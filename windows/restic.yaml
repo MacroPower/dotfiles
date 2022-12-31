@@ -1,0 +1,44 @@
+# Restic Profile
+# https://creativeprojects.github.io/resticprofile/
+
+global:
+  restic-binary: 'C:\bin\restic.exe'
+  scheduler: Task Scheduler
+
+home:
+  initialize: true
+  repository: 'rest:https://{{ .Env.RESTIC_USER | urlquery }}:{{ .Env.RESTIC_PASS | urlquery }}@{{ .Env.RESTIC_SERVER }}/{{ .Env.RESTIC_REPO }}'
+  password-file: repo.key
+  lock: home.lock
+
+  backup:
+    # Schedule with `resticprofile schedule --all`
+    # Runs daily at 2AM local time.
+    # https://www.freedesktop.org/software/systemd/man/systemd.time.html#Calendar%20Events
+    schedule: '*-*-* 02:00:00'
+    schedule-permission: user
+    schedule-priority: background
+    schedule-log: home-backup.log
+    schedule-lock-mode: default
+    schedule-lock-wait: 30m0s
+
+    exclude-caches: true
+    source:
+      - '{{ .Env.USERPROFILE }}'
+    exclude:
+      - '{{ .Env.USERPROFILE }}\.cache'
+      - '{{ .Env.USERPROFILE }}\.npm'
+      - '{{ .Env.USERPROFILE }}\.nuget'
+      - '{{ .Env.USERPROFILE }}\.vagrant.d'
+      - '{{ .Env.USERPROFILE }}\AppData\Local\Battle.net'
+      - '{{ .Env.USERPROFILE }}\AppData\Local\Packages'
+      - '{{ .Env.USERPROFILE }}\AppData\Local\restic'
+      - '{{ .Env.USERPROFILE }}\AppData\Local\Temp'
+      - '{{ .Env.USERPROFILE }}\Downloads'
+      - '{{ .Env.USERPROFILE }}\go'
+      - '{{ .Env.USERPROFILE }}\node_modules'
+      - '{{ .Env.USERPROFILE }}\npm-cache'
+      - '{{ .Env.USERPROFILE }}\npm'
+      - '{{ .Env.USERPROFILE }}\OneDrive'
+      - '{{ .Env.USERPROFILE }}\Videos'
+      - '{{ .Env.USERPROFILE }}\VirtualBox VMs'
