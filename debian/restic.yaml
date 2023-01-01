@@ -1,0 +1,34 @@
+# Restic Profile
+# https://creativeprojects.github.io/resticprofile/
+
+global:
+  scheduler: systemd
+
+default:
+  initialize: true
+  repository: 'rest:https://{{ .Env.RESTIC_USER | urlquery }}:{{ .Env.RESTIC_PASS | urlquery }}@{{ .Env.RESTIC_SERVER }}/{{ .Env.RESTIC_REPO }}'
+  password-file: repo.key
+  lock: default.lock
+
+  backup:
+    exclude-caches: true
+    source:
+      - /home
+      - /etc
+    exclude:
+      - '/home/*/Downloads'
+      - '/home/*/snap'
+      - '/home/*/.cache'
+      - '**/node_modules'
+
+  retention:
+    before-backup: false
+    after-backup: true
+    keep-last: 3
+    keep-hourly: false
+    keep-daily: 7
+    keep-weekly: 5
+    keep-monthly: 12
+    keep-yearly: 10
+    compact: false
+    prune: true
