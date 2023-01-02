@@ -5,11 +5,11 @@ global:
   restic-binary: 'C:\bin\restic.exe'
   scheduler: Task Scheduler
 
-home:
+default:
   initialize: true
   repository: 'rest:https://{{ .Env.RESTIC_USER | urlquery }}:{{ .Env.RESTIC_PASS | urlquery }}@{{ .Env.RESTIC_SERVER }}/{{ .Env.RESTIC_REPO }}'
   password-file: repo.key
-  lock: home.lock
+  lock: default.lock
 
   backup:
     # Schedule with `resticprofile schedule --all`
@@ -18,7 +18,7 @@ home:
     schedule: '*-*-* 02:00:00'
     schedule-permission: user
     schedule-priority: background
-    schedule-log: home-backup.log
+    schedule-log: default-backup.log
     schedule-lock-mode: default
     schedule-lock-wait: 30m0s
 
@@ -30,15 +30,33 @@ home:
       - '{{ .Env.USERPROFILE }}\.npm'
       - '{{ .Env.USERPROFILE }}\.nuget'
       - '{{ .Env.USERPROFILE }}\.vagrant.d'
-      - '{{ .Env.USERPROFILE }}\AppData\Local\Battle.net'
-      - '{{ .Env.USERPROFILE }}\AppData\Local\Packages'
-      - '{{ .Env.USERPROFILE }}\AppData\Local\restic'
-      - '{{ .Env.USERPROFILE }}\AppData\Local\Temp'
+      - '{{ .Env.USERPROFILE }}\AppData\Local'
+      - '{{ .Env.USERPROFILE }}\AppData\Roaming\Code'
+      - '{{ .Env.USERPROFILE }}\AppData\Roaming\Discord'
+      - '{{ .Env.USERPROFILE }}\AppData\Roaming\OpenLens'
       - '{{ .Env.USERPROFILE }}\Downloads'
       - '{{ .Env.USERPROFILE }}\go'
       - '{{ .Env.USERPROFILE }}\node_modules'
       - '{{ .Env.USERPROFILE }}\npm-cache'
       - '{{ .Env.USERPROFILE }}\npm'
+      - '{{ .Env.USERPROFILE }}\ntuser.dat.*'
+      - '{{ .Env.USERPROFILE }}\NTUSER.DAT'
       - '{{ .Env.USERPROFILE }}\OneDrive'
       - '{{ .Env.USERPROFILE }}\Videos'
       - '{{ .Env.USERPROFILE }}\VirtualBox VMs'
+      - '**\.lockfile'
+      - '**\*.lock'
+      - '**\LOCK'
+      - '**\node_modules'
+
+  retention:
+    before-backup: false
+    after-backup: true
+    keep-last: 3
+    keep-hourly: false
+    keep-daily: 7
+    keep-weekly: 5
+    keep-monthly: 12
+    keep-yearly: 10
+    compact: false
+    prune: true
