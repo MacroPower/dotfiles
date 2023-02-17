@@ -1,0 +1,63 @@
+{
+    "version": 2,
+    "type": "full",
+    "values": {
+        "cfg-seen": [],
+        "cfg-collapsed": [],
+        "addons.enabled": [
+            "ffzap-core",
+            "ffzap-bttv",
+            "7tv-emotes",
+            "chatterino-badges",
+            "new-account-highlighter",
+            "unread-mentions-counter"
+        ],
+        "p:0:addon.unread-mentions-counter.browser-notifications.enabled": true,
+        "p:0:layout.swap-sidebars": true,
+        "p:0:metadata.player-stats": true,
+        "p:0:chat.points.auto-rewards": true,
+        "p:0:chat.emote-menu.icon": true,
+        "p:0:chat.filtering.highlight-basic-terms": [
+            {
+                "v": {
+                    "v": "*macro*",
+                    "t": "glob",
+                    "c": "",
+                    "s": false,
+                    "h": false,
+                    "w": true,
+                    "p": 0,
+                    "remove": false
+                }
+            }
+        ],
+        "p:0:chat.filtering.highlight-basic-users": [
+            {
+                "v": {
+                    "v": "agg23",
+                    "t": "text",
+                    "c": "",
+                    "s": false,
+                    "h": false,
+                    "w": true,
+                    "p": 0,
+                    "remove": false
+                },
+                "id": "1676593422239-0.948802539741409-1"
+            },
+            {
+                "v": {
+                    "remove": false,
+                    "v": "Magnum_Phoenix",
+                    "t": "text",
+                    "c": "",
+                    "s": false,
+                    "h": false,
+                    "w": true,
+                    "p": 0
+                },
+                "id": "1676593432400-0.17189374847105177-2"
+            }
+        ]
+    }
+}
