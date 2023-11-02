@@ -1,11 +1,15 @@
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
-alias code=codium
-
 if status is-interactive
-    alias ls=exa
-    alias ll="exa -la"
+    alias ls=eza
+    alias ll="eza -la"
+    alias cat=bat
+    alias top=bottom
+    alias cd=z
+    alias find=fd
 end
+
+set PATH "$HOME/go/bin:$PATH"
 
 function fish_greeting
     echo '                 '(set_color F00)'___

@@ -18,5 +18,25 @@
     "editor.fontFamily": "'Fira Code Retina', monospace",
     "editor.fontLigatures": "'ss01', 'ss03', 'ss04', 'ss06', 'zero'",
     "editor.fontSize": 13,
-    "terminal.integrated.fontFamily": "'FiraCodeNerdFontCompleteM-Retina', monospace"
+    "terminal.integrated.fontFamily": "'FiraCodeNerdFontCompleteM-Retina', monospace",
+    "editor.inlineSuggest.enabled": true,
+    "github.copilot.enable": {
+      "*": true
+    },
+    "editor.rulers": [
+      80, 120
+    ],
+    "[vue]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[yaml]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[json]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "go.toolsManagement.autoUpdate": true
 }
