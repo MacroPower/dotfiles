@@ -1,15 +1,16 @@
 eval "$(/opt/homebrew/bin/brew shellenv)"
+zoxide init fish | source
+
+fish_add_path "$HOME/go/bin"
 
 if status is-interactive
     alias ls=eza
     alias ll="eza -la"
     alias cat=bat
-    alias top=bottom
+    alias top=btm
     alias cd=z
     alias find=fd
 end
-
-set PATH "$HOME/go/bin:$PATH"
 
 function fish_greeting
     echo '                 '(set_color F00)'___
