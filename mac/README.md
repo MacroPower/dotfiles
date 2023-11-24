@@ -18,7 +18,6 @@ ssh-keygen -t ed25519 -C "<email>"
 ```bash
 # Utils
 brew install neofetch   # Show system info
-brew install watch      # watch for mac
 brew install dos2unix   # dos2unix for mac
 brew install fd         # better find        https://github.com/sharkdp/fd
 brew install bat        # better cat         https://github.com/sharkdp/bat
@@ -29,10 +28,12 @@ brew install eza        # better ls          https://github.com/eza-community/ez
 brew install bottom     # better top         https://github.com/ClementTsang/bottom
 brew install git-delta  # better git diff    https://github.com/dandavison/delta
 brew install arping     # arp ping           https://github.com/ThomasHabets/arping
+brew install viddy      # better watch       https://github.com/sachaos/viddy
 brew install --cask linearmouse
 brew install --cask obsidian
 brew install --cask keka
 brew install --cask gpg-suite-no-mail
+brew install --cask drawio
 
 # Terminal
 brew install --cask kitty
@@ -66,8 +67,19 @@ brew install --cask db-browser-for-sqlite
 brew install --cask openlens # add `@alebcay/openlens-node-pod-menu**`
 brew install --cask visual-studio-code # install in path
 brew install --cask fork
+brew install --cask orbstack
+brew install --cask wireshark
+brew install wireshark
 brew install tfenv
 tfenv install 1.6.3 && tfenv use 1.6.3
+
+firefox https://krew.sigs.k8s.io/docs/user-guide/setup/install/
+kubectl krew index add netshoot https://github.com/nilic/kubectl-netshoot.git
+kubectl krew install netshoot/netshoot  # https://github.com/nilic/kubectl-netshoot
+kubectl krew install sniff              # ksniff
+kubectl krew install gadget             # inspektor gadget
+kubectl krew install tree               # https://github.com/ahmetb/kubectl-tree
+kubectl krew install access-matrix      # https://github.com/corneliusweig/rakkess
 
 code --install-extension PKief.material-icon-theme
 code --install-extension zhuangtongfa.material-theme
@@ -121,4 +133,14 @@ https://github.com/prometheus/node_exporter/blob/master/examples/launchctl/READM
 
 echo -- '--web.listen-address=0.0.0.0:9100' | \
 	sudo tee /opt/homebrew/etc/node_exporter.args
+```
+
+## Upgrades
+
+```sh
+brew update
+brew upgrade
+fisher update
+k krew update
+k krew upgrade
 ```

@@ -2,3 +2,4 @@ ilancosman/tide@v5
 patrickf1/fzf.fish
 jorgebucaran/autopair.fish
 oh-my-fish/plugin-jump
+evanlucas/fish-kubectl-completions

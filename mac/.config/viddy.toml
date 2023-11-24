@@ -1,0 +1,4 @@
+[general]
+no_shell = false
+shell = "fish"
+shell_options = ""
