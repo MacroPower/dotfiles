@@ -1,0 +1,73 @@
+tap "homebrew/bundle"
+tap "homebrew/cask-fonts"
+
+cask "firefox", greedy: true
+
+# Utils
+brew "neofetch"   # Show system info
+brew "dos2unix"   # dos2unix for mac
+brew "fd"         # better find        github.com/sharkdp/fd
+brew "bat"        # better cat         github.com/sharkdp/bat
+brew "fzf"        # fuzzy finder       github.com/junegunn/fzf#usage
+brew "zoxide"     # better cd          github.com/ajeetdsouza/zoxide
+brew "diskonaut"  # tui disk navigator github.com/imsnif/diskonaut
+brew "eza"        # better ls          github.com/eza-community/eza
+brew "bottom"     # better top         github.com/ClementTsang/bottom
+brew "git-delta"  # better git diff    github.com/dandavison/delta
+brew "arping"     # arp ping           github.com/ThomasHabets/arping
+brew "viddy"      # better watch       github.com/sachaos/viddy
+brew "tailscale"
+cask "linearmouse"
+cask "obsidian"
+cask "keka"
+cask "gpg-suite-no-mail"
+cask "drawio"
+
+# Terminal
+cask "kitty"
+brew "fish"
+cask "font-fira-code"
+cask "font-fira-code-nerd-font"
+brew "fisher"
+
+# Fun
+cask "spotify", greedy: true
+cask "discord", greedy: true
+cask "plex", greedy: true
+cask "vlc", greedy: true
+
+# Dev
+brew "go"
+brew "just"
+brew "gh"
+brew "pyenv"
+brew "kubectl"
+brew "kustomize"
+brew "helm"
+brew "kubectx"
+brew "go-jsonnet"
+brew "jsonnet-bundler"
+cask "db-browser-for-sqlite"
+cask "openlens" # add `@alebcay/openlens-node-pod-menu**`
+cask "visual-studio-code" # install in path
+cask "fork", greedy: true
+cask "orbstack", greedy: true
+cask "wireshark"
+brew "wireshark"
+brew "tfenv"
+
+vscode "eamodio.gitlens"
+vscode "EditorConfig.EditorConfig"
+vscode "esbenp.prettier-vscode"
+vscode "GitHub.copilot"
+vscode "GitHub.copilot-chat"
+vscode "golang.go"
+vscode "Grafana.vscode-jsonnet"
+vscode "hashicorp.terraform"
+vscode "kokakiwi.vscode-just"
+vscode "ms-kubernetes-tools.vscode-kubernetes-tools"
+vscode "PKief.material-icon-theme"
+vscode "redhat.vscode-yaml"
+vscode "stkb.rewrap"
+vscode "WakaTime.vscode-wakatime"
+vscode "zhuangtongfa.material-theme"
