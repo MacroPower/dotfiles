@@ -29,12 +29,12 @@ brew bundle install
 echo "/opt/homebrew/bin/fish" | sudo tee -a /etc/shells
 chsh -s /opt/homebrew/bin/fish
 
-## Sync packages and dotfiles with this repo
+## Push packages and dotfiles from this repo to the system
 ## 
 ## Note: This will set configuration on the machine to be equal to this repo.
 ## If there is any drift, it will result in packages and settings being removed.
 ##
-./sync.sh
+./push.sh
 ```
 
 ### Tools
