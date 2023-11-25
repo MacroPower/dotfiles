@@ -29,17 +29,12 @@ brew bundle install
 echo "/opt/homebrew/bin/fish" | sudo tee -a /etc/shells
 chsh -s /opt/homebrew/bin/fish
 
-## Add dotfiles
+## Sync packages and dotfiles with this repo
+## 
+## Note: This will set configuration on the machine to be equal to this repo.
+## If there is any drift, it will result in packages and settings being removed.
 ##
-rm -rf ~/.config/*
-cp -r .config ~/.config
-
-## Link dotfiles
-##
-rm -f ~/.gitconfig ~/.vimrc ~/Library/Application\ Support/Code/User/settings.json
-ln -s ~/.config/vscode/settings.json ~/Library/Application\ Support/Code/User/settings.json
-ln -s ~/.config/vim/.vimrc ~/.vimrc
-ln -s ~/.config/git/.gitconfig ~/.gitconfig
+./sync.sh
 ```
 
 ### Tools
