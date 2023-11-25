@@ -7,6 +7,7 @@
 ```bash
 # Create SSH key
 ssh-keygen -t ed25519 -C "<email>"
+cp -f .gitconfig ~/.gitconfig
 
 xcode-select --install
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
