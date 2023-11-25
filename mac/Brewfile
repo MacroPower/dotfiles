@@ -51,7 +51,7 @@ brew "go-jsonnet"
 brew "jsonnet-bundler"
 cask "db-browser-for-sqlite"
 cask "openlens" # add `@alebcay/openlens-node-pod-menu**`
-cask "visual-studio-code" # install in path
+cask "visual-studio-code"
 cask "fork", greedy: true
 cask "orbstack", greedy: true
 cask "slack", greedy: true

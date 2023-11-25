@@ -5,17 +5,41 @@
 ### Bootstrap
 
 ```bash
-# Create SSH key
+## Create SSH key
+##
 ssh-keygen -t ed25519 -C "<email>"
-cp -f .gitconfig ~/.gitconfig
-cp -f .vimrc ~/.vimrc
 
+## Install Xcode Command Line Tools
+##
 xcode-select --install
+
+## Install Brew
+##
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
+## Install packages via Brew
+##
+## Note: Launch VSCode, command+shift+p
+## Run `Shell Command: Install 'code' command in PATH`
+##
 brew bundle install
+
+## Set fish as the default shell
+##
 echo "/opt/homebrew/bin/fish" | sudo tee -a /etc/shells
 chsh -s /opt/homebrew/bin/fish
+
+## Add dotfiles
+##
+rm -rf ~/.config/*
+cp -r .config ~/.config
+
+## Link dotfiles
+##
+rm -f ~/.gitconfig ~/.vimrc ~/Library/Application\ Support/Code/User/settings.json
+ln -s ~/.config/vscode/settings.json ~/Library/Application\ Support/Code/User/settings.json
+ln -s ~/.config/vim/.vimrc ~/.vimrc
+ln -s ~/.config/git/.gitconfig ~/.gitconfig
 ```
 
 ### Tools
