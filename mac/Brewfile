@@ -54,6 +54,7 @@ cask "openlens" # add `@alebcay/openlens-node-pod-menu**`
 cask "visual-studio-code" # install in path
 cask "fork", greedy: true
 cask "orbstack", greedy: true
+cask "slack", greedy: true
 cask "wireshark"
 brew "wireshark"
 brew "tfenv"

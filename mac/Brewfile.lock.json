@@ -135,6 +135,13 @@
         "options": {
           "full_name": "rectangle"
         }
+      },
+      "slack": {
+        "version": "4.35.126",
+        "options": {
+          "greedy": true,
+          "full_name": "slack"
+        }
       }
     },
     "brew": {
