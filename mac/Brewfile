@@ -16,6 +16,7 @@ brew "bottom"     # better top         github.com/ClementTsang/bottom
 brew "git-delta"  # better git diff    github.com/dandavison/delta
 brew "arping"     # arp ping           github.com/ThomasHabets/arping
 brew "viddy"      # better watch       github.com/sachaos/viddy
+brew "trippy"     # better traceroute  github.com/fujiapple852/trippy
 brew "tailscale"
 cask "rectangle"
 cask "linearmouse"

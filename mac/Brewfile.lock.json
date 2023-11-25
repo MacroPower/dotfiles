@@ -1310,6 +1310,60 @@
             }
           }
         }
+      },
+      "trippy": {
+        "version": "0.8.0",
+        "bottle": {
+          "rebuild": 0,
+          "root_url": "https://ghcr.io/v2/homebrew/core",
+          "files": {
+            "arm64_sonoma": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/trippy/blobs/sha256:78a636171ac08b0588e7ea1a3afca8f8c2dbd63ca8ba5beca8e054717a0b33c8",
+              "sha256": "78a636171ac08b0588e7ea1a3afca8f8c2dbd63ca8ba5beca8e054717a0b33c8"
+            },
+            "arm64_ventura": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/trippy/blobs/sha256:2ca7942839c96151fee0e2abcc7d5b551fd53c75f797a96b786e11316d04baaf",
+              "sha256": "2ca7942839c96151fee0e2abcc7d5b551fd53c75f797a96b786e11316d04baaf"
+            },
+            "arm64_monterey": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/trippy/blobs/sha256:4f0ea6d43dfa05b6bdda735eb6dfac2f3e38b99f4a09694929742633fbc12f47",
+              "sha256": "4f0ea6d43dfa05b6bdda735eb6dfac2f3e38b99f4a09694929742633fbc12f47"
+            },
+            "arm64_big_sur": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/trippy/blobs/sha256:7b083e2f4d9afd3c82e2d1b2e01f52e6804972e4205818c0049f6e39ea688608",
+              "sha256": "7b083e2f4d9afd3c82e2d1b2e01f52e6804972e4205818c0049f6e39ea688608"
+            },
+            "sonoma": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/trippy/blobs/sha256:2bef6c5c35fe3333fc44956aa38f7851b76b741b246a4d7464e23344edfa5080",
+              "sha256": "2bef6c5c35fe3333fc44956aa38f7851b76b741b246a4d7464e23344edfa5080"
+            },
+            "ventura": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/trippy/blobs/sha256:48e6cbda0b86865439925bd439e128b120e675ca97abf0798b9d3c4d83b9eefb",
+              "sha256": "48e6cbda0b86865439925bd439e128b120e675ca97abf0798b9d3c4d83b9eefb"
+            },
+            "monterey": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/trippy/blobs/sha256:cf4ce67bbe64a8cdda172993c16b9e74a08ef0ce094c9d8425b845108a1cb0e5",
+              "sha256": "cf4ce67bbe64a8cdda172993c16b9e74a08ef0ce094c9d8425b845108a1cb0e5"
+            },
+            "big_sur": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/trippy/blobs/sha256:452cbfe0a5557e9b8b2079bb61496d0e45f3bb0c9179873c709d0f472033be26",
+              "sha256": "452cbfe0a5557e9b8b2079bb61496d0e45f3bb0c9179873c709d0f472033be26"
+            },
+            "x86_64_linux": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/trippy/blobs/sha256:d134c0706c4f73e14a541865d16968e9c86ce81f2bb48a17ebf428316c08b281",
+              "sha256": "d134c0706c4f73e14a541865d16968e9c86ce81f2bb48a17ebf428316c08b281"
+            }
+          }
+        }
       }
     },
     "vscode": {

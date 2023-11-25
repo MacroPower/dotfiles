@@ -24,6 +24,7 @@ if status is-interactive
     alias top=btm
     alias watch='viddy'
     alias w='viddy'
+    alias traceroute='trip'
 end
 
 alias k=kubectl
