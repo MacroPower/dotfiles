@@ -67,7 +67,6 @@ pyenv local 2.7.18 3.6.15 3.7.16 3.8.16
 ### System Settings
 
 - Keyboard -> Show Launchpad -> cmd+enter
-- Keyboard -> Ctrl->Cmd, Cmd->Ctrl
 - Sound -> Show Always
 - General -> Color -> Purple
 - General -> Default Web Browser -> Firefox
