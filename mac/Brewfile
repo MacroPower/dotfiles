@@ -59,6 +59,9 @@ cask "wireshark"
 brew "wireshark"
 brew "tfenv"
 
+# Monitoring
+brew "node_exporter" unless system "sysctl -n hw.model | grep Book"
+
 vscode "eamodio.gitlens"
 vscode "EditorConfig.EditorConfig"
 vscode "esbenp.prettier-vscode"

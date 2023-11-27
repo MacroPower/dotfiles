@@ -79,8 +79,6 @@ pyenv local 2.7.18 3.6.15 3.7.16 3.8.16
 For desktop/server monitoring
 
 ```bash
-brew install node_exporter
-
 https://github.com/prometheus/node_exporter/blob/master/examples/launchctl/README.md
 
 <string>/opt/homebrew/bin/node_exporter $(&lt; /opt/homebrew/etc/node_exporter.args)</string>
