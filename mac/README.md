@@ -76,16 +76,19 @@ pyenv local 2.7.18 3.6.15 3.7.16 3.8.16
 
 ### Node Exporter
 
-For desktop/server monitoring
+For desktop/server monitoring, node_exporter is installed. Complete setup:
 
 ```bash
-https://github.com/prometheus/node_exporter/blob/master/examples/launchctl/README.md
-
-<string>/opt/homebrew/bin/node_exporter $(&lt; /opt/homebrew/etc/node_exporter.args)</string>
+curl https://raw.githubusercontent.com/prometheus/node_exporter/master/examples/launchctl/io.prometheus.node_exporter.plist | \
+sed 's|/usr/local/bin/node_exporter|/opt/homebrew/bin/node_exporter|g' | \
+sed 's|/usr/local/etc/node_exporter.args|/opt/homebrew/etc/node_exporter.args|g' \
+> /Library/LaunchDaemons/io.prometheus.node_exporter.plist
 
 echo -- '--web.listen-address=0.0.0.0:9100' | \
 	sudo tee /opt/homebrew/etc/node_exporter.args
 ```
+
+Note: Modified from [the node_exporter docs](https://github.com/prometheus/node_exporter/blob/master/examples/launchctl/README.md).
 
 ## Upgrades
 
