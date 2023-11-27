@@ -5,7 +5,7 @@
         "revision": "d6fbeee54ba344be59731ff3e93fb105b2567e34"
       },
       "homebrew/cask-fonts": {
-        "revision": "558f919a38632feaed1f42e0201c5097ed60fae9"
+        "revision": "9eb089df1b1599407fe0ef88c745ffb8a1ec8fd0"
       }
     },
     "cask": {
@@ -59,7 +59,7 @@
         }
       },
       "font-fira-code-nerd-font": {
-        "version": "3.1.0",
+        "version": "3.1.1",
         "options": {
           "full_name": "font-fira-code-nerd-font"
         }
