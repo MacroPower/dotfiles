@@ -21,6 +21,9 @@
     "terminal.integrated.fontFamily": "'FiraCodeNerdFontCompleteM-Retina', monospace",
     "editor.inlineSuggest.enabled": true,
     "vs-kubernetes": {
+      "vscode-kubernetes.helm-path.mac": "/opt/homebrew/bin/helm",
+      "vscode-kubernetes.kubectl-path.mac": "/opt/homebrew/bin/kubectl",
+      "vscode-kubernetes.minikube-path.mac": "/opt/homebrew/bin/minikube",
       "vs-kubernetes.crd-code-completion": "enabled"
     },
     "github.copilot.enable": {
