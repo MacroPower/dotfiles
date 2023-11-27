@@ -1,7 +1,7 @@
 tap "homebrew/bundle"
 tap "homebrew/cask-fonts"
 
-cask "firefox", greedy: true
+cask "firefox"
 
 # Utils
 brew "neofetch"   # Show system info
@@ -34,10 +34,10 @@ cask "font-fira-code-nerd-font"
 brew "fisher"
 
 # Fun
-cask "spotify", greedy: true
-cask "discord", greedy: true
-cask "plex", greedy: true
-cask "vlc", greedy: true
+cask "spotify"
+cask "discord"
+cask "plex"
+cask "vlc"
 
 # Dev
 brew "go"
@@ -53,9 +53,9 @@ brew "jsonnet-bundler"
 cask "db-browser-for-sqlite"
 cask "openlens" # add `@alebcay/openlens-node-pod-menu**`
 cask "visual-studio-code"
-cask "fork", greedy: true
-cask "orbstack", greedy: true
-cask "slack", greedy: true
+cask "fork"
+cask "orbstack"
+cask "slack"
 cask "wireshark"
 brew "wireshark"
 brew "tfenv"
