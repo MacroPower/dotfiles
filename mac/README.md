@@ -40,6 +40,9 @@ chsh -s /opt/homebrew/bin/fish
 ### Tools
 
 ```bash
+# Tailscale
+firefox https://pkgs.tailscale.com/stable/#macos
+
 # Krew
 firefox https://krew.sigs.k8s.io/docs/user-guide/setup/install/
 kubectl krew index add netshoot https://github.com/nilic/kubectl-netshoot.git
