@@ -22,6 +22,7 @@ cask "rectangle"
 cask "linearmouse"
 cask "obsidian"
 cask "keka"
+cask "appcleaner"
 cask "gpg-suite-no-mail"
 cask "drawio"
 
