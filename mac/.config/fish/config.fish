@@ -17,7 +17,6 @@ fish_add_path "$HOME/.krew/bin"
 
 if status is-interactive
     alias ls=eza
-    alias ll="eza -la"
     alias cat=bat
     alias cd=z
     alias find=fd
