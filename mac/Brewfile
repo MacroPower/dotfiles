@@ -60,6 +60,14 @@ cask "wireshark"
 brew "wireshark"
 brew "tfenv"
 
+# Talos
+tap "siderolabs/talos"
+tap "dopplerhq/cli"
+brew "siderolabs/talos/talosctl"
+brew "talhelper"
+brew "gnupg" # for doppler
+brew "dopplerhq/cli/doppler"
+
 # Monitoring
 brew "node_exporter" unless system "sysctl -n hw.model | grep Book"
 
