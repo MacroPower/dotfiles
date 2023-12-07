@@ -12,6 +12,9 @@
       },
       "dopplerhq/cli": {
         "revision": "ba45932387da77c5bac5620795a7c4b7f70f8bf8"
+      },
+      "jakehilborn/jakehilborn": {
+        "revision": "cb85148b960eaa6a57b8d8554a1098b7dbe2f273"
       }
     },
     "cask": {
@@ -1562,6 +1565,10 @@
       },
       "dopplerhq/cli/doppler": {
         "version": "3.66.5",
+        "bottle": false
+      },
+      "jakehilborn/jakehilborn/displayplacer": {
+        "version": "1.4.0",
         "bottle": false
       }
     },

@@ -73,6 +73,11 @@ pyenv local 2.7.18 3.6.15 3.7.16 3.8.16
 - Battery -> Power Adapter -> Disable Sleep
 - Mouse -> Disable Natural Scrolling
 
+```sh
+displayplacer "id:s4294967295 res:2560x1440 hz:144 color_depth:7 enabled:true scaling:off origin:(0,0) degree:0"
+displayplacer "id:s1686152384 res:2560x1440 hz:144 color_depth:8 enabled:true scaling:off origin:(-2560,0) degree:0"
+```
+
 ### Node Exporter
 
 For desktop/server monitoring, node_exporter is installed. Complete setup:

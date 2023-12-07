@@ -11,6 +11,8 @@ cask "obsidian"
 cask "rectangle"
 cask "spotify"
 cask "vlc"
+tap "jakehilborn/jakehilborn"
+brew "jakehilborn/jakehilborn/displayplacer"
 
 # Terminal
 cask "kitty"
