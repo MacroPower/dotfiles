@@ -1,43 +1,36 @@
 tap "homebrew/bundle"
 tap "homebrew/cask-fonts"
 
-cask "firefox"
-
 # Utils
-brew "neofetch"   # Show system info
-brew "dos2unix"   # dos2unix for mac
-brew "fd"         # better find        github.com/sharkdp/fd
-brew "bat"        # better cat         github.com/sharkdp/bat
-brew "fzf"        # fuzzy finder       github.com/junegunn/fzf#usage
-brew "zoxide"     # better cd          github.com/ajeetdsouza/zoxide
-brew "diskonaut"  # tui disk navigator github.com/imsnif/diskonaut
-brew "eza"        # better ls          github.com/eza-community/eza
-brew "bottom"     # better top         github.com/ClementTsang/bottom
-brew "git-delta"  # better git diff    github.com/dandavison/delta
-brew "arping"     # arp ping           github.com/ThomasHabets/arping
-brew "viddy"      # better watch       github.com/sachaos/viddy
-brew "trippy"     # better traceroute  github.com/fujiapple852/trippy
-brew "tailscale"
-cask "rectangle"
+cask "appcleaner"
+cask "drawio"
+cask "gpg-suite-no-mail"
+cask "keka"
 cask "linearmouse"
 cask "obsidian"
-cask "keka"
-cask "appcleaner"
-cask "gpg-suite-no-mail"
-cask "drawio"
+cask "rectangle"
+cask "spotify"
+cask "vlc"
 
 # Terminal
 cask "kitty"
 brew "fish"
+brew "fisher" # fish plugin manager
 cask "font-fira-code"
 cask "font-fira-code-nerd-font"
-brew "fisher"
-
-# Fun
-cask "spotify"
-cask "discord"
-cask "plex"
-cask "vlc"
+brew "neofetch"   # neofetch for mac
+brew "dos2unix"   # dos2unix for mac
+brew "fzf"        # fuzzy finder         https://github.com/junegunn/fzf#usage
+brew "arping"     # arp ping             https://github.com/ThomasHabets/arping
+brew "diskonaut"  # tui disk navigator   https://github.com/imsnif/diskonaut
+brew "bat"        # better cat           https://github.com/sharkdp/bat
+brew "bottom"     # better top           https://github.com/ClementTsang/bottom
+brew "eza"        # better ls            https://github.com/eza-community/eza
+brew "fd"         # better find          https://github.com/sharkdp/fd
+brew "git-delta"  # better git diff      https://github.com/dandavison/delta
+brew "trippy"     # better traceroute    https://github.com/fujiapple852/trippy
+brew "viddy"      # better watch         https://github.com/sachaos/viddy
+brew "zoxide"     # better cd            https://github.com/ajeetdsouza/zoxide
 
 # Dev
 brew "go"
@@ -51,16 +44,22 @@ brew "kubectx"
 brew "go-jsonnet"
 brew "jsonnet-bundler"
 cask "db-browser-for-sqlite"
-cask "openlens" # add `@alebcay/openlens-node-pod-menu**`
+cask "openlens" # add `@alebcay/openlens-node-pod-menu`
 cask "visual-studio-code"
 cask "fork"
-cask "orbstack"
-cask "slack"
 cask "wireshark"
 brew "wireshark"
 brew "tfenv"
 
-# Talos
+# Personal
+cask "firefox"
+cask "discord"
+cask "plex"
+brew "tailscale"
+cask "orbstack"
+cask "slack"
+
+# Personal/Talos
 tap "siderolabs/talos"
 tap "dopplerhq/cli"
 brew "siderolabs/talos/talosctl"
@@ -68,9 +67,10 @@ brew "talhelper"
 brew "gnupg" # for doppler
 brew "dopplerhq/cli/doppler"
 
-# Monitoring
+# Personal/Monitoring
 brew "node_exporter" unless system "sysctl -n hw.model | grep Book"
 
+# VSCode
 vscode "eamodio.gitlens"
 vscode "EditorConfig.EditorConfig"
 vscode "esbenp.prettier-vscode"
