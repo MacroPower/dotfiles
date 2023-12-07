@@ -3,6 +3,7 @@ tap "homebrew/cask-fonts"
 
 # Utils
 cask "appcleaner"
+cask "caffeine"
 cask "drawio"
 cask "gpg-suite-no-mail"
 cask "keka"
