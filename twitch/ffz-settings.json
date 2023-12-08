@@ -13,10 +13,15 @@
             "unread-mentions-counter"
         ],
         "p:0:addon.unread-mentions-counter.browser-notifications.enabled": true,
-        "p:0:layout.swap-sidebars": true,
         "p:0:metadata.player-stats": true,
         "p:0:chat.points.auto-rewards": true,
         "p:0:chat.emote-menu.icon": true,
+        "p:0:channel.auto-skip-trailer": true,
+        "p:0:channel.auto-click-off-featured": true,
+        "p:0:channel.auto-click-chat": true,
+        "p:0:chat.drops.auto-rewards": true,
+        "p:0:player.disable-content-warnings": true,
+        "p:0:chat.filtering.highlight-mentions": true,
         "p:0:chat.filtering.highlight-basic-terms": [
             {
                 "v": {
