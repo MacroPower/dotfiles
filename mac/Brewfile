@@ -21,6 +21,8 @@ brew "fish"
 brew "fisher" # fish plugin manager
 cask "font-fira-code"
 cask "font-fira-code-nerd-font"
+brew "jq"
+brew "yq"
 brew "neofetch"   # neofetch for mac
 brew "dos2unix"   # dos2unix for mac
 brew "fzf"        # fuzzy finder         https://github.com/junegunn/fzf#usage
@@ -53,25 +55,13 @@ cask "fork"
 cask "wireshark"
 brew "wireshark"
 brew "tfenv"
-
-# Personal
-cask "firefox"
-cask "discord"
-cask "plex"
-brew "tailscale"
-cask "orbstack"
-cask "slack"
-
-# Personal/Talos
-tap "siderolabs/talos"
-tap "dopplerhq/cli"
-brew "siderolabs/talos/talosctl"
-brew "talhelper"
-brew "gnupg" # for doppler
-brew "dopplerhq/cli/doppler"
-
-# Personal/Monitoring
-brew "node_exporter" unless system "sysctl -n hw.model | grep Book"
+brew "node"
+brew "terraformer"
+brew "python@3.8"
+brew "python@3.9"
+brew "python@3.10"
+brew "python@3.11"
+brew "python@3.12"
 
 # VSCode
 vscode "eamodio.gitlens"
@@ -87,5 +77,43 @@ vscode "ms-kubernetes-tools.vscode-kubernetes-tools"
 vscode "PKief.material-icon-theme"
 vscode "redhat.vscode-yaml"
 vscode "stkb.rewrap"
-vscode "WakaTime.vscode-wakatime"
 vscode "zhuangtongfa.material-theme"
+
+if ! system "ls /Library/LaunchAgents/ | grep paloaltonetworks"
+
+    # Personal
+    cask "firefox"
+    cask "discord"
+    cask "plex"
+    brew "tailscale"
+    cask "orbstack"
+    cask "slack"
+
+    # Personal/Talos
+    tap "siderolabs/talos"
+    tap "dopplerhq/cli"
+    brew "siderolabs/talos/talosctl"
+    brew "talhelper"
+    brew "gnupg" # for doppler
+    brew "dopplerhq/cli/doppler"
+
+    # Personal/Monitoring
+    brew "node_exporter" unless system "sysctl -n hw.model | grep Book"
+
+    # Personal/VSCode
+    vscode "WakaTime.vscode-wakatime"
+
+else
+
+    brew "azure-cli"
+    tap "azure/kubelogin"
+    brew "azure/kubelogin/kubelogin"
+
+    tap "cloudfoundry/tap"
+    brew "cloudfoundry/tap/cf-cli@8"
+
+    tap "fluxcd/tap"
+    brew "fluxcd/tap/flux"
+    brew "sops"
+
+end
