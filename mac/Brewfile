@@ -48,6 +48,7 @@ brew "helm"
 brew "kubectx"
 brew "go-jsonnet"
 brew "jsonnet-bundler"
+cask "monodraw"
 cask "db-browser-for-sqlite"
 cask "openlens" # add `@alebcay/openlens-node-pod-menu`
 cask "visual-studio-code"
