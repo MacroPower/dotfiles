@@ -99,7 +99,7 @@ if ! system "ls /Library/LaunchAgents/ | grep paloaltonetworks"
     brew "dopplerhq/cli/doppler"
 
     # Personal/Monitoring
-    brew "node_exporter" unless system "sysctl -n hw.model | grep Book"
+    brew "node_exporter" unless system "ioreg -c AppleSmartBattery -r | grep '\"BatteryInstalled\" = Yes'"
 
     # Personal/VSCode
     vscode "WakaTime.vscode-wakatime"
