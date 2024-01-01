@@ -97,9 +97,5 @@ Note: Modified from [the node_exporter docs](https://github.com/prometheus/node_
 ## Upgrades
 
 ```sh
-brew update
-brew upgrade
-fisher update
-k krew update
-k krew upgrade
+./upgrade.sh
 ```
