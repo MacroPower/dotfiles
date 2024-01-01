@@ -1,6 +1,9 @@
 tap "homebrew/bundle"
 tap "homebrew/cask-fonts"
 
+tap "mas-cli/tap"
+brew "mas-cli/tap/mas"
+
 # Utils
 cask "appcleaner"
 cask "caffeine"
@@ -89,6 +92,7 @@ if ! system "ls /Library/LaunchAgents/ | grep paloaltonetworks"
     brew "tailscale"
     cask "orbstack"
     cask "slack"
+    mas "Wireguard", id: 1451685025
 
     # Personal/Talos
     tap "siderolabs/talos"
