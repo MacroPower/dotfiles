@@ -27,6 +27,8 @@ cask "font-fira-code"
 cask "font-fira-code-nerd-font"
 brew "jq"
 brew "yq"
+brew "nmap"
+cask "zenmap"
 brew "neofetch"   # neofetch for mac
 brew "dos2unix"   # dos2unix for mac
 brew "fzf"        # fuzzy finder         https://github.com/junegunn/fzf#usage
