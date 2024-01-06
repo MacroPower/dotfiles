@@ -31,6 +31,7 @@ brew "nmap"
 cask "zenmap"
 brew "neofetch"   # neofetch for mac
 brew "dos2unix"   # dos2unix for mac
+brew "tree"       # tree for mac
 brew "fzf"        # fuzzy finder         https://github.com/junegunn/fzf#usage
 brew "arping"     # arp ping             https://github.com/ThomasHabets/arping
 brew "diskonaut"  # tui disk navigator   https://github.com/imsnif/diskonaut
