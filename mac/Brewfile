@@ -104,7 +104,6 @@ if ! system "ls /Library/LaunchAgents/ | grep paloaltonetworks"
     brew "talhelper"
     brew "gnupg" # for doppler
     brew "dopplerhq/cli/doppler"
-    brew "liqoctl"
 
     # Personal/Monitoring
     brew "node_exporter" unless system "ioreg -c AppleSmartBattery -r | grep '\"BatteryInstalled\" = Yes'"
