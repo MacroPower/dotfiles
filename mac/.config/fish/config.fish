@@ -22,11 +22,11 @@ if status is-interactive
     alias find=fd
     alias top=btm
     alias watch='viddy'
-    alias w='viddy'
     alias traceroute='trip'
     alias grep='rg'
 end
 
+alias w='watch'
 alias k=kubectl
 alias wk="watch -n 1 kubectl"
 alias kx=kubectx
