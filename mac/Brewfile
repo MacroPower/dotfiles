@@ -43,6 +43,7 @@ brew "git-delta"  # better git diff      https://github.com/dandavison/delta
 brew "trippy"     # better traceroute    https://github.com/fujiapple852/trippy
 brew "viddy"      # better watch         https://github.com/sachaos/viddy
 brew "zoxide"     # better cd            https://github.com/ajeetdsouza/zoxide
+brew "ripgrep"    # better grep          https://github.com/BurntSushi/ripgrep
 
 # Dev
 brew "go"

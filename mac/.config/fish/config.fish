@@ -24,6 +24,7 @@ if status is-interactive
     alias watch='viddy'
     alias w='viddy'
     alias traceroute='trip'
+    alias grep='rg'
 end
 
 alias k=kubectl
