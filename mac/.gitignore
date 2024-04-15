@@ -1,1 +1,3 @@
+.config/argocd/config
 Brewfile.lock.json
+.config/helm/repositories.lock

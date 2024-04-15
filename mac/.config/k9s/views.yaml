@@ -1,0 +1,9 @@
+# $XDG_CONFIG_HOME/k9s/views.yaml
+views:
+  external-secrets.io/v1beta1/externalsecrets:
+    sortColumn: NAME:asc
+    columns: []
+
+  v1/pods:
+    sortColumn: AGE:desc
+    columns: []

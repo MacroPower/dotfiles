@@ -1,0 +1,32 @@
+# # ref: https://github.com/derailed/k9s/tree/master/plugins
+
+plugins:
+  watch-events:
+    shortCut: w
+    confirm: false
+    description: Watch Events
+    scopes:
+      - all
+    command: bash
+    background: false
+    args:
+      - -c
+      - "viddy -n 5 kubectl get events --context $CONTEXT --namespace $NAMESPACE --field-selector involvedObject.name=$NAME"
+
+  # Leverage stern (https://github.com/stern/stern) to output logs.
+  stern:
+    shortCut: Ctrl-L
+    confirm: false
+    description: "Logs <Stern>"
+    scopes:
+      - pods
+    command: stern
+    background: false
+    args:
+      - --tail
+      - 50
+      - $FILTER
+      - -n
+      - $NAMESPACE
+      - --context
+      - $CONTEXT

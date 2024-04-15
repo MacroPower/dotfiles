@@ -1,0 +1,13 @@
+aliases:
+  dp: deployments
+  sec: v1/secrets
+  jo: jobs
+  cr: clusterroles
+  crb: clusterrolebindings
+  ro: roles
+  rb: rolebindings
+  np: networkpolicies
+  es: externalsecrets
+  ces: clusterexternalsecrets
+  ess: secretstores
+  cess: clustersecretstores

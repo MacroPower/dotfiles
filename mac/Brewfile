@@ -47,15 +47,22 @@ brew "ripgrep"    # better grep          https://github.com/BurntSushi/ripgrep
 
 # Dev
 brew "go"
-brew "just"
 brew "gh"
 brew "pyenv"
 brew "kubectl"
+tap "kubecolor/tap"
+brew "kubecolor/tap/kubecolor"
 brew "kustomize"
 brew "helm"
 brew "kubectx"
 brew "go-jsonnet"
 brew "jsonnet-bundler"
+brew "kubeconform"
+brew "kyverno"
+tap "derailed/k9s"
+brew "derailed/k9s/k9s"
+tap "go-task/tap"
+brew "go-task/tap/go-task"
 cask "monodraw"
 cask "db-browser-for-sqlite"
 cask "openlens" # add `@alebcay/openlens-node-pod-menu`
@@ -87,6 +94,7 @@ vscode "PKief.material-icon-theme"
 vscode "redhat.vscode-yaml"
 vscode "stkb.rewrap"
 vscode "zhuangtongfa.material-theme"
+vscode "task.vscode-task"
 
 if ! system "ls /Library/LaunchAgents/ | grep paloaltonetworks"
 
@@ -94,7 +102,6 @@ if ! system "ls /Library/LaunchAgents/ | grep paloaltonetworks"
     cask "firefox"
     cask "discord"
     cask "plex"
-    brew "tailscale"
     cask "orbstack"
     cask "slack"
     mas "Wireguard", id: 1451685025
@@ -106,6 +113,8 @@ if ! system "ls /Library/LaunchAgents/ | grep paloaltonetworks"
     brew "talhelper"
     brew "gnupg" # for doppler
     brew "dopplerhq/cli/doppler"
+    brew "argocd"
+    brew "cilium-cli"
 
     # Personal/Monitoring
     brew "node_exporter" unless system "ioreg -c AppleSmartBattery -r | grep '\"BatteryInstalled\" = Yes'"

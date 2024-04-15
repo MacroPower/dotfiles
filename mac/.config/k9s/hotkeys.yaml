@@ -1,0 +1,16 @@
+# $XDG_CONFIG_HOME/k9s/hotkeys.yaml
+hotKeys:
+  shift-1:
+    shortCut:    Shift-1
+    description: View Namespaces
+    command:     namespaces
+
+  shift-2:
+    shortCut:    Shift-2
+    description: View Pods
+    command:     pods
+
+  shift-3:
+    shortCut:    Shift-3
+    description: View Worloads
+    command:     workloads
