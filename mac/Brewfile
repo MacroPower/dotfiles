@@ -14,7 +14,6 @@ cask "keka"
 cask "linearmouse"
 cask "obsidian"
 cask "rectangle"
-cask "spotify"
 cask "vlc"
 tap "jakehilborn/jakehilborn"
 brew "jakehilborn/jakehilborn/displayplacer"
@@ -28,7 +27,6 @@ cask "font-fira-code-nerd-font"
 brew "jq"
 brew "yq"
 brew "nmap"
-cask "zenmap"
 brew "neofetch"   # neofetch for mac
 brew "dos2unix"   # dos2unix for mac
 brew "tree"       # tree for mac
@@ -114,6 +112,5 @@ else
 
     tap "fluxcd/tap"
     brew "fluxcd/tap/flux"
-    brew "sops"
 
 end
