@@ -1,4 +1,4 @@
-# # ref: https://github.com/derailed/k9s/tree/master/plugins
+# ref: https://github.com/derailed/k9s/tree/master/plugins
 
 plugins:
   watch-events:
@@ -13,20 +13,69 @@ plugins:
       - -c
       - "viddy -n 5 kubectl get events --context $CONTEXT --namespace $NAMESPACE --field-selector involvedObject.name=$NAME"
 
-  # Leverage stern (https://github.com/stern/stern) to output logs.
-  stern:
-    shortCut: Ctrl-L
+  # kubectl-blame by knight42
+  # Annotate each line in the given resource's YAML with information from the managedFields to show who last modified the field.
+  # Source: https://github.com/knight42/kubectl-blame
+  # Install via:
+  #   krew: `kubectl krew install blame`
+  #   go: `go install github.com/knight42/kubectl-blame@latest`
+  blame:
+    shortCut: b
+    description: "Blame"
+    scopes:
+      - all
     confirm: false
-    description: "Logs <Stern>"
+    background: false
+    command: bash
+    args:
+      - -c
+      - "kubectl-blame $RESOURCE_NAME $NAME -n $NAMESPACE --context $CONTEXT | less"
+
+  debug:
+    shortCut: Shift-D
+    description: Add debug container
+    scopes:
+      - containers
+    confirm: false
+    dangerous: true
+    background: false
+    command: bash
+    args:
+      - -c
+      - "kubectl debug -it --context $CONTEXT -n $NAMESPACE $POD --target=$NAME --image=nicolaka/netshoot --share-processes -- zsh"
+
+  debug_pod:
+    shortCut: Shift-P
+    description: Add debug Pod
     scopes:
       - pods
-    command: stern
+    confirm: false
+    dangerous: true
     background: false
+    command: bash
     args:
-      - --tail
-      - 50
-      - $FILTER
-      - -n
-      - $NAMESPACE
+      - -c
+      - "kubectl run tmp-shell --context $CONTEXT -n $NAMESPACE --rm -it --image nicolaka/netshoot -- zsh"
+
+  remove_finalizers:
+    shortCut: Ctrl-F
+    confirm: true
+    dangerous: true
+    scopes:
+      - all
+    description: |
+      Remove Finalizers
+    command: kubectl
+    background: true
+    args:
+      - patch
       - --context
       - $CONTEXT
+      - --namespace
+      - $NAMESPACE
+      - $RESOURCE_NAME
+      - $NAME
+      - -p
+      - '{"metadata":{"finalizers":null}}'
+      - --type
+      - merge

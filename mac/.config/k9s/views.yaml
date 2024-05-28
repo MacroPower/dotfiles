@@ -5,5 +5,5 @@ views:
     columns: []
 
   v1/pods:
-    sortColumn: AGE:desc
+    sortColumn: NAME:asc
     columns: []

@@ -1,5 +1,5 @@
 k9s:
-  liveViewAutoRefresh: false
+  liveViewAutoRefresh: true
   screenDumpDir: /tmp/k9s-screen-dumps
   refreshRate: 1
   maxConnRetry: 5
@@ -10,9 +10,9 @@ k9s:
     headless: false
     logoless: false
     crumbsless: false
-    reactive: false
+    reactive: true
     noIcons: false
-    defaultsToFullScreen: false
+    defaultsToFullScreen: true
     skin: one-dark
   skipLatestRevCheck: false
   disablePodCounting: false
