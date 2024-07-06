@@ -22,6 +22,8 @@ brew "jakehilborn/jakehilborn/displayplacer"
 cask "kitty"
 brew "fish"
 brew "fisher" # fish plugin manager
+tap "go-task/tap"
+brew "go-task/tap/go-task"
 cask "font-fira-code"
 cask "font-fira-code-nerd-font"
 brew "jq"
