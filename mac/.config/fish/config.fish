@@ -1,5 +1,6 @@
 eval "$(/opt/homebrew/bin/brew shellenv)"
 zoxide init fish | source
+fzf --fish | source
 
 # set:
 # -g
@@ -11,6 +12,7 @@ zoxide init fish | source
 # (making it an "environment variable").
 
 set -gx XDG_CONFIG_HOME "$HOME/.config"
+set -gx devbox_no_prompt true
 
 fish_add_path "$HOME/go/bin"
 fish_add_path "$HOME/.krew/bin"
