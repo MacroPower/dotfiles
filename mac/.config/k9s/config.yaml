@@ -8,11 +8,11 @@ k9s:
   ui:
     enableMouse: false
     headless: false
-    logoless: false
+    logoless: true
     crumbsless: false
     reactive: true
     noIcons: false
-    defaultsToFullScreen: true
+    defaultsToFullScreen: false
     skin: one-dark
   skipLatestRevCheck: false
   disablePodCounting: false
@@ -28,8 +28,8 @@ k9s:
       namespaces: []
       labels: {}
   logger:
-    tail: 100
-    buffer: 5000
+    tail: 1000
+    buffer: 10000
     sinceSeconds: -1
     textWrap: false
     showTime: false
