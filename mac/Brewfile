@@ -17,6 +17,7 @@ cask "rectangle"
 cask "vlc"
 tap "jakehilborn/jakehilborn"
 brew "jakehilborn/jakehilborn/displayplacer"
+brew "imagemagick"
 
 # Terminal
 cask "kitty"
