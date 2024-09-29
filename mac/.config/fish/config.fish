@@ -34,6 +34,9 @@ alias wk="watch -n 1 kubectl"
 alias kx=kubectx
 alias kn=kubens
 
+alias ssh="kitty +kitten ssh"
+alias diff="kitty +kitten diff"
+
 function fish_greeting
     neofetch --disable packages
 end
