@@ -101,6 +101,7 @@ if ! system "ls /Library/LaunchAgents/ | grep paloaltonetworks"
     cask "orbstack"
     cask "slack"
     mas "Wireguard", id: 1451685025
+    mas "Bitwarden", id: 1352778147
 
     # Personal/Monitoring
     brew "node_exporter" unless system "ioreg -c AppleSmartBattery -r | grep '\"BatteryInstalled\" = Yes'"
