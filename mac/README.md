@@ -35,6 +35,12 @@ chsh -s /opt/homebrew/bin/fish
 ## If there is any drift, it will result in packages and settings being removed.
 ##
 ./push.sh
+
+## Configure GitHub AI Model for CLI
+##
+autoconfig_gh_models
+set model_name "Phi-3-medium-4k-instruct" # Low
+sed -i "" "s/model = .*/model = $model_name/g" ~/.config/fish-ai.ini
 ```
 
 ### Tools

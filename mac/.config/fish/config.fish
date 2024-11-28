@@ -11,6 +11,7 @@ zoxide init fish | source
 # (making it an "environment variable").
 
 set -gx XDG_CONFIG_HOME "$HOME/.config"
+set -gx FISH_AI_PYTHON_VERSION 3.12
 set -gx devbox_no_prompt true
 
 fish_add_path "$HOME/go/bin"
