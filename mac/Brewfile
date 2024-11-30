@@ -46,6 +46,14 @@ brew "viddy"      # better watch         https://github.com/sachaos/viddy
 brew "zoxide"     # better cd            https://github.com/ajeetdsouza/zoxide
 brew "ripgrep"    # better grep          https://github.com/BurntSushi/ripgrep
 
+# Python Build Dependencies
+brew "openssl"
+brew "readline"
+brew "sqlite3"
+brew "xz"
+brew "zlib"
+brew "tcl-tk"
+
 # Dev
 brew "go"
 brew "gh"
@@ -65,7 +73,8 @@ cask "fork"
 cask "wireshark"
 brew "wireshark"
 brew "node"
-brew "python@3.12"
+brew "pyenv"
+brew "tfenv"
 tap "kcl-lang/tap"
 brew "kcl-lang/tap/kcl"
 brew "kcl-lang/tap/kcl-lsp"

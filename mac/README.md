@@ -36,34 +36,24 @@ chsh -s /opt/homebrew/bin/fish
 ##
 ./push.sh
 
+## Login to GitHub
+##
+gh login
+
+## Install kubectl krew
+##
+firefox https://krew.sigs.k8s.io/docs/user-guide/setup/install/
+go install github.com/brumhard/krewfile@latest
+
 ## Configure GitHub AI Model for CLI
 ##
 autoconfig_gh_models
 set model_name "Phi-3-medium-4k-instruct" # Low
 sed -i "" "s/model = .*/model = $model_name/g" ~/.config/fish-ai.ini
-```
 
-### Tools
-
-```bash
-# Tailscale
-firefox https://pkgs.tailscale.com/stable/#macos
-
-# Krew
-firefox https://krew.sigs.k8s.io/docs/user-guide/setup/install/
-go install github.com/brumhard/krewfile@latest
-krewfile --file=.krewfile --command="kubectl krew"
-
-# Terraform
-tfenv install 1.6.3 && tfenv use 1.6.3
-
-# Python
-pyenv init
-pyenv install 3.8
-pyenv install 3.7
-pyenv install 3.6
-pyenv install 2.7
-pyenv local 2.7.18 3.6.15 3.7.16 3.8.16
+## Post install
+##
+./upgrade.sh
 ```
 
 ### System Settings
