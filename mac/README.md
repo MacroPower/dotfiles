@@ -51,17 +51,8 @@ firefox https://pkgs.tailscale.com/stable/#macos
 
 # Krew
 firefox https://krew.sigs.k8s.io/docs/user-guide/setup/install/
-kubectl krew index add netshoot https://github.com/nilic/kubectl-netshoot.git
-kubectl krew install netshoot/netshoot  # https://github.com/nilic/kubectl-netshoot
-kubectl krew install sniff              # ksniff
-kubectl krew install gadget             # inspektor gadget
-kubectl krew install tree               # https://github.com/ahmetb/kubectl-tree
-kubectl krew install access-matrix      # https://github.com/corneliusweig/rakkess
-kubectl krew install blame              # https://github.com/knight42/kubectl-blame
-kubectl krew install cyclonus           # https://github.com/mattfenwick/kubectl-cyclonus
-kubectl krew install get-all            # https://github.com/corneliusweig/ketall
-kubectl krew install graph              # https://github.com/steveteuber/kubectl-graph
-kubectl krew install stern              # https://github.com/stern/stern
+go install github.com/brumhard/krewfile@latest
+krewfile --file=.krewfile --command="kubectl krew"
 
 # Terraform
 tfenv install 1.6.3 && tfenv use 1.6.3

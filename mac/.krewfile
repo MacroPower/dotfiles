@@ -1,0 +1,13 @@
+index netshoot https://github.com/nilic/kubectl-netshoot.git
+
+netshoot/netshoot  # https://github.com/nilic/kubectl-netshoot
+sniff              # ksniff
+gadget             # inspektor gadget
+tree               # https://github.com/ahmetb/kubectl-tree
+access-matrix      # https://github.com/corneliusweig/rakkess
+blame              # https://github.com/knight42/kubectl-blame
+cyclonus           # https://github.com/mattfenwick/kubectl-cyclonus
+get-all            # https://github.com/corneliusweig/ketall
+graph              # https://github.com/steveteuber/kubectl-graph
+stern              # https://github.com/stern/stern
+krew
