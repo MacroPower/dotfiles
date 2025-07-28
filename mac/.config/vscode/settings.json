@@ -1,4 +1,5 @@
 {
+    "$schema": "vscode://schemas/settings/user",
     "workbench.colorTheme": "One Dark Pro Darker",
     "workbench.iconTheme": "material-icon-theme",
     "material-icon-theme.files.associations": {
@@ -16,24 +17,17 @@
       "mixin": "plugin"
     },
     "explorer.confirmDragAndDrop": false,
-    "editor.fontFamily": "'Fira Code Retina', monospace",
+    "editor.fontFamily": "'FiraCode Nerd Font Mono', monospace",
+    "editor.fontWeight": "500",
     "editor.fontLigatures": "'ss01', 'ss03', 'ss04', 'ss06', 'zero'",
-    "editor.fontSize": 13,
+    "editor.fontSize": 14,
     "terminal.integrated.fontFamily": "'FiraCode Nerd Font Mono', monospace",
-    "terminal.integrated.fontWeightBold": "bold",
-    "editor.inlineSuggest.enabled": true,
-    "go.toolsManagement.autoUpdate": true,
+    "terminal.integrated.fontSize": 14,
     "vs-kubernetes": {
       "vscode-kubernetes.helm-path.mac": "/opt/homebrew/bin/helm",
       "vscode-kubernetes.kubectl-path.mac": "/opt/homebrew/bin/kubectl",
       "vscode-kubernetes.minikube-path.mac": "/opt/homebrew/bin/minikube",
       "vs-kubernetes.crd-code-completion": "enabled"
-    },
-    "github.copilot.enable": {
-      "*": true,
-      "plaintext": false,
-      "markdown": true,
-      "scminput": false
     },
     "editor.rulers": [
       80, 120
@@ -53,5 +47,40 @@
     "[jsonc]": {
       "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
-    "github.copilot.editor.enableAutoCompletions": true
+    "cSpell.allowCompoundWords": true,
+    "cSpell.reportUnknownWords": false,
+    "cSpell.userWords": [
+      "stretchr"
+    ],
+    "files.exclude": {
+      "**/.git": false,
+      "**/.git/[^h]*": true,
+      "**/.svn": true,
+      "**/.hg": true,
+      "**/.DS_Store": true,
+      "**/Thumbs.db": true
+    },
+    "github.copilot.enable": {
+      "*": true,
+      "plaintext": false,
+      "scminput": false
+    },
+    "github.copilot.chat.codesearch.enabled": true,
+    "github.copilot.chat.generateTests.codeLens": true,
+    "github.copilot.chat.agent.thinkingTool": true,
+    "github.copilot.nextEditSuggestions.enabled": true,
+    "github.copilot.nextEditSuggestions.fixes": true,
+    "editor.inlineSuggest.edits.showCollapsed": true,
+    "editor.fontVariations": false,
+    "github.copilot.chat.agent.terminal.allowList": {
+      "task": true,
+      "mkdir": true,
+      "touch": true,
+      "echo": true,
+      "ls": true,
+      "cat": true,
+      "grep": true,
+      "devbox run -- task": true
+    },
+    "accessibility.voice.speechTimeout": 0
 }

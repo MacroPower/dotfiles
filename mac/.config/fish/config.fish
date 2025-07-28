@@ -39,5 +39,5 @@ alias ssh="kitty +kitten ssh"
 alias diff="kitty +kitten diff"
 
 function fish_greeting
-    neofetch --disable packages
+    # neofetch --disable packages
 end

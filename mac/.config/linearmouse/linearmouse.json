@@ -1,20 +1,46 @@
 {
-  "$schema" : "https:\/\/schema.linearmouse.app\/0.7.7",
   "schemes" : [
     {
-      "pointer" : {
-        "acceleration" : 0,
-        "speed" : 0.35,
-        "disableAcceleration" : false
-      },
       "if" : {
         "device" : {
-          "productName" : "BenQ ZOWIE Gaming Mouse",
+          "vendorID" : "0x4a5",
           "productID" : "0x8001",
-          "category" : "mouse",
-          "vendorID" : "0x4a5"
+          "productName" : "BenQ ZOWIE Gaming Mouse",
+          "category" : "mouse"
+        }
+      },
+      "scrolling" : {
+        "acceleration" : {
+          "vertical" : 1
+        }
+      },
+      "pointer" : {
+        "disableAcceleration" : true,
+        "acceleration" : 1,
+        "speed" : 0.35
+      }
+    },
+    {
+      "if" : {
+        "device" : {
+          "vendorID" : "0x9eb",
+          "productName" : "Virtual HID",
+          "productID" : "0x131",
+          "serialNumber" : "00000001",
+          "category" : "mouse"
+        }
+      },
+      "pointer" : {
+        "disableAcceleration" : true,
+        "speed" : 0,
+        "acceleration" : 0
+      },
+      "scrolling" : {
+        "acceleration" : {
+          "vertical" : 1
         }
       }
     }
-  ]
+  ],
+  "$schema" : "https:\/\/schema.linearmouse.app\/0.10.0"
 }

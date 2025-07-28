@@ -14,4 +14,6 @@ cp -r .config/* ~/.config
 rm -f ~/.gitconfig ~/.vimrc ~/Library/Application\ Support/Code/User/settings.json
 ln -s ~/.config/vscode/settings.json ~/Library/Application\ Support/Code/User/settings.json
 ln -s ~/.config/vim/.vimrc ~/.vimrc
+ln -s ~/.config/vim/colors ~/.vim/colors
+ln -s ~/.config/vim/pack ~/.vim/pack
 ln -s ~/.config/git/.gitconfig ~/.gitconfig
