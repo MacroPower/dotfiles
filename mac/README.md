@@ -45,11 +45,15 @@ gh login
 firefox https://krew.sigs.k8s.io/docs/user-guide/setup/install/
 go install github.com/brumhard/krewfile@latest
 
-## Configure GitHub AI Model for CLI
+## Configure Claude Code
 ##
-autoconfig_gh_models
-set model_name "Phi-3-medium-4k-instruct" # Low
-sed -i "" "s/model = .*/model = $model_name/g" ~/.config/fish-ai.ini
+claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
+claude mcp add --scope user kagi -e KAGI_API_KEY="YOUR_API_KEY_HERE" KAGI_SUMMARIZER_ENGINE="agnes" -- uvx kagimcp
+claude plugin marketplace add https://github.com/anthropics/claude-code
+claude plugin install code-review@claude-code-plugins
+claude plugin install commit-commands@claude-code-plugins
+claude plugin install plugin-dev@claude-code-plugins
+claude plugin install hookify@claude-code-plugins
 
 ## Post install
 ##
@@ -68,6 +72,22 @@ sed -i "" "s/model = .*/model = $model_name/g" ~/.config/fish-ai.ini
 ```sh
 displayplacer "id:s4294967295 res:2560x1440 hz:144 color_depth:7 enabled:true scaling:off origin:(0,0) degree:0"
 displayplacer "id:s1686152384 res:2560x1440 hz:144 color_depth:8 enabled:true scaling:off origin:(-2560,0) degree:0"
+```
+
+```sh
+defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool TRUE
+defaults write com.apple.finder AppleShowAllFiles -bool TRUE
+```
+
+```sh
+sudo bash -c 'echo "[default]
+  signing_required=no
+  streams=yes
+  notify_off=yes
+  port445=no_netbios
+  unix extensions=no
+  veto files=/._*/.DS_Store/
+  protocol_vers_map=6" > /etc/nsmb.conf'
 ```
 
 ### Node Exporter

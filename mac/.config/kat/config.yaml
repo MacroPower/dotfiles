@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=./config.v1beta1.json
+# yaml-language-server: $schema=https://jacobcolvin.com/kat/schemas/configs.v1beta1.json
 apiVersion: kat.jacobcolvin.com/v1beta1
 kind: Configuration
 ui:
@@ -70,7 +70,7 @@ profiles:
           args: [-V]
   kcl:
     source: >-
-      files.filter(f, pathExt(f) in [".k"])
+      files.filter(f, pathExt(f) in [".k", ".yaml"])
     command: kcl
     args: [run]
     hooks:

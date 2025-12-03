@@ -1,6 +1,5 @@
 eval "$(/opt/homebrew/bin/brew shellenv)"
 zoxide init fish | source
-pyenv init - | source
 
 # set:
 # -g
@@ -12,11 +11,15 @@ pyenv init - | source
 # (making it an "environment variable").
 
 set -gx XDG_CONFIG_HOME "$HOME/.config"
-set -gx FISH_AI_PYTHON_VERSION 3.12
+set -gx XDG_DATA_DIRS "/opt/homebrew/share"
 set -gx devbox_no_prompt true
+set -gx DYLD_LIBRARY_PATH "/opt/homebrew/opt/openssl/lib:$DYLD_LIBRARY_PATH"
+set -gx EDITOR "vim"
 
 fish_add_path "$HOME/go/bin"
+fish_add_path "$HOME/.npm-packages/bin"
 fish_add_path "$HOME/.krew/bin"
+fish_add_path "$HOME/.local/bin" # uv
 
 if status is-interactive
     alias ls=eza
@@ -41,3 +44,7 @@ alias diff="kitty +kitten diff"
 function fish_greeting
     # neofetch --disable packages
 end
+
+# Added by OrbStack: command-line tools and integration
+# This won't be added again if you remove it.
+source ~/.orbstack/shell/init2.fish 2>/dev/null || :

@@ -1,6 +1,5 @@
 tap "homebrew/bundle"
 tap "buo/cask-upgrade"
-tap "homebrew/cask-fonts"
 
 tap "mas-cli/tap"
 brew "mas-cli/tap/mas"
@@ -18,6 +17,9 @@ cask "vlc"
 tap "jakehilborn/jakehilborn"
 brew "jakehilborn/jakehilborn/displayplacer"
 brew "imagemagick"
+brew "ffmpeg"
+brew "graphviz"
+brew "coreutils" # GNU core utilities, prefixed with 'g', e.g., 'gdd'.
 
 # Terminal
 cask "kitty"
@@ -30,6 +32,8 @@ cask "font-fira-code-nerd-font"
 brew "jq"
 brew "yq"
 brew "nmap"
+brew "ddrescue"
+brew "terminal-notifier"
 brew "neofetch"   # neofetch for mac
 brew "dos2unix"   # dos2unix for mac
 brew "tree"       # tree for mac
@@ -54,20 +58,28 @@ brew "xz"
 brew "zlib"
 brew "tcl-tk"
 
+# Dotnet Dependencies
+cask "dotnet-sdk"
+
 # Dev
 brew "go"
+brew "uv"
 brew "gh"
 brew "kubectl"
+brew "kubeconform"
 tap "kubecolor/tap"
 brew "kubecolor/tap/kubecolor"
 brew "kustomize"
 brew "helm"
 brew "kubectx"
+brew "cilium-cli" # Cilium CLI
+brew "tetra"      # Cilium Tetragon CLI
 tap "derailed/k9s"
 brew "derailed/k9s/k9s"
+tap "ymtdzzz/tap"
+brew "ymtdzzz/tap/otel-tui"
 cask "monodraw"
 cask "db-browser-for-sqlite"
-cask "openlens" # add `@alebcay/openlens-node-pod-menu`
 cask "visual-studio-code"
 cask "fork"
 cask "wireshark"
@@ -75,11 +87,17 @@ brew "wireshark"
 brew "node"
 brew "pyenv"
 brew "tfenv"
+brew "direnv"
 tap "kcl-lang/tap"
 brew "kcl-lang/tap/kcl"
 brew "kcl-lang/tap/kcl-lsp"
+tap "macropower/tap"
+cask "kat"
+tap "robusta-dev/krr"
+brew "robusta-dev/krr/krr"
 
 # VSCode
+vscode "bierner.markdown-mermaid"
 vscode "eamodio.gitlens"
 vscode "EditorConfig.EditorConfig"
 vscode "esbenp.prettier-vscode"
@@ -94,6 +112,7 @@ vscode "ms-kubernetes-tools.vscode-kubernetes-tools"
 vscode "ms-python.debugpy"
 vscode "ms-python.python"
 vscode "ms-python.vscode-pylance"
+vscode "ms-python.vscode-python-envs"
 vscode "PKief.material-icon-theme"
 vscode "redhat.vscode-yaml"
 vscode "stkb.rewrap"
@@ -104,11 +123,13 @@ vscode "zhuangtongfa.material-theme"
 if ! system "ls /Library/LaunchAgents/ | grep paloaltonetworks"
 
     # Personal
+    brew "talosctl"
     cask "firefox"
     cask "discord"
     cask "plex"
     cask "orbstack"
     cask "slack"
+    cask "filebot"
     mas "Wireguard", id: 1451685025
     mas "Bitwarden", id: 1352778147
 
@@ -117,15 +138,13 @@ if ! system "ls /Library/LaunchAgents/ | grep paloaltonetworks"
 
     # Personal/VSCode
     vscode "WakaTime.vscode-wakatime"
+    vscode "jetpack-io.devbox"
 
 else
 
     brew "azure-cli"
     tap "azure/kubelogin"
     brew "azure/kubelogin/kubelogin"
-
-    tap "cloudfoundry/tap"
-    brew "cloudfoundry/tap/cf-cli@8"
 
     tap "fluxcd/tap"
     brew "fluxcd/tap/flux"
