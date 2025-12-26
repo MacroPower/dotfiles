@@ -22,7 +22,7 @@ brew "graphviz"
 brew "coreutils" # GNU core utilities, prefixed with 'g', e.g., 'gdd'.
 
 # Terminal
-cask "kitty"
+cask "ghostty"
 brew "fish"
 brew "fisher" # fish plugin manager
 tap "go-task/tap"
