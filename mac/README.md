@@ -53,11 +53,10 @@ go install github.com/brumhard/krewfile@latest
 ##
 claude mcp add --scope user context7 -- npx -y @upstash/context7-mcp
 claude mcp add --scope user kagi -e KAGI_API_KEY="YOUR_API_KEY_HERE" KAGI_SUMMARIZER_ENGINE="agnes" -- uvx kagimcp
-claude plugin marketplace add https://github.com/anthropics/claude-code
-claude plugin install code-review@claude-code-plugins
-claude plugin install commit-commands@claude-code-plugins
-claude plugin install plugin-dev@claude-code-plugins
-claude plugin install hookify@claude-code-plugins
+claude plugin marketplace add https://github.com/anthropics/claude-plugins-official
+claude plugin install code-review@claude-plugins-official
+claude plugin install commit-commands@claude-plugins-official
+claude plugin install gopls-lsp@claude-plugins-official
 
 ## Post install
 ##

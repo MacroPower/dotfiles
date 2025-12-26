@@ -1,6 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "model": "opusplan",
+  "permissions": {
+    "deny": [
+      "WebSearch"
+    ]
+  },
   "hooks": {
     "Stop": [
       {
@@ -15,13 +20,9 @@
     ]
   },
   "enabledPlugins": {
-    "code-review@claude-code-plugins": true,
-    "commit-commands@claude-code-plugins": true,
-    "plugin-dev@claude-code-plugins": true,
-    "hookify@claude-code-plugins": true
-  },
-  "permissions": {
-    "deny": ["WebSearch"]
+    "code-review@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "gopls-lsp@claude-plugins-official": true
   },
   "alwaysThinkingEnabled": true
 }
