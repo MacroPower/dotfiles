@@ -40,6 +40,10 @@ chsh -s /opt/homebrew/bin/fish
 ##
 gh login
 
+## Install devbox
+##
+firefox https://www.jetify.com/docs/devbox/installing-devbox
+
 ## Install kubectl krew
 ##
 firefox https://krew.sigs.k8s.io/docs/user-guide/setup/install/
