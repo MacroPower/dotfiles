@@ -2,3 +2,4 @@
 Brewfile.lock.json
 .config/helm/repositories.lock
 .config/fish-ai.ini
+.config/zed/**/*.mdb
