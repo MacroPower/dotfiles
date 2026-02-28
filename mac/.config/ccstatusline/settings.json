@@ -1,0 +1,70 @@
+{
+  "version": 3,
+  "lines": [
+    [
+      {
+        "id": "436af26f-b601-450f-81c8-1320abe7d395",
+        "type": "model",
+        "backgroundColor": "bgGreen"
+      },
+      {
+        "id": "5",
+        "type": "git-branch",
+        "color": "magenta"
+      },
+      {
+        "id": "bf4c6157-839c-4e2e-9ec5-d02edd1eef1a",
+        "type": "tokens-input"
+      },
+      {
+        "id": "fe01eaaf-5d52-43ef-958e-ab579d2e1c3d",
+        "type": "context-percentage-usable"
+      }
+    ],
+    [
+      {
+        "id": "a01d4526-982c-40b9-b0e1-6887f3f9281b",
+        "type": "session-cost",
+        "backgroundColor": "bgBrightRed"
+      },
+      {
+        "id": "0748007e-b5fe-4f25-9a64-114a2fa1eb09",
+        "type": "git-worktree"
+      },
+      {
+        "id": "c6077175-dd58-4dc2-ab06-4ba998da5d47",
+        "type": "tokens-output"
+      },
+      {
+        "id": "412fe1a7-b8f0-42e7-b92c-2ed2ceaaa2c5",
+        "type": "tokens-total"
+      }
+    ],
+    []
+  ],
+  "flexMode": "full",
+  "compactThreshold": 60,
+  "colorLevel": 3,
+  "defaultPadding": " ",
+  "inheritSeparatorColors": false,
+  "globalBold": false,
+  "powerline": {
+    "enabled": true,
+    "separators": [
+      ""
+    ],
+    "separatorInvertBackground": [
+      false
+    ],
+    "startCaps": [
+      "",
+      ""
+    ],
+    "endCaps": [
+      "",
+      ""
+    ],
+    "theme": "minimal",
+    "autoAlign": true
+  }
+}

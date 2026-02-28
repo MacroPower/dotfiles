@@ -3,7 +3,7 @@ apiVersion: kat.jacobcolvin.com/v1beta1
 kind: Configuration
 ui:
   # https://xyproto.github.io/splash/docs/
-  theme: "onedark"
+  theme: "charm"
   minimumDelay: 200ms
   compact: false
 rules:

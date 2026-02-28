@@ -7,6 +7,9 @@
 // custom settings, run `zed: open default settings` from the
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
+  "edit_predictions": {
+    "mode": "subtle",
+  },
   "ui_font_size": 15.0,
   "ui_font_weight": 500.0,
   "ui_font_family": "FiraCode Nerd Font Mono",
@@ -40,5 +43,6 @@
   "base_keymap": "VSCode",
   "vim_mode": false,
   "icon_theme": "Material Icon Theme",
-  "theme": "One Dark Pro"
+  "theme": "One Dark Pro",
+  "wrap_guides": [88, 120],
 }

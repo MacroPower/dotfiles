@@ -14,10 +14,6 @@
 # source-list-number-color: "\x1b[0m"
 # source-list-comment-color: "\x1b[95m"
 # source-list-arrow-color: "\x1b[93m"
-# source-list-tab-color: "\x1b[90m"
-
-# Uncomment to change what is printed instead of '\t'.
-# tab: "... "
 
 # Uncomment to change the number of lines printed above and below cursor when
 # listing source code.
@@ -32,7 +28,6 @@ aliases:
 # between compilation and debugging.
 # Note that substitution rules will not be used for paths passed to "break" and "trace"
 # commands.
-# See also Documentation/cli/substitutepath.md.
 substitute-path:
   # - {from: path, to: path}
   

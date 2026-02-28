@@ -8,6 +8,8 @@ brew bundle install --cleanup
 ##
 rm -rf ~/.config/*
 cp -r .config/* ~/.config
+cp -r .claude/agents/* ~/.claude/agents
+cp -r .claude/skills/* ~/.claude/skills
 
 ## Link dotfiles to the central .config directory where needed
 ##
@@ -20,6 +22,3 @@ mkdir -p ~/.config/vim
 ln -s ~/.config/vim/.vimrc ~/.vimrc
 ln -s ~/.config/vim/colors ~/.vim/colors
 ln -s ~/.config/vim/pack ~/.vim/pack
-
-mkdir -p ~/.config/claude
-ln -s ~/.config/claude/settings.json ~/.claude/settings.json

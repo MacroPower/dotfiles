@@ -35,9 +35,8 @@ palette = 15=#abb2bf
 window-padding-x = 8
 window-padding-y = 8,0
 
-font-family = Fira Code
-font-style = Bold
-font-feature = ss01 ss03 ss04 ss06 zero
+font-family = FiraCode Nerd Font Mono SemBd
+font-feature = ss01 ss03 ss04 ss06
 font-size = 14
 
 keybind = global:cmd+grave_accent=toggle_quick_terminal

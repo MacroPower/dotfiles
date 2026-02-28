@@ -1,5 +1,6 @@
 tap "homebrew/bundle"
 tap "buo/cask-upgrade"
+tap "jacobcolvin/tap"
 
 tap "mas-cli/tap"
 brew "mas-cli/tap/mas"
@@ -20,6 +21,13 @@ brew "imagemagick"
 brew "ffmpeg"
 brew "graphviz"
 brew "coreutils" # GNU core utilities, prefixed with 'g', e.g., 'gdd'.
+brew "gnu-sed"   # gsed
+brew "util-linux"
+tap "photo-cli/photo-cli"
+brew "photo-cli"
+tap "macos-fuse-t/cask"
+cask "fuse-t"
+brew "qemu"
 
 # Terminal
 cask "ghostty"
@@ -49,6 +57,7 @@ brew "trippy"     # better traceroute    https://github.com/fujiapple852/trippy
 brew "viddy"      # better watch         https://github.com/sachaos/viddy
 brew "zoxide"     # better cd            https://github.com/ajeetdsouza/zoxide
 brew "ripgrep"    # better grep          https://github.com/BurntSushi/ripgrep
+brew "onefetch"   # neofetch for git     https://github.com/o2sh/onefetch
 
 # Python Build Dependencies
 brew "openssl"
@@ -58,13 +67,24 @@ brew "xz"
 brew "zlib"
 brew "tcl-tk"
 
+# czkawka Dependencies
+brew "gtk4"
+# brew "ffmpeg"
+brew "librsvg"
+brew "libheif"
+brew "libraw"
+brew "dav1d"
+
 # Dotnet Dependencies
 cask "dotnet-sdk"
 
 # Dev
+cask "zed"
 brew "go"
 brew "uv"
 brew "gh"
+tap "dagger/tap"
+brew "dagger"
 brew "kubectl"
 brew "kubeconform"
 tap "kubecolor/tap"
