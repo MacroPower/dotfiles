@@ -1,0 +1,14 @@
+{
+  "name": "dotfiles",
+  "engineVersion": "v0.20.0",
+  "toolchains": [
+    {
+      "name": "nix",
+      "source": "toolchains/nix"
+    },
+    {
+      "name": "dev",
+      "source": "toolchains/dev"
+    }
+  ]
+}

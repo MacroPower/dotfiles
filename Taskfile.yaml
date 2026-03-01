@@ -1,0 +1,65 @@
+version: "3"
+
+vars:
+  HOST:
+    sh: hostname -s
+  USER:
+    sh: echo ${SUDO_USER:-$(whoami)}
+
+includes:
+  nix:
+    taskfile: ./taskfiles/nix
+    dir: .
+  vm:
+    taskfile: ./taskfiles/vm
+    dir: .
+
+tasks:
+  default:
+    cmd: task -l
+
+  switch:
+    desc: Apply nix config for the current host
+    vars:
+      SECRETS_FILE: /tmp/.nix-activation-secrets
+    cmds:
+      - cmd: >-
+          doppler secrets download -p dotfiles -c nix --format env --no-file
+          > {{.SECRETS_FILE}} 2>/dev/null
+          && chmod 600 {{.SECRETS_FILE}}
+          && chown {{.USER}} {{.SECRETS_FILE}}
+          || true
+      - defer: "rm -f {{.SECRETS_FILE}}"
+      - cmd: 'nix run nix-darwin -- switch --flake ".#{{.USER}}@{{.HOST}}"'
+        platforms: [darwin]
+      - cmd: 'home-manager switch --flake ".#{{.USER}}@{{.HOST}}"'
+        platforms: [linux]
+
+  update:
+    desc: Update all flake inputs
+    cmds:
+      - nix flake update
+
+  check:
+    desc: Run all Dagger checks
+    cmds:
+      - dagger check
+
+  dev:
+    desc: Launch an interactive dev container
+    vars:
+      BRANCH:
+        sh: git branch --show-current
+      CLONE_URL:
+        sh: git remote get-url origin
+    cmds:
+      - >-
+        doppler run -p dotfiles -c nix --
+        dagger call dev dev
+        --branch '{{.BRANCH}}'
+        --clone-url '{{.CLONE_URL}}'
+        --repo-source .
+        --git-config ~/.config/git
+        --tz '{{.TZ | default "America/New_York"}}'
+        --colorterm '{{.COLORTERM}}'
+        --kagi-api-key env://KAGI_API_KEY

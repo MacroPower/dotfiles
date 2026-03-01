@@ -1,0 +1,64 @@
+version: "3"
+
+vars:
+  VM_NAME: '{{.VM_NAME | default "nixos-orbstack"}}'
+  VM_FLAKE_DIR: /tmp/dotfiles
+  SECRETS_FILE: /tmp/.nix-activation-secrets
+
+tasks:
+  create:
+    desc: Create and configure a new OrbStack NixOS VM
+    cmds:
+      - orb create nixos:unstable {{.VM_NAME}}
+      - >-
+        tar --no-xattrs -cf - . |
+        orb run -m {{.VM_NAME}} -u root
+        sh -c 'rm -rf {{.VM_FLAKE_DIR}} && mkdir -p {{.VM_FLAKE_DIR}} && tar -xf - -C {{.VM_FLAKE_DIR}}'
+      - >-
+        orb run -m {{.VM_NAME}} -u root
+        sh -c 'mkdir -p /root && printf "[safe]\n\tdirectory = {{.VM_FLAKE_DIR}}\n" > /root/.gitconfig'
+      - cmd: >-
+          doppler secrets download -p dotfiles -c nix --format env --no-file
+          > {{.SECRETS_FILE}} 2>/dev/null
+          && chmod 600 {{.SECRETS_FILE}}
+          || true
+      - defer: 'rm -f {{.SECRETS_FILE}}'
+      - >-
+        cat {{.SECRETS_FILE}} 2>/dev/null |
+        orb run -m {{.VM_NAME}} -u root
+        sh -c 'cat > {{.SECRETS_FILE}} && chmod 644 {{.SECRETS_FILE}}'
+      - >-
+        orb run -m {{.VM_NAME}} -u root
+        nixos-rebuild switch --impure
+        --option extra-experimental-features 'nix-command flakes'
+        --flake '{{.VM_FLAKE_DIR}}#{{.VM_NAME}}'
+
+  switch:
+    desc: Apply NixOS config to an existing OrbStack VM
+    cmds:
+      - >-
+        tar --no-xattrs -cf - . |
+        orb run -m {{.VM_NAME}} -u root
+        sh -c 'rm -rf {{.VM_FLAKE_DIR}} && mkdir -p {{.VM_FLAKE_DIR}} && tar -xf - -C {{.VM_FLAKE_DIR}}'
+      - >-
+        orb run -m {{.VM_NAME}} -u root
+        sh -c 'mkdir -p /root && printf "[safe]\n\tdirectory = {{.VM_FLAKE_DIR}}\n" > /root/.gitconfig'
+      - cmd: >-
+          doppler secrets download -p dotfiles -c nix --format env --no-file
+          > {{.SECRETS_FILE}} 2>/dev/null
+          && chmod 600 {{.SECRETS_FILE}}
+          || true
+      - defer: 'rm -f {{.SECRETS_FILE}}'
+      - >-
+        cat {{.SECRETS_FILE}} 2>/dev/null |
+        orb run -m {{.VM_NAME}} -u root
+        sh -c 'cat > {{.SECRETS_FILE}} && chmod 644 {{.SECRETS_FILE}}'
+      - >-
+        orb run -m {{.VM_NAME}} -u root
+        nixos-rebuild switch --impure
+        --flake '{{.VM_FLAKE_DIR}}#{{.VM_NAME}}'
+
+  delete:
+    desc: Delete an OrbStack NixOS VM
+    cmds:
+      - orb delete {{.VM_NAME}} --force

@@ -1,0 +1,47 @@
+version: "3"
+
+tasks:
+  lint:
+    desc: Run all lint checks (statix, deadnix, nixfmt)
+    cmds:
+      - dagger check nix:lint nix:format
+
+  lint:check:
+    desc: Run statix and deadnix
+    cmds:
+      - dagger check nix:lint
+
+  lint:format:
+    desc: Check nixfmt formatting
+    cmds:
+      - dagger check nix:format
+
+  build:
+    desc: Evaluate all host configurations
+    cmds:
+      - dagger check nix:build
+
+  build:home:
+    desc: Evaluate all home-manager configurations
+    cmds:
+      - dagger check nix:build-home
+
+  flake-check:
+    desc: Validate flake schema
+    cmds:
+      - dagger check nix:flake-check
+
+  fix:
+    desc: Apply all auto-fixes (formatting and lint)
+    cmds:
+      - dagger call nix fix -y
+
+  fix:format:
+    desc: Apply nixfmt formatting
+    cmds:
+      - dagger call nix format-fix -y
+
+  fix:lint:
+    desc: Apply statix and deadnix fixes
+    cmds:
+      - dagger call nix lint-fix -y

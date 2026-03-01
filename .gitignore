@@ -1,0 +1,11 @@
+result
+.config/argocd/config
+.config/helm/repositories.lock
+.config/fish-ai.ini
+.config/zed/**/*.mdb
+.config/naps2/
+.config/kat/policy.yaml
+.config/github-copilot/
+.config/dagger/
+.config/auth0/
+.config/colima/
