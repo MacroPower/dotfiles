@@ -48,7 +48,9 @@
 
     activation = {
       installPython = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        run ${pkgs.uv}/bin/uv python install --default
+        if ! ${pkgs.uv}/bin/uv python find --no-project > /dev/null 2>&1; then
+          run ${pkgs.uv}/bin/uv python install --default
+        fi
       '';
     };
 
