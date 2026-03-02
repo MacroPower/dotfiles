@@ -29,10 +29,18 @@
     bottom.enable = true;
 
     tmux.enable = true;
+
+    ripgrep = {
+      enable = true;
+      arguments = [
+        "--smart-case"
+        "--hidden"
+        "--glob=!.git"
+      ];
+    };
   };
 
   home.packages = with pkgs; [
-    ripgrep
     jq
     yq-go
     trippy
