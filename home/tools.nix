@@ -38,6 +38,14 @@
         "--glob=!.git"
       ];
     };
+
+    fd = {
+      enable = true;
+      hidden = true;
+      ignores = [
+        ".git/"
+      ];
+    };
   };
 
   home.packages = with pkgs; [
