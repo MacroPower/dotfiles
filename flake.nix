@@ -23,6 +23,10 @@
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    dagger = {
+      url = "github:dagger/nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -34,6 +38,7 @@
       nix-vscode-extensions,
       krewfile,
       claude-code,
+      dagger,
       ...
     }:
     let
@@ -97,6 +102,7 @@
                 localOverlay
                 nix-vscode-extensions.overlays.default
                 claude-code.overlays.default
+                dagger.overlays.default
               ];
               home-manager = {
                 useGlobalPkgs = true;
@@ -122,6 +128,7 @@
               localOverlay
               nix-vscode-extensions.overlays.default
               claude-code.overlays.default
+              dagger.overlays.default
             ];
           };
           extraSpecialArgs = { inherit krewfile hostConfig; };
@@ -171,6 +178,7 @@
                 localOverlay
                 nix-vscode-extensions.overlays.default
                 claude-code.overlays.default
+                dagger.overlays.default
               ];
               home-manager = {
                 useGlobalPkgs = true;

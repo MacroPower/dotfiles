@@ -24,7 +24,6 @@
 
     taps = [
       "buo/cask-upgrade"
-      "dagger/tap"
       "jakehilborn/jakehilborn"
       "macos-fuse-t/cask"
       "photo-cli/photo-cli"
@@ -37,7 +36,6 @@
     ++ hostConfig.homebrew.extraTaps;
 
     brews = [
-      "dagger"
       "jakehilborn/jakehilborn/displayplacer"
       "photo-cli"
       "kubecolor/tap/kubecolor"

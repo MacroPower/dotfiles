@@ -40,5 +40,6 @@
     delta
     devbox
     doppler
+    dagger
   ];
 }
