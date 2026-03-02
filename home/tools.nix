@@ -37,7 +37,6 @@
     yq-go
     trippy
     viddy
-    delta
     devbox
     doppler
     dagger
