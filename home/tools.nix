@@ -28,7 +28,15 @@
 
     bottom.enable = true;
 
-    tmux.enable = true;
+    tmux = {
+      enable = true;
+      mouse = true;
+      baseIndex = 1;
+      historyLimit = 10000;
+      escapeTime = 0;
+      terminal = "tmux-256color";
+      keyMode = "vi";
+    };
 
     ripgrep = {
       enable = true;
