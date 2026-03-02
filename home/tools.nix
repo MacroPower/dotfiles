@@ -6,7 +6,7 @@
 
     eza = {
       enable = true;
-      enableFishIntegration = false;
+      enableFishIntegration = true;
     };
 
     fzf = {

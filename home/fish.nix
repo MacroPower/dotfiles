@@ -99,7 +99,6 @@ in
     '';
 
     shellAliases = {
-      ls = "eza";
       cat = "bat";
       cd = "z";
       top = "btm";
