@@ -94,6 +94,7 @@
             home-manager.darwinModules.home-manager
             {
               nixpkgs.overlays = [
+                localOverlay
                 nix-vscode-extensions.overlays.default
                 claude-code.overlays.default
               ];
@@ -118,6 +119,7 @@
             inherit system;
             config.allowUnfree = true;
             overlays = [
+              localOverlay
               nix-vscode-extensions.overlays.default
               claude-code.overlays.default
             ];
@@ -166,6 +168,7 @@
             home-manager.nixosModules.home-manager
             {
               nixpkgs.overlays = [
+                localOverlay
                 nix-vscode-extensions.overlays.default
                 claude-code.overlays.default
               ];
@@ -182,6 +185,9 @@
             }
           ];
         };
+      localOverlay = final: _prev: {
+        chief = final.callPackage ./pkgs/chief.nix { };
+      };
     in
     {
       darwinConfigurations = {

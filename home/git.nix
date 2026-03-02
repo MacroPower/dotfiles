@@ -17,6 +17,7 @@
       "**/.claude/settings.local.json"
       "**/.claude/worktrees/"
       "**/.worktrees/"
+      "**/.chief/"
     ];
   };
 

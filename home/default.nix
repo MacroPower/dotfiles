@@ -95,6 +95,7 @@
         nixd
         nil
         claude-code
+        chief
 
         # Fonts
         nerd-fonts.fira-code
