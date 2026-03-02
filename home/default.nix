@@ -112,6 +112,11 @@
       ++ (map (name: pkgs.${name}) hostConfig.extraHomePackages);
 
     file."Taskfile.yaml".source = ../configs/task/Taskfile.yaml;
+
+    file.".zed_server" = lib.mkIf pkgs.stdenv.isLinux {
+      source = "${pkgs.zed-editor.remote_server}/bin";
+      recursive = true;
+    };
   };
 
 }

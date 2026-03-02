@@ -53,4 +53,10 @@
   "icon_theme": "Material Icon Theme",
   "theme": "One Dark Pro",
   "wrap_guides": [88, 120],
+  "ssh_connections": [
+    {
+      "host": "nixos-orbstack.orb.local",
+      "username": "jacobcolvin",
+    },
+  ],
 }
