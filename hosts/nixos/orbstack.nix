@@ -7,7 +7,7 @@
 {
   imports = [
     ./common.nix
-    /etc/nixos/orbstack.nix
+    ./orbstack-hardware.nix
     "${modulesPath}/virtualisation/lxc-container.nix"
   ];
 
