@@ -16,6 +16,8 @@
     ./claude.nix
   ];
 
+  my.k8s.enable = lib.mkDefault true;
+
   programs.ssh = {
     enable = true;
     enableDefaultConfig = false;
