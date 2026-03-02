@@ -56,5 +56,6 @@
     devbox
     doppler
     dagger
+    gitui
   ];
 }
