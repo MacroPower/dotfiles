@@ -77,10 +77,6 @@
     caskArgs.no_quarantine = true;
   };
 
-  fonts.packages = with pkgs; [
-    nerd-fonts.fira-code
-  ];
-
   system = {
     defaults = {
       finder.AppleShowAllFiles = true;
