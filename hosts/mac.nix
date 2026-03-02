@@ -11,6 +11,11 @@
     "flakes"
   ];
 
+  nix.gc = {
+    automatic = true;
+    options = "--delete-older-than 30d";
+  };
+
   nixpkgs.config.allowUnfree = true;
 
   programs.fish.enable = true;
