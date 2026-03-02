@@ -27,6 +27,9 @@ tasks:
         cat {{.SECRETS_FILE}} 2>/dev/null |
         orb run -m {{.VM_NAME}} -u root
         sh -c 'cat > {{.SECRETS_FILE}} && chmod 644 {{.SECRETS_FILE}}'
+      - defer: >-
+          orb run -m {{.VM_NAME}} -u root
+          rm -f {{.SECRETS_FILE}}
       - >-
         orb run -m {{.VM_NAME}} -u root
         nixos-rebuild switch --impure
@@ -53,6 +56,9 @@ tasks:
         cat {{.SECRETS_FILE}} 2>/dev/null |
         orb run -m {{.VM_NAME}} -u root
         sh -c 'cat > {{.SECRETS_FILE}} && chmod 644 {{.SECRETS_FILE}}'
+      - defer: >-
+          orb run -m {{.VM_NAME}} -u root
+          rm -f {{.SECRETS_FILE}}
       - >-
         orb run -m {{.VM_NAME}} -u root
         nixos-rebuild switch --impure

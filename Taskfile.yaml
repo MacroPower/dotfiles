@@ -30,10 +30,14 @@ tasks:
           && chown {{.USER}} {{.SECRETS_FILE}}
           || true
       - defer: "rm -f {{.SECRETS_FILE}}"
-      - cmd: 'nix run nix-darwin -- switch --flake ".#{{.USER}}@{{.HOST}}"'
+      - cmd: 'sudo nix run nix-darwin -- switch --flake ".#{{.USER}}@{{.HOST}}"'
         platforms: [darwin]
+      - cmd: 'sudo nixos-rebuild switch --flake ".#{{.HOST}}"'
+        platforms: [linux]
+        if: "[ -f /etc/NIXOS ]"
       - cmd: 'home-manager switch --flake ".#{{.USER}}@{{.HOST}}"'
         platforms: [linux]
+        if: "[ ! -f /etc/NIXOS ]"
 
   update:
     desc: Update all flake inputs
