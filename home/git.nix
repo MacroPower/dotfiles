@@ -1,32 +1,41 @@
 { hostConfig, ... }:
 
 {
-  programs.git = {
-    enable = true;
+  programs = {
+    git = {
+      enable = true;
 
-    settings = {
-      user = {
-        name = hostConfig.git.userName;
-        email = hostConfig.git.userEmail;
+      settings = {
+        user = {
+          name = hostConfig.git.userName;
+          email = hostConfig.git.userEmail;
+        };
+        merge.conflictstyle = "diff3";
+        diff.colorMoved = "default";
       };
-      merge.conflictstyle = "diff3";
-      diff.colorMoved = "default";
+
+      ignores = [
+        "**/.claude/settings.local.json"
+        "**/.claude/worktrees/"
+        "**/.worktrees/"
+        "**/.chief/"
+      ];
     };
 
-    ignores = [
-      "**/.claude/settings.local.json"
-      "**/.claude/worktrees/"
-      "**/.worktrees/"
-      "**/.chief/"
-    ];
-  };
+    lazygit = {
+      enable = true;
+      settings = {
+        gui.showRandomTip = false;
+      };
+    };
 
-  programs.delta = {
-    enable = true;
-    enableGitIntegration = true;
-    options = {
-      navigate = true;
-      light = false;
+    delta = {
+      enable = true;
+      enableGitIntegration = true;
+      options = {
+        navigate = true;
+        light = false;
+      };
     };
   };
 }
