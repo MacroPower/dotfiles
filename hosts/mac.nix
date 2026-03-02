@@ -84,13 +84,13 @@
     defaults = {
       finder.AppleShowAllFiles = true;
       NSGlobalDomain."com.apple.swipescrolldirection" = false;
+      controlcenter.Sound = true;
       CustomUserPreferences = {
         "com.apple.desktopservices".DSDontWriteNetworkStores = true;
         NSGlobalDomain = {
           AppleAccentColor = 5;
           AppleHighlightColor = "0.968627 0.831373 1.000000 Purple";
         };
-        "com.apple.controlcenter".Sound = 18;
       };
     };
 
