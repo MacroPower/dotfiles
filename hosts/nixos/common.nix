@@ -32,7 +32,7 @@
     shell = pkgs.fish;
     extraGroups = [ "wheel" ];
     openssh.authorizedKeys.keyFiles = [
-      (builtins.fetchurl "https://github.com/MacroPower.keys")
+      ./authorized_keys # https://github.com/MacroPower.keys
     ];
   };
 
