@@ -125,6 +125,7 @@ in
         name = "tide";
         inherit (pkgs.fishPlugins.tide) src;
       }
+      # Not available in pkgs.fishPlugins — pinned fetchFromGitHub
       {
         name = "plugin-jump";
         src = pkgs.fetchFromGitHub {
@@ -134,6 +135,7 @@ in
           hash = "sha256-MVIXBKsfd7rrH7Dh7cksNI29YunqAGZvuZwdfrf1bZQ=";
         };
       }
+      # Not available in pkgs.fishPlugins — pinned fetchFromGitHub
       {
         name = "fish-kubectl-completions";
         src = pkgs.fetchFromGitHub {
