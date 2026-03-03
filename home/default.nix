@@ -127,11 +127,81 @@
         python-downloads = "manual";
       };
     };
+
+    zed-editor = {
+      enable = true;
+      package = null; # installed via Homebrew cask on macOS
+
+      userSettings = {
+        agent = {
+          default_model = {
+            provider = "copilot_chat";
+            model = "claude-opus-4.6";
+          };
+          favorite_models = [ ];
+          model_parameters = [ ];
+        };
+        edit_predictions = {
+          mode = "subtle";
+        };
+        ui_font_size = 15.0;
+        ui_font_weight = 500.0;
+        ui_font_family = "FiraCode Nerd Font Mono";
+        ui_font_features = {
+          ss01 = true;
+          ss03 = true;
+          ss04 = true;
+          ss06 = true;
+        };
+        buffer_font_size = 14.0;
+        buffer_font_weight = 500.0;
+        buffer_font_family = "FiraCode Nerd Font Mono";
+        buffer_font_features = {
+          ss01 = true;
+          ss03 = true;
+          ss04 = true;
+          ss06 = true;
+        };
+        features = {
+          edit_prediction_provider = "copilot";
+        };
+        terminal = {
+          font_family = "FiraCode Nerd Font Mono";
+          font_features = {
+            ss01 = true;
+            ss03 = true;
+            ss04 = true;
+            ss06 = true;
+          };
+        };
+        base_keymap = "VSCode";
+        vim_mode = false;
+        icon_theme = "Material Icon Theme";
+        theme = "One Dark Pro";
+        wrap_guides = [
+          88
+          120
+        ];
+        ssh_connections = [
+          {
+            host = "nixos-orbstack.orb.local";
+            username = "jacobcolvin";
+          }
+        ];
+      };
+
+      userKeymaps = [
+        {
+          context = "Workspace";
+          bindings = {
+            "shift shift" = "file_finder::Toggle";
+          };
+        }
+      ];
+    };
   };
 
   xdg.configFile = {
-    "zed/settings.json".source = ../configs/zed/settings.json;
-    "zed/keymap.json".source = ../configs/zed/keymap.json;
     "viddy.toml".source = ../configs/viddy.toml;
     "dlv/config.yml".source = ../configs/dlv/config.yml;
     "gh-copilot/config.yml".source = ../configs/gh-copilot/config.yml;
