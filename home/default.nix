@@ -116,6 +116,11 @@
       telemetry.mode = "off";
     };
 
+    npm = {
+      enable = true;
+      package = null; # nodejs is already in home.packages
+    };
+
     uv = {
       enable = true;
       settings = {
@@ -138,7 +143,10 @@
   home = {
     stateVersion = "25.05";
 
-    sessionPath = [ "$HOME/go/bin" ];
+    sessionPath = [
+      "$HOME/go/bin"
+      "$HOME/.npm/bin"
+    ];
 
     sessionVariables = {
       EDITOR = "vim";

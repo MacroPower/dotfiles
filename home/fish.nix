@@ -91,7 +91,6 @@ in
       set --global fish_pager_color_progress brwhite --background=cyan
       set --global fish_pager_color_selected_background -r
 
-      fish_add_path "$HOME/.npm-packages/bin"
       fish_add_path "$HOME/.krew/bin"
       fish_add_path "$HOME/.local/bin"
 
