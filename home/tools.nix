@@ -46,12 +46,13 @@
         "--glob=!.git"
       ];
     };
+
+    jq.enable = true;
+    trippy.enable = true;
   };
 
   home.packages = with pkgs; [
-    jq
     yq-go
-    trippy
     viddy
     devbox
     doppler

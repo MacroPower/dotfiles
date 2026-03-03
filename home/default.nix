@@ -110,6 +110,13 @@
         ];
       };
     };
+
+    uv = {
+      enable = true;
+      settings = {
+        python-downloads = "manual";
+      };
+    };
   };
 
   xdg.configFile = {
@@ -174,7 +181,6 @@
 
         # Languages & runtimes
         go
-        uv
         nodejs
 
         # Dev tools
