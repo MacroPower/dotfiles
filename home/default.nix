@@ -111,6 +111,11 @@
       };
     };
 
+    go = {
+      enable = true;
+      telemetry.mode = "off";
+    };
+
     uv = {
       enable = true;
       settings = {
@@ -132,6 +137,8 @@
 
   home = {
     stateVersion = "25.05";
+
+    sessionPath = [ "$HOME/go/bin" ];
 
     sessionVariables = {
       EDITOR = "vim";
@@ -179,7 +186,6 @@
         onefetch
 
         # Languages & runtimes
-        go
         nodejs
 
         # Dev tools

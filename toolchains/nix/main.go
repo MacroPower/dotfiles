@@ -140,8 +140,8 @@ func (m *Nix) evalHomeInfo(ctx context.Context, ctr *dagger.Container, name stri
 		WithExec([]string{"nix", "eval", "--json", ref, "--apply", `hm: {
 			homeDirectory = hm.config.home.homeDirectory;
 			username = hm.config.home.username;
-			xdgFiles = builtins.attrNames hm.config.xdg.configFile;
-			homeFiles = builtins.attrNames hm.config.home.file;
+			xdgFiles = builtins.filter (n: hm.config.xdg.configFile.${n}.enable) (builtins.attrNames hm.config.xdg.configFile);
+			homeFiles = builtins.filter (n: hm.config.home.file.${n}.enable) (builtins.attrNames hm.config.home.file);
 		}`}).
 		Stdout(ctx)
 	if err != nil {
