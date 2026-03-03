@@ -38,6 +38,7 @@ stdenv.mkDerivation {
   };
 
   sourceRoot = ".";
+  dontStrip = true;
 
   installPhase = ''
     install -Dm755 chief $out/bin/chief
