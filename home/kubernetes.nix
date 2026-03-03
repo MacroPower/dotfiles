@@ -21,6 +21,7 @@
       cilium-cli
       go-task
       krew
+      stern
     ]
     ++ (map (name: pkgs.${name}) hostConfig.extraK8sPackages);
 
@@ -39,7 +40,6 @@
         "blame" # https://github.com/knight42/kubectl-blame
         "get-all" # https://github.com/corneliusweig/ketall
         "graph" # https://github.com/steveteuber/kubectl-graph
-        "stern" # https://github.com/stern/stern
         "krew"
       ]
       ++ hostConfig.extraKrewPlugins;
