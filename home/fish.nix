@@ -123,24 +123,6 @@ in
         name = "tide";
         inherit (pkgs.fishPlugins.tide) src;
       }
-      {
-        name = "plugin-jump";
-        src = pkgs.fetchFromGitHub {
-          owner = "oh-my-fish";
-          repo = "plugin-jump";
-          rev = "af285ff91fa9d0d0261b810e09f8a4a05a6b1307";
-          hash = "sha256-MVIXBKsfd7rrH7Dh7cksNI29YunqAGZvuZwdfrf1bZQ=";
-        };
-      }
-      {
-        name = "fish-kubectl-completions";
-        src = pkgs.fetchFromGitHub {
-          owner = "evanlucas";
-          repo = "fish-kubectl-completions";
-          rev = "ced676392575d618d8b80b3895cdc3159be3f628";
-          hash = "sha256-OYiYTW+g71vD9NWOcX1i2/TaQfAg+c2dJZ5ohwWSDCc=";
-        };
-      }
     ];
   };
 

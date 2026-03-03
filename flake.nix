@@ -106,9 +106,7 @@
               "cyclonus" # https://github.com/mattfenwick/kubectl-cyclonus
             ];
             shell = {
-              extraShellInit = ''
-                eval "$(/opt/homebrew/bin/brew shellenv)"
-              '';
+              extraShellInit = "";
               extraInteractiveInit = ''
                 # OrbStack integration
                 source ~/.orbstack/shell/init2.fish 2>/dev/null || :
