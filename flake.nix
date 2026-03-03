@@ -45,12 +45,54 @@
       ...
     }:
     let
+      localOverlay = final: _prev: {
+        chief = final.callPackage ./pkgs/chief.nix { };
+      };
+
+      sharedOverlays = [
+        localOverlay
+        nix-vscode-extensions.overlays.default
+        claude-code.overlays.default
+        dagger.overlays.default
+      ];
+
+      applyHostDefaults =
+        hostConfig:
+        {
+          homeDirectory = "/home/${hostConfig.username}";
+          shell = {
+            extraShellInit = "";
+            extraInteractiveInit = "";
+            extraTideConfig = "";
+          };
+          extraHomePackages = [ ];
+          extraK8sPackages = [ ];
+          extraKrewPlugins = [ ];
+          extraXdgConfigFiles = { };
+          extraVscodeExtensions = _marketplace: [ ];
+          extraVscodeKubernetesSettings = { };
+          claude = { };
+        }
+        // hostConfig;
+
+      mkHomeManagerConfig = fullHostConfig: {
+        useGlobalPkgs = true;
+        useUserPackages = true;
+        backupFileExtension = "bak";
+        extraSpecialArgs = {
+          inherit krewfile;
+          hostConfig = fullHostConfig;
+        };
+        users.${fullHostConfig.username} = import ./home;
+      };
+
       mkDarwin =
         hostConfig:
         let
-          fullHostConfig = hostConfig // {
+          baseConfig = applyHostDefaults hostConfig;
+          fullHostConfig = baseConfig // {
             homeDirectory = "/Users/${hostConfig.username}";
-            extraHomePackages = hostConfig.extraHomePackages ++ [
+            extraHomePackages = baseConfig.extraHomePackages ++ [
               "terminal-notifier"
               "gtk4"
               "librsvg"
@@ -58,7 +100,7 @@
               "libraw"
               "dav1d"
             ];
-            extraKrewPlugins = (hostConfig.extraKrewPlugins or [ ]) ++ [
+            extraKrewPlugins = baseConfig.extraKrewPlugins ++ [
               "sniff" # https://github.com/eldadru/ksniff
               "access-matrix" # https://github.com/corneliusweig/rakkess
               "cyclonus" # https://github.com/mattfenwick/kubectl-cyclonus
@@ -101,40 +143,24 @@
             ./hosts/mac.nix
             home-manager.darwinModules.home-manager
             {
-              nixpkgs.overlays = [
-                localOverlay
-                nix-vscode-extensions.overlays.default
-                claude-code.overlays.default
-                dagger.overlays.default
-              ];
-              home-manager = {
-                useGlobalPkgs = true;
-                useUserPackages = true;
-                backupFileExtension = "bak";
-                extraSpecialArgs = {
-                  inherit krewfile;
-                  hostConfig = fullHostConfig;
-                };
-                users.${hostConfig.username} = import ./home;
-              };
+              nixpkgs.overlays = sharedOverlays;
+              home-manager = mkHomeManagerConfig fullHostConfig;
             }
           ];
         };
 
       mkHome =
         { system, hostConfig }:
+        let
+          fullHostConfig = applyHostDefaults hostConfig;
+        in
         home-manager.lib.homeManagerConfiguration {
           pkgs = import nixpkgs {
             inherit system;
             config.allowUnfree = true;
-            overlays = [
-              localOverlay
-              nix-vscode-extensions.overlays.default
-              claude-code.overlays.default
-              dagger.overlays.default
-            ];
+            overlays = sharedOverlays;
           };
-          extraSpecialArgs = { inherit krewfile hostConfig; };
+          inherit (mkHomeManagerConfig fullHostConfig) extraSpecialArgs;
           modules = [
             ./hosts/linux.nix
             ./home
@@ -148,25 +174,17 @@
           hostConfig,
         }:
         let
-          fullHostConfig = hostConfig // {
-            homeDirectory = "/home/${hostConfig.username}";
-            shell =
-              hostConfig.shell or {
-                extraShellInit = "";
-                extraInteractiveInit = "";
-                extraTideConfig = ''
-                  set -g tide_left_prompt_items os $tide_left_prompt_items
-                  set -g tide_os_icon \ue843
-                '';
-              };
-            extraHomePackages = hostConfig.extraHomePackages or [ ];
-            extraK8sPackages = hostConfig.extraK8sPackages or [ ];
-            extraKrewPlugins = hostConfig.extraKrewPlugins or [ ];
-            extraXdgConfigFiles = hostConfig.extraXdgConfigFiles or { };
-            extraVscodeExtensions = hostConfig.extraVscodeExtensions or (_marketplace: [ ]);
-            extraVscodeKubernetesSettings = hostConfig.extraVscodeKubernetesSettings or { };
-            claude = hostConfig.claude or { };
+          nixosDefaults = {
+            shell = {
+              extraShellInit = "";
+              extraInteractiveInit = "";
+              extraTideConfig = ''
+                set -g tide_left_prompt_items os $tide_left_prompt_items
+                set -g tide_os_icon \ue843
+              '';
+            };
           };
+          fullHostConfig = applyHostDefaults (nixosDefaults // hostConfig);
         in
         nixpkgs.lib.nixosSystem {
           inherit system;
@@ -177,28 +195,11 @@
             hostModule
             home-manager.nixosModules.home-manager
             {
-              nixpkgs.overlays = [
-                localOverlay
-                nix-vscode-extensions.overlays.default
-                claude-code.overlays.default
-                dagger.overlays.default
-              ];
-              home-manager = {
-                useGlobalPkgs = true;
-                useUserPackages = true;
-                backupFileExtension = "bak";
-                extraSpecialArgs = {
-                  inherit krewfile;
-                  hostConfig = fullHostConfig;
-                };
-                users.${hostConfig.username} = import ./home;
-              };
+              nixpkgs.overlays = sharedOverlays;
+              home-manager = mkHomeManagerConfig fullHostConfig;
             }
           ];
         };
-      localOverlay = final: _prev: {
-        chief = final.callPackage ./pkgs/chief.nix { };
-      };
     in
     {
       darwinConfigurations = {
@@ -300,7 +301,6 @@
           system = "aarch64-linux";
           hostConfig = {
             username = "jacobcolvin";
-            homeDirectory = "/home/jacobcolvin";
             git = {
               userName = "Jacob Colvin";
               userEmail = "jacobcolvin1@gmail.com";
@@ -313,12 +313,6 @@
                 set -g tide_os_icon \uebc6
               '';
             };
-            extraHomePackages = [ ];
-            extraK8sPackages = [ ];
-            extraKrewPlugins = [ ];
-            extraXdgConfigFiles = { };
-            extraVscodeExtensions = _marketplace: [ ];
-            extraVscodeKubernetesSettings = { };
           };
         };
       };
