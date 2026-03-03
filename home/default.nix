@@ -127,7 +127,6 @@
     "gh-copilot/config.yml".source = ../configs/gh-copilot/config.yml;
     "kat/config.yaml".source = ../configs/kat/config.yaml;
     "ccstatusline/settings.json".source = ../configs/ccstatusline/settings.json;
-    "gitui/theme.ron".source = ../configs/gitui/theme.ron;
   }
   // hostConfig.extraXdgConfigFiles;
 

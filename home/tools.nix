@@ -49,6 +49,11 @@
 
     jq.enable = true;
     trippy.enable = true;
+
+    gitui = {
+      enable = true;
+      theme = builtins.readFile ../configs/gitui/theme.ron;
+    };
   };
 
   home.packages = with pkgs; [
@@ -57,6 +62,5 @@
     devbox
     doppler
     dagger
-    gitui
   ];
 }
