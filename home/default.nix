@@ -216,6 +216,8 @@
     sessionPath = [
       "$HOME/go/bin"
       "$HOME/.npm/bin"
+      "$HOME/.krew/bin"
+      "$HOME/.local/bin"
     ];
 
     sessionVariables = {
