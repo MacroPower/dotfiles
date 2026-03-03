@@ -43,7 +43,7 @@
     brews = [
       "jakehilborn/jakehilborn/displayplacer"
       "photo-cli"
-      "kubecolor/tap/kubecolor"
+
       "ymtdzzz/tap/otel-tui"
       "kcl-lang/tap/kcl"
       "kcl-lang/tap/kcl-lsp"

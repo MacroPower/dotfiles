@@ -103,7 +103,7 @@ in
       watch = "viddy";
       w = "viddy";
       traceroute = "trip";
-      kubectl = "kubecolor";
+
     };
 
     functions = {
