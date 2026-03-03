@@ -16,71 +16,99 @@
     ./claude.nix
   ];
 
-  programs.ssh = {
-    enable = true;
-    enableDefaultConfig = false;
-    includes = hostConfig.sshIncludes or [ ];
-    extraConfig = "SendEnv COLORTERM";
-    matchBlocks."*".addKeysToAgent = "yes";
-  };
+  programs = {
+    ssh = {
+      enable = true;
+      enableDefaultConfig = false;
+      includes = hostConfig.sshIncludes or [ ];
+      extraConfig = "SendEnv COLORTERM";
+      matchBlocks."*".addKeysToAgent = "yes";
+    };
 
-  programs.ghostty = {
-    enable = true;
-    package = null; # installed via Homebrew cask on macOS
-    enableFishIntegration = true;
-    systemd.enable = false;
-    settings = {
-      window-height = 40;
-      window-width = 80;
+    ghostty = {
+      enable = true;
+      package = null; # installed via Homebrew cask on macOS
+      enableFishIntegration = true;
+      systemd.enable = false;
+      settings = {
+        window-height = 40;
+        window-width = 80;
 
-      foreground = "#abb2bf";
-      background = "#23272e";
+        foreground = "#abb2bf";
+        background = "#23272e";
 
-      cursor-color = "#d0d0d0";
-      cursor-text = "#151515";
-      selection-background = "#979eab";
-      selection-foreground = "#282c34";
+        cursor-color = "#d0d0d0";
+        cursor-text = "#151515";
+        selection-background = "#979eab";
+        selection-foreground = "#282c34";
 
-      window-titlebar-background = "#282c34";
-      window-titlebar-foreground = "#979eab";
-      split-divider-color = "#393e48";
+        window-titlebar-background = "#282c34";
+        window-titlebar-foreground = "#979eab";
+        split-divider-color = "#393e48";
 
-      palette = [
-        "0=#282c34"
-        "1=#e06c75"
-        "2=#98c379"
-        "3=#e5c07b"
-        "4=#61afef"
-        "5=#be5046"
-        "6=#56b6c2"
-        "7=#979eab"
-        "8=#393e48"
-        "9=#d19a66"
-        "10=#56b6c2"
-        "11=#e5c07b"
-        "12=#61afef"
-        "13=#be5046"
-        "14=#56b6c2"
-        "15=#abb2bf"
-      ];
+        palette = [
+          "0=#282c34"
+          "1=#e06c75"
+          "2=#98c379"
+          "3=#e5c07b"
+          "4=#61afef"
+          "5=#be5046"
+          "6=#56b6c2"
+          "7=#979eab"
+          "8=#393e48"
+          "9=#d19a66"
+          "10=#56b6c2"
+          "11=#e5c07b"
+          "12=#61afef"
+          "13=#be5046"
+          "14=#56b6c2"
+          "15=#abb2bf"
+        ];
 
-      window-padding-x = 8;
-      window-padding-y = "8,0";
+        window-padding-x = 8;
+        window-padding-y = "8,0";
 
-      font-family = "FiraCode Nerd Font Mono SemBd";
-      font-feature = [
-        "ss01"
-        "ss03"
-        "ss04"
-        "ss06"
-      ];
-      font-size = 14;
+        font-family = "FiraCode Nerd Font Mono SemBd";
+        font-feature = [
+          "ss01"
+          "ss03"
+          "ss04"
+          "ss06"
+        ];
+        font-size = 14;
 
-      keybind = [
-        "global:cmd+grave_accent=toggle_quick_terminal"
-      ];
-      quick-terminal-screen = "mouse";
-      quick-terminal-position = "right";
+        keybind = [
+          "global:cmd+grave_accent=toggle_quick_terminal"
+        ];
+        quick-terminal-screen = "mouse";
+        quick-terminal-position = "right";
+      };
+    };
+
+    fastfetch = {
+      enable = true;
+      settings = {
+        modules = [
+          "title"
+          "separator"
+          "os"
+          "host"
+          "kernel"
+          "uptime"
+          "packages"
+          "shell"
+          "display"
+          "de"
+          "wm"
+          "terminal"
+          "terminalfont"
+          "cpu"
+          "gpu"
+          "memory"
+          "break"
+          "colors"
+        ];
+      };
     };
   };
 
@@ -89,7 +117,6 @@
     "zed/keymap.json".source = ../configs/zed/keymap.json;
     "viddy.toml".source = ../configs/viddy.toml;
     "dlv/config.yml".source = ../configs/dlv/config.yml;
-    "neofetch/config.conf".source = ../configs/neofetch/config.conf;
     "gh-copilot/config.yml".source = ../configs/gh-copilot/config.yml;
     "kat/config.yaml".source = ../configs/kat/config.yaml;
     "ccstatusline/settings.json".source = ../configs/ccstatusline/settings.json;
@@ -143,7 +170,6 @@
         nmap
         ddrescue
         arping
-        neofetch
         onefetch
 
         # Languages & runtimes
