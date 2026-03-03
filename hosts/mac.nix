@@ -184,6 +184,10 @@
   power.sleep.computer = "never";
   power.sleep.display = "never";
 
+  # SMB client configuration (/etc/nsmb.conf).
+  # signing_required=no disables SMB packet signing, trading MITM protection
+  # for ~20-30% throughput gain on local/trusted networks. Re-enable signing
+  # (signing_required=yes) if connecting to untrusted or remote SMB shares.
   environment.etc."nsmb.conf".text = ''
     [default]
       signing_required=no
