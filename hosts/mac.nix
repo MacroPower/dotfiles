@@ -173,6 +173,14 @@
     stateVersion = 6;
   };
 
+  # Application firewall: filter inbound connections, allow signed apps
+  networking.applicationFirewall = {
+    enable = true;
+    enableStealthMode = true;
+    allowSigned = true;
+    allowSignedApp = true;
+  };
+
   power.sleep.computer = "never";
   power.sleep.display = "never";
 
