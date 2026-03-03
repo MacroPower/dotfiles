@@ -267,7 +267,7 @@ func (m *Nix) Lint(ctx context.Context) error {
 // +check
 func (m *Nix) Format(ctx context.Context) error {
 	_, err := m.base().
-		WithExec([]string{"nix", "shell", "nixpkgs#nixfmt-rfc-style", "-c", "nixfmt", "--check", "."}).
+		WithExec([]string{"nix", "shell", "nixpkgs#nixfmt", "-c", "nixfmt", "--check", "."}).
 		Sync(ctx)
 	return err
 }
@@ -276,7 +276,7 @@ func (m *Nix) Format(ctx context.Context) error {
 // +generate
 func (m *Nix) FormatFix() *dagger.Changeset {
 	fixed := m.base().
-		WithExec([]string{"nix", "shell", "nixpkgs#nixfmt-rfc-style", "-c", "nixfmt", "."}).
+		WithExec([]string{"nix", "shell", "nixpkgs#nixfmt", "-c", "nixfmt", "."}).
 		Directory("/src")
 	return dag.Directory().WithDirectory(".", fixed).Changes(m.Source)
 }
@@ -295,7 +295,7 @@ func (m *Nix) LintFix() *dagger.Changeset {
 // +generate
 func (m *Nix) Fix() *dagger.Changeset {
 	fixed := m.base().
-		WithExec([]string{"nix", "shell", "nixpkgs#nixfmt-rfc-style", "-c", "nixfmt", "."}).
+		WithExec([]string{"nix", "shell", "nixpkgs#nixfmt", "-c", "nixfmt", "."}).
 		WithExec([]string{"nix", "shell", "nixpkgs#statix", "-c", "statix", "fix", "."}).
 		WithExec([]string{"nix", "shell", "nixpkgs#deadnix", "-c", "deadnix", "--edit", "."}).
 		Directory("/src")
