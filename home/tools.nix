@@ -62,5 +62,6 @@
     devbox
     doppler
     dagger
+    nvd
   ];
 }
