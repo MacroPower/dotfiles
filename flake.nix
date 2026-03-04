@@ -30,6 +30,10 @@
       url = "github:dagger/nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    stylix = {
+      url = "github:nix-community/stylix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -42,6 +46,7 @@
       krewfile,
       claude-code,
       dagger,
+      stylix,
       ...
     }:
     let
@@ -55,6 +60,41 @@
         claude-code.overlays.default
         dagger.overlays.default
       ];
+
+      sharedStylixConfig =
+        { pkgs, ... }:
+        {
+          stylix = {
+            enable = true;
+            autoEnable = true;
+            polarity = "dark";
+
+            base16Scheme = "${pkgs.base16-schemes}/share/themes/onedark.yaml";
+            override = {
+              base00 = "23272e"; # darker background
+            };
+
+            fonts = {
+              monospace = {
+                package = pkgs.nerd-fonts.fira-code;
+                name = "FiraCode Nerd Font Mono";
+              };
+              sansSerif = {
+                package = pkgs.fira;
+                name = "Fira Sans";
+              };
+              serif = {
+                package = pkgs.merriweather;
+                name = "Merriweather";
+              };
+              emoji = {
+                package = pkgs.noto-fonts-color-emoji;
+                name = "Noto Color Emoji";
+              };
+              sizes.terminal = 14;
+            };
+          };
+        };
 
       applyHostDefaults =
         hostConfig:
@@ -140,6 +180,8 @@
           modules = [
             ./hosts/mac.nix
             home-manager.darwinModules.home-manager
+            stylix.darwinModules.stylix
+            sharedStylixConfig
             {
               nixpkgs.overlays = sharedOverlays;
               home-manager = mkHomeManagerConfig fullHostConfig;
@@ -160,6 +202,8 @@
           };
           inherit (mkHomeManagerConfig fullHostConfig) extraSpecialArgs;
           modules = [
+            stylix.homeModules.stylix
+            sharedStylixConfig
             ./hosts/linux.nix
             ./home
           ];
@@ -192,6 +236,8 @@
           modules = [
             hostModule
             home-manager.nixosModules.home-manager
+            stylix.nixosModules.stylix
+            sharedStylixConfig
             {
               nixpkgs.overlays = sharedOverlays;
               home-manager = mkHomeManagerConfig fullHostConfig;

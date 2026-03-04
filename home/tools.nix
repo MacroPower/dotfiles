@@ -7,11 +7,19 @@
     eza = {
       enable = true;
       enableFishIntegration = true;
+      icons = "auto";
+      colors = "auto";
+      git = true;
+      extraOptions = [
+        "--group-directories-first"
+        "--header"
+        "--all"
+      ];
     };
 
     fzf = {
       enable = true;
-      enableFishIntegration = false;
+      enableFishIntegration = true;
     };
 
     zoxide = {

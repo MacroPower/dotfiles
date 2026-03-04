@@ -1,18 +1,35 @@
-set et       " expandtab (use space character when tab key used) *
-set ts=2     " tabstop *
-set sw=2     " shiftwidth *
 set sts=2    " softtabstop (Let backspace delete indent)
 set ai       " autoindent (Indent at the same level of the previous line)
 set si       " smart indent
 set hls      " highlightsearch (Highlight search terms)
-set ic       " ignorecase when searching in vim
-set nu       " show line numbers
 syntax on    " enable syntax highlighting
 
-" * = preconfigured in most environments
+" Search
+set incsearch
+
+" UI
+set scrolloff=8
+set cursorline
+set wildmenu
+set wildmode=longest:full,full
+
+" System integration
+set clipboard=unnamedplus
+
+" Ensure undo directory exists
+if !isdirectory($HOME . "/.vim/undodir")
+  call mkdir($HOME . "/.vim/undodir", "p", 0700)
+endif
+
+" fzf.vim keybindings
+nnoremap <C-p> :Files<CR>
+nnoremap <leader>f :Rg<CR>
+nnoremap <leader>b :Buffers<CR>
+
+" vim-gitgutter responsiveness
+set updatetime=100
 
 " Mouse support
-set mouse=a
 set ttymouse=sgr
 set balloonevalterm
 " Styled and colored underline support
@@ -60,15 +77,19 @@ let &t_RT = "\e[23;2t"
 let &t_ut=''
 
 " Inspect $TERM instad of t_Co as it works in neovim as well
-if &term =~ '256color'
+if $COLORTERM == 'truecolor' || $COLORTERM == '24bit' || &term =~ '256color'
   " Enable true (24-bit) colors instead of (8-bit) 256 colors.
   if has('termguicolors')
     let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
     let &t_8b = "\<Esc>[48;2;%lu;%lu;%lum"
     set termguicolors
   endif
-  colorscheme onedark
 endif
 
-" Use the terminal's background color
-hi Normal guibg=NONE ctermbg=NONE
+" Theme
+colorscheme onedark
+hi Normal guibg=#23272e ctermbg=NONE
+
+" Airline
+let g:airline_theme='onedark'
+let g:airline_powerline_fonts = 1

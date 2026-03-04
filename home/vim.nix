@@ -1,4 +1,4 @@
-_:
+{ pkgs, ... }:
 
 {
   programs.vim = {
@@ -10,9 +10,33 @@ _:
       number = true;
       mouse = "a";
       ignorecase = true;
+      smartcase = true;
+      hidden = true;
+      undofile = true;
+      undodir = [ "$HOME/.vim/undodir" ];
     };
+    plugins = with pkgs.vimPlugins; [
+      # Appearance
+      onedark-vim
+      vim-airline
+      vim-airline-themes
+
+      # Navigation
+      fzf-vim
+
+      # Git
+      vim-fugitive
+      vim-gitgutter
+
+      # Editing
+      vim-surround
+      vim-commentary
+      vim-repeat
+
+      # Language support
+      vim-polyglot
+    ];
     extraConfig = builtins.readFile ../configs/vim/extra.vim;
   };
 
-  home.file.".vim/colors/onedark.vim".source = ../configs/vim/colors/onedark.vim;
 }

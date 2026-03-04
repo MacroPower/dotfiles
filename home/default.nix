@@ -7,6 +7,7 @@
 
 {
   imports = [
+    ./stylix.nix
     ./fish.nix
     ./git.nix
     ./vim.nix
@@ -46,29 +47,10 @@
         window-titlebar-foreground = "#979eab";
         split-divider-color = "#393e48";
 
-        palette = [
-          "0=#282c34"
-          "1=#e06c75"
-          "2=#98c379"
-          "3=#e5c07b"
-          "4=#61afef"
-          "5=#be5046"
-          "6=#56b6c2"
-          "7=#979eab"
-          "8=#393e48"
-          "9=#d19a66"
-          "10=#56b6c2"
-          "11=#e5c07b"
-          "12=#61afef"
-          "13=#be5046"
-          "14=#56b6c2"
-          "15=#abb2bf"
-        ];
-
         window-padding-x = 8;
         window-padding-y = "8,0";
 
-        font-family = "FiraCode Nerd Font Mono SemBd";
+        font-style = "SemiBold";
         font-feature = [
           "ss01"
           "ss03"
@@ -273,9 +255,6 @@
         nil
         claude-code
         chief
-
-        # Fonts
-        nerd-fonts.fira-code
 
         # Python build dependencies
         openssl
