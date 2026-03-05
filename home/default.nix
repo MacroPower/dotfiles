@@ -16,6 +16,7 @@
     ./kubernetes.nix
     ./vscode.nix
     ./claude.nix
+    ./secrets.nix
   ];
 
   programs = {
