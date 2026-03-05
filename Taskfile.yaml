@@ -24,7 +24,7 @@ tasks:
   switch:
     desc: Apply nix config for the current host
     cmds:
-      - cmd: 'sudo nix run nix-darwin -- switch --flake ".#{{.USER}}@{{.HOST}}"'
+      - cmd: 'sudo darwin-rebuild switch --flake ".#{{.USER}}@{{.HOST}}"'
         platforms: [darwin]
       - cmd: 'sudo nixos-rebuild switch --flake ".#{{.HOST}}"'
         platforms: [linux]
