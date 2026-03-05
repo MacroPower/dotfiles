@@ -3,9 +3,28 @@ version: "3"
 vars:
   VM_NAME: '{{.VM_NAME | default "nixos-orbstack"}}'
   VM_FLAKE_DIR: /tmp/dotfiles
-  SECRETS_FILE: /tmp/.nix-activation-secrets
+  AGE_KEY_FILE: ~/.config/sops/age/keys.txt
+  VM_AGE_KEY_DIR: /home/default/.config/sops/age
 
 tasks:
+  init-secrets:
+    desc: Copy age key into the VM for sops secret decryption
+    preconditions:
+      - sh: test -f {{.AGE_KEY_FILE}}
+        msg: "Age key not found at {{.AGE_KEY_FILE}}. Run 'task secrets:init' first."
+    status:
+      - >-
+        orb run -m {{.VM_NAME}}
+        test -f {{.VM_AGE_KEY_DIR}}/keys.txt
+    cmds:
+      - >-
+        orb run -m {{.VM_NAME}}
+        mkdir -p {{.VM_AGE_KEY_DIR}}
+      - >-
+        cat {{.AGE_KEY_FILE}} |
+        orb run -m {{.VM_NAME}}
+        sh -c 'cat > {{.VM_AGE_KEY_DIR}}/keys.txt && chmod 600 {{.VM_AGE_KEY_DIR}}/keys.txt'
+
   create:
     desc: Create and configure a new OrbStack NixOS VM
     cmds:
@@ -17,19 +36,7 @@ tasks:
       - >-
         orb run -m {{.VM_NAME}} -u root
         sh -c 'mkdir -p /root && printf "[safe]\n\tdirectory = {{.VM_FLAKE_DIR}}\n" > /root/.gitconfig'
-      - cmd: >-
-          doppler secrets download -p dotfiles -c nix --format env --no-file
-          > {{.SECRETS_FILE}} 2>/dev/null
-          && chmod 600 {{.SECRETS_FILE}}
-          || true
-      - defer: 'rm -f {{.SECRETS_FILE}}'
-      - >-
-        cat {{.SECRETS_FILE}} 2>/dev/null |
-        orb run -m {{.VM_NAME}} -u root
-        sh -c 'cat > {{.SECRETS_FILE}} && chmod 644 {{.SECRETS_FILE}}'
-      - defer: >-
-          orb run -m {{.VM_NAME}} -u root
-          rm -f {{.SECRETS_FILE}}
+      - task: init-secrets
       - >-
         orb run -m {{.VM_NAME}} -u root
         nixos-rebuild switch --impure
@@ -38,6 +45,7 @@ tasks:
 
   switch:
     desc: Apply NixOS config to an existing OrbStack VM
+    deps: [init-secrets]
     cmds:
       - >-
         tar --no-xattrs -cf - . |
@@ -46,19 +54,6 @@ tasks:
       - >-
         orb run -m {{.VM_NAME}} -u root
         sh -c 'mkdir -p /root && printf "[safe]\n\tdirectory = {{.VM_FLAKE_DIR}}\n" > /root/.gitconfig'
-      - cmd: >-
-          doppler secrets download -p dotfiles -c nix --format env --no-file
-          > {{.SECRETS_FILE}} 2>/dev/null
-          && chmod 600 {{.SECRETS_FILE}}
-          || true
-      - defer: 'rm -f {{.SECRETS_FILE}}'
-      - >-
-        cat {{.SECRETS_FILE}} 2>/dev/null |
-        orb run -m {{.VM_NAME}} -u root
-        sh -c 'cat > {{.SECRETS_FILE}} && chmod 644 {{.SECRETS_FILE}}'
-      - defer: >-
-          orb run -m {{.VM_NAME}} -u root
-          rm -f {{.SECRETS_FILE}}
       - >-
         orb run -m {{.VM_NAME}} -u root
         nixos-rebuild switch --impure
