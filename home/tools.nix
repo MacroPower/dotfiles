@@ -71,5 +71,7 @@
     doppler
     dagger
     nvd
+    sops
+    age
   ];
 }
