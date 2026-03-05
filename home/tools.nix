@@ -79,6 +79,7 @@
     doppler
     dagger
     nvd
+    nix-output-monitor
     sops
     age
   ];
