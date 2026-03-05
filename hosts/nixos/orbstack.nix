@@ -11,7 +11,7 @@
     "${modulesPath}/virtualisation/lxc-container.nix"
   ];
 
-  networking.hostName = "orbstack-nixos";
+  networking.hostName = "nixos-orbstack";
 
   # In LXC containers, systemd-hostnamed only sets the static hostname from
   # /etc/hostname, and cannot call sethostname() to update the kernel hostname.
@@ -22,7 +22,7 @@
     after = [ "systemd-hostnamed.service" ];
     serviceConfig.Type = "oneshot";
     script = ''
-      echo "orbstack-nixos" > /proc/sys/kernel/hostname
+      echo "nixos-orbstack" > /proc/sys/kernel/hostname
     '';
   };
 
