@@ -256,6 +256,12 @@
         };
     in
     {
+      formatter = {
+        aarch64-darwin = nixpkgs.legacyPackages.aarch64-darwin.nixfmt;
+        aarch64-linux = nixpkgs.legacyPackages.aarch64-linux.nixfmt;
+        x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt;
+      };
+
       darwinConfigurations = {
         "jacobcolvin@Jacobs-Mac-mini" = mkDarwin {
           username = "jacobcolvin";
