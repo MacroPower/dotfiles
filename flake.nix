@@ -34,6 +34,10 @@
       url = "github:nix-community/stylix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -47,6 +51,7 @@
       claude-code,
       dagger,
       stylix,
+      sops-nix,
       ...
     }:
     let
@@ -122,6 +127,7 @@
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 backupFileExtension = "bak";
+                sharedModules = [ sops-nix.homeManagerModules.sops ];
                 extraSpecialArgs = { inherit krewfile; };
                 users.${username} = {
                   imports = [
@@ -191,6 +197,7 @@
           };
           extraSpecialArgs = { inherit krewfile; };
           modules = [
+            sops-nix.homeManagerModules.sops
             stylix.homeModules.stylix
             sharedStylixConfig
             ./hosts/linux.nix
@@ -222,6 +229,7 @@
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 backupFileExtension = "bak";
+                sharedModules = [ sops-nix.homeManagerModules.sops ];
                 extraSpecialArgs = { inherit krewfile; };
                 users.${username} = {
                   imports = [
