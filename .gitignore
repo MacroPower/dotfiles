@@ -9,3 +9,4 @@ result
 .config/dagger/
 .config/auth0/
 .config/colima/
+.chief/
