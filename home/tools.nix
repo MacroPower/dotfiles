@@ -55,6 +55,9 @@
       ];
     };
 
+    nix-index.enable = true;
+    nix-index-database.comma.enable = true;
+
     jq.enable = true;
     trippy.enable = true;
 
