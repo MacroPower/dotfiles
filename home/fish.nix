@@ -118,16 +118,19 @@ in
 
     shellInit = ''
       ${config.dotfiles.shell.extraShellInit}
-      alias k=kubectl
-      alias wk="watch -n 1 kubectl"
-      alias kx=kubectx
-      alias kn=kubens
     '';
 
     interactiveShellInit = ''
       ${config.dotfiles.shell.extraInteractiveInit}
       set --global fish_key_bindings fish_default_key_bindings
     '';
+
+    shellAbbrs = {
+      k = "kubectl";
+      wk = "watch -n 1 kubectl";
+      kx = "kubectx";
+      kn = "kubens";
+    };
 
     shellAliases = {
       cat = "bat";
