@@ -118,7 +118,7 @@
         };
         ui_font_size = 15.0;
         ui_font_weight = 500.0;
-        ui_font_family = "FiraCode Nerd Font Mono";
+        ui_font_family = config.stylix.fonts.monospace.name;
         ui_font_features = {
           ss01 = true;
           ss03 = true;
@@ -127,7 +127,7 @@
         };
         buffer_font_size = 14.0;
         buffer_font_weight = 500.0;
-        buffer_font_family = "FiraCode Nerd Font Mono";
+        buffer_font_family = config.stylix.fonts.monospace.name;
         buffer_font_features = {
           ss01 = true;
           ss03 = true;
@@ -138,7 +138,7 @@
           edit_prediction_provider = "copilot";
         };
         terminal = {
-          font_family = "FiraCode Nerd Font Mono";
+          font_family = config.stylix.fonts.monospace.name;
           font_features = {
             ss01 = true;
             ss03 = true;

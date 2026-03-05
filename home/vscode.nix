@@ -56,11 +56,11 @@ in
           mixin = "plugin";
         };
         "explorer.confirmDragAndDrop" = false;
-        "editor.fontFamily" = "'FiraCode Nerd Font Mono', monospace";
+        "editor.fontFamily" = "'${config.stylix.fonts.monospace.name}', monospace";
         "editor.fontWeight" = "500";
         "editor.fontLigatures" = "'ss01', 'ss03', 'ss04', 'ss06', 'zero'";
         "editor.fontSize" = 14;
-        "terminal.integrated.fontFamily" = "'FiraCode Nerd Font Mono', monospace";
+        "terminal.integrated.fontFamily" = "'${config.stylix.fonts.monospace.name}', monospace";
         "terminal.integrated.fontSize" = 14;
         "vs-kubernetes" = {
           "vs-kubernetes.crd-code-completion" = "enabled";
