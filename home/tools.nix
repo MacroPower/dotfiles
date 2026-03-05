@@ -2,7 +2,13 @@
 
 {
   programs = {
-    bat.enable = true;
+    bat = {
+      enable = true;
+      config = {
+        style = "numbers,changes,header";
+        pager = "less -FR";
+      };
+    };
 
     eza = {
       enable = true;

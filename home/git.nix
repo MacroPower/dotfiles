@@ -34,6 +34,7 @@
     options = {
       navigate = true;
       light = false;
+      line-numbers = true;
     };
   };
 }
