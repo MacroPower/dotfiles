@@ -13,6 +13,9 @@ includes:
   vm:
     taskfile: ./taskfiles/vm
     dir: .
+  secrets:
+    taskfile: ./taskfiles/secrets
+    dir: .
 
 tasks:
   default:
