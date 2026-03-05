@@ -52,12 +52,12 @@ tasks:
         sh: git remote get-url origin
     cmds:
       - >-
-        doppler run -p dotfiles -c nix --
+        sops exec-env secrets/dotfiles.yaml '
         dagger call dev dev
-        --branch '{{.BRANCH}}'
-        --clone-url '{{.CLONE_URL}}'
+        --branch "{{.BRANCH}}"
+        --clone-url "{{.CLONE_URL}}"
         --repo-source .
         --git-config ~/.config/git
-        --tz '{{.TZ | default "America/New_York"}}'
-        --colorterm '{{.COLORTERM}}'
-        --kagi-api-key env://KAGI_API_KEY
+        --tz "{{.TZ | default "America/New_York"}}"
+        --colorterm "{{.COLORTERM}}"
+        --kagi-api-key env://KAGI_API_KEY'

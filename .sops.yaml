@@ -1,5 +1,5 @@
 keys:
-  - &primary age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  - &primary age1us5m895wfza00exg6d6up6zwradvv2lsj2u23ymx7azl2zhdmsgqadqnyh
 
 creation_rules:
   - path_regex: secrets/[^/]+\.yaml$

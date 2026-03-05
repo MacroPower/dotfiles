@@ -2,9 +2,10 @@ version: "3"
 
 vars:
   VM_NAME: '{{.VM_NAME | default "nixos-orbstack"}}'
+  VM_USER: '{{.VM_USER | default "jacobcolvin"}}'
   VM_FLAKE_DIR: /tmp/dotfiles
   AGE_KEY_FILE: ~/.config/sops/age/keys.txt
-  VM_AGE_KEY_DIR: /home/default/.config/sops/age
+  VM_AGE_KEY_DIR: /home/{{.VM_USER}}/.config/sops/age
 
 tasks:
   init-secrets:

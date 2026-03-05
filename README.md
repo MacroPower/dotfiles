@@ -10,7 +10,7 @@ git clone https://github.com/MacroPower/dotfiles && cd dotfiles
 home-manager switch --flake ".#$(whoami)@$(hostname -s)"
 
 gh auth login
-doppler login
+task secrets:init
 
 task switch
 ```
@@ -64,7 +64,7 @@ git clone https://github.com/MacroPower/dotfiles && cd dotfiles
 sudo nix run nix-darwin -- switch --flake ".#$SUDO_USER@$(hostname -s)"
 
 gh auth login
-doppler login
+task secrets:init
 
 task ssh:upload-key # optional
 
