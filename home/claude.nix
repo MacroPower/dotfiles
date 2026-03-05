@@ -178,7 +178,7 @@ in
           EXISTING=$(cat "$CLAUDE_JSON")
         else
           echo "Warning: ~/.claude.json is malformed, backing up" >&2
-          cp "$CLAUDE_JSON" "$CLAUDE_JSON.bak.$(date +%s)"
+          $DRY_RUN_CMD cp "$CLAUDE_JSON" "$CLAUDE_JSON.bak.$(date +%s)"
           EXISTING='{}'
         fi
       else
@@ -195,16 +195,20 @@ in
           '.projects["${config.dotfiles.homeDirectory}"].hasTrustDialogAccepted = true')
 
         # Authenticate gh CLI with scoped fine-grained PAT
-        if [ -n "''${GH_TOKEN:-}" ]; then
+        if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
           echo "''${GH_TOKEN}" | ${pkgs.gh}/bin/gh auth login --with-token
         fi
       ''}
 
       # Atomic write
-      TMPFILE=$(mktemp "$CLAUDE_JSON.tmp.XXXXXX")
-      echo "$UPDATED" > "$TMPFILE"
-      chmod 600 "$TMPFILE"
-      mv "$TMPFILE" "$CLAUDE_JSON"
+      if [ -z "$DRY_RUN_CMD" ]; then
+        TMPFILE=$(mktemp "$CLAUDE_JSON.tmp.XXXXXX")
+        echo "$UPDATED" > "$TMPFILE"
+        chmod 600 "$TMPFILE"
+        mv "$TMPFILE" "$CLAUDE_JSON"
+      else
+        echo "Would write merged MCP config to $CLAUDE_JSON"
+      fi
     '';
   };
 }
