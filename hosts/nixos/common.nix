@@ -60,6 +60,8 @@
     };
   };
 
+  security.sudo.keepTerminfo = true;
+
   security.sudo.extraRules = [
     {
       users = [ hostConfig.username ];
