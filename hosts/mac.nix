@@ -295,6 +295,12 @@
       protocol_vers_map=6
   '';
 
+  security.pam.services.sudo_local = {
+    touchIdAuth = true;
+    watchIdAuth = true;
+    reattach = true;
+  };
+
   users.users.${hostConfig.username} = {
     name = hostConfig.username;
     home = "/Users/${hostConfig.username}";
