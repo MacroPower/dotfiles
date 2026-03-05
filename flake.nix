@@ -96,85 +96,19 @@
           };
         };
 
-      applyHostDefaults =
-        hostConfig:
-        {
-          homeDirectory = "/home/${hostConfig.username}";
-          shell = {
-            extraShellInit = "";
-            extraInteractiveInit = "";
-            extraTideConfig = "";
-          };
-          extraHomePackages = [ ];
-          extraK8sPackages = [ ];
-          extraKrewPlugins = [ ];
-          extraXdgConfigFiles = { };
-          extraVscodeExtensions = _marketplace: [ ];
-          extraVscodeKubernetesSettings = { };
-          claude = { };
-        }
-        // hostConfig;
-
-      mkHomeManagerConfig = fullHostConfig: {
-        useGlobalPkgs = true;
-        useUserPackages = true;
-        backupFileExtension = "bak";
-        extraSpecialArgs = {
-          inherit krewfile;
-          hostConfig = fullHostConfig;
-        };
-        users.${fullHostConfig.username} = import ./home;
-      };
-
       mkDarwin =
-        hostConfig:
-        let
-          baseConfig = applyHostDefaults hostConfig;
-          fullHostConfig = baseConfig // {
-            homeDirectory = "/Users/${hostConfig.username}";
-            extraHomePackages = baseConfig.extraHomePackages ++ [
-              "terminal-notifier"
-              "gtk4"
-              "librsvg"
-              "libheif"
-              "libraw"
-              "dav1d"
-            ];
-            extraKrewPlugins = baseConfig.extraKrewPlugins ++ [
-              "sniff" # https://github.com/eldadru/ksniff
-              "access-matrix" # https://github.com/corneliusweig/rakkess
-              "cyclonus" # https://github.com/mattfenwick/kubectl-cyclonus
-            ];
-            shell = {
-              extraShellInit = "";
-              extraInteractiveInit = ''
-                # OrbStack integration
-                source ~/.orbstack/shell/init2.fish 2>/dev/null || :
-              '';
-              extraTideConfig = ''
-                set -g tide_left_prompt_items os $tide_left_prompt_items
-                set -g tide_os_icon \ue711
-              '';
-            };
-            extraXdgConfigFiles = {
-              "rectangle/RectangleConfig.json".source = ./configs/rectangle/RectangleConfig.json;
-              "linearmouse/linearmouse.json".source = ./configs/linearmouse/linearmouse.json;
-            };
-            extraVscodeKubernetesSettings = {
-              "vscode-kubernetes.helm-path.mac" = "/opt/homebrew/bin/helm";
-              "vscode-kubernetes.kubectl-path.mac" = "/opt/homebrew/bin/kubectl";
-              "vscode-kubernetes.minikube-path.mac" = "/opt/homebrew/bin/minikube";
-            };
-            sshIncludes = [
-              "~/.config/colima/ssh_config"
-              "~/.orbstack/ssh/config"
-            ];
-          };
-        in
+        {
+          username,
+          homebrew ? { },
+          homeModule,
+        }:
         nix-darwin.lib.darwinSystem {
           specialArgs = {
             inherit self;
-            hostConfig = fullHostConfig;
+            hostConfig = {
+              inherit username;
+              inherit homebrew;
+            };
           };
           modules = [
             ./hosts/mac.nix
@@ -184,28 +118,84 @@
             {
               nixpkgs.hostPlatform = "aarch64-darwin";
               nixpkgs.overlays = sharedOverlays;
-              home-manager = mkHomeManagerConfig fullHostConfig;
+              home-manager = {
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                backupFileExtension = "bak";
+                extraSpecialArgs = { inherit krewfile; };
+                users.${username} = {
+                  imports = [
+                    ./home
+                    homeModule
+                  ];
+                };
+              };
+            }
+            # Darwin-specific home-manager defaults
+            {
+              home-manager.users.${username} =
+                { pkgs, ... }:
+                {
+                  dotfiles = {
+                    inherit username;
+                    homeDirectory = "/Users/${username}";
+                    extraHomePackages = with pkgs; [
+                      terminal-notifier
+                      gtk4
+                      librsvg
+                      libheif
+                      libraw
+                      dav1d
+                    ];
+                    extraKrewPlugins = [
+                      "sniff" # https://github.com/eldadru/ksniff
+                      "access-matrix" # https://github.com/corneliusweig/rakkess
+                      "cyclonus" # https://github.com/mattfenwick/kubectl-cyclonus
+                    ];
+                    shell = {
+                      extraInteractiveInit = ''
+                        # OrbStack integration
+                        source ~/.orbstack/shell/init2.fish 2>/dev/null || :
+                      '';
+                      extraTideConfig = ''
+                        set -g tide_left_prompt_items os $tide_left_prompt_items
+                        set -g tide_os_icon \ue711
+                      '';
+                    };
+                    extraXdgConfigFiles = {
+                      "rectangle/RectangleConfig.json".source = ./configs/rectangle/RectangleConfig.json;
+                      "linearmouse/linearmouse.json".source = ./configs/linearmouse/linearmouse.json;
+                    };
+                    extraVscodeKubernetesSettings = {
+                      "vscode-kubernetes.helm-path.mac" = "/opt/homebrew/bin/helm";
+                      "vscode-kubernetes.kubectl-path.mac" = "/opt/homebrew/bin/kubectl";
+                      "vscode-kubernetes.minikube-path.mac" = "/opt/homebrew/bin/minikube";
+                    };
+                    sshIncludes = [
+                      "~/.config/colima/ssh_config"
+                      "~/.orbstack/ssh/config"
+                    ];
+                  };
+                };
             }
           ];
         };
 
       mkHome =
-        { system, hostConfig }:
-        let
-          fullHostConfig = applyHostDefaults hostConfig;
-        in
+        { system, homeModule }:
         home-manager.lib.homeManagerConfiguration {
           pkgs = import nixpkgs {
             inherit system;
             config.allowUnfree = true;
             overlays = sharedOverlays;
           };
-          inherit (mkHomeManagerConfig fullHostConfig) extraSpecialArgs;
+          extraSpecialArgs = { inherit krewfile; };
           modules = [
             stylix.homeModules.stylix
             sharedStylixConfig
             ./hosts/linux.nix
             ./home
+            homeModule
           ];
         };
 
@@ -213,24 +203,12 @@
         {
           system,
           hostModule,
-          hostConfig,
+          username,
+          homeModule,
         }:
-        let
-          nixosDefaults = {
-            shell = {
-              extraShellInit = "";
-              extraInteractiveInit = "";
-              extraTideConfig = ''
-                set -g tide_left_prompt_items os $tide_left_prompt_items
-                set -g tide_os_icon \ue843
-              '';
-            };
-          };
-          fullHostConfig = applyHostDefaults (nixosDefaults // hostConfig);
-        in
         nixpkgs.lib.nixosSystem {
           specialArgs = {
-            hostConfig = fullHostConfig;
+            hostConfig = { inherit username; };
           };
           modules = [
             hostModule
@@ -240,7 +218,31 @@
             {
               nixpkgs.hostPlatform = system;
               nixpkgs.overlays = sharedOverlays;
-              home-manager = mkHomeManagerConfig fullHostConfig;
+              home-manager = {
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                backupFileExtension = "bak";
+                extraSpecialArgs = { inherit krewfile; };
+                users.${username} = {
+                  imports = [
+                    ./home
+                    homeModule
+                  ];
+                };
+              };
+            }
+            # NixOS-specific home-manager defaults
+            {
+              home-manager.users.${username} = {
+                dotfiles = {
+                  inherit username;
+                  homeDirectory = "/home/${username}";
+                  shell.extraTideConfig = ''
+                    set -g tide_left_prompt_items os $tide_left_prompt_items
+                    set -g tide_os_icon \ue843
+                  '';
+                };
+              };
             }
           ];
         };
@@ -249,11 +251,6 @@
       darwinConfigurations = {
         "jacobcolvin@Jacobs-Mac-mini" = mkDarwin {
           username = "jacobcolvin";
-
-          git = {
-            userName = "Jacob Colvin";
-            userEmail = "jacobcolvin1@gmail.com";
-          };
 
           homebrew = {
             extraTaps = [ ];
@@ -269,21 +266,25 @@
             masApps = { };
           };
 
-          extraHomePackages = [ "talosctl" ];
-          extraK8sPackages = [ ];
-          extraVscodeExtensions =
-            marketplace: with marketplace; [
-              wakatime.vscode-wakatime
-            ];
+          homeModule =
+            { pkgs, ... }:
+            {
+              dotfiles = {
+                git = {
+                  userName = "Jacob Colvin";
+                  userEmail = "jacobcolvin1@gmail.com";
+                };
+                extraHomePackages = with pkgs; [ talosctl ];
+                extraVscodeExtensions =
+                  marketplace: with marketplace; [
+                    wakatime.vscode-wakatime
+                  ];
+              };
+            };
         };
 
         "jcolvin@Corporate-Mac" = mkDarwin {
           username = "jcolvin";
-
-          git = {
-            userName = "Jacob Colvin";
-            userEmail = "jcolvin@example.com";
-          };
 
           homebrew = {
             extraTaps = [
@@ -299,15 +300,24 @@
             masApps = { };
           };
 
-          extraHomePackages = [
-            "azure-cli"
-            "fluxcd"
-          ];
-          extraK8sPackages = [
-            "kubelogin"
-            "fluxcd"
-          ];
-          extraVscodeExtensions = _marketplace: [ ];
+          homeModule =
+            { pkgs, ... }:
+            {
+              dotfiles = {
+                git = {
+                  userName = "Jacob Colvin";
+                  userEmail = "jcolvin@example.com";
+                };
+                extraHomePackages = with pkgs; [
+                  azure-cli
+                  fluxcd
+                ];
+                extraK8sPackages = with pkgs; [
+                  kubelogin
+                  fluxcd
+                ];
+              };
+            };
         };
       };
 
@@ -315,14 +325,14 @@
         "nixos-orbstack" = mkNixOS {
           system = "aarch64-linux";
           hostModule = ./hosts/nixos/orbstack.nix;
-          hostConfig = {
-            username = "jacobcolvin";
-            git = {
-              userName = "Jacob Colvin";
-              userEmail = "jacobcolvin1@gmail.com";
-            };
-            claude = {
-              dangerouslySkipPermissions = true;
+          username = "jacobcolvin";
+          homeModule = {
+            dotfiles = {
+              git = {
+                userName = "Jacob Colvin";
+                userEmail = "jacobcolvin1@gmail.com";
+              };
+              claude.dangerouslySkipPermissions = true;
             };
           };
         };
@@ -330,9 +340,9 @@
         "nixos-truenas" = mkNixOS {
           system = "x86_64-linux";
           hostModule = ./hosts/nixos/truenas.nix;
-          hostConfig = {
-            username = "jacobcolvin";
-            git = {
+          username = "jacobcolvin";
+          homeModule = {
+            dotfiles.git = {
               userName = "Jacob Colvin";
               userEmail = "jacobcolvin1@gmail.com";
             };
@@ -343,16 +353,15 @@
       homeConfigurations = {
         "jacobcolvin@linux" = mkHome {
           system = "aarch64-linux";
-          hostConfig = {
-            username = "jacobcolvin";
-            git = {
-              userName = "Jacob Colvin";
-              userEmail = "jacobcolvin1@gmail.com";
-            };
-            shell = {
-              extraShellInit = "";
-              extraInteractiveInit = "";
-              extraTideConfig = ''
+          homeModule = {
+            dotfiles = {
+              username = "jacobcolvin";
+              homeDirectory = "/home/jacobcolvin";
+              git = {
+                userName = "Jacob Colvin";
+                userEmail = "jacobcolvin1@gmail.com";
+              };
+              shell.extraTideConfig = ''
                 set -g tide_left_prompt_items os $tide_left_prompt_items
                 set -g tide_os_icon \uebc6
               '';

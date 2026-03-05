@@ -1,7 +1,7 @@
 {
   pkgs,
   lib,
-  hostConfig,
+  config,
   ...
 }:
 
@@ -37,7 +37,7 @@ let
   # Per-host servers override/extend the base set.
   # Set a server to null to remove it on a specific host.
   allMcpServers = lib.filterAttrs (_: v: v != null) (
-    baseMcpServers // (hostConfig.claude.extraMcpServers or { })
+    baseMcpServers // config.dotfiles.claude.extraMcpServers
   );
 
   # Strip envVars metadata (not part of Claude's schema)
@@ -67,7 +67,7 @@ let
   ) envVarsList;
 
   # ── Dangerous-mode opt-in (per-host) ─────────────────────────
-  skipPerms = hostConfig.claude.dangerouslySkipPermissions or false;
+  skipPerms = config.dotfiles.claude.dangerouslySkipPermissions;
 
   # ── Settings ─────────────────────────────────────────────────
   baseSettings = {
@@ -119,7 +119,7 @@ let
     teammateMode = "auto";
   };
 
-  finalSettings = lib.recursiveUpdate baseSettings (hostConfig.claude.extraSettings or { });
+  finalSettings = lib.recursiveUpdate baseSettings config.dotfiles.claude.extraSettings;
 
   # Pretty-print settings.json at nix build time
   settingsFile =
@@ -194,7 +194,7 @@ in
       ${lib.optionalString skipPerms ''
         # Pre-trust home directory to skip workspace trust prompt
         UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq \
-          '.projects["${hostConfig.homeDirectory}"].hasTrustDialogAccepted = true')
+          '.projects["${config.dotfiles.homeDirectory}"].hasTrustDialogAccepted = true')
 
         # Authenticate gh CLI with scoped fine-grained PAT
         if [ -n "''${GH_TOKEN:-}" ]; then

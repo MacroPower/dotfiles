@@ -1,8 +1,8 @@
-{ pkgs, hostConfig, ... }:
+{ pkgs, config, ... }:
 
 {
-  home.username = hostConfig.username;
-  home.homeDirectory = hostConfig.homeDirectory;
+  home.username = config.dotfiles.username;
+  home.homeDirectory = config.dotfiles.homeDirectory;
 
   nix = {
     package = pkgs.nix;

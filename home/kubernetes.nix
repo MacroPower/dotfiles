@@ -1,7 +1,7 @@
 {
   pkgs,
+  config,
   krewfile,
-  hostConfig,
   ...
 }:
 
@@ -23,7 +23,7 @@
       krew
       stern
     ]
-    ++ (map (name: pkgs.${name}) hostConfig.extraK8sPackages);
+    ++ config.dotfiles.extraK8sPackages;
 
   programs = {
     krewfile = {
@@ -42,7 +42,7 @@
         "graph" # https://github.com/steveteuber/kubectl-graph
         "krew"
       ]
-      ++ hostConfig.extraKrewPlugins;
+      ++ config.dotfiles.extraKrewPlugins;
     };
 
     kubecolor = {

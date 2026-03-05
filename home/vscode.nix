@@ -1,4 +1,4 @@
-{ pkgs, hostConfig, ... }:
+{ pkgs, config, ... }:
 
 let
   marketplace = pkgs.vscode-marketplace;
@@ -35,7 +35,7 @@ in
           task.vscode-task
           zhuangtongfa.material-theme
         ]
-        ++ (hostConfig.extraVscodeExtensions marketplace);
+        ++ (config.dotfiles.extraVscodeExtensions marketplace);
 
       userSettings = {
         "$schema" = "vscode://schemas/settings/user";
@@ -65,7 +65,7 @@ in
         "vs-kubernetes" = {
           "vs-kubernetes.crd-code-completion" = "enabled";
         }
-        // hostConfig.extraVscodeKubernetesSettings;
+        // config.dotfiles.extraVscodeKubernetesSettings;
         "editor.rulers" = [
           80
           120

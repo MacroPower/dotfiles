@@ -1,12 +1,13 @@
 {
   pkgs,
   lib,
-  hostConfig,
+  config,
   ...
 }:
 
 {
   imports = [
+    ./options.nix
     ./stylix.nix
     ./fish.nix
     ./git.nix
@@ -21,7 +22,7 @@
     ssh = {
       enable = true;
       enableDefaultConfig = false;
-      includes = hostConfig.sshIncludes or [ ];
+      includes = config.dotfiles.sshIncludes;
       extraConfig = "SendEnv COLORTERM";
       matchBlocks."*".addKeysToAgent = "yes";
     };
@@ -190,7 +191,7 @@
     "kat/config.yaml".source = ../configs/kat/config.yaml;
     "ccstatusline/settings.json".source = ../configs/ccstatusline/settings.json;
   }
-  // hostConfig.extraXdgConfigFiles;
+  // config.dotfiles.extraXdgConfigFiles;
 
   home = {
     stateVersion = "25.05";
@@ -265,7 +266,7 @@
         tcl
 
       ]
-      ++ (map (name: pkgs.${name}) hostConfig.extraHomePackages);
+      ++ config.dotfiles.extraHomePackages;
 
     file."Taskfile.yaml".source = ../configs/task/Taskfile.yaml;
 

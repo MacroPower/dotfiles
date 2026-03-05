@@ -1,4 +1,4 @@
-{ hostConfig, ... }:
+{ config, ... }:
 
 {
   programs.git = {
@@ -6,8 +6,8 @@
 
     settings = {
       user = {
-        name = hostConfig.git.userName;
-        email = hostConfig.git.userEmail;
+        name = config.dotfiles.git.userName;
+        email = config.dotfiles.git.userEmail;
       };
       merge.conflictstyle = "diff3";
       diff.colorMoved = "default";

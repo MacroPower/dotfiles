@@ -2,7 +2,6 @@
   pkgs,
   lib,
   config,
-  hostConfig,
   ...
 }:
 
@@ -111,14 +110,14 @@ in
     set -g fish_color_end ${colors.base0E}      # purple
 
     # Per-host overrides
-    ${hostConfig.shell.extraTideConfig or ""}
+    ${config.dotfiles.shell.extraTideConfig}
   '';
 
   programs.fish = {
     enable = true;
 
     shellInit = ''
-      ${hostConfig.shell.extraShellInit}
+      ${config.dotfiles.shell.extraShellInit}
       alias k=kubectl
       alias wk="watch -n 1 kubectl"
       alias kx=kubectx
@@ -126,7 +125,7 @@ in
     '';
 
     interactiveShellInit = ''
-      ${hostConfig.shell.extraInteractiveInit}
+      ${config.dotfiles.shell.extraInteractiveInit}
       set --global fish_key_bindings fish_default_key_bindings
     '';
 
