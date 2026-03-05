@@ -196,6 +196,7 @@
 
   home = {
     stateVersion = "25.05";
+    preferXdgDirectories = true;
 
     sessionPath = [
       "$HOME/go/bin"
