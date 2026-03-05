@@ -23,16 +23,7 @@ tasks:
 
   switch:
     desc: Apply nix config for the current host
-    vars:
-      SECRETS_FILE: /tmp/.nix-activation-secrets
     cmds:
-      - cmd: >-
-          doppler secrets download -p dotfiles -c nix --format env --no-file
-          > {{.SECRETS_FILE}} 2>/dev/null
-          && chmod 600 {{.SECRETS_FILE}}
-          && chown {{.USER}} {{.SECRETS_FILE}}
-          || true
-      - defer: "rm -f {{.SECRETS_FILE}}"
       - cmd: 'sudo nix run nix-darwin -- switch --flake ".#{{.USER}}@{{.HOST}}"'
         platforms: [darwin]
       - cmd: 'sudo nixos-rebuild switch --flake ".#{{.HOST}}"'
