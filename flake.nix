@@ -172,7 +172,6 @@
           };
         in
         nix-darwin.lib.darwinSystem {
-          system = "aarch64-darwin";
           specialArgs = {
             inherit self;
             hostConfig = fullHostConfig;
@@ -183,6 +182,7 @@
             stylix.darwinModules.stylix
             sharedStylixConfig
             {
+              nixpkgs.hostPlatform = "aarch64-darwin";
               nixpkgs.overlays = sharedOverlays;
               home-manager = mkHomeManagerConfig fullHostConfig;
             }
@@ -229,7 +229,6 @@
           fullHostConfig = applyHostDefaults (nixosDefaults // hostConfig);
         in
         nixpkgs.lib.nixosSystem {
-          inherit system;
           specialArgs = {
             hostConfig = fullHostConfig;
           };
@@ -239,6 +238,7 @@
             stylix.nixosModules.stylix
             sharedStylixConfig
             {
+              nixpkgs.hostPlatform = system;
               nixpkgs.overlays = sharedOverlays;
               home-manager = mkHomeManagerConfig fullHostConfig;
             }
