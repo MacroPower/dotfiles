@@ -58,6 +58,11 @@
     nix-index.enable = true;
     nix-index-database.comma.enable = true;
 
+    nix-your-shell = {
+      enable = true;
+      enableFishIntegration = true;
+    };
+
     jq.enable = true;
     trippy.enable = true;
 
