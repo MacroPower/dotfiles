@@ -6,25 +6,9 @@
 }:
 
 {
-  nix.settings.experimental-features = [
-    "nix-command"
-    "flakes"
-  ];
+  imports = [ ../shared.nix ];
 
-  nix.optimise.automatic = true;
-
-  nixpkgs.flake.setFlakeRegistry = true;
-  nixpkgs.flake.setNixPath = true;
-
-  nix.gc = {
-    automatic = true;
-    options = "--delete-older-than 30d";
-  };
-
-  nixpkgs.config.allowUnfree = true;
   environment.enableAllTerminfo = true;
-
-  programs.fish.enable = true;
 
   programs.nh = {
     enable = true;
