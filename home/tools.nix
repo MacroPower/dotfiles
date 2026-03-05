@@ -85,6 +85,7 @@
     nvd
     nix-output-monitor
     nh
+    nurl
     sops
     age
   ];
