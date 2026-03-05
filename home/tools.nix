@@ -80,6 +80,7 @@
     dagger
     nvd
     nix-output-monitor
+    nh
     sops
     age
   ];

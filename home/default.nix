@@ -207,6 +207,7 @@
     sessionVariables = {
       EDITOR = "vim";
       XDG_CONFIG_HOME = "$HOME/.config";
+      FLAKE = "${config.home.homeDirectory}/repos/dotfiles";
       devbox_no_prompt = "true";
     };
 

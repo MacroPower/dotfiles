@@ -23,6 +23,11 @@
 
   programs.fish.enable = true;
 
+  programs.nh = {
+    enable = true;
+    flake = "/home/${hostConfig.username}/repos/dotfiles";
+  };
+
   programs.nix-ld = {
     enable = true;
     libraries = with pkgs; [
