@@ -67,6 +67,11 @@
       enableFishIntegration = true;
     };
 
+    carapace = {
+      enable = true;
+      enableFishIntegration = true;
+    };
+
     jq.enable = true;
     trippy.enable = true;
 
