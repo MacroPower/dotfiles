@@ -37,18 +37,6 @@
         window-height = 40;
         window-width = 80;
 
-        foreground = "#abb2bf";
-        background = "#23272e";
-
-        cursor-color = "#d0d0d0";
-        cursor-text = "#151515";
-        selection-background = "#979eab";
-        selection-foreground = "#282c34";
-
-        window-titlebar-background = "#282c34";
-        window-titlebar-foreground = "#979eab";
-        split-divider-color = "#393e48";
-
         window-padding-x = 8;
         window-padding-y = "8,0";
 
