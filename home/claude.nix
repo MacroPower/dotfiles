@@ -161,15 +161,13 @@ in
     };
 
     # Activation: merge mcpServers into mutable ~/.claude.json
-    activation.syncClaudeMcpServers = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    activation.syncClaudeMcpServers = lib.hm.dag.entryAfter [ "writeBoundary" "sops-nix" ] ''
       CLAUDE_JSON="$HOME/.claude.json"
       SERVERS='${mcpServersJson}'
 
-      # Source secrets from file when available (nix-darwin runs activation
-      # via launchctl/sudo which strips env vars set by doppler).
-      if [ -f /tmp/.nix-activation-secrets ]; then
-        . /tmp/.nix-activation-secrets
-      fi
+      # Read secrets from sops-decrypted files
+      KAGI_API_KEY=$(cat ${config.sops.secrets.kagi_api_key.path} 2>/dev/null || true)
+      GH_TOKEN=$(cat ${config.sops.secrets.gh_token.path} 2>/dev/null || true)
 
       # Inject env var values into MCP server config
       ${envVarInjections}
