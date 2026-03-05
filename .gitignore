@@ -10,3 +10,5 @@ result
 .config/auth0/
 .config/colima/
 .chief/
+secrets/.doppler-tmp.json
+secrets/*.tmp
