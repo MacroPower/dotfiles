@@ -85,6 +85,12 @@
       enableFishIntegration = true;
     };
 
+    atuin = {
+      enable = true;
+      enableFishIntegration = true;
+      flags = [ "--disable-up-arrow" ];
+    };
+
     jq.enable = true;
     trippy.enable = true;
 
