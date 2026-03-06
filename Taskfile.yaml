@@ -32,12 +32,12 @@ tasks:
   _switch-nh:
     internal: true
     cmds:
-      - cmd: 'nh darwin switch .'
+      - cmd: 'nh darwin switch . -H "{{.USER}}@{{.HOST}}"'
         platforms: [darwin]
-      - cmd: 'nh os switch .'
+      - cmd: 'nh os switch . -H "{{.HOST}}"'
         platforms: [linux]
         if: "[ -f /etc/NIXOS ]"
-      - cmd: 'nh home switch .'
+      - cmd: 'nh home switch . -H "{{.USER}}@{{.HOST}}"'
         platforms: [linux]
         if: "[ ! -f /etc/NIXOS ]"
 
