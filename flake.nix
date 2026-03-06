@@ -280,15 +280,8 @@
           username = "jcolvin";
 
           homebrew = {
-            extraTaps = [
-              "azure/kubelogin"
-              "fluxcd/tap"
-            ];
-            extraBrews = [
-              "azure-cli"
-              "azure/kubelogin/kubelogin"
-              "fluxcd/tap/flux"
-            ];
+            extraTaps = [ ];
+            extraBrews = [ ];
             extraCasks = [ ];
             masApps = { };
           };
