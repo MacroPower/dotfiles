@@ -117,5 +117,6 @@
     hyperfine
     lazydocker
     sd
+    procs
   ];
 }
