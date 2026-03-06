@@ -21,6 +21,10 @@ if !isdirectory($HOME . "/.vim/undodir")
   call mkdir($HOME . "/.vim/undodir", "p", 0700)
 endif
 
+" Leader key
+let mapleader = "\<Space>"
+set timeoutlen=500
+
 " fzf.vim keybindings
 nnoremap <C-p> :Files<CR>
 nnoremap <leader>f :Rg<CR>
@@ -93,3 +97,11 @@ hi Normal guibg=#23272e ctermbg=NONE
 " Airline
 let g:airline_theme='onedark'
 let g:airline_powerline_fonts = 1
+
+" vim-which-key
+let g:which_key_map = {}
+let g:which_key_map.f = 'ripgrep search'
+let g:which_key_map.b = 'buffers'
+call which_key#register('<Space>', "g:which_key_map")
+nnoremap <silent> <leader> :<c-u>WhichKey '<Space>'<CR>
+vnoremap <silent> <leader> :<c-u>WhichKeyVisual '<Space>'<CR>

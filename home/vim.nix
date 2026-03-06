@@ -33,6 +33,9 @@
       vim-commentary
       vim-repeat
 
+      # Learning
+      vim-which-key
+
       # Language support
       vim-polyglot
     ];
