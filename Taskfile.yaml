@@ -24,12 +24,32 @@ tasks:
   switch:
     desc: Apply nix config for the current host
     cmds:
+      - task: _switch-nh
+        if: 'command -v nh &>/dev/null'
+      - task: _switch-direct
+        if: '! command -v nh &>/dev/null'
+
+  _switch-nh:
+    internal: true
+    cmds:
       - cmd: 'nh darwin switch .'
         platforms: [darwin]
       - cmd: 'nh os switch .'
         platforms: [linux]
         if: "[ -f /etc/NIXOS ]"
       - cmd: 'nh home switch .'
+        platforms: [linux]
+        if: "[ ! -f /etc/NIXOS ]"
+
+  _switch-direct:
+    internal: true
+    cmds:
+      - cmd: 'sudo darwin-rebuild switch --flake ".#{{.USER}}@{{.HOST}}"'
+        platforms: [darwin]
+      - cmd: 'sudo nixos-rebuild switch --flake ".#{{.HOST}}"'
+        platforms: [linux]
+        if: "[ -f /etc/NIXOS ]"
+      - cmd: 'home-manager switch --flake ".#{{.USER}}@{{.HOST}}"'
         platforms: [linux]
         if: "[ ! -f /etc/NIXOS ]"
 
