@@ -119,5 +119,6 @@
     sd
     procs
     xh
+    doggo
   ];
 }
