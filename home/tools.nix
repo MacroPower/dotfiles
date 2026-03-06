@@ -123,5 +123,6 @@
     dive
     tokei
     difftastic
+    gping
   ];
 }
