@@ -130,6 +130,13 @@ in
       wk = "watch -n 1 kubectl";
       kx = "kubectx";
       kn = "kubens";
+      dig = "doggo";
+      ping = "gping";
+      lzd = "lazydocker";
+      hf = "hyperfine";
+      curl = "xh";
+      ps = "procs";
+      wc = "tokei";
     };
 
     shellAliases = {
