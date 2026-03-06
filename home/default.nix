@@ -30,7 +30,7 @@
 
     ghostty = {
       enable = true;
-      package = null; # installed via Homebrew cask on macOS
+      package = if pkgs.stdenv.isDarwin then pkgs.ghostty-bin else pkgs.ghostty;
       enableFishIntegration = true;
       systemd.enable = false;
       settings = {
