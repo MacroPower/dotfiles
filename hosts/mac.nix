@@ -47,6 +47,7 @@
       "obsidian"
       "vlc"
       "fuse-t"
+      "ghostty"
       "zed"
       "monodraw"
       "db-browser-for-sqlite"
