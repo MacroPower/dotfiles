@@ -80,6 +80,11 @@
 
     fd.enable = true;
 
+    yazi = {
+      enable = true;
+      enableFishIntegration = true;
+    };
+
     jq.enable = true;
     trippy.enable = true;
 
