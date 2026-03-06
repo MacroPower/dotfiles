@@ -21,7 +21,6 @@
       "jakehilborn/jakehilborn"
       "macos-fuse-t/cask"
       "photo-cli/photo-cli"
-      "kcl-lang/tap"
       "ymtdzzz/tap"
       "macropower/tap"
       "robusta-dev/krr"
@@ -34,8 +33,6 @@
       "photo-cli"
 
       "ymtdzzz/tap/otel-tui"
-      "kcl-lang/tap/kcl"
-      "kcl-lang/tap/kcl-lsp"
       "robusta-dev/krr/krr"
       "diskonaut"
     ]
