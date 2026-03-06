@@ -78,8 +78,6 @@
       enableFishIntegration = true;
     };
 
-    vivid.enable = true;
-
     jq.enable = true;
     trippy.enable = true;
 
