@@ -118,5 +118,6 @@
     lazydocker
     sd
     procs
+    xh
   ];
 }
