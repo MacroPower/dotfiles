@@ -137,6 +137,7 @@ in
       curl = "xh";
       ps = "procs";
       wc = "tokei";
+      man = "tldr";
     };
 
     shellAliases = {
