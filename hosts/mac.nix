@@ -32,7 +32,6 @@
       "photo-cli"
 
       "ymtdzzz/tap/otel-tui"
-      "diskonaut"
     ]
     ++ hostConfig.homebrew.extraBrews;
 

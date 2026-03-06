@@ -135,6 +135,7 @@ in
     shellAliases = {
       cat = "bat";
       cd = "z";
+      du = "dust";
       top = "btm";
       watch = "viddy";
       w = "viddy";

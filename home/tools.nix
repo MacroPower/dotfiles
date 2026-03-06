@@ -99,5 +99,6 @@
     nurl
     sops
     age
+    dust
   ];
 }
