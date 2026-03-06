@@ -24,12 +24,12 @@ tasks:
   switch:
     desc: Apply nix config for the current host
     cmds:
-      - cmd: 'nh darwin switch'
+      - cmd: 'nh darwin switch .'
         platforms: [darwin]
-      - cmd: 'nh os switch'
+      - cmd: 'nh os switch .'
         platforms: [linux]
         if: "[ -f /etc/NIXOS ]"
-      - cmd: 'nh home switch'
+      - cmd: 'nh home switch .'
         platforms: [linux]
         if: "[ ! -f /etc/NIXOS ]"
 
