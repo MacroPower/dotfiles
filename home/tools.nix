@@ -120,5 +120,6 @@
     procs
     xh
     doggo
+    dive
   ];
 }
