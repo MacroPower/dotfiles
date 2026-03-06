@@ -116,5 +116,6 @@
     tealdeer
     hyperfine
     lazydocker
+    sd
   ];
 }
