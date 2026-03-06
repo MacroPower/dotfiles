@@ -122,5 +122,6 @@
     doggo
     dive
     tokei
+    difftastic
   ];
 }
