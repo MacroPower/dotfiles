@@ -22,6 +22,7 @@
       go-task
       krew
       stern
+      krr
     ]
     ++ config.dotfiles.extraK8sPackages;
 

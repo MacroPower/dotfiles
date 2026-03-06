@@ -23,7 +23,6 @@
       "photo-cli/photo-cli"
       "ymtdzzz/tap"
       "macropower/tap"
-      "robusta-dev/krr"
       "jacobcolvin/tap"
     ]
     ++ hostConfig.homebrew.extraTaps;
@@ -33,7 +32,6 @@
       "photo-cli"
 
       "ymtdzzz/tap/otel-tui"
-      "robusta-dev/krr/krr"
       "diskonaut"
     ]
     ++ hostConfig.homebrew.extraBrews;
