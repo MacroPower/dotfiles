@@ -99,6 +99,11 @@
     jq.enable = true;
     trippy.enable = true;
 
+    tealdeer = {
+      enable = true;
+      settings.updates.auto_update = true;
+    };
+
     gitui = {
       enable = true;
       theme = builtins.readFile ../configs/gitui/theme.ron;
@@ -118,7 +123,6 @@
     sops
     age
     dust
-    tealdeer
     hyperfine
     lazydocker
     sd
