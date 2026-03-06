@@ -113,5 +113,6 @@
     sops
     age
     dust
+    tealdeer
   ];
 }
