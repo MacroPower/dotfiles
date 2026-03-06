@@ -102,7 +102,7 @@
 
     zed-editor = {
       enable = true;
-      package = null; # installed via Homebrew cask on macOS
+      package = pkgs.zed-editor;
 
       userSettings = {
         agent = {
