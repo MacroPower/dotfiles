@@ -115,5 +115,6 @@
     dust
     tealdeer
     hyperfine
+    lazydocker
   ];
 }
