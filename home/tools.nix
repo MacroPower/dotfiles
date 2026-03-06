@@ -114,5 +114,6 @@
     age
     dust
     tealdeer
+    hyperfine
   ];
 }
