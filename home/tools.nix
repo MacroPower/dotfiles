@@ -121,5 +121,6 @@
     xh
     doggo
     dive
+    tokei
   ];
 }
