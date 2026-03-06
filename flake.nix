@@ -144,7 +144,6 @@
                       '';
                     };
                     extraXdgConfigFiles = {
-                      "rectangle/RectangleConfig.json".source = ./configs/rectangle/RectangleConfig.json;
                       "linearmouse/linearmouse.json".source = ./configs/linearmouse/linearmouse.json;
                     };
                     extraVscodeKubernetesSettings = {

@@ -45,7 +45,6 @@
       "keka"
       "linearmouse"
       "obsidian"
-      "rectangle"
       "vlc"
       "fuse-t"
       "zed"
