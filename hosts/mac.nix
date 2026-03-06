@@ -54,7 +54,6 @@
       "fuse-t"
       "ghostty"
       "zed"
-      "visual-studio-code"
       "monodraw"
       "db-browser-for-sqlite"
       "fork"
