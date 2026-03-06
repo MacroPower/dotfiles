@@ -98,10 +98,68 @@ hi Normal guibg=#23272e ctermbg=NONE
 let g:airline_theme='onedark'
 let g:airline_powerline_fonts = 1
 
+" Cheatsheet
+function! ShowCheatsheet()
+  silent! bdelete vim-cheatsheet
+  new
+  file vim-cheatsheet
+  setlocal buftype=nofile bufhidden=wipe noswapfile nonumber norelativenumber
+  call setline(1, [
+    \ '  Vim Quick Reference — press q to close',
+    \ '',
+    \ '  NAVIGATION',
+    \ '  gg / G          top / bottom of file',
+    \ '  :{n}            jump to line n',
+    \ '  {n}G            jump to line n',
+    \ '  H / M / L       top / middle / bottom of screen',
+    \ '  Ctrl-d / Ctrl-u half-page down / up',
+    \ '  Ctrl-f / Ctrl-b full page down / up',
+    \ '  %               jump to matching bracket',
+    \ '  { / }           prev / next paragraph',
+    \ '  [[ / ]]         prev / next section',
+    \ '',
+    \ '  WORD MOTIONS',
+    \ '  w / W           next word / WORD',
+    \ '  b / B           prev word / WORD',
+    \ '  e / E           end of word / WORD',
+    \ '  0 / ^/ $        start / first char / end of line',
+    \ '  f{c} / F{c}     find char forward / backward',
+    \ '  t{c} / T{c}     till char forward / backward',
+    \ '  ; / ,           repeat / reverse last f/t',
+    \ '',
+    \ '  SEARCH',
+    \ '  / / ?           search forward / backward',
+    \ '  n / N           next / prev match',
+    \ '  * / #           search word under cursor fwd / back',
+    \ '',
+    \ '  EDITING',
+    \ '  ciw / caw       change inner / around word',
+    \ '  ci" / ci(       change inside quotes / parens',
+    \ '  di" / da(       delete inside quotes / around parens',
+    \ '  yiw / yy        yank word / line',
+    \ '  p / P           paste after / before',
+    \ '  . (dot)         repeat last change',
+    \ '  u / Ctrl-r      undo / redo',
+    \ '',
+    \ '  VISUAL MODE',
+    \ '  v / V / Ctrl-v  char / line / block select',
+    \ '  gv              reselect last visual',
+    \ '',
+    \ '  SURROUND (vim-surround)',
+    \ '  cs"''           change " to ''',
+    \ '  ds"             delete surrounding "',
+    \ '  ysiw"           surround word with "',
+    \ ])
+  nnoremap <buffer> q :bdelete<CR>
+  setlocal nomodifiable
+endfunction
+nnoremap <leader>? :call ShowCheatsheet()<CR>
+
 " vim-which-key
 let g:which_key_map = {}
 let g:which_key_map.f = 'ripgrep search'
 let g:which_key_map.b = 'buffers'
+let g:which_key_map['?'] = 'cheatsheet'
 call which_key#register('<Space>', "g:which_key_map")
 nnoremap <silent> <leader> :<c-u>WhichKey '<Space>'<CR>
 vnoremap <silent> <leader> :<c-u>WhichKeyVisual '<Space>'<CR>
