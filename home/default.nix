@@ -20,6 +20,9 @@
   ];
 
   programs = {
+    # Disable expensive man-cache rebuild triggered by fish enabling generateCaches
+    man.generateCaches = false;
+
     ssh = {
       enable = true;
       enableDefaultConfig = false;
