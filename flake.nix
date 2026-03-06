@@ -296,7 +296,6 @@
                 };
                 extraHomePackages = with pkgs; [
                   azure-cli
-                  fluxcd
                 ];
                 extraK8sPackages = with pkgs; [
                   kubelogin
