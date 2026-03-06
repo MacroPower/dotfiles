@@ -241,6 +241,7 @@
 
         # Languages & runtimes
         nodejs
+        dotnet-sdk
 
         # Dev tools
         nixd

@@ -58,7 +58,6 @@
       "db-browser-for-sqlite"
       "fork"
       "wireshark"
-      "dotnet-sdk"
       "kat"
     ]
     ++ hostConfig.homebrew.extraCasks;
