@@ -7,6 +7,9 @@ in
   programs.vscode = {
     enable = true;
     mutableExtensionsDir = false;
+    argvSettings = {
+      enable-crash-reporter = false;
+    };
 
     profiles.default = {
       extensions =
