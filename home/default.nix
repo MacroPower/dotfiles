@@ -247,7 +247,6 @@
         # Dev tools
         nixd
         nil
-        claude-code
         chief
 
         # Python build dependencies

@@ -89,11 +89,6 @@ in
     };
 
     claude = {
-      extraMcpServers = mkOption {
-        type = types.attrsOf (types.nullOr types.attrs);
-        default = { };
-        description = "Additional MCP servers for Claude Code (set to null to remove a base server).";
-      };
       dangerouslySkipPermissions = mkOption {
         type = types.bool;
         default = false;
