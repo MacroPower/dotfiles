@@ -173,6 +173,7 @@
       screencapture = {
         location = "~/Documents/Screenshots";
         type = "png";
+        save-selections = true;
       };
 
       # Require password immediately after screensaver activates
