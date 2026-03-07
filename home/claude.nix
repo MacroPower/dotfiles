@@ -46,6 +46,7 @@ in
 
     claude-code = {
       enable = true;
+      package = pkgs.llm-agents.claude-code;
       enableMcpIntegration = true;
 
       settings = lib.recursiveUpdate {
@@ -103,7 +104,7 @@ in
         };
         statusLine = {
           type = "command";
-          command = "npx -y ccstatusline@latest";
+          command = "${pkgs.llm-agents.ccstatusline}/bin/ccstatusline";
           padding = 0;
         };
         enabledPlugins = {
@@ -141,6 +142,10 @@ in
       claude = "command claude --dangerously-skip-permissions";
     };
   };
+
+  home.packages = [
+    pkgs.llm-agents.ccusage
+  ];
 
   home.file.".claude/CLAUDE.md".text = ''
     # Global Instructions

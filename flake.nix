@@ -20,8 +20,8 @@
       url = "github:brumhard/krewfile";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    claude-code = {
-      url = "github:sadjow/claude-code-nix";
+    llm-agents = {
+      url = "github:numtide/llm-agents.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     dagger = {
@@ -58,7 +58,7 @@
       home-manager,
       nix-vscode-extensions,
       krewfile,
-      claude-code,
+      llm-agents,
       dagger,
       stylix,
       nix-index-database,
@@ -95,7 +95,7 @@
           sharedOverlays = [
             localOverlay
             nix-vscode-extensions.overlays.default
-            claude-code.overlays.default
+            llm-agents.overlays.default
             dagger.overlays.default
           ];
 
