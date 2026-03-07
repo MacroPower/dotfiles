@@ -43,6 +43,10 @@
     nix-homebrew = {
       url = "github:zhaofengli/nix-homebrew";
     };
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -60,20 +64,27 @@
       nix-index-database,
       sops-nix,
       nix-homebrew,
+      treefmt-nix,
       ...
     }:
     flake-parts.lib.mkFlake { inherit inputs; } {
+      imports = [
+        treefmt-nix.flakeModule
+      ];
+
       systems = [
         "aarch64-darwin"
         "aarch64-linux"
         "x86_64-linux"
       ];
 
-      perSystem =
-        { pkgs, ... }:
-        {
-          formatter = pkgs.nixfmt;
+      perSystem = _: {
+        treefmt.programs = {
+          nixfmt.enable = true;
+          shfmt.enable = true;
+          prettier.enable = true;
         };
+      };
 
       flake =
         let
