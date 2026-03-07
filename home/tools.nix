@@ -88,6 +88,7 @@
     trippy.enable = true;
     lazydocker.enable = true;
     difftastic.enable = true;
+    docker-cli.enable = true;
 
     nh = {
       enable = true;
