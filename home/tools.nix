@@ -83,6 +83,7 @@
 
     jq.enable = true;
     trippy.enable = true;
+    lazydocker.enable = true;
 
     nh = {
       enable = true;
@@ -114,7 +115,6 @@
     age
     dust
     hyperfine
-    lazydocker
     sd
     procs
     xh
