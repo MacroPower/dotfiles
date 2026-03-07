@@ -70,6 +70,27 @@
 
       sharedStylixConfig = import ./hosts/stylix.nix;
 
+      hmSharedModules = [
+        sops-nix.homeManagerModules.sops
+        nix-index-database.homeModules.nix-index
+        krewfile.homeManagerModules.krewfile
+      ];
+
+      mkHomeManagerBlock =
+        { username, homeModule }:
+        {
+          useGlobalPkgs = true;
+          useUserPackages = true;
+          backupFileExtension = "bak";
+          sharedModules = hmSharedModules;
+          users.${username} = {
+            imports = [
+              ./home
+              homeModule
+            ];
+          };
+        };
+
       mkDarwin =
         {
           username,
@@ -92,22 +113,7 @@
             {
               nixpkgs.hostPlatform = "aarch64-darwin";
               nixpkgs.overlays = sharedOverlays;
-              home-manager = {
-                useGlobalPkgs = true;
-                useUserPackages = true;
-                backupFileExtension = "bak";
-                sharedModules = [
-                  sops-nix.homeManagerModules.sops
-                  nix-index-database.homeModules.nix-index
-                  krewfile.homeManagerModules.krewfile
-                ];
-                users.${username} = {
-                  imports = [
-                    ./home
-                    homeModule
-                  ];
-                };
-              };
+              home-manager = mkHomeManagerBlock { inherit username homeModule; };
             }
             # Darwin-specific home-manager defaults
             {
@@ -166,10 +172,7 @@
             config.allowUnfree = true;
             overlays = sharedOverlays;
           };
-          modules = [
-            sops-nix.homeManagerModules.sops
-            nix-index-database.homeModules.nix-index
-            krewfile.homeManagerModules.krewfile
+          modules = hmSharedModules ++ [
             stylix.homeModules.stylix
             sharedStylixConfig
             ./hosts/linux.nix
@@ -195,22 +198,7 @@
             {
               nixpkgs.hostPlatform = system;
               nixpkgs.overlays = sharedOverlays;
-              home-manager = {
-                useGlobalPkgs = true;
-                useUserPackages = true;
-                backupFileExtension = "bak";
-                sharedModules = [
-                  sops-nix.homeManagerModules.sops
-                  nix-index-database.homeModules.nix-index
-                  krewfile.homeManagerModules.krewfile
-                ];
-                users.${username} = {
-                  imports = [
-                    ./home
-                    homeModule
-                  ];
-                };
-              };
+              home-manager = mkHomeManagerBlock { inherit username homeModule; };
             }
             # NixOS-specific home-manager defaults
             {
