@@ -188,7 +188,7 @@
   // config.dotfiles.extraXdgConfigFiles;
 
   home = {
-    stateVersion = "25.05";
+    stateVersion = "26.05";
     preferXdgDirectories = true;
 
     sessionPath = [
