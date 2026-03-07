@@ -12,7 +12,6 @@
 
     eza = {
       enable = true;
-      enableFishIntegration = true;
       icons = "auto";
       colors = "auto";
       git = true;
@@ -23,15 +22,9 @@
       ];
     };
 
-    fzf = {
-      enable = true;
-      enableFishIntegration = true;
-    };
+    fzf.enable = true;
 
-    zoxide = {
-      enable = true;
-      enableFishIntegration = true;
-    };
+    zoxide.enable = true;
 
     direnv = {
       enable = true;
@@ -72,27 +65,19 @@
     nix-index.enable = true;
     nix-index-database.comma.enable = true;
 
-    nix-your-shell = {
-      enable = true;
-      enableFishIntegration = true;
-    };
+    nix-your-shell.enable = true;
 
-    carapace = {
-      enable = true;
-      enableFishIntegration = true;
-    };
+    carapace.enable = true;
 
     fd.enable = true;
 
     yazi = {
       enable = true;
-      enableFishIntegration = true;
       shellWrapperName = "y";
     };
 
     atuin = {
       enable = true;
-      enableFishIntegration = true;
       flags = [ "--disable-up-arrow" ];
     };
 
