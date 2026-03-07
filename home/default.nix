@@ -34,7 +34,6 @@
     ghostty = {
       enable = true;
       package = null; # installed via Homebrew cask on macOS
-      enableFishIntegration = true;
       systemd.enable = false;
       settings = {
         window-height = 40;
