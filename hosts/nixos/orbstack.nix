@@ -55,6 +55,20 @@
       "f /opt/orbstack-guest/etc/profile-late 0644 root root -"
     ];
 
+    # Mount empty tmpfs over OrbStack guest binaries for isolation
+    services.mask-guest-bins = {
+      description = "Mount empty tmpfs over OrbStack guest binaries for isolation";
+      wantedBy = [ "multi-user.target" ];
+      before = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+      script = ''
+        ${pkgs.util-linux}/bin/mount -t tmpfs -o ro,noexec tmpfs /opt/orbstack-guest/bin
+      '';
+    };
+
     # Unmount OrbStack host filesystem mounts for isolation
     services.unmount-host-mounts = {
       description = "Unmount OrbStack host filesystem mounts for isolation";
