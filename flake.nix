@@ -39,6 +39,9 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nix-homebrew = {
+      url = "github:zhaofengli/nix-homebrew";
+    };
   };
 
   outputs =
@@ -54,6 +57,7 @@
       stylix,
       nix-index-database,
       sops-nix,
+      nix-homebrew,
       ...
     }:
     let
@@ -106,6 +110,15 @@
                 inherit homebrew;
               };
               system.configurationRevision = self.rev or self.dirtyRev or null;
+            }
+            nix-homebrew.darwinModules.nix-homebrew
+            {
+              nix-homebrew = {
+                enable = true;
+                enableRosetta = true;
+                autoMigrate = true;
+                user = username;
+              };
             }
             home-manager.darwinModules.home-manager
             stylix.darwinModules.stylix
