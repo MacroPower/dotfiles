@@ -45,3 +45,8 @@ tasks:
     desc: Apply statix and deadnix fixes
     cmds:
       - dagger call nix lint-fix -y
+
+  pkg:update:
+    desc: Update custom package derivations in pkgs/
+    cmds:
+      - bash pkgs/chief-update.sh
