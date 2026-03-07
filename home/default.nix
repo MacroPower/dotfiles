@@ -33,7 +33,8 @@
 
     ghostty = {
       enable = true;
-      package = null; # installed via Homebrew cask on macOS
+      installBatSyntax = true;
+      installVimSyntax = true;
       systemd.enable = false;
       settings = {
         window-height = 40;
