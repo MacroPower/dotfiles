@@ -175,6 +175,8 @@
     };
   };
 
+  xdg.enable = true;
+
   xdg.configFile = {
     "viddy.toml".source = ../configs/viddy.toml;
     "dlv/config.yml".source = ../configs/dlv/config.yml;
@@ -197,7 +199,6 @@
 
     sessionVariables = {
       EDITOR = "vim";
-      XDG_CONFIG_HOME = "$HOME/.config";
       devbox_no_prompt = "true";
     };
 
