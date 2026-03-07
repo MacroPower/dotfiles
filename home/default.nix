@@ -93,6 +93,7 @@
     npm = {
       enable = true;
       package = null; # nodejs is already in home.packages
+      settings.prefix = "\${HOME}/.npm";
     };
 
     uv = {
