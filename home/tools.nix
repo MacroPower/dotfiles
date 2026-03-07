@@ -35,7 +35,14 @@
       };
     };
 
-    gh.enable = true;
+    gh = {
+      enable = true;
+      extensions = [ pkgs.github-copilot-cli ];
+      settings = {
+        git_protocol = "ssh";
+        editor = "vim";
+      };
+    };
 
     bottom.enable = true;
 
