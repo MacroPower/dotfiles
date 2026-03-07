@@ -1,15 +1,10 @@
 {
   pkgs,
   config,
-  krewfile,
   ...
 }:
 
 {
-  imports = [
-    krewfile.homeManagerModules.krewfile
-  ];
-
   home.packages =
     with pkgs;
     [
