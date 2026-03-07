@@ -319,7 +319,6 @@
   # Disable Spotlight indexing on network and external volumes.
   # Watches /Volumes for mount events; also runs at boot (RunAtLoad).
   launchd.daemons.spotlight-volume-blocker = {
-    command = "/bin/sh";
     serviceConfig = {
       ProgramArguments = [
         "/bin/sh"
