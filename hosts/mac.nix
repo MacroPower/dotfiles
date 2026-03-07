@@ -274,6 +274,22 @@
       protocol_vers_map=6
   '';
 
+  # Disable Spotlight indexing on network and external volumes.
+  # Watches /Volumes for mount events; also runs at boot (RunAtLoad).
+  launchd.daemons.spotlight-volume-blocker = {
+    command = "/bin/sh";
+    serviceConfig = {
+      ProgramArguments = [
+        "/bin/sh" "-c"
+        ''for vol in /Volumes/*/; do [ -d "$vol" ] && /usr/bin/mdutil -i off "$vol" 2>/dev/null; done''
+      ];
+      WatchPaths = [ "/Volumes" ];
+      RunAtLoad = true;
+      StandardErrorPath = "/dev/null";
+      StandardOutPath = "/dev/null";
+    };
+  };
+
   security.pam.services.sudo_local = {
     touchIdAuth = true;
     watchIdAuth = true;
