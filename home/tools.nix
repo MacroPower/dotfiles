@@ -87,6 +87,7 @@
     jq.enable = true;
     trippy.enable = true;
     lazydocker.enable = true;
+    difftastic.enable = true;
 
     nh = {
       enable = true;
@@ -123,7 +124,6 @@
     doggo
     dive
     tokei
-    difftastic
     gping
   ];
 }
