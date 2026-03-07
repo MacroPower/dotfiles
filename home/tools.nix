@@ -65,7 +65,10 @@
     nix-index.enable = true;
     nix-index-database.comma.enable = true;
 
-    nix-your-shell.enable = true;
+    nix-your-shell = {
+      enable = true;
+      nix-output-monitor.enable = true;
+    };
 
     carapace.enable = true;
 
@@ -108,7 +111,6 @@
     doppler
     dagger
     nvd
-    nix-output-monitor
 
     nurl
     sops
