@@ -1,18 +1,21 @@
 {
+  config,
   pkgs,
-  hostConfig,
   lib,
   ...
 }:
 
 {
-  imports = [ ../shared.nix ];
+  imports = [
+    ../shared.nix
+    ../options.nix
+  ];
 
   environment.enableAllTerminfo = true;
 
   programs.nh = {
     enable = true;
-    flake = "/home/${hostConfig.username}/repos/dotfiles";
+    flake = "/home/${config.dotfiles.system.username}/repos/dotfiles";
   };
 
   programs.nix-ld = {
@@ -26,9 +29,9 @@
     ];
   };
 
-  users.users.${hostConfig.username} = {
+  users.users.${config.dotfiles.system.username} = {
     isNormalUser = true;
-    home = "/home/${hostConfig.username}";
+    home = "/home/${config.dotfiles.system.username}";
     shell = pkgs.fish;
     extraGroups = [ "wheel" ];
     openssh.authorizedKeys.keyFiles = [ ../../keys/authorized_keys ];
@@ -48,7 +51,7 @@
 
   security.sudo.extraRules = [
     {
-      users = [ hostConfig.username ];
+      users = [ config.dotfiles.system.username ];
       commands = [
         {
           command = "ALL";

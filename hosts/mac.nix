@@ -1,13 +1,15 @@
 {
-  self,
+  config,
   pkgs,
   lib,
-  hostConfig,
   ...
 }:
 
 {
-  imports = [ ./shared.nix ];
+  imports = [
+    ./shared.nix
+    ./options.nix
+  ];
 
   homebrew = {
     enable = true;
@@ -27,7 +29,7 @@
       "robusta-dev/krr"
       "jacobcolvin/tap"
     ]
-    ++ hostConfig.homebrew.extraTaps;
+    ++ (config.dotfiles.system.homebrew.extraTaps or [ ]);
 
     brews = [
       "jakehilborn/jakehilborn/displayplacer"
@@ -36,7 +38,7 @@
       "ymtdzzz/tap/otel-tui"
       "robusta-dev/krr/krr"
     ]
-    ++ hostConfig.homebrew.extraBrews;
+    ++ (config.dotfiles.system.homebrew.extraBrews or [ ]);
 
     casks = [
       "appcleaner"
@@ -56,9 +58,9 @@
       "wireshark"
       "kat"
     ]
-    ++ hostConfig.homebrew.extraCasks;
+    ++ (config.dotfiles.system.homebrew.extraCasks or [ ]);
 
-    inherit (hostConfig.homebrew) masApps;
+    masApps = config.dotfiles.system.homebrew.masApps or { };
 
     caskArgs.no_quarantine = true;
   };
@@ -248,10 +250,8 @@
       };
     };
 
-    # Record the flake's git revision so `darwin-version` shows what's deployed
-    configurationRevision = self.rev or self.dirtyRev or null;
     # Transitional option: the user that owns system-level nix-darwin operations
-    primaryUser = hostConfig.username;
+    primaryUser = config.dotfiles.system.username;
     # nix-darwin state version, do not change after initial setup
     stateVersion = 6;
   };
@@ -330,9 +330,9 @@
     reattach = true;
   };
 
-  users.users.${hostConfig.username} = {
-    name = hostConfig.username;
-    home = "/Users/${hostConfig.username}";
+  users.users.${config.dotfiles.system.username} = {
+    name = config.dotfiles.system.username;
+    home = "/Users/${config.dotfiles.system.username}";
     shell = pkgs.fish;
   };
 }
