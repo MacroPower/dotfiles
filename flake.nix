@@ -77,15 +77,15 @@
           homeModule,
         }:
         nix-darwin.lib.darwinSystem {
-          specialArgs = {
-            inherit self;
-            hostConfig = {
-              inherit username;
-              inherit homebrew;
-            };
-          };
           modules = [
             ./hosts/mac.nix
+            {
+              dotfiles.system = {
+                inherit username;
+                inherit homebrew;
+              };
+              system.configurationRevision = self.rev or self.dirtyRev or null;
+            }
             home-manager.darwinModules.home-manager
             stylix.darwinModules.stylix
             sharedStylixConfig
@@ -186,11 +186,9 @@
           homeModule,
         }:
         nixpkgs.lib.nixosSystem {
-          specialArgs = {
-            hostConfig = { inherit username; };
-          };
           modules = [
             hostModule
+            { dotfiles.system = { inherit username; }; }
             home-manager.nixosModules.home-manager
             stylix.nixosModules.stylix
             sharedStylixConfig
