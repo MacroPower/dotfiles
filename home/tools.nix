@@ -77,7 +77,10 @@
       nix-output-monitor.enable = true;
     };
 
-    carapace.enable = true;
+    carapace = {
+      enable = true;
+      ignoreCase = true;
+    };
 
     fd.enable = true;
 
