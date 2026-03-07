@@ -92,6 +92,35 @@
         expose-animation-duration = 0.15;
         # Minimize windows into their application icon instead of the Dock
         minimize-to-application = true;
+
+        # Pinned Dock apps; optional cask-only apps are included only when
+        # their Homebrew cask is present in this host's merged cask list.
+        persistent-apps =
+          let
+            casks = config.homebrew.casks;
+            hasCask = name: builtins.elem name (map (c: if builtins.isString c then c else c.name) casks);
+          in
+          [
+            { app = "/Applications/Ghostty.app"; }
+            { app = "/System/Applications/Safari.app"; }
+          ]
+          ++ lib.optional (hasCask "firefox") { app = "/Applications/Firefox.app"; }
+          ++ [
+            { app = "/Applications/Obsidian.app"; }
+          ]
+          ++ lib.optional (hasCask "slack") { app = "/Applications/Slack.app"; }
+          ++ lib.optional (hasCask "discord") { app = "/Applications/Discord.app"; }
+          ++ [
+            { app = "/Applications/Visual Studio Code.app"; }
+            { app = "/Applications/Zed.app"; }
+            { app = "/Applications/Fork.app"; }
+            { app = "/System/Applications/System Settings.app"; }
+          ];
+
+        persistent-others = [
+          { folder = "/Users/${config.dotfiles.system.username}/Downloads"; }
+          { folder = "/Users/${config.dotfiles.system.username}/Documents/Screenshots"; }
+        ];
       };
 
       finder = {
