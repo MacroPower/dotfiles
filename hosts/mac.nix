@@ -256,9 +256,18 @@
     stateVersion = 6;
   };
 
-  # Keep the Mac always-on (never sleep computer or display)
-  power.sleep.computer = "never";
-  power.sleep.display = "never";
+  # Keep the Mac always-on and auto-recover from failures
+  power = {
+    sleep = {
+      computer = "never";
+      display = "never";
+      # Disable sleep via power button so headless Mac mini stays running
+      allowSleepByPowerButton = false;
+    };
+    # Auto-recover from freezes and power failures
+    restartAfterFreeze = true;
+    restartAfterPowerFailure = true;
+  };
 
   # SMB client configuration (/etc/nsmb.conf).
   # Optimized for Apple Silicon on a trusted local network.
