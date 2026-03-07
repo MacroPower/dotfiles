@@ -7,10 +7,23 @@
       description = "The primary user account name.";
     };
 
-    homebrew = lib.mkOption {
-      type = lib.types.attrs;
-      default = { };
-      description = "Host-specific Homebrew configuration (extraTaps, extraBrews, extraCasks, masApps).";
+    homebrew = {
+      extraTaps = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+      };
+      extraBrews = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+      };
+      extraCasks = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+      };
+      masApps = lib.mkOption {
+        type = lib.types.attrsOf lib.types.ints.positive;
+        default = { };
+      };
     };
   };
 }

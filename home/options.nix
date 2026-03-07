@@ -95,7 +95,7 @@ in
         description = "Whether to skip Claude Code permission prompts.";
       };
       extraSettings = mkOption {
-        type = types.attrs;
+        type = types.attrsOf types.anything;
         default = { };
         description = "Additional settings merged into Claude Code settings.json.";
       };

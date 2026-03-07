@@ -29,7 +29,7 @@
       "robusta-dev/krr"
       "jacobcolvin/tap"
     ]
-    ++ (config.dotfiles.system.homebrew.extraTaps or [ ]);
+    ++ config.dotfiles.system.homebrew.extraTaps;
 
     brews = [
       "jakehilborn/jakehilborn/displayplacer"
@@ -38,7 +38,7 @@
       "ymtdzzz/tap/otel-tui"
       "robusta-dev/krr/krr"
     ]
-    ++ (config.dotfiles.system.homebrew.extraBrews or [ ]);
+    ++ config.dotfiles.system.homebrew.extraBrews;
 
     casks = [
       "appcleaner"
@@ -58,9 +58,9 @@
       "wireshark"
       "kat"
     ]
-    ++ (config.dotfiles.system.homebrew.extraCasks or [ ]);
+    ++ config.dotfiles.system.homebrew.extraCasks;
 
-    masApps = config.dotfiles.system.homebrew.masApps or { };
+    masApps = config.dotfiles.system.homebrew.masApps;
 
     caskArgs.no_quarantine = true;
   };
