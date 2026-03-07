@@ -1,8 +1,5 @@
 {
-  nix.settings.experimental-features = [
-    "nix-command"
-    "flakes"
-  ];
+  imports = [ ./settings.nix ];
 
   nix.optimise.automatic = true;
 
