@@ -99,8 +99,8 @@
                 sharedModules = [
                   sops-nix.homeManagerModules.sops
                   nix-index-database.homeModules.nix-index
+                  krewfile.homeManagerModules.krewfile
                 ];
-                extraSpecialArgs = { inherit krewfile; };
                 users.${username} = {
                   imports = [
                     ./home
@@ -166,10 +166,10 @@
             config.allowUnfree = true;
             overlays = sharedOverlays;
           };
-          extraSpecialArgs = { inherit krewfile; };
           modules = [
             sops-nix.homeManagerModules.sops
             nix-index-database.homeModules.nix-index
+            krewfile.homeManagerModules.krewfile
             stylix.homeModules.stylix
             sharedStylixConfig
             ./hosts/linux.nix
@@ -204,8 +204,8 @@
                 sharedModules = [
                   sops-nix.homeManagerModules.sops
                   nix-index-database.homeModules.nix-index
+                  krewfile.homeManagerModules.krewfile
                 ];
-                extraSpecialArgs = { inherit krewfile; };
                 users.${username} = {
                   imports = [
                     ./home
