@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, config, ... }:
 
 {
   programs = {
@@ -84,6 +84,11 @@
     jq.enable = true;
     trippy.enable = true;
 
+    nh = {
+      enable = true;
+      flake = "${config.home.homeDirectory}/repos/dotfiles";
+    };
+
     tealdeer = {
       enable = true;
       settings.updates.auto_update = true;
@@ -103,7 +108,7 @@
     dagger
     nvd
     nix-output-monitor
-    nh
+
     nurl
     sops
     age
