@@ -25,9 +25,9 @@ tasks:
     desc: Apply nix config for the current host
     cmds:
       - task: _switch-nh
-        if: 'command -v nh &>/dev/null'
+        if: "command -v nh &>/dev/null"
       - task: _switch-direct
-        if: '! command -v nh &>/dev/null'
+        if: "! command -v nh &>/dev/null"
 
   _switch-nh:
     internal: true

@@ -50,20 +50,10 @@
   "globalBold": false,
   "powerline": {
     "enabled": true,
-    "separators": [
-      ""
-    ],
-    "separatorInvertBackground": [
-      false
-    ],
-    "startCaps": [
-      "",
-      ""
-    ],
-    "endCaps": [
-      "",
-      ""
-    ],
+    "separators": [""],
+    "separatorInvertBackground": [false],
+    "startCaps": ["", ""],
+    "endCaps": ["", ""],
     "theme": "minimal",
     "autoAlign": true
   }
