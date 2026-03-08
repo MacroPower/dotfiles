@@ -81,6 +81,8 @@
       perSystem = _: {
         treefmt.programs = {
           nixfmt.enable = true;
+          deadnix.enable = true;
+          statix.enable = true;
           shfmt.enable = true;
           prettier.enable = true;
         };

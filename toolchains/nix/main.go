@@ -241,63 +241,20 @@ func (m *Nix) Build(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Lint detects anti-patterns and unused bindings.
+// Lint checks formatting and lint rules via treefmt (nixfmt, deadnix, statix).
 // +check
 func (m *Nix) Lint(ctx context.Context) error {
-	eg, ctx := errgroup.WithContext(ctx)
-
-	eg.Go(func() error {
-		_, err := m.base().
-			WithExec([]string{"nix", "shell", "nixpkgs#statix", "-c", "statix", "check", "."}).
-			Sync(ctx)
-		return err
-	})
-
-	eg.Go(func() error {
-		_, err := m.base().
-			WithExec([]string{"nix", "shell", "nixpkgs#deadnix", "-c", "deadnix", "--fail", "."}).
-			Sync(ctx)
-		return err
-	})
-
-	return eg.Wait()
-}
-
-// Format ensures consistent nix formatting.
-// +check
-func (m *Nix) Format(ctx context.Context) error {
 	_, err := m.base().
-		WithExec([]string{"nix", "shell", "nixpkgs#nixfmt", "-c", "nixfmt", "--check", "."}).
+		WithExec([]string{"nix", "fmt", "--", "--fail-on-change"}).
 		Sync(ctx)
 	return err
 }
 
-// FormatFix applies nixfmt formatting.
+// Format applies all auto-fixes via treefmt (nixfmt, deadnix, statix).
 // +generate
-func (m *Nix) FormatFix() *dagger.Changeset {
+func (m *Nix) Format() *dagger.Changeset {
 	fixed := m.base().
-		WithExec([]string{"nix", "shell", "nixpkgs#nixfmt", "-c", "nixfmt", "."}).
-		Directory("/src")
-	return dag.Directory().WithDirectory(".", fixed).Changes(m.Source)
-}
-
-// LintFix applies statix fix and deadnix --edit.
-// +generate
-func (m *Nix) LintFix() *dagger.Changeset {
-	fixed := m.base().
-		WithExec([]string{"nix", "shell", "nixpkgs#statix", "-c", "statix", "fix", "."}).
-		WithExec([]string{"nix", "shell", "nixpkgs#deadnix", "-c", "deadnix", "--edit", "."}).
-		Directory("/src")
-	return dag.Directory().WithDirectory(".", fixed).Changes(m.Source)
-}
-
-// Fix applies all auto-fixes (formatting and lint).
-// +generate
-func (m *Nix) Fix() *dagger.Changeset {
-	fixed := m.base().
-		WithExec([]string{"nix", "shell", "nixpkgs#nixfmt", "-c", "nixfmt", "."}).
-		WithExec([]string{"nix", "shell", "nixpkgs#statix", "-c", "statix", "fix", "."}).
-		WithExec([]string{"nix", "shell", "nixpkgs#deadnix", "-c", "deadnix", "--edit", "."}).
+		WithExec([]string{"nix", "fmt"}).
 		Directory("/src")
 	return dag.Directory().WithDirectory(".", fixed).Changes(m.Source)
 }
@@ -313,7 +270,6 @@ func (m *Nix) All(ctx context.Context) error {
 	eg.Go(func() error { return m.Build(ctx) })
 	eg.Go(func() error { return m.BuildHome(ctx) })
 	eg.Go(func() error { return m.Lint(ctx) })
-	eg.Go(func() error { return m.Format(ctx) })
 
 	return eg.Wait()
 }

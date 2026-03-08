@@ -2,19 +2,14 @@ version: "3"
 
 tasks:
   lint:
-    desc: Run all lint checks (statix, deadnix, nixfmt)
-    cmds:
-      - dagger check nix:lint nix:format
-
-  lint:check:
-    desc: Run statix and deadnix
+    desc: Check formatting and lint (nixfmt, deadnix, statix via treefmt)
     cmds:
       - dagger check nix:lint
 
-  lint:format:
-    desc: Check nixfmt formatting
+  format:
+    desc: Apply all auto-fixes (formatting and lint via treefmt)
     cmds:
-      - dagger check nix:format
+      - dagger call nix format -y
 
   build:
     desc: Evaluate all host configurations
@@ -30,21 +25,6 @@ tasks:
     desc: Validate flake schema
     cmds:
       - dagger check nix:flake-check
-
-  fix:
-    desc: Apply all auto-fixes (formatting and lint)
-    cmds:
-      - dagger call nix fix -y
-
-  fix:format:
-    desc: Apply nixfmt formatting
-    cmds:
-      - dagger call nix format-fix -y
-
-  fix:lint:
-    desc: Apply statix and deadnix fixes
-    cmds:
-      - dagger call nix lint-fix -y
 
   pkg:update:
     desc: Update custom package derivations in pkgs/
