@@ -55,6 +55,38 @@
       url = "github:homebrew/homebrew-bundle";
       flake = false;
     };
+    homebrew-cask-upgrade = {
+      url = "github:buo/homebrew-cask-upgrade";
+      flake = false;
+    };
+    homebrew-jakehilborn = {
+      url = "github:jakehilborn/homebrew-jakehilborn";
+      flake = false;
+    };
+    homebrew-fuse-t = {
+      url = "github:macos-fuse-t/homebrew-cask";
+      flake = false;
+    };
+    homebrew-photo-cli = {
+      url = "github:photo-cli/homebrew-photo-cli";
+      flake = false;
+    };
+    homebrew-ymtdzzz = {
+      url = "github:ymtdzzz/homebrew-tap";
+      flake = false;
+    };
+    homebrew-macropower = {
+      url = "github:macropower/homebrew-tap";
+      flake = false;
+    };
+    homebrew-krr = {
+      url = "github:robusta-dev/homebrew-krr";
+      flake = false;
+    };
+    homebrew-jacobcolvin = {
+      url = "git+https://tap.jacobcolvin.com";
+      flake = false;
+    };
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";

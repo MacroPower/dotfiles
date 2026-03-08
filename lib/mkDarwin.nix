@@ -33,9 +33,22 @@ inputs.nix-darwin.lib.darwinSystem {
           "homebrew/homebrew-core" = inputs.homebrew-core;
           "homebrew/homebrew-cask" = inputs.homebrew-cask;
           "homebrew/homebrew-bundle" = inputs.homebrew-bundle;
+          "buo/homebrew-cask-upgrade" = inputs.homebrew-cask-upgrade;
+          "jakehilborn/homebrew-jakehilborn" = inputs.homebrew-jakehilborn;
+          "macos-fuse-t/homebrew-cask" = inputs.homebrew-fuse-t;
+          "photo-cli/homebrew-photo-cli" = inputs.homebrew-photo-cli;
+          "ymtdzzz/homebrew-tap" = inputs.homebrew-ymtdzzz;
+          "macropower/homebrew-tap" = inputs.homebrew-macropower;
+          "robusta-dev/homebrew-krr" = inputs.homebrew-krr;
+          "jacobcolvin/homebrew-tap" = inputs.homebrew-jacobcolvin;
         };
       };
     }
+    # Sync nix-homebrew taps into nix-darwin's homebrew.taps so
+    # `brew bundle --cleanup` doesn't try to untap them.
+    ({ config, ... }: {
+      homebrew.taps = builtins.attrNames config.nix-homebrew.taps;
+    })
     inputs.home-manager.darwinModules.home-manager
     inputs.stylix.darwinModules.stylix
     sharedStylixConfig
