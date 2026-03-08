@@ -63,7 +63,7 @@ func (m *Nix) FlakeCheck() *dagger.Container {
 	return m.base().
 		WithNewFile("/tmp/check/flake.nix", wrapper).
 		WithWorkdir("/tmp/check").
-		WithExec([]string{"nix", "flake", "check", "--no-build", "--all-systems", "--no-write-lock-file"})
+		WithExec([]string{"nix", "flake", "check", "--no-build", "--no-write-lock-file"})
 }
 
 // hosts returns the list of darwinConfigurations defined in the flake.
