@@ -115,9 +115,9 @@
               inherit inputs self;
               paths = {
                 home = ./home;
-                hostMac = ./hosts/mac.nix;
-                hostLinux = ./hosts/linux.nix;
-                stylix = ./hosts/stylix.nix;
+                hostMac = ./hosts/darwin/default.nix;
+                hostLinux = ./hosts/home/default.nix;
+                stylix = ./lib/stylix.nix;
                 chief = ./pkgs/chief.nix;
                 linearmouse = ./configs/linearmouse/linearmouse.json;
               };
@@ -129,125 +129,17 @@
         in
         {
           darwinConfigurations = {
-            "jacobcolvin@Jacobs-Mac-mini" = mkDarwin {
-              username = "jacobcolvin";
-
-              homebrew = {
-                extraTaps = [ ];
-                extraBrews = [ ];
-                extraCasks = [
-                  "firefox"
-                  "discord"
-                  "plex"
-                  "orbstack"
-                  "slack"
-                  "filebot"
-                ];
-                masApps = { };
-              };
-
-              homeModule =
-                { pkgs, ... }:
-                {
-                  dotfiles = {
-                    git = {
-                      userName = "Jacob Colvin";
-                      userEmail = "jacobcolvin1@gmail.com";
-                    };
-                    extraHomePackages = with pkgs; [ talosctl ];
-                    vscode.extraExtensions =
-                      marketplace: with marketplace; [
-                        wakatime.vscode-wakatime
-                      ];
-                  };
-                };
-            };
-
-            "jcolvin@Corporate-Mac" = mkDarwin {
-              username = "jcolvin";
-
-              homebrew = {
-                extraTaps = [ ];
-                extraBrews = [ ];
-                extraCasks = [ ];
-                masApps = { };
-              };
-
-              homeModule =
-                { pkgs, ... }:
-                {
-                  dotfiles = {
-                    git = {
-                      userName = "Jacob Colvin";
-                      userEmail = "jcolvin@example.com";
-                    };
-                    extraHomePackages = with pkgs; [
-                      azure-cli
-                    ];
-                    kubernetes.extraPackages = with pkgs; [
-                      kubelogin
-                      fluxcd
-                    ];
-                  };
-                };
-            };
+            "jacobcolvin@Jacobs-Mac-mini" = mkDarwin (import ./hosts/darwin/mac-mini.nix);
+            "jcolvin@Corporate-Mac" = mkDarwin (import ./hosts/darwin/corporate.nix);
           };
 
           nixosConfigurations = {
-            "nixos-orbstack" = mkNixOS {
-              system = "aarch64-linux";
-              hostModule = ./hosts/nixos/orbstack.nix;
-              username = "jacobcolvin";
-              homeModule = {
-                dotfiles = {
-                  git = {
-                    userName = "Jacob Colvin";
-                    userEmail = "jacobcolvin1@gmail.com";
-                  };
-                  claude.dangerouslySkipPermissions = true;
-                };
-              };
-            };
-
-            "nixos-truenas" = mkNixOS {
-              system = "x86_64-linux";
-              hostModule = ./hosts/nixos/truenas.nix;
-              username = "jacobcolvin";
-              homeModule = {
-                dotfiles = {
-                  git = {
-                    userName = "Jacob Colvin";
-                    userEmail = "jacobcolvin1@gmail.com";
-                  };
-                  kubernetes.enable = false;
-                  vscode.enable = false;
-                  claude.enable = false;
-                  ghostty.enable = false;
-                  zed.enable = false;
-                  development.enable = false;
-                };
-              };
-            };
+            "nixos-orbstack" = mkNixOS (import ./hosts/nixos/orbstack.nix);
+            "nixos-truenas" = mkNixOS (import ./hosts/nixos/truenas.nix);
           };
 
           homeConfigurations = {
-            "jacobcolvin@linux" = mkHome {
-              system = "aarch64-linux";
-              homeModule = {
-                dotfiles = {
-                  username = "jacobcolvin";
-                  homeDirectory = "/home/jacobcolvin";
-                  git = {
-                    userName = "Jacob Colvin";
-                    userEmail = "jacobcolvin1@gmail.com";
-                  };
-                  shell.extraTideConfig = ''
-                    set -g tide_left_prompt_items os $tide_left_prompt_items
-                    set -g tide_os_icon \uebc6
-                  '';
-                };
-              };
-            };
+            "jacobcolvin@linux" = mkHome (import ./hosts/home/linux.nix);
           };
         };
     };

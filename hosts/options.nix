@@ -8,15 +8,15 @@
     };
 
     homebrew = {
-      extraTaps = lib.mkOption {
+      taps = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [ ];
       };
-      extraBrews = lib.mkOption {
+      brews = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [ ];
       };
-      extraCasks = lib.mkOption {
+      casks = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [ ];
       };

@@ -1,7 +1,7 @@
 { pkgs, config, ... }:
 
 {
-  imports = [ ./settings.nix ];
+  imports = [ ../settings.nix ];
 
   home.username = config.dotfiles.username;
   home.homeDirectory = config.dotfiles.homeDirectory;

@@ -7,8 +7,8 @@
 
 {
   imports = [
-    ./shared.nix
-    ./options.nix
+    ../shared.nix
+    ../options.nix
   ];
 
   homebrew = {
@@ -29,7 +29,7 @@
       "robusta-dev/krr"
       "jacobcolvin/tap"
     ]
-    ++ config.dotfiles.system.homebrew.extraTaps;
+    ++ config.dotfiles.system.homebrew.taps;
 
     brews = [
       "jakehilborn/jakehilborn/displayplacer"
@@ -38,7 +38,7 @@
       "ymtdzzz/tap/otel-tui"
       "robusta-dev/krr/krr"
     ]
-    ++ config.dotfiles.system.homebrew.extraBrews;
+    ++ config.dotfiles.system.homebrew.brews;
 
     casks = [
       "appcleaner"
@@ -58,7 +58,7 @@
       "wireshark"
       "kat"
     ]
-    ++ config.dotfiles.system.homebrew.extraCasks;
+    ++ config.dotfiles.system.homebrew.casks;
 
     inherit (config.dotfiles.system.homebrew) masApps;
 
