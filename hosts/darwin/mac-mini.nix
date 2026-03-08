@@ -1,6 +1,12 @@
 {
   username = "jacobcolvin";
 
+  loginItems = [
+    "/Applications/LinearMouse.app"
+    "/Applications/Caffeine.app"
+    "/Applications/OrbStack.app"
+  ];
+
   homebrew = {
     taps = [ ];
     brews = [ ];

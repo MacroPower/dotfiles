@@ -80,6 +80,17 @@
         autohide-delay = 0.15;
         # Faster Dock show/hide animation
         autohide-time-modifier = 0.15;
+        # Enable bounce animation when launching apps
+        launchanim = true;
+        # Dock position on screen
+        orientation = "bottom";
+        # Show all apps (not just active ones)
+        static-only = false;
+        # Hot corners (1 = disabled)
+        wvous-tl-corner = 1;
+        wvous-tr-corner = 1;
+        wvous-bl-corner = 1;
+        wvous-br-corner = 1;
         # Faster minimize animation than the default "genie"
         mineffect = "scale";
         # Dim icons of hidden applications
@@ -148,11 +159,35 @@
         NewWindowTarget = "Home";
       };
 
+      trackpad = {
+        # Two-finger tap/click for right-click
+        TrackpadRightClick = true;
+        # Three-finger drag (accessibility feature, avoids click-and-hold)
+        TrackpadThreeFingerDrag = true;
+        # Launchpad gesture with four-finger pinch
+        TrackpadFourFingerPinchGesture = 2;
+      };
+
       NSGlobalDomain = {
         # Disable "natural" (inverted) scroll direction
         "com.apple.swipescrolldirection" = false;
         # Show all file extensions in Finder
         AppleShowAllExtensions = true;
+        # Dark mode
+        AppleInterfaceStyle = "Dark";
+        # Don't auto-switch between light and dark mode
+        AppleInterfaceStyleSwitchesAutomatically = false;
+        # Medium font smoothing for non-Apple external displays
+        AppleFontSmoothing = 2;
+        # Freedom units
+        AppleMeasurementUnits = "Inches";
+        AppleMetricUnits = 0;
+        AppleTemperatureUnit = "Fahrenheit";
+        # Medium sidebar icon size
+        NSTableViewDefaultSizeMode = 2;
+        # Spring-loading: hover a dragged file over a folder to open it
+        "com.apple.springing.enabled" = true;
+        "com.apple.springing.delay" = 0.1;
         # Disable auto-capitalization
         NSAutomaticCapitalizationEnabled = false;
         # Disable smart dashes (e.g., -- -> —)
@@ -236,6 +271,9 @@
         NowPlaying = false;
       };
 
+      # Globe/Fn key opens emoji picker (note: dictation bound to cmd)
+      hitoolbox.AppleFnUsageType = "Show Emoji & Symbols";
+
       # Window tiling and Stage Manager behavior
       WindowManager = {
         # Disable click-wallpaper-to-reveal-desktop (Sonoma default)
@@ -248,6 +286,12 @@
         EnableTilingOptionAccelerator = true;
         # No gaps between tiled windows (maximize screen real estate)
         EnableTiledWindowMargins = false;
+        # Keep desktop icons visible (Stage Manager)
+        HideDesktop = false;
+        StandardHideDesktopIcons = false;
+        # Keep widgets visible (Stage Manager)
+        StageManagerHideWidgets = false;
+        StandardHideWidgets = false;
       };
 
       # Each display gets its own independent set of Spaces (requires logout)
@@ -255,6 +299,14 @@
 
       # Don't auto-install macOS updates (prefer manual control for nix-darwin compat)
       SoftwareUpdate.AutomaticallyInstallMacOSUpdates = false;
+
+      # Reduce visual effects for snappier UI and less distraction
+      universalaccess = {
+        # Skip animation when switching Spaces, opening Mission Control, etc.
+        reduceMotion = true;
+        # Use solid backgrounds instead of translucent sidebars and menus
+        reduceTransparency = true;
+      };
 
       CustomUserPreferences = {
         # Don't create .DS_Store files on network or USB volumes
@@ -266,11 +318,51 @@
         NSGlobalDomain = {
           AppleAccentColor = 5;
           AppleHighlightColor = "0.968627 0.831373 1.000000 Purple";
+          # Don't minimize on title bar double-click
+          AppleMiniaturizeOnDoubleClick = false;
+          # Web Inspector available in right-click context menus
+          WebKitDeveloperExtras = true;
+          # Disable web view auto-correct
+          WebAutomaticSpellingCorrectionEnabled = false;
+          # Disable non-essential UI animations
+          QLPanelAnimationDuration = 0;
+          NSToolbarFullScreenAnimationDuration = 0;
+          NSBrowserColumnAnimationSpeedMultiplier = 0;
+          NSDocumentRevisionsWindowTransformAnimation = 0;
         };
-        # Disable personalized Apple ads
-        "com.apple.AdLib".allowApplePersonalizedAdvertising = false;
-        # Suppress crash reporter dialog (logs still collected)
-        "com.apple.CrashReporter".DialogType = "none";
+        # Disable personalized Apple ads and ad tracking
+        "com.apple.AdLib" = {
+          allowApplePersonalizedAdvertising = false;
+          allowIdentifierForAdvertising = false;
+        };
+        # Show AirPlay in menu bar even when not in use
+        "com.apple.airplay".showInMenuBarIfPresent = true;
+        # Fine-grained menu bar item visibility
+        "com.apple.controlcenter" = {
+          "NSStatusItem Visible AirDrop" = true;
+          "NSStatusItem Visible Battery" = true;
+          "NSStatusItem Visible Bluetooth" = true;
+          "NSStatusItem Visible Clock" = true;
+          "NSStatusItem Visible FocusModes" = true;
+          "NSStatusItem Visible Sound" = true;
+          "NSStatusItem Visible WiFi" = true;
+        };
+        # Disable proofreading popup in Dictionary
+        "com.apple.Dictionary".ProofreadingEnabled = false;
+        # Eliminate Launchpad/springboard animations
+        "com.apple.dock" = {
+          springboard-hide-duration = 0;
+          springboard-page-duration = 0;
+          springboard-show-duration = 0;
+        };
+        # Show location icon in menu bar
+        "com.apple.locationmenu".StatusBarIconEnabled = true;
+        # Notification banners visible for 5 seconds
+        "com.apple.notificationcenterui".bannerTime = 5;
+        # Do not allow sleep
+        "com.apple.PowerManagement".SleepDisabled = 1;
+        # Show all preference panes in System Settings
+        "com.apple.systempreferences".ShowAllMode = true;
         # TextEdit opens in plain text mode by default
         "com.apple.TextEdit".RichText = 0;
         # Hide Recent Tags from Finder sidebar
@@ -324,10 +416,145 @@
               };
             };
           };
+        # Prevent Photos from auto-launching when a camera, phone, or SD card is connected
+        "com.apple.ImageCapture".disableHotPlug = true;
+        # Suppress the "use this disk for backups?" prompt when new drives are mounted
+        # and exclude system files from backups for faster/smaller snapshots
+        "com.apple.TimeMachine" = {
+          DoNotOfferNewDisksForBackup = true;
+          SkipSystemFiles = true;
+        };
+        # Disable App Store auto updates
+        "com.apple.commerce".AutoUpdate = false;
+
+        # Force the maximum AAC bitpool (80) for Bluetooth audio negotiation,
+        # preventing the codec from dropping to lower quality under contention
+        "com.apple.BluetoothAudioAgent" = {
+          "Apple Bitpool Max (editable)" = 80;
+          "Apple Bitpool Min (editable)" = 80;
+          "Apple Initial Bitpool (editable)" = 80;
+          "Apple Initial Bitpool Min (editable)" = 80;
+          "Negotiated Bitpool" = 80;
+          "Negotiated Bitpool Max" = 80;
+          "Negotiated Bitpool Min" = 80;
+        };
+
+        # Lower-level Bluetooth daemon settings: pin AAC at 320 kbps,
+        # raise the packet ceiling, and enable both AAC and AptX codecs
+        bluetoothaudiod = {
+          "AAC Bitrate" = 320;
+          "AAC max packet size" = 644;
+          "Apple Bitpool Max" = 80;
+          "Apple Bitpool Min" = 80;
+          "Apple Initial Bitpool Min" = 80;
+          "Apple Initial Bitpool" = 80;
+          "Enable AAC codec" = true;
+          "Enable AptX codec" = true;
+          "Negotiated Bitpool Max" = 80;
+          "Negotiated Bitpool Min" = 80;
+          "Negotiated Bitpool" = 80;
+        };
+
+        # Check for macOS/security updates daily instead of weekly,
+        # download in background, and auto-install critical patches
+        "com.apple.SoftwareUpdate" = {
+          AutomaticCheckEnabled = true;
+          # 1 = daily (default is 7)
+          ScheduleFrequency = 1;
+          # Download updates in the background
+          AutomaticDownload = 1;
+          # Auto-install XProtect, MRT, and system data files
+          CriticalUpdateInstall = 1;
+        };
+
+        # Activity Monitor opens its main window on launch, shows
+        # real-time CPU graph in the Dock icon, and sorts by CPU descending
+        "com.apple.ActivityMonitor" = {
+          OpenMainWindow = true;
+          # 5 = CPU usage graph in Dock icon (0=app, 2=history, 3=network, 6=all)
+          IconType = 5;
+          SortColumn = "CPUUsage";
+          # 0 = descending (highest CPU first)
+          SortDirection = 0;
+        };
+
+        # Window tiling via drag (explicit, supplements system.defaults.WindowManager)
+        "com.apple.WindowManager" = {
+          EnableTilingByEdgeDrag = true;
+          EnableTopTilingByEdgeDrag = true;
+          EnableTilingOptionAccelerator = true;
+        };
+
+        # Disk Utility: show all devices, partitions, debug menu, and advanced image options
+        "com.apple.DiskUtility" = {
+          DUDebugMenuEnabled = true;
+          DUShowEveryPartition = true;
+          SidebarShowAllDevices = true;
+          advanced-image-options = true;
+        };
+
+        # Enable AirDrop discovery over Ethernet and other non-default interfaces
+        "com.apple.NetworkBrowser".BrowseAllInterfaces = true;
+
+        # Skip checksum verification when mounting .dmg disk images (faster mounts)
+        "com.apple.frameworks.diskimages" = {
+          skip-verify = true;
+          skip-verify-locked = true;
+          skip-verify-remote = true;
+        };
+
+        # Don't reopen previous windows/apps after a restart or re-login
+        "com.apple.loginwindow".TALLogoutSavesState = false;
+
+        # Make Help Viewer windows non-floating so they behave like normal windows
+        "com.apple.helpviewer".DevMode = true;
+
+        # Spotlight: disable web suggestions and all other noisy/expensive categories
+        "com.apple.spotlight".orderedItems =
+          let
+            spotlightCategories = {
+              APPLICATIONS = true; # .app bundles
+              BOOKMARKS = false; # Safari and browser bookmarks
+              CONTACT = true; # Contacts / address book entries
+              DIRECTORIES = false; # Folder names
+              DOCUMENTS = false; # Pages, Word, plain text, etc.
+              EVENT_TODO = true; # Calendar events and Reminders
+              FONTS = false; # Installed font families
+              IMAGES = false; # Photos, screenshots, graphics
+              MENU_CONVERSION = true; # Unit and currency conversions
+              MENU_DEFINITION = true; # Dictionary definitions
+              MENU_EXPRESSION = true; # Calculator / math expressions
+              MENU_OTHER = false; # Miscellaneous results
+              MENU_SPOTLIGHT_SUGGESTIONS = false; # Siri / Apple suggestions
+              MENU_WEBSEARCH = false; # Web search suggestions
+              MESSAGES = false; # iMessage / SMS history
+              MOVIES = false; # Video files
+              MUSIC = false; # Audio files and Apple Music
+              PDF = false; # PDF documents
+              PRESENTATIONS = false; # Keynote, PowerPoint slides
+              SOURCE = false; # Source code files
+              SPREADSHEETS = false; # Numbers, Excel sheets
+              SYSTEM_PREFS = true; # System Settings panes
+            };
+          in
+          map (name: {
+            inherit name;
+            enabled = spotlightCategories.${name};
+          }) (builtins.attrNames spotlightCategories);
+
         # Disable dictation auto-punctuation
         "com.apple.assistant.support"."Dictation Auto Punctuation Enabled" = false;
       };
+
+      # System-wide preferences (written to /Library/Preferences/, requires root)
+      CustomSystemPreferences = {
+        # Prevent Gatekeeper from silently re-enabling itself every 30 days
+        "com.apple.security".GKAutoRearm = false;
+      };
     };
+
+    # Silence the boot chime on startup
+    startup.chime = false;
 
     # Transitional option: the user that owns system-level nix-darwin operations
     primaryUser = config.dotfiles.system.username;
@@ -335,8 +562,50 @@
     activationScripts.postActivation.text = ''
       sudo -u ${config.dotfiles.system.username} /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
     '';
+
+    # Declaratively manage macOS login items via System Events.
+    # Adds items from dotfiles.system.loginItems and removes any
+    # previously-managed items that are no longer in the list.
+    activationScripts.loginItems.text =
+      let
+        items = config.dotfiles.system.loginItems;
+        user = config.dotfiles.system.username;
+      in
+      lib.optionalString (items != [ ]) ''
+        echo "managing login items..." >&2
+        MANAGED_ITEMS=(${lib.concatMapStringsSep " " (p: ''"${p}"'') items})
+
+        # Get current login item names
+        current_items=$(sudo -u ${user} osascript -e \
+          'tell application "System Events" to get the name of every login item' 2>/dev/null || echo "")
+
+        for app in "''${MANAGED_ITEMS[@]}"; do
+          app_name=$(/usr/bin/basename "$app" .app)
+          if [ -d "$app" ]; then
+            if ! echo "$current_items" | /usr/bin/grep -q "$app_name"; then
+              echo "  adding login item: $app_name" >&2
+              sudo -u ${user} osascript -e \
+                "tell application \"System Events\" to make login item at end with properties {path:\"$app\", hidden:false}" 2>/dev/null || true
+            fi
+          fi
+        done
+      '';
+
     # nix-darwin state version, do not change after initial setup
     stateVersion = 6;
+  };
+
+  # macOS application-level firewall with stealth mode
+  networking.applicationFirewall = {
+    # Enable the built-in ALF (Application Layer Firewall)
+    enable = true;
+    # Don't respond to ICMP probes or closed-port connection attempts,
+    # making the machine invisible to casual port scans
+    enableStealthMode = true;
+    # Allow connections for apps signed by Apple (system services, App Store apps)
+    allowSigned = true;
+    # Allow connections for apps signed with a valid developer certificate
+    allowSignedApp = true;
   };
 
   # Keep the Mac always-on and auto-recover from failures

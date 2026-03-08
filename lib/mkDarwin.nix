@@ -9,6 +9,7 @@
 {
   username,
   homebrew ? { },
+  loginItems ? [ ],
   homeModule,
 }:
 inputs.nix-darwin.lib.darwinSystem {
@@ -16,8 +17,7 @@ inputs.nix-darwin.lib.darwinSystem {
     paths.hostMac
     {
       dotfiles.system = {
-        inherit username;
-        inherit homebrew;
+        inherit username homebrew loginItems;
       };
       system.configurationRevision = self.rev or self.dirtyRev or null;
     }
