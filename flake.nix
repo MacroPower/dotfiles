@@ -78,15 +78,33 @@
         "x86_64-linux"
       ];
 
-      perSystem = _: {
-        treefmt.programs = {
-          nixfmt.enable = true;
-          deadnix.enable = true;
-          statix.enable = true;
-          shfmt.enable = true;
-          prettier.enable = true;
+      perSystem =
+        { system, ... }:
+        {
+          treefmt.programs = {
+            nixfmt.enable = true;
+            deadnix.enable = true;
+            statix.enable = true;
+            shfmt.enable = true;
+            prettier.enable = true;
+          };
+
+          checks =
+            let
+              inherit (nixpkgs) lib;
+              filterSystem = lib.filterAttrs (
+                _: cfg: (cfg.pkgs.stdenv.hostPlatform.system or cfg.config.nixpkgs.hostPlatform) == system
+              );
+            in
+            lib.mergeAttrsList [
+              (lib.mapAttrs' (name: cfg: lib.nameValuePair "${name}_home" cfg.activationPackage) (
+                filterSystem self.homeConfigurations
+              ))
+              (lib.mapAttrs (_: cfg: cfg.config.system.build.toplevel) (
+                filterSystem (self.darwinConfigurations // self.nixosConfigurations)
+              ))
+            ];
         };
-      };
 
       flake =
         let
