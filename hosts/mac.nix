@@ -102,18 +102,16 @@
           in
           [
             { app = "/Applications/Ghostty.app"; }
-            { app = "/System/Applications/Safari.app"; }
           ]
           ++ lib.optional (hasCask "firefox") { app = "/Applications/Firefox.app"; }
-          ++ [
-            { app = "/Applications/Obsidian.app"; }
-          ]
-          ++ lib.optional (hasCask "slack") { app = "/Applications/Slack.app"; }
+          ++ lib.optional (hasCask "obsidian") { app = "/Applications/Obsidian.app"; }
           ++ lib.optional (hasCask "discord") { app = "/Applications/Discord.app"; }
           ++ [
-            { app = "/Applications/Visual Studio Code.app"; }
             { app = "/Applications/Zed.app"; }
             { app = "/Applications/Fork.app"; }
+            { app = "/System/Applications/Messages.app"; }
+            { app = "/System/Applications/Notes.app"; }
+            { app = "/System/Applications/Utilities/Activity Monitor.app"; }
             { app = "/System/Applications/System Settings.app"; }
           ];
 
