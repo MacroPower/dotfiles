@@ -191,7 +191,7 @@
                           libraw
                           dav1d
                         ];
-                        extraKrewPlugins = [
+                        kubernetes.extraKrewPlugins = [
                           "sniff" # https://github.com/eldadru/ksniff
                           "access-matrix" # https://github.com/corneliusweig/rakkess
                           "cyclonus" # https://github.com/mattfenwick/kubectl-cyclonus
@@ -209,7 +209,7 @@
                         extraXdgConfigFiles = {
                           "linearmouse/linearmouse.json".source = ./configs/linearmouse/linearmouse.json;
                         };
-                        extraVscodeKubernetesSettings = {
+                        vscode.extraKubernetesSettings = {
                           "vscode-kubernetes.helm-path.mac" = "/opt/homebrew/bin/helm";
                           "vscode-kubernetes.kubectl-path.mac" = "/opt/homebrew/bin/kubectl";
                           "vscode-kubernetes.minikube-path.mac" = "/opt/homebrew/bin/minikube";
@@ -304,7 +304,7 @@
                       userEmail = "jacobcolvin1@gmail.com";
                     };
                     extraHomePackages = with pkgs; [ talosctl ];
-                    extraVscodeExtensions =
+                    vscode.extraExtensions =
                       marketplace: with marketplace; [
                         wakatime.vscode-wakatime
                       ];
@@ -333,7 +333,7 @@
                     extraHomePackages = with pkgs; [
                       azure-cli
                     ];
-                    extraK8sPackages = with pkgs; [
+                    kubernetes.extraPackages = with pkgs; [
                       kubelogin
                       fluxcd
                     ];
@@ -363,9 +363,17 @@
               hostModule = ./hosts/nixos/truenas.nix;
               username = "jacobcolvin";
               homeModule = {
-                dotfiles.git = {
-                  userName = "Jacob Colvin";
-                  userEmail = "jacobcolvin1@gmail.com";
+                dotfiles = {
+                  git = {
+                    userName = "Jacob Colvin";
+                    userEmail = "jacobcolvin1@gmail.com";
+                  };
+                  kubernetes.enable = false;
+                  vscode.enable = false;
+                  claude.enable = false;
+                  ghostty.enable = false;
+                  zed.enable = false;
+                  development.enable = false;
                 };
               };
             };

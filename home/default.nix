@@ -1,19 +1,9 @@
 {
   pkgs,
-  lib,
   config,
   ...
 }:
 
-let
-  fontFeatures = config.dotfiles.fonts.features;
-  fontFeaturesAttrs = builtins.listToAttrs (
-    map (f: {
-      name = f;
-      value = true;
-    }) fontFeatures
-  );
-in
 {
   imports = [
     ./options.nix
@@ -26,6 +16,9 @@ in
     ./vscode.nix
     ./claude.nix
     ./secrets.nix
+    ./ghostty.nix
+    ./zed.nix
+    ./development.nix
   ];
 
   programs = {
@@ -38,29 +31,6 @@ in
       includes = config.dotfiles.sshIncludes;
       extraConfig = "SendEnv COLORTERM";
       matchBlocks."*".addKeysToAgent = "yes";
-    };
-
-    ghostty = {
-      enable = true;
-      package = null; # installed via Homebrew cask on macOS
-      systemd.enable = false;
-      settings = {
-        window-height = 40;
-        window-width = 80;
-
-        window-padding-x = 8;
-        window-padding-y = "8,0";
-
-        font-style = "SemiBold";
-        font-feature = fontFeatures;
-        font-size = 14;
-
-        keybind = [
-          "global:cmd+grave_accent=toggle_quick_terminal"
-        ];
-        quick-terminal-screen = "mouse";
-        quick-terminal-position = "right";
-      };
     };
 
     fastfetch = {
@@ -88,81 +58,6 @@ in
         ];
       };
     };
-
-    go = {
-      enable = true;
-      telemetry.mode = "off";
-    };
-
-    npm = {
-      enable = true;
-      package = null; # nodejs is already in home.packages
-      settings.prefix = "\${HOME}/.npm";
-    };
-
-    uv = {
-      enable = true;
-      settings = {
-        python-downloads = "manual";
-      };
-    };
-
-    zed-editor = {
-      enable = true;
-      package = null; # installed via Homebrew cask on macOS
-
-      userSettings = {
-        agent = {
-          default_model = {
-            provider = "copilot_chat";
-            model = "claude-opus-4.6";
-          };
-          favorite_models = [ ];
-          model_parameters = [ ];
-        };
-        edit_predictions = {
-          mode = "subtle";
-        };
-        ui_font_size = 15.0;
-        ui_font_weight = 500.0;
-        ui_font_family = config.stylix.fonts.monospace.name;
-        ui_font_features = fontFeaturesAttrs;
-        buffer_font_size = 14.0;
-        buffer_font_weight = 500.0;
-        buffer_font_family = config.stylix.fonts.monospace.name;
-        buffer_font_features = fontFeaturesAttrs;
-        features = {
-          edit_prediction_provider = "copilot";
-        };
-        terminal = {
-          font_family = config.stylix.fonts.monospace.name;
-          font_features = fontFeaturesAttrs;
-        };
-        base_keymap = "VSCode";
-        vim_mode = false;
-        icon_theme = "Material Icon Theme";
-        theme = "One Dark Pro";
-        wrap_guides = [
-          88
-          120
-        ];
-        ssh_connections = [
-          {
-            host = "nixos-orbstack.orb.local";
-            username = "jacobcolvin";
-          }
-        ];
-      };
-
-      userKeymaps = [
-        {
-          context = "Workspace";
-          bindings = {
-            "shift shift" = "file_finder::Toggle";
-          };
-        }
-      ];
-    };
   };
 
   dconf.enable = false;
@@ -174,7 +69,6 @@ in
     "dlv/config.yml".source = ../configs/dlv/config.yml;
     "gh-copilot/config.yml".source = ../configs/gh-copilot/config.yml;
     "kat/config.yaml".source = ../configs/kat/config.yaml;
-    "ccstatusline/settings.json".source = ../configs/ccstatusline/settings.json;
   }
   // config.dotfiles.extraXdgConfigFiles;
 
@@ -183,21 +77,12 @@ in
     preferXdgDirectories = true;
 
     sessionPath = [
-      "$HOME/go/bin"
-      "$HOME/.npm/bin"
-      "$HOME/.krew/bin"
       "$HOME/.local/bin"
     ];
 
     sessionVariables = {
       EDITOR = "vim";
       devbox_no_prompt = "true";
-    };
-
-    activation = {
-      installPython = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        run ${pkgs.uv}/bin/uv python install --default
-      '';
     };
 
     packages =
@@ -233,32 +118,10 @@ in
         arping
         onefetch
 
-        # Languages & runtimes
-        nodejs
-        dotnet-sdk
-
-        # Dev tools
-        nixd
-        nil
-        chief
-
-        # Python build dependencies
-        openssl
-        readline
-        sqlite
-        xz
-        zlib
-        tcl
-
       ]
       ++ config.dotfiles.extraHomePackages;
 
     file."Taskfile.yaml".source = ../configs/task/Taskfile.yaml;
-
-    file.".zed_server" = lib.mkIf pkgs.stdenv.isLinux {
-      source = "${pkgs.zed-editor.remote_server}/bin";
-      recursive = true;
-    };
   };
 
 }

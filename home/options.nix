@@ -52,34 +52,10 @@ in
       description = "Additional packages to install in home.packages.";
     };
 
-    extraK8sPackages = mkOption {
-      type = types.listOf types.package;
-      default = [ ];
-      description = "Additional Kubernetes-related packages.";
-    };
-
-    extraKrewPlugins = mkOption {
-      type = types.listOf types.str;
-      default = [ ];
-      description = "Additional kubectl krew plugins.";
-    };
-
     extraXdgConfigFiles = mkOption {
       type = types.attrsOf types.anything;
       default = { };
       description = "Additional XDG config files merged into xdg.configFile.";
-    };
-
-    extraVscodeExtensions = mkOption {
-      type = types.uniq (types.functionTo (types.listOf types.package));
-      default = _marketplace: [ ];
-      description = "Function taking marketplace to return extra VS Code extensions.";
-    };
-
-    extraVscodeKubernetesSettings = mkOption {
-      type = types.attrsOf types.str;
-      default = { };
-      description = "Additional VS Code Kubernetes extension settings.";
     };
 
     sshIncludes = mkOption {
@@ -97,19 +73,6 @@ in
         "ss06"
       ];
       description = "OpenType font features to enable across editors and terminals.";
-    };
-
-    claude = {
-      dangerouslySkipPermissions = mkOption {
-        type = types.bool;
-        default = false;
-        description = "Whether to skip Claude Code permission prompts.";
-      };
-      extraSettings = mkOption {
-        type = types.attrsOf types.anything;
-        default = { };
-        description = "Additional settings merged into Claude Code settings.json.";
-      };
     };
   };
 }
