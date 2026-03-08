@@ -2051,3 +2051,441 @@ The migration is non-trivial because our helpers embed domain-specific integrati
    - **Rationale:** Our `mkDarwin`/`mkHome`/`mkNixOS` helpers already provide equivalent functionality to nixos-unified's builder functions, with the added benefit of deep domain-specific integrations (Stylix, nix-homebrew, sops-nix, krewfile, nix-index-database) baked in. nixos-unified's generic builders would force us to move all these integrations into per-host or shared modules, increasing verbosity. The autowiring feature conflicts with our explicit-configuration preference. The activate script's main advantage (remote SSH deployment) is better served by deploy-rs or colmena if needed. The specialArgs pattern (candidate #1) captures the most valuable insight and can be adopted without the dependency. Full adoption would add an upstream dependency, require a non-trivial migration, and yield modest net simplification given our domain-specific integrations.
    - **Source:** Overall architecture comparison
    - **Impact:** N/A. Recommendation to skip full adoption and cherry-pick the specialArgs pattern instead.
+
+---
+
+# Compiled Candidate Changes
+
+All candidate changes from US-001 through US-020, grouped by category. Duplicates are merged with all sources cited. Each entry describes **what** and **why**, not how.
+
+## Structure
+
+Changes to flake organization, module layout, host definitions, and directory structure.
+
+### 1. Extract flake output logic into a separate `lib/` or `flake/` directory
+
+- **Description:** Move `mkDarwin`, `mkHome`, `mkNixOS` helpers and overlay/module lists out of `flake.nix` into dedicated files, keeping the flake entry point minimal.
+- **Rationale:** Our `flake.nix` is ~400 lines with inline builder functions. Extracting them improves readability, makes helpers testable independently, and follows the strongest recurring pattern in the survey.
+- **Sources:** ryan4yin/nix-config `lib/`, wimpysworld/nix-config `lib/flake-builders.nix`, khaneliman/khanelinix `flake/`, connorfeeley/dotfiles `flake-modules/`, alyraffauf/nixcfg `modules/flake/`, KubqoA/dotfiles `bootstrap.nix` + `lib.nix` (6-repo signal)
+- **Impact:** Medium
+- **Category:** Structure
+
+### 2. Data-driven host registry
+
+- **Description:** Centralize host metadata (hostname, platform, username, stateVersion, feature flags) into a standalone data file (Nix attrset or TOML), separate from builder logic.
+- **Rationale:** Separating host data from Nix code makes the host inventory scannable without understanding Nix, and new hosts can be added by editing a data file. Reduces per-host boilerplate in `flake.nix`.
+- **Sources:** wimpysworld/nix-config `lib/registry-systems.toml` (TOML), joshsymonds/nix-config `nixosHostDefinitions` (Nix attrset), TheMaxMur/NixOS-Configuration `hosts.nix` (Nix attrset), connorfeeley/dotfiles `ops/metadata/hosts.toml` (TOML) (4-repo signal)
+- **Impact:** Medium
+- **Category:** Structure
+
+### 3. Standalone `homeConfigurations` alongside integrated rebuilds
+
+- **Description:** Generate `homeConfigurations` outputs independently from `darwinConfigurations`/`nixosConfigurations`, enabling fast `home-manager switch` without sudo or full system rebuild.
+- **Rationale:** Decouples user-level config iteration from system rebuilds. `home-manager switch` takes seconds vs. a full darwin-rebuild. Our integrated approach means every `task switch` rebuilds both, even for HM-only changes.
+- **Sources:** eh8/chenglab, AlexNabokikh/nix-config, megalithic/dotfiles, KubqoA/dotfiles (4-repo signal)
+- **Impact:** Medium
+- **Category:** Structure
+
+### 4. Isolate dev tooling via flake-parts partitions (sub-flake)
+
+- **Description:** Put treefmt, devShells, checks, and templates into a sub-flake with its own `flake.lock`, keeping dev-only dependencies out of the main flake lock.
+- **Rationale:** Dev-only dependencies (treefmt-nix, statix, deadnix) do not bloat the main flake lock, and updating dev tools cannot break system builds.
+- **Sources:** khaneliman/khanelinix `flake/dev/`
+- **Impact:** Medium
+- **Category:** Structure
+
+### 5. Rich typed options module for host classification
+
+- **Description:** Expand `dotfiles.*` options with derived booleans (`host.is.workstation`, `host.is.laptop`), GPU classification, display configuration, and tag-based feature selection.
+- **Rationale:** Enables cleaner conditional logic in modules (e.g., `lib.mkIf host.is.workstation` instead of checking `pkgs.stdenv` inline). Tag-based selection (`hostHasTag "studio"`) is a flexible composition mechanism.
+- **Sources:** wimpysworld/nix-config `lib/noughty/default.nix` (~500 lines), TheMaxMur/NixOS-Configuration `modules/defaults/`
+- **Impact:** Medium
+- **Category:** Structure
+
+### 6. Composable NixOS profiles as feature flags
+
+- **Description:** Create self-contained NixOS feature modules (audio, bluetooth, swap, wifi, etc.) each with an `enable` option, so host configs read like feature checklists.
+- **Rationale:** Cleanly separates "what this host does" (profile list) from "how it's configured" (profile implementation). Reduces per-host configuration verbosity.
+- **Sources:** alyraffauf/nixcfg `modules/nixos/profiles/` (15+ profiles), TheMaxMur/NixOS-Configuration `system/nixos/modules/`
+- **Impact:** Medium
+- **Category:** Structure
+
+### 7. Profiles/roles-based composition for machine identity
+
+- **Description:** Define role bundles (personal, work, developer, server, workstation) as importable directories that encapsulate identity-specific config, separate from platform config.
+- **Rationale:** Cleanly separates machine identity from platform. The same profile (e.g., `profiles/personal`) works across Darwin, NixOS, and standalone HM. Reduces per-host boilerplate when multiple hosts share an identity.
+- **Sources:** kclejeune/system `profiles/`, connorfeeley/dotfiles `home/roles/`, khaneliman/khanelinix `modules/*/archetypes/`
+- **Impact:** Medium
+- **Category:** Structure
+
+### 8. Centralized path constants module
+
+- **Description:** Define all well-known paths (home, icloud, dotfiles, config, localBin, cargoHome, etc.) in a single file passed via `specialArgs`.
+- **Rationale:** Eliminates path duplication across modules. Modules reference `paths.icloud` instead of hardcoding long paths.
+- **Sources:** megalithic/dotfiles `lib/paths.nix`, joshsymonds/nix-config `lib/network.nix`
+- **Impact:** Low
+- **Category:** Structure
+
+### 9. NixOS-to-HM bridge via `home-manager.sharedModules`
+
+- **Description:** When a NixOS/Darwin module enables a system feature, auto-propagate the corresponding HM config via `sharedModules`.
+- **Rationale:** Eliminates dual configuration. Enabling a system feature automatically enables its user-space counterpart without configuring it in two places.
+- **Sources:** alyraffauf/nixcfg `modules/nixos/desktop/`
+- **Impact:** Medium
+- **Category:** Structure
+
+### 10. HM path aliasing via `mkAliasDefinitions`
+
+- **Description:** Create short aliases like `my.hm.file`, `my.hm.configFile` that map to verbose `home-manager.users.<user>.xdg.*` paths.
+- **Rationale:** Reduces verbosity when placing files from system-level modules into HM config.
+- **Sources:** ahmedelgabri/dotfiles `nix/modules/shared/settings.nix`, kclejeune/system `modules/primaryUser.nix` (2-repo signal)
+- **Impact:** Low
+- **Category:** Structure
+
+### 11. Adopt specialArgs pattern for `flake` access in modules
+
+- **Description:** Inject `flake = { self, inputs }` as specialArgs into all NixOS/Darwin/HM modules so they can access flake inputs without relying on closure scope.
+- **Rationale:** Makes modules self-contained and portable. Currently our modules depend on closure scope from `flake.nix`; this makes input access explicit.
+- **Sources:** srid/nixos-unified `nix/modules/flake-parts/lib.nix`, kclejeune/system (specialArgs pattern), ahmedelgabri/dotfiles (specialArgs pattern) (3-repo signal)
+- **Impact:** Medium
+- **Category:** Structure
+
+## Tooling
+
+Changes to formatters, linters, CI/CD, dev tools, and quality checks.
+
+### 12. Add statix and deadnix to treefmt pipeline
+
+- **Description:** Include `statix` (Nix anti-pattern linter) and `deadnix` (dead code detector) alongside nixfmt in treefmt.
+- **Rationale:** statix catches anti-patterns like unused let bindings, eta-reducible functions, and deprecated builtins. deadnix detects unused variables and lambda arguments. Both run automatically via `nix fmt`.
+- **Sources:** mrjones2014/dotfiles, megalithic/dotfiles, joshsymonds/nix-config, khaneliman/khanelinix, kclejeune/system, TheMaxMur/NixOS-Configuration, alyraffauf/nixcfg (7-repo signal)
+- **Impact:** Low
+- **Category:** Tooling
+
+### 13. Pre-commit hooks via git-hooks.nix
+
+- **Description:** Run treefmt as a pre-commit hook, installed automatically via devShell.
+- **Rationale:** Catches formatting issues before they reach CI. No enforcement currently exists at commit time.
+- **Sources:** ryan4yin/nix-config, kclejeune/system `cachix/git-hooks.nix`, alyraffauf/nixcfg (3-repo signal)
+- **Impact:** Low
+- **Category:** Tooling
+
+### 14. Flake checks that build all system configurations
+
+- **Description:** Generate flake `checks` from all nixos/darwin/home configurations by extracting `system.build.toplevel` / `activationPackage`, ensuring `nix flake check` validates actual builds.
+- **Rationale:** Current `nix flake check` may only validate syntax, not that every host config actually builds. Extracting build derivations into checks catches configuration errors early.
+- **Sources:** mrjones2014/dotfiles `checksForConfigs`, kclejeune/system `perSystem.checks` (2-repo signal)
+- **Impact:** Medium
+- **Category:** Tooling
+
+### 15. nix-auto-follow for flake input hygiene
+
+- **Description:** Use `nix-auto-follow` to verify that all transitive flake inputs that could be followed are actually followed.
+- **Rationale:** Prevents subtle cache misses from duplicate nixpkgs evaluations. Particularly valuable as the number of flake inputs grows.
+- **Sources:** mrjones2014/dotfiles `checks/flake-inputs.nix`
+- **Impact:** Medium
+- **Category:** Tooling
+
+### 16. nix-fast-build for CI
+
+- **Description:** Use `nix-fast-build` for parallel multi-system builds with `--skip-cached` in CI, combined with a binary cache.
+- **Rationale:** Faster than `nix flake check` for multi-system configs because it parallelizes evaluation and skips already-cached derivations.
+- **Sources:** mrjones2014/dotfiles CI workflow
+- **Impact:** Medium
+- **Category:** Tooling
+
+### 17. Add a devShell to the flake
+
+- **Description:** Provide a `devShells.default` with all formatting, linting, and operational tools so contributors can `nix develop` to get the right environment.
+- **Rationale:** Ensures consistent tooling for anyone working on the config. Currently relies on system-installed tools.
+- **Sources:** ryan4yin/nix-config, wimpysworld/nix-config, kclejeune/system, joshsymonds/nix-config (4-repo signal)
+- **Impact:** Low
+- **Category:** Tooling
+
+### 18. Automated flake.lock updates via GitHub Actions
+
+- **Description:** Use `DeterminateSystems/update-flake-lock` on a cron schedule to create PRs with flake.lock updates, validated by CI before merge.
+- **Rationale:** Creates hands-off dependency management. Our manual `task update` requires remembering to run it.
+- **Sources:** kclejeune/system, dustinlyons/nixos-config, wimpysworld/nix-config (via Dependabot) (3-repo signal)
+- **Impact:** Low
+- **Category:** Tooling
+
+### 19. keep-sorted formatter for maintaining sorted lists
+
+- **Description:** Add `keep-sorted` to treefmt with `# keep-sorted start/end` comments to auto-maintain alphabetical ordering in package lists.
+- **Rationale:** Prevents merge conflicts from unordered insertions. Useful for package lists and homebrew lists.
+- **Sources:** megalithic/dotfiles `format.nix`
+- **Impact:** Low
+- **Category:** Tooling
+
+### 20. typos spell checker
+
+- **Description:** Add `typos` (fast spell checker) to treefmt or pre-commit to catch typos in code, comments, and config files.
+- **Rationale:** Catches typos automatically with auto-fix support. Minor quality-of-life improvement.
+- **Sources:** ryan4yin/nix-config `.typos.toml`
+- **Impact:** Low
+- **Category:** Tooling
+
+### 21. Garnix for zero-config CI
+
+- **Description:** Use Garnix (7-line YAML) for building all flake outputs with automatic caching.
+- **Rationale:** Dramatically simpler than any other CI approach for validating that all configurations build. Complements existing Dagger-based testing.
+- **Sources:** kclejeune/system `garnix.yaml`
+- **Impact:** Low
+- **Category:** Tooling
+
+### 22. Binary cache integration (cachix or attic)
+
+- **Description:** Push build artifacts to a binary cache during CI/local builds so other machines can pull pre-built derivations.
+- **Rationale:** Reduces rebuild times across multiple machines. The `cachix watch-exec` pattern transparently pushes all build outputs.
+- **Sources:** connorfeeley/dotfiles (attic self-hosted), kclejeune/system (cachix), mrjones2014/dotfiles (cachix), joshsymonds/nix-config (cachix) (4-repo signal)
+- **Impact:** Medium
+- **Category:** Tooling
+
+### 23. nix-index-database with comma integration
+
+- **Description:** Add `nix-index-database` for instant `nix-locate` queries and `comma` (`, <command>`) to run any nixpkgs program without installing it.
+- **Rationale:** Eliminates the need to build a local nix-index. Typing `, ripgrep` runs ripgrep from nixpkgs without prior installation.
+- **Sources:** kclejeune/system `programs.nix-index-database.comma.enable`
+- **Impact:** Low
+- **Category:** Tooling
+
+## Modules
+
+Changes to home-manager modules, NixOS modules, packages, overlays, and theming.
+
+### 24. Stable nixpkgs overlay (`pkgs.stable`)
+
+- **Description:** Add a `nixpkgs-stable` input and expose it as `pkgs.stable` via an overlay, enabling per-package stable pinning.
+- **Rationale:** Provides a safety valve for unstable-tracking breakages. Individual packages can be pinned to stable (`pkgs.stable.somePackage`) while the rest tracks unstable.
+- **Sources:** wimpysworld/nix-config, MatthiasBenaets/nix-config, TheMaxMur/NixOS-Configuration (3-repo signal)
+- **Impact:** Medium
+- **Category:** Modules
+
+### 25. nix-homebrew with pinned non-flake inputs for declarative Homebrew management
+
+- **Description:** Use `nix-homebrew` with `mutableTaps = false` and pinned homebrew-core/cask/bundle as non-flake inputs for fully reproducible Homebrew.
+- **Rationale:** Manages the Homebrew installation itself declaratively, including Rosetta support. Pins tap versions in the flake lock for reproducible builds. Solves the Homebrew bootstrap problem on fresh installs.
+- **Sources:** eh8/chenglab, ahmedelgabri/dotfiles, megalithic/dotfiles, dustinlyons/nixos-config (4-repo signal)
+- **Impact:** Medium
+- **Category:** Modules
+
+### 26. Configure CLI tools via HM `programs.*` instead of just installing packages
+
+- **Description:** Use HM's built-in `programs.bat`, `programs.eza`, `programs.fzf`, `programs.ripgrep`, `programs.zoxide`, `programs.direnv` options instead of adding tools as raw packages.
+- **Rationale:** Using `programs.*.enable` gets shell integration, aliases, and config file management for free, rather than just having the binary on PATH.
+- **Sources:** wimpysworld/nix-config, khaneliman/khanelinix, AlexNabokikh/nix-config (3-repo signal)
+- **Impact:** Low
+- **Category:** Modules
+
+### 27. mac-app-util for Spotlight/Launchpad integration
+
+- **Description:** Use `hraban/mac-app-util` to ensure Nix-installed GUI apps appear in macOS Spotlight and Launchpad.
+- **Rationale:** Without it, Nix-installed GUI apps are only accessible via terminal. Creates proper `.app` wrappers that macOS indexes.
+- **Sources:** MatthiasBenaets/nix-config `modules/hosts/darwin/mac-app-util.nix`
+- **Impact:** Medium
+- **Category:** Modules
+
+### 28. Impermanence for NixOS hosts
+
+- **Description:** Run NixOS root on tmpfs with only `/nix/persist` surviving reboots, guaranteeing system state is fully declared in Nix.
+- **Rationale:** Catches configuration drift by design. Any undeclared files are wiped on reboot. Our NixOS hosts use persistent root, so undeclared state can accumulate.
+- **Sources:** eh8/chenglab, TheMaxMur/NixOS-Configuration, KubqoA/dotfiles (3-repo signal)
+- **Impact:** Medium
+- **Category:** Modules
+
+### 29. Mutable config via `system.activationScripts` for runtime-modified configs
+
+- **Description:** Use activation scripts to create regular filesystem symlinks (bypassing HM's read-only store links) for configs that apps modify at runtime.
+- **Rationale:** Some apps (Karabiner, Neovim plugin managers, Hammerspoon) write back to their config directory. Regular symlinks let the app write while still tracking config in git.
+- **Sources:** ahmedelgabri/dotfiles `nix/modules/shared/vim.nix`, `nix/modules/darwin/hammerspoon.nix`
+- **Impact:** Medium
+- **Category:** Modules
+
+### 30. Auto-discovered packages via `packagesFromDirectoryRecursive`
+
+- **Description:** Use the built-in nixpkgs helper `packagesFromDirectoryRecursive` to auto-expose all packages in `pkgs/` without maintaining an explicit list.
+- **Rationale:** Reduces the chance of adding a package but forgetting to wire it up.
+- **Sources:** khaneliman/khanelinix `flake/packages.nix`
+- **Impact:** Low
+- **Category:** Modules
+
+### 31. Structured overlay organization in a dedicated directory
+
+- **Description:** Move overlays to a dedicated `overlays/` directory with named overlays for local packages, version pins, and unstable channel access.
+- **Rationale:** Cleaner than our inline overlay list. Provides a clear place to add package overrides or version pins.
+- **Sources:** wimpysworld/nix-config `overlays/default.nix`, khaneliman/khanelinix `overlays/`
+- **Impact:** Low
+- **Category:** Modules
+
+### 32. Parameterized nix-conf.nix shared between system and home-manager
+
+- **Description:** Create a single nix settings file that takes `{ isHomeManager }` as a parameter, allowing both system and HM configs to import it with different behavior.
+- **Rationale:** Avoids duplicating Nix configuration across system and HM files. The closure-based parameterization is a clean pattern.
+- **Sources:** mrjones2014/dotfiles `nixos/nix-conf.nix`
+- **Impact:** Low
+- **Category:** Modules
+
+### 33. Performance tuning profiles module
+
+- **Description:** Provide a `performance.profile` enum option (dev/server/workstation/constrained) that sub-modules read to configure memory, network, and CPU tuning.
+- **Rationale:** Hosts set one option and get an appropriate tuning stack without managing sysctl details.
+- **Sources:** joshsymonds/nix-config `modules/performance/profiles.nix`
+- **Impact:** Medium
+- **Category:** Modules
+
+### 34. Chaotic Nyx for bleeding-edge packages
+
+- **Description:** Use `chaotic-cx/nyx` as a NixOS module for pre-built bleeding-edge packages (mesa-git, etc.).
+- **Rationale:** Alternative to maintaining custom overlays for packages that need to be newer than nixpkgs-unstable.
+- **Sources:** dustinlyons/nixos-config, TheMaxMur/NixOS-Configuration (2-repo signal)
+- **Impact:** Low
+- **Category:** Modules
+
+### 35. brew-alias helper for Nix-Homebrew interop
+
+- **Description:** Create a helper function that generates a Nix package symlinked to a Homebrew binary, bridging Nix-managed dev tools with Homebrew-installed native libraries.
+- **Rationale:** Solves the problem when a language toolchain (e.g., Ruby bundler) needs native macOS libraries only available via Homebrew (libpq, vips).
+- **Sources:** KubqoA/dotfiles `lib.nix` (`brew-alias` function)
+- **Impact:** Low
+- **Category:** Modules
+
+## Operations
+
+Changes to deployment, bootstrap, secrets management, macOS configuration, and Nix daemon settings.
+
+### 36. Lower Nix build priority on workstations
+
+- **Description:** Set `nix.daemonProcessType = "Background"` on Darwin and `nix.daemonCPUSchedPolicy = "idle"` on NixOS to prevent audio stutter and UI jank during builds.
+- **Rationale:** Simple, practical improvement for workstation usability. No downside beyond slightly slower builds.
+- **Sources:** wimpysworld/nix-config `darwin/default.nix`
+- **Impact:** Low
+- **Category:** Operations
+
+### 37. Ensure `system.primaryUser` is set on Darwin
+
+- **Description:** Set `system.primaryUser = username` in nix-darwin config.
+- **Rationale:** Newer nix-darwin option that explicitly declares the primary user. Without it, deprecation warnings may appear on recent nix-darwin versions.
+- **Sources:** ryan4yin/nix-darwin-kickstarter `modules/host-users.nix`
+- **Impact:** Low
+- **Category:** Operations
+
+### 38. Comprehensive macOS `CustomUserPreferences`
+
+- **Description:** Use `system.defaults.CustomUserPreferences` for macOS settings not exposed by nix-darwin options: `.DS_Store` prevention, Stage Manager, screencapture, Safari privacy, TimeMachine, Photos auto-open prevention, ad personalization.
+- **Rationale:** Clean escape hatch for `defaults write` commands. The `.DS_Store` prevention and screensaver password settings are broadly useful.
+- **Sources:** ryan4yin/nix-darwin-kickstarter, ahmedelgabri/dotfiles, megalithic/dotfiles (3-repo signal)
+- **Impact:** Low
+- **Category:** Operations
+
+### 39. macOS firewall stealth mode via `system.defaults.alf`
+
+- **Description:** Enable macOS Application Layer Firewall with stealth mode (no response to ICMP ping or connection attempts on closed ports).
+- **Rationale:** Minor but useful security hardening. Four lines of config.
+- **Sources:** dj95/nix-dotfiles `hosts/darwin-mbp/defaults.nix`
+- **Impact:** Low
+- **Category:** Operations
+
+### 40. Declarative macOS Dock management module
+
+- **Description:** Create a custom module that declares Dock entries as typed options, using `dockutil` in an activation script to diff and reset when state drifts.
+- **Rationale:** Maintains Dock consistency across rebuilds without manual management.
+- **Sources:** dustinlyons/nixos-config `modules/darwin/dock/default.nix`, eh8/chenglab `modules/macos/_dock.nix` (2-repo signal)
+- **Impact:** Low
+- **Category:** Operations
+
+### 41. Deploy-rs for remote NixOS host management
+
+- **Description:** Use deploy-rs (or colmena) for remote NixOS deployment with auto-rollback and validation before activation.
+- **Rationale:** Enables remote management of TrueNAS and other NixOS hosts without SSH+nixos-rebuild. Validates configurations before activating, reducing broken deployment risk.
+- **Sources:** ryan4yin/nix-config (colmena), connorfeeley/dotfiles `deploy.nix` (deploy-rs) (2-repo signal)
+- **Impact:** Medium
+- **Category:** Operations
+
+### 42. sops-nix age keys derived from SSH host keys
+
+- **Description:** Derive age keys from SSH host ed25519 keys via `ssh-to-age`, eliminating a separate age key file for secrets decryption.
+- **Rationale:** Secrets decryption works on any machine with an authorized SSH key, without manually distributing a standalone age key. Simplifies the bootstrap story.
+- **Sources:** eh8/chenglab, joshsymonds/nix-config `home.activation.deriveAgenixKey`, KubqoA/dotfiles `scripts/ssh-key-setup` (3-repo signal)
+- **Impact:** Medium
+- **Category:** Operations
+
+### 43. Bootstrap install script for fresh machine setup
+
+- **Description:** Create a script (or flake app) handling the full bootstrap flow: Nix installation, SSH key generation, age key derivation, sops config update, and initial system build.
+- **Rationale:** Makes fresh installs reproducible and documented. Eliminates manual steps that are error-prone.
+- **Sources:** eh8/chenglab `install.sh`, KubqoA/dotfiles `scripts/ssh-key-setup`, dustinlyons/nixos-config `apps/`, joshsymonds/nix-config (4-repo signal)
+- **Impact:** Medium
+- **Category:** Operations
+
+### 44. system.autoUpgrade from GitHub flake URI
+
+- **Description:** Use `system.autoUpgrade` pointing at the flake's GitHub URI for automatic daily rebuilds on always-on NixOS hosts.
+- **Rationale:** Combined with CI-validated flake.lock updates, creates a hands-off update pipeline for servers. Our NixOS hosts require manual `task switch`.
+- **Sources:** eh8/chenglab `modules/nixos/auto-update.nix`
+- **Impact:** Medium
+- **Category:** Operations
+
+### 45. Verify `auto-optimise-store` safety with Lix
+
+- **Description:** Verify whether the race condition in NixOS/nix#7273 ("cannot link .tmp-link") affects our Lix-based setup.
+- **Rationale:** Multiple repos explicitly disable `auto-optimise-store` citing this bug. Our config enables it. Worth confirming Lix is not affected.
+- **Sources:** ryan4yin/nix-darwin-kickstarter (cites NixOS/nix#7273)
+- **Impact:** Low
+- **Category:** Operations
+
+### 46. `homebrew.onActivation.cleanup = "zap"`
+
+- **Description:** Set Homebrew cleanup to "zap" to uninstall all formulae and related files not listed in the Nix-generated Brewfile.
+- **Rationale:** Enforces full declarative control over Homebrew packages. Tighter reproducibility.
+- **Sources:** ryan4yin/nix-darwin-kickstarter, wimpysworld/nix-config (2-repo signal)
+- **Impact:** Low
+- **Category:** Operations
+
+### 47. Explicit `allowUnfreePredicate` with package list
+
+- **Description:** Replace blanket `allowUnfree = true` with `allowUnfreePredicate` listing specific unfree packages.
+- **Rationale:** Makes unfree dependencies visible and auditable. Conditional lists can differ per host (e.g., servers vs. workstations).
+- **Sources:** mrjones2014/dotfiles `nixos/nixpkgs-config.nix`
+- **Impact:** Low
+- **Category:** Operations
+
+### 48. Auto-infer `homeDirectory` from username and platform
+
+- **Description:** Compute `home.homeDirectory` automatically (`/Users/${username}` on Darwin, `/home/${username}` on Linux) in helper functions.
+- **Rationale:** Eliminates a source of copy-paste errors. Currently set manually in platform-specific inline modules.
+- **Sources:** srid/nixos-unified `nix/modules/flake-parts/lib.nix`
+- **Impact:** Low
+- **Category:** Operations
+
+### 49. `nix.settings.max-jobs = "auto"`
+
+- **Description:** Set `max-jobs = "auto"` in shared Nix config to use all available CPU cores for builds.
+- **Rationale:** Simple optimization. The default without this setting is 1 on some platforms.
+- **Sources:** srid/nixos-unified
+- **Impact:** Low
+- **Category:** Operations
+
+### 50. zramSwap for memory-constrained NixOS hosts
+
+- **Description:** Enable `zramSwap = { enable = true; memoryPercent = 40; }` for compressed RAM swap on NixOS.
+- **Rationale:** Two-line setting that significantly improves OOM resilience on memory-constrained hosts (OrbStack container, lightweight VMs).
+- **Sources:** shaunsingh/nix-darwin-dotfiles
+- **Impact:** Low
+- **Category:** Operations
+
+### 51. Flake apps for grouped input updates
+
+- **Description:** Expose `nix run .#update-core`, `.#update-system`, `.#update-apps` to update subsets of flake inputs rather than all-or-nothing.
+- **Rationale:** Allows updating core Nix infrastructure independently from application inputs, reducing the risk of a single `nix flake update` breaking everything.
+- **Sources:** khaneliman/khanelinix `flake/apps.nix`
+- **Impact:** Low
+- **Category:** Operations
+
+### 52. Per-host sops secret files colocated with host configs
+
+- **Description:** Store `secrets.yaml` files inside each host's directory rather than in a centralized `secrets/` directory, with `.sops.yaml` path regex matching.
+- **Rationale:** Collocates secrets with consuming configs. Makes it clear which host has which secrets and enables finer-grained access control.
+- **Sources:** wimpysworld/nix-config `secrets/host-*.yaml`, KubqoA/dotfiles `hosts/*/secrets.yaml` (2-repo signal)
+- **Impact:** Low
+- **Category:** Operations
