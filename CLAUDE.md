@@ -26,8 +26,9 @@ task switch
 - **`lib/`**: Builder functions (`mkDarwin`, `mkHome`, `mkNixOS`) and shared config (overlays, home-manager modules). `lib/default.nix` is the entry point, each builder lives in its own file.
 - **`hosts/shared.nix`**: Nix settings shared between nix-darwin and NixOS (experimental features, GC, store optimization, flake registry).
 - **`hosts/stylix.nix`**: Shared stylix theme config (base16 scheme, fonts, cursor) imported by all three helpers.
-- **`hosts/mac.nix`**: System-level nix-darwin config (Homebrew, PAM/Touch ID, user accounts). Imports `shared.nix`. `hosts/linux.nix` is the standalone home-manager equivalent.
-- **`hosts/nixos/`**: NixOS system configs: `orbstack.nix` (OrbStack container), `truenas.nix` (TrueNAS server), `common.nix` (shared NixOS settings, imports `../shared.nix`).
+- **`hosts/darwin/`**: Per-host metadata for macOS machines. `hosts/darwin/default.nix` has system-level nix-darwin config (Homebrew, PAM/Touch ID, user accounts).
+- **`hosts/nixos/`**: NixOS system configs: `orbstack.nix` (OrbStack container), `truenas.nix` (TrueNAS server), `default.nix` (shared NixOS settings, imports `../shared.nix`).
+- **`hosts/linux/`**: Non-NixOS Linux hosts using standalone home-manager (`mkHome`). `container.nix` is the Dagger dev container config.
 - **`home/`**: Home-manager modules imported from `home/default.nix`. Each `.nix` file is a self-contained module for a tool domain (shell, git, editors, k8s, etc.).
 - **`configs/`**: Raw config files, normally symlinked into `~/.config/` via `xdg.configFile` and `home.file`.
 - **`pkgs/`**: Custom Nix package derivations.

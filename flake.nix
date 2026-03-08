@@ -116,7 +116,7 @@
               paths = {
                 home = ./home;
                 hostMac = ./hosts/darwin/default.nix;
-                hostLinux = ./hosts/home/default.nix;
+                hostLinux = ./hosts/linux/default.nix;
                 stylix = ./lib/stylix.nix;
                 chief = ./pkgs/chief.nix;
                 linearmouse = ./configs/linearmouse/linearmouse.json;
@@ -139,7 +139,7 @@
           };
 
           homeConfigurations = {
-            "jacobcolvin@linux" = mkHome (import ./hosts/home/linux.nix);
+            "jacobcolvin@linux" = mkHome (import ./hosts/linux/container.nix);
           };
         };
     };
