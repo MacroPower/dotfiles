@@ -301,3 +301,93 @@ Modules in khanelinix's `modules/home/` that we lack or configure differently:
    - **Rationale:** khanelinix exposes all custom packages under `pkgs.khanelinix.*` via a single overlay, preventing name collisions with nixpkgs. Our custom packages are added directly to the top-level `pkgs` namespace via inline overlays, which could theoretically shadow nixpkgs packages.
    - **Source:** `overlays/default/` (default overlay), `lib/overlay.nix`
    - **Impact:** Low. Defensive practice; prevents potential name collisions.
+
+## eh8/chenglab
+
+**Source:** [github.com/eh8/chenglab](https://github.com/eh8/chenglab)
+
+A homelab-focused Nix config managing 7 machines: 3 NixOS servers (ThinkCenter M710q Tiny), 1 AMD Ryzen desktop, 1 M1 MacBook Air (nix-darwin), 1 WSL instance, and 1 custom ISO builder. Notably minimal and approachable, with a strong emphasis on impermanence (root on tmpfs), full-disk encryption with remote initrd unlock, and self-hosted services. Tracks stable nixpkgs (25.11) with an unstable overlay available.
+
+### Comparison Table
+
+| Aspect                   | eh8/chenglab                                                                                                                                                                                       | Our dotfiles                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Flake structure          | Flat `flake.nix` with `mkNixOSConfig`/`mkDarwinConfig` helpers that take a path; no flake-parts                                                                                                    | `flake.nix` with flake-parts and `mkDarwin`/`mkHome`/`mkNixOS` helpers that take a `hostConfig` attrset             |
+| Module organization      | `modules/{nixos,macos,wsl,home-manager}/` split by platform; each has a `base.nix` + `_packages.nix`                                                                                               | `hosts/` for system config, `home/` for flat home-manager modules; no platform subdirectories under home            |
+| Host definitions         | `machines/<hostname>/configuration.nix` + `hardware-configuration.nix`; each machine explicitly imports its modules                                                                                | `flake.nix` inline `hostConfig` attrsets that feed `mkDarwin`/`mkHome`/`mkNixOS`; hardware config in `hosts/nixos/` |
+| Home-manager integration | Embedded in each machine's `configuration.nix` via `home-manager.users.${vars.userName}.imports = [...]`                                                                                           | Centralized in `home/default.nix` imported by flake helpers; each module self-contained                             |
+| Shared variables         | `vars.nix` attrset (fullName, userName, userEmail, SSH keys) imported via `import ./vars.nix` and passed through `specialArgs`                                                                     | `hostConfig` attrset in `flake.nix` plus `dotfiles.*` NixOS/HM options for typed config                             |
+| Secrets management       | sops-nix with age keys derived from SSH host keys stored at `/nix/secret/initrd/ssh_host_ed25519_key`; `.sops.yaml` lists all machine age public keys                                              | sops-nix with standalone age key                                                                                    |
+| Impermanence             | Root on tmpfs (`/ = { device = "none"; fsType = "tmpfs"; }`), persistent state via `environment.persistence."/nix/persist"` with explicit dirs/files list                                          | Not used; standard persistent root filesystem                                                                       |
+| Disk encryption          | LUKS on all NixOS servers; remote initrd SSH unlock via `boot.initrd.network.ssh`                                                                                                                  | Not used                                                                                                            |
+| Services layer           | Dedicated `services/` directory with per-service `.nix` files (nextcloud, tailscale, nixarr, homebridge, etc.); underscore prefix for shared infra (`_acme.nix`, `_cloudflared.nix`, `_nginx.nix`) | No services directory; NixOS hosts are lightweight (OrbStack container, TrueNAS)                                    |
+| Operations               | `.justfile` with deploy, up, lint, fmt, clean, repair, sops-edit, sops-rotate, sops-update, build-iso                                                                                              | `Taskfile.yaml` with switch, update, check, format                                                                  |
+| Nixpkgs channel          | Stable (nixos-25.11) with `nixpkgs-unstable` input available                                                                                                                                       | Unstable (nixos-unstable) everywhere                                                                                |
+| Formatter                | Alejandra exposed via `nix fmt`                                                                                                                                                                    | treefmt-nix with prettier + nixfmt                                                                                  |
+| CI/CD                    | GitHub Actions: daily `flake.lock` update via Dependabot, release workflow for ISO/WSL tarball builds                                                                                              | Dagger-based CI                                                                                                     |
+| Auto-updates             | `system.autoUpgrade` pulling from `github:eh8/chenglab` daily at 07:00 with randomized delay                                                                                                       | Not used                                                                                                            |
+| Install/bootstrap        | `install.sh` shell script handling macOS (Determinate Nix installer, Xcode, Rosetta) and Linux (disk partitioning, encryption, mount, SSH key gen, age key derivation)                             | No bootstrap script                                                                                                 |
+| WSL support              | Dedicated machine config via `nixos-wsl` + `vscode-server` modules                                                                                                                                 | Not supported                                                                                                       |
+| Custom ISO               | `iso1chng` NixOS config builds a minimal installer ISO baked with personal SSH key                                                                                                                 | Not used                                                                                                            |
+| Dock management          | Custom `local.dock` module (`modules/macos/_dock.nix`) for declarative macOS Dock entries                                                                                                          | Not used (manual Dock management)                                                                                   |
+| Platform packages        | Separate `_packages.nix` per platform (nixos, macos, wsl, home-manager)                                                                                                                            | Packages in `home/default.nix` and per-module; system packages in `hosts/mac.nix`                                   |
+| Shell                    | zsh with powerlevel10k                                                                                                                                                                             | fish                                                                                                                |
+
+### Home-Manager Module Comparison
+
+| Module area      | eh8/chenglab                                    | Our dotfiles                                |
+| ---------------- | ----------------------------------------------- | ------------------------------------------- |
+| Shell            | zsh + powerlevel10k (`_zsh.nix`, `_p10k/`)      | fish (via `home/shell.nix`)                 |
+| Terminal         | Alacritty (`alacritty.nix`)                     | Ghostty, WezTerm (via `home/terminals.nix`) |
+| Editor           | Helix (default), Vim (backup)                   | Neovim (via nixvim flake)                   |
+| Git              | Basic config (`git.nix`)                        | Comprehensive config (`home/git.nix`)       |
+| Multiplexer      | Zellij                                          | tmux                                        |
+| File tools       | bat, lsd, fd, ripgrep, fzf                      | bat, eza, fd, ripgrep, fzf, zoxide          |
+| System monitor   | btop, htop                                      | btop                                        |
+| Directory env    | direnv + nix-direnv                             | direnv + nix-direnv                         |
+| Media            | yt-dlp, gallery-dl                              | Not in HM modules                           |
+| Fonts            | fonts.nix (unclear what fonts)                  | Nerd Fonts via stylix                       |
+| Password manager | 1Password (`1password.nix`)                     | 1Password (via Homebrew cask)               |
+| Desktop (NixOS)  | `desktop.nix` (Firefox, Nautilus, GNOME tweaks) | Not applicable (no NixOS desktop)           |
+
+### Candidate Changes
+
+1. **Impermanence for NixOS hosts**
+   - **Rationale:** chenglab runs root on tmpfs with only `/nix/persist` surviving reboots. This guarantees system state is fully declared in Nix; any undeclared files are wiped on reboot. The `environment.persistence."/nix/persist"` block explicitly lists which directories (`/var/log`, `/var/lib/nixos`) and files (`/etc/machine-id`, SSH host keys) survive. This pattern catches configuration drift by design. Our NixOS hosts (OrbStack, TrueNAS) use persistent root, so undeclared state can accumulate.
+   - **Source:** `machines/svr1chng/hardware-configuration.nix` (tmpfs root), `modules/nixos/base.nix` (persistence declarations)
+   - **Impact:** Medium. Requires repartitioning existing NixOS hosts and auditing all stateful paths. Most valuable for the TrueNAS host where config drift is harder to detect.
+
+2. **Remote initrd SSH unlock for encrypted hosts**
+   - **Rationale:** chenglab enables `boot.initrd.network.ssh` with a dedicated initrd SSH host key, allowing remote LUKS passphrase entry via SSH. The authorized keys are reused from the user's config. This is essential for headless server operation with full-disk encryption. Our TrueNAS NixOS host could benefit if we add LUKS.
+   - **Source:** `modules/nixos/remote-unlock.nix`, `machines/svr1chng/hardware-configuration.nix` (LUKS config)
+   - **Impact:** Low. Only relevant if we add disk encryption to NixOS hosts.
+
+3. **system.autoUpgrade from GitHub flake URI**
+   - **Rationale:** chenglab uses `system.autoUpgrade` pointing at `github:eh8/chenglab` to auto-rebuild servers daily. Combined with CI that updates `flake.lock` via Dependabot, this creates a hands-off update pipeline: Dependabot updates lock -> merge -> servers auto-rebuild. Our NixOS hosts require manual `task switch`.
+   - **Source:** `modules/nixos/auto-update.nix`
+   - **Impact:** Medium. Reduces maintenance burden for always-on NixOS hosts. Requires confidence in CI catching breaking changes before merge.
+
+4. **Underscore prefix convention for shared/infrastructure modules**
+   - **Rationale:** chenglab prefixes shared infrastructure modules with underscores (`_acme.nix`, `_cloudflared.nix`, `_nginx.nix` in services; `_packages.nix`, `_zsh.nix` in home-manager). This visually separates foundational modules from feature modules in directory listings. Similar to wimpysworld's `_mixins/` pattern noted in US-002.
+   - **Source:** `services/_acme.nix`, `services/_nginx.nix`, `modules/home-manager/_packages.nix`
+   - **Impact:** Low. Naming convention only; no functional change.
+
+5. **Per-platform module directories under modules/**
+   - **Rationale:** chenglab splits modules into `modules/{nixos,macos,wsl,home-manager}/`, each with its own `base.nix` and `_packages.nix`. This makes platform boundaries explicit at the filesystem level. Our repo uses `hosts/` for system config and `home/` for HM modules, but home-manager modules are shared across platforms via conditional `mkIf` checks inside the modules themselves.
+   - **Source:** `modules/` directory structure
+   - **Impact:** Low. Our current approach works because we have fewer platform-specific HM differences. Would become more relevant if we added WSL or NixOS desktop support.
+
+6. **Dedicated services/ directory for self-hosted applications**
+   - **Rationale:** chenglab keeps all self-hosted service configs (nextcloud, tailscale, jellyfin, homebridge, etc.) in a top-level `services/` directory, separate from system modules. Each machine imports only the services it runs. This cleanly separates "what this machine is" (modules) from "what this machine runs" (services). Our NixOS hosts are lightweight enough that this separation is not yet needed, but it would help if we add more services to TrueNAS.
+   - **Source:** `services/` directory, `machines/svr1chng/configuration.nix` (service imports)
+   - **Impact:** Low. Organizational pattern; only relevant if our NixOS hosts start running more services.
+
+7. **sops-nix age keys derived from SSH host keys**
+   - **Rationale:** chenglab derives age keys from the SSH host key stored at `/nix/secret/initrd/ssh_host_ed25519_key`, meaning the sops identity is the machine's existing SSH key rather than a separate age key. The `.sops.yaml` lists each machine's age public key. The `install.sh` script automates the `ssh-to-age` conversion during bootstrap. This eliminates managing a separate age key file. Our setup uses a standalone age key.
+   - **Source:** `modules/nixos/base.nix` (`sops.age.sshKeyPaths`), `.sops.yaml`, `install.sh` (ssh-to-age conversion)
+   - **Impact:** Low. Different trust model; neither approach is strictly better. SSH-derived keys tie secrets access to machine identity, which is simpler but less flexible for multi-user scenarios.
+
+8. **Bootstrap install script with disk setup and encryption**
+   - **Rationale:** chenglab's `install.sh` handles the entire bootstrap flow for both macOS (Xcode, Rosetta, Determinate Nix installer, then `nix run nix-darwin`) and Linux (GPT partitioning, LUKS encryption, filesystem creation, tmpfs mount hierarchy, initrd SSH key generation, age key derivation). This makes fresh installs reproducible and documented. Our repo has no bootstrap script.
+   - **Source:** `install.sh`
+   - **Impact:** Low. Useful for reproducible machine setup, but our macOS bootstrap is already handled by Determinate Nix installer + `task switch`.
