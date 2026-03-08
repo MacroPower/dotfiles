@@ -1,14 +1,19 @@
-{ ... }:
+{
+  modulesPath,
+  ...
+}:
 
 {
   imports = [
     ./common.nix
+    "${modulesPath}/virtualisation/lxc-container.nix"
   ];
 
-  # Networking: Jailmaker systemd-nspawn containers use host0 as
+  # Networking: TrueNAS LXC containers use host0 as
   # the virtual ethernet interface connected to the host bridge.
   networking.useNetworkd = true;
   networking.dhcpcd.enable = false;
+  networking.useHostResolvConf = false;
   systemd.network.networks."50-host0" = {
     matchConfig.Name = "host0";
     networkConfig = {
