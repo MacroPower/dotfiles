@@ -1854,3 +1854,116 @@ Modules in shaunsingh's HM config that we lack or configure differently:
    - **Rationale:** The Sway config generates workspace keybindings programmatically: `concatAttrs (map (i: { "${modifier}+${toString i}" = "...workspace ${toString i}"; ... }) (lib.range 0 9))` generates all 10 workspace bindings from a single expression. This is then merged with explicit keybindings via `//`. The pattern of generating repetitive keybindings from a range rather than listing them manually is a clean Nix idiom for any tiling WM config.
    - **Source:** `sway/home.nix` (keybindings block)
    - **Impact:** Low. Desktop Linux pattern; not applicable to our current setup but a clean Nix idiom.
+
+## dj95/nix-dotfiles
+
+**Source:** [github.com/dj95/nix-dotfiles](https://github.com/dj95/nix-dotfiles)
+
+### Overview
+
+A single-user nix-darwin + NixOS config focused on development tooling, with strong emphasis on Kubernetes/DevOps operations and Zellij terminal multiplexer (dj95 is the author of zjstatus, zj-quit, and zj-smart-sessions Zellij plugins). The repo has two hosts: a personal MacBook Pro (darwin-mbp) and a NixOS desktop (nixos-desktop). Home-manager is integrated as a darwin module on macOS but appears to run standalone on NixOS (the NixOS config has no HM module import in the flake; `home-manager` is listed as a system package). Heavy use of overlays for version pinning and custom packages.
+
+### Comparison Table
+
+| Aspect                           | dj95/nix-dotfiles                                                                               | Our Approach                                                                |
+| -------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Flake framework**              | None; raw `flake-utils.eachDefaultSystem` + manual config definitions                           | flake-parts with mkDarwin/mkHome/mkNixOS helpers                            |
+| **Top-level structure**          | `hosts/`, `home-manager/`, `overlays/`, `tools/`                                                | `hosts/`, `home/`, `configs/`, `pkgs/`, `toolchains/`                       |
+| **Host definition**              | Inline `darwinConfigurations` with hardcoded hostname; NixOS host not wired in flake outputs    | Data-driven `hostConfig` attrsets passed to builder functions               |
+| **Platforms**                    | nix-darwin (aarch64-darwin) + NixOS (x86_64-linux)                                              | nix-darwin + NixOS + standalone HM for Linux                                |
+| **HM integration (Darwin)**      | `home-manager.darwinModules.home-manager` inside darwin modules list                            | Same; HM as a nix-darwin module                                             |
+| **HM integration (NixOS)**       | Standalone; `home-manager` installed as system package                                          | HM as NixOS module                                                          |
+| **HM module location**           | `home-manager/modules/*.nix` (flat, per-domain files)                                           | `home/` (flat, per-domain files)                                            |
+| **Raw config files**             | `home-manager/configs/` (neovim, zellij, hyprland, sketchybar, linter)                          | `configs/` (similar pattern, different directory name)                      |
+| **Module import style**          | Explicit per-host import lists in `flake.nix`                                                   | Explicit imports via `home/default.nix`                                     |
+| **Machine role differentiation** | Per-host HM import lists select different module subsets; `linux-only.nix` for desktop packages | `hostConfig` flags (e.g., `isPersonal`, `isWork`) drive module conditionals |
+| **Overlays**                     | Heavy; 16 overlay files for version pinning and custom packages                                 | Minimal overlay usage                                                       |
+| **Custom packages**              | Via overlays (`overlays/*.nix`) using `fetchFromGitHub` + build from source                     | `pkgs/` directory with proper derivations                                   |
+| **Flake inputs for own tools**   | zjstatus, zj-quit, zj-smart-sessions, argo-helm-updater, kdl-fmt as flake inputs                | No self-authored tool inputs                                                |
+| **Shell**                        | fish (with starship prompt, extensive inline config)                                            | fish (similar approach)                                                     |
+| **Terminal**                     | Ghostty (via HM xdg.configFile), WezTerm, Alacritty, Kitty (multiple options)                   | Ghostty (via HM programs.ghostty)                                           |
+| **Terminal multiplexer**         | Zellij (author's own plugins: zjstatus, zj-quit, zj-smart-sessions)                             | tmux                                                                        |
+| **Editor**                       | Neovim (Nix-managed plugins, Lua config in configs/neovim/), Helix, Zed                         | Neovim (similar Nix-managed approach)                                       |
+| **Window manager (macOS)**       | AeroSpace + yabai (both configured); sketchybar for status bar                                  | None via Nix                                                                |
+| **Window manager (Linux)**       | Hyprland (Wayland)                                                                              | None (headless NixOS hosts)                                                 |
+| **Theming**                      | Manual per-app theme configuration (Gruvbox primary, Catppuccin and Rose Pine alternatives)     | Stylix (base16, applied globally)                                           |
+| **Secrets management**           | None                                                                                            | sops-nix                                                                    |
+| **Operations tooling**           | Raw `darwin-rebuild switch --flakes .#name` commands                                            | Taskfile with `task switch`                                                 |
+| **Nix settings**                 | Inline in host configuration.nix                                                                | Centralized `hosts/shared.nix`                                              |
+| **Formatter/linter**             | None configured in flake                                                                        | treefmt (nixfmt)                                                            |
+| **CI/CD**                        | None                                                                                            | Dagger-based toolchains                                                     |
+| **macOS defaults**               | `system.defaults.*` in `hosts/darwin-mbp/defaults.nix`                                          | Similar in `hosts/mac.nix`                                                  |
+| **Touch ID sudo**                | `security.pam.enableSudoTouchIdAuth = true`                                                     | Same                                                                        |
+| **Nix app symlinks**             | Custom `activationScripts.applications` with `cp -LR`                                           | Not present (or via mac-app-util)                                           |
+| **Docker**                       | Colima (macOS), Docker CE (NixOS)                                                               | Docker Desktop via Homebrew                                                 |
+
+### Machine Role Differentiation
+
+dj95 differentiates machine roles purely through per-host HM import lists in `flake.nix`. The Darwin host imports 20 modules (cli, fish, git, ghostty, dev, ops, neovim, language modules, etc.), while the NixOS desktop would import a different subset including `linux-only.nix` (desktop GUI apps, Firefox, KDE/Qt packages) and `hyprland.nix`.
+
+There is no abstraction layer for role selection: each host explicitly lists every HM module it needs. This is the simplest possible approach but creates duplication when hosts share most modules. Our `hostConfig` approach (passing flags like `isPersonal`, `isWork`, `hasGui` that modules read to conditionally enable features) is more DRY but adds indirection.
+
+The `linux-only.nix` module is a platform-specific package bundle, not a conditional module. It is simply included or excluded from the import list. This is effectively a manual version of our platform-conditional logic in `home/default.nix`.
+
+### Home-Manager Module Comparison
+
+Modules in dj95 not present in our config:
+
+| Module           | Description                                                       | Relevance                         |
+| ---------------- | ----------------------------------------------------------------- | --------------------------------- |
+| `aerospace.nix`  | AeroSpace tiling WM config (HM-level)                             | Low; alternative macOS WM         |
+| `zellij.nix`     | Zellij with custom plugins (zjstatus, zj-quit, zj-smart-sessions) | Medium; we use tmux               |
+| `helix.nix`      | Helix editor via xdg.configFile                                   | Low; alternative editor           |
+| `zed.nix`        | Zed editor config                                                 | Low; alternative editor           |
+| `wezterm.nix`    | WezTerm terminal config                                           | Low; we use Ghostty               |
+| `ops.nix`        | Kubernetes/DevOps tool bundle (50+ packages)                      | Medium; overlaps with our k8s.nix |
+| `lldb.nix`       | LLDB debugger config                                              | Low                               |
+| `linux-only.nix` | Desktop Linux GUI packages                                        | Low; our NixOS hosts are headless |
+| `hyprland.nix`   | Hyprland Wayland WM config                                        | Low; desktop Linux                |
+| `dev.nix`        | Dev tools (direnv, nil LSP)                                       | Low; we have similar              |
+| `ls-color.nix`   | LS_COLORS via vivid                                               | Low                               |
+| `kitty.nix`      | Kitty terminal config                                             | Low; alternative terminal         |
+| `rio.nix`        | Rio terminal config                                               | Low; alternative terminal         |
+| `tmux.nix`       | tmux config (unused in current Darwin host)                       | Low; we have our own              |
+
+### Candidate Changes
+
+1. **Overlay-based version pinning for packages that lag in nixpkgs**
+   - **Rationale:** dj95 uses overlays extensively (16 files) to pin specific versions of packages like zellij, kubectx, crossplane, and logcli. The pattern is straightforward: override `src` and `version` in `overrideAttrs`, sometimes with `cargoDeps` hash updates for Rust packages. This is useful when nixpkgs lags behind on a tool you need at a specific version. Our approach of using nixpkgs as-is is simpler but means waiting for upstream updates.
+   - **Source:** `overlays/zellij.nix`, `overlays/kubectx.nix`, and 14 other overlay files
+   - **Impact:** Low. Only relevant when we need a specific package version not yet in nixpkgs. The overlay pattern itself is standard Nix.
+
+2. **Flake inputs for self-authored tools**
+   - **Rationale:** dj95 imports their own tools (zjstatus, zj-quit, zj-smart-sessions, argo-helm-updater, kdl-fmt) as flake inputs and injects them via overlays (`(final: prev: { zjstatus = zjstatus.packages.${prev.system}.default; })`). This makes personal tool development seamless: update the tool repo, `nix flake update`, and the new version flows into the system config. If we have self-authored Nix packages published as flakes, this pattern integrates them cleanly.
+   - **Source:** `flake.nix` (inputs section and overlays list)
+   - **Impact:** Low. Only relevant if we publish tools as standalone flakes.
+
+3. **Custom macOS app symlink activation script**
+   - **Rationale:** The `system.activationScripts.applications` block in `general.nix` uses `pkgs.buildEnv` to collect all system packages with `/Applications` paths, then `cp -LR` them into `~/Applications/Nix Apps`. This solves the macOS Spotlight/Launchpad discoverability problem for Nix-installed GUI apps. The `mac-app-util` package (seen in MatthiasBenaets' survey) is a more polished solution to the same problem.
+   - **Source:** `hosts/darwin-mbp/general.nix` (activationScripts block)
+   - **Impact:** Low. We already have awareness of `mac-app-util` from US-012; this is a manual alternative.
+
+4. **Per-host explicit HM import lists for role differentiation**
+   - **Rationale:** Rather than using conditional flags or role abstractions, dj95 simply lists every HM module each host needs directly in `flake.nix`. This is maximally explicit: reading the flake.nix tells you exactly what each machine gets. The trade-off is duplication when hosts share modules. For a two-host setup, this is fine. For our three-platform setup with multiple hosts, our `hostConfig` approach scales better, but the explicitness is worth noting as a simplicity benchmark.
+   - **Source:** `flake.nix` (darwinConfigurations.Daniels-MacBook-Pro.modules block, HM imports list)
+   - **Impact:** Low. Our current approach is better for our host count, but this validates that explicit imports are a viable pattern even at moderate scale.
+
+5. **`linux-only.nix` as a platform-specific package bundle**
+   - **Rationale:** A single module that bundles all Linux-desktop-specific packages (GUI apps, desktop environment tools, system utilities not available on macOS). This is included in the NixOS host's import list and excluded from Darwin's. Simpler than platform detection in modules; the platform distinction happens at the import level rather than inside modules. Our approach of using `pkgs.stdenv.isDarwin`/`isLinux` conditionals within modules is more flexible but less explicit about what each platform gets.
+   - **Source:** `home-manager/modules/linux-only.nix`
+   - **Impact:** Low. Different approach to the same problem; ours is more flexible for shared modules.
+
+6. **Comprehensive fish shell functions for development workflow**
+   - **Rationale:** The `dev` fish function in `fish.nix` is a workspace launcher: it uses `fd` + `fzf` to fuzzy-find project directories under `~/Developer`, detects per-project `.zellij.kdl` layout files, calculates terminal dimensions to choose between default and wide layouts, and attaches to named Zellij sessions. This integrates project selection, terminal multiplexer session management, and layout adaptation into a single command. The pattern of encoding workflow automation in shell functions (rather than external scripts) keeps everything in one HM module.
+   - **Source:** `home-manager/modules/fish.nix` (functions.dev)
+   - **Impact:** Low. Workflow-specific, but the pattern of integrating workspace management into fish functions is clean.
+
+7. **Ghostty configuration via raw xdg.configFile**
+   - **Rationale:** dj95 configures Ghostty by writing `xdg.configFile."ghostty/config"` directly with the config text, including custom themes as separate files and GLSL shaders. This is the same approach as our `configs/` pattern but with inline text rather than file references. Notable settings: `background-opacity = 0.85`, `background-blur-radius = 40`, `window-colorspace = display-p3`, `adjust-cell-height = +50%`, `freetype-load-flags = no-hinting`, and custom shader support.
+   - **Source:** `home-manager/modules/ghostty.nix`
+   - **Impact:** Low. We use `programs.ghostty` HM module which is more structured. The shader and P3 colorspace settings are interesting macOS-specific options.
+
+8. **macOS firewall stealth mode via `system.defaults.alf`**
+   - **Rationale:** The `defaults.nix` file enables macOS Application Layer Firewall with stealth mode: `system.defaults.alf = { globalstate = 1; stealthenabled = 1; allowsignedenabled = 1; allowdownloadsignedenabled = 1; }`. Stealth mode makes the machine not respond to ICMP ping requests or connection attempts from closed TCP/UDP ports, which is a minor but useful security hardening. We do not configure macOS firewall settings.
+   - **Source:** `hosts/darwin-mbp/defaults.nix` (system.defaults.alf block)
+   - **Impact:** Medium. Simple security hardening that could be added to our `hosts/mac.nix` with four lines.
