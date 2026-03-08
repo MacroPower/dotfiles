@@ -135,6 +135,19 @@ in
             "git"
           ];
         };
+        hooks = {
+          PreToolUse = [
+            {
+              matcher = "Bash";
+              hooks = [
+                {
+                  type = "command";
+                  command = "${pkgs.llm-agents.rtk}/libexec/rtk/hooks/rtk-rewrite.sh";
+                }
+              ];
+            }
+          ];
+        };
         alwaysThinkingEnabled = true;
         skipDangerousModePermissionPrompt = true;
         teammateMode = "auto";
@@ -152,6 +165,7 @@ in
   home = {
     packages = [
       pkgs.llm-agents.ccusage
+      pkgs.llm-agents.rtk
     ];
 
     file.".claude/CLAUDE.md".text = ''
