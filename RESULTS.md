@@ -977,3 +977,97 @@ Modules in joshsymonds/nix-config vs. our repo:
    - **Rationale:** `modules/installer.nix` is a full NixOS module (~450 lines) that generates bootable installer ISOs with auto-partitioning, optional LUKS encryption, optional swap, disk detection heuristics, repo cloning, and nixos-install automation. Hosts define an `installer.nix` that sets `autoInstaller` options and get a buildable ISO via `nix build .#<host>InstallerIso`. This is the most comprehensive installer pattern seen across all surveyed repos.
    - **Source:** `modules/installer.nix`, `hosts/stygianlibrary/installer.nix`, `hosts/ultraviolet/installer.nix`, `hosts/vermissian/installer.nix`
    - **Impact:** High. Significant module to build, but eliminates manual NixOS installation entirely. Only relevant if we need reproducible NixOS provisioning.
+
+## dustinlyons/nixos-config
+
+**Source:** [github.com/dustinlyons/nixos-config](https://github.com/dustinlyons/nixos-config)
+
+A macOS + NixOS configuration with a strong emphasis on the `apps/` directory pattern, where operational scripts (apply, build-switch, install, clean, copy-keys, create-keys, rollback) are exposed as flake apps via `nix run`. Also notable for its flake templates, Dependabot-driven flake.lock updates, and CI that builds templates on every push. Uses agenix for secrets, disko for disk partitioning, nix-homebrew for declarative Homebrew, and Chaotic Nyx for bleeding-edge packages.
+
+### Comparison Table
+
+| Aspect                  | dustinlyons/nixos-config                                                                                                                                     | Our repo                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| **Flake structure**     | Single `flake.nix` with inline helpers (`mkApp`, `mkLinuxApps`, `mkDarwinApps`); `flake-utils` for `forAllSystems`                                           | Single `flake.nix` with `mkDarwin`/`mkHome`/`mkNixOS` helpers                   |
+| **Module organization** | `modules/{darwin,nixos,shared}/` three-way split; `shared/` contains cross-platform HM config, packages, files, fonts                                        | `home/` (flat HM modules), `hosts/` (system config), `configs/` (raw files)     |
+| **Host definitions**    | `hosts/{darwin,nixos}/default.nix` with `genAttrs` over system strings; named hosts as additional attrset entries (`garfield`)                               | Per-host attrsets in `flake.nix` via `mkDarwin`/`mkHome`/`mkNixOS`              |
+| **Apps directory**      | `apps/{aarch64-darwin,x86_64-darwin,x86_64-linux,aarch64-linux}/` with bash scripts exposed as flake apps via `mkApp`                                        | No flake apps; operations handled by `Taskfile.yaml`                            |
+| **Operations runner**   | `nix run .#apply`, `nix run .#build-switch`, `nix run .#install`, etc.                                                                                       | `task switch`, `task update`, `task check`, `task format`                       |
+| **Flake templates**     | `templates/{starter,starter-with-secrets}/` with `%TOKEN%` placeholders and sed substitution                                                                 | No templates                                                                    |
+| **Secrets management**  | agenix with private `nix-secrets` git repo (SSH-accessed); age identity from `~/.ssh/id_ed25519`                                                             | sops-nix with standalone age key                                                |
+| **Disk partitioning**   | disko (`disko.nixosModules.disko`) for declarative disk layout                                                                                               | Manual filesystem config                                                        |
+| **Homebrew management** | nix-homebrew with pinned homebrew-core/cask/bundle as non-flake inputs; `mutableTaps = false`                                                                | nix-darwin `homebrew` module with direct tap management                         |
+| **Overlays**            | `overlays/` directory with auto-discovery via `readDir` + filter; includes AppImage wrappers, version pins                                                   | No overlays directory                                                           |
+| **Shell**               | zsh with powerlevel10k, inline config in `modules/shared/home-manager.nix`                                                                                   | fish with custom functions via HM                                               |
+| **Editor**              | Emacs (custom overlay + daemon), Vim (configured via HM), Zed                                                                                                | Neovim via nixvim                                                               |
+| **Terminal**            | Alacritty (configured via HM with platform-conditional font sizes)                                                                                           | Ghostty (via HM)                                                                |
+| **Desktop environment** | KDE Plasma 6 with plasma-manager HM module; rofi launcher                                                                                                    | macOS native; no Linux DE config                                                |
+| **CI/CD**               | GitHub Actions: `build-template.yml` (reusable workflow building templates), `lint.yml`, `update-flake-lock.yml` (weekly cron via DeterminateSystems action) | Dagger-based CI                                                                 |
+| **Flake lock updates**  | Dependabot + `update-flake-lock.yml` GitHub Action (weekly cron, builds template first, then creates PR)                                                     | `task update` (manual)                                                          |
+| **Theming**             | Manual color scheme in Alacritty config; Breeze Dark for KDE/rofi                                                                                            | Stylix with base16 scheme                                                       |
+| **Nix implementation**  | `nix.enable = false` on Darwin (external Nix management); standard Nix on NixOS                                                                              | Lix on macOS; standard Nix on NixOS                                             |
+| **Shared config**       | `modules/shared/` directory with `default.nix`, `home-manager.nix`, `packages.nix`, `files.nix`, `fonts.nix`, `emacs.nix`                                    | `hosts/shared.nix` for system config; `home/` for HM (no shared/platform split) |
+| **Systemd services**    | `modules/nixos/systemd.nix` with dev environment auto-start (tmux sessions), automated content generation timers                                             | No custom systemd services                                                      |
+| **Custom packages**     | Overlays for AppImage wrapping (Cider, Obsidian, TablePlus, WoWUp), version pins (PHPStorm, Playwright)                                                      | `pkgs/` directory with custom derivations                                       |
+
+### Home-Manager Module Comparison
+
+| Module/Tool  | dustinlyons                                            | Ours                      |
+| ------------ | ------------------------------------------------------ | ------------------------- |
+| direnv       | Yes (zsh integration)                                  | Yes                       |
+| zsh          | Yes (powerlevel10k, extensive inline config)           | No (we use fish)          |
+| fish         | No                                                     | Yes                       |
+| git          | Yes (GPG signing, LFS)                                 | Yes                       |
+| vim          | Yes (airline, tmux-navigator, extensive vimrc)         | No (we use neovim/nixvim) |
+| alacritty    | Yes (platform-conditional settings)                    | No (we use ghostty)       |
+| ssh          | Yes (external config includes, matchBlocks)            | Yes                       |
+| tmux         | Yes (resurrect, continuum, power-theme, vim-navigator) | Yes                       |
+| gpg          | Yes (with systemd key import service)                  | Yes                       |
+| rofi         | Yes (Breeze Dark themed)                               | No                        |
+| plasma (KDE) | Yes (via plasma-manager)                               | No                        |
+| emacs        | Yes (custom overlay, daemon service)                   | No                        |
+| starship     | No                                                     | Yes                       |
+| k8s tools    | No (only kubectl)                                      | Yes                       |
+| bat          | Yes (in packages)                                      | Yes                       |
+
+### Candidate Changes
+
+1. **Flake apps for operational scripts**
+   - **Rationale:** The `apps/` directory pattern wraps bash scripts as flake apps, making operations self-documenting and runnable via `nix run .#apply`, `nix run .#build-switch`, etc. Each script is a standalone bash file in `apps/<system>/`, and `mkApp` in `flake.nix` wraps them with `writeScriptBin` to inject git into PATH. This is a fundamentally different approach from our Taskfile: flake apps are Nix-native (no external task runner dependency), system-aware (different scripts per platform), and discoverable via `nix flake show`. The trade-off is more boilerplate (one script file per operation per platform, plus `mkLinuxApps`/`mkDarwinApps` registration in flake.nix) compared to our single `Taskfile.yaml`.
+   - **Source:** `apps/`, `flake.nix` (`mkApp`, `mkLinuxApps`, `mkDarwinApps`)
+   - **Impact:** Medium. Our Taskfile approach works well and `nh` handles the core switch operation. Flake apps would add Nix-native discoverability but increase file count.
+
+2. **Flake templates for onboarding**
+   - **Rationale:** The `templates/` directory provides two complete starter configurations (`starter` and `starter-with-secrets`) that users can initialize via `nix flake init -t github:dustinlyons/nixos-config#starter`. Each template contains a full, working flake with `%USER%`, `%EMAIL%`, `%NAME%` placeholders that the `apply` script substitutes with user input. The CI builds these templates on every push to prevent template rot. This is a fork-friendliness pattern (also seen in joshsymonds/nix-config US-010) but implemented via Nix's native template mechanism rather than just making the repo itself forkable.
+   - **Source:** `templates/starter/`, `templates/starter-with-secrets/`, `.github/workflows/build-template.yml`
+   - **Impact:** Low. Only relevant if we wanted to make our config usable as a template for others. Our repo is personal-use, not a starter kit.
+
+3. **Overlay auto-discovery from directory**
+   - **Rationale:** `modules/shared/default.nix` reads the `overlays/` directory with `builtins.readDir`, filters for `.nix` files, and imports them all as overlays. It also supports per-host exclusions via an `excludeForHost` attrset. This is a practical approach to overlay management, though it conflicts with our CLAUDE.md preference for explicit imports. The per-host exclusion pattern is interesting for cases where an overlay breaks on certain platforms.
+   - **Source:** `modules/shared/default.nix`, `overlays/`
+   - **Impact:** Low. We do not currently use overlays. If we adopted overlays, the auto-discovery pattern would reduce boilerplate but conflict with our explicit-imports code style.
+
+4. **nix-homebrew with pinned non-flake inputs**
+   - **Rationale:** Uses nix-homebrew (zhaofengli-wip/nix-homebrew) with `mutableTaps = false` and pinned `homebrew-core`, `homebrew-cask`, `homebrew-bundle` as non-flake inputs. This is now a four-repo signal (chenglab, ahmedelgabri, megalithic, dustinlyons) for declarative Homebrew management. The `autoMigrate = true` option handles transitioning from an existing Homebrew installation. Compared to our nix-darwin `homebrew` module approach, this pins tap versions in the flake lock, giving reproducible Homebrew builds.
+   - **Source:** `flake.nix` (inputs + nix-homebrew module config)
+   - **Impact:** Medium. Stronger reproducibility guarantee for Homebrew than our current approach. Four repos now demonstrate this pattern.
+
+5. **CI template validation workflow**
+   - **Rationale:** The `build-template.yml` reusable workflow initializes templates in CI, applies token substitution with test values, and builds the NixOS configuration. The `update-flake-lock.yml` workflow runs weekly, builds the template first to verify it works, then creates a PR to update `flake.lock` using DeterminateSystems/update-flake-lock. This two-stage approach (validate, then update) prevents broken lock file updates from merging. The disk space cleanup step in CI (removing Azure CLI, Chrome, .NET, etc.) is a practical pattern for GitHub Actions runners that need to build Nix derivations.
+   - **Source:** `.github/workflows/build-template.yml`, `.github/workflows/update-flake-lock.yml`
+   - **Impact:** Low. Our Dagger-based CI serves a similar purpose. The weekly flake lock update PR pattern is worth noting but we handle updates manually via `task update`.
+
+6. **Declarative dock management module**
+   - **Rationale:** `modules/darwin/dock/default.nix` is a custom NixOS-style module that declaratively manages the macOS Dock. It defines `local.dock.entries` as a typed option (list of `{path, section, options}` submodules), then uses `dockutil` in a `system.activationScripts.postActivation` script to diff the current dock state against the desired state, resetting only when they differ. This is a clean pattern for managing macOS UI state declaratively.
+   - **Source:** `modules/darwin/dock/default.nix`, `modules/darwin/home-manager.nix` (dock entries)
+   - **Impact:** Low. Nice-to-have for macOS dock consistency across rebuilds. Minimal implementation effort (single module file + dockutil dependency).
+
+7. **Chaotic Nyx for bleeding-edge packages**
+   - **Rationale:** The `chaotic` flake input (chaotic-cx/nyx) provides pre-built bleeding-edge packages and kernel modules, including `mesa-git` for latest GPU support. It is imported as a NixOS module (`chaotic.nixosModules.default`) and can be selectively enabled per-host. This is the first surveyed repo using Chaotic Nyx, which is an alternative to maintaining custom overlays for packages that need to be newer than nixpkgs-unstable.
+   - **Source:** `flake.nix` (chaotic input), `hosts/nixos/default.nix` (`chaotic.mesa-git.enable`)
+   - **Impact:** Low. Only relevant for NixOS hosts that need bleeding-edge GPU drivers or other packages. Not applicable to our macOS-primary workflow.
+
+8. **Shared modules with platform-conditional HM config**
+   - **Rationale:** The `modules/shared/home-manager.nix` file contains all cross-platform home-manager program configs (zsh, git, vim, alacritty, ssh, tmux) in a single file, using `lib.mkIf pkgs.stdenv.hostPlatform.isLinux` / `isDarwin` for platform-specific values (font sizes, paths, aliases). Platform-specific HM modules (`modules/darwin/home-manager.nix`, `modules/nixos/home-manager.nix`) then merge with `shared-programs` via `programs = shared-programs // { ... }`. This is a clean pattern for avoiding HM config duplication across platforms, though it puts everything in one large file rather than our per-domain split.
+   - **Source:** `modules/shared/home-manager.nix`, `modules/{darwin,nixos}/home-manager.nix`
+   - **Impact:** Medium. Our flat `home/*.nix` modules already avoid duplication since they are imported by all hosts. The platform-conditional pattern (`lib.mkIf stdenv.isDarwin`) within shared files is something we already use where needed.
