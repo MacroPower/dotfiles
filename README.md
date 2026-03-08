@@ -73,7 +73,6 @@ sudo task switch
 
 ### System Settings
 
-- Keyboard -> Show Launchpad -> cmd+enter
 - General -> Default Web Browser -> Firefox
 
 ### Display Configuration

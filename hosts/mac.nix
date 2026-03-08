@@ -60,7 +60,7 @@
     ]
     ++ config.dotfiles.system.homebrew.extraCasks;
 
-    masApps = config.dotfiles.system.homebrew.masApps;
+    inherit (config.dotfiles.system.homebrew) masApps;
 
     caskArgs.no_quarantine = true;
   };
@@ -97,7 +97,7 @@
         # their Homebrew cask is present in this host's merged cask list.
         persistent-apps =
           let
-            casks = config.homebrew.casks;
+            inherit (config.homebrew) casks;
             hasCask = name: builtins.elem name (map (c: if builtins.isString c then c else c.name) casks);
           in
           [
@@ -277,27 +277,55 @@
         "com.apple.TextEdit".RichText = 0;
         # Hide Recent Tags from Finder sidebar
         "com.apple.finder".ShowRecentTags = false;
-        # Dictation shortcut: "Press Either Command Key Twice"
-        "com.apple.symbolichotkeys" = let
-          # AppleSymbolicHotKeys IDs (from macOS internals)
-          hotkeys = {
-            dictation = 164;
-          };
-          # NSEvent modifier flags (from NSEvent.h / CGEvent.h)
-          modifiers = {
-            command = 1048576; # 0x100000 -- NSEventModifierFlagCommand
-          };
-        in {
-          AppleSymbolicHotKeys."${toString hotkeys.dictation}" = {
-            enabled = true;
-            value = {
-              # macOS stores [flag, ~flag] for modifier-type shortcuts;
-              # ~flag as signed 64-bit = -(flag + 1)
-              parameters = [ modifiers.command (-(modifiers.command + 1)) ];
-              type = "modifier";
+        "com.apple.symbolichotkeys" =
+          let
+            # AppleSymbolicHotKeys IDs (from macOS internals)
+            hotkeys = {
+              showApps = 160;
+              dictation = 164;
+            };
+            # NSEvent modifier flags (from NSEvent.h / CGEvent.h)
+            modifiers = {
+              command = 1048576; # 0x100000 -- NSEventModifierFlagCommand
+            };
+            # Unicode character values for AppleSymbolicHotKeys parameters
+            chars = {
+              nonPrintable = 65535; # 0xFFFF -- sentinel for non-character keys
+            };
+            # Virtual keycodes (from Events.h / Carbon)
+            keycodes = {
+              enter = 36; # kVK_Return
+            };
+          in
+          {
+            AppleSymbolicHotKeys = {
+              # Show Apps: Cmd+Enter
+              "${toString hotkeys.showApps}" = {
+                enabled = true;
+                value = {
+                  parameters = [
+                    chars.nonPrintable
+                    keycodes.enter
+                    modifiers.command
+                  ];
+                  type = "standard";
+                };
+              };
+              # Dictation: Press Either Command Key Twice
+              "${toString hotkeys.dictation}" = {
+                enabled = true;
+                value = {
+                  # macOS stores [flag, ~flag] for modifier-type shortcuts;
+                  # ~flag as signed 64-bit = -(flag + 1)
+                  parameters = [
+                    modifiers.command
+                    (-(modifiers.command + 1))
+                  ];
+                  type = "modifier";
+                };
+              };
             };
           };
-        };
         # Disable dictation auto-punctuation
         "com.apple.assistant.support"."Dictation Auto Punctuation Enabled" = false;
       };
