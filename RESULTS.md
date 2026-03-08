@@ -780,3 +780,78 @@ Modules in megalithic's `home/common/` that we lack or configure differently:
    - **Rationale:** megalithic uses `nix-homebrew` (zhaofengli-wip/nix-homebrew) with pinned homebrew-core, homebrew-cask, homebrew-services, and homebrew-bundle as non-flake inputs. This manages the Homebrew installation itself declaratively, including Rosetta support (`enableRosetta = true`), immutable taps (`mutableTaps = false`), and auto-migration. This is the third repo (after chenglab US-004 and ahmedelgabri US-007) using this pattern, making it a strong recurring signal.
    - **Source:** `flake.nix` (nix-homebrew + homebrew-\* inputs), `brew_config` function
    - **Impact:** Medium. Solves the Homebrew bootstrap problem. We already have `nix-homebrew` as an input but this shows a more complete integration pattern with immutable taps and custom tap support (e.g., FelixKratz/homebrew-formulae).
+
+## ryan4yin/nix-darwin-kickstarter
+
+**Source:** [github.com/ryan4yin/nix-darwin-kickstarter](https://github.com/ryan4yin/nix-darwin-kickstarter)
+
+This is a beginner-friendly template repo, not a personal config. It provides two template variants: a `minimal/` template (nix-darwin only, no home-manager) and a `rich-demo/` template (nix-darwin + home-manager with macOS defaults, Homebrew, fonts, shell, and git). The repo is designed to be forked and customized, with `__USERNAME__`, `__SYSTEM__`, and `__HOSTNAME__` placeholders that users replace with their own values.
+
+### Comparison Table
+
+| Aspect                       | nix-darwin-kickstarter                                                                                         | Our repo                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Purpose**                  | Beginner template / kickstarter                                                                                | Personal production config                                                  |
+| **Flake structure**          | Two independent sub-flakes (`minimal/`, `rich-demo/`), each self-contained with own `flake.nix` + `flake.lock` | Single flake with `mkDarwin`/`mkHome`/`mkNixOS` helpers                     |
+| **Flake framework**          | Raw `outputs` function, no flake-parts/flake-utils                                                             | flake-parts                                                                 |
+| **Platform support**         | macOS only (nix-darwin)                                                                                        | macOS (nix-darwin) + NixOS + standalone Linux (home-manager)                |
+| **Home-manager integration** | `minimal/`: none; `rich-demo/`: HM as darwin module (like ours)                                                | HM as darwin/NixOS module                                                   |
+| **Module organization**      | `modules/` (system) + `home/` (HM), 4-5 files each                                                             | `hosts/` (system) + `home/` (HM modules), many more files                   |
+| **Module naming**            | Domain-based: `nix-core.nix`, `system.nix`, `apps.nix`, `host-users.nix`                                       | Domain-based: `shell.nix`, `git.nix`, `editors.nix`, etc.                   |
+| **Host config passing**      | `specialArgs` with `username`/`hostname`/`useremail` as plain strings, plus full `inputs` spread               | `hostConfig` attrset via `specialArgs`, plus `dotfiles.*` NixOS options     |
+| **Commenting style**         | Heavy inline comments explaining every concept; tutorial-grade documentation                                   | Minimal comments; config speaks for itself                                  |
+| **Placeholder pattern**      | `__USERNAME__`/`__SYSTEM__`/`__HOSTNAME__` with sed-based test substitution in Justfile                        | No placeholders; host values defined in `flake.nix`                         |
+| **Formatter**                | `alejandra` (set as `formatter.${system}`)                                                                     | `nixfmt` via treefmt                                                        |
+| **Operations**               | `Justfile` with `just darwin`/`just up`/`just clean`/`just gc`/`just fmt`                                      | `Taskfile.yaml` with `task switch`/`task update`/`task check`/`task format` |
+| **Secrets**                  | None                                                                                                           | sops-nix                                                                    |
+| **Overlays**                 | None                                                                                                           | None (minimal)                                                              |
+| **Custom packages**          | None                                                                                                           | `pkgs/` directory                                                           |
+| **CI/CD**                    | None (template repo)                                                                                           | Dagger-based toolchains                                                     |
+| **Nix settings**             | `nix-core.nix` with substituters, GC, experimental features                                                    | `hosts/shared.nix` with similar settings                                    |
+| **Homebrew**                 | Direct `homebrew` nix-darwin module; `rich-demo/` adds mirror config via `activationScripts`                   | Direct `homebrew` nix-darwin module                                         |
+| **macOS defaults**           | `rich-demo/` has extensive `system.defaults` (dock, finder, trackpad, NSGlobalDomain, CustomUserPreferences)   | Our `hosts/mac.nix` configures defaults                                     |
+| **Fonts**                    | `rich-demo/` installs nerd-fonts, material-design-icons, font-awesome via `fonts.packages`                     | Fonts managed via stylix + home-manager                                     |
+| **Shell**                    | zsh (darwin default); `rich-demo/` configures via HM `programs.zsh`                                            | fish via home-manager                                                       |
+| **Determinate Nix**          | Mentioned in comments (`nix.enable = false` if using Determinate); not default                                 | Not used; we use Lix                                                        |
+| **Stable vs. unstable**      | Tracks stable `nixpkgs-25.11-darwin` / `nix-darwin-25.11`                                                      | Tracks unstable nixpkgs                                                     |
+
+### Simplifications Revealed
+
+The kickstarter's minimal template is essentially 4 files + a flake.nix. Comparing this to our setup reveals where our complexity is structural (supporting multiple platforms, many tools) versus incidental:
+
+1. **Our `hostConfig` attrset vs. plain `specialArgs` strings**: The kickstarter passes `username`, `hostname`, and `useremail` as simple string values via `specialArgs`. Our `hostConfig` attrset bundles similar data but with more fields (git config, Homebrew lists, feature flags). Both approaches work; the kickstarter's is simpler because it has fewer per-host knobs to turn. Our complexity is justified by multi-host support.
+
+2. **Domain-split modules are the universal pattern**: The kickstarter's `nix-core.nix` / `system.nix` / `apps.nix` / `host-users.nix` split matches our `hosts/shared.nix` / `hosts/mac.nix` / `home/*.nix` pattern closely. Every surveyed repo uses some variant of this. The naming differs but the intent is identical.
+
+3. **The two-step darwin-rebuild command**: The kickstarter documents the raw `nix build .#darwinConfigurations.hostname.system && sudo -E ./result/sw/bin/darwin-rebuild switch --flake .#hostname` workflow. We abstract this behind `task switch` (which uses `nh`). The kickstarter's Justfile wraps the same thing with `just darwin`. No gap here.
+
+4. **`auto-optimise-store = false` with rationale**: The kickstarter's `nix-core.nix` explicitly disables `auto-optimise-store` with a link to NixOS/nix#7273 ("cannot link .tmp-link: File exists"). Our `hosts/shared.nix` enables store optimization. Worth verifying whether we hit this bug.
+
+5. **`system.primaryUser` setting**: The kickstarter sets `system.primaryUser = username` in `host-users.nix`. This is a newer nix-darwin option that designates the primary user for settings that previously inferred it. Worth checking if we set this.
+
+### Candidate Changes
+
+1. **Verify `auto-optimise-store` safety**
+   - **Rationale:** The kickstarter explicitly disables `nix.settings.auto-optimise-store` citing NixOS/nix#7273, a race condition that causes "cannot link .tmp-link: File exists" errors during concurrent builds. Our `hosts/shared.nix` enables store optimization. If we use Lix (which may have fixed this), it could be fine, but it is worth verifying we do not hit this in practice.
+   - **Source:** `minimal/modules/nix-core.nix` (comment + `auto-optimise-store = false`)
+   - **Impact:** Low. A one-line change if needed, but store optimization saves significant disk space over time.
+
+2. **Ensure `system.primaryUser` is set**
+   - **Rationale:** The kickstarter sets `system.primaryUser = username` in `host-users.nix`. This is a nix-darwin option introduced to explicitly declare which user owns system-level settings (replacing previous implicit inference). If we are on a recent nix-darwin version and do not set this, we may get deprecation warnings.
+   - **Source:** `minimal/modules/host-users.nix`, `rich-demo/modules/host-users.nix`
+   - **Impact:** Low. A one-line addition to `hosts/mac.nix` if missing.
+
+3. **Consider `CustomUserPreferences` for macOS defaults not exposed by nix-darwin**
+   - **Rationale:** The `rich-demo/` template uses `system.defaults.CustomUserPreferences` to configure settings not directly supported by nix-darwin options: `.DS_Store` prevention on network/USB volumes, Stage Manager behavior, screen capture format/location, ad personalization, and Photos auto-launch. This is a clean escape hatch for `defaults write` commands that do not have first-class nix-darwin support.
+   - **Source:** `rich-demo/modules/system.nix` (`CustomUserPreferences` block)
+   - **Impact:** Low. Cherry-pick individual preferences as needed. The pattern itself (using `CustomUserPreferences`) is more important than the specific values.
+
+4. **Add `homebrew.onActivation.cleanup = "zap"` for stricter Homebrew management**
+   - **Rationale:** The `rich-demo/` template sets `cleanup = "zap"`, which uninstalls all formulae and related files not listed in the Nix-generated Brewfile. This enforces full declarative control over Homebrew packages. The `minimal/` template comments it out as a safer default. Our config should consider enabling this for tighter reproducibility.
+   - **Source:** `rich-demo/modules/apps.nix` (`onActivation.cleanup = "zap"`)
+   - **Impact:** Low. Behavioral change; could remove manually-installed brews on next rebuild if not listed in config.
+
+5. **Tutorial-grade README as onboarding documentation**
+   - **Rationale:** The `minimal/README.md` provides a step-by-step guide: install Nix, read the files, install Homebrew, search for TODOs, run the build command. It also documents the directory structure with a `tree` output. While our repo is not a template, a similar "getting started" section in our README could help contributors or future-self when setting up a new machine.
+   - **Source:** `minimal/README.md`
+   - **Impact:** Low. Documentation only, no code changes.
