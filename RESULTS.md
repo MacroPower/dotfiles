@@ -855,3 +855,125 @@ The kickstarter's minimal template is essentially 4 files + a flake.nix. Compari
    - **Rationale:** The `minimal/README.md` provides a step-by-step guide: install Nix, read the files, install Homebrew, search for TODOs, run the build command. It also documents the directory structure with a `tree` output. While our repo is not a template, a similar "getting started" section in our README could help contributors or future-self when setting up a new machine.
    - **Source:** `minimal/README.md`
    - **Impact:** Low. Documentation only, no code changes.
+
+## joshsymonds/nix-config
+
+**Source:** [github.com/joshsymonds/nix-config](https://github.com/joshsymonds/nix-config)
+
+826 stars, 124 forks. One of the most forked nix-config repos on GitHub, managing a macOS laptop (cloudbank, aarch64-darwin) and multiple headless NixOS servers (ultraviolet, bluedesert, echelon, vermissian, stygianlibrary, egoengine). MIT licensed.
+
+### Comparison Table
+
+| Aspect                           | joshsymonds/nix-config                                                                                                                                                   | Our repo                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| Flake structure                  | Inline `flake.nix` with `mkNixosHost` / `mkHomeManagerModules` helpers, no flake-parts                                                                                   | `flake.nix` with flake-parts, `mkDarwin` / `mkHome` / `mkNixOS` helpers |
+| Host definitions                 | Data-driven `nixosHostDefinitions` attrset in `flake.nix`, iterated by `lib.mapAttrs mkNixosHost`                                                                        | Inline per-host calls in flake outputs                                  |
+| System-level modules             | `modules/` split into `darwin/`, `nix/`, `services/`, `performance/`                                                                                                     | `hosts/` with `shared.nix`, `mac.nix`, `hosts/nixos/`                   |
+| Home-manager integration         | Integrated into system rebuilds via `mkHomeManagerModules`; also generates standalone `homeConfigurations` programmatically from the same host definitions               | Integrated into system rebuilds; no standalone `homeConfigurations`     |
+| Home-manager layout              | `home-manager/` with per-tool subdirectories (atuin/, git/, tmux/, etc.) plus `common.nix`, `aarch64-darwin.nix`, `headless-x86_64-linux.nix`, `minimal.nix`             | `home/` with flat per-tool `.nix` files and `default.nix`               |
+| Per-host HM overrides            | `home-manager/hosts/<hostname>.nix` files that import platform profiles and add host-specific overrides                                                                  | Host-specific config via `hostConfig` attrset in flake                  |
+| Minimal/constrained host profile | `home-manager/minimal.nix` for resource-constrained devices (disables direnv, autosuggestion, syntax highlighting; uses nano instead of nvim)                            | No equivalent minimal profile                                           |
+| Secrets management               | agenix with `secrets.nix` key map, `age.identityPaths`, and a `home.activation.deriveAgenixKey` script that auto-derives age keys from SSH ed25519 keys via `ssh-to-age` | sops-nix with standalone age key                                        |
+| Overlays                         | Single `overlays/default.nix` exporting `default`, `darwin`, `additions`, `modifications`, `unstable-packages` (most empty); all applied via `modules/nix/defaults.nix`  | Minimal overlay usage                                                   |
+| Custom packages                  | `pkgs/` with 12+ packages (caddy, claude-code-cli, coder-cli, gemini-cli, golangci-lint-bin, nuclei, mcp-atlassian, etc.)                                                | `pkgs/` with custom derivations                                         |
+| Network topology                 | `lib/network.nix` -- plain attrset of subnets, hosts (IP, interface, subnet), and infra devices; imported by hosts                                                       | No centralized network topology                                         |
+| Performance tuning               | `modules/performance/profiles.nix` -- enum-based profiles (dev/server/workstation/constrained/router/none) with sub-modules for memory, network, CPU (Intel/AMD)         | No equivalent performance module                                        |
+| Operations                       | `Makefile` with lint, test, format-check, flake-check, update targets; `FILE=` argument for targeted checks                                                              | `Taskfile.yaml` with switch, check, format, update targets              |
+| Nix linting                      | `statix` + `deadnix` + `alejandra` in Makefile and devShell                                                                                                              | `nixfmt` via treefmt                                                    |
+| Nix daemon                       | Determinate Nix on both Darwin and NixOS; `nix.gc`/`nix.optimise` disabled on Darwin (managed by Determinate)                                                            | Lix with declarative nix-daemon settings                                |
+| Installer system                 | Full `modules/installer.nix` -- NixOS module with `autoInstaller` options for auto-partitioning, LUKS, swap, ISO generation, and prebuilt closures                       | No installer infrastructure                                             |
+| CI/CD                            | `.github/workflows/build-base.yml`                                                                                                                                       | No CI (Dagger-based e2e testing locally)                                |
+| Dev environment                  | `devShells.default` with alejandra, nixpkgs-fmt, statix, deadnix, shellcheck, git; `.envrc` for direnv                                                                   | devShell via flake-parts                                                |
+| Cachix                           | Personal `joshsymonds.cachix.org` + `nix-community`, `devenv`, `cuda-maintainers` binary caches                                                                          | No binary cache                                                         |
+| Shell                            | zsh (not fish)                                                                                                                                                           | fish                                                                    |
+| Editor                           | Helix (primary), Neovim available                                                                                                                                        | Neovim                                                                  |
+| Theming                          | No unified theming system; per-app Catppuccin Mocha                                                                                                                      | stylix with base16 scheme                                               |
+| Documentation                    | Comprehensive README with structure, quick start, customization, dev contexts docs; CLAUDE.md; modules/README.md                                                         | Minimal README                                                          |
+
+### What Makes It Fork-Friendly
+
+The repo's high fork count (124) correlates with several structural decisions that lower the barrier for newcomers:
+
+1. **Data-driven host definitions.** The `nixosHostDefinitions` attrset in `flake.nix` separates host metadata (system, modules list, optional homeModule path) from the builder logic (`mkNixosHost`). A forker only needs to add a new entry to the attrset and create the corresponding `hosts/<name>/` directory -- no need to understand the builder internals.
+
+2. **Layered HM profiles.** The `common.nix` -> `headless-x86_64-linux.nix` / `aarch64-darwin.nix` -> `hosts/<hostname>.nix` hierarchy means a forker can start with the common set and override or extend at any layer. The `minimal.nix` profile shows that even resource-constrained devices can participate with a stripped-down config.
+
+3. **No framework dependencies.** Unlike repos using Snowfall Lib or flake-parts, this repo uses plain Nix with small helper functions. The entire `flake.nix` is self-contained and readable without knowing any framework APIs.
+
+4. **Inline documentation.** The README explains how to add a new system and a new package step-by-step. The `modules/README.md` documents the module convention. CLAUDE.md provides testing procedures. This guidance is uncommon in personal dotfiles repos.
+
+5. **Comprehensive devShell.** The default devShell includes all necessary linting and formatting tools, so a forker can run `nix develop` and immediately have a working development environment without installing anything manually.
+
+6. **MIT license.** Explicit permissive licensing removes legal ambiguity about forking.
+
+### Home-Manager Module Comparison
+
+Modules in joshsymonds/nix-config vs. our repo:
+
+| Module area      | joshsymonds                                         | Ours                               |
+| ---------------- | --------------------------------------------------- | ---------------------------------- |
+| Shell (zsh)      | `home-manager/zsh/`                                 | `home/shell.nix` (fish)            |
+| Git              | `home-manager/git/`                                 | `home/git.nix`                     |
+| Editor (Helix)   | `home-manager/helix/`                               | N/A (we use Neovim)                |
+| Terminal (Kitty) | `home-manager/kitty/`                               | `home/kitty.nix`                   |
+| Tmux             | `home-manager/tmux/`                                | N/A                                |
+| Starship         | `home-manager/starship/`                            | `home/shell.nix` (starship config) |
+| GPG              | `home-manager/gpg/`                                 | `home/gpg.nix`                     |
+| SSH agent        | `home-manager/ssh-agent/`                           | System-level SSH agent             |
+| SSH config       | `home-manager/ssh-config/`                          | `home/ssh.nix`                     |
+| SSH hosts        | `home-manager/ssh-hosts/`                           | `home/ssh.nix` (combined)          |
+| K9s              | `home-manager/k9s/`                                 | `home/k8s.nix`                     |
+| Atuin            | `home-manager/atuin/`                               | `home/shell.nix` (atuin config)    |
+| Aerospace        | `home-manager/aerospace/`                           | N/A (macOS window manager)         |
+| Claude Code      | `home-manager/claude-code/` (with hooks)            | N/A                                |
+| MCP servers      | `home-manager/mcp/`                                 | N/A                                |
+| Go               | `home-manager/go/`                                  | `home/go.nix`                      |
+| Media            | `home-manager/media/`                               | N/A                                |
+| Security tools   | `home-manager/security-tools/`                      | N/A                                |
+| Linkpearl        | `home-manager/linkpearl/` (clipboard sync)          | N/A                                |
+| Devspaces        | `home-manager/devspaces-client/`, `devspaces-host/` | N/A                                |
+| Egoengine        | `home-manager/egoengine/` (Docker dev env)          | N/A                                |
+| Gemini CLI       | `home-manager/gemini-cli/` (disabled)               | N/A                                |
+| Gmailctl         | `home-manager/gmailctl/`                            | N/A                                |
+
+### Candidate Changes
+
+1. **Data-driven host definitions attrset**
+   - **Rationale:** The `nixosHostDefinitions` pattern in `flake.nix` consolidates all host metadata (system arch, module list, optional home-manager module) into a single attrset, then uses `lib.mapAttrs mkNixosHost` to generate all `nixosConfigurations`. This separates data from logic, making it easier to add hosts and reducing boilerplate. Our flake.nix inlines each host call, which is fine at our scale but becomes harder to scan as host count grows.
+   - **Source:** `flake.nix` (`nixosHostDefinitions` attrset and `mkNixosHost` function)
+   - **Impact:** Medium. Structural refactor of flake.nix; improves readability but requires reworking our existing helper functions.
+
+2. **Centralized network topology file**
+   - **Rationale:** `lib/network.nix` defines all subnets, host IPs, interfaces, gateways, and infrastructure devices (NAS shares, etc.) in a single plain attrset. Hosts import this file instead of hardcoding network values. This is a clean single-source-of-truth pattern for multi-host NixOS setups. Our NixOS hosts (OrbStack, TrueNAS) could benefit from this if we add more NixOS machines.
+   - **Source:** `lib/network.nix`
+   - **Impact:** Low. Only relevant if our NixOS host count grows; currently we have two NixOS hosts with simple networking.
+
+3. **Performance tuning profiles module**
+   - **Rationale:** `modules/performance/profiles.nix` exposes a single `performance.profile` enum option (dev/server/workstation/constrained/router/none) that sub-modules read to configure memory, network, and CPU tuning. This is a clean composition pattern: hosts set `performance.profile = "server";` and get appropriate sysctl, scheduler, and governor settings without managing the details. Could be useful for our TrueNAS host.
+   - **Source:** `modules/performance/profiles.nix`, `modules/performance/memory.nix`, `modules/performance/network.nix`, `modules/performance/intel-cpu.nix`, `modules/performance/amd-cpu.nix`
+   - **Impact:** Medium. Requires creating a new module hierarchy but adds concrete performance benefits for NixOS hosts.
+
+4. **Minimal home-manager profile for constrained devices**
+   - **Rationale:** `home-manager/minimal.nix` provides a stripped-down HM configuration for resource-constrained hosts: disables direnv, autosuggestions, syntax highlighting; uses nano instead of neovim; includes only essential packages. Per-host files like `hosts/bluedesert.nix` import this instead of the full common profile. Our repo assumes all hosts get the full config, which may be wasteful for lightweight NixOS hosts.
+   - **Source:** `home-manager/minimal.nix`, `home-manager/hosts/bluedesert.nix`
+   - **Impact:** Low. Only relevant if we add resource-constrained hosts; our current hosts can handle the full config.
+
+5. **Auto-derive agenix/age keys from SSH keys via activation script**
+   - **Rationale:** The `home.activation.deriveAgenixKey` script in `common.nix` automatically derives an age key from the user's ed25519 SSH key using `ssh-to-age`, storing it at `~/.config/agenix/keys.txt`. This means secrets decryption works on any machine with an authorized SSH key, without manually distributing a separate age key. Our sops-nix setup requires a standalone age key, which is an extra bootstrap step on new machines.
+   - **Source:** `home-manager/common.nix` (`home.activation.deriveAgenixKey`)
+   - **Impact:** Medium. Would simplify our secrets bootstrap story; requires evaluating whether sops-nix can use SSH-derived keys similarly.
+
+6. **Statix and deadnix for Nix linting**
+   - **Rationale:** The Makefile runs `statix check` (anti-pattern detection) and `deadnix` (dead code detection) alongside formatting. Our treefmt only runs nixfmt. Adding statix and deadnix to our treefmt or CI would catch issues like unused let bindings, legacy `with` usage, and redundant patterns. This is now a three-repo signal (mrjones2014, joshsymonds, khaneliman).
+   - **Source:** `Makefile` (`lint-nix` target), `flake.nix` (devShell packages)
+   - **Impact:** Low. Adding two tools to treefmt or a pre-commit check; no structural changes.
+
+7. **Programmatic homeConfigurations generation from host definitions**
+   - **Rationale:** The `homeConfigurations` output in `flake.nix` is generated programmatically from `nixosHostDefinitions` using `lib.genAttrs` and `builtins.attrNames`. This ensures every host with a `homeModule` automatically gets a corresponding standalone `homeConfigurations` entry (formatted as `user@hostname`), without manual duplication. Useful for running `home-manager switch` independently of system rebuilds.
+   - **Source:** `flake.nix` (`homeConfigurations` section)
+   - **Impact:** Low. We currently only use integrated HM; standalone configs would be an addition, not a replacement.
+
+8. **Installer ISO module with auto-partitioning**
+   - **Rationale:** `modules/installer.nix` is a full NixOS module (~450 lines) that generates bootable installer ISOs with auto-partitioning, optional LUKS encryption, optional swap, disk detection heuristics, repo cloning, and nixos-install automation. Hosts define an `installer.nix` that sets `autoInstaller` options and get a buildable ISO via `nix build .#<host>InstallerIso`. This is the most comprehensive installer pattern seen across all surveyed repos.
+   - **Source:** `modules/installer.nix`, `hosts/stygianlibrary/installer.nix`, `hosts/ultraviolet/installer.nix`, `hosts/vermissian/installer.nix`
+   - **Impact:** High. Significant module to build, but eliminates manual NixOS installation entirely. Only relevant if we need reproducible NixOS provisioning.
