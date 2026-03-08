@@ -391,3 +391,101 @@ A homelab-focused Nix config managing 7 machines: 3 NixOS servers (ThinkCenter M
    - **Rationale:** chenglab's `install.sh` handles the entire bootstrap flow for both macOS (Xcode, Rosetta, Determinate Nix installer, then `nix run nix-darwin`) and Linux (GPT partitioning, LUKS encryption, filesystem creation, tmpfs mount hierarchy, initrd SSH key generation, age key derivation). This makes fresh installs reproducible and documented. Our repo has no bootstrap script.
    - **Source:** `install.sh`
    - **Impact:** Low. Useful for reproducible machine setup, but our macOS bootstrap is already handled by Determinate Nix installer + `task switch`.
+
+## AlexNabokikh/nix-config
+
+**Source:** [github.com/AlexNabokikh/nix-config](https://github.com/AlexNabokikh/nix-config)
+
+A clean, two-host setup managing one NixOS desktop (energy) and one nix-darwin MacBook (PL-OLX-KCGXHGK3PY). Notable for its strict separation between system-level modules (`modules/nixos/`, `modules/darwin/`), home-manager modules (`modules/home-manager/`), and per-user/per-host home configs (`home/<user>/<host>/`). Uses catppuccin/nix for theming, Makefile for operations, and keeps home-manager as a standalone configuration (not integrated into system rebuilds).
+
+### Comparison Table
+
+| Aspect                   | AlexNabokikh/nix-config                                                                                                                            | Our dotfiles                                                                                                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Flake framework          | Plain flake outputs, no flake-parts                                                                                                                | flake-parts with `treefmt-nix.flakeModule`                                                                                                                                       |
+| Flake inputs             | 6 inputs (nixpkgs, home-manager, hardware, catppuccin, noctalia, darwin)                                                                           | 12 inputs (nixpkgs, flake-parts, nix-darwin, home-manager, nix-vscode-extensions, krewfile, llm-agents, dagger, stylix, nix-index-database, sops-nix, nix-homebrew, treefmt-nix) |
+| Helper functions         | `mkNixosConfiguration`, `mkDarwinConfiguration`, `mkHomeConfiguration` -- three separate functions                                                 | `mkDarwin`, `mkHome`, `mkNixOS` -- three analogous functions                                                                                                                     |
+| Home-manager integration | Standalone `homeConfigurations` only; not integrated into system rebuilds                                                                          | Integrated into darwin/NixOS via `darwinModules.home-manager` / `nixosModules.home-manager`, plus standalone `homeConfigurations` for Linux                                      |
+| Host layout              | `hosts/<hostname>/default.nix` per host                                                                                                            | `hosts/mac.nix` (shared darwin), `hosts/nixos/<host>.nix` (per NixOS host), `hosts/linux.nix` (standalone HM)                                                                    |
+| Module organization      | Three-tier: `modules/{darwin,nixos,home-manager}/{common,desktop,programs,...}/` with per-program subdirectories                                   | Flat: `home/*.nix` per tool domain, `hosts/shared.nix` for system-level shared config                                                                                            |
+| Per-user config          | `home/<user>/<host>/default.nix` selects which module groups to import                                                                             | Inline `homeModule` function/attrset in `flake.nix` per host                                                                                                                     |
+| User metadata            | `users` attrset in `flake.nix` with avatar, email, fullName, gitKey fields; passed via `specialArgs` as `userConfig`                               | `dotfiles.*` NixOS options module with typed options; passed via home-manager module system                                                                                      |
+| Module path passing      | String interpolation: `"${nixosModules}/common"` where `nixosModules = "${self}/modules/nixos"`                                                    | Direct import paths: `./hosts/mac.nix`, `./home`                                                                                                                                 |
+| Theming                  | catppuccin/nix (`catppuccin.homeModules.catppuccin`) with flavor/accent in HM common module                                                        | stylix (base16 scheme, fonts, cursor) via `stylix.darwinModules.stylix` / `stylix.nixosModules.stylix`                                                                           |
+| Secrets management       | None                                                                                                                                               | sops-nix                                                                                                                                                                         |
+| Operations               | Makefile with explicit targets: `darwin-rebuild`, `nixos-rebuild`, `home-manager-switch`, `nix-gc`, `flake-update`, `flake-check`, `bootstrap-mac` | Taskfile.yaml with `task switch` (auto-detects platform via `nh`), `task update`, `task check`, `task format`                                                                    |
+| Bootstrap                | `bootstrap-mac` target chains `install-nix` then `install-nix-darwin`                                                                              | No bootstrap script; Determinate Nix installer + `task switch`                                                                                                                   |
+| Formatter / linter       | None in flake                                                                                                                                      | treefmt-nix (nixfmt, deadnix, statix, shfmt, prettier)                                                                                                                           |
+| Flake checks             | `nix flake check` via Makefile                                                                                                                     | Per-system checks that build all configurations via flake-parts `perSystem.checks`                                                                                               |
+| Shell                    | zsh (system-level `programs.zsh.enable = true`)                                                                                                    | fish (home-manager `programs.fish`)                                                                                                                                              |
+| Custom packages          | None                                                                                                                                               | `pkgs/` directory with custom derivations                                                                                                                                        |
+| Overlays                 | None                                                                                                                                               | Local overlay + nix-vscode-extensions, llm-agents, dagger overlays                                                                                                               |
+| Hardware modules         | nixos-hardware (`inputs.hardware.nixosModules.asus-rog-strix-x570e`, `common-gpu-amd`)                                                             | None (our NixOS hosts are OrbStack/TrueNAS VMs, no hardware-specific modules needed)                                                                                             |
+| Scripts                  | `modules/home-manager/scripts/` with `home.file.".local/bin"` recursive source from `./bin`                                                        | Shell scripts in `configs/` symlinked via `xdg.configFile`                                                                                                                       |
+| Desktop environment      | NixOS: niri (Wayland compositor) + Hyprland option; HM: desktop-specific modules for niri/hyprland/wayland-common                                  | No desktop environment (headless NixOS hosts, macOS manages its own DE)                                                                                                          |
+| Nixpkgs config           | `allowUnfree = true` set centrally in `nixpkgsConfig` attrset, applied in each helper                                                              | `config.allowUnfree = true` in standalone HM; darwin/NixOS inherit from nixpkgs module                                                                                           |
+
+### Home-Manager Module Comparison
+
+AlexNabokikh organizes HM modules under `modules/home-manager/` with subdirectories for category (`common/`, `programs/`, `desktop/`, `misc/`, `services/`, `scripts/`). Each program gets its own directory with a `default.nix`. The `common/default.nix` explicitly imports all shared program modules.
+
+| Module (theirs)                    | Equivalent (ours)                  | Notes                                                                        |
+| ---------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------- |
+| programs/aerospace                 | (none)                             | macOS tiling WM; we don't use one                                            |
+| programs/alacritty                 | home/ghostty.nix                   | Different terminal emulators                                                 |
+| programs/atuin                     | (none)                             | Shell history sync; we use fish built-in history                             |
+| programs/bat                       | home/shell.nix (bat config inline) | We configure bat within shell module                                         |
+| programs/btop                      | (none)                             | System monitor; not configured in our repo                                   |
+| programs/fzf                       | home/shell.nix (fzf inline)        | We configure fzf within shell module                                         |
+| programs/git                       | home/git.nix                       | Similar scope                                                                |
+| programs/go                        | home/development.nix               | We bundle Go config in development module                                    |
+| programs/gpg                       | (none)                             | GPG agent; not configured in our repo                                        |
+| programs/k8s                       | home/kubernetes.nix                | Similar scope                                                                |
+| programs/lazygit                   | home/git.nix                       | We bundle lazygit in git module                                              |
+| programs/neovim                    | (none)                             | We use VS Code and Zed instead                                               |
+| programs/starship                  | home/shell.nix                     | We use tide prompt for fish instead of starship                              |
+| programs/tmux                      | (none)                             | Terminal multiplexer; not configured in our repo                             |
+| programs/zsh                       | home/shell.nix                     | Different shell (we use fish)                                                |
+| programs/saml2aws                  | (none)                             | AWS SSO tool; work-specific                                                  |
+| misc/gtk, misc/qt                  | (none)                             | Desktop theming; not relevant for our headless NixOS + macOS setup           |
+| misc/xdg                           | home/default.nix                   | We set XDG paths in home default module                                      |
+| desktop/niri, desktop/hyprland     | (none)                             | Wayland compositors; not relevant for us                                     |
+| services/hypridle, services/kanshi | (none)                             | Desktop services; not relevant for us                                        |
+| scripts/                           | configs/                           | Different mechanism: they use `home.file` recursive, we use `xdg.configFile` |
+
+### Candidate Changes
+
+1. **Separate home-manager modules into per-program directories**
+   - **Rationale:** AlexNabokikh gives each program its own directory under `modules/home-manager/programs/<name>/default.nix`. Our flat `home/*.nix` files work well at our current scale, but some of our modules (shell.nix, development.nix) bundle multiple programs together. Per-program directories would make it clearer what each module configures and allow independent toggling.
+   - **Source:** `modules/home-manager/programs/` (22 program directories)
+   - **Impact:** Low. Our flat layout is fine for our current module count (~15 files). Only worth considering if modules grow significantly larger or more numerous.
+
+2. **Centralized user metadata attrset in flake.nix**
+   - **Rationale:** AlexNabokikh defines a `users` attrset at the top of `flake.nix` containing all user metadata (name, email, fullName, gitKey, avatar, wallpaper) and passes it to all configurations via `specialArgs`. This is simpler than our approach of scattering user-specific settings across inline `homeModule` definitions. However, our `dotfiles.*` options module provides type checking and defaults that a plain attrset does not.
+   - **Source:** `flake.nix` (lines defining `users` attrset)
+   - **Impact:** Low. Our typed options approach is more robust. The pattern is worth noting but switching to it would lose type safety.
+
+3. **Standalone home-manager configurations (not integrated into system rebuild)**
+   - **Rationale:** AlexNabokikh uses `homeConfigurations` exclusively, running `home-manager switch` separately from `darwin-rebuild`/`nixos-rebuild`. This decouples home config updates from system rebuilds, making home changes faster and independent. Our integrated approach means every `task switch` rebuilds both system and home, which is slower but ensures consistency.
+   - **Source:** `flake.nix` (`mkHomeConfiguration` function, `homeConfigurations` output)
+   - **Impact:** Medium. Faster iteration on home config changes, at the cost of potential drift between system and home state. Worth considering as an optional workflow alongside the integrated rebuild.
+
+4. **Makefile with explicit, descriptive targets and bootstrap chain**
+   - **Rationale:** AlexNabokikh's Makefile has separate targets for each operation (`darwin-rebuild`, `nixos-rebuild`, `home-manager-switch`, `nix-gc`, `flake-update`, `flake-check`) with echo messages before and after each step, plus a `bootstrap-mac` target that chains `install-nix` and `install-nix-darwin`. Our Taskfile uses `task switch` with auto-detection, which is more convenient but less transparent. The bootstrap chain pattern is worth noting.
+   - **Source:** `Makefile`
+   - **Impact:** Low. Our Taskfile with `nh` auto-detection is more ergonomic. The bootstrap chain is the only meaningfully different pattern.
+
+5. **String-interpolated module paths via specialArgs**
+   - **Rationale:** AlexNabokikh passes module base paths as strings via `specialArgs` (`nixosModules = "${self}/modules/nixos"`, `darwinModules = "${self}/modules/darwin"`, `nhModules = "${self}/modules/home-manager"`) and imports them with string interpolation (`"${nixosModules}/common"`). This allows hosts and home configs to import modules without knowing the repo's absolute path structure. Our approach uses direct relative imports (`./hosts/mac.nix`, `./home`), which is simpler and more explicit.
+   - **Source:** `flake.nix` (specialArgs), `hosts/energy/default.nix`, `home/nabokikh/energy/default.nix`
+   - **Impact:** Low. String interpolation adds indirection without clear benefit for our repo size. Direct imports are preferred per our code style (explicit over convention-based).
+
+6. **Per-user/per-host home directory structure**
+   - **Rationale:** AlexNabokikh organizes home configs as `home/<username>/<hostname>/default.nix`, creating a matrix of user-by-host combinations. Each file selects which module groups to import (common, desktop, etc.). Our approach uses inline `homeModule` closures in `flake.nix`. The directory-based approach scales better when the same user has different configs across many hosts, or when multiple users share a host.
+   - **Source:** `home/nabokikh/energy/default.nix`, `home/alexander.nabokikh/PL-OLX-KCGXHGK3PY/default.nix`
+   - **Impact:** Low. We have two users across four hosts, all with similar configs. The inline approach keeps everything visible in `flake.nix`. The directory approach would only help if user/host combinations grew significantly.
+
+7. **Disable boot-time services for faster startup**
+   - **Rationale:** AlexNabokikh explicitly disables `NetworkManager-wait-online` and `plymouth-quit-wait` systemd services to reduce boot time. These are common culprits for slow NixOS boots. Our NixOS hosts (OrbStack container, TrueNAS VM) may not have the same boot path, but it is a practical optimization to be aware of.
+   - **Source:** `modules/nixos/common/default.nix` (`systemd.services`)
+   - **Impact:** Low. Relevant only if our NixOS hosts experience slow boot times from these services.
