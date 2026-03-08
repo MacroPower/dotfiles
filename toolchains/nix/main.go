@@ -176,14 +176,14 @@ func (m *Nix) validateHome(ctx context.Context, name string) error {
 
 	for _, f := range info.XdgFiles {
 		path := fmt.Sprintf("%s/.config/%s", info.HomeDirectory, f)
-		if strings.HasPrefix(f, "/") {
+		if strings.HasPrefix(f, info.HomeDirectory+"/") {
 			path = f
 		}
 		ctr = ctr.WithExec([]string{"test", "-e", path})
 	}
 	for _, f := range info.HomeFiles {
 		path := fmt.Sprintf("%s/%s", info.HomeDirectory, f)
-		if strings.HasPrefix(f, "/") {
+		if strings.HasPrefix(f, info.HomeDirectory+"/") {
 			path = f
 		}
 		ctr = ctr.WithExec([]string{"test", "-e", path})

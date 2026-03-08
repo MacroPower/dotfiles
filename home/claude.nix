@@ -23,12 +23,18 @@ in
         context7 = {
           type = "stdio";
           command = "npx";
-          args = ["-y" "@upstash/context7-mcp"];
+          args = [
+            "-y"
+            "@upstash/context7-mcp"
+          ];
         };
         fetch = {
           type = "stdio";
           command = "${pkgs.uv}/bin/uvx";
-          args = ["--isolated" "mcp-server-fetch"];
+          args = [
+            "--isolated"
+            "mcp-server-fetch"
+          ];
         };
         kagi = {
           type = "stdio";
@@ -143,81 +149,83 @@ in
     };
   };
 
-  home.packages = [
-    pkgs.llm-agents.ccusage
-  ];
+  home = {
+    packages = [
+      pkgs.llm-agents.ccusage
+    ];
 
-  home.file.".claude/CLAUDE.md".text = ''
-    # Global Instructions
+    file.".claude/CLAUDE.md".text = ''
+      # Global Instructions
 
-    ## Web Search & Fetching
+      ## Web Search & Fetching
 
-    - Use `mcp__kagi__kagi_search_fetch` for web searches.
-    - Use `mcp__fetch__fetch` for fetching known URLs and web page content.
-    - Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs` for documentation and examples.
-    - Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)
+      - Use `mcp__kagi__kagi_search_fetch` for web searches.
+      - Use `mcp__fetch__fetch` for fetching known URLs and web page content.
+      - Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs` for documentation and examples.
+      - Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)
 
-    Remember: Do research, don't guess.
+      Remember: Do research, don't guess.
 
-    ## Writing Style
+      ## Writing Style
 
-    - Keep responses to plain ASCII text. Use commas, semicolons, parentheses, or separate sentences for clauses.
-    - Acknowledge complexity and mixed feelings when they exist.
-    - Your code speaks for itself. Enumeration of content is redundant. Focus instead on the how and why.
+      - Keep responses to plain ASCII text. Use commas, semicolons, parentheses, or separate sentences for clauses.
+      - Acknowledge complexity and mixed feelings when they exist.
+      - Your code speaks for itself. Enumeration of content is redundant. Focus instead on the how and why.
 
-    When writing documentation, you MUST review your output against the above rules.
-  '';
+      When writing documentation, you MUST review your output against the above rules.
+    '';
 
-  home.sessionVariables = lib.optionalAttrs skipPerms {
-    IS_SANDBOX = "1";
-  };
+    sessionVariables = lib.optionalAttrs skipPerms {
+      IS_SANDBOX = "1";
+    };
 
-  # Activation: merge MCP servers and secrets into mutable ~/.claude.json
-  home.activation.syncClaudeJson = lib.hm.dag.entryAfter [ "writeBoundary" "sops-nix" ] ''
-    CLAUDE_JSON="$HOME/.claude.json"
+    # Activation: merge MCP servers and secrets into mutable ~/.claude.json
+    activation.syncClaudeJson = lib.hm.dag.entryAfter [ "writeBoundary" "sops-nix" ] ''
+      CLAUDE_JSON="$HOME/.claude.json"
 
-    # Read existing file or start fresh
-    if [ -f "$CLAUDE_JSON" ]; then
-      if ${pkgs.jq}/bin/jq empty "$CLAUDE_JSON" 2>/dev/null; then
-        EXISTING=$(cat "$CLAUDE_JSON")
+      # Read existing file or start fresh
+      if [ -f "$CLAUDE_JSON" ]; then
+        if ${pkgs.jq}/bin/jq empty "$CLAUDE_JSON" 2>/dev/null; then
+          EXISTING=$(cat "$CLAUDE_JSON")
+        else
+          echo "Warning: ~/.claude.json is malformed, backing up" >&2
+          $DRY_RUN_CMD cp "$CLAUDE_JSON" "$CLAUDE_JSON.bak.$(date +%s)"
+          EXISTING='{}'
+        fi
       else
-        echo "Warning: ~/.claude.json is malformed, backing up" >&2
-        $DRY_RUN_CMD cp "$CLAUDE_JSON" "$CLAUDE_JSON.bak.$(date +%s)"
         EXISTING='{}'
       fi
-    else
-      EXISTING='{}'
-    fi
 
-    # Merge MCP servers from home-manager config
-    MCP_CONFIG="${config.xdg.configHome}/mcp/mcp.json"
-    MCP_SERVERS='{}'
-    if [ -f "$MCP_CONFIG" ]; then
-      MCP_SERVERS=$(${pkgs.jq}/bin/jq '.mcpServers // {}' "$MCP_CONFIG")
-    fi
-    UPDATED=$(echo "$EXISTING" | ${pkgs.jq}/bin/jq \
-      --argjson mcp "$MCP_SERVERS" \
-      '.mcpServers = (.mcpServers // {} | to_entries | map(select(.key as $k | $mcp | has($k) | not)) | from_entries) * $mcp')
-
-    ${lib.optionalString skipPerms ''
-      # Pre-trust home directory and authenticate with scoped PAT (sandbox only)
-      UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq \
-        '.projects["${config.dotfiles.homeDirectory}"].hasTrustDialogAccepted = true')
-      GH_TOKEN=$(cat ${config.sops.secrets.gh_token.path} 2>/dev/null || true)
-      if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
-        echo "''${GH_TOKEN}" | ${pkgs.gh}/bin/gh auth login --with-token
-        ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
+      # Merge MCP servers from home-manager config
+      MCP_CONFIG="${config.xdg.configHome}/mcp/mcp.json"
+      MCP_SERVERS='{}'
+      if [ -f "$MCP_CONFIG" ]; then
+        MCP_SERVERS=$(${pkgs.jq}/bin/jq '.mcpServers // {}' "$MCP_CONFIG")
       fi
-    ''}
+      UPDATED=$(echo "$EXISTING" | ${pkgs.jq}/bin/jq \
+        --argjson mcp "$MCP_SERVERS" \
+        '.mcpServers = (.mcpServers // {} | to_entries | map(select(.key as $k | $mcp | has($k) | not)) | from_entries) * $mcp')
 
-    # Atomic write
-    if [ -z "$DRY_RUN_CMD" ]; then
-      TMPFILE=$(mktemp "$CLAUDE_JSON.tmp.XXXXXX")
-      echo "$UPDATED" > "$TMPFILE"
-      chmod 600 "$TMPFILE"
-      mv "$TMPFILE" "$CLAUDE_JSON"
-    else
-      echo "Would write merged MCP config to $CLAUDE_JSON"
-    fi
-  '';
+      ${lib.optionalString skipPerms ''
+        # Pre-trust home directory and authenticate with scoped PAT (sandbox only)
+        UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq \
+          '.projects["${config.dotfiles.homeDirectory}"].hasTrustDialogAccepted = true')
+        GH_TOKEN=$(cat ${config.sops.secrets.gh_token.path} 2>/dev/null || true)
+        if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
+          echo "''${GH_TOKEN}" | ${pkgs.gh}/bin/gh auth login --with-token
+          ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
+        fi
+      ''}
+
+      # Atomic write
+      if [ -z "$DRY_RUN_CMD" ]; then
+        TMPFILE=$(mktemp "$CLAUDE_JSON.tmp.XXXXXX")
+        echo "$UPDATED" > "$TMPFILE"
+        chmod 600 "$TMPFILE"
+        mv "$TMPFILE" "$CLAUDE_JSON"
+      else
+        echo "Would write merged MCP config to $CLAUDE_JSON"
+      fi
+    '';
+  };
 }

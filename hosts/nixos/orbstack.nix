@@ -11,7 +11,14 @@
     "${modulesPath}/virtualisation/lxc-container.nix"
   ];
 
-  networking.hostName = "nixos-orbstack";
+  networking = {
+    hostName = "nixos-orbstack";
+
+    # Networking: OrbStack's orbstack.nix handles DNS and DHCP tuning,
+    # but the networkd config itself must be in the main configuration.
+    useNetworkd = true;
+    dhcpcd.enable = false;
+  };
 
   # In LXC containers, systemd-hostnamed only sets the static hostname from
   # /etc/hostname, and cannot call sethostname() to update the kernel hostname.
@@ -34,10 +41,6 @@
     (writeShellScriptBin "docker" ''exec sudo ${nerdctl}/bin/nerdctl "$@"'')
   ];
 
-  # Networking: OrbStack's orbstack.nix handles DNS and DHCP tuning,
-  # but the networkd config itself must be in the main configuration.
-  networking.useNetworkd = true;
-  networking.dhcpcd.enable = false;
   systemd = {
     network.networks."50-eth0" = {
       matchConfig.Name = "eth0";

@@ -176,6 +176,8 @@
     };
   };
 
+  dconf.enable = false;
+
   xdg.enable = true;
 
   xdg.configFile = {
