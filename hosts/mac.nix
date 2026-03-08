@@ -277,11 +277,38 @@
         "com.apple.TextEdit".RichText = 0;
         # Hide Recent Tags from Finder sidebar
         "com.apple.finder".ShowRecentTags = false;
+        # Dictation shortcut: "Press Either Command Key Twice"
+        "com.apple.symbolichotkeys" = let
+          # AppleSymbolicHotKeys IDs (from macOS internals)
+          hotkeys = {
+            dictation = 164;
+          };
+          # NSEvent modifier flags (from NSEvent.h / CGEvent.h)
+          modifiers = {
+            command = 1048576; # 0x100000 -- NSEventModifierFlagCommand
+          };
+        in {
+          AppleSymbolicHotKeys."${toString hotkeys.dictation}" = {
+            enabled = true;
+            value = {
+              # macOS stores [flag, ~flag] for modifier-type shortcuts;
+              # ~flag as signed 64-bit = -(flag + 1)
+              parameters = [ modifiers.command (-(modifiers.command + 1)) ];
+              type = "modifier";
+            };
+          };
+        };
+        # Disable dictation auto-punctuation
+        "com.apple.assistant.support"."Dictation Auto Punctuation Enabled" = false;
       };
     };
 
     # Transitional option: the user that owns system-level nix-darwin operations
     primaryUser = config.dotfiles.system.username;
+    # Apply settings changes without requiring logout
+    activationScripts.postActivation.text = ''
+      sudo -u ${config.dotfiles.system.username} /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
+    '';
     # nix-darwin state version, do not change after initial setup
     stateVersion = 6;
   };
