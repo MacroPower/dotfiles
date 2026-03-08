@@ -22,7 +22,8 @@ task switch
 
 ## Architecture
 
-- **`flake.nix`**: Entry point. Three helpers: `mkDarwin` (nix-darwin + home-manager), `mkHome` (standalone home-manager for Linux), and `mkNixOS` (NixOS + home-manager). Each host passes a `hostConfig` attrset.
+- **`flake.nix`**: Entry point. Declares inputs, flake-parts scaffolding, and host configurations. Each host passes a `hostConfig` attrset to a builder from `lib/`.
+- **`lib/`**: Builder functions (`mkDarwin`, `mkHome`, `mkNixOS`) and shared config (overlays, home-manager modules). `lib/default.nix` is the entry point, each builder lives in its own file.
 - **`hosts/shared.nix`**: Nix settings shared between nix-darwin and NixOS (experimental features, GC, store optimization, flake registry).
 - **`hosts/stylix.nix`**: Shared stylix theme config (base16 scheme, fonts, cursor) imported by all three helpers.
 - **`hosts/mac.nix`**: System-level nix-darwin config (Homebrew, PAM/Touch ID, user accounts). Imports `shared.nix`. `hosts/linux.nix` is the standalone home-manager equivalent.

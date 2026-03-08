@@ -1,0 +1,78 @@
+{
+  inputs,
+  self,
+  paths,
+}:
+let
+  inherit (inputs)
+    nix-vscode-extensions
+    llm-agents
+    dagger
+    sops-nix
+    nix-index-database
+    krewfile
+    ;
+
+  localOverlay = final: _prev: {
+    chief = final.callPackage paths.chief { };
+  };
+
+  sharedOverlays = [
+    localOverlay
+    nix-vscode-extensions.overlays.default
+    llm-agents.overlays.default
+    dagger.overlays.default
+  ];
+
+  sharedStylixConfig = import paths.stylix;
+
+  hmSharedModules = [
+    sops-nix.homeManagerModules.sops
+    nix-index-database.homeModules.nix-index
+    krewfile.homeManagerModules.krewfile
+  ];
+
+  mkHomeManagerBlock =
+    { username, homeModule }:
+    {
+      useGlobalPkgs = true;
+      useUserPackages = true;
+      backupFileExtension = "bak";
+      sharedModules = hmSharedModules;
+      users.${username} = {
+        imports = [
+          paths.home
+          homeModule
+        ];
+      };
+    };
+in
+{
+  mkDarwin = import ./mkDarwin.nix {
+    inherit
+      inputs
+      self
+      paths
+      sharedOverlays
+      sharedStylixConfig
+      mkHomeManagerBlock
+      ;
+  };
+  mkHome = import ./mkHome.nix {
+    inherit
+      inputs
+      paths
+      sharedOverlays
+      sharedStylixConfig
+      hmSharedModules
+      ;
+  };
+  mkNixOS = import ./mkNixOS.nix {
+    inherit
+      inputs
+      sharedOverlays
+      sharedStylixConfig
+      mkHomeManagerBlock
+      ;
+  };
+}

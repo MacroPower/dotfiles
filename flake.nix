@@ -66,19 +66,6 @@
       self,
       nixpkgs,
       flake-parts,
-      nix-darwin,
-      home-manager,
-      nix-vscode-extensions,
-      krewfile,
-      llm-agents,
-      dagger,
-      stylix,
-      nix-index-database,
-      sops-nix,
-      nix-homebrew,
-      homebrew-core,
-      homebrew-cask,
-      homebrew-bundle,
       treefmt-nix,
       ...
     }:
@@ -123,179 +110,22 @@
 
       flake =
         let
-          localOverlay = final: _prev: {
-            chief = final.callPackage ./pkgs/chief.nix { };
-          };
-
-          sharedOverlays = [
-            localOverlay
-            nix-vscode-extensions.overlays.default
-            llm-agents.overlays.default
-            dagger.overlays.default
-          ];
-
-          sharedStylixConfig = import ./hosts/stylix.nix;
-
-          hmSharedModules = [
-            sops-nix.homeManagerModules.sops
-            nix-index-database.homeModules.nix-index
-            krewfile.homeManagerModules.krewfile
-          ];
-
-          mkHomeManagerBlock =
-            { username, homeModule }:
-            {
-              useGlobalPkgs = true;
-              useUserPackages = true;
-              backupFileExtension = "bak";
-              sharedModules = hmSharedModules;
-              users.${username} = {
-                imports = [
-                  ./home
-                  homeModule
-                ];
+          inherit
+            (import ./lib {
+              inherit inputs self;
+              paths = {
+                home = ./home;
+                hostMac = ./hosts/mac.nix;
+                hostLinux = ./hosts/linux.nix;
+                stylix = ./hosts/stylix.nix;
+                chief = ./pkgs/chief.nix;
+                linearmouse = ./configs/linearmouse/linearmouse.json;
               };
-            };
-
-          mkDarwin =
-            {
-              username,
-              homebrew ? { },
-              homeModule,
-            }:
-            nix-darwin.lib.darwinSystem {
-              modules = [
-                ./hosts/mac.nix
-                {
-                  dotfiles.system = {
-                    inherit username;
-                    inherit homebrew;
-                  };
-                  system.configurationRevision = self.rev or self.dirtyRev or null;
-                }
-                nix-homebrew.darwinModules.nix-homebrew
-                {
-                  nix-homebrew = {
-                    enable = true;
-                    enableRosetta = true;
-                    autoMigrate = true;
-                    user = username;
-                    mutableTaps = false;
-                    taps = {
-                      "homebrew/homebrew-core" = homebrew-core;
-                      "homebrew/homebrew-cask" = homebrew-cask;
-                      "homebrew/homebrew-bundle" = homebrew-bundle;
-                    };
-                  };
-                }
-                home-manager.darwinModules.home-manager
-                stylix.darwinModules.stylix
-                sharedStylixConfig
-                {
-                  nixpkgs.hostPlatform = "aarch64-darwin";
-                  nixpkgs.overlays = sharedOverlays;
-                  home-manager = mkHomeManagerBlock { inherit username homeModule; };
-                }
-                # Darwin-specific home-manager defaults
-                {
-                  home-manager.users.${username} =
-                    { pkgs, ... }:
-                    {
-                      dotfiles = {
-                        inherit username;
-                        homeDirectory = "/Users/${username}";
-                        extraHomePackages = with pkgs; [
-                          terminal-notifier
-                          gtk4
-                          librsvg
-                          libheif
-                          libraw
-                          dav1d
-                        ];
-                        kubernetes.extraKrewPlugins = [
-                          "sniff" # https://github.com/eldadru/ksniff
-                          "access-matrix" # https://github.com/corneliusweig/rakkess
-                          "cyclonus" # https://github.com/mattfenwick/kubectl-cyclonus
-                        ];
-                        shell = {
-                          extraInteractiveInit = ''
-                            # OrbStack integration
-                            source ~/.orbstack/shell/init2.fish 2>/dev/null || :
-                          '';
-                          extraTideConfig = ''
-                            set -g tide_left_prompt_items os $tide_left_prompt_items
-                            set -g tide_os_icon \ue711
-                          '';
-                        };
-                        extraXdgConfigFiles = {
-                          "linearmouse/linearmouse.json".source = ./configs/linearmouse/linearmouse.json;
-                        };
-                        vscode.extraKubernetesSettings = {
-                          "vscode-kubernetes.helm-path.mac" = "/opt/homebrew/bin/helm";
-                          "vscode-kubernetes.kubectl-path.mac" = "/opt/homebrew/bin/kubectl";
-                          "vscode-kubernetes.minikube-path.mac" = "/opt/homebrew/bin/minikube";
-                        };
-                        sshIncludes = [
-                          "~/.config/colima/ssh_config"
-                          "~/.orbstack/ssh/config"
-                        ];
-                      };
-                    };
-                }
-              ];
-            };
-
-          mkHome =
-            { system, homeModule }:
-            home-manager.lib.homeManagerConfiguration {
-              pkgs = import nixpkgs {
-                inherit system;
-                config.allowUnfree = true;
-                overlays = sharedOverlays;
-              };
-              modules = hmSharedModules ++ [
-                stylix.homeModules.stylix
-                sharedStylixConfig
-                ./hosts/linux.nix
-                ./home
-                homeModule
-              ];
-            };
-
-          mkNixOS =
-            {
-              system,
-              hostModule,
-              username,
-              homeModule,
-            }:
-            nixpkgs.lib.nixosSystem {
-              modules = [
-                hostModule
-                { dotfiles.system = { inherit username; }; }
-                home-manager.nixosModules.home-manager
-                stylix.nixosModules.stylix
-                sharedStylixConfig
-                {
-                  nixpkgs.hostPlatform = system;
-                  nixpkgs.overlays = sharedOverlays;
-                  home-manager = mkHomeManagerBlock { inherit username homeModule; };
-                }
-                # NixOS-specific home-manager defaults
-                {
-                  home-manager.users.${username} = {
-                    dotfiles = {
-                      inherit username;
-                      homeDirectory = "/home/${username}";
-                      shell.extraTideConfig = ''
-                        set -g tide_left_prompt_items os $tide_left_prompt_items
-                        set -g tide_os_icon \ue843
-                      '';
-                    };
-                  };
-                }
-              ];
-            };
+            })
+            mkDarwin
+            mkHome
+            mkNixOS
+            ;
         in
         {
           darwinConfigurations = {
