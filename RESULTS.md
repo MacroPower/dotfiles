@@ -1173,3 +1173,154 @@ Modules in MatthiasBenaets' config that we lack or configure differently:
    - **Rationale:** Having per-language dev shells (python, nodejs, etc.) in the dotfiles repo makes them available system-wide via `nix develop ~/.setup#python`. These serve as quick-start environments without per-project `flake.nix` files. Our approach is per-project dev shells, which is more precise but requires setup for every new project.
    - **Source:** `shells/` directory
    - **Impact:** Low. Different workflow preference. Per-project dev shells are generally more appropriate for reproducibility.
+
+## kclejeune/system
+
+**Source:** [github.com/kclejeune/system](https://github.com/kclejeune/system)
+
+### Comparison Table
+
+| Aspect                | kclejeune/system                                                                                                                                       | Our approach                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| Flake framework       | flake-parts with `mkDarwinConfig`/`mkNixosConfig`/`mkHomeConfig` helpers defined outside the `flake-parts.lib.mkFlake` body                            | flake-parts with `mkDarwin`/`mkHome`/`mkNixOS` helpers inside `flake.nix` |
+| Module layout         | `modules/{darwin,nixos,home-manager}/` with a shared `modules/common.nix`                                                                              | `hosts/` (system-level) + `home/` (flat HM modules)                       |
+| Host composition      | `profiles/` directory (personal, work) imported as `extraModules` by each config                                                                       | `hostConfig` attrsets passed to helper functions                          |
+| Config naming         | `"username@system"` keys (e.g. `kclejeune@aarch64-darwin`) with `lib.map` over `darwinSystems`                                                         | Named host keys (e.g. `jacobs-macbook`)                                   |
+| Multi-arch generation | `lib.map` over a computed `darwinSystems`/`defaultSystems` list to auto-generate configs for all supported architectures                               | One config per named host with explicit system                            |
+| User abstraction      | `primaryUser.nix` module with `user` and `hm` option aliases via `mkAliasDefinitions`                                                                  | `dotfiles.*` NixOS options module                                         |
+| Nix implementation    | Determinate Nix (`determinateNix.enable = true`, `nix.enable = false`)                                                                                 | Lix (Nix implementation fork)                                             |
+| Nix daemon config     | `determinateNix.customSettings` + `determinateNixd` (garbage collector strategy, builder state, netrc)                                                 | Declarative `nix.settings` via Lix                                        |
+| Secrets management    | None (no sops-nix, agenix, or similar)                                                                                                                 | sops-nix                                                                  |
+| Overlays              | Single `self.overlays.default` via flake-parts `easyOverlay`, includes `pkgs.stable` from pinned stable nixpkgs                                        | Minimal overlays                                                          |
+| Nixpkgs channel       | Tracks unstable with `stable` and `legacy` (25.05) as overlay attributes                                                                               | Tracks unstable                                                           |
+| Homebrew management   | nix-darwin `homebrew` module (no nix-homebrew)                                                                                                         | nix-darwin `homebrew` module                                              |
+| Shell                 | zsh with oh-my-zsh (30+ plugins), bash as secondary                                                                                                    | fish as primary                                                           |
+| Custom packages       | `pkgs/` directory: `sysdo` (Python CLI), `cb` (clipboard), `fnox` (Firefox profiles)                                                                   | `pkgs/` directory with custom derivations                                 |
+| Operations CLI        | `sysdo` -- custom Python CLI built with typer, packaged as a Nix derivation                                                                            | `task` (Taskfile.yaml) with `nh`                                          |
+| Formatter/linter      | treefmt-nix with deadnix, nixfmt, jsonfmt, mdformat, stylua, ruff, shellcheck, shfmt                                                                   | treefmt with nixfmt, prettier                                             |
+| Pre-commit hooks      | git-hooks.nix (cachix/git-hooks.nix) with treefmt hook                                                                                                 | None                                                                      |
+| CI: macOS builds      | Cirrus CI with macOS runner (Sequoia image), Determinate Nix installer, cachix push                                                                    | None                                                                      |
+| CI: Linux builds      | Cirrus CI with NixOS container (x86_64 + aarch64), cachix push                                                                                         | Dagger-based e2e testing                                                  |
+| CI: Garnix            | garnix.yaml for x86_64-linux builds, all config types included                                                                                         | None                                                                      |
+| CI: flake updates     | GitHub Actions with `DeterminateSystems/update-flake-lock` (daily cron) + Dependabot                                                                   | Manual `task update`                                                      |
+| Flake checks          | Generates checks from all configurations by extracting `activationPackage` (HM) and `system.build.toplevel` (darwin/nixos), filtered by current system | `task check` (nix flake check)                                            |
+| Dev shell             | Comprehensive: includes fd, ripgrep, uv, nh, pre-commit hooks, treefmt programs, custom packages                                                       | Basic nix develop                                                         |
+| Touch ID sudo         | `security.pam.services.sudo_local.touchIdAuth = true`                                                                                                  | PAM Touch ID via nix-darwin                                               |
+| Neovim                | In-repo Lua config via `xdg.configFile`, not nixvim                                                                                                    | In-repo config via `configs/`                                             |
+| Raw config files      | `modules/home-manager/dotfiles/` directory with subdirs for aerospace, ghostty, kitty, hammerspoon, etc.                                               | `configs/` directory symlinked via `xdg.configFile`                       |
+| Syncthing             | Custom Darwin launchd module (`modules/darwin/syncthing.nix`) + NixOS native `services.syncthing`                                                      | Not configured                                                            |
+| macOS preferences     | Dedicated `preferences.nix` with dock, finder, trackpad, keyboard settings                                                                             | Inline in `hosts/mac.nix`                                                 |
+| Window manager        | AeroSpace (via Homebrew cask)                                                                                                                          | yabai/skhd or similar                                                     |
+| Font management       | JetBrains Mono via `fonts.packages` (system) + `fonts.fontconfig.enable` (HM)                                                                          | Font packages in home.packages                                            |
+| nix-index             | nix-index-database (Mic92/nix-index-database) with comma integration                                                                                   | Not configured                                                            |
+
+### Profiles-Based Composition
+
+kclejeune/system's defining architectural pattern is the `profiles/` directory for machine composition. Instead of per-host configuration files, profiles represent **roles** that cut across platform boundaries:
+
+- `profiles/personal/` -- sets `user.name = "kclejeune"`, imports personal HM config (git email, etc.)
+- `profiles/work/` -- sets `user.name = "klejeune"`, imports work HM config (AWS tools, teleport, etc.), disables CA cert installation
+
+Each profile has two layers:
+
+1. `default.nix` -- system-level settings (user identity, platform-specific options)
+2. `home-manager/default.nix` -- user-level settings (packages, git config)
+
+Hosts compose by selecting a profile as an `extraModule`:
+
+```nix
+"kclejeune@aarch64-darwin" = mkDarwinConfig {
+  extraModules = [ ./profiles/personal ./modules/darwin/apps.nix ];
+};
+"klejeune@aarch64-darwin" = mkDarwinConfig {
+  extraModules = [ ./profiles/work ];
+};
+```
+
+This is distinct from our `hostConfig` approach. Our pattern embeds all host-specific values in the flake.nix call site; kclejeune's pattern externalizes them into importable directories. The trade-off: profiles are more reusable across platforms (the same `profiles/personal` works for darwin, nixos, and standalone HM), but add a layer of indirection.
+
+The `primaryUser.nix` module is the glue that makes profiles work. It defines `user` and `hm` as top-level options with `mkAliasDefinitions`, so `user.name = "kclejeune"` expands to `users.users.kclejeune` and `hm.imports = [...]` expands to `home-manager.users.kclejeune.imports = [...]`. This is functionally similar to ahmedelgabri's `mkAliasDefinitions` pattern (US-007) but applied to the user account rather than just xdg paths.
+
+### Multi-Architecture Auto-Generation
+
+A notable pattern is the automatic generation of configs for all supported architectures:
+
+```nix
+darwinSystems = lib.intersectLists defaultSystems lib.platforms.darwin;
+# generates kclejeune@x86_64-darwin AND kclejeune@aarch64-darwin
+lib.map (system: { "kclejeune@${system}" = mkDarwinConfig { inherit system; ... }; }) darwinSystems
+```
+
+This eliminates per-architecture duplication. Our approach defines each host once with a fixed system, which is simpler but means adding a new architecture requires a new host entry.
+
+### Home-Manager Module Differences
+
+Modules in kclejeune/system not present in ours:
+
+| Module                | Description                                  |
+| --------------------- | -------------------------------------------- |
+| 1password.nix         | SSH agent integration with 1Password         |
+| nushell.nix           | Nushell shell configuration                  |
+| gnome.nix             | GNOME desktop dconf settings                 |
+| yazi/                 | Yazi file manager config                     |
+| tldr.nix              | tealdeer/tldr pages                          |
+| dotfiles/aerospace/   | AeroSpace window manager config              |
+| dotfiles/hammerspoon/ | Hammerspoon automation                       |
+| dotfiles/raycast/     | Raycast launcher scripts                     |
+| nixpkgs.nix (HM)      | Per-user nixpkgs config + nix-index registry |
+
+Tools in their HM packages not in ours: attic (binary cache), ast-grep, bento, bfs, cirrus-cli, d2 (diagrams), dix (nix diff), doxx, flamegraph, flamelens, flawz (CVE browser), flyctl, fnox, fx (JSON viewer), git-absorb, git-who, git-my, grype, helm-docs, hyperfine, jnv (JSON navigator), lazyworktree, mise, mmv, nix-inspect, nix-tree, nixd, nixpacks, ouch, oxfmt, oxlint, prek (pre-commit), process-compose, rclone, restic, rustscan, sig, skopeo, ssh-to-age, sysdo, trivy, usage, yq-go.
+
+### CI Patterns
+
+kclejeune uses a dual CI strategy:
+
+1. **Cirrus CI** (`.cirrus.yml`) -- The primary CI. Runs macOS builds on Apple Silicon (Sequoia runner image) and Linux builds on both x86_64 and aarch64 containers. Uses `cachix watch-exec` to push build artifacts to a binary cache. This is notable because GitHub Actions cannot run macOS ARM builds natively; Cirrus CI provides free macOS ARM runners for open-source projects.
+
+2. **Garnix** (`garnix.yaml`) -- A Nix-native CI service that builds flake outputs declaratively. The YAML config specifies which outputs to build (`homeConfigurations.*`, `darwinConfigurations.*`, etc.). Garnix handles caching automatically. This is the simplest CI setup seen: a 7-line YAML file replaces a full CI pipeline definition.
+
+3. **GitHub Actions** (`.github/workflows/update.yml`) -- Only used for automated flake.lock updates via `DeterminateSystems/update-flake-lock`, running on a daily cron schedule. Combined with Dependabot for dependency PRs.
+
+The three-service split is pragmatic: Cirrus CI for its macOS ARM capability, Garnix for zero-config Nix builds, and GitHub Actions for the update-flake-lock action (which needs PR creation permissions).
+
+### Candidate Changes
+
+1. **Profiles-based composition for personal vs. work differentiation**
+   - **Rationale:** The `profiles/` pattern cleanly separates identity and role-specific config from platform config. If we ever need personal vs. work machine variants, externalizing these into importable profile directories is cleaner than conditional logic in `hostConfig`. The `primaryUser.nix` alias module (`user`/`hm` shortcuts) reduces boilerplate significantly.
+   - **Source:** `profiles/`, `modules/primaryUser.nix`
+   - **Impact:** Medium. Would require restructuring how host-specific values flow through our system, but the pattern is compatible with our existing helpers. Only worth doing if we actually need multi-identity support.
+
+2. **Garnix for zero-config CI**
+   - **Rationale:** Garnix requires only a 7-line YAML file to build all flake outputs with caching. No pipeline scripts, no Nix installation steps, no cache push commands. For validating that all configurations build, this is dramatically simpler than any other CI approach surveyed. It complements (rather than replaces) more complex CI for macOS builds.
+   - **Source:** `garnix.yaml`
+   - **Impact:** Low. Easy to adopt alongside our existing Dagger-based testing. Garnix is free for open-source repos.
+
+3. **Cirrus CI for macOS ARM builds**
+   - **Rationale:** GitHub Actions lacks native macOS ARM runners for open-source projects. Cirrus CI provides them free. If we want CI validation of our darwin configurations on Apple Silicon, Cirrus CI is currently the best option. The `cachix watch-exec` pattern pushes all build outputs to a binary cache automatically.
+   - **Source:** `.cirrus.yml`
+   - **Impact:** Medium. Adds a new CI service dependency. Only relevant if we want remote darwin build validation.
+
+4. **Automated flake.lock updates via GitHub Actions**
+   - **Rationale:** `DeterminateSystems/update-flake-lock` creates PRs with flake.lock updates on a daily cron. Combined with CI that validates builds, this creates hands-off dependency management. Our manual `task update` requires remembering to run it. This is now a three-repo signal (chenglab, kclejeune, wimpysworld via Dependabot).
+   - **Source:** `.github/workflows/update.yml`
+   - **Impact:** Low. Easy to add without changing anything else. The action is well-maintained by DeterminateSystems.
+
+5. **Flake checks from all configurations**
+   - **Rationale:** kclejeune generates flake `checks` by extracting `activationPackage` from homeConfigurations and `system.build.toplevel` from darwin/nixos configs, filtered to the current system. This means `nix flake check` validates actual system builds, not just syntax. mrjones2014 (US-006) uses the same pattern with `checksForConfigs`. Two-repo signal.
+   - **Source:** `perSystem.checks` in `flake.nix`
+   - **Impact:** Medium. Would make `task check` validate real builds. Requires adapting the filtering logic for our config naming scheme.
+
+6. **git-hooks.nix for pre-commit treefmt**
+   - **Rationale:** The `cachix/git-hooks.nix` integration runs treefmt as a pre-commit hook, catching formatting issues before they reach CI. The hook is installed automatically via `devShells.default.shellHook`. Our repo has treefmt but no pre-commit enforcement.
+   - **Source:** `flake.nix` (git-hooks flakeModule), `perSystem.pre-commit`
+   - **Impact:** Low. Easy to add as a flake-parts module. Prevents formatting-only CI failures.
+
+7. **deadnix in treefmt pipeline**
+   - **Rationale:** deadnix detects unused variables, unused `let` bindings, and unused lambda arguments in Nix code. Adding it to treefmt (alongside nixfmt) catches dead code automatically. kclejeune configures `no-lambda-arg` and `no-lambda-pattern-names` to reduce noise. Combined with mrjones2014's statix (US-006), there are now two repos signaling Nix-specific linting beyond formatting.
+   - **Source:** `perSystem.treefmt.programs.deadnix`
+   - **Impact:** Low. Drop-in addition to our existing treefmt config.
+
+8. **nix-index-database with comma integration**
+   - **Rationale:** `nix-index-database` provides a pre-built index of all nixpkgs packages, enabling instant `nix-locate` queries and `comma` (`, <command>`) to run any nixpkgs program without installing it. This eliminates the need to build a local nix-index (which takes significant time and resources). The comma integration means typing `, ripgrep` runs ripgrep from nixpkgs without any prior installation.
+   - **Source:** `modules/home-manager/default.nix` (nix-index-database import), `programs.nix-index-database.comma.enable`
+   - **Impact:** Low. Single flake input addition + two HM options. Immediately useful for ad-hoc tool usage.
