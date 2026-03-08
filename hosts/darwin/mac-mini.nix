@@ -3,19 +3,21 @@
 
   loginItems = [
     "/Applications/LinearMouse.app"
-    "/Applications/Caffeine.app"
+    "~/Applications/Home Manager Apps/Caffeine.app"
     "/Applications/OrbStack.app"
+  ];
+
+  extraApps = [
+    "discord"
+    "obsidian"
   ];
 
   homebrew = {
     taps = [ ];
     brews = [ ];
     casks = [
-      "firefox"
-      "discord"
       "plex"
       "orbstack"
-      "slack"
       "filebot"
     ];
     masApps = { };
@@ -29,7 +31,12 @@
           userName = "Jacob Colvin";
           userEmail = "jacobcolvin1@gmail.com";
         };
-        extraHomePackages = with pkgs; [ talosctl ];
+        extraHomePackages = with pkgs; [
+          talosctl
+          discord
+          obsidian
+          slack
+        ];
         vscode.extraExtensions =
           marketplace: with marketplace; [
             wakatime.vscode-wakatime

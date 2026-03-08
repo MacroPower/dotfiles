@@ -118,6 +118,7 @@
   };
 
   home.packages = with pkgs; [
+    go-task
     yq-go
     viddy
     devbox
@@ -137,5 +138,6 @@
     dive
     tokei
     gping
+    photo-cli
   ];
 }

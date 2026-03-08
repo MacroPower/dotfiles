@@ -10,6 +10,7 @@
   username,
   homebrew ? { },
   loginItems ? [ ],
+  extraApps ? [ ],
   homeModule,
 }:
 inputs.nix-darwin.lib.darwinSystem {
@@ -17,10 +18,19 @@ inputs.nix-darwin.lib.darwinSystem {
     paths.hostMac
     {
       dotfiles.system = {
-        inherit username homebrew loginItems;
+        inherit
+          username
+          homebrew
+          loginItems
+          extraApps
+          ;
       };
       system.configurationRevision = self.rev or self.dirtyRev or null;
     }
+    inputs.mac-app-util.darwinModules.default
+    # home-manager 25.11+ copies apps via rsync (targets.darwin.copyApps),
+    # so they work natively with Spotlight, Dock, and Gatekeeper -- no
+    # mac-app-util trampolines needed for HM apps.
     inputs.nix-homebrew.darwinModules.nix-homebrew
     {
       nix-homebrew = {
@@ -33,22 +43,18 @@ inputs.nix-darwin.lib.darwinSystem {
           "homebrew/homebrew-core" = inputs.homebrew-core;
           "homebrew/homebrew-cask" = inputs.homebrew-cask;
           "homebrew/homebrew-bundle" = inputs.homebrew-bundle;
-          "buo/homebrew-cask-upgrade" = inputs.homebrew-cask-upgrade;
-          "jakehilborn/homebrew-jakehilborn" = inputs.homebrew-jakehilborn;
           "macos-fuse-t/homebrew-cask" = inputs.homebrew-fuse-t;
-          "photo-cli/homebrew-photo-cli" = inputs.homebrew-photo-cli;
-          "ymtdzzz/homebrew-tap" = inputs.homebrew-ymtdzzz;
-          "macropower/homebrew-tap" = inputs.homebrew-macropower;
-          "robusta-dev/homebrew-krr" = inputs.homebrew-krr;
-          "jacobcolvin/homebrew-tap" = inputs.homebrew-jacobcolvin;
         };
       };
     }
     # Sync nix-homebrew taps into nix-darwin's homebrew.taps so
     # `brew bundle --cleanup` doesn't try to untap them.
-    ({ config, ... }: {
-      homebrew.taps = builtins.attrNames config.nix-homebrew.taps;
-    })
+    (
+      { config, ... }:
+      {
+        homebrew.taps = builtins.attrNames config.nix-homebrew.taps;
+      }
+    )
     inputs.home-manager.darwinModules.home-manager
     inputs.stylix.darwinModules.stylix
     sharedStylixConfig
@@ -72,6 +78,13 @@ inputs.nix-darwin.lib.darwinSystem {
               libheif
               libraw
               dav1d
+              drawio
+              wireshark
+              appcleaner
+              caffeine
+              keka
+              monodraw
+              vlc-bin
             ];
             kubernetes.extraKrewPlugins = [
               "sniff" # https://github.com/eldadru/ksniff
@@ -87,9 +100,6 @@ inputs.nix-darwin.lib.darwinSystem {
                 set -g tide_left_prompt_items os $tide_left_prompt_items
                 set -g tide_os_icon \ue711
               '';
-            };
-            extraXdgConfigFiles = {
-              "linearmouse/linearmouse.json".source = paths.linearmouse;
             };
             vscode.extraKubernetesSettings = {
               "vscode-kubernetes.helm-path.mac" = "/opt/homebrew/bin/helm";

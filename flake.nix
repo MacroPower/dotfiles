@@ -40,6 +40,13 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nur = {
+      url = "github:nix-community/NUR";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    mac-app-util = {
+      url = "github:hraban/mac-app-util";
+    };
     nix-homebrew = {
       url = "github:zhaofengli/nix-homebrew";
     };
@@ -55,36 +62,8 @@
       url = "github:homebrew/homebrew-bundle";
       flake = false;
     };
-    homebrew-cask-upgrade = {
-      url = "github:buo/homebrew-cask-upgrade";
-      flake = false;
-    };
-    homebrew-jakehilborn = {
-      url = "github:jakehilborn/homebrew-jakehilborn";
-      flake = false;
-    };
     homebrew-fuse-t = {
       url = "github:macos-fuse-t/homebrew-cask";
-      flake = false;
-    };
-    homebrew-photo-cli = {
-      url = "github:photo-cli/homebrew-photo-cli";
-      flake = false;
-    };
-    homebrew-ymtdzzz = {
-      url = "github:ymtdzzz/homebrew-tap";
-      flake = false;
-    };
-    homebrew-macropower = {
-      url = "github:macropower/homebrew-tap";
-      flake = false;
-    };
-    homebrew-krr = {
-      url = "github:robusta-dev/homebrew-krr";
-      flake = false;
-    };
-    homebrew-jacobcolvin = {
-      url = "git+https://tap.jacobcolvin.com";
       flake = false;
     };
     treefmt-nix = {
@@ -151,7 +130,10 @@
                 hostLinux = ./hosts/linux/default.nix;
                 stylix = ./lib/stylix.nix;
                 chief = ./pkgs/chief.nix;
-                linearmouse = ./configs/linearmouse/linearmouse.json;
+                displayplacer = ./pkgs/displayplacer.nix;
+                otel-tui = ./pkgs/otel-tui.nix;
+                zed-bin = ./pkgs/zed.nix;
+                photo-cli = ./pkgs/photo-cli.nix;
               };
             })
             mkDarwin

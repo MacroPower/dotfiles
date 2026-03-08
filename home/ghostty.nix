@@ -1,5 +1,6 @@
 {
   lib,
+  pkgs,
   config,
   ...
 }:
@@ -16,7 +17,7 @@ in
   config = lib.mkIf cfg.enable {
     programs.ghostty = {
       enable = true;
-      package = null; # installed via Homebrew cask on macOS
+      package = if pkgs.stdenv.hostPlatform.isDarwin then pkgs.ghostty-bin else null;
       systemd.enable = false;
       settings = {
         window-height = 40;

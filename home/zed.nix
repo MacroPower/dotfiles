@@ -23,7 +23,7 @@ in
   config = lib.mkIf cfg.enable {
     programs.zed-editor = {
       enable = true;
-      package = null; # installed via Homebrew cask on macOS
+      package = pkgs.zed-bin;
 
       userSettings = {
         agent = {
@@ -79,7 +79,7 @@ in
     };
 
     home.file.".zed_server" = lib.mkIf pkgs.stdenv.isLinux {
-      source = "${pkgs.zed-editor.remote_server}/bin";
+      source = "${pkgs.zed-bin.remote_server}/bin";
       recursive = true;
     };
   };

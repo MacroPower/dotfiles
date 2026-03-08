@@ -11,6 +11,9 @@
     ../options.nix
   ];
 
+  # Nix-installed GUI apps that all darwin hosts get
+  dotfiles.system.extraApps = [ "firefox" ];
+
   homebrew = {
     enable = true;
     enableFishIntegration = true;
@@ -20,43 +23,16 @@
     };
 
     taps = [
-      "buo/cask-upgrade"
-      "jakehilborn/jakehilborn"
       "macos-fuse-t/cask"
-      "photo-cli/photo-cli"
-      "ymtdzzz/tap"
-      "macropower/tap"
-      "robusta-dev/krr"
-      "jacobcolvin/tap"
     ]
     ++ config.dotfiles.system.homebrew.taps;
 
-    brews = [
-      "jakehilborn/jakehilborn/displayplacer"
-      "photo-cli"
-
-      "ymtdzzz/tap/otel-tui"
-      "robusta-dev/krr/krr"
-    ]
-    ++ config.dotfiles.system.homebrew.brews;
+    inherit (config.dotfiles.system.homebrew) brews;
 
     casks = [
-      "appcleaner"
-      "caffeine"
-      "drawio"
-      "gpg-suite-no-mail"
-      "keka"
-      "linearmouse"
-      "obsidian"
-      "vlc"
-      "fuse-t"
-      "ghostty"
-      "zed"
-      "monodraw"
-      "db-browser-for-sqlite"
       "fork"
-      "wireshark"
-      "kat"
+      "fuse-t"
+      "linearmouse"
     ]
     ++ config.dotfiles.system.homebrew.casks;
 
@@ -109,27 +85,37 @@
         persistent-apps =
           let
             inherit (config.homebrew) casks;
-            hasCask = name: builtins.elem name (map (c: if builtins.isString c then c else c.name) casks);
+            hasApp =
+              name:
+              builtins.elem name (map (c: if builtins.isString c then c else c.name) casks)
+              || builtins.elem name config.dotfiles.system.extraApps;
+            resolveHome = p: builtins.replaceStrings [ "~" ] [ "/Users/${config.dotfiles.system.username}" ] p;
           in
-          [
-            { app = "/Applications/Ghostty.app"; }
-          ]
-          ++ lib.optional (hasCask "firefox") { app = "/Applications/Firefox.app"; }
-          ++ lib.optional (hasCask "obsidian") { app = "/Applications/Obsidian.app"; }
-          ++ lib.optional (hasCask "discord") { app = "/Applications/Discord.app"; }
-          ++ [
-            { app = "/Applications/Zed.app"; }
-            { app = "/Applications/Fork.app"; }
-            { app = "/System/Applications/Messages.app"; }
-            { app = "/System/Applications/Notes.app"; }
-            { app = "/System/Applications/Utilities/Activity Monitor.app"; }
-            { app = "/System/Applications/System Settings.app"; }
-          ];
+          map (a: a // { app = resolveHome a.app; }) (
+            [
+              { app = "~/Applications/Home Manager Apps/Ghostty.app"; }
+              { app = "~/Applications/Home Manager Apps/Firefox.app"; }
+            ]
+            ++ lib.optional (hasApp "obsidian") { app = "~/Applications/Home Manager Apps/Obsidian.app"; }
+            ++ lib.optional (hasApp "discord") { app = "~/Applications/Home Manager Apps/Discord.app"; }
+            ++ [
+              { app = "~/Applications/Home Manager Apps/Zed.app"; }
+              { app = "/Applications/Fork.app"; }
+              { app = "/System/Applications/Messages.app"; }
+              { app = "/System/Applications/Notes.app"; }
+              { app = "/System/Applications/Utilities/Activity Monitor.app"; }
+              { app = "/System/Applications/System Settings.app"; }
+            ]
+          );
 
-        persistent-others = [
-          { folder = "/Users/${config.dotfiles.system.username}/Downloads"; }
-          { folder = "/Users/${config.dotfiles.system.username}/Documents/Screenshots"; }
-        ];
+        persistent-others =
+          let
+            resolveHome = p: builtins.replaceStrings [ "~" ] [ "/Users/${config.dotfiles.system.username}" ] p;
+          in
+          map (a: a // { folder = resolveHome a.folder; }) [
+            { folder = "~/Downloads"; }
+            { folder = "~/Documents/Screenshots"; }
+          ];
       };
 
       finder = {
@@ -568,8 +554,9 @@
     # previously-managed items that are no longer in the list.
     activationScripts.loginItems.text =
       let
-        items = config.dotfiles.system.loginItems;
         user = config.dotfiles.system.username;
+        resolveHome = p: builtins.replaceStrings [ "~" ] [ "/Users/${user}" ] p;
+        items = map resolveHome config.dotfiles.system.loginItems;
       in
       lib.optionalString (items != [ ]) ''
         echo "managing login items..." >&2

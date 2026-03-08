@@ -41,9 +41,10 @@ in
           kubernetes-helm
           kubectx
           cilium-cli
-          go-task
           krew
           stern
+          kubelogin
+          fluxcd
         ]
         ++ cfg.extraPackages;
     };

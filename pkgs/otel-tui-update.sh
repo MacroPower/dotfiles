@@ -9,30 +9,30 @@ for arg in "$@"; do
 done
 
 DIRNAME=$(dirname "$0")
-PKG_FILE="$DIRNAME/chief.nix"
-REPO="minicodemonkey/chief"
+PKG_FILE="$DIRNAME/otel-tui.nix"
+REPO="ymtdzzz/otel-tui"
 
 # Get current and latest versions
 currentVersion=$(grep -Po '(?<=version = ")[^"]+' "$PKG_FILE")
 latestVersion=$(gh release view --repo "$REPO" --json tagName -q '.tagName | ltrimstr("v")')
 
-echo "chief: current=$currentVersion latest=$latestVersion"
+echo "otel-tui: current=$currentVersion latest=$latestVersion"
 if [[ $currentVersion == "$latestVersion" && $FORCE == false ]]; then
-  echo "chief is up-to-date"
+  echo "otel-tui is up-to-date"
   exit 0
 fi
 
 # Update hashes for each platform
 declare -A platforms=(
-  ["aarch64-darwin"]="darwin_arm64"
-  ["x86_64-darwin"]="darwin_amd64"
-  ["aarch64-linux"]="linux_arm64"
-  ["x86_64-linux"]="linux_amd64"
+  ["aarch64-darwin"]="Darwin_arm64"
+  ["x86_64-darwin"]="Darwin_x86_64"
+  ["aarch64-linux"]="Linux_arm64"
+  ["x86_64-linux"]="Linux_x86_64"
 )
 
 for nix_system in "${!platforms[@]}"; do
   suffix="${platforms[$nix_system]}"
-  url="https://github.com/$REPO/releases/download/v${latestVersion}/chief_${latestVersion}_${suffix}.tar.gz"
+  url="https://github.com/$REPO/releases/download/v${latestVersion}/otel-tui_${suffix}.tar.gz"
   newHash=$(nix store prefetch-file --json "$url" | jq -r '.hash')
   currentHash=$(grep -A2 "\"$nix_system\"" "$PKG_FILE" | grep -Po '(?<=hash = ")[^"]+')
   sed -i "s|$currentHash|$newHash|" "$PKG_FILE"
@@ -41,4 +41,4 @@ done
 
 # Update version
 sed -i "s|version = \"$currentVersion\"|version = \"$latestVersion\"|" "$PKG_FILE"
-echo "chief updated to $latestVersion"
+echo "otel-tui updated to $latestVersion"

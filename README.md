@@ -56,7 +56,7 @@ ssh-keygen -t ed25519 -C "<email>"
 # Install Xcode Command Line Tools
 xcode-select --install
 
-# Install Brew (still needed for GUI casks)
+# Install Brew
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 git clone https://github.com/MacroPower/dotfiles && cd dotfiles

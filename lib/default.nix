@@ -5,6 +5,7 @@
 }:
 let
   inherit (inputs)
+    nur
     nix-vscode-extensions
     llm-agents
     dagger
@@ -15,10 +16,15 @@ let
 
   localOverlay = final: _prev: {
     chief = final.callPackage paths.chief { };
+    otel-tui = final.callPackage paths.otel-tui { };
+    displayplacer = final.callPackage paths.displayplacer { };
+    zed-bin = final.callPackage paths.zed-bin { };
+    photo-cli = final.callPackage paths.photo-cli { };
   };
 
   sharedOverlays = [
     localOverlay
+    nur.overlays.default
     nix-vscode-extensions.overlays.default
     llm-agents.overlays.default
     dagger.overlays.default

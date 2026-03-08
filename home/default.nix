@@ -10,6 +10,7 @@
     ./stylix.nix
     ./fish.nix
     ./git.nix
+    ./gpg.nix
     ./vim.nix
     ./tools.nix
     ./kubernetes.nix
@@ -17,7 +18,9 @@
     ./claude.nix
     ./secrets.nix
     ./ghostty.nix
+    ./displayplacer.nix
     ./zed.nix
+    ./firefox.nix
     ./development.nix
   ];
 
@@ -117,6 +120,8 @@
         ddrescue
         arping
         onefetch
+        otel-tui
+        azure-cli
 
       ]
       ++ config.dotfiles.extraHomePackages;
