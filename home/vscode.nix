@@ -2,6 +2,7 @@
 
 let
   marketplace = pkgs.vscode-marketplace;
+  fontLigatures = builtins.concatStringsSep ", " (map (f: "'${f}'") config.dotfiles.fonts.features);
 in
 {
   programs.vscode = {
@@ -61,7 +62,7 @@ in
         "explorer.confirmDragAndDrop" = false;
         "editor.fontFamily" = "'${config.stylix.fonts.monospace.name}', monospace";
         "editor.fontWeight" = "500";
-        "editor.fontLigatures" = "'ss01', 'ss03', 'ss04', 'ss06', 'zero'";
+        "editor.fontLigatures" = fontLigatures;
         "editor.fontSize" = 14;
         "terminal.integrated.fontFamily" = "'${config.stylix.fonts.monospace.name}', monospace";
         "terminal.integrated.fontSize" = 14;

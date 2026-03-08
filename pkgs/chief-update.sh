@@ -10,7 +10,7 @@ currentVersion=$(grep -Po '(?<=version = ")[^"]+' "$PKG_FILE")
 latestVersion=$(gh release view --repo "$REPO" --json tagName -q '.tagName | ltrimstr("v")')
 
 echo "chief: current=$currentVersion latest=$latestVersion"
-if [[ "$currentVersion" == "$latestVersion" ]]; then
+if [[ $currentVersion == "$latestVersion" ]]; then
   echo "chief is up-to-date"
   exit 0
 fi

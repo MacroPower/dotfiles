@@ -88,6 +88,17 @@ in
       description = "SSH config Include directives.";
     };
 
+    fonts.features = mkOption {
+      type = types.listOf types.str;
+      default = [
+        "ss01"
+        "ss03"
+        "ss04"
+        "ss06"
+      ];
+      description = "OpenType font features to enable across editors and terminals.";
+    };
+
     claude = {
       dangerouslySkipPermissions = mkOption {
         type = types.bool;

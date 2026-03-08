@@ -5,6 +5,15 @@
   ...
 }:
 
+let
+  fontFeatures = config.dotfiles.fonts.features;
+  fontFeaturesAttrs = builtins.listToAttrs (
+    map (f: {
+      name = f;
+      value = true;
+    }) fontFeatures
+  );
+in
 {
   imports = [
     ./options.nix
@@ -43,12 +52,7 @@
         window-padding-y = "8,0";
 
         font-style = "SemiBold";
-        font-feature = [
-          "ss01"
-          "ss03"
-          "ss04"
-          "ss06"
-        ];
+        font-feature = fontFeatures;
         font-size = 14;
 
         keybind = [
@@ -122,32 +126,17 @@
         ui_font_size = 15.0;
         ui_font_weight = 500.0;
         ui_font_family = config.stylix.fonts.monospace.name;
-        ui_font_features = {
-          ss01 = true;
-          ss03 = true;
-          ss04 = true;
-          ss06 = true;
-        };
+        ui_font_features = fontFeaturesAttrs;
         buffer_font_size = 14.0;
         buffer_font_weight = 500.0;
         buffer_font_family = config.stylix.fonts.monospace.name;
-        buffer_font_features = {
-          ss01 = true;
-          ss03 = true;
-          ss04 = true;
-          ss06 = true;
-        };
+        buffer_font_features = fontFeaturesAttrs;
         features = {
           edit_prediction_provider = "copilot";
         };
         terminal = {
           font_family = config.stylix.fonts.monospace.name;
-          font_features = {
-            ss01 = true;
-            ss03 = true;
-            ss04 = true;
-            ss06 = true;
-          };
+          font_features = fontFeaturesAttrs;
         };
         base_keymap = "VSCode";
         vim_mode = false;
