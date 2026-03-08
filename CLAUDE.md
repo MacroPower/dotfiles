@@ -8,26 +8,16 @@ Declarative system configuration using **nix-darwin** + **home-manager**, manage
 
 ```bash
 # Update all flake inputs
-nix flake update
+task update
 
 # Validate the flake
-nix flake check
+task check
 
-# Format Nix files
-nix fmt
+# Format all files
+task format
 
-# Apply config via nh (recommended, uses $FLAKE from env)
-nh darwin switch        # macOS
-nh os switch            # NixOS
-nh home switch          # standalone home-manager (Linux)
-
-# Or via task runner (auto-detects platform)
+# Apply config via task (auto-detects platform)
 task switch
-
-# Direct rebuild commands (equivalent, but without nh's diff/confirmation UX)
-sudo darwin-rebuild switch --flake '.#jacobcolvin@Jacobs-Mac-mini'
-home-manager switch --flake '.#jacobcolvin@linux'
-sudo nixos-rebuild switch --flake '.#nixos-orbstack'
 ```
 
 ## Architecture
@@ -42,3 +32,7 @@ sudo nixos-rebuild switch --flake '.#nixos-orbstack'
 - **`pkgs/`**: Custom Nix package derivations.
 - **`toolchains/`**: Dagger-based dev toolchains.
 - **`Taskfile.yaml`**: Task runner for common operations (`task switch` auto-detects platform and uses `nh`).
+
+## Code Style
+
+- Prefer explicit configuration (e.g. named imports, spelled-out lists) over automatic file discovery or convention-based loading.
