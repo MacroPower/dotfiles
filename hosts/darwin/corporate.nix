@@ -8,14 +8,12 @@
     masApps = { };
   };
 
-  homeModule =
-    _:
-    {
-      dotfiles = {
-        git = {
-          userName = "Jacob Colvin";
-          userEmail = "jcolvin@example.com";
-        };
+  homeModule = _: {
+    dotfiles = {
+      git = {
+        userName = "Jacob Colvin";
+        userEmail = "jcolvin@example.com";
       };
     };
+  };
 }
