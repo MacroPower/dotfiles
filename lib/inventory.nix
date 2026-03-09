@@ -18,7 +18,7 @@ let
     if builtins.isAttrs l then
       clean (l.spdxId or (l.shortName or ""))
     else if builtins.isList l then
-      builtins.concatStringsSep ", " (map licenseName l)
+      if builtins.length l == 1 then licenseName (builtins.head l) else "multiple"
     else
       "";
 
