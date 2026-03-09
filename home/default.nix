@@ -1,5 +1,6 @@
 {
   pkgs,
+  lib,
   config,
   ...
 }:
@@ -123,6 +124,37 @@
         otel-tui
         azure-cli
 
+        # Networking & debugging
+        curl
+        file
+        fping
+        iperf3
+        netcat-openbsd
+        openssl
+        socat
+        tcpdump
+        wireshark-cli
+        termshark
+        websocat
+        swaks
+        grpcurl
+        dhcping
+        net-snmp
+        bird2
+        oha
+        speedtest-go
+        bandwhich
+
+      ]
+      ++ lib.optionals pkgs.stdenv.isLinux [
+        conntrack-tools
+        ethtool
+        iproute2
+        iptables
+        iputils
+        ipvsadm
+        nftables
+        strace
       ]
       ++ config.dotfiles.extraHomePackages;
 
