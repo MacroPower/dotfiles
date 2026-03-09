@@ -26,6 +26,11 @@ tasks:
     cmds:
       - dagger check nix:flake-check
 
+  inventory:
+    desc: Update README.md with installed package inventory
+    cmds:
+      - "{{.TASKFILE_DIR}}/scripts/update-inventory.sh"
+
   pkg:update:
     desc: Update custom package derivations in pkgs/
     cmds:

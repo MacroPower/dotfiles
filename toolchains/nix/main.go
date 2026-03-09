@@ -58,7 +58,7 @@ func (m *Nix) base() *dagger.Container {
 func (m *Nix) FlakeCheck() *dagger.Container {
 	wrapper := `{
   inputs.src.url = "path:/src";
-  outputs = { src, ... }: builtins.removeAttrs src.outputs [ "nixosConfigurations" ];
+  outputs = { src, ... }: builtins.removeAttrs src.outputs [ "nixosConfigurations" "inventory" ];
 }`
 	return m.base().
 		WithNewFile("/tmp/check/flake.nix", wrapper).
