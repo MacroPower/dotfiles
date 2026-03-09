@@ -10,7 +10,7 @@ inputs.home-manager.lib.homeManagerConfiguration {
   pkgs = import inputs.nixpkgs {
     inherit system;
     config.allowUnfree = true;
-    overlays = sharedOverlays;
+    overlays = sharedOverlays system;
   };
   modules = hmSharedModules ++ [
     inputs.stylix.homeModules.stylix

@@ -60,7 +60,7 @@ inputs.nix-darwin.lib.darwinSystem {
     sharedStylixConfig
     {
       nixpkgs.hostPlatform = "aarch64-darwin";
-      nixpkgs.overlays = sharedOverlays;
+      nixpkgs.overlays = sharedOverlays "aarch64-darwin";
       home-manager = mkHomeManagerBlock { inherit username homeModule; };
     }
     # Darwin-specific home-manager defaults

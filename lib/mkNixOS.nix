@@ -19,7 +19,7 @@ inputs.nixpkgs.lib.nixosSystem {
     sharedStylixConfig
     {
       nixpkgs.hostPlatform = system;
-      nixpkgs.overlays = sharedOverlays;
+      nixpkgs.overlays = sharedOverlays system;
       home-manager = mkHomeManagerBlock { inherit username homeModule; };
     }
     # NixOS-specific home-manager defaults

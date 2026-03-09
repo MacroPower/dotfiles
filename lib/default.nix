@@ -6,6 +6,7 @@
 let
   inherit (inputs)
     nur
+    nur-jacobcolvin
     nix-vscode-extensions
     llm-agents
     dagger
@@ -22,8 +23,13 @@ let
     photo-cli = final.callPackage paths.photo-cli { };
   };
 
-  sharedOverlays = [
+  nurJacobColvinOverlay =
+    system: _final: _prev:
+    nur-jacobcolvin.packages.${system};
+
+  sharedOverlays = system: [
     localOverlay
+    (nurJacobColvinOverlay system)
     nur.overlays.default
     nix-vscode-extensions.overlays.default
     llm-agents.overlays.default

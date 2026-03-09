@@ -754,17 +754,37 @@
         ]
       },
       "locked": {
-        "lastModified": 1773022026,
-        "narHash": "sha256-N7ATuPU9yKQqZMnnjh6sgiUMUwBAWYDs1ngnms4pMQQ=",
+        "lastModified": 1773023281,
+        "narHash": "sha256-eaGnlYAHgqu1+OwlImy88SaeKlSfWVIchs5Tpzl1W/A=",
         "owner": "nix-community",
         "repo": "NUR",
-        "rev": "8abf8e9b996eb13d99e13659926156a8c2930f6a",
+        "rev": "823270d5cecab1d78e739e1785925a3b64856ced",
         "type": "github"
       },
       "original": {
         "owner": "nix-community",
         "repo": "NUR",
         "type": "github"
+      }
+    },
+    "nur-jacobcolvin": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1764543628,
+        "narHash": "sha256-Ogpmtiq5G7jwpq1DF0PbfIkUI4RxcQrbu4Lpy3IQ/Ik=",
+        "ref": "refs/heads/main",
+        "rev": "19926cd01a431289f3f65febb623918c698d10d3",
+        "revCount": 46,
+        "type": "git",
+        "url": "https://nur.jacobcolvin.com"
+      },
+      "original": {
+        "type": "git",
+        "url": "https://nur.jacobcolvin.com"
       }
     },
     "nur_2": {
@@ -810,6 +830,7 @@
         "nix-vscode-extensions": "nix-vscode-extensions",
         "nixpkgs": "nixpkgs_5",
         "nur": "nur",
+        "nur-jacobcolvin": "nur-jacobcolvin",
         "sops-nix": "sops-nix",
         "stylix": "stylix",
         "treefmt-nix": "treefmt-nix_4"

@@ -115,6 +115,11 @@
         ffmpeg
         graphviz
 
+        # NUR packages (nur.jacobcolvin.com)
+        kat
+        kclipper
+        kcl-lsp
+
         # System tools
         qemu
         nmap
