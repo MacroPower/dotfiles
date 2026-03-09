@@ -1,7 +1,7 @@
-# Formats the inventory JSON as a single deduplicated markdown table.
-# Merges all hosts, preferring entries with the most metadata and the
-# shortest/cleanest name when multiple packages share the same homepage
-# (e.g. firefox/firefox-bin, ghostty/ghostty-bin, gpg/gnupg).
+# Formats the inventory JSON as deduplicated markdown tables split by platform.
+# Packages appearing on both darwin and linux hosts are "Universal"; the rest
+# land in Darwin-only or Linux-only sections.  Homebrew casks get their own
+# subsection under Darwin.
 
 # Metadata overrides for HM programs whose modules do not expose a package
 # with useful meta attributes. Entries with null values are excluded from
@@ -46,30 +46,59 @@ def apply_overrides:
   else .
   end;
 
+# Table header used for each section.
+def table_header:
+  "| Name | Description | License |\n|------|-------------|--------|";
+
 . as $inv |
 
-# Collect all entries, apply overrides, deduplicate by name first.
-[$inv[] | .programs[], .nixPackages[] | apply_overrides] |
-  group_by(.name) |
-  map(sort_by(- (.homepage | length) - (.description | length) - ((.license // "") | length)) | first) |
+# Tag each entry with the platform of its host.
+[to_entries[] | .value.platform as $plat |
+  (.value.programs[], .value.nixPackages[]) | apply_overrides |
+  {entry: ., platform: $plat}
+] |
 
-  # Then collapse entries that share the same non-empty homepage.
-  group_by(if .homepage == "" then .name else .homepage end) |
-  map(pick_best) |
-  sort_by(.name) |
-  . as $entries |
+# Deduplicate by name, collecting which platforms each package appears on.
+group_by(.entry.name) | map({
+  entry: ([.[].entry] | sort_by(- (.homepage|length) - (.description|length) - ((.license // "")|length)) | first),
+  platforms: ([.[].platform] | unique)
+}) |
 
-# All homebrew casks across hosts, deduplicated.
-[$inv[] | .homebrewCasks // [] | .[]] |
-  unique | sort |
-  . as $casks |
+# Collapse entries sharing the same non-empty homepage, merging platform sets.
+group_by(if .entry.homepage == "" then .entry.name else .entry.homepage end) |
+map({
+  entry: ([.[].entry] | pick_best),
+  platforms: ([.[].platforms[]] | unique)
+}) |
+sort_by(.entry.name) |
 
+# Split into three buckets.
+{
+  universal: [.[] | select((.platforms | contains(["darwin"])) and (.platforms | contains(["linux"]))) | .entry],
+  darwin:    [.[] | select((.platforms | contains(["darwin"])) and ((.platforms | contains(["linux"])) | not)) | .entry],
+  linux:     [.[] | select((.platforms | contains(["linux"])) and ((.platforms | contains(["darwin"])) | not)) | .entry]
+} |
+
+# Homebrew casks across all hosts, deduplicated.
+. as $grouped | [$inv[] | .homebrewCasks // [] | .[]] | unique | sort | . as $casks |
+
+# Render sections, skipping empty ones.
 "## Package Inventory\n\n" +
-"| Name | Description | License |\n" +
-"|------|-------------|--------|\n" +
-([$entries[] | fmt_entry] | join("\n")) +
+
+"### Universal\n\n" + table_header + "\n" +
+([$grouped.universal[] | fmt_entry] | join("\n")) +
+
+if ($grouped.darwin | length) > 0 then
+  "\n\n### Darwin\n\n" + table_header + "\n" +
+  ([$grouped.darwin[] | fmt_entry] | join("\n"))
+else "" end +
+
+if ($grouped.linux | length) > 0 then
+  "\n\n### Linux\n\n" + table_header + "\n" +
+  ([$grouped.linux[] | fmt_entry] | join("\n"))
+else "" end +
 
 if ($casks | length) > 0 then
-  "\n\n## Homebrew Casks\n\n| Name |\n|------|\n" +
+  "\n\n### Homebrew Casks\n\n| Name |\n|------|\n" +
   ([$casks[] | "| [" + . + "](https://formulae.brew.sh/cask/" + . + ") |"] | join("\n"))
 else "" end

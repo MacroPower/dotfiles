@@ -116,6 +116,7 @@ let
     in
     hmInventory hmCfg
     // {
+      platform = "darwin";
       homebrewCasks = extractBrewNames (cfg.config.homebrew.casks or [ ]);
       homebrewBrews = extractBrewNames (cfg.config.homebrew.brews or [ ]);
     };
@@ -127,10 +128,10 @@ let
       users = cfg.config.home-manager.users or { };
       username = builtins.head (builtins.attrNames users);
     in
-    hmInventory users.${username};
+    hmInventory users.${username} // { platform = "linux"; };
 
   # Standalone home-manager: config is the HM config directly.
-  homeInventory = _: cfg: hmInventory cfg.config;
+  homeInventory = _: cfg: hmInventory cfg.config // { platform = "linux"; };
 
   inventory =
     lib.mapAttrs darwinInventory (self.darwinConfigurations or { })
