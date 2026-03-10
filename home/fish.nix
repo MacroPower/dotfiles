@@ -148,6 +148,7 @@ in
       watch = "viddy";
       w = "viddy";
       traceroute = "trip";
+      nc = "ncat";
     };
 
     functions = {
