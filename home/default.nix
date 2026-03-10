@@ -145,7 +145,7 @@
         grpcurl
         dhcping
         net-snmp
-        bird2
+        gobgpd
         oha
         speedtest-go
         bandwhich
