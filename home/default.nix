@@ -138,7 +138,6 @@
         openssl
         socat
         tcpdump
-        wireshark-cli
         termshark
         websocat
         swaks
