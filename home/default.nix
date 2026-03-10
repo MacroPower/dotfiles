@@ -134,7 +134,7 @@
         file
         fping
         iperf3
-        netcat-openbsd
+        nmap
         openssl
         socat
         tcpdump
