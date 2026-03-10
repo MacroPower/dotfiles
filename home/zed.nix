@@ -25,6 +25,28 @@ in
       enable = true;
       package = pkgs.zed-bin;
 
+      extensions = [
+        # themes & icons
+        "material-icon-theme"
+        "one-dark-pro"
+        # languages
+        "nix"
+        "csharp"
+        "toml"
+        "dockerfile"
+        "fish"
+        "latex"
+        "java"
+        "scss"
+        "git-firefly"
+        "sql"
+        "csv"
+        "ini"
+        # infra
+        "terraform"
+        "helm"
+      ];
+
       userSettings = {
         agent = {
           default_model = {

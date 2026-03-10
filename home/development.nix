@@ -54,6 +54,7 @@ in
         dotnet-sdk
 
         # Dev tools
+        gopls
         nixd
         nil
         chief
