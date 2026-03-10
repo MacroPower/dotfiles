@@ -93,6 +93,44 @@
       enable = true;
       daemon.enable = true;
       flags = [ "--disable-up-arrow" ];
+      settings = {
+        update_check = false;
+        style = "auto";
+        keymap_mode = "auto";
+
+        # Scope searches to the current host by default
+        filter_mode = "host";
+        # Auto-filter by git repo when inside one
+        workspaces = true;
+        # Search bar at the top (fzf-like)
+        invert = true;
+
+        # Keep history clean, exclude trivial commands
+        history_filter = [
+          "^cd$"
+          "^ls$"
+          "^clear$"
+          "^exit$"
+          "^pwd$"
+        ];
+
+        # Track subcommands for better `atuin stats`
+        stats.common_subcommands = [
+          "cargo"
+          "docker"
+          "git"
+          "go"
+          "kubectl"
+          "nix"
+          "npm"
+          "systemctl"
+          "tmux"
+          "task"
+          "dagger"
+          "gh"
+          "brew"
+        ];
+      };
     };
 
     jq.enable = true;
