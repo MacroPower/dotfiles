@@ -1,0 +1,51 @@
+name: publish
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-shell:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Publish dev container via Dagger
+        uses: ./.github/actions/dagger-call
+        with:
+          function: >-
+            dev publish-shell
+            --password=env://REGISTRY_PASSWORD
+            --image="ghcr.io/macropower/shell"
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Publish sandbox container via Dagger
+        uses: ./.github/actions/dagger-call
+        with:
+          function: >-
+            dev publish-sandbox
+            --password=env://REGISTRY_PASSWORD
+            --image="ghcr.io/macropower/sandbox"
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}

@@ -16,6 +16,9 @@ includes:
   secrets:
     taskfile: ./taskfiles/secrets
     dir: .
+  toolchains:
+    taskfile: ./taskfiles/toolchains
+    dir: .
 
 tasks:
   default:
@@ -63,21 +66,37 @@ tasks:
     cmds:
       - dagger check
 
+  publish:
+    desc: Build and publish dev container to GHCR
+    vars:
+      TAG: '{{.TAG | default "latest"}}'
+    cmds:
+      - >-
+        dagger call dev publish-shell
+        --password env://GITHUB_TOKEN
+        --tags "{{.TAG}}"
+
   dev:
     desc: Launch an interactive dev container
-    vars:
-      BRANCH:
-        sh: git branch --show-current
-      CLONE_URL:
-        sh: git remote get-url origin
     cmds:
       - >-
         sops exec-env secrets/dotfiles.yaml '
-        dagger call dev dev
-        --branch "{{.BRANCH}}"
-        --clone-url "{{.CLONE_URL}}"
+        dagger call dev shell
         --repo-source .
         --git-config ~/.config/git
         --tz "{{.TZ | default "America/New_York"}}"
         --colorterm "{{.COLORTERM}}"
-        --kagi-api-key env://KAGI_API_KEY'
+        --kagi-api-key env://KAGI_API_KEY
+        --interactive'
+
+  sandbox:
+    desc: Launch an interactive dev container with network firewall
+    cmds:
+      - >-
+        sops exec-env secrets/dotfiles.yaml '
+        dagger call dev sandbox
+        --git-config ~/.config/git
+        --tz "{{.TZ | default "America/New_York"}}"
+        --colorterm "{{.COLORTERM}}"
+        --kagi-api-key env://KAGI_API_KEY
+        --interactive'
