@@ -157,7 +157,7 @@
           };
 
           homeConfigurations = {
-            "jacobcolvin@linux" = mkHome (import ./hosts/linux/container.nix);
+            "dev@linux" = mkHome (import ./hosts/linux/container.nix);
           };
 
           inventory = import ./lib/inventory.nix {

@@ -33,7 +33,7 @@ func New(
 }
 
 // nixImage is the pinned nixos/nix container image.
-const nixImage = "nixos/nix:2.32.6@sha256:8b7cc7ccc4c6a3b7852d81db9c4d0875b5a98867729351ed6fbfbf2839f1fa25"
+const nixImage = "nixos/nix:2.34.1@sha256:1d59121e0c361076b4f23c158d236702f2f045b3b477b51075b81ceb6188d34a"
 
 // base returns a container with nix and flakes enabled.
 func (m *Nix) base() *dagger.Container {

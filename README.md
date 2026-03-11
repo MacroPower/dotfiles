@@ -15,7 +15,6 @@
 | [azure-cli](https://github.com/Azure/azure-cli)                            | Next generation multi-platform command line experience for Azure                                                                    | MIT               |
 | [bandwhich](https://github.com/imsnif/bandwhich)                           | CLI utility for displaying current network utilization                                                                              | MIT               |
 | [bat](https://github.com/sharkdp/bat)                                      | Cat(1) clone with syntax highlighting and Git integration                                                                           | multiple          |
-| [bird](https://bird.network.cz)                                            | BIRD Internet Routing Daemon                                                                                                        | GPL-2.0-or-later  |
 | [bottom](https://github.com/ClementTsang/bottom)                           | Cross-platform graphical process/system monitor with a customizable interface                                                       | MIT               |
 | [carapace](https://carapace.sh)                                            | Multi-shell multi-command argument completer                                                                                        | MIT               |
 | [ccusage](https://github.com/ryoppippi/ccusage)                            | Usage analysis tool for Claude Code                                                                                                 | MIT               |
@@ -62,6 +61,8 @@
 | [gnutar](https://www.gnu.org/software/tar/)                                | GNU implementation of the \`tar' archiver                                                                                           | GPL-3.0-or-later  |
 | [go](https://go.dev/)                                                      | Go Programming language                                                                                                             | BSD-3-Clause      |
 | [go-task](https://taskfile.dev/)                                           | Task runner / simpler Make alternative written in Go                                                                                | MIT               |
+| [gobgpd](https://osrg.github.io/gobgp/)                                    | BGP implemented in Go                                                                                                               | Apache-2.0        |
+| [gopls](https://github.com/golang/tools/tree/master/gopls)                 | Official language server for the Go language                                                                                        | BSD-3-Clause      |
 | [gpg](https://gnupg.org)                                                   | Modern release of the GNU Privacy Guard, a GPL OpenPGP implementation                                                               | GPL-3.0-or-later  |
 | [gpg-tui](https://github.com/orhun/gpg-tui)                                | Terminal user interface for GnuPG                                                                                                   | MIT               |
 | [gping](https://github.com/orf/gping)                                      | Ping, but with a graph                                                                                                              | MIT               |
@@ -90,7 +91,6 @@
 | [merriweather](https://github.com/SorkinType/Merriweather)                 | Text face designed to be pleasant to read on screens                                                                                | OFL-1.1           |
 | [nerd-fonts-fira-code](https://nerdfonts.com/)                             | Nerd Fonts: Programming ligatures, extension of Fira Mono font, enlarged operators                                                  | multiple          |
 | [net-snmp](https://www.net-snmp.org/)                                      | Clients and server for the SNMP network monitoring protocol                                                                         | BSD-3-Clause      |
-| [netcat-openbsd](https://salsa.debian.org/debian/netcat-openbsd)           | TCP/IP swiss army knife. OpenBSD variant                                                                                            | BSD-3-Clause      |
 | [nh](https://github.com/nix-community/nh)                                  | Yet another nix cli helper                                                                                                          | EUPL-1.2          |
 | [nil](https://github.com/oxalica/nil)                                      | Yet another language server for Nix                                                                                                 | multiple          |
 | [nix-index](https://github.com/nix-community/nix-index)                    | Quickly locate nix packages with specific files                                                                                     | BSD-3-Clause      |
@@ -137,7 +137,6 @@
 | [vscode](https://code.visualstudio.com/)                                   | Code editor developed by Microsoft                                                                                                  | unfree            |
 | [websocat](https://github.com/vi/websocat)                                 | Command-line client for WebSockets (like netcat/socat)                                                                              | MIT               |
 | [wget](https://www.gnu.org/software/wget/)                                 | Tool for retrieving files using HTTP, HTTPS, and FTP                                                                                | GPL-3.0-or-later  |
-| [wireshark-qt](https://www.wireshark.org)                                  | Powerful network protocol analyzer                                                                                                  | GPL-2.0-or-later  |
 | [xh](https://github.com/ducaale/xh)                                        | Friendly and fast tool for sending HTTP requests                                                                                    | MIT               |
 | [xz](https://tukaani.org/xz/)                                              | General-purpose data compression software, successor of LZMA                                                                        | multiple          |
 | [yazi](https://github.com/sxyazi/yazi)                                     | Blazing fast terminal file manager written in Rust, based on async I/O                                                              | MIT               |
@@ -167,20 +166,24 @@
 | [talosctl](https://www.talos.dev/)                                 | CLI for out-of-band management of Kubernetes nodes created by Talos                                            | MPL-2.0           |
 | [terminal-notifier](https://github.com/julienXX/terminal-notifier) | Send macOS notifications from the terminal                                                                     | MIT               |
 | [vlc-bin-arm64](https://www.videolan.org/vlc/)                     | Cross-platform media player and streaming server; precompiled binary for MacOS, repacked from official website | LGPL-2.1-or-later |
+| [wireshark-qt](https://www.wireshark.org)                          | Powerful network protocol analyzer                                                                             | GPL-2.0-or-later  |
 
 ### Linux
 
 | Name                                                                                        | Description                                                                             | License          |
 | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------- |
 | [conntrack-tools](https://conntrack-tools.netfilter.org/)                                   | Connection tracking userspace tools                                                     | GPL-2.0-or-later |
+| [dnsmasq](https://www.thekelleys.org.uk/dnsmasq/doc.html)                                   | Integrated DNS, DHCP and TFTP server for small networks                                 | GPL-2.0-only     |
+| [envoy-bin](https://envoyproxy.io)                                                          | Cloud-native edge and service proxy                                                     | Apache-2.0       |
 | [ethtool](https://www.kernel.org/pub/software/network/ethtool/)                             | Utility for controlling network drivers and hardware                                    | GPL-2.0-or-later |
 | [gnome-shell-extension-user-themes](https://extensions.gnome.org/extension/19/user-themes/) | Load shell themes from user directory.                                                  | GPL-2.0-or-later |
 | [iproute2](https://wiki.linuxfoundation.org/networking/iproute2)                            | Collection of utilities for controlling TCP/IP networking and traffic control in Linux  | GPL-2.0-only     |
+| [ipset](https://ipset.netfilter.org/)                                                       | Administration tool for IP sets                                                         | GPL-2.0-or-later |
 | [iptables](https://www.netfilter.org/projects/iptables/index.html)                          | Program to configure the Linux IP packet filtering ruleset                              | GPL-2.0-or-later |
 | [iputils](https://github.com/iputils/iputils)                                               | Set of small useful utilities for Linux networking                                      | multiple         |
 | [ipvsadm](http://www.linuxvirtualserver.org/software/ipvs.html)                             | Linux Virtual Server support programs                                                   | GPL-2.0-or-later |
 | [man-db](http://man-db.nongnu.org)                                                          | Implementation of the standard Unix documentation system accessed using the man command | GPL-2.0-or-later |
-| [nftables](https://netfilter.org/projects/nftables/)                                        | Project that aims to replace the existing {ip,ip6,arp,eb}tables framework               | GPL-2.0-only     |
+| [procps](https://gitlab.com/procps-ng/procps)                                               | Utilities that give information about processes using the /proc filesystem              | GPL-2.0-or-later |
 | [qt5ct](https://sourceforge.net/projects/qt5ct/)                                            | Qt5 Configuration Tool                                                                  | BSD-2-Clause     |
 | [qt6ct](https://www.opencode.net/trialuser/qt6ct)                                           | Qt6 Configuration Tool                                                                  | BSD-2-Clause     |
 | [qtstyleplugin-kvantum](https://github.com/tsujan/Kvantum)                                  | SVG-based Qt5 theme engine plus a config tool and extra themes                          | GPL-3.0-or-later |

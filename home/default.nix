@@ -152,12 +152,15 @@
       ]
       ++ lib.optionals pkgs.stdenv.isLinux [
         conntrack-tools
+        dnsmasq
+        envoy-bin
         ethtool
         iproute2
         iptables
+        ipset
         iputils
         ipvsadm
-        nftables
+        procps
         strace
       ]
       ++ config.dotfiles.extraHomePackages;

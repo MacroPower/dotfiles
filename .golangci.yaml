@@ -1,0 +1,231 @@
+# This file contains all available configuration options
+# with their default values.
+version: "2"
+run:
+  # Timeout for analysis, e.g. 30s, 5m.
+  timeout: 5m
+  allow-parallel-runners: true
+
+output:
+  show-stats: true
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - golines
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - blank
+        - dot
+        - alias
+        - localmodule
+    gofmt:
+      simplify: true
+      rewrite-rules:
+        - pattern: "interface{}"
+          replacement: "any"
+    gofumpt:
+      module-path: dagger/dev
+      extra-rules: true
+    golines:
+      reformat-tags: false
+      max-len: 120
+
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - contextcheck
+    - depguard
+    - dupl
+    - durationcheck
+    - errcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - exptostd
+    - fatcontext
+    - forcetypeassert
+    - gocheckcompilerdirectives
+    - goconst
+    - gocritic
+    - godoclint
+    - goprintffuncname
+    - gosec
+    - gosmopolitan
+    - govet
+    - grouper
+    - iface
+    - importas
+    - inamedparam
+    - ineffassign
+    - intrange
+    - iotamixing
+    # - ireturn
+    - makezero
+    - mirror
+    - misspell
+    - modernize
+    - musttag
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - noctx
+    - noinlineerr
+    # - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - paralleltest
+    # - perfsprint
+    # - prealloc
+    - predeclared
+    - reassign
+    # - recvcheck
+    # - revive
+    - sloglint
+    - staticcheck
+    - tagalign
+    - testableexamples
+    - testifylint
+    - testpackage
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - wrapcheck
+    - wsl_v5
+
+  settings:
+    gosec:
+      excludes:
+        - G122 # Lchown permissions
+        - G301 # dir perms > 0750
+        - G302 # file perms > 0600 on OpenFile
+        - G304 # file path from variable
+        - G306 # file perms > 0600 on WriteFile
+
+    misspell:
+      locale: US
+      mode: default
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    wsl_v5:
+      allow-whole-block: true
+      case-max-lines: 2
+      default: all
+      disable:
+        - assign-exclusive
+        - if
+
+    unused:
+      field-writes-are-uses: false
+      exported-fields-are-used: false
+      local-variables-are-used: false
+
+    govet:
+      enable-all: true
+      disable:
+        - shadow
+
+    usetesting:
+      os-temp-dir: true
+      context-background: true
+      context-todo: true
+
+    testifylint:
+      enable-all: true
+      expected-actual:
+        pattern: ^want
+
+    sloglint:
+      attr-only: true
+      static-msg: true
+      args-on-sep-lines: true
+      key-naming-case: snake
+      context: scope
+      forbidden-keys:
+        - time
+        - level
+        - msg
+
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - unnamedResult
+        - singleCaseSwitch
+      settings:
+        hugeParam:
+          sizeThreshold: 256
+
+    modernize:
+      # newexpr analyzer panics in golang.org/x/tools@v0.42.0
+      # https://github.com/golang/go/issues/73937
+      disable:
+        - newexpr
+
+    godoclint:
+      default: all
+      disable:
+        - require-pkg-doc
+      options:
+        max-len:
+          length: 80
+
+    godot:
+      scope: noinline
+      period: true
+      capital: true
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    grouper:
+      import-require-single-import: true
+      var-require-single-var: true
+
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: "golang.org/x/exp/slog"
+              desc: use log/slog
+            - pkg: "github.com/pkg/errors"
+              desc: use errors
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - dupl
+          - goconst
+          - gosec
+          - gosmopolitan
+          - godoclint
+      - path: _test\.go
+        text: "fieldalignment:"
+      - source: "= `"
+        linters:
+          - grouper
+      - path: cmd/
+        linters:
+          - wrapcheck
+          - godoclint
