@@ -221,7 +221,8 @@ type envoyRBACPolicy struct {
 // envoyRBACPermission represents a single RBAC permission check.
 // Fields are mutually exclusive (Envoy oneof).
 type envoyRBACPermission struct {
-	RequestedServerName *envoyStringMatch `yaml:"requested_server_name,omitempty"`
+	RequestedServerName *envoyStringMatch   `yaml:"requested_server_name,omitempty"`
+	Header              *envoyHeaderMatcher `yaml:"header,omitempty"`
 }
 
 type envoyRBACPrincipal struct {
@@ -335,6 +336,29 @@ func wildcardToSNIRegex(pattern string) string {
 	return `^[-a-zA-Z0-9_]+\.` + regexp.QuoteMeta(suffix) + `$`
 }
 
+// wildcardToHostRegex converts a wildcard pattern into a regex for HTTP
+// Host/:authority header matching. Like [wildcardToSNIRegex] but also
+// accepts an optional ":port" suffix, since HTTP/1.1 Host and HTTP/2
+// :authority headers may include a port (e.g. "sub.example.com:80").
+//
+// The quantifier is "+" (one or more) rather than Cilium's "*" (zero or
+// more) because an empty DNS label is not a valid hostname and cannot
+// appear in an HTTP Host header.
+//
+// Example: "*.example.com" -> "^[-a-zA-Z0-9_]+\.example\.com(:\d+)?$"
+//
+//	matches:  "sub.example.com", "sub.example.com:80"
+//	rejects:  "a.b.example.com", "a.b.example.com:80"
+func wildcardToHostRegex(pattern string) string {
+	if strings.HasPrefix(pattern, "**.") {
+		suffix := pattern[3:]
+		return `^[-a-zA-Z0-9_]+(\.[-a-zA-Z0-9_]+)*\.` + regexp.QuoteMeta(suffix) + `(:\d+)?$`
+	}
+
+	suffix := strings.TrimPrefix(pattern, "*.")
+	return `^[-a-zA-Z0-9_]+\.` + regexp.QuoteMeta(suffix) + `(:\d+)?$`
+}
+
 // wildcardServerName converts a domain pattern to an Envoy server_names
 // entry. Both "*.example.com" and "**.example.com" use "*.example.com"
 // in server_names because Envoy's suffix matching is inherently
@@ -396,6 +420,71 @@ func buildWildcardRBACFilter(wildcardDomains []string) envoyFilter {
 	}
 }
 
+// buildWildcardHTTPRBACFilter creates an HTTP RBAC filter that
+// restricts wildcard domain matches to the correct depth by checking
+// the :authority pseudo-header. Single-star patterns ("*.example.com")
+// are confined to one DNS label; double-star patterns
+// ("**.example.com") allow arbitrary subdomain depth. This is the
+// HTTP-layer equivalent of [buildWildcardRBACFilter] (which checks
+// TLS SNI).
+//
+// Cilium enforces FQDN wildcard depth via its BPF identity system
+// (DNS proxy regex -> identity allocation -> BPF map lookup), not at
+// the Envoy layer. This RBAC approach is an architectural substitute
+// that achieves equivalent filtering semantics within the sandbox's
+// Envoy-only architecture.
+//
+// Because the RBAC filter applies globally to the HCM (not per virtual
+// host), the permissions must also allow exact domains through. Each
+// wildcard gets a depth-enforcement regex (via [wildcardToHostRegex]);
+// each exact domain gets a regex that matches the literal name with an
+// optional port suffix. All permissions are OR'd.
+func buildWildcardHTTPRBACFilter(wildcardDomains, exactDomains []string) envoyFilter {
+	var permissions []envoyRBACPermission
+
+	for _, d := range wildcardDomains {
+		permissions = append(permissions, envoyRBACPermission{
+			Header: &envoyHeaderMatcher{
+				Name: ":authority",
+				StringMatch: envoyStringMatch{
+					SafeRegex: &envoySafeRegex{
+						Regex: wildcardToHostRegex(d),
+					},
+				},
+			},
+		})
+	}
+
+	for _, d := range exactDomains {
+		permissions = append(permissions, envoyRBACPermission{
+			Header: &envoyHeaderMatcher{
+				Name: ":authority",
+				StringMatch: envoyStringMatch{
+					SafeRegex: &envoySafeRegex{
+						Regex: `^` + regexp.QuoteMeta(d) + `(:\d+)?$`,
+					},
+				},
+			},
+		})
+	}
+
+	return envoyFilter{
+		Name: "envoy.filters.http.rbac",
+		TypedConfig: envoyRBACConfig{
+			AtType: "type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC",
+			Rules: envoyRBACRules{
+				Action: "ALLOW",
+				Policies: map[string]envoyRBACPolicy{
+					"wildcard_depth": {
+						Permissions: permissions,
+						Principals:  []envoyRBACPrincipal{{Any: true}},
+					},
+				},
+			},
+		},
+	}
+}
+
 func buildPassthroughFilterChain(
 	upstreamPort int,
 	statPrefix string,
@@ -441,7 +530,7 @@ func buildMITMFilterChain(rule ResolvedRule, accessLog []envoyAccessLog, certsDi
 	certPath := fmt.Sprintf("%s/%s/cert.pem", certsDir, sn)
 	keyPath := fmt.Sprintf("%s/%s/key.pem", certsDir, sn)
 
-	vhosts := buildHTTPVirtualHosts([]ResolvedRule{rule}, "mitm_forward_proxy_cluster")
+	vhosts, _, _ := buildHTTPVirtualHosts([]ResolvedRule{rule}, "mitm_forward_proxy_cluster")
 
 	return envoyFilterChain{
 		FilterChainMatch: &envoyFilterChainMatch{ServerNames: []string{sn}},
@@ -579,18 +668,39 @@ func buildTLSListener(
 	}
 }
 
-func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) []envoyVirtualHost {
+func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) ([]envoyVirtualHost, []string, []string) {
 	var (
 		restricted   []ResolvedRule
 		unrestricted []string
 	)
 
+	// Classify domains for RBAC filter generation using the original
+	// domain pattern (before wildcardServerName conversion) so that
+	// ** patterns produce multi-label regexes via wildcardToHostRegex.
+	// Restricted domains are always exact names (never wildcards)
+	// because ErrWildcardWithL7 rejects wildcard matchPatterns
+	// combined with L7 rules at config validation time.
+	var wildcardDomains, exactDomains []string
 	for _, r := range rules {
 		if r.IsRestricted() {
 			restricted = append(restricted, r)
 		} else {
 			unrestricted = append(unrestricted, wildcardServerName(r.Domain))
+			// Use the original r.Domain (not the wildcardServerName-converted
+			// value) so that ** patterns retain their multi-label semantics
+			// through wildcardToHostRegex.
+			if strings.HasPrefix(r.Domain, "*.") || strings.HasPrefix(r.Domain, "**.") {
+				wildcardDomains = append(wildcardDomains, r.Domain)
+			} else if r.Domain != "*" {
+				exactDomains = append(exactDomains, r.Domain)
+			}
 		}
+	}
+
+	// Restricted domains are exact names; include them so the RBAC
+	// filter's ALLOW policy permits their traffic through.
+	for _, r := range restricted {
+		exactDomains = append(exactDomains, r.Domain)
 	}
 
 	var vhosts []envoyVirtualHost
@@ -651,11 +761,11 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) []envoyVirtualH
 		})
 	}
 
-	return vhosts
+	return vhosts, wildcardDomains, exactDomains
 }
 
 func buildHTTPForwardListener(rules []ResolvedRule, open bool, accessLog []envoyAccessLog) envoyListener {
-	vhosts := buildHTTPVirtualHosts(rules, "dynamic_forward_proxy_cluster")
+	vhosts, wildcardDomains, exactDomains := buildHTTPVirtualHosts(rules, "dynamic_forward_proxy_cluster")
 
 	// Envoy allows only one virtual host with Domains: ["*"] per route
 	// config. When a bare wildcard rule already produced a "*" vhost,
@@ -679,6 +789,31 @@ func buildHTTPForwardListener(rules []ResolvedRule, open bool, accessLog []envoy
 		})
 	}
 
+	// Build the HTTP filter chain. When wildcard domains are present
+	// and the listener is not fully open and there is no catch-all
+	// vhost, prepend an RBAC filter that enforces single-label depth
+	// on the :authority header.
+	httpFilters := []envoyFilter{
+		{
+			Name: "envoy.filters.http.dynamic_forward_proxy",
+			TypedConfig: envoyHTTPDFPFilterConfig{
+				AtType:         "type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig",
+				DNSCacheConfig: sharedDNSCacheConfig,
+			},
+		},
+		{
+			Name: "envoy.filters.http.router",
+			TypedConfig: envoyTypeOnly{
+				AtType: "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router",
+			},
+		},
+	}
+
+	if len(wildcardDomains) > 0 && !open && !hasCatchAll {
+		rbacFilter := buildWildcardHTTPRBACFilter(wildcardDomains, exactDomains)
+		httpFilters = append([]envoyFilter{rbacFilter}, httpFilters...)
+	}
+
 	return envoyListener{
 		Name: "http_forward",
 		Address: envoyAddress{SocketAddress: envoySocketAddress{
@@ -693,22 +828,8 @@ func buildHTTPForwardListener(rules []ResolvedRule, open bool, accessLog []envoy
 					RouteConfig: envoyRouteConfig{
 						VirtualHosts: vhosts,
 					},
-					AccessLog: accessLog,
-					HTTPFilters: []envoyFilter{
-						{
-							Name: "envoy.filters.http.dynamic_forward_proxy",
-							TypedConfig: envoyHTTPDFPFilterConfig{
-								AtType:         "type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig",
-								DNSCacheConfig: sharedDNSCacheConfig,
-							},
-						},
-						{
-							Name: "envoy.filters.http.router",
-							TypedConfig: envoyTypeOnly{
-								AtType: "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router",
-							},
-						},
-					},
+					AccessLog:   accessLog,
+					HTTPFilters: httpFilters,
 				},
 			}},
 		}},

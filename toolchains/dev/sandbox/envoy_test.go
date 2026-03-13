@@ -489,6 +489,9 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"ALLOW",
 				`^[-a-zA-Z0-9_]+(\\.[-a-zA-Z0-9_]+)*\\.example\\.com$`,
 				"*.example.com",
+				// HTTP RBAC also present with multi-label regex + port suffix:
+				"envoy.filters.http.rbac",
+				`^[-a-zA-Z0-9_]+(\\.[-a-zA-Z0-9_]+)*\\.example\\.com(:\\d+)?$`,
 			},
 			notWant: []string{
 				"**.example.com",
@@ -543,6 +546,86 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"tls_passthrough_8080",
 				"envoy.filters.network.rbac",
 				`^[-a-zA-Z0-9_]+\\.example\\.com$`,
+			},
+		},
+		"wildcard HTTP gets RBAC filter on :authority": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example.com"}},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}}}},
+			})},
+			want: []string{
+				"envoy.filters.http.rbac",
+				":authority",
+				`^[-a-zA-Z0-9_]+\\.example\\.com(:\\d+)?$`,
+				// TLS RBAC also present:
+				"envoy.filters.network.rbac",
+				`^[-a-zA-Z0-9_]+\\.example\\.com$`,
+			},
+		},
+		"exact domain HTTP no RBAC": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "80"}}}},
+			})},
+			notWant: []string{"envoy.filters.http.rbac"},
+		},
+		"mixed wildcard and exact HTTP RBAC includes both": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "github.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "80"}}}},
+				},
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "80"}}}},
+				},
+			)},
+			want: []string{
+				"envoy.filters.http.rbac",
+				`^[-a-zA-Z0-9_]+\\.example\\.com(:\\d+)?$`,
+				`^github\\.com(:\\d+)?$`,
+			},
+		},
+		"open port 80 no HTTP RBAC despite wildcards": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "80"}}}},
+				},
+				sandbox.EgressRule{ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "80"}}}}},
+			)},
+			notWant: []string{"envoy.filters.http.rbac"},
+		},
+		"bare wildcard HTTP no RBAC": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*"}},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "80"}}}},
+			})},
+			notWant: []string{"envoy.filters.http.rbac"},
+		},
+		"double-star wildcard HTTP gets multi-label RBAC regex": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "**.example.com"}},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "80"}}}},
+			})},
+			want: []string{
+				"envoy.filters.http.rbac",
+				":authority",
+				`^[-a-zA-Z0-9_]+(\\.[-a-zA-Z0-9_]+)*\\.example\\.com(:\\d+)?$`,
+			},
+		},
+		"multiple wildcards HTTP RBAC": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{
+					{MatchPattern: "*.a.com"},
+					{MatchPattern: "*.b.com"},
+				},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "80"}}}},
+			})},
+			want: []string{
+				"envoy.filters.http.rbac",
+				`^[-a-zA-Z0-9_]+\\.a\\.com(:\\d+)?$`,
+				`^[-a-zA-Z0-9_]+\\.b\\.com(:\\d+)?$`,
 			},
 		},
 		"separate FQDN and CIDR generates Envoy for FQDN only": {
