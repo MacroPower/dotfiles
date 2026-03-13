@@ -762,7 +762,14 @@ func (c *SandboxConfig) Validate() error {
 
 // validateFQDNSelectors checks that each FQDN selector in a rule has
 // exactly one of matchName or matchPattern, and that patterns use only
-// leading *. prefix wildcards. Deep wildcards (**) are normalized to *.
+// leading wildcards. Cilium supports three wildcard forms:
+//
+//   - "*"        -- match all FQDNs
+//   - "*.suffix" -- single-label wildcard (one subdomain level)
+//   - "**.suffix" -- multi-label wildcard (arbitrary subdomain depth)
+//
+// Cilium treats 2+ stars identically ([*]{2,} in its regex), so runs
+// of 3+ stars are normalized to ** before validation.
 func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
 	for j, fqdn := range rule.ToFQDNs {
 		if fqdn.MatchName == "" && fqdn.MatchPattern == "" {
@@ -773,19 +780,35 @@ func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
 			return fmt.Errorf("%w: rule %d selector %d", ErrFQDNSelectorAmbiguous, ruleIdx, j)
 		}
 
-		// Normalize ** to * for validation; Envoy's suffix matching
-		// already handles deep subdomains.
-		checkPattern := strings.ReplaceAll(fqdn.MatchPattern, "**", "*")
-
-		// Bare "*" is valid: Cilium treats it as "match all FQDNs"
-		// while still honoring toPorts restrictions. This is different
-		// from omitting egress, which removes all filtering.
-		if checkPattern != "*" && strings.Contains(checkPattern, "*") && !strings.HasPrefix(checkPattern, "*.") {
-			return fmt.Errorf("%w: rule %d selector %d pattern %q",
-				ErrFQDNPatternPartialWildcard, ruleIdx, j, fqdn.MatchPattern)
+		p := fqdn.MatchPattern
+		if p == "" {
+			continue
 		}
 
-		if strings.Count(checkPattern, "*") > 1 {
+		// Normalize runs of 3+ stars to ** (Cilium equivalence).
+		for strings.Contains(p, "***") {
+			p = strings.ReplaceAll(p, "***", "**")
+		}
+
+		switch {
+		case p == "*" || p == "**":
+			// Bare wildcards: match all FQDNs.
+		case strings.HasPrefix(p, "**."):
+			// Multi-label wildcard. The remainder after "**." must be
+			// wildcard-free.
+			if strings.Contains(p[3:], "*") {
+				return fmt.Errorf("%w: rule %d selector %d pattern %q",
+					ErrFQDNPatternPartialWildcard, ruleIdx, j, fqdn.MatchPattern)
+			}
+		case strings.HasPrefix(p, "*."):
+			// Single-label wildcard. The remainder after "*." must be
+			// wildcard-free.
+			if strings.Contains(p[2:], "*") {
+				return fmt.Errorf("%w: rule %d selector %d pattern %q",
+					ErrFQDNPatternPartialWildcard, ruleIdx, j, fqdn.MatchPattern)
+			}
+		case strings.Contains(p, "*"):
+			// Wildcard not in a valid leading position.
 			return fmt.Errorf("%w: rule %d selector %d pattern %q",
 				ErrFQDNPatternPartialWildcard, ruleIdx, j, fqdn.MatchPattern)
 		}
@@ -1016,12 +1039,12 @@ func (c *SandboxConfig) TCPForwardHosts() []string {
 // semantics; if any occurrence has no L7 rules, the merged result has
 // none (unrestricted wins).
 //
-// Note: matchPattern values (e.g. "*.example.com") are passed through
-// as-is to Envoy server_names. Envoy uses suffix-based matching, which
-// would match arbitrarily deep subdomains; an RBAC network filter
-// (see [buildWildcardRBACFilter]) is prepended to wildcard filter
-// chains to enforce single-label depth, matching CiliumNetworkPolicy
-// matchPattern semantics.
+// Note: matchPattern values (e.g. "*.example.com", "**.example.com")
+// are preserved as domain keys. Envoy server_names uses suffix-based
+// matching, which would match arbitrarily deep subdomains; an RBAC
+// network filter (see [buildWildcardRBACFilter]) is prepended to
+// wildcard filter chains to enforce the correct depth (single-label
+// for *, multi-label for **), matching CiliumNetworkPolicy semantics.
 func (c *SandboxConfig) ResolveRulesForPort(port int) []ResolvedRule {
 	type merged struct {
 		httpRules    []ResolvedHTTPRule
@@ -1045,7 +1068,15 @@ func (c *SandboxConfig) ResolveRulesForPort(port int) []ResolvedRule {
 		for _, fqdn := range rule.ToFQDNs {
 			domain := fqdn.MatchName
 			if domain == "" {
-				domain = strings.ReplaceAll(fqdn.MatchPattern, "**", "*")
+				domain = fqdn.MatchPattern
+				// Normalize 3+ stars to ** (Cilium equivalence).
+				for strings.Contains(domain, "***") {
+					domain = strings.ReplaceAll(domain, "***", "**")
+				}
+				// Bare "**" is equivalent to "*" (match all FQDNs).
+				if domain == "**" {
+					domain = "*"
+				}
 			}
 
 			m, exists := byDomain[domain]

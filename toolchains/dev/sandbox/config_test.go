@@ -676,13 +676,38 @@ func TestValidate(t *testing.T) {
 			},
 			err: sandbox.ErrFQDNSelectorAmbiguous,
 		},
-		"deep wildcard normalized": {
+		"deep wildcard accepted": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "**.example.com"}},
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 				}),
 			},
+		},
+		"triple star wildcard accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "***.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+		},
+		"bare double star accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "**"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+		},
+		"mid-pattern double star rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "test.**.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNPatternPartialWildcard,
 		},
 		"bare wildcard accepted": {
 			cfg: &sandbox.SandboxConfig{
@@ -1708,13 +1733,21 @@ func TestResolveRulesForPort(t *testing.T) {
 			port: 500,
 			want: []sandbox.ResolvedRule{{Domain: "api.example.com"}},
 		},
-		"deep wildcard resolves as single wildcard": {
+		"deep wildcard preserves double-star domain": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
 				ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "**.example.com"}},
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 			})},
 			port: 443,
-			want: []sandbox.ResolvedRule{{Domain: "*.example.com"}},
+			want: []sandbox.ResolvedRule{{Domain: "**.example.com"}},
+		},
+		"bare double star resolves as single star": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "**"}},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+			})},
+			port: 443,
+			want: []sandbox.ResolvedRule{{Domain: "*"}},
 		},
 	}
 

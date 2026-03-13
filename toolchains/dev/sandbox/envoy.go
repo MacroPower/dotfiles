@@ -299,39 +299,68 @@ var sharedDNSCacheConfig = envoyDNSCacheConfig{
 }
 
 // wildcardToSNIRegex converts a Cilium-style wildcard pattern into a
-// regex that enforces single-label depth on the wildcard portion.
+// regex for RBAC SNI matching. It handles two forms:
 //
-// Cilium's matchPattern treats "*" as zero or more DNS-valid characters
-// excluding ".", confining the match to a single DNS label
-// (see Cilium pkg/fqdn/matchpattern [ToAnchoredRegexp]). Envoy's
-// server_names uses suffix-based matching, which crosses label
-// boundaries. This regex bridges the gap: it is applied via an RBAC
-// network filter on the TLS SNI value to reject multi-label matches
-// that Envoy would otherwise allow.
+//   - "*." prefix (single-label): matches exactly one DNS label.
+//     Example: "*.example.com" -> "^[-a-zA-Z0-9_]+\.example\.com$"
+//     matches:  "sub.example.com"
+//     rejects:  "a.b.example.com"
 //
-// The character class [-a-zA-Z0-9_] mirrors Cilium's label charset.
-// The quantifier is "+" (one or more) rather than Cilium's "*" (zero
-// or more) because an empty DNS label is not a valid hostname and
-// cannot appear in a TLS SNI value (RFC 6066 section 3).
+//   - "**." prefix (multi-label): matches one or more DNS labels at
+//     arbitrary depth, mirroring Cilium's [dnsWildcardREGroup].
+//     Example: "**.example.com" -> "^[-a-zA-Z0-9_]+(\.[-a-zA-Z0-9_]+)*\.example\.com$"
+//     matches:  "sub.example.com", "a.b.example.com"
+//     rejects:  "example.com"
 //
-// Example: "*.example.com" -> "^[-a-zA-Z0-9_]+\.example\.com$"
-//   - matches:   "sub.example.com"
-//   - rejects:   "a.b.example.com" (multi-label)
+// Both forms use + (one-or-more) on the first label's character class,
+// not * (zero-or-more), because empty DNS labels are invalid in SNI
+// (RFC 6066 section 3). This is an intentional sandbox strictness:
+// Cilium's single-label regex uses * (allowing empty labels like
+// ".example.com"), but since SNI values in practice never have empty
+// labels, the + quantifier is both correct and more precise.
+//
+// SNI values never contain trailing dots (RFC 6066 section 3), so unlike
+// Cilium's regex (which uses [.] for FQDN-form names), this uses literal
+// \. separators and omits the trailing dot anchor.
+//
+// [dnsWildcardREGroup]: Cilium pkg/fqdn/matchpattern constants.
 func wildcardToSNIRegex(pattern string) string {
+	if strings.HasPrefix(pattern, "**.") {
+		suffix := pattern[3:]
+		// One or more dot-separated labels, then the fixed suffix.
+		return `^[-a-zA-Z0-9_]+(\.[-a-zA-Z0-9_]+)*\.` + regexp.QuoteMeta(suffix) + `$`
+	}
+
 	suffix := strings.TrimPrefix(pattern, "*.")
 	return `^[-a-zA-Z0-9_]+\.` + regexp.QuoteMeta(suffix) + `$`
 }
 
+// wildcardServerName converts a domain pattern to an Envoy server_names
+// entry. Both "*.example.com" and "**.example.com" use "*.example.com"
+// in server_names because Envoy's suffix matching is inherently
+// multi-label. The RBAC filter (via [wildcardToSNIRegex]) provides the
+// correct depth restriction.
+func wildcardServerName(domain string) string {
+	if strings.HasPrefix(domain, "**.") {
+		return "*." + domain[3:]
+	}
+	return domain
+}
+
 // buildWildcardRBACFilter creates an RBAC network filter that
-// restricts wildcard server_names matches to single-label depth,
+// restricts wildcard server_names matches to the correct depth,
 // matching [CiliumNetworkPolicy] toFQDNs.matchPattern semantics.
+// Single-star patterns ("*.example.com") are confined to one DNS
+// label; double-star patterns ("**.example.com") allow arbitrary
+// subdomain depth.
 //
 // Envoy's server_names uses suffix-based matching, so "*.example.com"
 // matches arbitrarily deep subdomains like "a.b.example.com". Cilium
 // confines "*" to a single DNS label. This filter is prepended to
 // passthrough filter chains that contain wildcard patterns; it checks
-// the TLS SNI (requested_server_name) against per-domain regexes and
-// closes the connection if the SNI does not match.
+// the TLS SNI (requested_server_name) against per-domain regexes
+// (via [wildcardToSNIRegex]) and closes the connection if the SNI
+// does not match.
 //
 // The RBAC action is ALLOW with one permission per wildcard domain.
 // Multiple permissions are OR'd: the connection is allowed if the SNI
@@ -408,13 +437,14 @@ func buildPassthroughFilterChain(
 }
 
 func buildMITMFilterChain(rule ResolvedRule, accessLog []envoyAccessLog, certsDir string) envoyFilterChain {
-	certPath := fmt.Sprintf("%s/%s/cert.pem", certsDir, rule.Domain)
-	keyPath := fmt.Sprintf("%s/%s/key.pem", certsDir, rule.Domain)
+	sn := wildcardServerName(rule.Domain)
+	certPath := fmt.Sprintf("%s/%s/cert.pem", certsDir, sn)
+	keyPath := fmt.Sprintf("%s/%s/key.pem", certsDir, sn)
 
 	vhosts := buildHTTPVirtualHosts([]ResolvedRule{rule}, "mitm_forward_proxy_cluster")
 
 	return envoyFilterChain{
-		FilterChainMatch: &envoyFilterChainMatch{ServerNames: []string{rule.Domain}},
+		FilterChainMatch: &envoyFilterChainMatch{ServerNames: []string{sn}},
 		TransportSocket: &envoyTransportSocket{
 			Name: "envoy.transport_sockets.tls",
 			TypedConfig: envoyDownstreamTlsContext{
@@ -493,14 +523,15 @@ func buildTLSListener(
 		open = true
 	}
 
-	// Wildcard domains (e.g. "*.example.com") are placed in a separate
-	// filter chain with an RBAC filter that enforces single-label
-	// wildcard depth, matching CiliumNetworkPolicy semantics. Without
-	// this, Envoy's suffix-based server_names matching would allow
-	// arbitrarily deep subdomains like "a.b.example.com".
+	// Wildcard domains ("*.example.com" or "**.example.com") are placed
+	// in a separate filter chain with an RBAC filter that enforces the
+	// correct wildcard depth (single-label for *, multi-label for **),
+	// matching CiliumNetworkPolicy semantics. Without this, Envoy's
+	// suffix-based server_names matching would allow arbitrarily deep
+	// subdomains for single-star patterns like "*.example.com".
 	var exactDomains, wildcardDomains []string
 	for _, d := range passthroughDomains {
-		if strings.HasPrefix(d, "*.") {
+		if strings.HasPrefix(d, "*.") || strings.HasPrefix(d, "**.") {
 			wildcardDomains = append(wildcardDomains, d)
 		} else {
 			exactDomains = append(exactDomains, d)
@@ -514,9 +545,13 @@ func buildTLSListener(
 
 	if len(wildcardDomains) > 0 {
 		rbac := buildWildcardRBACFilter(wildcardDomains)
+		envoyNames := make([]string, len(wildcardDomains))
+		for i, d := range wildcardDomains {
+			envoyNames[i] = wildcardServerName(d)
+		}
 		chains = append(
 			chains,
-			buildPassthroughFilterChain(upstreamPort, statPrefix+"_wildcard", wildcardDomains, accessLog, &rbac),
+			buildPassthroughFilterChain(upstreamPort, statPrefix+"_wildcard", envoyNames, accessLog, &rbac),
 		)
 	}
 
@@ -554,7 +589,7 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) []envoyVirtualH
 		if r.IsRestricted() {
 			restricted = append(restricted, r)
 		} else {
-			unrestricted = append(unrestricted, r.Domain)
+			unrestricted = append(unrestricted, wildcardServerName(r.Domain))
 		}
 	}
 
@@ -596,7 +631,7 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) []envoyVirtualH
 		})
 		vhosts = append(vhosts, envoyVirtualHost{
 			Name:    "restricted_" + r.Domain,
-			Domains: []string{r.Domain},
+			Domains: []string{wildcardServerName(r.Domain)},
 			Routes:  routes,
 		})
 	}

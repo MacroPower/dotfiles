@@ -479,6 +479,21 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				`^[-a-zA-Z0-9_]+\\.example\\.com$`,
 			},
 		},
+		"double-star wildcard gets multi-label RBAC regex": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "**.example.com"}},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}}}},
+			})},
+			want: []string{
+				"envoy.filters.network.rbac",
+				"ALLOW",
+				`^[-a-zA-Z0-9_]+(\\.[-a-zA-Z0-9_]+)*\\.example\\.com$`,
+				"*.example.com",
+			},
+			notWant: []string{
+				"**.example.com",
+			},
+		},
 		"exact domain no RBAC": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
 				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},

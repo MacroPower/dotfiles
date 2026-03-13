@@ -168,7 +168,12 @@ func GenerateCerts(rules []ResolvedRule, caDir, certsDir string) error {
 			continue
 		}
 
-		err := GenerateLeafCert(caDir, certsDir, r.Domain)
+		// Convert "**.example.com" to "*.example.com" for cert SANs
+		// and directory paths. TLS certs use "*.example.com" as the
+		// wildcard SAN form (RFC 6125); there is no "**." SAN.
+		domain := wildcardServerName(r.Domain)
+
+		err := GenerateLeafCert(caDir, certsDir, domain)
 		if err != nil {
 			return fmt.Errorf("generating cert for %s: %w", r.Domain, err)
 		}

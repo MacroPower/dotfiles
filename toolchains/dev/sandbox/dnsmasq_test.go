@@ -137,6 +137,17 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 				"ipset=/#/sandbox_fqdn4,sandbox_fqdn6",
 			},
 		},
+		"double-star wildcard stripped to base domain": {
+			upstream: "8.8.8.8",
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "**.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			want:    []string{"server=/example.com/8.8.8.8", "address=/#/"},
+			notWant: []string{"server=8.8.8.8\n", "**.example.com"},
+		},
 		"rules-only mode forwards all": {
 			upstream: "8.8.8.8",
 			cfg: &sandbox.SandboxConfig{

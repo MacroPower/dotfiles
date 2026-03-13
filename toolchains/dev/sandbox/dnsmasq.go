@@ -94,9 +94,16 @@ func collectDNSDomains(cfg *SandboxConfig) []string {
 				d = fqdn.MatchPattern
 			}
 
-			// Strip wildcard prefix: *.example.com -> example.com.
-			// Dnsmasq matches subdomains by default for server=/ entries.
-			d = strings.TrimPrefix(d, "*.")
+			// Strip leading wildcard prefix: *.example.com,
+			// **.example.com, and ***.example.com all become example.com.
+			// Dnsmasq's server=/ entries match all subdomains by default,
+			// which is correct for both wildcard forms. Bare wildcards
+			// (* or **) normalize to "*" for the catch-all check.
+			d = strings.TrimLeft(d, "*")
+			d = strings.TrimPrefix(d, ".")
+			if d == "" {
+				d = "*"
+			}
 			if d != "" && !seen[d] {
 				seen[d] = true
 			}
