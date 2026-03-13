@@ -2297,12 +2297,12 @@ func TestResolveCIDRRules(t *testing.T) {
 					{Port: 53, Protocol: "sctp"},
 					{Port: 53, Protocol: "tcp"},
 					{Port: 53, Protocol: "udp"},
-				}},
+				}, RuleIndex: 0},
 				{CIDR: "1.1.1.0/24", Ports: []sandbox.ResolvedPortProto{
 					{Port: 443, Protocol: "sctp"},
 					{Port: 443, Protocol: "tcp"},
 					{Port: 443, Protocol: "udp"},
-				}},
+				}, RuleIndex: 1},
 			},
 		},
 		"toCIDR without except": {
@@ -2315,6 +2315,18 @@ func TestResolveCIDRRules(t *testing.T) {
 				{CIDR: "8.8.8.0/24"},
 			},
 		},
+		"toCIDR and toCIDRSet in same rule share RuleIndex": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDR:    []string{"10.0.0.0/8"},
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "192.168.0.0/16", Except: []string{"192.168.1.0/24"}}},
+				}),
+			},
+			wantIPv4: []sandbox.ResolvedCIDR{
+				{CIDR: "10.0.0.0/8", RuleIndex: 0},
+				{CIDR: "192.168.0.0/16", Except: []string{"192.168.1.0/24"}, RuleIndex: 0},
+			},
+		},
 		"toCIDR and toCIDRSet in separate rules": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(
@@ -2325,8 +2337,8 @@ func TestResolveCIDRRules(t *testing.T) {
 				),
 			},
 			wantIPv4: []sandbox.ResolvedCIDR{
-				{CIDR: "1.1.1.0/24"},
-				{CIDR: "8.8.8.0/24", Except: []string{"8.8.8.8/32"}},
+				{CIDR: "1.1.1.0/24", RuleIndex: 0},
+				{CIDR: "8.8.8.0/24", Except: []string{"8.8.8.8/32"}, RuleIndex: 1},
 			},
 		},
 		"UDP port-scoped CIDR": {
@@ -2398,7 +2410,7 @@ func TestResolveCIDRRules(t *testing.T) {
 					{Port: 443, Protocol: "sctp"},
 					{Port: 443, Protocol: "tcp"},
 					{Port: 443, Protocol: "udp"},
-				}},
+				}, RuleIndex: 0},
 			},
 		},
 	}

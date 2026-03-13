@@ -23,6 +23,32 @@ func formatPortProto(pp ResolvedPortProto) string {
 	return fmt.Sprintf("-p %s --dport %s", pp.Protocol, dport)
 }
 
+// groupCIDRsByRule groups resolved CIDRs by their RuleIndex,
+// preserving order of first appearance.
+func groupCIDRsByRule(cidrs []ResolvedCIDR) [][]ResolvedCIDR {
+	if len(cidrs) == 0 {
+		return nil
+	}
+
+	idxOrder := make([]int, 0)
+	groups := make(map[int][]ResolvedCIDR)
+
+	for _, c := range cidrs {
+		if _, seen := groups[c.RuleIndex]; !seen {
+			idxOrder = append(idxOrder, c.RuleIndex)
+		}
+
+		groups[c.RuleIndex] = append(groups[c.RuleIndex], c)
+	}
+
+	result := make([][]ResolvedCIDR, len(idxOrder))
+	for i, idx := range idxOrder {
+		result[i] = groups[idx]
+	}
+
+	return result
+}
+
 // GenerateIptablesRules builds iptables-restore format rules that redirect
 // user traffic to Envoy and restrict outbound access. Operates in three
 // modes based on CiliumNetworkPolicy semantics:
@@ -197,47 +223,58 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 	writeNatRules(&nat4, cidr4)
 	writeNatRules(&nat6, cidr6)
 
-	writeCIDRExceptDrop := func(b *strings.Builder, cidrs []ResolvedCIDR) {
-		for _, rule := range cidrs {
-			for _, exc := range rule.Except {
+	unrestricted := cfg.HasUnrestrictedOpenPorts()
+
+	// writeCIDRChains emits per-rule iptables chains that preserve
+	// Cilium's OR semantics across egress rules. Each chain evaluates
+	// one rule's CIDRs and excepts independently: RETURN for except
+	// hits (try next rule), ACCEPT for CIDR hits (allow packet).
+	writeCIDRChains := func(b *strings.Builder, cidrs []ResolvedCIDR, af string) {
+		groups := groupCIDRsByRule(cidrs)
+
+		// Declare all chains before any -A references.
+		for i := range groups {
+			fmt.Fprintf(b, "-N CIDR_%s_%d\n", af, i)
+		}
+
+		// Populate each per-rule chain.
+		for i, group := range groups {
+			chainName := fmt.Sprintf("CIDR_%s_%d", af, i)
+
+			// Except RETURNs scoped to this rule only.
+			for _, rule := range group {
+				for _, exc := range rule.Except {
+					if len(rule.Ports) == 0 {
+						fmt.Fprintf(b, "-A %s -m owner --uid-owner %s -d %s -j RETURN\n", chainName, UID, exc)
+					} else {
+						for _, pp := range rule.Ports {
+							fmt.Fprintf(b, "-A %s -m owner --uid-owner %s %s -d %s -j RETURN\n",
+								chainName, UID, formatPortProto(pp), exc)
+						}
+					}
+				}
+			}
+
+			// CIDR ACCEPTs scoped to this rule.
+			for _, rule := range group {
 				if len(rule.Ports) == 0 {
-					fmt.Fprintf(b, "-A OUTPUT -m owner --uid-owner %s -d %s -j DROP\n", UID, exc)
+					fmt.Fprintf(b, "-A %s -m owner --uid-owner %s -d %s -j ACCEPT\n", chainName, UID, rule.CIDR)
 				} else {
 					for _, pp := range rule.Ports {
-						fmt.Fprintf(
-							b,
-							"-A OUTPUT -m owner --uid-owner %s %s -d %s -j DROP\n",
-							UID,
-							formatPortProto(pp),
-							exc,
-						)
+						fmt.Fprintf(b, "-A %s -m owner --uid-owner %s %s -d %s -j ACCEPT\n",
+							chainName, UID, formatPortProto(pp), rule.CIDR)
 					}
 				}
 			}
 		}
-	}
 
-	writeCIDRAccept := func(b *strings.Builder, cidrs []ResolvedCIDR) {
-		for _, rule := range cidrs {
-			if len(rule.Ports) == 0 {
-				fmt.Fprintf(b, "-A OUTPUT -m owner --uid-owner %s -d %s -j ACCEPT\n", UID, rule.CIDR)
-			} else {
-				for _, pp := range rule.Ports {
-					fmt.Fprintf(
-						b,
-						"-A OUTPUT -m owner --uid-owner %s %s -d %s -j ACCEPT\n",
-						UID,
-						formatPortProto(pp),
-						rule.CIDR,
-					)
-				}
-			}
+		// Jump from OUTPUT to each per-rule chain in sequence.
+		for i := range groups {
+			fmt.Fprintf(b, "-A OUTPUT -j CIDR_%s_%d\n", af, i)
 		}
 	}
 
-	unrestricted := cfg.HasUnrestrictedOpenPorts()
-
-	writeFilterRules := func(b *strings.Builder, loopbackCIDR, ipsetName string, cidrs []ResolvedCIDR) {
+	writeFilterRules := func(b *strings.Builder, loopbackCIDR, ipsetName string, cidrs []ResolvedCIDR, af string) {
 		b.WriteString("*filter\n")
 		b.WriteString("-A OUTPUT -o lo -j ACCEPT\n")
 		fmt.Fprintf(b, "-A OUTPUT -d %s -j ACCEPT\n", loopbackCIDR)
@@ -245,14 +282,9 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 		b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p udp --dport 53 -j ACCEPT\n")
 		b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p tcp --dport 53 -j ACCEPT\n")
 		if !unrestricted {
-			// CIDR except: DROP for user UID to excepted ranges.
-			writeCIDRExceptDrop(b, cidrs)
-		}
-
-		// CIDR allow: ACCEPT for user UID to allowed CIDRs.
-		// Skipped when unrestricted (subsumed by broad ACCEPT).
-		if !unrestricted {
-			writeCIDRAccept(b, cidrs)
+			// Per-rule CIDR chains preserve OR semantics: each
+			// rule's excepts only block within that rule's chain.
+			writeCIDRChains(b, cidrs, af)
 		}
 
 		// Envoy accept: Envoy can reach any IP (domain allowlist
@@ -306,8 +338,8 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 		b.WriteString("COMMIT\n")
 	}
 
-	writeFilterRules(&filter4, "127.0.0.0/8", IPSetFQDN4, cidr4)
-	writeFilterRules(&filter6, "::1/128", IPSetFQDN6, cidr6)
+	writeFilterRules(&filter4, "127.0.0.0/8", IPSetFQDN4, cidr4, "4")
+	writeFilterRules(&filter6, "::1/128", IPSetFQDN6, cidr6, "6")
 
 	return nat4.String() + filter4.String(), nat6.String() + filter6.String()
 }

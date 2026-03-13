@@ -582,10 +582,14 @@ type ResolvedPortProto struct {
 // represents a direct IP-level allow rule that bypasses the Envoy
 // proxy. Ports are inherited from the parent [EgressRule]'s toPorts;
 // an empty Ports slice means any port (no L4 restriction).
+// RuleIndex tracks which egress rule this CIDR came from, enabling
+// per-rule iptables chains that preserve Cilium's OR semantics
+// across rules.
 type ResolvedCIDR struct {
-	CIDR   string
-	Except []string
-	Ports  []ResolvedPortProto
+	CIDR      string
+	Except    []string
+	Ports     []ResolvedPortProto
+	RuleIndex int
 }
 
 // DefaultConfig returns a config decoded from the embedded defaults.yaml.
@@ -1570,6 +1574,8 @@ func normalizeProtocol(proto string) string {
 func (c *SandboxConfig) ResolveCIDRRules() ([]ResolvedCIDR, []ResolvedCIDR) {
 	var ipv4, ipv6 []ResolvedCIDR
 
+	ruleIdx := 0
+
 	for _, rule := range c.EgressRules() {
 		if len(rule.ToCIDRSet) == 0 && len(rule.ToCIDR) == 0 {
 			continue
@@ -1586,7 +1592,7 @@ func (c *SandboxConfig) ResolveCIDRRules() ([]ResolvedCIDR, []ResolvedCIDR) {
 		allCIDRs = append(allCIDRs, rule.ToCIDRSet...)
 
 		for _, cidr := range allCIDRs {
-			v4, v6 := classifyCIDR(cidr, ports)
+			v4, v6 := classifyCIDR(cidr, ports, ruleIdx)
 			if v4 != nil {
 				ipv4 = append(ipv4, *v4)
 			}
@@ -1595,6 +1601,8 @@ func (c *SandboxConfig) ResolveCIDRRules() ([]ResolvedCIDR, []ResolvedCIDR) {
 				ipv6 = append(ipv6, *v6)
 			}
 		}
+
+		ruleIdx++
 	}
 
 	return ipv4, ipv6
@@ -1662,8 +1670,9 @@ func resolvePortsFromRule(rule EgressRule) []ResolvedPortProto {
 
 // classifyCIDR parses a CIDR rule and classifies it by address family,
 // filtering except entries to only include those matching the same
-// family.
-func classifyCIDR(cidr CIDRRule, ports []ResolvedPortProto) (*ResolvedCIDR, *ResolvedCIDR) {
+// family. The ruleIndex is propagated to the resulting [ResolvedCIDR]
+// to track which egress rule it came from.
+func classifyCIDR(cidr CIDRRule, ports []ResolvedPortProto, ruleIndex int) (*ResolvedCIDR, *ResolvedCIDR) {
 	_, _, err := net.ParseCIDR(cidr.CIDR)
 	if err != nil {
 		return nil, nil
@@ -1687,7 +1696,7 @@ func classifyCIDR(cidr CIDRRule, ports []ResolvedPortProto) (*ResolvedCIDR, *Res
 	}
 
 	if strings.Contains(cidr.CIDR, ":") {
-		resolved := ResolvedCIDR{CIDR: cidr.CIDR, Except: v6Except, Ports: ports}
+		resolved := ResolvedCIDR{CIDR: cidr.CIDR, Except: v6Except, Ports: ports, RuleIndex: ruleIndex}
 		if len(resolved.Except) == 0 {
 			resolved.Except = nil
 		}
@@ -1695,7 +1704,7 @@ func classifyCIDR(cidr CIDRRule, ports []ResolvedPortProto) (*ResolvedCIDR, *Res
 		return nil, &resolved
 	}
 
-	resolved := ResolvedCIDR{CIDR: cidr.CIDR, Except: v4Except, Ports: ports}
+	resolved := ResolvedCIDR{CIDR: cidr.CIDR, Except: v4Except, Ports: ports, RuleIndex: ruleIndex}
 	if len(resolved.Except) == 0 {
 		resolved.Except = nil
 	}

@@ -42,25 +42,30 @@ func TestGenerateIptablesRules(t *testing.T) {
 				// NAT: CIDR RETURN before redirects.
 				"-A OUTPUT -m owner --uid-owner 1000 -d 0.0.0.0/0 -j RETURN",
 				"--to-port 15080", "--to-port 15443", "--to-port 23080",
-				// FILTER: except DROP for user UID (not Envoy).
-				"-A OUTPUT -m owner --uid-owner 1000 -d 10.0.0.0/8 -j DROP",
-				"-A OUTPUT -m owner --uid-owner 1000 -d 172.16.0.0/12 -j DROP",
-				"-A OUTPUT -m owner --uid-owner 1000 -d 192.168.0.0/16 -j DROP",
-				// FILTER: CIDR ACCEPT for user UID.
-				"-A OUTPUT -m owner --uid-owner 1000 -d 0.0.0.0/0 -j ACCEPT",
+				// FILTER: per-rule chain with except RETURN.
+				"-N CIDR_4_0",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 10.0.0.0/8 -j RETURN",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 172.16.0.0/12 -j RETURN",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 192.168.0.0/16 -j RETURN",
+				// FILTER: CIDR ACCEPT within per-rule chain.
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 0.0.0.0/0 -j ACCEPT",
+				"-A OUTPUT -j CIDR_4_0",
 				"LOG",
 			},
 			notWantIPv4: []string{
-				"-m owner --uid-owner 999 -d 10.0.0.0/8 -j DROP",
+				"-d 10.0.0.0/8 -j DROP",
+				"-A OUTPUT -m owner --uid-owner 1000 -d 0.0.0.0/0 -j ACCEPT",
 			},
 			wantIPv6: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -d ::/0 -j RETURN",
-				"-A OUTPUT -m owner --uid-owner 1000 -d fc00::/7 -j DROP",
-				"-A OUTPUT -m owner --uid-owner 1000 -d fe80::/10 -j DROP",
-				"-A OUTPUT -m owner --uid-owner 1000 -d ::/0 -j ACCEPT",
+				"-N CIDR_6_0",
+				"-A CIDR_6_0 -m owner --uid-owner 1000 -d fc00::/7 -j RETURN",
+				"-A CIDR_6_0 -m owner --uid-owner 1000 -d fe80::/10 -j RETURN",
+				"-A CIDR_6_0 -m owner --uid-owner 1000 -d ::/0 -j ACCEPT",
+				"-A OUTPUT -j CIDR_6_0",
 			},
 			notWantIPv6: []string{
-				"-m owner --uid-owner 999 -d fc00::/7 -j DROP",
+				"-d fc00::/7 -j DROP",
 			},
 		},
 		"no CIDR rules means no IP-level rules": {
@@ -106,7 +111,11 @@ func TestGenerateIptablesRules(t *testing.T) {
 					},
 				}),
 			},
-			wantIPv6:    []string{"::1/128", "fc00::/7", "fe80::/10"},
+			wantIPv6: []string{
+				"::1/128",
+				"-A CIDR_6_0 -m owner --uid-owner 1000 -d fc00::/7 -j RETURN",
+				"-A CIDR_6_0 -m owner --uid-owner 1000 -d fe80::/10 -j RETURN",
+			},
 			notWantIPv6: []string{"127.0.0.0/8"},
 		},
 		"tcp forwards get redirect rules": {
@@ -150,7 +159,8 @@ func TestGenerateIptablesRules(t *testing.T) {
 			},
 			wantIPv4: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -d 8.8.8.0/24 -j RETURN",
-				"-A OUTPUT -m owner --uid-owner 1000 -d 8.8.8.0/24 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 8.8.8.0/24 -j ACCEPT",
+				"-A OUTPUT -j CIDR_4_0",
 			},
 		},
 		"UDP CIDR rules use -p udp": {
@@ -162,7 +172,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 			},
 			wantIPv4: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 53 -d 8.8.8.0/24 -j RETURN",
-				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 53 -d 8.8.8.0/24 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p udp --dport 53 -d 8.8.8.0/24 -j ACCEPT",
 			},
 		},
 		"ANY protocol CIDR expands to tcp and udp": {
@@ -175,8 +185,8 @@ func TestGenerateIptablesRules(t *testing.T) {
 			wantIPv4: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 53 -d 8.8.8.0/24 -j RETURN",
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 53 -d 8.8.8.0/24 -j RETURN",
-				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 53 -d 8.8.8.0/24 -j ACCEPT",
-				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 53 -d 8.8.8.0/24 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 53 -d 8.8.8.0/24 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p udp --dport 53 -d 8.8.8.0/24 -j ACCEPT",
 			},
 			notWantIPv4: []string{"-m multiport"},
 		},
@@ -191,8 +201,8 @@ func TestGenerateIptablesRules(t *testing.T) {
 				}),
 			},
 			wantIPv4: []string{
-				"-p udp --dport 53 -d 8.8.8.0/24 -j ACCEPT",
-				"-p tcp --dport 443 -d 8.8.8.0/24 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p udp --dport 53 -d 8.8.8.0/24 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 443 -d 8.8.8.0/24 -j ACCEPT",
 			},
 		},
 		"port range CIDR uses --dport range syntax": {
@@ -205,8 +215,8 @@ func TestGenerateIptablesRules(t *testing.T) {
 			wantIPv4: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 8000:9000 -d 8.8.8.0/24 -j RETURN",
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 8000:9000 -d 8.8.8.0/24 -j RETURN",
-				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 8000:9000 -d 8.8.8.0/24 -j ACCEPT",
-				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 8000:9000 -d 8.8.8.0/24 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 8000:9000 -d 8.8.8.0/24 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p udp --dport 8000:9000 -d 8.8.8.0/24 -j ACCEPT",
 			},
 		},
 		"port-scoped CIDR rules": {
@@ -220,9 +230,9 @@ func TestGenerateIptablesRules(t *testing.T) {
 				// NAT: port-scoped RETURN for both protocols.
 				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 443 -d 8.8.8.0/24 -j RETURN",
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -d 8.8.8.0/24 -j RETURN",
-				// FILTER: port-scoped ACCEPT for both protocols.
-				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 443 -d 8.8.8.0/24 -j ACCEPT",
-				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -d 8.8.8.0/24 -j ACCEPT",
+				// FILTER: port-scoped ACCEPT in per-rule chain.
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 443 -d 8.8.8.0/24 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p udp --dport 443 -d 8.8.8.0/24 -j ACCEPT",
 			},
 		},
 		"port-scoped CIDR with except": {
@@ -238,10 +248,13 @@ func TestGenerateIptablesRules(t *testing.T) {
 			wantIPv4: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 443 -d 0.0.0.0/0 -j RETURN",
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -d 0.0.0.0/0 -j RETURN",
-				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 443 -d 10.0.0.0/8 -j DROP",
-				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -d 10.0.0.0/8 -j DROP",
-				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 443 -d 0.0.0.0/0 -j ACCEPT",
-				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -d 0.0.0.0/0 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 443 -d 10.0.0.0/8 -j RETURN",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p udp --dport 443 -d 10.0.0.0/8 -j RETURN",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 443 -d 0.0.0.0/0 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p udp --dport 443 -d 0.0.0.0/0 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				"-d 10.0.0.0/8 -j DROP",
 			},
 		},
 		"CIDR RETURN comes before REDIRECT in NAT": {
@@ -511,12 +524,143 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 443 -d 10.0.0.0/8 -j RETURN",
 				// NAT: FQDN port gets REDIRECT.
 				"--to-port 15443",
-				// FILTER: CIDR gets ACCEPT.
-				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 443 -d 10.0.0.0/8 -j ACCEPT",
+				// FILTER: CIDR gets ACCEPT in per-rule chain.
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 443 -d 10.0.0.0/8 -j ACCEPT",
+				"-A OUTPUT -j CIDR_4_0",
 				// FILTER: Envoy UID gets ACCEPT.
 				"-A OUTPUT -m owner --uid-owner 999 -j ACCEPT",
 			},
 			wantRedirectCount4: 1,
+		},
+		"cross-rule CIDR except does not block globally": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{ToCIDR: []string{"10.0.0.0/8"}},
+					sandbox.EgressRule{ToCIDRSet: []sandbox.CIDRRule{{
+						CIDR:   "10.0.0.0/8",
+						Except: []string{"10.1.0.0/16"},
+					}}},
+				),
+			},
+			wantIPv4: []string{
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 10.0.0.0/8 -j ACCEPT",
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -d 10.1.0.0/16 -j RETURN",
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -d 10.0.0.0/8 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				"-d 10.1.0.0/16 -j DROP",
+			},
+		},
+		"per-rule chains for CIDR except": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{ToCIDR: []string{"10.0.0.0/8"}},
+					sandbox.EgressRule{ToCIDRSet: []sandbox.CIDRRule{{
+						CIDR:   "10.0.0.0/8",
+						Except: []string{"10.1.0.0/16"},
+					}}},
+				),
+			},
+			wantIPv4: []string{
+				"-N CIDR_4_0",
+				"-N CIDR_4_1",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 10.0.0.0/8 -j ACCEPT",
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -d 10.1.0.0/16 -j RETURN",
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -d 10.0.0.0/8 -j ACCEPT",
+				"-A OUTPUT -j CIDR_4_0",
+				"-A OUTPUT -j CIDR_4_1",
+			},
+			notWantIPv4: []string{
+				"-d 10.1.0.0/16 -j DROP",
+			},
+		},
+		"no except still uses per-rule chains": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{ToCIDR: []string{"10.0.0.0/8"}},
+					sandbox.EgressRule{ToCIDR: []string{"192.168.0.0/16"}},
+				),
+			},
+			wantIPv4: []string{
+				"-N CIDR_4_0",
+				"-N CIDR_4_1",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 10.0.0.0/8 -j ACCEPT",
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -d 192.168.0.0/16 -j ACCEPT",
+				"-A OUTPUT -j CIDR_4_0",
+				"-A OUTPUT -j CIDR_4_1",
+			},
+		},
+		"toCIDR and toCIDRSet in same rule share chain": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDR:    []string{"10.0.0.0/8"},
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "192.168.0.0/16", Except: []string{"192.168.1.0/24"}}},
+				}),
+			},
+			wantIPv4: []string{
+				"-N CIDR_4_0",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 192.168.1.0/24 -j RETURN",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 10.0.0.0/8 -j ACCEPT",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 192.168.0.0/16 -j ACCEPT",
+				"-A OUTPUT -j CIDR_4_0",
+			},
+			notWantIPv4: []string{
+				"-N CIDR_4_1",
+				"-d 192.168.1.0/24 -j DROP",
+			},
+		},
+		"different port cross-rule CIDR except": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToCIDR:  []string{"10.0.0.0/8"},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+					sandbox.EgressRule{
+						ToCIDRSet: []sandbox.CIDRRule{{
+							CIDR:   "10.0.0.0/8",
+							Except: []string{"10.1.0.0/16"},
+						}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "80"}}}},
+					},
+				),
+			},
+			wantIPv4: []string{
+				// Rule A: port 443 only, no excepts.
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 443 -d 10.0.0.0/8 -j ACCEPT",
+				// Rule B: port 80, except scoped to port 80.
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -p tcp --dport 80 -d 10.1.0.0/16 -j RETURN",
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -p tcp --dport 80 -d 10.0.0.0/8 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				// Except must NOT apply to port 443.
+				"-p tcp --dport 443 -d 10.1.0.0/16 -j RETURN",
+				"-d 10.1.0.0/16 -j DROP",
+			},
+		},
+		"port-scoped cross-rule CIDR except": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToCIDR:  []string{"10.0.0.0/8"},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+					sandbox.EgressRule{
+						ToCIDRSet: []sandbox.CIDRRule{{
+							CIDR:   "10.0.0.0/8",
+							Except: []string{"10.1.0.0/16"},
+						}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			wantIPv4: []string{
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -p tcp --dport 443 -d 10.1.0.0/16 -j RETURN",
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -p tcp --dport 443 -d 10.0.0.0/8 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				"-d 10.1.0.0/16 -j DROP",
+			},
 		},
 	}
 
@@ -584,14 +728,15 @@ func TestGenerateIptablesRulesFilterOrder(t *testing.T) {
 
 	ipv4, _ := sandbox.GenerateIptablesRules(cfg)
 
-	dropIdx := strings.Index(ipv4, "-d 10.0.0.0/8 -j DROP")
+	// Within the per-rule chain, except RETURN comes before CIDR ACCEPT.
+	returnIdx := strings.Index(ipv4, "-d 10.0.0.0/8 -j RETURN")
 	acceptIdx := strings.Index(ipv4, "-d 0.0.0.0/0 -j ACCEPT")
 	envoyIdx := strings.Index(ipv4, "--uid-owner 999 -j ACCEPT")
 
-	assert.Greater(t, acceptIdx, dropIdx,
-		"CIDR except DROP must come before CIDR ACCEPT")
+	assert.Greater(t, acceptIdx, returnIdx,
+		"CIDR except RETURN must come before CIDR ACCEPT in per-rule chain")
 	assert.Greater(t, envoyIdx, acceptIdx,
-		"Envoy ACCEPT must come after CIDR ACCEPT")
+		"Envoy ACCEPT must come after per-rule chain ACCEPT")
 }
 
 func TestGenerateIptablesRulesUnrestrictedOpenPorts(t *testing.T) {
@@ -671,8 +816,8 @@ func TestGenerateIptablesRulesUnrestrictedOpenPorts(t *testing.T) {
 			wantIPv4: []string{
 				// Portless CIDR RETURN (no -p/--dport).
 				"-A OUTPUT -m owner --uid-owner 1000 -d 8.8.8.0/24 -j RETURN",
-				// Portless CIDR ACCEPT.
-				"-A OUTPUT -m owner --uid-owner 1000 -d 8.8.8.0/24 -j ACCEPT",
+				// Portless CIDR ACCEPT in per-rule chain.
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 8.8.8.0/24 -j ACCEPT",
 			},
 			notWantIPv4: []string{
 				// Not unrestricted (has L3 selector), so no broad user ACCEPT.
