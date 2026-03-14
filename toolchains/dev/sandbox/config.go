@@ -63,11 +63,6 @@ var (
 	// exceeds 65535 or is less than the port.
 	ErrEndPortInvalid = errors.New("endPort must be >= port and <= 65535")
 
-	// ErrEndPortWithFQDN is returned when a [Port] with endPort is used in
-	// a rule containing toFQDNs. Port ranges only work with CIDR rules
-	// because Envoy needs individual listeners.
-	ErrEndPortWithFQDN = errors.New("endPort cannot be used with toFQDNs rules")
-
 	// ErrCIDRInvalid is returned when a CIDR string cannot be parsed.
 	ErrCIDRInvalid = errors.New("invalid CIDR")
 
@@ -865,7 +860,7 @@ func (c *SandboxConfig) Validate() error {
 			return fmt.Errorf("%w: rule %d", ErrCIDRAndCIDRSetMixed, i)
 		}
 
-		err = validatePorts(rule, i, hasFQDNs)
+		err = validatePorts(rule, i)
 		if err != nil {
 			return err
 		}
@@ -1058,7 +1053,7 @@ func validateFQDNConstraints(rule EgressRule, ruleIdx int, hasFQDNs bool) error 
 
 // validatePorts checks that each port entry has a valid port number,
 // protocol, and endPort configuration.
-func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
+func validatePorts(rule EgressRule, ruleIdx int) error {
 	for _, pr := range rule.ToPorts {
 		hasWildcardPort := false
 
@@ -1086,7 +1081,7 @@ func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 			}
 
 			if n > 0 {
-				err = validateEndPort(p, int(n), ruleIdx, hasFQDNs)
+				err = validateEndPort(p, int(n), ruleIdx)
 				if err != nil {
 					return err
 				}
@@ -1116,7 +1111,7 @@ func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 }
 
 // validateEndPort checks endPort constraints for a single port entry.
-func validateEndPort(p Port, portNum, ruleIdx int, hasFQDNs bool) error {
+func validateEndPort(p Port, portNum, ruleIdx int) error {
 	if p.EndPort == 0 {
 		return nil
 	}
@@ -1131,10 +1126,6 @@ func validateEndPort(p Port, portNum, ruleIdx int, hasFQDNs bool) error {
 
 	if p.EndPort < portNum {
 		return fmt.Errorf("%w: rule %d port %q endPort %d", ErrEndPortInvalid, ruleIdx, p.Port, p.EndPort)
-	}
-
-	if hasFQDNs {
-		return fmt.Errorf("%w: rule %d port %q", ErrEndPortWithFQDN, ruleIdx, p.Port)
 	}
 
 	return nil

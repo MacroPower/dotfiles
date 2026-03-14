@@ -842,14 +842,13 @@ func TestValidate(t *testing.T) {
 			},
 			err: sandbox.ErrEndPortInvalid,
 		},
-		"endPort with toFQDNs rejected": {
+		"endPort with toFQDNs valid": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000}}}},
 				}),
 			},
-			err: sandbox.ErrEndPortWithFQDN,
 		},
 		"invalid CIDR": {
 			cfg: &sandbox.SandboxConfig{
