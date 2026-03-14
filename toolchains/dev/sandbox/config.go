@@ -302,6 +302,7 @@ const (
 	protoTCP  = "tcp"
 	protoUDP  = "udp"
 	protoSCTP = "sctp"
+	protoAny  = "ANY"
 )
 
 // isSvcName reports whether s is a valid IANA service name per RFC
@@ -1631,7 +1632,7 @@ func portRuleHasTCPPort(pr PortRule, port int) bool {
 
 	for _, p := range pr.Ports {
 		proto := normalizeProtocol(p.Protocol)
-		if proto != "" && proto != protoTCP {
+		if proto != protoAny && proto != protoTCP {
 			continue // UDP, SCTP -- skip
 		}
 
@@ -1794,7 +1795,7 @@ func (c *SandboxConfig) ResolvePorts() []int {
 		for _, pr := range rules[ri].ToPorts {
 			for _, p := range pr.Ports {
 				proto := normalizeProtocol(p.Protocol)
-				if proto != "" && proto != protoTCP {
+				if proto != protoAny && proto != protoTCP {
 					continue
 				}
 
@@ -1900,7 +1901,7 @@ func (c *SandboxConfig) ResolveOpenPortRules() []ResolvedOpenPort {
 				n := int(resolved)
 				proto := normalizeProtocol(p.Protocol)
 				protos := []string{proto}
-				if proto == "" {
+				if proto == protoAny {
 					protos = []string{protoTCP, protoUDP}
 				}
 
@@ -2022,7 +2023,7 @@ func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []FQDNRulePorts {
 					continue
 				case protoUDP, protoSCTP:
 					protos = []string{proto}
-				case "":
+				case protoAny:
 					// ANY: expand to non-TCP protocols only.
 					// SCTP requires explicit opt-in (Cilium: sctp.enabled=true).
 					protos = []string{protoUDP}
@@ -2189,12 +2190,12 @@ func containsMidPositionDoubleStar(pattern string) bool {
 }
 
 // normalizeProtocol converts a config-level protocol string to the
-// lowercase form used in iptables rules. "TCP" maps to "tcp", "UDP"
-// to "udp", "SCTP" to "sctp", and empty or "ANY" to "" (any
-// protocol). Under Cilium default semantics, an omitted protocol
-// means TCP and UDP. SCTP requires explicit opt-in (Cilium Helm
-// value sctp.enabled=true); the sandbox matches this default by
-// expanding ANY to TCP+UDP only.
+// canonical form used internally. "TCP" maps to "tcp", "UDP" to
+// "udp", "SCTP" to "sctp", and empty or "ANY" to "ANY" (matching
+// Cilium's canonical [protoAny] representation). Under Cilium default
+// semantics, an omitted protocol means TCP and UDP. SCTP requires
+// explicit opt-in (Cilium Helm value sctp.enabled=true); the sandbox
+// matches this default by expanding ANY to TCP+UDP only.
 func normalizeProtocol(proto string) string {
 	switch proto {
 	case "TCP":
@@ -2204,9 +2205,9 @@ func normalizeProtocol(proto string) string {
 	case "SCTP":
 		return protoSCTP
 	case "", "ANY":
-		return ""
+		return protoAny
 	default:
-		return ""
+		return protoAny
 	}
 }
 
@@ -2290,7 +2291,7 @@ func resolvePortsFromRule(rule EgressRule) []ResolvedPortProto {
 			// so formatPortProto always has a concrete protocol
 			// for port-scoped rules. SCTP requires explicit opt-in.
 			protos := []string{proto}
-			if proto == "" {
+			if proto == protoAny {
 				protos = []string{protoTCP, protoUDP}
 			}
 

@@ -12,8 +12,8 @@ import (
 // only generated when explicitly specified (not from ANY expansion),
 // matching Cilium's default behavior where SCTP requires opt-in.
 func formatPortProto(pp ResolvedPortProto) string {
-	if pp.Protocol == "" {
-		panic("formatPortProto called with empty protocol; ANY must be expanded to tcp+udp before calling")
+	if pp.Protocol == "" || pp.Protocol == protoAny {
+		panic("formatPortProto called with empty/ANY protocol; ANY must be expanded to tcp+udp before calling")
 	}
 
 	dport := fmt.Sprintf("%d", pp.Port)
