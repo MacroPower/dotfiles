@@ -788,6 +788,9 @@ func normalizeEgressRule(c *SandboxConfig, i int) {
 		fqdn := &rule.ToFQDNs[j]
 		fqdn.MatchName = strings.TrimRight(strings.ToLower(fqdn.MatchName), ".")
 		fqdn.MatchPattern = strings.TrimRight(strings.ToLower(fqdn.MatchPattern), ".")
+		for strings.Contains(fqdn.MatchPattern, "***") {
+			fqdn.MatchPattern = strings.ReplaceAll(fqdn.MatchPattern, "***", "**")
+		}
 	}
 
 	for j := range rule.ToCIDR {
@@ -997,11 +1000,6 @@ func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
 		p := fqdn.MatchPattern
 		if p == "" {
 			continue
-		}
-
-		// Normalize runs of 3+ stars to ** (Cilium equivalence).
-		for strings.Contains(p, "***") {
-			p = strings.ReplaceAll(p, "***", "**")
 		}
 
 		switch {
@@ -1304,10 +1302,6 @@ func (c *SandboxConfig) ResolveRulesForPort(port int) []ResolvedRule {
 			domain := fqdn.MatchName
 			if domain == "" {
 				domain = fqdn.MatchPattern
-				// Normalize 3+ stars to ** (Cilium equivalence).
-				for strings.Contains(domain, "***") {
-					domain = strings.ReplaceAll(domain, "***", "**")
-				}
 				// Bare "**" is equivalent to "*" (match all FQDNs).
 				if domain == "**" {
 					domain = "*"
@@ -1923,6 +1917,12 @@ func patternToAnchoredRegex(pattern string, isMatchName bool) string {
 		escaped := strings.ReplaceAll(pattern, ".", "[.]")
 
 		return "^" + escaped + "[.]$"
+	}
+
+	// Collapse runs of 3+ stars to ** so that e.g. "***.example.com"
+	// is treated identically to "**.example.com" (Cilium equivalence).
+	for strings.Contains(pattern, "***") {
+		pattern = strings.ReplaceAll(pattern, "***", "**")
 	}
 
 	if isBareWildcard(pattern) {

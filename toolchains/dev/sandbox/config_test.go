@@ -3540,6 +3540,18 @@ func TestCompileFQDNPatterns(t *testing.T) {
 			wantIndices: []int{0},
 			match:       map[string]bool{"anything.com.": true, ".": true},
 		},
+		"triple-star suffix wildcard": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "***.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+				}),
+			},
+			want:        []string{"***.example.com"},
+			wantIndices: []int{0},
+			match:       map[string]bool{"sub.example.com.": true, "a.b.example.com.": true},
+			noMatch:     map[string]bool{"example.com.": true},
+		},
 		"mid-position double-star falls back to single-label": {
 			cfg: sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
