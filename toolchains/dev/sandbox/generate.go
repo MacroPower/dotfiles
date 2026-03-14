@@ -18,16 +18,17 @@ const CADir = "/etc/sandbox/ca"
 
 // Generate reads the sandbox YAML config at configPath, resolves domains
 // and ports, generates MITM certs for path-restricted rules, and writes
-// iptables and Envoy config files to /etc.
-func Generate(ctx context.Context, configPath string) error {
+// iptables and Envoy config files to /etc. The parsed [*SandboxConfig] is
+// returned so callers can reuse it without re-parsing.
+func Generate(ctx context.Context, configPath string) (*SandboxConfig, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return fmt.Errorf("reading config: %w", err)
+		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
 	cfg, err := ParseConfig(data)
 	if err != nil {
-		return fmt.Errorf("parsing config: %w", err)
+		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
 	// Collect domains that need MITM certs (restricted on any TLS port).
@@ -51,7 +52,7 @@ func Generate(ctx context.Context, configPath string) error {
 	if len(mitmRules) > 0 {
 		err := GenerateCerts(mitmRules, CADir, CertsDir)
 		if err != nil {
-			return fmt.Errorf("generating certs: %w", err)
+			return nil, fmt.Errorf("generating certs: %w", err)
 		}
 
 		certsDir = CertsDir
@@ -60,19 +61,19 @@ func Generate(ctx context.Context, configPath string) error {
 	caBundlePath := findCABundle()
 	envoyConf, err := GenerateEnvoyConfig(cfg, certsDir, caBundlePath)
 	if err != nil {
-		return fmt.Errorf("generating envoy config: %w", err)
+		return nil, fmt.Errorf("generating envoy config: %w", err)
 	}
 
 	ipv4Rules, ipv6Rules := GenerateIptablesRules(cfg)
 
 	err = validateIptablesRules(ctx, "iptables-restore", ipv4Rules)
 	if err != nil {
-		return fmt.Errorf("validating IPv4 rules: %w", err)
+		return nil, fmt.Errorf("validating IPv4 rules: %w", err)
 	}
 
 	err = validateIptablesRules(ctx, "ip6tables-restore", ipv6Rules)
 	if err != nil {
-		return fmt.Errorf("validating IPv6 rules: %w", err)
+		return nil, fmt.Errorf("validating IPv6 rules: %w", err)
 	}
 
 	files := map[string]string{
@@ -84,11 +85,11 @@ func Generate(ctx context.Context, configPath string) error {
 	for _, path := range slices.Sorted(maps.Keys(files)) {
 		err := os.WriteFile(path, []byte(files[path]), 0o644)
 		if err != nil {
-			return fmt.Errorf("writing %s: %w", path, err)
+			return nil, fmt.Errorf("writing %s: %w", path, err)
 		}
 	}
 
-	return nil
+	return cfg, nil
 }
 
 // GenerateEnvoyFromConfig resolves rules from a [SandboxConfig] and

@@ -107,12 +107,15 @@ func Init(ctx context.Context, args []string) error {
 
 	upstream := ParseUpstreamDNS(string(resolvData))
 
-	// Generate configs at runtime if not pre-baked.
+	// Generate configs at runtime if not pre-baked. The parsed config
+	// is returned so we can reuse it below without re-parsing (ISSUE-71).
+	var cfg *SandboxConfig
+
 	_, err = os.Stat("/etc/envoy-sandbox.yaml")
 	if os.IsNotExist(err) {
 		slog.InfoContext(ctx, "generating firewall configs")
 
-		err := Generate(ctx, ConfigPath)
+		cfg, err = Generate(ctx, ConfigPath)
 		if err != nil {
 			return fmt.Errorf("generating configs: %w", err)
 		}
@@ -137,15 +140,17 @@ func Init(ctx context.Context, args []string) error {
 		return fmt.Errorf("creating envoy user: %w", err)
 	}
 
-	// Read config to determine runtime mode.
-	cfgData, err := os.ReadFile(ConfigPath)
-	if err != nil {
-		return fmt.Errorf("reading sandbox config: %w", err)
-	}
+	// Parse config if Generate() was not called (pre-baked configs).
+	if cfg == nil {
+		cfgData, err := os.ReadFile(ConfigPath)
+		if err != nil {
+			return fmt.Errorf("reading sandbox config: %w", err)
+		}
 
-	cfg, err := ParseConfig(cfgData)
-	if err != nil {
-		return fmt.Errorf("parsing sandbox config: %w", err)
+		cfg, err = ParseConfig(cfgData)
+		if err != nil {
+			return fmt.Errorf("parsing sandbox config: %w", err)
+		}
 	}
 
 	needsEnvoy := len(cfg.ResolvePorts()) > 0 || len(cfg.TCPForwards) > 0
