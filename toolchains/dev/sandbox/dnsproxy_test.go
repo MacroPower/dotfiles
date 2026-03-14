@@ -696,37 +696,6 @@ func TestDNSProxyUnrestrictedMode(t *testing.T) {
 	require.Len(t, resp.Answer, 1)
 }
 
-func TestDNSProxyRulesOnlyMode(t *testing.T) {
-	t.Parallel()
-
-	_, upstream := startMockDNS(t, "10.0.0.5")
-
-	// Rules-only: EnableDefaultDeny.Egress = false, so all queries forward.
-	cfg := &sandbox.SandboxConfig{
-		EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(false)},
-		Egress: egressRules(sandbox.EgressRule{
-			ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
-			ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
-		}),
-	}
-
-	proxy, err := sandbox.StartDNSProxy(cfg, upstream, "127.0.0.1:0", true)
-	require.NoError(t, err)
-
-	t.Cleanup(func() { _ = proxy.Shutdown() })
-
-	// Non-matching domain should still be forwarded (rules-only mode).
-	client := &dns.Client{Net: "udp"}
-	msg := new(dns.Msg)
-	msg.SetQuestion("other.domain.com.", dns.TypeA)
-
-	resp, _, err := client.Exchange(msg, proxy.Addr)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	assert.Equal(t, dns.RcodeSuccess, resp.Rcode)
-	require.Len(t, resp.Answer, 1)
-}
-
 func TestDNSProxyTCPForwardHosts(t *testing.T) {
 	t.Parallel()
 

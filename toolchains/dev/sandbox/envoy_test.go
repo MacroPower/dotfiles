@@ -386,48 +386,6 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 			want:    []string{"tcp_forward_22", "github.com", "STRICT_DNS"},
 			notWant: []string{"tls_passthrough", "http_forward", "dynamic_forward_proxy_cluster"},
 		},
-		"rules-only mode gets catch-all passthrough": {
-			cfg: &sandbox.SandboxConfig{
-				EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(false)},
-				Egress: egressRules(sandbox.EgressRule{
-					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
-					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}}}},
-				}),
-			},
-			want: []string{
-				"tls_passthrough",
-				"http_forward",
-				"example.com",
-				"tls_passthrough_open",
-				"name: open",
-				`- "*"`,
-			},
-		},
-		"rules-only mode preserves L7 MITM chains": {
-			cfg: &sandbox.SandboxConfig{
-				EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(false)},
-				Egress: egressRules(sandbox.EgressRule{
-					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
-					ToPorts: []sandbox.PortRule{{
-						Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
-						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/", Method: "GET"}}},
-					}},
-				}),
-			},
-			certsDir: "/etc/sandbox/certs",
-			want: []string{
-				"tls_passthrough",
-				"http_forward",
-				"restricted_api.example.com",
-				"mitm_api.example.com",
-				"DownstreamTlsContext",
-				"/v1/",
-				"direct_response",
-				"403",
-				"tls_passthrough_open",
-				"name: open",
-			},
-		},
 		"empty rule with FQDN+L7 generates FQDN listeners": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(
 				sandbox.EgressRule{},

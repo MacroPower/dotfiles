@@ -394,35 +394,6 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -j ACCEPT",
 			},
 		},
-		"enableDefaultDeny with empty egress is unrestricted": {
-			cfg: &sandbox.SandboxConfig{
-				EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(true)},
-				Egress:            egressRules(),
-			},
-			wantIPv4: []string{
-				"-A OUTPUT -j ACCEPT",
-			},
-			notWantIPv4: []string{
-				"REDIRECT", "-A OUTPUT -j DROP",
-				"--uid-owner 999",
-			},
-		},
-		"rules without default-deny gets ACCEPT": {
-			cfg: &sandbox.SandboxConfig{
-				EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(false)},
-				Egress: egressRules(sandbox.EgressRule{
-					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
-					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
-				}),
-			},
-			wantIPv4: []string{
-				"REDIRECT",
-				"-A OUTPUT -j ACCEPT",
-			},
-			notWantIPv4: []string{
-				"-A OUTPUT -j DROP",
-			},
-		},
 		"empty egress is unrestricted": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(),

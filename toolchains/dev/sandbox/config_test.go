@@ -16,11 +16,6 @@ func egressRules(rules ...sandbox.EgressRule) *[]sandbox.EgressRule {
 	return &rules
 }
 
-// boolPtr is a test helper that returns a pointer to a bool.
-func boolPtr(b bool) *bool {
-	return &b
-}
-
 func TestParseConfig(t *testing.T) {
 	t.Parallel()
 
@@ -179,7 +174,6 @@ func TestParseConfigEgressSemantics(t *testing.T) {
 		yaml             string
 		wantUnrestricted bool
 		wantBlocked      bool
-		wantRulesOnly    bool
 	}{
 		"absent egress": {
 			yaml:             `logging: false`,
@@ -210,42 +204,6 @@ egress:
           - port: "443"
 `,
 		},
-		"enableDefaultDeny true with empty egress is unrestricted": {
-			yaml: `
-enableDefaultDeny:
-  egress: true
-egress: []
-`,
-			wantUnrestricted: true,
-		},
-		"enableDefaultDeny true with absent egress is unrestricted": {
-			yaml: `
-enableDefaultDeny:
-  egress: true
-`,
-			wantUnrestricted: true,
-		},
-		"enableDefaultDeny false with rules is rules-only": {
-			yaml: `
-enableDefaultDeny:
-  egress: false
-egress:
-  - toFQDNs:
-      - matchName: example.com
-    toPorts:
-      - ports:
-          - port: "443"
-`,
-			wantRulesOnly: true,
-		},
-		"enableDefaultDeny false with empty egress is unrestricted": {
-			yaml: `
-enableDefaultDeny:
-  egress: false
-egress: []
-`,
-			wantUnrestricted: true,
-		},
 	}
 
 	for name, tt := range tests {
@@ -256,57 +214,6 @@ egress: []
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantUnrestricted, cfg.IsEgressUnrestricted())
 			assert.Equal(t, tt.wantBlocked, cfg.IsEgressBlocked())
-			assert.Equal(t, tt.wantRulesOnly, cfg.IsEgressRulesOnly())
-		})
-	}
-}
-
-func TestIsEgressRulesOnly(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		cfg  *sandbox.SandboxConfig
-		want bool
-	}{
-		"nil egress": {
-			cfg: &sandbox.SandboxConfig{},
-		},
-		"empty egress": {
-			cfg: &sandbox.SandboxConfig{Egress: egressRules()},
-		},
-		"empty rule": {
-			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{})},
-		},
-		"rules with default-deny": {
-			cfg: &sandbox.SandboxConfig{
-				Egress: egressRules(sandbox.EgressRule{
-					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
-					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
-				}),
-			},
-		},
-		"rules without default-deny": {
-			cfg: &sandbox.SandboxConfig{
-				EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(false)},
-				Egress: egressRules(sandbox.EgressRule{
-					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
-					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
-				}),
-			},
-			want: true,
-		},
-		"empty egress without default-deny": {
-			cfg: &sandbox.SandboxConfig{
-				EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(false)},
-				Egress:            egressRules(),
-			},
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, tt.cfg.IsEgressRulesOnly())
 		})
 	}
 }
@@ -2453,13 +2360,13 @@ func TestIsDefaultDenyEnabled(t *testing.T) {
 		cfg  *sandbox.SandboxConfig
 		want bool
 	}{
-		"nil egress no explicit deny": {
+		"nil egress": {
 			cfg: &sandbox.SandboxConfig{},
 		},
-		"empty egress no explicit deny": {
+		"empty egress": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules()},
 		},
-		"rules present infers deny": {
+		"rules present": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
@@ -2467,26 +2374,6 @@ func TestIsDefaultDenyEnabled(t *testing.T) {
 				}),
 			},
 			want: true,
-		},
-		"explicit true with nil egress is false": {
-			cfg: &sandbox.SandboxConfig{
-				EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(true)},
-			},
-		},
-		"explicit true with empty egress is false": {
-			cfg: &sandbox.SandboxConfig{
-				EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(true)},
-				Egress:            egressRules(),
-			},
-		},
-		"explicit false overrides inference": {
-			cfg: &sandbox.SandboxConfig{
-				EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(false)},
-				Egress: egressRules(sandbox.EgressRule{
-					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
-					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
-				}),
-			},
 		},
 	}
 
@@ -3474,13 +3361,6 @@ func TestMarshalConfigRoundtrip(t *testing.T) {
 		},
 		"empty egress roundtrips as unrestricted": {
 			cfg:              &sandbox.SandboxConfig{Egress: egressRules()},
-			wantUnrestricted: true,
-		},
-		"explicit deny with empty egress roundtrips as unrestricted": {
-			cfg: &sandbox.SandboxConfig{
-				EnableDefaultDeny: sandbox.DefaultDenyConfig{Egress: boolPtr(true)},
-				Egress:            egressRules(),
-			},
 			wantUnrestricted: true,
 		},
 		"empty rule roundtrips as blocked": {

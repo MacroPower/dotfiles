@@ -73,7 +73,7 @@ func GenerateIptablesRules(cfg *SandboxConfig) (string, string) {
 		return generateBlockedIptables(cfg)
 	}
 
-	return generateRulesIptables(cfg, cfg.IsDefaultDenyEnabled())
+	return generateRulesIptables(cfg)
 }
 
 // writeBaseFilterRules emits the shared INPUT and OUTPUT base rules
@@ -207,10 +207,9 @@ func generateBlockedIptables(cfg *SandboxConfig) (string, string) {
 }
 
 // generateRulesIptables is the standard rules-mode generation with
-// Envoy REDIRECT and per-rule CIDR allows. When defaultDeny is true,
-// the final verdict is DROP; when false, it is ACCEPT (rules-only mode
-// where non-matching traffic passes through).
-func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string) {
+// Envoy REDIRECT and per-rule CIDR allows. The final verdict is
+// always DROP (default-deny).
+func generateRulesIptables(cfg *SandboxConfig) (string, string) {
 	resolvedPorts := cfg.ResolvePorts()
 	cidr4, cidr6 := cfg.ResolveCIDRRules()
 	openPortRules := cfg.ResolveOpenPortRules()
@@ -403,19 +402,11 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 			}
 		}
 
-		if defaultDeny {
-			if cfg.Logging {
-				b.WriteString("-A OUTPUT -j LOG --log-prefix \"SANDBOX_DROP: \"\n")
-			}
-
-			b.WriteString("-A OUTPUT -j DROP\n")
-		} else {
-			if cfg.Logging {
-				b.WriteString("-A OUTPUT -j LOG --log-prefix \"SANDBOX_ALLOW: \"\n")
-			}
-
-			b.WriteString("-A OUTPUT -j ACCEPT\n")
+		if cfg.Logging {
+			b.WriteString("-A OUTPUT -j LOG --log-prefix \"SANDBOX_DROP: \"\n")
 		}
+
+		b.WriteString("-A OUTPUT -j DROP\n")
 
 		b.WriteString("COMMIT\n")
 	}

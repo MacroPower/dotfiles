@@ -505,44 +505,25 @@ type TCPForward struct {
 	Port int `yaml:"port"`
 }
 
-// DefaultDenyConfig controls whether a rule triggers default-deny
-// behavior, matching Cilium's enableDefaultDeny semantics. This only
-// takes effect when the Egress field is present (non-nil); a nil
-// Egress field means no egress enforcement regardless of this setting.
-type DefaultDenyConfig struct {
-	// Egress controls default-deny for egress. Only consulted when
-	// [SandboxConfig.Egress] is non-nil. When nil, default-deny is
-	// inferred as true when egress rules are present.
-	Egress *bool `yaml:"egress,omitempty"`
-}
-
 // SandboxConfig is the top-level YAML configuration for the sandbox firewall.
 //
 // The Egress field uses CiliumNetworkPolicy semantics:
 //   - nil (absent from YAML): no egress enforcement (unrestricted)
 //   - empty slice (egress: []): no effect, equivalent to omitting the
-//     field (unrestricted); Cilium infers default-deny from rule
-//     presence, so an empty list never activates enforcement even with
-//     explicit EnableDefaultDeny.Egress
-//   - non-empty slice: rules apply; non-matching traffic is dropped when
-//     default-deny is active (inferred from rule presence), or accepted
-//     when EnableDefaultDeny.Egress is explicitly false (rules-only mode)
-//   - a slice containing an empty EgressRule{}: deny-all; default-deny
-//     is inferred from the non-empty list, and empty selectors match
-//     nothing. This matches Cilium's canonical deny-all pattern
-//     described in the "Ingress/Egress Default Deny" section of the
-//     policy language docs. An empty EgressRule{} has no L3 selectors
-//     (toEndpoints, toCIDR, toCIDRSet, toFQDNs) and no L4/L7
-//     selectors (toPorts), so it whitelists zero traffic. The
-//     allow-all pattern in Cilium is structurally different: it
+//     field (unrestricted); an empty list never activates enforcement
+//   - non-empty slice: rules apply; non-matching traffic is dropped
+//     (default-deny is always active when rules are present)
+//   - a slice containing an empty EgressRule{}: deny-all; empty
+//     selectors match nothing. This matches Cilium's canonical
+//     deny-all pattern described in the "Ingress/Egress Default Deny"
+//     section of the policy language docs. An empty EgressRule{} has
+//     no L3 selectors (toEndpoints, toCIDR, toCIDRSet, toFQDNs) and
+//     no L4/L7 selectors (toPorts), so it whitelists zero traffic.
+//     The allow-all pattern in Cilium is structurally different: it
 //     requires toEndpoints: [{}], where the empty EndpointSelector
 //     is the wildcard that matches all endpoints.
 //     See: https://docs.cilium.io/en/stable/security/policy/language/#ingress-egress-default-deny
 type SandboxConfig struct {
-	// EnableDefaultDeny controls whether default-deny is active.
-	// When Egress is nil, default-deny is inferred from whether
-	// egress rules are present.
-	EnableDefaultDeny DefaultDenyConfig `yaml:"enableDefaultDeny,omitempty"`
 	// Egress lists egress rules with FQDN, port, and CIDR selectors.
 	// A nil pointer means the field was absent from YAML (unrestricted).
 	// An empty slice is equivalent to nil; Cilium infers default-deny
@@ -565,48 +546,15 @@ func (c *SandboxConfig) EgressRules() []EgressRule {
 }
 
 // IsDefaultDenyEnabled reports whether default-deny is active for egress.
-// Returns false when Egress is nil or the egress list is empty.
-// Cilium infers enableDefaultDeny from rule presence, overwriting
-// user-provided values when the list is empty. When rules are present,
-// uses EnableDefaultDeny.Egress if set, otherwise infers true.
+// Returns true when egress rules are present (non-nil, non-empty list).
 func (c *SandboxConfig) IsDefaultDenyEnabled() bool {
-	if c.Egress == nil {
-		return false
-	}
-
-	// Cilium infers enableDefaultDeny from rule presence, overwriting
-	// any user-provided value when the egress list is empty. Match that:
-	// an empty list never activates default-deny.
-	if len(c.EgressRules()) == 0 {
-		return false
-	}
-
-	if c.EnableDefaultDeny.Egress != nil {
-		return *c.EnableDefaultDeny.Egress
-	}
-
-	return true
+	return c.Egress != nil && len(c.EgressRules()) > 0
 }
 
 // IsEgressUnrestricted reports whether egress is unrestricted,
 // meaning no egress filtering should be applied.
 func (c *SandboxConfig) IsEgressUnrestricted() bool {
-	if c.Egress == nil {
-		return true
-	}
-
-	return !c.IsDefaultDenyEnabled() && len(c.EgressRules()) == 0
-}
-
-// IsEgressRulesOnly reports whether egress is in rules-only mode:
-// rules are present but default-deny is disabled, so non-matching
-// traffic is accepted instead of dropped.
-func (c *SandboxConfig) IsEgressRulesOnly() bool {
-	if c.Egress == nil {
-		return false
-	}
-
-	return len(c.EgressRules()) > 0 && !c.IsDefaultDenyEnabled()
+	return c.Egress == nil || len(c.EgressRules()) == 0
 }
 
 // IsEgressBlocked reports whether all egress is blocked: default-deny

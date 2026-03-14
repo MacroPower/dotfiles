@@ -20,7 +20,7 @@ type dnsMode int
 
 const (
 	// dnsModeForwardAll forwards all queries to the upstream resolver.
-	// Used for unrestricted, rules-only, and bare wildcard configs.
+	// Used for unrestricted and bare wildcard configs.
 	dnsModeForwardAll dnsMode = iota
 
 	// dnsModeRefuseAll returns REFUSED for all queries without
@@ -209,7 +209,7 @@ type DNSProxy struct {
 // [::1] at the same port when ipv6Disabled is false). The proxy
 // determines its filtering mode from cfg:
 //
-//   - nil/unrestricted/rules-only/bare-wildcard: forward all queries
+//   - nil/unrestricted/bare-wildcard: forward all queries
 //   - blocked (egress: [{}]): return REFUSED for all queries
 //   - restricted with specific domains: forward allowed, refuse others
 //
@@ -233,7 +233,7 @@ func StartDNSProxy(cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled
 
 	// Determine filtering mode.
 	switch {
-	case cfg == nil || cfg.IsEgressUnrestricted() || cfg.IsEgressRulesOnly():
+	case cfg == nil || cfg.IsEgressUnrestricted():
 		p.mode = dnsModeForwardAll
 	case cfg.IsEgressBlocked():
 		p.mode = dnsModeRefuseAll

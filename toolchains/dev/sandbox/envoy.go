@@ -1069,7 +1069,6 @@ func buildClusters(rules []ResolvedRule, tcpForwards []TCPForward, caBundlePath 
 // catch-all passthrough chains.
 func GenerateEnvoyConfig(cfg *SandboxConfig, certsDir, caBundlePath string) (string, error) {
 	accessLog := BuildAccessLog(cfg.Logging)
-	catchAllOpen := !cfg.IsDefaultDenyEnabled()
 
 	resolvedPorts := cfg.ResolvePorts()
 
@@ -1103,7 +1102,7 @@ func GenerateEnvoyConfig(cfg *SandboxConfig, certsDir, caBundlePath string) (str
 				443,
 				"tls_passthrough",
 				rules443,
-				catchAllOpen || openPortSet[443],
+				openPortSet[443],
 				accessLog,
 				certsDir,
 			),
@@ -1117,7 +1116,7 @@ func GenerateEnvoyConfig(cfg *SandboxConfig, certsDir, caBundlePath string) (str
 			rules80 = stripL7Restrictions(rules80)
 		}
 
-		listeners = append(listeners, buildHTTPForwardListener(rules80, catchAllOpen || openPortSet[80], accessLog))
+		listeners = append(listeners, buildHTTPForwardListener(rules80, openPortSet[80], accessLog))
 	}
 
 	for _, fwd := range cfg.TCPForwards {
@@ -1138,7 +1137,7 @@ func GenerateEnvoyConfig(cfg *SandboxConfig, certsDir, caBundlePath string) (str
 			fmt.Sprintf("tls_passthrough_%d", p),
 			15000+p, p,
 			fmt.Sprintf("tls_passthrough_%d", p),
-			rulesP, catchAllOpen || openPortSet[p], accessLog, certsDir,
+			rulesP, openPortSet[p], accessLog, certsDir,
 		))
 	}
 
