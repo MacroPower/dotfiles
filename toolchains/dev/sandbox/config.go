@@ -2068,7 +2068,7 @@ func normalizeProtocol(proto string) string {
 	case "", "ANY":
 		return ""
 	default:
-		panic("normalizeProtocol: unrecognized protocol " + proto)
+		return ""
 	}
 }
 
