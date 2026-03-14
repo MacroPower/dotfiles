@@ -19,6 +19,21 @@ import (
 	_ "embed"
 )
 
+const maxFQDNLength = 255
+
+var (
+	// allowedMatchNameChars validates that a matchName contains only
+	// DNS-safe characters. Matches Cilium's allowedMatchNameChars
+	// (pkg/policy/api/fqdn.go) but uses only lowercase since
+	// normalizeEgressRule lowercases before validation.
+	allowedMatchNameChars = regexp.MustCompile(`^[-a-z0-9_.]+$`)
+
+	// allowedMatchPatternChars validates that a matchPattern contains
+	// only DNS-safe characters plus the wildcard '*'. Matches Cilium's
+	// allowedPatternChars (pkg/fqdn/matchpattern/matchpattern.go).
+	allowedMatchPatternChars = regexp.MustCompile(`^[-a-z0-9_.*]+$`)
+)
+
 var (
 	// ErrFQDNSelectorEmpty is returned when an [FQDNSelector] has neither
 	// matchName nor matchPattern set.
@@ -119,6 +134,25 @@ var (
 	ErrFQDNPatternPartialWildcard = errors.New(
 		"matchPattern with partial wildcard is not supported; only leading *. prefix is allowed",
 	)
+
+	// ErrFQDNNameInvalidChars is returned when a matchName contains
+	// characters outside the DNS allowlist [a-z0-9._-]. Matches
+	// Cilium's allowedMatchNameChars validation.
+	ErrFQDNNameInvalidChars = errors.New(
+		"matchName contains invalid characters: only a-z, 0-9, '.', '-', and '_' are allowed",
+	)
+
+	// ErrFQDNPatternInvalidChars is returned when a matchPattern
+	// contains characters outside the pattern allowlist [a-z0-9._*-].
+	// Matches Cilium's allowedPatternChars validation.
+	ErrFQDNPatternInvalidChars = errors.New(
+		"matchPattern contains invalid characters: only a-z, 0-9, '.', '-', '_', and '*' are allowed",
+	)
+
+	// ErrFQDNTooLong is returned when a matchName or matchPattern
+	// exceeds 255 characters. Matches Cilium's MaxFQDNLength constant
+	// and kubebuilder MaxLength validation.
+	ErrFQDNTooLong = errors.New("FQDN selector exceeds maximum length of 255 characters")
 
 	// ErrFQDNWithCIDR is returned when an [EgressRule] combines toFQDNs
 	// with toCIDR or toCIDRSet. Under CiliumNetworkPolicy semantics,
@@ -879,6 +913,30 @@ func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
 
 		if fqdn.MatchName != "" && fqdn.MatchPattern != "" {
 			return fmt.Errorf("%w: rule %d selector %d", ErrFQDNSelectorAmbiguous, ruleIdx, j)
+		}
+
+		// Character and length validation, matching Cilium's
+		// FQDNSelector.sanitize() and matchpattern.prevalidate().
+		if fqdn.MatchName != "" {
+			if len(fqdn.MatchName) > maxFQDNLength {
+				return fmt.Errorf("%w: rule %d selector %d name %q (%d chars)",
+					ErrFQDNTooLong, ruleIdx, j, fqdn.MatchName, len(fqdn.MatchName))
+			}
+			if !allowedMatchNameChars.MatchString(fqdn.MatchName) {
+				return fmt.Errorf("%w: rule %d selector %d name %q",
+					ErrFQDNNameInvalidChars, ruleIdx, j, fqdn.MatchName)
+			}
+		}
+
+		if fqdn.MatchPattern != "" {
+			if len(fqdn.MatchPattern) > maxFQDNLength {
+				return fmt.Errorf("%w: rule %d selector %d pattern %q (%d chars)",
+					ErrFQDNTooLong, ruleIdx, j, fqdn.MatchPattern, len(fqdn.MatchPattern))
+			}
+			if !allowedMatchPatternChars.MatchString(fqdn.MatchPattern) {
+				return fmt.Errorf("%w: rule %d selector %d pattern %q",
+					ErrFQDNPatternInvalidChars, ruleIdx, j, fqdn.MatchPattern)
+			}
 		}
 
 		p := fqdn.MatchPattern

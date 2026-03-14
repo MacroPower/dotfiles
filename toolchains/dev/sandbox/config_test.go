@@ -1121,6 +1121,137 @@ func TestValidate(t *testing.T) {
 				}),
 			},
 		},
+		"matchName with spaces rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example .com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNNameInvalidChars,
+		},
+		"matchName with colon rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example:8080.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNNameInvalidChars,
+		},
+		"matchName with slash rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com/path"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNNameInvalidChars,
+		},
+		"matchName with semicolon rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example;.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNNameInvalidChars,
+		},
+		"matchPattern with spaces rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example .com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNPatternInvalidChars,
+		},
+		"matchPattern with semicolon rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example;.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNPatternInvalidChars,
+		},
+		"matchPattern with colon rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example:8080.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNPatternInvalidChars,
+		},
+		"matchPattern with slash rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example.com/path"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNPatternInvalidChars,
+		},
+		"matchName exceeding 255 chars rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: strings.Repeat("a", 256)}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNTooLong,
+		},
+		"matchPattern exceeding 255 chars rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*." + strings.Repeat("a", 254)}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNTooLong,
+		},
+		"matchName at exactly 255 chars valid": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: strings.Repeat("a", 255)}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+		},
+		"matchName with underscore valid": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "_dmarc.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+		},
+		"matchName with hyphen valid": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "my-service.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+		},
+		"punycode IDN matchName valid": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "xn--n3h.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+		},
+		"raw unicode matchName rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "\u2603.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			err: sandbox.ErrFQDNNameInvalidChars,
+		},
 	}
 
 	for name, tt := range tests {
