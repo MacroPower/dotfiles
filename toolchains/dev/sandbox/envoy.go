@@ -133,14 +133,19 @@ type envoyAccessLog struct {
 }
 
 type envoyHTTPConnManagerConfig struct {
-	AtType                       string           `yaml:"@type"`
-	StatPrefix                   string           `yaml:"stat_prefix"`
-	NormalizePath                *bool            `yaml:"normalize_path,omitempty"`
-	MergeSlashes                 bool             `yaml:"merge_slashes,omitempty"`
-	PathWithEscapedSlashesAction string           `yaml:"path_with_escaped_slashes_action,omitempty"`
-	RouteConfig                  envoyRouteConfig `yaml:"route_config"`
-	AccessLog                    []envoyAccessLog `yaml:"access_log,omitempty"`
-	HTTPFilters                  []envoyFilter    `yaml:"http_filters"`
+	AtType                       string               `yaml:"@type"`
+	StatPrefix                   string               `yaml:"stat_prefix"`
+	NormalizePath                *bool                `yaml:"normalize_path,omitempty"`
+	MergeSlashes                 bool                 `yaml:"merge_slashes,omitempty"`
+	PathWithEscapedSlashesAction string               `yaml:"path_with_escaped_slashes_action,omitempty"`
+	RouteConfig                  envoyRouteConfig     `yaml:"route_config"`
+	AccessLog                    []envoyAccessLog     `yaml:"access_log,omitempty"`
+	HTTPFilters                  []envoyFilter        `yaml:"http_filters"`
+	UpgradeConfigs               []envoyUpgradeConfig `yaml:"upgrade_configs,omitempty"`
+}
+
+type envoyUpgradeConfig struct {
+	UpgradeType string `yaml:"upgrade_type"`
 }
 
 type envoyRouteConfig struct {
@@ -247,7 +252,7 @@ type envoyHTTPDFPFilterConfig struct {
 }
 
 type envoyCluster struct {
-	ClusterType                   *envoyClusterType    `yaml:"cluster_type,omitempty"`
+	ClusterType                   *envoyClusterType     `yaml:"cluster_type,omitempty"`
 	TransportSocket               *envoyTransportSocket `yaml:"transport_socket,omitempty"`
 	LoadAssignment                *envoyLoadAssignment  `yaml:"load_assignment,omitempty"`
 	TypedExtensionProtocolOptions map[string]any        `yaml:"typed_extension_protocol_options,omitempty"`
@@ -576,7 +581,8 @@ func buildMITMFilterChain(rule ResolvedRule, accessLog []envoyAccessLog, certsDi
 				RouteConfig: envoyRouteConfig{
 					VirtualHosts: vhosts,
 				},
-				AccessLog: accessLog,
+				AccessLog:      accessLog,
+				UpgradeConfigs: []envoyUpgradeConfig{{UpgradeType: "websocket"}},
 				HTTPFilters: []envoyFilter{
 					{
 						Name: "envoy.filters.http.dynamic_forward_proxy",
@@ -849,8 +855,9 @@ func buildHTTPForwardListener(rules []ResolvedRule, open bool, accessLog []envoy
 					RouteConfig: envoyRouteConfig{
 						VirtualHosts: vhosts,
 					},
-					AccessLog:   accessLog,
-					HTTPFilters: httpFilters,
+					AccessLog:      accessLog,
+					UpgradeConfigs: []envoyUpgradeConfig{{UpgradeType: "websocket"}},
+					HTTPFilters:    httpFilters,
 				},
 			}},
 		}},
