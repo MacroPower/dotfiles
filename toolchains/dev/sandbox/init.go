@@ -148,6 +148,8 @@ func Init(ctx context.Context, args []string) error {
 
 	// Create per-rule ipsets before iptables-restore, since iptables
 	// rules reference ipset names in -m set --match-set directives.
+	var createdIPSets []string
+
 	for _, frp := range cfg.ResolveFQDNNonTCPPorts() {
 		for _, ipv6 := range []bool{false, true} {
 			name := FQDNIPSetName(frp.RuleIndex, ipv6)
@@ -164,8 +166,31 @@ func Init(ctx context.Context, args []string) error {
 			if err != nil {
 				return fmt.Errorf("creating ipset %s: %w", name, err)
 			}
+
+			createdIPSets = append(createdIPSets, name)
 		}
 	}
+
+	// Destroy ipsets on error return so a restart does not fail on
+	// pre-existing sets (ISSUE-67).
+	var ipsetCleanedUp bool
+
+	defer func() {
+		if ipsetCleanedUp {
+			return
+		}
+
+		for _, name := range createdIPSets {
+			//nolint:gosec // G204: name is from validated FQDNIPSetName output.
+			destroyErr := exec.CommandContext(ctx, "ipset", "destroy", name).Run()
+			if destroyErr != nil {
+				slog.DebugContext(ctx, "destroying ipset on init failure",
+					slog.String("name", name),
+					slog.Any("err", destroyErr),
+				)
+			}
+		}
+	}()
 
 	// Load iptables redirect rules and validate.
 	err = runCmd(ctx, "iptables-restore", "/etc/iptables-sandbox.rules")
@@ -209,6 +234,21 @@ func Init(ctx context.Context, args []string) error {
 		return fmt.Errorf("starting DNS proxy: %w", err)
 	}
 
+	// Shut down DNS proxy on error return so goroutines and listeners
+	// do not leak (ISSUE-43).
+	var dnsProxyCleanedUp bool
+
+	defer func() {
+		if dnsProxyCleanedUp {
+			return
+		}
+
+		shutdownErr := dnsProxy.Shutdown()
+		if shutdownErr != nil {
+			slog.DebugContext(ctx, "shutting down DNS proxy on init failure", slog.Any("err", shutdownErr))
+		}
+	}()
+
 	// Point system DNS to local resolver.
 	umountErr := exec.CommandContext(ctx, "umount", "/etc/resolv.conf").Run()
 	if umountErr != nil {
@@ -248,6 +288,11 @@ func Init(ctx context.Context, args []string) error {
 			return fmt.Errorf("%w: %w", ErrEnvoyNotRunning, err)
 		}
 	}
+
+	// Init setup succeeded; disable error-path cleanup defers.
+	// From this point, cleanup is handled by the shutdown path below.
+	ipsetCleanedUp = true
+	dnsProxyCleanedUp = true
 
 	// Prepare privilege drop.
 	chownErr := os.Chown("/commandhistory", mustAtoi(UID), mustAtoi(GID))
