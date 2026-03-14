@@ -1,10 +1,13 @@
 package sandbox
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"slices"
+	"strings"
 )
 
 // CertsDir is the directory where MITM leaf certificates are stored.
@@ -16,7 +19,7 @@ const CADir = "/etc/sandbox/ca"
 // Generate reads the sandbox YAML config at configPath, resolves domains
 // and ports, generates MITM certs for path-restricted rules, and writes
 // iptables and Envoy config files to /etc.
-func Generate(configPath string) error {
+func Generate(ctx context.Context, configPath string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("reading config: %w", err)
@@ -62,6 +65,16 @@ func Generate(configPath string) error {
 
 	ipv4Rules, ipv6Rules := GenerateIptablesRules(cfg)
 
+	err = validateIptablesRules(ctx, "iptables-restore", ipv4Rules)
+	if err != nil {
+		return fmt.Errorf("validating IPv4 rules: %w", err)
+	}
+
+	err = validateIptablesRules(ctx, "ip6tables-restore", ipv6Rules)
+	if err != nil {
+		return fmt.Errorf("validating IPv6 rules: %w", err)
+	}
+
 	files := map[string]string{
 		"/etc/envoy-sandbox.yaml":      envoyConf,
 		"/etc/iptables-sandbox.rules":  ipv4Rules,
@@ -84,6 +97,22 @@ func Generate(configPath string) error {
 // unexported [ResolvedRule] values directly.
 func GenerateEnvoyFromConfig(cfg *SandboxConfig, certsDir, caBundlePath string) (string, error) {
 	return GenerateEnvoyConfig(cfg, certsDir, caBundlePath)
+}
+
+// validateIptablesRules runs iptables-restore --test to validate rule
+// syntax without applying. If validation fails, the error includes the
+// invalid rules for debugging.
+func validateIptablesRules(ctx context.Context, restoreCmd, rules string) error {
+	//nolint:gosec // G204: restoreCmd is a hardcoded binary name from Generate.
+	cmd := exec.CommandContext(ctx, restoreCmd, "--test")
+	cmd.Stdin = strings.NewReader(rules)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s --test: %w\noutput: %s\nrules:\n%s", restoreCmd, err, out, rules)
+	}
+
+	return nil
 }
 
 // findCABundle returns the path to the system CA certificate bundle.

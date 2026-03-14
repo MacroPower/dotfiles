@@ -50,7 +50,7 @@ func main() {
 			Short: "Generate iptables/envoy configs from YAML",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return sandbox.Generate(sandbox.ConfigPath)
+				return sandbox.Generate(cmd.Context(), sandbox.ConfigPath)
 			},
 		},
 		&cobra.Command{

@@ -112,7 +112,7 @@ func Init(ctx context.Context, args []string) error {
 	if os.IsNotExist(err) {
 		slog.InfoContext(ctx, "generating firewall configs")
 
-		err := Generate(ConfigPath)
+		err := Generate(ctx, ConfigPath)
 		if err != nil {
 			return fmt.Errorf("generating configs: %w", err)
 		}

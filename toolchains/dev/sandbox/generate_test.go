@@ -61,7 +61,7 @@ func TestGenerate(t *testing.T) {
 
 			path := tt.setup(t)
 
-			err := sandbox.Generate(path)
+			err := sandbox.Generate(t.Context(), path)
 			require.Error(t, err)
 			require.ErrorContains(t, err, tt.wantMsg)
 
