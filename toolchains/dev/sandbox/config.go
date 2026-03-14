@@ -274,6 +274,12 @@ var (
 	// exist in the sandbox.
 	ErrUnsupportedSelector = errors.New("unsupported egress selector")
 
+	// ErrUnsupportedFeature is returned when a type contains a
+	// Cilium feature field that the sandbox does not implement.
+	// The field is parsed from YAML to produce a clear error instead
+	// of an opaque "unknown field" parse failure.
+	ErrUnsupportedFeature = errors.New("unsupported feature")
+
 	// validProtocols lists the supported transport protocols. Cilium
 	// also supports ICMP, ICMPv6, VRRP, and IGMP, but these are
 	// IP-layer protocols without ports and cannot be expressed in the
@@ -486,8 +492,14 @@ type EgressRule struct {
 
 // CIDRRule specifies an IP range to allow, with optional exceptions.
 type CIDRRule struct {
+	// CIDRGroupSelector is a Cilium field for label-based CIDR group
+	// selection. The sandbox has no CRD-based CIDR group resolution.
+	CIDRGroupSelector any `yaml:"cidrGroupSelector,omitempty"`
 	// CIDR is the IP range in CIDR notation (e.g. "10.0.0.0/8").
 	CIDR string `yaml:"cidr"`
+	// CIDRGroupRef is a Cilium field referencing a CiliumCIDRGroup.
+	// The sandbox has no CRD-based CIDR group resolution.
+	CIDRGroupRef string `yaml:"cidrGroupRef,omitempty"`
 	// Except lists sub-ranges of CIDR to exclude.
 	Except []string `yaml:"except,omitempty"`
 }
@@ -503,10 +515,28 @@ type FQDNSelector struct {
 
 // PortRule restricts traffic to specific ports with optional L7 rules.
 type PortRule struct {
+	// Unsupported Cilium fields. These exist so the YAML decoder
+	// captures them instead of producing opaque parse errors.
+	// [Validate] rejects any rule where these are populated.
+	// See Cilium's PortRule in pkg/policy/api/rule.go.
+
+	// TerminatingTLS is a Cilium field for TLS termination context.
+	// The sandbox does not support TLS policy contexts.
+	TerminatingTLS any `yaml:"terminatingTLS,omitempty"`
+	// OriginatingTLS is a Cilium field for TLS origination context.
+	// The sandbox does not support TLS policy contexts.
+	OriginatingTLS any `yaml:"originatingTLS,omitempty"`
+	// Listener is a Cilium field for Envoy listener references.
+	// The sandbox manages its own Envoy config and does not support
+	// user-specified listeners.
+	Listener any `yaml:"listener,omitempty"`
 	// Rules specifies optional L7 inspection rules.
 	Rules *L7Rules `yaml:"rules,omitempty"`
 	// Ports lists allowed destination ports.
 	Ports []Port `yaml:"ports,omitempty"`
+	// ServerNames is a Cilium field for SNI-based filtering on ports.
+	// The sandbox handles SNI via Envoy filter chains, not port rules.
+	ServerNames []any `yaml:"serverNames,omitempty"`
 }
 
 // Port specifies a destination port number with optional protocol and range.
@@ -529,6 +559,22 @@ type Port struct {
 type L7Rules struct {
 	// HTTP specifies HTTP-level rules for MITM inspection.
 	HTTP []HTTPRule `yaml:"http,omitempty"`
+
+	// Unsupported Cilium L7 protocol fields. See Cilium's L7Rules
+	// in pkg/policy/api/l7.go.
+
+	// Kafka is a Cilium field for Kafka protocol rules (deprecated).
+	// The sandbox only supports HTTP L7 inspection.
+	Kafka []any `yaml:"kafka,omitempty"`
+	// DNS is a Cilium field for DNS protocol rules.
+	// The sandbox handles DNS via its own DNS proxy, not L7 rules.
+	DNS []any `yaml:"dns,omitempty"`
+	// L7Proto is a Cilium field specifying a custom L7 protocol parser.
+	// The sandbox does not support custom L7 protocol parsers.
+	L7Proto string `yaml:"l7proto,omitempty"`
+	// L7 is a Cilium field for generic key-value L7 rules.
+	// The sandbox does not support custom L7 protocol rules.
+	L7 []any `yaml:"l7,omitempty"`
 }
 
 // HTTPRule specifies an allowed HTTP method, path, host, and/or
@@ -1052,6 +1098,84 @@ func validateUnsupportedSelectors(rule EgressRule, ruleIdx int) error {
 	return nil
 }
 
+// validateUnsupportedPortRuleFeatures checks for Cilium-only fields on
+// a [PortRule] that the sandbox does not implement.
+func validateUnsupportedPortRuleFeatures(pr PortRule, ruleIdx int) error {
+	type field struct {
+		name string
+		set  bool
+	}
+
+	fields := []field{
+		{"terminatingTLS", pr.TerminatingTLS != nil},
+		{"originatingTLS", pr.OriginatingTLS != nil},
+		{"serverNames", len(pr.ServerNames) > 0},
+		{"listener", pr.Listener != nil},
+	}
+
+	for _, f := range fields {
+		if f.set {
+			return fmt.Errorf(
+				"%w: rule %d toPorts has %s, which is not supported by the sandbox",
+				ErrUnsupportedFeature, ruleIdx, f.name,
+			)
+		}
+	}
+
+	return nil
+}
+
+// validateUnsupportedL7Features checks for Cilium-only L7 protocol
+// fields on [L7Rules] that the sandbox does not implement.
+func validateUnsupportedL7Features(rules *L7Rules, ruleIdx int) error {
+	if rules == nil {
+		return nil
+	}
+
+	type field struct {
+		name string
+		set  bool
+	}
+
+	fields := []field{
+		{"kafka", len(rules.Kafka) > 0},
+		{"dns", len(rules.DNS) > 0},
+		{"l7proto", rules.L7Proto != ""},
+		{"l7", len(rules.L7) > 0},
+	}
+
+	for _, f := range fields {
+		if f.set {
+			return fmt.Errorf(
+				"%w: rule %d toPorts rules has %s, which is not supported by the sandbox",
+				ErrUnsupportedFeature, ruleIdx, f.name,
+			)
+		}
+	}
+
+	return nil
+}
+
+// validateUnsupportedCIDRRuleFeatures checks for Cilium-only fields on
+// a [CIDRRule] that the sandbox does not implement.
+func validateUnsupportedCIDRRuleFeatures(cr CIDRRule, ruleIdx int) error {
+	if cr.CIDRGroupRef != "" {
+		return fmt.Errorf(
+			"%w: rule %d toCIDRSet has cidrGroupRef, which is not supported by the sandbox",
+			ErrUnsupportedFeature, ruleIdx,
+		)
+	}
+
+	if cr.CIDRGroupSelector != nil {
+		return fmt.Errorf(
+			"%w: rule %d toCIDRSet has cidrGroupSelector, which is not supported by the sandbox",
+			ErrUnsupportedFeature, ruleIdx,
+		)
+	}
+
+	return nil
+}
+
 // Cilium treats 2+ stars identically ([*]{2,} in its regex), so runs
 // of 3+ stars are normalized to ** before validation.
 func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
@@ -1168,6 +1292,16 @@ func validateFQDNConstraints(rule EgressRule, ruleIdx int, hasFQDNs bool) error 
 // protocol, and endPort configuration.
 func validatePorts(rule EgressRule, ruleIdx int) error {
 	for _, pr := range rule.ToPorts {
+		err := validateUnsupportedPortRuleFeatures(pr, ruleIdx)
+		if err != nil {
+			return err
+		}
+
+		err = validateUnsupportedL7Features(pr.Rules, ruleIdx)
+		if err != nil {
+			return err
+		}
+
 		if len(pr.Ports) > maxPorts {
 			return fmt.Errorf("%w: rule %d has %d ports",
 				ErrPortsTooMany, ruleIdx, len(pr.Ports))
@@ -1199,7 +1333,7 @@ func validatePorts(rule EgressRule, ruleIdx int) error {
 			}
 		}
 
-		err := validateHTTPRules(pr, ruleIdx)
+		err = validateHTTPRules(pr, ruleIdx)
 		if err != nil {
 			return err
 		}
@@ -1360,6 +1494,11 @@ func validateL7Rules(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 // except entries are subnets of the parent CIDR.
 func validateCIDRSets(rule EgressRule, ruleIdx int) error {
 	for _, cidr := range rule.ToCIDRSet {
+		err := validateUnsupportedCIDRRuleFeatures(cidr, ruleIdx)
+		if err != nil {
+			return err
+		}
+
 		_, parentNet, err := net.ParseCIDR(cidr.CIDR)
 		if err != nil {
 			return fmt.Errorf("%w: rule %d cidr %q", ErrCIDRInvalid, ruleIdx, cidr.CIDR)

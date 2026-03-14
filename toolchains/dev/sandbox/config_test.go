@@ -3585,6 +3585,212 @@ egress:
 	})
 }
 
+func TestUnsupportedFeatures(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		yaml string
+		err  error
+	}{
+		"terminatingTLS rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "443"
+        terminatingTLS:
+          secret:
+            name: my-secret
+`,
+			err: sandbox.ErrUnsupportedFeature,
+		},
+		"originatingTLS rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "443"
+        originatingTLS:
+          secret:
+            name: my-secret
+`,
+			err: sandbox.ErrUnsupportedFeature,
+		},
+		"serverNames rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "443"
+        serverNames:
+          - example.com
+`,
+			err: sandbox.ErrUnsupportedFeature,
+		},
+		"listener rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "443"
+        listener:
+          envoyConfig:
+            name: my-listener
+`,
+			err: sandbox.ErrUnsupportedFeature,
+		},
+		"cidrGroupRef rejected": {
+			yaml: `
+egress:
+  - toCIDRSet:
+      - cidr: 10.0.0.0/8
+        cidrGroupRef: my-cidr-group
+`,
+			err: sandbox.ErrUnsupportedFeature,
+		},
+		"cidrGroupSelector rejected": {
+			yaml: `
+egress:
+  - toCIDRSet:
+      - cidr: 10.0.0.0/8
+        cidrGroupSelector:
+          matchLabels:
+            env: prod
+`,
+			err: sandbox.ErrUnsupportedFeature,
+		},
+		"kafka L7 rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: kafka.example.com
+    toPorts:
+      - ports:
+          - port: "9092"
+        rules:
+          kafka:
+            - topic: my-topic
+`,
+			err: sandbox.ErrUnsupportedFeature,
+		},
+		"dns L7 rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: dns.example.com
+    toPorts:
+      - ports:
+          - port: "53"
+        rules:
+          dns:
+            - matchPattern: "*.example.com"
+`,
+			err: sandbox.ErrUnsupportedFeature,
+		},
+		"l7proto rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "443"
+        rules:
+          l7proto: envoy.filters.network.my_filter
+`,
+			err: sandbox.ErrUnsupportedFeature,
+		},
+		"l7 generic rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "443"
+        rules:
+          l7:
+            - action: allow
+`,
+			err: sandbox.ErrUnsupportedFeature,
+		},
+		"empty serverNames not rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "443"
+        serverNames: []
+`,
+		},
+		"null terminatingTLS not rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "443"
+        terminatingTLS: null
+`,
+		},
+		"empty kafka not rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "443"
+        rules:
+          kafka: []
+`,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := sandbox.ParseConfig([]byte(tt.yaml))
+			if tt.err != nil {
+				require.ErrorIs(t, err, tt.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+
+	// Verify the error message format includes field name and rule index.
+	t.Run("error format includes context", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := sandbox.ParseConfig([]byte(`
+egress:
+  - toCIDR:
+      - 10.0.0.0/8
+  - toCIDRSet:
+      - cidr: 10.0.0.0/8
+        cidrGroupRef: my-group
+`))
+		require.ErrorIs(t, err, sandbox.ErrUnsupportedFeature)
+		require.ErrorContains(t, err, "rule 1")
+		require.ErrorContains(t, err, "cidrGroupRef")
+	})
+}
+
 func TestMarshalConfigRoundtrip(t *testing.T) {
 	t.Parallel()
 
