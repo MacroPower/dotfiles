@@ -195,18 +195,35 @@ func collectTCPForwardHosts(cfg *SandboxConfig, result []DNSDomain, seen map[str
 // replacing the previous dnsmasq + RefuseDNS two-hop chain with a
 // single process.
 type DNSProxy struct {
-	ctx      context.Context
-	udp4     *dns.Server
-	udp6     *dns.Server
-	tcp4     *dns.Server
-	tcp6     *dns.Server
-	cancel   context.CancelFunc
-	upstream string
-	Addr     string
-	domains  []DNSDomain
-	patterns []FQDNPattern
-	mode     dnsMode
-	logging  bool
+	ctx       context.Context
+	cancel    context.CancelFunc
+	ipsetFunc func(ctx context.Context, commands string) error
+	udp4      *dns.Server
+	udp6      *dns.Server
+	tcp4      *dns.Server
+	tcp6      *dns.Server
+	upstream  string
+	Addr      string
+	domains   []DNSDomain
+	patterns  []FQDNPattern
+	mode      dnsMode
+	logging   bool
+}
+
+// DNSProxyOption configures optional behavior of a [DNSProxy].
+//
+// The following options are available:
+//
+//   - [WithIPSetFunc]
+type DNSProxyOption func(*DNSProxy)
+
+// WithIPSetFunc replaces the default ipset restore command with fn.
+// Intended for testing ipset population without requiring root
+// privileges or the ipset binary. A [DNSProxyOption].
+func WithIPSetFunc(fn func(ctx context.Context, commands string) error) DNSProxyOption {
+	return func(p *DNSProxy) {
+		p.ipsetFunc = fn
+	}
 }
 
 // StartDNSProxy starts the DNS proxy on listenAddr (and optionally
@@ -217,17 +234,16 @@ type DNSProxy struct {
 //   - blocked (egress: [{}]): return REFUSED for all queries
 //   - restricted with specific domains: forward allowed, refuse others
 //
-// When cfg has FQDN rules with non-TCP ports, UDP responses matching
-// the compiled patterns populate ipsets with TTL-aware timeouts.
-// TCP queries are proxied without ipset filtering (TCP DNS fallback
-// is rare; the preceding UDP query already populated the ipset).
-// Blocks until ready.
+// When cfg has FQDN rules with non-TCP ports, both UDP and TCP
+// responses matching the compiled patterns populate ipsets with
+// TTL-aware timeouts. Blocks until ready.
 //
 // IPv6 listener: if ipv6Disabled is true, only IPv4 listeners are
 // created. If ipv6Disabled is false and binding [::1] fails, startup
 // returns an error (IPv6 bypass risk).
 func StartDNSProxy(
 	ctx context.Context, cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled bool,
+	opts ...DNSProxyOption,
 ) (*DNSProxy, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -262,6 +278,10 @@ func StartDNSProxy(
 
 	if cfg != nil {
 		p.logging = cfg.Logging
+	}
+
+	for _, opt := range opts {
+		opt(p)
 	}
 
 	// Collect servers and listeners for cleanup on error.
@@ -409,16 +429,16 @@ func (p *DNSProxy) handleUDPQuery(w dns.ResponseWriter, r *dns.Msg) {
 	p.handleQuery(w, r, "udp")
 }
 
-// handleTCPQuery handles TCP DNS queries with mode-aware filtering.
-// ipset population is skipped for TCP (the preceding UDP query
-// already populated the ipset).
+// handleTCPQuery handles TCP DNS queries with mode-aware filtering
+// and ipset population for matching responses.
 func (p *DNSProxy) handleTCPQuery(w dns.ResponseWriter, r *dns.Msg) {
 	p.handleQuery(w, r, "tcp")
 }
 
 // handleQuery is the unified query handler for both UDP and TCP.
 // It applies mode-based filtering, forwards allowed queries to
-// upstream, populates ipsets (UDP only), and logs when enabled.
+// upstream, populates ipsets for matching responses, and logs when
+// enabled.
 func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 	if len(r.Question) == 0 {
 		fail := new(dns.Msg)
@@ -491,8 +511,10 @@ func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 		return
 	}
 
-	// ipset population (UDP only, when patterns exist).
-	if proto == "udp" && resp.Rcode == dns.RcodeSuccess {
+	// Populate ipsets for both UDP and TCP responses. TCP DNS
+	// responses (e.g., from truncated UDP retries) contain IPs that
+	// must be added to the firewall allow list.
+	if resp.Rcode == dns.RcodeSuccess {
 		if indices := matchingFQDNRuleIndices(p.patterns, qname); len(indices) > 0 {
 			p.populateIPSets(qname, resp, indices)
 		}
@@ -569,12 +591,26 @@ func (p *DNSProxy) populateIPSets(qname string, resp *dns.Msg, ruleIndices []int
 		return
 	}
 
+	cmds := commands.String()
+
+	if p.ipsetFunc != nil {
+		err := p.ipsetFunc(p.ctx, cmds)
+		if err != nil {
+			slog.Debug("ipset update",
+				slog.String("qname", qname),
+				slog.Any("err", err),
+			)
+		}
+
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
 	defer cancel()
 
 	//nolint:gosec // G204: command is a constant.
 	cmd := exec.CommandContext(ctx, "ipset", "restore", "-exist")
-	cmd.Stdin = strings.NewReader(commands.String())
+	cmd.Stdin = strings.NewReader(cmds)
 
 	err := cmd.Run()
 	if err != nil {

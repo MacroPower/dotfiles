@@ -1,9 +1,11 @@
 package sandbox_test
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 	"testing"
 
 	"github.com/miekg/dns"
@@ -710,6 +712,198 @@ func TestDNSProxyUnrestrictedMode(t *testing.T) {
 	require.NotNil(t, resp)
 	assert.Equal(t, dns.RcodeSuccess, resp.Rcode)
 	require.Len(t, resp.Answer, 1)
+}
+
+func TestDNSProxyTCPPopulatesIPSet(t *testing.T) {
+	t.Parallel()
+
+	upstream := startMockDNS(t, "10.20.30.40")
+
+	var (
+		mu       sync.Mutex
+		recorded []string
+	)
+
+	cfg := &sandbox.SandboxConfig{
+		Egress: egressRules(sandbox.EgressRule{
+			ToFQDNs: []sandbox.FQDNSelector{{MatchName: "tcp-ipset.example.com"}},
+			ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+		}),
+	}
+
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true,
+		sandbox.WithIPSetFunc(func(_ context.Context, commands string) error {
+			mu.Lock()
+			defer mu.Unlock()
+
+			recorded = append(recorded, commands)
+
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
+
+	// TCP query should populate ipset.
+	client := &dns.Client{Net: "tcp"}
+	msg := new(dns.Msg)
+	msg.SetQuestion("tcp-ipset.example.com.", dns.TypeA)
+
+	resp, _, err := client.Exchange(msg, proxy.Addr)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, dns.RcodeSuccess, resp.Rcode)
+	require.Len(t, resp.Answer, 1)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	require.Len(t, recorded, 1)
+	assert.Contains(t, recorded[0], "add sandbox_fqdn4_0 10.20.30.40 timeout ")
+}
+
+func TestDNSProxyTruncatedUDPThenTCPRetry(t *testing.T) {
+	t.Parallel()
+
+	// Mock upstream that returns a truncated UDP response,
+	// then a full TCP response with A records.
+	lc := net.ListenConfig{}
+
+	pc, err := lc.ListenPacket(t.Context(), "udp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	udpAddr, ok := pc.LocalAddr().(*net.UDPAddr)
+	require.True(t, ok)
+
+	tcpLn, err := lc.Listen(t.Context(), "tcp", fmt.Sprintf("127.0.0.1:%d", udpAddr.Port))
+	require.NoError(t, err)
+
+	// UDP handler: return truncated response with no answers.
+	udpHandler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		resp := new(dns.Msg)
+		resp.SetReply(r)
+
+		resp.Truncated = true
+
+		assert.NoError(t, w.WriteMsg(resp))
+	})
+
+	// TCP handler: return full response with A records.
+	tcpHandler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		resp := new(dns.Msg)
+		resp.SetReply(r)
+
+		resp.Answer = append(resp.Answer,
+			&dns.A{
+				Hdr: dns.RR_Header{
+					Name:   r.Question[0].Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    300,
+				},
+				A: net.ParseIP("1.1.1.1"),
+			},
+			&dns.A{
+				Hdr: dns.RR_Header{
+					Name:   r.Question[0].Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    300,
+				},
+				A: net.ParseIP("2.2.2.2"),
+			},
+		)
+		assert.NoError(t, w.WriteMsg(resp))
+	})
+
+	udpSrv := &dns.Server{PacketConn: pc, Handler: udpHandler}
+	tcpSrv := &dns.Server{Listener: tcpLn, Handler: tcpHandler}
+
+	udpReady := make(chan struct{})
+	tcpReady := make(chan struct{})
+	udpSrv.NotifyStartedFunc = func() { close(udpReady) }
+	tcpSrv.NotifyStartedFunc = func() { close(tcpReady) }
+
+	go func() {
+		err := udpSrv.ActivateAndServe()
+		if err != nil {
+			slog.Debug("mock dns udp server exited", slog.Any("err", err))
+		}
+	}()
+
+	go func() {
+		err := tcpSrv.ActivateAndServe()
+		if err != nil {
+			slog.Debug("mock dns tcp server exited", slog.Any("err", err))
+		}
+	}()
+
+	<-udpReady
+	<-tcpReady
+
+	t.Cleanup(func() {
+		assert.NoError(t, udpSrv.Shutdown())
+		assert.NoError(t, tcpSrv.Shutdown())
+	})
+
+	upstreamAddr := fmt.Sprintf("127.0.0.1:%d", udpAddr.Port)
+
+	var (
+		mu       sync.Mutex
+		recorded []string
+	)
+
+	cfg := &sandbox.SandboxConfig{
+		Egress: egressRules(sandbox.EgressRule{
+			ToFQDNs: []sandbox.FQDNSelector{{MatchName: "truncated.example.com"}},
+			ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+		}),
+	}
+
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstreamAddr, "127.0.0.1:0", true,
+		sandbox.WithIPSetFunc(func(_ context.Context, commands string) error {
+			mu.Lock()
+			defer mu.Unlock()
+
+			recorded = append(recorded, commands)
+
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
+
+	// Step 1: UDP query gets truncated response (no IPs to populate).
+	udpClient := &dns.Client{Net: "udp"}
+	msg := new(dns.Msg)
+	msg.SetQuestion("truncated.example.com.", dns.TypeA)
+
+	resp, _, err := udpClient.Exchange(msg, proxy.Addr)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.Truncated)
+
+	mu.Lock()
+	assert.Empty(t, recorded, "truncated UDP response should not populate ipset")
+	mu.Unlock()
+
+	// Step 2: TCP retry gets full response with A records.
+	tcpClient := &dns.Client{Net: "tcp"}
+
+	resp2, _, err := tcpClient.Exchange(msg, proxy.Addr)
+	require.NoError(t, err)
+	require.NotNil(t, resp2)
+	assert.Equal(t, dns.RcodeSuccess, resp2.Rcode)
+	require.Len(t, resp2.Answer, 2)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	require.Len(t, recorded, 1, "TCP retry should populate ipset")
+	assert.Contains(t, recorded[0], "add sandbox_fqdn4_0 1.1.1.1 timeout ")
+	assert.Contains(t, recorded[0], "add sandbox_fqdn4_0 2.2.2.2 timeout ")
 }
 
 func TestDNSProxyTCPForwardHosts(t *testing.T) {
