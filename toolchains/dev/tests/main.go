@@ -106,6 +106,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestSandboxUnsupportedSelector(ctx) })
 	eg.Go(func() error { return m.TestSandboxOpenPortRange(ctx) })
 	eg.Go(func() error { return m.TestSandboxPathNormalization(ctx) })
+	eg.Go(func() error { return m.TestSandboxWildcardDnsmasq(ctx) })
 	eg.Go(func() error { return m.TestAtuinDaemon(ctx) })
 
 	return eg.Wait()
@@ -1196,6 +1197,40 @@ func (m *Tests) TestSandboxPathNormalization(ctx context.Context) error {
 		if !strings.Contains(envoyConf, want) {
 			return fmt.Errorf("envoy config missing %q", want)
 		}
+	}
+
+	return nil
+}
+
+// TestSandboxWildcardDnsmasq verifies that wildcard matchPattern entries
+// use dnsmasq's /*.domain/ syntax to exclude the bare parent domain,
+// matching Cilium's exclusion of the bare domain from single-star wildcards.
+//
+// +check
+func (m *Tests) TestSandboxWildcardDnsmasq(ctx context.Context) error {
+	ctr := dag.Dev().SandboxBase(dagger.DevSandboxBaseOpts{
+		SandboxConfig: configFile(`egress:
+  - toFQDNs:
+      - matchPattern: "*.example.com"
+    toPorts:
+      - ports:
+          - port: "443"
+`),
+	})
+
+	dnsmasqConf, err := ctr.File("/etc/dnsmasq.conf").Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("reading dnsmasq config: %w", err)
+	}
+
+	// Wildcard matchPattern must use /*.example.com/ syntax.
+	if !strings.Contains(dnsmasqConf, "server=/*.example.com/") {
+		return fmt.Errorf("dnsmasq config missing wildcard server directive, got:\n%s", dnsmasqConf)
+	}
+
+	// Bare /example.com/ form must NOT appear (it would match the parent domain).
+	if strings.Contains(dnsmasqConf, "server=/example.com/") {
+		return fmt.Errorf("dnsmasq config has bare domain server directive (should be wildcard), got:\n%s", dnsmasqConf)
 	}
 
 	return nil

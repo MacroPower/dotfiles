@@ -55,7 +55,7 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			want:    []string{"server=/github.com/8.8.8.8", "address=/#/"},
 			notWant: []string{"server=8.8.8.8\n"},
 		},
-		"restricted mode strips wildcard prefix": {
+		"wildcard matchPattern uses dnsmasq wildcard syntax": {
 			upstream: "8.8.8.8",
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
@@ -63,8 +63,8 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 				}),
 			},
-			want:    []string{"server=/github.com/8.8.8.8", "address=/#/"},
-			notWant: []string{"server=8.8.8.8\n"},
+			want:    []string{"server=/*.github.com/8.8.8.8", "address=/#/"},
+			notWant: []string{"server=8.8.8.8\n", "server=/github.com/"},
 		},
 		"blocked mode returns NXDOMAIN only": {
 			upstream: "8.8.8.8",
@@ -137,7 +137,7 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 				"ipset=/#/sandbox_fqdn4,sandbox_fqdn6",
 			},
 		},
-		"double-star wildcard stripped to base domain": {
+		"double-star wildcard uses dnsmasq wildcard syntax": {
 			upstream: "8.8.8.8",
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
@@ -145,8 +145,81 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 				}),
 			},
+			want:    []string{"server=/*.example.com/8.8.8.8", "address=/#/"},
+			notWant: []string{"server=8.8.8.8\n", "**.example.com", "server=/example.com/"},
+		},
+		"wildcard matchPattern with UDP uses dnsmasq wildcard ipset": {
+			upstream: "8.8.8.8",
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "5000", Protocol: "UDP"}}}},
+				}),
+			},
+			want: []string{
+				"server=/*.example.com/8.8.8.8",
+				"ipset=/*.example.com/sandbox_fqdn4,sandbox_fqdn6",
+				"address=/#/",
+			},
+			notWant: []string{"server=/example.com/", "ipset=/example.com/"},
+		},
+		"matchName uses plain domain syntax": {
+			upstream: "8.8.8.8",
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			want:    []string{"server=/api.example.com/8.8.8.8", "address=/#/"},
+			notWant: []string{"server=/*.api.example.com/"},
+		},
+		"mixed matchName and wildcard matchPattern": {
+			upstream: "1.1.1.1",
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{
+						{MatchName: "exact.example.com"},
+						{MatchPattern: "*.wild.example.com"},
+					},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			want: []string{
+				"server=/exact.example.com/1.1.1.1",
+				"server=/*.wild.example.com/1.1.1.1",
+				"address=/#/",
+			},
+			notWant: []string{"server=/wild.example.com/"},
+		},
+		"matchName upgrades wildcard to non-wildcard for same domain": {
+			upstream: "8.8.8.8",
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
 			want:    []string{"server=/example.com/8.8.8.8", "address=/#/"},
-			notWant: []string{"server=8.8.8.8\n", "**.example.com"},
+			notWant: []string{"server=/*.example.com/"},
+		},
+		"TCPForward host upgrades wildcard for same domain": {
+			upstream: "8.8.8.8",
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+				TCPForwards: []sandbox.TCPForward{{Port: 22, Host: "example.com"}},
+			},
+			want:    []string{"server=/example.com/8.8.8.8", "address=/#/"},
+			notWant: []string{"server=/*.example.com/"},
 		},
 		"rules-only mode forwards all": {
 			upstream: "8.8.8.8",
