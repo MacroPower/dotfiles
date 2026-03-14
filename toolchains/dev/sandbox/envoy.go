@@ -137,6 +137,7 @@ type envoyHTTPConnManagerConfig struct {
 	NormalizePath                *bool                `yaml:"normalize_path,omitempty"`
 	AtType                       string               `yaml:"@type"`
 	StatPrefix                   string               `yaml:"stat_prefix"`
+	StreamIdleTimeout            string               `yaml:"stream_idle_timeout,omitempty"`
 	PathWithEscapedSlashesAction string               `yaml:"path_with_escaped_slashes_action,omitempty"`
 	RouteConfig                  envoyRouteConfig     `yaml:"route_config"`
 	AccessLog                    []envoyAccessLog     `yaml:"access_log,omitempty"`
@@ -583,6 +584,7 @@ func buildMITMFilterChain(rule ResolvedRule, accessLog []envoyAccessLog, certsDi
 			TypedConfig: envoyHTTPConnManagerConfig{
 				AtType:                       "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
 				StatPrefix:                   "mitm_" + rule.Domain,
+				StreamIdleTimeout:            "300s",
 				NormalizePath:                boolPtr(true),
 				MergeSlashes:                 true,
 				PathWithEscapedSlashesAction: "UNESCAPE_AND_REDIRECT",
@@ -883,6 +885,7 @@ func buildHTTPForwardListener(rules []ResolvedRule, open bool, accessLog []envoy
 				TypedConfig: envoyHTTPConnManagerConfig{
 					AtType:                       "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
 					StatPrefix:                   "http_forward",
+					StreamIdleTimeout:            "300s",
 					NormalizePath:                boolPtr(true),
 					MergeSlashes:                 true,
 					PathWithEscapedSlashesAction: "UNESCAPE_AND_REDIRECT",

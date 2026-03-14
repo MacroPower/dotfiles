@@ -810,6 +810,17 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"timeout: 3600s",
 			},
 		},
+		"HCMs have stream idle timeout": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}}}},
+				},
+			)},
+			want: []string{
+				"stream_idle_timeout: 300s",
+			},
+		},
 	}
 
 	for name, tt := range tests {
