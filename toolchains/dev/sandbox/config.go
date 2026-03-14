@@ -39,9 +39,7 @@ var (
 	// only DNS-safe characters plus the wildcard '*'. Matches Cilium's
 	// allowedPatternChars (pkg/fqdn/matchpattern/matchpattern.go).
 	allowedMatchPatternChars = regexp.MustCompile(`^[-a-z0-9_.*]+$`)
-)
 
-var (
 	// ErrFQDNSelectorEmpty is returned when an [FQDNSelector] has neither
 	// matchName nor matchPattern set.
 	ErrFQDNSelectorEmpty = errors.New("FQDN selector must have matchName or matchPattern")
@@ -429,6 +427,9 @@ type EgressRule struct {
 	// See Cilium's EgressCommonRule and EgressRule in
 	// pkg/policy/api/egress.go for the canonical definitions.
 
+	// Authentication is a Cilium field for mutual authentication.
+	// The sandbox does not support authentication policy.
+	Authentication any `yaml:"authentication,omitempty"`
 	// ToEndpoints is a Cilium L3 selector matching endpoints by label.
 	// The sandbox has no endpoint identity system.
 	ToEndpoints []any `yaml:"toEndpoints,omitempty"`
@@ -449,9 +450,6 @@ type EgressRule struct {
 	// ICMPs is a Cilium selector for ICMP type filtering.
 	// The sandbox does not support ICMP-level policy.
 	ICMPs []any `yaml:"icmps,omitempty"`
-	// Authentication is a Cilium field for mutual authentication.
-	// The sandbox does not support authentication policy.
-	Authentication any `yaml:"authentication,omitempty"`
 }
 
 // CIDRRule specifies an IP range to allow, with optional exceptions.
@@ -504,14 +502,6 @@ type L7Rules struct {
 // HTTPRule specifies an allowed HTTP method, path, host, and/or
 // header constraints.
 type HTTPRule struct {
-	// Headers is a list of header names that must be present in the
-	// request (presence check). Each entry is a header field name;
-	// the value is not inspected.
-	Headers []string `yaml:"headers,omitempty"`
-	// HeaderMatches specifies header name/value constraints. The
-	// request must contain the named header with the specified value
-	// or it is denied.
-	HeaderMatches []HeaderMatch `yaml:"headerMatches,omitempty"`
 	// Method restricts the allowed HTTP method as an extended POSIX
 	// regex (e.g. "GET", "GET|POST").
 	Method string `yaml:"method,omitempty"`
@@ -522,6 +512,14 @@ type HTTPRule struct {
 	// matched against the Host header (e.g. "api\\.example\\.com",
 	// ".*\\.example\\.com").
 	Host string `yaml:"host,omitempty"`
+	// Headers is a list of header names that must be present in the
+	// request (presence check). Each entry is a header field name;
+	// the value is not inspected.
+	Headers []string `yaml:"headers,omitempty"`
+	// HeaderMatches specifies header name/value constraints. The
+	// request must contain the named header with the specified value
+	// or it is denied.
+	HeaderMatches []HeaderMatch `yaml:"headerMatches,omitempty"`
 }
 
 // HeaderMatch specifies a header name/value constraint. The request
@@ -547,9 +545,13 @@ type HeaderMatch struct {
 type MismatchAction string
 
 const (
-	MismatchLOG     MismatchAction = "LOG"
-	MismatchADD     MismatchAction = "ADD"
-	MismatchDELETE  MismatchAction = "DELETE"
+	// MismatchLOG logs when the header value does not match.
+	MismatchLOG MismatchAction = "LOG"
+	// MismatchADD adds a header when the value does not match.
+	MismatchADD MismatchAction = "ADD"
+	// MismatchDELETE deletes the header when it does not match.
+	MismatchDELETE MismatchAction = "DELETE"
+	// MismatchREPLACE replaces the header value on mismatch.
 	MismatchREPLACE MismatchAction = "REPLACE"
 )
 
@@ -567,21 +569,26 @@ type TCPForward struct {
 // SandboxConfig is the top-level YAML configuration for the sandbox firewall.
 //
 // The Egress field uses CiliumNetworkPolicy semantics:
-//   - nil (absent from YAML): no egress enforcement (unrestricted)
+//
+//   - nil (absent from YAML): no egress enforcement (unrestricted).
+//
 //   - empty slice (egress: []): no effect, equivalent to omitting the
-//     field (unrestricted); an empty list never activates enforcement
+//     field (unrestricted); an empty list never activates enforcement.
+//
 //   - non-empty slice: rules apply; non-matching traffic is dropped
-//     (default-deny is always active when rules are present)
-//   - a slice containing an empty EgressRule{}: deny-all; empty
-//     selectors match nothing. This matches Cilium's canonical
-//     deny-all pattern described in the "Ingress/Egress Default Deny"
-//     section of the policy language docs. An empty EgressRule{} has
-//     no L3 selectors (toEndpoints, toCIDR, toCIDRSet, toFQDNs) and
-//     no L4/L7 selectors (toPorts), so it whitelists zero traffic.
-//     The allow-all pattern in Cilium is structurally different: it
-//     requires toEndpoints: [{}], where the empty EndpointSelector
-//     is the wildcard that matches all endpoints.
-//     See: https://docs.cilium.io/en/stable/security/policy/language/#ingress-egress-default-deny
+//     (default-deny is always active when rules are present).
+//
+//   - a slice containing an empty EgressRule{}: deny-all; empty selectors
+//     match nothing. This matches Cilium's canonical deny-all pattern
+//     described in the "Ingress/Egress Default Deny" section of the policy
+//     language docs. An empty EgressRule{} has no L3 selectors (toEndpoints,
+//     toCIDR, toCIDRSet, toFQDNs) and no L4/L7 selectors (toPorts), so it
+//     whitelists zero traffic. The allow-all pattern in Cilium is structurally
+//     different: it requires toEndpoints: [{}], where the empty
+//     EndpointSelector is the wildcard that matches all endpoints.
+//     See [Ingress/Egress Default Deny].
+//
+// [Ingress/Egress Default Deny]: https://docs.cilium.io/en/stable/security/policy/language/#ingress-egress-default-deny
 type SandboxConfig struct {
 	// Egress lists egress rules with FQDN, port, and CIDR selectors.
 	// A nil pointer means the field was absent from YAML (unrestricted).
@@ -624,8 +631,7 @@ func (c *SandboxConfig) IsEgressUnrestricted() bool {
 // and no L4 selectors (ToPorts). With no selectors present, the rule
 // whitelists nothing -- it does not act as a wildcard. Cilium's own
 // documentation uses egress: [{}] as the canonical deny-all example
-// in the "Ingress/Egress Default Deny" section:
-// https://docs.cilium.io/en/stable/security/policy/language/#ingress-egress-default-deny
+// in the [Ingress/Egress Default Deny] section.
 //
 // The allow-all pattern in Cilium is structurally different and
 // requires a toEndpoints selector with an empty EndpointSelector:
@@ -645,16 +651,19 @@ func (c *SandboxConfig) IsEgressUnrestricted() bool {
 // This method checks that every rule in the egress list has all
 // selector fields empty, which is the structural equivalent of
 // Cilium's deny-all.
+//
+// [Ingress/Egress Default Deny]: https://docs.cilium.io/en/stable/security/policy/language/#ingress-egress-default-deny
 func (c *SandboxConfig) IsEgressBlocked() bool {
 	if !c.IsDefaultDenyEnabled() {
 		return false
 	}
 
-	for _, rule := range c.EgressRules() {
+	rules := c.EgressRules()
+	for i := range rules {
 		// Unsupported selectors (ToEndpoints, ToEntities, etc.) are not
 		// checked here because Validate() rejects them before this point.
-		if len(rule.ToFQDNs) > 0 || len(rule.ToPorts) > 0 ||
-			len(rule.ToCIDR) > 0 || len(rule.ToCIDRSet) > 0 {
+		if len(rules[i].ToFQDNs) > 0 || len(rules[i].ToPorts) > 0 ||
+			len(rules[i].ToCIDR) > 0 || len(rules[i].ToCIDRSet) > 0 {
 			return false
 		}
 	}
@@ -792,6 +801,7 @@ func normalizeEgressRule(c *SandboxConfig, i int) {
 	for j := range rule.ToFQDNs {
 		fqdn := &rule.ToFQDNs[j]
 		fqdn.MatchName = strings.TrimRight(strings.ToLower(fqdn.MatchName), ".")
+
 		fqdn.MatchPattern = strings.TrimRight(strings.ToLower(fqdn.MatchPattern), ".")
 		for strings.Contains(fqdn.MatchPattern, "***") {
 			fqdn.MatchPattern = strings.ReplaceAll(fqdn.MatchPattern, "***", "**")
@@ -809,7 +819,8 @@ func normalizeEgressRule(c *SandboxConfig, i int) {
 // IPv6). If s is neither, it is returned unchanged so that downstream
 // validation can produce the appropriate error.
 func normalizeCIDR(s string) string {
-	if _, _, err := net.ParseCIDR(s); err == nil {
+	_, _, err := net.ParseCIDR(s)
+	if err == nil {
 		return s
 	}
 
@@ -836,7 +847,8 @@ func (c *SandboxConfig) Validate() error {
 		// like toEntities or toEndpoints being ignored.
 		// The unsupported fields don't need normalization, so this
 		// can safely run first.
-		if err := validateUnsupportedSelectors((*c.Egress)[i], i); err != nil {
+		err := validateUnsupportedSelectors((*c.Egress)[i], i)
+		if err != nil {
 			return err
 		}
 
@@ -849,7 +861,7 @@ func (c *SandboxConfig) Validate() error {
 
 		// An empty EgressRule{} is valid: it triggers default-deny
 		// with empty selectors (deny-all pattern).
-		err := validateFQDNSelectors(rule, i)
+		err = validateFQDNSelectors(rule, i)
 		if err != nil {
 			return err
 		}
@@ -876,8 +888,8 @@ func (c *SandboxConfig) Validate() error {
 		}
 
 		for _, cidr := range rule.ToCIDR {
-			_, _, err := net.ParseCIDR(cidr)
-			if err != nil {
+			_, _, parseErr := net.ParseCIDR(cidr)
+			if parseErr != nil {
 				return fmt.Errorf("%w: rule %d cidr %q", ErrCIDRInvalid, i, cidr)
 			}
 		}
@@ -993,6 +1005,7 @@ func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
 				return fmt.Errorf("%w: rule %d selector %d name %q (%d chars)",
 					ErrFQDNTooLong, ruleIdx, j, fqdn.MatchName, len(fqdn.MatchName))
 			}
+
 			if !allowedMatchNameChars.MatchString(fqdn.MatchName) {
 				return fmt.Errorf("%w: rule %d selector %d name %q",
 					ErrFQDNNameInvalidChars, ruleIdx, j, fqdn.MatchName)
@@ -1004,6 +1017,7 @@ func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
 				return fmt.Errorf("%w: rule %d selector %d pattern %q (%d chars)",
 					ErrFQDNTooLong, ruleIdx, j, fqdn.MatchPattern, len(fqdn.MatchPattern))
 			}
+
 			if !allowedMatchPatternChars.MatchString(fqdn.MatchPattern) {
 				return fmt.Errorf("%w: rule %d selector %d pattern %q",
 					ErrFQDNPatternInvalidChars, ruleIdx, j, fqdn.MatchPattern)
@@ -1025,6 +1039,7 @@ func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
 				return fmt.Errorf("%w: rule %d selector %d pattern %q",
 					ErrFQDNPatternPartialWildcard, ruleIdx, j, fqdn.MatchPattern)
 			}
+
 		case strings.HasPrefix(p, "*."):
 			// Single-label wildcard. The remainder after "*." must be
 			// wildcard-free.
@@ -1032,6 +1047,7 @@ func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
 				return fmt.Errorf("%w: rule %d selector %d pattern %q",
 					ErrFQDNPatternPartialWildcard, ruleIdx, j, fqdn.MatchPattern)
 			}
+
 		case strings.Contains(p, "*"):
 			// Wildcard not in a valid leading position.
 			return fmt.Errorf("%w: rule %d selector %d pattern %q",
@@ -1184,6 +1200,7 @@ func validateHTTPRules(pr PortRule, ruleIdx int) error {
 			if hm.Name == "" {
 				return fmt.Errorf("%w: rule %d headerMatches[%d]", ErrHeaderMatchNameEmpty, ruleIdx, i)
 			}
+
 			if hm.Mismatch != "" {
 				return fmt.Errorf("%w: rule %d headerMatches[%d] mismatch %q",
 					ErrHeaderMatchMismatchAction, ruleIdx, i, hm.Mismatch)
@@ -1322,17 +1339,18 @@ func (c *SandboxConfig) ResolveRulesForPort(port int) []ResolvedRule {
 
 	var order []string
 
-	for _, rule := range c.EgressRules() {
-		if len(rule.ToFQDNs) == 0 {
+	egressRules := c.EgressRules()
+	for i := range egressRules {
+		if len(egressRules[i].ToFQDNs) == 0 {
 			continue
 		}
 
-		matched, hasPlainL4, httpRules := matchRuleForPort(rule, port)
+		matched, hasPlainL4, httpRules := matchRuleForPort(egressRules[i], port)
 		if !matched {
 			continue
 		}
 
-		for _, fqdn := range rule.ToFQDNs {
+		for _, fqdn := range egressRules[i].ToFQDNs {
 			domain := fqdn.MatchName
 			if domain == "" {
 				domain = fqdn.MatchPattern
@@ -1440,13 +1458,7 @@ func matchRuleForPort(rule EgressRule, port int) (bool, bool, []ResolvedHTTPRule
 			}
 		} else {
 			for _, h := range pr.Rules.HTTP {
-				httpRules = append(httpRules, ResolvedHTTPRule{
-					Method:        h.Method,
-					Path:          h.Path,
-					Host:          h.Host,
-					Headers:       h.Headers,
-					HeaderMatches: h.HeaderMatches,
-				})
+				httpRules = append(httpRules, ResolvedHTTPRule(h))
 			}
 		}
 	}
@@ -1577,25 +1589,23 @@ func (c *SandboxConfig) ResolveRules() []ResolvedRule {
 	for _, d := range order {
 		m := byDomain[d]
 		r := ResolvedRule{Domain: d}
-		if !m.unrestricted {
-			if len(m.httpRules) > 0 {
-				r.HTTPRules = make([]ResolvedHTTPRule, 0, len(m.httpRules))
-				for _, hr := range m.httpRules {
-					r.HTTPRules = append(r.HTTPRules, hr)
+		if !m.unrestricted && len(m.httpRules) > 0 {
+			r.HTTPRules = make([]ResolvedHTTPRule, 0, len(m.httpRules))
+			for _, hr := range m.httpRules {
+				r.HTTPRules = append(r.HTTPRules, hr)
+			}
+
+			sort.Slice(r.HTTPRules, func(i, j int) bool {
+				if r.HTTPRules[i].Path != r.HTTPRules[j].Path {
+					return r.HTTPRules[i].Path < r.HTTPRules[j].Path
 				}
 
-				sort.Slice(r.HTTPRules, func(i, j int) bool {
-					if r.HTTPRules[i].Path != r.HTTPRules[j].Path {
-						return r.HTTPRules[i].Path < r.HTTPRules[j].Path
-					}
+				if r.HTTPRules[i].Method != r.HTTPRules[j].Method {
+					return r.HTTPRules[i].Method < r.HTTPRules[j].Method
+				}
 
-					if r.HTTPRules[i].Method != r.HTTPRules[j].Method {
-						return r.HTTPRules[i].Method < r.HTTPRules[j].Method
-					}
-
-					return r.HTTPRules[i].Host < r.HTTPRules[j].Host
-				})
-			}
+				return r.HTTPRules[i].Host < r.HTTPRules[j].Host
+			})
 		}
 
 		result = append(result, r)
@@ -1642,21 +1652,22 @@ func (c *SandboxConfig) ResolvePorts() []int {
 	}
 
 	seen := make(map[int]bool)
-	for _, rule := range rules {
+	for ri := range rules {
 		// Empty rules have no selectors, so they contribute
 		// nothing to Envoy listeners.
-		if len(rule.ToFQDNs) == 0 && len(rule.ToPorts) == 0 && len(rule.ToCIDR) == 0 && len(rule.ToCIDRSet) == 0 {
+		if len(rules[ri].ToFQDNs) == 0 && len(rules[ri].ToPorts) == 0 &&
+			len(rules[ri].ToCIDR) == 0 && len(rules[ri].ToCIDRSet) == 0 {
 			continue
 		}
 
 		// CIDR-only rules bypass Envoy; their ports don't need
 		// Envoy listeners. Validation prevents FQDN+CIDR
 		// combinations, so this is equivalent to "not an FQDN rule".
-		if len(rule.ToCIDRSet) > 0 || len(rule.ToCIDR) > 0 {
+		if len(rules[ri].ToCIDRSet) > 0 || len(rules[ri].ToCIDR) > 0 {
 			continue
 		}
 
-		isOpenPortRule := len(rule.ToFQDNs) == 0
+		isOpenPortRule := len(rules[ri].ToFQDNs) == 0
 
 		// Explicit ports from FQDN and open-port rules contribute.
 		// Validation ensures FQDN rules always have toPorts.
@@ -1664,7 +1675,7 @@ func (c *SandboxConfig) ResolvePorts() []int {
 		// or SCTP-only), since Envoy only handles TCP listeners.
 		// Open-port ranges bypass Envoy via direct iptables ACCEPT;
 		// they don't need REDIRECT listeners.
-		for _, pr := range rule.ToPorts {
+		for _, pr := range rules[ri].ToPorts {
 			for _, p := range pr.Ports {
 				proto := normalizeProtocol(p.Protocol)
 				if proto != "" && proto != protoTCP {
@@ -1725,19 +1736,20 @@ type ResolvedOpenPort struct {
 // CIDR except DROPs and CIDR ACCEPTs from other rules (Cilium OR
 // semantics across rules).
 func (c *SandboxConfig) HasUnrestrictedOpenPorts() bool {
-	for _, rule := range c.EgressRules() {
-		if len(rule.ToFQDNs) > 0 || len(rule.ToCIDR) > 0 || len(rule.ToCIDRSet) > 0 {
+	eRules := c.EgressRules()
+	for ri := range eRules {
+		if len(eRules[ri].ToFQDNs) > 0 || len(eRules[ri].ToCIDR) > 0 || len(eRules[ri].ToCIDRSet) > 0 {
 			continue
 		}
 
-		for _, pr := range rule.ToPorts {
+		for _, pr := range eRules[ri].ToPorts {
 			if len(pr.Ports) == 0 {
 				return true
 			}
 
 			for _, p := range pr.Ports {
-				n, _ := ResolvePort(p.Port)
-				if n == 0 {
+				n, err := ResolvePort(p.Port)
+				if err != nil || n == 0 {
 					return true
 				}
 			}
@@ -1755,12 +1767,14 @@ func (c *SandboxConfig) ResolveOpenPortRules() []ResolvedOpenPort {
 	seen := make(map[string]bool)
 
 	var result []ResolvedOpenPort
-	for _, rule := range c.EgressRules() {
-		if len(rule.ToFQDNs) > 0 || len(rule.ToCIDR) > 0 || len(rule.ToCIDRSet) > 0 {
+
+	openRules := c.EgressRules()
+	for ri := range openRules {
+		if len(openRules[ri].ToFQDNs) > 0 || len(openRules[ri].ToCIDR) > 0 || len(openRules[ri].ToCIDRSet) > 0 {
 			continue
 		}
 
-		for _, pr := range rule.ToPorts {
+		for _, pr := range openRules[ri].ToPorts {
 			for _, p := range pr.Ports {
 				resolved, err := ResolvePort(p.Port)
 				if err != nil || resolved == 0 {
@@ -1823,8 +1837,8 @@ func (c *SandboxConfig) ResolveOpenPorts() []int {
 // egress rule. Each rule gets its own ipset pair, matching Cilium's
 // per-selector isolation semantics.
 type FQDNRulePorts struct {
-	RuleIndex int
 	Ports     []ResolvedOpenPort
+	RuleIndex int
 }
 
 // ruleHasNonTCPPorts reports whether an egress rule has any ports with
@@ -1865,8 +1879,8 @@ func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []FQDNRulePorts {
 
 	ruleIdx := 0
 
-	for _, rule := range rules {
-		if len(rule.ToFQDNs) == 0 || !ruleHasNonTCPPorts(rule) {
+	for ri := range rules {
+		if len(rules[ri].ToFQDNs) == 0 || !ruleHasNonTCPPorts(rules[ri]) {
 			continue
 		}
 
@@ -1874,7 +1888,7 @@ func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []FQDNRulePorts {
 
 		var ports []ResolvedOpenPort
 
-		for _, pr := range rule.ToPorts {
+		for _, pr := range rules[ri].ToPorts {
 			for _, p := range pr.Ports {
 				resolved, err := ResolvePort(p.Port)
 				if err != nil || resolved == 0 {
@@ -1945,8 +1959,8 @@ func (c *SandboxConfig) HasFQDNNonTCPPorts() bool {
 // For FQDN-form regexes (with trailing dot). For SNI/Host regexes
 // without trailing dot, see [wildcardToSNIRegex] and [wildcardToHostRegex].
 type FQDNPattern struct {
-	Original  string
 	Regex     *regexp.Regexp
+	Original  string
 	RuleIndex int
 }
 
@@ -1964,14 +1978,15 @@ func (c *SandboxConfig) CompileFQDNPatterns() []FQDNPattern {
 
 	ruleIdx := 0
 
-	for _, rule := range c.EgressRules() {
-		if len(rule.ToFQDNs) == 0 || !ruleHasNonTCPPorts(rule) {
+	patRules := c.EgressRules()
+	for ri := range patRules {
+		if len(patRules[ri].ToFQDNs) == 0 || !ruleHasNonTCPPorts(patRules[ri]) {
 			continue
 		}
 
 		seen := make(map[string]bool)
 
-		for _, fqdn := range rule.ToFQDNs {
+		for _, fqdn := range patRules[ri].ToFQDNs {
 			var original string
 
 			var isMatchName bool
@@ -2083,20 +2098,21 @@ func (c *SandboxConfig) ResolveCIDRRules() ([]ResolvedCIDR, []ResolvedCIDR) {
 
 	ruleIdx := 0
 
-	for _, rule := range c.EgressRules() {
-		if len(rule.ToCIDRSet) == 0 && len(rule.ToCIDR) == 0 {
+	cidrRules := c.EgressRules()
+	for ri := range cidrRules {
+		if len(cidrRules[ri].ToCIDRSet) == 0 && len(cidrRules[ri].ToCIDR) == 0 {
 			continue
 		}
 
-		ports := resolvePortsFromRule(rule)
+		ports := resolvePortsFromRule(cidrRules[ri])
 
 		// Combine toCIDR and toCIDRSet into a unified list.
-		allCIDRs := make([]CIDRRule, 0, len(rule.ToCIDR)+len(rule.ToCIDRSet))
-		for _, cidr := range rule.ToCIDR {
+		allCIDRs := make([]CIDRRule, 0, len(cidrRules[ri].ToCIDR)+len(cidrRules[ri].ToCIDRSet))
+		for _, cidr := range cidrRules[ri].ToCIDR {
 			allCIDRs = append(allCIDRs, CIDRRule{CIDR: cidr})
 		}
 
-		allCIDRs = append(allCIDRs, rule.ToCIDRSet...)
+		allCIDRs = append(allCIDRs, cidrRules[ri].ToCIDRSet...)
 
 		for _, cidr := range allCIDRs {
 			v4, v6 := classifyCIDR(cidr, ports, ruleIdx)

@@ -204,7 +204,7 @@ func Init(ctx context.Context, args []string) error {
 
 	// Start DNS proxy. Handles domain filtering internally (replacing
 	// dnsmasq + RefuseDNS).
-	dnsProxy, err := StartDNSProxy(cfg, net.JoinHostPort(upstream, "53"), "127.0.0.1:53", ipv6Disabled)
+	dnsProxy, err := StartDNSProxy(ctx, cfg, net.JoinHostPort(upstream, "53"), "127.0.0.1:53", ipv6Disabled)
 	if err != nil {
 		return fmt.Errorf("starting DNS proxy: %w", err)
 	}
@@ -324,7 +324,8 @@ func Init(ctx context.Context, args []string) error {
 
 	// Clean up daemons.
 	if dnsProxy != nil {
-		if err := dnsProxy.Shutdown(); err != nil {
+		err := dnsProxy.Shutdown()
+		if err != nil {
 			slog.DebugContext(ctx, "stopping DNS proxy", slog.Any("err", err))
 		}
 	}

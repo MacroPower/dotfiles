@@ -112,6 +112,26 @@ func (m *Tests) All(ctx context.Context) error {
 	return eg.Wait()
 }
 
+// AllFull runs all tests including heavy network, MITM, and publish tests.
+func (m *Tests) AllFull(ctx context.Context) error {
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error { return m.All(ctx) })
+	eg.Go(func() error { return m.TestSandboxNetwork(ctx) })
+	eg.Go(func() error { return m.TestSandboxRuntimeConfig(ctx) })
+	eg.Go(func() error { return m.TestPublishSandboxImage(ctx) })
+	eg.Go(func() error { return m.TestSandboxGenDefault(ctx) })
+	eg.Go(func() error { return m.TestSandboxGenCustomConfig(ctx) })
+	eg.Go(func() error { return m.TestSandboxMitmPaths(ctx) })
+	eg.Go(func() error { return m.TestSandboxMitmMethods(ctx) })
+	eg.Go(func() error { return m.TestSandboxHttpFiltering(ctx) })
+	eg.Go(func() error { return m.TestSandboxRefusedDNS(ctx) })
+	eg.Go(func() error { return m.TestSandboxPathNormalizationE2E(ctx) })
+	eg.Go(func() error { return m.TestPublish(ctx) })
+
+	return eg.Wait()
+}
+
 // TestDevBase verifies that [Dev.DevBase] produces a container with essential
 // development tools available on PATH. This validates the tool installation
 // pipeline without requiring an interactive terminal session.

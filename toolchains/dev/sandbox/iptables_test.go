@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/toolchains/dev/sandbox"
 )
@@ -646,7 +647,9 @@ func TestGenerateIptablesRules(t *testing.T) {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(
 					sandbox.EgressRule{
-						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "UDP"}}}},
+						ToPorts: []sandbox.PortRule{
+							{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "UDP"}}},
+						},
 					},
 					sandbox.EgressRule{
 						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
@@ -666,7 +669,9 @@ func TestGenerateIptablesRules(t *testing.T) {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(
 					sandbox.EgressRule{
-						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+						ToPorts: []sandbox.PortRule{
+							{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}},
+						},
 					},
 					sandbox.EgressRule{
 						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
@@ -690,7 +695,9 @@ func TestGenerateIptablesRules(t *testing.T) {
 						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080", Protocol: "TCP"}}}},
 					},
 					sandbox.EgressRule{
-						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "UDP"}}}},
+						ToPorts: []sandbox.PortRule{
+							{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "UDP"}}},
+						},
 					},
 					sandbox.EgressRule{
 						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
@@ -710,7 +717,9 @@ func TestGenerateIptablesRules(t *testing.T) {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(
 					sandbox.EgressRule{
-						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "5000", EndPort: 6000, Protocol: "SCTP"}}}},
+						ToPorts: []sandbox.PortRule{
+							{Ports: []sandbox.Port{{Port: "5000", EndPort: 6000, Protocol: "SCTP"}}},
+						},
 					},
 					sandbox.EgressRule{
 						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
@@ -726,7 +735,9 @@ func TestGenerateIptablesRules(t *testing.T) {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(
 					sandbox.EgressRule{
-						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 8000, Protocol: "TCP"}}}},
+						ToPorts: []sandbox.PortRule{
+							{Ports: []sandbox.Port{{Port: "8000", EndPort: 8000, Protocol: "TCP"}}},
+						},
 					},
 					sandbox.EgressRule{
 						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
@@ -863,7 +874,9 @@ func TestGenerateIptablesRules(t *testing.T) {
 						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000"}}}},
 					},
 					sandbox.EgressRule{
-						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+						ToPorts: []sandbox.PortRule{
+							{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}},
+						},
 					},
 				),
 			},
@@ -991,6 +1004,8 @@ func TestGenerateIptablesRulesInputBeforeOutput(t *testing.T) {
 		// Search within the filter table only (NAT table also has
 		// -A OUTPUT rules that precede *filter).
 		filterStart := strings.Index(rules, "*filter")
+		require.GreaterOrEqual(t, filterStart, 0, "*filter section not found")
+
 		filterSection := rules[filterStart:]
 		inputIdx := strings.Index(filterSection, "-A INPUT")
 		outputIdx := strings.Index(filterSection, "-A OUTPUT")

@@ -134,6 +134,7 @@ func writeBaseFilterRules(b *strings.Builder, loopbackCIDR string, ipv6 bool) {
 				icmpType)
 		}
 	}
+
 	b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p udp --dport 53 -j ACCEPT\n")
 	b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p tcp --dport 53 -j ACCEPT\n")
 }

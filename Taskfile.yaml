@@ -16,6 +16,9 @@ includes:
   secrets:
     taskfile: ./taskfiles/secrets
     dir: .
+  toolchains:
+    taskfile: ./taskfiles/toolchains
+    dir: .
 
 tasks:
   default:

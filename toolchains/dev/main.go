@@ -89,6 +89,29 @@ func (m *Dev) CheckLint(ctx context.Context) error {
 	return nil
 }
 
+// CheckTest runs Go unit tests on the sandbox module.
+//
+// +check
+func (m *Dev) CheckTest(ctx context.Context) error {
+	src := dag.CurrentModule().Source().Directory("sandbox")
+
+	_, err := dag.Container().
+		From("golang:1.26-alpine").
+		WithMountedCache("/go/pkg/mod", dag.CacheVolume(devCacheNamespace+":modules")).
+		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
+		WithMountedCache("/go/build-cache", dag.CacheVolume(devCacheNamespace+":build")).
+		WithEnvVariable("GOCACHE", "/go/build-cache").
+		WithDirectory("/src", src).
+		WithWorkdir("/src").
+		WithExec([]string{"go", "test", "./..."}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("testing sandbox: %w", err)
+	}
+
+	return nil
+}
+
 // Format runs golangci-lint --fix across all Go modules in the toolchain
 // and returns the merged changeset of auto-fixed source files. Changeset
 // paths are prefixed with the module's location within the repo so that

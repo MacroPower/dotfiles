@@ -2289,10 +2289,14 @@ func TestResolveOpenPortRules(t *testing.T) {
 		"dedup across rules with same range": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(
 				sandbox.EgressRule{
-					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+					ToPorts: []sandbox.PortRule{
+						{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}},
+					},
 				},
 				sandbox.EgressRule{
-					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+					ToPorts: []sandbox.PortRule{
+						{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}},
+					},
 				},
 			)},
 			want: []sandbox.ResolvedOpenPort{
@@ -2305,7 +2309,9 @@ func TestResolveOpenPortRules(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", Protocol: "TCP"}}}},
 				},
 				sandbox.EgressRule{
-					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+					ToPorts: []sandbox.PortRule{
+						{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}},
+					},
 				},
 			)},
 			want: []sandbox.ResolvedOpenPort{
@@ -2384,21 +2390,27 @@ func TestResolveFQDNNonTCPPorts(t *testing.T) {
 				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
 			})},
-			want: []sandbox.FQDNRulePorts{{RuleIndex: 0, Ports: []sandbox.ResolvedOpenPort{{Port: 443, Protocol: "udp"}}}},
+			want: []sandbox.FQDNRulePorts{
+				{RuleIndex: 0, Ports: []sandbox.ResolvedOpenPort{{Port: 443, Protocol: "udp"}}},
+			},
 		},
 		"FQDN SCTP port": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
 				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "3868", Protocol: "SCTP"}}}},
 			})},
-			want: []sandbox.FQDNRulePorts{{RuleIndex: 0, Ports: []sandbox.ResolvedOpenPort{{Port: 3868, Protocol: "sctp"}}}},
+			want: []sandbox.FQDNRulePorts{
+				{RuleIndex: 0, Ports: []sandbox.ResolvedOpenPort{{Port: 3868, Protocol: "sctp"}}},
+			},
 		},
 		"FQDN ANY port expands to udp": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
 				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 			})},
-			want: []sandbox.FQDNRulePorts{{RuleIndex: 0, Ports: []sandbox.ResolvedOpenPort{{Port: 443, Protocol: "udp"}}}},
+			want: []sandbox.FQDNRulePorts{
+				{RuleIndex: 0, Ports: []sandbox.ResolvedOpenPort{{Port: 443, Protocol: "udp"}}},
+			},
 		},
 		"FQDN TCP-only returns nil": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
@@ -2625,7 +2637,9 @@ func TestResolvePorts(t *testing.T) {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(
 					sandbox.EgressRule{
-						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+						ToPorts: []sandbox.PortRule{
+							{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}},
+						},
 					},
 					sandbox.EgressRule{
 						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
@@ -2976,6 +2990,7 @@ func TestResolveCIDRRules(t *testing.T) {
 			if tt.validate {
 				require.NoError(t, tt.cfg.Validate())
 			}
+
 			ipv4, ipv6 := tt.cfg.ResolveCIDRRules()
 			assert.Equal(t, tt.wantIPv4, ipv4)
 			assert.Equal(t, tt.wantIPv6, ipv6)
@@ -3417,6 +3432,7 @@ egressPolicy:
 			if tt.wantRules > 0 {
 				require.NoError(t, err)
 				assert.Len(t, cfg.EgressRules(), tt.wantRules)
+
 				return
 			}
 

@@ -1,0 +1,17 @@
+version: "3"
+
+vars:
+  INTEGRATION_MODULES: toolchains/dev/tests
+
+tasks:
+  integration:
+    desc: Run lightweight integration tests (+check)
+    cmds:
+      - for: { var: INTEGRATION_MODULES }
+        cmd: dagger check -m {{.ITEM}}
+
+  integration:full:
+    desc: Run all integration tests (including heavy network/MITM tests)
+    cmds:
+      - for: { var: INTEGRATION_MODULES }
+        cmd: dagger call -m {{.ITEM}} all-full

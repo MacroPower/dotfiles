@@ -134,15 +134,15 @@ type envoyAccessLog struct {
 }
 
 type envoyHTTPConnManagerConfig struct {
+	NormalizePath                *bool                `yaml:"normalize_path,omitempty"`
 	AtType                       string               `yaml:"@type"`
 	StatPrefix                   string               `yaml:"stat_prefix"`
-	NormalizePath                *bool                `yaml:"normalize_path,omitempty"`
-	MergeSlashes                 bool                 `yaml:"merge_slashes,omitempty"`
 	PathWithEscapedSlashesAction string               `yaml:"path_with_escaped_slashes_action,omitempty"`
 	RouteConfig                  envoyRouteConfig     `yaml:"route_config"`
 	AccessLog                    []envoyAccessLog     `yaml:"access_log,omitempty"`
 	HTTPFilters                  []envoyFilter        `yaml:"http_filters"`
 	UpgradeConfigs               []envoyUpgradeConfig `yaml:"upgrade_configs,omitempty"`
+	MergeSlashes                 bool                 `yaml:"merge_slashes,omitempty"`
 }
 
 type envoyUpgradeConfig struct {
@@ -200,8 +200,8 @@ type envoyRouteMatch struct {
 
 type envoyHeaderMatcher struct {
 	StringMatch  *envoyStringMatch `yaml:"string_match,omitempty"`
-	Name         string            `yaml:"name"`
 	PresentMatch *bool             `yaml:"present_match,omitempty"`
+	Name         string            `yaml:"name"`
 }
 
 type envoyStringMatch struct {
@@ -275,8 +275,8 @@ type envoyClusterDFPConfig struct {
 }
 
 type envoyHttpProtocolOptions struct {
-	AtType                      string                           `yaml:"@type"`
 	UseDownstreamProtocolConfig envoyUseDownstreamProtocolConfig `yaml:"use_downstream_protocol_config"`
+	AtType                      string                           `yaml:"@type"`
 }
 
 type envoyUseDownstreamProtocolConfig struct{}
@@ -332,7 +332,8 @@ var sharedDNSCacheConfig = envoyDNSCacheConfig{
 //
 //   - "**." prefix (multi-label): matches one or more DNS labels at
 //     arbitrary depth, mirroring Cilium's [dnsWildcardREGroup].
-//     Example: "**.example.com" -> "^[-a-zA-Z0-9_]+(\.[-a-zA-Z0-9_]+)*\.example\.com$"
+//     Example: "**.example.com" ->
+//     "^[-a-zA-Z0-9_]+(\.[-a-zA-Z0-9_]+)*\.example\.com$"
 //     matches:  "sub.example.com", "a.b.example.com"
 //     rejects:  "example.com"
 //
@@ -356,6 +357,7 @@ func wildcardToSNIRegex(pattern string) string {
 	}
 
 	suffix := strings.TrimPrefix(pattern, "*.")
+
 	return `^[-a-zA-Z0-9_]+\.` + regexp.QuoteMeta(suffix) + `$`
 }
 
@@ -379,6 +381,7 @@ func wildcardToHostRegex(pattern string) string {
 	}
 
 	suffix := strings.TrimPrefix(pattern, "*.")
+
 	return `^[-a-zA-Z0-9_]+\.` + regexp.QuoteMeta(suffix) + `(:\d+)?$`
 }
 
@@ -391,6 +394,7 @@ func wildcardServerName(domain string) string {
 	if strings.HasPrefix(domain, "**.") {
 		return "*." + domain[3:]
 	}
+
 	return domain
 }
 
@@ -661,10 +665,12 @@ func buildTLSListener(
 
 	if len(wildcardDomains) > 0 {
 		rbac := buildWildcardRBACFilter(wildcardDomains)
+
 		envoyNames := make([]string, len(wildcardDomains))
 		for i, d := range wildcardDomains {
 			envoyNames[i] = wildcardServerName(d)
 		}
+
 		chains = append(
 			chains,
 			buildPassthroughFilterChain(upstreamPort, statPrefix+"_wildcard", envoyNames, accessLog, &rbac),
@@ -781,7 +787,7 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) ([]envoyVirtual
 
 		// Catch-all denies everything else.
 		routes = append(routes, envoyRoute{
-			Match:          envoyRouteMatch{Prefix: "/"},
+			Match: envoyRouteMatch{Prefix: "/"},
 			DirectResponse: &envoyDirectResponseAction{
 				Status: 403,
 				Body:   &envoyDataSource{InlineString: "Access denied"},

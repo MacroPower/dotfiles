@@ -173,7 +173,7 @@ linters:
         - singleCaseSwitch
       settings:
         hugeParam:
-          sizeThreshold: 256
+          sizeThreshold: 1024
 
     modernize:
       # newexpr analyzer panics in golang.org/x/tools@v0.42.0

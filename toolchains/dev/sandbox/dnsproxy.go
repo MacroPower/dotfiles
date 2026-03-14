@@ -90,10 +90,12 @@ func (d DNSDomain) Matches(qname string) bool {
 // as-is for the caller to handle.
 func CollectDNSDomains(cfg *SandboxConfig) []DNSDomain {
 	seen := make(map[string]bool)
+
 	var result []DNSDomain
 
-	for _, rule := range cfg.EgressRules() {
-		for _, fqdn := range rule.ToFQDNs {
+	eRules := cfg.EgressRules()
+	for ri := range eRules {
+		for _, fqdn := range eRules[ri].ToFQDNs {
 			var d DNSDomain
 
 			if fqdn.MatchName != "" {
@@ -111,6 +113,7 @@ func CollectDNSDomains(cfg *SandboxConfig) []DNSDomain {
 					// through for catch-all handling.
 					if !seen["*"] {
 						seen["*"] = true
+
 						result = append(result, DNSDomain{Name: "*"})
 					}
 
@@ -121,29 +124,7 @@ func CollectDNSDomains(cfg *SandboxConfig) []DNSDomain {
 			}
 
 			if seen[d.Name] {
-				// If previously seen as a wildcard, and this is
-				// an exact matchName for the same domain, upgrade
-				// to non-wildcard so the bare domain also resolves.
-				if !d.Wildcard {
-					for i := range result {
-						if result[i].Name == d.Name && result[i].Wildcard {
-							result[i].Wildcard = false
-							break
-						}
-					}
-				}
-
-				// If previously seen as single-level wildcard,
-				// and this is multi-level for the same domain,
-				// upgrade to multi-level (superset).
-				if d.Wildcard && d.MultiLevel {
-					for i := range result {
-						if result[i].Name == d.Name && result[i].Wildcard && !result[i].MultiLevel {
-							result[i].MultiLevel = true
-							break
-						}
-					}
-				}
+				upgradeDNSDomain(result, d)
 
 				continue
 			}
@@ -153,6 +134,34 @@ func CollectDNSDomains(cfg *SandboxConfig) []DNSDomain {
 		}
 	}
 
+	return collectTCPForwardHosts(cfg, result, seen)
+}
+
+// upgradeDNSDomain adjusts an existing entry in result when the same
+// domain is encountered again with different wildcard properties.
+func upgradeDNSDomain(result []DNSDomain, d DNSDomain) {
+	for i := range result {
+		if result[i].Name != d.Name {
+			continue
+		}
+
+		// Exact matchName upgrades a wildcard entry so the bare
+		// domain also resolves.
+		if !d.Wildcard && result[i].Wildcard {
+			result[i].Wildcard = false
+		}
+
+		// Multi-level wildcard upgrades single-level (superset).
+		if d.Wildcard && d.MultiLevel && !result[i].MultiLevel {
+			result[i].MultiLevel = true
+		}
+
+		return
+	}
+}
+
+// collectTCPForwardHosts adds TCPForward hosts to the domain list.
+func collectTCPForwardHosts(cfg *SandboxConfig, result []DNSDomain, seen map[string]bool) []DNSDomain {
 	for _, host := range cfg.TCPForwardHosts() {
 		if seen[host] {
 			// TCPForward hosts need the bare domain to resolve.
@@ -186,23 +195,18 @@ func CollectDNSDomains(cfg *SandboxConfig) []DNSDomain {
 // replacing the previous dnsmasq + RefuseDNS two-hop chain with a
 // single process.
 type DNSProxy struct {
-	mode     dnsMode
+	ctx      context.Context
+	udp4     *dns.Server
+	udp6     *dns.Server
+	tcp4     *dns.Server
+	tcp6     *dns.Server
+	cancel   context.CancelFunc
+	upstream string
+	Addr     string
 	domains  []DNSDomain
 	patterns []FQDNPattern
-	upstream string
+	mode     dnsMode
 	logging  bool
-
-	// Addr is the IPv4 address the proxy is listening on. Useful for
-	// tests that bind to port 0 and need the kernel-assigned port.
-	Addr string
-
-	udp4 *dns.Server
-	udp6 *dns.Server
-	tcp4 *dns.Server
-	tcp6 *dns.Server
-
-	cancel context.CancelFunc
-	ctx    context.Context
 }
 
 // StartDNSProxy starts the DNS proxy on listenAddr (and optionally
@@ -222,8 +226,10 @@ type DNSProxy struct {
 // IPv6 listener: if ipv6Disabled is true, only IPv4 listeners are
 // created. If ipv6Disabled is false and binding [::1] fails, startup
 // returns an error (IPv6 bypass risk).
-func StartDNSProxy(cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled bool) (*DNSProxy, error) {
-	ctx, cancel := context.WithCancel(context.Background())
+func StartDNSProxy(
+	ctx context.Context, cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled bool,
+) (*DNSProxy, error) {
+	ctx, cancel := context.WithCancel(ctx)
 
 	p := &DNSProxy{
 		upstream: upstream,
@@ -267,12 +273,17 @@ func StartDNSProxy(cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled
 		cancel()
 
 		for _, c := range closers {
-			_ = c.Close()
+			err := c.Close()
+			if err != nil {
+				slog.WarnContext(ctx, "closing listener", slog.Any("err", err))
+			}
 		}
 	}
 
+	lc := net.ListenConfig{}
+
 	// UDP IPv4.
-	udp4PC, err := net.ListenPacket("udp", listenAddr)
+	udp4PC, err := lc.ListenPacket(ctx, "udp", listenAddr)
 	if err != nil {
 		cleanup()
 
@@ -282,7 +293,13 @@ func StartDNSProxy(cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled
 	closers = append(closers, udp4PC)
 
 	// Resolve actual address (port may be 0).
-	udpAddr := udp4PC.LocalAddr().(*net.UDPAddr)
+	udpAddr, ok := udp4PC.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		cleanup()
+
+		return nil, fmt.Errorf("unexpected address type: %T", udp4PC.LocalAddr())
+	}
+
 	p.Addr = udpAddr.String()
 
 	p.udp4 = &dns.Server{
@@ -291,7 +308,7 @@ func StartDNSProxy(cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled
 	}
 
 	// TCP IPv4 on the same port.
-	tcp4Ln, err := net.Listen("tcp", p.Addr)
+	tcp4Ln, err := lc.Listen(ctx, "tcp", p.Addr)
 	if err != nil {
 		cleanup()
 
@@ -309,7 +326,7 @@ func StartDNSProxy(cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled
 	if !ipv6Disabled {
 		addr6 := fmt.Sprintf("[::1]:%d", udpAddr.Port)
 
-		udp6PC, err := net.ListenPacket("udp", addr6)
+		udp6PC, err := lc.ListenPacket(ctx, "udp", addr6)
 		if err != nil {
 			cleanup()
 
@@ -323,7 +340,7 @@ func StartDNSProxy(cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled
 			Handler:    dns.HandlerFunc(p.handleUDPQuery),
 		}
 
-		tcp6Ln, err := net.Listen("tcp", addr6)
+		tcp6Ln, err := lc.Listen(ctx, "tcp", addr6)
 		if err != nil {
 			cleanup()
 
@@ -350,7 +367,12 @@ func StartDNSProxy(cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled
 
 		s.NotifyStartedFunc = sync.OnceFunc(func() { wg.Done() })
 
-		go func() { _ = s.ActivateAndServe() }()
+		go func() {
+			err := s.ActivateAndServe()
+			if err != nil {
+				slog.Debug("dns server exited", slog.Any("err", err))
+			}
+		}()
 	}
 
 	wg.Wait()
@@ -367,7 +389,8 @@ func (p *DNSProxy) Shutdown() error {
 
 	for _, s := range []*dns.Server{p.udp4, p.udp6, p.tcp4, p.tcp6} {
 		if s != nil {
-			if err := s.Shutdown(); err != nil {
+			err := s.Shutdown()
+			if err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -400,7 +423,11 @@ func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 	if len(r.Question) == 0 {
 		fail := new(dns.Msg)
 		fail.SetRcode(r, dns.RcodeServerFailure)
-		_ = w.WriteMsg(fail)
+
+		err := w.WriteMsg(fail)
+		if err != nil {
+			slog.Warn("writing dns error response", slog.Any("err", err))
+		}
 
 		return
 	}
@@ -418,7 +445,10 @@ func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 			)
 		}
 
-		_ = w.WriteMsg(resp)
+		err := w.WriteMsg(resp)
+		if err != nil {
+			slog.Warn("writing dns refusal", slog.Any("err", err))
+		}
 
 		return
 	}
@@ -434,7 +464,10 @@ func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 			)
 		}
 
-		_ = w.WriteMsg(resp)
+		err := w.WriteMsg(resp)
+		if err != nil {
+			slog.Warn("writing dns refusal", slog.Any("err", err))
+		}
 
 		return
 	}
@@ -449,7 +482,11 @@ func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 	if err != nil {
 		fail := new(dns.Msg)
 		fail.SetRcode(r, dns.RcodeServerFailure)
-		_ = w.WriteMsg(fail)
+
+		err := w.WriteMsg(fail)
+		if err != nil {
+			slog.Warn("writing dns error response", slog.Any("err", err))
+		}
 
 		return
 	}
@@ -468,7 +505,10 @@ func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 		)
 	}
 
-	_ = w.WriteMsg(resp)
+	err = w.WriteMsg(resp)
+	if err != nil {
+		slog.Warn("writing dns response", slog.Any("err", err))
+	}
 }
 
 // domainAllowed reports whether qname matches any domain in the
@@ -515,6 +555,7 @@ func (p *DNSProxy) populateIPSets(qname string, resp *dns.Msg, ruleIndices []int
 			for _, idx := range ruleIndices {
 				fmt.Fprintf(&commands, "add %s %s timeout %d\n", FQDNIPSetName(idx, false), a.A.String(), ttl)
 			}
+
 		case *dns.AAAA:
 			ttl := max(int(a.Hdr.Ttl), minIPSetTTL)
 

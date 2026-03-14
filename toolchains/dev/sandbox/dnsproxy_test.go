@@ -2,6 +2,7 @@ package sandbox_test
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"testing"
 
@@ -392,20 +393,24 @@ func TestMatchFQDNPatternsWithoutBareWildcard(t *testing.T) {
 
 // startMockDNS starts a mock DNS server that responds to queries with
 // the given A record IP. Returns the server and its address.
-func startMockDNS(t *testing.T, ip string) (*dns.Server, string) {
+func startMockDNS(t *testing.T, ip string) string {
 	t.Helper()
 
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+
+	pc, err := lc.ListenPacket(t.Context(), "udp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	udpAddr := pc.LocalAddr().(*net.UDPAddr)
+	udpAddr, ok := pc.LocalAddr().(*net.UDPAddr)
+	require.True(t, ok)
 
-	tcpLn, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", udpAddr.Port))
+	tcpLn, err := lc.Listen(t.Context(), "tcp", fmt.Sprintf("127.0.0.1:%d", udpAddr.Port))
 	require.NoError(t, err)
 
 	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
 		resp := new(dns.Msg)
 		resp.SetReply(r)
+
 		resp.Answer = append(resp.Answer, &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   r.Question[0].Name,
@@ -415,7 +420,7 @@ func startMockDNS(t *testing.T, ip string) (*dns.Server, string) {
 			},
 			A: net.ParseIP(ip),
 		})
-		_ = w.WriteMsg(resp)
+		assert.NoError(t, w.WriteMsg(resp))
 	})
 
 	udpSrv := &dns.Server{
@@ -434,24 +439,35 @@ func startMockDNS(t *testing.T, ip string) (*dns.Server, string) {
 	udpSrv.NotifyStartedFunc = func() { close(udpReady) }
 	tcpSrv.NotifyStartedFunc = func() { close(tcpReady) }
 
-	go func() { _ = udpSrv.ActivateAndServe() }()
-	go func() { _ = tcpSrv.ActivateAndServe() }()
+	go func() {
+		err := udpSrv.ActivateAndServe()
+		if err != nil {
+			slog.Debug("mock dns udp server exited", slog.Any("err", err))
+		}
+	}()
+
+	go func() {
+		err := tcpSrv.ActivateAndServe()
+		if err != nil {
+			slog.Debug("mock dns tcp server exited", slog.Any("err", err))
+		}
+	}()
 
 	<-udpReady
 	<-tcpReady
 
 	t.Cleanup(func() {
-		_ = udpSrv.Shutdown()
-		_ = tcpSrv.Shutdown()
+		assert.NoError(t, udpSrv.Shutdown())
+		assert.NoError(t, tcpSrv.Shutdown())
 	})
 
-	return udpSrv, fmt.Sprintf("127.0.0.1:%d", udpAddr.Port)
+	return fmt.Sprintf("127.0.0.1:%d", udpAddr.Port)
 }
 
 func TestStartDNSProxy(t *testing.T) {
 	t.Parallel()
 
-	_, upstream := startMockDNS(t, "1.2.3.4")
+	upstream := startMockDNS(t, "1.2.3.4")
 
 	cfg := &sandbox.SandboxConfig{
 		Egress: egressRules(sandbox.EgressRule{
@@ -460,10 +476,10 @@ func TestStartDNSProxy(t *testing.T) {
 		}),
 	}
 
-	proxy, err := sandbox.StartDNSProxy(cfg, upstream, "127.0.0.1:0", true)
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true)
 	require.NoError(t, err)
 
-	t.Cleanup(func() { _ = proxy.Shutdown() })
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
 
 	// Query a matching domain through the proxy.
 	client := &dns.Client{Net: "udp"}
@@ -493,7 +509,7 @@ func TestStartDNSProxy(t *testing.T) {
 func TestDNSProxyTCPPassthrough(t *testing.T) {
 	t.Parallel()
 
-	_, upstream := startMockDNS(t, "5.6.7.8")
+	upstream := startMockDNS(t, "5.6.7.8")
 
 	cfg := &sandbox.SandboxConfig{
 		Egress: egressRules(sandbox.EgressRule{
@@ -502,10 +518,10 @@ func TestDNSProxyTCPPassthrough(t *testing.T) {
 		}),
 	}
 
-	proxy, err := sandbox.StartDNSProxy(cfg, upstream, "127.0.0.1:0", true)
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true)
 	require.NoError(t, err)
 
-	t.Cleanup(func() { _ = proxy.Shutdown() })
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
 
 	// TCP query for allowed domain should succeed.
 	client := &dns.Client{Net: "tcp"}
@@ -526,17 +542,17 @@ func TestDNSProxyTCPPassthrough(t *testing.T) {
 func TestDNSProxyBlockedMode(t *testing.T) {
 	t.Parallel()
 
-	_, upstream := startMockDNS(t, "1.2.3.4")
+	upstream := startMockDNS(t, "1.2.3.4")
 
 	// Blocked config: egress: [{}] with default deny.
 	cfg := &sandbox.SandboxConfig{
 		Egress: egressRules(sandbox.EgressRule{}),
 	}
 
-	proxy, err := sandbox.StartDNSProxy(cfg, upstream, "127.0.0.1:0", true)
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true)
 	require.NoError(t, err)
 
-	t.Cleanup(func() { _ = proxy.Shutdown() })
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
 
 	// All queries should get REFUSED.
 	client := &dns.Client{Net: "udp"}
@@ -553,7 +569,7 @@ func TestDNSProxyBlockedMode(t *testing.T) {
 func TestDNSProxyRestrictedMode(t *testing.T) {
 	t.Parallel()
 
-	_, upstream := startMockDNS(t, "10.0.0.1")
+	upstream := startMockDNS(t, "10.0.0.1")
 
 	cfg := &sandbox.SandboxConfig{
 		Egress: egressRules(sandbox.EgressRule{
@@ -562,10 +578,10 @@ func TestDNSProxyRestrictedMode(t *testing.T) {
 		}),
 	}
 
-	proxy, err := sandbox.StartDNSProxy(cfg, upstream, "127.0.0.1:0", true)
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true)
 	require.NoError(t, err)
 
-	t.Cleanup(func() { _ = proxy.Shutdown() })
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
 
 	client := &dns.Client{Net: "udp"}
 
@@ -601,7 +617,7 @@ func TestDNSProxyRestrictedMode(t *testing.T) {
 func TestDNSProxyRestrictedWildcard(t *testing.T) {
 	t.Parallel()
 
-	_, upstream := startMockDNS(t, "10.0.0.2")
+	upstream := startMockDNS(t, "10.0.0.2")
 
 	cfg := &sandbox.SandboxConfig{
 		Egress: egressRules(sandbox.EgressRule{
@@ -610,10 +626,10 @@ func TestDNSProxyRestrictedWildcard(t *testing.T) {
 		}),
 	}
 
-	proxy, err := sandbox.StartDNSProxy(cfg, upstream, "127.0.0.1:0", true)
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true)
 	require.NoError(t, err)
 
-	t.Cleanup(func() { _ = proxy.Shutdown() })
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
 
 	client := &dns.Client{Net: "udp"}
 
@@ -648,7 +664,7 @@ func TestDNSProxyRestrictedWildcard(t *testing.T) {
 func TestDNSProxyBareWildcard(t *testing.T) {
 	t.Parallel()
 
-	_, upstream := startMockDNS(t, "10.0.0.3")
+	upstream := startMockDNS(t, "10.0.0.3")
 
 	cfg := &sandbox.SandboxConfig{
 		Egress: egressRules(sandbox.EgressRule{
@@ -657,10 +673,10 @@ func TestDNSProxyBareWildcard(t *testing.T) {
 		}),
 	}
 
-	proxy, err := sandbox.StartDNSProxy(cfg, upstream, "127.0.0.1:0", true)
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true)
 	require.NoError(t, err)
 
-	t.Cleanup(func() { _ = proxy.Shutdown() })
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
 
 	// Bare wildcard should forward all queries.
 	client := &dns.Client{Net: "udp"}
@@ -677,13 +693,13 @@ func TestDNSProxyBareWildcard(t *testing.T) {
 func TestDNSProxyUnrestrictedMode(t *testing.T) {
 	t.Parallel()
 
-	_, upstream := startMockDNS(t, "10.0.0.4")
+	upstream := startMockDNS(t, "10.0.0.4")
 
 	// nil config -> unrestricted.
-	proxy, err := sandbox.StartDNSProxy(nil, upstream, "127.0.0.1:0", true)
+	proxy, err := sandbox.StartDNSProxy(t.Context(), nil, upstream, "127.0.0.1:0", true)
 	require.NoError(t, err)
 
-	t.Cleanup(func() { _ = proxy.Shutdown() })
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
 
 	client := &dns.Client{Net: "udp"}
 	msg := new(dns.Msg)
@@ -699,7 +715,7 @@ func TestDNSProxyUnrestrictedMode(t *testing.T) {
 func TestDNSProxyTCPForwardHosts(t *testing.T) {
 	t.Parallel()
 
-	_, upstream := startMockDNS(t, "10.0.0.6")
+	upstream := startMockDNS(t, "10.0.0.6")
 
 	// Restricted mode with a TCPForward host that should be resolvable.
 	cfg := &sandbox.SandboxConfig{
@@ -710,10 +726,10 @@ func TestDNSProxyTCPForwardHosts(t *testing.T) {
 		TCPForwards: []sandbox.TCPForward{{Port: 22, Host: "git.example.com"}},
 	}
 
-	proxy, err := sandbox.StartDNSProxy(cfg, upstream, "127.0.0.1:0", true)
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true)
 	require.NoError(t, err)
 
-	t.Cleanup(func() { _ = proxy.Shutdown() })
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
 
 	client := &dns.Client{Net: "udp"}
 
