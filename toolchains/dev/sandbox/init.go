@@ -254,14 +254,48 @@ func Init(ctx context.Context, args []string) error {
 	}()
 
 	// Point system DNS to local resolver.
+	// Write to a temp file first, then atomically rename into place so that
+	// a failed write after unmount does not leave the container without DNS.
+	tmpResolv, err := os.CreateTemp("/etc", ".resolv.conf.*")
+	if err != nil {
+		return fmt.Errorf("creating temp resolv.conf: %w", err)
+	}
+
+	_, err = tmpResolv.WriteString("nameserver 127.0.0.1\nnameserver ::1\n")
+
+	closeErr := tmpResolv.Close()
+
+	if err != nil {
+		removeErr := os.Remove(tmpResolv.Name())
+		if removeErr != nil {
+			slog.DebugContext(ctx, "removing temp resolv.conf", slog.Any("err", removeErr))
+		}
+
+		return fmt.Errorf("writing temp resolv.conf: %w", err)
+	}
+
+	if closeErr != nil {
+		removeErr := os.Remove(tmpResolv.Name())
+		if removeErr != nil {
+			slog.DebugContext(ctx, "removing temp resolv.conf", slog.Any("err", removeErr))
+		}
+
+		return fmt.Errorf("closing temp resolv.conf: %w", closeErr)
+	}
+
 	umountErr := exec.CommandContext(ctx, "umount", "/etc/resolv.conf").Run()
 	if umountErr != nil {
 		slog.DebugContext(ctx, "unmounting resolv.conf", slog.Any("err", umountErr))
 	}
 
-	err = os.WriteFile("/etc/resolv.conf", []byte("nameserver 127.0.0.1\nnameserver ::1\n"), 0o644)
+	err = os.Rename(tmpResolv.Name(), "/etc/resolv.conf")
 	if err != nil {
-		return fmt.Errorf("writing resolv.conf: %w", err)
+		slog.ErrorContext(ctx, "atomic resolv.conf rename failed after unmount",
+			slog.String("temp", tmpResolv.Name()),
+			slog.Any("err", err),
+		)
+
+		return fmt.Errorf("renaming resolv.conf: %w", err)
 	}
 
 	// Start Envoy only when listeners are needed.
