@@ -349,8 +349,6 @@ const (
 	// divergences from Cilium:
 	//   - No per-process lookup enforcement: all uid-1000 processes
 	//     share the ipset. Mitigated by Envoy for TCP traffic.
-	//   - No zombie/conntrack integration: entries expire strictly on
-	//     TTL regardless of active connections.
 	//   - No per-hostname IP limit: ipset maxelem 65536 shared across
 	//     all hostnames (Cilium caps at 1000 per hostname).
 	IPSetFQDN4 = "sandbox_fqdn4"

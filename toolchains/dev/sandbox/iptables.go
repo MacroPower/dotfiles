@@ -378,12 +378,21 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 				}
 			}
 
-			// Non-TCP FQDN ports: ACCEPT for user UID on UDP/SCTP ports
-			// restricted to DNS-resolved IPs via ipset. The DNS proxy
-			// populates the ipset with resolved IPs from FQDN domains.
+			// Non-TCP FQDN ports: two rules per port/protocol.
+			// ESTABLISHED allows packets on flows whose initial packet
+			// was accepted by the ipset rule below, implementing
+			// zombie/CT semantics: conntrack keeps flows alive past
+			// ipset TTL expiry, matching Cilium's DNSZombieMappings
+			// behavior. The ipset rule gates first packets of new
+			// flows, requiring DNS resolution before establishment.
 			for _, fp := range fqdnNonTCPPorts {
 				fmt.Fprintf(b,
-					"-A OUTPUT -m owner --uid-owner %s -p %s --dport %d -m set --match-set %s dst -j ACCEPT\n",
+					"-A OUTPUT -m owner --uid-owner %s -p %s --dport %d "+
+						"-m state --state ESTABLISHED -j ACCEPT\n",
+					UID, fp.Protocol, fp.Port)
+				fmt.Fprintf(b,
+					"-A OUTPUT -m owner --uid-owner %s -p %s --dport %d "+
+						"-m set --match-set %s dst -j ACCEPT\n",
 					UID, fp.Protocol, fp.Port, ipsetName)
 			}
 		}

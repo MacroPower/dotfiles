@@ -443,9 +443,11 @@ func TestGenerateIptablesRules(t *testing.T) {
 				}),
 			},
 			wantIPv4: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m state --state ESTABLISHED -j ACCEPT",
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn4 dst -j ACCEPT",
 			},
 			wantIPv6: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m state --state ESTABLISHED -j ACCEPT",
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn6 dst -j ACCEPT",
 			},
 			notWantIPv4: []string{
@@ -460,9 +462,11 @@ func TestGenerateIptablesRules(t *testing.T) {
 				}),
 			},
 			wantIPv4: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -m state --state ESTABLISHED -j ACCEPT",
 				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -m set --match-set sandbox_fqdn4 dst -j ACCEPT",
 			},
 			wantIPv6: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -m state --state ESTABLISHED -j ACCEPT",
 				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -m set --match-set sandbox_fqdn6 dst -j ACCEPT",
 			},
 			notWantIPv4: []string{
@@ -479,11 +483,13 @@ func TestGenerateIptablesRules(t *testing.T) {
 			wantIPv4: []string{
 				// TCP handled by Envoy via REDIRECT.
 				"--to-port 15443",
-				// UDP handled by ipset.
+				// UDP: ESTABLISHED for zombie/CT, then ipset for new flows.
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m state --state ESTABLISHED -j ACCEPT",
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn4 dst -j ACCEPT",
 			},
 			notWantIPv4: []string{"-p sctp"},
 			wantIPv6: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m state --state ESTABLISHED -j ACCEPT",
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn6 dst -j ACCEPT",
 			},
 			notWantIPv6:        []string{"-p sctp"},
@@ -506,6 +512,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 			},
 			notWantIPv4: []string{
 				"--match-set",
+				"-p udp --dport 443 -m state --state ESTABLISHED",
 			},
 		},
 		"separate FQDN and CIDR rules": {
