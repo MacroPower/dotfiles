@@ -749,6 +749,10 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) ([]envoyVirtual
 				match.Headers = buildMethodHeaderMatcher([]string{hr.Method})
 			}
 
+			if hr.Host != "" {
+				match.Headers = append(match.Headers, buildHostHeaderMatcher(hr.Host)...)
+			}
+
 			routes = append(routes, envoyRoute{
 				Match: match,
 				Route: &envoyRouteAction{
@@ -926,6 +930,28 @@ func buildMethodHeaderMatcher(methods []string) []envoyHeaderMatcher {
 	}
 
 	return []envoyHeaderMatcher{hm}
+}
+
+// buildHostHeaderMatcher creates an Envoy header matcher for the
+// :authority pseudo-header using the given host regex. Envoy
+// normalizes HTTP/1.1 Host into :authority for route matching. The
+// regex is anchored with ^ and $ so it uses RE2::FullMatch semantics,
+// matching Cilium's extended POSIX regex behavior.
+//
+// An optional port suffix (:\d+) is allowed after the host pattern
+// because HTTP/1.1 clients may include the port in the Host header
+// (e.g. "api.example.com:8443"), and Envoy preserves it in
+// :authority. Cilium's Go extension strips the port before matching,
+// but raw Envoy route matchers see the full value.
+func buildHostHeaderMatcher(host string) []envoyHeaderMatcher {
+	if host == "" {
+		return nil
+	}
+
+	return []envoyHeaderMatcher{{
+		Name:        ":authority",
+		StringMatch: envoyStringMatch{SafeRegex: &envoySafeRegex{Regex: "^" + host + `(:[0-9]+)?$`}},
+	}}
 }
 
 // stripL7Restrictions converts restricted rules to passthrough by

@@ -78,9 +78,9 @@ var (
 	// not a valid regular expression.
 	ErrMethodInvalidRegex = errors.New("method must be a valid regex")
 
-	// ErrHTTPHostUnsupported is returned when an [HTTPRule] sets the
-	// host field, which the sandbox does not implement.
-	ErrHTTPHostUnsupported = errors.New("HTTP host field is not supported by the sandbox")
+	// ErrHostInvalidRegex is returned when a host in an [HTTPRule] is
+	// not a valid regular expression.
+	ErrHostInvalidRegex = errors.New("host must be a valid regex")
 
 	// ErrHTTPHeadersUnsupported is returned when an [HTTPRule] sets the
 	// headers field, which the sandbox does not implement.
@@ -489,8 +489,9 @@ type HTTPRule struct {
 	// Path restricts the allowed URL path as an extended POSIX regex
 	// matched against the full path (e.g. "/v1/.*", "/api/v[12]/.*").
 	Path string `yaml:"path,omitempty"`
-	// Host is present to catch YAML input; the sandbox does not
-	// support HTTP host matching and will reject configs that set it.
+	// Host restricts the allowed HTTP host as an extended POSIX regex
+	// matched against the Host header (e.g. "api\\.example\\.com",
+	// ".*\\.example\\.com").
 	Host string `yaml:"host,omitempty"`
 }
 
@@ -610,6 +611,7 @@ func (c *SandboxConfig) IsEgressBlocked() bool {
 type ResolvedHTTPRule struct {
 	Method string // empty = any method
 	Path   string // empty = any path
+	Host   string // empty = any host
 }
 
 // ResolvedRule bridges between the Cilium-shaped config and Envoy-shaped
@@ -1088,7 +1090,20 @@ func validateHTTPRules(pr PortRule, ruleIdx int) error {
 
 	for _, h := range pr.Rules.HTTP {
 		if h.Host != "" {
-			return fmt.Errorf("%w: rule %d", ErrHTTPHostUnsupported, ruleIdx)
+			if len(h.Host) > maxRegexLen {
+				return fmt.Errorf(
+					"%w: rule %d host too long (%d > %d)",
+					ErrHostInvalidRegex,
+					ruleIdx,
+					len(h.Host),
+					maxRegexLen,
+				)
+			}
+
+			_, err := regexp.Compile(h.Host)
+			if err != nil {
+				return fmt.Errorf("%w: rule %d host %q", ErrHostInvalidRegex, ruleIdx, h.Host)
+			}
 		}
 
 		if h.Headers != nil {
@@ -1273,10 +1288,10 @@ func (c *SandboxConfig) ResolveRulesForPort(port int) []ResolvedRule {
 		r := ResolvedRule{Domain: d}
 
 		if !m.unrestricted && len(m.httpRules) > 0 {
-			// Deduplicate HTTP rules by {method, path}.
-			seen := make(map[[2]string]bool, len(m.httpRules))
+			// Deduplicate HTTP rules by {method, path, host}.
+			seen := make(map[[3]string]bool, len(m.httpRules))
 			for _, hr := range m.httpRules {
-				k := [2]string{hr.Method, hr.Path}
+				k := [3]string{hr.Method, hr.Path, hr.Host}
 				if !seen[k] {
 					seen[k] = true
 
@@ -1289,7 +1304,11 @@ func (c *SandboxConfig) ResolveRulesForPort(port int) []ResolvedRule {
 					return r.HTTPRules[i].Path < r.HTTPRules[j].Path
 				}
 
-				return r.HTTPRules[i].Method < r.HTTPRules[j].Method
+				if r.HTTPRules[i].Method != r.HTTPRules[j].Method {
+					return r.HTTPRules[i].Method < r.HTTPRules[j].Method
+				}
+
+				return r.HTTPRules[i].Host < r.HTTPRules[j].Host
 			})
 		}
 
@@ -1341,7 +1360,7 @@ func matchRuleForPort(rule EgressRule, port int) (bool, bool, []ResolvedHTTPRule
 			}
 		} else {
 			for _, h := range pr.Rules.HTTP {
-				httpRules = append(httpRules, ResolvedHTTPRule{Method: h.Method, Path: h.Path})
+				httpRules = append(httpRules, ResolvedHTTPRule{Method: h.Method, Path: h.Path, Host: h.Host})
 			}
 		}
 	}
@@ -1434,7 +1453,7 @@ func (c *SandboxConfig) ResolveRules() []ResolvedRule {
 	ports := c.ResolvePorts()
 
 	type merged struct {
-		httpRules    map[[2]string]ResolvedHTTPRule
+		httpRules    map[[3]string]ResolvedHTTPRule
 		unrestricted bool
 	}
 
@@ -1449,7 +1468,7 @@ func (c *SandboxConfig) ResolveRules() []ResolvedRule {
 			m, exists := byDomain[r.Domain]
 			if !exists {
 				m = &merged{
-					httpRules: make(map[[2]string]ResolvedHTTPRule),
+					httpRules: make(map[[3]string]ResolvedHTTPRule),
 				}
 				byDomain[r.Domain] = m
 				order = append(order, r.Domain)
@@ -1460,7 +1479,7 @@ func (c *SandboxConfig) ResolveRules() []ResolvedRule {
 			}
 
 			for _, hr := range r.HTTPRules {
-				k := [2]string{hr.Method, hr.Path}
+				k := [3]string{hr.Method, hr.Path, hr.Host}
 				m.httpRules[k] = hr
 			}
 		}
@@ -1484,7 +1503,11 @@ func (c *SandboxConfig) ResolveRules() []ResolvedRule {
 						return r.HTTPRules[i].Path < r.HTTPRules[j].Path
 					}
 
-					return r.HTTPRules[i].Method < r.HTTPRules[j].Method
+					if r.HTTPRules[i].Method != r.HTTPRules[j].Method {
+						return r.HTTPRules[i].Method < r.HTTPRules[j].Method
+					}
+
+					return r.HTTPRules[i].Host < r.HTTPRules[j].Host
 				})
 			}
 		}

@@ -263,6 +263,55 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 			})},
 			notWant: []string{":method"},
 		},
+		"host-only restriction": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{{
+					Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
+					Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+						{Host: "api.example.com"},
+					}},
+				}},
+			})},
+			want: []string{
+				"restricted_api.example.com",
+				":authority",
+				"regex: ^api.example.com(:[0-9]+)?$",
+				"direct_response",
+				"403",
+			},
+			notWant: []string{":method"},
+		},
+		"host and method combined": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{{
+					Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
+					Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+						{Method: "GET", Host: "api.example.com"},
+					}},
+				}},
+			})},
+			want: []string{
+				":method",
+				"regex: ^GET$",
+				":authority",
+				"regex: ^api.example.com(:[0-9]+)?$",
+			},
+		},
+		"no host restriction has no authority header": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+				ToPorts: []sandbox.PortRule{{
+					Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
+					Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+						{Method: "GET"},
+					}},
+				}},
+			})},
+			want:    []string{":method"},
+			notWant: []string{":authority"},
+		},
 		"per-port domain scoping": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(
 				sandbox.EgressRule{

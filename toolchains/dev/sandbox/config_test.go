@@ -997,19 +997,32 @@ func TestValidate(t *testing.T) {
 			},
 			err: sandbox.ErrFQDNSelectorEmpty,
 		},
-		"HTTP host field rejected": {
+		"HTTP host field accepted": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
 					ToPorts: []sandbox.PortRule{{
 						Ports: []sandbox.Port{{Port: "443"}},
 						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
-							{Path: "/v1/", Host: "api.example.com"},
+							{Path: "/v1/", Host: "api\\.example\\.com"},
 						}},
 					}},
 				}),
 			},
-			err: sandbox.ErrHTTPHostUnsupported,
+		},
+		"host invalid regex rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+							{Host: "["},
+						}},
+					}},
+				}),
+			},
+			err: sandbox.ErrHostInvalidRegex,
 		},
 		"HTTP headers field rejected": {
 			cfg: &sandbox.SandboxConfig{
