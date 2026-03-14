@@ -555,6 +555,36 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-d 10.1.0.0/16 -j DROP",
 			},
 		},
+		"overlapping CIDR ranges across rules (ISSUE-44)": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{ToCIDR: []string{"10.0.0.0/8"}},
+					sandbox.EgressRule{ToCIDRSet: []sandbox.CIDRRule{{
+						CIDR:   "10.1.0.0/16",
+						Except: []string{"10.1.1.0/24"},
+					}}},
+				),
+			},
+			wantIPv4: []string{
+				// Separate per-rule chains.
+				"-N CIDR_4_0",
+				"-N CIDR_4_1",
+				// Rule 0: broad /8 ACCEPT, no excepts.
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 10.0.0.0/8 -j ACCEPT",
+				// Rule 1: except RETURN scoped to this chain only.
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -d 10.1.1.0/24 -j RETURN",
+				"-A CIDR_4_1 -m owner --uid-owner 1000 -d 10.1.0.0/16 -j ACCEPT",
+				// Both chains jumped to from OUTPUT.
+				"-A OUTPUT -j CIDR_4_0",
+				"-A OUTPUT -j CIDR_4_1",
+			},
+			notWantIPv4: []string{
+				// Except must NOT appear in rule 0's chain.
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 10.1.1.0/24",
+				// No DROP semantics anywhere (RETURN, not DROP).
+				"-d 10.1.1.0/24 -j DROP",
+			},
+		},
 		"no except still uses per-rule chains": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(
@@ -1069,6 +1099,57 @@ func TestGenerateIptablesRulesInputBeforeOutput(t *testing.T) {
 		assert.Greater(t, outputIdx, inputIdx,
 			"INPUT rules must come before OUTPUT rules in filter table")
 	}
+}
+
+func TestGenerateIptablesRulesOverlappingCIDRChainOrder(t *testing.T) {
+	t.Parallel()
+
+	// ISSUE-44: rule 0 allows 10.0.0.0/8 (broad), rule 1 allows
+	// 10.1.0.0/16 with except 10.1.1.0/24 (narrow with exclusion).
+	// Verify both chains use RETURN semantics so that traffic to
+	// 10.1.1.0/24 is accepted by rule 0's chain even though rule 1
+	// excludes it (OR across rules).
+	cfg := &sandbox.SandboxConfig{
+		Egress: egressRules(
+			sandbox.EgressRule{ToCIDR: []string{"10.0.0.0/8"}},
+			sandbox.EgressRule{ToCIDRSet: []sandbox.CIDRRule{{
+				CIDR:   "10.1.0.0/16",
+				Except: []string{"10.1.1.0/24"},
+			}}},
+		),
+	}
+
+	ipv4, _ := sandbox.GenerateIptablesRules(cfg)
+
+	// Rule 0's chain: broad /8 ACCEPT with no excepts.
+	rule0Accept := strings.Index(ipv4, "-A CIDR_4_0 -m owner --uid-owner 1000 -d 10.0.0.0/8 -j ACCEPT")
+	require.GreaterOrEqual(t, rule0Accept, 0, "rule 0 ACCEPT must be present")
+
+	// Rule 1's chain: except RETURN before /16 ACCEPT.
+	rule1Return := strings.Index(ipv4, "-A CIDR_4_1 -m owner --uid-owner 1000 -d 10.1.1.0/24 -j RETURN")
+	rule1Accept := strings.Index(ipv4, "-A CIDR_4_1 -m owner --uid-owner 1000 -d 10.1.0.0/16 -j ACCEPT")
+
+	require.GreaterOrEqual(t, rule1Return, 0, "rule 1 except RETURN must be present")
+	require.GreaterOrEqual(t, rule1Accept, 0, "rule 1 ACCEPT must be present")
+
+	assert.Greater(t, rule1Accept, rule1Return,
+		"rule 1 except RETURN must come before ACCEPT in CIDR_4_1")
+
+	// OUTPUT jumps: rule 0's chain is evaluated first.
+	jump0 := strings.Index(ipv4, "-A OUTPUT -j CIDR_4_0")
+	jump1 := strings.Index(ipv4, "-A OUTPUT -j CIDR_4_1")
+
+	require.GreaterOrEqual(t, jump0, 0, "OUTPUT jump to CIDR_4_0 must be present")
+	require.GreaterOrEqual(t, jump1, 0, "OUTPUT jump to CIDR_4_1 must be present")
+
+	assert.Greater(t, jump1, jump0,
+		"CIDR_4_0 jump must come before CIDR_4_1 in OUTPUT chain")
+
+	// Verify no DROP semantics -- only RETURN and ACCEPT in CIDR chains.
+	assert.NotContains(t, ipv4, "CIDR_4_0 -m owner --uid-owner 1000 -d 10.1.1.0/24",
+		"rule 0's chain must not reference rule 1's except")
+	assert.NotContains(t, ipv4, "-d 10.1.1.0/24 -j DROP",
+		"except must use RETURN semantics, not DROP")
 }
 
 func TestGenerateIptablesRulesUnrestrictedOpenPorts(t *testing.T) {
