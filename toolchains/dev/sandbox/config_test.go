@@ -1119,7 +1119,7 @@ func TestValidate(t *testing.T) {
 			},
 			err: sandbox.ErrHTTPHeadersUnsupported,
 		},
-		"L7 on port 8443 rejected": {
+		"L7 on port 8443 valid": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
@@ -1129,7 +1129,6 @@ func TestValidate(t *testing.T) {
 					}},
 				}),
 			},
-			err: sandbox.ErrL7OnUnsupportedPort,
 		},
 		"L7 on port 80 valid": {
 			cfg: &sandbox.SandboxConfig{
@@ -3093,7 +3092,7 @@ func TestNamedPortValidation(t *testing.T) {
 				}),
 			},
 		},
-		"L7 on named port dns rejected": {
+		"L7 on named port dns valid": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "dns.example.com"}},
@@ -3103,7 +3102,6 @@ func TestNamedPortValidation(t *testing.T) {
 					}},
 				}),
 			},
-			err: sandbox.ErrL7OnUnsupportedPort,
 		},
 		"uppercase named port normalized": {
 			cfg: &sandbox.SandboxConfig{

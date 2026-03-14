@@ -548,6 +548,22 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				`^[-a-zA-Z0-9_]+\\.example\\.com$`,
 			},
 		},
+		"MITM on extra port": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{{
+					Ports: []sandbox.Port{{Port: "8080"}},
+					Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+				}},
+			})},
+			certsDir: "/etc/sandbox/certs",
+			want: []string{
+				"tls_passthrough_8080",
+				"mitm_api.example.com",
+				"/etc/sandbox/certs/api.example.com/cert.pem",
+				"DownstreamTlsContext",
+			},
+		},
 		"wildcard HTTP gets RBAC filter on :authority": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
 				ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example.com"}},

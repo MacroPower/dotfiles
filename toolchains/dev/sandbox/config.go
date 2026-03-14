@@ -117,11 +117,6 @@ var (
 	// without domain context for MITM; CIDR rules bypass Envoy.
 	ErrL7RequiresFQDN = errors.New("L7 rules require toFQDNs selectors")
 
-	// ErrL7OnUnsupportedPort is returned when L7 HTTP rules are used
-	// on a port other than 80 or 443. The sandbox only supports HTTP
-	// MITM inspection on standard HTTP/HTTPS ports.
-	ErrL7OnUnsupportedPort = errors.New("L7 HTTP rules are only supported on ports 80 and 443")
-
 	// ErrL7RequiresTCP is returned when L7 HTTP rules are paired with
 	// a non-TCP protocol. Envoy's HTTP connection manager requires TCP
 	// streams; UDP, SCTP, and ANY are invalid with L7 HTTP rules.
@@ -1122,11 +1117,6 @@ func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 				if p.Protocol != "" && p.Protocol != "TCP" {
 					return fmt.Errorf("%w: rule %d port %s protocol %s",
 						ErrL7RequiresTCP, ruleIdx, p.Port, p.Protocol)
-				}
-
-				n, err := ResolvePort(p.Port)
-				if err == nil && int(n) != 80 && int(n) != 443 {
-					return fmt.Errorf("%w: rule %d port %s", ErrL7OnUnsupportedPort, ruleIdx, p.Port)
 				}
 			}
 		}
