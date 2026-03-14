@@ -1348,6 +1348,51 @@ func TestValidate(t *testing.T) {
 			},
 			err: sandbox.ErrFQDNNameInvalidChars,
 		},
+		"port 0 without L7 accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
+				}),
+			},
+		},
+		"port 0 with FQDN accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
+				}),
+			},
+		},
+		"port 0 with L7 rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "0"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+					}},
+				}),
+			},
+			err: sandbox.ErrL7WithWildcardPort,
+		},
+		"port 0 with endPort rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0", EndPort: 443}}}},
+				}),
+			},
+			err: sandbox.ErrEndPortWithWildcardPort,
+		},
+		"port 0 with UDP accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0", Protocol: "UDP"}}}},
+				}),
+			},
+		},
 	}
 
 	for name, tt := range tests {
@@ -1976,6 +2021,40 @@ func TestResolveRulesForPort(t *testing.T) {
 			port: 443,
 			want: []sandbox.ResolvedRule{{Domain: "*"}},
 		},
+		"port 0 matches all target ports": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "wildcard.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
+				},
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "specific.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				},
+			)},
+			port: 443,
+			want: []sandbox.ResolvedRule{
+				{Domain: "specific.example.com"},
+				{Domain: "wildcard.example.com"},
+			},
+		},
+		"port 0 matches non-standard ports": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "wildcard.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
+				},
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "specific.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080"}}}},
+				},
+			)},
+			port: 8080,
+			want: []sandbox.ResolvedRule{
+				{Domain: "specific.example.com"},
+				{Domain: "wildcard.example.com"},
+			},
+		},
 	}
 
 	for name, tt := range tests {
@@ -2185,6 +2264,49 @@ func TestResolveOpenPortRules(t *testing.T) {
 			} else {
 				assert.Equal(t, tt.want, got)
 			}
+		})
+	}
+}
+
+func TestHasUnrestrictedOpenPorts(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		cfg  *sandbox.SandboxConfig
+		want bool
+	}{
+		"empty Ports list is unrestricted": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToPorts: []sandbox.PortRule{{}},
+			})},
+			want: true,
+		},
+		"port 0 counts as unrestricted": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
+			})},
+			want: true,
+		},
+		"specific port is not unrestricted": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+			})},
+			want: false,
+		},
+		"FQDN rule with port 0 not unrestricted": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
+			})},
+			want: false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, tt.cfg.HasUnrestrictedOpenPorts())
 		})
 	}
 }
@@ -2473,6 +2595,14 @@ func TestResolvePorts(t *testing.T) {
 			},
 			want: []int{443, 8080},
 		},
+		"port 0 does not appear in resolved ports": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
+				}),
+			},
+		},
 	}
 
 	for name, tt := range tests {
@@ -2727,6 +2857,17 @@ func TestResolveCIDRRules(t *testing.T) {
 					{Port: 443, Protocol: "tcp"},
 					{Port: 443, Protocol: "udp"},
 				}, RuleIndex: 0},
+			},
+		},
+		"port 0 CIDR rule has no port restriction": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "10.0.0.0/8"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
+				}),
+			},
+			wantIPv4: []sandbox.ResolvedCIDR{
+				{CIDR: "10.0.0.0/8"},
 			},
 		},
 	}

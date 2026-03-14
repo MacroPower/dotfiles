@@ -948,6 +948,34 @@ func TestGenerateIptablesRulesUnrestrictedOpenPorts(t *testing.T) {
 				"-A OUTPUT -m owner --uid-owner 1000 -j ACCEPT",
 			},
 		},
+		"port 0 open-port rule produces unrestricted ACCEPT": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
+				}),
+			},
+			wantIPv4: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				"--dport 0",
+			},
+		},
+		"port 0 CIDR rule produces portless iptables rules": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "10.0.0.0/8"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
+				}),
+			},
+			wantIPv4: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -d 10.0.0.0/8 -j RETURN",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -d 10.0.0.0/8 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				"--dport 0",
+			},
+		},
 	}
 
 	for name, tt := range tests {

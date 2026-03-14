@@ -130,6 +130,19 @@ var (
 	// boilerplate.
 	ErrL7RequiresTCP = errors.New("L7 HTTP rules can only apply to TCP")
 
+	// ErrL7WithWildcardPort is returned when L7 rules are used with
+	// port 0 (wildcard). Cilium rejects this combination because L7
+	// inspection requires a concrete port for proxy binding.
+	ErrL7WithWildcardPort = errors.New("L7 rules cannot be used when port is 0")
+
+	// ErrEndPortWithWildcardPort is returned when endPort is used with
+	// port 0. Port 0 already means "all ports," so a range is redundant
+	// and likely a misconfiguration. Cilium does not reject this
+	// combination, but the sandbox is intentionally stricter to prevent
+	// confusing configs (e.g. port 0 endPort 443 looks like a range but
+	// means all ports).
+	ErrEndPortWithWildcardPort = errors.New("endPort cannot be used with wildcard port 0")
+
 	// ErrWildcardWithL7 is returned when a wildcard matchPattern is used
 	// with L7 HTTP rules. The MITM filter chain builds filesystem paths
 	// from the domain name, and wildcards in paths are invalid.
@@ -1020,6 +1033,8 @@ func validateFQDNConstraints(rule EgressRule, ruleIdx int, hasFQDNs bool) error 
 // protocol, and endPort configuration.
 func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 	for _, pr := range rule.ToPorts {
+		hasWildcardPort := false
+
 		for _, p := range pr.Ports {
 			if p.Port == "" {
 				return fmt.Errorf("%w: rule %d", ErrPortEmpty, ruleIdx)
@@ -1030,13 +1045,24 @@ func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 				return fmt.Errorf("%w: rule %d port %q", ErrPortInvalid, ruleIdx, p.Port)
 			}
 
+			if n == 0 {
+				hasWildcardPort = true
+
+				// EndPort is nonsensical with wildcard port.
+				if p.EndPort > 0 {
+					return fmt.Errorf("%w: rule %d port %q", ErrEndPortWithWildcardPort, ruleIdx, p.Port)
+				}
+			}
+
 			if !validProtocols[p.Protocol] {
 				return fmt.Errorf("%w: rule %d port %q protocol %q", ErrProtocolInvalid, ruleIdx, p.Port, p.Protocol)
 			}
 
-			err = validateEndPort(p, int(n), ruleIdx, hasFQDNs)
-			if err != nil {
-				return err
+			if n > 0 {
+				err = validateEndPort(p, int(n), ruleIdx, hasFQDNs)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -1046,6 +1072,10 @@ func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 		}
 
 		if pr.Rules != nil && len(pr.Rules.HTTP) > 0 {
+			if hasWildcardPort {
+				return fmt.Errorf("%w: rule %d", ErrL7WithWildcardPort, ruleIdx)
+			}
+
 			for _, p := range pr.Ports {
 				if p.Protocol != "" && p.Protocol != "TCP" {
 					return fmt.Errorf("%w: rule %d port %s protocol %s",
@@ -1374,6 +1404,11 @@ func portRuleMatchesPort(pr PortRule, port int) bool {
 
 		n := int(resolved)
 
+		// Port 0 is a wildcard: matches any target port.
+		if n == 0 {
+			return true
+		}
+
 		if p.EndPort > 0 && port >= n && port <= p.EndPort {
 			return true
 		}
@@ -1585,6 +1620,13 @@ func (c *SandboxConfig) HasUnrestrictedOpenPorts() bool {
 		for _, pr := range rule.ToPorts {
 			if len(pr.Ports) == 0 {
 				return true
+			}
+
+			for _, p := range pr.Ports {
+				n, _ := ResolvePort(p.Port)
+				if n == 0 {
+					return true
+				}
 			}
 		}
 	}
@@ -1830,8 +1872,13 @@ func resolvePortsFromRule(rule EgressRule) []ResolvedPortProto {
 
 		for _, p := range pr.Ports {
 			resolved, err := ResolvePort(p.Port)
-			if err != nil || resolved == 0 {
+			if err != nil {
 				continue
+			}
+
+			if resolved == 0 {
+				// Wildcard port: equivalent to empty Ports list.
+				return nil
 			}
 
 			n := int(resolved)
