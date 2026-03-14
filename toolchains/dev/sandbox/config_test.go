@@ -767,6 +767,27 @@ func TestValidate(t *testing.T) {
 				}),
 			},
 		},
+		"bare IPv4 in toCIDR accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDR: []string{"10.0.0.1"},
+				}),
+			},
+		},
+		"bare IPv6 in toCIDR accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDR: []string{"fd00::1"},
+				}),
+			},
+		},
+		"bare IPv4-mapped IPv6 in toCIDR accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDR: []string{"::ffff:10.0.0.1"},
+				}),
+			},
+		},
 		"invalid toCIDR": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
@@ -2659,6 +2680,7 @@ func TestResolveCIDRRules(t *testing.T) {
 
 	tests := map[string]struct {
 		cfg      *sandbox.SandboxConfig
+		validate bool
 		wantIPv4 []sandbox.ResolvedCIDR
 		wantIPv6 []sandbox.ResolvedCIDR
 	}{
@@ -2870,12 +2892,37 @@ func TestResolveCIDRRules(t *testing.T) {
 				{CIDR: "10.0.0.0/8"},
 			},
 		},
+		"bare IPv4 toCIDR normalizes to /32": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDR: []string{"8.8.8.8"},
+				}),
+			},
+			validate: true,
+			wantIPv4: []sandbox.ResolvedCIDR{
+				{CIDR: "8.8.8.8/32"},
+			},
+		},
+		"bare IPv6 toCIDR normalizes to /128": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDR: []string{"fd00::1"},
+				}),
+			},
+			validate: true,
+			wantIPv6: []sandbox.ResolvedCIDR{
+				{CIDR: "fd00::1/128"},
+			},
+		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			if tt.validate {
+				require.NoError(t, tt.cfg.Validate())
+			}
 			ipv4, ipv6 := tt.cfg.ResolveCIDRRules()
 			assert.Equal(t, tt.wantIPv4, ipv4)
 			assert.Equal(t, tt.wantIPv6, ipv6)

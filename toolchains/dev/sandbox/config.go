@@ -789,6 +789,35 @@ func normalizeEgressRule(c *SandboxConfig, i int) {
 		fqdn.MatchName = strings.TrimRight(strings.ToLower(fqdn.MatchName), ".")
 		fqdn.MatchPattern = strings.TrimRight(strings.ToLower(fqdn.MatchPattern), ".")
 	}
+
+	for j := range rule.ToCIDR {
+		rule.ToCIDR[j] = normalizeCIDR(rule.ToCIDR[j])
+	}
+}
+
+// normalizeCIDR returns s in CIDR notation. If s is already a valid
+// CIDR prefix it is returned as-is. If s is a bare IP address, the
+// appropriate full-length prefix is appended (/32 for IPv4, /128 for
+// IPv6). If s is neither, it is returned unchanged so that downstream
+// validation can produce the appropriate error.
+func normalizeCIDR(s string) string {
+	if _, _, err := net.ParseCIDR(s); err == nil {
+		return s
+	}
+
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return s
+	}
+
+	// Use string-based detection to match classifyCIDR's approach.
+	// This avoids To4() returning non-nil for IPv4-mapped IPv6
+	// addresses like "::ffff:10.0.0.1", which should get /128.
+	if strings.Contains(s, ":") {
+		return s + "/128"
+	}
+
+	return s + "/32"
 }
 
 // Validate checks that the config is internally consistent.
