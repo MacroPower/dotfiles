@@ -43,6 +43,11 @@ type DNSDomain struct {
 	// with a leading wildcard prefix ("*." or "**."), restricting
 	// matches to subdomains only (excluding the bare parent domain).
 	Wildcard bool
+	// MultiLevel is true for "**." patterns, allowing matches at
+	// arbitrary subdomain depth. When false (single-star "*."
+	// pattern), only one label before the suffix is allowed. This
+	// mirrors Cilium's depth restriction for single-star wildcards.
+	MultiLevel bool
 }
 
 // Matches reports whether qname (in FQDN wire format with trailing
@@ -60,7 +65,19 @@ func (d DNSDomain) Matches(qname string) bool {
 	q = strings.ToLower(q)
 
 	if d.Wildcard {
-		return strings.HasSuffix(q, "."+d.Name)
+		suffix := "." + d.Name
+		if !strings.HasSuffix(q, suffix) {
+			return false
+		}
+
+		if !d.MultiLevel {
+			// Single-star: exactly one label before the suffix.
+			prefix := q[:len(q)-len(suffix)]
+
+			return !strings.Contains(prefix, ".")
+		}
+
+		return true
 	}
 
 	return q == d.Name || strings.HasSuffix(q, "."+d.Name)
@@ -82,10 +99,11 @@ func CollectDNSDomains(cfg *SandboxConfig) []DNSDomain {
 			if fqdn.MatchName != "" {
 				d = DNSDomain{Name: fqdn.MatchName}
 			} else {
+				// Detect multi-level ("**.") before stripping.
+				multiLevel := strings.HasPrefix(fqdn.MatchPattern, "**.")
+
 				// Strip all leading "*" characters then the
 				// following "." to extract the base domain.
-				// This handles both "*.example.com" and
-				// "**.example.com" uniformly.
 				stripped := strings.TrimLeft(fqdn.MatchPattern, "*")
 				stripped = strings.TrimPrefix(stripped, ".")
 				if stripped == "" {
@@ -99,7 +117,7 @@ func CollectDNSDomains(cfg *SandboxConfig) []DNSDomain {
 					continue
 				}
 
-				d = DNSDomain{Name: stripped, Wildcard: true}
+				d = DNSDomain{Name: stripped, Wildcard: true, MultiLevel: multiLevel}
 			}
 
 			if seen[d.Name] {
@@ -110,6 +128,18 @@ func CollectDNSDomains(cfg *SandboxConfig) []DNSDomain {
 					for i := range result {
 						if result[i].Name == d.Name && result[i].Wildcard {
 							result[i].Wildcard = false
+							break
+						}
+					}
+				}
+
+				// If previously seen as single-level wildcard,
+				// and this is multi-level for the same domain,
+				// upgrade to multi-level (superset).
+				if d.Wildcard && d.MultiLevel {
+					for i := range result {
+						if result[i].Name == d.Name && result[i].Wildcard && !result[i].MultiLevel {
+							result[i].MultiLevel = true
 							break
 						}
 					}

@@ -50,10 +50,25 @@ func TestDNSDomainMatches(t *testing.T) {
 			qname:  "sub.example.com.",
 			want:   true,
 		},
-		"wildcard deep subdomain match": {
+		"wildcard rejects deep subdomain": {
 			domain: sandbox.DNSDomain{Name: "example.com", Wildcard: true},
 			qname:  "a.b.example.com.",
+			want:   false,
+		},
+		"multi-level wildcard deep subdomain": {
+			domain: sandbox.DNSDomain{Name: "example.com", Wildcard: true, MultiLevel: true},
+			qname:  "a.b.example.com.",
 			want:   true,
+		},
+		"multi-level wildcard single subdomain": {
+			domain: sandbox.DNSDomain{Name: "example.com", Wildcard: true, MultiLevel: true},
+			qname:  "sub.example.com.",
+			want:   true,
+		},
+		"multi-level wildcard rejects bare parent": {
+			domain: sandbox.DNSDomain{Name: "example.com", Wildcard: true, MultiLevel: true},
+			qname:  "example.com.",
+			want:   false,
 		},
 		"wildcard rejects bare parent": {
 			domain: sandbox.DNSDomain{Name: "example.com", Wildcard: true},
@@ -116,14 +131,29 @@ func TestCollectDNSDomains(t *testing.T) {
 			},
 			want: []sandbox.DNSDomain{{Name: "example.com", Wildcard: true}},
 		},
-		"double-star produces wildcard": {
+		"double-star produces multi-level wildcard": {
 			cfg: sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "**.example.com"}},
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 				}),
 			},
-			want: []sandbox.DNSDomain{{Name: "example.com", Wildcard: true}},
+			want: []sandbox.DNSDomain{{Name: "example.com", Wildcard: true, MultiLevel: true}},
+		},
+		"multi-level upgrades single-level for same domain": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "**.example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			want: []sandbox.DNSDomain{{Name: "example.com", Wildcard: true, MultiLevel: true}},
 		},
 		"bare wildcard passthrough": {
 			cfg: sandbox.SandboxConfig{
@@ -604,6 +634,15 @@ func TestDNSProxyRestrictedWildcard(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp2)
 	assert.Equal(t, dns.RcodeRefused, resp2.Rcode)
+
+	// Multi-label subdomain should get REFUSED (single-star depth).
+	msg3 := new(dns.Msg)
+	msg3.SetQuestion("a.b.example.com.", dns.TypeA)
+
+	resp3, _, err := client.Exchange(msg3, proxy.Addr)
+	require.NoError(t, err)
+	require.NotNil(t, resp3)
+	assert.Equal(t, dns.RcodeRefused, resp3.Rcode)
 }
 
 func TestDNSProxyBareWildcard(t *testing.T) {
