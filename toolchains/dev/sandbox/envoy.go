@@ -151,6 +151,8 @@ type envoySubstitutionFormatString struct {
 
 type envoyHTTPConnManagerConfig struct {
 	NormalizePath                *bool                `yaml:"normalize_path,omitempty"`
+	UseRemoteAddress             *bool                `yaml:"use_remote_address,omitempty"`
+	SkipXffAppend                *bool                `yaml:"skip_xff_append,omitempty"`
 	AtType                       string               `yaml:"@type"`
 	StatPrefix                   string               `yaml:"stat_prefix"`
 	StreamIdleTimeout            string               `yaml:"stream_idle_timeout,omitempty"`
@@ -620,6 +622,8 @@ func buildMITMFilterChain(rule ResolvedRule, accessLog []envoyAccessLog, certsDi
 				StatPrefix:                   "mitm_" + rule.Domain,
 				StreamIdleTimeout:            "300s",
 				NormalizePath:                boolPtr(true),
+				UseRemoteAddress:             boolPtr(true),
+				SkipXffAppend:                boolPtr(true),
 				MergeSlashes:                 true,
 				PathWithEscapedSlashesAction: "UNESCAPE_AND_REDIRECT",
 				RouteConfig: envoyRouteConfig{
@@ -980,6 +984,8 @@ func buildHTTPForwardListener(rules []ResolvedRule, open bool, accessLog []envoy
 					StatPrefix:                   "http_forward",
 					StreamIdleTimeout:            "300s",
 					NormalizePath:                boolPtr(true),
+					UseRemoteAddress:             boolPtr(true),
+					SkipXffAppend:                boolPtr(true),
 					MergeSlashes:                 true,
 					PathWithEscapedSlashesAction: "UNESCAPE_AND_REDIRECT",
 					RouteConfig: envoyRouteConfig{

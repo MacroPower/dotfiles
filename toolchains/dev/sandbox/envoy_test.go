@@ -821,6 +821,18 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"stream_idle_timeout: 300s",
 			},
 		},
+		"HCMs set UseRemoteAddress and SkipXffAppend": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}}}},
+				},
+			)},
+			want: []string{
+				"use_remote_address: true",
+				"skip_xff_append: true",
+			},
+		},
 		"gRPC route match and timeout handling": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(
 				sandbox.EgressRule{
