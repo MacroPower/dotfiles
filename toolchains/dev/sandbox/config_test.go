@@ -1369,6 +1369,18 @@ func TestValidate(t *testing.T) {
 			},
 			err: sandbox.ErrL7WithWildcardPort,
 		},
+		"empty ports with L7 rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+					ToPorts: []sandbox.PortRule{
+						{Ports: []sandbox.Port{{Port: "443"}}},
+						{Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}}},
+					},
+				}),
+			},
+			err: sandbox.ErrL7WithWildcardPort,
+		},
 		"port 0 with endPort rejected": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{

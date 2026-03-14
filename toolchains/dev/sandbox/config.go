@@ -1091,7 +1091,7 @@ func validatePorts(rule EgressRule, ruleIdx int) error {
 		}
 
 		if pr.Rules != nil && len(pr.Rules.HTTP) > 0 {
-			if hasWildcardPort {
+			if len(pr.Ports) == 0 || hasWildcardPort {
 				return fmt.Errorf("%w: rule %d", ErrL7WithWildcardPort, ruleIdx)
 			}
 
