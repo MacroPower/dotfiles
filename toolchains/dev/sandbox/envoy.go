@@ -28,10 +28,11 @@ type envoyStaticResources struct {
 }
 
 type envoyListener struct {
-	Name            string             `yaml:"name"`
-	Address         envoyAddress       `yaml:"address"`
-	ListenerFilters []envoyNamedTyped  `yaml:"listener_filters,omitempty"`
-	FilterChains    []envoyFilterChain `yaml:"filter_chains"`
+	DefaultFilterChain *envoyFilterChain  `yaml:"default_filter_chain,omitempty"`
+	Name               string             `yaml:"name"`
+	Address            envoyAddress       `yaml:"address"`
+	ListenerFilters    []envoyNamedTyped  `yaml:"listener_filters,omitempty"`
+	FilterChains       []envoyFilterChain `yaml:"filter_chains"`
 }
 
 type envoyAddress struct {
@@ -129,8 +130,22 @@ type envoyTcpProxyConfig struct {
 }
 
 type envoyAccessLog struct {
-	Name        string        `yaml:"name"`
-	TypedConfig envoyTypeOnly `yaml:"typed_config"`
+	TypedConfig any    `yaml:"typed_config"`
+	Name        string `yaml:"name"`
+}
+
+// envoyStderrAccessLogConfig models the StderrAccessLog typed config with
+// an optional text format. When LogFormat is set, Envoy uses the provided
+// format string instead of the default access log format.
+type envoyStderrAccessLogConfig struct {
+	LogFormat *envoySubstitutionFormatString `yaml:"log_format,omitempty"`
+	AtType    string                         `yaml:"@type"`
+}
+
+// envoySubstitutionFormatString models Envoy's SubstitutionFormatString
+// with a text_format field for command-operator log formatting.
+type envoySubstitutionFormatString struct {
+	TextFormat string `yaml:"text_format"`
 }
 
 type envoyHTTPConnManagerConfig struct {
@@ -704,11 +719,20 @@ func buildTLSListener(
 		chains = append(chains, buildPassthroughFilterChain(upstreamPort, statPrefix+"_open", nil, accessLog, nil))
 	}
 
+	// Default filter chain catches connections without SNI (e.g., TLS
+	// by IP address). Without this, Envoy silently drops the connection
+	// with no log entry, making diagnosis difficult (ISSUE-34). The
+	// access log always fires (regardless of the logging flag) since
+	// missing-SNI connections indicate a configuration or client issue
+	// that should be visible.
+	defaultChain := buildDefaultRejectFilterChain(statPrefix)
+
 	return envoyListener{
 		Name: name,
 		Address: envoyAddress{SocketAddress: envoySocketAddress{
 			Address: "127.0.0.1", PortValue: listenPort,
 		}},
+		DefaultFilterChain: &defaultChain,
 		ListenerFilters: []envoyNamedTyped{{
 			Name: "envoy.filters.listener.tls_inspector",
 			TypedConfig: envoyTypeOnly{
@@ -716,6 +740,32 @@ func buildTLSListener(
 			},
 		}},
 		FilterChains: chains,
+	}
+}
+
+// buildDefaultRejectFilterChain creates a filter chain that logs and
+// immediately closes connections. Used as the default filter chain on
+// TLS listeners to provide diagnostic output for connections without
+// SNI instead of silently dropping them.
+func buildDefaultRejectFilterChain(statPrefix string) envoyFilterChain {
+	return envoyFilterChain{
+		Filters: []envoyFilter{{
+			Name: "envoy.filters.network.tcp_proxy",
+			TypedConfig: envoyTcpProxyConfig{
+				AtType:     "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
+				StatPrefix: statPrefix + "_no_sni",
+				Cluster:    "missing_sni_blackhole",
+				AccessLog: []envoyAccessLog{{
+					Name: "envoy.access_loggers.stderr",
+					TypedConfig: envoyStderrAccessLogConfig{
+						AtType: "type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StderrAccessLog",
+						LogFormat: &envoySubstitutionFormatString{
+							TextFormat: "missing_sni src=%DOWNSTREAM_REMOTE_ADDRESS% dst=%DOWNSTREAM_LOCAL_ADDRESS% %RESPONSE_FLAGS%\n",
+						},
+					},
+				}},
+			},
+		}},
 	}
 }
 
@@ -1050,7 +1100,16 @@ func hasMITMRules(rules []ResolvedRule) bool {
 }
 
 func buildClusters(rules []ResolvedRule, tcpForwards []TCPForward, caBundlePath string) []envoyCluster {
-	var clusters []envoyCluster
+	// Static cluster with no endpoints used as the upstream for the
+	// default filter chain on TLS listeners. Connections routed here
+	// are immediately reset (no healthy upstream), which is the desired
+	// behavior for missing-SNI connections after the access log fires.
+	clusters := []envoyCluster{{
+		Name:           "missing_sni_blackhole",
+		ConnectTimeout: "1s",
+		Type:           "STATIC",
+		LBPolicy:       "ROUND_ROBIN",
+	}}
 
 	// Only add the dynamic forward proxy cluster when there are FQDN rules.
 	if len(rules) > 0 {

@@ -833,6 +833,18 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"grpc_timeout_header_max: 0s",
 			},
 		},
+		"TLS listener has default filter chain for missing SNI": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+			})},
+			want: []string{
+				"default_filter_chain:",
+				"missing_sni_blackhole",
+				"tls_passthrough_no_sni",
+				"missing_sni src=%DOWNSTREAM_REMOTE_ADDRESS% dst=%DOWNSTREAM_LOCAL_ADDRESS%",
+			},
+		},
 		"clusters have connect timeout": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
