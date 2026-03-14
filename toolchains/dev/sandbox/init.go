@@ -282,15 +282,18 @@ func Init(ctx context.Context, args []string) error {
 	userCmd.Stdout = os.Stdout
 	userCmd.Stderr = os.Stderr
 
-	err = userCmd.Start()
-	if err != nil {
-		return fmt.Errorf("starting user command: %w", err)
-	}
-
-	// Catch container-runtime signals so we can forward them and
-	// shut down cleanly instead of being killed mid-operation.
+	// Register signal handler before starting the user command so
+	// that a SIGTERM arriving between Start() and Notify() is
+	// caught instead of triggering Go's default termination.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+
+	err = userCmd.Start()
+	if err != nil {
+		signal.Stop(sigCh)
+
+		return fmt.Errorf("starting user command: %w", err)
+	}
 
 	// Wait for user command exit or signal, whichever comes first.
 	waitCh := make(chan error, 1)
