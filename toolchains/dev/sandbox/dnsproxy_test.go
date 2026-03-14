@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -1269,4 +1270,93 @@ func TestDNSProxyCNAMEHigherTTLUsesATTL(t *testing.T) {
 	// Minimum TTL is A(120), above minIPSetTTL so used directly.
 	assert.Contains(t, recorded[0], "timeout 120")
 	assert.Contains(t, recorded[0], "10.99.0.1")
+}
+
+func TestDNSProxyUpstreamTimeoutSilentDrop(t *testing.T) {
+	t.Parallel()
+
+	// Start a mock DNS server that never responds, causing upstream
+	// timeout.
+	lc := net.ListenConfig{}
+
+	pc, err := lc.ListenPacket(t.Context(), "udp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	udpAddr, ok := pc.LocalAddr().(*net.UDPAddr)
+	require.True(t, ok)
+
+	t.Cleanup(func() { assert.NoError(t, pc.Close()) })
+
+	upstreamAddr := fmt.Sprintf("127.0.0.1:%d", udpAddr.Port)
+
+	cfg := &sandbox.SandboxConfig{
+		Egress: egressRules(sandbox.EgressRule{
+			ToFQDNs: []sandbox.FQDNSelector{{MatchName: "timeout.example.com"}},
+			ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+		}),
+	}
+
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstreamAddr, "127.0.0.1:0", true,
+		sandbox.WithClientTimeout(100*time.Millisecond),
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
+
+	// Query with a short client timeout. The proxy should not send
+	// a response (silent drop), so the client itself times out.
+	client := &dns.Client{
+		Net:     "udp",
+		Timeout: 500 * time.Millisecond,
+	}
+
+	msg := new(dns.Msg)
+	msg.SetQuestion("timeout.example.com.", dns.TypeA)
+
+	resp, _, err := client.Exchange(msg, proxy.Addr)
+
+	// The client should get a timeout error (no response from proxy).
+	require.Error(t, err, "expected client timeout due to silent drop")
+	assert.Nil(t, resp)
+}
+
+func TestDNSProxyUpstreamConnectionRefusedSERVFAIL(t *testing.T) {
+	t.Parallel()
+
+	// Find a port that is not listening to trigger connection refused.
+	lc := net.ListenConfig{}
+
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	addr := ln.Addr().String()
+	require.NoError(t, ln.Close()) // Close immediately so the port is not listening.
+
+	cfg := &sandbox.SandboxConfig{
+		Egress: egressRules(sandbox.EgressRule{
+			ToFQDNs: []sandbox.FQDNSelector{{MatchName: "refused.example.com"}},
+			ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+		}),
+	}
+
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, addr, "127.0.0.1:0", true,
+		sandbox.WithClientTimeout(2*time.Second),
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
+
+	// Use TCP so connection-refused is reliably detected.
+	client := &dns.Client{
+		Net:     "tcp",
+		Timeout: 5 * time.Second,
+	}
+
+	msg := new(dns.Msg)
+	msg.SetQuestion("refused.example.com.", dns.TypeA)
+
+	resp, _, err := client.Exchange(msg, proxy.Addr)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, dns.RcodeServerFailure, resp.Rcode, "non-timeout upstream error should produce SERVFAIL")
 }

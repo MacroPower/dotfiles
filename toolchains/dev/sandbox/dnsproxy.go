@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -195,27 +196,37 @@ func collectTCPForwardHosts(cfg *SandboxConfig, result []DNSDomain, seen map[str
 // replacing the previous dnsmasq + RefuseDNS two-hop chain with a
 // single process.
 type DNSProxy struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	ipsetFunc func(ctx context.Context, commands string) error
-	udp4      *dns.Server
-	udp6      *dns.Server
-	tcp4      *dns.Server
-	tcp6      *dns.Server
-	upstream  string
-	Addr      string
-	domains   []DNSDomain
-	patterns  []FQDNPattern
-	mode      dnsMode
-	logging   bool
+	ctx           context.Context
+	cancel        context.CancelFunc
+	ipsetFunc     func(ctx context.Context, commands string) error
+	udp4          *dns.Server
+	udp6          *dns.Server
+	tcp4          *dns.Server
+	tcp6          *dns.Server
+	upstream      string
+	Addr          string
+	domains       []DNSDomain
+	patterns      []FQDNPattern
+	clientTimeout time.Duration
+	mode          dnsMode
+	logging       bool
 }
 
 // DNSProxyOption configures optional behavior of a [DNSProxy].
 //
 // The following options are available:
 //
+//   - [WithClientTimeout]
 //   - [WithIPSetFunc]
 type DNSProxyOption func(*DNSProxy)
+
+// WithClientTimeout overrides the default 10-second upstream DNS
+// client timeout. A [DNSProxyOption].
+func WithClientTimeout(d time.Duration) DNSProxyOption {
+	return func(p *DNSProxy) {
+		p.clientTimeout = d
+	}
+}
 
 // WithIPSetFunc replaces the default ipset restore command with fn.
 // Intended for testing ipset population without requiring root
@@ -248,9 +259,10 @@ func StartDNSProxy(
 	ctx, cancel := context.WithCancel(ctx)
 
 	p := &DNSProxy{
-		upstream: upstream,
-		cancel:   cancel,
-		ctx:      ctx,
+		upstream:      upstream,
+		cancel:        cancel,
+		ctx:           ctx,
+		clientTimeout: 10 * time.Second,
 	}
 
 	// Determine filtering mode.
@@ -495,11 +507,20 @@ func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 	// Forward to upstream.
 	client := &dns.Client{
 		Net:     proto,
-		Timeout: 10 * time.Second,
+		Timeout: p.clientTimeout,
 	}
 
 	resp, _, err := client.ExchangeContext(p.ctx, r, p.upstream)
 	if err != nil {
+		// On upstream timeout, return without sending a response
+		// to let the client's own timeout expire naturally. This
+		// matches Cilium's behavior and avoids triggering
+		// immediate client retries via SERVFAIL.
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return
+		}
+
 		fail := new(dns.Msg)
 		fail.SetRcode(r, dns.RcodeServerFailure)
 
