@@ -160,8 +160,8 @@ func Init(ctx context.Context, args []string) error {
 	// reference ipset names in -m set --match-set directives.
 	if cfg.HasFQDNNonTCPPorts() {
 		for _, args := range [][]string{
-			{"ipset", "create", IPSetFQDN4, "hash:ip", "family", "inet"},
-			{"ipset", "create", IPSetFQDN6, "hash:ip", "family", "inet6"},
+			{"ipset", "create", IPSetFQDN4, "hash:ip", "family", "inet", "timeout", "0"},
+			{"ipset", "create", IPSetFQDN6, "hash:ip", "family", "inet6", "timeout", "0"},
 		} {
 			//nolint:gosec // G204: args are constants.
 			err := exec.CommandContext(ctx, args[0], args[1:]...).Run()
@@ -189,10 +189,14 @@ func Init(ctx context.Context, args []string) error {
 	}
 
 	// Load IPv6 rules; disable IPv6 if kernel lacks ip6tables support.
+	ipv6Disabled := false
+
 	err = runCmd(ctx, "ip6tables-restore", "/etc/ip6tables-sandbox.rules")
 	if err != nil {
 		slog.WarnContext(ctx, "ip6tables unavailable, disabling IPv6")
 		disableIPv6(ctx)
+
+		ipv6Disabled = true
 	}
 
 	// Verify IPv6 state unconditionally -- even without Envoy, IPv6
@@ -208,6 +212,21 @@ func Init(ctx context.Context, args []string) error {
 		_, err := StartRefuseDNS()
 		if err != nil {
 			return fmt.Errorf("starting refuse DNS server: %w", err)
+		}
+	}
+
+	// Start DNS proxy before dnsmasq to bind port 53. The proxy
+	// forwards per-query to dnsmasq, so dnsmasq not being up yet
+	// causes transient SERVFAIL, not a startup failure.
+	var dnsProxy *DNSProxy
+
+	if cfg.HasFQDNNonTCPPorts() {
+		patterns := cfg.CompileFQDNPatterns()
+		upstream := fmt.Sprintf("127.0.0.1:%d", DnsmasqProxyPort)
+
+		dnsProxy, err = StartDNSProxy(patterns, upstream, "127.0.0.1:53", ipv6Disabled, cfg.Logging)
+		if err != nil {
+			return fmt.Errorf("starting DNS proxy: %w", err)
 		}
 	}
 
@@ -334,6 +353,12 @@ func Init(ctx context.Context, args []string) error {
 	}
 
 	// Clean up daemons.
+	if dnsProxy != nil {
+		if err := dnsProxy.Shutdown(); err != nil {
+			slog.DebugContext(ctx, "stopping DNS proxy", slog.Any("err", err))
+		}
+	}
+
 	if envoyCmd != nil && envoyCmd.Process != nil {
 		err := envoyCmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {

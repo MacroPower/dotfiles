@@ -23,7 +23,12 @@ func GenerateDnsmasqConfig(upstream string, cfg *SandboxConfig) string {
 	b.WriteString("listen-address=127.0.0.1\n")
 	b.WriteString("listen-address=::1\n")
 	b.WriteString("bind-interfaces\n")
-	b.WriteString("port=53\n")
+	if cfg != nil && cfg.HasFQDNNonTCPPorts() {
+		fmt.Fprintf(&b, "port=%d\n", DnsmasqProxyPort)
+	} else {
+		b.WriteString("port=53\n")
+	}
+
 	b.WriteString("no-resolv\n")
 	b.WriteString("user=root\n")
 	b.WriteString("pid-file=/var/run/dnsmasq.pid\n")
@@ -31,6 +36,12 @@ func GenerateDnsmasqConfig(upstream string, cfg *SandboxConfig) string {
 	// Cilium's DNS proxy behavior. This ensures ipsets are populated
 	// with fresh IPs on every query and clients see current records.
 	b.WriteString("cache-size=0\n")
+
+	if cfg != nil && cfg.Logging {
+		b.WriteString("log-queries\n")
+		b.WriteString("log-facility=-\n")
+	}
+
 	b.WriteString("\n")
 
 	if cfg == nil || cfg.IsEgressUnrestricted() || cfg.IsEgressRulesOnly() {
@@ -49,8 +60,6 @@ func GenerateDnsmasqConfig(upstream string, cfg *SandboxConfig) string {
 	// Restricted mode: REFUSED catch-all, then per-domain forwards.
 	domains := collectDNSDomains(cfg)
 
-	hasNonTCPFQDN := cfg.HasFQDNNonTCPPorts()
-
 	// Bare wildcard "*" matches all FQDNs (Cilium semantics). All DNS
 	// queries must resolve so the proxy can see the traffic, even though
 	// port/L7 filtering still applies. Forward everything rather than
@@ -59,12 +68,6 @@ func GenerateDnsmasqConfig(upstream string, cfg *SandboxConfig) string {
 		return d.Name == "*"
 	}) {
 		fmt.Fprintf(&b, "server=%s\n", upstream)
-		// Populate ipset with all resolved IPs for non-TCP FQDN ports.
-		// dnsmasq logs errors when adding IPv4 to an inet6 set (and
-		// vice versa); this is cosmetic noise.
-		if hasNonTCPFQDN {
-			fmt.Fprintf(&b, "ipset=/#/%s,%s\n", IPSetFQDN4, IPSetFQDN6)
-		}
 
 		return b.String()
 	}
@@ -73,16 +76,6 @@ func GenerateDnsmasqConfig(upstream string, cfg *SandboxConfig) string {
 
 	for _, d := range domains {
 		fmt.Fprintf(&b, "server=/%s/%s\n", d.dnsmasqDomain(), upstream)
-	}
-
-	// Populate ipset with resolved IPs from FQDN domains for non-TCP
-	// port enforcement. The iptables rules restrict by port/protocol,
-	// so extra IPs in the ipset are harmless. dnsmasq logs errors when
-	// adding IPv4 to an inet6 set (and vice versa); this is cosmetic.
-	if hasNonTCPFQDN {
-		for _, d := range domains {
-			fmt.Fprintf(&b, "ipset=/%s/%s,%s\n", d.dnsmasqDomain(), IPSetFQDN4, IPSetFQDN6)
-		}
 	}
 
 	return b.String()
@@ -103,11 +96,11 @@ type dnsDomain struct {
 }
 
 // dnsmasqDomain returns the domain string formatted for use in dnsmasq
-// server= and ipset= directives. Wildcard entries use the /*.domain/
-// form to exclude the bare parent domain; exact entries use the plain
-// /domain/ form. Note that dnsmasq's /*.domain/ still matches all
-// subdomain depths (not just single-label); single-label enforcement
-// for Cilium's "*" pattern happens at the Envoy RBAC layer.
+// server= directives. Wildcard entries use the /*.domain/ form to
+// exclude the bare parent domain; exact entries use the plain /domain/
+// form. Note that dnsmasq's /*.domain/ still matches all subdomain
+// depths (not just single-label); single-label enforcement for
+// Cilium's "*" pattern happens at the DNS proxy and Envoy RBAC layer.
 func (d dnsDomain) dnsmasqDomain() string {
 	if d.Wildcard {
 		return "*." + d.Name

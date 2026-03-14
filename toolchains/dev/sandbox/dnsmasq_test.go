@@ -101,7 +101,7 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			want:    []string{"server=8.8.8.8"},
 			notWant: []string{"server=/", "address=/#/", "server=127.0.0.1#5553"},
 		},
-		"FQDN with UDP port adds ipset directive": {
+		"non-TCP FQDN uses proxy port": {
 			upstream: "8.8.8.8",
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
@@ -111,10 +111,10 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			},
 			want: []string{
 				"server=/github.com/8.8.8.8",
-				"ipset=/github.com/sandbox_fqdn4,sandbox_fqdn6",
+				"port=5354",
 				"server=127.0.0.1#5553",
 			},
-			notWant: []string{"address=/#/"},
+			notWant: []string{"ipset=", "address=/#/", "port=53\n"},
 		},
 		"TCP-only FQDN has no ipset directive": {
 			upstream: "8.8.8.8",
@@ -127,7 +127,7 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			want:    []string{"server=/github.com/8.8.8.8", "server=127.0.0.1#5553"},
 			notWant: []string{"ipset=", "address=/#/"},
 		},
-		"bare wildcard with UDP adds catch-all ipset": {
+		"bare wildcard with UDP uses proxy port": {
 			upstream: "8.8.8.8",
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
@@ -137,9 +137,9 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			},
 			want: []string{
 				"server=8.8.8.8",
-				"ipset=/#/sandbox_fqdn4,sandbox_fqdn6",
+				"port=5354",
 			},
-			notWant: []string{"server=127.0.0.1#5553"},
+			notWant: []string{"ipset=", "server=127.0.0.1#5553", "port=53\n"},
 		},
 		"double-star wildcard uses dnsmasq wildcard syntax": {
 			upstream: "8.8.8.8",
@@ -152,7 +152,7 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			want:    []string{"server=/*.example.com/8.8.8.8", "server=127.0.0.1#5553"},
 			notWant: []string{"server=8.8.8.8\n", "**.example.com", "server=/example.com/", "address=/#/"},
 		},
-		"wildcard matchPattern with UDP uses dnsmasq wildcard ipset": {
+		"wildcard matchPattern with UDP uses proxy port": {
 			upstream: "8.8.8.8",
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
@@ -162,10 +162,10 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			},
 			want: []string{
 				"server=/*.example.com/8.8.8.8",
-				"ipset=/*.example.com/sandbox_fqdn4,sandbox_fqdn6",
+				"port=5354",
 				"server=127.0.0.1#5553",
 			},
-			notWant: []string{"server=/example.com/", "ipset=/example.com/", "address=/#/"},
+			notWant: []string{"ipset=", "server=/example.com/", "address=/#/", "port=53\n"},
 		},
 		"matchName uses plain domain syntax": {
 			upstream: "8.8.8.8",
@@ -248,6 +248,18 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			},
 			want:    []string{"server=8.8.8.8"},
 			notWant: []string{"server=/", "address=/#/", "server=127.0.0.1#5553"},
+		},
+		"logging enabled adds log-queries": {
+			upstream: "8.8.8.8",
+			cfg: &sandbox.SandboxConfig{
+				Logging: true,
+			},
+			want: []string{"log-queries", "log-facility=-"},
+		},
+		"logging disabled omits log-queries": {
+			upstream: "8.8.8.8",
+			cfg:      &sandbox.SandboxConfig{},
+			notWant:  []string{"log-queries", "log-facility=-"},
 		},
 	}
 

@@ -344,20 +344,36 @@ const (
 	// ConfigPath is the path to the sandbox YAML config file.
 	ConfigPath = "/etc/sandbox/config.yaml"
 
-	// IPSetFQDN4 is the IPv4 ipset populated by dnsmasq with resolved IPs
-	// from FQDN egress rules. Used by iptables to restrict non-TCP FQDN
-	// traffic to DNS-resolved destinations, matching Cilium's L3 identity
-	// behavior for toFQDNs rules.
+	// IPSetFQDN4 is the IPv4 ipset populated by the DNS proxy with
+	// resolved IPs from FQDN egress rules. Used by iptables to restrict
+	// non-TCP FQDN traffic to DNS-resolved destinations, matching
+	// Cilium's L3 identity behavior for toFQDNs rules.
 	//
-	// Known divergence from Cilium: ipset entries persist for the
-	// container's lifetime (no TTL expiry), and dnsmasq wildcard matching
-	// covers all subdomain depths (Cilium restricts to single-label
-	// prefixes). Both are acceptable because the sandbox is short-lived
-	// and dnsmasq already resolves all depths for DNS forwarding.
+	// The DNS proxy enforces wildcard depth (single-label for "*",
+	// multi-label for "**") and sets per-entry TTL timeouts. Known
+	// divergences from Cilium:
+	//   - No per-process lookup enforcement: all uid-1000 processes
+	//     share the ipset. Mitigated by Envoy for TCP traffic.
+	//   - No zombie/conntrack integration: entries expire strictly on
+	//     TTL regardless of active connections.
+	//   - No per-hostname IP limit: ipset maxelem 65536 shared across
+	//     all hostnames (Cilium caps at 1000 per hostname).
 	IPSetFQDN4 = "sandbox_fqdn4"
 
 	// IPSetFQDN6 is the IPv6 counterpart of [IPSetFQDN4].
 	IPSetFQDN6 = "sandbox_fqdn6"
+
+	// DnsmasqProxyPort is the port dnsmasq listens on when the DNS
+	// proxy is active. The proxy takes port 53; dnsmasq moves here.
+	DnsmasqProxyPort = 5354
+
+	// minIPSetTTL is the minimum timeout (in seconds) for ipset entries
+	// populated from DNS responses. Cilium's --tofqdns-min-ttl defaults
+	// to 0 (honor upstream TTL exactly); we use 60 to avoid excessive
+	// process spawning from frequent ipset add calls at very short TTLs,
+	// and to provide a safety margin against transient connectivity
+	// failures between DNS re-queries.
+	minIPSetTTL = 60
 
 	// maxRegexLen is the maximum allowed length for path and method
 	// regex patterns. Envoy uses RE2 with a default max program size
@@ -1817,6 +1833,96 @@ func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []ResolvedOpenPort {
 // rules with non-TCP ports that need ipset-backed iptables rules.
 func (c *SandboxConfig) HasFQDNNonTCPPorts() bool {
 	return len(c.ResolveFQDNNonTCPPorts()) > 0
+}
+
+// FQDNPattern pairs an FQDN selector with its compiled regex for DNS
+// response filtering. Patterns follow Cilium's matchpattern semantics:
+// [FQDNSelector.MatchName] compiles to an exact match, single "*"
+// matches one DNS label, "**." prefix matches one or more labels.
+//
+// For FQDN-form regexes (with trailing dot). For SNI/Host regexes
+// without trailing dot, see [wildcardToSNIRegex] and [wildcardToHostRegex].
+type FQDNPattern struct {
+	Original string
+	Regex    *regexp.Regexp
+}
+
+// CompileFQDNPatterns returns compiled regexes for all [FQDNSelector]
+// entries in the config. Only iterates ToFQDNs; [TCPForward] hosts
+// are excluded (they use Envoy, not ipset filtering).
+func (c *SandboxConfig) CompileFQDNPatterns() []FQDNPattern {
+	var patterns []FQDNPattern
+
+	seen := make(map[string]bool)
+
+	for _, rule := range c.EgressRules() {
+		for _, fqdn := range rule.ToFQDNs {
+			var original string
+
+			var isMatchName bool
+
+			if fqdn.MatchName != "" {
+				original = fqdn.MatchName
+				isMatchName = true
+			} else {
+				original = fqdn.MatchPattern
+			}
+
+			if seen[original] {
+				continue
+			}
+
+			seen[original] = true
+
+			regex := patternToAnchoredRegex(original, isMatchName)
+			patterns = append(patterns, FQDNPattern{
+				Original: original,
+				Regex:    regexp.MustCompile(regex),
+			})
+		}
+	}
+
+	return patterns
+}
+
+// patternToAnchoredRegex converts an FQDN selector value into an
+// anchored regex that matches FQDN-form names (with trailing dot).
+// Follows Cilium's matchpattern.ToAnchoredRegexp with an extension
+// for the "**." prefix (multi-label depth matching).
+func patternToAnchoredRegex(pattern string, isMatchName bool) string {
+	if isMatchName {
+		escaped := strings.ReplaceAll(pattern, ".", "[.]")
+
+		return "^" + escaped + "[.]$"
+	}
+
+	if isBareWildcard(pattern) {
+		return `(^([-a-zA-Z0-9_]+[.])+$)|(^[.]$)`
+	}
+
+	// "**." prefix: one or more dot-separated DNS labels followed by
+	// the fixed suffix. Matches arbitrary depth (a.b.c.suffix.).
+	if strings.HasPrefix(pattern, "**.") {
+		suffix := pattern[3:]
+		escaped := strings.ReplaceAll(suffix, ".", "[.]")
+
+		return `^([-a-zA-Z0-9_]+([.][-a-zA-Z0-9_]+){0,})[.]` + escaped + `[.]$`
+	}
+
+	// Standard Cilium: each "." becomes "[.]", each "*" becomes
+	// "[-a-zA-Z0-9_]*" (zero or more chars within a single label).
+	// Mid-position "**" naturally collapses to single-label since
+	// each star is expanded independently.
+	result := strings.ReplaceAll(pattern, ".", "[.]")
+	result = strings.ReplaceAll(result, "*", "[-a-zA-Z0-9_]*")
+
+	return "^" + result + "[.]$"
+}
+
+// isBareWildcard reports whether pattern consists entirely of "*"
+// characters (e.g. "*", "**", "***").
+func isBareWildcard(pattern string) bool {
+	return strings.TrimLeft(pattern, "*") == ""
 }
 
 // normalizeProtocol converts a config-level protocol string to the

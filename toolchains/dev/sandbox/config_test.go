@@ -3458,3 +3458,148 @@ func TestMarshalConfigRoundtrip(t *testing.T) {
 		})
 	}
 }
+
+func TestCompileFQDNPatterns(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		cfg     sandbox.SandboxConfig
+		want    []string
+		match   map[string]bool
+		noMatch map[string]bool
+	}{
+		"matchName exact": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+				}),
+			},
+			want:    []string{"api.example.com"},
+			match:   map[string]bool{"api.example.com.": true},
+			noMatch: map[string]bool{"evil.api.example.com.": true, "example.com.": true},
+		},
+		"single-star wildcard": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+				}),
+			},
+			want:    []string{"*.example.com"},
+			match:   map[string]bool{"sub.example.com.": true},
+			noMatch: map[string]bool{"a.b.example.com.": true, "example.com.": true},
+		},
+		"double-star wildcard": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "**.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+				}),
+			},
+			want:    []string{"**.example.com"},
+			match:   map[string]bool{"sub.example.com.": true, "a.b.example.com.": true},
+			noMatch: map[string]bool{"example.com.": true},
+		},
+		"bare wildcard": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "*"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+				}),
+			},
+			want:    []string{"*"},
+			match:   map[string]bool{"anything.com.": true, "a.b.c.": true, ".": true},
+			noMatch: map[string]bool{"": true},
+		},
+		"triple-star bare wildcard": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "***"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+				}),
+			},
+			want:  []string{"***"},
+			match: map[string]bool{"anything.com.": true, ".": true},
+		},
+		"mid-position double-star falls back to single-label": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "test.**.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+				}),
+			},
+			want:    []string{"test.**.example.com"},
+			match:   map[string]bool{"test.sub.example.com.": true},
+			noMatch: map[string]bool{"test.a.b.example.com.": true},
+		},
+		"excludes TCPForward hosts": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+				}),
+				TCPForwards: []sandbox.TCPForward{{Port: 22, Host: "git.example.com"}},
+			},
+			want: []string{"api.example.com"},
+		},
+		"deduplicates patterns": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080", Protocol: "UDP"}}}},
+					},
+				),
+			},
+			want: []string{"api.example.com"},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			patterns := tt.cfg.CompileFQDNPatterns()
+
+			var originals []string
+			for _, p := range patterns {
+				originals = append(originals, p.Original)
+			}
+
+			assert.Equal(t, tt.want, originals)
+
+			for qname := range tt.match {
+				matched := false
+
+				for _, p := range patterns {
+					if p.Regex.MatchString(qname) {
+						matched = true
+
+						break
+					}
+				}
+
+				assert.True(t, matched, "expected %q to match", qname)
+			}
+
+			for qname := range tt.noMatch {
+				matched := false
+
+				for _, p := range patterns {
+					if p.Regex.MatchString(qname) {
+						matched = true
+
+						break
+					}
+				}
+
+				assert.False(t, matched, "expected %q not to match", qname)
+			}
+		})
+	}
+}
