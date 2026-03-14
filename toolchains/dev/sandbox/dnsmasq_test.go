@@ -221,6 +221,18 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			want:    []string{"server=/example.com/8.8.8.8", "address=/#/"},
 			notWant: []string{"server=/*.example.com/"},
 		},
+		"cache disabled in unrestricted mode": {
+			upstream: "8.8.8.8",
+			cfg:      &sandbox.SandboxConfig{},
+			want:     []string{"cache-size=0", "server=8.8.8.8"},
+		},
+		"cache disabled in blocked mode": {
+			upstream: "8.8.8.8",
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{}),
+			},
+			want: []string{"cache-size=0", "address=/#/"},
+		},
 		"rules-only mode forwards all": {
 			upstream: "8.8.8.8",
 			cfg: &sandbox.SandboxConfig{
@@ -240,6 +252,9 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			t.Parallel()
 
 			conf := sandbox.GenerateDnsmasqConfig(tt.upstream, tt.cfg)
+
+			// All modes must disable caching to match Cilium semantics.
+			assert.Contains(t, conf, "cache-size=0")
 
 			for _, s := range tt.want {
 				assert.Contains(t, conf, s)

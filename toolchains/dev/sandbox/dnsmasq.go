@@ -26,6 +26,10 @@ func GenerateDnsmasqConfig(upstream string, cfg *SandboxConfig) string {
 	b.WriteString("no-resolv\n")
 	b.WriteString("user=root\n")
 	b.WriteString("pid-file=/var/run/dnsmasq.pid\n")
+	// Disable caching so every query is forwarded upstream, matching
+	// Cilium's DNS proxy behavior. This ensures ipsets are populated
+	// with fresh IPs on every query and clients see current records.
+	b.WriteString("cache-size=0\n")
 	b.WriteString("\n")
 
 	if cfg == nil || cfg.IsEgressUnrestricted() || cfg.IsEgressRulesOnly() {
