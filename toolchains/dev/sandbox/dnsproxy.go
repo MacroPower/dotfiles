@@ -455,7 +455,7 @@ func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 	}
 
 	// ipset population (UDP only, when patterns exist).
-	if proto == "udp" {
+	if proto == "udp" && resp.Rcode == dns.RcodeSuccess {
 		if indices := matchingFQDNRuleIndices(p.patterns, qname); len(indices) > 0 {
 			p.populateIPSets(qname, resp, indices)
 		}
