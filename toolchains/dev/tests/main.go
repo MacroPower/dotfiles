@@ -103,6 +103,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestSandboxLogging(ctx) })
 	eg.Go(func() error { return m.TestSandboxCIDRNoExcept(ctx) })
 	eg.Go(func() error { return m.TestSandboxMethodRestriction(ctx) })
+	eg.Go(func() error { return m.TestSandboxUnsupportedSelector(ctx) })
 	eg.Go(func() error { return m.TestAtuinDaemon(ctx) })
 
 	return eg.Wait()
@@ -1098,6 +1099,35 @@ echo "=== All HTTP filtering assertions passed ==="
 		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("sandbox http filtering: %w", err)
+	}
+
+	return nil
+}
+
+// TestSandboxUnsupportedSelector verifies that a config containing a
+// Cilium selector the sandbox does not implement (toEntities) is
+// rejected with a clear error during config parsing. The error should
+// propagate through [Dev.SandboxBase] as a build failure.
+//
+// +check
+func (m *Tests) TestSandboxUnsupportedSelector(ctx context.Context) error {
+	_, err := dag.Dev().SandboxBase(dagger.DevSandboxBaseOpts{
+		SandboxConfig: configFile(`egress:
+  - toEntities:
+      - world
+`),
+	}).Sync(ctx)
+
+	if err == nil {
+		return fmt.Errorf("expected error for unsupported toEntities selector, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "unsupported egress selector") {
+		return fmt.Errorf("expected 'unsupported egress selector' in error, got: %s", err.Error())
+	}
+
+	if !strings.Contains(err.Error(), "toEntities") {
+		return fmt.Errorf("expected 'toEntities' in error message, got: %s", err.Error())
 	}
 
 	return nil

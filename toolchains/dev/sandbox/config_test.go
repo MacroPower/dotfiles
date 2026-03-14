@@ -2658,6 +2658,181 @@ func TestNamedPortResolution(t *testing.T) {
 	})
 }
 
+func TestUnsupportedSelectors(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		yaml      string
+		err       error
+		wantRules int
+	}{
+		"toEndpoints rejected": {
+			yaml: `
+egress:
+  - toEndpoints:
+      - matchLabels:
+          role: backend
+    toPorts:
+      - ports:
+          - port: "443"
+`,
+			err: sandbox.ErrUnsupportedSelector,
+		},
+		"toEntities world rejected": {
+			yaml: `
+egress:
+  - toEntities:
+      - world
+`,
+			err: sandbox.ErrUnsupportedSelector,
+		},
+		"toServices rejected": {
+			yaml: `
+egress:
+  - toServices:
+      - k8sService:
+          serviceName: my-svc
+          namespace: default
+`,
+			err: sandbox.ErrUnsupportedSelector,
+		},
+		"toNodes rejected": {
+			yaml: `
+egress:
+  - toNodes:
+      - matchLabels:
+          node-role: worker
+`,
+			err: sandbox.ErrUnsupportedSelector,
+		},
+		"toGroups rejected": {
+			yaml: `
+egress:
+  - toGroups:
+      - aws:
+          securityGroupsIds:
+            - sg-123
+`,
+			err: sandbox.ErrUnsupportedSelector,
+		},
+		"toRequires rejected": {
+			yaml: `
+egress:
+  - toRequires:
+      - something
+`,
+			err: sandbox.ErrUnsupportedSelector,
+		},
+		"icmps rejected": {
+			yaml: `
+egress:
+  - icmps:
+      - fields:
+          - type: 8
+`,
+			err: sandbox.ErrUnsupportedSelector,
+		},
+		"authentication rejected": {
+			yaml: `
+egress:
+  - authentication:
+      mode: required
+`,
+			err: sandbox.ErrUnsupportedSelector,
+		},
+		"empty toEntities not rejected": {
+			yaml: `
+egress:
+  - toEntities: []
+    toCIDR:
+      - 10.0.0.0/8
+`,
+			wantRules: 1,
+		},
+		"null toEntities not rejected": {
+			yaml: `
+egress:
+  - toEntities: null
+    toCIDR:
+      - 10.0.0.0/8
+`,
+			wantRules: 1,
+		},
+		"absent toEntities not rejected": {
+			yaml: `
+egress:
+  - toCIDR:
+      - 10.0.0.0/8
+`,
+			wantRules: 1,
+		},
+		"error message includes field name and rule index": {
+			yaml: `
+egress:
+  - toCIDR:
+      - 10.0.0.0/8
+  - toEntities:
+      - world
+`,
+			err: sandbox.ErrUnsupportedSelector,
+		},
+		"unknown field rejected at parse time": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "443"
+    someFutureField: true
+`,
+		},
+		"unknown top-level field rejected": {
+			yaml: `
+egressPolicy:
+  - toFQDNs:
+      - matchName: example.com
+`,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := sandbox.ParseConfig([]byte(tt.yaml))
+			if tt.err != nil {
+				require.ErrorIs(t, err, tt.err)
+				return
+			}
+
+			if tt.wantRules > 0 {
+				require.NoError(t, err)
+				assert.Len(t, cfg.EgressRules(), tt.wantRules)
+				return
+			}
+
+			// Unknown field cases: expect a parse error (not a sentinel)
+			require.Error(t, err)
+		})
+	}
+
+	// Verify the error message format includes field name and rule index.
+	t.Run("error format", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := sandbox.ParseConfig([]byte(`
+egress:
+  - toCIDR:
+      - 10.0.0.0/8
+  - toEntities:
+      - world
+`))
+		require.ErrorIs(t, err, sandbox.ErrUnsupportedSelector)
+		assert.ErrorContains(t, err, "rule 1 has toEntities")
+	})
+}
+
 func TestMarshalConfigRoundtrip(t *testing.T) {
 	t.Parallel()
 

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/goccy/go-yaml"
 	"go.jacobcolvin.com/niceyaml"
 
 	_ "embed"
@@ -166,6 +167,14 @@ var (
 	// overlaps with a resolved port.
 	ErrTCPForwardPortConflict = errors.New("tcp forward port conflicts with resolved ports")
 
+	// ErrUnsupportedSelector is returned when an [EgressRule] contains a
+	// CiliumNetworkPolicy selector that the sandbox does not implement.
+	// The sandbox only supports toFQDNs, toPorts, toCIDR, and toCIDRSet.
+	// Cilium selectors like toEndpoints, toEntities, toServices, toNodes,
+	// and toGroups require cluster identity infrastructure that does not
+	// exist in the sandbox.
+	ErrUnsupportedSelector = errors.New("unsupported egress selector")
+
 	// validProtocols lists the supported transport protocols. Cilium
 	// also supports ICMP, ICMPv6, VRRP, and IGMP, but these are
 	// IP-layer protocols without ports and cannot be expressed in the
@@ -311,10 +320,18 @@ const (
 // In Cilium, the allow-all pattern is an EgressRule containing a
 // toEndpoints selector with an empty EndpointSelector (i.e.,
 // toEndpoints: [{}]), which acts as a wildcard matching all endpoints.
-// The sandbox does not implement toEndpoints, but the distinction
-// matters for understanding why egress: [{}] means deny-all rather
-// than allow-all. See Cilium's EgressRule and EgressCommonRule structs
-// in pkg/policy/api/egress.go.
+// The sandbox does not implement toEndpoints; using it produces an
+// [ErrUnsupportedSelector] validation error. The distinction matters
+// for understanding why egress: [{}] means deny-all rather than
+// allow-all. See Cilium's EgressRule and EgressCommonRule structs in
+// pkg/policy/api/egress.go.
+//
+// Unsupported Cilium selectors (toEndpoints, toEntities, toServices,
+// toNodes, toGroups, toRequires, icmps, authentication) are parsed
+// into stub fields and rejected during [Validate]. Additionally,
+// [parseConfigRaw] enables [yaml.DisallowUnknownField] so that any
+// field not present in the struct (including future Cilium additions)
+// produces a parse error rather than silent data loss.
 type EgressRule struct {
 	// ToFQDNs selects traffic by destination hostname.
 	ToFQDNs []FQDNSelector `yaml:"toFQDNs,omitempty"`
@@ -324,6 +341,39 @@ type EgressRule struct {
 	ToCIDR []string `yaml:"toCIDR,omitempty"`
 	// ToCIDRSet allows traffic to IP ranges with optional exceptions.
 	ToCIDRSet []CIDRRule `yaml:"toCIDRSet,omitempty"`
+
+	// Unsupported Cilium selectors. These fields exist so that the YAML
+	// decoder captures them instead of relying solely on strict mode.
+	// [Validate] rejects any rule where these are populated, producing
+	// an actionable error message. The types are []any or any to avoid
+	// replicating Cilium's full type hierarchy.
+	//
+	// See Cilium's EgressCommonRule and EgressRule in
+	// pkg/policy/api/egress.go for the canonical definitions.
+
+	// ToEndpoints is a Cilium L3 selector matching endpoints by label.
+	// The sandbox has no endpoint identity system.
+	ToEndpoints []any `yaml:"toEndpoints,omitempty"`
+	// ToEntities is a Cilium L3 selector matching special entities
+	// (world, cluster, host, etc). The sandbox has no entity resolution.
+	ToEntities []any `yaml:"toEntities,omitempty"`
+	// ToServices is a Cilium L3 selector matching Kubernetes services.
+	// The sandbox has no service discovery.
+	ToServices []any `yaml:"toServices,omitempty"`
+	// ToNodes is a Cilium L3 selector matching nodes by label.
+	// The sandbox has no node identity system.
+	ToNodes []any `yaml:"toNodes,omitempty"`
+	// ToGroups is a Cilium L3 selector matching cloud provider groups.
+	// The sandbox has no cloud provider integration.
+	ToGroups []any `yaml:"toGroups,omitempty"`
+	// ToRequires is a deprecated Cilium field. Rejected unconditionally.
+	ToRequires []any `yaml:"toRequires,omitempty"`
+	// ICMPs is a Cilium selector for ICMP type filtering.
+	// The sandbox does not support ICMP-level policy.
+	ICMPs []any `yaml:"icmps,omitempty"`
+	// Authentication is a Cilium field for mutual authentication.
+	// The sandbox does not support authentication policy.
+	Authentication any `yaml:"authentication,omitempty"`
 }
 
 // CIDRRule specifies an IP range to allow, with optional exceptions.
@@ -538,6 +588,8 @@ func (c *SandboxConfig) IsEgressBlocked() bool {
 	}
 
 	for _, rule := range c.EgressRules() {
+		// Unsupported selectors (ToEndpoints, ToEntities, etc.) are not
+		// checked here because Validate() rejects them before this point.
 		if len(rule.ToFQDNs) > 0 || len(rule.ToPorts) > 0 ||
 			len(rule.ToCIDR) > 0 || len(rule.ToCIDRSet) > 0 {
 			return false
@@ -623,7 +675,9 @@ func MarshalDefaultConfig() ([]byte, error) {
 func parseConfigRaw(data []byte) (*SandboxConfig, error) {
 	var cfg SandboxConfig
 
-	src := niceyaml.NewSourceFromBytes(data)
+	src := niceyaml.NewSourceFromBytes(data,
+		niceyaml.WithDecodeOptions(yaml.DisallowUnknownField()),
+	)
 	dec, err := src.Decoder()
 	if err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
@@ -679,6 +733,15 @@ func normalizeEgressRule(c *SandboxConfig, i int) {
 // Validate checks that the config is internally consistent.
 func (c *SandboxConfig) Validate() error {
 	for i := range c.EgressRules() {
+		// Reject unsupported Cilium selectors before any other
+		// processing. This prevents silent data loss from fields
+		// like toEntities or toEndpoints being ignored.
+		// The unsupported fields don't need normalization, so this
+		// can safely run first.
+		if err := validateUnsupportedSelectors((*c.Egress)[i], i); err != nil {
+			return err
+		}
+
 		// Normalize before validation so that e.g. "tcp" passes
 		// the uppercase protocol check and "GitHub.COM." passes
 		// FQDN validation as "github.com".
@@ -772,6 +835,39 @@ func (c *SandboxConfig) Validate() error {
 //   - "*.suffix" -- single-label wildcard (one subdomain level)
 //   - "**.suffix" -- multi-label wildcard (arbitrary subdomain depth)
 //
+// validateUnsupportedSelectors checks whether any Cilium selectors that
+// the sandbox does not implement are present in the rule. Returns an
+// error for the first unsupported selector found, with the rule index
+// and field name for diagnostics.
+func validateUnsupportedSelectors(rule EgressRule, ruleIdx int) error {
+	type field struct {
+		name string
+		set  bool
+	}
+
+	fields := []field{
+		{"toEndpoints", len(rule.ToEndpoints) > 0},
+		{"toEntities", len(rule.ToEntities) > 0},
+		{"toServices", len(rule.ToServices) > 0},
+		{"toNodes", len(rule.ToNodes) > 0},
+		{"toGroups", len(rule.ToGroups) > 0},
+		{"toRequires", len(rule.ToRequires) > 0},
+		{"icmps", len(rule.ICMPs) > 0},
+		{"authentication", rule.Authentication != nil},
+	}
+
+	for _, f := range fields {
+		if f.set {
+			return fmt.Errorf(
+				"%w: rule %d has %s, which is not implemented by the sandbox",
+				ErrUnsupportedSelector, ruleIdx, f.name,
+			)
+		}
+	}
+
+	return nil
+}
+
 // Cilium treats 2+ stars identically ([*]{2,} in its regex), so runs
 // of 3+ stars are normalized to ** before validation.
 func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
