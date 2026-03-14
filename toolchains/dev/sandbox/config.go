@@ -127,6 +127,17 @@ var (
 		"toFQDNs rules require explicit toPorts with non-empty ports (sandbox constraint: Envoy needs per-port listeners)",
 	)
 
+	// ErrFQDNWildcardPort is returned when an [EgressRule] with toFQDNs
+	// contains a wildcard port (port 0). Port 0 with toFQDNs produces no
+	// enforcement in the sandbox because [ResolvePorts] and
+	// [ResolveFQDNNonTCPPorts] both skip port 0, creating no Envoy
+	// listener, ipset, or iptables rules. Cilium treats port 0 as a
+	// wildcard allowing all ports; the sandbox rejects it to prevent
+	// silent no-enforcement.
+	ErrFQDNWildcardPort = errors.New(
+		"toFQDNs rules require explicit ports; wildcard port 0 is not supported (sandbox constraint: produces no enforcement)",
+	)
+
 	// ErrExceptNotSubnet is returned when an except CIDR is not a subnet
 	// of its parent CIDR. Cilium requires except entries to be contained
 	// within the parent range.
@@ -1133,6 +1144,14 @@ func validateFQDNConstraints(rule EgressRule, ruleIdx int, hasFQDNs bool) error 
 
 	if !hasExplicitPorts {
 		return fmt.Errorf("%w: rule %d", ErrFQDNRequiresPorts, ruleIdx)
+	}
+
+	for _, pr := range rule.ToPorts {
+		for _, p := range pr.Ports {
+			if p.Port == "0" {
+				return fmt.Errorf("%w: rule %d", ErrFQDNWildcardPort, ruleIdx)
+			}
+		}
 	}
 
 	return nil

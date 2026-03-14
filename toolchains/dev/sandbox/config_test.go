@@ -113,6 +113,17 @@ egress:
 `,
 			err: sandbox.ErrFQDNRequiresPorts,
 		},
+		"FQDN with wildcard port 0 rejected": {
+			yaml: `
+egress:
+  - toFQDNs:
+      - matchName: example.com
+    toPorts:
+      - ports:
+          - port: "0"
+`,
+			err: sandbox.ErrFQDNWildcardPort,
+		},
 		"FQDN selector empty": {
 			yaml: `
 egress:
@@ -355,6 +366,17 @@ func TestValidate(t *testing.T) {
 				}),
 			},
 			err: sandbox.ErrFQDNRequiresPorts,
+		},
+		"FQDN with wildcard port 0 rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "0"}},
+					}},
+				}),
+			},
+			err: sandbox.ErrFQDNWildcardPort,
 		},
 		"empty egress rule is valid": {
 			cfg: &sandbox.SandboxConfig{
@@ -1414,15 +1436,16 @@ func TestValidate(t *testing.T) {
 				}),
 			},
 		},
-		"port 0 with FQDN accepted": {
+		"port 0 with FQDN rejected": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
 				}),
 			},
+			err: sandbox.ErrFQDNWildcardPort,
 		},
-		"port 0 with L7 rejected": {
+		"port 0 with FQDN and L7 rejected": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
@@ -1432,7 +1455,7 @@ func TestValidate(t *testing.T) {
 					}},
 				}),
 			},
-			err: sandbox.ErrL7WithWildcardPort,
+			err: sandbox.ErrFQDNWildcardPort,
 		},
 		"empty ports with L7 rejected": {
 			cfg: &sandbox.SandboxConfig{
