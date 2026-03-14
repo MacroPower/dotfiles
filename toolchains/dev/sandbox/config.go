@@ -199,8 +199,9 @@ var (
 	// selectors (we have no ToEndpoints, ToEntities, ToServices, ToGroups,
 	// or ToNodes), the ToCIDR + ToCIDRSet pair is the only combination
 	// that can trigger this check. ToFQDNs is handled separately by
-	// [ErrFQDNWithCIDR] before we reach this point, matching Cilium's
-	// own separate FQDN validation path.
+	// [ErrFQDNWithCIDR] before we reach this point; Cilium includes
+	// ToFQDNs in the same unified l3Members() pairwise check, but
+	// the outcome is equivalent since both reject the combination.
 	//
 	// Note: Cilium's l3Members() uses countNonGeneratedCIDRRules for
 	// ToCIDRSet and countNonGeneratedEndpoints for ToEndpoints, so that
