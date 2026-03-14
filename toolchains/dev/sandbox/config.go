@@ -21,6 +21,11 @@ import (
 
 const maxFQDNLength = 255
 
+// maxPorts is the maximum number of port entries allowed in a single
+// [PortRule]. Matches Cilium's +kubebuilder:validation:MaxItems=40
+// on PortRule.Ports.
+const maxPorts = 40
+
 // proxyPortBase is the base port added to destination ports to derive
 // the Envoy proxy listen port. Ports above maxProxyablePort overflow
 // uint16 when offset and are rejected at validation time.
@@ -164,13 +169,15 @@ var (
 	// inspection requires a concrete port for proxy binding.
 	ErrL7WithWildcardPort = errors.New("L7 rules cannot be used when port is 0")
 
-	// ErrEndPortWithWildcardPort is returned when endPort is used with
-	// port 0. Port 0 already means "all ports," so a range is redundant
-	// and likely a misconfiguration. Cilium does not reject this
-	// combination, but the sandbox is intentionally stricter to prevent
-	// confusing configs (e.g. port 0 endPort 443 looks like a range but
-	// means all ports).
-	ErrEndPortWithWildcardPort = errors.New("endPort cannot be used with wildcard port 0")
+	// ErrPortsTooMany is returned when a [PortRule] has more than
+	// [maxPorts] entries. Cilium enforces this limit via
+	// +kubebuilder:validation:MaxItems=40 on PortRule.Ports.
+	ErrPortsTooMany = errors.New("too many ports: maximum 40 per port rule")
+
+	// ErrEndPortNegative is returned when a [Port] has a negative
+	// endPort value. Cilium uses int32 with +kubebuilder:validation:Minimum=0
+	// to reject negative values at admission.
+	ErrEndPortNegative = errors.New("endPort must not be negative")
 
 	// ErrWildcardWithL7 is returned when a wildcard matchPattern is used
 	// with L7 HTTP rules. The MITM filter chain builds filesystem paths
@@ -242,12 +249,6 @@ var (
 	ErrCIDRAndCIDRSetMixed = errors.New(
 		"toCIDR and toCIDRSet cannot be combined in the same rule; use separate rules",
 	)
-
-	// ErrEndPortWithNamedPort is returned when a [Port] has endPort
-	// set with a named port. Cilium silently ignores endPort with
-	// named ports; the sandbox rejects it outright since silent
-	// ignoring is confusing in a config-validation context.
-	ErrEndPortWithNamedPort = errors.New("endPort not supported with named ports")
 
 	// ErrTCPForwardPortConflict is returned when a [TCPForward] port
 	// overlaps with a resolved port.
@@ -1141,6 +1142,11 @@ func validateFQDNConstraints(rule EgressRule, ruleIdx int, hasFQDNs bool) error 
 // protocol, and endPort configuration.
 func validatePorts(rule EgressRule, ruleIdx int) error {
 	for _, pr := range rule.ToPorts {
+		if len(pr.Ports) > maxPorts {
+			return fmt.Errorf("%w: rule %d has %d ports",
+				ErrPortsTooMany, ruleIdx, len(pr.Ports))
+		}
+
 		hasWildcardPort := false
 
 		for _, p := range pr.Ports {
@@ -1155,22 +1161,15 @@ func validatePorts(rule EgressRule, ruleIdx int) error {
 
 			if n == 0 {
 				hasWildcardPort = true
-
-				// EndPort is nonsensical with wildcard port.
-				if p.EndPort > 0 {
-					return fmt.Errorf("%w: rule %d port %q", ErrEndPortWithWildcardPort, ruleIdx, p.Port)
-				}
 			}
 
 			if !validProtocols[p.Protocol] {
 				return fmt.Errorf("%w: rule %d port %q protocol %q", ErrProtocolInvalid, ruleIdx, p.Port, p.Protocol)
 			}
 
-			if n > 0 {
-				err = validateEndPort(p, int(n), ruleIdx)
-				if err != nil {
-					return err
-				}
+			err = validateEndPort(p, int(n), ruleIdx)
+			if err != nil {
+				return err
 			}
 		}
 
@@ -1197,17 +1196,25 @@ func validatePorts(rule EgressRule, ruleIdx int) error {
 }
 
 // validateEndPort checks endPort constraints for a single port entry.
+// EndPort with named ports or wildcard port 0 is silently ignored,
+// matching Cilium's behavior.
 func validateEndPort(p Port, portNum, ruleIdx int) error {
 	if p.EndPort == 0 {
 		return nil
 	}
 
-	if p.EndPort > 65535 {
-		return fmt.Errorf("%w: rule %d endPort %d exceeds 65535", ErrEndPortInvalid, ruleIdx, p.EndPort)
+	if p.EndPort < 0 {
+		return fmt.Errorf("%w: rule %d endPort %d", ErrEndPortNegative, ruleIdx, p.EndPort)
 	}
 
-	if isSvcName(p.Port) {
-		return fmt.Errorf("%w: rule %d port %q", ErrEndPortWithNamedPort, ruleIdx, p.Port)
+	// Cilium silently ignores endPort with named ports and wildcard
+	// port 0. Match that behavior rather than rejecting.
+	if isSvcName(p.Port) || portNum == 0 {
+		return nil
+	}
+
+	if p.EndPort > 65535 {
+		return fmt.Errorf("%w: rule %d endPort %d exceeds 65535", ErrEndPortInvalid, ruleIdx, p.EndPort)
 	}
 
 	if p.EndPort < portNum {

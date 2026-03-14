@@ -1446,14 +1446,13 @@ func TestValidate(t *testing.T) {
 			},
 			err: sandbox.ErrL7WithWildcardPort,
 		},
-		"port 0 with endPort rejected": {
+		"port 0 with endPort silently ignored": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
 					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0", EndPort: 443}}}},
 				}),
 			},
-			err: sandbox.ErrEndPortWithWildcardPort,
 		},
 		"port 0 with UDP accepted": {
 			cfg: &sandbox.SandboxConfig{
@@ -1461,6 +1460,46 @@ func TestValidate(t *testing.T) {
 					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
 					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0", Protocol: "UDP"}}}},
 				}),
+			},
+		},
+		"negative endPort rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", EndPort: -1}}}},
+				}),
+			},
+			err: sandbox.ErrEndPortNegative,
+		},
+		"more than 40 ports rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(func() sandbox.EgressRule {
+					ports := make([]sandbox.Port, 41)
+					for i := range ports {
+						ports[i] = sandbox.Port{Port: "443"}
+					}
+
+					return sandbox.EgressRule{
+						ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+						ToPorts:   []sandbox.PortRule{{Ports: ports}},
+					}
+				}()),
+			},
+			err: sandbox.ErrPortsTooMany,
+		},
+		"exactly 40 ports accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(func() sandbox.EgressRule {
+					ports := make([]sandbox.Port, 40)
+					for i := range ports {
+						ports[i] = sandbox.Port{Port: "443"}
+					}
+
+					return sandbox.EgressRule{
+						ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+						ToPorts:   []sandbox.PortRule{{Ports: ports}},
+					}
+				}()),
 			},
 		},
 	}
@@ -3182,14 +3221,13 @@ func TestNamedPortValidation(t *testing.T) {
 			},
 			err: sandbox.ErrPortInvalid,
 		},
-		"endPort with named port rejected": {
+		"endPort with named port silently ignored": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
 					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "https", EndPort: 500}}}},
 				}),
 			},
-			err: sandbox.ErrEndPortWithNamedPort,
 		},
 		"L7 on named port http accepted": {
 			cfg: &sandbox.SandboxConfig{
