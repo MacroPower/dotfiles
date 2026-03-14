@@ -76,6 +76,34 @@ func GenerateIptablesRules(cfg *SandboxConfig) (string, string) {
 	return generateRulesIptables(cfg, cfg.IsDefaultDenyEnabled())
 }
 
+// writeBaseFilterRules emits the shared INPUT and OUTPUT base rules
+// that appear in all three iptables modes. INPUT rules act as Cilium's
+// ingress policy gate: loopback and reply traffic are allowed, all
+// unsolicited inbound traffic is dropped. OUTPUT rules allow loopback,
+// loopback CIDR, ESTABLISHED/RELATED traffic for non-sandboxed UIDs,
+// and root DNS queries.
+func writeBaseFilterRules(b *strings.Builder, loopbackCIDR string) {
+	b.WriteString("*filter\n")
+	// INPUT: allow loopback and replies to outbound connections.
+	// Drop everything else (no exposed ports; matches Cilium's
+	// default ingress deny).
+	b.WriteString("-A INPUT -i lo -j ACCEPT\n")
+	b.WriteString("-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
+	b.WriteString("-A INPUT -j DROP\n")
+	// OUTPUT: base rules shared by all modes.
+	b.WriteString("-A OUTPUT -o lo -j ACCEPT\n")
+	fmt.Fprintf(b, "-A OUTPUT -d %s -j ACCEPT\n", loopbackCIDR)
+	// ESTABLISHED,RELATED for non-sandboxed UIDs only. UID 1000 must
+	// traverse per-UID rules; kernel-generated packets (no owner)
+	// still match due to ! negation semantics.
+	fmt.Fprintf(b,
+		"-A OUTPUT -m state --state ESTABLISHED,RELATED -m owner ! --uid-owner %s -j ACCEPT\n",
+		UID,
+	)
+	b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p udp --dport 53 -j ACCEPT\n")
+	b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p tcp --dport 53 -j ACCEPT\n")
+}
+
 // generateUnrestrictedIptables produces rules that allow all egress.
 // NAT contains only TCPForward REDIRECTs; FILTER has standard base
 // rules plus ACCEPT (no DROP).
@@ -97,12 +125,8 @@ func generateUnrestrictedIptables(cfg *SandboxConfig) (string, string) {
 	}
 
 	writeFilter := func(b *strings.Builder, loopbackCIDR string) {
-		b.WriteString("*filter\n")
-		b.WriteString("-A OUTPUT -o lo -j ACCEPT\n")
-		fmt.Fprintf(b, "-A OUTPUT -d %s -j ACCEPT\n", loopbackCIDR)
-		b.WriteString("-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
-		b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p udp --dport 53 -j ACCEPT\n")
-		b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p tcp --dport 53 -j ACCEPT\n")
+		writeBaseFilterRules(b, loopbackCIDR)
+
 		if cfg.Logging {
 			b.WriteString("-A OUTPUT -j LOG --log-prefix \"SANDBOX_ALLOW: \"\n")
 		}
@@ -129,12 +153,8 @@ func generateBlockedIptables(cfg *SandboxConfig) (string, string) {
 	}
 
 	writeFilter := func(b *strings.Builder, loopbackCIDR string) {
-		b.WriteString("*filter\n")
-		b.WriteString("-A OUTPUT -o lo -j ACCEPT\n")
-		fmt.Fprintf(b, "-A OUTPUT -d %s -j ACCEPT\n", loopbackCIDR)
-		b.WriteString("-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
-		b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p udp --dport 53 -j ACCEPT\n")
-		b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p tcp --dport 53 -j ACCEPT\n")
+		writeBaseFilterRules(b, loopbackCIDR)
+
 		if cfg.Logging {
 			b.WriteString("-A OUTPUT -j LOG --log-prefix \"SANDBOX_DROP: \"\n")
 		}
@@ -276,12 +296,7 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 	}
 
 	writeFilterRules := func(b *strings.Builder, loopbackCIDR, ipsetName string, cidrs []ResolvedCIDR, af string) {
-		b.WriteString("*filter\n")
-		b.WriteString("-A OUTPUT -o lo -j ACCEPT\n")
-		fmt.Fprintf(b, "-A OUTPUT -d %s -j ACCEPT\n", loopbackCIDR)
-		b.WriteString("-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT\n")
-		b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p udp --dport 53 -j ACCEPT\n")
-		b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p tcp --dport 53 -j ACCEPT\n")
+		writeBaseFilterRules(b, loopbackCIDR)
 		if !unrestricted {
 			// Per-rule CIDR chains preserve OR semantics: each
 			// rule's excepts only block within that rule's chain.

@@ -292,7 +292,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-A OUTPUT -j ACCEPT",
 			},
 			notWantIPv4: []string{
-				"REDIRECT", "DROP",
+				"REDIRECT", "-A OUTPUT -j DROP",
 				"--uid-owner 999",
 			},
 		},
@@ -338,7 +338,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-A OUTPUT -j ACCEPT",
 			},
 			notWantIPv4: []string{
-				"DROP",
+				"-A OUTPUT -j DROP",
 				"--to-port 15443",
 				"--to-port 15080",
 			},
@@ -403,7 +403,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-A OUTPUT -j ACCEPT",
 			},
 			notWantIPv4: []string{
-				"REDIRECT", "DROP",
+				"REDIRECT", "-A OUTPUT -j DROP",
 				"--uid-owner 999",
 			},
 		},
@@ -431,7 +431,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-A OUTPUT -j ACCEPT",
 			},
 			notWantIPv4: []string{
-				"REDIRECT", "DROP",
+				"REDIRECT", "-A OUTPUT -j DROP",
 				"--uid-owner 999",
 			},
 		},
@@ -783,6 +783,45 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-p udp --dport 3868",
 			},
 		},
+		"ESTABLISHED,RELATED excludes sandboxed UID": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			wantIPv4: []string{
+				"-A OUTPUT -m state --state ESTABLISHED,RELATED -m owner ! --uid-owner 1000 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				// Global ESTABLISHED,RELATED (without UID exclusion) must not appear.
+				"-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT",
+			},
+			wantIPv6: []string{
+				"-A OUTPUT -m state --state ESTABLISHED,RELATED -m owner ! --uid-owner 1000 -j ACCEPT",
+			},
+			notWantIPv6: []string{
+				"-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT",
+			},
+		},
+		"INPUT chain drops unsolicited inbound": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			wantIPv4: []string{
+				"-A INPUT -i lo -j ACCEPT",
+				"-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT",
+				"-A INPUT -j DROP",
+			},
+			wantIPv6: []string{
+				"-A INPUT -i lo -j ACCEPT",
+				"-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT",
+				"-A INPUT -j DROP",
+			},
+		},
 		"FQDN REDIRECT coexists with open-port TCP range ACCEPT": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(
@@ -879,6 +918,30 @@ func TestGenerateIptablesRulesFilterOrder(t *testing.T) {
 		"CIDR except RETURN must come before CIDR ACCEPT in per-rule chain")
 	assert.Greater(t, envoyIdx, acceptIdx,
 		"Envoy ACCEPT must come after per-rule chain ACCEPT")
+}
+
+func TestGenerateIptablesRulesInputBeforeOutput(t *testing.T) {
+	t.Parallel()
+
+	cfg := &sandbox.SandboxConfig{
+		Egress: egressRules(sandbox.EgressRule{
+			ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+			ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+		}),
+	}
+
+	ipv4, ipv6 := sandbox.GenerateIptablesRules(cfg)
+
+	for _, rules := range []string{ipv4, ipv6} {
+		// Search within the filter table only (NAT table also has
+		// -A OUTPUT rules that precede *filter).
+		filterStart := strings.Index(rules, "*filter")
+		filterSection := rules[filterStart:]
+		inputIdx := strings.Index(filterSection, "-A INPUT")
+		outputIdx := strings.Index(filterSection, "-A OUTPUT")
+		assert.Greater(t, outputIdx, inputIdx,
+			"INPUT rules must come before OUTPUT rules in filter table")
+	}
 }
 
 func TestGenerateIptablesRulesUnrestrictedOpenPorts(t *testing.T) {
