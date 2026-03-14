@@ -2,7 +2,9 @@ package sandbox
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 )
 
 // CertsDir is the directory where MITM leaf certificates are stored.
@@ -66,8 +68,8 @@ func Generate(configPath string) error {
 		"/etc/ip6tables-sandbox.rules": ipv6Rules,
 	}
 
-	for path, content := range files {
-		err := os.WriteFile(path, []byte(content), 0o644)
+	for _, path := range slices.Sorted(maps.Keys(files)) {
+		err := os.WriteFile(path, []byte(files[path]), 0o644)
 		if err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)
 		}

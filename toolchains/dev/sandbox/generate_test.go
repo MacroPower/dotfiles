@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/toolchains/dev/sandbox"
@@ -68,5 +69,48 @@ func TestGenerate(t *testing.T) {
 				require.ErrorIs(t, err, tt.err)
 			}
 		})
+	}
+}
+
+func TestGenerateDeterministicOutput(t *testing.T) {
+	t.Parallel()
+
+	yamlCfg := []byte("egress:\n" +
+		"  - toPorts:\n" +
+		"      - ports:\n" +
+		"          - port: \"443\"\n" +
+		"          - port: \"80\"\n" +
+		"    toFQDNs:\n" +
+		"      - matchName: api.example.com\n" +
+		"      - matchName: cdn.example.com\n" +
+		"  - toPorts:\n" +
+		"      - ports:\n" +
+		"          - port: \"8080\"\n" +
+		"    toFQDNs:\n" +
+		"      - matchPattern: \"*.example.org\"\n")
+
+	cfg, err := sandbox.ParseConfig(yamlCfg)
+	require.NoError(t, err)
+
+	const iterations = 10
+
+	envoyResults := make([]string, iterations)
+	ipv4Results := make([]string, iterations)
+	ipv6Results := make([]string, iterations)
+
+	for i := range iterations {
+		envoy, err := sandbox.GenerateEnvoyFromConfig(cfg, "", "")
+		require.NoError(t, err)
+
+		ipv4, ipv6 := sandbox.GenerateIptablesRules(cfg)
+		envoyResults[i] = envoy
+		ipv4Results[i] = ipv4
+		ipv6Results[i] = ipv6
+	}
+
+	for i := 1; i < iterations; i++ {
+		assert.Equal(t, envoyResults[0], envoyResults[i], "envoy config differs on iteration %d", i)
+		assert.Equal(t, ipv4Results[0], ipv4Results[i], "ipv4 rules differ on iteration %d", i)
+		assert.Equal(t, ipv6Results[0], ipv6Results[i], "ipv6 rules differ on iteration %d", i)
 	}
 }
