@@ -194,10 +194,16 @@ type envoyRoute struct {
 //   - source/common/common/matchers.cc: CompiledGoogleReMatcher::match
 //     calls re2::RE2::FullMatch
 type envoyRouteMatch struct {
-	Prefix    string               `yaml:"prefix,omitempty"`
-	SafeRegex *envoySafeRegex      `yaml:"safe_regex,omitempty"`
-	Headers   []envoyHeaderMatcher `yaml:"headers,omitempty"`
+	SafeRegex *envoySafeRegex             `yaml:"safe_regex,omitempty"`
+	Grpc      *envoyGrpcRouteMatchOptions `yaml:"grpc,omitempty"`
+	Prefix    string                      `yaml:"prefix,omitempty"`
+	Headers   []envoyHeaderMatcher        `yaml:"headers,omitempty"`
 }
+
+// envoyGrpcRouteMatchOptions is an empty message that, when present on a
+// RouteMatch, restricts the route to gRPC requests (content-type
+// application/grpc). Mirrors Envoy's route.RouteMatch.GrpcRouteMatchOptions.
+type envoyGrpcRouteMatchOptions struct{}
 
 type envoyHeaderMatcher struct {
 	StringMatch  *envoyStringMatch `yaml:"string_match,omitempty"`
@@ -241,9 +247,17 @@ type envoyRBACPrincipal struct {
 }
 
 type envoyRouteAction struct {
-	Cluster         string `yaml:"cluster"`
-	Timeout         string `yaml:"timeout,omitempty"`
-	AutoHostRewrite bool   `yaml:"auto_host_rewrite"`
+	MaxStreamDuration *envoyMaxStreamDuration `yaml:"max_stream_duration,omitempty"`
+	Cluster           string                  `yaml:"cluster"`
+	Timeout           string                  `yaml:"timeout,omitempty"`
+	AutoHostRewrite   bool                    `yaml:"auto_host_rewrite"`
+}
+
+// envoyMaxStreamDuration models Envoy's route.MaxStreamDuration message.
+// GrpcTimeoutHeaderMax caps the duration extracted from the grpc-timeout
+// request header. A value of "0s" means unlimited (honor the client value).
+type envoyMaxStreamDuration struct {
+	GrpcTimeoutHeaderMax string `yaml:"grpc_timeout_header_max"`
 }
 
 type envoyDirectResponseAction struct {
@@ -705,6 +719,27 @@ func buildTLSListener(
 	}
 }
 
+// grpcRouteVariant creates a gRPC-specific copy of a forwarding route.
+// The copy adds GrpcRouteMatchOptions to the match (restricting it to
+// gRPC requests) and MaxStreamDuration.GrpcTimeoutHeaderMax to the
+// action (honoring the grpc-timeout request header). Cilium creates
+// these dedicated gRPC routes before each regular route so that gRPC
+// streaming RPCs get proper timeout handling.
+func grpcRouteVariant(r envoyRoute) envoyRoute {
+	grpcMatch := r.Match
+	grpcMatch.Grpc = &envoyGrpcRouteMatchOptions{}
+
+	return envoyRoute{
+		Match: grpcMatch,
+		Route: &envoyRouteAction{
+			MaxStreamDuration: &envoyMaxStreamDuration{GrpcTimeoutHeaderMax: "0s"},
+			Cluster:           r.Route.Cluster,
+			Timeout:           r.Route.Timeout,
+			AutoHostRewrite:   r.Route.AutoHostRewrite,
+		},
+	}
+}
+
 func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) ([]envoyVirtualHost, []string, []string) {
 	var (
 		restricted   []ResolvedRule
@@ -780,14 +815,15 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) ([]envoyVirtual
 				})
 			}
 
-			routes = append(routes, envoyRoute{
+			httpRoute := envoyRoute{
 				Match: match,
 				Route: &envoyRouteAction{
 					Cluster:         cluster,
 					AutoHostRewrite: true,
 					Timeout:         "3600s",
 				},
-			})
+			}
+			routes = append(routes, grpcRouteVariant(httpRoute), httpRoute)
 		}
 
 		// Catch-all denies everything else.
@@ -807,17 +843,18 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) ([]envoyVirtual
 
 	// All unrestricted domains share one virtual host.
 	if len(unrestricted) > 0 {
+		allowRoute := envoyRoute{
+			Match: envoyRouteMatch{Prefix: "/"},
+			Route: &envoyRouteAction{
+				Cluster:         cluster,
+				AutoHostRewrite: true,
+				Timeout:         "3600s",
+			},
+		}
 		vhosts = append(vhosts, envoyVirtualHost{
 			Name:    "allowed",
 			Domains: unrestricted,
-			Routes: []envoyRoute{{
-				Match: envoyRouteMatch{Prefix: "/"},
-				Route: &envoyRouteAction{
-					Cluster:         cluster,
-					AutoHostRewrite: true,
-					Timeout:         "3600s",
-				},
-			}},
+			Routes:  []envoyRoute{grpcRouteVariant(allowRoute), allowRoute},
 		})
 	}
 
@@ -836,17 +873,18 @@ func buildHTTPForwardListener(rules []ResolvedRule, open bool, accessLog []envoy
 	})
 
 	if open && !hasCatchAll {
+		openRoute := envoyRoute{
+			Match: envoyRouteMatch{Prefix: "/"},
+			Route: &envoyRouteAction{
+				Cluster:         "dynamic_forward_proxy_cluster",
+				AutoHostRewrite: true,
+				Timeout:         "3600s",
+			},
+		}
 		vhosts = append(vhosts, envoyVirtualHost{
 			Name:    "open",
 			Domains: []string{"*"},
-			Routes: []envoyRoute{{
-				Match: envoyRouteMatch{Prefix: "/"},
-				Route: &envoyRouteAction{
-					Cluster:         "dynamic_forward_proxy_cluster",
-					AutoHostRewrite: true,
-					Timeout:         "3600s",
-				},
-			}},
+			Routes:  []envoyRoute{grpcRouteVariant(openRoute), openRoute},
 		})
 	}
 

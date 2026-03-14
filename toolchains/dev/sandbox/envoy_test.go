@@ -821,6 +821,18 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"stream_idle_timeout: 300s",
 			},
 		},
+		"gRPC route match and timeout handling": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}}}},
+				},
+			)},
+			want: []string{
+				"grpc: {}",
+				"grpc_timeout_header_max: 0s",
+			},
+		},
 		"clusters have connect timeout": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
