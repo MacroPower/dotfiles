@@ -21,6 +21,13 @@ import (
 
 const maxFQDNLength = 255
 
+// proxyPortBase is the base port added to destination ports to derive
+// the Envoy proxy listen port. Ports above maxProxyablePort overflow
+// uint16 when offset and are rejected at validation time.
+const proxyPortBase = 15000
+
+const maxProxyablePort = 65535 - proxyPortBase
+
 var (
 	// allowedMatchNameChars validates that a matchName contains only
 	// DNS-safe characters. Matches Cilium's allowedMatchNameChars
@@ -94,6 +101,12 @@ var (
 	// sets a Mismatch action. The sandbox cannot enforce request
 	// modification semantics (LOG, ADD, DELETE, REPLACE).
 	ErrHeaderMatchMismatchAction = errors.New("headerMatch mismatch actions are not supported by the sandbox")
+
+	// ErrPortExceedsProxyRange is returned when a port exceeds the
+	// maximum value that can be offset by [proxyPortBase] without
+	// overflowing uint16. Ports above 50535 produce proxy listen
+	// ports above 65535.
+	ErrPortExceedsProxyRange = errors.New("port exceeds proxy range (max 50535)")
 
 	// ErrInvalidTCPForward is returned when a [TCPForward] entry has a
 	// non-positive port or empty host.
@@ -890,6 +903,10 @@ func (c *SandboxConfig) Validate() error {
 
 	portsSet := make(map[int]bool, len(resolvedPorts))
 	for _, p := range resolvedPorts {
+		if p > maxProxyablePort {
+			return fmt.Errorf("%w: %d", ErrPortExceedsProxyRange, p)
+		}
+
 		portsSet[p] = true
 	}
 
@@ -897,6 +914,10 @@ func (c *SandboxConfig) Validate() error {
 	for _, fwd := range c.TCPForwards {
 		if fwd.Port <= 0 || fwd.Host == "" {
 			return fmt.Errorf("%w: port=%d host=%q", ErrInvalidTCPForward, fwd.Port, fwd.Host)
+		}
+
+		if fwd.Port > maxProxyablePort {
+			return fmt.Errorf("%w: %d", ErrPortExceedsProxyRange, fwd.Port)
 		}
 
 		if seen[fwd.Port] {

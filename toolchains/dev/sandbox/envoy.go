@@ -1162,7 +1162,7 @@ func GenerateEnvoyConfig(cfg *SandboxConfig, certsDir, caBundlePath string) (str
 
 	for _, fwd := range cfg.TCPForwards {
 		name := fmt.Sprintf("tcp_forward_%d", fwd.Port)
-		listeners = append(listeners, buildTCPForwardListener(name, 15000+fwd.Port, name, accessLog))
+		listeners = append(listeners, buildTCPForwardListener(name, proxyPortBase+fwd.Port, name, accessLog))
 	}
 
 	// Extra port listeners support both passthrough and MITM (when L7
@@ -1176,7 +1176,7 @@ func GenerateEnvoyConfig(cfg *SandboxConfig, certsDir, caBundlePath string) (str
 
 		listeners = append(listeners, buildTLSListener(
 			fmt.Sprintf("tls_passthrough_%d", p),
-			15000+p, p,
+			proxyPortBase+p, p,
 			fmt.Sprintf("tls_passthrough_%d", p),
 			rulesP, openPortSet[p], accessLog, certsDir,
 		))

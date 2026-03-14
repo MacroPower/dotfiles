@@ -151,7 +151,7 @@ func generateUnrestrictedIptables(cfg *SandboxConfig) (string, string) {
 				"-A OUTPUT -m owner --uid-owner %s -p tcp --dport %d -j REDIRECT --to-port %d\n",
 				UID,
 				fwd.Port,
-				15000+fwd.Port,
+				proxyPortBase+fwd.Port,
 			)
 		}
 
@@ -257,7 +257,7 @@ func generateRulesIptables(cfg *SandboxConfig) (string, string) {
 				"-A OUTPUT -m owner --uid-owner %s -p tcp --dport %d -j REDIRECT --to-port %d\n",
 				UID,
 				p,
-				15000+p,
+				proxyPortBase+p,
 			)
 		}
 
@@ -267,7 +267,7 @@ func generateRulesIptables(cfg *SandboxConfig) (string, string) {
 				"-A OUTPUT -m owner --uid-owner %s -p tcp --dport %d -j REDIRECT --to-port %d\n",
 				UID,
 				fwd.Port,
-				15000+fwd.Port,
+				proxyPortBase+fwd.Port,
 			)
 		}
 

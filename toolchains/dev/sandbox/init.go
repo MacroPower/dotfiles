@@ -439,11 +439,11 @@ func firstListenerPort(cfg *SandboxConfig) int {
 	}
 
 	if len(cfg.TCPForwards) > 0 {
-		return 15000 + cfg.TCPForwards[0].Port
+		return proxyPortBase + cfg.TCPForwards[0].Port
 	}
 
 	if len(ports) > 0 {
-		return 15000 + ports[0]
+		return proxyPortBase + ports[0]
 	}
 
 	return 15443

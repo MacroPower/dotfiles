@@ -441,6 +441,21 @@ func TestValidate(t *testing.T) {
 			},
 			err: sandbox.ErrTCPForwardRequiresEgress,
 		},
+		"port exceeds proxy range": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "50536"}}}},
+				}),
+			},
+			err: sandbox.ErrPortExceedsProxyRange,
+		},
+		"tcp forward port exceeds proxy range": {
+			cfg: &sandbox.SandboxConfig{
+				TCPForwards: []sandbox.TCPForward{{Port: 50536, Host: "example.com"}},
+			},
+			err: sandbox.ErrPortExceedsProxyRange,
+		},
 		"valid methods": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
