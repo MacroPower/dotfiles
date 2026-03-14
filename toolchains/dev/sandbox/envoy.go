@@ -94,7 +94,8 @@ type envoyValidationContext struct {
 }
 
 type envoyFilterChainMatch struct {
-	ServerNames []string `yaml:"server_names"`
+	TransportProtocol string   `yaml:"transport_protocol,omitempty"`
+	ServerNames       []string `yaml:"server_names,omitempty"`
 }
 
 type envoyFilter struct {
@@ -576,9 +577,12 @@ func buildPassthroughFilterChain(
 		},
 	)
 
-	fc := envoyFilterChain{Filters: filters}
-	if len(serverNames) > 0 {
-		fc.FilterChainMatch = &envoyFilterChainMatch{ServerNames: serverNames}
+	fc := envoyFilterChain{
+		FilterChainMatch: &envoyFilterChainMatch{
+			TransportProtocol: "tls",
+			ServerNames:       serverNames,
+		},
+		Filters: filters,
 	}
 
 	return fc
@@ -592,7 +596,7 @@ func buildMITMFilterChain(rule ResolvedRule, accessLog []envoyAccessLog, certsDi
 	vhosts, _, _ := buildHTTPVirtualHosts([]ResolvedRule{rule}, "mitm_forward_proxy_cluster")
 
 	return envoyFilterChain{
-		FilterChainMatch: &envoyFilterChainMatch{ServerNames: []string{sn}},
+		FilterChainMatch: &envoyFilterChainMatch{TransportProtocol: "tls", ServerNames: []string{sn}},
 		TransportSocket: &envoyTransportSocket{
 			Name: "envoy.transport_sockets.tls",
 			TypedConfig: envoyDownstreamTlsContext{

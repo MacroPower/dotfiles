@@ -845,6 +845,26 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"missing_sni src=%DOWNSTREAM_REMOTE_ADDRESS% dst=%DOWNSTREAM_LOCAL_ADDRESS%",
 			},
 		},
+		"TLS filter chains have transport_protocol tls": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+					}},
+				},
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "cdn.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}}}},
+				},
+				sandbox.EgressRule{ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080"}}}}},
+			)},
+			certsDir: "/etc/sandbox/certs",
+			want: []string{
+				"transport_protocol: tls",
+			},
+		},
 		"clusters have connect timeout": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
