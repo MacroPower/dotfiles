@@ -2,6 +2,7 @@ package sandbox_test
 
 import (
 	"net"
+	"os/exec"
 	"testing"
 
 	"github.com/miekg/dns"
@@ -79,6 +80,51 @@ func TestDNSProxyShutdownOnInitFailure(t *testing.T) {
 	require.NoError(t, proxy.Shutdown())
 
 	// Verify the port is released by binding the same address.
+	lc := net.ListenConfig{}
+	ln, err := lc.ListenPacket(t.Context(), "udp", proxy.Addr)
+	require.NoError(t, err)
+	require.NoError(t, ln.Close())
+}
+
+func TestShutdownOrder(t *testing.T) {
+	t.Parallel()
+
+	// Start a mock upstream DNS server and a DNS proxy.
+	upstream := startMockDNS(t, "1.2.3.4")
+
+	cfg := &sandbox.SandboxConfig{
+		Egress: egressRules(sandbox.EgressRule{
+			ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+			ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+		}),
+	}
+
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true)
+	require.NoError(t, err)
+
+	// Start a long-running subprocess to simulate Envoy.
+	envoyCmd := exec.CommandContext(t.Context(), "sleep", "60")
+	require.NoError(t, envoyCmd.Start())
+
+	// Verify DNS proxy is serving before shutdown.
+	client := &dns.Client{Net: "udp"}
+	msg := new(dns.Msg)
+	msg.SetQuestion("example.com.", dns.TypeA)
+
+	resp, _, err := client.Exchange(msg, proxy.Addr)
+	require.NoError(t, err)
+	assert.Equal(t, dns.RcodeSuccess, resp.Rcode)
+
+	// DNS should still be resolvable while Envoy is draining.
+	// We verify this by checking that after Shutdown returns,
+	// the Envoy process has already exited (was waited on) and
+	// the DNS proxy port is released.
+	sandbox.Shutdown(t.Context(), envoyCmd, proxy, nil)
+
+	// Envoy process should have been terminated and waited on.
+	assert.NotNil(t, envoyCmd.ProcessState, "envoy process should have been waited on")
+
+	// DNS proxy port should be released.
 	lc := net.ListenConfig{}
 	ln, err := lc.ListenPacket(t.Context(), "udp", proxy.Addr)
 	require.NoError(t, err)

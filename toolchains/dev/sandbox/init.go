@@ -17,6 +17,10 @@ import (
 	"time"
 )
 
+// envoyDrainTimeout is the maximum time to wait for Envoy to exit
+// after receiving SIGTERM before proceeding with shutdown.
+const envoyDrainTimeout = 5 * time.Second
+
 // ExitError carries a process exit code through the error return path
 // so the CLI entrypoint can propagate it to [os.Exit].
 type ExitError struct{ Code int }
@@ -367,20 +371,7 @@ func Init(ctx context.Context, args []string) error {
 		waitErr = <-waitCh
 	}
 
-	// Clean up daemons.
-	if dnsProxy != nil {
-		err := dnsProxy.Shutdown()
-		if err != nil {
-			slog.DebugContext(ctx, "stopping DNS proxy", slog.Any("err", err))
-		}
-	}
-
-	if envoyCmd != nil && envoyCmd.Process != nil {
-		err := envoyCmd.Process.Signal(syscall.SIGTERM)
-		if err != nil {
-			slog.DebugContext(ctx, "stopping envoy", slog.Any("err", err))
-		}
-	}
+	Shutdown(ctx, envoyCmd, dnsProxy, createdIPSets)
 
 	// Reap any remaining zombie children (PID 1 responsibility).
 	for {
@@ -403,6 +394,80 @@ func Init(ctx context.Context, args []string) error {
 	}
 
 	return &ExitError{Code: exitCode}
+}
+
+// Shutdown performs the full cleanup sequence in the correct order:
+// Envoy first (with drain wait), then DNS proxy, then iptables/ipsets.
+// Stopping Envoy before DNS ensures in-flight requests can still
+// resolve during Envoy's drain period (ISSUE-52).
+func Shutdown(ctx context.Context, envoyCmd *exec.Cmd, dnsProxy *DNSProxy, ipsets []string) {
+	// Stop Envoy first so DNS remains available during drain (ISSUE-52).
+	if envoyCmd != nil && envoyCmd.Process != nil {
+		err := envoyCmd.Process.Signal(syscall.SIGTERM)
+		if err != nil {
+			slog.DebugContext(ctx, "stopping envoy", slog.Any("err", err))
+		} else {
+			// Wait up to 5 seconds for Envoy to exit gracefully (ISSUE-51).
+			envoyDone := make(chan struct{})
+
+			go func() {
+				waitErr := envoyCmd.Wait()
+				if waitErr != nil {
+					slog.DebugContext(ctx, "envoy exited", slog.Any("err", waitErr))
+				}
+
+				close(envoyDone)
+			}()
+
+			select {
+			case <-envoyDone:
+			case <-time.After(envoyDrainTimeout):
+				slog.WarnContext(ctx, "envoy did not exit within drain timeout, proceeding")
+			}
+		}
+	}
+
+	// Stop DNS proxy after Envoy is down.
+	if dnsProxy != nil {
+		err := dnsProxy.Shutdown()
+		if err != nil {
+			slog.DebugContext(ctx, "stopping DNS proxy", slog.Any("err", err))
+		}
+	}
+
+	// Flush iptables rules and destroy ipsets so a restart in the same
+	// network namespace does not fail on pre-existing resources (ISSUE-53).
+	cleanupIPTables(ctx)
+
+	for _, name := range ipsets {
+		//nolint:gosec // G204: name is from validated FQDNIPSetName output.
+		destroyErr := exec.CommandContext(ctx, "ipset", "destroy", name).Run()
+		if destroyErr != nil {
+			slog.DebugContext(ctx, "destroying ipset on shutdown",
+				slog.String("name", name),
+				slog.Any("err", destroyErr),
+			)
+		}
+	}
+}
+
+// cleanupIPTables flushes the sandbox iptables chains so that a
+// restart in the same network namespace starts with clean state.
+func cleanupIPTables(ctx context.Context) {
+	for _, cmd := range []string{"iptables", "ip6tables"} {
+		for _, table := range []string{"nat", "filter"} {
+			//nolint:gosec // G204: cmd and table are from hardcoded lists.
+			out, err := exec.CommandContext(ctx, cmd, "-t", table, "-F").CombinedOutput()
+			if err != nil {
+				slog.DebugContext(ctx, "flushing iptables on shutdown",
+					slog.String("cmd", cmd),
+					slog.String("table", table),
+					slog.String("output", string(out)),
+					slog.Any("err", err),
+				)
+			}
+		}
+	}
 }
 
 // installCA copies the sandbox CA certificate into the system trust
