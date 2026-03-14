@@ -202,6 +202,15 @@ func Init(ctx context.Context, args []string) error {
 		return err
 	}
 
+	// Start refuse DNS server for blocked/restricted modes.
+	// Must start before dnsmasq so the upstream is available.
+	if !cfg.IsEgressUnrestricted() && !cfg.IsEgressRulesOnly() {
+		_, err := StartRefuseDNS()
+		if err != nil {
+			return fmt.Errorf("starting refuse DNS server: %w", err)
+		}
+	}
+
 	// Start dnsmasq.
 	err = os.MkdirAll("/var/run", 0o755)
 	if err != nil {

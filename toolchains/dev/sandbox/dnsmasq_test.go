@@ -26,23 +26,23 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 				"no-resolv",
 				"port=53",
 			},
-			notWant: []string{"server=/", "address=/#/"},
+			notWant: []string{"server=/", "address=/#/", "server=127.0.0.1#5553"},
 		},
 		"ipv6 upstream": {
 			upstream: "2001:4860:4860::8888",
 			want:     []string{"server=2001:4860:4860::8888", "no-resolv"},
-			notWant:  []string{"server=/", "address=/#/"},
+			notWant:  []string{"server=/", "address=/#/", "server=127.0.0.1#5553"},
 		},
 		"nil config forwards all": {
 			upstream: "8.8.8.8",
 			want:     []string{"server=8.8.8.8"},
-			notWant:  []string{"server=/", "address=/#/"},
+			notWant:  []string{"server=/", "address=/#/", "server=127.0.0.1#5553"},
 		},
 		"unrestricted mode forwards all": {
 			upstream: "8.8.8.8",
 			cfg:      &sandbox.SandboxConfig{},
 			want:     []string{"server=8.8.8.8"},
-			notWant:  []string{"server=/", "address=/#/"},
+			notWant:  []string{"server=/", "address=/#/", "server=127.0.0.1#5553"},
 		},
 		"restricted mode with FQDN domains": {
 			upstream: "8.8.8.8",
@@ -52,8 +52,8 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 				}),
 			},
-			want:    []string{"server=/github.com/8.8.8.8", "address=/#/"},
-			notWant: []string{"server=8.8.8.8\n"},
+			want:    []string{"server=/github.com/8.8.8.8", "server=127.0.0.1#5553"},
+			notWant: []string{"server=8.8.8.8\n", "address=/#/"},
 		},
 		"wildcard matchPattern uses dnsmasq wildcard syntax": {
 			upstream: "8.8.8.8",
@@ -63,16 +63,16 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 				}),
 			},
-			want:    []string{"server=/*.github.com/8.8.8.8", "address=/#/"},
-			notWant: []string{"server=8.8.8.8\n", "server=/github.com/"},
+			want:    []string{"server=/*.github.com/8.8.8.8", "server=127.0.0.1#5553"},
+			notWant: []string{"server=8.8.8.8\n", "server=/github.com/", "address=/#/"},
 		},
-		"blocked mode returns NXDOMAIN only": {
+		"blocked mode returns REFUSED": {
 			upstream: "8.8.8.8",
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{}),
 			},
-			want:    []string{"address=/#/"},
-			notWant: []string{"server=/", "server=8.8.8.8"},
+			want:    []string{"server=127.0.0.1#5553"},
+			notWant: []string{"server=/", "server=8.8.8.8", "address=/#/"},
 		},
 		"includes TCPForward hosts": {
 			upstream: "8.8.8.8",
@@ -86,8 +86,9 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			want: []string{
 				"server=/github.com/8.8.8.8",
 				"server=/git.example.com/8.8.8.8",
-				"address=/#/",
+				"server=127.0.0.1#5553",
 			},
+			notWant: []string{"address=/#/"},
 		},
 		"bare wildcard forwards all": {
 			upstream: "8.8.8.8",
@@ -98,7 +99,7 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 				}),
 			},
 			want:    []string{"server=8.8.8.8"},
-			notWant: []string{"server=/", "address=/#/"},
+			notWant: []string{"server=/", "address=/#/", "server=127.0.0.1#5553"},
 		},
 		"FQDN with UDP port adds ipset directive": {
 			upstream: "8.8.8.8",
@@ -111,7 +112,9 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			want: []string{
 				"server=/github.com/8.8.8.8",
 				"ipset=/github.com/sandbox_fqdn4,sandbox_fqdn6",
+				"server=127.0.0.1#5553",
 			},
+			notWant: []string{"address=/#/"},
 		},
 		"TCP-only FQDN has no ipset directive": {
 			upstream: "8.8.8.8",
@@ -121,8 +124,8 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "TCP"}}}},
 				}),
 			},
-			want:    []string{"server=/github.com/8.8.8.8"},
-			notWant: []string{"ipset="},
+			want:    []string{"server=/github.com/8.8.8.8", "server=127.0.0.1#5553"},
+			notWant: []string{"ipset=", "address=/#/"},
 		},
 		"bare wildcard with UDP adds catch-all ipset": {
 			upstream: "8.8.8.8",
@@ -136,6 +139,7 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 				"server=8.8.8.8",
 				"ipset=/#/sandbox_fqdn4,sandbox_fqdn6",
 			},
+			notWant: []string{"server=127.0.0.1#5553"},
 		},
 		"double-star wildcard uses dnsmasq wildcard syntax": {
 			upstream: "8.8.8.8",
@@ -145,8 +149,8 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 				}),
 			},
-			want:    []string{"server=/*.example.com/8.8.8.8", "address=/#/"},
-			notWant: []string{"server=8.8.8.8\n", "**.example.com", "server=/example.com/"},
+			want:    []string{"server=/*.example.com/8.8.8.8", "server=127.0.0.1#5553"},
+			notWant: []string{"server=8.8.8.8\n", "**.example.com", "server=/example.com/", "address=/#/"},
 		},
 		"wildcard matchPattern with UDP uses dnsmasq wildcard ipset": {
 			upstream: "8.8.8.8",
@@ -159,9 +163,9 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			want: []string{
 				"server=/*.example.com/8.8.8.8",
 				"ipset=/*.example.com/sandbox_fqdn4,sandbox_fqdn6",
-				"address=/#/",
+				"server=127.0.0.1#5553",
 			},
-			notWant: []string{"server=/example.com/", "ipset=/example.com/"},
+			notWant: []string{"server=/example.com/", "ipset=/example.com/", "address=/#/"},
 		},
 		"matchName uses plain domain syntax": {
 			upstream: "8.8.8.8",
@@ -171,7 +175,7 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 				}),
 			},
-			want:    []string{"server=/api.example.com/8.8.8.8", "address=/#/"},
+			want:    []string{"server=/api.example.com/8.8.8.8", "server=127.0.0.1#5553"},
 			notWant: []string{"server=/*.api.example.com/"},
 		},
 		"mixed matchName and wildcard matchPattern": {
@@ -188,9 +192,9 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			want: []string{
 				"server=/exact.example.com/1.1.1.1",
 				"server=/*.wild.example.com/1.1.1.1",
-				"address=/#/",
+				"server=127.0.0.1#5553",
 			},
-			notWant: []string{"server=/wild.example.com/"},
+			notWant: []string{"server=/wild.example.com/", "address=/#/"},
 		},
 		"matchName upgrades wildcard to non-wildcard for same domain": {
 			upstream: "8.8.8.8",
@@ -206,8 +210,8 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 					},
 				),
 			},
-			want:    []string{"server=/example.com/8.8.8.8", "address=/#/"},
-			notWant: []string{"server=/*.example.com/"},
+			want:    []string{"server=/example.com/8.8.8.8", "server=127.0.0.1#5553"},
+			notWant: []string{"server=/*.example.com/", "address=/#/"},
 		},
 		"TCPForward host upgrades wildcard for same domain": {
 			upstream: "8.8.8.8",
@@ -218,8 +222,8 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 				}),
 				TCPForwards: []sandbox.TCPForward{{Port: 22, Host: "example.com"}},
 			},
-			want:    []string{"server=/example.com/8.8.8.8", "address=/#/"},
-			notWant: []string{"server=/*.example.com/"},
+			want:    []string{"server=/example.com/8.8.8.8", "server=127.0.0.1#5553"},
+			notWant: []string{"server=/*.example.com/", "address=/#/"},
 		},
 		"cache disabled in unrestricted mode": {
 			upstream: "8.8.8.8",
@@ -231,7 +235,7 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{}),
 			},
-			want: []string{"cache-size=0", "address=/#/"},
+			want: []string{"cache-size=0", "server=127.0.0.1#5553"},
 		},
 		"rules-only mode forwards all": {
 			upstream: "8.8.8.8",
@@ -243,7 +247,7 @@ func TestGenerateDnsmasqConfig(t *testing.T) {
 				}),
 			},
 			want:    []string{"server=8.8.8.8"},
-			notWant: []string{"server=/", "address=/#/"},
+			notWant: []string{"server=/", "address=/#/", "server=127.0.0.1#5553"},
 		},
 	}
 

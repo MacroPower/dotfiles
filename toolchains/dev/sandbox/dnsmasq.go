@@ -11,7 +11,8 @@ import (
 // DNS queries to the given upstream server. When cfg specifies FQDN
 // rules with default-deny active, forwarding is restricted to only
 // the allowed domains (plus [TCPForward] hosts); all other queries
-// return NXDOMAIN. When cfg is nil, unrestricted, or rules-only,
+// return REFUSED (matching Cilium semantics). When cfg is nil,
+// unrestricted, or rules-only,
 // all queries are forwarded (existing behavior).
 //
 // Dnsmasq is used as a local resolver because iptables only allows
@@ -39,12 +40,13 @@ func GenerateDnsmasqConfig(upstream string, cfg *SandboxConfig) string {
 	}
 
 	if cfg.IsEgressBlocked() {
-		// Deny-all: return NXDOMAIN for everything.
-		b.WriteString("address=/#/\n")
+		// Deny-all: forward to refuse server (returns REFUSED, matching
+		// Cilium's default --tofqdns-dns-reject-response-code=refused).
+		fmt.Fprintf(&b, "server=127.0.0.1#%d\n", RefusePort)
 		return b.String()
 	}
 
-	// Restricted mode: NXDOMAIN catch-all, then per-domain forwards.
+	// Restricted mode: REFUSED catch-all, then per-domain forwards.
 	domains := collectDNSDomains(cfg)
 
 	hasNonTCPFQDN := cfg.HasFQDNNonTCPPorts()
@@ -67,7 +69,7 @@ func GenerateDnsmasqConfig(upstream string, cfg *SandboxConfig) string {
 		return b.String()
 	}
 
-	b.WriteString("address=/#/\n")
+	fmt.Fprintf(&b, "server=127.0.0.1#%d\n", RefusePort)
 
 	for _, d := range domains {
 		fmt.Fprintf(&b, "server=/%s/%s\n", d.dnsmasqDomain(), upstream)

@@ -1236,6 +1236,109 @@ func (m *Tests) TestSandboxWildcardDnsmasq(ctx context.Context) error {
 	return nil
 }
 
+// TestSandboxRefusedDNS verifies that blocked domains receive REFUSED
+// (rcode 5) instead of NXDOMAIN (rcode 3), matching Cilium's default
+// --tofqdns-dns-reject-response-code=refused behavior. The refuse DNS
+// server runs on port 5553 and dnsmasq forwards unmatched queries to it.
+//
+// Security review: InsecureRootCapabilities is required because
+// sandbox init needs CAP_NET_ADMIN to load iptables rules and start
+// dnsmasq/Envoy. The init script drops to uid 1000 before running the
+// test assertions, so all network probes execute unprivileged.
+//
+// Not annotated with +check because it requires InsecureRootCapabilities.
+// Run manually:
+//
+//	dagger call -m toolchains/dev/tests test-sandbox-refused-d-n-s
+func (m *Tests) TestSandboxRefusedDNS(ctx context.Context) error {
+	ctr := dag.Dev().SandboxBase(dagger.DevSandboxBaseOpts{
+		SandboxConfig: configFile(`egress:
+  - toFQDNs:
+      - matchName: "allowed.example.com"
+    toPorts:
+      - ports:
+          - port: "443"
+`),
+	})
+
+	// Use Node.js (available in DevBase) to query DNS and inspect rcode.
+	// Node's dns module uses the system resolver, but we need raw rcode
+	// access, so use dgram to send a hand-crafted DNS query.
+	script := `set -e
+
+echo "=== Assertion 1: blocked domain gets REFUSED ==="
+rcode=$(node -e "
+const dgram = require('dgram');
+const c = dgram.createSocket('udp4');
+// Minimal DNS query for blocked.example.com A record
+const buf = Buffer.alloc(41);
+buf.writeUInt16BE(0x1234, 0); // ID
+buf.writeUInt16BE(0x0100, 2); // flags: RD=1
+buf.writeUInt16BE(1, 4);      // QDCOUNT=1
+// QNAME: blocked.example.com
+let off = 12;
+for (const label of ['blocked','example','com']) {
+  buf[off++] = label.length;
+  buf.write(label, off); off += label.length;
+}
+buf[off++] = 0; // root
+buf.writeUInt16BE(1, off); off += 2; // QTYPE=A
+buf.writeUInt16BE(1, off); off += 2; // QCLASS=IN
+c.send(buf.slice(0,off), 53, '127.0.0.1', (err) => { if(err) { console.log(-1); process.exit(1); } });
+c.on('message', (msg) => { console.log(msg.readUInt16BE(2) & 0xf); c.close(); });
+setTimeout(() => { console.log(-1); c.close(); }, 5000);
+")
+if [ "$rcode" != "5" ]; then
+  echo "FAIL: expected rcode 5 (REFUSED) for blocked domain, got: $rcode"
+  exit 1
+fi
+echo "PASS: blocked domain got REFUSED (rcode 5)"
+
+echo "=== Assertion 2: allowed domain does not get REFUSED ==="
+rcode=$(node -e "
+const dgram = require('dgram');
+const c = dgram.createSocket('udp4');
+const buf = Buffer.alloc(41);
+buf.writeUInt16BE(0x1234, 0);
+buf.writeUInt16BE(0x0100, 2);
+buf.writeUInt16BE(1, 4);
+let off = 12;
+for (const label of ['allowed','example','com']) {
+  buf[off++] = label.length;
+  buf.write(label, off); off += label.length;
+}
+buf[off++] = 0;
+buf.writeUInt16BE(1, off); off += 2;
+buf.writeUInt16BE(1, off); off += 2;
+c.send(buf.slice(0,off), 53, '127.0.0.1', (err) => { if(err) { console.log(-1); process.exit(1); } });
+c.on('message', (msg) => { console.log(msg.readUInt16BE(2) & 0xf); c.close(); });
+setTimeout(() => { console.log(-1); c.close(); }, 5000);
+")
+if [ "$rcode" = "5" ]; then
+  echo "FAIL: allowed domain should not get REFUSED, got rcode: $rcode"
+  exit 1
+fi
+echo "PASS: allowed domain did not get REFUSED (rcode $rcode)"
+
+echo "=== All REFUSED DNS assertions passed ==="
+`
+
+	_, err := ctr.
+		WithExec([]string{"mkdir", "-p", "/commandhistory", "/claude-state"}).
+		WithExec(
+			[]string{"/usr/local/bin/sandbox", "init", "--", "sh", "-c", script},
+			dagger.ContainerWithExecOpts{
+				InsecureRootCapabilities: true,
+			},
+		).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("sandbox REFUSED DNS: %w", err)
+	}
+
+	return nil
+}
+
 // TestSandboxPathNormalizationE2E verifies that Envoy's path normalization
 // works end-to-end: a request to //api//foo is normalized to /api/foo and
 // matches a /api/ path rule via MITM inspection, while /blocked is rejected.
