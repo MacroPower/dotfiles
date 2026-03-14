@@ -1898,6 +1898,50 @@ func TestResolveRulesForPort(t *testing.T) {
 			port: 443,
 			want: []sandbox.ResolvedRule{{Domain: "api.example.com"}},
 		},
+		"ANY plain L4 nullifies TCP L7 on same port": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{
+					{Ports: []sandbox.Port{{Port: "443"}}},
+					{
+						Ports: []sandbox.Port{{Port: "443", Protocol: "TCP"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/api"}}},
+					},
+				},
+			})},
+			port: 443,
+			want: []sandbox.ResolvedRule{{Domain: "api.example.com"}},
+		},
+		"UDP plain L4 does not nullify TCP L7 on same port": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{
+					{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}},
+					{
+						Ports: []sandbox.Port{{Port: "443", Protocol: "TCP"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/api"}}},
+					},
+				},
+			})},
+			port: 443,
+			want: []sandbox.ResolvedRule{
+				{Domain: "api.example.com", HTTPRules: []sandbox.ResolvedHTTPRule{{Path: "/api"}}},
+			},
+		},
+		"TCP plain L4 still nullifies TCP L7 on same port": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{
+					{Ports: []sandbox.Port{{Port: "443", Protocol: "TCP"}}},
+					{
+						Ports: []sandbox.Port{{Port: "443", Protocol: "TCP"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/api"}}},
+					},
+				},
+			})},
+			port: 443,
+			want: []sandbox.ResolvedRule{{Domain: "api.example.com"}},
+		},
 		"toPorts-only rule excluded": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080"}}}},

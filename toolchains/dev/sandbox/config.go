@@ -1384,8 +1384,13 @@ func matchRuleForPort(rule EgressRule, port int) (bool, bool, []ResolvedHTTPRule
 
 		if pr.Rules == nil || pr.Rules.HTTP == nil || len(pr.Rules.HTTP) == 0 {
 			// Plain L4 rule on this port: nullifies all
-			// sibling L7 for this EgressRule.
-			hasPlainL4 = true
+			// sibling L7 for this EgressRule. Only
+			// TCP-compatible entries can nullify L7 (HTTP
+			// inspection is TCP-only). A UDP/443 entry must
+			// not cancel TCP/443 L7 rules.
+			if portRuleHasTCPPort(pr, port) {
+				hasPlainL4 = true
+			}
 		} else {
 			for _, h := range pr.Rules.HTTP {
 				httpRules = append(httpRules, ResolvedHTTPRule{Method: h.Method, Path: h.Path})
@@ -1414,6 +1419,48 @@ func portRuleMatchesPort(pr PortRule, port int) bool {
 		n := int(resolved)
 
 		// Port 0 is a wildcard: matches any target port.
+		if n == 0 {
+			return true
+		}
+
+		if p.EndPort > 0 && port >= n && port <= p.EndPort {
+			return true
+		}
+
+		if n == port {
+			return true
+		}
+	}
+
+	return false
+}
+
+// portRuleHasTCPPort reports whether a [PortRule] contains a
+// TCP-compatible port entry matching the given port number. An entry is
+// TCP-compatible when its protocol is TCP, ANY, or empty (the default).
+// This prevents non-TCP entries (UDP, SCTP) from nullifying TCP L7
+// rules during intra-rule L7 resolution, matching Cilium's per-(port,
+// protocol) L4Filter semantics.
+func portRuleHasTCPPort(pr PortRule, port int) bool {
+	if len(pr.Ports) == 0 {
+		// No ports list means L7-only toPorts entry, which is
+		// implicitly TCP (HTTP inspection requires TCP).
+		return true
+	}
+
+	for _, p := range pr.Ports {
+		proto := normalizeProtocol(p.Protocol)
+		if proto != "" && proto != protoTCP {
+			continue // UDP, SCTP -- skip
+		}
+
+		resolved, err := ResolvePort(p.Port)
+		if err != nil {
+			continue
+		}
+
+		n := int(resolved)
+
 		if n == 0 {
 			return true
 		}
