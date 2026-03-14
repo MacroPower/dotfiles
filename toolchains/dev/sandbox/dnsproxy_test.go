@@ -28,12 +28,12 @@ func TestDNSDomainMatches(t *testing.T) {
 		"non-wildcard subdomain": {
 			domain: sandbox.DNSDomain{Name: "example.com"},
 			qname:  "sub.example.com.",
-			want:   true,
+			want:   false,
 		},
 		"non-wildcard deep subdomain": {
 			domain: sandbox.DNSDomain{Name: "example.com"},
 			qname:  "a.b.c.example.com.",
-			want:   true,
+			want:   false,
 		},
 		"non-wildcard suffix trap": {
 			domain: sandbox.DNSDomain{Name: "example.com"},
@@ -579,14 +579,14 @@ func TestDNSProxyRestrictedMode(t *testing.T) {
 	assert.Equal(t, dns.RcodeSuccess, resp.Rcode)
 	require.Len(t, resp.Answer, 1)
 
-	// Subdomain of allowed domain should also succeed.
+	// Subdomain of allowed domain should get REFUSED (exact match only).
 	msg2 := new(dns.Msg)
 	msg2.SetQuestion("sub.allowed.example.com.", dns.TypeA)
 
 	resp2, _, err := client.Exchange(msg2, proxy.Addr)
 	require.NoError(t, err)
 	require.NotNil(t, resp2)
-	assert.Equal(t, dns.RcodeSuccess, resp2.Rcode)
+	assert.Equal(t, dns.RcodeRefused, resp2.Rcode)
 
 	// Disallowed domain should get REFUSED.
 	msg3 := new(dns.Msg)

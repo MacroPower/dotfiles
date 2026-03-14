@@ -80,7 +80,7 @@ func (d DNSDomain) Matches(qname string) bool {
 		return true
 	}
 
-	return q == d.Name || strings.HasSuffix(q, "."+d.Name)
+	return q == d.Name
 }
 
 // CollectDNSDomains returns a sorted, deduplicated list of domains
