@@ -410,9 +410,10 @@ type Port struct {
 	// and SCTP.
 	Protocol string `yaml:"protocol,omitempty"`
 	// EndPort specifies the upper bound of a port range. When set, the
-	// rule matches ports from Port to EndPort inclusive. Only valid with
-	// CIDR rules; not supported with toFQDNs (Envoy needs individual
-	// listeners).
+	// rule matches ports from Port to EndPort inclusive. Valid with CIDR
+	// and open-port rules (toPorts without L3 selectors); not supported
+	// with toFQDNs (Envoy needs individual listeners). Open-port TCP
+	// ranges bypass Envoy via direct iptables ACCEPT.
 	EndPort int `yaml:"endPort,omitempty"`
 }
 
@@ -1392,8 +1393,11 @@ func (c *SandboxConfig) ResolveDomains() []string {
 // (toCIDRSet without toFQDNs) are skipped because they bypass Envoy.
 // Ports that are exclusively non-TCP (e.g. UDP-only or SCTP-only) are
 // excluded since Envoy only creates TCP listeners. Ports from
-// FQDN-bearing rules and toPorts-only rules (no L3 selectors) both
-// contribute to the resolved set. Returns a sorted, deduplicated list.
+// FQDN-bearing rules and single-port toPorts-only rules (no L3
+// selectors) both contribute to the resolved set. Open-port ranges
+// (endPort > 0 on toPorts-only rules) are skipped because they
+// bypass Envoy via direct iptables ACCEPT. Returns a sorted,
+// deduplicated list.
 //
 // Non-TCP ports from FQDN rules are handled separately by
 // [ResolveFQDNNonTCPPorts] and enforced via ipset-backed iptables rules.
@@ -1422,14 +1426,22 @@ func (c *SandboxConfig) ResolvePorts() []int {
 			continue
 		}
 
-		// Only explicit ports from FQDN rules contribute.
+		isOpenPortRule := len(rule.ToFQDNs) == 0
+
+		// Explicit ports from FQDN and open-port rules contribute.
 		// Validation ensures FQDN rules always have toPorts.
 		// Skip ports that are exclusively non-TCP (e.g. UDP-only
 		// or SCTP-only), since Envoy only handles TCP listeners.
+		// Open-port ranges bypass Envoy via direct iptables ACCEPT;
+		// they don't need REDIRECT listeners.
 		for _, pr := range rule.ToPorts {
 			for _, p := range pr.Ports {
 				proto := normalizeProtocol(p.Protocol)
 				if proto != "" && proto != protoTCP {
+					continue
+				}
+
+				if isOpenPortRule && p.EndPort > 0 {
 					continue
 				}
 
@@ -1471,6 +1483,7 @@ func (c *SandboxConfig) ExtraPorts() []int {
 type ResolvedOpenPort struct {
 	Protocol string
 	Port     int
+	EndPort  int // 0 = no range
 }
 
 // HasUnrestrictedOpenPorts reports whether any port-only egress rule
@@ -1524,11 +1537,11 @@ func (c *SandboxConfig) ResolveOpenPortRules() []ResolvedOpenPort {
 				}
 
 				for _, pr := range protos {
-					k := pr + "/" + strconv.Itoa(n)
+					k := pr + "/" + strconv.Itoa(n) + "/" + strconv.Itoa(p.EndPort)
 					if !seen[k] {
 						seen[k] = true
 
-						result = append(result, ResolvedOpenPort{Port: n, Protocol: pr})
+						result = append(result, ResolvedOpenPort{Port: n, EndPort: p.EndPort, Protocol: pr})
 					}
 				}
 			}
@@ -1538,6 +1551,10 @@ func (c *SandboxConfig) ResolveOpenPortRules() []ResolvedOpenPort {
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Port != result[j].Port {
 			return result[i].Port < result[j].Port
+		}
+
+		if result[i].EndPort != result[j].EndPort {
+			return result[i].EndPort < result[j].EndPort
 		}
 
 		return result[i].Protocol < result[j].Protocol
@@ -1613,11 +1630,11 @@ func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []ResolvedOpenPort {
 				}
 
 				for _, pr := range protos {
-					k := pr + "/" + strconv.Itoa(n)
+					k := pr + "/" + strconv.Itoa(n) + "/" + strconv.Itoa(p.EndPort)
 					if !seen[k] {
 						seen[k] = true
 
-						result = append(result, ResolvedOpenPort{Port: n, Protocol: pr})
+						result = append(result, ResolvedOpenPort{Port: n, EndPort: p.EndPort, Protocol: pr})
 					}
 				}
 			}
@@ -1627,6 +1644,10 @@ func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []ResolvedOpenPort {
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Port != result[j].Port {
 			return result[i].Port < result[j].Port
+		}
+
+		if result[i].EndPort != result[j].EndPort {
+			return result[i].EndPort < result[j].EndPort
 		}
 
 		return result[i].Protocol < result[j].Protocol
@@ -1756,6 +1777,10 @@ func resolvePortsFromRule(rule EgressRule) []ResolvedPortProto {
 	sort.Slice(ports, func(i, j int) bool {
 		if ports[i].Port != ports[j].Port {
 			return ports[i].Port < ports[j].Port
+		}
+
+		if ports[i].EndPort != ports[j].EndPort {
+			return ports[i].EndPort < ports[j].EndPort
 		}
 
 		return ports[i].Protocol < ports[j].Protocol

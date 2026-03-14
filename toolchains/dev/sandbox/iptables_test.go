@@ -662,6 +662,130 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-d 10.1.0.0/16 -j DROP",
 			},
 		},
+		"UDP open port range emits dport range": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "UDP"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			wantIPv4: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 8000:9000 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				"--dport 8000 -j ACCEPT",
+			},
+			wantRedirectCount4: 1,
+		},
+		"TCP open port range bypasses Envoy with direct ACCEPT": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			wantIPv4: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 8000:9000 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				// Range should not get a NAT REDIRECT.
+				"--to-port 23000",
+			},
+			wantRedirectCount4: 1,
+		},
+		"mixed single and range open port": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080", Protocol: "TCP"}}}},
+					},
+					sandbox.EgressRule{
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "UDP"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			wantIPv4: []string{
+				// Single TCP port gets REDIRECT (Envoy).
+				"--to-port 23080",
+				// UDP range gets direct ACCEPT.
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 8000:9000 -j ACCEPT",
+			},
+			wantRedirectCount4: 2,
+		},
+		"SCTP open port range emits dport range": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "5000", EndPort: 6000, Protocol: "SCTP"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			wantIPv4: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 5000:6000 -j ACCEPT",
+			},
+		},
+		"endPort equal to port emits dport N:N": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 8000, Protocol: "TCP"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			wantIPv4: []string{
+				// endPort == port produces --dport N:N, valid iptables
+				// syntax equivalent to --dport N. No special case.
+				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 8000:8000 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				// Should not get a NAT REDIRECT for the range port.
+				"--to-port 23000",
+			},
+			wantRedirectCount4: 1,
+		},
+		"FQDN REDIRECT coexists with open-port TCP range ACCEPT": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000"}}}},
+					},
+					sandbox.EgressRule{
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+					},
+				),
+			},
+			wantIPv4: []string{
+				// NAT REDIRECT for FQDN rule's port 8000 (Envoy inspection).
+				"--to-port 23000",
+				// Direct ACCEPT for the TCP range (bypasses Envoy).
+				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 8000:9000 -j ACCEPT",
+			},
+			// FQDN port 8000 contributes one REDIRECT; the range does not.
+			wantRedirectCount4: 1,
+		},
 	}
 
 	for name, tt := range tests {

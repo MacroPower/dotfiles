@@ -104,6 +104,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestSandboxCIDRNoExcept(ctx) })
 	eg.Go(func() error { return m.TestSandboxMethodRestriction(ctx) })
 	eg.Go(func() error { return m.TestSandboxUnsupportedSelector(ctx) })
+	eg.Go(func() error { return m.TestSandboxOpenPortRange(ctx) })
 	eg.Go(func() error { return m.TestAtuinDaemon(ctx) })
 
 	return eg.Wait()
@@ -1128,6 +1129,34 @@ func (m *Tests) TestSandboxUnsupportedSelector(ctx context.Context) error {
 
 	if !strings.Contains(err.Error(), "toEntities") {
 		return fmt.Errorf("expected 'toEntities' in error message, got: %s", err.Error())
+	}
+
+	return nil
+}
+
+// TestSandboxOpenPortRange verifies that a UDP port range open-port
+// rule (toPorts without L3 selectors, with endPort) produces iptables
+// rules with --dport start:end range syntax instead of silently
+// dropping the range.
+//
+// +check
+func (m *Tests) TestSandboxOpenPortRange(ctx context.Context) error {
+	ctr := dag.Dev().SandboxBase(dagger.DevSandboxBaseOpts{
+		SandboxConfig: configFile(allDomainsYAML + `  - toPorts:
+      - ports:
+          - port: "8000"
+            endPort: 9000
+            protocol: UDP
+`),
+	})
+
+	rules, err := ctr.File("/etc/iptables-sandbox.rules").Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("reading iptables rules: %w", err)
+	}
+
+	if !strings.Contains(rules, "--dport 8000:9000") {
+		return fmt.Errorf("iptables rules missing port range --dport 8000:9000, got:\n%s", rules)
 	}
 
 	return nil

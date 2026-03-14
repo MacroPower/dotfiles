@@ -1885,6 +1885,67 @@ func TestResolveOpenPortRules(t *testing.T) {
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080"}}}},
 			})},
 		},
+		"TCP open port with endPort": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+			})},
+			want: []sandbox.ResolvedOpenPort{
+				{Port: 8000, EndPort: 9000, Protocol: "tcp"},
+			},
+		},
+		"UDP open port with endPort": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "5000", EndPort: 6000, Protocol: "UDP"}}}},
+			})},
+			want: []sandbox.ResolvedOpenPort{
+				{Port: 5000, EndPort: 6000, Protocol: "udp"},
+			},
+		},
+		"ANY protocol open port with endPort expands": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000}}}},
+			})},
+			want: []sandbox.ResolvedOpenPort{
+				{Port: 8000, EndPort: 9000, Protocol: "sctp"},
+				{Port: 8000, EndPort: 9000, Protocol: "tcp"},
+				{Port: 8000, EndPort: 9000, Protocol: "udp"},
+			},
+		},
+		"endPort equal to port": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 8000, Protocol: "TCP"}}}},
+			})},
+			want: []sandbox.ResolvedOpenPort{
+				{Port: 8000, EndPort: 8000, Protocol: "tcp"},
+			},
+		},
+		"dedup across rules with same range": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+				},
+				sandbox.EgressRule{
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+				},
+			)},
+			want: []sandbox.ResolvedOpenPort{
+				{Port: 8000, EndPort: 9000, Protocol: "tcp"},
+			},
+		},
+		"mixed single and range for same start port": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", Protocol: "TCP"}}}},
+				},
+				sandbox.EgressRule{
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+				},
+			)},
+			want: []sandbox.ResolvedOpenPort{
+				{Port: 8000, Protocol: "tcp"},
+				{Port: 8000, EndPort: 9000, Protocol: "tcp"},
+			},
+		},
 	}
 
 	for name, tt := range tests {
@@ -2156,6 +2217,34 @@ func TestResolvePorts(t *testing.T) {
 				),
 			},
 			want: []int{443},
+		},
+		"open-port range excluded from Envoy listeners": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000, Protocol: "TCP"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			want: []int{443},
+		},
+		"open-port single port included in Envoy listeners": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080", Protocol: "TCP"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			want: []int{443, 8080},
 		},
 	}
 

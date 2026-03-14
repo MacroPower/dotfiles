@@ -298,15 +298,32 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 		} else {
 			// Non-TCP open ports: ACCEPT for user UID on UDP and SCTP
 			// ports that have no destination restriction (toPorts-only
-			// rules). TCP open ports are handled by Envoy catch-all chains.
+			// rules). Single TCP open ports are handled by Envoy
+			// catch-all chains; TCP port ranges bypass Envoy via
+			// direct ACCEPT (Envoy cannot create listeners for
+			// arbitrary port ranges).
 			for _, op := range openPortRules {
+				dport := fmt.Sprintf("%d", op.Port)
+				if op.EndPort > 0 {
+					dport = fmt.Sprintf("%d:%d", op.Port, op.EndPort)
+				}
+
 				if op.Protocol == "udp" || op.Protocol == "sctp" {
 					fmt.Fprintf(
 						b,
-						"-A OUTPUT -m owner --uid-owner %s -p %s --dport %d -j ACCEPT\n",
+						"-A OUTPUT -m owner --uid-owner %s -p %s --dport %s -j ACCEPT\n",
 						UID,
 						op.Protocol,
-						op.Port,
+						dport,
+					)
+				}
+
+				if op.Protocol == "tcp" && op.EndPort > 0 {
+					fmt.Fprintf(
+						b,
+						"-A OUTPUT -m owner --uid-owner %s -p tcp --dport %s -j ACCEPT\n",
+						UID,
+						dport,
 					)
 				}
 			}
