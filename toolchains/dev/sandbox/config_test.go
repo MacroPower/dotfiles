@@ -703,12 +703,62 @@ func TestValidate(t *testing.T) {
 				}),
 			},
 		},
-		"bare IPv4-mapped IPv6 in toCIDR accepted": {
+		"bare IPv4-mapped IPv6 in toCIDR rejected": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToCIDR: []string{"::ffff:10.0.0.1"},
 				}),
 			},
+			err: sandbox.ErrCIDRIPv4MappedIPv6,
+		},
+		"IPv4-mapped IPv6 CIDR in toCIDR rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDR: []string{"::ffff:10.0.0.0/104"},
+				}),
+			},
+			err: sandbox.ErrCIDRIPv4MappedIPv6,
+		},
+		"IPv4-mapped IPv6 parent in toCIDRSet rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "::ffff:10.0.0.0/104"}},
+				}),
+			},
+			err: sandbox.ErrCIDRIPv4MappedIPv6,
+		},
+		"IPv4-mapped IPv6 except entry rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{
+						CIDR:   "fd00::/8",
+						Except: []string{"::ffff:10.0.0.0/104"},
+					}},
+				}),
+			},
+			err: sandbox.ErrCIDRIPv4MappedIPv6,
+		},
+		"cross-family except IPv4 parent IPv6 except rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{
+						CIDR:   "10.0.0.0/8",
+						Except: []string{"fd00::/16"},
+					}},
+				}),
+			},
+			err: sandbox.ErrExceptAddressFamilyMismatch,
+		},
+		"cross-family except IPv6 parent IPv4 except rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{
+						CIDR:   "fd00::/8",
+						Except: []string{"10.0.0.0/16"},
+					}},
+				}),
+			},
+			err: sandbox.ErrExceptAddressFamilyMismatch,
 		},
 		"invalid toCIDR": {
 			cfg: &sandbox.SandboxConfig{
@@ -867,7 +917,7 @@ func TestValidate(t *testing.T) {
 					}},
 				}),
 			},
-			err: sandbox.ErrExceptNotSubnet,
+			err: sandbox.ErrExceptAddressFamilyMismatch,
 		},
 		"L7 on toPorts-only rejected": {
 			cfg: &sandbox.SandboxConfig{
@@ -2916,16 +2966,9 @@ func TestResolveCIDRRules(t *testing.T) {
 				}},
 			},
 		},
-		"IPv4-mapped IPv6 classified as IPv6": {
-			cfg: &sandbox.SandboxConfig{
-				Egress: egressRules(sandbox.EgressRule{
-					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "::ffff:10.0.0.0/104"}},
-				}),
-			},
-			wantIPv6: []sandbox.ResolvedCIDR{
-				{CIDR: "::ffff:10.0.0.0/104"},
-			},
-		},
+		// IPv4-mapped IPv6 CIDRs are now rejected at validation time
+		// (ErrCIDRIPv4MappedIPv6), so they never reach ResolveCIDRRules.
+		// See TestValidate for the rejection tests.
 		"separate FQDN and CIDR rules contribute CIDRs": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(

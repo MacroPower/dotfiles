@@ -127,6 +127,24 @@ var (
 	// within the parent range.
 	ErrExceptNotSubnet = errors.New("except CIDR must be a subnet of the parent CIDR")
 
+	// ErrCIDRIPv4MappedIPv6 is returned when a CIDR uses an IPv4-mapped
+	// IPv6 address (e.g. ::ffff:10.0.0.0/104). These addresses are
+	// ambiguous: [net.ParseCIDR] normalizes them to IPv4, but string-based
+	// family detection routes them to IPv6, causing silent misclassification.
+	// Cilium normalizes via Unmap() in the ipcache layer; the sandbox
+	// rejects them outright to prevent silent failures.
+	ErrCIDRIPv4MappedIPv6 = errors.New(
+		"IPv4-mapped IPv6 CIDRs (::ffff:0.0.0.0/N) are not supported; use the IPv4 equivalent",
+	)
+
+	// ErrExceptAddressFamilyMismatch is returned when an except CIDR's
+	// address family differs from its parent CIDR. An IPv6 except on an
+	// IPv4 parent (or vice versa) can never match any address in the
+	// parent range and silently has no effect.
+	ErrExceptAddressFamilyMismatch = errors.New(
+		"except CIDR address family must match parent CIDR",
+	)
+
 	// ErrL7RequiresFQDN is returned when L7 rules are specified on a rule
 	// without toFQDNs selectors. The sandbox cannot enforce L7 rules
 	// without domain context for MITM; CIDR rules bypass Envoy.
@@ -839,6 +857,36 @@ func normalizeCIDR(s string) string {
 	return s + "/32"
 }
 
+// isIPv4MappedIPv6 reports whether s is an IPv4-mapped IPv6 CIDR or
+// address (e.g. "::ffff:10.0.0.0/104" or "::ffff:10.0.0.1"). These
+// addresses contain a colon (so string-based detection classifies them
+// as IPv6) but [net.ParseCIDR] normalizes them to IPv4, creating a
+// family mismatch that causes silent misclassification.
+func isIPv4MappedIPv6(s string) bool {
+	if !strings.Contains(s, ":") {
+		return false
+	}
+
+	// Strip the CIDR prefix length if present.
+	host, _, _ := strings.Cut(s, "/")
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	// ip.To4() returns non-nil for IPv4-mapped IPv6 addresses, but
+	// we only want to flag addresses that also contain ":" in the
+	// original string (pure IPv4 like "10.0.0.1" also has To4() != nil).
+	return ip.To4() != nil
+}
+
+// cidrIsIPv6 reports whether a CIDR string represents an IPv6 address,
+// using string-based detection (presence of ":") to match classifyCIDR.
+func cidrIsIPv6(s string) bool {
+	return strings.Contains(s, ":")
+}
+
 // Validate checks that the config is internally consistent.
 func (c *SandboxConfig) Validate() error {
 	for i := range c.EgressRules() {
@@ -891,6 +939,10 @@ func (c *SandboxConfig) Validate() error {
 			_, _, parseErr := net.ParseCIDR(cidr)
 			if parseErr != nil {
 				return fmt.Errorf("%w: rule %d cidr %q", ErrCIDRInvalid, i, cidr)
+			}
+
+			if isIPv4MappedIPv6(cidr) {
+				return fmt.Errorf("%w: rule %d cidr %q", ErrCIDRIPv4MappedIPv6, i, cidr)
 			}
 		}
 
@@ -1280,11 +1332,34 @@ func validateCIDRSets(rule EgressRule, ruleIdx int) error {
 			return fmt.Errorf("%w: rule %d cidr %q", ErrCIDRInvalid, ruleIdx, cidr.CIDR)
 		}
 
+		if isIPv4MappedIPv6(cidr.CIDR) {
+			return fmt.Errorf("%w: rule %d cidr %q", ErrCIDRIPv4MappedIPv6, ruleIdx, cidr.CIDR)
+		}
+
+		parentIsV6 := cidrIsIPv6(cidr.CIDR)
 		parentOnes, _ := parentNet.Mask.Size()
+
 		for _, exc := range cidr.Except {
 			_, excNet, err := net.ParseCIDR(exc)
 			if err != nil {
 				return fmt.Errorf("%w: rule %d except %q", ErrCIDRInvalid, ruleIdx, exc)
+			}
+
+			if isIPv4MappedIPv6(exc) {
+				return fmt.Errorf("%w: rule %d except %q", ErrCIDRIPv4MappedIPv6, ruleIdx, exc)
+			}
+
+			// Explicit address family match check. Cross-family
+			// except entries silently have no effect because
+			// net.IPNet.Contains returns false across families.
+			if cidrIsIPv6(exc) != parentIsV6 {
+				return fmt.Errorf(
+					"%w: rule %d except %q (%s) does not match parent %q (%s)",
+					ErrExceptAddressFamilyMismatch,
+					ruleIdx,
+					exc, familyLabel(cidrIsIPv6(exc)),
+					cidr.CIDR, familyLabel(parentIsV6),
+				)
 			}
 
 			excOnes, _ := excNet.Mask.Size()
@@ -1295,6 +1370,15 @@ func validateCIDRSets(rule EgressRule, ruleIdx int) error {
 	}
 
 	return nil
+}
+
+// familyLabel returns "IPv6" or "IPv4" for use in error messages.
+func familyLabel(isV6 bool) string {
+	if isV6 {
+		return "IPv6"
+	}
+
+	return "IPv4"
 }
 
 // TCPForwardHosts returns a deduplicated, sorted list of hostnames from
