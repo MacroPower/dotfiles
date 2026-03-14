@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net"
 	"os/exec"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -13,9 +15,149 @@ import (
 	"github.com/miekg/dns"
 )
 
-// DNSProxy is a filtering DNS proxy that forwards queries to dnsmasq
-// and populates ipsets with TTL-aware timeouts from matching responses.
+// dnsMode determines how the DNS proxy handles queries.
+type dnsMode int
+
+const (
+	// dnsModeForwardAll forwards all queries to the upstream resolver.
+	// Used for unrestricted, rules-only, and bare wildcard configs.
+	dnsModeForwardAll dnsMode = iota
+
+	// dnsModeRefuseAll returns REFUSED for all queries without
+	// contacting upstream. Used for blocked configs (egress: [{}]).
+	dnsModeRefuseAll
+
+	// dnsModeAllowlist forwards queries matching the allowed domain
+	// list and returns REFUSED for everything else.
+	dnsModeAllowlist
+)
+
+// DNSDomain is an allowed domain entry for DNS filtering. Wildcard
+// entries (from matchPattern "*.example.com" or "**.example.com")
+// match subdomains only; exact entries match the domain itself and
+// all subdomains.
+type DNSDomain struct {
+	// Name is the domain without any wildcard prefix.
+	Name string
+	// Wildcard is true when the entry originated from a matchPattern
+	// with a leading wildcard prefix ("*." or "**."), restricting
+	// matches to subdomains only (excluding the bare parent domain).
+	Wildcard bool
+}
+
+// Matches reports whether qname (in FQDN wire format with trailing
+// dot) matches this domain entry. Non-wildcard entries match the
+// domain and all subdomains (like dnsmasq /domain/). Wildcard entries
+// match subdomains only, not the bare parent (like dnsmasq /*.domain/).
+// The leading-dot check prevents false positives (notexample.com vs
+// example.com).
+func (d DNSDomain) Matches(qname string) bool {
+	q := strings.TrimSuffix(qname, ".")
+	if q == "" {
+		return false
+	}
+
+	q = strings.ToLower(q)
+
+	if d.Wildcard {
+		return strings.HasSuffix(q, "."+d.Name)
+	}
+
+	return q == d.Name || strings.HasSuffix(q, "."+d.Name)
+}
+
+// CollectDNSDomains returns a sorted, deduplicated list of domains
+// that should be forwarded in restricted mode. Includes FQDN domains
+// (preserving wildcard vs exact distinction for correct filtering)
+// and [TCPForward] hosts. The bare wildcard "*" pattern is included
+// as-is for the caller to handle.
+func CollectDNSDomains(cfg *SandboxConfig) []DNSDomain {
+	seen := make(map[string]bool)
+	var result []DNSDomain
+
+	for _, rule := range cfg.EgressRules() {
+		for _, fqdn := range rule.ToFQDNs {
+			var d DNSDomain
+
+			if fqdn.MatchName != "" {
+				d = DNSDomain{Name: fqdn.MatchName}
+			} else {
+				// Strip all leading "*" characters then the
+				// following "." to extract the base domain.
+				// This handles both "*.example.com" and
+				// "**.example.com" uniformly.
+				stripped := strings.TrimLeft(fqdn.MatchPattern, "*")
+				stripped = strings.TrimPrefix(stripped, ".")
+				if stripped == "" {
+					// Bare wildcard "*", "**", etc.: pass
+					// through for catch-all handling.
+					if !seen["*"] {
+						seen["*"] = true
+						result = append(result, DNSDomain{Name: "*"})
+					}
+
+					continue
+				}
+
+				d = DNSDomain{Name: stripped, Wildcard: true}
+			}
+
+			if seen[d.Name] {
+				// If previously seen as a wildcard, and this is
+				// an exact matchName for the same domain, upgrade
+				// to non-wildcard so the bare domain also resolves.
+				if !d.Wildcard {
+					for i := range result {
+						if result[i].Name == d.Name && result[i].Wildcard {
+							result[i].Wildcard = false
+							break
+						}
+					}
+				}
+
+				continue
+			}
+
+			seen[d.Name] = true
+			result = append(result, d)
+		}
+	}
+
+	for _, host := range cfg.TCPForwardHosts() {
+		if seen[host] {
+			// TCPForward hosts need the bare domain to resolve.
+			// If a wildcard FQDN entry exists for the same
+			// domain, upgrade to non-wildcard so both the bare
+			// domain and subdomains resolve.
+			for i := range result {
+				if result[i].Name == host && result[i].Wildcard {
+					result[i].Wildcard = false
+					break
+				}
+			}
+
+			continue
+		}
+
+		seen[host] = true
+		result = append(result, DNSDomain{Name: host})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+
+	return result
+}
+
+// DNSProxy is a filtering DNS proxy that handles domain-level
+// filtering and ipset population. It forwards allowed queries to the
+// real upstream resolver and returns REFUSED for blocked domains,
+// replacing the previous dnsmasq + RefuseDNS two-hop chain with a
+// single process.
 type DNSProxy struct {
+	mode     dnsMode
+	domains  []DNSDomain
 	patterns []FQDNPattern
 	upstream string
 	logging  bool
@@ -33,26 +175,57 @@ type DNSProxy struct {
 	ctx    context.Context
 }
 
-// StartDNSProxy starts the proxy on listenAddr (and optionally [::1]
-// at the same port when ipv6Disabled is false). UDP queries are
-// handled with pattern-filtered ipset population. TCP queries are
-// proxied to upstream without ipset filtering (TCP DNS fallback is
-// rare; the preceding UDP query already populated the ipset).
-// Forwards all queries to upstream (dnsmasq on [DnsmasqProxyPort]).
+// StartDNSProxy starts the DNS proxy on listenAddr (and optionally
+// [::1] at the same port when ipv6Disabled is false). The proxy
+// determines its filtering mode from cfg:
+//
+//   - nil/unrestricted/rules-only/bare-wildcard: forward all queries
+//   - blocked (egress: [{}]): return REFUSED for all queries
+//   - restricted with specific domains: forward allowed, refuse others
+//
+// When cfg has FQDN rules with non-TCP ports, UDP responses matching
+// the compiled patterns populate ipsets with TTL-aware timeouts.
+// TCP queries are proxied without ipset filtering (TCP DNS fallback
+// is rare; the preceding UDP query already populated the ipset).
 // Blocks until ready.
 //
 // IPv6 listener: if ipv6Disabled is true, only IPv4 listeners are
 // created. If ipv6Disabled is false and binding [::1] fails, startup
 // returns an error (IPv6 bypass risk).
-func StartDNSProxy(patterns []FQDNPattern, upstream string, listenAddr string, ipv6Disabled bool, logging bool) (*DNSProxy, error) {
+func StartDNSProxy(cfg *SandboxConfig, upstream, listenAddr string, ipv6Disabled bool) (*DNSProxy, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	p := &DNSProxy{
-		patterns: patterns,
 		upstream: upstream,
-		logging:  logging,
 		cancel:   cancel,
 		ctx:      ctx,
+	}
+
+	// Determine filtering mode.
+	switch {
+	case cfg == nil || cfg.IsEgressUnrestricted() || cfg.IsEgressRulesOnly():
+		p.mode = dnsModeForwardAll
+	case cfg.IsEgressBlocked():
+		p.mode = dnsModeRefuseAll
+	default:
+		domains := CollectDNSDomains(cfg)
+		if slices.ContainsFunc(domains, func(d DNSDomain) bool {
+			return d.Name == "*"
+		}) {
+			p.mode = dnsModeForwardAll
+		} else {
+			p.mode = dnsModeAllowlist
+			p.domains = domains
+		}
+	}
+
+	// Compile FQDN patterns for ipset population (non-TCP ports only).
+	if cfg != nil && cfg.HasFQDNNonTCPPorts() {
+		p.patterns = cfg.CompileFQDNPatterns()
+	}
+
+	if cfg != nil {
+		p.logging = cfg.Logging
 	}
 
 	// Collect servers and listeners for cleanup on error.
@@ -177,12 +350,68 @@ func (p *DNSProxy) Shutdown() error {
 	return nil
 }
 
-// handleUDPQuery forwards the query to dnsmasq, filters matching
-// responses through ipset population, and returns the response.
-// ipset add completes before the response is delivered to the client.
+// handleUDPQuery handles UDP DNS queries with mode-aware filtering
+// and ipset population for matching responses.
 func (p *DNSProxy) handleUDPQuery(w dns.ResponseWriter, r *dns.Msg) {
+	p.handleQuery(w, r, "udp")
+}
+
+// handleTCPQuery handles TCP DNS queries with mode-aware filtering.
+// ipset population is skipped for TCP (the preceding UDP query
+// already populated the ipset).
+func (p *DNSProxy) handleTCPQuery(w dns.ResponseWriter, r *dns.Msg) {
+	p.handleQuery(w, r, "tcp")
+}
+
+// handleQuery is the unified query handler for both UDP and TCP.
+// It applies mode-based filtering, forwards allowed queries to
+// upstream, populates ipsets (UDP only), and logs when enabled.
+func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
+	if len(r.Question) == 0 {
+		fail := new(dns.Msg)
+		fail.SetRcode(r, dns.RcodeServerFailure)
+		_ = w.WriteMsg(fail)
+
+		return
+	}
+
+	qname := strings.ToLower(r.Question[0].Name)
+
+	// Blocked mode: refuse everything without contacting upstream.
+	if p.mode == dnsModeRefuseAll {
+		resp := new(dns.Msg)
+		resp.SetRcode(r, dns.RcodeRefused)
+
+		if p.logging {
+			slog.Info("dns query refused",
+				slog.String("name", qname),
+			)
+		}
+
+		_ = w.WriteMsg(resp)
+
+		return
+	}
+
+	// Allowlist mode: refuse queries that don't match any allowed domain.
+	if p.mode == dnsModeAllowlist && !p.domainAllowed(qname) {
+		resp := new(dns.Msg)
+		resp.SetRcode(r, dns.RcodeRefused)
+
+		if p.logging {
+			slog.Info("dns query refused",
+				slog.String("name", qname),
+			)
+		}
+
+		_ = w.WriteMsg(resp)
+
+		return
+	}
+
+	// Forward to upstream.
 	client := &dns.Client{
-		Net:     "udp",
+		Net:     proto,
 		Timeout: 10 * time.Second,
 	}
 
@@ -195,43 +424,31 @@ func (p *DNSProxy) handleUDPQuery(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	if len(r.Question) > 0 {
-		qname := strings.ToLower(r.Question[0].Name)
+	// ipset population (UDP only, when patterns exist).
+	if proto == "udp" && matchesFQDNPatterns(p.patterns, qname) {
+		p.populateIPSets(qname, resp)
+	}
 
-		if matchesFQDNPatterns(p.patterns, qname) {
-			p.populateIPSets(qname, resp)
-		}
-
-		if p.logging {
-			slog.Info("dns query",
-				slog.String("name", qname),
-				slog.Int("answers", len(resp.Answer)),
-			)
-		}
+	if p.logging {
+		slog.Info("dns query",
+			slog.String("name", qname),
+			slog.Int("answers", len(resp.Answer)),
+		)
 	}
 
 	_ = w.WriteMsg(resp)
 }
 
-// handleTCPQuery proxies TCP DNS queries to upstream without ipset
-// filtering. TCP DNS is triggered by truncated UDP responses; the
-// preceding UDP query already populated the ipset.
-func (p *DNSProxy) handleTCPQuery(w dns.ResponseWriter, r *dns.Msg) {
-	client := &dns.Client{
-		Net:     "tcp",
-		Timeout: 10 * time.Second,
+// domainAllowed reports whether qname matches any domain in the
+// allowlist.
+func (p *DNSProxy) domainAllowed(qname string) bool {
+	for _, d := range p.domains {
+		if d.Matches(qname) {
+			return true
+		}
 	}
 
-	resp, _, err := client.ExchangeContext(p.ctx, r, p.upstream)
-	if err != nil {
-		fail := new(dns.Msg)
-		fail.SetRcode(r, dns.RcodeServerFailure)
-		_ = w.WriteMsg(fail)
-
-		return
-	}
-
-	_ = w.WriteMsg(resp)
+	return false
 }
 
 // matchesFQDNPatterns reports whether the FQDN-form query name

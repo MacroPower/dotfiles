@@ -379,8 +379,8 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 			}
 
 			// Non-TCP FQDN ports: ACCEPT for user UID on UDP/SCTP ports
-			// restricted to DNS-resolved IPs via ipset. dnsmasq populates
-			// the ipset with resolved IPs from FQDN domains.
+			// restricted to DNS-resolved IPs via ipset. The DNS proxy
+			// populates the ipset with resolved IPs from FQDN domains.
 			for _, fp := range fqdnNonTCPPorts {
 				fmt.Fprintf(b,
 					"-A OUTPUT -m owner --uid-owner %s -p %s --dport %d -m set --match-set %s dst -j ACCEPT\n",

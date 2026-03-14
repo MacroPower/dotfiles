@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -81,8 +80,8 @@ func CreateEnvoyUser() error {
 }
 
 // Init performs the full sandbox initialization sequence: generates
-// configs if needed, loads iptables rules, starts dnsmasq and Envoy,
-// then drops privileges and runs the given command as a supervised
+// configs if needed, loads iptables rules, starts the DNS proxy and
+// Envoy, then drops privileges and runs the given command as a supervised
 // child process. The context is threaded to all subprocesses, allowing
 // cancellation to propagate. Returns an [*ExitError] carrying the
 // child's exit code on normal termination.
@@ -145,15 +144,6 @@ func Init(ctx context.Context, args []string) error {
 		return fmt.Errorf("parsing sandbox config: %w", err)
 	}
 
-	// Generate dnsmasq config with real upstream, restricted to
-	// allowed domains when the config specifies FQDN rules.
-	dnsmasqConf := GenerateDnsmasqConfig(upstream, cfg)
-
-	err = os.WriteFile("/etc/dnsmasq-sandbox.conf", []byte(dnsmasqConf), 0o644)
-	if err != nil {
-		return fmt.Errorf("writing dnsmasq config: %w", err)
-	}
-
 	needsEnvoy := len(cfg.ResolvePorts()) > 0 || len(cfg.TCPForwards) > 0
 
 	// Create ipsets before iptables-restore, since iptables rules
@@ -206,40 +196,11 @@ func Init(ctx context.Context, args []string) error {
 		return err
 	}
 
-	// Start refuse DNS server for blocked/restricted modes.
-	// Must start before dnsmasq so the upstream is available.
-	if !cfg.IsEgressUnrestricted() && !cfg.IsEgressRulesOnly() {
-		_, err := StartRefuseDNS()
-		if err != nil {
-			return fmt.Errorf("starting refuse DNS server: %w", err)
-		}
-	}
-
-	// Start DNS proxy before dnsmasq to bind port 53. The proxy
-	// forwards per-query to dnsmasq, so dnsmasq not being up yet
-	// causes transient SERVFAIL, not a startup failure.
-	var dnsProxy *DNSProxy
-
-	if cfg.HasFQDNNonTCPPorts() {
-		patterns := cfg.CompileFQDNPatterns()
-		upstream := fmt.Sprintf("127.0.0.1:%d", DnsmasqProxyPort)
-
-		dnsProxy, err = StartDNSProxy(patterns, upstream, "127.0.0.1:53", ipv6Disabled, cfg.Logging)
-		if err != nil {
-			return fmt.Errorf("starting DNS proxy: %w", err)
-		}
-	}
-
-	// Start dnsmasq.
-	err = os.MkdirAll("/var/run", 0o755)
+	// Start DNS proxy. Handles domain filtering internally (replacing
+	// dnsmasq + RefuseDNS).
+	dnsProxy, err := StartDNSProxy(cfg, net.JoinHostPort(upstream, "53"), "127.0.0.1:53", ipv6Disabled)
 	if err != nil {
-		return fmt.Errorf("creating /var/run: %w", err)
-	}
-
-	dnsmasqCmd := exec.CommandContext(ctx, "dnsmasq", "--conf-file=/etc/dnsmasq-sandbox.conf")
-	err = dnsmasqCmd.Run()
-	if err != nil {
-		return fmt.Errorf("starting dnsmasq: %w", err)
+		return fmt.Errorf("starting DNS proxy: %w", err)
 	}
 
 	// Point system DNS to local resolver.
@@ -363,17 +324,6 @@ func Init(ctx context.Context, args []string) error {
 		err := envoyCmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
 			slog.DebugContext(ctx, "stopping envoy", slog.Any("err", err))
-		}
-	}
-
-	pidData, pidErr := os.ReadFile("/var/run/dnsmasq.pid")
-	if pidErr == nil {
-		pid, atoiErr := strconv.Atoi(strings.TrimSpace(string(pidData)))
-		if atoiErr == nil {
-			err := syscall.Kill(pid, syscall.SIGTERM)
-			if err != nil {
-				slog.DebugContext(ctx, "stopping dnsmasq", slog.Any("err", err))
-			}
 		}
 	}
 

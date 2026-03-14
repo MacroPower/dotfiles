@@ -13,7 +13,7 @@ const CADir = "/etc/sandbox/ca"
 
 // Generate reads the sandbox YAML config at configPath, resolves domains
 // and ports, generates MITM certs for path-restricted rules, and writes
-// iptables, Envoy, and dnsmasq config files to /etc.
+// iptables and Envoy config files to /etc.
 func Generate(configPath string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {

@@ -1,6 +1,6 @@
 // Package sandbox provides configuration types and generation functions
 // for the sandbox firewall. It reads a YAML config file and produces
-// iptables rules, Envoy proxy config, and dnsmasq DNS forwarding config.
+// iptables rules, Envoy proxy config, and DNS proxy config.
 package sandbox
 
 import (
@@ -362,10 +362,6 @@ const (
 
 	// IPSetFQDN6 is the IPv6 counterpart of [IPSetFQDN4].
 	IPSetFQDN6 = "sandbox_fqdn6"
-
-	// DnsmasqProxyPort is the port dnsmasq listens on when the DNS
-	// proxy is active. The proxy takes port 53; dnsmasq moves here.
-	DnsmasqProxyPort = 5354
 
 	// minIPSetTTL is the minimum timeout (in seconds) for ipset entries
 	// populated from DNS responses. Cilium's --tofqdns-min-ttl defaults

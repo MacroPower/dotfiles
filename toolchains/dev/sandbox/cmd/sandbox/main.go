@@ -47,7 +47,7 @@ func main() {
 	rootCmd.AddCommand(
 		&cobra.Command{
 			Use:   "generate",
-			Short: "Generate iptables/envoy/dnsmasq configs from YAML",
+			Short: "Generate iptables/envoy configs from YAML",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return sandbox.Generate(sandbox.ConfigPath)
