@@ -246,11 +246,38 @@ func generateRulesIptables(cfg *SandboxConfig) (string, string) {
 		}
 	}
 
+	// Compute open TCP single ports for NAT RETURN optimization.
+	// When an open port and FQDN+L7 rule share a TCP port, the
+	// open port rule subsumes the FQDN rule's L7 restrictions via
+	// OR semantics. A NAT RETURN before the REDIRECT lets non-FQDN
+	// traffic bypass Envoy, avoiding unnecessary proxy latency.
+	openTCPSinglePorts := make(map[int]bool)
+	for _, op := range openPortRules {
+		if op.Protocol == "tcp" && op.EndPort == 0 {
+			openTCPSinglePorts[op.Port] = true
+		}
+	}
+
 	writeNatRules := func(b *strings.Builder, cidrs []ResolvedCIDR) {
 		b.WriteString("*nat\n")
 		// CIDR allow: RETURN for user traffic to allowed CIDRs
 		// (skips redirect to Envoy). Must come before REDIRECT rules.
 		writeCIDRReturn(b, cidrs)
+		// Open port + FQDN overlap: RETURN for user UID on ports
+		// that are both open and FQDN-resolved. The open port rule
+		// subsumes FQDN L7 restrictions (Cilium OR semantics), so
+		// proxying is unnecessary. Must come before REDIRECT rules.
+		for _, p := range resolvedPorts {
+			if openTCPSinglePorts[p] {
+				fmt.Fprintf(
+					b,
+					"-A OUTPUT -m owner --uid-owner %s -p tcp --dport %d -j RETURN\n",
+					UID,
+					p,
+				)
+			}
+		}
+
 		// Envoy redirect: REDIRECT rules for all resolved ports.
 		for _, p := range resolvedPorts {
 			fmt.Fprintf(

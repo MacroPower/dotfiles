@@ -889,6 +889,32 @@ func TestGenerateIptablesRules(t *testing.T) {
 			// FQDN port 8000 contributes one REDIRECT; the range does not.
 			wantRedirectCount4: 1,
 		},
+		"open port + FQDN overlap gets NAT RETURN before REDIRECT": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+						ToPorts: []sandbox.PortRule{{
+							Ports: []sandbox.Port{{Port: "443"}},
+							Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+						}},
+					},
+					sandbox.EgressRule{
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			wantIPv4: []string{
+				// NAT RETURN for open+FQDN overlap port (before REDIRECT).
+				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 443 -j RETURN",
+				// REDIRECT still emitted (unreachable for port 443).
+				"--to-port 15443",
+			},
+			wantIPv6: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p tcp --dport 443 -j RETURN",
+			},
+			wantRedirectCount4: 1,
+		},
 		"two FQDN rules get separate ipsets": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(
@@ -961,6 +987,37 @@ func TestGenerateIptablesRulesNATOrder(t *testing.T) {
 	redirectIdx := strings.Index(ipv4, "-j REDIRECT")
 	assert.Greater(t, redirectIdx, returnIdx,
 		"CIDR RETURN must come before REDIRECT in NAT chain")
+}
+
+func TestGenerateIptablesRulesOpenFQDNOverlapNATOrder(t *testing.T) {
+	t.Parallel()
+
+	cfg := &sandbox.SandboxConfig{
+		Egress: egressRules(
+			sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{{
+					Ports: []sandbox.Port{{Port: "443"}},
+					Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+				}},
+			},
+			sandbox.EgressRule{
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+			},
+		),
+	}
+
+	ipv4, _ := sandbox.GenerateIptablesRules(cfg)
+
+	returnIdx := strings.Index(ipv4, "--dport 443 -j RETURN")
+	redirectIdx := strings.Index(ipv4, "--dport 443 -j REDIRECT")
+
+	require.GreaterOrEqual(t, returnIdx, 0,
+		"NAT RETURN for open+FQDN overlap port must be present")
+	require.GreaterOrEqual(t, redirectIdx, 0,
+		"NAT REDIRECT for the port must be present")
+	assert.Greater(t, redirectIdx, returnIdx,
+		"open port RETURN must come before REDIRECT in NAT chain")
 }
 
 func TestGenerateIptablesRulesFilterOrder(t *testing.T) {
