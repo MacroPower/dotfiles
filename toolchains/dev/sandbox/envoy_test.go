@@ -628,6 +628,63 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				`^[-a-zA-Z0-9_]+\\.b\\.com(:\\d+)?$`,
 			},
 		},
+		"HTTP forward listener has path normalization": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "80"}}}},
+			})},
+			want: []string{
+				"normalize_path: true",
+				"merge_slashes: true",
+				"path_with_escaped_slashes_action: UNESCAPE_AND_REDIRECT",
+			},
+		},
+		"MITM listener has path normalization": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{{
+					Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
+					Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+				}},
+			})},
+			certsDir: "/etc/sandbox/certs",
+			want: []string{
+				"mitm_api.example.com",
+				"normalize_path: true",
+				"merge_slashes: true",
+				"path_with_escaped_slashes_action: UNESCAPE_AND_REDIRECT",
+			},
+		},
+		"MITM-only config (no HTTP forward) has path normalization": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{{
+					Ports: []sandbox.Port{{Port: "443"}},
+					Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+				}},
+			})},
+			certsDir: "/etc/sandbox/certs",
+			want: []string{
+				"mitm_api.example.com",
+				"normalize_path: true",
+				"merge_slashes: true",
+				"path_with_escaped_slashes_action: UNESCAPE_AND_REDIRECT",
+			},
+			notWant: []string{
+				"http_forward",
+			},
+		},
+		"passthrough-only config has no normalization fields": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+			})},
+			notWant: []string{
+				"normalize_path",
+				"merge_slashes",
+				"UNESCAPE_AND_REDIRECT",
+			},
+		},
 		"separate FQDN and CIDR generates Envoy for FQDN only": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(
 				sandbox.EgressRule{

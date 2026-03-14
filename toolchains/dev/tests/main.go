@@ -105,6 +105,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestSandboxMethodRestriction(ctx) })
 	eg.Go(func() error { return m.TestSandboxUnsupportedSelector(ctx) })
 	eg.Go(func() error { return m.TestSandboxOpenPortRange(ctx) })
+	eg.Go(func() error { return m.TestSandboxPathNormalization(ctx) })
 	eg.Go(func() error { return m.TestAtuinDaemon(ctx) })
 
 	return eg.Wait()
@@ -1157,6 +1158,117 @@ func (m *Tests) TestSandboxOpenPortRange(ctx context.Context) error {
 
 	if !strings.Contains(rules, "--dport 8000:9000") {
 		return fmt.Errorf("iptables rules missing port range --dport 8000:9000, got:\n%s", rules)
+	}
+
+	return nil
+}
+
+// TestSandboxPathNormalization verifies that Envoy path normalization
+// fields (normalize_path, merge_slashes, path_with_escaped_slashes_action)
+// are present in the generated Envoy config for HCM listeners.
+//
+// +check
+func (m *Tests) TestSandboxPathNormalization(ctx context.Context) error {
+	ctr := dag.Dev().SandboxBase(dagger.DevSandboxBaseOpts{
+		SandboxConfig: configFile(`egress:
+  - toFQDNs:
+      - matchName: "example.com"
+    toPorts:
+      - ports:
+          - port: "80"
+          - port: "443"
+        rules:
+          http:
+            - path: /api/
+`),
+	})
+
+	envoyConf, err := ctr.File("/etc/envoy-sandbox.yaml").Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("reading envoy config: %w", err)
+	}
+
+	for _, want := range []string{
+		"normalize_path: true",
+		"merge_slashes: true",
+		"path_with_escaped_slashes_action: UNESCAPE_AND_REDIRECT",
+	} {
+		if !strings.Contains(envoyConf, want) {
+			return fmt.Errorf("envoy config missing %q", want)
+		}
+	}
+
+	return nil
+}
+
+// TestSandboxPathNormalizationE2E verifies that Envoy's path normalization
+// works end-to-end: a request to //api//foo is normalized to /api/foo and
+// matches a /api/ path rule via MITM inspection, while /blocked is rejected.
+//
+// Security review: InsecureRootCapabilities is required because
+// sandbox init needs CAP_NET_ADMIN to load iptables rules and start
+// dnsmasq/Envoy. The init script drops to uid 1000 before running the
+// test assertions, so all network probes execute unprivileged.
+//
+// Not annotated with +check because it requires InsecureRootCapabilities.
+// Run manually:
+//
+//	dagger call -m toolchains/dev/tests test-sandbox-path-normalization-e2-e
+func (m *Tests) TestSandboxPathNormalizationE2E(ctx context.Context) error {
+	ctr := dag.Dev().SandboxBase(dagger.DevSandboxBaseOpts{
+		SandboxConfig: configFile(`egress:
+  - toFQDNs:
+      - matchName: "golang.org"
+      - matchPattern: "*.golang.org"
+      - matchName: "go.dev"
+      - matchPattern: "*.go.dev"
+      - matchName: "gopkg.in"
+      - matchName: "go.googlesource.com"
+      - matchName: "cs.opensource.google"
+  - toFQDNs:
+      - matchName: proxy.golang.org
+    toPorts:
+      - rules:
+          http:
+            - path: /github.com/
+`),
+	})
+
+	// Remove pre-baked configs and regenerate with MITM certs.
+	ctr = ctr.
+		WithoutFile("/etc/envoy-sandbox.yaml").
+		WithoutFile("/etc/iptables-sandbox.rules").
+		WithoutFile("/etc/ip6tables-sandbox.rules").
+		WithExec([]string{"/usr/local/bin/sandbox", "generate"})
+
+	script := `set -e
+
+echo "=== Assertion 1: double-slash path gets normalized and matches /github.com/ rule ==="
+wget -q -O /dev/null --timeout=15 "https://proxy.golang.org//github.com//stretchr/testify/@latest"
+echo "PASS: //github.com//stretchr/testify/@latest normalized and matched"
+
+echo "=== Assertion 2: disallowed path still returns 403 ==="
+status=$(wget --server-response -O /dev/null --timeout=15 https://proxy.golang.org/blocked-path 2>&1 | grep -o 'HTTP/[^ ]* [0-9]*' | tail -1 | grep -o '[0-9]*$') || true
+if [ "$status" != "403" ]; then
+  echo "FAIL: expected 403 for blocked path, got: $status"
+  exit 1
+fi
+echo "PASS: /blocked-path returned 403"
+
+echo "=== All path normalization assertions passed ==="
+`
+
+	_, err := ctr.
+		WithExec([]string{"mkdir", "-p", "/commandhistory", "/claude-state"}).
+		WithExec(
+			[]string{"/usr/local/bin/sandbox", "init", "--", "sh", "-c", script},
+			dagger.ContainerWithExecOpts{
+				InsecureRootCapabilities: true,
+			},
+		).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("sandbox path normalization: %w", err)
 	}
 
 	return nil

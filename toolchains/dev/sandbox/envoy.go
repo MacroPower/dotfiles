@@ -133,11 +133,14 @@ type envoyAccessLog struct {
 }
 
 type envoyHTTPConnManagerConfig struct {
-	AtType      string           `yaml:"@type"`
-	StatPrefix  string           `yaml:"stat_prefix"`
-	RouteConfig envoyRouteConfig `yaml:"route_config"`
-	AccessLog   []envoyAccessLog `yaml:"access_log,omitempty"`
-	HTTPFilters []envoyFilter    `yaml:"http_filters"`
+	AtType                       string           `yaml:"@type"`
+	StatPrefix                   string           `yaml:"stat_prefix"`
+	NormalizePath                *bool            `yaml:"normalize_path,omitempty"`
+	MergeSlashes                 bool             `yaml:"merge_slashes,omitempty"`
+	PathWithEscapedSlashesAction string           `yaml:"path_with_escaped_slashes_action,omitempty"`
+	RouteConfig                  envoyRouteConfig `yaml:"route_config"`
+	AccessLog                    []envoyAccessLog `yaml:"access_log,omitempty"`
+	HTTPFilters                  []envoyFilter    `yaml:"http_filters"`
 }
 
 type envoyRouteConfig struct {
@@ -292,6 +295,10 @@ func BuildAccessLog(logging bool) []envoyAccessLog {
 			AtType: "type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StderrAccessLog",
 		},
 	}}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 var sharedDNSCacheConfig = envoyDNSCacheConfig{
@@ -553,8 +560,11 @@ func buildMITMFilterChain(rule ResolvedRule, accessLog []envoyAccessLog, certsDi
 		Filters: []envoyFilter{{
 			Name: "envoy.filters.network.http_connection_manager",
 			TypedConfig: envoyHTTPConnManagerConfig{
-				AtType:     "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
-				StatPrefix: "mitm_" + rule.Domain,
+				AtType:                       "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+				StatPrefix:                   "mitm_" + rule.Domain,
+				NormalizePath:                boolPtr(true),
+				MergeSlashes:                 true,
+				PathWithEscapedSlashesAction: "UNESCAPE_AND_REDIRECT",
 				RouteConfig: envoyRouteConfig{
 					VirtualHosts: vhosts,
 				},
@@ -823,8 +833,11 @@ func buildHTTPForwardListener(rules []ResolvedRule, open bool, accessLog []envoy
 			Filters: []envoyFilter{{
 				Name: "envoy.filters.network.http_connection_manager",
 				TypedConfig: envoyHTTPConnManagerConfig{
-					AtType:     "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
-					StatPrefix: "http_forward",
+					AtType:                       "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+					StatPrefix:                   "http_forward",
+					NormalizePath:                boolPtr(true),
+					MergeSlashes:                 true,
+					PathWithEscapedSlashesAction: "UNESCAPE_AND_REDIRECT",
 					RouteConfig: envoyRouteConfig{
 						VirtualHosts: vhosts,
 					},
