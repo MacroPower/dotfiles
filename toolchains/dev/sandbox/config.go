@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1112,6 +1113,11 @@ func validateFQDNSelectors(rule EgressRule, ruleIdx int) error {
 					ErrFQDNPatternPartialWildcard, ruleIdx, j, fqdn.MatchPattern)
 			}
 
+		case containsMidPositionDoubleStar(p):
+			// Mid-position ** as a complete label (e.g. "test.**.cilium.io").
+			// patternToAnchoredRegex handles this via the generic path,
+			// producing correct single-label semantics per star.
+
 		case strings.Contains(p, "*"):
 			// Wildcard not in a valid leading position.
 			return fmt.Errorf("%w: rule %d selector %d pattern %q",
@@ -2173,6 +2179,13 @@ func patternToAnchoredRegex(pattern string, isMatchName bool) string {
 // characters (e.g. "*", "**", "***").
 func isBareWildcard(pattern string) bool {
 	return strings.TrimLeft(pattern, "*") == ""
+}
+
+// containsMidPositionDoubleStar reports whether pattern contains "**" as a
+// complete dot-separated label in a non-leading position (e.g.
+// "test.**.cilium.io"). Leading "**." is handled separately by the caller.
+func containsMidPositionDoubleStar(pattern string) bool {
+	return slices.Contains(strings.Split(pattern, "."), "**")
 }
 
 // normalizeProtocol converts a config-level protocol string to the

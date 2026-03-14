@@ -644,14 +644,13 @@ func TestValidate(t *testing.T) {
 				}),
 			},
 		},
-		"mid-pattern double star rejected": {
+		"mid-pattern double star accepted": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchPattern: "test.**.example.com"}},
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 				}),
 			},
-			err: sandbox.ErrFQDNPatternPartialWildcard,
 		},
 		"bare wildcard accepted": {
 			cfg: &sandbox.SandboxConfig{
