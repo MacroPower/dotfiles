@@ -46,9 +46,9 @@ var (
 	// ErrPortEmpty is returned when a [Port] has an empty port string.
 	ErrPortEmpty = errors.New("port must not be empty")
 
-	// ErrPortInvalid is returned when a [Port] has a non-numeric,
-	// non-positive, or unknown service name port string.
-	ErrPortInvalid = errors.New("port must be a positive integer or known service name")
+	// ErrPortInvalid is returned when a [Port] has a non-numeric, out-of-range
+	// (must be 0-65535), or unknown service name port string.
+	ErrPortInvalid = errors.New("port must be 0-65535 or a known service name")
 
 	// ErrProtocolInvalid is returned when a [Port] has an unrecognized
 	// protocol. Valid values are TCP, UDP, SCTP, ANY, or empty (defaults
@@ -58,9 +58,9 @@ var (
 	// this by expanding ANY into all three protocols where applicable.
 	ErrProtocolInvalid = errors.New("invalid protocol: must be TCP, UDP, SCTP, ANY, or empty")
 
-	// ErrEndPortInvalid is returned when a [Port] has an endPort that is
-	// less than the port.
-	ErrEndPortInvalid = errors.New("endPort must be greater than or equal to port")
+	// ErrEndPortInvalid is returned when a [Port] has an endPort that
+	// exceeds 65535 or is less than the port.
+	ErrEndPortInvalid = errors.New("endPort must be >= port and <= 65535")
 
 	// ErrEndPortWithFQDN is returned when a [Port] with endPort is used in
 	// a rule containing toFQDNs. Port ranges only work with CIDR rules
@@ -221,7 +221,7 @@ var (
 	// numbers. Cilium resolves named ports dynamically from Kubernetes
 	// pod specs (containerPort.name); the sandbox uses this static map
 	// instead since there are no pods to query.
-	wellKnownPorts = map[string]int{
+	wellKnownPorts = map[string]uint16{
 		"domain":  53,
 		"dns":     53,
 		"dns-tcp": 53, // Kubernetes naming convention, not IANA
@@ -277,11 +277,15 @@ func isSvcName(s string) bool {
 // strings ("443") and well-known IANA service names ("https"). Cilium
 // resolves named ports dynamically from Kubernetes pod specs; the
 // sandbox uses a static [wellKnownPorts] map instead. Returns an error
-// for unknown names or invalid syntax.
-func ResolvePort(s string) (int, error) {
-	n, err := strconv.Atoi(s)
+// for unknown names, invalid syntax, or values outside 0-65535.
+//
+// Uses base 10 (not base 0) because the sandbox reads YAML config
+// files, not Kubernetes API objects, so hex/octal/binary port literals
+// are not meaningful.
+func ResolvePort(s string) (uint16, error) {
+	n, err := strconv.ParseUint(s, 10, 16)
 	if err == nil {
-		return n, nil
+		return uint16(n), nil
 	}
 
 	if !isSvcName(s) {
@@ -1013,7 +1017,7 @@ func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 			}
 
 			n, err := ResolvePort(p.Port)
-			if err != nil || n <= 0 {
+			if err != nil {
 				return fmt.Errorf("%w: rule %d port %q", ErrPortInvalid, ruleIdx, p.Port)
 			}
 
@@ -1021,7 +1025,7 @@ func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 				return fmt.Errorf("%w: rule %d port %q protocol %q", ErrProtocolInvalid, ruleIdx, p.Port, p.Protocol)
 			}
 
-			err = validateEndPort(p, n, ruleIdx, hasFQDNs)
+			err = validateEndPort(p, int(n), ruleIdx, hasFQDNs)
 			if err != nil {
 				return err
 			}
@@ -1035,7 +1039,7 @@ func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 		if pr.Rules != nil && len(pr.Rules.HTTP) > 0 {
 			for _, p := range pr.Ports {
 				n, err := ResolvePort(p.Port)
-				if err == nil && n != 80 && n != 443 {
+				if err == nil && int(n) != 80 && int(n) != 443 {
 					return fmt.Errorf("%w: rule %d port %s", ErrL7OnUnsupportedPort, ruleIdx, p.Port)
 				}
 			}
@@ -1049,6 +1053,10 @@ func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 func validateEndPort(p Port, portNum, ruleIdx int, hasFQDNs bool) error {
 	if p.EndPort == 0 {
 		return nil
+	}
+
+	if p.EndPort > 65535 {
+		return fmt.Errorf("%w: rule %d endPort %d exceeds 65535", ErrEndPortInvalid, ruleIdx, p.EndPort)
 	}
 
 	if isSvcName(p.Port) {
@@ -1345,10 +1353,12 @@ func portRuleMatchesPort(pr PortRule, port int) bool {
 	}
 
 	for _, p := range pr.Ports {
-		n, err := ResolvePort(p.Port)
+		resolved, err := ResolvePort(p.Port)
 		if err != nil {
 			continue
 		}
+
+		n := int(resolved)
 
 		if p.EndPort > 0 && port >= n && port <= p.EndPort {
 			return true
@@ -1503,9 +1513,9 @@ func (c *SandboxConfig) ResolvePorts() []int {
 					continue
 				}
 
-				n, err := ResolvePort(p.Port)
-				if err == nil && n > 0 {
-					seen[n] = true
+				resolved, err := ResolvePort(p.Port)
+				if err == nil && resolved > 0 {
+					seen[int(resolved)] = true
 				}
 			}
 		}
@@ -1583,11 +1593,12 @@ func (c *SandboxConfig) ResolveOpenPortRules() []ResolvedOpenPort {
 
 		for _, pr := range rule.ToPorts {
 			for _, p := range pr.Ports {
-				n, err := ResolvePort(p.Port)
-				if err != nil || n <= 0 {
+				resolved, err := ResolvePort(p.Port)
+				if err != nil || resolved == 0 {
 					continue
 				}
 
+				n := int(resolved)
 				proto := normalizeProtocol(p.Protocol)
 				protos := []string{proto}
 				if proto == "" {
@@ -1667,11 +1678,12 @@ func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []ResolvedOpenPort {
 
 		for _, pr := range rule.ToPorts {
 			for _, p := range pr.Ports {
-				n, err := ResolvePort(p.Port)
-				if err != nil || n <= 0 {
+				resolved, err := ResolvePort(p.Port)
+				if err != nil || resolved == 0 {
 					continue
 				}
 
+				n := int(resolved)
 				proto := normalizeProtocol(p.Protocol)
 
 				// TCP is handled by Envoy via ResolvePorts.
@@ -1803,11 +1815,12 @@ func resolvePortsFromRule(rule EgressRule) []ResolvedPortProto {
 		}
 
 		for _, p := range pr.Ports {
-			n, err := ResolvePort(p.Port)
-			if err != nil || n <= 0 {
+			resolved, err := ResolvePort(p.Port)
+			if err != nil || resolved == 0 {
 				continue
 			}
 
+			n := int(resolved)
 			proto := normalizeProtocol(p.Protocol)
 			// Expand ANY protocol into separate tcp, udp, and sctp
 			// entries so formatPortProto always has a concrete

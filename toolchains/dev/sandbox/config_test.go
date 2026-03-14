@@ -2651,7 +2651,7 @@ func TestResolvePort(t *testing.T) {
 
 	tests := map[string]struct {
 		input string
-		want  int
+		want  uint16
 		err   bool
 	}{
 		"numeric":            {input: "443", want: 443},
@@ -2670,6 +2670,15 @@ func TestResolvePort(t *testing.T) {
 		"consecutive hyphen": {input: "dns--tcp", err: true},
 		"empty":              {input: "", err: true},
 		"digits only":        {input: "123", want: 123},
+		"port 65535":         {input: "65535", want: 65535},
+		"port 65536":         {input: "65536", err: true},
+		"port 70000":         {input: "70000", err: true},
+		"large port":         {input: "100000", err: true},
+		"negative":           {input: "-1", err: true},
+		"negative zero":      {input: "-0", err: true},
+		"hex rejected":       {input: "0x1BB", err: true},
+		"octal rejected":     {input: "0o777", err: true},
+		"max int rejected":   {input: "2147483647", err: true},
 	}
 
 	for name, tt := range tests {
@@ -2801,6 +2810,49 @@ func TestNamedPortValidation(t *testing.T) {
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "HTTPS"}}}},
+				}),
+			},
+		},
+		"port 65536 rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "65536"}}}},
+				}),
+			},
+			err: sandbox.ErrPortInvalid,
+		},
+		"port 70000 rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "70000"}}}},
+				}),
+			},
+			err: sandbox.ErrPortInvalid,
+		},
+		"port 65535 accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "65535"}}}},
+				}),
+			},
+		},
+		"endPort 70000 rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", EndPort: 70000}}}},
+				}),
+			},
+			err: sandbox.ErrEndPortInvalid,
+		},
+		"port 0 accepted": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "0.0.0.0/0"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "0"}}}},
 				}),
 			},
 		},
