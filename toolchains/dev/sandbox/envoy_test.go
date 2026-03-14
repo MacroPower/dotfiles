@@ -821,6 +821,21 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"stream_idle_timeout: 300s",
 			},
 		},
+		"clusters have connect timeout": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Method: "GET", Path: "/v1/"}}},
+					}},
+				}),
+				TCPForwards: []sandbox.TCPForward{{Port: 22, Host: "github.com"}},
+			},
+			want: []string{
+				"connect_timeout: 5s",
+			},
+		},
 	}
 
 	for name, tt := range tests {

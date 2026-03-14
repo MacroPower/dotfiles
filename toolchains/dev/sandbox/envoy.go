@@ -262,6 +262,7 @@ type envoyCluster struct {
 	LoadAssignment                *envoyLoadAssignment  `yaml:"load_assignment,omitempty"`
 	TypedExtensionProtocolOptions map[string]any        `yaml:"typed_extension_protocol_options,omitempty"`
 	Name                          string                `yaml:"name"`
+	ConnectTimeout                string                `yaml:"connect_timeout"`
 	Type                          string                `yaml:"type,omitempty"`
 	LBPolicy                      string                `yaml:"lb_policy"`
 }
@@ -1016,8 +1017,9 @@ func buildClusters(rules []ResolvedRule, tcpForwards []TCPForward, caBundlePath 
 	// Only add the dynamic forward proxy cluster when there are FQDN rules.
 	if len(rules) > 0 {
 		clusters = append(clusters, envoyCluster{
-			Name:     "dynamic_forward_proxy_cluster",
-			LBPolicy: "CLUSTER_PROVIDED",
+			Name:           "dynamic_forward_proxy_cluster",
+			ConnectTimeout: "5s",
+			LBPolicy:       "CLUSTER_PROVIDED",
 			ClusterType: &envoyClusterType{
 				Name: "envoy.clusters.dynamic_forward_proxy",
 				TypedConfig: envoyClusterDFPConfig{
@@ -1073,8 +1075,9 @@ func buildClusters(rules []ResolvedRule, tcpForwards []TCPForward, caBundlePath 
 		// Both approaches produce the same result: correct SNI on
 		// the upstream TLS handshake.
 		clusters = append(clusters, envoyCluster{
-			Name:     "mitm_forward_proxy_cluster",
-			LBPolicy: "CLUSTER_PROVIDED",
+			Name:           "mitm_forward_proxy_cluster",
+			ConnectTimeout: "5s",
+			LBPolicy:       "CLUSTER_PROVIDED",
 			ClusterType: &envoyClusterType{
 				Name: "envoy.clusters.dynamic_forward_proxy",
 				TypedConfig: envoyClusterDFPConfig{
@@ -1098,9 +1101,10 @@ func buildClusters(rules []ResolvedRule, tcpForwards []TCPForward, caBundlePath 
 	for _, fwd := range tcpForwards {
 		name := fmt.Sprintf("tcp_forward_%d", fwd.Port)
 		clusters = append(clusters, envoyCluster{
-			Name:     name,
-			Type:     "STRICT_DNS",
-			LBPolicy: "ROUND_ROBIN",
+			Name:           name,
+			ConnectTimeout: "5s",
+			Type:           "STRICT_DNS",
+			LBPolicy:       "ROUND_ROBIN",
 			LoadAssignment: &envoyLoadAssignment{
 				ClusterName: name,
 				Endpoints: []envoyEndpoint{{
