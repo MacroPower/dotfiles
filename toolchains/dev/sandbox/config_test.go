@@ -1121,6 +1121,102 @@ func TestValidate(t *testing.T) {
 				}),
 			},
 		},
+		"L7 with UDP protocol rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+					}},
+				}),
+			},
+			err: sandbox.ErrL7RequiresTCP,
+		},
+		"L7 with SCTP protocol rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "80", Protocol: "SCTP"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+					}},
+				}),
+			},
+			err: sandbox.ErrL7RequiresTCP,
+		},
+		"L7 with ANY protocol rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443", Protocol: "ANY"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+					}},
+				}),
+			},
+			err: sandbox.ErrL7RequiresTCP,
+		},
+		"L7 with explicit TCP protocol valid": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443", Protocol: "TCP"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+					}},
+				}),
+			},
+		},
+		"L7 with empty protocol valid": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+					}},
+				}),
+			},
+		},
+		"L7 with mixed TCP and UDP ports rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{
+							{Port: "80", Protocol: "TCP"},
+							{Port: "443", Protocol: "UDP"},
+						},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+					}},
+				}),
+			},
+			err: sandbox.ErrL7RequiresTCP,
+		},
+		"L7 with lowercase udp normalized then rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443", Protocol: "udp"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+					}},
+				}),
+			},
+			err: sandbox.ErrL7RequiresTCP,
+		},
+		"empty HTTP rules with UDP protocol valid": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{}},
+					}},
+				}),
+			},
+		},
 		"matchName with spaces rejected": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{

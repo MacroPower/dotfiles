@@ -121,6 +121,15 @@ var (
 	// MITM inspection on standard HTTP/HTTPS ports.
 	ErrL7OnUnsupportedPort = errors.New("L7 HTTP rules are only supported on ports 80 and 443")
 
+	// ErrL7RequiresTCP is returned when L7 HTTP rules are paired with
+	// a non-TCP protocol. Envoy's HTTP connection manager requires TCP
+	// streams; UDP, SCTP, and ANY are invalid with L7 HTTP rules.
+	// Empty protocol is allowed (implies TCP). Cilium's
+	// PortRule.sanitize() rejects empty too (it normalizes to ANY
+	// first), but the sandbox intentionally permits it to reduce
+	// boilerplate.
+	ErrL7RequiresTCP = errors.New("L7 HTTP rules can only apply to TCP")
+
 	// ErrWildcardWithL7 is returned when a wildcard matchPattern is used
 	// with L7 HTTP rules. The MITM filter chain builds filesystem paths
 	// from the domain name, and wildcards in paths are invalid.
@@ -1038,6 +1047,11 @@ func validatePorts(rule EgressRule, ruleIdx int, hasFQDNs bool) error {
 
 		if pr.Rules != nil && len(pr.Rules.HTTP) > 0 {
 			for _, p := range pr.Ports {
+				if p.Protocol != "" && p.Protocol != "TCP" {
+					return fmt.Errorf("%w: rule %d port %s protocol %s",
+						ErrL7RequiresTCP, ruleIdx, p.Port, p.Protocol)
+				}
+
 				n, err := ResolvePort(p.Port)
 				if err == nil && int(n) != 80 && int(n) != 443 {
 					return fmt.Errorf("%w: rule %d port %s", ErrL7OnUnsupportedPort, ruleIdx, p.Port)
