@@ -444,11 +444,11 @@ func TestGenerateIptablesRules(t *testing.T) {
 			},
 			wantIPv4: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m state --state ESTABLISHED -j ACCEPT",
-				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn4 dst -j ACCEPT",
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn4_0 dst -j ACCEPT",
 			},
 			wantIPv6: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m state --state ESTABLISHED -j ACCEPT",
-				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn6 dst -j ACCEPT",
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn6_0 dst -j ACCEPT",
 			},
 			notWantIPv4: []string{
 				"--to-port 15443",
@@ -463,11 +463,11 @@ func TestGenerateIptablesRules(t *testing.T) {
 			},
 			wantIPv4: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -m state --state ESTABLISHED -j ACCEPT",
-				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -m set --match-set sandbox_fqdn4 dst -j ACCEPT",
+				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -m set --match-set sandbox_fqdn4_0 dst -j ACCEPT",
 			},
 			wantIPv6: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -m state --state ESTABLISHED -j ACCEPT",
-				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -m set --match-set sandbox_fqdn6 dst -j ACCEPT",
+				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -m set --match-set sandbox_fqdn6_0 dst -j ACCEPT",
 			},
 			notWantIPv4: []string{
 				"REDIRECT",
@@ -485,12 +485,12 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"--to-port 15443",
 				// UDP: ESTABLISHED for zombie/CT, then ipset for new flows.
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m state --state ESTABLISHED -j ACCEPT",
-				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn4 dst -j ACCEPT",
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn4_0 dst -j ACCEPT",
 			},
 			notWantIPv4: []string{"-p sctp"},
 			wantIPv6: []string{
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m state --state ESTABLISHED -j ACCEPT",
-				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn6 dst -j ACCEPT",
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn6_0 dst -j ACCEPT",
 			},
 			notWantIPv6:        []string{"-p sctp"},
 			wantRedirectCount4: 1,
@@ -904,6 +904,28 @@ func TestGenerateIptablesRules(t *testing.T) {
 			},
 			// FQDN port 8000 contributes one REDIRECT; the range does not.
 			wantRedirectCount4: 1,
+		},
+		"two FQDN rules get separate ipsets": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "a.example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "b.example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080", Protocol: "UDP"}}}},
+					},
+				),
+			},
+			wantIPv4: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn4_0 dst -j ACCEPT",
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 8080 -m set --match-set sandbox_fqdn4_1 dst -j ACCEPT",
+			},
+			wantIPv6: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn6_0 dst -j ACCEPT",
+				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 8080 -m set --match-set sandbox_fqdn6_1 dst -j ACCEPT",
+			},
 		},
 	}
 

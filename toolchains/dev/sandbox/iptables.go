@@ -214,7 +214,7 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 	resolvedPorts := cfg.ResolvePorts()
 	cidr4, cidr6 := cfg.ResolveCIDRRules()
 	openPortRules := cfg.ResolveOpenPortRules()
-	fqdnNonTCPPorts := cfg.ResolveFQDNNonTCPPorts()
+	fqdnRulePorts := cfg.ResolveFQDNNonTCPPorts()
 
 	var (
 		nat4, filter4 strings.Builder
@@ -329,7 +329,7 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 		}
 	}
 
-	writeFilterRules := func(b *strings.Builder, loopbackCIDR, ipsetName string, cidrs []ResolvedCIDR, af string, ipv6 bool) {
+	writeFilterRules := func(b *strings.Builder, loopbackCIDR string, cidrs []ResolvedCIDR, af string, ipv6 bool) {
 		writeBaseFilterRules(b, loopbackCIDR, ipv6)
 		if !unrestricted {
 			// Per-rule CIDR chains preserve OR semantics: each
@@ -378,22 +378,28 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 				}
 			}
 
-			// Non-TCP FQDN ports: two rules per port/protocol.
-			// ESTABLISHED allows packets on flows whose initial packet
-			// was accepted by the ipset rule below, implementing
-			// zombie/CT semantics: conntrack keeps flows alive past
-			// ipset TTL expiry, matching Cilium's DNSZombieMappings
-			// behavior. The ipset rule gates first packets of new
-			// flows, requiring DNS resolution before establishment.
-			for _, fp := range fqdnNonTCPPorts {
-				fmt.Fprintf(b,
-					"-A OUTPUT -m owner --uid-owner %s -p %s --dport %d "+
-						"-m state --state ESTABLISHED -j ACCEPT\n",
-					UID, fp.Protocol, fp.Port)
-				fmt.Fprintf(b,
-					"-A OUTPUT -m owner --uid-owner %s -p %s --dport %d "+
-						"-m set --match-set %s dst -j ACCEPT\n",
-					UID, fp.Protocol, fp.Port, ipsetName)
+			// Non-TCP FQDN ports: per-rule ipset pairs. Each FQDN
+			// rule gets its own ipset so cross-rule IP leakage is
+			// prevented. ESTABLISHED allows packets on flows whose
+			// initial packet was accepted by the ipset rule below,
+			// implementing zombie/CT semantics: conntrack keeps flows
+			// alive past ipset TTL expiry, matching Cilium's
+			// DNSZombieMappings behavior. The ipset rule gates first
+			// packets of new flows, requiring DNS resolution before
+			// establishment.
+			for _, frp := range fqdnRulePorts {
+				ipsetName := FQDNIPSetName(frp.RuleIndex, ipv6)
+
+				for _, fp := range frp.Ports {
+					fmt.Fprintf(b,
+						"-A OUTPUT -m owner --uid-owner %s -p %s --dport %d "+
+							"-m state --state ESTABLISHED -j ACCEPT\n",
+						UID, fp.Protocol, fp.Port)
+					fmt.Fprintf(b,
+						"-A OUTPUT -m owner --uid-owner %s -p %s --dport %d "+
+							"-m set --match-set %s dst -j ACCEPT\n",
+						UID, fp.Protocol, fp.Port, ipsetName)
+				}
 			}
 		}
 
@@ -414,8 +420,8 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 		b.WriteString("COMMIT\n")
 	}
 
-	writeFilterRules(&filter4, "127.0.0.0/8", IPSetFQDN4, cidr4, "4", false)
-	writeFilterRules(&filter6, "::1/128", IPSetFQDN6, cidr6, "6", true)
+	writeFilterRules(&filter4, "127.0.0.0/8", cidr4, "4", false)
+	writeFilterRules(&filter6, "::1/128", cidr6, "6", true)
 
 	return nat4.String() + filter4.String(), nat6.String() + filter6.String()
 }

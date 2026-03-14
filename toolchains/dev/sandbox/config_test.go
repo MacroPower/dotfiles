@@ -2333,30 +2333,28 @@ func TestResolveFQDNNonTCPPorts(t *testing.T) {
 
 	tests := map[string]struct {
 		cfg  *sandbox.SandboxConfig
-		want []sandbox.ResolvedOpenPort
+		want []sandbox.FQDNRulePorts
 	}{
 		"FQDN UDP port": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
 				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
 			})},
-			want: []sandbox.ResolvedOpenPort{{Port: 443, Protocol: "udp"}},
+			want: []sandbox.FQDNRulePorts{{RuleIndex: 0, Ports: []sandbox.ResolvedOpenPort{{Port: 443, Protocol: "udp"}}}},
 		},
 		"FQDN SCTP port": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
 				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "3868", Protocol: "SCTP"}}}},
 			})},
-			want: []sandbox.ResolvedOpenPort{{Port: 3868, Protocol: "sctp"}},
+			want: []sandbox.FQDNRulePorts{{RuleIndex: 0, Ports: []sandbox.ResolvedOpenPort{{Port: 3868, Protocol: "sctp"}}}},
 		},
 		"FQDN ANY port expands to udp": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
 				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 			})},
-			want: []sandbox.ResolvedOpenPort{
-				{Port: 443, Protocol: "udp"},
-			},
+			want: []sandbox.FQDNRulePorts{{RuleIndex: 0, Ports: []sandbox.ResolvedOpenPort{{Port: 443, Protocol: "udp"}}}},
 		},
 		"FQDN TCP-only returns nil": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
@@ -2372,6 +2370,22 @@ func TestResolveFQDNNonTCPPorts(t *testing.T) {
 		},
 		"unrestricted returns nil": {
 			cfg: &sandbox.SandboxConfig{},
+		},
+		"two FQDN rules get separate indices": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "a.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+				},
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "b.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080", Protocol: "UDP"}}}},
+				},
+			)},
+			want: []sandbox.FQDNRulePorts{
+				{RuleIndex: 0, Ports: []sandbox.ResolvedOpenPort{{Port: 443, Protocol: "udp"}}},
+				{RuleIndex: 1, Ports: []sandbox.ResolvedOpenPort{{Port: 8080, Protocol: "udp"}}},
+			},
 		},
 	}
 
@@ -3461,10 +3475,11 @@ func TestCompileFQDNPatterns(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		cfg     sandbox.SandboxConfig
-		want    []string
-		match   map[string]bool
-		noMatch map[string]bool
+		cfg         sandbox.SandboxConfig
+		want        []string
+		wantIndices []int
+		match       map[string]bool
+		noMatch     map[string]bool
 	}{
 		"matchName exact": {
 			cfg: sandbox.SandboxConfig{
@@ -3473,9 +3488,10 @@ func TestCompileFQDNPatterns(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
 				}),
 			},
-			want:    []string{"api.example.com"},
-			match:   map[string]bool{"api.example.com.": true},
-			noMatch: map[string]bool{"evil.api.example.com.": true, "example.com.": true},
+			want:        []string{"api.example.com"},
+			wantIndices: []int{0},
+			match:       map[string]bool{"api.example.com.": true},
+			noMatch:     map[string]bool{"evil.api.example.com.": true, "example.com.": true},
 		},
 		"single-star wildcard": {
 			cfg: sandbox.SandboxConfig{
@@ -3484,9 +3500,10 @@ func TestCompileFQDNPatterns(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
 				}),
 			},
-			want:    []string{"*.example.com"},
-			match:   map[string]bool{"sub.example.com.": true},
-			noMatch: map[string]bool{"a.b.example.com.": true, "example.com.": true},
+			want:        []string{"*.example.com"},
+			wantIndices: []int{0},
+			match:       map[string]bool{"sub.example.com.": true},
+			noMatch:     map[string]bool{"a.b.example.com.": true, "example.com.": true},
 		},
 		"double-star wildcard": {
 			cfg: sandbox.SandboxConfig{
@@ -3495,9 +3512,10 @@ func TestCompileFQDNPatterns(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
 				}),
 			},
-			want:    []string{"**.example.com"},
-			match:   map[string]bool{"sub.example.com.": true, "a.b.example.com.": true},
-			noMatch: map[string]bool{"example.com.": true},
+			want:        []string{"**.example.com"},
+			wantIndices: []int{0},
+			match:       map[string]bool{"sub.example.com.": true, "a.b.example.com.": true},
+			noMatch:     map[string]bool{"example.com.": true},
 		},
 		"bare wildcard": {
 			cfg: sandbox.SandboxConfig{
@@ -3506,9 +3524,10 @@ func TestCompileFQDNPatterns(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
 				}),
 			},
-			want:    []string{"*"},
-			match:   map[string]bool{"anything.com.": true, "a.b.c.": true, ".": true},
-			noMatch: map[string]bool{"": true},
+			want:        []string{"*"},
+			wantIndices: []int{0},
+			match:       map[string]bool{"anything.com.": true, "a.b.c.": true, ".": true},
+			noMatch:     map[string]bool{"": true},
 		},
 		"triple-star bare wildcard": {
 			cfg: sandbox.SandboxConfig{
@@ -3517,8 +3536,9 @@ func TestCompileFQDNPatterns(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
 				}),
 			},
-			want:  []string{"***"},
-			match: map[string]bool{"anything.com.": true, ".": true},
+			want:        []string{"***"},
+			wantIndices: []int{0},
+			match:       map[string]bool{"anything.com.": true, ".": true},
 		},
 		"mid-position double-star falls back to single-label": {
 			cfg: sandbox.SandboxConfig{
@@ -3527,9 +3547,10 @@ func TestCompileFQDNPatterns(t *testing.T) {
 					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
 				}),
 			},
-			want:    []string{"test.**.example.com"},
-			match:   map[string]bool{"test.sub.example.com.": true},
-			noMatch: map[string]bool{"test.a.b.example.com.": true},
+			want:        []string{"test.**.example.com"},
+			wantIndices: []int{0},
+			match:       map[string]bool{"test.sub.example.com.": true},
+			noMatch:     map[string]bool{"test.a.b.example.com.": true},
 		},
 		"excludes TCPForward hosts": {
 			cfg: sandbox.SandboxConfig{
@@ -3539,9 +3560,10 @@ func TestCompileFQDNPatterns(t *testing.T) {
 				}),
 				TCPForwards: []sandbox.TCPForward{{Port: 22, Host: "git.example.com"}},
 			},
-			want: []string{"api.example.com"},
+			want:        []string{"api.example.com"},
+			wantIndices: []int{0},
 		},
-		"deduplicates patterns": {
+		"same pattern in two rules produces two entries": {
 			cfg: sandbox.SandboxConfig{
 				Egress: egressRules(
 					sandbox.EgressRule{
@@ -3554,7 +3576,37 @@ func TestCompileFQDNPatterns(t *testing.T) {
 					},
 				),
 			},
-			want: []string{"api.example.com"},
+			want:        []string{"api.example.com", "api.example.com"},
+			wantIndices: []int{0, 1},
+		},
+		"deduplicates within same rule": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{
+						{MatchName: "api.example.com"},
+						{MatchName: "api.example.com"},
+					},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+				}),
+			},
+			want:        []string{"api.example.com"},
+			wantIndices: []int{0},
+		},
+		"skips TCP-only FQDN rules": {
+			cfg: sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "tcp-only.example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "TCP"}}}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "udp.example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "5353", Protocol: "UDP"}}}},
+					},
+				),
+			},
+			want:        []string{"udp.example.com"},
+			wantIndices: []int{0},
 		},
 	}
 
@@ -3565,11 +3617,19 @@ func TestCompileFQDNPatterns(t *testing.T) {
 			patterns := tt.cfg.CompileFQDNPatterns()
 
 			var originals []string
+
+			var indices []int
+
 			for _, p := range patterns {
 				originals = append(originals, p.Original)
+				indices = append(indices, p.RuleIndex)
 			}
 
 			assert.Equal(t, tt.want, originals)
+
+			if tt.wantIndices != nil {
+				assert.Equal(t, tt.wantIndices, indices)
+			}
 
 			for qname := range tt.match {
 				matched := false

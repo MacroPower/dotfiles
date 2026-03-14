@@ -455,8 +455,10 @@ func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 	}
 
 	// ipset population (UDP only, when patterns exist).
-	if proto == "udp" && matchesFQDNPatterns(p.patterns, qname) {
-		p.populateIPSets(qname, resp)
+	if proto == "udp" {
+		if indices := matchingFQDNRuleIndices(p.patterns, qname); len(indices) > 0 {
+			p.populateIPSets(qname, resp, indices)
+		}
 	}
 
 	if p.logging {
@@ -481,32 +483,44 @@ func (p *DNSProxy) domainAllowed(qname string) bool {
 	return false
 }
 
-// matchesFQDNPatterns reports whether the FQDN-form query name
-// matches any of the compiled patterns.
-func matchesFQDNPatterns(patterns []FQDNPattern, qname string) bool {
+// matchingFQDNRuleIndices returns the deduplicated rule indices whose
+// compiled patterns match qname.
+func matchingFQDNRuleIndices(patterns []FQDNPattern, qname string) []int {
+	seen := make(map[int]bool)
+
+	var indices []int
+
 	for _, pat := range patterns {
-		if pat.Regex.MatchString(qname) {
-			return true
+		if pat.Regex.MatchString(qname) && !seen[pat.RuleIndex] {
+			seen[pat.RuleIndex] = true
+			indices = append(indices, pat.RuleIndex)
 		}
 	}
 
-	return false
+	return indices
 }
 
 // populateIPSets extracts A and AAAA records from the DNS response
-// and batch-adds them to the appropriate ipsets using ipset restore.
-// TTLs are clamped to a minimum of [minIPSetTTL].
-func (p *DNSProxy) populateIPSets(qname string, resp *dns.Msg) {
+// and batch-adds them to the per-rule ipsets for each matching rule
+// index using ipset restore. TTLs are clamped to a minimum of
+// [minIPSetTTL].
+func (p *DNSProxy) populateIPSets(qname string, resp *dns.Msg, ruleIndices []int) {
 	var commands strings.Builder
 
 	for _, rr := range resp.Answer {
 		switch a := rr.(type) {
 		case *dns.A:
 			ttl := max(int(a.Hdr.Ttl), minIPSetTTL)
-			fmt.Fprintf(&commands, "add %s %s timeout %d\n", IPSetFQDN4, a.A.String(), ttl)
+
+			for _, idx := range ruleIndices {
+				fmt.Fprintf(&commands, "add %s %s timeout %d\n", FQDNIPSetName(idx, false), a.A.String(), ttl)
+			}
 		case *dns.AAAA:
 			ttl := max(int(a.Hdr.Ttl), minIPSetTTL)
-			fmt.Fprintf(&commands, "add %s %s timeout %d\n", IPSetFQDN6, a.AAAA.String(), ttl)
+
+			for _, idx := range ruleIndices {
+				fmt.Fprintf(&commands, "add %s %s timeout %d\n", FQDNIPSetName(idx, true), a.AAAA.String(), ttl)
+			}
 		}
 	}
 

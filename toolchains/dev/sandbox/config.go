@@ -339,23 +339,6 @@ const (
 	// ConfigPath is the path to the sandbox YAML config file.
 	ConfigPath = "/etc/sandbox/config.yaml"
 
-	// IPSetFQDN4 is the IPv4 ipset populated by the DNS proxy with
-	// resolved IPs from FQDN egress rules. Used by iptables to restrict
-	// non-TCP FQDN traffic to DNS-resolved destinations, matching
-	// Cilium's L3 identity behavior for toFQDNs rules.
-	//
-	// The DNS proxy enforces wildcard depth (single-label for "*",
-	// multi-label for "**") and sets per-entry TTL timeouts. Known
-	// divergences from Cilium:
-	//   - No per-process lookup enforcement: all uid-1000 processes
-	//     share the ipset. Mitigated by Envoy for TCP traffic.
-	//   - No per-hostname IP limit: ipset maxelem 65536 shared across
-	//     all hostnames (Cilium caps at 1000 per hostname).
-	IPSetFQDN4 = "sandbox_fqdn4"
-
-	// IPSetFQDN6 is the IPv6 counterpart of [IPSetFQDN4].
-	IPSetFQDN6 = "sandbox_fqdn6"
-
 	// minIPSetTTL is the minimum timeout (in seconds) for ipset entries
 	// populated from DNS responses. Cilium's --tofqdns-min-ttl defaults
 	// to 0 (honor upstream TTL exactly); we use 60 to avoid excessive
@@ -370,6 +353,17 @@ const (
 	// fail in RE2.
 	maxRegexLen = 1000
 )
+
+// FQDNIPSetName returns the ipset name for a FQDN rule index and
+// address family. Names follow sandbox_fqdn{4,6}_R where R is the
+// 0-indexed position among FQDN-bearing rules with non-TCP ports.
+func FQDNIPSetName(ruleIdx int, ipv6 bool) string {
+	if ipv6 {
+		return fmt.Sprintf("sandbox_fqdn6_%d", ruleIdx)
+	}
+
+	return fmt.Sprintf("sandbox_fqdn4_%d", ruleIdx)
+}
 
 // EgressRule defines an egress policy with optional FQDN, port, and CIDR
 // selectors. Under CiliumNetworkPolicy semantics, ToFQDNs is mutually
@@ -1736,14 +1730,39 @@ func (c *SandboxConfig) ResolveOpenPorts() []int {
 	return result
 }
 
+// FQDNRulePorts groups resolved non-TCP ports for a single FQDN
+// egress rule. Each rule gets its own ipset pair, matching Cilium's
+// per-selector isolation semantics.
+type FQDNRulePorts struct {
+	RuleIndex int
+	Ports     []ResolvedOpenPort
+}
+
+// ruleHasNonTCPPorts reports whether an egress rule has any ports with
+// a non-TCP protocol (UDP, SCTP, or ANY which expands to UDP).
+func ruleHasNonTCPPorts(rule EgressRule) bool {
+	for _, pr := range rule.ToPorts {
+		for _, p := range pr.Ports {
+			proto := normalizeProtocol(p.Protocol)
+			if proto != protoTCP {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // ResolveFQDNNonTCPPorts returns resolved UDP port entries from FQDN
-// rules. These ports cannot use Envoy (TCP-only) and are instead
-// enforced via ipset-backed iptables rules that restrict traffic to
-// DNS-resolved IPs. ANY protocol is expanded into udp entries (TCP is
-// handled by [ResolvePorts] + Envoy; SCTP requires explicit opt-in).
-// Returns nil when egress is unrestricted, blocked, or has no FQDN
-// rules with non-TCP ports.
-func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []ResolvedOpenPort {
+// rules, grouped per rule. Each qualifying rule (FQDN selectors with
+// non-TCP ports) gets its own [FQDNRulePorts] entry so iptables can
+// reference per-rule ipsets. These ports cannot use Envoy (TCP-only)
+// and are instead enforced via ipset-backed iptables rules that
+// restrict traffic to DNS-resolved IPs. ANY protocol is expanded into
+// udp entries (TCP is handled by [ResolvePorts] + Envoy; SCTP
+// requires explicit opt-in). Returns nil when egress is unrestricted,
+// blocked, or has no FQDN rules with non-TCP ports.
+func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []FQDNRulePorts {
 	if c.IsEgressUnrestricted() {
 		return nil
 	}
@@ -1753,14 +1772,18 @@ func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []ResolvedOpenPort {
 		return nil
 	}
 
-	seen := make(map[string]bool)
+	var result []FQDNRulePorts
 
-	var result []ResolvedOpenPort
+	ruleIdx := 0
 
 	for _, rule := range rules {
-		if len(rule.ToFQDNs) == 0 {
+		if len(rule.ToFQDNs) == 0 || !ruleHasNonTCPPorts(rule) {
 			continue
 		}
+
+		seen := make(map[string]bool)
+
+		var ports []ResolvedOpenPort
 
 		for _, pr := range rule.ToPorts {
 			for _, p := range pr.Ports {
@@ -1791,24 +1814,30 @@ func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []ResolvedOpenPort {
 					if !seen[k] {
 						seen[k] = true
 
-						result = append(result, ResolvedOpenPort{Port: n, EndPort: p.EndPort, Protocol: pr})
+						ports = append(ports, ResolvedOpenPort{Port: n, EndPort: p.EndPort, Protocol: pr})
 					}
 				}
 			}
 		}
+
+		if len(ports) > 0 {
+			sort.Slice(ports, func(i, j int) bool {
+				if ports[i].Port != ports[j].Port {
+					return ports[i].Port < ports[j].Port
+				}
+
+				if ports[i].EndPort != ports[j].EndPort {
+					return ports[i].EndPort < ports[j].EndPort
+				}
+
+				return ports[i].Protocol < ports[j].Protocol
+			})
+
+			result = append(result, FQDNRulePorts{RuleIndex: ruleIdx, Ports: ports})
+		}
+
+		ruleIdx++
 	}
-
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].Port != result[j].Port {
-			return result[i].Port < result[j].Port
-		}
-
-		if result[i].EndPort != result[j].EndPort {
-			return result[i].EndPort < result[j].EndPort
-		}
-
-		return result[i].Protocol < result[j].Protocol
-	})
 
 	return result
 }
@@ -1827,19 +1856,32 @@ func (c *SandboxConfig) HasFQDNNonTCPPorts() bool {
 // For FQDN-form regexes (with trailing dot). For SNI/Host regexes
 // without trailing dot, see [wildcardToSNIRegex] and [wildcardToHostRegex].
 type FQDNPattern struct {
-	Original string
-	Regex    *regexp.Regexp
+	Original  string
+	Regex     *regexp.Regexp
+	RuleIndex int
 }
 
 // CompileFQDNPatterns returns compiled regexes for all [FQDNSelector]
-// entries in the config. Only iterates ToFQDNs; [TCPForward] hosts
-// are excluded (they use Envoy, not ipset filtering).
+// entries in FQDN rules that have non-TCP ports. Each pattern carries
+// a RuleIndex matching the index used by [ResolveFQDNNonTCPPorts], so
+// DNS responses can populate the correct per-rule ipset. Patterns are
+// deduplicated within each rule (same selector appearing twice in one
+// rule produces one entry) but not across rules (same selector in two
+// rules produces two entries with different RuleIndex values).
+// [TCPForward] hosts are excluded (they use Envoy, not ipset
+// filtering).
 func (c *SandboxConfig) CompileFQDNPatterns() []FQDNPattern {
 	var patterns []FQDNPattern
 
-	seen := make(map[string]bool)
+	ruleIdx := 0
 
 	for _, rule := range c.EgressRules() {
+		if len(rule.ToFQDNs) == 0 || !ruleHasNonTCPPorts(rule) {
+			continue
+		}
+
+		seen := make(map[string]bool)
+
 		for _, fqdn := range rule.ToFQDNs {
 			var original string
 
@@ -1860,10 +1902,13 @@ func (c *SandboxConfig) CompileFQDNPatterns() []FQDNPattern {
 
 			regex := patternToAnchoredRegex(original, isMatchName)
 			patterns = append(patterns, FQDNPattern{
-				Original: original,
-				Regex:    regexp.MustCompile(regex),
+				Original:  original,
+				Regex:     regexp.MustCompile(regex),
+				RuleIndex: ruleIdx,
 			})
 		}
+
+		ruleIdx++
 	}
 
 	return patterns

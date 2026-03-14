@@ -146,17 +146,23 @@ func Init(ctx context.Context, args []string) error {
 
 	needsEnvoy := len(cfg.ResolvePorts()) > 0 || len(cfg.TCPForwards) > 0
 
-	// Create ipsets before iptables-restore, since iptables rules
-	// reference ipset names in -m set --match-set directives.
-	if cfg.HasFQDNNonTCPPorts() {
-		for _, args := range [][]string{
-			{"ipset", "create", IPSetFQDN4, "hash:ip", "family", "inet", "timeout", "0"},
-			{"ipset", "create", IPSetFQDN6, "hash:ip", "family", "inet6", "timeout", "0"},
-		} {
-			//nolint:gosec // G204: args are constants.
+	// Create per-rule ipsets before iptables-restore, since iptables
+	// rules reference ipset names in -m set --match-set directives.
+	for _, frp := range cfg.ResolveFQDNNonTCPPorts() {
+		for _, ipv6 := range []bool{false, true} {
+			name := FQDNIPSetName(frp.RuleIndex, ipv6)
+			family := "inet"
+
+			if ipv6 {
+				family = "inet6"
+			}
+
+			args := []string{"ipset", "create", name, "hash:ip", "family", family, "timeout", "0"}
+
+			//nolint:gosec // G204: args are constructed from validated config indices.
 			err := exec.CommandContext(ctx, args[0], args[1:]...).Run()
 			if err != nil {
-				return fmt.Errorf("creating ipset %s: %w", args[2], err)
+				return fmt.Errorf("creating ipset %s: %w", name, err)
 			}
 		}
 	}
