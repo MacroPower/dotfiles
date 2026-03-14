@@ -75,7 +75,8 @@ type envoyTlsCertificate struct {
 }
 
 type envoyDataSource struct {
-	Filename string `yaml:"filename"`
+	Filename     string `yaml:"filename,omitempty"`
+	InlineString string `yaml:"inline_string,omitempty"`
 }
 
 type envoyUpstreamTlsContext struct {
@@ -244,7 +245,8 @@ type envoyRouteAction struct {
 }
 
 type envoyDirectResponseAction struct {
-	Status int `yaml:"status"`
+	Body   *envoyDataSource `yaml:"body,omitempty"`
+	Status int              `yaml:"status"`
 }
 
 type envoyHTTPDFPFilterConfig struct {
@@ -780,7 +782,10 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) ([]envoyVirtual
 		// Catch-all denies everything else.
 		routes = append(routes, envoyRoute{
 			Match:          envoyRouteMatch{Prefix: "/"},
-			DirectResponse: &envoyDirectResponseAction{Status: 403},
+			DirectResponse: &envoyDirectResponseAction{
+				Status: 403,
+				Body:   &envoyDataSource{InlineString: "Access denied"},
+			},
 		})
 		vhosts = append(vhosts, envoyVirtualHost{
 			Name:    "restricted_" + r.Domain,
