@@ -576,23 +576,49 @@ func matchingFQDNRuleIndices(patterns []FQDNPattern, qname string) []int {
 
 // populateIPSets extracts A and AAAA records from the DNS response
 // and batch-adds them to the per-rule ipsets for each matching rule
-// index using ipset restore. TTLs are clamped to a minimum of
+// index using ipset restore. The TTL is the minimum across all
+// records in the response (including CNAME chain), matching Cilium's
+// ExtractMsgDetails behavior. TTLs are clamped to a minimum of
 // [minIPSetTTL].
 func (p *DNSProxy) populateIPSets(qname string, resp *dns.Msg, ruleIndices []int) {
+	// Compute minimum TTL across all answer records (A, AAAA,
+	// CNAME) to match Cilium's lowest-TTL-in-chain behavior.
+	minTTL := -1
+
+	for _, rr := range resp.Answer {
+		rrTTL := int(rr.Header().Ttl)
+		if minTTL < 0 || rrTTL < minTTL {
+			minTTL = rrTTL
+		}
+	}
+
+	if minTTL < 0 {
+		return
+	}
+
+	ttl := max(minTTL, minIPSetTTL)
+
+	// Extract and log CNAME targets for observability.
+	for _, rr := range resp.Answer {
+		if cname, ok := rr.(*dns.CNAME); ok && p.logging {
+			slog.Info("dns cname",
+				slog.String("name", qname),
+				slog.String("target", cname.Target),
+				slog.Int("ttl", int(cname.Hdr.Ttl)),
+			)
+		}
+	}
+
 	var commands strings.Builder
 
 	for _, rr := range resp.Answer {
 		switch a := rr.(type) {
 		case *dns.A:
-			ttl := max(int(a.Hdr.Ttl), minIPSetTTL)
-
 			for _, idx := range ruleIndices {
 				fmt.Fprintf(&commands, "add %s %s timeout %d\n", FQDNIPSetName(idx, false), a.A.String(), ttl)
 			}
 
 		case *dns.AAAA:
-			ttl := max(int(a.Hdr.Ttl), minIPSetTTL)
-
 			for _, idx := range ruleIndices {
 				fmt.Fprintf(&commands, "add %s %s timeout %d\n", FQDNIPSetName(idx, true), a.AAAA.String(), ttl)
 			}

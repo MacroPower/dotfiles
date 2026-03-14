@@ -1757,6 +1757,31 @@ func TestResolveRules(t *testing.T) {
 			},
 			want: []sandbox.ResolvedRule{{Domain: "api.example.com"}},
 		},
+		"cross-domain L7 isolation": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+						ToPorts: []sandbox.PortRule{{
+							Ports: []sandbox.Port{{Port: "443"}},
+							Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+								{Method: "GET", Path: "/v1/"},
+							}},
+						}},
+					},
+					sandbox.EgressRule{
+						ToFQDNs: []sandbox.FQDNSelector{{MatchName: "cdn.example.com"}},
+						ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+					},
+				),
+			},
+			want: []sandbox.ResolvedRule{
+				{Domain: "api.example.com", HTTPRules: []sandbox.ResolvedHTTPRule{
+					{Method: "GET", Path: "/v1/"},
+				}},
+				{Domain: "cdn.example.com"},
+			},
+		},
 	}
 
 	for name, tt := range tests {

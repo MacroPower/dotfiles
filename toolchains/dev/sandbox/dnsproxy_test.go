@@ -1088,3 +1088,185 @@ func TestDNSProxyTCPForwardHosts(t *testing.T) {
 	require.NotNil(t, resp3)
 	assert.Equal(t, dns.RcodeRefused, resp3.Rcode)
 }
+
+// startCNAMEMockDNS starts a mock DNS server that returns a CNAME
+// chain followed by an A record. The CNAME has cnameTTL and the A
+// record has aTTL.
+func startCNAMEMockDNS(t *testing.T, cnameTTL, aTTL uint32) string {
+	t.Helper()
+
+	lc := net.ListenConfig{}
+
+	pc, err := lc.ListenPacket(t.Context(), "udp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	udpAddr, ok := pc.LocalAddr().(*net.UDPAddr)
+	require.True(t, ok)
+
+	tcpLn, err := lc.Listen(t.Context(), "tcp", fmt.Sprintf("127.0.0.1:%d", udpAddr.Port))
+	require.NoError(t, err)
+
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		resp := new(dns.Msg)
+		resp.SetReply(r)
+
+		resp.Answer = append(resp.Answer,
+			&dns.CNAME{
+				Hdr: dns.RR_Header{
+					Name:   r.Question[0].Name,
+					Rrtype: dns.TypeCNAME,
+					Class:  dns.ClassINET,
+					Ttl:    cnameTTL,
+				},
+				Target: "target.cdn.example.com.",
+			},
+			&dns.A{
+				Hdr: dns.RR_Header{
+					Name:   "target.cdn.example.com.",
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    aTTL,
+				},
+				A: net.ParseIP("10.99.0.1"),
+			},
+		)
+		assert.NoError(t, w.WriteMsg(resp))
+	})
+
+	udpSrv := &dns.Server{PacketConn: pc, Handler: handler}
+	tcpSrv := &dns.Server{Listener: tcpLn, Handler: handler}
+
+	udpReady := make(chan struct{})
+	tcpReady := make(chan struct{})
+
+	udpSrv.NotifyStartedFunc = func() { close(udpReady) }
+	tcpSrv.NotifyStartedFunc = func() { close(tcpReady) }
+
+	go func() {
+		err := udpSrv.ActivateAndServe()
+		if err != nil {
+			slog.Debug("mock dns udp server exited", slog.Any("err", err))
+		}
+	}()
+
+	go func() {
+		err := tcpSrv.ActivateAndServe()
+		if err != nil {
+			slog.Debug("mock dns tcp server exited", slog.Any("err", err))
+		}
+	}()
+
+	<-udpReady
+	<-tcpReady
+
+	t.Cleanup(func() {
+		assert.NoError(t, udpSrv.Shutdown())
+		assert.NoError(t, tcpSrv.Shutdown())
+	})
+
+	return fmt.Sprintf("127.0.0.1:%d", udpAddr.Port)
+}
+
+func TestDNSProxyCNAMEMinTTL(t *testing.T) {
+	t.Parallel()
+
+	// CNAME TTL=30, A TTL=300 -- ipset should use TTL=60
+	// (30 is below minIPSetTTL=60).
+	upstream := startCNAMEMockDNS(t, 30, 300)
+
+	var (
+		mu       sync.Mutex
+		recorded []string
+	)
+
+	cfg := &sandbox.SandboxConfig{
+		Egress: egressRules(sandbox.EgressRule{
+			ToFQDNs: []sandbox.FQDNSelector{{MatchName: "cname.example.com"}},
+			ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+		}),
+	}
+
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true,
+		sandbox.WithIPSetFunc(func(_ context.Context, commands string) error {
+			mu.Lock()
+			defer mu.Unlock()
+
+			recorded = append(recorded, commands)
+
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
+
+	client := &dns.Client{Net: "udp"}
+	msg := new(dns.Msg)
+	msg.SetQuestion("cname.example.com.", dns.TypeA)
+
+	resp, _, err := client.Exchange(msg, proxy.Addr)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, dns.RcodeSuccess, resp.Rcode)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	require.Len(t, recorded, 1)
+
+	// The minimum TTL across CNAME(30) and A(300) is 30, clamped
+	// to minIPSetTTL=60.
+	assert.Contains(t, recorded[0], "timeout 60")
+	assert.Contains(t, recorded[0], "10.99.0.1")
+}
+
+func TestDNSProxyCNAMEHigherTTLUsesATTL(t *testing.T) {
+	t.Parallel()
+
+	// CNAME TTL=300, A TTL=120 -- ipset should use TTL=120.
+	upstream := startCNAMEMockDNS(t, 300, 120)
+
+	var (
+		mu       sync.Mutex
+		recorded []string
+	)
+
+	cfg := &sandbox.SandboxConfig{
+		Egress: egressRules(sandbox.EgressRule{
+			ToFQDNs: []sandbox.FQDNSelector{{MatchName: "cname2.example.com"}},
+			ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443", Protocol: "UDP"}}}},
+		}),
+	}
+
+	proxy, err := sandbox.StartDNSProxy(t.Context(), cfg, upstream, "127.0.0.1:0", true,
+		sandbox.WithIPSetFunc(func(_ context.Context, commands string) error {
+			mu.Lock()
+			defer mu.Unlock()
+
+			recorded = append(recorded, commands)
+
+			return nil
+		}),
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { assert.NoError(t, proxy.Shutdown()) })
+
+	client := &dns.Client{Net: "udp"}
+	msg := new(dns.Msg)
+	msg.SetQuestion("cname2.example.com.", dns.TypeA)
+
+	resp, _, err := client.Exchange(msg, proxy.Addr)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, dns.RcodeSuccess, resp.Rcode)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	require.Len(t, recorded, 1)
+
+	// Minimum TTL is A(120), above minIPSetTTL so used directly.
+	assert.Contains(t, recorded[0], "timeout 120")
+	assert.Contains(t, recorded[0], "10.99.0.1")
+}
