@@ -247,12 +247,13 @@ type envoyHTTPDFPFilterConfig struct {
 }
 
 type envoyCluster struct {
-	ClusterType     *envoyClusterType     `yaml:"cluster_type,omitempty"`
-	TransportSocket *envoyTransportSocket `yaml:"transport_socket,omitempty"`
-	LoadAssignment  *envoyLoadAssignment  `yaml:"load_assignment,omitempty"`
-	Name            string                `yaml:"name"`
-	Type            string                `yaml:"type,omitempty"`
-	LBPolicy        string                `yaml:"lb_policy"`
+	ClusterType                   *envoyClusterType    `yaml:"cluster_type,omitempty"`
+	TransportSocket               *envoyTransportSocket `yaml:"transport_socket,omitempty"`
+	LoadAssignment                *envoyLoadAssignment  `yaml:"load_assignment,omitempty"`
+	TypedExtensionProtocolOptions map[string]any        `yaml:"typed_extension_protocol_options,omitempty"`
+	Name                          string                `yaml:"name"`
+	Type                          string                `yaml:"type,omitempty"`
+	LBPolicy                      string                `yaml:"lb_policy"`
 }
 
 type envoyClusterType struct {
@@ -264,6 +265,13 @@ type envoyClusterDFPConfig struct {
 	AtType         string              `yaml:"@type"`
 	DNSCacheConfig envoyDNSCacheConfig `yaml:"dns_cache_config"`
 }
+
+type envoyHttpProtocolOptions struct {
+	AtType                      string                           `yaml:"@type"`
+	UseDownstreamProtocolConfig envoyUseDownstreamProtocolConfig `yaml:"use_downstream_protocol_config"`
+}
+
+type envoyUseDownstreamProtocolConfig struct{}
 
 type envoyLoadAssignment struct {
 	ClusterName string          `yaml:"cluster_name"`
@@ -1011,6 +1019,12 @@ func buildClusters(rules []ResolvedRule, tcpForwards []TCPForward, caBundlePath 
 			TransportSocket: &envoyTransportSocket{
 				Name:        "envoy.transport_sockets.tls",
 				TypedConfig: upstreamTLS,
+			},
+			TypedExtensionProtocolOptions: map[string]any{
+				"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": envoyHttpProtocolOptions{
+					AtType:                      "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions",
+					UseDownstreamProtocolConfig: envoyUseDownstreamProtocolConfig{},
+				},
 			},
 		})
 	}

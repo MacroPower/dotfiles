@@ -168,6 +168,8 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"alpn_protocols",
 				"h2",
 				"http/1.1",
+				"use_downstream_protocol_config",
+				"HttpProtocolOptions",
 			},
 		},
 		"no MITM without certsDir": {
@@ -250,6 +252,8 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"/etc/sandbox/certs/api.example.com/cert.pem",
 				"mitm_api.example.com",
 				":method",
+				"use_downstream_protocol_config",
+				"HttpProtocolOptions",
 			},
 		},
 		"no method restriction has no method header": {
