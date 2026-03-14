@@ -792,6 +792,24 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"10.0.0.0",
 			},
 		},
+		"route actions have request timeout": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{{Path: "/v1/"}}},
+					}},
+				},
+				sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "cdn.example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}}}},
+				},
+			)},
+			want: []string{
+				"timeout: 3600s",
+			},
+		},
 	}
 
 	for name, tt := range tests {

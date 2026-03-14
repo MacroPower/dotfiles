@@ -241,6 +241,7 @@ type envoyRBACPrincipal struct {
 
 type envoyRouteAction struct {
 	Cluster         string `yaml:"cluster"`
+	Timeout         string `yaml:"timeout,omitempty"`
 	AutoHostRewrite bool   `yaml:"auto_host_rewrite"`
 }
 
@@ -781,6 +782,7 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) ([]envoyVirtual
 				Route: &envoyRouteAction{
 					Cluster:         cluster,
 					AutoHostRewrite: true,
+					Timeout:         "3600s",
 				},
 			})
 		}
@@ -810,6 +812,7 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) ([]envoyVirtual
 				Route: &envoyRouteAction{
 					Cluster:         cluster,
 					AutoHostRewrite: true,
+					Timeout:         "3600s",
 				},
 			}},
 		})
@@ -838,6 +841,7 @@ func buildHTTPForwardListener(rules []ResolvedRule, open bool, accessLog []envoy
 				Route: &envoyRouteAction{
 					Cluster:         "dynamic_forward_proxy_cluster",
 					AutoHostRewrite: true,
+					Timeout:         "3600s",
 				},
 			}},
 		})
