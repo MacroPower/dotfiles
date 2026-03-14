@@ -82,9 +82,18 @@ var (
 	// not a valid regular expression.
 	ErrHostInvalidRegex = errors.New("host must be a valid regex")
 
-	// ErrHTTPHeadersUnsupported is returned when an [HTTPRule] sets the
-	// headers field, which the sandbox does not implement.
-	ErrHTTPHeadersUnsupported = errors.New("HTTP headers field is not supported by the sandbox")
+	// ErrHTTPHeaderEmpty is returned when an [HTTPRule] Headers entry
+	// is an empty string.
+	ErrHTTPHeaderEmpty = errors.New("HTTP header name must not be empty")
+
+	// ErrHeaderMatchNameEmpty is returned when a [HeaderMatch] has an
+	// empty Name field.
+	ErrHeaderMatchNameEmpty = errors.New("headerMatch name must not be empty")
+
+	// ErrHeaderMatchMismatchAction is returned when a [HeaderMatch]
+	// sets a Mismatch action. The sandbox cannot enforce request
+	// modification semantics (LOG, ADD, DELETE, REPLACE).
+	ErrHeaderMatchMismatchAction = errors.New("headerMatch mismatch actions are not supported by the sandbox")
 
 	// ErrInvalidTCPForward is returned when a [TCPForward] entry has a
 	// non-positive port or empty host.
@@ -478,11 +487,17 @@ type L7Rules struct {
 	HTTP []HTTPRule `yaml:"http,omitempty"`
 }
 
-// HTTPRule specifies an allowed HTTP method and/or path regex.
+// HTTPRule specifies an allowed HTTP method, path, host, and/or
+// header constraints.
 type HTTPRule struct {
-	// Headers is present to catch YAML input; the sandbox does not
-	// support HTTP header matching and will reject configs that set it.
-	Headers any `yaml:"headers,omitempty"`
+	// Headers is a list of header names that must be present in the
+	// request (presence check). Each entry is a header field name;
+	// the value is not inspected.
+	Headers []string `yaml:"headers,omitempty"`
+	// HeaderMatches specifies header name/value constraints. The
+	// request must contain the named header with the specified value
+	// or it is denied.
+	HeaderMatches []HeaderMatch `yaml:"headerMatches,omitempty"`
 	// Method restricts the allowed HTTP method as an extended POSIX
 	// regex (e.g. "GET", "GET|POST").
 	Method string `yaml:"method,omitempty"`
@@ -494,6 +509,35 @@ type HTTPRule struct {
 	// ".*\\.example\\.com").
 	Host string `yaml:"host,omitempty"`
 }
+
+// HeaderMatch specifies a header name/value constraint. The request
+// header must have the specified value or the request is denied.
+//
+// Cilium also supports a Mismatch field (LOG, ADD, DELETE, REPLACE)
+// for request modification instead of denial. The sandbox rejects
+// configs that set Mismatch since it cannot enforce modification
+// semantics.
+type HeaderMatch struct {
+	// Mismatch defines the action when the header value does not
+	// match. The sandbox rejects any non-empty value.
+	Mismatch MismatchAction `yaml:"mismatch,omitempty"`
+	// Name is the header field name to match.
+	Name string `yaml:"name"`
+	// Value is the expected header value.
+	Value string `yaml:"value,omitempty"`
+}
+
+// MismatchAction defines what happens when a [HeaderMatch] value does
+// not match. The sandbox does not support mismatch actions and rejects
+// configs that set one.
+type MismatchAction string
+
+const (
+	MismatchLOG     MismatchAction = "LOG"
+	MismatchADD     MismatchAction = "ADD"
+	MismatchDELETE  MismatchAction = "DELETE"
+	MismatchREPLACE MismatchAction = "REPLACE"
+)
 
 // TCPForward maps a TCP port to a specific upstream host. Unlike egress
 // rules (which use TLS SNI or HTTP Host filtering against the domain
@@ -609,9 +653,11 @@ func (c *SandboxConfig) IsEgressBlocked() bool {
 // rules within a toPorts entry are OR'd -- each is an independent
 // match, not a cross-product.
 type ResolvedHTTPRule struct {
-	Method string // empty = any method
-	Path   string // empty = any path
-	Host   string // empty = any host
+	Method        string        // empty = any method
+	Path          string        // empty = any path
+	Host          string        // empty = any host
+	Headers       []string      // presence-check header names
+	HeaderMatches []HeaderMatch // name/value constraints (deny on mismatch)
 }
 
 // ResolvedRule bridges between the Cilium-shaped config and Envoy-shaped
@@ -1106,8 +1152,20 @@ func validateHTTPRules(pr PortRule, ruleIdx int) error {
 			}
 		}
 
-		if h.Headers != nil {
-			return fmt.Errorf("%w: rule %d", ErrHTTPHeadersUnsupported, ruleIdx)
+		for i, hdr := range h.Headers {
+			if hdr == "" {
+				return fmt.Errorf("%w: rule %d headers[%d]", ErrHTTPHeaderEmpty, ruleIdx, i)
+			}
+		}
+
+		for i, hm := range h.HeaderMatches {
+			if hm.Name == "" {
+				return fmt.Errorf("%w: rule %d headerMatches[%d]", ErrHeaderMatchNameEmpty, ruleIdx, i)
+			}
+			if hm.Mismatch != "" {
+				return fmt.Errorf("%w: rule %d headerMatches[%d] mismatch %q",
+					ErrHeaderMatchMismatchAction, ruleIdx, i, hm.Mismatch)
+			}
 		}
 
 		if h.Path != "" {
@@ -1360,7 +1418,13 @@ func matchRuleForPort(rule EgressRule, port int) (bool, bool, []ResolvedHTTPRule
 			}
 		} else {
 			for _, h := range pr.Rules.HTTP {
-				httpRules = append(httpRules, ResolvedHTTPRule{Method: h.Method, Path: h.Path, Host: h.Host})
+				httpRules = append(httpRules, ResolvedHTTPRule{
+					Method:        h.Method,
+					Path:          h.Path,
+					Host:          h.Host,
+					Headers:       h.Headers,
+					HeaderMatches: h.HeaderMatches,
+				})
 			}
 		}
 	}

@@ -198,8 +198,9 @@ type envoyRouteMatch struct {
 }
 
 type envoyHeaderMatcher struct {
-	StringMatch envoyStringMatch `yaml:"string_match"`
-	Name        string           `yaml:"name"`
+	StringMatch  *envoyStringMatch `yaml:"string_match,omitempty"`
+	Name         string            `yaml:"name"`
+	PresentMatch *bool             `yaml:"present_match,omitempty"`
 }
 
 type envoyStringMatch struct {
@@ -466,7 +467,7 @@ func buildWildcardHTTPRBACFilter(wildcardDomains, exactDomains []string) envoyFi
 		permissions = append(permissions, envoyRBACPermission{
 			Header: &envoyHeaderMatcher{
 				Name: ":authority",
-				StringMatch: envoyStringMatch{
+				StringMatch: &envoyStringMatch{
 					SafeRegex: &envoySafeRegex{
 						Regex: wildcardToHostRegex(d),
 					},
@@ -479,7 +480,7 @@ func buildWildcardHTTPRBACFilter(wildcardDomains, exactDomains []string) envoyFi
 		permissions = append(permissions, envoyRBACPermission{
 			Header: &envoyHeaderMatcher{
 				Name: ":authority",
-				StringMatch: envoyStringMatch{
+				StringMatch: &envoyStringMatch{
 					SafeRegex: &envoySafeRegex{
 						Regex: `^` + regexp.QuoteMeta(d) + `(:\d+)?$`,
 					},
@@ -753,6 +754,20 @@ func buildHTTPVirtualHosts(rules []ResolvedRule, cluster string) ([]envoyVirtual
 				match.Headers = append(match.Headers, buildHostHeaderMatcher(hr.Host)...)
 			}
 
+			for _, hdr := range hr.Headers {
+				match.Headers = append(match.Headers, envoyHeaderMatcher{
+					Name:         hdr,
+					PresentMatch: boolPtr(true),
+				})
+			}
+
+			for _, hm := range hr.HeaderMatches {
+				match.Headers = append(match.Headers, envoyHeaderMatcher{
+					Name:        hm.Name,
+					StringMatch: &envoyStringMatch{Exact: hm.Value},
+				})
+			}
+
 			routes = append(routes, envoyRoute{
 				Match: match,
 				Route: &envoyRouteAction{
@@ -923,10 +938,10 @@ func buildMethodHeaderMatcher(methods []string) []envoyHeaderMatcher {
 
 	hm := envoyHeaderMatcher{Name: ":method"}
 	if len(methods) == 1 {
-		hm.StringMatch = envoyStringMatch{SafeRegex: &envoySafeRegex{Regex: "^" + methods[0] + "$"}}
+		hm.StringMatch = &envoyStringMatch{SafeRegex: &envoySafeRegex{Regex: "^" + methods[0] + "$"}}
 	} else {
 		regex := "^(" + strings.Join(methods, "|") + ")$"
-		hm.StringMatch = envoyStringMatch{SafeRegex: &envoySafeRegex{Regex: regex}}
+		hm.StringMatch = &envoyStringMatch{SafeRegex: &envoySafeRegex{Regex: regex}}
 	}
 
 	return []envoyHeaderMatcher{hm}
@@ -950,7 +965,7 @@ func buildHostHeaderMatcher(host string) []envoyHeaderMatcher {
 
 	return []envoyHeaderMatcher{{
 		Name:        ":authority",
-		StringMatch: envoyStringMatch{SafeRegex: &envoySafeRegex{Regex: "^" + host + `(:[0-9]+)?$`}},
+		StringMatch: &envoyStringMatch{SafeRegex: &envoySafeRegex{Regex: "^" + host + `(:[0-9]+)?$`}},
 	}}
 }
 

@@ -712,6 +712,66 @@ func TestGenerateEnvoyConfig(t *testing.T) {
 				"UNESCAPE_AND_REDIRECT",
 			},
 		},
+		"headers presence check": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{{
+					Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
+					Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+						{Headers: []string{"X-Custom", "Authorization"}},
+					}},
+				}},
+			})},
+			certsDir: "/etc/sandbox/certs",
+			want: []string{
+				"restricted_api.example.com",
+				"present_match: true",
+				"name: X-Custom",
+				"name: Authorization",
+				"direct_response",
+				"403",
+			},
+		},
+		"headerMatches value check": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{{
+					Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
+					Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+						{HeaderMatches: []sandbox.HeaderMatch{{Name: "X-Token", Value: "secret"}}},
+					}},
+				}},
+			})},
+			certsDir: "/etc/sandbox/certs",
+			want: []string{
+				"restricted_api.example.com",
+				"name: X-Token",
+				"exact: secret",
+				"direct_response",
+				"403",
+			},
+			notWant: []string{"present_match"},
+		},
+		"headers combined with method and path": {
+			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
+				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+				ToPorts: []sandbox.PortRule{{
+					Ports: []sandbox.Port{{Port: "443"}, {Port: "80"}},
+					Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+						{Method: "GET", Path: "/v1/", Headers: []string{"X-Custom"}},
+					}},
+				}},
+			})},
+			certsDir: "/etc/sandbox/certs",
+			want: []string{
+				"restricted_api.example.com",
+				":method",
+				"regex: ^GET$",
+				"regex: /v1/",
+				"name: X-Custom",
+				"present_match: true",
+			},
+		},
 		"separate FQDN and CIDR generates Envoy for FQDN only": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(
 				sandbox.EgressRule{

@@ -1024,19 +1024,73 @@ func TestValidate(t *testing.T) {
 			},
 			err: sandbox.ErrHostInvalidRegex,
 		},
-		"HTTP headers field rejected": {
+		"HTTP headers valid": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
 					ToPorts: []sandbox.PortRule{{
 						Ports: []sandbox.Port{{Port: "443"}},
 						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
-							{Path: "/v1/", Headers: []string{"X-Custom: value"}},
+							{Path: "/v1/", Headers: []string{"X-Custom"}},
 						}},
 					}},
 				}),
 			},
-			err: sandbox.ErrHTTPHeadersUnsupported,
+		},
+		"HTTP headers empty name rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+							{Path: "/v1/", Headers: []string{""}},
+						}},
+					}},
+				}),
+			},
+			err: sandbox.ErrHTTPHeaderEmpty,
+		},
+		"headerMatches valid": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+							{HeaderMatches: []sandbox.HeaderMatch{{Name: "X-Token", Value: "secret"}}},
+						}},
+					}},
+				}),
+			},
+		},
+		"headerMatches empty name rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+							{HeaderMatches: []sandbox.HeaderMatch{{Name: ""}}},
+						}},
+					}},
+				}),
+			},
+			err: sandbox.ErrHeaderMatchNameEmpty,
+		},
+		"headerMatches mismatch action rejected": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "api.example.com"}},
+					ToPorts: []sandbox.PortRule{{
+						Ports: []sandbox.Port{{Port: "443"}},
+						Rules: &sandbox.L7Rules{HTTP: []sandbox.HTTPRule{
+							{HeaderMatches: []sandbox.HeaderMatch{{Name: "X-Token", Mismatch: sandbox.MismatchLOG}}},
+						}},
+					}},
+				}),
+			},
+			err: sandbox.ErrHeaderMatchMismatchAction,
 		},
 		"L7 on port 8443 valid": {
 			cfg: &sandbox.SandboxConfig{
