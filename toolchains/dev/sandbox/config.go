@@ -1983,8 +1983,9 @@ func (c *SandboxConfig) CompileFQDNPatterns() []FQDNPattern {
 
 // patternToAnchoredRegex converts an FQDN selector value into an
 // anchored regex that matches FQDN-form names (with trailing dot).
-// Follows Cilium's matchpattern.ToAnchoredRegexp with an extension
-// for the "**." prefix (multi-label depth matching).
+// Follows Cilium's matchpattern.ToAnchoredRegexp, including the
+// "**." prefix (multi-label depth matching via Cilium's
+// subdomainWildcardSpecifierPrefix in matchpattern.go).
 func patternToAnchoredRegex(pattern string, isMatchName bool) string {
 	if isMatchName {
 		escaped := strings.ReplaceAll(pattern, ".", "[.]")
