@@ -80,9 +80,12 @@ func GenerateIptablesRules(cfg *SandboxConfig) (string, string) {
 // that appear in all three iptables modes. INPUT rules act as Cilium's
 // ingress policy gate: loopback and reply traffic are allowed, all
 // unsolicited inbound traffic is dropped. OUTPUT rules allow loopback,
-// loopback CIDR, ESTABLISHED/RELATED traffic for non-sandboxed UIDs,
-// and root DNS queries.
-func writeBaseFilterRules(b *strings.Builder, loopbackCIDR string) {
+// loopback CIDR, ESTABLISHED traffic for non-sandboxed UIDs, per-type
+// ICMP RELATED matching Cilium's BPF conntrack set, and root DNS
+// queries. The ipv6 parameter selects the correct ICMP type set:
+// three IPv4 types (destination-unreachable, time-exceeded,
+// parameter-problem) or four ICMPv6 types (plus packet-too-big).
+func writeBaseFilterRules(b *strings.Builder, loopbackCIDR string, ipv6 bool) {
 	b.WriteString("*filter\n")
 	// INPUT: allow loopback and replies to outbound connections.
 	// Drop everything else (no exposed ports; matches Cilium's
@@ -93,13 +96,44 @@ func writeBaseFilterRules(b *strings.Builder, loopbackCIDR string) {
 	// OUTPUT: base rules shared by all modes.
 	b.WriteString("-A OUTPUT -o lo -j ACCEPT\n")
 	fmt.Fprintf(b, "-A OUTPUT -d %s -j ACCEPT\n", loopbackCIDR)
-	// ESTABLISHED,RELATED for non-sandboxed UIDs only. UID 1000 must
+	// ESTABLISHED for non-sandboxed UIDs only. UID 1000 must
 	// traverse per-UID rules; kernel-generated packets (no owner)
 	// still match due to ! negation semantics.
 	fmt.Fprintf(b,
-		"-A OUTPUT -m state --state ESTABLISHED,RELATED -m owner ! --uid-owner %s -j ACCEPT\n",
+		"-A OUTPUT -m state --state ESTABLISHED -m owner ! --uid-owner %s -j ACCEPT\n",
 		UID,
 	)
+	// ICMP error RELATED: per-type rules matching Cilium's BPF
+	// conntrack RELATED types. Not UID-scoped since ICMP errors
+	// are legitimate responses for all connections.
+	if ipv6 {
+		// ICMPv6 types: DEST_UNREACH (1), PKT_TOOBIG (2),
+		// TIME_EXCEED (3), PARAMPROB (4).
+		for _, icmpType := range []string{
+			"destination-unreachable",
+			"packet-too-big",
+			"time-exceeded",
+			"parameter-problem",
+		} {
+			fmt.Fprintf(b,
+				"-A OUTPUT -p icmpv6 --icmpv6-type %s "+
+					"-m state --state RELATED -j ACCEPT\n",
+				icmpType)
+		}
+	} else {
+		// IPv4 ICMP types: DEST_UNREACH (3), TIME_EXCEEDED (11),
+		// PARAMETERPROB (12).
+		for _, icmpType := range []string{
+			"destination-unreachable",
+			"time-exceeded",
+			"parameter-problem",
+		} {
+			fmt.Fprintf(b,
+				"-A OUTPUT -p icmp --icmp-type %s "+
+					"-m state --state RELATED -j ACCEPT\n",
+				icmpType)
+		}
+	}
 	b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p udp --dport 53 -j ACCEPT\n")
 	b.WriteString("-A OUTPUT -m owner --uid-owner 0 -p tcp --dport 53 -j ACCEPT\n")
 }
@@ -124,8 +158,8 @@ func generateUnrestrictedIptables(cfg *SandboxConfig) (string, string) {
 		b.WriteString("COMMIT\n")
 	}
 
-	writeFilter := func(b *strings.Builder, loopbackCIDR string) {
-		writeBaseFilterRules(b, loopbackCIDR)
+	writeFilter := func(b *strings.Builder, loopbackCIDR string, ipv6 bool) {
+		writeBaseFilterRules(b, loopbackCIDR, ipv6)
 
 		if cfg.Logging {
 			b.WriteString("-A OUTPUT -j LOG --log-prefix \"SANDBOX_ALLOW: \"\n")
@@ -138,8 +172,8 @@ func generateUnrestrictedIptables(cfg *SandboxConfig) (string, string) {
 	var nat4, filter4, nat6, filter6 strings.Builder
 	writeNat(&nat4)
 	writeNat(&nat6)
-	writeFilter(&filter4, "127.0.0.0/8")
-	writeFilter(&filter6, "::1/128")
+	writeFilter(&filter4, "127.0.0.0/8", false)
+	writeFilter(&filter6, "::1/128", true)
 
 	return nat4.String() + filter4.String(), nat6.String() + filter6.String()
 }
@@ -152,8 +186,8 @@ func generateBlockedIptables(cfg *SandboxConfig) (string, string) {
 		b.WriteString("COMMIT\n")
 	}
 
-	writeFilter := func(b *strings.Builder, loopbackCIDR string) {
-		writeBaseFilterRules(b, loopbackCIDR)
+	writeFilter := func(b *strings.Builder, loopbackCIDR string, ipv6 bool) {
+		writeBaseFilterRules(b, loopbackCIDR, ipv6)
 
 		if cfg.Logging {
 			b.WriteString("-A OUTPUT -j LOG --log-prefix \"SANDBOX_DROP: \"\n")
@@ -166,8 +200,8 @@ func generateBlockedIptables(cfg *SandboxConfig) (string, string) {
 	var nat4, filter4, nat6, filter6 strings.Builder
 	writeNat(&nat4)
 	writeNat(&nat6)
-	writeFilter(&filter4, "127.0.0.0/8")
-	writeFilter(&filter6, "::1/128")
+	writeFilter(&filter4, "127.0.0.0/8", false)
+	writeFilter(&filter6, "::1/128", true)
 
 	return nat4.String() + filter4.String(), nat6.String() + filter6.String()
 }
@@ -295,8 +329,8 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 		}
 	}
 
-	writeFilterRules := func(b *strings.Builder, loopbackCIDR, ipsetName string, cidrs []ResolvedCIDR, af string) {
-		writeBaseFilterRules(b, loopbackCIDR)
+	writeFilterRules := func(b *strings.Builder, loopbackCIDR, ipsetName string, cidrs []ResolvedCIDR, af string, ipv6 bool) {
+		writeBaseFilterRules(b, loopbackCIDR, ipv6)
 		if !unrestricted {
 			// Per-rule CIDR chains preserve OR semantics: each
 			// rule's excepts only block within that rule's chain.
@@ -371,8 +405,8 @@ func generateRulesIptables(cfg *SandboxConfig, defaultDeny bool) (string, string
 		b.WriteString("COMMIT\n")
 	}
 
-	writeFilterRules(&filter4, "127.0.0.0/8", IPSetFQDN4, cidr4, "4")
-	writeFilterRules(&filter6, "::1/128", IPSetFQDN6, cidr6, "6")
+	writeFilterRules(&filter4, "127.0.0.0/8", IPSetFQDN4, cidr4, "4", false)
+	writeFilterRules(&filter6, "::1/128", IPSetFQDN6, cidr6, "6", true)
 
 	return nat4.String() + filter4.String(), nat6.String() + filter6.String()
 }

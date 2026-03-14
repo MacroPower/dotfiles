@@ -783,7 +783,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-p udp --dport 3868",
 			},
 		},
-		"ESTABLISHED,RELATED excludes sandboxed UID": {
+		"ESTABLISHED excludes sandboxed UID": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(sandbox.EgressRule{
 					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
@@ -791,17 +791,72 @@ func TestGenerateIptablesRules(t *testing.T) {
 				}),
 			},
 			wantIPv4: []string{
-				"-A OUTPUT -m state --state ESTABLISHED,RELATED -m owner ! --uid-owner 1000 -j ACCEPT",
+				"-A OUTPUT -m state --state ESTABLISHED -m owner ! --uid-owner 1000 -j ACCEPT",
 			},
 			notWantIPv4: []string{
-				// Global ESTABLISHED,RELATED (without UID exclusion) must not appear.
-				"-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT",
+				// ESTABLISHED,RELATED must not appear in OUTPUT rules.
+				"-A OUTPUT -m state --state ESTABLISHED,RELATED",
 			},
 			wantIPv6: []string{
-				"-A OUTPUT -m state --state ESTABLISHED,RELATED -m owner ! --uid-owner 1000 -j ACCEPT",
+				"-A OUTPUT -m state --state ESTABLISHED -m owner ! --uid-owner 1000 -j ACCEPT",
 			},
 			notWantIPv6: []string{
-				"-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT",
+				"-A OUTPUT -m state --state ESTABLISHED,RELATED",
+			},
+		},
+		"ICMP error types accepted for IPv4": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			wantIPv4: []string{
+				"-A OUTPUT -m state --state ESTABLISHED -m owner ! --uid-owner 1000 -j ACCEPT",
+				"-A OUTPUT -p icmp --icmp-type destination-unreachable -m state --state RELATED -j ACCEPT",
+				"-A OUTPUT -p icmp --icmp-type time-exceeded -m state --state RELATED -j ACCEPT",
+				"-A OUTPUT -p icmp --icmp-type parameter-problem -m state --state RELATED -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				"-A OUTPUT -m state --state ESTABLISHED,RELATED",
+			},
+		},
+		"ICMPv6 error types accepted for IPv6": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
+					ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
+				}),
+			},
+			wantIPv6: []string{
+				"-A OUTPUT -m state --state ESTABLISHED -m owner ! --uid-owner 1000 -j ACCEPT",
+				"-A OUTPUT -p icmpv6 --icmpv6-type destination-unreachable -m state --state RELATED -j ACCEPT",
+				"-A OUTPUT -p icmpv6 --icmpv6-type packet-too-big -m state --state RELATED -j ACCEPT",
+				"-A OUTPUT -p icmpv6 --icmpv6-type time-exceeded -m state --state RELATED -j ACCEPT",
+				"-A OUTPUT -p icmpv6 --icmpv6-type parameter-problem -m state --state RELATED -j ACCEPT",
+			},
+			notWantIPv6: []string{
+				"-A OUTPUT -m state --state ESTABLISHED,RELATED",
+			},
+		},
+		"blocked mode has ICMP error rules": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{}),
+			},
+			wantIPv4: []string{
+				"-A OUTPUT -p icmp --icmp-type destination-unreachable -m state --state RELATED -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				"-A OUTPUT -m state --state ESTABLISHED,RELATED",
+			},
+		},
+		"unrestricted mode has ICMP error rules": {
+			cfg: &sandbox.SandboxConfig{},
+			wantIPv4: []string{
+				"-A OUTPUT -p icmp --icmp-type destination-unreachable -m state --state RELATED -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				"-A OUTPUT -m state --state ESTABLISHED,RELATED",
 			},
 		},
 		"INPUT chain drops unsolicited inbound": {
