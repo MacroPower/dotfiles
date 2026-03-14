@@ -188,7 +188,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 53 -d 8.8.8.0/24 -j ACCEPT",
 				"-A CIDR_4_0 -m owner --uid-owner 1000 -p udp --dport 53 -d 8.8.8.0/24 -j ACCEPT",
 			},
-			notWantIPv4: []string{"-m multiport"},
+			notWantIPv4: []string{"-m multiport", "-p sctp"},
 		},
 		"mixed TCP/UDP ports": {
 			cfg: &sandbox.SandboxConfig{
@@ -218,6 +218,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 8000:9000 -d 8.8.8.0/24 -j ACCEPT",
 				"-A CIDR_4_0 -m owner --uid-owner 1000 -p udp --dport 8000:9000 -d 8.8.8.0/24 -j ACCEPT",
 			},
+			notWantIPv4: []string{"-p sctp"},
 		},
 		"port-scoped CIDR rules": {
 			cfg: &sandbox.SandboxConfig{
@@ -234,6 +235,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-A CIDR_4_0 -m owner --uid-owner 1000 -p tcp --dport 443 -d 8.8.8.0/24 -j ACCEPT",
 				"-A CIDR_4_0 -m owner --uid-owner 1000 -p udp --dport 443 -d 8.8.8.0/24 -j ACCEPT",
 			},
+			notWantIPv4: []string{"-p sctp"},
 		},
 		"port-scoped CIDR with except": {
 			cfg: &sandbox.SandboxConfig{
@@ -255,6 +257,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 			},
 			notWantIPv4: []string{
 				"-d 10.0.0.0/8 -j DROP",
+				"-p sctp",
 			},
 		},
 		"CIDR RETURN comes before REDIRECT in NAT": {
@@ -357,7 +360,7 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 5353 -j ACCEPT",
 			},
 		},
-		"open ANY port gets redirect and UDP+SCTP ACCEPT": {
+		"open ANY port gets redirect and UDP ACCEPT": {
 			cfg: &sandbox.SandboxConfig{
 				Egress: egressRules(
 					sandbox.EgressRule{
@@ -372,9 +375,8 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"--to-port 23080",
 				// UDP gets direct ACCEPT.
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 8080 -j ACCEPT",
-				// SCTP gets direct ACCEPT.
-				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 8080 -j ACCEPT",
 			},
+			notWantIPv4: []string{"-p sctp"},
 		},
 		"open SCTP port gets ACCEPT": {
 			cfg: &sandbox.SandboxConfig{
@@ -477,14 +479,14 @@ func TestGenerateIptablesRules(t *testing.T) {
 			wantIPv4: []string{
 				// TCP handled by Envoy via REDIRECT.
 				"--to-port 15443",
-				// UDP and SCTP handled by ipset.
-				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 443 -m set --match-set sandbox_fqdn4 dst -j ACCEPT",
+				// UDP handled by ipset.
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn4 dst -j ACCEPT",
 			},
+			notWantIPv4: []string{"-p sctp"},
 			wantIPv6: []string{
-				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 443 -m set --match-set sandbox_fqdn6 dst -j ACCEPT",
 				"-A OUTPUT -m owner --uid-owner 1000 -p udp --dport 443 -m set --match-set sandbox_fqdn6 dst -j ACCEPT",
 			},
+			notWantIPv6:        []string{"-p sctp"},
 			wantRedirectCount4: 1,
 		},
 		"FQDN non-TCP skipped when unrestricted open ports": {
@@ -764,6 +766,22 @@ func TestGenerateIptablesRules(t *testing.T) {
 				"--to-port 23000",
 			},
 			wantRedirectCount4: 1,
+		},
+		"explicit SCTP CIDR still works": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "8.8.8.0/24"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "3868", Protocol: "SCTP"}}}},
+				}),
+			},
+			wantIPv4: []string{
+				"-A OUTPUT -m owner --uid-owner 1000 -p sctp --dport 3868 -d 8.8.8.0/24 -j RETURN",
+				"-A CIDR_4_0 -m owner --uid-owner 1000 -p sctp --dport 3868 -d 8.8.8.0/24 -j ACCEPT",
+			},
+			notWantIPv4: []string{
+				"-p tcp --dport 3868",
+				"-p udp --dport 3868",
+			},
 		},
 		"FQDN REDIRECT coexists with open-port TCP range ACCEPT": {
 			cfg: &sandbox.SandboxConfig{

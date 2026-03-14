@@ -2191,7 +2191,6 @@ func TestResolveOpenPortRules(t *testing.T) {
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080", Protocol: "ANY"}}}},
 			})},
 			want: []sandbox.ResolvedOpenPort{
-				{Port: 8080, Protocol: "sctp"},
 				{Port: 8080, Protocol: "tcp"},
 				{Port: 8080, Protocol: "udp"},
 			},
@@ -2201,7 +2200,6 @@ func TestResolveOpenPortRules(t *testing.T) {
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8080"}}}},
 			})},
 			want: []sandbox.ResolvedOpenPort{
-				{Port: 8080, Protocol: "sctp"},
 				{Port: 8080, Protocol: "tcp"},
 				{Port: 8080, Protocol: "udp"},
 			},
@@ -2233,7 +2231,6 @@ func TestResolveOpenPortRules(t *testing.T) {
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "8000", EndPort: 9000}}}},
 			})},
 			want: []sandbox.ResolvedOpenPort{
-				{Port: 8000, EndPort: 9000, Protocol: "sctp"},
 				{Port: 8000, EndPort: 9000, Protocol: "tcp"},
 				{Port: 8000, EndPort: 9000, Protocol: "udp"},
 			},
@@ -2353,13 +2350,12 @@ func TestResolveFQDNNonTCPPorts(t *testing.T) {
 			})},
 			want: []sandbox.ResolvedOpenPort{{Port: 3868, Protocol: "sctp"}},
 		},
-		"FQDN ANY port expands to udp and sctp": {
+		"FQDN ANY port expands to udp": {
 			cfg: &sandbox.SandboxConfig{Egress: egressRules(sandbox.EgressRule{
 				ToFQDNs: []sandbox.FQDNSelector{{MatchName: "example.com"}},
 				ToPorts: []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "443"}}}},
 			})},
 			want: []sandbox.ResolvedOpenPort{
-				{Port: 443, Protocol: "sctp"},
 				{Port: 443, Protocol: "udp"},
 			},
 		},
@@ -2717,10 +2713,8 @@ func TestResolveCIDRRules(t *testing.T) {
 			},
 			wantIPv4: []sandbox.ResolvedCIDR{
 				{CIDR: "8.8.8.0/24", Ports: []sandbox.ResolvedPortProto{
-					{Port: 80, Protocol: "sctp"},
 					{Port: 80, Protocol: "tcp"},
 					{Port: 80, Protocol: "udp"},
-					{Port: 443, Protocol: "sctp"},
 					{Port: 443, Protocol: "tcp"},
 					{Port: 443, Protocol: "udp"},
 				}},
@@ -2762,12 +2756,10 @@ func TestResolveCIDRRules(t *testing.T) {
 			},
 			wantIPv4: []sandbox.ResolvedCIDR{
 				{CIDR: "8.8.8.0/24", Ports: []sandbox.ResolvedPortProto{
-					{Port: 53, Protocol: "sctp"},
 					{Port: 53, Protocol: "tcp"},
 					{Port: 53, Protocol: "udp"},
 				}, RuleIndex: 0},
 				{CIDR: "1.1.1.0/24", Ports: []sandbox.ResolvedPortProto{
-					{Port: 443, Protocol: "sctp"},
 					{Port: 443, Protocol: "tcp"},
 					{Port: 443, Protocol: "udp"},
 				}, RuleIndex: 1},
@@ -2829,7 +2821,6 @@ func TestResolveCIDRRules(t *testing.T) {
 			},
 			wantIPv4: []sandbox.ResolvedCIDR{
 				{CIDR: "8.8.8.0/24", Ports: []sandbox.ResolvedPortProto{
-					{Port: 53, Protocol: "sctp"},
 					{Port: 53, Protocol: "tcp"},
 					{Port: 53, Protocol: "udp"},
 				}},
@@ -2844,7 +2835,6 @@ func TestResolveCIDRRules(t *testing.T) {
 			},
 			wantIPv4: []sandbox.ResolvedCIDR{
 				{CIDR: "8.8.8.0/24", Ports: []sandbox.ResolvedPortProto{
-					{Port: 8000, EndPort: 9000, Protocol: "sctp"},
 					{Port: 8000, EndPort: 9000, Protocol: "tcp"},
 					{Port: 8000, EndPort: 9000, Protocol: "udp"},
 				}},
@@ -2875,7 +2865,6 @@ func TestResolveCIDRRules(t *testing.T) {
 			},
 			wantIPv4: []sandbox.ResolvedCIDR{
 				{CIDR: "10.0.0.0/8", Ports: []sandbox.ResolvedPortProto{
-					{Port: 443, Protocol: "sctp"},
 					{Port: 443, Protocol: "tcp"},
 					{Port: 443, Protocol: "udp"},
 				}, RuleIndex: 0},
@@ -2890,6 +2879,33 @@ func TestResolveCIDRRules(t *testing.T) {
 			},
 			wantIPv4: []sandbox.ResolvedCIDR{
 				{CIDR: "10.0.0.0/8"},
+			},
+		},
+		"ANY omits SCTP": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "8.8.8.0/24"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "53"}}}},
+				}),
+			},
+			wantIPv4: []sandbox.ResolvedCIDR{
+				{CIDR: "8.8.8.0/24", Ports: []sandbox.ResolvedPortProto{
+					{Port: 53, Protocol: "tcp"},
+					{Port: 53, Protocol: "udp"},
+				}},
+			},
+		},
+		"explicit SCTP preserved": {
+			cfg: &sandbox.SandboxConfig{
+				Egress: egressRules(sandbox.EgressRule{
+					ToCIDRSet: []sandbox.CIDRRule{{CIDR: "8.8.8.0/24"}},
+					ToPorts:   []sandbox.PortRule{{Ports: []sandbox.Port{{Port: "3868", Protocol: "SCTP"}}}},
+				}),
+			},
+			wantIPv4: []sandbox.ResolvedCIDR{
+				{CIDR: "8.8.8.0/24", Ports: []sandbox.ResolvedPortProto{
+					{Port: 3868, Protocol: "sctp"},
+				}},
 			},
 		},
 		"bare IPv4 toCIDR normalizes to /32": {

@@ -7,9 +7,10 @@ import (
 
 // formatPortProto formats a [ResolvedPortProto] as iptables flags.
 // Protocol must be non-empty ("tcp", "udp", or "sctp"); ANY protocol
-// entries are expanded into separate tcp/udp/sctp entries by
-// [ResolveCIDRRules] before reaching this function. SCTP requires the
-// xt_sctp kernel module.
+// entries are expanded into separate tcp/udp entries by
+// [ResolveCIDRRules] before reaching this function. SCTP rules are
+// only generated when explicitly specified (not from ANY expansion),
+// matching Cilium's default behavior where SCTP requires opt-in.
 func formatPortProto(pp ResolvedPortProto) string {
 	if pp.Protocol == "" {
 		panic("formatPortProto called with empty protocol; ANY must be expanded to tcp+udp before calling")

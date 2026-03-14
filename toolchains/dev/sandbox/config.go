@@ -54,8 +54,9 @@ var (
 	// protocol. Valid values are TCP, UDP, SCTP, ANY, or empty (defaults
 	// to ANY).
 	//
-	// Cilium's ANY matches TCP, UDP, and SCTP; the sandbox follows
-	// this by expanding ANY into all three protocols where applicable.
+	// Under Cilium's default configuration, ANY expands to TCP and UDP.
+	// SCTP requires explicit opt-in (Cilium Helm value sctp.enabled=true);
+	// the sandbox matches this default by expanding ANY to TCP+UDP only.
 	ErrProtocolInvalid = errors.New("invalid protocol: must be TCP, UDP, SCTP, ANY, or empty")
 
 	// ErrEndPortInvalid is returned when a [Port] has an endPort that
@@ -1666,7 +1667,7 @@ func (c *SandboxConfig) HasUnrestrictedOpenPorts() bool {
 // ResolveOpenPortRules returns resolved open port entries from rules
 // that have toPorts but neither toFQDNs nor toCIDRSet. These ports
 // allow all destinations (passthrough without domain filtering). ANY
-// protocol is expanded into separate tcp, udp, and sctp entries.
+// protocol is expanded into separate tcp and udp entries.
 func (c *SandboxConfig) ResolveOpenPortRules() []ResolvedOpenPort {
 	seen := make(map[string]bool)
 
@@ -1687,7 +1688,7 @@ func (c *SandboxConfig) ResolveOpenPortRules() []ResolvedOpenPort {
 				proto := normalizeProtocol(p.Protocol)
 				protos := []string{proto}
 				if proto == "" {
-					protos = []string{protoTCP, protoUDP, protoSCTP}
+					protos = []string{protoTCP, protoUDP}
 				}
 
 				for _, pr := range protos {
@@ -1735,13 +1736,13 @@ func (c *SandboxConfig) ResolveOpenPorts() []int {
 	return result
 }
 
-// ResolveFQDNNonTCPPorts returns resolved UDP and SCTP port entries
-// from FQDN rules. These ports cannot use Envoy (TCP-only) and are
-// instead enforced via ipset-backed iptables rules that restrict
-// traffic to DNS-resolved IPs. ANY protocol is expanded into udp and
-// sctp entries (TCP is handled by [ResolvePorts] + Envoy). Returns
-// nil when egress is unrestricted, blocked, or has no FQDN rules
-// with non-TCP ports.
+// ResolveFQDNNonTCPPorts returns resolved UDP port entries from FQDN
+// rules. These ports cannot use Envoy (TCP-only) and are instead
+// enforced via ipset-backed iptables rules that restrict traffic to
+// DNS-resolved IPs. ANY protocol is expanded into udp entries (TCP is
+// handled by [ResolvePorts] + Envoy; SCTP requires explicit opt-in).
+// Returns nil when egress is unrestricted, blocked, or has no FQDN
+// rules with non-TCP ports.
 func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []ResolvedOpenPort {
 	if c.IsEgressUnrestricted() {
 		return nil
@@ -1781,7 +1782,8 @@ func (c *SandboxConfig) ResolveFQDNNonTCPPorts() []ResolvedOpenPort {
 					protos = []string{proto}
 				case "":
 					// ANY: expand to non-TCP protocols only.
-					protos = []string{protoUDP, protoSCTP}
+					// SCTP requires explicit opt-in (Cilium: sctp.enabled=true).
+					protos = []string{protoUDP}
 				}
 
 				for _, pr := range protos {
@@ -1820,8 +1822,10 @@ func (c *SandboxConfig) HasFQDNNonTCPPorts() bool {
 // normalizeProtocol converts a config-level protocol string to the
 // lowercase form used in iptables rules. "TCP" maps to "tcp", "UDP"
 // to "udp", "SCTP" to "sctp", and empty or "ANY" to "" (any
-// protocol). Under Cilium semantics, an omitted protocol means all
-// protocols (TCP, UDP, and SCTP).
+// protocol). Under Cilium default semantics, an omitted protocol
+// means TCP and UDP. SCTP requires explicit opt-in (Cilium Helm
+// value sctp.enabled=true); the sandbox matches this default by
+// expanding ANY to TCP+UDP only.
 func normalizeProtocol(proto string) string {
 	switch proto {
 	case "TCP":
@@ -1912,12 +1916,12 @@ func resolvePortsFromRule(rule EgressRule) []ResolvedPortProto {
 
 			n := int(resolved)
 			proto := normalizeProtocol(p.Protocol)
-			// Expand ANY protocol into separate tcp, udp, and sctp
-			// entries so formatPortProto always has a concrete
-			// protocol for port-scoped rules.
+			// Expand ANY protocol into separate tcp and udp entries
+			// so formatPortProto always has a concrete protocol
+			// for port-scoped rules. SCTP requires explicit opt-in.
 			protos := []string{proto}
 			if proto == "" {
-				protos = []string{protoTCP, protoUDP, protoSCTP}
+				protos = []string{protoTCP, protoUDP}
 			}
 
 			for _, expandedProto := range protos {
