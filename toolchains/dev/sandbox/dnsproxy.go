@@ -527,6 +527,18 @@ func (p *DNSProxy) handleQuery(w dns.ResponseWriter, r *dns.Msg, proto string) {
 		)
 	}
 
+	// Compress oversized UDP responses to avoid unnecessary TCP
+	// retries. Matches Cilium's shouldCompressResponse logic:
+	// inspect EDNS0 UDPSize() (or 512 bytes when absent).
+	if proto == "udp" {
+		edns := r.IsEdns0()
+		respLen := resp.Len()
+
+		if (edns != nil && respLen > int(edns.UDPSize())) || respLen > 512 {
+			resp.Compress = true
+		}
+	}
+
 	err = w.WriteMsg(resp)
 	if err != nil {
 		slog.Warn("writing dns response", slog.Any("err", err))
