@@ -10,6 +10,14 @@ let
   cfg = config.dotfiles.claude;
   skipPerms = cfg.dangerouslySkipPermissions;
 
+  rtkConfig = (pkgs.formats.toml { }).generate "config.toml" {
+    display = {
+      colors = false;
+      emoji = false;
+      max_width = 120;
+    };
+  };
+
   # Wrapper script that reads the KAGI_API_KEY from sops at runtime
   kagiWrapper = pkgs.writeShellScript "kagi-mcp-wrapper" ''
     export KAGI_API_KEY="$(cat ${config.sops.secrets.kagi_api_key.path} 2>/dev/null || true)"
@@ -181,7 +189,10 @@ in
       };
     };
 
-    xdg.configFile."ccstatusline/settings.json".source = ../configs/ccstatusline/settings.json;
+    xdg.configFile = {
+      "ccstatusline/settings.json".source = ../configs/ccstatusline/settings.json;
+      "rtk/config.toml".source = rtkConfig;
+    };
 
     home = {
       packages = [
