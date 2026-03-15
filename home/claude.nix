@@ -41,14 +41,6 @@ in
       mcp = {
         enable = true;
         servers = {
-          context7 = {
-            type = "stdio";
-            command = "npx";
-            args = [
-              "-y"
-              "@upstash/context7-mcp"
-            ];
-          };
           fetch = {
             type = "stdio";
             command = "${pkgs.uv}/bin/uvx";
@@ -198,7 +190,6 @@ in
 
         - Use `mcp__kagi__kagi_search_fetch` for web searches.
         - Use `mcp__fetch__fetch` for fetching known URLs and web page content.
-        - Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs` for documentation and examples.
         - Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)
 
         Remember: Do research, don't guess.

@@ -49,8 +49,6 @@ const defaultConfig = `egress:
       - matchPattern: "*.anthropic.com"
       - matchName: "kagi.com"
       - matchPattern: "*.kagi.com"
-      - matchName: "context7.com"
-      - matchPattern: "*.context7.com"
       - matchName: "github.com"
       - matchPattern: "*.github.com"
       - matchName: "githubusercontent.com"
