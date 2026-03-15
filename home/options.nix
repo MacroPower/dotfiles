@@ -39,11 +39,6 @@ in
         default = "";
         description = "Extra fish interactive shell init commands.";
       };
-      extraTideConfig = mkOption {
-        type = types.lines;
-        default = "";
-        description = "Extra Tide prompt configuration.";
-      };
     };
 
     extraHomePackages = mkOption {

@@ -28,10 +28,6 @@ inputs.nixpkgs.lib.nixosSystem {
         dotfiles = {
           inherit username;
           homeDirectory = "/home/${username}";
-          shell.extraTideConfig = ''
-            set -g tide_left_prompt_items os $tide_left_prompt_items
-            set -g tide_os_icon \ue843
-          '';
         };
       };
     }

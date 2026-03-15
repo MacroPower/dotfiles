@@ -96,10 +96,6 @@ inputs.nix-darwin.lib.darwinSystem {
                 # OrbStack integration
                 source ~/.orbstack/shell/init2.fish 2>/dev/null || :
               '';
-              extraTideConfig = ''
-                set -g tide_left_prompt_items os $tide_left_prompt_items
-                set -g tide_os_icon \ue711
-              '';
             };
             vscode.extraKubernetesSettings = {
               "vscode-kubernetes.helm-path.mac" = "/opt/homebrew/bin/helm";

@@ -6,112 +6,492 @@
 }:
 
 let
-  tideSrc = pkgs.fishPlugins.tide.src;
   inherit (config.lib.stylix) colors;
-
-  # Transform Tide preset file lines ("varname value") into fish
-  # "set -g varname value" commands at Nix build time.
-  toSetG =
-    file:
-    let
-      lines = lib.splitString "\n" (builtins.readFile file);
-      nonEmpty = builtins.filter (l: l != "") lines;
-    in
-    builtins.concatStringsSep "\n" (map (l: "set -g " + l) nonEmpty);
+  # Produce a Nerd Font glyph from a hex codepoint via JSON unicode escape.
+  # Use nf for BMP (4-digit) codepoints; nf2 for supplementary (surrogate pair).
+  nf = code: builtins.fromJSON ''"\u${code}"'';
+  nf2 = hi: lo: builtins.fromJSON ''"\u${hi}\u${lo}"'';
 in
 {
-  # Tide prompt config: generated at build time from Tide's own lean
-  # preset and icon files, with a small set of overrides. The 00- prefix
-  # ensures this loads before Tide's _tide_init.fish in conf.d.
-  xdg.configFile."fish/conf.d/00-tide-config.fish".text = ''
-    # Tide internal color aliases (OneDark via stylix)
-    set -g _tide_color_dark_blue ${colors.base0D}    # blue
-    set -g _tide_color_dark_green ${colors.base0B}   # green
-    set -g _tide_color_gold ${colors.base0A}         # yellow
-    set -g _tide_color_green ${colors.base0B}        # green
-    set -g _tide_color_light_blue ${colors.base0D}   # blue
-
-    # Tide lean preset (auto-generated from plugin source)
-    ${toSetG "${tideSrc}/functions/tide/configure/icons.fish"}
-    ${toSetG "${tideSrc}/functions/tide/configure/configs/lean.fish"}
-
-    # Ensure default key bindings during first render
-    set -g fish_key_bindings fish_default_key_bindings
-
-    # Overrides on top of lean defaults
-    set -g tide_right_prompt_items $tide_right_prompt_items time
-    set -g tide_prompt_add_newline_before false
-    set -g tide_prompt_icon_connection \u00b7
-    set -g tide_time_format %r
-
-    # ── OneDark color overrides (stylix palette) ─────────────────────
-
-    # Character prompt
-    set -g tide_character_color_failure ${colors.base08}   # red
-
-    # Git
-    set -g tide_git_color_conflicted ${colors.base08}       # red
-    set -g tide_git_color_operation ${colors.base08}        # red
-
-    # PWD
-    set -g tide_pwd_color_truncated_dirs ${colors.base0C}   # cyan
-
-    # Prompt chrome
-    set -g tide_prompt_color_frame_and_connection ${colors.base03}   # muted gray
-    set -g tide_prompt_color_separator_same_color ${colors.base04}   # dark foreground
-
-    # Context (user@host)
-    set -g tide_context_color_default ${colors.base09}   # orange
-    set -g tide_context_color_ssh ${colors.base09}       # orange
-
-    # Status & duration
-    set -g tide_status_color_failure ${colors.base08}   # red
-    set -g tide_cmd_duration_color ${colors.base0A}     # yellow
-
-    # Time, shell level
-    set -g tide_time_color ${colors.base04}    # dark foreground
-    set -g tide_shlvl_color ${colors.base09}   # orange
-
-    # Direnv
-    set -g tide_direnv_color_denied ${colors.base08}   # red
-
-    # Tool indicators
-    set -g tide_aws_color ${colors.base09}            # orange
-    set -g tide_bun_color ${colors.base0A}            # yellow
-    set -g tide_crystal_color ${colors.base06}        # light foreground
-    set -g tide_distrobox_color ${colors.base0E}      # purple
-    set -g tide_docker_color ${colors.base0D}         # blue
-    set -g tide_elixir_color ${colors.base0E}         # purple
-    set -g tide_gcloud_color ${colors.base0D}         # blue
-    set -g tide_go_color ${colors.base0C}             # cyan
-    set -g tide_java_color ${colors.base09}           # orange
-    set -g tide_kubectl_color ${colors.base0D}        # blue
-    set -g tide_nix_shell_color ${colors.base0D}      # blue
-    set -g tide_node_color ${colors.base0B}           # green
-    set -g tide_os_color ${colors.base05}             # foreground
-    set -g tide_php_color ${colors.base0D}            # blue
-    set -g tide_private_mode_color ${colors.base06}   # light foreground
-    set -g tide_pulumi_color ${colors.base0A}         # yellow
-    set -g tide_python_color ${colors.base0C}         # cyan
-    set -g tide_ruby_color ${colors.base08}           # red
-    set -g tide_rustc_color ${colors.base0F}          # dark red
-    set -g tide_terraform_color ${colors.base0E}      # purple
-    set -g tide_toolbox_color ${colors.base0E}        # purple
-    set -g tide_zig_color ${colors.base0A}            # yellow
-
-    # Vi mode
-    set -g tide_vi_mode_color_default ${colors.base04}   # dark foreground
-    set -g tide_vi_mode_color_insert ${colors.base0B}    # green
-    set -g tide_vi_mode_color_replace ${colors.base09}   # orange
-    set -g tide_vi_mode_color_visual ${colors.base0E}    # purple
-
-    # Fix low-contrast base16-fish colors using stylix palette
-    set -g fish_color_param ${colors.base05}    # foreground
-    set -g fish_color_end ${colors.base0E}      # purple
-
-    # Per-host overrides
-    ${config.dotfiles.shell.extraTideConfig}
+  # Fix low-contrast base16-fish colors using stylix palette
+  xdg.configFile."fish/conf.d/00-color-fixes.fish".text = ''
+    set -g fish_color_param ${colors.base05}
+    set -g fish_color_end ${colors.base0E}
   '';
+
+  programs.starship = {
+    enable = true;
+    enableTransience = true;
+
+    settings = {
+      add_newline = false;
+
+      format = lib.concatStrings [
+        "$os"
+        "$container"
+        "$directory"
+        "$git_branch"
+        "$git_state"
+        "$git_status"
+        "$git_metrics"
+        "$fill"
+        "$status"
+        "$cmd_duration"
+        "$shlvl"
+        "$jobs"
+        "$kubernetes"
+        "$docker_context"
+        "$nix_shell"
+        "$direnv"
+        "$golang"
+        "$nodejs"
+        "$python"
+        "$ruby"
+        "$rust"
+        "$terraform"
+        "$aws"
+        "$azure"
+        "$gcloud"
+        "$java"
+        "$zig"
+        "$elixir"
+        "$php"
+        "$bun"
+        "$crystal"
+        "$lua"
+        "$pulumi"
+        "$username"
+        "$hostname"
+        "$time"
+        "$line_break"
+        "$character"
+      ];
+
+      character = {
+        success_symbol = "[❯](bold #${colors.base0B})";
+        error_symbol = "[❯](bold #${colors.base08})";
+      };
+
+      directory = {
+        style = "bold #${colors.base0D}";
+        truncation_symbol = "/.../";
+        read_only = " ${nf2 "DB80" "DF3E"}";
+      };
+
+      git_branch = {
+        style = "#${colors.base0B}";
+        format = "[${nf "f418"} $branch(:$remote_branch)]($style) ";
+      };
+      git_status = {
+        format = lib.concatStrings [
+          "[$ahead_behind](#${colors.base0C})"
+          "[$conflicted](#${colors.base08})"
+          "[$stashed](#${colors.base0E})"
+          "[$deleted](#${colors.base08})"
+          "[$renamed](#${colors.base0E})"
+          "[$modified](#${colors.base0A})"
+          "[$staged](#${colors.base0B})"
+          "[$untracked](#${colors.base04})"
+        ];
+        ahead = "⇡$count ";
+        behind = "⇣$count ";
+        diverged = "⇕⇡$ahead_count⇣$behind_count ";
+        conflicted = "=$count ";
+        stashed = "\\$$count ";
+        deleted = "✘$count ";
+        renamed = "»$count ";
+        modified = "*$count ";
+        staged = "+$count ";
+        untracked = "?$count ";
+      };
+      git_commit.tag_symbol = " ${nf "f412"} ";
+      git_state.style = "#${colors.base08}";
+      git_metrics = {
+        disabled = false;
+        added_style = "#${colors.base0B}";
+        deleted_style = "#${colors.base08}";
+      };
+
+      fill = {
+        symbol = nf "00b7";
+        style = "#${colors.base02}";
+      };
+
+      status = {
+        disabled = false;
+        style = "#${colors.base08}";
+        symbol = "${nf "f467"} ";
+        format = " [$status]($style)";
+      };
+
+      cmd_duration = {
+        style = "#${colors.base0A}";
+        min_time = 2000;
+        format = " [${nf2 "DB86" "DD9F"} $duration]($style)";
+      };
+
+      shlvl = {
+        disabled = false;
+        style = "#${colors.base09}";
+        threshold = 2;
+        symbol = "${nf "f120"} ";
+        format = " [$symbol$shlvl]($style)";
+      };
+
+      jobs = {
+        style = "#${colors.base0D}";
+        symbol = "${nf "f013"} ";
+        format = " [$symbol$number]($style)";
+      };
+
+      time = {
+        disabled = false;
+        style = "#${colors.base04}";
+        format = " [$time]($style)";
+        time_format = "%r";
+      };
+
+      username = {
+        style_user = "#${colors.base09}";
+        style_root = "bold #${colors.base08}";
+        show_always = false;
+        format = " [$user]($style)";
+      };
+
+      hostname = {
+        style = "#${colors.base09}";
+        ssh_only = true;
+        ssh_symbol = "${nf "eb01"} ";
+        format = "[@$hostname]($style)";
+      };
+
+      # Tool indicators (nerd font symbols, no "via" prefix)
+      aws = {
+        style = "#${colors.base09}";
+        symbol = "${nf "e33d"} ";
+        format = " [$symbol($profile )(@$region )]($style)";
+      };
+      azure = {
+        disabled = false;
+        style = "#${colors.base0D}";
+        symbol = "${nf "ebd8"} ";
+        format = " [$symbol($subscription )]($style)";
+      };
+      bun = {
+        style = "#${colors.base0A}";
+        symbol = "${nf "e76f"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      crystal = {
+        style = "#${colors.base06}";
+        symbol = "${nf "e62f"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      direnv = {
+        disabled = false;
+        style = "#${colors.base0B}";
+        denied_msg = "[denied](#${colors.base08})";
+        format = " [$symbol$loaded/$allowed]($style)";
+      };
+      docker_context = {
+        style = "#${colors.base0D}";
+        symbol = "${nf "f308"} ";
+        format = " [$symbol$context]($style)";
+      };
+      elixir = {
+        style = "#${colors.base0E}";
+        symbol = "${nf "e62d"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      gcloud = {
+        style = "#${colors.base0D}";
+        symbol = "${nf "e7f1"} ";
+        format = " [$symbol$account(@$domain)(\\($project\\) )]($style)";
+      };
+      golang = {
+        style = "#${colors.base0C}";
+        symbol = "${nf "e627"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      java = {
+        style = "#${colors.base09}";
+        symbol = "${nf "e256"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      kubernetes = {
+        disabled = false;
+        style = "#${colors.base0D}";
+        symbol = "${nf "2638"} ";
+        format = " [$symbol$context( \\($namespace\\) )]($style)";
+      };
+      lua = {
+        style = "#${colors.base0D}";
+        symbol = "${nf "e620"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      nix_shell = {
+        style = "#${colors.base0D}";
+        symbol = "${nf "f313"} ";
+        format = " [$symbol$state( \\($name\\) )]($style)";
+      };
+      nodejs = {
+        style = "#${colors.base0B}";
+        symbol = "${nf "e718"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      pulumi = {
+        style = "#${colors.base0A}";
+        symbol = "${nf "f1b2"} ";
+        format = " [$symbol($stack )]($style)";
+      };
+      php = {
+        style = "#${colors.base0D}";
+        symbol = "${nf "e608"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      python = {
+        style = "#${colors.base0C}";
+        symbol = "${nf "e235"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      ruby = {
+        style = "#${colors.base08}";
+        symbol = "${nf "e791"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      rust = {
+        style = "#${colors.base0F}";
+        symbol = "${nf2 "DB85" "DE17"} ";
+        format = " [$symbol($version )]($style)";
+      };
+      terraform = {
+        style = "#${colors.base0E}";
+        symbol = "${nf2 "db84" "dc62"} ";
+        format = " [$symbol$workspace]($style)";
+      };
+      zig = {
+        style = "#${colors.base0A}";
+        symbol = "${nf "e6a9"} ";
+        format = " [$symbol($version )]($style)";
+      };
+
+      # Additional nerd font symbol modules
+      buf = {
+        style = "#${colors.base0D}";
+        symbol = "${nf "f49d"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      c = {
+        style = "#${colors.base0D}";
+        symbol = "${nf "e61e"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      cmake = {
+        style = "#${colors.base08}";
+        symbol = "${nf "e794"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      conda = {
+        style = "#${colors.base0B}";
+        symbol = "${nf "f10c"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      cpp = {
+        style = "#${colors.base0D}";
+        symbol = "${nf "e61d"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      dart = {
+        style = "#${colors.base0C}";
+        symbol = "${nf "e798"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      deno = {
+        style = "#${colors.base06}";
+        symbol = "${nf "e7c0"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      elm = {
+        style = "#${colors.base0C}";
+        symbol = "${nf "e62c"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      fennel = {
+        style = "#${colors.base0A}";
+        symbol = "${nf "e6af"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      fortran = {
+        style = "#${colors.base0E}";
+        symbol = "${nf "e7de"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      fossil_branch = {
+        style = "#${colors.base0B}";
+        symbol = "${nf "f418"} ";
+        format = "[$symbol$branch]($style) ";
+      };
+      gradle = {
+        style = "#${colors.base0B}";
+        symbol = "${nf "e660"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      guix_shell = {
+        style = "#${colors.base0A}";
+        symbol = "${nf "f325"} ";
+        format = "[$symbol$state( \\($name\\) )]($style)";
+      };
+      haskell = {
+        style = "#${colors.base0E}";
+        symbol = "${nf "e777"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      haxe = {
+        style = "#${colors.base09}";
+        symbol = "${nf "e666"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      hg_branch = {
+        style = "#${colors.base04}";
+        symbol = "${nf "f418"} ";
+        format = "[$symbol$branch]($style) ";
+      };
+      julia = {
+        style = "#${colors.base0E}";
+        symbol = "${nf "e624"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      kotlin = {
+        style = "#${colors.base09}";
+        symbol = "${nf "e634"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      memory_usage = {
+        style = "#${colors.base08}";
+        symbol = "${nf2 "DB80" "DF5B"} ";
+        format = "[$symbol$ram]($style) ";
+      };
+      meson = {
+        style = "#${colors.base0C}";
+        symbol = "${nf2 "DB81" "DD37"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      nim = {
+        style = "#${colors.base0A}";
+        symbol = "${nf2 "DB80" "DDA5"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      ocaml = {
+        style = "#${colors.base09}";
+        symbol = "${nf "e67a"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      package = {
+        style = "#${colors.base09}";
+        symbol = "${nf2 "DB80" "DFD7"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      perl = {
+        style = "#${colors.base0D}";
+        symbol = "${nf "e67e"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      pijul_channel = {
+        style = "#${colors.base0B}";
+        symbol = "${nf "f418"} ";
+        format = "[$symbol$channel]($style) ";
+      };
+      pixi = {
+        style = "#${colors.base0B}";
+        symbol = "${nf2 "DB80" "DFD7"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      rlang = {
+        style = "#${colors.base0D}";
+        symbol = "${nf2 "DB81" "DFD4"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      scala = {
+        style = "#${colors.base08}";
+        symbol = "${nf "e737"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      swift = {
+        style = "#${colors.base09}";
+        symbol = "${nf "e755"} ";
+        format = "[$symbol($version )]($style)";
+      };
+      xmake = {
+        style = "#${colors.base0B}";
+        symbol = "${nf "e794"} ";
+        format = "[$symbol($version )]($style)";
+      };
+
+      container = {
+        style = "#${colors.base05}";
+        symbol = "${nf "f4b7"} ";
+        format = "[$symbol]($style)";
+      };
+
+      # OS detection symbols
+      os = {
+        disabled = false;
+        style = "#${colors.base05}";
+      };
+      os.symbols = {
+        Alpaquita = "${nf "eaa2"} ";
+        Alpine = "${nf "f300"} ";
+        AlmaLinux = "${nf "f31d"} ";
+        Amazon = "${nf "f270"} ";
+        Android = "${nf "f17b"} ";
+        AOSC = "${nf "f301"} ";
+        Arch = "${nf "f303"} ";
+        Artix = "${nf "f31f"} ";
+        CachyOS = "${nf "f303"} ";
+        CentOS = "${nf "f304"} ";
+        Debian = "${nf "f306"} ";
+        DragonFly = "${nf "e28e"} ";
+        Elementary = "${nf "f309"} ";
+        Emscripten = "${nf "f205"} ";
+        EndeavourOS = "${nf "f197"} ";
+        Fedora = "${nf "f30a"} ";
+        FreeBSD = "${nf "f30c"} ";
+        Garuda = "${nf2 "DB81" "DED3"} ";
+        Gentoo = "${nf "f30d"} ";
+        HardenedBSD = "${nf2 "DB81" "DF8C"} ";
+        Illumos = "${nf2 "DB80" "DE38"} ";
+        Ios = "${nf2 "DB80" "DC37"} ";
+        Kali = "${nf "f327"} ";
+        Linux = "${nf "f31a"} ";
+        Mabox = "${nf "eb29"} ";
+        Macos = "${nf "f302"} ";
+        Manjaro = "${nf "f312"} ";
+        Mariner = "${nf "f1cd"} ";
+        MidnightBSD = "${nf "f186"} ";
+        Mint = "${nf "f30e"} ";
+        NetBSD = "${nf "f024"} ";
+        NixOS = "${nf "f313"} ";
+        Nobara = "${nf "f380"} ";
+        OpenBSD = "${nf2 "DB80" "DE3A"} ";
+        openSUSE = "${nf "f314"} ";
+        OracleLinux = "${nf2 "DB80" "DF37"} ";
+        Pop = "${nf "f32a"} ";
+        Raspbian = "${nf "f315"} ";
+        Redhat = "${nf "f316"} ";
+        RedHatEnterprise = "${nf "f316"} ";
+        RockyLinux = "${nf "f32b"} ";
+        Redox = "${nf2 "DB80" "DC18"} ";
+        Solus = "${nf2 "DB82" "DC33"} ";
+        SUSE = "${nf "f314"} ";
+        Ubuntu = "${nf "f31b"} ";
+        Unknown = "${nf "f22d"} ";
+        Void = "${nf "f32e"} ";
+        Windows = "${nf2 "DB80" "DF72"} ";
+        Zorin = "${nf "f32f"} ";
+      };
+
+    };
+  };
 
   programs.fish = {
     enable = true;
@@ -164,11 +544,6 @@ in
         name = "autopair";
         inherit (pkgs.fishPlugins.autopair) src;
       }
-      {
-        name = "tide";
-        inherit (pkgs.fishPlugins.tide) src;
-      }
     ];
   };
-
 }
