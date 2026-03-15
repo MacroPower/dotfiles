@@ -83,6 +83,7 @@ in
               "Read(./.env)"
               "Read(./.secrets)"
               "mcp__kagi__kagi_summarizer"
+              "mcp__github__get_file_contents"
               # GitHub MCP: deny all write/mutating tools.
               # These are blocked by the MCP config and primarily denied here as a usage hint.
               "mcp__github__actions_run_trigger"
@@ -142,6 +143,11 @@ in
                 "api.githubcopilot.com"
               ];
             };
+            filesystem = {
+              allowWrite = [
+                "//tmp/git"
+              ];
+            };
             excludedCommands = [
               "docker"
               "dagger"
@@ -191,6 +197,8 @@ in
         - Use `mcp__kagi__kagi_search_fetch` for web searches.
         - Use `mcp__fetch__fetch` for fetching known URLs and web page content.
         - Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)
+        - To read files from a GitHub repo, `git clone` it into `/tmp/git/<owner>/<repo>` and read from there.
+        - If a repo already exists in `/tmp/git/<owner>/<repo>`, `git status` and `git pull` if needed.
 
         Remember: Do research, don't guess.
 
