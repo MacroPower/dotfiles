@@ -34,7 +34,7 @@ let
       RTK_REWRITE = "${pkgs.llm-agents.rtk}/libexec/rtk/hooks/rtk-rewrite.sh";
       GIT_IDEMPOTENT = "${pkgs.git-idempotent}/bin/git-idempotent";
     };
-    text = ''exec hook-router'';
+    text = "exec hook-router";
   };
 
   # Wrapper script that reads the KAGI_API_KEY from sops at runtime

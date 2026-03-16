@@ -44,6 +44,8 @@
       KbdInteractiveAuthentication = false;
       PermitRootLogin = "no";
       AcceptEnv = [ "COLORTERM" ];
+      ClientAliveInterval = 60;
+      ClientAliveCountMax = 3;
     };
   };
 

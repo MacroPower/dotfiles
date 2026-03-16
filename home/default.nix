@@ -34,7 +34,11 @@
       enableDefaultConfig = false;
       includes = config.dotfiles.sshIncludes;
       extraConfig = "SendEnv COLORTERM";
-      matchBlocks."*".addKeysToAgent = "yes";
+      matchBlocks."*" = {
+        addKeysToAgent = "yes";
+        serverAliveInterval = 60;
+        serverAliveCountMax = 3;
+      };
     };
 
     fastfetch = {
