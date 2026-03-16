@@ -169,23 +169,23 @@ in
       aws = {
         style = "#${colors.base09}";
         symbol = "${nf "e33d"} ";
-        format = " [$symbol($profile )(@$region )]($style)";
+        format = " [$symbol($profile )(@$region)]($style)";
       };
       azure = {
         disabled = false;
         style = "#${colors.base0D}";
         symbol = "${nf "ebd8"} ";
-        format = " [$symbol($subscription )]($style)";
+        format = " [$symbol($subscription)]($style)";
       };
       bun = {
         style = "#${colors.base0A}";
         symbol = "${nf "e76f"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       crystal = {
         style = "#${colors.base06}";
         symbol = "${nf "e62f"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       direnv = {
         disabled = false;
@@ -201,68 +201,68 @@ in
       elixir = {
         style = "#${colors.base0E}";
         symbol = "${nf "e62d"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       gcloud = {
         style = "#${colors.base0D}";
         symbol = "${nf "e7f1"} ";
-        format = " [$symbol$account(@$domain)(\\($project\\) )]($style)";
+        format = " [$symbol$account(@$domain)(\\($project\\))]($style)";
       };
       golang = {
         style = "#${colors.base0C}";
         symbol = "${nf "e627"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       java = {
         style = "#${colors.base09}";
         symbol = "${nf "e256"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       kubernetes = {
         disabled = false;
         style = "#${colors.base0D}";
         symbol = "${nf "2638"} ";
-        format = " [$symbol$context( \\($namespace\\) )]($style)";
+        format = " [$symbol$context(\\($namespace\\))]($style)";
       };
       lua = {
         style = "#${colors.base0D}";
         symbol = "${nf "e620"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       nix_shell = {
         style = "#${colors.base0D}";
         symbol = "${nf "f313"} ";
-        format = " [$symbol$state( \\($name\\) )]($style)";
+        format = " [$symbol$state(\\($name\\))]($style)";
       };
       nodejs = {
         style = "#${colors.base0B}";
         symbol = "${nf "e718"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       pulumi = {
         style = "#${colors.base0A}";
         symbol = "${nf "f1b2"} ";
-        format = " [$symbol($stack )]($style)";
+        format = " [$symbol($stack)]($style)";
       };
       php = {
         style = "#${colors.base0D}";
         symbol = "${nf "e608"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       python = {
         style = "#${colors.base0C}";
         symbol = "${nf "e235"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       ruby = {
         style = "#${colors.base08}";
         symbol = "${nf "e791"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       rust = {
         style = "#${colors.base0F}";
         symbol = "${nf2 "DB85" "DE17"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
       terraform = {
         style = "#${colors.base0E}";
@@ -272,7 +272,7 @@ in
       zig = {
         style = "#${colors.base0A}";
         symbol = "${nf "e6a9"} ";
-        format = " [$symbol($version )]($style)";
+        format = " [$symbol($version)]($style)";
       };
 
       # Additional nerd font symbol modules
