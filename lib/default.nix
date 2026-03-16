@@ -21,6 +21,8 @@ let
     displayplacer = final.callPackage paths.displayplacer { };
     zed-bin = final.callPackage paths.zed-bin { };
     photo-cli = final.callPackage paths.photo-cli { };
+    git-idempotent = final.callPackage paths.git-idempotent { };
+    hook-router = final.callPackage paths.hook-router { };
   };
 
   nurJacobColvinOverlay =

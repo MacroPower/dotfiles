@@ -1,11 +1,6 @@
-# Toolchains
+# Tools
 
-This file provides guidance to Claude Code (claude.ai/code) when working with Dagger toolchains in this repository.
-
-## Overview
-
-- `dev`: Development shell and sandbox containers.
-- `nix`: Nix utils, e.g. `format`, `lint`.
+This file provides guidance to Claude Code (claude.ai/code) when working with tools in this repository.
 
 ## Code Style
 
@@ -34,6 +29,5 @@ This file provides guidance to Claude Code (claude.ai/code) when working with Da
 - Field names: prefer `want` for expected output, `err` for expected errors.
 - For inputs, use clear contextual names (e.g., `before`/`after` for diffs, `line`/`col` for positions).
 - Always use `t.Parallel()` in all tests.
-- Create test packages (`package foo_test`) testing public API.
 - Use `require.ErrorIs` for sentinel error checking.
 - Use `require.ErrorAs` for error type extraction.

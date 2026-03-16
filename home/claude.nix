@@ -18,90 +18,24 @@ let
     };
   };
 
-  blockFetch = pkgs.writeShellScript "block-fetch" ''
-    INPUT=$(cat)
-    URL=$(echo "$INPUT" | ${pkgs.jq}/bin/jq -r '.tool_input.url // ""')
-    case "$URL" in
-      *raw.githubusercontent.com*)
-        case "$URL" in
-          *.md) ;;
-          *)
-            ${pkgs.jq}/bin/jq -n '{
-              hookSpecificOutput: {
-                hookEventName: "PreToolUse",
-                permissionDecision: "deny",
-                permissionDecisionReason: "Fetching code from raw.githubusercontent.com is blocked. Clone the repo to /tmp/git/<owner>/<repo> and read files locally instead."
-              }
-            }'
-            exit 0
-            ;;
-        esac
-        ;;
-    esac
-  '';
+  blockFetch = pkgs.writeShellApplication {
+    name = "block-fetch";
+    runtimeInputs = [ pkgs.jq ];
+    text = builtins.readFile ../configs/claude/hooks/block-fetch.sh;
+  };
 
   # Single Bash PreToolUse hook that dispatches command rewrites.
   # All matching hooks run concurrently, so we use one hook to avoid
   # non-deterministic updatedInput races between multiple Bash matchers.
-  bashRewriter = pkgs.writeShellScript "bash-rewriter" ''
-    INPUT=$(cat)
-    CMD=$(echo "$INPUT" | ${pkgs.jq}/bin/jq -r '.tool_input.command // ""')
-
-    rewrite_git_clone() {
-      # Parse URL and optional destination, skipping flags
-      local args=""
-      eval "set -- $CMD"
-      shift 2  # drop "git" "clone"
-      for arg; do
-        case "$arg" in
-          -*) ;;
-          *) args="$args $arg";;
-        esac
-      done
-      set -- $args
-      local url="''${1:-}" dest="''${2:-}"
-
-      [ -z "$url" ] && return 1
-
-      # Infer destination from URL if not provided
-      if [ -z "$dest" ]; then
-        dest="/tmp/git/$(echo "$url" | ${pkgs.gnused}/bin/sed -n 's|.*github\.com[:/]\([^/]*\)/\([^/. ]*\).*|\1/\2|p')"
-        [ "$dest" = "/tmp/git/" ] && return 1
-      fi
-
-      local safe_cmd
-      safe_cmd=$(cat <<SCRIPT
-    mkdir -p "$(dirname "$dest")"
-    (
-      ${pkgs.util-linux}/bin/flock 9
-      if [ -d "$dest/.git" ]; then
-        git -C "$dest" pull --ff-only -q 2>/dev/null || true
-      else
-        git clone -q "$url" "$dest"
-      fi
-    ) 9>"$dest.lock"
-    rm -f "$dest.lock"
-    SCRIPT
-      )
-
-      echo "$INPUT" | ${pkgs.jq}/bin/jq --arg cmd "$safe_cmd" '{
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "allow",
-          updatedInput: (.tool_input | .command = $cmd)
-        }
-      }'
-    }
-
-    case "$CMD" in
-      "git clone "*)
-        rewrite_git_clone && exit 0
-        ;;
-    esac
-
-    # Fall through to rtk for everything else
-    echo "$INPUT" | ${pkgs.llm-agents.rtk}/libexec/rtk/hooks/rtk-rewrite.sh
-  '';
+  hookRouter = pkgs.writeShellApplication {
+    name = "hook-router-wrapper";
+    runtimeInputs = [ pkgs.hook-router ];
+    runtimeEnv = {
+      RTK_REWRITE = "${pkgs.llm-agents.rtk}/libexec/rtk/hooks/rtk-rewrite.sh";
+      GIT_IDEMPOTENT = "${pkgs.git-idempotent}/bin/git-idempotent";
+    };
+    text = ''exec hook-router'';
+  };
 
   # Wrapper script that reads the KAGI_API_KEY from sops at runtime
   kagiWrapper = pkgs.writeShellScript "kagi-mcp-wrapper" ''
@@ -257,7 +191,7 @@ in
                 hooks = [
                   {
                     type = "command";
-                    command = "${bashRewriter}";
+                    command = lib.getExe hookRouter;
                   }
                 ];
               }
@@ -266,7 +200,7 @@ in
                 hooks = [
                   {
                     type = "command";
-                    command = "${blockFetch}";
+                    command = lib.getExe blockFetch;
                   }
                 ];
               }
