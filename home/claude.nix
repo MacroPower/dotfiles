@@ -205,6 +205,7 @@ in
               }
             ];
           };
+          autoMemoryEnabled = false;
           alwaysThinkingEnabled = true;
           skipDangerousModePermissionPrompt = true;
           teammateMode = "auto";
