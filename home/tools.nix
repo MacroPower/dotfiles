@@ -174,6 +174,7 @@
     xh
     doggo
     dive
+    cosign
     tokei
     gping
     photo-cli
