@@ -155,7 +155,6 @@ in
             padding = 0;
           };
           enabledPlugins = {
-            "commit-commands@claude-plugins-official" = true;
             "claude-md-management@claude-plugins-official" = true;
             "skill-creator@claude-plugins-official" = true;
             "code-review@claude-plugins-official" = true;
