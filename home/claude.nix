@@ -145,8 +145,26 @@ in
               "mcp__github__update_pull_request_branch"
             ];
             ask = [
-              "Bash(git push *)"
               "Bash(git push)"
+              "Bash(git push *)"
+              "Bash(git reset)"
+              "Bash(git reset *)"
+              "Bash(git clean *)"
+              "Bash(git restore *)"
+              "Bash(git branch *)"
+              "Bash(git checkout *)"
+              "Bash(git switch *)"
+              "Bash(git rebase)"
+              "Bash(git rebase *)"
+              "Bash(git merge *)"
+              "Bash(git tag *)"
+              "Bash(git rm *)"
+              "Bash(git remote *)"
+              "Bash(git stash pop)"
+              "Bash(git stash pop *)"
+              "Bash(git stash drop)"
+              "Bash(git stash drop *)"
+              "Bash(git stash clear)"
             ];
           };
           statusLine = {
