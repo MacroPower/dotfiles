@@ -1,0 +1,14 @@
+egress:
+  - toFQDNs:
+      - matchName: "anthropic.com"
+      - matchPattern: "*.anthropic.com"
+      - matchName: "kagi.com"
+      - matchPattern: "*.kagi.com"
+      - matchName: "nixos.org"
+      - matchPattern: "*.nixos.org"
+    toPorts:
+      - ports:
+          - port: "443"
+            protocol: TCP
+          - port: "80"
+            protocol: TCP

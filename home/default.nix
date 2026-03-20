@@ -77,6 +77,7 @@
     "dlv/config.yml".source = ../configs/dlv/config.yml;
     "gh-copilot/config.yml".source = ../configs/gh-copilot/config.yml;
     "kat/config.yaml".source = ../configs/kat/config.yaml;
+    "terrarium/config.yaml".source = ../configs/terrarium/config.yaml;
   }
   // config.dotfiles.extraXdgConfigFiles;
 
@@ -160,12 +161,13 @@
         envoy-bin
         ethtool
         iproute2
-        iptables
         ipset
         iputils
         ipvsadm
+        nftables
         procps
         strace
+        terrarium
       ]
       ++ config.dotfiles.extraHomePackages;
 

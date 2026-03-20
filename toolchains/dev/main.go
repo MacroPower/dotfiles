@@ -37,54 +37,11 @@ const (
 	// gid is the numeric group ID for the sandbox user.
 	gid = "1000"
 
-	// terrariumConfigPath is where the terrarium config YAML is written.
-	terrariumConfigPath = "/etc/terrarium/config.yaml"
+	// terrariumConfigPath is the XDG config path where terrarium
+	// looks for its configuration YAML.
+	terrariumConfigPath = homeDir + "/.config/terrarium/config.yaml"
 )
 
-// defaultConfig is the default terrarium configuration YAML, used when
-// no config file is provided. Identical to terrarium's built-in defaults.
-const defaultConfig = `egress:
-  - toFQDNs:
-      - matchName: "anthropic.com"
-      - matchPattern: "*.anthropic.com"
-      - matchName: "kagi.com"
-      - matchPattern: "*.kagi.com"
-      - matchName: "github.com"
-      - matchPattern: "*.github.com"
-      - matchName: "githubusercontent.com"
-      - matchPattern: "*.githubusercontent.com"
-      - matchName: "api.githubcopilot.com"
-      - matchName: "golang.org"
-      - matchPattern: "*.golang.org"
-      - matchName: "go.dev"
-      - matchPattern: "*.go.dev"
-      - matchName: "gopkg.in"
-      - matchName: "go.googlesource.com"
-      - matchName: "cs.opensource.google"
-      - matchName: "dl.google.com"
-      - matchName: "packages.cloud.google.com"
-      - matchName: "repo1.maven.org"
-      - matchName: "repo.maven.apache.org"
-      - matchName: "nixos.org"
-      - matchPattern: "*.nixos.org"
-      - matchName: "registry.npmjs.org"
-      - matchName: "pypi.org"
-      - matchPattern: "*.pypi.org"
-      - matchName: "files.pythonhosted.org"
-      - matchName: "crates.io"
-      - matchPattern: "*.crates.io"
-      - matchName: "rust-lang.org"
-      - matchPattern: "*.rust-lang.org"
-      - matchName: "releases.hashicorp.com"
-      - matchName: "registry.terraform.io"
-    toPorts:
-      - ports:
-          - port: "443"
-            protocol: TCP
-          - port: "80"
-            protocol: TCP
-logging: false
-`
 
 // Dev provides reusable development container functions powered by
 // nix home-manager. Create instances with [New].
@@ -296,7 +253,7 @@ func (m *Dev) SandboxBase(
 	// +optional
 	kagiApiKey *dagger.Secret,
 	// YAML sandbox config file defining egress rules and firewall
-	// options. Uses the default config when not provided.
+	// options. Overrides the home-manager-deployed config when provided.
 	// +optional
 	sandboxConfig *dagger.File,
 ) (*dagger.Container, error) {
@@ -305,11 +262,9 @@ func (m *Dev) SandboxBase(
 		return nil, err
 	}
 
-	// Write config YAML: use provided file or fall back to defaults.
+	// Override the home-manager-deployed config if one was provided.
 	if sandboxConfig != nil {
 		ctr = ctr.WithFile(terrariumConfigPath, sandboxConfig)
-	} else {
-		ctr = ctr.WithNewFile(terrariumConfigPath, defaultConfig)
 	}
 
 	// setup-user: create non-root user in /etc/passwd and /etc/group,
@@ -359,7 +314,7 @@ func (m *Dev) Sandbox(
 	// +optional
 	kagiApiKey *dagger.Secret,
 	// YAML sandbox config file defining egress rules and firewall
-	// options. Uses the default config when not provided.
+	// options. Overrides the home-manager-deployed config when provided.
 	// +optional
 	sandboxConfig *dagger.File,
 ) (*dagger.Container, error) {
@@ -445,9 +400,9 @@ func (m *Dev) PublishShell(
 
 // PublishSandbox builds a self-contained sandbox container and pushes it
 // to a container registry. The published image includes the terrarium
-// binary (via nix) and a default config.yaml; firewall configs are
+// binary and config.yaml deployed by home-manager; firewall configs are
 // generated at runtime by terrarium init. Users customize behavior by
-// mounting their own config.yaml at the terrarium config path.
+// mounting their own config.yaml at the terrarium XDG config path.
 func (m *Dev) PublishSandbox(
 	ctx context.Context,
 	// Registry password or personal access token.
@@ -478,7 +433,6 @@ chown -R %s:%s %s
 
 	built := base.
 		WithExec([]string{"sh", "-c", setupUserScript}).
-		WithNewFile(terrariumConfigPath, defaultConfig).
 		WithEnvVariable("IS_SANDBOX_NETWORK", "1")
 
 	ctr := built.

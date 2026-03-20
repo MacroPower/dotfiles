@@ -25,8 +25,12 @@ const (
 	// hmBin is the stable path to home-manager managed binaries.
 	hmBin = "/home/dev/.local/state/home-manager/gcroots/current-home/home-path/bin"
 
-	// terrariumConfigPath is where the terrarium config YAML is written.
-	terrariumConfigPath = "/etc/terrarium/config.yaml"
+	// homeDir is the home directory for the dev container user.
+	homeDir = "/home/dev"
+
+	// terrariumConfigPath is the XDG config path where terrarium
+	// looks for its configuration YAML.
+	terrariumConfigPath = homeDir + "/.config/terrarium/config.yaml"
 )
 
 // Tests provides integration tests for the [Dev] module.
