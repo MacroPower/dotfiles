@@ -672,7 +672,11 @@
     reattach = true;
   };
 
+  environment.shells = [ pkgs.fish ];
+
+  users.knownUsers = [ config.dotfiles.system.username ];
   users.users.${config.dotfiles.system.username} = {
+    uid = 501;
     name = config.dotfiles.system.username;
     home = "/Users/${config.dotfiles.system.username}";
     shell = pkgs.fish;
