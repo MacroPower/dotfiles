@@ -1,11 +1,14 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
+let
+  inherit (config.stylix.inputs) tinted-schemes;
+in
 {
   stylix = {
     enable = true;
     autoEnable = true;
     polarity = "dark";
 
-    base16Scheme = "${pkgs.base16-schemes}/share/themes/onedark.yaml";
+    base16Scheme = "${tinted-schemes}/base16/onedark.yaml";
     override = {
       base00 = "23272e"; # darker background
     };
