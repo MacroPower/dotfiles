@@ -43,7 +43,7 @@ let
   hmSharedModules = [
     sops-nix.homeManagerModules.sops
     nix-index-database.homeModules.nix-index
-    krewfile.homeManagerModules.krewfile
+    (import paths.krewfileModule krewfile)
   ];
 
   mkHomeManagerBlock =
