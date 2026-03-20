@@ -345,8 +345,9 @@
         "com.apple.locationmenu".StatusBarIconEnabled = true;
         # Notification banners visible for 5 seconds
         "com.apple.notificationcenterui".bannerTime = 5;
-        # Do not allow sleep
-        "com.apple.PowerManagement".SleepDisabled = 1;
+        # Prevent sleep at the OS level when disableSleep is set
+        "com.apple.PowerManagement".SleepDisabled =
+          if config.dotfiles.system.power.disableSleep then 1 else 0;
         # Show all preference panes in System Settings
         "com.apple.systempreferences".ShowAllMode = true;
         # TextEdit opens in plain text mode by default
@@ -595,17 +596,11 @@
     allowSignedApp = true;
   };
 
-  # Keep the Mac always-on and auto-recover from failures
   power = {
     sleep = {
-      computer = "never";
-      display = "never";
-      # Disable sleep via power button so headless Mac mini stays running
-      allowSleepByPowerButton = false;
+      inherit (config.dotfiles.system.power.sleep) computer display allowSleepByPowerButton;
     };
-    # Auto-recover from freezes and power failures
-    restartAfterFreeze = true;
-    restartAfterPowerFailure = true;
+    inherit (config.dotfiles.system.power) restartAfterFreeze restartAfterPowerFailure;
   };
 
   # SMB client configuration (/etc/nsmb.conf).

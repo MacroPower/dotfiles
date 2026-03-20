@@ -12,6 +12,17 @@
     "obsidian"
   ];
 
+  power = {
+    sleep = {
+      computer = 15;
+      display = 5;
+      allowSleepByPowerButton = true;
+    };
+    restartAfterFreeze = true;
+    restartAfterPowerFailure = null;
+    disableSleep = false;
+  };
+
   homebrew = {
     taps = [ ];
     brews = [ ];

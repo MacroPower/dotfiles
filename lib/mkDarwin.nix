@@ -11,6 +11,7 @@
   homebrew ? { },
   loginItems ? [ ],
   extraApps ? [ ],
+  power ? { },
   homeModule,
 }:
 inputs.nix-darwin.lib.darwinSystem {
@@ -24,6 +25,7 @@ inputs.nix-darwin.lib.darwinSystem {
           loginItems
           extraApps
           ;
+        inherit power;
       };
       system.configurationRevision = self.rev or self.dirtyRev or null;
     }
