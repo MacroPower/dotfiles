@@ -261,7 +261,10 @@ xcode-select --install
 
 git clone https://github.com/MacroPower/dotfiles && cd dotfiles
 
-sudo nix run nix-darwin -- switch --flake ".#$SUDO_USER@$(hostname -s)"
+# Install Lix: https://lix.systems/install/
+curl -sSf -L https://install.lix.systems/lix | sh -s -- install
+
+sudo nix --extra-experimental-features "nix-command flakes" run nix-darwin -- switch --flake ".#$(whoami)@$(hostname -s)"
 
 gh auth login
 task secrets:init
