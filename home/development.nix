@@ -31,7 +31,7 @@ in
       uv = {
         enable = true;
         settings = {
-          python-downloads = "manual";
+          python-downloads = "automatic";
         };
       };
     };
