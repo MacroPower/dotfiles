@@ -301,14 +301,18 @@ in
           --argjson mcp "$MCP_SERVERS" \
           '.mcpServers = (.mcpServers // {} | to_entries | map(select(.key as $k | $mcp | has($k) | not)) | from_entries) * $mcp')
 
+        # Set GitHub PAT as a universal fish variable for MCP auth
+        GH_TOKEN=$(cat ${config.sops.secrets.gh_token.path} 2>/dev/null || true)
+        if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
+          ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
+        fi
+
         ${lib.optionalString skipPerms ''
           # Pre-trust home directory and authenticate with scoped PAT (sandbox only)
           UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq \
             '.projects["${config.dotfiles.homeDirectory}"].hasTrustDialogAccepted = true')
-          GH_TOKEN=$(cat ${config.sops.secrets.gh_token.path} 2>/dev/null || true)
           if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
             echo "''${GH_TOKEN}" | ${pkgs.gh}/bin/gh auth login --with-token
-            ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
           fi
         ''}
 
