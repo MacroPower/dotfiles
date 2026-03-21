@@ -8,6 +8,7 @@
 }:
 {
   username,
+  hostname,
   homebrew ? { },
   loginItems ? [ ],
   extraApps ? [ ],
@@ -18,6 +19,7 @@ inputs.nix-darwin.lib.darwinSystem {
   modules = [
     paths.hostMac
     {
+      networking.hostName = hostname;
       dotfiles.system = {
         inherit
           username
@@ -71,7 +73,7 @@ inputs.nix-darwin.lib.darwinSystem {
         { pkgs, ... }:
         {
           dotfiles = {
-            inherit username;
+            inherit username hostname;
             homeDirectory = "/Users/${username}";
             extraHomePackages = with pkgs; [
               terminal-notifier

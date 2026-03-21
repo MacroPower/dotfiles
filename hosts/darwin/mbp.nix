@@ -1,5 +1,6 @@
 {
   username = "jacobcolvin";
+  hostname = "Jacobs-MacBook-Pro";
 
   loginItems = [
     "/Applications/LinearMouse.app"

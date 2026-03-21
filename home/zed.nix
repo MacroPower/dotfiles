@@ -2,6 +2,7 @@
   pkgs,
   lib,
   config,
+  osConfig ? { },
   ...
 }:
 
@@ -14,6 +15,45 @@ let
       value = true;
     }) fontFeatures
   );
+
+  hasOsConfig = osConfig ? networking;
+  isDarwin = hasOsConfig && pkgs.stdenv.isDarwin;
+  inherit (config.dotfiles) username hostname;
+  flakeExpr = "builtins.getFlake (toString ./.)";
+  # NixOS configs are keyed by hostname alone; darwin and home-manager use username@hostname.
+  isNixOS = hasOsConfig && !isDarwin;
+  configName =
+    let
+      name = if isNixOS then hostname else "${username}@${hostname}";
+    in
+    ''"${name}"'';
+  configType =
+    if isDarwin then
+      "darwinConfigurations"
+    else if isNixOS then
+      "nixosConfigurations"
+    else
+      "homeConfigurations";
+
+  nixdOptions =
+    let
+      flakeConfig = "(${flakeExpr}).${configType}.${configName}";
+    in
+    if hasOsConfig then
+      {
+        ${if isDarwin then "darwin" else "nixos"} = {
+          expr = "${flakeConfig}.options";
+        };
+        home-manager = {
+          expr = "${flakeConfig}.options.home-manager.users.type.getSubOptions []";
+        };
+      }
+    else
+      {
+        home-manager = {
+          expr = "${flakeConfig}.options";
+        };
+      };
 in
 {
   options.dotfiles.zed.enable = lib.mkEnableOption "Zed editor" // {
@@ -48,6 +88,27 @@ in
       ];
 
       userSettings = {
+        languages = {
+          Nix = {
+            language_servers = [
+              "nixd"
+              "!nil"
+            ];
+          };
+        };
+        lsp = {
+          nixd = {
+            settings = {
+              nixpkgs = {
+                expr = "(${flakeExpr}).${configType}.${configName}.pkgs";
+              };
+              formatting = {
+                command = [ "nixfmt" ];
+              };
+              options = nixdOptions;
+            };
+          };
+        };
         agent = {
           default_model = {
             provider = "copilot_chat";
@@ -58,6 +119,7 @@ in
         };
         edit_predictions = {
           mode = "subtle";
+          provider = "copilot";
         };
         ui_font_size = 15.0;
         ui_font_weight = 500.0;
@@ -67,9 +129,6 @@ in
         buffer_font_weight = 500.0;
         buffer_font_family = config.stylix.fonts.monospace.name;
         buffer_font_features = fontFeaturesAttrs;
-        features = {
-          edit_prediction_provider = "copilot";
-        };
         terminal = {
           font_family = config.stylix.fonts.monospace.name;
           font_features = fontFeaturesAttrs;

@@ -22,9 +22,9 @@ in
     };
 
     extraKrewPlugins = mkOption {
-      type = types.listOf types.str;
+      type = types.listOf types.nonEmptyStr;
       default = [ ];
-      description = "Additional kubectl krew plugins.";
+      description = "Additional kubectl krew plugin names to install.";
     };
   };
 

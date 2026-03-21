@@ -14,27 +14,27 @@ let
     scheme = mkOption {
       type = types.str;
       default = "";
-      description = "Regex for URL scheme.";
+      description = "Regex pattern matching the URL scheme. Empty string means no constraint.";
     };
     host = mkOption {
       type = types.str;
       default = "";
-      description = "Regex for URL host.";
+      description = "Regex pattern matching the URL host. Empty string means no constraint.";
     };
     path = mkOption {
       type = types.str;
       default = "";
-      description = "Regex for URL path.";
+      description = "Regex pattern matching the URL path. Empty string means no constraint.";
     };
     query = mkOption {
       type = types.str;
       default = "";
-      description = "Regex for URL query.";
+      description = "Regex pattern matching the URL query string. Empty string means no constraint.";
     };
     fragment = mkOption {
       type = types.str;
       default = "";
-      description = "Regex for URL fragment.";
+      description = "Regex pattern matching the URL fragment. Empty string means no constraint.";
     };
   };
 
@@ -43,13 +43,13 @@ let
   denyRuleType = types.submodule {
     options = urlMatchOptions // {
       reason = mkOption {
-        type = types.str;
-        description = "Reason shown when URL is denied.";
+        type = types.nonEmptyStr;
+        description = "Human-readable reason shown when a matching URL is denied.";
       };
       except = mkOption {
         type = types.listOf urlMatchType;
         default = [ ];
-        description = "Exception patterns.";
+        description = "URL patterns exempted from this deny rule.";
       };
     };
   };
@@ -123,7 +123,7 @@ in
     dangerouslySkipPermissions = mkOption {
       type = types.bool;
       default = false;
-      description = "Whether to skip Claude Code permission prompts.";
+      description = "Run Claude Code with --dangerously-skip-permissions, enabling sandbox mode with automatic directory trust and GitHub auth.";
     };
 
     extraSettings = mkOption {

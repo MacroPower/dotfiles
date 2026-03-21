@@ -3,6 +3,7 @@
   homeModule = {
     dotfiles = {
       username = "dev";
+      hostname = "linux";
       homeDirectory = "/home/dev";
       git = {
         userName = "Jacob Colvin";

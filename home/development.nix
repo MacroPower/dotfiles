@@ -56,7 +56,6 @@ in
         # Dev tools
         gopls
         nixd
-        nil
         chief
 
         # Python build dependencies

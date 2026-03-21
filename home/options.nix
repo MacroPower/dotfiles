@@ -6,13 +6,18 @@ in
 {
   options.dotfiles = {
     username = mkOption {
-      type = types.str;
+      type = types.nonEmptyStr;
       description = "System username.";
     };
 
     homeDirectory = mkOption {
-      type = types.str;
-      description = "Path to the user's home directory.";
+      type = types.nonEmptyStr;
+      description = "Absolute path to the user's home directory.";
+    };
+
+    hostname = mkOption {
+      type = types.nonEmptyStr;
+      description = "Hostname for this configuration (used for nixd LSP option discovery).";
     };
 
     git = {
@@ -32,12 +37,12 @@ in
       extraShellInit = mkOption {
         type = types.lines;
         default = "";
-        description = "Extra fish shell init commands.";
+        description = "Extra fish shell init commands sourced on every shell startup (before interactiveShellInit).";
       };
       extraInteractiveInit = mkOption {
         type = types.lines;
         default = "";
-        description = "Extra fish interactive shell init commands.";
+        description = "Extra fish commands sourced only in interactive shells.";
       };
     };
 
@@ -50,17 +55,17 @@ in
     extraXdgConfigFiles = mkOption {
       type = types.attrsOf types.anything;
       default = { };
-      description = "Additional XDG config files merged into xdg.configFile.";
+      description = "Additional entries merged into xdg.configFile. Each key is a relative path under XDG_CONFIG_HOME.";
     };
 
     sshIncludes = mkOption {
-      type = types.listOf types.str;
+      type = types.listOf types.nonEmptyStr;
       default = [ ];
       description = "SSH config Include directives.";
     };
 
     fonts.features = mkOption {
-      type = types.listOf types.str;
+      type = types.listOf types.nonEmptyStr;
       default = [
         "ss01"
         "ss03"

@@ -18,9 +18,10 @@ in
     };
 
     extraExtensions = mkOption {
+      # uniq: function-typed options cannot be meaningfully merged across modules
       type = types.uniq (types.functionTo (types.listOf types.package));
       default = _marketplace: [ ];
-      description = "Function taking marketplace to return extra VS Code extensions.";
+      description = "Function taking a vscode-marketplace attrset and returning a list of extra VS Code extensions.";
     };
 
     extraKubernetesSettings = mkOption {

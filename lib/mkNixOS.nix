@@ -23,13 +23,17 @@ inputs.nixpkgs.lib.nixosSystem {
       home-manager = mkHomeManagerBlock { inherit username homeModule; };
     }
     # NixOS-specific home-manager defaults
-    {
-      home-manager.users.${username} = {
-        dotfiles = {
-          inherit username;
-          homeDirectory = "/home/${username}";
+    (
+      { config, ... }:
+      {
+        home-manager.users.${username} = {
+          dotfiles = {
+            inherit username;
+            hostname = config.networking.hostName;
+            homeDirectory = "/home/${username}";
+          };
         };
-      };
-    }
+      }
+    )
   ];
 }
