@@ -110,6 +110,32 @@ in
             pr = "";
           };
           permissions = {
+            allow = [
+              "mcp__kagi__kagi_search_fetch"
+              "mcp__github__get_commit"
+              "mcp__github__get_copilot_job_status"
+              "mcp__github__get_label"
+              "mcp__github__get_latest_release"
+              "mcp__github__get_me"
+              "mcp__github__get_release_by_tag"
+              "mcp__github__get_tag"
+              "mcp__github__get_team_members"
+              "mcp__github__get_teams"
+              "mcp__github__issue_read"
+              "mcp__github__list_branches"
+              "mcp__github__list_commits"
+              "mcp__github__list_issue_types"
+              "mcp__github__list_issues"
+              "mcp__github__list_pull_requests"
+              "mcp__github__list_releases"
+              "mcp__github__list_tags"
+              "mcp__github__pull_request_read"
+              "mcp__github__search_code"
+              "mcp__github__search_issues"
+              "mcp__github__search_pull_requests"
+              "mcp__github__search_repositories"
+              "mcp__github__search_users"
+            ];
             deny = [
               "WebSearch"
               "WebFetch"
@@ -149,6 +175,7 @@ in
               "mcp__github__update_gist"
               "mcp__github__update_pull_request"
               "mcp__github__update_pull_request_branch"
+              "mcp__github__run_secret_scanning"
             ];
             ask = [
               "Bash(git push)"
@@ -157,7 +184,6 @@ in
               "Bash(git reset *)"
               "Bash(git clean *)"
               "Bash(git restore *)"
-              "Bash(git branch *)"
               "Bash(git checkout *)"
               "Bash(git switch *)"
               "Bash(git rebase)"
@@ -186,16 +212,14 @@ in
           sandbox = {
             enabled = pkgs.stdenv.isDarwin;
             network = {
-              allowAllUnixSockets = true;
               allowLocalBinding = true;
               allowedDomains = [
                 "jacobcolvin.com"
-                "api.githubcopilot.com"
               ];
             };
             filesystem = {
               allowWrite = [
-                "//tmp/git"
+                "/tmp/git"
               ];
             };
             excludedCommands = [
