@@ -26,6 +26,17 @@ tasks:
         orb run -m {{.VM_NAME}}
         sh -c 'cat > {{.VM_AGE_KEY_DIR}}/keys.txt && chmod 600 {{.VM_AGE_KEY_DIR}}/keys.txt'
 
+  init-nix:
+    desc: Ensure git is available in the VM for flake fetching
+    status:
+      - >-
+        orb run -m {{.VM_NAME}} -u root
+        command -v git
+    cmds:
+      - >-
+        orb run -m {{.VM_NAME}} -u root
+        nix-env -iA nixos.git
+
   create:
     desc: Create and configure a new OrbStack NixOS VM
     cmds:
@@ -38,15 +49,15 @@ tasks:
         orb run -m {{.VM_NAME}} -u root
         sh -c 'mkdir -p /root && printf "[safe]\n\tdirectory = {{.VM_FLAKE_DIR}}\n" > /root/.gitconfig'
       - task: init-secrets
+      - task: init-nix
       - >-
         orb run -m {{.VM_NAME}} -u root
         nixos-rebuild switch --impure
-        --option extra-experimental-features 'nix-command flakes'
         --flake '{{.VM_FLAKE_DIR}}#{{.VM_NAME}}'
 
   switch:
     desc: Apply NixOS config to an existing OrbStack VM
-    deps: [init-secrets]
+    deps: [init-secrets, init-nix]
     cmds:
       - >-
         tar --no-xattrs -cf - . |
