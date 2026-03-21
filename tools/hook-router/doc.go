@@ -1,9 +1,15 @@
-// Hook-router is a Claude Code PreToolUse hook that rewrites shell commands
-// before they are executed.
+// Hook-router is a Claude Code PreToolUse hook that inspects and rewrites
+// shell commands before they are executed.
 //
 // It reads hook JSON from stdin, parses any shell command in the tool input,
-// and rewrites git clone invocations to use git-idempotent. Hooks that don't
-// match are forwarded to an optional downstream hook.
+// and applies two checks in order:
+//
+//  1. Deny: commands containing grep or find are rejected with a hint to use
+//     rg or fd instead.
+//  2. Rewrite: git clone invocations are rewritten to use git-idempotent.
+//
+// Hooks that don't match either check are forwarded to an optional downstream
+// hook.
 //
 // # Environment
 //

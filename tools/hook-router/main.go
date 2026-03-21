@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -64,9 +65,28 @@ func run(stdin io.Reader, stdout io.Writer, cfg config) error {
 		return delegate(input, cfg.rtkRewrite)
 	}
 
-	rewritten, rewrote, err := rewriteClones(command, cfg.gitIdempotent)
+	parser := syntax.NewParser()
+
+	prog, err := parser.Parse(strings.NewReader(command), "")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: parse error, delegating: %v\n", err)
+		return delegate(input, cfg.rtkRewrite)
+	}
+
+	// Deny takes priority over rewriting.
+	if reason, denied := checkDenied(prog); denied {
+		return encodeJSON(stdout, map[string]any{
+			"hookSpecificOutput": map[string]any{
+				"hookEventName":            "PreToolUse",
+				"permissionDecision":       "deny",
+				"permissionDecisionReason": reason,
+			},
+		})
+	}
+
+	rewritten, rewrote, err := rewriteClones(prog, cfg.gitIdempotent)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hook-router: rewrite error, delegating: %v\n", err)
 		return delegate(input, cfg.rtkRewrite)
 	}
 
@@ -80,17 +100,17 @@ func run(stdin io.Reader, stdout io.Writer, cfg config) error {
 
 	updatedInput["command"] = rewritten
 
-	output := map[string]any{
+	return encodeJSON(stdout, map[string]any{
 		"hookSpecificOutput": map[string]any{
 			"hookEventName":      "PreToolUse",
 			"permissionDecision": "allow",
 			"updatedInput":       updatedInput,
 		},
-	}
+	})
+}
 
-	enc := json.NewEncoder(stdout)
-
-	err = enc.Encode(output)
+func encodeJSON(w io.Writer, v any) error {
+	err := json.NewEncoder(w).Encode(v)
 	if err != nil {
 		return fmt.Errorf("encoding output: %w", err)
 	}
@@ -98,14 +118,57 @@ func run(stdin io.Reader, stdout io.Writer, cfg config) error {
 	return nil
 }
 
-func rewriteClones(command, gitIdempotent string) (string, bool, error) {
-	parser := syntax.NewParser()
+// replacements maps commands that should be denied to their suggested alternatives.
+var replacements = map[string]string{
+	"grep": "rg",
+	"find": "fd",
+}
 
-	prog, err := parser.Parse(strings.NewReader(command), "")
-	if err != nil {
-		return "", false, fmt.Errorf("parsing command: %w", err)
+// checkDenied walks the AST looking for commands that should be replaced
+// with modern alternatives. It returns a denial reason and true if any
+// denied command is found.
+func checkDenied(prog *syntax.File) (string, bool) {
+	found := make(map[string]string) // command -> replacement
+
+	syntax.Walk(prog, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) < 1 {
+			return true
+		}
+
+		parts := call.Args[0].Parts
+		if len(parts) != 1 {
+			return true
+		}
+
+		lit, ok := parts[0].(*syntax.Lit)
+		if !ok {
+			return true
+		}
+
+		if alt, match := replacements[lit.Value]; match {
+			found[lit.Value] = alt
+		}
+
+		return true
+	})
+
+	if len(found) == 0 {
+		return "", false
 	}
 
+	var hints []string
+	for cmd, alt := range found {
+		hints = append(hints, fmt.Sprintf("Use %s instead of %s.", alt, cmd))
+	}
+
+	// Sort for deterministic output.
+	sort.Strings(hints)
+
+	return strings.Join(hints, " "), true
+}
+
+func rewriteClones(prog *syntax.File, gitIdempotent string) (string, bool, error) {
 	rewrote := false
 	syntax.Walk(prog, func(node syntax.Node) bool {
 		call, ok := node.(*syntax.CallExpr)
@@ -140,7 +203,7 @@ func rewriteClones(command, gitIdempotent string) (string, bool, error) {
 
 	printer := syntax.NewPrinter()
 
-	err = printer.Print(&buf, prog)
+	err := printer.Print(&buf, prog)
 	if err != nil {
 		return "", false, fmt.Errorf("printing rewritten command: %w", err)
 	}

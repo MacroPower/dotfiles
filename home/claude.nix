@@ -302,6 +302,11 @@ in
 
         Remember: Do research, don't guess.
 
+        ## Shell Commands
+
+        - Use `rg` instead of `grep` in Bash commands.
+        - Use `fd` instead of `find` in Bash commands.
+
         ## Writing Style
 
         - Keep responses to plain ASCII text. Use commas, semicolons, parentheses, or separate sentences for clauses.
