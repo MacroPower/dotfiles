@@ -24,6 +24,12 @@ let
     text = builtins.readFile ../configs/claude/hooks/block-fetch.sh;
   };
 
+  blockExitPlan = pkgs.writeShellApplication {
+    name = "block-exit-plan";
+    runtimeInputs = [ pkgs.jq ];
+    text = builtins.readFile ../configs/claude/hooks/block-exit-plan.sh;
+  };
+
   # Single Bash PreToolUse hook that dispatches command rewrites.
   # All matching hooks run concurrently, so we use one hook to avoid
   # non-deterministic updatedInput races between multiple Bash matchers.
@@ -218,6 +224,15 @@ in
                   {
                     type = "command";
                     command = lib.getExe blockFetch;
+                  }
+                ];
+              }
+              {
+                matcher = "ExitPlanMode";
+                hooks = [
+                  {
+                    type = "command";
+                    command = lib.getExe blockExitPlan;
                   }
                 ];
               }
