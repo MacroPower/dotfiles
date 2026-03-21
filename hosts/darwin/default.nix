@@ -75,8 +75,8 @@
         show-process-indicators = true;
         # Group windows by application in Mission Control
         expose-group-apps = true;
-        # Speed up Mission Control animations (default: ~0.7s)
-        expose-animation-duration = 0.15;
+        # Instant Mission Control animations (default: ~0.7s)
+        expose-animation-duration = 0.001;
         # Minimize windows into their application icon instead of the Dock
         minimize-to-application = true;
 
@@ -149,14 +149,14 @@
         # Two-finger tap/click for right-click
         TrackpadRightClick = true;
         # Three-finger drag (accessibility feature, avoids click-and-hold)
-        TrackpadThreeFingerDrag = true;
+        TrackpadThreeFingerDrag = false;
         # Launchpad gesture with four-finger pinch
         TrackpadFourFingerPinchGesture = 2;
       };
 
       NSGlobalDomain = {
-        # Disable "natural" (inverted) scroll direction
-        "com.apple.swipescrolldirection" = false;
+        # Enable "natural" (inverted) scroll direction
+        "com.apple.swipescrolldirection" = true;
         # Show all file extensions in Finder
         AppleShowAllExtensions = true;
         # Dark mode
@@ -442,18 +442,6 @@
           "Negotiated Bitpool" = 80;
         };
 
-        # Check for macOS/security updates daily instead of weekly,
-        # download in background, and auto-install critical patches
-        "com.apple.SoftwareUpdate" = {
-          AutomaticCheckEnabled = true;
-          # 1 = daily (default is 7)
-          ScheduleFrequency = 1;
-          # Download updates in the background
-          AutomaticDownload = 1;
-          # Auto-install XProtect, MRT, and system data files
-          CriticalUpdateInstall = 1;
-        };
-
         # Activity Monitor opens its main window on launch, shows
         # real-time CPU graph in the Dock icon, and sorts by CPU descending
         "com.apple.ActivityMonitor" = {
@@ -463,13 +451,6 @@
           SortColumn = "CPUUsage";
           # 0 = descending (highest CPU first)
           SortDirection = 0;
-        };
-
-        # Window tiling via drag (explicit, supplements system.defaults.WindowManager)
-        "com.apple.WindowManager" = {
-          EnableTilingByEdgeDrag = true;
-          EnableTopTilingByEdgeDrag = true;
-          EnableTilingOptionAccelerator = true;
         };
 
         # Disk Utility: show all devices, partitions, debug menu, and advanced image options
@@ -537,6 +518,17 @@
       CustomSystemPreferences = {
         # Prevent Gatekeeper from silently re-enabling itself every 30 days
         "com.apple.security".GKAutoRearm = false;
+        # Check for macOS/security updates daily instead of weekly,
+        # download in background, and auto-install critical patches
+        "com.apple.SoftwareUpdate" = {
+          AutomaticCheckEnabled = true;
+          # 1 = daily (default is 7)
+          ScheduleFrequency = 1;
+          # Download updates in the background
+          AutomaticDownload = 1;
+          # Auto-install XProtect, MRT, and system data files
+          CriticalUpdateInstall = 1;
+        };
       };
     };
 
