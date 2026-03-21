@@ -42,7 +42,6 @@ const (
 	terrariumConfigPath = homeDir + "/.config/terrarium/config.yaml"
 )
 
-
 // Dev provides reusable development container functions powered by
 // nix home-manager. Create instances with [New].
 type Dev struct {
