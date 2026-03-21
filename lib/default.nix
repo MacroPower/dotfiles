@@ -30,7 +30,16 @@ let
     system: _final: _prev:
     nur-jacobcolvin.packages.${system};
 
+  lixOverlay = _final: prev: {
+    inherit (prev.lixPackageSets.stable)
+      nixpkgs-review
+      nix-eval-jobs
+      nix-fast-build
+      ;
+  };
+
   sharedOverlays = system: [
+    lixOverlay
     localOverlay
     (nurJacobColvinOverlay system)
     nur.overlays.default

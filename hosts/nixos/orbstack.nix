@@ -23,19 +23,6 @@
         dhcpcd.enable = false;
       };
 
-      # In LXC containers, systemd-hostnamed only sets the static hostname from
-      # /etc/hostname, and cannot call sethostname() to update the kernel hostname.
-      # OrbStack pre-sets the kernel hostname to "nixos", so we override it here.
-      systemd.services.set-hostname = {
-        description = "Set kernel hostname to match networking.hostName";
-        wantedBy = [ "multi-user.target" ];
-        after = [ "systemd-hostnamed.service" ];
-        serviceConfig.Type = "oneshot";
-        script = ''
-          echo "nixos-orbstack" > /proc/sys/kernel/hostname
-        '';
-      };
-
       # Container runtime (isolated from OrbStack's host daemon)
       virtualisation.containerd.enable = true;
 
@@ -45,6 +32,19 @@
       ];
 
       systemd = {
+        # In LXC containers, systemd-hostnamed only sets the static hostname from
+        # /etc/hostname, and cannot call sethostname() to update the kernel hostname.
+        # OrbStack pre-sets the kernel hostname to "nixos", so we override it here.
+        services.set-hostname = {
+          description = "Set kernel hostname to match networking.hostName";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "systemd-hostnamed.service" ];
+          serviceConfig.Type = "oneshot";
+          script = ''
+            echo "nixos-orbstack" > /proc/sys/kernel/hostname
+          '';
+        };
+
         network.networks."50-eth0" = {
           matchConfig.Name = "eth0";
           networkConfig = {

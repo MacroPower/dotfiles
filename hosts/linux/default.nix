@@ -6,5 +6,5 @@
   home.username = config.dotfiles.username;
   home.homeDirectory = config.dotfiles.homeDirectory;
 
-  nix.package = pkgs.nix;
+  nix.package = pkgs.lixPackageSets.stable.lix;
 }
