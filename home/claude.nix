@@ -18,10 +18,14 @@ let
     };
   };
 
-  blockFetch = pkgs.writeShellApplication {
-    name = "block-fetch";
-    runtimeInputs = [ pkgs.jq ];
-    text = builtins.readFile ../configs/claude/hooks/block-fetch.sh;
+  fetchRules = (pkgs.formats.json { }).generate "mcp-fetch-rules.json" {
+    deny = [
+      {
+        host = "raw\\.githubusercontent\\.com";
+        except = [ { path = ".*\\.md"; } ];
+        reason = "Fetching code from raw.githubusercontent.com is blocked. Clone the repo to /tmp/git/<owner>/<repo> and read files locally instead.";
+      }
+    ];
   };
 
   blockExitPlan = pkgs.writeShellApplication {
@@ -76,10 +80,10 @@ in
         servers = {
           fetch = {
             type = "stdio";
-            command = "${pkgs.uv}/bin/uvx";
+            command = "${pkgs.mcp-fetch}/bin/mcp-fetch";
             args = [
-              "--isolated"
-              "mcp-server-fetch"
+              "--rules-file"
+              "${fetchRules}"
             ];
           };
           kagi = {
@@ -111,6 +115,7 @@ in
           };
           permissions = {
             allow = [
+              "mcp__fetch__fetch"
               "mcp__kagi__kagi_search_fetch"
               "mcp__github__get_commit"
               "mcp__github__get_copilot_job_status"
@@ -236,15 +241,6 @@ in
                   {
                     type = "command";
                     command = lib.getExe hookRouter;
-                  }
-                ];
-              }
-              {
-                matcher = "mcp__fetch__fetch";
-                hooks = [
-                  {
-                    type = "command";
-                    command = lib.getExe blockFetch;
                   }
                 ];
               }

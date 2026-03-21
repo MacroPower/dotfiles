@@ -140,6 +140,7 @@
                 photo-cli = ./pkgs/photo-cli.nix;
                 git-idempotent = ./tools/git-idempotent/package.nix;
                 hook-router = ./tools/hook-router/package.nix;
+                mcp-fetch = ./tools/mcp-fetch/package.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })

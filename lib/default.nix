@@ -23,6 +23,7 @@ let
     photo-cli = final.callPackage paths.photo-cli { };
     git-idempotent = final.callPackage paths.git-idempotent { };
     hook-router = final.callPackage paths.hook-router { };
+    mcp-fetch = final.callPackage paths.mcp-fetch { };
   };
 
   nurJacobColvinOverlay =
