@@ -215,6 +215,8 @@ in
               allowLocalBinding = true;
               allowedDomains = [
                 "jacobcolvin.com"
+                "registry.dagger.io"
+                "api.dagger.cloud"
               ];
             };
             filesystem = {
