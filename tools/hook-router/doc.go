@@ -5,7 +5,8 @@
 // and applies two checks in order:
 //
 //  1. Deny: commands containing grep or find are rejected with a hint to use
-//     rg or fd instead.
+//     rg or fd instead. git stash save/push forms are also denied to prevent
+//     shelving changes as an avoidance mechanism.
 //  2. Rewrite: git clone invocations are rewritten to use git-idempotent.
 //
 // Hooks that don't match either check are forwarded to an optional downstream

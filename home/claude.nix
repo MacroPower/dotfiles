@@ -192,11 +192,6 @@ in
               "Bash(git tag *)"
               "Bash(git rm *)"
               "Bash(git remote *)"
-              "Bash(git stash pop)"
-              "Bash(git stash pop *)"
-              "Bash(git stash drop)"
-              "Bash(git stash drop *)"
-              "Bash(git stash clear)"
             ];
           };
           statusLine = {

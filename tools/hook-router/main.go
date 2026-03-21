@@ -75,13 +75,11 @@ func run(stdin io.Reader, stdout io.Writer, cfg config) error {
 
 	// Deny takes priority over rewriting.
 	if reason, denied := checkDenied(prog); denied {
-		return encodeJSON(stdout, map[string]any{
-			"hookSpecificOutput": map[string]any{
-				"hookEventName":            "PreToolUse",
-				"permissionDecision":       "deny",
-				"permissionDecisionReason": reason,
-			},
-		})
+		return encodeJSON(stdout, denyResponse(reason))
+	}
+
+	if reason, denied := checkGitStashDenied(prog); denied {
+		return encodeJSON(stdout, denyResponse(reason))
 	}
 
 	rewritten, rewrote, err := rewriteClones(prog, cfg.gitIdempotent)
@@ -109,6 +107,16 @@ func run(stdin io.Reader, stdout io.Writer, cfg config) error {
 	})
 }
 
+func denyResponse(reason string) map[string]any {
+	return map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName":            "PreToolUse",
+			"permissionDecision":       "deny",
+			"permissionDecisionReason": reason,
+		},
+	}
+}
+
 func encodeJSON(w io.Writer, v any) error {
 	err := json.NewEncoder(w).Encode(v)
 	if err != nil {
@@ -122,6 +130,19 @@ func encodeJSON(w io.Writer, v any) error {
 var replacements = map[string]string{
 	"grep": "rg",
 	"find": "fd",
+}
+
+// stashAllowed lists git stash subcommands that are safe to allow through.
+// Any stash invocation whose third argument is not in this set is denied,
+// which blocks save/push forms used to shelve changes.
+var stashAllowed = map[string]bool{
+	"pop":    true,
+	"apply":  true,
+	"list":   true,
+	"show":   true,
+	"branch": true,
+	"drop":   true,
+	"clear":  true,
 }
 
 // checkDenied walks the AST looking for commands that should be replaced
@@ -166,6 +187,57 @@ func checkDenied(prog *syntax.File) (string, bool) {
 	sort.Strings(hints)
 
 	return strings.Join(hints, " "), true
+}
+
+// checkGitStashDenied walks the AST looking for git stash invocations that
+// save/push changes. It allows read and consume subcommands (pop, apply, list,
+// show, branch, drop, clear) and denies everything else.
+func checkGitStashDenied(prog *syntax.File) (string, bool) {
+	found := false
+
+	syntax.Walk(prog, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) < 2 {
+			return true
+		}
+
+		parts0 := call.Args[0].Parts
+		parts1 := call.Args[1].Parts
+		if len(parts0) != 1 || len(parts1) != 1 {
+			return true
+		}
+
+		lit0, ok0 := parts0[0].(*syntax.Lit)
+		lit1, ok1 := parts1[0].(*syntax.Lit)
+		if !ok0 || !ok1 || lit0.Value != "git" || lit1.Value != "stash" {
+			return true
+		}
+
+		// Bare "git stash" (implicit push) or unknown subcommand/flag.
+		if len(call.Args) == 2 {
+			found = true
+			return true
+		}
+
+		parts2 := call.Args[2].Parts
+		if len(parts2) != 1 {
+			found = true
+			return true
+		}
+
+		lit2, ok2 := parts2[0].(*syntax.Lit)
+		if !ok2 || !stashAllowed[lit2.Value] {
+			found = true
+		}
+
+		return true
+	})
+
+	if !found {
+		return "", false
+	}
+
+	return "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.", true
 }
 
 func rewriteClones(prog *syntax.File, gitIdempotent string) (string, bool, error) {
