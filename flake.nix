@@ -151,7 +151,7 @@
         {
           darwinConfigurations = {
             "jacobcolvin@Jacobs-Mac-mini" = mkDarwin (import ./hosts/darwin/mac-mini.nix);
-            "jacobcolvin@Jacobs-MBP" = mkDarwin (import ./hosts/darwin/mbp.nix);
+            "jacobcolvin@Jacobs-MacBook-Pro" = mkDarwin (import ./hosts/darwin/mbp.nix);
           };
 
           nixosConfigurations = {
