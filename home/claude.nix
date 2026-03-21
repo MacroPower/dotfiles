@@ -10,6 +10,58 @@ let
   cfg = config.dotfiles.claude;
   skipPerms = cfg.dangerouslySkipPermissions;
 
+  urlMatchOptions = {
+    scheme = mkOption {
+      type = types.str;
+      default = "";
+      description = "Regex for URL scheme.";
+    };
+    host = mkOption {
+      type = types.str;
+      default = "";
+      description = "Regex for URL host.";
+    };
+    path = mkOption {
+      type = types.str;
+      default = "";
+      description = "Regex for URL path.";
+    };
+    query = mkOption {
+      type = types.str;
+      default = "";
+      description = "Regex for URL query.";
+    };
+    fragment = mkOption {
+      type = types.str;
+      default = "";
+      description = "Regex for URL fragment.";
+    };
+  };
+
+  urlMatchType = types.submodule { options = urlMatchOptions; };
+
+  denyRuleType = types.submodule {
+    options = urlMatchOptions // {
+      reason = mkOption {
+        type = types.str;
+        description = "Reason shown when URL is denied.";
+      };
+      except = mkOption {
+        type = types.listOf urlMatchType;
+        default = [ ];
+        description = "Exception patterns.";
+      };
+    };
+  };
+
+  cleanAttrs = lib.filterAttrs (_: v: v != "" && v != [ ]);
+  cleanRule =
+    rule:
+    let
+      cleaned = cleanAttrs rule;
+    in
+    if cleaned ? except then cleaned // { except = map cleanAttrs cleaned.except; } else cleaned;
+
   rtkConfig = (pkgs.formats.toml { }).generate "config.toml" {
     display = {
       colors = false;
@@ -18,15 +70,23 @@ let
     };
   };
 
-  fetchRules = (pkgs.formats.json { }).generate "mcp-fetch-rules.json" {
-    deny = [
-      {
-        host = "raw\\.githubusercontent\\.com";
-        except = [ { path = ".*\\.md"; } ];
-        reason = "Fetching code from raw.githubusercontent.com is blocked. Clone the repo to /tmp/git/<owner>/<repo> and read files locally instead.";
-      }
-    ];
-  };
+  fetchRules = (pkgs.formats.json { }).generate "mcp-fetch-rules.json" (
+    {
+      deny = map cleanRule (
+        [
+          {
+            host = "raw\\.githubusercontent\\.com";
+            except = [ { path = ".*\\.md"; } ];
+            reason = "Fetching code from raw.githubusercontent.com is blocked. Clone the repo to /tmp/git/<owner>/<repo> and read files locally instead.";
+          }
+        ]
+        ++ cfg.extraFetchRules.deny
+      );
+    }
+    // lib.optionalAttrs (cfg.extraFetchRules.allow != [ ]) {
+      allow = map cleanAttrs cfg.extraFetchRules.allow;
+    }
+  );
 
   blockExitPlan = pkgs.writeShellApplication {
     name = "block-exit-plan";
@@ -70,6 +130,25 @@ in
       type = types.attrsOf types.anything;
       default = { };
       description = "Additional settings merged into Claude Code settings.json.";
+    };
+
+    extraFetchRules = mkOption {
+      type = types.submodule {
+        options = {
+          deny = mkOption {
+            type = types.listOf denyRuleType;
+            default = [ ];
+            description = "Additional deny rules appended to the base mcp-fetch rules.";
+          };
+          allow = mkOption {
+            type = types.listOf urlMatchType;
+            default = [ ];
+            description = "Allow rules for mcp-fetch. When non-empty, only matching URLs are permitted.";
+          };
+        };
+      };
+      default = { };
+      description = "Extra mcp-fetch URL filtering rules merged with the base deny list.";
     };
   };
 
