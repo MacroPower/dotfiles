@@ -34,14 +34,16 @@ type AllowRule struct {
 
 // rulesFile is the JSON structure read from disk.
 type rulesFile struct {
-	Deny  []DenyRule  `json:"deny,omitempty"`
-	Allow []AllowRule `json:"allow,omitempty"`
+	Deny   []DenyRule  `json:"deny,omitempty"`
+	Allow  []AllowRule `json:"allow,omitempty"`
+	Reason string      `json:"reason,omitempty"`
 }
 
 // Rules holds compiled URL rules, ready for matching.
 type Rules struct {
-	deny  []compiledDeny
-	allow []compiledMatch
+	deny   []compiledDeny
+	allow  []compiledMatch
+	reason string
 }
 
 type compiledMatch struct {
@@ -78,7 +80,7 @@ func LoadRules(path string) (*Rules, error) {
 		return nil, fmt.Errorf("parsing rules file: %w", err)
 	}
 
-	rules := &Rules{}
+	rules := &Rules{reason: f.Reason}
 
 	for i, d := range f.Deny {
 		cm, err := compileURLMatch(d.URLMatch)
@@ -142,6 +144,10 @@ func (r *Rules) Check(u *url.URL) string {
 			if a.matches(u) {
 				return ""
 			}
+		}
+
+		if r.reason != "" {
+			return r.reason
 		}
 
 		return "URL not in allow list"

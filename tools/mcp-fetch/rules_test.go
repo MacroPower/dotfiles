@@ -14,10 +14,11 @@ func TestCheck(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		deny  []compiledDeny
-		allow []compiledMatch
-		url   string
-		want  string
+		deny   []compiledDeny
+		allow  []compiledMatch
+		reason string
+		url    string
+		want   string
 	}{
 		"deny by host": {
 			deny: mustDeny(t, DenyRule{
@@ -101,6 +102,12 @@ func TestCheck(t *testing.T) {
 			url:  "https://raw.githubusercontent.com/o/r/main/README.md?token=abc",
 			want: "",
 		},
+		"allow list, no match, custom reason": {
+			allow:  mustAllow(t, AllowRule{URLMatch: URLMatch{Host: `example\.com`}}),
+			reason: "ask the user for permission first",
+			url:    "https://other.com/page",
+			want:   "ask the user for permission first",
+		},
 		"anchoring prevents substring host match": {
 			deny: mustDeny(t, DenyRule{
 				URLMatch: URLMatch{Host: `example\.com`},
@@ -117,7 +124,7 @@ func TestCheck(t *testing.T) {
 
 			var r *Rules
 			if tt.deny != nil || tt.allow != nil {
-				r = &Rules{deny: tt.deny, allow: tt.allow}
+				r = &Rules{deny: tt.deny, allow: tt.allow, reason: tt.reason}
 			}
 
 			u, err := url.ParseRequestURI(tt.url)
@@ -158,6 +165,15 @@ func TestLoadRules(t *testing.T) {
 		"malformed JSON": {
 			content: `{invalid`,
 			err:     "parsing rules file",
+		},
+		"reason field loaded": {
+			content: `{"reason":"custom msg","allow":[{"host":"example\\.com"}]}`,
+			want: func(t *testing.T, r *Rules) {
+				t.Helper()
+				u, err := url.ParseRequestURI("https://other.com/page")
+				require.NoError(t, err)
+				assert.Equal(t, "custom msg", r.Check(u))
+			},
 		},
 		"invalid regex": {
 			content: `{"deny":[{"host":"[invalid","reason":"bad"}]}`,

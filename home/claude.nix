@@ -72,6 +72,7 @@ let
 
   fetchRules = (pkgs.formats.json { }).generate "mcp-fetch-rules.json" (
     {
+      reason = "URL not in allowlist. If you need to fetch this content, ask the user to add an entry to the allowlist. Present the user with both the URL and your justification.";
       deny = map cleanRule (
         [
           {
