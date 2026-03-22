@@ -555,7 +555,7 @@ in
 
         ## Writing Style
 
-        - Keep responses to plain ASCII text. Use commas, semicolons, parentheses, or separate sentences for clauses.
+        - Keep responses to plain ASCII text.
         - Acknowledge complexity and mixed feelings when they exist.
         - Your code speaks for itself. Enumeration of content is redundant. Focus instead on the how and why.
 
