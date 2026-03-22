@@ -466,6 +466,7 @@ in
             filesystem = {
               allowWrite = [
                 "/tmp/git"
+                "/private/tmp/git"
               ];
             };
             excludedCommands = [
