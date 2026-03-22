@@ -27,33 +27,17 @@ func TestCheckDenied(t *testing.T) {
 		input string
 		want  string
 	}{
-		"grep": {
-			input: "grep foo file.txt",
-			want:  "Use rg instead of grep.",
-		},
 		"find": {
 			input: "find . -name '*.go'",
 			want:  "Use fd instead of find.",
-		},
-		"grep in pipeline": {
-			input: "ls | grep foo",
-			want:  "Use rg instead of grep.",
 		},
 		"find in pipeline": {
 			input: "find . -name x | xargs rm",
 			want:  "Use fd instead of find.",
 		},
-		"both grep and find": {
-			input: "grep foo && find . -name x",
-			want:  "Use fd instead of find. Use rg instead of grep.",
-		},
-		"grep in subshell": {
-			input: "(grep foo file.txt)",
-			want:  "Use rg instead of grep.",
-		},
-		"grep in command substitution": {
-			input: "echo $(grep foo bar)",
-			want:  "Use rg instead of grep.",
+		"find in compound": {
+			input: "echo hi && find . -name x",
+			want:  "Use fd instead of find.",
 		},
 		"no match: rg": {
 			input: "rg foo",
@@ -445,7 +429,7 @@ func TestRun(t *testing.T) {
 		t.Parallel()
 
 		input := makeInput(map[string]any{
-			"command": "grep foo file.txt",
+			"command": "find . -name foo",
 		})
 
 		var stdout bytes.Buffer
@@ -462,14 +446,14 @@ func TestRun(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "PreToolUse", hso["hookEventName"])
 		assert.Equal(t, "deny", hso["permissionDecision"])
-		assert.Equal(t, "Use rg instead of grep.", hso["permissionDecisionReason"])
+		assert.Equal(t, "Use fd instead of find.", hso["permissionDecisionReason"])
 	})
 
 	t.Run("denied command with git clone", func(t *testing.T) {
 		t.Parallel()
 
 		input := makeInput(map[string]any{
-			"command": "git clone URL dest && grep foo file.txt",
+			"command": "git clone URL dest && find . -name foo",
 		})
 
 		var stdout bytes.Buffer

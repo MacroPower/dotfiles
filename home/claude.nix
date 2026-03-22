@@ -551,7 +551,6 @@ in
 
         ## Shell Commands
 
-        - Use `rg` instead of `grep` in Bash commands.
         - Use `fd` instead of `find` in Bash commands.
 
         ## Writing Style

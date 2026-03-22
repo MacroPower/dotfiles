@@ -128,7 +128,6 @@ func encodeJSON(w io.Writer, v any) error {
 
 // replacements maps commands that should be denied to their suggested alternatives.
 var replacements = map[string]string{
-	"grep": "rg",
 	"find": "fd",
 }
 
