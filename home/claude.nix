@@ -227,7 +227,9 @@ let
 
   # Wrapper script that reads the KAGI_API_KEY from sops at runtime
   kagiWrapper = pkgs.writeShellScript "kagi-mcp-wrapper" ''
-    export KAGI_API_KEY="$(cat ${config.sops.secrets.kagi_api_key.path} 2>/dev/null || true)"
+    if [ -f "${config.sops.secrets.kagi_api_key.path}" ]; then
+      export KAGI_API_KEY="$(cat "${config.sops.secrets.kagi_api_key.path}" 2>/dev/null || true)"
+    fi
     export KAGI_SUMMARIZER_ENGINE="agnes"
     exec ${pkgs.uv}/bin/uvx --isolated --managed-python --python=3.13 kagimcp "$@"
   '';
@@ -592,9 +594,11 @@ in
           '.mcpServers = (.mcpServers // {} | to_entries | map(select(.key as $k | $mcp | has($k) | not)) | from_entries) * $mcp')
 
         # Set GitHub PAT as a universal fish variable for MCP auth
-        GH_TOKEN=$(cat ${config.sops.secrets.gh_token.path} 2>/dev/null || true)
-        if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
-          ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
+        if [ -f "${config.sops.secrets.gh_token.path}" ]; then
+          GH_TOKEN=$(cat "${config.sops.secrets.gh_token.path}" 2>/dev/null || true)
+          if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
+            ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
+          fi
         fi
 
         ${lib.optionalString skipPerms ''
