@@ -52,6 +52,7 @@ in
         # Languages & runtimes
         nodejs
         dotnet-sdk
+        gcc
 
         # Dev tools
         gopls

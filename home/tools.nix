@@ -178,5 +178,8 @@
     tokei
     gping
     photo-cli
+    editorconfig-checker
+    tfswitch
+    tflint
   ];
 }
