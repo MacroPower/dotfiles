@@ -268,13 +268,55 @@ in
       default = { };
       description = "Extra mcp-fetch URL filtering rules merged with the base deny and allow lists.";
     };
+
+    extraAgents = mkOption {
+      type = types.attrsOf (types.either types.lines types.path);
+      default = { };
+      description = "Additional agents merged into programs.claude-code.agents. Keys omit the .md suffix.";
+    };
+
+    extraSkills = mkOption {
+      type = types.attrsOf (types.either types.lines types.path);
+      default = { };
+      description = "Additional skills merged into programs.claude-code.skills. Values may be paths to directories or files.";
+    };
+
+    extraMcpServers = mkOption {
+      type = types.attrsOf types.anything;
+      default = { };
+      description = "Additional MCP servers deep-merged into programs.mcp.servers.";
+    };
+
+    extraPermissions = mkOption {
+      type = types.submodule {
+        options = {
+          allow = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+            description = "Additional tool patterns appended to the permissions allow list.";
+          };
+          deny = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+            description = "Additional tool patterns appended to the permissions deny list.";
+          };
+          ask = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+            description = "Additional tool patterns appended to the permissions ask list.";
+          };
+        };
+      };
+      default = { };
+      description = "Additional permission entries appended to the base allow/deny/ask lists.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
     programs = {
       mcp = {
         enable = true;
-        servers = {
+        servers = lib.recursiveUpdate {
           fetch = {
             type = "stdio";
             command = "${pkgs.mcp-fetch}/bin/mcp-fetch";
@@ -294,7 +336,7 @@ in
               Authorization = "Bearer \${GITHUB_PERSONAL_ACCESS_TOKEN}";
             };
           };
-        };
+        } cfg.extraMcpServers;
       };
 
       claude-code = {
@@ -337,7 +379,8 @@ in
               "mcp__github__search_pull_requests"
               "mcp__github__search_repositories"
               "mcp__github__search_users"
-            ];
+            ]
+            ++ cfg.extraPermissions.allow;
             deny = [
               "WebSearch"
               "WebFetch"
@@ -378,7 +421,8 @@ in
               "mcp__github__update_pull_request"
               "mcp__github__update_pull_request_branch"
               "mcp__github__run_secret_scanning"
-            ];
+            ]
+            ++ cfg.extraPermissions.deny;
             ask = [
               "Bash(git push)"
               "Bash(git push *)"
@@ -394,7 +438,8 @@ in
               "Bash(git tag *)"
               "Bash(git rm *)"
               "Bash(git remote *)"
-            ];
+            ]
+            ++ cfg.extraPermissions.ask;
           };
           statusLine = {
             type = "command";
@@ -458,8 +503,19 @@ in
           teammateMode = "auto";
         } cfg.extraSettings;
 
-        agentsDir = ../configs/claude/agents;
-        skillsDir = ../configs/claude/skills;
+        agents = {
+          code-simplifier = ../configs/claude/agents/code-simplifier.md;
+          humanizer = ../configs/claude/agents/humanizer.md;
+          plan-reviewer = ../configs/claude/agents/plan-reviewer.md;
+        }
+        // cfg.extraAgents;
+
+        skills = {
+          commit = ../configs/claude/skills/commit;
+          commit-push-pr = ../configs/claude/skills/commit-push-pr;
+          dagger-modules = ../configs/claude/skills/dagger-modules;
+        }
+        // cfg.extraSkills;
       };
 
       fish.shellAliases = lib.optionalAttrs skipPerms {

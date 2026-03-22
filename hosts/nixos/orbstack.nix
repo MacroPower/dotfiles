@@ -99,7 +99,10 @@
         userName = "Jacob Colvin";
         userEmail = "jacobcolvin1@gmail.com";
       };
-      claude.dangerouslySkipPermissions = true;
+      claude = {
+        dangerouslySkipPermissions = true;
+        extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
+      };
     };
   };
 }

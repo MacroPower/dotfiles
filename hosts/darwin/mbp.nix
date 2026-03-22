@@ -49,6 +49,7 @@
           obsidian
           slack
         ];
+        claude.extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
         vscode.extraExtensions =
           marketplace: with marketplace; [
             wakatime.vscode-wakatime
