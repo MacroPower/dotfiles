@@ -221,7 +221,6 @@ let
     runtimeInputs = [ pkgs.hook-router ];
     runtimeEnv = {
       RTK_REWRITE = "${pkgs.llm-agents.rtk}/libexec/rtk/hooks/rtk-rewrite.sh";
-      GIT_IDEMPOTENT = "${pkgs.git-idempotent}/bin/git-idempotent";
     };
     text = "exec hook-router";
   };
@@ -328,6 +327,16 @@ in
               "${fetchRules}"
             ];
           };
+          git = {
+            type = "stdio";
+            command = "${pkgs.mcp-git}/bin/mcp-git";
+            args = [
+              "--allow-dir"
+              "/tmp/git"
+              "--allow-dir"
+              "/private/tmp/git"
+            ];
+          };
           kagi = {
             type = "stdio";
             command = "${kagiWrapper}";
@@ -358,6 +367,7 @@ in
           permissions = {
             allow = [
               "mcp__fetch__fetch"
+              "mcp__git__git_clone"
               "mcp__kagi__kagi_search_fetch"
               "mcp__github__get_commit"
               "mcp__github__get_copilot_job_status"
@@ -546,7 +556,7 @@ in
         - Use `mcp__kagi__kagi_search_fetch` for web searches.
         - Use `mcp__fetch__fetch` for fetching known URLs and web page content.
         - Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)
-        - To read files from a GitHub repo, `git clone` it into `/tmp/git/<owner>/<repo>` and read from there.
+        - Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there.
 
         Remember: Do research, don't guess.
 

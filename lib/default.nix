@@ -21,7 +21,7 @@ let
     displayplacer = final.callPackage paths.displayplacer { };
     zed-bin = final.callPackage paths.zed-bin { };
     photo-cli = final.callPackage paths.photo-cli { };
-    git-idempotent = final.callPackage paths.git-idempotent { };
+    mcp-git = final.callPackage paths.mcp-git { };
     hook-router = final.callPackage paths.hook-router { };
     mcp-fetch = final.callPackage paths.mcp-fetch { };
   };

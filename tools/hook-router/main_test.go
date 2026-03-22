@@ -83,41 +83,43 @@ func TestCheckDenied(t *testing.T) {
 func TestCheckGitStashDenied(t *testing.T) {
 	t.Parallel()
 
+	const stashDenied = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
+
 	tests := map[string]struct {
 		input string
 		want  string
 	}{
 		"bare git stash": {
 			input: "git stash",
-			want:  "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.",
+			want:  stashDenied,
 		},
 		"git stash push": {
 			input: "git stash push",
-			want:  "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.",
+			want:  stashDenied,
 		},
 		"git stash push with path": {
 			input: "git stash push -- file.go",
-			want:  "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.",
+			want:  stashDenied,
 		},
 		"git stash save": {
 			input: `git stash save "wip"`,
-			want:  "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.",
+			want:  stashDenied,
 		},
 		"git stash -k": {
 			input: "git stash -k",
-			want:  "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.",
+			want:  stashDenied,
 		},
 		"git stash --keep-index": {
 			input: "git stash --keep-index",
-			want:  "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.",
+			want:  stashDenied,
 		},
 		"git stash in pipeline": {
 			input: "git stash || echo fail",
-			want:  "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.",
+			want:  stashDenied,
 		},
 		"git stash in subshell": {
 			input: "(git stash)",
-			want:  "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.",
+			want:  stashDenied,
 		},
 		"no match: git stash pop": {
 			input: "git stash pop",
@@ -169,90 +171,10 @@ func TestCheckGitStashDenied(t *testing.T) {
 	}
 }
 
-func TestRewriteClones(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		input string
-		want  string
-	}{
-		"simple clone": {
-			input: "git clone URL dest",
-			want:  "git-idempotent clone URL dest",
-		},
-		"compound &&": {
-			input: "cd /tmp/git && git clone URL dest",
-			want:  "cd /tmp/git && git-idempotent clone URL dest",
-		},
-		"empty prefix &&": {
-			input: `echo "" && git clone URL dest`,
-			want:  `echo "" && git-idempotent clone URL dest`,
-		},
-		"semicolon chain": {
-			input: "echo hi; git clone URL dest",
-			want:  "echo hi\ngit-idempotent clone URL dest",
-		},
-		"subshell": {
-			input: "(git clone URL dest)",
-			want:  "(git-idempotent clone URL dest)",
-		},
-		"nested subshell": {
-			input: "(cd /tmp && git clone URL dest)",
-			want:  "(cd /tmp && git-idempotent clone URL dest)",
-		},
-		"multiple clones": {
-			input: "git clone A B && git clone C D",
-			want:  "git-idempotent clone A B && git-idempotent clone C D",
-		},
-		"clone with flags": {
-			input: "git clone --depth 1 URL dest",
-			want:  "git-idempotent clone --depth 1 URL dest",
-		},
-		"no match: git pull": {
-			input: "git pull origin main",
-		},
-		"no match: plain cmd": {
-			input: "ls -la",
-		},
-		"no match: empty": {
-			input: "",
-		},
-		"git only, no subcommand": {
-			input: "git",
-		},
-		"or list": {
-			input: "git clone URL dest || echo fail",
-			want:  "git-idempotent clone URL dest || echo fail",
-		},
-		"if block": {
-			input: "if true; then git clone URL dest; fi",
-			want:  "if true; then git-idempotent clone URL dest; fi",
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			prog := mustParse(t, tt.input)
-			got, rewrote, err := rewriteClones(prog, "git-idempotent")
-			require.NoError(t, err)
-			assert.Equal(t, tt.want != "", rewrote)
-
-			if rewrote {
-				assert.Equal(t, tt.want, got)
-			}
-		})
-	}
-}
-
 func TestRun(t *testing.T) {
 	t.Parallel()
 
-	cfg := config{
-		gitIdempotent: "git-idempotent",
-		rtkRewrite:    "",
-	}
+	cfg := config{}
 
 	makeInput := func(toolInput map[string]any) string {
 		hook := map[string]any{"tool_input": toolInput}
@@ -261,58 +183,6 @@ func TestRun(t *testing.T) {
 
 		return string(b)
 	}
-
-	t.Run("matching command", func(t *testing.T) {
-		t.Parallel()
-
-		input := makeInput(map[string]any{
-			"command": "git clone URL dest",
-		})
-
-		var stdout bytes.Buffer
-
-		err := run(strings.NewReader(input), &stdout, cfg)
-		require.NoError(t, err)
-
-		var result map[string]any
-
-		err = json.Unmarshal(stdout.Bytes(), &result)
-		require.NoError(t, err)
-
-		hso, ok := result["hookSpecificOutput"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "allow", hso["permissionDecision"])
-
-		updatedInput, ok := hso["updatedInput"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "git-idempotent clone URL dest", updatedInput["command"])
-	})
-
-	t.Run("extra fields preserved", func(t *testing.T) {
-		t.Parallel()
-
-		input := makeInput(map[string]any{
-			"command":     "git clone URL dest",
-			"description": "cloning repo",
-		})
-
-		var stdout bytes.Buffer
-
-		err := run(strings.NewReader(input), &stdout, cfg)
-		require.NoError(t, err)
-
-		var result map[string]any
-
-		err = json.Unmarshal(stdout.Bytes(), &result)
-		require.NoError(t, err)
-
-		hso, ok := result["hookSpecificOutput"].(map[string]any)
-		require.True(t, ok)
-
-		updatedInput, ok := hso["updatedInput"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "cloning repo", updatedInput["description"])
-	})
 
 	t.Run("non-matching command", func(t *testing.T) {
 		t.Parallel()
