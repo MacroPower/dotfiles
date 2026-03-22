@@ -79,12 +79,130 @@ let
             except = [ { path = ".*\\.md"; } ];
             reason = "Fetching code from raw.githubusercontent.com is blocked. Clone the repo to /tmp/git/<owner>/<repo> and read files locally instead.";
           }
+          {
+            host = "google\\.com";
+            reason = "Fetching from google.com is blocked. Use mcp__kagi__kagi_search_fetch instead.";
+          }
         ]
         ++ cfg.extraFetchRules.deny
       );
     }
-    // lib.optionalAttrs (cfg.extraFetchRules.allow != [ ]) {
-      allow = map cleanAttrs cfg.extraFetchRules.allow;
+    // {
+      allow = map cleanAttrs (
+        [
+          { host = "(.*\\.)?adguard\\.com"; }
+          { host = "(.*\\.)?anthropic\\.com"; }
+          { host = "(.*\\.)?archlinux\\.org"; }
+          { host = "argoproj\\.github\\.io"; }
+          { host = "(.*\\.)?argoproj\\.io"; }
+          { host = "(.*\\.)?artifacthub\\.io"; }
+          { host = "(.*\\.)?astral\\.sh"; }
+          { host = "(.*\\.)?atuin\\.sh"; }
+          { host = "(.*\\.)?docs\\.auth0\\.com"; }
+          { host = "bjw-s-labs\\.github\\.io"; }
+          { host = "(.*\\.)?brew\\.sh"; }
+          { host = "(.*\\.)?cert-manager\\.io"; }
+          { host = "(.*\\.)?cilium\\.io"; }
+          { host = "(.*\\.)?cncf\\.io"; }
+          { host = "(.*\\.)?cloudflare\\.com"; }
+          { host = "(.*\\.)?cloudnative-pg\\.io"; }
+          { host = "(.*\\.)?containerd\\.io"; }
+          { host = "(.*\\.)?coredns\\.io"; }
+          { host = "(.*\\.)?crates\\.io"; }
+          { host = "(.*\\.)?crossplane\\.io"; }
+          { host = "(.*\\.)?crds\\.dev"; }
+          { host = "(.*\\.)?dagger\\.io"; }
+          { host = "(.*\\.)?daggerverse\\.dev"; }
+          { host = "(.*\\.)?direnv\\.net"; }
+          { host = "(.*\\.)?docker\\.com"; }
+          { host = "(.*\\.)?docs\\.rs"; }
+          { host = "(.*\\.)?editorconfig\\.org"; }
+          { host = "(.*\\.)?docs\\.doppler\\.com"; }
+          { host = "(.*\\.)?dragonflydb\\.io"; }
+          { host = "(.*\\.)?envoyproxy\\.io"; }
+          { host = "(.*\\.)?etcd\\.io"; }
+          { host = "(.*\\.)?external-secrets\\.io"; }
+          { host = "(.*\\.)?fishshell\\.com"; }
+          { host = "(.*\\.)?fluxcd\\.io"; }
+          { host = "(.*\\.)?freedesktop\\.org"; }
+          { host = "(.*\\.)?gethomepage\\.dev"; }
+          { host = "(.*\\.)?getsops\\.io"; }
+          { host = "(.*\\.)?ghostty\\.org"; }
+          { host = "(.*\\.)?git-scm\\.com"; }
+          { host = "(.*\\.)?github\\.com"; }
+          { host = "(.*\\.)?githubusercontent\\.com"; }
+          { host = "(.*\\.)?gnu\\.org"; }
+          { host = "(.*\\.)?gnupg\\.org"; }
+          { host = "(.*\\.)?go\\.dev"; }
+          { host = "(.*\\.)?golang\\.org"; }
+          { host = "(.*\\.)?grafana\\.com"; }
+          { host = "(.*\\.)?grpc\\.io"; }
+          { host = "(.*\\.)?hashicorp\\.com"; }
+          { host = "(.*\\.)?helm\\.sh"; }
+          { host = "(.*\\.)?hetzner\\.com"; }
+          { host = "(.*\\.)?ietf\\.org"; }
+          { host = "(.*\\.)?inspektor-gadget\\.io"; }
+          { host = "(.*\\.)?jacobcolvin\\.com"; }
+          { host = "(.*\\.)?jetify\\.com"; }
+          { host = "(.*\\.)?jsonnet\\.org"; }
+          { host = "(.*\\.)?k9scli\\.io"; }
+          { host = "(.*\\.)?kagi\\.com"; }
+          { host = "(.*\\.)?kcl-lang\\.io"; }
+          { host = "(.*\\.)?kernel\\.org"; }
+          { host = "(.*\\.)?kubernetes\\.io"; }
+          { host = "(.*\\.)?kyverno\\.io"; }
+          { host = "(.*\\.)?letsencrypt\\.org"; }
+          { host = "(.*\\.)?lix\\.systems"; }
+          { host = "(.*\\.)?man7\\.org"; }
+          { host = "(.*\\.)?microsoft\\.com"; }
+          { host = "(.*\\.)?mozilla\\.org"; }
+          { host = "(.*\\.)?nats\\.io"; }
+          { host = "(.*\\.)?nix\\.dev"; }
+          { host = "(.*\\.)?nixos\\.org"; }
+          { host = "(.*\\.)?nmap\\.org"; }
+          { host = "(.*\\.)?nodejs\\.org"; }
+          { host = "(.*\\.)?npmjs\\.com"; }
+          { host = "(.*\\.)?npmjs\\.org"; }
+          { host = "(.*\\.)?obsidian\\.md"; }
+          { host = "(.*\\.)?opencontainers\\.org"; }
+          { host = "(.*\\.)?openebs\\.io"; }
+          { host = "(.*\\.)?openssl\\.org"; }
+          { host = "(.*\\.)?opentelemetry\\.io"; }
+          { host = "(.*\\.)?opentofu\\.org"; }
+          { host = "(.*\\.)?postgresql\\.org"; }
+          { host = "(.*\\.)?prettier\\.io"; }
+          { host = "(.*\\.)?prometheus\\.io"; }
+          { host = "(.*\\.)?pypi\\.org"; }
+          { host = "(.*\\.)?python\\.org"; }
+          { host = "(.*\\.)?redis\\.io"; }
+          { host = "(.*\\.)?rfc-editor\\.org"; }
+          { host = "(.*\\.)?robusta\\.dev"; }
+          { host = "(.*\\.)?rook\\.io"; }
+          { host = "(.*\\.)?rust-lang\\.org"; }
+          { host = "(.*\\.)?securecodebox\\.io"; }
+          { host = "(.*\\.)?sigstore\\.dev"; }
+          { host = "(.*\\.)?sigs\\.k8s\\.io"; }
+          { host = "(.*\\.)?docs\\.spacelift\\.io"; }
+          { host = "(.*\\.)?sqlite\\.org"; }
+          { host = "(.*\\.)?stakater\\.com"; }
+          { host = "(.*\\.)?stackoverflow\\.com"; }
+          { host = "(.*\\.)?starship\\.rs"; }
+          { host = "(.*\\.)?talos\\.dev"; }
+          { host = "(.*\\.)?taskfile\\.dev"; }
+          { host = "(.*\\.)?terraform\\.io"; }
+          { host = "(.*\\.)?tetragon\\.io"; }
+          { host = "(.*\\.)?truenas\\.com"; }
+          { host = "(.*\\.)?typescriptlang\\.org"; }
+          { host = "(.*\\.)?ui\\.com"; }
+          { host = "(.*\\.)?w3\\.org"; }
+          { host = "(.*\\.)?whatwg\\.org"; }
+          { host = "(.*\\.)?wikipedia\\.org"; }
+          { host = "(.*\\.)?wireguard\\.com"; }
+          { host = "(.*\\.)?wireshark\\.org"; }
+          { host = "(.*\\.)?zed\\.dev"; }
+        ]
+        ++ cfg.extraFetchRules.allow
+      );
     }
   );
 
@@ -143,12 +261,12 @@ in
           allow = mkOption {
             type = types.listOf urlMatchType;
             default = [ ];
-            description = "Allow rules for mcp-fetch. When non-empty, only matching URLs are permitted.";
+            description = "Additional allow rules appended to the base mcp-fetch allowlist.";
           };
         };
       };
       default = { };
-      description = "Extra mcp-fetch URL filtering rules merged with the base deny list.";
+      description = "Extra mcp-fetch URL filtering rules merged with the base deny and allow lists.";
     };
   };
 
