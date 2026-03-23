@@ -374,6 +374,8 @@ in
           };
           permissions = {
             allow = [
+              "Edit(//tmp/git/**)"
+              "Edit(//private/tmp/git/**)"
               "mcp__fetch__fetch"
               "mcp__git__git_clone"
               "mcp__kagi__kagi_search_fetch"
@@ -403,12 +405,90 @@ in
             ]
             ++ cfg.extraPermissions.allow;
             deny = [
+              # Key material & certificates
+              "Read(//**/*.pem)"
+              "Read(//**/*.key)"
+              "Read(//**/*.p12)"
+              "Read(//**/*.pfx)"
+              "Read(//**/*.jks)"
+              "Read(//**/*.asc)"
+              "Read(//**/*.keystore)"
+              "Read(//**/*.kdbx)"
+              "Read(//**/wallet.dat)"
+              "Read(//**/keystore/**)"
+              "Read(//**/.ssh/**)"
+              "Read(//**/.gnupg/**)"
+
+              # Generic secrets
+              "Read(//**/.env)"
+              "Read(//**/.env.*)"
+              "Read(//**/.secrets/**)"
+              "Read(//**/.git-credentials)"
+              "Read(//**/git/credentials)"
+              "Read(//**/.netrc)"
+              "Read(//**/.curlrc)"
+              "Read(//**/.wgetrc)"
+              "Read(//**/.password-store/**)"
+
+              # Cloud credentials
+              "Read(//**/.aws/credentials)"
+              "Read(//**/.aws/config)"
+              "Read(//**/.aws/sso/**)"
+              "Read(//**/.azure/**)"
+              "Read(//**/.config/gcloud/**)"
+              "Read(//**/.config/hcloud/config.json)"
+              "Read(//**/.snyk)"
+              "Read(//**/.wrangler/**)"
+
+              # Container & Kubernetes
+              "Read(//**/.docker/config.json)"
+              "Read(//**/.docker/certs.d/**)"
+              "Read(//**/.config/containers/auth.json)"
+              "Read(//**/.kube/config)"
+              "Read(//**/.kube/config*)"
+              "Read(//**/.talos/**)"
+              "Read(//**/.cosign/**)"
+              "Read(//**/.helm/repository/repositories.yaml)"
+
+              # Secret managers & encryption
+              "Read(//**/.doppler/**)"
+              "Read(//**/age/keys.txt)"
+              "Read(//**/rclone.conf)"
+
+              # IaC state & credentials
+              "Read(//**/credentials.tfrc.json)"
+              "Read(//**/.terraformrc)"
+              "Read(//**/.terraform.d/credentials.tfrc.json)"
+              "Read(//**/*.tfstate)"
+              "Read(//**/*.tfstate.*)"
+              "Read(//**/.pulumi/credentials.json)"
+
+              # CI/CD & deployment tokens
+              "Read(//**/.config/gh/hosts.yml)"
+              "Read(//**/.spacelift/**)"
+              "Read(//**/.jira.d/config.yml)"
+
+              # Package manager credentials
+              "Read(//**/.npmrc)"
+              "Read(//**/.pypirc)"
+              "Read(//**/.cargo/credentials.toml)"
+              "Read(//**/.gem/credentials)"
+              "Read(//**/.m2/settings.xml)"
+              "Read(//**/.m2/settings-security.xml)"
+              "Read(//**/.gradle/gradle.properties)"
+              "Read(//**/.composer/auth.json)"
+              "Read(//**/.config/poetry/auth.toml)"
+              "Read(//**/.bunfig.toml)"
+
+              # Claude Code credentials
+              "Read(//**/.claude/.credentials.json)"
+
+              # Usage hints
               "WebSearch"
               "WebFetch"
-              "Read(./.env)"
-              "Read(./.secrets)"
               "mcp__kagi__kagi_summarizer"
               "mcp__github__get_file_contents"
+
               # GitHub MCP: deny all write/mutating tools.
               # These are blocked by the MCP config and primarily denied here as a usage hint.
               "mcp__github__actions_run_trigger"
