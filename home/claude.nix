@@ -225,6 +225,14 @@ let
     text = "exec hook-router";
   };
 
+  # Wrapper script that reads the GH_TOKEN from sops at runtime
+  gitWrapper = pkgs.writeShellScript "git-mcp-wrapper" ''
+    if [ -f "${config.sops.secrets.gh_token.path}" ]; then
+      export GITHUB_TOKEN="$(cat "${config.sops.secrets.gh_token.path}" 2>/dev/null || true)"
+    fi
+    exec ${pkgs.mcp-git}/bin/mcp-git "$@"
+  '';
+
   # Wrapper script that reads the KAGI_API_KEY from sops at runtime
   kagiWrapper = pkgs.writeShellScript "kagi-mcp-wrapper" ''
     if [ -f "${config.sops.secrets.kagi_api_key.path}" ]; then
@@ -329,7 +337,7 @@ in
           };
           git = {
             type = "stdio";
-            command = "${pkgs.mcp-git}/bin/mcp-git";
+            command = "${gitWrapper}";
             args = [
               "--allow-dir"
               "/tmp/git"

@@ -41,6 +41,7 @@ func main() {
 	h := &cloneHandler{
 		allowDirs:     allowDirs,
 		allowInsecure: *allowInsecure,
+		token:         os.Getenv("GITHUB_TOKEN"),
 	}
 
 	srv := mcp.NewServer(

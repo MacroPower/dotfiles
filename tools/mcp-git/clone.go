@@ -74,8 +74,9 @@ type CloneInput struct {
 // cloneHandler implements the git_clone tool handler.
 type cloneHandler struct {
 	allowDirs     []string
-	allowInsecure bool // permit http:// and git:// URLs
-	allowFileURLs bool // testing only: permit file:// and local path URLs
+	allowInsecure bool   // permit http:// and git:// URLs
+	allowFileURLs bool   // testing only: permit file:// and local path URLs
+	token         string // GitHub personal access token for HTTPS auth
 }
 
 func (h *cloneHandler) handle(
@@ -128,6 +129,27 @@ func (h *cloneHandler) handle(
 	}
 
 	return h.clone(ctx, input)
+}
+
+// credentialArgs returns git -c flags that configure a
+// credential helper for GitHub HTTPS URLs. It returns nil when
+// no token is set or the URL is not an HTTPS GitHub URL.
+func (h *cloneHandler) credentialArgs(url string) []string {
+	if h.token == "" || !strings.HasPrefix(url, "https://github.com/") {
+		return nil
+	}
+
+	return []string{
+		"-c", "credential.helper=",
+		"-c", `credential.https://github.com.helper=!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f`,
+	}
+}
+
+// gitEnv returns the environment for git subprocesses. It
+// preserves the inherited environment and adds
+// GIT_TERMINAL_PROMPT=0 to prevent interactive prompts.
+func gitEnv() []string {
+	return append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 }
 
 // checkURL verifies that url uses a permitted scheme. Accepted
@@ -216,13 +238,17 @@ func resolveExistingPrefix(path string) string {
 
 //nolint:unparam // signature matches mcp.AddTool handler contract.
 func (h *cloneHandler) pull(ctx context.Context, url, dest string) (*mcp.CallToolResult, any, error) {
-	originErr := checkOrigin(ctx, url, dest)
+	originErr := h.checkOrigin(ctx, url, dest)
 	if originErr != nil {
 		return toolError(originErr), nil, nil
 	}
 
+	args := h.credentialArgs(url)
+	args = append(args, "-C", dest, "pull", "--ff-only", "-q")
+
 	//nolint:gosec // G204: dest is user-provided input.
-	cmd := exec.CommandContext(ctx, "git", "-C", dest, "pull", "--ff-only", "-q")
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = gitEnv()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -243,9 +269,12 @@ func (h *cloneHandler) pull(ctx context.Context, url, dest string) (*mcp.CallToo
 // checkOrigin verifies that the existing repo at dest has an
 // origin remote URL matching url. Both sides are normalized by
 // stripping a trailing ".git" suffix before comparison.
-func checkOrigin(ctx context.Context, url, dest string) error {
+func (h *cloneHandler) checkOrigin(ctx context.Context, url, dest string) error {
 	//nolint:gosec // G204: dest is user-provided input.
-	out, err := exec.CommandContext(ctx, "git", "-C", dest, "remote", "get-url", "origin").Output()
+	cmd := exec.CommandContext(ctx, "git", "-C", dest, "remote", "get-url", "origin")
+	cmd.Env = gitEnv()
+
+	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("%w: reading origin: %w", ErrOriginMismatch, err)
 	}
@@ -262,10 +291,12 @@ func checkOrigin(ctx context.Context, url, dest string) error {
 
 //nolint:unparam // signature matches mcp.AddTool handler contract.
 func (h *cloneHandler) clone(ctx context.Context, input CloneInput) (*mcp.CallToolResult, any, error) {
-	args := buildCloneArgs(input)
+	args := h.credentialArgs(input.URL)
+	args = append(args, buildCloneArgs(input)...)
 
 	//nolint:gosec // G204: args are user-provided input.
 	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = gitEnv()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

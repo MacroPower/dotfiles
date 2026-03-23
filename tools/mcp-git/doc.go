@@ -10,4 +10,10 @@
 //   - --allow-dir: restrict dest to subdirectories of this path
 //     (repeatable; if omitted, all paths are allowed)
 //   - --allow-insecure: permit unencrypted URL schemes (http, git)
+//
+// # Environment
+//
+//   - GITHUB_TOKEN: when set, configures a git credential helper that
+//     authenticates HTTPS requests to github.com using this token.
+//     This enables cloning private repositories.
 package main

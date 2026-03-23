@@ -200,6 +200,52 @@ func initBareRepo(t *testing.T) string {
 	return bare
 }
 
+func TestCredentialArgs(t *testing.T) {
+	t.Parallel()
+
+	wantArgs := []string{
+		"-c", "credential.helper=",
+		"-c", `credential.https://github.com.helper=!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f`,
+	}
+
+	tests := map[string]struct {
+		token string
+		url   string
+		want  []string
+	}{
+		"no token": {
+			url: "https://github.com/a/b",
+		},
+		"github https": {
+			token: "ghp_test123",
+			url:   "https://github.com/a/b",
+			want:  wantArgs,
+		},
+		"gitlab https": {
+			token: "ghp_test123",
+			url:   "https://gitlab.com/a/b",
+		},
+		"github ssh": {
+			token: "ghp_test123",
+			url:   "ssh://git@github.com/a/b",
+		},
+		"github scp": {
+			token: "ghp_test123",
+			url:   "git@github.com:a/b",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &cloneHandler{token: tt.token}
+			got := h.credentialArgs(tt.url)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestCheckURL(t *testing.T) {
 	t.Parallel()
 
@@ -346,6 +392,33 @@ func TestHandleClone(t *testing.T) {
 	require.NoError(t, statErr, ".git directory should exist after clone")
 
 	// Second call: pull.
+	result, _, err = h.handle(t.Context(), nil, CloneInput{
+		URL:  bare,
+		Dest: dest,
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	assert.Contains(t, resultText(t, result), "Pulled")
+}
+
+func TestHandleCloneWithToken(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	h := &cloneHandler{allowFileURLs: true, token: "ghp_unused"}
+
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	// Clone with token set (file URL, so credential args are not injected).
+	result, _, err := h.handle(t.Context(), nil, CloneInput{
+		URL:  bare,
+		Dest: dest,
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	assert.Contains(t, resultText(t, result), "Cloned")
+
+	// Pull with token set.
 	result, _, err = h.handle(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
