@@ -11,9 +11,6 @@
     ../options.nix
   ];
 
-  # Nix-installed GUI apps that all darwin hosts get
-  dotfiles.system.extraApps = [ "firefox" ];
-
   homebrew = {
     enable = true;
     enableFishIntegration = true;
@@ -80,36 +77,23 @@
         # Minimize windows into their application icon instead of the Dock
         minimize-to-application = true;
 
-        # Pinned Dock apps; optional cask-only apps are included only when
-        # their Homebrew cask is present in this host's merged cask list.
+        # Pinned Dock apps, sorted alphabetically by name.
         persistent-apps =
           let
-            inherit (config.homebrew) casks;
-            hasApp =
-              name:
-              builtins.elem name (map (c: if builtins.isString c then c else c.name) casks)
-              || builtins.elem name config.dotfiles.system.extraApps;
             resolveHome = p: builtins.replaceStrings [ "~" ] [ "/Users/${config.dotfiles.system.username}" ] p;
-            appName = a: builtins.baseNameOf a.app;
             unsorted = [
-              { app = "~/Applications/Home Manager Apps/Ghostty.app"; }
-              { app = "~/Applications/Home Manager Apps/Firefox.app"; }
+              "~/Applications/Home Manager Apps/Ghostty.app"
+              "~/Applications/Home Manager Apps/Firefox.app"
+              "~/Applications/Home Manager Apps/Zed.app"
+              "/Applications/Fork.app"
+              "/System/Applications/Messages.app"
+              "/System/Applications/Notes.app"
+              "/System/Applications/Utilities/Activity Monitor.app"
+              "/System/Applications/System Settings.app"
             ]
-            ++ lib.optional (hasApp "obsidian") { app = "~/Applications/Home Manager Apps/Obsidian.app"; }
-            ++ lib.optional (hasApp "discord") { app = "~/Applications/Home Manager Apps/Discord.app"; }
-            ++ [
-              { app = "~/Applications/Home Manager Apps/Zed.app"; }
-              { app = "/Applications/Fork.app"; }
-              { app = "/System/Applications/Messages.app"; }
-              { app = "/System/Applications/Notes.app"; }
-              { app = "/System/Applications/Utilities/Activity Monitor.app"; }
-              { app = "/System/Applications/System Settings.app"; }
-            ]
-            ++ map (app: { inherit app; }) config.dotfiles.system.dockExtraApps;
+            ++ config.dotfiles.system.dockExtraApps;
           in
-          map (a: a // { app = resolveHome a.app; }) (
-            lib.sort (a: b: lib.toLower (appName a) < lib.toLower (appName b)) unsorted
-          );
+          map resolveHome (lib.sort (a: b: lib.toLower (baseNameOf a) < lib.toLower (baseNameOf b)) unsorted);
 
         persistent-others =
           let

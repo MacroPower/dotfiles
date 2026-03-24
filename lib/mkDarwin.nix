@@ -11,7 +11,6 @@
   hostname,
   homebrew ? { },
   loginItems ? [ ],
-  extraApps ? [ ],
   dockExtraApps ? [ ],
   power ? { },
   homeModule,
@@ -26,7 +25,6 @@ inputs.nix-darwin.lib.darwinSystem {
           username
           homebrew
           loginItems
-          extraApps
           dockExtraApps
           ;
         inherit power;

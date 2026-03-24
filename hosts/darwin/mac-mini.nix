@@ -8,9 +8,9 @@
     "/Applications/OrbStack.app"
   ];
 
-  extraApps = [
-    "discord"
-    "obsidian"
+  dockExtraApps = [
+    "~/Applications/Home Manager Apps/Discord.app"
+    "~/Applications/Home Manager Apps/Obsidian.app"
   ];
 
   homebrew = {

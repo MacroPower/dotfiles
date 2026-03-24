@@ -13,16 +13,10 @@
       description = "Paths to .app bundles that should launch at login.";
     };
 
-    extraApps = lib.mkOption {
-      type = lib.types.listOf lib.types.nonEmptyStr;
-      default = [ ];
-      description = "Nix-installed GUI app names for conditional Dock/login items.";
-    };
-
     dockExtraApps = lib.mkOption {
       type = lib.types.listOf lib.types.nonEmptyStr;
       default = [ ];
-      description = "Additional .app paths to pin to the Dock after the standard set.";
+      description = "Additional .app paths to pin to the Dock.";
     };
 
     power = {
