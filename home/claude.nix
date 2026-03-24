@@ -571,7 +571,6 @@ in
             excludedCommands = [
               "docker"
               "dagger"
-              "git"
             ];
           };
           hooks = {

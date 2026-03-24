@@ -179,6 +179,7 @@
     gping
     photo-cli
     editorconfig-checker
+    lefthook
     tfswitch
     tflint
   ];

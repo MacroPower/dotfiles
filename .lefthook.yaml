@@ -1,0 +1,5 @@
+pre-commit:
+  commands:
+    check:
+      use_stdin: true
+      run: task check
