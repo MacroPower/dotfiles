@@ -19,6 +19,12 @@
       description = "Nix-installed GUI app names for conditional Dock/login items.";
     };
 
+    dockExtraApps = lib.mkOption {
+      type = lib.types.listOf lib.types.nonEmptyStr;
+      default = [ ];
+      description = "Additional .app paths to pin to the Dock after the standard set.";
+    };
+
     power = {
       sleep = {
         computer = lib.mkOption {

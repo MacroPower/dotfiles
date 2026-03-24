@@ -106,6 +106,7 @@
               { app = "/System/Applications/Utilities/Activity Monitor.app"; }
               { app = "/System/Applications/System Settings.app"; }
             ]
+            ++ map (app: { inherit app; }) config.dotfiles.system.dockExtraApps
           );
 
         persistent-others =
