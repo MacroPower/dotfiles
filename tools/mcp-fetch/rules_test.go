@@ -116,6 +116,94 @@ func TestCheck(t *testing.T) {
 			url:  "https://evil-example.com/page",
 			want: "",
 		},
+		"deny github API with path": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `api\.github\.com`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://api.github.com/repos/owner/repo/issues",
+			want: "use mcp",
+		},
+		"deny github API bare host": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `api\.github\.com`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://api.github.com/",
+			want: "use mcp",
+		},
+		"deny github issue page": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `github\.com`, Path: `/[^/]+/[^/]+/issues(/.*)?`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://github.com/owner/repo/issues/123",
+			want: "use mcp",
+		},
+		"deny github PR singular": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `github\.com`, Path: `/[^/]+/[^/]+/pulls?(/.*)?`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://github.com/owner/repo/pull/456",
+			want: "use mcp",
+		},
+		"deny github PRs plural": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `github\.com`, Path: `/[^/]+/[^/]+/pulls?(/.*)?`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://github.com/owner/repo/pulls",
+			want: "use mcp",
+		},
+		"deny github blob page": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `github\.com`, Path: `/[^/]+/[^/]+/(blob|tree)(/.*)?`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://github.com/owner/repo/blob/main/file.go",
+			want: "use mcp",
+		},
+		"deny github releases bare": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `github\.com`, Path: `/[^/]+/[^/]+/releases(/.*)?`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://github.com/owner/repo/releases",
+			want: "use mcp",
+		},
+		"deny github compare page": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `github\.com`, Path: `/[^/]+/[^/]+/(commit|compare)(/.*)?`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://github.com/owner/repo/compare/main...feature",
+			want: "use mcp",
+		},
+		"deny github search, query string ignored": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `github\.com`, Path: `/search(/.*)?`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://github.com/search?q=test&type=code",
+			want: "use mcp",
+		},
+		"allow github repo root": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `github\.com`, Path: `/[^/]+/[^/]+/issues(/.*)?`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://github.com/owner/repo",
+			want: "",
+		},
+		"allow github top-level page": {
+			deny: mustDeny(t, DenyRule{
+				URLMatch: URLMatch{Host: `github\.com`, Path: `/[^/]+/[^/]+/issues(/.*)?`},
+				Reason:   "use mcp",
+			}),
+			url:  "https://github.com/features",
+			want: "",
+		},
 	}
 
 	for name, tt := range tests {

@@ -84,6 +84,45 @@ let
             host = "google\\.com";
             reason = "Fetching from google.com is blocked. Use mcp__kagi__kagi_search_fetch instead.";
           }
+          {
+            host = "api\\.github\\.com";
+            reason = "Use mcp__github__* tools instead of fetching the GitHub API directly.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/issues(/.*)?";
+            reason = "Use mcp__github__list_issues or mcp__github__issue_read instead of fetching GitHub issue pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/pulls?(/.*)?";
+            reason = "Use mcp__github__list_pull_requests or mcp__github__pull_request_read instead of fetching GitHub PR pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/(commit|compare)(/.*)?";
+            reason = "Use mcp__github__get_commit or mcp__github__list_commits instead of fetching GitHub commit pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/releases(/.*)?";
+            reason = "Use mcp__github__list_releases or mcp__github__get_latest_release instead of fetching GitHub release pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/tags(/.*)?";
+            reason = "Use mcp__github__list_tags or mcp__github__get_tag instead of fetching GitHub tag pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/(blob|tree)(/.*)?";
+            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching GitHub file pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/search(/.*)?";
+            reason = "Use mcp__github__search_code, mcp__github__search_issues, mcp__github__search_pull_requests, or mcp__github__search_repositories instead of fetching GitHub search pages.";
+          }
         ]
         ++ cfg.extraFetchRules.deny
       );
