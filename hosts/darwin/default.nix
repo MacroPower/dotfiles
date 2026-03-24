@@ -90,9 +90,8 @@
               builtins.elem name (map (c: if builtins.isString c then c else c.name) casks)
               || builtins.elem name config.dotfiles.system.extraApps;
             resolveHome = p: builtins.replaceStrings [ "~" ] [ "/Users/${config.dotfiles.system.username}" ] p;
-          in
-          map (a: a // { app = resolveHome a.app; }) (
-            [
+            appName = a: builtins.baseNameOf a.app;
+            unsorted = [
               { app = "~/Applications/Home Manager Apps/Ghostty.app"; }
               { app = "~/Applications/Home Manager Apps/Firefox.app"; }
             ]
@@ -106,7 +105,10 @@
               { app = "/System/Applications/Utilities/Activity Monitor.app"; }
               { app = "/System/Applications/System Settings.app"; }
             ]
-            ++ map (app: { inherit app; }) config.dotfiles.system.dockExtraApps
+            ++ map (app: { inherit app; }) config.dotfiles.system.dockExtraApps;
+          in
+          map (a: a // { app = resolveHome a.app; }) (
+            lib.sort (a: b: lib.toLower (appName a) < lib.toLower (appName b)) unsorted
           );
 
         persistent-others =
