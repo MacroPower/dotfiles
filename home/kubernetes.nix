@@ -26,6 +26,12 @@ in
       default = [ ];
       description = "Additional kubectl krew plugin names to install.";
     };
+
+    extraHelmPlugins = mkOption {
+      type = types.listOf types.package;
+      default = [ ];
+      description = "Additional Helm plugins to install.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -38,7 +44,15 @@ in
           kubectl
           kubeconform
           kustomize
-          kubernetes-helm
+          (pkgs.wrapHelm pkgs.kubernetes-helm {
+            plugins =
+              with pkgs.kubernetes-helmPlugins;
+              [
+                helm-diff
+                helm-unittest
+              ]
+              ++ cfg.extraHelmPlugins;
+          })
           kubectx
           cilium-cli
           krew
