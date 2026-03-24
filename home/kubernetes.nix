@@ -59,6 +59,7 @@ in
           stern
           kubelogin
           fluxcd
+          chart-testing
         ]
         ++ cfg.extraPackages;
     };
