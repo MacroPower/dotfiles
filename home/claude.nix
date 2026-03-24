@@ -228,7 +228,7 @@ let
   # Wrapper script that reads the GH_TOKEN from sops at runtime
   gitWrapper = pkgs.writeShellScript "git-mcp-wrapper" ''
     if [ -f "${config.sops.secrets.gh_token.path}" ]; then
-      export GITHUB_TOKEN="$(cat "${config.sops.secrets.gh_token.path}" 2>/dev/null || true)"
+      export GH_TOKEN="$(cat "${config.sops.secrets.gh_token.path}" 2>/dev/null || true)"
     fi
     exec ${pkgs.mcp-git}/bin/mcp-git "$@"
   '';

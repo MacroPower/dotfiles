@@ -205,7 +205,7 @@ func TestCredentialArgs(t *testing.T) {
 
 	wantArgs := []string{
 		"-c", "credential.helper=",
-		"-c", `credential.https://github.com.helper=!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f`,
+		"-c", `credential.https://github.com.helper=!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f`,
 	}
 
 	tests := map[string]struct {

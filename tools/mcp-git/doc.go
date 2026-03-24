@@ -13,7 +13,7 @@
 //
 // # Environment
 //
-//   - GITHUB_TOKEN: when set, configures a git credential helper that
+//   - GH_TOKEN: when set, configures a git credential helper that
 //     authenticates HTTPS requests to github.com using this token.
 //     This enables cloning private repositories.
 package main
