@@ -57,7 +57,7 @@ func (h *fetchHandler) fetchRobots(ctx context.Context, origin string) *robotstx
 	if err != nil {
 		return &robotstxt.RobotsData{}
 	}
-	defer closeBody(ctx, resp.Body, robotsURL)
+	defer h.closeBody(ctx, resp.Body, robotsURL)
 
 	if resp.StatusCode != http.StatusOK {
 		return &robotstxt.RobotsData{}

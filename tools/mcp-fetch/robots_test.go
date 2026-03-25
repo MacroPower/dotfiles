@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -154,6 +155,7 @@ func newTestHandler(t *testing.T, client *http.Client) *fetchHandler {
 
 	h := &fetchHandler{
 		userAgent:    "test-agent",
+		log:          slog.Default(),
 		robotsCache:  expirable.NewLRU[string, *robotstxt.RobotsData](10, nil, time.Hour),
 		contentCache: expirable.NewLRU[string, string](10, nil, time.Hour),
 	}

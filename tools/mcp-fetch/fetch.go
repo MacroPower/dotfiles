@@ -57,6 +57,7 @@ type FetchInput struct {
 type fetchHandler struct {
 	client       *http.Client
 	rules        *Rules
+	log          *slog.Logger
 	robotsCache  *expirable.LRU[string, *robotstxt.RobotsData]
 	contentCache *expirable.LRU[string, string]
 	userAgent    string
@@ -96,15 +97,32 @@ func (h *fetchHandler) handle(
 
 	err = h.validateURL(u)
 	if err != nil {
+		h.log.WarnContext(ctx, "denied",
+			slog.String("host", u.Host),
+			slog.String("url", input.URL),
+			slog.Any("error", err),
+		)
+
 		return toolError(err), nil, nil
 	}
 
 	if h.checkRobots {
 		err = h.checkRobotsURL(ctx, u)
 		if err != nil {
+			h.log.WarnContext(ctx, "denied",
+				slog.String("host", u.Host),
+				slog.String("url", input.URL),
+				slog.Any("error", err),
+			)
+
 			return toolError(err), nil, nil
 		}
 	}
+
+	h.log.InfoContext(ctx, "allowed",
+		slog.String("host", u.Host),
+		slog.String("url", input.URL),
+	)
 
 	cacheKey := input.URL
 	if input.Raw {
@@ -149,7 +167,7 @@ func (h *fetchHandler) doFetch(ctx context.Context, rawURL string) ([]byte, stri
 	if err != nil {
 		return nil, "", fmt.Errorf("performing request: %w", err)
 	}
-	defer closeBody(ctx, resp.Body, rawURL)
+	defer h.closeBody(ctx, resp.Body, rawURL)
 
 	if resp.StatusCode >= 400 {
 		return nil, "", fmt.Errorf("%w: status %d", ErrHTTPStatus, resp.StatusCode)
@@ -239,10 +257,10 @@ func isToolError(err error) bool {
 	return false
 }
 
-func closeBody(ctx context.Context, body io.Closer, label string) {
+func (h *fetchHandler) closeBody(ctx context.Context, body io.Closer, label string) {
 	err := body.Close()
 	if err != nil {
-		slog.WarnContext(
+		h.log.WarnContext(
 			ctx, "closing response body",
 			slog.String("url", label),
 			slog.Any("error", err),

@@ -10,4 +10,5 @@
 //   - --ignore-robots-txt: skip robots.txt checks
 //   - --proxy-url: HTTP proxy URL
 //   - --rules-file: path to JSON URL allow/deny rules file
+//   - --log-file: path to JSON log file (append); logs allow/deny decisions
 package main

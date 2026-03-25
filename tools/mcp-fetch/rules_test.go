@@ -258,6 +258,7 @@ func TestLoadRules(t *testing.T) {
 			content: `{"reason":"custom msg","allow":[{"host":"example\\.com"}]}`,
 			want: func(t *testing.T, r *Rules) {
 				t.Helper()
+
 				u, err := url.ParseRequestURI("https://other.com/page")
 				require.NoError(t, err)
 				assert.Equal(t, "custom msg", r.Check(u))

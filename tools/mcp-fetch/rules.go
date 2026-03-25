@@ -34,16 +34,16 @@ type AllowRule struct {
 
 // rulesFile is the JSON structure read from disk.
 type rulesFile struct {
+	Reason string      `json:"reason,omitempty"`
 	Deny   []DenyRule  `json:"deny,omitempty"`
 	Allow  []AllowRule `json:"allow,omitempty"`
-	Reason string      `json:"reason,omitempty"`
 }
 
 // Rules holds compiled URL rules, ready for matching.
 type Rules struct {
+	reason string
 	deny   []compiledDeny
 	allow  []compiledMatch
-	reason string
 }
 
 type compiledMatch struct {

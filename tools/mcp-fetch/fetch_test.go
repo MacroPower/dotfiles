@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -344,6 +347,68 @@ func TestRedirectToFileScheme(t *testing.T) {
 	require.NotNil(t, result)
 	assert.True(t, result.IsError, "expected tool error for file:// redirect")
 	assert.Contains(t, resultText(t, result), "unsupported URL scheme")
+}
+
+func TestHandleLogging(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		mustWrite(w, []byte("ok"))
+	}))
+	t.Cleanup(srv.Close)
+
+	denyRules := mustDeny(t, DenyRule{
+		URLMatch: URLMatch{Host: `evil\.com`},
+		Reason:   "blocked",
+	})
+
+	tests := map[string]struct {
+		input     FetchInput
+		wantMsg   string
+		wantLevel string
+		wantHost  string
+	}{
+		"denied URL logged at WARN": {
+			input:     FetchInput{URL: "https://evil.com/page"},
+			wantMsg:   "denied",
+			wantLevel: "WARN",
+			wantHost:  "evil.com",
+		},
+		"allowed URL logged at INFO": {
+			input:     FetchInput{URL: srv.URL + "/ok"},
+			wantMsg:   "allowed",
+			wantLevel: "INFO",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+
+			h := newTestHandler(t, srv.Client())
+			h.log = slog.New(slog.NewJSONHandler(&buf, nil))
+			h.rules = &Rules{deny: denyRules}
+
+			_, _, err := h.handle(t.Context(), nil, tt.input)
+			require.NoError(t, err)
+
+			var entry map[string]any
+
+			err = json.Unmarshal(buf.Bytes(), &entry)
+			require.NoError(t, err, "log output: %s", buf.String())
+
+			assert.Equal(t, tt.wantMsg, entry["msg"])
+			assert.Equal(t, tt.wantLevel, entry["level"])
+			assert.Contains(t, entry["url"], tt.input.URL)
+
+			if tt.wantHost != "" {
+				assert.Equal(t, tt.wantHost, entry["host"])
+			}
+		})
+	}
 }
 
 func resultText(t *testing.T, result *mcp.CallToolResult) string {
