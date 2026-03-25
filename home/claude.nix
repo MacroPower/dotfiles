@@ -264,17 +264,26 @@ let
     text = "exec hook-router";
   };
 
-  # MCP stdio env vars for custom CA bundle
-  caEnv = lib.optionalAttrs (config.dotfiles.caBundlePath != null) {
-    env = {
-      NIX_SSL_CERT_FILE = config.dotfiles.caBundlePath;
-      SSL_CERT_FILE = config.dotfiles.caBundlePath;
-      CURL_CA_BUNDLE = config.dotfiles.caBundlePath;
-      GIT_SSL_CAINFO = config.dotfiles.caBundlePath;
-      REQUESTS_CA_BUNDLE = config.dotfiles.caBundlePath;
-      NODE_EXTRA_CA_CERTS = config.dotfiles.caBundlePath;
-    };
+  # CA env vars injected into all stdio MCP servers
+  caEnvVars = lib.optionalAttrs (config.dotfiles.caBundlePath != null) {
+    NIX_SSL_CERT_FILE = config.dotfiles.caBundlePath;
+    SSL_CERT_FILE = config.dotfiles.caBundlePath;
+    CURL_CA_BUNDLE = config.dotfiles.caBundlePath;
+    GIT_SSL_CAINFO = config.dotfiles.caBundlePath;
+    REQUESTS_CA_BUNDLE = config.dotfiles.caBundlePath;
+    NODE_EXTRA_CA_CERTS = config.dotfiles.caBundlePath;
   };
+
+  # Post-process all servers to inject CA env into stdio servers
+  injectCaEnv =
+    servers:
+    lib.mapAttrs (
+      _: server:
+      if (server.type or "") == "stdio" && caEnvVars != { } then
+        server // { env = caEnvVars // (server.env or { }); }
+      else
+        server
+    ) servers;
 
   # Wrapper script that reads the GH_TOKEN from sops at runtime
   gitWrapper = pkgs.writeShellScript "git-mcp-wrapper" ''
@@ -377,40 +386,39 @@ in
     programs = {
       mcp = {
         enable = true;
-        servers = lib.recursiveUpdate {
-          fetch = {
-            type = "stdio";
-            command = "${pkgs.mcp-fetch}/bin/mcp-fetch";
-            args = [
-              "--rules-file"
-              "${fetchRules}"
-            ];
-          }
-          // caEnv;
-          git = {
-            type = "stdio";
-            command = "${gitWrapper}";
-            args = [
-              "--allow-dir"
-              "/tmp/git"
-              "--allow-dir"
-              "/private/tmp/git"
-            ];
-          }
-          // caEnv;
-          kagi = {
-            type = "stdio";
-            command = "${kagiWrapper}";
-          }
-          // caEnv;
-          github = {
-            type = "http";
-            url = "https://api.githubcopilot.com/mcp/readonly";
-            headers = {
-              Authorization = "Bearer \${GITHUB_PERSONAL_ACCESS_TOKEN}";
+        servers = injectCaEnv (
+          lib.recursiveUpdate {
+            fetch = {
+              type = "stdio";
+              command = "${pkgs.mcp-fetch}/bin/mcp-fetch";
+              args = [
+                "--rules-file"
+                "${fetchRules}"
+              ];
             };
-          };
-        } cfg.extraMcpServers;
+            git = {
+              type = "stdio";
+              command = "${gitWrapper}";
+              args = [
+                "--allow-dir"
+                "/tmp/git"
+                "--allow-dir"
+                "/private/tmp/git"
+              ];
+            };
+            kagi = {
+              type = "stdio";
+              command = "${kagiWrapper}";
+            };
+            github = {
+              type = "http";
+              url = "https://api.githubcopilot.com/mcp/readonly";
+              headers = {
+                Authorization = "Bearer \${GITHUB_PERSONAL_ACCESS_TOKEN}";
+              };
+            };
+          } cfg.extraMcpServers
+        );
       };
 
       claude-code = {
