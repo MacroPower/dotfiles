@@ -13,6 +13,7 @@
   loginItems ? [ ],
   dockExtraApps ? [ ],
   power ? { },
+  caCertificateFiles ? [ ],
   homeModule,
 }:
 inputs.nix-darwin.lib.darwinSystem {
@@ -26,6 +27,7 @@ inputs.nix-darwin.lib.darwinSystem {
           homebrew
           loginItems
           dockExtraApps
+          caCertificateFiles
           ;
         inherit power;
       };
@@ -73,7 +75,7 @@ inputs.nix-darwin.lib.darwinSystem {
         { pkgs, ... }:
         {
           dotfiles = {
-            inherit username hostname;
+            inherit username hostname caCertificateFiles;
             homeDirectory = "/Users/${username}";
             extraHomePackages = with pkgs; [
               terminal-notifier

@@ -645,6 +645,8 @@
     };
   };
 
+  security.pki.certificateFiles = config.dotfiles.system.caCertificateFiles;
+
   security.pam.services.sudo_local = {
     touchIdAuth = true;
     watchIdAuth = true;

@@ -49,6 +49,8 @@
     };
   };
 
+  security.pki.certificateFiles = config.dotfiles.system.caCertificateFiles;
+
   security.sudo.keepTerminfo = true;
 
   security.sudo.extraRules = [

@@ -54,6 +54,12 @@
       };
     };
 
+    caCertificateFiles = lib.mkOption {
+      type = lib.types.listOf lib.types.path;
+      default = [ ];
+      description = "PEM certificate files to add to the system CA bundle.";
+    };
+
     homebrew = {
       taps = lib.mkOption {
         type = lib.types.listOf lib.types.nonEmptyStr;

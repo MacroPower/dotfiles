@@ -264,6 +264,18 @@ let
     text = "exec hook-router";
   };
 
+  # MCP stdio env vars for custom CA bundle
+  caEnv = lib.optionalAttrs (config.dotfiles.caBundlePath != null) {
+    env = {
+      NIX_SSL_CERT_FILE = config.dotfiles.caBundlePath;
+      SSL_CERT_FILE = config.dotfiles.caBundlePath;
+      CURL_CA_BUNDLE = config.dotfiles.caBundlePath;
+      GIT_SSL_CAINFO = config.dotfiles.caBundlePath;
+      REQUESTS_CA_BUNDLE = config.dotfiles.caBundlePath;
+      NODE_EXTRA_CA_CERTS = config.dotfiles.caBundlePath;
+    };
+  };
+
   # Wrapper script that reads the GH_TOKEN from sops at runtime
   gitWrapper = pkgs.writeShellScript "git-mcp-wrapper" ''
     if [ -f "${config.sops.secrets.gh_token.path}" ]; then
@@ -373,7 +385,8 @@ in
               "--rules-file"
               "${fetchRules}"
             ];
-          };
+          }
+          // caEnv;
           git = {
             type = "stdio";
             command = "${gitWrapper}";
@@ -383,11 +396,13 @@ in
               "--allow-dir"
               "/private/tmp/git"
             ];
-          };
+          }
+          // caEnv;
           kagi = {
             type = "stdio";
             command = "${kagiWrapper}";
-          };
+          }
+          // caEnv;
           github = {
             type = "http";
             url = "https://api.githubcopilot.com/mcp/readonly";

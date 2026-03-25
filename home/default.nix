@@ -8,6 +8,7 @@
 {
   imports = [
     ./options.nix
+    ./ca-certificates.nix
     ./stylix.nix
     ./fish.nix
     ./git.nix

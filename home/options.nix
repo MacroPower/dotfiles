@@ -64,6 +64,19 @@ in
       description = "SSH config Include directives.";
     };
 
+    caCertificateFiles = mkOption {
+      type = types.listOf types.path;
+      default = [ ];
+      description = "PEM certificate files to add to the CA bundle.";
+    };
+
+    caBundlePath = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      internal = true;
+      description = "Path to the custom CA bundle (set automatically by ca-certificates module).";
+    };
+
     fonts.features = mkOption {
       type = types.listOf types.nonEmptyStr;
       default = [
