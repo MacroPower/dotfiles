@@ -21,7 +21,7 @@ in
 
   programs.starship = {
     enable = true;
-    enableTransience = true;
+    enableFishIntegration = false;
 
     settings = {
       add_newline = false;
@@ -34,7 +34,9 @@ in
         "$git_state"
         "$git_status"
         "$git_metrics"
-        "$fill"
+      ];
+
+      right_format = lib.concatStrings [
         "$status"
         "$cmd_duration"
         "$shlvl"
@@ -63,8 +65,6 @@ in
         "$username"
         "$hostname"
         "$time"
-        "$line_break"
-        "$character"
       ];
 
       character = {
@@ -503,6 +503,61 @@ in
     interactiveShellInit = ''
       ${config.dotfiles.shell.extraInteractiveInit}
       set --global fish_key_bindings fish_default_key_bindings
+
+      # Initialize starship (defines helper functions like enable_transience)
+      starship init fish | source
+
+      # Width-aware prompt: joins left+right with fill dots on one line when
+      # they fit, or stacks them on two lines when the terminal is too narrow.
+      function fish_prompt
+        set -l exit_code $status
+        set -l pipe_status $pipestatus
+
+        if contains -- --final-rendering $argv; or test "$TRANSIENT" = "1"
+          if test "$TRANSIENT" = "1"
+            set -g TRANSIENT 0
+            printf \e\[0J
+          end
+          set_color --bold ${colors.base0B}
+          printf '❯ '
+          set_color normal
+          return
+        end
+
+        set -l keymap insert
+        switch "$fish_key_bindings"
+          case fish_hybrid_key_bindings fish_vi_key_bindings
+            set keymap "$fish_bind_mode"
+        end
+
+        set -l cmd_args \
+          --terminal-width="$COLUMNS" \
+          --status=$exit_code \
+          --pipestatus="$pipe_status" \
+          --cmd-duration="$CMD_DURATION" \
+          --jobs=(count (jobs -p 2>/dev/null)) \
+          --keymap=$keymap
+
+        set -l left (starship prompt $cmd_args 2>/dev/null | string collect)
+        set -l right (starship prompt --right $cmd_args 2>/dev/null | string collect)
+        set -l left_w (string length --visible -- "$left")
+        set -l right_w (string length --visible -- "$right")
+
+        if test (math "$left_w + $right_w + 1") -le $COLUMNS
+          set -l fill_len (math "$COLUMNS - $left_w - $right_w")
+          printf '%s%s%s%s%s\n' "$left" (set_color ${colors.base02}) (string repeat -n $fill_len -- '${nf "00b7"}') (set_color normal) "$right"
+        else
+          printf '%s\n%s\n' "$left" (string trim -l -- "$right")
+        end
+
+        set_color --bold (test $exit_code -eq 0 && echo ${colors.base0B} || echo ${colors.base08})
+        printf '❯ '
+        set_color normal
+      end
+
+      function fish_right_prompt; end
+
+      enable_transience
     '';
 
     shellAbbrs = {
