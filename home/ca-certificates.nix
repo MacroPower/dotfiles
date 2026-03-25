@@ -12,6 +12,7 @@ in
 {
   config = lib.mkIf (certs != [ ]) {
     dotfiles.caBundlePath = bundle;
+    nix.settings.ssl-cert-file = bundle;
     home.sessionVariables = {
       NIX_SSL_CERT_FILE = bundle;
       SSL_CERT_FILE = bundle;
