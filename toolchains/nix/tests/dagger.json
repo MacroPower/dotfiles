@@ -1,0 +1,13 @@
+{
+  "name": "tests",
+  "engineVersion": "v0.20.3",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "nix",
+      "source": ".."
+    }
+  ]
+}

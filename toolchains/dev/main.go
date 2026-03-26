@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"dagger/dev/internal/dagger"
 )
@@ -19,8 +20,9 @@ const (
 	// devCacheNamespace is the namespace prefix for dev-specific cache volumes.
 	devCacheNamespace = "go.jacobcolvin.com/dotfiles/toolchains/dev"
 
-	// homeConfig is the home-manager configuration name from the flake.
-	homeConfig = "dev@linux"
+	// homeConfigFmt is the format string for home-manager configuration names.
+	// The placeholder is filled with the Nix system string (e.g. "aarch64-linux").
+	homeConfigFmt = "dev@%s"
 
 	// golangciLintVersion is the golangci-lint image tag used by [Dev.CheckLint].
 	golangciLintVersion = "v2.11" // renovate: datasource=github-releases depName=golangci/golangci-lint
@@ -150,19 +152,37 @@ func (m *Dev) formatModule(mod string) *dagger.Changeset {
 	return updated.Changes(original)
 }
 
+// nixSystem maps a Dagger container platform to a Nix system string.
+func nixSystem(ctx context.Context, ctr *dagger.Container) (string, error) {
+	plat, err := ctr.Platform(ctx)
+	if err != nil {
+		return "", fmt.Errorf("detecting platform: %w", err)
+	}
+	switch {
+	case strings.Contains(string(plat), "arm64"):
+		return "aarch64-linux", nil
+	case strings.Contains(string(plat), "amd64"):
+		return "x86_64-linux", nil
+	default:
+		return "", fmt.Errorf("unsupported platform: %s", plat)
+	}
+}
+
 // buildBase builds and activates the home-manager configuration on the
-// given container. It installs rsync, mounts the dotfiles source, runs
-// nix build + activate, and sets PATH/EDITOR/TERM. Callers are expected
-// to configure any cache mounts on ctr before calling this method.
-func (m *Dev) buildBase(ctr *dagger.Container) *dagger.Container {
+// given container. It detects the container platform and selects the
+// matching home-manager config. Callers are expected to configure any
+// cache mounts on ctr before calling this method.
+func (m *Dev) buildBase(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
+	sys, err := nixSystem(ctx, ctr)
+	if err != nil {
+		return nil, err
+	}
+	config := fmt.Sprintf(`.#homeConfigurations."%s".activationPackage`, fmt.Sprintf(homeConfigFmt, sys))
 	return ctr.
 		WithEnvVariable("NIX_CONFIG", "experimental-features = nix-command flakes\nfilter-syscalls = false\n").
 		WithDirectory("/dotfiles", m.Source).
 		WithWorkdir("/dotfiles").
-		WithExec([]string{
-			"nix", "build",
-			`.#homeConfigurations."` + homeConfig + `".activationPackage`,
-		}).
+		WithExec([]string{"nix", "build", config}).
 		WithExec([]string{"mkdir", "-p", homeDir}).
 		WithExec([]string{"mkdir", "-p", homeDir + "/.local/state/nix/profiles"}).
 		WithExec([]string{"mkdir", "-p", "/nix/var/nix/profiles/per-user/" + username}).
@@ -178,21 +198,21 @@ func (m *Dev) buildBase(ctr *dagger.Container) *dagger.Container {
 		WithEnvVariable("EDITOR", "vim").
 		WithEnvVariable("TERM", "xterm-256color").
 		WithoutDirectory("/dotfiles").
-		WithWorkdir(homeDir)
+		WithWorkdir(homeDir), nil
 }
 
 // cachedBuild builds the home-manager configuration with nix store and
 // eval caches mounted, so repeated builds reuse prior work. The nix
 // store and var directories share a single cache volume to keep them
 // atomically consistent.
-func (m *Dev) cachedBuild() *dagger.Container {
+func (m *Dev) cachedBuild(ctx context.Context) (*dagger.Container, error) {
 	ctr := dag.Container().From(nixImage)
 	ctr = ctr.
 		WithMountedCache("/nix", dag.CacheVolume(devCacheNamespace+":nix"),
 			dagger.ContainerWithMountedCacheOpts{Source: ctr.Directory("/nix")}).
 		WithMountedCache("/root/.cache/nix", dag.CacheVolume(devCacheNamespace+":nix-eval-cache"))
 
-	return m.buildBase(ctr)
+	return m.buildBase(ctx, ctr)
 }
 
 // DevBase returns a base development container with nix and home-manager
@@ -206,7 +226,11 @@ func (m *Dev) DevBase(
 	// +optional
 	kagiApiKey *dagger.Secret,
 ) (*dagger.Container, error) {
-	ctr := m.cachedBuild().
+	built, err := m.cachedBuild(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctr := built.
 		WithMountedCache(homeDir+"/.krew", dag.CacheVolume(devCacheNamespace+":krew"))
 
 	if kagiApiKey != nil {
@@ -367,7 +391,10 @@ func (m *Dev) PublishShell(
 		tags = []string{"latest"}
 	}
 
-	built := m.cachedBuild()
+	built, err := m.cachedBuild(ctx)
+	if err != nil {
+		return "", err
+	}
 
 	ctr := built.
 		WithoutMount("/nix/store").
@@ -381,11 +408,7 @@ func (m *Dev) PublishShell(
 		WithLabel("org.opencontainers.image.source", "https://github.com/MacroPower/dotfiles").
 		WithLabel("org.opencontainers.image.description", "Development container with nix home-manager tools")
 
-	var (
-		addr string
-		err  error
-	)
-
+	var addr string
 	for _, tag := range tags {
 		ref := fmt.Sprintf("%s:%s", image, tag)
 		addr, err = ctr.Publish(ctx, ref)

@@ -1,0 +1,66 @@
+name: sbom
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Generate dependency snapshot via Dagger
+        uses: ./.github/actions/dagger-call
+        with:
+          function: >-
+            nix dependency-snapshot
+            --sha=${{ github.sha }}
+            --ref=${{ github.ref }}
+            --correlator="sbom-submit"
+            --run-url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            export --path snapshot.json
+
+      - name: Submit to GitHub dependency graph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            -X POST \
+            "/repos/${{ github.repository }}/dependency-graph/snapshots" \
+            --input snapshot.json
+
+  vulnscan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Generate SARIF via Dagger
+        uses: ./.github/actions/dagger-call
+        with:
+          function: >-
+            nix vulnscan-sarif
+            export --path vulnix.sarif.json
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: vulnix.sarif.json
+          category: vulnix

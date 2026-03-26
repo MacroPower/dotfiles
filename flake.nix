@@ -161,7 +161,8 @@
           };
 
           homeConfigurations = {
-            "dev@linux" = mkHome (import ./hosts/linux/container.nix);
+            "dev@aarch64-linux" = mkHome (import ./hosts/linux/container.nix "aarch64-linux");
+            "dev@x86_64-linux" = mkHome (import ./hosts/linux/container.nix "x86_64-linux");
           };
 
           inventory = import ./lib/inventory.nix {

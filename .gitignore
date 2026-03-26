@@ -12,3 +12,4 @@ result
 .chief/
 secrets/.doppler-tmp.json
 secrets/*.tmp
+sbom.cdx.json

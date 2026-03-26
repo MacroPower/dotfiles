@@ -10,9 +10,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"dagger/nix/internal/dagger"
+	"dagger/nix/internal/sarif"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -32,8 +35,24 @@ func New(
 	return &Nix{Source: source}
 }
 
-// nixImage is the pinned nixos/nix container image.
-const nixImage = "nixos/nix:2.34.1@sha256:1d59121e0c361076b4f23c158d236702f2f045b3b477b51075b81ceb6188d34a"
+// nixImage is the pinned lix container image.
+const nixImage = "ghcr.io/lix-project/lix:2.94.0@sha256:25f5eee428aa1bc217cfcfa7c6d1e072274001ba07d4bb10a92fb7e3e16d1838"
+
+// nixSystem maps a Dagger container platform to a Nix system string.
+func nixSystem(ctx context.Context, ctr *dagger.Container) (string, error) {
+	plat, err := ctr.Platform(ctx)
+	if err != nil {
+		return "", fmt.Errorf("detecting platform: %w", err)
+	}
+	switch {
+	case strings.Contains(string(plat), "arm64"):
+		return "aarch64-linux", nil
+	case strings.Contains(string(plat), "amd64"):
+		return "x86_64-linux", nil
+	default:
+		return "", fmt.Errorf("unsupported platform: %s", plat)
+	}
+}
 
 // base returns a container with nix and flakes enabled.
 func (m *Nix) base() *dagger.Container {
@@ -44,7 +63,7 @@ func (m *Nix) base() *dagger.Container {
 		WithMountedCache("/nix/var/nix", dag.CacheVolume("nix-var"),
 			dagger.ContainerWithMountedCacheOpts{Source: ctr.Directory("/nix/var/nix")}).
 		WithMountedCache("/root/.cache/nix", dag.CacheVolume("nix-eval-cache")).
-		WithEnvVariable("NIX_CONFIG", "experimental-features = nix-command flakes\nfilter-syscalls = false\n").
+		WithEnvVariable("NIX_CONFIG", "experimental-features = nix-command flakes\n").
 		WithDirectory("/src", m.Source).
 		WithWorkdir("/src")
 }
@@ -199,15 +218,24 @@ func (m *Nix) validateHome(ctx context.Context, name string) error {
 	return nil
 }
 
-// BuildHome builds and validates all home-manager activation packages.
+// BuildHome builds and validates home-manager activation packages
+// that match the current engine platform.
 // +check
 func (m *Nix) BuildHome(ctx context.Context) error {
+	base := m.base()
+	sys, err := nixSystem(ctx, base)
+	if err != nil {
+		return err
+	}
 	configs, err := m.homeConfigs(ctx)
 	if err != nil {
 		return err
 	}
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, name := range configs {
+		if !strings.HasSuffix(name, sys) {
+			continue
+		}
 		eg.Go(func() error {
 			return m.validateHome(ctx, name)
 		})
@@ -257,6 +285,238 @@ func (m *Nix) Format() *dagger.Changeset {
 		WithExec([]string{"nix", "fmt"}).
 		Directory("/src")
 	return dag.Directory().WithDirectory(".", fixed).Changes(m.Source)
+}
+
+// homeClosurePath builds the home-manager activation package and returns
+// the nix store path. Used by [Nix.Sbom] and [Nix.Vulnscan].
+func (m *Nix) homeClosurePath(ctx context.Context) (string, error) {
+	base := m.base()
+	sys, err := nixSystem(ctx, base)
+	if err != nil {
+		return "", err
+	}
+	config := fmt.Sprintf(`.#homeConfigurations."dev@%s".activationPackage`, sys)
+	out, err := base.
+		WithExec([]string{"nix", "build", config, "--no-link", "--print-out-paths"}).
+		Stdout(ctx)
+	if err != nil {
+		return "", fmt.Errorf("building home closure: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// Sbom generates a CycloneDX SBOM for the home-manager closure.
+func (m *Nix) Sbom(ctx context.Context) (*dagger.File, error) {
+	storePath, err := m.homeClosurePath(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.base().
+		WithExec([]string{"nix", "profile", "install", "nixpkgs#sbomnix"}).
+		WithExec([]string{"sbomnix", storePath,
+			"--cdx", "/tmp/sbom.cdx.json"}).
+		File("/tmp/sbom.cdx.json"), nil
+}
+
+// DependencySnapshot generates a GitHub dependency submission snapshot
+// from the CycloneDX SBOM. The returned JSON can be POSTed directly to
+// the GitHub dependency submission API. The sha and ref parameters
+// identify the commit; correlator deduplicates submissions; runURL
+// links back to the CI run.
+func (m *Nix) DependencySnapshot(
+	ctx context.Context,
+	// Git commit SHA for the snapshot.
+	sha string,
+	// Git ref (e.g. "refs/heads/master").
+	ref string,
+	// Unique correlator string for deduplication.
+	correlator string,
+	// URL of the CI run that produced this snapshot.
+	runURL string,
+) (*dagger.File, error) {
+	sbom, err := m.Sbom(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	sbomBytes, err := sbom.Contents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading sbom: %w", err)
+	}
+
+	var cdx cdxBOM
+	if err := json.Unmarshal([]byte(sbomBytes), &cdx); err != nil {
+		return nil, fmt.Errorf("parsing sbom: %w", err)
+	}
+
+	snapshot := buildDependencySnapshot(cdx, sha, ref, correlator, runURL)
+
+	out, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshaling snapshot: %w", err)
+	}
+
+	return dag.Directory().
+		WithNewFile("snapshot.json", string(out)).
+		File("snapshot.json"), nil
+}
+
+// Vulnscan checks the home-manager closure for known CVEs using vulnix.
+func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
+	storePath, err := m.homeClosurePath(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	out, err := m.base().
+		WithExec([]string{"nix", "profile", "install", "nixpkgs#vulnix"}).
+		WithExec([]string{"vulnix", storePath},
+			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
+		Stdout(ctx)
+	if err != nil {
+		return "", fmt.Errorf("running vulnix: %w", err)
+	}
+	return out, nil
+}
+
+// VulnscanSarif scans the home-manager closure for known CVEs and
+// returns the results as a SARIF v2.1.0 JSON file suitable for upload
+// to GitHub Code Scanning. Unlike [Nix.Vulnscan], which returns raw text,
+// this method produces structured output that GitHub can render as
+// security alerts. Results for directly declared packages point to the
+// .nix file where they appear; transitive dependencies fall back to
+// the nixpkgs rev in flake.lock.
+func (m *Nix) VulnscanSarif(ctx context.Context) (*dagger.File, error) {
+	out, err := m.Vulnscan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	packages, err := sarif.ParseVulnix(out)
+	if err != nil {
+		return nil, fmt.Errorf("parsing vulnix output: %w", err)
+	}
+
+	locations, err := m.findPackageLocations(ctx, packages)
+	if err != nil {
+		return nil, fmt.Errorf("finding package locations: %w", err)
+	}
+
+	fallbackLine, err := m.findNixpkgsLine(ctx)
+	if err != nil {
+		fallbackLine = 1
+	}
+
+	log := sarif.BuildLog(packages, locations, "flake.lock", fallbackLine)
+
+	data, err := json.MarshalIndent(log, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshaling sarif: %w", err)
+	}
+
+	return dag.Directory().
+		WithNewFile("vulnix.sarif.json", string(data)).
+		File("vulnix.sarif.json"), nil
+}
+
+// findPackageLocations greps .nix source files for each vulnerable
+// package name and returns the first match as a [sarif.SourceLocation].
+// Only matches Nix package reference patterns (pkgs.NAME or bare
+// identifiers on their own line) to avoid false positives from
+// attribute names like "network = {".
+func (m *Nix) findPackageLocations(ctx context.Context, packages []sarif.VulnixPackage) (map[string]sarif.SourceLocation, error) {
+	locations := make(map[string]sarif.SourceLocation)
+
+	if len(packages) == 0 {
+		return locations, nil
+	}
+
+	// Build grep -E patterns that match Nix package references:
+	//   pkgs.NAME or pkgs."NAME"  (attribute access)
+	//   ^\s+NAME\s*$              (bare name on own line, inside a with pkgs block)
+	var pkgPatterns, barePatterns []string
+	for _, pkg := range packages {
+		pkgPatterns = append(pkgPatterns, fmt.Sprintf(`pkgs\.%s\b`, pkg.Name))
+		pkgPatterns = append(pkgPatterns, fmt.Sprintf(`pkgs\."%s"`, pkg.Name))
+		barePatterns = append(barePatterns, fmt.Sprintf(`^\s+%s\s*$`, regexp.QuoteMeta(pkg.Name)))
+	}
+	allPatterns := append(pkgPatterns, barePatterns...)
+	pattern := strings.Join(allPatterns, "|")
+
+	grepOut, err := m.base().
+		WithExec([]string{"sh", "-c",
+			fmt.Sprintf("grep -rEnl --include='*.nix' '%s' /src/home/ /src/hosts/ 2>/dev/null || true", pattern)}).
+		Stdout(ctx)
+	if err != nil {
+		return locations, nil
+	}
+
+	// For each file that matched, get line numbers.
+	files := strings.Fields(strings.TrimSpace(grepOut))
+	if len(files) == 0 {
+		return locations, nil
+	}
+
+	grepOut, err = m.base().
+		WithExec([]string{"sh", "-c",
+			fmt.Sprintf("grep -rEn --include='*.nix' '%s' %s 2>/dev/null || true",
+				pattern, strings.Join(files, " "))}).
+		Stdout(ctx)
+	if err != nil {
+		return locations, nil
+	}
+
+	for _, line := range strings.Split(grepOut, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		file := strings.TrimPrefix(parts[0], "/src/")
+		lineNum, err := strconv.Atoi(parts[1])
+		if err != nil {
+			continue
+		}
+		content := parts[2]
+
+		for _, pkg := range packages {
+			if _, ok := locations[pkg.Name]; ok {
+				continue
+			}
+			if sarif.MatchesPkgRef(content, pkg.Name) {
+				locations[pkg.Name] = sarif.SourceLocation{
+					URI:  file,
+					Line: lineNum,
+				}
+			}
+		}
+	}
+
+	return locations, nil
+}
+
+// findNixpkgsLine finds the line number of the "nixpkgs" node in flake.lock.
+func (m *Nix) findNixpkgsLine(ctx context.Context) (int, error) {
+	// Match the top-level nixpkgs node (4-space indent, opening brace).
+	out, err := m.base().
+		WithExec([]string{"sh", "-c", `grep -n '^    "nixpkgs": {' /src/flake.lock | head -1`}).
+		Stdout(ctx)
+	if err != nil {
+		return 1, err
+	}
+	parts := strings.SplitN(strings.TrimSpace(out), ":", 2)
+	if len(parts) < 1 {
+		return 1, fmt.Errorf("nixpkgs not found in flake.lock")
+	}
+	n, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 1, err
+	}
+	return n, nil
 }
 
 // All runs all checks concurrently.

@@ -33,6 +33,7 @@ let
     in
     {
       name = clean rawName;
+      version = clean (p.version or "");
       homepage = clean rawHomepage;
       description = clean rawDesc;
       license = rawLicense;
@@ -70,6 +71,7 @@ let
           [
             {
               inherit name;
+              version = if pkg != null then clean (pkg.version or "") else "";
               homepage = clean rawHomepage;
               description = clean rawDesc;
               license = rawLicense;

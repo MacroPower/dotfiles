@@ -24,6 +24,7 @@ def md_escape: gsub("`"; "\\`");
 
 def fmt_entry:
   "| " + (if .homepage == "" then .name else "[\(.name)](\(.homepage))" end) +
+  " | " + (.version // "") +
   " | " + (.description | md_escape) +
   " | " + (.license // "") + " |";
 
@@ -48,7 +49,7 @@ def apply_overrides:
 
 # Table header used for each section.
 def table_header:
-  "| Name | Description | License |\n|------|-------------|--------|";
+  "| Name | Version | Description | License |\n|------|---------|-------------|--------|";
 
 . as $inv |
 

@@ -1,5 +1,5 @@
-{
-  system = "aarch64-linux";
+system: {
+  inherit system;
   homeModule = {
     dotfiles = {
       username = "dev";

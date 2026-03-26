@@ -31,6 +31,16 @@ tasks:
     cmds:
       - "{{.TASKFILE_DIR}}/scripts/update-inventory.sh"
 
+  sbom:
+    desc: Generate CycloneDX SBOM for the home-manager closure
+    cmds:
+      - dagger call nix sbom export --path sbom.cdx.json
+
+  vulnscan:
+    desc: Check home-manager closure for known CVEs
+    cmds:
+      - dagger call nix vulnscan
+
   pkg:update:
     desc: Update custom package derivations in pkgs/
     cmds:
