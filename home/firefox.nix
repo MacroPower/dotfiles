@@ -8,7 +8,7 @@
 let
   inherit (lib) mkOption mkEnableOption types;
   cfg = config.dotfiles.firefox;
-  addons = pkgs.nur.repos.rycee.firefox-addons;
+  addons = pkgs.firefox-addons;
 in
 {
   options.dotfiles.firefox = {

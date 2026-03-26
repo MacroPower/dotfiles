@@ -5,7 +5,6 @@
 }:
 let
   inherit (inputs)
-    nur
     nur-jacobcolvin
     nix-vscode-extensions
     llm-agents
@@ -38,11 +37,21 @@ let
       ;
   };
 
+  ryceeOverlay = final: prev: {
+    firefox-addons = final.callPackage (inputs.rycee-nur + "/pkgs/firefox-addons") {
+      buildMozillaXpiAddon =
+        let
+          libMozilla = import (inputs.rycee-nur + "/lib/mozilla.nix") { inherit (prev) lib; };
+        in
+        libMozilla.mkBuildMozillaXpiAddon { inherit (final) fetchurl stdenv; };
+    };
+  };
+
   sharedOverlays = system: [
     lixOverlay
     localOverlay
     (nurJacobColvinOverlay system)
-    nur.overlays.default
+    ryceeOverlay
     nix-vscode-extensions.overlays.default
     llm-agents.overlays.default
     dagger.overlays.default

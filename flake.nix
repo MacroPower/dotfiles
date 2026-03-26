@@ -40,9 +40,9 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nur = {
-      url = "github:nix-community/NUR";
-      inputs.nixpkgs.follows = "nixpkgs";
+    rycee-nur = {
+      url = "gitlab:rycee/nur-expressions";
+      flake = false;
     };
     nur-jacobcolvin = {
       url = "git+https://nur.jacobcolvin.com";
