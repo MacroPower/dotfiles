@@ -35,6 +35,8 @@ in
         ];
         quick-terminal-screen = "mouse";
         quick-terminal-position = "right";
+        # Disable auto-updates (managed by Nix)
+        auto-update = "off";
       };
     };
   };

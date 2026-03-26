@@ -722,7 +722,10 @@ in
         When writing documentation, you MUST review your output against the above rules.
       '';
 
-      sessionVariables = lib.optionalAttrs skipPerms {
+      sessionVariables = {
+        DISABLE_AUTOUPDATER = "1";
+      }
+      // lib.optionalAttrs skipPerms {
         IS_SANDBOX = "1";
       };
 

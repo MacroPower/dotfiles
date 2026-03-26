@@ -150,6 +150,10 @@ in
             "devbox run -- task" = true;
           };
           "accessibility.voice.speechTimeout" = 0;
+          # Disable auto-updates (managed by Nix)
+          "update.mode" = "none";
+          "extensions.autoUpdate" = false;
+          "extensions.autoCheckUpdates" = false;
         };
       };
     };

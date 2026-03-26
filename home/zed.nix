@@ -133,6 +133,8 @@ in
           font_family = config.stylix.fonts.monospace.name;
           font_features = fontFeaturesAttrs;
         };
+        # Disable auto-updates (managed by Nix)
+        auto_update = false;
         base_keymap = "VSCode";
         vim_mode = false;
         icon_theme = "Material Icon Theme";

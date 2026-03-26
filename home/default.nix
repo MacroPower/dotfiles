@@ -93,6 +93,7 @@
     sessionVariables = {
       EDITOR = "vim";
       devbox_no_prompt = "true";
+      HOMEBREW_NO_AUTO_UPDATE = "1";
     };
 
     packages =

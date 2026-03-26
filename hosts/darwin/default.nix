@@ -422,6 +422,10 @@
         };
         # Disable App Store auto updates
         "com.apple.commerce".AutoUpdate = false;
+        # Disable Sparkle auto-updates for Homebrew casks (managed by nix-darwin)
+        "dev.kdrag0n.MacVirt".SUAutomaticallyUpdate = false;
+        "com.lujjjh.LinearMouse".SUAutomaticallyUpdate = false;
+        "com.DanPristupov.Fork".SUAutomaticallyUpdate = false;
 
         # Force the maximum AAC bitpool (80) for Bluetooth audio negotiation,
         # preventing the codec from dropping to lower quality under contention
