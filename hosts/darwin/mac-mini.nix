@@ -34,6 +34,7 @@
         };
         extraHomePackages = with pkgs; [
           talosctl
+          tpi
           discord
           obsidian
           slack
