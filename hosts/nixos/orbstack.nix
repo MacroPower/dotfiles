@@ -28,6 +28,7 @@
 
       environment.systemPackages = with pkgs; [
         nerdctl
+        pkgsStatic.tini
         (writeShellScriptBin "docker" ''exec sudo ${nerdctl}/bin/nerdctl "$@"'')
       ];
 

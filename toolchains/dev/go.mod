@@ -11,7 +11,7 @@ replace go.opentelemetry.io/otel/log => go.opentelemetry.io/otel/log v0.16.0
 replace go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.16.0
 
 require (
-	dagger.io/dagger v0.19.11
+	dagger.io/dagger v0.20.3
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/otel-go v1.41.0
 	github.com/vektah/gqlparser/v2 v2.5.30
