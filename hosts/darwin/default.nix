@@ -99,10 +99,32 @@
           let
             resolveHome = p: builtins.replaceStrings [ "~" ] [ "/Users/${config.dotfiles.system.username}" ] p;
           in
-          map (a: a // { folder = resolveHome a.folder; }) [
-            { folder = "~/Downloads"; }
-            { folder = "~/Documents/Screenshots"; }
-          ];
+          map
+            (
+              a:
+              a
+              // {
+                folder = a.folder // {
+                  path = resolveHome a.folder.path;
+                };
+              }
+            )
+            [
+              {
+                folder = {
+                  path = "~/Downloads";
+                  arrangement = "date-added";
+                  showas = "fan";
+                };
+              }
+              {
+                folder = {
+                  path = "~/Documents/screenshots";
+                  arrangement = "date-added";
+                  showas = "fan";
+                };
+              }
+            ];
       };
 
       finder = {
@@ -206,7 +228,7 @@
 
       # Save screenshots to ~/Documents/Screenshots as lossless PNG
       screencapture = {
-        location = "~/Documents/Screenshots";
+        location = "/Users/${config.dotfiles.system.username}/Documents/screenshots";
         type = "png";
         save-selections = true;
       };
@@ -527,6 +549,11 @@
     # Apply settings changes without requiring logout
     activationScripts.postActivation.text = ''
       sudo -u ${config.dotfiles.system.username} /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
+    '';
+
+    # Ensure the custom screenshot directory exists
+    activationScripts.screenshotDir.text = ''
+      sudo -u ${config.dotfiles.system.username} mkdir -p /Users/${config.dotfiles.system.username}/Documents/screenshots
     '';
 
     # Declaratively manage macOS login items via System Events.
