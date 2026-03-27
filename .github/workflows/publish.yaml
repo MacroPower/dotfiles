@@ -23,12 +23,14 @@ jobs:
           persist-credentials: false
 
       - name: Publish dev container via Dagger
-        uses: ./.github/actions/dagger-call
+        uses: dagger/dagger-for-github@v8.4.1
         with:
-          function: >-
+          version: "v0.20.3"
+          call: >-
             dev publish-shell
             --password=env://REGISTRY_PASSWORD
             --image="ghcr.io/macropower/shell"
+          enable-github-summary: "true"
         env:
           REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
@@ -41,11 +43,13 @@ jobs:
           persist-credentials: false
 
       - name: Publish sandbox container via Dagger
-        uses: ./.github/actions/dagger-call
+        uses: dagger/dagger-for-github@v8.4.1
         with:
-          function: >-
+          version: "v0.20.3"
+          call: >-
             dev publish-sandbox
             --password=env://REGISTRY_PASSWORD
             --image="ghcr.io/macropower/sandbox"
+          enable-github-summary: "true"
         env:
           REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}

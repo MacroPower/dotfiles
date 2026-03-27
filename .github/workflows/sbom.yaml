@@ -23,15 +23,17 @@ jobs:
           persist-credentials: false
 
       - name: Generate dependency snapshot via Dagger
-        uses: ./.github/actions/dagger-call
+        uses: dagger/dagger-for-github@v8.4.1
         with:
-          function: >-
+          version: "v0.20.3"
+          call: >-
             nix dependency-snapshot
             --sha=${{ github.sha }}
             --ref=${{ github.ref }}
             --correlator="sbom-submit"
             --run-url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             export --path snapshot.json
+          enable-github-summary: "true"
 
       - name: Submit to GitHub dependency graph
         env:
@@ -53,11 +55,13 @@ jobs:
           persist-credentials: false
 
       - name: Generate SARIF via Dagger
-        uses: ./.github/actions/dagger-call
+        uses: dagger/dagger-for-github@v8.4.1
         with:
-          function: >-
+          version: "v0.20.3"
+          call: >-
             nix vulnscan-sarif
             export --path vulnix.sarif.json
+          enable-github-summary: "true"
 
       - name: Upload SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v4
