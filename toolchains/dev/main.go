@@ -158,6 +158,7 @@ func nixSystem(ctx context.Context, ctr *dagger.Container) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("detecting platform: %w", err)
 	}
+
 	switch {
 	case strings.Contains(string(plat), "arm64"):
 		return "aarch64-linux", nil
@@ -177,7 +178,9 @@ func (m *Dev) buildBase(ctx context.Context, ctr *dagger.Container) (*dagger.Con
 	if err != nil {
 		return nil, err
 	}
-	config := fmt.Sprintf(`.#homeConfigurations."%s".activationPackage`, fmt.Sprintf(homeConfigFmt, sys))
+
+	config := fmt.Sprintf(".#homeConfigurations.%q.activationPackage", fmt.Sprintf(homeConfigFmt, sys))
+
 	return ctr.
 		WithEnvVariable("NIX_CONFIG", "experimental-features = nix-command flakes\nfilter-syscalls = false\n").
 		WithDirectory("/dotfiles", m.Source).
@@ -230,6 +233,7 @@ func (m *Dev) DevBase(
 	if err != nil {
 		return nil, err
 	}
+
 	ctr := built.
 		WithMountedCache(homeDir+"/.krew", dag.CacheVolume(devCacheNamespace+":krew"))
 
@@ -396,12 +400,19 @@ func (m *Dev) PublishShell(
 		return "", err
 	}
 
-	ctr := built.
-		WithoutMount("/nix/store").
-		WithoutMount("/nix/var/nix").
+	// Snapshot cache-mounted paths into the rootfs. Dagger cannot
+	// convert cache-mounted directories into immutable Directory
+	// references, so we cp to a non-mounted path, get a Directory
+	// from there, then overlay it after removing the mounts.
+	snapshot := built.WithExec([]string{"cp", "-a", "/nix", "/nix-snapshot"})
+	nixDir := snapshot.Directory("/nix-snapshot")
+
+	ctr := snapshot.
+		WithoutMount("/nix").
 		WithoutMount("/root/.cache/nix").
-		WithDirectory("/nix", built.Directory("/nix")).
-		WithDirectory(homeDir, built.Directory(homeDir)).
+		WithoutDirectory("/nix").
+		WithDirectory("/nix", nixDir).
+		WithoutDirectory("/nix-snapshot").
 		WithWorkdir(homeDir).
 		WithEntrypoint([]string{"fish"}).
 		WithRegistryAuth("ghcr.io", "MacroPower", password).
@@ -457,13 +468,21 @@ chown -R %s:%s %s
 		WithExec([]string{"sh", "-c", setupUserScript}).
 		WithEnvVariable("IS_SANDBOX_NETWORK", "1")
 
-	ctr := built.
-		WithoutMount("/nix/store").
-		WithoutMount("/nix/var/nix").
+	// Snapshot cache-mounted paths into the rootfs. Dagger cannot
+	// convert cache-mounted directories into immutable Directory
+	// references, so we cp to a non-mounted path, get a Directory
+	// from there, then overlay it after removing the mounts.
+	snapshot := built.WithExec([]string{"cp", "-a", "/nix", "/nix-snapshot"})
+	nixDir := snapshot.Directory("/nix-snapshot")
+
+	ctr := snapshot.
+		WithoutMount("/nix").
 		WithoutMount("/root/.cache/nix").
+		WithoutMount(homeDir+"/.krew").
 		WithoutMount("/claude-state").
-		WithDirectory("/nix", built.Directory("/nix")).
-		WithDirectory(homeDir, built.Directory(homeDir)).
+		WithoutDirectory("/nix").
+		WithDirectory("/nix", nixDir).
+		WithoutDirectory("/nix-snapshot").
 		WithWorkdir(homeDir).
 		WithEntrypoint([]string{"terrarium", "init", "--", "fish"}).
 		WithRegistryAuth("ghcr.io", "MacroPower", password).
