@@ -6,7 +6,7 @@
 }:
 
 let
-  inherit (lib) mkOption mkEnableOption types;
+  inherit (lib) mkOption types;
   cfg = config.dotfiles.claude;
   skipPerms = cfg.dangerouslySkipPermissions;
 
@@ -304,10 +304,6 @@ let
 in
 {
   options.dotfiles.claude = {
-    enable = mkEnableOption "Claude Code" // {
-      default = true;
-    };
-
     dangerouslySkipPermissions = mkOption {
       type = types.bool;
       default = false;
@@ -382,7 +378,7 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     programs = {
       mcp = {
         enable = true;
@@ -693,6 +689,7 @@ in
 
     home = {
       packages = [
+        pkgs.chief
         pkgs.llm-agents.ccusage
         pkgs.rtk-bin
       ];

@@ -15,15 +15,7 @@
     ./gpg.nix
     ./vim.nix
     ./tools.nix
-    ./kubernetes.nix
-    ./vscode.nix
-    ./claude.nix
     ./secrets.nix
-    ./ghostty.nix
-    ./displayplacer.nix
-    ./zed.nix
-    ./firefox.nix
-    ./development.nix
   ];
 
   programs = {

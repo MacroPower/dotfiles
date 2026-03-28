@@ -6,7 +6,6 @@
 let
   inherit (inputs)
     nur-jacobcolvin
-    nix-vscode-extensions
     llm-agents
     dagger
     sops-nix
@@ -53,7 +52,6 @@ let
     localOverlay
     (nurJacobColvinOverlay system)
     ryceeOverlay
-    nix-vscode-extensions.overlays.default
     llm-agents.overlays.default
     dagger.overlays.default
   ];

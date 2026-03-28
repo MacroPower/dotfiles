@@ -6,16 +6,12 @@
 }:
 
 let
-  inherit (lib) mkOption mkEnableOption types;
+  inherit (lib) mkOption types;
   cfg = config.dotfiles.firefox;
   addons = pkgs.firefox-addons;
 in
 {
   options.dotfiles.firefox = {
-    enable = mkEnableOption "Firefox" // {
-      default = true;
-    };
-
     extraExtensions = mkOption {
       type = types.listOf types.package;
       default = [ ];
@@ -23,7 +19,7 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     stylix.targets.firefox.profileNames = [ "default" ];
 
     programs.firefox = {

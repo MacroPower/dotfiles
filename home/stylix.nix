@@ -4,8 +4,6 @@
   stylix.targets = {
     # Vim: themed by joshdick/onedark.vim plugin + vim-airline
     vim.enable = lib.mkDefault false;
-    # VSCode: themed by "One Dark Pro Darker" extension
-    vscode.enable = lib.mkDefault false;
     # Zed: themed by "One Dark Pro" built-in theme
     zed.enable = lib.mkDefault false;
     # GitUI: themed by configs/gitui/theme.ron

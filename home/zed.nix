@@ -1,13 +1,11 @@
 {
   pkgs,
-  lib,
   config,
   osConfig ? { },
   ...
 }:
 
 let
-  cfg = config.dotfiles.zed;
   fontFeatures = config.dotfiles.fonts.features;
   fontFeaturesAttrs = builtins.listToAttrs (
     map (f: {
@@ -56,123 +54,106 @@ let
       };
 in
 {
-  options.dotfiles.zed = {
-    enable = lib.mkEnableOption "Zed editor" // {
-      default = true;
-    };
-    remoteServer = lib.mkEnableOption "Zed remote server" // {
-      default = pkgs.stdenv.isLinux;
-    };
-  };
+  config = {
+    programs.zed-editor = {
+      enable = true;
+      package = pkgs.zed-bin;
 
-  config = lib.mkMerge [
-    (lib.mkIf cfg.enable {
-      programs.zed-editor = {
-        enable = true;
-        package = pkgs.zed-bin;
+      extensions = [
+        # themes & icons
+        "material-icon-theme"
+        "one-dark-pro"
+        # languages
+        "nix"
+        "csharp"
+        "toml"
+        "dockerfile"
+        "fish"
+        "latex"
+        "java"
+        "scss"
+        "git-firefly"
+        "sql"
+        "csv"
+        "ini"
+        # infra
+        "terraform"
+        "helm"
+      ];
 
-        extensions = [
-          # themes & icons
-          "material-icon-theme"
-          "one-dark-pro"
-          # languages
-          "nix"
-          "csharp"
-          "toml"
-          "dockerfile"
-          "fish"
-          "latex"
-          "java"
-          "scss"
-          "git-firefly"
-          "sql"
-          "csv"
-          "ini"
-          # infra
-          "terraform"
-          "helm"
-        ];
-
-        userSettings = {
-          languages = {
-            Nix = {
-              language_servers = [
-                "nixd"
-                "!nil"
-              ];
-            };
+      userSettings = {
+        languages = {
+          Nix = {
+            language_servers = [
+              "nixd"
+              "!nil"
+            ];
           };
-          lsp = {
-            nixd = {
-              settings = {
-                nixpkgs = {
-                  expr = "(${flakeExpr}).${configType}.${configName}.pkgs";
-                };
-                formatting = {
-                  command = [ "nixfmt" ];
-                };
-                options = nixdOptions;
-              };
-            };
-          };
-          agent = {
-            default_model = {
-              provider = "copilot_chat";
-              model = "claude-opus-4.6";
-            };
-            favorite_models = [ ];
-            model_parameters = [ ];
-          };
-          edit_predictions = {
-            mode = "subtle";
-            provider = "copilot";
-          };
-          ui_font_size = 15.0;
-          ui_font_weight = 500.0;
-          ui_font_family = config.stylix.fonts.monospace.name;
-          ui_font_features = fontFeaturesAttrs;
-          buffer_font_size = 14.0;
-          buffer_font_weight = 500.0;
-          buffer_font_family = config.stylix.fonts.monospace.name;
-          buffer_font_features = fontFeaturesAttrs;
-          terminal = {
-            font_family = config.stylix.fonts.monospace.name;
-            font_features = fontFeaturesAttrs;
-          };
-          # Disable auto-updates (managed by Nix)
-          auto_update = false;
-          base_keymap = "VSCode";
-          vim_mode = false;
-          icon_theme = "Material Icon Theme";
-          theme = "One Dark Pro";
-          wrap_guides = [
-            88
-            120
-          ];
-          ssh_connections = [
-            {
-              host = "nixos-orbstack.orb.local";
-              username = "jacobcolvin";
-            }
-          ];
         };
-
-        userKeymaps = [
-          {
-            context = "Workspace";
-            bindings = {
-              "shift shift" = "file_finder::Toggle";
+        lsp = {
+          nixd = {
+            settings = {
+              nixpkgs = {
+                expr = "(${flakeExpr}).${configType}.${configName}.pkgs";
+              };
+              formatting = {
+                command = [ "nixfmt" ];
+              };
+              options = nixdOptions;
             };
+          };
+        };
+        agent = {
+          default_model = {
+            provider = "copilot_chat";
+            model = "claude-opus-4.6";
+          };
+          favorite_models = [ ];
+          model_parameters = [ ];
+        };
+        edit_predictions = {
+          mode = "subtle";
+          provider = "copilot";
+        };
+        ui_font_size = 15.0;
+        ui_font_weight = 500.0;
+        ui_font_family = config.stylix.fonts.monospace.name;
+        ui_font_features = fontFeaturesAttrs;
+        buffer_font_size = 14.0;
+        buffer_font_weight = 500.0;
+        buffer_font_family = config.stylix.fonts.monospace.name;
+        buffer_font_features = fontFeaturesAttrs;
+        terminal = {
+          font_family = config.stylix.fonts.monospace.name;
+          font_features = fontFeaturesAttrs;
+        };
+        # Disable auto-updates (managed by Nix)
+        auto_update = false;
+        base_keymap = "VSCode";
+        vim_mode = false;
+        icon_theme = "Material Icon Theme";
+        theme = "One Dark Pro";
+        wrap_guides = [
+          88
+          120
+        ];
+        ssh_connections = [
+          {
+            host = "nixos-orbstack.orb.local";
+            username = "jacobcolvin";
           }
         ];
       };
 
-    })
-    (lib.mkIf cfg.remoteServer {
-      home.file.".zed_server" = lib.mkIf pkgs.stdenv.isLinux {
-        source = "${pkgs.zed-bin.remote_server}/bin";
-        recursive = true;
-      };
-    })
-  ];
+      userKeymaps = [
+        {
+          context = "Workspace";
+          bindings = {
+            "shift shift" = "file_finder::Toggle";
+          };
+        }
+      ];
+    };
+
+  };
 }

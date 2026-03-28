@@ -103,11 +103,6 @@ inputs.nix-darwin.lib.darwinSystem {
                 source ~/.orbstack/shell/init2.fish 2>/dev/null || :
               '';
             };
-            vscode.extraKubernetesSettings = {
-              "vscode-kubernetes.helm-path.mac" = "/opt/homebrew/bin/helm";
-              "vscode-kubernetes.kubectl-path.mac" = "/opt/homebrew/bin/kubectl";
-              "vscode-kubernetes.minikube-path.mac" = "/opt/homebrew/bin/minikube";
-            };
             sshIncludes = [
               "~/.config/colima/ssh_config"
               "~/.orbstack/ssh/config"

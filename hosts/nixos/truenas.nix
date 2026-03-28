@@ -28,12 +28,6 @@
         userName = "Jacob Colvin";
         userEmail = "jacobcolvin1@gmail.com";
       };
-      kubernetes.enable = false;
-      vscode.enable = false;
-      claude.enable = false;
-      ghostty.enable = false;
-      zed.enable = false;
-      development.enable = false;
     };
   };
 }

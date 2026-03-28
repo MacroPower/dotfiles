@@ -1,20 +1,14 @@
 {
-  lib,
   pkgs,
   config,
   ...
 }:
 
 let
-  cfg = config.dotfiles.ghostty;
   fontFeatures = config.dotfiles.fonts.features;
 in
 {
-  options.dotfiles.ghostty.enable = lib.mkEnableOption "Ghostty terminal" // {
-    default = true;
-  };
-
-  config = lib.mkIf cfg.enable {
+  config = {
     programs.ghostty = {
       enable = true;
       package = if pkgs.stdenv.hostPlatform.isDarwin then pkgs.ghostty-bin else null;

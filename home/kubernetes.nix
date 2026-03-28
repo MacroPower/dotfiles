@@ -6,15 +6,11 @@
 }:
 
 let
-  inherit (lib) mkOption mkEnableOption types;
+  inherit (lib) mkOption types;
   cfg = config.dotfiles.kubernetes;
 in
 {
   options.dotfiles.kubernetes = {
-    enable = mkEnableOption "Kubernetes tools" // {
-      default = true;
-    };
-
     extraPackages = mkOption {
       type = types.listOf types.package;
       default = [ ];
@@ -34,7 +30,7 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     home = {
       sessionPath = [ "$HOME/.krew/bin" ];
 

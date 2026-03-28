@@ -25,25 +25,24 @@
   };
 
   homeModule =
-    { pkgs, ... }:
+    { ... }:
     {
+      imports = [
+        ../../home/firefox.nix
+        ../../home/ghostty.nix
+        ../../home/zed.nix
+        ../../home/development.nix
+        ../../home/kubernetes.nix
+        ../../home/claude.nix
+        ../../home/displayplacer.nix
+        ../../home/personal.nix
+      ];
       dotfiles = {
         git = {
           userName = "Jacob Colvin";
           userEmail = "jacobcolvin1@gmail.com";
         };
-        extraHomePackages = with pkgs; [
-          talosctl
-          tpi
-          discord
-          obsidian
-          slack
-        ];
         claude.extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
-        vscode.extraExtensions =
-          marketplace: with marketplace; [
-            wakatime.vscode-wakatime
-          ];
       };
     };
 }

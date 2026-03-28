@@ -95,6 +95,12 @@
       };
     };
   homeModule = {
+    imports = [
+      ../../home/development.nix
+      ../../home/kubernetes.nix
+      ../../home/claude.nix
+      ../../home/zed-remote.nix
+    ];
     dotfiles = {
       git = {
         userName = "Jacob Colvin";

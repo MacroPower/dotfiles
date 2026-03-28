@@ -1,6 +1,12 @@
 system: {
   inherit system;
   homeModule = {
+    imports = [
+      ../../home/development.nix
+      ../../home/kubernetes.nix
+      ../../home/claude.nix
+      ../../home/zed-remote.nix
+    ];
     dotfiles = {
       username = "dev";
       hostname = "linux";
@@ -9,10 +15,6 @@ system: {
         userName = "Jacob Colvin";
         userEmail = "jacobcolvin1@gmail.com";
       };
-      firefox.enable = false;
-      ghostty.enable = false;
-      vscode.enable = false;
-      zed.enable = false;
     };
   };
 }
