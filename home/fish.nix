@@ -34,11 +34,11 @@ in
         "$git_state"
         "$git_status"
         "$git_metrics"
+        "$cmd_duration"
       ];
 
       right_format = lib.concatStrings [
         "$status"
-        "$cmd_duration"
         "$shlvl"
         "$jobs"
         "$kubernetes"
@@ -190,8 +190,9 @@ in
       direnv = {
         disabled = false;
         style = "#${colors.base0B}";
+        symbol = "${nf "f07c"} ";
         denied_msg = "[denied](#${colors.base08})";
-        format = " [$symbol$loaded/$allowed]($style)";
+        format = " [$symbol$loaded$denied]($style)";
       };
       docker_context = {
         style = "#${colors.base0D}";
@@ -232,7 +233,7 @@ in
       nix_shell = {
         style = "#${colors.base0D}";
         symbol = "${nf "f313"} ";
-        format = " [$symbol$state(\\($name\\))]($style)";
+        format = " [$symbol($name)]($style)";
       };
       nodejs = {
         style = "#${colors.base0B}";
