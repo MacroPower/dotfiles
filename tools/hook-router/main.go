@@ -67,6 +67,10 @@ func run(stdin io.Reader, stdout io.Writer, cfg config) error {
 		return encodeJSON(stdout, denyResponse(reason))
 	}
 
+	if reason, denied := checkK8sCliDenied(prog); denied {
+		return encodeJSON(stdout, denyResponse(reason))
+	}
+
 	return delegate(input, cfg.rtkRewrite)
 }
 
@@ -154,6 +158,57 @@ func checkGitStashDenied(prog *syntax.File) (string, bool) {
 	}
 
 	return "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.", true
+}
+
+// k8sBlockedCmds lists CLI commands that should be routed through the
+// mcp-kubernetes MCP server instead of being invoked directly.
+var k8sBlockedCmds = map[string]string{
+	"kubectl": "mcp__kubernetes__call_kubectl",
+	"helm":    "mcp__kubernetes__call_helm",
+	"cilium":  "mcp__kubernetes__call_cilium",
+	"hubble":  "mcp__kubernetes__call_hubble",
+}
+
+// checkK8sCliDenied walks the AST looking for direct invocations of kubectl,
+// helm, cilium, or hubble. These should use the mcp-kubernetes MCP server.
+func checkK8sCliDenied(prog *syntax.File) (string, bool) {
+	var tool string
+
+	syntax.Walk(prog, func(node syntax.Node) bool {
+		if tool != "" {
+			return false
+		}
+
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) < 1 {
+			return true
+		}
+
+		parts := call.Args[0].Parts
+		if len(parts) != 1 {
+			return true
+		}
+
+		lit, ok := parts[0].(*syntax.Lit)
+		if !ok {
+			return true
+		}
+
+		if _, blocked := k8sBlockedCmds[lit.Value]; blocked {
+			tool = lit.Value
+		}
+
+		return true
+	})
+
+	if tool == "" {
+		return "", false
+	}
+
+	return fmt.Sprintf(
+		"Direct %s usage is blocked. Use %s instead.",
+		tool, k8sBlockedCmds[tool],
+	), true
 }
 
 func delegate(input []byte, rtkRewrite string) error {

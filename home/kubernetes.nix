@@ -51,6 +51,7 @@ in
           })
           kubectx
           cilium-cli
+          hubble
           krew
           stern
           kubelogin

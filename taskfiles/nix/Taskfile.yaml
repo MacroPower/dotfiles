@@ -50,3 +50,4 @@ tasks:
       - bash pkgs/zed-update.sh
       - bash pkgs/photo-cli-update.sh
       - bash pkgs/rtk-bin-update.sh
+      - bash pkgs/mcp-kubernetes-update.sh

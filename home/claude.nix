@@ -406,6 +406,19 @@ in
               type = "stdio";
               command = "${kagiWrapper}";
             };
+            kubernetes = {
+              type = "stdio";
+              command = "${pkgs.mcp-kubernetes}/bin/mcp-kubernetes";
+              args = [
+                "--access-level"
+                "readonly"
+                "--additional-tools"
+                "helm,cilium,hubble"
+              ];
+              env = {
+                KUBERNETES_MCP_COLLECT_TELEMETRY = "false";
+              };
+            };
             github = {
               type = "http";
               url = "https://api.githubcopilot.com/mcp/readonly";
@@ -460,6 +473,10 @@ in
               "mcp__github__search_pull_requests"
               "mcp__github__search_repositories"
               "mcp__github__search_users"
+              "mcp__kubernetes__call_kubectl"
+              "mcp__kubernetes__call_helm"
+              "mcp__kubernetes__call_cilium"
+              "mcp__kubernetes__call_hubble"
             ]
             ++ cfg.extraPermissions.allow;
             deny = [
@@ -713,6 +730,14 @@ in
         - Your code speaks for itself. Enumeration of content is redundant. Focus instead on the how and why.
 
         When writing documentation, you MUST review your output against the above rules.
+
+        ## Kubernetes
+
+        - Use `mcp__kubernetes__call_kubectl` for kubectl operations.
+        - Use `mcp__kubernetes__call_helm` for Helm operations.
+        - Use `mcp__kubernetes__call_cilium` for Cilium operations.
+        - Use `mcp__kubernetes__call_hubble` for Hubble observability.
+        - Do not run kubectl, helm, cilium, or hubble directly.
       '';
 
       sessionVariables = {

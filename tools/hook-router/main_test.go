@@ -111,6 +111,78 @@ func TestCheckGitStashDenied(t *testing.T) {
 	}
 }
 
+func TestCheckK8sCliDenied(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		input string
+		want  string
+	}{
+		"kubectl get pods": {
+			input: "kubectl get pods",
+			want:  "Direct kubectl usage is blocked. Use mcp__kubernetes__call_kubectl instead.",
+		},
+		"kubectl with namespace": {
+			input: "kubectl -n kube-system get pods",
+			want:  "Direct kubectl usage is blocked. Use mcp__kubernetes__call_kubectl instead.",
+		},
+		"kubectl in pipeline": {
+			input: "kubectl get pods | grep foo",
+			want:  "Direct kubectl usage is blocked. Use mcp__kubernetes__call_kubectl instead.",
+		},
+		"kubectl in compound": {
+			input: "cd /tmp && kubectl apply -f manifest.yaml",
+			want:  "Direct kubectl usage is blocked. Use mcp__kubernetes__call_kubectl instead.",
+		},
+		"helm install": {
+			input: "helm install my-release chart",
+			want:  "Direct helm usage is blocked. Use mcp__kubernetes__call_helm instead.",
+		},
+		"helm template": {
+			input: "cd /tmp && helm template chart",
+			want:  "Direct helm usage is blocked. Use mcp__kubernetes__call_helm instead.",
+		},
+		"cilium status": {
+			input: "cilium status",
+			want:  "Direct cilium usage is blocked. Use mcp__kubernetes__call_cilium instead.",
+		},
+		"hubble observe": {
+			input: "hubble observe",
+			want:  "Direct hubble usage is blocked. Use mcp__kubernetes__call_hubble instead.",
+		},
+		"hubble in subshell": {
+			input: "(hubble observe --follow)",
+			want:  "Direct hubble usage is blocked. Use mcp__kubernetes__call_hubble instead.",
+		},
+		"no match: echo kubectl": {
+			input: "echo kubectl get pods",
+		},
+		"no match: git status": {
+			input: "git status",
+		},
+		"no match: kubecolor": {
+			input: "kubecolor get pods",
+		},
+		"no match: helmfile": {
+			input: "helmfile sync",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			got, denied := checkK8sCliDenied(prog)
+			assert.Equal(t, tt.want != "", denied)
+
+			if denied {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -211,6 +283,30 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, "PreToolUse", hso["hookEventName"])
 		assert.Equal(t, "deny", hso["permissionDecision"])
 		assert.Contains(t, hso["permissionDecisionReason"], "git stash")
+	})
+
+	t.Run("denied kubectl", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "kubectl get pods -A",
+		})
+
+		var stdout bytes.Buffer
+
+		err := run(strings.NewReader(input), &stdout, cfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Contains(t, hso["permissionDecisionReason"], "kubectl")
 	})
 
 	t.Run("denied git stash with git clone", func(t *testing.T) {

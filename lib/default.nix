@@ -23,6 +23,7 @@ let
     rtk-bin = final.callPackage paths.rtk-bin { };
     hook-router = final.callPackage paths.hook-router { };
     mcp-fetch = final.callPackage paths.mcp-fetch { };
+    mcp-kubernetes = final.callPackage paths.mcp-kubernetes { };
   };
 
   nurJacobColvinOverlay =
