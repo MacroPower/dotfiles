@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	// nixImage is the pinned nixos/nix container image.
-	nixImage = "nixos/nix:2.34.1@sha256:1d59121e0c361076b4f23c158d236702f2f045b3b477b51075b81ceb6188d34a"
+	// nixImage is the pinned lix container image.
+	nixImage = "ghcr.io/lix-project/lix:2.94.0@sha256:25f5eee428aa1bc217cfcfa7c6d1e072274001ba07d4bb10a92fb7e3e16d1838"
 
 	// devCacheNamespace is the namespace prefix for dev-specific cache volumes.
 	devCacheNamespace = "go.jacobcolvin.com/dotfiles/toolchains/dev"
@@ -182,7 +182,8 @@ func (m *Dev) buildBase(ctx context.Context, ctr *dagger.Container) (*dagger.Con
 	config := fmt.Sprintf(".#homeConfigurations.%q.activationPackage", fmt.Sprintf(homeConfigFmt, sys))
 
 	return ctr.
-		WithEnvVariable("NIX_CONFIG", "experimental-features = nix-command flakes\nfilter-syscalls = false\n").
+		WithEnvVariable("NIX_CONFIG", "experimental-features = nix-command flakes\n"+
+			"max-jobs = auto\n").
 		WithDirectory("/dotfiles", m.Source).
 		WithWorkdir("/dotfiles").
 		WithExec([]string{"nix", "build", config}).
@@ -375,29 +376,13 @@ func (m *Dev) Sandbox(
 	return ctr, nil
 }
 
-// PublishShell builds a self-contained dev container and pushes it to a
-// container registry. Unlike [Dev.DevBase], the published image bakes
-// all nix store contents into image layers so it works without Dagger
-// cache volumes.
-func (m *Dev) PublishShell(
-	ctx context.Context,
-	// Registry password or personal access token.
-	password *dagger.Secret,
-	// Image tags. Defaults to ["latest"].
-	// +optional
-	tags []string,
-	// Full image reference without tag.
-	// +optional
-	// +default="ghcr.io/macropower/shell"
-	image string,
-) (string, error) {
-	if len(tags) == 0 {
-		tags = []string{"latest"}
-	}
-
+// BuildShell builds a self-contained dev container with all nix store
+// contents baked into image layers so it works without Dagger cache
+// volumes. Use [Dev.PublishShell] to build and push in one step.
+func (m *Dev) BuildShell(ctx context.Context) (*dagger.Container, error) {
 	built, err := m.cachedBuild(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Snapshot cache-mounted paths into the rootfs. Dagger cannot
@@ -415,9 +400,36 @@ func (m *Dev) PublishShell(
 		WithoutDirectory("/nix-snapshot").
 		WithWorkdir(homeDir).
 		WithEntrypoint([]string{"fish"}).
-		WithRegistryAuth("ghcr.io", "MacroPower", password).
 		WithLabel("org.opencontainers.image.source", "https://github.com/MacroPower/dotfiles").
 		WithLabel("org.opencontainers.image.description", "Development container with nix home-manager tools")
+
+	return ctr, nil
+}
+
+// PublishShell builds a self-contained dev container via [Dev.BuildShell]
+// and pushes it to a container registry.
+func (m *Dev) PublishShell(
+	ctx context.Context,
+	// Registry password or personal access token.
+	password *dagger.Secret,
+	// Image tags. Defaults to ["latest"].
+	// +optional
+	tags []string,
+	// Full image reference without tag.
+	// +optional
+	// +default="ghcr.io/macropower/shell"
+	image string,
+) (string, error) {
+	if len(tags) == 0 {
+		tags = []string{"latest"}
+	}
+
+	ctr, err := m.BuildShell(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	ctr = ctr.WithRegistryAuth("ghcr.io", "MacroPower", password)
 
 	var addr string
 	for _, tag := range tags {

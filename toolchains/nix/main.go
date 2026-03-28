@@ -63,7 +63,7 @@ func (m *Nix) base() *dagger.Container {
 		WithMountedCache("/nix/var/nix", dag.CacheVolume("nix-var"),
 			dagger.ContainerWithMountedCacheOpts{Source: ctr.Directory("/nix/var/nix")}).
 		WithMountedCache("/root/.cache/nix", dag.CacheVolume("nix-eval-cache")).
-		WithEnvVariable("NIX_CONFIG", "experimental-features = nix-command flakes\n").
+		WithEnvVariable("NIX_CONFIG", "experimental-features = nix-command flakes\nmax-jobs = auto\n").
 		WithDirectory("/src", m.Source).
 		WithWorkdir("/src")
 }
