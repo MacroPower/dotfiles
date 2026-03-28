@@ -202,6 +202,7 @@ func (m *Dev) buildBase(ctx context.Context, ctr *dagger.Container) (*dagger.Con
 		WithEnvVariable("EDITOR", "vim").
 		WithEnvVariable("TERM", "xterm-256color").
 		WithoutDirectory("/dotfiles").
+		WithExec([]string{"nix", "store", "gc"}).
 		WithWorkdir(homeDir), nil
 }
 
@@ -210,7 +211,16 @@ func (m *Dev) buildBase(ctx context.Context, ctr *dagger.Container) (*dagger.Con
 // store and var directories share a single cache volume to keep them
 // atomically consistent.
 func (m *Dev) cachedBuild(ctx context.Context) (*dagger.Container, error) {
-	ctr := dag.Container().From(nixImage)
+	// Squash the base image into a single layer so its many small
+	// layers don't bloat the final published image.
+	// Squashing discards OCI config; restore env vars so nix, git,
+	// and SSL work during the build.
+	base := dag.Container().From(nixImage)
+	ctr := dag.Container().WithRootfs(base.Rootfs()).
+		WithEnvVariable("PATH", "/root/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin").
+		WithEnvVariable("SSL_CERT_FILE", "/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt").
+		WithEnvVariable("NIX_SSL_CERT_FILE", "/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt").
+		WithEnvVariable("GIT_SSL_CAINFO", "/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt")
 	ctr = ctr.
 		WithMountedCache("/nix", dag.CacheVolume(devCacheNamespace+":nix"),
 			dagger.ContainerWithMountedCacheOpts{Source: ctr.Directory("/nix")}).
@@ -392,12 +402,11 @@ func (m *Dev) BuildShell(ctx context.Context) (*dagger.Container, error) {
 	snapshot := built.WithExec([]string{"cp", "-a", "/nix", "/nix-snapshot"})
 	nixDir := snapshot.Directory("/nix-snapshot")
 
-	ctr := snapshot.
+	ctr := built.
 		WithoutMount("/nix").
 		WithoutMount("/root/.cache/nix").
 		WithoutDirectory("/nix").
 		WithDirectory("/nix", nixDir).
-		WithoutDirectory("/nix-snapshot").
 		WithWorkdir(homeDir).
 		WithEntrypoint([]string{"fish"}).
 		WithLabel("org.opencontainers.image.source", "https://github.com/MacroPower/dotfiles").
@@ -487,14 +496,13 @@ chown -R %s:%s %s
 	snapshot := built.WithExec([]string{"cp", "-a", "/nix", "/nix-snapshot"})
 	nixDir := snapshot.Directory("/nix-snapshot")
 
-	ctr := snapshot.
+	ctr := built.
 		WithoutMount("/nix").
 		WithoutMount("/root/.cache/nix").
 		WithoutMount(homeDir+"/.krew").
 		WithoutMount("/claude-state").
 		WithoutDirectory("/nix").
 		WithDirectory("/nix", nixDir).
-		WithoutDirectory("/nix-snapshot").
 		WithWorkdir(homeDir).
 		WithEntrypoint([]string{"terrarium", "init", "--", "fish"}).
 		WithRegistryAuth("ghcr.io", "MacroPower", password).
