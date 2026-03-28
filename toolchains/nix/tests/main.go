@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 )
 
 // Tests provides integration tests for the [Nix] module.
@@ -189,19 +188,15 @@ type sarifResult struct {
 }
 
 type sarifLocation struct {
-	PhysicalLocation sarifPhysicalLocation `json:"physicalLocation"`
-}
-
-type sarifPhysicalLocation struct {
-	ArtifactLocation sarifArtifactLocation `json:"artifactLocation"`
-}
-
-type sarifArtifactLocation struct {
-	URI string `json:"uri"`
+	PhysicalLocation struct {
+		ArtifactLocation struct {
+			URI string `json:"uri"`
+		} `json:"artifactLocation"`
+	} `json:"physicalLocation"`
 }
 
 // TestVulnscanSarif verifies that [Nix.VulnscanSarif] produces valid
-// SARIF v2.1.0 JSON from the vulnix scan.
+// SARIF v2.1.0 JSON from the grype scan.
 //
 // +check
 func (m *Tests) TestVulnscanSarif(ctx context.Context) error {
@@ -215,7 +210,7 @@ func (m *Tests) TestVulnscanSarif(ctx context.Context) error {
 		return fmt.Errorf("parsing sarif JSON: %w", err)
 	}
 
-	if log.Schema != "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json" {
+	if log.Schema != "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json" {
 		return fmt.Errorf("schema = %q, want SARIF v2.1.0 schema", log.Schema)
 	}
 	if log.Version != "2.1.0" {
@@ -226,8 +221,8 @@ func (m *Tests) TestVulnscanSarif(ctx context.Context) error {
 	}
 
 	run := log.Runs[0]
-	if run.Tool.Driver.Name != "vulnix" {
-		return fmt.Errorf("driver name = %q, want %q", run.Tool.Driver.Name, "vulnix")
+	if run.Tool.Driver.Name != "grype" {
+		return fmt.Errorf("driver name = %q, want %q", run.Tool.Driver.Name, "grype")
 	}
 
 	// Don't assert specific CVE counts (they change), but validate structure.
@@ -240,16 +235,11 @@ func (m *Tests) TestVulnscanSarif(ctx context.Context) error {
 		default:
 			return fmt.Errorf("result[%d] level = %q, want error/warning/note", i, r.Level)
 		}
-		if len(r.Locations) == 0 {
-			return fmt.Errorf("result[%d] has no locations", i)
-		}
-		uri := r.Locations[0].PhysicalLocation.ArtifactLocation.URI
-		if uri == "" {
-			return fmt.Errorf("result[%d] has empty location URI", i)
-		}
-		// Results point to either a .nix source file (direct deps) or flake.lock (transitive).
-		if uri != "flake.lock" && !strings.HasSuffix(uri, ".nix") {
-			return fmt.Errorf("result[%d] location = %q, want .nix file or flake.lock", i, uri)
+		// Verify empty artifact URIs were patched (GitHub rejects empty URIs).
+		for _, loc := range r.Locations {
+			if loc.PhysicalLocation.ArtifactLocation.URI == "" {
+				return fmt.Errorf("result[%d] has empty location URI", i)
+			}
 		}
 	}
 

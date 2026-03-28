@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"dagger/nix/internal/dagger"
-	"dagger/nix/internal/sarif"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -288,7 +287,7 @@ func (m *Nix) Format() *dagger.Changeset {
 }
 
 // homeClosurePath builds the home-manager activation package and returns
-// the nix store path. Used by [Nix.Sbom] and [Nix.Vulnscan].
+// the nix store path. Used by [Nix.Sbom].
 func (m *Nix) homeClosurePath(ctx context.Context) (string, error) {
 	base := m.base()
 	sys, err := nixSystem(ctx, base)
@@ -362,20 +361,33 @@ func (m *Nix) DependencySnapshot(
 		File("snapshot.json"), nil
 }
 
-// Vulnscan checks the home-manager closure for known CVEs using vulnix.
+// grypeBase returns a container with grype installed and the vulnerability
+// database cached. The SBOM file is mounted for scanning.
+func (m *Nix) grypeBase(ctx context.Context) (*dagger.Container, error) {
+	sbom, err := m.Sbom(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.base().
+		WithMountedCache("/root/.cache/grype", dag.CacheVolume("grype-db")).
+		WithExec([]string{"nix", "profile", "install", "nixpkgs#grype"}).
+		WithFile("/tmp/sbom.cdx.json", sbom), nil
+}
+
+// Vulnscan checks the home-manager closure for known CVEs using grype.
 func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
-	storePath, err := m.homeClosurePath(ctx)
+	ctr, err := m.grypeBase(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	out, err := m.base().
-		WithExec([]string{"nix", "profile", "install", "nixpkgs#vulnix"}).
-		WithExec([]string{"vulnix", storePath},
+	out, err := ctr.
+		WithExec([]string{"grype", "sbom:/tmp/sbom.cdx.json"},
 			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
 		Stdout(ctx)
 	if err != nil {
-		return "", fmt.Errorf("running vulnix: %w", err)
+		return "", fmt.Errorf("running grype: %w", err)
 	}
 	return out, nil
 }
@@ -384,21 +396,33 @@ func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 // returns the results as a SARIF v2.1.0 JSON file suitable for upload
 // to GitHub Code Scanning. Unlike [Nix.Vulnscan], which returns raw text,
 // this method produces structured output that GitHub can render as
-// security alerts. Results for directly declared packages point to the
-// .nix file where they appear; transitive dependencies fall back to
-// the nixpkgs rev in flake.lock.
+// security alerts.
+//
+// Grype produces empty artifact locations when scanning SBOMs. Since
+// GitHub Code Scanning requires every result to reference a file in
+// the repo, results are patched: directly declared packages point to
+// the .nix file where they appear; transitive dependencies fall back
+// to the nixpkgs pin in flake.lock.
 func (m *Nix) VulnscanSarif(ctx context.Context) (*dagger.File, error) {
-	out, err := m.Vulnscan(ctx)
+	ctr, err := m.grypeBase(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	packages, err := sarif.ParseVulnix(out)
+	raw, err := ctr.
+		WithExec([]string{"grype", "sbom:/tmp/sbom.cdx.json",
+			"--output", "sarif",
+			"--file", "/tmp/grype.sarif.json"},
+			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
+		File("/tmp/grype.sarif.json").
+		Contents(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("parsing vulnix output: %w", err)
+		return nil, fmt.Errorf("running grype: %w", err)
 	}
 
-	locations, err := m.findPackageLocations(ctx, packages)
+	pkgNames := packageNamesFromSarif(raw)
+
+	locations, err := m.findPackageLocations(ctx, pkgNames)
 	if err != nil {
 		return nil, fmt.Errorf("finding package locations: %w", err)
 	}
@@ -408,63 +432,88 @@ func (m *Nix) VulnscanSarif(ctx context.Context) (*dagger.File, error) {
 		fallbackLine = 1
 	}
 
-	log := sarif.BuildLog(packages, locations, "flake.lock", fallbackLine)
-
-	data, err := json.MarshalIndent(log, "", "  ")
+	patched, err := patchSarifLocations(raw, locations, "flake.lock", fallbackLine)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling sarif: %w", err)
+		return nil, fmt.Errorf("patching sarif locations: %w", err)
 	}
 
 	return dag.Directory().
-		WithNewFile("vulnix.sarif.json", string(data)).
-		File("vulnix.sarif.json"), nil
+		WithNewFile("grype.sarif.json", patched).
+		File("grype.sarif.json"), nil
 }
 
-// findPackageLocations greps .nix source files for each vulnerable
-// package name and returns the first match as a [sarif.SourceLocation].
-// Only matches Nix package reference patterns (pkgs.NAME or bare
-// identifiers on their own line) to avoid false positives from
-// attribute names like "network = {".
-func (m *Nix) findPackageLocations(ctx context.Context, packages []sarif.VulnixPackage) (map[string]sarif.SourceLocation, error) {
-	locations := make(map[string]sarif.SourceLocation)
+// cveRuleIDRe extracts the package name from grype's ruleId format:
+// "CVE-YYYY-NNNNN-packagename" -> "packagename".
+var cveRuleIDRe = regexp.MustCompile(`^CVE-\d+-\d+-(.+)$`)
 
-	if len(packages) == 0 {
+// packageNamesFromSarif extracts unique package names from grype SARIF
+// ruleIds. Grype uses the format "CVE-YYYY-NNNNN-pkgname".
+func packageNamesFromSarif(raw string) []string {
+	var doc struct {
+		Runs []struct {
+			Results []struct {
+				RuleID string `json:"ruleId"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var names []string
+	for _, run := range doc.Runs {
+		for _, r := range run.Results {
+			m := cveRuleIDRe.FindStringSubmatch(r.RuleID)
+			if m == nil {
+				continue
+			}
+			name := m[1]
+			if !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+	return names
+}
+
+// sourceLocation maps a package name to the file and line where it is declared.
+type sourceLocation struct {
+	uri  string
+	line int
+}
+
+// findPackageLocations greps .nix source files for each package name
+// and returns the first match as a source location. Only matches Nix
+// package reference patterns (pkgs.NAME, pkgs."NAME", or bare name on
+// its own line) to avoid false positives from attribute names.
+func (m *Nix) findPackageLocations(ctx context.Context, names []string) (map[string]sourceLocation, error) {
+	locations := make(map[string]sourceLocation)
+	if len(names) == 0 {
 		return locations, nil
 	}
 
-	// Build grep -E patterns that match Nix package references:
-	//   pkgs.NAME or pkgs."NAME"  (attribute access)
-	//   ^\s+NAME\s*$              (bare name on own line, inside a with pkgs block)
 	var pkgPatterns, barePatterns []string
-	for _, pkg := range packages {
-		pkgPatterns = append(pkgPatterns, fmt.Sprintf(`pkgs\.%s\b`, pkg.Name))
-		pkgPatterns = append(pkgPatterns, fmt.Sprintf(`pkgs\."%s"`, pkg.Name))
-		barePatterns = append(barePatterns, fmt.Sprintf(`^\s+%s\s*$`, regexp.QuoteMeta(pkg.Name)))
+	for _, name := range names {
+		pkgPatterns = append(pkgPatterns, fmt.Sprintf(`pkgs\.%s\b`, name))
+		pkgPatterns = append(pkgPatterns, fmt.Sprintf(`pkgs\."%s"`, name))
+		barePatterns = append(barePatterns, fmt.Sprintf(`^\s+%s\s*$`, regexp.QuoteMeta(name)))
 	}
 	allPatterns := append(pkgPatterns, barePatterns...)
 	pattern := strings.Join(allPatterns, "|")
 
 	grepOut, err := m.base().
 		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("grep -rEnl --include='*.nix' '%s' /src/home/ /src/hosts/ 2>/dev/null || true", pattern)}).
+			fmt.Sprintf("grep -rEn --include='*.nix' '%s' /src/home/ /src/hosts/ 2>/dev/null || true", pattern)}).
 		Stdout(ctx)
 	if err != nil {
 		return locations, nil
 	}
 
-	// For each file that matched, get line numbers.
-	files := strings.Fields(strings.TrimSpace(grepOut))
-	if len(files) == 0 {
-		return locations, nil
-	}
-
-	grepOut, err = m.base().
-		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("grep -rEn --include='*.nix' '%s' %s 2>/dev/null || true",
-				pattern, strings.Join(files, " "))}).
-		Stdout(ctx)
-	if err != nil {
-		return locations, nil
+	nameSet := make(map[string]bool, len(names))
+	for _, n := range names {
+		nameSet[n] = true
 	}
 
 	for _, line := range strings.Split(grepOut, "\n") {
@@ -483,15 +532,12 @@ func (m *Nix) findPackageLocations(ctx context.Context, packages []sarif.VulnixP
 		}
 		content := parts[2]
 
-		for _, pkg := range packages {
-			if _, ok := locations[pkg.Name]; ok {
+		for name := range nameSet {
+			if _, ok := locations[name]; ok {
 				continue
 			}
-			if sarif.MatchesPkgRef(content, pkg.Name) {
-				locations[pkg.Name] = sarif.SourceLocation{
-					URI:  file,
-					Line: lineNum,
-				}
+			if matchesPkgRef(content, name) {
+				locations[name] = sourceLocation{uri: file, line: lineNum}
 			}
 		}
 	}
@@ -499,9 +545,39 @@ func (m *Nix) findPackageLocations(ctx context.Context, packages []sarif.VulnixP
 	return locations, nil
 }
 
+// matchesPkgRef reports whether a Nix source line contains a package
+// reference for name: pkgs.NAME, pkgs."NAME", or NAME as the sole
+// token on a line (bare name inside a with pkgs block).
+func matchesPkgRef(line, name string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == name {
+		return true
+	}
+	if strings.Contains(line, `pkgs."`+name+`"`) {
+		return true
+	}
+	prefix := "pkgs." + name
+	idx := strings.Index(line, prefix)
+	if idx >= 0 {
+		end := idx + len(prefix)
+		if end >= len(line) {
+			return true
+		}
+		next := line[end]
+		if !isNixIdentChar(next) {
+			return true
+		}
+	}
+	return false
+}
+
+func isNixIdentChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+		(c >= '0' && c <= '9') || c == '_' || c == '\'' || c == '-'
+}
+
 // findNixpkgsLine finds the line number of the "nixpkgs" node in flake.lock.
 func (m *Nix) findNixpkgsLine(ctx context.Context) (int, error) {
-	// Match the top-level nixpkgs node (4-space indent, opening brace).
 	out, err := m.base().
 		WithExec([]string{"sh", "-c", `grep -n '^    "nixpkgs": {' /src/flake.lock | head -1`}).
 		Stdout(ctx)
@@ -517,6 +593,62 @@ func (m *Nix) findNixpkgsLine(ctx context.Context) (int, error) {
 		return 1, err
 	}
 	return n, nil
+}
+
+// patchSarifLocations fills in artifact locations in SARIF results.
+// Results whose package has a source location point to that .nix file;
+// all others fall back to fallbackURI at fallbackLine.
+func patchSarifLocations(raw string, locations map[string]sourceLocation, fallbackURI string, fallbackLine int) (string, error) {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return "", err
+	}
+
+	runs, _ := doc["runs"].([]any)
+	for _, run := range runs {
+		runMap, _ := run.(map[string]any)
+		results, _ := runMap["results"].([]any)
+		for _, result := range results {
+			resultMap, _ := result.(map[string]any)
+			ruleID, _ := resultMap["ruleId"].(string)
+
+			uri := fallbackURI
+			line := fallbackLine
+			if m := cveRuleIDRe.FindStringSubmatch(ruleID); m != nil {
+				if loc, ok := locations[m[1]]; ok {
+					uri = loc.uri
+					line = loc.line
+				}
+			}
+
+			locs, _ := resultMap["locations"].([]any)
+			for _, loc := range locs {
+				locMap, _ := loc.(map[string]any)
+				phys, _ := locMap["physicalLocation"].(map[string]any)
+				if phys == nil {
+					continue
+				}
+				art, _ := phys["artifactLocation"].(map[string]any)
+				if art == nil {
+					continue
+				}
+				art["uri"] = uri
+				region, _ := phys["region"].(map[string]any)
+				if region != nil {
+					region["startLine"] = line
+					region["startColumn"] = 1
+					region["endLine"] = line
+					region["endColumn"] = 1
+				}
+			}
+		}
+	}
+
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 // All runs all checks concurrently.

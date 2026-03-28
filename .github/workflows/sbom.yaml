@@ -61,12 +61,12 @@ jobs:
           version: "v0.20.3"
           call: >-
             nix vulnscan-sarif
-            export --path vulnix.sarif.json
+            export --path grype.sarif.json
           cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
           enable-github-summary: "true"
 
       - name: Upload SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: vulnix.sarif.json
-          category: vulnix
+          sarif_file: grype.sarif.json
+          category: grype
