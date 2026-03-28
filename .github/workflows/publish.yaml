@@ -30,6 +30,7 @@ jobs:
             dev publish-shell
             --password=env://REGISTRY_PASSWORD
             --image="ghcr.io/macropower/shell"
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
           enable-github-summary: "true"
         env:
           REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
@@ -50,6 +51,7 @@ jobs:
             dev publish-sandbox
             --password=env://REGISTRY_PASSWORD
             --image="ghcr.io/macropower/sandbox"
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
           enable-github-summary: "true"
         env:
           REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}

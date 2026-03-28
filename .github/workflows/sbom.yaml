@@ -33,6 +33,7 @@ jobs:
             --correlator="sbom-submit"
             --run-url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             export --path snapshot.json
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
           enable-github-summary: "true"
 
       - name: Submit to GitHub dependency graph
@@ -61,6 +62,7 @@ jobs:
           call: >-
             nix vulnscan-sarif
             export --path vulnix.sarif.json
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
           enable-github-summary: "true"
 
       - name: Upload SARIF to GitHub Code Scanning
