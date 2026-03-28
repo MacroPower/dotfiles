@@ -20,66 +20,6 @@ func mustParse(t *testing.T, command string) *syntax.File {
 	return prog
 }
 
-func TestCheckDenied(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		input string
-		want  string
-	}{
-		"find": {
-			input: "find . -name '*.go'",
-			want:  "Use fd instead of find.",
-		},
-		"find in pipeline": {
-			input: "find . -name x | xargs rm",
-			want:  "Use fd instead of find.",
-		},
-		"find in compound": {
-			input: "echo hi && find . -name x",
-			want:  "Use fd instead of find.",
-		},
-		"no match: rg": {
-			input: "rg foo",
-		},
-		"no match: fd": {
-			input: "fd pattern",
-		},
-		"no match: echo grep": {
-			input: "echo grep",
-		},
-		"no match: echo find": {
-			input: "echo find",
-		},
-		"no match: sh -c grep": {
-			input: `sh -c "grep foo"`,
-		},
-		"no match: plain cmd": {
-			input: "ls -la",
-		},
-		"no match: empty": {
-			input: "",
-		},
-		"no match: git clone": {
-			input: "git clone URL dest",
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			prog := mustParse(t, tt.input)
-			got, denied := checkDenied(prog)
-			assert.Equal(t, tt.want != "", denied)
-
-			if denied {
-				assert.Equal(t, tt.want, got)
-			}
-		})
-	}
-}
-
 func TestCheckGitStashDenied(t *testing.T) {
 	t.Parallel()
 
@@ -295,49 +235,4 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, "deny", hso["permissionDecision"])
 	})
 
-	t.Run("denied command", func(t *testing.T) {
-		t.Parallel()
-
-		input := makeInput(map[string]any{
-			"command": "find . -name foo",
-		})
-
-		var stdout bytes.Buffer
-
-		err := run(strings.NewReader(input), &stdout, cfg)
-		require.NoError(t, err)
-
-		var result map[string]any
-
-		err = json.Unmarshal(stdout.Bytes(), &result)
-		require.NoError(t, err)
-
-		hso, ok := result["hookSpecificOutput"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "PreToolUse", hso["hookEventName"])
-		assert.Equal(t, "deny", hso["permissionDecision"])
-		assert.Equal(t, "Use fd instead of find.", hso["permissionDecisionReason"])
-	})
-
-	t.Run("denied command with git clone", func(t *testing.T) {
-		t.Parallel()
-
-		input := makeInput(map[string]any{
-			"command": "git clone URL dest && find . -name foo",
-		})
-
-		var stdout bytes.Buffer
-
-		err := run(strings.NewReader(input), &stdout, cfg)
-		require.NoError(t, err)
-
-		var result map[string]any
-
-		err = json.Unmarshal(stdout.Bytes(), &result)
-		require.NoError(t, err)
-
-		hso, ok := result["hookSpecificOutput"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "deny", hso["permissionDecision"])
-	})
 }

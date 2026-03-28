@@ -49,3 +49,4 @@ tasks:
       - bash pkgs/otel-tui-update.sh
       - bash pkgs/zed-update.sh
       - bash pkgs/photo-cli-update.sh
+      - bash pkgs/rtk-bin-update.sh

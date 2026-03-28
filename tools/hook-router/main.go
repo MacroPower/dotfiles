@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -64,10 +63,6 @@ func run(stdin io.Reader, stdout io.Writer, cfg config) error {
 		return delegate(input, cfg.rtkRewrite)
 	}
 
-	if reason, denied := checkDenied(prog); denied {
-		return encodeJSON(stdout, denyResponse(reason))
-	}
-
 	if reason, denied := checkGitStashDenied(prog); denied {
 		return encodeJSON(stdout, denyResponse(reason))
 	}
@@ -95,12 +90,6 @@ func encodeJSON(w io.Writer, v any) error {
 }
 
 var (
-	// replacements maps commands to their suggested
-	// alternatives.
-	replacements = map[string]string{
-		"find": "fd",
-	}
-
 	// stashAllowed lists git stash subcommands that are
 	// safe to allow through. Any stash invocation whose
 	// third argument is not in this set is denied, which
@@ -115,50 +104,6 @@ var (
 		"clear":  true,
 	}
 )
-
-// checkDenied walks the AST looking for commands that should be replaced
-// with modern alternatives. It returns a denial reason and true if any
-// denied command is found.
-func checkDenied(prog *syntax.File) (string, bool) {
-	found := make(map[string]string) // command -> replacement
-
-	syntax.Walk(prog, func(node syntax.Node) bool {
-		call, ok := node.(*syntax.CallExpr)
-		if !ok || len(call.Args) < 1 {
-			return true
-		}
-
-		parts := call.Args[0].Parts
-		if len(parts) != 1 {
-			return true
-		}
-
-		lit, ok := parts[0].(*syntax.Lit)
-		if !ok {
-			return true
-		}
-
-		if alt, ok := replacements[lit.Value]; ok {
-			found[lit.Value] = alt
-		}
-
-		return true
-	})
-
-	if len(found) == 0 {
-		return "", false
-	}
-
-	var hints []string
-	for cmd, alt := range found {
-		hints = append(hints, fmt.Sprintf("Use %s instead of %s.", alt, cmd))
-	}
-
-	// Sort for deterministic output.
-	sort.Strings(hints)
-
-	return strings.Join(hints, " "), true
-}
 
 // checkGitStashDenied walks the AST looking for git stash invocations that
 // save/push changes. It allows read and consume subcommands (pop, apply, list,

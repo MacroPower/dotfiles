@@ -259,7 +259,7 @@ let
     name = "hook-router-wrapper";
     runtimeInputs = [ pkgs.hook-router ];
     runtimeEnv = {
-      RTK_REWRITE = "${pkgs.llm-agents.rtk}/libexec/rtk/hooks/rtk-rewrite.sh";
+      RTK_REWRITE = "${pkgs.rtk-bin}/libexec/rtk/hooks/rtk-rewrite.sh";
     };
     text = "exec hook-router";
   };
@@ -694,7 +694,7 @@ in
     home = {
       packages = [
         pkgs.llm-agents.ccusage
-        pkgs.llm-agents.rtk
+        pkgs.rtk-bin
       ];
 
       file.".claude/CLAUDE.md".text = ''
@@ -708,10 +708,6 @@ in
         - Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there.
 
         Remember: Do research, don't guess.
-
-        ## Shell Commands
-
-        - Use `fd` instead of `find` in Bash commands.
 
         ## Writing Style
 

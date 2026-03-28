@@ -21,6 +21,7 @@ let
     zed-bin = final.callPackage paths.zed-bin { };
     photo-cli = final.callPackage paths.photo-cli { };
     mcp-git = final.callPackage paths.mcp-git { };
+    rtk-bin = final.callPackage paths.rtk-bin { };
     hook-router = final.callPackage paths.hook-router { };
     mcp-fetch = final.callPackage paths.mcp-fetch { };
   };
