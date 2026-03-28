@@ -159,7 +159,6 @@
     go-task
     yq-go
     viddy
-    devbox
     doppler
     dagger
     nvd
