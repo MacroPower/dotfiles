@@ -8,7 +8,5 @@
     discord
     obsidian
     slack
-    talosctl
-    tpi
   ];
 }
