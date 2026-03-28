@@ -13,3 +13,4 @@ result
 secrets/.doppler-tmp.json
 secrets/*.tmp
 sbom.cdx.json
+.direnv/
