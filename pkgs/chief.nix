@@ -5,24 +5,24 @@
 }:
 
 let
-  version = "0.7.0";
+  version = "0.8.0";
 
   srcs = {
     "aarch64-darwin" = {
       url = "https://github.com/minicodemonkey/chief/releases/download/v${version}/chief_${version}_darwin_arm64.tar.gz";
-      hash = "sha256-dFYiD/YBLAjgQjN0giTl+X4oufqoMaX8GzLA9vdU5y4=";
+      hash = "sha256-EGKe7/Zu4cafdC0jx759Qs56HupQXYR+SxCk8NxKbHY=";
     };
     "x86_64-darwin" = {
       url = "https://github.com/minicodemonkey/chief/releases/download/v${version}/chief_${version}_darwin_amd64.tar.gz";
-      hash = "sha256-TyqnKYfXnUJtpdw7L/BHInd9dp07ur51JtE4v605GZ0=";
+      hash = "sha256-XO4ewG/GPFCOSAKbPUcJ80HSJjP1jk2TglqCqVx0hPw=";
     };
     "aarch64-linux" = {
       url = "https://github.com/minicodemonkey/chief/releases/download/v${version}/chief_${version}_linux_arm64.tar.gz";
-      hash = "sha256-Lf/MyCSlMXgf1fQ+ej/q7C/pmtk0oihrBv0yaIpRgIs=";
+      hash = "sha256-sOqYg4WjGG5sRM+Wo102BYmfxTZVHhc6dKNvXDYZjiw=";
     };
     "x86_64-linux" = {
       url = "https://github.com/minicodemonkey/chief/releases/download/v${version}/chief_${version}_linux_amd64.tar.gz";
-      hash = "sha256-jdYbVZcL4hEE7ycNcrBFppx+d5AC3f8q4LZVMoNKr3w=";
+      hash = "sha256-zwtLW0y9OyfeBlvTJImTj0b0CtFv8IuONUJ0mGJV89w=";
     };
   };
 
