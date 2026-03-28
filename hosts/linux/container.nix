@@ -9,6 +9,10 @@ system: {
         userName = "Jacob Colvin";
         userEmail = "jacobcolvin1@gmail.com";
       };
+      firefox.enable = false;
+      ghostty.enable = false;
+      vscode.enable = false;
+      zed.enable = false;
     };
   };
 }
