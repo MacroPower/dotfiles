@@ -57,7 +57,9 @@ in
           kubelogin
           fluxcd
           chart-testing
+          radar
         ]
+        ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.radar-desktop ]
         ++ cfg.extraPackages;
     };
 

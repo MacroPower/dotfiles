@@ -156,6 +156,8 @@
                 mcp-git = ./tools/mcp-git/package.nix;
                 hook-router = ./tools/hook-router/package.nix;
                 mcp-fetch = ./tools/mcp-fetch/package.nix;
+                radar = ./pkgs/radar.nix;
+                radar-desktop = ./pkgs/radar-desktop.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })

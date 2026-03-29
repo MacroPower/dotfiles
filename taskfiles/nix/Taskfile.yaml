@@ -51,3 +51,4 @@ tasks:
       - bash pkgs/photo-cli-update.sh
       - bash pkgs/rtk-bin-update.sh
       - bash pkgs/mcp-kubernetes-update.sh
+      - bash pkgs/radar-update.sh
