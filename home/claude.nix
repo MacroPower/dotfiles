@@ -390,6 +390,8 @@ in
               args = [
                 "--rules-file"
                 "${fetchRules}"
+                "--log-file"
+                "${config.xdg.stateHome}/mcp-fetch/fetch.log"
               ];
             };
             git = {

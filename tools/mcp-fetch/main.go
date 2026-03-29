@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"os/signal"
 	"time"
 
@@ -116,6 +117,10 @@ func run() error {
 func openLogger(path string) (*slog.Logger, func(), error) {
 	if path == "" {
 		return slog.New(slog.DiscardHandler), func() {}, nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, nil, fmt.Errorf("creating log directory: %w", err)
 	}
 
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
