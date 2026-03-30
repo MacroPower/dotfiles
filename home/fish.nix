@@ -562,7 +562,14 @@ in
     '';
 
     shellAbbrs = {
+      g = "git";
+      gs = "git status";
+      tf = "tofu";
+      t = "go-task";
       k = "kubectl";
+      kd = "kubectl describe";
+      kg = "kubectl get";
+      kl = "kubectl logs";
       wk = "watch -n 1 kubectl";
       kx = "kubectx";
       kn = "kubens";
