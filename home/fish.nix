@@ -565,7 +565,8 @@ in
       g = "git";
       gs = "git status";
       tf = "tofu";
-      t = "go-task";
+      t = "task";
+      tg = "task -g";
       k = "kubectl";
       kd = "kubectl describe";
       kg = "kubectl get";
