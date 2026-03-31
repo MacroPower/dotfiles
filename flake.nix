@@ -158,6 +158,7 @@
                 mcp-fetch = ./tools/mcp-fetch/package.nix;
                 radar = ./pkgs/radar.nix;
                 radar-desktop = ./pkgs/radar-desktop.nix;
+                helm-schema = ./pkgs/helm-schema.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })

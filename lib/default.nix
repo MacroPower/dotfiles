@@ -26,6 +26,7 @@ let
     mcp-kubernetes = final.callPackage paths.mcp-kubernetes { };
     radar = final.callPackage paths.radar { };
     radar-desktop = final.callPackage paths.radar-desktop { };
+    helm-schema = final.callPackage paths.helm-schema { };
   };
 
   nurJacobColvinOverlay =

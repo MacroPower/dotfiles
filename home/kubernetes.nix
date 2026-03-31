@@ -47,6 +47,7 @@ in
                 helm-diff
                 helm-unittest
               ]
+              ++ [ pkgs.helm-schema ]
               ++ cfg.extraHelmPlugins;
           })
           kubectx
