@@ -1,0 +1,29 @@
+version: "3"
+
+tasks:
+  endpoint-status:
+    desc: Cilium endpoint status
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME]
+    vars:
+      POD_IP:
+        sh: kubectl get pod --context {{.CONTEXT}} -n {{.NAMESPACE}} {{.NAME}} -o jsonpath='{.status.podIP}'
+    cmd: kubectl exec -n kube-system -l k8s-app=cilium --context {{.CONTEXT}} -- cilium endpoint list | grep {{.POD_IP}} | less
+
+  hubble-observe:
+    desc: Hubble observe flows
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME]
+    cmd: hubble observe --context {{.CONTEXT}} --namespace {{.NAMESPACE}} --to-pod {{.NAMESPACE}}/{{.NAME}} --from-pod {{.NAMESPACE}}/{{.NAME}} --last 100 -f
+
+  identity:
+    desc: Cilium identity
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME]
+    vars:
+      POD_IP:
+        sh: kubectl get pod --context {{.CONTEXT}} -n {{.NAMESPACE}} {{.NAME}} -o jsonpath='{.status.podIP}'
+    cmd: >-
+      kubectl exec -n kube-system -l k8s-app=cilium --context {{.CONTEXT}} -- cilium endpoint list -o json
+      | jq '.[] | select(.status.networking.addressing[].ipv4 == "{{.POD_IP}}") | {id, identity, state: .status.state}'
+      | less

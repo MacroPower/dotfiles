@@ -1,0 +1,32 @@
+version: "3"
+
+tasks:
+  status:
+    desc: Certificate status
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME]
+    cmd: cmctl status certificate --context {{.CONTEXT}} -n {{.NAMESPACE}} {{.NAME}} |& less
+
+  renew:
+    desc: Certificate renew
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME]
+    cmd: cmctl renew --context {{.CONTEXT}} -n {{.NAMESPACE}} {{.NAME}} |& less
+
+  inspect:
+    desc: Inspect secret
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME]
+    cmd: cmctl inspect secret --context {{.CONTEXT}} -n {{.NAMESPACE}} {{.NAME}} |& less
+
+  openssl-ca:
+    desc: Openssl ca.crt
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME]
+    cmd: kubectl get secret --context {{.CONTEXT}} -n {{.NAMESPACE}} {{.NAME}} -o jsonpath='{.data.ca\.crt}' | base64 -d | openssl storeutl -noout -text -certs /dev/stdin |& less
+
+  openssl-tls:
+    desc: Openssl tls.crt
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME]
+    cmd: kubectl get secret --context {{.CONTEXT}} -n {{.NAMESPACE}} {{.NAME}} -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl storeutl -noout -text -certs /dev/stdin |& less

@@ -1,0 +1,43 @@
+version: "3"
+
+tasks:
+  values:
+    desc: Helm release values
+    requires:
+      vars: [CONTEXT, NAMESPACE, RELEASE]
+    cmd: helm get values {{.RELEASE}} -n {{.NAMESPACE}} --kube-context {{.CONTEXT}} | less -K
+
+  default-values:
+    desc: Chart default values
+    requires:
+      vars: [CONTEXT, NAMESPACE, RELEASE]
+    vars:
+      REVISION:
+        sh: helm history -n {{.NAMESPACE}} --kube-context {{.CONTEXT}} {{.RELEASE}} | grep deployed | cut -d$'\t' -f1 | tr -d ' \t'
+    cmd: >-
+      kubectl get secrets --context {{.CONTEXT}} -n {{.NAMESPACE}} sh.helm.release.v1.{{.RELEASE}}.v{{.REVISION}} -o yaml
+      | yq e '.data.release' -
+      | base64 -d
+      | base64 -d
+      | gunzip
+      | jq -r '.chart.values'
+      | yq -P
+      | less -K
+
+  diff-previous:
+    desc: Diff with previous revision
+    requires:
+      vars: [CONTEXT, NAMESPACE, RELEASE, REVISION]
+    vars:
+      LAST_REVISION:
+        sh: echo $(({{.REVISION}}-1))
+    cmd: helm diff revision {{.RELEASE}} {{.REVISION}} {{.LAST_REVISION}} --kube-context {{.CONTEXT}} --namespace {{.NAMESPACE}} --color | less -RK
+
+  diff-current:
+    desc: Diff with current revision
+    requires:
+      vars: [CONTEXT, NAMESPACE, REVISION, RELEASE]
+    vars:
+      LATEST_REVISION:
+        sh: helm history -n {{.NAMESPACE}} --kube-context {{.CONTEXT}} {{.RELEASE}} | grep deployed | cut -d$'\t' -f1 | tr -d ' \t'
+    cmd: helm diff revision {{.RELEASE}} {{.LATEST_REVISION}} {{.REVISION}} --kube-context {{.CONTEXT}} --namespace {{.NAMESPACE}} --color | less -RK

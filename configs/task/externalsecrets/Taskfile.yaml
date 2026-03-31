@@ -1,0 +1,20 @@
+version: "3"
+
+tasks:
+  refresh:
+    desc: Refresh ExternalSecret
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME]
+    vars:
+      TIMESTAMP:
+        sh: date +%s
+    cmd: kubectl annotate externalsecrets.external-secrets.io --context {{.CONTEXT}} -n {{.NAMESPACE}} {{.NAME}} force-sync={{.TIMESTAMP}} --overwrite
+
+  refresh-push:
+    desc: Refresh PushSecret
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME]
+    vars:
+      TIMESTAMP:
+        sh: date +%s
+    cmd: kubectl annotate pushsecrets.external-secrets.io --context {{.CONTEXT}} -n {{.NAMESPACE}} {{.NAME}} force-sync={{.TIMESTAMP}} --overwrite

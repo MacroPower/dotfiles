@@ -9,6 +9,12 @@ let
   taskDir = ../configs/task;
   taskSubdirs = [
     "ssh"
+    "k8s"
+    "helm"
+    "pvc"
+    "externalsecrets"
+    "cert"
+    "cilium"
   ]
   ++ config.dotfiles.taskSubdirs;
   globalTaskfile = pkgs.writeText "Taskfile.yaml" (

@@ -1,0 +1,105 @@
+version: "3"
+
+tasks:
+  blame:
+    desc: Blame resource
+    requires:
+      vars: [CONTEXT, NAMESPACE, RESOURCE_NAME, NAME]
+    cmd: kubectl blame --context {{.CONTEXT}} --namespace {{.NAMESPACE}} {{.RESOURCE_NAME}} {{.NAME}} | less
+
+  remove-finalizers:
+    desc: Remove finalizers
+    requires:
+      vars: [CONTEXT, NAMESPACE, RESOURCE_NAME, NAME]
+    cmd: kubectl patch --context {{.CONTEXT}} --namespace {{.NAMESPACE}} {{.RESOURCE_NAME}} {{.NAME}} -p '{"metadata":{"finalizers":null}}' --type merge
+
+  debug:
+    desc: Add debug container
+    requires:
+      vars: [CONTEXT, NAMESPACE, POD, NAME, INPUT_IMAGE, INPUT_PROFILE]
+    vars:
+      SHARE_PROCESSES_FLAG:
+        sh: '[ "{{.INPUT_SHARE_PROCESSES}}" = "true" ] && echo "--share-processes" || true'
+    cmd: >-
+      kubectl debug -it --context {{.CONTEXT}} -n={{.NAMESPACE}} {{.POD}}
+      --target={{.NAME}}
+      --image={{.INPUT_IMAGE}}
+      --profile={{.INPUT_PROFILE}}
+      {{.SHARE_PROCESSES_FLAG}}
+      -- sh
+
+  node-root-shell:
+    desc: Root shell on node
+    requires:
+      vars: [CONTEXT, NAME]
+    cmd: |
+      host="{{.NAME}}"
+      json='
+      {
+        "apiVersion": "v1",
+        "spec": {
+          "hostIPC": true,
+          "hostNetwork": true,
+          "hostPID": true
+      '
+      if ! [[ -z "$host" ]]; then
+        json+=",
+        \"nodeSelector\" : {
+          \"kubernetes.io/hostname\" : \"$host\"
+        }
+        ";
+      fi
+      json+='
+        }
+      }
+      '
+      kubectl run -ti --context {{.CONTEXT}} --image alpine:3.23 --rm --privileged --restart=Never --overrides="$json" root --command -- nsenter -t 1 -m -u -n -i -- bash -l
+
+  watch-events:
+    desc: Get events
+    requires:
+      vars: [CONTEXT, NAMESPACE, RESOURCE_NAME, NAME]
+    cmd: kubectl events --context {{.CONTEXT}} --namespace {{.NAMESPACE}} --for {{.RESOURCE_NAME}}/{{.NAME}} --watch
+
+  trace-dns:
+    desc: Trace DNS requests
+    requires:
+      vars: [CONTEXT, RESOURCE_NAME, NAME]
+    preconditions:
+      - sh: '[ "$(kubectl version --client -o json | jq -r .clientVersion.minor | tr -d +)" -ge 30 ]'
+        msg: kubectl version 1.30 or later is required
+    cmd: |
+      IG_VERSION=v0.34.0
+      IG_IMAGE=ghcr.io/inspektor-gadget/ig:$IG_VERSION
+      IG_FIELD=k8s.podName,src,dst,qr,qtype,name,rcode,latency_ns
+
+      GREEN='\033[0;32m'
+      BLUE='\033[0;34m'
+      NC='\033[0m'
+
+      clear
+
+      if [[ -n "{{.POD}}" ]]; then
+        echo -e "${GREEN}Tracing DNS requests for container ${BLUE}{{.NAME}}${GREEN} in pod ${BLUE}{{.POD}}${GREEN} in namespace ${BLUE}{{.NAMESPACE}}${NC}"
+        IG_NODE=$(kubectl get pod "{{.POD}}" -n "{{.NAMESPACE}}" -o jsonpath='{.spec.nodeName}')
+        kubectl debug --context={{.CONTEXT}} -q \
+          --profile=sysadmin "node/$IG_NODE" -it --image="$IG_IMAGE" -- \
+          ig run trace_dns:$IG_VERSION -F "k8s.podName=={{.POD}}" -F "k8s.containerName={{.NAME}}" \
+          --fields "$IG_FIELD"
+        exit
+      fi
+
+      if [[ "{{.RESOURCE_NAME}}" == *"nodes"* ]]; then
+        echo -e "${GREEN}Tracing DNS requests for node ${BLUE}{{.NAME}}${NC}"
+        kubectl debug --context={{.CONTEXT}} -q \
+          --profile=sysadmin -it --image="$IG_IMAGE" "node/{{.NAME}}" -- \
+          ig run trace_dns:$IG_VERSION --fields "$IG_FIELD"
+        exit
+      fi
+
+      echo -e "${GREEN}Tracing DNS requests for pod ${BLUE}{{.NAME}}${GREEN} in namespace ${BLUE}{{.NAMESPACE}}${NC}"
+      IG_NODE=$(kubectl get pod "{{.NAME}}" -n "{{.NAMESPACE}}" -o jsonpath='{.spec.nodeName}')
+      kubectl debug --context={{.CONTEXT}} -q \
+        --profile=sysadmin -it --image="$IG_IMAGE" "node/$IG_NODE" -- \
+        ig run trace_dns:$IG_VERSION -F "k8s.podName=={{.NAME}}" \
+        --fields "$IG_FIELD"

@@ -1,0 +1,66 @@
+version: "3"
+
+tasks:
+  shell:
+    desc: Shell on PVC
+    requires:
+      vars:
+        [CONTEXT, NAMESPACE, NAME, INPUT_MOUNTPATH, INPUT_PODNAME, INPUT_IMAGE]
+    vars:
+      NODE:
+        sh: kubectl --context {{.CONTEXT}} -n {{.NAMESPACE}} get pods -o jsonpath='{range .items[?(@.spec.volumes[*].persistentVolumeClaim.claimName=="{{.NAME}}")]} {.spec.nodeName}{"\n"}{end}' | head -n1
+    defer: kubectl --context {{.CONTEXT}} -n {{.NAMESPACE}} delete pod {{.INPUT_PODNAME}} --ignore-not-found --grace-period=0 --force 2>/dev/null
+    cmd: |
+      if [ -n "{{.NODE}}" ]; then
+        NODE_LINE="nodeName: {{.NODE}}"
+      else
+        NODE_LINE=""
+      fi
+
+      echo "Starting a shell pod with PVC - {{.NAME}} mounted at {{.INPUT_MOUNTPATH}}"
+
+      {
+      cat <<EOF
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: {{.INPUT_PODNAME}}
+        namespace: {{.NAMESPACE}}
+      spec:
+        $NODE_LINE
+        restartPolicy: Never
+        tolerations:
+          - operator: Exists
+        containers:
+          - name: shell
+            image: {{.INPUT_IMAGE}}
+            command: ["sh"]
+            stdin: true
+            tty: true
+            volumeMounts:
+              - name: vol
+                mountPath: {{.INPUT_MOUNTPATH}}
+        volumes:
+          - name: vol
+            persistentVolumeClaim:
+              claimName: {{.NAME}}
+      EOF
+      } | kubectl --context {{.CONTEXT}} apply -f - >/dev/null 2>&1
+
+      echo "Waiting for pod to be ready."
+      if ! kubectl --context {{.CONTEXT}} -n {{.NAMESPACE}} wait --for=condition=Ready pod/{{.INPUT_PODNAME}} --timeout=60s; then
+        echo "Pod did not become Ready. Likely a ReadWriteOnce conflict."
+        echo "Press Enter to return to k9s."
+        read dummy
+        exit 0
+      fi
+
+      kubectl --context {{.CONTEXT}} -n {{.NAMESPACE}} exec -it {{.INPUT_PODNAME}} -- bash || echo "Could not exec into pod."
+
+      echo "Cleaning up pod."
+
+  resize:
+    desc: Resize PVC
+    requires:
+      vars: [CONTEXT, NAMESPACE, NAME, INPUT_SIZE]
+    cmd: kubectl patch pvc {{.NAME}} -n {{.NAMESPACE}} --context {{.CONTEXT}} -p '{"spec":{"resources":{"requests":{"storage":"{{.INPUT_SIZE}}"}}}}'
