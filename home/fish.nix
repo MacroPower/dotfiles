@@ -572,6 +572,9 @@ in
       kg = "kubectl get";
       kl = "kubectl logs";
       wk = "watch -n 1 kubectl";
+      wkd = "watch -n 1 kubectl describe";
+      wkg = "watch -n 1 kubectl get";
+      wkl = "kubectl logs --follow";
       kx = "kubectx";
       kn = "kubens";
       dig = "doggo";
