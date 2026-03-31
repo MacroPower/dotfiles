@@ -59,6 +59,7 @@ in
           fluxcd
           chart-testing
           radar
+          cmctl
         ]
         ++ lib.optionals pkgs.stdenv.isDarwin [ pkgs.radar-desktop ]
         ++ cfg.extraPackages;
