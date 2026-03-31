@@ -147,91 +147,83 @@ in
         };
 
         aliases = {
-          aliases = {
-            dp = "deployments";
-            sec = "v1/secrets";
-            jo = "jobs";
-            cr = "clusterroles";
-            crb = "clusterrolebindings";
-            ro = "roles";
-            rb = "rolebindings";
-            np = "networkpolicies";
-            es = "externalsecrets";
-            ces = "clusterexternalsecrets";
-            ess = "secretstores";
-            cess = "clustersecretstores";
-          };
+          dp = "deployments";
+          sec = "v1/secrets";
+          jo = "jobs";
+          cr = "clusterroles";
+          crb = "clusterrolebindings";
+          ro = "roles";
+          rb = "rolebindings";
+          np = "networkpolicies";
+          es = "externalsecrets";
+          ces = "clusterexternalsecrets";
+          ess = "secretstores";
+          cess = "clustersecretstores";
         };
 
         hotKeys = {
-          hotKeys = {
-            shift-1 = {
-              shortCut = "Shift-1";
-              description = "View Namespaces";
-              command = "namespaces";
-            };
-            shift-2 = {
-              shortCut = "Shift-2";
-              description = "View Pods";
-              command = "pods";
-            };
-            shift-3 = {
-              shortCut = "Shift-3";
-              description = "View Worloads";
-              command = "workloads";
-            };
+          shift-1 = {
+            shortCut = "Shift-1";
+            description = "View Namespaces";
+            command = "namespaces";
+          };
+          shift-2 = {
+            shortCut = "Shift-2";
+            description = "View Pods";
+            command = "pods";
+          };
+          shift-3 = {
+            shortCut = "Shift-3";
+            description = "View Worloads";
+            command = "workloads";
           };
         };
 
         plugins = {
-          plugins = {
-            blame = {
-              shortCut = "Ctrl-B";
-              description = "Blame";
-              scopes = [ "all" ];
-              confirm = false;
-              background = false;
-              command = "bash";
-              args = [
-                "-c"
-                "kubectl blame --context $CONTEXT --namespace $NAMESPACE $RESOURCE_NAME $NAME | less"
-              ];
-            };
-            remove_finalizers = {
-              shortCut = "Ctrl-F";
-              confirm = true;
-              dangerous = true;
-              scopes = [ "all" ];
-              description = "Remove Finalizers";
-              command = "kubectl";
-              background = true;
-              args = [
-                "patch"
-                "--context"
-                "$CONTEXT"
-                "--namespace"
-                "$NAMESPACE"
-                "$RESOURCE_NAME"
-                "$NAME"
-                "-p"
-                ''{"metadata":{"finalizers":null}}''
-                "--type"
-                "merge"
-              ];
-            };
+          blame = {
+            shortCut = "Ctrl-B";
+            description = "Blame";
+            scopes = [ "all" ];
+            confirm = false;
+            background = false;
+            command = "bash";
+            args = [
+              "-c"
+              "kubectl blame --context $CONTEXT --namespace $NAMESPACE $RESOURCE_NAME $NAME | less"
+            ];
+          };
+          remove_finalizers = {
+            shortCut = "Ctrl-F";
+            confirm = true;
+            dangerous = true;
+            scopes = [ "all" ];
+            description = "Remove Finalizers";
+            command = "kubectl";
+            background = true;
+            args = [
+              "patch"
+              "--context"
+              "$CONTEXT"
+              "--namespace"
+              "$NAMESPACE"
+              "$RESOURCE_NAME"
+              "$NAME"
+              "-p"
+              ''{"metadata":{"finalizers":null}}''
+              "--type"
+              "merge"
+            ];
           };
         };
 
         views = {
-          views = {
-            "external-secrets.io/v1beta1/externalsecrets" = {
-              sortColumn = "NAME:asc";
-              columns = [ ];
-            };
-            "v1/pods" = {
-              sortColumn = "NAME:asc";
-              columns = [ ];
-            };
+          "external-secrets.io/v1beta1/externalsecrets" = {
+            sortColumn = "NAME:asc";
+            columns = [ ];
+          };
+          "v1/pods" = {
+            sortColumn = "NAME:asc";
+            columns = [ ];
           };
         };
 
