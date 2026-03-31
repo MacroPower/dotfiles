@@ -77,6 +77,7 @@ inputs.nix-darwin.lib.darwinSystem {
           dotfiles = {
             inherit username hostname caCertificateFiles;
             homeDirectory = "/Users/${username}";
+            taskSubdirs = [ "displays" ];
             extraHomePackages = with pkgs; [
               terminal-notifier
               gtk4

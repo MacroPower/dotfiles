@@ -1,0 +1,8 @@
+version: "3"
+
+tasks:
+  configure:
+    desc: Configure displays
+    cmds:
+      - displayplacer "id:s4294967295 res:2560x1440 hz:144 color_depth:7 enabled:true scaling:off origin:(0,0) degree:0"
+      - displayplacer "id:s1686152384 res:2560x1440 hz:144 color_depth:8 enabled:true scaling:off origin:(-2560,0) degree:0"

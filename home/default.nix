@@ -5,6 +5,30 @@
   ...
 }:
 
+let
+  taskDir = ../configs/task;
+  taskSubdirs = [
+    "ssh"
+  ]
+  ++ config.dotfiles.taskSubdirs;
+  globalTaskfile = pkgs.writeText "Taskfile.yaml" (
+    lib.concatStrings (
+      [
+        ''
+          version: "3"
+
+          tasks:
+            default:
+              cmd: task -g -l
+
+          includes:
+        ''
+      ]
+      ++ map (name: "  ${name}:\n    taskfile: ./task/${name}/Taskfile.yaml\n") taskSubdirs
+    )
+  );
+in
+
 {
   imports = [
     ./options.nix
@@ -164,7 +188,15 @@
       ]
       ++ config.dotfiles.extraHomePackages;
 
-    file."Taskfile.yaml".source = ../configs/task/Taskfile.yaml;
+    file = {
+      "Taskfile.yaml".source = globalTaskfile;
+    }
+    // builtins.listToAttrs (
+      map (name: {
+        name = "task/${name}/Taskfile.yaml";
+        value.source = taskDir + "/${name}/Taskfile.yaml";
+      }) taskSubdirs
+    );
   };
 
 }

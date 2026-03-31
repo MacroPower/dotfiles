@@ -58,6 +58,12 @@ in
       description = "Additional entries merged into xdg.configFile. Each key is a relative path under XDG_CONFIG_HOME.";
     };
 
+    taskSubdirs = mkOption {
+      type = types.listOf types.nonEmptyStr;
+      default = [ ];
+      description = "Task subdirectory names to include in the generated global Taskfile.";
+    };
+
     sshIncludes = mkOption {
       type = types.listOf types.nonEmptyStr;
       default = [ ];
