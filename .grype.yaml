@@ -1,0 +1,74 @@
+ignore:
+  # CVE-2007-1397 applies to FiSH, an IRC encryption plugin for
+  # irssi/XChat (https://nvd.nist.gov/vuln/detail/CVE-2007-1397).
+  # Grype incorrectly matches it against fish-shell because both
+  # share the CPE product name "fish". The two projects are
+  # unrelated and share no code.
+  - vulnerability: CVE-2007-1397
+    package:
+      name: fish
+
+  # Fixed in graphite2 1.3.10. NVD CPE lacks version range end.
+  - vulnerability: CVE-2017-5436
+    package:
+      name: graphite2
+
+  # Ubuntu AppArmor packaging issue, not an upstream CUPS vulnerability.
+  - vulnerability: CVE-2018-6553
+    package:
+      name: cups
+
+  # "Geody Labs Dagger" PHP web app, not dagger.io CI tool.
+  - vulnerability: CVE-2008-6636
+    package:
+      name: dagger
+
+  # strace race condition (year 2000) allowing local arbitrary file reads.
+  # Fixed decades ago; current strace 6.x is unaffected. NVD CPE also
+  # lists Linux kernel 2.3.20 as the affected platform, causing scanners
+  # to match broadly.
+  - vulnerability: CVE-2000-0006
+    package:
+      name: strace
+
+  # Fixed in spice-server 0.12.8. NVD CPE has no version ceiling.
+  - vulnerability: CVE-2016-0749
+    package:
+      name: spice
+  # Affects spice-gtk (client), not spice-server.
+  - vulnerability: CVE-2018-10893
+    package:
+      name: spice
+  # Fixed in spice-server 0.12.8.
+  - vulnerability: CVE-2016-2150
+    package:
+      name: spice
+
+  # sun file parser error-handling bug. Fixed in Debian's 6.8.9.9-4
+  # package; no clear upstream release includes the fix, but current
+  # ImageMagick 7.x is unaffected. NVD CPE has no version ceiling.
+  - vulnerability: CVE-2014-9826
+    package:
+      name: imagemagick
+  # Fixed in ImageMagick 7.0.0.25.
+  - vulnerability: CVE-2017-5506
+    package:
+      name: imagemagick
+
+  # Capstone 5.0.7 is the release that fixes both of these CVEs.
+  - vulnerability: CVE-2025-68114
+    package:
+      name: capstone
+  - vulnerability: CVE-2025-67873
+    package:
+      name: capstone
+
+  # Fixed in libtiff 4.7.0.
+  - vulnerability: CVE-2023-52356
+    package:
+      name: libtiff
+
+  # RHEL qemu-kvm packaging issue, not upstream QEMU.
+  - vulnerability: CVE-2023-2680
+    package:
+      name: qemu

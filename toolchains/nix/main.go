@@ -369,10 +369,13 @@ func (m *Nix) grypeBase(ctx context.Context) (*dagger.Container, error) {
 		return nil, err
 	}
 
+	grypeConfig := m.Source.File(".grype.yaml")
+
 	return m.base().
 		WithMountedCache("/root/.cache/grype", dag.CacheVolume("grype-db")).
 		WithExec([]string{"nix", "profile", "install", "nixpkgs#grype"}).
-		WithFile("/tmp/sbom.cdx.json", sbom), nil
+		WithFile("/tmp/sbom.cdx.json", sbom).
+		WithFile("/tmp/.grype.yaml", grypeConfig), nil
 }
 
 // Vulnscan checks the home-manager closure for known CVEs using grype.
@@ -383,7 +386,7 @@ func (m *Nix) Vulnscan(ctx context.Context) (string, error) {
 	}
 
 	out, err := ctr.
-		WithExec([]string{"grype", "sbom:/tmp/sbom.cdx.json"},
+		WithExec([]string{"grype", "--config", "/tmp/.grype.yaml", "sbom:/tmp/sbom.cdx.json"},
 			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
 		Stdout(ctx)
 	if err != nil {
@@ -410,7 +413,8 @@ func (m *Nix) VulnscanSarif(ctx context.Context) (*dagger.File, error) {
 	}
 
 	raw, err := ctr.
-		WithExec([]string{"grype", "sbom:/tmp/sbom.cdx.json",
+		WithExec([]string{"grype", "--config", "/tmp/.grype.yaml",
+			"sbom:/tmp/sbom.cdx.json",
 			"--output", "sarif",
 			"--file", "/tmp/grype.sarif.json"},
 			dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
