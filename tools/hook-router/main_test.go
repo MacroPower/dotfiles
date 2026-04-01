@@ -134,25 +134,14 @@ func TestCheckK8sCliDenied(t *testing.T) {
 			input: "cd /tmp && kubectl apply -f manifest.yaml",
 			want:  "Direct kubectl usage is blocked. Use mcp__kubernetes__call_kubectl instead.",
 		},
-		"helm install": {
+		"no match: helm install": {
 			input: "helm install my-release chart",
-			want:  "Direct helm usage is blocked. Use mcp__kubernetes__call_helm instead.",
 		},
-		"helm template": {
-			input: "cd /tmp && helm template chart",
-			want:  "Direct helm usage is blocked. Use mcp__kubernetes__call_helm instead.",
-		},
-		"cilium status": {
+		"no match: cilium status": {
 			input: "cilium status",
-			want:  "Direct cilium usage is blocked. Use mcp__kubernetes__call_cilium instead.",
 		},
-		"hubble observe": {
+		"no match: hubble observe": {
 			input: "hubble observe",
-			want:  "Direct hubble usage is blocked. Use mcp__kubernetes__call_hubble instead.",
-		},
-		"hubble in subshell": {
-			input: "(hubble observe --follow)",
-			want:  "Direct hubble usage is blocked. Use mcp__kubernetes__call_hubble instead.",
 		},
 		"no match: echo kubectl": {
 			input: "echo kubectl get pods",

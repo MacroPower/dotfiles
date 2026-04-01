@@ -164,13 +164,10 @@ func checkGitStashDenied(prog *syntax.File) (string, bool) {
 // mcp-kubernetes MCP server instead of being invoked directly.
 var k8sBlockedCmds = map[string]string{
 	"kubectl": "mcp__kubernetes__call_kubectl",
-	"helm":    "mcp__kubernetes__call_helm",
-	"cilium":  "mcp__kubernetes__call_cilium",
-	"hubble":  "mcp__kubernetes__call_hubble",
 }
 
-// checkK8sCliDenied walks the AST looking for direct invocations of kubectl,
-// helm, cilium, or hubble. These should use the mcp-kubernetes MCP server.
+// checkK8sCliDenied walks the AST looking for direct invocations of kubectl.
+// These should use the mcp-kubernetes MCP server.
 func checkK8sCliDenied(prog *syntax.File) (string, bool) {
 	var tool string
 

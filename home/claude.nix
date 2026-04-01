@@ -414,8 +414,6 @@ in
               args = [
                 "--access-level"
                 "readonly"
-                "--additional-tools"
-                "helm,cilium,hubble"
               ];
               env = {
                 KUBERNETES_MCP_COLLECT_TELEMETRY = "false";
@@ -476,9 +474,6 @@ in
               "mcp__github__search_repositories"
               "mcp__github__search_users"
               "mcp__kubernetes__call_kubectl"
-              "mcp__kubernetes__call_helm"
-              "mcp__kubernetes__call_cilium"
-              "mcp__kubernetes__call_hubble"
             ]
             ++ cfg.extraPermissions.allow;
             deny = [
@@ -735,11 +730,7 @@ in
 
         ## Kubernetes
 
-        - Use `mcp__kubernetes__call_kubectl` for kubectl operations.
-        - Use `mcp__kubernetes__call_helm` for Helm operations.
-        - Use `mcp__kubernetes__call_cilium` for Cilium operations.
-        - Use `mcp__kubernetes__call_hubble` for Hubble observability.
-        - Do not run kubectl, helm, cilium, or hubble directly.
+        - Use `mcp__kubernetes__call_kubectl` for kubectl operations. Do not run kubectl directly.
       '';
 
       sessionVariables = {
