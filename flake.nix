@@ -132,6 +132,7 @@
               inputs'.dagger.packages.dagger
               pkgs.sops
               pkgs.lefthook
+              pkgs.golangci-lint
             ];
           };
         };

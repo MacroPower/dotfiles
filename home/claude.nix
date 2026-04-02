@@ -261,7 +261,7 @@ let
     runtimeEnv = {
       RTK_REWRITE = "${pkgs.rtk-bin}/libexec/rtk/hooks/rtk-rewrite.sh";
     };
-    text = "exec hook-router";
+    text = ''exec hook-router --log-file "${config.xdg.stateHome}/hook-router/hook-router.log"'';
   };
 
   # CA env vars injected into all stdio MCP servers

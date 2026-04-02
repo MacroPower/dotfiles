@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -194,7 +195,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, cfg)
+		err := run(strings.NewReader(input), &stdout, cfg, slog.New(slog.DiscardHandler))
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -204,7 +205,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader("not json"), &stdout, cfg)
+		err := run(strings.NewReader("not json"), &stdout, cfg, slog.New(slog.DiscardHandler))
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -217,7 +218,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err = run(strings.NewReader(string(input)), &stdout, cfg)
+		err = run(strings.NewReader(string(input)), &stdout, cfg, slog.New(slog.DiscardHandler))
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -231,7 +232,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, cfg)
+		err := run(strings.NewReader(input), &stdout, cfg, slog.New(slog.DiscardHandler))
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -245,7 +246,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, cfg)
+		err := run(strings.NewReader(input), &stdout, cfg, slog.New(slog.DiscardHandler))
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -259,7 +260,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, cfg)
+		err := run(strings.NewReader(input), &stdout, cfg, slog.New(slog.DiscardHandler))
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -283,7 +284,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, cfg)
+		err := run(strings.NewReader(input), &stdout, cfg, slog.New(slog.DiscardHandler))
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -307,7 +308,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, cfg)
+		err := run(strings.NewReader(input), &stdout, cfg, slog.New(slog.DiscardHandler))
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -319,5 +320,4 @@ func TestRun(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "deny", hso["permissionDecision"])
 	})
-
 }

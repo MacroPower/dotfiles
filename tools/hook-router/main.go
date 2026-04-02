@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -25,14 +28,28 @@ func configFromEnv() config {
 }
 
 func main() {
-	err := run(os.Stdin, os.Stdout, configFromEnv())
+	logFile := flag.String("log-file", "", "path to JSON log file (append)")
+
+	flag.Parse()
+
+	err := mainErr(*logFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(stdin io.Reader, stdout io.Writer, cfg config) error {
+func mainErr(logFile string) error {
+	logger, closeLog, err := openLogger(logFile)
+	if err != nil {
+		return err
+	}
+	defer closeLog()
+
+	return run(os.Stdin, os.Stdout, configFromEnv(), logger)
+}
+
+func run(stdin io.Reader, stdout io.Writer, cfg config, logger *slog.Logger) error {
 	input, err := io.ReadAll(stdin)
 	if err != nil {
 		return fmt.Errorf("reading stdin: %w", err)
@@ -42,36 +59,58 @@ func run(stdin io.Reader, stdout io.Writer, cfg config) error {
 
 	err = json.Unmarshal(input, &hook)
 	if err != nil {
-		return delegate(input, cfg.rtkRewrite)
+		logger.Info("invalid JSON, delegating", slog.Any("error", err))
+		return delegate(input, cfg.rtkRewrite, logger)
 	}
 
 	toolInput, ok := hook["tool_input"].(map[string]any)
 	if !ok {
-		return delegate(input, cfg.rtkRewrite)
+		return delegate(input, cfg.rtkRewrite, logger)
 	}
 
 	command, ok := toolInput["command"].(string)
 	if !ok || command == "" {
-		return delegate(input, cfg.rtkRewrite)
+		return delegate(input, cfg.rtkRewrite, logger)
 	}
+
+	logger.Info("checking command", slog.String("command", command))
 
 	parser := syntax.NewParser()
 
 	prog, err := parser.Parse(strings.NewReader(command), "")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "hook-router: parse error, delegating: %v\n", err)
-		return delegate(input, cfg.rtkRewrite)
+		logger.Warn(
+			"parse error, delegating",
+			slog.String("command", command),
+			slog.Any("error", err),
+		)
+
+		return delegate(input, cfg.rtkRewrite, logger)
 	}
 
 	if reason, denied := checkGitStashDenied(prog); denied {
+		logger.Info(
+			"denied",
+			slog.String("rule", "git-stash"),
+			slog.String("command", command),
+			slog.String("reason", reason),
+		)
+
 		return encodeJSON(stdout, denyResponse(reason))
 	}
 
 	if reason, denied := checkK8sCliDenied(prog); denied {
+		logger.Info(
+			"denied",
+			slog.String("rule", "k8s-cli"),
+			slog.String("command", command),
+			slog.String("reason", reason),
+		)
+
 		return encodeJSON(stdout, denyResponse(reason))
 	}
 
-	return delegate(input, cfg.rtkRewrite)
+	return delegate(input, cfg.rtkRewrite, logger)
 }
 
 func denyResponse(reason string) map[string]any {
@@ -106,6 +145,13 @@ var (
 		"branch": true,
 		"drop":   true,
 		"clear":  true,
+	}
+
+	// k8sBlockedCmds lists CLI commands that should be routed
+	// through the mcp-kubernetes MCP server instead of being
+	// invoked directly.
+	k8sBlockedCmds = map[string]string{
+		"kubectl": "mcp__kubernetes__call_kubectl",
 	}
 )
 
@@ -160,12 +206,6 @@ func checkGitStashDenied(prog *syntax.File) (string, bool) {
 	return "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.", true
 }
 
-// k8sBlockedCmds lists CLI commands that should be routed through the
-// mcp-kubernetes MCP server instead of being invoked directly.
-var k8sBlockedCmds = map[string]string{
-	"kubectl": "mcp__kubernetes__call_kubectl",
-}
-
 // checkK8sCliDenied walks the AST looking for direct invocations of kubectl.
 // These should use the mcp-kubernetes MCP server.
 func checkK8sCliDenied(prog *syntax.File) (string, bool) {
@@ -208,10 +248,12 @@ func checkK8sCliDenied(prog *syntax.File) (string, bool) {
 	), true
 }
 
-func delegate(input []byte, rtkRewrite string) error {
+func delegate(input []byte, rtkRewrite string, logger *slog.Logger) error {
 	if rtkRewrite == "" {
 		return nil
 	}
+
+	logger.Info("delegating", slog.String("target", rtkRewrite))
 
 	cmd := exec.CommandContext(context.Background(), rtkRewrite)
 	cmd.Stdin = bytes.NewReader(input)
@@ -224,4 +266,31 @@ func delegate(input []byte, rtkRewrite string) error {
 	}
 
 	return nil
+}
+
+// openLogger creates a JSON [*slog.Logger] writing to the named file.
+// Returns a discard logger and no-op closer when path is empty.
+func openLogger(path string) (*slog.Logger, func(), error) {
+	if path == "" {
+		return slog.New(slog.DiscardHandler), func() {}, nil
+	}
+
+	err := os.MkdirAll(filepath.Dir(path), 0o755)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating log directory: %w", err)
+	}
+
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, nil, fmt.Errorf("opening %s: %w", path, err)
+	}
+
+	logger := slog.New(slog.NewJSONHandler(f, nil))
+
+	return logger, func() {
+		err := f.Close()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "closing log file: %v\n", err)
+		}
+	}, nil
 }
