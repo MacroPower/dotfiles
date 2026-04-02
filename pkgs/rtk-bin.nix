@@ -33,7 +33,7 @@ let
     srcs.${stdenv.hostPlatform.system} or (throw "Unsupported system: ${stdenv.hostPlatform.system}");
 
   hookScript = fetchurl {
-    url = "https://raw.githubusercontent.com/rtk-ai/rtk/v${version}/hooks/rtk-rewrite.sh";
+    url = "https://raw.githubusercontent.com/rtk-ai/rtk/v${version}/hooks/claude/rtk-rewrite.sh";
     hash = "sha256-7w1jCZT9fvXyuE+2bNYknEk7uHNrys1HNNfHmBJQGPs=";
   };
 in
