@@ -40,7 +40,7 @@ for nix_system in "${!platforms[@]}"; do
 done
 
 # Update hook script hash
-hookUrl="https://raw.githubusercontent.com/$REPO/v${latestVersion}/hooks/rtk-rewrite.sh"
+hookUrl="https://raw.githubusercontent.com/$REPO/v${latestVersion}/hooks/claude/rtk-rewrite.sh"
 newHookHash=$(nix store prefetch-file --json "$hookUrl" | jq -r '.hash')
 currentHookHash=$(grep -A2 "hookScript" "$PKG_FILE" | grep -Po '(?<=hash = ")[^"]+')
 sed -i "s|$currentHookHash|$newHookHash|" "$PKG_FILE"
