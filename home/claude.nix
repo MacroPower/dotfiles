@@ -626,24 +626,33 @@ in
           };
           sandbox = {
             enabled = pkgs.stdenv.isDarwin;
+            failIfUnavailable = true;
+            allowUnsandboxedCommands = false;
+            # Allow access to the system TLS trust service.
+            enableWeakerNetworkIsolation = true;
             network = {
               allowLocalBinding = true;
+              allowUnixSockets = [
+                "/nix/var/nix/daemon-socket/socket"
+              ];
               allowedDomains = [
                 "jacobcolvin.com"
                 "registry.dagger.io"
                 "api.dagger.cloud"
+                "auth.dagger.cloud"
+                "proxy.golang.org"
+                "sum.golang.org"
               ];
             };
             filesystem = {
               allowWrite = [
                 "/tmp/git"
                 "/private/tmp/git"
+                "~/go/pkg"
+                "~/Library/Caches"
+                "~/.cache/nix"
               ];
             };
-            excludedCommands = [
-              "docker"
-              "dagger"
-            ];
           };
           hooks = {
             # NOTE: All matching hooks run concurrently with the original input.
