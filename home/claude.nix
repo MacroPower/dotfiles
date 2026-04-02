@@ -260,6 +260,7 @@ let
     runtimeInputs = [ pkgs.hook-router ];
     runtimeEnv = {
       RTK_REWRITE = "${pkgs.rtk-bin}/libexec/rtk/hooks/rtk-rewrite.sh";
+      DOCKER_PROXY_ENSURE = "${pkgs.ensure-docker-proxy}/bin/ensure-docker-proxy";
     };
     text = ''exec hook-router --log-file "${config.xdg.stateHome}/hook-router/hook-router.log"'';
   };

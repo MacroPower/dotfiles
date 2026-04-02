@@ -173,6 +173,114 @@ func TestCheckK8sCliDenied(t *testing.T) {
 	}
 }
 
+func TestCheckDockerCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		input          string
+		wantFound      bool
+		wantProxied    bool
+		wantSubcommand string
+		wantNetwork    string
+	}{
+		"docker run": {
+			input:          "docker run -it ubuntu",
+			wantFound:      true,
+			wantSubcommand: "run",
+		},
+		"docker run with network host": {
+			input:          "docker run --network host ubuntu",
+			wantFound:      true,
+			wantSubcommand: "run",
+			wantNetwork:    "host",
+		},
+		"docker run with network=bridge": {
+			input:          "docker run --network=bridge ubuntu",
+			wantFound:      true,
+			wantSubcommand: "run",
+			wantNetwork:    "bridge",
+		},
+		"docker run with net none": {
+			input:          "docker run --net none ubuntu",
+			wantFound:      true,
+			wantSubcommand: "run",
+			wantNetwork:    "none",
+		},
+		"docker run with net=none": {
+			input:          "docker run --net=none ubuntu",
+			wantFound:      true,
+			wantSubcommand: "run",
+			wantNetwork:    "none",
+		},
+		"docker create": {
+			input:          "docker create --name foo ubuntu",
+			wantFound:      true,
+			wantSubcommand: "create",
+		},
+		"docker compose up": {
+			input:          "docker compose up -d",
+			wantFound:      true,
+			wantSubcommand: "compose",
+		},
+		"docker compose run": {
+			input:          "docker compose run svc",
+			wantFound:      true,
+			wantSubcommand: "compose",
+		},
+		"docker build": {
+			input:          "docker build .",
+			wantFound:      true,
+			wantSubcommand: "build",
+		},
+		"docker ps": {
+			input:          "docker ps",
+			wantFound:      true,
+			wantSubcommand: "ps",
+		},
+		"docker in pipeline": {
+			input:          "docker ps | grep foo",
+			wantFound:      true,
+			wantSubcommand: "ps",
+		},
+		"docker in compound": {
+			input:          "cd /app && docker build .",
+			wantFound:      true,
+			wantSubcommand: "build",
+		},
+		"already proxied": {
+			input:          "DOCKER_HOST=tcp://127.0.0.1:2375 docker ps",
+			wantFound:      true,
+			wantProxied:    true,
+			wantSubcommand: "ps",
+		},
+		"no match: echo docker": {
+			input: "echo docker run",
+		},
+		"no match: dockerize": {
+			input: "dockerize -wait tcp://db:5432",
+		},
+		"no match: docker-compose v1": {
+			input: "docker-compose up -d",
+		},
+		"no match: git status": {
+			input: "git status",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			info := checkDockerCommand(prog)
+			assert.Equal(t, tt.wantFound, info.found, "found")
+			assert.Equal(t, tt.wantProxied, info.alreadyProxied, "proxied")
+			assert.Equal(t, tt.wantSubcommand, info.subcommand, "subcommand")
+			assert.Equal(t, tt.wantNetwork, info.networkFlag, "networkFlag")
+		})
+	}
+}
+
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -297,6 +405,303 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, "PreToolUse", hso["hookEventName"])
 		assert.Equal(t, "deny", hso["permissionDecision"])
 		assert.Contains(t, hso["permissionDecisionReason"], "kubectl")
+	})
+
+	t.Run("docker command rewrite without ensure", func(t *testing.T) {
+		t.Parallel()
+
+		// No dockerProxyEnsure configured: docker commands pass through to delegate.
+		input := makeInput(map[string]any{
+			"command":     "docker ps",
+			"description": "list containers",
+		})
+
+		var stdout bytes.Buffer
+
+		err := run(strings.NewReader(input), &stdout, cfg)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes(), "should delegate, not rewrite")
+	})
+
+	t.Run("docker command rewrite with ensure", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command":     "docker ps -a",
+			"description": "list all containers",
+		})
+
+		var stdout bytes.Buffer
+
+		// Use "true" as a no-op ensure script.
+		dockerCfg := config{dockerProxyEnsure: "true", dockerProxyPort: "2375"}
+
+		err := run(strings.NewReader(input), &stdout, dockerCfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+
+		updatedInput, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "DOCKER_HOST=tcp://127.0.0.1:2375 docker ps -a", updatedInput["command"])
+		assert.Equal(t, "list all containers", updatedInput["description"], "non-command fields should be preserved")
+	})
+
+	t.Run("docker run injects network none", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "docker run ubuntu echo hello",
+		})
+
+		var stdout bytes.Buffer
+
+		dockerCfg := config{dockerProxyEnsure: "true", dockerProxyPort: "2375"}
+
+		err := run(strings.NewReader(input), &stdout, dockerCfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+
+		updatedInput, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "DOCKER_HOST=tcp://127.0.0.1:2375 docker run --network none ubuntu echo hello", updatedInput["command"])
+	})
+
+	t.Run("docker create injects network none", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "docker create ubuntu",
+		})
+
+		var stdout bytes.Buffer
+
+		dockerCfg := config{dockerProxyEnsure: "true", dockerProxyPort: "2375"}
+
+		err := run(strings.NewReader(input), &stdout, dockerCfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+
+		updatedInput, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "DOCKER_HOST=tcp://127.0.0.1:2375 docker create --network none ubuntu", updatedInput["command"])
+	})
+
+	t.Run("docker run --network host denied", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "docker run --network host ubuntu",
+		})
+
+		var stdout bytes.Buffer
+
+		dockerCfg := config{dockerProxyEnsure: "true", dockerProxyPort: "2375"}
+
+		err := run(strings.NewReader(input), &stdout, dockerCfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Contains(t, hso["permissionDecisionReason"], "--network none")
+	})
+
+	t.Run("docker run --network=host denied", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "docker run --network=host ubuntu",
+		})
+
+		var stdout bytes.Buffer
+
+		dockerCfg := config{dockerProxyEnsure: "true", dockerProxyPort: "2375"}
+
+		err := run(strings.NewReader(input), &stdout, dockerCfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+	})
+
+	t.Run("docker run --net bridge denied", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "docker run --net bridge ubuntu",
+		})
+
+		var stdout bytes.Buffer
+
+		dockerCfg := config{dockerProxyEnsure: "true", dockerProxyPort: "2375"}
+
+		err := run(strings.NewReader(input), &stdout, dockerCfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+	})
+
+	t.Run("docker run --network none passes through", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "docker run --network none ubuntu",
+		})
+
+		var stdout bytes.Buffer
+
+		dockerCfg := config{dockerProxyEnsure: "true", dockerProxyPort: "2375"}
+
+		err := run(strings.NewReader(input), &stdout, dockerCfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+
+		updatedInput, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "DOCKER_HOST=tcp://127.0.0.1:2375 docker run --network none ubuntu", updatedInput["command"],
+			"should not double-inject --network none")
+	})
+
+	t.Run("docker run --net=none passes through", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "docker run --net=none ubuntu",
+		})
+
+		var stdout bytes.Buffer
+
+		dockerCfg := config{dockerProxyEnsure: "true", dockerProxyPort: "2375"}
+
+		err := run(strings.NewReader(input), &stdout, dockerCfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+
+		updatedInput, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "DOCKER_HOST=tcp://127.0.0.1:2375 docker run --net=none ubuntu", updatedInput["command"])
+	})
+
+	t.Run("docker build not network restricted", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "docker build .",
+		})
+
+		var stdout bytes.Buffer
+
+		dockerCfg := config{dockerProxyEnsure: "true", dockerProxyPort: "2375"}
+
+		err := run(strings.NewReader(input), &stdout, dockerCfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+
+		updatedInput, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "DOCKER_HOST=tcp://127.0.0.1:2375 docker build .", updatedInput["command"],
+			"build should not have --network none injected")
+	})
+
+	t.Run("docker run --network host denied without proxy", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "docker run --network host ubuntu",
+		})
+
+		var stdout bytes.Buffer
+
+		// No dockerProxyEnsure configured.
+		err := run(strings.NewReader(input), &stdout, cfg)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"],
+			"network deny should fire even without proxy configured")
+	})
+
+	t.Run("already proxied docker command passes through", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "DOCKER_HOST=tcp://127.0.0.1:2375 docker ps",
+		})
+
+		var stdout bytes.Buffer
+
+		dockerCfg := config{dockerProxyEnsure: "true", dockerProxyPort: "2375"}
+
+		err := run(strings.NewReader(input), &stdout, dockerCfg)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes(), "already proxied should delegate, not rewrite")
 	})
 
 	t.Run("denied git stash with git clone", func(t *testing.T) {

@@ -156,6 +156,7 @@
                 mcp-kubernetes = ./pkgs/mcp-kubernetes.nix;
                 mcp-git = ./tools/mcp-git/package.nix;
                 hook-router = ./tools/hook-router/package.nix;
+                ensure-docker-proxy = ./tools/ensure-docker-proxy/package.nix;
                 mcp-fetch = ./tools/mcp-fetch/package.nix;
                 radar = ./pkgs/radar.nix;
                 radar-desktop = ./pkgs/radar-desktop.nix;
