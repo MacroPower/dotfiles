@@ -649,6 +649,7 @@ in
                 "/tmp/git"
                 "/private/tmp/git"
                 "~/go/pkg"
+                "~/Library/Application Support/rtk"
                 "~/Library/Caches"
                 "~/.cache/nix"
               ];
