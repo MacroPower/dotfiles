@@ -714,6 +714,7 @@ in
       packages = [
         pkgs.chief
         pkgs.llm-agents.ccusage
+        pkgs.llm-agents.workmux
         pkgs.rtk-bin
       ];
 
