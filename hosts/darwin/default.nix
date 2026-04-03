@@ -367,6 +367,8 @@
           let
             # AppleSymbolicHotKeys IDs (from macOS internals)
             hotkeys = {
+              selectPrevInputSource = 60;
+              selectNextInputSource = 61;
               showApps = 160;
               dictation = 164;
             };
@@ -385,6 +387,13 @@
           in
           {
             AppleSymbolicHotKeys = {
+              # Disable input source switching (frees Ctrl+Space for tmux prefix)
+              "${toString hotkeys.selectPrevInputSource}" = {
+                enabled = false;
+              };
+              "${toString hotkeys.selectNextInputSource}" = {
+                enabled = false;
+              };
               # Show Apps: Cmd+Enter
               "${toString hotkeys.showApps}" = {
                 enabled = true;

@@ -62,6 +62,8 @@ let
     in
     if cleaned ? except then cleaned // { except = map cleanAttrs cleaned.except; } else cleaned;
 
+  workmux = "${lib.getExe pkgs.llm-agents.workmux} set-window-status";
+
   rtkConfig = (pkgs.formats.toml { }).generate "config.toml" {
     display = {
       colors = false;
@@ -634,6 +636,7 @@ in
               allowLocalBinding = true;
               allowUnixSockets = [
                 "/nix/var/nix/daemon-socket/socket"
+                "/private/tmp/tmux-501/default"
               ];
               allowedDomains = [
                 "jacobcolvin.com"
@@ -679,6 +682,47 @@ in
                 ];
               }
             ];
+            UserPromptSubmit = [
+              {
+                hooks = [
+                  {
+                    type = "command";
+                    command = "${workmux} working";
+                  }
+                ];
+              }
+            ];
+            Notification = [
+              {
+                matcher = "permission_prompt|elicitation_dialog";
+                hooks = [
+                  {
+                    type = "command";
+                    command = "${workmux} waiting";
+                  }
+                ];
+              }
+            ];
+            PostToolUse = [
+              {
+                hooks = [
+                  {
+                    type = "command";
+                    command = "${workmux} working";
+                  }
+                ];
+              }
+            ];
+            Stop = [
+              {
+                hooks = [
+                  {
+                    type = "command";
+                    command = "${workmux} done";
+                  }
+                ];
+              }
+            ];
           };
           autoMemoryEnabled = false;
           alwaysThinkingEnabled = true;
@@ -709,6 +753,7 @@ in
     xdg.configFile = {
       "ccstatusline/settings.json".source = ../configs/ccstatusline/settings.json;
       "rtk/config.toml".source = rtkConfig;
+      "workmux/config.yaml".source = ../configs/workmux/config.yaml;
     };
 
     home = {
@@ -746,6 +791,7 @@ in
 
       sessionVariables = {
         DISABLE_AUTOUPDATER = "1";
+        CLAUDE_CODE_TMUX_TRUECOLOR = "1";
       }
       // lib.optionalAttrs skipPerms {
         IS_SANDBOX = "1";

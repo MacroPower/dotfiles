@@ -26,6 +26,8 @@ in
 
         keybind = [
           "global:cmd+grave_accent=toggle_quick_terminal"
+          "cmd+d=unbind"
+          "cmd+shift+d=unbind"
         ];
         quick-terminal-screen = "mouse";
         quick-terminal-position = "right";

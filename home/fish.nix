@@ -7,10 +7,7 @@
 
 let
   inherit (config.lib.stylix) colors;
-  # Produce a Nerd Font glyph from a hex codepoint via JSON unicode escape.
-  # Use nf for BMP (4-digit) codepoints; nf2 for supplementary (surrogate pair).
-  nf = code: builtins.fromJSON ''"\u${code}"'';
-  nf2 = hi: lo: builtins.fromJSON ''"\u${hi}\u${lo}"'';
+  inherit (import ../lib/nerdfonts.nix) icons;
 in
 {
   # Fix low-contrast base16-fish colors using stylix palette
@@ -41,8 +38,6 @@ in
         "$status"
         "$shlvl"
         "$jobs"
-        "$kubernetes"
-        "$docker_context"
         "$nix_shell"
         "$direnv"
         "$golang"
@@ -51,9 +46,6 @@ in
         "$ruby"
         "$rust"
         "$terraform"
-        "$aws"
-        "$azure"
-        "$gcloud"
         "$java"
         "$zig"
         "$elixir"
@@ -62,9 +54,6 @@ in
         "$crystal"
         "$lua"
         "$pulumi"
-        "$username"
-        "$hostname"
-        "$time"
       ];
 
       character = {
@@ -75,12 +64,12 @@ in
       directory = {
         style = "bold #${colors.base0D}";
         truncation_symbol = "/.../";
-        read_only = " ${nf2 "DB80" "DF3E"}";
+        read_only = " ${icons.lock}";
       };
 
       git_branch = {
         style = "#${colors.base0B}";
-        format = "[${nf "f418"} $branch(:$remote_branch)]($style) ";
+        format = "[${icons.branch} $branch(:$remote_branch)]($style) ";
       };
       git_status = {
         format = lib.concatStrings [
@@ -104,7 +93,7 @@ in
         staged = "+$count ";
         untracked = "?$count ";
       };
-      git_commit.tag_symbol = " ${nf "f412"} ";
+      git_commit.tag_symbol = " ${icons.gitTag} ";
       git_state.style = "#${colors.base08}";
       git_metrics = {
         disabled = false;
@@ -113,324 +102,276 @@ in
       };
 
       fill = {
-        symbol = nf "00b7";
+        symbol = icons.middleDot;
         style = "#${colors.base02}";
       };
 
       status = {
         disabled = false;
         style = "#${colors.base08}";
-        symbol = "${nf "f467"} ";
+        symbol = "${icons.error} ";
         format = " [$status]($style)";
       };
 
       cmd_duration = {
         style = "#${colors.base0A}";
         min_time = 2000;
-        format = " [${nf2 "DB86" "DD9F"} $duration]($style)";
+        format = " [${icons.timer} $duration]($style)";
       };
 
       shlvl = {
         disabled = false;
         style = "#${colors.base09}";
         threshold = 2;
-        symbol = "${nf "f120"} ";
+        symbol = "${icons.terminal} ";
         format = " [$symbol$shlvl]($style)";
       };
 
       jobs = {
         style = "#${colors.base0D}";
-        symbol = "${nf "f013"} ";
+        symbol = "${icons.gear} ";
         format = " [$symbol$number]($style)";
       };
 
-      time = {
-        disabled = false;
-        style = "#${colors.base04}";
-        format = " [$time]($style)";
-        time_format = "%r";
-      };
-
-      username = {
-        style_user = "#${colors.base09}";
-        style_root = "bold #${colors.base08}";
-        show_always = false;
-        format = " [$user]($style)";
-      };
-
-      hostname = {
-        style = "#${colors.base09}";
-        ssh_only = true;
-        ssh_symbol = "${nf "eb01"} ";
-        format = "[@$hostname]($style)";
-      };
-
       # Tool indicators (nerd font symbols, no "via" prefix)
-      aws = {
-        style = "#${colors.base09}";
-        symbol = "${nf "e33d"} ";
-        format = " [$symbol($profile )(@$region)]($style)";
-      };
-      azure = {
-        disabled = false;
-        style = "#${colors.base0D}";
-        symbol = "${nf "ebd8"} ";
-        format = " [$symbol($subscription)]($style)";
-      };
       bun = {
         style = "#${colors.base0A}";
-        symbol = "${nf "e76f"} ";
+        symbol = "${icons.bun} ";
         format = " [$symbol($version)]($style)";
       };
       crystal = {
         style = "#${colors.base06}";
-        symbol = "${nf "e62f"} ";
+        symbol = "${icons.crystal} ";
         format = " [$symbol($version)]($style)";
       };
       direnv = {
         disabled = false;
         style = "#${colors.base0B}";
-        symbol = "${nf "f07c"} ";
+        symbol = "${icons.direnv} ";
         denied_msg = "[denied](#${colors.base08})";
         format = " [$symbol$loaded$denied]($style)";
       };
-      docker_context = {
-        style = "#${colors.base0D}";
-        symbol = "${nf "f308"} ";
-        format = " [$symbol$context]($style)";
-      };
       elixir = {
         style = "#${colors.base0E}";
-        symbol = "${nf "e62d"} ";
+        symbol = "${icons.elixir} ";
         format = " [$symbol($version)]($style)";
-      };
-      gcloud = {
-        style = "#${colors.base0D}";
-        symbol = "${nf "e7f1"} ";
-        format = " [$symbol$account(@$domain)(\\($project\\))]($style)";
       };
       golang = {
         style = "#${colors.base0C}";
-        symbol = "${nf "e627"} ";
+        symbol = "${icons.golang} ";
         format = " [$symbol($version)]($style)";
       };
       java = {
         style = "#${colors.base09}";
-        symbol = "${nf "e256"} ";
+        symbol = "${icons.java} ";
         format = " [$symbol($version)]($style)";
-      };
-      kubernetes = {
-        disabled = false;
-        style = "#${colors.base0D}";
-        symbol = "${nf "2638"} ";
-        format = " [$symbol$context(\\($namespace\\))]($style)";
       };
       lua = {
         style = "#${colors.base0D}";
-        symbol = "${nf "e620"} ";
+        symbol = "${icons.lua} ";
         format = " [$symbol($version)]($style)";
       };
       nix_shell = {
         style = "#${colors.base0D}";
-        symbol = "${nf "f313"} ";
+        symbol = "${icons.nix} ";
         format = " [$symbol($name)]($style)";
       };
       nodejs = {
         style = "#${colors.base0B}";
-        symbol = "${nf "e718"} ";
+        symbol = "${icons.nodejs} ";
         format = " [$symbol($version)]($style)";
       };
       pulumi = {
         style = "#${colors.base0A}";
-        symbol = "${nf "f1b2"} ";
+        symbol = "${icons.pulumi} ";
         format = " [$symbol($stack)]($style)";
       };
       php = {
         style = "#${colors.base0D}";
-        symbol = "${nf "e608"} ";
+        symbol = "${icons.php} ";
         format = " [$symbol($version)]($style)";
       };
       python = {
         style = "#${colors.base0C}";
-        symbol = "${nf "e235"} ";
+        symbol = "${icons.python} ";
         format = " [$symbol($version)]($style)";
       };
       ruby = {
         style = "#${colors.base08}";
-        symbol = "${nf "e791"} ";
+        symbol = "${icons.ruby} ";
         format = " [$symbol($version)]($style)";
       };
       rust = {
         style = "#${colors.base0F}";
-        symbol = "${nf2 "DB85" "DE17"} ";
+        symbol = "${icons.rust} ";
         format = " [$symbol($version)]($style)";
       };
       terraform = {
         style = "#${colors.base0E}";
-        symbol = "${nf2 "db84" "dc62"} ";
+        symbol = "${icons.terraform} ";
         format = " [$symbol$workspace]($style)";
       };
       zig = {
         style = "#${colors.base0A}";
-        symbol = "${nf "e6a9"} ";
+        symbol = "${icons.zig} ";
         format = " [$symbol($version)]($style)";
       };
 
       # Additional nerd font symbol modules
       buf = {
         style = "#${colors.base0D}";
-        symbol = "${nf "f49d"} ";
+        symbol = "${icons.buf} ";
         format = "[$symbol($version )]($style)";
       };
       c = {
         style = "#${colors.base0D}";
-        symbol = "${nf "e61e"} ";
+        symbol = "${icons.c} ";
         format = "[$symbol($version )]($style)";
       };
       cmake = {
         style = "#${colors.base08}";
-        symbol = "${nf "e794"} ";
+        symbol = "${icons.cmake} ";
         format = "[$symbol($version )]($style)";
       };
       conda = {
         style = "#${colors.base0B}";
-        symbol = "${nf "f10c"} ";
+        symbol = "${icons.conda} ";
         format = "[$symbol($version )]($style)";
       };
       cpp = {
         style = "#${colors.base0D}";
-        symbol = "${nf "e61d"} ";
+        symbol = "${icons.cpp} ";
         format = "[$symbol($version )]($style)";
       };
       dart = {
         style = "#${colors.base0C}";
-        symbol = "${nf "e798"} ";
+        symbol = "${icons.dart} ";
         format = "[$symbol($version )]($style)";
       };
       deno = {
         style = "#${colors.base06}";
-        symbol = "${nf "e7c0"} ";
+        symbol = "${icons.deno} ";
         format = "[$symbol($version )]($style)";
       };
       elm = {
         style = "#${colors.base0C}";
-        symbol = "${nf "e62c"} ";
+        symbol = "${icons.elm} ";
         format = "[$symbol($version )]($style)";
       };
       fennel = {
         style = "#${colors.base0A}";
-        symbol = "${nf "e6af"} ";
+        symbol = "${icons.fennel} ";
         format = "[$symbol($version )]($style)";
       };
       fortran = {
         style = "#${colors.base0E}";
-        symbol = "${nf "e7de"} ";
+        symbol = "${icons.fortran} ";
         format = "[$symbol($version )]($style)";
       };
       fossil_branch = {
         style = "#${colors.base0B}";
-        symbol = "${nf "f418"} ";
+        symbol = "${icons.branch} ";
         format = "[$symbol$branch]($style) ";
       };
       gradle = {
         style = "#${colors.base0B}";
-        symbol = "${nf "e660"} ";
+        symbol = "${icons.gradle} ";
         format = "[$symbol($version )]($style)";
       };
       guix_shell = {
         style = "#${colors.base0A}";
-        symbol = "${nf "f325"} ";
+        symbol = "${icons.guixShell} ";
         format = "[$symbol$state( \\($name\\) )]($style)";
       };
       haskell = {
         style = "#${colors.base0E}";
-        symbol = "${nf "e777"} ";
+        symbol = "${icons.haskell} ";
         format = "[$symbol($version )]($style)";
       };
       haxe = {
         style = "#${colors.base09}";
-        symbol = "${nf "e666"} ";
+        symbol = "${icons.haxe} ";
         format = "[$symbol($version )]($style)";
       };
       hg_branch = {
         style = "#${colors.base04}";
-        symbol = "${nf "f418"} ";
+        symbol = "${icons.branch} ";
         format = "[$symbol$branch]($style) ";
       };
       julia = {
         style = "#${colors.base0E}";
-        symbol = "${nf "e624"} ";
+        symbol = "${icons.julia} ";
         format = "[$symbol($version )]($style)";
       };
       kotlin = {
         style = "#${colors.base09}";
-        symbol = "${nf "e634"} ";
+        symbol = "${icons.kotlin} ";
         format = "[$symbol($version )]($style)";
       };
       memory_usage = {
         style = "#${colors.base08}";
-        symbol = "${nf2 "DB80" "DF5B"} ";
+        symbol = "${icons.memory} ";
         format = "[$symbol$ram]($style) ";
       };
       meson = {
         style = "#${colors.base0C}";
-        symbol = "${nf2 "DB81" "DD37"} ";
+        symbol = "${icons.meson} ";
         format = "[$symbol($version )]($style)";
       };
       nim = {
         style = "#${colors.base0A}";
-        symbol = "${nf2 "DB80" "DDA5"} ";
+        symbol = "${icons.nim} ";
         format = "[$symbol($version )]($style)";
       };
       ocaml = {
         style = "#${colors.base09}";
-        symbol = "${nf "e67a"} ";
+        symbol = "${icons.ocaml} ";
         format = "[$symbol($version )]($style)";
       };
       package = {
         style = "#${colors.base09}";
-        symbol = "${nf2 "DB80" "DFD7"} ";
+        symbol = "${icons.package} ";
         format = "[$symbol($version )]($style)";
       };
       perl = {
         style = "#${colors.base0D}";
-        symbol = "${nf "e67e"} ";
+        symbol = "${icons.perl} ";
         format = "[$symbol($version )]($style)";
       };
       pijul_channel = {
         style = "#${colors.base0B}";
-        symbol = "${nf "f418"} ";
+        symbol = "${icons.branch} ";
         format = "[$symbol$channel]($style) ";
       };
       pixi = {
         style = "#${colors.base0B}";
-        symbol = "${nf2 "DB80" "DFD7"} ";
+        symbol = "${icons.package} ";
         format = "[$symbol($version )]($style)";
       };
       rlang = {
         style = "#${colors.base0D}";
-        symbol = "${nf2 "DB81" "DFD4"} ";
+        symbol = "${icons.rlang} ";
         format = "[$symbol($version )]($style)";
       };
       scala = {
         style = "#${colors.base08}";
-        symbol = "${nf "e737"} ";
+        symbol = "${icons.scala} ";
         format = "[$symbol($version )]($style)";
       };
       swift = {
         style = "#${colors.base09}";
-        symbol = "${nf "e755"} ";
+        symbol = "${icons.swift} ";
         format = "[$symbol($version )]($style)";
       };
       xmake = {
         style = "#${colors.base0B}";
-        symbol = "${nf "e794"} ";
+        symbol = "${icons.xmake} ";
         format = "[$symbol($version )]($style)";
       };
 
       container = {
         style = "#${colors.base05}";
-        symbol = "${nf "f4b7"} ";
+        symbol = "${icons.container} ";
         format = "[$symbol]($style)";
       };
 
@@ -439,57 +380,7 @@ in
         disabled = false;
         style = "#${colors.base05}";
       };
-      os.symbols = {
-        Alpaquita = "${nf "eaa2"} ";
-        Alpine = "${nf "f300"} ";
-        AlmaLinux = "${nf "f31d"} ";
-        Amazon = "${nf "f270"} ";
-        Android = "${nf "f17b"} ";
-        AOSC = "${nf "f301"} ";
-        Arch = "${nf "f303"} ";
-        Artix = "${nf "f31f"} ";
-        CachyOS = "${nf "f303"} ";
-        CentOS = "${nf "f304"} ";
-        Debian = "${nf "f306"} ";
-        DragonFly = "${nf "e28e"} ";
-        Elementary = "${nf "f309"} ";
-        Emscripten = "${nf "f205"} ";
-        EndeavourOS = "${nf "f197"} ";
-        Fedora = "${nf "f30a"} ";
-        FreeBSD = "${nf "f30c"} ";
-        Garuda = "${nf2 "DB81" "DED3"} ";
-        Gentoo = "${nf "f30d"} ";
-        HardenedBSD = "${nf2 "DB81" "DF8C"} ";
-        Illumos = "${nf2 "DB80" "DE38"} ";
-        Ios = "${nf2 "DB80" "DC37"} ";
-        Kali = "${nf "f327"} ";
-        Linux = "${nf "f31a"} ";
-        Mabox = "${nf "eb29"} ";
-        Macos = "${nf "f302"} ";
-        Manjaro = "${nf "f312"} ";
-        Mariner = "${nf "f1cd"} ";
-        MidnightBSD = "${nf "f186"} ";
-        Mint = "${nf "f30e"} ";
-        NetBSD = "${nf "f024"} ";
-        NixOS = "${nf "f313"} ";
-        Nobara = "${nf "f380"} ";
-        OpenBSD = "${nf2 "DB80" "DE3A"} ";
-        openSUSE = "${nf "f314"} ";
-        OracleLinux = "${nf2 "DB80" "DF37"} ";
-        Pop = "${nf "f32a"} ";
-        Raspbian = "${nf "f315"} ";
-        Redhat = "${nf "f316"} ";
-        RedHatEnterprise = "${nf "f316"} ";
-        RockyLinux = "${nf "f32b"} ";
-        Redox = "${nf2 "DB80" "DC18"} ";
-        Solus = "${nf2 "DB82" "DC33"} ";
-        SUSE = "${nf "f314"} ";
-        Ubuntu = "${nf "f31b"} ";
-        Unknown = "${nf "f22d"} ";
-        Void = "${nf "f32e"} ";
-        Windows = "${nf2 "DB80" "DF72"} ";
-        Zorin = "${nf "f32f"} ";
-      };
+      os.symbols = builtins.mapAttrs (_: v: "${v} ") icons.os;
 
     };
   };
@@ -502,6 +393,12 @@ in
     '';
 
     interactiveShellInit = ''
+      # Auto-start tmux for interactive shells (skip if already in tmux,
+      # inside an IDE terminal, or tmux isn't available)
+      if status is-interactive; and command -q tmux; and not set -q TMUX; and not set -q ZED_TERM; and test -z "$SSH_CONNECTION"
+        exec tmux new-session \; set-option destroy-unattached on
+      end
+
       ${config.dotfiles.shell.extraInteractiveInit}
       set --global fish_key_bindings fish_default_key_bindings
 
@@ -546,7 +443,7 @@ in
 
         if test (math "$left_w + $right_w + 1") -le $COLUMNS
           set -l fill_len (math "$COLUMNS - $left_w - $right_w")
-          printf '%s%s%s%s%s\n' "$left" (set_color ${colors.base02}) (string repeat -n $fill_len -- '${nf "00b7"}') (set_color normal) "$right"
+          printf '%s%s%s%s%s\n' "$left" (set_color ${colors.base02}) (string repeat -n $fill_len -- '${icons.middleDot}') (set_color normal) "$right"
         else
           printf '%s\n%s\n' "$left" (string trim -l -- "$right")
         end

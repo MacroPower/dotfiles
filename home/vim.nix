@@ -23,6 +23,7 @@
 
       # Navigation
       fzf-vim
+      vim-tmux-navigator
 
       # Git
       vim-fugitive

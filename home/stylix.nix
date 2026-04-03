@@ -12,5 +12,7 @@
     k9s.enable = lib.mkDefault false;
     # Starship: themed explicitly in fish.nix with stylix palette
     starship.enable = lib.mkDefault false;
+    # Tmux: themed explicitly in tools.nix with stylix palette
+    tmux.enable = lib.mkDefault false;
   };
 }
