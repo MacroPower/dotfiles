@@ -62,7 +62,7 @@ let
     in
     if cleaned ? except then cleaned // { except = map cleanAttrs cleaned.except; } else cleaned;
 
-  workmux = "${lib.getExe pkgs.workmux-bin} set-window-status";
+  workmux = "${lib.getExe' pkgs.workmux-bin "workmux"} set-window-status";
 
   workmuxConfig = (pkgs.formats.yaml { }).generate "config.yaml" {
     nerdfont = true;
@@ -321,7 +321,7 @@ let
       export KAGI_API_KEY="$(cat "${config.sops.secrets.kagi_api_key.path}" 2>/dev/null || true)"
     fi
     export KAGI_SUMMARIZER_ENGINE="agnes"
-    exec ${pkgs.uv}/bin/uvx --isolated --managed-python --python=3.13 kagimcp "$@"
+    exec ${pkgs.mcp-kagi}/bin/kagimcp "$@"
   '';
 in
 {
@@ -668,6 +668,9 @@ in
               ];
             };
             filesystem = {
+              allowRead = [
+                "/nix/store"
+              ];
               allowWrite = [
                 "/tmp/git"
                 "/private/tmp/git"
@@ -879,7 +882,7 @@ in
 
         # Prune stale worktree entries from ~/.claude.json
         if [ -z "$DRY_RUN_CMD" ] && command -v workmux >/dev/null 2>&1 && [ -f "$CLAUDE_JSON" ]; then
-          ${lib.getExe pkgs.workmux-bin} claude prune 2>/dev/null || true
+          ${lib.getExe' pkgs.workmux-bin "workmux"} claude prune 2>/dev/null || true
         fi
       '';
     };

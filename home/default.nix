@@ -56,7 +56,13 @@ in
       enable = true;
       enableDefaultConfig = false;
       includes = config.dotfiles.sshIncludes;
-      extraConfig = "SendEnv COLORTERM";
+      extraConfig = ''
+        SendEnv COLORTERM
+        KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
+        Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+        MACs hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com
+        HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,ssh-ed25519,sk-ssh-ed25519-cert-v01@openssh.com,sk-ssh-ed25519@openssh.com
+      '';
       matchBlocks."*" = {
         addKeysToAgent = "yes";
         serverAliveInterval = 60;

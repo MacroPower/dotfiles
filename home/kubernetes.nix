@@ -113,7 +113,7 @@ in
             skipLatestRevCheck = false;
             disablePodCounting = false;
             shellPod = {
-              image = "nicolaka/netshoot:b2f26ec9a306e27037573443b63f00e2e94a82dd";
+              image = "nicolaka/netshoot@sha256:49dd3b2d303468996db4bde350285ea155338fe51b2fb0f44887a19acd3e6847";
               namespace = "default";
               limits = {
                 cpu = "100m";

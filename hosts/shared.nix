@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 {
   imports = [ ./settings.nix ];
 
@@ -11,7 +11,22 @@
   nixpkgs = {
     flake.setFlakeRegistry = true;
     flake.setNixPath = true;
-    config.allowUnfree = true;
+    config.allowUnfreePredicate =
+      pkg:
+      builtins.elem (lib.getName pkg) [
+        "appcleaner"
+        "claude-code"
+        "discord"
+        "drawio"
+        "frankerfacez"
+        "firefox-bin"
+        "firefox-bin-unwrapped"
+        "keka"
+        "monodraw"
+        "obsidian"
+        "slack"
+        "vlc-bin"
+      ];
   };
 
   nix.gc = {

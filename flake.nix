@@ -3,7 +3,10 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    flake-parts.url = "github:hercules-ci/flake-parts";
+    flake-parts = {
+      url = "github:hercules-ci/flake-parts";
+      inputs.nixpkgs-lib.follows = "nixpkgs";
+    };
     nix-darwin = {
       url = "github:nix-darwin/nix-darwin";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -41,15 +44,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     rycee-nur = {
-      url = "gitlab:rycee/nur-expressions";
+      url = "gitlab:rycee/nur-expressions?narHash=sha256-6CZuk2ChoYS2g97AuLw8caJwE2ta3SNoMPCKw/ptZdw%3D";
       flake = false;
     };
     nur-jacobcolvin = {
-      url = "git+https://nur.jacobcolvin.com";
+      url = "git+https://nur.jacobcolvin.com?narHash=sha256-RLSLxjOFLpEn8GioLbUFjBBp0tQphcWqtPdx4DBfmmA%3D";
       inputs.nixpkgs.follows = "nixpkgs";
-    };
-    mac-app-util = {
-      url = "github:hraban/mac-app-util";
     };
     nix-homebrew = {
       url = "github:zhaofengli/nix-homebrew";
@@ -164,6 +164,7 @@
                 radar = ./pkgs/radar.nix;
                 radar-desktop = ./pkgs/radar-desktop.nix;
                 helm-schema = ./pkgs/helm-schema.nix;
+                mcp-kagi = ./pkgs/mcp-kagi.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })

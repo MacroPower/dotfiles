@@ -57,9 +57,88 @@ tasks:
         if: "[ ! -f /etc/NIXOS ]"
 
   update:
-    desc: Update all flake inputs
+    desc: Update all flake inputs and show what changed
     cmds:
       - nix flake update
+      - git diff flake.lock
+
+  update:input:
+    desc: Update a single flake input and show what changed
+    cmds:
+      - nix flake update {{.CLI_ARGS}}
+      - git diff flake.lock
+
+  update:reviewed:
+    desc: Update flake inputs one at a time with per-input diffs and confirmation
+    cmds:
+      - |
+        for input in $(nix flake metadata --json | jq -r '.locks.nodes.root.inputs | keys[]'); do
+          # Skip narHash-pinned inputs (use update:pinned for those)
+          if grep -A3 "\"$input\"" flake.nix | grep -q 'narHash='; then
+            echo "=== Skipping $input (narHash-pinned, use 'task update:pinned -- $input') ==="
+            echo
+            continue
+          fi
+          echo "=== Updating $input ==="
+          nix flake update "$input"
+          if git diff --quiet flake.lock; then
+            echo "  (no changes)"
+          else
+            git diff flake.lock
+            echo
+            read -rp "Stage flake.lock for $input? [y/N] " answer
+            if [[ "$answer" =~ ^[Yy]$ ]]; then
+              git add flake.lock
+              echo "  Staged."
+            else
+              git checkout -- flake.lock
+              echo "  Reverted."
+            fi
+          fi
+          echo
+        done
+
+  update:pinned:
+    desc: Update a narHash-pinned flake input (updates both flake.lock and flake.nix)
+    cmds:
+      - |
+        INPUT="{{.CLI_ARGS}}"
+        if [ -z "$INPUT" ]; then
+          echo "Usage: task update:pinned -- <input-name>"
+          exit 1
+        fi
+        if ! grep -A3 "\"$INPUT\"" flake.nix | grep -q 'narHash='; then
+          echo "Error: $INPUT does not have a narHash pin in flake.nix"
+          exit 1
+        fi
+        # Step 1: Strip narHash query param from this input's URL to allow fresh fetch
+        sed -i'' -E "/\"$INPUT\"/,/\};/{/url =/s|\?narHash=sha256-[^\"%]*%3D||;}" flake.nix
+        # Step 2: Update the input
+        echo "=== Updating $INPUT ==="
+        if ! nix flake update "$INPUT"; then
+          echo "Update failed, restoring flake.nix"
+          git checkout -- flake.nix
+          exit 1
+        fi
+        if git diff --quiet flake.lock; then
+          echo "No changes for $INPUT"
+          git checkout -- flake.nix
+          exit 0
+        fi
+        # Step 3: Extract new narHash and re-pin in flake.nix URL
+        NEW_HASH=$(jq -r ".nodes[\"$INPUT\"].locked.narHash" flake.lock)
+        ENCODED_HASH=$(echo "$NEW_HASH" | sed 's/=$/%3D/')
+        # Find the URL line for this input and append narHash param
+        sed -i'' -E "/\"$INPUT\"/,/\};/{/url =/s|(\";)|?narHash=$ENCODED_HASH\1|;}" flake.nix
+        echo "Pinned $INPUT to narHash: $NEW_HASH"
+        echo
+        git diff flake.nix flake.lock
+
+  brew:upgrade:
+    desc: Manually upgrade all Homebrew packages
+    platforms: [darwin]
+    cmds:
+      - brew upgrade
 
   check:
     desc: Run all Dagger checks

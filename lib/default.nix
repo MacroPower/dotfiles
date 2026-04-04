@@ -28,6 +28,7 @@ let
     radar = final.callPackage paths.radar { };
     radar-desktop = final.callPackage paths.radar-desktop { };
     helm-schema = final.callPackage paths.helm-schema { };
+    mcp-kagi = final.callPackage paths.mcp-kagi { };
   };
 
   nurJacobColvinOverlay =
@@ -52,10 +53,9 @@ let
     };
   };
 
-  workmuxOverlay =
-    system: _final: _prev: {
-      workmux-bin = workmux.packages.${system}.default;
-    };
+  workmuxOverlay = system: _final: _prev: {
+    workmux-bin = workmux.packages.${system}.default;
+  };
 
   sharedOverlays = system: [
     lixOverlay

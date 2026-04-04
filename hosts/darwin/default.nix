@@ -11,6 +11,8 @@
     ../options.nix
   ];
 
+  dotfiles.system.homebrew.unsignedCasks = [ "fuse-t" ];
+
   homebrew = {
     enable = true;
     enableFishIntegration = true;
@@ -35,7 +37,6 @@
 
     inherit (config.dotfiles.system.homebrew) masApps;
 
-    caskArgs.no_quarantine = true;
   };
 
   system = {
@@ -238,9 +239,6 @@
         askForPassword = true;
         askForPasswordDelay = 0;
       };
-
-      # Disable quarantine prompts for downloaded applications
-      LaunchServices.LSQuarantine = false;
 
       # Login window hardening
       loginwindow = {
@@ -486,13 +484,6 @@
         # Enable AirDrop discovery over Ethernet and other non-default interfaces
         "com.apple.NetworkBrowser".BrowseAllInterfaces = true;
 
-        # Skip checksum verification when mounting .dmg disk images (faster mounts)
-        "com.apple.frameworks.diskimages" = {
-          skip-verify = true;
-          skip-verify-locked = true;
-          skip-verify-remote = true;
-        };
-
         # Don't reopen previous windows/apps after a restart or re-login
         "com.apple.loginwindow".TALLogoutSavesState = false;
 
@@ -538,8 +529,6 @@
 
       # System-wide preferences (written to /Library/Preferences/, requires root)
       CustomSystemPreferences = {
-        # Prevent Gatekeeper from silently re-enabling itself every 30 days
-        "com.apple.security".GKAutoRearm = false;
         # Check for macOS/security updates daily instead of weekly,
         # download in background, and auto-install critical patches
         "com.apple.SoftwareUpdate" = {
@@ -568,6 +557,22 @@
     activationScripts.screenshotDir.text = ''
       sudo -u ${config.dotfiles.system.username} mkdir -p /Users/${config.dotfiles.system.username}/Documents/screenshots
     '';
+
+    # Strip quarantine from casks that lack notarization (runs after Homebrew)
+    activationScripts.stripCaskQuarantine = {
+      deps = [ "homebrew" ];
+      text =
+        let
+          casks = config.dotfiles.system.homebrew.unsignedCasks;
+        in
+        lib.optionalString (casks != [ ]) ''
+          echo "stripping quarantine from unsigned casks..." >&2
+          for cask in ${lib.concatMapStringsSep " " (c: ''"${c}"'') casks}; do
+            cask_path="/opt/homebrew/Caskroom/$cask"
+            [ -d "$cask_path" ] && xattr -rd com.apple.quarantine "$cask_path" 2>/dev/null || true
+          done
+        '';
+    };
 
     # Declaratively manage macOS login items via System Events.
     # Adds items from dotfiles.system.loginItems and removes any

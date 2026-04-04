@@ -9,7 +9,14 @@
 inputs.home-manager.lib.homeManagerConfiguration {
   pkgs = import inputs.nixpkgs {
     inherit system;
-    config.allowUnfree = true;
+    config.allowUnfreePredicate =
+      pkg:
+      builtins.elem (inputs.nixpkgs.lib.getName pkg) [
+        "claude-code"
+        "discord"
+        "obsidian"
+        "slack"
+      ];
     overlays = sharedOverlays system;
   };
   modules = hmSharedModules ++ [

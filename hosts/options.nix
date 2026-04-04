@@ -76,6 +76,11 @@
         default = [ ];
         description = "Homebrew casks to install.";
       };
+      unsignedCasks = lib.mkOption {
+        type = lib.types.listOf lib.types.nonEmptyStr;
+        default = [ ];
+        description = "Cask names that lack notarization; quarantine is stripped after install.";
+      };
       masApps = lib.mkOption {
         type = lib.types.attrsOf lib.types.ints.positive;
         default = { };

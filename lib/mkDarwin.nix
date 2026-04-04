@@ -33,10 +33,6 @@ inputs.nix-darwin.lib.darwinSystem {
       };
       system.configurationRevision = self.rev or self.dirtyRev or null;
     }
-    inputs.mac-app-util.darwinModules.default
-    # home-manager 25.11+ copies apps via rsync (targets.darwin.copyApps),
-    # so they work natively with Spotlight, Dock, and Gatekeeper -- no
-    # mac-app-util trampolines needed for HM apps.
     inputs.nix-homebrew.darwinModules.nix-homebrew
     {
       nix-homebrew = {
