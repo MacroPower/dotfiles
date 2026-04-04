@@ -25,6 +25,24 @@ let
     highlight = colors.base0A;
   };
 
+  tmuxSeshPicker = pkgs.writeShellApplication {
+    name = "tmux-sesh-picker";
+    runtimeInputs = [
+      pkgs.sesh
+      pkgs.fzf
+    ];
+    text = ''
+      selected=$(sesh list | fzf \
+        --reverse --no-sort \
+        --border-label ' sesh ' \
+        --prompt '> ' \
+        --header 'sessions' \
+        --preview 'tmux capture-pane -ep -t {} 2>/dev/null || echo "(no preview)"' \
+        --preview-window 'right:50%:wrap')
+      [ -n "$selected" ] && sesh connect "$selected"
+    '';
+  };
+
   tmuxStatusContext = pkgs.writeShellApplication {
     name = "tmux-status-context";
     runtimeInputs = [ pkgs.yq-go ];
@@ -78,6 +96,475 @@ let
 
       printf '%s' "$out"
     '';
+  };
+
+  # Shared tmux binding definitions -- single source of truth for both
+  # direct keybindings and which-key menu items.
+  #
+  # Fields:
+  #   name      - display name (present = appears in which-key)
+  #   key       - key shared by direct bind and which-key
+  #   cmd       - tmux command string
+  #   repeat    - (optional) -r flag for direct binding
+  #   transient - (optional) transient which-key menu item
+  #   table     - (optional) "root" for -n, or key table name for -T
+  b = {
+    # Top-level
+    commandPrompt = {
+      name = "Command prompt";
+      key = ":";
+      cmd = "command-prompt";
+    };
+    lastWindow = {
+      name = "Last window";
+      key = "tab";
+      cmd = ''run-shell "workmux last-agent"'';
+    };
+    reloadConfig = {
+      name = "Reload config";
+      key = "r";
+      cmd = ''source-file ~/.config/tmux/tmux.conf \; display-message "Config reloaded"'';
+    };
+    clearScreen = {
+      name = "Clear screen";
+      key = "C-l";
+      cmd = ''send-keys C-l \; run-shell "sleep 0.1" \; clear-history'';
+    };
+    listKeys = {
+      name = "+Keys";
+      key = "?";
+      cmd = "list-keys -N";
+    };
+
+    # Windows
+    newWindow = {
+      name = "New window";
+      key = "c";
+      cmd = ''new-window -c "#{pane_current_path}"'';
+    };
+    splitH = {
+      name = "Split horizontal";
+      key = "d";
+      cmd = ''split-window -h -c "#{pane_current_path}"'';
+    };
+    splitV = {
+      name = "Split vertical";
+      key = "D";
+      cmd = ''split-window -v -c "#{pane_current_path}"'';
+    };
+    swapWindowPrev = {
+      name = "Swap prev";
+      key = "P";
+      cmd = "swap-window -t -1 \\; select-window -t -1";
+      repeat = true;
+    };
+    swapWindowNext = {
+      name = "Swap next";
+      key = "N";
+      cmd = "swap-window -t +1 \\; select-window -t +1";
+      repeat = true;
+    };
+    renameWindow = {
+      name = "Rename";
+      key = "R";
+      cmd = ''command-prompt -I "#W" "rename-window -- \"%%\""'';
+    };
+    killWindow = {
+      name = "Kill";
+      key = "X";
+      cmd = ''confirm -p "Kill window #W? (y/n)" kill-window'';
+    };
+
+    # Layouts
+    layoutNext = {
+      name = "Next";
+      key = "=";
+      cmd = "next-layout";
+      transient = true;
+    };
+    layoutTiled = {
+      name = "Tiled";
+      key = "t";
+      cmd = "select-layout tiled";
+    };
+    layoutH = {
+      name = "Horizontal";
+      key = "_";
+      cmd = "select-layout even-horizontal";
+    };
+    layoutV = {
+      name = "Vertical";
+      key = "v";
+      cmd = "select-layout even-vertical";
+    };
+
+    # Panes
+    paneLeft = {
+      name = "Left";
+      key = "h";
+      cmd = "select-pane -L";
+    };
+    paneDown = {
+      name = "Down";
+      key = "j";
+      cmd = "select-pane -D";
+    };
+    paneUp = {
+      name = "Up";
+      key = "k";
+      cmd = "select-pane -U";
+    };
+    paneRight = {
+      name = "Right";
+      key = "l";
+      cmd = "select-pane -R";
+    };
+    resizeLeft = {
+      name = "Left";
+      key = "H";
+      cmd = "resize-pane -L 5";
+      repeat = true;
+      transient = true;
+    };
+    resizeDown = {
+      name = "Down";
+      key = "J";
+      cmd = "resize-pane -D 5";
+      repeat = true;
+      transient = true;
+    };
+    resizeUp = {
+      name = "Up";
+      key = "K";
+      cmd = "resize-pane -U 5";
+      repeat = true;
+      transient = true;
+    };
+    resizeRight = {
+      name = "Right";
+      key = "L";
+      cmd = "resize-pane -R 5";
+      repeat = true;
+      transient = true;
+    };
+    swapPanePrev = {
+      name = "Swap prev";
+      key = "<";
+      cmd = "swap-pane -U";
+      repeat = true;
+    };
+    swapPaneNext = {
+      name = "Swap next";
+      key = ">";
+      cmd = "swap-pane -D";
+      repeat = true;
+    };
+    zoomPane = {
+      name = "Zoom";
+      key = "z";
+      cmd = "resize-pane -Z";
+    };
+    breakPane = {
+      name = "Break pane";
+      key = "B";
+      cmd = "break-pane";
+    };
+    grabPane = {
+      name = "Grab/join pane";
+      key = "G";
+      cmd = ''choose-window "join-pane -h -s \"%%\""'';
+    };
+    movePane = {
+      name = "Send to window";
+      key = "M";
+      cmd = ''command-prompt -p "send pane to:" "join-pane -h -t \"%%\""'';
+    };
+    killPane = {
+      name = "Kill pane";
+      key = "x";
+      cmd = "kill-pane";
+    };
+
+    # Sessions
+    seshPicker = {
+      name = "Switcher (sesh)";
+      key = "S";
+      cmd = ''display-popup -E -T " sesh " -w 70% -h 70% tmux-sesh-picker'';
+    };
+    sessionTree = {
+      name = "Session tree";
+      key = "w";
+      cmd = "choose-tree -Zs";
+    };
+    sessionRename = {
+      name = "Rename";
+      key = "$";
+      cmd = ''command-prompt -I "#S" "rename-session -- \"%%\""'';
+    };
+    newSession = {
+      name = "New";
+      key = "C-n";
+      cmd = "new-session";
+    };
+    detach = {
+      name = "Detach";
+      key = "Q";
+      cmd = "detach";
+    };
+
+    # Popups
+    scratchPopup = {
+      name = "Scratch terminal";
+      key = "\`";
+      cmd = ''display-popup -E -T " scratch " -w 80% -h 80% -d "#{pane_current_path}"'';
+    };
+    gituiPopup = {
+      name = "gitui";
+      key = "C-g";
+      cmd = ''display-popup -E -T " gitui " -w 90% -h 90% -d "#{pane_current_path}" gitui'';
+    };
+    lazydockerPopup = {
+      name = "lazydocker";
+      key = "C-d";
+      cmd = ''display-popup -E -T " lazydocker " -w 90% -h 90% lazydocker'';
+    };
+
+    # Workmux
+    workmuxDash = {
+      name = "Dashboard";
+      key = "C-s";
+      cmd = ''display-popup -E -T " workmux " -h 30 -w 100 "workmux dashboard"'';
+    };
+    workmuxSidebar = {
+      name = "Sidebar";
+      key = "C-t";
+      cmd = ''run-shell "workmux sidebar"'';
+    };
+    workmuxLast = {
+      name = "Last done";
+      key = "C-w";
+      cmd = ''run-shell "workmux last-done"'';
+    };
+
+    # Toggles
+    toggleStatus = {
+      name = "Status bar";
+      key = "b";
+      cmd = "set-option -g status";
+    };
+    toggleSync = {
+      name = "Sync panes";
+      key = "Y";
+      cmd = ''set-window-option synchronize-panes \; display-message "sync #{?synchronize-panes,ON,OFF}"'';
+    };
+    toggleMouse = {
+      name = "Mouse";
+      key = "m";
+      cmd = ''set -g mouse \; display-message "Mouse #{?mouse,ON,OFF}"'';
+    };
+
+    # Direct-only (no name -> no which-key entry)
+    altWindow1 = {
+      key = "M-1";
+      cmd = "select-window -t 1";
+      table = "root";
+    };
+    altWindow2 = {
+      key = "M-2";
+      cmd = "select-window -t 2";
+      table = "root";
+    };
+    altWindow3 = {
+      key = "M-3";
+      cmd = "select-window -t 3";
+      table = "root";
+    };
+    altWindow4 = {
+      key = "M-4";
+      cmd = "select-window -t 4";
+      table = "root";
+    };
+    altWindow5 = {
+      key = "M-5";
+      cmd = "select-window -t 5";
+      table = "root";
+    };
+    altWindow6 = {
+      key = "M-6";
+      cmd = "select-window -t 6";
+      table = "root";
+    };
+    altWindow7 = {
+      key = "M-7";
+      cmd = "select-window -t 7";
+      table = "root";
+    };
+    altWindow8 = {
+      key = "M-8";
+      cmd = "select-window -t 8";
+      table = "root";
+    };
+    altWindow9 = {
+      key = "M-9";
+      cmd = "select-window -t 9";
+      table = "root";
+    };
+  };
+
+  # Which-key menu hierarchy -- references b.* entries above
+  whichKeyMenus = [
+    b.commandPrompt
+    b.lastWindow
+    b.reloadConfig
+    { separator = true; }
+    {
+      name = "+Windows";
+      key = "w";
+      menu = [
+        b.newWindow
+        b.splitH
+        b.splitV
+        { separator = true; }
+        b.sessionTree
+        b.swapWindowPrev
+        b.swapWindowNext
+        { separator = true; }
+        {
+          name = "+Layout";
+          key = "l";
+          menu = [
+            b.layoutNext
+            b.layoutTiled
+            b.layoutH
+            b.layoutV
+          ];
+        }
+        b.renameWindow
+        b.killWindow
+      ];
+    }
+    {
+      name = "+Panes";
+      key = "p";
+      menu = [
+        b.paneLeft
+        b.paneDown
+        b.paneUp
+        b.paneRight
+        { separator = true; }
+        {
+          name = "+Resize";
+          key = "r";
+          menu = [
+            b.resizeLeft
+            b.resizeDown
+            b.resizeUp
+            b.resizeRight
+          ];
+        }
+        b.swapPanePrev
+        b.swapPaneNext
+        b.zoomPane
+        { separator = true; }
+        b.breakPane
+        b.grabPane
+        b.movePane
+        b.killPane
+      ];
+    }
+    {
+      name = "+Sessions";
+      key = "s";
+      menu = [
+        b.seshPicker
+        b.sessionTree
+        b.sessionRename
+        b.newSession
+        b.detach
+      ];
+    }
+    {
+      name = "+Popups";
+      key = "o";
+      menu = [
+        b.scratchPopup
+        b.gituiPopup
+        b.lazydockerPopup
+      ];
+    }
+    {
+      name = "+Workmux";
+      key = "W";
+      menu = [
+        b.workmuxDash
+        b.workmuxSidebar
+        b.workmuxLast
+      ];
+    }
+    {
+      name = "+Toggles";
+      key = "t";
+      menu = [
+        b.toggleStatus
+        b.toggleSync
+        b.toggleMouse
+      ];
+    }
+    { separator = true; }
+    b.clearScreen
+    b.listKeys
+  ];
+
+  # Generate a tmux `bind` line from a binding record
+  mkBindLine =
+    entry:
+    let
+      tableFlag =
+        if entry ? table && entry.table == "root" then
+          "-n "
+        else if entry ? table then
+          "-T ${entry.table} "
+        else
+          "";
+      repeatFlag = if entry.repeat or false then "-r " else "";
+    in
+    "bind ${repeatFlag}${tableFlag}${entry.key} ${entry.cmd}";
+
+  # Generate all direct bind lines from the binding attrset
+  bindLines = lib.concatMapStringsSep "\n" mkBindLine (lib.attrValues b);
+
+  # Convert a binding record or menu node to a which-key YAML item
+  mkWhichKeyItem =
+    item:
+    if item ? separator then
+      { separator = true; }
+    else if item ? menu then
+      {
+        inherit (item) name key;
+        menu = map mkWhichKeyItem item.menu;
+      }
+    else
+      {
+        inherit (item) name key;
+        command = item.cmd;
+      }
+      // lib.optionalAttrs (item.transient or false) { transient = true; };
+
+  tmuxWhichKeyConfig = (pkgs.formats.yaml { }).generate "config.yaml" {
+    command_alias_start_index = 200;
+    keybindings.prefix_table = "Space";
+    title = {
+      style = "align=centre,bold";
+      prefix = "tmux";
+      prefix_style = "fg=green,align=centre,bold";
+    };
+    position = {
+      x = "R";
+      y = "P";
+    };
+    custom_variables = [ ];
+    macros = [ ];
+    items = map mkWhichKeyItem whichKeyMenus;
   };
 in
 {
@@ -175,6 +662,12 @@ in
             set -g @extrakto_key "e"
             set -g @extrakto_copy_key "tab"
             set -g @extrakto_insert_key "enter"
+          '';
+        }
+        {
+          plugin = tmux-which-key;
+          extraConfig = ''
+            set -g @tmux-which-key-xdg-enable 1
           '';
         }
         {
@@ -300,89 +793,8 @@ in
         set -g pane-scrollbars modal
         set -g pane-scrollbars-style "bg=#${tmux.bg},fg=#${tmux.dim}"
 
-        # --- Keybindings ---
-
-        # Reload config
-        bind r source-file ~/.config/tmux/tmux.conf \; display-message "Config reloaded"
-
-        # Better split/window bindings (keep CWD)
-        bind c new-window -c "#{pane_current_path}"
-        bind d split-window -h -c "#{pane_current_path}"
-        bind D split-window -v -c "#{pane_current_path}"
-
-        # Pane navigation with vi keys
-        bind h select-pane -L
-        bind j select-pane -D
-        bind k select-pane -U
-        bind l select-pane -R
-
-        # Pane resizing with vi keys
-        bind -r H resize-pane -L 5
-        bind -r J resize-pane -D 5
-        bind -r K resize-pane -U 5
-        bind -r L resize-pane -R 5
-
-        # Pane swapping
-        bind -r < swap-pane -U
-        bind -r > swap-pane -D
-
-        # Window reordering
-        bind -r P swap-window -t -1\; select-window -t -1
-        bind -r N swap-window -t +1\; select-window -t +1
-
-        # Break/join panes
-        bind B break-pane
-        bind G choose-window 'join-pane -h -s "%%"'
-
-        # Quick window switching (workmux last-agent is a superset of last-window)
-        bind Tab run-shell "workmux last-agent"
-
-        # Prefix-free window switching
-        bind -n M-1 select-window -t 1
-        bind -n M-2 select-window -t 2
-        bind -n M-3 select-window -t 3
-        bind -n M-4 select-window -t 4
-        bind -n M-5 select-window -t 5
-        bind -n M-6 select-window -t 6
-        bind -n M-7 select-window -t 7
-        bind -n M-8 select-window -t 8
-        bind -n M-9 select-window -t 9
-
-        # Kill pane without confirmation
-        bind x kill-pane
-
-        # Clear pane screen and scrollback history
-        bind C-l send-keys C-l \; run-shell "sleep 0.1" \; clear-history
-
-        # Toggle status bar
-        bind b set-option -g status
-
-        # Toggle synchronize-panes
-        bind Y set-window-option synchronize-panes\; display-message "sync #{?synchronize-panes,ON,OFF}"
-
-        # Toggle mouse mode (for native terminal selection)
-        bind m set-option -g mouse \; display-message "Mouse #{?mouse,ON,OFF}"
-
-        # Move pane to window (complements B=break, G=grab)
-        bind M command-prompt -p "send pane to window:" "join-pane -h -t '%%'"
-
-        # Session switcher (sesh + fzf)
-        bind S display-popup -E -T ' sesh ' -w 70% -h 70% "sesh connect \"$(sesh list | fzf --reverse --no-sort --border-label ' sesh ' --prompt '> ' --header 'sessions' --preview 'tmux capture-pane -ep -t {} 2>/dev/null || echo \"(no preview)\"' --preview-window 'right:50%:wrap')\""
-
-        # Session/window/pane tree
-        bind w choose-tree -Zs
-
-        # Popup scratch terminal
-        bind ` display-popup -E -T ' scratch ' -w 80% -h 80% -d "#{pane_current_path}"
-
-        # Popup TUI apps
-        bind C-g display-popup -E -T ' gitui ' -w 90% -h 90% -d "#{pane_current_path}" "gitui"
-        bind C-d display-popup -E -T ' lazydocker ' -w 90% -h 90% "lazydocker"
-
-        # Workmux
-        bind C-s display-popup -E -T ' workmux ' -h 30 -w 100 "workmux dashboard"
-        bind C-t run-shell "workmux sidebar"
-        bind C-w run-shell "workmux last-done"
+        # --- Keybindings (generated from shared binding definitions) ---
+        ${bindLines}
 
         # vi-style copy mode (yank plugin handles 'y' for clipboard integration)
         bind -T copy-mode-vi v send-keys -X begin-selection
@@ -509,8 +921,19 @@ in
     };
   };
 
+  xdg.configFile."tmux/plugins/tmux-which-key/config.yaml".source = tmuxWhichKeyConfig;
+
+  # Ensure tmux-which-key's init.tmux is writable so the plugin can rebuild it
+  home.activation.tmuxWhichKeyPermissions = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    f="$HOME/.local/share/tmux/plugins/tmux-which-key/init.tmux"
+    if [ -f "$f" ] && [ ! -w "$f" ]; then
+      chmod u+w "$f"
+    fi
+  '';
+
   home.packages = [
     tmuxStatusContext
+    tmuxSeshPicker
   ]
   ++ (with pkgs; [
     go-task
