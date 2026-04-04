@@ -155,6 +155,7 @@ in
         kcl-lsp
 
         # System tools
+        lima
         qemu
         nmap
         ddrescue
