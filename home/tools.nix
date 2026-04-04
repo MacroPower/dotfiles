@@ -789,9 +789,8 @@ in
         set -g set-titles on
         set -g set-titles-string "#S / #W"
 
-        # Scrollbars (tmux 3.6+, modal = copy-mode only)
-        set -g pane-scrollbars modal
-        set -g pane-scrollbars-style "bg=#${tmux.bg},fg=#${tmux.dim}"
+        # Scrollbars disabled - modal scrollbars cause text reflow on width change
+        set -g pane-scrollbars off
 
         # --- Keybindings (generated from shared binding definitions) ---
         ${bindLines}
