@@ -943,7 +943,6 @@ in
     dagger
     nvd
     sesh
-
     nurl
     sops
     age
@@ -958,9 +957,8 @@ in
     tokei
     gping
     photo-cli
-    editorconfig-checker
     lefthook
     tfswitch
-    tflint
+    devbox
   ]);
 }

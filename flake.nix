@@ -98,9 +98,6 @@
       perSystem =
         {
           system,
-          pkgs,
-          config,
-          inputs',
           ...
         }:
         {
@@ -128,17 +125,6 @@
               ))
             ];
 
-          devShells.default = pkgs.mkShell {
-            packages = [
-              pkgs.go-task
-              config.treefmt.build.wrapper
-              pkgs.nh
-              inputs'.dagger.packages.dagger
-              pkgs.sops
-              pkgs.lefthook
-              pkgs.golangci-lint
-            ];
-          };
         };
 
       flake =
