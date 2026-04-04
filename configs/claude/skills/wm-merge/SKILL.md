@@ -26,7 +26,29 @@ This command finishes work on the current branch by:
 
 ## Step 1: Commit
 
-If there are staged changes, commit them. Use lowercase, imperative mood, no conventional commit prefixes. Skip if nothing is staged.
+Stage all changes and create a single git commit with an appropriate message. Skip this step if there are no changes.
+
+### Context
+
+- Current git status: !`git status`
+- Current git diff (staged and unstaged changes): !`git diff HEAD`
+- Current branch: !`git branch --show-current`
+- Recent commits: !`git log --oneline -10`
+
+### Conventional Commit Reference
+
+If the codebase follows conventional commits (visible in recent commits above), the commit type must follow these rules:
+
+- build: changes that affect the build system or external dependencies
+- ci: changes to our CI configuration files and scripts
+- docs: documentation only changes
+- feat: a new feature
+- fix: a bug fix
+- perf: a code change that improves performance
+- refactor: a code change that neither fixes a bug nor adds a feature
+- style: changes that do not affect the meaning of the code (e.g. white-space, formatting)
+- test: adding missing tests or correcting existing tests
+- chore: changes that affect auxiliary tools (e.g. linter version/configs)
 
 ## Step 2: Rebase
 
