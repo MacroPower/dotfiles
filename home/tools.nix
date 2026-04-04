@@ -138,11 +138,32 @@ in
       aggressiveResize = true;
       plugins = with pkgs.tmuxPlugins; [
         sensible
-        urlview
+        {
+          plugin = fzf-tmux-url;
+          extraConfig = ''
+            set -g @fzf-url-fzf-options '-p 60%,30% --prompt="   " --border-label=" Open URL "'
+          '';
+        }
         vim-tmux-navigator
         {
           plugin = yank;
           extraConfig = "set -g @yank_selection_mouse 'clipboard'";
+        }
+        open
+        {
+          plugin = fuzzback;
+          extraConfig = ''
+            set -g @fuzzback-bind /
+            set -g @fuzzback-popup 1
+            set -g @fuzzback-popup-size '90%'
+          '';
+        }
+        {
+          plugin = logging;
+          extraConfig = ''
+            set -g @logging-path "$HOME/.local/share/tmux/logging"
+            set -g @logging_key "O"
+          '';
         }
         {
           plugin = tmux-thumbs;
@@ -155,6 +176,10 @@ in
             set -g @extrakto_copy_key "tab"
             set -g @extrakto_insert_key "enter"
           '';
+        }
+        {
+          plugin = tmux-fzf;
+          extraConfig = ''set -g @tmux-fzf-launch-key "f"'';
         }
         {
           plugin = resurrect;
@@ -189,6 +214,7 @@ in
             "#[fg=#${tmux.dark}]"
             "#[bg=#{?client_prefix,##${tmux.accentAlt},##${tmux.accent}}]"
             "#[bold] #S "
+            "#{?synchronize-panes,#[fg=##${tmux.dark}]#[bg=##${tmux.highlight}] SYNC ,}"
           ]
         }"
 
@@ -211,7 +237,8 @@ in
             "#{?window_start_flag,"
             "#[fg=#{?client_prefix,##${tmux.accentAlt},##${tmux.accent}}]"
             "#[bg=#${tmux.bg}]#[nobold]${pl},}"
-            "#[fg=#${tmux.dim},bg=#${tmux.bg}] #I #W#{?window_zoomed_flag, Z,}#{?@workmux_status, #{@workmux_status},} "
+            "#{?window_activity_flag,#[fg=##${tmux.highlight}],#[fg=##${tmux.dim}]}"
+            "#[bg=#${tmux.bg}] #I #W#{?window_zoomed_flag, Z,}#{?@workmux_status, #{@workmux_status},} "
           ]
         }"
         set -g window-status-current-format "${
@@ -224,6 +251,8 @@ in
             "#[fg=#${tmux.active},bg=#${tmux.bg}]${pl}"
           ]
         }"
+
+        set -g window-status-activity-style "none"
 
         # Borders
         set -g pane-border-style "fg=#${tmux.muted}"
@@ -256,10 +285,20 @@ in
         set -g set-clipboard on
         set -g renumber-windows on
         set -g focus-events on
+        set -g detach-on-destroy off
+        set -g wrap-search off
+        set -g monitor-activity on
+        set -g visual-activity off
+        set -g activity-action other
         set -g display-time 3000
         set -g display-panes-time 3000
+        set -g pane-base-index 1
         set -g set-titles on
         set -g set-titles-string "#S / #W"
+
+        # Scrollbars (tmux 3.6+, modal = copy-mode only)
+        set -g pane-scrollbars modal
+        set -g pane-scrollbars-style "bg=#${tmux.bg},fg=#${tmux.dim}"
 
         # --- Keybindings ---
 
@@ -298,8 +337,25 @@ in
         # Quick window switching (workmux last-agent is a superset of last-window)
         bind Tab run-shell "workmux last-agent"
 
+        # Prefix-free window switching
+        bind -n M-1 select-window -t 1
+        bind -n M-2 select-window -t 2
+        bind -n M-3 select-window -t 3
+        bind -n M-4 select-window -t 4
+        bind -n M-5 select-window -t 5
+        bind -n M-6 select-window -t 6
+        bind -n M-7 select-window -t 7
+        bind -n M-8 select-window -t 8
+        bind -n M-9 select-window -t 9
+
         # Kill pane without confirmation
         bind x kill-pane
+
+        # Clear pane screen and scrollback history
+        bind C-l send-keys C-l \; run-shell "sleep 0.1" \; clear-history
+
+        # Toggle status bar
+        bind b set-option -g status
 
         # Toggle synchronize-panes
         bind Y set-window-option synchronize-panes\; display-message "sync #{?synchronize-panes,ON,OFF}"
@@ -311,23 +367,27 @@ in
         bind M command-prompt -p "send pane to window:" "join-pane -h -t '%%'"
 
         # Session switcher (sesh + fzf)
-        bind S display-popup -E -w 60% -h 60% "sesh connect \"$(sesh list | fzf --reverse --no-sort --border-label ' sesh ' --prompt '> ')\""
+        bind S display-popup -E -T ' sesh ' -w 70% -h 70% "sesh connect \"$(sesh list | fzf --reverse --no-sort --border-label ' sesh ' --prompt '> ' --header 'sessions' --preview 'tmux capture-pane -ep -t {} 2>/dev/null || echo \"(no preview)\"' --preview-window 'right:50%:wrap')\""
+
+        # Session/window/pane tree
+        bind w choose-tree -Zs
 
         # Popup scratch terminal
-        bind ` display-popup -E -w 80% -h 80% -d "#{pane_current_path}"
+        bind ` display-popup -E -T ' scratch ' -w 80% -h 80% -d "#{pane_current_path}"
 
         # Popup TUI apps
-        bind C-g display-popup -E -w 90% -h 90% -d "#{pane_current_path}" "gitui"
-        bind D display-popup -E -w 90% -h 90% "lazydocker"
+        bind C-g display-popup -E -T ' gitui ' -w 90% -h 90% -d "#{pane_current_path}" "gitui"
+        bind C-d display-popup -E -T ' lazydocker ' -w 90% -h 90% "lazydocker"
 
         # Workmux
-        bind C-s display-popup -E -h 30 -w 100 "workmux dashboard"
+        bind C-s display-popup -E -T ' workmux ' -h 30 -w 100 "workmux dashboard"
         bind C-t run-shell "workmux sidebar"
-        bind C-l run-shell "workmux last-done"
+        bind C-w run-shell "workmux last-done"
 
         # vi-style copy mode (yank plugin handles 'y' for clipboard integration)
         bind -T copy-mode-vi v send-keys -X begin-selection
         bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
+        bind -T copy-mode-vi Y send-keys -X select-line \; send-keys -X copy-selection-and-cancel
         bind -T copy-mode-vi Escape send-keys -X cancel
 
         # Incremental search in copy mode
@@ -342,7 +402,11 @@ in
         set -as terminal-features ',xterm-ghostty:extkeys'
         set -as terminal-features ',xterm-ghostty:sync'
         set -as terminal-features ',xterm-ghostty:strike'
+        set -as terminal-features ',xterm-ghostty:sixel'
         set -as terminal-overrides ',xterm-ghostty:Ss=\E[%p1%d q:Se=\E[2 q'
+
+        # Hyperlink (OSC 8) support
+        set -as terminal-features ',*:hyperlinks'
 
         # Generic undercurl/colored underline support
         set -as terminal-overrides ',*:Smulx=\E[4::%p1%dm'
