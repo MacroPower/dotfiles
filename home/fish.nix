@@ -396,7 +396,7 @@ in
       # Auto-start tmux for interactive shells (skip if already in tmux,
       # inside an IDE terminal, or tmux isn't available)
       if status is-interactive; and command -q tmux; and not set -q TMUX; and not set -q ZED_TERM; and test -z "$SSH_CONNECTION"
-        exec tmux new-session \; set-option destroy-unattached on
+        exec tmux new-session -c "$HOME" \; set-option destroy-unattached on
       end
 
       ${config.dotfiles.shell.extraInteractiveInit}

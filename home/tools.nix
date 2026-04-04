@@ -304,7 +304,7 @@ let
     newSession = {
       name = "New";
       key = "C-n";
-      cmd = "new-session";
+      cmd = "new-session -c ~";
     };
     detach = {
       name = "Detach";
@@ -685,7 +685,7 @@ in
         {
           plugin = continuum;
           extraConfig = ''
-            set -g @continuum-restore 'on'
+            set -g @continuum-restore 'off'
             set -g @continuum-save-interval '10'
           '';
         }
@@ -778,7 +778,7 @@ in
         set -g set-clipboard on
         set -g renumber-windows on
         set -g focus-events on
-        set -g detach-on-destroy off
+        set -g detach-on-destroy no-detached
         set -g wrap-search off
         set -g monitor-activity on
         set -g visual-activity off
