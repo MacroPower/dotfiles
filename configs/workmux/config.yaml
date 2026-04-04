@@ -1,9 +1,0 @@
-nerdfont: true
-merge_strategy: rebase
-agent: claude
-window_prefix: "wm-"
-
-panes:
-  - command: <agent>
-    focus: true
-  - split: horizontal

@@ -770,7 +770,8 @@
         "rycee-nur": "rycee-nur",
         "sops-nix": "sops-nix",
         "stylix": "stylix",
-        "treefmt-nix": "treefmt-nix_4"
+        "treefmt-nix": "treefmt-nix_4",
+        "workmux": "workmux"
       }
     },
     "rycee-nur": {
@@ -1073,6 +1074,26 @@
       "original": {
         "owner": "numtide",
         "repo": "treefmt-nix",
+        "type": "github"
+      }
+    },
+    "workmux": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1775236079,
+        "narHash": "sha256-R1GaWG+vR6wb6QAMqSuC8EwuhFwmZtO7fOw/UD+ypNo=",
+        "owner": "raine",
+        "repo": "workmux",
+        "rev": "915e38a3f57f852dc13cf901e2314a9479019a94",
+        "type": "github"
+      },
+      "original": {
+        "owner": "raine",
+        "repo": "workmux",
         "type": "github"
       }
     }

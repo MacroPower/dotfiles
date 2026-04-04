@@ -461,6 +461,7 @@ in
     shellAbbrs = {
       g = "git";
       gs = "git status";
+      wm = "workmux";
       tf = "tofu";
       t = "task";
       tg = "task -g";

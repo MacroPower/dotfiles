@@ -20,6 +20,10 @@
       url = "github:numtide/llm-agents.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    workmux = {
+      url = "github:raine/workmux";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     dagger = {
       url = "github:dagger/nix";
       inputs.nixpkgs.follows = "nixpkgs";

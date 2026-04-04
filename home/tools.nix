@@ -211,7 +211,7 @@ in
             "#{?window_start_flag,"
             "#[fg=#{?client_prefix,##${tmux.accentAlt},##${tmux.accent}}]"
             "#[bg=#${tmux.bg}]#[nobold]${pl},}"
-            "#[fg=#${tmux.dim},bg=#${tmux.bg}] #I #W#{?window_zoomed_flag, Z,} "
+            "#[fg=#${tmux.dim},bg=#${tmux.bg}] #I #W#{?window_zoomed_flag, Z,}#{?@workmux_status, #{@workmux_status},} "
           ]
         }"
         set -g window-status-current-format "${
@@ -220,7 +220,7 @@ in
             "#[fg=#{?client_prefix,##${tmux.accentAlt},##${tmux.accent}}]"
             "#[bg=#${tmux.active}]#[nobold]${pl},"
             "#[fg=#${tmux.bg}]#[bg=#${tmux.active}]${pl}}"
-            "#[fg=#${tmux.dark},bg=#${tmux.active},bold] #I #W#{?window_zoomed_flag, Z,} "
+            "#[fg=#${tmux.dark},bg=#${tmux.active},bold] #I #W#{?window_zoomed_flag, Z,}#{?@workmux_status, #{@workmux_status},} "
             "#[fg=#${tmux.active},bg=#${tmux.bg}]${pl}"
           ]
         }"
@@ -295,8 +295,8 @@ in
         bind B break-pane
         bind G choose-window 'join-pane -h -s "%%"'
 
-        # Quick window switching
-        bind Tab last-window
+        # Quick window switching (workmux last-agent is a superset of last-window)
+        bind Tab run-shell "workmux last-agent"
 
         # Kill pane without confirmation
         bind x kill-pane
@@ -319,6 +319,11 @@ in
         # Popup TUI apps
         bind C-g display-popup -E -w 90% -h 90% -d "#{pane_current_path}" "gitui"
         bind D display-popup -E -w 90% -h 90% "lazydocker"
+
+        # Workmux
+        bind C-s display-popup -E -h 30 -w 100 "workmux dashboard"
+        bind C-t run-shell "workmux sidebar"
+        bind C-l run-shell "workmux last-done"
 
         # vi-style copy mode (yank plugin handles 'y' for clipboard integration)
         bind -T copy-mode-vi v send-keys -X begin-selection

@@ -62,7 +62,27 @@ let
     in
     if cleaned ? except then cleaned // { except = map cleanAttrs cleaned.except; } else cleaned;
 
-  workmux = "${lib.getExe pkgs.llm-agents.workmux} set-window-status";
+  workmux = "${lib.getExe pkgs.workmux-bin} set-window-status";
+
+  workmuxConfig = (pkgs.formats.yaml { }).generate "config.yaml" {
+    nerdfont = true;
+    merge_strategy = "rebase";
+    agent = "claude";
+    window_prefix = "wm-";
+    status_format = false;
+    status_icons = {
+      working = "󱚣";
+      waiting = "󰍻";
+      done = "󰄴";
+    };
+    panes = [
+      {
+        command = "<agent>";
+        focus = true;
+      }
+      { split = "horizontal"; }
+    ];
+  };
 
   rtkConfig = (pkgs.formats.toml { }).generate "config.toml" {
     display = {
@@ -655,6 +675,7 @@ in
                 "~/Library/Application Support/rtk"
                 "~/Library/Caches"
                 "~/.cache/nix"
+                "~/.local/state/workmux"
               ];
             };
           };
@@ -741,6 +762,11 @@ in
           commit = ../configs/claude/skills/commit;
           commit-push-pr = ../configs/claude/skills/commit-push-pr;
           dagger-modules = ../configs/claude/skills/dagger-modules;
+          worktree = ../configs/claude/skills/worktree;
+          wm-merge = ../configs/claude/skills/wm-merge;
+          wm-rebase = ../configs/claude/skills/wm-rebase;
+          wm-coordinator = ../configs/claude/skills/wm-coordinator;
+          wm-workmux = ../configs/claude/skills/wm-workmux;
         }
         // cfg.extraSkills;
       };
@@ -753,14 +779,14 @@ in
     xdg.configFile = {
       "ccstatusline/settings.json".source = ../configs/ccstatusline/settings.json;
       "rtk/config.toml".source = rtkConfig;
-      "workmux/config.yaml".source = ../configs/workmux/config.yaml;
+      "workmux/config.yaml".source = workmuxConfig;
     };
 
     home = {
       packages = [
         pkgs.chief
         pkgs.llm-agents.ccusage
-        pkgs.llm-agents.workmux
+        pkgs.workmux-bin
         pkgs.rtk-bin
       ];
 
@@ -849,6 +875,11 @@ in
           mv "$TMPFILE" "$CLAUDE_JSON"
         else
           echo "Would write merged MCP config to $CLAUDE_JSON"
+        fi
+
+        # Prune stale worktree entries from ~/.claude.json
+        if [ -z "$DRY_RUN_CMD" ] && command -v workmux >/dev/null 2>&1 && [ -f "$CLAUDE_JSON" ]; then
+          ${lib.getExe pkgs.workmux-bin} claude prune 2>/dev/null || true
         fi
       '';
     };

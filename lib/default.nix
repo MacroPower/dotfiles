@@ -7,6 +7,7 @@ let
   inherit (inputs)
     nur-jacobcolvin
     llm-agents
+    workmux
     dagger
     sops-nix
     nix-index-database
@@ -51,11 +52,17 @@ let
     };
   };
 
+  workmuxOverlay =
+    system: _final: _prev: {
+      workmux-bin = workmux.packages.${system}.default;
+    };
+
   sharedOverlays = system: [
     lixOverlay
     localOverlay
     (nurJacobColvinOverlay system)
     ryceeOverlay
+    (workmuxOverlay system)
     llm-agents.overlays.default
     dagger.overlays.default
   ];
