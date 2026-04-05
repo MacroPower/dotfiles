@@ -323,6 +323,17 @@ let
     export KAGI_SUMMARIZER_ENGINE="agnes"
     exec ${pkgs.mcp-kagi}/bin/kagimcp "$@"
   '';
+
+  # Wrapper script that reads ArgoCD credentials from sops at runtime
+  argocdWrapper = pkgs.writeShellScript "argocd-mcp-wrapper" ''
+    if [ -f "${config.sops.secrets.argocd_api_token.path}" ]; then
+      export ARGOCD_API_TOKEN="$(cat "${config.sops.secrets.argocd_api_token.path}" 2>/dev/null || true)"
+    fi
+    if [ -f "${config.sops.secrets.argocd_base_url.path}" ]; then
+      export ARGOCD_BASE_URL="$(cat "${config.sops.secrets.argocd_base_url.path}" 2>/dev/null || true)"
+    fi
+    exec ${pkgs.mcp-argocd}/bin/argocd-mcp "$@"
+  '';
 in
 {
   options.dotfiles.claude = {
@@ -452,6 +463,11 @@ in
                 Authorization = "Bearer \${GITHUB_PERSONAL_ACCESS_TOKEN}";
               };
             };
+            argocd = {
+              type = "stdio";
+              command = "${argocdWrapper}";
+              args = [ "stdio" ];
+            };
           } cfg.extraMcpServers
         );
       };
@@ -502,6 +518,18 @@ in
               "mcp__kubernetes__call_kubectl"
               "mcp__nixos__nix"
               "mcp__nixos__nix_versions"
+
+              # ArgoCD (read-only operations)
+              "mcp__argocd__list_clusters"
+              "mcp__argocd__list_applications"
+              "mcp__argocd__get_application"
+              "mcp__argocd__get_application_resource_tree"
+              "mcp__argocd__get_application_managed_resources"
+              "mcp__argocd__get_application_workload_logs"
+              "mcp__argocd__get_resource_events"
+              "mcp__argocd__get_resource_actions"
+              "mcp__argocd__get_application_events"
+              "mcp__argocd__get_resources"
             ]
             ++ cfg.extraPermissions.allow;
             deny = [
@@ -639,6 +667,13 @@ in
               "Bash(git tag *)"
               "Bash(git rm *)"
               "Bash(git remote *)"
+
+              # ArgoCD (mutating operations)
+              "mcp__argocd__create_application"
+              "mcp__argocd__update_application"
+              "mcp__argocd__delete_application"
+              "mcp__argocd__sync_application"
+              "mcp__argocd__run_resource_action"
             ]
             ++ cfg.extraPermissions.ask;
           };
@@ -822,6 +857,7 @@ in
         ## Kubernetes
 
         - Use `mcp__kubernetes__call_kubectl` for kubectl operations. Do not run kubectl directly.
+        - Use the `mcp__argocd__*` tools to interact with Argo CD. Do not use the `argocd` CLI directly.
 
         ## Nix
 

@@ -52,3 +52,4 @@ tasks:
       - bash pkgs/rtk-bin-update.sh
       - bash pkgs/mcp-kubernetes-update.sh
       - bash pkgs/radar-update.sh
+      - bash pkgs/mcp-argocd-update.sh

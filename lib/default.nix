@@ -29,6 +29,7 @@ let
     radar-desktop = final.callPackage paths.radar-desktop { };
     helm-schema = final.callPackage paths.helm-schema { };
     mcp-kagi = final.callPackage paths.mcp-kagi { };
+    mcp-argocd = final.callPackage paths.mcp-argocd { };
   };
 
   nurJacobColvinOverlay =
