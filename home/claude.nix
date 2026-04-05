@@ -441,6 +441,10 @@ in
                 KUBERNETES_MCP_COLLECT_TELEMETRY = "false";
               };
             };
+            nixos = {
+              type = "stdio";
+              command = "${pkgs.mcp-nixos}/bin/mcp-nixos";
+            };
             github = {
               type = "http";
               url = "https://api.githubcopilot.com/mcp/readonly";
@@ -496,6 +500,8 @@ in
               "mcp__github__search_repositories"
               "mcp__github__search_users"
               "mcp__kubernetes__call_kubectl"
+              "mcp__nixos__nix"
+              "mcp__nixos__nix_versions"
             ]
             ++ cfg.extraPermissions.allow;
             deny = [
@@ -816,6 +822,11 @@ in
         ## Kubernetes
 
         - Use `mcp__kubernetes__call_kubectl` for kubectl operations. Do not run kubectl directly.
+
+        ## Nix
+
+        - Use `mcp__nixos__nix` for Nix package searches, NixOS/home-manager/nix-darwin option lookups, and FlakeHub queries.
+        - Use `mcp__nixos__nix_versions` for package version history and channel availability.
       '';
 
       sessionVariables = {
