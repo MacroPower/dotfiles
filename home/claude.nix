@@ -1011,6 +1011,7 @@ in
                   "~/Library/Application Support/rtk"
                   "~/Library/Caches"
                   "~/.cache/nix"
+                  "~/.cache/helm"
                   "~/.local/state/workmux"
                 ]
                 ++ bundledWritePaths;
