@@ -1237,32 +1237,6 @@ in
         };
       };
 
-      kubernetes = {
-        servers.kubernetes = {
-          type = "stdio";
-          command = "${pkgs.mcp-kubernetes}/bin/mcp-kubernetes";
-          args = [
-            "--access-level"
-            "readonly"
-          ];
-          env = {
-            KUBERNETES_MCP_COLLECT_TELEMETRY = "false";
-          };
-        };
-        activation.markers = [
-          ".katrc.yaml"
-          "Chart.yaml"
-          "kustomization.yaml"
-        ];
-        permissions.allow = [ "mcp__kubernetes__call_kubectl" ];
-        instructions = {
-          category = "Infrastructure";
-          items = [
-            "Use `mcp__kubernetes__call_kubectl` for kubectl operations. Do not run kubectl directly."
-          ];
-        };
-      };
-
       nixos = {
         servers.nixos = {
           type = "stdio";

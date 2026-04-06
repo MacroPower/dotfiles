@@ -156,7 +156,6 @@
                 zed-bin = ./pkgs/zed.nix;
                 photo-cli = ./pkgs/photo-cli.nix;
                 rtk-bin = ./pkgs/rtk-bin.nix;
-                mcp-kubernetes = ./pkgs/mcp-kubernetes.nix;
                 mcp-git = ./tools/mcp-git/package.nix;
                 hook-router = ./tools/hook-router/package.nix;
                 mcp-fetch = ./tools/mcp-fetch/package.nix;

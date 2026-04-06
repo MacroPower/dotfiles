@@ -109,67 +109,6 @@ func TestCheckGitStashDenied(t *testing.T) {
 	}
 }
 
-func TestCheckK8sCliDenied(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		input string
-		want  string
-	}{
-		"kubectl get pods": {
-			input: "kubectl get pods",
-			want:  "Direct kubectl usage is blocked. Use mcp__kubernetes__call_kubectl instead.",
-		},
-		"kubectl with namespace": {
-			input: "kubectl -n kube-system get pods",
-			want:  "Direct kubectl usage is blocked. Use mcp__kubernetes__call_kubectl instead.",
-		},
-		"kubectl in pipeline": {
-			input: "kubectl get pods | grep foo",
-			want:  "Direct kubectl usage is blocked. Use mcp__kubernetes__call_kubectl instead.",
-		},
-		"kubectl in compound": {
-			input: "cd /tmp && kubectl apply -f manifest.yaml",
-			want:  "Direct kubectl usage is blocked. Use mcp__kubernetes__call_kubectl instead.",
-		},
-		"no match: helm install": {
-			input: "helm install my-release chart",
-		},
-		"no match: cilium status": {
-			input: "cilium status",
-		},
-		"no match: hubble observe": {
-			input: "hubble observe",
-		},
-		"no match: echo kubectl": {
-			input: "echo kubectl get pods",
-		},
-		"no match: git status": {
-			input: "git status",
-		},
-		"no match: kubecolor": {
-			input: "kubecolor get pods",
-		},
-		"no match: helmfile": {
-			input: "helmfile sync",
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			prog := mustParse(t, tt.input)
-			got, denied := checkK8sCliDenied(prog)
-			assert.Equal(t, tt.want != "", denied)
-
-			if denied {
-				assert.Equal(t, tt.want, got)
-			}
-		})
-	}
-}
-
 func TestCheckGitSubcmdDenied(t *testing.T) {
 	t.Parallel()
 

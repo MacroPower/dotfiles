@@ -29,13 +29,6 @@ var (
 		"clear":  true,
 	}
 
-	// k8sBlockedCmds lists CLI commands that should be routed
-	// through the mcp-kubernetes MCP server instead of being
-	// invoked directly.
-	k8sBlockedCmds = map[string]string{
-		"kubectl": "mcp__kubernetes__call_kubectl",
-	}
-
 	// gitBlockedSubcmds lists git subcommands that should be
 	// routed through an MCP tool instead of being invoked
 	// directly.
@@ -97,17 +90,6 @@ func handleBash(ctx context.Context, input []byte, stdout io.Writer, cfg config,
 		logger.Info(
 			"denied",
 			slog.String("rule", "git-stash"),
-			slog.String("command", command),
-			slog.String("reason", reason),
-		)
-
-		return encodeJSON(stdout, denyResponse(reason))
-	}
-
-	if reason, denied := checkK8sCliDenied(prog); denied {
-		logger.Info(
-			"denied",
-			slog.String("rule", "k8s-cli"),
 			slog.String("command", command),
 			slog.String("reason", reason),
 		)
@@ -179,48 +161,6 @@ func checkGitStashDenied(prog *syntax.File) (string, bool) {
 	}
 
 	return "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.", true
-}
-
-// checkK8sCliDenied walks the AST looking for direct invocations of kubectl.
-// These should use the mcp-kubernetes MCP server.
-func checkK8sCliDenied(prog *syntax.File) (string, bool) {
-	var tool string
-
-	syntax.Walk(prog, func(node syntax.Node) bool {
-		if tool != "" {
-			return false
-		}
-
-		call, ok := node.(*syntax.CallExpr)
-		if !ok || len(call.Args) < 1 {
-			return true
-		}
-
-		parts := call.Args[0].Parts
-		if len(parts) != 1 {
-			return true
-		}
-
-		lit, ok := parts[0].(*syntax.Lit)
-		if !ok {
-			return true
-		}
-
-		if _, blocked := k8sBlockedCmds[lit.Value]; blocked {
-			tool = lit.Value
-		}
-
-		return true
-	})
-
-	if tool == "" {
-		return "", false
-	}
-
-	return fmt.Sprintf(
-		"Direct %s usage is blocked. Use %s instead.",
-		tool, k8sBlockedCmds[tool],
-	), true
 }
 
 // checkGitSubcmdDenied walks the AST looking for direct invocations of

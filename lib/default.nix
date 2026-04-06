@@ -26,7 +26,6 @@ let
     mcp-fetch = final.callPackage paths.mcp-fetch { };
     mcp-http-proxy = final.callPackage paths.mcp-http-proxy { };
     cookie = final.callPackage paths.cookie { };
-    mcp-kubernetes = final.callPackage paths.mcp-kubernetes { };
     radar = final.callPackage paths.radar { };
     radar-desktop = final.callPackage paths.radar-desktop { };
     helm-schema = final.callPackage paths.helm-schema { };

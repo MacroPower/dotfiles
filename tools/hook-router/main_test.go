@@ -130,30 +130,6 @@ func TestRun(t *testing.T) {
 		assert.Contains(t, hso["permissionDecisionReason"], "git stash")
 	})
 
-	t.Run("PreToolUse Bash: denied kubectl", func(t *testing.T) {
-		t.Parallel()
-
-		input := makeInput(map[string]any{
-			"command": "kubectl get pods -A",
-		})
-
-		var stdout bytes.Buffer
-
-		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, logger)
-		require.NoError(t, err)
-
-		var result map[string]any
-
-		err = json.Unmarshal(stdout.Bytes(), &result)
-		require.NoError(t, err)
-
-		hso, ok := result["hookSpecificOutput"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "PreToolUse", hso["hookEventName"])
-		assert.Equal(t, "deny", hso["permissionDecision"])
-		assert.Contains(t, hso["permissionDecisionReason"], "kubectl")
-	})
-
 	t.Run("PreToolUse Bash: denied git stash with git clone", func(t *testing.T) {
 		t.Parallel()
 
