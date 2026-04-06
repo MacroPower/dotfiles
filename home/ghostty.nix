@@ -24,6 +24,7 @@ in
         font-feature = fontFeatures;
         font-size = 14;
 
+        macos-option-as-alt = "left";
         keybind = [
           "global:cmd+grave_accent=toggle_quick_terminal"
           "cmd+d=unbind"
