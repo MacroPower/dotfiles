@@ -334,6 +334,29 @@ let
     fi
     exec ${pkgs.mcp-argocd}/bin/argocd-mcp "$@"
   '';
+
+  # Aggregate enabled MCP server bundles
+  enabledBundles = lib.filterAttrs (_: b: b.enable) cfg.mcpServerBundles;
+  bundleValues = lib.attrValues enabledBundles;
+  bundledServers = lib.foldl' lib.recursiveUpdate { } (map (b: b.servers) bundleValues);
+  bundledAllow = lib.concatMap (b: b.permissions.allow) bundleValues;
+  bundledDeny = lib.concatMap (b: b.permissions.deny) bundleValues;
+  bundledAsk = lib.concatMap (b: b.permissions.ask) bundleValues;
+  bundledDomains = lib.concatMap (b: b.sandbox.allowedDomains) bundleValues;
+  bundledSockets = lib.concatMap (b: b.sandbox.allowUnixSockets) bundleValues;
+  bundledReadPaths = lib.concatMap (b: b.sandbox.allowRead) bundleValues;
+  bundledWritePaths = lib.concatMap (b: b.sandbox.allowWrite) bundleValues;
+  bundledInstructions =
+    let
+      pairs = lib.filter (p: p.category != "" && p.items != [ ]) (
+        map (b: { inherit (b.instructions) category items; }) bundleValues
+      );
+      grouped = lib.foldl' (
+        acc: p: acc // { ${p.category} = (acc.${p.category} or [ ]) ++ p.items; }
+      ) { } pairs;
+      renderCategory = cat: items: "## ${cat}\n\n" + lib.concatMapStringsSep "\n" (i: "- ${i}") items;
+    in
+    lib.concatStringsSep "\n\n" (lib.mapAttrsToList renderCategory grouped);
 in
 {
   options.dotfiles.claude = {
@@ -409,67 +432,299 @@ in
       default = { };
       description = "Additional permission entries appended to the base allow/deny/ask lists.";
     };
+
+    mcpServerBundles = mkOption {
+      type = types.attrsOf (
+        types.submodule {
+          options = {
+            enable = mkOption {
+              type = types.bool;
+              default = true;
+              description = "Whether this MCP server bundle is enabled.";
+            };
+            servers = mkOption {
+              type = types.attrsOf types.anything;
+              default = { };
+              description = "MCP server definitions merged into programs.mcp.servers.";
+            };
+            permissions = {
+              allow = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = "Tool patterns appended to the permissions allow list.";
+              };
+              deny = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = "Tool patterns appended to the permissions deny list.";
+              };
+              ask = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = "Tool patterns appended to the permissions ask list.";
+              };
+            };
+            sandbox = {
+              allowedDomains = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = "Network domains to add to the sandbox allowlist.";
+              };
+              allowUnixSockets = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = "Unix socket paths to add to the sandbox allowlist.";
+              };
+              allowRead = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = "Filesystem paths to add to the sandbox read allowlist.";
+              };
+              allowWrite = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = "Filesystem paths to add to the sandbox write allowlist.";
+              };
+            };
+            instructions = {
+              category = mkOption {
+                type = types.str;
+                default = "";
+                description = "Section heading (## <category>) in ~/.claude/CLAUDE.md. Bundles sharing a category are grouped.";
+              };
+              items = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = "Instruction lines rendered as a bulleted list under the category heading.";
+              };
+            };
+          };
+        }
+      );
+      default = { };
+      description = "MCP server bundles grouping server config, permissions, sandbox rules, and CLAUDE.md instructions.";
+    };
   };
 
   config = {
+    dotfiles.claude.mcpServerBundles = {
+      fetch = {
+        servers.fetch = {
+          type = "stdio";
+          command = "${pkgs.mcp-fetch}/bin/mcp-fetch";
+          args = [
+            "--rules-file"
+            "${fetchRules}"
+            "--log-file"
+            "${config.xdg.stateHome}/mcp-fetch/fetch.log"
+          ];
+        };
+        permissions.allow = [ "mcp__fetch__fetch" ];
+        permissions.deny = [
+          "WebSearch"
+          "WebFetch"
+        ];
+        instructions = {
+          category = "Web Search & Fetching";
+          items = [
+            "Use `mcp__fetch__fetch` for fetching known URLs and web page content."
+          ];
+        };
+      };
+
+      git = {
+        servers.git = {
+          type = "stdio";
+          command = "${gitWrapper}";
+          args = [
+            "--allow-dir"
+            "/tmp/git"
+            "--allow-dir"
+            "/private/tmp/git"
+          ];
+        };
+        permissions.allow = [ "mcp__git__git_clone" ];
+        sandbox.allowWrite = [
+          "/tmp/git"
+          "/private/tmp/git"
+        ];
+        instructions = {
+          category = "Web Search & Fetching";
+          items = [
+            "Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there."
+          ];
+        };
+      };
+
+      kagi = {
+        servers.kagi = {
+          type = "stdio";
+          command = "${kagiWrapper}";
+        };
+        permissions.allow = [ "mcp__kagi__kagi_search_fetch" ];
+        permissions.deny = [ "mcp__kagi__kagi_summarizer" ];
+        instructions = {
+          category = "Web Search & Fetching";
+          items = [
+            "Use `mcp__kagi__kagi_search_fetch` for web searches."
+          ];
+        };
+      };
+
+      kubernetes = {
+        servers.kubernetes = {
+          type = "stdio";
+          command = "${pkgs.mcp-kubernetes}/bin/mcp-kubernetes";
+          args = [
+            "--access-level"
+            "readonly"
+          ];
+          env = {
+            KUBERNETES_MCP_COLLECT_TELEMETRY = "false";
+          };
+        };
+        permissions.allow = [ "mcp__kubernetes__call_kubectl" ];
+        instructions = {
+          category = "Kubernetes";
+          items = [
+            "Use `mcp__kubernetes__call_kubectl` for kubectl operations. Do not run kubectl directly."
+          ];
+        };
+      };
+
+      nixos = {
+        servers.nixos = {
+          type = "stdio";
+          command = "${pkgs.mcp-nixos}/bin/mcp-nixos";
+        };
+        permissions.allow = [
+          "mcp__nixos__nix"
+          "mcp__nixos__nix_versions"
+        ];
+        instructions = {
+          category = "Nix";
+          items = [
+            "Use `mcp__nixos__nix` for Nix package searches, NixOS/home-manager/nix-darwin option lookups, and FlakeHub queries."
+            "Use `mcp__nixos__nix_versions` for package version history and channel availability."
+          ];
+        };
+      };
+
+      github = {
+        servers.github = {
+          type = "http";
+          url = "https://api.githubcopilot.com/mcp/readonly";
+          headers = {
+            Authorization = "Bearer \${GITHUB_PERSONAL_ACCESS_TOKEN}";
+          };
+        };
+        permissions.allow = [
+          "mcp__github__get_commit"
+          "mcp__github__get_copilot_job_status"
+          "mcp__github__get_label"
+          "mcp__github__get_latest_release"
+          "mcp__github__get_me"
+          "mcp__github__get_release_by_tag"
+          "mcp__github__get_tag"
+          "mcp__github__get_team_members"
+          "mcp__github__get_teams"
+          "mcp__github__issue_read"
+          "mcp__github__list_branches"
+          "mcp__github__list_commits"
+          "mcp__github__list_issue_types"
+          "mcp__github__list_issues"
+          "mcp__github__list_pull_requests"
+          "mcp__github__list_releases"
+          "mcp__github__list_tags"
+          "mcp__github__pull_request_read"
+          "mcp__github__search_code"
+          "mcp__github__search_issues"
+          "mcp__github__search_pull_requests"
+          "mcp__github__search_repositories"
+          "mcp__github__search_users"
+        ];
+        permissions.deny = [
+          "mcp__github__get_file_contents"
+          # GitHub MCP: deny all write/mutating tools.
+          # These are blocked by the MCP config and primarily denied here as a usage hint.
+          "mcp__github__actions_run_trigger"
+          "mcp__github__add_comment_to_pending_review"
+          "mcp__github__add_issue_comment"
+          "mcp__github__add_reply_to_pull_request_comment"
+          "mcp__github__assign_copilot_to_issue"
+          "mcp__github__create_branch"
+          "mcp__github__create_gist"
+          "mcp__github__create_or_update_file"
+          "mcp__github__create_pull_request"
+          "mcp__github__create_pull_request_with_copilot"
+          "mcp__github__create_repository"
+          "mcp__github__delete_file"
+          "mcp__github__dismiss_notification"
+          "mcp__github__fork_repository"
+          "mcp__github__issue_write"
+          "mcp__github__label_write"
+          "mcp__github__manage_notification_subscription"
+          "mcp__github__manage_repository_notification_subscription"
+          "mcp__github__mark_all_notifications_read"
+          "mcp__github__merge_pull_request"
+          "mcp__github__projects_write"
+          "mcp__github__pull_request_review_write"
+          "mcp__github__push_files"
+          "mcp__github__request_copilot_review"
+          "mcp__github__star_repository"
+          "mcp__github__sub_issue_write"
+          "mcp__github__unstar_repository"
+          "mcp__github__update_gist"
+          "mcp__github__update_pull_request"
+          "mcp__github__update_pull_request_branch"
+          "mcp__github__run_secret_scanning"
+        ];
+        instructions = {
+          category = "Web Search & Fetching";
+          items = [
+            "Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)"
+          ];
+        };
+      };
+
+      argocd = {
+        servers.argocd = {
+          type = "stdio";
+          command = "${argocdWrapper}";
+          args = [ "stdio" ];
+        };
+        permissions.allow = [
+          "mcp__argocd__list_clusters"
+          "mcp__argocd__list_applications"
+          "mcp__argocd__get_application"
+          "mcp__argocd__get_application_resource_tree"
+          "mcp__argocd__get_application_managed_resources"
+          "mcp__argocd__get_application_workload_logs"
+          "mcp__argocd__get_resource_events"
+          "mcp__argocd__get_resource_actions"
+          "mcp__argocd__get_application_events"
+          "mcp__argocd__get_resources"
+        ];
+        permissions.ask = [
+          "mcp__argocd__create_application"
+          "mcp__argocd__update_application"
+          "mcp__argocd__delete_application"
+          "mcp__argocd__sync_application"
+          "mcp__argocd__run_resource_action"
+        ];
+        instructions = {
+          category = "Kubernetes";
+          items = [
+            "Use the `mcp__argocd__*` tools to interact with Argo CD. Do not use the `argocd` CLI directly."
+          ];
+        };
+      };
+    };
+
     programs = {
       mcp = {
         enable = true;
-        servers = injectCaEnv (
-          lib.recursiveUpdate {
-            fetch = {
-              type = "stdio";
-              command = "${pkgs.mcp-fetch}/bin/mcp-fetch";
-              args = [
-                "--rules-file"
-                "${fetchRules}"
-                "--log-file"
-                "${config.xdg.stateHome}/mcp-fetch/fetch.log"
-              ];
-            };
-            git = {
-              type = "stdio";
-              command = "${gitWrapper}";
-              args = [
-                "--allow-dir"
-                "/tmp/git"
-                "--allow-dir"
-                "/private/tmp/git"
-              ];
-            };
-            kagi = {
-              type = "stdio";
-              command = "${kagiWrapper}";
-            };
-            kubernetes = {
-              type = "stdio";
-              command = "${pkgs.mcp-kubernetes}/bin/mcp-kubernetes";
-              args = [
-                "--access-level"
-                "readonly"
-              ];
-              env = {
-                KUBERNETES_MCP_COLLECT_TELEMETRY = "false";
-              };
-            };
-            nixos = {
-              type = "stdio";
-              command = "${pkgs.mcp-nixos}/bin/mcp-nixos";
-            };
-            github = {
-              type = "http";
-              url = "https://api.githubcopilot.com/mcp/readonly";
-              headers = {
-                Authorization = "Bearer \${GITHUB_PERSONAL_ACCESS_TOKEN}";
-              };
-            };
-            argocd = {
-              type = "stdio";
-              command = "${argocdWrapper}";
-              args = [ "stdio" ];
-            };
-          } cfg.extraMcpServers
-        );
+        servers = injectCaEnv (lib.recursiveUpdate bundledServers cfg.extraMcpServers);
       };
 
       claude-code = {
@@ -486,196 +741,114 @@ in
             pr = "";
           };
           permissions = {
-            allow = [
-              "Edit(//tmp/git/**)"
-              "Edit(//private/tmp/git/**)"
-              "mcp__fetch__fetch"
-              "mcp__git__git_clone"
-              "mcp__kagi__kagi_search_fetch"
-              "mcp__github__get_commit"
-              "mcp__github__get_copilot_job_status"
-              "mcp__github__get_label"
-              "mcp__github__get_latest_release"
-              "mcp__github__get_me"
-              "mcp__github__get_release_by_tag"
-              "mcp__github__get_tag"
-              "mcp__github__get_team_members"
-              "mcp__github__get_teams"
-              "mcp__github__issue_read"
-              "mcp__github__list_branches"
-              "mcp__github__list_commits"
-              "mcp__github__list_issue_types"
-              "mcp__github__list_issues"
-              "mcp__github__list_pull_requests"
-              "mcp__github__list_releases"
-              "mcp__github__list_tags"
-              "mcp__github__pull_request_read"
-              "mcp__github__search_code"
-              "mcp__github__search_issues"
-              "mcp__github__search_pull_requests"
-              "mcp__github__search_repositories"
-              "mcp__github__search_users"
-              "mcp__kubernetes__call_kubectl"
-              "mcp__nixos__nix"
-              "mcp__nixos__nix_versions"
+            allow =
+              [
+                "Edit(//tmp/git/**)"
+                "Edit(//private/tmp/git/**)"
+              ]
+              ++ bundledAllow
+              ++ cfg.extraPermissions.allow;
+            deny =
+              [
+                # Key material & certificates
+                "Read(//**/*.pem)"
+                "Read(//**/*.key)"
+                "Read(//**/*.p12)"
+                "Read(//**/*.pfx)"
+                "Read(//**/*.jks)"
+                "Read(//**/*.asc)"
+                "Read(//**/*.keystore)"
+                "Read(//**/*.kdbx)"
+                "Read(//**/wallet.dat)"
+                "Read(//**/keystore/**)"
+                "Read(//**/.ssh/**)"
+                "Read(//**/.gnupg/**)"
 
-              # ArgoCD (read-only operations)
-              "mcp__argocd__list_clusters"
-              "mcp__argocd__list_applications"
-              "mcp__argocd__get_application"
-              "mcp__argocd__get_application_resource_tree"
-              "mcp__argocd__get_application_managed_resources"
-              "mcp__argocd__get_application_workload_logs"
-              "mcp__argocd__get_resource_events"
-              "mcp__argocd__get_resource_actions"
-              "mcp__argocd__get_application_events"
-              "mcp__argocd__get_resources"
-            ]
-            ++ cfg.extraPermissions.allow;
-            deny = [
-              # Key material & certificates
-              "Read(//**/*.pem)"
-              "Read(//**/*.key)"
-              "Read(//**/*.p12)"
-              "Read(//**/*.pfx)"
-              "Read(//**/*.jks)"
-              "Read(//**/*.asc)"
-              "Read(//**/*.keystore)"
-              "Read(//**/*.kdbx)"
-              "Read(//**/wallet.dat)"
-              "Read(//**/keystore/**)"
-              "Read(//**/.ssh/**)"
-              "Read(//**/.gnupg/**)"
+                # Generic secrets
+                "Read(//**/.env)"
+                "Read(//**/.env.*)"
+                "Read(//**/.secrets/**)"
+                "Read(//**/.git-credentials)"
+                "Read(//**/git/credentials)"
+                "Read(//**/.netrc)"
+                "Read(//**/.curlrc)"
+                "Read(//**/.wgetrc)"
+                "Read(//**/.password-store/**)"
 
-              # Generic secrets
-              "Read(//**/.env)"
-              "Read(//**/.env.*)"
-              "Read(//**/.secrets/**)"
-              "Read(//**/.git-credentials)"
-              "Read(//**/git/credentials)"
-              "Read(//**/.netrc)"
-              "Read(//**/.curlrc)"
-              "Read(//**/.wgetrc)"
-              "Read(//**/.password-store/**)"
+                # Cloud credentials
+                "Read(//**/.aws/credentials)"
+                "Read(//**/.aws/config)"
+                "Read(//**/.aws/sso/**)"
+                "Read(//**/.azure/**)"
+                "Read(//**/.config/gcloud/**)"
+                "Read(//**/.config/hcloud/config.json)"
+                "Read(//**/.snyk)"
+                "Read(//**/.wrangler/**)"
 
-              # Cloud credentials
-              "Read(//**/.aws/credentials)"
-              "Read(//**/.aws/config)"
-              "Read(//**/.aws/sso/**)"
-              "Read(//**/.azure/**)"
-              "Read(//**/.config/gcloud/**)"
-              "Read(//**/.config/hcloud/config.json)"
-              "Read(//**/.snyk)"
-              "Read(//**/.wrangler/**)"
+                # Container & Kubernetes
+                "Read(//**/.docker/config.json)"
+                "Read(//**/.docker/certs.d/**)"
+                "Read(//**/.config/containers/auth.json)"
+                "Read(//**/.kube/config)"
+                "Read(//**/.kube/config*)"
+                "Read(//**/.talos/**)"
+                "Read(//**/.cosign/**)"
+                "Read(//**/.helm/repository/repositories.yaml)"
 
-              # Container & Kubernetes
-              "Read(//**/.docker/config.json)"
-              "Read(//**/.docker/certs.d/**)"
-              "Read(//**/.config/containers/auth.json)"
-              "Read(//**/.kube/config)"
-              "Read(//**/.kube/config*)"
-              "Read(//**/.talos/**)"
-              "Read(//**/.cosign/**)"
-              "Read(//**/.helm/repository/repositories.yaml)"
+                # Secret managers & encryption
+                "Read(//**/.doppler/**)"
+                "Read(//**/age/keys.txt)"
+                "Read(//**/rclone.conf)"
 
-              # Secret managers & encryption
-              "Read(//**/.doppler/**)"
-              "Read(//**/age/keys.txt)"
-              "Read(//**/rclone.conf)"
+                # IaC state & credentials
+                "Read(//**/credentials.tfrc.json)"
+                "Read(//**/.terraformrc)"
+                "Read(//**/.terraform.d/credentials.tfrc.json)"
+                "Read(//**/*.tfstate)"
+                "Read(//**/*.tfstate.*)"
+                "Read(//**/.pulumi/credentials.json)"
 
-              # IaC state & credentials
-              "Read(//**/credentials.tfrc.json)"
-              "Read(//**/.terraformrc)"
-              "Read(//**/.terraform.d/credentials.tfrc.json)"
-              "Read(//**/*.tfstate)"
-              "Read(//**/*.tfstate.*)"
-              "Read(//**/.pulumi/credentials.json)"
+                # CI/CD & deployment tokens
+                "Read(//**/.config/gh/hosts.yml)"
+                "Read(//**/.spacelift/**)"
+                "Read(//**/.jira.d/config.yml)"
 
-              # CI/CD & deployment tokens
-              "Read(//**/.config/gh/hosts.yml)"
-              "Read(//**/.spacelift/**)"
-              "Read(//**/.jira.d/config.yml)"
+                # Package manager credentials
+                "Read(//**/.npmrc)"
+                "Read(//**/.pypirc)"
+                "Read(//**/.cargo/credentials.toml)"
+                "Read(//**/.gem/credentials)"
+                "Read(//**/.m2/settings.xml)"
+                "Read(//**/.m2/settings-security.xml)"
+                "Read(//**/.gradle/gradle.properties)"
+                "Read(//**/.composer/auth.json)"
+                "Read(//**/.config/poetry/auth.toml)"
+                "Read(//**/.bunfig.toml)"
 
-              # Package manager credentials
-              "Read(//**/.npmrc)"
-              "Read(//**/.pypirc)"
-              "Read(//**/.cargo/credentials.toml)"
-              "Read(//**/.gem/credentials)"
-              "Read(//**/.m2/settings.xml)"
-              "Read(//**/.m2/settings-security.xml)"
-              "Read(//**/.gradle/gradle.properties)"
-              "Read(//**/.composer/auth.json)"
-              "Read(//**/.config/poetry/auth.toml)"
-              "Read(//**/.bunfig.toml)"
-
-              # Claude Code credentials
-              "Read(//**/.claude/.credentials.json)"
-
-              # Usage hints
-              "WebSearch"
-              "WebFetch"
-              "mcp__kagi__kagi_summarizer"
-              "mcp__github__get_file_contents"
-
-              # GitHub MCP: deny all write/mutating tools.
-              # These are blocked by the MCP config and primarily denied here as a usage hint.
-              "mcp__github__actions_run_trigger"
-              "mcp__github__add_comment_to_pending_review"
-              "mcp__github__add_issue_comment"
-              "mcp__github__add_reply_to_pull_request_comment"
-              "mcp__github__assign_copilot_to_issue"
-              "mcp__github__create_branch"
-              "mcp__github__create_gist"
-              "mcp__github__create_or_update_file"
-              "mcp__github__create_pull_request"
-              "mcp__github__create_pull_request_with_copilot"
-              "mcp__github__create_repository"
-              "mcp__github__delete_file"
-              "mcp__github__dismiss_notification"
-              "mcp__github__fork_repository"
-              "mcp__github__issue_write"
-              "mcp__github__label_write"
-              "mcp__github__manage_notification_subscription"
-              "mcp__github__manage_repository_notification_subscription"
-              "mcp__github__mark_all_notifications_read"
-              "mcp__github__merge_pull_request"
-              "mcp__github__projects_write"
-              "mcp__github__pull_request_review_write"
-              "mcp__github__push_files"
-              "mcp__github__request_copilot_review"
-              "mcp__github__star_repository"
-              "mcp__github__sub_issue_write"
-              "mcp__github__unstar_repository"
-              "mcp__github__update_gist"
-              "mcp__github__update_pull_request"
-              "mcp__github__update_pull_request_branch"
-              "mcp__github__run_secret_scanning"
-            ]
-            ++ cfg.extraPermissions.deny;
-            ask = [
-              "Bash(git push)"
-              "Bash(git push *)"
-              "Bash(git reset)"
-              "Bash(git reset *)"
-              "Bash(git clean *)"
-              "Bash(git restore *)"
-              "Bash(git checkout *)"
-              "Bash(git switch *)"
-              "Bash(git rebase)"
-              "Bash(git rebase *)"
-              "Bash(git merge *)"
-              "Bash(git tag *)"
-              "Bash(git rm *)"
-              "Bash(git remote *)"
-
-              # ArgoCD (mutating operations)
-              "mcp__argocd__create_application"
-              "mcp__argocd__update_application"
-              "mcp__argocd__delete_application"
-              "mcp__argocd__sync_application"
-              "mcp__argocd__run_resource_action"
-            ]
-            ++ cfg.extraPermissions.ask;
+                # Claude Code credentials
+                "Read(//**/.claude/.credentials.json)"
+              ]
+              ++ bundledDeny
+              ++ cfg.extraPermissions.deny;
+            ask =
+              [
+                "Bash(git push)"
+                "Bash(git push *)"
+                "Bash(git reset)"
+                "Bash(git reset *)"
+                "Bash(git clean *)"
+                "Bash(git restore *)"
+                "Bash(git checkout *)"
+                "Bash(git switch *)"
+                "Bash(git rebase)"
+                "Bash(git rebase *)"
+                "Bash(git merge *)"
+                "Bash(git tag *)"
+                "Bash(git rm *)"
+                "Bash(git remote *)"
+              ]
+              ++ bundledAsk
+              ++ cfg.extraPermissions.ask;
           };
           statusLine = {
             type = "command";
@@ -695,32 +868,36 @@ in
             enableWeakerNetworkIsolation = true;
             network = {
               allowLocalBinding = true;
-              allowUnixSockets = [
-                "/nix/var/nix/daemon-socket/socket"
-                "/private/tmp/tmux-501/default"
-              ];
-              allowedDomains = [
-                "jacobcolvin.com"
-                "registry.dagger.io"
-                "api.dagger.cloud"
-                "auth.dagger.cloud"
-                "proxy.golang.org"
-                "sum.golang.org"
-              ];
+              allowUnixSockets =
+                [
+                  "/nix/var/nix/daemon-socket/socket"
+                  "/private/tmp/tmux-501/default"
+                ]
+                ++ bundledSockets;
+              allowedDomains =
+                [
+                  "jacobcolvin.com"
+                  "registry.dagger.io"
+                  "api.dagger.cloud"
+                  "auth.dagger.cloud"
+                  "proxy.golang.org"
+                  "sum.golang.org"
+                ]
+                ++ bundledDomains;
             };
             filesystem = {
               allowRead = [
                 "/nix/store"
-              ];
-              allowWrite = [
-                "/tmp/git"
-                "/private/tmp/git"
-                "~/go/pkg"
-                "~/Library/Application Support/rtk"
-                "~/Library/Caches"
-                "~/.cache/nix"
-                "~/.local/state/workmux"
-              ];
+              ] ++ bundledReadPaths;
+              allowWrite =
+                [
+                  "~/go/pkg"
+                  "~/Library/Application Support/rtk"
+                  "~/Library/Caches"
+                  "~/.cache/nix"
+                  "~/.local/state/workmux"
+                ]
+                ++ bundledWritePaths;
             };
           };
           hooks = {
@@ -834,36 +1011,17 @@ in
         pkgs.rtk-bin
       ];
 
-      file.".claude/CLAUDE.md".text = ''
-        # Global Instructions
+      file.".claude/CLAUDE.md".text =
+        ''
+          # Global Instructions
 
-        ## Web Search & Fetching
+          ## Writing Style
 
-        - Use `mcp__kagi__kagi_search_fetch` for web searches.
-        - Use `mcp__fetch__fetch` for fetching known URLs and web page content.
-        - Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)
-        - Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there.
-
-        Remember: Do research, don't guess.
-
-        ## Writing Style
-
-        - Keep responses to plain ASCII text.
-        - Acknowledge complexity and mixed feelings when they exist.
-        - Your code speaks for itself. Enumeration of content is redundant. Focus instead on the how and why.
-
-        When writing documentation, you MUST review your output against the above rules.
-
-        ## Kubernetes
-
-        - Use `mcp__kubernetes__call_kubectl` for kubectl operations. Do not run kubectl directly.
-        - Use the `mcp__argocd__*` tools to interact with Argo CD. Do not use the `argocd` CLI directly.
-
-        ## Nix
-
-        - Use `mcp__nixos__nix` for Nix package searches, NixOS/home-manager/nix-darwin option lookups, and FlakeHub queries.
-        - Use `mcp__nixos__nix_versions` for package version history and channel availability.
-      '';
+          - Keep responses to plain ASCII text.
+          - Acknowledge complexity and mixed feelings when they exist.
+          - Your code speaks for itself. Enumeration of content is redundant. Focus instead on the how and why.
+        ''
+        + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n";
 
       sessionVariables = {
         DISABLE_AUTOUPDATER = "1";
