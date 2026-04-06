@@ -201,8 +201,10 @@ let
   };
 
   fetchRules = (pkgs.formats.json { }).generate "mcp-fetch-rules.json" (
-    {
+    lib.optionalAttrs cfg.fetchAllowlist {
       reason = "URL not in allowlist. If you need to fetch this content, ask the user to add an entry to the allowlist. Present the user with both the URL and your justification.";
+    }
+    // {
       deny = map cleanRule (
         [
           {
@@ -257,7 +259,7 @@ let
         ++ cfg.extraFetchRules.deny
       );
     }
-    // {
+    // lib.optionalAttrs cfg.fetchAllowlist {
       allow = map cleanAttrs (
         [
           { host = "(.*\\.)?adguard\\.com"; }
@@ -497,6 +499,12 @@ in
       };
       default = { };
       description = "Extra mcp-fetch URL filtering rules merged with the base deny and allow lists.";
+    };
+
+    fetchAllowlist = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Whether to enforce the mcp-fetch URL allowlist. When false, all URLs are allowed unless explicitly denied.";
     };
 
     extraAgents = mkOption {
