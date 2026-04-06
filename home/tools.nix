@@ -1004,5 +1004,6 @@ in
     lefthook
     tfswitch
     devbox
+    angle-grinder
   ]);
 }
