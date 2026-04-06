@@ -34,6 +34,18 @@ var (
 	// with a dash.
 	ErrDeniedBranch = errors.New("branch must not start with '-'")
 
+	// ErrDeniedRef is returned when the ref name starts
+	// with a dash.
+	ErrDeniedRef = errors.New("ref must not start with '-'")
+
+	// ErrRefConflict is returned when both branch and ref
+	// are set.
+	ErrRefConflict = errors.New("branch and ref are mutually exclusive")
+
+	// ErrDeniedSparsePath is returned when a sparse checkout
+	// path is invalid.
+	ErrDeniedSparsePath = errors.New("sparse path is invalid")
+
 	// ErrDeniedDestPrefix is returned when the dest path starts
 	// with a dash.
 	ErrDeniedDestPrefix = errors.New("dest must not start with '-'")
@@ -64,11 +76,14 @@ var (
 
 // CloneInput is the JSON input schema for the git_clone tool.
 type CloneInput struct {
-	URL          string `json:"url"                    jsonschema:"Repository URL to clone"`
-	Dest         string `json:"dest"                   jsonschema:"Destination directory path"`
-	Branch       string `json:"branch,omitzero"        jsonschema:"Branch to clone"`
-	Depth        int    `json:"depth,omitzero"         jsonschema:"Shallow clone depth"`
-	SingleBranch bool   `json:"single_branch,omitzero" jsonschema:"Clone only the specified branch"`
+	URL          string   `json:"url"                    jsonschema:"Repository URL to clone"`
+	Dest         string   `json:"dest"                   jsonschema:"Destination directory path"`
+	Branch       string   `json:"branch,omitzero"        jsonschema:"Branch to clone"`
+	Ref          string   `json:"ref,omitzero"           jsonschema:"Branch or tag to check out (alias for branch)"`
+	Depth        int      `json:"depth,omitzero"         jsonschema:"Shallow clone depth"`
+	SingleBranch bool     `json:"single_branch,omitzero" jsonschema:"Clone only the specified branch"`
+	Sparse       bool     `json:"sparse,omitzero"        jsonschema:"Enable sparse checkout (only root files unless sparse_paths is set)"`
+	SparsePaths  []string `json:"sparse_paths,omitzero"  jsonschema:"Paths for sparse checkout (implies sparse)"`
 }
 
 // cloneHandler implements the git_clone tool handler.
@@ -103,6 +118,22 @@ func (h *cloneHandler) handle(
 
 	if input.Branch != "" && strings.HasPrefix(input.Branch, "-") {
 		return toolError(ErrDeniedBranch), nil, nil
+	}
+
+	if input.Ref != "" && strings.HasPrefix(input.Ref, "-") {
+		return toolError(ErrDeniedRef), nil, nil
+	}
+
+	if input.Ref != "" && input.Branch != "" {
+		return toolError(ErrRefConflict), nil, nil
+	}
+
+	if input.Ref != "" {
+		input.Branch = input.Ref
+	}
+
+	if err := checkSparsePaths(input.SparsePaths); err != nil {
+		return toolError(err), nil, nil
 	}
 
 	destErr := h.checkDest(input.Dest)
@@ -305,11 +336,60 @@ func (h *cloneHandler) clone(ctx context.Context, input CloneInput) (*mcp.CallTo
 		return toolError(fmt.Errorf("%w: %w", ErrClone, err)), nil, nil
 	}
 
+	if len(input.SparsePaths) > 0 {
+		scArgs := []string{"-C", input.Dest, "sparse-checkout", "set"}
+		scArgs = append(scArgs, input.SparsePaths...)
+
+		//nolint:gosec // G204: sparse paths are validated by checkSparsePaths.
+		scCmd := exec.CommandContext(ctx, "git", scArgs...)
+		scCmd.Env = gitEnv()
+		scCmd.Stdout = os.Stdout
+		scCmd.Stderr = os.Stderr
+
+		if scErr := scCmd.Run(); scErr != nil {
+			return toolError(fmt.Errorf("sparse checkout failed: %w", scErr)), nil, nil
+		}
+	}
+
+	msg := fmt.Sprintf("Cloned %s into %s", input.URL, input.Dest)
+	if len(input.SparsePaths) > 0 {
+		msg += fmt.Sprintf(" (sparse: %s)", strings.Join(input.SparsePaths, ", "))
+	}
+
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{
-			Text: fmt.Sprintf("Cloned %s into %s", input.URL, input.Dest),
-		}},
+		Content: []mcp.Content{&mcp.TextContent{Text: msg}},
 	}, nil, nil
+}
+
+// checkSparsePaths validates each path in paths for use with
+// git sparse-checkout. Empty paths, dash prefixes, absolute
+// paths, ".." segments, and control characters are rejected.
+func checkSparsePaths(paths []string) error {
+	for _, p := range paths {
+		if p == "" {
+			return fmt.Errorf("%w: empty path", ErrDeniedSparsePath)
+		}
+
+		if strings.HasPrefix(p, "-") {
+			return fmt.Errorf("%w: %q starts with '-'", ErrDeniedSparsePath, p)
+		}
+
+		if strings.HasPrefix(p, "/") {
+			return fmt.Errorf("%w: %q is absolute", ErrDeniedSparsePath, p)
+		}
+
+		if strings.ContainsAny(p, "\x00\n\r") {
+			return fmt.Errorf("%w: %q contains control characters", ErrDeniedSparsePath, p)
+		}
+
+		for _, seg := range strings.Split(p, "/") {
+			if seg == ".." {
+				return fmt.Errorf("%w: %q contains '..'", ErrDeniedSparsePath, p)
+			}
+		}
+	}
+
+	return nil
 }
 
 // buildCloneArgs converts a [CloneInput] into the argument list for git clone.
@@ -326,6 +406,14 @@ func buildCloneArgs(input CloneInput) []string {
 
 	if input.SingleBranch {
 		args = append(args, "--single-branch")
+	}
+
+	if input.Sparse || len(input.SparsePaths) > 0 {
+		args = append(args, "--sparse")
+
+		if input.Depth == 0 {
+			args = append(args, "--filter=blob:none")
+		}
 	}
 
 	args = append(args, "--", input.URL, input.Dest)

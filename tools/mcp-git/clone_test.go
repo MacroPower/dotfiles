@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -51,6 +52,33 @@ func TestBuildCloneArgs(t *testing.T) {
 			},
 			want: []string{
 				"clone", "-q", "--depth", "1", "--branch", "dev", "--single-branch",
+				"--", "https://github.com/a/b", "/tmp/b",
+			},
+		},
+		"with sparse bool": {
+			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/b", Sparse: true},
+			want: []string{
+				"clone", "-q", "--sparse", "--filter=blob:none",
+				"--", "https://github.com/a/b", "/tmp/b",
+			},
+		},
+		"with sparse paths": {
+			input: CloneInput{
+				URL: "https://github.com/a/b", Dest: "/tmp/b",
+				SparsePaths: []string{"src", "docs"},
+			},
+			want: []string{
+				"clone", "-q", "--sparse", "--filter=blob:none",
+				"--", "https://github.com/a/b", "/tmp/b",
+			},
+		},
+		"sparse with depth": {
+			input: CloneInput{
+				URL: "https://github.com/a/b", Dest: "/tmp/b",
+				Sparse: true, Depth: 1,
+			},
+			want: []string{
+				"clone", "-q", "--depth", "1", "--sparse",
 				"--", "https://github.com/a/b", "/tmp/b",
 			},
 		},
@@ -152,6 +180,30 @@ func TestHandleValidation(t *testing.T) {
 		"missing dest": {
 			input: CloneInput{URL: "https://github.com/a/b"},
 			want:  ErrMissingDest.Error(),
+		},
+		"denied ref": {
+			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/x", Ref: "--upload-pack=evil"},
+			want:  ErrDeniedRef.Error(),
+		},
+		"ref and branch conflict": {
+			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/x", Branch: "main", Ref: "v1"},
+			want:  ErrRefConflict.Error(),
+		},
+		"sparse path with dash": {
+			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/x", SparsePaths: []string{"-evil"}},
+			want:  "sparse path is invalid: \"-evil\" starts with '-'",
+		},
+		"sparse path with dotdot": {
+			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/x", SparsePaths: []string{"../etc"}},
+			want:  "sparse path is invalid: \"../etc\" contains '..'",
+		},
+		"sparse path absolute": {
+			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/x", SparsePaths: []string{"/etc/passwd"}},
+			want:  "sparse path is invalid: \"/etc/passwd\" is absolute",
+		},
+		"sparse path empty string": {
+			input: CloneInput{URL: "https://github.com/a/b", Dest: "/tmp/x", SparsePaths: []string{""}},
+			want:  "sparse path is invalid: empty path",
 		},
 	}
 
@@ -342,6 +394,66 @@ func TestCheckDestSymlink(t *testing.T) {
 	require.NoError(t, h.checkDest(filepath.Join(allowDir, "repo")))
 }
 
+func TestCheckSparsePaths(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		paths []string
+		err   error
+	}{
+		"nil":            {},
+		"empty slice":    {paths: []string{}},
+		"valid single":   {paths: []string{"src"}},
+		"valid nested":   {paths: []string{"src/pkg/foo"}},
+		"valid multiple": {paths: []string{"src", "docs"}},
+		"dash prefix": {
+			paths: []string{"-x"},
+			err:   ErrDeniedSparsePath,
+		},
+		"dotdot": {
+			paths: []string{"a/../b"},
+			err:   ErrDeniedSparsePath,
+		},
+		"absolute": {
+			paths: []string{"/x"},
+			err:   ErrDeniedSparsePath,
+		},
+		"empty string": {
+			paths: []string{""},
+			err:   ErrDeniedSparsePath,
+		},
+		"valid then invalid": {
+			paths: []string{"src", ""},
+			err:   ErrDeniedSparsePath,
+		},
+		"null byte": {
+			paths: []string{"src\x00evil"},
+			err:   ErrDeniedSparsePath,
+		},
+		"newline": {
+			paths: []string{"src\nevil"},
+			err:   ErrDeniedSparsePath,
+		},
+		"carriage return": {
+			paths: []string{"src\revil"},
+			err:   ErrDeniedSparsePath,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			err := checkSparsePaths(tt.paths)
+			if tt.err != nil {
+				require.ErrorIs(t, err, tt.err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestDeniedBranch(t *testing.T) {
 	t.Parallel()
 
@@ -425,6 +537,108 @@ func TestHandleCloneWithToken(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, result.IsError)
+	assert.Contains(t, resultText(t, result), "Pulled")
+}
+
+func TestHandleCloneRef(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+
+	// Create a tag in the bare repo via a temporary clone.
+	tmp := filepath.Join(t.TempDir(), "tag-work")
+
+	for _, args := range [][]string{
+		{"git", "clone", bare, tmp},
+		{"git", "-C", tmp, "config", "user.email", "test@test.com"},
+		{"git", "-C", tmp, "config", "user.name", "Test"},
+		{"git", "-C", tmp, "tag", "v1.0.0"},
+		{"git", "-C", tmp, "push", "--tags"},
+	} {
+		cmd := exec.CommandContext(t.Context(), args[0], args[1:]...) //nolint:gosec // test helper
+		cmd.Stderr = os.Stderr
+		require.NoError(t, cmd.Run(), "setup command failed: %v", args)
+	}
+
+	h := &cloneHandler{allowFileURLs: true}
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	result, _, err := h.handle(t.Context(), nil, CloneInput{
+		URL:  bare,
+		Dest: dest,
+		Ref:  "v1.0.0",
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+	assert.Contains(t, resultText(t, result), "Cloned")
+
+	// Verify HEAD is at the tagged commit.
+	cmd := exec.CommandContext(t.Context(), "git", "-C", dest, "describe", "--tags", "--exact-match", "HEAD")
+	out, descErr := cmd.Output()
+	require.NoError(t, descErr)
+	assert.Equal(t, "v1.0.0", strings.TrimSpace(string(out)))
+}
+
+func TestHandleCloneSparse(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+
+	// Add files in src/ and docs/ directories.
+	tmp := filepath.Join(t.TempDir(), "sparse-work")
+
+	for _, args := range [][]string{
+		{"git", "clone", bare, tmp},
+		{"git", "-C", tmp, "config", "user.email", "test@test.com"},
+		{"git", "-C", tmp, "config", "user.name", "Test"},
+	} {
+		cmd := exec.CommandContext(t.Context(), args[0], args[1:]...) //nolint:gosec // test helper
+		cmd.Stderr = os.Stderr
+		require.NoError(t, cmd.Run(), "setup command failed: %v", args)
+	}
+
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "src"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "docs"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "src", "main.go"), []byte("package main"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "docs", "README"), []byte("docs"), 0o644))
+
+	for _, args := range [][]string{
+		{"git", "-C", tmp, "add", "."},
+		{"git", "-C", tmp, "commit", "-m", "add dirs"},
+		{"git", "-C", tmp, "push"},
+	} {
+		cmd := exec.CommandContext(t.Context(), args[0], args[1:]...) //nolint:gosec // test helper
+		cmd.Stderr = os.Stderr
+		require.NoError(t, cmd.Run(), "setup command failed: %v", args)
+	}
+
+	h := &cloneHandler{allowFileURLs: true}
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	// Clone with sparse checkout.
+	result, _, err := h.handle(t.Context(), nil, CloneInput{
+		URL:         bare,
+		Dest:        dest,
+		SparsePaths: []string{"src"},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+	assert.Contains(t, resultText(t, result), "sparse: src")
+
+	// src/ should exist, docs/ should not.
+	_, statErr := os.Stat(filepath.Join(dest, "src", "main.go"))
+	require.NoError(t, statErr, "src/main.go should exist")
+
+	_, statErr = os.Stat(filepath.Join(dest, "docs", "README"))
+	require.ErrorIs(t, statErr, os.ErrNotExist, "docs/README should not exist in sparse checkout")
+
+	// Pull should still work.
+	result, _, err = h.handle(t.Context(), nil, CloneInput{
+		URL:  bare,
+		Dest: dest,
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
 	assert.Contains(t, resultText(t, result), "Pulled")
 }
 
