@@ -53,3 +53,4 @@ tasks:
       - bash pkgs/mcp-kubernetes-update.sh
       - bash pkgs/radar-update.sh
       - bash pkgs/mcp-argocd-update.sh
+      - bash pkgs/claude-powerline-update.sh

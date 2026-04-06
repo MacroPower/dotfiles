@@ -7,8 +7,116 @@
 
 let
   inherit (lib) mkOption types;
+  inherit (config.lib.stylix) colors;
   cfg = config.dotfiles.claude;
   skipPerms = cfg.dangerouslySkipPermissions;
+
+  claudePowerlineConfig = builtins.toJSON {
+    theme = "custom";
+    colors.custom = {
+      directory = {
+        bg = "#${colors.base09}";
+        fg = "#${colors.base00}";
+      };
+      git = {
+        bg = "#${colors.base02}";
+        fg = "#${colors.base0E}";
+      };
+      model = {
+        bg = "#${colors.base0B}";
+        fg = "#${colors.base00}";
+      };
+      session = {
+        bg = "#${colors.base01}";
+        fg = "#${colors.base0C}";
+      };
+      block = {
+        bg = "#${colors.base02}";
+        fg = "#${colors.base0D}";
+      };
+      today = {
+        bg = "#${colors.base00}";
+        fg = "#${colors.base0B}";
+      };
+      tmux = {
+        bg = "#${colors.base02}";
+        fg = "#${colors.base0B}";
+      };
+      context = {
+        bg = "#${colors.base03}";
+        fg = "#${colors.base05}";
+      };
+      contextWarning = {
+        bg = "#${colors.base09}";
+        fg = "#${colors.base0A}";
+      };
+      contextCritical = {
+        bg = "#${colors.base08}";
+        fg = "#${colors.base06}";
+      };
+      metrics = {
+        bg = "#${colors.base02}";
+        fg = "#${colors.base05}";
+      };
+      version = {
+        bg = "#${colors.base02}";
+        fg = "#${colors.base04}";
+      };
+      env = {
+        bg = "#${colors.base01}";
+        fg = "#${colors.base0E}";
+      };
+      weekly = {
+        bg = "#${colors.base01}";
+        fg = "#${colors.base0D}";
+      };
+    };
+    display = {
+      style = "powerline";
+      charset = "unicode";
+      colorCompatibility = "auto";
+      autoWrap = true;
+      padding = 1;
+      lines = [
+        {
+          segments = {
+            git = {
+              enabled = true;
+              showRepoName = true;
+            };
+            context = {
+              enabled = true;
+              showPercentageOnly = false;
+              displayStyle = "geometric";
+              autocompactBuffer = 100000;
+            };
+          };
+        }
+        {
+          segments = {
+            block = {
+              enabled = true;
+            };
+            weekly = {
+              enabled = true;
+            };
+          };
+        }
+      ];
+    };
+    budget = {
+      session = {
+        amount = 220000;
+        type = "tokens";
+        warningThreshold = 80;
+      };
+      weekly = {
+        amount = 1100;
+        type = "cost";
+        warningThreshold = 80;
+      };
+    };
+  };
 
   urlMatchOptions = {
     scheme = mkOption {
@@ -852,7 +960,7 @@ in
           };
           statusLine = {
             type = "command";
-            command = "${pkgs.llm-agents.ccstatusline}/bin/ccstatusline";
+            command = "${pkgs.claude-powerline}/bin/claude-powerline";
             padding = 0;
           };
           enabledPlugins = {
@@ -998,7 +1106,7 @@ in
     };
 
     xdg.configFile = {
-      "ccstatusline/settings.json".source = ../configs/ccstatusline/settings.json;
+      "claude-powerline/config.json".text = claudePowerlineConfig;
       "rtk/config.toml".source = rtkConfig;
       "workmux/config.yaml".source = workmuxConfig;
     };

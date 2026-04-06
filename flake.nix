@@ -152,6 +152,7 @@
                 helm-schema = ./pkgs/helm-schema.nix;
                 mcp-kagi = ./pkgs/mcp-kagi.nix;
                 mcp-argocd = ./pkgs/mcp-argocd.nix;
+                claude-powerline = ./pkgs/claude-powerline.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })

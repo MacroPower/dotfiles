@@ -30,6 +30,7 @@ let
     helm-schema = final.callPackage paths.helm-schema { };
     mcp-kagi = final.callPackage paths.mcp-kagi { };
     mcp-argocd = final.callPackage paths.mcp-argocd { };
+    claude-powerline = final.callPackage paths.claude-powerline { };
   };
 
   nurJacobColvinOverlay =
