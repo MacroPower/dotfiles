@@ -149,29 +149,29 @@ let
     };
     splitV = {
       name = "Split vertical";
-      key = "D";
+      key = "v";
       cmd = ''split-window -v -c "#{pane_current_path}"'';
     };
     swapWindowPrev = {
       name = "Swap prev";
-      key = "P";
+      key = "[";
       cmd = "swap-window -t -1 \\; select-window -t -1";
       repeat = true;
     };
     swapWindowNext = {
       name = "Swap next";
-      key = "N";
+      key = "]";
       cmd = "swap-window -t +1 \\; select-window -t +1";
       repeat = true;
     };
     renameWindow = {
       name = "Rename";
-      key = "R";
+      key = "C-r";
       cmd = ''command-prompt -I "#W" "rename-window -- \"%%\""'';
     };
     killWindow = {
       name = "Kill";
-      key = "X";
+      key = "C-x";
       cmd = ''confirm -p "Kill window #W? (y/n)" kill-window'';
     };
 
@@ -189,12 +189,12 @@ let
     };
     layoutH = {
       name = "Horizontal";
-      key = "_";
+      key = "-";
       cmd = "select-layout even-horizontal";
     };
     layoutV = {
       name = "Vertical";
-      key = "v";
+      key = "C-v";
       cmd = "select-layout even-vertical";
     };
 
@@ -249,13 +249,13 @@ let
     };
     swapPanePrev = {
       name = "Swap prev";
-      key = "<";
+      key = "[";
       cmd = "swap-pane -U";
       repeat = true;
     };
     swapPaneNext = {
       name = "Swap next";
-      key = ">";
+      key = "]";
       cmd = "swap-pane -D";
       repeat = true;
     };
@@ -266,17 +266,17 @@ let
     };
     breakPane = {
       name = "Break pane";
-      key = "B";
+      key = "C-b";
       cmd = "break-pane";
     };
     grabPane = {
       name = "Grab/join pane";
-      key = "G";
+      key = "g";
       cmd = ''choose-window "join-pane -h -s \"%%\""'';
     };
     movePane = {
       name = "Send to window";
-      key = "M";
+      key = "m";
       cmd = ''command-prompt -p "send pane to:" "join-pane -h -t \"%%\""'';
     };
     killPane = {
@@ -288,7 +288,7 @@ let
     # Sessions
     seshPicker = {
       name = "Switcher (sesh)";
-      key = "S";
+      key = "s";
       cmd = ''display-popup -E -T " sesh " -w 70% -h 70% tmux-sesh-picker'';
     };
     sessionTree = {
@@ -298,7 +298,7 @@ let
     };
     sessionRename = {
       name = "Rename";
-      key = "$";
+      key = "n";
       cmd = ''command-prompt -I "#S" "rename-session -- \"%%\""'';
     };
     newSession = {
@@ -308,7 +308,7 @@ let
     };
     detach = {
       name = "Detach";
-      key = "Q";
+      key = "q";
       cmd = "detach";
     };
 
@@ -342,7 +342,7 @@ let
     };
     workmuxLast = {
       name = "Last done";
-      key = "C-w";
+      key = "C-l";
       cmd = ''run-shell "workmux last-done"'';
     };
 
@@ -354,7 +354,7 @@ let
     };
     toggleSync = {
       name = "Sync panes";
-      key = "Y";
+      key = "y";
       cmd = ''set-window-option synchronize-panes \; display-message "sync #{?synchronize-panes,ON,OFF}"'';
     };
     toggleMouse = {
@@ -407,6 +407,51 @@ let
     altWindow9 = {
       key = "M-9";
       cmd = "select-window -t 9";
+      table = "root";
+    };
+    altSplitH = {
+      key = "M-d";
+      cmd = ''split-window -h -c "#{pane_current_path}"'';
+      table = "root";
+    };
+    altSplitV = {
+      key = "M-v";
+      cmd = ''split-window -v -c "#{pane_current_path}"'';
+      table = "root";
+    };
+    altNewWindow = {
+      key = "M-c";
+      cmd = ''new-window -c "#{pane_current_path}"'';
+      table = "root";
+    };
+    altZoom = {
+      key = "M-z";
+      cmd = "resize-pane -Z";
+      table = "root";
+    };
+    altLastWindow = {
+      key = "M-Tab";
+      cmd = ''run-shell "workmux last-agent"'';
+      table = "root";
+    };
+    altScratch = {
+      key = "M-o";
+      cmd = ''display-popup -E -T " scratch " -w 80% -h 80% -d "#{pane_current_path}"'';
+      table = "root";
+    };
+    altSeshPicker = {
+      key = "M-f";
+      cmd = ''display-popup -E -T " sesh " -w 70% -h 70% tmux-sesh-picker'';
+      table = "root";
+    };
+    altPrevWindow = {
+      key = "M-h";
+      cmd = "previous-window";
+      table = "root";
+    };
+    altNextWindow = {
+      key = "M-l";
+      cmd = "next-window";
       table = "root";
     };
   };
@@ -494,7 +539,7 @@ let
     }
     {
       name = "+Workmux";
-      key = "W";
+      key = "C-w";
       menu = [
         b.workmuxDash
         b.workmuxSidebar
@@ -649,12 +694,12 @@ in
           plugin = logging;
           extraConfig = ''
             set -g @logging-path "$HOME/.local/share/tmux/logging"
-            set -g @logging_key "O"
+            set -g @logging_key "C-o"
           '';
         }
         {
           plugin = tmux-thumbs;
-          extraConfig = "set -g @thumbs-key F";
+          extraConfig = "set -g @thumbs-key f";
         }
         {
           plugin = extrakto;
@@ -672,7 +717,7 @@ in
         }
         {
           plugin = tmux-fzf;
-          extraConfig = ''set -g @tmux-fzf-launch-key "f"'';
+          extraConfig = ''set -g @tmux-fzf-launch-key "C-f"'';
         }
         {
           plugin = resurrect;
