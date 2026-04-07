@@ -1085,7 +1085,9 @@ in
           autoMemoryEnabled = false;
           alwaysThinkingEnabled = true;
           skipDangerousModePermissionPrompt = true;
-          teammateMode = "auto";
+          teammateMode = "in-process";
+          showThinkingSummaries = true;
+          showClearContextOnPlanAccept = true;
         } cfg.extraSettings;
 
         agents = {
