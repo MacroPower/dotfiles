@@ -31,6 +31,7 @@
     casks = [
       "fork"
       "fuse-t"
+      "homerow"
       "linearmouse"
     ]
     ++ config.dotfiles.system.homebrew.casks;
@@ -490,6 +491,19 @@
         "dev.kdrag0n.MacVirt".SUAutomaticallyUpdate = false;
         "com.lujjjh.LinearMouse".SUAutomaticallyUpdate = false;
         "com.DanPristupov.Fork".SUAutomaticallyUpdate = false;
+        "com.superultra.Homerow" = {
+          SUAutomaticallyUpdate = false;
+          "check-for-updates-automatically" = false;
+          "launch-at-login" = true;
+          "is-auto-click-enabled" = true;
+          "chain-clicks" = true;
+          "non-search-shortcut" = "\\U2303B";
+          "scroll-shortcut" = "";
+          "auto-switch-input-source-id" = "com.apple.keylayout.US";
+          "disabled-bundle-paths" = [
+            "/Users/${config.dotfiles.system.username}/Applications/Home Manager Apps/Ghostty.app"
+          ];
+        };
 
         # Force the maximum AAC bitpool (80) for Bluetooth audio negotiation,
         # preventing the codec from dropping to lower quality under contention
