@@ -1,7 +1,11 @@
+(defalias
+  tmux C-b
+)
+
 (defsrc
   caps
 )
 
 (deflayer default
-  f13
+  @tmux
 )

@@ -681,7 +681,6 @@ in
     tmux = {
       enable = true;
       mouse = true;
-      prefix = "C-Space";
       baseIndex = 1;
       historyLimit = 50000;
       escapeTime = 0;

@@ -385,7 +385,7 @@
           in
           {
             AppleSymbolicHotKeys = {
-              # Disable input source switching (frees Ctrl+Space for tmux prefix)
+              # Disable input source switching (frees Ctrl+Space)
               "${toString hotkeys.selectPrevInputSource}" = {
                 enabled = false;
               };
