@@ -617,7 +617,7 @@ let
 
   tmuxWhichKeyConfig = (pkgs.formats.yaml { }).generate "config.yaml" {
     command_alias_start_index = 200;
-    keybindings.prefix_table = "Space";
+    keybindings.prefix_table = "C-b";
     title = {
       style = "align=centre,bold";
       prefix = "tmux";
