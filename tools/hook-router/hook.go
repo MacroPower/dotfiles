@@ -40,6 +40,17 @@ func denyResponse(reason string) map[string]any {
 	}
 }
 
+func rewriteResponse(command string) map[string]any {
+	return map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName": "PreToolUse",
+			"updatedInput": map[string]any{
+				"command": command,
+			},
+		},
+	}
+}
+
 func blockResponse(reason string) map[string]any {
 	return map[string]any{
 		"decision": "block",

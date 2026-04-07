@@ -192,3 +192,120 @@ func TestCheckGitSubcmdDenied(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckKubectxDenied(t *testing.T) {
+	t.Parallel()
+
+	const kubectxDeniedMsg = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
+
+	tests := map[string]struct {
+		input string
+		want  string
+	}{
+		"bare kubectx": {
+			input: "kubectx",
+			want:  kubectxDeniedMsg,
+		},
+		"kubectx with context": {
+			input: "kubectx my-context",
+			want:  kubectxDeniedMsg,
+		},
+		"kubectx list flag": {
+			input: "kubectx -l",
+			want:  kubectxDeniedMsg,
+		},
+		"bare kubens": {
+			input: "kubens",
+			want:  kubectxDeniedMsg,
+		},
+		"kubens with namespace": {
+			input: "kubens kube-system",
+			want:  kubectxDeniedMsg,
+		},
+		"kubectx in pipeline": {
+			input: "kubectx | grep prod",
+			want:  kubectxDeniedMsg,
+		},
+		"kubectx in subshell": {
+			input: "(kubectx my-context)",
+			want:  kubectxDeniedMsg,
+		},
+		"no match: kubectl": {
+			input: "kubectl get pods",
+		},
+		"no match: echo kubectx": {
+			input: "echo kubectx",
+		},
+		"no match: sh -c kubectx": {
+			input: `sh -c "kubectx"`,
+		},
+		"no match: unrelated": {
+			input: "git status",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			got, denied := checkKubectxDenied(prog)
+			assert.Equal(t, tt.want != "", denied)
+
+			if denied {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestHasKubectl(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		input string
+		want  bool
+	}{
+		"simple command": {
+			input: "kubectl get pods",
+			want:  true,
+		},
+		"bare kubectl": {
+			input: "kubectl",
+			want:  true,
+		},
+		"pipeline": {
+			input: "kubectl get pods | grep foo",
+			want:  true,
+		},
+		"subshell": {
+			input: "(kubectl get ns)",
+			want:  true,
+		},
+		"chained": {
+			input: "kubectl get pods && kubectl get svc",
+			want:  true,
+		},
+		"no match: already wrapped": {
+			input: "kubectl-claude get pods",
+		},
+		"no match: echo": {
+			input: "echo kubectl",
+		},
+		"no match: sh -c": {
+			input: `sh -c "kubectl get pods"`,
+		},
+		"no match: unrelated": {
+			input: "git status",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			assert.Equal(t, tt.want, hasKubectl(prog))
+		})
+	}
+}

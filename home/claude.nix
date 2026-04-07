@@ -213,6 +213,7 @@ let
       enabled = true;
       backend = "lima";
       image = "file://${config.home.homeDirectory}/.lima/_images/terrarium.qcow2";
+      host_commands = [ "mcp-kubectx" ];
       toolchain = "auto";
       env_passthrough = [
         "GITHUB_TOKEN"
@@ -691,6 +692,26 @@ let
 in
 {
   options.dotfiles.claude = {
+    kubeApiDomains = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      description = ''
+        Kubernetes API server hostnames that `mcp__kubectx__select`
+        is allowed to switch to. The same set is added to the sandbox
+        network allowlist (effective on darwin, where Seatbelt
+        sandboxing is active) so kubectl can reach them. Empty (the
+        default) lets the tool select any apiserver in the kubeconfig;
+        sandbox network access still has to be granted elsewhere when
+        needed.
+      '';
+    };
+
+    kubeClusterRole = mkOption {
+      type = types.str;
+      default = "view";
+      description = "ClusterRole to bind ServiceAccounts to when selecting a Kubernetes context.";
+    };
+
     dangerouslySkipPermissions = mkOption {
       type = types.bool;
       default = false;
@@ -1551,6 +1572,34 @@ in
           ];
         };
       };
+
+      kubectx = {
+        servers.kubectx = {
+          type = "stdio";
+          command = "${pkgs.mcp-kubectx}/bin/mcp-kubectx";
+          args = [
+            "serve"
+            "--sa-role-name"
+            cfg.kubeClusterRole
+            "--log-file"
+            "${config.xdg.stateHome}/mcp-kubectx/kubectx.log"
+          ]
+          ++ lib.concatMap (host: [
+            "--allow-apiserver-host"
+            host
+          ]) cfg.kubeApiDomains;
+        };
+        permissions.allow = [ "mcp__kubectx__list" ];
+        permissions.ask = [ "mcp__kubectx__select" ];
+        sandbox.allowedDomains = cfg.kubeApiDomains;
+        instructions = {
+          category = "Kubernetes";
+          items = [
+            "Use `mcp__kubectx__list` to see available Kubernetes contexts."
+            "Use `mcp__kubectx__select` to activate a context before running kubectl commands."
+          ];
+        };
+      };
     };
 
     programs = {
@@ -1871,6 +1920,7 @@ in
         pkgs.chief
         pkgs.llm-agents.ccusage
         pkgs.llm-agents.ck
+        pkgs.mcp-kubectx
         workmuxWrapped
         pkgs.rtk-bin
         pkgs.claude-history

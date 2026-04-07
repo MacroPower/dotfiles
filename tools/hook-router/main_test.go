@@ -130,6 +130,82 @@ func TestRun(t *testing.T) {
 		assert.Contains(t, hso["permissionDecisionReason"], "git stash")
 	})
 
+	t.Run("PreToolUse Bash: denied kubectl without kubeconfig", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "kubectl get pods",
+		})
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Contains(t, hso["permissionDecisionReason"], "mcp__kubectx__select")
+	})
+
+	t.Run("PreToolUse Bash: rewrite kubectl with kubeconfig", func(t *testing.T) {
+		t.Parallel()
+
+		kubeconfigCfg := config{kubeconfigPath: "/tmp/claude-kubectx/12345/kubeconfig"}
+
+		input := makeInput(map[string]any{
+			"command": "kubectl get pods",
+		})
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, kubeconfigCfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+
+		assert.Equal(t, "PreToolUse", hso["hookEventName"],
+			"Claude Code rejects hookSpecificOutput without hookEventName")
+
+		updated, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "KUBECONFIG=/tmp/claude-kubectx/12345/kubeconfig kubectl get pods", updated["command"])
+	})
+
+	t.Run("PreToolUse Bash: denied kubectx", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"command": "kubectx my-context",
+		})
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Contains(t, hso["permissionDecisionReason"], "kubectx")
+	})
+
 	t.Run("PreToolUse Bash: denied git stash with git clone", func(t *testing.T) {
 		t.Parallel()
 

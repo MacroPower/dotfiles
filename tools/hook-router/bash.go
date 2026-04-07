@@ -109,6 +109,43 @@ func handleBash(ctx context.Context, input []byte, stdout io.Writer, cfg config,
 		return encodeJSON(stdout, denyResponse(reason))
 	}
 
+	if reason, denied := checkKubectxDenied(prog); denied {
+		logger.Info(
+			"denied",
+			slog.String("rule", "kubectx"),
+			slog.String("command", command),
+			slog.String("reason", reason),
+		)
+
+		return encodeJSON(stdout, denyResponse(reason))
+	}
+
+	if hasKubectl(prog) {
+		if cfg.kubeconfigPath == "" {
+			reason := "No kubeconfig found. Use mcp__kubectx__select to choose a context first."
+
+			logger.Info(
+				"denied",
+				slog.String("rule", "kubectl-no-kubeconfig"),
+				slog.String("command", command),
+				slog.String("reason", reason),
+			)
+
+			return encodeJSON(stdout, denyResponse(reason))
+		}
+
+		rewritten := "KUBECONFIG=" + cfg.kubeconfigPath + " " + command
+
+		logger.Info(
+			"rewrite",
+			slog.String("rule", "kubectl"),
+			slog.String("command", command),
+			slog.String("rewritten", rewritten),
+		)
+
+		return encodeJSON(stdout, rewriteResponse(rewritten))
+	}
+
 	return delegate(ctx, input, cfg.rtkRewrite, logger)
 }
 
@@ -236,6 +273,76 @@ func checkGitSubcmdDenied(prog *syntax.File) (string, string, bool) {
 		"Direct git %s usage is blocked. Use %s instead.",
 		subcmd, gitBlockedSubcmds[subcmd],
 	), true
+}
+
+// kubectxDenied lists command names that are blocked in favor of the
+// mcp-kubectx MCP tools.
+var kubectxDenied = map[string]bool{
+	"kubectx": true,
+	"kubens":  true,
+}
+
+// checkKubectxDenied walks the AST looking for kubectx or kubens
+// invocations. These are denied because the MCP kubectx tools
+// (mcp__kubectx__list, mcp__kubectx__select) should be used instead.
+func checkKubectxDenied(prog *syntax.File) (string, bool) {
+	found := false
+
+	syntax.Walk(prog, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) < 1 {
+			return true
+		}
+
+		parts0 := call.Args[0].Parts
+		if len(parts0) != 1 {
+			return true
+		}
+
+		lit, ok := parts0[0].(*syntax.Lit)
+		if !ok || !kubectxDenied[lit.Value] {
+			return true
+		}
+
+		found = true
+
+		return true
+	})
+
+	if !found {
+		return "", false
+	}
+
+	return "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts.", true
+}
+
+// hasKubectl walks the AST looking for commands where the first word is
+// exactly "kubectl".
+func hasKubectl(prog *syntax.File) bool {
+	found := false
+
+	syntax.Walk(prog, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) < 1 {
+			return true
+		}
+
+		parts0 := call.Args[0].Parts
+		if len(parts0) != 1 {
+			return true
+		}
+
+		lit, ok := parts0[0].(*syntax.Lit)
+		if !ok || lit.Value != "kubectl" {
+			return true
+		}
+
+		found = true
+
+		return true
+	})
+
+	return found
 }
 
 func delegate(ctx context.Context, input []byte, rtkRewrite string, logger *slog.Logger) error {

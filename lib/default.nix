@@ -26,6 +26,7 @@ let
     mcp-fetch = final.callPackage paths.mcp-fetch { };
     mcp-http-proxy = final.callPackage paths.mcp-http-proxy { };
     cookie = final.callPackage paths.cookie { };
+    mcp-kubectx = final.callPackage paths.mcp-kubectx { };
     radar = final.callPackage paths.radar { };
     radar-desktop = final.callPackage paths.radar-desktop { };
     helm-schema = final.callPackage paths.helm-schema { };
@@ -63,11 +64,21 @@ let
   };
 
   workmuxOverlay = system: _final: _prev: {
-    workmux-bin = workmux.packages.${system}.default.overrideAttrs {
+    workmux-bin = workmux.packages.${system}.default.overrideAttrs (old: {
       # Sandbox network_proxy and rpc tests need to bind TCP listeners,
       # which the Nix build sandbox does not permit.
       doCheck = false;
-    };
+
+      # mcp-kubectx (declared in workmux host_commands) needs to read
+      # ~/.kube/config. Upstream's host-exec sandbox unconditionally denies
+      # ~/.kube. Drop that single entry from DENY_READ_DIRS. Trade-off:
+      # every host_commands entry now gets read access to ~/.kube; today
+      # that's only mcp-kubectx, so blast radius matches the binary that
+      # needs it.
+      patches = (old.patches or [ ]) ++ [
+        ../pkgs/workmux-allow-kube-read.patch
+      ];
+    });
   };
 
   # lupa 2.7's bundled LuaJIT 2.1 Makefile mis-detects the target on

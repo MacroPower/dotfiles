@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -24,15 +25,23 @@ import (
 // whose UserPromptSubmit invocation clears plan-guard state. A nil or
 // empty slice disables the failsafe.
 type config struct {
-	postImpl     *PostImplCatalog
-	commitSkills []string
-	rtkRewrite   string
+	postImpl       *PostImplCatalog
+	commitSkills   []string
+	rtkRewrite     string
+	kubeconfigPath string
 }
 
 func configFromEnv() config {
-	return config{
+	cfg := config{
 		rtkRewrite: os.Getenv("RTK_REWRITE"),
 	}
+	if ppid := os.Getppid(); ppid > 1 {
+		p := filepath.Join(os.TempDir(), "claude-kubectx", strconv.Itoa(ppid), "kubeconfig")
+		if _, err := os.Stat(p); err == nil {
+			cfg.kubeconfigPath = p
+		}
+	}
+	return cfg
 }
 
 func main() {

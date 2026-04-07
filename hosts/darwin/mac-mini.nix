@@ -47,6 +47,10 @@
         claude = {
           remoteControl = true;
           extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
+          kubeApiDomains = [
+            "kmain.cin.macro.network"
+            "kmgmt.cin.macro.network"
+          ];
           lima = {
             enable = true;
             cpus = 8;
