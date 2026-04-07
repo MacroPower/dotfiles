@@ -849,7 +849,6 @@ in
         enableMcpIntegration = true;
 
         settings = lib.recursiveUpdate {
-          defaultMode = "plan";
           env = {
             CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
           };
@@ -858,6 +857,7 @@ in
             pr = "";
           };
           permissions = {
+            defaultMode = "plan";
             allow =
               [
                 "Edit(//tmp/git/**)"
