@@ -849,6 +849,7 @@ in
         enableMcpIntegration = true;
 
         settings = lib.recursiveUpdate {
+          defaultMode = "plan";
           env = {
             CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
           };
