@@ -43,8 +43,8 @@ let
         fg = "#${colors.base0B}";
       };
       context = {
-        bg = "#${colors.base03}";
-        fg = "#${colors.base05}";
+        bg = "#${colors.base0B}";
+        fg = "#${colors.base00}";
       };
       contextWarning = {
         bg = "#${colors.base09}";
