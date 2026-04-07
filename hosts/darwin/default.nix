@@ -690,6 +690,13 @@
     };
   };
 
+  services.kanata = {
+    enable = true;
+    sudoers = false;
+    configSource = ../../configs/kanata/kanata.kbd;
+    kanata-bar.enable = true;
+  };
+
   security.pki.certificateFiles = config.dotfiles.system.caCertificateFiles;
 
   security.pam.services.sudo_local = {

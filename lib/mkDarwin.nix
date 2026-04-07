@@ -59,6 +59,7 @@ inputs.nix-darwin.lib.darwinSystem {
     )
     inputs.home-manager.darwinModules.home-manager
     inputs.stylix.darwinModules.stylix
+    inputs.kanata-darwin.darwinModules.default
     sharedStylixConfig
     {
       nixpkgs.hostPlatform = "aarch64-darwin";
