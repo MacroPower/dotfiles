@@ -27,9 +27,9 @@ let
 
   tmuxSeshPicker = pkgs.writeShellApplication {
     name = "tmux-sesh-picker";
-    runtimeInputs = [
-      pkgs.sesh
-      pkgs.fzf
+    runtimeInputs = with pkgs; [
+      sesh
+      fzf
     ];
     text = ''
       selected=$(sesh list | fzf \
@@ -41,6 +41,21 @@ let
         --preview-window 'right:50%:wrap')
       [ -n "$selected" ] && sesh connect "$selected"
     '';
+  };
+
+  tmuxFilePicker = pkgs.writeShellApplication {
+    name = "tmux-file-picker";
+    excludeShellChecks = [ "SC2086" ];
+    runtimeInputs = with pkgs; [
+      fzf
+      fd
+      bat
+      tree
+      zoxide
+      coreutils-full
+      git
+    ];
+    text = builtins.readFile ../scripts/tmux-file-picker.sh;
   };
 
   tmuxStatusContext = pkgs.writeShellApplication {
@@ -442,6 +457,11 @@ let
     altSeshPicker = {
       key = "M-f";
       cmd = ''display-popup -E -T " sesh " -w 70% -h 70% tmux-sesh-picker'';
+      table = "root";
+    };
+    altFilePicker = {
+      key = "M-p";
+      cmd = ''display-popup -E -T " files " -w 80% -h 80% -d "#{pane_current_path}" tmux-file-picker --git-root'';
       table = "root";
     };
     altPrevWindow = {
@@ -978,6 +998,7 @@ in
   home.packages = [
     tmuxStatusContext
     tmuxSeshPicker
+    tmuxFilePicker
   ]
   ++ (with pkgs; [
     go-task
