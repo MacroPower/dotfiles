@@ -956,8 +956,6 @@ in
                 "Bash(git restore *)"
                 "Bash(git checkout *)"
                 "Bash(git switch *)"
-                "Bash(git rebase)"
-                "Bash(git rebase *)"
                 "Bash(git merge *)"
                 "Bash(git tag *)"
                 "Bash(git rm *)"
