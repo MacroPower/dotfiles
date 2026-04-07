@@ -53,7 +53,10 @@
           userName = "Jacob Colvin";
           userEmail = "jacobcolvin1@gmail.com";
         };
-        claude.extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
+        claude = {
+          fetchAllowlist = false;
+          extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
+        };
       };
     };
 }
