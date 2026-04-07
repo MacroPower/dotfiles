@@ -1105,6 +1105,7 @@ in
           wm-rebase = ../configs/claude/skills/wm-rebase;
           wm-coordinator = ../configs/claude/skills/wm-coordinator;
           wm-workmux = ../configs/claude/skills/wm-workmux;
+          git-surgeon = ../configs/claude/skills/git-surgeon;
         }
         // cfg.extraSkills;
       };
@@ -1127,6 +1128,7 @@ in
         pkgs.workmux-bin
         pkgs.rtk-bin
         pkgs.claude-history
+        pkgs.git-surgeon
       ];
 
       file.".claude/CLAUDE.md".text =

@@ -154,6 +154,7 @@
                 mcp-argocd = ./pkgs/mcp-argocd.nix;
                 claude-powerline = ./pkgs/claude-powerline.nix;
                 claude-history = ./pkgs/claude-history.nix;
+                git-surgeon = ./pkgs/git-surgeon.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })

@@ -32,6 +32,7 @@ let
     mcp-argocd = final.callPackage paths.mcp-argocd { };
     claude-powerline = final.callPackage paths.claude-powerline { };
     claude-history = final.callPackage paths.claude-history { };
+    git-surgeon = final.callPackage paths.git-surgeon { };
   };
 
   nurJacobColvinOverlay =

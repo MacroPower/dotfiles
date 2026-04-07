@@ -55,3 +55,4 @@ tasks:
       - bash pkgs/mcp-argocd-update.sh
       - bash pkgs/claude-powerline-update.sh
       - bash pkgs/claude-history-update.sh
+      - bash pkgs/git-surgeon-update.sh
