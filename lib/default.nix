@@ -31,6 +31,7 @@ let
     mcp-kagi = final.callPackage paths.mcp-kagi { };
     mcp-argocd = final.callPackage paths.mcp-argocd { };
     claude-powerline = final.callPackage paths.claude-powerline { };
+    claude-history = final.callPackage paths.claude-history { };
   };
 
   nurJacobColvinOverlay =

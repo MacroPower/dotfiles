@@ -1126,6 +1126,7 @@ in
         pkgs.llm-agents.ccusage
         pkgs.workmux-bin
         pkgs.rtk-bin
+        pkgs.claude-history
       ];
 
       file.".claude/CLAUDE.md".text =
