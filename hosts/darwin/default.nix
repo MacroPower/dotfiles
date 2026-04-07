@@ -551,6 +551,9 @@
     # Apply settings changes without requiring logout
     activationScripts.postActivation.text = ''
       sudo -u ${config.dotfiles.system.username} /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
+
+      # Restart kanata-bar so it picks up the freshly-copied config
+      launchctl kickstart -k "gui/$(id -u ${config.dotfiles.system.username})/com.kanata-bar.launchd" &>/dev/null || true
     '';
 
     # Ensure the custom screenshot directory exists
@@ -696,6 +699,8 @@
     configSource = ../../configs/kanata/kanata.kbd;
     kanata-bar = {
       enable = true;
+      extraLaunchdConfig.KeepAlive = true;
+      settings.kanata_bar.autostart_kanata = true;
       package = let
         version = "1.1.10";
         src = pkgs.fetchurl {
