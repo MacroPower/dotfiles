@@ -689,12 +689,6 @@ in
       aggressiveResize = true;
       plugins = with pkgs.tmuxPlugins; [
         sensible
-        {
-          plugin = fzf-tmux-url;
-          extraConfig = ''
-            set -g @fzf-url-fzf-options '-p 60%,30% --prompt="   " --border-label=" Open URL "'
-          '';
-        }
         vim-tmux-navigator
         {
           plugin = yank;
