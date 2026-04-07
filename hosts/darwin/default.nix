@@ -694,7 +694,27 @@
     enable = true;
     sudoers = false;
     configSource = ../../configs/kanata/kanata.kbd;
-    kanata-bar.enable = true;
+    kanata-bar = {
+      enable = true;
+      package = let
+        version = "1.1.10";
+        src = pkgs.fetchurl {
+          url = "https://github.com/not-in-stock/kanata-bar/releases/download/v${version}/kanata-bar.app.zip";
+          hash = "sha256-ugfjyutB0bKmZ+LCRsw7DvYyotgSzurAzi7tlEHWOzU=";
+        };
+      in pkgs.stdenv.mkDerivation {
+        pname = "kanata-bar-app";
+        inherit version src;
+        dontUnpack = true;
+        dontStrip = true;
+        dontPatchELF = true;
+        nativeBuildInputs = [ pkgs.unzip ];
+        installPhase = ''
+          mkdir -p "$out/Applications"
+          unzip -q $src -d "$out/Applications"
+        '';
+      };
+    };
   };
 
   security.pki.certificateFiles = config.dotfiles.system.caCertificateFiles;
