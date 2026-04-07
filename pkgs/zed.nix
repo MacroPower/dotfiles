@@ -98,8 +98,9 @@ stdenvNoCC.mkDerivation {
   installPhase =
     if isDarwin then
       ''
-        mkdir -p $out/Applications
+        mkdir -p $out/Applications $out/bin
         cp -R "Zed.app" $out/Applications/
+        ln -s $out/Applications/Zed.app/Contents/MacOS/cli $out/bin/zed
       ''
     else
       ''
