@@ -497,8 +497,11 @@
           "launch-at-login" = true;
           "is-auto-click-enabled" = true;
           "chain-clicks" = true;
-          "non-search-shortcut" = "\\U2303B";
-          "scroll-shortcut" = "";
+          "enable-hyper-key" = true;
+          "hide-labels-when-nothing-is-searched" = false;
+          "search-shortcut" = "";
+          "non-search-shortcut" = "\\U2303\\U2325\\U21e7\\U2318A";
+          "scroll-shortcut" = "\\U2303\\U2325\\U21e7\\U2318S";
           "auto-switch-input-source-id" = "com.apple.keylayout.US";
           "disabled-bundle-paths" = [
             "/Users/${config.dotfiles.system.username}/Applications/Home Manager Apps/Ghostty.app"
