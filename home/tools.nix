@@ -847,6 +847,7 @@ in
         set -g pane-base-index 1
         set -g set-titles on
         set -g set-titles-string "#S / #W"
+        set -g automatic-rename-format "#{?#{m:.*-wrapped,#{pane_current_command}},#{s/^\\.//;s/-wrapped$//:pane_current_command},#{pane_current_command}}#{?pane_in_mode, (#{pane_mode}),}#{?pane_dead,[dead],}"
 
         # Scrollbars disabled - modal scrollbars cause text reflow on width change
         set -g pane-scrollbars off
