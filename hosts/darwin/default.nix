@@ -623,8 +623,6 @@
     activationScripts.postActivation.text = ''
       sudo -u ${config.dotfiles.system.username} /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
 
-      # Restart kanata-bar so it picks up the freshly-copied config
-      launchctl kickstart -k "gui/$(id -u ${config.dotfiles.system.username})/com.kanata-bar.launchd" &>/dev/null || true
     '';
 
     # Ensure the custom screenshot directory exists
@@ -761,35 +759,6 @@
       RunAtLoad = true;
       StandardErrorPath = "/dev/null";
       StandardOutPath = "/dev/null";
-    };
-  };
-
-  services.kanata = {
-    enable = true;
-    sudoers = false;
-    configSource = ../../configs/kanata/kanata.kbd;
-    kanata-bar = {
-      enable = true;
-      extraLaunchdConfig.KeepAlive = true;
-      settings.kanata_bar.autostart_kanata = true;
-      package = let
-        version = "1.1.10";
-        src = pkgs.fetchurl {
-          url = "https://github.com/not-in-stock/kanata-bar/releases/download/v${version}/kanata-bar.app.zip";
-          hash = "sha256-ugfjyutB0bKmZ+LCRsw7DvYyotgSzurAzi7tlEHWOzU=";
-        };
-      in pkgs.stdenv.mkDerivation {
-        pname = "kanata-bar-app";
-        inherit version src;
-        dontUnpack = true;
-        dontStrip = true;
-        dontPatchELF = true;
-        nativeBuildInputs = [ pkgs.unzip ];
-        installPhase = ''
-          mkdir -p "$out/Applications"
-          unzip -q $src -d "$out/Applications"
-        '';
-      };
     };
   };
 

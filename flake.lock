@@ -260,24 +260,6 @@
         "type": "github"
       }
     },
-    "flake-utils_2": {
-      "inputs": {
-        "systems": "systems_2"
-      },
-      "locked": {
-        "lastModified": 1731533236,
-        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "type": "github"
-      }
-    },
     "fromYaml": {
       "flake": false,
       "locked": {
@@ -412,52 +394,9 @@
         "type": "github"
       }
     },
-    "kanata-darwin": {
-      "inputs": {
-        "kanata-tray": "kanata-tray",
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1774930051,
-        "narHash": "sha256-i+Nyq0tg/Uz7+HLPdtKGZhCqeKLxPu8eNcmm+8b+9fo=",
-        "owner": "not-in-stock",
-        "repo": "kanata-darwin",
-        "rev": "e48c11649e59a05d77331b30d0f1ebba226e528e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "not-in-stock",
-        "repo": "kanata-darwin",
-        "type": "github"
-      }
-    },
-    "kanata-tray": {
-      "inputs": {
-        "flake-utils": "flake-utils",
-        "nixpkgs": [
-          "kanata-darwin",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1767299040,
-        "narHash": "sha256-UoalsSTJwzgtWj1lfsc61NxgDJOsnxVOD+A17+o5yKA=",
-        "owner": "rszyma",
-        "repo": "kanata-tray",
-        "rev": "3903d3d432daf793e0ec4d7b3c4f50481f6ace55",
-        "type": "github"
-      },
-      "original": {
-        "owner": "rszyma",
-        "repo": "kanata-tray",
-        "type": "github"
-      }
-    },
     "krewfile": {
       "inputs": {
-        "flake-utils": "flake-utils_2",
+        "flake-utils": "flake-utils",
         "nixpkgs": [
           "nixpkgs"
         ]
@@ -484,7 +423,7 @@
         "nixpkgs": [
           "nixpkgs"
         ],
-        "systems": "systems_3",
+        "systems": "systems_2",
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
@@ -630,7 +569,6 @@
         "homebrew-cask": "homebrew-cask",
         "homebrew-core": "homebrew-core",
         "homebrew-fuse-t": "homebrew-fuse-t",
-        "kanata-darwin": "kanata-darwin",
         "krewfile": "krewfile",
         "llm-agents": "llm-agents",
         "nix-darwin": "nix-darwin",
@@ -695,7 +633,7 @@
           "nixpkgs"
         ],
         "nur": "nur",
-        "systems": "systems_4",
+        "systems": "systems_3",
         "tinted-foot": "tinted-foot",
         "tinted-kitty": "tinted-kitty",
         "tinted-schemes": "tinted-schemes",
@@ -747,21 +685,6 @@
       }
     },
     "systems_3": {
-      "locked": {
-        "lastModified": 1681028828,
-        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
-        "owner": "nix-systems",
-        "repo": "default",
-        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nix-systems",
-        "repo": "default",
-        "type": "github"
-      }
-    },
-    "systems_4": {
       "locked": {
         "lastModified": 1681028828,
         "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
