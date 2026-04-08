@@ -29,7 +29,7 @@ in
           "global:cmd+grave_accent=toggle_quick_terminal"
           "cmd+d=unbind"
           "cmd+shift+d=unbind"
-          "caps_lock=text:\\x02"
+          "shift+ctrl+alt+super+left_super=text:\\x02"
           "alt+right=text:\\x1b[1;3C"
           "alt+left=text:\\x1b[1;3D"
           "alt+up=text:\\x1b[1;3A"

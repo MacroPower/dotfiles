@@ -281,7 +281,7 @@ let
     };
     breakPane = {
       name = "Break pane";
-      key = "C-b";
+      key = "B";
       cmd = "break-pane";
     };
     grabPane = {
