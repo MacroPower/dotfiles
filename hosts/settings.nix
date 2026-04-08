@@ -1,11 +1,14 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 {
   nix.settings = {
     experimental-features = [
       "nix-command"
       "flakes"
     ];
-    trusted-users = [ "root" ];
+    trusted-users = [
+      "root"
+      config.dotfiles.system.username
+    ];
     allowed-users = [ "root" ] ++ (if pkgs.stdenv.isDarwin then [ "@admin" ] else [ "@wheel" ]);
     sandbox = if pkgs.stdenv.isLinux then true else "relaxed";
     substituters = [ "https://cache.nixos.org" ];
