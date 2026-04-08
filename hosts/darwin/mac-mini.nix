@@ -37,6 +37,7 @@
         ../../home/claude.nix
         ../../home/displayplacer.nix
         ../../home/personal.nix
+        ../../home/obsidian.nix
       ];
       dotfiles = {
         git = {

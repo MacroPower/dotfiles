@@ -58,6 +58,18 @@ let
     text = builtins.readFile ../scripts/tmux-file-picker.sh;
   };
 
+  tmuxObsidianTask = pkgs.writeShellApplication {
+    name = "tmux-obsidian-task";
+    runtimeInputs = [ pkgs.gum ];
+    text = ''
+      task=$(gum input --placeholder "Task..." --header "Add task to daily note")
+      [ -z "$task" ] && exit 0
+      obsidian daily:append content="- [ ] $task" silent
+      echo "Added: $task"
+      sleep 0.5
+    '';
+  };
+
   tmuxStatusContext = pkgs.writeShellApplication {
     name = "tmux-status-context";
     runtimeInputs = [ pkgs.yq-go ];
@@ -343,6 +355,11 @@ let
       key = "C-d";
       cmd = ''display-popup -E -T " lazydocker " -w 90% -h 90% lazydocker'';
     };
+    obsidianTask = {
+      name = "Add task (obsidian)";
+      key = "o";
+      cmd = ''display-popup -E -T " obsidian " -w 60% -h 20% tmux-obsidian-task'';
+    };
 
     # Workmux
     workmuxDash = {
@@ -490,6 +507,7 @@ let
         b.scratchPopup
         b.gituiPopup
         b.lazydockerPopup
+        b.obsidianTask
       ];
     }
     {
@@ -929,6 +947,7 @@ in
     tmuxStatusContext
     tmuxSeshPicker
     tmuxFilePicker
+    tmuxObsidianTask
   ]
   ++ (with pkgs; [
     go-task
