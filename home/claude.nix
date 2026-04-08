@@ -87,7 +87,7 @@ let
             context = {
               enabled = true;
               showPercentageOnly = false;
-              displayStyle = "geometric";
+              displayStyle = "text";
               autocompactBuffer = 100000;
             };
           };
