@@ -30,6 +30,10 @@ in
           "cmd+d=unbind"
           "cmd+shift+d=unbind"
           "caps_lock=text:\\x02"
+          "alt+right=text:\\x1b[1;3C"
+          "alt+left=text:\\x1b[1;3D"
+          "alt+up=text:\\x1b[1;3A"
+          "alt+down=text:\\x1b[1;3B"
         ];
         quick-terminal-screen = "mouse";
         quick-terminal-position = "right";
