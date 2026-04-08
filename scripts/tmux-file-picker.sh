@@ -98,7 +98,7 @@ main() {
     local search_dir="${path_arg:-$pane_dir}"
 
     # Convert to absolute path if relative
-    if [[ ! $search_dir == /* ]]; then
+    if [[ $search_dir != /* ]]; then
       search_dir="$pane_dir/$search_dir"
     fi
 
