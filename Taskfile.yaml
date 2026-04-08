@@ -19,6 +19,9 @@ includes:
   toolchains:
     taskfile: ./taskfiles/toolchains
     dir: .
+  lima:
+    taskfile: ./taskfiles/lima
+    dir: .
 
 tasks:
   default:

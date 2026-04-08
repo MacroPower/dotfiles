@@ -48,7 +48,7 @@
       flake = false;
     };
     nur-jacobcolvin = {
-      url = "git+https://nur.jacobcolvin.com?narHash=sha256-RLSLxjOFLpEn8GioLbUFjBBp0tQphcWqtPdx4DBfmmA%3D";
+      url = "git+https://nur.jacobcolvin.com?narHash=sha256-rcMuUP4YFEyTnGw3IKQtuGlh1UfDLLLn/jLMe%2BMEhCM%3D";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nix-homebrew = {
@@ -69,6 +69,10 @@
     homebrew-fuse-t = {
       url = "github:macos-fuse-t/homebrew-cask";
       flake = false;
+    };
+    nixos-lima = {
+      url = "github:nixos-lima/nixos-lima";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
@@ -125,6 +129,17 @@
               ))
             ];
 
+          packages =
+            let
+              inherit (nixpkgs) lib;
+              arch = builtins.head (lib.splitString "-" system);
+            in
+            lib.optionalAttrs (lib.hasSuffix "-linux" system) {
+              lima-image = self.nixosConfigurations."lima-${arch}".config.system.build.images.qemu-efi;
+              lima-terrarium-image =
+                self.nixosConfigurations."lima-terrarium-${arch}".config.system.build.images.qemu-efi;
+            };
+
         };
 
       flake =
@@ -169,10 +184,25 @@
             "jacobcolvin@Jacobs-MacBook-Pro" = mkDarwin (import ./hosts/darwin/mbp.nix);
           };
 
-          nixosConfigurations = {
-            "nixos-orbstack" = mkNixOS (import ./hosts/nixos/orbstack.nix);
-            "nixos-truenas" = mkNixOS (import ./hosts/nixos/truenas.nix);
-          };
+          nixosConfigurations =
+            let
+              mkLimaConfig =
+                file: system:
+                mkNixOS (
+                  import file {
+                    inherit (inputs) nixos-lima;
+                    inherit system;
+                  }
+                );
+            in
+            {
+              "nixos-orbstack" = mkNixOS (import ./hosts/nixos/orbstack.nix);
+              "nixos-truenas" = mkNixOS (import ./hosts/nixos/truenas.nix);
+              "lima-aarch64" = mkLimaConfig ./hosts/nixos/lima.nix "aarch64-linux";
+              "lima-x86_64" = mkLimaConfig ./hosts/nixos/lima.nix "x86_64-linux";
+              "lima-terrarium-aarch64" = mkLimaConfig ./hosts/nixos/lima-terrarium.nix "aarch64-linux";
+              "lima-terrarium-x86_64" = mkLimaConfig ./hosts/nixos/lima-terrarium.nix "x86_64-linux";
+            };
 
           homeConfigurations = {
             "dev@aarch64-linux" = mkHome (import ./hosts/linux/container.nix "aarch64-linux");

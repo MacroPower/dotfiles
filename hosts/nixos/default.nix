@@ -67,5 +67,5 @@
 
   time.timeZone = lib.mkDefault "America/New_York";
 
-  system.stateVersion = "25.05";
+  system.stateVersion = lib.mkDefault "25.05";
 }

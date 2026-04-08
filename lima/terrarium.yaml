@@ -1,0 +1,26 @@
+# Lima VM template for Terrarium (NixOS + network firewall).
+#
+# This template uses a golden image built with `task lima:image:terrarium`.
+# The image has the full NixOS configuration baked in, so no
+# provisioning step is needed.
+#
+# Usage:
+#   task lima:image:terrarium   # build the golden qcow2 (requires Linux builder)
+#   task lima:create:terrarium  # create and start the VM
+#   task lima:rebuild:terrarium # apply configuration changes without rebuilding the image
+#   task lima:destroy           # stop and delete the VM
+
+# Placeholder image; lima:create:terrarium overrides via --set with the local
+# golden image path for the host architecture.
+images:
+  - location: ""
+    arch: "aarch64"
+  - location: ""
+    arch: "x86_64"
+
+cpus: 2
+memory: 2GiB
+disk: 20GiB
+
+env:
+  TERRARIUM_CONFIG: "/etc/terrarium/config.yaml"

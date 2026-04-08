@@ -1,0 +1,85 @@
+version: "3"
+
+vars:
+  NIX_SYSTEM:
+    sh: "uname -m | sed 's/arm64/aarch64/' | sed 's/$/-linux/'"
+  LIMA_ARCH:
+    sh: "uname -m | sed 's/arm64/aarch64/'"
+
+tasks:
+  image:
+    desc: Build the Lima NixOS golden image
+    sources:
+      - hosts/nixos/lima.nix
+      - hosts/nixos/lima-hardware.nix
+      - hosts/nixos/default.nix
+      - hosts/shared.nix
+    generates:
+      - lima/default.qcow2
+    cmds:
+      - nix build .#packages.{{.NIX_SYSTEM}}.lima-image --no-update-lock-file --always-allow-substitutes --out-link {{.ROOT_DIR}}/lima/result
+      - cp -f {{.ROOT_DIR}}/lima/result/*.qcow2 {{.ROOT_DIR}}/lima/default.qcow2
+      - rm -f {{.ROOT_DIR}}/lima/result
+
+  image:terrarium:
+    desc: Build the Lima Terrarium golden image
+    sources:
+      - hosts/nixos/lima-terrarium.nix
+      - hosts/nixos/lima-hardware.nix
+      - hosts/nixos/default.nix
+      - hosts/shared.nix
+    generates:
+      - lima/terrarium.qcow2
+    cmds:
+      - nix build .#packages.{{.NIX_SYSTEM}}.lima-terrarium-image --no-update-lock-file --always-allow-substitutes --out-link {{.ROOT_DIR}}/lima/result-terrarium
+      - cp -f {{.ROOT_DIR}}/lima/result-terrarium/*.qcow2 {{.ROOT_DIR}}/lima/terrarium.qcow2
+      - rm -f {{.ROOT_DIR}}/lima/result-terrarium
+
+  create:
+    desc: Create and start the normal Lima VM
+    deps: [image]
+    cmds:
+      - >-
+        limactl create --name=lima
+        --set '.images = [{"location": "file://{{.ROOT_DIR}}/lima/default.qcow2", "arch": "{{.LIMA_ARCH}}"}]'
+        lima/default.yaml
+      - limactl start lima
+
+  create:terrarium:
+    desc: Create and start the Terrarium Lima VM
+    deps: [image:terrarium]
+    cmds:
+      - >-
+        limactl create --name=lima-terrarium
+        --set '.images = [{"location": "file://{{.ROOT_DIR}}/lima/terrarium.qcow2", "arch": "{{.LIMA_ARCH}}"}]'
+        lima/terrarium.yaml
+      - limactl start lima-terrarium
+
+  rebuild:
+    desc: Apply NixOS config changes to the normal Lima VM
+    cmds:
+      - "limactl cp -r {{.ROOT_DIR}} lima:/tmp/lima-flake"
+      - limactl shell lima -- sudo nixos-rebuild switch --no-update-lock-file --flake /tmp/lima-flake#lima-{{.LIMA_ARCH}}
+
+  rebuild:terrarium:
+    desc: Apply NixOS config changes to the Terrarium Lima VM
+    cmds:
+      - "limactl cp -r {{.ROOT_DIR}} lima-terrarium:/tmp/lima-flake"
+      - limactl shell lima-terrarium -- sudo nixos-rebuild switch --no-update-lock-file --flake /tmp/lima-flake#lima-terrarium-{{.LIMA_ARCH}}
+
+  logs:
+    desc: Tail provisioning logs from a Lima VM
+    vars:
+      VM: '{{.VM | default "lima"}}'
+    cmds:
+      - |
+        until limactl shell {{.VM}} -- true 2>/dev/null; do sleep 2; done
+        limactl shell {{.VM}} -- journalctl -f -u lima-init --output=cat
+
+  destroy:
+    desc: Stop and delete a Lima VM
+    vars:
+      VM: '{{.VM | default "lima"}}'
+    cmds:
+      - limactl stop {{.VM}} || true
+      - limactl delete {{.VM}}
