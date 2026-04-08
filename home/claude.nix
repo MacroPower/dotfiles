@@ -858,112 +858,109 @@ in
           };
           permissions = {
             defaultMode = "plan";
-            allow =
-              [
-                "Edit(//tmp/git/**)"
-                "Edit(//private/tmp/git/**)"
-              ]
-              ++ bundledAllow
-              ++ cfg.extraPermissions.allow;
-            deny =
-              [
-                # Key material & certificates
-                "Read(//**/*.pem)"
-                "Read(//**/*.key)"
-                "Read(//**/*.p12)"
-                "Read(//**/*.pfx)"
-                "Read(//**/*.jks)"
-                "Read(//**/*.asc)"
-                "Read(//**/*.keystore)"
-                "Read(//**/*.kdbx)"
-                "Read(//**/wallet.dat)"
-                "Read(//**/keystore/**)"
-                "Read(//**/.ssh/**)"
-                "Read(//**/.gnupg/**)"
+            allow = [
+              "Edit(//tmp/git/**)"
+              "Edit(//private/tmp/git/**)"
+            ]
+            ++ bundledAllow
+            ++ cfg.extraPermissions.allow;
+            deny = [
+              # Key material & certificates
+              "Read(//**/*.pem)"
+              "Read(//**/*.key)"
+              "Read(//**/*.p12)"
+              "Read(//**/*.pfx)"
+              "Read(//**/*.jks)"
+              "Read(//**/*.asc)"
+              "Read(//**/*.keystore)"
+              "Read(//**/*.kdbx)"
+              "Read(//**/wallet.dat)"
+              "Read(//**/keystore/**)"
+              "Read(//**/.ssh/**)"
+              "Read(//**/.gnupg/**)"
 
-                # Generic secrets
-                "Read(//**/.env)"
-                "Read(//**/.env.*)"
-                "Read(//**/.secrets/**)"
-                "Read(//**/.git-credentials)"
-                "Read(//**/git/credentials)"
-                "Read(//**/.netrc)"
-                "Read(//**/.curlrc)"
-                "Read(//**/.wgetrc)"
-                "Read(//**/.password-store/**)"
+              # Generic secrets
+              "Read(//**/.env)"
+              "Read(//**/.env.*)"
+              "Read(//**/.secrets/**)"
+              "Read(//**/.git-credentials)"
+              "Read(//**/git/credentials)"
+              "Read(//**/.netrc)"
+              "Read(//**/.curlrc)"
+              "Read(//**/.wgetrc)"
+              "Read(//**/.password-store/**)"
 
-                # Cloud credentials
-                "Read(//**/.aws/credentials)"
-                "Read(//**/.aws/config)"
-                "Read(//**/.aws/sso/**)"
-                "Read(//**/.azure/**)"
-                "Read(//**/.config/gcloud/**)"
-                "Read(//**/.config/hcloud/config.json)"
-                "Read(//**/.snyk)"
-                "Read(//**/.wrangler/**)"
+              # Cloud credentials
+              "Read(//**/.aws/credentials)"
+              "Read(//**/.aws/config)"
+              "Read(//**/.aws/sso/**)"
+              "Read(//**/.azure/**)"
+              "Read(//**/.config/gcloud/**)"
+              "Read(//**/.config/hcloud/config.json)"
+              "Read(//**/.snyk)"
+              "Read(//**/.wrangler/**)"
 
-                # Container & Kubernetes
-                "Read(//**/.docker/config.json)"
-                "Read(//**/.docker/certs.d/**)"
-                "Read(//**/.config/containers/auth.json)"
-                "Read(//**/.kube/config)"
-                "Read(//**/.kube/config*)"
-                "Read(//**/.talos/**)"
-                "Read(//**/.cosign/**)"
-                "Read(//**/.helm/repository/repositories.yaml)"
+              # Container & Kubernetes
+              "Read(//**/.docker/config.json)"
+              "Read(//**/.docker/certs.d/**)"
+              "Read(//**/.config/containers/auth.json)"
+              "Read(//**/.kube/config)"
+              "Read(//**/.kube/config*)"
+              "Read(//**/.talos/**)"
+              "Read(//**/.cosign/**)"
+              "Read(//**/.helm/repository/repositories.yaml)"
 
-                # Secret managers & encryption
-                "Read(//**/.doppler/**)"
-                "Read(//**/age/keys.txt)"
-                "Read(//**/rclone.conf)"
+              # Secret managers & encryption
+              "Read(//**/.doppler/**)"
+              "Read(//**/age/keys.txt)"
+              "Read(//**/rclone.conf)"
 
-                # IaC state & credentials
-                "Read(//**/credentials.tfrc.json)"
-                "Read(//**/.terraformrc)"
-                "Read(//**/.terraform.d/credentials.tfrc.json)"
-                "Read(//**/*.tfstate)"
-                "Read(//**/*.tfstate.*)"
-                "Read(//**/.pulumi/credentials.json)"
+              # IaC state & credentials
+              "Read(//**/credentials.tfrc.json)"
+              "Read(//**/.terraformrc)"
+              "Read(//**/.terraform.d/credentials.tfrc.json)"
+              "Read(//**/*.tfstate)"
+              "Read(//**/*.tfstate.*)"
+              "Read(//**/.pulumi/credentials.json)"
 
-                # CI/CD & deployment tokens
-                "Read(//**/.config/gh/hosts.yml)"
-                "Read(//**/.spacelift/**)"
-                "Read(//**/.jira.d/config.yml)"
+              # CI/CD & deployment tokens
+              "Read(//**/.config/gh/hosts.yml)"
+              "Read(//**/.spacelift/**)"
+              "Read(//**/.jira.d/config.yml)"
 
-                # Package manager credentials
-                "Read(//**/.npmrc)"
-                "Read(//**/.pypirc)"
-                "Read(//**/.cargo/credentials.toml)"
-                "Read(//**/.gem/credentials)"
-                "Read(//**/.m2/settings.xml)"
-                "Read(//**/.m2/settings-security.xml)"
-                "Read(//**/.gradle/gradle.properties)"
-                "Read(//**/.composer/auth.json)"
-                "Read(//**/.config/poetry/auth.toml)"
-                "Read(//**/.bunfig.toml)"
+              # Package manager credentials
+              "Read(//**/.npmrc)"
+              "Read(//**/.pypirc)"
+              "Read(//**/.cargo/credentials.toml)"
+              "Read(//**/.gem/credentials)"
+              "Read(//**/.m2/settings.xml)"
+              "Read(//**/.m2/settings-security.xml)"
+              "Read(//**/.gradle/gradle.properties)"
+              "Read(//**/.composer/auth.json)"
+              "Read(//**/.config/poetry/auth.toml)"
+              "Read(//**/.bunfig.toml)"
 
-                # Claude Code credentials
-                "Read(//**/.claude/.credentials.json)"
-              ]
-              ++ bundledDeny
-              ++ cfg.extraPermissions.deny;
-            ask =
-              [
-                "Bash(git push)"
-                "Bash(git push *)"
-                "Bash(git reset)"
-                "Bash(git reset *)"
-                "Bash(git clean *)"
-                "Bash(git restore *)"
-                "Bash(git checkout *)"
-                "Bash(git switch *)"
-                "Bash(git merge *)"
-                "Bash(git tag *)"
-                "Bash(git rm *)"
-                "Bash(git remote *)"
-              ]
-              ++ bundledAsk
-              ++ cfg.extraPermissions.ask;
+              # Claude Code credentials
+              "Read(//**/.claude/.credentials.json)"
+            ]
+            ++ bundledDeny
+            ++ cfg.extraPermissions.deny;
+            ask = [
+              "Bash(git push)"
+              "Bash(git push *)"
+              "Bash(git reset)"
+              "Bash(git reset *)"
+              "Bash(git clean *)"
+              "Bash(git restore *)"
+              "Bash(git checkout *)"
+              "Bash(git switch *)"
+              "Bash(git merge *)"
+              "Bash(git tag *)"
+              "Bash(git rm *)"
+              "Bash(git remote *)"
+            ]
+            ++ bundledAsk
+            ++ cfg.extraPermissions.ask;
           };
           statusLine = {
             type = "command";
@@ -983,37 +980,35 @@ in
             enableWeakerNetworkIsolation = true;
             network = {
               allowLocalBinding = true;
-              allowUnixSockets =
-                [
-                  "/nix/var/nix/daemon-socket/socket"
-                  "/private/tmp/tmux-501/default"
-                ]
-                ++ bundledSockets;
-              allowedDomains =
-                [
-                  "jacobcolvin.com"
-                  "registry.dagger.io"
-                  "api.dagger.cloud"
-                  "auth.dagger.cloud"
-                  "proxy.golang.org"
-                  "sum.golang.org"
-                ]
-                ++ bundledDomains;
+              allowUnixSockets = [
+                "/nix/var/nix/daemon-socket/socket"
+                "/private/tmp/tmux-501/default"
+              ]
+              ++ bundledSockets;
+              allowedDomains = [
+                "jacobcolvin.com"
+                "registry.dagger.io"
+                "api.dagger.cloud"
+                "auth.dagger.cloud"
+                "proxy.golang.org"
+                "sum.golang.org"
+              ]
+              ++ bundledDomains;
             };
             filesystem = {
               allowRead = [
                 "/nix/store"
-              ] ++ bundledReadPaths;
-              allowWrite =
-                [
-                  "~/go/pkg"
-                  "~/Library/Application Support/rtk"
-                  "~/Library/Caches"
-                  "~/.cache/nix"
-                  "~/.cache/helm"
-                  "~/.local/state/workmux"
-                ]
-                ++ bundledWritePaths;
+              ]
+              ++ bundledReadPaths;
+              allowWrite = [
+                "~/go/pkg"
+                "~/Library/Application Support/rtk"
+                "~/Library/Caches"
+                "~/.cache/nix"
+                "~/.cache/helm"
+                "~/.local/state/workmux"
+              ]
+              ++ bundledWritePaths;
             };
           };
           hooks = {
@@ -1132,17 +1127,16 @@ in
         pkgs.git-surgeon
       ];
 
-      file.".claude/CLAUDE.md".text =
-        ''
-          # Global Instructions
+      file.".claude/CLAUDE.md".text = ''
+        # Global Instructions
 
-          ## Writing Style
+        ## Writing Style
 
-          - Keep responses to plain ASCII text.
-          - Acknowledge complexity and mixed feelings when they exist.
-          - Your code speaks for itself. Enumeration of content is redundant. Focus instead on the how and why.
-        ''
-        + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n";
+        - Keep responses to plain ASCII text.
+        - Acknowledge complexity and mixed feelings when they exist.
+        - Your code speaks for itself. Enumeration of content is redundant. Focus instead on the how and why.
+      ''
+      + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n";
 
       sessionVariables = {
         DISABLE_AUTOUPDATER = "1";
