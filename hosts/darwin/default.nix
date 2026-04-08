@@ -11,6 +11,8 @@
     ../options.nix
   ];
 
+  nix.linux-builder.enable = true;
+
   dotfiles.system.homebrew.unsignedCasks = [ "fuse-t" ];
 
   homebrew = {
