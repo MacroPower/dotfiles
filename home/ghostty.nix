@@ -29,6 +29,7 @@ in
           "global:cmd+grave_accent=toggle_quick_terminal"
           "cmd+d=unbind"
           "cmd+shift+d=unbind"
+          "caps_lock=text:\\x02"
         ];
         quick-terminal-screen = "mouse";
         quick-terminal-position = "right";

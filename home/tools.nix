@@ -680,6 +680,7 @@ in
 
     tmux = {
       enable = true;
+      prefix = "C-b";
       mouse = true;
       baseIndex = 1;
       historyLimit = 50000;
