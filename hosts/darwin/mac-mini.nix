@@ -3,7 +3,6 @@
   hostname = "Jacobs-Mac-mini";
 
   loginItems = [
-    "/Applications/Homerow.app"
     "/Applications/LinearMouse.app"
     "~/Applications/Home Manager Apps/Caffeine.app"
     "/Applications/Hyperkey.app"

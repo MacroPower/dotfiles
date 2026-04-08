@@ -31,7 +31,6 @@
     casks = [
       "fork"
       "fuse-t"
-      "homerow"
       "hyperkey"
       "linearmouse"
     ]
@@ -503,23 +502,6 @@
           launchOnLogin = 1;
           quickHyperKeycode = 0;
         };
-        "com.superultra.Homerow" = {
-          SUAutomaticallyUpdate = false;
-          "check-for-updates-automatically" = false;
-          "launch-at-login" = true;
-          "is-auto-click-enabled" = true;
-          "chain-clicks" = true;
-          "enable-hyper-key" = true;
-          "hide-labels-when-nothing-is-searched" = false;
-          "search-shortcut" = "";
-          "non-search-shortcut" = "\\U2303\\U2325\\U21e7\\U2318A";
-          "scroll-shortcut" = "\\U2303\\U2325\\U21e7\\U2318S";
-          "auto-switch-input-source-id" = "com.apple.keylayout.US";
-          "disabled-bundle-paths" = [
-            "/Users/${config.dotfiles.system.username}/Applications/Home Manager Apps/Ghostty.app"
-          ];
-        };
-
         # Force the maximum AAC bitpool (80) for Bluetooth audio negotiation,
         # preventing the codec from dropping to lower quality under contention
         "com.apple.BluetoothAudioAgent" = {
