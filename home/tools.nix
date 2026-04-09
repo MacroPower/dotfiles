@@ -975,5 +975,6 @@ in
     tfswitch
     devbox
     angle-grinder
+    zstd
   ]);
 }
