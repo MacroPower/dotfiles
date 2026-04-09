@@ -399,6 +399,12 @@ in
         exec tmux new-session -c "$HOME" \; set-option destroy-unattached on
       end
 
+      # Start workmux sidebar once per tmux session
+      if set -q TMUX; and command -q workmux; and not tmux show-environment WORKMUX_SIDEBAR &>/dev/null
+        tmux set-environment WORKMUX_SIDEBAR 1
+        workmux sidebar --session &disown
+      end
+
       ${config.dotfiles.shell.extraInteractiveInit}
       set --global fish_key_bindings fish_default_key_bindings
 
