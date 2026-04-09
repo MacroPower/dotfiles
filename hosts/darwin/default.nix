@@ -12,6 +12,18 @@
   ];
 
   nix.linux-builder.enable = true;
+  nix.linux-builder.config = {
+    virtualisation.diskSize = lib.mkForce (80 * 1024); # 80 GiB
+    virtualisation.cores = 8;
+    virtualisation.memorySize = lib.mkForce (8 * 1024); # 8 GiB
+    nix.settings.min-free = lib.mkForce 0;
+    nix.settings.max-free = lib.mkForce 0;
+    nix.gc = {
+      automatic = true;
+      dates = "weekly";
+      options = "--delete-older-than 30d";
+    };
+  };
 
   dotfiles.system.homebrew.unsignedCasks = [ "fuse-t" ];
 
