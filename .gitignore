@@ -16,3 +16,4 @@ sbom.cdx.json
 lima/*.qcow2
 lima/result*
 .direnv/
+.task/
