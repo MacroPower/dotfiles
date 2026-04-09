@@ -34,6 +34,8 @@ tasks:
       - nix build .#packages.{{.NIX_SYSTEM}}.lima-terrarium-image --no-update-lock-file --always-allow-substitutes --out-link {{.ROOT_DIR}}/lima/result-terrarium
       - cp -f {{.ROOT_DIR}}/lima/result-terrarium/*.qcow2 {{.ROOT_DIR}}/lima/terrarium.qcow2
       - rm -f {{.ROOT_DIR}}/lima/result-terrarium
+      - mkdir -p ~/.lima/images
+      - cp -f {{.ROOT_DIR}}/lima/terrarium.qcow2 ~/.lima/images/terrarium.qcow2
 
   create:
     desc: Create and start the normal Lima VM
@@ -83,3 +85,19 @@ tasks:
     cmds:
       - limactl stop {{.VM}} || true
       - limactl delete {{.VM}}
+
+  builder:ensure:
+    desc: Ensure the linux-builder service is running
+    platforms: [darwin]
+    status:
+      - sudo launchctl print system/org.nixos.linux-builder &>/dev/null
+    cmds:
+      - sudo launchctl bootstrap system /Library/LaunchDaemons/org.nixos.linux-builder.plist
+
+  builder:reset:
+    desc: Stop the linux-builder, delete its disk, and restart
+    platforms: [darwin]
+    cmds:
+      - sudo launchctl bootout system/org.nixos.linux-builder || true
+      - sudo rm -f /var/lib/linux-builder/*.qcow2
+      - task: builder:ensure
