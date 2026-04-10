@@ -1163,6 +1163,7 @@ in
           teammateMode = "in-process";
           showThinkingSummaries = true;
           showClearContextOnPlanAccept = true;
+          effortLevel = "high";
         } cfg.extraSettings;
 
         agents = {
