@@ -1,6 +1,14 @@
-{ pkgs, lib, ... }:
 {
-  imports = [ ./settings.nix ];
+  pkgs,
+  lib,
+  config,
+  ...
+}:
+{
+  nix.settings = import ./settings.nix {
+    inherit pkgs;
+    inherit (config.dotfiles.system) username;
+  };
 
   nix.package = pkgs.lixPackageSets.stable.lix;
 
