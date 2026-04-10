@@ -70,7 +70,10 @@ inputs.nix-darwin.lib.darwinSystem {
       home-manager.users.${username} =
         { pkgs, ... }:
         {
-          imports = [ ../home/virtualization.nix ];
+          imports = [
+            ../home/tmux.nix
+            ../home/virtualization.nix
+          ];
           dotfiles = {
             inherit username hostname caCertificateFiles;
             homeDirectory = "/Users/${username}";
