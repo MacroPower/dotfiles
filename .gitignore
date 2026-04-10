@@ -14,6 +14,7 @@ secrets/.doppler-tmp.json
 secrets/*.tmp
 sbom.cdx.json
 lima/*.qcow2
+lima/*.qcow2.zst
 lima/result*
 .direnv/
 .task/
