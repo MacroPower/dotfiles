@@ -94,29 +94,6 @@
           };
           firewall.enabled = true;
         };
-        egress = [
-          {
-            toFQDNs = [
-              { matchName = "jacobcolvin.com"; }
-              { matchPattern = "*.jacobcolvin.com"; }
-              { matchName = "cache.nixos.org"; }
-            ];
-            toPorts = [
-              {
-                ports = [
-                  {
-                    port = "443";
-                    protocol = "TCP";
-                  }
-                  {
-                    port = "80";
-                    protocol = "TCP";
-                  }
-                ];
-              }
-            ];
-          }
-        ];
       };
 
       # Ensure the CA certificate directory exists for terrarium's
