@@ -78,7 +78,22 @@
 
       # Terrarium egress policy, applied on every boot.
       environment.etc."terrarium/config.yaml".text = builtins.toJSON {
-        logging = true;
+        logging = {
+          dns = {
+            enabled = true;
+            format = "json";
+            path = "/var/lib/terrarium/dns.log";
+          };
+          envoy = {
+            path = "/var/lib/terrarium/envoy.log";
+            accessLog = {
+              enabled = true;
+              format = "json";
+              path = "/var/lib/terrarium/envoy-access.log";
+            };
+          };
+          firewall.enabled = true;
+        };
         egress = [
           {
             toFQDNs = [

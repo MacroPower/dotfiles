@@ -48,7 +48,7 @@
       flake = false;
     };
     nur-jacobcolvin = {
-      url = "git+https://nur.jacobcolvin.com?narHash=sha256-rcMuUP4YFEyTnGw3IKQtuGlh1UfDLLLn/jLMe%2BMEhCM%3D";
+      url = "git+https://nur.jacobcolvin.com?narHash=sha256-P29nqOJLFhk%2B//2YpBFImAQoWqgYOkPuHczKArgYOsg%3D";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nix-homebrew = {

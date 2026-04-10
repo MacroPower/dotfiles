@@ -430,7 +430,14 @@ func (m *Tests) TestSandboxTCPForward(ctx context.Context) error {
 // +check
 func (m *Tests) TestSandboxLogging(ctx context.Context) error {
 	ctr := dag.Dev().SandboxBase(dagger.DevSandboxBaseOpts{
-		SandboxConfig: configFile(allDomainsYAML + `logging: true
+		SandboxConfig: configFile(allDomainsYAML + `logging:
+  dns:
+    enabled: true
+  envoy:
+    accessLog:
+      enabled: true
+  firewall:
+    enabled: true
 `),
 	})
 
@@ -653,7 +660,6 @@ func (m *Tests) TestSandboxRuntimeConfig(ctx context.Context) error {
       - matchName: "gopkg.in"
       - matchName: "go.googlesource.com"
       - matchName: "cs.opensource.google"
-logging: false
 `
 	// Use a SandboxBase with the go-only config file.
 	ctr := dag.Dev().SandboxBase(dagger.DevSandboxBaseOpts{
@@ -839,7 +845,6 @@ func (m *Tests) TestSandboxGenCustomConfig(ctx context.Context) error {
       - matchName: "go.googlesource.com"
       - matchName: "cs.opensource.google"
       - matchName: api.company.com
-logging: false
 `
 
 	ctr := dag.Container().From(addr).
