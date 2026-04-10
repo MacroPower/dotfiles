@@ -56,7 +56,7 @@ type Dev struct {
 func New(
 	// Dotfiles source directory containing flake.nix.
 	// +defaultPath="/"
-	// +ignore=["result", ".git", "toolchains/"]
+	// +ignore=["result", ".git", "toolchains/", "lima/"]
 	source *dagger.Directory,
 ) *Dev {
 	return &Dev{Source: source}

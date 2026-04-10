@@ -28,7 +28,7 @@ type Nix struct {
 func New(
 	// Project source directory
 	// +defaultPath="/"
-	// +ignore=["**/.git", "result", "toolchains/"]
+	// +ignore=["**/.git", "result", "toolchains/", "lima/"]
 	source *dagger.Directory,
 ) *Nix {
 	return &Nix{Source: source}
