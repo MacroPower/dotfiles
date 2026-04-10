@@ -31,11 +31,11 @@ in
         "$git_state"
         "$git_status"
         "$git_metrics"
-        "$cmd_duration"
       ];
 
       right_format = lib.concatStrings [
         "$status"
+        "$cmd_duration"
         "$shlvl"
         "$jobs"
         "$nix_shell"
