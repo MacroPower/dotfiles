@@ -74,6 +74,7 @@ inputs.nix-darwin.lib.darwinSystem {
             ../home/k9s.nix
             ../home/tmux.nix
             ../home/virtualization.nix
+            ../home/wireshark.nix
           ];
           dotfiles = {
             inherit username hostname caCertificateFiles;
@@ -87,7 +88,6 @@ inputs.nix-darwin.lib.darwinSystem {
               libraw
               dav1d
               drawio
-              wireshark
               appcleaner
               caffeine
               keka

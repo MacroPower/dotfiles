@@ -171,7 +171,6 @@ in
         openssl
         socat
         tcpdump
-        termshark
         websocat
         swaks
         grpcurl
