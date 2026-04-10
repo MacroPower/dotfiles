@@ -165,7 +165,6 @@
     cosign
     tokei
     gping
-    photo-cli
     lefthook
     tfswitch
     devbox
