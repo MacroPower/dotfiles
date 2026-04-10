@@ -71,6 +71,7 @@ inputs.nix-darwin.lib.darwinSystem {
         { pkgs, ... }:
         {
           imports = [
+            ../home/k9s.nix
             ../home/tmux.nix
             ../home/virtualization.nix
           ];
