@@ -10,7 +10,10 @@ fi
 COUNTER="${TMPDIR:-/tmp}/claude-exit-plan-${SESSION_ID}"
 
 if [ -d "$COUNTER" ]; then
-  # Second call -- allow through, clean up
+  # Second call -- allow through, write marker for Stop hook, clean up
+  MARKER="${TMPDIR:-/tmp}/claude-plan-active-${SESSION_ID}"
+  BASE_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+  printf '%s\n%s\n' "$PLAN_PATH" "$BASE_SHA" >"$MARKER"
   rmdir "$COUNTER"
   exit 0
 fi

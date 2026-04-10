@@ -418,8 +418,17 @@ let
 
   blockExitPlan = pkgs.writeShellApplication {
     name = "block-exit-plan";
-    runtimeInputs = [ pkgs.jq ];
+    runtimeInputs = [
+      pkgs.jq
+      pkgs.git
+    ];
     text = builtins.readFile ../configs/claude/hooks/block-exit-plan.sh;
+  };
+
+  blockStop = pkgs.writeShellApplication {
+    name = "block-stop";
+    runtimeInputs = [ pkgs.jq ];
+    text = builtins.readFile ../configs/claude/hooks/block-stop.sh;
   };
 
   # Single Bash PreToolUse hook that dispatches command rewrites.
@@ -1153,6 +1162,10 @@ in
                     type = "command";
                     command = "${workmux} done";
                   }
+                  {
+                    type = "command";
+                    command = lib.getExe blockStop;
+                  }
                 ];
               }
             ];
@@ -1169,6 +1182,7 @@ in
         agents = {
           code-simplifier = ../configs/claude/agents/code-simplifier.md;
           humanizer = ../configs/claude/agents/humanizer.md;
+          implementation-reviewer = ../configs/claude/agents/implementation-reviewer.md;
           plan-reviewer = ../configs/claude/agents/plan-reviewer.md;
         }
         // cfg.extraAgents;
