@@ -13,7 +13,7 @@
         (import ./lima-hardware.nix nixos-lima)
       ];
 
-      networking.hostName = "lima-terrarium";
+      networking.hostName = "terrarium";
 
       environment.systemPackages = [ pkgs.terrarium ];
 

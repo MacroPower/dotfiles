@@ -135,9 +135,8 @@
               arch = builtins.head (lib.splitString "-" system);
             in
             lib.optionalAttrs (lib.hasSuffix "-linux" system) {
-              lima-image = self.nixosConfigurations."lima-${arch}".config.system.build.images.qemu-efi;
-              lima-terrarium-image =
-                self.nixosConfigurations."lima-terrarium-${arch}".config.system.build.images.qemu-efi;
+              terrarium-image =
+                self.nixosConfigurations."terrarium-${arch}".config.system.build.images.qemu-efi;
             };
 
         };
@@ -198,10 +197,8 @@
             {
               "nixos-orbstack" = mkNixOS (import ./hosts/nixos/orbstack.nix);
               "nixos-truenas" = mkNixOS (import ./hosts/nixos/truenas.nix);
-              "lima-aarch64" = mkLimaConfig ./hosts/nixos/lima.nix "aarch64-linux";
-              "lima-x86_64" = mkLimaConfig ./hosts/nixos/lima.nix "x86_64-linux";
-              "lima-terrarium-aarch64" = mkLimaConfig ./hosts/nixos/lima-terrarium.nix "aarch64-linux";
-              "lima-terrarium-x86_64" = mkLimaConfig ./hosts/nixos/lima-terrarium.nix "x86_64-linux";
+              "terrarium-aarch64" = mkLimaConfig ./hosts/nixos/terrarium.nix "aarch64-linux";
+              "terrarium-x86_64" = mkLimaConfig ./hosts/nixos/terrarium.nix "x86_64-linux";
             };
 
           homeConfigurations = {
