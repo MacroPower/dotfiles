@@ -167,7 +167,6 @@ in
         file
         fping
         iperf3
-        nmap
         openssl
         socat
         tcpdump
