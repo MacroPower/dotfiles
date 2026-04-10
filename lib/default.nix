@@ -58,7 +58,11 @@ let
   };
 
   workmuxOverlay = system: _final: _prev: {
-    workmux-bin = workmux.packages.${system}.default;
+    workmux-bin = workmux.packages.${system}.default.overrideAttrs {
+      # Sandbox network_proxy and rpc tests need to bind TCP listeners,
+      # which the Nix build sandbox does not permit.
+      doCheck = false;
+    };
   };
 
   sharedOverlays = system: [

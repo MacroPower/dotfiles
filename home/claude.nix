@@ -183,6 +183,21 @@ let
       waiting = "󰍻";
       done = "󰄴";
     };
+    theme = {
+      custom = {
+        current_row_bg = "#${colors.base00}";
+        text = "#${colors.base05}";
+        accent = "#${colors.base0D}";
+        success = "#${colors.base0B}";
+        warning = "#${colors.base0A}";
+        danger = "#${colors.base08}";
+        dimmed = "#${colors.base03}";
+        border = "#${colors.base02}";
+        header = "#${colors.base0E}";
+        keycap = "#${colors.base0C}";
+        info = "#${colors.base0C}";
+      };
+    };
     panes = [
       {
         command = "<agent>";

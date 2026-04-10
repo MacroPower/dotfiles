@@ -70,6 +70,7 @@ Flags:
 - `-p <text>`: inline prompt (short tasks only)
 - `--name <handle>`: explicit handle name (otherwise derived from branch)
 - `--base <branch>`: base branch to branch from (default: current)
+- `--fork`: fork an existing Claude Code conversation into a new worktree with full prior context
 
 ### Monitor Status
 

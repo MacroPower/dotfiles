@@ -921,11 +921,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1775236079,
-        "narHash": "sha256-R1GaWG+vR6wb6QAMqSuC8EwuhFwmZtO7fOw/UD+ypNo=",
+        "lastModified": 1775763334,
+        "narHash": "sha256-m2FYogeJP0m8opuLyMXeAEMh5lAe4hs6oCZiUEBWcxs=",
         "owner": "raine",
         "repo": "workmux",
-        "rev": "915e38a3f57f852dc13cf901e2314a9479019a94",
+        "rev": "389ad80844eae0f0a27d1db5e1cd82ac6672ec41",
         "type": "github"
       },
       "original": {

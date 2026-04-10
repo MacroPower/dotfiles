@@ -53,6 +53,7 @@ Key flags:
 - `-W, --wait`: block until the tmux window is closed
 - `-n, --count <N>`: create N worktree instances
 - `--foreach <matrix>`: create worktrees from variable matrix
+- `--fork`: fork an existing Claude Code conversation into a new worktree, resuming with full context from a previous session
 - `--no-hooks, --no-file-ops, --no-pane-cmds`: skip setup steps
 
 ### List worktrees
