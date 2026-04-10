@@ -6,6 +6,7 @@
 #
 # Usage:
 #   task lima:image   # build the golden qcow2 (requires Linux builder)
+#   task lima:pull    # pull a pre-built image from GHCR (no builder needed)
 #   task lima:create  # create and start the VM
 #   task lima:rebuild # apply configuration changes without rebuilding the image
 #   task lima:destroy # stop and delete the VM

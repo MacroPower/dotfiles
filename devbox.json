@@ -1,4 +1,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/main/.schema/devbox.schema.json",
-  "packages": ["go@latest", "golangci-lint@latest"]
+  "packages": [
+    "go@latest",
+    "golangci-lint@latest",
+    "oras@latest",
+    "zstd@latest"
+  ]
 }

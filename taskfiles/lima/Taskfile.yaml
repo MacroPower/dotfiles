@@ -5,6 +5,7 @@ vars:
     sh: "uname -m | sed 's/arm64/aarch64/' | sed 's/$/-linux/'"
   LIMA_ARCH:
     sh: "uname -m | sed 's/arm64/aarch64/'"
+  IMAGE_DIR: '{{env "HOME"}}/.lima/_images'
 
 tasks:
   image:
@@ -15,21 +16,65 @@ tasks:
       - hosts/nixos/default.nix
       - hosts/shared.nix
     generates:
-      - lima/terrarium.qcow2
+      - "{{.IMAGE_DIR}}/terrarium.qcow2"
     cmds:
+      - mkdir -p {{.IMAGE_DIR}}
       - nix build .#packages.{{.NIX_SYSTEM}}.terrarium-image --no-update-lock-file --always-allow-substitutes --out-link {{.ROOT_DIR}}/lima/result-terrarium
-      - cp -f {{.ROOT_DIR}}/lima/result-terrarium/*.qcow2 {{.ROOT_DIR}}/lima/terrarium.qcow2
+      - cp -f {{.ROOT_DIR}}/lima/result-terrarium/*.qcow2 {{.IMAGE_DIR}}/terrarium.qcow2
+      - chmod u+w {{.IMAGE_DIR}}/terrarium.qcow2
       - rm -f {{.ROOT_DIR}}/lima/result-terrarium
-      - mkdir -p ~/.lima/images
-      - cp -f {{.ROOT_DIR}}/lima/terrarium.qcow2 ~/.lima/images/terrarium.qcow2
+      - zstd -T0 -19 -f {{.IMAGE_DIR}}/terrarium.qcow2 -o {{.IMAGE_DIR}}/terrarium.qcow2.zst
+
+  login:
+    desc: Log in to GHCR for image publishing
+    cmds:
+      - oras login ghcr.io
+
+  publish:
+    desc: Publish the compressed terrarium image to GHCR
+    deps: [image]
+    vars:
+      IMAGE_REF: ghcr.io/macropower/dotfiles/terrarium
+    preconditions:
+      - sh: command -v oras
+        msg: "oras CLI not found"
+      - sh: test -f {{.IMAGE_DIR}}/terrarium.qcow2.zst
+        msg: "Compressed image not found. Run 'task lima:image' first."
+    cmds:
+      - >-
+        cd {{.IMAGE_DIR}} &&
+        oras push {{.IMAGE_REF}}:lima-{{.LIMA_ARCH}}
+        --artifact-type application/vnd.terrarium.qcow2.zst.v1
+        --annotation org.opencontainers.image.source=https://github.com/MacroPower/dotfiles
+        terrarium.qcow2.zst:application/zstd
+
+  pull:
+    desc: Pull a pre-built terrarium image from GHCR
+    vars:
+      TAG: '{{.TAG | default (printf "lima-%s" .LIMA_ARCH)}}'
+      IMAGE_REF: ghcr.io/macropower/dotfiles/terrarium
+    preconditions:
+      - sh: command -v oras
+        msg: "oras CLI not found"
+      - sh: command -v zstd
+        msg: "zstd not found"
+    status:
+      - test -f {{.IMAGE_DIR}}/terrarium.qcow2
+    cmds:
+      - mkdir -p {{.IMAGE_DIR}}
+      - oras pull {{.IMAGE_REF}}:{{.TAG}} -o {{.IMAGE_DIR}}/
+      - zstd -d -f {{.IMAGE_DIR}}/terrarium.qcow2.zst -o {{.IMAGE_DIR}}/terrarium.qcow2
+      - rm -f {{.IMAGE_DIR}}/terrarium.qcow2.zst
 
   create:
     desc: Create and start the Terrarium Lima VM
-    deps: [image]
+    preconditions:
+      - sh: test -f {{.IMAGE_DIR}}/terrarium.qcow2
+        msg: "Image not found. Run 'task lima:image' (build) or 'task lima:pull' (download) first."
     cmds:
       - >-
         limactl create --name=terrarium
-        --set '.images = [{"location": "file://{{.ROOT_DIR}}/lima/terrarium.qcow2", "arch": "{{.LIMA_ARCH}}"}]'
+        --set '.images = [{"location": "file://{{.IMAGE_DIR}}/terrarium.qcow2", "arch": "{{.LIMA_ARCH}}"}]'
         lima/terrarium.yaml
       - limactl start terrarium
 
