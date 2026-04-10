@@ -60,12 +60,26 @@ let
 
   tmuxObsidianTask = pkgs.writeShellApplication {
     name = "tmux-obsidian-task";
-    runtimeInputs = [ pkgs.gum ];
+    runtimeInputs = with pkgs; [
+      fd
+      gum
+    ];
     text = ''
-      task=$(gum input --placeholder "Task..." --header "Add task to daily note")
+      vaults_dir="$HOME/Documents/vaults"
+      if [ ! -d "$vaults_dir" ]; then
+        echo "No vaults found in $vaults_dir"
+        sleep 1
+        exit 1
+      fi
+
+      vault=$(fd --type d --max-depth 1 --base-directory "$vaults_dir" | gum choose --header "Select vault")
+      [ -z "$vault" ] && exit 0
+
+      task=$(gum input --placeholder "Task..." --header "Add task to daily note ($vault)")
       [ -z "$task" ] && exit 0
-      obsidian daily:append content="- [ ] $task" silent
-      echo "Added: $task"
+
+      obsidian daily:append content="- [ ] $task" vault="$vault" silent
+      echo "Added to $vault: $task"
       sleep 0.5
     '';
   };
@@ -358,7 +372,7 @@ let
     obsidianTask = {
       name = "Add task (obsidian)";
       key = "o";
-      cmd = ''display-popup -E -T " obsidian " -w 60% -h 20% tmux-obsidian-task'';
+      cmd = ''display-popup -E -T " obsidian " -w 60% -h 30% tmux-obsidian-task'';
     };
 
     # Workmux
