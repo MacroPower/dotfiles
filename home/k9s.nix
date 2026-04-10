@@ -1,5 +1,4 @@
-_:
-{
+_: {
   config = {
     programs = {
       k9s = {

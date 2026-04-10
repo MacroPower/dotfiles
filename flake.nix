@@ -135,8 +135,7 @@
               arch = builtins.head (lib.splitString "-" system);
             in
             lib.optionalAttrs (lib.hasSuffix "-linux" system) {
-              terrarium-image =
-                self.nixosConfigurations."terrarium-${arch}".config.system.build.images.qemu-efi;
+              terrarium-image = self.nixosConfigurations."terrarium-${arch}".config.system.build.images.qemu-efi;
             };
 
         };
