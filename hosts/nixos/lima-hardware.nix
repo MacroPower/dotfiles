@@ -14,6 +14,7 @@ nixos-lima:
   virtualisation.containerd.enable = true;
 
   environment.systemPackages = with pkgs; [
+    iptables
     nerdctl
     pkgsStatic.tini
     (writeShellScriptBin "docker" ''exec sudo ${nerdctl}/bin/nerdctl "$@"'')
