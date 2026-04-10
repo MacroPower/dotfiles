@@ -72,6 +72,7 @@ inputs.nix-darwin.lib.darwinSystem {
         {
           imports = [
             ../home/k9s.nix
+            ../home/kube-radar.nix
             ../home/tmux.nix
             ../home/virtualization.nix
             ../home/wireshark.nix
