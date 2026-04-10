@@ -205,7 +205,7 @@ let
       }
       { split = "horizontal"; }
     ];
-    sandbox = lib.optionalAttrs pkgs.stdenv.isDarwin {
+    sandbox = lib.optionalAttrs cfg.lima.enable {
       enabled = true;
       backend = "lima";
       image = "file://${config.home.homeDirectory}/.lima/_images/terrarium.qcow2";
@@ -223,9 +223,9 @@ let
         isolation = "shared";
         projects_dir = "${config.home.homeDirectory}/Documents/repos";
         skip_default_provision = true;
-        cpus = 8;
-        memory = "8GiB";
-        disk = "80GiB";
+        inherit (cfg.lima) cpus;
+        inherit (cfg.lima) memory;
+        inherit (cfg.lima) disk;
       };
     };
   };
@@ -584,6 +584,25 @@ in
       type = types.attrsOf types.anything;
       default = { };
       description = "Additional MCP servers deep-merged into programs.mcp.servers.";
+    };
+
+    lima = {
+      enable = lib.mkEnableOption "Lima sandbox backend";
+      cpus = mkOption {
+        type = types.int;
+        default = 8;
+        description = "Number of CPUs allocated to the Lima VM.";
+      };
+      memory = mkOption {
+        type = types.str;
+        default = "8GiB";
+        description = "Memory allocated to the Lima VM.";
+      };
+      disk = mkOption {
+        type = types.str;
+        default = "80GiB";
+        description = "Disk size allocated to the Lima VM.";
+      };
     };
 
     extraPermissions = mkOption {

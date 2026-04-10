@@ -58,6 +58,12 @@
         claude = {
           fetchAllowlist = false;
           extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
+          lima = {
+            enable = true;
+            cpus = 12;
+            memory = "32GiB";
+            disk = "500GiB";
+          };
         };
       };
     };

@@ -44,7 +44,15 @@
           userName = "Jacob Colvin";
           userEmail = "jacobcolvin1@gmail.com";
         };
-        claude.extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
+        claude = {
+          extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
+          lima = {
+            enable = true;
+            cpus = 8;
+            memory = "8GiB";
+            disk = "120GiB";
+          };
+        };
       };
     };
 }
