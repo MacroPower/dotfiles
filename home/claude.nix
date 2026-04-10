@@ -190,6 +190,29 @@ let
       }
       { split = "horizontal"; }
     ];
+    sandbox = lib.optionalAttrs pkgs.stdenv.isDarwin {
+      enabled = true;
+      backend = "lima";
+      image = "file://${config.home.homeDirectory}/.lima/_images/terrarium.qcow2";
+      toolchain = "auto";
+      env_passthrough = [
+        "GITHUB_TOKEN"
+        "GITHUB_PERSONAL_ACCESS_TOKEN"
+        "GH_TOKEN"
+        "ARGOCD_API_TOKEN"
+        "ARGOCD_BASE_URL"
+        "DAGGER_CLOUD_TOKEN"
+        "KAGI_API_KEY"
+      ];
+      lima = {
+        isolation = "shared";
+        projects_dir = "${config.home.homeDirectory}/Documents/repos";
+        skip_default_provision = true;
+        cpus = 8;
+        memory = "8GiB";
+        disk = "80GiB";
+      };
+    };
   };
 
   rtkConfig = (pkgs.formats.toml { }).generate "config.toml" {
@@ -443,6 +466,29 @@ let
       export ARGOCD_BASE_URL="$(cat "${config.sops.secrets.argocd_base_url.path}" 2>/dev/null || true)"
     fi
     exec ${pkgs.mcp-argocd}/bin/argocd-mcp "$@"
+  '';
+
+  # Wrapper that injects sops secrets as env vars for sandbox env_passthrough
+  workmuxWrapped = pkgs.writeShellScriptBin "workmux" ''
+    if [ -f "${config.sops.secrets.gh_token.path}" ]; then
+      GH_TOKEN="$(cat "${config.sops.secrets.gh_token.path}" 2>/dev/null || true)"
+      export GH_TOKEN
+      export GITHUB_TOKEN="$GH_TOKEN"
+      export GITHUB_PERSONAL_ACCESS_TOKEN="$GH_TOKEN"
+    fi
+    if [ -f "${config.sops.secrets.argocd_api_token.path}" ]; then
+      export ARGOCD_API_TOKEN="$(cat "${config.sops.secrets.argocd_api_token.path}" 2>/dev/null || true)"
+    fi
+    if [ -f "${config.sops.secrets.argocd_base_url.path}" ]; then
+      export ARGOCD_BASE_URL="$(cat "${config.sops.secrets.argocd_base_url.path}" 2>/dev/null || true)"
+    fi
+    if [ -f "${config.sops.secrets.dagger_cloud_token.path}" ]; then
+      export DAGGER_CLOUD_TOKEN="$(cat "${config.sops.secrets.dagger_cloud_token.path}" 2>/dev/null || true)"
+    fi
+    if [ -f "${config.sops.secrets.kagi_api_key.path}" ]; then
+      export KAGI_API_KEY="$(cat "${config.sops.secrets.kagi_api_key.path}" 2>/dev/null || true)"
+    fi
+    exec ${lib.getExe' pkgs.workmux-bin "workmux"} "$@"
   '';
 
   # Aggregate enabled MCP server bundles
@@ -1121,7 +1167,7 @@ in
       packages = [
         pkgs.chief
         pkgs.llm-agents.ccusage
-        pkgs.workmux-bin
+        workmuxWrapped
         pkgs.rtk-bin
         pkgs.claude-history
         pkgs.git-surgeon

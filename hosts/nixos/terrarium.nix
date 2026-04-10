@@ -6,7 +6,12 @@
   inherit system;
   username = "jacobcolvin";
   hostModule =
-    { pkgs, ... }:
+    {
+      pkgs,
+      lib,
+      config,
+      ...
+    }:
     {
       imports = [
         ./default.nix
@@ -14,6 +19,11 @@
       ];
 
       networking.hostName = "terrarium";
+
+      # Override login shell to bash. workmux sandbox generates POSIX shell
+      # syntax (export VAR=value) and passes it via `limactl shell -- eval`,
+      # which uses the login shell. Fish cannot parse POSIX export syntax.
+      users.users.${config.dotfiles.system.username}.shell = lib.mkForce pkgs.bash;
 
       environment.systemPackages = [ pkgs.terrarium ];
 
@@ -66,7 +76,7 @@
         };
         serviceConfig = {
           Type = "notify";
-          ExecStart = "${pkgs.terrarium}/bin/terrarium daemon --config=\${TERRARIUM_CONFIG}";
+          ExecStart = "${pkgs.terrarium}/bin/terrarium daemon --config=/etc/terrarium/config.yaml";
           EnvironmentFile = "/etc/environment";
           StateDirectory = "terrarium";
           WatchdogSec = "30s";
