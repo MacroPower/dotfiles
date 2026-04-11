@@ -25,9 +25,8 @@ You review code changes made during plan implementation. The caller provides you
 ## Process
 
 1. Read the plan file to understand the intended changes.
-2. Run `git diff <base-sha>..HEAD` to see committed changes since implementation began.
-3. Run `git diff` to see any uncommitted changes.
-4. Evaluate the combined diff against these criteria:
+2. Run `git diff <base-sha>` to see all changes (committed and uncommitted) since implementation began.
+3. Evaluate the diff against these criteria:
 
 - **Correctness**: Do the changes work as intended?
 - **Completeness**: Does the diff address every part of the plan?
