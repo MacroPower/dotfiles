@@ -880,8 +880,8 @@ in
           "#(tmux-status-context)"
           "#[fg=#${tmux.surface},bg=#${tmux.bg}]${plr}"
           "#[fg=#${tmux.fg},bg=#${tmux.surface}] #(whoami)@#h "
-          "#[fg=#${tmux.accent},bg=#${tmux.surface}]${plr}"
-          "#[fg=#${tmux.dark},bg=#${tmux.accent},bold] %I:%M:%S %p "
+          "#[fg=#{?client_prefix,##${tmux.accentAlt},##${tmux.accent}},bg=#${tmux.surface}]${plr}"
+          "#[fg=#${tmux.dark},bg=#{?client_prefix,##${tmux.accentAlt},##${tmux.accent}},bold] %I:%M:%S %p "
         ]
       }"
 
