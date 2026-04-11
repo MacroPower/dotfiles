@@ -32,9 +32,15 @@ render_hints() {
       first=false
       local indent="${line%%[![:space:]]*}"
       local rest="${line:${#indent}}"
-      if [[ $rest =~ ^([^[:space:]]+(\ [^[:space:]]+)*)(\ {3,}) ]]; then
+      local key_re='^([^ ]+) '
+      if [[ $rest =~ $key_re ]]; then
         local key_part="${BASH_REMATCH[1]}"
-        printf '%s%s%s%s%s%s\n' "$indent" "$key_esc" "$key_part" "$dim_esc" "${rest:${#key_part}}" "$reset"
+        local placeholder=$'\x01'
+        local styled="${key_part//\\\//$placeholder}"
+        styled="${styled//\//${dim_esc}/${key_esc}}"
+        styled="${styled//$placeholder//}"
+        styled="${styled//·/${dim_esc}·${key_esc}}"
+        printf '%s%s%s%s%s%s\n' "$indent" "$key_esc" "$styled" "$dim_esc" "${rest:${#key_part}}" "$reset"
       else
         printf '%s%s%s\n' "$dim_esc" "$line" "$reset"
       fi
@@ -45,7 +51,11 @@ render_hints() {
 self="$TMUX_PANE"
 hints_dir="$HOME/.config/hints"
 last_cmd=""
+last_width=""
+printf '\033[?7l' # disable line wrapping -- truncate at pane edge
 clear
+
+trap 'printf "\033[?7h"' EXIT
 
 while true; do
   # Find the active pane's command in this window (excluding the hints pane)
@@ -73,7 +83,9 @@ while true; do
   nvim) cmd="vim" ;;
   esac
 
-  if [ "$cmd" != "$last_cmd" ]; then
+  # Re-render on command change or pane resize
+  cur_width=$(tput cols)
+  if [ "$cmd" != "$last_cmd" ] || [ "$cur_width" != "$last_width" ]; then
     hint_file="$hints_dir/$cmd.txt"
     [ -f "$hint_file" ] || hint_file="$hints_dir/tmux.txt"
 
@@ -83,6 +95,7 @@ while true; do
     printf '%s\n' "$output"
     tput ed
     last_cmd="$cmd"
+    last_width="$cur_width"
   fi
 
   sleep 0.5

@@ -198,9 +198,9 @@ let
     };
     clearScreen = {
       group = "general";
-      name = "Clear screen";
-      key = "C-l";
-      cmd = ''send-keys C-l \; run-shell "sleep 0.1" \; clear-history'';
+      name = "Clear scrollback";
+      key = "C";
+      cmd = "clear-history";
     };
     hintsToggle = {
       group = "general";
@@ -211,7 +211,7 @@ let
     listKeys = {
       group = "general";
       name = "+Keys";
-      key = "M-?";
+      key = "I";
       cmd = "list-keys -N";
     };
 
@@ -251,14 +251,28 @@ let
     renameWindow = {
       group = "windows";
       name = "Rename";
-      key = "C-r";
+      key = "R";
       cmd = ''command-prompt -I "#W" "rename-window -- \"%%\""'';
     };
     killWindow = {
       group = "windows";
       name = "Kill";
-      key = "C-x";
+      key = "X";
       cmd = ''confirm -p "Kill window #W? (y/n)" kill-window'';
+    };
+    nextWindow = {
+      group = "windows";
+      name = "Next";
+      key = "n";
+      cmd = "next-window";
+      repeat = true;
+    };
+    prevWindow = {
+      group = "windows";
+      name = "Previous";
+      key = "b";
+      cmd = "previous-window";
+      repeat = true;
     };
 
     # Layouts
@@ -284,35 +298,29 @@ let
     layoutV = {
       group = "layouts";
       name = "Vertical";
-      key = "C-v";
+      key = "V";
       cmd = "select-layout even-vertical";
     };
+    layoutMainH = {
+      group = "layouts";
+      name = "Main horizontal";
+      key = "U";
+      cmd = "select-layout main-horizontal";
+    };
+    layoutMainV = {
+      group = "layouts";
+      name = "Main vertical";
+      key = "Y";
+      cmd = "select-layout main-vertical";
+    };
+    layoutSpread = {
+      group = "layouts";
+      name = "Spread evenly";
+      key = "_";
+      cmd = "select-layout -E";
+    };
 
-    # Panes
-    paneLeft = {
-      group = "panes";
-      name = "Left";
-      key = "h";
-      cmd = "select-pane -L";
-    };
-    paneDown = {
-      group = "panes";
-      name = "Down";
-      key = "j";
-      cmd = "select-pane -D";
-    };
-    paneUp = {
-      group = "panes";
-      name = "Up";
-      key = "k";
-      cmd = "select-pane -U";
-    };
-    paneRight = {
-      group = "panes";
-      name = "Right";
-      key = "l";
-      cmd = "select-pane -R";
-    };
+    # Panes (navigation via vim-tmux-navigator: C-hjkl)
     resizeLeft = {
       group = "panes";
       name = "Left";
@@ -389,6 +397,31 @@ let
       key = "x";
       cmd = "kill-pane";
     };
+    displayPanes = {
+      group = "panes";
+      name = "Display numbers";
+      key = "i";
+      cmd = "display-panes";
+    };
+    rotatePanes = {
+      group = "panes";
+      name = "Rotate";
+      key = "a";
+      cmd = "rotate-window";
+      transient = true;
+    };
+    markPane = {
+      group = "panes";
+      name = "Mark";
+      key = "u";
+      cmd = ''select-pane -m \; display-message "Pane marked"'';
+    };
+    respawnPane = {
+      group = "panes";
+      name = "Respawn";
+      key = "Z";
+      cmd = ''confirm -p "Respawn pane? (y/n)" "respawn-pane -k"'';
+    };
 
     # Sessions
     seshPicker = {
@@ -406,13 +439,13 @@ let
     sessionRename = {
       group = "sessions";
       name = "Rename";
-      key = "n";
+      key = "$";
       cmd = ''command-prompt -I "#S" "rename-session -- \"%%\""'';
     };
     newSession = {
       group = "sessions";
       name = "New";
-      key = "C-n";
+      key = "N";
       cmd = "new-session -c ~";
     };
     detach = {
@@ -432,13 +465,13 @@ let
     gituiPopup = {
       group = "popups";
       name = "gitui";
-      key = "C-g";
+      key = "G";
       cmd = ''display-popup -E -T " gitui " -w 90% -h 90% -d "#{pane_current_path}" gitui'';
     };
     lazydockerPopup = {
       group = "popups";
       name = "lazydocker";
-      key = "C-d";
+      key = "D";
       cmd = ''display-popup -E -T " lazydocker " -w 90% -h 90% lazydocker'';
     };
     obsidianTask = {
@@ -452,84 +485,35 @@ let
     workmuxDash = {
       group = "workmux";
       name = "Dashboard";
-      key = "C-s";
+      key = "S";
       cmd = ''display-popup -E -T " workmux " -h 30 -w 100 "workmux dashboard"'';
     };
     workmuxSidebar = {
       group = "workmux";
       name = "Sidebar";
-      key = "C-t";
+      key = "T";
       cmd = ''run-shell "workmux sidebar"'';
     };
     workmuxLast = {
       group = "workmux";
       name = "Last done";
-      key = "C-l";
+      key = "W";
       cmd = ''run-shell "workmux last-done"'';
     };
 
     # Toggles
-    toggleStatus = {
-      group = "toggles";
-      name = "Status bar";
-      key = "b";
-      cmd = "set-option -g status";
-    };
     toggleSync = {
       group = "toggles";
       name = "Sync panes";
       key = "y";
       cmd = ''set-window-option synchronize-panes \; display-message "sync #{?synchronize-panes,ON,OFF}"'';
     };
-    toggleMouse = {
-      group = "toggles";
-      name = "Mouse";
-      key = "m";
-      cmd = ''set -g mouse \; display-message "Mouse #{?mouse,ON,OFF}"'';
-    };
-
-    # Alt shortcuts (root table, no prefix)
-    altLastWindow = {
-      group = "alt";
-      name = "Last window";
-      key = "M-Tab";
-      cmd = ''run-shell "workmux last-agent"'';
-      table = "root";
-    };
-    altScratch = {
-      group = "alt";
-      name = "Scratch";
-      key = "M-o";
-      cmd = ''display-popup -E -T " scratch " -w 80% -h 80% -d "#{pane_current_path}"'';
-      table = "root";
-    };
-    altSeshPicker = {
-      group = "alt";
-      name = "Sessions";
-      key = "M-f";
-      cmd = ''display-popup -E -T " sesh " -w 70% -h 70% tmux-sesh-picker'';
-      table = "root";
-    };
-    altFilePicker = {
-      group = "alt";
-      name = "Files";
-      key = "M-p";
+    # File picker (prefix+F)
+    filePicker = {
+      group = "popups";
+      name = "File picker";
+      key = "F";
       cmd = ''display-popup -E -T " files " -w 80% -h 80% -d "#{pane_current_path}" tmux-file-picker --git-root'';
-      table = "root";
-    };
-    altPrevWindow = {
-      group = "alt";
-      name = "Prev window";
-      key = "M-h";
-      cmd = "previous-window";
-      table = "root";
-    };
-    altNextWindow = {
-      group = "alt";
-      name = "Next window";
-      key = "M-l";
-      cmd = "next-window";
-      table = "root";
     };
   };
 
@@ -550,6 +534,8 @@ let
         b.sessionTree
         b.swapWindowPrev
         b.swapWindowNext
+        b.nextWindow
+        b.prevWindow
         { separator = true; }
         {
           name = "+Layout";
@@ -559,6 +545,10 @@ let
             b.layoutTiled
             b.layoutH
             b.layoutV
+            b.layoutMainH
+            b.layoutMainV
+            { separator = true; }
+            b.layoutSpread
           ];
         }
         b.renameWindow
@@ -569,11 +559,6 @@ let
       name = "+Panes";
       key = "p";
       menu = [
-        b.paneLeft
-        b.paneDown
-        b.paneUp
-        b.paneRight
-        { separator = true; }
         {
           name = "+Resize";
           key = "r";
@@ -586,11 +571,15 @@ let
         }
         b.swapPanePrev
         b.swapPaneNext
+        b.displayPanes
+        b.rotatePanes
         b.zoomPane
         { separator = true; }
         b.breakPane
         b.grabPane
         b.movePane
+        b.markPane
+        b.respawnPane
         b.killPane
       ];
     }
@@ -612,12 +601,13 @@ let
         b.scratchPopup
         b.gituiPopup
         b.lazydockerPopup
+        b.filePicker
         b.obsidianTask
       ];
     }
     {
       name = "+Workmux";
-      key = "C-w";
+      key = "M";
       menu = [
         b.workmuxDash
         b.workmuxSidebar
@@ -628,9 +618,7 @@ let
       name = "+Toggles";
       key = "t";
       menu = [
-        b.toggleStatus
         b.toggleSync
-        b.toggleMouse
         b.hintsToggle
       ];
     }
@@ -692,10 +680,6 @@ let
       id = "toggles";
       label = "TOGGLES";
     }
-    {
-      id = "alt";
-      label = "ALT SHORTCUTS (no prefix)";
-    }
   ];
 
   entriesForGroup = gid: lib.filter (e: (e.group or "") == gid) (lib.attrValues b);
@@ -704,7 +688,29 @@ let
     width: str:
     str + builtins.substring 0 (lib.max 0 (width - builtins.stringLength str)) "                    ";
 
-  fmtHintEntry = e: "  ${padRight 10 e.key}${e.name}";
+  # Display symbols for special key names in hints
+  keySymbols = {
+    tab = "⇥";
+  };
+
+  displayKey = k: keySymbols.${k} or k;
+
+  # Display width of a key (1 for symbol replacements, byte length for ASCII)
+  keyDisplayWidth =
+    k:
+    let
+      dk = displayKey k;
+    in
+    if keySymbols ? ${k} then 1 else builtins.stringLength dk;
+
+  fmtHintEntry =
+    e:
+    let
+      dk = displayKey e.key;
+      # Compensate for multi-byte UTF-8 symbols that are only 1 column wide
+      padWidth = 6 + (builtins.stringLength dk - keyDisplayWidth e.key);
+    in
+    "   ${padRight padWidth dk}${e.name}";
 
   fmtHintGroup =
     { id, label }:
@@ -783,7 +789,10 @@ in
         plugin = logging;
         extraConfig = ''
           set -g @logging-path "$HOME/.local/share/tmux/logging"
-          set -g @logging_key "C-o"
+          set -g @logging_key "O"
+          set -g @screen-capture-key "P"
+          set -g @save-complete-history-key "A"
+          set -g @clear-history-key "Q"
         '';
       }
       {
@@ -806,7 +815,7 @@ in
       }
       {
         plugin = tmux-fzf;
-        extraConfig = ''set -g @tmux-fzf-launch-key "C-f"'';
+        extraConfig = ''set -g @tmux-fzf-launch-key "E"'';
       }
       {
         plugin = resurrect;

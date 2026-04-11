@@ -26,7 +26,7 @@ let mapleader = "\<Space>"
 set timeoutlen=500
 
 " fzf.vim keybindings
-nnoremap <C-p> :Files<CR>
+nnoremap <leader>p :Files<CR>
 nnoremap <leader>f :Rg<CR>
 nnoremap <leader>b :Buffers<CR>
 
@@ -98,10 +98,19 @@ hi Normal guibg=#23272e ctermbg=NONE
 let g:airline_theme='onedark'
 let g:airline_powerline_fonts = 1
 
+" Git keybindings (fugitive + gitgutter)
+nnoremap <leader>gs :Git<CR>
+nnoremap <leader>gb :Git blame<CR>
+nnoremap <leader>gd :Gvdiffsplit<CR>
+nnoremap <leader>gn ]c
+nnoremap <leader>gp [c
+
 " vim-which-key
 let g:which_key_map = {}
+let g:which_key_map.p = 'fzf files'
 let g:which_key_map.f = 'ripgrep search'
 let g:which_key_map.b = 'buffers'
+let g:which_key_map.g = { 'name': '+git', 's': 'status', 'b': 'blame', 'd': 'diff split', 'n': 'next hunk', 'p': 'prev hunk' }
 call which_key#register('<Space>', "g:which_key_map")
 nnoremap <silent> <leader> :<c-u>WhichKey '<Space>'<CR>
 vnoremap <silent> <leader> :<c-u>WhichKeyVisual '<Space>'<CR>
