@@ -1,0 +1,45 @@
+vim
+
+NAVIGATION
+  gg / G        top / bottom of file
+  :{n}          jump to line n
+  {n}G          jump to line n
+  H / M / L     top / middle / bottom of screen
+  C-d / C-u     half-page down / up
+  C-f / C-b     full page down / up
+  %             jump to matching bracket
+  { / }         prev / next paragraph
+  [[ / ]]       prev / next section
+
+WORD MOTIONS
+  w / W         next word / WORD
+  b / B         prev word / WORD
+  e / E         end of word / WORD
+  0 / ^ / $     start / first char / end of line
+  f{c} / F{c}   find char forward / backward
+  t{c} / T{c}   till char forward / backward
+  ; / ,         repeat / reverse last f/t
+
+SEARCH
+  / / ?         search forward / backward
+  n / N         next / prev match
+  * / #         word under cursor fwd / back
+  C-p           fzf files
+
+EDITING
+  ciw / caw     change inner / around word
+  ci" / ci(     change inside quotes / parens
+  di" / da(     delete inside quotes / around parens
+  yiw / yy      yank word / line
+  p / P         paste after / before
+  .             repeat last change
+  u / C-r       undo / redo
+
+VISUAL MODE
+  v / V / C-v   char / line / block select
+  gv            reselect last visual
+
+SURROUND (vim-surround)
+  cs"'          change " to '
+  ds"           delete surrounding "
+  ysiw"         surround word with "

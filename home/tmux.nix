@@ -139,10 +139,37 @@ let
     '';
   };
 
+  tmuxHints = pkgs.writeShellApplication {
+    name = "tmux-hints";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.ncurses
+      pkgs.tmux
+    ];
+    text = ''
+      # Stylix colors (injected at build time)
+      color_accent="${colors.base0B}"
+      color_active="${colors.base0E}"
+      color_dim="${colors.base04}"
+      color_key="${colors.base0D}"
+    ''
+    + builtins.readFile ../scripts/tmux-hints.sh;
+  };
+
+  tmuxHintsToggle = pkgs.writeShellApplication {
+    name = "tmux-hints-toggle";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.tmux
+    ];
+    text = builtins.readFile ../scripts/tmux-hints-toggle.sh;
+  };
+
   # Shared tmux binding definitions -- single source of truth for both
   # direct keybindings and which-key menu items.
   #
   # Fields:
+  #   group     - hint category (general, windows, panes, etc.)
   #   name      - display name (present = appears in which-key)
   #   key       - key shared by direct bind and which-key
   #   cmd       - tmux command string
@@ -150,67 +177,85 @@ let
   #   transient - (optional) transient which-key menu item
   #   table     - (optional) "root" for -n, or key table name for -T
   b = {
-    # Top-level
+    # General
     commandPrompt = {
+      group = "general";
       name = "Command prompt";
       key = ":";
       cmd = "command-prompt";
     };
     lastWindow = {
+      group = "general";
       name = "Last window";
       key = "tab";
       cmd = ''run-shell "workmux last-agent"'';
     };
     reloadConfig = {
+      group = "general";
       name = "Reload config";
       key = "r";
       cmd = ''source-file ~/.config/tmux/tmux.conf \; display-message "Config reloaded"'';
     };
     clearScreen = {
+      group = "general";
       name = "Clear screen";
       key = "C-l";
       cmd = ''send-keys C-l \; run-shell "sleep 0.1" \; clear-history'';
     };
-    listKeys = {
-      name = "+Keys";
+    hintsToggle = {
+      group = "general";
+      name = "Hints sidebar";
       key = "?";
+      cmd = ''run-shell "tmux-hints-toggle"'';
+    };
+    listKeys = {
+      group = "general";
+      name = "+Keys";
+      key = "M-?";
       cmd = "list-keys -N";
     };
 
     # Windows
     newWindow = {
+      group = "windows";
       name = "New window";
       key = "c";
       cmd = ''new-window -c "#{pane_current_path}"'';
     };
     splitH = {
+      group = "windows";
       name = "Split horizontal";
       key = "d";
       cmd = ''split-window -h -c "#{pane_current_path}"'';
     };
     splitV = {
+      group = "windows";
       name = "Split vertical";
       key = "v";
       cmd = ''split-window -v -c "#{pane_current_path}"'';
     };
     swapWindowPrev = {
+      group = "windows";
       name = "Swap prev";
       key = "[";
       cmd = "swap-window -t -1 \\; select-window -t -1";
       repeat = true;
     };
     swapWindowNext = {
+      group = "windows";
       name = "Swap next";
       key = "]";
       cmd = "swap-window -t +1 \\; select-window -t +1";
       repeat = true;
     };
     renameWindow = {
+      group = "windows";
       name = "Rename";
       key = "C-r";
       cmd = ''command-prompt -I "#W" "rename-window -- \"%%\""'';
     };
     killWindow = {
+      group = "windows";
       name = "Kill";
       key = "C-x";
       cmd = ''confirm -p "Kill window #W? (y/n)" kill-window'';
@@ -218,22 +263,26 @@ let
 
     # Layouts
     layoutNext = {
+      group = "layouts";
       name = "Next";
       key = "=";
       cmd = "next-layout";
       transient = true;
     };
     layoutTiled = {
+      group = "layouts";
       name = "Tiled";
       key = "t";
       cmd = "select-layout tiled";
     };
     layoutH = {
+      group = "layouts";
       name = "Horizontal";
       key = "-";
       cmd = "select-layout even-horizontal";
     };
     layoutV = {
+      group = "layouts";
       name = "Vertical";
       key = "C-v";
       cmd = "select-layout even-vertical";
@@ -241,26 +290,31 @@ let
 
     # Panes
     paneLeft = {
+      group = "panes";
       name = "Left";
       key = "h";
       cmd = "select-pane -L";
     };
     paneDown = {
+      group = "panes";
       name = "Down";
       key = "j";
       cmd = "select-pane -D";
     };
     paneUp = {
+      group = "panes";
       name = "Up";
       key = "k";
       cmd = "select-pane -U";
     };
     paneRight = {
+      group = "panes";
       name = "Right";
       key = "l";
       cmd = "select-pane -R";
     };
     resizeLeft = {
+      group = "panes";
       name = "Left";
       key = "H";
       cmd = "resize-pane -L 5";
@@ -268,6 +322,7 @@ let
       transient = true;
     };
     resizeDown = {
+      group = "panes";
       name = "Down";
       key = "J";
       cmd = "resize-pane -D 5";
@@ -275,6 +330,7 @@ let
       transient = true;
     };
     resizeUp = {
+      group = "panes";
       name = "Up";
       key = "K";
       cmd = "resize-pane -U 5";
@@ -282,6 +338,7 @@ let
       transient = true;
     };
     resizeRight = {
+      group = "panes";
       name = "Right";
       key = "L";
       cmd = "resize-pane -R 5";
@@ -289,38 +346,45 @@ let
       transient = true;
     };
     swapPanePrev = {
+      group = "panes";
       name = "Swap prev";
       key = "[";
       cmd = "swap-pane -U";
       repeat = true;
     };
     swapPaneNext = {
+      group = "panes";
       name = "Swap next";
       key = "]";
       cmd = "swap-pane -D";
       repeat = true;
     };
     zoomPane = {
+      group = "panes";
       name = "Zoom";
       key = "z";
       cmd = "resize-pane -Z";
     };
     breakPane = {
+      group = "panes";
       name = "Break pane";
       key = "B";
       cmd = "break-pane";
     };
     grabPane = {
+      group = "panes";
       name = "Grab/join pane";
       key = "g";
       cmd = ''choose-window "join-pane -h -s \"%%\""'';
     };
     movePane = {
+      group = "panes";
       name = "Send to window";
       key = "m";
       cmd = ''command-prompt -p "send pane to:" "join-pane -h -t \"%%\""'';
     };
     killPane = {
+      group = "panes";
       name = "Kill pane";
       key = "x";
       cmd = "kill-pane";
@@ -328,26 +392,31 @@ let
 
     # Sessions
     seshPicker = {
+      group = "sessions";
       name = "Switcher (sesh)";
       key = "s";
       cmd = ''display-popup -E -T " sesh " -w 70% -h 70% tmux-sesh-picker'';
     };
     sessionTree = {
+      group = "sessions";
       name = "Session tree";
       key = "w";
       cmd = "choose-tree -Zs";
     };
     sessionRename = {
+      group = "sessions";
       name = "Rename";
       key = "n";
       cmd = ''command-prompt -I "#S" "rename-session -- \"%%\""'';
     };
     newSession = {
+      group = "sessions";
       name = "New";
       key = "C-n";
       cmd = "new-session -c ~";
     };
     detach = {
+      group = "sessions";
       name = "Detach";
       key = "q";
       cmd = "detach";
@@ -355,21 +424,25 @@ let
 
     # Popups
     scratchPopup = {
+      group = "popups";
       name = "Scratch terminal";
       key = "\`";
       cmd = ''display-popup -E -T " scratch " -w 80% -h 80% -d "#{pane_current_path}"'';
     };
     gituiPopup = {
+      group = "popups";
       name = "gitui";
       key = "C-g";
       cmd = ''display-popup -E -T " gitui " -w 90% -h 90% -d "#{pane_current_path}" gitui'';
     };
     lazydockerPopup = {
+      group = "popups";
       name = "lazydocker";
       key = "C-d";
       cmd = ''display-popup -E -T " lazydocker " -w 90% -h 90% lazydocker'';
     };
     obsidianTask = {
+      group = "popups";
       name = "Add task (obsidian)";
       key = "o";
       cmd = ''display-popup -E -T " obsidian " -w 60% -h 30% tmux-obsidian-task'';
@@ -377,16 +450,19 @@ let
 
     # Workmux
     workmuxDash = {
+      group = "workmux";
       name = "Dashboard";
       key = "C-s";
       cmd = ''display-popup -E -T " workmux " -h 30 -w 100 "workmux dashboard"'';
     };
     workmuxSidebar = {
+      group = "workmux";
       name = "Sidebar";
       key = "C-t";
       cmd = ''run-shell "workmux sidebar"'';
     };
     workmuxLast = {
+      group = "workmux";
       name = "Last done";
       key = "C-l";
       cmd = ''run-shell "workmux last-done"'';
@@ -394,48 +470,63 @@ let
 
     # Toggles
     toggleStatus = {
+      group = "toggles";
       name = "Status bar";
       key = "b";
       cmd = "set-option -g status";
     };
     toggleSync = {
+      group = "toggles";
       name = "Sync panes";
       key = "y";
       cmd = ''set-window-option synchronize-panes \; display-message "sync #{?synchronize-panes,ON,OFF}"'';
     };
     toggleMouse = {
+      group = "toggles";
       name = "Mouse";
       key = "m";
       cmd = ''set -g mouse \; display-message "Mouse #{?mouse,ON,OFF}"'';
     };
 
-    # Direct-only (no name -> no which-key entry)
+    # Alt shortcuts (root table, no prefix)
     altLastWindow = {
+      group = "alt";
+      name = "Last window";
       key = "M-Tab";
       cmd = ''run-shell "workmux last-agent"'';
       table = "root";
     };
     altScratch = {
+      group = "alt";
+      name = "Scratch";
       key = "M-o";
       cmd = ''display-popup -E -T " scratch " -w 80% -h 80% -d "#{pane_current_path}"'';
       table = "root";
     };
     altSeshPicker = {
+      group = "alt";
+      name = "Sessions";
       key = "M-f";
       cmd = ''display-popup -E -T " sesh " -w 70% -h 70% tmux-sesh-picker'';
       table = "root";
     };
     altFilePicker = {
+      group = "alt";
+      name = "Files";
       key = "M-p";
       cmd = ''display-popup -E -T " files " -w 80% -h 80% -d "#{pane_current_path}" tmux-file-picker --git-root'';
       table = "root";
     };
     altPrevWindow = {
+      group = "alt";
+      name = "Prev window";
       key = "M-h";
       cmd = "previous-window";
       table = "root";
     };
     altNextWindow = {
+      group = "alt";
+      name = "Next window";
       key = "M-l";
       cmd = "next-window";
       table = "root";
@@ -540,10 +631,12 @@ let
         b.toggleStatus
         b.toggleSync
         b.toggleMouse
+        b.hintsToggle
       ];
     }
     { separator = true; }
     b.clearScreen
+    b.hintsToggle
     b.listKeys
   ];
 
@@ -564,6 +657,66 @@ let
 
   # Generate all direct bind lines from the binding attrset
   bindLines = lib.concatMapStringsSep "\n" mkBindLine (lib.attrValues b);
+
+  # Hint generation -- builds a flat cheat sheet from binding data
+  hintGroups = [
+    {
+      id = "general";
+      label = "GENERAL";
+    }
+    {
+      id = "windows";
+      label = "WINDOWS";
+    }
+    {
+      id = "panes";
+      label = "PANES";
+    }
+    {
+      id = "layouts";
+      label = "LAYOUTS";
+    }
+    {
+      id = "sessions";
+      label = "SESSIONS";
+    }
+    {
+      id = "popups";
+      label = "POPUPS";
+    }
+    {
+      id = "workmux";
+      label = "WORKMUX";
+    }
+    {
+      id = "toggles";
+      label = "TOGGLES";
+    }
+    {
+      id = "alt";
+      label = "ALT SHORTCUTS (no prefix)";
+    }
+  ];
+
+  entriesForGroup = gid: lib.filter (e: (e.group or "") == gid) (lib.attrValues b);
+
+  padRight =
+    width: str:
+    str + builtins.substring 0 (lib.max 0 (width - builtins.stringLength str)) "                    ";
+
+  fmtHintEntry = e: "  ${padRight 10 e.key}${e.name}";
+
+  fmtHintGroup =
+    { id, label }:
+    let
+      entries = entriesForGroup id;
+    in
+    lib.optionalString (entries != [ ])
+      "\n${label}\n${lib.concatMapStringsSep "\n" fmtHintEntry entries}";
+
+  tmuxHintsText = "tmux\n" + lib.concatMapStrings fmtHintGroup hintGroups + "\n";
+
+  tmuxHintsFile = pkgs.writeText "tmux-hints.txt" tmuxHintsText;
 
   # Convert a binding record or menu node to a which-key YAML item
   mkWhichKeyItem =
@@ -808,6 +961,8 @@ in
   };
 
   xdg.configFile."tmux/plugins/tmux-which-key/config.yaml".source = tmuxWhichKeyConfig;
+  xdg.configFile."hints/tmux.txt".source = tmuxHintsFile;
+  xdg.configFile."hints/vim.txt".source = ../configs/hints/vim.txt;
 
   # Ensure tmux-which-key's init.tmux is writable so the plugin can rebuild it
   home.activation.tmuxWhichKeyPermissions = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
@@ -822,6 +977,8 @@ in
     tmuxSeshPicker
     tmuxFilePicker
     tmuxObsidianTask
+    tmuxHints
+    tmuxHintsToggle
     pkgs.sesh
   ];
 }
