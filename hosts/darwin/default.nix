@@ -397,14 +397,18 @@
             # Unicode character values for AppleSymbolicHotKeys parameters
             chars = {
               nonPrintable = 65535; # 0xFFFF -- sentinel for non-character keys
+              h = 104;
+              j = 106;
+              k = 107;
+              l = 108;
             };
             # Virtual keycodes (from Events.h / Carbon)
             keycodes = {
               enter = 36; # kVK_Return
-              leftArrow = 123; # kVK_LeftArrow
-              rightArrow = 124; # kVK_RightArrow
-              downArrow = 125; # kVK_DownArrow
-              upArrow = 126; # kVK_UpArrow
+              h = 4; # kVK_ANSI_H
+              j = 38; # kVK_ANSI_J
+              k = 40; # kVK_ANSI_K
+              l = 37; # kVK_ANSI_L
             };
           in
           {
@@ -428,50 +432,50 @@
                   type = "standard";
                 };
               };
-              # Mission Control: Ctrl+Up
+              # Mission Control: Cmd+K
               "${toString hotkeys.missionControl}" = {
                 enabled = true;
                 value = {
                   parameters = [
-                    chars.nonPrintable
-                    keycodes.upArrow
-                    modifiers.control
+                    chars.k
+                    keycodes.k
+                    modifiers.command
                   ];
                   type = "standard";
                 };
               };
-              # Application Windows: Ctrl+Down
+              # Application Windows: Cmd+J
               "${toString hotkeys.applicationWindows}" = {
                 enabled = true;
                 value = {
                   parameters = [
-                    chars.nonPrintable
-                    keycodes.downArrow
-                    modifiers.control
+                    chars.j
+                    keycodes.j
+                    modifiers.command
                   ];
                   type = "standard";
                 };
               };
-              # Move Left a Space: Ctrl+Left
+              # Move Left a Space: Cmd+H
               "${toString hotkeys.moveLeftASpace}" = {
                 enabled = true;
                 value = {
                   parameters = [
-                    chars.nonPrintable
-                    keycodes.leftArrow
-                    modifiers.control
+                    chars.h
+                    keycodes.h
+                    modifiers.command
                   ];
                   type = "standard";
                 };
               };
-              # Move Right a Space: Ctrl+Right
+              # Move Right a Space: Cmd+L
               "${toString hotkeys.moveRightASpace}" = {
                 enabled = true;
                 value = {
                   parameters = [
-                    chars.nonPrintable
-                    keycodes.rightArrow
-                    modifiers.control
+                    chars.l
+                    keycodes.l
+                    modifiers.command
                   ];
                   type = "standard";
                 };
