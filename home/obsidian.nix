@@ -82,7 +82,7 @@ let
       webviewer = false;
     };
     "daily-notes.json" = mkConfig "daily-notes.json" {
-      format = "YYYY/MM/YYYY-MM-DD";
+      format = "YYYY/MM/DD";
     };
     "graph.json" = mkConfig "graph.json" {
       collapse-filter = true;
@@ -327,7 +327,7 @@ in
   ];
 
   home.activation.obsidianStylix = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    vaults_dir="$HOME/Documents/vaults"
+    vaults_dir="${config.dotfiles.obsidian.vaultsDir}"
     if [ -d "$vaults_dir" ]; then
       for obsidian_dir in "$vaults_dir"/*/.obsidian; do
         if [ -d "$obsidian_dir" ]; then

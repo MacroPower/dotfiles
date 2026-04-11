@@ -65,7 +65,7 @@ let
       gum
     ];
     text = ''
-      vaults_dir="$HOME/Documents/vaults"
+      vaults_dir="${config.dotfiles.obsidian.vaultsDir}"
       if [ ! -d "$vaults_dir" ]; then
         echo "No vaults found in $vaults_dir"
         sleep 1

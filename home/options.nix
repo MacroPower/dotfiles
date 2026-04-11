@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ lib, config, ... }:
 
 let
   inherit (lib) mkOption types;
@@ -92,6 +92,12 @@ in
         "ss06"
       ];
       description = "OpenType font features to enable across editors and terminals.";
+    };
+
+    obsidian.vaultsDir = mkOption {
+      type = types.nonEmptyStr;
+      default = "${config.dotfiles.homeDirectory}/Library/Mobile Documents/iCloud~md~obsidian/Documents";
+      description = "Absolute path to the Obsidian vaults directory.";
     };
   };
 }
