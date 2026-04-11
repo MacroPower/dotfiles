@@ -156,6 +156,15 @@ let
     + builtins.readFile ../scripts/tmux-hints.sh;
   };
 
+  tmuxVimPopup = pkgs.writeShellApplication {
+    name = "tmux-vim-popup";
+    runtimeInputs = [
+      pkgs.tmux
+      pkgs.coreutils
+    ];
+    text = builtins.readFile ../scripts/tmux-vim-popup.sh;
+  };
+
   tmuxHintsToggle = pkgs.writeShellApplication {
     name = "tmux-hints-toggle";
     runtimeInputs = [
@@ -797,7 +806,17 @@ in
       }
       {
         plugin = tmux-thumbs;
-        extraConfig = "set -g @thumbs-key f";
+        extraConfig = ''
+          set -g @thumbs-key f
+          set -g @thumbs-upcase-command 'tmux-vim-popup "{}"'
+
+          # Hint styling
+          set -g @thumbs-hint-fg-color "#${tmux.bg}"
+          set -g @thumbs-hint-bg-color "#${tmux.highlight}"
+          set -g @thumbs-contrast enabled
+          set -g @thumbs-position off_left
+          set -g @thumbs-reverse enabled
+        '';
       }
       {
         plugin = extrakto;
@@ -988,6 +1007,7 @@ in
     tmuxObsidianTask
     tmuxHints
     tmuxHintsToggle
+    tmuxVimPopup
     pkgs.sesh
   ];
 }
