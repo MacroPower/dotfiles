@@ -1,11 +1,16 @@
-// Hook-router is a Claude Code PreToolUse hook that inspects shell commands
-// before they are executed.
+// Hook-router is a Claude Code hook handler that inspects tool invocations
+// and manages plan-mode lifecycle state.
 //
-// It reads hook JSON from stdin, parses any shell command in the tool input,
-// and denies commands containing find (use fd instead) and git stash save/push
-// forms.
+// It handles PreToolUse, PostToolUse, and Stop hook events:
 //
-// Hooks that don't match are forwarded to an optional downstream hook.
+//   - PreToolUse:Bash -- denies git stash save/push and direct kubectl usage
+//   - PreToolUse:ExitPlanMode -- gates plan exit behind plan-reviewer
+//   - PreToolUse:EnterPlanMode -- resets plan session state
+//   - PostToolUse:ExitPlanMode -- records plan path and baseline commit
+//   - Stop -- blocks until implementation-reviewer approves (when plan changes exist)
+//
+// Session state is persisted in a SQLite database. Unmatched Bash commands
+// are forwarded to an optional downstream hook.
 //
 // # Environment
 //

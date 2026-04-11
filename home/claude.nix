@@ -416,37 +416,21 @@ let
     }
   );
 
-  blockExitPlan = pkgs.writeShellApplication {
-    name = "block-exit-plan";
-    runtimeInputs = [
-      pkgs.jq
-      pkgs.git
-    ];
-    text = builtins.readFile ../configs/claude/hooks/block-exit-plan.sh;
-  };
-
-  blockStop = pkgs.writeShellApplication {
-    name = "block-stop";
-    runtimeInputs = [ pkgs.jq ];
-    text = builtins.readFile ../configs/claude/hooks/block-stop.sh;
-  };
-
-  clearPlanMarker = pkgs.writeShellApplication {
-    name = "clear-plan-marker";
-    runtimeInputs = [ pkgs.jq ];
-    text = builtins.readFile ../configs/claude/hooks/clear-plan-marker.sh;
-  };
-
-  # Single Bash PreToolUse hook that dispatches command rewrites.
-  # All matching hooks run concurrently, so we use one hook to avoid
-  # non-deterministic updatedInput races between multiple Bash matchers.
   hookRouter = pkgs.writeShellApplication {
     name = "hook-router-wrapper";
-    runtimeInputs = [ pkgs.hook-router ];
+    runtimeInputs = [
+      pkgs.hook-router
+      pkgs.git
+    ];
     runtimeEnv = {
       RTK_REWRITE = "${pkgs.rtk-bin}/libexec/rtk/hooks/rtk-rewrite.sh";
     };
-    text = ''exec hook-router --log-file "${config.xdg.stateHome}/hook-router/hook-router.log"'';
+    text = ''
+      exec hook-router \
+        --db "${config.xdg.stateHome}/hook-router/state.db" \
+        --log-file "${config.xdg.stateHome}/hook-router/hook-router.log" \
+        "$@"
+    '';
   };
 
   # CA env vars injected into all stdio MCP servers
@@ -1102,6 +1086,7 @@ in
                 "~/.cache/nix"
                 "~/.cache/helm"
                 "~/.local/state/workmux"
+                "~/.local/state/hook-router"
               ]
               ++ bundledWritePaths;
             };
@@ -1116,7 +1101,7 @@ in
                 hooks = [
                   {
                     type = "command";
-                    command = lib.getExe hookRouter;
+                    command = "${lib.getExe hookRouter} --event PreToolUse --tool Bash";
                   }
                 ];
               }
@@ -1125,7 +1110,7 @@ in
                 hooks = [
                   {
                     type = "command";
-                    command = lib.getExe blockExitPlan;
+                    command = "${lib.getExe hookRouter} --event PreToolUse --tool ExitPlanMode";
                   }
                 ];
               }
@@ -1134,7 +1119,7 @@ in
                 hooks = [
                   {
                     type = "command";
-                    command = lib.getExe clearPlanMarker;
+                    command = "${lib.getExe hookRouter} --event PreToolUse --tool EnterPlanMode";
                   }
                 ];
               }
@@ -1169,6 +1154,15 @@ in
                   }
                 ];
               }
+              {
+                matcher = "ExitPlanMode";
+                hooks = [
+                  {
+                    type = "command";
+                    command = "${lib.getExe hookRouter} --event PostToolUse --tool ExitPlanMode";
+                  }
+                ];
+              }
             ];
             Stop = [
               {
@@ -1179,7 +1173,7 @@ in
                   }
                   {
                     type = "command";
-                    command = lib.getExe blockStop;
+                    command = "${lib.getExe hookRouter} --event Stop";
                   }
                 ];
               }
