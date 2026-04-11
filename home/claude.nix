@@ -1230,6 +1230,12 @@ in
         - Keep responses to plain ASCII text.
         - Acknowledge complexity and mixed feelings when they exist.
         - Your code speaks for itself. Enumeration of content is redundant. Focus instead on the how and why.
+
+        ## Agents & Concurrency
+
+        - Prefer parallel tool calls. When a task touches 2+ independent areas, make multiple tool calls (Agent, Read, Grep, etc.) in a single message rather than one at a time.
+        - Launch multiple Agent tool calls concurrently when investigating or working on independent areas. Don't serialize what can run in parallel.
+        - For large tasks spanning many files or domains, you may orchestrate multiple worktree agents with `/wm-coordinator`.
       ''
       + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n";
 
