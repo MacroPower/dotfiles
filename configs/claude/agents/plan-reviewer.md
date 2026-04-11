@@ -3,6 +3,8 @@ name: plan-reviewer
 description: |
   Use this agent to review implementation plans before exiting plan mode. Pass the plan file path as context.
 
+  If the reviewer finds issues, update the plan and run the reviewer again. Repeat until you get LGTM.
+
   Examples:
 
   <example>

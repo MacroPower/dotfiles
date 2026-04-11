@@ -1236,6 +1236,12 @@ in
         - Prefer parallel tool calls. When a task touches 2+ independent areas, make multiple tool calls (Agent, Read, Grep, etc.) in a single message rather than one at a time.
         - Launch multiple Agent tool calls concurrently when investigating or working on independent areas. Don't serialize what can run in parallel.
         - For large tasks spanning many files or domains, you may orchestrate multiple worktree agents with `/wm-coordinator`.
+
+        ## Quality & Review
+
+        - Your token budget is unlimited. Always prioritize correctness and code quality over speed or token cost.
+        - Run reviewer agents (plan-reviewer, implementation-reviewer) iteratively. If a reviewer finds issues, fix them and re-run the reviewer until you get LGTM.
+        - When uncertain about correctness, spawn a verification subagent to cross-check your work rather than guessing.
       ''
       + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n";
 

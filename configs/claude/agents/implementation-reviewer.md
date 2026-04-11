@@ -4,6 +4,8 @@ description: |
   Use this agent to review code changes after implementing a plan.
   The Stop hook will tell you the plan file path and base SHA, pass both to this agent.
 
+  If the reviewer finds issues, fix them and run the reviewer again. Repeat until you get LGTM.
+
   Examples:
 
   <example>

@@ -2,8 +2,10 @@ INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
 STOP_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
 
-# Already continuing from a prior block -- allow through
+# Already continuing from a prior block -- clean up marker and allow through
 if [ "$STOP_ACTIVE" = "true" ]; then
+  MARKER="${TMPDIR:-/tmp}/claude-plan-active-${SESSION_ID}"
+  rm -f "$MARKER"
   exit 0
 fi
 
@@ -17,7 +19,6 @@ fi
 # Read marker: line 1 = plan path, line 2 = base SHA
 PLAN_PATH=$(sed -n '1p' "$MARKER")
 BASE_SHA=$(sed -n '2p' "$MARKER")
-rm -f "$MARKER"
 
 # Block and request review, passing plan path and base SHA
 jq -n --arg plan "$PLAN_PATH" --arg base "$BASE_SHA" '{
@@ -29,6 +30,7 @@ jq -n --arg plan "$PLAN_PATH" --arg base "$BASE_SHA" '{
     + " Pass it both the plan file path and the base SHA."
     + " If your implementation deviated from the original plan,"
     + " explain your reasoning to the reviewer."
-    + " After addressing any feedback, you may stop."
+    + " If the reviewer finds issues, fix them and re-run the reviewer."
+    + " Repeat until you get LGTM, then you may stop."
   )
 }'

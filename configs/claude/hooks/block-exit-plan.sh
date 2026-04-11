@@ -25,7 +25,7 @@ if mkdir "$COUNTER" 2>/dev/null; then
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
       permissionDecisionReason: (
-        "Before exiting plan mode, consider running the"
+        "Before exiting plan mode, run the"
         + " plan-reviewer agent to review the plan at "
         + $plan + ". Pass it the plan file path. After"
         + " review is complete and any feedback has been"
