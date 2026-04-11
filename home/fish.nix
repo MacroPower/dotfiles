@@ -399,10 +399,11 @@ in
         exec tmux new-session -c "$HOME" \; set-option destroy-unattached on
       end
 
-      # Start workmux sidebar once per tmux session
-      if set -q TMUX; and command -q workmux; and not tmux show-environment WORKMUX_SIDEBAR &>/dev/null
-        tmux set-environment WORKMUX_SIDEBAR 1
-        workmux sidebar --session &disown
+      # Auto-start workmux sidebar (recovers if it died)
+      if set -q TMUX; and command -q workmux
+        if not tmux show-option -gqv @workmux_sidebar_scope 2>/dev/null | string length -q
+          workmux sidebar --session 2>/dev/null &disown
+        end
       end
 
       ${config.dotfiles.shell.extraInteractiveInit}
