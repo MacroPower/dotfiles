@@ -59,6 +59,7 @@ in
           fluxcd
           chart-testing
           cmctl
+          argocd
         ]
         ++ cfg.extraPackages;
     };
