@@ -1189,6 +1189,10 @@ in
                     type = "command";
                     command = "${workmux} done";
                   }
+                ];
+              }
+              {
+                hooks = [
                   {
                     type = "command";
                     command = "${lib.getExe hookRouter} --event Stop";
