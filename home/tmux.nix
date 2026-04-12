@@ -835,7 +835,7 @@ let
       # Compensate for multi-byte UTF-8 symbols that are only 1 column wide
       padWidth = 6 + (builtins.stringLength dk - keyDisplayWidth e.key);
     in
-    "   ${padRight padWidth dk}${e.name}";
+    "  ${padRight padWidth dk}${lib.toLower e.name}";
 
   fmtHintGroup =
     { id, label }:
