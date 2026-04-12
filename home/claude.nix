@@ -505,28 +505,36 @@ let
     echo "$*" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//;s/-$//' | cut -c1-60
   '';
 
-  # Wrapper that injects sops secrets as env vars for sandbox env_passthrough
-  workmuxWrapped = pkgs.writeShellScriptBin "workmux" ''
-    if [ -f "${config.sops.secrets.gh_token.path}" ]; then
-      GH_TOKEN="$(cat "${config.sops.secrets.gh_token.path}" 2>/dev/null || true)"
-      export GH_TOKEN
-      export GITHUB_TOKEN="$GH_TOKEN"
-      export GITHUB_PERSONAL_ACCESS_TOKEN="$GH_TOKEN"
-    fi
-    if [ -f "${config.sops.secrets.argocd_api_token.path}" ]; then
-      export ARGOCD_API_TOKEN="$(cat "${config.sops.secrets.argocd_api_token.path}" 2>/dev/null || true)"
-    fi
-    if [ -f "${config.sops.secrets.argocd_base_url.path}" ]; then
-      export ARGOCD_BASE_URL="$(cat "${config.sops.secrets.argocd_base_url.path}" 2>/dev/null || true)"
-    fi
-    if [ -f "${config.sops.secrets.dagger_cloud_token.path}" ]; then
-      export DAGGER_CLOUD_TOKEN="$(cat "${config.sops.secrets.dagger_cloud_token.path}" 2>/dev/null || true)"
-    fi
-    if [ -f "${config.sops.secrets.kagi_api_key.path}" ]; then
-      export KAGI_API_KEY="$(cat "${config.sops.secrets.kagi_api_key.path}" 2>/dev/null || true)"
-    fi
-    exec ${lib.getExe' pkgs.workmux-bin "workmux"} "$@"
-  '';
+  # Wrapper that injects sops secrets as env vars for sandbox env_passthrough.
+  # Uses symlinkJoin so share/fish/vendor_completions.d/ from workmux-bin is preserved.
+  workmuxWrapped = pkgs.symlinkJoin {
+    name = "workmux-wrapped";
+    paths = [ pkgs.workmux-bin ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/workmux \
+        --run '
+          if [ -f "${config.sops.secrets.gh_token.path}" ]; then
+            GH_TOKEN="$(cat "${config.sops.secrets.gh_token.path}" 2>/dev/null || true)"
+            export GH_TOKEN
+            export GITHUB_TOKEN="$GH_TOKEN"
+            export GITHUB_PERSONAL_ACCESS_TOKEN="$GH_TOKEN"
+          fi
+          if [ -f "${config.sops.secrets.argocd_api_token.path}" ]; then
+            export ARGOCD_API_TOKEN="$(cat "${config.sops.secrets.argocd_api_token.path}" 2>/dev/null || true)"
+          fi
+          if [ -f "${config.sops.secrets.argocd_base_url.path}" ]; then
+            export ARGOCD_BASE_URL="$(cat "${config.sops.secrets.argocd_base_url.path}" 2>/dev/null || true)"
+          fi
+          if [ -f "${config.sops.secrets.dagger_cloud_token.path}" ]; then
+            export DAGGER_CLOUD_TOKEN="$(cat "${config.sops.secrets.dagger_cloud_token.path}" 2>/dev/null || true)"
+          fi
+          if [ -f "${config.sops.secrets.kagi_api_key.path}" ]; then
+            export KAGI_API_KEY="$(cat "${config.sops.secrets.kagi_api_key.path}" 2>/dev/null || true)"
+          fi
+        '
+    '';
+  };
 
   # Aggregate enabled MCP server bundles
   enabledBundles = lib.filterAttrs (_: b: b.enable) cfg.mcpServerBundles;

@@ -29,7 +29,28 @@
       environment.systemPackages = with pkgs; [
         nerdctl
         pkgsStatic.tini
-        (writeShellScriptBin "docker" ''exec sudo ${nerdctl}/bin/nerdctl "$@"'')
+        (stdenvNoCC.mkDerivation {
+          name = "docker-nerdctl-wrapper";
+          dontUnpack = true;
+          installPhase = ''
+            install -Dm755 ${writeShellScript "docker" ''exec sudo ${nerdctl}/bin/nerdctl "$@"''} $out/bin/docker
+
+            mkdir -p $out/share/fish/vendor_completions.d
+            sed 's/^complete -c nerdctl/complete -c docker/' \
+              "${nerdctl}/share/fish/vendor_completions.d/nerdctl.fish" \
+              > $out/share/fish/vendor_completions.d/docker.fish
+
+            mkdir -p $out/share/bash-completion/completions
+            sed 's/nerdctl/docker/g' \
+              "${nerdctl}/share/bash-completion/completions/nerdctl" \
+              > $out/share/bash-completion/completions/docker
+
+            mkdir -p $out/share/zsh/site-functions
+            sed 's/nerdctl/docker/g' \
+              "${nerdctl}/share/zsh/site-functions/_nerdctl" \
+              > $out/share/zsh/site-functions/_docker
+          '';
+        })
       ];
 
       systemd = {
