@@ -174,6 +174,114 @@ let
     text = builtins.readFile ../scripts/tmux-hints-toggle.sh;
   };
 
+  tmux-floax = pkgs.tmuxPlugins.mkTmuxPlugin {
+    pluginName = "tmux-floax";
+    rtpFilePath = "floax.tmux";
+    version = "0-unstable-2026-02-24";
+    src = pkgs.fetchFromGitHub {
+      owner = "omerxx";
+      repo = "tmux-floax";
+      rev = "133f526793d90d2caa323c47687dd5544a2c704b";
+      hash = "sha256-9Hb9dn2qHF6KcIhtogvycX3Z0MoQrLPLCzZXtjGlPHw=";
+    };
+  };
+
+  floaxScripts = "${tmux-floax}/share/tmux-plugins/tmux-floax/scripts";
+
+  tmuxFloaxRun = pkgs.writeShellApplication {
+    name = "tmux-floax-run";
+    excludeShellChecks = [ "SC1091" ];
+    runtimeInputs = [ pkgs.tmux ];
+    text = ''
+      # Source floax utils for set_bindings, unset_bindings, and env vars
+      # shellcheck source=/dev/null
+      source "${floaxScripts}/utils.sh"
+
+      # Suppress workmux sidebar hooks for the lifetime of this popup.
+      # They fire on new-session/new-window and would attach a sidebar to the
+      # floax session. Hooks are restored (with || true) after the popup closes.
+      _workmux_bin=$(tmux show-hooks -g 2>/dev/null \
+        | sed -n 's|^after-new-session\[99\] run-shell -b "\(.*\) _sidebar-sync.*|\1|p' || true)
+      if [ -n "$_workmux_bin" ]; then
+        tmux set-hook -gu 'after-new-session[99]' 2>/dev/null || true
+        tmux set-hook -gu 'after-new-window[99]' 2>/dev/null || true
+      fi
+
+      WIDTH="$FLOAX_WIDTH"
+      HEIGHT="$FLOAX_HEIGHT"
+
+      while [[ "''${1-}" == --* ]]; do
+        case "$1" in
+          --width) WIDTH="$2"; shift 2 ;;
+          --height) HEIGHT="$2"; shift 2 ;;
+          *) break ;;
+        esac
+      done
+
+      NAME="''${1:?usage: tmux-floax-run [--width W] [--height H] <name> [command...]}"
+      shift
+      COMMAND="''${*:-}"
+
+      # Toggle off if already in this session
+      if [ "$(tmux display-message -p '#{session_name}')" = "$NAME" ]; then
+        unset_bindings
+        tmux detach-client
+        exit 0
+      fi
+
+      # Store context for floax scripts (embed, menu, etc.)
+      tmux setenv -g FLOAX_SESSION_NAME "$NAME"
+      tmux setenv -g ORIGIN_SESSION "$(tmux display -p '#{session_name}')"
+      tmux setenv -g FLOAX_TITLE " $NAME "
+
+      set_bindings
+
+      CURRENT_PATH="$(tmux display-message -p '#{pane_current_path}')"
+
+      if ! tmux has-session -t "$NAME" 2>/dev/null; then
+        if [ -n "$COMMAND" ]; then
+          tmux new-session -d -s "$NAME" -c "$CURRENT_PATH" -e FLOAX=1 "$COMMAND"
+        else
+          tmux new-session -d -s "$NAME" -c "$CURRENT_PATH" -e FLOAX=1
+        fi
+        tmux set-option -t "$NAME" status off
+      elif [ -z "$COMMAND" ] && [ "''${FLOAX_CHANGE_PATH:-}" = "true" ]; then
+        # Auto-cd for persistent sessions (scratch)
+        session_path="$(tmux display -t "$NAME" -p '#{pane_current_path}' 2>/dev/null || echo "")"
+        if [ -n "$session_path" ] && [ "$session_path" != "$CURRENT_PATH" ]; then
+          tmux send-keys -R -t "$NAME" " cd \"$CURRENT_PATH\"" C-m
+        fi
+      fi
+
+      # Show floating popup (blocks until dismissed)
+      tmux popup \
+        -S "fg=$FLOAX_BORDER_COLOR" \
+        -s "fg=$FLOAX_TEXT_COLOR" \
+        -T " $NAME " \
+        -w "$WIDTH" -h "$HEIGHT" \
+        -b rounded -E \
+        "tmux attach-session -t '$NAME'" || true
+
+      # Cleanup: destroy leftover command sessions (e.g. after embed moves the
+      # window out, leaving only the placeholder). Persistent sessions (no
+      # COMMAND) are kept alive across toggles.
+      if [ -n "$COMMAND" ] && tmux has-session -t "$NAME" 2>/dev/null; then
+        tmux kill-session -t "$NAME"
+      fi
+
+      # Restore workmux hooks (with error tolerance for non-workmux windows)
+      if [ -n "$_workmux_bin" ]; then
+        _sync="$_workmux_bin _sidebar-sync --window #{window_id} 2>/dev/null || true"
+        tmux set-hook -g 'after-new-session[99]' "run-shell -b \"$_sync\""
+        tmux set-hook -g 'after-new-window[99]' "run-shell -b \"$_sync\""
+      fi
+
+      # Remove root-table bindings and reset session name for menu
+      unset_bindings
+      tmux setenv -g FLOAX_SESSION_NAME scratch
+    '';
+  };
+
   # Shared tmux binding definitions -- single source of truth for both
   # direct keybindings and which-key menu items.
   #
@@ -464,30 +572,44 @@ let
       cmd = "detach";
     };
 
-    # Popups
+    # Floax-based popups (persistent sessions, embeddable via C-M-e)
     scratchPopup = {
       group = "popups";
       name = "Scratch terminal";
       key = "\`";
-      cmd = ''display-popup -E -T " scratch " -w 80% -h 80% -d "#{pane_current_path}"'';
+      cmd = ''run-shell "tmux-floax-run scratch"'';
+    };
+    scratchMenu = {
+      group = "popups";
+      name = "Floax menu";
+      key = "~";
+      cmd = ''run-shell "${floaxScripts}/menu.sh"'';
     };
     gituiPopup = {
       group = "popups";
       name = "gitui";
       key = "G";
-      cmd = ''display-popup -E -T " gitui " -w 90% -h 90% -d "#{pane_current_path}" gitui'';
+      cmd = ''run-shell "tmux-floax-run --width 90% --height 90% gitui gitui"'';
     };
     lazydockerPopup = {
       group = "popups";
       name = "lazydocker";
       key = "D";
-      cmd = ''display-popup -E -T " lazydocker " -w 90% -h 90% lazydocker'';
+      cmd = ''run-shell "tmux-floax-run --width 90% --height 90% lazydocker lazydocker"'';
     };
     obsidianTask = {
       group = "popups";
       name = "Add task (obsidian)";
       key = "o";
-      cmd = ''display-popup -E -T " obsidian " -w 60% -h 30% tmux-obsidian-task'';
+      cmd = ''run-shell "tmux-floax-run --width 60% --height 30% obsidian tmux-obsidian-task"'';
+    };
+
+    # Pickers stay as display-popup (need parent pane context)
+    filePicker = {
+      group = "popups";
+      name = "File picker";
+      key = "F";
+      cmd = ''display-popup -E -T " files " -w 80% -h 80% -d "#{pane_current_path}" tmux-file-picker --git-root'';
     };
 
     # Workmux
@@ -495,7 +617,7 @@ let
       group = "workmux";
       name = "Dashboard";
       key = "S";
-      cmd = ''display-popup -E -T " workmux " -h 30 -w 100 "workmux dashboard"'';
+      cmd = ''run-shell "tmux-floax-run --width 100 --height 30 wm-dash workmux dashboard"'';
     };
     workmuxSidebar = {
       group = "workmux";
@@ -516,13 +638,6 @@ let
       name = "Sync panes";
       key = "y";
       cmd = ''set-window-option synchronize-panes \; display-message "sync #{?synchronize-panes,ON,OFF}"'';
-    };
-    # File picker (prefix+F)
-    filePicker = {
-      group = "popups";
-      name = "File picker";
-      key = "F";
-      cmd = ''display-popup -E -T " files " -w 80% -h 80% -d "#{pane_current_path}" tmux-file-picker --git-root'';
     };
   };
 
@@ -608,6 +723,7 @@ let
       key = "o";
       menu = [
         b.scratchPopup
+        b.scratchMenu
         b.gituiPopup
         b.lazydockerPopup
         b.filePicker
@@ -827,6 +943,19 @@ in
         '';
       }
       {
+        plugin = tmux-floax;
+        extraConfig = ''
+          set -g @floax-bind 'F13'
+          set -g @floax-bind-menu 'F14'
+          set -g @floax-width '80%'
+          set -g @floax-height '80%'
+          set -g @floax-border-color '#${tmux.muted}'
+          set -g @floax-text-color '#${tmux.dim}'
+          set -g @floax-change-path 'true'
+          set -g @floax-title ' scratch '
+        '';
+      }
+      {
         plugin = tmux-which-key;
         extraConfig = ''
           set -g @tmux-which-key-xdg-enable 1
@@ -1008,6 +1137,7 @@ in
     tmuxHints
     tmuxHintsToggle
     tmuxVimPopup
+    tmuxFloaxRun
     pkgs.sesh
   ];
 }
