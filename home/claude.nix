@@ -490,6 +490,10 @@ let
     exec ${pkgs.mcp-argocd}/bin/argocd-mcp "$@"
   '';
 
+  slugify = pkgs.writeShellScriptBin "slugify" ''
+    echo "$*" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//;s/-$//' | cut -c1-60
+  '';
+
   # Wrapper that injects sops secrets as env vars for sandbox env_passthrough
   workmuxWrapped = pkgs.writeShellScriptBin "workmux" ''
     if [ -f "${config.sops.secrets.gh_token.path}" ]; then
@@ -538,6 +542,7 @@ let
     "~/.cache/helm"
     "~/.local/state/workmux"
     "~/.local/state/hook-router"
+    "~/.local/share/claude"
   ]
   ++ bundledWritePaths;
 
@@ -1213,6 +1218,7 @@ in
           wm-coordinator = ../configs/claude/skills/wm-coordinator;
           wm-workmux = ../configs/claude/skills/wm-workmux;
           git-surgeon = ../configs/claude/skills/git-surgeon;
+          research = ../configs/claude/skills/research;
         }
         // cfg.extraSkills;
       };
@@ -1236,6 +1242,7 @@ in
         pkgs.rtk-bin
         pkgs.claude-history
         pkgs.git-surgeon
+        slugify
       ];
 
       file.".claude/CLAUDE.md".text = ''
@@ -1268,6 +1275,10 @@ in
       // lib.optionalAttrs skipPerms {
         IS_SANDBOX = "1";
       };
+
+      activation.ensureClaudeResearchDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        run mkdir -p "$HOME/.local/share/claude/research"
+      '';
 
       # Activation: merge MCP servers and secrets into mutable ~/.claude.json
       activation.syncClaudeJson = lib.hm.dag.entryAfter [ "writeBoundary" "sops-nix" ] ''
