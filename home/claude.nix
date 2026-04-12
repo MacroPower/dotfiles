@@ -215,7 +215,14 @@ let
         command = "<agent>";
         focus = true;
       }
-      { split = "horizontal"; }
+      (
+        {
+          split = "horizontal";
+        }
+        // lib.optionalAttrs cfg.lima.enable {
+          command = "workmux sandbox shell -- fish";
+        }
+      )
     ];
     sandbox = lib.optionalAttrs cfg.lima.enable {
       enabled = true;
