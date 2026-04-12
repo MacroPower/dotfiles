@@ -206,6 +206,10 @@ let
         info = "#${colors.base0C}";
       };
     };
+    post_create = lib.optionals cfg.lima.enable [
+      "direnv allow"
+      "lefthook install"
+    ];
     panes = [
       {
         command = "<agent>";
