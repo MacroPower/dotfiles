@@ -197,7 +197,7 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, stdout.Bytes())
 	})
 
-	t.Run("PostToolUse ExitPlanMode: no store is noop", func(t *testing.T) {
+	t.Run("PostToolUse is noop", func(t *testing.T) {
 		t.Parallel()
 
 		input := `{"session_id":"test","tool_input":{}}`

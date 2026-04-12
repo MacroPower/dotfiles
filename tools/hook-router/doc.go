@@ -4,9 +4,9 @@
 // It handles PreToolUse, PostToolUse, and Stop hook events:
 //
 //   - PreToolUse:Bash -- denies git stash save/push and direct kubectl usage
-//   - PreToolUse:ExitPlanMode -- gates plan exit behind plan-reviewer
+//   - PreToolUse:ExitPlanMode -- gates plan exit behind plan-reviewer, records
+//     plan path and baseline commit on approval
 //   - PreToolUse:EnterPlanMode -- resets plan session state
-//   - PostToolUse:ExitPlanMode -- records plan path and baseline commit
 //   - Stop -- blocks until implementation-reviewer approves (when plan changes exist)
 //
 // Session state is persisted in a SQLite database. Unmatched Bash commands

@@ -6,51 +6,7 @@ import (
 	"log/slog"
 )
 
-func handleExitPlanModePre(input []byte, stdout io.Writer, store *Store, logger *slog.Logger) error {
-	hook, err := parseHookInput(input)
-	if err != nil {
-		logger.Warn("failed to parse hook input", slog.Any("error", err))
-		return nil
-	}
-
-	if hook.SessionID == "" {
-		return nil
-	}
-
-	count, err := store.IncrementExitPlanCount(context.Background(), hook.SessionID)
-	if err != nil {
-		logger.Error("failed to increment exit plan count", slog.Any("error", err))
-		return nil
-	}
-
-	if count == 1 {
-		planPath := ""
-		if hook.ToolInput != nil {
-			if p, ok := hook.ToolInput["planFilePath"].(string); ok {
-				planPath = p
-			}
-		}
-
-		reason := "Before exiting plan mode, run the plan-reviewer agent to review the plan"
-		if planPath != "" {
-			reason += " at " + planPath + ". Pass it the plan file path."
-		} else {
-			reason += "."
-		}
-
-		reason += " After review is complete and any feedback has been addressed, call ExitPlanMode again."
-
-		logger.Info("denied ExitPlanMode (first call)", slog.String("session", hook.SessionID))
-
-		return encodeJSON(stdout, denyResponse(reason))
-	}
-
-	logger.Info("allowed ExitPlanMode", slog.String("session", hook.SessionID), slog.Int("count", count))
-
-	return nil
-}
-
-func handleExitPlanModePost(input []byte, store *Store, workDir string, logger *slog.Logger) error {
+func handleExitPlanModePre(input []byte, stdout io.Writer, store *Store, workDir string, logger *slog.Logger) error {
 	hook, err := parseHookInput(input)
 	if err != nil {
 		logger.Warn("failed to parse hook input", slog.Any("error", err))
@@ -68,20 +24,44 @@ func handleExitPlanModePost(input []byte, store *Store, workDir string, logger *
 		}
 	}
 
+	count, err := store.IncrementExitPlanCount(context.Background(), hook.SessionID)
+	if err != nil {
+		logger.Error("failed to increment exit plan count", slog.Any("error", err))
+		return nil
+	}
+
+	if count == 1 {
+		reason := "Before exiting plan mode, run the plan-reviewer agent to review the plan"
+		if planPath != "" {
+			reason += " at " + planPath + ". Pass it the plan file path."
+		} else {
+			reason += "."
+		}
+
+		reason += " After review is complete and any feedback has been addressed, call ExitPlanMode again."
+
+		logger.Info("denied ExitPlanMode (first call)", slog.String("session", hook.SessionID))
+
+		return encodeJSON(stdout, denyResponse(reason))
+	}
+
+	// Record plan path and baseline SHA when allowing ExitPlanMode through.
+	// PostToolUse does not fire for plan-mode control tools, so we record
+	// here on the second (approved) call instead.
 	git := &GitRunner{Dir: workDir}
 
 	baseSHA, err := git.HeadSHA(context.Background())
 	if err != nil {
 		logger.Warn("failed to get HEAD SHA", slog.Any("error", err))
-		// Continue with empty SHA; Stop handler falls back to status check.
 	}
 
 	if err := store.SetPlanPath(context.Background(), hook.SessionID, planPath, baseSHA); err != nil {
 		logger.Error("failed to set plan path", slog.Any("error", err))
 	}
 
-	logger.Info("recorded plan path",
+	logger.Info("allowed ExitPlanMode, recorded plan path",
 		slog.String("session", hook.SessionID),
+		slog.Int("count", count),
 		slog.String("plan_path", planPath),
 		slog.String("base_sha", baseSHA),
 	)

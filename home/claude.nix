@@ -1154,15 +1154,6 @@ in
                   }
                 ];
               }
-              {
-                matcher = "ExitPlanMode";
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${lib.getExe hookRouter} --event PostToolUse --tool ExitPlanMode";
-                  }
-                ];
-              }
             ];
             Stop = [
               {

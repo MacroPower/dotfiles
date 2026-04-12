@@ -73,7 +73,7 @@ func run(stdin io.Reader, stdout io.Writer, event, tool string, store *Store, cf
 				return nil
 			}
 
-			return handleExitPlanModePre(input, stdout, store, logger)
+			return handleExitPlanModePre(input, stdout, store, ".", logger)
 		case "EnterPlanMode":
 			if store == nil {
 				return nil
@@ -84,16 +84,7 @@ func run(stdin io.Reader, stdout io.Writer, event, tool string, store *Store, cf
 			return nil
 		}
 	case "PostToolUse":
-		switch tool {
-		case "ExitPlanMode":
-			if store == nil {
-				return nil
-			}
-
-			return handleExitPlanModePost(input, store, ".", logger)
-		default:
-			return nil
-		}
+		return nil
 	case "Stop":
 		if store == nil {
 			return nil

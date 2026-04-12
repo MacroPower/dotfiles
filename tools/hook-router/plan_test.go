@@ -28,6 +28,7 @@ func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
 
 	input := makeHookJSON(t, HookInput{
 		SessionID: "s1",
@@ -36,7 +37,7 @@ func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(input, &stdout, store, logger)
+	err := handleExitPlanModePre(input, &stdout, store, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -47,13 +48,19 @@ func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
 	assert.Equal(t, "deny", hso["permissionDecision"])
 	assert.Contains(t, hso["permissionDecisionReason"], "plan-reviewer")
 	assert.Contains(t, hso["permissionDecisionReason"], "/path/plan.md")
+
+	// plan_path should NOT be set yet (only on allow).
+	_, planPath, _, err := store.Session(context.Background(), "s1")
+	require.NoError(t, err)
+	assert.Equal(t, "", planPath)
 }
 
-func TestHandleExitPlanModePre_SecondCallAllows(t *testing.T) {
+func TestHandleExitPlanModePre_SecondCallAllowsAndRecords(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
 
 	input := makeHookJSON(t, HookInput{
 		SessionID: "s1",
@@ -63,16 +70,22 @@ func TestHandleExitPlanModePre_SecondCallAllows(t *testing.T) {
 	// First call: denied.
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(input, &stdout, store, logger)
+	err := handleExitPlanModePre(input, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.NotEmpty(t, stdout.Bytes())
 
-	// Second call: allowed (no output).
+	// Second call: allowed (no output), and records plan path.
 	stdout.Reset()
 
-	err = handleExitPlanModePre(input, &stdout, store, logger)
+	err = handleExitPlanModePre(input, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
+
+	// Verify plan_path and base_sha are now recorded.
+	_, planPath, baseSHA, err := store.Session(context.Background(), "s1")
+	require.NoError(t, err)
+	assert.Equal(t, "/path/plan.md", planPath)
+	assert.Len(t, baseSHA, 40)
 }
 
 func TestHandleExitPlanModePre_NoPlanPath(t *testing.T) {
@@ -80,6 +93,7 @@ func TestHandleExitPlanModePre_NoPlanPath(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
 
 	input := makeHookJSON(t, HookInput{
 		SessionID: "s1",
@@ -88,7 +102,7 @@ func TestHandleExitPlanModePre_NoPlanPath(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(input, &stdout, store, logger)
+	err := handleExitPlanModePre(input, &stdout, store, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -104,6 +118,7 @@ func TestHandleExitPlanModePre_EmptySessionAllows(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
 
 	input := makeHookJSON(t, HookInput{
 		SessionID: "",
@@ -112,30 +127,9 @@ func TestHandleExitPlanModePre_EmptySessionAllows(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(input, &stdout, store, logger)
+	err := handleExitPlanModePre(input, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
-}
-
-func TestHandleExitPlanModePost(t *testing.T) {
-	t.Parallel()
-
-	store := newTestStore(t)
-	logger := slog.New(slog.DiscardHandler)
-	dir := initTestRepo(t)
-
-	input := makeHookJSON(t, HookInput{
-		SessionID: "s1",
-		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
-	})
-
-	err := handleExitPlanModePost(input, store, dir, logger)
-	require.NoError(t, err)
-
-	_, planPath, baseSHA, err := store.Session(context.Background(), "s1")
-	require.NoError(t, err)
-	assert.Equal(t, "/path/plan.md", planPath)
-	assert.Len(t, baseSHA, 40)
 }
 
 func TestHandleEnterPlanMode_ResetsSession(t *testing.T) {
@@ -161,7 +155,7 @@ func TestHandleEnterPlanMode_ResetsSession(t *testing.T) {
 	assert.Equal(t, "", baseSHA)
 }
 
-func TestBugFix_ExitPlanRejected_StopAllowsThrough(t *testing.T) {
+func TestBugFix_OnlyDenied_StopAllowsThrough(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
@@ -173,23 +167,19 @@ func TestBugFix_ExitPlanRejected_StopAllowsThrough(t *testing.T) {
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
 
-	// PreToolUse:ExitPlanMode fires twice (deny then allow).
+	// PreToolUse:ExitPlanMode fires once -- denied.
+	// The session never reaches the "allow" path (plan review cycle ongoing).
 	var stdout bytes.Buffer
-	_ = handleExitPlanModePre(input, &stdout, store, logger)
+	_ = handleExitPlanModePre(input, &stdout, store, dir, logger)
 
-	stdout.Reset()
-	_ = handleExitPlanModePre(input, &stdout, store, logger)
-
-	// PostToolUse:ExitPlanMode NEVER fires (user rejected).
-	// This is the bug fix: plan_path stays empty.
-
-	// Stop fires -- should allow through because plan_path is empty.
+	// Stop fires -- should allow through because plan_path is empty
+	// (only recorded on allow, not on deny).
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
 	err := handleStop(stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
-	assert.Empty(t, stdout.Bytes(), "Stop should allow through when plan_path is empty")
+	assert.Empty(t, stdout.Bytes(), "Stop should allow through when only deny was issued")
 }
 
 func TestStopBlocksWithChanges(t *testing.T) {
@@ -197,15 +187,23 @@ func TestStopBlocksWithChanges(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
-	ctx := context.Background()
-
 	dir := initTestRepo(t)
-	git := &GitRunner{Dir: dir}
 
-	baseSHA, err := git.HeadSHA(ctx)
+	input := makeHookJSON(t, HookInput{
+		SessionID: "s1",
+		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
+	})
+
+	// Full flow: deny then allow (which records plan path).
+	var stdout bytes.Buffer
+	_ = handleExitPlanModePre(input, &stdout, store, dir, logger)
+
+	stdout.Reset()
+	_ = handleExitPlanModePre(input, &stdout, store, dir, logger)
+
+	// Get the baseSHA that was recorded.
+	_, _, baseSHA, err := store.Session(context.Background(), "s1")
 	require.NoError(t, err)
-
-	_ = store.SetPlanPath(ctx, "s1", "/path/plan.md", baseSHA)
 
 	// Make a code change and commit.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new\n"), 0o644))
@@ -222,8 +220,7 @@ func TestStopBlocksWithChanges(t *testing.T) {
 	}
 
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
-
-	var stdout bytes.Buffer
+	stdout.Reset()
 
 	err = handleStop(stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
@@ -241,22 +238,25 @@ func TestStopAllowsNoChanges(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
-	ctx := context.Background()
-
 	dir := initTestRepo(t)
-	git := &GitRunner{Dir: dir}
 
-	baseSHA, err := git.HeadSHA(ctx)
-	require.NoError(t, err)
+	input := makeHookJSON(t, HookInput{
+		SessionID: "s1",
+		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
+	})
 
-	_ = store.SetPlanPath(ctx, "s1", "/path/plan.md", baseSHA)
+	// Full flow: deny then allow.
+	var stdout bytes.Buffer
+	_ = handleExitPlanModePre(input, &stdout, store, dir, logger)
+
+	stdout.Reset()
+	_ = handleExitPlanModePre(input, &stdout, store, dir, logger)
 
 	// No changes -- Stop should allow through.
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stdout.Reset()
 
-	var stdout bytes.Buffer
-
-	err = handleStop(stopInput, &stdout, store, dir, logger)
+	err := handleStop(stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "Stop should allow through when no changes")
 }
