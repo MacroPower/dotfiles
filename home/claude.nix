@@ -623,6 +623,8 @@ in
       description = "Additional MCP servers deep-merged into programs.mcp.servers.";
     };
 
+    remoteControl = lib.mkEnableOption "Claude Code remote control for all sessions";
+
     lima = {
       enable = lib.mkEnableOption "Lima sandbox backend";
       cpus = mkOption {
@@ -1306,6 +1308,11 @@ in
         UPDATED=$(echo "$EXISTING" | ${pkgs.jq}/bin/jq \
           --argjson mcp "$MCP_SERVERS" \
           '.mcpServers = (.mcpServers // {} | to_entries | map(select(.key as $k | $mcp | has($k) | not)) | from_entries) * $mcp')
+
+        ${lib.optionalString cfg.remoteControl ''
+          # Enable remote control for all interactive sessions
+          UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq '.remoteControlAtStartup = true')
+        ''}
 
         # Set GitHub PAT as a universal fish variable for MCP auth
         if [ -f "${config.sops.secrets.gh_token.path}" ]; then

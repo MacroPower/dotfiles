@@ -45,6 +45,7 @@
           userEmail = "jacobcolvin1@gmail.com";
         };
         claude = {
+          remoteControl = true;
           extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
           lima = {
             enable = true;
