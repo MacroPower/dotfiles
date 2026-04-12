@@ -27,6 +27,25 @@
 
       environment.systemPackages = [ pkgs.terrarium ];
 
+      # br_netfilter makes bridged (container) traffic traverse netfilter
+      # hooks so terrarium's nftables rules can see it.
+      boot.kernelModules = [ "br_netfilter" ];
+
+      boot.kernel.sysctl = {
+        # Let bridged traffic pass through iptables/ip6tables chains.
+        "net.bridge.bridge-nf-call-iptables" = 1;
+        "net.bridge.bridge-nf-call-ip6tables" = 1;
+        # Allow DNAT to 127.0.0.1 on dynamically-created bridge/veth interfaces.
+        "net.ipv4.conf.default.route_localnet" = 1;
+        # Standard IP forwarding for container networking.
+        "net.ipv4.ip_forward" = 1;
+        # Loose reverse-path filter -- br_netfilter causes rpfilter mismatches
+        # because bridged packets enter L3 hooks with veth as iif but routes
+        # point to the bridge master.
+        "net.ipv4.conf.all.rp_filter" = 2;
+        "net.ipv4.conf.default.rp_filter" = 2;
+      };
+
       # Boot-time deny-all firewall. This table loads before terrarium
       # starts and blocks all non-loopback traffic. Terrarium replaces it
       # with policy-based rules on startup. If terrarium never starts,
@@ -104,6 +123,42 @@
           };
           firewall.enabled = true;
         };
+      };
+
+      # CNI bridge network for containerd workloads.
+      environment.etc."cni/net.d/10-bridge.conflist".text = builtins.toJSON {
+        cniVersion = "1.0.0";
+        name = "bridge";
+        plugins = [
+          {
+            type = "bridge";
+            bridge = "cni0";
+            isGateway = true;
+            ipMasq = false;
+            ipam = {
+              type = "host-local";
+              ranges = [
+                [
+                  {
+                    subnet = "172.20.0.0/16";
+                    gateway = "172.20.0.1";
+                  }
+                ]
+              ];
+              routes = [ { dst = "0.0.0.0/0"; } ];
+            };
+            dns = {
+              nameservers = [ "1.1.1.1" ];
+            };
+          }
+          {
+            type = "portmap";
+            capabilities = {
+              portMappings = true;
+            };
+          }
+          { type = "loopback"; }
+        ];
       };
 
       # Ensure the CA certificate directory exists for terrarium's
