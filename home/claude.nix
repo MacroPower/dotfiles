@@ -162,6 +162,14 @@ let
     };
   };
 
+  toPermGlob =
+    path:
+    let
+      expanded =
+        if lib.hasPrefix "~" path then config.home.homeDirectory + lib.removePrefix "~" path else path;
+    in
+    "/${expanded}/**";
+
   cleanAttrs = lib.filterAttrs (_: v: v != "" && v != [ ]);
   cleanRule =
     rule:
@@ -516,6 +524,31 @@ let
   bundledSockets = lib.concatMap (b: b.sandbox.allowUnixSockets) bundleValues;
   bundledReadPaths = lib.concatMap (b: b.sandbox.allowRead) bundleValues;
   bundledWritePaths = lib.concatMap (b: b.sandbox.allowWrite) bundleValues;
+
+  extraReadPaths = [
+    "/nix/store"
+  ]
+  ++ bundledReadPaths;
+
+  extraWritePaths = [
+    "~/go/pkg"
+    "~/Library/Application Support/rtk"
+    "~/Library/Caches"
+    "~/.cache/nix"
+    "~/.cache/helm"
+    "~/.local/state/workmux"
+    "~/.local/state/hook-router"
+  ]
+  ++ bundledWritePaths;
+
+  readPermEntries = map (p: "Read(${toPermGlob p})") extraReadPaths;
+
+  writePermEntries = lib.concatMap (p: [
+    "Read(${toPermGlob p})"
+    "Write(${toPermGlob p})"
+    "Edit(${toPermGlob p})"
+  ]) extraWritePaths;
+
   bundledInstructions =
     let
       pairs = lib.filter (p: p.category != "" && p.items != [ ]) (
@@ -937,12 +970,7 @@ in
           };
           permissions = {
             defaultMode = "plan";
-            allow = [
-              "Edit(//tmp/git/**)"
-              "Edit(//private/tmp/git/**)"
-            ]
-            ++ bundledAllow
-            ++ cfg.extraPermissions.allow;
+            allow = readPermEntries ++ writePermEntries ++ bundledAllow ++ cfg.extraPermissions.allow;
             deny = [
               # Key material & certificates
               "Read(//**/*.pem)"
@@ -1075,20 +1103,8 @@ in
               ++ bundledDomains;
             };
             filesystem = {
-              allowRead = [
-                "/nix/store"
-              ]
-              ++ bundledReadPaths;
-              allowWrite = [
-                "~/go/pkg"
-                "~/Library/Application Support/rtk"
-                "~/Library/Caches"
-                "~/.cache/nix"
-                "~/.cache/helm"
-                "~/.local/state/workmux"
-                "~/.local/state/hook-router"
-              ]
-              ++ bundledWritePaths;
+              allowRead = extraReadPaths;
+              allowWrite = extraWritePaths;
             };
           };
           hooks = {
