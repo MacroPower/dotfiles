@@ -39,29 +39,16 @@
         "net.ipv4.conf.default.route_localnet" = 1;
         # Standard IP forwarding for container networking.
         "net.ipv4.ip_forward" = 1;
-        # Loose reverse-path filter -- br_netfilter causes rpfilter mismatches
-        # because bridged packets enter L3 hooks with veth as iif but routes
-        # point to the bridge master.
-        "net.ipv4.conf.all.rp_filter" = 2;
-        "net.ipv4.conf.default.rp_filter" = 2;
       };
 
-      # Boot-time deny-all firewall. This table loads before terrarium
-      # starts and blocks all non-loopback traffic. Terrarium replaces it
-      # with policy-based rules on startup. If terrarium never starts,
-      # crashes, or is stopped, the deny-all rules remain in the kernel.
+      # Boot-time deny-all egress. Terrarium replaces this table with
+      # policy-based rules on startup. If terrarium never starts, the
+      # deny-all OUTPUT remains in the kernel.
       networking.nftables = {
         enable = true;
         tables.terrarium = {
           family = "inet";
           content = ''
-            chain input {
-              type filter hook input priority filter; policy drop;
-              iifname "lo" accept
-              ct state established,related accept
-              # Allow SSH from Lima host for guest agent communication.
-              tcp dport 22 accept
-            }
             chain output {
               type filter hook output priority filter; policy drop;
               oifname "lo" accept
@@ -69,6 +56,37 @@
             }
           '';
         };
+        # Guard table -- terrarium never touches this, so it survives
+        # daemon reloads. Accepts traffic carrying the policy-evaluated
+        # fwmark (bit 0x2) set by the terrarium table; drops everything
+        # else when the daemon is down (no terrarium table, no mark).
+        tables.terrarium-guard = {
+          family = "inet";
+          content = ''
+            chain output {
+              type filter hook output priority 10; policy accept;
+              ip daddr 127.0.0.0/8 accept
+              ip6 daddr ::1 accept
+              meta mark & 0x2 == 0x2 accept
+              ct state established,related accept
+              drop
+            }
+          '';
+        };
+      };
+
+      # Inbound filtering via the NixOS firewall. Accept DNATted
+      # bridge-container traffic and TPROXY-marked forwarded packets.
+      # Loose rpfilter avoids br_netfilter iif mismatches at the
+      # nftables level (fib saddr . mark oif exists).
+      networking.firewall = {
+        enable = true;
+        checkReversePath = "loose";
+        allowedTCPPorts = [ 22 ];
+        extraInputRules = ''
+          ct status dnat accept
+          meta mark & 0x1 == 0x1 accept
+        '';
       };
 
       # Envoy user (UID 1001) matching Terrarium's default.
@@ -97,6 +115,7 @@
           Type = "notify";
           ExecStart = "${pkgs.terrarium}/bin/terrarium daemon --config=/etc/terrarium/config.yaml";
           EnvironmentFile = "/etc/environment";
+          RuntimeDirectory = "terrarium";
           StateDirectory = "terrarium";
           WatchdogSec = "30s";
           Restart = "always";
