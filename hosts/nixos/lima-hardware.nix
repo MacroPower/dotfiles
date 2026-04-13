@@ -30,7 +30,7 @@ nixos-lima:
 
         mkdir -p $out/share/bash-completion/completions
         sed 's/nerdctl/docker/g' \
-          "${nerdctl}/share/bash-completion/completions/nerdctl" \
+          "${nerdctl}/share/bash-completion/completions/nerdctl.bash" \
           > $out/share/bash-completion/completions/docker
 
         mkdir -p $out/share/zsh/site-functions
