@@ -44,7 +44,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     rycee-nur = {
-      url = "gitlab:rycee/nur-expressions?narHash=sha256-6CZuk2ChoYS2g97AuLw8caJwE2ta3SNoMPCKw/ptZdw%3D";
+      url = "gitlab:rycee/nur-expressions";
       flake = false;
     };
     nur-jacobcolvin = {

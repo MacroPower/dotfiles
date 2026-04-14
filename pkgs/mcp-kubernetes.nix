@@ -5,24 +5,24 @@
 }:
 
 let
-  version = "0.0.12";
+  version = "0.0.13";
 
   srcs = {
     "aarch64-darwin" = {
       url = "https://github.com/Azure/mcp-kubernetes/releases/download/v${version}/mcp-kubernetes-darwin-arm64";
-      hash = "sha256-sy5oEBp0vino+3+brE3aK+V7dCSDAnr2volSCr6qlBY=";
+      hash = "sha256-RtG6VhIodpbD5CwMNnAyxuvW8Rw1Vzk0BoBDyCHBcOE=";
     };
     "x86_64-darwin" = {
       url = "https://github.com/Azure/mcp-kubernetes/releases/download/v${version}/mcp-kubernetes-darwin-amd64";
-      hash = "sha256-Liz9aXh6XgBYS7rB0/1WYWrS0JYOUDOBUvzAoIczX4g=";
+      hash = "sha256-GzCMx66xR5h5e/YkgWr4aYUabFYZN5W4bpMhM2lCrXg=";
     };
     "aarch64-linux" = {
       url = "https://github.com/Azure/mcp-kubernetes/releases/download/v${version}/mcp-kubernetes-linux-arm64";
-      hash = "sha256-PpNhTKAQVIklMDtYU3+cD9mAQywD4LhCtSEJFroe/ls=";
+      hash = "sha256-1l9wZethNre46JhyGCaF4vyKQ0MkBMjnsWHgsjIbOpk=";
     };
     "x86_64-linux" = {
       url = "https://github.com/Azure/mcp-kubernetes/releases/download/v${version}/mcp-kubernetes-linux-amd64";
-      hash = "sha256-bqWiGGqaV6FiUonSmVjSMp6qq5G+yuN/pKuGpFGkByw=";
+      hash = "sha256-gDXmQijfSmRIeyzCKESgqU6mLU6VQj2m/XR3aoC0WdQ=";
     };
   };
 
