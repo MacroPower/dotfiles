@@ -99,5 +99,11 @@ in
       default = "${config.dotfiles.homeDirectory}/Library/Mobile Documents/iCloud~md~obsidian/Documents";
       description = "Absolute path to the Obsidian vaults directory.";
     };
+
+    tmux.socketPath = mkOption {
+      type = types.nullOr types.nonEmptyStr;
+      default = null;
+      description = "Full tmux socket file path passed via -S flag. Overrides the default /tmp/tmux-<UID>/default. On macOS use canonical /private/tmp paths.";
+    };
   };
 }

@@ -886,6 +886,19 @@ in
 {
   programs.tmux = {
     enable = true;
+    package =
+      if config.dotfiles.tmux.socketPath != null then
+        pkgs.symlinkJoin {
+          name = "tmux-wrapped";
+          paths = [ pkgs.tmux ];
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          postBuild = ''
+            wrapProgram $out/bin/tmux \
+              --add-flags "-S ${config.dotfiles.tmux.socketPath}"
+          '';
+        }
+      else
+        pkgs.tmux;
     prefix = "C-b";
     mouse = true;
     baseIndex = 1;
@@ -1120,6 +1133,12 @@ in
   xdg.configFile."tmux/plugins/tmux-which-key/config.yaml".source = tmuxWhichKeyConfig;
   xdg.configFile."hints/tmux.txt".source = tmuxHintsFile;
   xdg.configFile."hints/vim.txt".source = ../configs/hints/vim.txt;
+
+  home.activation.tmuxSocketDir = lib.mkIf (config.dotfiles.tmux.socketPath != null) (
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      run mkdir -p -m 0700 "$(dirname "${config.dotfiles.tmux.socketPath}")"
+    ''
+  );
 
   # Ensure tmux-which-key's init.tmux is writable so the plugin can rebuild it
   home.activation.tmuxWhichKeyPermissions = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
