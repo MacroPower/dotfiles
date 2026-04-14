@@ -1116,9 +1116,10 @@ in
               allowUnixSockets = [
                 "/nix/var/nix/daemon-socket/socket"
                 (
-                  if config.dotfiles.tmux.socketPath != null
-                  then config.dotfiles.tmux.socketPath
-                  else "/private/tmp/tmux-501/default"
+                  if config.dotfiles.tmux.socketPath != null then
+                    config.dotfiles.tmux.socketPath
+                  else
+                    "/private/tmp/tmux-501/default"
                 )
               ]
               ++ bundledSockets;
