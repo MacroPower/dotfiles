@@ -197,15 +197,42 @@ let
       # shellcheck source=/dev/null
       source "${floaxScripts}/utils.sh"
 
-      # Suppress workmux sidebar hooks for the lifetime of this popup.
-      # They fire on new-session/new-window and would attach a sidebar to the
-      # floax session. Hooks are restored (with || true) after the popup closes.
-      _workmux_bin=$(tmux show-hooks -g 2>/dev/null \
-        | sed -n 's|^after-new-session\[99\] run-shell -b "\(.*\) _sidebar-sync.*|\1|p' || true)
-      if [ -n "$_workmux_bin" ]; then
-        tmux set-hook -gu 'after-new-session[99]' 2>/dev/null || true
-        tmux set-hook -gu 'after-new-window[99]' 2>/dev/null || true
+      # Suppress all workmux sidebar hooks for the lifetime of this popup.
+      # Without this, hooks fire on new-session/new-window and attach a sidebar
+      # to the floax session. When the popup command exits, the orphaned sidebar
+      # detects it's the last pane and triggers shutdown_all_sidebars().
+      _WORKMUX_HOOKS=(
+        'after-new-session[99]'
+        'after-new-window[99]'
+        'window-resized[99]'
+        'after-select-window[98]'
+        'client-session-changed[98]'
+        'after-kill-pane[98]'
+      )
+      _hooks_file=""
+      _all_hooks=$(tmux show-hooks -g 2>/dev/null || true)
+      if echo "$_all_hooks" | grep -q '_sidebar-sync'; then
+        _hooks_file=$(mktemp)
+        echo "$_all_hooks" > "$_hooks_file"
+        for _h in "''${_WORKMUX_HOOKS[@]}"; do
+          tmux set-hook -gu "$_h" 2>/dev/null || true
+        done
       fi
+
+      _restore_workmux_hooks() {
+        if [ -n "$_hooks_file" ] && [ -f "$_hooks_file" ]; then
+          for _h in "''${_WORKMUX_HOOKS[@]}"; do
+            _line=$(grep -F "$_h " "$_hooks_file" || true)
+            if [ -n "$_line" ]; then
+              _cmd="''${_line#"$_h "}"
+              tmux set-hook -g "$_h" "$_cmd" 2>/dev/null || true
+            fi
+          done
+          rm -f "$_hooks_file"
+          _hooks_file=""
+        fi
+      }
+      trap _restore_workmux_hooks EXIT
 
       WIDTH="$FLOAX_WIDTH"
       HEIGHT="$FLOAX_HEIGHT"
@@ -269,12 +296,8 @@ let
         tmux kill-session -t "$NAME"
       fi
 
-      # Restore workmux hooks (with error tolerance for non-workmux windows)
-      if [ -n "$_workmux_bin" ]; then
-        _sync="$_workmux_bin _sidebar-sync --window #{window_id} 2>/dev/null || true"
-        tmux set-hook -g 'after-new-session[99]' "run-shell -b \"$_sync\""
-        tmux set-hook -g 'after-new-window[99]' "run-shell -b \"$_sync\""
-      fi
+      # Restore workmux hooks (also runs via EXIT trap for abnormal exits)
+      _restore_workmux_hooks
 
       # Remove root-table bindings and reset session name for menu
       unset_bindings
