@@ -165,6 +165,7 @@
                 helm-schema = ./pkgs/helm-schema.nix;
                 mcp-kagi = ./pkgs/mcp-kagi.nix;
                 mcp-argocd = ./pkgs/mcp-argocd.nix;
+                mcp-opentofu = ./pkgs/mcp-opentofu.nix;
                 claude-powerline = ./pkgs/claude-powerline.nix;
                 claude-history = ./pkgs/claude-history.nix;
                 git-surgeon = ./pkgs/git-surgeon.nix;

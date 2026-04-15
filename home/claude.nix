@@ -1029,6 +1029,26 @@ in
           ];
         };
       };
+      opentofu = {
+        servers.opentofu = {
+          type = "stdio";
+          command = "${pkgs.mcp-opentofu}/bin/mcp-opentofu";
+        };
+        permissions.allow = [
+          "mcp__opentofu__search-opentofu-registry"
+          "mcp__opentofu__get-provider-details"
+          "mcp__opentofu__get-module-details"
+          "mcp__opentofu__get-resource-docs"
+          "mcp__opentofu__get-datasource-docs"
+        ];
+        sandbox.allowedDomains = [ "api.opentofu.org" ];
+        instructions = {
+          category = "OpenTofu";
+          items = [
+            "Use `mcp__opentofu__*` tools to query the OpenTofu Registry for providers, modules, resources, and data sources instead of guessing from memory."
+          ];
+        };
+      };
     };
 
     programs = {

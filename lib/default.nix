@@ -30,6 +30,7 @@ let
     helm-schema = final.callPackage paths.helm-schema { };
     mcp-kagi = final.callPackage paths.mcp-kagi { };
     mcp-argocd = final.callPackage paths.mcp-argocd { };
+    mcp-opentofu = final.callPackage paths.mcp-opentofu { };
     claude-powerline = final.callPackage paths.claude-powerline { };
     claude-history = final.callPackage paths.claude-history { };
     git-surgeon = final.callPackage paths.git-surgeon { };
