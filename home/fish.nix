@@ -402,7 +402,7 @@ in
       # Auto-start workmux sidebar (recovers if it died; skip floax popups)
       if set -q TMUX; and command -q workmux; and not set -q FLOAX
         if not tmux show-option -gqv @workmux_sidebar_scope 2>/dev/null | string length -q
-          workmux sidebar --session 2>/dev/null &disown
+          workmux sidebar --session >/dev/null 2>&1 &disown
         end
       end
 
