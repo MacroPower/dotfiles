@@ -29,4 +29,4 @@ fi
 # Normalize
 file="$(realpath -m "$file")"
 
-tmux display-popup -E -T " vim " -w 90% -h 90% -d "$(dirname "$file")" vim +"$line" "$file"
+tmux-popup-run -T " vim " -w 90% -h 90% -d "$(dirname "$file")" vim +"$line" "$file"

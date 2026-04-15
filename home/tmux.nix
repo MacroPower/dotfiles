@@ -161,6 +161,7 @@ let
     runtimeInputs = [
       pkgs.tmux
       pkgs.coreutils
+      tmuxPopupRun
     ];
     text = builtins.readFile ../scripts/tmux-vim-popup.sh;
   };
@@ -172,6 +173,97 @@ let
       pkgs.tmux
     ];
     text = builtins.readFile ../scripts/tmux-hints-toggle.sh;
+  };
+
+  # Suppress workmux's global sidebar hooks for the duration of a popup so
+  # they don't fire against the popup's transient session/window and trigger
+  # shutdown_all_sidebars() when the popup closes.
+  #
+  # Sourced by both tmux-floax-run and tmux-popup-run. Defines:
+  #   _suppress_workmux_hooks  -- snapshot + unset
+  #   _restore_workmux_hooks   -- replay from snapshot (idempotent)
+  #
+  # Concurrency: nested invocations are safe. Inner wrappers see the hooks
+  # already unset (snapshot lacks _sidebar-sync), capture nothing, restore
+  # nothing. The outermost wrapper holds the real snapshot and restores on
+  # exit (last-to-finish wins).
+  workmuxHooksLib = pkgs.writeText "workmux-hooks.sh" ''
+    _WORKMUX_HOOKS=(
+      'after-new-session[99]'
+      'after-new-window[99]'
+      'window-resized[99]'
+      'after-select-window[98]'
+      'client-session-changed[98]'
+      'after-kill-pane[98]'
+    )
+    _hooks_file=""
+
+    _suppress_workmux_hooks() {
+      local _all_hooks
+      _all_hooks=$(tmux show-hooks -g 2>/dev/null || true)
+      if echo "$_all_hooks" | grep -q '_sidebar-sync'; then
+        _hooks_file=$(mktemp)
+        echo "$_all_hooks" > "$_hooks_file"
+        local _h
+        for _h in "''${_WORKMUX_HOOKS[@]}"; do
+          tmux set-hook -gu "$_h" 2>/dev/null || true
+        done
+      fi
+    }
+
+    _restore_workmux_hooks() {
+      if [ -n "$_hooks_file" ] && [ -f "$_hooks_file" ]; then
+        local _h _line _cmd
+        for _h in "''${_WORKMUX_HOOKS[@]}"; do
+          # show-hooks -g lines look like: hook-name[index] command...
+          _line=$(grep -F "$_h " "$_hooks_file" || true)
+          if [ -n "$_line" ]; then
+            _cmd="''${_line#"$_h "}"
+            tmux set-hook -g "$_h" "$_cmd" 2>/dev/null || true
+          fi
+        done
+        rm -f "$_hooks_file"
+        _hooks_file=""
+      fi
+    }
+  '';
+
+  # Generic synchronous popup wrapper. Always passes -E itself; callers must
+  # NOT pass -E. Forward -T, -w, -h, -d, and the trailing command verbatim.
+  tmuxPopupRun = pkgs.writeShellApplication {
+    name = "tmux-popup-run";
+    excludeShellChecks = [ "SC1091" ];
+    runtimeInputs = [ pkgs.tmux ];
+    text = ''
+      # shellcheck source=/dev/null
+      source "${workmuxHooksLib}"
+
+      _suppress_workmux_hooks
+      trap _restore_workmux_hooks EXIT HUP INT TERM
+
+      tmux display-popup -E "$@"
+    '';
+  };
+
+  # Dedicated picker wrappers so the tmux key bindings can invoke them with
+  # no inner quoting -- avoids breaking the single-quoted string that
+  # tmux-which-key wraps each menu command in.
+  tmuxSeshPopup = pkgs.writeShellApplication {
+    name = "tmux-sesh-popup";
+    runtimeInputs = [ tmuxPopupRun ];
+    text = ''tmux-popup-run -T " sesh " -w 70% -h 70% tmux-sesh-picker'';
+  };
+
+  tmuxFilePopup = pkgs.writeShellApplication {
+    name = "tmux-file-popup";
+    runtimeInputs = [
+      pkgs.tmux
+      tmuxPopupRun
+    ];
+    text = ''
+      cwd=$(tmux display-message -p '#{pane_current_path}')
+      tmux-popup-run -T " files " -w 80% -h 80% -d "$cwd" tmux-file-picker --git-root
+    '';
   };
 
   tmux-floax = pkgs.tmuxPlugins.mkTmuxPlugin {
@@ -201,38 +293,10 @@ let
       # Without this, hooks fire on new-session/new-window and attach a sidebar
       # to the floax session. When the popup command exits, the orphaned sidebar
       # detects it's the last pane and triggers shutdown_all_sidebars().
-      _WORKMUX_HOOKS=(
-        'after-new-session[99]'
-        'after-new-window[99]'
-        'window-resized[99]'
-        'after-select-window[98]'
-        'client-session-changed[98]'
-        'after-kill-pane[98]'
-      )
-      _hooks_file=""
-      _all_hooks=$(tmux show-hooks -g 2>/dev/null || true)
-      if echo "$_all_hooks" | grep -q '_sidebar-sync'; then
-        _hooks_file=$(mktemp)
-        echo "$_all_hooks" > "$_hooks_file"
-        for _h in "''${_WORKMUX_HOOKS[@]}"; do
-          tmux set-hook -gu "$_h" 2>/dev/null || true
-        done
-      fi
-
-      _restore_workmux_hooks() {
-        if [ -n "$_hooks_file" ] && [ -f "$_hooks_file" ]; then
-          for _h in "''${_WORKMUX_HOOKS[@]}"; do
-            _line=$(grep -F "$_h " "$_hooks_file" || true)
-            if [ -n "$_line" ]; then
-              _cmd="''${_line#"$_h "}"
-              tmux set-hook -g "$_h" "$_cmd" 2>/dev/null || true
-            fi
-          done
-          rm -f "$_hooks_file"
-          _hooks_file=""
-        fi
-      }
-      trap _restore_workmux_hooks EXIT
+      # shellcheck source=/dev/null
+      source "${workmuxHooksLib}"
+      _suppress_workmux_hooks
+      trap _restore_workmux_hooks EXIT HUP INT TERM
 
       WIDTH="$FLOAX_WIDTH"
       HEIGHT="$FLOAX_HEIGHT"
@@ -568,7 +632,7 @@ let
       group = "sessions";
       name = "Switcher (sesh)";
       key = "s";
-      cmd = ''display-popup -E -T " sesh " -w 70% -h 70% tmux-sesh-picker'';
+      cmd = ''run-shell "tmux-sesh-popup"'';
     };
     sessionTree = {
       group = "sessions";
@@ -632,7 +696,7 @@ let
       group = "popups";
       name = "File picker";
       key = "F";
-      cmd = ''display-popup -E -T " files " -w 80% -h 80% -d "#{pane_current_path}" tmux-file-picker --git-root'';
+      cmd = ''run-shell "tmux-file-popup"'';
     };
 
     # Workmux
@@ -1179,6 +1243,9 @@ in
     tmuxHints
     tmuxHintsToggle
     tmuxVimPopup
+    tmuxPopupRun
+    tmuxSeshPopup
+    tmuxFilePopup
     tmuxFloaxRun
     pkgs.sesh
   ];
