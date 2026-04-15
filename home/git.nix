@@ -25,6 +25,7 @@
       "**/.claude/worktrees/"
       "**/.worktrees/"
       "**/.chief/"
+      "**/.ck/"
     ];
   };
 

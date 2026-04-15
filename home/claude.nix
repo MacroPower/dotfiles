@@ -224,6 +224,9 @@ let
         }
       )
     ];
+    files = {
+      copy = [ ".ck" ];
+    };
     sandbox = lib.optionalAttrs cfg.lima.enable {
       enabled = true;
       backend = "lima";
@@ -798,7 +801,7 @@ in
           "WebFetch"
         ];
         instructions = {
-          category = "Web Search & Fetching";
+          category = "Web Search";
           items = [
             "Use `mcp__fetch__fetch` for fetching known URLs and web page content."
           ];
@@ -822,7 +825,7 @@ in
           "/private/tmp/git"
         ];
         instructions = {
-          category = "Web Search & Fetching";
+          category = "Code Search";
           items = [
             "Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there."
           ];
@@ -837,7 +840,7 @@ in
         permissions.allow = [ "mcp__kagi__kagi_search_fetch" ];
         permissions.deny = [ "mcp__kagi__kagi_summarizer" ];
         instructions = {
-          category = "Web Search & Fetching";
+          category = "Web Search";
           items = [
             "Use `mcp__kagi__kagi_search_fetch` for web searches."
           ];
@@ -879,6 +882,40 @@ in
           items = [
             "Use `mcp__nixos__nix` for Nix package searches, NixOS/home-manager/nix-darwin option lookups, and FlakeHub queries."
             "Use `mcp__nixos__nix_versions` for package version history and channel availability."
+          ];
+        };
+      };
+
+      ck = {
+        servers.ck = {
+          type = "stdio";
+          command = "${pkgs.llm-agents.ck}/bin/ck";
+          args = [ "--serve" ];
+        };
+        permissions.allow = [
+          "mcp__ck__semantic_search"
+          "mcp__ck__regex_search"
+          "mcp__ck__lexical_search"
+          "mcp__ck__hybrid_search"
+          "mcp__ck__index_status"
+          "mcp__ck__health_check"
+          "mcp__ck__default_ckignore"
+          "mcp__ck__reindex"
+        ];
+        sandbox = {
+          allowWrite = [ "~/.cache/ck" ];
+          allowedDomains = [
+            "huggingface.co"
+            "cdn-lfs.huggingface.co"
+          ];
+        };
+        instructions = {
+          category = "Code Search";
+          items = [
+            "Use `mcp__ck__semantic_search` to find code by meaning when keywords are unknown or fuzzy."
+            "Use `mcp__ck__hybrid_search` for combined semantic + regex ranking."
+            "Use `mcp__ck__lexical_search` for BM25 full-text search across a repo."
+            "Prefer `Grep` for known exact strings/regexes, use `mcp__ck__regex_search` when you need paged results across a large repo."
           ];
         };
       };
@@ -1285,6 +1322,7 @@ in
       packages = [
         pkgs.chief
         pkgs.llm-agents.ccusage
+        pkgs.llm-agents.ck
         workmuxWrapped
         pkgs.rtk-bin
         pkgs.claude-history
