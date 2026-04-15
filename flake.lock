@@ -638,11 +638,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1776040191,
-        "narHash": "sha256-j0e7zZvGqodnD5n2hyfigZQk8ujor3y4xkawrfqLm40=",
+        "lastModified": 1776208901,
+        "narHash": "sha256-8uyoy3TVTJelnqL8YmaXavrCx5wWFfypVebKYmG2RjQ=",
         "ref": "refs/heads/main",
-        "rev": "a953a23b7ae39a3c7735a1f8d8843aeff57e8ab8",
-        "revCount": 59,
+        "rev": "607271e57714115997ef39a0669560c24f4a0276",
+        "revCount": 60,
         "type": "git",
         "url": "https://nur.jacobcolvin.com"
       },

@@ -200,7 +200,7 @@
 | [qtstyleplugin-kvantum](https://github.com/tsujan/Kvantum)                                  | 1.1.6    | SVG-based Qt5 theme engine plus a config tool and extra themes                          | GPL-3.0-or-later |
 | [shared-mime-info](http://freedesktop.org/wiki/Software/shared-mime-info)                   | 2.4      | Database of common MIME types                                                           | GPL-2.0-or-later |
 | [strace](https://strace.io/)                                                                | 6.19     | System call tracer for Linux                                                            | multiple         |
-| [terrarium](https://github.com/macropower/terrarium)                                        | 0.4.1    | Secure container environment using Envoy as an L7 egress gateway                        | Apache-2.0       |
+| [terrarium](https://github.com/macropower/terrarium)                                        | 0.6.1    | Secure container environment using Envoy as an L7 egress gateway                        | Apache-2.0       |
 
 ### Homebrew Casks
 
