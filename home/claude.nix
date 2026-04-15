@@ -990,6 +990,8 @@ in
           env = {
             CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
           };
+          disableAutoMode = "disable";
+          includeGitInstructions = false;
           attribution = {
             commit = "";
             pr = "";
