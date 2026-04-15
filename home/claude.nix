@@ -644,6 +644,25 @@ in
 
     remoteControl = lib.mkEnableOption "Claude Code remote control for all sessions";
 
+    attribution = mkOption {
+      type = types.submodule {
+        options = {
+          commit = mkOption {
+            type = types.str;
+            default = "";
+            description = "Attribution footer appended to commit messages. Empty string disables attribution.";
+          };
+          pr = mkOption {
+            type = types.str;
+            default = "";
+            description = "Attribution footer appended to pull request descriptions. Empty string disables attribution.";
+          };
+        };
+      };
+      default = { };
+      description = "Per-host attribution strings for commits and PRs authored via Claude Code.";
+    };
+
     lima = {
       enable = lib.mkEnableOption "Lima sandbox backend";
       cpus = mkOption {
@@ -992,10 +1011,7 @@ in
           };
           disableAutoMode = "disable";
           includeGitInstructions = false;
-          attribution = {
-            commit = "";
-            pr = "";
-          };
+          inherit (cfg) attribution;
           permissions = {
             defaultMode = "plan";
             allow = readPermEntries ++ writePermEntries ++ bundledAllow ++ cfg.extraPermissions.allow;
