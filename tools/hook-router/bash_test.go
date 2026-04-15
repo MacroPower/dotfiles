@@ -169,3 +169,87 @@ func TestCheckK8sCliDenied(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckGitSubcmdDenied(t *testing.T) {
+	t.Parallel()
+
+	const cloneDenied = "Direct git clone usage is blocked. Use mcp__git__git_clone instead."
+
+	tests := map[string]struct {
+		input string
+		want  string
+	}{
+		"git clone url": {
+			input: "git clone https://example.com/repo.git",
+			want:  cloneDenied,
+		},
+		"git clone with flags and dest": {
+			input: "git clone --depth 1 https://example.com/repo.git /tmp/dst",
+			want:  cloneDenied,
+		},
+		"git -C dir clone": {
+			input: "git -C /tmp clone https://example.com/repo.git",
+			want:  cloneDenied,
+		},
+		"git --git-dir long flag clone": {
+			input: "git --git-dir=/x clone https://example.com/repo.git",
+			want:  cloneDenied,
+		},
+		"git -c key=val clone": {
+			input: "git -c user.name=x clone https://example.com/repo.git",
+			want:  cloneDenied,
+		},
+		"git stacked value flags clone": {
+			input: "git -C /tmp -c foo=bar clone https://example.com/repo.git",
+			want:  cloneDenied,
+		},
+		"git clone in pipeline": {
+			input: "git clone https://example.com/repo.git | tee log",
+			want:  cloneDenied,
+		},
+		"git clone in compound": {
+			input: "cd /tmp && git clone https://example.com/repo.git",
+			want:  cloneDenied,
+		},
+		"git clone in subshell": {
+			input: "(git clone https://example.com/repo.git)",
+			want:  cloneDenied,
+		},
+		"git clone with env prefix": {
+			input: "GIT_TERMINAL_PROMPT=0 git clone https://example.com/repo.git",
+			want:  cloneDenied,
+		},
+		"no match: git status": {
+			input: "git status",
+		},
+		"no match: git cloner": {
+			input: "git cloner",
+		},
+		"no match: echo git clone": {
+			input: "echo git clone https://example.com/repo.git",
+		},
+		"no match: sh -c git clone": {
+			input: `sh -c "git clone https://example.com/repo.git"`,
+		},
+		"no match: git help clone": {
+			input: "git help clone",
+		},
+		"no match: git -C dir status": {
+			input: "git -C /tmp status",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			_, got, denied := checkGitSubcmdDenied(prog)
+			assert.Equal(t, tt.want != "", denied)
+
+			if denied {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}

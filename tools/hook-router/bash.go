@@ -35,6 +35,28 @@ var (
 	k8sBlockedCmds = map[string]string{
 		"kubectl": "mcp__kubernetes__call_kubectl",
 	}
+
+	// gitBlockedSubcmds lists git subcommands that should be
+	// routed through an MCP tool instead of being invoked
+	// directly.
+	gitBlockedSubcmds = map[string]string{
+		"clone": "mcp__git__git_clone",
+	}
+
+	// gitFlagsTakingValue lists top-level git flags that consume
+	// the following argument as their value (e.g. `git -C dir
+	// clone url`). The walker skips both the flag and its value
+	// when locating the subcommand.
+	gitFlagsTakingValue = map[string]bool{
+		"-C":             true,
+		"-c":             true,
+		"--exec-path":    true,
+		"--git-dir":      true,
+		"--work-tree":    true,
+		"--namespace":    true,
+		"--super-prefix": true,
+		"--config-env":   true,
+	}
 )
 
 func handleBash(input []byte, stdout io.Writer, cfg config, logger *slog.Logger) error {
@@ -86,6 +108,18 @@ func handleBash(input []byte, stdout io.Writer, cfg config, logger *slog.Logger)
 		logger.Info(
 			"denied",
 			slog.String("rule", "k8s-cli"),
+			slog.String("command", command),
+			slog.String("reason", reason),
+		)
+
+		return encodeJSON(stdout, denyResponse(reason))
+	}
+
+	if subcmd, reason, denied := checkGitSubcmdDenied(prog); denied {
+		logger.Info(
+			"denied",
+			slog.String("rule", "git-subcmd"),
+			slog.String("subcmd", subcmd),
 			slog.String("command", command),
 			slog.String("reason", reason),
 		)
@@ -186,6 +220,81 @@ func checkK8sCliDenied(prog *syntax.File) (string, bool) {
 	return fmt.Sprintf(
 		"Direct %s usage is blocked. Use %s instead.",
 		tool, k8sBlockedCmds[tool],
+	), true
+}
+
+// checkGitSubcmdDenied walks the AST looking for direct invocations of
+// git subcommands listed in [gitBlockedSubcmds]. These should use the
+// corresponding MCP tool instead. Leading flags between `git` and the
+// subcommand (e.g. `git -C dir clone url`) are skipped.
+func checkGitSubcmdDenied(prog *syntax.File) (string, string, bool) {
+	var subcmd string
+
+	syntax.Walk(prog, func(node syntax.Node) bool {
+		if subcmd != "" {
+			return false
+		}
+
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) < 2 {
+			return true
+		}
+
+		parts0 := call.Args[0].Parts
+		if len(parts0) != 1 {
+			return true
+		}
+
+		lit0, ok0 := parts0[0].(*syntax.Lit)
+		if !ok0 || lit0.Value != "git" {
+			return true
+		}
+
+		skipNext := false
+
+		for _, arg := range call.Args[1:] {
+			if len(arg.Parts) != 1 {
+				return true
+			}
+
+			lit, ok := arg.Parts[0].(*syntax.Lit)
+			if !ok {
+				return true
+			}
+
+			if skipNext {
+				skipNext = false
+				continue
+			}
+
+			if strings.HasPrefix(lit.Value, "-") {
+				// Long flags written as `--flag=value` carry the
+				// value inline; only consume the next arg when the
+				// flag is the bare form.
+				if gitFlagsTakingValue[lit.Value] {
+					skipNext = true
+				}
+
+				continue
+			}
+
+			if _, blocked := gitBlockedSubcmds[lit.Value]; blocked {
+				subcmd = lit.Value
+			}
+
+			return true
+		}
+
+		return true
+	})
+
+	if subcmd == "" {
+		return "", "", false
+	}
+
+	return subcmd, fmt.Sprintf(
+		"Direct git %s usage is blocked. Use %s instead.",
+		subcmd, gitBlockedSubcmds[subcmd],
 	), true
 }
 
