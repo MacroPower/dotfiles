@@ -243,6 +243,9 @@ let
         "ARGOCD_BASE_URL"
         "DAGGER_CLOUD_TOKEN"
         "KAGI_API_KEY"
+        "SPACELIFT_API_KEY_ENDPOINT"
+        "SPACELIFT_API_KEY_ID"
+        "SPACELIFT_API_KEY_SECRET"
       ];
       lima = {
         isolation = "shared";
@@ -417,7 +420,7 @@ let
           { host = "(.*\\.)?securecodebox\\.io"; }
           { host = "(.*\\.)?sigstore\\.dev"; }
           { host = "(.*\\.)?sigs\\.k8s\\.io"; }
-          { host = "(.*\\.)?docs\\.spacelift\\.io"; }
+          { host = "(.*\\.)?spacelift\\.io"; }
           { host = "(.*\\.)?sqlite\\.org"; }
           { host = "(.*\\.)?stakater\\.com"; }
           { host = "(.*\\.)?stackoverflow\\.com"; }
@@ -507,6 +510,20 @@ let
     exec ${pkgs.mcp-argocd}/bin/argocd-mcp "$@"
   '';
 
+  # Wrapper script that reads Spacelift credentials from sops at runtime
+  spaceliftWrapper = pkgs.writeShellScript "spacelift-mcp-wrapper" ''
+    if [ -f "${config.sops.secrets.spacelift_api_key_endpoint.path}" ]; then
+      export SPACELIFT_API_KEY_ENDPOINT="$(cat "${config.sops.secrets.spacelift_api_key_endpoint.path}" 2>/dev/null || true)"
+    fi
+    if [ -f "${config.sops.secrets.spacelift_api_key_id.path}" ]; then
+      export SPACELIFT_API_KEY_ID="$(cat "${config.sops.secrets.spacelift_api_key_id.path}" 2>/dev/null || true)"
+    fi
+    if [ -f "${config.sops.secrets.spacelift_api_key_secret.path}" ]; then
+      export SPACELIFT_API_KEY_SECRET="$(cat "${config.sops.secrets.spacelift_api_key_secret.path}" 2>/dev/null || true)"
+    fi
+    exec ${pkgs.spacectl}/bin/spacectl "$@"
+  '';
+
   slugify = pkgs.writeShellScriptBin "slugify" ''
     echo "$*" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//;s/-$//' | cut -c1-60
   '';
@@ -537,6 +554,15 @@ let
           fi
           if [ -f "${config.sops.secrets.kagi_api_key.path}" ]; then
             export KAGI_API_KEY="$(cat "${config.sops.secrets.kagi_api_key.path}" 2>/dev/null || true)"
+          fi
+          if [ -f "${config.sops.secrets.spacelift_api_key_endpoint.path}" ]; then
+            export SPACELIFT_API_KEY_ENDPOINT="$(cat "${config.sops.secrets.spacelift_api_key_endpoint.path}" 2>/dev/null || true)"
+          fi
+          if [ -f "${config.sops.secrets.spacelift_api_key_id.path}" ]; then
+            export SPACELIFT_API_KEY_ID="$(cat "${config.sops.secrets.spacelift_api_key_id.path}" 2>/dev/null || true)"
+          fi
+          if [ -f "${config.sops.secrets.spacelift_api_key_secret.path}" ]; then
+            export SPACELIFT_API_KEY_SECRET="$(cat "${config.sops.secrets.spacelift_api_key_secret.path}" 2>/dev/null || true)"
           fi
         '
     '';
@@ -1049,6 +1075,41 @@ in
           category = "OpenTofu";
           items = [
             "Use `mcp__opentofu__*` tools to query the OpenTofu Registry for providers, modules, resources, and data sources instead of guessing from memory."
+          ];
+        };
+      };
+
+      spacelift = {
+        servers.spacelift = {
+          type = "stdio";
+          command = "${spaceliftWrapper}";
+          args = [
+            "mcp"
+            "server"
+          ];
+        };
+        permissions.allow = [
+          "mcp__spacelift__introspect_graphql_schema"
+          "mcp__spacelift__get_graphql_type_details"
+          "mcp__spacelift__search_graphql_schema_fields"
+          "mcp__spacelift__authentication_guide"
+          "mcp__spacelift__get_spacelift_stacks"
+          "mcp__spacelift__get_stack_runs"
+          "mcp__spacelift__get_stack_run_logs"
+          "mcp__spacelift__get_stack_run_changes"
+        ];
+        permissions.ask = [
+          "mcp__spacelift__trigger_stack_run"
+          "mcp__spacelift__discard_stack_run"
+          "mcp__spacelift__confirm_stack_run"
+        ];
+        sandbox.allowedDomains = [
+          "spacelift.io"
+        ];
+        instructions = {
+          category = "Infrastructure";
+          items = [
+            "Use `mcp__spacelift__*` tools for Spacelift operations. Do not use the `spacectl` CLI directly."
           ];
         };
       };

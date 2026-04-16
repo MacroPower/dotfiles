@@ -60,6 +60,7 @@ in
           chart-testing
           cmctl
           argocd
+          spacectl
         ]
         ++ cfg.extraPackages;
     };
