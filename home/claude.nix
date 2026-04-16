@@ -225,7 +225,10 @@ let
       )
     ];
     files = {
-      copy = [ ".ck" ];
+      copy = [
+        ".ck"
+        ".claude"
+      ];
     };
     sandbox = lib.optionalAttrs cfg.lima.enable {
       enabled = true;
