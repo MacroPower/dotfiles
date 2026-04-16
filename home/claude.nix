@@ -1079,6 +1079,35 @@ in
         };
       };
 
+      leanspec = {
+        servers.leanspec = {
+          type = "stdio";
+          command = "${pkgs.leanspec-mcp}/bin/leanspec-mcp";
+        };
+        permissions.allow = [
+          "mcp__leanspec__list"
+          "mcp__leanspec__view"
+          "mcp__leanspec__search"
+          "mcp__leanspec__validate"
+          "mcp__leanspec__tokens"
+          "mcp__leanspec__board"
+          "mcp__leanspec__stats"
+          "mcp__leanspec__children"
+          "mcp__leanspec__deps"
+        ];
+        permissions.ask = [
+          "mcp__leanspec__create"
+          "mcp__leanspec__update"
+          "mcp__leanspec__relationships"
+        ];
+        instructions = {
+          category = "Specs";
+          items = [
+            "Use `mcp__leanspec__*` tools to read, search, and manage LeanSpec specifications."
+          ];
+        };
+      };
+
       spacelift = {
         servers.spacelift = {
           type = "stdio";

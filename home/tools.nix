@@ -146,6 +146,7 @@
   };
 
   home.packages = with pkgs; [
+    leanspec-cli
     go-task
     yq-go
     viddy

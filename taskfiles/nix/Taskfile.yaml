@@ -56,3 +56,5 @@ tasks:
       - bash pkgs/claude-powerline-update.sh
       - bash pkgs/claude-history-update.sh
       - bash pkgs/git-surgeon-update.sh
+      - bash pkgs/leanspec-mcp-update.sh
+      - bash pkgs/leanspec-cli-update.sh

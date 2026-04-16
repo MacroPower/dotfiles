@@ -166,6 +166,8 @@
                 mcp-kagi = ./pkgs/mcp-kagi.nix;
                 mcp-argocd = ./pkgs/mcp-argocd.nix;
                 mcp-opentofu = ./pkgs/mcp-opentofu.nix;
+                leanspec-mcp = ./pkgs/leanspec-mcp.nix;
+                leanspec-cli = ./pkgs/leanspec-cli.nix;
                 claude-powerline = ./pkgs/claude-powerline.nix;
                 claude-history = ./pkgs/claude-history.nix;
                 git-surgeon = ./pkgs/git-surgeon.nix;
