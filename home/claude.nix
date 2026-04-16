@@ -207,8 +207,8 @@ let
       };
     };
     post_create = lib.optionals cfg.lima.enable [
-      "direnv allow"
-      "lefthook install"
+      "direnv allow >/dev/null 2>&1"
+      "lefthook install >/dev/null 2>&1"
     ];
     panes = [
       {
