@@ -69,9 +69,27 @@ let
     };
   };
 
+  # lupa 2.7's bundled LuaJIT 2.1 Makefile mis-detects the target on
+  # aarch64-linux, producing x86_64 objects that fail to link. Strip the
+  # luajit21 source so setup.py skips that extension; lua51/52/54 still
+  # build, which is all lupa's Python consumers (pydocket -> fastmcp ->
+  # mcp-nixos) need.
+  lupaOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        lupa = pyprev.lupa.overrideAttrs (old: {
+          postPatch = (old.postPatch or "") + ''
+            rm -rf third-party/luajit21
+          '';
+        });
+      })
+    ];
+  };
+
   sharedOverlays = system: [
     lixOverlay
     localOverlay
+    lupaOverlay
     (nurJacobColvinOverlay system)
     ryceeOverlay
     (workmuxOverlay system)

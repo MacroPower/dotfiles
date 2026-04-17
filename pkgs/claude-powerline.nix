@@ -7,7 +7,7 @@
 }:
 
 let
-  version = "1.24.4";
+  version = "1.25.1";
 in
 stdenv.mkDerivation {
   pname = "claude-powerline";
@@ -15,7 +15,7 @@ stdenv.mkDerivation {
 
   src = fetchurl {
     url = "https://registry.npmjs.org/@owloops/claude-powerline/-/claude-powerline-${version}.tgz";
-    hash = "sha256-mR/OsXEEwHwqZM5onWeM/0stoLIbVJhsyFJBVleaNjE=";
+    hash = "sha256-mDYTTI5bUULblVdLaU2Fi3c/095HHLsaN3Kfxk//yR4=";
   };
 
   nativeBuildInputs = [ makeWrapper ];

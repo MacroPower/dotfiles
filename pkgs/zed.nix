@@ -24,31 +24,31 @@
 }:
 
 let
-  version = "0.231.2";
+  version = "0.232.2";
 
   srcs = {
     "aarch64-darwin" = {
       url = "https://github.com/zed-industries/zed/releases/download/v${version}/Zed-aarch64.dmg";
-      hash = "sha256-NbLDOKJg3h6kpKEPV5wURwMh1C8xR73QhWn2FJvk/2M=";
+      hash = "sha256-gnF93qTAOtAzqcmdFEDRtx1vYUGwLu3Rqhy46z3Lk48=";
     };
     "aarch64-linux" = {
       url = "https://github.com/zed-industries/zed/releases/download/v${version}/zed-linux-aarch64.tar.gz";
-      hash = "sha256-IaVGyhLav6/AzXXO65KSAgMBB6XFUmY7twPHG5hPKxQ=";
+      hash = "sha256-9G9boyDEFVVErN+dBNzjPrcf5G8Wp4bUgB9LJ8Ai7ow=";
     };
     "x86_64-linux" = {
       url = "https://github.com/zed-industries/zed/releases/download/v${version}/zed-linux-x86_64.tar.gz";
-      hash = "sha256-kgZRPji4o3zyfodL/z38ZebdGrH0rg++X+Eq90Zdw9w=";
+      hash = "sha256-wpu3nOOOnMvkDZVtmgJVnA42iRb/JyuJK9WF6IlBX5M=";
     };
   };
 
   remoteServerSrcs = {
     "aarch64-linux" = {
       url = "https://github.com/zed-industries/zed/releases/download/v${version}/zed-remote-server-linux-aarch64.gz";
-      hash = "sha256-tuzkIy4jNSbWgdfHI4Q8kAZqVyG+OJilZOQvto+7jS8=";
+      hash = "sha256-c8fPtU0U9wV785OKcJqqA011L3nDvsDYhfHGnAep0r0=";
     };
     "x86_64-linux" = {
       url = "https://github.com/zed-industries/zed/releases/download/v${version}/zed-remote-server-linux-x86_64.gz";
-      hash = "sha256-HIDGo4Fa2PWqh9ezmGepFSBlM9U46H1bViJ7wkaQ2NM=";
+      hash = "sha256-UR4/NbVzCDr2/I+hvhid6OPMcuFVzjTC7w0gGzimH0U=";
     };
   };
 
