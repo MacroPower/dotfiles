@@ -171,6 +171,7 @@
                 claude-powerline = ./pkgs/claude-powerline.nix;
                 claude-history = ./pkgs/claude-history.nix;
                 git-surgeon = ./pkgs/git-surgeon.nix;
+                no-new-privs = ./tools/no-new-privs/package.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })

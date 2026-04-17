@@ -1142,7 +1142,26 @@ in
 
       claude-code = {
         enable = true;
-        package = pkgs.llm-agents.claude-code;
+        package =
+          let
+            base = pkgs.llm-agents.claude-code;
+          in
+          if pkgs.stdenv.isLinux then
+            let
+              wrapper = pkgs.writeShellScript "claude-no-new-privs" ''
+                exec ${pkgs.no-new-privs}/bin/no-new-privs ${base}/bin/claude "$@"
+              '';
+            in
+            pkgs.symlinkJoin {
+              inherit (base) name meta;
+              paths = [ base ];
+              postBuild = ''
+                rm "$out/bin/claude"
+                install -m 0755 ${wrapper} "$out/bin/claude"
+              '';
+            }
+          else
+            base;
         enableMcpIntegration = true;
 
         settings = lib.recursiveUpdate {

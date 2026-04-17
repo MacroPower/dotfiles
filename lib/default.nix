@@ -36,6 +36,7 @@ let
     claude-powerline = final.callPackage paths.claude-powerline { };
     claude-history = final.callPackage paths.claude-history { };
     git-surgeon = final.callPackage paths.git-surgeon { };
+    no-new-privs = if final.stdenv.isLinux then final.callPackage paths.no-new-privs { } else null;
   };
 
   nurJacobColvinOverlay =
