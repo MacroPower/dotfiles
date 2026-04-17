@@ -112,7 +112,11 @@
           "nftables.service"
         ];
         wants = [ "network-online.target" ];
-        wantedBy = [ "multi-user.target" ];
+        partOf = [ "nftables.service" ];
+        wantedBy = [
+          "multi-user.target"
+          "nftables.service"
+        ];
         environment = {
           HOME = "/var/lib/terrarium";
           XDG_DATA_HOME = "/var/lib/terrarium";
