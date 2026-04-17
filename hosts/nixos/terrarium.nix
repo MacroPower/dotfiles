@@ -200,6 +200,7 @@
       ../../home/claude.nix
     ];
     dotfiles = {
+      sops.enable = false;
       git = {
         userName = "Jacob Colvin";
         userEmail = "jacobcolvin1@gmail.com";

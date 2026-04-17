@@ -76,6 +76,12 @@ in
       description = "PEM certificate files to add to the CA bundle.";
     };
 
+    sops.enable = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Whether to enable sops-nix secret decryption. Disable for hosts that receive secrets via environment variables.";
+    };
+
     caBundlePath = mkOption {
       type = types.nullOr types.str;
       default = null;

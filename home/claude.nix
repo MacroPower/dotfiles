@@ -9,7 +9,24 @@ let
   inherit (lib) mkOption types;
   inherit (config.lib.stylix) colors;
   cfg = config.dotfiles.claude;
+  sopsEnabled = config.dotfiles.sops.enable;
   skipPerms = cfg.dangerouslySkipPermissions;
+
+  # Returns the sops secret path when sops is enabled, or a nonexistent
+  # path when disabled.  Nix is lazy so the `then` branch (which accesses
+  # config.sops.secrets) is never evaluated when sopsEnabled is false.
+  secretPath =
+    name: if sopsEnabled then config.sops.secrets.${name}.path else "/run/secrets/disabled";
+
+  # Generate shell snippet that exports an env var from a sops secret file.
+  exportSecret = envVar: secretName: ''
+    if [ -f "${secretPath secretName}" ]; then
+      export ${envVar}="$(cat "${secretPath secretName}" 2>/dev/null || true)"
+    fi
+  '';
+
+  # Generate shell snippets for multiple env-var-to-secret mappings.
+  exportSecrets = mappings: lib.concatStrings (lib.mapAttrsToList exportSecret mappings);
 
   claudePowerlineConfig = builtins.toJSON {
     theme = "custom";
@@ -482,45 +499,31 @@ let
         server
     ) servers;
 
-  # Wrapper script that reads the GH_TOKEN from sops at runtime
   gitWrapper = pkgs.writeShellScript "git-mcp-wrapper" ''
-    if [ -f "${config.sops.secrets.gh_token.path}" ]; then
-      export GH_TOKEN="$(cat "${config.sops.secrets.gh_token.path}" 2>/dev/null || true)"
-    fi
+    ${exportSecret "GH_TOKEN" "gh_token"}
     exec ${pkgs.mcp-git}/bin/mcp-git "$@"
   '';
 
-  # Wrapper script that reads the KAGI_API_KEY from sops at runtime
   kagiWrapper = pkgs.writeShellScript "kagi-mcp-wrapper" ''
-    if [ -f "${config.sops.secrets.kagi_api_key.path}" ]; then
-      export KAGI_API_KEY="$(cat "${config.sops.secrets.kagi_api_key.path}" 2>/dev/null || true)"
-    fi
+    ${exportSecret "KAGI_API_KEY" "kagi_api_key"}
     export KAGI_SUMMARIZER_ENGINE="agnes"
     exec ${pkgs.mcp-kagi}/bin/kagimcp "$@"
   '';
 
-  # Wrapper script that reads ArgoCD credentials from sops at runtime
   argocdWrapper = pkgs.writeShellScript "argocd-mcp-wrapper" ''
-    if [ -f "${config.sops.secrets.argocd_api_token.path}" ]; then
-      export ARGOCD_API_TOKEN="$(cat "${config.sops.secrets.argocd_api_token.path}" 2>/dev/null || true)"
-    fi
-    if [ -f "${config.sops.secrets.argocd_base_url.path}" ]; then
-      export ARGOCD_BASE_URL="$(cat "${config.sops.secrets.argocd_base_url.path}" 2>/dev/null || true)"
-    fi
+    ${exportSecrets {
+      ARGOCD_API_TOKEN = "argocd_api_token";
+      ARGOCD_BASE_URL = "argocd_base_url";
+    }}
     exec ${pkgs.mcp-argocd}/bin/argocd-mcp "$@"
   '';
 
-  # Wrapper script that reads Spacelift credentials from sops at runtime
   spaceliftWrapper = pkgs.writeShellScript "spacelift-mcp-wrapper" ''
-    if [ -f "${config.sops.secrets.spacelift_api_key_endpoint.path}" ]; then
-      export SPACELIFT_API_KEY_ENDPOINT="$(cat "${config.sops.secrets.spacelift_api_key_endpoint.path}" 2>/dev/null || true)"
-    fi
-    if [ -f "${config.sops.secrets.spacelift_api_key_id.path}" ]; then
-      export SPACELIFT_API_KEY_ID="$(cat "${config.sops.secrets.spacelift_api_key_id.path}" 2>/dev/null || true)"
-    fi
-    if [ -f "${config.sops.secrets.spacelift_api_key_secret.path}" ]; then
-      export SPACELIFT_API_KEY_SECRET="$(cat "${config.sops.secrets.spacelift_api_key_secret.path}" 2>/dev/null || true)"
-    fi
+    ${exportSecrets {
+      SPACELIFT_API_KEY_ENDPOINT = "spacelift_api_key_endpoint";
+      SPACELIFT_API_KEY_ID = "spacelift_api_key_id";
+      SPACELIFT_API_KEY_SECRET = "spacelift_api_key_secret";
+    }}
     exec ${pkgs.spacectl}/bin/spacectl "$@"
   '';
 
@@ -537,33 +540,20 @@ let
     postBuild = ''
       wrapProgram $out/bin/workmux \
         --run '
-          if [ -f "${config.sops.secrets.gh_token.path}" ]; then
-            GH_TOKEN="$(cat "${config.sops.secrets.gh_token.path}" 2>/dev/null || true)"
-            export GH_TOKEN
+          ${exportSecret "GH_TOKEN" "gh_token"}
+          if [ -n "''${GH_TOKEN:-}" ]; then
             export GITHUB_TOKEN="$GH_TOKEN"
             export GITHUB_PERSONAL_ACCESS_TOKEN="$GH_TOKEN"
           fi
-          if [ -f "${config.sops.secrets.argocd_api_token.path}" ]; then
-            export ARGOCD_API_TOKEN="$(cat "${config.sops.secrets.argocd_api_token.path}" 2>/dev/null || true)"
-          fi
-          if [ -f "${config.sops.secrets.argocd_base_url.path}" ]; then
-            export ARGOCD_BASE_URL="$(cat "${config.sops.secrets.argocd_base_url.path}" 2>/dev/null || true)"
-          fi
-          if [ -f "${config.sops.secrets.dagger_cloud_token.path}" ]; then
-            export DAGGER_CLOUD_TOKEN="$(cat "${config.sops.secrets.dagger_cloud_token.path}" 2>/dev/null || true)"
-          fi
-          if [ -f "${config.sops.secrets.kagi_api_key.path}" ]; then
-            export KAGI_API_KEY="$(cat "${config.sops.secrets.kagi_api_key.path}" 2>/dev/null || true)"
-          fi
-          if [ -f "${config.sops.secrets.spacelift_api_key_endpoint.path}" ]; then
-            export SPACELIFT_API_KEY_ENDPOINT="$(cat "${config.sops.secrets.spacelift_api_key_endpoint.path}" 2>/dev/null || true)"
-          fi
-          if [ -f "${config.sops.secrets.spacelift_api_key_id.path}" ]; then
-            export SPACELIFT_API_KEY_ID="$(cat "${config.sops.secrets.spacelift_api_key_id.path}" 2>/dev/null || true)"
-          fi
-          if [ -f "${config.sops.secrets.spacelift_api_key_secret.path}" ]; then
-            export SPACELIFT_API_KEY_SECRET="$(cat "${config.sops.secrets.spacelift_api_key_secret.path}" 2>/dev/null || true)"
-          fi
+          ${exportSecrets {
+            ARGOCD_API_TOKEN = "argocd_api_token";
+            ARGOCD_BASE_URL = "argocd_base_url";
+            DAGGER_CLOUD_TOKEN = "dagger_cloud_token";
+            KAGI_API_KEY = "kagi_api_key";
+            SPACELIFT_API_KEY_ENDPOINT = "spacelift_api_key_endpoint";
+            SPACELIFT_API_KEY_ID = "spacelift_api_key_id";
+            SPACELIFT_API_KEY_SECRET = "spacelift_api_key_secret";
+          }}
         '
     '';
   };
@@ -1479,69 +1469,71 @@ in
       '';
 
       # Activation: merge MCP servers and secrets into mutable ~/.claude.json
-      activation.syncClaudeJson = lib.hm.dag.entryAfter [ "writeBoundary" "sops-nix" ] ''
-        CLAUDE_JSON="$HOME/.claude.json"
+      activation.syncClaudeJson =
+        lib.hm.dag.entryAfter ([ "writeBoundary" ] ++ lib.optional sopsEnabled "sops-nix")
+          ''
+            CLAUDE_JSON="$HOME/.claude.json"
 
-        # Read existing file or start fresh
-        if [ -f "$CLAUDE_JSON" ]; then
-          if ${pkgs.jq}/bin/jq empty "$CLAUDE_JSON" 2>/dev/null; then
-            EXISTING=$(cat "$CLAUDE_JSON")
-          else
-            echo "Warning: ~/.claude.json is malformed, backing up" >&2
-            $DRY_RUN_CMD cp "$CLAUDE_JSON" "$CLAUDE_JSON.bak.$(date +%s)"
-            EXISTING='{}'
-          fi
-        else
-          EXISTING='{}'
-        fi
+            # Read existing file or start fresh
+            if [ -f "$CLAUDE_JSON" ]; then
+              if ${pkgs.jq}/bin/jq empty "$CLAUDE_JSON" 2>/dev/null; then
+                EXISTING=$(cat "$CLAUDE_JSON")
+              else
+                echo "Warning: ~/.claude.json is malformed, backing up" >&2
+                $DRY_RUN_CMD cp "$CLAUDE_JSON" "$CLAUDE_JSON.bak.$(date +%s)"
+                EXISTING='{}'
+              fi
+            else
+              EXISTING='{}'
+            fi
 
-        # Merge MCP servers from home-manager config
-        MCP_CONFIG="${config.xdg.configHome}/mcp/mcp.json"
-        MCP_SERVERS='{}'
-        if [ -f "$MCP_CONFIG" ]; then
-          MCP_SERVERS=$(${pkgs.jq}/bin/jq '.mcpServers // {}' "$MCP_CONFIG")
-        fi
-        UPDATED=$(echo "$EXISTING" | ${pkgs.jq}/bin/jq \
-          --argjson mcp "$MCP_SERVERS" \
-          '.mcpServers = (.mcpServers // {} | to_entries | map(select(.key as $k | $mcp | has($k) | not)) | from_entries) * $mcp')
+            # Merge MCP servers from home-manager config
+            MCP_CONFIG="${config.xdg.configHome}/mcp/mcp.json"
+            MCP_SERVERS='{}'
+            if [ -f "$MCP_CONFIG" ]; then
+              MCP_SERVERS=$(${pkgs.jq}/bin/jq '.mcpServers // {}' "$MCP_CONFIG")
+            fi
+            UPDATED=$(echo "$EXISTING" | ${pkgs.jq}/bin/jq \
+              --argjson mcp "$MCP_SERVERS" \
+              '.mcpServers = (.mcpServers // {} | to_entries | map(select(.key as $k | $mcp | has($k) | not)) | from_entries) * $mcp')
 
-        ${lib.optionalString cfg.remoteControl ''
-          # Enable remote control for all interactive sessions
-          UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq '.remoteControlAtStartup = true')
-        ''}
+            ${lib.optionalString cfg.remoteControl ''
+              # Enable remote control for all interactive sessions
+              UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq '.remoteControlAtStartup = true')
+            ''}
 
-        # Set GitHub PAT as a universal fish variable for MCP auth
-        if [ -f "${config.sops.secrets.gh_token.path}" ]; then
-          GH_TOKEN=$(cat "${config.sops.secrets.gh_token.path}" 2>/dev/null || true)
-          if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
-            ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
-          fi
-        fi
+            # Set GitHub PAT as a universal fish variable for MCP auth
+            if [ -f "${secretPath "gh_token"}" ]; then
+              GH_TOKEN=$(cat "${secretPath "gh_token"}" 2>/dev/null || true)
+              if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
+                ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
+              fi
+            fi
 
-        ${lib.optionalString skipPerms ''
-          # Pre-trust home directory and authenticate with scoped PAT (sandbox only)
-          UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq \
-            '.projects["${config.dotfiles.homeDirectory}"].hasTrustDialogAccepted = true')
-          if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
-            echo "''${GH_TOKEN}" | ${pkgs.gh}/bin/gh auth login --with-token
-          fi
-        ''}
+            ${lib.optionalString skipPerms ''
+              # Pre-trust home directory and authenticate with scoped PAT (sandbox only)
+              UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq \
+                '.projects["${config.dotfiles.homeDirectory}"].hasTrustDialogAccepted = true')
+              if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
+                echo "''${GH_TOKEN}" | ${pkgs.gh}/bin/gh auth login --with-token
+              fi
+            ''}
 
-        # Atomic write
-        if [ -z "$DRY_RUN_CMD" ]; then
-          TMPFILE=$(mktemp "$CLAUDE_JSON.tmp.XXXXXX")
-          echo "$UPDATED" > "$TMPFILE"
-          chmod 600 "$TMPFILE"
-          mv "$TMPFILE" "$CLAUDE_JSON"
-        else
-          echo "Would write merged MCP config to $CLAUDE_JSON"
-        fi
+            # Atomic write
+            if [ -z "$DRY_RUN_CMD" ]; then
+              TMPFILE=$(mktemp "$CLAUDE_JSON.tmp.XXXXXX")
+              echo "$UPDATED" > "$TMPFILE"
+              chmod 600 "$TMPFILE"
+              mv "$TMPFILE" "$CLAUDE_JSON"
+            else
+              echo "Would write merged MCP config to $CLAUDE_JSON"
+            fi
 
-        # Prune stale worktree entries from ~/.claude.json
-        if [ -z "$DRY_RUN_CMD" ] && command -v workmux >/dev/null 2>&1 && [ -f "$CLAUDE_JSON" ]; then
-          ${lib.getExe' pkgs.workmux-bin "workmux"} claude prune 2>/dev/null || true
-        fi
-      '';
+            # Prune stale worktree entries from ~/.claude.json
+            if [ -z "$DRY_RUN_CMD" ] && command -v workmux >/dev/null 2>&1 && [ -f "$CLAUDE_JSON" ]; then
+              ${lib.getExe' pkgs.workmux-bin "workmux"} claude prune 2>/dev/null || true
+            fi
+          '';
     };
   };
 }

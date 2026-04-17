@@ -1,6 +1,6 @@
-{ config, ... }:
+{ config, lib, ... }:
 
-{
+lib.mkIf config.dotfiles.sops.enable {
   sops = {
     defaultSopsFile = ../secrets/dotfiles.yaml;
     age.keyFile = "${config.home.homeDirectory}/.config/sops/age/keys.txt";
