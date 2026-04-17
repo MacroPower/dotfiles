@@ -221,6 +221,21 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, stdout.Bytes())
 	})
 
+	t.Run("PreToolUse Agent: no store is noop", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"subagent_type": "implementation-reviewer",
+			"prompt":        "review changes",
+		})
+
+		var stdout bytes.Buffer
+
+		err := run(strings.NewReader(input), &stdout, "PreToolUse", "Agent", nil, cfg, slog.New(slog.DiscardHandler))
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+	})
+
 	t.Run("unknown event falls back to Bash handler", func(t *testing.T) {
 		t.Parallel()
 

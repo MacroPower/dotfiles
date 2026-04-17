@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -16,9 +17,19 @@ CREATE TABLE IF NOT EXISTS sessions (
     exit_plan_count INTEGER NOT NULL DEFAULT 0,
     plan_path       TEXT NOT NULL DEFAULT '',
     base_sha        TEXT NOT NULL DEFAULT '',
+    review_head_sha TEXT NOT NULL DEFAULT '',
+    review_wt_hash  TEXT NOT NULL DEFAULT '',
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `
+
+// migrations adds columns that may be missing in databases created before
+// the current schema. Each statement is executed individually; "duplicate
+// column name" errors are silently ignored.
+var migrations = []string{
+	`ALTER TABLE sessions ADD COLUMN review_head_sha TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE sessions ADD COLUMN review_wt_hash TEXT NOT NULL DEFAULT ''`,
+}
 
 // Store manages plan-guard session state in a SQLite database.
 type Store struct {
@@ -53,6 +64,17 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 
 		return nil, fmt.Errorf("creating schema: %w", err)
+	}
+
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil {
+			// Ignore "duplicate column name" errors from re-running migrations.
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				db.Close()
+
+				return nil, fmt.Errorf("running migration: %w", err)
+			}
+		}
 	}
 
 	// Clean up stale sessions (>24h).
@@ -124,6 +146,40 @@ func (s *Store) SetPlanPath(ctx context.Context, id, planPath, baseSHA string) e
 	return nil
 }
 
+// SetReviewFingerprint records the git state fingerprint captured when
+// a reviewer agent is spawned.
+func (s *Store) SetReviewFingerprint(ctx context.Context, id, headSHA, wtHash string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sessions (session_id, review_head_sha, review_wt_hash)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(session_id) DO UPDATE SET
+		   review_head_sha = excluded.review_head_sha,
+		   review_wt_hash = excluded.review_wt_hash,
+		   updated_at = datetime('now')`, id, headSHA, wtHash)
+	if err != nil {
+		return fmt.Errorf("setting review fingerprint: %w", err)
+	}
+
+	return nil
+}
+
+// ReviewFingerprint returns the stored git state fingerprint for a session.
+// Returns empty strings when no fingerprint has been recorded.
+func (s *Store) ReviewFingerprint(ctx context.Context, id string) (headSHA, wtHash string, err error) {
+	err = s.db.QueryRowContext(ctx,
+		`SELECT review_head_sha, review_wt_hash FROM sessions WHERE session_id = ?`, id).
+		Scan(&headSHA, &wtHash)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+
+	if err != nil {
+		return "", "", fmt.Errorf("querying review fingerprint: %w", err)
+	}
+
+	return headSHA, wtHash, nil
+}
+
 // ResetSession clears plan state for a session (used on EnterPlanMode).
 func (s *Store) ResetSession(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx,
@@ -133,6 +189,8 @@ func (s *Store) ResetSession(ctx context.Context, id string) error {
 		   exit_plan_count = 0,
 		   plan_path = '',
 		   base_sha = '',
+		   review_head_sha = '',
+		   review_wt_hash = '',
 		   updated_at = datetime('now')`, id)
 	if err != nil {
 		return fmt.Errorf("resetting session: %w", err)

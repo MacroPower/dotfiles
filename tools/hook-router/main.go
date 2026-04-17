@@ -80,6 +80,12 @@ func run(stdin io.Reader, stdout io.Writer, event, tool string, store *Store, cf
 			}
 
 			return handleEnterPlanMode(input, store, logger)
+		case "Agent":
+			if store == nil {
+				return nil
+			}
+
+			return handleAgentPre(input, stdout, store, ".", logger)
 		default:
 			return nil
 		}

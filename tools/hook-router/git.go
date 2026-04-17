@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -43,6 +44,30 @@ func (g *GitRunner) HasChanges(ctx context.Context, baseSHA string) (bool, error
 	}
 
 	return len(strings.TrimSpace(string(out))) > 0, nil
+}
+
+// Fingerprint returns a snapshot of the current repository state as a
+// HEAD commit SHA and a SHA-256 hash of the working tree status. Two
+// calls return the same pair only when committed and uncommitted state
+// are identical.
+func (g *GitRunner) Fingerprint(ctx context.Context) (headSHA, wtHash string, err error) {
+	headSHA, err = g.HeadSHA(ctx)
+	if err != nil {
+		return "", "", err
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	cmd.Dir = g.Dir
+
+	out, err := cmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("git status: %w", err)
+	}
+
+	h := sha256.Sum256(out)
+	wtHash = fmt.Sprintf("%x", h)
+
+	return headSHA, wtHash, nil
 }
 
 // HeadSHA returns the current HEAD commit SHA.

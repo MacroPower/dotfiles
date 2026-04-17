@@ -1328,6 +1328,15 @@ in
                   }
                 ];
               }
+              {
+                matcher = "Agent";
+                hooks = [
+                  {
+                    type = "command";
+                    command = "${lib.getExe hookRouter} --event PreToolUse --tool Agent";
+                  }
+                ];
+              }
             ];
             UserPromptSubmit = [
               {

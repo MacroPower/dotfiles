@@ -147,3 +147,58 @@ func TestHasChanges_NotGitRepo(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, changed)
 }
+
+func TestFingerprint(t *testing.T) {
+	t.Parallel()
+
+	dir := initTestRepo(t)
+	git := &GitRunner{Dir: dir}
+	ctx := context.Background()
+
+	headSHA, wtHash, err := git.Fingerprint(ctx)
+	require.NoError(t, err)
+	assert.Len(t, headSHA, 40)
+	assert.Len(t, wtHash, 64) // sha256 hex
+
+	// Same state produces the same fingerprint.
+	headSHA2, wtHash2, err := git.Fingerprint(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, headSHA, headSHA2)
+	assert.Equal(t, wtHash, wtHash2)
+}
+
+func TestFingerprint_ChangesAfterEdit(t *testing.T) {
+	t.Parallel()
+
+	dir := initTestRepo(t)
+	git := &GitRunner{Dir: dir}
+	ctx := context.Background()
+
+	headBefore, wtBefore, err := git.Fingerprint(ctx)
+	require.NoError(t, err)
+
+	// Uncommitted edit changes the working-tree hash but not HEAD.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new\n"), 0o644))
+
+	headAfter, wtAfter, err := git.Fingerprint(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, headBefore, headAfter, "HEAD should not change for uncommitted edits")
+	assert.NotEqual(t, wtBefore, wtAfter, "working-tree hash should differ after edit")
+
+	// Committing the change updates HEAD too.
+	for _, args := range [][]string{
+		{"git", "add", "."},
+		{"git", "commit", "-m", "add file"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+	}
+
+	headCommitted, wtCommitted, err := git.Fingerprint(ctx)
+	require.NoError(t, err)
+	assert.NotEqual(t, headBefore, headCommitted, "HEAD should change after commit")
+	assert.NotEqual(t, wtAfter, wtCommitted, "working-tree hash should change after commit")
+}

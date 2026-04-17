@@ -69,6 +69,50 @@ func handleExitPlanModePre(input []byte, stdout io.Writer, store *Store, workDir
 	return nil
 }
 
+// reviewerAgentTypes lists subagent_type values whose spawn should
+// capture a git fingerprint so the Stop hook can skip redundant blocks.
+var reviewerAgentTypes = map[string]bool{
+	"implementation-reviewer": true,
+	"plan-reviewer":           true,
+}
+
+func handleAgentPre(input []byte, stdout io.Writer, store *Store, workDir string, logger *slog.Logger) error {
+	hook, err := parseHookInput(input)
+	if err != nil {
+		logger.Warn("failed to parse hook input", slog.Any("error", err))
+		return nil
+	}
+
+	if hook.SessionID == "" {
+		return nil
+	}
+
+	agentType, _ := hook.ToolInput["subagent_type"].(string)
+	if !reviewerAgentTypes[agentType] {
+		return nil
+	}
+
+	git := &GitRunner{Dir: workDir}
+
+	headSHA, wtHash, err := git.Fingerprint(context.Background())
+	if err != nil {
+		logger.Warn("failed to get fingerprint for reviewer", slog.Any("error", err))
+		return nil
+	}
+
+	if err := store.SetReviewFingerprint(context.Background(), hook.SessionID, headSHA, wtHash); err != nil {
+		logger.Error("failed to set review fingerprint", slog.Any("error", err))
+	}
+
+	logger.Info("recorded review fingerprint",
+		slog.String("session", hook.SessionID),
+		slog.String("agent_type", agentType),
+		slog.String("head_sha", headSHA),
+	)
+
+	return nil
+}
+
 func handleEnterPlanMode(input []byte, store *Store, logger *slog.Logger) error {
 	hook, err := parseHookInput(input)
 	if err != nil {
@@ -134,6 +178,26 @@ func handleStop(input []byte, stdout io.Writer, store *Store, workDir string, lo
 		)
 
 		return nil
+	}
+
+	// Check whether a reviewer already ran against the current state.
+	reviewHead, reviewWT, fpErr := store.ReviewFingerprint(context.Background(), hook.SessionID)
+	if fpErr != nil {
+		logger.Warn("failed to read review fingerprint", slog.Any("error", fpErr))
+	}
+
+	if reviewHead != "" {
+		currentHead, currentWT, fpErr := git.Fingerprint(context.Background())
+		if fpErr != nil {
+			logger.Warn("failed to get current fingerprint", slog.Any("error", fpErr))
+		} else if currentHead == reviewHead && currentWT == reviewWT {
+			logger.Info("reviewer already ran against current state, allowing",
+				slog.String("session", hook.SessionID),
+				slog.String("head_sha", currentHead),
+			)
+
+			return nil
+		}
 	}
 
 	reason := "Before finishing, run the implementation-reviewer agent to review" +
