@@ -65,11 +65,11 @@ let
       };
       contextWarning = {
         bg = "#${colors.base09}";
-        fg = "#${colors.base0A}";
+        fg = "#${colors.base00}";
       };
       contextCritical = {
         bg = "#${colors.base08}";
-        fg = "#${colors.base06}";
+        fg = "#${colors.base00}";
       };
       metrics = {
         bg = "#${colors.base02}";
