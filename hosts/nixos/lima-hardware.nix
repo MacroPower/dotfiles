@@ -38,6 +38,25 @@ in
     DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER = "implicit";
   };
 
+  # Rootful Docker alongside rootless. Sockets do not collide:
+  # - Rootful at /run/docker.sock
+  # - Rootless at $XDG_RUNTIME_DIR/docker.sock
+  virtualisation.docker = {
+    enable = true;
+    # Avoid the 172.17-172.20 default pools so an expanding pool cannot
+    # collide with the CNI bridge at 172.20.0.0/16 in terrarium.nix.
+    daemon.settings.default-address-pools = [
+      {
+        base = "172.30.0.0/16";
+        size = 24;
+      }
+      {
+        base = "172.31.0.0/16";
+        size = 24;
+      }
+    ];
+  };
+
   users.users.${user} = {
     # docker-rootless needs subuid/subgid for newuidmap/newgidmap;
     # NixOS's rootless module does not provision them on its own.
