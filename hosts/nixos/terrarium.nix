@@ -211,6 +211,7 @@
       };
       claude = {
         dangerouslySkipPermissions = true;
+        remoteControl = true;
         research.useVault = true;
       };
     };
