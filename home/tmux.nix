@@ -1214,6 +1214,15 @@ in
       # Generic undercurl/colored underline support
       set -as terminal-overrides ',*:Smulx=\E[4::%p1%dm'
       set -as terminal-overrides ',*:Setulc=\E[58::2::%p1%{65536}%/%d::%p1%{256}%/%{255}%&%d::%p1%{255}%&%d%;m'
+
+      # OSC 52 clipboard passthrough. With `set-clipboard on`, tmux uses this
+      # format when re-emitting yanks or child OSC 52 sequences to the outer
+      # terminal. terminal-overrides is a comma-separated list where each
+      # entry is `term:cap`, so combined term lists only set the last term;
+      # one line per term family is the only correct form.
+      set -as terminal-overrides ',xterm*:Ms=\E]52;%p1%s\007'
+      set -as terminal-overrides ',tmux*:Ms=\E]52;%p1%s\007'
+      set -as terminal-overrides ',screen*:Ms=\E]52;%p1%s\007'
     '';
   };
 

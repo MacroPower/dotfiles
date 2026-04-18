@@ -39,6 +39,8 @@ in
         quick-terminal-position = "right";
         # Disable auto-updates (managed by Nix)
         auto-update = "off";
+        # Let OSC 52 writes (pbcopy shim inside lima) through without prompting.
+        clipboard-write = "allow";
       };
     };
   };
