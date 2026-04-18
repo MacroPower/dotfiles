@@ -49,6 +49,8 @@
     };
   };
 
+  environment.variables.COLORTERM = "truecolor";
+
   security.pki.certificateFiles = config.dotfiles.system.caCertificateFiles;
 
   security.sudo.keepTerminfo = true;
