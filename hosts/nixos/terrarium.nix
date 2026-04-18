@@ -209,7 +209,10 @@
         userName = "Jacob Colvin";
         userEmail = "jacobcolvin1@gmail.com";
       };
-      claude.dangerouslySkipPermissions = true;
+      claude = {
+        dangerouslySkipPermissions = true;
+        research.useVault = true;
+      };
     };
   };
 }

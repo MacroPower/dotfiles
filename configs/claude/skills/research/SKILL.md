@@ -20,8 +20,9 @@ First, create the output directory. Run this Bash command, replacing the entire
 
 ```bash
 SLUG=`slugify <TOPIC_TEXT>`
-mkdir -p "$HOME/.local/share/claude/research/$SLUG"
-echo "$HOME/.local/share/claude/research/$SLUG"
+RESEARCH_ROOT="$CLAUDE_RESEARCH_DIR/$SLUG"
+mkdir -p "$RESEARCH_ROOT"
+echo "$RESEARCH_ROOT"
 ```
 
 Store the echoed path as `OUTPUT_DIR` and use it for all agent output file paths.

@@ -264,6 +264,13 @@ let
         "SPACELIFT_API_KEY_ID"
         "SPACELIFT_API_KEY_SECRET"
       ];
+      extra_mounts = [
+        {
+          host_path = researchDir;
+          guest_path = researchDir;
+          writable = true;
+        }
+      ];
       lima = {
         isolation = "shared";
         projects_dir = "${config.home.homeDirectory}/Documents/repos";
@@ -570,6 +577,12 @@ let
   bundledReadPaths = lib.concatMap (b: b.sandbox.allowRead) bundleValues;
   bundledWritePaths = lib.concatMap (b: b.sandbox.allowWrite) bundleValues;
 
+  researchDir =
+    if cfg.research.useVault then
+      "${config.dotfiles.obsidian.vaultsDir}/${cfg.research.vault}/research"
+    else
+      "${config.home.homeDirectory}/.local/share/claude/research";
+
   extraReadPaths = [
     "/nix/store"
   ]
@@ -584,6 +597,7 @@ let
     "~/.local/state/workmux"
     "~/.local/state/hook-router"
     "~/.local/share/claude"
+    researchDir
   ]
   ++ bundledWritePaths;
 
@@ -665,6 +679,19 @@ in
     };
 
     remoteControl = lib.mkEnableOption "Claude Code remote control for all sessions";
+
+    research = {
+      vault = mkOption {
+        type = types.nonEmptyStr;
+        default = "docs";
+        description = "Obsidian vault name (under dotfiles.obsidian.vaultsDir) where the research skill writes reports.";
+      };
+      useVault = mkOption {
+        type = types.bool;
+        default = pkgs.stdenv.isDarwin;
+        description = "Whether CLAUDE_RESEARCH_DIR resolves to the Obsidian vault. Defaults to true on Darwin. Set true on Linux hosts that have the vault mounted at the same absolute path as the Darwin host (e.g. terrarium inside a workmux sandbox).";
+      };
+    };
 
     attribution = mkOption {
       type = types.submodule {
@@ -1487,14 +1514,18 @@ in
       sessionVariables = {
         DISABLE_AUTOUPDATER = "1";
         CLAUDE_CODE_TMUX_TRUECOLOR = "1";
+        CLAUDE_RESEARCH_DIR = researchDir;
       }
       // lib.optionalAttrs skipPerms {
         IS_SANDBOX = "1";
       };
 
-      activation.ensureClaudeResearchDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        run mkdir -p "$HOME/.local/share/claude/research"
-      '';
+      activation.ensureClaudeResearchDir =
+        lib.mkIf (pkgs.stdenv.isDarwin || !cfg.research.useVault) (
+          lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+            run mkdir -p "${researchDir}"
+          ''
+        );
 
       # Activation: merge MCP servers and secrets into mutable ~/.claude.json
       activation.syncClaudeJson =

@@ -102,8 +102,8 @@ in
 
     obsidian.vaultsDir = mkOption {
       type = types.nonEmptyStr;
-      default = "${config.dotfiles.homeDirectory}/Library/Mobile Documents/iCloud~md~obsidian/Documents";
-      description = "Absolute path to the Obsidian vaults directory.";
+      default = "/Users/${config.dotfiles.username}/Library/Mobile Documents/iCloud~md~obsidian/Documents";
+      description = "Absolute path to the Obsidian vaults directory. Anchored at /Users/ so a mounted view inside a Lima sandbox matches the Darwin host path.";
     };
 
     tmux.socketPath = mkOption {
