@@ -29,110 +29,19 @@ let
   exportSecrets = mappings: lib.concatStrings (lib.mapAttrsToList exportSecret mappings);
 
   claudePowerlineConfig = builtins.toJSON {
-    theme = "custom";
-    colors.custom = {
-      directory = {
-        bg = "#${colors.base09}";
-        fg = "#${colors.base00}";
-      };
-      git = {
-        bg = "#${colors.base02}";
-        fg = "#${colors.base0E}";
-      };
-      model = {
-        bg = "#${colors.base0B}";
-        fg = "#${colors.base00}";
-      };
-      session = {
-        bg = "#${colors.base01}";
-        fg = "#${colors.base0C}";
-      };
-      block = {
-        bg = "#${colors.base02}";
-        fg = "#${colors.base0D}";
-      };
-      today = {
-        bg = "#${colors.base00}";
-        fg = "#${colors.base0B}";
-      };
-      tmux = {
-        bg = "#${colors.base02}";
-        fg = "#${colors.base0B}";
-      };
-      context = {
-        bg = "#${colors.base0B}";
-        fg = "#${colors.base00}";
-      };
-      contextWarning = {
-        bg = "#${colors.base09}";
-        fg = "#${colors.base00}";
-      };
-      contextCritical = {
-        bg = "#${colors.base08}";
-        fg = "#${colors.base00}";
-      };
-      metrics = {
-        bg = "#${colors.base02}";
-        fg = "#${colors.base05}";
-      };
-      version = {
-        bg = "#${colors.base02}";
-        fg = "#${colors.base04}";
-      };
-      env = {
-        bg = "#${colors.base01}";
-        fg = "#${colors.base0E}";
-      };
-      weekly = {
-        bg = "#${colors.base01}";
-        fg = "#${colors.base0D}";
-      };
-    };
+    inherit (cfg.powerline) theme;
+    colors.${cfg.powerline.theme} = cfg.powerline.colors;
     display = {
-      style = "powerline";
-      charset = "unicode";
-      colorCompatibility = "auto";
-      autoWrap = true;
-      padding = 1;
-      lines = [
-        {
-          segments = {
-            git = {
-              enabled = true;
-              showRepoName = true;
-            };
-            context = {
-              enabled = true;
-              showPercentageOnly = false;
-              displayStyle = "text";
-              autocompactBuffer = 100000;
-            };
-          };
-        }
-        {
-          segments = {
-            block = {
-              enabled = true;
-            };
-            weekly = {
-              enabled = true;
-            };
-          };
-        }
-      ];
+      inherit (cfg.powerline.display)
+        style
+        charset
+        colorCompatibility
+        autoWrap
+        padding
+        lines
+        ;
     };
-    budget = {
-      session = {
-        amount = 220000;
-        type = "tokens";
-        warningThreshold = 80;
-      };
-      weekly = {
-        amount = 1100;
-        type = "cost";
-        warningThreshold = 80;
-      };
-    };
+    inherit (cfg.powerline) budget;
   };
 
   urlMatchOptions = {
@@ -164,6 +73,53 @@ let
   };
 
   urlMatchType = types.submodule { options = urlMatchOptions; };
+
+  powerlineColorType = types.submodule {
+    options = {
+      bg = mkOption {
+        type = types.str;
+        description = "Background color for the segment. Any color string accepted by claude-powerline (e.g. `#rrggbb`).";
+      };
+      fg = mkOption {
+        type = types.str;
+        description = "Foreground color for the segment. Any color string accepted by claude-powerline (e.g. `#rrggbb`).";
+      };
+    };
+  };
+
+  powerlineSegmentType = types.submodule {
+    freeformType = types.attrsOf types.anything;
+    options.enabled = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Whether this segment renders.";
+    };
+  };
+
+  mkBudgetType =
+    defaults:
+    types.submodule {
+      options = {
+        amount = mkOption {
+          type = types.int;
+          default = defaults.amount;
+          description = "Budget limit. Units are interpreted per `type`.";
+        };
+        type = mkOption {
+          type = types.enum [
+            "tokens"
+            "cost"
+          ];
+          default = defaults.type;
+          description = "Budget unit.";
+        };
+        warningThreshold = mkOption {
+          type = types.ints.between 0 100;
+          default = 80;
+          description = "Percent of budget at which to switch to the warning color.";
+        };
+      };
+    };
 
   denyRuleType = types.submodule {
     options = urlMatchOptions // {
@@ -650,6 +606,210 @@ in
       type = types.attrsOf types.anything;
       default = { };
       description = "Additional settings merged into Claude Code settings.json.";
+    };
+
+    powerline = mkOption {
+      type = types.submodule {
+        options = {
+          theme = mkOption {
+            type = types.str;
+            default = "custom";
+            description = ''
+              Top-level `theme` key in the emitted claude-powerline config,
+              also used as the dynamic attr key under which `colors` is
+              emitted (`colors.<theme>`). If you set `theme` to a value
+              other than `custom`, also override `colors` — otherwise the
+              stylix-derived default palette will be emitted under that
+              theme name, shadowing any built-in palette claude-powerline
+              ships.
+            '';
+          };
+
+          colors = mkOption {
+            type = types.attrsOf powerlineColorType;
+            default = {
+              directory = {
+                bg = "#${colors.base09}";
+                fg = "#${colors.base00}";
+              };
+              git = {
+                bg = "#${colors.base02}";
+                fg = "#${colors.base0E}";
+              };
+              model = {
+                bg = "#${colors.base0B}";
+                fg = "#${colors.base00}";
+              };
+              session = {
+                bg = "#${colors.base01}";
+                fg = "#${colors.base0C}";
+              };
+              block = {
+                bg = "#${colors.base02}";
+                fg = "#${colors.base0D}";
+              };
+              today = {
+                bg = "#${colors.base00}";
+                fg = "#${colors.base0B}";
+              };
+              tmux = {
+                bg = "#${colors.base02}";
+                fg = "#${colors.base0B}";
+              };
+              context = {
+                bg = "#${colors.base0B}";
+                fg = "#${colors.base00}";
+              };
+              contextWarning = {
+                bg = "#${colors.base09}";
+                fg = "#${colors.base00}";
+              };
+              contextCritical = {
+                bg = "#${colors.base08}";
+                fg = "#${colors.base00}";
+              };
+              metrics = {
+                bg = "#${colors.base02}";
+                fg = "#${colors.base05}";
+              };
+              version = {
+                bg = "#${colors.base02}";
+                fg = "#${colors.base04}";
+              };
+              env = {
+                bg = "#${colors.base01}";
+                fg = "#${colors.base0E}";
+              };
+              weekly = {
+                bg = "#${colors.base01}";
+                fg = "#${colors.base0D}";
+              };
+            };
+            description = ''
+              Per-segment colors keyed by claude-powerline segment name
+              (directory, git, model, session, block, today, tmux,
+              context, contextWarning, contextCritical, metrics, version,
+              env, weekly), not theme name — the outer theme wrapping is
+              applied at emit time. Overriding a segment requires setting
+              both `bg` and `fg`; partial overrides fail module
+              evaluation. Unknown segment names pass type-checking and
+              are silently ignored by claude-powerline. The default
+              palette is derived from `config.lib.stylix.colors`;
+              replacing this option with a literal attrset decouples the
+              status line from the host's base16 scheme.
+            '';
+          };
+
+          display = mkOption {
+            type = types.submodule {
+              options = {
+                style = mkOption {
+                  type = types.str;
+                  default = "powerline";
+                  description = "Display style passed through to claude-powerline.";
+                };
+                charset = mkOption {
+                  type = types.str;
+                  default = "unicode";
+                  description = "Character set passed through to claude-powerline.";
+                };
+                colorCompatibility = mkOption {
+                  type = types.str;
+                  default = "auto";
+                  description = "Color compatibility mode passed through to claude-powerline.";
+                };
+                autoWrap = mkOption {
+                  type = types.bool;
+                  default = true;
+                  description = "Whether claude-powerline auto-wraps lines that exceed the terminal width.";
+                };
+                padding = mkOption {
+                  type = types.int;
+                  default = 1;
+                  description = "Padding applied between segments.";
+                };
+                lines = mkOption {
+                  type = types.listOf (
+                    types.submodule {
+                      options.segments = mkOption {
+                        type = types.attrsOf powerlineSegmentType;
+                        default = { };
+                        description = "Segments rendered on this line, keyed by segment name.";
+                      };
+                    }
+                  );
+                  default = [
+                    {
+                      segments = {
+                        git = {
+                          enabled = true;
+                          showRepoName = true;
+                        };
+                        context = {
+                          enabled = true;
+                          showPercentageOnly = false;
+                          displayStyle = "text";
+                          autocompactBuffer = 100000;
+                        };
+                      };
+                    }
+                    {
+                      segments = {
+                        block = {
+                          enabled = true;
+                        };
+                        weekly = {
+                          enabled = true;
+                        };
+                      };
+                    }
+                  ];
+                  description = ''
+                    Lines rendered by claude-powerline, top-to-bottom.
+                    Lists replace, not merge: a host that overrides this
+                    option must supply the full layout. The same
+                    replacement applies one level deeper — redefining a
+                    single line's `segments` drops the other segments on
+                    that line rather than merging. Segment names inside
+                    `segments` must match the set claude-powerline
+                    recognizes; unknown names pass type-checking and are
+                    silently ignored.
+                  '';
+                };
+              };
+            };
+            default = { };
+            description = "claude-powerline `display` config block.";
+          };
+
+          budget = mkOption {
+            type = types.submodule {
+              options = {
+                session = mkOption {
+                  type = mkBudgetType {
+                    amount = 220000;
+                    type = "tokens";
+                  };
+                  default = { };
+                  description = "Per-session budget.";
+                };
+                weekly = mkOption {
+                  type = mkBudgetType {
+                    amount = 1100;
+                    type = "cost";
+                  };
+                  default = { };
+                  description = "Weekly budget.";
+                };
+              };
+            };
+            default = { };
+            description = "claude-powerline `budget` config block.";
+          };
+        };
+      };
+      default = { };
+      description = "claude-powerline status line configuration emitted to ~/.config/claude-powerline/config.json.";
     };
 
     extraFetchRules = mkOption {
