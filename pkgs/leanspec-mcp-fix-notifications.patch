@@ -1,0 +1,16 @@
+--- a/rust/leanspec-mcp/src/main.rs
++++ b/rust/leanspec-mcp/src/main.rs
+@@ -27,6 +27,13 @@ async fn run_server() {
+                     continue;
+                 }
+
++                // JSON-RPC 2.0: notifications (no `id`) MUST NOT receive a response.
++                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) {
++                    if v.get("id").is_none() {
++                        continue;
++                    }
++                }
++
+                 let response = match serde_json::from_str::<McpRequest>(&input) {
+                     Ok(request) => handle_request(request).await,
+                     Err(e) => McpResponse::error(-32700, &format!("Parse error: {}", e)),

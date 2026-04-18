@@ -17,11 +17,7 @@ rustPlatform.buildRustPackage {
 
   cargoHash = "sha256-BJiu74s2rTHDRmch9BgCk82e6s4+SbT2wo2lMKlHhf8=";
 
-  # leanspec-mcp is excluded from the workspace; move it to members so cargo builds it.
-  postPatch = ''
-    sed -i '/leanspec-mcp.*deprecated/d' rust/Cargo.toml
-    sed -i 's/"leanspec-http",/"leanspec-http", "leanspec-mcp",/' rust/Cargo.toml
-  '';
+  patches = [ ./leanspec-mcp-fix-notifications.patch ];
 
   cargoRoot = "rust";
   buildAndTestSubdir = "rust";
