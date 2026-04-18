@@ -1200,7 +1200,11 @@ in
       # --- Terminal support ---
 
       # Ghostty
-      set -g extended-keys on
+      # `always` (not `on`) so tmux forwards CSI u extended keys to inner
+      # apps even when they don't advertise support. Claude Code doesn't
+      # emit `CSI > 4 ; N m` or `CSI ? 2027 h`, so `on` would downgrade
+      # Shift+Enter to plain \r and break multi-line input.
+      set -g extended-keys always
       set -as terminal-features ',xterm-ghostty:RGB'
       set -as terminal-features ',xterm-ghostty:extkeys'
       set -as terminal-features ',xterm-ghostty:sync'

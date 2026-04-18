@@ -263,6 +263,8 @@ let
         "SPACELIFT_API_KEY_ENDPOINT"
         "SPACELIFT_API_KEY_ID"
         "SPACELIFT_API_KEY_SECRET"
+        "TERM_PROGRAM"
+        "TERM_PROGRAM_VERSION"
       ];
       extra_mounts = [
         {
