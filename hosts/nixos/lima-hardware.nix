@@ -1,7 +1,12 @@
 # Lima guest-agent integration and service stability.
 # Called as: import ./lima-hardware.nix nixos-lima
 nixos-lima:
-{ lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 {
   imports = [ "${nixos-lima}/lima.nix" ];
 
@@ -13,31 +18,33 @@ nixos-lima:
 
   virtualisation.containerd.enable = true;
 
+  virtualisation.docker = {
+    enable = true;
+    daemon.settings = {
+      containerd = "/run/containerd/containerd.sock";
+      features.containerd-snapshotter = true;
+    };
+  };
+
+  # Upstream virtualisation.docker orders only after network.target
+  # and docker.socket. With containerd pointing at an external daemon,
+  # dockerd races ahead on boot and crashloops until containerd is up.
+  systemd.services.docker = {
+    after = [ "containerd.service" ];
+    requires = [ "containerd.service" ];
+  };
+
+  users.users.${config.dotfiles.system.username}.extraGroups = [ "docker" ];
+
+  # dockerd uses the `moby` containerd namespace; align nerdctl so
+  # both CLIs see the same containers/images without extra flags.
+  environment.etc."nerdctl/nerdctl.toml".text = ''
+    namespace = "moby"
+  '';
+
   environment.systemPackages = with pkgs; [
     iptables
     nerdctl
     pkgsStatic.tini
-    (stdenvNoCC.mkDerivation {
-      name = "docker-nerdctl-wrapper";
-      dontUnpack = true;
-      installPhase = ''
-        install -Dm755 ${writeShellScript "docker" ''exec sudo ${nerdctl}/bin/nerdctl "$@"''} $out/bin/docker
-
-        mkdir -p $out/share/fish/vendor_completions.d
-        sed 's/^complete -c nerdctl/complete -c docker/' \
-          "${nerdctl}/share/fish/vendor_completions.d/nerdctl.fish" \
-          > $out/share/fish/vendor_completions.d/docker.fish
-
-        mkdir -p $out/share/bash-completion/completions
-        sed 's/nerdctl/docker/g' \
-          "${nerdctl}/share/bash-completion/completions/nerdctl.bash" \
-          > $out/share/bash-completion/completions/docker
-
-        mkdir -p $out/share/zsh/site-functions
-        sed 's/nerdctl/docker/g' \
-          "${nerdctl}/share/zsh/site-functions/_nerdctl" \
-          > $out/share/zsh/site-functions/_docker
-      '';
-    })
   ];
 }
