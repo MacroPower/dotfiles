@@ -229,7 +229,7 @@ let
     ];
     panes = [
       {
-        command = "<agent>";
+        command = "claude";
         focus = true;
       }
       (
@@ -537,6 +537,21 @@ let
   slugify = pkgs.writeShellScriptBin "slugify" ''
     echo "$*" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//;s/-$//' | cut -c1-60
   '';
+
+  # Wrap claude with its invocation-time env so vars survive boundaries that
+  # don't propagate the shell env (lima VMs, ssh without SendEnv, etc.).
+  claudeWrapped = pkgs.symlinkJoin {
+    name = "claude-code-wrapped";
+    paths = [ pkgs.llm-agents.claude-code ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/claude \
+        --set CLAUDE_CODE_TMUX_TRUECOLOR 1 \
+        --set DISABLE_AUTOUPDATER 1 \
+        --set CLAUDE_RESEARCH_DIR ${lib.escapeShellArg researchDir} \
+        ${lib.optionalString skipPerms "--set IS_SANDBOX 1 --add-flags --dangerously-skip-permissions"}
+    '';
+  };
 
   # Wrapper that injects sops secrets as env vars for sandbox env_passthrough.
   # Uses symlinkJoin so share/fish/vendor_completions.d/ from workmux-bin is preserved.
@@ -1169,7 +1184,7 @@ in
 
       claude-code = {
         enable = true;
-        package = pkgs.llm-agents.claude-code;
+        package = claudeWrapped;
         enableMcpIntegration = true;
 
         settings = lib.recursiveUpdate {
@@ -1446,9 +1461,6 @@ in
         // cfg.extraSkills;
       };
 
-      fish.shellAliases = lib.optionalAttrs skipPerms {
-        claude = "command claude --dangerously-skip-permissions";
-      };
     };
 
     xdg.configFile = {
@@ -1492,21 +1504,11 @@ in
       ''
       + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n";
 
-      sessionVariables = {
-        DISABLE_AUTOUPDATER = "1";
-        CLAUDE_CODE_TMUX_TRUECOLOR = "1";
-        CLAUDE_RESEARCH_DIR = researchDir;
-      }
-      // lib.optionalAttrs skipPerms {
-        IS_SANDBOX = "1";
-      };
-
-      activation.ensureClaudeResearchDir =
-        lib.mkIf (pkgs.stdenv.isDarwin || !cfg.research.useVault) (
-          lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-            run mkdir -p "${researchDir}"
-          ''
-        );
+      activation.ensureClaudeResearchDir = lib.mkIf (pkgs.stdenv.isDarwin || !cfg.research.useVault) (
+        lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          run mkdir -p "${researchDir}"
+        ''
+      );
 
       # Activation: merge MCP servers and secrets into mutable ~/.claude.json
       activation.syncClaudeJson =
