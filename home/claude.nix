@@ -502,6 +502,16 @@ let
     exec ${pkgs.spacectl}/bin/spacectl "$@"
   '';
 
+  githubWrapper = pkgs.writeShellScript "github-mcp-wrapper" ''
+    ${exportSecret "GH_TOKEN" "gh_token"}
+    export GITHUB_PERSONAL_ACCESS_TOKEN="''${GH_TOKEN:-}"
+    exec ${pkgs.mcp-http-proxy}/bin/mcp-http-proxy \
+      --url https://api.githubcopilot.com/mcp/readonly \
+      --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN" \
+      --log-file "${config.xdg.stateHome}/mcp-http-proxy/github.log" \
+      "$@"
+  '';
+
   slugify = pkgs.writeShellScriptBin "slugify" ''
     echo "$*" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//;s/-$//' | cut -c1-60
   '';
@@ -1199,11 +1209,8 @@ in
 
       github = {
         servers.github = {
-          type = "http";
-          url = "https://api.githubcopilot.com/mcp/readonly";
-          headers = {
-            Authorization = "Bearer \${GITHUB_PERSONAL_ACCESS_TOKEN}";
-          };
+          type = "stdio";
+          command = "${githubWrapper}";
         };
         permissions.allow = [
           "mcp__github__get_commit"
