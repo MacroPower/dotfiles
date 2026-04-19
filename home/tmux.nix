@@ -853,7 +853,7 @@ let
           "";
       repeatFlag = if entry.repeat or false then "-r " else "";
     in
-    "bind ${repeatFlag}${tableFlag}\"${entry.key}\" ${entry.cmd}";
+    "bind ${repeatFlag}${tableFlag}'${entry.key}' ${entry.cmd}";
 
   # Generate all direct bind lines from the binding attrset
   bindLines = lib.concatMapStringsSep "\n" mkBindLine (lib.attrValues b);
