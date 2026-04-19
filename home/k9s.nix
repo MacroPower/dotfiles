@@ -1,4 +1,5 @@
-_: {
+{ config, ... }:
+{
   config = {
     programs = {
       k9s = {
@@ -561,7 +562,126 @@ _: {
           };
         };
 
-        skins.one-dark = ../configs/k9s/skins/one-dark.yaml;
+        skins.one-dark = with config.lib.stylix.colors.withHashtag; {
+          k9s = {
+            body = {
+              fgColor = base05;
+              bgColor = base00;
+              logoColor = base0B;
+            };
+            prompt = {
+              fgColor = base05;
+              bgColor = base00;
+              suggestColor = base09;
+            };
+            info = {
+              fgColor = base05;
+              sectionColor = base0B;
+            };
+            help = {
+              fgColor = base05;
+              bgColor = base00;
+              keyColor = base0A;
+              numKeyColor = base0D;
+              sectionColor = base0E;
+            };
+            dialog = {
+              fgColor = base05;
+              bgColor = base00;
+              buttonFgColor = base05;
+              buttonBgColor = base0B;
+              buttonFocusFgColor = base00;
+              buttonFocusBgColor = base0D;
+              labelFgColor = base09;
+              fieldFgColor = base0D;
+            };
+            frame = {
+              border = {
+                fgColor = base0B;
+                focusColor = base0B;
+              };
+              menu = {
+                fgColor = base05;
+                keyColor = base0A;
+                numKeyColor = base0A;
+              };
+              crumbs = {
+                fgColor = base00;
+                bgColor = base0B;
+                activeColor = base0A;
+              };
+              status = {
+                newColor = base0D;
+                modifyColor = base0B;
+                addColor = base05;
+                pendingColor = base09;
+                errorColor = base08;
+                highlightColor = base0A;
+                killColor = base0E;
+                completedColor = base05;
+              };
+              title = {
+                fgColor = base0D;
+                bgColor = base00;
+                highlightColor = base0E;
+                counterColor = base05;
+                filterColor = base0D;
+              };
+            };
+            views = {
+              charts = {
+                bgColor = base00;
+                defaultDialColors = [
+                  base0B
+                  base08
+                ];
+                defaultChartColors = [
+                  base0B
+                  base08
+                ];
+              };
+              table = {
+                fgColor = base0A;
+                bgColor = base00;
+                cursorFgColor = base00;
+                cursorBgColor = base0D;
+                markColor = base09;
+                header = {
+                  fgColor = base05;
+                  bgColor = base00;
+                  sorterColor = base09;
+                };
+              };
+              xray = {
+                fgColor = base0D;
+                bgColor = base00;
+                cursorColor = base05;
+                graphicColor = base09;
+                showIcons = false;
+              };
+              yaml = {
+                keyColor = base08;
+                colonColor = base05;
+                valueColor = base05;
+              };
+              logs = {
+                fgColor = base05;
+                bgColor = base00;
+                indicator = {
+                  fgColor = base0D;
+                  bgColor = base00;
+                  toggleOnColor = base08;
+                  toggleOffColor = base05;
+                };
+              };
+              help = {
+                fgColor = base05;
+                bgColor = base00;
+                indicator.fgColor = base0D;
+              };
+            };
+          };
+        };
       };
     };
   };

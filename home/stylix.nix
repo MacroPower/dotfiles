@@ -8,7 +8,7 @@
     zed.enable = lib.mkDefault false;
     # GitUI: themed by configs/gitui/theme.ron
     gitui.enable = lib.mkDefault false;
-    # K9s: themed by skins.one-dark in kubernetes.nix
+    # K9s: themed by skins.one-dark in k9s.nix
     k9s.enable = lib.mkDefault false;
     # Starship: themed explicitly in fish.nix with stylix palette
     starship.enable = lib.mkDefault false;
