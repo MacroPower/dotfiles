@@ -423,13 +423,13 @@ let
     newWindow = {
       group = "windows";
       name = "New window";
-      key = "c";
+      key = "t";
       cmd = ''new-window -c "#{pane_current_path}"'';
     };
     splitH = {
       group = "windows";
       name = "Split horizontal";
-      key = "d";
+      key = "s";
       cmd = ''split-window -h -c "#{pane_current_path}"'';
     };
     splitV = {
@@ -483,14 +483,14 @@ let
     layoutNext = {
       group = "layouts";
       name = "Next";
-      key = "=";
+      key = "Enter";
       cmd = "next-layout";
       transient = true;
     };
-    layoutTiled = {
+    equalizeLayout = {
       group = "layouts";
-      name = "Tiled";
-      key = "t";
+      name = "Equalize (tiled)";
+      key = "=";
       cmd = "select-layout tiled";
     };
     layoutH = {
@@ -598,8 +598,14 @@ let
     killPane = {
       group = "panes";
       name = "Kill pane";
-      key = "x";
+      key = "c";
       cmd = "kill-pane";
+    };
+    onlyPane = {
+      group = "panes";
+      name = "Only (kill others)";
+      key = "o";
+      cmd = "kill-pane -a";
     };
     displayPanes = {
       group = "panes";
@@ -631,7 +637,7 @@ let
     seshPicker = {
       group = "sessions";
       name = "Switcher (sesh)";
-      key = "s";
+      key = "j";
       cmd = ''run-shell "tmux-sesh-popup"'';
     };
     sessionTree = {
@@ -687,7 +693,7 @@ let
     obsidianTask = {
       group = "popups";
       name = "Add task (obsidian)";
-      key = "o";
+      key = "O";
       cmd = ''run-shell "tmux-floax-run --width 60% --height 30% obsidian tmux-obsidian-task"'';
     };
 
@@ -753,7 +759,7 @@ let
           key = "l";
           menu = [
             b.layoutNext
-            b.layoutTiled
+            b.equalizeLayout
             b.layoutH
             b.layoutV
             b.layoutMainH
@@ -792,6 +798,7 @@ let
         b.markPane
         b.respawnPane
         b.killPane
+        b.onlyPane
       ];
     }
     {
@@ -1014,7 +1021,7 @@ in
         plugin = logging;
         extraConfig = ''
           set -g @logging-path "$HOME/.local/share/tmux/logging"
-          set -g @logging_key "O"
+          set -g @logging_key "k"
           set -g @screen-capture-key "P"
           set -g @save-complete-history-key "A"
           set -g @clear-history-key "Q"
