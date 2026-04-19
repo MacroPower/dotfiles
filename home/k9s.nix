@@ -566,12 +566,12 @@
           k9s = {
             body = {
               fgColor = base05;
-              bgColor = base00;
+              bgColor = "default";
               logoColor = base0B;
             };
             prompt = {
               fgColor = base05;
-              bgColor = base00;
+              bgColor = "default";
               suggestColor = base09;
             };
             info = {
@@ -580,7 +580,7 @@
             };
             help = {
               fgColor = base05;
-              bgColor = base00;
+              bgColor = "default";
               keyColor = base0A;
               numKeyColor = base0D;
               sectionColor = base0E;
@@ -630,7 +630,7 @@
             };
             views = {
               charts = {
-                bgColor = base00;
+                bgColor = "default";
                 defaultDialColors = [
                   base0B
                   base08
@@ -642,19 +642,19 @@
               };
               table = {
                 fgColor = base0A;
-                bgColor = base00;
+                bgColor = "default";
                 cursorFgColor = base00;
                 cursorBgColor = base0D;
                 markColor = base09;
                 header = {
                   fgColor = base05;
-                  bgColor = base00;
+                  bgColor = "default";
                   sorterColor = base09;
                 };
               };
               xray = {
                 fgColor = base0D;
-                bgColor = base00;
+                bgColor = "default";
                 cursorColor = base05;
                 graphicColor = base09;
                 showIcons = false;
@@ -666,17 +666,17 @@
               };
               logs = {
                 fgColor = base05;
-                bgColor = base00;
+                bgColor = "default";
                 indicator = {
                   fgColor = base0D;
-                  bgColor = base00;
+                  bgColor = "default";
                   toggleOnColor = base08;
                   toggleOffColor = base05;
                 };
               };
               help = {
                 fgColor = base05;
-                bgColor = base00;
+                bgColor = "default";
                 indicator.fgColor = base0D;
               };
             };
