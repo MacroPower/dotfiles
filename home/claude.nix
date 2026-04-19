@@ -1695,6 +1695,7 @@ in
           wm-workmux = ../configs/claude/skills/wm-workmux;
           git-surgeon = ../configs/claude/skills/git-surgeon;
           research = ../configs/claude/skills/research;
+          taskfile = ../configs/claude/skills/taskfile;
         }
         // cfg.extraSkills;
       };
