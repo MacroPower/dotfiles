@@ -134,7 +134,24 @@ in
 
     jq.enable = true;
     trippy.enable = true;
-    lazydocker.enable = true;
+    lazydocker = {
+      enable = true;
+      settings = {
+        # `settings` replaces the home-manager module's default wholesale,
+        # so re-state the compose template it ships with.
+        commandTemplates.dockerCompose = "docker compose";
+
+        gui.theme = {
+          activeBorderColor = [
+            "#${config.lib.stylix.colors.base0D}"
+            "bold"
+          ];
+          inactiveBorderColor = [ "#${config.lib.stylix.colors.base04}" ];
+          selectedLineBgColor = [ "#${config.lib.stylix.colors.base02}" ];
+          optionsTextColor = [ "#${config.lib.stylix.colors.base0C}" ];
+        };
+      };
+    };
     difftastic.enable = true;
     docker-cli.enable = true;
 
