@@ -188,9 +188,13 @@ let
         command = "claude";
         focus = true;
       }
+      {
+        split = "horizontal";
+        command = "vim";
+      }
       (
         {
-          split = "horizontal";
+          split = "vertical";
         }
         // lib.optionalAttrs cfg.lima.enable {
           command = "workmux sandbox shell -- fish";
