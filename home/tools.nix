@@ -1,9 +1,21 @@
 {
   pkgs,
   config,
+  lib,
   ...
 }:
 
+let
+  baseDirenvConfig = {
+    global = {
+      hide_env_diff = true;
+      warn_timeout = "30s";
+    };
+  };
+  sandboxDirenvConfig = lib.optionalAttrs (config.dotfiles.hostname == "terrarium") {
+    whitelist.prefix = [ "/Users/${config.dotfiles.username}/Documents/repos" ];
+  };
+in
 {
   programs = {
     bat = {
@@ -33,10 +45,7 @@
     direnv = {
       enable = true;
       nix-direnv.enable = true;
-      config.global = {
-        hide_env_diff = true;
-        warn_timeout = "30s";
-      };
+      config = baseDirenvConfig // sandboxDirenvConfig;
     };
 
     gh = {
