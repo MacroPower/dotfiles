@@ -443,6 +443,16 @@ let
     '';
   };
 
+  mcpActivationGuard = pkgs.writeShellApplication {
+    name = "mcp-activation-guard";
+    runtimeInputs = [
+      pkgs.fd
+      pkgs.git
+      pkgs.coreutils
+    ];
+    text = builtins.readFile ../scripts/mcp-activation-guard.sh;
+  };
+
   # CA env vars injected into all stdio MCP servers
   caEnvVars = lib.optionalAttrs (config.dotfiles.caBundlePath != null) {
     NIX_SSL_CERT_FILE = config.dotfiles.caBundlePath;
@@ -541,7 +551,33 @@ let
   # Aggregate enabled MCP server bundles
   enabledBundles = lib.filterAttrs (_: b: b.enable) cfg.mcpServerBundles;
   bundleValues = lib.attrValues enabledBundles;
-  bundledServers = lib.foldl' lib.recursiveUpdate { } (map (b: b.servers) bundleValues);
+
+  # Wrap a stdio server's command with the activation guard when the bundle
+  # defines markers. http/other types are passed through unchanged (they have
+  # no `command` field and need a different gating strategy if ever required).
+  # Note: `cfg.extraMcpServers.<name>` deep-merges on top of the wrapped server,
+  # so overriding `command` alone leaves the guard's marker args and `--`
+  # sentinel in place; a full escape hatch must set both `command` and `args`.
+  wrapServerWithGuard =
+    markers: server:
+    if (server.type or "") == "stdio" && markers != [ ] then
+      server
+      // {
+        command = "${mcpActivationGuard}/bin/mcp-activation-guard";
+        args =
+          markers
+          ++ [
+            "--"
+            server.command
+          ]
+          ++ (server.args or [ ]);
+      }
+    else
+      server;
+
+  bundledServers = lib.foldl' lib.recursiveUpdate { } (
+    map (b: lib.mapAttrs (_: wrapServerWithGuard b.activation.markers) b.servers) bundleValues
+  );
   bundledAllow = lib.concatMap (b: b.permissions.allow) bundleValues;
   bundledDeny = lib.concatMap (b: b.permissions.deny) bundleValues;
   bundledAsk = lib.concatMap (b: b.permissions.ask) bundleValues;
@@ -997,6 +1033,19 @@ in
                 description = "Instruction lines rendered as a bulleted list under the category heading.";
               };
             };
+            activation.markers = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              description = ''
+                Glob patterns that gate this bundle's stdio servers on project
+                contents. Empty list keeps the servers always-on. Non-empty: at
+                MCP server startup a wrapper scans the project scope (git repo
+                toplevel, or $PWD at depth 3 when outside a repo) with fd; if
+                no marker matches and a .git is reachable, the server exits 1
+                and Claude Code silently drops it. Outside any project the gate
+                fails open.
+              '';
+            };
           };
         }
       );
@@ -1082,6 +1131,11 @@ in
             KUBERNETES_MCP_COLLECT_TELEMETRY = "false";
           };
         };
+        activation.markers = [
+          ".katrc.yaml"
+          "Chart.yaml"
+          "kustomization.yaml"
+        ];
         permissions.allow = [ "mcp__kubernetes__call_kubectl" ];
         instructions = {
           category = "Kubernetes";
@@ -1226,6 +1280,13 @@ in
           command = "${argocdWrapper}";
           args = [ "stdio" ];
         };
+        activation.markers = [
+          ".tenant.yaml"
+          ".app.yaml"
+          ".katrc.yaml"
+          "Chart.yaml"
+          "kustomization.yaml"
+        ];
         permissions.allow = [
           "mcp__argocd__list_clusters"
           "mcp__argocd__list_applications"
@@ -1257,6 +1318,10 @@ in
           type = "stdio";
           command = "${pkgs.mcp-opentofu}/bin/mcp-opentofu";
         };
+        activation.markers = [
+          "*.tf"
+          "*.tfvars"
+        ];
         permissions.allow = [
           "mcp__opentofu__search-opentofu-registry"
           "mcp__opentofu__get-provider-details"
@@ -1311,6 +1376,10 @@ in
             "server"
           ];
         };
+        activation.markers = [
+          "*.tf"
+          "*.tfvars"
+        ];
         permissions.allow = [
           "mcp__spacelift__introspect_graphql_schema"
           "mcp__spacelift__get_graphql_type_details"
