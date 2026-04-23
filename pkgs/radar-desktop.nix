@@ -6,7 +6,7 @@
 }:
 
 let
-  version = "1.4.8";
+  version = "1.5.2";
 in
 stdenvNoCC.mkDerivation {
   pname = "radar-desktop";
@@ -14,7 +14,7 @@ stdenvNoCC.mkDerivation {
 
   src = fetchurl {
     url = "https://github.com/skyhook-io/radar/releases/download/v${version}/radar-desktop_v${version}_darwin_universal.zip";
-    hash = "sha256-cedPr6STHWdxIpsGognk5jRN2cdG9tfmVaCJrBZD8dM=";
+    hash = "sha256-nmlFsDXOJtUl2QUCmIapzaKCn6DwOdm8qRlfNmzYGQE=";
   };
 
   sourceRoot = ".";
