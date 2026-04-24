@@ -20,6 +20,11 @@
 
       networking.hostName = "terrarium";
 
+      # Workmux multiplexes SSH over a Lima control socket and each pane/
+      # agent RPC channel consumes a session. The default of 10 is hit in
+      # bursts across a few worktrees; raise the ceiling for this dev VM.
+      services.openssh.settings.MaxSessions = 100;
+
       # Override login shell to bash. workmux sandbox generates POSIX shell
       # syntax (export VAR=value) and passes it via `limactl shell -- eval`,
       # which uses the login shell. Fish cannot parse POSIX export syntax.
