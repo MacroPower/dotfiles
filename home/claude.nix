@@ -1464,10 +1464,8 @@ in
             allow = readPermEntries ++ writePermEntries ++ bundledAllow ++ cfg.extraPermissions.allow;
             deny = [
               # Key material & certificates
-              "Read(//**/*.pem)"
               "Read(//**/*.key)"
               "Read(//**/*.p12)"
-              "Read(//**/*.pfx)"
               "Read(//**/*.jks)"
               "Read(//**/*.asc)"
               "Read(//**/*.keystore)"
@@ -1523,7 +1521,6 @@ in
 
               # CI/CD & deployment tokens
               "Read(//**/.config/gh/hosts.yml)"
-              "Read(//**/.spacelift/**)"
               "Read(//**/.jira.d/config.yml)"
 
               # Package manager credentials
@@ -1546,15 +1543,7 @@ in
             ask = [
               "Bash(git push)"
               "Bash(git push *)"
-              "Bash(git reset)"
-              "Bash(git reset *)"
-              "Bash(git clean *)"
-              "Bash(git restore *)"
-              "Bash(git checkout *)"
               "Bash(git switch *)"
-              "Bash(git merge *)"
-              "Bash(git tag *)"
-              "Bash(git rm *)"
               "Bash(git remote *)"
             ]
             ++ bundledAsk
