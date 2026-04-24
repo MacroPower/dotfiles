@@ -529,6 +529,7 @@ let
     postBuild = ''
       wrapProgram $out/bin/claude \
         --set CLAUDE_CODE_TMUX_TRUECOLOR 1 \
+        --set CLAUDE_CODE_NO_FLICKER 1 \
         --set DISABLE_AUTOUPDATER 1 \
         --set CLAUDE_RESEARCH_DIR ${lib.escapeShellArg researchDir} \
         ${lib.optionalString skipPerms "--set IS_SANDBOX 1 --add-flags --dangerously-skip-permissions"}
