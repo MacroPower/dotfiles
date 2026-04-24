@@ -59,23 +59,23 @@ var (
 	}
 )
 
-func handleBash(input []byte, stdout io.Writer, cfg config, logger *slog.Logger) error {
+func handleBash(ctx context.Context, input []byte, stdout io.Writer, cfg config, logger *slog.Logger) error {
 	var hook map[string]any
 
 	err := json.Unmarshal(input, &hook)
 	if err != nil {
 		logger.Info("invalid JSON, delegating", slog.Any("error", err))
-		return delegate(input, cfg.rtkRewrite, logger)
+		return delegate(ctx, input, cfg.rtkRewrite, logger)
 	}
 
 	toolInput, ok := hook["tool_input"].(map[string]any)
 	if !ok {
-		return delegate(input, cfg.rtkRewrite, logger)
+		return delegate(ctx, input, cfg.rtkRewrite, logger)
 	}
 
 	command, ok := toolInput["command"].(string)
 	if !ok || command == "" {
-		return delegate(input, cfg.rtkRewrite, logger)
+		return delegate(ctx, input, cfg.rtkRewrite, logger)
 	}
 
 	logger.Info("checking command", slog.String("command", command))
@@ -90,7 +90,7 @@ func handleBash(input []byte, stdout io.Writer, cfg config, logger *slog.Logger)
 			slog.Any("error", err),
 		)
 
-		return delegate(input, cfg.rtkRewrite, logger)
+		return delegate(ctx, input, cfg.rtkRewrite, logger)
 	}
 
 	if reason, denied := checkGitStashDenied(prog); denied {
@@ -127,7 +127,7 @@ func handleBash(input []byte, stdout io.Writer, cfg config, logger *slog.Logger)
 		return encodeJSON(stdout, denyResponse(reason))
 	}
 
-	return delegate(input, cfg.rtkRewrite, logger)
+	return delegate(ctx, input, cfg.rtkRewrite, logger)
 }
 
 // checkGitStashDenied walks the AST looking for git stash invocations that
@@ -298,14 +298,14 @@ func checkGitSubcmdDenied(prog *syntax.File) (string, string, bool) {
 	), true
 }
 
-func delegate(input []byte, rtkRewrite string, logger *slog.Logger) error {
+func delegate(ctx context.Context, input []byte, rtkRewrite string, logger *slog.Logger) error {
 	if rtkRewrite == "" {
 		return nil
 	}
 
 	logger.Info("delegating", slog.String("target", rtkRewrite))
 
-	cmd := exec.CommandContext(context.Background(), rtkRewrite)
+	cmd := exec.CommandContext(ctx, rtkRewrite)
 	cmd.Stdin = bytes.NewReader(input)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

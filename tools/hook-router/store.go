@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,12 +25,18 @@ CREATE TABLE IF NOT EXISTS sessions (
 `
 
 // migrations adds columns that may be missing in databases created before
-// the current schema. Each statement is executed individually; "duplicate
-// column name" errors are silently ignored.
+// the current schema. Each statement is executed individually;
+// "duplicate column name" errors are silently ignored so the set can be
+// re-run on existing databases before the user_version was introduced.
 var migrations = []string{
 	`ALTER TABLE sessions ADD COLUMN review_head_sha TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE sessions ADD COLUMN review_wt_hash TEXT NOT NULL DEFAULT ''`,
 }
+
+const (
+	busyTimeoutMs = 30000
+	schemaVersion = 2
+)
 
 // Store manages plan-guard session state in a SQLite database.
 type Store struct {
@@ -37,50 +44,121 @@ type Store struct {
 }
 
 // OpenStore opens (or creates) the SQLite database at path and applies
-// the schema. It enables WAL mode and a busy timeout for safe concurrent
-// access, and prunes sessions older than 24 hours.
-func OpenStore(path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+// the schema. Concurrency settings are passed in the DSN so every pooled
+// connection inherits them (busy_timeout is per-connection). WAL and
+// synchronous=NORMAL are the standard pairing for concurrent readers and
+// a single writer at a time. The context bounds ping and schema setup.
+func OpenStore(ctx context.Context, path string) (*Store, error) {
+	err := os.MkdirAll(filepath.Dir(path), 0o755)
+	if err != nil {
 		return nil, fmt.Errorf("creating store directory: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", path)
+	dsn := fmt.Sprintf(
+		"file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)",
+		path, busyTimeoutMs,
+	)
+
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 
-	for _, pragma := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA busy_timeout=5000",
-	} {
-		if _, err := db.Exec(pragma); err != nil {
-			db.Close()
+	// MaxOpen=1 serializes intra-process writes on the Go connection
+	// mutex; inter-process contention is handled by the DSN busy_timeout.
+	// MaxIdle=1 is defensive — with MaxOpen=1 the pool can't hold more
+	// idle connections anyway, but it makes the intent explicit.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
-			return nil, fmt.Errorf("setting %s: %w", pragma, err)
+	err = db.PingContext(ctx)
+	if err != nil {
+		closeErr := db.Close()
+		if closeErr != nil {
+			return nil, fmt.Errorf("pinging database: %w (close: %w)", err, closeErr)
 		}
+
+		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 
-	if _, err := db.Exec(schema); err != nil {
-		db.Close()
+	s := &Store{db: db}
 
-		return nil, fmt.Errorf("creating schema: %w", err)
+	err = s.ensureSchema(ctx)
+	if err != nil {
+		closeErr := db.Close()
+		if closeErr != nil {
+			return nil, fmt.Errorf("%w (close: %w)", err, closeErr)
+		}
+
+		return nil, err
+	}
+
+	return s, nil
+}
+
+// ensureSchema creates the schema and runs migrations on a fresh or
+// out-of-date database, and is a cheap no-op (one PRAGMA read) on an
+// already-current database. The schema version gate keeps the hot path
+// free of DDL writes under concurrent load.
+//
+// Cold-start race: when N processes open a fresh database concurrently,
+// all observe user_version == 0 and run CREATE TABLE IF NOT EXISTS plus
+// the idempotent ALTERs. The DDL is safe to race on and duplicate-column
+// errors are filtered. The final PRAGMA user_version write serializes on
+// SQLite's write lock under the busy_timeout window, so readers see the
+// version flip atomically and converge on schemaVersion.
+func (s *Store) ensureSchema(ctx context.Context) error {
+	var version int
+
+	err := s.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version)
+	if err != nil {
+		return fmt.Errorf("reading schema version: %w", err)
+	}
+
+	if version == schemaVersion {
+		return nil
+	}
+
+	_, err = s.db.ExecContext(ctx, schema)
+	if err != nil {
+		return fmt.Errorf("creating schema: %w", err)
 	}
 
 	for _, m := range migrations {
-		if _, err := db.Exec(m); err != nil {
-			// Ignore "duplicate column name" errors from re-running migrations.
-			if !strings.Contains(err.Error(), "duplicate column name") {
-				db.Close()
-
-				return nil, fmt.Errorf("running migration: %w", err)
-			}
+		_, err = s.db.ExecContext(ctx, m)
+		if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("running migration: %w", err)
 		}
 	}
 
-	// Clean up stale sessions (>24h).
-	_, _ = db.Exec(`DELETE FROM sessions WHERE updated_at < datetime('now', '-24 hours')`)
+	// PRAGMA does not accept bound parameters; the version constant is a
+	// trusted int, so string interpolation is safe here.
+	_, err = s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
+	if err != nil {
+		return fmt.Errorf("setting schema version: %w", err)
+	}
 
-	return &Store{db: db}, nil
+	return nil
+}
+
+// MaybePruneStale runs the 24-hour session cleanup with ~5% probability
+// per invocation. The probabilistic gate spreads cleanup writes across
+// invocations so N concurrent processes don't all contend on the write
+// lock at startup. Returns ran=true when the gate passed and the DELETE
+// was attempted, plus any error from the delete itself.
+func (s *Store) MaybePruneStale(ctx context.Context) (bool, error) {
+	// Probabilistic gate, not a security-sensitive choice; weak RNG is fine.
+	if rand.IntN(20) != 0 { //nolint:gosec // statistical cleanup gate
+		return false, nil
+	}
+
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM sessions WHERE updated_at < datetime('now', '-24 hours')`)
+	if err != nil {
+		return true, fmt.Errorf("pruning stale sessions: %w", err)
+	}
+
+	return true, nil
 }
 
 // Close releases the database connection.

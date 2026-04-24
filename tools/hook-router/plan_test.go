@@ -37,7 +37,7 @@ func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(input, &stdout, store, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -70,14 +70,14 @@ func TestHandleExitPlanModePre_SecondCallAllowsAndRecords(t *testing.T) {
 	// First call: denied.
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(input, &stdout, store, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.NotEmpty(t, stdout.Bytes())
 
 	// Second call: allowed (no output), and records plan path.
 	stdout.Reset()
 
-	err = handleExitPlanModePre(input, &stdout, store, dir, logger)
+	err = handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 
@@ -102,7 +102,7 @@ func TestHandleExitPlanModePre_NoPlanPath(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(input, &stdout, store, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -127,7 +127,7 @@ func TestHandleExitPlanModePre_EmptySessionAllows(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(input, &stdout, store, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 }
@@ -145,7 +145,7 @@ func TestHandleEnterPlanMode_ResetsSession(t *testing.T) {
 
 	input := makeHookJSON(t, HookInput{SessionID: "s1"})
 
-	err := handleEnterPlanMode(input, store, logger)
+	err := handleEnterPlanMode(t.Context(), input, store, logger)
 	require.NoError(t, err)
 
 	count, planPath, baseSHA, err := store.Session(ctx, "s1")
@@ -170,14 +170,14 @@ func TestBugFix_OnlyDenied_StopAllowsThrough(t *testing.T) {
 	// PreToolUse:ExitPlanMode fires once -- denied.
 	// The session never reaches the "allow" path (plan review cycle ongoing).
 	var stdout bytes.Buffer
-	_ = handleExitPlanModePre(input, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
 
 	// Stop fires -- should allow through because plan_path is empty
 	// (only recorded on allow, not on deny).
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "Stop should allow through when only deny was issued")
 }
@@ -196,10 +196,10 @@ func TestStopBlocksWithChanges(t *testing.T) {
 
 	// Full flow: deny then allow (which records plan path).
 	var stdout bytes.Buffer
-	_ = handleExitPlanModePre(input, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
 
 	stdout.Reset()
-	_ = handleExitPlanModePre(input, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
 
 	// Get the baseSHA that was recorded.
 	_, _, baseSHA, err := store.Session(context.Background(), "s1")
@@ -222,7 +222,7 @@ func TestStopBlocksWithChanges(t *testing.T) {
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err = handleStop(stopInput, &stdout, store, dir, logger)
+	err = handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -247,16 +247,16 @@ func TestStopAllowsNoChanges(t *testing.T) {
 
 	// Full flow: deny then allow.
 	var stdout bytes.Buffer
-	_ = handleExitPlanModePre(input, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
 
 	stdout.Reset()
-	_ = handleExitPlanModePre(input, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
 
 	// No changes -- Stop should allow through.
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "Stop should allow through when no changes")
 }
@@ -278,7 +278,7 @@ func TestStopHookActive_ClearsAndAllows(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 
@@ -305,7 +305,7 @@ func TestHandleAgentPre_RecordsFingerprint(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleAgentPre(input, &stdout, store, dir, logger)
+	err := handleAgentPre(t.Context(), input, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "should always allow through")
 
@@ -330,9 +330,7 @@ func TestHandleAgentPre_IgnoresNonReviewer(t *testing.T) {
 		},
 	})
 
-	var stdout bytes.Buffer
-
-	err := handleAgentPre(input, &stdout, store, dir, logger)
+	err := handleAgentPre(t.Context(), input, store, dir, logger)
 	require.NoError(t, err)
 
 	// No fingerprint should be recorded.
@@ -357,9 +355,7 @@ func TestHandleAgentPre_PlanReviewer(t *testing.T) {
 		},
 	})
 
-	var stdout bytes.Buffer
-
-	err := handleAgentPre(input, &stdout, store, dir, logger)
+	err := handleAgentPre(t.Context(), input, store, dir, logger)
 	require.NoError(t, err)
 
 	headSHA, _, err := store.ReviewFingerprint(context.Background(), "s1")
@@ -381,10 +377,10 @@ func TestStop_AllowsWhenReviewerRanAgainstCurrentState(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	_ = handleExitPlanModePre(planInput, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
 
 	stdout.Reset()
-	_ = handleExitPlanModePre(planInput, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
 
 	// Make a code change and commit.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
@@ -408,14 +404,14 @@ func TestStop_AllowsWhenReviewerRanAgainstCurrentState(t *testing.T) {
 
 	stdout.Reset()
 
-	err := handleAgentPre(agentInput, &stdout, store, dir, logger)
+	err := handleAgentPre(t.Context(), agentInput, store, dir, logger)
 	require.NoError(t, err)
 
 	// Stop should allow through since reviewer ran against current state.
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err = handleStop(stopInput, &stdout, store, dir, logger)
+	err = handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "Stop should allow through when reviewer ran against current state")
 }
@@ -434,10 +430,10 @@ func TestStop_BlocksWhenCommittedEditsAfterReviewer(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	_ = handleExitPlanModePre(planInput, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
 
 	stdout.Reset()
-	_ = handleExitPlanModePre(planInput, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
 
 	// Make initial change and commit.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
@@ -460,7 +456,7 @@ func TestStop_BlocksWhenCommittedEditsAfterReviewer(t *testing.T) {
 	})
 
 	stdout.Reset()
-	_ = handleAgentPre(agentInput, &stdout, store, dir, logger)
+	require.NoError(t, handleAgentPre(t.Context(), agentInput, store, dir, logger))
 
 	// More edits AFTER the reviewer ran.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "fix.txt"), []byte("fix\n"), 0o644))
@@ -480,7 +476,7 @@ func TestStop_BlocksWhenCommittedEditsAfterReviewer(t *testing.T) {
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -503,10 +499,10 @@ func TestStop_BlocksWhenUncommittedEditsAfterReviewer(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	_ = handleExitPlanModePre(planInput, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
 
 	stdout.Reset()
-	_ = handleExitPlanModePre(planInput, &stdout, store, dir, logger)
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
 
 	// Make initial change and commit.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
@@ -529,7 +525,7 @@ func TestStop_BlocksWhenUncommittedEditsAfterReviewer(t *testing.T) {
 	})
 
 	stdout.Reset()
-	_ = handleAgentPre(agentInput, &stdout, store, dir, logger)
+	require.NoError(t, handleAgentPre(t.Context(), agentInput, store, dir, logger))
 
 	// Uncommitted edit AFTER the reviewer ran.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("changed\n"), 0o644))
@@ -538,13 +534,98 @@ func TestStop_BlocksWhenUncommittedEditsAfterReviewer(t *testing.T) {
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
 
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	assert.Equal(t, "block", result["decision"])
+}
+
+// TestHandleStop_EscapeHatchWorksWhenStoreUnavailable verifies the
+// stop_hook_active escape hatch still returns the user to control even
+// when the backing store has gone away. Without this, a user wedged
+// behind a stuck DB would have no way to finish a session.
+func TestHandleStop_EscapeHatchWorksWhenStoreUnavailable(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
+
+	// Simulate a dead backend by closing the underlying connection.
+	require.NoError(t, store.Close())
+
+	stopInput := makeHookJSON(t, HookInput{
+		SessionID:      "s1",
+		StopHookActive: true,
+	})
+
+	var stdout bytes.Buffer
+
+	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	require.NoError(t, err)
+	assert.Empty(t, stdout.Bytes(), "escape hatch must allow through even when store is dead")
+}
+
+// TestHandleStop_FailsClosedOnStoreError verifies that when the Session
+// read fails (e.g. store is dead and no escape hatch is set), the handler
+// blocks with a retry message rather than silently allowing stop.
+func TestHandleStop_FailsClosedOnStoreError(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
+
+	require.NoError(t, store.Close())
+
+	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+
+	var stdout bytes.Buffer
+
+	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	require.NoError(t, err)
+
+	var result map[string]any
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	assert.Equal(t, "block", result["decision"])
+	assert.Contains(t, result["reason"], "retry")
+}
+
+// TestHandleExitPlanModePre_FailsClosedOnStoreError verifies that when
+// the increment fails, the handler denies with a retry message rather
+// than silently letting ExitPlanMode through (which would bypass the
+// plan-reviewer guardrail).
+func TestHandleExitPlanModePre_FailsClosedOnStoreError(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
+
+	require.NoError(t, store.Close())
+
+	input := makeHookJSON(t, HookInput{
+		SessionID: "s1",
+		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
+	})
+
+	var stdout bytes.Buffer
+
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
+	require.NoError(t, err)
+
+	var result map[string]any
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+	hso, ok := result["hookSpecificOutput"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "deny", hso["permissionDecision"])
+	assert.Contains(t, hso["permissionDecisionReason"], "retry")
 }
 
 func TestStopAllowsEmptySession(t *testing.T) {
@@ -559,7 +640,7 @@ func TestStopAllowsEmptySession(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 }

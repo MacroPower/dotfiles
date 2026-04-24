@@ -15,6 +15,7 @@ func TestRun(t *testing.T) {
 	t.Parallel()
 
 	cfg := config{}
+	logger := slog.New(slog.DiscardHandler)
 
 	makeInput := func(toolInput map[string]any) string {
 		hook := map[string]any{"tool_input": toolInput}
@@ -33,7 +34,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "", "", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "", "", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -47,7 +48,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -57,7 +58,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader("not json"), &stdout, "", "", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader("not json"), &stdout, "", "", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -70,7 +71,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err = run(strings.NewReader(string(input)), &stdout, "PreToolUse", "Bash", nil, cfg, slog.New(slog.DiscardHandler))
+		err = run(t.Context(), strings.NewReader(string(input)), &stdout, "PreToolUse", "Bash", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -84,7 +85,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -98,7 +99,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -112,7 +113,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -136,7 +137,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -160,7 +161,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -180,7 +181,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "PreToolUse", "ExitPlanMode", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "ExitPlanMode", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -192,7 +193,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "PreToolUse", "EnterPlanMode", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "EnterPlanMode", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -204,7 +205,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "PostToolUse", "ExitPlanMode", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PostToolUse", "ExitPlanMode", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -216,7 +217,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "Stop", "", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "Stop", "", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -231,7 +232,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "PreToolUse", "Agent", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Agent", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -245,7 +246,7 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(strings.NewReader(input), &stdout, "Unknown", "", nil, cfg, slog.New(slog.DiscardHandler))
+		err := run(t.Context(), strings.NewReader(input), &stdout, "Unknown", "", nil, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any

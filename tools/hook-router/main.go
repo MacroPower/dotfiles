@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // config holds runtime settings resolved from the environment.
@@ -42,20 +44,41 @@ func mainErr(logFile, event, tool, dbPath string) error {
 	}
 	defer closeLog()
 
+	// 45s > 30s busy_timeout leaves headroom for JSON encode + git calls
+	// even when a single DB call burns the full busy_timeout budget.
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
 	var store *Store
 
 	if dbPath != "" {
-		store, err = OpenStore(dbPath)
+		store, err = OpenStore(ctx, dbPath)
 		if err != nil {
 			return fmt.Errorf("opening store: %w", err)
 		}
 		defer store.Close()
+
+		if ran, err := store.MaybePruneStale(ctx); ran {
+			if err != nil {
+				logger.Debug("prune stale sessions failed", slog.Any("error", err))
+			} else {
+				logger.Debug("pruned stale sessions")
+			}
+		}
 	}
 
-	return run(os.Stdin, os.Stdout, event, tool, store, configFromEnv(), logger)
+	return run(ctx, os.Stdin, os.Stdout, event, tool, store, configFromEnv(), logger)
 }
 
-func run(stdin io.Reader, stdout io.Writer, event, tool string, store *Store, cfg config, logger *slog.Logger) error {
+func run(
+	ctx context.Context,
+	stdin io.Reader,
+	stdout io.Writer,
+	event, tool string,
+	store *Store,
+	cfg config,
+	logger *slog.Logger,
+) error {
 	input, err := io.ReadAll(stdin)
 	if err != nil {
 		return fmt.Errorf("reading stdin: %w", err)
@@ -67,39 +90,44 @@ func run(stdin io.Reader, stdout io.Writer, event, tool string, store *Store, cf
 	case "PreToolUse":
 		switch tool {
 		case "Bash":
-			return handleBash(input, stdout, cfg, logger)
+			return handleBash(ctx, input, stdout, cfg, logger)
 		case "ExitPlanMode":
 			if store == nil {
 				return nil
 			}
 
-			return handleExitPlanModePre(input, stdout, store, ".", logger)
+			return handleExitPlanModePre(ctx, input, stdout, store, ".", logger)
+
 		case "EnterPlanMode":
 			if store == nil {
 				return nil
 			}
 
-			return handleEnterPlanMode(input, store, logger)
+			return handleEnterPlanMode(ctx, input, store, logger)
+
 		case "Agent":
 			if store == nil {
 				return nil
 			}
 
-			return handleAgentPre(input, stdout, store, ".", logger)
+			return handleAgentPre(ctx, input, store, ".", logger)
+
 		default:
 			return nil
 		}
 	case "PostToolUse":
 		return nil
+
 	case "Stop":
 		if store == nil {
 			return nil
 		}
 
-		return handleStop(input, stdout, store, ".", logger)
+		return handleStop(ctx, input, stdout, store, ".", logger)
+
 	default:
 		// Backward compat: no --event flag, treat as Bash PreToolUse.
-		return handleBash(input, stdout, cfg, logger)
+		return handleBash(ctx, input, stdout, cfg, logger)
 	}
 }
 
