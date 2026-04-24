@@ -47,27 +47,42 @@ func (g *GitRunner) HasChanges(ctx context.Context, baseSHA string) (bool, error
 }
 
 // Fingerprint returns a snapshot of the current repository state as a
-// HEAD commit SHA and a SHA-256 hash of the working tree status. Two
+// HEAD commit SHA and a SHA-256 hash of the working tree content. Two
 // calls return the same pair only when committed and uncommitted state
 // are identical.
+//
+// The working-tree hash is derived from the full diff against HEAD plus
+// the list of untracked non-ignored paths, so edits to an already-dirty
+// file produce a different hash. Content of untracked-never-added files
+// is not hashed.
 func (g *GitRunner) Fingerprint(ctx context.Context) (headSHA, wtHash string, err error) {
 	headSHA, err = g.HeadSHA(ctx)
 	if err != nil {
 		return "", "", err
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
-	cmd.Dir = g.Dir
+	diffCmd := exec.CommandContext(ctx, "git", "diff", "--no-ext-diff", "--binary", "HEAD")
+	diffCmd.Dir = g.Dir
 
-	out, err := cmd.Output()
+	diff, err := diffCmd.Output()
 	if err != nil {
-		return "", "", fmt.Errorf("git status: %w", err)
+		return "", "", fmt.Errorf("git diff HEAD: %w", err)
 	}
 
-	h := sha256.Sum256(out)
-	wtHash = fmt.Sprintf("%x", h)
+	untrackedCmd := exec.CommandContext(ctx, "git", "ls-files", "--others", "--exclude-standard", "-z")
+	untrackedCmd.Dir = g.Dir
 
-	return headSHA, wtHash, nil
+	untracked, err := untrackedCmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("git ls-files --others: %w", err)
+	}
+
+	h := sha256.New()
+	h.Write(diff)
+	h.Write([]byte{0})
+	h.Write(untracked)
+
+	return headSHA, fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 // HeadSHA returns the current HEAD commit SHA.

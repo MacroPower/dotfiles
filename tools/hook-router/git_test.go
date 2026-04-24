@@ -167,6 +167,73 @@ func TestFingerprint(t *testing.T) {
 	assert.Equal(t, wtHash, wtHash2)
 }
 
+func TestFingerprint_EditsToSameDirtyFileChangeHash(t *testing.T) {
+	t.Parallel()
+
+	dir := initTestRepo(t)
+	git := &GitRunner{Dir: dir}
+	ctx := t.Context()
+
+	readme := filepath.Join(dir, "README.md")
+
+	require.NoError(t, os.WriteFile(readme, []byte("v1\n"), 0o644))
+
+	_, wt1, err := git.Fingerprint(ctx)
+	require.NoError(t, err)
+
+	porcelain1 := runPorcelain(t, ctx, dir)
+
+	require.NoError(t, os.WriteFile(readme, []byte("v2\n"), 0o644))
+
+	_, wt2, err := git.Fingerprint(ctx)
+	require.NoError(t, err)
+
+	porcelain2 := runPorcelain(t, ctx, dir)
+
+	// Pins the regression: porcelain output is identical across content
+	// edits to the same already-dirty file, so a future refactor that
+	// reverts to hashing porcelain output would fail this assertion.
+	assert.Equal(t, porcelain1, porcelain2, "git status --porcelain is stable across content edits to a dirty file")
+	assert.NotEqual(t, wt1, wt2, "working-tree hash must change when dirty file content changes")
+}
+
+func TestFingerprint_NewUntrackedFileChangesHash(t *testing.T) {
+	t.Parallel()
+
+	dir := initTestRepo(t)
+	git := &GitRunner{Dir: dir}
+	ctx := t.Context()
+
+	_, wt1, err := git.Fingerprint(ctx)
+	require.NoError(t, err)
+
+	untracked := filepath.Join(dir, "new.txt")
+	require.NoError(t, os.WriteFile(untracked, []byte("hello\n"), 0o644))
+
+	_, wt2, err := git.Fingerprint(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, os.Remove(untracked))
+
+	_, wt3, err := git.Fingerprint(ctx)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, wt1, wt2, "appearance of untracked file must change hash")
+	assert.Equal(t, wt1, wt3, "removal of untracked file must restore hash")
+}
+
+func runPorcelain(t *testing.T, ctx context.Context, dir string) string {
+	t.Helper()
+
+	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	cmd.Dir = dir
+
+	out, err := cmd.Output()
+	require.NoError(t, err)
+
+	return string(out)
+}
+
 func TestFingerprint_ChangesAfterEdit(t *testing.T) {
 	t.Parallel()
 
