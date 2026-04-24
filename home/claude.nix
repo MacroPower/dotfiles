@@ -430,6 +430,27 @@ let
     }
   );
 
+  # Post-implementation agent catalog. The Stop-gate block message
+  # bullets and the AskUserQuestion label allowlist both derive from
+  # this list -- hook-router receives it as JSON via
+  # --post-impl-agents. Field names must match the lowercase JSON tags
+  # on PostImplAgent in tools/hook-router/plan.go.
+  postImplAgents = [
+    {
+      label = "implementation-reviewer";
+      description = "Review code changes against the plan. Pass it the plan file path and the base SHA.";
+    }
+    {
+      label = "simplify";
+      aliases = [ "code-simplifier" ];
+      description = "Review and simplify the implemented code.";
+    }
+    {
+      label = "humanizer";
+      description = "Clean up AI writing patterns in any prose/docs that changed.";
+    }
+  ];
+
   hookRouter = pkgs.writeShellApplication {
     name = "hook-router-wrapper";
     runtimeInputs = [
@@ -443,6 +464,7 @@ let
       exec hook-router \
         --db "${config.xdg.stateHome}/hook-router/state.db" \
         --log-file "${config.xdg.stateHome}/hook-router/hook-router.log" \
+        --post-impl-agents ${lib.escapeShellArg (builtins.toJSON postImplAgents)} \
         "$@"
     '';
   };
@@ -1613,15 +1635,6 @@ in
                   }
                 ];
               }
-              {
-                matcher = "Agent";
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${lib.getExe hookRouter} --event PreToolUse --tool Agent";
-                  }
-                ];
-              }
             ];
             UserPromptSubmit = [
               {
@@ -1650,6 +1663,15 @@ in
                   {
                     type = "command";
                     command = "${workmux} working";
+                  }
+                ];
+              }
+              {
+                matcher = "AskUserQuestion";
+                hooks = [
+                  {
+                    type = "command";
+                    command = "${lib.getExe hookRouter} --event PostToolUse --tool AskUserQuestion";
                   }
                 ];
               }

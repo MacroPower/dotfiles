@@ -12,6 +12,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// The review_head_sha / review_wt_hash columns now hold the
+// fingerprint captured when the user confirms post-implementation
+// agents via AskUserQuestion. The names predate the rename and
+// are kept to avoid schema churn.
 const schema = `
 CREATE TABLE IF NOT EXISTS sessions (
     session_id      TEXT PRIMARY KEY,
@@ -224,9 +228,9 @@ func (s *Store) SetPlanPath(ctx context.Context, id, planPath, baseSHA string) e
 	return nil
 }
 
-// SetReviewFingerprint records the git state fingerprint captured when
-// a reviewer agent is spawned.
-func (s *Store) SetReviewFingerprint(ctx context.Context, id, headSHA, wtHash string) error {
+// SetAskFingerprint records the git state fingerprint captured when
+// a post-implementation AskUserQuestion completes.
+func (s *Store) SetAskFingerprint(ctx context.Context, id, headSHA, wtHash string) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO sessions (session_id, review_head_sha, review_wt_hash)
 		 VALUES (?, ?, ?)
@@ -235,15 +239,16 @@ func (s *Store) SetReviewFingerprint(ctx context.Context, id, headSHA, wtHash st
 		   review_wt_hash = excluded.review_wt_hash,
 		   updated_at = datetime('now')`, id, headSHA, wtHash)
 	if err != nil {
-		return fmt.Errorf("setting review fingerprint: %w", err)
+		return fmt.Errorf("setting ask fingerprint: %w", err)
 	}
 
 	return nil
 }
 
-// ReviewFingerprint returns the stored git state fingerprint for a session.
+// AskFingerprint returns the stored git state fingerprint for a session,
+// captured when a post-implementation AskUserQuestion completes.
 // Returns empty strings when no fingerprint has been recorded.
-func (s *Store) ReviewFingerprint(ctx context.Context, id string) (headSHA, wtHash string, err error) {
+func (s *Store) AskFingerprint(ctx context.Context, id string) (headSHA, wtHash string, err error) {
 	err = s.db.QueryRowContext(ctx,
 		`SELECT review_head_sha, review_wt_hash FROM sessions WHERE session_id = ?`, id).
 		Scan(&headSHA, &wtHash)
@@ -252,7 +257,7 @@ func (s *Store) ReviewFingerprint(ctx context.Context, id string) (headSHA, wtHa
 	}
 
 	if err != nil {
-		return "", "", fmt.Errorf("querying review fingerprint: %w", err)
+		return "", "", fmt.Errorf("querying ask fingerprint: %w", err)
 	}
 
 	return headSHA, wtHash, nil

@@ -198,7 +198,7 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, stdout.Bytes())
 	})
 
-	t.Run("PostToolUse is noop", func(t *testing.T) {
+	t.Run("PostToolUse unknown tool is noop", func(t *testing.T) {
 		t.Parallel()
 
 		input := `{"session_id":"test","tool_input":{}}`
@@ -206,6 +206,26 @@ func TestRun(t *testing.T) {
 		var stdout bytes.Buffer
 
 		err := run(t.Context(), strings.NewReader(input), &stdout, "PostToolUse", "ExitPlanMode", nil, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("PostToolUse AskUserQuestion: no store is noop", func(t *testing.T) {
+		t.Parallel()
+
+		input := makeInput(map[string]any{
+			"questions": []any{
+				map[string]any{
+					"options": []any{
+						map[string]any{"label": "implementation-reviewer"},
+					},
+				},
+			},
+		})
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PostToolUse", "AskUserQuestion", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -222,13 +242,10 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, stdout.Bytes())
 	})
 
-	t.Run("PreToolUse Agent: no store is noop", func(t *testing.T) {
+	t.Run("PreToolUse unknown tool is noop", func(t *testing.T) {
 		t.Parallel()
 
-		input := makeInput(map[string]any{
-			"subagent_type": "implementation-reviewer",
-			"prompt":        "review changes",
-		})
+		input := makeInput(map[string]any{"foo": "bar"})
 
 		var stdout bytes.Buffer
 

@@ -23,6 +23,33 @@ func makeHookJSON(t *testing.T, hook HookInput) []byte {
 	return b
 }
 
+// testCatalog returns a [*PostImplCatalog] matching the canonical
+// agents declared in home/claude.nix. Tests that exercise
+// handlePostAskUserQuestion or handleStop pass this via cfg so the
+// Nix-driven validation and block-message rendering paths are the
+// same shape as production.
+func testCatalog() *PostImplCatalog {
+	return NewPostImplCatalog([]PostImplAgent{
+		{
+			Label:       "implementation-reviewer",
+			Description: "Review code changes against the plan. Pass it the plan file path and the base SHA.",
+		},
+		{
+			Label:       "simplify",
+			Aliases:     []string{"code-simplifier"},
+			Description: "Review and simplify the implemented code.",
+		},
+		{Label: "humanizer", Description: "Clean up AI writing patterns in any prose/docs that changed."},
+	})
+}
+
+// cfg is the shared [config] used by every test in this file that
+// exercises handleStop or handlePostAskUserQuestion. Declaring it at
+// package scope keeps handler call sites uniform; tests that need a
+// different shape (e.g. empty catalog for degraded-mode assertions)
+// declare their own local cfg, which shadows this one.
+var cfg = config{postImpl: testCatalog()}
+
 func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
 	t.Parallel()
 
@@ -177,7 +204,7 @@ func TestBugFix_OnlyDenied_StopAllowsThrough(t *testing.T) {
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "Stop should allow through when only deny was issued")
 }
@@ -222,13 +249,14 @@ func TestStopBlocksWithChanges(t *testing.T) {
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err = handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	err = handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
 
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	assert.Equal(t, "block", result["decision"])
+	assert.Contains(t, result["reason"], "AskUserQuestion")
 	assert.Contains(t, result["reason"], "implementation-reviewer")
 	assert.Contains(t, result["reason"], baseSHA)
 }
@@ -256,7 +284,7 @@ func TestStopAllowsNoChanges(t *testing.T) {
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "Stop should allow through when no changes")
 }
@@ -278,7 +306,7 @@ func TestStopHookActive_ClearsAndAllows(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 
@@ -288,82 +316,132 @@ func TestStopHookActive_ClearsAndAllows(t *testing.T) {
 	assert.Equal(t, "", planPath)
 }
 
-func TestHandleAgentPre_RecordsFingerprint(t *testing.T) {
+// askInputWithLabel builds an AskUserQuestion PostToolUse input whose
+// single question has one option with the given label. The label is
+// chosen by the caller so a test can both exercise the match path
+// (label in postImplAgentLabels) and the non-match path.
+func askInputWithLabel(t *testing.T, sessionID, label string) []byte {
+	t.Helper()
+
+	return makeHookJSON(t, HookInput{
+		SessionID: sessionID,
+		ToolName:  "AskUserQuestion",
+		ToolInput: map[string]any{
+			"questions": []any{
+				map[string]any{
+					"options": []any{
+						map[string]any{"label": label},
+					},
+				},
+			},
+		},
+	})
+}
+
+func TestHandlePostAskUserQuestion_RecordsFingerprintOnMatchingLabel(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
-		SessionID: "s1",
-		ToolInput: map[string]any{
-			"subagent_type": "implementation-reviewer",
-			"prompt":        "review the changes",
-		},
-	})
+	input := askInputWithLabel(t, "s1", "implementation-reviewer")
 
-	var stdout bytes.Buffer
-
-	err := handleAgentPre(t.Context(), input, store, dir, logger)
+	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
 	require.NoError(t, err)
-	assert.Empty(t, stdout.Bytes(), "should always allow through")
 
-	headSHA, wtHash, err := store.ReviewFingerprint(context.Background(), "s1")
+	headSHA, wtHash, err := store.AskFingerprint(context.Background(), "s1")
 	require.NoError(t, err)
 	assert.Len(t, headSHA, 40)
 	assert.Len(t, wtHash, 64)
 }
 
-func TestHandleAgentPre_IgnoresNonReviewer(t *testing.T) {
+func TestHandlePostAskUserQuestion_IgnoresUnrelatedQuestion(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
-		SessionID: "s1",
-		ToolInput: map[string]any{
-			"subagent_type": "Explore",
-			"prompt":        "search the codebase",
-		},
-	})
+	// Labels not in postImplAgentLabels, e.g. an unrelated clarifying question.
+	input := askInputWithLabel(t, "s1", "use-default-directory")
 
-	err := handleAgentPre(t.Context(), input, store, dir, logger)
+	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
 	require.NoError(t, err)
 
-	// No fingerprint should be recorded.
-	headSHA, wtHash, err := store.ReviewFingerprint(context.Background(), "s1")
+	headSHA, wtHash, err := store.AskFingerprint(context.Background(), "s1")
 	require.NoError(t, err)
 	assert.Equal(t, "", headSHA)
 	assert.Equal(t, "", wtHash)
 }
 
-func TestHandleAgentPre_PlanReviewer(t *testing.T) {
+func TestHandlePostAskUserQuestion_EmptySessionIsNoop(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
-		SessionID: "s1",
-		ToolInput: map[string]any{
-			"subagent_type": "plan-reviewer",
-			"prompt":        "review the plan",
-		},
-	})
+	input := askInputWithLabel(t, "", "implementation-reviewer")
 
-	err := handleAgentPre(t.Context(), input, store, dir, logger)
+	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
 	require.NoError(t, err)
 
-	headSHA, _, err := store.ReviewFingerprint(context.Background(), "s1")
+	// Nothing written for the empty session, and no write for any session.
+	headSHA, _, err := store.AskFingerprint(context.Background(), "")
 	require.NoError(t, err)
-	assert.Len(t, headSHA, 40, "plan-reviewer should also record fingerprint")
+	assert.Equal(t, "", headSHA)
 }
 
-func TestStop_AllowsWhenReviewerRanAgainstCurrentState(t *testing.T) {
+func TestHandlePostAskUserQuestion_MalformedToolInputIsNoop(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
+
+	cases := map[string]map[string]any{
+		"missing questions": {},
+		"questions non-array": {
+			"questions": "nope",
+		},
+		"options non-array": {
+			"questions": []any{
+				map[string]any{"options": "nope"},
+			},
+		},
+		"label non-string": {
+			"questions": []any{
+				map[string]any{
+					"options": []any{
+						map[string]any{"label": 42},
+					},
+				},
+			},
+		},
+	}
+
+	for name, toolInput := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			input := makeHookJSON(t, HookInput{
+				SessionID: "s-" + name,
+				ToolName:  "AskUserQuestion",
+				ToolInput: toolInput,
+			})
+
+			err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
+			require.NoError(t, err)
+
+			headSHA, _, err := store.AskFingerprint(context.Background(), "s-"+name)
+			require.NoError(t, err)
+			assert.Equal(t, "", headSHA)
+		})
+	}
+}
+
+func TestStop_AllowsWhenAskRanAgainstCurrentState(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
@@ -396,27 +474,24 @@ func TestStop_AllowsWhenReviewerRanAgainstCurrentState(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 
-	// Simulate reviewer spawn -- captures fingerprint of current state.
-	agentInput := makeHookJSON(t, HookInput{
-		SessionID: "s1",
-		ToolInput: map[string]any{"subagent_type": "implementation-reviewer"},
-	})
+	// Simulate user answering post-impl AskUserQuestion -- captures
+	// fingerprint of current state.
+	askInput := askInputWithLabel(t, "s1", "implementation-reviewer")
 
-	stdout.Reset()
-
-	err := handleAgentPre(t.Context(), agentInput, store, dir, logger)
+	err := handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger)
 	require.NoError(t, err)
 
-	// Stop should allow through since reviewer ran against current state.
+	// Stop should allow through since the post-impl question was
+	// answered against current state.
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err = handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	err = handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
-	assert.Empty(t, stdout.Bytes(), "Stop should allow through when reviewer ran against current state")
+	assert.Empty(t, stdout.Bytes(), "Stop should allow through when ask ran against current state")
 }
 
-func TestStop_BlocksWhenCommittedEditsAfterReviewer(t *testing.T) {
+func TestStop_BlocksWhenCommittedEditsAfterAsk(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
@@ -449,16 +524,11 @@ func TestStop_BlocksWhenCommittedEditsAfterReviewer(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 
-	// Reviewer runs and captures fingerprint.
-	agentInput := makeHookJSON(t, HookInput{
-		SessionID: "s1",
-		ToolInput: map[string]any{"subagent_type": "implementation-reviewer"},
-	})
+	// User answers AskUserQuestion; handler captures fingerprint.
+	askInput := askInputWithLabel(t, "s1", "implementation-reviewer")
+	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
 
-	stdout.Reset()
-	require.NoError(t, handleAgentPre(t.Context(), agentInput, store, dir, logger))
-
-	// More edits AFTER the reviewer ran.
+	// More edits AFTER the user answered.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "fix.txt"), []byte("fix\n"), 0o644))
 
 	for _, args := range [][]string{
@@ -472,20 +542,23 @@ func TestStop_BlocksWhenCommittedEditsAfterReviewer(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 
-	// Stop should block since state changed after reviewer.
+	// Stop should block since state changed after Ask; re-block message
+	// should re-prompt with the instructional AskUserQuestion content.
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
 
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	assert.Equal(t, "block", result["decision"])
+	assert.Contains(t, result["reason"], "AskUserQuestion")
+	assert.Contains(t, result["reason"], "implementation-reviewer")
 }
 
-func TestStop_BlocksWhenUncommittedEditsAfterReviewer(t *testing.T) {
+func TestStop_BlocksWhenUncommittedEditsAfterAsk(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
@@ -518,29 +591,27 @@ func TestStop_BlocksWhenUncommittedEditsAfterReviewer(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 
-	// Reviewer runs and captures fingerprint.
-	agentInput := makeHookJSON(t, HookInput{
-		SessionID: "s1",
-		ToolInput: map[string]any{"subagent_type": "implementation-reviewer"},
-	})
+	// User answers AskUserQuestion; handler captures fingerprint.
+	askInput := askInputWithLabel(t, "s1", "implementation-reviewer")
+	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
 
-	stdout.Reset()
-	require.NoError(t, handleAgentPre(t.Context(), agentInput, store, dir, logger))
-
-	// Uncommitted edit AFTER the reviewer ran.
+	// Uncommitted edit AFTER the user answered.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("changed\n"), 0o644))
 
-	// Stop should block since working tree changed.
+	// Stop should block since working tree changed; re-block message
+	// should cite the AskUserQuestion instructions.
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
 
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	assert.Equal(t, "block", result["decision"])
+	assert.Contains(t, result["reason"], "AskUserQuestion")
+	assert.Contains(t, result["reason"], "implementation-reviewer")
 }
 
 // TestHandleStop_EscapeHatchWorksWhenStoreUnavailable verifies the
@@ -564,7 +635,7 @@ func TestHandleStop_EscapeHatchWorksWhenStoreUnavailable(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "escape hatch must allow through even when store is dead")
 }
@@ -585,7 +656,7 @@ func TestHandleStop_FailsClosedOnStoreError(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -640,7 +711,98 @@ func TestStopAllowsEmptySession(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
+}
+
+func TestParsePostImplAgents(t *testing.T) {
+	t.Parallel()
+
+	type check func(t *testing.T, cat *PostImplCatalog)
+
+	cases := map[string]struct {
+		in    string
+		err   bool
+		check check
+	}{
+		"empty string yields empty catalog": {
+			in: "",
+			check: func(t *testing.T, cat *PostImplCatalog) {
+				t.Helper()
+				assert.True(t, cat.Empty())
+				assert.False(t, cat.HasLabel("implementation-reviewer"))
+			},
+		},
+		"valid JSON with aliases": {
+			in: `[{"label":"simplify","aliases":["code-simplifier"],"description":"d"}]`,
+			check: func(t *testing.T, cat *PostImplCatalog) {
+				t.Helper()
+				assert.False(t, cat.Empty())
+				assert.True(t, cat.HasLabel("simplify"))
+				assert.True(t, cat.HasLabel("code-simplifier"))
+				assert.False(t, cat.HasLabel("humanizer"))
+			},
+		},
+		"entry without aliases round-trips": {
+			in: `[{"label":"commit","description":"Create a git commit."}]`,
+			check: func(t *testing.T, cat *PostImplCatalog) {
+				t.Helper()
+				assert.True(t, cat.HasLabel("commit"))
+				// BuildAskReason renders the single bullet.
+				reason := cat.BuildAskReason("/p.md", "abc123")
+				assert.Contains(t, reason, "commit: Create a git commit.")
+			},
+		},
+		"malformed JSON returns error": {
+			in:  `[{"label":`,
+			err: true,
+		},
+		"duplicate labels are not deduped": {
+			in: `[{"label":"commit","description":"first"},{"label":"commit","description":"second"}]`,
+			check: func(t *testing.T, cat *PostImplCatalog) {
+				t.Helper()
+				assert.True(t, cat.HasLabel("commit"))
+
+				reason := cat.BuildAskReason("/p.md", "abc123")
+				// Both bullets render -- catalog trusts the Nix list as source of truth.
+				assert.Contains(t, reason, "commit: first")
+				assert.Contains(t, reason, "commit: second")
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cat, err := parsePostImplAgents(tc.in)
+			if tc.err {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, cat)
+			tc.check(t, cat)
+		})
+	}
+}
+
+// TestBuildAskReason_EmptyCatalog documents the degraded-mode
+// fallback: with no agents, Stop still renders a (bullet-less)
+// block message rather than panicking. Production should never hit
+// this path -- mainErr logs a warning when the catalog is empty --
+// but the invariant that handlers can call BuildAskReason without a
+// nil-guard is enforced here.
+func TestBuildAskReason_EmptyCatalog(t *testing.T) {
+	t.Parallel()
+
+	cat := NewPostImplCatalog(nil)
+	reason := cat.BuildAskReason("/p.md", "abc123")
+
+	assert.Contains(t, reason, "AskUserQuestion")
+	assert.Contains(t, reason, "/p.md")
+	assert.Contains(t, reason, "abc123")
+	assert.NotContains(t, reason, "  - ") // zero bullets rendered
 }
