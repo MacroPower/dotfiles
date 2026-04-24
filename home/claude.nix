@@ -257,59 +257,7 @@ let
       reason = "URL not in allowlist. If you need to fetch this content, ask the user to add an entry to the allowlist. Present the user with both the URL and your justification.";
     }
     // {
-      deny = map cleanRule (
-        [
-          {
-            host = "raw\\.githubusercontent\\.com";
-            except = [ { path = ".*\\.md"; } ];
-            reason = "Fetching code from raw.githubusercontent.com is blocked. Clone the repo to /tmp/git/<owner>/<repo> and read files locally instead.";
-          }
-          {
-            host = "google\\.com";
-            reason = "Fetching from google.com is blocked. Use mcp__kagi__kagi_search_fetch instead.";
-          }
-          {
-            host = "api\\.github\\.com";
-            reason = "Use mcp__github__* tools instead of fetching the GitHub API directly.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/issues(/.*)?";
-            reason = "Use mcp__github__list_issues or mcp__github__issue_read instead of fetching GitHub issue pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/pulls?(/.*)?";
-            reason = "Use mcp__github__list_pull_requests or mcp__github__pull_request_read instead of fetching GitHub PR pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/(commit|compare)(/.*)?";
-            reason = "Use mcp__github__get_commit or mcp__github__list_commits instead of fetching GitHub commit pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/releases(/.*)?";
-            reason = "Use mcp__github__list_releases or mcp__github__get_latest_release instead of fetching GitHub release pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/tags(/.*)?";
-            reason = "Use mcp__github__list_tags or mcp__github__get_tag instead of fetching GitHub tag pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/(blob|tree)(/.*)?";
-            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching GitHub file pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/search(/.*)?";
-            reason = "Use mcp__github__search_code, mcp__github__search_issues, mcp__github__search_pull_requests, or mcp__github__search_repositories instead of fetching GitHub search pages.";
-          }
-        ]
-        ++ cfg.extraFetchRules.deny
-      );
+      deny = map cleanRule (bundledFetchDeny ++ cfg.extraFetchRules.deny);
     }
     // lib.optionalAttrs cfg.fetchAllowlist {
       allow = map cleanAttrs (
@@ -425,6 +373,7 @@ let
           { host = "(.*\\.)?wireshark\\.org"; }
           { host = "(.*\\.)?zed\\.dev"; }
         ]
+        ++ bundledFetchAllow
         ++ cfg.extraFetchRules.allow
       );
     }
@@ -622,6 +571,8 @@ let
   bundledSockets = lib.concatMap (b: b.sandbox.allowUnixSockets) bundleValues;
   bundledReadPaths = lib.concatMap (b: b.sandbox.allowRead) bundleValues;
   bundledWritePaths = lib.concatMap (b: b.sandbox.allowWrite) bundleValues;
+  bundledFetchDeny = lib.concatMap (b: b.fetchRules.deny) bundleValues;
+  bundledFetchAllow = lib.concatMap (b: b.fetchRules.allow) bundleValues;
 
   researchDir =
     if cfg.research.useVault then
@@ -1083,11 +1034,28 @@ in
                 fails open.
               '';
             };
+            fetchRules = {
+              deny = mkOption {
+                type = types.listOf denyRuleType;
+                default = [ ];
+                description = ''
+                  mcp-fetch deny rules contributed by this bundle. Aggregated
+                  at `enable` granularity, so redirect messages that point at
+                  this bundle's MCP tools automatically turn off when the
+                  bundle is disabled.
+                '';
+              };
+              allow = mkOption {
+                type = types.listOf urlMatchType;
+                default = [ ];
+                description = "mcp-fetch allow rules contributed by this bundle.";
+              };
+            };
           };
         }
       );
       default = { };
-      description = "MCP server bundles grouping server config, permissions, sandbox rules, and CLAUDE.md instructions.";
+      description = "MCP server bundles grouping server config, permissions, sandbox rules, mcp-fetch rules, and CLAUDE.md instructions.";
     };
   };
 
@@ -1133,6 +1101,28 @@ in
           "/tmp/git"
           "/private/tmp/git"
         ];
+        fetchRules.deny = [
+          {
+            host = "raw\\.githubusercontent\\.com";
+            except = [ { path = ".*\\.md"; } ];
+            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching raw GitHub files.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/(blob|tree)(/.*)?";
+            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching GitHub file pages.";
+          }
+          {
+            host = "gitlab\\.com";
+            path = "/.+/-/(blob|tree)(/.*)?";
+            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching GitLab file pages.";
+          }
+          {
+            host = "codeberg\\.org";
+            path = "/[^/]+/[^/]+/src/(branch|commit|tag)/.*";
+            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching Codeberg file pages.";
+          }
+        ];
         instructions = {
           category = "Code Search";
           items = [
@@ -1148,6 +1138,12 @@ in
         };
         permissions.allow = [ "mcp__kagi__kagi_search_fetch" ];
         permissions.deny = [ "mcp__kagi__kagi_summarizer" ];
+        fetchRules.deny = [
+          {
+            host = "(google|bing|duckduckgo|brave)\\.com";
+            reason = "Fetching from general-purpose search engines is blocked. Use mcp__kagi__kagi_search_fetch instead.";
+          }
+        ];
         instructions = {
           category = "Web Search";
           items = [
@@ -1190,6 +1186,17 @@ in
         permissions.allow = [
           "mcp__nixos__nix"
           "mcp__nixos__nix_versions"
+        ];
+        fetchRules.deny = [
+          {
+            host = "search\\.nixos\\.org";
+            path = "/(packages|options)(\\?.*)?";
+            reason = "Use mcp__nixos__nix for Nix package searches and NixOS/home-manager/nix-darwin option lookups instead of scraping search.nixos.org.";
+          }
+          {
+            host = "home-manager-options\\.extranix\\.com";
+            reason = "Use mcp__nixos__nix to look up home-manager options instead of scraping home-manager-options.extranix.com.";
+          }
         ];
         instructions = {
           category = "Nix";
@@ -1300,6 +1307,42 @@ in
           "mcp__github__update_pull_request_branch"
           "mcp__github__run_secret_scanning"
         ];
+        fetchRules.deny = [
+          {
+            host = "api\\.github\\.com";
+            reason = "Use mcp__github__* tools instead of fetching the GitHub API directly.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/issues(/.*)?";
+            reason = "Use mcp__github__list_issues or mcp__github__issue_read instead of fetching GitHub issue pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/pulls?(/.*)?";
+            reason = "Use mcp__github__list_pull_requests or mcp__github__pull_request_read instead of fetching GitHub PR pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/(commit|compare)(/.*)?";
+            reason = "Use mcp__github__get_commit or mcp__github__list_commits instead of fetching GitHub commit pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/releases(/.*)?";
+            reason = "Use mcp__github__list_releases or mcp__github__get_latest_release instead of fetching GitHub release pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/[^/]+/[^/]+/tags(/.*)?";
+            reason = "Use mcp__github__list_tags or mcp__github__get_tag instead of fetching GitHub tag pages.";
+          }
+          {
+            host = "github\\.com";
+            path = "/search(/.*)?";
+            reason = "Use mcp__github__search_code, mcp__github__search_issues, mcp__github__search_pull_requests, or mcp__github__search_repositories instead of fetching GitHub search pages.";
+          }
+        ];
         instructions = {
           category = "Web Search & Fetching";
           items = [
@@ -1364,6 +1407,18 @@ in
           "mcp__opentofu__get-datasource-docs"
         ];
         sandbox.allowedDomains = [ "api.opentofu.org" ];
+        fetchRules.deny = [
+          {
+            host = "registry\\.opentofu\\.org";
+            path = "/(providers|modules)(/.*)?";
+            reason = "Use mcp__opentofu__* tools (search-opentofu-registry, get-provider-details, get-module-details, get-resource-docs, get-datasource-docs) instead of fetching OpenTofu Registry pages.";
+          }
+          {
+            host = "registry\\.terraform\\.io";
+            path = "/(providers|modules)(/.*)?";
+            reason = "Use mcp__opentofu__* tools (search-opentofu-registry, get-provider-details, get-module-details, get-resource-docs, get-datasource-docs) instead of fetching Terraform Registry pages.";
+          }
+        ];
         instructions = {
           category = "OpenTofu";
           items = [
