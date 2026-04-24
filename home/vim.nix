@@ -1,8 +1,9 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 
 {
   programs.vim = {
     enable = true;
+    packageConfigurable = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin pkgs.vim-darwin;
     settings = {
       expandtab = true;
       tabstop = 2;
