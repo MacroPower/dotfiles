@@ -28,6 +28,8 @@ This command finishes work on the current branch by:
 
 Stage all changes and create a single git commit with an appropriate message. Skip this step if there are no changes.
 
+The commit subject must be 70 characters or less. The description must wrap at 70 characters. Use plain ASCII characters only. Keep the description short and to the point.
+
 ### Context
 
 - Current git status: !`git status`
