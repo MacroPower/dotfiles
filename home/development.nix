@@ -1,6 +1,7 @@
 {
   pkgs,
   lib,
+  config,
   ...
 }:
 
@@ -44,6 +45,10 @@ in
       "$HOME/go/bin"
       "$HOME/.npm/bin"
     ];
+
+    sessionVariables = lib.mkIf (config.dotfiles.hostname == "terrarium") {
+      UV_PROJECT_ENVIRONMENT = ".venv-linux";
+    };
 
     activation = {
       installPython = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
