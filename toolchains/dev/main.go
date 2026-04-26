@@ -444,10 +444,8 @@ func (m *Dev) BuildShell(
 }
 
 // publishMultiArch builds one container per platform via buildVariant
-// and pushes a multi-platform OCI manifest list at each tag. The
-// publisher container only carries registry auth; PlatformVariants
-// fully determines the manifest contents. Empty tags defaults to
-// ["latest"]; empty platforms defaults to amd64 + arm64.
+// and delegates the manifest assembly to [Dev.publishVariants]. Empty
+// platforms defaults to amd64 + arm64.
 func (m *Dev) publishMultiArch(
 	ctx context.Context,
 	password *dagger.Secret,
@@ -456,10 +454,6 @@ func (m *Dev) publishMultiArch(
 	platforms []dagger.Platform,
 	buildVariant func(context.Context, dagger.Platform) (*dagger.Container, error),
 ) (string, error) {
-	if len(tags) == 0 {
-		tags = []string{"latest"}
-	}
-
 	if len(platforms) == 0 {
 		platforms = []dagger.Platform{"linux/amd64", "linux/arm64"}
 	}
@@ -473,6 +467,25 @@ func (m *Dev) publishMultiArch(
 		}
 
 		variants = append(variants, ctr)
+	}
+
+	return m.publishVariants(ctx, password, image, tags, variants)
+}
+
+// publishVariants pushes the given platform variants as a single
+// multi-platform OCI manifest list at each tag. The publisher
+// container only carries registry auth; PlatformVariants fully
+// determines the manifest contents. Empty tags defaults to ["latest"].
+// Used by [Dev.publishMultiArch] and [Dev.PublishManifest].
+func (m *Dev) publishVariants(
+	ctx context.Context,
+	password *dagger.Secret,
+	image string,
+	tags []string,
+	variants []*dagger.Container,
+) (string, error) {
+	if len(tags) == 0 {
+		tags = []string{"latest"}
 	}
 
 	publisher := dag.Container().WithRegistryAuth("ghcr.io", "MacroPower", password)
@@ -591,6 +604,43 @@ func (m *Dev) PublishSandbox(
 	platforms []dagger.Platform,
 ) (string, error) {
 	return m.publishMultiArch(ctx, password, image, tags, platforms, m.buildSandboxForPlatform)
+}
+
+// PublishManifest assembles a multi-arch OCI manifest list from
+// previously published single-platform images and pushes it at each
+// tag via [Dev.publishVariants]. refs and platforms are parallel
+// slices: refs[i] must point at a single-platform image whose
+// architecture matches platforms[i]. Pinning Platform on each pull
+// ensures the right variant is selected even if a ref ever resolves
+// to a manifest list.
+func (m *Dev) PublishManifest(
+	ctx context.Context,
+	// Registry password or personal access token.
+	password *dagger.Secret,
+	// Full target image reference without tag, e.g.
+	// "ghcr.io/macropower/shell".
+	image string,
+	// Source image references (with tag), one per platform.
+	refs []string,
+	// Platform per ref. Must be the same length as refs.
+	platforms []dagger.Platform,
+	// Image tags to publish. Defaults to ["latest"].
+	// +optional
+	tags []string,
+) (string, error) {
+	if len(refs) != len(platforms) {
+		return "", fmt.Errorf("refs (%d) and platforms (%d) length mismatch",
+			len(refs), len(platforms))
+	}
+
+	variants := make([]*dagger.Container, 0, len(refs))
+
+	for i, ref := range refs {
+		variants = append(variants,
+			dag.Container(dagger.ContainerOpts{Platform: platforms[i]}).From(ref))
+	}
+
+	return m.publishVariants(ctx, password, image, tags, variants)
 }
 
 // Shell opens an interactive development container with an optional source

@@ -14,7 +14,39 @@ permissions:
   packages: write
 
 jobs:
+  build-shell:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: amd64
+            runs-on: ubuntu-latest
+          - platform: arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build dev container via Dagger
+        uses: dagger/dagger-for-github@v8.4.1
+        with:
+          version: "v0.20.6"
+          call: >-
+            dev publish-shell
+            --password=env://REGISTRY_PASSWORD
+            --image="ghcr.io/macropower/shell"
+            --platforms="linux/${{ matrix.platform }}"
+            --tags="${{ github.sha }}-${{ matrix.platform }}"
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+          enable-github-summary: "true"
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
   publish-shell:
+    needs: build-shell
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,26 +54,55 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm64
-          image: tonistiigi/binfmt:qemu-v10.2.1
-
-      - name: Publish dev container via Dagger
+      - name: Assemble multi-arch manifest via Dagger
         uses: dagger/dagger-for-github@v8.4.1
         with:
-          version: "v0.20.3"
+          version: "v0.20.6"
           call: >-
-            dev publish-shell
+            dev publish-manifest
             --password=env://REGISTRY_PASSWORD
             --image="ghcr.io/macropower/shell"
+            --refs="ghcr.io/macropower/shell:${{ github.sha }}-amd64,ghcr.io/macropower/shell:${{ github.sha }}-arm64"
+            --platforms="linux/amd64,linux/arm64"
+            --tags="latest,${{ github.sha }}"
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+          enable-github-summary: "true"
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+  build-sandbox:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: amd64
+            runs-on: ubuntu-latest
+          - platform: arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build sandbox container via Dagger
+        uses: dagger/dagger-for-github@v8.4.1
+        with:
+          version: "v0.20.6"
+          call: >-
+            dev publish-sandbox
+            --password=env://REGISTRY_PASSWORD
+            --image="ghcr.io/macropower/sandbox"
+            --platforms="linux/${{ matrix.platform }}"
+            --tags="${{ github.sha }}-${{ matrix.platform }}"
           cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
           enable-github-summary: "true"
         env:
           REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
   publish-sandbox:
+    needs: build-sandbox
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -49,20 +110,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm64
-          image: tonistiigi/binfmt:qemu-v10.2.1
-
-      - name: Publish sandbox container via Dagger
+      - name: Assemble multi-arch manifest via Dagger
         uses: dagger/dagger-for-github@v8.4.1
         with:
-          version: "v0.20.3"
+          version: "v0.20.6"
           call: >-
-            dev publish-sandbox
+            dev publish-manifest
             --password=env://REGISTRY_PASSWORD
             --image="ghcr.io/macropower/sandbox"
+            --refs="ghcr.io/macropower/sandbox:${{ github.sha }}-amd64,ghcr.io/macropower/sandbox:${{ github.sha }}-arm64"
+            --platforms="linux/amd64,linux/arm64"
+            --tags="latest,${{ github.sha }}"
           cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
           enable-github-summary: "true"
         env:
