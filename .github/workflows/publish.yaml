@@ -22,6 +22,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+          image: tonistiigi/binfmt:qemu-v10.2.1
+
       - name: Publish dev container via Dagger
         uses: dagger/dagger-for-github@v8.4.1
         with:
@@ -42,6 +48,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+          image: tonistiigi/binfmt:qemu-v10.2.1
 
       - name: Publish sandbox container via Dagger
         uses: dagger/dagger-for-github@v8.4.1

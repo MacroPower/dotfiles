@@ -207,24 +207,33 @@ func (m *Dev) buildBase(ctx context.Context, ctr *dagger.Container) (*dagger.Con
 }
 
 // cachedBuild builds the home-manager configuration with nix store and
-// eval caches mounted, so repeated builds reuse prior work. The nix
-// store and var directories share a single cache volume to keep them
-// atomically consistent.
-func (m *Dev) cachedBuild(ctx context.Context) (*dagger.Container, error) {
+// eval caches mounted, so repeated builds reuse prior work. Cache
+// volumes are scoped per Nix system so amd64 and arm64 builds keep
+// separate /nix stores; mixing arches in one volume corrupts the
+// store database. An empty platform leaves arch selection to the
+// engine.
+func (m *Dev) cachedBuild(ctx context.Context, platform dagger.Platform) (*dagger.Container, error) {
 	// Squash the base image into a single layer so its many small
 	// layers don't bloat the final published image.
 	// Squashing discards OCI config; restore env vars so nix, git,
 	// and SSL work during the build.
-	base := dag.Container().From(nixImage)
-	ctr := dag.Container().WithRootfs(base.Rootfs()).
+	opts := dagger.ContainerOpts{Platform: platform}
+	base := dag.Container(opts).From(nixImage)
+
+	sys, err := nixSystem(ctx, base)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr := dag.Container(opts).WithRootfs(base.Rootfs()).
 		WithEnvVariable("PATH", "/root/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin").
 		WithEnvVariable("SSL_CERT_FILE", "/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt").
 		WithEnvVariable("NIX_SSL_CERT_FILE", "/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt").
 		WithEnvVariable("GIT_SSL_CAINFO", "/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt")
 	ctr = ctr.
-		WithMountedCache("/nix", dag.CacheVolume(devCacheNamespace+":nix"),
+		WithMountedCache("/nix", dag.CacheVolume(devCacheNamespace+":nix:"+sys),
 			dagger.ContainerWithMountedCacheOpts{Source: ctr.Directory("/nix")}).
-		WithMountedCache("/root/.cache/nix", dag.CacheVolume(devCacheNamespace+":nix-eval-cache"))
+		WithMountedCache("/root/.cache/nix", dag.CacheVolume(devCacheNamespace+":nix-eval-cache:"+sys))
 
 	return m.buildBase(ctx, ctr)
 }
@@ -240,7 +249,19 @@ func (m *Dev) DevBase(
 	// +optional
 	kagiApiKey *dagger.Secret,
 ) (*dagger.Container, error) {
-	built, err := m.cachedBuild(ctx)
+	return m.devBaseForPlatform(ctx, "", kagiApiKey)
+}
+
+// devBaseForPlatform is the platform-aware implementation behind
+// [Dev.DevBase]. The Publish helpers call this directly so each
+// architecture variant runs through the same activation steps with
+// its own /nix cache.
+func (m *Dev) devBaseForPlatform(
+	ctx context.Context,
+	platform dagger.Platform,
+	kagiApiKey *dagger.Secret,
+) (*dagger.Container, error) {
+	built, err := m.cachedBuild(ctx, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -388,9 +409,16 @@ func (m *Dev) Sandbox(
 
 // BuildShell builds a self-contained dev container with all nix store
 // contents baked into image layers so it works without Dagger cache
-// volumes. Use [Dev.PublishShell] to build and push in one step.
-func (m *Dev) BuildShell(ctx context.Context) (*dagger.Container, error) {
-	built, err := m.cachedBuild(ctx)
+// volumes. Use [Dev.PublishShell] to build and push in one step. An
+// empty platform builds for the engine's native architecture.
+func (m *Dev) BuildShell(
+	ctx context.Context,
+	// Target platform (e.g. "linux/amd64", "linux/arm64"). Empty
+	// uses the Dagger engine's native architecture.
+	// +optional
+	platform dagger.Platform,
+) (*dagger.Container, error) {
+	built, err := m.cachedBuild(ctx, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -415,8 +443,61 @@ func (m *Dev) BuildShell(ctx context.Context) (*dagger.Container, error) {
 	return ctr, nil
 }
 
-// PublishShell builds a self-contained dev container via [Dev.BuildShell]
-// and pushes it to a container registry.
+// publishMultiArch builds one container per platform via buildVariant
+// and pushes a multi-platform OCI manifest list at each tag. The
+// publisher container only carries registry auth; PlatformVariants
+// fully determines the manifest contents. Empty tags defaults to
+// ["latest"]; empty platforms defaults to amd64 + arm64.
+func (m *Dev) publishMultiArch(
+	ctx context.Context,
+	password *dagger.Secret,
+	image string,
+	tags []string,
+	platforms []dagger.Platform,
+	buildVariant func(context.Context, dagger.Platform) (*dagger.Container, error),
+) (string, error) {
+	if len(tags) == 0 {
+		tags = []string{"latest"}
+	}
+
+	if len(platforms) == 0 {
+		platforms = []dagger.Platform{"linux/amd64", "linux/arm64"}
+	}
+
+	variants := make([]*dagger.Container, 0, len(platforms))
+
+	for _, p := range platforms {
+		ctr, err := buildVariant(ctx, p)
+		if err != nil {
+			return "", fmt.Errorf("building %s: %w", p, err)
+		}
+
+		variants = append(variants, ctr)
+	}
+
+	publisher := dag.Container().WithRegistryAuth("ghcr.io", "MacroPower", password)
+
+	var addr string
+
+	for _, tag := range tags {
+		ref := fmt.Sprintf("%s:%s", image, tag)
+
+		a, err := publisher.Publish(ctx, ref, dagger.ContainerPublishOpts{
+			PlatformVariants: variants,
+		})
+		if err != nil {
+			return "", fmt.Errorf("publishing %s: %w", ref, err)
+		}
+
+		addr = a
+	}
+
+	return addr, nil
+}
+
+// PublishShell builds self-contained dev container variants via
+// [Dev.BuildShell] for each requested platform and pushes a single
+// multi-platform OCI manifest list per tag to the registry.
 func (m *Dev) PublishShell(
 	ctx context.Context,
 	// Registry password or personal access token.
@@ -428,54 +509,28 @@ func (m *Dev) PublishShell(
 	// +optional
 	// +default="ghcr.io/macropower/shell"
 	image string,
+	// Target platforms for the manifest list. Defaults to
+	// ["linux/amd64", "linux/arm64"].
+	// +optional
+	platforms []dagger.Platform,
 ) (string, error) {
-	if len(tags) == 0 {
-		tags = []string{"latest"}
-	}
-
-	ctr, err := m.BuildShell(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	ctr = ctr.WithRegistryAuth("ghcr.io", "MacroPower", password)
-
-	var addr string
-	for _, tag := range tags {
-		ref := fmt.Sprintf("%s:%s", image, tag)
-		addr, err = ctr.Publish(ctx, ref)
-		if err != nil {
-			return "", fmt.Errorf("publishing %s: %w", ref, err)
-		}
-	}
-
-	return addr, nil
+	return m.publishMultiArch(ctx, password, image, tags, platforms, m.BuildShell)
 }
 
-// PublishSandbox builds a self-contained sandbox container and pushes it
-// to a container registry. The published image includes the terrarium
-// binary and config.yaml deployed by home-manager; firewall configs are
-// generated at runtime by terrarium init. Users customize behavior by
-// mounting their own config.yaml at the terrarium XDG config path.
-func (m *Dev) PublishSandbox(
+// buildSandboxForPlatform builds a self-contained sandbox container
+// for a single platform: it activates home-manager via
+// [Dev.devBaseForPlatform], creates the non-root sandbox user,
+// snapshots the /nix cache mount into the rootfs, and sets the
+// terrarium entrypoint and OCI labels. Cache-only mounts that should
+// not bake into the published image (krew, claude-state) are dropped
+// after [Dev.devBaseForPlatform] adds them.
+func (m *Dev) buildSandboxForPlatform(
 	ctx context.Context,
-	// Registry password or personal access token.
-	password *dagger.Secret,
-	// Image tags. Defaults to ["latest"].
-	// +optional
-	tags []string,
-	// Full image reference without tag.
-	// +optional
-	// +default="ghcr.io/macropower/sandbox"
-	image string,
-) (string, error) {
-	if len(tags) == 0 {
-		tags = []string{"latest"}
-	}
-
-	base, err := m.DevBase(ctx, nil)
+	platform dagger.Platform,
+) (*dagger.Container, error) {
+	base, err := m.devBaseForPlatform(ctx, platform, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// setup-user: create non-root user.
@@ -496,7 +551,7 @@ chown -R %s:%s %s
 	snapshot := built.WithExec([]string{"cp", "-a", "/nix", "/nix-snapshot"})
 	nixDir := snapshot.Directory("/nix-snapshot")
 
-	ctr := built.
+	return built.
 		WithoutMount("/nix").
 		WithoutMount("/root/.cache/nix").
 		WithoutMount(homeDir+"/.krew").
@@ -505,20 +560,37 @@ chown -R %s:%s %s
 		WithDirectory("/nix", nixDir).
 		WithWorkdir(homeDir).
 		WithEntrypoint([]string{"terrarium", "init", "--", "fish"}).
-		WithRegistryAuth("ghcr.io", "MacroPower", password).
 		WithLabel("org.opencontainers.image.source", "https://github.com/MacroPower/dotfiles").
-		WithLabel("org.opencontainers.image.description", "Sandboxed development container with nix home-manager tools")
+		WithLabel(
+			"org.opencontainers.image.description",
+			"Sandboxed development container with nix home-manager tools",
+		), nil
+}
 
-	var addr string
-	for _, tag := range tags {
-		ref := fmt.Sprintf("%s:%s", image, tag)
-		addr, err = ctr.Publish(ctx, ref)
-		if err != nil {
-			return "", fmt.Errorf("publishing %s: %w", ref, err)
-		}
-	}
-
-	return addr, nil
+// PublishSandbox builds self-contained sandbox container variants via
+// [Dev.buildSandboxForPlatform] for each requested platform and pushes
+// a single multi-platform OCI manifest list per tag to the registry.
+// The published image includes the terrarium binary and config.yaml
+// deployed by home-manager; firewall configs are generated at runtime
+// by terrarium init. Users customize behavior by mounting their own
+// config.yaml at the terrarium XDG config path.
+func (m *Dev) PublishSandbox(
+	ctx context.Context,
+	// Registry password or personal access token.
+	password *dagger.Secret,
+	// Image tags. Defaults to ["latest"].
+	// +optional
+	tags []string,
+	// Full image reference without tag.
+	// +optional
+	// +default="ghcr.io/macropower/sandbox"
+	image string,
+	// Target platforms for the manifest list. Defaults to
+	// ["linux/amd64", "linux/arm64"].
+	// +optional
+	platforms []dagger.Platform,
+) (string, error) {
+	return m.publishMultiArch(ctx, password, image, tags, platforms, m.buildSandboxForPlatform)
 }
 
 // Shell opens an interactive development container with an optional source
