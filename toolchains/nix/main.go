@@ -286,35 +286,33 @@ func (m *Nix) Format() *dagger.Changeset {
 	return dag.Directory().WithDirectory(".", fixed).Changes(m.Source)
 }
 
-// homeClosurePath builds the home-manager activation package and returns
-// the nix store path. Used by [Nix.Sbom].
-func (m *Nix) homeClosurePath(ctx context.Context) (string, error) {
+// sbomnixRef pins the upstream sbomnix flake. nixpkgs ships 1.7.4
+// which cannot parse the `nix derivation show` JSON format produced
+// by Nix 2.33+ (and Lix 2.94 used here), failing with "Deriver does
+// not exist" on every closure path. v1.7.6 normalizes the new
+// wrapped payload. https://github.com/tiiuae/sbomnix/issues/267
+const sbomnixRef = "github:tiiuae/sbomnix/v1.7.6"
+
+// Sbom generates a CycloneDX SBOM for the home-manager closure.
+func (m *Nix) Sbom(ctx context.Context) (*dagger.File, error) {
 	base := m.base()
 	sys, err := nixSystem(ctx, base)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	config := fmt.Sprintf(`.#homeConfigurations."dev@%s".activationPackage`, sys)
+
 	out, err := base.
 		WithExec([]string{"nix", "build", config, "--no-link", "--print-out-paths"}).
 		Stdout(ctx)
 	if err != nil {
-		return "", fmt.Errorf("building home closure: %w", err)
+		return nil, fmt.Errorf("building home closure: %w", err)
 	}
-	return strings.TrimSpace(out), nil
-}
+	storePath := strings.TrimSpace(out)
 
-// Sbom generates a CycloneDX SBOM for the home-manager closure.
-func (m *Nix) Sbom(ctx context.Context) (*dagger.File, error) {
-	storePath, err := m.homeClosurePath(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return m.base().
-		WithExec([]string{"nix", "profile", "install", "nixpkgs#sbomnix"}).
-		WithExec([]string{"sbomnix", storePath,
-			"--cdx", "/tmp/sbom.cdx.json"}).
+	return base.
+		WithExec([]string{"nix", "run", sbomnixRef + "#sbomnix", "--",
+			storePath, "--cdx", "/tmp/sbom.cdx.json"}).
 		File("/tmp/sbom.cdx.json"), nil
 }
 
