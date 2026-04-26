@@ -32,6 +32,12 @@
 
       environment.systemPackages = [ pkgs.terrarium ];
 
+      # Cap retained generations so kernels + initrds don't fill the
+      # ~250M Lima /boot partition. Five is enough headroom to roll
+      # back across a couple of bad rebuilds without hitting ENOSPC
+      # during the next bootloader install.
+      boot.loader.grub.configurationLimit = 5;
+
       # br_netfilter makes bridged (container) traffic traverse netfilter
       # hooks so terrarium's nftables rules can see it.
       boot.kernelModules = [ "br_netfilter" ];

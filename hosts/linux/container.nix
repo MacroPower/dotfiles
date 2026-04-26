@@ -5,7 +5,7 @@ system: {
       ../../home/development.nix
       ../../home/kubernetes.nix
       ../../home/claude.nix
-      ../../home/zed-remote.nix
+      ../../home/files.nix
     ];
     dotfiles = {
       username = "dev";

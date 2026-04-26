@@ -182,7 +182,6 @@ in
     nurl
     sops
     age
-    dust
     hyperfine
     sd
     procs

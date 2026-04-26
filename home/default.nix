@@ -41,6 +41,7 @@ in
     ./ca-certificates.nix
     ./stylix.nix
     ./fish.nix
+    ./files.nix
     ./git.nix
     ./gpg.nix
     ./neovim.nix
