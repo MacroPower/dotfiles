@@ -6,30 +6,37 @@
 }:
 
 let
-  # OSC 52 pbcopy shim for Linux hosts (notably the workmux lima VM).
-  # Two paths: write OSC 52 directly to /dev/tty when we have one, otherwise
-  # hand the bytes to tmux via `load-buffer -w` so its set-clipboard machinery
-  # re-emits OSC 52 upstream via the `Ms=` override in home/tmux.nix.
+  # OSC 52 pbcopy shim for Linux hosts (notably the terrarium lima VM).
+  #
+  # The chain is: shim -> outer client tty -> SSH -> Ghostty -> macOS clipboard.
+  #
+  # When inside tmux we deliberately route around tmux's clipboard machinery
+  # by writing OSC 52 straight to the attached client's outer tty instead of
+  # /dev/tty (the pane PTY). Two reasons:
+  #   1. tmux interns the Ms= cap at client-attach time, so a stale session
+  #      that started before a fix won't pick it up without detach+reattach.
+  #   2. Even with set-clipboard set correctly, OSC 52 from a pane is always
+  #      consumed by tmux's parser; if the cached Ms= is wrong the bytes are
+  #      silently dropped on re-emit.
+  # Writing directly to client_tty puts bytes onto the SSH PTY downstream of
+  # tmux entirely, so neither failure mode applies.
   pbcopy-osc52 = pkgs.writeShellScriptBin "pbcopy" ''
     set -eu
-    input="''${1:-/dev/stdin}"
-    tmpfile=$(${pkgs.coreutils}/bin/mktemp)
-    trap 'rm -f "$tmpfile"' EXIT
-    ${pkgs.coreutils}/bin/cat "$input" > "$tmpfile"
+    b64=$(${pkgs.coreutils}/bin/base64 -w0 < "''${1:-/dev/stdin}")
+    osc() { printf '\e]52;c;%s\a' "$b64"; }
 
-    # Direct path: shell with a controlling tty (interactive SSH, login shell).
-    b64=$(${pkgs.coreutils}/bin/base64 -w0 < "$tmpfile")
-    if printf '\e]52;c;%s\a' "$b64" >/dev/tty 2>/dev/null; then exit 0; fi
-
-    # Fallback: tmux's server runs us without a controlling tty (copy-pipe,
-    # run-shell, etc.). Route through tmux so its set-clipboard machinery
-    # re-emits OSC 52 to the outer terminal via the Ms= override.
     if [ -n "''${TMUX:-}" ]; then
-      ${config.programs.tmux.package}/bin/tmux load-buffer -w - < "$tmpfile"
-      exit 0
+      client_tty=$(${config.programs.tmux.package}/bin/tmux \
+        list-clients -F '#{client_tty}' 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)
+      if [ -n "$client_tty" ] && [ -w "$client_tty" ]; then
+        osc > "$client_tty"
+        exit 0
+      fi
     fi
 
-    echo "pbcopy: no controlling tty and not in tmux; OSC 52 unavailable" >&2
+    if osc >/dev/tty 2>/dev/null; then exit 0; fi
+
+    echo "pbcopy: no path to outer terminal (TMUX=''${TMUX:-unset})" >&2
     exit 1
   '';
 in
