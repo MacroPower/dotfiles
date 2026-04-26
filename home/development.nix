@@ -85,6 +85,9 @@ in
         nodejs
         gcc
 
+        # Linters
+        editorconfig-checker
+
         # Python build dependencies
         openssl
         readline

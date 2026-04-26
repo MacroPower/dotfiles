@@ -28,7 +28,7 @@ type Nix struct {
 func New(
 	// Project source directory
 	// +defaultPath="/"
-	// +ignore=["**/.git", "result", "toolchains/", "lima/", ".devbox/"]
+	// +ignore=["**/.git", "result", "toolchains/", "lima/", ".devbox/", ".ck/"]
 	source *dagger.Directory,
 ) *Nix {
 	return &Nix{Source: source}
@@ -273,6 +273,16 @@ func (m *Nix) Build(ctx context.Context) error {
 func (m *Nix) Lint(ctx context.Context) error {
 	_, err := m.base().
 		WithExec([]string{"nix", "fmt", "--", "--fail-on-change"}).
+		Sync(ctx)
+	return err
+}
+
+// Editorconfig validates files against .editorconfig rules.
+// +check
+func (m *Nix) Editorconfig(ctx context.Context) error {
+	_, err := m.base().
+		WithExec([]string{"nix", "profile", "install", "nixpkgs#editorconfig-checker"}).
+		WithExec([]string{"editorconfig-checker", "-no-color"}).
 		Sync(ctx)
 	return err
 }
@@ -664,6 +674,7 @@ func (m *Nix) All(ctx context.Context) error {
 	eg.Go(func() error { return m.Build(ctx) })
 	eg.Go(func() error { return m.BuildHome(ctx) })
 	eg.Go(func() error { return m.Lint(ctx) })
+	eg.Go(func() error { return m.Editorconfig(ctx) })
 
 	return eg.Wait()
 }
