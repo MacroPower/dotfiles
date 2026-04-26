@@ -101,11 +101,28 @@ let
     ];
   };
 
+  # aioboto3's DynamoDB tests hit a moto/werkzeug mock server that
+  # emits a duplicate Server header; aiohttp's stricter parser rejects
+  # it with HTTPClientError. The remaining suite is also slow (~10 min)
+  # and not worth running in our closure rebuild. Note: nixpkgs runs
+  # the test suite as the install-check phase, so doInstallCheck is
+  # what gates it (doCheck is already false here).
+  aioboto3Overlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        aioboto3 = pyprev.aioboto3.overrideAttrs {
+          doInstallCheck = false;
+        };
+      })
+    ];
+  };
+
   sharedOverlays = system: [
     lixOverlay
     localOverlay
     lupaOverlay
     fastmcpOverlay
+    aioboto3Overlay
     (nurJacobColvinOverlay system)
     ryceeOverlay
     (workmuxOverlay system)
