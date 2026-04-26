@@ -48,7 +48,10 @@ func testCatalog() *PostImplCatalog {
 // package scope keeps handler call sites uniform; tests that need a
 // different shape (e.g. empty catalog for degraded-mode assertions)
 // declare their own local cfg, which shadows this one.
-var cfg = config{postImpl: testCatalog()}
+var cfg = config{
+	postImpl:     testCatalog(),
+	commitSkills: []string{"commit", "commit-push-pr", "merge"},
+}
 
 func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
 	t.Parallel()
@@ -182,6 +185,57 @@ func TestHandleEnterPlanMode_ResetsSession(t *testing.T) {
 	assert.Equal(t, "", baseSHA)
 }
 
+func TestEnterPlanMode_SetsInPlanMode(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	ctx := context.Background()
+
+	input := makeHookJSON(t, HookInput{SessionID: "s1"})
+
+	err := handleEnterPlanMode(t.Context(), input, store, logger)
+	require.NoError(t, err)
+
+	inPlanMode, err := store.InPlanMode(ctx, "s1")
+	require.NoError(t, err)
+	assert.True(t, inPlanMode)
+}
+
+func TestExitPlanModePre_SecondCall_ClearsInPlanMode(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	ctx := context.Background()
+	dir := initTestRepo(t)
+
+	require.NoError(t, store.SetInPlanMode(ctx, "s1", true))
+
+	input := makeHookJSON(t, HookInput{
+		SessionID: "s1",
+		ToolInput: map[string]any{"planFilePath": "/plan.md"},
+	})
+
+	var stdout bytes.Buffer
+
+	// First call denies.
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+
+	// in_plan_mode still set after deny (only cleared on allow).
+	inPlanMode, err := store.InPlanMode(ctx, "s1")
+	require.NoError(t, err)
+	assert.True(t, inPlanMode, "in_plan_mode must remain set across the deny call")
+
+	// Second call allows and clears in_plan_mode.
+	stdout.Reset()
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+
+	inPlanMode, err = store.InPlanMode(ctx, "s1")
+	require.NoError(t, err)
+	assert.False(t, inPlanMode)
+}
+
 func TestBugFix_OnlyDenied_StopAllowsThrough(t *testing.T) {
 	t.Parallel()
 
@@ -261,7 +315,7 @@ func TestStopBlocksWithChanges(t *testing.T) {
 	assert.Contains(t, result["reason"], baseSHA)
 }
 
-func TestStopAllowsNoChanges(t *testing.T) {
+func TestStop_BlocksImplementationWithNoChanges(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
@@ -280,13 +334,256 @@ func TestStopAllowsNoChanges(t *testing.T) {
 	stdout.Reset()
 	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
 
-	// No changes -- Stop should allow through.
+	// No changes -- Stop now blocks; the unified message must offer
+	// both branches so Claude can either confirm done or ask for input.
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
 	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
-	assert.Empty(t, stdout.Bytes(), "Stop should allow through when no changes")
+
+	var result map[string]any
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	assert.Equal(t, "block", result["decision"])
+
+	reason, ok := result["reason"].(string)
+	require.True(t, ok)
+	assert.Contains(t, reason, "completed the implementation")
+	assert.Contains(t, reason, "If you are not done")
+}
+
+func TestStop_AllowsAfterPostImplAUQ_NoChanges(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
+
+	planInput := makeHookJSON(t, HookInput{
+		SessionID: "s1",
+		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
+	})
+
+	var stdout bytes.Buffer
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+
+	stdout.Reset()
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+
+	// No changes, but user answers a post-impl AUQ -- captures the
+	// fingerprint of the (unchanged) state so Stop can short-circuit.
+	askInput := askInputWithLabel(t, "s1", "implementation-reviewer")
+	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
+
+	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stdout.Reset()
+
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	require.NoError(t, err)
+	assert.Empty(t, stdout.Bytes(),
+		"Stop should allow through after a post-impl AUQ even with no changes")
+}
+
+func TestStop_BlocksInPlanMode(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	ctx := context.Background()
+	dir := initTestRepo(t)
+
+	require.NoError(t, store.SetInPlanMode(ctx, "s1", true))
+
+	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+
+	var stdout bytes.Buffer
+
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	require.NoError(t, err)
+
+	var result map[string]any
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	assert.Equal(t, "block", result["decision"])
+	assert.Contains(t, result["reason"], "plan mode")
+	assert.Contains(t, result["reason"], "ExitPlanMode")
+}
+
+// TestStop_BlocksInPlanMode_WithPlanPathFromPriorRound covers the
+// pathological case where ResetSession was skipped and the row carries
+// both in_plan_mode=1 and a plan_path from a prior session. The
+// plan-mode block must still win, otherwise the impl-mode message
+// would render mid-plan.
+func TestStop_BlocksInPlanMode_WithPlanPathFromPriorRound(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	ctx := context.Background()
+	dir := initTestRepo(t)
+
+	require.NoError(t, store.SetPlanPath(ctx, "s1", "/old/plan.md", "old-sha"))
+	require.NoError(t, store.SetInPlanMode(ctx, "s1", true))
+
+	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+
+	var stdout bytes.Buffer
+
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	require.NoError(t, err)
+
+	var result map[string]any
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	assert.Equal(t, "block", result["decision"])
+	assert.Contains(t, result["reason"], "plan mode")
+}
+
+func TestStop_AllowsAfterCommitClear(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	ctx := context.Background()
+	dir := initTestRepo(t)
+
+	// Mid-implementation state.
+	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
+
+	promptInput := makeHookJSON(t, HookInput{
+		SessionID: "s1",
+		Prompt:    "/commit",
+	})
+	require.NoError(t, handleUserPromptSubmit(t.Context(), promptInput, store, cfg, logger))
+
+	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+
+	var stdout bytes.Buffer
+
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	require.NoError(t, err)
+	assert.Empty(t, stdout.Bytes(), "Stop should allow through after /commit clears state")
+}
+
+func TestUserPromptSubmit_CommitClearsSession(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	ctx := context.Background()
+
+	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
+	require.NoError(t, store.SetInPlanMode(ctx, "s1", true))
+
+	input := makeHookJSON(t, HookInput{SessionID: "s1", Prompt: "/commit"})
+
+	err := handleUserPromptSubmit(t.Context(), input, store, cfg, logger)
+	require.NoError(t, err)
+
+	count, planPath, baseSHA, err := store.Session(ctx, "s1")
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+	assert.Equal(t, "", planPath)
+	assert.Equal(t, "", baseSHA)
+
+	inPlanMode, err := store.InPlanMode(ctx, "s1")
+	require.NoError(t, err)
+	assert.False(t, inPlanMode)
+}
+
+func TestUserPromptSubmit_CommitWithArgsClears(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	ctx := context.Background()
+
+	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
+
+	input := makeHookJSON(t, HookInput{SessionID: "s1", Prompt: "/commit feat: add foo"})
+
+	err := handleUserPromptSubmit(t.Context(), input, store, cfg, logger)
+	require.NoError(t, err)
+
+	_, planPath, _, err := store.Session(ctx, "s1")
+	require.NoError(t, err)
+	assert.Equal(t, "", planPath)
+}
+
+func TestUserPromptSubmit_CommitPushPrAlsoClears(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	ctx := context.Background()
+
+	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
+
+	input := makeHookJSON(t, HookInput{SessionID: "s1", Prompt: "/commit-push-pr"})
+
+	err := handleUserPromptSubmit(t.Context(), input, store, cfg, logger)
+	require.NoError(t, err)
+
+	_, planPath, _, err := store.Session(ctx, "s1")
+	require.NoError(t, err)
+	assert.Equal(t, "", planPath)
+}
+
+func TestUserPromptSubmit_MergeAlsoClears(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	ctx := context.Background()
+
+	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
+
+	input := makeHookJSON(t, HookInput{SessionID: "s1", Prompt: "/merge"})
+
+	err := handleUserPromptSubmit(t.Context(), input, store, cfg, logger)
+	require.NoError(t, err)
+
+	_, planPath, _, err := store.Session(ctx, "s1")
+	require.NoError(t, err)
+	assert.Equal(t, "", planPath)
+}
+
+func TestUserPromptSubmit_NonCommitIsNoop(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"plain text":              "just a regular prompt",
+		"unrelated slash command": "/rebase",
+		"coordinator skill":       "/coordinator do stuff",
+		"workmux skill":           "/workmux",
+		"mid-sentence mention":    "please /commit this change",
+		"prefixed mention":        "the /commit skill",
+		"case mismatch":           "/Commit",
+		"empty prompt":            "",
+	}
+
+	for name, prompt := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			store := newTestStore(t)
+			logger := slog.New(slog.DiscardHandler)
+			ctx := context.Background()
+
+			sessionID := "s-" + name
+			require.NoError(t, store.SetPlanPath(ctx, sessionID, "/plan.md", "sha1"))
+
+			input := makeHookJSON(t, HookInput{SessionID: sessionID, Prompt: prompt})
+
+			err := handleUserPromptSubmit(t.Context(), input, store, cfg, logger)
+			require.NoError(t, err)
+
+			_, planPath, _, err := store.Session(ctx, sessionID)
+			require.NoError(t, err)
+			assert.Equal(t, "/plan.md", planPath, "session must NOT be cleared for prompt %q", prompt)
+		})
+	}
 }
 
 func TestStopHookActive_ClearsAndAllows(t *testing.T) {
@@ -804,5 +1101,22 @@ func TestBuildAskReason_EmptyCatalog(t *testing.T) {
 	assert.Contains(t, reason, "AskUserQuestion")
 	assert.Contains(t, reason, "/p.md")
 	assert.Contains(t, reason, "abc123")
+	assert.Contains(t, reason, "If you are not done")
 	assert.NotContains(t, reason, "  - ") // zero bullets rendered
+}
+
+// TestBuildAskReason_NotDoneBranchPresent enforces the unified-message
+// contract: the populated-catalog rendering must include both branches
+// so Claude can choose between confirming done (post-impl AUQ) or
+// asking a clarifying question.
+func TestBuildAskReason_NotDoneBranchPresent(t *testing.T) {
+	t.Parallel()
+
+	reason := testCatalog().BuildAskReason("/p.md", "abc123")
+
+	assert.Contains(t, reason, "completed the implementation")
+	assert.Contains(t, reason, "If you are not done")
+	assert.Contains(t, reason, "implementation-reviewer")
+	assert.Contains(t, reason, "/p.md")
+	assert.Contains(t, reason, "abc123")
 }

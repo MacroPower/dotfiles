@@ -11,6 +11,7 @@ type HookInput struct {
 	SessionID      string         `json:"session_id"`
 	ToolName       string         `json:"tool_name"`
 	ToolInput      map[string]any `json:"tool_input"`
+	Prompt         string         `json:"prompt"`
 	StopHookActive bool           `json:"stop_hook_active"`
 }
 

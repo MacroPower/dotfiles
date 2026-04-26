@@ -390,14 +390,24 @@ let
       description = "Review code changes against the plan. Pass it the plan file path and the base SHA.";
     }
     {
-      label = "simplify";
-      aliases = [ "code-simplifier" ];
+      label = "code-simplifier";
       description = "Review and simplify the implemented code.";
     }
     {
       label = "humanizer";
       description = "Clean up AI writing patterns in any prose/docs that changed.";
     }
+  ];
+
+  # Wrap-up skills whose UserPromptSubmit invocation clears the
+  # plan-guard session state, releasing Stop. `merge` is the public
+  # name of the wm-merge skill (see configs/claude/skills/wm-merge/
+  # SKILL.md `name: merge`). Other wm-* skills (rebase, coordinator,
+  # workmux) are not wrap-up actions and are intentionally excluded.
+  commitSkills = [
+    "commit"
+    "commit-push-pr"
+    "merge"
   ];
 
   hookRouter = pkgs.writeShellApplication {
@@ -414,6 +424,7 @@ let
         --db "${config.xdg.stateHome}/hook-router/state.db" \
         --log-file "${config.xdg.stateHome}/hook-router/hook-router.log" \
         --post-impl-agents ${lib.escapeShellArg (builtins.toJSON postImplAgents)} \
+        --commit-skills ${lib.escapeShellArg (builtins.toJSON commitSkills)} \
         "$@"
     '';
   };
@@ -1686,6 +1697,14 @@ in
                   {
                     type = "command";
                     command = "${workmux} working";
+                  }
+                ];
+              }
+              {
+                hooks = [
+                  {
+                    type = "command";
+                    command = "${lib.getExe hookRouter} --event UserPromptSubmit";
                   }
                 ];
               }

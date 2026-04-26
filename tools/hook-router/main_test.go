@@ -242,6 +242,44 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, stdout.Bytes())
 	})
 
+	t.Run("UserPromptSubmit: no store is noop", func(t *testing.T) {
+		t.Parallel()
+
+		input := `{"session_id":"test","prompt":"/commit"}`
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "UserPromptSubmit", "", nil, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("UserPromptSubmit /commit prompt routes through handler", func(t *testing.T) {
+		t.Parallel()
+
+		store := newTestStore(t)
+		ctx := t.Context()
+
+		require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
+
+		routedCfg := config{
+			postImpl:     testCatalog(),
+			commitSkills: []string{"commit", "commit-push-pr", "merge"},
+		}
+
+		input := `{"session_id":"s1","prompt":"/commit"}`
+
+		var stdout bytes.Buffer
+
+		err := run(ctx, strings.NewReader(input), &stdout, "UserPromptSubmit", "", store, routedCfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+
+		_, planPath, _, err := store.Session(ctx, "s1")
+		require.NoError(t, err)
+		assert.Equal(t, "", planPath, "session must be cleared after /commit")
+	})
+
 	t.Run("PreToolUse unknown tool is noop", func(t *testing.T) {
 		t.Parallel()
 

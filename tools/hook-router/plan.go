@@ -6,8 +6,21 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 )
+
+// planModeBlockReason is the Stop block message used while a session
+// is between EnterPlanMode and an approved ExitPlanMode. Plan path is
+// not yet recorded at this point so the message is a literal string.
+//
+// The wording deliberately tells Claude what to do (continue, ask, or
+// exit plan mode) without disclosing what specifically releases the
+// gate. Spelling out the unlock condition tends to make the model
+// optimize for that condition rather than for the work it represents.
+const planModeBlockReason = "You are in plan mode. Continue working on the plan," +
+	" call AskUserQuestion if you need input from the user, or call" +
+	" ExitPlanMode when the plan is ready."
 
 func handleExitPlanModePre(
 	ctx context.Context,
@@ -77,6 +90,14 @@ func handleExitPlanModePre(
 		return encodeJSON(stdout, denyResponse("plan-guard store unavailable, please retry"))
 	}
 
+	// Fail-open: at worst Stop will keep blocking with the plan-mode
+	// message after ExitPlanMode succeeded; the user's recovery path
+	// is the stop_hook_active escape hatch in handleStop.
+	err = store.SetInPlanMode(ctx, hook.SessionID, false)
+	if err != nil {
+		logger.Error("failed to clear in_plan_mode", slog.Any("error", err))
+	}
+
 	logger.Info("allowed ExitPlanMode, recorded plan path",
 		slog.String("session", hook.SessionID),
 		slog.Int("count", count),
@@ -131,30 +152,50 @@ func (c *PostImplCatalog) HasLabel(label string) bool { return c.labels[label] }
 // Empty reports whether the catalog has no agents.
 func (c *PostImplCatalog) Empty() bool { return len(c.agents) == 0 }
 
-// BuildAskReason returns the Stop block-message that instructs Claude
-// to call AskUserQuestion with the catalog's canonical option labels.
-// Bullets are rendered in catalog order (Nix list order, preserved
-// through [builtins.toJSON]).
+// BuildAskReason returns the unified Stop block-message used while a
+// session is mid-implementation. The message has two branches:
+//
+//   - "If you have completed the implementation": instructs Claude to
+//     call AskUserQuestion with the catalog's canonical option labels.
+//   - "If you are not done": directs Claude to keep working, with
+//     AskUserQuestion as the path for clarifying questions.
+//
+// Bullets render in catalog order (Nix list order, preserved through
+// [builtins.toJSON]). When the catalog is empty the bullet section is
+// suppressed and the "completed" branch falls back to a single sentence
+// — production should never hit this path (mainErr logs a warning) but
+// the invariant that callers can render without a nil-guard holds.
+//
+// Wording note: the message describes what Claude should do, not what
+// the gate is checking. Disclosing the precise unlock condition (e.g.
+// "Stop unlocks when a post-impl AUQ is answered against the current
+// git state") tends to make the model optimize for the unlock rather
+// than for the work the unlock is meant to gate.
 func (c *PostImplCatalog) BuildAskReason(planPath, baseSHA string) string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "Before finishing, call AskUserQuestion to decide which post-implementation"+
-		" agents should run against the plan at %s. Pre-implementation"+
-		" baseline commit: %s.\n\n"+
-		"Ask one multi-select question. Each option's `label` MUST be exactly one"+
-		" of (free-form labels will not satisfy the gate):\n", planPath, baseSHA)
+	fmt.Fprintf(&b, "You are implementing the plan at %s (baseline: %s).\n\n",
+		planPath, baseSHA)
 
-	for _, a := range c.agents {
-		fmt.Fprintf(&b, "  - %s: %s\n", a.Label, a.Description)
+	if len(c.agents) > 0 {
+		b.WriteString("If you have completed the implementation, call AskUserQuestion" +
+			" with the post-implementation review options below. Each option's" +
+			" `label` MUST be exactly one of:\n")
+
+		for _, a := range c.agents {
+			fmt.Fprintf(&b, "  - %s: %s\n", a.Label, a.Description)
+		}
+
+		b.WriteString("After the user answers, run the chosen agents in an" +
+			" appropriate order.\n\n")
+	} else {
+		b.WriteString("If you have completed the implementation, call AskUserQuestion" +
+			" with the post-implementation review options provided by your" +
+			" environment.\n\n")
 	}
 
-	b.WriteString("\nAfter the user answers, choose an appropriate order and concurrency for" +
-		" the selected agents (e.g. review before committing; independent passes" +
-		" can run in parallel). Run them, then attempt to stop. If a selected" +
-		" agent modified code, Stop will re-block; call AskUserQuestion again" +
-		" (offering the same options) so the user can decide whether to run any" +
-		" agent against the new state (e.g. re-run implementation-reviewer after" +
-		" simplify).")
+	b.WriteString("If you are not done, keep working. Call AskUserQuestion if you" +
+		" need input from the user.")
 
 	return b.String()
 }
@@ -309,9 +350,126 @@ func handleEnterPlanMode(ctx context.Context, input []byte, store *Store, logger
 		logger.Error("failed to reset session", slog.Any("error", err))
 	}
 
+	// Fail-open: if the bit doesn't get set, Stop falls through to the
+	// existing post-impl path. The user loses the plan-mode block but
+	// still gets the deny-on-EnterPlanMode workflow.
+	err = store.SetInPlanMode(ctx, hook.SessionID, true)
+	if err != nil {
+		logger.Error("failed to set in_plan_mode", slog.Any("error", err))
+	}
+
 	logger.Info("reset session for plan mode", slog.String("session", hook.SessionID))
 
 	return nil
+}
+
+// handleUserPromptSubmit clears the session when the user invokes a
+// configured wrap-up skill (e.g. /commit, /merge). After the clear,
+// Stop allows through normally because Session() re-INSERTs the row
+// with all defaults (in_plan_mode=0, plan_path='').
+//
+// Fail-open: if the parse fails or the clear errors, the user's
+// recovery path is the stop_hook_active escape hatch — Claude Code
+// retries the Stop hook with that flag set after the next block, and
+// handleStop's existing escape hatch will clear and allow.
+func handleUserPromptSubmit(
+	ctx context.Context,
+	input []byte,
+	store *Store,
+	cfg config,
+	logger *slog.Logger,
+) error {
+	hook, err := parseHookInput(input)
+	if err != nil {
+		logger.Warn("failed to parse hook input", slog.Any("error", err))
+		return nil
+	}
+
+	if hook.SessionID == "" {
+		return nil
+	}
+
+	skill, ok := matchCommitPrompt(hook.Prompt, cfg.commitSkills)
+	if !ok {
+		return nil
+	}
+
+	err = store.ClearSession(ctx, hook.SessionID)
+	if err != nil {
+		// Fail-open: leaves the user behind a still-active gate, but
+		// stop_hook_active in handleStop is the documented recovery.
+		logger.Error("failed to clear session for wrap-up skill",
+			slog.String("session", hook.SessionID),
+			slog.String("skill", skill),
+			slog.Any("error", err),
+		)
+
+		return nil
+	}
+
+	logger.Info("cleared session for wrap-up skill",
+		slog.String("session", hook.SessionID),
+		slog.String("skill", skill),
+	)
+
+	return nil
+}
+
+// matchCommitPrompt reports whether prompt opens with one of the
+// configured wrap-up skill invocations (e.g. "/commit", "/merge foo").
+// Returns the matched skill name (without the leading slash) on hit.
+//
+// Matching is anchored on the first whitespace-delimited token of the
+// first line, with a required leading slash. Comparison is case
+// sensitive — Claude Code slash commands are registered lowercase and
+// case-sensitive — so "/Commit" does not match "/commit", and a
+// conversational mention like "please /commit this" never matches
+// (the first token is "please").
+func matchCommitPrompt(prompt string, skills []string) (string, bool) {
+	trimmed := strings.TrimSpace(prompt)
+	if trimmed == "" {
+		return "", false
+	}
+
+	if i := strings.IndexByte(trimmed, '\n'); i >= 0 {
+		trimmed = trimmed[:i]
+	}
+
+	fields := strings.Fields(trimmed)
+	if len(fields) == 0 {
+		return "", false
+	}
+
+	token := fields[0]
+	if !strings.HasPrefix(token, "/") {
+		return "", false
+	}
+
+	name := token[1:]
+	if !slices.Contains(skills, name) {
+		return "", false
+	}
+
+	return name, true
+}
+
+// parseCommitSkills decodes the JSON payload passed via --commit-skills
+// into a list of skill names. An empty input yields nil (valid: no
+// wrap-up skills configured); malformed JSON returns an error so
+// wrapper misconfiguration is loud.
+func parseCommitSkills(s string) ([]string, error) {
+	if s == "" {
+		return nil, nil
+	}
+
+	var skills []string
+
+	err := json.Unmarshal([]byte(s), &skills)
+	if err != nil {
+		return nil, fmt.Errorf("decoding commit skills JSON: %w", err)
+	}
+
+	return skills, nil
 }
 
 func handleStop(
@@ -356,27 +514,29 @@ func handleStop(
 		return encodeJSON(stdout, blockResponse("plan-guard store unavailable, please retry"))
 	}
 
+	// Fail-closed: same posture as the Session() error above. A stale
+	// store should produce a block + retry, not a silent allow.
+	inPlanMode, err := store.InPlanMode(ctx, hook.SessionID)
+	if err != nil {
+		logger.Error("failed to read in_plan_mode", slog.Any("error", err))
+		return encodeJSON(stdout, blockResponse("plan-guard store unavailable, please retry"))
+	}
+
+	// Plan-mode block must run BEFORE the empty-plan-path allow:
+	// EnterPlanMode sets in_plan_mode=1 with plan_path="" (only set on
+	// the second/approved ExitPlanMode call), so falling through here
+	// would silently allow Stop in plan mode.
+	if inPlanMode {
+		logger.Info("blocking stop in plan mode", slog.String("session", hook.SessionID))
+		return encodeJSON(stdout, blockResponse(planModeBlockReason))
+	}
+
 	if planPath == "" {
 		logger.Info("no plan path, allowing through", slog.String("session", hook.SessionID))
 		return nil
 	}
 
 	git := &GitRunner{Dir: workDir}
-
-	changed, err := git.HasChanges(ctx, baseSHA)
-	if err != nil {
-		logger.Warn("failed to check for changes", slog.Any("error", err))
-		return nil
-	}
-
-	if !changed {
-		logger.Info("no code changes, allowing through",
-			slog.String("session", hook.SessionID),
-			slog.String("plan_path", planPath),
-		)
-
-		return nil
-	}
 
 	// Fail-open on the fingerprint read: the fallback is the normal block
 	// response below, which is more useful than a "store unavailable"

@@ -19,9 +19,14 @@ import (
 // cfg.postImpl.HasLabel(...) and cfg.postImpl.BuildAskReason(...)
 // without a nil-guard. Tests that exercise handlers must construct a
 // catalog too (see testCatalog in plan_test.go).
+//
+// commitSkills lists the wrap-up skill names (without leading slash)
+// whose UserPromptSubmit invocation clears plan-guard state. A nil or
+// empty slice disables the failsafe.
 type config struct {
-	postImpl   *PostImplCatalog
-	rtkRewrite string
+	postImpl     *PostImplCatalog
+	commitSkills []string
+	rtkRewrite   string
 }
 
 func configFromEnv() config {
@@ -32,21 +37,22 @@ func configFromEnv() config {
 
 func main() {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
-	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop)")
+	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, UserPromptSubmit)")
 	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion)")
 	dbPath := flag.String("db", "", "path to SQLite state database")
 	postImplAgents := flag.String("post-impl-agents", "", "JSON array of {label, aliases?, description} entries")
+	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplAgents)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplAgents, *commitSkills)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplAgentsJSON string) error {
+func mainErr(logFile, event, tool, dbPath, postImplAgentsJSON, commitSkillsJSON string) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -85,8 +91,14 @@ func mainErr(logFile, event, tool, dbPath, postImplAgentsJSON string) error {
 		logger.Warn("post-impl catalog is empty")
 	}
 
+	skills, err := parseCommitSkills(commitSkillsJSON)
+	if err != nil {
+		return fmt.Errorf("parsing --commit-skills: %w", err)
+	}
+
 	cfg := configFromEnv()
 	cfg.postImpl = catalog
+	cfg.commitSkills = skills
 
 	return run(ctx, os.Stdin, os.Stdout, event, tool, store, cfg, logger)
 }
@@ -148,6 +160,13 @@ func run(
 		}
 
 		return handleStop(ctx, input, stdout, store, cfg, ".", logger)
+
+	case "UserPromptSubmit":
+		if store == nil {
+			return nil
+		}
+
+		return handleUserPromptSubmit(ctx, input, store, cfg, logger)
 
 	default:
 		// Backward compat: no --event flag, treat as Bash PreToolUse.

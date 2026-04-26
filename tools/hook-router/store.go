@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     base_sha        TEXT NOT NULL DEFAULT '',
     review_head_sha TEXT NOT NULL DEFAULT '',
     review_wt_hash  TEXT NOT NULL DEFAULT '',
+    in_plan_mode    INTEGER NOT NULL DEFAULT 0,
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `
@@ -35,11 +36,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 var migrations = []string{
 	`ALTER TABLE sessions ADD COLUMN review_head_sha TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE sessions ADD COLUMN review_wt_hash TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE sessions ADD COLUMN in_plan_mode INTEGER NOT NULL DEFAULT 0`,
 }
 
 const (
 	busyTimeoutMs = 30000
-	schemaVersion = 2
+	schemaVersion = 3
 )
 
 // Store manages plan-guard session state in a SQLite database.
@@ -264,6 +266,12 @@ func (s *Store) AskFingerprint(ctx context.Context, id string) (headSHA, wtHash 
 }
 
 // ResetSession clears plan state for a session (used on EnterPlanMode).
+//
+// in_plan_mode is reset to 0 along with the other columns so the row is
+// returned to a clean baseline. EnterPlanMode follows ResetSession with
+// an explicit [*Store.SetInPlanMode] call to flip the bit on, keeping
+// the bit's lifecycle owned by EnterPlanMode rather than coupling it
+// into ResetSession.
 func (s *Store) ResetSession(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO sessions (session_id)
@@ -274,12 +282,55 @@ func (s *Store) ResetSession(ctx context.Context, id string) error {
 		   base_sha = '',
 		   review_head_sha = '',
 		   review_wt_hash = '',
+		   in_plan_mode = 0,
 		   updated_at = datetime('now')`, id)
 	if err != nil {
 		return fmt.Errorf("resetting session: %w", err)
 	}
 
 	return nil
+}
+
+// SetInPlanMode records whether the session is currently inside an
+// EnterPlanMode/ExitPlanMode bracket. The Stop hook reads this bit to
+// block Stop while plan-mode is open.
+func (s *Store) SetInPlanMode(ctx context.Context, id string, inPlanMode bool) error {
+	v := 0
+	if inPlanMode {
+		v = 1
+	}
+
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sessions (session_id, in_plan_mode)
+		 VALUES (?, ?)
+		 ON CONFLICT(session_id) DO UPDATE SET
+		   in_plan_mode = excluded.in_plan_mode,
+		   updated_at = datetime('now')`, id, v)
+	if err != nil {
+		return fmt.Errorf("setting in_plan_mode: %w", err)
+	}
+
+	return nil
+}
+
+// InPlanMode reports whether the given session is currently inside an
+// EnterPlanMode/ExitPlanMode bracket. Returns false (not an error)
+// when the session row does not exist.
+func (s *Store) InPlanMode(ctx context.Context, id string) (bool, error) {
+	var v int
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT in_plan_mode FROM sessions WHERE session_id = ?`, id).
+		Scan(&v)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("querying in_plan_mode: %w", err)
+	}
+
+	return v != 0, nil
 }
 
 // ClearSession removes a session entirely.
