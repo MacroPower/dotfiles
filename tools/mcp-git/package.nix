@@ -15,6 +15,7 @@ buildGoModule {
 
   meta = {
     description = "MCP server exposing idempotent git operations";
+    homepage = "https://github.com/MacroPower/dotfiles/tree/main/tools/mcp-git";
     license = lib.licenses.asl20;
     mainProgram = "mcp-git";
   };

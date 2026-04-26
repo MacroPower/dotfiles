@@ -135,7 +135,11 @@ let
 
   # Build inventory for a home-manager config.
   hmInventory = hmCfg: {
-    nixPackages = extractPackages (hmCfg.home.packages ++ extractProgramExtraPackages hmCfg.programs);
+    nixPackages = extractPackages (
+      hmCfg.home.packages
+      ++ extractProgramExtraPackages hmCfg.programs
+      ++ (hmCfg.dotfiles.extraInventoryPackages or [ ])
+    );
     programs = extractPrograms hmCfg.programs;
   };
 

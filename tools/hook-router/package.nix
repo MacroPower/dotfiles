@@ -16,6 +16,7 @@ buildGoModule {
 
   meta = {
     description = "Claude Code hook router with plan-guard lifecycle management";
+    homepage = "https://github.com/MacroPower/dotfiles/tree/main/tools/hook-router";
     license = lib.licenses.asl20;
     mainProgram = "hook-router";
   };

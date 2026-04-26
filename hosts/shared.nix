@@ -24,6 +24,7 @@
       builtins.elem (lib.getName pkg) [
         "appcleaner"
         "claude-code"
+        "claude-code-wrapped"
         "discord"
         "drawio"
         "frankerfacez"

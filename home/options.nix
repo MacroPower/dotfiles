@@ -52,6 +52,17 @@ in
       description = "Additional packages to install in home.packages.";
     };
 
+    extraInventoryPackages = mkOption {
+      type = types.listOf types.package;
+      default = [ ];
+      description = ''
+        Additional packages to surface in the README inventory only. Use for
+        derivations referenced transitively by Nix store path (e.g. MCP stdio
+        servers invoked from program config) that should still be documented
+        as installed tools. These are not added to home.packages.
+      '';
+    };
+
     extraXdgConfigFiles = mkOption {
       type = types.attrsOf types.anything;
       default = { };

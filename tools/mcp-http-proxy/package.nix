@@ -19,6 +19,7 @@ buildGoModule {
 
   meta = {
     description = "Stdio MCP server proxying to an upstream Streamable HTTP endpoint";
+    homepage = "https://github.com/MacroPower/dotfiles/tree/main/tools/mcp-http-proxy";
     license = lib.licenses.asl20;
     mainProgram = "mcp-http-proxy";
   };

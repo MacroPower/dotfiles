@@ -508,6 +508,7 @@ let
     name = "claude-code-wrapped";
     paths = [ pkgs.llm-agents.claude-code ];
     nativeBuildInputs = [ pkgs.makeWrapper ];
+    inherit (pkgs.llm-agents.claude-code) meta version;
     postBuild = ''
       wrapProgram $out/bin/claude \
         --set CLAUDE_CODE_TMUX_TRUECOLOR 1 \
@@ -1797,6 +1798,13 @@ in
       "rtk/config.toml".source = rtkConfig;
       "workmux/config.yaml".source = workmuxConfig;
     };
+
+    dotfiles.extraInventoryPackages = [
+      pkgs.hook-router
+      pkgs.mcp-fetch
+      pkgs.mcp-git
+      pkgs.mcp-http-proxy
+    ];
 
     home = {
       packages = [

@@ -12,6 +12,7 @@ buildGoModule {
 
   meta = {
     description = "Tiny self-contained fortune cookie generator";
+    homepage = "https://github.com/MacroPower/dotfiles/tree/main/tools/cookie";
     license = lib.licenses.asl20;
     mainProgram = "cookie";
   };
