@@ -117,12 +117,23 @@ let
     ];
   };
 
+  # direnv's checkPhase runs bash/fish/zsh integration test scripts
+  # that take 10+ minutes per closure rebuild and occasionally hang on
+  # tty operations under the macOS Nix sandbox. We trust upstream's
+  # CI to validate releases; skip the check phase locally.
+  direnvOverlay = _final: prev: {
+    direnv = prev.direnv.overrideAttrs {
+      doCheck = false;
+    };
+  };
+
   sharedOverlays = system: [
     lixOverlay
     localOverlay
     lupaOverlay
     fastmcpOverlay
     aioboto3Overlay
+    direnvOverlay
     (nurJacobColvinOverlay system)
     ryceeOverlay
     (workmuxOverlay system)
