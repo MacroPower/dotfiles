@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Open a file path in vim inside a tmux popup.
+# Open a file path in nvim inside a tmux popup.
 # Called by tmux-thumbs @thumbs-upcase-command with matched text as $1.
 
-input="${1?Usage: tmux-vim-popup <path>}"
+input="${1?Usage: tmux-nvim-popup <path>}"
 
 # Expand leading tilde
 input="${input/#\~/$HOME}"
@@ -29,4 +29,4 @@ fi
 # Normalize
 file="$(realpath -m "$file")"
 
-tmux-popup-run -T " vim " -w 90% -h 90% -d "$(dirname "$file")" vim +"$line" "$file"
+tmux-popup-run -T " nvim " -w 90% -h 90% -d "$(dirname "$file")" nvim +"$line" "$file"

@@ -25,6 +25,7 @@ let
     hook-router = final.callPackage paths.hook-router { };
     mcp-fetch = final.callPackage paths.mcp-fetch { };
     mcp-http-proxy = final.callPackage paths.mcp-http-proxy { };
+    cookie = final.callPackage paths.cookie { };
     mcp-kubernetes = final.callPackage paths.mcp-kubernetes { };
     radar = final.callPackage paths.radar { };
     radar-desktop = final.callPackage paths.radar-desktop { };

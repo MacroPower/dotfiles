@@ -1,0 +1,80 @@
+nvim -- OP [count] MOD NOUN
+
+OPERATORS
+  c/d/y      change/delete/yank
+  v/V/C-v    visual char/line/block
+  >/<        indent/dedent
+  =          auto-indent
+  gu/gU      lower/upper case
+  gq         format/wrap text
+  g~/~       toggle case (motion / single)
+  gc         comment toggle
+  gcc/gc󰆾    comment line/motion
+  s          surround
+  Doubled = line; CAP = to end of line
+MODIFIERS
+  i          inner (excludes bounds)
+  a          around (includes bounds)
+MOTIONS
+  w/b/e      word next/prev/end
+  W/B/E      WORD next/prev/end
+  ge/gE      end of prev word/WORD
+  0/^/$      line start/non-blank/end
+  f{c}/F{c}  find char fwd/back
+  t{c}/T{c}  till char fwd/back
+  ;/,        repeat/reverse last f/t
+  {/}/[[/]]  prev/next paragraph/section
+  gg/G       file top/bottom
+  H/M/L      screen top/mid/bot
+  zz/zt/zb   scroll cursor mid/top/bot
+  C-f/b      page full down/up
+  C-o/i      jump back/forward
+  %          match bracket
+  'a/`a/''   jump mark line/exact/back
+  ma         set mark a
+  s/p        sentence/paragraph
+  f/c/a/t    func/class/param/tag
+  ilX/inX    last/next X
+  \//?        search fwd/back
+  n/N        next/prev match
+  */#        word under cursor fwd/back
+  co/ct      our/their conflicts
+  cb/c0      both/no conflicts
+EDITING
+  p/P        paste after/before
+  ]p/[p      cycle yank fwd/back
+  .          repeat last change
+  u/C-r      undo/redo
+  J          join lines
+  C-a/C-x    inc/dec number
+  Y          yank to end of line
+  C-l        clear search highlight
+  gx         open URL/path under cursor
+WINDOWS (C-w + X)
+  s/v        horiz/vert split
+  o          close all others
+  =          equalize sizes
+LSP (g + X)
+  gd/gD      def/decl
+  gr/gi/gy   refs/impl/type
+  K          hover
+NEXT/PREV (]X next, [X prev)
+  b/c/i/j    buffer/comment/indent/jump
+  l/o/q/u    location/oldfile/quickfix/undo
+  w/y/t/f    window/yank/todo/function
+  a/x/d      parameter/conflict/diagnostic
+MULTICURSOR
+  ↑/↓        add cursor
+  ←/→        prev/next cursor (layer)
+  C-q        toggle cursor
+  esc        clear cursors
+TELESCOPE PICKER
+  C-x/v/t    open in split/vsplit/tab
+  C-q        send results to quickfix
+  C-\/        show all picker keys
+  C-u/d      scroll preview up/down
+MISC
+  -          parent dir
+  zR/zM      open/close all folds
+  s          jump2d
+  gS         toggle split/join

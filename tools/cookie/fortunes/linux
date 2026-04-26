@@ -1,0 +1,117 @@
+Linux ext2fs has been stable for a long time, now it's time to break it
+	-- Linux-Kongress '95 in Berlin
+%
+The state of some commercial Un*x is more unsecure than any Linux box
+without a root password...
+	-- Bernd Eckenfels
+%
+Less is more or less more
+	-- Y_Plentyn on #LinuxGER
+%
+Let's call it an accidental feature.
+	--Larry Wall
+%
+Feel free to contact me (flames about my english and the useless of this
+driver will be redirected to /dev/null, oh no, it's full...).
+	-- Michael Beck, describing the PC-speaker sound device
+%
+lp1 on fire
+	-- One of the more obfuscated kernel messages
+%
+/*
+ * Oops. The kernel tried to access some bad page. We'll have to
+ * terminate things with extreme prejudice.
+ */
+ die_if_kernel("Oops", regs, error_code);
+	-- From linux/arch/i386/mm/fault.c
+%
+Be warned that typing \fBkillall \fIname\fP may not have the desired
+effect on non-Linux systems, especially when done by a privileged user.
+	-- From the killall manual page
+%
+Note that if I can get you to "su and say" something just by asking,
+you have a very serious security problem on your system and you should
+look into it.
+	-- Paul Vixie, vixie-cron 3.0.1 installation notes
+%
+How should I know if it works? That's what beta testers are for.
+I only coded it.
+	-- Linus Torvalds
+%
+Absolutely nothing should be concluded from these figures except that
+no conclusion can be drawn from them.
+	-- Joseph L. Brothers, Linux/PowerPC Project)
+%
+I don't know why, but first C programs tend to look a lot worse than
+first programs in any other language (maybe except for fortran, but then
+I suspect all fortran programs look like `firsts')
+	-- Olaf Kirch
+%
+On a normal ascii line, the only safe condition to detect is a 'BREAK'
+- everything else having been assigned functions by Gnu EMACS.
+	-- Tarl Neustaedter
+%
+Oh, I've seen copies [of Linux Journal] around the terminal room at The Labs.
+	-- Dennis Ritchie
+%
+If you want to travel around the world and be invited to speak at a lot
+of different places, just write a Unix operating system.
+	-- Linus Torvalds
+%
+All language designers are arrogant. Goes with the territory...
+	-- Larry Wall
+%
+And the next time you consider complaining that running Lucid Emacs
+19.05 via NFS from a remote Linux machine in Paraguay doesn't seem to
+get the background colors right, you'll know who to thank.
+	-- Matt Welsh
+%
+I once witnessed a long-winded, month-long flamewar over the use of
+mice vs. trackballs... It was very silly.
+	-- Matt Welsh
+%
+What you end up with, after running an operating system concept through
+these many marketing coffee filters, is something not unlike plain hot
+water.
+	-- Matt Welsh
+%
+..you could spend *all day* customizing the title bar. Believe me. I
+speak from experience.
+	-- Matt Welsh
+%
+I would rather spend 10 hours reading someone else's source code than
+10 minutes listening to Musak waiting for technical support which isn't.
+	-- Dr. Greg Wettstein, Roger Maris Cancer Center
+%
+...[Linux's] capacity to talk via any medium except smoke signals.
+	-- Dr. Greg Wettstein, Roger Maris Cancer Center
+%
+I still maintain the point that designing a monolithic kernel in 1991 is a
+fundamental error. Be thankful you are not my student. You would not get a
+high grade for such a design :-)
+	-- Andrew Tanenbaum to Linus Torvalds
+%
+We use Linux for all our mission-critical applications. Having the source code
+means that we are not held hostage by anyone's support department.
+	-- Russell Nelson, President of Crynwr Software
+%
+Linux is obsolete
+	-- Andrew Tanenbaum
+%
+Dijkstra probably hates me.
+	-- Linus Torvalds, in kernel/sched.c
+%
+And 1.1.81 is officially BugFree(tm), so if you receive any bug-reports
+on it, you know they are just evil lies.
+	-- Linus Torvalds
+%
+Sic transit discus mundi
+	-- From the System Administrator's Guide, by Lars Wirzenius
+%
+We all know Linux is great... it does infinite loops in 5 seconds.
+	-- Linus Torvalds
+%
+The chat program is in public domain. This is not the GNU public license.
+If it breaks then you get to keep both pieces.
+	-- Copyright notice for the chat program
+%

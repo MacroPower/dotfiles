@@ -156,14 +156,14 @@ let
     + builtins.readFile ../scripts/tmux-hints.sh;
   };
 
-  tmuxVimPopup = pkgs.writeShellApplication {
-    name = "tmux-vim-popup";
+  tmuxNvimPopup = pkgs.writeShellApplication {
+    name = "tmux-nvim-popup";
     runtimeInputs = [
       pkgs.tmux
       pkgs.coreutils
       tmuxPopupRun
     ];
-    text = builtins.readFile ../scripts/tmux-vim-popup.sh;
+    text = builtins.readFile ../scripts/tmux-nvim-popup.sh;
   };
 
   tmuxHintsToggle = pkgs.writeShellApplication {
@@ -1031,7 +1031,7 @@ in
         plugin = tmux-thumbs;
         extraConfig = ''
           set -g @thumbs-key f
-          set -g @thumbs-upcase-command 'tmux-vim-popup "{}"'
+          set -g @thumbs-upcase-command 'tmux-nvim-popup "{}"'
 
           # Hint styling
           set -g @thumbs-hint-fg-color "#${tmux.bg}"
@@ -1076,7 +1076,7 @@ in
         plugin = resurrect;
         extraConfig = ''
           set -g @resurrect-capture-pane-contents 'on'
-          set -g @resurrect-strategy-vim 'session'
+          set -g @resurrect-strategy-nvim 'session'
           set -g @resurrect-processes '"~btm" "~lazydocker" "~gitui"'
         '';
       }
@@ -1239,7 +1239,6 @@ in
 
   xdg.configFile."tmux/plugins/tmux-which-key/config.yaml".source = tmuxWhichKeyConfig;
   xdg.configFile."hints/tmux.txt".source = tmuxHintsFile;
-  xdg.configFile."hints/vim.txt".source = ../configs/hints/vim.txt;
 
   home.activation.tmuxSocketDir = lib.mkIf (config.dotfiles.tmux.socketPath != null) (
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
@@ -1262,7 +1261,7 @@ in
     tmuxObsidianTask
     tmuxHints
     tmuxHintsToggle
-    tmuxVimPopup
+    tmuxNvimPopup
     tmuxPopupRun
     tmuxSeshPopup
     tmuxFilePopup

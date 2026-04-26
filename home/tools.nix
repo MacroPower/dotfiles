@@ -53,7 +53,7 @@ in
       extensions = [ ];
       settings = {
         git_protocol = "ssh";
-        editor = "vim";
+        editor = "nvim";
       };
     };
 

@@ -190,7 +190,7 @@ let
       }
       {
         split = "horizontal";
-        command = "vim";
+        command = "nvim";
       }
       (
         {

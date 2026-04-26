@@ -43,7 +43,7 @@ in
     ./fish.nix
     ./git.nix
     ./gpg.nix
-    ./vim.nix
+    ./neovim.nix
     ./tools.nix
     ./secrets.nix
   ];
@@ -120,7 +120,8 @@ in
 
     sessionVariables = {
       COLORTERM = "truecolor";
-      EDITOR = "vim";
+      EDITOR = "nvim";
+      VISUAL = "nvim";
       HOMEBREW_NO_AUTO_UPDATE = "1";
     };
 

@@ -78,11 +78,6 @@ while true; do
   cmd="${cmd#.}"
   cmd="${cmd%-wrapped}"
 
-  # Command aliases
-  case "$cmd" in
-  nvim) cmd="vim" ;;
-  esac
-
   # Re-render on command change or pane resize
   cur_width=$(tput cols)
   if [ "$cmd" != "$last_cmd" ] || [ "$cur_width" != "$last_width" ]; then

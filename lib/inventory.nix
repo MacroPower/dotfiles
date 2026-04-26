@@ -96,6 +96,36 @@ let
   extractPackages =
     packages: lib.sort (a: b: a.name < b.name) (map pkgMeta (builtins.filter isRealPackage packages));
 
+  # Pull extraPackages from any enabled program (e.g. programs.neovim.extraPackages
+  # bundles gopls, ripgrep, prettierd, etc.). Returns a flat list of derivations
+  # which `extractPackages` then turns into inventory entries alongside
+  # `home.packages`. The jq pipeline dedupes on name, so overlap with home.packages
+  # or another program's package is harmless.
+  extractProgramExtraPackages =
+    programs:
+    let
+      tryExtras =
+        name:
+        let
+          hasEnable = builtins.tryEval (programs.${name} ? enable);
+          tryEnabled =
+            if hasEnable.success && hasEnable.value then
+              builtins.tryEval (builtins.deepSeq programs.${name}.enable programs.${name}.enable)
+            else
+              {
+                success = false;
+                value = false;
+              };
+          v = programs.${name};
+          hasExtras = builtins.tryEval (v ? extraPackages && builtins.isList v.extraPackages);
+        in
+        if tryEnabled.success && tryEnabled.value && hasExtras.success && hasExtras.value then
+          v.extraPackages
+        else
+          [ ];
+    in
+    builtins.concatMap tryExtras (builtins.attrNames programs);
+
   # Extract Homebrew cask/brew names (strings), sorted.
   extractBrewNames =
     items:
@@ -105,7 +135,7 @@ let
 
   # Build inventory for a home-manager config.
   hmInventory = hmCfg: {
-    nixPackages = extractPackages hmCfg.home.packages;
+    nixPackages = extractPackages (hmCfg.home.packages ++ extractProgramExtraPackages hmCfg.programs);
     programs = extractPrograms hmCfg.programs;
   };
 

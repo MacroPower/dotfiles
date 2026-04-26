@@ -161,6 +161,7 @@
                 hook-router = ./tools/hook-router/package.nix;
                 mcp-fetch = ./tools/mcp-fetch/package.nix;
                 mcp-http-proxy = ./tools/mcp-http-proxy/package.nix;
+                cookie = ./tools/cookie/package.nix;
                 radar = ./pkgs/radar.nix;
                 radar-desktop = ./pkgs/radar-desktop.nix;
                 helm-schema = ./pkgs/helm-schema.nix;

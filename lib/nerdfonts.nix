@@ -23,7 +23,19 @@ in
 
     # VCS
     branch = nf "f418";
+    git = nf "f1d3";
     gitTag = nf "f412";
+
+    # Editor / UI
+    code = nf "f121";
+    cursor = nf "f246";
+    fileTree = nf2 "db81" "de45";
+    fire = nf2 "db80" "de38";
+    harpoon = nf2 "db86" "dc40";
+    refresh = nf "f021";
+    save = nf "f0c7";
+    search = nf "f002";
+    tree = nf2 "db81" "dd31";
 
     # Infrastructure
     kubernetes = nf "2638";

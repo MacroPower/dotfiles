@@ -63,10 +63,6 @@ in
         nodejs
         gcc
 
-        # Dev tools
-        gopls
-        nixd
-
         # Python build dependencies
         openssl
         readline
