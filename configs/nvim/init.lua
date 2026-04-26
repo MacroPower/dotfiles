@@ -12,6 +12,19 @@ vim.opt.smartcase = true
 vim.opt.scrolloff = 8
 vim.opt.cursorline = true
 vim.opt.wildmode = "longest:full,full"
+-- Headless Linux (SSH into terrarium, container hosts) has no X/Wayland
+-- clipboard tool. Force OSC 52 so yanks ride the same chain as the pbcopy
+-- shim: Neovim -> inner tmux (set-clipboard on) -> outer tmux -> Ghostty.
+-- macOS/X/Wayland keep Neovim's auto-detected provider (pbcopy / wl-copy /
+-- xclip), which already talks to a real clipboard.
+if vim.fn.has("mac") == 0 and vim.env.DISPLAY == nil and vim.env.WAYLAND_DISPLAY == nil then
+  local osc52 = require("vim.ui.clipboard.osc52")
+  vim.g.clipboard = {
+    name = "OSC 52",
+    copy = { ["+"] = osc52.copy("+"), ["*"] = osc52.copy("*") },
+    paste = { ["+"] = osc52.paste("+"), ["*"] = osc52.paste("*") },
+  }
+end
 vim.opt.clipboard = "unnamedplus"
 vim.opt.updatetime = 100
 vim.opt.termguicolors = true -- explicit; nvim auto-enables based on $COLORTERM

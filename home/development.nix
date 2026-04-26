@@ -7,15 +7,30 @@
 
 let
   # OSC 52 pbcopy shim for Linux hosts (notably the workmux lima VM).
-  # Raw OSC 52 goes to /dev/tty; tmux (with `set-clipboard on` + the `Ms=`
-  # override in home/tmux.nix) intercepts and re-emits upstream to Ghostty.
+  # Two paths: write OSC 52 directly to /dev/tty when we have one, otherwise
+  # hand the bytes to tmux via `load-buffer -w` so its set-clipboard machinery
+  # re-emits OSC 52 upstream via the `Ms=` override in home/tmux.nix.
   pbcopy-osc52 = pkgs.writeShellScriptBin "pbcopy" ''
     set -eu
-    data=$(${pkgs.coreutils}/bin/base64 -w0 < "''${1:-/dev/stdin}")
-    if ! printf '\e]52;c;%s\a' "$data" >/dev/tty 2>/dev/null; then
-      echo "pbcopy: no controlling tty; OSC 52 clipboard unavailable" >&2
-      exit 1
+    input="''${1:-/dev/stdin}"
+    tmpfile=$(${pkgs.coreutils}/bin/mktemp)
+    trap 'rm -f "$tmpfile"' EXIT
+    ${pkgs.coreutils}/bin/cat "$input" > "$tmpfile"
+
+    # Direct path: shell with a controlling tty (interactive SSH, login shell).
+    b64=$(${pkgs.coreutils}/bin/base64 -w0 < "$tmpfile")
+    if printf '\e]52;c;%s\a' "$b64" >/dev/tty 2>/dev/null; then exit 0; fi
+
+    # Fallback: tmux's server runs us without a controlling tty (copy-pipe,
+    # run-shell, etc.). Route through tmux so its set-clipboard machinery
+    # re-emits OSC 52 to the outer terminal via the Ms= override.
+    if [ -n "''${TMUX:-}" ]; then
+      ${config.programs.tmux.package}/bin/tmux load-buffer -w - < "$tmpfile"
+      exit 0
     fi
+
+    echo "pbcopy: no controlling tty and not in tmux; OSC 52 unavailable" >&2
+    exit 1
   '';
 in
 

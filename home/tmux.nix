@@ -1228,12 +1228,15 @@ in
 
       # OSC 52 clipboard passthrough. With `set-clipboard on`, tmux uses this
       # format when re-emitting yanks or child OSC 52 sequences to the outer
-      # terminal. terminal-overrides is a comma-separated list where each
-      # entry is `term:cap`, so combined term lists only set the last term;
-      # one line per term family is the only correct form.
-      set -as terminal-overrides ',xterm*:Ms=\E]52;%p1%s\007'
-      set -as terminal-overrides ',tmux*:Ms=\E]52;%p1%s\007'
-      set -as terminal-overrides ',screen*:Ms=\E]52;%p1%s\007'
+      # terminal. Ms takes two params: %p1 is the selection ("c", "p", ...)
+      # and %p2 is the base64 payload — see tty-features.c:87 in tmux source.
+      # Dropping %p2%s strips the data and turns every copy into an empty
+      # paste request. terminal-overrides is a comma-separated list where
+      # each entry is `term:cap`, so combined term lists only set the last
+      # term; one line per term family is the only correct form.
+      set -as terminal-overrides ',xterm*:Ms=\E]52;%p1%s;%p2%s\007'
+      set -as terminal-overrides ',tmux*:Ms=\E]52;%p1%s;%p2%s\007'
+      set -as terminal-overrides ',screen*:Ms=\E]52;%p1%s;%p2%s\007'
     '';
   };
 
