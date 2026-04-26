@@ -469,6 +469,8 @@ in
       g = "git";
       gs = "git status";
       wm = "workmux";
+      wms = "workmux sandbox shell -- fish";
+      wma = "workmux sandbox agent";
       tf = "tofu";
       t = "task";
       tg = "task -g";
