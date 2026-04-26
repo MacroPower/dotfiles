@@ -202,23 +202,29 @@
         "d /usr/local/share/ca-certificates 0755 root root -"
       ];
     };
-  homeModule = {
-    imports = [
-      ../../home/development.nix
-      ../../home/kubernetes.nix
-      ../../home/claude.nix
-    ];
-    dotfiles = {
-      sops.enable = false;
-      git = {
-        userName = "Jacob Colvin";
-        userEmail = "jacobcolvin1@gmail.com";
+  homeModule =
+    { lib, ... }:
+    {
+      imports = [
+        ../../home/development.nix
+        ../../home/kubernetes.nix
+        ../../home/claude.nix
+        ../../home/tmux.nix
+      ];
+      dotfiles = {
+        sops.enable = false;
+        git = {
+          userName = "Jacob Colvin";
+          userEmail = "jacobcolvin1@gmail.com";
+        };
+        claude = {
+          dangerouslySkipPermissions = true;
+          remoteControl = true;
+          research.useVault = true;
+        };
       };
-      claude = {
-        dangerouslySkipPermissions = true;
-        remoteControl = true;
-        research.useVault = true;
-      };
+      # Inner tmux uses C-a so it doesn't collide with the macOS-host
+      # tmux's C-b prefix when SSHed in from a nested session.
+      programs.tmux.prefix = lib.mkForce "C-a";
     };
-  };
 }
