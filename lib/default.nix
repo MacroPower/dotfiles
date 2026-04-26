@@ -87,10 +87,25 @@ let
     ];
   };
 
+  # fastmcp's test_server_performance_no_latency asserts a wall-clock
+  # request takes <100ms, which is flaky on loaded CI runners.
+  fastmcpOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        fastmcp = pyprev.fastmcp.overrideAttrs (old: {
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_server_performance_no_latency"
+          ];
+        });
+      })
+    ];
+  };
+
   sharedOverlays = system: [
     lixOverlay
     localOverlay
     lupaOverlay
+    fastmcpOverlay
     (nurJacobColvinOverlay system)
     ryceeOverlay
     (workmuxOverlay system)
