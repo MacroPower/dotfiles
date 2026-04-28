@@ -49,6 +49,7 @@
         ../../home/displayplacer.nix
         ../../home/personal.nix
         ../../home/obsidian.nix
+        ../../home/comfyui.nix
       ];
       dotfiles = {
         git = {
@@ -66,6 +67,7 @@
             disk = "500GiB";
           };
         };
+        comfyui.enable = true;
       };
     };
 }

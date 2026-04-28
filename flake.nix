@@ -173,6 +173,7 @@
                 claude-powerline = ./pkgs/claude-powerline.nix;
                 claude-history = ./pkgs/claude-history.nix;
                 git-surgeon = ./pkgs/git-surgeon.nix;
+                comfyui = ./pkgs/comfyui.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })

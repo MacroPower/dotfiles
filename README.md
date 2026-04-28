@@ -196,6 +196,7 @@
 | ------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------- | ----------------- |
 | [appcleaner](https://freemacsoft.net/appcleaner)                   | 3.6.8    | Uninstall unwanted apps                                                                                        | unfree            |
 | [caffeine](https://intelliscapesolutions.com/apps/caffeine)        | 1.1.4    | Don't let your Mac fall asleep                                                                                 | MIT               |
+| [comfyui](https://github.com/comfyanonymous/ComfyUI)               |          | ComfyUI photo-restoration toolkit (launcher, updater, model fetcher)                                           | GPL-3.0-only      |
 | [dav1d](https://github.com/videolan/dav1d)                         | 1.5.3    | Cross-platform AV1 decoder focused on speed and correctness                                                    | BSD-2-Clause      |
 | [discord](https://discordapp.com/)                                 | 0.0.382  | All-in-one cross-platform voice and text chat for gamers                                                       | unfree            |
 | [displayplacer](https://github.com/jakehilborn/displayplacer)      | 1.4.0    | macOS command line utility to configure multi-display resolutions and arrangements                             | MIT               |
