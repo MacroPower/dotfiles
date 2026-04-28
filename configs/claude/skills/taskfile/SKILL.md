@@ -22,7 +22,7 @@ description: >-
 ## Quick Reference
 
 | Topic | Reference |
-|-------|-----------|
+| --- | --- |
 | Taskfile YAML schema (every key, field, type) | [schema.md](references/schema.md) |
 | `task` CLI (commands, flags, exit codes) | [cli.md](references/cli.md) |
 | Templating (`{{.VAR}}`, special vars, functions) | [templating.md](references/templating.md) |

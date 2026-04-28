@@ -296,20 +296,20 @@ comma-separated syntax: `R,G,B`. For example, `255,0,0` is equivalent to
 
 A table of variables and their defaults can be found below:
 
-| ENV                         | Default |
-| --------------------------- | ------- |
-| `TASK_COLOR_RESET`          | `0`     |
-| `TASK_COLOR_RED`            | `31`    |
-| `TASK_COLOR_GREEN`          | `32`    |
-| `TASK_COLOR_YELLOW`         | `33`    |
-| `TASK_COLOR_BLUE`           | `34`    |
-| `TASK_COLOR_MAGENTA`        | `35`    |
-| `TASK_COLOR_CYAN`           | `36`    |
-| `TASK_COLOR_BRIGHT_RED`     | `91`    |
-| `TASK_COLOR_BRIGHT_GREEN`   | `92`    |
-| `TASK_COLOR_BRIGHT_YELLOW`  | `93`    |
-| `TASK_COLOR_BRIGHT_BLUE`    | `94`    |
-| `TASK_COLOR_BRIGHT_MAGENTA` | `95`    |
-| `TASK_COLOR_BRIGHT_CYAN`    | `96`    |
+| ENV | Default |
+| --- | --- |
+| `TASK_COLOR_RESET` | `0` |
+| `TASK_COLOR_RED` | `31` |
+| `TASK_COLOR_GREEN` | `32` |
+| `TASK_COLOR_YELLOW` | `33` |
+| `TASK_COLOR_BLUE` | `34` |
+| `TASK_COLOR_MAGENTA` | `35` |
+| `TASK_COLOR_CYAN` | `36` |
+| `TASK_COLOR_BRIGHT_RED` | `91` |
+| `TASK_COLOR_BRIGHT_GREEN` | `92` |
+| `TASK_COLOR_BRIGHT_YELLOW` | `93` |
+| `TASK_COLOR_BRIGHT_BLUE` | `94` |
+| `TASK_COLOR_BRIGHT_MAGENTA` | `95` |
+| `TASK_COLOR_BRIGHT_CYAN` | `96` |
 
 [ansi]: https://en.wikipedia.org/wiki/ANSI_escape_code

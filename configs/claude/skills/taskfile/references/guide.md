@@ -1108,7 +1108,7 @@ processing c
 ##### `if` vs `preconditions`
 
 | Aspect | `if` | `preconditions` |
-|--------|------|-----------------|
+| --- | --- | --- |
 | On failure | Skips (continues) | Fails (stops) |
 | Message | Only in verbose mode | Always shown |
 | Use case | "Run if possible" | "Must be true" |

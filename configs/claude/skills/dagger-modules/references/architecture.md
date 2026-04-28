@@ -23,7 +23,7 @@
 ## Core Types
 
 | Type | Purpose | Example |
-|------|---------|---------|
+| --- | --- | --- |
 | `Container` | OCI container image, chainable | `dag.Container().From("alpine")` |
 | `Directory` | Filesystem directory reference | `dag.Directory()`, function args |
 | `File` | Single file reference | `container.File("/app/binary")` |
@@ -92,7 +92,7 @@ _, err := container.Sync(ctx)  // forces the pipeline to execute, returns the co
 Controls whether the entire function re-executes:
 
 | Annotation | Behavior |
-|-----------|----------|
+| --- | --- |
 | (default) | Cached for 7 days |
 | `// +cache="10m"` | Cached for 10 minutes |
 | `// +cache="session"` | Cached within current engine session only |
@@ -137,7 +137,7 @@ func (m *MyModule) buildEnv(src *dagger.Directory) *dagger.Container {
 Common cache volume patterns:
 
 | Tool | Cache Path | Volume Name | Env Var |
-|------|-----------|-------------|---------|
+| --- | --- | --- | --- |
 | Go modules | `/go/pkg/mod` | `go-mod` | `GOMODCACHE` |
 | Go build | `/root/.cache/go-build` | `go-build` | `GOCACHE` |
 | npm | `/root/.npm` | `npm-cache` | |
@@ -436,7 +436,7 @@ How `+defaultPath` resolves depends on whether the module is in a git repository
 
 **Git repositories:**
 | Default path | Context directory | Resolved path |
-|---|---|---|
+| --- | --- | --- |
 | `/` | Repository root (`/`) | `/` |
 | `/src` | Repository root (`/`) | `/src` |
 | `.` | `dagger.json` directory (`/my-module`) | `/my-module` |
@@ -444,7 +444,7 @@ How `+defaultPath` resolves depends on whether the module is in a git repository
 
 **Non-git directories:**
 | Default path | Context directory | Resolved path |
-|---|---|---|
+| --- | --- | --- |
 | `/` | `dagger.json` directory (`/my-module`) | `/my-module` |
 | `.` | `dagger.json` directory (`/my-module`) | `/my-module` |
 
@@ -674,7 +674,7 @@ file := llm.Env().Output("report").AsFile()
 ### LLM API methods
 
 | Method | Description |
-|--------|-------------|
+| --- | --- |
 | `dag.LLM()` | Create a new LLM instance |
 | `.WithModel(model)` | Set the model (e.g., `"claude-sonnet-4-5"`, `"gpt-4o"`) |
 | `.WithPrompt(text)` | Append a prompt (variables use `$name` syntax) |

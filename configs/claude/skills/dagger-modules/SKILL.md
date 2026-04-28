@@ -22,7 +22,7 @@ This skill covers the full lifecycle of building Dagger modules in Go: initializ
 ## Quick Reference
 
 | Topic | Reference |
-|-------|-----------|
+| --- | --- |
 | Go code patterns and examples | [go-patterns.md](references/go-patterns.md) |
 | Architecture, types, caching, services, LLM | [architecture.md](references/architecture.md) |
 | Common recipes (builds, containers, etc.) | [cookbook.md](references/cookbook.md) |
@@ -534,7 +534,7 @@ Dagger pipelines run identically locally and in CI. Write pipeline logic in Dagg
 ## Common Patterns Summary
 
 | Pattern | When to Use | Reference |
-|---------|-------------|-----------|
+| --- | --- | --- |
 | Multi-stage build | Compile in one container, run in minimal image | [cookbook.md](references/cookbook.md) |
 | Multi-platform build | Build for multiple OS/arch combinations | [cookbook.md](references/cookbook.md) |
 | Builder pattern | `With*` methods returning `*MyModule` | [go-patterns.md](references/go-patterns.md) |
