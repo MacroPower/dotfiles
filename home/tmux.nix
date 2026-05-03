@@ -524,7 +524,7 @@ let
       cmd = "select-layout -E";
     };
 
-    # Panes (navigation via vim-tmux-navigator: C-hjkl)
+    # Panes (navigation via smart-splits.nvim: C-hjkl, resize: C-S-hjkl, see extraConfig)
     resizeLeft = {
       group = "panes";
       name = "Left";
@@ -1003,7 +1003,6 @@ in
     aggressiveResize = true;
     plugins = with pkgs.tmuxPlugins; [
       sensible
-      vim-tmux-navigator
       {
         plugin = yank;
         extraConfig = "set -g @yank_selection_mouse 'clipboard'";
@@ -1089,6 +1088,33 @@ in
       }
     ];
     extraConfig = ''
+      # --- smart-splits.nvim integration ---
+      # Forward C-h/j/k/l (navigation) and C-S-h/j/k/l (resize) to the
+      # active pane when it is running an nvim/vim/fzf process; otherwise
+      # select-pane / resize-pane in that direction. The grep regex uses
+      # `\S` (the `\\S` here is Nix string escaping for a single backslash).
+      is_vim="ps -o state=,comm= -t '#{pane_tty}' \
+          | grep -iqE '^[^TXZ ]+ +(\\S+\\/)?g?(view|l?n?vim?x?|fzf)(diff)?$'"
+
+      bind-key -n C-h if-shell "$is_vim" 'send-keys C-h' 'select-pane -L'
+      bind-key -n C-j if-shell "$is_vim" 'send-keys C-j' 'select-pane -D'
+      bind-key -n C-k if-shell "$is_vim" 'send-keys C-k' 'select-pane -U'
+      bind-key -n C-l if-shell "$is_vim" 'send-keys C-l' 'select-pane -R'
+
+      # Resize via Ctrl+Shift+hjkl. Spelled `C-S-h` (not `C-H`) because
+      # tmux collapses `C-H` to `C-h` -- the legacy control byte is
+      # identical (0x08), so the explicit `S-` modifier is required and
+      # only works with extended-keys on (set further down in this file).
+      bind-key -n 'C-S-h' if-shell "$is_vim" 'send-keys C-S-h' 'resize-pane -L 3'
+      bind-key -n 'C-S-j' if-shell "$is_vim" 'send-keys C-S-j' 'resize-pane -D 3'
+      bind-key -n 'C-S-k' if-shell "$is_vim" 'send-keys C-S-k' 'resize-pane -U 3'
+      bind-key -n 'C-S-l' if-shell "$is_vim" 'send-keys C-S-l' 'resize-pane -R 3'
+
+      bind-key -r -T copy-mode-vi C-h select-pane -L
+      bind-key -r -T copy-mode-vi C-j select-pane -D
+      bind-key -r -T copy-mode-vi C-k select-pane -U
+      bind-key -r -T copy-mode-vi C-l select-pane -R
+
       # --- Theme ---
 
       # Status bar layout

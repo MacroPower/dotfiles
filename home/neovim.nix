@@ -175,7 +175,33 @@ in
           vim.keymap.set("n", "<leader>r", builtin.resume, { desc = "resume picker" })
         '';
       }
-      vim-tmux-navigator
+      {
+        plugin = smart-splits-nvim;
+        type = "lua";
+        config = ''
+          require("smart-splits").setup({
+            multiplexer_integration = "tmux",
+            at_edge = "stop",
+            default_amount = 3,
+            cursor_follows_swapped_bufs = true,
+            ignored_buftypes = { "nofile", "quickfix", "prompt" },
+            ignored_filetypes = { "minifiles", "TelescopePrompt", "trouble", "Trouble" },
+          })
+
+          local ss = require("smart-splits")
+          for _, m in ipairs({ "n", "t" }) do
+            vim.keymap.set(m, "<c-h>", ss.move_cursor_left,  { desc = "window left" })
+            vim.keymap.set(m, "<c-j>", ss.move_cursor_down,  { desc = "window down" })
+            vim.keymap.set(m, "<c-k>", ss.move_cursor_up,    { desc = "window up" })
+            vim.keymap.set(m, "<c-l>", ss.move_cursor_right, { desc = "window right" })
+          end
+
+          vim.keymap.set("n", "<c-s-h>", ss.resize_left,  { desc = "resize left" })
+          vim.keymap.set("n", "<c-s-j>", ss.resize_down,  { desc = "resize down" })
+          vim.keymap.set("n", "<c-s-k>", ss.resize_up,    { desc = "resize up" })
+          vim.keymap.set("n", "<c-s-l>", ss.resize_right, { desc = "resize right" })
+        '';
+      }
       {
         plugin = yanky-nvim;
         type = "lua";
