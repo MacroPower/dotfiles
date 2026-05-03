@@ -1183,7 +1183,7 @@ in
         ];
         permissions.allow = [ "mcp__kubernetes__call_kubectl" ];
         instructions = {
-          category = "Kubernetes";
+          category = "Infrastructure";
           items = [
             "Use `mcp__kubernetes__call_kubectl` for kubectl operations. Do not run kubectl directly."
           ];
@@ -1211,7 +1211,7 @@ in
           }
         ];
         instructions = {
-          category = "Nix";
+          category = "Code Search";
           items = [
             "Use `mcp__nixos__nix` for Nix package searches, NixOS/home-manager/nix-darwin option lookups, and FlakeHub queries."
             "Use `mcp__nixos__nix_versions` for package version history and channel availability."
@@ -1356,7 +1356,7 @@ in
           }
         ];
         instructions = {
-          category = "Web Search & Fetching";
+          category = "Code Search";
           items = [
             "Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)"
           ];
@@ -1396,7 +1396,7 @@ in
           "mcp__argocd__run_resource_action"
         ];
         instructions = {
-          category = "Kubernetes";
+          category = "Infrastructure";
           items = [
             "Use the `mcp__argocd__*` tools to interact with Argo CD. Do not use the `argocd` CLI directly."
           ];
@@ -1432,7 +1432,7 @@ in
           }
         ];
         instructions = {
-          category = "OpenTofu";
+          category = "Infrastructure";
           items = [
             "Use `mcp__opentofu__*` tools to query the OpenTofu Registry for providers, modules, resources, and data sources instead of guessing from memory."
           ];
@@ -1454,8 +1454,6 @@ in
           "mcp__leanspec__stats"
           "mcp__leanspec__children"
           "mcp__leanspec__deps"
-        ];
-        permissions.ask = [
           "mcp__leanspec__create"
           "mcp__leanspec__update"
           "mcp__leanspec__relationships"
@@ -1839,7 +1837,6 @@ in
 
         ## Agents & Concurrency
 
-        - Prefer parallel tool calls. When a task touches 2+ independent areas, make multiple tool calls (Agent, Read, Grep, etc.) in a single message rather than one at a time.
         - Launch multiple Agent tool calls concurrently when investigating or working on independent areas. Don't serialize what can run in parallel.
         - For large tasks spanning many files or domains, you may orchestrate multiple worktree agents with `/wm-coordinator`.
 
