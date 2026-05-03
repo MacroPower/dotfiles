@@ -227,6 +227,7 @@
           dangerouslySkipPermissions = true;
           remoteControl = true;
           research.useVault = true;
+          fetchAllowlist = false;
         };
       };
       # Inner tmux uses C-a so it doesn't collide with the macOS-host
