@@ -403,7 +403,7 @@ let
     clearScreen = {
       group = "general";
       name = "Clear scrollback";
-      key = "C";
+      key = "c";
       cmd = "clear-history";
     };
     hintsToggle = {
@@ -598,14 +598,14 @@ let
     killPane = {
       group = "panes";
       name = "Kill pane";
-      key = "c";
-      cmd = "kill-pane";
+      key = "C";
+      cmd = ''confirm -p "Kill pane? (y/n)" kill-pane'';
     };
     onlyPane = {
       group = "panes";
       name = "Only (kill others)";
-      key = "o";
-      cmd = "kill-pane -a";
+      key = "O";
+      cmd = ''confirm -p "Kill all other panes? (y/n)" "kill-pane -a"'';
     };
     displayPanes = {
       group = "panes";
@@ -661,8 +661,20 @@ let
     detach = {
       group = "sessions";
       name = "Detach";
-      key = "q";
+      key = "Q";
       cmd = "detach";
+    };
+    killSession = {
+      group = "sessions";
+      name = "Kill session";
+      key = "&";
+      cmd = ''confirm -p "Kill session #S? (y/n)" kill-session'';
+    };
+    killServer = {
+      group = "sessions";
+      name = "Kill server";
+      key = "*";
+      cmd = ''confirm -p "Kill server (all sessions)? (y/n)" kill-server'';
     };
 
     # Floax-based popups (persistent sessions, embeddable via C-M-e)
@@ -693,7 +705,7 @@ let
     obsidianTask = {
       group = "popups";
       name = "Add task (obsidian)";
-      key = "O";
+      key = "o";
       cmd = ''run-shell "tmux-floax-run --width 60% --height 30% obsidian tmux-obsidian-task"'';
     };
 
@@ -810,6 +822,9 @@ let
         b.sessionRename
         b.newSession
         b.detach
+        { separator = true; }
+        b.killSession
+        b.killServer
       ];
     }
     {
@@ -1023,7 +1038,6 @@ in
           set -g @logging_key "k"
           set -g @screen-capture-key "P"
           set -g @save-complete-history-key "A"
-          set -g @clear-history-key "Q"
         '';
       }
       {
