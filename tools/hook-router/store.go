@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -27,6 +28,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     in_plan_mode    INTEGER NOT NULL DEFAULT 0,
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS pending_plans (
+    cwd        TEXT PRIMARY KEY,
+    plan_path  TEXT NOT NULL DEFAULT '',
+    base_sha   TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 // migrations adds columns that may be missing in databases created before
@@ -41,7 +49,7 @@ var migrations = []string{
 
 const (
 	busyTimeoutMs = 30000
-	schemaVersion = 3
+	schemaVersion = 4
 )
 
 // Store manages plan-guard session state in a SQLite database.
@@ -147,24 +155,38 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 	return nil
 }
 
-// MaybePruneStale runs the 24-hour session cleanup with ~5% probability
-// per invocation. The probabilistic gate spreads cleanup writes across
+// MaybePruneStale runs the 24-hour cleanup with ~5% probability per
+// invocation. The probabilistic gate spreads cleanup writes across
 // invocations so N concurrent processes don't all contend on the write
-// lock at startup. Returns ran=true when the gate passed and the DELETE
-// was attempted, plus any error from the delete itself.
+// lock at startup. Returns ran=true when the gate passed and
+// [*Store.pruneStale] was invoked, plus any error from the prune.
 func (s *Store) MaybePruneStale(ctx context.Context) (bool, error) {
 	// Probabilistic gate, not a security-sensitive choice; weak RNG is fine.
 	if rand.IntN(20) != 0 { //nolint:gosec // statistical cleanup gate
 		return false, nil
 	}
 
+	return true, s.pruneStale(ctx)
+}
+
+// pruneStale removes both `sessions` and `pending_plans` rows older
+// than 24 hours. Split out from [*Store.MaybePruneStale] so tests can
+// exercise the cleanup paths directly without fighting the
+// probabilistic gate.
+func (s *Store) pruneStale(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM sessions WHERE updated_at < datetime('now', '-24 hours')`)
 	if err != nil {
-		return true, fmt.Errorf("pruning stale sessions: %w", err)
+		return fmt.Errorf("pruning stale sessions: %w", err)
 	}
 
-	return true, nil
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM pending_plans WHERE updated_at < datetime('now', '-24 hours')`)
+	if err != nil {
+		return fmt.Errorf("pruning stale pending plans: %w", err)
+	}
+
+	return nil
 }
 
 // Close releases the database connection.
@@ -339,6 +361,97 @@ func (s *Store) ClearSession(ctx context.Context, id string) error {
 		`DELETE FROM sessions WHERE session_id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("clearing session: %w", err)
+	}
+
+	return nil
+}
+
+// SetPendingPlan UPSERTs a pending plan handoff keyed by cwd. The row
+// is consumed by [*Store.ConsumePendingPlan] when the cleared session's
+// SessionStart hook fires; see plan.go's handleSessionStart.
+//
+// The first return value reports whether an existing row was overwritten
+// while its `updated_at` was within 60 seconds. Callers
+// (handleExitPlanModePre) log this as a Warn for observability — it
+// indicates concurrent CC instances racing on the same cwd, which is the
+// documented limitation of the cwd-keyed handoff.
+//
+// The freshness check uses two queries (SELECT then UPSERT). The race
+// window between them is benign: a missed warn-log has no correctness
+// impact.
+func (s *Store) SetPendingPlan(ctx context.Context, cwd, planPath, baseSHA string) (bool, error) {
+	var fresh int
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT updated_at >= datetime('now', '-60 seconds')
+		 FROM pending_plans WHERE cwd = ?`, cwd).Scan(&fresh)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("checking pending plan freshness: %w", err)
+	}
+
+	overwroteFresh := err == nil && fresh != 0
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO pending_plans (cwd, plan_path, base_sha)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(cwd) DO UPDATE SET
+		   plan_path = excluded.plan_path,
+		   base_sha = excluded.base_sha,
+		   updated_at = datetime('now')`, cwd, planPath, baseSHA)
+	if err != nil {
+		return false, fmt.Errorf("setting pending plan: %w", err)
+	}
+
+	return overwroteFresh, nil
+}
+
+// ConsumePendingPlan reads and deletes the pending plan for cwd in a
+// single statement, but only when the row's `updated_at` is within
+// ttlSeconds. Stale rows are left in place for [*Store.MaybePruneStale]
+// to remove on the 24-hour cycle.
+//
+// The atomic read+delete relies on `MaxOpenConns=1`: the DELETE...RETURNING
+// is one statement, and intra-process serialization comes from the pool
+// limit while inter-process serialization comes from SQLite's write lock
+// (busy_timeout). A future tuning change to N>1 would still keep
+// per-statement atomicity, so this is robust.
+//
+// The third return value reports whether a fresh row matched and was
+// deleted; false (with nil err) means no fresh row was present. The
+// caller (handleSessionStart) treats not-found as the no-migration path.
+func (s *Store) ConsumePendingPlan(
+	ctx context.Context,
+	cwd string,
+	ttlSeconds int,
+) (string, string, bool, error) {
+	query := fmt.Sprintf(
+		`DELETE FROM pending_plans
+		 WHERE cwd = ? AND updated_at >= datetime('now', '-%d seconds')
+		 RETURNING plan_path, base_sha`, ttlSeconds)
+
+	var planPath, baseSHA string
+
+	err := s.db.QueryRowContext(ctx, query, cwd).Scan(&planPath, &baseSHA)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, nil
+	}
+
+	if err != nil {
+		return "", "", false, fmt.Errorf("consuming pending plan: %w", err)
+	}
+
+	return planPath, baseSHA, true, nil
+}
+
+// DeletePendingPlan removes the pending plan row for cwd, if any.
+// Used as best-effort cleanup at lifecycle boundaries (EnterPlanMode,
+// commit-skill wrap-up, post-impl AUQ recorded, stop_hook_active escape,
+// fingerprint short-circuit).
+func (s *Store) DeletePendingPlan(ctx context.Context, cwd string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM pending_plans WHERE cwd = ?`, cwd)
+	if err != nil {
+		return fmt.Errorf("deleting pending plan: %w", err)
 	}
 
 	return nil

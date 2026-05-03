@@ -1758,6 +1758,16 @@ in
                 ];
               }
             ];
+            SessionStart = [
+              {
+                hooks = [
+                  {
+                    type = "command";
+                    command = "${lib.getExe hookRouter} --event SessionStart";
+                  }
+                ];
+              }
+            ];
           };
           autoMemoryEnabled = false;
           alwaysThinkingEnabled = true;

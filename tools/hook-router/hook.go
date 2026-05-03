@@ -7,12 +7,18 @@ import (
 )
 
 // HookInput represents the JSON payload Claude Code sends to hooks.
+//
+// Cwd is included on every event. Source is only populated on
+// SessionStart (one of "startup", "resume", "clear", "compact"); other
+// events leave it empty.
 type HookInput struct {
 	SessionID      string         `json:"session_id"`
 	ToolName       string         `json:"tool_name"`
 	ToolInput      map[string]any `json:"tool_input"`
 	Prompt         string         `json:"prompt"`
 	StopHookActive bool           `json:"stop_hook_active"`
+	Cwd            string         `json:"cwd"`
+	Source         string         `json:"source"`
 }
 
 func parseHookInput(data []byte) (HookInput, error) {

@@ -161,6 +161,13 @@ func run(
 
 		return handleStop(ctx, input, stdout, store, cfg, ".", logger)
 
+	case "SessionStart":
+		if store == nil {
+			return nil
+		}
+
+		return handleSessionStart(ctx, input, store, logger)
+
 	case "UserPromptSubmit":
 		if store == nil {
 			return nil

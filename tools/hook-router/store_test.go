@@ -32,7 +32,7 @@ func TestStoreSession(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	count, planPath, baseSHA, err := store.Session(ctx, "s1")
 	require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestStoreSession_Idempotent(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := store.IncrementExitPlanCount(ctx, "s1")
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestStoreIncrementExitPlanCount(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	count, err := store.IncrementExitPlanCount(ctx, "s1")
 	require.NoError(t, err)
@@ -79,7 +79,7 @@ func TestStoreSetPlanPath(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	err := store.SetPlanPath(ctx, "s1", "/path/to/plan.md", "abc123")
 	require.NoError(t, err)
@@ -94,7 +94,7 @@ func TestStoreSetPlanPath_Overwrite(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	err := store.SetPlanPath(ctx, "s1", "/old.md", "old-sha")
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func TestStoreResetSession(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, _ = store.IncrementExitPlanCount(ctx, "s1")
 	_ = store.SetPlanPath(ctx, "s1", "/plan.md", "sha1")
@@ -131,7 +131,7 @@ func TestStoreClearSession(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, _ = store.IncrementExitPlanCount(ctx, "s1")
 
@@ -148,7 +148,7 @@ func TestSetAskFingerprint(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	err := store.SetAskFingerprint(ctx, "s1", "abc123", "def456")
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestSetAskFingerprint_Overwrite(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	err := store.SetAskFingerprint(ctx, "s1", "old-head", "old-wt")
 	require.NoError(t, err)
@@ -181,7 +181,7 @@ func TestResetSession_ClearsAskFingerprint(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	err := store.SetAskFingerprint(ctx, "s1", "abc", "def")
 	require.NoError(t, err)
@@ -199,7 +199,7 @@ func TestStoreIndependentSessions(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, _ = store.IncrementExitPlanCount(ctx, "s1")
 	_, _ = store.IncrementExitPlanCount(ctx, "s1")
@@ -237,6 +237,162 @@ func hammerStore(ctx context.Context, dbPath, sessionID string, ops int) error {
 	}
 
 	return nil
+}
+
+func TestSetPendingPlan_UpsertsAndRefreshes(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	overwroteFresh, err := store.SetPendingPlan(ctx, "/cwd", "/plan.md", "sha1")
+	require.NoError(t, err)
+	assert.False(t, overwroteFresh, "first write must not report overwrite")
+
+	planPath, baseSHA, found, err := store.ConsumePendingPlan(ctx, "/cwd", 300)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "/plan.md", planPath)
+	assert.Equal(t, "sha1", baseSHA)
+
+	_, err = store.SetPendingPlan(ctx, "/cwd", "/v1.md", "sha-v1")
+	require.NoError(t, err)
+
+	overwroteFresh, err = store.SetPendingPlan(ctx, "/cwd", "/v2.md", "sha-v2")
+	require.NoError(t, err)
+	assert.True(t, overwroteFresh, "overwriting a fresh row must report overwrite=true")
+
+	planPath, baseSHA, found, err = store.ConsumePendingPlan(ctx, "/cwd", 300)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "/v2.md", planPath)
+	assert.Equal(t, "sha-v2", baseSHA)
+}
+
+func TestConsumePendingPlan_FoundFreshDeletes(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	_, err := store.SetPendingPlan(ctx, "/cwd", "/plan.md", "sha1")
+	require.NoError(t, err)
+
+	planPath, baseSHA, found, err := store.ConsumePendingPlan(ctx, "/cwd", 300)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "/plan.md", planPath)
+	assert.Equal(t, "sha1", baseSHA)
+
+	// Second consume must return not-found (row was deleted).
+	_, _, found, err = store.ConsumePendingPlan(ctx, "/cwd", 300)
+	require.NoError(t, err)
+	assert.False(t, found)
+}
+
+func TestConsumePendingPlan_StaleReturnsNotFoundAndStaleRowSurvives(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	_, err := store.SetPendingPlan(ctx, "/cwd", "/plan.md", "sha1")
+	require.NoError(t, err)
+
+	// Backdate the row beyond the TTL we'll pass in.
+	_, err = store.db.ExecContext(ctx,
+		`UPDATE pending_plans SET updated_at = datetime('now', '-10 seconds') WHERE cwd = ?`,
+		"/cwd")
+	require.NoError(t, err)
+
+	_, _, found, err := store.ConsumePendingPlan(ctx, "/cwd", 5)
+	require.NoError(t, err)
+	assert.False(t, found, "stale row must not be returned through the TTL gate")
+
+	// Stale row survives Consume; MaybePruneStale handles eventual cleanup.
+	var count int
+
+	err = store.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pending_plans WHERE cwd = ?`, "/cwd").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "stale row must remain for MaybePruneStale to clean up")
+}
+
+func TestConsumePendingPlan_AbsentReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	_, _, found, err := store.ConsumePendingPlan(ctx, "/never-set", 300)
+	require.NoError(t, err)
+	assert.False(t, found)
+}
+
+func TestDeletePendingPlan(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	_, err := store.SetPendingPlan(ctx, "/cwd", "/plan.md", "sha1")
+	require.NoError(t, err)
+
+	require.NoError(t, store.DeletePendingPlan(ctx, "/cwd"))
+
+	_, _, found, err := store.ConsumePendingPlan(ctx, "/cwd", 300)
+	require.NoError(t, err)
+	assert.False(t, found)
+
+	// Idempotent: deleting an absent row is a no-op.
+	require.NoError(t, store.DeletePendingPlan(ctx, "/cwd"))
+}
+
+// TestPruneStale_PrunesBothTables_Beyond24h verifies the cleanup path
+// directly, bypassing MaybePruneStale's probabilistic gate. Both
+// `sessions` and `pending_plans` rows older than 24 hours must go;
+// fresh rows must survive.
+func TestPruneStale_PrunesBothTables_Beyond24h(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	// Fresh pending plan -- must survive.
+	_, err := store.SetPendingPlan(ctx, "/fresh", "/p1.md", "sha1")
+	require.NoError(t, err)
+
+	// Stale pending plan (>24h) -- must be pruned.
+	_, err = store.SetPendingPlan(ctx, "/stale", "/p2.md", "sha2")
+	require.NoError(t, err)
+
+	_, err = store.db.ExecContext(ctx,
+		`UPDATE pending_plans SET updated_at = datetime('now', '-25 hours') WHERE cwd = ?`,
+		"/stale")
+	require.NoError(t, err)
+
+	// Fresh session -- must survive.
+	require.NoError(t, store.SetPlanPath(ctx, "fresh-sess", "/sess1.md", "sha-a"))
+
+	// Stale session (>24h) -- must be pruned.
+	require.NoError(t, store.SetPlanPath(ctx, "stale-sess", "/sess2.md", "sha-b"))
+
+	_, err = store.db.ExecContext(ctx,
+		`UPDATE sessions SET updated_at = datetime('now', '-25 hours') WHERE session_id = ?`,
+		"stale-sess")
+	require.NoError(t, err)
+
+	require.NoError(t, store.pruneStale(ctx))
+
+	var pendingCount, sessionCount int
+
+	require.NoError(t, store.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pending_plans`).Scan(&pendingCount))
+	assert.Equal(t, 1, pendingCount, "stale pending row must be pruned, fresh must survive")
+
+	require.NoError(t, store.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sessions`).Scan(&sessionCount))
+	assert.Equal(t, 1, sessionCount, "stale session row must be pruned, fresh must survive")
 }
 
 // TestStore_ConcurrentWriters_DistinctSessions exercises inter-process

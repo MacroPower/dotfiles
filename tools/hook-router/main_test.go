@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -240,6 +242,46 @@ func TestRun(t *testing.T) {
 		err := run(t.Context(), strings.NewReader(input), &stdout, "Stop", "", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("SessionStart: no store is noop", func(t *testing.T) {
+		t.Parallel()
+
+		input := `{"session_id":"new","cwd":"/tmp/x","source":"clear"}`
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "SessionStart", "", nil, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("SessionStart routes to handler and migrates pending plan", func(t *testing.T) {
+		t.Parallel()
+
+		store := newTestStore(t)
+		ctx := t.Context()
+
+		cwd := t.TempDir()
+
+		resolved, err := filepath.EvalSymlinks(cwd)
+		require.NoError(t, err)
+
+		_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+		require.NoError(t, err)
+
+		input := fmt.Sprintf(`{"session_id":"new","cwd":%q,"source":"clear"}`, cwd)
+
+		var stdout bytes.Buffer
+
+		err = run(ctx, strings.NewReader(input), &stdout, "SessionStart", "", store, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+
+		_, planPath, baseSHA, err := store.Session(ctx, "new")
+		require.NoError(t, err)
+		assert.Equal(t, "/plan.md", planPath)
+		assert.Equal(t, "sha1", baseSHA)
 	})
 
 	t.Run("UserPromptSubmit: no store is noop", func(t *testing.T) {
