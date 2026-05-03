@@ -65,6 +65,13 @@ in
           })
           require("mini.bracketed").setup({})
           require("mini.splitjoin").setup({})
+
+          local hi = require("mini.hipatterns")
+          hi.setup({
+            highlighters = {
+              hex_color = hi.gen_highlighter.hex_color({ style = "inline" }),
+            },
+          })
           require("mini.files").setup({ windows = { preview = true } })
           require("mini.sessions").setup({ autoread = false, autowrite = true })
 
@@ -266,14 +273,25 @@ in
         '';
       }
       {
-        plugin = git-conflict-nvim;
+        plugin = conflict-marker-vim;
         type = "lua";
         config = ''
-          require("git-conflict").setup({
-            default_mappings = true,
-            default_commands = true,
-          })
-          vim.keymap.set("n", "<leader>gx", "<cmd>GitConflictListQf<cr>", { desc = "list conflicts" })
+          vim.keymap.set("n", "<leader>gx", function()
+            local hits = vim.fn.systemlist({ "git", "grep", "-nE", "^<<<<<<< " })
+            if vim.v.shell_error ~= 0 or #hits == 0 then
+              vim.notify("no conflict markers found", vim.log.levels.INFO)
+              return
+            end
+            local items = {}
+            for _, line in ipairs(hits) do
+              local f, n, t = line:match("^([^:]+):(%d+):(.*)$")
+              if f then
+                table.insert(items, { filename = f, lnum = tonumber(n), text = t })
+              end
+            end
+            vim.fn.setqflist({}, " ", { title = "Git conflicts", items = items })
+            vim.cmd("copen")
+          end, { desc = "list conflicts" })
         '';
       }
 
@@ -400,18 +418,6 @@ in
         '';
       }
 
-      # Inline color preview (#rrggbb, rgb(), hsl(), Tailwind classes)
-      {
-        plugin = nvim-highlight-colors;
-        type = "lua";
-        config = ''
-          require("nvim-highlight-colors").setup({
-            render = "virtual",
-            enable_tailwind = true,
-          })
-        '';
-      }
-
       # Treesitter (replaces vim-polyglot). main-branch nvim-treesitter no longer
       # exposes nvim-treesitter.configs; highlight/indent are wired up directly
       # against vim.treesitter, and textobjects has its own setup call.
@@ -489,22 +495,6 @@ in
           })
           vim.keymap.set("n", "zR", require("ufo").openAllFolds,  { desc = "open all folds" })
           vim.keymap.set("n", "zM", require("ufo").closeAllFolds, { desc = "close all folds" })
-        '';
-      }
-
-      # Replaces the incremental_selection feature dropped from nvim-treesitter
-      # main. <C-space> grows the selection up the tree; <BS> shrinks it back.
-      {
-        plugin = wildfire-nvim;
-        type = "lua";
-        config = ''
-          require("wildfire").setup({
-            keymaps = {
-              init_selection = "<C-space>",
-              node_incremental = "<C-space>",
-              node_decremental = "<BS>",
-            },
-          })
         '';
       }
 
