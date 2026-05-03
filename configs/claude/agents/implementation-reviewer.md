@@ -36,6 +36,7 @@ You review code changes made during plan implementation. The caller provides you
 - **Docs**: Are docs added/updated where the plan called for them?
 - **Simplicity**: Unnecessary abstractions, dead code, overly defensive checks?
 - **Security**: Injection vectors, leaked secrets, unsafe patterns?
+- **Self-contained**: No references to plans, specs, stories, tickets, issues, PRs, or other external docs in code, comments, commits, or docs (e.g. "see plan.md", "per story #42"). Such references rot as documents drift. Flag each and suggest inlining the context or removing it.
 
 ## Output format
 
