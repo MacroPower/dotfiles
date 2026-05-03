@@ -22,6 +22,9 @@
 
   # Disable systemd-resolved
   services.resolved.enable = false;
+  # OrbStack manages /etc/resolv.conf directly; skip resolvconf so it
+  # does not race with the bind-mount above (assertion in newer nixpkgs).
+  networking.resolvconf.enable = false;
   environment.etc."resolv.conf".source = "/opt/orbstack-guest/etc/resolv.conf";
 
   # Faster DHCP - OrbStack uses SLAAC exclusively
