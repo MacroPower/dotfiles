@@ -8,6 +8,7 @@
 let
   inherit (lib) mkOption types;
   inherit (config.lib.stylix) colors;
+  inherit (import ../lib/colors.nix { inherit lib; }) lighten;
   cfg = config.dotfiles.claude;
   sopsEnabled = config.dotfiles.sops.enable;
   skipPerms = cfg.dangerouslySkipPermissions;
@@ -162,6 +163,7 @@ let
     status_icons = {
       working = "󱚣";
       waiting = "󰍻";
+      sleeping = "󰤄";
       done = "󰄴";
     };
     theme = {
@@ -249,6 +251,63 @@ let
       colors = false;
       emoji = false;
       max_width = 120;
+    };
+  };
+
+  claudeStylixBase = if config.stylix.polarity == "light" then "light" else "dark";
+
+  # Shimmer tokens in the upstream Claude Code dark theme are hardcoded
+  # constants ~+12 lightness points above their base. base16 has no
+  # lightened slots, so we derive them by bumping HSL lightness. This keeps
+  # the warm pair-with-base relationship intact under any stylix scheme.
+  shimmerOf = name: lighten colors name 12;
+
+  claudeStylixTheme = (pkgs.formats.json { }).generate "stylix.json" {
+    name = "Stylix";
+    base = claudeStylixBase;
+    overrides = {
+      claude = "#${colors.base09}";
+      claudeShimmer = shimmerOf "base09";
+      text = "#${colors.base05}";
+      inverseText = "#${colors.base00}";
+      inactive = "#${colors.base04}";
+      inactiveShimmer = shimmerOf "base04";
+      subtle = "#${colors.base03}";
+      permission = "#${colors.base0D}";
+      permissionShimmer = shimmerOf "base0D";
+      remember = "#${colors.base0D}";
+
+      success = "#${colors.base0B}";
+      error = "#${colors.base08}";
+      warning = "#${colors.base0A}";
+      warningShimmer = shimmerOf "base0A";
+      merged = "#${colors.base0E}";
+
+      promptBorder = "#${colors.base04}";
+      promptBorderShimmer = shimmerOf "base04";
+      planMode = "#${colors.base0D}";
+      autoAccept = "#${colors.base0E}";
+      bashBorder = "#${colors.base0F}";
+      ide = "#${colors.base0D}";
+      fastMode = "#${colors.base09}";
+      fastModeShimmer = shimmerOf "base09";
+
+      userMessageBackground = "#${colors.base01}";
+      selectionBg = "#${colors.base02}";
+
+      red_FOR_SUBAGENTS_ONLY = "#${colors.base08}";
+      orange_FOR_SUBAGENTS_ONLY = "#${colors.base09}";
+      yellow_FOR_SUBAGENTS_ONLY = "#${colors.base0A}";
+      green_FOR_SUBAGENTS_ONLY = "#${colors.base0B}";
+      cyan_FOR_SUBAGENTS_ONLY = "#${colors.base0C}";
+      blue_FOR_SUBAGENTS_ONLY = "#${colors.base0D}";
+      purple_FOR_SUBAGENTS_ONLY = "#${colors.base0E}";
+      pink_FOR_SUBAGENTS_ONLY = "#${colors.base0F}";
+
+      # Diff dimmed tokens (diffAddedDimmed, diffRemovedDimmed) are left to
+      # the preset. Their upstream relationship to diffAdded/diffRemoved is
+      # a desaturate-and-tint, not a simple lighten, so HSL lightening would
+      # not reproduce the muted background look.
     };
   };
 
@@ -642,6 +701,20 @@ in
       type = types.attrsOf types.anything;
       default = { };
       description = "Additional settings merged into Claude Code settings.json.";
+    };
+
+    stylixTheme = mkOption {
+      type = types.submodule {
+        options = {
+          enable = mkOption {
+            type = types.bool;
+            default = config.stylix.enable or false;
+            description = "Generate ~/.claude/themes/stylix.json from the active stylix base16 scheme and select it as the Claude Code theme.";
+          };
+        };
+      };
+      default = { };
+      description = "Wire Claude Code's custom-theme JSON to the active stylix base16 palette.";
     };
 
     powerline = mkOption {
@@ -1517,263 +1590,268 @@ in
         package = claudeWrapped;
         enableMcpIntegration = true;
 
-        settings = lib.recursiveUpdate {
-          env = {
-            CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
-          };
-          disableAutoMode = "disable";
-          includeGitInstructions = false;
-          inherit (cfg) attribution;
-          permissions = {
-            defaultMode = "plan";
-            allow = readPermEntries ++ writePermEntries ++ bundledAllow ++ cfg.extraPermissions.allow;
-            deny = [
-              # Key material & certificates
-              "Read(//**/*.key)"
-              "Read(//**/*.p12)"
-              "Read(//**/*.jks)"
-              "Read(//**/*.asc)"
-              "Read(//**/*.keystore)"
-              "Read(//**/*.kdbx)"
-              "Read(//**/wallet.dat)"
-              "Read(//**/keystore/**)"
-              "Read(//**/.ssh/**)"
-              "Read(//**/.gnupg/**)"
-
-              # Generic secrets
-              "Read(//**/.env)"
-              "Read(//**/.env.*)"
-              "Read(//**/.secrets/**)"
-              "Read(//**/.git-credentials)"
-              "Read(//**/git/credentials)"
-              "Read(//**/.netrc)"
-              "Read(//**/.curlrc)"
-              "Read(//**/.wgetrc)"
-              "Read(//**/.password-store/**)"
-
-              # Cloud credentials
-              "Read(//**/.aws/credentials)"
-              "Read(//**/.aws/config)"
-              "Read(//**/.aws/sso/**)"
-              "Read(//**/.azure/**)"
-              "Read(//**/.config/gcloud/**)"
-              "Read(//**/.config/hcloud/config.json)"
-              "Read(//**/.snyk)"
-              "Read(//**/.wrangler/**)"
-
-              # Container & Kubernetes
-              "Read(//**/.docker/config.json)"
-              "Read(//**/.docker/certs.d/**)"
-              "Read(//**/.config/containers/auth.json)"
-              "Read(//**/.kube/config)"
-              "Read(//**/.kube/config*)"
-              "Read(//**/.talos/**)"
-              "Read(//**/.cosign/**)"
-              "Read(//**/.helm/repository/repositories.yaml)"
-
-              # Secret managers & encryption
-              "Read(//**/.doppler/**)"
-              "Read(//**/age/keys.txt)"
-              "Read(//**/rclone.conf)"
-
-              # IaC state & credentials
-              "Read(//**/credentials.tfrc.json)"
-              "Read(//**/.terraformrc)"
-              "Read(//**/.terraform.d/credentials.tfrc.json)"
-              "Read(//**/*.tfstate)"
-              "Read(//**/*.tfstate.*)"
-              "Read(//**/.pulumi/credentials.json)"
-
-              # CI/CD & deployment tokens
-              "Read(//**/.config/gh/hosts.yml)"
-              "Read(//**/.jira.d/config.yml)"
-
-              # Package manager credentials
-              "Read(//**/.npmrc)"
-              "Read(//**/.pypirc)"
-              "Read(//**/.cargo/credentials.toml)"
-              "Read(//**/.gem/credentials)"
-              "Read(//**/.m2/settings.xml)"
-              "Read(//**/.m2/settings-security.xml)"
-              "Read(//**/.gradle/gradle.properties)"
-              "Read(//**/.composer/auth.json)"
-              "Read(//**/.config/poetry/auth.toml)"
-              "Read(//**/.bunfig.toml)"
-
-              # Claude Code credentials
-              "Read(//**/.claude/.credentials.json)"
-            ]
-            ++ bundledDeny
-            ++ cfg.extraPermissions.deny;
-            ask = [
-              "Bash(git push)"
-              "Bash(git push *)"
-              "Bash(git switch *)"
-              "Bash(git remote *)"
-            ]
-            ++ bundledAsk
-            ++ cfg.extraPermissions.ask;
-          };
-          statusLine = {
-            type = "command";
-            command = "${pkgs.claude-powerline}/bin/claude-powerline";
-            padding = 0;
-          };
-          enabledPlugins = {
-            "claude-md-management@claude-plugins-official" = true;
-            "skill-creator@claude-plugins-official" = true;
-            "code-review@claude-plugins-official" = true;
-          };
-          sandbox = {
-            enabled = pkgs.stdenv.isDarwin;
-            failIfUnavailable = true;
-            allowUnsandboxedCommands = false;
-            # Allow access to the system TLS trust service.
-            enableWeakerNetworkIsolation = true;
-            network = {
-              allowLocalBinding = true;
-              allowUnixSockets = [
-                "/nix/var/nix/daemon-socket/socket"
-                (
-                  if config.dotfiles.tmux.socketPath != null then
-                    config.dotfiles.tmux.socketPath
-                  else
-                    "/private/tmp/tmux-501/default"
-                )
-              ]
-              ++ bundledSockets;
-              allowedDomains = [
-                "jacobcolvin.com"
-                "registry.dagger.io"
-                "api.dagger.cloud"
-                "auth.dagger.cloud"
-                "proxy.golang.org"
-                "sum.golang.org"
-              ]
-              ++ bundledDomains;
+        settings = lib.recursiveUpdate (
+          {
+            env = {
+              CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
             };
-            filesystem = {
-              allowRead = extraReadPaths;
-              allowWrite = extraWritePaths;
+            disableAutoMode = "disable";
+            includeGitInstructions = false;
+            inherit (cfg) attribution;
+            permissions = {
+              defaultMode = "plan";
+              allow = readPermEntries ++ writePermEntries ++ bundledAllow ++ cfg.extraPermissions.allow;
+              deny = [
+                # Key material & certificates
+                "Read(//**/*.key)"
+                "Read(//**/*.p12)"
+                "Read(//**/*.jks)"
+                "Read(//**/*.asc)"
+                "Read(//**/*.keystore)"
+                "Read(//**/*.kdbx)"
+                "Read(//**/wallet.dat)"
+                "Read(//**/keystore/**)"
+                "Read(//**/.ssh/**)"
+                "Read(//**/.gnupg/**)"
+
+                # Generic secrets
+                "Read(//**/.env)"
+                "Read(//**/.env.*)"
+                "Read(//**/.secrets/**)"
+                "Read(//**/.git-credentials)"
+                "Read(//**/git/credentials)"
+                "Read(//**/.netrc)"
+                "Read(//**/.curlrc)"
+                "Read(//**/.wgetrc)"
+                "Read(//**/.password-store/**)"
+
+                # Cloud credentials
+                "Read(//**/.aws/credentials)"
+                "Read(//**/.aws/config)"
+                "Read(//**/.aws/sso/**)"
+                "Read(//**/.azure/**)"
+                "Read(//**/.config/gcloud/**)"
+                "Read(//**/.config/hcloud/config.json)"
+                "Read(//**/.snyk)"
+                "Read(//**/.wrangler/**)"
+
+                # Container & Kubernetes
+                "Read(//**/.docker/config.json)"
+                "Read(//**/.docker/certs.d/**)"
+                "Read(//**/.config/containers/auth.json)"
+                "Read(//**/.kube/config)"
+                "Read(//**/.kube/config*)"
+                "Read(//**/.talos/**)"
+                "Read(//**/.cosign/**)"
+                "Read(//**/.helm/repository/repositories.yaml)"
+
+                # Secret managers & encryption
+                "Read(//**/.doppler/**)"
+                "Read(//**/age/keys.txt)"
+                "Read(//**/rclone.conf)"
+
+                # IaC state & credentials
+                "Read(//**/credentials.tfrc.json)"
+                "Read(//**/.terraformrc)"
+                "Read(//**/.terraform.d/credentials.tfrc.json)"
+                "Read(//**/*.tfstate)"
+                "Read(//**/*.tfstate.*)"
+                "Read(//**/.pulumi/credentials.json)"
+
+                # CI/CD & deployment tokens
+                "Read(//**/.config/gh/hosts.yml)"
+                "Read(//**/.jira.d/config.yml)"
+
+                # Package manager credentials
+                "Read(//**/.npmrc)"
+                "Read(//**/.pypirc)"
+                "Read(//**/.cargo/credentials.toml)"
+                "Read(//**/.gem/credentials)"
+                "Read(//**/.m2/settings.xml)"
+                "Read(//**/.m2/settings-security.xml)"
+                "Read(//**/.gradle/gradle.properties)"
+                "Read(//**/.composer/auth.json)"
+                "Read(//**/.config/poetry/auth.toml)"
+                "Read(//**/.bunfig.toml)"
+
+                # Claude Code credentials
+                "Read(//**/.claude/.credentials.json)"
+              ]
+              ++ bundledDeny
+              ++ cfg.extraPermissions.deny;
+              ask = [
+                "Bash(git push)"
+                "Bash(git push *)"
+                "Bash(git switch *)"
+                "Bash(git remote *)"
+              ]
+              ++ bundledAsk
+              ++ cfg.extraPermissions.ask;
             };
-          };
-          hooks = {
-            # NOTE: All matching hooks run concurrently with the original input.
-            # Only one hook per tool should return updatedInput to avoid
-            # non-deterministic last-writer-wins races.
-            PreToolUse = [
-              {
-                matcher = "Bash";
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${lib.getExe hookRouter} --event PreToolUse --tool Bash";
-                  }
-                ];
-              }
-              {
-                matcher = "ExitPlanMode";
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${lib.getExe hookRouter} --event PreToolUse --tool ExitPlanMode";
-                  }
-                ];
-              }
-              {
-                matcher = "EnterPlanMode";
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${lib.getExe hookRouter} --event PreToolUse --tool EnterPlanMode";
-                  }
-                ];
-              }
-            ];
-            UserPromptSubmit = [
-              {
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${workmux} working";
-                  }
-                ];
-              }
-              {
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${lib.getExe hookRouter} --event UserPromptSubmit";
-                  }
-                ];
-              }
-            ];
-            Notification = [
-              {
-                matcher = "permission_prompt|elicitation_dialog";
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${workmux} waiting";
-                  }
-                ];
-              }
-            ];
-            PostToolUse = [
-              {
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${workmux} working";
-                  }
-                ];
-              }
-              {
-                matcher = "AskUserQuestion";
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${lib.getExe hookRouter} --event PostToolUse --tool AskUserQuestion";
-                  }
-                ];
-              }
-            ];
-            Stop = [
-              {
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${workmux} done";
-                  }
-                ];
-              }
-              {
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${lib.getExe hookRouter} --event Stop";
-                  }
-                ];
-              }
-            ];
-            SessionStart = [
-              {
-                hooks = [
-                  {
-                    type = "command";
-                    command = "${lib.getExe hookRouter} --event SessionStart";
-                  }
-                ];
-              }
-            ];
-          };
-          autoMemoryEnabled = false;
-          alwaysThinkingEnabled = true;
-          skipDangerousModePermissionPrompt = true;
-          teammateMode = "in-process";
-          showThinkingSummaries = true;
-          showClearContextOnPlanAccept = true;
-        } cfg.extraSettings;
+            statusLine = {
+              type = "command";
+              command = "${pkgs.claude-powerline}/bin/claude-powerline";
+              padding = 0;
+            };
+            enabledPlugins = {
+              "claude-md-management@claude-plugins-official" = true;
+              "skill-creator@claude-plugins-official" = true;
+              "code-review@claude-plugins-official" = true;
+            };
+            sandbox = {
+              enabled = pkgs.stdenv.isDarwin;
+              failIfUnavailable = true;
+              allowUnsandboxedCommands = false;
+              # Allow access to the system TLS trust service.
+              enableWeakerNetworkIsolation = true;
+              network = {
+                allowLocalBinding = true;
+                allowUnixSockets = [
+                  "/nix/var/nix/daemon-socket/socket"
+                  (
+                    if config.dotfiles.tmux.socketPath != null then
+                      config.dotfiles.tmux.socketPath
+                    else
+                      "/private/tmp/tmux-501/default"
+                  )
+                ]
+                ++ bundledSockets;
+                allowedDomains = [
+                  "jacobcolvin.com"
+                  "registry.dagger.io"
+                  "api.dagger.cloud"
+                  "auth.dagger.cloud"
+                  "proxy.golang.org"
+                  "sum.golang.org"
+                ]
+                ++ bundledDomains;
+              };
+              filesystem = {
+                allowRead = extraReadPaths;
+                allowWrite = extraWritePaths;
+              };
+            };
+            hooks = {
+              # NOTE: All matching hooks run concurrently with the original input.
+              # Only one hook per tool should return updatedInput to avoid
+              # non-deterministic last-writer-wins races.
+              PreToolUse = [
+                {
+                  matcher = "Bash";
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${lib.getExe hookRouter} --event PreToolUse --tool Bash";
+                    }
+                  ];
+                }
+                {
+                  matcher = "ExitPlanMode";
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${lib.getExe hookRouter} --event PreToolUse --tool ExitPlanMode";
+                    }
+                  ];
+                }
+                {
+                  matcher = "EnterPlanMode";
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${lib.getExe hookRouter} --event PreToolUse --tool EnterPlanMode";
+                    }
+                  ];
+                }
+              ];
+              UserPromptSubmit = [
+                {
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${workmux} working";
+                    }
+                  ];
+                }
+                {
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${lib.getExe hookRouter} --event UserPromptSubmit";
+                    }
+                  ];
+                }
+              ];
+              Notification = [
+                {
+                  matcher = "permission_prompt|elicitation_dialog";
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${workmux} waiting";
+                    }
+                  ];
+                }
+              ];
+              PostToolUse = [
+                {
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${workmux} working";
+                    }
+                  ];
+                }
+                {
+                  matcher = "AskUserQuestion";
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${lib.getExe hookRouter} --event PostToolUse --tool AskUserQuestion";
+                    }
+                  ];
+                }
+              ];
+              Stop = [
+                {
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${workmux} done";
+                    }
+                  ];
+                }
+                {
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${lib.getExe hookRouter} --event Stop";
+                    }
+                  ];
+                }
+              ];
+              SessionStart = [
+                {
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${lib.getExe hookRouter} --event SessionStart";
+                    }
+                  ];
+                }
+              ];
+            };
+            autoMemoryEnabled = false;
+            alwaysThinkingEnabled = true;
+            skipDangerousModePermissionPrompt = true;
+            teammateMode = "in-process";
+            showThinkingSummaries = true;
+            showClearContextOnPlanAccept = true;
+          }
+          // lib.optionalAttrs cfg.stylixTheme.enable {
+            theme = "custom:stylix";
+          }
+        ) cfg.extraSettings;
 
         agents = {
           code-simplifier = ../configs/claude/agents/code-simplifier.md;
@@ -1825,6 +1903,10 @@ in
         pkgs.git-surgeon
         slugify
       ];
+
+      file.".claude/themes/stylix.json" = lib.mkIf cfg.stylixTheme.enable {
+        source = claudeStylixTheme;
+      };
 
       file.".claude/CLAUDE.md".text = ''
         # Global Instructions
