@@ -88,14 +88,32 @@ let
     ];
   };
 
-  # fastmcp's test_server_performance_no_latency asserts a wall-clock
-  # request takes <100ms, which is flaky on loaded CI runners.
+  # fastmcp's test suite is wall-clock heavy and prone to hanging
+  # network/keep-alive tests under the Nix sandbox -- nixpkgs already
+  # carries a long disabledTests list, but new flakes keep appearing
+  # on each bump. Trust upstream CI and skip the check phase entirely.
+  # pytestCheckHook runs in installCheckPhase, so doInstallCheck is the
+  # right gate (doCheck already defaults false for pure-python builds).
   fastmcpOverlay = _final: prev: {
     pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
       (_pyfinal: pyprev: {
-        fastmcp = pyprev.fastmcp.overrideAttrs (old: {
+        fastmcp = pyprev.fastmcp.overrideAttrs {
+          doInstallCheck = false;
+        };
+      })
+    ];
+  };
+
+  # mcp's test_non_compliant_notification_response spawns a subprocess
+  # server and waits up to 10s for it to bind a TCP port; under heavy
+  # local rebuilds the server doesn't come up in time and the test
+  # fails the whole build.
+  mcpOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        mcp = pyprev.mcp.overrideAttrs (old: {
           disabledTests = (old.disabledTests or [ ]) ++ [
-            "test_server_performance_no_latency"
+            "test_non_compliant_notification_response"
           ];
         });
       })
@@ -133,6 +151,7 @@ let
     localOverlay
     lupaOverlay
     fastmcpOverlay
+    mcpOverlay
     aioboto3Overlay
     direnvOverlay
     (nurJacobColvinOverlay system)
