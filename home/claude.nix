@@ -1604,6 +1604,17 @@ in
         permissions.allow = [ "mcp__kubectx__list" ];
         permissions.ask = [ "mcp__kubectx__select" ];
         sandbox.allowedDomains = cfg.kubeApiDomains;
+        # Per-`serve` UDS: kubectl's exec credential plugin
+        # (`mcp-kubectx exec-plugin --socket <path>`) connects here
+        # instead of forking out to `host token` itself, so the
+        # plugin can run inside Claude's bash sandbox without
+        # tripping the `~/.kube/config` read deny. Both env tags
+        # are listed because the same bundle entry flows into
+        # both the host (Darwin) and guest (Lima) profiles.
+        sandbox.allowUnixSockets = [
+          "${config.xdg.stateHome}/mcp-kubectx-run/serve.*.host.sock"
+          "${config.xdg.stateHome}/mcp-kubectx-run/serve.*.guest.sock"
+        ];
         instructions = {
           category = "Kubernetes";
           items = [
@@ -1981,6 +1992,16 @@ in
           run mkdir -p "${config.xdg.stateHome}/mcp-kubectx"
         ''
       );
+
+      # Per-`serve` UDS lives outside the Lima bind-mounted state
+      # dir (UDS-over-bind-mount semantics on macOS-host are
+      # unverified; the safe design avoids the question). Both host
+      # and guest profiles need this dir at mode 0700 to match
+      # listenSocket's parent-dir invariant; create it
+      # unconditionally so non-Lima Darwin hosts also get it.
+      activation.ensureMcpKubectxRunDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        run install -d -m 700 "${config.xdg.stateHome}/mcp-kubectx-run"
+      '';
 
       # Activation: merge MCP servers and secrets into mutable ~/.claude.json
       activation.syncClaudeJson =

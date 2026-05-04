@@ -142,7 +142,7 @@ func TestHostTokenSkipsWorkmuxWhenEnvSetToGuest(t *testing.T) { //nolint:paralle
 	hostStdout = &buf
 	t.Cleanup(func() { hostStdout = prevStdout })
 
-	err := runHostToken([]string{
+	err := runHostToken(t.Context(), []string{
 		"--kubeconfig", "/dev/null",
 		"--context", "prod",
 		"--sa", "claude-sa-x",
@@ -160,25 +160,34 @@ func TestHostTokenSkipsWorkmuxWhenEnvSetToGuest(t *testing.T) { //nolint:paralle
 }
 
 // TestSelectArgsForGuestFlag pins that handler.selectCtx forwards
-// --for-guest=BOOL based on envLookup. Together with the
-// hostExecArgs tests it covers the full host/guest decision.
-// Also pins that --pid is always forwarded and --out-path is omitted
-// when h.outputPath is empty (host select then defaults the path).
-func TestSelectArgsForGuestFlag(t *testing.T) {
-	t.Parallel()
+// --for-guest=BOOL based on envLookup, --pid is always forwarded,
+// --out-path is omitted when h.outputPath is empty (host select
+// then defaults the path), and --socket-path forwards the
+// per-`serve` UDS path keyed off pid + env so guest serve's host
+// select still resolves the path the guest fs holds.
+func TestSelectArgsForGuestFlag(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
 
 	tests := map[string]struct {
 		guest string
 		want  string
+		sock  string
 	}{
-		"host":  {guest: "", want: "--for-guest=false"},
-		"guest": {guest: "1", want: "--for-guest=true"},
+		"host": {
+			guest: "",
+			want:  "--for-guest=false",
+			sock:  filepath.Join(stateHome, "mcp-kubectx-run", "serve.4242.host.sock"),
+		},
+		"guest": {
+			guest: "1",
+			want:  "--for-guest=true",
+			sock:  filepath.Join(stateHome, "mcp-kubectx-run", "serve.4242.guest.sock"),
+		},
 	}
 
-	for name, tc := range tests {
+	for name, tc := range tests { //nolint:paralleltest // shares t.Setenv state
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
 			h := &handler{
 				kubeconfigPath: "/k",
 				pid:            4242,
@@ -193,6 +202,10 @@ func TestSelectArgsForGuestFlag(t *testing.T) {
 			require.Contains(t, args, "4242")
 			require.NotContains(t, args, "--out-path",
 				"--out-path must be omitted when h.outputPath is empty")
+
+			require.Contains(t, args, "--socket-path")
+			require.Contains(t, args, tc.sock,
+				"--socket-path must be forwarded keyed off pid + env tag")
 		})
 	}
 }

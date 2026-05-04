@@ -10,30 +10,49 @@ token.
 
 ## Architecture
 
-The binary has two surface areas dispatched by a single flat switch
-in `cli.go`:
+The binary has three surface areas dispatched by a single flat
+switch in `cli.go`:
 
 - **`serve`** is the long-lived MCP stdio server. It owns per-process
   state in `*handler`: the host kubeconfig path, the SA configuration
-  parsed from `--sa-*` flags, and a slice of cleanup closures
-  registered on each `select`. It never touches the cluster directly.
-  Output-path resolution is delegated to `host select`; serve only
-  forwards its own pid + `host`/`guest` env as the discriminator so
-  concurrent serves never collide.
+  parsed from `--sa-*` flags, an atomic `currentSA` descriptor, the
+  per-`serve` UDS listener, and a slice of cleanup closures registered
+  on each `select`. It never touches the cluster directly.
 - **`host {list, select, token, release}`** are stateless one-shots.
   Each parses argv, talks to the cluster via client-go, prints JSON
   or text on stdout, and exits. They share no state with each other
   or with `serve`. Cluster state is the source of truth for what
   exists; in-process state in `serve` only tracks ownership.
+- **`exec-plugin`** is the kubectl exec credential shim. It
+  connects to `serve`'s UDS at `--socket <path>`, copies the bytes
+  the server writes to stdout, and exits. Like the `host *`
+  subcommands, it never constructs a `*handler`, which is what
+  keeps the structural recursion guard (see
+  [Recursion guard](#recursion-guard-and-the-env-chain)) honest.
+
+End-to-end credential flow:
+
+```
+kubectl exec plugin
+  -> mcp-kubectx exec-plugin --socket <state>/mcp-kubectx-run/serve.<pid>.<env>.sock
+     (UDS)
+  -> mcp-kubectx serve  (currentSA loaded atomically)
+     -> defaultRunHost("token", ...)
+        -> direct fork on host
+        -> workmux host-exec on guest
+     -> ExecCredential JSON written back to UDS
+  -> shim copies bytes to stdout
+  -> kubectl reads ExecCredential, calls API server
+```
 
 The shell-out boundary is the only place the guest/host distinction
-matters. `*handler.hostExecArgs` decides whether to invoke
+still matters. `*handler.hostExecArgs` decides whether to invoke
 `mcp-kubectx host *` directly (when `serve` is on the host) or wrap
 it with `workmux host-exec mcp-kubectx host *` (when `serve` is
-inside a Lima guest, indicated by `WM_SANDBOX_GUEST=1`). The wrapped
-form forwards argv to the host-side mcp-kubectx binary via the
-workmux RPC server, gated by the host_commands allowlist (see
-[Deployment requirement](#deployment-requirement-workmux-host_commands-allowlist)).
+inside a Lima guest, indicated by `WM_SANDBOX_GUEST=1`). The
+distinction is invisible to kubectl: both host- and guest-side
+serves write the same exec-plugin block, and routing happens
+server-side.
 
 ```
 mcp-kubectx serve              # MCP stdio mode, local to its Claude
@@ -41,16 +60,15 @@ mcp-kubectx host list          # one-shot: print contexts
 mcp-kubectx host select <ctx>  # one-shot: create SA, write kubeconfig, print descriptor
 mcp-kubectx host token         # one-shot: mint token, print ExecCredential JSON
 mcp-kubectx host release       # one-shot: delete SA + binding
+mcp-kubectx exec-plugin        # kubectl-facing UDS shim
 ```
 
 ## Scoped kubeconfigs
 
-`host select` writes one of two variants depending on `--for-guest`.
-The cluster section is identical in both, copied verbatim from the
-selected context in the host kubeconfig. Only `user.exec.command`
-and its leading args differ.
-
-**Host consumer** (`--for-guest=false`):
+`host select` writes a single uniform shape regardless of
+`--for-guest`. The cluster section is copied verbatim from the
+selected context in the host kubeconfig. The `user.exec` block is
+the same tiny UDS shim in both host- and guest-side kubeconfigs:
 
 ```yaml
 apiVersion: v1
@@ -71,54 +89,26 @@ users:
     user:
       exec:
         apiVersion: client.authentication.k8s.io/v1
-        command: /nix/store/.../bin/mcp-kubectx
+        command: mcp-kubectx
         args:
-          - host
-          - token
-          - --kubeconfig
-          - /Users/me/.kube/config
-          - --context
-          - prod
-          - --sa
-          - claude-sa-abc12345
-          - --namespace
-          - kube-system
-          - --sa-expiration
-          - "3600"
+          - exec-plugin
+          - --socket
+          - /Users/me/.local/state/mcp-kubectx-run/serve.4242.host.sock
         interactiveMode: Never
 ```
 
-**Guest consumer** (`--for-guest=true`):
+`command: mcp-kubectx` is a bare program name (PATH lookup), not
+the absolute store path the previous design used. This is
+deliberate: the absolute path would be invalidated by every
+nix-darwin rebuild, requiring kubectl to start over each time.
+`mcp-kubectx` is on PATH for both the host and the in-Lima
+profiles via `home.packages` in `home/claude.nix`.
 
-```yaml
-users:
-  - name: claude-sa-abc12345
-    user:
-      exec:
-        apiVersion: client.authentication.k8s.io/v1
-        command: workmux
-        args:
-          - host-exec
-          - mcp-kubectx
-          - host
-          - token
-          - --kubeconfig
-          - /Users/me/.kube/config
-          - --context
-          - prod
-          - --sa
-          - claude-sa-abc12345
-          - --namespace
-          - kube-system
-          - --sa-expiration
-          - "3600"
-        interactiveMode: Never
-```
-
-`serve` always supplies `--for-guest=$(isGuest)` when it shells out
-to `host select` (`kubeconfig.go`'s `selectArgs`), so the kubeconfig
-written for an in-guest Claude is the guest variant and the one
-written for a host Claude is the host variant.
+The `--for-guest` flag survives as a *path discriminator* only:
+it flips the `<env>` token between `host` and `guest` in the
+defaulted kubeconfig and socket filenames so a host serve and a
+Lima-guest serve cannot collide on the same path. Kubectl still
+sees a uniform plugin shape.
 
 ## ExecCredential output
 
@@ -153,20 +143,28 @@ revoke the SA out from under it at any time.
 
 This is plain kubectl exec-plugin plumbing, so anything that uses
 client-go (kubectl, helm, kustomize, argocd) works without
-modification. There's no custom proxy listening on a Unix socket, no
-bind-mounted docker.sock equivalent, no SDK shim.
+modification. The Unix domain socket is bound by the same
+long-lived MCP `serve` process that already owns the per-`serve`
+state; there is no new daemon and the UDS lifetime tracks the
+Claude session exactly. The shim itself is a single
+`mcp-kubectx exec-plugin` subcommand built into the same binary
+kubectl already invokes, so the deployment surface is unchanged.
 
-Token rotation falls out of the design. Each plugin invocation mints
-a fresh token via the host's admin TokenRequest API. Deleting the SA
-on the host invalidates any cached token at its next API call;
-there's no separate revocation channel to keep in sync.
+Token rotation falls out of the design. Each plugin invocation
+asks `serve` to mint a fresh token via the host's admin
+TokenRequest API. Deleting the SA on the host invalidates any
+cached token at its next API call; there's no separate revocation
+channel to keep in sync.
 
-The transport is one-shot argv-in / stdout-out. That's exactly the
-contract `workmux host-exec` already implements, so there's no
-long-lived host process to babysit, no socket auth, no multiplexing
-question, no signal protocol. kubectl inside the VM talks straight
-to the cluster API server over the network it already has; the host
-is contacted only at token-mint time.
+The UDS exists specifically to escape the bash sandbox at
+credential-mint time: kubectl runs under a sandbox that denies
+reads of `~/.kube/config`, so the credential plugin (a child of
+sandboxed kubectl) inherits the deny when it tries to read the
+admin kubeconfig itself. Routing the mint through `serve` -- which
+runs outside both the bash sandbox (host case) and the Lima guest
+(guest case via `workmux host-exec`) -- sidesteps the deny without
+broadening any sandbox grant. Sandbox grants the connect on the
+single socket path; the token mint happens entirely outside.
 
 ## Lifecycle and cleanup
 
@@ -190,16 +188,32 @@ parsed, `restoreCleanups` swaps the previous list back so the prior
 SA still gets released at shutdown.
 
 On SIGINT or SIGTERM, the cleanup closure returned by `sessionDir`
-runs every registered release with the same 30-second
-`context.Background` timeout and then removes the kubeconfig file.
-SIGKILL leaks at most one SA + one kubeconfig file, the same blast
-radius as today's "kill mcp-kubectx without warning". No regression.
+runs in this order:
+
+1. `socketShutdown` closes the UDS listener and waits on a
+   `sync.WaitGroup` for in-flight per-connection handlers to
+   return. This is required so no handler is mid-token-mint when
+   the next steps unlink files.
+2. Drain registered SA release closures with a 30-second
+   `context.Background` timeout.
+3. Unlink the socket file at `h.socketPath`.
+4. Unlink the scoped kubeconfig at `h.lastOutputPath`.
+5. Unlink the hook-router sidecar symlink. (Local TMPDIR; never
+   crosses the Lima boundary.)
+
+SIGKILL leaks at most one SA + one kubeconfig file + one socket
+inode, the same blast radius as today's "kill mcp-kubectx without
+warning". No regression. A stale socket inode left behind by SIGKILL
+is detected and removed on the next `serve` start: `listenSocket`
+dial-tests the path; ECONNREFUSED means the file is leftover state
+and is unlinked before the bind, while a successful dial means a
+live peer holds it and surfaces `ErrSocketInUse`.
 
 A future `mcp-kubectx host sweep --age=24h` tool can mop up orphans
 by label and TTL. Not yet implemented.
 
-The behaviors above are pinned by the `TestSelect*` and
-`TestSessionDir*` test families in `kubeconfig_test.go`.
+The behaviors above are pinned by the `TestSelect*`, `TestSessionDir*`,
+and `TestServeSocket*` test families.
 
 ## Recursion guard and the env chain
 
@@ -211,10 +225,12 @@ this.
 
 **Design rule (structural).** Only `*handler` decides whether to
 wrap with `workmux host-exec`. `hostExecArgs` is a method on
-`*handler` (`shellout.go`), and the `host *` subcommand entry points
-never construct a `*handler`, so they have no path to `runHost` and
-no way to invoke the wrapper. `host token` reads the cluster
-directly via `KubeClient.CreateTokenRequest`. The mechanism is
+`*handler` (`shellout.go`), and the `host *` subcommand entry
+points -- joined now by `exec-plugin` -- never construct a
+`*handler`, so they have no path to `runHost` and no way to invoke
+the wrapper. `host token` reads the cluster directly via
+`KubeClient.CreateTokenRequest`; `exec-plugin` is a pure UDS
+client and does not even import the K8s client. The mechanism is
 syntactic. There is no path through the call graph; it is not a
 runtime env-var check.
 
@@ -243,7 +259,10 @@ resolve `command: workmux` without an absolute path.
 The structural defense is pinned by
 `TestHostTokenSkipsWorkmuxWhenEnvSetToGuest`, which sets
 `WM_SANDBOX_GUEST=1` and confirms `runHostToken` calls
-`CreateTokenRequest` directly with no intermediate fork.
+`CreateTokenRequest` directly with no intermediate fork. The
+`exec-plugin` shim has no analogous test because the entry point
+literally does not link the K8s client; the structural property is
+visible at compile time.
 
 ## Deployment requirement: workmux host_commands allowlist
 
@@ -310,6 +329,40 @@ When `serve` is invoked with `--output PATH`, it forwards the path
 verbatim as `--out-path`, bypassing the defaulting. In a Lima
 guest, an explicit `--output` must be host-resolvable and writable
 from the guest -- typically only true under a bind mount.
+
+### Sockets live outside the bind-mounted state dir
+
+The per-`serve` UDS lives at
+`<state>/mcp-kubectx-run/serve.<pid>.<env>.sock`, *not* alongside
+the kubeconfig under `<state>/mcp-kubectx/`. The latter is the
+existing Lima writable bind mount declared in workmux's
+`extra_mounts`; UDS-over-Lima-bind-mount semantics on macOS-host
+are unverified, and the safe design avoids the question by hosting
+the socket on each profile's local filesystem.
+
+Both kinds of `serve` (host and guest) bind their socket on their
+own filesystem. A guest serve's socket is reachable only from
+inside the same guest, which is exactly the topology kubectl needs
+since the kubectl that uses it also runs inside the guest. The
+*kubeconfig* still lives under the bind mount because both
+profiles need read access to the file; the socket only needs
+guest-local create + connect, so it lives outside.
+
+Future readers: do not "fix" the socket back into the single
+state dir without first verifying UDS-over-bind-mount semantics
+end-to-end.
+
+### Trust boundary
+
+Socket file mode is `0600`; parent dir is `0700`. Single-user
+machine, identical to the kubeconfig at the same dir level. Any
+process running as the same UID can connect, but the threat model
+already trusts same-UID processes (they could read the kubeconfig
+file itself if the deny list did not block it). The bash sandbox
+specifically denies `~/.kube/config` to prevent admin kubeconfig
+exfiltration; the socket gives the in-sandbox kubectl exactly one
+narrow capability -- "ask serve for a fresh SA-scoped token" --
+without expanding the read deny.
 
 ## Out of scope
 

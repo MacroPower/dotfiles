@@ -1,21 +1,23 @@
-// Mcp-kubectx is an MCP server that exposes Kubernetes context
-// selection over stdio transport, bridging a sandboxed caller and
-// the host kubeconfig it cannot read directly.
+// Mcp-kubectx is an MCP server for Kubernetes context selection
+// over stdio. The sandboxed caller cannot read the host kubeconfig
+// directly, so this binary brokers access to it.
 //
-// The binary has two surface areas: the long-lived `serve`
-// subcommand that speaks the MCP stdio protocol, and a set of
-// stateless `host *` one-shot subcommands that always run on the
-// macOS host. The MCP layer always shells out to `host *`, invoking
-// the binary directly when on the host and going through `workmux
+// The binary has three surface areas: the long-lived `serve`
+// subcommand that speaks the MCP stdio protocol, a set of stateless
+// `host *` one-shot subcommands that always run on the macOS host,
+// and an `exec-plugin` UDS shim invoked by kubectl as its credential
+// plugin. The MCP layer always shells out to `host *`, invoking the
+// binary directly when on the host and going through `workmux
 // host-exec` when the caller is itself inside a Lima sandbox guest.
-// The host/guest decision is made structurally: only the `serve`
+// The host/guest decision is structural: only the `serve`
 // [*handler] knows how to wrap with `workmux host-exec`, and `host
-// *` entry points never construct a `*handler`, so a host-side
-// `host token` invoked by kubectl from the guest cannot recurse
-// back across the boundary even if guest env vars leak through.
-// The scoped kubeconfig produced by `host select` carries no token
-// material; its user.exec block invokes `host token` on demand to
-// mint short-lived ServiceAccount tokens.
+// *` and `exec-plugin` entry points never construct a `*handler`.
+// So a host-side `host token` invoked by kubectl from the guest
+// cannot recurse back across the boundary even if guest env vars
+// leak through. The scoped kubeconfig produced by `host select`
+// carries no token material; its user.exec block invokes
+// `exec-plugin` to ask serve for a short-lived ServiceAccount
+// token over a per-`serve` Unix domain socket.
 //
 // # Binary layout
 //
@@ -30,20 +32,27 @@
 // # Subcommands
 //
 //   - serve: MCP stdio server. Owns the per-process kubeconfig
-//     path, parses --sa-* flags, and shells out to `host *` for
-//     every cluster-touching operation.
+//     path, parses --sa-* flags, binds the per-`serve` UDS at
+//     [socketPathForServe], and shells out to `host *` for every
+//     cluster-touching operation.
 //   - host list: prints the available kubeconfig contexts.
 //   - host select <ctx>: creates a ServiceAccount + role binding
 //     and writes a scoped kubeconfig whose user.exec block points
-//     at `host token`. Resolves the output path itself when
-//     --out-path is omitted, keyed off the --pid + --for-guest
-//     discriminator the serve forwards. Prints a JSON
-//     [HostSelectResult] on stdout.
+//     at `exec-plugin --socket <path>`. Resolves the output path
+//     and socket path itself when --out-path / --socket-path are
+//     omitted, keyed off the --pid + --for-guest discriminator the
+//     serve forwards. Prints a JSON [HostSelectResult] on stdout.
 //   - host token: mints a fresh ServiceAccount token via
 //     TokenRequest and prints an [ExecCredential] JSON document.
+//     Reached internally by serve through [*handler.runHost], not
+//     directly by kubectl.
 //   - host release: deletes a ServiceAccount and its binding.
 //     Best-effort: always exits 0 so `serve` never retries the
 //     call across the rest of its lifetime.
+//   - exec-plugin: kubectl-facing UDS shim. Dials the per-`serve`
+//     socket, copies the response bytes (an [ExecCredential] JSON
+//     document) to stdout, and exits. Pure UDS client; never
+//     constructs a [*handler] and never imports the K8s client.
 //
 // # serve flags
 //

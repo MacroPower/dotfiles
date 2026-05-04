@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -89,6 +92,8 @@ func TestResolveKubeconfigPath(t *testing.T) { //nolint:tparallel // subtests us
 }
 
 func TestSessionDir(t *testing.T) {
+	t.Parallel()
+
 	t.Run("removes lastOutputPath on cleanup", func(t *testing.T) {
 		t.Parallel()
 
@@ -102,12 +107,11 @@ func TestSessionDir(t *testing.T) {
 			lastOutputPath: outPath,
 		}
 
-		cleanup, err := h.sessionDir()
-		require.NoError(t, err)
+		cleanup := h.sessionDir()
 
 		cleanup()
 
-		_, err = os.Stat(outPath)
+		_, err := os.Stat(outPath)
 		assert.True(t, os.IsNotExist(err), "kubeconfig file should be removed after cleanup")
 	})
 
@@ -116,10 +120,7 @@ func TestSessionDir(t *testing.T) {
 
 		h := &handler{pid: 6666, envLookup: constLookup("")}
 
-		cleanup, err := h.sessionDir()
-		require.NoError(t, err)
-
-		cleanup()
+		h.sessionDir()()
 	})
 
 	t.Run("missing file is best-effort", func(t *testing.T) {
@@ -131,10 +132,7 @@ func TestSessionDir(t *testing.T) {
 			lastOutputPath: filepath.Join(t.TempDir(), "never-written.yaml"),
 		}
 
-		cleanup, err := h.sessionDir()
-		require.NoError(t, err)
-
-		cleanup()
+		h.sessionDir()()
 	})
 }
 
@@ -154,10 +152,7 @@ func TestSessionDirCleanupRunsResourceCleanupWhenOutputSet(t *testing.T) {
 
 	h.registerCleanup(func(_ context.Context) { called = true })
 
-	cleanup, err := h.sessionDir()
-	require.NoError(t, err)
-
-	cleanup()
+	h.sessionDir()()
 
 	require.True(t, called, "resource cleanup must run when outputPath is set")
 }
@@ -175,10 +170,7 @@ func TestSessionDirCleanupRunsResourceCleanupWhenOutputUnset(t *testing.T) {
 
 	h.registerCleanup(func(_ context.Context) { called = true })
 
-	cleanup, err := h.sessionDir()
-	require.NoError(t, err)
-
-	cleanup()
+	h.sessionDir()()
 
 	require.True(t, called, "resource cleanup must run when outputPath is unset")
 }
@@ -446,16 +438,13 @@ func TestSessionDirCleanupRemovesSidecarSymlink(t *testing.T) { //nolint:paralle
 
 	h := &handler{pid: 4242, envLookup: constLookup("")}
 
-	cleanup, err := h.sessionDir()
-	require.NoError(t, err)
+	h.sessionDir()()
 
-	cleanup()
-
-	_, err = os.Lstat(sidecar)
+	_, err := os.Lstat(sidecar)
 	assert.True(t, os.IsNotExist(err), "sidecar symlink should be removed after cleanup")
 
 	_, err = os.Stat(filepath.Dir(sidecar))
-	assert.NoError(t, err, "sidecar parent dir should be left in place")
+	require.NoError(t, err, "sidecar parent dir should be left in place")
 }
 
 // TestSelectShellsHostSelect pins that handler.selectCtx forwards
@@ -604,6 +593,219 @@ func TestSelectShellInvalidJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	require.ErrorIs(t, extractError(result), ErrParseHostResult)
+}
+
+// TestSelectCtxPopulatesCurrentSA pins that a successful selectCtx
+// stores a [currentSA] descriptor populated from the host select
+// JSON result plus the handler's expiration.
+func TestSelectCtxPopulatesCurrentSA(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	t.Setenv("TMPDIR", t.TempDir())
+
+	stdout, err := json.Marshal(HostSelectResult{
+		Path:       "/canonical/kubeconfig.yaml",
+		SAName:     "claude-sa-new",
+		Namespace:  "kube-system",
+		Kubeconfig: "/admin/kube",
+		Context:    "prod",
+	})
+	require.NoError(t, err)
+
+	fake := &fakeRunHost{stdout: map[string][]byte{"select": stdout}}
+
+	h := &handler{
+		kubeconfigPath: "/admin/kube",
+		outputPath:     "/canonical/kubeconfig.yaml",
+		envLookup:      constLookup(""),
+		runHost:        fake.run,
+		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 7200},
+	}
+
+	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	got := h.currentSA.Load()
+	require.NotNil(t, got, "currentSA must be populated after success")
+	assert.Equal(t, "/admin/kube", got.Kubeconfig)
+	assert.Equal(t, "prod", got.Context)
+	assert.Equal(t, "claude-sa-new", got.SAName)
+	assert.Equal(t, "kube-system", got.Namespace)
+	assert.Equal(t, 7200, got.Expiration)
+}
+
+// TestSelectCtxRestoresCurrentSAOnFailure pins that a host-select
+// shell error leaves the prior currentSA descriptor in place so
+// kubectl on the existing kubeconfig keeps working until the
+// caller selects a new context that does succeed.
+func TestSelectCtxRestoresCurrentSAOnFailure(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	t.Setenv("TMPDIR", t.TempDir())
+
+	prev := &currentSA{
+		Kubeconfig: "/admin/kube",
+		Context:    "prod",
+		SAName:     "claude-sa-prev",
+		Namespace:  "ns",
+		Expiration: 3600,
+	}
+
+	fake := &fakeRunHost{
+		errs: map[string]error{"select": errors.New("forbidden")},
+	}
+
+	h := &handler{
+		kubeconfigPath: "/admin/kube",
+		outputPath:     "/tmp/k.yaml",
+		envLookup:      constLookup(""),
+		runHost:        fake.run,
+		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+	}
+	h.currentSA.Store(prev)
+
+	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+
+	got := h.currentSA.Load()
+	require.NotNil(t, got, "prior currentSA must be restored after failure")
+	assert.Equal(t, prev, got)
+}
+
+// TestSelectCtxRestoresCurrentSAOnInvalidJSON pins the same
+// restore semantics on the JSON-parse failure branch.
+func TestSelectCtxRestoresCurrentSAOnInvalidJSON(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	t.Setenv("TMPDIR", t.TempDir())
+
+	prev := &currentSA{
+		Kubeconfig: "/admin/kube",
+		Context:    "prod",
+		SAName:     "claude-sa-prev",
+		Namespace:  "ns",
+		Expiration: 3600,
+	}
+
+	fake := &fakeRunHost{
+		stdout: map[string][]byte{"select": []byte("not json")},
+	}
+
+	h := &handler{
+		kubeconfigPath: "/admin/kube",
+		outputPath:     "/tmp/k.yaml",
+		envLookup:      constLookup(""),
+		runHost:        fake.run,
+		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+	}
+	h.currentSA.Store(prev)
+
+	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+
+	got := h.currentSA.Load()
+	require.NotNil(t, got)
+	assert.Equal(t, prev, got)
+}
+
+// TestSessionDirCleanupOrdering pins that socketShutdown drains
+// in-flight handlers (waiting for them to exit) before the cleanup
+// closure proceeds to unlink files. Drives this with a runHost
+// that holds a handler in-flight via a shared channel; the test
+// verifies the unlink does not happen until the handler is
+// released.
+func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	t.Setenv("TMPDIR", t.TempDir())
+
+	socketPath := filepath.Join(t.TempDir(), "ordering.sock")
+	kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig.yaml")
+	require.NoError(t, os.WriteFile(kubeconfigPath, []byte("placeholder"), 0o600))
+
+	release := make(chan struct{})
+	entered := make(chan struct{})
+
+	h := &handler{
+		pid:            7777,
+		envLookup:      constLookup(""),
+		lastOutputPath: kubeconfigPath,
+		socketPath:     socketPath,
+	}
+	h.runHost = func(_ context.Context, _ string, _ []string) ([]byte, error) {
+		close(entered)
+		<-release
+
+		return []byte("ok"), nil
+	}
+	h.currentSA.Store(&currentSA{
+		Kubeconfig: "/admin/kube",
+		Context:    "prod",
+		SAName:     "sa",
+		Namespace:  "ns",
+		Expiration: 3600,
+	})
+
+	listener, listenCleanup, err := h.listenSocket(t.Context(), socketPath)
+	require.NoError(t, err)
+
+	t.Cleanup(listenCleanup)
+
+	h.mu.Lock()
+	h.socketListener = listener
+	h.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	go h.serveSocket(ctx, listener, &h.socketWG)
+
+	connDone := make(chan struct{})
+
+	go func() {
+		defer close(connDone)
+
+		conn, dialErr := net.DialTimeout("unix", socketPath, 2*time.Second) //nolint:noctx // synchronous test fixture
+		if !assert.NoError(t, dialErr) {
+			return
+		}
+
+		defer conn.Close() //nolint:errcheck // best-effort test cleanup
+
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second)) //nolint:errcheck // best-effort test deadline
+
+		_, _ = io.ReadAll(conn) //nolint:errcheck // test only consumes EOF, payload checked elsewhere
+	}()
+
+	<-entered
+
+	cancel()
+
+	cleanup := h.sessionDir()
+
+	cleanupDone := make(chan struct{})
+
+	go func() {
+		cleanup()
+		close(cleanupDone)
+	}()
+
+	select {
+	case <-cleanupDone:
+		t.Fatal("sessionDir cleanup returned before in-flight socket handler completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+
+	select {
+	case <-cleanupDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sessionDir cleanup did not complete after handler released")
+	}
+
+	<-connDone
+
+	_, err = os.Stat(socketPath)
+	assert.True(t, os.IsNotExist(err), "socket file must be unlinked by cleanup")
+
+	_, err = os.Stat(kubeconfigPath)
+	assert.True(t, os.IsNotExist(err), "kubeconfig file must be unlinked by cleanup")
 }
 
 // extractError wraps the tool result text as an error for ErrorIs

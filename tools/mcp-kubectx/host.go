@@ -54,17 +54,34 @@ func splitLeadingPositional(args []string) (string, []string, error) {
 // the same path through the writable bind mount declared in
 // workmux's extra_mounts.
 func stateHomeDir() string {
-	state := os.Getenv("XDG_STATE_HOME")
-	if state != "" {
-		return filepath.Join(state, "mcp-kubectx")
+	return xdgStateSubdir("mcp-kubectx")
+}
+
+// xdgStateSubdir resolves $XDG_STATE_HOME/<sub> with the standard
+// ~/.local/state fallback. Centralized so [stateHomeDir] and
+// [socketStateDir] cannot drift on the lookup-and-fallback rules.
+func xdgStateSubdir(sub string) string {
+	if state := os.Getenv("XDG_STATE_HOME"); state != "" {
+		return filepath.Join(state, sub)
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(".", ".local", "state", "mcp-kubectx")
+		return filepath.Join(".", ".local", "state", sub)
 	}
 
-	return filepath.Join(home, ".local", "state", "mcp-kubectx")
+	return filepath.Join(home, ".local", "state", sub)
+}
+
+// envTag returns "guest" when forGuest is true and "host" otherwise.
+// Used as the per-pid filename discriminator on both the kubeconfig
+// and the per-serve UDS path.
+func envTag(forGuest bool) string {
+	if forGuest {
+		return "guest"
+	}
+
+	return "host"
 }
 
 // resolveHostKubeconfigPath returns the kubeconfig path to read,
@@ -201,7 +218,7 @@ func (s *stringSliceFlag) Set(v string) error {
 // runHostSelect creates an SA + binding and writes a scoped
 // kubeconfig whose user.exec block points at `host token`. The
 // caller owns cleanup and on-demand token minting.
-func runHostSelect(args []string) error {
+func runHostSelect(ctx context.Context, args []string) error {
 	contextName, rest, err := splitLeadingPositional(args)
 	if err != nil {
 		return err
@@ -215,7 +232,17 @@ func runHostSelect(args []string) error {
 		"destination for the scoped kubeconfig (default: <stateHomeDir>/kubeconfig.<pid>.<env>.yaml)",
 	)
 	pid := fs.Int("pid", 0, "serve process pid (required when --out-path is empty; ignored otherwise)")
-	forGuest := fs.Bool("for-guest", false, "write a kubeconfig whose exec plugin uses workmux host-exec")
+	forGuest := fs.Bool(
+		"for-guest",
+		false,
+		"path discriminator: when true, the defaulted kubeconfig and socket filenames carry the `guest` env tag rather than `host`",
+	)
+	socketPath := fs.String(
+		"socket-path", "",
+		"absolute path of the per-serve UDS the kubeconfig's exec plugin will connect to "+
+			"(default: <socketStateDir>/serve.<pid>.<env>.sock). serve passes its own resolved path "+
+			"because in the guest case the path lives on the guest fs but host select runs host-side.",
+	)
 	saRole := fs.String("sa-role-name", "", "name of the Role or ClusterRole to bind (required)")
 	saRoleKind := fs.String("sa-role-kind", roleKindClusterRole, "kind of role to bind: Role or ClusterRole")
 	saClusterScoped := fs.Bool("sa-cluster-scoped", false, "create a ClusterRoleBinding instead of a RoleBinding")
@@ -244,15 +271,23 @@ func runHostSelect(args []string) error {
 			return ErrSelectMissingPid
 		}
 
-		env := "host"
-		if *forGuest {
-			env = "guest"
-		}
-
 		resolvedOutPath = filepath.Join(
 			stateHomeDir(),
-			fmt.Sprintf("kubeconfig.%d.%s.yaml", *pid, env),
+			fmt.Sprintf("kubeconfig.%d.%s.yaml", *pid, envTag(*forGuest)),
 		)
+	}
+
+	// Socket path defaults to socketPathForServe(*pid, *forGuest)
+	// when --socket-path is empty. Unlike --out-path, no --pid
+	// requirement is enforced here: the existing --pid check on
+	// the kubeconfig path branch already covers production use,
+	// and tests that exercise --out-path without --pid would
+	// otherwise have to mock the socket path purely to satisfy
+	// validation. pid=0 is harmless because tests never actually
+	// connect through the embedded path.
+	resolvedSocketPath := *socketPath
+	if resolvedSocketPath == "" {
+		resolvedSocketPath = socketPathForServe(*pid, *forGuest)
 	}
 
 	sa := saConfig{
@@ -319,24 +354,12 @@ func runHostSelect(args []string) error {
 
 	namespace := resolveSANamespace(sa, found)
 
-	ctx := context.Background()
-
 	saName, err := createSAWithBinding(ctx, client, sa, namespace)
 	if err != nil {
 		return err
 	}
 
-	plugin, err := buildExecPlugin(execPluginParams{
-		KubeconfigPath: hostKubeconfig,
-		Context:        contextName,
-		SAName:         saName,
-		Namespace:      namespace,
-		Expiration:     sa.expiration,
-		ForGuest:       *forGuest,
-	})
-	if err != nil {
-		return err
-	}
+	plugin := buildExecPlugin(execPluginParams{SocketPath: resolvedSocketPath})
 
 	out := kubeConfig{
 		APIVersion:     "v1",
@@ -412,7 +435,7 @@ type ExecCredentialStatus struct {
 // Does NOT read [guestEnvVar]: the guest/host distinction lives
 // only in serve. Recursion via `workmux host-exec` is impossible
 // because token never constructs a *handler.
-func runHostToken(args []string) error {
+func runHostToken(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("host token", flag.ContinueOnError)
 
 	kubeconfig := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
@@ -444,7 +467,7 @@ func runHostToken(args []string) error {
 		expiration = time.Duration(defaultExpiration) * time.Second
 	}
 
-	token, expiry, err := client.CreateTokenRequest(context.Background(), *namespace, *saName, expiration)
+	token, expiry, err := client.CreateTokenRequest(ctx, *namespace, *saName, expiration)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrTokenRequest, err)
 	}
@@ -473,7 +496,7 @@ func runHostToken(args []string) error {
 // NotFound, and exec failures alike. Returning non-zero would
 // otherwise force serve to retry the cleanup over the entire process
 // lifetime, which is worse than the leak.
-func runHostRelease(args []string) error {
+func runHostRelease(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("host release", flag.ContinueOnError)
 
 	kubeconfig := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
@@ -487,12 +510,12 @@ func runHostRelease(args []string) error {
 		// flag.ContinueOnError already prints the error to stderr,
 		// but we still log a structured warning and return success
 		// so that serve never retries the call.
-		slog.Warn("parse host release flags", slog.Any("error", err))
+		slog.WarnContext(ctx, "parse host release flags", slog.Any("error", err))
 		return nil
 	}
 
 	if *saName == "" || *namespace == "" {
-		slog.Warn("host release missing required flags",
+		slog.WarnContext(ctx, "host release missing required flags",
 			slog.String("sa", *saName),
 			slog.String("namespace", *namespace),
 		)
@@ -502,7 +525,7 @@ func runHostRelease(args []string) error {
 
 	client, err := hostKubeClient(resolveHostKubeconfigPath(*kubeconfig), *contextName)
 	if err != nil {
-		slog.Warn("build kube client for release",
+		slog.WarnContext(ctx, "build kube client for release",
 			slog.String("sa", *saName),
 			slog.Any("error", err),
 		)
@@ -511,8 +534,6 @@ func runHostRelease(args []string) error {
 	}
 
 	bindingName := bindingNameForSA(*saName)
-
-	ctx := context.Background()
 
 	// Binding and SA deletes are independent; running them in
 	// parallel halves the K8s API round-trips per release.

@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -62,17 +64,33 @@ type namedUser struct {
 // handler holds configuration parsed from command-line flags and
 // the per-process state owned by serve. It is constructed only on
 // the serve code path; the host * subcommands never touch it.
+//
+// currentSA is loaded by the UDS handler goroutine in
+// [*handler.handleSocketConn] and stored by [*handler.selectCtx]
+// after a successful host select. It carries the descriptor needed
+// to mint a token via [runHostToken] without re-reading any flag
+// state. Atomic rather than mutex-guarded so the socket goroutine
+// never contends with selectCtx's existing critical sections.
+//
+// socketPath / socketListener / socketWG track the per-`serve` UDS
+// lifecycle. socketListener is held only between [main.runServe]
+// and the cleanup ordering in [*handler.sessionDir]; socketWG is
+// drained by [*handler.socketShutdown].
 type handler struct {
+	socketListener  net.Listener
 	envLookup       func(string) string
 	runHost         runHostFunc
-	cleanupFuncs    []func(context.Context)
-	kubeconfigPath  string
+	currentSA       atomic.Pointer[currentSA]
 	outputPath      string
+	kubeconfigPath  string
+	socketPath      string
 	lastOutputPath  string
 	allowedAPIHosts []string
+	cleanupFuncs    []func(context.Context)
 	sa              saConfig
-	mu              sync.Mutex
+	socketWG        sync.WaitGroup
 	pid             int
+	mu              sync.Mutex
 }
 
 // registerCleanup appends a function to run during session teardown.
@@ -115,20 +133,30 @@ func sidecarSymlinkPath() string {
 	)
 }
 
-// sessionDir returns a cleanup function for the per-`serve` session.
-// Cleanup drains every registered K8s resource cleanup (with a
-// 30-second timeout from [context.Background]) and then unlinks
-// the scoped kubeconfig at h.lastOutputPath with a local
-// [os.Remove]. The path is the host-resolved one returned by
-// `host select`; for a guest serve it lives under the
-// `~/.local/state/mcp-kubectx` bind mount declared in workmux's
-// extra_mounts (writable), so removal succeeds without any
-// host-side shell-out.
+// sessionDir returns a cleanup closure for the per-`serve` session.
+// Construction is infallible; the returned closure must be called
+// once on shutdown.
 //
-// The sidecar symlink lives in the local process's TMPDIR and is
-// removed with [os.Remove]; it does not cross the Lima boundary.
-func (h *handler) sessionDir() (func(), error) {
-	runResourceCleanup := func() {
+// Shutdown ordering:
+//  1. [*handler.socketShutdown] closes the UDS listener and waits
+//     for in-flight connection handlers via h.socketWG. Required
+//     so no handler is mid-`runHost` when later steps unlink files.
+//  2. Drain registered K8s resource cleanups with a 30-second
+//     [context.Background] timeout.
+//  3. Unlink the socket file at h.socketPath.
+//  4. Unlink the scoped kubeconfig at h.lastOutputPath. For a
+//     guest serve this path lives under the writable bind mount
+//     of `~/.local/state/mcp-kubectx` declared in workmux's
+//     extra_mounts, so removal succeeds without any host-side
+//     shell-out.
+//  5. Unlink the hook-router sidecar symlink. It lives in the
+//     local TMPDIR and never crosses the Lima boundary.
+func (h *handler) sessionDir() func() {
+	// runResourceCleanup intentionally derives from context.Background.
+	// The serve's signal-rooted ctx is already canceled by the time
+	// this runs (it fires *because* ctx canceled), so threading it
+	// would abort in-flight Delete* calls and re-leak the SA.
+	runResourceCleanup := func() { //nolint:contextcheck // see comment above
 		h.mu.Lock()
 		fns := h.cleanupFuncs
 		h.mu.Unlock()
@@ -146,37 +174,43 @@ func (h *handler) sessionDir() (func(), error) {
 	}
 
 	return func() {
+		h.socketShutdown()
+
 		runResourceCleanup()
 
 		h.mu.Lock()
+		socketPath := h.socketPath
 		outPath := h.lastOutputPath
 		h.mu.Unlock()
 
-		if outPath != "" {
-			err := os.Remove(outPath)
-			if err != nil && !os.IsNotExist(err) {
-				slog.Warn("cleanup kubeconfig",
-					slog.String("path", outPath),
-					slog.Any("error", err),
-				)
-			}
-		}
+		bestEffortRemove("serve socket", socketPath)
+		bestEffortRemove("kubeconfig", outPath)
+		// Sidecar is symlink-only: parent dir is intentionally
+		// left in place because a peer serve under the same
+		// Claude PPID may still depend on it. TMPDIR is reaped
+		// at reboot.
+		bestEffortRemove("sidecar symlink", sidecarSymlinkPath())
+	}
+}
 
-		sidecar := sidecarSymlinkPath()
-		if sidecar != "" {
-			// Symlink-only: parent dir is intentionally left in
-			// place because a peer serve under the same Claude
-			// PPID may still depend on it. TMPDIR is reaped at
-			// reboot.
-			err := os.Remove(sidecar)
-			if err != nil && !os.IsNotExist(err) {
-				slog.Warn("cleanup sidecar symlink",
-					slog.String("path", sidecar),
-					slog.Any("error", err),
-				)
-			}
-		}
-	}, nil
+// bestEffortRemove unlinks path, logging a warn on real errors and
+// silently swallowing IsNotExist. Empty path is a no-op so callers
+// can pass conditionally-set paths without an outer guard.
+func bestEffortRemove(what, path string) {
+	if path == "" {
+		return
+	}
+
+	err := os.Remove(path)
+	if err == nil || os.IsNotExist(err) {
+		return
+	}
+
+	slog.Warn("cleanup",
+		slog.String("kind", what),
+		slog.String("path", path),
+		slog.Any("error", err),
+	)
 }
 
 // loadKubeconfig reads and parses a kubeconfig file.
@@ -247,11 +281,21 @@ func (h *handler) selectCtx(
 	h.cleanupFuncs = nil
 	h.mu.Unlock()
 
+	prevSA := h.currentSA.Load()
+
+	// rollback restores the snapshot taken above. Called by every
+	// failure path between here and the success commit so kubectl
+	// on the prior context keeps minting tokens for the prior SA.
+	rollback := func() {
+		h.restoreCleanups(prev)
+		h.currentSA.Store(prevSA)
+	}
+
 	args := h.selectArgs(input.Context)
 
 	stdout, err := h.runHost(ctx, "select", args)
 	if err != nil {
-		h.restoreCleanups(prev)
+		rollback()
 		return toolError(err), nil, nil
 	}
 
@@ -259,7 +303,7 @@ func (h *handler) selectCtx(
 
 	err = json.Unmarshal(stdout, &result)
 	if err != nil {
-		h.restoreCleanups(prev)
+		rollback()
 		return toolError(fmt.Errorf("%w: %w", ErrParseHostResult, err)), nil, nil
 	}
 
@@ -270,6 +314,20 @@ func (h *handler) selectCtx(
 	h.mu.Lock()
 	h.lastOutputPath = result.Path
 	h.mu.Unlock()
+
+	// Storing the new descriptor before draining the prior cleanups
+	// is deliberate: kubectl on the new context can mint tokens for
+	// the new SA while the prior SA's Delete* calls are still in
+	// flight, hiding rotation latency from the user. The atomic
+	// pointer guarantees the socket goroutine sees a coherent
+	// old-or-new SA, never garbage.
+	h.currentSA.Store(&currentSA{
+		Kubeconfig: result.Kubeconfig,
+		Context:    result.Context,
+		SAName:     result.SAName,
+		Namespace:  result.Namespace,
+		Expiration: h.sa.expiration,
+	})
 
 	// result.Path is the path host select actually wrote, including
 	// any host-side defaulting; using it points the symlink and
@@ -310,11 +368,14 @@ func (h *handler) selectCtx(
 // an empty list yields no flags and lets `host select` accept any
 // apiserver.
 func (h *handler) selectArgs(contextName string) []string {
+	guest := h.isGuest()
+
 	args := []string{contextName}
 	args = append(args, h.kubeconfigArgs()...)
 	args = append(args,
 		"--pid", strconv.Itoa(h.pid),
-		fmt.Sprintf("--for-guest=%t", h.isGuest()),
+		fmt.Sprintf("--for-guest=%t", guest),
+		"--socket-path", socketPathForServe(h.pid, guest),
 		"--sa-role-name", h.sa.role,
 		"--sa-role-kind", h.sa.roleKind,
 		"--sa-namespace", h.sa.namespace,

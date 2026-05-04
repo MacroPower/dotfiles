@@ -1,11 +1,5 @@
 package main
 
-import (
-	"fmt"
-	"os"
-	"strconv"
-)
-
 // execAuthAPIVersion is the kubectl exec credential plugin protocol
 // version used by the scoped kubeconfig.
 const execAuthAPIVersion = "client.authentication.k8s.io/v1"
@@ -21,57 +15,34 @@ type execPlugin struct {
 	Args            []string `yaml:"args"`
 }
 
-// execPluginParams describes the inputs needed to mint a token via
-// the host token subcommand. The exec plugin pins these flags so
-// that the running plugin process cannot be subverted by caller-side
-// environment, and so the host-resolved kubeconfig path survives
-// across $KUBECONFIG sanitization in workmux host-exec.
+// execPluginParams describes the inputs needed to build the kubectl
+// exec credential plugin block. Only the per-`serve` socket path
+// varies; the host- and guest-side kubeconfigs both use the same
+// shim that connects back to its own serve over UDS, hiding the
+// host/guest distinction from kubectl.
 type execPluginParams struct {
-	KubeconfigPath string
-	Context        string
-	SAName         string
-	Namespace      string
-	Expiration     int
-	ForGuest       bool
+	SocketPath string
 }
 
 // buildExecPlugin returns the `user.exec` config for the scoped
-// kubeconfig. When forGuest is false the plugin invokes the
-// mcp-kubectx binary at its current absolute store path; when
-// forGuest is true it goes through workmux host-exec so the in-VM
-// kubectl can reach the host.
-func buildExecPlugin(p execPluginParams) (execPlugin, error) {
-	tokenArgs := []string{
-		"host", "token",
-		"--kubeconfig", p.KubeconfigPath,
-		"--context", p.Context,
-		"--sa", p.SAName,
-		"--namespace", p.Namespace,
-		"--sa-expiration", strconv.Itoa(p.Expiration),
-	}
-
-	var (
-		cmd  string
-		args = tokenArgs
-	)
-
-	if p.ForGuest {
-		cmd = "workmux"
-
-		args = append([]string{"host-exec", "mcp-kubectx"}, tokenArgs...)
-	} else {
-		self, err := os.Executable()
-		if err != nil {
-			return execPlugin{}, fmt.Errorf("resolve executable path: %w", err)
-		}
-
-		cmd = self
-	}
-
+// kubeconfig. The plugin is a tiny in-binary UDS client
+// (`mcp-kubectx exec-plugin --socket <path>`); both host- and
+// guest-side serves write the same shape, so kubectl never sees
+// the workmux host-exec wrapper. The wrapper still happens server
+// side: guest serve's [*handler.defaultRunHost] decides between a
+// direct fork and `workmux host-exec` for the in-process token
+// call, transparent to the kubeconfig.
+//
+// `command` is the bare program name "mcp-kubectx" to keep the
+// scoped kubeconfig portable across rebuilds (the absolute store
+// path would be invalidated by the next nix-darwin switch). The
+// binary is on PATH for both the host and the in-Lima profiles via
+// `home.packages` in `home/claude.nix`.
+func buildExecPlugin(p execPluginParams) execPlugin {
 	return execPlugin{
 		APIVersion:      execAuthAPIVersion,
-		Command:         cmd,
-		Args:            args,
+		Command:         "mcp-kubectx",
+		Args:            []string{"exec-plugin", "--socket", p.SocketPath},
 		InteractiveMode: "Never",
-	}, nil
+	}
 }

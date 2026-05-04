@@ -16,19 +16,32 @@ import (
 const version = "0.1.0"
 
 func main() {
-	err := dispatch(os.Args)
+	os.Exit(run())
+}
+
+// run is the testable body of main. Splitting it out lets `os.Exit`
+// happen at the very top frame so deferred `cancel()` and any other
+// cleanup actually run.
+func run() int {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	err := dispatch(ctx, os.Args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
+		return 1
 	}
+
+	return 0
 }
 
 // runServe runs the MCP stdio server. It owns the long-lived
 // per-process state (kubeconfig path, SA cleanup registry) and
 // shells out to `host *` subcommands -- directly when on the
 // macOS host, via `workmux host-exec` when in a Lima guest -- to
-// touch the cluster.
-func runServe(args []string) error {
+// touch the cluster. ctx carries the parent process's signal
+// cancellation; runServe itself does not call [signal.NotifyContext].
+func runServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 
 	kubeconfig := fs.String(
@@ -36,7 +49,8 @@ func runServe(args []string) error {
 		"path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)",
 	)
 	output := fs.String(
-		"output", "",
+		"output",
+		"",
 		"path where scoped kubeconfig is written (default: <host's $XDG_STATE_HOME>/mcp-kubectx/kubeconfig.<pid>.<env>.yaml). "+
 			"In a Lima guest, an explicit path must be host-resolvable; shutdown cleanup uses a local os.Remove on this "+
 			"branch (not host cleanup), so the path must also be writable from the guest -- typically only true under a "+
@@ -111,11 +125,25 @@ func runServe(args []string) error {
 
 	h.runHost = h.defaultRunHost
 
-	cleanup, err := h.sessionDir()
+	sockPath := socketPathForServe(h.pid, h.isGuest())
+
+	// listenSocket's own cleanup is dropped: sessionDir's cleanup
+	// already calls socketShutdown (close listener) + bestEffortRemove
+	// of socketPath, so calling both would just be redundant.
+	listener, _, err := h.listenSocket(ctx, sockPath)
 	if err != nil {
-		return fmt.Errorf("session directory: %w", err)
+		return fmt.Errorf("bind serve socket: %w", err)
 	}
-	defer cleanup()
+
+	h.mu.Lock()
+	h.socketPath = sockPath
+	h.socketListener = listener
+	h.mu.Unlock()
+
+	//nolint:contextcheck // SA-release drain inside cleanup uses context.Background by design; see comment in sessionDir
+	defer h.sessionDir()()
+
+	go h.serveSocket(ctx, listener, &h.socketWG)
 
 	srv := mcp.NewServer(
 		&mcp.Implementation{Name: "mcp-kubectx", Version: version},
@@ -132,12 +160,7 @@ func runServe(args []string) error {
 		Description: "Select a Kubernetes context and write a scoped kubeconfig to the configured output path.",
 	}, h.selectCtx)
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-
 	err = srv.Run(ctx, &mcp.StdioTransport{})
-
-	cancel()
-
 	if err != nil {
 		return fmt.Errorf("server: %w", err)
 	}
