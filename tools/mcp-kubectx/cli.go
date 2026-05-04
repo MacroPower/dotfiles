@@ -40,11 +40,14 @@ func dispatch(args []string) error {
 
 // dispatchHost routes a `host <sub>` invocation to the right
 // one-shot handler. The host subcommands never run the MCP server
-// and never shell out to `workmux host-exec`; they always reach
-// Kubernetes directly.
+// and never shell out to `workmux host-exec`; they touch the host
+// filesystem and Kubernetes API directly.
 func dispatchHost(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("%w: host (missing subcommand: list|select|token|release)", ErrUnknownSubcommand)
+		return fmt.Errorf(
+			"%w: host (missing subcommand: list|select|token|release)",
+			ErrUnknownSubcommand,
+		)
 	}
 
 	switch args[0] {

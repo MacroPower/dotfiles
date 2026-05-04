@@ -81,7 +81,7 @@ func TestHostListMissingFile(t *testing.T) {
 	require.ErrorIs(t, err, ErrLoadKubeconfig)
 }
 
-func TestHostSelectMissingOutPath(t *testing.T) {
+func TestHostSelectMissingPid(t *testing.T) {
 	t.Parallel()
 
 	path := writeTestKubeconfig(t, testKubeconfig())
@@ -91,7 +91,58 @@ func TestHostSelectMissingOutPath(t *testing.T) {
 		"--kubeconfig", path,
 		"--sa-role-name", "view",
 	})
-	require.ErrorIs(t, err, ErrSelectMissingOutPath)
+	require.ErrorIs(t, err, ErrSelectMissingPid)
+}
+
+// TestHostSelectDefaultsOutPath pins that omitting --out-path falls
+// back to <stateHomeDir>/kubeconfig.<pid>.<env>.yaml on the host
+// side. The <env> component flips with --for-guest.
+func TestHostSelectDefaultsOutPath(t *testing.T) { //nolint:paralleltest // mutates package-level state, uses t.Setenv
+	tests := map[string]struct {
+		forGuest string
+		want     string
+	}{
+		"host env": {
+			forGuest: "false",
+			want:     "kubeconfig.1234.host.yaml",
+		},
+		"guest env": {
+			forGuest: "true",
+			want:     "kubeconfig.1234.guest.yaml",
+		},
+	}
+
+	for name, tc := range tests { //nolint:paralleltest // subtests use t.Setenv
+		t.Run(name, func(t *testing.T) {
+			withHostKubeClient(t, &mockKubeClient{token: "t", tokenExpiry: time.Now()})
+
+			buf := withHostStdout(t)
+
+			stateHome := t.TempDir()
+			t.Setenv("XDG_STATE_HOME", stateHome)
+
+			path := writeTestKubeconfig(t, testKubeconfig())
+
+			err := runHostSelect([]string{
+				"prod",
+				"--kubeconfig", path,
+				"--pid", "1234",
+				"--for-guest=" + tc.forGuest,
+				"--sa-role-name", "view",
+			})
+			require.NoError(t, err)
+
+			expected := filepath.Join(stateHome, "mcp-kubectx", tc.want)
+
+			var result HostSelectResult
+
+			require.NoError(t, json.NewDecoder(strings.NewReader(buf.String())).Decode(&result))
+			assert.Equal(t, expected, result.Path)
+
+			_, statErr := os.Stat(expected)
+			assert.NoError(t, statErr, "kubeconfig file must exist at the defaulted path")
+		})
+	}
 }
 
 func TestHostSelectMissingContext(t *testing.T) {

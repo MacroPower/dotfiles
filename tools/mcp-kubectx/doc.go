@@ -35,7 +35,10 @@
 //   - host list: prints the available kubeconfig contexts.
 //   - host select <ctx>: creates a ServiceAccount + role binding
 //     and writes a scoped kubeconfig whose user.exec block points
-//     at `host token`. Prints a JSON [HostSelectResult] on stdout.
+//     at `host token`. Resolves the output path itself when
+//     --out-path is omitted, keyed off the --pid + --for-guest
+//     discriminator the serve forwards. Prints a JSON
+//     [HostSelectResult] on stdout.
 //   - host token: mints a fresh ServiceAccount token via
 //     TokenRequest and prints an [ExecCredential] JSON document.
 //   - host release: deletes a ServiceAccount and its binding.
@@ -51,12 +54,21 @@
 //   - --kubeconfig: path to the host kubeconfig file
 //     (default: $KUBECONFIG, then ~/.kube/config).
 //   - --output: path where the scoped kubeconfig is written
-//     (default: $XDG_STATE_HOME/mcp-kubectx/kubeconfig.<pid>.<env>.yaml,
+//     (default: <host's $XDG_STATE_HOME>/mcp-kubectx/kubeconfig.<pid>.<env>.yaml,
 //     falling back to ~/.local/state/mcp-kubectx/... when
-//     $XDG_STATE_HOME is unset). <env> is the literal string `host`
-//     or `guest`. The <pid> component prevents two `serve` instances
-//     (including a host serve and a Lima-guest serve sharing the
-//     same $HOME) from overwriting each other's kubeconfig.
+//     $XDG_STATE_HOME is unset on the host). The default is
+//     resolved by `host select` itself; `serve` only forwards its
+//     own pid plus host/guest env as the discriminator. <env> is
+//     the literal string `host` or `guest`. <pid> is the serve
+//     process id, scoping the file to the running serve so a host
+//     serve and a Lima-guest serve cannot collide.
+//     An explicit --output must be host-resolvable and writable
+//     from the guest, since shutdown cleanup is a local
+//     [os.Remove]. Default operation already satisfies that via
+//     the writable bind mount of <stateHomeDir> declared in
+//     workmux's extra_mounts; an explicit --output bypasses that
+//     mount, so the user is responsible for picking a path that
+//     is reachable on both sides.
 //   - --sa-role-name: name of the Role or ClusterRole to bind (required).
 //   - --sa-role-kind: kind of role to bind: Role or ClusterRole
 //     (default: ClusterRole).
@@ -83,17 +95,25 @@
 // # host select flags
 //
 // Creates a ServiceAccount + binding and writes a scoped kubeconfig.
-// The first positional argument is the context name. --out-path is
-// required. Path policy lives in `serve`, never on the host side, so
-// two concurrent `serve` instances cannot collide on the same file.
+// The first positional argument is the context name. Path resolution
+// is split: serve owns the discriminator (pid + host/guest env);
+// host select owns the base directory ([stateHomeDir], read from
+// the host's $XDG_STATE_HOME). When --out-path is empty, host select
+// requires --pid and resolves the path itself; an explicit
+// --out-path bypasses defaulting and is forwarded verbatim.
 //
 //   - --kubeconfig: path to the host kubeconfig file.
-//   - --out-path: destination for the scoped kubeconfig (required;
-//     `serve` always supplies it from [*handler.resolveOutputPath]).
+//   - --out-path: destination for the scoped kubeconfig (default:
+//     <stateHomeDir>/kubeconfig.<pid>.<env>.yaml).
+//   - --pid: serve process pid, used as the filename
+//     discriminator when --out-path is empty (required in that
+//     branch, ignored when --out-path is set).
 //   - --for-guest: when true, the kubeconfig user.exec block wraps
 //     `mcp-kubectx host token` with `workmux host-exec` so an
 //     in-guest kubectl can reach the host. When false, user.exec
 //     points at the absolute path of the current binary directly.
+//     Also drives the <env> token (`host` or `guest`) when
+//     --out-path defaulting is in effect.
 //   - --sa-role-name, --sa-role-kind, --sa-cluster-scoped,
 //     --sa-namespace, --sa-expiration: same semantics as the `serve`
 //     flags above. `serve` forwards its own values verbatim.
@@ -144,9 +164,14 @@
 //
 // On SIGINT or SIGTERM, the cleanup closure returned by
 // [*handler.sessionDir] runs every registered release with the same
-// 30-second [context.Background] timeout and then removes the
-// kubeconfig file. SIGKILL leaks at most one SA and one kubeconfig
-// file. Provisioned SAs and bindings carry the
+// 30-second [context.Background] timeout, then unlinks the
+// kubeconfig file with a local [os.Remove] of h.lastOutputPath.
+// On a Lima-guest serve the unlink lands on the host through the
+// writable bind mount of <stateHomeDir> declared in workmux's
+// extra_mounts; the guest's write reach extends only to that
+// directory, which only ever holds mcp-kubectx kubeconfigs.
+// SIGKILL leaks at most one SA and one
+// kubeconfig file. Provisioned SAs and bindings carry the
 // `app.kubernetes.io/managed-by=mcp-kubectx` label so a future
 // sweep tool can find orphans by selector.
 //

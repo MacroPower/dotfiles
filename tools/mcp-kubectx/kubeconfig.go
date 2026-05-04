@@ -22,7 +22,6 @@ var (
 	ErrContextNotFound = errors.New("context not found")
 	ErrLoadKubeconfig  = errors.New("load kubeconfig")
 	ErrWriteKubeconfig = errors.New("write kubeconfig")
-	ErrSessionDir      = errors.New("session directory")
 	ErrParseHostResult = errors.New("parse host select result")
 )
 
@@ -69,6 +68,7 @@ type handler struct {
 	cleanupFuncs    []func(context.Context)
 	kubeconfigPath  string
 	outputPath      string
+	lastOutputPath  string
 	allowedAPIHosts []string
 	sa              saConfig
 	mu              sync.Mutex
@@ -94,23 +94,6 @@ func (h *handler) restoreCleanups(prev []func(context.Context)) {
 	h.mu.Unlock()
 }
 
-// stateHomeDir returns the parent directory used for per-`serve`
-// kubeconfig files. Honors $XDG_STATE_HOME, falling back to
-// ~/.local/state when unset.
-func stateHomeDir() string {
-	state := os.Getenv("XDG_STATE_HOME")
-	if state != "" {
-		return filepath.Join(state, "mcp-kubectx")
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".", ".local", "state", "mcp-kubectx")
-	}
-
-	return filepath.Join(home, ".local", "state", "mcp-kubectx")
-}
-
 // sidecarSymlinkPath returns the per-Claude-session symlink path
 // the Claude Code hook-router consults to find the active
 // kubeconfig. Mirrors hook-router's lookup in main.go's
@@ -132,40 +115,18 @@ func sidecarSymlinkPath() string {
 	)
 }
 
-// resolveOutputPath returns the path where the scoped kubeconfig is
-// written. When no flag is set, the path is keyed by the serve
-// process pid and the host/guest environment so concurrent serve
-// instances (potentially across the Lima boundary, which shares
-// $HOME) never overwrite each other.
-func (h *handler) resolveOutputPath() string {
-	if h.outputPath != "" {
-		return h.outputPath
-	}
-
-	env := "host"
-	if h.isGuest() {
-		env = "guest"
-	}
-
-	pid := h.pid
-	if pid <= 0 {
-		pid = os.Getpid()
-	}
-
-	return filepath.Join(
-		stateHomeDir(),
-		fmt.Sprintf("kubeconfig.%s.%s.yaml", strconv.Itoa(pid), env),
-	)
-}
-
-// sessionDir creates the parent directory for the per-`serve`
-// kubeconfig file and returns a cleanup function. Cleanup runs
-// every registered K8s resource cleanup (with a 30-second timeout
-// from [context.Background]) and then removes the kubeconfig file.
+// sessionDir returns a cleanup function for the per-`serve` session.
+// Cleanup drains every registered K8s resource cleanup (with a
+// 30-second timeout from [context.Background]) and then unlinks
+// the scoped kubeconfig at h.lastOutputPath with a local
+// [os.Remove]. The path is the host-resolved one returned by
+// `host select`; for a guest serve it lives under the
+// `~/.local/state/mcp-kubectx` bind mount declared in workmux's
+// extra_mounts (writable), so removal succeeds without any
+// host-side shell-out.
 //
-// Each serve owns one file inside the shared $XDG_STATE_HOME/mcp-kubectx
-// parent. Concurrent serve processes share that directory but never
-// share filenames -- the path is keyed by pid and host/guest env.
+// The sidecar symlink lives in the local process's TMPDIR and is
+// removed with [os.Remove]; it does not cross the Lima boundary.
 func (h *handler) sessionDir() (func(), error) {
 	runResourceCleanup := func() {
 		h.mu.Lock()
@@ -184,24 +145,21 @@ func (h *handler) sessionDir() (func(), error) {
 		}
 	}
 
-	outPath := h.resolveOutputPath()
-
-	if h.outputPath == "" {
-		err := os.MkdirAll(filepath.Dir(outPath), 0o700)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrSessionDir, err)
-		}
-	}
-
 	return func() {
 		runResourceCleanup()
 
-		err := os.Remove(outPath)
-		if err != nil && !os.IsNotExist(err) {
-			slog.Warn("cleanup kubeconfig",
-				slog.String("path", outPath),
-				slog.Any("error", err),
-			)
+		h.mu.Lock()
+		outPath := h.lastOutputPath
+		h.mu.Unlock()
+
+		if outPath != "" {
+			err := os.Remove(outPath)
+			if err != nil && !os.IsNotExist(err) {
+				slog.Warn("cleanup kubeconfig",
+					slog.String("path", outPath),
+					slog.Any("error", err),
+				)
+			}
 		}
 
 		sidecar := sidecarSymlinkPath()
@@ -309,9 +267,13 @@ func (h *handler) selectCtx(
 
 	h.registerCleanup(releaseFn)
 
-	// result.Path round-trips --out-path back from host select, so it
-	// equals h.resolveOutputPath() in normal operation; using it
-	// instead points the symlink at the file the host actually wrote.
+	h.mu.Lock()
+	h.lastOutputPath = result.Path
+	h.mu.Unlock()
+
+	// result.Path is the path host select actually wrote, including
+	// any host-side defaulting; using it points the symlink and
+	// shutdown cleanup at the same file.
 	h.publishSidecar(result.Path)
 
 	if len(prev) > 0 {
@@ -337,17 +299,21 @@ func (h *handler) selectCtx(
 	)), nil, nil
 }
 
-// selectArgs builds the argv passed to `host select`. The serve
-// process always supplies the resolved out-path so the host
-// subcommand never has to make path policy decisions. Each
-// allowed apiserver host is forwarded as a repeated
-// `--allow-apiserver-host` flag; an empty list yields no flags
-// and lets `host select` accept any apiserver.
+// selectArgs builds the argv passed to `host select`. Serve owns
+// the discriminator (pid + host/guest env) and forwards it as
+// --pid; host select uses that, plus its own host-side
+// [stateHomeDir], to resolve the kubeconfig path. When the user
+// passed --output to serve, h.outputPath is non-empty and serve
+// forwards it as --out-path so the user override still wins (host
+// select ignores --pid in that branch). Each allowed apiserver
+// host is forwarded as a repeated `--allow-apiserver-host` flag;
+// an empty list yields no flags and lets `host select` accept any
+// apiserver.
 func (h *handler) selectArgs(contextName string) []string {
 	args := []string{contextName}
 	args = append(args, h.kubeconfigArgs()...)
 	args = append(args,
-		"--out-path", h.resolveOutputPath(),
+		"--pid", strconv.Itoa(h.pid),
 		fmt.Sprintf("--for-guest=%t", h.isGuest()),
 		"--sa-role-name", h.sa.role,
 		"--sa-role-kind", h.sa.roleKind,
@@ -355,6 +321,10 @@ func (h *handler) selectArgs(contextName string) []string {
 		"--sa-expiration", strconv.Itoa(h.sa.expiration),
 		fmt.Sprintf("--sa-cluster-scoped=%t", h.sa.clusterScoped),
 	)
+
+	if h.outputPath != "" {
+		args = append(args, "--out-path", h.outputPath)
+	}
 
 	for _, host := range h.allowedAPIHosts {
 		args = append(args, "--"+allowAPIServerHostFlag, host)

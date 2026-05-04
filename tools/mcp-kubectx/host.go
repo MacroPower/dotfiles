@@ -47,6 +47,26 @@ func splitLeadingPositional(args []string) (string, []string, error) {
 	return args[0], args[1:], nil
 }
 
+// stateHomeDir returns the parent directory used for per-`serve`
+// kubeconfig files. Honors $XDG_STATE_HOME, falling back to
+// ~/.local/state when unset. Resolved on the host side because
+// the file lives on the host filesystem; a Lima-guest serve sees
+// the same path through the writable bind mount declared in
+// workmux's extra_mounts.
+func stateHomeDir() string {
+	state := os.Getenv("XDG_STATE_HOME")
+	if state != "" {
+		return filepath.Join(state, "mcp-kubectx")
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".", ".local", "state", "mcp-kubectx")
+	}
+
+	return filepath.Join(home, ".local", "state", "mcp-kubectx")
+}
+
 // resolveHostKubeconfigPath returns the kubeconfig path to read,
 // preferring the explicit flag value, then $KUBECONFIG, then
 // ~/.kube/config. Used by both the host subcommands and the serve
@@ -122,15 +142,15 @@ type HostSelectResult struct {
 	ClusterScoped bool   `json:"clusterScoped"`
 }
 
-// Sentinel errors for the host subcommands. ErrSelectMissingOutPath
-// signals that host select was invoked without --out-path: the
-// serve-side caller owns path policy and always supplies a
-// per-process path; defaulting on the host side would let two
-// concurrent serves overwrite each other's kubeconfig.
+// Sentinel errors for the host subcommands. ErrSelectMissingPid
+// signals that host select was invoked without --out-path and
+// without --pid: when path resolution falls back to the host-side
+// default, serve must supply its own pid as the discriminator so
+// concurrent host + guest serves never overwrite each other.
 //
-//nolint:grouper // distinct from the test indirections above
+//nolint:grouper // sentinels grouped separately from the test-indirection vars further up
 var (
-	ErrSelectMissingOutPath  = errors.New("--out-path is required")
+	ErrSelectMissingPid      = errors.New("--pid is required when --out-path is empty")
 	ErrParseHostSelectFlags  = errors.New("parse host select flags")
 	ErrParseHostListFlags    = errors.New("parse host list flags")
 	ErrParseHostTokenFlags   = errors.New("parse host token flags")
@@ -190,7 +210,11 @@ func runHostSelect(args []string) error {
 	fs := flag.NewFlagSet("host select", flag.ContinueOnError)
 
 	kubeconfig := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
-	outPath := fs.String("out-path", "", "destination for the scoped kubeconfig (required)")
+	outPath := fs.String(
+		"out-path", "",
+		"destination for the scoped kubeconfig (default: <stateHomeDir>/kubeconfig.<pid>.<env>.yaml)",
+	)
+	pid := fs.Int("pid", 0, "serve process pid (required when --out-path is empty; ignored otherwise)")
 	forGuest := fs.Bool("for-guest", false, "write a kubeconfig whose exec plugin uses workmux host-exec")
 	saRole := fs.String("sa-role-name", "", "name of the Role or ClusterRole to bind (required)")
 	saRoleKind := fs.String("sa-role-kind", roleKindClusterRole, "kind of role to bind: Role or ClusterRole")
@@ -214,8 +238,21 @@ func runHostSelect(args []string) error {
 		return fmt.Errorf("%w: %w", ErrParseHostSelectFlags, err)
 	}
 
-	if *outPath == "" {
-		return ErrSelectMissingOutPath
+	resolvedOutPath := *outPath
+	if resolvedOutPath == "" {
+		if *pid <= 0 {
+			return ErrSelectMissingPid
+		}
+
+		env := "host"
+		if *forGuest {
+			env = "guest"
+		}
+
+		resolvedOutPath = filepath.Join(
+			stateHomeDir(),
+			fmt.Sprintf("kubeconfig.%d.%s.yaml", *pid, env),
+		)
 	}
 
 	sa := saConfig{
@@ -328,13 +365,13 @@ func runHostSelect(args []string) error {
 		return fmt.Errorf("%w: %w", ErrWriteKubeconfig, err)
 	}
 
-	err = writeFileSecure(*outPath, data)
+	err = writeFileSecure(resolvedOutPath, data)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrWriteKubeconfig, err)
 	}
 
 	result := HostSelectResult{
-		Path:          *outPath,
+		Path:          resolvedOutPath,
 		SAName:        saName,
 		Namespace:     namespace,
 		Kubeconfig:    hostKubeconfig,

@@ -14,10 +14,12 @@ The binary has two surface areas dispatched by a single flat switch
 in `cli.go`:
 
 - **`serve`** is the long-lived MCP stdio server. It owns per-process
-  state in `*handler`: the host kubeconfig path, the per-`serve`
-  scoped-kubeconfig path, the SA configuration parsed from `--sa-*`
-  flags, and a slice of cleanup closures registered on each `select`.
-  It never touches the cluster directly.
+  state in `*handler`: the host kubeconfig path, the SA configuration
+  parsed from `--sa-*` flags, and a slice of cleanup closures
+  registered on each `select`. It never touches the cluster directly.
+  Output-path resolution is delegated to `host select`; serve only
+  forwards its own pid + `host`/`guest` env as the discriminator so
+  concurrent serves never collide.
 - **`host {list, select, token, release}`** are stateless one-shots.
   Each parses argv, talks to the cluster via client-go, prints JSON
   or text on stdout, and exits. They share no state with each other
@@ -196,10 +198,8 @@ radius as today's "kill mcp-kubectx without warning". No regression.
 A future `mcp-kubectx host sweep --age=24h` tool can mop up orphans
 by label and TTL. Not yet implemented.
 
-The behaviors above are pinned by `TestSelectDrainsPriorCleanupOnSuccess`,
-`TestSelectRestoresPrevCleanupOnFailure`,
-`TestSessionDirCleanupRunsResourceCleanupWhenOutputSet`, and
-`TestSessionDirCleanupRunsResourceCleanupWhenOutputUnset`.
+The behaviors above are pinned by the `TestSelect*` and
+`TestSessionDir*` test families in `kubeconfig_test.go`.
 
 ## Recursion guard and the env chain
 
@@ -267,25 +267,49 @@ server.
 
 ## Concurrent-select hazard and per-`serve` paths
 
-A host `serve` and a Lima-guest `serve` share `$HOME`. If `host
-select` defaulted the output kubeconfig path on the host side, two
-`serve` instances could overwrite each other's kubeconfig. To avoid
-that, `--out-path` is **required** on `host select`. Path policy
-lives only in `serve`. Each `serve` resolves a path keyed by pid
-plus `host` or `guest` env (`*handler.resolveOutputPath`):
+The scoped kubeconfig file lives on the host filesystem. A
+host-side `serve` and a Lima-guest `serve` could otherwise overwrite
+each other's kubeconfig if path resolution did not key on the
+running serve's identity. Resolution is split: `serve` owns the
+discriminator (its own pid plus `host` or `guest` env), `host
+select` owns the base directory (the host's `$XDG_STATE_HOME`).
+`serve` forwards `--pid <h.pid>` plus `--for-guest=BOOL` to `host
+select`, which builds the path:
 
 ```
-$XDG_STATE_HOME/mcp-kubectx/kubeconfig.<pid>.<env>.yaml
+<host's $XDG_STATE_HOME>/mcp-kubectx/kubeconfig.<pid>.<env>.yaml
 ```
 
 `<env>` is the literal string `host` or `guest`; `<pid>` is the
 serve process id. Falls back to `~/.local/state/mcp-kubectx/...`
-when `$XDG_STATE_HOME` is unset.
+when `$XDG_STATE_HOME` is unset on the host.
 
-The MCP `select` response carries the resolved path back to the
-caller so an interactive shell can `export KUBECONFIG=...` to it.
-Each `serve` removes its own kubeconfig file on shutdown alongside
-the `host release` of its current SA.
+A guest-side `serve` reads the host's `$XDG_STATE_HOME` because
+`workmux host-exec` runs `host select` on the host, so the env
+introspection happens host-side. The guest sees the file at the
+same absolute path through a writable bind mount of
+`<host's $XDG_STATE_HOME>/mcp-kubectx` declared in workmux's
+`extra_mounts` (see `home/claude.nix`). Shutdown cleanup is a
+local `os.Remove(h.lastOutputPath)` from the serve process; on a
+guest serve the unlink lands on the host through the same bind
+mount. The mount is intentionally scoped to the mcp-kubectx
+state dir so the guest's write reach extends only to mcp-kubectx
+kubeconfig files -- not to the rest of the host filesystem.
+
+The hook-router sidecar symlink published by [*handler.publishSidecar]
+points at the same host-absolute path; hook-router resolves it
+through the bind mount to _read_ the kubeconfig.
+
+The MCP `select` response carries the host-resolved path back to
+the caller so an interactive shell can `export KUBECONFIG=...` to
+it. Each `serve` removes its own kubeconfig file on shutdown
+alongside the `host release` of its current SA.
+
+The `--out-path` flag on `host select` remains as an escape hatch.
+When `serve` is invoked with `--output PATH`, it forwards the path
+verbatim as `--out-path`, bypassing the defaulting. In a Lima
+guest, an explicit `--output` must be host-resolvable and writable
+from the guest -- typically only true under a bind mount.
 
 ## Out of scope
 

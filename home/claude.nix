@@ -235,6 +235,18 @@ let
           guest_path = researchDir;
           writable = true;
         }
+        {
+          # mcp-kubectx serve writes scoped kubeconfig files at
+          # this path via `host select` running on the macOS host.
+          # The guest's kubectl reads them through this bind mount,
+          # and shutdown cleanup uses a local os.Remove from the
+          # guest -- so the mount must be writable. Blast radius
+          # is bounded to this directory, which only ever holds
+          # mcp-kubectx kubeconfigs.
+          host_path = "${config.xdg.stateHome}/mcp-kubectx";
+          guest_path = "${config.xdg.stateHome}/mcp-kubectx";
+          writable = true;
+        }
       ];
       lima = {
         isolation = "shared";
@@ -1957,6 +1969,16 @@ in
       activation.ensureClaudeResearchDir = lib.mkIf (pkgs.stdenv.isDarwin || !cfg.research.useVault) (
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           run mkdir -p "${researchDir}"
+        ''
+      );
+
+      # Lima refuses to start when an extra_mounts host_path is
+      # missing, and `host select` only creates this dir lazily on
+      # the first kubectx select. Pre-create it at activation so
+      # `task lima:rebuild` succeeds on a fresh host.
+      activation.ensureMcpKubectxStateDir = lib.mkIf cfg.lima.enable (
+        lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          run mkdir -p "${config.xdg.stateHome}/mcp-kubectx"
         ''
       );
 

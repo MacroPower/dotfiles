@@ -37,7 +37,10 @@ func runServe(args []string) error {
 	)
 	output := fs.String(
 		"output", "",
-		"path where scoped kubeconfig is written (default: $XDG_STATE_HOME/mcp-kubectx/kubeconfig.<pid>.<env>.yaml)",
+		"path where scoped kubeconfig is written (default: <host's $XDG_STATE_HOME>/mcp-kubectx/kubeconfig.<pid>.<env>.yaml). "+
+			"In a Lima guest, an explicit path must be host-resolvable; shutdown cleanup uses a local os.Remove on this "+
+			"branch (not host cleanup), so the path must also be writable from the guest -- typically only true under a "+
+			"writable bind mount. Default operation does not need a writable mount.",
 	)
 	saRole := fs.String(
 		"sa-role-name", "",
@@ -99,6 +102,7 @@ func runServe(args []string) error {
 	h := &handler{
 		kubeconfigPath:  *kubeconfig,
 		outputPath:      *output,
+		lastOutputPath:  *output,
 		allowedAPIHosts: allowedAPIHosts,
 		pid:             os.Getpid(),
 		sa:              sa,

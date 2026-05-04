@@ -126,7 +126,11 @@ func run(
 		return fmt.Errorf("reading stdin: %w", err)
 	}
 
-	logger.Info("dispatch", slog.String("event", event), slog.String("tool", tool))
+	logger.Info("dispatch",
+		slog.String("event", event),
+		slog.String("tool", tool),
+		slog.Int("ppid", os.Getppid()),
+	)
 
 	switch event {
 	case "PreToolUse":

@@ -88,101 +88,67 @@ func TestResolveKubeconfigPath(t *testing.T) { //nolint:tparallel // subtests us
 	})
 }
 
-func TestResolveOutputPath(t *testing.T) { //nolint:tparallel // uses t.Setenv
-	tmpDir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", tmpDir)
+func TestSessionDir(t *testing.T) {
+	t.Run("removes lastOutputPath on cleanup", func(t *testing.T) {
+		t.Parallel()
 
-	tests := map[string]struct {
-		flagVal string
-		guest   string
-		pid     int
-		want    string
-	}{
-		"flag set": {
-			flagVal: "/custom/output",
-			pid:     1234,
-			want:    "/custom/output",
-		},
-		"host pid scoped": {
-			pid:  1234,
-			want: filepath.Join(tmpDir, "mcp-kubectx", "kubeconfig.1234.host.yaml"),
-		},
-		"guest pid scoped": {
-			pid:   1234,
-			guest: "1",
-			want:  filepath.Join(tmpDir, "mcp-kubectx", "kubeconfig.1234.guest.yaml"),
-		},
-	}
+		dir := t.TempDir()
+		outPath := filepath.Join(dir, "kubeconfig.yaml")
+		require.NoError(t, os.WriteFile(outPath, []byte("placeholder"), 0o600))
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			h := &handler{
-				outputPath: tc.flagVal,
-				pid:        tc.pid,
-				envLookup:  constLookup(tc.guest),
-			}
-			assert.Equal(t, tc.want, h.resolveOutputPath())
-		})
-	}
-}
-
-func TestSessionDir(t *testing.T) { //nolint:tparallel // subtests use t.Setenv
-	t.Run("creates and cleans up", func(t *testing.T) {
-		// Cannot use t.Parallel with t.Setenv.
-		stateHome := t.TempDir()
-		t.Setenv("XDG_STATE_HOME", stateHome)
-
-		h := &handler{pid: 9999, envLookup: constLookup("")}
-
-		expectedPath := filepath.Join(stateHome, "mcp-kubectx", "kubeconfig.9999.host.yaml")
-		expectedDir := filepath.Dir(expectedPath)
+		h := &handler{
+			pid:            9999,
+			envLookup:      constLookup(""),
+			lastOutputPath: outPath,
+		}
 
 		cleanup, err := h.sessionDir()
 		require.NoError(t, err)
 
-		_, err = os.Stat(expectedDir)
-		require.NoError(t, err, "session directory should exist")
-
-		assert.Equal(t, expectedPath, h.resolveOutputPath())
-
-		// Drop a placeholder file at the resolved path so we can
-		// verify cleanup removes it.
-		require.NoError(t, os.WriteFile(expectedPath, []byte("placeholder"), 0o600))
-
 		cleanup()
 
-		_, err = os.Stat(expectedPath)
+		_, err = os.Stat(outPath)
 		assert.True(t, os.IsNotExist(err), "kubeconfig file should be removed after cleanup")
 	})
 
-	t.Run("idempotent", func(t *testing.T) {
-		// Cannot use t.Parallel with t.Setenv.
-		t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Run("noop when lastOutputPath empty", func(t *testing.T) {
+		t.Parallel()
 
-		h := &handler{pid: 7777, envLookup: constLookup("")}
+		h := &handler{pid: 6666, envLookup: constLookup("")}
 
-		cleanup1, err := h.sessionDir()
+		cleanup, err := h.sessionDir()
 		require.NoError(t, err)
 
-		cleanup2, err := h.sessionDir()
+		cleanup()
+	})
+
+	t.Run("missing file is best-effort", func(t *testing.T) {
+		t.Parallel()
+
+		h := &handler{
+			pid:            5555,
+			envLookup:      constLookup(""),
+			lastOutputPath: filepath.Join(t.TempDir(), "never-written.yaml"),
+		}
+
+		cleanup, err := h.sessionDir()
 		require.NoError(t, err)
 
-		cleanup2()
-		cleanup1()
+		cleanup()
 	})
 }
 
 // TestSessionDirCleanupRunsResourceCleanupWhenOutputSet asserts
 // that the cleanup returned by [handler.sessionDir] still drains
-// registered K8s resource cleanups when --output is set. Prior to
-// the fix, the flag-set branch returned a no-op closure and
-// silently leaked ServiceAccounts on shutdown.
+// registered K8s resource cleanups when --output is set.
 func TestSessionDirCleanupRunsResourceCleanupWhenOutputSet(t *testing.T) {
 	t.Parallel()
 
-	h := &handler{outputPath: filepath.Join(t.TempDir(), "out"), pid: 1234, envLookup: constLookup("")}
+	h := &handler{
+		outputPath: filepath.Join(t.TempDir(), "out"),
+		pid:        1234,
+		envLookup:  constLookup(""),
+	}
 
 	var called bool
 
@@ -197,12 +163,11 @@ func TestSessionDirCleanupRunsResourceCleanupWhenOutputSet(t *testing.T) {
 }
 
 // TestSessionDirCleanupRunsResourceCleanupWhenOutputUnset asserts
-// the directory-creating branch also drains resource cleanup. This
-// pins the contract on both branches so future refactors do not
-// reintroduce the no-op case.
-func TestSessionDirCleanupRunsResourceCleanupWhenOutputUnset(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	// Cannot use t.Parallel with t.Setenv.
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+// the same drain happens when no --output is set, pinning the
+// contract on both branches so future refactors do not reintroduce
+// the no-op case.
+func TestSessionDirCleanupRunsResourceCleanupWhenOutputUnset(t *testing.T) {
+	t.Parallel()
 
 	h := &handler{pid: 6543, envLookup: constLookup("")}
 

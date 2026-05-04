@@ -162,6 +162,8 @@ func TestHostTokenSkipsWorkmuxWhenEnvSetToGuest(t *testing.T) { //nolint:paralle
 // TestSelectArgsForGuestFlag pins that handler.selectCtx forwards
 // --for-guest=BOOL based on envLookup. Together with the
 // hostExecArgs tests it covers the full host/guest decision.
+// Also pins that --pid is always forwarded and --out-path is omitted
+// when h.outputPath is empty (host select then defaults the path).
 func TestSelectArgsForGuestFlag(t *testing.T) {
 	t.Parallel()
 
@@ -179,7 +181,7 @@ func TestSelectArgsForGuestFlag(t *testing.T) {
 
 			h := &handler{
 				kubeconfigPath: "/k",
-				outputPath:     "/o",
+				pid:            4242,
 				sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
 				envLookup:      constLookup(tc.guest),
 			}
@@ -187,6 +189,10 @@ func TestSelectArgsForGuestFlag(t *testing.T) {
 			args := h.selectArgs("prod")
 
 			require.Contains(t, args, tc.want)
+			require.Contains(t, args, "--pid")
+			require.Contains(t, args, "4242")
+			require.NotContains(t, args, "--out-path",
+				"--out-path must be omitted when h.outputPath is empty")
 		})
 	}
 }
