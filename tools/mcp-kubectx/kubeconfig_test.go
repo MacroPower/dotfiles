@@ -376,11 +376,132 @@ func TestSelectCtxValidation(t *testing.T) {
 	}
 }
 
+// TestSelectPublishesSidecarSymlink pins that a successful
+// selectCtx publishes the per-Claude-session symlink at
+// [sidecarSymlinkPath] pointing at the kubeconfig path returned by
+// `host select`. hook-router reads kubectl context through this
+// symlink (see tools/hook-router/main.go's configFromEnv).
+func TestSelectPublishesSidecarSymlink(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	// Cannot use t.Parallel with t.Setenv.
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+
+	stdout, err := json.Marshal(HostSelectResult{
+		Path:       "/canonical/kubeconfig.yaml",
+		SAName:     "claude-sa-1",
+		Namespace:  "ns",
+		Kubeconfig: "/admin/kube",
+		Context:    "prod",
+	})
+	require.NoError(t, err)
+
+	fake := &fakeRunHost{stdout: map[string][]byte{"select": stdout}}
+
+	h := &handler{
+		kubeconfigPath: "/admin/kube",
+		outputPath:     "/canonical/kubeconfig.yaml",
+		envLookup:      constLookup(""),
+		runHost:        fake.run,
+		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+	}
+
+	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	sidecar := sidecarSymlinkPath()
+	require.NotEmpty(t, sidecar, "test must run with PPID > 1")
+	require.True(t, strings.HasPrefix(sidecar, tmpDir),
+		"sidecar must live under the stubbed TMPDIR")
+
+	info, err := os.Lstat(sidecar)
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode()&os.ModeSymlink, "sidecar must be a symlink")
+
+	target, err := os.Readlink(sidecar)
+	require.NoError(t, err)
+	assert.Equal(t, "/canonical/kubeconfig.yaml", target)
+}
+
+// TestSelectReplacesStaleSidecarSymlink pins that selectCtx
+// overwrites a pre-existing symlink at the sidecar path. Without
+// atomic replacement the second select would fail with EEXIST and
+// silently leave hook-router pointed at the wrong kubeconfig.
+func TestSelectReplacesStaleSidecarSymlink(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	// Cannot use t.Parallel with t.Setenv.
+	t.Setenv("TMPDIR", t.TempDir())
+
+	sidecar := sidecarSymlinkPath()
+	require.NotEmpty(t, sidecar, "test must run with PPID > 1")
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(sidecar), 0o700))
+	require.NoError(t, os.Symlink("/dev/null", sidecar))
+
+	stdout, err := json.Marshal(HostSelectResult{
+		Path:       "/fresh/kubeconfig.yaml",
+		SAName:     "claude-sa-2",
+		Namespace:  "ns",
+		Kubeconfig: "/admin/kube",
+		Context:    "prod",
+	})
+	require.NoError(t, err)
+
+	fake := &fakeRunHost{stdout: map[string][]byte{"select": stdout}}
+
+	h := &handler{
+		kubeconfigPath: "/admin/kube",
+		outputPath:     "/fresh/kubeconfig.yaml",
+		envLookup:      constLookup(""),
+		runHost:        fake.run,
+		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+	}
+
+	_, _, err = h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
+	require.NoError(t, err)
+
+	target, err := os.Readlink(sidecar)
+	require.NoError(t, err)
+	assert.Equal(t, "/fresh/kubeconfig.yaml", target)
+}
+
+// TestSessionDirCleanupRemovesSidecarSymlink pins that the cleanup
+// closure returned by sessionDir removes the sidecar symlink. The
+// parent dir is intentionally left in place to avoid racing peer
+// serves under the same Claude PPID.
+func TestSessionDirCleanupRemovesSidecarSymlink(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	// Cannot use t.Parallel with t.Setenv.
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("TMPDIR", t.TempDir())
+
+	sidecar := sidecarSymlinkPath()
+	require.NotEmpty(t, sidecar, "test must run with PPID > 1")
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(sidecar), 0o700))
+	require.NoError(t, os.Symlink("/somewhere", sidecar))
+
+	h := &handler{pid: 4242, envLookup: constLookup("")}
+
+	cleanup, err := h.sessionDir()
+	require.NoError(t, err)
+
+	cleanup()
+
+	_, err = os.Lstat(sidecar)
+	assert.True(t, os.IsNotExist(err), "sidecar symlink should be removed after cleanup")
+
+	_, err = os.Stat(filepath.Dir(sidecar))
+	assert.NoError(t, err, "sidecar parent dir should be left in place")
+}
+
 // TestSelectShellsHostSelect pins that handler.selectCtx forwards
 // the right argv to host select and parses the JSON result back
 // into the MCP success text.
-func TestSelectShellsHostSelect(t *testing.T) {
-	t.Parallel()
+func TestSelectShellsHostSelect(t *testing.T) { //nolint:paralleltest // uses t.Setenv for TMPDIR isolation
+	// Cannot use t.Parallel with t.Setenv. selectCtx publishes the
+	// hook-router sidecar symlink under TMPDIR; isolate it to
+	// t.TempDir so test runs do not pollute the developer's
+	// /tmp/claude-kubectx/.
+	t.Setenv("TMPDIR", t.TempDir())
 
 	stdout, err := json.Marshal(HostSelectResult{
 		Path:       "/tmp/k.yaml",

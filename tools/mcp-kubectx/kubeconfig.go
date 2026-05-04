@@ -111,6 +111,27 @@ func stateHomeDir() string {
 	return filepath.Join(home, ".local", "state", "mcp-kubectx")
 }
 
+// sidecarSymlinkPath returns the per-Claude-session symlink path
+// the Claude Code hook-router consults to find the active
+// kubeconfig. Mirrors hook-router's lookup in main.go's
+// configFromEnv: <TMPDIR>/claude-kubectx/<PPID>/kubeconfig. PPID
+// here is Claude (which spawns this serve as a stdio MCP child),
+// so the symlink scopes one kubeconfig to one Claude session
+// without depending on the serve's own pid. Returns "" when PPID
+// <= 1; without a Claude parent there is nothing for hook-router
+// to scope to.
+func sidecarSymlinkPath() string {
+	ppid := os.Getppid()
+	if ppid <= 1 {
+		return ""
+	}
+
+	return filepath.Join(
+		os.TempDir(), "claude-kubectx",
+		strconv.Itoa(ppid), "kubeconfig",
+	)
+}
+
 // resolveOutputPath returns the path where the scoped kubeconfig is
 // written. When no flag is set, the path is keyed by the serve
 // process pid and the host/guest environment so concurrent serve
@@ -181,6 +202,21 @@ func (h *handler) sessionDir() (func(), error) {
 				slog.String("path", outPath),
 				slog.Any("error", err),
 			)
+		}
+
+		sidecar := sidecarSymlinkPath()
+		if sidecar != "" {
+			// Symlink-only: parent dir is intentionally left in
+			// place because a peer serve under the same Claude
+			// PPID may still depend on it. TMPDIR is reaped at
+			// reboot.
+			err := os.Remove(sidecar)
+			if err != nil && !os.IsNotExist(err) {
+				slog.Warn("cleanup sidecar symlink",
+					slog.String("path", sidecar),
+					slog.Any("error", err),
+				)
+			}
 		}
 	}, nil
 }
@@ -273,6 +309,11 @@ func (h *handler) selectCtx(
 
 	h.registerCleanup(releaseFn)
 
+	// result.Path round-trips --out-path back from host select, so it
+	// equals h.resolveOutputPath() in normal operation; using it
+	// instead points the symlink at the file the host actually wrote.
+	h.publishSidecar(result.Path)
+
 	if len(prev) > 0 {
 		// drainCtx deliberately derives from context.Background --
 		// the request ctx is canceled by the MCP SDK as soon as
@@ -335,6 +376,34 @@ func (h *handler) kubeconfigArgs() []string {
 	return []string{"--kubeconfig", h.kubeconfigPath}
 }
 
+// publishSidecar refreshes the per-Claude-session symlink at
+// [sidecarSymlinkPath] to point at target (the kubeconfig path
+// `host select` just wrote). The Claude Code hook-router resolves
+// kubectl invocations through this symlink. Failure is non-fatal:
+// hook-router falls back to its "no kubeconfig" denial, which is
+// the same behavior callers see today before this fix.
+func (h *handler) publishSidecar(target string) {
+	sidecar := sidecarSymlinkPath()
+	if sidecar == "" {
+		return
+	}
+
+	err := writeSymlinkAtomic(sidecar, target)
+	if err != nil {
+		slog.Warn("write hook-router sidecar symlink",
+			slog.String("path", sidecar),
+			slog.Any("error", err),
+		)
+
+		return
+	}
+
+	slog.Info("published hook-router sidecar",
+		slog.String("path", sidecar),
+		slog.String("target", target),
+	)
+}
+
 // releaseClosure builds the cleanup callback that shells out to
 // `host release` for an SA created by a successful `host select`.
 // Errors are logged but never propagated; release is best-effort.
@@ -370,6 +439,37 @@ func writeFileSecure(path string, data []byte) error {
 	err = os.WriteFile(path, data, 0o600)
 	if err != nil {
 		return fmt.Errorf("write file: %w", err)
+	}
+
+	return nil
+}
+
+// writeSymlinkAtomic creates or replaces a symlink at path pointing
+// to target. Parent dirs are created with 0o700. Replacement is
+// atomic via tmp + rename, so a concurrent reader never observes
+// a missing symlink.
+func writeSymlinkAtomic(path, target string) error {
+	err := os.MkdirAll(filepath.Dir(path), 0o700)
+	if err != nil {
+		return fmt.Errorf("create directory: %w", err)
+	}
+
+	tmp := path + ".tmp"
+
+	// Best-effort: ENOENT (no leftover) is fine; any other
+	// failure surfaces below when os.Symlink hits EEXIST.
+	_ = os.Remove(tmp) //nolint:errcheck // see comment
+
+	err = os.Symlink(target, tmp)
+	if err != nil {
+		return fmt.Errorf("create symlink: %w", err)
+	}
+
+	err = os.Rename(tmp, path)
+	if err != nil {
+		// Best-effort rollback of the tmp symlink we just made.
+		_ = os.Remove(tmp) //nolint:errcheck // see comment
+		return fmt.Errorf("rename symlink: %w", err)
 	}
 
 	return nil
