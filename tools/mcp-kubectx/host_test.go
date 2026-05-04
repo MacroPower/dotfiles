@@ -94,12 +94,15 @@ func TestHostSelectMissingPid(t *testing.T) {
 	require.ErrorIs(t, err, ErrSelectMissingPid)
 }
 
-// TestHostSelectDefaultsOutPath pins that omitting --out-path falls
-// back to <stateHomeDir>/kubeconfig.<pid>.<env>.yaml on the host
-// side, and that omitting --socket-path falls back to
-// <socketStateDir>/serve.<pid>.<env>.sock and embeds that path in
-// the kubeconfig's user.exec args. The <env> component flips with
-// --for-guest in both cases.
+// TestHostSelectDefaultsOutPath pins two distinct defaults that
+// fire when the corresponding flag is omitted: --out-path falls
+// back to <stateHomeDir>/kubeconfig.<pid>.<env>.yaml (where <pid>
+// is the value of --pid, used purely as a filename discriminator),
+// and --socket-path falls back to
+// <socketStateDir>/serve.0.<env>.sock (slot 0 of the slot pool;
+// independent of --pid). Both have <env> driven by --for-guest.
+// In production serve always forwards an explicit --socket-path so
+// the slot-0 default is only hit by tests.
 func TestHostSelectDefaultsOutPath(t *testing.T) { //nolint:paralleltest // mutates package-level state, uses t.Setenv
 	tests := map[string]struct {
 		forGuest   string
@@ -109,12 +112,12 @@ func TestHostSelectDefaultsOutPath(t *testing.T) { //nolint:paralleltest // muta
 		"host env": {
 			forGuest:   "false",
 			want:       "kubeconfig.1234.host.yaml",
-			wantSocket: "serve.1234.host.sock",
+			wantSocket: "serve.0.host.sock",
 		},
 		"guest env": {
 			forGuest:   "true",
 			want:       "kubeconfig.1234.guest.yaml",
-			wantSocket: "serve.1234.guest.sock",
+			wantSocket: "serve.0.guest.sock",
 		},
 	}
 
@@ -186,8 +189,10 @@ func TestHostSelectContextNotFound(t *testing.T) {
 // TestHostSelectExecPluginShape pins the uniform exec-plugin
 // shape across forGuest=true/false. The two variants no longer
 // differ -- both write the same `mcp-kubectx exec-plugin --socket
-// <path>` block. Only the socket path discriminator (`host` vs.
-// `guest`) flips.
+// <path>` block. Only the socket path env discriminator (`host`
+// vs. `guest`) flips. The test forwards --socket-path explicitly
+// (rather than relying on the slot-0 default) to mirror serve's
+// production behavior.
 func TestHostSelectExecPluginShape(t *testing.T) { //nolint:paralleltest // mutates package-level state, uses t.Setenv
 	tests := map[string]struct {
 		forGuest    string
@@ -196,12 +201,12 @@ func TestHostSelectExecPluginShape(t *testing.T) { //nolint:paralleltest // muta
 	}{
 		"host env": {
 			forGuest:    "false",
-			wantSocket:  "serve.4242.host.sock",
+			wantSocket:  "serve.0.host.sock",
 			clusterRole: "ClusterRole",
 		},
 		"guest env": {
 			forGuest:    "true",
-			wantSocket:  "serve.4242.guest.sock",
+			wantSocket:  "serve.0.guest.sock",
 			clusterRole: "ClusterRole",
 		},
 	}

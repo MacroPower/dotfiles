@@ -75,7 +75,10 @@ type namedUser struct {
 // socketPath / socketListener / socketWG track the per-`serve` UDS
 // lifecycle. socketListener is held only between [main.runServe]
 // and the cleanup ordering in [*handler.sessionDir]; socketWG is
-// drained by [*handler.socketShutdown].
+// drained by [*handler.socketShutdown]. socketSlots caps the number
+// of slot paths [*handler.acquireServeSocket] probes at startup;
+// each slot maps to one literal entry in Claude Code's sandbox
+// allowUnixSockets allowlist.
 type handler struct {
 	socketListener  net.Listener
 	envLookup       func(string) string
@@ -90,6 +93,7 @@ type handler struct {
 	sa              saConfig
 	socketWG        sync.WaitGroup
 	pid             int
+	socketSlots     int
 	mu              sync.Mutex
 }
 
@@ -363,10 +367,13 @@ func (h *handler) selectCtx(
 // [stateHomeDir], to resolve the kubeconfig path. When the user
 // passed --output to serve, h.outputPath is non-empty and serve
 // forwards it as --out-path so the user override still wins (host
-// select ignores --pid in that branch). Each allowed apiserver
-// host is forwarded as a repeated `--allow-apiserver-host` flag;
-// an empty list yields no flags and lets `host select` accept any
-// apiserver.
+// select ignores --pid in that branch). The socket path is
+// forwarded directly from h.socketPath, the slot resolved once at
+// serve startup by [*handler.acquireServeSocket]; selectArgs never
+// re-derives the path so the kubeconfig and the bound listener
+// cannot drift. Each allowed apiserver host is forwarded as a
+// repeated `--allow-apiserver-host` flag; an empty list yields no
+// flags and lets `host select` accept any apiserver.
 func (h *handler) selectArgs(contextName string) []string {
 	guest := h.isGuest()
 
@@ -375,7 +382,7 @@ func (h *handler) selectArgs(contextName string) []string {
 	args = append(args,
 		"--pid", strconv.Itoa(h.pid),
 		fmt.Sprintf("--for-guest=%t", guest),
-		"--socket-path", socketPathForServe(h.pid, guest),
+		"--socket-path", h.socketPath,
 		"--sa-role-name", h.sa.role,
 		"--sa-role-kind", h.sa.roleKind,
 		"--sa-namespace", h.sa.namespace,

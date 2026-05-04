@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -19,6 +20,7 @@ var (
 	ErrSocketInUse        = errors.New("serve socket is already bound by a live peer")
 	ErrSocketBind         = errors.New("bind serve socket")
 	ErrSocketCleanupStale = errors.New("clean stale serve socket")
+	ErrAllSlotsBusy       = errors.New("all serve socket slots are bound by live peers")
 )
 
 // Per-connection deadlines. Server-side is shorter than the
@@ -55,16 +57,54 @@ func socketStateDir() string {
 	return xdgStateSubdir("mcp-kubectx-run")
 }
 
-// socketPathForServe returns the absolute path of the per-`serve`
-// Unix domain socket. The naming scheme mirrors the existing
-// kubeconfig.<pid>.<env>.yaml file under [stateHomeDir]: per-pid +
-// per-env discriminators keep host- and guest-side serves from
-// stomping on each other's sockets.
-func socketPathForServe(pid int, forGuest bool) string {
+// socketPathForSlot returns the absolute path of the per-`serve`
+// Unix domain socket for a given slot index. Slot indices are dense
+// (0..N-1); each slot maps 1:1 to a literal entry in the Claude Code
+// sandbox's `allowUnixSockets` allowlist, which is matched as exact
+// strings rather than as glob patterns. Per-env discriminators
+// (`host` vs `guest`) keep host- and guest-side serves on the same
+// machine from stomping on each other's sockets.
+func socketPathForSlot(slot int, forGuest bool) string {
 	return filepath.Join(
 		socketStateDir(),
-		fmt.Sprintf("serve.%d.%s.sock", pid, envTag(forGuest)),
+		fmt.Sprintf("serve.%d.%s.sock", slot, envTag(forGuest)),
 	)
+}
+
+// acquireServeSocket walks slots 0..maxSlots-1 and binds the first
+// free one. The returned listener and cleanup are owned by the
+// caller (typically [main.runServe]); the socket inode is unlinked
+// when cleanup runs.
+//
+// Two errors are treated as "this slot is taken, try the next":
+// [ErrSocketInUse] (a live peer was detected by [clearStaleSocket]'s
+// dial probe) and a wrapped [syscall.EADDRINUSE] from `lc.Listen`
+// (a peer bound between our probe and our bind). Every other error
+// from [*handler.listenSocket] propagates immediately. Exhaustion
+// returns [ErrAllSlotsBusy] with the slot count and state directory
+// embedded in the message so operators can grow the pool.
+func (h *handler) acquireServeSocket(
+	ctx context.Context,
+	forGuest bool,
+	maxSlots int,
+) (string, net.Listener, func(), error) {
+	for slot := range maxSlots {
+		path := socketPathForSlot(slot, forGuest)
+
+		listener, cleanup, err := h.listenSocket(ctx, path)
+		if err == nil {
+			return path, listener, cleanup, nil
+		}
+
+		if errors.Is(err, ErrSocketInUse) || errors.Is(err, syscall.EADDRINUSE) {
+			continue
+		}
+
+		return "", nil, nil, err
+	}
+
+	return "", nil, nil, fmt.Errorf("%w: %d slots in %s",
+		ErrAllSlotsBusy, maxSlots, socketStateDir())
 }
 
 // listenSocket binds a Unix domain socket at path, returning the

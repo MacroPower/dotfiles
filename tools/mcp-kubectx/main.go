@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,17 @@ import (
 )
 
 const version = "0.1.0"
+
+// defaultSocketSlots matches the size of the literal allowUnixSockets
+// list emitted by the Nix bundle in home/claude.nix. Both must agree
+// or the rendered Claude Code sandbox allowlist will not cover every
+// slot serve might bind.
+const defaultSocketSlots = 16
+
+// ErrInvalidSocketSlots is returned when --socket-slots is parsed
+// successfully but holds a non-positive value. [flag.Int] does not
+// validate ranges, so the check happens after Parse.
+var ErrInvalidSocketSlots = errors.New("--socket-slots must be >= 1")
 
 func main() {
 	os.Exit(run())
@@ -77,6 +89,14 @@ func runServe(ctx context.Context, args []string) error {
 		"ServiceAccount token lifetime in seconds (default: 3600, max: 86400)",
 	)
 	logFile := fs.String("log-file", "", "path to JSON log file (append)")
+	socketSlots := fs.Int(
+		"socket-slots",
+		defaultSocketSlots,
+		"number of UDS slot paths to probe at startup; serve binds the first free slot. "+
+			"Each slot maps to one literal entry in the Claude Code sandbox allowlist. "+
+			"Must be >= 1. Concurrent serves on the same host occupy distinct slots; "+
+			"startup fails when every slot is held by a live peer.",
+	)
 
 	var allowedAPIHosts stringSliceFlag
 
@@ -90,6 +110,10 @@ func runServe(ctx context.Context, args []string) error {
 	err := fs.Parse(args)
 	if err != nil {
 		return fmt.Errorf("parse serve flags: %w", err)
+	}
+
+	if *socketSlots < 1 {
+		return fmt.Errorf("%w: got %d", ErrInvalidSocketSlots, *socketSlots)
 	}
 
 	logger, logCloser, err := openLogger(*logFile)
@@ -119,18 +143,18 @@ func runServe(ctx context.Context, args []string) error {
 		lastOutputPath:  *output,
 		allowedAPIHosts: allowedAPIHosts,
 		pid:             os.Getpid(),
+		socketSlots:     *socketSlots,
 		sa:              sa,
 		envLookup:       os.Getenv,
 	}
 
 	h.runHost = h.defaultRunHost
 
-	sockPath := socketPathForServe(h.pid, h.isGuest())
-
-	// listenSocket's own cleanup is dropped: sessionDir's cleanup
+	// acquireServeSocket walks slot 0..socketSlots-1 and binds the
+	// first free one. Its cleanup is dropped: sessionDir's cleanup
 	// already calls socketShutdown (close listener) + bestEffortRemove
 	// of socketPath, so calling both would just be redundant.
-	listener, _, err := h.listenSocket(ctx, sockPath)
+	sockPath, listener, _, err := h.acquireServeSocket(ctx, h.isGuest(), h.socketSlots)
 	if err != nil {
 		return fmt.Errorf("bind serve socket: %w", err)
 	}

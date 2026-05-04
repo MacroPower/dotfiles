@@ -15,32 +15,209 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSocketPathForServe(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+// shortTempDir returns a temp directory under [os.TempDir] whose
+// path is short enough to keep socket paths under macOS's 104-byte
+// sun_path limit. [testing.T.TempDir] embeds the test name in the
+// path, which combined with the mcp-kubectx-run subdir + slot
+// filename overflows the limit on the Nix builder where TMPDIR is
+// already deeply nested. Cleanup is registered with t.Cleanup.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+
+	// usetesting linter wants t.TempDir() here, but that is exactly
+	// the failure mode this helper exists to avoid: t.TempDir embeds
+	// the test name in the path, producing paths that exceed the
+	// 104-byte sun_path limit on the Nix builder.
+	dir, err := os.MkdirTemp(os.TempDir(), "k") //nolint:usetesting // see comment above
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = os.RemoveAll(dir) }) //nolint:errcheck // best-effort test cleanup
+
+	return dir
+}
+
+func TestSocketPathForSlot(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
 
 	tests := map[string]struct {
-		pid      int
+		slot     int
 		forGuest bool
 		want     string
 	}{
-		"host pid": {
-			pid:      4242,
+		"host slot 0": {
+			slot:     0,
 			forGuest: false,
-			want:     filepath.Join(stateHome, "mcp-kubectx-run", "serve.4242.host.sock"),
+			want:     filepath.Join(stateHome, "mcp-kubectx-run", "serve.0.host.sock"),
 		},
-		"guest pid": {
-			pid:      9999,
+		"guest slot 1": {
+			slot:     1,
 			forGuest: true,
-			want:     filepath.Join(stateHome, "mcp-kubectx-run", "serve.9999.guest.sock"),
+			want:     filepath.Join(stateHome, "mcp-kubectx-run", "serve.1.guest.sock"),
+		},
+		"host slot 7": {
+			slot:     7,
+			forGuest: false,
+			want:     filepath.Join(stateHome, "mcp-kubectx-run", "serve.7.host.sock"),
 		},
 	}
 
 	for name, tc := range tests { //nolint:paralleltest // shares t.Setenv state
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.want, socketPathForServe(tc.pid, tc.forGuest))
+			assert.Equal(t, tc.want, socketPathForSlot(tc.slot, tc.forGuest))
 		})
 	}
+}
+
+// TestAcquireServeSocketPicksFirstFreeSlot pre-binds slots 0..k-1
+// with raw net.Listen calls so [*handler.acquireServeSocket]'s
+// dial probe sees them as live, then asserts acquire returns slot k.
+func TestAcquireServeSocketPicksFirstFreeSlot(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	stateHome := shortTempDir(t)
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	const k = 3
+
+	for slot := range k {
+		path := socketPathForSlot(slot, false)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+
+		live, err := net.Listen("unix", path) //nolint:noctx // synchronous test fixture
+		require.NoError(t, err)
+
+		t.Cleanup(func() { _ = live.Close() }) //nolint:errcheck // best-effort test cleanup
+
+		go func() {
+			for {
+				conn, err := live.Accept()
+				if err != nil {
+					return
+				}
+
+				_ = conn.Close() //nolint:errcheck // best-effort test cleanup
+			}
+		}()
+	}
+
+	h := &handler{}
+
+	gotPath, listener, cleanup, err := h.acquireServeSocket(t.Context(), false, 8)
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	assert.Equal(t, socketPathForSlot(k, false), gotPath)
+	assert.NotNil(t, listener)
+}
+
+// TestAcquireServeSocketSkipsStaleSlot drops a regular file at slot 0
+// (simulating a SIGKILLed serve's leftover) and asserts acquire
+// reuses slot 0 because [clearStaleSocket] unlinks the leftover
+// before the bind.
+func TestAcquireServeSocketSkipsStaleSlot(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	stateHome := shortTempDir(t)
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	staleSlot := socketPathForSlot(0, false)
+	require.NoError(t, os.MkdirAll(filepath.Dir(staleSlot), 0o700))
+	require.NoError(t, os.WriteFile(staleSlot, []byte("stale"), 0o600))
+
+	h := &handler{}
+
+	gotPath, _, cleanup, err := h.acquireServeSocket(t.Context(), false, 8)
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	assert.Equal(t, staleSlot, gotPath, "stale leftover at slot 0 must be reclaimed")
+
+	info, err := os.Stat(gotPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.ModeSocket, info.Mode().Type(),
+		"stale file should have been replaced by a real socket")
+}
+
+// TestAcquireServeSocketDoesNotStealLivePeer pre-binds slot 0 with
+// a live listener, calls acquireServeSocket, and verifies (a) the
+// returned path is slot 1, and (b) the live peer's socket inode is
+// still bound by the original listener after acquire returned. Pins
+// the property that the slot loop never silently unlinks a live
+// peer's socket.
+func TestAcquireServeSocketDoesNotStealLivePeer(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	stateHome := shortTempDir(t)
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	livePath := socketPathForSlot(0, false)
+	require.NoError(t, os.MkdirAll(filepath.Dir(livePath), 0o700))
+
+	live, err := net.Listen("unix", livePath) //nolint:noctx // synchronous test fixture
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = live.Close() }) //nolint:errcheck // best-effort test cleanup
+
+	go func() {
+		for {
+			conn, err := live.Accept()
+			if err != nil {
+				return
+			}
+
+			_ = conn.Close() //nolint:errcheck // best-effort test cleanup
+		}
+	}()
+
+	h := &handler{}
+
+	gotPath, _, cleanup, err := h.acquireServeSocket(t.Context(), false, 8)
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	assert.Equal(t, socketPathForSlot(1, false), gotPath,
+		"live peer at slot 0 must push acquire to slot 1")
+
+	// The live peer's path must still accept dials. If acquire had
+	// stolen the inode, the next Dial would fail with ECONNREFUSED
+	// (no listener on that path anymore).
+	conn, dialErr := net.DialTimeout("unix", livePath, 2*time.Second) //nolint:noctx // synchronous test fixture
+	require.NoError(t, dialErr, "live peer's socket must still be bound after acquire")
+
+	_ = conn.Close() //nolint:errcheck // best-effort test cleanup
+}
+
+// TestAcquireServeSocketExhaustion binds every slot in the pool and
+// asserts acquire surfaces [ErrAllSlotsBusy] with a message that
+// names the slot count and state directory so operators have
+// actionable detail.
+func TestAcquireServeSocketExhaustion(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	stateHome := shortTempDir(t)
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	const maxSlots = 4
+
+	for slot := range maxSlots {
+		path := socketPathForSlot(slot, false)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+
+		live, err := net.Listen("unix", path) //nolint:noctx // synchronous test fixture
+		require.NoError(t, err)
+
+		t.Cleanup(func() { _ = live.Close() }) //nolint:errcheck // best-effort test cleanup
+
+		go func() {
+			for {
+				conn, err := live.Accept()
+				if err != nil {
+					return
+				}
+
+				_ = conn.Close() //nolint:errcheck // best-effort test cleanup
+			}
+		}()
+	}
+
+	h := &handler{}
+
+	_, _, _, err := h.acquireServeSocket(t.Context(), false, maxSlots)
+	require.ErrorIs(t, err, ErrAllSlotsBusy)
+	assert.Contains(t, err.Error(), "4 slots")
+	assert.Contains(t, err.Error(), filepath.Join(stateHome, "mcp-kubectx-run"))
 }
 
 func TestListenSocketUnlinksStale(t *testing.T) {
@@ -261,7 +438,10 @@ func TestServeSocketConcurrent(t *testing.T) {
 func TestServeSocketRotationDuringRequest(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	// shortTempDir keeps the path under macOS's 104-byte sun_path
+	// limit; t.TempDir() embeds the long test name and combined
+	// with `rotate.sock` overflows on the Nix builder.
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "rotate.sock")
 
 	saA := &currentSA{

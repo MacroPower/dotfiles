@@ -724,6 +724,21 @@ in
       description = "ClusterRole to bind ServiceAccounts to when selecting a Kubernetes context.";
     };
 
+    kubectxSocketSlots = mkOption {
+      type = types.ints.positive;
+      default = 16;
+      description = ''
+        Number of UDS slots `mcp-kubectx serve` may bind. Each slot is
+        enumerated as a literal entry in the sandbox's allowUnixSockets
+        list, since Claude Code matches that allowlist as exact paths
+        rather than as globs. Bumping this allows more concurrent Claude
+        sessions on this host before slot exhaustion fails new serve
+        starts. Drives both the `--socket-slots` flag passed to the
+        binary and the size of the rendered allowlist; the two cannot
+        drift because they share this option.
+      '';
+    };
+
     dangerouslySkipPermissions = mkOption {
       type = types.bool;
       default = false;
@@ -1595,6 +1610,8 @@ in
             cfg.kubeClusterRole
             "--log-file"
             "${config.xdg.stateHome}/mcp-kubectx/kubectx.log"
+            "--socket-slots"
+            (toString cfg.kubectxSocketSlots)
           ]
           ++ lib.concatMap (host: [
             "--allow-apiserver-host"
@@ -1608,13 +1625,19 @@ in
         # (`mcp-kubectx exec-plugin --socket <path>`) connects here
         # instead of forking out to `host token` itself, so the
         # plugin can run inside Claude's bash sandbox without
-        # tripping the `~/.kube/config` read deny. Both env tags
-        # are listed because the same bundle entry flows into
-        # both the host (Darwin) and guest (Lima) profiles.
-        sandbox.allowUnixSockets = [
-          "${config.xdg.stateHome}/mcp-kubectx-run/serve.*.host.sock"
-          "${config.xdg.stateHome}/mcp-kubectx-run/serve.*.guest.sock"
-        ];
+        # tripping the `~/.kube/config` read deny.
+        #
+        # Claude Code's allowUnixSockets matcher is literal-only:
+        # entries must be exact paths, not globs. We enumerate one
+        # entry per slot (host + guest variant of each) so the
+        # rendered allowlist is 1:1 with the slot range
+        # `mcp-kubectx serve` walks at startup. Both env tags are
+        # listed because the same bundle entry flows into both the
+        # host (Darwin) and guest (Lima) profiles.
+        sandbox.allowUnixSockets = lib.concatMap (slot: [
+          "${config.xdg.stateHome}/mcp-kubectx-run/serve.${toString slot}.host.sock"
+          "${config.xdg.stateHome}/mcp-kubectx-run/serve.${toString slot}.guest.sock"
+        ]) (lib.genList lib.id cfg.kubectxSocketSlots);
         instructions = {
           category = "Kubernetes";
           items = [

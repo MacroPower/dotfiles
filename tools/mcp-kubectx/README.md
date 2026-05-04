@@ -34,7 +34,7 @@ End-to-end credential flow:
 
 ```
 kubectl exec plugin
-  -> mcp-kubectx exec-plugin --socket <state>/mcp-kubectx-run/serve.<pid>.<env>.sock
+  -> mcp-kubectx exec-plugin --socket <state>/mcp-kubectx-run/serve.<slot>.<env>.sock
      (UDS)
   -> mcp-kubectx serve  (currentSA loaded atomically)
      -> defaultRunHost("token", ...)
@@ -93,22 +93,22 @@ users:
         args:
           - exec-plugin
           - --socket
-          - /Users/me/.local/state/mcp-kubectx-run/serve.4242.host.sock
+          - /Users/me/.local/state/mcp-kubectx-run/serve.0.host.sock
         interactiveMode: Never
 ```
 
-`command: mcp-kubectx` is a bare program name (PATH lookup), not
-the absolute store path the previous design used. This is
-deliberate: the absolute path would be invalidated by every
-nix-darwin rebuild, requiring kubectl to start over each time.
-`mcp-kubectx` is on PATH for both the host and the in-Lima
-profiles via `home.packages` in `home/claude.nix`.
+`command: mcp-kubectx` is a bare program name (PATH lookup) so
+that nix-darwin rebuilds do not invalidate kubeconfigs; an
+absolute store path would change on every rebuild and force
+kubectl to start over. `mcp-kubectx` is on PATH for both the
+host and the in-Lima profiles via `home.packages` in
+`home/claude.nix`.
 
-The `--for-guest` flag survives as a *path discriminator* only:
-it flips the `<env>` token between `host` and `guest` in the
-defaulted kubeconfig and socket filenames so a host serve and a
-Lima-guest serve cannot collide on the same path. Kubectl still
-sees a uniform plugin shape.
+The `--for-guest` flag is a _path discriminator_ only: it flips
+the `<env>` token between `host` and `guest` in the defaulted
+kubeconfig and socket filenames so a host serve and a Lima-guest
+serve cannot collide on the same path. Kubectl sees a uniform
+plugin shape either way.
 
 ## ExecCredential output
 
@@ -202,15 +202,13 @@ runs in this order:
    crosses the Lima boundary.)
 
 SIGKILL leaks at most one SA + one kubeconfig file + one socket
-inode, the same blast radius as today's "kill mcp-kubectx without
-warning". No regression. A stale socket inode left behind by SIGKILL
-is detected and removed on the next `serve` start: `listenSocket`
-dial-tests the path; ECONNREFUSED means the file is leftover state
-and is unlinked before the bind, while a successful dial means a
-live peer holds it and surfaces `ErrSocketInUse`.
-
-A future `mcp-kubectx host sweep --age=24h` tool can mop up orphans
-by label and TTL. Not yet implemented.
+inode at the killed serve's slot. The leaked socket inode is
+reclaimed the next time a `serve` picks that slot during
+`acquireServeSocket`'s walk: `listenSocket`'s `clearStaleSocket`
+step dial-tests the path; ECONNREFUSED means the file is leftover
+state and is unlinked before the bind, while a successful dial
+means a live peer holds the slot and the loop advances to the
+next slot.
 
 The behaviors above are pinned by the `TestSelect*`, `TestSessionDir*`,
 and `TestServeSocket*` test families.
@@ -225,10 +223,10 @@ this.
 
 **Design rule (structural).** Only `*handler` decides whether to
 wrap with `workmux host-exec`. `hostExecArgs` is a method on
-`*handler` (`shellout.go`), and the `host *` subcommand entry
-points -- joined now by `exec-plugin` -- never construct a
-`*handler`, so they have no path to `runHost` and no way to invoke
-the wrapper. `host token` reads the cluster directly via
+`*handler` (`shellout.go`), and neither the `host *` subcommand
+entry points nor `exec-plugin` construct a `*handler`, so they
+have no path to `runHost` and no way to invoke the wrapper.
+`host token` reads the cluster directly via
 `KubeClient.CreateTokenRequest`; `exec-plugin` is a pure UDS
 client and does not even import the K8s client. The mechanism is
 syntactic. There is no path through the call graph; it is not a
@@ -324,8 +322,8 @@ the caller so an interactive shell can `export KUBECONFIG=...` to
 it. Each `serve` removes its own kubeconfig file on shutdown
 alongside the `host release` of its current SA.
 
-The `--out-path` flag on `host select` remains as an escape hatch.
-When `serve` is invoked with `--output PATH`, it forwards the path
+The `--out-path` flag on `host select` is an escape hatch. When
+`serve` is invoked with `--output PATH`, it forwards the path
 verbatim as `--out-path`, bypassing the defaulting. In a Lima
 guest, an explicit `--output` must be host-resolvable and writable
 from the guest -- typically only true under a bind mount.
@@ -333,24 +331,46 @@ from the guest -- typically only true under a bind mount.
 ### Sockets live outside the bind-mounted state dir
 
 The per-`serve` UDS lives at
-`<state>/mcp-kubectx-run/serve.<pid>.<env>.sock`, *not* alongside
+`<state>/mcp-kubectx-run/serve.<slot>.<env>.sock`, _not_ alongside
 the kubeconfig under `<state>/mcp-kubectx/`. The latter is the
 existing Lima writable bind mount declared in workmux's
 `extra_mounts`; UDS-over-Lima-bind-mount semantics on macOS-host
 are unverified, and the safe design avoids the question by hosting
-the socket on each profile's local filesystem.
+the socket on each profile's local filesystem. See [Socket slot
+pool](#socket-slot-pool) below for how `<slot>` is picked.
 
 Both kinds of `serve` (host and guest) bind their socket on their
 own filesystem. A guest serve's socket is reachable only from
 inside the same guest, which is exactly the topology kubectl needs
 since the kubectl that uses it also runs inside the guest. The
-*kubeconfig* still lives under the bind mount because both
+_kubeconfig_ still lives under the bind mount because both
 profiles need read access to the file; the socket only needs
 guest-local create + connect, so it lives outside.
 
-Future readers: do not "fix" the socket back into the single
-state dir without first verifying UDS-over-bind-mount semantics
-end-to-end.
+### Socket slot pool
+
+`serve` binds the first free slot in the range
+`serve.0.<env>.sock` … `serve.<N-1>.<env>.sock` at startup, where
+`N` defaults to 16 and is configurable via `--socket-slots`. Slot
+indices keep socket filenames stable across `serve` restarts
+because Claude Code's sandbox `allowUnixSockets` setting matches
+entries as literal paths, not glob patterns; enumerating one
+literal entry per slot is the only way to allow a per-`serve`
+socket whose filename varies between processes.
+
+`acquireServeSocket` walks slot indices upward and re-uses
+`listenSocket`'s existing stale-vs-live dial probe to skip slots
+held by a live peer. Crash-leftover inodes are silently unlinked
+and reused. Concurrent `serve` instances on the same host occupy
+distinct slots; on exhaustion, startup fails with a clear error
+naming the configured slot count and the state directory so an
+operator can grow the pool by raising `kubectxSocketSlots` in
+`home/claude.nix` and rerunning `task switch`.
+
+The Nix bundle in `home/claude.nix` enumerates exactly the
+literal paths the binary may bind, sized from the same option,
+so the rendered `~/.claude/settings.json` allowlist is always
+1:1 with the `serve` binary's slot range.
 
 ### Trust boundary
 
@@ -370,7 +390,6 @@ without expanding the read deny.
   egress proxy gate this. If a target cluster is unreachable from
   the guest, the user adds it to `kubeApiDomains` or routes around
   it. Not this package's problem.
-- **Orphan cleanup.** `mcp-kubectx host sweep --age=24h` is the
-  intended tool for SAs and stale kubeconfig files left behind by
-  SIGKILLed serves. Not yet implemented; until then, orphans
-  accumulate at the rate of one per ungraceful exit per `serve`.
+- **Orphan cleanup.** SAs and stale kubeconfig files left behind
+  by SIGKILLed serves accumulate at the rate of one per ungraceful
+  exit per `serve`.

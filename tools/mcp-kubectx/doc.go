@@ -32,9 +32,10 @@
 // # Subcommands
 //
 //   - serve: MCP stdio server. Owns the per-process kubeconfig
-//     path, parses --sa-* flags, binds the per-`serve` UDS at
-//     [socketPathForServe], and shells out to `host *` for every
-//     cluster-touching operation.
+//     path, parses --sa-* flags, binds the per-`serve` UDS via
+//     [*handler.acquireServeSocket] (which walks the slot pool
+//     described under "Socket slot pool" below), and shells out
+//     to `host *` for every cluster-touching operation.
 //   - host list: prints the available kubeconfig contexts.
 //   - host select <ctx>: creates a ServiceAccount + role binding
 //     and writes a scoped kubeconfig whose user.exec block points
@@ -89,10 +90,33 @@
 //     (default: 3600, max: 86400).
 //   - --log-file: path to JSON log file (append). Logs warnings and
 //     cleanup events; defaults to discard.
+//   - --socket-slots: number of UDS slot paths probed at startup
+//     (default 16, must be >= 1). Each slot maps to one literal
+//     entry in the Claude Code sandbox allowUnixSockets allowlist.
+//     See "Socket slot pool" below.
 //   - --allow-apiserver-host: hostname permitted as cluster.server
 //     when selecting a context. Repeatable; an empty list lets
 //     `select` accept any apiserver in the kubeconfig. Forwarded
 //     verbatim to each `host select` invocation.
+//
+// # Socket slot pool
+//
+// The per-`serve` UDS lives at
+// <socketStateDir>/serve.<slot>.<env>.sock, where <slot> is a dense
+// integer 0..N-1 picked at startup by [*handler.acquireServeSocket].
+// Slot indices replace the previous PID-based naming because Claude
+// Code's sandbox `allowUnixSockets` setting matches entries as
+// literal paths, not globs; enumerating one literal per slot is the
+// only way to allow a per-`serve` socket whose filename varies.
+// `acquireServeSocket` walks 0..N-1, skipping slots that are held
+// by a live peer (detected via [clearStaleSocket]'s dial probe) or
+// that race-lose at bind time (wrapped [syscall.EADDRINUSE] from
+// [*handler.listenSocket]). Crash-leftover inodes are unlinked by
+// `clearStaleSocket` and the slot is reused. When every slot is
+// held by a live peer, startup fails with [ErrAllSlotsBusy] naming
+// the slot count and the state directory; bumping --socket-slots
+// (and matching the literal allowlist on the consuming side) is
+// the remedy.
 //
 // # host list flags
 //
@@ -179,10 +203,12 @@
 // writable bind mount of <stateHomeDir> declared in workmux's
 // extra_mounts; the guest's write reach extends only to that
 // directory, which only ever holds mcp-kubectx kubeconfigs.
-// SIGKILL leaks at most one SA and one
-// kubeconfig file. Provisioned SAs and bindings carry the
-// `app.kubernetes.io/managed-by=mcp-kubectx` label so a future
-// sweep tool can find orphans by selector.
+// SIGKILL leaks at most one SA, one kubeconfig file, and one stale
+// socket inode at the killed serve's slot; the next serve that
+// reclaims that slot's path detects the leftover via
+// [clearStaleSocket] and unlinks it before binding. Provisioned SAs
+// and bindings carry the `app.kubernetes.io/managed-by=mcp-kubectx`
+// label so a future sweep tool can find orphans by selector.
 //
 // # Recursion guard
 //

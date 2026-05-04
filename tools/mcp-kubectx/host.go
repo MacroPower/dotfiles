@@ -240,7 +240,7 @@ func runHostSelect(ctx context.Context, args []string) error {
 	socketPath := fs.String(
 		"socket-path", "",
 		"absolute path of the per-serve UDS the kubeconfig's exec plugin will connect to "+
-			"(default: <socketStateDir>/serve.<pid>.<env>.sock). serve passes its own resolved path "+
+			"(default: <socketStateDir>/serve.0.<env>.sock). serve passes its own resolved slot path "+
 			"because in the guest case the path lives on the guest fs but host select runs host-side.",
 	)
 	saRole := fs.String("sa-role-name", "", "name of the Role or ClusterRole to bind (required)")
@@ -277,17 +277,15 @@ func runHostSelect(ctx context.Context, args []string) error {
 		)
 	}
 
-	// Socket path defaults to socketPathForServe(*pid, *forGuest)
-	// when --socket-path is empty. Unlike --out-path, no --pid
-	// requirement is enforced here: the existing --pid check on
-	// the kubeconfig path branch already covers production use,
-	// and tests that exercise --out-path without --pid would
-	// otherwise have to mock the socket path purely to satisfy
-	// validation. pid=0 is harmless because tests never actually
-	// connect through the embedded path.
+	// Socket path defaults to socketPathForSlot(0, *forGuest)
+	// when --socket-path is empty. The default is only hit when
+	// `host select` runs standalone (effectively tests); in
+	// production, serve always forwards its own resolved slot path
+	// via --socket-path. Slot 0 is the deterministic default and
+	// matches what a single fresh serve would pick.
 	resolvedSocketPath := *socketPath
 	if resolvedSocketPath == "" {
-		resolvedSocketPath = socketPathForServe(*pid, *forGuest)
+		resolvedSocketPath = socketPathForSlot(0, *forGuest)
 	}
 
 	sa := saConfig{

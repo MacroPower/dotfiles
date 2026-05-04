@@ -162,12 +162,13 @@ func TestHostTokenSkipsWorkmuxWhenEnvSetToGuest(t *testing.T) { //nolint:paralle
 // TestSelectArgsForGuestFlag pins that handler.selectCtx forwards
 // --for-guest=BOOL based on envLookup, --pid is always forwarded,
 // --out-path is omitted when h.outputPath is empty (host select
-// then defaults the path), and --socket-path forwards the
-// per-`serve` UDS path keyed off pid + env so guest serve's host
-// select still resolves the path the guest fs holds.
-func TestSelectArgsForGuestFlag(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	stateHome := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", stateHome)
+// then defaults the kubeconfig path), and --socket-path is
+// forwarded verbatim from h.socketPath so the slot resolved at
+// serve startup by [*handler.acquireServeSocket] flows through
+// without re-derivation. The fixture sets h.socketPath directly
+// (mirroring what runServe does after a successful acquire).
+func TestSelectArgsForGuestFlag(t *testing.T) {
+	t.Parallel()
 
 	tests := map[string]struct {
 		guest string
@@ -177,20 +178,23 @@ func TestSelectArgsForGuestFlag(t *testing.T) { //nolint:paralleltest // uses t.
 		"host": {
 			guest: "",
 			want:  "--for-guest=false",
-			sock:  filepath.Join(stateHome, "mcp-kubectx-run", "serve.4242.host.sock"),
+			sock:  "/tmp/mcp-kubectx-run/serve.0.host.sock",
 		},
 		"guest": {
 			guest: "1",
 			want:  "--for-guest=true",
-			sock:  filepath.Join(stateHome, "mcp-kubectx-run", "serve.4242.guest.sock"),
+			sock:  "/tmp/mcp-kubectx-run/serve.2.guest.sock",
 		},
 	}
 
-	for name, tc := range tests { //nolint:paralleltest // shares t.Setenv state
+	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			h := &handler{
 				kubeconfigPath: "/k",
 				pid:            4242,
+				socketPath:     tc.sock,
 				sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
 				envLookup:      constLookup(tc.guest),
 			}
@@ -205,7 +209,7 @@ func TestSelectArgsForGuestFlag(t *testing.T) { //nolint:paralleltest // uses t.
 
 			require.Contains(t, args, "--socket-path")
 			require.Contains(t, args, tc.sock,
-				"--socket-path must be forwarded keyed off pid + env tag")
+				"--socket-path must forward h.socketPath verbatim")
 		})
 	}
 }

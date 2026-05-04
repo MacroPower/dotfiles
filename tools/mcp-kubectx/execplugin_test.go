@@ -18,10 +18,10 @@ func TestBuildExecPluginUniform(t *testing.T) {
 		socket string
 	}{
 		"host-style path": {
-			socket: "/Users/me/.local/state/mcp-kubectx-run/serve.4242.host.sock",
+			socket: "/Users/me/.local/state/mcp-kubectx-run/serve.0.host.sock",
 		},
 		"guest-style path": {
-			socket: "/home/dev/.local/state/mcp-kubectx-run/serve.9999.guest.sock",
+			socket: "/home/dev/.local/state/mcp-kubectx-run/serve.1.guest.sock",
 		},
 		"trivially short": {
 			socket: "/tmp/x.sock",
