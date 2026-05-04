@@ -9,6 +9,35 @@ nixos-lima:
 }:
 let
   user = config.dotfiles.system.username;
+
+  # Replace the upstream lima-init script wholesale. The original appends
+  # mount entries to /etc/fstab between #LIMA-START/#LIMA-END markers and
+  # calls `systemctl restart local-fs.target`. NixOS regenerates
+  # /etc/fstab from declarative `fileSystems` on every activation, so
+  # those entries vanish on the next switch and systemd unmounts them.
+  # The original awk also only converted `, ` separators to tabs, so
+  # mount points containing literal spaces (e.g. macOS iCloud paths
+  # under /Users/<name>/Library/Mobile Documents/...) produced
+  # malformed fstab lines that systemd discarded.
+  #
+  # The replacement script emits systemd .mount units under
+  # /run/systemd/system (NixOS does not touch /run, so the units survive
+  # activation) and uses systemd-escape to encode whitespace in mount
+  # points. The script body lives in ../../scripts/lima-init.sh; the
+  # placeholders are substituted here so we avoid IFD.
+  patchedLimaInitScript =
+    lib.replaceStrings
+      [ "@CIDATA_MNT@" "@LIMA_PATH@" ]
+      [
+        "/mnt/lima-cidata"
+        (pkgs.lib.makeBinPath [
+          pkgs.shadow
+          pkgs.gawk
+          pkgs.systemd
+          pkgs.mount
+        ])
+      ]
+      (builtins.readFile ../../scripts/lima-init.sh);
 in
 {
   imports = [ "${nixos-lima}/lima.nix" ];
@@ -18,6 +47,8 @@ in
   # (which run inside lima-init) to call switch without killing themselves.
   systemd.services.lima-init.restartIfChanged = lib.mkForce false;
   systemd.services.lima-guestagent.restartIfChanged = lib.mkForce false;
+
+  systemd.services.lima-init.script = lib.mkForce patchedLimaInitScript;
 
   # Docker (rootful + rootless). Rootless uses rootlesskit's pasta
   # network driver by default; pasta's built-in DNS forwarder
