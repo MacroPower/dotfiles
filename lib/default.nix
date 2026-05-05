@@ -81,17 +81,26 @@ let
     });
   };
 
-  # lupa 2.7's bundled LuaJIT 2.1 Makefile mis-detects the target on
-  # aarch64-linux, producing x86_64 objects that fail to link. Strip the
-  # luajit21 source so setup.py skips that extension; lua51/52/54 still
-  # build, which is all lupa's Python consumers (pydocket -> fastmcp ->
-  # mcp-nixos) need.
+  # nixpkgs at this pin builds lupa-2.8 with `LUPA_NO_BUNDLE=true` and
+  # without fetching git submodules. setup.py then falls through to its
+  # pkg-config fallback (find_lua_build) and produces a single unversioned
+  # `lupa.lua` extension linked against system LuaJIT. fakeredis (pulled
+  # in transitively via mcp-nixos -> fastmcp >= 2.14 -> pydocket) does
+  # `import lupa.lua51` at module load, which fails -- breaking mcp-nixos
+  # at stdio handshake. Flip lupa back to bundled mode and strip the
+  # empty submodule placeholder dirs (only third-party/lua51 is actually
+  # vendored in the tarball) so setup.py builds `lupa.lua51` from source.
+  # That is all fakeredis needs.
   lupaOverlay = _final: prev: {
     pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
       (_pyfinal: pyprev: {
         lupa = pyprev.lupa.overrideAttrs (old: {
+          env = (old.env or { }) // {
+            LUPA_NO_BUNDLE = "false";
+          };
           postPatch = (old.postPatch or "") + ''
-            rm -rf third-party/luajit21
+            find third-party -mindepth 1 -maxdepth 1 -type d ! -name lua51 \
+              -exec rm -rf {} +
           '';
         });
       })
