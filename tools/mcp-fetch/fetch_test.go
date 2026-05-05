@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -155,7 +156,7 @@ func TestTruncation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			result := truncate(tt.content, tt.startIndex, tt.maxLength)
+			result, _ := truncate(tt.content, tt.startIndex, tt.maxLength)
 			assert.Contains(t, result, tt.want)
 		})
 	}
@@ -409,6 +410,232 @@ func TestHandleLogging(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandleRecording_Success(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		mustWrite(w, []byte("hello world"))
+	}))
+	t.Cleanup(srv.Close)
+
+	store := newTestStore(t)
+	h := newTestHandler(t, srv.Client(), withStore(store))
+
+	_, _, err := h.handle(t.Context(), nil, FetchInput{URL: srv.URL + "/x"})
+	require.NoError(t, err)
+
+	rows, err := store.RecentFetches(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+
+	got := rows[0]
+	assert.Equal(t, OutcomeOK, got.Outcome)
+	assert.Equal(t, 200, got.StatusCode)
+	assert.Contains(t, got.ContentType, "text/plain")
+	assert.Positive(t, got.ResponseBytes)
+	assert.Positive(t, got.OutputBytes)
+	assert.Equal(t, 0, got.CacheHit)
+	assert.Empty(t, got.Error)
+}
+
+func TestHandleRecording_AllOutcomes(t *testing.T) {
+	t.Parallel()
+
+	plainSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ok":
+			w.Header().Set("Content-Type", "text/plain")
+			mustWrite(w, []byte("ok"))
+
+		case "/404":
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	t.Cleanup(plainSrv.Close)
+
+	deniedURL := "https://blocked.invalid/x"
+	denyRules := mustDeny(t, DenyRule{
+		URLMatch: URLMatch{Host: `blocked\.invalid`},
+		Reason:   "test deny",
+	})
+
+	tests := map[string]struct {
+		input        FetchInput
+		wantOutcome  string
+		wantStatus   int
+		wantHostHas  string
+		wantErrorHas string
+		rules        *Rules
+	}{
+		"ok": {
+			input:       FetchInput{URL: plainSrv.URL + "/ok"},
+			wantOutcome: OutcomeOK, wantStatus: 200,
+		},
+		"http_error": {
+			input:       FetchInput{URL: plainSrv.URL + "/404"},
+			wantOutcome: OutcomeHTTPError, wantStatus: 404,
+			wantErrorHas: "404",
+		},
+		"denied": {
+			input:        FetchInput{URL: deniedURL},
+			rules:        &Rules{deny: denyRules},
+			wantOutcome:  OutcomeDenied,
+			wantHostHas:  "blocked.invalid",
+			wantErrorHas: "test deny",
+		},
+		"fetch_error transport": {
+			input:        FetchInput{URL: "http://127.0.0.1:1/never-listens"},
+			wantOutcome:  OutcomeFetchError,
+			wantErrorHas: "performing request",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			store := newTestStore(t)
+			h := newTestHandler(t, plainSrv.Client(), withStore(store))
+
+			if tt.rules != nil {
+				h.rules = tt.rules
+			}
+
+			_, _, err := h.handle(t.Context(), nil, tt.input)
+			_ = err
+
+			rows, err := store.RecentFetches(t.Context(), 10)
+			require.NoError(t, err)
+			require.Len(t, rows, 1)
+
+			got := rows[0]
+			assert.Equal(t, tt.wantOutcome, got.Outcome)
+
+			if tt.wantStatus != 0 {
+				assert.Equal(t, tt.wantStatus, got.StatusCode)
+			}
+
+			if tt.wantHostHas != "" {
+				assert.Contains(t, got.Host, tt.wantHostHas)
+			}
+
+			if tt.wantErrorHas != "" {
+				assert.Contains(t, got.Error, tt.wantErrorHas)
+			}
+		})
+	}
+}
+
+func TestHandleRecording_InvalidURL(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	h := newTestHandler(t, http.DefaultClient, withStore(store))
+
+	_, _, err := h.handle(t.Context(), nil, FetchInput{URL: "::not-a-url"})
+	require.Error(t, err)
+
+	rows, err := store.RecentFetches(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, OutcomeInvalidURL, rows[0].Outcome)
+	assert.Empty(t, rows[0].Host)
+}
+
+func TestHandleRecording_CacheHit(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		mustWrite(w, []byte("hello"))
+	}))
+	t.Cleanup(srv.Close)
+
+	store := newTestStore(t)
+	h := newTestHandler(t, srv.Client(), withStore(store))
+
+	_, _, err := h.handle(t.Context(), nil, FetchInput{URL: srv.URL + "/cached"})
+	require.NoError(t, err)
+
+	_, _, err = h.handle(t.Context(), nil, FetchInput{URL: srv.URL + "/cached"})
+	require.NoError(t, err)
+
+	rows, err := store.RecentFetches(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+
+	// Newest first: second call was a cache hit.
+	assert.Equal(t, 1, rows[0].CacheHit)
+	assert.Equal(t, 0, rows[0].StatusCode, "cache hit rows have status_code=0 by convention")
+	assert.Empty(t, rows[0].ContentType)
+	assert.Equal(t, 0, rows[0].ResponseBytes)
+	// First call was a cache miss.
+	assert.Equal(t, 0, rows[1].CacheHit)
+	assert.Equal(t, 200, rows[1].StatusCode)
+}
+
+func TestHandleRecording_RawMode(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		mustWrite(w, []byte("<html><body>hi</body></html>"))
+	}))
+	t.Cleanup(srv.Close)
+
+	store := newTestStore(t)
+	h := newTestHandler(t, srv.Client(), withStore(store))
+
+	_, _, err := h.handle(t.Context(), nil, FetchInput{URL: srv.URL + "/raw", Raw: true})
+	require.NoError(t, err)
+
+	rows, err := store.RecentFetches(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 1, rows[0].RawMode)
+}
+
+func TestHandleRecording_FailureLogsWarn(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		mustWrite(w, []byte("ok"))
+	}))
+	t.Cleanup(srv.Close)
+
+	store := newTestStore(t)
+	// Close the underlying DB so Record() fails.
+	require.NoError(t, store.db.Close())
+
+	var buf bytes.Buffer
+
+	h := newTestHandler(t, srv.Client(),
+		withStore(store),
+		withLogger(slog.New(slog.NewJSONHandler(&buf, nil))),
+	)
+
+	_, _, err := h.handle(t.Context(), nil, FetchInput{URL: srv.URL + "/x"})
+	require.NoError(t, err)
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	require.Len(t, lines, 2,
+		"expected exactly two log lines (allowed Info + recording fetch Warn), got: %s", buf.String())
+
+	var first, second map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &first))
+	require.NoError(t, json.Unmarshal([]byte(lines[1]), &second))
+
+	assert.Equal(t, "allowed", first["msg"])
+	assert.Equal(t, "INFO", first["level"])
+	assert.Equal(t, "recording fetch", second["msg"])
+	assert.Equal(t, "WARN", second["level"])
 }
 
 func resultText(t *testing.T, result *mcp.CallToolResult) string {

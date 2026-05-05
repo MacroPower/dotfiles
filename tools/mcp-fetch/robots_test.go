@@ -150,15 +150,18 @@ func TestCrossOriginRedirectRobotsCheck(t *testing.T) {
 	assert.Contains(t, resultText(t, result), "robots.txt")
 }
 
-func newTestHandler(t *testing.T, client *http.Client) *fetchHandler {
+func newTestHandler(t *testing.T, client *http.Client, opts ...fetchOption) *fetchHandler {
 	t.Helper()
 
-	h := &fetchHandler{
-		userAgent:    "test-agent",
-		log:          slog.Default(),
-		robotsCache:  expirable.NewLRU[string, *robotstxt.RobotsData](10, nil, time.Hour),
-		contentCache: expirable.NewLRU[string, string](10, nil, time.Hour),
+	defaults := []fetchOption{
+		withUserAgent("test-agent"),
+		withLogger(slog.Default()),
+		withRobotsCache(expirable.NewLRU[string, *robotstxt.RobotsData](10, nil, time.Hour)),
+		withContentCache(expirable.NewLRU[string, string](10, nil, time.Hour)),
+		withCheckRobots(false),
 	}
+
+	h := newFetchHandler(append(defaults, opts...)...)
 
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {

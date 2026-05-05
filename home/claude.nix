@@ -1257,6 +1257,8 @@ in
           type = "stdio";
           command = "${pkgs.mcp-fetch}/bin/mcp-fetch";
           args = [
+            "--db"
+            "${config.xdg.stateHome}/mcp-fetch/fetches.db"
             "--rules-file"
             "${fetchRules}"
             "--log-file"
@@ -2021,7 +2023,6 @@ in
 
     dotfiles.extraInventoryPackages = [
       pkgs.hook-router
-      pkgs.mcp-fetch
       pkgs.mcp-git
       pkgs.mcp-http-proxy
     ];
@@ -2031,6 +2032,7 @@ in
         pkgs.chief
         pkgs.llm-agents.ccusage
         pkgs.llm-agents.ck
+        pkgs.mcp-fetch
         pkgs.mcp-kubectx
         workmuxWrapped
         pkgs.rtk-bin

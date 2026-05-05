@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,6 +24,12 @@ const (
 	defaultMaxLength = 5000
 	maxMaxLength     = 1_000_000
 	maxResponseBytes = 10 * 1024 * 1024 // 10 MiB
+
+	// recordTimeout caps how long the deferred Record call will wait
+	// when the request context has already been canceled. Detached
+	// from the request via [context.WithoutCancel] so cancellation
+	// does not lose the row.
+	recordTimeout = 5 * time.Second
 )
 
 var (
@@ -60,8 +67,79 @@ type fetchHandler struct {
 	log          *slog.Logger
 	robotsCache  *expirable.LRU[string, *robotstxt.RobotsData]
 	contentCache *expirable.LRU[string, string]
+	store        *Store
 	userAgent    string
 	checkRobots  bool
+}
+
+// fetchOption configures a [fetchHandler] via [newFetchHandler].
+//
+// Functions of this type:
+//   - [withUserAgent]
+//   - [withCheckRobots]
+//   - [withRules]
+//   - [withLogger]
+//   - [withRobotsCache]
+//   - [withContentCache]
+//   - [withStore]
+//
+// The HTTP client is wired separately after construction because the
+// client's CheckRedirect closure captures the handler, creating a
+// cyclic dependency that doesn't fit the option pattern.
+type fetchOption func(*fetchHandler)
+
+// withUserAgent sets the User-Agent header. See [fetchOption].
+func withUserAgent(ua string) fetchOption {
+	return func(h *fetchHandler) { h.userAgent = ua }
+}
+
+// withCheckRobots toggles robots.txt enforcement. See [fetchOption].
+func withCheckRobots(check bool) fetchOption {
+	return func(h *fetchHandler) { h.checkRobots = check }
+}
+
+// withRules sets the URL allow/deny rules. See [fetchOption].
+func withRules(r *Rules) fetchOption {
+	return func(h *fetchHandler) { h.rules = r }
+}
+
+// withLogger sets the structured logger. See [fetchOption].
+func withLogger(l *slog.Logger) fetchOption {
+	return func(h *fetchHandler) { h.log = l }
+}
+
+// withRobotsCache replaces the per-origin robots.txt cache. See [fetchOption].
+func withRobotsCache(c *expirable.LRU[string, *robotstxt.RobotsData]) fetchOption {
+	return func(h *fetchHandler) { h.robotsCache = c }
+}
+
+// withContentCache replaces the per-URL content cache. See [fetchOption].
+func withContentCache(c *expirable.LRU[string, string]) fetchOption {
+	return func(h *fetchHandler) { h.contentCache = c }
+}
+
+// withStore enables SQLite recording of fetch results. A nil store
+// disables recording. See [fetchOption].
+func withStore(s *Store) fetchOption {
+	return func(h *fetchHandler) { h.store = s }
+}
+
+// newFetchHandler constructs a [*fetchHandler] from the given options.
+// Caches default to in-memory expirable LRUs and the logger defaults
+// to discard, so a zero-option call returns a usable handler.
+func newFetchHandler(opts ...fetchOption) *fetchHandler {
+	h := &fetchHandler{
+		log:          slog.New(slog.DiscardHandler),
+		robotsCache:  expirable.NewLRU[string, *robotstxt.RobotsData](128, nil, time.Hour),
+		contentCache: expirable.NewLRU[string, string](64, nil, time.Hour),
+		checkRobots:  true,
+	}
+
+	for _, opt := range opts {
+		opt(h)
+	}
+
+	return h
 }
 
 // validateURL checks that the URL uses an allowed scheme and passes URL rules.
@@ -90,13 +168,36 @@ func (h *fetchHandler) handle(
 	maxLength = min(maxLength, maxMaxLength)
 	startIndex := max(input.StartIndex, 0)
 
+	start := time.Now()
+
+	// Sentinel outcome: every successful path overwrites this. If we
+	// land in the deferred recorder without an outcome assignment
+	// something has gone wrong and the row should reflect that.
+	rec := FetchRecord{
+		URL:        input.URL,
+		MaxLength:  maxLength,
+		StartIndex: startIndex,
+		RawMode:    boolToInt(input.Raw),
+		Outcome:    OutcomeInternalError,
+	}
+
+	defer h.recordFetch(ctx, &rec, start)
+
 	u, err := url.ParseRequestURI(input.URL)
 	if err != nil {
+		rec.Outcome = OutcomeInvalidURL
+		rec.Error = err.Error()
+
 		return nil, nil, fmt.Errorf("invalid URL: %w", err)
 	}
 
+	rec.Host = u.Host
+
 	err = h.validateURL(u)
 	if err != nil {
+		rec.Outcome = OutcomeDenied
+		rec.Error = err.Error()
+
 		h.log.WarnContext(ctx, "denied",
 			slog.String("host", u.Host),
 			slog.String("url", input.URL),
@@ -109,6 +210,9 @@ func (h *fetchHandler) handle(
 	if h.checkRobots {
 		err = h.checkRobotsURL(ctx, u)
 		if err != nil {
+			rec.Outcome = OutcomeRobotsDenied
+			rec.Error = err.Error()
+
 			h.log.WarnContext(ctx, "denied",
 				slog.String("host", u.Host),
 				slog.String("url", input.URL),
@@ -130,55 +234,124 @@ func (h *fetchHandler) handle(
 	}
 
 	content, ok := h.contentCache.Get(cacheKey)
-	if !ok {
-		body, contentType, err := h.doFetch(ctx, input.URL)
+	if ok {
+		rec.CacheHit = 1
+	} else {
+		body, contentType, status, err := h.doFetch(ctx, input.URL)
 		if err != nil {
-			if isToolError(err) {
-				return toolError(err), nil, nil
-			}
+			rec.Error = err.Error()
 
-			return nil, nil, fmt.Errorf("fetching URL: %w", err)
+			switch {
+			case errors.Is(err, ErrHTTPStatus):
+				rec.Outcome = OutcomeHTTPError
+				rec.StatusCode = status
+
+				return toolError(err), nil, nil
+
+			case isToolError(err):
+				rec.Outcome = OutcomeFetchError
+
+				return toolError(err), nil, nil
+
+			default:
+				rec.Outcome = OutcomeFetchError
+
+				return nil, nil, fmt.Errorf("fetching URL: %w", err)
+			}
 		}
+
+		rec.StatusCode = status
+		rec.ContentType = contentType
+		rec.ResponseBytes = len(body)
 
 		content, err = h.processBody(body, contentType, input.Raw)
 		if err != nil {
+			rec.Outcome = OutcomeInternalError
+			rec.Error = err.Error()
+
 			return nil, nil, fmt.Errorf("processing response: %w", err)
 		}
 
 		h.contentCache.Add(cacheKey, content)
 	}
 
-	result := truncate(content, startIndex, maxLength)
+	result, truncated := truncate(content, startIndex, maxLength)
+
+	rec.Outcome = OutcomeOK
+	rec.OutputBytes = len(result)
+	rec.Truncated = boolToInt(truncated)
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: result}},
 	}, nil, nil
 }
 
-func (h *fetchHandler) doFetch(ctx context.Context, rawURL string) ([]byte, string, error) {
+// recordFetch is the deferred recorder. It captures any panic so the
+// row reflects the failure, persists the record on a context detached
+// from the request (so client cancellation does not lose the row),
+// then re-raises the panic so the runtime still surfaces the crash.
+//
+// Record errors are logged at slog Warn and never propagate to the
+// MCP caller - the fetch already succeeded from their point of view.
+func (h *fetchHandler) recordFetch(ctx context.Context, rec *FetchRecord, start time.Time) {
+	panicVal := recover()
+	if panicVal != nil {
+		// rec.Outcome is already OutcomeInternalError (the sentinel set
+		// at the top of handle); only the error string needs filling in.
+		rec.Error = fmt.Sprintf("panic: %v", panicVal)
+
+		h.log.ErrorContext(ctx, "fetch panic",
+			slog.Any("panic", panicVal),
+			slog.String("url", rec.URL),
+		)
+	}
+
+	rec.DurationMs = time.Since(start).Milliseconds()
+
+	if h.store != nil {
+		recCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+		defer cancel()
+
+		err := h.store.Record(recCtx, *rec)
+		if err != nil {
+			h.log.WarnContext(ctx, "recording fetch",
+				slog.String("url", rec.URL),
+				slog.Any("error", err),
+			)
+		}
+	}
+
+	if panicVal != nil {
+		panic(panicVal)
+	}
+}
+
+func (h *fetchHandler) doFetch(ctx context.Context, rawURL string) ([]byte, string, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
-		return nil, "", fmt.Errorf("building request: %w", err)
+		return nil, "", 0, fmt.Errorf("building request: %w", err)
 	}
 
 	req.Header.Set("User-Agent", h.userAgent)
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("performing request: %w", err)
+		return nil, "", 0, fmt.Errorf("performing request: %w", err)
 	}
 	defer h.closeBody(ctx, resp.Body, rawURL)
 
+	contentType := resp.Header.Get("Content-Type")
+
 	if resp.StatusCode >= 400 {
-		return nil, "", fmt.Errorf("%w: status %d", ErrHTTPStatus, resp.StatusCode)
+		return nil, contentType, resp.StatusCode, fmt.Errorf("%w: status %d", ErrHTTPStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return nil, "", fmt.Errorf("reading response: %w", err)
+		return nil, contentType, resp.StatusCode, fmt.Errorf("reading response: %w", err)
 	}
 
-	return body, resp.Header.Get("Content-Type"), nil
+	return body, contentType, resp.StatusCode, nil
 }
 
 func (h *fetchHandler) processBody(body []byte, contentType string, raw bool) (string, error) {
@@ -219,12 +392,15 @@ func convertHTML(body []byte) (string, error) {
 	return md, nil
 }
 
-func truncate(content string, startIndex, maxLength int) string {
+// truncate slices the content to the [startIndex, startIndex+maxLength)
+// rune window and returns the result plus a flag indicating whether
+// content was elided beyond the window.
+func truncate(content string, startIndex, maxLength int) (string, bool) {
 	runes := []rune(content)
 	total := len(runes)
 
 	if startIndex >= total {
-		return fmt.Sprintf("<content empty: start_index %d exceeds content length %d>", startIndex, total)
+		return fmt.Sprintf("<content empty: start_index %d exceeds content length %d>", startIndex, total), false
 	}
 
 	end := min(startIndex+maxLength, total)
@@ -235,9 +411,11 @@ func truncate(content string, startIndex, maxLength int) string {
 			"\n\n<content truncated: %d/%d characters shown. Use start_index=%d to continue reading>",
 			end-startIndex, total, end,
 		)
+
+		return result, true
 	}
 
-	return result
+	return result, false
 }
 
 func toolError(err error) *mcp.CallToolResult {
