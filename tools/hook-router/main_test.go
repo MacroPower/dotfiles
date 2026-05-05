@@ -16,7 +16,7 @@ import (
 func TestRun(t *testing.T) {
 	t.Parallel()
 
-	cfg := config{}
+	cfg := config{commandRules: canonicalRules()}
 	logger := slog.New(slog.DiscardHandler)
 
 	makeInput := func(toolInput map[string]any) string {
@@ -156,7 +156,10 @@ func TestRun(t *testing.T) {
 	t.Run("PreToolUse Bash: rewrite kubectl with kubeconfig", func(t *testing.T) {
 		t.Parallel()
 
-		kubeconfigCfg := config{kubeconfigPath: "/tmp/claude-kubectx/12345/kubeconfig"}
+		kubeconfigCfg := config{
+			kubeconfigPath: "/tmp/claude-kubectx/12345/kubeconfig",
+			commandRules:   canonicalRules(),
+		}
 
 		input := makeInput(map[string]any{
 			"command": "kubectl get pods",
@@ -359,6 +362,7 @@ func TestRun(t *testing.T) {
 		routedCfg := config{
 			postImpl:     testCatalog(),
 			commitSkills: []string{"commit", "commit-push-pr", "merge"},
+			commandRules: canonicalRules(),
 		}
 
 		input := `{"session_id":"s1","prompt":"/commit"}`

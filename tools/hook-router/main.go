@@ -15,17 +15,19 @@ import (
 // config holds runtime settings resolved from the environment and
 // from flag-parsed wrapper inputs.
 //
-// Invariant: after [mainErr] finishes wiring, postImpl is non-nil
-// (possibly an empty catalog of post-impl skills). Handlers can call
-// cfg.postImpl.HasLabel(...) and cfg.postImpl.BuildAskReason(...)
-// without a nil-guard. Tests that exercise handlers must construct a
-// catalog too (see testCatalog in plan_test.go).
+// Invariant: once [mainErr] finishes wiring, postImpl and commandRules
+// are non-nil (possibly empty), so handlers can call
+// cfg.postImpl.HasLabel(...) / cfg.postImpl.BuildAskReason(...) and
+// cfg.commandRules.Check(...) without nil-guards. Handler tests must
+// construct both as well (see testCatalog in plan_test.go and
+// [NewCommandRules]).
 //
 // commitSkills lists the wrap-up skill names (without leading slash)
 // whose UserPromptSubmit invocation clears plan-guard state. A nil or
 // empty slice disables the failsafe.
 type config struct {
 	postImpl       *PostImplCatalog
+	commandRules   *CommandRules
 	commitSkills   []string
 	rtkRewrite     string
 	kubeconfigPath string
@@ -51,17 +53,18 @@ func main() {
 	dbPath := flag.String("db", "", "path to SQLite state database")
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
+	commandRules := flag.String("command-rules", "", "JSON array of command deny rules ({command, args, except, reason})")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON string) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON string) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -105,9 +108,22 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON 
 		return fmt.Errorf("parsing --commit-skills: %w", err)
 	}
 
+	rules, err := parseCommandRules(commandRulesJSON)
+	if err != nil {
+		return fmt.Errorf("parsing --command-rules: %w", err)
+	}
+
+	if rules.Empty() {
+		// A host with every rule-contributing bundle disabled is a
+		// legitimate config, so log at debug rather than warn (unlike
+		// the post-impl catalog above).
+		logger.Debug("command rules engine is empty")
+	}
+
 	cfg := configFromEnv()
 	cfg.postImpl = catalog
 	cfg.commitSkills = skills
+	cfg.commandRules = rules
 
 	return run(ctx, os.Stdin, os.Stdout, event, tool, store, cfg, logger)
 }

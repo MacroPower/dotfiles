@@ -3,7 +3,8 @@
 //
 // It handles PreToolUse, PostToolUse, and Stop hook events:
 //
-//   - PreToolUse:Bash             -- denies git stash save/push
+//   - PreToolUse:Bash             -- evaluates command-deny rules from
+//     --command-rules JSON and rewrites kubectl with KUBECONFIG
 //   - PreToolUse:ExitPlanMode     -- gates plan exit behind plan-reviewer, records
 //     plan path and baseline commit on approval
 //   - PreToolUse:EnterPlanMode    -- resets plan session state

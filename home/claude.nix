@@ -136,6 +136,50 @@ let
     };
   };
 
+  # Bash command deny rule, evaluated by hook-router on PreToolUse:Bash.
+  # See tools/hook-router/command_rules.go DenyCommandRule for matching
+  # semantics; the JSON tags there must stay aligned with these option
+  # names.
+  denyCommandRuleType = types.submodule {
+    options = {
+      command = mkOption {
+        type = types.nonEmptyStr;
+        description = ''
+          Executable name matched literally against the first word of
+          the call.
+        '';
+      };
+      args = mkOption {
+        type = types.listOf types.nonEmptyStr;
+        default = [ ];
+        description = ''
+          Positional arguments that must follow `command`, matched
+          literally in order. With `command = "git"`, leading
+          top-level git flags are skipped before matching; other
+          commands match strictly from position 1. An empty list
+          matches every invocation of `command`, so set a non-empty
+          list to scope the rule to a specific subcommand.
+        '';
+      };
+      except = mkOption {
+        type = types.listOf types.nonEmptyStr;
+        default = [ ];
+        description = ''
+          Literal arguments that exempt the call when they appear as
+          the next argument after `args`. Lets `git stash pop` through
+          while still denying `git stash push`. No flag-skipping is
+          applied to the candidate slot, so intervening flags break
+          the exemption. Bare `command + args` calls (no further
+          arguments) always deny regardless of `except`.
+        '';
+      };
+      reason = mkOption {
+        type = types.nonEmptyStr;
+        description = "Message returned to Claude when the rule denies a command.";
+      };
+    };
+  };
+
   toPermGlob =
     path:
     let
@@ -504,6 +548,9 @@ let
         --log-file "${config.xdg.stateHome}/hook-router/hook-router.log" \
         --post-impl-skills ${lib.escapeShellArg (builtins.toJSON postImplSkills)} \
         --commit-skills ${lib.escapeShellArg (builtins.toJSON commitSkills)} \
+        --command-rules ${
+          lib.escapeShellArg (builtins.toJSON (bundledCommandDeny ++ cfg.extraCommandRules.deny))
+        } \
         "$@"
     '';
   };
@@ -672,6 +719,7 @@ let
   bundledWritePaths = lib.concatMap (b: b.sandbox.allowWrite) bundleValues;
   bundledFetchDeny = lib.concatMap (b: b.fetchRules.deny) bundleValues;
   bundledFetchAllow = lib.concatMap (b: b.fetchRules.allow) bundleValues;
+  bundledCommandDeny = lib.concatMap (b: b.commandRules.deny) bundleValues;
 
   researchDir =
     if cfg.research.useVault then
@@ -1003,6 +1051,26 @@ in
       description = "Extra mcp-fetch URL filtering rules merged with the base deny and allow lists.";
     };
 
+    extraCommandRules = mkOption {
+      type = types.submodule {
+        options = {
+          deny = mkOption {
+            type = types.listOf denyCommandRuleType;
+            default = [ ];
+            description = ''
+              Extra bash command deny rules, appended after the
+              bundle-contributed rules in hook-router's evaluation
+              order. No `allow` counterpart exists: hook-router has
+              no command allowlist concept, only deny rules with
+              optional per-rule `except` exemptions.
+            '';
+          };
+        };
+      };
+      default = { };
+      description = "Extra hook-router command deny rules appended after bundle-contributed rules.";
+    };
+
     fetchAllowlist = mkOption {
       type = types.bool;
       default = true;
@@ -1211,6 +1279,19 @@ in
                 description = "mcp-fetch allow rules contributed by this bundle.";
               };
             };
+            commandRules = {
+              deny = mkOption {
+                type = types.listOf denyCommandRuleType;
+                default = [ ];
+                description = ''
+                  hook-router PreToolUse:Bash deny rules contributed by
+                  this bundle. Aggregated at `enable` granularity, so
+                  redirect messages that point at this bundle's MCP
+                  tools turn off automatically when the bundle is
+                  disabled.
+                '';
+              };
+            };
           };
         }
       );
@@ -1262,6 +1343,27 @@ in
         sandbox.allowWrite = [
           "/tmp/git"
           "/private/tmp/git"
+        ];
+        commandRules.deny = [
+          {
+            command = "git";
+            args = [ "clone" ];
+            reason = "Direct git clone usage is blocked. Use mcp__git__git_clone instead.";
+          }
+          {
+            command = "git";
+            args = [ "stash" ];
+            except = [
+              "pop"
+              "apply"
+              "list"
+              "show"
+              "branch"
+              "drop"
+              "clear"
+            ];
+            reason = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.";
+          }
         ];
         fetchRules.deny = [
           {
@@ -1335,13 +1437,6 @@ in
             reason = "Use mcp__nixos__nix to look up home-manager options instead of scraping home-manager-options.extranix.com.";
           }
         ];
-        instructions = {
-          category = "Code Search";
-          items = [
-            "Use `mcp__nixos__nix` for Nix package searches, NixOS/home-manager/nix-darwin option lookups, and FlakeHub queries."
-            "Use `mcp__nixos__nix_versions` for package version history and channel availability."
-          ];
-        };
       };
 
       ck = {
@@ -1549,20 +1644,14 @@ in
           {
             host = "registry\\.opentofu\\.org";
             path = "/(providers|modules)(/.*)?";
-            reason = "Use mcp__opentofu__* tools (search-opentofu-registry, get-provider-details, get-module-details, get-resource-docs, get-datasource-docs) instead of fetching OpenTofu Registry pages.";
+            reason = "Use mcp__opentofu__* tools instead of fetching OpenTofu Registry pages.";
           }
           {
             host = "registry\\.terraform\\.io";
             path = "/(providers|modules)(/.*)?";
-            reason = "Use mcp__opentofu__* tools (search-opentofu-registry, get-provider-details, get-module-details, get-resource-docs, get-datasource-docs) instead of fetching Terraform Registry pages.";
+            reason = "Use mcp__opentofu__* tools instead of fetching Terraform Registry pages.";
           }
         ];
-        instructions = {
-          category = "Infrastructure";
-          items = [
-            "Use `mcp__opentofu__*` tools to query the OpenTofu Registry for providers, modules, resources, and data sources instead of guessing from memory."
-          ];
-        };
       };
 
       leanspec = {
@@ -1651,6 +1740,16 @@ in
         };
         permissions.allow = [ "mcp__kubectx__list" ];
         permissions.ask = [ "mcp__kubectx__select" ];
+        commandRules.deny = [
+          {
+            command = "kubectx";
+            reason = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts.";
+          }
+          {
+            command = "kubens";
+            reason = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts.";
+          }
+        ];
         sandbox.allowedDomains = cfg.kubeApiDomains;
         # Per-`serve` UDS: kubectl's exec credential plugin
         # (`mcp-kubectx exec-plugin --socket <path>`) connects here
