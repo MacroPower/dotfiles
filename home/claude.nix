@@ -652,8 +652,16 @@ let
     else
       server;
 
+  applyAlwaysLoad =
+    alwaysLoad: server: if alwaysLoad then server // { alwaysLoad = true; } else server;
+
   bundledServers = lib.foldl' lib.recursiveUpdate { } (
-    map (b: lib.mapAttrs (_: wrapServerWithGuard b.activation.markers) b.servers) bundleValues
+    map (
+      b:
+      lib.mapAttrs (
+        _: server: applyAlwaysLoad b.alwaysLoad (wrapServerWithGuard b.activation.markers server)
+      ) b.servers
+    ) bundleValues
   );
   bundledAllow = lib.concatMap (b: b.permissions.allow) bundleValues;
   bundledDeny = lib.concatMap (b: b.permissions.deny) bundleValues;
@@ -1174,6 +1182,18 @@ in
                 fails open.
               '';
             };
+            alwaysLoad = mkOption {
+              type = types.bool;
+              default = false;
+              description = ''
+                Set `alwaysLoad = true` on every server in this bundle so its
+                tool schemas load at session start rather than being deferred
+                behind Claude Code's ToolSearch. Use sparingly — each upfront
+                tool consumes context that would otherwise be available for
+                the conversation. See
+                https://code.claude.com/docs/en/mcp#configure-tool-search.
+              '';
+            };
             fetchRules = {
               deny = mkOption {
                 type = types.listOf denyRuleType;
@@ -1202,6 +1222,7 @@ in
   config = {
     dotfiles.claude.mcpServerBundles = {
       fetch = {
+        alwaysLoad = true;
         servers.fetch = {
           type = "stdio";
           command = "${pkgs.mcp-fetch}/bin/mcp-fetch";
@@ -1226,6 +1247,7 @@ in
       };
 
       git = {
+        alwaysLoad = true;
         servers.git = {
           type = "stdio";
           command = "${gitWrapper}";
@@ -1272,6 +1294,7 @@ in
       };
 
       kagi = {
+        alwaysLoad = true;
         servers.kagi = {
           type = "stdio";
           command = "${kagiWrapper}";
@@ -1322,6 +1345,7 @@ in
       };
 
       ck = {
+        alwaysLoad = true;
         servers.ck = {
           type = "stdio";
           command = "${pkgs.llm-agents.ck}/bin/ck";
