@@ -479,51 +479,6 @@ let
       repeat = true;
     };
 
-    # Layouts
-    layoutNext = {
-      group = "layouts";
-      name = "Next";
-      key = "Enter";
-      cmd = "next-layout";
-      transient = true;
-    };
-    equalizeLayout = {
-      group = "layouts";
-      name = "Equalize (tiled)";
-      key = "=";
-      cmd = "select-layout tiled";
-    };
-    layoutH = {
-      group = "layouts";
-      name = "Horizontal";
-      key = "-";
-      cmd = "select-layout even-horizontal";
-    };
-    layoutV = {
-      group = "layouts";
-      name = "Vertical";
-      key = "V";
-      cmd = "select-layout even-vertical";
-    };
-    layoutMainH = {
-      group = "layouts";
-      name = "Main horizontal";
-      key = "U";
-      cmd = "select-layout main-horizontal";
-    };
-    layoutMainV = {
-      group = "layouts";
-      name = "Main vertical";
-      key = "Y";
-      cmd = "select-layout main-vertical";
-    };
-    layoutSpread = {
-      group = "layouts";
-      name = "Spread evenly";
-      key = "_";
-      cmd = "select-layout -E";
-    };
-
     # Panes (navigation via smart-splits.nvim: C-hjkl, resize: C-S-hjkl, see extraConfig)
     resizeLeft = {
       group = "panes";
@@ -766,20 +721,6 @@ let
         b.nextWindow
         b.prevWindow
         { separator = true; }
-        {
-          name = "+Layout";
-          key = "l";
-          menu = [
-            b.layoutNext
-            b.equalizeLayout
-            b.layoutH
-            b.layoutV
-            b.layoutMainH
-            b.layoutMainV
-            { separator = true; }
-            b.layoutSpread
-          ];
-        }
         b.renameWindow
         b.killWindow
       ];
@@ -893,10 +834,6 @@ let
     {
       id = "panes";
       label = "PANES";
-    }
-    {
-      id = "layouts";
-      label = "LAYOUTS";
     }
     {
       id = "sessions";
@@ -1233,6 +1170,14 @@ in
 
       # --- Keybindings (generated from shared binding definitions) ---
       ${bindLines}
+
+      # Disable built-in layout bindings (next-layout, preset layouts).
+      unbind Space
+      unbind M-1
+      unbind M-2
+      unbind M-3
+      unbind M-4
+      unbind M-5
 
       # vi-style copy mode (yank plugin handles 'y' for clipboard integration)
       bind -T copy-mode-vi v send-keys -X begin-selection
