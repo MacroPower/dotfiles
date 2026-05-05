@@ -165,6 +165,27 @@ let
     };
   };
 
+  # nixpkgs runs grug-far.nvim's mini.test suite during build whenever
+  # lua is 5.1-compatible and the host isn't darwin (luajit2.1 hits this
+  # on linux). The override at pkgs/development/lua-modules/overrides.nix
+  # rm -rf's the bundled screenshots first because they're pinned to
+  # specific neovim/ripgrep/ast-grep versions; with no references, the
+  # screenshot tests then write fresh ones and mini.test reports each
+  # as a failure, so `make test` exits 2. Skip the check phase -- the
+  # plugin itself is just lua and we rely on upstream CI for it.
+  # buildNeovimPlugin sources from neovim-unwrapped.lua.pkgs (a separate
+  # scope from pkgs.luajitPackages), so the override has to be threaded
+  # through luajit's packageOverrides for both consumers to pick it up.
+  grugFarOverlay = _final: prev: {
+    luajit = prev.luajit.override {
+      packageOverrides = _luaFinal: luaPrev: {
+        grug-far-nvim = luaPrev.grug-far-nvim.overrideAttrs {
+          doCheck = false;
+        };
+      };
+    };
+  };
+
   sharedOverlays = system: [
     lixOverlay
     localOverlay
@@ -173,6 +194,7 @@ let
     mcpOverlay
     aioboto3Overlay
     direnvOverlay
+    grugFarOverlay
     (nurJacobColvinOverlay system)
     ryceeOverlay
     (workmuxOverlay system)
