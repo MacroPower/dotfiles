@@ -672,8 +672,8 @@ let
     '';
   };
 
-  # Aggregate enabled MCP server bundles
-  enabledBundles = lib.filterAttrs (_: b: b.enable) cfg.mcpServerBundles;
+  # Aggregate enabled tool bundles
+  enabledBundles = lib.filterAttrs (_: b: b.enable) cfg.toolBundles;
   bundleValues = lib.attrValues enabledBundles;
 
   # Wrap a stdio server's command with the activation guard when the bundle
@@ -1172,14 +1172,14 @@ in
       description = "Additional permission entries appended to the base allow/deny/ask lists.";
     };
 
-    mcpServerBundles = mkOption {
+    toolBundles = mkOption {
       type = types.attrsOf (
         types.submodule {
           options = {
             enable = mkOption {
               type = types.bool;
               default = true;
-              description = "Whether this MCP server bundle is enabled.";
+              description = "Whether this tool bundle is enabled.";
             };
             servers = mkOption {
               type = types.attrsOf types.anything;
@@ -1296,12 +1296,12 @@ in
         }
       );
       default = { };
-      description = "MCP server bundles grouping server config, permissions, sandbox rules, mcp-fetch rules, and CLAUDE.md instructions.";
+      description = "Tool bundles grouping MCP servers, permissions, sandbox rules, mcp-fetch rules, and CLAUDE.md instructions.";
     };
   };
 
   config = {
-    dotfiles.claude.mcpServerBundles = {
+    dotfiles.claude.toolBundles = {
       fetch = {
         alwaysLoad = true;
         servers.fetch = {
