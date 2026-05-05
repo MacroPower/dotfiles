@@ -167,7 +167,7 @@
                 helm-schema = ./pkgs/helm-schema.nix;
                 mcp-kagi = ./pkgs/mcp-kagi.nix;
                 mcp-argocd = ./pkgs/mcp-argocd.nix;
-                mcp-opentofu = ./pkgs/mcp-opentofu.nix;
+                mcp-opentofu = ./tools/mcp-opentofu/package.nix;
                 leanspec-mcp = ./pkgs/leanspec-mcp.nix;
                 leanspec-cli = ./pkgs/leanspec-cli.nix;
                 claude-powerline = ./pkgs/claude-powerline.nix;

@@ -1633,11 +1633,11 @@ in
           "*.tfvars"
         ];
         permissions.allow = [
-          "mcp__opentofu__search-opentofu-registry"
-          "mcp__opentofu__get-provider-details"
-          "mcp__opentofu__get-module-details"
-          "mcp__opentofu__get-resource-docs"
-          "mcp__opentofu__get-datasource-docs"
+          "mcp__opentofu__search_registry"
+          "mcp__opentofu__get_provider_details"
+          "mcp__opentofu__get_module_details"
+          "mcp__opentofu__get_resource_docs"
+          "mcp__opentofu__get_datasource_docs"
         ];
         sandbox.allowedDomains = [ "api.opentofu.org" ];
         fetchRules.deny = [
