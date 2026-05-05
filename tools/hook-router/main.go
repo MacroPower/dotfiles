@@ -16,7 +16,7 @@ import (
 // from flag-parsed wrapper inputs.
 //
 // Invariant: after [mainErr] finishes wiring, postImpl is non-nil
-// (possibly an empty catalog). Handlers can call
+// (possibly an empty catalog of post-impl skills). Handlers can call
 // cfg.postImpl.HasLabel(...) and cfg.postImpl.BuildAskReason(...)
 // without a nil-guard. Tests that exercise handlers must construct a
 // catalog too (see testCatalog in plan_test.go).
@@ -49,19 +49,19 @@ func main() {
 	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, UserPromptSubmit)")
 	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion)")
 	dbPath := flag.String("db", "", "path to SQLite state database")
-	postImplAgents := flag.String("post-impl-agents", "", "JSON array of {label, aliases?, description} entries")
+	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplAgents, *commitSkills)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplAgentsJSON, commitSkillsJSON string) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON string) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -91,9 +91,9 @@ func mainErr(logFile, event, tool, dbPath, postImplAgentsJSON, commitSkillsJSON 
 		}
 	}
 
-	catalog, err := parsePostImplAgents(postImplAgentsJSON)
+	catalog, err := parsePostImplSkills(postImplSkillsJSON)
 	if err != nil {
-		return fmt.Errorf("parsing --post-impl-agents: %w", err)
+		return fmt.Errorf("parsing --post-impl-skills: %w", err)
 	}
 
 	if catalog.Empty() {

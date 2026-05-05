@@ -24,22 +24,16 @@ func makeHookJSON(t *testing.T, hook HookInput) []byte {
 }
 
 // testCatalog returns a [*PostImplCatalog] matching the canonical
-// agents declared in home/claude.nix. Tests that exercise
+// skills declared in home/claude.nix. Tests that exercise
 // handlePostAskUserQuestion or handleStop pass this via cfg so the
 // Nix-driven validation and block-message rendering paths are the
 // same shape as production.
 func testCatalog() *PostImplCatalog {
-	return NewPostImplCatalog([]PostImplAgent{
-		{
-			Label:       "implementation-reviewer",
-			Description: "Review code changes against the plan. Pass it the plan file path and the base SHA.",
-		},
-		{
-			Label:       "simplify",
-			Aliases:     []string{"code-simplifier"},
-			Description: "Review and simplify the implemented code.",
-		},
-		{Label: "humanizer", Description: "Clean up AI writing patterns in any prose/docs that changed."},
+	return NewPostImplCatalog([]PostImplSkill{
+		{Label: "/review-implementation", Description: "Review code changes against the plan."},
+		{Label: "/simplify", Description: "Review and simplify the implemented code."},
+		{Label: "/humanize", Description: "Clean up AI writing patterns in any prose/docs that changed."},
+		{Label: "/commit", Description: "Wrap up the cycle by creating a git commit."},
 	})
 }
 
@@ -311,7 +305,7 @@ func TestStopBlocksWithChanges(t *testing.T) {
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	assert.Equal(t, "block", result["decision"])
 	assert.Contains(t, result["reason"], "AskUserQuestion")
-	assert.Contains(t, result["reason"], "implementation-reviewer")
+	assert.Contains(t, result["reason"], "/review-implementation")
 	assert.Contains(t, result["reason"], baseSHA)
 }
 
@@ -373,7 +367,7 @@ func TestStop_AllowsAfterPostImplAUQ_NoChanges(t *testing.T) {
 
 	// No changes, but user answers a post-impl AUQ -- captures the
 	// fingerprint of the (unchanged) state so Stop can short-circuit.
-	askInput := askInputWithLabel(t, "s1", "implementation-reviewer")
+	askInput := askInputWithLabel(t, "s1", "/review-implementation")
 	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
 
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
@@ -616,7 +610,7 @@ func TestStopHookActive_ClearsAndAllows(t *testing.T) {
 // askInputWithLabel builds an AskUserQuestion PostToolUse input whose
 // single question has one option with the given label. The label is
 // chosen by the caller so a test can both exercise the match path
-// (label in postImplAgentLabels) and the non-match path.
+// (label present in the post-impl skill catalog) and the non-match path.
 func askInputWithLabel(t *testing.T, sessionID, label string) []byte {
 	t.Helper()
 
@@ -642,7 +636,7 @@ func TestHandlePostAskUserQuestion_RecordsFingerprintOnMatchingLabel(t *testing.
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := askInputWithLabel(t, "s1", "implementation-reviewer")
+	input := askInputWithLabel(t, "s1", "/review-implementation")
 
 	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
 	require.NoError(t, err)
@@ -660,7 +654,7 @@ func TestHandlePostAskUserQuestion_IgnoresUnrelatedQuestion(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	// Labels not in postImplAgentLabels, e.g. an unrelated clarifying question.
+	// Labels not in the post-impl skill catalog, e.g. an unrelated clarifying question.
 	input := askInputWithLabel(t, "s1", "use-default-directory")
 
 	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
@@ -679,7 +673,7 @@ func TestHandlePostAskUserQuestion_EmptySessionIsNoop(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := askInputWithLabel(t, "", "implementation-reviewer")
+	input := askInputWithLabel(t, "", "/review-implementation")
 
 	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
 	require.NoError(t, err)
@@ -773,7 +767,7 @@ func TestStop_AllowsWhenAskRanAgainstCurrentState(t *testing.T) {
 
 	// Simulate user answering post-impl AskUserQuestion -- captures
 	// fingerprint of current state.
-	askInput := askInputWithLabel(t, "s1", "implementation-reviewer")
+	askInput := askInputWithLabel(t, "s1", "/review-implementation")
 
 	err := handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger)
 	require.NoError(t, err)
@@ -822,7 +816,7 @@ func TestStop_BlocksWhenCommittedEditsAfterAsk(t *testing.T) {
 	}
 
 	// User answers AskUserQuestion; handler captures fingerprint.
-	askInput := askInputWithLabel(t, "s1", "implementation-reviewer")
+	askInput := askInputWithLabel(t, "s1", "/review-implementation")
 	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
 
 	// More edits AFTER the user answered.
@@ -852,7 +846,7 @@ func TestStop_BlocksWhenCommittedEditsAfterAsk(t *testing.T) {
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	assert.Equal(t, "block", result["decision"])
 	assert.Contains(t, result["reason"], "AskUserQuestion")
-	assert.Contains(t, result["reason"], "implementation-reviewer")
+	assert.Contains(t, result["reason"], "/review-implementation")
 }
 
 func TestStop_BlocksWhenUncommittedEditsAfterAsk(t *testing.T) {
@@ -889,7 +883,7 @@ func TestStop_BlocksWhenUncommittedEditsAfterAsk(t *testing.T) {
 	}
 
 	// User answers AskUserQuestion; handler captures fingerprint.
-	askInput := askInputWithLabel(t, "s1", "implementation-reviewer")
+	askInput := askInputWithLabel(t, "s1", "/review-implementation")
 	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
 
 	// Uncommitted edit AFTER the user answered.
@@ -908,7 +902,7 @@ func TestStop_BlocksWhenUncommittedEditsAfterAsk(t *testing.T) {
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	assert.Equal(t, "block", result["decision"])
 	assert.Contains(t, result["reason"], "AskUserQuestion")
-	assert.Contains(t, result["reason"], "implementation-reviewer")
+	assert.Contains(t, result["reason"], "/review-implementation")
 }
 
 // TestHandleStop_EscapeHatchWorksWhenStoreUnavailable verifies the
@@ -1013,7 +1007,7 @@ func TestStopAllowsEmptySession(t *testing.T) {
 	assert.Empty(t, stdout.Bytes())
 }
 
-func TestParsePostImplAgents(t *testing.T) {
+func TestParsePostImplSkills(t *testing.T) {
 	t.Parallel()
 
 	type check func(t *testing.T, cat *PostImplCatalog)
@@ -1028,20 +1022,10 @@ func TestParsePostImplAgents(t *testing.T) {
 			check: func(t *testing.T, cat *PostImplCatalog) {
 				t.Helper()
 				assert.True(t, cat.Empty())
-				assert.False(t, cat.HasLabel("implementation-reviewer"))
+				assert.False(t, cat.HasLabel("/review-implementation"))
 			},
 		},
-		"valid JSON with aliases": {
-			in: `[{"label":"simplify","aliases":["code-simplifier"],"description":"d"}]`,
-			check: func(t *testing.T, cat *PostImplCatalog) {
-				t.Helper()
-				assert.False(t, cat.Empty())
-				assert.True(t, cat.HasLabel("simplify"))
-				assert.True(t, cat.HasLabel("code-simplifier"))
-				assert.False(t, cat.HasLabel("humanizer"))
-			},
-		},
-		"entry without aliases round-trips": {
+		"entry round-trips": {
 			in: `[{"label":"commit","description":"Create a git commit."}]`,
 			check: func(t *testing.T, cat *PostImplCatalog) {
 				t.Helper()
@@ -1073,7 +1057,7 @@ func TestParsePostImplAgents(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			cat, err := parsePostImplAgents(tc.in)
+			cat, err := parsePostImplSkills(tc.in)
 			if tc.err {
 				require.Error(t, err)
 				return
@@ -1087,11 +1071,11 @@ func TestParsePostImplAgents(t *testing.T) {
 }
 
 // TestBuildAskReason_EmptyCatalog documents the degraded-mode
-// fallback: with no agents, Stop still renders a (bullet-less)
-// block message rather than panicking. Production should never hit
-// this path -- mainErr logs a warning when the catalog is empty --
-// but the invariant that handlers can call BuildAskReason without a
-// nil-guard is enforced here.
+// fallback: with no skills, Stop still renders a (bullet-less) block
+// message rather than panicking. Production should never hit this
+// path (mainErr logs a warning when the catalog is empty) but the
+// invariant that handlers can call BuildAskReason without a nil-guard
+// is enforced here.
 func TestBuildAskReason_EmptyCatalog(t *testing.T) {
 	t.Parallel()
 
@@ -1116,7 +1100,7 @@ func TestBuildAskReason_NotDoneBranchPresent(t *testing.T) {
 
 	assert.Contains(t, reason, "completed the implementation")
 	assert.Contains(t, reason, "If you are not done")
-	assert.Contains(t, reason, "implementation-reviewer")
+	assert.Contains(t, reason, "/review-implementation")
 	assert.Contains(t, reason, "/p.md")
 	assert.Contains(t, reason, "abc123")
 }
@@ -1493,7 +1477,7 @@ func TestHandleStop_FingerprintMatch_DeletesPendingPlan(t *testing.T) {
 			"questions": []any{
 				map[string]any{
 					"options": []any{
-						map[string]any{"label": "implementation-reviewer"},
+						map[string]any{"label": "/review-implementation"},
 					},
 				},
 			},
@@ -1541,7 +1525,7 @@ func TestHandlePostAskUserQuestion_DeletesPendingPlan(t *testing.T) {
 			"questions": []any{
 				map[string]any{
 					"options": []any{
-						map[string]any{"label": "implementation-reviewer"},
+						map[string]any{"label": "/review-implementation"},
 					},
 				},
 			},

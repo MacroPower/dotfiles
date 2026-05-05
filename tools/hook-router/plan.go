@@ -188,55 +188,52 @@ func handleExitPlanModePre(
 	return nil
 }
 
-// PostImplAgent describes one post-implementation agent Claude may run
-// when a plan's Stop gate fires. The shape mirrors the JSON emitted by
-// the Nix-side `postImplAgents` list: field order and tag casing must
-// match or [builtins.toJSON] output will silently unmarshal to zero
-// values.
-type PostImplAgent struct {
-	Label       string   `json:"label"`
-	Description string   `json:"description"`
-	Aliases     []string `json:"aliases,omitempty"`
+// PostImplSkill describes one post-implementation slash command Claude
+// may invoke when a plan's Stop gate fires. The shape mirrors the JSON
+// emitted by the Nix-side `postImplSkills` list: field order and tag
+// casing must match or [builtins.toJSON] output will silently unmarshal
+// to zero values.
+type PostImplSkill struct {
+	Label       string `json:"label"`
+	Description string `json:"description"`
 }
 
-// PostImplCatalog bundles a list of [PostImplAgent] entries (used for
+// PostImplCatalog bundles a list of [PostImplSkill] entries (used for
 // block-message rendering) with the derived label set (used for O(1)
 // validation of AskUserQuestion option labels). Construct with
 // [NewPostImplCatalog] so the two stay in sync.
 type PostImplCatalog struct {
 	labels map[string]bool
-	agents []PostImplAgent
+	skills []PostImplSkill
 }
 
-// NewPostImplCatalog builds a [*PostImplCatalog] from the given agents,
-// folding each agent's canonical label and aliases into the validation
-// set. Duplicates across entries are not deduped: the Nix list is the
-// source of truth and is expected to stay clean.
-func NewPostImplCatalog(agents []PostImplAgent) *PostImplCatalog {
-	labels := make(map[string]bool, len(agents))
+// NewPostImplCatalog builds a [*PostImplCatalog] from the given skills,
+// folding each skill's label into the validation set. Duplicates across
+// entries are not deduped: the Nix list is the source of truth and is
+// expected to stay clean.
+func NewPostImplCatalog(skills []PostImplSkill) *PostImplCatalog {
+	labels := make(map[string]bool, len(skills))
 
-	for _, a := range agents {
-		labels[a.Label] = true
-		for _, alias := range a.Aliases {
-			labels[alias] = true
-		}
+	for _, s := range skills {
+		labels[s.Label] = true
 	}
 
-	return &PostImplCatalog{agents: agents, labels: labels}
+	return &PostImplCatalog{skills: skills, labels: labels}
 }
 
-// HasLabel reports whether label matches any canonical label or alias
-// in the catalog.
+// HasLabel reports whether label matches a slash-command label in the
+// catalog.
 func (c *PostImplCatalog) HasLabel(label string) bool { return c.labels[label] }
 
-// Empty reports whether the catalog has no agents.
-func (c *PostImplCatalog) Empty() bool { return len(c.agents) == 0 }
+// Empty reports whether the catalog has no skills.
+func (c *PostImplCatalog) Empty() bool { return len(c.skills) == 0 }
 
 // BuildAskReason returns the unified Stop block-message used while a
 // session is mid-implementation. The message has two branches:
 //
 //   - "If you have completed the implementation": instructs Claude to
-//     call AskUserQuestion with the catalog's canonical option labels.
+//     call AskUserQuestion with the catalog's slash-command labels and
+//     then invoke each chosen option as a slash command.
 //   - "If you are not done": directs Claude to keep working, with
 //     AskUserQuestion as the path for clarifying questions.
 //
@@ -257,46 +254,47 @@ func (c *PostImplCatalog) BuildAskReason(planPath, baseSHA string) string {
 	fmt.Fprintf(&b, "You are implementing the plan at %s (baseline: %s).\n\n",
 		planPath, baseSHA)
 
-	if len(c.agents) > 0 {
+	b.WriteString("If you are not done, keep working. Call AskUserQuestion if you" +
+		" need input from the user.\n")
+
+	if len(c.skills) > 0 {
 		b.WriteString("If you have completed the implementation, call AskUserQuestion" +
 			" with the post-implementation review options below. Each option's" +
 			" `label` MUST be exactly one of:\n")
 
-		for _, a := range c.agents {
-			fmt.Fprintf(&b, "  - %s: %s\n", a.Label, a.Description)
+		for _, s := range c.skills {
+			fmt.Fprintf(&b, "  - %s: %s\n", s.Label, s.Description)
 		}
 
-		b.WriteString("After the user answers, run the chosen agents in an" +
-			" appropriate order.\n\n")
+		b.WriteString("Each option's `label` is itself a slash-command invocation." +
+			" After the user answers, run each chosen option's label as the" +
+			" corresponding slash command. Think about and intellegently order the" +
+			" commands: edits first, then reviews, then any finalizers.")
 	} else {
 		b.WriteString("If you have completed the implementation, call AskUserQuestion" +
-			" with the post-implementation review options provided by your" +
-			" environment.\n\n")
+			" with the post-implementation review options provided by your environment.")
 	}
-
-	b.WriteString("If you are not done, keep working. Call AskUserQuestion if you" +
-		" need input from the user.")
 
 	return b.String()
 }
 
-// parsePostImplAgents decodes the JSON payload passed via
-// --post-impl-agents into a [*PostImplCatalog]. An empty input yields
+// parsePostImplSkills decodes the JSON payload passed via
+// --post-impl-skills into a [*PostImplCatalog]. An empty input yields
 // an empty catalog (valid for tests and early-startup paths);
 // malformed JSON returns an error so wrapper misconfiguration is loud.
-func parsePostImplAgents(s string) (*PostImplCatalog, error) {
+func parsePostImplSkills(s string) (*PostImplCatalog, error) {
 	if s == "" {
 		return NewPostImplCatalog(nil), nil
 	}
 
-	var agents []PostImplAgent
+	var skills []PostImplSkill
 
-	err := json.Unmarshal([]byte(s), &agents)
+	err := json.Unmarshal([]byte(s), &skills)
 	if err != nil {
-		return nil, fmt.Errorf("decoding post-impl agents JSON: %w", err)
+		return nil, fmt.Errorf("decoding post-impl skills JSON: %w", err)
 	}
 
-	return NewPostImplCatalog(agents), nil
+	return NewPostImplCatalog(skills), nil
 }
 
 // handlePostAskUserQuestion runs on PostToolUse:AskUserQuestion.
@@ -371,9 +369,9 @@ func handlePostAskUserQuestion(
 }
 
 // hasPostImplLabel walks tool_input["questions"][].options[].label and
-// reports whether any label matches a [*PostImplCatalog] label or
-// alias. All type assertions use comma-ok; malformed shapes are
-// treated as "no match". An empty catalog matches nothing.
+// reports whether any label matches a [*PostImplCatalog] label. All
+// type assertions use comma-ok; malformed shapes are treated as "no
+// match". An empty catalog matches nothing.
 func hasPostImplLabel(toolInput map[string]any, cat *PostImplCatalog) bool {
 	if toolInput == nil {
 		return false
@@ -603,8 +601,8 @@ func handleStop(
 	_, planPath, baseSHA, err := store.Session(ctx, hook.SessionID)
 	if err != nil {
 		// Fail-closed: today this silently allows Stop through, bypassing
-		// the implementation-reviewer guard. Block instead so the user
-		// retries. The stop_hook_active escape hatch above is preserved.
+		// the post-impl review guard. Block instead so the user retries.
+		// The stop_hook_active escape hatch above is preserved.
 		logger.Error("failed to read session", slog.Any("error", err))
 		return encodeJSON(stdout, blockResponse("plan-guard store unavailable, please retry"))
 	}

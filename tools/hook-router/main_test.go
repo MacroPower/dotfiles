@@ -271,7 +271,7 @@ func TestRun(t *testing.T) {
 			"questions": []any{
 				map[string]any{
 					"options": []any{
-						map[string]any{"label": "implementation-reviewer"},
+						map[string]any{"label": "/review-implementation"},
 					},
 				},
 			},

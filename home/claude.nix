@@ -451,23 +451,30 @@ let
     }
   );
 
-  # Post-implementation agent catalog. The Stop-gate block message
-  # bullets and the AskUserQuestion label allowlist both derive from
-  # this list -- hook-router receives it as JSON via
-  # --post-impl-agents. Field names must match the lowercase JSON tags
-  # on PostImplAgent in tools/hook-router/plan.go.
-  postImplAgents = [
+  # Post-implementation slash-command catalog. Each label is the
+  # canonical slash-command invocation (with leading slash) so Claude
+  # can dispatch the AskUserQuestion answer directly without
+  # translation. The Stop-gate block message bullets and the
+  # AskUserQuestion label allowlist both derive from this list --
+  # hook-router receives it as JSON via --post-impl-skills. Field
+  # names must match the lowercase JSON tags on PostImplSkill in
+  # tools/hook-router/plan.go.
+  postImplSkills = [
     {
-      label = "implementation-reviewer";
-      description = "Review code changes against the plan. Pass it the plan file path and the base SHA.";
+      label = "/review-implementation";
+      description = "Review code changes against the plan.";
     }
     {
-      label = "code-simplifier";
+      label = "/simplify";
       description = "Review and simplify the implemented code.";
     }
     {
-      label = "humanizer";
+      label = "/humanize";
       description = "Clean up AI writing patterns in any prose/docs that changed.";
+    }
+    {
+      label = "/commit";
+      description = "Wrap up the cycle by creating a git commit.";
     }
   ];
 
@@ -495,7 +502,7 @@ let
       exec hook-router \
         --db "${config.xdg.stateHome}/hook-router/state.db" \
         --log-file "${config.xdg.stateHome}/hook-router/hook-router.log" \
-        --post-impl-agents ${lib.escapeShellArg (builtins.toJSON postImplAgents)} \
+        --post-impl-skills ${lib.escapeShellArg (builtins.toJSON postImplSkills)} \
         --commit-skills ${lib.escapeShellArg (builtins.toJSON commitSkills)} \
         "$@"
     '';
@@ -1923,7 +1930,6 @@ in
         ) cfg.extraSettings;
 
         agents = {
-          code-simplifier = ../configs/claude/agents/code-simplifier.md;
           humanizer = ../configs/claude/agents/humanizer.md;
           implementation-reviewer = ../configs/claude/agents/implementation-reviewer.md;
           plan-reviewer = ../configs/claude/agents/plan-reviewer.md;
@@ -1940,7 +1946,9 @@ in
           wm-coordinator = ../configs/claude/skills/wm-coordinator;
           wm-workmux = ../configs/claude/skills/wm-workmux;
           git-surgeon = ../configs/claude/skills/git-surgeon;
+          humanize = ../configs/claude/skills/humanize;
           research = ../configs/claude/skills/research;
+          review-implementation = ../configs/claude/skills/review-implementation;
           taskfile = ../configs/claude/skills/taskfile;
         }
         // cfg.extraSkills;
