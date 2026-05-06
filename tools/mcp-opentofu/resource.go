@@ -19,29 +19,35 @@ const registryInfoMIMEType = "text/markdown"
 
 // registryInfoName is the programmatic name surfaced via `resources/list`.
 // Clients fall back to it as the display label when no Title is set.
-const registryInfoName = "OpenTofu Registry overview"
+const registryInfoName = "OpenTofu MCP server overview"
 
 // registryInfoDescription is the human-readable hint surfaced alongside the
 // resource entry to help models decide when to read it.
-const registryInfoDescription = "Tool overview and naming conventions for the OpenTofu Registry MCP server."
+const registryInfoDescription = "Tool overview and naming conventions for the OpenTofu MCP server."
 
 // registryInfoText is the verbatim Markdown body returned by
 // [registryInfoHandler]. It documents the available tools and the naming
 // conventions the model should follow when building tool inputs (no
 // `terraform-provider-` / `terraform-aws-` prefixes, short resource names).
-const registryInfoText = `The OpenTofu Registry is a public index of providers, modules, resources, and data sources for OpenTofu and Terraform.
+const registryInfoText = `The OpenTofu MCP server exposes the public OpenTofu Registry plus local validation, initialization, and planning for OpenTofu / Terraform configuration.
 You can:
 - **Search** for providers, modules, resources, and data sources using the ` + "`search_registry`" + ` tool.
 - **Get detailed information** about a provider or module using ` + "`get_provider_details`" + ` or ` + "`get_module_details`" + `.
 - **Retrieve documentation** for a specific resource or data source using ` + "`get_resource_docs`" + ` or ` + "`get_datasource_docs`" + `.
+- **Validate a local configuration directory** using ` + "`validate`" + ` (shells out to a local ` + "`tofu`" + ` binary).
+- **Initialize a local configuration directory** using ` + "`init`" + ` (shells out to a local ` + "`tofu`" + ` binary) to download providers and modules.
+- **Plan a local configuration directory** using ` + "`plan`" + ` (shells out to a local ` + "`tofu`" + ` binary) to preview pending changes or detect drift.
 
 **Tips:**
 - Do **not** include prefixes like ` + "`terraform-provider-`" + ` or ` + "`terraform-aws-`" + ` in names.
 - Use simple search terms (e.g., ` + "`aws`" + `, ` + "`kubernetes`" + `, ` + "`s3`" + `, ` + "`database`" + `).
 - For resources and data sources, use the short name (e.g., ` + "`s3_bucket`" + `, ` + "`instance`" + `, ` + "`ami`" + `).
+- ` + "`validate`" + ` requires an absolute ` + "`working_directory`" + `; pass ` + "`init=true`" + ` for a lightweight local init (` + "`-backend=false`" + `) when providers or modules have not been fetched yet.
+- For a full init that may also configure the backend, use the standalone ` + "`init`" + ` tool with ` + "`backend=true`" + `; pass ` + "`upgrade=true`" + ` to fetch the latest provider/module versions allowed by constraints.
+- ` + "`plan`" + ` also accepts ` + "`init=true`" + ` for a lightweight pre-plan init. Pass ` + "`destroy=true`" + ` to plan a destroy run, or ` + "`refresh_only=true`" + ` to detect drift without proposing configuration changes.
+- ` + "`plan`" + ` output may include sensitive resource values (passwords, tokens, attributes from data sources); treat the response as confidential.
 
-This MCP server is designed to work with OpenTofu (a fork of HashiCorp Terraform) and provides access to the OpenTofu Registry.
-For more details, use the search and info tools above to explore the registry.
+This server targets OpenTofu (a fork of HashiCorp Terraform).
 `
 
 // registryInfoResource describes the static resource registered by

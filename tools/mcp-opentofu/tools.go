@@ -2,11 +2,24 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// MCP tool names. Used as the tool argument to [*handler.toolError],
+// [*handler.execError], and [*handler.logStderr] so a typo can't misroute a
+// log entry.
+const (
+	toolSearch          = "search_registry"
+	toolProviderDetails = "get_provider_details"
+	toolModuleDetails   = "get_module_details"
+	toolResourceDocs    = "get_resource_docs"
+	toolDatasourceDocs  = "get_datasource_docs"
+	toolValidate        = "validate"
+	toolInit            = "init"
+	toolPlan            = "plan"
 )
 
 // SearchInput is the input schema for the search_registry tool.
@@ -54,10 +67,11 @@ type DataSourceDocsInput struct {
 	StartIndex int    `json:"start_index,omitzero" jsonschema:"Character offset to start reading from (default 0)"`
 }
 
-// handler holds the shared state for the five tool handlers.
+// handler holds the shared state for the tool handlers.
 type handler struct {
 	client *Client
 	log    *slog.Logger
+	tofu   tofuExecutor
 }
 
 func (h *handler) handleSearch(
@@ -67,7 +81,7 @@ func (h *handler) handleSearch(
 ) (*mcp.CallToolResult, any, error) {
 	items, err := h.client.Search(ctx, in.Query)
 	if err != nil {
-		return h.toolError(ctx, "search_registry",
+		return h.toolError(ctx, toolSearch,
 			fmt.Errorf("searching the OpenTofu Registry: %w", err),
 		)
 	}
@@ -84,7 +98,7 @@ func (h *handler) handleProviderDetails(
 ) (*mcp.CallToolResult, any, error) {
 	prov, err := h.client.Provider(ctx, in.Namespace, in.Name)
 	if err != nil {
-		return h.toolError(ctx, "get_provider_details",
+		return h.toolError(ctx, toolProviderDetails,
 			fmt.Errorf("getting details for provider %s/%s: %w", in.Namespace, in.Name, err),
 		)
 	}
@@ -97,7 +111,7 @@ func (h *handler) handleProviderDetails(
 
 	pv, err := h.client.ProviderVersion(ctx, in.Namespace, in.Name, ver)
 	if err != nil {
-		return h.toolError(ctx, "get_provider_details",
+		return h.toolError(ctx, toolProviderDetails,
 			fmt.Errorf("getting details for provider %s/%s: %w", in.Namespace, in.Name, err),
 		)
 	}
@@ -114,7 +128,7 @@ func (h *handler) handleModuleDetails(
 ) (*mcp.CallToolResult, any, error) {
 	mod, err := h.client.Module(ctx, in.Namespace, in.Name, in.Target)
 	if err != nil {
-		return h.toolError(ctx, "get_module_details",
+		return h.toolError(ctx, toolModuleDetails,
 			fmt.Errorf("getting details for module %s/%s (%s): %w", in.Namespace, in.Name, in.Target, err),
 		)
 	}
@@ -131,14 +145,14 @@ func (h *handler) handleResourceDocs(
 ) (*mcp.CallToolResult, any, error) {
 	ver, err := h.resolveVersion(ctx, in.Version, in.Namespace, in.Name)
 	if err != nil {
-		return h.toolError(ctx, "get_resource_docs",
+		return h.toolError(ctx, toolResourceDocs,
 			fmt.Errorf("getting documentation for resource %s_%s: %w", in.Name, in.Resource, err),
 		)
 	}
 
 	body, err := h.client.ResourceDocs(ctx, in.Namespace, in.Name, ver, in.Resource)
 	if err != nil {
-		return h.toolError(ctx, "get_resource_docs",
+		return h.toolError(ctx, toolResourceDocs,
 			fmt.Errorf("getting documentation for resource %s_%s: %w", in.Name, in.Resource, err),
 		)
 	}
@@ -153,14 +167,14 @@ func (h *handler) handleDatasourceDocs(
 ) (*mcp.CallToolResult, any, error) {
 	ver, err := h.resolveVersion(ctx, in.Version, in.Namespace, in.Name)
 	if err != nil {
-		return h.toolError(ctx, "get_datasource_docs",
+		return h.toolError(ctx, toolDatasourceDocs,
 			fmt.Errorf("getting documentation for data source %s_%s: %w", in.Name, in.DataSource, err),
 		)
 	}
 
 	body, err := h.client.DatasourceDocs(ctx, in.Namespace, in.Name, ver, in.DataSource)
 	if err != nil {
-		return h.toolError(ctx, "get_datasource_docs",
+		return h.toolError(ctx, toolDatasourceDocs,
 			fmt.Errorf("getting documentation for data source %s_%s: %w", in.Name, in.DataSource, err),
 		)
 	}
@@ -188,23 +202,21 @@ func (h *handler) resolveVersion(ctx context.Context, ver, ns, name string) (str
 	return v, nil
 }
 
-// toolError logs err and either wraps it as a tool-level [*mcp.CallToolResult]
-// (when the underlying error is [ErrRegistry]) or surfaces it as an internal
-// error via the (_, _, err) handler triple.
+// toolError logs err and wraps it as a tool-level [*mcp.CallToolResult] with
+// [*mcp.CallToolResult.IsError] set to true so the model sees the failure
+// reason. Internal errors that should bubble up to the transport (context
+// cancellation, OS errors) are returned directly by callers without going
+// through this helper.
 func (h *handler) toolError(ctx context.Context, tool string, err error) (*mcp.CallToolResult, any, error) {
 	h.log.WarnContext(ctx, "tool error",
 		slog.String("tool", tool),
 		slog.Any("error", err),
 	)
 
-	if errors.Is(err, ErrRegistry) {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
-			IsError: true,
-		}, nil, nil
-	}
-
-	return nil, nil, err
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+		IsError: true,
+	}, nil, nil
 }
 
 func textResult(text string) *mcp.CallToolResult {

@@ -28,6 +28,11 @@ func run() error {
 	userAgent := flag.String("user-agent", defaultUserAgent, "HTTP User-Agent header")
 	proxyURL := flag.String("proxy-url", "", "HTTP proxy URL")
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
+	tofuBin := flag.String(
+		"tofu-bin", "tofu",
+		"path to the tofu binary used by the local-tofu tools (validate, init, plan);"+
+			" resolved via PATH when not absolute",
+	)
 
 	flag.Parse()
 
@@ -58,7 +63,11 @@ func run() error {
 		WithUserAgent(*userAgent),
 	)
 
-	h := &handler{client: client, log: logger}
+	h := &handler{
+		client: client,
+		log:    logger,
+		tofu:   newExecTofu(*tofuBin),
+	}
 
 	srv := mcp.NewServer(
 		&mcp.Implementation{Name: "mcp-opentofu", Version: version},
@@ -66,29 +75,44 @@ func run() error {
 	)
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "search_registry",
+		Name:        toolSearch,
 		Description: "Search the OpenTofu Registry to find providers, modules, resources, and data sources. Use simple terms without prefixes like 'terraform-provider-' or 'terraform-module-'.",
 	}, h.handleSearch)
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "get_provider_details",
+		Name:        toolProviderDetails,
 		Description: "Get detailed information about a specific OpenTofu provider by namespace and name. Do NOT include 'terraform-provider-' prefix in the name.",
 	}, h.handleProviderDetails)
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "get_module_details",
+		Name:        toolModuleDetails,
 		Description: "Get detailed information about a specific OpenTofu module by namespace, name, and target. Use the simple module name, NOT the full repository name.",
 	}, h.handleModuleDetails)
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "get_resource_docs",
+		Name:        toolResourceDocs,
 		Description: "Get detailed documentation for a specific OpenTofu resource by provider namespace, provider name, and resource name.",
 	}, h.handleResourceDocs)
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "get_datasource_docs",
+		Name:        toolDatasourceDocs,
 		Description: "Get detailed documentation for a specific OpenTofu data source by provider namespace, provider name, and data source name.",
 	}, h.handleDatasourceDocs)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        toolValidate,
+		Description: `Run "tofu validate" against a local working directory and return diagnostics. The directory must contain initialized OpenTofu / Terraform configuration; pass init=true to run "tofu init -input=false -no-color -backend=false" first when modules or providers have not yet been fetched.`,
+	}, h.handleValidate)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        toolInit,
+		Description: `Run "tofu init" against a local working directory to download providers and modules. Defaults to -backend=false (local init only); pass backend=true to also configure the backend. Pass upgrade=true to fetch the latest provider/module versions allowed by version constraints.`,
+	}, h.handleInit)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        toolPlan,
+		Description: `Run "tofu plan" against a local working directory and report whether any changes are pending. Requires that providers/modules have been fetched (run init first or pass init=true). Pass destroy=true for a destroy plan, refresh_only=true for drift detection. Output may include sensitive values; treat as confidential.`,
+	}, h.handlePlan)
 
 	addRegistryInfoResource(srv)
 

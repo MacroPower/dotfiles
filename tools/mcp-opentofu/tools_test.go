@@ -253,6 +253,9 @@ func TestAddTool(t *testing.T) {
 		mcp.AddTool(srv, &mcp.Tool{Name: "get_module_details", Description: "x"}, h.handleModuleDetails)
 		mcp.AddTool(srv, &mcp.Tool{Name: "get_resource_docs", Description: "x"}, h.handleResourceDocs)
 		mcp.AddTool(srv, &mcp.Tool{Name: "get_datasource_docs", Description: "x"}, h.handleDatasourceDocs)
+		mcp.AddTool(srv, &mcp.Tool{Name: "validate", Description: "x"}, h.handleValidate)
+		mcp.AddTool(srv, &mcp.Tool{Name: "init", Description: "x"}, h.handleInit)
+		mcp.AddTool(srv, &mcp.Tool{Name: "plan", Description: "x"}, h.handlePlan)
 	})
 }
 

@@ -1579,7 +1579,29 @@ in
           "mcp__opentofu__get_resource_docs"
           "mcp__opentofu__get_datasource_docs"
         ];
+        permissions.ask = [
+          "mcp__opentofu__init"
+          "mcp__opentofu__plan"
+          "mcp__opentofu__validate"
+        ];
         sandbox.allowedDomains = [ "api.opentofu.org" ];
+        commandRules.deny = [
+          {
+            command = "tofu";
+            args = [ "init" ];
+            reason = "Do not run tofu init directly. Use mcp__opentofu__init instead.";
+          }
+          {
+            command = "tofu";
+            args = [ "plan" ];
+            reason = "Do not run tofu plan directly. Use mcp__opentofu__plan instead.";
+          }
+          {
+            command = "tofu";
+            args = [ "validate" ];
+            reason = "Do not run tofu validate directly. Use mcp__opentofu__validate instead.";
+          }
+        ];
         fetchRules.deny = [
           {
             host = "registry\\.opentofu\\.org";
