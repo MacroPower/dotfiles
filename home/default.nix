@@ -117,6 +117,7 @@ in
 
     sessionPath = [
       "$HOME/.local/bin"
+      "$HOME/bin"
     ];
 
     sessionVariables = {
