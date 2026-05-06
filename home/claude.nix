@@ -609,6 +609,31 @@ let
     exec ${pkgs.spacectl}/bin/spacectl "$@"
   '';
 
+  opentofuPolicyFile = (pkgs.formats.json { }).generate "mcp-opentofu-policy.json" {
+    init = {
+      allowed_domains = [
+        "registry.opentofu.org"
+        "registry.terraform.io"
+        "releases.hashicorp.com"
+        "github.com"
+        "objects.githubusercontent.com"
+        "codeload.github.com"
+      ];
+      allow_read = [ ];
+      allow_write = [ ];
+    };
+    validate = {
+      allowed_domains = [ ];
+      allow_read = [ ];
+      allow_write = [ ];
+    };
+    plan = {
+      allowed_domains = [ ];
+      allow_read = [ ];
+      allow_write = [ ];
+    };
+  };
+
   githubWrapper = pkgs.writeShellScript "github-mcp-wrapper" ''
     ${exportSecret "GH_TOKEN" "gh_token"}
     export GITHUB_PERSONAL_ACCESS_TOKEN="''${GH_TOKEN:-}"
@@ -1576,6 +1601,10 @@ in
         servers.opentofu = {
           type = "stdio";
           command = "${pkgs.mcp-opentofu}/bin/mcp-opentofu";
+          args = [
+            "--sandbox=auto"
+            "--policy-file=${opentofuPolicyFile}"
+          ];
         };
         permissions.allow = [
           "mcp__opentofu__search_registry"

@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -24,10 +26,11 @@ var ErrValidate = errors.New("validate")
 
 // ValidateInput is the input schema for the validate tool.
 type ValidateInput struct {
-	WorkingDirectory string `json:"working_directory"    jsonschema:"Absolute path to the directory containing OpenTofu / Terraform configuration to validate"`
-	Init             bool   `json:"init,omitzero"        jsonschema:"When true, run 'tofu init -input=false -no-color -backend=false' before validation. Use this when providers or modules have not been fetched yet"`
-	MaxLength        int    `json:"max_length,omitzero"  jsonschema:"Maximum number of characters to return (default 5000)"`
-	StartIndex       int    `json:"start_index,omitzero" jsonschema:"Character offset to start reading from (default 0)"`
+	WorkingDirectory string   `json:"working_directory"      jsonschema:"Absolute path to the directory containing OpenTofu / Terraform configuration to validate"`
+	Init             bool     `json:"init,omitzero"          jsonschema:"When true, run 'tofu init -input=false -no-color -backend=false' before validation. Use this when providers or modules have not been fetched yet"`
+	AllowedPaths     []string `json:"allowed_paths,omitzero" jsonschema:"Extra absolute paths to bind read-only inside the sandbox (e.g. shared module directories outside the working directory). Symlinks must be resolved by the caller; user-supplied symlinks outside the working directory are not traversed inside the sandbox"`
+	MaxLength        int      `json:"max_length,omitzero"    jsonschema:"Maximum number of characters to return (default 5000)"`
+	StartIndex       int      `json:"start_index,omitzero"   jsonschema:"Character offset to start reading from (default 0)"`
 }
 
 // validateOutput is the JSON shape produced by `tofu validate -json`.
@@ -62,9 +65,10 @@ type validateRangePos struct {
 
 // tofuExecutor runs a tofu subcommand in a working directory and returns its
 // stdout, stderr, exit code, and any non-exit error from
-// [exec.CommandContext]. Implementations must respect ctx cancellation.
+// [exec.CommandContext]. Implementations must respect ctx cancellation
+// and apply policy via the configured [Sandbox].
 type tofuExecutor interface {
-	Run(ctx context.Context, dir string, args ...string) (stdout, stderr []byte, exitCode int, err error)
+	Run(ctx context.Context, dir string, policy Policy, args ...string) (stdout, stderr []byte, exitCode int, err error)
 }
 
 // maxTofuStreamBytes caps the amount of stdout or stderr [*execTofu.Run]
@@ -76,20 +80,31 @@ const maxTofuStreamBytes = 16 * 1024 * 1024
 
 // execTofu is the production [tofuExecutor] backed by [exec.CommandContext].
 type execTofu struct {
-	bin string
+	bin     string
+	sandbox Sandbox
 }
 
 // newExecTofu returns an [*execTofu] that invokes bin (resolved via PATH at
-// run time when not absolute).
-func newExecTofu(bin string) *execTofu {
-	return &execTofu{bin: bin}
+// run time when not absolute) under sandbox.
+func newExecTofu(bin string, sandbox Sandbox) *execTofu {
+	if sandbox == nil {
+		sandbox = noopSandbox{}
+	}
+
+	return &execTofu{bin: bin, sandbox: sandbox}
 }
+
+// tofuCancelGrace is the grace period between cmd.Cancel firing SIGTERM
+// and the runtime escalating to SIGKILL. On Darwin SIGTERM reaches tofu
+// directly; on Linux it reaches bwrap, which propagates death via
+// PR_SET_PDEATHSIG, so the effective grace window is shorter there.
+const tofuCancelGrace = 10 * time.Second
 
 // Run satisfies [tofuExecutor]. A non-zero exit is reported via the exitCode
 // return; the err return is non-nil only for non-exit failures (binary not
 // found, context cancellation, OS errors). Each stream is capped at
 // [maxTofuStreamBytes] bytes; further output is silently dropped.
-func (e *execTofu) Run(ctx context.Context, dir string, args ...string) ([]byte, []byte, int, error) {
+func (e *execTofu) Run(ctx context.Context, dir string, policy Policy, args ...string) ([]byte, []byte, int, error) {
 	// The bin path comes from the operator-supplied --tofu-bin flag and
 	// args are constructed by the handlers, not from raw model input.
 	// Invoking the configured tofu binary with handler-built args is the
@@ -97,13 +112,21 @@ func (e *execTofu) Run(ctx context.Context, dir string, args ...string) ([]byte,
 	cmd := exec.CommandContext(ctx, e.bin, args...) //nolint:gosec // intentional: see comment
 	cmd.Dir = dir
 
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = tofuCancelGrace
+
+	err := e.sandbox.Wrap(cmd, policy)
+	if err != nil {
+		return nil, nil, -1, fmt.Errorf("wrapping tofu in sandbox: %w", err)
+	}
+
 	stdout := &cappedBuffer{limit: maxTofuStreamBytes}
 	stderr := &cappedBuffer{limit: maxTofuStreamBytes}
 
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 
 	var exitErr *exec.ExitError
 
@@ -174,7 +197,8 @@ func validateWorkingDir(dir string, sentinel error) error {
 // runInitStep runs the canonical `tofu init -input=false -no-color
 // -backend=false` prelude shared by the validate and plan tools. tool names
 // the MCP tool whose handler is invoking the prelude (used for logging and
-// error surfacing); sentinel is the per-tool sentinel error.
+// error surfacing); sentinel is the per-tool sentinel error; policy is the
+// init-step [Policy] (already merged with any per-call AllowRead extras).
 //
 // The return shape is a three-state signal. The first return is true when
 // the caller should stop and return the second/third returns; false means
@@ -185,8 +209,9 @@ func (h *handler) runInitStep(
 	ctx context.Context,
 	dir, tool string,
 	sentinel error,
+	policy Policy,
 ) (bool, *mcp.CallToolResult, error) {
-	stdout, stderr, code, err := h.tofu.Run(ctx, dir,
+	stdout, stderr, code, err := h.tofu.Run(ctx, dir, policy,
 		"init", "-input=false", "-no-color", "-backend=false",
 	)
 	if err != nil {
@@ -195,6 +220,10 @@ func (h *handler) runInitStep(
 	}
 
 	if code != 0 {
+		if r, ok := h.classifyMissingBinary(ctx, tool, sentinel, "init", stderr, code); ok {
+			return true, r, nil
+		}
+
 		r, _, e := h.toolError(ctx, tool,
 			fmt.Errorf("%w: 'tofu init' exited with code %d:\n%s",
 				sentinel, code, combineOutput(stdout, stderr)),
@@ -221,16 +250,28 @@ func (h *handler) handleValidate(
 
 	dir := in.WorkingDirectory
 
+	validatePolicy, extras, pathErr := h.buildPolicy(toolValidate, in.AllowedPaths)
+	if pathErr != nil {
+		return h.toolError(ctx, toolValidate, fmt.Errorf("%w: %w", ErrValidate, pathErr))
+	}
+
 	if in.Init {
-		stop, r, initErr := h.runInitStep(ctx, dir, toolValidate, ErrValidate)
+		initPolicy := h.policyFor(toolInit)
+		initPolicy.AllowRead = mergeAllowRead(initPolicy.AllowRead, extras)
+
+		stop, r, initErr := h.runInitStep(ctx, dir, toolValidate, ErrValidate, initPolicy)
 		if stop {
 			return r, nil, initErr
 		}
 	}
 
-	stdout, stderr, _, err := h.tofu.Run(ctx, dir, "validate", "-json", "-no-color")
+	stdout, stderr, code, err := h.tofu.Run(ctx, dir, validatePolicy, "validate", "-json", "-no-color")
 	if err != nil {
 		return h.execError(ctx, toolValidate, ErrValidate, "validate", err)
+	}
+
+	if r, ok := h.classifyMissingBinary(ctx, toolValidate, ErrValidate, "validate", stderr, code); ok {
+		return r, nil, nil
 	}
 
 	h.logStderr(ctx, toolValidate, "validate", stderr)
@@ -256,12 +297,10 @@ func renderValidateOutput(dir string, stdout, stderr []byte) string {
 }
 
 // execError maps a non-exit error from [tofuExecutor.Run] to either a
-// user-facing tool result or an internal handler error. A missing tofu binary
-// is wrapped under sentinel and routed through [*handler.toolError] so the
-// model sees it; everything else (context cancellation, OS errors) bubbles up
-// as an internal error. Callers pass the MCP tool name to surface in the
-// result and the sentinel error [*handler.toolError] uses to classify the
-// failure as user-facing.
+// user-facing tool result or an internal handler error. A missing tofu
+// binary is wrapped under sentinel and routed through
+// [*handler.toolError] so the model sees it; everything else (context
+// cancellation, OS errors) bubbles up as an internal error.
 func (h *handler) execError(
 	ctx context.Context,
 	tool string,
@@ -277,6 +316,85 @@ func (h *handler) execError(
 	}
 
 	return nil, nil, fmt.Errorf("running tofu %s: %w", sub, err)
+}
+
+// classifyMissingBinary returns a user-facing tool result when the wrapper
+// exit code 127 plus "command not found" or "No such file" stderr
+// together suggest the tofu binary (or the sandbox wrapper itself) was
+// missing. Both shells (sandbox-exec via execvp, bwrap) emit one of
+// these on a missing argv[0]. Returns ok=false when the signal does not
+// match so callers fall back to their generic error rendering.
+func (h *handler) classifyMissingBinary(
+	ctx context.Context,
+	tool string,
+	sentinel error,
+	sub string,
+	stderr []byte,
+	code int,
+) (*mcp.CallToolResult, bool) {
+	if code != 127 {
+		return nil, false
+	}
+
+	body := string(stderr)
+	if !strings.Contains(body, "command not found") && !strings.Contains(body, "No such file") {
+		return nil, false
+	}
+
+	r, _, _ := h.toolError(ctx, tool,
+		fmt.Errorf("%w: tofu binary not found in PATH; pass --tofu-bin to override (running %q): %s",
+			sentinel, sub, strings.TrimSpace(body)),
+	)
+
+	return r, true
+}
+
+// resolveAllowedPaths runs each entry through [validateExtraPath]
+// against h.allowRoot and returns the resolved paths in order. The
+// returned slice is suitable for merging into a [Policy.AllowRead] list.
+func (h *handler) resolveAllowedPaths(paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+
+	resolved := make([]string, 0, len(paths))
+
+	for _, p := range paths {
+		r, err := validateExtraPath(p, h.allowRoot)
+		if err != nil {
+			return nil, err
+		}
+
+		resolved = append(resolved, r)
+	}
+
+	return resolved, nil
+}
+
+// policyFor returns the named tool's [Policy], or a zero [Policy] when
+// the tool is absent from h.policies. [Policy] is a value type, so the
+// returned struct is independent of the map; the only mutation callers
+// perform is reassigning AllowRead via [mergeAllowRead], which always
+// returns a fresh slice — no defensive cloning needed.
+func (h *handler) policyFor(tool string) Policy {
+	return h.policies[tool]
+}
+
+// buildPolicy is the per-handler chokepoint that turns a tool name plus
+// the caller-supplied AllowedPaths into the [Policy] handed to the
+// sandbox. Resolution happens through [*handler.resolveAllowedPaths]; on
+// error, the returned [Policy] is unspecified and callers must not use
+// it.
+func (h *handler) buildPolicy(tool string, allowedPaths []string) (Policy, []string, error) {
+	extras, err := h.resolveAllowedPaths(allowedPaths)
+	if err != nil {
+		return Policy{}, nil, err
+	}
+
+	p := h.policyFor(tool)
+	p.AllowRead = mergeAllowRead(p.AllowRead, extras)
+
+	return p, extras, nil
 }
 
 // logStderr emits a structured warning when buf is non-empty so operators see

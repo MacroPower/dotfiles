@@ -69,9 +69,11 @@ type DataSourceDocsInput struct {
 
 // handler holds the shared state for the tool handlers.
 type handler struct {
-	client *Client
-	log    *slog.Logger
-	tofu   tofuExecutor
+	client    *Client
+	log       *slog.Logger
+	tofu      tofuExecutor
+	policies  Policies
+	allowRoot string
 }
 
 func (h *handler) handleSearch(

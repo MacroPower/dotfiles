@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -33,6 +35,14 @@ func run() error {
 		"path to the tofu binary used by the local-tofu tools (validate, init, plan);"+
 			" resolved via PATH when not absolute",
 	)
+	sandboxFlag := flag.String(
+		"sandbox", "auto",
+		"sandbox mode for tofu subprocesses: auto (platform default), on (require backend), or off (debug)",
+	)
+	policyFile := flag.String(
+		"policy-file", "",
+		"path to a JSON file describing per-tool sandbox policies; required when --sandbox is auto or on",
+	)
 
 	flag.Parse()
 
@@ -41,6 +51,35 @@ func run() error {
 		return err
 	}
 	defer logCloser()
+
+	mode, err := ParseSandboxMode(*sandboxFlag)
+	if err != nil {
+		return err
+	}
+
+	sandbox, err := New(mode)
+	if err != nil {
+		return err
+	}
+
+	policies, err := loadPolicies(mode, *policyFile, logger)
+	if err != nil {
+		return err
+	}
+
+	allowRoot, err := resolveAllowRoot()
+	if err != nil {
+		return err
+	}
+
+	logSandboxEnforcementWarnings(logger, mode, policies)
+
+	logger.Info("sandbox configured",
+		slog.String("mode", string(mode)),
+		slog.String("backend", sandbox.Name()),
+		slog.String("policy_file", *policyFile),
+		slog.String("allow_root", allowRoot),
+	)
 
 	transport := &http.Transport{}
 
@@ -64,9 +103,11 @@ func run() error {
 	)
 
 	h := &handler{
-		client: client,
-		log:    logger,
-		tofu:   newExecTofu(*tofuBin),
+		client:    client,
+		log:       logger,
+		tofu:      newExecTofu(*tofuBin, sandbox),
+		policies:  policies,
+		allowRoot: allowRoot,
 	}
 
 	srv := mcp.NewServer(
@@ -125,6 +166,90 @@ func run() error {
 	}
 
 	return nil
+}
+
+// loadPolicies reads the JSON policy file. The file is required when
+// sandbox mode is anything other than [SandboxOff]; with --sandbox=off a
+// missing file degrades to a warning and [Defaults] applies, so the
+// binary stays runnable by hand for debugging. Malformed JSON is fatal
+// in every mode.
+func loadPolicies(mode SandboxMode, path string, logger *slog.Logger) (Policies, error) {
+	if path == "" {
+		if mode != SandboxOff {
+			return nil, fmt.Errorf("%w: --policy-file is required when --sandbox=%s", ErrPolicy, mode)
+		}
+
+		logger.Warn("running without --policy-file; init and plan will reach no registry",
+			slog.String("sandbox", string(mode)),
+		)
+
+		return Defaults(), nil
+	}
+
+	policies, err := LoadFile(path)
+	if err != nil {
+		if mode != SandboxOff {
+			return nil, err
+		}
+
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+
+		logger.Warn("policy file missing; falling back to defaults",
+			slog.String("path", path),
+			slog.String("sandbox", string(mode)),
+		)
+
+		return Defaults(), nil
+	}
+
+	for _, tool := range []string{toolValidate, toolInit, toolPlan} {
+		if _, ok := policies[tool]; !ok {
+			policies[tool] = Policy{}
+		}
+	}
+
+	return policies, nil
+}
+
+// logSandboxEnforcementWarnings emits a single warning when any sandboxed
+// tool declares an [Policy.AllowedDomains] entry. Per-domain enforcement
+// has platform-specific limits — see the per-platform caveat strings
+// below for the actual wording.
+func logSandboxEnforcementWarnings(logger *slog.Logger, mode SandboxMode, policies Policies) {
+	if mode == SandboxOff {
+		return
+	}
+
+	var withDomains []string
+
+	for tool, p := range policies {
+		if len(p.AllowedDomains) > 0 {
+			withDomains = append(withDomains, tool)
+		}
+	}
+
+	if len(withDomains) == 0 {
+		return
+	}
+
+	var caveat string
+
+	switch runtime.GOOS {
+	case "darwin":
+		caveat = "sandbox-exec resolves domain names to IPs at policy-load time; CDN-fronted hosts may be flaky"
+	case "linux":
+		caveat = "bwrap unprivileged user namespaces cannot filter outbound traffic per-domain; allowed_domains documents intent only"
+	default:
+		caveat = "no sandbox backend on this platform; domain allowlist is advisory"
+	}
+
+	logger.Warn("sandbox network allowlist has limited per-domain enforcement",
+		slog.String("platform", runtime.GOOS),
+		slog.String("caveat", caveat),
+		slog.Any("tools", withDomains),
+	)
 }
 
 // openLogger creates a JSON [*slog.Logger] writing to the named file.

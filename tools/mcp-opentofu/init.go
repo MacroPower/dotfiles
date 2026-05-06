@@ -18,9 +18,10 @@ var ErrInit = errors.New("init")
 
 // InitInput is the input schema for the init tool.
 type InitInput struct {
-	WorkingDirectory string `json:"working_directory" jsonschema:"Absolute path to the directory containing OpenTofu / Terraform configuration to initialize"`
-	Backend          bool   `json:"backend,omitzero"  jsonschema:"When true, configure the backend (default false: passes -backend=false to keep init local and avoid credential prompts)"`
-	Upgrade          bool   `json:"upgrade,omitzero"  jsonschema:"When true, pass -upgrade to fetch the latest module/provider versions allowed by version constraints"`
+	WorkingDirectory string   `json:"working_directory"      jsonschema:"Absolute path to the directory containing OpenTofu / Terraform configuration to initialize"`
+	Backend          bool     `json:"backend,omitzero"       jsonschema:"When true, configure the backend (default false: passes -backend=false to keep init local and avoid credential prompts)"`
+	Upgrade          bool     `json:"upgrade,omitzero"       jsonschema:"When true, pass -upgrade to fetch the latest module/provider versions allowed by version constraints"`
+	AllowedPaths     []string `json:"allowed_paths,omitzero" jsonschema:"Extra absolute paths to bind read-only inside the sandbox (e.g. shared module directories outside the working directory). Symlinks must be resolved by the caller; user-supplied symlinks outside the working directory are not traversed inside the sandbox"`
 }
 
 func (h *handler) handleInit(
@@ -35,17 +36,26 @@ func (h *handler) handleInit(
 
 	dir := in.WorkingDirectory
 
+	policy, _, pathErr := h.buildPolicy(toolInit, in.AllowedPaths)
+	if pathErr != nil {
+		return h.toolError(ctx, toolInit, fmt.Errorf("%w: %w", ErrInit, pathErr))
+	}
+
 	args := []string{"init", "-input=false", "-no-color", fmt.Sprintf("-backend=%t", in.Backend)}
 	if in.Upgrade {
 		args = append(args, "-upgrade")
 	}
 
-	stdout, stderr, code, err := h.tofu.Run(ctx, dir, args...)
+	stdout, stderr, code, err := h.tofu.Run(ctx, dir, policy, args...)
 	if err != nil {
 		return h.execError(ctx, toolInit, ErrInit, "init", err)
 	}
 
 	if code != 0 {
+		if r, ok := h.classifyMissingBinary(ctx, toolInit, ErrInit, "init", stderr, code); ok {
+			return r, nil, nil
+		}
+
 		return h.toolError(ctx, toolInit,
 			fmt.Errorf("%w: 'tofu init' exited with code %d:\n%s",
 				ErrInit, code, combineOutput(stdout, stderr)),

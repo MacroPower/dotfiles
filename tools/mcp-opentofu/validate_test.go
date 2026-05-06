@@ -17,8 +17,9 @@ import (
 
 // fakeCall records a single invocation captured by [fakeExecutor].
 type fakeCall struct {
-	dir  string
-	args []string
+	dir    string
+	args   []string
+	policy Policy
 }
 
 // fakeResponse is one canned reply returned by [fakeExecutor.Run] in order.
@@ -40,13 +41,17 @@ func newFakeExecutor(responses ...fakeResponse) *fakeExecutor {
 	return &fakeExecutor{responses: responses}
 }
 
-func (f *fakeExecutor) Run(ctx context.Context, dir string, args ...string) ([]byte, []byte, int, error) {
+func (f *fakeExecutor) Run(ctx context.Context, dir string, policy Policy, args ...string) ([]byte, []byte, int, error) {
 	ctxErr := ctx.Err()
 	if ctxErr != nil {
 		return nil, nil, -1, fmt.Errorf("fakeExecutor: %w", ctxErr)
 	}
 
-	f.calls = append(f.calls, fakeCall{dir: dir, args: append([]string(nil), args...)})
+	f.calls = append(f.calls, fakeCall{
+		dir:    dir,
+		args:   append([]string(nil), args...),
+		policy: policy,
+	})
 
 	if len(f.calls) > len(f.responses) {
 		return nil, nil, -1, errors.New("fakeExecutor: unexpected extra call")

@@ -18,12 +18,13 @@ var ErrPlan = errors.New("plan")
 
 // PlanInput is the input schema for the plan tool.
 type PlanInput struct {
-	WorkingDirectory string `json:"working_directory"     jsonschema:"Absolute path to the directory containing OpenTofu / Terraform configuration to plan"`
-	Init             bool   `json:"init,omitzero"         jsonschema:"When true, run 'tofu init -input=false -no-color -backend=false' before planning. Use when providers or modules have not yet been fetched"`
-	Destroy          bool   `json:"destroy,omitzero"      jsonschema:"When true, plan a destroy run (-destroy) instead of a normal apply plan"`
-	RefreshOnly      bool   `json:"refresh_only,omitzero" jsonschema:"When true, run a refresh-only plan (-refresh-only) that detects drift without proposing configuration changes"`
-	MaxLength        int    `json:"max_length,omitzero"   jsonschema:"Maximum number of characters to return (default 5000)"`
-	StartIndex       int    `json:"start_index,omitzero"  jsonschema:"Character offset to start reading from (default 0)"`
+	WorkingDirectory string   `json:"working_directory"      jsonschema:"Absolute path to the directory containing OpenTofu / Terraform configuration to plan"`
+	Init             bool     `json:"init,omitzero"          jsonschema:"When true, run 'tofu init -input=false -no-color -backend=false' before planning. Use when providers or modules have not yet been fetched"`
+	Destroy          bool     `json:"destroy,omitzero"       jsonschema:"When true, plan a destroy run (-destroy) instead of a normal apply plan"`
+	RefreshOnly      bool     `json:"refresh_only,omitzero"  jsonschema:"When true, run a refresh-only plan (-refresh-only) that detects drift without proposing configuration changes"`
+	AllowedPaths     []string `json:"allowed_paths,omitzero" jsonschema:"Extra absolute paths to bind read-only inside the sandbox (e.g. shared module directories outside the working directory). Symlinks must be resolved by the caller; user-supplied symlinks outside the working directory are not traversed inside the sandbox"`
+	MaxLength        int      `json:"max_length,omitzero"    jsonschema:"Maximum number of characters to return (default 5000)"`
+	StartIndex       int      `json:"start_index,omitzero"   jsonschema:"Character offset to start reading from (default 0)"`
 }
 
 func (h *handler) handlePlan(
@@ -38,8 +39,16 @@ func (h *handler) handlePlan(
 
 	dir := in.WorkingDirectory
 
+	planPolicy, extras, pathErr := h.buildPolicy(toolPlan, in.AllowedPaths)
+	if pathErr != nil {
+		return h.toolError(ctx, toolPlan, fmt.Errorf("%w: %w", ErrPlan, pathErr))
+	}
+
 	if in.Init {
-		stop, r, initErr := h.runInitStep(ctx, dir, toolPlan, ErrPlan)
+		initPolicy := h.policyFor(toolInit)
+		initPolicy.AllowRead = mergeAllowRead(initPolicy.AllowRead, extras)
+
+		stop, r, initErr := h.runInitStep(ctx, dir, toolPlan, ErrPlan, initPolicy)
 		if stop {
 			return r, nil, initErr
 		}
@@ -54,7 +63,7 @@ func (h *handler) handlePlan(
 		args = append(args, "-refresh-only")
 	}
 
-	stdout, stderr, code, err := h.tofu.Run(ctx, dir, args...)
+	stdout, stderr, code, err := h.tofu.Run(ctx, dir, planPolicy, args...)
 	if err != nil {
 		return h.execError(ctx, toolPlan, ErrPlan, "plan", err)
 	}
@@ -69,6 +78,10 @@ func (h *handler) handlePlan(
 	case 2:
 		hasChanges = true
 	default:
+		if r, ok := h.classifyMissingBinary(ctx, toolPlan, ErrPlan, "plan", stderr, code); ok {
+			return r, nil, nil
+		}
+
 		return h.toolError(ctx, toolPlan,
 			fmt.Errorf("%w: 'tofu plan' exited with code %d:\n%s",
 				ErrPlan, code, combineOutput(stdout, stderr)),
