@@ -48,6 +48,7 @@ func runServe(args []string) int {
 
 	userAgent := fs.String("user-agent", "MCP-Fetch/"+version, "HTTP User-Agent header")
 	ignoreRobots := fs.Bool("ignore-robots-txt", false, "skip robots.txt checks")
+	ignoreLLMs := fs.Bool("ignore-llms-txt", false, "skip llms.txt discovery and notice")
 	proxyURL := fs.String("proxy-url", "", "HTTP proxy URL")
 	rulesFile := fs.String("rules-file", "", "path to JSON URL rules file")
 	logFile := fs.String("log-file", "", "path to JSON log file (append)")
@@ -64,7 +65,7 @@ func runServe(args []string) int {
 		return 2
 	}
 
-	err = serve(*userAgent, *ignoreRobots, *proxyURL, *rulesFile, *logFile, *dbPath)
+	err = serve(*userAgent, *ignoreRobots, *ignoreLLMs, *proxyURL, *rulesFile, *logFile, *dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 
@@ -74,7 +75,7 @@ func runServe(args []string) int {
 	return 0
 }
 
-func serve(userAgent string, ignoreRobots bool, proxyURL, rulesFile, logFile, dbPath string) error {
+func serve(userAgent string, ignoreRobots, ignoreLLMs bool, proxyURL, rulesFile, logFile, dbPath string) error {
 	logger, logCloser, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -129,6 +130,7 @@ func serve(userAgent string, ignoreRobots bool, proxyURL, rulesFile, logFile, db
 	h := newFetchHandler(
 		withUserAgent(userAgent),
 		withCheckRobots(!ignoreRobots),
+		withCheckLLMs(!ignoreLLMs),
 		withRules(rules),
 		withLogger(logger),
 		withStore(store),

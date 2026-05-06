@@ -67,9 +67,11 @@ type fetchHandler struct {
 	log          *slog.Logger
 	robotsCache  *expirable.LRU[string, *robotstxt.RobotsData]
 	contentCache *expirable.LRU[string, string]
+	llmsCache    *expirable.LRU[string, string]
 	store        *Store
 	userAgent    string
 	checkRobots  bool
+	checkLLMs    bool
 }
 
 // fetchOption configures a [fetchHandler] via [newFetchHandler].
@@ -77,10 +79,12 @@ type fetchHandler struct {
 // Functions of this type:
 //   - [withUserAgent]
 //   - [withCheckRobots]
+//   - [withCheckLLMs]
 //   - [withRules]
 //   - [withLogger]
 //   - [withRobotsCache]
 //   - [withContentCache]
+//   - [withLLMsCache]
 //   - [withStore]
 //
 // The HTTP client is wired separately after construction because the
@@ -96,6 +100,11 @@ func withUserAgent(ua string) fetchOption {
 // withCheckRobots toggles robots.txt enforcement. See [fetchOption].
 func withCheckRobots(check bool) fetchOption {
 	return func(h *fetchHandler) { h.checkRobots = check }
+}
+
+// withCheckLLMs toggles llms.txt discovery and notice. See [fetchOption].
+func withCheckLLMs(check bool) fetchOption {
+	return func(h *fetchHandler) { h.checkLLMs = check }
 }
 
 // withRules sets the URL allow/deny rules. See [fetchOption].
@@ -118,6 +127,11 @@ func withContentCache(c *expirable.LRU[string, string]) fetchOption {
 	return func(h *fetchHandler) { h.contentCache = c }
 }
 
+// withLLMsCache replaces the per-origin llms.txt discovery cache. See [fetchOption].
+func withLLMsCache(c *expirable.LRU[string, string]) fetchOption {
+	return func(h *fetchHandler) { h.llmsCache = c }
+}
+
 // withStore enables SQLite recording of fetch results. A nil store
 // disables recording. See [fetchOption].
 func withStore(s *Store) fetchOption {
@@ -132,7 +146,9 @@ func newFetchHandler(opts ...fetchOption) *fetchHandler {
 		log:          slog.New(slog.DiscardHandler),
 		robotsCache:  expirable.NewLRU[string, *robotstxt.RobotsData](128, nil, time.Hour),
 		contentCache: expirable.NewLRU[string, string](64, nil, time.Hour),
+		llmsCache:    expirable.NewLRU[string, string](128, nil, time.Hour),
 		checkRobots:  true,
+		checkLLMs:    true,
 	}
 
 	for _, opt := range opts {
@@ -280,6 +296,18 @@ func (h *fetchHandler) handle(
 	rec.Outcome = OutcomeOK
 	rec.OutputBytes = len(result)
 	rec.Truncated = boolToInt(truncated)
+
+	if h.checkLLMs && startIndex == 0 && u.Path != "/llms.txt" {
+		origin := u.Scheme + "://" + u.Host
+
+		llmsURL := h.findLLMsTxt(ctx, origin)
+		if llmsURL != "" {
+			result += fmt.Sprintf(
+				"\n\n<llms.txt available at %s: an LLM-optimized index of this site>",
+				llmsURL,
+			)
+		}
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: result}},

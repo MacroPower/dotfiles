@@ -18,6 +18,7 @@
 //
 //   - --user-agent: HTTP User-Agent header (default: "MCP-Fetch/0.1.0")
 //   - --ignore-robots-txt: skip robots.txt checks
+//   - --ignore-llms-txt: skip llms.txt discovery and notice
 //   - --proxy-url: HTTP proxy URL
 //   - --rules-file: path to JSON URL allow/deny rules file
 //   - --log-file: path to JSON log file (append); logs allow/deny decisions

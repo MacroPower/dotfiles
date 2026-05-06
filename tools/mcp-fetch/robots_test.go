@@ -158,7 +158,9 @@ func newTestHandler(t *testing.T, client *http.Client, opts ...fetchOption) *fet
 		withLogger(slog.Default()),
 		withRobotsCache(expirable.NewLRU[string, *robotstxt.RobotsData](10, nil, time.Hour)),
 		withContentCache(expirable.NewLRU[string, string](10, nil, time.Hour)),
+		withLLMsCache(expirable.NewLRU[string, string](10, nil, time.Hour)),
 		withCheckRobots(false),
+		withCheckLLMs(false),
 	}
 
 	h := newFetchHandler(append(defaults, opts...)...)
