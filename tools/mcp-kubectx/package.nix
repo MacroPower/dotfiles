@@ -12,6 +12,7 @@ buildGoModule {
 
   meta = {
     description = "MCP server for Kubernetes context selection with ServiceAccount-scoped credentials";
+    homepage = "https://github.com/MacroPower/dotfiles/tree/main/tools/mcp-kubectx";
     license = lib.licenses.asl20;
     mainProgram = "mcp-kubectx";
   };
