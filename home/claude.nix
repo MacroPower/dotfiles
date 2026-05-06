@@ -542,6 +542,11 @@ let
     runtimeEnv = {
       RTK_REWRITE = "${pkgs.rtk-bin}/libexec/rtk/hooks/rtk-rewrite.sh";
     };
+    # The --command-rules JSON is shell-escaped via lib.escapeShellArg
+    # (single-quoted). Backticks inside the JSON are literal data, but
+    # shellcheck warns SC2016 about them as if they were unexpanded
+    # command substitutions.
+    excludeShellChecks = [ "SC2016" ];
     text = ''
       exec hook-router \
         --db "${config.xdg.stateHome}/hook-router/state.db" \
@@ -1653,27 +1658,247 @@ in
           ];
         };
         permissions.allow = [
-          "mcp__spacelift__introspect_graphql_schema"
+          "mcp__spacelift__get_authentication_guide"
+          "mcp__spacelift__get_blueprint"
+          "mcp__spacelift__get_context"
           "mcp__spacelift__get_graphql_type_details"
-          "mcp__spacelift__search_graphql_schema_fields"
-          "mcp__spacelift__authentication_guide"
+          "mcp__spacelift__get_module"
+          "mcp__spacelift__get_module_guide"
+          "mcp__spacelift__get_module_version"
+          "mcp__spacelift__get_policy"
+          "mcp__spacelift__get_policy_sample"
+          "mcp__spacelift__get_space"
           "mcp__spacelift__get_spacelift_stacks"
-          "mcp__spacelift__get_stack_runs"
-          "mcp__spacelift__get_stack_run_logs"
+          "mcp__spacelift__get_stack_run"
           "mcp__spacelift__get_stack_run_changes"
+          "mcp__spacelift__get_stack_run_logs"
+          "mcp__spacelift__get_stack_runs"
+          "mcp__spacelift__get_worker_pool"
+          "mcp__spacelift__introspect_graphql_schema"
+          "mcp__spacelift__list_blueprints"
+          "mcp__spacelift__list_contexts"
+          "mcp__spacelift__list_module_versions"
+          "mcp__spacelift__list_modules"
+          "mcp__spacelift__list_policies"
+          "mcp__spacelift__list_policy_samples"
+          "mcp__spacelift__list_policy_samples_indexed"
+          "mcp__spacelift__list_resources"
+          "mcp__spacelift__list_spaces"
+          "mcp__spacelift__list_stack_proposed_runs"
+          "mcp__spacelift__list_stack_runs"
+          "mcp__spacelift__list_stacks"
+          "mcp__spacelift__list_worker_pools"
+          "mcp__spacelift__search_contexts"
+          "mcp__spacelift__search_graphql_schema_fields"
+          "mcp__spacelift__search_modules"
         ];
         permissions.ask = [
           "mcp__spacelift__trigger_stack_run"
           "mcp__spacelift__discard_stack_run"
           "mcp__spacelift__confirm_stack_run"
+          "mcp__spacelift__local_preview"
         ];
-        sandbox.allowedDomains = [
-          "spacelift.io"
+        permissions.deny = [
+          "mcp__spacelift__list_api_keys"
+          "mcp__spacelift__get_api_key"
+        ];
+        commandRules.deny = [
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "list"
+            ];
+            reason = "Use `mcp__spacelift__list_stacks` instead of `spacectl stack list`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "show"
+            ];
+            reason = "Use `mcp__spacelift__get_spacelift_stacks` instead of `spacectl stack show`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "run"
+              "list"
+            ];
+            reason = "Use `mcp__spacelift__list_stack_runs` instead of `spacectl stack run list`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "logs"
+            ];
+            reason = "Use `mcp__spacelift__get_stack_run_logs` instead of `spacectl stack logs`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "changes"
+            ];
+            reason = "Use `mcp__spacelift__get_stack_run_changes` instead of `spacectl stack changes`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "resources"
+              "list"
+            ];
+            reason = "Use `mcp__spacelift__list_resources` instead of `spacectl stack resources list`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "confirm"
+            ];
+            reason = "Use `mcp__spacelift__confirm_stack_run` instead of `spacectl stack confirm`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "discard"
+            ];
+            reason = "Use `mcp__spacelift__discard_stack_run` instead of `spacectl stack discard`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "local-preview"
+            ];
+            reason = "Use `mcp__spacelift__local_preview` instead of `spacectl stack local-preview`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "preview"
+            ];
+            reason = "Use `mcp__spacelift__trigger_stack_run` instead of `spacectl stack preview`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "deploy"
+            ];
+            reason = "Use `mcp__spacelift__trigger_stack_run` instead of `spacectl stack deploy`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "retry"
+            ];
+            reason = "Use `mcp__spacelift__trigger_stack_run` instead of `spacectl stack retry`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "replan"
+            ];
+            reason = "Use `mcp__spacelift__trigger_stack_run` instead of `spacectl stack replan`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "module"
+              "list"
+            ];
+            reason = "Use `mcp__spacelift__list_modules` instead of `spacectl module list`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "module"
+              "list-versions"
+            ];
+            reason = "Use `mcp__spacelift__list_module_versions` instead of `spacectl module list-versions`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "blueprint"
+              "list"
+            ];
+            reason = "Use `mcp__spacelift__list_blueprints` instead of `spacectl blueprint list`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "blueprint"
+              "show"
+            ];
+            reason = "Use `mcp__spacelift__get_blueprint` instead of `spacectl blueprint show`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "policy"
+              "list"
+            ];
+            reason = "Use `mcp__spacelift__list_policies` instead of `spacectl policy list`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "policy"
+              "show"
+            ];
+            reason = "Use `mcp__spacelift__get_policy` instead of `spacectl policy show`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "policy"
+              "samples"
+            ];
+            reason = "Use `mcp__spacelift__list_policy_samples` instead of `spacectl policy samples`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "policy"
+              "sample"
+            ];
+            reason = "Use `mcp__spacelift__get_policy_sample` instead of `spacectl policy sample`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "policy"
+              "samples-indexed"
+            ];
+            reason = "Use `mcp__spacelift__list_policy_samples_indexed` instead of `spacectl policy samples-indexed`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "workerpool"
+              "list"
+            ];
+            reason = "Use `mcp__spacelift__list_worker_pools` instead of `spacectl workerpool list`.";
+          }
+          {
+            # Catch-all deny
+            command = "spacectl";
+            reason = "Do not invoke `spacectl` directly. Use the `mcp__spacelift__*` tools instead.";
+          }
         ];
         instructions = {
           category = "Infrastructure";
           items = [
-            "Use `mcp__spacelift__*` tools for Spacelift operations. Do not use the `spacectl` CLI directly."
+            "Use `mcp__spacelift__*` tools for Spacelift operations. Do not invoke `spacectl` directly."
           ];
         };
       };
