@@ -30,8 +30,9 @@ func Truncate(content string, startIndex, maxLength int) string {
 
 	// Fast path: when starting from the beginning and the body fits the
 	// window, no rune-counting is needed. Skips an O(n) []rune allocation
-	// that scales with the full content (e.g. multi-MB plan output). The
-	// non-empty guard preserves the empty-marker behavior below.
+	// that scales with the full content (e.g. multi-MB registry
+	// documentation). The non-empty guard preserves the empty-marker
+	// behavior below.
 	if startIndex == 0 && content != "" && len(content) <= maxLength {
 		return content
 	}

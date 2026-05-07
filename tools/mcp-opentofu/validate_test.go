@@ -63,8 +63,8 @@ func (f *fakeExecutor) Run(ctx context.Context, dir string, policy Policy, args 
 }
 
 // newTofuTestHandler returns a [*handler] wired with a discard logger and
-// the given [*fakeExecutor]. It is shared by the validate, init, and plan
-// handler tests.
+// the given [*fakeExecutor]. It is shared by the validate and init handler
+// tests.
 func newTofuTestHandler(t *testing.T, fake *fakeExecutor) *handler {
 	t.Helper()
 

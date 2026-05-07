@@ -88,34 +88,6 @@ func TestHandleInitPassesPolicy(t *testing.T) {
 	assert.Equal(t, []string{"registry.opentofu.org"}, fake.calls[0].policy.AllowedDomains)
 }
 
-func TestHandlePlanPassesInitAndPlanPolicies(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	fake := newFakeExecutor(
-		fakeResponse{stdout: "Initialized!"},
-		fakeResponse{stdout: "No changes."},
-	)
-	h := newTofuTestHandler(t, fake)
-	h.policies = Policies{
-		toolInit: {AllowedDomains: []string{"registry.opentofu.org"}},
-		toolPlan: {AllowedDomains: []string{}},
-	}
-
-	r, _, err := h.handlePlan(t.Context(), nil, PlanInput{
-		WorkingDirectory: dir,
-		Init:             true,
-	})
-	require.NoError(t, err)
-	require.False(t, r.IsError, resultText(t, r))
-
-	require.Len(t, fake.calls, 2)
-	assert.Equal(t, []string{"registry.opentofu.org"}, fake.calls[0].policy.AllowedDomains,
-		"init step must use init policy")
-	assert.Empty(t, fake.calls[1].policy.AllowedDomains,
-		"plan step must use plan policy")
-}
-
 func TestHandleValidateRejectsBadAllowedPath(t *testing.T) {
 	t.Parallel()
 

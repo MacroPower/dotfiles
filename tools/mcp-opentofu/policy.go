@@ -19,7 +19,7 @@ var ErrPolicy = errors.New("policy")
 // Policy describes the per-tool sandbox allowlist applied around every tofu
 // invocation. Empty values mean "deny by default": no extra network, no
 // extra filesystem access, no extra unix sockets. Per-call inputs (such as
-// AllowedPaths on the validate, init, and plan handlers) are merged on top
+// AllowedPaths on the validate and init handlers) are merged on top
 // of the per-tool [Policy] before invoking the [Sandbox].
 type Policy struct {
 	// AllowedDomains lists DNS names that the sandbox should permit
@@ -44,7 +44,7 @@ type Policy struct {
 }
 
 // Policies is the per-tool [Policy] map used by [*handler]. Keys are MCP
-// tool names ([toolValidate], [toolInit], [toolPlan]); missing keys behave
+// tool names ([toolValidate] and [toolInit]); missing keys behave
 // as if the tool had a zero-value [Policy].
 type Policies map[string]Policy
 
@@ -55,7 +55,6 @@ func Defaults() Policies {
 	return Policies{
 		toolValidate: {},
 		toolInit:     {},
-		toolPlan:     {},
 	}
 }
 

@@ -14,7 +14,7 @@ func TestDefaults(t *testing.T) {
 
 	d := Defaults()
 
-	for _, tool := range []string{toolValidate, toolInit, toolPlan} {
+	for _, tool := range []string{toolValidate, toolInit} {
 		p, ok := d[tool]
 		require.True(t, ok, "expected default policy for %q", tool)
 		assert.Empty(t, p.AllowedDomains)
@@ -34,8 +34,7 @@ func TestLoadFile(t *testing.T) {
 		path := filepath.Join(dir, "policy.json")
 		body := `{
 			"init":     {"allowed_domains": ["registry.opentofu.org"], "allow_read": [], "allow_write": []},
-			"validate": {"allowed_domains": [], "allow_read": [], "allow_write": []},
-			"plan":     {"allowed_domains": [], "allow_read": [], "allow_write": []}
+			"validate": {"allowed_domains": [], "allow_read": [], "allow_write": []}
 		}`
 		require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
 

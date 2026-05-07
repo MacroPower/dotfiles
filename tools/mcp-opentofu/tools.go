@@ -19,7 +19,6 @@ const (
 	toolDatasourceDocs  = "get_datasource_docs"
 	toolValidate        = "validate"
 	toolInit            = "init"
-	toolPlan            = "plan"
 )
 
 // SearchInput is the input schema for the search_registry tool.

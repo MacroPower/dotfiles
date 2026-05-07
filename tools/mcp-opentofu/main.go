@@ -32,7 +32,7 @@ func run() error {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
 	tofuBin := flag.String(
 		"tofu-bin", "tofu",
-		"path to the tofu binary used by the local-tofu tools (validate, init, plan);"+
+		"path to the tofu binary used by the local-tofu tools (validate, init);"+
 			" resolved via PATH when not absolute",
 	)
 	sandboxFlag := flag.String(
@@ -150,11 +150,6 @@ func run() error {
 		Description: `Run "tofu init" against a local working directory to download providers and modules. Defaults to -backend=false (local init only); pass backend=true to also configure the backend. Pass upgrade=true to fetch the latest provider/module versions allowed by version constraints.`,
 	}, h.handleInit)
 
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        toolPlan,
-		Description: `Run "tofu plan" against a local working directory and report whether any changes are pending. Requires that providers/modules have been fetched (run init first or pass init=true). Pass destroy=true for a destroy plan, refresh_only=true for drift detection. Output may include sensitive values; treat as confidential.`,
-	}, h.handlePlan)
-
 	addRegistryInfoResource(srv)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -179,7 +174,7 @@ func loadPolicies(mode SandboxMode, path string, logger *slog.Logger) (Policies,
 			return nil, fmt.Errorf("%w: --policy-file is required when --sandbox=%s", ErrPolicy, mode)
 		}
 
-		logger.Warn("running without --policy-file; init and plan will reach no registry",
+		logger.Warn("running without --policy-file; init will reach no registry",
 			slog.String("sandbox", string(mode)),
 		)
 
@@ -204,7 +199,7 @@ func loadPolicies(mode SandboxMode, path string, logger *slog.Logger) (Policies,
 		return Defaults(), nil
 	}
 
-	for _, tool := range []string{toolValidate, toolInit, toolPlan} {
+	for _, tool := range []string{toolValidate, toolInit} {
 		if _, ok := policies[tool]; !ok {
 			policies[tool] = Policy{}
 		}

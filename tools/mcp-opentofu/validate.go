@@ -72,9 +72,9 @@ type tofuExecutor interface {
 }
 
 // maxTofuStreamBytes caps the amount of stdout or stderr [*execTofu.Run]
-// will buffer per stream. This guards against runaway providers (e.g. plan
-// output for a huge stack) or interactive prompts producing unbounded
-// output. The limit is generous relative to typical plan sizes but small
+// will buffer per stream. This guards against runaway providers (e.g. init
+// output for a huge module tree) or interactive prompts producing unbounded
+// output. The limit is generous relative to typical tofu output but small
 // enough to keep peak memory predictable.
 const maxTofuStreamBytes = 16 * 1024 * 1024
 
@@ -195,7 +195,7 @@ func validateWorkingDir(dir string, sentinel error) error {
 }
 
 // runInitStep runs the canonical `tofu init -input=false -no-color
-// -backend=false` prelude shared by the validate and plan tools. tool names
+// -backend=false` prelude used by the validate tool. tool names
 // the MCP tool whose handler is invoking the prelude (used for logging and
 // error surfacing); sentinel is the per-tool sentinel error; policy is the
 // init-step [Policy] (already merged with any per-call AllowRead extras).
