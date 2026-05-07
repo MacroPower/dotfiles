@@ -43,25 +43,21 @@ for url in "${urls[@]}"; do
     rel="index.md"
     md_url="$BASE_URL/index.md"
     ;;
-  /*)
-    rel="${path#/}.md"
-    md_url="${url}.md"
-    ;;
   *)
-    rel="$path.md"
+    rel="${path#/}.md"
     md_url="${url}.md"
     ;;
   esac
   dest="$OUT_DIR/$rel"
   mkdir -p "$(dirname "$dest")"
   if ! effective=$(
-    curl -fSL \
+    curl -fsSL \
       --retry 3 --retry-delay 2 --retry-all-errors --retry-connrefused \
       --max-time 30 \
       -A "$UA" \
       -o "$dest" \
       -w '%{url_effective}' \
-      "$md_url" 2>/dev/null
+      "$md_url"
   ); then
     failures=$((failures + 1))
     echo "FAIL: $md_url" >&2
