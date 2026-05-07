@@ -2005,6 +2005,7 @@ in
           {
             env = {
               CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+              CLAUDE_CODE_EFFORT_LEVEL = "max";
             };
             disableAutoMode = "disable";
             includeGitInstructions = false;
@@ -2258,7 +2259,6 @@ in
             teammateMode = "in-process";
             showThinkingSummaries = true;
             showClearContextOnPlanAccept = true;
-            effortLevel = "max";
           }
           // lib.optionalAttrs cfg.stylixTheme.enable {
             theme = "custom:stylix";
