@@ -2274,6 +2274,7 @@ in
         skills = {
           commit = ../configs/claude/skills/commit;
           commit-push-pr = ../configs/claude/skills/commit-push-pr;
+          create-skill = ../configs/claude/skills/create-skill;
           dagger-modules = ../configs/claude/skills/dagger-modules;
           worktree = ../configs/claude/skills/worktree;
           wm-merge = ../configs/claude/skills/wm-merge;
