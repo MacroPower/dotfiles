@@ -2258,6 +2258,7 @@ in
             teammateMode = "in-process";
             showThinkingSummaries = true;
             showClearContextOnPlanAccept = true;
+            effortLevel = "max";
           }
           // lib.optionalAttrs cfg.stylixTheme.enable {
             theme = "custom:stylix";
