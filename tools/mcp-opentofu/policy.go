@@ -44,7 +44,7 @@ type Policy struct {
 }
 
 // Policies is the per-tool [Policy] map used by [*handler]. Keys are MCP
-// tool names ([toolValidate] and [toolInit]); missing keys behave
+// tool names ([toolValidate], [toolInit], [toolTest]); missing keys behave
 // as if the tool had a zero-value [Policy].
 type Policies map[string]Policy
 
@@ -55,6 +55,7 @@ func Defaults() Policies {
 	return Policies{
 		toolValidate: {},
 		toolInit:     {},
+		toolTest:     {},
 	}
 }
 

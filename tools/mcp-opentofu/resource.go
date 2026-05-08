@@ -29,13 +29,14 @@ const registryInfoDescription = "Tool overview and naming conventions for the Op
 // [registryInfoHandler]. It documents the available tools and the naming
 // conventions the model should follow when building tool inputs (no
 // `terraform-provider-` / `terraform-aws-` prefixes, short resource names).
-const registryInfoText = `The OpenTofu MCP server exposes the public OpenTofu Registry plus local validation and initialization for OpenTofu / Terraform configuration.
+const registryInfoText = `The OpenTofu MCP server exposes the public OpenTofu Registry plus local validation, initialization, and testing for OpenTofu / Terraform configuration.
 You can:
 - **Search** for providers, modules, resources, and data sources using the ` + "`search_registry`" + ` tool.
 - **Get detailed information** about a provider or module using ` + "`get_provider_details`" + ` or ` + "`get_module_details`" + `.
 - **Retrieve documentation** for a specific resource or data source using ` + "`get_resource_docs`" + ` or ` + "`get_datasource_docs`" + `.
 - **Validate a local configuration directory** using ` + "`validate`" + ` (shells out to a local ` + "`tofu`" + ` binary).
 - **Initialize a local configuration directory** using ` + "`init`" + ` (shells out to a local ` + "`tofu`" + ` binary) to download providers and modules.
+- **Run test files** in a local configuration directory using ` + "`test`" + ` (shells out to a local ` + "`tofu`" + ` binary). Note: ` + "`tofu test`" + ` provisions real infrastructure (apply then destroy) unless tests use ` + "`mock_provider`" + ` blocks.
 
 **Tips:**
 - Do **not** include prefixes like ` + "`terraform-provider-`" + ` or ` + "`terraform-aws-`" + ` in names.
@@ -43,6 +44,7 @@ You can:
 - For resources and data sources, use the short name (e.g., ` + "`s3_bucket`" + `, ` + "`instance`" + `, ` + "`ami`" + `).
 - ` + "`validate`" + ` requires an absolute ` + "`working_directory`" + `; pass ` + "`init=true`" + ` for a lightweight local init (` + "`-backend=false`" + `) when providers or modules have not been fetched yet.
 - For a full init that may also configure the backend, use the standalone ` + "`init`" + ` tool with ` + "`backend=true`" + `; pass ` + "`upgrade=true`" + ` to fetch the latest provider/module versions allowed by constraints.
+- ` + "`test`" + ` discovers ` + "`*.tftest.hcl`" + ` / ` + "`*.tofutest.hcl`" + ` files in the working directory and a sibling ` + "`tests`" + ` directory; use ` + "`test_directory`" + ` to point elsewhere and ` + "`filter`" + ` to limit which files run. A non-zero exit means at least one assertion failed and is surfaced in the rendered transcript, not as a tool error.
 
 This server targets OpenTofu (a fork of HashiCorp Terraform).
 `

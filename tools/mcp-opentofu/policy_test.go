@@ -14,7 +14,7 @@ func TestDefaults(t *testing.T) {
 
 	d := Defaults()
 
-	for _, tool := range []string{toolValidate, toolInit} {
+	for _, tool := range []string{toolValidate, toolInit, toolTest} {
 		p, ok := d[tool]
 		require.True(t, ok, "expected default policy for %q", tool)
 		assert.Empty(t, p.AllowedDomains)

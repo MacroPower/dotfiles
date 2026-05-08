@@ -32,7 +32,7 @@ func run() error {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
 	tofuBin := flag.String(
 		"tofu-bin", "tofu",
-		"path to the tofu binary used by the local-tofu tools (validate, init);"+
+		"path to the tofu binary used by the local-tofu tools (validate, init, test);"+
 			" resolved via PATH when not absolute",
 	)
 	sandboxFlag := flag.String(
@@ -150,6 +150,11 @@ func run() error {
 		Description: `Run "tofu init" against a local working directory to download providers and modules. Defaults to -backend=false (local init only); pass backend=true to also configure the backend. Pass upgrade=true to fetch the latest provider/module versions allowed by version constraints.`,
 	}, h.handleInit)
 
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        toolTest,
+		Description: `Run "tofu test" against a local working directory and return the test transcript. Note: tofu test runs real apply/destroy cycles against actual infrastructure unless tests use mock_provider blocks. Pass init=true when providers/modules are not yet installed. To pass test-specific variables, use a terraform.tfvars file in the working directory or define variables blocks inside the .tftest.hcl files.`,
+	}, h.handleTest)
+
 	addRegistryInfoResource(srv)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -199,7 +204,7 @@ func loadPolicies(mode SandboxMode, path string, logger *slog.Logger) (Policies,
 		return Defaults(), nil
 	}
 
-	for _, tool := range []string{toolValidate, toolInit} {
+	for _, tool := range []string{toolValidate, toolInit, toolTest} {
 		if _, ok := policies[tool]; !ok {
 			policies[tool] = Policy{}
 		}
