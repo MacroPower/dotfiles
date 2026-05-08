@@ -201,9 +201,11 @@ func (m *Dev) buildBase(ctx context.Context, ctr *dagger.Container) (*dagger.Con
 		).
 		WithEnvVariable("EDITOR", "vim").
 		WithEnvVariable("TERM", "xterm-256color").
+		// Move out of /dotfiles before deleting it, otherwise the next
+		// WithExec recreates an empty /dotfiles to honor the workdir.
+		WithWorkdir(homeDir).
 		WithoutDirectory("/dotfiles").
-		WithExec([]string{"nix", "store", "gc"}).
-		WithWorkdir(homeDir), nil
+		WithExec([]string{"nix", "store", "gc"}), nil
 }
 
 // cachedBuild builds the home-manager configuration with nix store and
@@ -322,8 +324,18 @@ func (m *Dev) SandboxBase(
 	}
 
 	// Override the home-manager-deployed config if one was provided.
+	// Otherwise dereference the home-manager symlink chain so the file
+	// lives in the rootfs; dagger.Container.File cannot follow links
+	// into cache-mounted /nix store paths.
 	if sandboxConfig != nil {
 		ctr = ctr.WithFile(terrariumConfigPath, sandboxConfig)
+	} else {
+		ctr = ctr.WithExec([]string{
+			"sh", "-c",
+			fmt.Sprintf("cp -L --remove-destination %s %s.tmp && mv %s.tmp %s",
+				terrariumConfigPath, terrariumConfigPath,
+				terrariumConfigPath, terrariumConfigPath),
+		})
 	}
 
 	// setup-user: create non-root user in /etc/passwd and /etc/group,
@@ -427,7 +439,9 @@ func (m *Dev) BuildShell(
 	// convert cache-mounted directories into immutable Directory
 	// references, so we cp to a non-mounted path, get a Directory
 	// from there, then overlay it after removing the mounts.
-	snapshot := built.WithExec([]string{"cp", "-a", "/nix", "/nix-snapshot"})
+	snapshot := built.
+		WithExec([]string{"cp", "-a", "/nix", "/nix-snapshot"}).
+		WithExec([]string{"sh", "-c", stripScript})
 	nixDir := snapshot.Directory("/nix-snapshot")
 
 	ctr := built.
@@ -442,6 +456,80 @@ func (m *Dev) BuildShell(
 
 	return ctr, nil
 }
+
+// stripScript shrinks /nix-snapshot before it gets baked into the image.
+//
+// Two passes. First, delete categories of files nothing in a CI/dev
+// container reads: docs, non-English locales, GUI desktop integration,
+// shell completions for shells we don't use, build-only artifacts
+// (.a/.la/.js.map), Python __pycache__ (regenerated to a writable cache
+// on first import), and the lix base image's nix-channel scaffolding
+// (the dev container drives rebuilds through the dotfiles flake, not
+// channels).
+//
+// Second, prune /nix-snapshot/store down to the closure of the
+// home-manager generation plus the latest system profile. Everything
+// else is kept alive only by dagger-engine cache gcroots and stale
+// profile generations the cache volume accumulates across runs, so
+// `nix store gc` against the live store leaves them in place. The
+// published image performs no further nix store operations and store
+// paths are self-contained, so dropping them from the snapshot is safe.
+const stripScript = `set -eo pipefail
+find /nix-snapshot -type d \( \
+    -name man -o -name doc -o -name info \
+    -o -name gtk-doc -o -name devhelp -o -name help \
+    -o -name applications -o -name icons -o -name pixmaps \
+    -o -name zsh -o -name bash-completion \
+    -o -name __pycache__ \
+\) -prune -exec rm -rf {} +
+find /nix-snapshot -type d -path '*/share/locale/*' \
+    ! -path '*/share/locale/en' \
+    ! -path '*/share/locale/en_*' \
+    ! -path '*/share/locale/en/*' \
+    ! -path '*/share/locale/en_*/*' \
+    -prune -exec rm -rf {} +
+find /nix-snapshot -type f \
+    \( -name '*.a' -o -name '*.la' -o -name '*.js.map' \) \
+    -delete
+rm -rf /nix-snapshot/var/nix/profiles/per-user/root/channels \
+       /nix-snapshot/var/nix/profiles/per-user/root/channels-* \
+       /nix-snapshot/var/nix/gcroots/docker
+
+# Closure roots: home-manager's gcroot, the latest per-user/root
+# profile, and the system default profile. nix-store -qR reads from
+# the live /nix (cache volume) because /nix-snapshot is a plain
+# directory tree, not a Nix store. We delete by store-path basename
+# under /nix-snapshot/store rather than running ` + "`nix store gc`" + `, since
+# the cache volume's docker gcroots and lingering profile generations
+# defeat gc on the live store.
+keep=$(mktemp)
+trap 'rm -f "$keep"' EXIT
+roots=
+for r in /home/dev/.local/state/home-manager/gcroots/current-home \
+         /nix/var/nix/profiles/per-user/root/profile \
+         /nix/var/nix/profiles/default; do
+    [ -e "$r" ] || continue
+    roots="$roots $(readlink -f "$r")"
+done
+if [ -z "$roots" ]; then
+    echo "stripScript: no closure roots resolved under /nix" >&2
+    exit 1
+fi
+nix-store -qR $roots | awk -F/ '{print $NF}' | sort -u > "$keep"
+keep_count=$(wc -l < "$keep")
+# Healthy closures land around 1500-2500 paths. Anything dramatically
+# smaller means ` + "`nix-store -qR`" + ` lost some of the closure and the comm
+# diff below would treat live paths as orphans, gutting /nix/store.
+if [ "$keep_count" -lt 500 ]; then
+    echo "stripScript: keep set has only $keep_count paths, refusing to prune" >&2
+    exit 1
+fi
+ls /nix-snapshot/store | sort -u | comm -23 - "$keep" \
+    | while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        rm -rf "/nix-snapshot/store/$name"
+    done
+`
 
 // publishMultiArch builds one container per platform via buildVariant
 // and delegates the manifest assembly to [Dev.publishVariants]. Empty
@@ -497,6 +585,10 @@ func (m *Dev) publishVariants(
 
 		a, err := publisher.Publish(ctx, ref, dagger.ContainerPublishOpts{
 			PlatformVariants: variants,
+			// zstd shrinks the published image by ~7% over forced
+			// gzip on this content (mostly /nix/store binaries) and
+			// decompresses faster on pull.
+			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
 		if err != nil {
 			return "", fmt.Errorf("publishing %s: %w", ref, err)
@@ -561,7 +653,9 @@ chown -R %s:%s %s
 	// convert cache-mounted directories into immutable Directory
 	// references, so we cp to a non-mounted path, get a Directory
 	// from there, then overlay it after removing the mounts.
-	snapshot := built.WithExec([]string{"cp", "-a", "/nix", "/nix-snapshot"})
+	snapshot := built.
+		WithExec([]string{"cp", "-a", "/nix", "/nix-snapshot"}).
+		WithExec([]string{"sh", "-c", stripScript})
 	nixDir := snapshot.Directory("/nix-snapshot")
 
 	return built.
