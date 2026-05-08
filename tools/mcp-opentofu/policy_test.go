@@ -14,7 +14,7 @@ func TestDefaults(t *testing.T) {
 
 	d := Defaults()
 
-	for _, tool := range []string{toolValidate, toolInit, toolTest} {
+	for _, tool := range []string{toolRunInit, toolRunValidate, toolRunTest} {
 		p, ok := d[tool]
 		require.True(t, ok, "expected default policy for %q", tool)
 		assert.Empty(t, p.AllowedDomains)
@@ -33,15 +33,15 @@ func TestLoadFile(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "policy.json")
 		body := `{
-			"init":     {"allowed_domains": ["registry.opentofu.org"], "allow_read": [], "allow_write": []},
-			"validate": {"allowed_domains": [], "allow_read": [], "allow_write": []}
+			"run_init":     {"allowed_domains": ["registry.opentofu.org"], "allow_read": [], "allow_write": []},
+			"run_validate": {"allowed_domains": [], "allow_read": [], "allow_write": []}
 		}`
 		require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
 
 		got, err := LoadFile(path)
 		require.NoError(t, err)
-		require.Contains(t, got, "init")
-		assert.Equal(t, []string{"registry.opentofu.org"}, got["init"].AllowedDomains)
+		require.Contains(t, got, "run_init")
+		assert.Equal(t, []string{"registry.opentofu.org"}, got["run_init"].AllowedDomains)
 	})
 
 	t.Run("missing", func(t *testing.T) {

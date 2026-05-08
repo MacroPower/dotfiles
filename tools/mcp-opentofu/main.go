@@ -32,7 +32,7 @@ func run() error {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
 	tofuBin := flag.String(
 		"tofu-bin", "tofu",
-		"path to the tofu binary used by the local-tofu tools (validate, init, test);"+
+		"path to the tofu binary used by the local-tofu tools (run_init, run_validate, run_test);"+
 			" resolved via PATH when not absolute",
 	)
 	sandboxFlag := flag.String(
@@ -141,17 +141,17 @@ func run() error {
 	}, h.handleDatasourceDocs)
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        toolValidate,
-		Description: `Run "tofu validate" against a local working directory and return diagnostics. The directory must contain initialized OpenTofu / Terraform configuration; pass init=true to run "tofu init -input=false -no-color -backend=false" first when modules or providers have not yet been fetched.`,
-	}, h.handleValidate)
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        toolInit,
+		Name:        toolRunInit,
 		Description: `Run "tofu init" against a local working directory to download providers and modules. Defaults to -backend=false (local init only); pass backend=true to also configure the backend. Pass upgrade=true to fetch the latest provider/module versions allowed by version constraints.`,
 	}, h.handleInit)
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        toolTest,
+		Name:        toolRunValidate,
+		Description: `Run "tofu validate" against a local working directory and return diagnostics. The directory must contain initialized OpenTofu / Terraform configuration; pass init=true to run "tofu init -input=false -no-color -backend=false" first when modules or providers have not yet been fetched.`,
+	}, h.handleValidate)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        toolRunTest,
 		Description: `Run "tofu test" against a local working directory and return the test transcript. Note: tofu test runs real apply/destroy cycles against actual infrastructure unless tests use mock_provider blocks. Pass init=true when providers/modules are not yet installed. To pass test-specific variables, use a terraform.tfvars file in the working directory or define variables blocks inside the .tftest.hcl files.`,
 	}, h.handleTest)
 
@@ -204,7 +204,7 @@ func loadPolicies(mode SandboxMode, path string, logger *slog.Logger) (Policies,
 		return Defaults(), nil
 	}
 
-	for _, tool := range []string{toolValidate, toolInit, toolTest} {
+	for _, tool := range []string{toolRunInit, toolRunValidate, toolRunTest} {
 		if _, ok := policies[tool]; !ok {
 			policies[tool] = Policy{}
 		}

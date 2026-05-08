@@ -36,21 +36,21 @@ func (h *handler) handleTest(
 ) (*mcp.CallToolResult, any, error) {
 	wdErr := validateWorkingDir(in.WorkingDirectory, ErrTest)
 	if wdErr != nil {
-		return h.toolError(ctx, toolTest, wdErr)
+		return h.toolError(ctx, toolRunTest, wdErr)
 	}
 
 	dir := in.WorkingDirectory
 
-	testPolicy, extras, pathErr := h.buildPolicy(toolTest, in.AllowedPaths)
+	testPolicy, extras, pathErr := h.buildPolicy(toolRunTest, in.AllowedPaths)
 	if pathErr != nil {
-		return h.toolError(ctx, toolTest, fmt.Errorf("%w: %w", ErrTest, pathErr))
+		return h.toolError(ctx, toolRunTest, fmt.Errorf("%w: %w", ErrTest, pathErr))
 	}
 
 	if in.Init {
-		initPolicy := h.policyFor(toolInit)
+		initPolicy := h.policyFor(toolRunInit)
 		initPolicy.AllowRead = mergeAllowRead(initPolicy.AllowRead, extras)
 
-		stop, r, initErr := h.runInitStep(ctx, dir, toolTest, ErrTest, initPolicy)
+		stop, r, initErr := h.runInitStep(ctx, dir, toolRunTest, ErrTest, initPolicy)
 		if stop {
 			return r, nil, initErr
 		}
@@ -60,14 +60,14 @@ func (h *handler) handleTest(
 
 	stdout, stderr, code, err := h.tofu.Run(ctx, dir, testPolicy, args...)
 	if err != nil {
-		return h.execError(ctx, toolTest, ErrTest, "test", err)
+		return h.execError(ctx, toolRunTest, ErrTest, "test", err)
 	}
 
-	if r, ok := h.classifyMissingBinary(ctx, toolTest, ErrTest, "test", stderr, code); ok {
+	if r, ok := h.classifyMissingBinary(ctx, toolRunTest, ErrTest, "test", stderr, code); ok {
 		return r, nil, nil
 	}
 
-	h.logStderr(ctx, toolTest, "test", stderr)
+	h.logStderr(ctx, toolRunTest, "test", stderr)
 
 	text := renderTest(dir, code, stdout, stderr)
 

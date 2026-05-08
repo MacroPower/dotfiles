@@ -46,17 +46,17 @@ func TestPolicyForReassignDoesNotAffectMap(t *testing.T) {
 
 	h := &handler{
 		policies: Policies{
-			toolInit: {
+			toolRunInit: {
 				AllowedDomains: []string{"example.com"},
 				AllowRead:      []string{"/a"},
 			},
 		},
 	}
 
-	got := h.policyFor(toolInit)
+	got := h.policyFor(toolRunInit)
 	got.AllowRead = mergeAllowRead(got.AllowRead, []string{"/b"})
 
-	assert.Equal(t, []string{"/a"}, h.policies[toolInit].AllowRead,
+	assert.Equal(t, []string{"/a"}, h.policies[toolRunInit].AllowRead,
 		"reassigning the local Policy field must not mutate the source map")
 }
 
@@ -77,7 +77,7 @@ func TestHandleInitPassesPolicy(t *testing.T) {
 	fake := newFakeExecutor(fakeResponse{stdout: "ok"})
 	h := newTofuTestHandler(t, fake)
 	h.policies = Policies{
-		toolInit: {AllowedDomains: []string{"registry.opentofu.org"}},
+		toolRunInit: {AllowedDomains: []string{"registry.opentofu.org"}},
 	}
 
 	r, _, err := h.handleInit(t.Context(), nil, InitInput{WorkingDirectory: dir})

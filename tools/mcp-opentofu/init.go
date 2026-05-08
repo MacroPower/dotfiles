@@ -31,14 +31,14 @@ func (h *handler) handleInit(
 ) (*mcp.CallToolResult, any, error) {
 	wdErr := validateWorkingDir(in.WorkingDirectory, ErrInit)
 	if wdErr != nil {
-		return h.toolError(ctx, toolInit, wdErr)
+		return h.toolError(ctx, toolRunInit, wdErr)
 	}
 
 	dir := in.WorkingDirectory
 
-	policy, _, pathErr := h.buildPolicy(toolInit, in.AllowedPaths)
+	policy, _, pathErr := h.buildPolicy(toolRunInit, in.AllowedPaths)
 	if pathErr != nil {
-		return h.toolError(ctx, toolInit, fmt.Errorf("%w: %w", ErrInit, pathErr))
+		return h.toolError(ctx, toolRunInit, fmt.Errorf("%w: %w", ErrInit, pathErr))
 	}
 
 	args := []string{"init", "-input=false", "-no-color", fmt.Sprintf("-backend=%t", in.Backend)}
@@ -48,21 +48,21 @@ func (h *handler) handleInit(
 
 	stdout, stderr, code, err := h.tofu.Run(ctx, dir, policy, args...)
 	if err != nil {
-		return h.execError(ctx, toolInit, ErrInit, "init", err)
+		return h.execError(ctx, toolRunInit, ErrInit, "init", err)
 	}
 
 	if code != 0 {
-		if r, ok := h.classifyMissingBinary(ctx, toolInit, ErrInit, "init", stderr, code); ok {
+		if r, ok := h.classifyMissingBinary(ctx, toolRunInit, ErrInit, "init", stderr, code); ok {
 			return r, nil, nil
 		}
 
-		return h.toolError(ctx, toolInit,
+		return h.toolError(ctx, toolRunInit,
 			fmt.Errorf("%w: 'tofu init' exited with code %d:\n%s",
 				ErrInit, code, combineOutput(stdout, stderr)),
 		)
 	}
 
-	h.logStderr(ctx, toolInit, "init", stderr)
+	h.logStderr(ctx, toolRunInit, "init", stderr)
 
 	return textResult(renderInit(dir, stdout, stderr)), nil, nil
 }

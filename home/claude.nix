@@ -610,7 +610,7 @@ let
   '';
 
   opentofuPolicyFile = (pkgs.formats.json { }).generate "mcp-opentofu-policy.json" {
-    init = {
+    run_init = {
       allowed_domains = [
         "registry.opentofu.org"
         "registry.terraform.io"
@@ -622,7 +622,7 @@ let
       allow_read = [ ];
       allow_write = [ ];
     };
-    validate = {
+    run_validate = {
       allowed_domains = [ ];
       allow_read = [ ];
       allow_write = [ ];
@@ -1609,20 +1609,20 @@ in
           "mcp__opentofu__get_datasource_docs"
         ];
         permissions.ask = [
-          "mcp__opentofu__init"
-          "mcp__opentofu__validate"
+          "mcp__opentofu__run_init"
+          "mcp__opentofu__run_validate"
         ];
         sandbox.allowedDomains = [ "api.opentofu.org" ];
         commandRules.deny = [
           {
             command = "tofu";
             args = [ "init" ];
-            reason = "Do not run tofu init directly. Use mcp__opentofu__init instead.";
+            reason = "Do not run tofu init directly. Use mcp__opentofu__run_init instead.";
           }
           {
             command = "tofu";
             args = [ "validate" ];
-            reason = "Do not run tofu validate directly. Use mcp__opentofu__validate instead.";
+            reason = "Do not run tofu validate directly. Use mcp__opentofu__run_validate instead.";
           }
         ];
         fetchRules.deny = [

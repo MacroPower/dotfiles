@@ -245,21 +245,21 @@ func (h *handler) handleValidate(
 ) (*mcp.CallToolResult, any, error) {
 	wdErr := validateWorkingDir(in.WorkingDirectory, ErrValidate)
 	if wdErr != nil {
-		return h.toolError(ctx, toolValidate, wdErr)
+		return h.toolError(ctx, toolRunValidate, wdErr)
 	}
 
 	dir := in.WorkingDirectory
 
-	validatePolicy, extras, pathErr := h.buildPolicy(toolValidate, in.AllowedPaths)
+	validatePolicy, extras, pathErr := h.buildPolicy(toolRunValidate, in.AllowedPaths)
 	if pathErr != nil {
-		return h.toolError(ctx, toolValidate, fmt.Errorf("%w: %w", ErrValidate, pathErr))
+		return h.toolError(ctx, toolRunValidate, fmt.Errorf("%w: %w", ErrValidate, pathErr))
 	}
 
 	if in.Init {
-		initPolicy := h.policyFor(toolInit)
+		initPolicy := h.policyFor(toolRunInit)
 		initPolicy.AllowRead = mergeAllowRead(initPolicy.AllowRead, extras)
 
-		stop, r, initErr := h.runInitStep(ctx, dir, toolValidate, ErrValidate, initPolicy)
+		stop, r, initErr := h.runInitStep(ctx, dir, toolRunValidate, ErrValidate, initPolicy)
 		if stop {
 			return r, nil, initErr
 		}
@@ -267,14 +267,14 @@ func (h *handler) handleValidate(
 
 	stdout, stderr, code, err := h.tofu.Run(ctx, dir, validatePolicy, "validate", "-json", "-no-color")
 	if err != nil {
-		return h.execError(ctx, toolValidate, ErrValidate, "validate", err)
+		return h.execError(ctx, toolRunValidate, ErrValidate, "validate", err)
 	}
 
-	if r, ok := h.classifyMissingBinary(ctx, toolValidate, ErrValidate, "validate", stderr, code); ok {
+	if r, ok := h.classifyMissingBinary(ctx, toolRunValidate, ErrValidate, "validate", stderr, code); ok {
 		return r, nil, nil
 	}
 
-	h.logStderr(ctx, toolValidate, "validate", stderr)
+	h.logStderr(ctx, toolRunValidate, "validate", stderr)
 
 	text := renderValidateOutput(dir, stdout, stderr)
 

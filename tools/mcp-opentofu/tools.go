@@ -17,9 +17,9 @@ const (
 	toolModuleDetails   = "get_module_details"
 	toolResourceDocs    = "get_resource_docs"
 	toolDatasourceDocs  = "get_datasource_docs"
-	toolValidate        = "validate"
-	toolInit            = "init"
-	toolTest            = "test"
+	toolRunInit         = "run_init"
+	toolRunValidate     = "run_validate"
+	toolRunTest         = "run_test"
 )
 
 // SearchInput is the input schema for the search_registry tool.

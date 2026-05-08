@@ -34,17 +34,17 @@ You can:
 - **Search** for providers, modules, resources, and data sources using the ` + "`search_registry`" + ` tool.
 - **Get detailed information** about a provider or module using ` + "`get_provider_details`" + ` or ` + "`get_module_details`" + `.
 - **Retrieve documentation** for a specific resource or data source using ` + "`get_resource_docs`" + ` or ` + "`get_datasource_docs`" + `.
-- **Validate a local configuration directory** using ` + "`validate`" + ` (shells out to a local ` + "`tofu`" + ` binary).
-- **Initialize a local configuration directory** using ` + "`init`" + ` (shells out to a local ` + "`tofu`" + ` binary) to download providers and modules.
-- **Run test files** in a local configuration directory using ` + "`test`" + ` (shells out to a local ` + "`tofu`" + ` binary). Note: ` + "`tofu test`" + ` provisions real infrastructure (apply then destroy) unless tests use ` + "`mock_provider`" + ` blocks.
+- **Initialize a local configuration directory** using ` + "`run_init`" + ` (shells out to a local ` + "`tofu`" + ` binary) to download providers and modules.
+- **Validate a local configuration directory** using ` + "`run_validate`" + ` (shells out to a local ` + "`tofu`" + ` binary).
+- **Run test files** in a local configuration directory using ` + "`run_test`" + ` (shells out to a local ` + "`tofu`" + ` binary). Note: ` + "`tofu test`" + ` provisions real infrastructure (apply then destroy) unless tests use ` + "`mock_provider`" + ` blocks.
 
 **Tips:**
 - Do **not** include prefixes like ` + "`terraform-provider-`" + ` or ` + "`terraform-aws-`" + ` in names.
 - Use simple search terms (e.g., ` + "`aws`" + `, ` + "`kubernetes`" + `, ` + "`s3`" + `, ` + "`database`" + `).
 - For resources and data sources, use the short name (e.g., ` + "`s3_bucket`" + `, ` + "`instance`" + `, ` + "`ami`" + `).
-- ` + "`validate`" + ` requires an absolute ` + "`working_directory`" + `; pass ` + "`init=true`" + ` for a lightweight local init (` + "`-backend=false`" + `) when providers or modules have not been fetched yet.
-- For a full init that may also configure the backend, use the standalone ` + "`init`" + ` tool with ` + "`backend=true`" + `; pass ` + "`upgrade=true`" + ` to fetch the latest provider/module versions allowed by constraints.
-- ` + "`test`" + ` discovers ` + "`*.tftest.hcl`" + ` / ` + "`*.tofutest.hcl`" + ` files in the working directory and a sibling ` + "`tests`" + ` directory; use ` + "`test_directory`" + ` to point elsewhere and ` + "`filter`" + ` to limit which files run. A non-zero exit means at least one assertion failed and is surfaced in the rendered transcript, not as a tool error.
+- ` + "`run_validate`" + ` requires an absolute ` + "`working_directory`" + `; pass ` + "`init=true`" + ` for a lightweight local init (` + "`-backend=false`" + `) when providers or modules have not been fetched yet.
+- For a full init that may also configure the backend, use the standalone ` + "`run_init`" + ` tool with ` + "`backend=true`" + `; pass ` + "`upgrade=true`" + ` to fetch the latest provider/module versions allowed by constraints.
+- ` + "`run_test`" + ` discovers ` + "`*.tftest.hcl`" + ` / ` + "`*.tofutest.hcl`" + ` files in the working directory and a sibling ` + "`tests`" + ` directory; use ` + "`test_directory`" + ` to point elsewhere and ` + "`filter`" + ` to limit which files run. A non-zero exit means at least one assertion failed and is surfaced in the rendered transcript, not as a tool error.
 
 This server targets OpenTofu (a fork of HashiCorp Terraform).
 `
