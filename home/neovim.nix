@@ -350,26 +350,29 @@ in
           local mc = require("multicursor-nvim")
           mc.setup()
 
-          vim.keymap.set({ "n", "x" }, "<up>",           function() mc.lineAddCursor(-1) end,  { desc = "add cursor up" })
-          vim.keymap.set({ "n", "x" }, "<down>",         function() mc.lineAddCursor(1) end,   { desc = "add cursor down" })
-          vim.keymap.set({ "n", "x" }, "<leader><up>",   function() mc.lineSkipCursor(-1) end, { desc = "skip cursor up" })
-          vim.keymap.set({ "n", "x" }, "<leader><down>", function() mc.lineSkipCursor(1) end,  { desc = "skip cursor down" })
+          -- VSCode-style single-chord bindings for high-frequency actions
+          vim.keymap.set({ "n", "x" }, "<C-n>",      function() mc.matchAddCursor(1) end,  { desc = "match add next" })
+          vim.keymap.set({ "n", "x" }, "<C-S-n>",    function() mc.matchAddCursor(-1) end, { desc = "match add prev" })
+          vim.keymap.set({ "n", "x" }, "<M-n>",      mc.matchAllAddCursors,                { desc = "match all" })
+          vim.keymap.set({ "n", "x" }, "<C-A-Up>",   function() mc.lineAddCursor(-1) end,  { desc = "add cursor up" })
+          vim.keymap.set({ "n", "x" }, "<C-A-Down>", function() mc.lineAddCursor(1) end,   { desc = "add cursor down" })
+          vim.keymap.set({ "n", "x" }, "<C-S-Up>",   function() mc.lineSkipCursor(-1) end, { desc = "skip cursor up" })
+          vim.keymap.set({ "n", "x" }, "<C-S-Down>", function() mc.lineSkipCursor(1) end,  { desc = "skip cursor down" })
 
-          vim.keymap.set({ "n", "x" }, "<leader>mn", function() mc.matchAddCursor(1) end,    { desc = "match add next" })
-          vim.keymap.set({ "n", "x" }, "<leader>mN", function() mc.matchAddCursor(-1) end,   { desc = "match add prev" })
+          -- Niche actions remain on leader
           vim.keymap.set({ "n", "x" }, "<leader>ms", function() mc.matchSkipCursor(1) end,   { desc = "match skip next" })
           vim.keymap.set({ "n", "x" }, "<leader>mS", function() mc.matchSkipCursor(-1) end,  { desc = "match skip prev" })
-          vim.keymap.set({ "n", "x" }, "<leader>mA", mc.matchAllAddCursors,                  { desc = "match all" })
           vim.keymap.set("n",          "<leader>ma", mc.alignCursors,                        { desc = "align cursors" })
           vim.keymap.set("x",          "<leader>mt", function() mc.transposeCursors(1) end,  { desc = "transpose >" })
           vim.keymap.set("x",          "<leader>mT", function() mc.transposeCursors(-1) end, { desc = "transpose <" })
           vim.keymap.set("n",          "<leader>mr", mc.restoreCursors,                      { desc = "restore cursors" })
 
-          vim.keymap.set("n", "<c-leftmouse>",   mc.handleMouse)
-          vim.keymap.set("n", "<c-leftdrag>",    mc.handleMouseDrag)
-          vim.keymap.set("n", "<c-leftrelease>", mc.handleMouseRelease)
+          -- VSCode-style alt+click adds a cursor at the click position
+          vim.keymap.set("n", "<M-LeftMouse>",   mc.handleMouse)
+          vim.keymap.set("n", "<M-LeftDrag>",    mc.handleMouseDrag)
+          vim.keymap.set("n", "<M-LeftRelease>", mc.handleMouseRelease)
 
-          vim.keymap.set({ "n", "x" }, "<c-q>", mc.toggleCursor, { desc = "toggle cursor" })
+          vim.keymap.set({ "n", "x" }, "<C-q>", mc.toggleCursor, { desc = "toggle cursor" })
 
           mc.addKeymapLayer(function(layerSet)
             layerSet({ "n", "x" }, "<left>",  mc.prevCursor)

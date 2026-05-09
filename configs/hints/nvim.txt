@@ -45,9 +45,13 @@ EDITING
 LSP
   K          hover
 MULTICURSOR
-  ↑/↓        add cursor
-  ←/→        prev/next cursor (layer)
+  C-n/C-S-n  match add next/prev
+  M-n        match all
+  C-A-↑/↓    add cursor up/down
+  C-S-↑/↓    skip cursor up/down
+  M-click    cursor at click
   C-q        toggle cursor
+  ←/→        prev/next cursor (layer)
   esc        clear cursors
 TELESCOPE PICKER
   C-x/v/t    open in split/vsplit/tab
