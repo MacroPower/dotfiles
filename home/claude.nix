@@ -556,6 +556,7 @@ let
         --command-rules ${
           lib.escapeShellArg (builtins.toJSON (bundledCommandDeny ++ cfg.extraCommandRules.deny))
         } \
+        ${lib.optionalString pkgs.stdenv.isDarwin "--auto-allow"} \
         "$@"
     '';
   };

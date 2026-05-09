@@ -25,12 +25,19 @@ import (
 // commitSkills lists the wrap-up skill names (without leading slash)
 // whose UserPromptSubmit invocation clears plan-guard state. A nil or
 // empty slice disables the failsafe.
+//
+// autoAllow, when true, makes [handleBash] emit a PreToolUse "allow"
+// decision on the fall-through paths (after deny + RTK delegate),
+// suppressing Claude Code's static Bash analyzer prompt for shell
+// expansions. Only safe when a sandbox is enforcing the actual
+// containment.
 type config struct {
 	postImpl       *PostImplCatalog
 	commandRules   *CommandRules
 	commitSkills   []string
 	rtkRewrite     string
 	kubeconfigPath string
+	autoAllow      bool
 }
 
 func configFromEnv() config {
@@ -54,17 +61,18 @@ func main() {
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
 	commandRules := flag.String("command-rules", "", "JSON array of command deny rules ({command, args, except, reason})")
+	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *autoAllow)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON string) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON string, autoAllow bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -124,6 +132,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.postImpl = catalog
 	cfg.commitSkills = skills
 	cfg.commandRules = rules
+	cfg.autoAllow = autoAllow
 
 	return run(ctx, os.Stdin, os.Stdout, event, tool, store, cfg, logger)
 }

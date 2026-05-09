@@ -84,10 +84,49 @@ func handleBash(ctx context.Context, input []byte, stdout io.Writer, cfg config,
 			slog.String("rewritten", rewritten),
 		)
 
-		return encodeJSON(stdout, rewriteResponse(rewritten))
+		resp := rewriteResponse(rewritten)
+		if cfg.autoAllow {
+			mergeAllow(resp, "sandbox auto-allow (kubectl rewrite)")
+		}
+
+		return encodeJSON(stdout, resp)
 	}
 
-	return delegate(ctx, input, cfg.rtkRewrite, logger)
+	return delegateOrAutoAllow(ctx, input, stdout, cfg, logger)
+}
+
+// delegateOrAutoAllow runs RTK and, when [config.autoAllow] is set,
+// emits a PreToolUse "allow" decision if RTK produced no rewrite of
+// its own. Without auto-allow, falls through to [delegate] so streaming
+// behavior on Linux/non-sandbox hosts is unchanged.
+func delegateOrAutoAllow(ctx context.Context, input []byte, stdout io.Writer, cfg config, logger *slog.Logger) error {
+	if !cfg.autoAllow {
+		return delegate(ctx, input, cfg.rtkRewrite, logger)
+	}
+
+	captured, err := delegateCapture(ctx, input, cfg.rtkRewrite, logger)
+	if err != nil {
+		// Forward whatever RTK already wrote before erroring; a complete
+		// JSON object may have landed on stdout before a downstream step
+		// failed. Propagate the error so the wrapper exits non-zero
+		// instead of silently swallowing RTK failures under auto-allow.
+		if len(captured) > 0 {
+			_, _ = stdout.Write(captured)
+		}
+
+		return err
+	}
+
+	if len(captured) > 0 {
+		_, err = stdout.Write(captured)
+		if err != nil {
+			return fmt.Errorf("forwarding RTK output: %w", err)
+		}
+
+		return nil
+	}
+
+	return encodeJSON(stdout, allowResponse("sandbox auto-allow"))
 }
 
 // hasKubectl walks the AST looking for commands where the first word is
@@ -119,7 +158,11 @@ func hasKubectl(prog *syntax.File) bool {
 	return found
 }
 
-func delegate(ctx context.Context, input []byte, rtkRewrite string, logger *slog.Logger) error {
+// runRTK execs rtkRewrite with input on stdin, sending RTK's stdout to
+// the given writer. Stderr goes to os.Stderr so RTK's missing-jq,
+// missing-rtk, and version-too-old warnings reach the user. Empty
+// rtkRewrite is a no-op so callers don't special-case unset RTK.
+func runRTK(ctx context.Context, input []byte, rtkRewrite string, stdout io.Writer, logger *slog.Logger) error {
 	if rtkRewrite == "" {
 		return nil
 	}
@@ -128,7 +171,7 @@ func delegate(ctx context.Context, input []byte, rtkRewrite string, logger *slog
 
 	cmd := exec.CommandContext(ctx, rtkRewrite)
 	cmd.Stdin = bytes.NewReader(input)
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = stdout
 	cmd.Stderr = os.Stderr
 
 	err := cmd.Run()
@@ -137,4 +180,28 @@ func delegate(ctx context.Context, input []byte, rtkRewrite string, logger *slog
 	}
 
 	return nil
+}
+
+func delegate(ctx context.Context, input []byte, rtkRewrite string, logger *slog.Logger) error {
+	return runRTK(ctx, input, rtkRewrite, os.Stdout, logger)
+}
+
+// delegateCapture runs RTK with a buffered stdout so the caller can
+// decide whether to forward RTK's output or substitute a different
+// response.
+//
+// Trade-off: rtk-rewrite.sh translates `rtk rewrite` exit 2 (RTK's own
+// deny) into "exit 0 + empty stdout", relying on Claude Code's native
+// deny rules to catch the same command. Under auto-allow, "empty
+// stdout" means "emit allow", so an RTK-only deny rule (one not also
+// covered by [DenyCommandRule] or settings.permissions.deny) would
+// silently run. The bundled deny set covers the cases we care about,
+// and reproducing RTK's deny intent would require execing `rtk rewrite`
+// directly and re-implementing its exit-code protocol.
+func delegateCapture(ctx context.Context, input []byte, rtkRewrite string, logger *slog.Logger) ([]byte, error) {
+	var buf bytes.Buffer
+
+	err := runRTK(ctx, input, rtkRewrite, &buf, logger)
+
+	return buf.Bytes(), err
 }

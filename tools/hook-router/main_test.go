@@ -186,6 +186,35 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, "KUBECONFIG=/tmp/claude-kubectx/12345/kubeconfig kubectl get pods", updated["command"])
 	})
 
+	t.Run("PreToolUse Bash: autoAllow flows through run() to handleBash", func(t *testing.T) {
+		t.Parallel()
+
+		autoCfg := config{
+			commandRules: canonicalRules(),
+			autoAllow:    true,
+		}
+
+		input := makeInput(map[string]any{
+			"command": "echo $USER",
+		})
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, autoCfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+		assert.Equal(t, "allow", hso["permissionDecision"])
+		assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
+	})
+
 	t.Run("PreToolUse Bash: denied kubectx", func(t *testing.T) {
 		t.Parallel()
 
