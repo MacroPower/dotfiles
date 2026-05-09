@@ -628,6 +628,11 @@ let
       allow_read = [ ];
       allow_write = [ ];
     };
+    run_test = {
+      allowed_domains = [ ];
+      allow_read = [ ];
+      allow_write = [ ];
+    };
   };
 
   githubWrapper = pkgs.writeShellScript "github-mcp-wrapper" ''
@@ -1612,6 +1617,7 @@ in
         permissions.ask = [
           "mcp__opentofu__run_init"
           "mcp__opentofu__run_validate"
+          "mcp__opentofu__run_test"
         ];
         sandbox.allowedDomains = [ "api.opentofu.org" ];
         commandRules.deny = [
@@ -1624,6 +1630,11 @@ in
             command = "tofu";
             args = [ "validate" ];
             reason = "Do not run tofu validate directly. Use mcp__opentofu__run_validate instead.";
+          }
+          {
+            command = "tofu";
+            args = [ "test" ];
+            reason = "Do not run tofu test directly. Use mcp__opentofu__run_test instead.";
           }
         ];
         fetchRules.deny = [
