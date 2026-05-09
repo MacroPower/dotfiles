@@ -14,20 +14,20 @@ import (
 // pendingPlanTTLSeconds bounds how long a cwd-keyed pending plan
 // handoff is honored after [handleExitPlanModePre] records it.
 //
-// In the Claude Code TUI, "Yes, clear context (...) and bypass
-// permissions" is a single button. The sequence
+// The sequence:
 //
 //  1. PreToolUse:ExitPlanMode (count==2) writes the pending row
-//  2. Claude Code clears context and creates the new session
-//  3. SessionStart fires and consumes the row
+//  2. User reviews the plan, then clicks "Yes, clear context (...)
+//     and bypass permissions"
+//  3. Claude Code clears context and creates the new session
+//  4. SessionStart fires and consumes the row
 //
-// is atomic from the user's perspective — there is no separate "clear
-// later" affordance — so the gap between (1) and (3) is sub-second
-// system latency. A short TTL is therefore deterministic in practice
-// while still preventing a stuck pending row (e.g. SessionStart hook
-// crash, DB busy at the wrong moment) from attaching to an unrelated
-// future session in the same cwd.
-const pendingPlanTTLSeconds = 30
+// Most of the time between (1) and (4) is the user reading the plan
+// and deciding whether to accept it, which can take a while. The TTL
+// needs to cover that wait. It also needs to expire stuck rows
+// (SessionStart hook crashed, DB was busy, etc.) before they get
+// picked up by an unrelated future session in the same cwd.
+const pendingPlanTTLSeconds = 3600
 
 // resolveCwd returns [filepath.EvalSymlinks] of raw when the path
 // resolves, falling back to raw with a warn-log when it does not.

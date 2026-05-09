@@ -1264,9 +1264,9 @@ func TestHandleSessionStart_StalePendingPlanIgnored(t *testing.T) {
 	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
 	require.NoError(t, err)
 
-	// Backdate the row beyond the 300s TTL.
+	// Backdate the row beyond the 3600s TTL.
 	_, err = store.db.ExecContext(ctx,
-		`UPDATE pending_plans SET updated_at = datetime('now', '-1 hour') WHERE cwd = ?`,
+		`UPDATE pending_plans SET updated_at = datetime('now', '-2 hours') WHERE cwd = ?`,
 		resolved)
 	require.NoError(t, err)
 
