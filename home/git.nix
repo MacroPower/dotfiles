@@ -22,6 +22,7 @@
 
     ignores = [
       "**/.claude/settings.local.json"
+      "**/.claude/scheduled_tasks.lock"
       "**/.claude/worktrees/"
       "**/.worktrees/"
       "**/.chief/"
