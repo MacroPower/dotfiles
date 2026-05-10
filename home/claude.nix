@@ -731,8 +731,82 @@ let
     else
       "${config.home.homeDirectory}/.local/share/claude/research";
 
+  extraDenyReadPaths = [ "/" ];
+
   extraReadPaths = [
     "/nix/store"
+    "/nix/var/nix/profiles"
+
+    "/etc"
+    "/private/etc"
+    "/usr"
+    "/bin"
+    "/sbin"
+
+    # macOS frameworks and developer tools (CLT, Xcode toolchain).
+    "/Library/Frameworks"
+    "/Library/Apple"
+    "/Library/Developer"
+    "/System"
+
+    # Narrow /dev set — blanket /dev would expose /dev/disk*, /dev/kmem,
+    # /dev/mem. Mirrors the nodes Claude Code auto-allows for writes plus
+    # common stdin/entropy/fd nodes.
+    "/dev/null"
+    "/dev/zero"
+    "/dev/random"
+    "/dev/urandom"
+    "/dev/stdin"
+    "/dev/stdout"
+    "/dev/stderr"
+    "/dev/tty"
+    "/dev/fd"
+    "/dev/dtracehelper"
+    "/dev/autofs_nowait"
+
+    "/tmp"
+    "/private/tmp"
+
+    # macOS dyld shared cache — every binary launch reads this.
+    "/var/db/dyld"
+    "/private/var/db/dyld"
+
+    # macOS per-user temp. Claude Code overrides $TMPDIR, but Apple
+    # frameworks (codesign, security, simctl, parts of Xcode CLT)
+    # resolve via confstr(_CS_DARWIN_USER_TEMP_DIR) and still hit
+    # /var/folders.
+    "/var/folders"
+    "/private/var/folders"
+
+    "/opt/homebrew"
+
+    "~/.config"
+    "~/.cache"
+    "~/.local/state"
+    "~/.local/share"
+    "~/.local/bin"
+    "~/.claude"
+
+    # ~/Library narrowed — blanket access leaks Keychains, Cookies,
+    # Messages, Mail, Containers, Application Support subdirs, etc.
+    "~/Library/Application Support/rtk"
+    "~/Library/Caches"
+    "~/Library/Preferences"
+    "~/Library/Fonts"
+    "~/Library/Frameworks"
+
+    "~/Documents/repos"
+    "~/Documents/screenshots"
+    "~/go"
+
+    # home-manager `home.file` places these directly under $HOME, so
+    # `~/.config/**` and friends don't cover them.
+    "~/Taskfile.yaml"
+    "~/task"
+
+    # Listed explicitly so the read list doesn't depend on the vaultsDir
+    # default (which resolves under ~/Library/Mobile Documents/...).
+    researchDir
   ]
   ++ bundledReadPaths;
 
@@ -2056,6 +2130,7 @@ in
                 "Read(//**/.azure/**)"
                 "Read(//**/.config/gcloud/**)"
                 "Read(//**/.config/hcloud/config.json)"
+                "Read(//**/.config/argocd/**)"
                 "Read(//**/.snyk)"
                 "Read(//**/.wrangler/**)"
 
@@ -2073,6 +2148,8 @@ in
                 "Read(//**/.doppler/**)"
                 "Read(//**/age/keys.txt)"
                 "Read(//**/rclone.conf)"
+                "Read(//**/.op/**)"
+                "Read(//**/.config/op/**)"
 
                 # IaC state & credentials
                 "Read(//**/credentials.tfrc.json)"
@@ -2085,6 +2162,9 @@ in
                 # CI/CD & deployment tokens
                 "Read(//**/.config/gh/hosts.yml)"
                 "Read(//**/.jira.d/config.yml)"
+                "Read(//**/.config/dagger/**)"
+                "Read(//**/.config/spacelift/**)"
+                "Read(//**/.spacelift/**)"
 
                 # Package manager credentials
                 "Read(//**/.npmrc)"
@@ -2100,6 +2180,10 @@ in
 
                 # Claude Code credentials
                 "Read(//**/.claude/.credentials.json)"
+
+                # Developer tool sessions & generated keys
+                "Read(//**/atuin/key)"
+                "Read(//**/.lima/_config/user)"
               ]
               ++ bundledDeny
               ++ cfg.extraPermissions.deny;
@@ -2151,6 +2235,7 @@ in
                 ++ bundledDomains;
               };
               filesystem = {
+                denyRead = extraDenyReadPaths;
                 allowRead = extraReadPaths;
                 allowWrite = extraWritePaths;
               };
