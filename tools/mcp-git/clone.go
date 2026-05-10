@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -57,6 +58,10 @@ var (
 	// ErrClone wraps the underlying git clone failure.
 	ErrClone = errors.New("git clone failed")
 
+	// ErrTimeout is returned when a git operation exceeds the
+	// configured timeout.
+	ErrTimeout = errors.New("git operation timed out")
+
 	// scpPattern matches SCP-style git URLs (e.g., git@github.com:org/repo).
 	scpPattern = regexp.MustCompile(`^\w+@[\w.-]+:`)
 
@@ -84,14 +89,43 @@ type CloneInput struct {
 	SingleBranch bool     `json:"single_branch,omitzero" jsonschema:"Clone only the specified branch"`
 	Sparse       bool     `json:"sparse,omitzero"        jsonschema:"Enable sparse checkout (only root files unless sparse_paths is set)"`
 	SparsePaths  []string `json:"sparse_paths,omitzero"  jsonschema:"Paths for sparse checkout (implies sparse)"`
+
+	// TimeoutSeconds overrides the server default for this call.
+	// Zero means use the default; per-call disable is not supported.
+	TimeoutSeconds int `json:"timeout_seconds,omitzero" jsonschema:"Override the default per-operation timeout in seconds; 0 means use the server default (disable is operator-only via --timeout 0)"`
 }
 
 // cloneHandler implements the git_clone tool handler.
 type cloneHandler struct {
 	allowDirs     []string
-	allowInsecure bool   // permit http:// and git:// URLs
-	allowFileURLs bool   // testing only: permit file:// and local path URLs
-	token         string // GitHub personal access token for HTTPS auth
+	allowInsecure bool          // permit http:// and git:// URLs
+	allowFileURLs bool          // testing only: permit file:// and local path URLs
+	timeout       time.Duration // timeout bounds each git invocation; 0 disables.
+	token         string        // GitHub personal access token for HTTPS auth
+}
+
+// effectiveTimeout returns the timeout to apply for a single
+// git invocation. A non-zero perCallSecs overrides h.timeout;
+// otherwise h.timeout is used (and 0 disables the bound).
+func (h *cloneHandler) effectiveTimeout(perCallSecs int) time.Duration {
+	if perCallSecs > 0 {
+		return time.Duration(perCallSecs) * time.Second
+	}
+
+	return h.timeout
+}
+
+// timeoutError returns an [ErrTimeout]-wrapped error when ctx
+// has expired, and nil otherwise. Use it inside an existing
+// `if err != nil` branch around a git subprocess to convert a
+// generic subprocess failure into a recognizable timeout.
+func timeoutError(ctx context.Context) error {
+	ctxErr := ctx.Err()
+	if ctxErr == nil {
+		return nil
+	}
+
+	return fmt.Errorf("%w: %w", ErrTimeout, ctxErr)
 }
 
 func (h *cloneHandler) handle(
@@ -139,6 +173,12 @@ func (h *cloneHandler) handle(
 	destErr := h.checkDest(input.Dest)
 	if destErr != nil {
 		return toolError(destErr), nil, nil
+	}
+
+	if d := h.effectiveTimeout(input.TimeoutSeconds); d > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d)
+		defer cancel()
 	}
 
 	err := os.MkdirAll(filepath.Dir(input.Dest), 0o755) //nolint:gosec // G301: dest is user-provided input.
@@ -285,6 +325,10 @@ func (h *cloneHandler) pull(ctx context.Context, url, dest string) (*mcp.CallToo
 
 	err := cmd.Run()
 	if err != nil {
+		if tErr := timeoutError(ctx); tErr != nil {
+			return toolError(tErr), nil, nil
+		}
+
 		slog.WarnContext(ctx, "pulling latest changes", slog.Any("error", err))
 
 		return toolError(fmt.Errorf("pulling latest changes in %s: %w", dest, err)), nil, nil
@@ -307,6 +351,10 @@ func (h *cloneHandler) checkOrigin(ctx context.Context, url, dest string) error 
 
 	out, err := cmd.Output()
 	if err != nil {
+		if tErr := timeoutError(ctx); tErr != nil {
+			return tErr
+		}
+
 		return fmt.Errorf("%w: reading origin: %w", ErrOriginMismatch, err)
 	}
 
@@ -333,6 +381,10 @@ func (h *cloneHandler) clone(ctx context.Context, input CloneInput) (*mcp.CallTo
 
 	err := cmd.Run()
 	if err != nil {
+		if tErr := timeoutError(ctx); tErr != nil {
+			return toolError(tErr), nil, nil
+		}
+
 		return toolError(fmt.Errorf("%w: %w", ErrClone, err)), nil, nil
 	}
 
@@ -347,6 +399,10 @@ func (h *cloneHandler) clone(ctx context.Context, input CloneInput) (*mcp.CallTo
 		scCmd.Stderr = os.Stderr
 
 		if scErr := scCmd.Run(); scErr != nil {
+			if tErr := timeoutError(ctx); tErr != nil {
+				return toolError(tErr), nil, nil
+			}
+
 			return toolError(fmt.Errorf("sparse checkout failed: %w", scErr)), nil, nil
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -36,11 +37,17 @@ func main() {
 		"permit unencrypted URL schemes (http, git)",
 	)
 
+	timeout := flag.Duration(
+		"timeout", time.Minute,
+		"max duration for a single git operation (0 disables)",
+	)
+
 	flag.Parse()
 
 	h := &cloneHandler{
 		allowDirs:     allowDirs,
 		allowInsecure: *allowInsecure,
+		timeout:       *timeout,
 		token:         os.Getenv("GH_TOKEN"),
 	}
 

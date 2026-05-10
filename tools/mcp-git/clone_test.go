@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -666,4 +667,99 @@ func TestHandleOriginMismatch(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.IsError)
 	assert.Contains(t, resultText(t, result), "origin URL mismatch")
+}
+
+func TestEffectiveTimeout(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		handlerTimeout time.Duration
+		perCallSecs    int
+		want           time.Duration
+	}{
+		"per-call wins over default": {
+			handlerTimeout: time.Minute,
+			perCallSecs:    5,
+			want:           5 * time.Second,
+		},
+		"default used when per-call zero": {
+			handlerTimeout: time.Minute,
+			perCallSecs:    0,
+			want:           time.Minute,
+		},
+		"zero everywhere": {
+			handlerTimeout: 0,
+			perCallSecs:    0,
+			want:           0,
+		},
+		"large per-call over small default": {
+			handlerTimeout: time.Second,
+			perCallSecs:    600,
+			want:           10 * time.Minute,
+		},
+		"per-call when default disabled": {
+			handlerTimeout: 0,
+			perCallSecs:    10,
+			want:           10 * time.Second,
+		},
+		"negative per-call falls back to default": {
+			handlerTimeout: time.Minute,
+			perCallSecs:    -1,
+			want:           time.Minute,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &cloneHandler{timeout: tt.handlerTimeout}
+			assert.Equal(t, tt.want, h.effectiveTimeout(tt.perCallSecs))
+		})
+	}
+}
+
+func TestHandleCloneTimeout(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	h := &cloneHandler{allowFileURLs: true, timeout: time.Nanosecond}
+
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	result, _, err := h.handle(t.Context(), nil, CloneInput{
+		URL:  bare,
+		Dest: dest,
+	})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	assert.Contains(t, resultText(t, result), "timed out")
+}
+
+func TestHandlePullTimeout(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	// First call clones with no timeout configured.
+	cloneH := &cloneHandler{allowFileURLs: true}
+
+	result, _, err := cloneH.handle(t.Context(), nil, CloneInput{
+		URL:  bare,
+		Dest: dest,
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	// Second call takes the pull branch and trips the timeout.
+	pullH := &cloneHandler{allowFileURLs: true, timeout: time.Nanosecond}
+
+	result, _, err = pullH.handle(t.Context(), nil, CloneInput{
+		URL:  bare,
+		Dest: dest,
+	})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	assert.Contains(t, resultText(t, result), "timed out")
 }

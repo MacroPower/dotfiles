@@ -10,6 +10,13 @@
 //   - --allow-dir: restrict dest to subdirectories of this path
 //     (repeatable; if omitted, all paths are allowed)
 //   - --allow-insecure: permit unencrypted URL schemes (http, git)
+//   - --timeout: max duration for a single git operation (0 disables)
+//
+// The per-destination flock acquired before any git invocation is
+// not context-aware, so a destination contended by another caller
+// can extend the wall-clock duration past --timeout: the deadline
+// expires during the flock wait and the next git invocation aborts
+// immediately once flock returns.
 //
 // # Environment
 //
