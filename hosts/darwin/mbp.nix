@@ -3,7 +3,6 @@
   hostname = "Jacobs-MacBook-Pro";
 
   loginItems = [
-    "/Applications/LinearMouse.app"
     "~/Applications/Home Manager Apps/Caffeine.app"
     "/Applications/Hyperkey.app"
     "/Applications/OrbStack.app"

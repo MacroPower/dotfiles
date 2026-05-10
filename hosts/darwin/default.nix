@@ -746,6 +746,25 @@
     };
   };
 
+  # LinearMouse has no plist toggle for launch-at-login (uses SMAppService
+  # internally, which only its own UI can flip). The shared loginItems
+  # activation script can't add it either: osascript -> System Events is
+  # denied by TCC and fails silently. A per-user launchd agent bypasses
+  # TCC and lets launchd supervise the process directly.
+  launchd.user.agents.linearmouse = {
+    serviceConfig = {
+      Label = "org.nixos.linearmouse";
+      Program = "/Applications/LinearMouse.app/Contents/MacOS/LinearMouse";
+      RunAtLoad = true;
+      KeepAlive = false;
+      # LinearMouse is LSUIElement=true; only load in the GUI (Aqua) session,
+      # not in Background sessions used for ssh logins.
+      LimitLoadToSessionType = "Aqua";
+      StandardErrorPath = "/dev/null";
+      StandardOutPath = "/dev/null";
+    };
+  };
+
   # Disable TCP delayed ACK for SMB performance.
   # macOS defaults to delaying ACK packets, which bottlenecks SMB throughput.
   launchd.daemons.tcp-delayed-ack-disable = {
