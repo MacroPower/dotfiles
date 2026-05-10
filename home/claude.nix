@@ -13,6 +13,17 @@ let
   sopsEnabled = config.dotfiles.sops.enable;
   skipPerms = cfg.dangerouslySkipPermissions;
 
+  # Claude Code's built-in sandbox. Darwin-only; the Linux backend is
+  # unverified, and `failIfUnavailable = true` would break startup.
+  sandboxEnabled = pkgs.stdenv.isDarwin;
+
+  # True when the process is contained — by Claude Code's sandbox on
+  # Darwin, or by the Lima VM on terrarium. Drives `--auto-allow` on
+  # hook-router, which lets the bash hook emit PreToolUse "allow" and
+  # skip the static analyzer prompt on shell expansions. See
+  # tools/hook-router/main.go config.autoAllow.
+  autoAllowEnabled = sandboxEnabled || config.dotfiles.hostname == "terrarium";
+
   # Returns the sops secret path when sops is enabled, or a nonexistent
   # path when disabled.  Nix is lazy so the `then` branch (which accesses
   # config.sops.secrets) is never evaluated when sopsEnabled is false.
@@ -556,7 +567,7 @@ let
         --command-rules ${
           lib.escapeShellArg (builtins.toJSON (bundledCommandDeny ++ cfg.extraCommandRules.deny))
         } \
-        ${lib.optionalString pkgs.stdenv.isDarwin "--auto-allow"} \
+        ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         "$@"
     '';
   };
@@ -2112,7 +2123,7 @@ in
               "code-review@claude-plugins-official" = true;
             };
             sandbox = {
-              enabled = pkgs.stdenv.isDarwin;
+              enabled = sandboxEnabled;
               failIfUnavailable = true;
               allowUnsandboxedCommands = false;
               # Allow access to the system TLS trust service.
