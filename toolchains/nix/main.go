@@ -219,7 +219,6 @@ func (m *Nix) validateHome(ctx context.Context, name string) error {
 
 // BuildHome builds and validates home-manager activation packages
 // that match the current engine platform.
-// +check
 func (m *Nix) BuildHome(ctx context.Context) error {
 	base := m.base()
 	sys, err := nixSystem(ctx, base)
