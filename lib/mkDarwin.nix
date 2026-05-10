@@ -76,6 +76,7 @@ inputs.nix-darwin.lib.darwinSystem {
             ../home/tmux.nix
             ../home/virtualization.nix
             ../home/wireshark.nix
+            ../home/caffeine.nix
           ];
           dotfiles = {
             inherit username hostname caCertificateFiles;
