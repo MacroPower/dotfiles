@@ -120,6 +120,14 @@ func TestHandleBashAutoAllow(t *testing.T) {
 	rtkAllowJSON := writeRTKScript(t, "rtk-allow.sh", `cat <<'EOF'
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{"command":"rtk-rewritten"}}}
 EOF`)
+	rtkAllowWithReason := writeRTKScript(t, "rtk-allow-reason.sh", `cat <<'EOF'
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"RTK auto-rewrite","updatedInput":{"command":"rtk-rewritten"}}}
+EOF`)
+	rtkRewriteOnly := writeRTKScript(t, "rtk-rewrite-only.sh", `cat <<'EOF'
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{"command":"rtk ls /tmp"}}}
+EOF`)
+	rtkInvalidJSON := writeRTKScript(t, "rtk-invalid.sh", `printf 'not json\n'`)
+	rtkMissingHSO := writeRTKScript(t, "rtk-missing-hso.sh", `printf '%s\n' '{"unrelated":"shape"}'`)
 	rtkExit5 := writeRTKScript(t, "rtk-exit5.sh", "exit 5")
 	rtkPartialFail := writeRTKScript(t, "rtk-partial.sh", `printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{"command":"partial"}}}'
 exit 7`)
@@ -165,12 +173,11 @@ exit 7`)
 		assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
 	})
 
-	t.Run("autoAllow=true, RTK returns its own JSON: forwarded verbatim", func(t *testing.T) {
+	t.Run("autoAllow=true, RTK provides own decision: preserved (bytes may be re-encoded)", func(t *testing.T) {
 		t.Parallel()
 
-		// RTK emits its own allow + updatedInput. handleBash must
-		// forward these bytes unchanged so RTK's rewrite and decision
-		// reach Claude Code intact.
+		// Field order is not guaranteed across the merge path, so this
+		// test decodes JSON rather than asserting raw byte equality.
 		cfg := config{
 			commandRules: canonicalRules(),
 			rtkRewrite:   rtkAllowJSON,
@@ -194,9 +201,106 @@ exit 7`)
 		require.True(t, ok)
 		assert.Equal(t, "rtk-rewritten", updated["command"])
 		// Reason field is absent because RTK's response did not include
-		// one. Verbatim forwarding must not synthesize fields.
+		// one. The merge helper must not synthesize a reason on this
+		// path.
 		_, hasReason := hso["permissionDecisionReason"]
-		assert.False(t, hasReason, "verbatim RTK output must not gain new fields")
+		assert.False(t, hasReason, "decision-present short-circuit must not add fields")
+	})
+
+	t.Run("autoAllow=true, RTK rewrite without decision: allow merged in", func(t *testing.T) {
+		t.Parallel()
+
+		// Real RTK exit-3 ask path emits updatedInput without a
+		// permissionDecision. Under --auto-allow, hook-router must
+		// attach allow so Claude Code does not re-prompt on the
+		// rewritten command.
+		cfg := config{
+			commandRules: canonicalRules(),
+			rtkRewrite:   rtkRewriteOnly,
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "ls /tmp"), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+		assert.Equal(t, "allow", hso["permissionDecision"])
+		assert.Equal(t, "sandbox auto-allow (rtk rewrite)", hso["permissionDecisionReason"])
+
+		updated, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "rtk ls /tmp", updated["command"], "RTK rewrite must be preserved")
+	})
+
+	t.Run("autoAllow=true, RTK exit-0 with reason: not overwritten", func(t *testing.T) {
+		t.Parallel()
+
+		// Real RTK exit-0 path includes both permissionDecision: allow
+		// AND permissionDecisionReason: "RTK auto-rewrite". The
+		// decision-present short-circuit must preserve RTK's reason
+		// rather than restamping it with the sandbox auto-allow reason.
+		cfg := config{
+			commandRules: canonicalRules(),
+			rtkRewrite:   rtkAllowWithReason,
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "echo hi"), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "allow", hso["permissionDecision"])
+		assert.Equal(t, "RTK auto-rewrite", hso["permissionDecisionReason"],
+			"RTK's own reason must not be overwritten")
+	})
+
+	t.Run("autoAllow=true, RTK invalid JSON: forwarded verbatim, no error", func(t *testing.T) {
+		t.Parallel()
+
+		// Malformed RTK output is RTK's bug, not ours to rewrite. The
+		// merge helper returns an error; the caller logs at warn and
+		// forwards the captured bytes so Claude Code surfaces whatever
+		// is actually broken.
+		cfg := config{
+			commandRules: canonicalRules(),
+			rtkRewrite:   rtkInvalidJSON,
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "echo hi"), &stdout, cfg, logger)
+		require.NoError(t, err)
+		assert.Equal(t, "not json\n", stdout.String())
+	})
+
+	t.Run("autoAllow=true, RTK valid JSON missing hookSpecificOutput: forwarded verbatim, no error", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules: canonicalRules(),
+			rtkRewrite:   rtkMissingHSO,
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "echo hi"), &stdout, cfg, logger)
+		require.NoError(t, err)
+		assert.Equal(t, "{\"unrelated\":\"shape\"}\n", stdout.String())
 	})
 
 	t.Run("autoAllow=true, deny match: deny precedence holds", func(t *testing.T) {

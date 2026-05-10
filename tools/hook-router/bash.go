@@ -118,7 +118,17 @@ func delegateOrAutoAllow(ctx context.Context, input []byte, stdout io.Writer, cf
 	}
 
 	if len(captured) > 0 {
-		_, err = stdout.Write(captured)
+		out, err := mergeAllowIntoJSON(captured, "sandbox auto-allow (rtk rewrite)")
+		if err != nil {
+			logger.Warn(
+				"RTK output not mergeable, forwarding verbatim",
+				slog.Any("error", err),
+			)
+
+			out = captured
+		}
+
+		_, err = stdout.Write(out)
 		if err != nil {
 			return fmt.Errorf("forwarding RTK output: %w", err)
 		}

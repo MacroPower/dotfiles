@@ -78,6 +78,43 @@ func mergeAllow(resp map[string]any, reason string) {
 	hso["permissionDecisionReason"] = reason
 }
 
+// mergeAllowIntoJSON merges a PreToolUse "allow" decision into the
+// JSON response in data, leaving an existing permissionDecision
+// (allow, deny, or ask) untouched. Returns the original bytes when
+// no merge was needed, or freshly encoded bytes (with a trailing
+// newline to match [encodeJSON] framing) when allow was merged in.
+//
+// Caller contract: data must be non-empty. The function does not
+// distinguish "RTK had no opinion" from "RTK wanted to ask"; both
+// surface as a missing permissionDecision and both get allow merged
+// in. See the auto-allow trade-off note alongside [delegateOrAutoAllow].
+func mergeAllowIntoJSON(data []byte, reason string) ([]byte, error) {
+	var resp map[string]any
+
+	err := json.Unmarshal(data, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("parsing RTK response: %w", err)
+	}
+
+	hso, ok := resp["hookSpecificOutput"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("RTK response missing hookSpecificOutput object")
+	}
+
+	if _, has := hso["permissionDecision"]; has {
+		return data, nil
+	}
+
+	mergeAllow(resp, reason)
+
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("re-encoding merged response: %w", err)
+	}
+
+	return append(out, '\n'), nil
+}
+
 func blockResponse(reason string) map[string]any {
 	return map[string]any{
 		"decision": "block",
