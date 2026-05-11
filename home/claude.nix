@@ -203,11 +203,14 @@ let
       pathGlob = mkOption {
         type = types.nonEmptyStr;
         description = ''
-          Absolute file-path glob evaluated with Go's filepath.Match.
-          No tilde expansion at runtime — the Nix evaluator must
-          produce the resolved absolute path (e.g.
+          Absolute file-path glob evaluated with doublestar v4
+          (`doublestar.PathMatch`), OS-separator aware like the older
+          `filepath.Match`. `**` crosses path separators only when it
+          occupies a full segment: `/a/**/*.md` is recursive, but
+          `/a/**foo` is not (the `**` degrades to a single `*`).
+          Tilde expansion does not happen at runtime, so the Nix
+          evaluator must produce the resolved absolute path (e.g.
           `''${config.home.homeDirectory}/.claude/plans/*.md`).
-          Recursive `**` is not supported.
         '';
       };
       command = mkOption {
@@ -783,7 +786,7 @@ let
   # formatter's own python wrapper script stays intact.
   defaultFormatterRules = [
     {
-      pathGlob = "${config.home.homeDirectory}/.claude/plans/*.md";
+      pathGlob = "${config.home.homeDirectory}/.claude/plans/**/*.md";
       command = [
         "${pkgs.mdformat}/bin/mdformat"
         "--wrap"
@@ -796,7 +799,7 @@ let
       timeout = "5s";
     }
     {
-      pathGlob = "${researchDir}/*.md";
+      pathGlob = "${researchDir}/**/*.md";
       command = [
         "${pkgs.mdformat}/bin/mdformat"
         "--wrap"

@@ -8,8 +8,9 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
+
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 // defaultFormatterTimeout bounds a single formatter invocation when a
@@ -21,13 +22,14 @@ import (
 const defaultFormatterTimeout = 5 * time.Second
 
 // FormatterRule routes a single file path to one external formatter.
-// The file path is appended as the final argv element when [Run]
-// executes Command, so the formatter binary must accept a path
-// positional. PathGlob is matched with [filepath.Match] (no recursive
-// `**`); a future glob lib swap stays internal to [*FormatterRules.Match].
+// [Run] appends the file path as the final argv element to Command,
+// so the formatter binary must accept a path positional. PathGlob is
+// matched with [doublestar.PathMatch]; `**` matches recursively
+// across path separators when used as a full segment (e.g.
+// `/a/**/*.md`).
 //
-// JSON tag style is camelCase to match the attribute names
-// [builtins.toJSON] emits in home/claude.nix.
+// JSON tags are camelCase because [builtins.toJSON] in home/claude.nix
+// emits attribute names verbatim.
 type FormatterRule struct {
 	PathGlob string   `json:"pathGlob"`
 	Command  []string `json:"command"`
@@ -114,19 +116,19 @@ func (r *FormatterRules) Empty() bool {
 	return len(r.rules) == 0
 }
 
-// Match returns the first rule whose [FormatterRule.PathGlob] matches
-// filePath via [filepath.Match], along with true. When no rule
-// matches, returns the zero value and false. A malformed glob in a
-// rule counts as "no match" for that rule and matching continues;
-// [parseFormatterRules] rejects malformed globs at parse time so this
-// path is unreachable in practice.
+// Match returns the first rule whose [FormatterRule.PathGlob] accepts
+// filePath under [doublestar.PathMatch], and true. When no rule
+// matches, returns the zero value and false. A malformed glob is
+// treated as a non-match and matching continues to the next rule;
+// [parseFormatterRules] rejects malformed globs at parse time, so in
+// practice that branch is unreachable.
 func (r *FormatterRules) Match(filePath string) (FormatterRule, bool) {
 	if r == nil || len(r.rules) == 0 {
 		return FormatterRule{}, false
 	}
 
 	for _, rule := range r.rules {
-		matched, err := filepath.Match(rule.PathGlob, filePath)
+		matched, err := doublestar.PathMatch(rule.PathGlob, filePath)
 		if err != nil {
 			continue
 		}
@@ -167,7 +169,7 @@ func parseFormatterRules(s string) (*FormatterRules, error) {
 			return nil, fmt.Errorf("formatter rule %d: command is empty", i)
 		}
 
-		_, err := filepath.Match(rule.PathGlob, "")
+		_, err := doublestar.PathMatch(rule.PathGlob, "")
 		if err != nil {
 			return nil, fmt.Errorf("formatter rule %d: invalid pathGlob %q: %w", i, rule.PathGlob, err)
 		}

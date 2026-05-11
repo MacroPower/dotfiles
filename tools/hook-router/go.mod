@@ -3,6 +3,7 @@ module go.jacobcolvin.com/dotfiles/tools/hook-router
 go 1.25.0
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	modernc.org/sqlite v1.48.2
 	mvdan.cc/sh/v3 v3.11.0
 )

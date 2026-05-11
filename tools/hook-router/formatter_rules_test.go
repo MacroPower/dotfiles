@@ -144,7 +144,7 @@ func TestFormatterRulesMatch(t *testing.T) {
 			path:    "/tmp/random.md",
 			wantHit: false,
 		},
-		"subdirectory below plans does not match (no recursive **)": {
+		"single-segment * does not cross path separators under doublestar": {
 			path:    "/home/x/.claude/plans/sub/nested.md",
 			wantHit: false,
 		},
@@ -160,6 +160,50 @@ func TestFormatterRulesMatch(t *testing.T) {
 			if tc.wantHit {
 				assert.Equal(t, tc.wantGlob, rule.PathGlob)
 			}
+		})
+	}
+}
+
+func TestFormatterRulesMatchDoublestar(t *testing.T) {
+	t.Parallel()
+
+	rules := NewFormatterRules([]FormatterRule{
+		{
+			PathGlob: "/home/x/.claude/plans/**/*.md",
+			Command:  []string{"mdformat"},
+		},
+	})
+
+	cases := map[string]struct {
+		path    string
+		wantHit bool
+	}{
+		"top-level still matches under **": {
+			path:    "/home/x/.claude/plans/today.md",
+			wantHit: true,
+		},
+		"nested subdirectory matches": {
+			path:    "/home/x/.claude/plans/sub/nested.md",
+			wantHit: true,
+		},
+		"dotfile subdirectory matches (doublestar PathMatch has no WithNoHidden)": {
+			// WithNoHidden is a GlobOption read by Glob/GlobWalk/FilepathGlob.
+			// PathMatch ignores it, so dotfile segments still match.
+			path:    "/home/x/.claude/plans/.hidden/note.md",
+			wantHit: true,
+		},
+		"prefix collision still rejected under **": {
+			path:    "/home/x/.claude/plans-archive/old.md",
+			wantHit: false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			_, ok := rules.Match(tc.path)
+			assert.Equal(t, tc.wantHit, ok)
 		})
 	}
 }
@@ -282,6 +326,43 @@ func TestHandlePostFileWriteTools(t *testing.T) {
 		// `tr -s '\n'` collapses runs of newlines, proving the formatter
 		// actually ran without relying on mdformat being on PATH.
 		Command: []string{"sh", "-c", `tr -s '\n' < "$1" > "$1.tmp" && mv "$1.tmp" "$1"`, "sh"},
+	}
+
+	cfg := config{formatterRules: NewFormatterRules([]FormatterRule{rule})}
+	logger := slog.New(slog.DiscardHandler)
+
+	for _, toolName := range []string{"Write", "Edit", "MultiEdit"} {
+		t.Run(toolName, func(t *testing.T) {
+			require.NoError(t, os.WriteFile(target, []byte(before), 0o644))
+
+			input, err := json.Marshal(map[string]any{
+				"tool_name":  toolName,
+				"tool_input": map[string]any{"file_path": target},
+			})
+			require.NoError(t, err)
+
+			err = handlePostFileWrite(t.Context(), input, cfg, logger)
+			require.NoError(t, err)
+
+			got, err := os.ReadFile(target)
+			require.NoError(t, err)
+			assert.NotContains(t, string(got), "\n\n\n", "blank-line run should be collapsed for "+toolName)
+		})
+	}
+}
+
+func TestHandlePostFileWriteToolsDoublestar(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	subDir := filepath.Join(tmp, "sub")
+	require.NoError(t, os.MkdirAll(subDir, 0o755))
+	target := filepath.Join(subDir, "doc.md")
+	const before = "# t\n\n\n\nbar\n"
+
+	rule := FormatterRule{
+		PathGlob: filepath.Join(tmp, "**/*.md"),
+		Command:  []string{"sh", "-c", `tr -s '\n' < "$1" > "$1.tmp" && mv "$1.tmp" "$1"`, "sh"},
 	}
 
 	cfg := config{formatterRules: NewFormatterRules([]FormatterRule{rule})}
