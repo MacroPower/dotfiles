@@ -214,6 +214,7 @@ let
     merge_strategy = "rebase";
     agent = "claude";
     window_prefix = "wm-";
+    worktree_dir = ".worktrees";
     status_format = false;
     status_icons = {
       working = "󱚣";
