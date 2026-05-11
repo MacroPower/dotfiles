@@ -28,28 +28,37 @@ CREATE TABLE IF NOT EXISTS sessions (
     in_plan_mode    INTEGER NOT NULL DEFAULT 0,
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
-
-CREATE TABLE IF NOT EXISTS pending_plans (
-    cwd        TEXT PRIMARY KEY,
-    plan_path  TEXT NOT NULL DEFAULT '',
-    base_sha   TEXT NOT NULL DEFAULT '',
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
 `
 
-// migrations adds columns that may be missing in databases created before
-// the current schema. Each statement is executed individually;
-// "duplicate column name" errors are silently ignored so the set can be
-// re-run on existing databases before the user_version was introduced.
+// migrations brings older databases forward to the current schema. Each
+// statement runs individually; "duplicate column name" errors are
+// silently ignored so the additive ALTERs remain re-runnable on
+// databases pre-dating user_version.
+//
+// The pending_plans DROP+CREATE is destructive. Rows there are transient
+// (60s freshness, 3600s TTL, 24h prune), so the only data lost at
+// upgrade is any in-flight plan-accept handoff at that moment.
+// Concurrent opens converge correctly because [*Store.ensureSchema]
+// wraps the whole block in BEGIN IMMEDIATE and re-checks user_version
+// after acquiring the write lock.
 var migrations = []string{
 	`ALTER TABLE sessions ADD COLUMN review_head_sha TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE sessions ADD COLUMN review_wt_hash TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE sessions ADD COLUMN in_plan_mode INTEGER NOT NULL DEFAULT 0`,
+	`DROP TABLE IF EXISTS pending_plans`,
+	`CREATE TABLE IF NOT EXISTS pending_plans (
+	    cwd        TEXT NOT NULL,
+	    claude_pid TEXT NOT NULL,
+	    plan_path  TEXT NOT NULL DEFAULT '',
+	    base_sha   TEXT NOT NULL DEFAULT '',
+	    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+	    PRIMARY KEY (cwd, claude_pid)
+	)`,
 }
 
 const (
 	busyTimeoutMs = 30000
-	schemaVersion = 4
+	schemaVersion = 5
 )
 
 // Store manages plan-guard session state in a SQLite database.
@@ -111,16 +120,22 @@ func OpenStore(ctx context.Context, path string) (*Store, error) {
 }
 
 // ensureSchema creates the schema and runs migrations on a fresh or
-// out-of-date database, and is a cheap no-op (one PRAGMA read) on an
-// already-current database. The schema version gate keeps the hot path
-// free of DDL writes under concurrent load.
+// out-of-date database. On an already-current database it is a cheap
+// no-op (one PRAGMA read). The version gate keeps the hot path free of
+// DDL writes under concurrent load.
 //
-// Cold-start race: when N processes open a fresh database concurrently,
-// all observe user_version == 0 and run CREATE TABLE IF NOT EXISTS plus
-// the idempotent ALTERs. The DDL is safe to race on and duplicate-column
-// errors are filtered. The final PRAGMA user_version write serializes on
-// SQLite's write lock under the busy_timeout window, so readers see the
-// version flip atomically and converge on schemaVersion.
+// Concurrency: when N processes race to open the same out-of-date
+// database, the slow path runs inside BEGIN IMMEDIATE, so exactly one
+// process holds the RESERVED write lock at a time. After acquiring the
+// lock the migrator re-reads user_version through the same connection;
+// if a peer already bumped it, the migrator commits without touching
+// the schema. The re-check is mandatory because the v4→v5 step drops
+// pending_plans, and without it a late waiter would race against rows
+// the winner just wrote.
+//
+// busy_timeout (set per-connection via the DSN) bounds how long
+// BEGIN IMMEDIATE waits for the lock. Under contention the timeout
+// surfaces as SQLITE_BUSY, which propagates up as an open failure.
 func (s *Store) ensureSchema(ctx context.Context) error {
 	var version int
 
@@ -133,13 +148,53 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 		return nil
 	}
 
-	_, err = s.db.ExecContext(ctx, schema)
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquiring migration conn: %w", err)
+	}
+	defer conn.Close()
+
+	_, err = conn.ExecContext(ctx, "BEGIN IMMEDIATE")
+	if err != nil {
+		return fmt.Errorf("beginning migration transaction: %w", err)
+	}
+
+	committed := false
+
+	defer func() {
+		if committed {
+			return
+		}
+
+		// Connection-scoped rollback; the conn is closing via the
+		// deferred conn.Close above, so a failed ROLLBACK has nowhere
+		// to surface anyway.
+		_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+	}()
+
+	err = conn.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version)
+	if err != nil {
+		return fmt.Errorf("rereading schema version: %w", err)
+	}
+
+	if version == schemaVersion {
+		_, err = conn.ExecContext(ctx, "COMMIT")
+		if err != nil {
+			return fmt.Errorf("committing no-op migration: %w", err)
+		}
+
+		committed = true
+
+		return nil
+	}
+
+	_, err = conn.ExecContext(ctx, schema)
 	if err != nil {
 		return fmt.Errorf("creating schema: %w", err)
 	}
 
 	for _, m := range migrations {
-		_, err = s.db.ExecContext(ctx, m)
+		_, err = conn.ExecContext(ctx, m)
 		if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("running migration: %w", err)
 		}
@@ -147,10 +202,17 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 
 	// PRAGMA does not accept bound parameters; the version constant is a
 	// trusted int, so string interpolation is safe here.
-	_, err = s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
 	if err != nil {
 		return fmt.Errorf("setting schema version: %w", err)
 	}
+
+	_, err = conn.ExecContext(ctx, "COMMIT")
+	if err != nil {
+		return fmt.Errorf("committing migration: %w", err)
+	}
+
+	committed = true
 
 	return nil
 }
@@ -366,25 +428,28 @@ func (s *Store) ClearSession(ctx context.Context, id string) error {
 	return nil
 }
 
-// SetPendingPlan UPSERTs a pending plan handoff keyed by cwd. The row
-// is consumed by [*Store.ConsumePendingPlan] when the cleared session's
-// SessionStart hook fires; see plan.go's handleSessionStart.
+// SetPendingPlan UPSERTs a pending plan handoff keyed by (cwd,
+// claudePID). The row is consumed by [*Store.ConsumePendingPlan] when
+// the cleared session's SessionStart hook fires; see plan.go's
+// handleSessionStart. The composite key partitions handoffs per
+// Claude Code window, so two windows in the same directory each own
+// their own row and cannot overwrite each other.
 //
 // The first return value reports whether an existing row was overwritten
-// while its `updated_at` was within 60 seconds. Callers
-// (handleExitPlanModePre) log this as a Warn for observability — it
-// indicates concurrent CC instances racing on the same cwd, which is the
-// documented limitation of the cwd-keyed handoff.
+// while its `updated_at` was within 60 seconds. Under the composite key
+// this only fires when the same window calls ExitPlanMode twice inside
+// the freshness window without consuming the previous handoff (e.g. the
+// user dismissed the accept dialog and re-planned).
 //
 // The freshness check uses two queries (SELECT then UPSERT). The race
-// window between them is benign: a missed warn-log has no correctness
+// window between them is benign: a missed signal has no correctness
 // impact.
-func (s *Store) SetPendingPlan(ctx context.Context, cwd, planPath, baseSHA string) (bool, error) {
+func (s *Store) SetPendingPlan(ctx context.Context, cwd, claudePID, planPath, baseSHA string) (bool, error) {
 	var fresh int
 
 	err := s.db.QueryRowContext(ctx,
 		`SELECT updated_at >= datetime('now', '-60 seconds')
-		 FROM pending_plans WHERE cwd = ?`, cwd).Scan(&fresh)
+		 FROM pending_plans WHERE cwd = ? AND claude_pid = ?`, cwd, claudePID).Scan(&fresh)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, fmt.Errorf("checking pending plan freshness: %w", err)
 	}
@@ -392,12 +457,12 @@ func (s *Store) SetPendingPlan(ctx context.Context, cwd, planPath, baseSHA strin
 	overwroteFresh := err == nil && fresh != 0
 
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO pending_plans (cwd, plan_path, base_sha)
-		 VALUES (?, ?, ?)
-		 ON CONFLICT(cwd) DO UPDATE SET
+		`INSERT INTO pending_plans (cwd, claude_pid, plan_path, base_sha)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(cwd, claude_pid) DO UPDATE SET
 		   plan_path = excluded.plan_path,
 		   base_sha = excluded.base_sha,
-		   updated_at = datetime('now')`, cwd, planPath, baseSHA)
+		   updated_at = datetime('now')`, cwd, claudePID, planPath, baseSHA)
 	if err != nil {
 		return false, fmt.Errorf("setting pending plan: %w", err)
 	}
@@ -405,33 +470,35 @@ func (s *Store) SetPendingPlan(ctx context.Context, cwd, planPath, baseSHA strin
 	return overwroteFresh, nil
 }
 
-// ConsumePendingPlan reads and deletes the pending plan for cwd in a
-// single statement, but only when the row's `updated_at` is within
-// ttlSeconds. Stale rows are left in place for [*Store.MaybePruneStale]
-// to remove on the 24-hour cycle.
+// ConsumePendingPlan reads and deletes the pending plan for (cwd,
+// claudePID) in a single statement, but only when the row's
+// `updated_at` is within ttlSeconds. Stale rows are left in place for
+// [*Store.MaybePruneStale] to remove on the 24-hour cycle. The
+// composite key scopes consumption to the calling window, so a peer
+// window's row is not touched.
 //
-// The atomic read+delete relies on `MaxOpenConns=1`: the DELETE...RETURNING
-// is one statement, and intra-process serialization comes from the pool
-// limit while inter-process serialization comes from SQLite's write lock
-// (busy_timeout). A future tuning change to N>1 would still keep
-// per-statement atomicity, so this is robust.
+// The atomic read+delete relies on `MaxOpenConns=1`: DELETE...RETURNING
+// is one statement, intra-process serialization comes from the pool
+// limit, and inter-process serialization comes from SQLite's write lock
+// (busy_timeout). Raising MaxOpenConns to N>1 would still keep
+// per-statement atomicity intact.
 //
 // The third return value reports whether a fresh row matched and was
 // deleted; false (with nil err) means no fresh row was present. The
 // caller (handleSessionStart) treats not-found as the no-migration path.
 func (s *Store) ConsumePendingPlan(
 	ctx context.Context,
-	cwd string,
+	cwd, claudePID string,
 	ttlSeconds int,
 ) (string, string, bool, error) {
 	query := fmt.Sprintf(
 		`DELETE FROM pending_plans
-		 WHERE cwd = ? AND updated_at >= datetime('now', '-%d seconds')
+		 WHERE cwd = ? AND claude_pid = ? AND updated_at >= datetime('now', '-%d seconds')
 		 RETURNING plan_path, base_sha`, ttlSeconds)
 
 	var planPath, baseSHA string
 
-	err := s.db.QueryRowContext(ctx, query, cwd).Scan(&planPath, &baseSHA)
+	err := s.db.QueryRowContext(ctx, query, cwd, claudePID).Scan(&planPath, &baseSHA)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", false, nil
 	}
@@ -443,13 +510,13 @@ func (s *Store) ConsumePendingPlan(
 	return planPath, baseSHA, true, nil
 }
 
-// DeletePendingPlan removes the pending plan row for cwd, if any.
-// Used as best-effort cleanup at lifecycle boundaries (EnterPlanMode,
-// commit-skill wrap-up, post-impl AUQ recorded, stop_hook_active escape,
-// fingerprint short-circuit).
-func (s *Store) DeletePendingPlan(ctx context.Context, cwd string) error {
+// DeletePendingPlan removes the pending plan row for (cwd, claudePID),
+// if any. Used as best-effort cleanup at lifecycle boundaries where the
+// handoff is no longer needed. Only the calling window's row is touched;
+// peers in the same cwd are left intact.
+func (s *Store) DeletePendingPlan(ctx context.Context, cwd, claudePID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM pending_plans WHERE cwd = ?`, cwd)
+		`DELETE FROM pending_plans WHERE cwd = ? AND claude_pid = ?`, cwd, claudePID)
 	if err != nil {
 		return fmt.Errorf("deleting pending plan: %w", err)
 	}

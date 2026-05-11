@@ -45,6 +45,7 @@ func testCatalog() *PostImplCatalog {
 var cfg = config{
 	postImpl:     testCatalog(),
 	commitSkills: []string{"commit", "commit-push-pr", "merge"},
+	claudePID:    testPID,
 }
 
 func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
@@ -61,7 +62,7 @@ func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -94,14 +95,14 @@ func TestHandleExitPlanModePre_SecondCallAllowsAndRecords(t *testing.T) {
 	// First call: denied.
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
 	require.NoError(t, err)
 	assert.NotEmpty(t, stdout.Bytes())
 
 	// Second call: allowed (no output), and records plan path.
 	stdout.Reset()
 
-	err = handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
+	err = handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 
@@ -126,7 +127,7 @@ func TestHandleExitPlanModePre_NoPlanPath(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -151,7 +152,7 @@ func TestHandleExitPlanModePre_EmptySessionAllows(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 }
@@ -169,7 +170,7 @@ func TestHandleEnterPlanMode_ResetsSession(t *testing.T) {
 
 	input := makeHookJSON(t, HookInput{SessionID: "s1"})
 
-	err := handleEnterPlanMode(t.Context(), input, store, logger)
+	err := handleEnterPlanMode(t.Context(), input, store, testPID, logger)
 	require.NoError(t, err)
 
 	count, planPath, baseSHA, err := store.Session(ctx, "s1")
@@ -188,7 +189,7 @@ func TestEnterPlanMode_SetsInPlanMode(t *testing.T) {
 
 	input := makeHookJSON(t, HookInput{SessionID: "s1"})
 
-	err := handleEnterPlanMode(t.Context(), input, store, logger)
+	err := handleEnterPlanMode(t.Context(), input, store, testPID, logger)
 	require.NoError(t, err)
 
 	inPlanMode, err := store.InPlanMode(ctx, "s1")
@@ -214,7 +215,7 @@ func TestExitPlanModePre_SecondCall_ClearsInPlanMode(t *testing.T) {
 	var stdout bytes.Buffer
 
 	// First call denies.
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	// in_plan_mode still set after deny (only cleared on allow).
 	inPlanMode, err := store.InPlanMode(ctx, "s1")
@@ -223,7 +224,7 @@ func TestExitPlanModePre_SecondCall_ClearsInPlanMode(t *testing.T) {
 
 	// Second call allows and clears in_plan_mode.
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	inPlanMode, err = store.InPlanMode(ctx, "s1")
 	require.NoError(t, err)
@@ -245,7 +246,7 @@ func TestBugFix_OnlyDenied_StopAllowsThrough(t *testing.T) {
 	// PreToolUse:ExitPlanMode fires once -- denied.
 	// The session never reaches the "allow" path (plan review cycle ongoing).
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	// Stop fires -- should allow through because plan_path is empty
 	// (only recorded on allow, not on deny).
@@ -271,10 +272,10 @@ func TestStopBlocksWithChanges(t *testing.T) {
 
 	// Full flow: deny then allow (which records plan path).
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	// Get the baseSHA that was recorded.
 	_, _, baseSHA, err := store.Session(context.Background(), "s1")
@@ -323,10 +324,10 @@ func TestStop_BlocksImplementationWithNoChanges(t *testing.T) {
 
 	// Full flow: deny then allow.
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	// No changes -- Stop now blocks; the unified message must offer
 	// both branches so Claude can either confirm done or ask for input.
@@ -360,10 +361,10 @@ func TestStop_AllowsAfterPostImplAUQ_NoChanges(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	// No changes, but user answers a post-impl AUQ -- captures the
 	// fingerprint of the (unchanged) state so Stop can short-circuit.
@@ -746,10 +747,10 @@ func TestStop_AllowsWhenAskRanAgainstCurrentState(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	// Make a code change and commit.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
@@ -796,10 +797,10 @@ func TestStop_BlocksWhenCommittedEditsAfterAsk(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	// Make initial change and commit.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
@@ -863,10 +864,10 @@ func TestStop_BlocksWhenUncommittedEditsAfterAsk(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	// Make initial change and commit.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
@@ -977,7 +978,7 @@ func TestHandleExitPlanModePre_FailsClosedOnStoreError(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -1119,10 +1120,10 @@ func TestHandleExitPlanModePre_FirstCallDoesNotSetPendingPlan(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	// First call denies; pending_plans must be empty.
-	_, _, found, err := store.ConsumePendingPlan(t.Context(), dir, 300)
+	_, _, found, err := store.ConsumePendingPlan(t.Context(), dir, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "deny path must not write pending_plans")
 }
@@ -1141,15 +1142,15 @@ func TestHandleExitPlanModePre_SecondCallSetsPendingPlan(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	resolved, err := filepath.EvalSymlinks(dir)
 	require.NoError(t, err)
 
-	planPath, baseSHA, found, err := store.ConsumePendingPlan(t.Context(), resolved, 300)
+	planPath, baseSHA, found, err := store.ConsumePendingPlan(t.Context(), resolved, testPID, 300)
 	require.NoError(t, err)
 	require.True(t, found, "second (allowed) ExitPlanMode must write pending_plans")
 	assert.Equal(t, "/path/plan.md", planPath)
@@ -1167,7 +1168,7 @@ func TestHandleSessionStart_MigratesPendingPlan(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks(cwd)
 	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	input := makeHookJSON(t, HookInput{
@@ -1176,7 +1177,7 @@ func TestHandleSessionStart_MigratesPendingPlan(t *testing.T) {
 		Source:    "clear",
 	})
 
-	require.NoError(t, handleSessionStart(t.Context(), input, store, logger))
+	require.NoError(t, handleSessionStart(t.Context(), input, store, testPID, logger))
 
 	_, planPath, baseSHA, err := store.Session(ctx, "new-sess")
 	require.NoError(t, err)
@@ -1184,7 +1185,7 @@ func TestHandleSessionStart_MigratesPendingPlan(t *testing.T) {
 	assert.Equal(t, "sha1", baseSHA)
 
 	// Pending row must be consumed.
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "pending row must be consumed after migration")
 }
@@ -1203,7 +1204,7 @@ func TestHandleSessionStart_NoPendingPlanIsNoOp(t *testing.T) {
 		Source:    "clear",
 	})
 
-	require.NoError(t, handleSessionStart(t.Context(), input, store, logger))
+	require.NoError(t, handleSessionStart(t.Context(), input, store, testPID, logger))
 
 	_, planPath, baseSHA, err := store.Session(t.Context(), "new-sess")
 	require.NoError(t, err)
@@ -1222,15 +1223,15 @@ func TestHandleSessionStart_EmptySessionIDIsNoOp(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks(cwd)
 	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	input := makeHookJSON(t, HookInput{Cwd: cwd, Source: "clear"})
 
-	require.NoError(t, handleSessionStart(t.Context(), input, store, logger))
+	require.NoError(t, handleSessionStart(t.Context(), input, store, testPID, logger))
 
 	// Pending row must remain since we couldn't migrate.
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
 	require.NoError(t, err)
 	assert.True(t, found, "empty session_id must not consume the pending row")
 }
@@ -1243,7 +1244,7 @@ func TestHandleSessionStart_EmptyCwdIsNoOp(t *testing.T) {
 
 	input := makeHookJSON(t, HookInput{SessionID: "s1", Source: "clear"})
 
-	require.NoError(t, handleSessionStart(t.Context(), input, store, logger))
+	require.NoError(t, handleSessionStart(t.Context(), input, store, testPID, logger))
 
 	_, planPath, _, err := store.Session(t.Context(), "s1")
 	require.NoError(t, err)
@@ -1261,7 +1262,7 @@ func TestHandleSessionStart_StalePendingPlanIgnored(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks(cwd)
 	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	// Backdate the row beyond the 3600s TTL.
@@ -1276,7 +1277,7 @@ func TestHandleSessionStart_StalePendingPlanIgnored(t *testing.T) {
 		Source:    "clear",
 	})
 
-	require.NoError(t, handleSessionStart(t.Context(), input, store, logger))
+	require.NoError(t, handleSessionStart(t.Context(), input, store, testPID, logger))
 
 	// Migration must NOT have happened.
 	_, planPath, _, err := store.Session(ctx, "new-sess")
@@ -1299,7 +1300,7 @@ func TestHandleSessionStart_SymlinkedCwdResolvesToSameRow(t *testing.T) {
 	require.NoError(t, err)
 
 	// Write keyed by resolved path (as handleExitPlanModePre would do).
-	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	// SessionStart fires with the symlinked cwd; resolveCwd must hit the
@@ -1310,7 +1311,7 @@ func TestHandleSessionStart_SymlinkedCwdResolvesToSameRow(t *testing.T) {
 		Source:    "clear",
 	})
 
-	require.NoError(t, handleSessionStart(t.Context(), input, store, logger))
+	require.NoError(t, handleSessionStart(t.Context(), input, store, testPID, logger))
 
 	_, planPath, _, err := store.Session(ctx, "new-sess")
 	require.NoError(t, err)
@@ -1342,10 +1343,10 @@ func TestHandleSessionStart_SymlinkWriteRealRead(t *testing.T) {
 	dir := initTestRepo(t)
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	// Now SessionStart fires with the real path -- must consume the row.
 	resolved, err := filepath.EvalSymlinks(realDir)
@@ -1356,7 +1357,7 @@ func TestHandleSessionStart_SymlinkWriteRealRead(t *testing.T) {
 		Cwd:       resolved,
 		Source:    "clear",
 	})
-	require.NoError(t, handleSessionStart(t.Context(), startInput, store, logger))
+	require.NoError(t, handleSessionStart(t.Context(), startInput, store, testPID, logger))
 
 	_, planPath, _, err := store.Session(ctx, "new-sess")
 	require.NoError(t, err)
@@ -1375,13 +1376,13 @@ func TestHandleEnterPlanMode_DeletesPendingPlan(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks(cwd)
 	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	input := makeHookJSON(t, HookInput{SessionID: "s1", Cwd: cwd})
-	require.NoError(t, handleEnterPlanMode(t.Context(), input, store, logger))
+	require.NoError(t, handleEnterPlanMode(t.Context(), input, store, testPID, logger))
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "EnterPlanMode must drop any stale pending handoff")
 }
@@ -1397,13 +1398,13 @@ func TestHandleUserPromptSubmit_CommitSkill_DeletesPendingPlan(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks(cwd)
 	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	input := makeHookJSON(t, HookInput{SessionID: "s1", Cwd: cwd, Prompt: "/commit"})
 	require.NoError(t, handleUserPromptSubmit(t.Context(), input, store, cfg, logger))
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "wrap-up skill must drop pending handoff for this cwd")
 }
@@ -1419,7 +1420,7 @@ func TestHandleStop_StopHookActive_DeletesPendingPlan(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks(dir)
 	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	stopInput := makeHookJSON(t, HookInput{
@@ -1431,7 +1432,7 @@ func TestHandleStop_StopHookActive_DeletesPendingPlan(t *testing.T) {
 	var stdout bytes.Buffer
 	require.NoError(t, handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger))
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "stop_hook_active escape must drop pending handoff")
 }
@@ -1454,18 +1455,18 @@ func TestHandleStop_FingerprintMatch_DeletesPendingPlan(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	// Pending row exists from the second ExitPlanMode call.
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
 	require.NoError(t, err)
 	require.True(t, found)
 
 	// Reseed (Consume just deleted it).
-	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	// Answer post-impl AUQ -- captures fingerprint.
@@ -1487,7 +1488,7 @@ func TestHandleStop_FingerprintMatch_DeletesPendingPlan(t *testing.T) {
 
 	// handlePostAskUserQuestion deletes pending too; reseed and trigger
 	// Stop's fingerprint-match path explicitly.
-	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1", Cwd: dir})
@@ -1498,7 +1499,7 @@ func TestHandleStop_FingerprintMatch_DeletesPendingPlan(t *testing.T) {
 	// Stop allowed through (fingerprint match) and dropped pending.
 	assert.Empty(t, stdout.Bytes())
 
-	_, _, found, err = store.ConsumePendingPlan(ctx, resolved, 300)
+	_, _, found, err = store.ConsumePendingPlan(ctx, resolved, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "fingerprint-match short-circuit must drop pending handoff")
 }
@@ -1514,7 +1515,7 @@ func TestHandlePostAskUserQuestion_DeletesPendingPlan(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks(dir)
 	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	askInput := makeHookJSON(t, HookInput{
@@ -1534,7 +1535,64 @@ func TestHandlePostAskUserQuestion_DeletesPendingPlan(t *testing.T) {
 
 	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "post-impl AUQ must drop pending handoff")
+}
+
+// TestHandleSessionStart_DoesNotConsumeOtherInstancesPlan exercises
+// per-window isolation at the handler layer. Window A writes a pending
+// plan; window B's SessionStart in the same cwd must not consume it,
+// and window A's own SessionStart (matching PPID) still migrates the
+// plan.
+func TestHandleSessionStart_DoesNotConsumeOtherInstancesPlan(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	ctx := t.Context()
+
+	cwd := t.TempDir()
+
+	resolved, err := filepath.EvalSymlinks(cwd)
+	require.NoError(t, err)
+
+	// Window A writes its handoff.
+	_, err = store.SetPendingPlan(ctx, resolved, "A", "/plan-A.md", "sha-A")
+	require.NoError(t, err)
+
+	// Window B's SessionStart fires in the same cwd. It must NOT consume
+	// A's row.
+	bInput := makeHookJSON(t, HookInput{
+		SessionID: "new-sess-B",
+		Cwd:       cwd,
+		Source:    "clear",
+	})
+
+	require.NoError(t, handleSessionStart(t.Context(), bInput, store, "B", logger))
+
+	_, planPathB, baseSHAB, err := store.Session(ctx, "new-sess-B")
+	require.NoError(t, err)
+	assert.Empty(t, planPathB, "window B must not migrate window A's plan")
+	assert.Empty(t, baseSHAB, "window B must not migrate window A's plan")
+
+	// Window A's SessionStart now fires; it must consume the row that B
+	// left untouched.
+	aInput := makeHookJSON(t, HookInput{
+		SessionID: "new-sess-A",
+		Cwd:       cwd,
+		Source:    "clear",
+	})
+
+	require.NoError(t, handleSessionStart(t.Context(), aInput, store, "A", logger))
+
+	_, planPathA, baseSHAA, err := store.Session(ctx, "new-sess-A")
+	require.NoError(t, err)
+	assert.Equal(t, "/plan-A.md", planPathA, "window A's SessionStart must migrate its own plan")
+	assert.Equal(t, "sha-A", baseSHAA)
+
+	// And the row is now consumed.
+	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, "A", 300)
+	require.NoError(t, err)
+	assert.False(t, found, "A's handoff must be consumed after its SessionStart")
 }

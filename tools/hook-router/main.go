@@ -31,12 +31,20 @@ import (
 // suppressing Claude Code's static Bash analyzer prompt for shell
 // expansions. Only safe when a sandbox is enforcing the actual
 // containment.
+//
+// claudePID is the Claude Code window PID this hook subprocess was
+// forked from. It scopes `pending_plans` to one window so two sessions
+// in the same cwd do not collide. Empty when PPID <= 1 (no Claude
+// parent, e.g. ad-hoc invocation or PID-1 container); in that case the
+// pending-plans handoff is silently disabled, matching the
+// kubeconfigPath empty-guard.
 type config struct {
 	postImpl       *PostImplCatalog
 	commandRules   *CommandRules
 	commitSkills   []string
 	rtkRewrite     string
 	kubeconfigPath string
+	claudePID      string
 	autoAllow      bool
 }
 
@@ -44,12 +52,16 @@ func configFromEnv() config {
 	cfg := config{
 		rtkRewrite: os.Getenv("RTK_REWRITE"),
 	}
+
 	if ppid := os.Getppid(); ppid > 1 {
-		p := filepath.Join(os.TempDir(), "claude-kubectx", strconv.Itoa(ppid), "kubeconfig")
+		cfg.claudePID = strconv.Itoa(ppid)
+
+		p := filepath.Join(os.TempDir(), "claude-kubectx", cfg.claudePID, "kubeconfig")
 		if _, err := os.Stat(p); err == nil {
 			cfg.kubeconfigPath = p
 		}
 	}
+
 	return cfg
 }
 
@@ -167,14 +179,14 @@ func run(
 				return nil
 			}
 
-			return handleExitPlanModePre(ctx, input, stdout, store, ".", logger)
+			return handleExitPlanModePre(ctx, input, stdout, store, cfg.claudePID, ".", logger)
 
 		case "EnterPlanMode":
 			if store == nil {
 				return nil
 			}
 
-			return handleEnterPlanMode(ctx, input, store, logger)
+			return handleEnterPlanMode(ctx, input, store, cfg.claudePID, logger)
 
 		default:
 			return nil
@@ -204,7 +216,7 @@ func run(
 			return nil
 		}
 
-		return handleSessionStart(ctx, input, store, logger)
+		return handleSessionStart(ctx, input, store, cfg.claudePID, logger)
 
 	case "UserPromptSubmit":
 		if store == nil {
