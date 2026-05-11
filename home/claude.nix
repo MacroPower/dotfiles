@@ -673,7 +673,7 @@ let
         --set CLAUDE_CODE_NO_FLICKER 1 \
         --set DISABLE_AUTOUPDATER 1 \
         --set CLAUDE_RESEARCH_DIR ${lib.escapeShellArg researchDir} \
-        ${lib.optionalString skipPerms "--set IS_SANDBOX 1 --add-flags --dangerously-skip-permissions"}
+        ${lib.optionalString skipPerms "--set IS_SANDBOX 1 --add-flags --allow-dangerously-skip-permissions --add-flags --permission-mode --add-flags plan"}
     '';
   };
 
@@ -883,7 +883,12 @@ in
     dangerouslySkipPermissions = mkOption {
       type = types.bool;
       default = false;
-      description = "Run Claude Code with --dangerously-skip-permissions, enabling sandbox mode with automatic directory trust and GitHub auth.";
+      description = ''
+        Allow toggling Claude Code into bypass-permissions mode at
+        runtime (Shift+Tab). Sets IS_SANDBOX=1, passes
+        --allow-dangerously-skip-permissions, pre-trusts the home
+        directory, and runs gh auth login.
+      '';
     };
 
     extraSettings = mkOption {
