@@ -860,6 +860,11 @@ let
     "/var/folders"
     "/private/var/folders"
 
+    # Runtime dirs. /run is the Linux standard; on macOS the same
+    # role lives at /private/var/run (with /var/run symlinked to it).
+    "/run"
+    "/private/var/run"
+
     "/opt/homebrew"
 
     "~/.config"
@@ -885,6 +890,12 @@ let
     # `~/.config/**` and friends don't cover them.
     "~/Taskfile.yaml"
     "~/task"
+
+    # Global gitconfig and gitignore. Resolved via XDG, but listed
+    # explicitly so git can read them even when the sandbox does not
+    # follow the home-manager-files symlink chain into /nix/store.
+    "~/.config/git/config"
+    "~/.config/git/ignore"
 
     # Listed explicitly so the read list doesn't depend on the vaultsDir
     # default (which resolves under ~/Library/Mobile Documents/...).
