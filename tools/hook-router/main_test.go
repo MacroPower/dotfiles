@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +13,58 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestEventNeedsStore(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		event string
+		tool  string
+		input string
+		want  bool
+	}{
+		"Stop always needs store":             {event: "Stop", want: true},
+		"SessionStart always needs store":     {event: "SessionStart", want: true},
+		"UserPromptSubmit always needs store": {event: "UserPromptSubmit", want: true},
+		"PreToolUse ExitPlanMode":             {event: "PreToolUse", tool: "ExitPlanMode", want: true},
+		"PreToolUse EnterPlanMode":            {event: "PreToolUse", tool: "EnterPlanMode", want: true},
+		"PreToolUse Bash skips store":         {event: "PreToolUse", tool: "Bash", want: false},
+		"PreToolUse unknown skips store":      {event: "PreToolUse", tool: "Read", want: false},
+		"PostToolUse AskUserQuestion via --tool": {
+			event: "PostToolUse", tool: "AskUserQuestion", want: true,
+		},
+		"PostToolUse AskUserQuestion via stdin fallback": {
+			event: "PostToolUse",
+			input: `{"tool_name":"AskUserQuestion"}`,
+			want:  true,
+		},
+		"PostToolUse Write skips store": {
+			event: "PostToolUse",
+			input: `{"tool_name":"Write"}`,
+			want:  false,
+		},
+		"PostToolUse Read (default no-op) skips store": {
+			event: "PostToolUse",
+			input: `{"tool_name":"Read"}`,
+			want:  false,
+		},
+		"PostToolUse malformed stdin skips store": {
+			event: "PostToolUse",
+			input: `not json`,
+			want:  false,
+		},
+		"unknown event skips store": {event: "Foo", want: false},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := eventNeedsStore(tc.event, tc.tool, []byte(tc.input))
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
 
 func TestRun(t *testing.T) {
 	t.Parallel()
@@ -314,6 +367,67 @@ func TestRun(t *testing.T) {
 		err := run(t.Context(), strings.NewReader(input), &stdout, "PostToolUse", "AskUserQuestion", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("PostToolUse stdin fallback routes AskUserQuestion when --tool empty", func(t *testing.T) {
+		t.Parallel()
+
+		input, err := json.Marshal(map[string]any{
+			"session_id": "",
+			"tool_name":  "AskUserQuestion",
+			"tool_input": map[string]any{"questions": []any{}},
+		})
+		require.NoError(t, err)
+
+		var stdout bytes.Buffer
+
+		// No store: handler returns nil early. The point is that
+		// dispatch reaches handlePostAskUserQuestion via the stdin
+		// fallback, not the legacy --tool flag.
+		err = run(t.Context(), strings.NewReader(string(input)), &stdout, "PostToolUse", "", nil, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("PostToolUse stdin fallback routes Write/Edit/MultiEdit through formatter", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		target := filepath.Join(dir, "doc.md")
+		const before = "# t\n\n\n\nbar\n"
+
+		rule := FormatterRule{
+			PathGlob: filepath.Join(dir, "*.md"),
+			Command:  []string{"sh", "-c", `tr -s '\n' < "$1" > "$1.tmp" && mv "$1.tmp" "$1"`, "sh"},
+		}
+
+		formatCfg := config{
+			commandRules:   canonicalRules(),
+			formatterRules: NewFormatterRules([]FormatterRule{rule}),
+		}
+
+		for _, toolName := range []string{"Write", "Edit", "MultiEdit"} {
+			t.Run(toolName, func(t *testing.T) {
+				require.NoError(t, os.WriteFile(target, []byte(before), 0o644))
+
+				input, err := json.Marshal(map[string]any{
+					"tool_name":  toolName,
+					"tool_input": map[string]any{"file_path": target},
+				})
+				require.NoError(t, err)
+
+				var stdout bytes.Buffer
+
+				err = run(t.Context(), strings.NewReader(string(input)), &stdout, "PostToolUse", "", nil, formatCfg, logger)
+				require.NoError(t, err)
+				assert.Empty(t, stdout.Bytes())
+
+				got, err := os.ReadFile(target)
+				require.NoError(t, err)
+				assert.NotContains(t, string(got), "\n\n\n",
+					"%s with --tool empty should reach handlePostFileWrite via stdin fallback", toolName)
+			})
+		}
 	})
 
 	t.Run("Stop: no store is noop", func(t *testing.T) {

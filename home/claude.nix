@@ -191,6 +191,44 @@ let
     };
   };
 
+  # File-formatter routing rule, evaluated by hook-router on
+  # PostToolUse:Write/Edit/MultiEdit. The matched file path is appended
+  # as the final argv element when the rule's command runs. See
+  # tools/hook-router/formatter_rules.go FormatterRule for matching
+  # semantics; option names below are camelCase because
+  # `builtins.toJSON` emits attribute names verbatim and the Go struct
+  # tags expect camelCase.
+  formatterRuleType = types.submodule {
+    options = {
+      pathGlob = mkOption {
+        type = types.nonEmptyStr;
+        description = ''
+          Absolute file-path glob evaluated with Go's filepath.Match.
+          No tilde expansion at runtime — the Nix evaluator must
+          produce the resolved absolute path (e.g.
+          `''${config.home.homeDirectory}/.claude/plans/*.md`).
+          Recursive `**` is not supported.
+        '';
+      };
+      command = mkOption {
+        type = types.listOf types.nonEmptyStr;
+        description = ''
+          Formatter argv. The matched file path is appended as the
+          final argument, so the binary must accept a path positional.
+        '';
+      };
+      timeout = mkOption {
+        type = types.str;
+        default = "5s";
+        description = ''
+          Per-invocation wall-clock budget (Go time.ParseDuration
+          syntax). Defaults to 5s; malformed values silently fall
+          back to the default.
+        '';
+      };
+    };
+  };
+
   toPermGlob =
     path:
     let
@@ -568,6 +606,9 @@ let
         --command-rules ${
           lib.escapeShellArg (builtins.toJSON (bundledCommandDeny ++ cfg.extraCommandRules.deny))
         } \
+        --formatter-rules ${
+          lib.escapeShellArg (builtins.toJSON (defaultFormatterRules ++ cfg.formatterRules))
+        } \
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         "$@"
     '';
@@ -731,6 +772,43 @@ let
       "${config.dotfiles.obsidian.vaultsDir}/${cfg.research.vault}/research"
     else
       "${config.home.homeDirectory}/.local/share/claude/research";
+
+  # Default formatter routes auto-installed by hook-router on
+  # PostToolUse:Write/Edit/MultiEdit. Plans and research notes
+  # accumulate token-wasteful patterns (multi-blank-line runs, trailing
+  # whitespace, inter-word double spaces) across many tool calls;
+  # mdformat collapses them in place. The wrapped python binary is
+  # invoked directly through its store-path `/bin/mdformat` so
+  # hook-router-wrapper doesn't need pkgs.mdformat on its PATH and the
+  # formatter's own python wrapper script stays intact.
+  defaultFormatterRules = [
+    {
+      pathGlob = "${config.home.homeDirectory}/.claude/plans/*.md";
+      command = [
+        "${pkgs.mdformat}/bin/mdformat"
+        "--wrap"
+        "no"
+        "--number"
+        "--no-validate"
+        "--no-extensions"
+        "--no-codeformatters"
+      ];
+      timeout = "5s";
+    }
+    {
+      pathGlob = "${researchDir}/*.md";
+      command = [
+        "${pkgs.mdformat}/bin/mdformat"
+        "--wrap"
+        "no"
+        "--number"
+        "--no-validate"
+        "--no-extensions"
+        "--no-codeformatters"
+      ];
+      timeout = "5s";
+    }
+  ];
 
   extraDenyReadPaths = [ "/" ];
 
@@ -1153,6 +1231,19 @@ in
       };
       default = { };
       description = "Extra hook-router command deny rules appended after bundle-contributed rules.";
+    };
+
+    formatterRules = mkOption {
+      type = types.listOf formatterRuleType;
+      default = [ ];
+      description = ''
+        Extra hook-router formatter routing rules, appended after the
+        built-in plans and research mdformat rules. Each rule maps an
+        absolute file-path glob to a formatter argv; the matched path
+        is appended as the final argument. Rules are evaluated in
+        order on PostToolUse:Write/Edit/MultiEdit and the first
+        matching glob wins.
+      '';
     };
 
     fetchAllowlist = mkOption {
@@ -2318,11 +2409,13 @@ in
                   ];
                 }
                 {
-                  matcher = "AskUserQuestion";
+                  # No matcher: hook-router routes by `tool_name` from
+                  # stdin so new handlers don't need parallel Nix
+                  # matcher updates.
                   hooks = [
                     {
                       type = "command";
-                      command = "${lib.getExe hookRouter} --event PostToolUse --tool AskUserQuestion";
+                      command = "${lib.getExe hookRouter} --event PostToolUse";
                     }
                   ];
                 }
