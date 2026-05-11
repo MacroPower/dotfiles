@@ -634,10 +634,36 @@
 
     # Transitional option: the user that owns system-level nix-darwin operations
     primaryUser = config.dotfiles.system.username;
-    # Apply settings changes without requiring logout
+    # activateSettings: applies the defaults writes above without a logout.
+    #
+    # launchctl config user path: sets the PATH inherited by user-context
+    # launchd processes (GUI apps from Finder/Spotlight/Dock, e.g. Fork.app).
+    # Without it, those apps get launchd's default /usr/bin:/bin:/usr/sbin:/sbin
+    # and cannot find Nix-installed tools like `task`, which breaks pre-commit
+    # hooks invoked from GUI git clients.
+    #
+    # Writes /private/var/db/com.apple.xpc.launchd/config/user.plist. Effective
+    # at next user login.
+    #
+    # `launchctl config user path` requires root. The activation script already
+    # runs as root, so do not prefix it with `sudo -u`.
     activationScripts.postActivation.text = ''
       sudo -u ${config.dotfiles.system.username} /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
 
+      echo "setting launchd user PATH..." >&2
+      /bin/launchctl config user path "${
+        lib.concatStringsSep ":" [
+          "/etc/profiles/per-user/${config.dotfiles.system.username}/bin"
+          "/run/current-system/sw/bin"
+          "/nix/var/nix/profiles/default/bin"
+          "/opt/homebrew/bin"
+          "/usr/local/bin"
+          "/usr/bin"
+          "/bin"
+          "/usr/sbin"
+          "/sbin"
+        ]
+      }"
     '';
 
     # Ensure the custom screenshot directory exists
