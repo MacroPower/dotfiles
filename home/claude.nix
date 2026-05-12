@@ -302,7 +302,6 @@ let
     ];
     files = {
       copy = [
-        ".ck"
         ".claude"
       ];
     };
@@ -1617,41 +1616,6 @@ in
         ];
       };
 
-      ck = {
-        alwaysLoad = true;
-        servers.ck = {
-          type = "stdio";
-          command = "${pkgs.llm-agents.ck}/bin/ck";
-          args = [ "--serve" ];
-        };
-        permissions.allow = [
-          "mcp__ck__semantic_search"
-          "mcp__ck__regex_search"
-          "mcp__ck__lexical_search"
-          "mcp__ck__hybrid_search"
-          "mcp__ck__index_status"
-          "mcp__ck__health_check"
-          "mcp__ck__default_ckignore"
-          "mcp__ck__reindex"
-        ];
-        sandbox = {
-          allowWrite = [ "~/.cache/ck" ];
-          allowedDomains = [
-            "huggingface.co"
-            "cdn-lfs.huggingface.co"
-          ];
-        };
-        instructions = {
-          category = "Code Search";
-          items = [
-            "Use `mcp__ck__semantic_search` to find code by meaning when keywords are unknown or fuzzy."
-            "Use `mcp__ck__hybrid_search` for combined semantic + regex ranking."
-            "Use `mcp__ck__lexical_search` for BM25 full-text search across a repo."
-            "Prefer `Grep` for known exact strings/regexes, use `mcp__ck__regex_search` when you need paged results across a large repo."
-          ];
-        };
-      };
-
       github = {
         servers.github = {
           type = "stdio";
@@ -2519,7 +2483,6 @@ in
       packages = [
         pkgs.chief
         pkgs.llm-agents.ccusage
-        pkgs.llm-agents.ck
         pkgs.mcp-fetch
         pkgs.mcp-kubectx
         workmuxWrapped

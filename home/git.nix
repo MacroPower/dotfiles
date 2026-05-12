@@ -26,7 +26,6 @@
       "**/.claude/worktrees/"
       "**/.worktrees/"
       "**/.chief/"
-      "**/.ck/"
       "**/.venv/"
       "**/.venv-*/"
     ];
