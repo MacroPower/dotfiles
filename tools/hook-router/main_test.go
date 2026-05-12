@@ -38,6 +38,14 @@ func TestEventNeedsStore(t *testing.T) {
 			input: `{"tool_name":"AskUserQuestion"}`,
 			want:  true,
 		},
+		"PostToolUse Bash via --tool needs store": {
+			event: "PostToolUse", tool: "Bash", want: true,
+		},
+		"PostToolUse Bash via stdin fallback needs store": {
+			event: "PostToolUse",
+			input: `{"tool_name":"Bash"}`,
+			want:  true,
+		},
 		"PostToolUse Write skips store": {
 			event: "PostToolUse",
 			input: `{"tool_name":"Write"}`,

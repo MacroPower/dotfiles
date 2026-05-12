@@ -194,7 +194,7 @@ func eventNeedsStore(event, tool string, input []byte) bool {
 			}
 		}
 
-		return toolName == "AskUserQuestion"
+		return toolName == "AskUserQuestion" || toolName == "Bash"
 	}
 
 	return false
@@ -263,6 +263,13 @@ func run(
 			}
 
 			return handlePostAskUserQuestion(ctx, input, store, cfg, ".", logger)
+
+		case "Bash":
+			if store == nil {
+				return nil
+			}
+
+			return handlePostBash(ctx, input, store, logger)
 
 		case "Write", "Edit", "MultiEdit":
 			return handlePostFileWrite(ctx, input, cfg, logger)

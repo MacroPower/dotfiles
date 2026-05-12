@@ -298,9 +298,9 @@ func TestFormatterRuleResolveTimeout(t *testing.T) {
 		in   string
 		want time.Duration
 	}{
-		"empty defaults": {in: "", want: defaultFormatterTimeout},
-		"valid override": {in: "250ms", want: 250 * time.Millisecond},
-		"malformed defaults": {in: "not-a-duration", want: defaultFormatterTimeout},
+		"empty defaults":        {in: "", want: defaultFormatterTimeout},
+		"valid override":        {in: "250ms", want: 250 * time.Millisecond},
+		"malformed defaults":    {in: "not-a-duration", want: defaultFormatterTimeout},
 		"non-positive defaults": {in: "-1s", want: defaultFormatterTimeout},
 	}
 

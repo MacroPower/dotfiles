@@ -41,6 +41,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 // Concurrent opens converge correctly because [*Store.ensureSchema]
 // wraps the whole block in BEGIN IMMEDIATE and re-checks user_version
 // after acquiring the write lock.
+//
+// v5->v6 adds bash_failures and its index. CREATE TABLE IF NOT EXISTS
+// is re-runnable; the "duplicate column name" guard only matches ALTER,
+// so it does not apply here. Concurrent migrators are still serialized
+// by the BEGIN IMMEDIATE wrapper in [*Store.ensureSchema].
 var migrations = []string{
 	`ALTER TABLE sessions ADD COLUMN review_head_sha TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE sessions ADD COLUMN review_wt_hash TEXT NOT NULL DEFAULT ''`,
@@ -54,11 +59,34 @@ var migrations = []string{
 	    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 	    PRIMARY KEY (cwd, claude_pid)
 	)`,
+	// bash_failures: commands whose PostToolUse payload signalled failure.
+	// WARNING: command/stdout/stderr can contain secrets (URLs with tokens,
+	// env vars echoed by shells). The DB stays local; treat it accordingly.
+	// stderr is kept verbatim (tail-biased 16 KiB) for human analysis only;
+	// the handler never re-reads it to decide whether a command failed.
+	// See handlePostBash precedence: is_error -> interrupted -> exit_code.
+	`CREATE TABLE IF NOT EXISTS bash_failures (
+	    id              INTEGER PRIMARY KEY,
+	    session_id      TEXT NOT NULL,
+	    transcript_path TEXT NOT NULL DEFAULT '',
+	    hook_event_name TEXT NOT NULL DEFAULT '',
+	    cwd             TEXT NOT NULL,
+	    command         TEXT NOT NULL,
+	    stdout          TEXT NOT NULL DEFAULT '',
+	    stderr          TEXT NOT NULL DEFAULT '',
+	    is_error        INTEGER NOT NULL DEFAULT 0,
+	    interrupted     INTEGER NOT NULL DEFAULT 0,
+	    exit_code       INTEGER,
+	    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+	)`,
+	`CREATE INDEX IF NOT EXISTS bash_failures_created_at_idx
+	    ON bash_failures(created_at)`,
 }
 
 const (
-	busyTimeoutMs = 30000
-	schemaVersion = 5
+	busyTimeoutMs            = 30000
+	schemaVersion            = 6
+	bashFailureRetentionDays = 30
 )
 
 // Store manages plan-guard session state in a SQLite database.
@@ -231,10 +259,12 @@ func (s *Store) MaybePruneStale(ctx context.Context) (bool, error) {
 	return true, s.pruneStale(ctx)
 }
 
-// pruneStale removes both `sessions` and `pending_plans` rows older
-// than 24 hours. Split out from [*Store.MaybePruneStale] so tests can
-// exercise the cleanup paths directly without fighting the
-// probabilistic gate.
+// pruneStale removes stale rows: `sessions` and `pending_plans` past
+// 24 hours, and `bash_failures` past [bashFailureRetentionDays] (the
+// failure history is kept longer than session state on purpose, since
+// analysis tools may want to look back across many sessions). Split
+// out from [*Store.MaybePruneStale] so tests can exercise cleanup
+// without fighting the probabilistic gate.
 func (s *Store) pruneStale(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM sessions WHERE updated_at < datetime('now', '-24 hours')`)
@@ -246,6 +276,16 @@ func (s *Store) pruneStale(ctx context.Context) error {
 		`DELETE FROM pending_plans WHERE updated_at < datetime('now', '-24 hours')`)
 	if err != nil {
 		return fmt.Errorf("pruning stale pending plans: %w", err)
+	}
+
+	// bashFailureRetentionDays is a trusted int constant; SQLite's
+	// datetime() accepts '-N days' as a relative modifier (same family
+	// as the '-24 hours' modifier above).
+	_, err = s.db.ExecContext(ctx,
+		fmt.Sprintf(`DELETE FROM bash_failures WHERE created_at < datetime('now', '-%d days')`,
+			bashFailureRetentionDays))
+	if err != nil {
+		return fmt.Errorf("pruning stale bash failures: %w", err)
 	}
 
 	return nil
@@ -519,6 +559,55 @@ func (s *Store) DeletePendingPlan(ctx context.Context, cwd, claudePID string) er
 		`DELETE FROM pending_plans WHERE cwd = ? AND claude_pid = ?`, cwd, claudePID)
 	if err != nil {
 		return fmt.Errorf("deleting pending plan: %w", err)
+	}
+
+	return nil
+}
+
+// boolToInt maps a Go bool to 0/1. modernc.org/sqlite does not
+// auto-convert booleans, so the call sites have to do it.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+
+	return 0
+}
+
+// BashFailure is the input shape for [*Store.RecordBashFailure].
+// ExitCode is a pointer because Claude Code does not always include
+// exit_code on the tool_response payload; nil maps to SQL NULL.
+type BashFailure struct {
+	SessionID      string
+	TranscriptPath string
+	HookEventName  string
+	Cwd            string
+	Command        string
+	Stdout         string
+	Stderr         string
+	IsError        bool
+	Interrupted    bool
+	ExitCode       *int
+}
+
+// RecordBashFailure appends a row to bash_failures. The failure
+// classification is the caller's job; this method just writes whatever
+// it is handed.
+func (s *Store) RecordBashFailure(ctx context.Context, f BashFailure) error {
+	var exitCode any
+	if f.ExitCode != nil {
+		exitCode = *f.ExitCode
+	}
+
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO bash_failures (
+		    session_id, transcript_path, hook_event_name, cwd, command,
+		    stdout, stderr, is_error, interrupted, exit_code
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		f.SessionID, f.TranscriptPath, f.HookEventName, f.Cwd, f.Command,
+		f.Stdout, f.Stderr, boolToInt(f.IsError), boolToInt(f.Interrupted), exitCode)
+	if err != nil {
+		return fmt.Errorf("recording bash failure: %w", err)
 	}
 
 	return nil

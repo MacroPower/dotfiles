@@ -10,9 +10,72 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"unicode/utf8"
 
 	"mvdan.cc/sh/v3/syntax"
 )
+
+const (
+	// bashStderrTailBytes keeps the last 16 KiB of stderr. Errors
+	// usually print at the end, so the tail is where the signal lives.
+	bashStderrTailBytes = 16 * 1024
+	// bashStdoutHeadBytes and bashStdoutTailBytes split stdout into a
+	// head+tail capture. Long `go test -v` or `npm install` logs need
+	// context at both ends to be readable.
+	bashStdoutHeadBytes = 2 * 1024
+	bashStdoutTailBytes = 2 * 1024
+	bashTruncSentinel   = "\n...truncated...\n"
+)
+
+// truncateTail returns the last n bytes of s, aligned forward to a
+// UTF-8 rune boundary so a multi-byte char is never split. Strings
+// shorter than n pass through unchanged.
+func truncateTail(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+
+	start := len(s) - n
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+
+	return s[start:]
+}
+
+// truncateHeadTail keeps the first head bytes and the last tail bytes
+// of s, joined by [bashTruncSentinel]. Returns s unchanged when
+// len(s) <= head+tail+len(sentinel), so a string barely over the limit
+// is not expanded by the sentinel insertion. Both indices are aligned
+// to UTF-8 rune boundaries (head rounds down, tail rounds up).
+//
+// Indices are clamped to len(s) to stay safe if a caller passes head
+// or tail values larger than the input.
+func truncateHeadTail(s string, head, tail int) string {
+	if len(s) <= head+tail+len(bashTruncSentinel) {
+		return s
+	}
+
+	headEnd := head
+	if headEnd > len(s) {
+		headEnd = len(s)
+	}
+
+	for headEnd > 0 && !utf8.RuneStart(s[headEnd]) {
+		headEnd--
+	}
+
+	tailStart := len(s) - tail
+	if tailStart < 0 {
+		tailStart = 0
+	}
+
+	for tailStart < len(s) && !utf8.RuneStart(s[tailStart]) {
+		tailStart++
+	}
+
+	return s[:headEnd] + bashTruncSentinel + s[tailStart:]
+}
 
 func handleBash(ctx context.Context, input []byte, stdout io.Writer, cfg config, logger *slog.Logger) error {
 	var hook map[string]any
@@ -194,6 +257,88 @@ func runRTK(ctx context.Context, input []byte, rtkRewrite string, stdout io.Writ
 
 func delegate(ctx context.Context, input []byte, rtkRewrite string, logger *slog.Logger) error {
 	return runRTK(ctx, input, rtkRewrite, os.Stdout, logger)
+}
+
+// handlePostBash records bash command failures for later analysis.
+// Successful runs are dropped silently. Every error path returns nil:
+// parse failures, missing tool_response, and DB write errors all log
+// at warn and swallow. PostToolUse hook errors get fed back to Claude
+// as "error" feedback, and surfacing DB-locked errors there is just
+// noise.
+//
+// A row is written when any of is_error, interrupted, or a non-zero
+// exit_code is set on tool_response. All three are persisted to their
+// own columns regardless of which one tripped the gate, so analysis
+// can disambiguate. Stderr is never a failure signal on its own:
+// kubectl, git, pre-commit, npm, and cargo all chatter to stderr on
+// success.
+func handlePostBash(
+	ctx context.Context,
+	input []byte,
+	store *Store,
+	logger *slog.Logger,
+) error {
+	hook, err := parseHookInput(input)
+	if err != nil {
+		logger.Warn("failed to parse hook input", slog.Any("error", err))
+		return nil
+	}
+
+	command, _ := hook.ToolInput["command"].(string)
+	if command == "" {
+		return nil
+	}
+
+	if hook.ToolResponse == nil {
+		return nil
+	}
+
+	isError, _ := hook.ToolResponse["is_error"].(bool)
+	interrupted, _ := hook.ToolResponse["interrupted"].(bool)
+
+	var exitCode *int
+	if v, ok := hook.ToolResponse["exit_code"].(float64); ok {
+		ec := int(v)
+		exitCode = &ec
+	}
+
+	failure := isError || interrupted || (exitCode != nil && *exitCode != 0)
+	if !failure {
+		logger.Debug("bash command succeeded", slog.String("command", command))
+		return nil
+	}
+
+	stdout, _ := hook.ToolResponse["stdout"].(string)
+	stderr, _ := hook.ToolResponse["stderr"].(string)
+
+	err = store.RecordBashFailure(ctx, BashFailure{
+		SessionID:      hook.SessionID,
+		TranscriptPath: hook.TranscriptPath,
+		HookEventName:  hook.HookEventName,
+		Cwd:            hook.Cwd,
+		Command:        command,
+		Stdout:         truncateHeadTail(stdout, bashStdoutHeadBytes, bashStdoutTailBytes),
+		Stderr:         truncateTail(stderr, bashStderrTailBytes),
+		IsError:        isError,
+		Interrupted:    interrupted,
+		ExitCode:       exitCode,
+	})
+	if err != nil {
+		logger.Warn("recording bash failure",
+			slog.String("command", command),
+			slog.Any("error", err),
+		)
+
+		return nil
+	}
+
+	logger.Info("recorded bash failure",
+		slog.String("command", command),
+		slog.Bool("is_error", isError),
+		slog.Bool("interrupted", interrupted),
+	)
+
+	return nil
 }
 
 // delegateCapture runs RTK with a buffered stdout so the caller can

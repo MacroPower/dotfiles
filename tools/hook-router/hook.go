@@ -8,15 +8,18 @@ import (
 	"log/slog"
 )
 
-// HookInput represents the JSON payload Claude Code sends to hooks.
+// HookInput is the JSON payload Claude Code sends to hooks.
 //
-// Cwd is included on every event. Source is only populated on
-// SessionStart (one of "startup", "resume", "clear", "compact"); other
-// events leave it empty.
+// Cwd, HookEventName, and TranscriptPath are sent on every event.
+// Source is set on SessionStart only (one of "startup", "resume",
+// "clear", "compact"). ToolResponse is set on PostToolUse only.
 type HookInput struct {
 	SessionID      string         `json:"session_id"`
+	HookEventName  string         `json:"hook_event_name"`
 	ToolName       string         `json:"tool_name"`
 	ToolInput      map[string]any `json:"tool_input"`
+	ToolResponse   map[string]any `json:"tool_response"`
+	TranscriptPath string         `json:"transcript_path"`
 	Prompt         string         `json:"prompt"`
 	StopHookActive bool           `json:"stop_hook_active"`
 	Cwd            string         `json:"cwd"`

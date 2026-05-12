@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// intPtr lets test tables express a non-nil *int inline without
+// declaring a temporary.
+func intPtr(v int) *int { return &v }
 
 // testPID is the canonical Claude-Code-window PID used in tests that
 // only exercise a single window's view of pending_plans. Tests that
@@ -637,12 +642,12 @@ func TestDeletePendingPlan_OnlyMatchingPID(t *testing.T) {
 	assert.Equal(t, "/plan-A.md", planPath)
 }
 
-// seedV4 writes the pre-migration shape into dbPath. It opens via
-// OpenStore (so `sessions` is created at the current shape), drops the
-// v5 pending_plans, re-creates it with the v4 single-column PK,
-// optionally inserts the given row, and rolls user_version back to 4.
-// Reopening the resulting DB triggers the v4→v5 migration. Pass
-// seedRow == nil to skip the row insert.
+// seedV4 writes the pre-migration shape into dbPath: open via
+// OpenStore (so `sessions` lands at the current shape), drop the
+// current pending_plans, recreate it with the v4 single-column PK,
+// optionally insert seedRow, then roll user_version back to 4.
+// Reopening the resulting DB then triggers every queued migration.
+// Pass seedRow == nil to skip the insert.
 func seedV4(t *testing.T, dbPath string, seedRow *struct{ cwd, planPath, baseSHA string }) {
 	t.Helper()
 
@@ -675,12 +680,12 @@ func seedV4(t *testing.T, dbPath string, seedRow *struct{ cwd, planPath, baseSHA
 	require.NoError(t, seed.Close())
 }
 
-// TestEnsureSchema_UpgradesV4ToV5 seeds a fresh DB with the v4 shape
-// of pending_plans (single-column PK on `cwd`), reopens it, and
-// verifies the v5 migration: user_version reaches 5, the table is
-// recreated with the composite PK, and a new write with (cwd,
-// claude_pid) succeeds.
-func TestEnsureSchema_UpgradesV4ToV5(t *testing.T) {
+// TestEnsureSchema_UpgradesFromV4 seeds a DB at the v4 shape of
+// pending_plans (single-column PK on `cwd`), reopens it, and checks
+// that the chained migrations land: user_version reaches the current
+// schemaVersion, pending_plans is recreated with the composite PK,
+// and a new (cwd, claude_pid) write succeeds.
+func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 	t.Parallel()
 
 	dbPath := filepath.Join(t.TempDir(), "v4.db")
@@ -689,7 +694,6 @@ func TestEnsureSchema_UpgradesV4ToV5(t *testing.T) {
 		cwd: "/seed-cwd", planPath: "/seed.md", baseSHA: "seed-sha",
 	})
 
-	// Reopen: triggers v4→v5 migration.
 	store, err := OpenStore(t.Context(), dbPath)
 	require.NoError(t, err)
 
@@ -701,7 +705,7 @@ func TestEnsureSchema_UpgradesV4ToV5(t *testing.T) {
 
 	require.NoError(t, store.db.QueryRowContext(t.Context(),
 		`PRAGMA user_version`).Scan(&version))
-	assert.Equal(t, schemaVersion, version, "user_version must reach v5 after migration")
+	assert.Equal(t, schemaVersion, version, "user_version must reach current schemaVersion after migration")
 
 	// Introspect the new schema: pending_plans must carry both cwd and
 	// claude_pid as primary-key columns.
@@ -747,16 +751,16 @@ func TestEnsureSchema_UpgradesV4ToV5(t *testing.T) {
 }
 
 // TestEnsureSchema_ConcurrentOpensConverge exercises the BEGIN IMMEDIATE
-// wrapper around the v4→v5 migration. Without the wrapper, a process
-// that observed user_version=4 on its initial PRAGMA read could run
-// the destructive DROP after a peer had already migrated and written
-// a row, destroying live data. Under the wrapper, only one process
-// runs the migration; the rest re-check user_version under the lock
-// and skip.
+// wrapper around the migration replay. Without the wrapper, a process
+// that read an old user_version before acquiring the write lock could
+// run the destructive pending_plans DROP after a peer had already
+// migrated and written rows, wiping them. Under the wrapper, the
+// migrator re-reads user_version inside the transaction and bails out
+// if a peer already bumped it.
 //
-// Shape: pre-seed a v4 DB, race N goroutines opening it concurrently,
-// each writing a unique (cwd, pid) row after OpenStore returns. The
-// final state must have exactly N rows in pending_plans.
+// Shape: seed a v4 DB, race N goroutines opening it concurrently, each
+// writing a unique (cwd, pid) row after OpenStore returns. The final
+// state must have exactly N rows in pending_plans.
 func TestEnsureSchema_ConcurrentOpensConverge(t *testing.T) {
 	t.Parallel()
 
@@ -817,7 +821,7 @@ func TestEnsureSchema_ConcurrentOpensConverge(t *testing.T) {
 
 	require.NoError(t, store.db.QueryRowContext(t.Context(),
 		`PRAGMA user_version`).Scan(&version))
-	assert.Equal(t, schemaVersion, version, "concurrent opens must all settle on v5")
+	assert.Equal(t, schemaVersion, version, "concurrent opens must all settle on the current schemaVersion")
 
 	var count int
 
@@ -825,4 +829,196 @@ func TestEnsureSchema_ConcurrentOpensConverge(t *testing.T) {
 		`SELECT COUNT(*) FROM pending_plans`).Scan(&count))
 	assert.Equal(t, goroutines, count,
 		"each goroutine's post-migration write must survive; no peer's DROP must have eaten it")
+}
+
+func TestRecordBashFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		failure  BashFailure
+		wantExit sql.NullInt64
+	}{
+		"basic insert (nil exit_code maps to NULL)": {
+			failure: BashFailure{
+				SessionID: "s1",
+				Cwd:       "/tmp",
+				Command:   "false",
+			},
+			wantExit: sql.NullInt64{Valid: false},
+		},
+		"is_error true": {
+			failure: BashFailure{
+				SessionID: "s1",
+				Cwd:       "/tmp",
+				Command:   "bogus",
+				IsError:   true,
+			},
+			wantExit: sql.NullInt64{Valid: false},
+		},
+		"interrupted true": {
+			failure: BashFailure{
+				SessionID:   "s1",
+				Cwd:         "/tmp",
+				Command:     "sleep 999",
+				Interrupted: true,
+			},
+			wantExit: sql.NullInt64{Valid: false},
+		},
+		"non-nil exit_code zero is recorded, not NULL": {
+			failure: BashFailure{
+				SessionID: "s1",
+				Cwd:       "/tmp",
+				Command:   "weird",
+				IsError:   true,
+				ExitCode:  intPtr(0),
+			},
+			wantExit: sql.NullInt64{Int64: 0, Valid: true},
+		},
+		"exit_code 127 with stdout/stderr": {
+			failure: BashFailure{
+				SessionID:      "s1",
+				TranscriptPath: "/tmp/t.jsonl",
+				HookEventName:  "PostToolUse",
+				Cwd:            "/tmp",
+				Command:        "nope",
+				Stdout:         "out",
+				Stderr:         "err",
+				ExitCode:       intPtr(127),
+			},
+			wantExit: sql.NullInt64{Int64: 127, Valid: true},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			store := newTestStore(t)
+			ctx := t.Context()
+
+			require.NoError(t, store.RecordBashFailure(ctx, tt.failure))
+
+			var (
+				gotSession, gotTranscript, gotEvent, gotCwd string
+				gotCommand, gotStdout, gotStderr            string
+				gotIsError, gotInterrupted                  int
+				gotExit                                     sql.NullInt64
+			)
+
+			err := store.db.QueryRowContext(ctx, `
+				SELECT session_id, transcript_path, hook_event_name, cwd, command,
+				       stdout, stderr, is_error, interrupted, exit_code
+				FROM bash_failures`).Scan(
+				&gotSession, &gotTranscript, &gotEvent, &gotCwd, &gotCommand,
+				&gotStdout, &gotStderr, &gotIsError, &gotInterrupted, &gotExit,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, tt.failure.SessionID, gotSession)
+			assert.Equal(t, tt.failure.TranscriptPath, gotTranscript)
+			assert.Equal(t, tt.failure.HookEventName, gotEvent)
+			assert.Equal(t, tt.failure.Cwd, gotCwd)
+			assert.Equal(t, tt.failure.Command, gotCommand)
+			assert.Equal(t, tt.failure.Stdout, gotStdout)
+			assert.Equal(t, tt.failure.Stderr, gotStderr)
+			assert.Equal(t, boolToInt(tt.failure.IsError), gotIsError)
+			assert.Equal(t, boolToInt(tt.failure.Interrupted), gotInterrupted)
+			assert.Equal(t, tt.wantExit, gotExit)
+		})
+	}
+}
+
+// TestRecordBashFailure_AppendOrdering pins the rowid-based id column
+// to monotonic insert order. Analysis tooling uses ORDER BY id to
+// replay history.
+func TestRecordBashFailure_AppendOrdering(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	for i := range 5 {
+		require.NoError(t, store.RecordBashFailure(ctx, BashFailure{
+			SessionID: "s1",
+			Cwd:       "/tmp",
+			Command:   fmt.Sprintf("cmd-%d", i),
+			ExitCode:  intPtr(i + 1),
+		}))
+	}
+
+	rows, err := store.db.QueryContext(ctx,
+		`SELECT id, command FROM bash_failures ORDER BY id`)
+	require.NoError(t, err)
+
+	defer rows.Close()
+
+	var (
+		lastID   int64
+		commands []string
+	)
+
+	for rows.Next() {
+		var (
+			id      int64
+			command string
+		)
+
+		require.NoError(t, rows.Scan(&id, &command))
+		assert.Greater(t, id, lastID, "id must be strictly increasing")
+		lastID = id
+		commands = append(commands, command)
+	}
+
+	require.NoError(t, rows.Err())
+	assert.Equal(t, []string{"cmd-0", "cmd-1", "cmd-2", "cmd-3", "cmd-4"}, commands)
+}
+
+// TestPruneStale_BashFailures30DayCutoff pins the 30-day cutoff
+// [*Store.pruneStale] applies to bash_failures: fresh rows and rows
+// at 29 days survive, rows at 31 days are deleted.
+func TestPruneStale_BashFailures30DayCutoff(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	require.NoError(t, store.RecordBashFailure(ctx, BashFailure{
+		SessionID: "s1", Cwd: "/tmp", Command: "fresh",
+	}))
+	require.NoError(t, store.RecordBashFailure(ctx, BashFailure{
+		SessionID: "s1", Cwd: "/tmp", Command: "edge-29d",
+	}))
+	require.NoError(t, store.RecordBashFailure(ctx, BashFailure{
+		SessionID: "s1", Cwd: "/tmp", Command: "stale-31d",
+	}))
+
+	_, err := store.db.ExecContext(ctx,
+		`UPDATE bash_failures SET created_at = datetime('now', '-29 days') WHERE command = ?`,
+		"edge-29d")
+	require.NoError(t, err)
+
+	_, err = store.db.ExecContext(ctx,
+		`UPDATE bash_failures SET created_at = datetime('now', '-31 days') WHERE command = ?`,
+		"stale-31d")
+	require.NoError(t, err)
+
+	require.NoError(t, store.pruneStale(ctx))
+
+	rows, err := store.db.QueryContext(ctx,
+		`SELECT command FROM bash_failures ORDER BY command`)
+	require.NoError(t, err)
+
+	defer rows.Close()
+
+	var got []string
+
+	for rows.Next() {
+		var c string
+
+		require.NoError(t, rows.Scan(&c))
+		got = append(got, c)
+	}
+
+	require.NoError(t, rows.Err())
+	assert.Equal(t, []string{"edge-29d", "fresh"}, got,
+		"rows at 29 days and fresh must survive; 31-day row must be pruned")
 }
