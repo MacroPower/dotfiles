@@ -16,6 +16,51 @@ in
     set -g fish_color_end ${colors.base0E}
   '';
 
+  # Silence stray `realpath: ... No such file or directory` errors that leak
+  # from fish's weekly whatis-cache rebuild during tab completion on macOS.
+  # Upstream: share/functions/__fish_apropos.fish (fish 4.6.0). Verbatim copy
+  # with `2>/dev/null` added to the `xargs realpath` invocation, because the
+  # command substitution it lives in does not inherit the caller's stderr
+  # redirect (see fish src/exec.rs exec_subshell_internal).
+  xdg.configFile."fish/conf.d/01-fix-apropos-realpath.fish".text = ''
+    if not type -q apropos
+        function __fish_apropos
+        end
+    else if test (uname) = Darwin; and test -x /usr/libexec/makewhatis
+        set -l dir
+        if test -n "$XDG_CACHE_HOME"
+            set dir $XDG_CACHE_HOME/fish
+        else
+            set dir (getconf DARWIN_USER_CACHE_DIR)"fish"
+        end
+
+        function __fish_apropos -V dir
+            if functions -q apropos; or test "$(command -v apropos)" != /usr/bin/apropos
+                __fish_without_manpager apropos "$argv"
+                return
+            end
+
+            set -l whatis $dir/whatis
+            set -l max_age 600000
+            set -l age $max_age
+
+            if test -f "$whatis"
+                set age (path mtime -R -- $whatis)
+            end
+
+            MANPATH="$dir" __fish_without_manpager /usr/bin/apropos "$argv"
+
+            if test $age -ge $max_age
+                test -d "$dir"; or mkdir -m 700 -p $dir
+                set -l sh (__fish_posix_shell)
+                $sh -c '( "$@" ) >/dev/null 2>&1 </dev/null &' -- \
+                    /usr/libexec/makewhatis -o "$whatis" \
+                    (/usr/bin/manpath | string split : | xargs realpath 2>/dev/null)
+            end
+        end
+    end
+  '';
+
   programs.starship = {
     enable = true;
     enableFishIntegration = false;
