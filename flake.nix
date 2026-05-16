@@ -172,6 +172,7 @@
                 leanspec-cli = ./pkgs/leanspec-cli.nix;
                 claude-powerline = ./pkgs/claude-powerline.nix;
                 claude-history = ./pkgs/claude-history.nix;
+                playwright-cli = ./pkgs/playwright-cli.nix;
                 git-surgeon = ./pkgs/git-surgeon.nix;
                 comfyui = ./pkgs/comfyui.nix;
                 krewfileModule = ./lib/krewfile-module.nix;

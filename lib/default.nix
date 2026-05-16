@@ -37,6 +37,7 @@ let
     leanspec-cli = final.callPackage paths.leanspec-cli { };
     claude-powerline = final.callPackage paths.claude-powerline { };
     claude-history = final.callPackage paths.claude-history { };
+    playwright-cli = final.callPackage paths.playwright-cli { };
     git-surgeon = final.callPackage paths.git-surgeon { };
     comfyui = final.callPackage paths.comfyui { };
   };

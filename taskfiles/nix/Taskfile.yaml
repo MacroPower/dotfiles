@@ -57,3 +57,4 @@ tasks:
       - bash pkgs/git-surgeon-update.sh
       - bash pkgs/leanspec-mcp-update.sh
       - bash pkgs/leanspec-cli-update.sh
+      - bash pkgs/playwright-cli-update.sh

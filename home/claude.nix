@@ -2461,6 +2461,7 @@ in
           research = ../configs/claude/skills/research;
           review-implementation = ../configs/claude/skills/review-implementation;
           taskfile = ../configs/claude/skills/taskfile;
+          playwright-cli = ../configs/claude/skills/playwright-cli;
         }
         // cfg.extraSkills;
       };
@@ -2489,6 +2490,7 @@ in
         pkgs.rtk-bin
         pkgs.claude-history
         pkgs.git-surgeon
+        pkgs.playwright-cli
         slugify
       ];
 
