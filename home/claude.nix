@@ -284,7 +284,7 @@ let
     ];
     panes = [
       {
-        command = "claude";
+        command = "claude --permission-mode plan";
         focus = true;
       }
       {
