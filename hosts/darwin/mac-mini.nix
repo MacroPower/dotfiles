@@ -9,7 +9,7 @@
   ];
 
   dockExtraApps = [
-    "~/Applications/Home Manager Apps/Discord.app"
+    "/Applications/Discord.app"
     "~/Applications/Home Manager Apps/Obsidian.app"
   ];
 
@@ -17,6 +17,7 @@
     taps = [ ];
     brews = [ ];
     casks = [
+      "discord"
       "plex"
       "orbstack"
       "filebot"

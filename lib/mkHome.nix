@@ -14,7 +14,6 @@ inputs.home-manager.lib.homeManagerConfiguration {
       builtins.elem (inputs.nixpkgs.lib.getName pkg) [
         "claude-code"
         "claude-code-wrapped"
-        "discord"
         "obsidian"
         "slack"
       ];
