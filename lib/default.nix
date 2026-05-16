@@ -77,6 +77,11 @@ let
       # needs it.
       patches = (old.patches or [ ]) ++ [
         ../pkgs/workmux-allow-kube-read.patch
+        # ClaudeProfile's hardcoded skip-permissions flag activates bypass
+        # mode and clobbers --permission-mode plan in the pane command.
+        # Swap to the opt-in --allow-dangerously-skip-permissions so plan
+        # mode survives launch; the agent can still escalate mid-session.
+        ../pkgs/workmux-claude-allow-dangerous.patch
       ];
     });
   };

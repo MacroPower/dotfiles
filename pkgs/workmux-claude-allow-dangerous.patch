@@ -1,0 +1,11 @@
+--- a/src/multiplexer/agent.rs
++++ b/src/multiplexer/agent.rs
+@@ -91,7 +91,7 @@ impl AgentProfile for ClaudeProfile {
+     }
+
+     fn skip_permissions_flag(&self) -> Option<&'static str> {
+-        Some("--dangerously-skip-permissions")
++        Some("--allow-dangerously-skip-permissions")
+     }
+
+     fn auto_name_command(&self) -> Option<&'static str> {
