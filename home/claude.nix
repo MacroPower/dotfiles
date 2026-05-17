@@ -1780,23 +1780,6 @@ in
           "mcp__opentofu__run_test"
         ];
         sandbox.allowedDomains = [ "api.opentofu.org" ];
-        commandRules.deny = [
-          {
-            command = "tofu";
-            args = [ "init" ];
-            reason = "Do not run tofu init directly. Use mcp__opentofu__run_init instead.";
-          }
-          {
-            command = "tofu";
-            args = [ "validate" ];
-            reason = "Do not run tofu validate directly. Use mcp__opentofu__run_validate instead.";
-          }
-          {
-            command = "tofu";
-            args = [ "test" ];
-            reason = "Do not run tofu test directly. Use mcp__opentofu__run_test instead.";
-          }
-        ];
         fetchRules.deny = [
           {
             host = "registry\\.opentofu\\.org";
