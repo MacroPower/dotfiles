@@ -50,6 +50,7 @@
         ../../home/personal.nix
         ../../home/obsidian.nix
         ../../home/comfyui.nix
+        ../../home/yt-dlp.nix
       ];
       dotfiles = {
         git = {
@@ -71,6 +72,7 @@
           };
         };
         comfyui.enable = true;
+        ytdlp.enable = true;
       };
     };
 }

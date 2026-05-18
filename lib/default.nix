@@ -40,6 +40,7 @@ let
     playwright-cli = final.callPackage paths.playwright-cli { };
     git-surgeon = final.callPackage paths.git-surgeon { };
     comfyui = final.callPackage paths.comfyui { };
+    slugify = final.callPackage paths.slugify { };
   };
 
   nurJacobColvinOverlay =

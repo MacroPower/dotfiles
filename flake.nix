@@ -175,6 +175,7 @@
                 playwright-cli = ./pkgs/playwright-cli.nix;
                 git-surgeon = ./pkgs/git-surgeon.nix;
                 comfyui = ./pkgs/comfyui.nix;
+                slugify = ./pkgs/slugify.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })

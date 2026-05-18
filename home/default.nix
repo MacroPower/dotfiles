@@ -38,6 +38,7 @@ in
 {
   imports = [
     ./options.nix
+    ./btrix.nix
     ./ca-certificates.nix
     ./stylix.nix
     ./fish.nix

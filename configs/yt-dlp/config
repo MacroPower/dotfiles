@@ -1,0 +1,42 @@
+# yt-dlp defaults -- managed by home-manager
+# Profile: video archive (max quality, mkv container)
+# Override any of these per-invocation with explicit CLI flags.
+
+# Output: ~/Documents/archives/<host>/<YYYY-MM-DD>-<title>.<ext>
+-o "~/Documents/archives/%(webpage_url_domain)s/%(upload_date>%Y-%m-%d)s-%(title)s.%(ext)s"
+
+# Restrict filenames to filesystem-safe ASCII (spaces -> _, strip specials).
+--restrict-filenames
+
+# Sort order: max resolution, then fps, then HDR, then prefer modern codecs.
+# Each codec key accepts a single preferred value; yt-dlp's default codec
+# ordering handles the fallback chain for everything else.
+-S "res,fps,hdr:12,vcodec:av01,acodec:opus"
+--merge-output-format mkv
+--remux-video mkv
+
+# Embed everything into the container.
+--embed-metadata
+--embed-thumbnail
+--embed-chapters
+--embed-subs
+
+# Subtitles: pull manual + auto English, embed via --embed-subs above.
+--write-subs
+--write-auto-subs
+--sub-langs "en.*,en"
+
+# SponsorBlock: mark chapters but do not remove (non-destructive default;
+# flip to --sponsorblock-remove on the CLI for the destructive variant).
+--sponsorblock-mark default
+
+# Behavior.
+--no-overwrites
+
+# Network resilience.
+--retries 10
+--fragment-retries 10
+--concurrent-fragments 4
+
+# Suppress the 90-day update warning (we manage versions via Nix).
+--no-update

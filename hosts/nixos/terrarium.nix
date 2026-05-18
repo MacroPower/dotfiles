@@ -216,6 +216,7 @@
         ../../home/kubernetes.nix
         ../../home/claude.nix
         ../../home/tmux.nix
+        ../../home/yt-dlp.nix
       ];
       dotfiles = {
         sops.enable = false;
@@ -229,6 +230,7 @@
           research.useVault = true;
           fetchAllowlist = false;
         };
+        ytdlp.enable = true;
       };
       # Inner tmux uses C-a so it doesn't collide with the macOS-host
       # tmux's C-b prefix when SSHed in from a nested session.

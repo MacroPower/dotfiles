@@ -343,6 +343,15 @@ let
           guest_path = "${config.xdg.stateHome}/mcp-kubectx";
           writable = true;
         }
+        {
+          # ~/Documents/archives is the output convention for the
+          # web-archive skill (btrix, yt-dlp). Mount it like
+          # ~/Documents/repos so captures from inside the sandbox
+          # persist to the host filesystem.
+          host_path = "${config.home.homeDirectory}/Documents/archives";
+          guest_path = "${config.home.homeDirectory}/Documents/archives";
+          writable = true;
+        }
       ];
       lima = {
         isolation = "shared";
@@ -698,10 +707,6 @@ let
       --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN" \
       --log-file "${config.xdg.stateHome}/mcp-http-proxy/github.log" \
       "$@"
-  '';
-
-  slugify = pkgs.writeShellScriptBin "slugify" ''
-    echo "$*" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//;s/-$//' | cut -c1-60
   '';
 
   # Wrap claude with its invocation-time env so vars survive boundaries that
@@ -2445,6 +2450,7 @@ in
           review-implementation = ../configs/claude/skills/review-implementation;
           taskfile = ../configs/claude/skills/taskfile;
           playwright-cli = ../configs/claude/skills/playwright-cli;
+          web-archive = ../configs/claude/skills/web-archive;
         }
         // cfg.extraSkills;
       };
@@ -2474,7 +2480,7 @@ in
         pkgs.claude-history
         pkgs.git-surgeon
         pkgs.playwright-cli
-        slugify
+        pkgs.slugify
       ];
 
       file.".claude/themes/stylix.json" = lib.mkIf cfg.stylixTheme.enable {
@@ -2516,6 +2522,13 @@ in
       activation.ensureMcpKubectxStateDir = lib.mkIf cfg.lima.enable (
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           run mkdir -p "${config.xdg.stateHome}/mcp-kubectx"
+        ''
+      );
+
+      # Same Lima-needs-host-path-to-exist constraint as above.
+      activation.ensureDocumentsArchivesDir = lib.mkIf cfg.lima.enable (
+        lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          run mkdir -p "${config.home.homeDirectory}/Documents/archives"
         ''
       );
 
