@@ -193,6 +193,7 @@ in
     gping
     lefthook
     tfswitch
+    tflint
     devbox
     angle-grinder
     zstd

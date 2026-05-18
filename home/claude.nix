@@ -877,6 +877,7 @@ let
     "~/.local/share"
     "~/.local/bin"
     "~/.claude"
+    "~/.tflint.d"
 
     # ~/Library narrowed — blanket access leaks Keychains, Cookies,
     # Messages, Mail, Containers, Application Support subdirs, etc.
@@ -916,6 +917,7 @@ let
     "~/.local/state/workmux"
     "~/.local/state/hook-router"
     "~/.local/share/claude"
+    "~/.tflint.d"
     researchDir
   ]
   ++ bundledWritePaths;
