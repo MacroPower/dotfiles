@@ -172,6 +172,51 @@ let
     };
   };
 
+  # nixpkgs PR #489526 (merged 2026-04-20) switched deno to building
+  # rusty_v8 from source instead of fetching the upstream prebuilt
+  # static lib. The from-source build fails on aarch64-darwin: during
+  # the V8 link step rustc execs build/toolchain/apple/linker_driver.py
+  # and trips EPERM (the chromium_build submodule's shebangs aren't
+  # reachable by patchShebangs, and python3 is absent from rustc's
+  # reduced linker PATH). Other rusty_v8 consumers in nixpkgs (codex,
+  # brioche, windmill, ...) still use the prebuilt release asset, so
+  # point deno's librusty_v8 input back at the prebuilt and skip the
+  # V8 build entirely. Bump `version` and the four shas in lockstep
+  # with `pkgs.deno.passthru.librusty_v8.version` when updating nixpkgs.
+  #
+  # Separately, deno 2.7.13's checkPhase runs uv_compat's
+  # tty_reset_mode_restores_termios test, which calls termios reset on
+  # a non-TTY fd inside the sandbox and asserts the ECHO flag is
+  # restored. With no TTY backing the fd the assertion always fires
+  # (left: 0, right: 8). This matches the pattern of the existing
+  # "Darwin sandbox issues" skips in deno/package.nix; add ours to
+  # checkFlags via overrideAttrs.
+  denoOverlay = final: prev: {
+    deno =
+      (prev.deno.override {
+        librusty_v8 = final.fetchurl {
+          name = "librusty_v8-147.2.1";
+          url = "https://github.com/denoland/rusty_v8/releases/download/v147.2.1/librusty_v8_simdutf_release_${final.stdenv.hostPlatform.rust.rustcTarget}.a.gz";
+          hash =
+            {
+              aarch64-darwin = "sha256-+KRxJX4ba/+c6xEdrjrBqjhW5mMRkI/H9DbmvFoVZ/U=";
+              x86_64-darwin = "sha256-PGgufH3EaUhMw/fgGEWW+WSjHWjh7l9xY//oUCvdXLk=";
+              aarch64-linux = "sha256-DjSVA3iGMxlBIopqA9woyPW/cDnGHzIP6lcCPxgSOBg=";
+              x86_64-linux = "sha256-/oX8Aww6CwIsukfa/Rv/MYSXM3Ku8i19ID8UuXHQIvM=";
+            }
+            .${final.stdenv.hostPlatform.system};
+          meta.sourceProvenance = with final.lib.sourceTypes; [ binaryNativeCode ];
+        };
+      }).overrideAttrs
+        (old: {
+          checkFlags =
+            (old.checkFlags or [ ])
+            ++ final.lib.optionals final.stdenv.hostPlatform.isDarwin [
+              "--skip=uv_compat::tests::tty_reset_mode_restores_termios"
+            ];
+        });
+  };
+
   # nixpkgs runs grug-far.nvim's mini.test suite during build whenever
   # lua is 5.1-compatible and the host isn't darwin (luajit2.1 hits this
   # on linux). The override at pkgs/development/lua-modules/overrides.nix
@@ -201,6 +246,7 @@ let
     mcpOverlay
     aioboto3Overlay
     direnvOverlay
+    denoOverlay
     grugFarOverlay
     (nurJacobColvinOverlay system)
     ryceeOverlay
