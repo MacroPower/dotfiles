@@ -1,9 +1,6 @@
 {
   lib,
-  stdenv,
   buildGoModule,
-  bubblewrap,
-  makeWrapper,
 }:
 
 buildGoModule {
@@ -16,13 +13,6 @@ buildGoModule {
   # Tests use httptest.NewServer, which binds to loopback. The Darwin sandbox
   # blocks all network access by default; this flag whitelists loopback.
   __darwinAllowLocalNetworking = true;
-
-  nativeBuildInputs = lib.optional stdenv.isLinux makeWrapper;
-
-  postFixup = lib.optionalString stdenv.isLinux ''
-    wrapProgram $out/bin/mcp-opentofu \
-      --prefix PATH : ${lib.makeBinPath [ bubblewrap ]}
-  '';
 
   meta = {
     description = "MCP OpenTofu Registry server (stdio) for Claude Code";

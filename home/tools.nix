@@ -207,4 +207,21 @@ in
     disable_checkpoint           = true
     disable_checkpoint_signature = true
   '';
+
+  # tfswitch defaults to symlinking /usr/local/bin/tofu (denied by the
+  # Claude sandbox) and falls back to ~/bin (creation also denied).
+  # Point it at ~/.terraform.versions/bin, which lives under a path
+  # already in the sandbox's allowWrite list for the opentofu bundle.
+  home.file.".tfswitch.toml".text = ''
+    bin = "${config.home.homeDirectory}/.terraform.versions/bin/tofu"
+    product = "opentofu"
+  '';
+
+  # tfswitch refuses to create the immediate parent of -b/bin, so the
+  # directory has to exist before the first invocation.
+  home.activation.tfswitchBinDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run mkdir -p "${config.home.homeDirectory}/.terraform.versions/bin"
+  '';
+
+  home.sessionPath = [ "$HOME/.terraform.versions/bin" ];
 }

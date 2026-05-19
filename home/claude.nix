@@ -676,31 +676,6 @@ let
     exec ${pkgs.spacectl}/bin/spacectl "$@"
   '';
 
-  opentofuPolicyFile = (pkgs.formats.json { }).generate "mcp-opentofu-policy.json" {
-    run_init = {
-      allowed_domains = [
-        "registry.opentofu.org"
-        "registry.terraform.io"
-        "releases.hashicorp.com"
-        "github.com"
-        "objects.githubusercontent.com"
-        "codeload.github.com"
-      ];
-      allow_read = [ "${config.xdg.configHome}/opentofu" ];
-      allow_write = [ ];
-    };
-    run_validate = {
-      allowed_domains = [ ];
-      allow_read = [ "${config.xdg.configHome}/opentofu" ];
-      allow_write = [ ];
-    };
-    run_test = {
-      allowed_domains = [ ];
-      allow_read = [ "${config.xdg.configHome}/opentofu" ];
-      allow_write = [ ];
-    };
-  };
-
   githubWrapper = pkgs.writeShellScript "github-mcp-wrapper" ''
     ${exportSecret "GH_TOKEN" "gh_token"}
     export GITHUB_PERSONAL_ACCESS_TOKEN="''${GH_TOKEN:-}"
@@ -725,6 +700,7 @@ let
         --set DISABLE_AUTOUPDATER 1 \
         --set CLAUDE_RESEARCH_DIR ${lib.escapeShellArg researchDir} \
         --set TF_CLI_CONFIG_FILE "${config.xdg.configHome}/opentofu/tofurc" \
+        --set PLUGIN_UNIX_SOCKET_DIR "${config.home.homeDirectory}/.terraform.versions" \
         ${lib.optionalString skipPerms "--set IS_SANDBOX 1 --add-flags --allow-dangerously-skip-permissions --add-flags --permission-mode --add-flags plan"}
     '';
   };
@@ -1774,10 +1750,6 @@ in
         servers.opentofu = {
           type = "stdio";
           command = "${pkgs.mcp-opentofu}/bin/mcp-opentofu";
-          args = [
-            "--sandbox=auto"
-            "--policy-file=${opentofuPolicyFile}"
-          ];
         };
         permissions.allow = [
           "mcp__opentofu__search_registry"
@@ -1786,12 +1758,18 @@ in
           "mcp__opentofu__get_resource_docs"
           "mcp__opentofu__get_datasource_docs"
         ];
-        permissions.ask = [
-          "mcp__opentofu__run_init"
-          "mcp__opentofu__run_validate"
-          "mcp__opentofu__run_test"
+        sandbox.allowedDomains = [
+          "api.opentofu.org"
+          "get.opentofu.org"
+          "registry.opentofu.org"
         ];
-        sandbox.allowedDomains = [ "api.opentofu.org" ];
+        sandbox.allowWrite = [ "~/.terraform.versions" ];
+        sandbox.allowRead = [ "~/.tfswitch.toml" ];
+        # hashicorp/go-plugin (used by tofu providers) binds a Unix domain
+        # socket for IPC with the parent process. The claude wrapper sets
+        # PLUGIN_UNIX_SOCKET_DIR=~/.terraform.versions so the socket lands
+        # in a directory the sandbox can both write to and bind within.
+        sandbox.allowUnixSockets = [ "~/.terraform.versions" ];
         fetchRules.deny = [
           {
             host = "registry\\.opentofu\\.org";
@@ -2306,7 +2284,7 @@ in
               };
               filesystem = {
                 denyRead = extraDenyReadPaths;
-                allowRead = extraReadPaths;
+                allowRead = lib.unique (extraReadPaths ++ extraWritePaths);
                 allowWrite = extraWritePaths;
               };
             };

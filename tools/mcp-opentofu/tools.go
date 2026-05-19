@@ -17,9 +17,6 @@ const (
 	toolModuleDetails   = "get_module_details"
 	toolResourceDocs    = "get_resource_docs"
 	toolDatasourceDocs  = "get_datasource_docs"
-	toolRunInit         = "run_init"
-	toolRunValidate     = "run_validate"
-	toolRunTest         = "run_test"
 )
 
 // SearchInput is the input schema for the search_registry tool.
@@ -69,11 +66,8 @@ type DataSourceDocsInput struct {
 
 // handler holds the shared state for the tool handlers.
 type handler struct {
-	client    *Client
-	log       *slog.Logger
-	tofu      tofuExecutor
-	policies  Policies
-	allowRoot string
+	client *Client
+	log    *slog.Logger
 }
 
 func (h *handler) handleSearch(
