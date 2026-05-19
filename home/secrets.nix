@@ -14,6 +14,7 @@ lib.mkIf config.dotfiles.sops.enable {
       spacelift_api_key_endpoint.key = "SPACELIFT_API_KEY_ENDPOINT";
       spacelift_api_key_id.key = "SPACELIFT_API_KEY_ID";
       spacelift_api_key_secret.key = "SPACELIFT_API_KEY_SECRET";
+      tf_token_app_us_spacelift_io.key = "TF_TOKEN_APP_US_SPACELIFT_IO";
     };
   };
 }

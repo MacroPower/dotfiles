@@ -198,4 +198,13 @@ in
     angle-grinder
     zstd
   ];
+
+  # Relocates the tofu CLI config out of ~/.terraform.d/ so the Claude
+  # sandbox (which blocks $HOME) can reach it via TF_CLI_CONFIG_FILE.
+  # Credentials-free on purpose: backend tokens flow through TF_TOKEN_*
+  # env vars sourced from sops.
+  xdg.configFile."opentofu/tofurc".text = ''
+    disable_checkpoint           = true
+    disable_checkpoint_signature = true
+  '';
 }

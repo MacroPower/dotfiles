@@ -322,6 +322,8 @@ let
         "SPACELIFT_API_KEY_ENDPOINT"
         "SPACELIFT_API_KEY_ID"
         "SPACELIFT_API_KEY_SECRET"
+        "TF_CLI_CONFIG_FILE"
+        "TF_TOKEN_app_us_spacelift_io"
         "TERM_PROGRAM"
         "TERM_PROGRAM_VERSION"
       ];
@@ -684,17 +686,17 @@ let
         "objects.githubusercontent.com"
         "codeload.github.com"
       ];
-      allow_read = [ ];
+      allow_read = [ "${config.xdg.configHome}/opentofu" ];
       allow_write = [ ];
     };
     run_validate = {
       allowed_domains = [ ];
-      allow_read = [ ];
+      allow_read = [ "${config.xdg.configHome}/opentofu" ];
       allow_write = [ ];
     };
     run_test = {
       allowed_domains = [ ];
-      allow_read = [ ];
+      allow_read = [ "${config.xdg.configHome}/opentofu" ];
       allow_write = [ ];
     };
   };
@@ -722,6 +724,7 @@ let
         --set CLAUDE_CODE_NO_FLICKER 1 \
         --set DISABLE_AUTOUPDATER 1 \
         --set CLAUDE_RESEARCH_DIR ${lib.escapeShellArg researchDir} \
+        --set TF_CLI_CONFIG_FILE "${config.xdg.configHome}/opentofu/tofurc" \
         ${lib.optionalString skipPerms "--set IS_SANDBOX 1 --add-flags --allow-dangerously-skip-permissions --add-flags --permission-mode --add-flags plan"}
     '';
   };
@@ -748,7 +751,9 @@ let
             SPACELIFT_API_KEY_ENDPOINT = "spacelift_api_key_endpoint";
             SPACELIFT_API_KEY_ID = "spacelift_api_key_id";
             SPACELIFT_API_KEY_SECRET = "spacelift_api_key_secret";
+            TF_TOKEN_app_us_spacelift_io = "tf_token_app_us_spacelift_io";
           }}
+          export TF_CLI_CONFIG_FILE="${config.xdg.configHome}/opentofu/tofurc"
         '
     '';
   };
