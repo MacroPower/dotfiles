@@ -32,8 +32,6 @@ in
 
   config = {
     home = {
-      sessionPath = [ "$HOME/.krew/bin" ];
-
       packages =
         with pkgs;
         [
