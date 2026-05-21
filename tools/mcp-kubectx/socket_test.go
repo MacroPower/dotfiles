@@ -659,7 +659,7 @@ func mustEncodeCred(t *testing.T, c ExecCredential) []byte {
 func TestListenSocketWritesSidecar(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "sidecar.sock")
 
 	h := &handler{}
@@ -687,7 +687,7 @@ func TestListenSocketWritesSidecar(t *testing.T) {
 func TestListenSocketOmitsSidecarOnEmptyInstanceID(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "no-sidecar.sock")
 
 	h := &handler{}
@@ -707,7 +707,7 @@ func TestListenSocketOmitsSidecarOnEmptyInstanceID(t *testing.T) {
 func TestListenSocketCleanupRemovesSidecar(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "cleanup-sidecar.sock")
 
 	h := &handler{}
@@ -732,7 +732,7 @@ func TestListenSocketCleanupRemovesSidecar(t *testing.T) {
 func TestClearStaleSocketRemovesOrphanedSidecar(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "orphan.sock")
 	sidecar := sidecarPath(path)
 
@@ -752,7 +752,7 @@ func TestClearStaleSocketRemovesOrphanedSidecar(t *testing.T) {
 func TestClearStaleSocketRemovesSidecarOfDeadInode(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "dead.sock")
 	sidecar := sidecarPath(path)
 
