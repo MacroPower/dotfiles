@@ -37,6 +37,7 @@ You review code changes made during plan implementation. The caller provides you
 - **Simplicity**: Unnecessary abstractions, dead code, overly defensive checks?
 - **Security**: Injection vectors, leaked secrets, unsafe patterns?
 - **Self-contained**: No references to plans, specs, stories, tickets, issues, PRs, or other external docs in code, comments, commits, or docs (e.g. "see plan.md", "per story #42"). Such references rot as documents drift. Flag each and suggest inlining the context or removing it.
+- **Timeless prose**: Comments and docs describe the current state of the code, not the change. Reject phrasing that frames behavior as a delta from a prior version: "now does X", "previously did Y", "newly added Z", "the new flag", "before this feature", "existing release flow only needed Q" (when contrasting with new behavior). Git history is the record of what changed; the source files should read the same whether you arrived at this commit or wrote it from scratch. Flag each occurrence and suggest a rewrite that states the present behavior directly.
 
 ## Output format
 
