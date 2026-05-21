@@ -2074,6 +2074,7 @@ in
             "serve"
             "--sa-role-name"
             cfg.kubeClusterRole
+            "--sa-cluster-scoped"
             "--log-file"
             "${config.xdg.stateHome}/mcp-kubectx/kubectx.log"
             "--socket-slots"
