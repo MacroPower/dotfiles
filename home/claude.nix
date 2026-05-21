@@ -850,6 +850,11 @@ let
     "/run"
     "/private/var/run"
 
+    # macOS default shell selector. /var/select/sh is the symlink some
+    # Apple tooling consults to resolve the system shell.
+    "/var/select/sh"
+    "/private/var/select/sh"
+
     "/opt/homebrew"
 
     "~/.config"
