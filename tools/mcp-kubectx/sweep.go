@@ -51,17 +51,17 @@ const (
 // deletes the orphans best-effort.
 //
 // Error contract: returns [ErrParseHostSweepFlags] on flag parse
-// failure, [ErrMissingHostID] when --host-id is empty, and
-// [ErrSweepList] only when every list call fails outright (RBAC
-// forbids cluster-wide list on all three resource kinds). Partial
-// list failures and all delete failures are logged at warn level
-// and swallowed because the next `serve` startup retries the
-// sweep anyway.
+// failure, [ErrMissingHostID] when --host-id is empty,
+// [ErrInvalidHostID] when --host-id is not exactly 16 lowercase
+// hex characters, and [ErrSweepList] only when every list call
+// fails outright (RBAC forbids cluster-wide list on all three
+// resource kinds). Partial list failures and all delete failures
+// are logged at warn level and swallowed because the next `serve`
+// startup retries the sweep anyway.
 //
-// The --host-id flag is required and non-empty. An empty host id
-// is a footgun because the resulting selector would either match
-// nothing or match too much depending on whether historical
-// resources carry the label.
+// The --host-id flag is required and format-checked; see
+// [ErrMissingHostID] and [ErrInvalidHostID] for the threat model
+// behind each check.
 //
 // --context may be empty; in that case [runHostSweep] resolves
 // `cfg.CurrentContext` from the loaded kubeconfig. If the
@@ -105,6 +105,10 @@ func runHostSweep(ctx context.Context, args []string) error {
 
 	if *hostID == "" {
 		return ErrMissingHostID
+	}
+
+	if !validHostID(*hostID) {
+		return fmt.Errorf("%w: %q", ErrInvalidHostID, *hostID)
 	}
 
 	resolvedKubeconfig := resolveHostKubeconfigPath(*kubeconfig)
@@ -167,6 +171,23 @@ func sweepSelector(hostID string) string {
 		managedByLabel, managedByValue,
 		hostIDLabel, hostID,
 	)
+}
+
+// validHostID reports whether s matches the format [randomHex]
+// produces. See [ErrInvalidHostID] for the rationale.
+func validHostID(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+
+	for i := range len(s) {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+
+	return true
 }
 
 // sweepCandidate is one classified resource awaiting deletion.

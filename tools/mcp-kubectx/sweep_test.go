@@ -11,6 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testHostID is the well-formed host id shared by every sweep
+// fixture. Centralized so [validHostID]'s format and the
+// fixtures cannot drift independently.
+const testHostID = "0123456789abcdef"
+
 // TestShouldDeleteClassification table-drives the classifier
 // invariants the sweep depends on. The cases mirror the README's
 // recovery semantics: preserve missing-label resources
@@ -204,13 +209,13 @@ func TestRunHostSweepEndToEnd(t *testing.T) { //nolint:paralleltest // mutates p
 	require.NoError(t, runHostSweep(t.Context(), []string{
 		"--kubeconfig", kubeconfigPath,
 		"--context", "prod",
-		"--host-id", "host-abc",
+		"--host-id", testHostID,
 		"--live-instance-id", "live",
 	}))
 
 	require.Len(t, mock.listedSAs, 1)
 	assert.Contains(t, mock.listedSAs[0], managedByLabel+"="+managedByValue)
-	assert.Contains(t, mock.listedSAs[0], hostIDLabel+"=host-abc")
+	assert.Contains(t, mock.listedSAs[0], hostIDLabel+"="+testHostID)
 
 	assert.Equal(t, []string{"ns/sa-dead"}, mock.deletedSAs,
 		"only orphan SAs (dead instance, host-id matching) should be deleted")
@@ -218,18 +223,38 @@ func TestRunHostSweepEndToEnd(t *testing.T) { //nolint:paralleltest // mutates p
 	assert.Equal(t, []string{"crb-dead"}, mock.deletedClusterRoleBindings)
 }
 
-// TestRunHostSweepRequiresHostID pins the [ErrMissingHostID]
-// guard. An empty host id would produce a selector matching
-// every managed resource cluster-wide, which is the footgun the
-// guard exists to prevent.
-func TestRunHostSweepRequiresHostID(t *testing.T) {
+// TestRunHostSweepRejectsInvalidHostID pins the input-validation
+// boundary at the start of [runHostSweep]: empty values fail with
+// [ErrMissingHostID], any other malformed value fails with
+// [ErrInvalidHostID] before the selector is built. The injection
+// case covers a tampered host.id smuggling selector
+// metacharacters past the validator.
+func TestRunHostSweepRejectsInvalidHostID(t *testing.T) {
 	t.Parallel()
 
-	err := runHostSweep(t.Context(), []string{
-		"--kubeconfig", "/dev/null",
-		"--context", "prod",
-	})
-	require.ErrorIs(t, err, ErrMissingHostID)
+	tests := map[string]struct {
+		hostID string
+		err    error
+	}{
+		"empty":              {hostID: "", err: ErrMissingHostID},
+		"fifteen chars":      {hostID: "0123456789abcde", err: ErrInvalidHostID},
+		"seventeen chars":    {hostID: "0123456789abcdef0", err: ErrInvalidHostID},
+		"uppercase hex":      {hostID: "0123456789ABCDEF", err: ErrInvalidHostID},
+		"non-hex char":       {hostID: "0123456789abcdeg", err: ErrInvalidHostID},
+		"selector injection": {hostID: "aaaaaaaaaaaaaaaa,namespace=kube-system", err: ErrInvalidHostID},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			err := runHostSweep(t.Context(), []string{
+				"--kubeconfig", "/dev/null",
+				"--host-id", tc.hostID,
+			})
+			require.ErrorIs(t, err, tc.err)
+		})
+	}
 }
 
 // TestRunHostSweepResolvesCurrentContextWhenEmpty pins that the
@@ -247,7 +272,7 @@ func TestRunHostSweepResolvesCurrentContextWhenEmpty(t *testing.T) {
 
 	require.NoError(t, runHostSweep(t.Context(), []string{
 		"--kubeconfig", kubeconfigPath,
-		"--host-id", "host-abc",
+		"--host-id", testHostID,
 	}))
 
 	require.NotEmpty(t, mock.listedSAs, "sweep must run even without --context")
@@ -272,7 +297,7 @@ func TestRunHostSweepEmptyLiveSetSweepsAll(t *testing.T) { //nolint:paralleltest
 	require.NoError(t, runHostSweep(t.Context(), []string{
 		"--kubeconfig", kubeconfigPath,
 		"--context", "prod",
-		"--host-id", "host-abc",
+		"--host-id", testHostID,
 	}))
 
 	sort.Strings(mock.deletedSAs)
@@ -293,7 +318,7 @@ func TestRunHostSweepSkipsWhenNoContextResolved(t *testing.T) { //nolint:paralle
 
 	require.NoError(t, runHostSweep(t.Context(), []string{
 		"--kubeconfig", kubeconfigPath,
-		"--host-id", "host-abc",
+		"--host-id", testHostID,
 	}))
 
 	assert.Empty(t, mock.listedSAs, "no resolved context must skip list calls entirely")
@@ -320,7 +345,7 @@ func TestRunHostSweepToleratesPartialListForbidden(t *testing.T) {
 	require.NoError(t, runHostSweep(t.Context(), []string{
 		"--kubeconfig", kubeconfigPath,
 		"--context", "prod",
-		"--host-id", "host-abc",
+		"--host-id", testHostID,
 	}))
 
 	assert.Equal(t, []string{"crb-dead"}, mock.deletedClusterRoleBindings,
@@ -346,7 +371,7 @@ func TestRunHostSweepSurfacesErrSweepListWhenAllFail(t *testing.T) {
 	err := runHostSweep(t.Context(), []string{
 		"--kubeconfig", kubeconfigPath,
 		"--context", "prod",
-		"--host-id", "host-abc",
+		"--host-id", testHostID,
 	})
 	require.ErrorIs(t, err, ErrSweepList)
 }
@@ -530,7 +555,7 @@ func TestRunHostSweepIgnoresEmptyLiveID(t *testing.T) { //nolint:paralleltest //
 	require.NoError(t, runHostSweep(t.Context(), []string{
 		"--kubeconfig", kubeconfigPath,
 		"--context", "prod",
-		"--host-id", "host-abc",
+		"--host-id", testHostID,
 		"--live-instance-id", "",
 	}))
 

@@ -180,6 +180,11 @@ var (
 	// (if no historical resources lack the label) or be unsafe (if
 	// they do): a footgun, so refuse outright.
 	ErrMissingHostID = errors.New("--host-id is required")
+	// ErrInvalidHostID guards the sweep selector against injection.
+	// [randomHex] produces 16 lowercase hex chars; any other shape
+	// is either a typo or a hand-crafted value with selector
+	// metacharacters in it, so [runHostSweep] refuses to run.
+	ErrInvalidHostID = errors.New("--host-id must be 16 lowercase hex characters")
 )
 
 // clusterServerHost extracts the hostname from a kubeconfig
