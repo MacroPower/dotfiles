@@ -367,15 +367,16 @@ func TestHandlerRunSweepForwardsArgs(t *testing.T) {
 	var got call
 
 	h := &handler{
-		hostID:    "host-1",
-		envLookup: constLookup(""),
+		hostID:     "host-1",
+		instanceID: "host-1-inst",
+		envLookup:  constLookup(""),
 		runHost: func(_ context.Context, sub string, args []string) ([]byte, error) {
 			got = call{sub: sub, args: append([]string(nil), args...)}
 			return nil, nil
 		},
 	}
 
-	h.runSweep(t.Context(), map[string]struct{}{"inst-a": {}, "inst-b": {}})
+	h.runSweep(t.Context(), map[string]struct{}{"inst-a": {}, "inst-b": {}, "host-1-inst": {}})
 
 	assert.Equal(t, subSweep, got.sub)
 	assert.NotContains(t, got.args, "--context", "context resolution lives in runHostSweep")
@@ -393,11 +394,11 @@ func TestHandlerRunSweepForwardsArgs(t *testing.T) {
 		if a == "--live-instance-id" {
 			count++
 
-			assert.Contains(t, []string{"inst-a", "inst-b"}, got.args[i+1])
+			assert.Contains(t, []string{"inst-a", "inst-b", "host-1-inst"}, got.args[i+1])
 		}
 	}
 
-	assert.Equal(t, 2, count)
+	assert.Equal(t, 3, count)
 }
 
 // TestHandlerRunSweepIncludesKubeconfigWhenSet pins the optional
@@ -410,6 +411,7 @@ func TestHandlerRunSweepIncludesKubeconfigWhenSet(t *testing.T) {
 	h := &handler{
 		kubeconfigPath: "/admin/kube",
 		hostID:         "host-1",
+		instanceID:     "host-1-inst",
 		envLookup:      constLookup(""),
 		runHost: func(_ context.Context, _ string, a []string) ([]byte, error) {
 			args = append([]string(nil), a...)
@@ -417,7 +419,7 @@ func TestHandlerRunSweepIncludesKubeconfigWhenSet(t *testing.T) {
 		},
 	}
 
-	h.runSweep(t.Context(), nil)
+	h.runSweep(t.Context(), map[string]struct{}{"host-1-inst": {}})
 
 	idx := indexOf(args, "--kubeconfig")
 	require.GreaterOrEqual(t, idx, 0)
@@ -431,8 +433,9 @@ func TestHandlerRunSweepLogsErrorWithoutPropagation(t *testing.T) {
 	t.Parallel()
 
 	h := &handler{
-		hostID:    "host-1",
-		envLookup: constLookup(""),
+		hostID:     "host-1",
+		instanceID: "host-1-inst",
+		envLookup:  constLookup(""),
 		runHost: func(_ context.Context, _ string, _ []string) ([]byte, error) {
 			return nil, errors.New("shell out failed")
 		},
@@ -440,7 +443,51 @@ func TestHandlerRunSweepLogsErrorWithoutPropagation(t *testing.T) {
 
 	// No panic, no return value to assert; reaching this line
 	// means the error did not propagate.
-	h.runSweep(t.Context(), nil)
+	h.runSweep(t.Context(), map[string]struct{}{"host-1-inst": {}})
+}
+
+// TestHandlerRunSweepSkipsDegradedDiscovery pins both
+// discovery-glitch guards: an empty live set, or a non-empty
+// live set missing h.instanceID. Either case would otherwise
+// shell out with zero --live-instance-id flags and trip
+// [runHostSweep]'s destructive manual-recovery semantics.
+func TestHandlerRunSweepSkipsDegradedDiscovery(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		liveSet    map[string]struct{}
+		instanceID string
+	}{
+		"empty live set": {
+			instanceID: "host-1-inst",
+			liveSet:    map[string]struct{}{},
+		},
+		"own id missing from live set": {
+			instanceID: "my-id",
+			liveSet:    map[string]struct{}{"someone-else": {}},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			called := false
+			h := &handler{
+				hostID:     "host-1",
+				instanceID: tc.instanceID,
+				envLookup:  constLookup(""),
+				runHost: func(_ context.Context, _ string, _ []string) ([]byte, error) {
+					called = true
+					return nil, nil
+				},
+			}
+
+			h.runSweep(t.Context(), tc.liveSet)
+
+			assert.False(t, called, "degraded discovery must refuse to shell out")
+		})
+	}
 }
 
 // indexOf returns the index of needle in s, or -1.

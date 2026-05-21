@@ -354,9 +354,33 @@ func deleteSweepCandidate(ctx context.Context, client KubeClient, c sweepCandida
 // successful sweep. --context is intentionally omitted from the
 // argv: no MCP `select` has happened yet, so the sweep resolves
 // `cfg.CurrentContext` itself from the host kubeconfig.
+//
+// Refuses to invoke [runHostSweep] when liveSet is empty or does
+// not contain h.instanceID. Either case indicates degraded
+// discovery (sidecar read or dial probe failed for the own slot);
+// shelling out anyway would let [runHostSweep]'s destructive
+// "manual recovery" semantics delete every peer-serve's
+// resources. The manual `host sweep` CLI keeps the
+// empty-live-set semantics so operator recovery still works.
 func (h *handler) runSweep(ctx context.Context, liveSet map[string]struct{}) {
-	args := []string{}
+	if len(liveSet) == 0 {
+		slog.WarnContext(ctx, "host sweep skipped: empty live instance set",
+			slog.String("host_id", h.hostID),
+		)
 
+		return
+	}
+
+	if _, ok := liveSet[h.instanceID]; !ok {
+		slog.WarnContext(ctx, "host sweep skipped: own instance id missing from live set",
+			slog.String("host_id", h.hostID),
+			slog.String("instance_id", h.instanceID),
+		)
+
+		return
+	}
+
+	args := []string{}
 	if h.kubeconfigPath != "" {
 		args = append(args, "--kubeconfig", h.kubeconfigPath)
 	}
