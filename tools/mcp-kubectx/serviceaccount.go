@@ -21,6 +21,18 @@ const (
 
 	// managedByValue is the label value for resources created by this tool.
 	managedByValue = "mcp-kubectx"
+
+	// instanceIDLabel identifies the specific [*handler] (one per
+	// `serve` process) that provisioned a resource. Bounded by
+	// [discoverLiveInstances] at sweep time so resources owned by a
+	// live serve are never reaped.
+	instanceIDLabel = "mcp-kubectx/instance-id"
+
+	// hostIDLabel identifies the persistent host the resource was
+	// provisioned from. The sweep selector pins on this label so two
+	// operators against a shared cluster never delete each other's
+	// resources. See [loadOrCreateHostID].
+	hostIDLabel = "mcp-kubectx/host-id"
 )
 
 // Sentinel errors for ServiceAccount operations.
@@ -35,8 +47,27 @@ var (
 	ErrBuildKubeClient   = errors.New("build kubernetes client")
 )
 
+// ResourceRef is a minimal projection of a Kubernetes object,
+// carrying only the fields the sweep classifier in [runHostSweep]
+// needs. The List* methods on [KubeClient] return slices of
+// ResourceRef rather than typed K8s objects so the interface stays
+// narrow and fakes in tests can be trivially small.
+type ResourceRef struct {
+	// Labels are the full label set on the object. The sweep
+	// classifier reads [instanceIDLabel] (and indirectly
+	// [hostIDLabel] via the list selector).
+	Labels map[string]string
+
+	// Namespace is empty for cluster-scoped resources
+	// (ClusterRoleBinding).
+	Namespace string
+
+	// Name is the K8s object name.
+	Name string
+}
+
 // KubeClient abstracts the Kubernetes API calls needed for
-// ServiceAccount provisioning and cleanup, allowing tests to
+// ServiceAccount provisioning, cleanup, and orphan sweeps. Tests
 // substitute a fake implementation.
 type KubeClient interface {
 	CreateServiceAccount(ctx context.Context, namespace, name string, labels map[string]string) error
@@ -59,6 +90,9 @@ type KubeClient interface {
 		namespace, saName string,
 		expiration time.Duration,
 	) (token string, expiry time.Time, err error)
+	ListServiceAccounts(ctx context.Context, labelSelector string) ([]ResourceRef, error)
+	ListRoleBindings(ctx context.Context, labelSelector string) ([]ResourceRef, error)
+	ListClusterRoleBindings(ctx context.Context, labelSelector string) ([]ResourceRef, error)
 }
 
 // saConfig holds ServiceAccount configuration parsed from flags.
@@ -105,7 +139,22 @@ func (c *saConfig) validate() error {
 }
 
 func randomSuffix() (string, error) {
-	b := make([]byte, 4)
+	return randomHex(4)
+}
+
+// randomInstanceID returns a 16-hex random identifier used for
+// [instanceIDLabel]. Wider than [randomSuffix] to prevent
+// intra-host collisions across long-running operators.
+func randomInstanceID() (string, error) {
+	return randomHex(8)
+}
+
+// randomHex returns a hex-encoded random string with the given
+// number of bytes. Internal helper shared between [randomSuffix]
+// and [randomInstanceID] so both pull from the same crypto/rand
+// source and surface a consistent error shape.
+func randomHex(n int) (string, error) {
+	b := make([]byte, n)
 
 	_, err := rand.Read(b)
 	if err != nil {
@@ -169,11 +218,18 @@ func bindingNameForSA(saName string) string {
 // minting, no kubeconfig writing, no cleanup registration. The
 // binding name follows [bindingNameForSA] so callers can derive it
 // from the returned SA name.
+//
+// instanceID and hostID are tagged on the created resources via
+// [instanceIDLabel] and [hostIDLabel] so the orphan sweep in
+// [runHostSweep] can attribute them to a specific live serve and
+// host. An empty string for either parameter omits that label
+// entirely; this is the contract the standalone `host select` CLI
+// invocation relies on so its existing tests stay green.
 func createSAWithBinding(
 	ctx context.Context,
 	client KubeClient,
 	sa saConfig,
-	namespace string,
+	namespace, instanceID, hostID string,
 ) (string, error) {
 	suffix, err := randomSuffix()
 	if err != nil {
@@ -183,6 +239,14 @@ func createSAWithBinding(
 	saName := "claude-sa-" + suffix
 
 	labels := map[string]string{managedByLabel: managedByValue}
+
+	if instanceID != "" {
+		labels[instanceIDLabel] = instanceID
+	}
+
+	if hostID != "" {
+		labels[hostIDLabel] = hostID
+	}
 
 	err = client.CreateServiceAccount(ctx, namespace, saName, labels)
 	if err != nil {

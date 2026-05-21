@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -71,10 +72,32 @@ func socketPathForSlot(slot int, forGuest bool) string {
 	)
 }
 
+// sidecarPath returns the path of the per-slot sidecar file that
+// records the instance id of the serve currently bound to the
+// socket at socketPath. Co-located with the socket inode so the
+// pair lives and dies together. An empty socketPath returns empty
+// so callers can pass conditionally-set paths without an outer
+// guard — otherwise `sidecarPath("")` would yield `".id"` and land
+// in CWD, which would surprise [bestEffortRemove].
+func sidecarPath(socketPath string) string {
+	if socketPath == "" {
+		return ""
+	}
+
+	return socketPath + ".id"
+}
+
 // acquireServeSocket walks slots 0..maxSlots-1 and binds the first
 // free one. The returned listener and cleanup are owned by the
 // caller (typically [main.runServe]); the socket inode is unlinked
 // when cleanup runs.
+//
+// instanceID is written atomically into a per-slot sidecar file
+// alongside the socket inode (see [sidecarPath]) so the next
+// `serve`'s [*handler.discoverLiveInstances] can attribute a live
+// slot back to its owning instance. An empty instanceID skips the
+// sidecar write — used only by tests and by the standalone
+// `host select` CLI path that does not need attribution.
 //
 // Two errors are treated as "this slot is taken, try the next":
 // [ErrSocketInUse] (a live peer was detected by [clearStaleSocket]'s
@@ -87,11 +110,12 @@ func (h *handler) acquireServeSocket(
 	ctx context.Context,
 	forGuest bool,
 	maxSlots int,
+	instanceID string,
 ) (string, net.Listener, func(), error) {
 	for slot := range maxSlots {
 		path := socketPathForSlot(slot, forGuest)
 
-		listener, cleanup, err := h.listenSocket(ctx, path)
+		listener, cleanup, err := h.listenSocket(ctx, path, instanceID)
 		if err == nil {
 			return path, listener, cleanup, nil
 		}
@@ -118,7 +142,19 @@ func (h *handler) acquireServeSocket(
 // returns [ErrSocketInUse]; ECONNREFUSED (or a wrapped equivalent)
 // means the file is stale and is unlinked before the bind. ENOENT
 // just falls through to the bind.
-func (h *handler) listenSocket(ctx context.Context, path string) (net.Listener, func(), error) {
+//
+// instanceID, when non-empty, is atomically written to the
+// per-slot sidecar at [sidecarPath] after the socket inode is
+// chmodded. The sidecar is the means by which a future serve's
+// [*handler.discoverLiveInstances] attributes a live slot back to
+// its bound serve, so the write must happen before this function
+// returns to the caller. On any failure between [net.ListenConfig.Listen]
+// and a successful return, the socket inode AND the sidecar (and
+// the sidecar tmp file, if present) are unlinked best-effort.
+func (h *handler) listenSocket(
+	ctx context.Context,
+	path, instanceID string,
+) (net.Listener, func(), error) {
 	err := os.MkdirAll(filepath.Dir(path), 0o700)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: create directory: %w", ErrSocketBind, err)
@@ -141,18 +177,40 @@ func (h *handler) listenSocket(ctx context.Context, path string) (net.Listener, 
 	// race with concurrent fs work in any future refactor).
 	chmodErr := os.Chmod(path, 0o600)
 	if chmodErr != nil {
-		_ = l.Close()       //nolint:errcheck // best-effort cleanup; chmodErr is what we surface
-		_ = os.Remove(path) //nolint:errcheck // best-effort cleanup; chmodErr is what we surface
+		_ = l.Close()                    //nolint:errcheck // best-effort cleanup; chmodErr is what we surface
+		_ = os.Remove(path)              //nolint:errcheck // best-effort cleanup; chmodErr is what we surface
+		_ = os.Remove(sidecarPath(path)) //nolint:errcheck // best-effort cleanup of any prior sidecar
 
 		return nil, nil, fmt.Errorf("%w: chmod: %w", ErrSocketBind, chmodErr)
 	}
 
+	if instanceID != "" {
+		sidecarErr := writeSidecar(path, instanceID)
+		if sidecarErr != nil {
+			_ = l.Close()       //nolint:errcheck // best-effort cleanup; sidecarErr is what we surface
+			_ = os.Remove(path) //nolint:errcheck // best-effort cleanup; sidecarErr is what we surface
+
+			return nil, nil, fmt.Errorf("%w: sidecar: %w", ErrSocketBind, sidecarErr)
+		}
+	}
+
 	cleanup := func() {
-		_ = l.Close()       //nolint:errcheck // best-effort cleanup
-		_ = os.Remove(path) //nolint:errcheck // best-effort cleanup
+		_ = l.Close()                    //nolint:errcheck // best-effort cleanup
+		_ = os.Remove(path)              //nolint:errcheck // best-effort cleanup
+		_ = os.Remove(sidecarPath(path)) //nolint:errcheck // best-effort cleanup
 	}
 
 	return l, cleanup, nil
+}
+
+// writeSidecar atomically records the bound serve's instance id in
+// the per-slot sidecar at [sidecarPath]. The atomicity matters:
+// [*handler.discoverLiveInstances] reads the file with no
+// coordination, so a torn write (zero bytes or partial bytes)
+// would be misclassified as "stale" and the slot's serve dropped
+// from the live set.
+func writeSidecar(socketPath, instanceID string) error {
+	return writeFileAtomic(sidecarPath(socketPath), []byte(instanceID), 0o600)
 }
 
 // clearStaleSocket implements the existing-path branch of
@@ -166,21 +224,23 @@ func (h *handler) listenSocket(ctx context.Context, path string) (net.Listener, 
 // successful connect: the only state we care about preserving is
 // "live peer holding the inode", which Dial detects positively.
 // ENOENT just falls through.
+//
+// In both the no-inode and dead-inode branches the per-slot
+// sidecar at [sidecarPath] is also unlinked best-effort. This
+// prevents a SIGKILLed serve's sidecar from outliving its socket
+// and being misread by a future [*handler.discoverLiveInstances].
 func clearStaleSocket(ctx context.Context, path string) error {
 	_, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			_ = os.Remove(sidecarPath(path)) //nolint:errcheck // best-effort; orphan sidecar from prior crash
 			return nil
 		}
 
 		return fmt.Errorf("%w: stat: %w", ErrSocketCleanupStale, err)
 	}
 
-	dialer := net.Dialer{Timeout: serveSocketDialDeadline}
-
-	conn, dialErr := dialer.DialContext(ctx, "unix", path)
-	if dialErr == nil {
-		_ = conn.Close() //nolint:errcheck // probe-only conn; we only care that it dialed
+	if dialProbe(ctx, path) {
 		return fmt.Errorf("%w: %s", ErrSocketInUse, path)
 	}
 
@@ -188,6 +248,8 @@ func clearStaleSocket(ctx context.Context, path string) error {
 	if rmErr != nil && !os.IsNotExist(rmErr) {
 		return fmt.Errorf("%w: remove: %w", ErrSocketCleanupStale, rmErr)
 	}
+
+	_ = os.Remove(sidecarPath(path)) //nolint:errcheck // best-effort; pair the socket inode with its sidecar
 
 	return nil
 }
@@ -299,6 +361,100 @@ func (h *handler) handleSocketConn(ctx context.Context, conn net.Conn) {
 			slog.Any("error", err),
 		)
 	}
+}
+
+// discoverLiveInstances walks slots 0..maxSlots-1 and returns the
+// set of instance ids whose UDS socket dial-tests live and whose
+// per-slot sidecar contains a readable non-empty id. The serve's
+// own slot is included automatically because [*handler.acquireServeSocket]
+// wrote its sidecar before returning, and on Linux the [net.ListenConfig.Listen]
+// call puts the socket into the LISTEN state with a SOMAXCONN
+// backlog immediately; the accept loop does not need to be running
+// for clients to dial successfully.
+//
+// Probes run concurrently because each slot can hit the full
+// [serveSocketDialDeadline] when the socket inode points at a
+// stuck listener; serial probing of a 16-slot pool would block
+// startup for up to 8 seconds.
+//
+// Skip rules:
+//   - dial succeeds + sidecar present, non-empty → add id to set.
+//   - dial succeeds + sidecar missing → skip. The socket owner is
+//     either mid-startup or running an older binary; preserve
+//     conservatively rather than misclassifying.
+//   - dial succeeds + sidecar zero bytes → skip. Defensive against
+//     a torn write (mostly historical; the atomic write at
+//     [writeSidecar] precludes this for current binaries).
+//   - dial fails → not live; [clearStaleSocket] on the next slot
+//     acquisition will unlink the sidecar best-effort.
+//
+// Dependency note: this function relies on Linux's UDS semantics
+// that a freshly bound listener accepts dials immediately. If a
+// future refactor either delays sidecar write until after
+// [*handler.serveSocket] starts or starts serveSocket before the
+// sidecar exists, the own-slot dial behavior here could change.
+func (h *handler) discoverLiveInstances(ctx context.Context, maxSlots int) map[string]struct{} {
+	results := make(chan string, maxSlots)
+
+	var wg sync.WaitGroup
+
+	forGuest := h.isGuest()
+
+	for slot := range maxSlots {
+		wg.Go(func() {
+			path := socketPathForSlot(slot, forGuest)
+
+			if !dialProbe(ctx, path) {
+				return
+			}
+
+			id := readSidecar(path)
+			if id == "" {
+				return
+			}
+
+			results <- id
+		})
+	}
+
+	wg.Wait()
+	close(results)
+
+	live := make(map[string]struct{})
+	for id := range results {
+		live[id] = struct{}{}
+	}
+
+	return live
+}
+
+// dialProbe runs the same short-deadline dial used by
+// [clearStaleSocket] and reports whether a live peer is on the
+// other end. Probe-only: connection is closed immediately.
+func dialProbe(ctx context.Context, path string) bool {
+	dialer := net.Dialer{Timeout: serveSocketDialDeadline}
+
+	conn, err := dialer.DialContext(ctx, "unix", path)
+	if err != nil {
+		return false
+	}
+
+	_ = conn.Close() //nolint:errcheck // probe-only conn
+
+	return true
+}
+
+// readSidecar returns the trimmed contents of the per-slot sidecar
+// at [sidecarPath]. Returns the empty string on any error or when
+// the file is empty so [*handler.discoverLiveInstances] uses a
+// single skip predicate.
+func readSidecar(socketPath string) string {
+	data, err := os.ReadFile(sidecarPath(socketPath))
+	if err != nil {
+		return ""
+	}
+
+	return string(bytes.TrimSpace(data))
 }
 
 // socketShutdown closes the listener and blocks until every

@@ -283,6 +283,70 @@ func TestHostSelectBindingNameConvention(t *testing.T) { //nolint:paralleltest /
 	assert.Equal(t, "ns/"+bindingNameForSA(saName), mock.createdRoleBindings[0])
 }
 
+// TestHostSelectOmitsInstanceAndHostLabelsWhenEmpty pins the
+// contract that `host select` only emits the new labels when the
+// corresponding flags are non-empty. Preserves existing test
+// invariants for standalone CLI use.
+//
+//nolint:paralleltest // mutates package-level state
+func TestHostSelectOmitsInstanceAndHostLabelsWhenEmpty(t *testing.T) {
+	mock := &mockKubeClient{token: "t", tokenExpiry: time.Now()}
+	withHostKubeClient(t, mock)
+
+	withHostStdout(t)
+
+	path := writeTestKubeconfig(t, testKubeconfig())
+	outPath := filepath.Join(t.TempDir(), "k.yaml")
+
+	require.NoError(t, runHostSelect(t.Context(), []string{
+		"prod",
+		"--kubeconfig", path,
+		"--out-path", outPath,
+		"--sa-role-name", "view",
+	}))
+
+	require.Len(t, mock.createdSALabels, 1)
+
+	labels := mock.createdSALabels[0]
+	assert.Equal(t, managedByValue, labels[managedByLabel])
+
+	_, hasInstance := labels[instanceIDLabel]
+	_, hasHost := labels[hostIDLabel]
+
+	assert.False(t, hasInstance, "missing --sa-instance-id must omit the instance-id label")
+	assert.False(t, hasHost, "missing --sa-host-id must omit the host-id label")
+}
+
+// TestHostSelectAppliesInstanceAndHostLabels pins that explicit
+// --sa-instance-id and --sa-host-id flags get tagged onto every
+// created resource so the sweep can attribute them.
+func TestHostSelectAppliesInstanceAndHostLabels(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	mock := &mockKubeClient{token: "t", tokenExpiry: time.Now()}
+	withHostKubeClient(t, mock)
+
+	withHostStdout(t)
+
+	path := writeTestKubeconfig(t, testKubeconfig())
+	outPath := filepath.Join(t.TempDir(), "k.yaml")
+
+	require.NoError(t, runHostSelect(t.Context(), []string{
+		"prod",
+		"--kubeconfig", path,
+		"--out-path", outPath,
+		"--sa-role-name", "view",
+		"--sa-instance-id", "instance-xyz",
+		"--sa-host-id", "host-abc",
+	}))
+
+	require.Len(t, mock.createdSALabels, 1)
+	assert.Equal(t, "instance-xyz", mock.createdSALabels[0][instanceIDLabel])
+	assert.Equal(t, "host-abc", mock.createdSALabels[0][hostIDLabel])
+
+	require.Len(t, mock.createdRoleBindingLabels, 1)
+	assert.Equal(t, "instance-xyz", mock.createdRoleBindingLabels[0][instanceIDLabel])
+	assert.Equal(t, "host-abc", mock.createdRoleBindingLabels[0][hostIDLabel])
+}
+
 func TestHostSelectDefaultNamespace(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	mock := &mockKubeClient{token: "t", tokenExpiry: time.Now()}
 	withHostKubeClient(t, mock)

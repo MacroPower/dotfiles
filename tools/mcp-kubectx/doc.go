@@ -50,6 +50,15 @@
 //   - host release: deletes a ServiceAccount and its binding.
 //     Best-effort: always exits 0 so `serve` never retries the
 //     call across the rest of its lifetime.
+//   - host sweep: lists SAs, RoleBindings, and ClusterRoleBindings
+//     labeled `managed-by=mcp-kubectx,host-id=<own>`, then deletes
+//     orphans whose `instance-id` is absent from the
+//     --live-instance-id set. Best-effort: surfaces only
+//     [ErrSweepList] on total list-call failure, returns nil
+//     otherwise. `serve` launches it as a background goroutine at
+//     startup; an operator can also invoke it directly. Requires
+//     cluster-wide list verb on the host kubeconfig; see the
+//     orphan-sweep section in README.md.
 //   - exec-plugin: kubectl-facing UDS shim. Dials the per-`serve`
 //     socket, copies the response bytes (an [ExecCredential] JSON
 //     document) to stdout, and exits. Pure UDS client; never
@@ -150,6 +159,12 @@
 //   - --sa-role-name, --sa-role-kind, --sa-cluster-scoped,
 //     --sa-namespace, --sa-expiration: same semantics as the `serve`
 //     flags above. `serve` forwards its own values verbatim.
+//   - --sa-instance-id: per-`serve` random identifier tagged on the
+//     created SA and binding via [instanceIDLabel]. `serve` forwards
+//     its own random id; empty omits the label.
+//   - --sa-host-id: persistent per-user-per-host identifier tagged
+//     via [hostIDLabel]. `serve` forwards the id loaded from
+//     [hostIDPath]; empty omits the label.
 //   - --allow-apiserver-host: hostname permitted as cluster.server.
 //     Repeatable; empty list allows any apiserver. When non-empty,
 //     the resolved cluster's `server` URL must have a matching
@@ -206,21 +221,34 @@
 // SIGKILL leaks at most one SA, one kubeconfig file, and one stale
 // socket inode at the killed serve's slot; the next serve that
 // reclaims that slot's path detects the leftover via
-// [clearStaleSocket] and unlinks it before binding. Provisioned SAs
-// and bindings carry the `app.kubernetes.io/managed-by=mcp-kubectx`
-// label so a future sweep tool can find orphans by selector.
+// [clearStaleSocket] and unlinks it before binding.
+//
+// Provisioned SAs and bindings carry three labels:
+// `app.kubernetes.io/managed-by=mcp-kubectx`,
+// `mcp-kubectx/host-id=<persistent>`, and
+// `mcp-kubectx/instance-id=<per-serve random>`. Every `serve` runs
+// a background `host sweep` at startup that lists labeled resources
+// for its own `host-id`, classifies each by `instance-id` against
+// the set of live serves (discovered through the per-slot UDS
+// sidecar in [*handler.discoverLiveInstances]), and
+// best-effort-deletes the orphans. Resources tagged only with
+// `managed-by` and no `host-id` cannot be attributed to a specific
+// host, so the sweep skips them; recovery is the manual `kubectl
+// delete` documented in the README. The selector pins on
+// `host-id`, so two operators on different machines cannot delete
+// each other's resources.
 //
 // # Recursion guard
 //
 // The guard against `host token` re-entering the guest path is
 // structural rather than runtime. [*handler.hostExecArgs] is bound
 // to `*handler`; the `host *` subcommand entry points
-// ([runHostList], [runHostSelect], [runHostToken], [runHostRelease])
-// never construct a `*handler`, so they have no path to
-// [*handler.defaultRunHost] and cannot decide to wrap with `workmux
-// host-exec`. Even when `WM_SANDBOX_GUEST=1` is set in their env,
-// they have no shell-out path. `host token` calls the cluster
-// directly via [KubeClient.CreateTokenRequest]. Pinned by
+// ([runHostList], [runHostSelect], [runHostToken], [runHostRelease],
+// [runHostSweep]) never construct a `*handler`, so they have no
+// path to [*handler.defaultRunHost] and cannot decide to wrap with
+// `workmux host-exec`. Even when `WM_SANDBOX_GUEST=1` is set in
+// their env, they have no shell-out path. `host token` calls the
+// cluster directly via [KubeClient.CreateTokenRequest]. Pinned by
 // `TestHostTokenSkipsWorkmuxWhenEnvSetToGuest`.
 //
 // # See also

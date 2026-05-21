@@ -101,7 +101,7 @@ func TestAcquireServeSocketPicksFirstFreeSlot(t *testing.T) { //nolint:parallelt
 
 	h := &handler{}
 
-	gotPath, listener, cleanup, err := h.acquireServeSocket(t.Context(), false, 8)
+	gotPath, listener, cleanup, err := h.acquireServeSocket(t.Context(), false, 8, "")
 	require.NoError(t, err)
 	t.Cleanup(cleanup)
 
@@ -123,7 +123,7 @@ func TestAcquireServeSocketSkipsStaleSlot(t *testing.T) { //nolint:paralleltest 
 
 	h := &handler{}
 
-	gotPath, _, cleanup, err := h.acquireServeSocket(t.Context(), false, 8)
+	gotPath, _, cleanup, err := h.acquireServeSocket(t.Context(), false, 8, "")
 	require.NoError(t, err)
 	t.Cleanup(cleanup)
 
@@ -165,7 +165,7 @@ func TestAcquireServeSocketDoesNotStealLivePeer(t *testing.T) { //nolint:paralle
 
 	h := &handler{}
 
-	gotPath, _, cleanup, err := h.acquireServeSocket(t.Context(), false, 8)
+	gotPath, _, cleanup, err := h.acquireServeSocket(t.Context(), false, 8, "")
 	require.NoError(t, err)
 	t.Cleanup(cleanup)
 
@@ -214,7 +214,7 @@ func TestAcquireServeSocketExhaustion(t *testing.T) { //nolint:paralleltest // u
 
 	h := &handler{}
 
-	_, _, _, err := h.acquireServeSocket(t.Context(), false, maxSlots)
+	_, _, _, err := h.acquireServeSocket(t.Context(), false, maxSlots, "")
 	require.ErrorIs(t, err, ErrAllSlotsBusy)
 	assert.Contains(t, err.Error(), "4 slots")
 	assert.Contains(t, err.Error(), filepath.Join(stateHome, "mcp-kubectx-run"))
@@ -232,7 +232,7 @@ func TestListenSocketUnlinksStale(t *testing.T) {
 
 	h := &handler{}
 
-	l, cleanup, err := h.listenSocket(t.Context(), path)
+	l, cleanup, err := h.listenSocket(t.Context(), path, "")
 	require.NoError(t, err)
 
 	t.Cleanup(cleanup)
@@ -253,7 +253,7 @@ func TestListenSocketPermissions(t *testing.T) {
 
 	h := &handler{}
 
-	l, cleanup, err := h.listenSocket(t.Context(), path)
+	l, cleanup, err := h.listenSocket(t.Context(), path, "")
 	require.NoError(t, err)
 	t.Cleanup(cleanup)
 	t.Cleanup(func() { _ = l.Close() }) //nolint:errcheck // best-effort test cleanup
@@ -275,7 +275,7 @@ func TestListenSocketCleanupRemoves(t *testing.T) {
 
 	h := &handler{}
 
-	_, cleanup, err := h.listenSocket(t.Context(), path)
+	_, cleanup, err := h.listenSocket(t.Context(), path, "")
 	require.NoError(t, err)
 
 	cleanup()
@@ -312,7 +312,7 @@ func TestServeSocketBindOnExistingPath(t *testing.T) {
 
 	h := &handler{}
 
-	_, _, err = h.listenSocket(t.Context(), path)
+	_, _, err = h.listenSocket(t.Context(), path, "")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSocketInUse)
 }
@@ -344,7 +344,7 @@ func TestServeSocketReturnsTokenJSON(t *testing.T) {
 		Expiration: 3600,
 	})
 
-	l, cleanup, err := h.listenSocket(t.Context(), path)
+	l, cleanup, err := h.listenSocket(t.Context(), path, "")
 	require.NoError(t, err)
 	t.Cleanup(cleanup)
 
@@ -369,7 +369,7 @@ func TestServeSocketBeforeSelect(t *testing.T) {
 
 	h := newServeSocketHandler(t, nil, nil)
 
-	l, cleanup, err := h.listenSocket(t.Context(), path)
+	l, cleanup, err := h.listenSocket(t.Context(), path, "")
 	require.NoError(t, err)
 	t.Cleanup(cleanup)
 
@@ -402,7 +402,7 @@ func TestServeSocketConcurrent(t *testing.T) {
 		Expiration: 3600,
 	})
 
-	l, cleanup, err := h.listenSocket(t.Context(), path)
+	l, cleanup, err := h.listenSocket(t.Context(), path, "")
 	require.NoError(t, err)
 	t.Cleanup(cleanup)
 
@@ -477,7 +477,7 @@ func TestServeSocketRotationDuringRequest(t *testing.T) {
 
 	h.currentSA.Store(saA)
 
-	l, cleanup, err := h.listenSocket(t.Context(), path)
+	l, cleanup, err := h.listenSocket(t.Context(), path, "")
 	require.NoError(t, err)
 	t.Cleanup(cleanup)
 
@@ -544,7 +544,7 @@ func TestServeSocketHandlerWaitsForCleanup(t *testing.T) {
 		Expiration: 3600,
 	})
 
-	l, _, err := h.listenSocket(t.Context(), path)
+	l, _, err := h.listenSocket(t.Context(), path, "")
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -651,4 +651,221 @@ func mustEncodeCred(t *testing.T, c ExecCredential) []byte {
 	require.NoError(t, err)
 
 	return append(data, '\n')
+}
+
+// TestListenSocketWritesSidecar pins that a non-empty instanceID
+// is atomically persisted alongside the socket inode with mode
+// 0600. The tmp file must be gone after the rename.
+func TestListenSocketWritesSidecar(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sidecar.sock")
+
+	h := &handler{}
+
+	_, cleanup, err := h.listenSocket(t.Context(), path, "inst-test")
+	require.NoError(t, err)
+
+	t.Cleanup(cleanup)
+
+	data, err := os.ReadFile(sidecarPath(path))
+	require.NoError(t, err)
+	assert.Equal(t, "inst-test", string(data))
+
+	info, err := os.Stat(sidecarPath(path))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+
+	_, err = os.Stat(sidecarPath(path) + ".tmp")
+	assert.True(t, os.IsNotExist(err), "tmp file must be removed after rename")
+}
+
+// TestListenSocketOmitsSidecarOnEmptyInstanceID pins the
+// test-only path where no instance id is provided: the function
+// still binds successfully and no sidecar is created.
+func TestListenSocketOmitsSidecarOnEmptyInstanceID(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "no-sidecar.sock")
+
+	h := &handler{}
+
+	_, cleanup, err := h.listenSocket(t.Context(), path, "")
+	require.NoError(t, err)
+
+	t.Cleanup(cleanup)
+
+	_, err = os.Stat(sidecarPath(path))
+	assert.True(t, os.IsNotExist(err), "no sidecar should exist when instanceID is empty")
+}
+
+// TestListenSocketCleanupRemovesSidecar pins that the returned
+// cleanup closure unlinks both the socket inode and the sidecar
+// when called.
+func TestListenSocketCleanupRemovesSidecar(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cleanup-sidecar.sock")
+
+	h := &handler{}
+
+	_, cleanup, err := h.listenSocket(t.Context(), path, "inst-cleanup")
+	require.NoError(t, err)
+
+	_, err = os.Stat(sidecarPath(path))
+	require.NoError(t, err)
+
+	cleanup()
+
+	_, err = os.Stat(sidecarPath(path))
+	assert.True(t, os.IsNotExist(err), "cleanup must remove the sidecar file")
+}
+
+// TestClearStaleSocketRemovesOrphanedSidecar pins that a sidecar
+// without a socket inode (the SIGKILL leftover the next serve
+// inherits) gets cleaned up before bind. Without this the next
+// discoverLiveInstances could read a stale id that has no live
+// peer.
+func TestClearStaleSocketRemovesOrphanedSidecar(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "orphan.sock")
+	sidecar := sidecarPath(path)
+
+	require.NoError(t, os.WriteFile(sidecar, []byte("orphan-id"), 0o600))
+
+	err := clearStaleSocket(t.Context(), path)
+	require.NoError(t, err, "stale clearance must succeed even without a socket inode")
+
+	_, err = os.Stat(sidecar)
+	assert.True(t, os.IsNotExist(err), "orphan sidecar must be unlinked")
+}
+
+// TestClearStaleSocketRemovesSidecarOfDeadInode pins that
+// clearStaleSocket unlinks the sidecar alongside the socket inode
+// when the dial probe fails. The next discoverLiveInstances pass
+// must not see a sidecar attached to a dead socket.
+func TestClearStaleSocketRemovesSidecarOfDeadInode(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dead.sock")
+	sidecar := sidecarPath(path)
+
+	require.NoError(t, os.WriteFile(path, []byte("stale-inode"), 0o600))
+	require.NoError(t, os.WriteFile(sidecar, []byte("dead-id"), 0o600))
+
+	err := clearStaleSocket(t.Context(), path)
+	require.NoError(t, err)
+
+	_, err = os.Stat(path)
+	assert.True(t, os.IsNotExist(err))
+
+	_, err = os.Stat(sidecar)
+	assert.True(t, os.IsNotExist(err), "sidecar of dead inode must be removed")
+}
+
+// TestDiscoverLiveInstances exercises the full skip matrix. Slot
+// 0 has a live socket and a sidecar with id-A; slot 1 has a live
+// socket but no sidecar (skipped); slot 2 has a sidecar but no
+// socket (skipped); slot 3 has a live socket and an empty sidecar
+// (skipped); slot 4 has a live socket and an unrelated sidecar
+// (added with id-D). Tests the (live, sidecar) join at the heart
+// of the sweep.
+func TestDiscoverLiveInstances(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	stateHome := shortTempDir(t)
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	bindWithSidecar := func(slot int, id string) {
+		path := socketPathForSlot(slot, false)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+
+		live, err := net.Listen("unix", path) //nolint:noctx // synchronous test fixture
+		require.NoError(t, err)
+
+		t.Cleanup(func() { _ = live.Close() }) //nolint:errcheck // best-effort test cleanup
+
+		go func() {
+			for {
+				conn, err := live.Accept()
+				if err != nil {
+					return
+				}
+
+				_ = conn.Close() //nolint:errcheck // best-effort test cleanup
+			}
+		}()
+
+		if id != "" {
+			require.NoError(t, os.WriteFile(sidecarPath(path), []byte(id), 0o600))
+		}
+	}
+
+	bindWithSidecar(0, "id-A")
+	bindWithSidecar(1, "")
+
+	// Slot 2: stale sidecar pointing at no socket.
+	stalePath := socketPathForSlot(2, false)
+	require.NoError(t, os.MkdirAll(filepath.Dir(stalePath), 0o700))
+	require.NoError(t, os.WriteFile(sidecarPath(stalePath), []byte("orphan"), 0o600))
+
+	// Slot 3: live socket with empty (zero-byte) sidecar.
+	bindWithSidecar(3, "")
+	require.NoError(t, os.WriteFile(sidecarPath(socketPathForSlot(3, false)), []byte(""), 0o600))
+
+	bindWithSidecar(4, "id-D")
+
+	h := &handler{envLookup: constLookup("")}
+
+	got := h.discoverLiveInstances(t.Context(), 5)
+
+	want := map[string]struct{}{"id-A": {}, "id-D": {}}
+	assert.Equal(t, want, got, "only live+sidecar pairs should be in the live set")
+}
+
+// TestDiscoverLiveInstancesIncludesOwnSlot pins a
+// fragile-but-load-bearing invariant: the serve's own listener
+// accepts dials immediately after Listen() returns, before the
+// accept goroutine starts. The sweep depends on this so a freshly
+// started serve sees itself in the live set before any kubectl
+// client has touched the UDS. Verifies by binding via
+// acquireServeSocket (which writes the sidecar) and immediately
+// calling discoverLiveInstances.
+func TestDiscoverLiveInstancesIncludesOwnSlot(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	stateHome := shortTempDir(t)
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	h := &handler{envLookup: constLookup("")}
+
+	_, _, cleanup, err := h.acquireServeSocket(t.Context(), false, 8, "own-id")
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	got := h.discoverLiveInstances(t.Context(), 8)
+	_, ok := got["own-id"]
+	assert.True(t, ok, "own slot's sidecar id must appear in the live set")
+}
+
+// TestAcquireServeSocketWritesSidecar pins that the slot picked
+// by acquireServeSocket has a sidecar containing the passed
+// instanceID. The cross-coupling between the slot walker and the
+// sidecar write is what lets a freshly-started serve include
+// itself in discoverLiveInstances without coordination.
+func TestAcquireServeSocketWritesSidecar(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	stateHome := shortTempDir(t)
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	h := &handler{envLookup: constLookup("")}
+
+	path, _, cleanup, err := h.acquireServeSocket(t.Context(), false, 8, "acquire-inst")
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	data, err := os.ReadFile(sidecarPath(path))
+	require.NoError(t, err)
+	assert.Equal(t, "acquire-inst", string(data))
 }

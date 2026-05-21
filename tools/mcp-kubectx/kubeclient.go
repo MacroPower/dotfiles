@@ -150,6 +150,74 @@ func (c *clientGoKubeClient) DeleteClusterRoleBinding(ctx context.Context, name 
 	return nil
 }
 
+func (c *clientGoKubeClient) ListServiceAccounts(
+	ctx context.Context,
+	labelSelector string,
+) ([]ResourceRef, error) {
+	list, err := c.clientset.CoreV1().ServiceAccounts("").List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list service accounts: %w", err)
+	}
+
+	refs := make([]ResourceRef, 0, len(list.Items))
+	for i := range list.Items {
+		refs = append(refs, ResourceRef{
+			Namespace: list.Items[i].Namespace,
+			Name:      list.Items[i].Name,
+			Labels:    list.Items[i].Labels,
+		})
+	}
+
+	return refs, nil
+}
+
+func (c *clientGoKubeClient) ListRoleBindings(
+	ctx context.Context,
+	labelSelector string,
+) ([]ResourceRef, error) {
+	list, err := c.clientset.RbacV1().RoleBindings("").List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list role bindings: %w", err)
+	}
+
+	refs := make([]ResourceRef, 0, len(list.Items))
+	for i := range list.Items {
+		refs = append(refs, ResourceRef{
+			Namespace: list.Items[i].Namespace,
+			Name:      list.Items[i].Name,
+			Labels:    list.Items[i].Labels,
+		})
+	}
+
+	return refs, nil
+}
+
+func (c *clientGoKubeClient) ListClusterRoleBindings(
+	ctx context.Context,
+	labelSelector string,
+) ([]ResourceRef, error) {
+	list, err := c.clientset.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list cluster role bindings: %w", err)
+	}
+
+	refs := make([]ResourceRef, 0, len(list.Items))
+	for i := range list.Items {
+		refs = append(refs, ResourceRef{
+			Name:   list.Items[i].Name,
+			Labels: list.Items[i].Labels,
+		})
+	}
+
+	return refs, nil
+}
+
 func (c *clientGoKubeClient) CreateTokenRequest(
 	ctx context.Context,
 	namespace, saName string,

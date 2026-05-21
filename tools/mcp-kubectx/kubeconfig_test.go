@@ -175,6 +175,63 @@ func TestSessionDirCleanupRunsResourceCleanupWhenOutputUnset(t *testing.T) {
 	require.True(t, called, "resource cleanup must run when outputPath is unset")
 }
 
+// TestDrainSweepReturnsWhenGoroutineCompletes pins the fast path:
+// a sweep goroutine that finishes before the timeout lets
+// drainSweep return immediately. The deferred Done is what makes
+// the WaitGroup wakeable; absence of a timeout-induced log line
+// is verified indirectly (drainSweep does not panic and returns
+// promptly).
+func TestDrainSweepReturnsWhenGoroutineCompletes(t *testing.T) {
+	t.Parallel()
+
+	h := &handler{}
+	h.sweepWG.Go(func() {})
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		h.drainSweep()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drainSweep blocked after the sweep goroutine returned")
+	}
+}
+
+// TestDrainSweepHonorsTimeout pins the slow-path safety net: a
+// hung sweep goroutine must not block process shutdown. The test
+// installs a short package-level timeout, kicks off a goroutine
+// that never returns until the test ends, and asserts drainSweep
+// exits within the bound.
+//
+//nolint:paralleltest // mutates package-level sweepDrainTimeout
+func TestDrainSweepHonorsTimeout(t *testing.T) {
+	prev := sweepDrainTimeout
+	sweepDrainTimeout = 50 * time.Millisecond
+
+	t.Cleanup(func() { sweepDrainTimeout = prev })
+
+	h := &handler{}
+
+	release := make(chan struct{})
+	h.sweepWG.Go(func() { <-release })
+
+	t.Cleanup(func() { close(release) })
+
+	start := time.Now()
+
+	h.drainSweep()
+
+	elapsed := time.Since(start)
+
+	assert.Less(t, elapsed, 1*time.Second,
+		"drainSweep must return promptly after the timeout fires")
+}
+
 // fakeRunHost records each (sub, args) pair and returns canned
 // stdout/error pairs by subcommand. It substitutes for the real
 // shell-out so handler.list and handler.selectCtx can be tested
@@ -741,10 +798,13 @@ func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses
 		Expiration: 3600,
 	})
 
-	listener, listenCleanup, err := h.listenSocket(t.Context(), socketPath)
+	listener, listenCleanup, err := h.listenSocket(t.Context(), socketPath, "ordering-inst")
 	require.NoError(t, err)
 
 	t.Cleanup(listenCleanup)
+
+	_, err = os.Stat(sidecarPath(socketPath))
+	require.NoError(t, err, "sidecar must exist after listenSocket with a non-empty instance id")
 
 	h.mu.Lock()
 	h.socketListener = listener
@@ -803,6 +863,9 @@ func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses
 
 	_, err = os.Stat(socketPath)
 	assert.True(t, os.IsNotExist(err), "socket file must be unlinked by cleanup")
+
+	_, err = os.Stat(sidecarPath(socketPath))
+	assert.True(t, os.IsNotExist(err), "sidecar file must be unlinked by cleanup")
 
 	_, err = os.Stat(kubeconfigPath)
 	assert.True(t, os.IsNotExist(err), "kubeconfig file must be unlinked by cleanup")

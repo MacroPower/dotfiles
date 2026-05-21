@@ -171,9 +171,15 @@ var (
 	ErrParseHostSelectFlags  = errors.New("parse host select flags")
 	ErrParseHostListFlags    = errors.New("parse host list flags")
 	ErrParseHostTokenFlags   = errors.New("parse host token flags")
+	ErrParseHostSweepFlags   = errors.New("parse host sweep flags")
 	ErrTokenMissingSA        = errors.New("--sa is required")
 	ErrTokenMissingNamespace = errors.New("--namespace is required")
 	ErrAPIServerNotAllowed   = errors.New("apiserver host not in allowlist")
+	// ErrMissingHostID guards against running the sweep without a
+	// host-id selector. An empty host id would either match nothing
+	// (if no historical resources lack the label) or be unsafe (if
+	// they do): a footgun, so refuse outright.
+	ErrMissingHostID = errors.New("--host-id is required")
 )
 
 // clusterServerHost extracts the hostname from a kubeconfig
@@ -251,6 +257,16 @@ func runHostSelect(ctx context.Context, args []string) error {
 		"namespace for the ServiceAccount (default: context namespace or \"default\")",
 	)
 	saExpiration := fs.Int("sa-expiration", 0, "ServiceAccount token lifetime in seconds (default: 3600, max: 86400)")
+	saInstanceID := fs.String(
+		"sa-instance-id", "",
+		"per-serve random identifier tagged on the SA + binding via the "+
+			"mcp-kubectx/instance-id label (default: empty = label omitted)",
+	)
+	saHostID := fs.String(
+		"sa-host-id", "",
+		"persistent per-user-per-host identifier tagged on the SA + binding via the "+
+			"mcp-kubectx/host-id label (default: empty = label omitted)",
+	)
 
 	var allowedHosts stringSliceFlag
 
@@ -352,7 +368,7 @@ func runHostSelect(ctx context.Context, args []string) error {
 
 	namespace := resolveSANamespace(sa, found)
 
-	saName, err := createSAWithBinding(ctx, client, sa, namespace)
+	saName, err := createSAWithBinding(ctx, client, sa, namespace, *saInstanceID, *saHostID)
 	if err != nil {
 		return err
 	}

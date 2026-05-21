@@ -18,11 +18,12 @@ switch in `cli.go`:
   parsed from `--sa-*` flags, an atomic `currentSA` descriptor, the
   per-`serve` UDS listener, and a slice of cleanup closures registered
   on each `select`. It never touches the cluster directly.
-- **`host {list, select, token, release}`** are stateless one-shots.
-  Each parses argv, talks to the cluster via client-go, prints JSON
-  or text on stdout, and exits. They share no state with each other
-  or with `serve`. Cluster state is the source of truth for what
-  exists; in-process state in `serve` only tracks ownership.
+- **`host {list, select, token, release, sweep}`** are stateless
+  one-shots. Each parses argv, talks to the cluster via client-go,
+  prints JSON or text on stdout, and exits. They share no state
+  with each other or with `serve`. Cluster state is the source of
+  truth for what exists; in-process state in `serve` only tracks
+  ownership.
 - **`exec-plugin`** is the kubectl exec credential shim. It
   connects to `serve`'s UDS at `--socket <path>`, copies the bytes
   the server writes to stdout, and exits. Like the `host *`
@@ -60,6 +61,7 @@ mcp-kubectx host list          # one-shot: print contexts
 mcp-kubectx host select <ctx>  # one-shot: create SA, write kubeconfig, print descriptor
 mcp-kubectx host token         # one-shot: mint token, print ExecCredential JSON
 mcp-kubectx host release       # one-shot: delete SA + binding
+mcp-kubectx host sweep         # one-shot: delete orphan SAs + bindings from this host
 mcp-kubectx exec-plugin        # kubectl-facing UDS shim
 ```
 
@@ -210,8 +212,93 @@ state and is unlinked before the bind, while a successful dial
 means a live peer holds the slot and the loop advances to the
 next slot.
 
+The SA + binding leak is reclaimed by the orphan sweep that runs
+on every `serve` startup. See [Orphan sweep](#orphan-sweep) below.
+
 The behaviors above are pinned by the `TestSelect*`, `TestSessionDir*`,
 and `TestServeSocket*` test families.
+
+## Orphan sweep
+
+Every provisioned SA and binding carries three labels:
+
+- `app.kubernetes.io/managed-by=mcp-kubectx`
+- `mcp-kubectx/host-id=<persistent>`: 16-hex id persisted at
+  `<XDG_STATE_HOME>/mcp-kubectx/host.id`, mode `0600`. Created on
+  first `serve` startup. Bounds the sweep to resources this host
+  owns, so two operators against a shared cluster never delete
+  each other's resources.
+- `mcp-kubectx/instance-id=<per-serve random>`: 16-hex id
+  generated fresh for each `serve` process. Persisted into a
+  per-slot sidecar file at `<socket-path>.id` so a future
+  `serve` can attribute a live UDS slot back to its bound
+  `instance-id`.
+
+Each `serve` launches a background `host sweep` at startup. The
+sweep:
+
+1. Lists SAs, RoleBindings, and ClusterRoleBindings filtered by
+   the selector `managed-by=mcp-kubectx,host-id=<own>` on the
+   apiserver. Cross-host resources never reach the classifier.
+2. For each result, reads `mcp-kubectx/instance-id`:
+   - Missing label → preserve (cannot be attributed to a host).
+   - Value ∈ live set (collected from live UDS sidecars across
+     the slot pool) → preserve.
+   - Otherwise → best-effort delete.
+
+Failures (list-Forbidden, individual delete errors) are logged at
+warn level and never block `serve` startup.
+
+### Permission requirement
+
+The sweep requires cluster-wide `list` verb on three resource
+kinds in the host kubeconfig:
+
+- `serviceaccounts.v1`
+- `rolebindings.rbac.authorization.k8s.io`
+- `clusterrolebindings.rbac.authorization.k8s.io`
+
+Release uses namespaced delete only. If `list` is forbidden on
+all three kinds the sweep logs a warning and `serve` startup
+continues (the goroutine swallows the resulting `ErrSweepList`).
+Partial forbids -- list works on one kind but not the others --
+are tolerated: the sweep processes whatever subset it can
+enumerate.
+
+### Orphans without `host-id`
+
+A resource carrying `managed-by=mcp-kubectx` but no
+`mcp-kubectx/host-id` label cannot be attributed to a specific
+host, so the sweep leaves it alone. To recover, run manually
+after stopping any live serves:
+
+```
+kubectl delete sa,rolebinding -A \
+  -l 'app.kubernetes.io/managed-by=mcp-kubectx,!mcp-kubectx/host-id'
+
+kubectl delete clusterrolebinding \
+  -l 'app.kubernetes.io/managed-by=mcp-kubectx,!mcp-kubectx/host-id'
+```
+
+The `!host-id` LabelSelector clause matches resources where the
+label is absent. There is no `--sweep-unlabeled` flag on the
+binary: the per-startup sweep cannot tell whose orphan it would
+be deleting, so recovery stays a separate manual command the
+operator runs once.
+
+### Manual sweep invocation
+
+```
+mcp-kubectx host sweep \
+  --kubeconfig ~/.kube/config \
+  --context my-ctx \
+  --host-id $(cat ~/.local/state/mcp-kubectx/host.id)
+```
+
+Passing zero `--live-instance-id` flags is destructive: every
+resource tagged with the matching `host-id` and a non-empty
+`instance-id` label gets deleted. Stop any running `serve`
+processes first.
 
 ## Recursion guard and the env chain
 
@@ -390,6 +477,10 @@ without expanding the read deny.
   egress proxy gate this. If a target cluster is unreachable from
   the guest, the user adds it to `kubeApiDomains` or routes around
   it. Not this package's problem.
-- **Orphan cleanup.** SAs and stale kubeconfig files left behind
-  by SIGKILLed serves accumulate at the rate of one per ungraceful
-  exit per `serve`.
+- **Stale kubeconfig files.** SIGKILL leaves the killed serve's
+  scoped kubeconfig on disk. Provisioned SAs are reclaimed by the
+  [Orphan sweep](#orphan-sweep) above; the kubeconfig file itself
+  is small and benign and is overwritten on the next `select` for
+  that pid+env discriminator. Bulk cleanup is a manual
+  `rm <state>/mcp-kubectx/kubeconfig.*.yaml` when no serve is
+  running.

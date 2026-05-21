@@ -20,6 +20,7 @@ const (
 	subSelect     = "select"
 	subToken      = "token"
 	subRelease    = "release"
+	subSweep      = "sweep"
 )
 
 // dispatch routes [os.Args] to the requested subcommand. The first
@@ -27,8 +28,9 @@ const (
 // stdio server (also the default when no subcommand is given, for
 // backwards compatibility), "host" delegates to one of the
 // host-only one-shot subcommands ("list", "select", "token",
-// "release"), and "exec-plugin" is the kubectl exec credential
-// shim that talks to a running serve over a Unix domain socket.
+// "release", "sweep"), and "exec-plugin" is the kubectl exec
+// credential shim that talks to a running serve over a Unix
+// domain socket.
 //
 // "exec-plugin" joins "host *" as a non-`*handler` subcommand: it
 // has no path to [*handler.runHost] and therefore cannot wrap
@@ -65,7 +67,7 @@ func dispatch(ctx context.Context, args []string) error {
 func dispatchHost(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf(
-			"%w: host (missing subcommand: list|select|token|release)",
+			"%w: host (missing subcommand: list|select|token|release|sweep)",
 			ErrUnknownSubcommand,
 		)
 	}
@@ -79,6 +81,8 @@ func dispatchHost(ctx context.Context, args []string) error {
 		return runHostToken(ctx, args[1:])
 	case subRelease:
 		return runHostRelease(ctx, args[1:])
+	case subSweep:
+		return runHostSweep(ctx, args[1:])
 	default:
 		return fmt.Errorf("%w: host %s", ErrUnknownSubcommand, args[0])
 	}

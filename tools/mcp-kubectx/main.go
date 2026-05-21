@@ -137,6 +137,16 @@ func runServe(ctx context.Context, args []string) error {
 		return fmt.Errorf("invalid service account config: %w", err)
 	}
 
+	instanceID, err := randomInstanceID()
+	if err != nil {
+		return fmt.Errorf("generate instance id: %w", err)
+	}
+
+	hostID, err := loadOrCreateHostID()
+	if err != nil {
+		return err
+	}
+
 	h := &handler{
 		kubeconfigPath:  *kubeconfig,
 		outputPath:      *output,
@@ -146,6 +156,8 @@ func runServe(ctx context.Context, args []string) error {
 		socketSlots:     *socketSlots,
 		sa:              sa,
 		envLookup:       os.Getenv,
+		instanceID:      instanceID,
+		hostID:          hostID,
 	}
 
 	h.runHost = h.defaultRunHost
@@ -153,8 +165,12 @@ func runServe(ctx context.Context, args []string) error {
 	// acquireServeSocket walks slot 0..socketSlots-1 and binds the
 	// first free one. Its cleanup is dropped: sessionDir's cleanup
 	// already calls socketShutdown (close listener) + bestEffortRemove
-	// of socketPath, so calling both would just be redundant.
-	sockPath, listener, _, err := h.acquireServeSocket(ctx, h.isGuest(), h.socketSlots)
+	// of socketPath, so calling both would just be redundant. The
+	// instanceID is written into the per-slot sidecar inside
+	// listenSocket before this returns; that write must happen
+	// before discoverLiveInstances runs below so the serve's own
+	// id appears in the live set.
+	sockPath, listener, _, err := h.acquireServeSocket(ctx, h.isGuest(), h.socketSlots, h.instanceID)
 	if err != nil {
 		return fmt.Errorf("bind serve socket: %w", err)
 	}
@@ -166,6 +182,14 @@ func runServe(ctx context.Context, args []string) error {
 
 	//nolint:contextcheck // SA-release drain inside cleanup uses context.Background by design; see comment in sessionDir
 	defer h.sessionDir()()
+
+	// Discover live instances BEFORE starting the accept loop so
+	// the sweep's classifier reads a coherent snapshot. The serve's
+	// own slot is included because the sidecar write above completed
+	// successfully and the listener is already in the LISTEN state.
+	liveSet := h.discoverLiveInstances(ctx, h.socketSlots)
+
+	h.sweepWG.Go(func() { h.runSweep(ctx, liveSet) })
 
 	go h.serveSocket(ctx, listener, &h.socketWG)
 

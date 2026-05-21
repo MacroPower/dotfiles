@@ -79,6 +79,15 @@ type namedUser struct {
 // of slot paths [*handler.acquireServeSocket] probes at startup;
 // each slot maps to one literal entry in Claude Code's sandbox
 // allowUnixSockets allowlist.
+//
+// instanceID is the per-`serve` random identifier tagged on every
+// provisioned SA and binding via [instanceIDLabel]; hostID is the
+// persistent per-user-per-host identifier tagged via [hostIDLabel].
+// Both are populated by [main.runServe] before
+// [*handler.acquireServeSocket] runs so the per-slot sidecar and
+// the resource labels stay aligned. sweepWG tracks the background
+// `host sweep` goroutine launched at startup so shutdown can wait
+// for it before unlinking files.
 type handler struct {
 	socketListener  net.Listener
 	envLookup       func(string) string
@@ -88,10 +97,13 @@ type handler struct {
 	kubeconfigPath  string
 	socketPath      string
 	lastOutputPath  string
+	instanceID      string
+	hostID          string
 	allowedAPIHosts []string
 	cleanupFuncs    []func(context.Context)
 	sa              saConfig
 	socketWG        sync.WaitGroup
+	sweepWG         sync.WaitGroup
 	pid             int
 	socketSlots     int
 	mu              sync.Mutex
@@ -145,15 +157,22 @@ func sidecarSymlinkPath() string {
 //  1. [*handler.socketShutdown] closes the UDS listener and waits
 //     for in-flight connection handlers via h.socketWG. Required
 //     so no handler is mid-`runHost` when later steps unlink files.
-//  2. Drain registered K8s resource cleanups with a 30-second
+//  2. Drain the background sweep goroutine via h.sweepWG with a
+//     30-second timeout. The timeout exists because a hung `host
+//     sweep` subprocess would otherwise block shutdown
+//     indefinitely; the existing 30-second timeout inside
+//     runResourceCleanup only scopes that function's K8s release
+//     calls, not the surrounding sessionDir closure.
+//  3. Drain registered K8s resource cleanups with a 30-second
 //     [context.Background] timeout.
-//  3. Unlink the socket file at h.socketPath.
-//  4. Unlink the scoped kubeconfig at h.lastOutputPath. For a
+//  4. Unlink the socket file at h.socketPath.
+//  5. Unlink the per-slot sidecar at [sidecarPath].
+//  6. Unlink the scoped kubeconfig at h.lastOutputPath. For a
 //     guest serve this path lives under the writable bind mount
 //     of `~/.local/state/mcp-kubectx` declared in workmux's
 //     extra_mounts, so removal succeeds without any host-side
 //     shell-out.
-//  5. Unlink the hook-router sidecar symlink. It lives in the
+//  7. Unlink the hook-router sidecar symlink. It lives in the
 //     local TMPDIR and never crosses the Lima boundary.
 func (h *handler) sessionDir() func() {
 	// runResourceCleanup intentionally derives from context.Background.
@@ -180,6 +199,8 @@ func (h *handler) sessionDir() func() {
 	return func() {
 		h.socketShutdown()
 
+		h.drainSweep()
+
 		runResourceCleanup()
 
 		h.mu.Lock()
@@ -188,12 +209,40 @@ func (h *handler) sessionDir() func() {
 		h.mu.Unlock()
 
 		bestEffortRemove("serve socket", socketPath)
+		bestEffortRemove("serve sidecar", sidecarPath(socketPath))
 		bestEffortRemove("kubeconfig", outPath)
 		// Sidecar is symlink-only: parent dir is intentionally
 		// left in place because a peer serve under the same
 		// Claude PPID may still depend on it. TMPDIR is reaped
 		// at reboot.
 		bestEffortRemove("sidecar symlink", sidecarSymlinkPath())
+	}
+}
+
+// sweepDrainTimeout caps how long [*handler.drainSweep] will wait
+// for the background sweep goroutine at shutdown. Package-level
+// so tests can shorten it; production code never mutates it.
+//
+//nolint:grouper // tunable timeout, kept separate from the sentinel-error var block
+var sweepDrainTimeout = 30 * time.Second
+
+// drainSweep waits for the background `host sweep` goroutine to
+// finish with a bounded timeout. Without the timeout a hung sweep
+// subprocess would block process exit indefinitely. Logs a warn
+// on timeout so operators can spot a stuck sweep.
+func (h *handler) drainSweep() {
+	doneCh := make(chan struct{})
+
+	go func() {
+		defer close(doneCh)
+
+		h.sweepWG.Wait()
+	}()
+
+	select {
+	case <-doneCh:
+	case <-time.After(sweepDrainTimeout):
+		slog.Warn("sweep drain timed out at shutdown")
 	}
 }
 
@@ -374,6 +423,12 @@ func (h *handler) selectCtx(
 // cannot drift. Each allowed apiserver host is forwarded as a
 // repeated `--allow-apiserver-host` flag; an empty list yields no
 // flags and lets `host select` accept any apiserver.
+//
+// h.instanceID and h.hostID flow through as --sa-instance-id and
+// --sa-host-id so the SAs and bindings `host select` creates carry
+// [instanceIDLabel] and [hostIDLabel]; empty values omit the flag
+// entirely so the host select side preserves existing test
+// invariants for standalone CLI use.
 func (h *handler) selectArgs(contextName string) []string {
 	guest := h.isGuest()
 
@@ -392,6 +447,14 @@ func (h *handler) selectArgs(contextName string) []string {
 
 	if h.outputPath != "" {
 		args = append(args, "--out-path", h.outputPath)
+	}
+
+	if h.instanceID != "" {
+		args = append(args, "--sa-instance-id", h.instanceID)
+	}
+
+	if h.hostID != "" {
+		args = append(args, "--sa-host-id", h.hostID)
 	}
 
 	for _, host := range h.allowedAPIHosts {
@@ -477,6 +540,33 @@ func writeFileSecure(path string, data []byte) error {
 	err = os.WriteFile(path, data, 0o600)
 	if err != nil {
 		return fmt.Errorf("write file: %w", err)
+	}
+
+	return nil
+}
+
+// writeFileAtomic writes data to path via a tmp + rename so a
+// concurrent reader never observes a torn or zero-byte file.
+// Parent dirs are not created here — callers ensure the dir exists
+// (or use [writeFileSecure] when they want both behaviors). Mode
+// is applied to the tmp file; rename preserves it.
+func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	tmp := path + ".tmp"
+
+	// Best-effort cleanup of any leftover tmp from a prior crash;
+	// the WriteFile below would otherwise hit EEXIST on platforms
+	// that surface it.
+	_ = os.Remove(tmp) //nolint:errcheck // best-effort cleanup
+
+	err := os.WriteFile(tmp, data, mode)
+	if err != nil {
+		return fmt.Errorf("write tmp: %w", err)
+	}
+
+	err = os.Rename(tmp, path)
+	if err != nil {
+		_ = os.Remove(tmp) //nolint:errcheck // best-effort rollback
+		return fmt.Errorf("rename: %w", err)
 	}
 
 	return nil

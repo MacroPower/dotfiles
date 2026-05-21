@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"sync"
 	"testing"
 	"time"
@@ -25,24 +26,42 @@ type mockKubeClient struct {
 	createClusterRoleBindingErr error
 	deleteClusterRoleBindingErr error
 	tokenRequestErr             error
+	listSAErr                   error
+	listRBErr                   error
+	listCRBErr                  error
 
 	token       string
 	tokenExpiry time.Time
 
 	createdSAs                 []string
+	createdSALabels            []map[string]string
+	createdRoleBindingLabels   []map[string]string
+	createdCRBLabels           []map[string]string
 	deletedSAs                 []string
 	createdRoleBindings        []string
 	deletedRoleBindings        []string
 	createdClusterRoleBindings []string
 	deletedClusterRoleBindings []string
 	tokenRequests              []string
+	listedSAs                  []string
+	listedRBs                  []string
+	listedCRBs                 []string
+
+	listSAResp  []ResourceRef
+	listRBResp  []ResourceRef
+	listCRBResp []ResourceRef
 }
 
-func (m *mockKubeClient) CreateServiceAccount(_ context.Context, namespace, name string, _ map[string]string) error {
+func (m *mockKubeClient) CreateServiceAccount(
+	_ context.Context,
+	namespace, name string,
+	labels map[string]string,
+) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.createdSAs = append(m.createdSAs, namespace+"/"+name)
+	m.createdSALabels = append(m.createdSALabels, cloneLabels(labels))
 
 	return m.createSAErr
 }
@@ -60,12 +79,13 @@ func (m *mockKubeClient) CreateRoleBinding(
 	_ context.Context,
 	namespace, name, _, _ string,
 	_ bool,
-	_ map[string]string,
+	labels map[string]string,
 ) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.createdRoleBindings = append(m.createdRoleBindings, namespace+"/"+name)
+	m.createdRoleBindingLabels = append(m.createdRoleBindingLabels, cloneLabels(labels))
 
 	return m.createRoleBindingErr
 }
@@ -82,12 +102,13 @@ func (m *mockKubeClient) DeleteRoleBinding(_ context.Context, namespace, name st
 func (m *mockKubeClient) CreateClusterRoleBinding(
 	_ context.Context,
 	name, _, _, _ string,
-	_ map[string]string,
+	labels map[string]string,
 ) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.createdClusterRoleBindings = append(m.createdClusterRoleBindings, name)
+	m.createdCRBLabels = append(m.createdCRBLabels, cloneLabels(labels))
 
 	return m.createClusterRoleBindingErr
 }
@@ -116,6 +137,47 @@ func (m *mockKubeClient) CreateTokenRequest(
 	}
 
 	return m.token, m.tokenExpiry, nil
+}
+
+func (m *mockKubeClient) ListServiceAccounts(_ context.Context, selector string) ([]ResourceRef, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.listedSAs = append(m.listedSAs, selector)
+
+	return m.listSAResp, m.listSAErr
+}
+
+func (m *mockKubeClient) ListRoleBindings(_ context.Context, selector string) ([]ResourceRef, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.listedRBs = append(m.listedRBs, selector)
+
+	return m.listRBResp, m.listRBErr
+}
+
+func (m *mockKubeClient) ListClusterRoleBindings(_ context.Context, selector string) ([]ResourceRef, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.listedCRBs = append(m.listedCRBs, selector)
+
+	return m.listCRBResp, m.listCRBErr
+}
+
+// cloneLabels returns a deep copy of labels so the mock retains
+// the value passed at call time rather than a reference that the
+// caller may mutate later.
+func cloneLabels(labels map[string]string) map[string]string {
+	if labels == nil {
+		return nil
+	}
+
+	out := make(map[string]string, len(labels))
+	maps.Copy(out, labels)
+
+	return out
 }
 
 func TestSAConfigValidate(t *testing.T) {
@@ -176,13 +238,15 @@ func TestCreateSAWithBinding(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		sa     saConfig
-		mock   *mockKubeClient
-		ns     string
-		err    error
-		assert func(t *testing.T, m *mockKubeClient)
+		sa         saConfig
+		mock       *mockKubeClient
+		ns         string
+		instanceID string
+		hostID     string
+		err        error
+		assert     func(t *testing.T, m *mockKubeClient)
 	}{
-		"role binding": {
+		"role binding without ids": {
 			sa:   saConfig{role: "view", roleKind: "Role", expiration: 3600},
 			mock: &mockKubeClient{},
 			ns:   "ns",
@@ -191,6 +255,32 @@ func TestCreateSAWithBinding(t *testing.T) {
 				assert.Len(t, m.createdSAs, 1)
 				assert.Len(t, m.createdRoleBindings, 1)
 				assert.Empty(t, m.createdClusterRoleBindings)
+
+				require.Len(t, m.createdSALabels, 1)
+				assert.Equal(t, managedByValue, m.createdSALabels[0][managedByLabel])
+
+				_, hasInstance := m.createdSALabels[0][instanceIDLabel]
+				_, hasHost := m.createdSALabels[0][hostIDLabel]
+
+				assert.False(t, hasInstance, "instance-id label must be omitted when empty")
+				assert.False(t, hasHost, "host-id label must be omitted when empty")
+			},
+		},
+		"role binding with ids": {
+			sa:         saConfig{role: "view", roleKind: "Role", expiration: 3600},
+			mock:       &mockKubeClient{},
+			ns:         "ns",
+			instanceID: "inst-abc",
+			hostID:     "host-xyz",
+			assert: func(t *testing.T, m *mockKubeClient) {
+				t.Helper()
+				require.Len(t, m.createdSALabels, 1)
+				assert.Equal(t, "inst-abc", m.createdSALabels[0][instanceIDLabel])
+				assert.Equal(t, "host-xyz", m.createdSALabels[0][hostIDLabel])
+
+				require.Len(t, m.createdRoleBindingLabels, 1)
+				assert.Equal(t, "inst-abc", m.createdRoleBindingLabels[0][instanceIDLabel])
+				assert.Equal(t, "host-xyz", m.createdRoleBindingLabels[0][hostIDLabel])
 			},
 		},
 		"cluster role binding namespaced": {
@@ -203,14 +293,20 @@ func TestCreateSAWithBinding(t *testing.T) {
 				assert.Empty(t, m.createdClusterRoleBindings)
 			},
 		},
-		"cluster scoped binding": {
-			sa:   saConfig{role: "view", roleKind: "ClusterRole", clusterScoped: true, expiration: 3600},
-			mock: &mockKubeClient{},
-			ns:   "ns",
+		"cluster scoped binding propagates labels": {
+			sa:         saConfig{role: "view", roleKind: "ClusterRole", clusterScoped: true, expiration: 3600},
+			mock:       &mockKubeClient{},
+			ns:         "ns",
+			instanceID: "inst-1",
+			hostID:     "host-1",
 			assert: func(t *testing.T, m *mockKubeClient) {
 				t.Helper()
 				assert.Len(t, m.createdClusterRoleBindings, 1)
 				assert.Empty(t, m.createdRoleBindings)
+
+				require.Len(t, m.createdCRBLabels, 1)
+				assert.Equal(t, "inst-1", m.createdCRBLabels[0][instanceIDLabel])
+				assert.Equal(t, "host-1", m.createdCRBLabels[0][hostIDLabel])
 			},
 		},
 		"sa creation failure": {
@@ -231,7 +327,7 @@ func TestCreateSAWithBinding(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			saName, err := createSAWithBinding(t.Context(), tc.mock, tc.sa, tc.ns)
+			saName, err := createSAWithBinding(t.Context(), tc.mock, tc.sa, tc.ns, tc.instanceID, tc.hostID)
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
 				return
