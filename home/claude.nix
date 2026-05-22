@@ -2463,7 +2463,7 @@ in
             showTurnDuration = true;
             terminalProgressBarEnabled = true;
             autoCompactEnabled = true;
-            autoCompactWindow = 200000;
+            autoCompactWindow = 666666;
           }
           // lib.optionalAttrs cfg.stylixTheme.enable {
             theme = "custom:stylix";
