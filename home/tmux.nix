@@ -683,7 +683,7 @@ let
       group = "workmux";
       name = "Sidebar";
       key = "T";
-      cmd = ''run-shell "workmux sidebar"'';
+      cmd = ''run-shell "workmux sidebar --session"'';
     };
     workmuxLast = {
       group = "workmux";
