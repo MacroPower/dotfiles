@@ -900,9 +900,12 @@ let
     "~/Library/Caches"
     "~/.cache/nix"
     "~/.cache/helm"
+    "~/.cache/gh"
     "~/.local/state/workmux"
     "~/.local/state/hook-router"
+    "~/.local/state/gh"
     "~/.local/share/claude"
+    "~/.local/share/gh"
     "~/.tflint.d"
     researchDir
   ]
