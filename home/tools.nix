@@ -171,33 +171,38 @@ in
     };
   };
 
-  home.packages = with pkgs; [
-    leanspec-cli
-    go-task
-    yq-go
-    viddy
-    doppler
-    dagger
-    nvd
-    nurl
-    sops
-    age
-    hyperfine
-    sd
-    procs
-    xh
-    doggo
-    dive
-    cosign
-    tokei
-    gping
-    lefthook
-    tfswitch
-    tflint
-    devbox
-    angle-grinder
-    zstd
-  ];
+  home.packages =
+    with pkgs;
+    [
+      leanspec-cli
+      go-task
+      yq-go
+      viddy
+      doppler
+      dagger
+      nvd
+      nurl
+      sops
+      age
+      hyperfine
+      sd
+      procs
+      xh
+      doggo
+      dive
+      cosign
+      tokei
+      gping
+      lefthook
+      tfswitch
+      tflint
+      devbox
+      angle-grinder
+      zstd
+    ]
+    ++ lib.optionals pkgs.stdenv.isDarwin [
+      mdcopy
+    ];
 
   # Relocates the tofu CLI config out of ~/.terraform.d/ so the Claude
   # sandbox (which blocks $HOME) can reach it via TF_CLI_CONFIG_FILE.

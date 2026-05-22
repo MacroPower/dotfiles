@@ -41,6 +41,7 @@ let
     git-surgeon = final.callPackage paths.git-surgeon { };
     comfyui = final.callPackage paths.comfyui { };
     slugify = final.callPackage paths.slugify { };
+    mdcopy = final.callPackage paths.mdcopy { };
   };
 
   nurJacobColvinOverlay =

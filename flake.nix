@@ -176,6 +176,7 @@
                 git-surgeon = ./pkgs/git-surgeon.nix;
                 comfyui = ./pkgs/comfyui.nix;
                 slugify = ./pkgs/slugify.nix;
+                mdcopy = ./pkgs/mdcopy.nix;
                 krewfileModule = ./lib/krewfile-module.nix;
               };
             })
