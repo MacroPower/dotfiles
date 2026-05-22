@@ -5,7 +5,7 @@
 }:
 
 let
-  version = "0.1.14";
+  version = "0.1.16";
 in
 rustPlatform.buildRustPackage {
   pname = "git-surgeon";
@@ -15,10 +15,10 @@ rustPlatform.buildRustPackage {
     owner = "raine";
     repo = "git-surgeon";
     rev = "v${version}";
-    hash = "sha256-5Ac4pdxB8FJbGGNc+gi+E+KHQgur3DTeF1IpboYdQJA=";
+    hash = "sha256-+0wIByswyAZFTE20VysejdfGTknzCsxRl3GKzPzWQPE=";
   };
 
-  cargoHash = "sha256-PdywtdBMwCRNoiUUNmfE/yATI0snWHrhJJVW0sMpUAc=";
+  cargoHash = "sha256-Zh6sk1DYamyxEbec0V8ukCnGpyQIDNqd0+Y9x66rmMA=";
 
   meta = {
     description = "Git primitives for autonomous coding agents";

@@ -32,6 +32,7 @@ let
     helm-schema = final.callPackage paths.helm-schema { };
     mcp-kagi = final.callPackage paths.mcp-kagi { };
     mcp-argocd = final.callPackage paths.mcp-argocd { };
+    marksman-bin = final.callPackage paths.marksman-bin { };
     mcp-opentofu = final.callPackage paths.mcp-opentofu { };
     leanspec-mcp = final.callPackage paths.leanspec-mcp { };
     leanspec-cli = final.callPackage paths.leanspec-cli { };
@@ -218,6 +219,19 @@ let
         });
   };
 
+  # Building marksman on Linux pulls in dotnetCorePackages.runtime_9_0,
+  # which on aarch64-linux routes through the source-built dotnet-vmr-9.0.15
+  # (a multi-hour build that aborts with SIGILL in its binary-allowance
+  # scanner), and even when the binary runtime is swapped in, the F# build
+  # under Apple-Silicon virtualization (Lima/QEMU) crashes the SDK with
+  # SIGILL during fsc invocations. Upstream publishes self-contained
+  # AOT-compiled binaries that sidestep the whole dotnet build chain; use
+  # those on Linux and keep the nixpkgs source build on Darwin where it
+  # works without a hitch.
+  marksmanOverlay = final: prev: {
+    marksman = if prev.stdenv.hostPlatform.isLinux then final.marksman-bin else prev.marksman;
+  };
+
   # nixpkgs runs grug-far.nvim's mini.test suite during build whenever
   # lua is 5.1-compatible and the host isn't darwin (luajit2.1 hits this
   # on linux). The override at pkgs/development/lua-modules/overrides.nix
@@ -248,6 +262,7 @@ let
     aioboto3Overlay
     direnvOverlay
     denoOverlay
+    marksmanOverlay
     grugFarOverlay
     (nurJacobColvinOverlay system)
     ryceeOverlay

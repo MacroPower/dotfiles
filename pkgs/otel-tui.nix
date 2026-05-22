@@ -5,24 +5,24 @@
 }:
 
 let
-  version = "0.7.1";
+  version = "0.7.3";
 
   srcs = {
     "aarch64-darwin" = {
       url = "https://github.com/ymtdzzz/otel-tui/releases/download/v${version}/otel-tui_Darwin_arm64.tar.gz";
-      hash = "sha256-ezD3pKlN+R+sWQj8LMol8Vblh3vkOK06sFk0s1FebR4=";
+      hash = "sha256-ntX8cLJtLKkBzlYLv4lu2xaFFEWrDrKnUWEt2dtUVZU=";
     };
     "x86_64-darwin" = {
       url = "https://github.com/ymtdzzz/otel-tui/releases/download/v${version}/otel-tui_Darwin_x86_64.tar.gz";
-      hash = "sha256-zbHAM8J+tx9EmxXuvl1tHeHvbdhEpPR44AZyyUnQSvo=";
+      hash = "sha256-kKZ30SOo/R3KeT0JL+Cn55icn/o1cA39+6gKwdQqy7A=";
     };
     "aarch64-linux" = {
       url = "https://github.com/ymtdzzz/otel-tui/releases/download/v${version}/otel-tui_Linux_arm64.tar.gz";
-      hash = "sha256-IlPjPEfVbMjQOs+gbmsoDOmv32wp/1J2vXSmREW0Bmg=";
+      hash = "sha256-yKc4zhpL2MtDb8TL6pm6lDOBI9dEHTol+EFKWYL3ve0=";
     };
     "x86_64-linux" = {
       url = "https://github.com/ymtdzzz/otel-tui/releases/download/v${version}/otel-tui_Linux_x86_64.tar.gz";
-      hash = "sha256-V929JyMB/N/QuwMWGhSP7oAnGHHG+B8zImMpbgB8UR0=";
+      hash = "sha256-CKXwt4psjh4sr1vshpbZWwBUFVq63OOgUAX0vM6h2eQ=";
     };
   };
 

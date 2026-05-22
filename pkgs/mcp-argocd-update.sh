@@ -31,7 +31,7 @@ echo "  src hash: $srcHash"
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 curl -sL "$tarballUrl" | tar -xz -C "$tmpdir" --strip-components=1
-npmDepsHash=$(prefetch-npm-deps "$tmpdir/package-lock.json" 2>/dev/null)
+npmDepsHash=$(NPM_FETCHER_VERSION=2 nix run nixpkgs#prefetch-npm-deps -- "$tmpdir/package-lock.json" 2>/dev/null)
 echo "  npmDepsHash: $npmDepsHash"
 
 # Update version

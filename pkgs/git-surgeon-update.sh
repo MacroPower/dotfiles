@@ -28,13 +28,28 @@ currentHash=$(grep -A5 'fetchFromGitHub' "$PKG_FILE" | grep -Po '(?<=hash = ")[^
 sed -i "s|$currentHash|$newHash|" "$PKG_FILE"
 echo "  src hash: $currentHash -> $newHash"
 
-# Reset cargoHash so the next build reveals the correct one
-currentCargoHash=$(grep -Po '(?<=cargoHash = ")[^"]+' "$PKG_FILE")
-sed -i "s|$currentCargoHash|lib.fakeHash|" "$PKG_FILE"
-# Replace quoted fakeHash with the unquoted expression
-sed -i 's|cargoHash = "lib.fakeHash"|cargoHash = lib.fakeHash|' "$PKG_FILE"
-
 # Update version
 sed -i "s|version = \"$currentVersion\"|version = \"$latestVersion\"|" "$PKG_FILE"
+
+# Resolve cargoHash by building the package; the vendor stage reports the
+# correct hash via a deliberate mismatch against lib.fakeHash.
+echo "  resolving cargoHash via nix build..."
+REPO_ROOT=$(git -C "$DIRNAME" rev-parse --show-toplevel)
+PKG_FILE_ABS=$(realpath "$PKG_FILE")
+sed -i -E 's|cargoHash = ("[^"]+"\|lib\.fakeHash);|cargoHash = lib.fakeHash;|' "$PKG_FILE"
+buildOutput=$(nix build --impure --no-link --expr "
+  let
+    flake = builtins.getFlake \"$REPO_ROOT\";
+    pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; };
+  in
+    pkgs.callPackage $PKG_FILE_ABS { }
+" 2>&1 || true)
+newCargoHash=$(echo "$buildOutput" | sed -n 's|.*got: *\(sha256-[A-Za-z0-9+/=]*\).*|\1|p' | head -1)
+if [[ -z $newCargoHash ]]; then
+  echo "ERROR: failed to resolve cargoHash. nix build output:" >&2
+  echo "$buildOutput" >&2
+  exit 1
+fi
+sed -i "s|cargoHash = lib.fakeHash;|cargoHash = \"$newCargoHash\";|" "$PKG_FILE"
+echo "  cargoHash: $newCargoHash"
 echo "git-surgeon updated to $latestVersion"
-echo "NOTE: Run 'nix build .#git-surgeon' to get the correct cargoHash, then update $PKG_FILE"

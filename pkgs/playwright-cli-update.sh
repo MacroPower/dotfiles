@@ -31,9 +31,7 @@ newHash=$(nix run nixpkgs#nix-prefetch-github -- microsoft playwright-cli \
 currentHash=$(grep -A5 'fetchFromGitHub' "$PKG_FILE" | grep -Po '(?<=hash = ")[^"]+' || true)
 currentRev=$(grep -Po '(?<=rev = ")[^"]+' "$PKG_FILE")
 
-# 3. Patch version, rev, src hash; reset npmDepsHash to lib.fakeHash so
-#    the next build reports the correct one (same pattern as
-#    pkgs/git-surgeon-update.sh). Guard the src-hash sed because the
+# 3. Patch version, rev, src hash. Guard the src-hash sed because the
 #    field is bare `lib.fakeHash` (unquoted) until the first build
 #    succeeds, and an empty $currentHash would make sed a no-op or
 #    error.
@@ -45,14 +43,28 @@ else
   sed -i "s|hash = lib.fakeHash|hash = \"$newHash\"|" "$PKG_FILE"
 fi
 
-currentDepsHash=$(grep -Po '(?<=npmDepsHash = ")[^"]+' "$PKG_FILE" || true)
-if [[ -n $currentDepsHash ]]; then
-  sed -i "s|npmDepsHash = \"$currentDepsHash\"|npmDepsHash = lib.fakeHash|" "$PKG_FILE"
+# 4. Resolve npmDepsHash by building the package; the deps-fetch stage
+#    reports the correct hash via a deliberate mismatch against lib.fakeHash.
+echo "  resolving npmDepsHash via nix build..."
+PKG_FILE_ABS=$(realpath "$PKG_FILE")
+sed -i -E 's|npmDepsHash = ("[^"]+"\|lib\.fakeHash);|npmDepsHash = lib.fakeHash;|' "$PKG_FILE"
+buildOutput=$(nix build --impure --no-link --expr "
+  let
+    flake = builtins.getFlake \"$REPO_ROOT\";
+    pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; };
+  in
+    pkgs.callPackage $PKG_FILE_ABS { }
+" 2>&1 || true)
+newDepsHash=$(echo "$buildOutput" | sed -n 's|.*got: *\(sha256-[A-Za-z0-9+/=]*\).*|\1|p' | head -1)
+if [[ -z $newDepsHash ]]; then
+  echo "ERROR: failed to resolve npmDepsHash. nix build output:" >&2
+  echo "$buildOutput" >&2
+  exit 1
 fi
-# Self-heal a stray quoted "lib.fakeHash" regardless of prior state.
-sed -i 's|npmDepsHash = "lib.fakeHash"|npmDepsHash = lib.fakeHash|' "$PKG_FILE"
+sed -i "s|npmDepsHash = lib.fakeHash;|npmDepsHash = \"$newDepsHash\";|" "$PKG_FILE"
+echo "  npmDepsHash: $newDepsHash"
 
-# 4. Re-vendor skill files in lockstep -- drop the old tree, copy from
+# 5. Re-vendor skill files in lockstep -- drop the old tree, copy from
 #    the git tarball at the new SHA so SKILL.md and references/ never
 #    drift.
 tmp=$(mktemp -d)
@@ -65,4 +77,3 @@ mkdir -p "$SKILL_DIR"
 cp -r "$src/skills/playwright-cli/." "$SKILL_DIR/"
 
 echo "playwright-cli updated to $latestVersion"
-echo "NOTE: Run 'nix build .#playwright-cli' to get the correct npmDepsHash, then update $PKG_FILE"
