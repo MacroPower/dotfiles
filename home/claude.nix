@@ -2502,6 +2502,7 @@ in
           humanize = ../configs/claude/skills/humanize;
           research = ../configs/claude/skills/research;
           review-implementation = ../configs/claude/skills/review-implementation;
+          simplify = ../configs/claude/skills/simplify;
           taskfile = ../configs/claude/skills/taskfile;
           playwright-cli = ../configs/claude/skills/playwright-cli;
           web-archive = ../configs/claude/skills/web-archive;
