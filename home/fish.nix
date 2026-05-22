@@ -438,10 +438,29 @@ in
     '';
 
     interactiveShellInit = ''
-      # Auto-start tmux for interactive shells (skip if already in tmux,
-      # inside an IDE terminal, or tmux isn't available)
+      # Auto-start tmux for interactive shells. We deliberately do NOT use `exec`
+      # directly on `tmux`: `exec tmux` would replace fish before the user sees a
+      # prompt, and a tmux startup failure (missing socket dir, swapped binary,
+      # fatal plugin crash on attach, server killed mid-attach) would leave a dead
+      # terminal with no way to log in and fix it.
+      #
+      # Instead, run tmux as a child. On success, `exec true` replaces fish with a
+      # tiny no-op so the terminal closes when its child exits. On failure, fall
+      # through to fish + a loud red banner.
+      #
+      # Note: plain `exit 0` does NOT work here. `config.fish` is loaded by fish via
+      # the `source` builtin, and `exit` from within a sourced file only skips the
+      # rest of the file (per `man fish-doc`); it does not terminate the shell.
+      # `exec true` is the portable way to actually replace the shell.
       if status is-interactive; and command -q tmux; and not set -q TMUX; and not set -q ZED_TERM; and test -z "$SSH_CONNECTION"
-        exec tmux new-session -c "$HOME" \; set-option destroy-unattached on
+        tmux new-session -c "$HOME" \; set-option destroy-unattached on; and exec true
+        set -l tmux_status $status
+
+        set_color --bold red
+        echo ""
+        echo "WARNING: tmux failed to start (exit $tmux_status). Falling back to plain fish."
+        echo ""
+        set_color normal
       end
 
       # Auto-start workmux sidebar (recovers if it died; skip floax popups)
