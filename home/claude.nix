@@ -413,6 +413,7 @@ let
       fastModeShimmer = shimmerOf "base09";
 
       userMessageBackground = "#${colors.base01}";
+      userMessageBackgroundHover = "#${colors.base02}";
       selectionBg = "#${colors.base02}";
 
       red_FOR_SUBAGENTS_ONLY = "#${colors.base08}";
@@ -1647,6 +1648,7 @@ in
           "mcp__github__list_issues"
           "mcp__github__list_pull_requests"
           "mcp__github__list_releases"
+          "mcp__github__list_repository_collaborators"
           "mcp__github__list_tags"
           "mcp__github__pull_request_read"
           "mcp__github__search_code"
@@ -1654,6 +1656,10 @@ in
           "mcp__github__search_pull_requests"
           "mcp__github__search_repositories"
           "mcp__github__search_users"
+        ];
+        permissions.ask = [
+          "Bash(gh)"
+          "Bash(gh *)"
         ];
         permissions.deny = [
           "mcp__github__get_file_contents"
@@ -1786,11 +1792,18 @@ in
         ];
         sandbox.allowWrite = [ "~/.terraform.versions" ];
         sandbox.allowRead = [ "~/.tfswitch.toml" ];
-        # hashicorp/go-plugin (used by tofu providers) binds a Unix domain
-        # socket for IPC with the parent process. The claude wrapper sets
-        # PLUGIN_UNIX_SOCKET_DIR=~/.terraform.versions so the socket lands
-        # in a directory the sandbox can both write to and bind within.
-        sandbox.allowUnixSockets = [ "~/.terraform.versions" ];
+        # hashicorp/go-plugin (used by tofu providers and tflint plugins)
+        # binds a Unix domain socket for IPC with the parent process. The
+        # claude wrapper sets PLUGIN_UNIX_SOCKET_DIR=~/.terraform.versions
+        # so tofu's socket lands in a directory the sandbox can both write
+        # to and bind within. tflint ignores PLUGIN_UNIX_SOCKET_DIR and
+        # always uses os.TempDir(), so a separate tflint wrapper points
+        # TMPDIR at ~/.tflint.d/tmp; ~/.tflint.d is added here so sockets
+        # inside it can be bound.
+        sandbox.allowUnixSockets = [
+          "~/.terraform.versions"
+          "~/.tflint.d"
+        ];
         fetchRules.deny = [
           {
             host = "registry\\.opentofu\\.org";
@@ -1852,11 +1865,9 @@ in
           "mcp__spacelift__get_policy"
           "mcp__spacelift__get_policy_sample"
           "mcp__spacelift__get_space"
-          "mcp__spacelift__get_spacelift_stacks"
           "mcp__spacelift__get_stack_run"
           "mcp__spacelift__get_stack_run_changes"
           "mcp__spacelift__get_stack_run_logs"
-          "mcp__spacelift__get_stack_runs"
           "mcp__spacelift__get_worker_pool"
           "mcp__spacelift__introspect_graphql_schema"
           "mcp__spacelift__list_blueprints"
@@ -1872,6 +1883,7 @@ in
           "mcp__spacelift__list_stack_runs"
           "mcp__spacelift__list_stacks"
           "mcp__spacelift__list_worker_pools"
+          "mcp__spacelift__local_preview"
           "mcp__spacelift__search_contexts"
           "mcp__spacelift__search_graphql_schema_fields"
           "mcp__spacelift__search_modules"
@@ -1880,7 +1892,6 @@ in
           "mcp__spacelift__trigger_stack_run"
           "mcp__spacelift__discard_stack_run"
           "mcp__spacelift__confirm_stack_run"
-          "mcp__spacelift__local_preview"
         ];
         permissions.deny = [
           "mcp__spacelift__list_api_keys"
@@ -1901,7 +1912,7 @@ in
               "stack"
               "show"
             ];
-            reason = "Use `mcp__spacelift__get_spacelift_stacks` instead of `spacectl stack show`.";
+            reason = "Use `mcp__spacelift__list_stacks` instead of `spacectl stack show`.";
           }
           {
             command = "spacectl";
@@ -2144,6 +2155,21 @@ in
           ];
         };
       };
+
+      claude-ai-integrations = {
+        # Claude.ai web-app integration auth tools with no configured server here.
+        # Denied defensively in case such a server gets wired up by accident.
+        permissions.deny = [
+          "mcp__claude_ai_Asana__authenticate"
+          "mcp__claude_ai_Asana__complete_authentication"
+          "mcp__claude_ai_Gmail__authenticate"
+          "mcp__claude_ai_Gmail__complete_authentication"
+          "mcp__claude_ai_Google_Calendar__authenticate"
+          "mcp__claude_ai_Google_Calendar__complete_authentication"
+          "mcp__claude_ai_Google_Drive__authenticate"
+          "mcp__claude_ai_Google_Drive__complete_authentication"
+        ];
+      };
     };
 
     programs = {
@@ -2155,13 +2181,12 @@ in
       claude-code = {
         enable = true;
         package = claudeWrapped;
-        enableMcpIntegration = true;
 
         settings = lib.recursiveUpdate (
           {
             env = {
               CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
-              CLAUDE_CODE_EFFORT_LEVEL = "max";
+              CLAUDE_CODE_EFFORT_LEVEL = "xhigh";
             };
             disableAutoMode = "disable";
             includeGitInstructions = false;
@@ -2254,6 +2279,10 @@ in
                 # Developer tool sessions & generated keys
                 "Read(//**/atuin/key)"
                 "Read(//**/.lima/_config/user)"
+
+                # Built-in worktree tools; workmux owns worktree management
+                "EnterWorktree"
+                "ExitWorktree"
               ]
               ++ bundledDeny
               ++ cfg.extraPermissions.deny;
@@ -2266,6 +2295,7 @@ in
               ++ bundledAsk
               ++ cfg.extraPermissions.ask;
             };
+            worktree.bgIsolation = "none";
             statusLine = {
               type = "command";
               command = "${pkgs.claude-powerline}/bin/claude-powerline";
@@ -2428,6 +2458,12 @@ in
             teammateMode = "in-process";
             showThinkingSummaries = true;
             showClearContextOnPlanAccept = true;
+            fileCheckpointingEnabled = true;
+            todoFeatureEnabled = true;
+            showTurnDuration = true;
+            terminalProgressBarEnabled = true;
+            autoCompactEnabled = true;
+            autoCompactWindow = 200000;
           }
           // lib.optionalAttrs cfg.stylixTheme.enable {
             theme = "custom:stylix";

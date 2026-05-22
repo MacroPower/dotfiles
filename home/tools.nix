@@ -15,6 +15,37 @@ let
   sandboxDirenvConfig = lib.optionalAttrs (config.dotfiles.hostname == "terrarium") {
     whitelist.prefix = [ "/Users/${config.dotfiles.username}/Documents/repos" ];
   };
+
+  # tfswitch refuses to create the immediate parent of its `-b` symlink
+  # target and falls back to ~/bin when missing, which the Claude sandbox
+  # denies. Wrap with a mkdir prelude so every invocation self-heals.
+  tfswitchWrapped = pkgs.symlinkJoin {
+    name = "tfswitch-wrapped";
+    paths = [ pkgs.tfswitch ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/tfswitch \
+        --run "mkdir -p ${config.home.homeDirectory}/.terraform.versions/bin"
+    '';
+  };
+
+  # tflint vendors a go-plugin version that ignores PLUGIN_UNIX_SOCKET_DIR
+  # and always binds its IPC sockets in `os.TempDir()`. The Claude sandbox
+  # overrides $TMPDIR to a path that blocks unix-socket binds, so redirect
+  # to ~/.tflint.d/tmp, which is in the sandbox's write + unix-socket
+  # allowlists via the opentofu bundle. Outside the sandbox the redirect
+  # is harmless -- sockets just land under ~/.tflint.d/tmp instead of the
+  # system temp dir.
+  tflintWrapped = pkgs.symlinkJoin {
+    name = "tflint-wrapped";
+    paths = [ pkgs.tflint ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/tflint \
+        --run "mkdir -p ${config.home.homeDirectory}/.tflint.d/tmp" \
+        --set TMPDIR "${config.home.homeDirectory}/.tflint.d/tmp"
+    '';
+  };
 in
 {
   programs = {
@@ -194,8 +225,8 @@ in
       tokei
       gping
       lefthook
-      tfswitch
-      tflint
+      tfswitchWrapped
+      tflintWrapped
       devbox
       angle-grinder
       zstd
@@ -220,12 +251,6 @@ in
   home.file.".tfswitch.toml".text = ''
     bin = "${config.home.homeDirectory}/.terraform.versions/bin/tofu"
     product = "opentofu"
-  '';
-
-  # tfswitch refuses to create the immediate parent of -b/bin, so the
-  # directory has to exist before the first invocation.
-  home.activation.tfswitchBinDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run mkdir -p "${config.home.homeDirectory}/.terraform.versions/bin"
   '';
 
   home.sessionPath = [ "$HOME/.terraform.versions/bin" ];
