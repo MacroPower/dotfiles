@@ -253,7 +253,7 @@ let
   workmuxConfig = (pkgs.formats.yaml { }).generate "config.yaml" {
     nerdfont = true;
     merge_strategy = "rebase";
-    agent = "claude";
+    inherit (cfg.workmux) agent;
     window_prefix = "wm-";
     worktree_dir = ".worktrees";
     status_format = false;
@@ -284,7 +284,7 @@ let
     ];
     panes = [
       {
-        command = "claude --permission-mode plan";
+        inherit (cfg.workmux) command;
         focus = true;
       }
       {
@@ -1329,6 +1329,19 @@ in
         type = types.str;
         default = "80GiB";
         description = "Disk size allocated to the Lima VM.";
+      };
+    };
+
+    workmux = {
+      agent = mkOption {
+        type = types.str;
+        default = "claude";
+        description = "Value emitted for workmux's top-level agent key in ~/.config/workmux/config.yaml. Workmux uses this label to pick the output-pattern profile for status routing (working / waiting / done). Override on hosts that drive workmux with a different coding agent.";
+      };
+      command = mkOption {
+        type = types.str;
+        default = "claude --permission-mode plan";
+        description = "Shell command launched in workmux's focused pane on session create. Decoupled from agent because flag conventions vary between coding agents.";
       };
     };
 
