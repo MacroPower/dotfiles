@@ -42,7 +42,13 @@ in
       ruff
       gotools
       gofumpt
+
+      # Mermaid / diagram rendering
+      imagemagick
+      mermaid-cli
     ];
+
+    extraLuaPackages = ps: [ ps.magick ];
 
     plugins = with pkgs.vimPlugins; [
       # Loaded first so MiniIcons.mock_nvim_web_devicons() registers
@@ -418,6 +424,48 @@ in
         type = "lua";
         config = ''
           require("render-markdown").setup({})
+        '';
+      }
+      {
+        plugin = image-nvim;
+        type = "lua";
+        config = ''
+          -- processor = "magick_rock" pairs with extraLuaPackages = [ ps.magick ]
+          -- on programs.neovim; switching back to magick_cli means dropping the
+          -- rock from that list.
+          require("image").setup({
+            backend = "kitty",
+            processor = "magick_rock",
+            integrations = {
+              markdown = { enabled = false },
+              neorg    = { enabled = false },
+            },
+            max_height_window_percentage = math.huge,
+            max_width_window_percentage  = math.huge,
+            window_overlap_clear_enabled = true,
+            window_overlap_clear_ft_ignore = {
+              "cmp_menu", "cmp_docs", "snacks_notif", "scrollview", "scrollview_sign",
+            },
+          })
+        '';
+      }
+      {
+        plugin = diagram-nvim;
+        type = "lua";
+        config = ''
+          require("diagram").setup({
+            integrations = {
+              require("diagram.integrations.markdown"),
+            },
+            renderer_options = {
+              mermaid = {
+                background = "transparent",
+                theme      = "dark",
+                scale      = 2,
+                cli_args   = { "--no-sandbox" },
+              },
+            },
+          })
         '';
       }
 

@@ -25,6 +25,7 @@
         "appcleaner"
         "claude-code"
         "claude-code-wrapped"
+        "diagram.nvim"
         "drawio"
         "frankerfacez"
         "firefox-bin"
