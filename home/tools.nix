@@ -219,7 +219,7 @@ in
       sd
       procs
       xh
-      doggo
+      knot-dns
       dive
       cosign
       tokei

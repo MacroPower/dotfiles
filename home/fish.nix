@@ -549,7 +549,7 @@ in
       wkl = "kubectl logs --follow";
       kx = "kubectx";
       kn = "kubens";
-      dig = "doggo";
+      dig = "kdig";
       ping = "gping";
       lzd = "lazydocker";
       hf = "hyperfine";
