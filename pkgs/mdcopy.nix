@@ -4,8 +4,9 @@ writeShellApplication {
   name = "mdcopy";
   runtimeInputs = [ cmark-gfm ];
   text = ''
-    cmark-gfm -e table -e strikethrough -e autolink -e tasklist -e tagfilter "$@" \
-      | textutil -stdin -stdout -format html -inputencoding UTF-8 -convert rtf \
-      | pbcopy
+    cmark-gfm -e table -e strikethrough -e autolink -e tasklist "$@" \
+      | hexdump -ve '1/1 "%.2x"' \
+      | xargs printf 'set the clipboard to {string:" ", «class HTML»:«data HTML%s»}' \
+      | osascript -
   '';
 }
