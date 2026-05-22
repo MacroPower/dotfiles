@@ -1790,7 +1790,18 @@ in
           "get.opentofu.org"
           "registry.opentofu.org"
         ];
-        sandbox.allowWrite = [ "~/.terraform.versions" ];
+        sandbox.allowWrite = [
+          "~/.terraform.versions"
+          # tofu init populates ~/.terraform.d/plugins (filesystem
+          # mirror) and ~/.terraform.d/plugin-cache (shared download
+          # cache when TF_PLUGIN_CACHE_DIR is set). Both need
+          # read+write so providers can be downloaded and loaded.
+          # Sibling ~/.terraform.d/credentials.tfrc.json stays
+          # unreachable -- it is not under either subdirectory and
+          # is additionally denied at the permission layer.
+          "~/.terraform.d/plugins"
+          "~/.terraform.d/plugin-cache"
+        ];
         sandbox.allowRead = [ "~/.tfswitch.toml" ];
         # hashicorp/go-plugin (used by tofu providers and tflint plugins)
         # binds a Unix domain socket for IPC with the parent process. The
