@@ -40,7 +40,6 @@
 
     casks = [
       "fork"
-      "linearmouse"
     ]
     ++ config.dotfiles.system.homebrew.casks;
 
@@ -501,7 +500,6 @@
         "com.apple.commerce".AutoUpdate = false;
         # Disable Sparkle auto-updates for Homebrew casks (managed by nix-darwin)
         "dev.kdrag0n.MacVirt".SUAutomaticallyUpdate = false;
-        "com.lujjjh.LinearMouse".SUAutomaticallyUpdate = false;
         "com.DanPristupov.Fork".SUAutomaticallyUpdate = false;
         # Activity Monitor opens its main window on launch, shows
         # real-time CPU graph in the Dock icon, and sorts by CPU descending
@@ -660,25 +658,6 @@
       inherit (config.dotfiles.system.power.sleep) computer display allowSleepByPowerButton;
     };
     inherit (config.dotfiles.system.power) restartAfterFreeze restartAfterPowerFailure;
-  };
-
-  # LinearMouse has no plist toggle for launch-at-login (uses SMAppService
-  # internally, which only its own UI can flip). The shared loginItems
-  # activation script can't add it either: osascript -> System Events is
-  # denied by TCC and fails silently. A per-user launchd agent bypasses
-  # TCC and lets launchd supervise the process directly.
-  launchd.user.agents.linearmouse = {
-    serviceConfig = {
-      Label = "org.nixos.linearmouse";
-      Program = "/Applications/LinearMouse.app/Contents/MacOS/LinearMouse";
-      RunAtLoad = true;
-      KeepAlive = false;
-      # LinearMouse is LSUIElement=true; only load in the GUI (Aqua) session,
-      # not in Background sessions used for ssh logins.
-      LimitLoadToSessionType = "Aqua";
-      StandardErrorPath = "/dev/null";
-      StandardOutPath = "/dev/null";
-    };
   };
 
   security.pki.certificateFiles = config.dotfiles.system.caCertificateFiles;
