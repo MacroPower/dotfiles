@@ -2,6 +2,7 @@
   pkgs,
   lib,
   config,
+  osConfig ? { },
   ...
 }:
 
@@ -10,6 +11,16 @@ let
   inherit (config.lib.stylix) colors;
   inherit (import ../lib/colors.nix { inherit lib; }) lighten;
   cfg = config.dotfiles.claude;
+
+  # Resolved from the host config (nix-darwin / NixOS) when home-manager
+  # runs as a host module. Standalone home-manager (linux containers,
+  # Dagger) has no `osConfig.users`, so the lookup returns null and the
+  # uid-scoped paths drop out of the lists below.
+  hostUid = lib.attrByPath [ "users" "users" config.home.username "uid" ] null osConfig;
+  claudeTmpPaths = lib.optionals (hostUid != null) [
+    "/tmp/claude-${toString hostUid}"
+    "/private/tmp/claude-${toString hostUid}"
+  ];
   sopsEnabled = config.dotfiles.sops.enable;
   skipPerms = cfg.dangerouslySkipPermissions;
 
@@ -908,8 +919,17 @@ let
     "~/.local/share/claude"
     "~/.local/share/gh"
     "~/.tflint.d"
+
+    # macOS per-user temp. Apple tooling (codesign, security, simctl,
+    # Xcode CLT) resolves $TMPDIR via confstr(_CS_DARWIN_USER_TEMP_DIR)
+    # and writes scratch files under /var/folders regardless of the
+    # $TMPDIR Claude Code exports.
+    "/var/folders"
+    "/private/var/folders"
+
     researchDir
   ]
+  ++ claudeTmpPaths
   ++ bundledWritePaths;
 
   readPermEntries = map (p: "Read(${toPermGlob p})") extraReadPaths;
