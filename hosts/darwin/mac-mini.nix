@@ -27,6 +27,7 @@
 
   darwinModule = _: {
     dotfiles.system.darwin.bluetoothAac.enable = true;
+    dotfiles.system.darwin.fork.enable = true;
     dotfiles.system.darwin.fuseT.enable = true;
     dotfiles.system.darwin.hyperkey.enable = true;
     dotfiles.system.darwin.linearmouse.enable = true;

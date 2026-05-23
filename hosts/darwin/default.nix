@@ -38,10 +38,7 @@
 
     inherit (config.dotfiles.system.homebrew) brews;
 
-    casks = [
-      "fork"
-    ]
-    ++ config.dotfiles.system.homebrew.casks;
+    casks = config.dotfiles.system.homebrew.casks;
 
     inherit (config.dotfiles.system.homebrew) masApps;
 
@@ -500,7 +497,6 @@
         "com.apple.commerce".AutoUpdate = false;
         # Disable Sparkle auto-updates for Homebrew casks (managed by nix-darwin)
         "dev.kdrag0n.MacVirt".SUAutomaticallyUpdate = false;
-        "com.DanPristupov.Fork".SUAutomaticallyUpdate = false;
         # Activity Monitor opens its main window on launch, shows
         # real-time CPU graph in the Dock icon, and sorts by CPU descending
         "com.apple.ActivityMonitor" = {
