@@ -25,6 +25,10 @@
     masApps = { };
   };
 
+  darwinModule = _: {
+    dotfiles.system.darwin.hyperkey.enable = true;
+  };
+
   homeModule =
     { ... }:
     {

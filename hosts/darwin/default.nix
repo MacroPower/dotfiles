@@ -46,7 +46,6 @@
     casks = [
       "fork"
       "fuse-t"
-      "hyperkey"
       "linearmouse"
     ]
     ++ config.dotfiles.system.homebrew.casks;
@@ -510,17 +509,6 @@
         "dev.kdrag0n.MacVirt".SUAutomaticallyUpdate = false;
         "com.lujjjh.LinearMouse".SUAutomaticallyUpdate = false;
         "com.DanPristupov.Fork".SUAutomaticallyUpdate = false;
-        "com.knollsoft.Hyperkey" = {
-          SUEnableAutomaticChecks = false;
-          capsLockRemapped = 2;
-          keyRemap = 1;
-          hyperFlags = 1966080;
-          physicalKeycode = 57;
-          applyToClick = 2;
-          hideMenuBarIcon = 1;
-          launchOnLogin = 1;
-          quickHyperKeycode = 0;
-        };
         # Force the maximum AAC bitpool (80) for Bluetooth audio negotiation,
         # preventing the codec from dropping to lower quality under contention
         "com.apple.BluetoothAudioAgent" = {
