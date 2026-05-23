@@ -36,6 +36,10 @@
     masApps = { };
   };
 
+  darwinModule = _: {
+    dotfiles.system.darwin.epsonScanV19II.enable = true;
+  };
+
   homeModule =
     { ... }:
     {

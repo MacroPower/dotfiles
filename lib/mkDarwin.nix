@@ -15,6 +15,7 @@
   power ? { },
   caCertificateFiles ? [ ],
   homeModule,
+  darwinModule ? { },
 }:
 inputs.nix-darwin.lib.darwinSystem {
   modules = [
@@ -114,5 +115,6 @@ inputs.nix-darwin.lib.darwinSystem {
           };
         };
     }
+    darwinModule
   ];
 }

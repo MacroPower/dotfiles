@@ -9,6 +9,7 @@
   imports = [
     ../shared.nix
     ../options.nix
+    ./modules
   ];
 
   nix.linux-builder.enable = true;
