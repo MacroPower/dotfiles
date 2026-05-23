@@ -26,8 +26,6 @@
     };
   };
 
-  dotfiles.system.homebrew.unsignedCasks = [ "fuse-t" ];
-
   homebrew = {
     enable = true;
     enableFishIntegration = true;
@@ -36,16 +34,12 @@
       upgrade = true;
     };
 
-    taps = [
-      "macos-fuse-t/cask"
-    ]
-    ++ config.dotfiles.system.homebrew.taps;
+    taps = config.dotfiles.system.homebrew.taps;
 
     inherit (config.dotfiles.system.homebrew) brews;
 
     casks = [
       "fork"
-      "fuse-t"
       "linearmouse"
     ]
     ++ config.dotfiles.system.homebrew.casks;
