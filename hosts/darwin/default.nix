@@ -503,34 +503,6 @@
         "dev.kdrag0n.MacVirt".SUAutomaticallyUpdate = false;
         "com.lujjjh.LinearMouse".SUAutomaticallyUpdate = false;
         "com.DanPristupov.Fork".SUAutomaticallyUpdate = false;
-        # Force the maximum AAC bitpool (80) for Bluetooth audio negotiation,
-        # preventing the codec from dropping to lower quality under contention
-        "com.apple.BluetoothAudioAgent" = {
-          "Apple Bitpool Max (editable)" = 80;
-          "Apple Bitpool Min (editable)" = 80;
-          "Apple Initial Bitpool (editable)" = 80;
-          "Apple Initial Bitpool Min (editable)" = 80;
-          "Negotiated Bitpool" = 80;
-          "Negotiated Bitpool Max" = 80;
-          "Negotiated Bitpool Min" = 80;
-        };
-
-        # Lower-level Bluetooth daemon settings: pin AAC at 320 kbps,
-        # raise the packet ceiling, and enable both AAC and AptX codecs
-        bluetoothaudiod = {
-          "AAC Bitrate" = 320;
-          "AAC max packet size" = 644;
-          "Apple Bitpool Max" = 80;
-          "Apple Bitpool Min" = 80;
-          "Apple Initial Bitpool Min" = 80;
-          "Apple Initial Bitpool" = 80;
-          "Enable AAC codec" = true;
-          "Enable AptX codec" = true;
-          "Negotiated Bitpool Max" = 80;
-          "Negotiated Bitpool Min" = 80;
-          "Negotiated Bitpool" = 80;
-        };
-
         # Activity Monitor opens its main window on launch, shows
         # real-time CPU graph in the Dock icon, and sorts by CPU descending
         "com.apple.ActivityMonitor" = {
