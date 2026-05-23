@@ -4,5 +4,6 @@
     ./fuse-t.nix
     ./hyperkey.nix
     ./smb-tuning.nix
+    ./spotlight.nix
   ];
 }

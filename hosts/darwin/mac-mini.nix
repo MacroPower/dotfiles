@@ -29,6 +29,7 @@
     dotfiles.system.darwin.fuseT.enable = true;
     dotfiles.system.darwin.hyperkey.enable = true;
     dotfiles.system.darwin.smbTuning.enable = true;
+    dotfiles.system.darwin.spotlight.enable = true;
   };
 
   homeModule =
