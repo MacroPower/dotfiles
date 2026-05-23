@@ -27,6 +27,7 @@
 
   darwinModule = _: {
     dotfiles.system.darwin.hyperkey.enable = true;
+    dotfiles.system.darwin.smbTuning.enable = true;
   };
 
   homeModule =

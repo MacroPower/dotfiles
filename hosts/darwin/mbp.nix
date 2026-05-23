@@ -39,6 +39,7 @@
   darwinModule = _: {
     dotfiles.system.darwin.epsonScanV19II.enable = true;
     dotfiles.system.darwin.hyperkey.enable = true;
+    dotfiles.system.darwin.smbTuning.enable = true;
   };
 
   homeModule =
