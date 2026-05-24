@@ -2527,6 +2527,7 @@ in
           wm-merge = ../configs/claude/skills/wm-merge;
           wm-rebase = ../configs/claude/skills/wm-rebase;
           wm-coordinator = ../configs/claude/skills/wm-coordinator;
+          wm-spawn = ../configs/claude/skills/wm-spawn;
           wm-workmux = ../configs/claude/skills/wm-workmux;
           git-surgeon = ../configs/claude/skills/git-surgeon;
           humanize = ../configs/claude/skills/humanize;
