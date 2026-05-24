@@ -15,6 +15,12 @@
 --merge-output-format mkv
 --remux-video mkv
 
+# Workaround for yt-dlp#14697: HLS-sourced YouTube mp4 fragments arrive with
+# unset packet timestamps that the matroska muxer refuses ("Can't write packet
+# with unknown timestamp"). Normalize via bsf during the mp4 -> mkv remux.
+# Drop once upstream wires FFmpegFixupTimestampPP into the HLS path.
+--postprocessor-args "VideoRemuxer+ffmpeg:-bsf:v setts=ts=TS-STARTPTS"
+
 # Embed everything into the container.
 --embed-metadata
 --embed-thumbnail
