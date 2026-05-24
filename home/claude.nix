@@ -357,12 +357,11 @@ let
           writable = true;
         }
         {
-          # ~/Documents/archives is the output convention for the
-          # web-archive skill (btrix, yt-dlp). Mount it like
-          # ~/Documents/repos so captures from inside the sandbox
-          # persist to the host filesystem.
-          host_path = "${config.home.homeDirectory}/Documents/archives";
-          guest_path = "${config.home.homeDirectory}/Documents/archives";
+          # Output dir for the web-archive skill (btrix, yt-dlp).
+          # Mount it like ~/Documents/repos so captures from inside
+          # the sandbox persist to the host filesystem.
+          host_path = cfg.archivesDir;
+          guest_path = cfg.archivesDir;
           writable = true;
         }
       ];
@@ -928,6 +927,7 @@ let
     "/private/var/folders"
 
     researchDir
+    cfg.archivesDir
   ]
   ++ claudeTmpPaths
   ++ bundledWritePaths;
@@ -1313,6 +1313,16 @@ in
         default = pkgs.stdenv.isDarwin;
         description = "Whether CLAUDE_RESEARCH_DIR resolves to the Obsidian vault. Defaults to true on Darwin. Set true on Linux hosts that have the vault mounted at the same absolute path as the Darwin host (e.g. terrarium inside a workmux sandbox).";
       };
+    };
+
+    archivesDir = mkOption {
+      type = types.nonEmptyStr;
+      default = "${config.home.homeDirectory}/Documents/archives";
+      description = ''
+        Output directory for the web-archive skill (btrix, yt-dlp).
+        Added to the sandbox write allowlist and bind-mounted into
+        the Lima sandbox at the same host and guest path.
+      '';
     };
 
     attribution = mkOption {
@@ -2602,9 +2612,9 @@ in
       );
 
       # Same Lima-needs-host-path-to-exist constraint as above.
-      activation.ensureDocumentsArchivesDir = lib.mkIf cfg.lima.enable (
+      activation.ensureArchivesDir = lib.mkIf cfg.lima.enable (
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-          run mkdir -p "${config.home.homeDirectory}/Documents/archives"
+          run mkdir -p ${lib.escapeShellArg cfg.archivesDir}
         ''
       );
 
