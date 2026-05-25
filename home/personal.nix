@@ -4,8 +4,9 @@
 }:
 
 {
+  imports = [ ./photo-cli.nix ];
+
   home.packages = with pkgs; [
-    photo-cli
     slack
   ];
 }
