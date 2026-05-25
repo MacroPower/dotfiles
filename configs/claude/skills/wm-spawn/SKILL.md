@@ -1,8 +1,9 @@
 ---
 name: spawn
 description: >-
-  Dispatch worktree agents to any repo under ~/Documents/repos from a single session.
-  Maintains an untracked catalog CLAUDE.md.
+  Dispatch worktree agents to any repo under ~/Documents/repos from a single
+  session. Two modes: targeted dispatch and fire-and-forget fan-out across
+  many repos. Maintains an untracked catalog CLAUDE.md.
 disable-model-invocation: true
 ---
 
@@ -14,26 +15,42 @@ send follow-ups, or merge. Use when Claude is running in `~/Documents/repos/`
 itself and needs to fan work out to sibling projects without changing
 directories.
 
+## Modes
+
+Pick one per invocation. The key question is **who picks the targets**:
+
+- **Mode 1: targeted dispatch** (default). The user named the target(s),
+  or the catalog disambiguates trivially. One non-trivial task, one or a
+  few named repos, including the case of multiple distinct tasks each
+  going to a different named repo. Path: §§1-2, §3, §§4-7.
+- **Mode 2: fan-out** (fire-and-forget). Same conceptual change across
+  >= 3 repos and discovery is part of the work: "in all repos", "every
+  repo with X", "everywhere", "bulk", "all my Nix projects". Each
+  spawned worktree agent is scoped strictly to its own repo. Path:
+  §§1-2, §4, §M, §6, §7.
+
 ## Hard rules
 
-1. **No exploration of target-repo source.** Do not read, grep, glob, or
-   search source files inside the target repo. Do not spawn Task/Explore
-   agents. The worktree agent does all the implementation work. The only
-   allowed reads inside a target repo are `<repo>/CLAUDE.md` and
-   `<repo>/README.md` — and those are allowed both during catalog refresh
-   (seeding new entries) and during target selection (when the catalog
-   description is too thin to disambiguate, or when a repo's scope appears
-   to have expanded beyond what the catalog says). If you read either file
-   for disambiguation and find the catalog description is now misleading,
-   update the catalog line in the same pass (see §2 step 7).
-2. **The one allowed user-facing pause is `AskUserQuestion`** — used only to
-   disambiguate the target repo. That is not exploration.
-3. **Write all prompt files first, then dispatch all tmux commands.** Keeps
+1. **The one allowed user-facing pause is `AskUserQuestion`**: used only
+   to disambiguate target repos. That is not exploration.
+2. **Write all prompt files first, then dispatch all tmux commands.** Keeps
    filesystem state consistent before any worktree agent starts reading its
-   prompt.
-4. **Use the catalog at `~/Documents/repos/CLAUDE.md`** as the source of truth
-   for what repos exist and what each is. Refresh it (see "Catalog refresh")
-   before target selection.
+   prompt. Issue the prompt-file `Write` calls as parallel tool calls in a
+   single turn, then issue the §6 `Bash` dispatches the same way.
+3. **Use the catalog at `~/Documents/repos/CLAUDE.md`** as the source of
+   truth for what repos exist. Refresh it (see §2) before any target
+   selection.
+4. **Target-repo source is read-only and the rules differ by mode.**
+   - Mode 1: do not read, grep, glob, or search source files inside a
+     target repo, and do not spawn Task/Explore agents. The only allowed
+     reads are `<repo>/CLAUDE.md` and `<repo>/README.md`, for catalog
+     seeding (§2), disambiguation (§3), and scope-drift updates (§2 step
+     7). The worktree agent does the implementation.
+   - Mode 2: `Explore` agents are allowed for discovery and for grabbing
+     example snippets to embed in per-target prompts. They remain
+     read-only. The only files this skill `Edit`s/`Write`s directly are
+     the catalog and the per-target prompt files; everything else routes
+     through the spawned worktree agents.
 
 ## 1. Preflight
 
@@ -49,9 +66,9 @@ fi
 
 ## 2. Catalog refresh (lazy drift)
 
-Run this on every invocation, before §3 target selection. Two phases: bash
-discovery, then a model step that reconciles the catalog. Reconciliation must
-complete before dispatch.
+Run this on every invocation, before §3 or §M target selection. Two phases:
+bash discovery, then a model step that reconciles the catalog.
+Reconciliation must complete before dispatch.
 
 ### Discovery
 
@@ -79,8 +96,8 @@ done
    plus one entry per discovered repo, sorted alphabetically by name.
 7. **Scope-drift updates.** If during target selection (§3) you read a
    repo's `CLAUDE.md` or `README.md` and discover the cataloged description
-   no longer accurately describes the project — its scope expanded, the
-   tech stack changed, the purpose shifted — rewrite that catalog line via
+   no longer accurately describes the project (scope expanded, tech stack
+   changed, purpose shifted), rewrite that catalog line via
    `Edit` in the same pass. Same format rules apply (single line, colon
    separator, ≤ 100 chars description text, no trailing period).
 
@@ -99,7 +116,7 @@ done
 Descriptions stay on one line, however long. Verification of manual-edit
 preservation depends on it.
 
-## 3. Target selection
+## 3. Target selection (mode 1)
 
 For each task in the user's request:
 
@@ -123,7 +140,10 @@ Constrained to `[a-z0-9-]+` (no spaces, quotes, dollar signs, or other shell
 metacharacters), cap at 40 chars. The dispatch snippet in §6 relies on this
 character set for safe shell interpolation.
 
-## 5. Prompt file
+In **mode 2**, pick the handle **once** and reuse it across every target
+so the resulting branches/PRs are trivially groupable.
+
+## 5. Prompt file (mode 1)
 
 `mktemp` a `.md`, write a self-contained prompt:
 
@@ -132,6 +152,79 @@ character set for safe shell interpolation.
 - If the user passed a skill (`/auto`, `/plan`, `/merge`, etc.), instruct the
   agent to use that skill verbatim instead of writing manual steps. Pass any
   skill flags through.
+
+## §M. Mode 2: fan-out
+
+### M.1 Discovery
+
+Phrase the eligibility criterion from the user's request as one short
+question ("does this repo have a Taskfile.yaml?", "does this repo's
+flake.nix pin nixpkgs-unstable?", "is there a `.github/workflows/ci.yml`
+older than the template?").
+
+Pick the cheapest tool that answers it:
+
+- **Mechanical predicate** (file existence, simple grep over a known
+  path): one `Bash` pass over `$REPOS_ROOT/*/`. Don't spawn agents for
+  what `test -f` and `grep -l` can decide.
+- **Semantic predicate** (intent, structure, idiom): one `Explore` agent
+  per batch of 5-10 repos, run all batches concurrently in one turn.
+  Each agent returns yes/no plus the proof path, ≤ 200 words total.
+  Only pass the catalog snippet if the criterion actually needs the
+  repo's purpose to resolve.
+
+Optional: pick a **reference repo** (one that already has the desired
+state) and have one Explore agent extract the canonical snippet (file
+path + small excerpt) so per-target prompts can point at a real example.
+The reference repo is read-only; it does not get a dispatch.
+
+If discovery returns zero eligible repos, report that and exit. If it
+returns 1-2, switch to mode 1 (fan-out machinery is overkill).
+
+### M.2 Per-target prompt template
+
+`mktemp` one `.md` per eligible repo. Keep each prompt short, plain, and
+unassuming. The agent doesn't need a pep talk. Use absolute `~`-rooted
+paths for any cross-repo reference.
+
+```
+Apply this change to this repo: <one-line summary>.
+
+What to change:
+<2-4 sentences max. Name the file(s), describe the shape of the change.
+No rationale, no history.>
+
+Reference (read-only):
+~/Documents/repos/<reference-repo>/<path/to/example>
+
+The same change is being applied in parallel to:
+- <other-repo-1>
+- <other-repo-2>
+- <other-repo-3>
+- ... (+ K others)
+
+Scope: edit only files inside your own worktree. Every path under
+~/Documents/repos/ that is not your own repo is read-only: reading for
+reference is fine, writing or running modifying commands there is not.
+```
+
+Cap the parallel-targets list at 5 names plus a `(+K others)` line so the
+prompt stays small when fan-out is wide.
+
+If the user passed a skill, append exactly one line:
+
+```
+Use the <skill> skill verbatim; pass <flags> through.
+```
+
+Do **not** include the catalog, do **not** include the discovery
+reasoning, do **not** include other repos' file contents. Reference
+paths plus repo names is enough. The agent can read them on demand.
+
+### M.3 Dispatch
+
+Follow hard rule 2: all prompt-file `Write` calls in one turn, then all
+§6 `Bash` dispatches in one turn.
 
 ## 6. Dispatch via tmux
 
@@ -159,7 +252,7 @@ tmux new-window -t "$SESSION" -c "$PROJECT_PATH" \
 ```
 
 `printf %q` keeps the spawned shell parsing safe. `-b` keeps workmux from
-switching panes — the dispatcher session stays put.
+switching panes: the dispatcher session stays put.
 
 ## 7. Report
 
@@ -169,11 +262,6 @@ A single line back to the user per task:
 Dispatched `<branch>` to `<repo>` (tmux session `<session>`).
 ```
 
-Do NOT monitor, capture, or wait.
-
-## Multi-repo fan-out
-
-If the user's request targets multiple repos, write every prompt file first
-(hard rule 3), then run a §6 dispatch per target. Each dispatch is
-independent; run them as separate Bash tool calls in the same model turn so
-they execute concurrently.
+In mode 2, emit one line per dispatched repo, then a one-line summary
+("Fan-out: N dispatches on branch `<handle>`."). Do NOT monitor, capture,
+or wait.
