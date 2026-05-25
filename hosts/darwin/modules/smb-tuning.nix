@@ -33,6 +33,14 @@ in
         # Disable SMB packet signing for ~20-30% throughput gain on trusted networks.
         signing_required = "no";
         # Disable NTFS alternate data streams (buggy on Apple Silicon SMB3 stack).
+        # Tradeoff: with streams off, macOS stores xattrs / resource forks in
+        # `._` AppleDouble companion files on the share. Two independent ways
+        # to eliminate them if it ever matters:
+        #   - Server-side: enable vfs_fruit on the TrueNAS share
+        #     (fruit:metadata=stream, fruit:resource=stream — usually the
+        #     default for shares created with the Apple/Time Machine preset).
+        #     This works regardless of the client `streams` value.
+        #   - Client-side: flip this to "yes" and re-test SMB3 stability.
         streams = "no";
         # Suppress change notifications to reduce resource usage.
         notify_off = "yes";
