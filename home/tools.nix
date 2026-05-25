@@ -230,6 +230,8 @@ in
       devbox
       angle-grinder
       zstd
+      pv
+      progress
     ]
     ++ lib.optionals pkgs.stdenv.isDarwin [
       mdcopy
