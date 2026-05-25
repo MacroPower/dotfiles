@@ -253,6 +253,24 @@ let
     };
   };
 
+  # cli-helpers 2.10.0 (litecli dep) ships 3 tabular-output tests that
+  # assert exact ANSI escape sequences; the bytes have shifted across
+  # Pygments versions in nixpkgs unstable, so the assertions fail even
+  # though the styling output is functionally correct.
+  cliHelpersOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        cli-helpers = pyprev.cli-helpers.overrideAttrs (old: {
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_style_output"
+            "test_style_output_with_newlines"
+            "test_style_output_custom_tokens"
+          ];
+        });
+      })
+    ];
+  };
+
   sharedOverlays = system: [
     lixOverlay
     localOverlay
@@ -264,6 +282,7 @@ let
     denoOverlay
     marksmanOverlay
     grugFarOverlay
+    cliHelpersOverlay
     (nurJacobColvinOverlay system)
     ryceeOverlay
     (workmuxOverlay system)
