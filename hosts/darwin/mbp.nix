@@ -32,7 +32,9 @@
       "plex"
       "orbstack"
       "filebot"
+      "digikam"
     ];
+    unsignedCasks = [ "digikam" ];
     masApps = { };
   };
 
@@ -61,6 +63,7 @@
         ../../home/personal.nix
         ../../home/obsidian.nix
         ../../home/comfyui.nix
+        ../../home/digikam.nix
         ../../home/yt-dlp.nix
       ];
       dotfiles = {
