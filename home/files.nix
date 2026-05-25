@@ -20,6 +20,8 @@
       _7zz
     ]
     ++ lib.optionals pkgs.stdenv.isLinux [
+      acl
+      attr
       apfs-fuse
       ntfs3g
       exfat
