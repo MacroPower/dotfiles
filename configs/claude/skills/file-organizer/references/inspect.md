@@ -1,11 +1,7 @@
 # Inspect
 
 Read-only operations: find files, list trees, measure disk usage,
-extract fields, and pipeline plumbing. The `jq` and moreutils sections
-sit here as nearest match -- they're general tools, but in this skill
-they show up almost entirely in inspection-shaped workflows
-(inventory, sort/group by metadata, in-place rewrites). Don't relocate
-without a real reason.
+extract fields, pipeline plumbing.
 
 ## fd -- find files
 
@@ -29,10 +25,9 @@ fd -e log -X rm                           # batch a single command over all resu
 `-X` runs once with all results appended (use for batchable commands like
 `rm`, `tar`, `wc -l`).
 
-Always pass `--max-depth` when the tree size is unknown.
-`--max-results N` stops dispatching new directory entries to walkers --
-prefer it over `| head` on huge trees, since `fd` is parallel and `head`
-relies on SIGPIPE to stop the walk.
+Always pass `--max-depth` when the tree size is unknown. Prefer
+`--max-results N` over `| head` -- see
+[large-fs.md](large-fs.md#streaming-and-sampling-patterns).
 
 ## eza -- list files
 
@@ -68,9 +63,8 @@ dust -d 3 -X .git -X node_modules src/  # exclude paths
 `-z 1M` takes a size string, not a bare number -- it filters out the
 small-file long tail.
 
-`czkawka_cli big -d <path> -n <N>` complements it with a flat top-N
-largest-files list (sizes, no tree). Full `czkawka_cli` flag reference
-in [dedupe.md](dedupe.md).
+`czkawka_cli big` complements with a flat top-N largest-files list
+(see [dedupe.md](dedupe.md#czkawka_cli----similar--fuzzy-duplicates)).
 
 ## jq -- JSON processing
 
@@ -104,11 +98,8 @@ monitoring -- it's a long-job concern, not a per-domain one.
 
 ## Recipes
 
-### First contact with an unknown directory
-
-See [large-fs.md](large-fs.md#preflight-estimate-scale) -- the
-preflight commands and segmentation thresholds live there alongside
-the rest of the scale-safety material.
+First-contact preflight + thresholds:
+[large-fs.md](large-fs.md#preflight-estimate-scale).
 
 ### Find what's hogging disk
 
@@ -127,11 +118,13 @@ or `run_in_background: true` if the tree could exceed 10 min.
 ### Build an inventory CSV from a tree
 
 ```bash
-fd --max-depth 4 -t f . src/ -X stat -c '%n,%s,%y' > inventory.csv
+fd --max-depth 4 -0 -t f . src/ | xargs -0 stat -c '%n,%s,%y' > inventory.csv
 ```
 
-On a million-file tree this produces a multi-GB CSV; preflight with
-`fd --max-depth 1 -t f . src/ | wc -l` and consider segmenting.
+`-X` (single argv burst) blows ARG_MAX on large trees; the NUL pipe
+into `xargs -0` chunks automatically. On a million-file tree this
+produces a multi-GB CSV; preflight with `fd --max-depth 1 -t f . src/
+| wc -l` and consider segmenting.
 
 GNU `coreutils` is on PATH on this machine, so `stat -c` works on Darwin
 and Linux alike.
@@ -149,8 +142,9 @@ jq -r '.[] | [.date, .size, .path] | @tsv' index.json | sort > inventory.tsv
 ### Move only the K newest files
 
 ```bash
-fd -t f --max-results K -e jpg . | xargs -I{} mv {} dst/
+fd -0 -t f --max-results K -e jpg . | xargs -0 mv -t dst/
 ```
 
-`--max-results` halts the walk early, which matters on huge trees -- a
-`| head` would let `fd` keep recursing until SIGPIPE.
+`--max-results` halts the walk early on huge trees. NUL-delimit so
+filenames with spaces or newlines survive, and use `mv -t` so a single
+`mv` handles all K files.

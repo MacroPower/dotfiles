@@ -27,5 +27,10 @@ See [dedupe.md](dedupe.md).
 ### Find and remove empty subdirectories
 
 ```bash
-fd -t d -X rmdir 2>/dev/null             # rmdir refuses non-empty dirs, so this is safe
+czkawka_cli empty-folders -d src/                    # report only
+czkawka_cli empty-folders -d src/ -y                 # move to trash
+fd -t d . src/ -x rmdir {} 2>/dev/null               # portable, refuses non-empty
 ```
+
+The `fd` form is safe by `rmdir`'s refusal to remove non-empty dirs;
+prefer `czkawka_cli` on huge trees where the per-dir fork cost adds up.

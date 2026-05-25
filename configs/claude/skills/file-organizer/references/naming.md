@@ -87,9 +87,6 @@ Pick date-only unless seconds-precision actually matters.
 
 ## Normalization recipes
 
-Practical "how to comply" patterns. Tools used here are documented in
-[rename.md](rename.md) (`rnr`) and [inspect.md](inspect.md) (`fd`).
-
 ### Lowercase basenames
 
 `rnr regex` ships a built-in case transform (`-t lower`). Prefer it
@@ -162,21 +159,18 @@ fd -t f . src/ -x bash -c '
 
 ### photo-cli round-trip
 
-With the wrapped `photo-cli`, `photo-cli copy --naming-style DateTimeWithSecondsAddress`
-emits names shaped like `2026-04-28_14-30-00_<address>.jpg` -- the timestamp portion is
-already policy-compliant. The only post-processing is to lowercase the reverse-geocoded
-address slug:
+The wrapped `photo-cli` with `--naming-style DateTimeWithSecondsAddress`
+emits `2026-04-28_14-30-00_<address>.jpg` -- timestamp is
+policy-compliant. Lowercase the address slug:
 
 ```bash
 rnr regex -f -t lower '(.*)' '$1' sorted/*
 ```
 
-If running stock `photo-cli` (which emits
-`2026.04.28_14.30.00_<address>.jpg`), chain the
+Stock `photo-cli` emits dotted timestamps
+(`2026.04.28_14.30.00_<address>.jpg`); run
 [Fold dotted-separator stems into dashes](#fold-dotted-separator-stems-into-dashes)
-recipe above first -- it rewrites only `.` -> `-`, leaving the
-underscore intact. After the dot fold the name is policy-compliant
-for the timestamp; lowercase the address slug as above.
+first, then the lowercase pass.
 
 ## When to deviate
 

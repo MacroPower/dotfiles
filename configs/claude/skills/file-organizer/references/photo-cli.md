@@ -123,10 +123,8 @@ photo-cli copy \
   what got geocoded vs. what didn't.
 - `no-address` and `no-address-and-no-photo-taken-date` subfolders catch
   EXIF-less files. Triage those by hand.
-- The wrapped `photo-cli` already emits the policy-aligned
-  dashed timestamp (`yyyy-MM-dd_HH-mm-ss`) -- the home-manager
-  module sets the four `Date*Format*` env vars at wrap time, so
-  `--naming-style DateTimeWithSecondsAddress` produces
-  `2026-04-28_14-30-00_<address>.jpg` directly. The only remaining
-  post-processing is to lowercase the reverse-geocoded address
-  slug -- see [naming.md](naming.md) for the lowercase recipe.
+- The wrapped `photo-cli` emits dashed timestamps
+  (`yyyy-MM-dd_HH-mm-ss`); the home-manager module sets the four
+  `Date*Format*` env vars at wrap time. See
+  [naming.md](naming.md#photo-cli-round-trip) for the lowercase
+  post-processing.

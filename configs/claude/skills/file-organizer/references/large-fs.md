@@ -139,9 +139,11 @@ the shape of the work:
   ```bash
   tar -cf - src/ | pv -s $(du -sb src/ | cut -f1) > src.tar
   pv huge.zst | zstd -d > huge
-  fd -e jpg . src/ | pv -l > /tmp/jpgs.list                 # -l counts newlines
-  fd -0 -e jpg . src/ | tr '\0' '\n' | pv -l > /tmp/jpgs.list  # NUL-safe variant
+  fd -0 -e jpg . src/ | pv -l0 > /tmp/jpgs.list             # NUL-delimited
   ```
+
+  `pv -l0` counts NUL-delimited records natively (don't pipe through
+  `tr` first).
 
 - **Peek at a running cp / mv / dd / tar** -- `progress` attaches to an
   already-running coreutils process. Start the cp/mv first, then run

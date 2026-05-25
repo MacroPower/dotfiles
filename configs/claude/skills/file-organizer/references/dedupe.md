@@ -61,73 +61,25 @@ czkawka_cli video -d src/ -m 10485760          # similar videos, >= 10 MiB
 
 `-s` on `image` is `--max-difference` (0-40, default 5). Lower = stricter.
 
-**Size flag asymmetry.** `czkawka_cli` `-m` / `-i` take **raw bytes**
-(no `1M` suffix). `fclones -s 1M` works; `czkawka_cli -m 1M` does not
--- write `-m 1048576` instead.
+**Two `czkawka_cli` traps to know:**
+
+- **`-R` means `--not-recursive`.** Inverted from the common convention
+  (`grep -R`, `cp -R`, `ls -R` all *enable* recursion). The default is
+  recursive; pass `-R` to scope to the top level only.
+- **`-m` / `-i` take raw bytes**, no `1M` suffix. `fclones -s 1M`
+  works; `czkawka_cli -m 1M` does not -- write `-m 1048576` instead.
 
 `czkawka_cli` prints per-stage progress on stderr.
 
 ## Recipes
 
-### Dedupe by content (fclones)
-
-Default is dry-run text output; pipe into an action subcommand to
-apply.
-
-```bash
-fclones group -s 1M src/                         # list duplicate groups, >= 1 MB
-fclones group -s 100M src/                       # only files >= 100 MB (faster)
-
-# Replace dupes with hardlinks (saves disk, files still appear in place):
-fclones group -s 1M src/ | fclones link
-
-# Or move dupes to a holding folder for review:
-fclones group -s 1M src/ | fclones move dupes-trash/
-
-# Or delete (asks for confirmation per group):
-fclones group -s 1M src/ | fclones remove
-```
-
-Always lead with a size floor.
-
-### Similar / fuzzy duplicates (czkawka_cli)
-
-For rotated photos, near-duplicate audio, re-encoded videos. Size flag
-is raw bytes (`-m 1048576`, **not** `-m 1M`):
-
-```bash
-czkawka_cli image -d ~/Pictures -m 1048576       # similar images, >= 1 MiB
-czkawka_cli image -d ~/Pictures -m 1048576 -s 10 # looser match
-czkawka_cli music -d ~/Music                     # similar audio
-czkawka_cli video -d ~/Videos -m 10485760        # similar videos, >= 10 MiB
-```
-
-`image`/`dup` have no `--depth` flag -- segment by top-level subfolder
-or use `-R` (top-level only) on huge trees.
-
-For photo libraries, `photo-cli copy --verify` already detects byte-level
+For photo libraries, `photo-cli copy --verify` detects byte-level
 duplicates and emits `sha1.lst`. See [photo-cli.md](photo-cli.md).
 
-### Segment per subfolder on huge libraries
-
 On 1M+ file libraries, segment per top-level subfolder rather than
-running over the whole root:
-
-```bash
-for sub in src/*/; do
-  fclones group -s 1M "$sub" > "reports/$(basename "$sub").txt"
-done
-```
-
-For `czkawka_cli` (no `--depth` flag, so segmenting is the only bound):
-
-```bash
-for sub in src/*/; do
-  czkawka_cli image -d "$sub" -m 1048576 -f "reports/$(basename "$sub").txt"
-done
-```
-
-See [large-fs.md](large-fs.md) for more on memory-heavy tools at scale.
+running over the whole root --
+[large-fs.md](large-fs.md#segmenting-a-tb-tree) has the loop pattern
+for both `fclones` and `czkawka_cli`.
 
 ### Hash-and-sort cross-check
 
@@ -135,7 +87,7 @@ Independent confirmation of an `fclones` run -- shells out to `sha1sum`
 and groups by hash:
 
 ```bash
-fd -t f --max-depth 4 . src/ -X sha1sum | sort > hashes.txt
+fd --max-depth 4 -0 -t f . src/ | xargs -0 sha1sum | sort > hashes.txt
 ```
 
 Pipe that into `awk` / `uniq` to find groups, or diff against the

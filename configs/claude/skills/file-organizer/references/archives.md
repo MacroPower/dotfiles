@@ -49,27 +49,18 @@ records as a poor man's progress indicator. For richer progress wrap in
 
 ```bash
 fd --max-depth 3 -e zip -e 7z -e rar -e tar -e gz . downloads/ \
-   -x 7zz x {} -o./extracted/
+   -x 7zz x {} -o./extracted/{/.}
 ```
 
-`7zz x` preserves directory structure inside each archive; use `7zz e`
-to flatten.
+`-o./extracted/{/.}` gives each archive its own subdir; without it
+basename collisions overwrite silently. `7zz x` preserves the archive's
+internal directory structure; use `7zz e` to flatten.
 
 ### Archive a sorted tree
 
-```bash
-tar --zstd -cf sorted-$(date +%Y%m%d).tar.zst sorted/
-```
-
-Higher compression at the cost of CPU:
+Datestamp the output and pick the format:
 
 ```bash
-tar --use-compress-program="zstd -19 --long" \
-    -cf sorted.tar.zst sorted/
-```
-
-For zip / 7z output, use `7zz a`:
-
-```bash
-7zz a -mx9 sorted-$(date +%Y%m%d).7z sorted/
+tar --zstd -cf sorted-$(date +%Y%m%d).tar.zst sorted/    # tar.zst
+7zz a -mx9 sorted-$(date +%Y%m%d).7z sorted/             # 7z, max compression
 ```

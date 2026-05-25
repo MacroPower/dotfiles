@@ -1,8 +1,7 @@
 # Rename and bulk text rewrite
 
-Filename rewrites (`rnr`, `fd ... -x mv`) and file-content rewrites
-(`sd`) live together because the underlying toolchain is shared; the
-recipes call out which is which.
+Filename rewrites with `rnr regex` and `fd ... -x mv`. File-content
+rewrites with `sd`.
 
 ## rnr -- regex rename
 
@@ -32,6 +31,11 @@ reaching for a rename tool.
 `sed` replacement with PCRE-style regex. Operates on *file contents*, not
 file names. For bulk renames, pair `fd` with `mv` or use `rnr regex`.
 
+Scope: bulk rewrites across many non-source files -- notes, configs,
+CSV/TSV, generated data. For a single source file, prefer Claude
+Code's Edit tool: `sd` rewrites in place with no undo and no diff
+preview after the fact.
+
 ```bash
 sd 'foo' 'bar' notes.md              # replace inside a single file
 sd '\bTODO\b' 'DONE' src/*.md        # multiple files (shell expands)
@@ -46,17 +50,7 @@ overwrite the same file, pair with `sponge` (see
 
 ## Recipes
 
-### Bulk-rename non-interactively
-
-`rnr regex` is dry-run by default; pass `-f` to apply.
-
-```bash
-rnr regex 'IMG_(\d+)' 'photo-$1' src/*.jpg       # dry-run preview
-rnr regex -f 'IMG_(\d+)' 'photo-$1' src/*.jpg    # apply
-rnr regex -f -r '\.jpeg$' '.jpg' src/            # recursive
-```
-
-For a single-extension rename in a pipeline:
+Pipeline rename (single extension):
 
 ```bash
 fd --max-depth 4 -e jpeg . src/ -x echo mv {} {.}.jpg   # dry-run
