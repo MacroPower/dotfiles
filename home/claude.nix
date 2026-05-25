@@ -1020,6 +1020,17 @@ in
       description = "Wire Claude Code's custom-theme JSON to the active stylix base16 palette.";
     };
 
+    hostContext = mkOption {
+      type = types.lines;
+      default = "";
+      description = ''
+        Host-specific prose appended to the generated ~/.claude/CLAUDE.md
+        under a "## Host Environment" section. Use this to tell Claude
+        Code about the environment it's running in (e.g. "You're in docker").
+        Empty (the default) emits no section at all.
+      '';
+    };
+
     powerline = mkOption {
       type = types.submodule {
         options = {
@@ -2594,7 +2605,8 @@ in
         - Run reviewer agents (plan-reviewer, implementation-reviewer) iteratively. If a reviewer finds issues, fix them and re-run the reviewer until you get LGTM.
         - When uncertain about correctness, spawn a verification subagent to cross-check your work rather than guessing.
       ''
-      + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n";
+      + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n"
+      + lib.optionalString (cfg.hostContext != "") "\n## Host Environment\n\n${cfg.hostContext}\n";
 
       activation.ensureClaudeResearchDir = lib.mkIf (pkgs.stdenv.isDarwin || !cfg.research.useVault) (
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
