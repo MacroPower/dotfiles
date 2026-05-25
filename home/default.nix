@@ -33,6 +33,25 @@ let
       ++ map (name: "  ${name}:\n    taskfile: ./task/${name}/Taskfile.yaml\n") taskSubdirs
     )
   );
+
+  # Override-only; unset keys take gomi's upstream defaults
+  # (https://github.com/babarot/gomi/blob/main/README.md#configuration).
+  gomiConfig = (pkgs.formats.yaml { }).generate "gomi-config.yaml" {
+    core = {
+      trash = {
+        # auto -> macOS Finder Trash on darwin (~/.Trash, restorable from
+        # Finder); xdg -> $XDG_DATA_HOME/Trash on linux. gomi_dir is
+        # cleared so a stale value can never silently flip auto -> legacy
+        # (gomi internal/config/cli.go:264-267).
+        strategy = if pkgs.stdenv.isDarwin then "auto" else "xdg";
+        gomi_dir = "";
+        home_fallback = config.dotfiles.gomi.homeFallback;
+      };
+      # 'D' in the TUI permanently deletes -- gomi's only built-in
+      # equivalent of `trash empty` short of --prune duration ranges.
+      permanent_delete.enable = true;
+    };
+  };
 in
 
 {
@@ -107,6 +126,7 @@ in
     "viddy.toml".source = ../configs/viddy.toml;
     "dlv/config.yml".source = ../configs/dlv/config.yml;
     "gh-copilot/config.yml".source = ../configs/gh-copilot/config.yml;
+    "gomi/config.yaml".source = gomiConfig;
     "kat/config.yaml".source = ../configs/kat/config.yaml;
     "terrarium/config.yaml".source = ../configs/terrarium/config.yaml;
   }

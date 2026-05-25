@@ -9,6 +9,7 @@
       renameutils
       rnr
       gdu
+      gomi
       exiftool
       czkawka
       jpegoptim
@@ -19,7 +20,6 @@
       _7zz
     ]
     ++ lib.optionals pkgs.stdenv.isLinux [
-      trashy
       apfs-fuse
       ntfs3g
       exfat

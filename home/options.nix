@@ -93,6 +93,18 @@ in
       description = "Whether to enable sops-nix secret decryption. Disable for hosts that receive secrets via environment variables.";
     };
 
+    gomi.homeFallback = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Whether gomi falls back to the home trash when the source file
+        is on a filesystem that has no usable .Trash-$uid directory.
+        Disable on hosts where a cross-device fallback would be
+        destructive -- e.g. inside containers whose home directory
+        lives on an ephemeral overlay.
+      '';
+    };
+
     caBundlePath = mkOption {
       type = types.nullOr types.str;
       default = null;
