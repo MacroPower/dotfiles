@@ -38,3 +38,14 @@ task switch
 ## Code Style
 
 - Prefer explicit configuration (e.g. named imports, spelled-out lists) over automatic file discovery or convention-based loading.
+
+## Claude Code Configuration
+
+Claude Code config lives in this repo and is symlinked into `~/.claude/` by `home/claude.nix`. When asked to edit Claude skills, agents, settings, hooks, slash commands, status line, or anything else under `~/.claude/`, edit the source in this repo, not the symlink target.
+
+- **Skills**: `configs/claude/skills/<name>/` (each skill is a directory with `SKILL.md` plus assets).
+- **Agents**: `configs/claude/agents/<name>.md`.
+- **Settings, hooks, slash commands, status line, MCP servers, env**: defined in `home/claude.nix` (the home-manager module that generates `settings.json` and writes files into `~/.claude/`).
+- **Global instructions (`~/.claude/CLAUDE.md`)**: also rendered by `home/claude.nix`.
+
+After editing, run `task switch` to re-link. Never edit files under `~/.claude/` directly -- the next `home-manager` activation will overwrite them.
