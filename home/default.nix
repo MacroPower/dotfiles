@@ -66,6 +66,7 @@ in
     ./gpg.nix
     ./neovim.nix
     ./tools.nix
+    ./dbs.nix
     ./secrets.nix
   ];
 
