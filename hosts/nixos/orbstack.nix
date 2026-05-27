@@ -129,7 +129,7 @@
       };
       claude = {
         dangerouslySkipPermissions = true;
-        extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
+        agents.go-doc-improver.source = ../../configs/claude/agents/go-doc-improver.md;
       };
     };
   };

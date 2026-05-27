@@ -73,7 +73,7 @@
         };
         claude = {
           fetchAllowlist = false;
-          extraAgents.go-doc-improver = ../../configs/claude/agents/go-doc-improver.md;
+          agents.go-doc-improver.source = ../../configs/claude/agents/go-doc-improver.md;
           kubeApiDomains = [
             "kmain.cin.macro.network"
             "kmgmt.cin.macro.network"

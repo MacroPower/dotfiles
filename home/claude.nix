@@ -1293,16 +1293,44 @@ in
       description = "Whether to enforce the mcp-fetch URL allowlist. When false, all URLs are allowed unless explicitly denied.";
     };
 
-    extraAgents = mkOption {
-      type = types.attrsOf (types.either types.lines types.path);
+    skills = mkOption {
+      type = types.attrsOf (
+        types.submodule {
+          options = {
+            enable = mkOption {
+              type = types.bool;
+              default = true;
+              description = "Whether this skill is installed into ~/.claude/skills/<name>.";
+            };
+            source = mkOption {
+              type = types.either types.path types.lines;
+              description = "Skill directory path, or raw SKILL.md contents.";
+            };
+          };
+        }
+      );
       default = { };
-      description = "Additional agents merged into programs.claude-code.agents. Keys omit the .md suffix.";
+      description = "Claude Code skills keyed by skill name. Defaults populated by this module; override `<name>.enable = false` to drop a bundled skill, or set `<name>.source` to add a custom one.";
     };
 
-    extraSkills = mkOption {
-      type = types.attrsOf (types.either types.lines types.path);
+    agents = mkOption {
+      type = types.attrsOf (
+        types.submodule {
+          options = {
+            enable = mkOption {
+              type = types.bool;
+              default = true;
+              description = "Whether this agent is installed into ~/.claude/agents/<name>.md.";
+            };
+            source = mkOption {
+              type = types.either types.path types.lines;
+              description = "Agent markdown file path, or raw agent body contents.";
+            };
+          };
+        }
+      );
       default = { };
-      description = "Additional skills merged into programs.claude-code.skills. Values may be paths to directories or files.";
+      description = "Claude Code agents keyed by agent name (no .md suffix). Defaults populated by this module; override `<name>.enable = false` to drop a bundled agent, or set `<name>.source` to add a custom one.";
     };
 
     extraMcpServers = mkOption {
@@ -1527,6 +1555,33 @@ in
   };
 
   config = {
+    dotfiles.claude.skills = {
+      commit.source = ../configs/claude/skills/commit;
+      commit-push-pr.source = ../configs/claude/skills/commit-push-pr;
+      create-skill.source = ../configs/claude/skills/create-skill;
+      dagger-modules.source = ../configs/claude/skills/dagger-modules;
+      worktree.source = ../configs/claude/skills/worktree;
+      wm-merge.source = ../configs/claude/skills/wm-merge;
+      wm-rebase.source = ../configs/claude/skills/wm-rebase;
+      wm-coordinator.source = ../configs/claude/skills/wm-coordinator;
+      wm-spawn.source = ../configs/claude/skills/wm-spawn;
+      wm-workmux.source = ../configs/claude/skills/wm-workmux;
+      git-surgeon.source = ../configs/claude/skills/git-surgeon;
+      humanize.source = ../configs/claude/skills/humanize;
+      research.source = ../configs/claude/skills/research;
+      review-implementation.source = ../configs/claude/skills/review-implementation;
+      simplify.source = ../configs/claude/skills/simplify;
+      taskfile.source = ../configs/claude/skills/taskfile;
+      playwright-cli.source = ../configs/claude/skills/playwright-cli;
+      web-archive.source = ../configs/claude/skills/web-archive;
+    };
+
+    dotfiles.claude.agents = {
+      humanizer.source = ../configs/claude/agents/humanizer.md;
+      implementation-reviewer.source = ../configs/claude/agents/implementation-reviewer.md;
+      plan-reviewer.source = ../configs/claude/agents/plan-reviewer.md;
+    };
+
     dotfiles.claude.toolBundles = {
       fetch = {
         alwaysLoad = true;
@@ -2522,34 +2577,9 @@ in
           }
         ) cfg.extraSettings;
 
-        agents = {
-          humanizer = ../configs/claude/agents/humanizer.md;
-          implementation-reviewer = ../configs/claude/agents/implementation-reviewer.md;
-          plan-reviewer = ../configs/claude/agents/plan-reviewer.md;
-        }
-        // cfg.extraAgents;
+        agents = lib.mapAttrs (_: a: a.source) (lib.filterAttrs (_: a: a.enable) cfg.agents);
 
-        skills = {
-          commit = ../configs/claude/skills/commit;
-          commit-push-pr = ../configs/claude/skills/commit-push-pr;
-          create-skill = ../configs/claude/skills/create-skill;
-          dagger-modules = ../configs/claude/skills/dagger-modules;
-          worktree = ../configs/claude/skills/worktree;
-          wm-merge = ../configs/claude/skills/wm-merge;
-          wm-rebase = ../configs/claude/skills/wm-rebase;
-          wm-coordinator = ../configs/claude/skills/wm-coordinator;
-          wm-spawn = ../configs/claude/skills/wm-spawn;
-          wm-workmux = ../configs/claude/skills/wm-workmux;
-          git-surgeon = ../configs/claude/skills/git-surgeon;
-          humanize = ../configs/claude/skills/humanize;
-          research = ../configs/claude/skills/research;
-          review-implementation = ../configs/claude/skills/review-implementation;
-          simplify = ../configs/claude/skills/simplify;
-          taskfile = ../configs/claude/skills/taskfile;
-          playwright-cli = ../configs/claude/skills/playwright-cli;
-          web-archive = ../configs/claude/skills/web-archive;
-        }
-        // cfg.extraSkills;
+        skills = lib.mapAttrs (_: s: s.source) (lib.filterAttrs (_: s: s.enable) cfg.skills);
       };
 
     };
