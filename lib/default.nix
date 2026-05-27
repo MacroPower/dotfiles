@@ -67,8 +67,28 @@ let
     };
   };
 
-  workmuxOverlay = system: _final: _prev: {
-    workmux-bin = workmux.packages.${system}.default.overrideAttrs (old: {
+  # Built directly via final.rustPlatform.buildRustPackage (instead of
+  # consuming workmux.packages.${system}.default) so the cargoDeps
+  # fetches go through our overlaid fetchurl. workmux's own flake
+  # evaluates against unmodified nixpkgs, which means the fetchurlOverlay
+  # injection would not reach the crate downloads there. Keep the
+  # buildRustPackage args in sync with workmux's flake.nix.
+  workmuxOverlay = _system: final: _prev: {
+    workmux-bin = final.rustPlatform.buildRustPackage {
+      pname = "workmux";
+      version = workmux.shortRev or workmux.dirtyShortRev or "dev";
+      src = workmux;
+      cargoLock = {
+        lockFile = "${workmux}/Cargo.lock";
+        outputHashes = {
+          "crossterm-0.29.0" = "sha256-rfAaqGylDaxx3bjmofifnzSh7Hmh21BzHp5fS/w2Z6I=";
+        };
+      };
+      nativeBuildInputs = [
+        final.installShellFiles
+        final.git
+      ];
+
       # Sandbox network_proxy and rpc tests need to bind TCP listeners,
       # which the Nix build sandbox does not permit.
       doCheck = false;
@@ -79,7 +99,7 @@ let
       # every host_commands entry now gets read access to ~/.kube; today
       # that's only mcp-kubectx, so blast radius matches the binary that
       # needs it.
-      patches = (old.patches or [ ]) ++ [
+      patches = [
         ../pkgs/workmux-allow-kube-read.patch
         # ClaudeProfile's hardcoded skip-permissions flag activates bypass
         # mode and clobbers --permission-mode plan in the pane command.
@@ -87,7 +107,15 @@ let
         # mode survives launch; the agent can still escalate mid-session.
         ../pkgs/workmux-claude-allow-dangerous.patch
       ];
-    });
+
+      postInstall = ''
+        export HOME=$TMPDIR
+        installShellCompletion --cmd workmux \
+          --bash <($out/bin/workmux completions bash) \
+          --fish <($out/bin/workmux completions fish) \
+          --zsh <($out/bin/workmux completions zsh)
+      '';
+    };
   };
 
   # nixpkgs at this pin builds lupa-2.8 with `LUPA_NO_BUNDLE=true` and
