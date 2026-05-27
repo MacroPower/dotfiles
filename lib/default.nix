@@ -253,6 +253,46 @@ let
     };
   };
 
+  # crates.io's edge (Fastly / Heroku) returns HTTP 403 for any request
+  # whose User-Agent header starts with "curl/". Nix's fetchurl invokes
+  # curl with its default UA, so every fetchCrate / importCargoLock
+  # download fails with the same 403 (verified directly: curl -A "" and
+  # -A Mozilla/5.0 both succeed against the same URL). Inject a neutral
+  # UA into every fetchurl call. Appending to curlOptsList is safe: the
+  # downloaded bytes are unchanged, so existing fixed-output hashes
+  # match and substitution from cache.nixos.org still hits.
+  fetchurlOverlay = _final: prev: {
+    # Preserve fetchurl's attrs (override, resolveUrl, extendDrvArgs, ...)
+    # by replacing only its __functor entrypoint. A plain wrapper function
+    # would drop those attrs and break callers that do fetchurl.override,
+    # fetchurl // { ... }, or attribute lookup against fetchurl.
+    #
+    # fetchurl accepts either a plain attrset or a fixed-point function
+    # (finalAttrs: { ... }); handle both shapes so `args // {...}` does
+    # not error against a function.
+    fetchurl =
+      let
+        addOpts =
+          a:
+          a
+          // {
+            curlOptsList = (a.curlOptsList or [ ]) ++ [
+              "--user-agent"
+              "Mozilla/5.0"
+            ];
+          };
+      in
+      prev.fetchurl
+      // {
+        __functor =
+          _self: args:
+          if builtins.isFunction args then
+            prev.fetchurl (final: addOpts (args final))
+          else
+            prev.fetchurl (addOpts args);
+      };
+  };
+
   # cli-helpers 2.10.0 (litecli dep) ships 3 tabular-output tests that
   # assert exact ANSI escape sequences; the bytes have shifted across
   # Pygments versions in nixpkgs unstable, so the assertions fail even
@@ -272,6 +312,7 @@ let
   };
 
   sharedOverlays = system: [
+    fetchurlOverlay
     lixOverlay
     localOverlay
     lupaOverlay
