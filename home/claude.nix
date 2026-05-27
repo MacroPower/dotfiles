@@ -569,32 +569,13 @@ let
     }
   );
 
-  # Post-implementation slash-command catalog. Each label is the
-  # canonical slash-command invocation (with leading slash) so Claude
-  # can dispatch the AskUserQuestion answer directly without
-  # translation. The Stop-gate block message bullets and the
-  # AskUserQuestion label allowlist both derive from this list --
-  # hook-router receives it as JSON via --post-impl-skills. Field
-  # names must match the lowercase JSON tags on PostImplSkill in
-  # tools/hook-router/plan.go.
-  postImplSkills = [
-    {
-      label = "/review-implementation";
-      description = "Review code changes against the plan.";
-    }
-    {
-      label = "/simplify";
-      description = "Review and simplify the implemented code.";
-    }
-    {
-      label = "/humanize";
-      description = "Clean up AI writing patterns in any prose/docs that changed.";
-    }
-    {
-      label = "/commit";
-      description = "Wrap up the cycle by creating a git commit.";
-    }
-  ];
+  # JSON payload passed to hook-router via --post-impl-skills.
+  # Derived from cfg.postImplSkills, filtered to enabled entries.
+  # Field names must match the lowercase JSON tags on PostImplSkill
+  # in tools/hook-router/plan.go.
+  postImplCatalog = lib.mapAttrsToList (_: s: { inherit (s) label description; }) (
+    lib.filterAttrs (_: s: s.enable) cfg.postImplSkills
+  );
 
   # Wrap-up skills whose UserPromptSubmit invocation clears the
   # plan-guard session state, releasing Stop. `merge` is the public
@@ -625,7 +606,7 @@ let
       exec hook-router \
         --db "${config.xdg.stateHome}/hook-router/state.db" \
         --log-file "${config.xdg.stateHome}/hook-router/hook-router.log" \
-        --post-impl-skills ${lib.escapeShellArg (builtins.toJSON postImplSkills)} \
+        --post-impl-skills ${lib.escapeShellArg (builtins.toJSON postImplCatalog)} \
         --commit-skills ${lib.escapeShellArg (builtins.toJSON commitSkills)} \
         --command-rules ${
           lib.escapeShellArg (builtins.toJSON (bundledCommandDeny ++ cfg.extraCommandRules.deny))
@@ -1333,6 +1314,34 @@ in
       description = "Claude Code agents keyed by agent name (no .md suffix). Defaults populated by this module; override `<name>.enable = false` to drop a bundled agent, or set `<name>.source` to add a custom one.";
     };
 
+    postImplSkills = mkOption {
+      type = types.attrsOf (
+        types.submodule (
+          { name, ... }:
+          {
+            options = {
+              enable = mkOption {
+                type = types.bool;
+                default = true;
+                description = "Whether this option is offered in the Stop-gate post-implementation AskUserQuestion catalog.";
+              };
+              label = mkOption {
+                type = types.str;
+                default = "/${name}";
+                description = "Slash-command label Claude dispatches when the user picks this option. Includes the leading slash.";
+              };
+              description = mkOption {
+                type = types.str;
+                description = "One-line description shown alongside the label in the post-implementation picker.";
+              };
+            };
+          }
+        )
+      );
+      default = { };
+      description = "Post-implementation slash commands offered when a plan's Stop gate fires. Defaults populated by this module; override `<name>.enable = false` to drop a bundled option, or add an entry with `<name>.description` to extend the catalog. The label defaults to `/<name>`; set `<name>.label` to override.";
+    };
+
     extraMcpServers = mkOption {
       type = types.attrsOf types.anything;
       default = { };
@@ -1580,6 +1589,13 @@ in
       humanizer.source = ../configs/claude/agents/humanizer.md;
       implementation-reviewer.source = ../configs/claude/agents/implementation-reviewer.md;
       plan-reviewer.source = ../configs/claude/agents/plan-reviewer.md;
+    };
+
+    dotfiles.claude.postImplSkills = {
+      review-implementation.description = "Review code changes against the plan.";
+      simplify.description = "Review and simplify the implemented code.";
+      humanize.description = "Clean up AI writing patterns in any prose/docs that changed.";
+      commit.description = "Wrap up the cycle by creating a git commit.";
     };
 
     dotfiles.claude.toolBundles = {
