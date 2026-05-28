@@ -8,54 +8,93 @@ Launch one or more tasks in new git worktrees using workmux.
 
 Tasks: $ARGUMENTS
 
-## You are a dispatcher, not an implementer
+## You are a relay, not an author
 
-**HARD RULE — NO EXCEPTIONS:** Do NOT explore, read, grep, glob, or search the
-codebase. Do NOT use the Task/Explore agent. Do NOT investigate the problem. You
-are a thin dispatcher — your ONLY job is to write prompt files and run
-`workmux add`. The worktree agent will do all the exploration and implementation.
+The worktree agent has the same tools you do — Read, Grep, Glob, Bash, the
+Explore subagent. It will plan and implement. Your job is to relay the user's
+intent and any context already established in this conversation, then get out
+of the way.
 
-If the user's message contains enough context to write a prompt, write it
-immediately. If not, ask the user for clarification — do NOT try to figure it
-out by reading code.
+If you invent details the user didn't give you — file paths, function names,
+a proposed approach, what to change — the worktree agent treats them as
+ground truth and builds on top of fabricated context. Anything you write that
+isn't grounded in the user's message, this conversation, or a file you just
+re-read is a hallucination the agent will commit to.
 
-If tasks reference earlier conversation (e.g., "do option 2"), include all
-relevant context in each prompt you write.
+## Size the prompt to the context that exists
 
-If tasks reference a markdown file (e.g., a plan or spec), re-read the file to
-ensure you have the latest version before writing prompts.
+The prompt's length should track the context the worktree agent will
+inherit, not how thorough you'd like to sound.
 
-For each task:
+**Cold-start tasks** (user's request stands alone, no relevant prior
+conversation): relay the task in the user's framing, plus pointers to
+anything authoritative — spec file paths, PR numbers, issue links. That's
+it. The agent explores from there.
 
-1. Generate a short, descriptive worktree name (2-4 words, kebab-case)
-2. Write a detailed implementation prompt to a temp file
-3. Run `workmux add <worktree-name> -b -P <temp-file>` to create the worktree
+**Tasks built on this conversation** (user says "do option 2", "use the
+approach we discussed", "apply the plan we just drafted"): the agent does
+not see this conversation. Summarize the decisions that actually matter
+for the task — what was chosen, what was ruled out, any constraints the
+user named — and include that in the prompt. Stick to things that were
+actually said; don't fill gaps with plausible-sounding extras.
 
-The prompt file should:
+`--fork` copies the entire conversation into the new worktree, which
+bloats the agent's context with everything you discussed, including
+tangents and dead ends. Reach for it only when the discussion is dense
+enough that a faithful summary would be nearly as long, or when the user
+explicitly asks to fork.
 
-- Include the full task description
-- Use RELATIVE paths only (never absolute paths, since each worktree has its own
-  root directory)
-- Be specific about what the agent should accomplish
+**Tasks pointing at a file** (plan, spec, notes): re-read the file so any
+recent edits are reflected, then cite the relative path in the prompt.
+Don't paraphrase the file's contents — point at it.
+
+## Keep out of the prompt
+
+- File paths, function names, module names the user didn't mention and that
+  don't appear in a file you just re-read.
+- A step-by-step implementation plan, unless the user gave one. The agent
+  plans its own work.
+- Your guess at what they "probably mean." If you're guessing, relay
+  as-is and let the agent ask or explore.
+- Generic preamble ("This is an important task...", "Be careful to...",
+  "Make sure to think carefully...").
+
+## Don't explore the codebase
+
+Reading, grepping, or spawning Explore from the dispatcher seat is wasted
+work — the agent redoes it with proper context. Skip it.
+
+The only file to read is a markdown file the user explicitly referenced
+(plan, spec, notes), and only to confirm its current content before citing
+the path. Even then, cite the path; don't copy the contents into the prompt.
+
+If the user's message is too thin to write even a faithful relay, relay it
+as-is. The agent can ask follow-up questions or explore. Don't paper over
+thinness by guessing.
 
 ## Skill delegation
 
-If the user passes a skill reference (e.g., `/auto`, `/plan-review`),
-the prompt should instruct the agent to use that skill instead of writing out
-manual implementation steps.
+If the user references a skill (e.g., `/auto`, `/plan-review`), instruct
+the agent to use that skill rather than writing out manual steps. Pass
+through any flags the user gave.
 
-**Skills can have flags.** If the user passes `/auto --gemini`, pass the
-flag through to the skill invocation in the prompt.
+Example prompt body:
 
-Example prompt:
 ```
-[Task description here]
+[Task in the user's framing]
 
-Use the skill: /skill-name [flags if any] [task description]
+Use the skill: /skill-name [flags] [task]
 ```
 
-Do NOT write detailed implementation steps when a skill is specified — the skill
-handles that.
+## Per-task steps
+
+For each task:
+
+1. Generate a short, descriptive worktree name (2-4 words, kebab-case).
+2. Write the prompt to a temp file.
+3. Run `workmux add <worktree-name> -b -P <temp-file>`.
+
+Use relative paths in the prompt — each worktree has its own root.
 
 ## Flags
 
@@ -88,9 +127,9 @@ Step 1 - Write all prompt files (in parallel):
 ```bash
 tmpfile=$(mktemp).md
 cat > "$tmpfile" << 'EOF'
-Implement feature X...
+[Prompt content]
 EOF
-echo "$tmpfile"  # Note the path for step 2
+echo "$tmpfile"
 ```
 
 Step 2 - After ALL files are written, run workmux commands (in parallel):
