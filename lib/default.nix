@@ -106,6 +106,13 @@ let
         # Swap to the opt-in --allow-dangerously-skip-permissions so plan
         # mode survives launch; the agent can still escalate mid-session.
         ../pkgs/workmux-claude-allow-dangerous.patch
+        # Claude Code's built-in sandbox hardcoded-denies writes to
+        # .git/config, which blocks workmux's per-worktree metadata writes
+        # (branch.<n>.workmux-base, workmux.worktree.<n>.<k>) and breaks
+        # `workmux add` mid-flow. Redirect those keys to
+        # $GIT_COMMON_DIR/workmux-config -- same directory, different
+        # filename, outside the sandbox's protected set.
+        ../pkgs/workmux-store-meta-outside-config.patch
       ];
 
       postInstall = ''
