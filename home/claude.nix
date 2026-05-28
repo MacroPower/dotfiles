@@ -1587,7 +1587,8 @@ in
 
     dotfiles.claude.agents = {
       humanizer.source = ../configs/claude/agents/humanizer.md;
-      implementation-reviewer.source = ../configs/claude/agents/implementation-reviewer.md;
+      implementation-reviewer-code.source = ../configs/claude/agents/implementation-reviewer-code.md;
+      implementation-reviewer-docs.source = ../configs/claude/agents/implementation-reviewer-docs.md;
       plan-reviewer.source = ../configs/claude/agents/plan-reviewer.md;
     };
 
@@ -2642,14 +2643,13 @@ in
 
         ## Agents & Concurrency
 
-        - Launch multiple Agent tool calls concurrently when investigating or working on independent areas. Don't serialize what can run in parallel.
-        - For large tasks spanning many files or domains, you may orchestrate multiple worktree agents with `/wm-coordinator`.
+        - Launch up to 20 `Agent` calls concurrently when investigating independent areas: `Agent({description, prompt, subagent_type})`. Don't serialize what can run in parallel.
+        - Use `Agent({..., model: "sonnet"})` for tasks where reasoning is not required. Explore agents (`subagent_type: "Explore"`) should use `model: "sonnet"` unless the user requests otherwise or passes `ultrathink`.
 
         ## Quality & Review
 
-        - Your token budget is unlimited. Always prioritize correctness and code quality over speed or token cost.
-        - Run reviewer agents (plan-reviewer, implementation-reviewer) iteratively. If a reviewer finds issues, fix them and re-run the reviewer until you get LGTM.
-        - When uncertain about correctness, spawn a verification subagent to cross-check your work rather than guessing.
+        - Run reviewer agents iteratively: `Agent({subagent_type: "plan-reviewer", description, prompt})`, and after implementation `Agent({subagent_type: "implementation-reviewer-code", description, prompt})` and `Agent({subagent_type: "implementation-reviewer-docs", description, prompt})` in parallel. If a reviewer finds issues, fix them and re-run until you get LGTM.
+        - When uncertain about correctness, spawn `Agent({subagent_type: "general-purpose", description, prompt})` to cross-check your work rather than guessing.
       ''
       + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n"
       + lib.optionalString (cfg.hostContext != "") "\n## Host Environment\n\n${cfg.hostContext}\n";
