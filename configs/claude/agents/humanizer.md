@@ -29,7 +29,7 @@ description: |
   assistant: "I'll launch the humanizer agent to check for AI writing patterns."
   <Task tool call to humanizer agent>
   </example>
-model: opus
+model: "opus[1m]"
 color: orange
 ---
 

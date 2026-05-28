@@ -14,7 +14,7 @@ description: |
   <assistant updates the plan based on feedback from plan-reviewer>
   <Task tool call to ExitPlanMode>
   </example>
-model: opus
+model: "opus[1m]"
 color: purple
 ---
 

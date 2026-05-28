@@ -33,7 +33,7 @@ description: |
   assistant: "I'll launch the go-doc-improver agent to review the documentation comments in your recently edited file."
   <Task tool call to go-doc-improver agent>
   </example>
-model: opus
+model: "opus[1m]"
 color: green
 ---
 
