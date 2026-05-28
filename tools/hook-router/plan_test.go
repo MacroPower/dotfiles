@@ -346,6 +346,7 @@ func TestStop_BlocksImplementationWithNoChanges(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, reason, "completed the implementation")
 	assert.Contains(t, reason, "If you are not done")
+	assert.Contains(t, reason, "If you have a question for the user")
 }
 
 func TestStop_AllowsAfterPostImplAUQ_NoChanges(t *testing.T) {
@@ -1091,9 +1092,9 @@ func TestBuildAskReason_EmptyCatalog(t *testing.T) {
 }
 
 // TestBuildAskReason_NotDoneBranchPresent enforces the unified-message
-// contract: the populated-catalog rendering must include both branches
-// so Claude can choose between confirming done (post-impl AUQ) or
-// asking a clarifying question.
+// contract: the populated-catalog rendering must include all three
+// branches so Claude can ask a clarifying question, keep working, or
+// confirm done (post-impl AUQ).
 func TestBuildAskReason_NotDoneBranchPresent(t *testing.T) {
 	t.Parallel()
 
@@ -1101,6 +1102,7 @@ func TestBuildAskReason_NotDoneBranchPresent(t *testing.T) {
 
 	assert.Contains(t, reason, "completed the implementation")
 	assert.Contains(t, reason, "If you are not done")
+	assert.Contains(t, reason, "If you have a question for the user")
 	assert.Contains(t, reason, "/review-implementation")
 	assert.Contains(t, reason, "/p.md")
 	assert.Contains(t, reason, "abc123")

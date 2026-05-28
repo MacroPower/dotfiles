@@ -241,13 +241,20 @@ func (c *PostImplCatalog) HasLabel(label string) bool { return c.labels[label] }
 func (c *PostImplCatalog) Empty() bool { return len(c.skills) == 0 }
 
 // BuildAskReason returns the unified Stop block-message used while a
-// session is mid-implementation. The message has two branches:
+// session is mid-implementation. The message guides Claude through
+// three cases, ordered so the clarifying-question path wins when it
+// applies (the model tends to default to whichever branch is most
+// concrete):
 //
-//   - "If you have completed the implementation": instructs Claude to
-//     call AskUserQuestion with the catalog's slash-command labels and
-//     then invoke each chosen option as a slash command.
-//   - "If you are not done": directs Claude to keep working, with
-//     AskUserQuestion as the path for clarifying questions.
+//   - "If you have a question for the user": call AskUserQuestion with
+//     that question, not with the post-impl labels. This branch goes
+//     first because the failure mode it guards against is Claude
+//     selecting a post-impl label when it actually meant to ask a
+//     clarifying question.
+//   - "If you are not done": keep working.
+//   - "Only when you have completed the implementation": call
+//     AskUserQuestion with the catalog's slash-command labels and then
+//     invoke each chosen option as a slash command.
 //
 // Bullets render in catalog order (Nix list order, preserved through
 // [builtins.toJSON]). When the catalog is empty the bullet section is
@@ -266,13 +273,19 @@ func (c *PostImplCatalog) BuildAskReason(planPath, baseSHA string) string {
 	fmt.Fprintf(&b, "You are implementing the plan at %s (baseline: %s).\n\n",
 		planPath, baseSHA)
 
-	b.WriteString("If you are not done, keep working. Call AskUserQuestion if you" +
-		" need input from the user.\n")
+	b.WriteString("If you have a question for the user — including one you wrote out" +
+		" but did not deliver via AskUserQuestion before ending your turn — call" +
+		" AskUserQuestion now with that question. The post-implementation options" +
+		" below are not answers to clarifying questions; their labels are slash" +
+		" commands, not free-text responses.\n")
+
+	b.WriteString("If you are not done, keep working.\n")
 
 	if len(c.skills) > 0 {
-		b.WriteString("If you have completed the implementation, call AskUserQuestion" +
-			" with the post-implementation review options below. Each option's" +
-			" `label` MUST be exactly one of:\n")
+		b.WriteString("Only when you have completed the implementation AND have no" +
+			" outstanding question for the user, call AskUserQuestion with the" +
+			" post-implementation review options below. Each option's `label` MUST" +
+			" be exactly one of:\n")
 
 		for _, s := range c.skills {
 			fmt.Fprintf(&b, "  - %s: %s\n", s.Label, s.Description)
@@ -280,11 +293,12 @@ func (c *PostImplCatalog) BuildAskReason(planPath, baseSHA string) string {
 
 		b.WriteString("Each option's `label` is itself a slash-command invocation." +
 			" After the user answers, run each chosen option's label as the" +
-			" corresponding slash command. Think about and intellegently order the" +
-			" commands: edits first, then reviews, then any finalizers.")
+			" corresponding slash command. Order the commands intelligently: edits" +
+			" first, then reviews, then any finalizers.")
 	} else {
-		b.WriteString("If you have completed the implementation, call AskUserQuestion" +
-			" with the post-implementation review options provided by your environment.")
+		b.WriteString("Only when you have completed the implementation AND have no" +
+			" outstanding question for the user, call AskUserQuestion with the" +
+			" post-implementation review options provided by your environment.")
 	}
 
 	return b.String()
