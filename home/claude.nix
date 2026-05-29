@@ -2686,9 +2686,11 @@ in
         run install -d -m 700 "${config.xdg.stateHome}/mcp-kubectx-run"
       '';
 
-      # Activation: merge MCP servers and secrets into mutable ~/.claude.json
+      # Merge MCP servers into mutable ~/.claude.json. Fenced ahead of
+      # sibling entries that can abort the activation script so the merge
+      # cannot be silently skipped by an unrelated upstream failure.
       activation.syncClaudeJson =
-        lib.hm.dag.entryAfter ([ "writeBoundary" ] ++ lib.optional sopsEnabled "sops-nix")
+        lib.hm.dag.entryBetween [ "sops-nix" "caffeineTccReset" ] [ "writeBoundary" ]
           ''
             CLAUDE_JSON="$HOME/.claude.json"
 
@@ -2720,21 +2722,11 @@ in
               UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq '.remoteControlAtStartup = true')
             ''}
 
-            # Set GitHub PAT as a universal fish variable for MCP auth
-            if [ -f "${secretPath "gh_token"}" ]; then
-              GH_TOKEN=$(cat "${secretPath "gh_token"}" 2>/dev/null || true)
-              if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
-                ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
-              fi
-            fi
-
             ${lib.optionalString skipPerms ''
-              # Pre-trust home directory and authenticate with scoped PAT (sandbox only)
+              # Pre-trust home directory (sandbox only); workspace trust does
+              # not require a token, so this runs independently of secrets.
               UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq \
                 '.projects["${config.dotfiles.homeDirectory}"].hasTrustDialogAccepted = true')
-              if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
-                echo "''${GH_TOKEN}" | ${pkgs.gh}/bin/gh auth login --with-token
-              fi
             ''}
 
             # Atomic write
@@ -2751,7 +2743,34 @@ in
             if [ -z "$DRY_RUN_CMD" ] && command -v workmux >/dev/null 2>&1 && [ -f "$CLAUDE_JSON" ]; then
               ${lib.getExe' pkgs.workmux-bin "workmux"} claude prune 2>/dev/null || true
             fi
+
+            # Load-bearing diagnostic: surfaces silent-skip regressions when
+            # a future sibling entry sorts ahead of this one and aborts.
+            MCP_COUNT=$(${pkgs.jq}/bin/jq 'length' <<<"$MCP_SERVERS")
+            echo "syncClaudeJson: synced $MCP_COUNT MCP servers to ~/.claude.json" >&2
           '';
+
+      # Best-effort propagation of the GitHub PAT to fish and gh. Kept
+      # separate from syncClaudeJson so a sops-nix failure cannot prevent
+      # the MCP merge from running.
+      activation.syncClaudeSecrets = lib.mkIf sopsEnabled (
+        lib.hm.dag.entryAfter [ "sops-nix" "syncClaudeJson" ] ''
+          # Set GitHub PAT as a universal fish variable for MCP auth
+          if [ -f "${secretPath "gh_token"}" ]; then
+            GH_TOKEN=$(cat "${secretPath "gh_token"}" 2>/dev/null || true)
+            if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
+              ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
+            fi
+          fi
+
+          ${lib.optionalString skipPerms ''
+            # Authenticate gh with the scoped PAT (sandbox only)
+            if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
+              echo "''${GH_TOKEN}" | ${pkgs.gh}/bin/gh auth login --with-token
+            fi
+          ''}
+        ''
+      );
     };
   };
 }
