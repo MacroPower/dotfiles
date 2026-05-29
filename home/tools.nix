@@ -265,4 +265,24 @@ in
   home.file.".terraform.versions/bin/.keep".text = "";
 
   home.sessionPath = [ "$HOME/.terraform.versions/bin" ];
+
+  # The home-manager atuin module starts the daemon with `atuin daemon start`,
+  # the one start path that skips stale-socket cleanup. An unclean termination
+  # (panic, hard reboot, SIGKILL) leaves ~/.local/share/atuin/daemon.sock
+  # behind; every subsequent start then fails at UnixListener::bind with
+  # EADDRINUSE and exits 1, so launchd crash-loops the agent and atuin (which
+  # has no sqlite fallback in daemon mode) silently drops all history. The
+  # `--force` flag runs force_cleanup() to remove the stale socket + pidfile
+  # before binding. Safe here because launchd only relaunches the agent after
+  # the prior instance has exited, so force_cleanup's kill targets a dead pid.
+  launchd.agents.atuin-daemon.config.ProgramArguments =
+    lib.mkIf (pkgs.stdenv.isDarwin && config.programs.atuin.daemon.enable)
+      (
+        lib.mkForce [
+          (lib.getExe config.programs.atuin.package)
+          "daemon"
+          "start"
+          "--force"
+        ]
+      );
 }
