@@ -1579,7 +1579,6 @@ in
       humanize.source = ../configs/claude/skills/humanize;
       research.source = ../configs/claude/skills/research;
       review-implementation.source = ../configs/claude/skills/review-implementation;
-      simplify.source = ../configs/claude/skills/simplify;
       taskfile.source = ../configs/claude/skills/taskfile;
       playwright-cli.source = ../configs/claude/skills/playwright-cli;
       web-archive.source = ../configs/claude/skills/web-archive;
@@ -2402,10 +2401,6 @@ in
                 # Developer tool sessions & generated keys
                 "Read(//**/atuin/key)"
                 "Read(//**/.lima/_config/user)"
-
-                # Built-in worktree tools; workmux owns worktree management
-                "EnterWorktree"
-                "ExitWorktree"
               ]
               ++ bundledDeny
               ++ cfg.extraPermissions.deny;
