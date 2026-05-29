@@ -1,34 +1,7 @@
 ---
 name: humanizer
-description: |
-  Use this agent to review text for AI writing patterns and rewrite it to sound more natural. Run it after drafting prose content like documentation, READMEs, PR descriptions, or blog posts.
-
-  Examples:
-
-  <example>
-  Context: The assistant has just written or edited documentation, a README, or prose content.
-  user: "Write a project description for the new auth service"
-  assistant: "Here's the project description:"
-  <function call omitted for brevity>
-  <commentary>
-  Since prose content was written, use the humanizer agent to review it for AI writing patterns and make it sound more natural.
-  </commentary>
-  assistant: "Let me run the humanizer agent to clean up any AI writing patterns"
-  </example>
-
-  <example>
-  Context: The user has text they want to sound more natural.
-  user: "This blog post sounds too robotic, can you humanize it?"
-  assistant: "I'll use the humanizer agent to review and improve the text."
-  <Task tool call to humanizer agent>
-  </example>
-
-  <example>
-  Context: The assistant has drafted a PR description or commit message with prose.
-  user: "Review the docs in the file I just edited"
-  assistant: "I'll launch the humanizer agent to check for AI writing patterns."
-  <Task tool call to humanizer agent>
-  </example>
+description: |-
+  Use this agent to review text for AI writing patterns and rewrite it to sound more natural.
 model: "opus[1m]"
 color: orange
 ---

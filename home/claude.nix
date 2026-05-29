@@ -2639,11 +2639,6 @@ in
 
         - Launch up to 20 `Agent` calls concurrently when investigating independent areas: `Agent({description, prompt, subagent_type})`. Don't serialize what can run in parallel.
         - Use `Agent({..., model: "sonnet"})` for tasks where reasoning is not required. Explore agents (`subagent_type: "Explore"`) should use `model: "sonnet"` unless the user requests otherwise or passes `ultrathink`.
-
-        ## Quality & Review
-
-        - Run reviewer agents iteratively: `Agent({subagent_type: "plan-reviewer", description, prompt})`, and after implementation `Agent({subagent_type: "implementation-reviewer-code", description, prompt})` and `Agent({subagent_type: "implementation-reviewer-docs", description, prompt})` in parallel. If a reviewer finds issues, fix them and re-run until you get LGTM.
-        - When uncertain about correctness, spawn `Agent({subagent_type: "general-purpose", description, prompt})` to cross-check your work rather than guessing.
       ''
       + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n"
       + lib.optionalString (cfg.hostContext != "") "\n## Host Environment\n\n${cfg.hostContext}\n";

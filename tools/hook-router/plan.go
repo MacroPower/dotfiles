@@ -242,8 +242,8 @@ func (c *PostImplCatalog) BuildAskReason(planPath, baseSHA string) string {
 	fmt.Fprintf(&b, "You are implementing the plan at %s (baseline: %s).\n\n",
 		planPath, baseSHA)
 
-	b.WriteString("If you have a question for the user — including one you wrote out" +
-		" but did not deliver via AskUserQuestion before ending your turn — call" +
+	b.WriteString("If you have a question for the user (including one you wrote out" +
+		" but did not deliver via AskUserQuestion before ending your turn) call" +
 		" AskUserQuestion now with that question. The post-implementation options" +
 		" below are not answers to clarifying questions; their labels are slash" +
 		" commands, not free-text responses.\n")
