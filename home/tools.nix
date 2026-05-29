@@ -18,7 +18,9 @@ let
 
   # tfswitch refuses to create the immediate parent of its `-b` symlink
   # target and falls back to ~/bin when missing, which the Claude sandbox
-  # denies. Wrap with a mkdir prelude so every invocation self-heals.
+  # denies. Activation materializes ~/.terraform.versions/bin; this mkdir
+  # prelude re-creates it at runtime should the directory be removed
+  # mid-session.
   tfswitchWrapped = pkgs.symlinkJoin {
     name = "tfswitch-wrapped";
     paths = [ pkgs.tfswitch ];
@@ -254,6 +256,13 @@ in
     bin = "${config.home.homeDirectory}/.terraform.versions/bin/tofu"
     product = "opentofu"
   '';
+
+  # tfswitch installs the `tofu` symlink into ~/.terraform.versions/bin but
+  # never creates that directory itself -- when the parent is missing it
+  # silently falls back to symlinking ~/bin, which the Claude sandbox denies.
+  # Materialize the directory at activation (independent of the tfswitchWrapped
+  # runtime mkdir) so the configured bin path always wins.
+  home.file.".terraform.versions/bin/.keep".text = "";
 
   home.sessionPath = [ "$HOME/.terraform.versions/bin" ];
 }
