@@ -32,19 +32,25 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 // migrations brings older databases forward to the current schema. Each
 // statement runs individually; "duplicate column name" errors are
-// silently ignored so the additive ALTERs remain re-runnable on
-// databases pre-dating user_version.
+// silently ignored so the additive ALTERs on `sessions` remain
+// re-runnable on databases pre-dating user_version.
 //
-// The pending_plans DROP+CREATE is destructive. Rows there are transient
-// (60s freshness, 3600s TTL, 24h prune), so the only data lost at
-// upgrade is any in-flight plan-accept handoff at that moment.
+// The slice is append-only: historical entries replay verbatim on every
+// fresh open, and later steps may DROP+CREATE tables that earlier steps
+// created. Editing a past entry would change what fresh DBs walk
+// through, breaking the equivalence between "upgrade from version N"
+// and "walk every step from scratch".
+//
+// Any `pending_plans` DROP+CREATE step is destructive. Rows there are
+// transient (60s freshness, 3600s TTL, 24h prune), so the only data
+// lost at upgrade is any in-flight plan-accept handoff at that moment.
 // Concurrent opens converge correctly because [*Store.ensureSchema]
 // wraps the whole block in BEGIN IMMEDIATE and re-checks user_version
 // after acquiring the write lock.
 //
-// v5->v6 adds bash_failures and its index. CREATE TABLE IF NOT EXISTS
-// is re-runnable; the "duplicate column name" guard only matches ALTER,
-// so it does not apply here. Concurrent migrators are still serialized
+// `bash_failures` is created with CREATE TABLE IF NOT EXISTS, which is
+// re-runnable; the "duplicate column name" guard only matches ALTER,
+// so it does not apply there. Concurrent migrators are still serialized
 // by the BEGIN IMMEDIATE wrapper in [*Store.ensureSchema].
 var migrations = []string{
 	`ALTER TABLE sessions ADD COLUMN review_head_sha TEXT NOT NULL DEFAULT ''`,
@@ -81,11 +87,18 @@ var migrations = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS bash_failures_created_at_idx
 	    ON bash_failures(created_at)`,
+	`DROP TABLE IF EXISTS pending_plans`,
+	`CREATE TABLE IF NOT EXISTS pending_plans (
+	    claude_pid TEXT PRIMARY KEY,
+	    plan_path  TEXT NOT NULL DEFAULT '',
+	    base_sha   TEXT NOT NULL DEFAULT '',
+	    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)`,
 }
 
 const (
 	busyTimeoutMs            = 30000
-	schemaVersion            = 6
+	schemaVersion            = 7
 	bashFailureRetentionDays = 30
 )
 
@@ -157,9 +170,9 @@ func OpenStore(ctx context.Context, path string) (*Store, error) {
 // process holds the RESERVED write lock at a time. After acquiring the
 // lock the migrator re-reads user_version through the same connection;
 // if a peer already bumped it, the migrator commits without touching
-// the schema. The re-check is mandatory because the v4→v5 step drops
-// pending_plans, and without it a late waiter would race against rows
-// the winner just wrote.
+// the schema. The re-check is mandatory because any destructive
+// `pending_plans` step drops the table, and without it a late waiter
+// would race against rows the winner just wrote.
 //
 // busy_timeout (set per-connection via the DSN) bounds how long
 // BEGIN IMMEDIATE waits for the lock. Under contention the timeout
@@ -468,28 +481,28 @@ func (s *Store) ClearSession(ctx context.Context, id string) error {
 	return nil
 }
 
-// SetPendingPlan UPSERTs a pending plan handoff keyed by (cwd,
-// claudePID). The row is consumed by [*Store.ConsumePendingPlan] when
-// the cleared session's SessionStart hook fires; see plan.go's
-// handleSessionStart. The composite key partitions handoffs per
-// Claude Code window, so two windows in the same directory each own
-// their own row and cannot overwrite each other.
+// SetPendingPlan UPSERTs a pending plan handoff keyed by claudePID.
+// The row is consumed by [*Store.ConsumePendingPlan] when the cleared
+// session's SessionStart hook fires; see plan.go's handleSessionStart.
+// The PID is the OS-process identity of the Claude Code window, so the
+// key partitions handoffs per window: two windows each own their own
+// row and cannot overwrite each other.
 //
 // The first return value reports whether an existing row was overwritten
-// while its `updated_at` was within 60 seconds. Under the composite key
-// this only fires when the same window calls ExitPlanMode twice inside
-// the freshness window without consuming the previous handoff (e.g. the
-// user dismissed the accept dialog and re-planned).
+// while its `updated_at` was within 60 seconds. This only fires when
+// the same window calls ExitPlanMode twice inside the freshness window
+// without consuming the previous handoff (e.g. the user dismissed the
+// accept dialog and re-planned).
 //
 // The freshness check uses two queries (SELECT then UPSERT). The race
 // window between them is benign: a missed signal has no correctness
 // impact.
-func (s *Store) SetPendingPlan(ctx context.Context, cwd, claudePID, planPath, baseSHA string) (bool, error) {
+func (s *Store) SetPendingPlan(ctx context.Context, claudePID, planPath, baseSHA string) (bool, error) {
 	var fresh int
 
 	err := s.db.QueryRowContext(ctx,
 		`SELECT updated_at >= datetime('now', '-60 seconds')
-		 FROM pending_plans WHERE cwd = ? AND claude_pid = ?`, cwd, claudePID).Scan(&fresh)
+		 FROM pending_plans WHERE claude_pid = ?`, claudePID).Scan(&fresh)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, fmt.Errorf("checking pending plan freshness: %w", err)
 	}
@@ -497,12 +510,12 @@ func (s *Store) SetPendingPlan(ctx context.Context, cwd, claudePID, planPath, ba
 	overwroteFresh := err == nil && fresh != 0
 
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO pending_plans (cwd, claude_pid, plan_path, base_sha)
-		 VALUES (?, ?, ?, ?)
-		 ON CONFLICT(cwd, claude_pid) DO UPDATE SET
+		`INSERT INTO pending_plans (claude_pid, plan_path, base_sha)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(claude_pid) DO UPDATE SET
 		   plan_path = excluded.plan_path,
 		   base_sha = excluded.base_sha,
-		   updated_at = datetime('now')`, cwd, claudePID, planPath, baseSHA)
+		   updated_at = datetime('now')`, claudePID, planPath, baseSHA)
 	if err != nil {
 		return false, fmt.Errorf("setting pending plan: %w", err)
 	}
@@ -510,12 +523,11 @@ func (s *Store) SetPendingPlan(ctx context.Context, cwd, claudePID, planPath, ba
 	return overwroteFresh, nil
 }
 
-// ConsumePendingPlan reads and deletes the pending plan for (cwd,
-// claudePID) in a single statement, but only when the row's
-// `updated_at` is within ttlSeconds. Stale rows are left in place for
-// [*Store.MaybePruneStale] to remove on the 24-hour cycle. The
-// composite key scopes consumption to the calling window, so a peer
-// window's row is not touched.
+// ConsumePendingPlan reads and deletes the pending plan for claudePID
+// in a single statement, but only when the row's `updated_at` is within
+// ttlSeconds. Stale rows are left in place for [*Store.MaybePruneStale]
+// to remove on the 24-hour cycle. The PID key scopes consumption to the
+// calling window, so a peer window's row is not touched.
 //
 // The atomic read+delete relies on `MaxOpenConns=1`: DELETE...RETURNING
 // is one statement, intra-process serialization comes from the pool
@@ -528,17 +540,17 @@ func (s *Store) SetPendingPlan(ctx context.Context, cwd, claudePID, planPath, ba
 // caller (handleSessionStart) treats not-found as the no-migration path.
 func (s *Store) ConsumePendingPlan(
 	ctx context.Context,
-	cwd, claudePID string,
+	claudePID string,
 	ttlSeconds int,
 ) (string, string, bool, error) {
 	query := fmt.Sprintf(
 		`DELETE FROM pending_plans
-		 WHERE cwd = ? AND claude_pid = ? AND updated_at >= datetime('now', '-%d seconds')
+		 WHERE claude_pid = ? AND updated_at >= datetime('now', '-%d seconds')
 		 RETURNING plan_path, base_sha`, ttlSeconds)
 
 	var planPath, baseSHA string
 
-	err := s.db.QueryRowContext(ctx, query, cwd, claudePID).Scan(&planPath, &baseSHA)
+	err := s.db.QueryRowContext(ctx, query, claudePID).Scan(&planPath, &baseSHA)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", false, nil
 	}
@@ -550,13 +562,13 @@ func (s *Store) ConsumePendingPlan(
 	return planPath, baseSHA, true, nil
 }
 
-// DeletePendingPlan removes the pending plan row for (cwd, claudePID),
-// if any. Used as best-effort cleanup at lifecycle boundaries where the
-// handoff is no longer needed. Only the calling window's row is touched;
-// peers in the same cwd are left intact.
-func (s *Store) DeletePendingPlan(ctx context.Context, cwd, claudePID string) error {
+// DeletePendingPlan removes the pending plan row for claudePID, if any.
+// Used as best-effort cleanup at lifecycle boundaries where the handoff
+// is no longer needed. Only the calling window's row is touched; peer
+// windows' rows are left intact.
+func (s *Store) DeletePendingPlan(ctx context.Context, claudePID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM pending_plans WHERE cwd = ? AND claude_pid = ?`, cwd, claudePID)
+		`DELETE FROM pending_plans WHERE claude_pid = ?`, claudePID)
 	if err != nil {
 		return fmt.Errorf("deleting pending plan: %w", err)
 	}

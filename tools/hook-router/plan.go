@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"slices"
 	"strings"
 )
 
-// pendingPlanTTLSeconds bounds how long a (cwd, claude_pid)-keyed
-// pending plan handoff is honored after [handleExitPlanModePre]
-// records it.
+// pendingPlanTTLSeconds bounds how long a claude_pid-keyed pending plan
+// handoff is honored after [handleExitPlanModePre] records it.
 //
 // The sequence:
 //
@@ -27,52 +25,25 @@ import (
 // plan and deciding whether to accept, which can take a while. The TTL
 // needs to cover that wait. It also needs to expire stuck rows
 // (SessionStart hook crashed, DB was busy, and so on) before an
-// unrelated future session in the same cwd picks them up.
+// unrelated future invocation picks them up.
 //
-// The (cwd, claude_pid) composite key already partitions handoffs per
-// window, so a stuck row from a dead window cannot leak onto a peer
-// window. The TTL is then only doing time-bounding within a window.
+// claude_pid is the OS-process identity of the Claude Code window and
+// is preserved across `/clear` (a `/clear` does not fork). The key
+// therefore partitions handoffs per window, so a stuck row from a dead
+// window cannot leak onto a peer window. The TTL is then only doing
+// time-bounding within a window.
 const pendingPlanTTLSeconds = 3600
 
-// resolveCwd returns [filepath.EvalSymlinks] of raw when the path
-// resolves, falling back to raw with a warn-log when it does not.
-// Callers use the resolved form as the pending_plans primary key so
-// symlinked and real invocations of the same directory hit the same
-// row.
-func resolveCwd(raw string, logger *slog.Logger) string {
-	if raw == "" {
-		return ""
-	}
-
-	resolved, err := filepath.EvalSymlinks(raw)
-	if err != nil {
-		logger.Warn("failed to resolve cwd symlinks, using raw path",
-			slog.String("cwd", raw),
-			slog.Any("error", err),
-		)
-
-		return raw
-	}
-
-	return resolved
-}
-
 // dropPendingPlan is the fail-open cleanup used at any lifecycle
-// boundary where the handoff is no longer needed. It resolves the cwd,
-// deletes the pending_plans row for (cwd, claudePID) if any, and logs
-// at Error on failure with the caller-supplied site tag. A no-op when
-// cwd or claudePID is empty.
-func dropPendingPlan(ctx context.Context, store *Store, rawCwd, claudePID, site string, logger *slog.Logger) {
+// boundary where the handoff is no longer needed. It deletes the
+// pending_plans row for claudePID if any, and logs at Error on failure
+// with the caller-supplied site tag. A no-op when claudePID is empty.
+func dropPendingPlan(ctx context.Context, store *Store, claudePID, site string, logger *slog.Logger) {
 	if claudePID == "" {
 		return
 	}
 
-	cwd := resolveCwd(rawCwd, logger)
-	if cwd == "" {
-		return
-	}
-
-	err := store.DeletePendingPlan(ctx, cwd, claudePID)
+	err := store.DeletePendingPlan(ctx, claudePID)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to delete pending plan",
 			slog.String("site", site),
@@ -169,21 +140,19 @@ func handleExitPlanModePre(
 		logger.Error("failed to clear in_plan_mode", slog.Any("error", err))
 	}
 
-	// Fail-open: pending_plans is the (cwd, claude_pid)-keyed handoff
-	// that bridges a `/clear` plan-accept. A failure here only degrades
+	// Fail-open: pending_plans is the claude_pid-keyed handoff that
+	// bridges a `/clear` plan-accept. A failure here only degrades
 	// option-1 (clear-context) plan accepts; option-2 still works via
 	// the session-keyed path above. Fail-closing would cause spurious
 	// denials. Empty claudePID disables the handoff entirely (see
 	// config.claudePID).
-	cwd := resolveCwd(hook.Cwd, logger)
-	if cwd != "" && claudePID != "" {
-		overwroteFresh, err := store.SetPendingPlan(ctx, cwd, claudePID, planPath, baseSHA)
+	if claudePID != "" {
+		overwroteFresh, err := store.SetPendingPlan(ctx, claudePID, planPath, baseSHA)
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to set pending plan", slog.Any("error", err))
 		} else if overwroteFresh {
 			logger.InfoContext(ctx, "overwrote fresh pending plan; same window re-planned within 60s without consuming previous handoff",
 				slog.String("session", hook.SessionID),
-				slog.String("cwd", cwd),
 				slog.String("claude_pid", claudePID),
 				slog.String("plan_path", planPath),
 			)
@@ -383,8 +352,8 @@ func handlePostAskUserQuestion(
 	}
 
 	// The post-impl question being answered means the migration handoff
-	// for this (cwd, claude_pid) is no longer needed.
-	dropPendingPlan(ctx, store, hook.Cwd, cfg.claudePID, "post-impl AUQ", logger)
+	// for this claude_pid is no longer needed.
+	dropPendingPlan(ctx, store, cfg.claudePID, "post-impl AUQ", logger)
 
 	logger.Info("recorded ask fingerprint",
 		slog.String("session", hook.SessionID),
@@ -467,8 +436,8 @@ func handleEnterPlanMode(ctx context.Context, input []byte, store *Store, claude
 	}
 
 	// EnterPlanMode signals a fresh plan; abandon this window's stale
-	// handoff for this cwd. Fail-open — see SetPendingPlan rationale.
-	dropPendingPlan(ctx, store, hook.Cwd, claudePID, "EnterPlanMode", logger)
+	// handoff. Fail-open — see SetPendingPlan rationale.
+	dropPendingPlan(ctx, store, claudePID, "EnterPlanMode", logger)
 
 	logger.Info("reset session for plan mode", slog.String("session", hook.SessionID))
 
@@ -520,8 +489,8 @@ func handleUserPromptSubmit(
 	}
 
 	// Wrap-up skill ends the implementation cycle; drop this window's
-	// handoff so it cannot leak onto the next session in this directory.
-	dropPendingPlan(ctx, store, hook.Cwd, cfg.claudePID, "wrap-up skill", logger)
+	// handoff so it cannot leak onto the next session.
+	dropPendingPlan(ctx, store, cfg.claudePID, "wrap-up skill", logger)
 
 	logger.Info("cleared session for wrap-up skill",
 		slog.String("session", hook.SessionID),
@@ -618,8 +587,8 @@ func handleStop(
 			logger.WarnContext(ctx, "failed to clear session", slog.Any("error", err))
 		}
 
-		// Drop this window's cwd handoff alongside the session clear.
-		dropPendingPlan(ctx, store, hook.Cwd, cfg.claudePID, "stop_hook_active", logger)
+		// Drop this window's handoff alongside the session clear.
+		dropPendingPlan(ctx, store, cfg.claudePID, "stop_hook_active", logger)
 
 		return nil
 	}
@@ -676,8 +645,8 @@ func handleStop(
 			)
 
 			// Implementation review is done for this state; this window's
-			// cwd handoff is no longer needed.
-			dropPendingPlan(ctx, store, hook.Cwd, cfg.claudePID, "fingerprint match", logger)
+			// handoff is no longer needed.
+			dropPendingPlan(ctx, store, cfg.claudePID, "fingerprint match", logger)
 
 			return nil
 		}
@@ -694,9 +663,9 @@ func handleStop(
 	return encodeJSON(stdout, blockResponse(reason))
 }
 
-// handleSessionStart migrates a (cwd, claude_pid)-keyed pending plan
-// onto the new session_id when a session starts (typically after
-// `/clear` accepted from the plan-accept dialog).
+// handleSessionStart migrates a claude_pid-keyed pending plan onto the
+// new session_id when a session starts (typically after `/clear`
+// accepted from the plan-accept dialog).
 //
 // The hook input does not link the new session_id to the pre-clear
 // session; see anthropics/claude-code#29094 (closed not_planned). The
@@ -704,11 +673,11 @@ func handleStop(
 // pre- and post-clear processes. PPID, on the other hand, is the
 // OS-process identity of the Claude Code window itself, and `/clear`
 // does not fork a new window: the same window keeps the same PPID
-// through a `/clear`, while two windows in the same cwd carry distinct
-// PPIDs. Joining on (cwd, claude_pid) therefore lets each window
-// consume only its own handoff. The TTL bounds stuck rows (SessionStart
-// hook crashed, DB busy, and so on) so they expire before being
-// mistaken for a fresh handoff.
+// through a `/clear`, while two windows carry distinct PPIDs. Joining
+// on claude_pid therefore lets each window consume only its own
+// handoff. The TTL bounds stuck rows (SessionStart hook crashed, DB
+// busy, and so on) so they expire before being mistaken for a fresh
+// handoff.
 //
 // hook.Source is intentionally ignored: the TTL alone is sufficient,
 // and the plan-accept-clear path may emit either `source=clear` or
@@ -732,13 +701,11 @@ func handleSessionStart(
 		return nil
 	}
 
-	if hook.SessionID == "" || hook.Cwd == "" || claudePID == "" {
+	if hook.SessionID == "" || claudePID == "" {
 		return nil
 	}
 
-	cwd := resolveCwd(hook.Cwd, logger)
-
-	planPath, baseSHA, found, err := store.ConsumePendingPlan(ctx, cwd, claudePID, pendingPlanTTLSeconds)
+	planPath, baseSHA, found, err := store.ConsumePendingPlan(ctx, claudePID, pendingPlanTTLSeconds)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to consume pending plan", slog.Any("error", err))
 		return nil
@@ -757,7 +724,6 @@ func handleSessionStart(
 	logger.InfoContext(ctx, "migrated pending plan to new session",
 		slog.String("session", hook.SessionID),
 		slog.String("source", hook.Source),
-		slog.String("cwd", cwd),
 		slog.String("plan_path", planPath),
 	)
 

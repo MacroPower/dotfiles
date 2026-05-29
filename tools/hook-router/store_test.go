@@ -255,24 +255,24 @@ func TestSetPendingPlan_UpsertsAndRefreshes(t *testing.T) {
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	overwroteFresh, err := store.SetPendingPlan(ctx, "/cwd", testPID, "/plan.md", "sha1")
+	overwroteFresh, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 	assert.False(t, overwroteFresh, "first write must not report overwrite")
 
-	planPath, baseSHA, found, err := store.ConsumePendingPlan(ctx, "/cwd", testPID, 300)
+	planPath, baseSHA, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "/plan.md", planPath)
 	assert.Equal(t, "sha1", baseSHA)
 
-	_, err = store.SetPendingPlan(ctx, "/cwd", testPID, "/v1.md", "sha-v1")
+	_, err = store.SetPendingPlan(ctx, testPID, "/v1.md", "sha-v1")
 	require.NoError(t, err)
 
-	overwroteFresh, err = store.SetPendingPlan(ctx, "/cwd", testPID, "/v2.md", "sha-v2")
+	overwroteFresh, err = store.SetPendingPlan(ctx, testPID, "/v2.md", "sha-v2")
 	require.NoError(t, err)
 	assert.True(t, overwroteFresh, "overwriting a fresh row must report overwrite=true")
 
-	planPath, baseSHA, found, err = store.ConsumePendingPlan(ctx, "/cwd", testPID, 300)
+	planPath, baseSHA, found, err = store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "/v2.md", planPath)
@@ -285,17 +285,17 @@ func TestConsumePendingPlan_FoundFreshDeletes(t *testing.T) {
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	_, err := store.SetPendingPlan(ctx, "/cwd", testPID, "/plan.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
-	planPath, baseSHA, found, err := store.ConsumePendingPlan(ctx, "/cwd", testPID, 300)
+	planPath, baseSHA, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "/plan.md", planPath)
 	assert.Equal(t, "sha1", baseSHA)
 
 	// Second consume must return not-found (row was deleted).
-	_, _, found, err = store.ConsumePendingPlan(ctx, "/cwd", testPID, 300)
+	_, _, found, err = store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found)
 }
@@ -306,16 +306,16 @@ func TestConsumePendingPlan_StaleReturnsNotFoundAndStaleRowSurvives(t *testing.T
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	_, err := store.SetPendingPlan(ctx, "/cwd", testPID, "/plan.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	// Backdate the row beyond the TTL we'll pass in.
 	_, err = store.db.ExecContext(ctx,
-		`UPDATE pending_plans SET updated_at = datetime('now', '-10 seconds') WHERE cwd = ? AND claude_pid = ?`,
-		"/cwd", testPID)
+		`UPDATE pending_plans SET updated_at = datetime('now', '-10 seconds') WHERE claude_pid = ?`,
+		testPID)
 	require.NoError(t, err)
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, "/cwd", testPID, 5)
+	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 5)
 	require.NoError(t, err)
 	assert.False(t, found, "stale row must not be returned through the TTL gate")
 
@@ -323,7 +323,7 @@ func TestConsumePendingPlan_StaleReturnsNotFoundAndStaleRowSurvives(t *testing.T
 	var count int
 
 	err = store.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM pending_plans WHERE cwd = ? AND claude_pid = ?`, "/cwd", testPID).Scan(&count)
+		`SELECT COUNT(*) FROM pending_plans WHERE claude_pid = ?`, testPID).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "stale row must remain for MaybePruneStale to clean up")
 }
@@ -334,7 +334,7 @@ func TestConsumePendingPlan_AbsentReturnsNotFound(t *testing.T) {
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, "/never-set", testPID, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found)
 }
@@ -345,17 +345,17 @@ func TestDeletePendingPlan(t *testing.T) {
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	_, err := store.SetPendingPlan(ctx, "/cwd", testPID, "/plan.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
-	require.NoError(t, store.DeletePendingPlan(ctx, "/cwd", testPID))
+	require.NoError(t, store.DeletePendingPlan(ctx, testPID))
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, "/cwd", testPID, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found)
 
 	// Idempotent: deleting an absent row is a no-op.
-	require.NoError(t, store.DeletePendingPlan(ctx, "/cwd", testPID))
+	require.NoError(t, store.DeletePendingPlan(ctx, testPID))
 }
 
 // TestPruneStale_PrunesBothTables_Beyond24h verifies the cleanup path
@@ -369,16 +369,16 @@ func TestPruneStale_PrunesBothTables_Beyond24h(t *testing.T) {
 	ctx := t.Context()
 
 	// Fresh pending plan -- must survive.
-	_, err := store.SetPendingPlan(ctx, "/fresh", testPID, "/p1.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, "fresh-pid", "/p1.md", "sha1")
 	require.NoError(t, err)
 
 	// Stale pending plan (>24h) -- must be pruned.
-	_, err = store.SetPendingPlan(ctx, "/stale", testPID, "/p2.md", "sha2")
+	_, err = store.SetPendingPlan(ctx, "stale-pid", "/p2.md", "sha2")
 	require.NoError(t, err)
 
 	_, err = store.db.ExecContext(ctx,
-		`UPDATE pending_plans SET updated_at = datetime('now', '-25 hours') WHERE cwd = ? AND claude_pid = ?`,
-		"/stale", testPID)
+		`UPDATE pending_plans SET updated_at = datetime('now', '-25 hours') WHERE claude_pid = ?`,
+		"stale-pid")
 	require.NoError(t, err)
 
 	// Fresh session -- must survive.
@@ -572,28 +572,28 @@ func TestStore_ShortContextSurfacesBusy(t *testing.T) {
 }
 
 // TestSetPendingPlan_DifferentPIDsCoexist verifies that two Claude
-// Code windows in the same cwd write distinct rows, and each window's
-// consume returns its own row.
+// Code windows write distinct rows, and each window's consume returns
+// its own row.
 func TestSetPendingPlan_DifferentPIDsCoexist(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	_, err := store.SetPendingPlan(ctx, "/cwd", "A", "/plan-A.md", "sha-A")
+	_, err := store.SetPendingPlan(ctx, "A", "/plan-A.md", "sha-A")
 	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, "/cwd", "B", "/plan-B.md", "sha-B")
+	_, err = store.SetPendingPlan(ctx, "B", "/plan-B.md", "sha-B")
 	require.NoError(t, err)
 
-	planPath, baseSHA, found, err := store.ConsumePendingPlan(ctx, "/cwd", "A", 300)
+	planPath, baseSHA, found, err := store.ConsumePendingPlan(ctx, "A", 300)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "/plan-A.md", planPath)
 	assert.Equal(t, "sha-A", baseSHA)
 
 	// B's row is untouched after A's consume.
-	planPath, baseSHA, found, err = store.ConsumePendingPlan(ctx, "/cwd", "B", 300)
+	planPath, baseSHA, found, err = store.ConsumePendingPlan(ctx, "B", 300)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "/plan-B.md", planPath)
@@ -601,42 +601,42 @@ func TestSetPendingPlan_DifferentPIDsCoexist(t *testing.T) {
 }
 
 // TestConsumePendingPlan_OnlyMatchingPID verifies a window cannot
-// consume a peer's handoff. Write (cwd, A); Consume(cwd, B) must
-// return not-found and leave A's row in place.
+// consume a peer's handoff. Write A; Consume(B) must return not-found
+// and leave A's row in place.
 func TestConsumePendingPlan_OnlyMatchingPID(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	_, err := store.SetPendingPlan(ctx, "/cwd", "A", "/plan-A.md", "sha-A")
+	_, err := store.SetPendingPlan(ctx, "A", "/plan-A.md", "sha-A")
 	require.NoError(t, err)
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, "/cwd", "B", 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, "B", 300)
 	require.NoError(t, err)
 	assert.False(t, found, "consume with non-matching PID must not return a row")
 
 	// A's row is still consumable.
-	planPath, _, found, err := store.ConsumePendingPlan(ctx, "/cwd", "A", 300)
+	planPath, _, found, err := store.ConsumePendingPlan(ctx, "A", 300)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "/plan-A.md", planPath)
 }
 
-// TestDeletePendingPlan_OnlyMatchingPID verifies Delete(cwd, B) is a
-// no-op when only an (cwd, A) row exists; A's row survives.
+// TestDeletePendingPlan_OnlyMatchingPID verifies Delete(B) is a no-op
+// when only an A row exists; A's row survives.
 func TestDeletePendingPlan_OnlyMatchingPID(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	_, err := store.SetPendingPlan(ctx, "/cwd", "A", "/plan-A.md", "sha-A")
+	_, err := store.SetPendingPlan(ctx, "A", "/plan-A.md", "sha-A")
 	require.NoError(t, err)
 
-	require.NoError(t, store.DeletePendingPlan(ctx, "/cwd", "B"))
+	require.NoError(t, store.DeletePendingPlan(ctx, "B"))
 
-	planPath, _, found, err := store.ConsumePendingPlan(ctx, "/cwd", "A", 300)
+	planPath, _, found, err := store.ConsumePendingPlan(ctx, "A", 300)
 	require.NoError(t, err)
 	require.True(t, found, "Delete with non-matching PID must leave the row")
 	assert.Equal(t, "/plan-A.md", planPath)
@@ -683,8 +683,8 @@ func seedV4(t *testing.T, dbPath string, seedRow *struct{ cwd, planPath, baseSHA
 // TestEnsureSchema_UpgradesFromV4 seeds a DB at the v4 shape of
 // pending_plans (single-column PK on `cwd`), reopens it, and checks
 // that the chained migrations land: user_version reaches the current
-// schemaVersion, pending_plans is recreated with the composite PK,
-// and a new (cwd, claude_pid) write succeeds.
+// schemaVersion, pending_plans is recreated with the PID-only PK, and
+// a new claude_pid write succeeds.
 func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 	t.Parallel()
 
@@ -707,8 +707,8 @@ func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 		`PRAGMA user_version`).Scan(&version))
 	assert.Equal(t, schemaVersion, version, "user_version must reach current schemaVersion after migration")
 
-	// Introspect the new schema: pending_plans must carry both cwd and
-	// claude_pid as primary-key columns.
+	// Introspect the new schema: pending_plans must have claude_pid as
+	// its sole primary-key column.
 	rows, err := store.db.QueryContext(t.Context(), `PRAGMA table_info(pending_plans)`)
 	require.NoError(t, err)
 
@@ -734,20 +734,128 @@ func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 	}
 
 	require.NoError(t, rows.Err())
-	assert.Contains(t, pkCols, "cwd", "cwd must be part of the primary key")
-	assert.Contains(t, pkCols, "claude_pid", "claude_pid must be part of the primary key")
+	assert.Equal(t, map[string]int{"claude_pid": 1}, pkCols,
+		"claude_pid must be the sole primary-key column")
 
 	// The seed row from the v4 shape was dropped by the migration; a
-	// fresh write with the new composite key must succeed.
-	_, err = store.SetPendingPlan(t.Context(), "/seed-cwd", "fresh-pid", "/fresh.md", "fresh-sha")
+	// fresh write with the new PID-only key must succeed.
+	_, err = store.SetPendingPlan(t.Context(), "fresh-pid", "/fresh.md", "fresh-sha")
 	require.NoError(t, err)
 
 	planPath, baseSHA, found, err := store.ConsumePendingPlan(t.Context(),
-		"/seed-cwd", "fresh-pid", 300)
+		"fresh-pid", 300)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "/fresh.md", planPath)
 	assert.Equal(t, "fresh-sha", baseSHA)
+}
+
+// seedV6 writes the pre-migration shape into dbPath: open via
+// OpenStore (so other tables land at the current shape), drop the
+// current pending_plans, recreate it with the v6 composite PK on
+// (cwd, claude_pid), optionally insert seedRow, then roll user_version
+// back to 6. Reopening the resulting DB then triggers the v6→v7 step.
+// Pass seedRow == nil to skip the insert.
+func seedV6(t *testing.T, dbPath string, seedRow *struct {
+	cwd, claudePID, planPath, baseSHA string
+},
+) {
+	t.Helper()
+
+	seed, err := OpenStore(t.Context(), dbPath)
+	require.NoError(t, err)
+
+	_, err = seed.db.ExecContext(t.Context(), `DROP TABLE IF EXISTS pending_plans`)
+	require.NoError(t, err)
+
+	_, err = seed.db.ExecContext(t.Context(), `
+		CREATE TABLE pending_plans (
+		    cwd        TEXT NOT NULL,
+		    claude_pid TEXT NOT NULL,
+		    plan_path  TEXT NOT NULL DEFAULT '',
+		    base_sha   TEXT NOT NULL DEFAULT '',
+		    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+		    PRIMARY KEY (cwd, claude_pid)
+		)
+	`)
+	require.NoError(t, err)
+
+	if seedRow != nil {
+		_, err = seed.db.ExecContext(t.Context(),
+			`INSERT INTO pending_plans (cwd, claude_pid, plan_path, base_sha) VALUES (?, ?, ?, ?)`,
+			seedRow.cwd, seedRow.claudePID, seedRow.planPath, seedRow.baseSHA)
+		require.NoError(t, err)
+	}
+
+	_, err = seed.db.ExecContext(t.Context(), `PRAGMA user_version = 6`)
+	require.NoError(t, err)
+
+	require.NoError(t, seed.Close())
+}
+
+// TestEnsureSchema_UpgradesFromV6 seeds a DB at the v6 shape of
+// pending_plans (composite PK on (cwd, claude_pid)), reopens it, and
+// checks that the v6→v7 step lands: user_version reaches the current
+// schemaVersion, pending_plans is recreated with claude_pid as the sole
+// PK, and the stale seed row is gone.
+func TestEnsureSchema_UpgradesFromV6(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "v6.db")
+
+	seedV6(t, dbPath, &struct {
+		cwd, claudePID, planPath, baseSHA string
+	}{
+		cwd: "/seed-cwd", claudePID: "seed-pid", planPath: "/seed.md", baseSHA: "seed-sha",
+	})
+
+	store, err := OpenStore(t.Context(), dbPath)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, store.Close())
+	})
+
+	var version int
+
+	require.NoError(t, store.db.QueryRowContext(t.Context(),
+		`PRAGMA user_version`).Scan(&version))
+	assert.Equal(t, schemaVersion, version, "user_version must reach current schemaVersion after migration")
+
+	rows, err := store.db.QueryContext(t.Context(), `PRAGMA table_info(pending_plans)`)
+	require.NoError(t, err)
+
+	defer rows.Close()
+
+	pkCols := map[string]int{}
+
+	for rows.Next() {
+		var (
+			cid       int
+			name      string
+			ctype     string
+			notnull   int
+			dfltValue any
+			pk        int
+		)
+
+		require.NoError(t, rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk))
+
+		if pk > 0 {
+			pkCols[name] = pk
+		}
+	}
+
+	require.NoError(t, rows.Err())
+	assert.Equal(t, map[string]int{"claude_pid": 1}, pkCols,
+		"claude_pid must be the sole primary-key column")
+
+	// The seed row from the v6 shape was dropped by the migration.
+	var count int
+
+	require.NoError(t, store.db.QueryRowContext(t.Context(),
+		`SELECT COUNT(*) FROM pending_plans`).Scan(&count))
+	assert.Equal(t, 0, count, "v6→v7 DROP must wipe the stale seed row")
 }
 
 // TestEnsureSchema_ConcurrentOpensConverge exercises the BEGIN IMMEDIATE
@@ -759,8 +867,8 @@ func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 // if a peer already bumped it.
 //
 // Shape: seed a v4 DB, race N goroutines opening it concurrently, each
-// writing a unique (cwd, pid) row after OpenStore returns. The final
-// state must have exactly N rows in pending_plans.
+// writing a unique pid row after OpenStore returns. The final state
+// must have exactly N rows in pending_plans.
 func TestEnsureSchema_ConcurrentOpensConverge(t *testing.T) {
 	t.Parallel()
 
@@ -790,7 +898,6 @@ func TestEnsureSchema_ConcurrentOpensConverge(t *testing.T) {
 			}()
 
 			_, setErr := store.SetPendingPlan(t.Context(),
-				fmt.Sprintf("/cwd-%d", i),
 				fmt.Sprintf("pid-%d", i),
 				fmt.Sprintf("/plan-%d.md", i),
 				fmt.Sprintf("sha-%d", i),

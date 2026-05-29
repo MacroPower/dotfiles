@@ -1125,7 +1125,7 @@ func TestHandleExitPlanModePre_FirstCallDoesNotSetPendingPlan(t *testing.T) {
 	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
 	// First call denies; pending_plans must be empty.
-	_, _, found, err := store.ConsumePendingPlan(t.Context(), dir, testPID, 300)
+	_, _, found, err := store.ConsumePendingPlan(t.Context(), testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "deny path must not write pending_plans")
 }
@@ -1149,10 +1149,7 @@ func TestHandleExitPlanModePre_SecondCallSetsPendingPlan(t *testing.T) {
 	stdout.Reset()
 	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
 
-	resolved, err := filepath.EvalSymlinks(dir)
-	require.NoError(t, err)
-
-	planPath, baseSHA, found, err := store.ConsumePendingPlan(t.Context(), resolved, testPID, 300)
+	planPath, baseSHA, found, err := store.ConsumePendingPlan(t.Context(), testPID, 300)
 	require.NoError(t, err)
 	require.True(t, found, "second (allowed) ExitPlanMode must write pending_plans")
 	assert.Equal(t, "/path/plan.md", planPath)
@@ -1167,10 +1164,8 @@ func TestHandleSessionStart_MigratesPendingPlan(t *testing.T) {
 	ctx := t.Context()
 
 	cwd := t.TempDir()
-	resolved, err := filepath.EvalSymlinks(cwd)
-	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	input := makeHookJSON(t, HookInput{
@@ -1187,7 +1182,7 @@ func TestHandleSessionStart_MigratesPendingPlan(t *testing.T) {
 	assert.Equal(t, "sha1", baseSHA)
 
 	// Pending row must be consumed.
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "pending row must be consumed after migration")
 }
@@ -1222,10 +1217,8 @@ func TestHandleSessionStart_EmptySessionIDIsNoOp(t *testing.T) {
 	ctx := t.Context()
 
 	cwd := t.TempDir()
-	resolved, err := filepath.EvalSymlinks(cwd)
-	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	input := makeHookJSON(t, HookInput{Cwd: cwd, Source: "clear"})
@@ -1233,24 +1226,9 @@ func TestHandleSessionStart_EmptySessionIDIsNoOp(t *testing.T) {
 	require.NoError(t, handleSessionStart(t.Context(), input, store, testPID, logger))
 
 	// Pending row must remain since we couldn't migrate.
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	assert.True(t, found, "empty session_id must not consume the pending row")
-}
-
-func TestHandleSessionStart_EmptyCwdIsNoOp(t *testing.T) {
-	t.Parallel()
-
-	store := newTestStore(t)
-	logger := slog.New(slog.DiscardHandler)
-
-	input := makeHookJSON(t, HookInput{SessionID: "s1", Source: "clear"})
-
-	require.NoError(t, handleSessionStart(t.Context(), input, store, testPID, logger))
-
-	_, planPath, _, err := store.Session(t.Context(), "s1")
-	require.NoError(t, err)
-	assert.Empty(t, planPath)
 }
 
 func TestHandleSessionStart_StalePendingPlanIgnored(t *testing.T) {
@@ -1261,16 +1239,14 @@ func TestHandleSessionStart_StalePendingPlanIgnored(t *testing.T) {
 	ctx := t.Context()
 
 	cwd := t.TempDir()
-	resolved, err := filepath.EvalSymlinks(cwd)
-	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	// Backdate the row beyond the 3600s TTL.
 	_, err = store.db.ExecContext(ctx,
-		`UPDATE pending_plans SET updated_at = datetime('now', '-2 hours') WHERE cwd = ?`,
-		resolved)
+		`UPDATE pending_plans SET updated_at = datetime('now', '-2 hours') WHERE claude_pid = ?`,
+		testPID)
 	require.NoError(t, err)
 
 	input := makeHookJSON(t, HookInput{
@@ -1287,86 +1263,6 @@ func TestHandleSessionStart_StalePendingPlanIgnored(t *testing.T) {
 	assert.Empty(t, planPath, "stale pending plan must not migrate")
 }
 
-func TestHandleSessionStart_SymlinkedCwdResolvesToSameRow(t *testing.T) {
-	t.Parallel()
-
-	store := newTestStore(t)
-	logger := slog.New(slog.DiscardHandler)
-	ctx := t.Context()
-
-	realDir := t.TempDir()
-	link := filepath.Join(t.TempDir(), "link")
-	require.NoError(t, os.Symlink(realDir, link))
-
-	resolved, err := filepath.EvalSymlinks(realDir)
-	require.NoError(t, err)
-
-	// Write keyed by resolved path (as handleExitPlanModePre would do).
-	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
-	require.NoError(t, err)
-
-	// SessionStart fires with the symlinked cwd; resolveCwd must hit the
-	// same row.
-	input := makeHookJSON(t, HookInput{
-		SessionID: "new-sess",
-		Cwd:       link,
-		Source:    "clear",
-	})
-
-	require.NoError(t, handleSessionStart(t.Context(), input, store, testPID, logger))
-
-	_, planPath, _, err := store.Session(ctx, "new-sess")
-	require.NoError(t, err)
-	assert.Equal(t, "/plan.md", planPath, "symlinked cwd must resolve to the same row")
-}
-
-// TestHandleSessionStart_SymlinkWriteRealRead verifies the inverse:
-// writing via a symlinked cwd and consuming via the real path also
-// hits the same row, since both sides go through resolveCwd.
-func TestHandleSessionStart_SymlinkWriteRealRead(t *testing.T) {
-	t.Parallel()
-
-	store := newTestStore(t)
-	logger := slog.New(slog.DiscardHandler)
-	ctx := t.Context()
-
-	realDir := t.TempDir()
-	link := filepath.Join(t.TempDir(), "link")
-	require.NoError(t, os.Symlink(realDir, link))
-
-	// Plan accept fires from the symlinked cwd; resolveCwd writes under
-	// the real path.
-	planInput := makeHookJSON(t, HookInput{
-		SessionID: "old-sess",
-		Cwd:       link,
-		ToolInput: map[string]any{"planFilePath": "/plan.md"},
-	})
-
-	dir := initTestRepo(t)
-
-	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
-
-	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
-
-	// Now SessionStart fires with the real path -- must consume the row.
-	resolved, err := filepath.EvalSymlinks(realDir)
-	require.NoError(t, err)
-
-	startInput := makeHookJSON(t, HookInput{
-		SessionID: "new-sess",
-		Cwd:       resolved,
-		Source:    "clear",
-	})
-	require.NoError(t, handleSessionStart(t.Context(), startInput, store, testPID, logger))
-
-	_, planPath, _, err := store.Session(ctx, "new-sess")
-	require.NoError(t, err)
-	assert.Equal(t, "/plan.md", planPath,
-		"writing via symlink and reading via real path must hit the same row")
-}
-
 func TestHandleEnterPlanMode_DeletesPendingPlan(t *testing.T) {
 	t.Parallel()
 
@@ -1375,16 +1271,14 @@ func TestHandleEnterPlanMode_DeletesPendingPlan(t *testing.T) {
 	ctx := t.Context()
 
 	cwd := t.TempDir()
-	resolved, err := filepath.EvalSymlinks(cwd)
-	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	input := makeHookJSON(t, HookInput{SessionID: "s1", Cwd: cwd})
 	require.NoError(t, handleEnterPlanMode(t.Context(), input, store, testPID, logger))
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "EnterPlanMode must drop any stale pending handoff")
 }
@@ -1397,18 +1291,16 @@ func TestHandleUserPromptSubmit_CommitSkill_DeletesPendingPlan(t *testing.T) {
 	ctx := t.Context()
 
 	cwd := t.TempDir()
-	resolved, err := filepath.EvalSymlinks(cwd)
-	require.NoError(t, err)
 
-	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	input := makeHookJSON(t, HookInput{SessionID: "s1", Cwd: cwd, Prompt: "/commit"})
 	require.NoError(t, handleUserPromptSubmit(t.Context(), input, store, cfg, logger))
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
-	assert.False(t, found, "wrap-up skill must drop pending handoff for this cwd")
+	assert.False(t, found, "wrap-up skill must drop pending handoff for this window")
 }
 
 func TestHandleStop_StopHookActive_DeletesPendingPlan(t *testing.T) {
@@ -1419,10 +1311,7 @@ func TestHandleStop_StopHookActive_DeletesPendingPlan(t *testing.T) {
 	ctx := t.Context()
 	dir := initTestRepo(t)
 
-	resolved, err := filepath.EvalSymlinks(dir)
-	require.NoError(t, err)
-
-	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	stopInput := makeHookJSON(t, HookInput{
@@ -1434,7 +1323,7 @@ func TestHandleStop_StopHookActive_DeletesPendingPlan(t *testing.T) {
 	var stdout bytes.Buffer
 	require.NoError(t, handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger))
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "stop_hook_active escape must drop pending handoff")
 }
@@ -1446,9 +1335,6 @@ func TestHandleStop_FingerprintMatch_DeletesPendingPlan(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	ctx := t.Context()
 	dir := initTestRepo(t)
-
-	resolved, err := filepath.EvalSymlinks(dir)
-	require.NoError(t, err)
 
 	planInput := makeHookJSON(t, HookInput{
 		SessionID: "s1",
@@ -1463,12 +1349,12 @@ func TestHandleStop_FingerprintMatch_DeletesPendingPlan(t *testing.T) {
 	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
 
 	// Pending row exists from the second ExitPlanMode call.
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	require.True(t, found)
 
 	// Reseed (Consume just deleted it).
-	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	// Answer post-impl AUQ -- captures fingerprint.
@@ -1490,7 +1376,7 @@ func TestHandleStop_FingerprintMatch_DeletesPendingPlan(t *testing.T) {
 
 	// handlePostAskUserQuestion deletes pending too; reseed and trigger
 	// Stop's fingerprint-match path explicitly.
-	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
+	_, err = store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1", Cwd: dir})
@@ -1501,7 +1387,7 @@ func TestHandleStop_FingerprintMatch_DeletesPendingPlan(t *testing.T) {
 	// Stop allowed through (fingerprint match) and dropped pending.
 	assert.Empty(t, stdout.Bytes())
 
-	_, _, found, err = store.ConsumePendingPlan(ctx, resolved, testPID, 300)
+	_, _, found, err = store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "fingerprint-match short-circuit must drop pending handoff")
 }
@@ -1514,10 +1400,7 @@ func TestHandlePostAskUserQuestion_DeletesPendingPlan(t *testing.T) {
 	ctx := t.Context()
 	dir := initTestRepo(t)
 
-	resolved, err := filepath.EvalSymlinks(dir)
-	require.NoError(t, err)
-
-	_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
+	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	askInput := makeHookJSON(t, HookInput{
@@ -1537,16 +1420,15 @@ func TestHandlePostAskUserQuestion_DeletesPendingPlan(t *testing.T) {
 
 	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
 
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, testPID, 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "post-impl AUQ must drop pending handoff")
 }
 
 // TestHandleSessionStart_DoesNotConsumeOtherInstancesPlan exercises
 // per-window isolation at the handler layer. Window A writes a pending
-// plan; window B's SessionStart in the same cwd must not consume it,
-// and window A's own SessionStart (matching PPID) still migrates the
-// plan.
+// plan; window B's SessionStart must not consume it, and window A's
+// own SessionStart (matching PPID) still migrates the plan.
 func TestHandleSessionStart_DoesNotConsumeOtherInstancesPlan(t *testing.T) {
 	t.Parallel()
 
@@ -1556,15 +1438,11 @@ func TestHandleSessionStart_DoesNotConsumeOtherInstancesPlan(t *testing.T) {
 
 	cwd := t.TempDir()
 
-	resolved, err := filepath.EvalSymlinks(cwd)
-	require.NoError(t, err)
-
 	// Window A writes its handoff.
-	_, err = store.SetPendingPlan(ctx, resolved, "A", "/plan-A.md", "sha-A")
+	_, err := store.SetPendingPlan(ctx, "A", "/plan-A.md", "sha-A")
 	require.NoError(t, err)
 
-	// Window B's SessionStart fires in the same cwd. It must NOT consume
-	// A's row.
+	// Window B's SessionStart fires. It must NOT consume A's row.
 	bInput := makeHookJSON(t, HookInput{
 		SessionID: "new-sess-B",
 		Cwd:       cwd,
@@ -1594,7 +1472,7 @@ func TestHandleSessionStart_DoesNotConsumeOtherInstancesPlan(t *testing.T) {
 	assert.Equal(t, "sha-A", baseSHAA)
 
 	// And the row is now consumed.
-	_, _, found, err := store.ConsumePendingPlan(ctx, resolved, "A", 300)
+	_, _, found, err := store.ConsumePendingPlan(ctx, "A", 300)
 	require.NoError(t, err)
 	assert.False(t, found, "A's handoff must be consumed after its SessionStart")
 }

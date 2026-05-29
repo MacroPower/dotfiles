@@ -470,10 +470,7 @@ func TestRun(t *testing.T) {
 
 		cwd := t.TempDir()
 
-		resolved, err := filepath.EvalSymlinks(cwd)
-		require.NoError(t, err)
-
-		_, err = store.SetPendingPlan(ctx, resolved, testPID, "/plan.md", "sha1")
+		_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 		require.NoError(t, err)
 
 		input := fmt.Sprintf(`{"session_id":"new","cwd":%q,"source":"clear"}`, cwd)

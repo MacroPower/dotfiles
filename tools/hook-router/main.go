@@ -35,11 +35,11 @@ import (
 // containment.
 //
 // claudePID is the Claude Code window PID this hook subprocess was
-// forked from. It scopes `pending_plans` to one window so two sessions
-// in the same cwd do not collide. Empty when PPID <= 1 (no Claude
-// parent, e.g. ad-hoc invocation or PID-1 container); in that case the
-// pending-plans handoff is silently disabled, matching the
-// kubeconfigPath empty-guard.
+// forked from. It scopes `pending_plans` to one window so two windows
+// do not collide. Empty when PPID <= 1 (no Claude parent, e.g. ad-hoc
+// invocation or PID-1 container); in that case the pending-plans
+// handoff is silently disabled, matching the kubeconfigPath
+// empty-guard.
 type config struct {
 	postImpl       *PostImplCatalog
 	commandRules   *CommandRules
