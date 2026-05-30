@@ -16,6 +16,22 @@ let
     whitelist.prefix = [ "/Users/${config.dotfiles.username}/Documents/repos" ];
   };
 
+  # A self-hosted atuin sync server runs on each macOS host, bound to
+  # loopback. The terrarium Lima VM reaches it through the Lima host
+  # gateway (host.lima.internal), which under vmType=vz proxies the
+  # guest's connection to the host's loopback. Hosts with no local server
+  # (TrueNAS, OrbStack, the Nix container) are left unsynced.
+  atuinPort = 8888;
+  atuinSyncAddress =
+    if config.dotfiles.hostname == "terrarium" then
+      "http://host.lima.internal:${toString atuinPort}"
+    else if pkgs.stdenv.isDarwin then
+      "http://127.0.0.1:${toString atuinPort}"
+    else
+      null;
+
+  atuinServerDataDir = "${config.xdg.dataHome}/atuin-server";
+
   # tfswitch refuses to create the immediate parent of its `-b` symlink
   # target and falls back to ~/bin when missing, which the Claude sandbox
   # denies. Activation materializes ~/.terraform.versions/bin; this mkdir
@@ -130,8 +146,8 @@ in
         style = "auto";
         keymap_mode = "auto";
 
-        # Scope searches to the current host by default
-        filter_mode = "host";
+        # Show synced history from all machines by default
+        filter_mode = "global";
         # Auto-filter by git repo when inside one
         workspaces = true;
         # Search bar at the top (fzf-like)
@@ -162,6 +178,19 @@ in
           "gh"
           "brew"
         ];
+      }
+      // lib.optionalAttrs (atuinSyncAddress != null) {
+        sync_address = atuinSyncAddress;
+        auto_sync = true;
+        sync_frequency = "5m";
+      }
+      // lib.optionalAttrs (config.dotfiles.hostname == "terrarium") {
+        # Read the encryption key straight from the macOS host's atuin data
+        # dir, which Lima mounts into the guest at the same absolute path.
+        # The guest decrypts the same synced history as the host without a
+        # local copy, so `atuin login` needs no `-k`. The mount is
+        # read-only, which is fine -- atuin only reads the key.
+        key_path = "/Users/${config.dotfiles.username}/.local/share/atuin/key";
       };
     };
 
@@ -285,4 +314,41 @@ in
           "--force"
         ]
       );
+
+  # Self-hosted atuin sync server, bound to loopback: the local client
+  # reaches it directly and the Lima guest via host.lima.internal, but it
+  # is never exposed to the LAN, so leaving registration open is low-risk.
+  # ATUIN_CONFIG_DIR isolates server state from the home-manager-managed
+  # client config at ~/.config/atuin.
+  launchd.agents.atuin-server = lib.mkIf pkgs.stdenv.isDarwin {
+    enable = true;
+    config = {
+      ProgramArguments = [
+        (lib.getExe' config.programs.atuin.package "atuin-server")
+        "start"
+      ];
+      KeepAlive = true;
+      RunAtLoad = true;
+      EnvironmentVariables = {
+        ATUIN_HOST = "127.0.0.1";
+        ATUIN_PORT = toString atuinPort;
+        ATUIN_OPEN_REGISTRATION = "true";
+        ATUIN_DB_URI = "sqlite://${atuinServerDataDir}/atuin.db";
+        ATUIN_CONFIG_DIR = atuinServerDataDir;
+      };
+      StandardOutPath = "${atuinServerDataDir}/server.log";
+      StandardErrorPath = "${atuinServerDataDir}/server.err.log";
+    };
+  };
+
+  # launchd opens StandardOutPath/StandardErrorPath at load time and does
+  # not create their parent directory, so the data dir must exist before
+  # home-manager's setupLaunchAgents bootstraps the agent -- otherwise the
+  # bootstrap fails on the missing log paths. Ordered after writeBoundary
+  # (the dir's home lives under $HOME) and before setupLaunchAgents.
+  home.activation.ensureAtuinServerDir = lib.mkIf pkgs.stdenv.isDarwin (
+    lib.hm.dag.entryBetween [ "setupLaunchAgents" ] [ "writeBoundary" ] ''
+      run mkdir -p ${lib.escapeShellArg atuinServerDataDir}
+    ''
+  );
 }

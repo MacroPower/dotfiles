@@ -292,6 +292,12 @@ let
     post_create = lib.optionals cfg.lima.enable [
       "direnv allow >/dev/null 2>&1 || true"
       "lefthook install >/dev/null 2>&1 || true"
+      # Authenticate this fresh sandbox to the self-hosted atuin server so its
+      # shell history syncs with the host. Credentials arrive via
+      # env_passthrough; the key is read from the mounted host key (key_path).
+      # Best-effort: an unreachable server, missing creds, or a failed sync
+      # never aborts sandbox setup.
+      "atuin login -u \"$ATUIN_USERNAME\" -p \"$ATUIN_PASSWORD\" >/dev/null 2>&1 && atuin sync >/dev/null 2>&1 || true"
     ];
     panes = [
       {
@@ -337,6 +343,8 @@ let
         "TF_TOKEN_app_us_spacelift_io"
         "TERM_PROGRAM"
         "TERM_PROGRAM_VERSION"
+        "ATUIN_USERNAME"
+        "ATUIN_PASSWORD"
       ];
       extra_mounts = [
         {
@@ -363,6 +371,14 @@ let
           host_path = cfg.archivesDir;
           guest_path = cfg.archivesDir;
           writable = true;
+        }
+        {
+          # Read-only: the guest reads only the static key. Its own history
+          # DB lives at the Linux /home/<user>/.local/share/atuin -- a
+          # different absolute path -- so there is no write conflict.
+          host_path = atuinDataDir;
+          guest_path = atuinDataDir;
+          writable = false;
         }
       ];
       lima = {
@@ -720,6 +736,8 @@ let
             SPACELIFT_API_KEY_ID = "spacelift_api_key_id";
             SPACELIFT_API_KEY_SECRET = "spacelift_api_key_secret";
             TF_TOKEN_app_us_spacelift_io = "tf_token_app_us_spacelift_io";
+            ATUIN_USERNAME = "atuin_username";
+            ATUIN_PASSWORD = "atuin_password";
           }}
           export TF_CLI_CONFIG_FILE="${config.xdg.configHome}/opentofu/tofurc"
         '
@@ -752,6 +770,10 @@ let
       "${config.dotfiles.obsidian.vaultsDir}/${cfg.research.vault}/research"
     else
       "${config.home.homeDirectory}/.local/share/claude/research";
+
+  # Host atuin data dir, shared read-only into the sandbox so the guest's
+  # atuin reads the host encryption key (key_path).
+  atuinDataDir = "${config.home.homeDirectory}/.local/share/atuin";
 
   # Default formatter routes auto-installed by hook-router on
   # PostToolUse:Write/Edit/MultiEdit. Plans and research notes
@@ -2663,6 +2685,14 @@ in
       activation.ensureArchivesDir = lib.mkIf cfg.lima.enable (
         lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           run mkdir -p ${lib.escapeShellArg cfg.archivesDir}
+        ''
+      );
+
+      # Lima refuses to start when this extra_mounts host_path is missing,
+      # and atuin creates the dir lazily on first run -- pre-create it.
+      activation.ensureAtuinDataDir = lib.mkIf cfg.lima.enable (
+        lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          run mkdir -p "${atuinDataDir}"
         ''
       );
 

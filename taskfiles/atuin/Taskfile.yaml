@@ -1,0 +1,46 @@
+version: "3"
+
+# Atuin self-hosted sync bootstrap (host side).
+#
+# The sync server runs on the macOS host (loopback) as a launchd agent.
+# Account credentials live in sops (secrets/dotfiles.yaml), populated from
+# Doppler via `task secrets:sync`. Expected keys:
+#   ATUIN_USERNAME, ATUIN_EMAIL, ATUIN_PASSWORD
+#
+# These tasks read the credentials transiently via `sops exec-env`, so no
+# plaintext password is written to disk. Registration writes the encryption
+# key to ~/.local/share/atuin/key.
+#
+# The workmux sandbox VMs auto-login on create (see home/claude.nix
+# post_create) rather than via a task, so there is no VM login task here.
+
+vars:
+  SOPS_FILE: secrets/dotfiles.yaml
+
+tasks:
+  _check-sops-key:
+    internal: true
+    preconditions:
+      - sh: test -f ~/.config/sops/age/keys.txt
+        msg: "sops age key missing. Run 'task secrets:init' first."
+
+  register:
+    desc: Register the shared atuin account on the local self-hosted server (one-time, host)
+    deps: [_check-sops-key]
+    preconditions:
+      - sh: curl -fsS http://127.0.0.1:8888/ >/dev/null 2>&1
+        msg: "atuin server not reachable on 127.0.0.1:8888. Apply config with 'task switch' first."
+    cmds:
+      - >-
+        sops exec-env {{.SOPS_FILE}} '
+        atuin register -u "$ATUIN_USERNAME" -e "$ATUIN_EMAIL" -p "$ATUIN_PASSWORD"'
+      - atuin sync
+
+  login:
+    desc: Log this host into the atuin sync server using sops credentials
+    deps: [_check-sops-key]
+    cmds:
+      - >-
+        sops exec-env {{.SOPS_FILE}} '
+        atuin login -u "$ATUIN_USERNAME" -p "$ATUIN_PASSWORD"'
+      - atuin sync

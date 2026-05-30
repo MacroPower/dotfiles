@@ -31,6 +31,9 @@ includes:
   lima:
     taskfile: ./taskfiles/lima
     dir: .
+  atuin:
+    taskfile: ./taskfiles/atuin
+    dir: .
 
 tasks:
   default:
