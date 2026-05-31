@@ -12,6 +12,114 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// writeContextsConfig writes a minimal kubeconfig with the given
+// current-context and context names, returning its path.
+func writeContextsConfig(t *testing.T, currentContext string, names ...string) string {
+	t.Helper()
+
+	var b strings.Builder
+
+	b.WriteString("apiVersion: v1\nkind: Config\n")
+
+	if currentContext != "" {
+		b.WriteString("current-context: " + currentContext + "\n")
+	}
+
+	if len(names) > 0 {
+		b.WriteString("contexts:\n")
+
+		for _, n := range names {
+			b.WriteString("- name: " + n + "\n  context:\n    cluster: " + n + "\n    user: " + n + "\n")
+		}
+	}
+
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	require.NoError(t, os.WriteFile(path, []byte(b.String()), 0o600))
+
+	return path
+}
+
+// TestKubectxSelected pins the bash-gate selection check, including
+// the union-membership rule that lets a guest context
+// ($CLAUDE_KUBECTX_GUEST_CONFIG) count as selected even though
+// current-context is read from local.yaml only.
+func TestKubectxSelected(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.Setenv
+	t.Run("local context selected", func(t *testing.T) {
+		local := writeContextsConfig(t, "kind-dev", "kind-dev")
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", "")
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+
+		assert.Equal(t, local, kubectxSelected())
+	})
+
+	t.Run("guest context selected via union", func(t *testing.T) {
+		local := writeContextsConfig(t, "tald")
+		guest := writeContextsConfig(t, "", "tald")
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+
+		assert.Equal(t, local, kubectxSelected())
+	})
+
+	t.Run("foreign current-context denied", func(t *testing.T) {
+		local := writeContextsConfig(t, "admin@main")
+		guest := writeContextsConfig(t, "", "tald")
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+
+		assert.Empty(t, kubectxSelected())
+	})
+
+	t.Run("empty current-context denied", func(t *testing.T) {
+		local := writeContextsConfig(t, "", "kind-dev")
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", "")
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+
+		assert.Empty(t, kubectxSelected())
+	})
+
+	t.Run("guest var unset falls back to local-only", func(t *testing.T) {
+		// current-context names a context that exists only in a guest
+		// config the gate cannot see, so without the var it denies.
+		local := writeContextsConfig(t, "tald")
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", "")
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+
+		assert.Empty(t, kubectxSelected())
+	})
+
+	t.Run("missing guest file is no error and denies", func(t *testing.T) {
+		local := writeContextsConfig(t, "tald")
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", filepath.Join(t.TempDir(), "absent"))
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+
+		assert.Empty(t, kubectxSelected())
+	})
+
+	t.Run("external sidecar present selects", func(t *testing.T) {
+		local := writeContextsConfig(t, "admin@main")
+		sidecar := filepath.Join(t.TempDir(), "kubeconfig")
+		require.NoError(t, os.WriteFile(sidecar, []byte("apiVersion: v1\nkind: Config\n"), 0o600))
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", "")
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", sidecar)
+
+		assert.Equal(t, local, kubectxSelected())
+	})
+
+	t.Run("CLAUDE_KUBECTX_LOCAL unset denies", func(t *testing.T) {
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
+
+		assert.Empty(t, kubectxSelected())
+	})
+}
+
 func TestHandleSessionEnd(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.Setenv
 	logger := slog.New(slog.DiscardHandler)
 

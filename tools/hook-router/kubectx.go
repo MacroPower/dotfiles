@@ -58,8 +58,9 @@ func loadKubeconfigContexts(path string) (*kubeconfigContexts, error) {
 // $KUBECONFIG and holds the authoritative current-context. A
 // context counts as selected only when current-context is non-empty
 // AND one of:
-//   - it names a context defined in the local file (in-sandbox
-//     cluster-admin creds, inline in local.yaml), or
+//   - it names a context in the union of local.yaml and, on the guest
+//     image, the guest's ~/.kube/config (in-sandbox cluster-admin
+//     creds, inline in whichever of those two files defines it), or
 //   - the external sidecar symlink exists at $CLAUDE_KUBECTX_SIDECAR,
 //     meaning mcp-kubectx published usable view-scoped creds.
 //
@@ -69,6 +70,10 @@ func loadKubeconfigContexts(path string) (*kubeconfigContexts, error) {
 // actionable "select a context first" deny instead of letting
 // kubectl fail with a raw auth error. The bare stub (empty
 // current-context) likewise denies.
+//
+// current-context is read from local.yaml only, preserving the
+// "select first" authority even when the named context is defined in
+// the guest config.
 func kubectxSelected() string {
 	local := os.Getenv("CLAUDE_KUBECTX_LOCAL")
 	if local == "" {
@@ -80,10 +85,8 @@ func kubectxSelected() string {
 		return ""
 	}
 
-	for _, c := range cfg.Contexts {
-		if c.Name == cfg.CurrentContext {
-			return local
-		}
+	if contextInUnion(cfg, cfg.CurrentContext) {
+		return local
 	}
 
 	if sidecar := os.Getenv("CLAUDE_KUBECTX_SIDECAR"); sidecar != "" {
@@ -93,6 +96,48 @@ func kubectxSelected() string {
 	}
 
 	return ""
+}
+
+// contextInUnion reports whether name is defined in the local
+// kubeconfig contexts or, when $CLAUDE_KUBECTX_GUEST_CONFIG is set, in
+// the guest's ~/.kube/config. The guest config is loaded tolerantly:
+// an unset var or a missing/unreadable file contributes no contexts,
+// so off-guest the check is exactly the local-only membership test.
+//
+// The var is read from the hook-router's own process env, descended
+// from the wrapped claude process that exported it -- the same
+// provenance as $CLAUDE_KUBECTX_LOCAL / $CLAUDE_KUBECTX_SIDECAR -- so
+// it is present whenever the gate evaluates a guest-local selection.
+//
+// This is the gate-side twin of mcp-kubectx's localContextNames union.
+// The two live in separate binaries with no shared package, so the
+// local+guest membership rule is maintained in both; keep them in sync.
+func contextInUnion(local *kubeconfigContexts, name string) bool {
+	defines := func(cfg *kubeconfigContexts) bool {
+		for _, c := range cfg.Contexts {
+			if c.Name == name {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	if defines(local) {
+		return true
+	}
+
+	guest := os.Getenv("CLAUDE_KUBECTX_GUEST_CONFIG")
+	if guest == "" {
+		return false
+	}
+
+	cfg, err := loadKubeconfigContexts(guest)
+	if err != nil {
+		return false
+	}
+
+	return defines(cfg)
 }
 
 // handleSessionEnd removes the per-session kubectx directory rooted

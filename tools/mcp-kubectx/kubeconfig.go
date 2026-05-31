@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -326,27 +327,105 @@ func loadLocalConfig() (*kubeConfig, error) {
 	return loadKubeconfig(path)
 }
 
-// localContextNames returns the set of context names defined in the
-// local kubeconfig. Empty when $CLAUDE_KUBECTX_LOCAL is unset or the
-// file is the bare stub the wrapper pre-creates. The select
-// dispatch uses membership here to route a context to the local
-// (cluster-admin, no SA) path instead of the external SA-mint path.
-func localContextNames() (map[string]struct{}, error) {
-	cfg, err := loadLocalConfig()
-	if err != nil {
-		return nil, err
+// guestConfigPath returns the guest's ~/.kube/config path when the
+// launcher wrapper exported $CLAUDE_KUBECTX_GUEST_CONFIG, or "" when
+// the var is unset. The wrapper exports it only on the Lima guest
+// image (gated by the dotfiles.claude.guestKubeconfigLocal build
+// flag), so a serve that never received it -- a Darwin-host direct
+// run, or any test -- sees "" and treats the guest config as absent.
+//
+// The decision keys on the env var alone, intentionally independent
+// of [*handler.isGuest] / WM_SANDBOX_GUEST: the guest-config source is
+// a property of how the wrapper laid out $KUBECONFIG, not of the
+// host/guest shell-out routing, so the two must not be conflated.
+func guestConfigPath() string {
+	return os.Getenv("CLAUDE_KUBECTX_GUEST_CONFIG")
+}
+
+// loadGuestConfig reads the guest's ~/.kube/config -- the second entry
+// in the in-sandbox merged $KUBECONFIG -- which holds the cluster and
+// user definitions for guest-local clusters (kind / k3d / minikube /
+// Talos-in-Docker). Returns (nil, nil) when $CLAUDE_KUBECTX_GUEST_CONFIG
+// is unset or the file does not exist yet (it is created the first
+// time a guest cluster is provisioned), so callers degrade to the
+// local.yaml-only view. A read or parse failure of an existing file
+// surfaces as a non-nil error.
+func loadGuestConfig() (*kubeConfig, error) {
+	path := guestConfigPath()
+	if path == "" {
+		return nil, nil //nolint:nilnil // unset var is a valid "no guest config" state
 	}
 
-	names := make(map[string]struct{})
-	if cfg == nil {
-		return names, nil
+	cfg, err := loadKubeconfig(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil //nolint:nilnil // missing file is a valid "no guest config yet" state
 	}
 
-	for _, c := range cfg.Contexts {
-		names[c.Name] = struct{}{}
+	return cfg, err
+}
+
+// localView reads the in-sandbox local sources and returns the
+// merged-view selection plus the union of context names that route to
+// the local (cluster-admin, no SA) path.
+//
+// current is read from local.yaml ($CLAUDE_KUBECTX_LOCAL) only -- the
+// MCP-owned selection authority, first-file-wins in the merged
+// $KUBECONFIG -- so an in-sandbox selection never depends on a plain
+// guest shell's current-context. names is the order-preserving deduped
+// union of the contexts in local.yaml and, when set, the guest's
+// ~/.kube/config; local.yaml names come first so a name in both
+// resolves to the local.yaml entry (client-go first-file-wins) and
+// list() output stays stable.
+//
+// A read/parse failure of either source degrades to whatever the other
+// source provides rather than failing the caller: list() falls back to
+// the external-only view and the route check simply omits the
+// unreadable source's names.
+func localView() (current string, names []string) {
+	seen := make(map[string]struct{})
+
+	add := func(cfg *kubeConfig) {
+		for _, c := range cfg.Contexts {
+			if _, dup := seen[c.Name]; dup {
+				continue
+			}
+
+			seen[c.Name] = struct{}{}
+			names = append(names, c.Name)
+		}
 	}
 
-	return names, nil
+	local, lerr := loadLocalConfig()
+	if lerr == nil && local != nil {
+		current = local.CurrentContext
+
+		add(local)
+	}
+
+	guest, gerr := loadGuestConfig()
+	if gerr == nil && guest != nil {
+		add(guest)
+	}
+
+	return current, names
+}
+
+// localContextNames returns the set of context names that route to the
+// local (cluster-admin, no SA) path: the deduped union of the contexts
+// in local.yaml ($CLAUDE_KUBECTX_LOCAL) and, when
+// $CLAUDE_KUBECTX_GUEST_CONFIG is set, the guest's ~/.kube/config.
+// [*handler.selectCtx] uses membership here to route a context away
+// from the external SA-mint path. Empty when neither source defines a
+// context (out-of-wrapper serve, or the bare local.yaml stub).
+func localContextNames() map[string]struct{} {
+	_, names := localView()
+
+	set := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		set[n] = struct{}{}
+	}
+
+	return set
 }
 
 // setLocalCurrentContext rewrites the top-level current-context in
@@ -356,16 +435,20 @@ func localContextNames() (map[string]struct{}, error) {
 //
 // In the merged $KUBECONFIG the local file is first, so client-go
 // resolves current-context first-file-wins: this file is the
-// authoritative merged-view selection for both external and local
-// contexts. select writes through here so an external selection
-// still takes effect even though the external creds live in the
-// second (sidecar) entry.
+// authoritative merged-view selection for external, guest-local, and
+// in-sandbox-local contexts alike. select writes through here so a
+// selection takes effect even when the selected context's creds live
+// in another merge entry -- the sidecar for an external context, the
+// guest's ~/.kube/config for a guest-local one. local.yaml itself
+// holds only the current-context selection; the MCP never writes
+// cluster/user entries into it.
 //
 // The write round-trips the file through [kubeConfig], so the local
 // file is normalized to that modeled subset on every call:
 // top-level preferences/extensions and per-context extensions are
-// not preserved. The local-cluster tools in scope (kind / k3d /
-// minikube / k3s) do not emit those fields.
+// not preserved. Keeping cluster/user definitions out of local.yaml
+// is what makes that round-trip lossless and safe -- the user's real
+// guest config is never normalized through here.
 func setLocalCurrentContext(name string) error {
 	path := os.Getenv("CLAUDE_KUBECTX_LOCAL")
 	if path == "" {
@@ -392,9 +475,11 @@ type ListInput struct{}
 
 // list relays the external contexts from `host list` (read from the
 // admin kubeconfig) merged with the in-sandbox contexts defined in
-// the local kubeconfig, tagged `(local)`. The single `(current)`
-// marker is derived from the local file's current-context -- the
-// merged-view source of truth -- not from the admin kubeconfig's
+// the local sources, tagged `(local)`. The local set is the union of
+// local.yaml and, on the guest image, the guest's ~/.kube/config (see
+// [localView]); a name defined in both is listed once. The single
+// `(current)` marker is derived from local.yaml's current-context --
+// the merged-view source of truth -- not from the admin kubeconfig's
 // own current-context, which is meaningless in the merged view that
 // `host list` cannot see.
 func (h *handler) list(
@@ -409,20 +494,7 @@ func (h *handler) list(
 		return toolError(err), nil, nil
 	}
 
-	var (
-		localNames []string
-		current    string
-	)
-
-	// A read/parse failure degrades to the external-only view rather
-	// than failing the whole list.
-	cfg, lerr := loadLocalConfig()
-	if lerr == nil && cfg != nil {
-		current = cfg.CurrentContext
-		for _, c := range cfg.Contexts {
-			localNames = append(localNames, c.Name)
-		}
-	}
+	current, localNames := localView()
 
 	return toolResult(mergeListOutput(string(stdout), localNames, current)), nil, nil
 }
@@ -519,19 +591,19 @@ func (h *handler) selectCtx(
 		return toolError(ErrMissingContext), nil, nil
 	}
 
-	// A context defined in the local kubeconfig carries its own inline
-	// admin creds; it takes the local path -- no host shell-out, no SA.
-	// Local wins on a name collision with the admin kubeconfig. A read
-	// failure here falls through to the external path rather than
-	// misrouting a real external context.
-	names, lerr := localContextNames()
-	if lerr == nil {
-		if _, isLocal := names[input.Context]; isLocal {
-			// The drain inside selectLocalCtx derives from
-			// context.Background by design, breaking the request-ctx
-			// chain on purpose; see the selectLocalCtx doc.
-			return h.selectLocalCtx(input.Context) //nolint:contextcheck // see comment
-		}
+	// Route by union membership first: a name defined in local.yaml OR
+	// the guest's ~/.kube/config takes the local path -- no host
+	// shell-out, no SA. Its cluster/user/creds resolve from whichever
+	// of those two merge entries defines it (local.yaml first-file-wins
+	// on a collision). Only a name absent from both falls through to
+	// the external SA-mint path below. The union check is load-bearing:
+	// a guest cluster's apiserver is unreachable from the macOS host,
+	// so minting an SA against it would fail -- it must route local.
+	if _, isLocal := localContextNames()[input.Context]; isLocal {
+		// The drain inside selectLocalCtx derives from
+		// context.Background by design, breaking the request-ctx
+		// chain on purpose; see the selectLocalCtx doc.
+		return h.selectLocalCtx(input.Context) //nolint:contextcheck // see comment
 	}
 
 	h.mu.Lock()
@@ -633,11 +705,14 @@ func drainCleanups(prev []func(context.Context)) {
 	}
 }
 
-// selectLocalCtx activates an in-sandbox context defined in the
-// local kubeconfig: it sets current-context there and idles the UDS
-// token path. No `host select` shell-out and no ServiceAccount --
-// the local context carries its own inline cluster-admin creds in
-// the local file, which kubectl reads directly.
+// selectLocalCtx activates an in-sandbox context from the local
+// sources: it sets current-context in local.yaml and idles the UDS
+// token path. No `host select` shell-out and no ServiceAccount -- the
+// context carries its own inline cluster-admin creds, which kubectl
+// reads directly from whichever merge entry defines it: local.yaml
+// for an in-sandbox tool's cluster, or the guest's ~/.kube/config
+// (the middle merge entry) for a guest-local cluster. Only
+// current-context is written, and only to local.yaml.
 //
 // Ordering is pinned so a partial failure never tears state:
 //   - snapshot the prior cleanups but do NOT clear them yet;

@@ -229,6 +229,11 @@
           remoteControl = true;
           research.useVault = true;
           fetchAllowlist = false;
+          # This image runs Claude inside the Lima sandbox, where
+          # ~/.kube/config is the guest's own config (no host admin
+          # creds). Surface it as a local kubectx source so guest-local
+          # clusters behave like any normal cluster.
+          guestKubeconfigLocal = true;
         };
         ytdlp.enable = true;
       };

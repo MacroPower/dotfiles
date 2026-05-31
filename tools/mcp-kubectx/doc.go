@@ -251,11 +251,48 @@
 // cluster directly via [KubeClient.CreateTokenRequest]. Pinned by
 // `TestHostTokenSkipsWorkmuxWhenEnvSetToGuest`.
 //
+// # In-sandbox merged kubeconfig
+//
+// The launcher wrapper composes the in-sandbox $KUBECONFIG as a
+// colon-list with a single writer each. Off the Lima guest it is two
+// entries:
+//
+//	$CLAUDE_KUBECTX_LOCAL : $CLAUDE_KUBECTX_SIDECAR
+//	   (selection overlay)    (external SA creds)
+//
+// On the Lima guest image the guest's own ~/.kube/config is spliced
+// into the middle, making it a first-class local source:
+//
+//	$CLAUDE_KUBECTX_LOCAL : $HOME/.kube/config : $CLAUDE_KUBECTX_SIDECAR
+//	   (selection overlay)    (guest cluster defs)   (external SA creds)
+//
+// local.yaml ($CLAUDE_KUBECTX_LOCAL) holds only current-context, the
+// MCP-owned merged-view selection (first-file-wins). The guest config
+// ($CLAUDE_KUBECTX_GUEST_CONFIG, set only on the guest image) holds
+// the cluster/user definitions for guest-local clusters (kind / k3d /
+// minikube / Talos-in-Docker) and is read, never written, by the MCP:
+// [localView] enumerates its contexts alongside local.yaml's as the
+// union driving [*handler.list] output and [*handler.selectCtx]
+// routing. The sidecar carries the exec-plugin recipe for external
+// contexts.
+//
+// [*handler.selectCtx] routes by union membership first: a name in
+// local.yaml or the guest config takes the local (no-SA) path; only a
+// name absent from both takes the external SA-mint path. The union is
+// load-bearing -- a guest cluster's apiserver is unreachable from the
+// macOS host, so an SA mint against it would fail. client-go is
+// first-file-wins, so the guest config shadows the sidecar on a name
+// collision; the routing invariant keeps each selected name defined in
+// exactly one effective source. See [guestConfigPath] for why the
+// guest-config source keys on the env var alone, independent of
+// host/guest shell-out routing.
+//
 // # See also
 //
 // README.md in this package carries the YAML kubeconfig samples (host
 // and guest variants), the [ExecCredential] JSON sample, the
-// `home/claude.nix` `host_commands` deployment requirement, and the
+// `home/claude.nix` `host_commands` deployment requirement, the
+// three-way merge and its collision-precedence invariant, and the
 // end-to-end env-chain explanation that closes the recursion-guard
 // story.
 package main

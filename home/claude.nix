@@ -694,6 +694,23 @@ let
       "$@"
   '';
 
+  # The launcher wrapper's in-sandbox merged $KUBECONFIG, emitted as
+  # exactly ONE `export KUBECONFIG` --run line so a later --run cannot
+  # shadow an earlier one. local.yaml (MCP-owned selection overlay,
+  # first-file-wins) and the sidecar (external SA creds) always bracket
+  # the colon-list. On the Lima guest image (guestKubeconfigLocal) the
+  # guest's own ~/.kube/config is spliced between them, with a preceding
+  # --run that exports $CLAUDE_KUBECTX_GUEST_CONFIG, so guest-local
+  # clusters (kind / k3d / minikube / Talos-in-Docker) resolve like any
+  # normal cluster. The interpolation carries no trailing line
+  # continuation; the wrapProgram call site supplies the `\`.
+  kubectxKubeconfigRunArgs =
+    if cfg.guestKubeconfigLocal then
+      "--run 'export CLAUDE_KUBECTX_GUEST_CONFIG=\"$HOME/.kube/config\"' \\\n        "
+      + "--run 'export KUBECONFIG=\"$CLAUDE_KUBECTX_LOCAL:$CLAUDE_KUBECTX_GUEST_CONFIG:$CLAUDE_KUBECTX_SIDECAR\"'"
+    else
+      "--run 'export KUBECONFIG=\"$CLAUDE_KUBECTX_LOCAL:$CLAUDE_KUBECTX_SIDECAR\"'";
+
   # Wrap claude with its invocation-time env so vars survive boundaries that
   # don't propagate the shell env (lima VMs, ssh without SendEnv, etc.).
   claudeWrapped = pkgs.symlinkJoin {
@@ -709,7 +726,7 @@ let
         --run 'export CLAUDE_KUBECTX_SIDECAR="$CLAUDE_KUBECTX_DIR/kubeconfig"' \
         --run 'export CLAUDE_KUBECTX_LOCAL="$CLAUDE_KUBECTX_DIR/local.yaml"' \
         --run '[ -f "$CLAUDE_KUBECTX_LOCAL" ] || printf "apiVersion: v1\nkind: Config\n" > "$CLAUDE_KUBECTX_LOCAL"' \
-        --run 'export KUBECONFIG="$CLAUDE_KUBECTX_LOCAL:$CLAUDE_KUBECTX_SIDECAR"' \
+        ${kubectxKubeconfigRunArgs} \
         --set CLAUDE_CODE_TMUX_TRUECOLOR 1 \
         --set CLAUDE_CODE_NO_FLICKER 1 \
         --set DISABLE_AUTOUPDATER 1 \
@@ -996,6 +1013,31 @@ in
         starts. Drives both the `--socket-slots` flag passed to the
         binary and the size of the rendered allowlist; the two cannot
         drift because they share this option.
+      '';
+    };
+
+    guestKubeconfigLocal = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Treat the guest's own `~/.kube/config` as an in-sandbox
+        "local" kubectx source. When enabled, the Claude launcher
+        wrapper exports `$CLAUDE_KUBECTX_GUEST_CONFIG` and splices the
+        guest config into the middle of the merged `$KUBECONFIG`
+        (`$CLAUDE_KUBECTX_LOCAL : ~/.kube/config :
+        $CLAUDE_KUBECTX_SIDECAR`), mcp-kubectx enumerates and routes
+        its contexts as `(local)`, and the `~/.kube/config*` Read deny
+        is dropped so the Read tool can see guest cluster definitions.
+        A guest-local cluster (kind / k3d / minikube / Talos-in-Docker)
+        then behaves like any normal cluster from any guest shell, with
+        no per-consumer kubeconfig merge glue.
+
+        Enable this ONLY on the Lima guest image that runs Claude
+        inside the sandbox (`hosts/nixos/terrarium.nix`). On the macOS
+        host and every other profile it must stay false: there
+        `~/.kube/config` holds real admin credentials that must never
+        enter the sandbox, the Read deny stays in force, and the merge
+        keeps its byte-identical two-entry form.
       '';
     };
 
@@ -2384,8 +2426,6 @@ in
                 "Read(//**/.docker/config.json)"
                 "Read(//**/.docker/certs.d/**)"
                 "Read(//**/.config/containers/auth.json)"
-                "Read(//**/.kube/config)"
-                "Read(//**/.kube/config*)"
                 "Read(//**/.talos/**)"
                 "Read(//**/.cosign/**)"
                 "Read(//**/.helm/repository/repositories.yaml)"
@@ -2430,6 +2470,16 @@ in
                 # Developer tool sessions & generated keys
                 "Read(//**/atuin/key)"
                 "Read(//**/.lima/_config/user)"
+              ]
+              # On the Lima guest image ~/.kube/config is a readable
+              # local kubectx source (guestKubeconfigLocal); everywhere
+              # else it holds host admin creds and stays denied. The
+              # sidecar and scoped kubeconfigs live under
+              # $CLAUDE_KUBECTX_DIR / $XDG_STATE_HOME, not any .kube/
+              # path, so they are unaffected either way.
+              ++ lib.optionals (!cfg.guestKubeconfigLocal) [
+                "Read(//**/.kube/config)"
+                "Read(//**/.kube/config*)"
               ]
               ++ bundledDeny
               ++ cfg.extraPermissions.deny;

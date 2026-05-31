@@ -354,6 +354,111 @@ func TestListMergesLocalContexts(t *testing.T) { //nolint:paralleltest // uses t
 	)
 }
 
+// runListWithHost drives handler.list with a canned `host list`
+// stdout and returns the merged text, asserting the call succeeds.
+// The local/guest sources are taken from the ambient
+// $CLAUDE_KUBECTX_LOCAL / $CLAUDE_KUBECTX_GUEST_CONFIG the caller set.
+func runListWithHost(t *testing.T, hostOut string) string {
+	t.Helper()
+
+	fake := &fakeRunHost{stdout: map[string][]byte{"list": []byte(hostOut)}}
+	h := &handler{
+		kubeconfigPath: "/k",
+		envLookup:      constLookup(""),
+		runHost:        fake.run,
+	}
+
+	result, _, err := h.list(t.Context(), nil, ListInput{})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	return resultText(t, result)
+}
+
+// TestListMergesGuestContexts pins the three-way merged view: when
+// $CLAUDE_KUBECTX_GUEST_CONFIG is set, the guest's ~/.kube/config
+// contexts join local.yaml's as `(local)`, a name in both is listed
+// once, a missing guest file is tolerated, and a guest name colliding
+// with an external one drops the external line (local/guest wins).
+func TestListMergesGuestContexts(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.Setenv
+	t.Run("guest-only contexts enumerated as local", func(t *testing.T) {
+		local := writeTestKubeconfig(t, kubeConfig{
+			APIVersion: "v1", Kind: "Config", CurrentContext: "tald",
+		})
+		guest := writeTestKubeconfig(t, kubeConfig{
+			APIVersion: "v1", Kind: "Config",
+			Contexts: []namedContext{
+				{Name: "tald", Context: contextDetails{Cluster: "tald", User: "tald"}},
+			},
+		})
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
+
+		assert.Equal(t,
+			"Available contexts:\n- prod\n- staging\n- tald (local) (current)\n",
+			runListWithHost(t, "Available contexts:\n- prod (current)\n- staging\n"),
+		)
+	})
+
+	t.Run("name in both local and guest is listed once", func(t *testing.T) {
+		local := writeTestKubeconfig(t, kubeConfig{
+			APIVersion: "v1", Kind: "Config", CurrentContext: "shared",
+			Contexts: []namedContext{
+				{Name: "shared", Context: contextDetails{Cluster: "shared", User: "shared"}},
+			},
+		})
+		guest := writeTestKubeconfig(t, kubeConfig{
+			APIVersion: "v1", Kind: "Config",
+			Contexts: []namedContext{
+				{Name: "shared", Context: contextDetails{Cluster: "shared", User: "shared"}},
+				{Name: "tald", Context: contextDetails{Cluster: "tald", User: "tald"}},
+			},
+		})
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
+
+		assert.Equal(t,
+			"Available contexts:\n- prod\n- shared (local) (current)\n- tald (local)\n",
+			runListWithHost(t, "Available contexts:\n- prod\n"),
+		)
+	})
+
+	t.Run("missing guest file is tolerated", func(t *testing.T) {
+		local := writeTestKubeconfig(t, kubeConfig{
+			APIVersion: "v1", Kind: "Config", CurrentContext: "kind-dev",
+			Contexts: []namedContext{
+				{Name: "kind-dev", Context: contextDetails{Cluster: "kind", User: "kind"}},
+			},
+		})
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", filepath.Join(t.TempDir(), "absent"))
+
+		assert.Equal(t,
+			"Available contexts:\n- prod\n- kind-dev (local) (current)\n",
+			runListWithHost(t, "Available contexts:\n- prod\n"),
+		)
+	})
+
+	t.Run("guest name shadows colliding external", func(t *testing.T) {
+		local := writeTestKubeconfig(t, kubeConfig{
+			APIVersion: "v1", Kind: "Config", CurrentContext: "shared",
+		})
+		guest := writeTestKubeconfig(t, kubeConfig{
+			APIVersion: "v1", Kind: "Config",
+			Contexts: []namedContext{
+				{Name: "shared", Context: contextDetails{Cluster: "shared", User: "shared"}},
+			},
+		})
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
+
+		assert.Equal(t,
+			"Available contexts:\n- prod\n- shared (local) (current)\n",
+			runListWithHost(t, "Available contexts:\n- prod (current)\n- shared\n"),
+		)
+	})
+}
+
 // TestMergeListOutput pins the pure merge transform, including the
 // local-wins collision rule.
 func TestMergeListOutput(t *testing.T) {
@@ -1148,6 +1253,90 @@ func TestSelectLocalContextWriteFailureKeepsPriorState(t *testing.T) { //nolint:
 	n := len(h.cleanupFuncs)
 	h.mu.Unlock()
 	assert.Equal(t, 1, n, "prior cleanup list must be untouched on write failure")
+}
+
+// TestSelectGuestContextRoutesLocal pins that a context defined only
+// in the guest's ~/.kube/config ($CLAUDE_KUBECTX_GUEST_CONFIG) routes
+// to the local path: no `host select` shell-out, no SA, currentSA
+// cleared, and current-context written to local.yaml only. Its creds
+// resolve from the guest config (the middle merge entry); local.yaml
+// is never given a cluster/user entry for it.
+func TestSelectGuestContextRoutesLocal(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	tmp := t.TempDir()
+	local := filepath.Join(tmp, "local.yaml")
+	require.NoError(t, os.WriteFile(local, []byte("apiVersion: v1\nkind: Config\n"), 0o600))
+
+	guest := writeTestKubeconfig(t, kubeConfig{
+		APIVersion: "v1", Kind: "Config",
+		Contexts: []namedContext{
+			{Name: "tald", Context: contextDetails{Cluster: "tald", User: "tald"}},
+		},
+	})
+
+	t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+	t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
+
+	fake := &fakeRunHost{}
+
+	h := &handler{
+		kubeconfigPath: "/admin/kube",
+		envLookup:      constLookup(""),
+		runHost:        fake.run,
+		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+	}
+	h.currentSA.Store(&currentSA{Context: "prod", SAName: "claude-sa-prev", Expiration: 3600})
+
+	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "tald"})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	assert.Empty(t, fake.calls, "guest-local select must not shell out to any host subcommand")
+	assert.Nil(t, h.currentSA.Load(), "guest-local select must clear currentSA")
+
+	got, err := loadKubeconfig(local)
+	require.NoError(t, err)
+	assert.Equal(t, "tald", got.CurrentContext, "selection must be recorded in local.yaml")
+	assert.Empty(t, got.Contexts, "guest context must not be copied into local.yaml")
+}
+
+// TestSelectGuestCollisionRoutesLocal pins the safety-critical
+// precedence: when a guest context name collides with an external
+// context name, select routes local (guest wins, no SA minted). Were
+// it to route external, `host select` would mint an SA against an
+// apiserver unreachable from the host.
+func TestSelectGuestCollisionRoutesLocal(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	tmp := t.TempDir()
+	local := filepath.Join(tmp, "local.yaml")
+	require.NoError(t, os.WriteFile(local, []byte("apiVersion: v1\nkind: Config\n"), 0o600))
+
+	guest := writeTestKubeconfig(t, kubeConfig{
+		APIVersion: "v1", Kind: "Config",
+		Contexts: []namedContext{
+			{Name: "shared", Context: contextDetails{Cluster: "shared", User: "shared"}},
+		},
+	})
+
+	t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+	t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
+
+	fake := &fakeRunHost{}
+
+	h := &handler{
+		kubeconfigPath: "/admin/kube",
+		envLookup:      constLookup(""),
+		runHost:        fake.run,
+		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+	}
+
+	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "shared"})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	assert.Empty(t, fake.calls, "a colliding name must route local, never mint an SA")
+
+	got, err := loadKubeconfig(local)
+	require.NoError(t, err)
+	assert.Equal(t, "shared", got.CurrentContext)
 }
 
 // TestSessionDirCleanupOrdering pins that socketShutdown drains
