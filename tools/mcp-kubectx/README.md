@@ -65,6 +65,90 @@ mcp-kubectx host sweep         # one-shot: delete orphan SAs + bindings from thi
 mcp-kubectx exec-plugin        # kubectl-facing UDS shim
 ```
 
+### Data flow
+
+Two axes decide where bytes go. The _destination_ axis splits on the
+cluster: a local in-sandbox cluster is hit directly with inline
+cluster-admin creds, a remote cluster with a `view`-scoped
+ServiceAccount token minted on the host. The _sandbox_ axis splits on
+where `serve` runs: under seatbelt-level sandboxing it sits in the host
+process tree and forks `host token` directly, under full Lima
+sandboxing it sits inside the guest and the mint crosses the boundary
+via `workmux host-exec`.
+
+In both diagrams, solid edges are direct with no host round-trip,
+dotted edges are the minted-credential round-trip through the UDS, and
+the thick edge is the authenticated API call.
+
+Seatbelt-level sandboxing -- `serve` on the host, direct fork:
+
+```mermaid
+flowchart TB
+  subgraph sb["Seatbelt sandbox (kubectl, ~/.kube/config read-denied)"]
+    kubectl["kubectl / client-go"]
+    kcfg{{"$KUBECONFIG = local.yaml : sidecar"}}
+    plugin["exec-plugin shim"]
+    kubectl --> kcfg
+  end
+
+  subgraph hostproc["Host process tree (outside the seatbelt)"]
+    serve["mcp-kubectx serve<br/>UDS owner"]
+    htoken["mcp-kubectx host token<br/>direct fork, TokenRequest"]
+    admin[("admin kubeconfig")]
+    serve -->|"hostExecArgs<br/>(WM_SANDBOX_GUEST unset)"| htoken
+    htoken --> admin
+  end
+
+  lapi[("in-sandbox API server<br/>kind / k3d -- inline admin")]
+  remote[("remote API server<br/>real cluster -- view-scoped")]
+
+  kcfg -->|"local ctx: inline admin creds"| lapi
+  kcfg -.->|"external ctx: exec-plugin recipe"| plugin
+  plugin -->|"UDS connect (crosses seatbelt)"| serve
+  htoken -.->|"ExecCredential (view token)"| serve
+  serve -.->|"UDS bytes"| plugin
+  plugin -.->|"stdout"| kubectl
+  kubectl ==>|"view-scoped token"| remote
+```
+
+Full Lima sandboxing -- `serve` in the guest, host mint via `workmux host-exec`:
+
+```mermaid
+flowchart TB
+  subgraph guest["Lima terrarium guest (full sandbox)"]
+    kubectl["kubectl / client-go"]
+    kcfg{{"$KUBECONFIG = local.yaml : sidecar"}}
+    plugin["exec-plugin shim"]
+    serve["mcp-kubectx serve<br/>UDS owner (guest-local socket)"]
+    lapi[("in-sandbox API server<br/>kind / k3d / k3s -- inline admin")]
+    kubectl --> kcfg
+  end
+
+  subgraph host["Host (outside the guest)"]
+    wm["workmux RPC server"]
+    htoken["mcp-kubectx host token<br/>TokenRequest"]
+    admin[("admin kubeconfig")]
+    wm -->|"fork, sanitized env (no WM_*)"| htoken
+    htoken --> admin
+  end
+
+  kcfg -->|"local ctx: inline admin creds"| lapi
+  kcfg -.->|"external ctx: exec-plugin recipe"| plugin
+  plugin -->|"UDS connect (guest-local)"| serve
+  serve -->|"hostExecArgs (WM_SANDBOX_GUEST=1)<br/>workmux host-exec mcp-kubectx host token"| wm
+  htoken -.->|"ExecCredential (view token)"| serve
+  serve -.->|"UDS bytes"| plugin
+  plugin -.->|"stdout"| kubectl
+  kubectl ==>|"view-scoped token"| remote[("remote API server<br/>real cluster -- view-scoped")]
+```
+
+A local context is only reachable where a cluster can physically run.
+Only the Lima terrarium has a container runtime, so on the Darwin host
+and in the Dagger container `local.yaml` stays an inert stub and every
+selection takes the external path -- the local edge above is live only
+in the full-Lima diagram.
+See [Threat-model shift for local contexts](#threat-model-shift-for-local-contexts).
+
 ## Scoped kubeconfigs
 
 `host select` writes a single uniform shape regardless of
