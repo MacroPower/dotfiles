@@ -85,15 +85,35 @@ func envTag(forGuest bool) string {
 }
 
 // resolveHostKubeconfigPath returns the kubeconfig path to read,
-// preferring the explicit flag value, then $KUBECONFIG, then
-// ~/.kube/config. Used by both the host subcommands and the serve
-// handler.
+// preferring the explicit flag value, then $KUBECONFIG_HOST, then
+// $KUBECONFIG, then ~/.kube/config. Used by both the host
+// subcommands and the serve handler.
+//
+// $KUBECONFIG_HOST exists because the Claude Code launcher wrapper
+// rewrites $KUBECONFIG to a per-session symlink under
+// $CLAUDE_KUBECTX_DIR. The user's pre-existing $KUBECONFIG, when set,
+// is preserved as $KUBECONFIG_HOST so mcp-kubectx can still read the
+// source kubeconfig (contexts list, credentials for SA creation).
+//
+// A $KUBECONFIG that points inside $CLAUDE_KUBECTX_DIR is the scoped
+// output the wrapper writes per `select`, not a source of contexts:
+// it does not exist until the first select, and never enumerates the
+// host's contexts. When a user relies on the default ~/.kube/config
+// (no pre-existing $KUBECONFIG to preserve as $KUBECONFIG_HOST), the
+// wrapper still rewrites $KUBECONFIG to that scoped path, so this
+// branch is skipped to fall through to ~/.kube/config. The trailing
+// path separator rejects sibling-directory confusion, matching the
+// containment check in [sidecarSymlinkPath].
 func resolveHostKubeconfigPath(flagVal string) string {
 	if flagVal != "" {
 		return flagVal
 	}
 
-	if env := os.Getenv("KUBECONFIG"); env != "" {
+	if env := os.Getenv("KUBECONFIG_HOST"); env != "" {
+		return env
+	}
+
+	if env := os.Getenv("KUBECONFIG"); env != "" && !insideClaudeKubectxDir(env) {
 		return env
 	}
 
@@ -103,6 +123,18 @@ func resolveHostKubeconfigPath(flagVal string) string {
 	}
 
 	return filepath.Join(home, ".kube", "config")
+}
+
+// insideClaudeKubectxDir reports whether path sits inside the
+// per-session $CLAUDE_KUBECTX_DIR the Claude Code launcher wrapper
+// creates for scoped kubeconfigs. Returns false when the env var is
+// unset (out-of-wrapper invocation). The trailing path separator
+// rejects sibling-directory confusion (e.g. CLAUDE_KUBECTX_DIR=
+// /run/claude-kubectx.1 with path=/run/claude-kubectx.12/kubeconfig).
+func insideClaudeKubectxDir(path string) bool {
+	dir := os.Getenv("CLAUDE_KUBECTX_DIR")
+
+	return dir != "" && strings.HasPrefix(path, dir+string(os.PathSeparator))
 }
 
 // runHostList prints the available kubeconfig contexts to stdout.

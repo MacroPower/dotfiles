@@ -81,6 +81,38 @@ func TestHostListMissingFile(t *testing.T) {
 	require.ErrorIs(t, err, ErrLoadKubeconfig)
 }
 
+// TestResolveHostKubeconfigPathSkipsScopedKubeconfig pins the
+// fallthrough that keeps `list` working when a user relies on the
+// default ~/.kube/config: the launcher wrapper rewrites $KUBECONFIG
+// to the scoped output under $CLAUDE_KUBECTX_DIR without preserving
+// $KUBECONFIG_HOST, so resolution must skip that scoped path rather
+// than read a kubeconfig that does not exist until the first select.
+func TestResolveHostKubeconfigPathSkipsScopedKubeconfig(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	scopedDir := t.TempDir()
+	scoped := filepath.Join(scopedDir, "kubeconfig")
+
+	t.Setenv("KUBECONFIG_HOST", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", scopedDir)
+	t.Setenv("KUBECONFIG", scoped)
+
+	got := resolveHostKubeconfigPath("")
+	assert.NotEqual(t, scoped, got, "scoped kubeconfig must not be treated as a host source")
+	assert.True(t, strings.HasSuffix(got, filepath.Join(".kube", "config")))
+}
+
+// TestResolveHostKubeconfigPathHonorsRealKubeconfig pins the
+// out-of-wrapper case: a $KUBECONFIG that does not sit inside
+// $CLAUDE_KUBECTX_DIR is a real source and must be returned as-is.
+func TestResolveHostKubeconfigPathHonorsRealKubeconfig(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	real := filepath.Join(t.TempDir(), "config")
+
+	t.Setenv("KUBECONFIG_HOST", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", "/run/claude-kubectx.1")
+	t.Setenv("KUBECONFIG", real)
+
+	assert.Equal(t, real, resolveHostKubeconfigPath(""))
+}
+
 func TestHostSelectMissingPid(t *testing.T) {
 	t.Parallel()
 

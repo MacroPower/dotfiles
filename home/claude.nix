@@ -703,6 +703,10 @@ let
     inherit (pkgs.llm-agents.claude-code) meta version;
     postBuild = ''
       wrapProgram $out/bin/claude \
+        --run 'if [ -n "''${KUBECONFIG-}" ]; then export KUBECONFIG_HOST="$KUBECONFIG"; fi' \
+        --run 'export CLAUDE_KUBECTX_DIR="''${XDG_RUNTIME_DIR:-/tmp}/claude-kubectx.$$"' \
+        --run 'mkdir -p "$CLAUDE_KUBECTX_DIR"' \
+        --run 'export KUBECONFIG="$CLAUDE_KUBECTX_DIR/kubeconfig"' \
         --set CLAUDE_CODE_TMUX_TRUECOLOR 1 \
         --set CLAUDE_CODE_NO_FLICKER 1 \
         --set DISABLE_AUTOUPDATER 1 \
@@ -2587,6 +2591,16 @@ in
                     {
                       type = "command";
                       command = "${lib.getExe hookRouter} --event SessionStart";
+                    }
+                  ];
+                }
+              ];
+              SessionEnd = [
+                {
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${lib.getExe hookRouter} --event SessionEnd";
                     }
                   ];
                 }

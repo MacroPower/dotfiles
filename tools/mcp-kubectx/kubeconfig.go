@@ -130,14 +130,32 @@ func (h *handler) restoreCleanups(prev []func(context.Context)) {
 
 // sidecarSymlinkPath returns the per-Claude-session symlink path
 // the Claude Code hook-router consults to find the active
-// kubeconfig. Mirrors hook-router's lookup in main.go's
-// configFromEnv: <TMPDIR>/claude-kubectx/<PPID>/kubeconfig. PPID
-// here is Claude (which spawns this serve as a stdio MCP child),
-// so the symlink scopes one kubeconfig to one Claude session
-// without depending on the serve's own pid. Returns "" when PPID
-// <= 1; without a Claude parent there is nothing for hook-router
-// to scope to.
+// kubeconfig.
+//
+// Preferred lookup: $KUBECONFIG, when it sits inside
+// $CLAUDE_KUBECTX_DIR. The Claude Code launcher wrapper sets both,
+// pointing $KUBECONFIG at "$CLAUDE_KUBECTX_DIR/kubeconfig" so a
+// kubectl Bash subprocess inherits the symlink directly without
+// any per-call rewrite by hook-router.
+//
+// The $CLAUDE_KUBECTX_DIR containment check guards against an
+// out-of-wrapper invocation (dev mode, ad-hoc serve) where a stray
+// $KUBECONFIG might point at the user's real kubeconfig: without
+// the check, publishSidecar would overwrite it with a symlink. The
+// trailing path separator on the prefix rejects sibling-directory
+// confusion (e.g. CLAUDE_KUBECTX_DIR=/run/claude-kubectx.1 with
+// $KUBECONFIG=/run/claude-kubectx.12/kubeconfig).
+//
+// Fallback: <TMPDIR>/claude-kubectx/<PPID>/kubeconfig. Preserved so
+// non-wrapper code paths during the transition continue to work.
+// Returns "" when neither path applies (PPID <= 1 and no wrapper
+// env). hook-router falls back to its "no kubeconfig" denial when
+// the symlink does not exist.
 func sidecarSymlinkPath() string {
+	if p := os.Getenv("KUBECONFIG"); p != "" && insideClaudeKubectxDir(p) {
+		return p
+	}
+
 	ppid := os.Getppid()
 	if ppid <= 1 {
 		return ""

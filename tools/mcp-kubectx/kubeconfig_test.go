@@ -75,13 +75,27 @@ func TestResolveKubeconfigPath(t *testing.T) { //nolint:tparallel // subtests us
 
 	t.Run("env set", func(t *testing.T) {
 		// Cannot use t.Parallel with t.Setenv.
+		t.Setenv("KUBECONFIG_HOST", "")
 		t.Setenv("KUBECONFIG", "/env/kubeconfig")
 
 		assert.Equal(t, "/env/kubeconfig", resolveHostKubeconfigPath(""))
 	})
 
+	t.Run("KUBECONFIG_HOST wins over KUBECONFIG", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv.
+		// The Claude Code launcher wrapper sets KUBECONFIG to a
+		// per-session symlink and preserves the user's original
+		// KUBECONFIG as KUBECONFIG_HOST. mcp-kubectx must read the
+		// preserved value when listing contexts or creating an SA.
+		t.Setenv("KUBECONFIG_HOST", "/user/kubeconfig")
+		t.Setenv("KUBECONFIG", "/run/user/1000/claude-kubectx.42/kubeconfig")
+
+		assert.Equal(t, "/user/kubeconfig", resolveHostKubeconfigPath(""))
+	})
+
 	t.Run("default", func(t *testing.T) {
 		// Cannot use t.Parallel with t.Setenv.
+		t.Setenv("KUBECONFIG_HOST", "")
 		t.Setenv("KUBECONFIG", "")
 
 		home, err := os.UserHomeDir()
@@ -399,6 +413,9 @@ func TestSelectPublishesSidecarSymlink(t *testing.T) { //nolint:paralleltest // 
 	// Cannot use t.Parallel with t.Setenv.
 	tmpDir := t.TempDir()
 	t.Setenv("TMPDIR", tmpDir)
+	// Clear the wrapper env so the PPID-based fallback is exercised.
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", "")
 
 	stdout, err := json.Marshal(HostSelectResult{
 		Path:       "/canonical/kubeconfig.yaml",
@@ -444,6 +461,8 @@ func TestSelectPublishesSidecarSymlink(t *testing.T) { //nolint:paralleltest // 
 func TestSelectReplacesStaleSidecarSymlink(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	// Cannot use t.Parallel with t.Setenv.
 	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", "")
 
 	sidecar := sidecarSymlinkPath()
 	require.NotEmpty(t, sidecar, "test must run with PPID > 1")
@@ -486,6 +505,8 @@ func TestSessionDirCleanupRemovesSidecarSymlink(t *testing.T) { //nolint:paralle
 	// Cannot use t.Parallel with t.Setenv.
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", "")
 
 	sidecar := sidecarSymlinkPath()
 	require.NotEmpty(t, sidecar, "test must run with PPID > 1")
@@ -504,6 +525,82 @@ func TestSessionDirCleanupRemovesSidecarSymlink(t *testing.T) { //nolint:paralle
 	require.NoError(t, err, "sidecar parent dir should be left in place")
 }
 
+// TestSidecarSymlinkPathEnvBranch exercises the env-var lookup in
+// [sidecarSymlinkPath]: when the Claude Code launcher wrapper sets
+// both $CLAUDE_KUBECTX_DIR and $KUBECONFIG (with KUBECONFIG inside
+// the dir), mcp-kubectx writes the symlink at $KUBECONFIG directly.
+// Otherwise it falls back to the PPID-based path so non-wrapper
+// invocations keep working during the transition.
+func TestSidecarSymlinkPathEnvBranch(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.Setenv
+	t.Run("KUBECONFIG inside CLAUDE_KUBECTX_DIR: honored verbatim", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv.
+		dir := "/run/user/1000/claude-kubectx.42"
+		kc := dir + "/kubeconfig"
+
+		t.Setenv("CLAUDE_KUBECTX_DIR", dir)
+		t.Setenv("KUBECONFIG", kc)
+
+		assert.Equal(t, kc, sidecarSymlinkPath())
+	})
+
+	t.Run("KUBECONFIG outside CLAUDE_KUBECTX_DIR: falls back to PPID path", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv.
+		// Guards the user's real kubeconfig: a stray KUBECONFIG that
+		// points outside the wrapper dir (dev mode, ad-hoc invocation)
+		// must not be overwritten by publishSidecar.
+		t.Setenv("TMPDIR", t.TempDir())
+		t.Setenv("CLAUDE_KUBECTX_DIR", "/run/user/1000/claude-kubectx.42")
+		t.Setenv("KUBECONFIG", "/home/user/.kube/config")
+
+		got := sidecarSymlinkPath()
+		require.NotEmpty(t, got, "test must run with PPID > 1")
+		assert.NotEqual(t, "/home/user/.kube/config", got,
+			"the user's real kubeconfig must never be returned as the symlink path")
+		assert.Contains(t, got, "claude-kubectx",
+			"fallback path must live under the PPID-based tree")
+	})
+
+	t.Run("CLAUDE_KUBECTX_DIR unset: falls back to PPID path", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv.
+		t.Setenv("TMPDIR", t.TempDir())
+		t.Setenv("CLAUDE_KUBECTX_DIR", "")
+		t.Setenv("KUBECONFIG", "/run/user/1000/claude-kubectx.42/kubeconfig")
+
+		got := sidecarSymlinkPath()
+		require.NotEmpty(t, got, "test must run with PPID > 1")
+		assert.NotEqual(t, "/run/user/1000/claude-kubectx.42/kubeconfig", got,
+			"without CLAUDE_KUBECTX_DIR the env branch must not match")
+	})
+
+	t.Run("sibling-prefix attack: HasPrefix with trailing sep rejects it", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv.
+		// Without the trailing path separator on the prefix check,
+		// CLAUDE_KUBECTX_DIR=/run/claude-kubectx.1 would falsely match
+		// KUBECONFIG=/run/claude-kubectx.12/kubeconfig and let the
+		// publishSidecar write into the wrong session's dir.
+		t.Setenv("TMPDIR", t.TempDir())
+		t.Setenv("CLAUDE_KUBECTX_DIR", "/run/claude-kubectx.1")
+		t.Setenv("KUBECONFIG", "/run/claude-kubectx.12/kubeconfig")
+
+		got := sidecarSymlinkPath()
+		require.NotEmpty(t, got, "test must run with PPID > 1")
+		assert.NotEqual(t, "/run/claude-kubectx.12/kubeconfig", got,
+			"sibling-prefix path must be rejected by the containment check")
+	})
+
+	t.Run("KUBECONFIG unset: falls back to PPID path", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv.
+		t.Setenv("TMPDIR", t.TempDir())
+		t.Setenv("CLAUDE_KUBECTX_DIR", "/run/user/1000/claude-kubectx.42")
+		t.Setenv("KUBECONFIG", "")
+
+		got := sidecarSymlinkPath()
+		require.NotEmpty(t, got, "test must run with PPID > 1")
+		assert.Contains(t, got, "claude-kubectx",
+			"PPID fallback path must apply when KUBECONFIG is unset")
+	})
+}
+
 // TestSelectShellsHostSelect pins that handler.selectCtx forwards
 // the right argv to host select and parses the JSON result back
 // into the MCP success text.
@@ -513,6 +610,8 @@ func TestSelectShellsHostSelect(t *testing.T) { //nolint:paralleltest // uses t.
 	// t.TempDir so test runs do not pollute the developer's
 	// /tmp/claude-kubectx/.
 	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", "")
 
 	stdout, err := json.Marshal(HostSelectResult{
 		Path:       "/tmp/k.yaml",
@@ -657,6 +756,8 @@ func TestSelectShellInvalidJSON(t *testing.T) {
 // JSON result plus the handler's expiration.
 func TestSelectCtxPopulatesCurrentSA(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", "")
 
 	stdout, err := json.Marshal(HostSelectResult{
 		Path:       "/canonical/kubeconfig.yaml",
@@ -696,6 +797,8 @@ func TestSelectCtxPopulatesCurrentSA(t *testing.T) { //nolint:paralleltest // us
 // caller selects a new context that does succeed.
 func TestSelectCtxRestoresCurrentSAOnFailure(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", "")
 
 	prev := &currentSA{
 		Kubeconfig: "/admin/kube",
@@ -731,6 +834,8 @@ func TestSelectCtxRestoresCurrentSAOnFailure(t *testing.T) { //nolint:parallelte
 // restore semantics on the JSON-parse failure branch.
 func TestSelectCtxRestoresCurrentSAOnInvalidJSON(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", "")
 
 	prev := &currentSA{
 		Kubeconfig: "/admin/kube",
@@ -770,6 +875,8 @@ func TestSelectCtxRestoresCurrentSAOnInvalidJSON(t *testing.T) { //nolint:parall
 // released.
 func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", "")
 
 	socketPath := filepath.Join(t.TempDir(), "ordering.sock")
 	kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig.yaml")

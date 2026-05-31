@@ -93,6 +93,63 @@ func TestHasKubectl(t *testing.T) {
 	}
 }
 
+func TestKubectlKubeconfigOverride(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		input string
+		want  bool
+	}{
+		"inline KUBECONFIG assignment": {
+			input: "KUBECONFIG=/x kubectl get pods",
+			want:  true,
+		},
+		"flag separate value": {
+			input: "kubectl --kubeconfig /x get pods",
+			want:  true,
+		},
+		"flag inline value": {
+			input: "kubectl --kubeconfig=/x get pods",
+			want:  true,
+		},
+		"flag in later position": {
+			input: "kubectl get pods --kubeconfig /x",
+			want:  true,
+		},
+		"inline KUBECONFIG expansion": {
+			input: "KUBECONFIG=$OTHER kubectl get pods",
+			want:  true,
+		},
+		"flag inline expansion value": {
+			input: "kubectl --kubeconfig=$VAR get pods",
+			want:  true,
+		},
+		"flag separate expansion value": {
+			input: "kubectl --kubeconfig $VAR get pods",
+			want:  true,
+		},
+		"no match: plain kubectl": {
+			input: "kubectl get pods",
+		},
+		"no match: KUBECONFIG on non-kubectl": {
+			input: "KUBECONFIG=/x helm list",
+		},
+		"no match: env wrapper out of scope": {
+			input: "env -i kubectl get pods",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			_, got := kubectlKubeconfigOverride(prog)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 // TestHandleBashAutoAllow exercises the --auto-allow paths in
 // [handleBash]. RTK fakes are written serially in the parent test
 // before any parallel subtest runs, so each script file is closed
@@ -326,12 +383,12 @@ exit 7`)
 		assert.Equal(t, "deny", hso["permissionDecision"])
 	})
 
-	t.Run("autoAllow=true, kubectl rewrite preserves hookEventName + adds allow", func(t *testing.T) {
+	t.Run("autoAllow=true, kubectl with kubeconfig: allow without updatedInput", func(t *testing.T) {
 		t.Parallel()
 
 		cfg := config{
 			commandRules:   canonicalRules(),
-			kubeconfigPath: "/tmp/claude-kubectx/12345/kubeconfig",
+			kubeconfigPath: "/tmp/claude-kubectx.12345/kubeconfig",
 			autoAllow:      true,
 		}
 
@@ -345,14 +402,29 @@ exit 7`)
 
 		hso, ok := result["hookSpecificOutput"].(map[string]any)
 		require.True(t, ok)
-		assert.Equal(t, "PreToolUse", hso["hookEventName"],
-			"merge must not drop hookEventName")
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
 		assert.Equal(t, "allow", hso["permissionDecision"])
-		assert.Equal(t, "sandbox auto-allow (kubectl rewrite)", hso["permissionDecisionReason"])
+		assert.Equal(t, "sandbox auto-allow (kubectl)", hso["permissionDecisionReason"])
 
-		updated, ok := hso["updatedInput"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "KUBECONFIG=/tmp/claude-kubectx/12345/kubeconfig kubectl get pods", updated["command"])
+		_, hasUpdated := hso["updatedInput"]
+		assert.False(t, hasUpdated,
+			"kubectl handler must not rewrite the command; KUBECONFIG comes from the process env")
+	})
+
+	t.Run("autoAllow=false, kubectl with kubeconfig: no output (normal permission flow)", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules:   canonicalRules(),
+			kubeconfigPath: "/tmp/claude-kubectx.12345/kubeconfig",
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "kubectl get pods"), &stdout, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes(),
+			"without auto-allow, kubectl handler falls through to the normal permission flow")
 	})
 
 	t.Run("autoAllow=true, kubectl no kubeconfig: deny only, no allow merge", func(t *testing.T) {
@@ -375,6 +447,77 @@ exit 7`)
 		require.True(t, ok)
 		assert.Equal(t, "deny", hso["permissionDecision"])
 		assert.Contains(t, hso["permissionDecisionReason"], "mcp__kubectx__select")
+		assert.Contains(t, hso["permissionDecisionReason"], "No kubeconfig selected")
+	})
+
+	t.Run("autoAllow=true, kubectl with kubeconfig override: denies", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules:   canonicalRules(),
+			kubeconfigPath: "/tmp/claude-kubectx.12345/kubeconfig",
+			autoAllow:      true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "kubectl --kubeconfig /etc/other get pods"), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Contains(t, hso["permissionDecisionReason"], "overrides the session kubeconfig")
+	})
+
+	t.Run("autoAllow=true, inline KUBECONFIG override: denies", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules:   canonicalRules(),
+			kubeconfigPath: "/tmp/claude-kubectx.12345/kubeconfig",
+			autoAllow:      true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "KUBECONFIG=/etc/other kubectl get pods"), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Contains(t, hso["permissionDecisionReason"], "overrides the session kubeconfig")
+	})
+
+	t.Run("autoAllow=true, no kubeconfig, override command: no-kubeconfig deny wins", func(t *testing.T) {
+		t.Parallel()
+
+		// With no context selected, the no-kubeconfig deny fires first and
+		// the override check is never reached.
+		cfg := config{
+			commandRules: canonicalRules(),
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "kubectl --kubeconfig /etc/other get pods"), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Contains(t, hso["permissionDecisionReason"], "No kubeconfig selected")
 	})
 
 	t.Run("autoAllow=true, malformed JSON: bypasses auto-allow", func(t *testing.T) {

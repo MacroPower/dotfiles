@@ -212,13 +212,19 @@ func TestRun(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "deny", hso["permissionDecision"])
 		assert.Contains(t, hso["permissionDecisionReason"], "mcp__kubectx__select")
+		assert.Contains(t, hso["permissionDecisionReason"], "No kubeconfig selected")
 	})
 
-	t.Run("PreToolUse Bash: rewrite kubectl with kubeconfig", func(t *testing.T) {
+	t.Run("PreToolUse Bash: kubectl with kubeconfig: no rewrite, no output", func(t *testing.T) {
 		t.Parallel()
 
+		// With KUBECONFIG inherited from the launcher wrapper, the
+		// kubectl subprocess uses the right kubeconfig without any
+		// hook-router rewrite. Without auto-allow, hook-router emits
+		// no JSON and Claude Code's normal permission flow handles
+		// the kubectl invocation.
 		kubeconfigCfg := config{
-			kubeconfigPath: "/tmp/claude-kubectx/12345/kubeconfig",
+			kubeconfigPath: "/tmp/claude-kubectx.12345/kubeconfig",
 			commandRules:   canonicalRules(),
 		}
 
@@ -230,21 +236,7 @@ func TestRun(t *testing.T) {
 
 		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "Bash", nil, kubeconfigCfg, logger)
 		require.NoError(t, err)
-
-		var result map[string]any
-
-		err = json.Unmarshal(stdout.Bytes(), &result)
-		require.NoError(t, err)
-
-		hso, ok := result["hookSpecificOutput"].(map[string]any)
-		require.True(t, ok)
-
-		assert.Equal(t, "PreToolUse", hso["hookEventName"],
-			"Claude Code rejects hookSpecificOutput without hookEventName")
-
-		updated, ok := hso["updatedInput"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "KUBECONFIG=/tmp/claude-kubectx/12345/kubeconfig kubectl get pods", updated["command"])
+		assert.Empty(t, stdout.Bytes())
 	})
 
 	t.Run("PreToolUse Bash: autoAllow flows through run() to handleBash", func(t *testing.T) {
@@ -558,5 +550,35 @@ func TestRun(t *testing.T) {
 		hso, ok := result["hookSpecificOutput"].(map[string]any)
 		require.True(t, ok)
 		assert.Equal(t, "deny", hso["permissionDecision"])
+	})
+}
+
+func TestConfigFromEnv(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.Setenv
+	t.Run("KUBECONFIG unset: kubeconfigPath empty", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv.
+		t.Setenv("KUBECONFIG", "")
+
+		cfg := configFromEnv()
+		assert.Empty(t, cfg.kubeconfigPath)
+	})
+
+	t.Run("KUBECONFIG set but file missing: kubeconfigPath empty", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv.
+		t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "does-not-exist"))
+
+		cfg := configFromEnv()
+		assert.Empty(t, cfg.kubeconfigPath,
+			"missing file must signal 'no context selected' so the bash handler denies")
+	})
+
+	t.Run("KUBECONFIG set and file present: kubeconfigPath honored", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv.
+		path := filepath.Join(t.TempDir(), "kubeconfig")
+		require.NoError(t, os.WriteFile(path, []byte("hi"), 0o600))
+
+		t.Setenv("KUBECONFIG", path)
+
+		cfg := configFromEnv()
+		assert.Equal(t, path, cfg.kubeconfigPath)
 	})
 }

@@ -58,10 +58,17 @@ func configFromEnv() config {
 
 	if ppid := os.Getppid(); ppid > 1 {
 		cfg.claudePID = strconv.Itoa(ppid)
+	}
 
-		p := filepath.Join(os.TempDir(), "claude-kubectx", cfg.claudePID, "kubeconfig")
-		if _, err := os.Stat(p); err == nil {
-			cfg.kubeconfigPath = p
+	// $KUBECONFIG is set by the Claude Code launcher wrapper to a
+	// per-session symlink under $CLAUDE_KUBECTX_DIR. The symlink
+	// only exists after mcp-kubectx publishes it on a successful
+	// `select`, so an unset env var or a missing file both signal
+	// "no context selected" to the bash handler.
+	cfg.kubeconfigPath = os.Getenv("KUBECONFIG")
+	if cfg.kubeconfigPath != "" {
+		if _, err := os.Stat(cfg.kubeconfigPath); err != nil {
+			cfg.kubeconfigPath = ""
 		}
 	}
 
@@ -286,11 +293,16 @@ func run(
 		return handleStop(ctx, input, stdout, store, cfg, ".", logger)
 
 	case "SessionStart":
+		sweepKubectxDirs(kubectxSweepParent(), logger)
+
 		if store == nil {
 			return nil
 		}
 
 		return handleSessionStart(ctx, input, store, cfg.claudePID, logger)
+
+	case "SessionEnd":
+		return handleSessionEnd(ctx, logger)
 
 	case "UserPromptSubmit":
 		if store == nil {

@@ -45,17 +45,6 @@ func denyResponse(reason string) map[string]any {
 	}
 }
 
-func rewriteResponse(command string) map[string]any {
-	return map[string]any{
-		"hookSpecificOutput": map[string]any{
-			"hookEventName": "PreToolUse",
-			"updatedInput": map[string]any{
-				"command": command,
-			},
-		},
-	}
-}
-
 // allowResponse returns a PreToolUse decision that skips the analyzer's
 // permission prompt. Per Claude Code's hook docs, ask and deny rules
 // in settings still fire even when a hook returns "allow".
@@ -70,9 +59,9 @@ func allowResponse(reason string) map[string]any {
 }
 
 // mergeAllow attaches an "allow" permission decision to an existing
-// PreToolUse response (typically from [rewriteResponse]), preserving
-// hookEventName and updatedInput so one response both rewrites the
-// command and skips the analyzer prompt.
+// PreToolUse response, preserving hookEventName and any other
+// hookSpecificOutput fields so one response can both shape behavior
+// and skip the analyzer prompt.
 func mergeAllow(resp map[string]any, reason string) {
 	hso, ok := resp["hookSpecificOutput"].(map[string]any)
 	if !ok {
