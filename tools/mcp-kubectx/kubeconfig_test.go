@@ -1339,6 +1339,62 @@ func TestSelectGuestCollisionRoutesLocal(t *testing.T) { //nolint:paralleltest /
 	assert.Equal(t, "shared", got.CurrentContext)
 }
 
+// TestSetLocalCurrentContextRecreatesReapedFile pins that the writer
+// tolerates a reaped session dir: when $CLAUDE_KUBECTX_LOCAL names a
+// file whose parent dir no longer exists -- a serve restart that left
+// the var exported but swept the directory -- it recreates the stub
+// and records the selection instead of hard-erroring.
+func TestSetLocalCurrentContextRecreatesReapedFile(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	reaped := filepath.Join(t.TempDir(), "claude-kubectx.123", "local.yaml")
+	t.Setenv("CLAUDE_KUBECTX_LOCAL", reaped)
+
+	require.NoError(t, setLocalCurrentContext("admin@local"))
+
+	cfg, err := loadKubeconfig(reaped)
+	require.NoError(t, err)
+	assert.Equal(t, "admin@local", cfg.CurrentContext)
+	assert.Equal(t, "v1", cfg.APIVersion)
+	assert.Equal(t, "Config", cfg.Kind)
+}
+
+// TestSelectGuestContextRecreatesReapedLocal reproduces the restart
+// artifact end to end: the guest config defines the selected context
+// (so routing is local) while $CLAUDE_KUBECTX_LOCAL points at a reaped
+// session dir. The local select path must recreate local.yaml and
+// record current-context rather than failing on the missing write
+// target.
+func TestSelectGuestContextRecreatesReapedLocal(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	reaped := filepath.Join(t.TempDir(), "claude-kubectx.123", "local.yaml")
+	t.Setenv("CLAUDE_KUBECTX_LOCAL", reaped)
+
+	guest := writeTestKubeconfig(t, kubeConfig{
+		APIVersion: "v1", Kind: "Config",
+		Contexts: []namedContext{
+			{Name: "admin@local", Context: contextDetails{Cluster: "local", User: "admin"}},
+		},
+	})
+	t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
+
+	fake := &fakeRunHost{}
+
+	h := &handler{
+		kubeconfigPath: "/admin/kube",
+		envLookup:      constLookup(""),
+		runHost:        fake.run,
+		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+	}
+
+	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "admin@local"})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	assert.Empty(t, fake.calls, "guest-local select must not shell out")
+
+	cfg, err := loadKubeconfig(reaped)
+	require.NoError(t, err)
+	assert.Equal(t, "admin@local", cfg.CurrentContext)
+}
+
 // TestSessionDirCleanupOrdering pins that socketShutdown drains
 // in-flight handlers (waiting for them to exit) before the cleanup
 // closure proceeds to unlink files. Drives this with a runHost

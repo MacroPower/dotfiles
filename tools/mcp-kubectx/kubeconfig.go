@@ -433,6 +433,13 @@ func localContextNames() map[string]struct{} {
 // [writeFileAtomic]). An empty name clears the field. No-op when
 // $CLAUDE_KUBECTX_LOCAL is unset.
 //
+// A reaped session dir is tolerated: across a serve restart the
+// wrapper's $CLAUDE_KUBECTX_LOCAL can outlive the per-session dir it
+// names (the dir is swept once its PID dies), so the stub the wrapper
+// seeds on a clean start may be gone. When the file or its parent is
+// missing, the stub is recreated rather than erroring -- the file
+// holds only current-context, so a fresh one loses nothing.
+//
 // In the merged $KUBECONFIG the local file is first, so client-go
 // resolves current-context first-file-wins: this file is the
 // authoritative merged-view selection for external, guest-local, and
@@ -456,13 +463,20 @@ func setLocalCurrentContext(name string) error {
 	}
 
 	cfg, err := loadKubeconfig(path)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
+		cfg = &kubeConfig{APIVersion: "v1", Kind: "Config"}
+	} else if err != nil {
 		return err
 	}
 
 	cfg.CurrentContext = name
 
 	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrWriteKubeconfig, err)
+	}
+
+	err = os.MkdirAll(filepath.Dir(path), 0o700)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrWriteKubeconfig, err)
 	}
