@@ -137,8 +137,12 @@ time when round-tripping through `workmux host-exec`.
 ## Why this design
 
 The scoped kubeconfig holds the SA name, cluster URL, and CA. No
-token material lives on disk inside the VM. The token exists in
-kubectl's memory for the duration of the API call and is gone after.
+token material lives on disk inside the VM (this holds for external
+contexts only; in-sandbox local clusters carry inline admin creds --
+see [Threat-model shift for local
+contexts](#threat-model-shift-for-local-contexts)). The token
+exists in kubectl's memory for the duration of the API call and is
+gone after.
 Compromise of the bind-mounted directory reveals a recipe for asking
 the host to mint a token, not the token itself, and the host can
 revoke the SA out from under it at any time.
@@ -167,6 +171,88 @@ runs outside both the bash sandbox (host case) and the Lima guest
 (guest case via `workmux host-exec`) -- sidesteps the deny without
 broadening any sandbox grant. Sandbox grants the connect on the
 single socket path; the token mint happens entirely outside.
+
+## Merged kubeconfig: external + in-sandbox clusters
+
+The launcher wrapper splits `$KUBECONFIG` into a two-file
+colon-list with a single writer each, so external (`view`-scoped,
+via mcp-kubectx) and in-sandbox (cluster-admin, direct) clusters
+coexist behind one `kubectl` and one MCP interface:
+
+```
+$KUBECONFIG = $CLAUDE_KUBECTX_LOCAL : $CLAUDE_KUBECTX_SIDECAR
+              ^ local.yaml            ^ kubeconfig (symlink)
+              first entry             second entry
+```
+
+- **`$CLAUDE_KUBECTX_LOCAL`** (`$CLAUDE_KUBECTX_DIR/local.yaml`) is
+  written by in-sandbox cluster tools (kind / k3d / minikube /
+  k3s) and by plain `kubectl config use-context`. The wrapper
+  pre-creates it as a bare stub (`apiVersion: v1` / `kind: Config`).
+- **`$CLAUDE_KUBECTX_SIDECAR`** (`$CLAUDE_KUBECTX_DIR/kubeconfig`)
+  is the mcp-managed symlink to the scoped kubeconfig, effectively
+  read-only to kubectl. It still carries only the exec-plugin
+  recipe for external contexts.
+
+**The stub must always exist.** client-go's `GetDefaultFilename`
+returns the first `$KUBECONFIG` entry that _exists on disk_,
+falling back to the first _listed_ entry only when none exist.
+`kubectl config use-context`, new-context writes, and tool-driven
+cluster writes all target that file. If `local.yaml` were absent,
+those writes would silently land in the sidecar and corrupt mcp
+state. Pre-creating the stub guarantees `local.yaml` always exists,
+so it wins `GetDefaultFilename` and every local write lands there,
+leaving the sidecar pristine.
+
+**`current-context` is local-authoritative.** It is the one field
+both writers want; in a merged list client-go resolves it
+first-file-wins, so `local.yaml` (first) decides. `select` writes
+`current-context` into `local.yaml` for _both_ kinds -- an external
+selection takes effect there even though its creds live in the
+sidecar. Switching is symmetric and last-writer-wins:
+`kubectl config use-context <local>` and `mcp__kubectx__select
+<external>` both rewrite the same field (tmp+rename atomic).
+
+### Unified `list` / `select`
+
+Both MCP tools cover both kinds, dispatching on the context's
+origin (`serve` reads `$CLAUDE_KUBECTX_LOCAL` in-process):
+
+- **`list`** relays the external contexts from `host list` (the
+  admin kubeconfig) plus the contexts defined in `local.yaml`,
+  tagged `(local)`. `host list`'s own ` (current)` suffix is
+  stripped (the admin kubeconfig's current-context is meaningless
+  in the merged view); a single `(current)` marker is reapplied
+  from `local.yaml`'s `current-context`.
+- **`select <ctx>`** branches up front. An external context takes
+  the SA-mint path (host-side mint, publish sidecar) **and** writes
+  `current-context` into `local.yaml`. A context defined in
+  `local.yaml` takes the **local path**: no host shell-out, no SA
+  -- just set `current-context`, release any prior external SA, and
+  store `currentSA` nil so the UDS token path idles. On a name
+  collision **local wins** (rename the external context to surface
+  the shadowed one).
+
+Plain `kubectl config use-context` keeps working for both as a
+fallback, since everything lives in the one merged `$KUBECONFIG`.
+
+### Threat-model shift for local contexts
+
+The scoped-kubeconfig property above -- "no token material lives on
+disk inside the VM" -- does **not** hold for local contexts. A
+local context in `local.yaml` carries usable inline cluster-admin
+creds _inside_ the sandbox. That is safe only because the cluster is
+a throwaway in-VM cluster with no reachability beyond the guest.
+Nothing denies
+reading `local.yaml` -- the sandbox's `~/.kube/config*` read-deny
+does not cover it -- so do not assume a read-deny protects it. The
+admin kubeconfig of any _real_ cluster still never enters the
+sandbox; external access stays `view`-scoped through the UDS.
+
+Only the Lima terrarium VM has a container runtime, so a local
+cluster can only actually run there. On the Darwin host and in the
+Dagger container the plumbing is inert: `local.yaml` stays the bare
+stub and every selection is external.
 
 ## Lifecycle and cleanup
 

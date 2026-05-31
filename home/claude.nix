@@ -706,7 +706,10 @@ let
         --run 'if [ -n "''${KUBECONFIG-}" ]; then export KUBECONFIG_HOST="$KUBECONFIG"; fi' \
         --run 'export CLAUDE_KUBECTX_DIR="''${XDG_RUNTIME_DIR:-/tmp}/claude-kubectx.$$"' \
         --run 'mkdir -p "$CLAUDE_KUBECTX_DIR"' \
-        --run 'export KUBECONFIG="$CLAUDE_KUBECTX_DIR/kubeconfig"' \
+        --run 'export CLAUDE_KUBECTX_SIDECAR="$CLAUDE_KUBECTX_DIR/kubeconfig"' \
+        --run 'export CLAUDE_KUBECTX_LOCAL="$CLAUDE_KUBECTX_DIR/local.yaml"' \
+        --run '[ -f "$CLAUDE_KUBECTX_LOCAL" ] || printf "apiVersion: v1\nkind: Config\n" > "$CLAUDE_KUBECTX_LOCAL"' \
+        --run 'export KUBECONFIG="$CLAUDE_KUBECTX_LOCAL:$CLAUDE_KUBECTX_SIDECAR"' \
         --set CLAUDE_CODE_TMUX_TRUECOLOR 1 \
         --set CLAUDE_CODE_NO_FLICKER 1 \
         --set DISABLE_AUTOUPDATER 1 \

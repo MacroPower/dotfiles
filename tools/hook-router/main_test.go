@@ -553,32 +553,83 @@ func TestRun(t *testing.T) {
 	})
 }
 
+// writeLocalKubeconfig writes a local.yaml with the given
+// current-context and locally-defined context names, returning its
+// path. An empty current produces the bare-stub shape.
+func writeLocalKubeconfig(t *testing.T, current string, contexts ...string) string {
+	t.Helper()
+
+	var b strings.Builder
+
+	b.WriteString("apiVersion: v1\nkind: Config\n")
+
+	if current != "" {
+		fmt.Fprintf(&b, "current-context: %s\n", current)
+	}
+
+	if len(contexts) > 0 {
+		b.WriteString("contexts:\n")
+
+		for _, name := range contexts {
+			fmt.Fprintf(&b, "- name: %s\n  context:\n    cluster: %s\n    user: %s\n", name, name, name)
+		}
+	}
+
+	path := filepath.Join(t.TempDir(), "local.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(b.String()), 0o600))
+
+	return path
+}
+
 func TestConfigFromEnv(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.Setenv
-	t.Run("KUBECONFIG unset: kubeconfigPath empty", func(t *testing.T) {
+	t.Run("CLAUDE_KUBECTX_LOCAL unset: kubeconfigPath empty", func(t *testing.T) {
 		// Cannot use t.Parallel with t.Setenv.
-		t.Setenv("KUBECONFIG", "")
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
 
-		cfg := configFromEnv()
-		assert.Empty(t, cfg.kubeconfigPath)
+		assert.Empty(t, configFromEnv().kubeconfigPath)
 	})
 
-	t.Run("KUBECONFIG set but file missing: kubeconfigPath empty", func(t *testing.T) {
+	t.Run("bare stub (empty current-context): denies", func(t *testing.T) {
 		// Cannot use t.Parallel with t.Setenv.
-		t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "does-not-exist"))
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", writeLocalKubeconfig(t, ""))
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
 
-		cfg := configFromEnv()
-		assert.Empty(t, cfg.kubeconfigPath,
-			"missing file must signal 'no context selected' so the bash handler denies")
+		assert.Empty(t, configFromEnv().kubeconfigPath,
+			"the bare stub has no current-context, so no context is selected")
 	})
 
-	t.Run("KUBECONFIG set and file present: kubeconfigPath honored", func(t *testing.T) {
+	t.Run("current-context names a local context: selected", func(t *testing.T) {
 		// Cannot use t.Parallel with t.Setenv.
-		path := filepath.Join(t.TempDir(), "kubeconfig")
-		require.NoError(t, os.WriteFile(path, []byte("hi"), 0o600))
+		local := writeLocalKubeconfig(t, "kind-dev", "kind-dev")
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
 
-		t.Setenv("KUBECONFIG", path)
+		assert.Equal(t, local, configFromEnv().kubeconfigPath,
+			"a local context with inline creds counts as selected")
+	})
 
-		cfg := configFromEnv()
-		assert.Equal(t, path, cfg.kubeconfigPath)
+	t.Run("external current-context with live sidecar: selected", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv.
+		local := writeLocalKubeconfig(t, "prod")
+		sidecar := filepath.Join(t.TempDir(), "kubeconfig")
+		require.NoError(t, os.Symlink("/scoped/kubeconfig.yaml", sidecar))
+
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", sidecar)
+
+		assert.Equal(t, local, configFromEnv().kubeconfigPath,
+			"an external selection with a published sidecar counts as selected")
+	})
+
+	t.Run("use-context external never MCP-selected: denies", func(t *testing.T) {
+		// Cannot use t.Parallel with t.Setenv. current-context names a
+		// context that is neither local nor backed by a sidecar: the
+		// gate must still emit the actionable select-first deny.
+		t.Setenv("CLAUDE_KUBECTX_LOCAL", writeLocalKubeconfig(t, "prod"))
+		t.Setenv("CLAUDE_KUBECTX_SIDECAR", filepath.Join(t.TempDir(), "no-such-sidecar"))
+
+		assert.Empty(t, configFromEnv().kubeconfigPath,
+			"current-context set with no usable creds must still deny")
 	})
 }

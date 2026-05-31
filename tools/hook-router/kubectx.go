@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
+
+	"gopkg.in/yaml.v3"
 )
 
 // kubectxDirPrefix is the basename prefix that [handleSessionEnd]
@@ -16,6 +19,81 @@ import (
 // directories. The Claude Code launcher wrapper writes the full path
 // as $XDG_RUNTIME_DIR/claude-kubectx.<pid> (falling back to /tmp).
 const kubectxDirPrefix = "claude-kubectx."
+
+// kubeconfigContexts is the minimal kubeconfig shape the bash gate
+// needs: the active current-context plus the set of locally-defined
+// context names. Cluster/user/auth material is intentionally not
+// modeled -- the gate only decides whether a context is selectable,
+// never reads creds.
+type kubeconfigContexts struct {
+	CurrentContext string `yaml:"current-context"`
+	Contexts       []struct {
+		Name string `yaml:"name"`
+	} `yaml:"contexts"`
+}
+
+// loadKubeconfigContexts reads and parses the named kubeconfig into
+// the minimal [kubeconfigContexts] shape.
+func loadKubeconfigContexts(path string) (*kubeconfigContexts, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read kubeconfig: %w", err)
+	}
+
+	var cfg kubeconfigContexts
+
+	err = yaml.Unmarshal(data, &cfg)
+	if err != nil {
+		return nil, fmt.Errorf("parse kubeconfig: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// kubectxSelected returns the local merged kubeconfig path when a
+// context is effectively selected for kubectl, or "" when nothing
+// usable is selected. The bash gate denies kubectl on "".
+//
+// $CLAUDE_KUBECTX_LOCAL is the first entry in the wrapper's merged
+// $KUBECONFIG and holds the authoritative current-context. A
+// context counts as selected only when current-context is non-empty
+// AND one of:
+//   - it names a context defined in the local file (in-sandbox
+//     cluster-admin creds, inline in local.yaml), or
+//   - the external sidecar symlink exists at $CLAUDE_KUBECTX_SIDECAR,
+//     meaning mcp-kubectx published usable view-scoped creds.
+//
+// The compound check rejects a `kubectl config use-context
+// <external>` for a context that was never MCP-selected: it sets
+// current-context but leaves no sidecar, so the gate still emits the
+// actionable "select a context first" deny instead of letting
+// kubectl fail with a raw auth error. The bare stub (empty
+// current-context) likewise denies.
+func kubectxSelected() string {
+	local := os.Getenv("CLAUDE_KUBECTX_LOCAL")
+	if local == "" {
+		return ""
+	}
+
+	cfg, err := loadKubeconfigContexts(local)
+	if err != nil || cfg.CurrentContext == "" {
+		return ""
+	}
+
+	for _, c := range cfg.Contexts {
+		if c.Name == cfg.CurrentContext {
+			return local
+		}
+	}
+
+	if sidecar := os.Getenv("CLAUDE_KUBECTX_SIDECAR"); sidecar != "" {
+		if _, err := os.Lstat(sidecar); err == nil {
+			return local
+		}
+	}
+
+	return ""
+}
 
 // handleSessionEnd removes the per-session kubectx directory rooted
 // at $CLAUDE_KUBECTX_DIR. The directory is created by the Claude

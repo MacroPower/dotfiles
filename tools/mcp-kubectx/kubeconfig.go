@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -129,29 +130,36 @@ func (h *handler) restoreCleanups(prev []func(context.Context)) {
 }
 
 // sidecarSymlinkPath returns the per-Claude-session symlink path
-// the Claude Code hook-router consults to find the active
+// the Claude Code hook-router consults to find the active external
 // kubeconfig.
 //
-// Preferred lookup: $KUBECONFIG, when it sits inside
-// $CLAUDE_KUBECTX_DIR. The Claude Code launcher wrapper sets both,
-// pointing $KUBECONFIG at "$CLAUDE_KUBECTX_DIR/kubeconfig" so a
-// kubectl Bash subprocess inherits the symlink directly without
-// any per-call rewrite by hook-router.
+// Preferred lookup: $CLAUDE_KUBECTX_SIDECAR. The Claude Code
+// launcher wrapper sets it to "$CLAUDE_KUBECTX_DIR/kubeconfig" --
+// the second entry in the merged $KUBECONFIG colon-list. Reading
+// the explicit var short-circuits the containment check below,
+// which cannot inspect a colon-separated $KUBECONFIG: a list never
+// equals a single contained path.
 //
-// The $CLAUDE_KUBECTX_DIR containment check guards against an
-// out-of-wrapper invocation (dev mode, ad-hoc serve) where a stray
-// $KUBECONFIG might point at the user's real kubeconfig: without
-// the check, publishSidecar would overwrite it with a symlink. The
-// trailing path separator on the prefix rejects sibling-directory
-// confusion (e.g. CLAUDE_KUBECTX_DIR=/run/claude-kubectx.1 with
+// Fallback lookup: $KUBECONFIG, when it is a single path sitting
+// inside $CLAUDE_KUBECTX_DIR. Serves an out-of-wrapper serve that
+// sets a single-path $KUBECONFIG. The $CLAUDE_KUBECTX_DIR
+// containment check guards against a stray $KUBECONFIG pointing at
+// the user's real kubeconfig: without it, publishSidecar would
+// overwrite that file with a symlink. The trailing path separator
+// on the prefix rejects sibling-directory confusion (e.g.
+// CLAUDE_KUBECTX_DIR=/run/claude-kubectx.1 with
 // $KUBECONFIG=/run/claude-kubectx.12/kubeconfig).
 //
-// Fallback: <TMPDIR>/claude-kubectx/<PPID>/kubeconfig. Preserved so
-// non-wrapper code paths during the transition continue to work.
-// Returns "" when neither path applies (PPID <= 1 and no wrapper
-// env). hook-router falls back to its "no kubeconfig" denial when
-// the symlink does not exist.
+// Fallback: <TMPDIR>/claude-kubectx/<PPID>/kubeconfig. Serves dev /
+// ad-hoc serve invocations that set no wrapper env. Returns "" when
+// neither path applies (PPID <= 1 and no wrapper env). hook-router
+// falls back to its "no kubeconfig" denial when the symlink does
+// not exist.
 func sidecarSymlinkPath() string {
+	if p := os.Getenv("CLAUDE_KUBECTX_SIDECAR"); p != "" {
+		return p
+	}
+
 	if p := os.Getenv("KUBECONFIG"); p != "" && insideClaudeKubectxDir(p) {
 		return p
 	}
@@ -301,12 +309,94 @@ func loadKubeconfig(path string) (*kubeConfig, error) {
 	return &cfg, nil
 }
 
+// loadLocalConfig reads and parses the in-sandbox merged local
+// kubeconfig at $CLAUDE_KUBECTX_LOCAL -- the first entry in the
+// wrapper's merged $KUBECONFIG, owned by in-sandbox cluster tools
+// and plain `kubectl config use-context`. Returns (nil, nil) when
+// the var is unset (out-of-wrapper serve), so callers degrade to
+// the external-only view. A read or parse failure surfaces as a
+// non-nil error so the select dispatch can fall back to the
+// external path rather than misclassify a context.
+func loadLocalConfig() (*kubeConfig, error) {
+	path := os.Getenv("CLAUDE_KUBECTX_LOCAL")
+	if path == "" {
+		return nil, nil //nolint:nilnil // unset var is a valid "no local file" state
+	}
+
+	return loadKubeconfig(path)
+}
+
+// localContextNames returns the set of context names defined in the
+// local kubeconfig. Empty when $CLAUDE_KUBECTX_LOCAL is unset or the
+// file is the bare stub the wrapper pre-creates. The select
+// dispatch uses membership here to route a context to the local
+// (cluster-admin, no SA) path instead of the external SA-mint path.
+func localContextNames() (map[string]struct{}, error) {
+	cfg, err := loadLocalConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	names := make(map[string]struct{})
+	if cfg == nil {
+		return names, nil
+	}
+
+	for _, c := range cfg.Contexts {
+		names[c.Name] = struct{}{}
+	}
+
+	return names, nil
+}
+
+// setLocalCurrentContext rewrites the top-level current-context in
+// the local kubeconfig and writes it back atomically (tmp+rename via
+// [writeFileAtomic]). An empty name clears the field. No-op when
+// $CLAUDE_KUBECTX_LOCAL is unset.
+//
+// In the merged $KUBECONFIG the local file is first, so client-go
+// resolves current-context first-file-wins: this file is the
+// authoritative merged-view selection for both external and local
+// contexts. select writes through here so an external selection
+// still takes effect even though the external creds live in the
+// second (sidecar) entry.
+//
+// The write round-trips the file through [kubeConfig], so the local
+// file is normalized to that modeled subset on every call:
+// top-level preferences/extensions and per-context extensions are
+// not preserved. The local-cluster tools in scope (kind / k3d /
+// minikube / k3s) do not emit those fields.
+func setLocalCurrentContext(name string) error {
+	path := os.Getenv("CLAUDE_KUBECTX_LOCAL")
+	if path == "" {
+		return nil
+	}
+
+	cfg, err := loadKubeconfig(path)
+	if err != nil {
+		return err
+	}
+
+	cfg.CurrentContext = name
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrWriteKubeconfig, err)
+	}
+
+	return writeFileAtomic(path, data, 0o600)
+}
+
 // ListInput is the MCP input schema for the list tool.
 type ListInput struct{}
 
-// list shells out to `host list` and relays its stdout as the MCP
-// tool result. The host subcommand owns formatting; serve only
-// surfaces it.
+// list relays the external contexts from `host list` (read from the
+// admin kubeconfig) merged with the in-sandbox contexts defined in
+// the local kubeconfig, tagged `(local)`. The single `(current)`
+// marker is derived from the local file's current-context -- the
+// merged-view source of truth -- not from the admin kubeconfig's
+// own current-context, which is meaningless in the merged view that
+// `host list` cannot see.
 func (h *handler) list(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -319,7 +409,89 @@ func (h *handler) list(
 		return toolError(err), nil, nil
 	}
 
-	return toolResult(string(stdout)), nil, nil
+	var (
+		localNames []string
+		current    string
+	)
+
+	// A read/parse failure degrades to the external-only view rather
+	// than failing the whole list.
+	cfg, lerr := loadLocalConfig()
+	if lerr == nil && cfg != nil {
+		current = cfg.CurrentContext
+		for _, c := range cfg.Contexts {
+			localNames = append(localNames, c.Name)
+		}
+	}
+
+	return toolResult(mergeListOutput(string(stdout), localNames, current)), nil, nil
+}
+
+// mergeListOutput rebuilds the `host list` text into the merged
+// view. External lines have their own ` (current)` suffix stripped
+// (the admin kubeconfig's current-context is meaningless here), each
+// local context is appended tagged `(local)`, and a single
+// `(current)` marker is applied wherever a name matches current. On
+// a name collision the local context wins: the external line is
+// dropped so the name resolves to the local entry, matching
+// client-go's first-file-wins merge.
+func mergeListOutput(hostOut string, localNames []string, current string) string {
+	local := make(map[string]struct{}, len(localNames))
+	for _, n := range localNames {
+		local[n] = struct{}{}
+	}
+
+	var b strings.Builder
+
+	b.WriteString("Available contexts:\n")
+
+	wrote := false
+
+	for line := range strings.SplitSeq(hostOut, "\n") {
+		if !strings.HasPrefix(line, "- ") {
+			continue
+		}
+
+		name := strings.TrimSuffix(strings.TrimPrefix(line, "- "), " (current)")
+		if _, shadowed := local[name]; shadowed {
+			continue
+		}
+
+		writeContextLine(&b, name, "", name == current)
+
+		wrote = true
+	}
+
+	for _, name := range localNames {
+		writeContextLine(&b, name, "local", name == current)
+
+		wrote = true
+	}
+
+	if !wrote {
+		return "No contexts found."
+	}
+
+	return b.String()
+}
+
+// writeContextLine appends one `- <name>[ (<tag>)][ (current)]` line.
+// An empty tag omits the tag parenthetical.
+func writeContextLine(b *strings.Builder, name, tag string, current bool) {
+	b.WriteString("- ")
+	b.WriteString(name)
+
+	if tag != "" {
+		b.WriteString(" (")
+		b.WriteString(tag)
+		b.WriteString(")")
+	}
+
+	if current {
+		b.WriteString(" (current)")
+	}
+
+	b.WriteString("\n")
 }
 
 // SelectInput is the MCP input schema for the select tool.
@@ -345,6 +517,21 @@ func (h *handler) selectCtx(
 ) (*mcp.CallToolResult, any, error) {
 	if input.Context == "" {
 		return toolError(ErrMissingContext), nil, nil
+	}
+
+	// A context defined in the local kubeconfig carries its own inline
+	// admin creds; it takes the local path -- no host shell-out, no SA.
+	// Local wins on a name collision with the admin kubeconfig. A read
+	// failure here falls through to the external path rather than
+	// misrouting a real external context.
+	names, lerr := localContextNames()
+	if lerr == nil {
+		if _, isLocal := names[input.Context]; isLocal {
+			// The drain inside selectLocalCtx derives from
+			// context.Background by design, breaking the request-ctx
+			// chain on purpose; see the selectLocalCtx doc.
+			return h.selectLocalCtx(input.Context) //nolint:contextcheck // see comment
+		}
 	}
 
 	h.mu.Lock()
@@ -405,26 +592,87 @@ func (h *handler) selectCtx(
 	// shutdown cleanup at the same file.
 	h.publishSidecar(result.Path)
 
-	if len(prev) > 0 {
-		// drainCtx deliberately derives from context.Background --
-		// the request ctx is canceled by the MCP SDK as soon as
-		// this function returns, which would abort in-flight
-		// Delete* calls and re-leak the SA.
-		drainCtx, cancel := context.WithTimeout(
-			context.Background(),
-			30*time.Second,
+	// The external creds live in the sidecar (second merged entry),
+	// but current-context resolves first-file-wins from the local
+	// file, so the selection only takes effect once written there.
+	// Non-fatal: the SA already exists; a kubectl-side
+	// `use-context` is the fallback.
+	cerr := setLocalCurrentContext(result.Context)
+	if cerr != nil {
+		slog.WarnContext(ctx, "set local current-context",
+			slog.String("context", result.Context),
+			slog.Any("error", cerr),
 		)
-
-		for _, fn := range prev {
-			fn(drainCtx) //nolint:contextcheck // see drainCtx comment
-		}
-
-		cancel()
 	}
+
+	drainCleanups(prev)
 
 	return toolResult(fmt.Sprintf(
 		"Created ServiceAccount for context %q bound to %s.\nKubeconfig written to %s",
 		result.Context, describeBinding(h.sa), result.Path,
+	)), nil, nil
+}
+
+// drainCleanups runs the snapshotted prior cleanup closures (the SA
+// release callbacks registered by an earlier select) with a bounded
+// timeout, then returns. The timeout context derives from
+// [context.Background], not the request ctx: the MCP SDK cancels the
+// request ctx as soon as the tool call returns, which would abort
+// the in-flight Delete* calls and re-leak the prior SA. A nil or
+// empty slice is a no-op.
+func drainCleanups(prev []func(context.Context)) {
+	if len(prev) == 0 {
+		return
+	}
+
+	drainCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	for _, fn := range prev {
+		fn(drainCtx) //nolint:contextcheck // see doc comment
+	}
+}
+
+// selectLocalCtx activates an in-sandbox context defined in the
+// local kubeconfig: it sets current-context there and idles the UDS
+// token path. No `host select` shell-out and no ServiceAccount --
+// the local context carries its own inline cluster-admin creds in
+// the local file, which kubectl reads directly.
+//
+// Ordering is pinned so a partial failure never tears state:
+//   - snapshot the prior cleanups but do NOT clear them yet;
+//   - write current-context; on write error bail without touching
+//     currentSA or the live cleanup list, so the prior selection
+//     (its SA and release closure) stays intact;
+//   - only on success clear currentSA (store nil) so the socket
+//     goroutine stops minting tokens, register no new closure, and
+//     drain the prior closures to release any prior external SA.
+func (h *handler) selectLocalCtx(name string) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	prev := h.cleanupFuncs
+	h.mu.Unlock()
+
+	err := setLocalCurrentContext(name)
+	if err != nil {
+		// Prior selection untouched: currentSA and cleanupFuncs are
+		// exactly as they were, so the previous context keeps working.
+		return toolError(err), nil, nil
+	}
+
+	h.mu.Lock()
+	h.cleanupFuncs = nil
+	h.mu.Unlock()
+
+	// Local creds are inline; the UDS token path must stay idle so a
+	// stray exec-plugin call does not mint against a stale SA.
+	h.currentSA.Store(nil)
+
+	drainCleanups(prev)
+
+	return toolResult(fmt.Sprintf(
+		"Selected local context %q (cluster-admin, in-sandbox creds). "+
+			"No ServiceAccount minted; this context shadows any external context of the same name.",
+		name,
 	)), nil, nil
 }
 

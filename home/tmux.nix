@@ -93,9 +93,16 @@ let
 
       out=""
 
-      # Kubernetes context
-      cfg="''${KUBECONFIG:-}"
-      cfg="''${cfg%%:*}"
+      # Kubernetes context. The mcp-kubectx wrapper splits $KUBECONFIG
+      # into a merged colon-list whose first entry, $CLAUDE_KUBECTX_LOCAL,
+      # holds the authoritative current-context for both local and
+      # external selections. Prefer it; fall back to the first $KUBECONFIG
+      # entry, then the default kubeconfig.
+      cfg="''${CLAUDE_KUBECTX_LOCAL:-}"
+      if [ -z "$cfg" ]; then
+        cfg="''${KUBECONFIG:-}"
+        cfg="''${cfg%%:*}"
+      fi
       cfg="''${cfg:-$HOME/.kube/config}"
       if [ -f "$cfg" ]; then
         ctx=$(yq '.current-context // ""' "$cfg" 2>/dev/null || true)

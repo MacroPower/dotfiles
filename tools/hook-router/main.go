@@ -60,17 +60,13 @@ func configFromEnv() config {
 		cfg.claudePID = strconv.Itoa(ppid)
 	}
 
-	// $KUBECONFIG is set by the Claude Code launcher wrapper to a
-	// per-session symlink under $CLAUDE_KUBECTX_DIR. The symlink
-	// only exists after mcp-kubectx publishes it on a successful
-	// `select`, so an unset env var or a missing file both signal
-	// "no context selected" to the bash handler.
-	cfg.kubeconfigPath = os.Getenv("KUBECONFIG")
-	if cfg.kubeconfigPath != "" {
-		if _, err := os.Stat(cfg.kubeconfigPath); err != nil {
-			cfg.kubeconfigPath = ""
-		}
-	}
+	// The launcher wrapper sets $KUBECONFIG to a colon-list
+	// (local.yaml:sidecar), so a stat on it always fails. Selection
+	// is resolved from the local file's current-context plus the
+	// presence of usable creds; see [kubectxSelected]. A non-empty
+	// return signals "a context is selected" to the bash handler;
+	// "" denies kubectl with the actionable select-first message.
+	cfg.kubeconfigPath = kubectxSelected()
 
 	return cfg
 }
