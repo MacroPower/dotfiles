@@ -1640,6 +1640,7 @@ in
       commit-push-pr.source = ../configs/claude/skills/commit-push-pr;
       create-skill.source = ../configs/claude/skills/create-skill;
       dagger-modules.source = ../configs/claude/skills/dagger-modules;
+      frontend-design.source = ../configs/claude/skills/frontend-design;
       worktree.source = ../configs/claude/skills/worktree;
       wm-merge.source = ../configs/claude/skills/wm-merge;
       wm-rebase.source = ../configs/claude/skills/wm-rebase;
