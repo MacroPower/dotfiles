@@ -2705,8 +2705,8 @@ in
 
         - Keep responses to plain ASCII text.
         - Acknowledge complexity and mixed feelings when they exist.
-        - Your code speaks for itself. Enumeration of content is redundant. Focus instead on the how and why.
-        - Code comments and docs describe the current state of the system, not the change. Avoid temporal framing -- "now does X", "previously did Y", "newly added Z", "the new flag", "before this feature", "existing release flow only needed Q" -- since git history already records what changed and these phrases rot the moment the next commit lands. Write so the file reads the same whether the reader arrived at this commit or wrote it from scratch.
+        - Don't enumerate what the code already shows; explain the how and why.
+        - Write comments and docs in the present tense, describing the system as it is, not how it changed. Our git history records the change.
 
         ## Agents & Concurrency
 
