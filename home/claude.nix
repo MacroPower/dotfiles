@@ -969,15 +969,11 @@ let
 
   bundledInstructions =
     let
-      pairs = lib.filter (p: p.category != "" && p.items != [ ]) (
-        map (b: { inherit (b.instructions) category items; }) bundleValues
-      );
-      grouped = lib.foldl' (
-        acc: p: acc // { ${p.category} = (acc.${p.category} or [ ]) ++ p.items; }
-      ) { } pairs;
-      renderCategory = cat: items: "## ${cat}\n\n" + lib.concatMapStringsSep "\n" (i: "- ${i}") items;
+      items = lib.concatMap (b: b.instructions.items) bundleValues;
     in
-    lib.concatStringsSep "\n\n" (lib.mapAttrsToList renderCategory grouped);
+    lib.optionalString (items != [ ]) (
+      "## Tools\n\n" + lib.concatMapStringsSep "\n" (i: "- ${i}") items
+    );
 in
 {
   options.dotfiles.claude = {
@@ -1573,15 +1569,10 @@ in
               };
             };
             instructions = {
-              category = mkOption {
-                type = types.str;
-                default = "";
-                description = "Section heading (## <category>) in ~/.claude/CLAUDE.md. Bundles sharing a category are grouped.";
-              };
               items = mkOption {
                 type = types.listOf types.str;
                 default = [ ];
-                description = "Instruction lines rendered as a bulleted list under the category heading.";
+                description = "Instruction lines rendered as bullets under the `## Tools` heading in ~/.claude/CLAUDE.md.";
               };
             };
             alwaysLoad = mkOption {
@@ -1691,7 +1682,6 @@ in
           "WebFetch"
         ];
         instructions = {
-          category = "Web Search";
           items = [
             "Use `mcp__fetch__fetch` for fetching known URLs and web page content."
           ];
@@ -1759,7 +1749,6 @@ in
           }
         ];
         instructions = {
-          category = "Code Search";
           items = [
             "Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there."
           ];
@@ -1781,7 +1770,6 @@ in
           }
         ];
         instructions = {
-          category = "Web Search";
           items = [
             "Use `mcp__kagi__kagi_search_fetch` for web searches."
           ];
@@ -1918,7 +1906,6 @@ in
           }
         ];
         instructions = {
-          category = "Code Search";
           items = [
             "Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)"
           ];
@@ -1951,9 +1938,8 @@ in
           "mcp__argocd__run_resource_action"
         ];
         instructions = {
-          category = "Infrastructure";
           items = [
-            "Use the `mcp__argocd__*` tools to interact with Argo CD. Do not use the `argocd` CLI directly."
+            "Use `mcp__argocd__*` tools to interact with Argo CD. Do not use the `argocd` CLI directly."
           ];
         };
       };
@@ -2033,7 +2019,6 @@ in
           "mcp__leanspec__relationships"
         ];
         instructions = {
-          category = "Specs";
           items = [
             "Use `mcp__leanspec__*` tools to read, search, and manage LeanSpec specifications."
           ];
@@ -2286,7 +2271,6 @@ in
           }
         ];
         instructions = {
-          category = "Infrastructure";
           items = [
             "Use `mcp__spacelift__*` tools for Spacelift operations. Do not invoke `spacectl` directly."
           ];
@@ -2343,7 +2327,6 @@ in
           "${config.xdg.stateHome}/mcp-kubectx-run/serve.${toString slot}.guest.sock"
         ]) (lib.genList lib.id cfg.kubectxSocketSlots);
         instructions = {
-          category = "Kubernetes";
           items = [
             "Use `mcp__kubectx__list` to see available Kubernetes contexts."
             "Use `mcp__kubectx__select` to activate a context before running kubectl commands."
