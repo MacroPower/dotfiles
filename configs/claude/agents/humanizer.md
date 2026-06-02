@@ -2,7 +2,6 @@
 name: humanizer
 description: |-
   Use this agent to review text for AI writing patterns and rewrite it to sound more natural.
-model: "opus[1m]"
 color: orange
 ---
 

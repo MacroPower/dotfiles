@@ -2,9 +2,6 @@
 name: implementation-reviewer-docs
 description: |-
   Use this agent to review prose quality after implementing a plan.
-  If the reviewer finds issues, fix them and run the reviewer again.
-  Repeat until you get LGTM.
-model: "opus[1m]"
 color: blue
 ---
 

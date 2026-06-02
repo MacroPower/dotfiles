@@ -2,8 +2,6 @@
 name: implementation-reviewer-code
 description: |-
   Use this agent to review code changes after implementing a plan.
-  If the reviewer finds issues, fix them and run the reviewer again.
-  Repeat until you get LGTM.
 model: "opus[1m]"
 color: green
 ---
