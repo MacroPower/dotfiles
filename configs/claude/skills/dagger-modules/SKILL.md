@@ -19,6 +19,8 @@ description: >-
 
 This skill covers the full lifecycle of building Dagger modules in Go: initialization, function design, types, caching, services, secrets, LLM integration, testing, dependencies, toolchains, and publishing.
 
+Targets **Dagger v0.21.x**. The Go SDK is versioned in lockstep with the engine and requires **Go 1.26+**.
+
 ## Quick Reference
 
 | Topic | Reference |
@@ -54,9 +56,11 @@ my-module/
 ├── main.go          # Main object + functions
 ├── build.go         # Additional functions (same package)
 └── internal/        # Generated code (do not edit)
-    ├── dagger/
+    ├── dagger/      # dagger.gen.go + one <dep>.gen.go per dependency
     └── telemetry/
 ```
+
+Each installed dependency gets its own kebab-cased bindings file there (e.g. `my-dep.gen.go`), which keeps `dagger develop` diffs small when dependencies change.
 
 Split across multiple files in the same package freely. Only the top-level package is part of the public API.
 
@@ -100,6 +104,9 @@ dagger develop
 
 # List available functions
 dagger functions
+
+# Run all code generators (// +generate functions) and apply their changes
+dagger generate
 
 # Call a function
 dagger call build --src=.
@@ -292,7 +299,7 @@ func (m *MyModule) Build() *dagger.Container {
 }
 ```
 
-Checks from toolchains are namespaced: `dagger check my-toolchain:lint`. Run all checks from a toolchain with `dagger check my-toolchain:*`. List available checks with `dagger check -l`.
+Checks from toolchains are namespaced: `dagger check my-toolchain:lint`. Run all checks from a toolchain with `dagger check my-toolchain:*`. List available checks with `dagger check -l`. `dagger check` resolves against the entire workspace (all modules and toolchains it contains), not just the current module. Pass `--failfast` to cancel remaining checks on the first failure.
 
 ### Toolchain customization
 
@@ -364,6 +371,10 @@ dagger call deploy --token=op://vault/item/field        # 1Password
 dagger call deploy --token=vault://path/to/secret.item  # HashiCorp Vault
 dagger call deploy --token=aws://prod/github/token      # AWS Secrets Manager
 ```
+
+Always pass an explicit scheme. A bare, scheme-less value is deprecated and emits a warning prompting you to add a scheme prefix (e.g. `env://`); a future release will require it.
+
+Function arguments (including secret references) can be persisted as user-defaults in a local `.env` file (named `MODULE_ARG` or `TYPE_FUNC_ARG`, case-insensitive). Dagger stores the *reference* (e.g. `env://API_TOKEN`), never the raw secret value, so the `.env` holds no secret material.
 
 By default, secrets with identical plaintext share cache entries. For rotating secrets that should still share cache, use a `cacheKey`:
 
@@ -487,9 +498,11 @@ func (t *Tests) All(ctx context.Context) error {
 
 ## Changesets
 
-Functions can return a `*dagger.Changeset` to represent file modifications that should be applied back to the source directory. This is useful for code generation, formatting, and other source-modifying operations:
+Functions can return a `*dagger.Changeset` to represent file modifications that should be applied back to the source directory. This is useful for code generation, formatting, and other source-modifying operations. Annotate a generator with `// +generate` to register it with the `dagger generate` command:
 
 ```go
+// Generate runs go generate and returns changes to apply
+// +generate
 func (m *MyModule) Generate() *dagger.Changeset {
     generated := dag.Container().
         From("golang:1.22").
@@ -501,7 +514,9 @@ func (m *MyModule) Generate() *dagger.Changeset {
 }
 ```
 
-The CLI flag `-y` / `--auto-apply` automatically applies changesets to the source directory. Functions can also return `[]*dagger.Changeset` for multiple sets of changes.
+`dagger generate` runs every `// +generate` function and merges their changesets into the source directory. Each `// +generate` function also gets a matching check automatically, so `dagger check` flags stale generated files (run only the explicit checks with `dagger check --no-generate`; suppress a toolchain's generated checks with `ignoreChecks`).
+
+When a function returns a changeset directly (not via `// +generate`), the CLI flag `-y` / `--auto-apply` applies it to the source directory. Functions can also return `[]*dagger.Changeset` for multiple sets of changes.
 
 ## Dagger Shell
 
