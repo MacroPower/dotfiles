@@ -33,7 +33,7 @@ jobs:
       - name: Build dev container via Dagger
         uses: dagger/dagger-for-github@v8.4.1
         with:
-          version: "v0.20.6"
+          version: "v0.20.8"
           call: >-
             dev publish-shell
             --password=env://REGISTRY_PASSWORD
@@ -57,7 +57,7 @@ jobs:
       - name: Assemble multi-arch manifest via Dagger
         uses: dagger/dagger-for-github@v8.4.1
         with:
-          version: "v0.20.6"
+          version: "v0.20.8"
           call: >-
             dev publish-manifest
             --password=env://REGISTRY_PASSWORD
@@ -89,7 +89,7 @@ jobs:
       - name: Build sandbox container via Dagger
         uses: dagger/dagger-for-github@v8.4.1
         with:
-          version: "v0.20.6"
+          version: "v0.20.8"
           call: >-
             dev publish-sandbox
             --password=env://REGISTRY_PASSWORD
@@ -113,7 +113,7 @@ jobs:
       - name: Assemble multi-arch manifest via Dagger
         uses: dagger/dagger-for-github@v8.4.1
         with:
-          version: "v0.20.6"
+          version: "v0.20.8"
           call: >-
             dev publish-manifest
             --password=env://REGISTRY_PASSWORD
