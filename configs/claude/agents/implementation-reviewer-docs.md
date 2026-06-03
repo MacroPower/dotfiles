@@ -1,7 +1,8 @@
 ---
 name: implementation-reviewer-docs
-description: |-
-  Use this agent to review prose quality after implementing a plan.
+description: >-
+  Review prose quality after implementing a plan.
+  Only use when a skill explicitly calls for it.
 color: blue
 ---
 

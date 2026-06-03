@@ -1,8 +1,8 @@
 ---
 name: implementation-reviewer-code
-description: |-
-  Use this agent to review code changes after implementing a plan.
-model: "opus[1m]"
+description: >-
+  Review code changes after implementing a plan.
+  Only use when a skill explicitly calls for it.
 color: green
 ---
 

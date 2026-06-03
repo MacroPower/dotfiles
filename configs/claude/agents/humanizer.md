@@ -1,7 +1,8 @@
 ---
 name: humanizer
-description: |-
-  Use this agent to review text for AI writing patterns and rewrite it to sound more natural.
+description: >-
+  Review text for AI writing patterns and rewrite it to sound more natural.
+  Only use when a skill explicitly calls for it.
 color: orange
 ---
 

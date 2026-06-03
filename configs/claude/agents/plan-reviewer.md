@@ -1,7 +1,7 @@
 ---
 name: plan-reviewer
-description: |-
-  Use this agent to review implementation plans before exiting plan mode.
+description: >-
+  Review implementation plans before exiting plan mode.
   Pass the plan file path as context.
 color: purple
 ---
