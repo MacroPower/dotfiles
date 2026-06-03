@@ -2484,9 +2484,7 @@ in
               padding = 0;
             };
             enabledPlugins = {
-              "claude-md-management@claude-plugins-official" = true;
               "skill-creator@claude-plugins-official" = true;
-              "code-review@claude-plugins-official" = true;
             };
             sandbox = {
               enabled = sandboxEnabled;
