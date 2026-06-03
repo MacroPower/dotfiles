@@ -1,18 +1,12 @@
 ---
 name: taskfile
 description: >-
-  Reference and guidance for writing Taskfiles (Taskfile.yml, Taskfile.yaml,
-  Taskfile.dist.yml) and using the `task` / go-task CLI (https://taskfile.dev/).
-  Trigger when the user edits or creates Taskfile.yml/.taskrc.yml, pastes a
-  taskfile.dev/schema.json yaml-language-server directive, asks about Task
-  schema keys (version, tasks, vars, env, includes, deps, cmds, preconditions,
-  requires, sources, generates, method, run, dotenv, status, aliases, watch,
-  platforms), runs or troubleshoots the `task` CLI, or asks about Task
-  templating ({{.VAR}}, special variables .TASK, .CHECKSUM, .USER_WORKING_DIR,
-  .ROOT_DIR). Also trigger on references to `go-task`, `go-task/task`, or
-  `task --init`. SKIP when the user is discussing generic to-do lists,
+  Reference and guidance for writing Taskfiles (Taskfile.yaml) and using the
+  `task` / go-task CLI (https://taskfile.dev/). Trigger when the user edits or
+  creates Taskfile.yaml files, runs or troubleshoots the `task` CLI, or asks
+  about Task or `go-task`. SKIP when the user is discussing generic to-do lists,
   Celery/Airflow/Luigi tasks, Claude Code's own TaskCreate/TaskList tools, or
-  macOS Reminders. Those are unrelated to the go-task runner.
+  macOS Reminders.
 ---
 
 # Taskfile Task Runner Reference

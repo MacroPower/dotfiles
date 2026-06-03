@@ -2,17 +2,10 @@
 name: dagger-modules
 description: >-
   Guide for creating Dagger modules, toolchains, and CI pipelines using the Go SDK.
-  Covers module initialization, function design, type system, caching, services,
-  secrets, LLM/agent integration, testing, and architecture patterns. Use this skill
-  whenever the user wants to create or modify a Dagger module, build a toolchain,
-  write Dagger Functions in Go, set up CI/CD with Dagger, or asks about Dagger
-  patterns, best practices, or architecture. Also trigger when you see dagger.json,
-  the dagger CLI, imports from "dagger/<module>/internal/dagger", or references to
-  the `dag` client. Trigger on "dagger call", "dagger check", "dagger install",
-  "dagger toolchain install", "daggerverse", or "dagger develop". Even if the user
-  doesn't say "Dagger" explicitly, use this skill when the context involves
-  containerized build pipelines, module-based CI, programmable CI/CD in Go, or
-  building AI agents with Dagger's LLM type.
+  Use this skill whenever the user wants to create or modify a Dagger module,
+  build a toolchain, write Dagger Functions in Go, or set up CI/CD with Dagger.
+  Also trigger when you see dagger.json, the dagger CLI, imports from dagger, or
+  references to the `dag` client.
 ---
 
 # Dagger Modules — Go SDK
