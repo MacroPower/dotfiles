@@ -326,8 +326,11 @@ SA path would fail -- it must route local.
 
 A consequence: because the guest config is persistent, a guest context
 whose name exactly matches a real external context (e.g. `admin@main`)
-would permanently shadow it (dropped from `list`, unreachable via SA).
-Keep guest-cluster context names distinct from real external ones.
+would permanently shadow it (unreachable via SA). `list` keeps the
+collision visible by tagging the surviving line
+`(local, shadows external)` instead of silently dropping the external
+context. Keep guest-cluster context names distinct from real external
+ones.
 
 **The stub must always exist.** client-go's `GetDefaultFilename`
 returns the first `$KUBECONFIG` entry that _exists on disk_,

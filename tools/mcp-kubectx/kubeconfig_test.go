@@ -453,7 +453,7 @@ func TestListMergesGuestContexts(t *testing.T) { //nolint:tparallel,paralleltest
 		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
 
 		assert.Equal(t,
-			"Available contexts:\n- prod\n- shared (local) (current)\n",
+			"Available contexts:\n- prod\n- shared (local, shadows external) (current)\n",
 			runListWithHost(t, "Available contexts:\n- prod (current)\n- shared\n"),
 		)
 	})
@@ -489,7 +489,7 @@ func TestMergeListOutput(t *testing.T) {
 			hostOut:    "Available contexts:\n- prod (current)\n- shared\n",
 			localNames: []string{"shared"},
 			current:    "shared",
-			want:       "Available contexts:\n- prod\n- shared (local) (current)\n",
+			want:       "Available contexts:\n- prod\n- shared (local, shadows external) (current)\n",
 		},
 		"no contexts at all": {
 			hostOut: "No contexts found.",

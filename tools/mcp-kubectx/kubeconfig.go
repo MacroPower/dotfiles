@@ -520,7 +520,10 @@ func (h *handler) list(
 // `(current)` marker is applied wherever a name matches current. On
 // a name collision the local context wins: the external line is
 // dropped so the name resolves to the local entry, matching
-// client-go's first-file-wins merge.
+// client-go's first-file-wins merge. The surviving local line is
+// tagged `(local, shadows external)` so the collision — which makes
+// the external context unreachable for as long as the local name
+// exists — stays visible instead of silently swallowing a context.
 func mergeListOutput(hostOut string, localNames []string, current string) string {
 	local := make(map[string]struct{}, len(localNames))
 	for _, n := range localNames {
@@ -532,6 +535,7 @@ func mergeListOutput(hostOut string, localNames []string, current string) string
 	b.WriteString("Available contexts:\n")
 
 	wrote := false
+	shadowed := make(map[string]struct{})
 
 	for line := range strings.SplitSeq(hostOut, "\n") {
 		if !strings.HasPrefix(line, "- ") {
@@ -539,7 +543,8 @@ func mergeListOutput(hostOut string, localNames []string, current string) string
 		}
 
 		name := strings.TrimSuffix(strings.TrimPrefix(line, "- "), " (current)")
-		if _, shadowed := local[name]; shadowed {
+		if _, isLocal := local[name]; isLocal {
+			shadowed[name] = struct{}{}
 			continue
 		}
 
@@ -549,7 +554,12 @@ func mergeListOutput(hostOut string, localNames []string, current string) string
 	}
 
 	for _, name := range localNames {
-		writeContextLine(&b, name, "local", name == current)
+		tag := "local"
+		if _, s := shadowed[name]; s {
+			tag = "local, shadows external"
+		}
+
+		writeContextLine(&b, name, tag, name == current)
 
 		wrote = true
 	}
