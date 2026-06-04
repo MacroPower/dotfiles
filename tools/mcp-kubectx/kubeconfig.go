@@ -295,7 +295,7 @@ func bestEffortRemove(what, path string) {
 
 // loadKubeconfig reads and parses a kubeconfig file.
 func loadKubeconfig(path string) (*kubeConfig, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // kubeconfig paths come from operator flags and wrapper env by design
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrLoadKubeconfig, err)
 	}
@@ -381,7 +381,12 @@ func loadGuestConfig() (*kubeConfig, error) {
 // source provides rather than failing the caller: list() falls back to
 // the external-only view and the route check simply omits the
 // unreadable source's names.
-func localView() (current string, names []string) {
+func localView() (string, []string) {
+	var (
+		current string
+		names   []string
+	)
+
 	seen := make(map[string]struct{})
 
 	add := func(cfg *kubeConfig) {
@@ -476,6 +481,7 @@ func setLocalCurrentContext(name string) error {
 		return fmt.Errorf("%w: %w", ErrWriteKubeconfig, err)
 	}
 
+	//nolint:gosec // $CLAUDE_KUBECTX_LOCAL names the wrapper-owned local.yaml by design
 	err = os.MkdirAll(filepath.Dir(path), 0o700)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrWriteKubeconfig, err)
@@ -701,7 +707,7 @@ func (h *handler) selectCtx(
 		)
 	}
 
-	drainCleanups(prev)
+	drainCleanups(prev) //nolint:contextcheck // intentionally derives from context.Background; see drainCleanups doc
 
 	return toolResult(fmt.Sprintf(
 		"Created ServiceAccount for context %q bound to %s.\nKubeconfig written to %s",
@@ -915,6 +921,8 @@ func writeFileSecure(path string, data []byte) error {
 // Parent dirs are not created here — callers ensure the dir exists
 // (or use [writeFileSecure] when they want both behaviors). Mode
 // is applied to the tmp file; rename preserves it.
+//
+//nolint:gosec // paths are caller-owned state files (operator flags / wrapper env), not untrusted input
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	tmp := path + ".tmp"
 

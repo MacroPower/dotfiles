@@ -104,13 +104,13 @@ func TestResolveHostKubeconfigPathSkipsScopedKubeconfig(t *testing.T) { //nolint
 // out-of-wrapper case: a $KUBECONFIG that does not sit inside
 // $CLAUDE_KUBECTX_DIR is a real source and must be returned as-is.
 func TestResolveHostKubeconfigPathHonorsRealKubeconfig(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	real := filepath.Join(t.TempDir(), "config")
+	realPath := filepath.Join(t.TempDir(), "config")
 
 	t.Setenv("KUBECONFIG_HOST", "")
 	t.Setenv("CLAUDE_KUBECTX_DIR", "/run/claude-kubectx.1")
-	t.Setenv("KUBECONFIG", real)
+	t.Setenv("KUBECONFIG", realPath)
 
-	assert.Equal(t, real, resolveHostKubeconfigPath(""))
+	assert.Equal(t, realPath, resolveHostKubeconfigPath(""))
 }
 
 func TestHostSelectMissingPid(t *testing.T) {
