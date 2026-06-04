@@ -638,6 +638,7 @@ let
           lib.escapeShellArg (builtins.toJSON (defaultFormatterRules ++ cfg.formatterRules))
         } \
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
+        ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
         "$@"
     '';
   };
@@ -1054,6 +1055,21 @@ in
         runtime (Shift+Tab). Sets IS_SANDBOX=1, passes
         --allow-dangerously-skip-permissions, pre-trusts the home
         directory, and runs gh auth login.
+      '';
+    };
+
+    skipPlanReview = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Skip the plan-reviewer deny gate on the first ExitPlanMode call.
+        Normally hook-router denies the first ExitPlanMode of a session
+        and instructs Claude to run the plan-reviewer agent first. With
+        this enabled, that deny is skipped and ExitPlanMode proceeds
+        without the review round-trip. All plan-guard bookkeeping (plan
+        path, baseline SHA, clearing in_plan_mode, the pending-plan
+        handoff) still happens, so the Stop hook's post-implementation
+        review gate is unaffected.
       '';
     };
 

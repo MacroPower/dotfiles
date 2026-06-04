@@ -56,6 +56,7 @@
         };
         claude = {
           remoteControl = true;
+          skipPlanReview = true;
           agents.go-doc-improver.source = ../../configs/claude/agents/go-doc-improver.md;
           kubeApiDomains = [
             "kmain.cin.macro.network"

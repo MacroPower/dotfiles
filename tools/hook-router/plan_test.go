@@ -62,7 +62,7 @@ func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -95,18 +95,51 @@ func TestHandleExitPlanModePre_SecondCallAllowsAndRecords(t *testing.T) {
 	// First call: denied.
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 	assert.NotEmpty(t, stdout.Bytes())
 
 	// Second call: allowed (no output), and records plan path.
 	stdout.Reset()
 
-	err = handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
+	err = handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 
 	// Verify plan_path and base_sha are now recorded.
+	_, planPath, baseSHA, err := store.Session(context.Background(), "s1")
+	require.NoError(t, err)
+	assert.Equal(t, "/path/plan.md", planPath)
+	assert.Len(t, baseSHA, 40)
+}
+
+func TestHandleExitPlanModePre_SkipPlanReviewAllowsFirstCall(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
+
+	cfg := config{
+		postImpl:       testCatalog(),
+		commitSkills:   []string{"commit", "commit-push-pr", "merge"},
+		claudePID:      testPID,
+		skipPlanReview: true,
+	}
+
+	input := makeHookJSON(t, HookInput{
+		SessionID: "s1",
+		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
+	})
+
+	// First call: allowed (no deny output), and records plan path.
+	var stdout bytes.Buffer
+
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger)
+	require.NoError(t, err)
+	assert.Empty(t, stdout.Bytes(), "skip-plan-review must allow the first ExitPlanMode call")
+
+	// Bookkeeping still ran: plan_path and base_sha are recorded.
 	_, planPath, baseSHA, err := store.Session(context.Background(), "s1")
 	require.NoError(t, err)
 	assert.Equal(t, "/path/plan.md", planPath)
@@ -127,7 +160,7 @@ func TestHandleExitPlanModePre_NoPlanPath(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -152,7 +185,7 @@ func TestHandleExitPlanModePre_EmptySessionAllows(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 }
@@ -215,7 +248,7 @@ func TestExitPlanModePre_SecondCall_ClearsInPlanMode(t *testing.T) {
 	var stdout bytes.Buffer
 
 	// First call denies.
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger))
 
 	// in_plan_mode still set after deny (only cleared on allow).
 	inPlanMode, err := store.InPlanMode(ctx, "s1")
@@ -224,7 +257,7 @@ func TestExitPlanModePre_SecondCall_ClearsInPlanMode(t *testing.T) {
 
 	// Second call allows and clears in_plan_mode.
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger))
 
 	inPlanMode, err = store.InPlanMode(ctx, "s1")
 	require.NoError(t, err)
@@ -246,7 +279,7 @@ func TestBugFix_OnlyDenied_StopAllowsThrough(t *testing.T) {
 	// PreToolUse:ExitPlanMode fires once -- denied.
 	// The session never reaches the "allow" path (plan review cycle ongoing).
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger))
 
 	// Stop fires -- should allow through because plan_path is empty
 	// (only recorded on allow, not on deny).
@@ -272,10 +305,10 @@ func TestStopBlocksWithChanges(t *testing.T) {
 
 	// Full flow: deny then allow (which records plan path).
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger))
 
 	// Get the baseSHA that was recorded.
 	_, _, baseSHA, err := store.Session(context.Background(), "s1")
@@ -324,10 +357,10 @@ func TestStop_BlocksImplementationWithNoChanges(t *testing.T) {
 
 	// Full flow: deny then allow.
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger))
 
 	// No changes -- Stop now blocks; the unified message must offer
 	// both branches so Claude can either confirm done or ask for input.
@@ -362,10 +395,10 @@ func TestStop_AllowsAfterPostImplAUQ_NoChanges(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
 	// No changes, but user answers a post-impl AUQ -- captures the
 	// fingerprint of the (unchanged) state so Stop can short-circuit.
@@ -748,10 +781,10 @@ func TestStop_AllowsWhenAskRanAgainstCurrentState(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
 	// Make a code change and commit.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
@@ -798,10 +831,10 @@ func TestStop_BlocksWhenCommittedEditsAfterAsk(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
 	// Make initial change and commit.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
@@ -865,10 +898,10 @@ func TestStop_BlocksWhenUncommittedEditsAfterAsk(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
 	// Make initial change and commit.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
@@ -979,7 +1012,7 @@ func TestHandleExitPlanModePre_FailsClosedOnStoreError(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger)
+	err := handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -1122,7 +1155,7 @@ func TestHandleExitPlanModePre_FirstCallDoesNotSetPendingPlan(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger))
 
 	// First call denies; pending_plans must be empty.
 	_, _, found, err := store.ConsumePendingPlan(t.Context(), testPID, 300)
@@ -1144,10 +1177,10 @@ func TestHandleExitPlanModePre_SecondCallSetsPendingPlan(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), input, &stdout, store, cfg, dir, logger))
 
 	planPath, baseSHA, found, err := store.ConsumePendingPlan(t.Context(), testPID, 300)
 	require.NoError(t, err)
@@ -1343,10 +1376,10 @@ func TestHandleStop_FingerprintMatch_DeletesPendingPlan(t *testing.T) {
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
 	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, testPID, dir, logger))
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
 	// Pending row exists from the second ExitPlanMode call.
 	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)

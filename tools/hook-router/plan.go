@@ -69,7 +69,8 @@ func handleExitPlanModePre(
 	input []byte,
 	stdout io.Writer,
 	store *Store,
-	claudePID, workDir string,
+	cfg config,
+	workDir string,
 	logger *slog.Logger,
 ) error {
 	hook, err := parseHookInput(input)
@@ -89,27 +90,34 @@ func handleExitPlanModePre(
 		}
 	}
 
-	count, err := store.IncrementExitPlanCount(ctx, hook.SessionID)
-	if err != nil {
-		// Fail-closed: silently swallowing this error would let the first
-		// ExitPlanMode call through without ever invoking plan-reviewer.
-		logger.Error("failed to increment exit plan count", slog.Any("error", err))
-		return encodeJSON(stdout, denyResponse("plan-guard store unavailable, please retry"))
-	}
+	// skipPlanReview disables the deny-once gate entirely; the counter
+	// exists only to implement it, so the increment is skipped too and
+	// count stays 0 (a meaningful signal in the allow log below).
+	var count int
 
-	if count == 1 {
-		reason := "Before exiting plan mode, run the plan-reviewer agent to review the plan"
-		if planPath != "" {
-			reason += " at " + planPath + ". Pass it the plan file path."
-		} else {
-			reason += "."
+	if !cfg.skipPlanReview {
+		count, err = store.IncrementExitPlanCount(ctx, hook.SessionID)
+		if err != nil {
+			// Fail-closed: silently swallowing this error would let the first
+			// ExitPlanMode call through without ever invoking plan-reviewer.
+			logger.Error("failed to increment exit plan count", slog.Any("error", err))
+			return encodeJSON(stdout, denyResponse("plan-guard store unavailable, please retry"))
 		}
 
-		reason += " After review is complete and any feedback has been addressed, call ExitPlanMode again."
+		if count == 1 {
+			reason := "Before exiting plan mode, run the plan-reviewer agent to review the plan"
+			if planPath != "" {
+				reason += " at " + planPath + ". Pass it the plan file path."
+			} else {
+				reason += "."
+			}
 
-		logger.Info("denied ExitPlanMode (first call)", slog.String("session", hook.SessionID))
+			reason += " After review is complete and any feedback has been addressed, call ExitPlanMode again."
 
-		return encodeJSON(stdout, denyResponse(reason))
+			logger.Info("denied ExitPlanMode (first call)", slog.String("session", hook.SessionID))
+
+			return encodeJSON(stdout, denyResponse(reason))
+		}
 	}
 
 	// Record plan path and baseline SHA when allowing ExitPlanMode through.
@@ -146,14 +154,14 @@ func handleExitPlanModePre(
 	// the session-keyed path above. Fail-closing would cause spurious
 	// denials. Empty claudePID disables the handoff entirely (see
 	// config.claudePID).
-	if claudePID != "" {
-		overwroteFresh, err := store.SetPendingPlan(ctx, claudePID, planPath, baseSHA)
+	if cfg.claudePID != "" {
+		overwroteFresh, err := store.SetPendingPlan(ctx, cfg.claudePID, planPath, baseSHA)
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to set pending plan", slog.Any("error", err))
 		} else if overwroteFresh {
 			logger.InfoContext(ctx, "overwrote fresh pending plan; same window re-planned within 60s without consuming previous handoff",
 				slog.String("session", hook.SessionID),
-				slog.String("claude_pid", claudePID),
+				slog.String("claude_pid", cfg.claudePID),
 				slog.String("plan_path", planPath),
 			)
 		}

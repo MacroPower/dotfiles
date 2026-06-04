@@ -40,6 +40,12 @@ import (
 // invocation or PID-1 container); in that case the pending-plans
 // handoff is silently disabled, matching the kubeconfigPath
 // empty-guard.
+//
+// skipPlanReview, when true, makes [handleExitPlanModePre] skip the
+// first-call deny that forces the plan-reviewer agent before exiting
+// plan mode. All plan-guard bookkeeping (plan path, baseline SHA,
+// clearing in_plan_mode, the pending-plan handoff) still happens, so
+// the Stop gate is unaffected.
 type config struct {
 	postImpl       *PostImplCatalog
 	commandRules   *CommandRules
@@ -49,6 +55,7 @@ type config struct {
 	kubeconfigPath string
 	claudePID      string
 	autoAllow      bool
+	skipPlanReview bool
 }
 
 func configFromEnv() config {
@@ -81,17 +88,18 @@ func main() {
 	commandRules := flag.String("command-rules", "", "JSON array of command deny rules ({command, args, except, reason})")
 	formatterRules := flag.String("formatter-rules", "", "JSON array of file-formatter routing rules ({pathGlob, command, timeout})")
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
+	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *formatterRules, *autoAllow)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *formatterRules, *autoAllow, *skipPlanReview)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, formatterRulesJSON string, autoAllow bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, formatterRulesJSON string, autoAllow, skipPlanReview bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -172,6 +180,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.commandRules = rules
 	cfg.formatterRules = formatters
 	cfg.autoAllow = autoAllow
+	cfg.skipPlanReview = skipPlanReview
 
 	return run(ctx, bytes.NewReader(input), os.Stdout, event, tool, store, cfg, logger)
 }
@@ -233,7 +242,7 @@ func run(
 				return nil
 			}
 
-			return handleExitPlanModePre(ctx, input, stdout, store, cfg.claudePID, ".", logger)
+			return handleExitPlanModePre(ctx, input, stdout, store, cfg, ".", logger)
 
 		case "EnterPlanMode":
 			if store == nil {
