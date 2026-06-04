@@ -8,24 +8,24 @@
 }:
 
 let
-  version = "0.40.0";
+  version = "0.42.1";
 
   srcs = {
     "aarch64-darwin" = {
       url = "https://github.com/rtk-ai/rtk/releases/download/v${version}/rtk-aarch64-apple-darwin.tar.gz";
-      hash = "sha256-YMLDJbTt8DZ8+pcWrC4siIq80GXv9F0BUQ2mVhq4Ljw=";
+      hash = "sha256-QB1yqAwO/Fl66UafBTzlHHAzTqQnUnRkq3b44pjaJEc=";
     };
     "x86_64-darwin" = {
       url = "https://github.com/rtk-ai/rtk/releases/download/v${version}/rtk-x86_64-apple-darwin.tar.gz";
-      hash = "sha256-jqxQL7gSBWlz2iqMLwwA4UJ7pfcb0UwBUgvFQGMMuYo=";
+      hash = "sha256-YWXYD0DbD0b4ry6hXQEy6VficXqnRQeQbHzls8IMZV4=";
     };
     "aarch64-linux" = {
       url = "https://github.com/rtk-ai/rtk/releases/download/v${version}/rtk-aarch64-unknown-linux-gnu.tar.gz";
-      hash = "sha256-HQCHrWKhgsCDPCJRrGeLXgU1ZBjZGqVzBaxRoSbJsQI=";
+      hash = "sha256-MvTXh2bi9bQ3Vu/OPGmdxNqL7vUpbesC+ndW8yV+slw=";
     };
     "x86_64-linux" = {
       url = "https://github.com/rtk-ai/rtk/releases/download/v${version}/rtk-x86_64-unknown-linux-musl.tar.gz";
-      hash = "sha256-p10hCkRYdBBrwW2itO+6AdNtKXr6M+wTRyjy1fQu9a8=";
+      hash = "sha256-o3yjAKQlEKlkRT8rwuIXdp7whyeAr4AtuKfWmPHaJGU=";
     };
   };
 

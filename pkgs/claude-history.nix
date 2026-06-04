@@ -9,7 +9,7 @@
 }:
 
 let
-  version = "0.1.60";
+  version = "0.1.65";
 in
 rustPlatform.buildRustPackage {
   pname = "claude-history";
@@ -19,10 +19,10 @@ rustPlatform.buildRustPackage {
     owner = "raine";
     repo = "claude-history";
     rev = "v${version}";
-    hash = "sha256-qwI2mXspLaHQGKhtmZzD+XJGl/D9MMglCc2e5g33IXE=";
+    hash = "sha256-GKbUDzCUSV/V6HRMAQxZxu2JjTDo0As01/bH1uLjz70=";
   };
 
-  cargoHash = "sha256-EPNu05t9+x06vNiPgRuiwpXXG3aypRGNzbpiA9f5+Jo=";
+  cargoHash = "sha256-3mzk5dtbmJt14Kw1K5MfUd5V8GDHdIZa1Qk/pp9x6ho=";
 
   nativeBuildInputs = [ pkg-config ];
 

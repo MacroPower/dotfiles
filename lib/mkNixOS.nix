@@ -19,6 +19,12 @@ inputs.nixpkgs.lib.nixosSystem {
     inputs.stylix.nixosModules.stylix
     sharedStylixConfig
     {
+      # Stylix's kmscon target still sets services.kmscon.{fonts,extraConfig},
+      # which nixpkgs has removed in favor of services.kmscon.config. Disable
+      # the target until stylix catches up.
+      stylix.targets.kmscon.enable = false;
+    }
+    {
       nixpkgs.hostPlatform = system;
       nixpkgs.overlays = sharedOverlays system;
       home-manager = mkHomeManagerBlock { inherit username homeModule; };
