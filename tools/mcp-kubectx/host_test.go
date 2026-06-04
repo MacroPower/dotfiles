@@ -218,6 +218,39 @@ func TestHostSelectContextNotFound(t *testing.T) {
 	require.ErrorIs(t, err, ErrContextNotFound)
 }
 
+// TestHostSelectClusterEntryMissing pins that a context whose
+// cluster entry is absent from the kubeconfig is refused before any
+// cluster-side mutation, even with no apiserver allowlist. Without
+// the guard, the SA and binding would be created and then stranded
+// behind a scoped kubeconfig with a dangling cluster reference.
+func TestHostSelectClusterEntryMissing(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	mock := &mockKubeClient{token: "t", tokenExpiry: time.Now()}
+	withHostKubeClient(t, mock)
+	withHostStdout(t)
+
+	cfg := testKubeconfig()
+	cfg.Contexts = append(cfg.Contexts, namedContext{
+		Name:    "dangling",
+		Context: contextDetails{Cluster: "no-such-cluster", User: "admin"},
+	})
+
+	path := writeTestKubeconfig(t, cfg)
+	outPath := filepath.Join(t.TempDir(), "k.yaml")
+
+	err := runHostSelect(t.Context(), []string{
+		"dangling",
+		"--kubeconfig", path,
+		"--out-path", outPath,
+		"--sa-role-name", "view",
+	})
+	require.ErrorIs(t, err, ErrClusterNotFound)
+
+	assert.Empty(t, mock.createdSAs, "missing cluster entry must not create the SA")
+
+	_, statErr := os.Stat(outPath)
+	assert.True(t, os.IsNotExist(statErr), "missing cluster entry must not write the kubeconfig")
+}
+
 // TestHostSelectExecPluginShape pins the uniform exec-plugin
 // shape across forGuest=true/false. The two variants no longer
 // differ -- both write the same `mcp-kubectx exec-plugin --socket
@@ -461,6 +494,32 @@ func TestHostSelectAPIServerAllowed(t *testing.T) { //nolint:paralleltest // mut
 
 	_, statErr := os.Stat(outPath)
 	assert.NoError(t, statErr, "allowed select must write the kubeconfig")
+}
+
+// TestHostSelectAPIServerAllowedCaseInsensitive pins that the
+// allowlist comparison ignores case: DNS hostnames are
+// case-insensitive, so a mixed-case `cluster.server` URL must
+// still match a lowercase allowlist entry.
+func TestHostSelectAPIServerAllowedCaseInsensitive(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	mock := &mockKubeClient{token: "t", tokenExpiry: time.Now()}
+	withHostKubeClient(t, mock)
+	withHostStdout(t)
+
+	cfg := testKubeconfig()
+	cfg.Clusters[0].Cluster = map[string]any{"server": "https://PROD.Example.COM:6443"}
+
+	path := writeTestKubeconfig(t, cfg)
+	outPath := filepath.Join(t.TempDir(), "k.yaml")
+
+	require.NoError(t, runHostSelect(t.Context(), []string{
+		"prod",
+		"--kubeconfig", path,
+		"--out-path", outPath,
+		"--sa-role-name", "view",
+		"--allow-apiserver-host", "prod.example.com",
+	}))
+
+	assert.NotEmpty(t, mock.createdSAs, "case-different host must still match the allowlist")
 }
 
 func TestHostSelectAPIServerDenied(t *testing.T) { //nolint:paralleltest // mutates package-level state

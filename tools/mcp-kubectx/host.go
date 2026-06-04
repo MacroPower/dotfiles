@@ -199,7 +199,13 @@ type HostSelectResult struct {
 //
 //nolint:grouper // sentinels grouped separately from the test-indirection vars further up
 var (
-	ErrSelectMissingPid      = errors.New("--pid is required when --out-path is empty")
+	ErrSelectMissingPid = errors.New("--pid is required when --out-path is empty")
+	// ErrClusterNotFound guards host select against a context whose
+	// cluster entry is absent from the kubeconfig. Without the
+	// guard, the SA and binding would be created and then stranded
+	// behind a scoped kubeconfig whose dangling cluster reference
+	// kubectl cannot resolve.
+	ErrClusterNotFound       = errors.New("cluster entry not found for context")
 	ErrParseHostSelectFlags  = errors.New("parse host select flags")
 	ErrParseHostListFlags    = errors.New("parse host list flags")
 	ErrParseHostTokenFlags   = errors.New("parse host token flags")
@@ -383,17 +389,24 @@ func runHostSelect(ctx context.Context, args []string) error {
 		}
 	}
 
-	if len(allowedHosts) > 0 {
-		if cluster == nil {
-			return fmt.Errorf("%w: context %q has no cluster entry", ErrAPIServerNotAllowed, contextName)
-		}
+	// Refuse before any cluster-side mutation; see [ErrClusterNotFound].
+	if cluster == nil {
+		return fmt.Errorf("%w: context %q references cluster %q",
+			ErrClusterNotFound, contextName, found.Context.Cluster)
+	}
 
+	if len(allowedHosts) > 0 {
 		host, hostErr := clusterServerHost(cluster.Cluster)
 		if hostErr != nil {
 			return hostErr
 		}
 
-		if !slices.Contains(allowedHosts, host) {
+		// DNS hostnames are case-insensitive, so the kubeconfig
+		// author's casing must not defeat the allowlist.
+		allowed := slices.ContainsFunc(allowedHosts, func(a string) bool {
+			return strings.EqualFold(a, host)
+		})
+		if !allowed {
 			return fmt.Errorf("%w: %s", ErrAPIServerNotAllowed, host)
 		}
 	}
