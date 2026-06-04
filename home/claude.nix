@@ -2698,19 +2698,22 @@ in
       };
 
       file.".claude/CLAUDE.md".text = ''
-        # Global Instructions
+        ## Agents
+        - Use `Agent({..., model: "<model>"})` to downgrade models for tasks where reasoning is not required.
+        - Explore agents (`subagent_type: "Explore"`) should use generally `model: "sonnet"` or `model: "haiku"`.
+        - Plan agents (`subagent_type: "Plan"`) should always use `model: "opus"`.
+        - For generic agents, use your best judgement based on the task being assigned.
+
+        ## Shell
+        - A PreToolUse hook rewrites some Bash commands through `rtk`, which filters their output to reduce tokens.
+        - Notable rewrites: `find` -> `fd`, `grep` -> `rg`.
+        - If filtered output looks truncated or wrong, rerun as `rtk proxy <cmd>` to get the raw output.
 
         ## Writing Style
-
         - Keep responses to plain ASCII text.
         - Acknowledge complexity and mixed feelings when they exist.
         - Don't enumerate what the code already shows; explain the how and why.
-        - Write comments and docs in the present tense, describing the system as it is, not how it changed. Our git history records the change.
-
-        ## Agents & Concurrency
-
-        - Launch up to 20 `Agent` calls concurrently when investigating independent areas: `Agent({description, prompt, subagent_type})`. Don't serialize what can run in parallel.
-        - Use `Agent({..., model: "sonnet"})` for tasks where reasoning is not required. Explore agents (`subagent_type: "Explore"`) should use `model: "sonnet"` unless the user requests otherwise or passes `ultrathink`.
+        - Write comments and docs in the present tense, describing the system as it is, not how it changed.
       ''
       + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n"
       + lib.optionalString (cfg.hostContext != "") "\n## Host Environment\n\n${cfg.hostContext}\n";
