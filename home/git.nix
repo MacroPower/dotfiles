@@ -24,6 +24,7 @@
       "**/.claude/settings.local.json"
       "**/.claude/scheduled_tasks.lock"
       "**/.claude/worktrees/"
+      "**/.workmux/"
       "**/.worktrees/"
       "**/.chief/"
       "**/.playwright-cli/"
