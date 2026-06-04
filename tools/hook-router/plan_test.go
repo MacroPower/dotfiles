@@ -286,7 +286,7 @@ func TestBugFix_OnlyDenied_StopAllowsThrough(t *testing.T) {
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "Stop should allow through when only deny was issued")
 }
@@ -331,7 +331,7 @@ func TestStopBlocksWithChanges(t *testing.T) {
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err = handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err = handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -367,7 +367,7 @@ func TestStop_BlocksImplementationWithNoChanges(t *testing.T) {
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -382,13 +382,17 @@ func TestStop_BlocksImplementationWithNoChanges(t *testing.T) {
 	assert.Contains(t, reason, "If you have a question for the user")
 }
 
-func TestStop_AllowsAfterPostImplAUQ_NoChanges(t *testing.T) {
+// TestStop_AllowsAfterPostImplAUQ pins the release semantics: answering
+// the post-impl AskUserQuestion releases the Stop gate for the rest of
+// the plan cycle.
+func TestStop_AllowsAfterPostImplAUQ(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
+	// Full plan flow: deny then allow.
 	planInput := makeHookJSON(t, HookInput{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
@@ -400,18 +404,31 @@ func TestStop_AllowsAfterPostImplAUQ_NoChanges(t *testing.T) {
 	stdout.Reset()
 	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
 
-	// No changes, but user answers a post-impl AUQ -- captures the
-	// fingerprint of the (unchanged) state so Stop can short-circuit.
+	// Make a code change and commit (the implementation).
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
+
+	for _, args := range [][]string{
+		{"git", "add", "."},
+		{"git", "commit", "-m", "implement"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+	}
+
+	// User answers the post-impl AskUserQuestion -- releases the gate.
 	askInput := askInputWithLabel(t, "s1", "/review-implementation")
-	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
+	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, logger))
 
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(),
-		"Stop should allow through after a post-impl AUQ even with no changes")
+		"Stop should allow through after the post-impl AUQ is answered")
 }
 
 func TestStop_BlocksInPlanMode(t *testing.T) {
@@ -420,7 +437,6 @@ func TestStop_BlocksInPlanMode(t *testing.T) {
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
 	ctx := t.Context()
-	dir := initTestRepo(t)
 
 	require.NoError(t, store.SetInPlanMode(ctx, "s1", true))
 
@@ -428,7 +444,7 @@ func TestStop_BlocksInPlanMode(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -450,7 +466,6 @@ func TestStop_BlocksInPlanMode_WithPlanPathFromPriorRound(t *testing.T) {
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
 	ctx := t.Context()
-	dir := initTestRepo(t)
 
 	require.NoError(t, store.SetPlanPath(ctx, "s1", "/old/plan.md", "old-sha"))
 	require.NoError(t, store.SetInPlanMode(ctx, "s1", true))
@@ -459,7 +474,7 @@ func TestStop_BlocksInPlanMode_WithPlanPathFromPriorRound(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -475,7 +490,6 @@ func TestStop_AllowsAfterCommitClear(t *testing.T) {
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
 	ctx := t.Context()
-	dir := initTestRepo(t)
 
 	// Mid-implementation state.
 	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
@@ -490,7 +504,7 @@ func TestStop_AllowsAfterCommitClear(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "Stop should allow through after /commit clears state")
 }
@@ -621,7 +635,6 @@ func TestStopHookActive_ClearsAndAllows(t *testing.T) {
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
 	ctx := t.Context()
-	dir := initTestRepo(t)
 
 	_ = store.SetPlanPath(ctx, "s1", "/path/plan.md", "sha1")
 
@@ -632,7 +645,7 @@ func TestStopHookActive_ClearsAndAllows(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 
@@ -664,22 +677,33 @@ func askInputWithLabel(t *testing.T, sessionID, label string) []byte {
 	})
 }
 
-func TestHandlePostAskUserQuestion_RecordsFingerprintOnMatchingLabel(t *testing.T) {
+func TestHandlePostAskUserQuestion_MatchingLabelClearsSession(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
-	dir := initTestRepo(t)
+	ctx := t.Context()
+
+	// Mid-implementation state.
+	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
 
 	input := askInputWithLabel(t, "s1", "/review-implementation")
 
-	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
+	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, logger)
 	require.NoError(t, err)
 
-	headSHA, wtHash, err := store.AskFingerprint(context.Background(), "s1")
+	// Session row is cleared: plan_path is gone...
+	_, planPath, _, err := store.Session(ctx, "s1")
 	require.NoError(t, err)
-	assert.Len(t, headSHA, 40)
-	assert.Len(t, wtHash, 64)
+	assert.Equal(t, "", planPath)
+
+	// ...so a subsequent Stop allows through.
+	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+
+	var stdout bytes.Buffer
+
+	require.NoError(t, handleStop(t.Context(), stopInput, &stdout, store, cfg, logger))
+	assert.Empty(t, stdout.Bytes(), "Stop must allow after the post-impl AUQ clears the session")
 }
 
 func TestHandlePostAskUserQuestion_IgnoresUnrelatedQuestion(t *testing.T) {
@@ -687,18 +711,19 @@ func TestHandlePostAskUserQuestion_IgnoresUnrelatedQuestion(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
-	dir := initTestRepo(t)
+	ctx := t.Context()
+
+	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
 
 	// Labels not in the post-impl skill catalog, e.g. an unrelated clarifying question.
 	input := askInputWithLabel(t, "s1", "use-default-directory")
 
-	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
+	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, logger)
 	require.NoError(t, err)
 
-	headSHA, wtHash, err := store.AskFingerprint(context.Background(), "s1")
+	_, planPath, _, err := store.Session(ctx, "s1")
 	require.NoError(t, err)
-	assert.Equal(t, "", headSHA)
-	assert.Equal(t, "", wtHash)
+	assert.Equal(t, "/plan.md", planPath, "unrelated question must not clear the session")
 }
 
 func TestHandlePostAskUserQuestion_EmptySessionIsNoop(t *testing.T) {
@@ -706,17 +731,19 @@ func TestHandlePostAskUserQuestion_EmptySessionIsNoop(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
-	dir := initTestRepo(t)
 
 	input := askInputWithLabel(t, "", "/review-implementation")
 
-	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
+	err := handlePostAskUserQuestion(t.Context(), input, store, cfg, logger)
 	require.NoError(t, err)
 
-	// Nothing written for the empty session, and no write for any session.
-	headSHA, _, err := store.AskFingerprint(context.Background(), "")
-	require.NoError(t, err)
-	assert.Equal(t, "", headSHA)
+	// No row touched or created for any session. Queried directly because
+	// Session() would itself INSERT a row.
+	var count int
+
+	require.NoError(t, store.db.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM sessions`).Scan(&count))
+	assert.Equal(t, 0, count)
 }
 
 func TestHandlePostAskUserQuestion_MalformedToolInputIsNoop(t *testing.T) {
@@ -724,7 +751,6 @@ func TestHandlePostAskUserQuestion_MalformedToolInputIsNoop(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
-	dir := initTestRepo(t)
 
 	cases := map[string]map[string]any{
 		"missing questions": {},
@@ -751,73 +777,30 @@ func TestHandlePostAskUserQuestion_MalformedToolInputIsNoop(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			sessionID := "s-" + name
+			require.NoError(t, store.SetPlanPath(t.Context(), sessionID, "/plan.md", "sha1"))
+
 			input := makeHookJSON(t, HookInput{
-				SessionID: "s-" + name,
+				SessionID: sessionID,
 				ToolName:  "AskUserQuestion",
 				ToolInput: toolInput,
 			})
 
-			err := handlePostAskUserQuestion(t.Context(), input, store, cfg, dir, logger)
+			err := handlePostAskUserQuestion(t.Context(), input, store, cfg, logger)
 			require.NoError(t, err)
 
-			headSHA, _, err := store.AskFingerprint(context.Background(), "s-"+name)
+			_, planPath, _, err := store.Session(context.Background(), sessionID)
 			require.NoError(t, err)
-			assert.Equal(t, "", headSHA)
+			assert.Equal(t, "/plan.md", planPath, "malformed tool_input must not clear the session")
 		})
 	}
 }
 
-func TestStop_AllowsWhenAskRanAgainstCurrentState(t *testing.T) {
-	t.Parallel()
-
-	store := newTestStore(t)
-	logger := slog.New(slog.DiscardHandler)
-	dir := initTestRepo(t)
-
-	// Full plan flow: deny then allow.
-	planInput := makeHookJSON(t, HookInput{
-		SessionID: "s1",
-		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
-	})
-
-	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
-
-	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
-
-	// Make a code change and commit.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("code\n"), 0o644))
-
-	for _, args := range [][]string{
-		{"git", "add", "."},
-		{"git", "commit", "-m", "implement"},
-	} {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
-
-		out, err := cmd.CombinedOutput()
-		require.NoError(t, err, "%s", out)
-	}
-
-	// Simulate user answering post-impl AskUserQuestion -- captures
-	// fingerprint of current state.
-	askInput := askInputWithLabel(t, "s1", "/review-implementation")
-
-	err := handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger)
-	require.NoError(t, err)
-
-	// Stop should allow through since the post-impl question was
-	// answered against current state.
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
-	stdout.Reset()
-
-	err = handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
-	require.NoError(t, err)
-	assert.Empty(t, stdout.Bytes(), "Stop should allow through when ask ran against current state")
-}
-
-func TestStop_BlocksWhenCommittedEditsAfterAsk(t *testing.T) {
+// TestStop_AllowsAfterAsk_DespiteCommittedEdits is the load-bearing
+// regression test for once-per-cycle release: edits made AFTER the
+// post-impl question is answered (e.g. by /code-review --fix) must NOT
+// re-arm the Stop gate.
+func TestStop_AllowsAfterAsk_DespiteCommittedEdits(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
@@ -850,9 +833,9 @@ func TestStop_BlocksWhenCommittedEditsAfterAsk(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 
-	// User answers AskUserQuestion; handler captures fingerprint.
+	// User answers AskUserQuestion; handler releases the gate.
 	askInput := askInputWithLabel(t, "s1", "/review-implementation")
-	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
+	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, logger))
 
 	// More edits AFTER the user answered.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "fix.txt"), []byte("fix\n"), 0o644))
@@ -868,23 +851,19 @@ func TestStop_BlocksWhenCommittedEditsAfterAsk(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 
-	// Stop should block since state changed after Ask; re-block message
-	// should re-prompt with the instructional AskUserQuestion content.
+	// Stop must still allow: the gate fired once this cycle.
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
-
-	var result map[string]any
-
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
-	assert.Equal(t, "block", result["decision"])
-	assert.Contains(t, result["reason"], "AskUserQuestion")
-	assert.Contains(t, result["reason"], "/review-implementation")
+	assert.Empty(t, stdout.Bytes(),
+		"Stop must allow despite committed edits after the post-impl AUQ")
 }
 
-func TestStop_BlocksWhenUncommittedEditsAfterAsk(t *testing.T) {
+// TestStop_AllowsAfterAsk_DespiteUncommittedEdits is the uncommitted
+// twin of the committed-edits regression test above.
+func TestStop_AllowsAfterAsk_DespiteUncommittedEdits(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
@@ -917,27 +896,79 @@ func TestStop_BlocksWhenUncommittedEditsAfterAsk(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 
-	// User answers AskUserQuestion; handler captures fingerprint.
+	// User answers AskUserQuestion; handler releases the gate.
 	askInput := askInputWithLabel(t, "s1", "/review-implementation")
-	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
+	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, logger))
 
 	// Uncommitted edit AFTER the user answered.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("changed\n"), 0o644))
 
-	// Stop should block since working tree changed; re-block message
-	// should cite the AskUserQuestion instructions.
+	// Stop must still allow: the gate fired once this cycle.
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 	stdout.Reset()
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
+	assert.Empty(t, stdout.Bytes(),
+		"Stop must allow despite uncommitted edits after the post-impl AUQ")
+}
+
+// TestStop_ReArmsOnNextPlanCycle pins the re-arm semantics: the
+// post-impl AUQ releases Stop only for the current plan cycle.
+// EnterPlanMode resets the session and the next approved ExitPlanMode
+// records a fresh plan_path, so Stop blocks again.
+func TestStop_ReArmsOnNextPlanCycle(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	logger := slog.New(slog.DiscardHandler)
+	dir := initTestRepo(t)
+
+	// Cycle 1: approved plan, post-impl AUQ answered, Stop allows.
+	planInput := makeHookJSON(t, HookInput{
+		SessionID: "s1",
+		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
+	})
+
+	var stdout bytes.Buffer
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
+
+	stdout.Reset()
+	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
+
+	askInput := askInputWithLabel(t, "s1", "/review-implementation")
+	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, logger))
+
+	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stdout.Reset()
+	require.NoError(t, handleStop(t.Context(), stopInput, &stdout, store, cfg, logger))
+	assert.Empty(t, stdout.Bytes(), "Stop must allow after the post-impl AUQ")
+
+	// Cycle 2: EnterPlanMode re-arms; approved ExitPlanMode records a
+	// fresh plan_path.
+	enterInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	require.NoError(t, handleEnterPlanMode(t.Context(), enterInput, store, testPID, logger))
+
+	plan2Input := makeHookJSON(t, HookInput{
+		SessionID: "s1",
+		ToolInput: map[string]any{"planFilePath": "/path/plan2.md"},
+	})
+
+	stdout.Reset()
+	require.NoError(t, handleExitPlanModePre(t.Context(), plan2Input, &stdout, store, cfg, dir, logger))
+
+	stdout.Reset()
+	require.NoError(t, handleExitPlanModePre(t.Context(), plan2Input, &stdout, store, cfg, dir, logger))
+
+	// Stop blocks again with the new cycle's post-impl question.
+	stdout.Reset()
+	require.NoError(t, handleStop(t.Context(), stopInput, &stdout, store, cfg, logger))
 
 	var result map[string]any
 
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	assert.Equal(t, "block", result["decision"])
-	assert.Contains(t, result["reason"], "AskUserQuestion")
-	assert.Contains(t, result["reason"], "/review-implementation")
+	assert.Contains(t, result["reason"], "/path/plan2.md")
 }
 
 // TestHandleStop_EscapeHatchWorksWhenStoreUnavailable verifies the
@@ -949,7 +980,6 @@ func TestHandleStop_EscapeHatchWorksWhenStoreUnavailable(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
-	dir := initTestRepo(t)
 
 	// Simulate a dead backend by closing the underlying connection.
 	require.NoError(t, store.Close())
@@ -961,7 +991,7 @@ func TestHandleStop_EscapeHatchWorksWhenStoreUnavailable(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes(), "escape hatch must allow through even when store is dead")
 }
@@ -974,7 +1004,6 @@ func TestHandleStop_FailsClosedOnStoreError(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
-	dir := initTestRepo(t)
 
 	require.NoError(t, store.Close())
 
@@ -982,7 +1011,7 @@ func TestHandleStop_FailsClosedOnStoreError(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -1030,14 +1059,13 @@ func TestStopAllowsEmptySession(t *testing.T) {
 
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
-	dir := initTestRepo(t)
 
 	// No plan state set -- Stop should allow through.
 	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
 
 	var stdout bytes.Buffer
 
-	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger)
+	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
 }
@@ -1342,87 +1370,22 @@ func TestHandleStop_StopHookActive_DeletesPendingPlan(t *testing.T) {
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
 	ctx := t.Context()
-	dir := initTestRepo(t)
 
 	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	stopInput := makeHookJSON(t, HookInput{
 		SessionID:      "s1",
-		Cwd:            dir,
+		Cwd:            t.TempDir(),
 		StopHookActive: true,
 	})
 
 	var stdout bytes.Buffer
-	require.NoError(t, handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger))
+	require.NoError(t, handleStop(t.Context(), stopInput, &stdout, store, cfg, logger))
 
 	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)
 	assert.False(t, found, "stop_hook_active escape must drop pending handoff")
-}
-
-func TestHandleStop_FingerprintMatch_DeletesPendingPlan(t *testing.T) {
-	t.Parallel()
-
-	store := newTestStore(t)
-	logger := slog.New(slog.DiscardHandler)
-	ctx := t.Context()
-	dir := initTestRepo(t)
-
-	planInput := makeHookJSON(t, HookInput{
-		SessionID: "s1",
-		Cwd:       dir,
-		ToolInput: map[string]any{"planFilePath": "/plan.md"},
-	})
-
-	var stdout bytes.Buffer
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
-
-	stdout.Reset()
-	require.NoError(t, handleExitPlanModePre(t.Context(), planInput, &stdout, store, cfg, dir, logger))
-
-	// Pending row exists from the second ExitPlanMode call.
-	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
-	require.NoError(t, err)
-	require.True(t, found)
-
-	// Reseed (Consume just deleted it).
-	_, err = store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
-	require.NoError(t, err)
-
-	// Answer post-impl AUQ -- captures fingerprint.
-	askInput := makeHookJSON(t, HookInput{
-		SessionID: "s1",
-		Cwd:       dir,
-		ToolName:  "AskUserQuestion",
-		ToolInput: map[string]any{
-			"questions": []any{
-				map[string]any{
-					"options": []any{
-						map[string]any{"label": "/review-implementation"},
-					},
-				},
-			},
-		},
-	})
-	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
-
-	// handlePostAskUserQuestion deletes pending too; reseed and trigger
-	// Stop's fingerprint-match path explicitly.
-	_, err = store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
-	require.NoError(t, err)
-
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1", Cwd: dir})
-
-	stdout.Reset()
-	require.NoError(t, handleStop(t.Context(), stopInput, &stdout, store, cfg, dir, logger))
-
-	// Stop allowed through (fingerprint match) and dropped pending.
-	assert.Empty(t, stdout.Bytes())
-
-	_, _, found, err = store.ConsumePendingPlan(ctx, testPID, 300)
-	require.NoError(t, err)
-	assert.False(t, found, "fingerprint-match short-circuit must drop pending handoff")
 }
 
 func TestHandlePostAskUserQuestion_DeletesPendingPlan(t *testing.T) {
@@ -1431,14 +1394,13 @@ func TestHandlePostAskUserQuestion_DeletesPendingPlan(t *testing.T) {
 	store := newTestStore(t)
 	logger := slog.New(slog.DiscardHandler)
 	ctx := t.Context()
-	dir := initTestRepo(t)
 
 	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
 	askInput := makeHookJSON(t, HookInput{
 		SessionID: "s1",
-		Cwd:       dir,
+		Cwd:       t.TempDir(),
 		ToolName:  "AskUserQuestion",
 		ToolInput: map[string]any{
 			"questions": []any{
@@ -1451,7 +1413,7 @@ func TestHandlePostAskUserQuestion_DeletesPendingPlan(t *testing.T) {
 		},
 	})
 
-	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, dir, logger))
+	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, logger))
 
 	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
 	require.NoError(t, err)

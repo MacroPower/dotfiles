@@ -274,7 +274,7 @@ func run(
 				return nil
 			}
 
-			return handlePostAskUserQuestion(ctx, input, store, cfg, ".", logger)
+			return handlePostAskUserQuestion(ctx, input, store, cfg, logger)
 
 		case "Bash":
 			if store == nil {
@@ -295,7 +295,7 @@ func run(
 			return nil
 		}
 
-		return handleStop(ctx, input, stdout, store, cfg, ".", logger)
+		return handleStop(ctx, input, stdout, store, cfg, logger)
 
 	case "SessionStart":
 		sweepKubectxDirs(kubectxSweepParent(), logger)

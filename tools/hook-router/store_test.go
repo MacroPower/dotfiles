@@ -154,57 +154,6 @@ func TestStoreClearSession(t *testing.T) {
 	assert.Equal(t, 0, count)
 }
 
-func TestSetAskFingerprint(t *testing.T) {
-	t.Parallel()
-
-	store := newTestStore(t)
-	ctx := t.Context()
-
-	err := store.SetAskFingerprint(ctx, "s1", "abc123", "def456")
-	require.NoError(t, err)
-
-	headSHA, wtHash, err := store.AskFingerprint(ctx, "s1")
-	require.NoError(t, err)
-	assert.Equal(t, "abc123", headSHA)
-	assert.Equal(t, "def456", wtHash)
-}
-
-func TestSetAskFingerprint_Overwrite(t *testing.T) {
-	t.Parallel()
-
-	store := newTestStore(t)
-	ctx := t.Context()
-
-	err := store.SetAskFingerprint(ctx, "s1", "old-head", "old-wt")
-	require.NoError(t, err)
-
-	err = store.SetAskFingerprint(ctx, "s1", "new-head", "new-wt")
-	require.NoError(t, err)
-
-	headSHA, wtHash, err := store.AskFingerprint(ctx, "s1")
-	require.NoError(t, err)
-	assert.Equal(t, "new-head", headSHA)
-	assert.Equal(t, "new-wt", wtHash)
-}
-
-func TestResetSession_ClearsAskFingerprint(t *testing.T) {
-	t.Parallel()
-
-	store := newTestStore(t)
-	ctx := t.Context()
-
-	err := store.SetAskFingerprint(ctx, "s1", "abc", "def")
-	require.NoError(t, err)
-
-	err = store.ResetSession(ctx, "s1")
-	require.NoError(t, err)
-
-	headSHA, wtHash, err := store.AskFingerprint(ctx, "s1")
-	require.NoError(t, err)
-	assert.Equal(t, "", headSHA)
-	assert.Equal(t, "", wtHash)
-}
-
 func TestStoreIndependentSessions(t *testing.T) {
 	t.Parallel()
 

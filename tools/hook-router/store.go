@@ -13,10 +13,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// The review_head_sha / review_wt_hash columns now hold the
-// fingerprint captured when the user confirms post-implementation
-// agents via AskUserQuestion. The names predate the rename and
-// are kept to avoid schema churn.
+// The review_head_sha / review_wt_hash columns are vestigial: nothing
+// reads them. They are retained for schema compatibility (the
+// migrations list is append-only and dropping columns needs a table
+// rebuild) and written only by [*Store.ResetSession]'s zeroing.
 const schema = `
 CREATE TABLE IF NOT EXISTS sessions (
     session_id      TEXT PRIMARY KEY,
@@ -367,41 +367,6 @@ func (s *Store) SetPlanPath(ctx context.Context, id, planPath, baseSHA string) e
 	return nil
 }
 
-// SetAskFingerprint records the git state fingerprint captured when
-// a post-implementation AskUserQuestion completes.
-func (s *Store) SetAskFingerprint(ctx context.Context, id, headSHA, wtHash string) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (session_id, review_head_sha, review_wt_hash)
-		 VALUES (?, ?, ?)
-		 ON CONFLICT(session_id) DO UPDATE SET
-		   review_head_sha = excluded.review_head_sha,
-		   review_wt_hash = excluded.review_wt_hash,
-		   updated_at = datetime('now')`, id, headSHA, wtHash)
-	if err != nil {
-		return fmt.Errorf("setting ask fingerprint: %w", err)
-	}
-
-	return nil
-}
-
-// AskFingerprint returns the stored git state fingerprint for a session,
-// captured when a post-implementation AskUserQuestion completes.
-// Returns empty strings when no fingerprint has been recorded.
-func (s *Store) AskFingerprint(ctx context.Context, id string) (headSHA, wtHash string, err error) {
-	err = s.db.QueryRowContext(ctx,
-		`SELECT review_head_sha, review_wt_hash FROM sessions WHERE session_id = ?`, id).
-		Scan(&headSHA, &wtHash)
-	if err == sql.ErrNoRows {
-		return "", "", nil
-	}
-
-	if err != nil {
-		return "", "", fmt.Errorf("querying ask fingerprint: %w", err)
-	}
-
-	return headSHA, wtHash, nil
-}
-
 // ResetSession clears plan state for a session (used on EnterPlanMode).
 //
 // in_plan_mode is reset to 0 along with the other columns so the row is
@@ -417,6 +382,7 @@ func (s *Store) ResetSession(ctx context.Context, id string) error {
 		   exit_plan_count = 0,
 		   plan_path = '',
 		   base_sha = '',
+		   -- vestigial columns, zeroed for row consistency, read nowhere
 		   review_head_sha = '',
 		   review_wt_hash = '',
 		   in_plan_mode = 0,

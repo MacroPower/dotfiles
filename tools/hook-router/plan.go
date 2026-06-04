@@ -302,11 +302,14 @@ func parsePostImplSkills(s string) (*PostImplCatalog, error) {
 
 // handlePostAskUserQuestion runs on PostToolUse:AskUserQuestion.
 // When the question's option labels identify it as the Stop-gate
-// question, it captures the current git fingerprint so the Stop
-// hook can short-circuit. Fail-open throughout: parse errors,
-// missing session, fingerprint errors, and store write errors all
-// return nil; Stop will re-block on the next attempt, which is the
-// recovery path.
+// question, it clears the session row, releasing the Stop gate for
+// the rest of the plan cycle: the post-impl question fires once per
+// cycle, and follow-up edits by the chosen review skills do not
+// re-arm it. EnterPlanMode re-arms naturally via ResetSession plus
+// the next approved ExitPlanMode recording a fresh plan_path.
+// Fail-open throughout: parse errors, missing session, and store
+// write errors all return nil; Stop will re-block on the next
+// attempt, which is the recovery path.
 //
 // The signature deliberately omits an io.Writer: this handler must
 // never produce updatedInput, because workmux's PostToolUse entry
@@ -319,7 +322,6 @@ func handlePostAskUserQuestion(
 	input []byte,
 	store *Store,
 	cfg config,
-	workDir string,
 	logger *slog.Logger,
 ) error {
 	hook, err := parseHookInput(input)
@@ -342,20 +344,11 @@ func handlePostAskUserQuestion(
 		return nil
 	}
 
-	git := &GitRunner{Dir: workDir}
-
-	headSHA, wtHash, err := git.Fingerprint(ctx)
+	// Fail-open: on failure Stop re-blocks and re-asks the post-impl
+	// question, which is the recovery path.
+	err = store.ClearSession(ctx, hook.SessionID)
 	if err != nil {
-		logger.Warn("failed to get fingerprint for ask", slog.Any("error", err))
-		return nil
-	}
-
-	// Fail-open: this is a pure optimization (Stop short-circuit when the
-	// user already answered the post-impl question against current state).
-	// On failure Stop still blocks normally and prompts again.
-	err = store.SetAskFingerprint(ctx, hook.SessionID, headSHA, wtHash)
-	if err != nil {
-		logger.Error("failed to set ask fingerprint", slog.Any("error", err))
+		logger.Error("failed to clear session for post-impl AUQ", slog.Any("error", err))
 		return nil
 	}
 
@@ -363,9 +356,8 @@ func handlePostAskUserQuestion(
 	// for this claude_pid is no longer needed.
 	dropPendingPlan(ctx, store, cfg.claudePID, "post-impl AUQ", logger)
 
-	logger.Info("recorded ask fingerprint",
+	logger.Info("cleared session for post-impl AUQ, Stop gate released",
 		slog.String("session", hook.SessionID),
-		slog.String("head_sha", headSHA),
 	)
 
 	return nil
@@ -571,7 +563,6 @@ func handleStop(
 	stdout io.Writer,
 	store *Store,
 	cfg config,
-	workDir string,
 	logger *slog.Logger,
 ) error {
 	hook, err := parseHookInput(input)
@@ -627,37 +618,12 @@ func handleStop(
 		return encodeJSON(stdout, blockResponse(planModeBlockReason))
 	}
 
+	// An answered post-impl AskUserQuestion lands here too: the handler
+	// clears the session row, so Session() re-INSERTs it with an empty
+	// plan_path and Stop allows for the rest of the plan cycle.
 	if planPath == "" {
 		logger.Info("no plan path, allowing through", slog.String("session", hook.SessionID))
 		return nil
-	}
-
-	git := &GitRunner{Dir: workDir}
-
-	// Fail-open on the fingerprint read: the fallback is the normal block
-	// response below, which is more useful than a "store unavailable"
-	// message. A failed read just means we miss the short-circuit.
-	askHead, askWT, fpErr := store.AskFingerprint(ctx, hook.SessionID)
-	if fpErr != nil {
-		logger.Warn("failed to read ask fingerprint", slog.Any("error", fpErr))
-	}
-
-	if askHead != "" {
-		currentHead, currentWT, fpErr := git.Fingerprint(ctx)
-		if fpErr != nil {
-			logger.Warn("failed to get current fingerprint", slog.Any("error", fpErr))
-		} else if currentHead == askHead && currentWT == askWT {
-			logger.Info("post-impl question already answered for current state, allowing",
-				slog.String("session", hook.SessionID),
-				slog.String("head_sha", currentHead),
-			)
-
-			// Implementation review is done for this state; this window's
-			// handoff is no longer needed.
-			dropPendingPlan(ctx, store, cfg.claudePID, "fingerprint match", logger)
-
-			return nil
-		}
 	}
 
 	reason := cfg.postImpl.BuildAskReason(planPath, baseSHA)

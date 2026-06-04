@@ -9,11 +9,11 @@
 //     plan path and baseline commit on approval
 //   - PreToolUse:EnterPlanMode    -- resets plan session state
 //   - PostToolUse:AskUserQuestion -- when the question's option labels identify it
-//     as the Stop-gate question, captures a git
-//     fingerprint so Stop can short-circuit
+//     as the Stop-gate question, clears the session,
+//     releasing the Stop gate for the plan cycle
 //   - Stop                        -- blocks (with an AskUserQuestion-instructing
-//     message) until the recorded fingerprint matches
-//     the current git state
+//     message) until the post-impl question has been
+//     answered once for the current plan cycle
 //
 // Session state is persisted in a SQLite database. Unmatched Bash commands
 // are forwarded to an optional downstream hook.
