@@ -26,6 +26,7 @@
       "**/.claude/worktrees/"
       "**/.worktrees/"
       "**/.chief/"
+      "**/.playwright-cli/"
       "**/.venv/"
       "**/.venv-*/"
     ];

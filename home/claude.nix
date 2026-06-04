@@ -976,6 +976,8 @@ let
     );
 in
 {
+  imports = [ ./playwright.nix ];
+
   options.dotfiles.claude = {
     kubeApiDomains = mkOption {
       type = types.listOf types.str;
@@ -1644,7 +1646,6 @@ in
       review-implementation.source = ../configs/claude/skills/review-implementation;
       self-improve.source = ../configs/claude/skills/self-improve;
       taskfile.source = ../configs/claude/skills/taskfile;
-      playwright-cli.source = ../configs/claude/skills/playwright-cli;
       web-archive.source = ../configs/claude/skills/web-archive;
     };
 
@@ -2689,7 +2690,6 @@ in
         pkgs.rtk-bin
         pkgs.claude-history
         pkgs.git-surgeon
-        pkgs.playwright-cli
         pkgs.slugify
       ];
 
