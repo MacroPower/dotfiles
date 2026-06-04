@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -67,6 +68,23 @@ func TestSocketPathForSlot(t *testing.T) { //nolint:paralleltest // uses t.Seten
 			assert.Equal(t, tc.want, socketPathForSlot(tc.slot, tc.forGuest))
 		})
 	}
+}
+
+// TestListenSocketRejectsOverlongPath pins the explicit sun_path
+// guard: a socket path past the platform limit must surface a
+// message naming the path and the limit, not the bare EINVAL
+// bind(2) would otherwise produce.
+func TestListenSocketRejectsOverlongPath(t *testing.T) {
+	t.Parallel()
+
+	long := filepath.Join(shortTempDir(t), strings.Repeat("x", maxSunPathLen), "serve.sock")
+
+	h := &handler{}
+
+	_, _, err := h.listenSocket(t.Context(), long, "")
+	require.ErrorIs(t, err, ErrSocketBind)
+	assert.Contains(t, err.Error(), "unix socket path limit",
+		"the guard must name the cause, not surface a bare EINVAL")
 }
 
 // TestAcquireServeSocketPicksFirstFreeSlot pre-binds slots 0..k-1

@@ -33,6 +33,13 @@ const (
 	execPluginReadDeadline    = 30 * time.Second
 )
 
+// maxSunPathLen is the conservative cross-platform bound on a Unix
+// domain socket path: sun_path holds 104 bytes on Darwin and 108 on
+// Linux, minus a trailing NUL. Checked explicitly in
+// [*handler.listenSocket] because bind(2) otherwise surfaces a bare
+// EINVAL that names neither the path nor the reason.
+const maxSunPathLen = 103
+
 // currentSA holds the descriptor of the ServiceAccount currently
 // owned by `serve`. It is loaded atomically by the socket handler
 // goroutine when a kubectl exec-plugin connection arrives, and
@@ -155,6 +162,13 @@ func (h *handler) listenSocket(
 	ctx context.Context,
 	path, instanceID string,
 ) (net.Listener, func(), error) {
+	if len(path) > maxSunPathLen {
+		return nil, nil, fmt.Errorf(
+			"%w: path %q exceeds the %d-byte unix socket path limit; set XDG_STATE_HOME to a shorter path",
+			ErrSocketBind, path, maxSunPathLen,
+		)
+	}
+
 	err := os.MkdirAll(filepath.Dir(path), 0o700)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: create directory: %w", ErrSocketBind, err)
