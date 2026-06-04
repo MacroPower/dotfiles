@@ -390,12 +390,33 @@ func TestResolveSANamespace(t *testing.T) {
 	}
 }
 
+// neutralizeWrapperEnv clears every Claude-launcher env var a
+// selectCtx round-trip reads, and pins TMPDIR to a per-test dir.
+// Without this, an ambient wrapper environment (a test run from
+// inside a live Claude session) leaks into routing decisions via
+// localView and — worse — publishSidecar overwrites the live
+// session's real sidecar symlink.
+func neutralizeWrapperEnv(t *testing.T) string {
+	t.Helper()
+
+	tmp := t.TempDir()
+
+	t.Setenv("TMPDIR", tmp)
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("CLAUDE_KUBECTX_DIR", "")
+	t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
+	t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+	t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", "")
+
+	return tmp
+}
+
 // TestSelectDrainsPriorCleanupOnSuccess pins that handler.selectCtx
 // drains the prior SA's release closure as soon as the new one is
 // fully provisioned. Without this, concurrent Claude sessions that
 // share an --output path leak every prior SA until process exit.
-func TestSelectDrainsPriorCleanupOnSuccess(t *testing.T) {
-	t.Parallel()
+func TestSelectDrainsPriorCleanupOnSuccess(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	neutralizeWrapperEnv(t)
 
 	stdout1, err := json.Marshal(HostSelectResult{
 		Path: "/k", SAName: "claude-sa-1", Namespace: "ns",
@@ -477,8 +498,8 @@ func TestSelectDrainsPriorCleanupOnSuccess(t *testing.T) {
 // TestSelectRestoresPrevCleanupOnFailure pins the other half of the
 // drain contract: if host select fails, the previous closure must
 // be restored so it still runs at process shutdown.
-func TestSelectRestoresPrevCleanupOnFailure(t *testing.T) {
-	t.Parallel()
+func TestSelectRestoresPrevCleanupOnFailure(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	neutralizeWrapperEnv(t)
 
 	stdout1, err := json.Marshal(HostSelectResult{
 		Path: "/k", SAName: "claude-sa-1", Namespace: "ns",
@@ -545,8 +566,8 @@ func TestSelectRestoresPrevCleanupOnFailure(t *testing.T) {
 
 // TestSelectDoesNotDrainEmptyPrev guards against accidentally
 // emitting a host release call when there is no prior cleanup.
-func TestSelectDoesNotDrainEmptyPrev(t *testing.T) {
-	t.Parallel()
+func TestSelectDoesNotDrainEmptyPrev(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	neutralizeWrapperEnv(t)
 
 	stdout, err := json.Marshal(HostSelectResult{
 		Path: "/k", SAName: "claude-sa-1", Namespace: "ns",

@@ -289,10 +289,10 @@ func TestList(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.
 		},
 	}
 
-	for name, tc := range tests {
+	for name, tc := range tests { //nolint:paralleltest // subtests use t.Setenv via neutralizeWrapperEnv
 		t.Run(name, func(t *testing.T) {
 			// Cannot use t.Parallel with t.Setenv.
-			t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
+			neutralizeWrapperEnv(t)
 
 			fake := &fakeRunHost{
 				stdout: map[string][]byte{"list": tc.stdout},
@@ -322,6 +322,8 @@ func TestList(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.
 // suffix is dropped, and the single `(current)` marker reflects the
 // local file's current-context.
 func TestListMergesLocalContexts(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	neutralizeWrapperEnv(t)
+
 	local := writeTestKubeconfig(t, kubeConfig{
 		APIVersion:     "v1",
 		Kind:           "Config",
@@ -603,14 +605,8 @@ func TestSelectCtxValidation(t *testing.T) {
 // `host select`. hook-router reads kubectl context through this
 // symlink (see tools/hook-router/main.go's configFromEnv).
 func TestSelectPublishesSidecarSymlink(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	// Cannot use t.Parallel with t.Setenv.
-	tmpDir := t.TempDir()
-	t.Setenv("TMPDIR", tmpDir)
 	// Clear the wrapper env so the PPID-based fallback is exercised.
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("CLAUDE_KUBECTX_DIR", "")
-	t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
-	t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+	tmpDir := neutralizeWrapperEnv(t)
 
 	stdout, err := json.Marshal(HostSelectResult{
 		Path:       "/canonical/kubeconfig.yaml",
@@ -654,12 +650,7 @@ func TestSelectPublishesSidecarSymlink(t *testing.T) { //nolint:paralleltest // 
 // atomic replacement the second select would fail with EEXIST and
 // silently leave hook-router pointed at the wrong kubeconfig.
 func TestSelectReplacesStaleSidecarSymlink(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	// Cannot use t.Parallel with t.Setenv.
-	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("CLAUDE_KUBECTX_DIR", "")
-	t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
-	t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+	neutralizeWrapperEnv(t)
 
 	sidecar := sidecarSymlinkPath()
 	require.NotEmpty(t, sidecar, "test must run with PPID > 1")
@@ -699,13 +690,8 @@ func TestSelectReplacesStaleSidecarSymlink(t *testing.T) { //nolint:paralleltest
 // parent dir is intentionally left in place to avoid racing peer
 // serves under the same Claude PPID.
 func TestSessionDirCleanupRemovesSidecarSymlink(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	// Cannot use t.Parallel with t.Setenv.
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("CLAUDE_KUBECTX_DIR", "")
-	t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
-	t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+	neutralizeWrapperEnv(t)
 
 	sidecar := sidecarSymlinkPath()
 	require.NotEmpty(t, sidecar, "test must run with PPID > 1")
@@ -825,15 +811,10 @@ func TestSidecarSymlinkPathEnvBranch(t *testing.T) { //nolint:tparallel,parallel
 // the right argv to host select and parses the JSON result back
 // into the MCP success text.
 func TestSelectShellsHostSelect(t *testing.T) { //nolint:paralleltest // uses t.Setenv for TMPDIR isolation
-	// Cannot use t.Parallel with t.Setenv. selectCtx publishes the
-	// hook-router sidecar symlink under TMPDIR; isolate it to
-	// t.TempDir so test runs do not pollute the developer's
-	// /tmp/claude-kubectx/.
-	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("CLAUDE_KUBECTX_DIR", "")
-	t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
-	t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+	// selectCtx publishes the hook-router sidecar symlink under
+	// TMPDIR; isolate it to t.TempDir so test runs do not pollute
+	// the developer's /tmp/claude-kubectx/.
+	neutralizeWrapperEnv(t)
 
 	stdout, err := json.Marshal(HostSelectResult{
 		Path:       "/tmp/k.yaml",
@@ -931,8 +912,8 @@ func TestSelectArgsForwardsAllowedAPIHosts(t *testing.T) {
 	}
 }
 
-func TestSelectShellError(t *testing.T) {
-	t.Parallel()
+func TestSelectShellError(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	neutralizeWrapperEnv(t)
 
 	fake := &fakeRunHost{
 		errs: map[string]error{"select": errors.New("forbidden")},
@@ -952,8 +933,8 @@ func TestSelectShellError(t *testing.T) {
 	assert.Contains(t, resultText(t, result), "forbidden")
 }
 
-func TestSelectShellInvalidJSON(t *testing.T) {
-	t.Parallel()
+func TestSelectShellInvalidJSON(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	neutralizeWrapperEnv(t)
 
 	fake := &fakeRunHost{
 		stdout: map[string][]byte{"select": []byte("not json")},
@@ -977,11 +958,7 @@ func TestSelectShellInvalidJSON(t *testing.T) {
 // stores a [currentSA] descriptor populated from the host select
 // JSON result plus the handler's expiration.
 func TestSelectCtxPopulatesCurrentSA(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("CLAUDE_KUBECTX_DIR", "")
-	t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
-	t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+	neutralizeWrapperEnv(t)
 
 	stdout, err := json.Marshal(HostSelectResult{
 		Path:       "/canonical/kubeconfig.yaml",
@@ -1020,11 +997,7 @@ func TestSelectCtxPopulatesCurrentSA(t *testing.T) { //nolint:paralleltest // us
 // kubectl on the existing kubeconfig keeps working until the
 // caller selects a new context that does succeed.
 func TestSelectCtxRestoresCurrentSAOnFailure(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("CLAUDE_KUBECTX_DIR", "")
-	t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
-	t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+	neutralizeWrapperEnv(t)
 
 	prev := &currentSA{
 		Kubeconfig: "/admin/kube",
@@ -1059,11 +1032,7 @@ func TestSelectCtxRestoresCurrentSAOnFailure(t *testing.T) { //nolint:parallelte
 // TestSelectCtxRestoresCurrentSAOnInvalidJSON pins the same
 // restore semantics on the JSON-parse failure branch.
 func TestSelectCtxRestoresCurrentSAOnInvalidJSON(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("CLAUDE_KUBECTX_DIR", "")
-	t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
-	t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+	neutralizeWrapperEnv(t)
 
 	prev := &currentSA{
 		Kubeconfig: "/admin/kube",
@@ -1100,11 +1069,7 @@ func TestSelectCtxRestoresCurrentSAOnInvalidJSON(t *testing.T) { //nolint:parall
 // merged-view source of truth) while leaving the scoped/sidecar
 // kubeconfig file byte-for-byte untouched.
 func TestSelectExternalWritesLocalCurrentContext(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	tmp := t.TempDir()
-	t.Setenv("TMPDIR", tmp)
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("CLAUDE_KUBECTX_DIR", "")
-	t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+	tmp := neutralizeWrapperEnv(t)
 
 	local := filepath.Join(tmp, "local.yaml")
 	require.NoError(t, os.WriteFile(local, []byte("apiVersion: v1\nkind: Config\n"), 0o600))
@@ -1154,7 +1119,7 @@ func TestSelectExternalWritesLocalCurrentContext(t *testing.T) { //nolint:parall
 // current-context is set in the local file, and the prior external
 // SA's release closure is drained.
 func TestSelectLocalContext(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	tmp := t.TempDir()
+	tmp := neutralizeWrapperEnv(t)
 	local := filepath.Join(tmp, "local.yaml")
 
 	data, err := yaml.Marshal(&kubeConfig{
@@ -1208,6 +1173,8 @@ func TestSelectLocalContextWriteFailureKeepsPriorState(t *testing.T) { //nolint:
 		t.Skip("write-permission failure cannot be provoked as root")
 	}
 
+	neutralizeWrapperEnv(t)
+
 	dir := t.TempDir()
 	local := filepath.Join(dir, "local.yaml")
 
@@ -1225,7 +1192,8 @@ func TestSelectLocalContextWriteFailureKeepsPriorState(t *testing.T) { //nolint:
 	// Read-only parent: loadKubeconfig still reads the existing file,
 	// but writeFileAtomic's tmp create fails.
 	require.NoError(t, os.Chmod(dir, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) //nolint:errcheck // best-effort restore so TempDir cleanup can remove dir
+	//nolint:errcheck // best-effort restore so TempDir cleanup can remove dir
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 
 	prevSA := &currentSA{Context: "prod", SAName: "claude-sa-prev", Expiration: 3600}
 
@@ -1402,11 +1370,7 @@ func TestSelectGuestContextRecreatesReapedLocal(t *testing.T) { //nolint:paralle
 // verifies the unlink does not happen until the handler is
 // released.
 func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses t.Setenv
-	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("CLAUDE_KUBECTX_DIR", "")
-	t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
-	t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
+	neutralizeWrapperEnv(t)
 
 	socketPath := filepath.Join(t.TempDir(), "ordering.sock")
 	kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig.yaml")
