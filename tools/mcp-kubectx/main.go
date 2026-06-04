@@ -142,7 +142,14 @@ func runServe(ctx context.Context, args []string) error {
 		return fmt.Errorf("generate instance id: %w", err)
 	}
 
-	hostID, err := loadOrCreateHostID()
+	// The host id is per-env (host.id vs guest.id): the state dir
+	// is shared with the guest through the Lima bind mount, but
+	// each env's sweep can only vouch for its own env's live
+	// serves, so the ids must split along the same line. See
+	// [loadOrCreateHostID].
+	guest := os.Getenv(guestEnvVar) == "1"
+
+	hostID, err := loadOrCreateHostID(guest)
 	if err != nil {
 		return err
 	}
@@ -170,7 +177,7 @@ func runServe(ctx context.Context, args []string) error {
 	// listenSocket before this returns; that write must happen
 	// before discoverLiveInstances runs below so the serve's own
 	// id appears in the live set.
-	sockPath, listener, _, err := h.acquireServeSocket(ctx, h.isGuest(), h.socketSlots, h.instanceID)
+	sockPath, listener, _, err := h.acquireServeSocket(ctx, guest, h.socketSlots, h.instanceID)
 	if err != nil {
 		return fmt.Errorf("bind serve socket: %w", err)
 	}

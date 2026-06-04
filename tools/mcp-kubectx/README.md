@@ -462,10 +462,15 @@ Every provisioned SA and binding carries three labels:
 
 - `app.kubernetes.io/managed-by=mcp-kubectx`
 - `mcp-kubectx/host-id=<persistent>`: 16-hex id persisted at
-  `<XDG_STATE_HOME>/mcp-kubectx/host.id`, mode `0600`. Created on
-  first `serve` startup. Bounds the sweep to resources this host
-  owns, so two operators against a shared cluster never delete
-  each other's resources.
+  `<XDG_STATE_HOME>/mcp-kubectx/<env>.id` (`host.id` or
+  `guest.id`), mode `0600`. Created on first `serve` startup.
+  Bounds the sweep to resources this host+env owns, so two
+  operators against a shared cluster never delete each other's
+  resources. The id is per-env because the state dir is shared
+  with the guest through the Lima bind mount while sockets are
+  not: each env's liveness discovery can only vouch for its own
+  env's serves, so a shared id would let a host-side sweep delete
+  a concurrent guest serve's live SA (and vice versa).
 - `mcp-kubectx/instance-id=<per-serve random>`: 16-hex id
   generated fresh for each `serve` process. Persisted into a
   per-slot sidecar file at `<socket-path>.id` so a future
@@ -532,6 +537,10 @@ mcp-kubectx host sweep \
   --context my-ctx \
   --host-id $(cat ~/.local/state/mcp-kubectx/host.id)
 ```
+
+Use `guest.id` instead of `host.id` to sweep resources provisioned
+by guest-side serves; the two envs keep separate ids and separate
+sweep domains.
 
 Passing zero `--live-instance-id` flags is destructive: every
 resource tagged with the matching `host-id` and a non-empty

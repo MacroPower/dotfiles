@@ -235,8 +235,12 @@
 // `managed-by` and no `host-id` cannot be attributed to a specific
 // host, so the sweep skips them; recovery is the manual `kubectl
 // delete` documented in the README. The selector pins on
-// `host-id`, so two operators on different machines cannot delete
-// each other's resources.
+// `host-id`, persisted per env as `host.id` or `guest.id` (see
+// [loadOrCreateHostID]), so two operators on different machines
+// cannot delete each other's resources — and neither can host- and
+// guest-side serves on the same machine, which share the
+// bind-mounted state dir but cannot observe each other's live
+// sockets.
 //
 // # Recursion guard
 //

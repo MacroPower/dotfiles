@@ -16,11 +16,11 @@ import (
 func TestLoadOrCreateHostIDFreshCreate(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	id, err := loadOrCreateHostID()
+	id, err := loadOrCreateHostID(false)
 	require.NoError(t, err)
 	assert.Len(t, id, 16, "host id must be 16 hex chars (8 bytes)")
 
-	path := hostIDPath()
+	path := hostIDPath(false)
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
@@ -36,14 +36,14 @@ func TestLoadOrCreateHostIDFreshCreate(t *testing.T) { //nolint:paralleltest // 
 func TestLoadOrCreateHostIDIdempotent(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	first, err := loadOrCreateHostID()
+	first, err := loadOrCreateHostID(false)
 	require.NoError(t, err)
 
-	pathBefore := hostIDPath()
+	pathBefore := hostIDPath(false)
 	infoBefore, err := os.Stat(pathBefore)
 	require.NoError(t, err)
 
-	second, err := loadOrCreateHostID()
+	second, err := loadOrCreateHostID(false)
 	require.NoError(t, err)
 
 	assert.Equal(t, first, second, "second call must return persisted id")
@@ -55,20 +55,19 @@ func TestLoadOrCreateHostIDIdempotent(t *testing.T) { //nolint:paralleltest // u
 }
 
 // TestLoadOrCreateHostIDTrimsWhitespace pins that whitespace and
-// trailing newlines in a manually edited host.id file are
-// tolerated. An operator that hand-edits the file with `echo
-// >host.id` would otherwise see the trailing newline change the
-// effective selector.
+// trailing newlines around a well-formed id are tolerated. An
+// operator that hand-edits the file with `echo >host.id` would
+// otherwise see the trailing newline change the effective selector.
 func TestLoadOrCreateHostIDTrimsWhitespace(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	path := hostIDPath()
+	path := hostIDPath(false)
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
-	require.NoError(t, os.WriteFile(path, []byte("  manual-id\n"), 0o600))
+	require.NoError(t, os.WriteFile(path, []byte("  0123456789abcdef\n"), 0o600))
 
-	id, err := loadOrCreateHostID()
+	id, err := loadOrCreateHostID(false)
 	require.NoError(t, err)
-	assert.Equal(t, "manual-id", id, "leading/trailing whitespace must be trimmed")
+	assert.Equal(t, "0123456789abcdef", id, "leading/trailing whitespace must be trimmed")
 }
 
 // TestLoadOrCreateHostIDRegeneratesEmptyFile pins that a zero-byte
@@ -79,11 +78,52 @@ func TestLoadOrCreateHostIDTrimsWhitespace(t *testing.T) { //nolint:paralleltest
 func TestLoadOrCreateHostIDRegeneratesEmptyFile(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	path := hostIDPath()
+	path := hostIDPath(false)
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
 	require.NoError(t, os.WriteFile(path, []byte(""), 0o600))
 
-	id, err := loadOrCreateHostID()
+	id, err := loadOrCreateHostID(false)
 	require.NoError(t, err)
 	assert.Len(t, id, 16, "empty host.id must be regenerated to a 16-hex id")
+}
+
+// TestLoadOrCreateHostIDRegeneratesInvalidFormat pins that
+// persisted content rejected by [validHostID] (a hand-edited or
+// corrupt host.id) is replaced with a fresh well-formed id.
+// Returning it verbatim would label every resource with a value
+// [runHostSweep] refuses, permanently disabling the sweep.
+func TestLoadOrCreateHostIDRegeneratesInvalidFormat(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	path := hostIDPath(false)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte("manual-id\n"), 0o600))
+
+	id, err := loadOrCreateHostID(false)
+	require.NoError(t, err)
+	assert.True(t, validHostID(id), "regenerated id must satisfy validHostID")
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, id, string(data), "regenerated id must be persisted")
+}
+
+// TestLoadOrCreateHostIDPerEnv pins the host/guest id split. The
+// state dir is shared across the Lima bind mount, but each env can
+// only observe its own env's live sockets, so a shared id would
+// let one env's sweep delete the other env's live resources.
+func TestLoadOrCreateHostIDPerEnv(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	assert.Equal(t, "host.id", filepath.Base(hostIDPath(false)))
+	assert.Equal(t, "guest.id", filepath.Base(hostIDPath(true)))
+
+	hostID, err := loadOrCreateHostID(false)
+	require.NoError(t, err)
+
+	guestID, err := loadOrCreateHostID(true)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, hostID, guestID,
+		"host and guest envs must mint distinct ids so their sweeps stay disjoint")
 }
