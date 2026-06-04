@@ -96,6 +96,39 @@ func TestRunExecPluginClientReadDeadline(t *testing.T) { //nolint:paralleltest /
 	}
 }
 
+// TestRunExecPluginClientTruncated pins that a server closing
+// mid-document does not exit 0: partial JSON is withheld from
+// stdout and surfaced as [ErrMalformedCredential], so kubectl
+// re-invokes cleanly instead of choking on torn output.
+func TestRunExecPluginClientTruncated(t *testing.T) { //nolint:paralleltest // mutates package-level hostStdout
+	dir := t.TempDir()
+	path := filepath.Join(dir, "trunc.sock")
+
+	listener, err := net.Listen("unix", path) //nolint:noctx // synchronous test fixture
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() }) //nolint:errcheck // best-effort test cleanup
+
+	// Write a JSON prefix and close, simulating a server-side
+	// deadline expiring mid-write.
+	partial := []byte(`{"apiVersion":"client.authentication.k8s.io/v1","kind":"Exec`)
+
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+
+		_, _ = conn.Write(partial) //nolint:errcheck // deliberate partial write
+		_ = conn.Close()           //nolint:errcheck // simulate abrupt server close
+	}()
+
+	buf := withHostStdout(t)
+
+	err = runExecPluginClient(t.Context(), []string{"--socket", path})
+	require.ErrorIs(t, err, ErrMalformedCredential)
+	assert.Empty(t, buf.String(), "truncated JSON must not reach stdout")
+}
+
 // TestRunExecPluginClientMissingSocketFlag pins that omitting
 // --socket fails fast with the public sentinel.
 func TestRunExecPluginClientMissingSocketFlag(t *testing.T) { //nolint:paralleltest // mutates package-level hostStdout

@@ -323,10 +323,13 @@ func (h *handler) serveSocket(ctx context.Context, l net.Listener, wg *sync.Wait
 
 // handleSocketConn writes the bytes of an [ExecCredential] JSON
 // document for the currently-selected SA back to the kubectl shim.
-// When no SA is selected (currentSA is nil) the handler logs a
-// structured warning and closes the connection without writing any
-// bytes; the shim's n==0 check turns this into a deterministic
-// non-zero exit kubectl surfaces clearly.
+// When no SA is selected (currentSA is nil) or the token mint
+// fails, the handler logs a structured warning and closes the
+// connection without writing any bytes; the shim's zero-byte check
+// turns either case into a deterministic non-zero exit kubectl
+// surfaces clearly. The wire protocol cannot distinguish the two,
+// so [ErrEmptyCredential]'s text names both and points at the
+// serve logs.
 func (h *handler) handleSocketConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close() //nolint:errcheck // already responded; close error has nowhere to go
 
