@@ -198,7 +198,7 @@ func runServe(ctx context.Context, args []string) error {
 
 	h.sweepWG.Go(func() { h.runSweep(ctx, liveSet) })
 
-	go h.serveSocket(ctx, listener, &h.socketWG)
+	h.startServeSocket(ctx, listener, &h.socketWG)
 
 	srv := mcp.NewServer(
 		&mcp.Implementation{Name: "mcp-kubectx", Version: version},

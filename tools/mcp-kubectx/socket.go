@@ -254,13 +254,31 @@ func clearStaleSocket(ctx context.Context, path string) error {
 	return nil
 }
 
+// startServeSocket launches [*handler.serveSocket] on its own
+// goroutine with the accept loop itself registered on wg. Holding a
+// wg token for the loop's entire lifetime makes the per-connection
+// wg.Add inside serveSocket safe: the counter cannot reach zero
+// (so a concurrent [*handler.socketShutdown] Wait cannot return)
+// until the loop has exited, after which no further Add can occur.
+// Without the loop token, an Accept racing the shutdown's Close
+// could Add from a zero counter concurrently with Wait — the one
+// ordering [sync.WaitGroup] forbids — letting the shutdown unlink
+// session files under an in-flight token mint.
+func (h *handler) startServeSocket(ctx context.Context, l net.Listener, wg *sync.WaitGroup) {
+	wg.Go(func() {
+		h.serveSocket(ctx, l, wg)
+	})
+}
+
 // serveSocket runs the accept loop for the per-`serve` Unix domain
 // socket. It returns when ctx is canceled (the goroutine that
 // watches ctx closes the listener, which surfaces as [net.ErrClosed]
 // in Accept). Each accepted connection is handled in its own
 // goroutine tracked by wg so the shutdown path can drain in-flight
 // handlers before the higher-level cleanup unlinks the socket file
-// and the kubeconfig.
+// and the kubeconfig. Callers that drain wg concurrently must enter
+// through [*handler.startServeSocket] so the loop holds its own wg
+// token before the first Accept.
 func (h *handler) serveSocket(ctx context.Context, l net.Listener, wg *sync.WaitGroup) {
 	go func() {
 		<-ctx.Done()
