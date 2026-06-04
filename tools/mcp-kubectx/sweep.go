@@ -401,11 +401,7 @@ func (h *handler) runSweep(ctx context.Context, liveSet map[string]struct{}) {
 		return
 	}
 
-	args := []string{}
-	if h.kubeconfigPath != "" {
-		args = append(args, "--kubeconfig", h.kubeconfigPath)
-	}
-
+	args := h.kubeconfigArgs()
 	args = append(args, "--host-id", h.hostID)
 
 	for id := range liveSet {

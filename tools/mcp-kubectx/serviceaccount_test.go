@@ -44,8 +44,6 @@ type mockKubeClient struct {
 	deletedClusterRoleBindings []string
 	tokenRequests              []string
 	listedSAs                  []string
-	listedRBs                  []string
-	listedCRBs                 []string
 
 	listSAResp  []ResourceRef
 	listRBResp  []ResourceRef
@@ -148,20 +146,16 @@ func (m *mockKubeClient) ListServiceAccounts(_ context.Context, selector string)
 	return m.listSAResp, m.listSAErr
 }
 
-func (m *mockKubeClient) ListRoleBindings(_ context.Context, selector string) ([]ResourceRef, error) {
+func (m *mockKubeClient) ListRoleBindings(_ context.Context, _ string) ([]ResourceRef, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	m.listedRBs = append(m.listedRBs, selector)
 
 	return m.listRBResp, m.listRBErr
 }
 
-func (m *mockKubeClient) ListClusterRoleBindings(_ context.Context, selector string) ([]ResourceRef, error) {
+func (m *mockKubeClient) ListClusterRoleBindings(_ context.Context, _ string) ([]ResourceRef, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	m.listedCRBs = append(m.listedCRBs, selector)
 
 	return m.listCRBResp, m.listCRBErr
 }

@@ -48,14 +48,11 @@ func (h *handler) hostExecArgs(sub string, args []string) (string, []string, err
 
 // isGuest reports whether the serve process is running inside a
 // workmux sandbox guest. The decision uses the injected envLookup
-// so unit tests can drive both branches deterministically.
+// (assigned at every construction site: [main.runServe] uses
+// [os.Getenv], tests use constLookup) so unit tests can drive both
+// branches deterministically.
 func (h *handler) isGuest() bool {
-	lookup := h.envLookup
-	if lookup == nil {
-		lookup = os.Getenv
-	}
-
-	return lookup(guestEnvVar) == "1"
+	return h.envLookup(guestEnvVar) == "1"
 }
 
 // runHostFunc is the contract used by handler.list and

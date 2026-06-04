@@ -7,7 +7,7 @@ import (
 )
 
 // TestBuildExecPluginUniform pins the shape of the kubectl exec
-// plugin block. The shape is a function only of [execPluginParams.SocketPath];
+// plugin block. The shape is a function only of the socket path;
 // every other input that the previous two-variant design carried
 // (kubeconfig path, context, SA name, namespace, expiration,
 // for-guest) is deliberately gone.
@@ -32,7 +32,7 @@ func TestBuildExecPluginUniform(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			plugin := buildExecPlugin(execPluginParams{SocketPath: tc.socket})
+			plugin := buildExecPlugin(tc.socket)
 
 			assert.Equal(t, execAuthAPIVersion, plugin.APIVersion)
 			assert.Equal(t, "Never", plugin.InteractiveMode)

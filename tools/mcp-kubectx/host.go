@@ -164,12 +164,10 @@ func runHostList(args []string) error {
 
 	b.WriteString("Available contexts:\n")
 
+	// writeContextLine keeps this byte-identical to the serve-side
+	// merge output, which re-parses these lines.
 	for _, c := range cfg.Contexts {
-		if c.Name == cfg.CurrentContext {
-			fmt.Fprintf(&b, "- %s (current)\n", c.Name)
-		} else {
-			fmt.Fprintf(&b, "- %s\n", c.Name)
-		}
+		writeContextLine(&b, c.Name, "", c.Name == cfg.CurrentContext)
 	}
 
 	_, err = fmt.Fprint(hostStdout, b.String())
@@ -423,12 +421,13 @@ func runHostSelect(ctx context.Context, args []string) error {
 		return err
 	}
 
-	plugin := buildExecPlugin(execPluginParams{SocketPath: resolvedSocketPath})
+	plugin := buildExecPlugin(resolvedSocketPath)
 
 	out := kubeConfig{
 		APIVersion:     "v1",
 		Kind:           "Config",
 		CurrentContext: contextName,
+		Clusters:       []namedCluster{*cluster},
 		Contexts: []namedContext{{
 			Name: contextName,
 			Context: contextDetails{
@@ -441,10 +440,6 @@ func runHostSelect(ctx context.Context, args []string) error {
 			Name: saName,
 			User: map[string]any{"exec": plugin},
 		}},
-	}
-
-	if cluster != nil {
-		out.Clusters = []namedCluster{*cluster}
 	}
 
 	data, err := yaml.Marshal(&out)
