@@ -398,6 +398,13 @@ let
       emoji = false;
       max_width = 120;
     };
+    hooks = {
+      # rtk rewrites `rg ...` to `rtk grep ...`, but rtk's grep CLI cannot
+      # parse most rg flags (-i, --max-depth, ...); its parse-failure
+      # fallback then raw-executes GNU grep with rg-style args, which
+      # breaks directory searches. Let rg run natively instead.
+      exclude_commands = [ "rg" ];
+    };
   };
 
   claudeStylixBase = if config.stylix.polarity == "light" then "light" else "dark";
@@ -2706,7 +2713,6 @@ in
 
         ## Shell
         - A PreToolUse hook rewrites some Bash commands through `rtk`, which filters their output to reduce tokens.
-        - Notable rewrites: `find` -> `fd`, `grep` -> `rg`.
         - If filtered output looks truncated or wrong, rerun as `rtk proxy <cmd>` to get the raw output.
 
         ## Writing Style
