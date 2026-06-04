@@ -627,6 +627,28 @@ func TestHostTokenMissingFlags(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestHostTokenRejectsExcessiveExpiration pins that `host token`
+// enforces the same 86400-second cap as saConfig.validate on the
+// serve path. The subcommand is reachable directly, and an
+// unbounded value would both violate the documented cap and
+// overflow time.Duration for very large inputs.
+func TestHostTokenRejectsExcessiveExpiration(t *testing.T) { //nolint:paralleltest // mutates package-level state
+	mock := &mockKubeClient{token: "t", tokenExpiry: time.Now()}
+	withHostKubeClient(t, mock)
+	withHostStdout(t)
+
+	err := runHostToken(t.Context(), []string{
+		"--kubeconfig", "/dev/null",
+		"--context", "prod",
+		"--sa", "claude-sa-1",
+		"--namespace", "ns",
+		"--sa-expiration", "100000",
+	})
+	require.ErrorIs(t, err, ErrExpirationTooLong)
+
+	assert.Empty(t, mock.tokenRequests, "an out-of-cap expiration must not reach the apiserver")
+}
+
 func TestHostTokenAPIError(t *testing.T) { //nolint:paralleltest // mutates package-level state
 	mock := &mockKubeClient{tokenRequestErr: errors.New("unauthorized")}
 	withHostKubeClient(t, mock)

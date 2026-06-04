@@ -521,6 +521,15 @@ func runHostToken(ctx context.Context, args []string) error {
 		return ErrTokenMissingNamespace
 	}
 
+	// Mirror saConfig.validate's cap: the serve path validates its
+	// expiration at startup, but this subcommand is reachable
+	// directly, and an unbounded value would both violate the
+	// documented 86400 cap and overflow time.Duration past ~9.2e9
+	// seconds.
+	if *saExpiration > maxExpiration {
+		return fmt.Errorf("%w: got %d", ErrExpirationTooLong, *saExpiration)
+	}
+
 	client, err := hostKubeClient(resolveHostKubeconfigPath(*kubeconfig), *contextName)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrBuildKubeClient, err)
