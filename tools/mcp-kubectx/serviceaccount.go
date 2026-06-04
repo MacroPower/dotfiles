@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -255,6 +256,20 @@ func createSAWithBinding(
 
 	err = createBinding(ctx, client, sa, namespace, bindingNameForSA(saName), saName, labels)
 	if err != nil {
+		// Roll back the SA best-effort: it carries the live serve's
+		// own instance-id, which shields it from every sweep for as
+		// long as this serve runs, and a failed select registers no
+		// release closure — without the rollback it would strand
+		// until the next serve's startup sweep.
+		delErr := client.DeleteServiceAccount(ctx, namespace, saName)
+		if delErr != nil {
+			slog.WarnContext(ctx, "rollback service account after binding failure",
+				slog.String("namespace", namespace),
+				slog.String("name", saName),
+				slog.Any("error", delErr),
+			)
+		}
+
 		return "", fmt.Errorf("%w: %w", ErrCreateBinding, err)
 	}
 

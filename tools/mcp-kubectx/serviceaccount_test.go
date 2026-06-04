@@ -315,11 +315,20 @@ func TestCreateSAWithBinding(t *testing.T) {
 			ns:   "ns",
 			err:  ErrCreateSA,
 		},
-		"binding creation failure": {
+		"binding creation failure rolls back the SA": {
 			sa:   saConfig{role: "view", roleKind: "Role", expiration: 3600},
 			mock: &mockKubeClient{createRoleBindingErr: errors.New("forbidden")},
 			ns:   "ns",
 			err:  ErrCreateBinding,
+			assert: func(t *testing.T, m *mockKubeClient) {
+				t.Helper()
+				// The orphaned SA would carry the live serve's own
+				// instance-id and dodge every sweep; the rollback
+				// delete must fire.
+				require.Len(t, m.deletedSAs, 1)
+				assert.Equal(t, m.createdSAs[0], m.deletedSAs[0],
+					"the rollback must delete the SA that was just created")
+			},
 		},
 	}
 
@@ -330,6 +339,11 @@ func TestCreateSAWithBinding(t *testing.T) {
 			saName, err := createSAWithBinding(t.Context(), tc.mock, tc.sa, tc.ns, tc.instanceID, tc.hostID)
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
+
+				if tc.assert != nil {
+					tc.assert(t, tc.mock)
+				}
+
 				return
 			}
 
