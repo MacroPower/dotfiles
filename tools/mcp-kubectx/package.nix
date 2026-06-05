@@ -8,7 +8,7 @@ buildGoModule {
   version = "0.1.0";
 
   src = ./.;
-  vendorHash = "sha256-5Qjzp60MwfLPTEPVKRtoXgf0WCgqO/kA9Qm24MBQkeQ=";
+  vendorHash = "sha256-SEZxWum0M7DMVJVsNE+9/fH3etEICRDCoZEybgQXI3Q=";
 
   meta = {
     description = "MCP server for Kubernetes context selection with ServiceAccount-scoped credentials";
