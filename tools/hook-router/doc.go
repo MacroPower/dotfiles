@@ -3,7 +3,7 @@
 //
 // It handles PreToolUse, PostToolUse, and Stop hook events:
 //
-//   - PreToolUse:Bash             -- evaluates command-deny rules from
+//   - PreToolUse:Bash             -- evaluates command deny/ask rules from
 //     --command-rules JSON and rewrites kubectl with KUBECONFIG
 //   - PreToolUse:ExitPlanMode     -- gates plan exit behind plan-reviewer, records
 //     plan path and baseline commit on approval

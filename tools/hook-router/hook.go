@@ -45,6 +45,21 @@ func denyResponse(reason string) map[string]any {
 	}
 }
 
+// askResponse returns a PreToolUse decision that forces a permission
+// prompt. Hook decisions are evaluated after settings ask rules and
+// before settings allow rules, so an "ask" here prompts even when a
+// settings allow rule or sandbox auto-allow would otherwise let the
+// command run.
+func askResponse(reason string) map[string]any {
+	return map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName":            "PreToolUse",
+			"permissionDecision":       "ask",
+			"permissionDecisionReason": reason,
+		},
+	}
+}
+
 // allowResponse returns a PreToolUse decision that skips the analyzer's
 // permission prompt. Per Claude Code's hook docs, ask and deny rules
 // in settings still fire even when a hook returns "allow".

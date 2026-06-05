@@ -85,7 +85,7 @@ func main() {
 	dbPath := flag.String("db", "", "path to SQLite state database")
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
-	commandRules := flag.String("command-rules", "", "JSON array of command deny rules ({command, args, except, reason})")
+	commandRules := flag.String("command-rules", "", "JSON array of command deny/ask rules ({command, args, except, action, reason})")
 	formatterRules := flag.String("formatter-rules", "", "JSON array of file-formatter routing rules ({pathGlob, command, timeout})")
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")

@@ -383,6 +383,74 @@ exit 7`)
 		assert.Equal(t, "deny", hso["permissionDecision"])
 	})
 
+	t.Run("autoAllow=true, ask match: ask emitted instead of auto-allow", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules: ghAskRules(),
+			rtkRewrite:   rtkEmpty,
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "gh pr merge 1"), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+		assert.Equal(t, "ask", hso["permissionDecision"])
+		assert.Equal(t, ghGroupAskReason, hso["permissionDecisionReason"])
+	})
+
+	t.Run("autoAllow=false, ask match: ask emitted", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules: ghAskRules(),
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "gh api /user"), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "ask", hso["permissionDecision"])
+		assert.Equal(t, ghFallbackAskReason, hso["permissionDecisionReason"])
+	})
+
+	t.Run("autoAllow=true, ask-exempt command: falls through to auto-allow", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules: ghAskRules(),
+			rtkRewrite:   rtkEmpty,
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "gh pr view 1"), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "allow", hso["permissionDecision"])
+		assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
+	})
+
 	t.Run("autoAllow=true, kubectl with kubeconfig: allow without updatedInput", func(t *testing.T) {
 		t.Parallel()
 

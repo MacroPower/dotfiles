@@ -158,11 +158,14 @@ let
     };
   };
 
-  # Bash command deny rule, evaluated by hook-router on PreToolUse:Bash.
-  # See tools/hook-router/command_rules.go DenyCommandRule for matching
+  # Bash command rule, evaluated by hook-router on PreToolUse:Bash.
+  # Used for both deny rules (block the command) and ask rules (force
+  # a permission prompt); the action is set by list membership when
+  # the rules are serialized for the hook-router wrapper. See
+  # tools/hook-router/command_rules.go CommandRule for matching
   # semantics; the JSON tags there must stay aligned with these option
   # names.
-  denyCommandRuleType = types.submodule {
+  commandRuleType = types.submodule {
     options = {
       command = mkOption {
         type = types.nonEmptyStr;
@@ -192,12 +195,12 @@ let
           while still denying `git stash push`. No flag-skipping is
           applied to the candidate slot, so intervening flags break
           the exemption. Bare `command + args` calls (no further
-          arguments) always deny regardless of `except`.
+          arguments) always fire regardless of `except`.
         '';
       };
       reason = mkOption {
         type = types.nonEmptyStr;
-        description = "Message returned to Claude when the rule denies a command.";
+        description = "Message shown when the rule denies a command or asks for confirmation.";
       };
     };
   };
@@ -632,7 +635,15 @@ let
         --post-impl-skills ${lib.escapeShellArg (builtins.toJSON postImplCatalog)} \
         --commit-skills ${lib.escapeShellArg (builtins.toJSON commitSkills)} \
         --command-rules ${
-          lib.escapeShellArg (builtins.toJSON (bundledCommandDeny ++ cfg.extraCommandRules.deny))
+          # Deny rules are serialized before ask rules: hook-router
+          # evaluates the list in order with first-match-wins, so this
+          # ordering preserves deny precedence.
+          lib.escapeShellArg (
+            builtins.toJSON (
+              map (r: r // { action = "deny"; }) (bundledCommandDeny ++ cfg.extraCommandRules.deny)
+              ++ map (r: r // { action = "ask"; }) (bundledCommandAsk ++ cfg.extraCommandRules.ask)
+            )
+          )
         } \
         --formatter-rules ${
           lib.escapeShellArg (builtins.toJSON (defaultFormatterRules ++ cfg.formatterRules))
@@ -796,6 +807,7 @@ let
   bundledFetchDeny = lib.concatMap (b: b.fetchRules.deny) bundleValues;
   bundledFetchAllow = lib.concatMap (b: b.fetchRules.allow) bundleValues;
   bundledCommandDeny = lib.concatMap (b: b.commandRules.deny) bundleValues;
+  bundledCommandAsk = lib.concatMap (b: b.commandRules.ask) bundleValues;
 
   researchDir =
     if cfg.research.useVault then
@@ -1331,20 +1343,31 @@ in
       type = types.submodule {
         options = {
           deny = mkOption {
-            type = types.listOf denyCommandRuleType;
+            type = types.listOf commandRuleType;
             default = [ ];
             description = ''
               Extra bash command deny rules, appended after the
-              bundle-contributed rules in hook-router's evaluation
-              order. No `allow` counterpart exists: hook-router has
-              no command allowlist concept, only deny rules with
-              optional per-rule `except` exemptions.
+              bundle-contributed deny rules in hook-router's
+              evaluation order. No `allow` counterpart exists:
+              hook-router has only deny and ask rules with optional
+              per-rule `except` exemptions; non-matching commands
+              fall through to the normal permission flow.
+            '';
+          };
+          ask = mkOption {
+            type = types.listOf commandRuleType;
+            default = [ ];
+            description = ''
+              Extra bash command ask rules, appended after the
+              bundle-contributed ask rules in hook-router's
+              evaluation order. All deny rules are evaluated before
+              any ask rule.
             '';
           };
         };
       };
       default = { };
-      description = "Extra hook-router command deny rules appended after bundle-contributed rules.";
+      description = "Extra hook-router command deny/ask rules appended after bundle-contributed rules.";
     };
 
     formatterRules = mkOption {
@@ -1631,7 +1654,7 @@ in
             };
             commandRules = {
               deny = mkOption {
-                type = types.listOf denyCommandRuleType;
+                type = types.listOf commandRuleType;
                 default = [ ];
                 description = ''
                   hook-router PreToolUse:Bash deny rules contributed by
@@ -1639,6 +1662,20 @@ in
                   redirect messages that point at this bundle's MCP
                   tools turn off automatically when the bundle is
                   disabled.
+                '';
+              };
+              ask = mkOption {
+                type = types.listOf commandRuleType;
+                default = [ ];
+                description = ''
+                  hook-router PreToolUse:Bash ask rules contributed by
+                  this bundle. A matching command gets a forced
+                  permission prompt, even when settings allow rules or
+                  sandbox auto-allow would otherwise let it run. List
+                  order matters (first match wins): scope rules to
+                  subcommands before a catch-all fallback for the same
+                  command. All deny rules are evaluated before any ask
+                  rule.
                 '';
               };
             };
@@ -1823,119 +1860,205 @@ in
         ];
       };
 
-      github = {
-        servers.github = {
-          type = "stdio";
-          command = "${githubWrapper}";
-        };
-        permissions.allow = [
-          "mcp__github__get_commit"
-          "mcp__github__get_copilot_job_status"
-          "mcp__github__get_label"
-          "mcp__github__get_latest_release"
-          "mcp__github__get_me"
-          "mcp__github__get_release_by_tag"
-          "mcp__github__get_tag"
-          "mcp__github__get_team_members"
-          "mcp__github__get_teams"
-          "mcp__github__issue_read"
-          "mcp__github__list_branches"
-          "mcp__github__list_commits"
-          "mcp__github__list_issue_types"
-          "mcp__github__list_issues"
-          "mcp__github__list_pull_requests"
-          "mcp__github__list_releases"
-          "mcp__github__list_repository_collaborators"
-          "mcp__github__list_tags"
-          "mcp__github__pull_request_read"
-          "mcp__github__search_code"
-          "mcp__github__search_issues"
-          "mcp__github__search_pull_requests"
-          "mcp__github__search_repositories"
-          "mcp__github__search_users"
-        ];
-        permissions.ask = [
-          "Bash(gh)"
-          "Bash(gh *)"
-        ];
-        permissions.deny = [
-          "mcp__github__get_file_contents"
-          # GitHub MCP: deny all write/mutating tools.
-          # These are blocked by the MCP config and primarily denied here as a usage hint.
-          "mcp__github__actions_run_trigger"
-          "mcp__github__add_comment_to_pending_review"
-          "mcp__github__add_issue_comment"
-          "mcp__github__add_reply_to_pull_request_comment"
-          "mcp__github__assign_copilot_to_issue"
-          "mcp__github__create_branch"
-          "mcp__github__create_gist"
-          "mcp__github__create_or_update_file"
-          "mcp__github__create_pull_request"
-          "mcp__github__create_pull_request_with_copilot"
-          "mcp__github__create_repository"
-          "mcp__github__delete_file"
-          "mcp__github__dismiss_notification"
-          "mcp__github__fork_repository"
-          "mcp__github__issue_write"
-          "mcp__github__label_write"
-          "mcp__github__manage_notification_subscription"
-          "mcp__github__manage_repository_notification_subscription"
-          "mcp__github__mark_all_notifications_read"
-          "mcp__github__merge_pull_request"
-          "mcp__github__projects_write"
-          "mcp__github__pull_request_review_write"
-          "mcp__github__push_files"
-          "mcp__github__request_copilot_review"
-          "mcp__github__star_repository"
-          "mcp__github__sub_issue_write"
-          "mcp__github__unstar_repository"
-          "mcp__github__update_gist"
-          "mcp__github__update_pull_request"
-          "mcp__github__update_pull_request_branch"
-          "mcp__github__run_secret_scanning"
-        ];
-        fetchRules.deny = [
-          {
-            host = "api\\.github\\.com";
-            reason = "Use mcp__github__* tools instead of fetching the GitHub API directly.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/issues(/.*)?";
-            reason = "Use mcp__github__list_issues or mcp__github__issue_read instead of fetching GitHub issue pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/pulls?(/.*)?";
-            reason = "Use mcp__github__list_pull_requests or mcp__github__pull_request_read instead of fetching GitHub PR pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/(commit|compare)(/.*)?";
-            reason = "Use mcp__github__get_commit or mcp__github__list_commits instead of fetching GitHub commit pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/releases(/.*)?";
-            reason = "Use mcp__github__list_releases or mcp__github__get_latest_release instead of fetching GitHub release pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/tags(/.*)?";
-            reason = "Use mcp__github__list_tags or mcp__github__get_tag instead of fetching GitHub tag pages.";
-          }
-          {
-            host = "github\\.com";
-            path = "/search(/.*)?";
-            reason = "Use mcp__github__search_code, mcp__github__search_issues, mcp__github__search_pull_requests, or mcp__github__search_repositories instead of fetching GitHub search pages.";
-          }
-        ];
-        instructions = {
-          items = [
-            "Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)"
+      github =
+        let
+          # Read-only gh CLI surface: the single source of truth for
+          # both the permission allow entries and the hook-router ask
+          # rules below. Each group maps a gh subcommand to its
+          # read-only leaves; ghReadOnlyCommands lists top-level gh
+          # commands that are read-only in their entirety. Mirrored by
+          # ghAskRules in tools/hook-router/command_rules_test.go;
+          # update both together.
+          ghReadOnlyGroups = {
+            pr = [
+              "view"
+              "list"
+              "diff"
+              "checks"
+              "status"
+            ];
+            issue = [
+              "view"
+              "list"
+            ];
+            run = [
+              "view"
+              "list"
+              "watch"
+            ];
+            repo = [
+              "view"
+              "list"
+            ];
+            release = [
+              "view"
+              "list"
+            ];
+            workflow = [
+              "view"
+              "list"
+            ];
+          };
+          ghReadOnlyCommands = [
+            "search"
+            "status"
           ];
+          ghAllowPair = prefix: [
+            "Bash(gh ${prefix})"
+            "Bash(gh ${prefix} *)"
+          ];
+        in
+        {
+          servers.github = {
+            type = "stdio";
+            command = "${githubWrapper}";
+          };
+          permissions.allow = [
+            "mcp__github__get_commit"
+            "mcp__github__get_copilot_job_status"
+            "mcp__github__get_label"
+            "mcp__github__get_latest_release"
+            "mcp__github__get_me"
+            "mcp__github__get_release_by_tag"
+            "mcp__github__get_tag"
+            "mcp__github__get_team_members"
+            "mcp__github__get_teams"
+            "mcp__github__issue_read"
+            "mcp__github__list_branches"
+            "mcp__github__list_commits"
+            "mcp__github__list_issue_types"
+            "mcp__github__list_issues"
+            "mcp__github__list_pull_requests"
+            "mcp__github__list_releases"
+            "mcp__github__list_repository_collaborators"
+            "mcp__github__list_tags"
+            "mcp__github__pull_request_read"
+            "mcp__github__search_code"
+            "mcp__github__search_issues"
+            "mcp__github__search_pull_requests"
+            "mcp__github__search_repositories"
+            "mcp__github__search_users"
+          ]
+          # Read-only gh CLI commands, derived from the
+          # ghReadOnlyGroups / ghReadOnlyCommands tables above. These
+          # cover hosts where the sandbox auto-allow is off; mutating gh
+          # commands are caught by the commandRules.ask rules below,
+          # which prompt on every host. An ask entry like Bash(gh *)
+          # would shadow all of these (permission rules evaluate
+          # deny -> ask -> allow, regardless of specificity), so gh must
+          # not appear in the ask list.
+          ++ lib.concatLists (
+            lib.mapAttrsToList (
+              group: leaves: lib.concatMap (leaf: ghAllowPair "${group} ${leaf}") leaves
+            ) ghReadOnlyGroups
+          )
+          ++ lib.concatMap ghAllowPair ghReadOnlyCommands;
+          permissions.deny = [
+            "mcp__github__get_file_contents"
+            # GitHub MCP: deny all write/mutating tools.
+            # These are blocked by the MCP config and primarily denied here as a usage hint.
+            "mcp__github__actions_run_trigger"
+            "mcp__github__add_comment_to_pending_review"
+            "mcp__github__add_issue_comment"
+            "mcp__github__add_reply_to_pull_request_comment"
+            "mcp__github__assign_copilot_to_issue"
+            "mcp__github__create_branch"
+            "mcp__github__create_gist"
+            "mcp__github__create_or_update_file"
+            "mcp__github__create_pull_request"
+            "mcp__github__create_pull_request_with_copilot"
+            "mcp__github__create_repository"
+            "mcp__github__delete_file"
+            "mcp__github__dismiss_notification"
+            "mcp__github__fork_repository"
+            "mcp__github__issue_write"
+            "mcp__github__label_write"
+            "mcp__github__manage_notification_subscription"
+            "mcp__github__manage_repository_notification_subscription"
+            "mcp__github__mark_all_notifications_read"
+            "mcp__github__merge_pull_request"
+            "mcp__github__projects_write"
+            "mcp__github__pull_request_review_write"
+            "mcp__github__push_files"
+            "mcp__github__request_copilot_review"
+            "mcp__github__star_repository"
+            "mcp__github__sub_issue_write"
+            "mcp__github__unstar_repository"
+            "mcp__github__update_gist"
+            "mcp__github__update_pull_request"
+            "mcp__github__update_pull_request_branch"
+            "mcp__github__run_secret_scanning"
+          ];
+          # Fail-closed gating for the gh CLI, derived from the
+          # ghReadOnlyGroups / ghReadOnlyCommands tables above: read-only
+          # subcommands fall through (allowed by the permission entries
+          # above, or by the sandbox auto-allow), everything else gets a
+          # forced prompt -- including gh subcommands that do not exist
+          # yet. Order matters: subcommand-scoped rules run before the
+          # top-level fallback.
+          commandRules.ask =
+            lib.mapAttrsToList (group: leaves: {
+              command = "gh";
+              args = [ group ];
+              except = leaves;
+              reason = "This gh subcommand can mutate GitHub state. Confirm before running.";
+            }) ghReadOnlyGroups
+            ++ [
+              {
+                command = "gh";
+                except =
+                  lib.attrNames ghReadOnlyGroups
+                  ++ ghReadOnlyCommands
+                  ++ [
+                    "help"
+                    "version"
+                    "--version"
+                  ];
+                reason = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads.";
+              }
+            ];
+          fetchRules.deny = [
+            {
+              host = "api\\.github\\.com";
+              reason = "Use mcp__github__* tools instead of fetching the GitHub API directly.";
+            }
+            {
+              host = "github\\.com";
+              path = "/[^/]+/[^/]+/issues(/.*)?";
+              reason = "Use mcp__github__list_issues or mcp__github__issue_read instead of fetching GitHub issue pages.";
+            }
+            {
+              host = "github\\.com";
+              path = "/[^/]+/[^/]+/pulls?(/.*)?";
+              reason = "Use mcp__github__list_pull_requests or mcp__github__pull_request_read instead of fetching GitHub PR pages.";
+            }
+            {
+              host = "github\\.com";
+              path = "/[^/]+/[^/]+/(commit|compare)(/.*)?";
+              reason = "Use mcp__github__get_commit or mcp__github__list_commits instead of fetching GitHub commit pages.";
+            }
+            {
+              host = "github\\.com";
+              path = "/[^/]+/[^/]+/releases(/.*)?";
+              reason = "Use mcp__github__list_releases or mcp__github__get_latest_release instead of fetching GitHub release pages.";
+            }
+            {
+              host = "github\\.com";
+              path = "/[^/]+/[^/]+/tags(/.*)?";
+              reason = "Use mcp__github__list_tags or mcp__github__get_tag instead of fetching GitHub tag pages.";
+            }
+            {
+              host = "github\\.com";
+              path = "/search(/.*)?";
+              reason = "Use mcp__github__search_code, mcp__github__search_issues, mcp__github__search_pull_requests, or mcp__github__search_repositories instead of fetching GitHub search pages.";
+            }
+          ];
+          instructions = {
+            items = [
+              "Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)"
+            ];
+          };
         };
-      };
 
       argocd = {
         servers.argocd = {

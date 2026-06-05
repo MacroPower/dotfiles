@@ -111,17 +111,22 @@ func handleBash(ctx context.Context, input []byte, stdout io.Writer, cfg config,
 		return delegate(ctx, input, cfg.rtkRewrite, logger)
 	}
 
-	if rule, reason, denied := cfg.commandRules.Check(prog); denied {
+	if rule, reason, matched := cfg.commandRules.Check(prog); matched {
+		decision, ruleKind, response := "denied", "command-deny", denyResponse(reason)
+		if rule.Ask() {
+			decision, ruleKind, response = "ask", "command-ask", askResponse(reason)
+		}
+
 		logger.Info(
-			"denied",
-			slog.String("rule", "command-deny"),
+			decision,
+			slog.String("rule", ruleKind),
 			slog.String("command", rule.Command),
 			slog.String("args", strings.Join(rule.Args, " ")),
 			slog.String("command_input", command),
 			slog.String("reason", reason),
 		)
 
-		return encodeJSON(stdout, denyResponse(reason))
+		return encodeJSON(stdout, response)
 	}
 
 	if hasKubectl(prog) {
@@ -432,7 +437,7 @@ func handlePostBash(
 // deny) into "exit 0 + empty stdout", relying on Claude Code's native
 // deny rules to catch the same command. Under auto-allow, "empty
 // stdout" means "emit allow", so an RTK-only deny rule (one not also
-// covered by [DenyCommandRule] or settings.permissions.deny) would
+// covered by [CommandRule] or settings.permissions.deny) would
 // silently run. The bundled deny set covers the cases we care about,
 // and reproducing RTK's deny intent would require execing `rtk rewrite`
 // directly and re-implementing its exit-code protocol.
