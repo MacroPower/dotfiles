@@ -8,7 +8,7 @@ buildGoModule {
   version = "0.1.0";
 
   src = ./.;
-  vendorHash = "sha256-kQ0b62J+KLjgwQdvCQUPsFsSZT6kUl+cOA5tjGlybl0=";
+  vendorHash = "sha256-iMd3f8AWRhAHZc5v63hK5XoNX6NDRtBvPuMCVVZ99Sw=";
 
   # Tests use httptest.NewServer, which binds to loopback. The Darwin sandbox
   # blocks all network access by default; this flag whitelists loopback.
