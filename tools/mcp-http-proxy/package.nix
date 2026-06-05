@@ -8,7 +8,7 @@ buildGoModule {
   version = "0.1.0";
 
   src = ./.;
-  vendorHash = "sha256-KHvorQVs1KIPPeC9HwKG6WmVrtZcv27ugOhMYXD5y5I=";
+  vendorHash = "sha256-gmgdLG5cwtuEj0dW5SnRfKrauC0lxDQuOOzQSngz5jo=";
 
   # httptest.NewServer binds a TCP listener, which the Nix build sandbox
   # does not permit. These two tests intentionally exercise the HTTP
