@@ -2444,8 +2444,10 @@ in
             host
           ]) cfg.kubeApiDomains;
         };
-        permissions.allow = [ "mcp__kubectx__list" ];
-        permissions.ask = [ "mcp__kubectx__select" ];
+        permissions.allow = [
+          "mcp__kubectx__list"
+          "mcp__kubectx__select"
+        ];
         commandRules.deny = [
           {
             command = "kubectx";
