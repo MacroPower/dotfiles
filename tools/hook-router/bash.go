@@ -167,6 +167,19 @@ func handleBash(ctx context.Context, input []byte, stdout io.Writer, cfg config,
 		return nil
 	}
 
+	if hasTee(prog) {
+		logger.Info(
+			"tee writes files, skipping rtk rewrite",
+			slog.String("command", command),
+		)
+
+		if cfg.autoAllow {
+			return encodeJSON(stdout, allowResponse("sandbox auto-allow (tee, rtk skipped)"))
+		}
+
+		return nil
+	}
+
 	return delegateOrAutoAllow(ctx, input, stdout, cfg, logger)
 }
 
@@ -232,6 +245,41 @@ func hasKubectl(prog *syntax.File) bool {
 
 		lit, ok := parts0[0].(*syntax.Lit)
 		if !ok || lit.Value != "kubectl" {
+			return true
+		}
+
+		found = true
+
+		return true
+	})
+
+	return found
+}
+
+// hasTee walks the AST looking for commands where the first word is
+// exactly "tee". RTK rewrites filter the wrapped command's stdout, so
+// a downstream `| tee file` captures the filtered summary -- with its
+// truncation markers -- instead of the tool's raw output, silently
+// corrupting the target file. rtk (>= 0.42.2) declines to rewrite
+// commands with file redirects (`>`, `>>`) itself, but pipelines into
+// tee still rewrite, so this guard closes that hole by skipping the
+// RTK delegation entirely.
+func hasTee(prog *syntax.File) bool {
+	found := false
+
+	syntax.Walk(prog, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) < 1 {
+			return true
+		}
+
+		parts0 := call.Args[0].Parts
+		if len(parts0) != 1 {
+			return true
+		}
+
+		lit, ok := parts0[0].(*syntax.Lit)
+		if !ok || lit.Value != "tee" {
 			return true
 		}
 

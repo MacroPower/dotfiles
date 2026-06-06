@@ -93,6 +93,57 @@ func TestHasKubectl(t *testing.T) {
 	}
 }
 
+func TestHasTee(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		input string
+		want  bool
+	}{
+		"pipeline into tee": {
+			input: "helm show values x/y | tee out.yaml",
+			want:  true,
+		},
+		"tee append": {
+			input: "make build 2>&1 | tee -a build.log",
+			want:  true,
+		},
+		"bare tee": {
+			input: "tee out.txt",
+			want:  true,
+		},
+		"chained": {
+			input: "go test ./... && kubectl get pods | tee pods.txt",
+			want:  true,
+		},
+		"subshell": {
+			input: "(cat in.txt | tee copy.txt)",
+			want:  true,
+		},
+		"no match: echo": {
+			input: "echo tee",
+		},
+		"no match: tee-like name": {
+			input: "teectl status",
+		},
+		"no match: sh -c": {
+			input: `sh -c "ls | tee out.txt"`,
+		},
+		"no match: unrelated": {
+			input: "git status",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			assert.Equal(t, tt.want, hasTee(prog))
+		})
+	}
+}
+
 func TestKubectlKubeconfigOverride(t *testing.T) {
 	t.Parallel()
 
@@ -322,6 +373,50 @@ exit 7`)
 		assert.Equal(t, "allow", hso["permissionDecision"])
 		assert.Equal(t, "RTK auto-rewrite", hso["permissionDecisionReason"],
 			"RTK's own reason must not be overwritten")
+	})
+
+	t.Run("autoAllow=true, tee in pipeline: RTK skipped, plain allow emitted", func(t *testing.T) {
+		t.Parallel()
+
+		// The fake RTK would emit a rewrite; absence of updatedInput in
+		// the response proves the delegation was skipped.
+		cfg := config{
+			commandRules: canonicalRules(),
+			rtkRewrite:   rtkRewriteOnly,
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "ls /tmp | tee out.txt"), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+		assert.Equal(t, "allow", hso["permissionDecision"])
+		assert.Equal(t, "sandbox auto-allow (tee, rtk skipped)", hso["permissionDecisionReason"])
+
+		_, hasUpdated := hso["updatedInput"]
+		assert.False(t, hasUpdated, "RTK must not be consulted for tee pipelines")
+	})
+
+	t.Run("autoAllow=false, tee in pipeline: RTK skipped, stdout empty", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules: canonicalRules(),
+			rtkRewrite:   rtkRewriteOnly,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(context.Background(), hookInput(t, "ls /tmp | tee out.txt"), &stdout, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes(), "RTK must not be consulted for tee pipelines")
 	})
 
 	t.Run("autoAllow=true, RTK invalid JSON: forwarded verbatim, no error", func(t *testing.T) {
