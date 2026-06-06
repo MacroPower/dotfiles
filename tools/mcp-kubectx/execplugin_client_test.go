@@ -13,7 +13,7 @@ import (
 // TestRunExecPluginClientCopiesBytes pins the happy path: the
 // shim copies whatever the listener writes to hostStdout.
 func TestRunExecPluginClientCopiesBytes(t *testing.T) { //nolint:paralleltest // mutates package-level hostStdout
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "ok.sock")
 
 	want := []byte(
@@ -58,7 +58,7 @@ func TestRunExecPluginClientConnectFailure(t *testing.T) { //nolint:paralleltest
 // never writes terminates the shim within its read deadline rather
 // than hanging kubectl indefinitely.
 func TestRunExecPluginClientReadDeadline(t *testing.T) { //nolint:paralleltest // mutates package-level hostStdout
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "slow.sock")
 
 	listener, err := net.Listen("unix", path) //nolint:noctx // synchronous test fixture
@@ -101,7 +101,7 @@ func TestRunExecPluginClientReadDeadline(t *testing.T) { //nolint:paralleltest /
 // stdout and surfaced as [ErrMalformedCredential], so kubectl
 // re-invokes cleanly instead of choking on torn output.
 func TestRunExecPluginClientTruncated(t *testing.T) { //nolint:paralleltest // mutates package-level hostStdout
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "trunc.sock")
 
 	listener, err := net.Listen("unix", path) //nolint:noctx // synchronous test fixture
@@ -143,7 +143,7 @@ func TestRunExecPluginClientMissingSocketFlag(t *testing.T) { //nolint:parallelt
 // shim must surface ErrEmptyCredential so kubectl sees a non-zero
 // exit rather than misinterpreting empty stdout.
 func TestRunExecPluginClientNoHandler(t *testing.T) { //nolint:paralleltest // mutates package-level hostStdout
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "noop.sock")
 
 	listener, err := net.Listen("unix", path) //nolint:noctx // synchronous test fixture

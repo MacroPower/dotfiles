@@ -241,7 +241,7 @@ func TestAcquireServeSocketExhaustion(t *testing.T) { //nolint:paralleltest // u
 func TestListenSocketUnlinksStale(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "stale.sock")
 
 	// A regular file at the path simulates a leftover from a
@@ -266,7 +266,7 @@ func TestListenSocketUnlinksStale(t *testing.T) {
 func TestListenSocketPermissions(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "sub", "perm.sock")
 
 	h := &handler{}
@@ -288,7 +288,7 @@ func TestListenSocketPermissions(t *testing.T) {
 func TestListenSocketCleanupRemoves(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "cleanup.sock")
 
 	h := &handler{}
@@ -310,7 +310,7 @@ func TestListenSocketCleanupRemoves(t *testing.T) {
 func TestServeSocketBindOnExistingPath(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "live.sock")
 
 	live, err := net.Listen("unix", path) //nolint:noctx // synchronous test fixture
@@ -341,7 +341,7 @@ func TestServeSocketBindOnExistingPath(t *testing.T) {
 func TestServeSocketReturnsTokenJSON(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "ok.sock")
 
 	want := mustEncodeCred(t, ExecCredential{
@@ -382,7 +382,7 @@ func TestServeSocketReturnsTokenJSON(t *testing.T) {
 func TestServeSocketBeforeSelect(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "empty.sock")
 
 	h := newServeSocketHandler(t, nil, nil)
@@ -406,7 +406,7 @@ func TestServeSocketBeforeSelect(t *testing.T) {
 func TestServeSocketConcurrent(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "concurrent.sock")
 
 	want := []byte("tok-bytes-concurrent\n")
@@ -541,7 +541,7 @@ func TestServeSocketRotationDuringRequest(t *testing.T) {
 func TestServeSocketHandlerWaitsForCleanup(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortTempDir(t)
 	path := filepath.Join(dir, "wait.sock")
 
 	release := make(chan struct{})

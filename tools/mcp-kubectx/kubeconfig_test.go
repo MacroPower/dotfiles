@@ -1370,9 +1370,14 @@ func TestSelectGuestContextRecreatesReapedLocal(t *testing.T) { //nolint:paralle
 // verifies the unlink does not happen until the handler is
 // released.
 func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses t.Setenv
+	// Resolve the socket dir before neutralizeWrapperEnv points
+	// TMPDIR at a t.TempDir(), which would nest shortTempDir under
+	// the long test-name path it exists to avoid.
+	socketDir := shortTempDir(t)
+
 	neutralizeWrapperEnv(t)
 
-	socketPath := filepath.Join(t.TempDir(), "ordering.sock")
+	socketPath := filepath.Join(socketDir, "ordering.sock")
 	kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig.yaml")
 	require.NoError(t, os.WriteFile(kubeconfigPath, []byte("placeholder"), 0o600))
 
