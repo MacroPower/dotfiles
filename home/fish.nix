@@ -536,6 +536,7 @@ in
       wmd = "workmux dashboard";
       wms = "workmux sandbox shell -- fish";
       wma = "workmux sandbox agent";
+      wmap = "workmux add -A -P";
       tf = "tofu";
       t = "task";
       tg = "task -g";
