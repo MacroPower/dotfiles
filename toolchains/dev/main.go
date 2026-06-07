@@ -197,7 +197,7 @@ func (m *Dev) buildBase(ctx context.Context, ctr *dagger.Container) (*dagger.Con
 			homeDir+"/.local/state/home-manager/gcroots/current-home/home-path/bin:"+
 				homeDir+"/.nix-profile/bin:"+
 				"/nix/var/nix/profiles/default/bin:"+
-				"/usr/bin:/bin",
+				"/usr/local/bin:/usr/bin:/bin",
 		).
 		WithEnvVariable("EDITOR", "vim").
 		WithEnvVariable("TERM", "xterm-256color").
@@ -423,6 +423,13 @@ func (m *Dev) Sandbox(
 // contents baked into image layers so it works without Dagger cache
 // volumes. Use [Dev.PublishShell] to build and push in one step. An
 // empty platform builds for the engine's native architecture.
+//
+// The image is SSH-ready (see ssh.go): sshd prerequisites are baked in
+// and the container-init / sshd-entrypoint helpers let deployments
+// expose the container over SSH with nothing but environment variables.
+// fish is the default command rather than the entrypoint so that
+// runtime command overrides (e.g. compose `command:`) exec directly
+// instead of being parsed by fish as a script path.
 func (m *Dev) BuildShell(
 	ctx context.Context,
 	// Target platform (e.g. "linux/amd64", "linux/arm64"). Empty
@@ -434,6 +441,10 @@ func (m *Dev) BuildShell(
 	if err != nil {
 		return nil, err
 	}
+
+	// Bake SSH readiness before snapshotting so the passwd/shadow
+	// fixups and helper scripts land in the published layers.
+	built = withSSHReadiness(built)
 
 	// Snapshot cache-mounted paths into the rootfs. Dagger cannot
 	// convert cache-mounted directories into immutable Directory
@@ -450,7 +461,7 @@ func (m *Dev) BuildShell(
 		WithoutDirectory("/nix").
 		WithDirectory("/nix", nixDir).
 		WithWorkdir(homeDir).
-		WithEntrypoint([]string{"fish"}).
+		WithDefaultArgs([]string{"fish", "-l"}).
 		WithLabel("org.opencontainers.image.source", "https://github.com/MacroPower/dotfiles").
 		WithLabel("org.opencontainers.image.description", "Development container with nix home-manager tools")
 
@@ -658,6 +669,9 @@ chown -R %s:%s %s
 		WithExec([]string{"sh", "-c", stripScript})
 	nixDir := snapshot.Directory("/nix-snapshot")
 
+	// Splitting the terrarium wrapper (entrypoint) from fish (default
+	// args) lets runtime command overrides replace the sandboxed
+	// process while keeping the firewall setup in front of it.
 	return built.
 		WithoutMount("/nix").
 		WithoutMount("/root/.cache/nix").
@@ -666,7 +680,8 @@ chown -R %s:%s %s
 		WithoutDirectory("/nix").
 		WithDirectory("/nix", nixDir).
 		WithWorkdir(homeDir).
-		WithEntrypoint([]string{"terrarium", "init", "--", "fish"}).
+		WithEntrypoint([]string{"terrarium", "init", "--"}).
+		WithDefaultArgs([]string{"fish"}).
 		WithLabel("org.opencontainers.image.source", "https://github.com/MacroPower/dotfiles").
 		WithLabel(
 			"org.opencontainers.image.description",

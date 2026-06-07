@@ -13,12 +13,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
-	"dagger/tests/internal/dagger"
-
 	"golang.org/x/sync/errgroup"
+
+	"dagger/tests/internal/dagger"
 )
 
 const (
@@ -129,6 +130,8 @@ func (m *Tests) AllFull(ctx context.Context) error {
 	eg.Go(func() error { return m.TestSandboxRefusedDNS(ctx) })
 	eg.Go(func() error { return m.TestSandboxPathNormalizationE2E(ctx) })
 	eg.Go(func() error { return m.TestPublish(ctx) })
+	eg.Go(func() error { return m.TestShellSSHReady(ctx) })
+	eg.Go(func() error { return m.TestShellSSHLogin(ctx) })
 
 	return eg.Wait()
 }
@@ -725,13 +728,24 @@ func (m *Tests) TestPublishSandboxImage(ctx context.Context) error {
 
 	ctr := dag.Container().From(addr)
 
-	// Verify entrypoint.
+	// Verify entrypoint and default args. The terrarium wrapper is the
+	// entrypoint so a runtime command override replaces fish while
+	// keeping the firewall setup in front of it.
 	ep, err := ctr.Entrypoint(ctx)
 	if err != nil {
 		return fmt.Errorf("reading entrypoint: %w", err)
 	}
-	if len(ep) != 4 || ep[0] != "terrarium" || ep[1] != "init" || ep[2] != "--" || ep[3] != "fish" {
-		return fmt.Errorf("expected entrypoint [terrarium init -- fish], got %v", ep)
+
+	if strings.Join(ep, " ") != "terrarium init --" {
+		return fmt.Errorf("expected entrypoint [terrarium init --], got %v", ep)
+	}
+
+	args, err := ctr.DefaultArgs(ctx)
+	if err != nil {
+		return fmt.Errorf("reading default args: %w", err)
+	}
+	if strings.Join(args, " ") != "fish" {
+		return fmt.Errorf("expected default args [fish], got %v", args)
 	}
 
 	// Verify terrarium binary is on PATH.
@@ -1401,13 +1415,24 @@ func (m *Tests) TestPublish(ctx context.Context) error {
 	// Pull the published image back and verify metadata.
 	ctr := dag.Container().From(addr)
 
-	// Verify entrypoint.
+	// Verify there is no entrypoint and fish is the default command:
+	// runtime command overrides must exec directly instead of being
+	// parsed by fish as a script path.
 	ep, err := ctr.Entrypoint(ctx)
 	if err != nil {
 		return fmt.Errorf("reading entrypoint: %w", err)
 	}
-	if len(ep) != 1 || ep[0] != "fish" {
-		return fmt.Errorf("expected entrypoint [fish], got %v", ep)
+	if len(ep) != 0 {
+		return fmt.Errorf("expected empty entrypoint, got %v", ep)
+	}
+
+	args, err := ctr.DefaultArgs(ctx)
+	if err != nil {
+		return fmt.Errorf("reading default args: %w", err)
+	}
+
+	if strings.Join(args, " ") != "fish -l" {
+		return fmt.Errorf("expected default args [fish -l], got %v", args)
 	}
 
 	// Verify OCI labels.
@@ -1423,6 +1448,167 @@ func (m *Tests) TestPublish(ctx context.Context) error {
 		if got != want {
 			return fmt.Errorf("label %s: expected %q, got %q", key, want, got)
 		}
+	}
+
+	return nil
+}
+
+// TestShellSSHReady verifies the static half of the shell image's SSH
+// readiness (see toolchains/dev/ssh.go): the sshd privilege-separation
+// user, an unlocked root shadow entry, root's passwd entry pointing at
+// /home/dev and the fish login wrapper, the executable helper scripts,
+// and the CMD-only image config.
+//
+// Not annotated with +check because it builds the full shell image
+// (snapshot + strip). Run manually:
+//
+//	dagger call -m toolchains/dev/tests test-shell-sshready
+func (m *Tests) TestShellSSHReady(ctx context.Context) error {
+	ctr := dag.Dev().BuildShell()
+
+	// No entrypoint, fish as default command: runtime command overrides
+	// must exec directly instead of being parsed by fish as a script
+	// path.
+	ep, err := ctr.Entrypoint(ctx)
+	if err != nil {
+		return fmt.Errorf("reading entrypoint: %w", err)
+	}
+	if len(ep) != 0 {
+		return fmt.Errorf("expected empty entrypoint, got %v", ep)
+	}
+
+	args, err := ctr.DefaultArgs(ctx)
+	if err != nil {
+		return fmt.Errorf("reading default args: %w", err)
+	}
+
+	if strings.Join(args, " ") != "fish -l" {
+		return fmt.Errorf("expected default args [fish -l], got %v", args)
+	}
+
+	// sshd privsep user and group.
+	passwd, err := ctr.File("/etc/passwd").Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("reading /etc/passwd: %w", err)
+	}
+	if !strings.Contains(passwd, "sshd:x:74:74:") {
+		return fmt.Errorf("/etc/passwd missing sshd privsep user")
+	}
+
+	group, err := ctr.File("/etc/group").Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("reading /etc/group: %w", err)
+	}
+	if !strings.Contains(group, "sshd:x:74:") {
+		return fmt.Errorf("/etc/group missing sshd group")
+	}
+
+	// Root's passwd entry: HOME at /home/dev, login shell at the fish
+	// wrapper.
+	var rootOK bool
+	for line := range strings.SplitSeq(passwd, "\n") {
+		fields := strings.Split(line, ":")
+		if len(fields) == 7 && fields[0] == "root" {
+			if fields[5] != homeDir || fields[6] != "/usr/local/bin/fish-login" {
+				return fmt.Errorf("root passwd entry not rewritten: %s", line)
+			}
+
+			rootOK = true
+		}
+	}
+	if !rootOK {
+		return fmt.Errorf("/etc/passwd missing root entry")
+	}
+
+	// If the image ships a shadow file, root must not be locked there:
+	// OpenSSH refuses all auth (even pubkey) for locked accounts.
+	shadowCheck := `[ ! -f /etc/shadow ] || ` +
+		`awk -F: '$1=="root"{locked = ($2=="" || $2 ~ /^[!*]/)} END{exit locked}' /etc/shadow`
+	if _, err := ctr.WithExec([]string{"sh", "-c", shadowCheck}).Sync(ctx); err != nil {
+		return fmt.Errorf("root is locked in /etc/shadow: %w", err)
+	}
+
+	// Helper scripts are baked in, executable, and on PATH.
+	for _, script := range []string{"fish-login", "container-init", "sshd-entrypoint"} {
+		path := "/usr/local/bin/" + script
+		if _, err := ctr.WithExec([]string{"test", "-x", path}).Sync(ctx); err != nil {
+			return fmt.Errorf("%s not executable: %w", path, err)
+		}
+		if _, err := ctr.WithExec([]string{"sh", "-c", "command -v " + script}).Sync(ctx); err != nil {
+			return fmt.Errorf("%s not on PATH: %w", script, err)
+		}
+	}
+
+	// sshd runtime prerequisites.
+	for desc, cmd := range map[string][]string{
+		"privsep chroot": {"test", "-d", "/var/empty"},
+		"lastlog":        {"test", "-f", "/var/log/lastlog"},
+		"sshd binary":    {"sh", "-c", "command -v sshd"},
+	} {
+		if _, err := ctr.WithExec(cmd).Sync(ctx); err != nil {
+			return fmt.Errorf("%s: %w", desc, err)
+		}
+	}
+
+	return nil
+}
+
+// TestShellSSHLogin verifies SSH login end-to-end: the shell image runs
+// sshd-entrypoint as a Dagger service (host key generation, literal
+// authorized_keys via SSH_AUTHORIZED_KEYS, container-init pass-through)
+// and a client connects with the matching private key. The remote
+// command must run inside fish with the home-manager environment
+// (HOME=/home/dev, hm bin dir on PATH) set up by the login wrapper.
+//
+// Not annotated with +check because it builds the full shell image
+// (snapshot + strip). Run manually:
+//
+//	dagger call -m toolchains/dev/tests test-shell-sshlogin
+func (m *Tests) TestShellSSHLogin(ctx context.Context) error {
+	// Client keypair generated inside the dev container; the public half
+	// is injected via SSH_AUTHORIZED_KEYS so no network fetch happens.
+	keygen := dag.Dev().DevBase().
+		WithExec([]string{"ssh-keygen", "-t", "ed25519", "-N", "", "-f", "/tmp/id"})
+	pub, err := keygen.File("/tmp/id.pub").Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("generating client key: %w", err)
+	}
+
+	server := dag.Dev().BuildShell().
+		WithEnvVariable("SSH_AUTHORIZED_KEYS", pub).
+		WithExposedPort(22).
+		AsService(dagger.ContainerAsServiceOpts{
+			// Through container-init to cover its exec pass-through.
+			Args: []string{"container-init", "sshd-entrypoint"},
+		})
+
+	out, err := keygen.
+		WithServiceBinding("shell", server).
+		WithExec([]string{
+			"ssh",
+			"-o", "StrictHostKeyChecking=no",
+			"-o", "UserKnownHostsFile=/dev/null",
+			"-o", "IdentitiesOnly=yes",
+			"-i", "/tmp/id",
+			"root@shell",
+			"echo HOME=$HOME; echo FISH=$FISH_VERSION; echo USER=$USER",
+		}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("ssh login: %w", err)
+	}
+
+	// FISH_VERSION proves the login wrapper handed off to fish; HOME and
+	// USER prove the wrapper pinned the home-manager environment.
+	for _, want := range []string{"HOME=" + homeDir + "\n", "USER=root"} {
+		if !strings.Contains(out, want) {
+			return fmt.Errorf("ssh session env missing %q, got:\n%s", want, out)
+		}
+	}
+
+	fishRe := regexp.MustCompile(`FISH=\d`)
+	if !fishRe.MatchString(out) {
+		return fmt.Errorf("remote command did not run in fish, got:\n%s", out)
 	}
 
 	return nil

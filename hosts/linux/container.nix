@@ -1,7 +1,7 @@
 system: {
   inherit system;
   homeModule =
-    { ... }:
+    { pkgs, ... }:
     {
       imports = [
         ../../home/development.nix
@@ -11,6 +11,16 @@ system: {
         ../../home/photo-cli.nix
       ];
       dotfiles = {
+        # sshd and ssh-keygen for the published shell image, which can
+        # serve SSH via the baked-in sshd-entrypoint helper (see
+        # toolchains/dev/ssh.go). Client config comes from
+        # home/default.nix; openssh here makes the server explicit
+        # instead of leaning on the lix base image's profile. This
+        # config also feeds the sandbox image, which carries the few
+        # extra megabytes as the price of sharing one home config;
+        # openssh's heavy deps (openssl, zlib) are already in the
+        # closure either way.
+        extraHomePackages = [ pkgs.openssh ];
         username = "dev";
         hostname = "linux";
         homeDirectory = "/home/dev";
