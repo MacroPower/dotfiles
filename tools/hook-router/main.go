@@ -29,7 +29,7 @@ import (
 // empty slice disables the failsafe.
 //
 // autoAllow, when true, makes [handleBash] emit a PreToolUse "allow"
-// decision on the fall-through paths (after deny + RTK delegate),
+// decision on the fall-through paths (after the deny/ask checks),
 // suppressing Claude Code's static Bash analyzer prompt for shell
 // expansions. Only safe when a sandbox is enforcing the actual
 // containment.
@@ -51,7 +51,6 @@ type config struct {
 	commandRules   *CommandRules
 	formatterRules *FormatterRules
 	commitSkills   []string
-	rtkRewrite     string
 	kubeconfigPath string
 	claudePID      string
 	autoAllow      bool
@@ -59,9 +58,7 @@ type config struct {
 }
 
 func configFromEnv() config {
-	cfg := config{
-		rtkRewrite: os.Getenv("RTK_REWRITE"),
-	}
+	var cfg config
 
 	if ppid := os.Getppid(); ppid > 1 {
 		cfg.claudePID = strconv.Itoa(ppid)
@@ -236,7 +233,7 @@ func run(
 	case "PreToolUse":
 		switch tool {
 		case "Bash":
-			return handleBash(ctx, input, stdout, cfg, logger)
+			return handleBash(input, stdout, cfg, logger)
 		case "ExitPlanMode":
 			if store == nil {
 				return nil
@@ -318,7 +315,7 @@ func run(
 
 	default:
 		// Backward compat: no --event flag, treat as Bash PreToolUse.
-		return handleBash(ctx, input, stdout, cfg, logger)
+		return handleBash(input, stdout, cfg, logger)
 	}
 }
 

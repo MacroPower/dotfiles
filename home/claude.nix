@@ -395,53 +395,6 @@ let
     };
   };
 
-  # NOTE: rtk's [limits] and [tee] structs have no per-field serde
-  # defaults, so a partial table fails the WHOLE config parse and rtk
-  # silently reverts to its built-in defaults (colors and emoji back
-  # on, default limits). Every field of a table we set must be
-  # spelled out. See src/core/config.rs and src/core/tee.rs in rtk.
-  rtkConfig = (pkgs.formats.toml { }).generate "config.toml" {
-    display = {
-      colors = false;
-      emoji = false;
-      max_width = 120;
-    };
-    hooks = {
-      # rtk rewrites `rg ...` to `rtk grep ...`, but rtk's grep CLI cannot
-      # parse most rg flags (-i, --max-depth, ...); its parse-failure
-      # fallback then raw-executes GNU grep with rg-style args, which
-      # breaks directory searches. Let rg run natively instead.
-      exclude_commands = [ "rg" ];
-    };
-    # Raised from rtk defaults (200/25/15/10/2000): the dominant agent
-    # use case is "show me the matching lines", and over-aggressive
-    # caps force a second raw-output round trip that costs more tokens
-    # than the filtering saves. passthrough_max_chars also bounds how
-    # much raw output survives an adapter parse failure (e.g. the
-    # golangci-lint JSON path), where truncation hides the real error.
-    limits = {
-      grep_max_results = 500;
-      grep_max_per_file = 100;
-      status_max_files = 50;
-      status_max_untracked = 25;
-      passthrough_max_chars = 10000;
-    };
-    # Save every filtered command's raw output (>= 500 bytes) to
-    # ~/.local/share/rtk/tee/ (Linux) or ~/Library/Application
-    # Support/rtk/tee/ (macOS, already in the sandbox read/write
-    # allowlists) and append a "[full output: <path>]" hint to the
-    # filtered output. Recovery is then a Read of that file instead
-    # of a rerun with `rtk proxy`. max_files raised from 20: in
-    # "always" mode a busy session rotates files quickly, and a
-    # hint pointing at an already-deleted file is worse than none.
-    tee = {
-      enabled = true;
-      mode = "always";
-      max_files = 50;
-      max_file_size = 1048576;
-    };
-  };
-
   claudeStylixBase = if config.stylix.polarity == "light" then "light" else "dark";
 
   # Shimmer tokens in the upstream Claude Code dark theme are hardcoded
@@ -652,9 +605,6 @@ let
       pkgs.hook-router
       pkgs.git
     ];
-    runtimeEnv = {
-      RTK_REWRITE = "${pkgs.rtk-bin}/libexec/rtk/hooks/rtk-rewrite.sh";
-    };
     # The --command-rules JSON is shell-escaped via lib.escapeShellArg
     # (single-quoted). Backticks inside the JSON are literal data, but
     # shellcheck warns SC2016 about them as if they were unexpanded
@@ -956,7 +906,6 @@ let
 
     # ~/Library narrowed — blanket access leaks Keychains, Cookies,
     # Messages, Mail, Containers, Application Support subdirs, etc.
-    "~/Library/Application Support/rtk"
     "~/Library/Caches"
     "~/Library/Preferences"
     "~/Library/Fonts"
@@ -985,7 +934,6 @@ let
 
   extraWritePaths = [
     "~/go/pkg"
-    "~/Library/Application Support/rtk"
     "~/Library/Caches"
     "~/.cache/nix"
     "~/.cache/helm"
@@ -2851,7 +2799,6 @@ in
 
     xdg.configFile = {
       "claude-powerline/config.json".text = claudePowerlineConfig;
-      "rtk/config.toml".source = rtkConfig;
       "workmux/config.yaml".source = workmuxConfig;
     };
 
@@ -2868,7 +2815,6 @@ in
         pkgs.mcp-fetch
         pkgs.mcp-kubectx
         workmuxWrapped
-        pkgs.rtk-bin
         pkgs.claude-history
         pkgs.git-surgeon
         pkgs.slugify
@@ -2886,9 +2832,6 @@ in
         - For generic agents, use your best judgement based on the task being assigned.
 
         ## Shell
-        - A PreToolUse hook rewrites some Bash commands through `rtk`, which filters their output to reduce tokens.
-        - Filtered output ends with a `[full output: <path>]` hint when the raw output was saved; Read that file instead of rerunning the command.
-        - If filtered output looks wrong and no hint is present, rerun as `rtk proxy <cmd>` to get the raw output.
         - `cd` persists between Bash calls only while it stays inside the project directory; a `cd` outside it resets the cwd to the project root on the next call.
 
         ## Writing Style

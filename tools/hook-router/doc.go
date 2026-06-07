@@ -15,11 +15,5 @@
 //     message) until the post-impl question has been
 //     answered once for the current plan cycle
 //
-// Session state is persisted in a SQLite database. Unmatched Bash commands
-// are forwarded to an optional downstream hook.
-//
-// # Environment
-//
-//   - RTK_REWRITE: path to a downstream hook binary; unmatched input is piped to
-//     its stdin when set.
+// Session state is persisted in a SQLite database.
 package main
