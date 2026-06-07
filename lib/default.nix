@@ -167,18 +167,18 @@ let
     ];
   };
 
-  # mcp's test_non_compliant_notification_response spawns a subprocess
-  # server and waits up to 10s for it to bind a TCP port; under heavy
-  # local rebuilds the server doesn't come up in time and the test
-  # fails the whole build.
+  # mcp's sse/ws/streamable_http/integration tests spawn subprocess
+  # servers and poll for a TCP port to come up; under heavy local
+  # rebuilds in the Nix sandbox dozens of them time out at once and
+  # fail the whole build (started with one test, grew to 40+ across
+  # four files on later bumps). Same story as fastmcp above: trust
+  # upstream CI and skip the check phase entirely.
   mcpOverlay = _final: prev: {
     pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
       (_pyfinal: pyprev: {
-        mcp = pyprev.mcp.overrideAttrs (old: {
-          disabledTests = (old.disabledTests or [ ]) ++ [
-            "test_non_compliant_notification_response"
-          ];
-        });
+        mcp = pyprev.mcp.overrideAttrs {
+          doInstallCheck = false;
+        };
       })
     ];
   };

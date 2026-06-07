@@ -4,49 +4,42 @@
 }:
 
 let
-  kagiapi = python312Packages.buildPythonPackage {
-    pname = "kagiapi";
-    version = "0.2.1";
-    pyproject = true;
-
-    src = fetchPypi {
-      pname = "kagiapi";
-      version = "0.2.1";
-      hash = "sha256-NV/kB7TGg9bwhIJ+T4VP2VE03yhC8V0Inaz/Yg4/Sus=";
-    };
-
-    build-system = [ python312Packages.setuptools ];
-
-    dependencies = with python312Packages; [
-      requests
-      typing-extensions
-    ];
-
-    pythonImportsCheck = [ "kagiapi" ];
-  };
+  # fastmcp's py-key-value-aio dependency pulls aioboto3/moto/cfn-lint into
+  # its test closure, and cfn-lint's integration tests fail at the current
+  # nixpkgs pin. The store backends are test-only there; skip the suite.
+  ps = python312Packages.overrideScope (
+    _: prev: {
+      py-key-value-aio = prev.py-key-value-aio.overridePythonAttrs (_: {
+        doCheck = false;
+      });
+    }
+  );
 in
 
-python312Packages.buildPythonApplication {
+ps.buildPythonApplication {
   pname = "kagimcp";
-  version = "0.1.4";
+  version = "1.0.0";
   pyproject = true;
 
   src = fetchPypi {
     pname = "kagimcp";
-    version = "0.1.4";
-    hash = "sha256-fCFmd6BKyyeggekFsJtno394ZeswTYSRELryHQQAcyY=";
+    version = "1.0.0";
+    hash = "sha256-Yq7NM0OL17r9O0/Xv1JBCeqr/Vn9Zti1EFvdjmKbapw=";
   };
 
-  build-system = [ python312Packages.hatchling ];
+  build-system = [ ps.hatchling ];
 
-  dependencies = [
-    kagiapi
-    python312Packages.mcp
-    python312Packages.pydantic
+  dependencies = with ps; [
+    fastmcp
+    pydantic
+    urllib3
+    python-dateutil
+    typing-extensions
   ];
 
-  pythonImportsCheck = [ "kagimcp" ];
-  preInstallCheck = ''
-    export KAGI_API_KEY=fake
-  '';
+  # The sdist bundles a generated openapi_client for the Kagi v1 API.
+  pythonImportsCheck = [
+    "kagimcp"
+    "openapi_client"
+  ];
 }

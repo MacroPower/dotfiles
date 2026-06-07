@@ -714,7 +714,6 @@ let
 
   kagiWrapper = pkgs.writeShellScript "kagi-mcp-wrapper" ''
     ${exportSecret "KAGI_API_KEY" "kagi_api_key"}
-    export KAGI_SUMMARIZER_ENGINE="agnes"
     exec ${pkgs.mcp-kagi}/bin/kagimcp "$@"
   '';
 
@@ -1856,7 +1855,9 @@ in
           command = "${kagiWrapper}";
         };
         permissions.allow = [ "mcp__kagi__kagi_search_fetch" ];
-        permissions.deny = [ "mcp__kagi__kagi_summarizer" ];
+        # kagi_extract overlaps with mcp__fetch__fetch, which stays the
+        # preferred page fetcher.
+        permissions.deny = [ "mcp__kagi__kagi_extract" ];
         fetchRules.deny = [
           {
             host = "(google|bing|duckduckgo|brave)\\.com";
