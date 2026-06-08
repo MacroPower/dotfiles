@@ -24,6 +24,7 @@ var statsOutcomeOrder = []string{
 	OutcomeHTTPError,
 	OutcomeFetchError,
 	OutcomeInvalidURL,
+	OutcomeBadPattern,
 	OutcomeInternalError,
 }
 

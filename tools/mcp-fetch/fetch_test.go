@@ -162,6 +162,214 @@ func TestTruncation(t *testing.T) {
 	}
 }
 
+func TestGrepContent(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		content     string
+		pattern     string
+		opts        grepOptions
+		want        string
+		wantMatched bool
+		err         error
+	}{
+		"single match": {
+			content:     "foo\nbar\nbaz",
+			pattern:     "bar",
+			want:        "2:bar",
+			wantMatched: true,
+		},
+		"no match": {
+			content:     "foo\nbar\nbaz",
+			pattern:     "qux",
+			want:        "",
+			wantMatched: false,
+		},
+		"ignore case": {
+			content:     "foo\nBAR\nbaz",
+			pattern:     "bar",
+			opts:        grepOptions{ignoreCase: true},
+			want:        "2:BAR",
+			wantMatched: true,
+		},
+		"invert with group separator": {
+			content:     "foo\nbar\nbaz",
+			pattern:     "bar",
+			opts:        grepOptions{invert: true},
+			want:        "1:foo\n--\n3:baz",
+			wantMatched: true,
+		},
+		"context lines": {
+			content:     "alpha\nbeta\ngamma\ndelta\nepsilon",
+			pattern:     "gamma",
+			opts:        grepOptions{context: 1},
+			want:        "2-beta\n3:gamma\n4-delta",
+			wantMatched: true,
+		},
+		"non-adjacent groups separated": {
+			content:     "alpha\nbeta\ngamma\ndelta\nepsilon",
+			pattern:     "alpha|epsilon",
+			want:        "1:alpha\n--\n5:epsilon",
+			wantMatched: true,
+		},
+		"context groups separated": {
+			content:     "a\nb\nMATCH1\nd\ne\nf\ng\nMATCH2\ni",
+			pattern:     "MATCH1|MATCH2",
+			opts:        grepOptions{context: 1},
+			want:        "2-b\n3:MATCH1\n4-d\n--\n7-g\n8:MATCH2\n9-i",
+			wantMatched: true,
+		},
+		"preserved line numbers": {
+			content:     "a\nb\nc\nd\ne\nf\ng\nh\ni\nj",
+			pattern:     "h",
+			want:        "8:h",
+			wantMatched: true,
+		},
+		"invalid regex": {
+			content: "foo\nbar",
+			pattern: "(",
+			err:     ErrBadPattern,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, matched, err := grepContent(tt.content, tt.pattern, tt.opts)
+			if tt.err != nil {
+				require.ErrorIs(t, err, tt.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMatched, matched)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestHandleGrep(t *testing.T) {
+	t.Parallel()
+
+	htmlPage := `<!DOCTYPE html>
+<html><head><title>Test</title></head>
+<body><article><h1>Hello World</h1><p>This is a test paragraph.</p></article></body>
+</html>`
+
+	var manyLines strings.Builder
+	for i := range 50 {
+		fmt.Fprintf(&manyLines, "match line %d\n", i)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/html":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			mustWrite(w, []byte(htmlPage))
+
+		case "/text":
+			w.Header().Set("Content-Type", "text/plain")
+			mustWrite(w, []byte("first line\nsecond line\nthird line"))
+
+		case "/lines":
+			w.Header().Set("Content-Type", "text/plain")
+			mustWrite(w, []byte(manyLines.String()))
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	tests := map[string]struct {
+		input       FetchInput
+		wantHas     []string
+		wantMissing []string
+		wantErr     bool
+		errHas      string
+	}{
+		"filters markdown to matching lines": {
+			input:       FetchInput{URL: srv.URL + "/html", Pattern: "paragraph"},
+			wantHas:     []string{"paragraph"},
+			wantMissing: []string{"Hello World"},
+		},
+		"no match returns notice not error": {
+			input:   FetchInput{URL: srv.URL + "/html", Pattern: "zzzznomatch"},
+			wantHas: []string{"<no lines matched pattern", "zzzznomatch"},
+		},
+		"invalid pattern returns tool error": {
+			input:   FetchInput{URL: srv.URL + "/html", Pattern: "("},
+			wantErr: true,
+			errHas:  "invalid grep pattern",
+		},
+		"content-type prefix line participates in matching": {
+			input:   FetchInput{URL: srv.URL + "/text", Pattern: "Content-Type"},
+			wantHas: []string{"1:Content-Type: text/plain"},
+		},
+		"grep composes with pagination": {
+			input:   FetchInput{URL: srv.URL + "/lines", Pattern: "match line", MaxLength: 20},
+			wantHas: []string{"content truncated"},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newTestHandler(t, srv.Client())
+
+			result, _, err := h.handle(t.Context(), nil, tt.input)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+
+			text := resultText(t, result)
+
+			if tt.wantErr {
+				assert.True(t, result.IsError, "expected tool error")
+				assert.Contains(t, text, tt.errHas)
+
+				return
+			}
+
+			assert.False(t, result.IsError, "unexpected tool error: %s", text)
+
+			for _, want := range tt.wantHas {
+				assert.Contains(t, text, want)
+			}
+
+			for _, missing := range tt.wantMissing {
+				assert.NotContains(t, text, missing)
+			}
+		})
+	}
+}
+
+func TestHandleGrepNoMatchRecordsOK(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		mustWrite(w, []byte("hello world"))
+	}))
+	t.Cleanup(srv.Close)
+
+	store := newTestStore(t)
+	h := newTestHandler(t, srv.Client(), withStore(store))
+
+	result, _, err := h.handle(t.Context(), nil, FetchInput{URL: srv.URL + "/x", Pattern: "nomatch"})
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	rows, err := store.RecentFetches(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, OutcomeOK, rows[0].Outcome)
+	assert.Equal(t, 0, rows[0].Truncated)
+	assert.Positive(t, rows[0].OutputBytes)
+}
+
 func TestDefaultMaxLength(t *testing.T) {
 	t.Parallel()
 
@@ -492,6 +700,12 @@ func TestHandleRecording_AllOutcomes(t *testing.T) {
 			input:        FetchInput{URL: "http://127.0.0.1:1/never-listens"},
 			wantOutcome:  OutcomeFetchError,
 			wantErrorHas: "performing request",
+		},
+		"bad_pattern": {
+			input:        FetchInput{URL: plainSrv.URL + "/ok", Pattern: "("},
+			wantOutcome:  OutcomeBadPattern,
+			wantHostHas:  "127.0.0.1",
+			wantErrorHas: "error parsing regexp",
 		},
 	}
 

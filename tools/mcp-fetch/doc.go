@@ -3,6 +3,8 @@
 //
 // It fetches a URL over HTTP, optionally converts HTML to Markdown using
 // readability extraction, and returns the result with pagination support.
+// An optional RE2 pattern filters the processed content to matching lines
+// (grep-style) before pagination is applied.
 // When --db is set, every fetch attempt (success or failure) is recorded
 // to a SQLite database; the `stats` subcommand reads that database and
 // prints a summary report.

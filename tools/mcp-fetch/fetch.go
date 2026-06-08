@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -42,6 +43,9 @@ var (
 	// ErrDenied is returned when a URL is blocked by the configured [Rules].
 	ErrDenied = errors.New("URL denied by rules")
 
+	// ErrBadPattern is returned when the grep pattern fails to compile.
+	ErrBadPattern = errors.New("invalid grep pattern")
+
 	// toolErrors are sentinel errors surfaced to the caller as tool-level
 	// failures rather than internal errors.
 	toolErrors = []error{
@@ -58,6 +62,10 @@ type FetchInput struct {
 	MaxLength  int    `json:"max_length,omitzero"  jsonschema:"Maximum number of characters to return (default 5000)"`
 	StartIndex int    `json:"start_index,omitzero" jsonschema:"Character offset to start reading from (default 0)"`
 	Raw        bool   `json:"raw,omitzero"         jsonschema:"Return raw content without HTML-to-Markdown conversion"`
+	Pattern    string `json:"pattern,omitzero"     jsonschema:"RE2 regex; return only matching lines (grep-style), applied before start_index/max_length"`
+	IgnoreCase bool   `json:"ignore_case,omitzero" jsonschema:"Case-insensitive pattern (grep -i)"`
+	Context    int    `json:"context,omitzero"     jsonschema:"Lines of context around each match (grep -C, default 0)"`
+	Invert     bool   `json:"invert,omitzero"      jsonschema:"Return non-matching lines (grep -v)"`
 }
 
 // fetchHandler holds the shared state for the fetch tool handler.
@@ -209,6 +217,18 @@ func (h *fetchHandler) handle(
 
 	rec.Host = u.Host
 
+	// Validate the grep pattern before any network request so a bad
+	// pattern fails fast and never burns a fetch.
+	if input.Pattern != "" {
+		_, err = regexp.Compile(grepPattern(input.Pattern, input.IgnoreCase))
+		if err != nil {
+			rec.Outcome = OutcomeBadPattern
+			rec.Error = err.Error()
+
+			return toolError(fmt.Errorf("%w: %w", ErrBadPattern, err)), nil, nil
+		}
+	}
+
 	err = h.validateURL(u)
 	if err != nil {
 		rec.Outcome = OutcomeDenied
@@ -291,7 +311,39 @@ func (h *fetchHandler) handle(
 		h.contentCache.Add(cacheKey, content)
 	}
 
-	result, truncated := truncate(content, startIndex, maxLength)
+	filtered := content
+
+	if input.Pattern != "" {
+		matched := false
+
+		filtered, matched, err = grepContent(content, input.Pattern, grepOptions{
+			ignoreCase: input.IgnoreCase,
+			invert:     input.Invert,
+			context:    input.Context,
+		})
+		if err != nil {
+			// The pattern compiled during pre-fetch validation, so a
+			// failure here is internal rather than a bad-pattern case.
+			rec.Outcome = OutcomeInternalError
+			rec.Error = err.Error()
+
+			return nil, nil, fmt.Errorf("filtering content: %w", err)
+		}
+
+		if !matched {
+			notice := fmt.Sprintf("<no lines matched pattern %q>", input.Pattern)
+
+			rec.Outcome = OutcomeOK
+			rec.OutputBytes = len(notice)
+			rec.Truncated = 0
+
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: notice}},
+			}, nil, nil
+		}
+	}
+
+	result, truncated := truncate(filtered, startIndex, maxLength)
 
 	rec.Outcome = OutcomeOK
 	rec.OutputBytes = len(result)
@@ -418,6 +470,103 @@ func convertHTML(body []byte) (string, error) {
 	}
 
 	return md, nil
+}
+
+// grepOptions configures [grepContent].
+type grepOptions struct {
+	ignoreCase bool
+	invert     bool
+	context    int
+}
+
+// grepPattern composes the effective RE2 source: the (?i) flag is
+// prepended for case-insensitive matching. A user-supplied inline (?i)
+// still composes fine.
+func grepPattern(pattern string, ignoreCase bool) string {
+	if ignoreCase {
+		return "(?i)" + pattern
+	}
+
+	return pattern
+}
+
+// grepContent filters content to lines matching pattern, GNU grep style:
+// match lines render "N:text", context lines "N-text", and non-adjacent
+// groups are separated by a "--" line. Case-insensitivity comes from
+// opts.ignoreCase, not the pattern. Line numbers are 1-based over the
+// original content, so they stay meaningful regardless of any downstream
+// pagination. A compile error is wrapped in [ErrBadPattern]; when nothing
+// matches, out is empty and matched is false.
+func grepContent(content, pattern string, opts grepOptions) (out string, matched bool, err error) {
+	re, err := regexp.Compile(grepPattern(pattern, opts.ignoreCase))
+	if err != nil {
+		return "", false, fmt.Errorf("%w: %w", ErrBadPattern, err)
+	}
+
+	lines := strings.Split(content, "\n")
+
+	ctx := max(opts.context, 0)
+
+	// isMatch[i] marks a line that hits the pattern (rendered with a ":"
+	// separator); selected[i] additionally covers the context lines
+	// around each match (rendered with "-").
+	isMatch := make([]bool, len(lines))
+	selected := make([]bool, len(lines))
+
+	anyMatch := false
+
+	for i, line := range lines {
+		hit := re.MatchString(line)
+		if opts.invert {
+			hit = !hit
+		}
+
+		if !hit {
+			continue
+		}
+
+		anyMatch = true
+		isMatch[i] = true
+
+		lo := max(i-ctx, 0)
+		hi := min(i+ctx, len(lines)-1)
+
+		for j := lo; j <= hi; j++ {
+			selected[j] = true
+		}
+	}
+
+	if !anyMatch {
+		return "", false, nil
+	}
+
+	var (
+		b        strings.Builder
+		prevLine = -1
+	)
+
+	for i, line := range lines {
+		if !selected[i] {
+			continue
+		}
+
+		// A gap between the previous emitted line and this one means the
+		// two belong to non-adjacent groups; separate them with "--".
+		if prevLine >= 0 && i > prevLine+1 {
+			b.WriteString("--\n")
+		}
+
+		sep := "-"
+		if isMatch[i] {
+			sep = ":"
+		}
+
+		fmt.Fprintf(&b, "%d%s%s\n", i+1, sep, line)
+
+		prevLine = i
+	}
+
+	return strings.TrimSuffix(b.String(), "\n"), true, nil
 }
 
 // truncate slices the content to the [startIndex, startIndex+maxLength)

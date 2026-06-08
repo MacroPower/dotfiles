@@ -57,6 +57,7 @@ const (
 	OutcomeHTTPError     = "http_error"
 	OutcomeFetchError    = "fetch_error"
 	OutcomeInvalidURL    = "invalid_url"
+	OutcomeBadPattern    = "bad_pattern"
 	OutcomeInternalError = "internal_error"
 )
 
