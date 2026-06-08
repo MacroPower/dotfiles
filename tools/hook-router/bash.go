@@ -348,3 +348,81 @@ func handlePostBash(
 
 	return nil
 }
+
+// handlePostBashCompact rewrites a successful Bash command's surfaced
+// output by stripping ANSI escapes and collapsing repeated line runs,
+// then re-emits the whole tool_response via [updatedOutputResponse] so
+// the shortened output is what Claude reads. The streams it rewrites
+// (stdout, stderr, or both) come from [*Compactor.Streams]. Stateless:
+// takes no store.
+//
+// The tool_response map is shallow-copied and only stdout/stderr are
+// overwritten, preserving sibling fields (interrupted, isImage,
+// exit_code, is_error, ...) regardless of which are present. Nothing is
+// emitted unless a transform actually shortened something, so an output
+// that does not compress passes through untouched.
+//
+// Every error path logs at warn and returns nil: PostToolUse hook errors
+// are fed back to Claude as feedback, and surfacing parse/encode noise
+// there would be worse than silently leaving the output as-is. The guard
+// on [*Compactor.Empty] (nil-safe) runs first so a nil cfg.compactor is
+// a no-op.
+func handlePostBashCompact(
+	input []byte,
+	stdout io.Writer,
+	cfg config,
+	logger *slog.Logger,
+) error {
+	if cfg.compactor.Empty() {
+		return nil
+	}
+
+	hook, err := parseHookInput(input)
+	if err != nil {
+		logger.Warn("failed to parse hook input", slog.Any("error", err))
+		return nil
+	}
+
+	if hook.ToolResponse == nil {
+		return nil
+	}
+
+	updated := make(map[string]any, len(hook.ToolResponse))
+	for k, v := range hook.ToolResponse {
+		updated[k] = v
+	}
+
+	changed := false
+
+	for _, stream := range cfg.compactor.Streams() {
+		raw, ok := hook.ToolResponse[stream].(string)
+		if !ok {
+			continue
+		}
+
+		if out, did := cfg.compactor.Compact(raw); did {
+			updated[stream] = out
+			changed = true
+		}
+	}
+
+	if !changed {
+		return nil
+	}
+
+	command, _ := hook.ToolInput["command"].(string)
+
+	err = encodeJSON(stdout, updatedOutputResponse(updated))
+	if err != nil {
+		logger.Warn("encoding compacted bash output",
+			slog.String("command", command),
+			slog.Any("error", err),
+		)
+
+		return nil
+	}
+
+	logger.Info("compacted bash output", slog.String("command", command))
+
+	return nil
+}

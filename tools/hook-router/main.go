@@ -24,6 +24,13 @@ import (
 // must construct all three as well (see testCatalog in plan_test.go,
 // [NewCommandRules], and [NewFormatterRules]).
 //
+// compactor shares the same nil-safe contract: mainErr always wires it
+// to a non-nil (possibly disabled) value, but a bare config{} test
+// literal that does not exercise compaction may leave it nil, since
+// [*Compactor.Empty] and [*Compactor.Streams] guard a nil receiver.
+// Handlers gate on cfg.compactor.Empty() (nil-safe) before calling any
+// other method.
+//
 // commitSkills lists the wrap-up skill names (without leading slash)
 // whose UserPromptSubmit invocation clears plan-guard state. A nil or
 // empty slice disables the failsafe.
@@ -50,6 +57,7 @@ type config struct {
 	postImpl       *PostImplCatalog
 	commandRules   *CommandRules
 	formatterRules *FormatterRules
+	compactor      *Compactor
 	commitSkills   []string
 	kubeconfigPath string
 	claudePID      string
@@ -84,19 +92,20 @@ func main() {
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
 	commandRules := flag.String("command-rules", "", "JSON array of command deny/ask rules ({command, args, except, action, reason})")
 	formatterRules := flag.String("formatter-rules", "", "JSON array of file-formatter routing rules ({pathGlob, command, timeout})")
+	compactionConfig := flag.String("compaction-config", "", "JSON object configuring PostToolUse:Bash output compaction ({enable, stripAnsi, minRunLength, minBytes, streams})")
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *formatterRules, *autoAllow, *skipPlanReview)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *formatterRules, *compactionConfig, *autoAllow, *skipPlanReview)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, formatterRulesJSON string, autoAllow, skipPlanReview bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, formatterRulesJSON, compactionConfigJSON string, autoAllow, skipPlanReview bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -171,11 +180,21 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("formatter rules engine is empty")
 	}
 
+	compactor, err := parseCompactConfig(compactionConfigJSON)
+	if err != nil {
+		return fmt.Errorf("parsing --compaction-config: %w", err)
+	}
+
+	if compactor.Empty() {
+		logger.Debug("output compaction is disabled")
+	}
+
 	cfg := configFromEnv()
 	cfg.postImpl = catalog
 	cfg.commitSkills = skills
 	cfg.commandRules = rules
 	cfg.formatterRules = formatters
+	cfg.compactor = compactor
 	cfg.autoAllow = autoAllow
 	cfg.skipPlanReview = skipPlanReview
 
@@ -274,11 +293,17 @@ func run(
 			return handlePostAskUserQuestion(ctx, input, store, cfg, logger)
 
 		case "Bash":
-			if store == nil {
-				return nil
+			// The recorder is store-gated; the compactor is
+			// store-independent. Both run, but only
+			// handlePostBashCompact writes to stdout, so there is at
+			// most one updatedToolOutput decision.
+			if store != nil {
+				if err := handlePostBash(ctx, input, store, logger); err != nil {
+					return err
+				}
 			}
 
-			return handlePostBash(ctx, input, store, logger)
+			return handlePostBashCompact(input, stdout, cfg, logger)
 
 		case "Write", "Edit", "MultiEdit":
 			return handlePostFileWrite(ctx, input, cfg, logger)

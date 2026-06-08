@@ -11,6 +11,9 @@
 //   - PostToolUse:AskUserQuestion -- when the question's option labels identify it
 //     as the Stop-gate question, clears the session,
 //     releasing the Stop gate for the plan cycle
+//   - PostToolUse:Bash            -- compacts redundant successful output (ANSI
+//     strip + run collapse) via updatedToolOutput
+//   - PostToolUse:Write/Edit/MultiEdit -- runs the matching file formatter
 //   - Stop                        -- blocks (with an AskUserQuestion-instructing
 //     message) until the post-impl question has been
 //     answered once for the current plan cycle

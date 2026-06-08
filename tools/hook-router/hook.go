@@ -80,6 +80,20 @@ func blockResponse(reason string) map[string]any {
 	}
 }
 
+// updatedOutputResponse returns a PostToolUse decision that replaces the
+// tool's surfaced output with updated. Claude Code requires updated to
+// match the tool's output shape, so callers re-emit the whole
+// tool_response map with only stdout/stderr overwritten. See
+// [handlePostBashCompact].
+func updatedOutputResponse(updated map[string]any) map[string]any {
+	return map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName":     "PostToolUse",
+			"updatedToolOutput": updated,
+		},
+	}
+}
+
 func encodeJSON(w io.Writer, v any) error {
 	err := json.NewEncoder(w).Encode(v)
 	if err != nil {

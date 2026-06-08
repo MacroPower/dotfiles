@@ -46,6 +46,7 @@ var cfg = config{
 	postImpl:     testCatalog(),
 	commitSkills: []string{"commit", "commit-push-pr", "merge"},
 	claudePID:    testPID,
+	compactor:    NewCompactor(CompactConfig{}),
 }
 
 func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {

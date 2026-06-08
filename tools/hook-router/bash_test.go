@@ -656,6 +656,226 @@ func TestHandlePostBash_Truncation(t *testing.T) {
 		"stdout tail 2 KiB must be preserved")
 }
 
+// decodeUpdatedOutput extracts the updatedToolOutput map from a
+// PostToolUse compaction response written to buf. ok is false when buf
+// is empty (no decision emitted).
+func decodeUpdatedOutput(t *testing.T, buf []byte) (map[string]any, bool) {
+	t.Helper()
+
+	if len(buf) == 0 {
+		return nil, false
+	}
+
+	var result map[string]any
+
+	require.NoError(t, json.Unmarshal(buf, &result))
+
+	hso, ok := result["hookSpecificOutput"].(map[string]any)
+	require.True(t, ok, "missing hookSpecificOutput")
+	assert.Equal(t, "PostToolUse", hso["hookEventName"])
+
+	updated, ok := hso["updatedToolOutput"].(map[string]any)
+	require.True(t, ok, "missing updatedToolOutput")
+
+	return updated, true
+}
+
+func TestHandlePostBashCompact(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.DiscardHandler)
+
+	// enabledCompactor clears the size gate (MinBytes 1) so the small
+	// test fixtures exercise the transforms rather than the byte gate. The
+	// variadic streams pick which tool_response fields are eligible.
+	enabledCompactor := func(streams ...string) config {
+		return config{compactor: NewCompactor(CompactConfig{
+			Enable:       true,
+			StripAnsi:    true,
+			MinRunLength: 3,
+			MinBytes:     1,
+			Streams:      streams,
+		})}
+	}
+
+	const (
+		wideStdout = "a-wide-repeated-stdout-line"
+		wideStderr = "a-wide-repeated-stderr-line"
+	)
+
+	t.Run("collapses stdout and preserves sibling fields", func(t *testing.T) {
+		t.Parallel()
+
+		in := strings.Repeat(wideStdout+"\n", 50)
+		input := postBashPayload(t, "noisy", map[string]any{
+			"stdout":      in,
+			"stderr":      "",
+			"interrupted": false,
+			"isImage":     false,
+			"exit_code":   float64(0),
+		})
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, enabledCompactor("stdout", "stderr"), logger))
+
+		updated, ok := decodeUpdatedOutput(t, stdout.Bytes())
+		require.True(t, ok, "a collapsible stdout must emit updatedToolOutput")
+
+		gotStdout, ok := updated["stdout"].(string)
+		require.True(t, ok)
+		assert.Less(t, len(gotStdout), len(in), "stdout must be shorter")
+		assert.Contains(t, gotStdout, compactMarker(49))
+
+		// Sibling fields survive the shallow copy.
+		assert.Equal(t, false, updated["interrupted"])
+		assert.Equal(t, false, updated["isImage"])
+		assert.Equal(t, float64(0), updated["exit_code"])
+	})
+
+	t.Run("disabled compactor emits nothing", func(t *testing.T) {
+		t.Parallel()
+
+		input := postBashPayload(t, "noisy", map[string]any{
+			"stdout": strings.Repeat(wideStdout+"\n", 50),
+		})
+
+		cfg := config{compactor: NewCompactor(CompactConfig{})}
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, cfg, logger))
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("nil compactor emits nothing", func(t *testing.T) {
+		t.Parallel()
+
+		input := postBashPayload(t, "noisy", map[string]any{
+			"stdout": strings.Repeat(wideStdout+"\n", 50),
+		})
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, config{}, logger))
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("nothing repeats emits nothing", func(t *testing.T) {
+		t.Parallel()
+
+		input := postBashPayload(t, "ls", map[string]any{
+			"stdout": "line one\nline two\nline three\n",
+		})
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, enabledCompactor("stdout", "stderr"), logger))
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("below minBytes emits nothing", func(t *testing.T) {
+		t.Parallel()
+
+		// Default MinBytes (2048); the repeating fixture is far smaller.
+		cfg := config{compactor: NewCompactor(CompactConfig{
+			Enable:    true,
+			StripAnsi: true,
+			Streams:   compactStreams,
+		})}
+
+		input := postBashPayload(t, "noisy", map[string]any{
+			"stdout": strings.Repeat("x\n", 10),
+		})
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, cfg, logger))
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("missing tool_response is a no-op", func(t *testing.T) {
+		t.Parallel()
+
+		input := postBashPayload(t, "noisy", nil)
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, enabledCompactor("stdout", "stderr"), logger))
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("malformed JSON warns and emits nothing", func(t *testing.T) {
+		t.Parallel()
+
+		var buf bytes.Buffer
+		warnLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact([]byte("not json"), &stdout, enabledCompactor("stdout", "stderr"), warnLogger))
+		assert.Empty(t, stdout.Bytes())
+		assert.Contains(t, strings.ToLower(buf.String()), "parse hook input")
+	})
+
+	t.Run("clean stdout preserved verbatim while stderr collapses", func(t *testing.T) {
+		t.Parallel()
+
+		cleanStdout := "the one and only stdout line\n"
+		dirtyStderr := strings.Repeat(wideStderr+"\n", 50)
+
+		input := postBashPayload(t, "noisy", map[string]any{
+			"stdout": cleanStdout,
+			"stderr": dirtyStderr,
+		})
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, enabledCompactor("stdout", "stderr"), logger))
+
+		updated, ok := decodeUpdatedOutput(t, stdout.Bytes())
+		require.True(t, ok, "a collapsible stderr must emit updatedToolOutput")
+
+		assert.Equal(t, cleanStdout, updated["stdout"], "untouched stdout must be preserved verbatim")
+
+		gotStderr, ok := updated["stderr"].(string)
+		require.True(t, ok)
+		assert.Less(t, len(gotStderr), len(dirtyStderr), "stderr must be shorter")
+		assert.Contains(t, gotStderr, compactMarker(49))
+	})
+
+	t.Run("clean stderr preserved verbatim while stdout collapses", func(t *testing.T) {
+		t.Parallel()
+
+		dirtyStdout := strings.Repeat(wideStdout+"\n", 50)
+		cleanStderr := "the one and only stderr line\n"
+
+		input := postBashPayload(t, "noisy", map[string]any{
+			"stdout": dirtyStdout,
+			"stderr": cleanStderr,
+		})
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, enabledCompactor("stdout", "stderr"), logger))
+
+		updated, ok := decodeUpdatedOutput(t, stdout.Bytes())
+		require.True(t, ok)
+
+		assert.Equal(t, cleanStderr, updated["stderr"], "untouched stderr must be preserved verbatim")
+
+		gotStdout, ok := updated["stdout"].(string)
+		require.True(t, ok)
+		assert.Less(t, len(gotStdout), len(dirtyStdout))
+		assert.Contains(t, gotStdout, compactMarker(49))
+	})
+
+	t.Run("stderr omitted from streams leaves a collapsible stderr alone", func(t *testing.T) {
+		t.Parallel()
+
+		input := postBashPayload(t, "noisy", map[string]any{
+			"stdout": "the one and only stdout line\n",
+			"stderr": strings.Repeat(wideStderr+"\n", 50),
+		})
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, enabledCompactor("stdout"), logger))
+		assert.Empty(t, stdout.Bytes(),
+			"with stderr out of streams and clean stdout, no updatedToolOutput is emitted")
+	})
+}
+
 func TestTruncateTail(t *testing.T) {
 	t.Parallel()
 

@@ -630,6 +630,7 @@ let
         --formatter-rules ${
           lib.escapeShellArg (builtins.toJSON (defaultFormatterRules ++ cfg.formatterRules))
         } \
+        --compaction-config ${lib.escapeShellArg (builtins.toJSON cfg.outputCompaction)} \
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
         "$@"
@@ -1359,6 +1360,70 @@ in
         is appended as the final argument. Rules are evaluated in
         order on PostToolUse:Write/Edit/MultiEdit and the first
         matching glob wins.
+      '';
+    };
+
+    outputCompaction = mkOption {
+      type = types.submodule {
+        options = {
+          enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether hook-router compacts redundant successful Bash
+              output on PostToolUse:Bash. Failing commands route to
+              PostToolUseFailure, which carries no output, so this is
+              a success-path-only optimization.
+            '';
+          };
+          stripAnsi = mkOption {
+            type = types.bool;
+            default = true;
+            description = "Whether to strip ANSI/VT escape sequences (color, cursor, OSC) from the surfaced output.";
+          };
+          minRunLength = mkOption {
+            type = types.ints.positive;
+            default = 3;
+            description = ''
+              Minimum number of consecutive byte-identical lines before a
+              run is collapsed to one line plus a marker. Shorter runs
+              pass through verbatim.
+            '';
+          };
+          minBytes = mkOption {
+            type = types.ints.unsigned;
+            default = 2048;
+            description = ''
+              Skip compaction for outputs smaller than this many bytes,
+              checked against the raw pre-strip length. Keeps the
+              transforms off small outputs that carry no redundancy
+              worth collapsing.
+            '';
+          };
+          streams = mkOption {
+            type = types.listOf (
+              types.enum [
+                "stdout"
+                "stderr"
+              ]
+            );
+            default = [
+              "stdout"
+              "stderr"
+            ];
+            description = ''
+              Which tool_response output streams to compact. An empty
+              list compacts nothing (equivalent to disabling the
+              feature).
+            '';
+          };
+        };
+      };
+      default = { };
+      description = ''
+        hook-router PostToolUse:Bash output compaction. camelCase keys so
+        `builtins.toJSON` matches the Go struct tags in
+        tools/hook-router/compactor.go CompactConfig.
       '';
     };
 
