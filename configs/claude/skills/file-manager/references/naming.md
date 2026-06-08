@@ -1,6 +1,6 @@
 # Naming policy
 
-Names and layouts produced by the `file-organizer` skill follow these
+Names and layouts produced by the `file-manager` skill follow these
 rules. They override any tool's built-in defaults; if a tool's pattern
 doesn't fit, run the tool first, then normalize with `rnr regex` (or
 `fd ... -x mv` for cases regex can't reach).

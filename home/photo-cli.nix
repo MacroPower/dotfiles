@@ -817,8 +817,8 @@ in
   };
 
   config = {
-    # Match the file-organizer naming policy
-    # (configs/claude/skills/file-organizer/references/naming.md):
+    # Match the file-manager naming policy
+    # (configs/claude/skills/file-manager/references/naming.md):
     # `-` separates words within a field, `_` separates fields,
     # periods are reserved for semantic compound extensions.
     dotfiles.photo-cli.settings = {

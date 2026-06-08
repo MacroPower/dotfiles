@@ -1,15 +1,15 @@
 ---
-name: file-organizer
+name: file-manager
 description: >-
-  Organize, sort, rename, dedupe, or archive files on disk.
+  Manage, organize, sort, rename, dedupe, or archive files on disk.
   Use when reshaping a directory tree, batch-renaming, deduplicating, sorting media
   by date or location, mounting or extracting disk images, or cleaning up a folder.
   Skip for git operations and code edits.
 ---
 
-# file-organizer
+# file-manager
 
-Filesystem reorganization with the tools on this machine.
+Filesystem management and reorganization with the tools on this machine.
 
 ## Scale safety (read first)
 
