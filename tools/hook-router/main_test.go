@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -477,6 +478,57 @@ func TestRun(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "/plan.md", planPath)
 		assert.Equal(t, "sha1", baseSHA)
+	})
+
+	t.Run("SessionStart sweeps stale compaction outputs", func(t *testing.T) {
+		t.Parallel()
+
+		outDir := t.TempDir()
+
+		oldFile := filepath.Join(outDir, "s1-stdout-deadbeefdeadbeef.log")
+		require.NoError(t, os.WriteFile(oldFile, []byte("old"), 0o644))
+
+		freshFile := filepath.Join(outDir, "s2-stdout-cafef00dcafef00d.log")
+		require.NoError(t, os.WriteFile(freshFile, []byte("fresh"), 0o644))
+
+		// Age the old file past the TTL deterministically (no sleeps).
+		past := time.Now().Add(-(compactionOutputTTL + time.Hour))
+		require.NoError(t, os.Chtimes(oldFile, past, past))
+
+		sweepCfg := config{
+			commandRules:  canonicalRules(),
+			claudePID:     testPID,
+			outputArchive: NewOutputArchive(outDir),
+		}
+
+		input := `{"session_id":"new","cwd":"/tmp/x","source":"clear"}`
+
+		var stdout bytes.Buffer
+
+		// store==nil: the sweep runs before the store gate, so the
+		// SessionStart arm still exercises it.
+		err := run(t.Context(), strings.NewReader(input), &stdout, "SessionStart", "", nil, sweepCfg, logger)
+		require.NoError(t, err)
+
+		_, statErr := os.Stat(oldFile)
+		assert.True(t, os.IsNotExist(statErr), "SessionStart must sweep outputs older than the TTL")
+
+		_, statErr = os.Stat(freshFile)
+		assert.NoError(t, statErr, "SessionStart must keep fresh outputs")
+	})
+
+	t.Run("SessionStart with no archive dir does not sweep", func(t *testing.T) {
+		t.Parallel()
+
+		// cfg.outputArchive is nil, so Dir() == "" and the sweep is a
+		// nil-safe no-op (it must not panic or error).
+		input := `{"session_id":"new","cwd":"/tmp/x","source":"clear"}`
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "SessionStart", "", nil, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
 	})
 
 	t.Run("UserPromptSubmit: no store is noop", func(t *testing.T) {

@@ -12,7 +12,9 @@
 //     as the Stop-gate question, clears the session,
 //     releasing the Stop gate for the plan cycle
 //   - PostToolUse:Bash            -- compacts redundant successful output (ANSI
-//     strip + run collapse) via updatedToolOutput
+//     strip + run collapse) via updatedToolOutput; when archiving is on,
+//     writes the uncompacted stream to a file and appends a pointer so
+//     the dropped detail stays recoverable
 //   - PostToolUse:Write/Edit/MultiEdit -- runs the matching file formatter
 //   - Stop                        -- blocks (with an AskUserQuestion-instructing
 //     message) until the post-impl question has been

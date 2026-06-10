@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -698,6 +701,17 @@ func TestHandlePostBashCompact(t *testing.T) {
 		})}
 	}
 
+	// enabledArchiveCompactor is enabledCompactor wired to archive into
+	// dir, so a stream that compacts is written out and pointed at rather
+	// than lossily collapsed. Each case passes its own t.TempDir() so the
+	// files it writes can be inspected in isolation.
+	enabledArchiveCompactor := func(dir string, streams ...string) config {
+		cfg := enabledCompactor(streams...)
+		cfg.outputArchive = NewOutputArchive(dir)
+
+		return cfg
+	}
+
 	const (
 		wideStdout = "a-wide-repeated-stdout-line"
 		wideStderr = "a-wide-repeated-stderr-line"
@@ -873,6 +887,163 @@ func TestHandlePostBashCompact(t *testing.T) {
 		require.NoError(t, handlePostBashCompact(input, &stdout, enabledCompactor("stdout"), logger))
 		assert.Empty(t, stdout.Bytes(),
 			"with stderr out of streams and clean stdout, no updatedToolOutput is emitted")
+	})
+
+	t.Run("archive enabled: stdout gets a pointer and the file holds the raw original", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		raw := strings.Repeat(wideStdout+"\n", 50)
+		input := postBashPayload(t, "noisy", map[string]any{"stdout": raw})
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, enabledArchiveCompactor(dir, "stdout", "stderr"), logger))
+
+		updated, ok := decodeUpdatedOutput(t, stdout.Bytes())
+		require.True(t, ok, "a compressible+archivable stdout must emit updatedToolOutput")
+
+		gotStdout, ok := updated["stdout"].(string)
+		require.True(t, ok)
+		assert.Less(t, len(gotStdout), len(raw), "annotated stdout must be shorter than raw")
+		assert.Contains(t, gotStdout, "[hook-router: uncompacted stdout saved to ")
+		assert.True(t, strings.HasSuffix(gotStdout, fmt.Sprintf("(%d bytes)]", len(raw))),
+			"annotated stdout must end with the pointer line reporting the raw byte count")
+
+		// The named file holds the raw original verbatim.
+		entries, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		require.Len(t, entries, 1)
+
+		archived, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+		require.NoError(t, err)
+		assert.Equal(t, raw, string(archived), "the archived file must hold the raw original stream")
+	})
+
+	t.Run("archive save failure reverts to the full original, warns, emits no response", func(t *testing.T) {
+		t.Parallel()
+
+		// The archive dir lives under a regular file, so MkdirAll fails
+		// for every stream. With no stream able to archive, each reverts
+		// to its full original and nothing changes, so no updatedToolOutput
+		// is emitted -- Claude keeps the unmodified original rather than a
+		// lossy compaction with no recovery path.
+		base := t.TempDir()
+		notDir := filepath.Join(base, "f")
+		require.NoError(t, os.WriteFile(notDir, []byte("x"), 0o644))
+
+		raw := strings.Repeat(wideStdout+"\n", 50)
+		input := postBashPayload(t, "noisy", map[string]any{"stdout": raw})
+
+		cfg := enabledArchiveCompactor(filepath.Join(notDir, "outputs"), "stdout", "stderr")
+
+		var buf bytes.Buffer
+
+		warnLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, cfg, warnLogger))
+
+		assert.Empty(t, stdout.Bytes(), "a pure archive failure reverts every stream, so nothing is emitted")
+		assert.Contains(t, strings.ToLower(buf.String()), "compaction output dir", "the save failure must warn")
+
+		// The blocking regular file is untouched: MkdirAll never created
+		// an outputs tree under it.
+		info, err := os.Stat(notDir)
+		require.NoError(t, err)
+		assert.False(t, info.IsDir(), "the blocking regular file must remain a regular file")
+	})
+
+	t.Run("pointer would not net-shorten: revert to raw, no file", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+
+		// 5 identical lines compact (saving ~74 bytes) but the pointer
+		// marker is longer than the saving, so the gate declines: the
+		// stream reverts to raw and writes no file. With no other stream,
+		// nothing changes, so no response is emitted.
+		raw := strings.Repeat(wideStdout+"\n", 5)
+		input := postBashPayload(t, "noisy", map[string]any{"stdout": raw})
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, enabledArchiveCompactor(dir, "stdout"), logger))
+
+		assert.Empty(t, stdout.Bytes(), "a gate-miss reverts to raw; with no other change, nothing is emitted")
+
+		entries, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		assert.Empty(t, entries, "a gate-miss must not write a file")
+	})
+
+	t.Run("both streams: stdout pointers while stderr reverts, independent outcomes", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+
+		// stdout is large -> compacts and archives (pointer). stderr is
+		// small -> compacts but its pointer would not net-shorten, so it
+		// reverts to its full original. The response still emits because
+		// stdout changed.
+		rawStdout := strings.Repeat(wideStdout+"\n", 50)
+		rawStderr := strings.Repeat(wideStderr+"\n", 5)
+		input := postBashPayload(t, "noisy", map[string]any{
+			"stdout": rawStdout,
+			"stderr": rawStderr,
+		})
+
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, enabledArchiveCompactor(dir, "stdout", "stderr"), logger))
+
+		updated, ok := decodeUpdatedOutput(t, stdout.Bytes())
+		require.True(t, ok, "a changed stdout must emit updatedToolOutput even when stderr reverts")
+
+		gotStdout, ok := updated["stdout"].(string)
+		require.True(t, ok)
+		assert.Contains(t, gotStdout, "[hook-router: uncompacted stdout saved to ")
+
+		// The reverted stream keeps its full original, with no pointer.
+		gotStderr, ok := updated["stderr"].(string)
+		require.True(t, ok)
+		assert.Equal(t, rawStderr, gotStderr, "the reverted stderr must keep its full original")
+		assert.NotContains(t, gotStderr, "uncompacted", "the reverted stream must carry no pointer")
+
+		// Only stdout's file is written.
+		entries, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		assert.Len(t, entries, 1, "only the archived stream writes a file")
+
+		// Per-stream outcomes never grow the surfaced output.
+		assert.LessOrEqual(t, len(gotStdout)+len(gotStderr), len(rawStdout)+len(rawStderr),
+			"the combined surfaced output must not exceed the original")
+	})
+
+	t.Run("disabled archive: byte-identical lossy compaction, no pointer", func(t *testing.T) {
+		t.Parallel()
+
+		raw := strings.Repeat(wideStdout+"\n", 50)
+		input := postBashPayload(t, "noisy", map[string]any{"stdout": raw})
+
+		// enabledCompactor leaves outputArchive nil (archiving off).
+		var stdout bytes.Buffer
+		require.NoError(t, handlePostBashCompact(input, &stdout, enabledCompactor("stdout", "stderr"), logger))
+
+		updated, ok := decodeUpdatedOutput(t, stdout.Bytes())
+		require.True(t, ok)
+
+		got, ok := updated["stdout"].(string)
+		require.True(t, ok)
+		assert.NotContains(t, got, "uncompacted", "a disabled archive must not append a pointer")
+
+		// Byte-identical to the pure compactor transform.
+		want, did := NewCompactor(CompactConfig{
+			Enable:       true,
+			StripAnsi:    true,
+			MinRunLength: 3,
+			MinBytes:     1,
+			Streams:      []string{"stdout"},
+		}).Compact(raw)
+		require.True(t, did)
+		assert.Equal(t, want, got, "disabled-archive output must equal the pure compactor output")
 	})
 }
 

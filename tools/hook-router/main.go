@@ -31,6 +31,14 @@ import (
 // Handlers gate on cfg.compactor.Empty() (nil-safe) before calling any
 // other method.
 //
+// outputArchive shares that nil-safe contract too: mainErr always wires
+// it to a non-nil (possibly disabled) value, but a bare config{} test
+// literal may leave it nil, since [*OutputArchive.Empty],
+// [*OutputArchive.Dir], and [*OutputArchive.Annotate] guard a nil
+// receiver. The compaction handler gates on cfg.outputArchive.Empty()
+// (nil-safe) before calling Annotate, and the SessionStart sweep reads
+// cfg.outputArchive.Dir() (nil-safe) for its root.
+//
 // commitSkills lists the wrap-up skill names (without leading slash)
 // whose UserPromptSubmit invocation clears plan-guard state. A nil or
 // empty slice disables the failsafe.
@@ -58,6 +66,7 @@ type config struct {
 	commandRules   *CommandRules
 	formatterRules *FormatterRules
 	compactor      *Compactor
+	outputArchive  *OutputArchive
 	commitSkills   []string
 	kubeconfigPath string
 	claudePID      string
@@ -93,19 +102,20 @@ func main() {
 	commandRules := flag.String("command-rules", "", "JSON array of command deny/ask rules ({command, args, except, action, reason})")
 	formatterRules := flag.String("formatter-rules", "", "JSON array of file-formatter routing rules ({pathGlob, command, timeout})")
 	compactionConfig := flag.String("compaction-config", "", "JSON object configuring PostToolUse:Bash output compaction ({enable, stripAnsi, minRunLength, minBytes, streams})")
+	compactionOutputDir := flag.String("compaction-output-dir", "", "directory to archive a compacted Bash stream's uncompacted content to (\"\" disables archiving)")
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *formatterRules, *compactionConfig, *autoAllow, *skipPlanReview)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *formatterRules, *compactionConfig, *compactionOutputDir, *autoAllow, *skipPlanReview)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, formatterRulesJSON, compactionConfigJSON string, autoAllow, skipPlanReview bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir string, autoAllow, skipPlanReview bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -195,6 +205,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.commandRules = rules
 	cfg.formatterRules = formatters
 	cfg.compactor = compactor
+	cfg.outputArchive = NewOutputArchive(compactionOutputDir)
 	cfg.autoAllow = autoAllow
 	cfg.skipPlanReview = skipPlanReview
 
@@ -321,6 +332,7 @@ func run(
 
 	case "SessionStart":
 		sweepKubectxDirs(kubectxSweepParent(), logger)
+		sweepCompactionOutputs(cfg.outputArchive.Dir(), compactionOutputTTL, logger)
 
 		if store == nil {
 			return nil

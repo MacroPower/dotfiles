@@ -356,6 +356,18 @@ func handlePostBash(
 // (stdout, stderr, or both) come from [*Compactor.Streams]. Stateless:
 // takes no store.
 //
+// When cfg.outputArchive is enabled, compaction is lossless-by-retrieval:
+// before a stream is shortened, its uncompacted content is written to a
+// per-stream file via [*OutputArchive.Annotate] and a one-line pointer
+// naming that file is appended, so the model can read back the exact
+// ANSI and repeated lines compaction dropped. The fallback is
+// per-stream and conservative: if the archive write fails or the pointer
+// would not net-shorten the output, that stream keeps its full original
+// content (already in the shallow copy) -- never a lossy rewrite with no
+// recovery path, never a dangling pointer. With archiving disabled
+// (nil-safe [*OutputArchive.Empty]), the stream takes the plain lossy
+// compaction with no file and no pointer.
+//
 // The tool_response map is shallow-copied and only stdout/stderr are
 // overwritten, preserving sibling fields (interrupted, isImage,
 // exit_code, is_error, ...) regardless of which are present. Nothing is
@@ -400,10 +412,30 @@ func handlePostBashCompact(
 			continue
 		}
 
-		if out, did := cfg.compactor.Compact(raw); did {
+		out, did := cfg.compactor.Compact(raw)
+		if !did {
+			continue
+		}
+
+		if cfg.outputArchive.Empty() {
+			// Archiving off: plain lossy compaction, no recoverable original.
 			updated[stream] = out
 			changed = true
+
+			continue
 		}
+
+		annotated, ok := cfg.outputArchive.Annotate(hook.SessionID, stream, raw, out, logger)
+		if !ok {
+			// Save failed or the pointer would not net-shorten: keep the
+			// full original stream (already in the shallow copy) so the
+			// rewrite stays recoverable -- no lossy compaction without a
+			// pointer, no pointer without a file.
+			continue
+		}
+
+		updated[stream] = annotated
+		changed = true
 	}
 
 	if !changed {

@@ -630,7 +630,10 @@ let
         --formatter-rules ${
           lib.escapeShellArg (builtins.toJSON (defaultFormatterRules ++ cfg.formatterRules))
         } \
-        --compaction-config ${lib.escapeShellArg (builtins.toJSON cfg.outputCompaction)} \
+        --compaction-config ${
+          lib.escapeShellArg (builtins.toJSON (removeAttrs cfg.outputCompaction [ "saveFullOutput" ]))
+        } \
+        ${lib.optionalString cfg.outputCompaction.saveFullOutput ''--compaction-output-dir "${config.xdg.stateHome}/hook-router/outputs"''} \
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
         "$@"
@@ -1415,6 +1418,21 @@ in
               Which tool_response output streams to compact. An empty
               list compacts nothing (equivalent to disabling the
               feature).
+            '';
+          };
+          saveFullOutput = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether hook-router archives the uncompacted stream to a
+              file under ''${XDG_STATE_HOME}/hook-router/outputs before
+              compacting it, appending a one-line pointer to the
+              surfaced output that names the file so the model can read
+              back the exact ANSI and repeated lines compaction drops.
+              When false, compaction stays lossy: no file is written and
+              no pointer is appended. This toggle gates the
+              --compaction-output-dir wrapper flag and is not serialized
+              into --compaction-config.
             '';
           };
         };
