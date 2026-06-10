@@ -21,4 +21,15 @@
 //     answered once for the current plan cycle
 //
 // Session state is persisted in a SQLite database.
+//
+// The binary is thin wiring: event dispatch, flag parsing, and the
+// handlers that connect Claude Code's hook protocol to the underlying
+// engines. The engines themselves live in independent, importable
+// subpackages -- hook (protocol I/O), cmdrules (command deny/ask
+// rules), formatter (file-formatter routing), compact (output
+// compaction), archive (uncompacted-output archiving), state (SQLite
+// session state), kubectx (kubectl gating and session dir lifecycle),
+// git (repo queries), and postimpl (post-implementation skill
+// catalog). None of the subpackages import each other; only this
+// package composes them.
 package main

@@ -8,6 +8,11 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/git"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/postimpl"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
 )
 
 // pendingPlanTTLSeconds bounds how long a claude_pid-keyed pending plan
@@ -38,7 +43,7 @@ const pendingPlanTTLSeconds = 3600
 // boundary where the handoff is no longer needed. It deletes the
 // pending_plans row for claudePID if any, and logs at Error on failure
 // with the caller-supplied site tag. A no-op when claudePID is empty.
-func dropPendingPlan(ctx context.Context, store *Store, claudePID, site string, logger *slog.Logger) {
+func dropPendingPlan(ctx context.Context, store *state.Store, claudePID, site string, logger *slog.Logger) {
 	if claudePID == "" {
 		return
 	}
@@ -68,24 +73,24 @@ func handleExitPlanModePre(
 	ctx context.Context,
 	input []byte,
 	stdout io.Writer,
-	store *Store,
+	store *state.Store,
 	cfg config,
 	workDir string,
 	logger *slog.Logger,
 ) error {
-	hook, err := parseHookInput(input)
+	h, err := hook.ParseInput(input)
 	if err != nil {
 		logger.Warn("failed to parse hook input", slog.Any("error", err))
 		return nil
 	}
 
-	if hook.SessionID == "" {
+	if h.SessionID == "" {
 		return nil
 	}
 
 	planPath := ""
-	if hook.ToolInput != nil {
-		if p, ok := hook.ToolInput["planFilePath"].(string); ok {
+	if h.ToolInput != nil {
+		if p, ok := h.ToolInput["planFilePath"].(string); ok {
 			planPath = p
 		}
 	}
@@ -96,12 +101,12 @@ func handleExitPlanModePre(
 	var count int
 
 	if !cfg.skipPlanReview {
-		count, err = store.IncrementExitPlanCount(ctx, hook.SessionID)
+		count, err = store.IncrementExitPlanCount(ctx, h.SessionID)
 		if err != nil {
 			// Fail-closed: silently swallowing this error would let the first
 			// ExitPlanMode call through without ever invoking plan-reviewer.
 			logger.Error("failed to increment exit plan count", slog.Any("error", err))
-			return encodeJSON(stdout, denyResponse("plan-guard store unavailable, please retry"))
+			return writeDecision(stdout, hook.Deny("plan-guard store unavailable, please retry"))
 		}
 
 		if count == 1 {
@@ -114,36 +119,36 @@ func handleExitPlanModePre(
 
 			reason += " After review is complete and any feedback has been addressed, call ExitPlanMode again."
 
-			logger.Info("denied ExitPlanMode (first call)", slog.String("session", hook.SessionID))
+			logger.Info("denied ExitPlanMode (first call)", slog.String("session", h.SessionID))
 
-			return encodeJSON(stdout, denyResponse(reason))
+			return writeDecision(stdout, hook.Deny(reason))
 		}
 	}
 
 	// Record plan path and baseline SHA when allowing ExitPlanMode through.
 	// PostToolUse does not fire for plan-mode control tools, so we record
 	// here on the second (approved) call instead.
-	git := &GitRunner{Dir: workDir}
+	g := &git.Runner{Dir: workDir}
 
-	baseSHA, err := git.HeadSHA(ctx)
+	baseSHA, err := g.HeadSHA(ctx)
 	if err != nil {
 		logger.Warn("failed to get HEAD SHA", slog.Any("error", err))
 	}
 
-	err = store.SetPlanPath(ctx, hook.SessionID, planPath, baseSHA)
+	err = store.SetPlanPath(ctx, h.SessionID, planPath, baseSHA)
 	if err != nil {
 		// Fail-closed: if we don't record the plan path, the Stop hook
 		// won't know a plan is pending and won't ask for implementation
 		// review. The counter is already bumped; the user's retry will
 		// reach count == 3 and re-attempt SetPlanPath.
 		logger.Error("failed to set plan path", slog.Any("error", err))
-		return encodeJSON(stdout, denyResponse("plan-guard store unavailable, please retry"))
+		return writeDecision(stdout, hook.Deny("plan-guard store unavailable, please retry"))
 	}
 
 	// Fail-open: at worst Stop will keep blocking with the plan-mode
 	// message after ExitPlanMode succeeded; the user's recovery path
 	// is the stop_hook_active escape hatch in handleStop.
-	err = store.SetInPlanMode(ctx, hook.SessionID, false)
+	err = store.SetInPlanMode(ctx, h.SessionID, false)
 	if err != nil {
 		logger.Error("failed to clear in_plan_mode", slog.Any("error", err))
 	}
@@ -160,7 +165,7 @@ func handleExitPlanModePre(
 			logger.ErrorContext(ctx, "failed to set pending plan", slog.Any("error", err))
 		} else if overwroteFresh {
 			logger.InfoContext(ctx, "overwrote fresh pending plan; same window re-planned within 60s without consuming previous handoff",
-				slog.String("session", hook.SessionID),
+				slog.String("session", h.SessionID),
 				slog.String("claude_pid", cfg.claudePID),
 				slog.String("plan_path", planPath),
 			)
@@ -168,136 +173,13 @@ func handleExitPlanModePre(
 	}
 
 	logger.Info("allowed ExitPlanMode, recorded plan path",
-		slog.String("session", hook.SessionID),
+		slog.String("session", h.SessionID),
 		slog.Int("count", count),
 		slog.String("plan_path", planPath),
 		slog.String("base_sha", baseSHA),
 	)
 
 	return nil
-}
-
-// PostImplSkill describes one post-implementation slash command Claude
-// may invoke when a plan's Stop gate fires. The shape mirrors the JSON
-// emitted by the Nix-side `postImplSkills` list: field order and tag
-// casing must match or [builtins.toJSON] output will silently unmarshal
-// to zero values.
-type PostImplSkill struct {
-	Label       string `json:"label"`
-	Description string `json:"description"`
-}
-
-// PostImplCatalog bundles a list of [PostImplSkill] entries (used for
-// block-message rendering) with the derived label set (used for O(1)
-// validation of AskUserQuestion option labels). Construct with
-// [NewPostImplCatalog] so the two stay in sync.
-type PostImplCatalog struct {
-	labels map[string]bool
-	skills []PostImplSkill
-}
-
-// NewPostImplCatalog builds a [*PostImplCatalog] from the given skills,
-// folding each skill's label into the validation set. Duplicates across
-// entries are not deduped: the Nix list is the source of truth and is
-// expected to stay clean.
-func NewPostImplCatalog(skills []PostImplSkill) *PostImplCatalog {
-	labels := make(map[string]bool, len(skills))
-
-	for _, s := range skills {
-		labels[s.Label] = true
-	}
-
-	return &PostImplCatalog{skills: skills, labels: labels}
-}
-
-// HasLabel reports whether label matches a slash-command label in the
-// catalog.
-func (c *PostImplCatalog) HasLabel(label string) bool { return c.labels[label] }
-
-// Empty reports whether the catalog has no skills.
-func (c *PostImplCatalog) Empty() bool { return len(c.skills) == 0 }
-
-// BuildAskReason returns the unified Stop block-message used while a
-// session is mid-implementation. The message guides Claude through
-// three cases, ordered so the clarifying-question path wins when it
-// applies (the model tends to default to whichever branch is most
-// concrete):
-//
-//   - "If you have a question for the user": call AskUserQuestion with
-//     that question, not with the post-impl labels. This branch goes
-//     first because the failure mode it guards against is Claude
-//     selecting a post-impl label when it actually meant to ask a
-//     clarifying question.
-//   - "If you are not done": keep working.
-//   - "Only when you have completed the implementation": call
-//     AskUserQuestion with the catalog's slash-command labels and then
-//     invoke each chosen option as a slash command.
-//
-// Bullets render in catalog order (Nix list order, preserved through
-// [builtins.toJSON]). When the catalog is empty the bullet section is
-// suppressed and the "completed" branch falls back to a single sentence
-// — production should never hit this path (mainErr logs a warning) but
-// the invariant that callers can render without a nil-guard holds.
-//
-// Wording note: the message describes what Claude should do, not what
-// the gate is checking. Disclosing the precise unlock condition (e.g.
-// "Stop unlocks when a post-impl AUQ is answered against the current
-// git state") tends to make the model optimize for the unlock rather
-// than for the work the unlock is meant to gate.
-func (c *PostImplCatalog) BuildAskReason(planPath, baseSHA string) string {
-	var b strings.Builder
-
-	fmt.Fprintf(&b, "You are implementing the plan at %s (baseline: %s).\n\n",
-		planPath, baseSHA)
-
-	b.WriteString("If you have a question for the user (including one you wrote out" +
-		" but did not deliver via AskUserQuestion before ending your turn) call" +
-		" AskUserQuestion now with that question. The post-implementation options" +
-		" below are not answers to clarifying questions; their labels are slash" +
-		" commands, not free-text responses.\n")
-
-	b.WriteString("If you are not done, keep working.\n")
-
-	if len(c.skills) > 0 {
-		b.WriteString("Only when you have completed the implementation AND have no" +
-			" outstanding question for the user, call AskUserQuestion with the" +
-			" post-implementation review options below. Each option's `label` MUST" +
-			" be exactly one of:\n")
-
-		for _, s := range c.skills {
-			fmt.Fprintf(&b, "  - %s: %s\n", s.Label, s.Description)
-		}
-
-		b.WriteString("Each option's `label` is itself a slash-command invocation." +
-			" After the user answers, run each chosen option's label as the" +
-			" corresponding slash command. Order the commands intelligently: edits" +
-			" first, then reviews, then any finalizers.")
-	} else {
-		b.WriteString("Only when you have completed the implementation AND have no" +
-			" outstanding question for the user, call AskUserQuestion with the" +
-			" post-implementation review options provided by your environment.")
-	}
-
-	return b.String()
-}
-
-// parsePostImplSkills decodes the JSON payload passed via
-// --post-impl-skills into a [*PostImplCatalog]. An empty input yields
-// an empty catalog (valid for tests and early-startup paths);
-// malformed JSON returns an error so wrapper misconfiguration is loud.
-func parsePostImplSkills(s string) (*PostImplCatalog, error) {
-	if s == "" {
-		return NewPostImplCatalog(nil), nil
-	}
-
-	var skills []PostImplSkill
-
-	err := json.Unmarshal([]byte(s), &skills)
-	if err != nil {
-		return nil, fmt.Errorf("decoding post-impl skills JSON: %w", err)
-	}
-
-	return NewPostImplCatalog(skills), nil
 }
 
 // handlePostAskUserQuestion runs on PostToolUse:AskUserQuestion.
@@ -320,33 +202,33 @@ func parsePostImplSkills(s string) (*PostImplCatalog, error) {
 func handlePostAskUserQuestion(
 	ctx context.Context,
 	input []byte,
-	store *Store,
+	store *state.Store,
 	cfg config,
 	logger *slog.Logger,
 ) error {
-	hook, err := parseHookInput(input)
+	h, err := hook.ParseInput(input)
 	if err != nil {
 		logger.Warn("failed to parse hook input", slog.Any("error", err))
 		return nil
 	}
 
-	if hook.SessionID == "" {
+	if h.SessionID == "" {
 		return nil
 	}
 
 	// Belt-and-suspenders against a misconfigured matcher that routes a
 	// non-AskUserQuestion event here.
-	if hook.ToolName != "" && hook.ToolName != "AskUserQuestion" {
+	if h.ToolName != "" && h.ToolName != "AskUserQuestion" {
 		return nil
 	}
 
-	if !hasPostImplLabel(hook.ToolInput, cfg.postImpl) {
+	if !hasPostImplLabel(h.ToolInput, cfg.postImpl) {
 		return nil
 	}
 
 	// Fail-open: on failure Stop re-blocks and re-asks the post-impl
 	// question, which is the recovery path.
-	err = store.ClearSession(ctx, hook.SessionID)
+	err = store.ClearSession(ctx, h.SessionID)
 	if err != nil {
 		logger.Error("failed to clear session for post-impl AUQ", slog.Any("error", err))
 		return nil
@@ -357,17 +239,17 @@ func handlePostAskUserQuestion(
 	dropPendingPlan(ctx, store, cfg.claudePID, "post-impl AUQ", logger)
 
 	logger.Info("cleared session for post-impl AUQ, Stop gate released",
-		slog.String("session", hook.SessionID),
+		slog.String("session", h.SessionID),
 	)
 
 	return nil
 }
 
 // hasPostImplLabel walks tool_input["questions"][].options[].label and
-// reports whether any label matches a [*PostImplCatalog] label. All
+// reports whether any label matches a [*postimpl.Catalog] label. All
 // type assertions use comma-ok; malformed shapes are treated as "no
 // match". An empty catalog matches nothing.
-func hasPostImplLabel(toolInput map[string]any, cat *PostImplCatalog) bool {
+func hasPostImplLabel(toolInput map[string]any, cat *postimpl.Catalog) bool {
 	if toolInput == nil {
 		return false
 	}
@@ -408,21 +290,21 @@ func hasPostImplLabel(toolInput map[string]any, cat *PostImplCatalog) bool {
 	return false
 }
 
-func handleEnterPlanMode(ctx context.Context, input []byte, store *Store, claudePID string, logger *slog.Logger) error {
-	hook, err := parseHookInput(input)
+func handleEnterPlanMode(ctx context.Context, input []byte, store *state.Store, claudePID string, logger *slog.Logger) error {
+	h, err := hook.ParseInput(input)
 	if err != nil {
 		logger.Warn("failed to parse hook input", slog.Any("error", err))
 		return nil
 	}
 
-	if hook.SessionID == "" {
+	if h.SessionID == "" {
 		return nil
 	}
 
 	// Fail-open: stale counter means at most one extra ExitPlanMode deny,
 	// which the user already recovers from via the normal deny-then-allow
 	// flow. Fail-closed would prevent the user from entering plan mode.
-	err = store.ResetSession(ctx, hook.SessionID)
+	err = store.ResetSession(ctx, h.SessionID)
 	if err != nil {
 		logger.Error("failed to reset session", slog.Any("error", err))
 	}
@@ -430,7 +312,7 @@ func handleEnterPlanMode(ctx context.Context, input []byte, store *Store, claude
 	// Fail-open: if the bit doesn't get set, Stop falls through to the
 	// existing post-impl path. The user loses the plan-mode block but
 	// still gets the deny-on-EnterPlanMode workflow.
-	err = store.SetInPlanMode(ctx, hook.SessionID, true)
+	err = store.SetInPlanMode(ctx, h.SessionID, true)
 	if err != nil {
 		logger.Error("failed to set in_plan_mode", slog.Any("error", err))
 	}
@@ -439,7 +321,7 @@ func handleEnterPlanMode(ctx context.Context, input []byte, store *Store, claude
 	// handoff. Fail-open — see SetPendingPlan rationale.
 	dropPendingPlan(ctx, store, claudePID, "EnterPlanMode", logger)
 
-	logger.Info("reset session for plan mode", slog.String("session", hook.SessionID))
+	logger.Info("reset session for plan mode", slog.String("session", h.SessionID))
 
 	return nil
 }
@@ -456,31 +338,31 @@ func handleEnterPlanMode(ctx context.Context, input []byte, store *Store, claude
 func handleUserPromptSubmit(
 	ctx context.Context,
 	input []byte,
-	store *Store,
+	store *state.Store,
 	cfg config,
 	logger *slog.Logger,
 ) error {
-	hook, err := parseHookInput(input)
+	h, err := hook.ParseInput(input)
 	if err != nil {
 		logger.Warn("failed to parse hook input", slog.Any("error", err))
 		return nil
 	}
 
-	if hook.SessionID == "" {
+	if h.SessionID == "" {
 		return nil
 	}
 
-	skill, ok := matchCommitPrompt(hook.Prompt, cfg.commitSkills)
+	skill, ok := matchCommitPrompt(h.Prompt, cfg.commitSkills)
 	if !ok {
 		return nil
 	}
 
-	err = store.ClearSession(ctx, hook.SessionID)
+	err = store.ClearSession(ctx, h.SessionID)
 	if err != nil {
 		// Fail-open: leaves the user behind a still-active gate, but
 		// stop_hook_active in handleStop is the documented recovery.
 		logger.Error("failed to clear session for wrap-up skill",
-			slog.String("session", hook.SessionID),
+			slog.String("session", h.SessionID),
 			slog.String("skill", skill),
 			slog.Any("error", err),
 		)
@@ -493,7 +375,7 @@ func handleUserPromptSubmit(
 	dropPendingPlan(ctx, store, cfg.claudePID, "wrap-up skill", logger)
 
 	logger.Info("cleared session for wrap-up skill",
-		slog.String("session", hook.SessionID),
+		slog.String("session", h.SessionID),
 		slog.String("skill", skill),
 	)
 
@@ -561,27 +443,27 @@ func handleStop(
 	ctx context.Context,
 	input []byte,
 	stdout io.Writer,
-	store *Store,
+	store *state.Store,
 	cfg config,
 	logger *slog.Logger,
 ) error {
-	hook, err := parseHookInput(input)
+	h, err := hook.ParseInput(input)
 	if err != nil {
 		logger.Warn("failed to parse hook input", slog.Any("error", err))
 		return nil
 	}
 
-	if hook.SessionID == "" {
+	if h.SessionID == "" {
 		return nil
 	}
 
 	// Escape hatch: if already retrying after a block, clear and allow.
 	// ClearSession is fail-open so the escape hatch works even when the
 	// store is unavailable — the user has explicitly overridden the guard.
-	if hook.StopHookActive {
-		logger.Info("stop_hook_active, clearing session", slog.String("session", hook.SessionID))
+	if h.StopHookActive {
+		logger.Info("stop_hook_active, clearing session", slog.String("session", h.SessionID))
 
-		err := store.ClearSession(ctx, hook.SessionID)
+		err := store.ClearSession(ctx, h.SessionID)
 		if err != nil {
 			logger.WarnContext(ctx, "failed to clear session", slog.Any("error", err))
 		}
@@ -592,21 +474,21 @@ func handleStop(
 		return nil
 	}
 
-	_, planPath, baseSHA, err := store.Session(ctx, hook.SessionID)
+	_, planPath, baseSHA, err := store.Session(ctx, h.SessionID)
 	if err != nil {
 		// Fail-closed: today this silently allows Stop through, bypassing
 		// the post-impl review guard. Block instead so the user retries.
 		// The stop_hook_active escape hatch above is preserved.
 		logger.Error("failed to read session", slog.Any("error", err))
-		return encodeJSON(stdout, blockResponse("plan-guard store unavailable, please retry"))
+		return writeDecision(stdout, hook.Block("plan-guard store unavailable, please retry"))
 	}
 
 	// Fail-closed: same posture as the Session() error above. A stale
 	// store should produce a block + retry, not a silent allow.
-	inPlanMode, err := store.InPlanMode(ctx, hook.SessionID)
+	inPlanMode, err := store.InPlanMode(ctx, h.SessionID)
 	if err != nil {
 		logger.Error("failed to read in_plan_mode", slog.Any("error", err))
-		return encodeJSON(stdout, blockResponse("plan-guard store unavailable, please retry"))
+		return writeDecision(stdout, hook.Block("plan-guard store unavailable, please retry"))
 	}
 
 	// Plan-mode block must run BEFORE the empty-plan-path allow:
@@ -614,27 +496,27 @@ func handleStop(
 	// the second/approved ExitPlanMode call), so falling through here
 	// would silently allow Stop in plan mode.
 	if inPlanMode {
-		logger.Info("blocking stop in plan mode", slog.String("session", hook.SessionID))
-		return encodeJSON(stdout, blockResponse(planModeBlockReason))
+		logger.Info("blocking stop in plan mode", slog.String("session", h.SessionID))
+		return writeDecision(stdout, hook.Block(planModeBlockReason))
 	}
 
 	// An answered post-impl AskUserQuestion lands here too: the handler
 	// clears the session row, so Session() re-INSERTs it with an empty
 	// plan_path and Stop allows for the rest of the plan cycle.
 	if planPath == "" {
-		logger.Info("no plan path, allowing through", slog.String("session", hook.SessionID))
+		logger.Info("no plan path, allowing through", slog.String("session", h.SessionID))
 		return nil
 	}
 
 	reason := cfg.postImpl.BuildAskReason(planPath, baseSHA)
 
 	logger.Info("blocking stop for post-impl question",
-		slog.String("session", hook.SessionID),
+		slog.String("session", h.SessionID),
 		slog.String("plan_path", planPath),
 		slog.String("base_sha", baseSHA),
 	)
 
-	return encodeJSON(stdout, blockResponse(reason))
+	return writeDecision(stdout, hook.Block(reason))
 }
 
 // handleSessionStart migrates a claude_pid-keyed pending plan onto the
@@ -653,7 +535,7 @@ func handleStop(
 // busy, and so on) so they expire before being mistaken for a fresh
 // handoff.
 //
-// hook.Source is intentionally ignored: the TTL alone is sufficient,
+// h.Source is intentionally ignored: the TTL alone is sufficient,
 // and the plan-accept-clear path may emit either `source=clear` or
 // `source=startup` depending on Claude Code version.
 //
@@ -665,17 +547,17 @@ func handleStop(
 func handleSessionStart(
 	ctx context.Context,
 	input []byte,
-	store *Store,
+	store *state.Store,
 	claudePID string,
 	logger *slog.Logger,
 ) error {
-	hook, err := parseHookInput(input)
+	h, err := hook.ParseInput(input)
 	if err != nil {
 		logger.WarnContext(ctx, "failed to parse hook input", slog.Any("error", err))
 		return nil
 	}
 
-	if hook.SessionID == "" || claudePID == "" {
+	if h.SessionID == "" || claudePID == "" {
 		return nil
 	}
 
@@ -689,15 +571,15 @@ func handleSessionStart(
 		return nil
 	}
 
-	err = store.SetPlanPath(ctx, hook.SessionID, planPath, baseSHA)
+	err = store.SetPlanPath(ctx, h.SessionID, planPath, baseSHA)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to migrate plan path to new session", slog.Any("error", err))
 		return nil
 	}
 
 	logger.InfoContext(ctx, "migrated pending plan to new session",
-		slog.String("session", hook.SessionID),
-		slog.String("source", hook.Source),
+		slog.String("session", h.SessionID),
+		slog.String("source", h.Source),
 		slog.String("plan_path", planPath),
 	)
 

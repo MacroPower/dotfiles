@@ -1,18 +1,16 @@
-package main
+package formatter_test
 
 import (
-	"bytes"
-	"encoding/json"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/formatter"
 )
 
 func TestParseFormatterRules(t *testing.T) {
@@ -21,7 +19,7 @@ func TestParseFormatterRules(t *testing.T) {
 	cases := map[string]struct {
 		in   string
 		err  bool
-		want []FormatterRule
+		want []formatter.Rule
 	}{
 		"empty string yields empty rules": {
 			in:   "",
@@ -29,19 +27,19 @@ func TestParseFormatterRules(t *testing.T) {
 		},
 		"single rule round-trips": {
 			in: `[{"pathGlob":"/tmp/plans/*.md","command":["mdformat"]}]`,
-			want: []FormatterRule{
+			want: []formatter.Rule{
 				{PathGlob: "/tmp/plans/*.md", Command: []string{"mdformat"}},
 			},
 		},
 		"timeout field round-trips": {
 			in: `[{"pathGlob":"/tmp/*.md","command":["mdformat"],"timeout":"3s"}]`,
-			want: []FormatterRule{
+			want: []formatter.Rule{
 				{PathGlob: "/tmp/*.md", Command: []string{"mdformat"}, Timeout: "3s"},
 			},
 		},
 		"unknown fields are silently dropped": {
 			in: `[{"pathGlob":"/tmp/*.md","command":["mdformat"],"foo":1}]`,
-			want: []FormatterRule{
+			want: []formatter.Rule{
 				{PathGlob: "/tmp/*.md", Command: []string{"mdformat"}},
 			},
 		},
@@ -67,7 +65,7 @@ func TestParseFormatterRules(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			rules, err := parseFormatterRules(tc.in)
+			rules, err := formatter.Parse(tc.in)
 			if tc.err {
 				require.Error(t, err)
 				return
@@ -75,7 +73,7 @@ func TestParseFormatterRules(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotNil(t, rules)
-			assert.Equal(t, tc.want, rules.rules)
+			assert.Equal(t, tc.want, rules.Rules())
 		})
 	}
 }
@@ -91,12 +89,12 @@ func TestParseFormatterRulesNixJSON(t *testing.T) {
 	// Exact shape of `builtins.toJSON [{ pathGlob = "/x/plans/*.md"; command = ["/nix/store/abc/bin/mdformat"]; timeout = "5s"; }]`.
 	in := `[{"command":["/nix/store/abc/bin/mdformat"],"pathGlob":"/x/plans/*.md","timeout":"5s"}]`
 
-	rules, err := parseFormatterRules(in)
+	rules, err := formatter.Parse(in)
 	require.NoError(t, err)
-	require.Len(t, rules.rules, 1)
-	assert.Equal(t, "/x/plans/*.md", rules.rules[0].PathGlob)
-	assert.Equal(t, []string{"/nix/store/abc/bin/mdformat"}, rules.rules[0].Command)
-	assert.Equal(t, "5s", rules.rules[0].Timeout)
+	require.Len(t, rules.Rules(), 1)
+	assert.Equal(t, "/x/plans/*.md", rules.Rules()[0].PathGlob)
+	assert.Equal(t, []string{"/nix/store/abc/bin/mdformat"}, rules.Rules()[0].Command)
+	assert.Equal(t, "5s", rules.Rules()[0].Timeout)
 
 	rule, ok := rules.Match("/x/plans/today.md")
 	require.True(t, ok)
@@ -106,7 +104,7 @@ func TestParseFormatterRulesNixJSON(t *testing.T) {
 func TestFormatterRulesMatch(t *testing.T) {
 	t.Parallel()
 
-	rules := NewFormatterRules([]FormatterRule{
+	rules := formatter.New([]formatter.Rule{
 		{
 			PathGlob: "/home/x/.claude/plans/*.md",
 			Command:  []string{"mdformat"},
@@ -167,7 +165,7 @@ func TestFormatterRulesMatch(t *testing.T) {
 func TestFormatterRulesMatchDoublestar(t *testing.T) {
 	t.Parallel()
 
-	rules := NewFormatterRules([]FormatterRule{
+	rules := formatter.New([]formatter.Rule{
 		{
 			PathGlob: "/home/x/.claude/plans/**/*.md",
 			Command:  []string{"mdformat"},
@@ -211,7 +209,7 @@ func TestFormatterRulesMatchDoublestar(t *testing.T) {
 func TestFormatterRulesMatchFirstWins(t *testing.T) {
 	t.Parallel()
 
-	rules := NewFormatterRules([]FormatterRule{
+	rules := formatter.New([]formatter.Rule{
 		{PathGlob: "/tmp/*.md", Command: []string{"first"}},
 		{PathGlob: "/tmp/*.md", Command: []string{"second"}},
 	})
@@ -227,7 +225,7 @@ func TestFormatterRulesNilAndEmpty(t *testing.T) {
 	t.Run("nil engine is empty and does not match", func(t *testing.T) {
 		t.Parallel()
 
-		var rules *FormatterRules
+		var rules *formatter.Engine
 		assert.True(t, rules.Empty())
 
 		_, ok := rules.Match("/tmp/x.md")
@@ -237,7 +235,7 @@ func TestFormatterRulesNilAndEmpty(t *testing.T) {
 	t.Run("empty engine is empty and does not match", func(t *testing.T) {
 		t.Parallel()
 
-		rules := NewFormatterRules(nil)
+		rules := formatter.New(nil)
 		assert.True(t, rules.Empty())
 
 		_, ok := rules.Match("/tmp/x.md")
@@ -256,7 +254,7 @@ func TestFormatterRuleRunTimeout(t *testing.T) {
 	target := filepath.Join(tmp, "input.md")
 	require.NoError(t, os.WriteFile(target, []byte("# t"), 0o644))
 
-	rule := FormatterRule{
+	rule := formatter.Rule{
 		PathGlob: filepath.Join(tmp, "*.md"),
 		Command:  []string{"sleep", "5"},
 		Timeout:  "150ms",
@@ -273,7 +271,7 @@ func TestFormatterRuleRunTimeout(t *testing.T) {
 func TestFormatterRuleRunMissingFile(t *testing.T) {
 	t.Parallel()
 
-	rule := FormatterRule{
+	rule := formatter.Rule{
 		PathGlob: "/tmp/*.md",
 		Command:  []string{"sh", "-c", "echo should-not-run"},
 	}
@@ -285,7 +283,7 @@ func TestFormatterRuleRunMissingFile(t *testing.T) {
 func TestFormatterRuleRunEmptyCommand(t *testing.T) {
 	t.Parallel()
 
-	rule := FormatterRule{PathGlob: "/tmp/*.md"}
+	rule := formatter.Rule{PathGlob: "/tmp/*.md"}
 	err := rule.Run(t.Context(), "/tmp/x.md")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty command")
@@ -298,192 +296,18 @@ func TestFormatterRuleResolveTimeout(t *testing.T) {
 		in   string
 		want time.Duration
 	}{
-		"empty defaults":        {in: "", want: defaultFormatterTimeout},
+		"empty defaults":        {in: "", want: formatter.DefaultTimeout},
 		"valid override":        {in: "250ms", want: 250 * time.Millisecond},
-		"malformed defaults":    {in: "not-a-duration", want: defaultFormatterTimeout},
-		"non-positive defaults": {in: "-1s", want: defaultFormatterTimeout},
+		"malformed defaults":    {in: "not-a-duration", want: formatter.DefaultTimeout},
+		"non-positive defaults": {in: "-1s", want: formatter.DefaultTimeout},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			r := FormatterRule{Timeout: tc.in}
+			r := formatter.Rule{Timeout: tc.in}
 			assert.Equal(t, tc.want, r.ResolveTimeout())
 		})
 	}
-}
-
-func TestHandlePostFileWriteTools(t *testing.T) {
-	t.Parallel()
-
-	tmp := t.TempDir()
-	target := filepath.Join(tmp, "doc.md")
-	const before = "# t\n\n\n\nbar\n"
-
-	rule := FormatterRule{
-		PathGlob: filepath.Join(tmp, "*.md"),
-		// `tr -s '\n'` collapses runs of newlines, proving the formatter
-		// actually ran without relying on mdformat being on PATH.
-		Command: []string{"sh", "-c", `tr -s '\n' < "$1" > "$1.tmp" && mv "$1.tmp" "$1"`, "sh"},
-	}
-
-	cfg := config{formatterRules: NewFormatterRules([]FormatterRule{rule})}
-	logger := slog.New(slog.DiscardHandler)
-
-	for _, toolName := range []string{"Write", "Edit", "MultiEdit"} {
-		t.Run(toolName, func(t *testing.T) {
-			require.NoError(t, os.WriteFile(target, []byte(before), 0o644))
-
-			input, err := json.Marshal(map[string]any{
-				"tool_name":  toolName,
-				"tool_input": map[string]any{"file_path": target},
-			})
-			require.NoError(t, err)
-
-			err = handlePostFileWrite(t.Context(), input, cfg, logger)
-			require.NoError(t, err)
-
-			got, err := os.ReadFile(target)
-			require.NoError(t, err)
-			assert.NotContains(t, string(got), "\n\n\n", "blank-line run should be collapsed for "+toolName)
-		})
-	}
-}
-
-func TestHandlePostFileWriteToolsDoublestar(t *testing.T) {
-	t.Parallel()
-
-	tmp := t.TempDir()
-	subDir := filepath.Join(tmp, "sub")
-	require.NoError(t, os.MkdirAll(subDir, 0o755))
-	target := filepath.Join(subDir, "doc.md")
-	const before = "# t\n\n\n\nbar\n"
-
-	rule := FormatterRule{
-		PathGlob: filepath.Join(tmp, "**/*.md"),
-		Command:  []string{"sh", "-c", `tr -s '\n' < "$1" > "$1.tmp" && mv "$1.tmp" "$1"`, "sh"},
-	}
-
-	cfg := config{formatterRules: NewFormatterRules([]FormatterRule{rule})}
-	logger := slog.New(slog.DiscardHandler)
-
-	for _, toolName := range []string{"Write", "Edit", "MultiEdit"} {
-		t.Run(toolName, func(t *testing.T) {
-			require.NoError(t, os.WriteFile(target, []byte(before), 0o644))
-
-			input, err := json.Marshal(map[string]any{
-				"tool_name":  toolName,
-				"tool_input": map[string]any{"file_path": target},
-			})
-			require.NoError(t, err)
-
-			err = handlePostFileWrite(t.Context(), input, cfg, logger)
-			require.NoError(t, err)
-
-			got, err := os.ReadFile(target)
-			require.NoError(t, err)
-			assert.NotContains(t, string(got), "\n\n\n", "blank-line run should be collapsed for "+toolName)
-		})
-	}
-}
-
-func TestHandlePostFileWriteNoMatch(t *testing.T) {
-	t.Parallel()
-
-	tmp := t.TempDir()
-	target := filepath.Join(tmp, "doc.md")
-	const before = "# t\n\n\n\nbar\n"
-	require.NoError(t, os.WriteFile(target, []byte(before), 0o644))
-
-	// Glob in an unrelated directory — rule must not fire.
-	rule := FormatterRule{
-		PathGlob: "/var/empty/should-never-match/*.md",
-		Command:  []string{"sh", "-c", `echo bad > "$1"`, "sh"},
-	}
-
-	cfg := config{formatterRules: NewFormatterRules([]FormatterRule{rule})}
-	logger := slog.New(slog.DiscardHandler)
-
-	input, err := json.Marshal(map[string]any{
-		"tool_name":  "Write",
-		"tool_input": map[string]any{"file_path": target},
-	})
-	require.NoError(t, err)
-
-	err = handlePostFileWrite(t.Context(), input, cfg, logger)
-	require.NoError(t, err)
-
-	got, err := os.ReadFile(target)
-	require.NoError(t, err)
-	assert.Equal(t, before, string(got))
-}
-
-func TestHandlePostFileWriteEmptyEngine(t *testing.T) {
-	t.Parallel()
-
-	cfg := config{formatterRules: NewFormatterRules(nil)}
-	logger := slog.New(slog.DiscardHandler)
-
-	input := []byte(`{"tool_name":"Write","tool_input":{"file_path":"/tmp/x.md"}}`)
-
-	err := handlePostFileWrite(t.Context(), input, cfg, logger)
-	assert.NoError(t, err)
-}
-
-func TestHandlePostFileWriteMissingFilePath(t *testing.T) {
-	t.Parallel()
-
-	rule := FormatterRule{
-		PathGlob: "/tmp/*.md",
-		Command:  []string{"true"},
-	}
-
-	cfg := config{formatterRules: NewFormatterRules([]FormatterRule{rule})}
-	logger := slog.New(slog.DiscardHandler)
-
-	cases := map[string]string{
-		"no tool_input":         `{"tool_name":"Write"}`,
-		"tool_input has no key": `{"tool_name":"Write","tool_input":{}}`,
-		"file_path empty":       `{"tool_name":"Write","tool_input":{"file_path":""}}`,
-		"file_path wrong type":  `{"tool_name":"Write","tool_input":{"file_path":42}}`,
-	}
-
-	for name, in := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			err := handlePostFileWrite(t.Context(), []byte(in), cfg, logger)
-			assert.NoError(t, err)
-		})
-	}
-}
-
-func TestHandlePostFileWriteFormatterFailureSwallowed(t *testing.T) {
-	t.Parallel()
-
-	tmp := t.TempDir()
-	target := filepath.Join(tmp, "doc.md")
-	require.NoError(t, os.WriteFile(target, []byte("# t\n"), 0o644))
-
-	rule := FormatterRule{
-		PathGlob: filepath.Join(tmp, "*.md"),
-		Command:  []string{"sh", "-c", "exit 7", "sh"},
-	}
-
-	cfg := config{formatterRules: NewFormatterRules([]FormatterRule{rule})}
-
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	input, err := json.Marshal(map[string]any{
-		"tool_name":  "Write",
-		"tool_input": map[string]any{"file_path": target},
-	})
-	require.NoError(t, err)
-
-	err = handlePostFileWrite(t.Context(), input, cfg, logger)
-	require.NoError(t, err, "formatter exit codes must not propagate")
-	assert.Contains(t, strings.ToLower(buf.String()), "formatter run failed",
-		"non-zero exit should be logged at warn")
 }

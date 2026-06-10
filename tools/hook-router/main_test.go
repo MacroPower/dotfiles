@@ -13,6 +13,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/archive"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/formatter"
 )
 
 func TestEventNeedsStore(t *testing.T) {
@@ -365,7 +368,8 @@ func TestRun(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := run(t.Context(), strings.NewReader(input), &stdout, "PostToolUse", "AskUserQuestion", nil, cfg, logger)
+		in := strings.NewReader(input)
+		err := run(t.Context(), in, &stdout, "PostToolUse", "AskUserQuestion", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -397,14 +401,14 @@ func TestRun(t *testing.T) {
 		target := filepath.Join(dir, "doc.md")
 		const before = "# t\n\n\n\nbar\n"
 
-		rule := FormatterRule{
+		rule := formatter.Rule{
 			PathGlob: filepath.Join(dir, "*.md"),
 			Command:  []string{"sh", "-c", `tr -s '\n' < "$1" > "$1.tmp" && mv "$1.tmp" "$1"`, "sh"},
 		}
 
 		formatCfg := config{
 			commandRules:   canonicalRules(),
-			formatterRules: NewFormatterRules([]FormatterRule{rule}),
+			formatterRules: formatter.New([]formatter.Rule{rule}),
 		}
 
 		for _, toolName := range []string{"Write", "Edit", "MultiEdit"} {
@@ -419,7 +423,8 @@ func TestRun(t *testing.T) {
 
 				var stdout bytes.Buffer
 
-				err = run(t.Context(), strings.NewReader(string(input)), &stdout, "PostToolUse", "", nil, formatCfg, logger)
+				in := strings.NewReader(string(input))
+				err = run(t.Context(), in, &stdout, "PostToolUse", "", nil, formatCfg, logger)
 				require.NoError(t, err)
 				assert.Empty(t, stdout.Bytes())
 
@@ -492,13 +497,13 @@ func TestRun(t *testing.T) {
 		require.NoError(t, os.WriteFile(freshFile, []byte("fresh"), 0o644))
 
 		// Age the old file past the TTL deterministically (no sleeps).
-		past := time.Now().Add(-(compactionOutputTTL + time.Hour))
+		past := time.Now().Add(-(archive.DefaultTTL + time.Hour))
 		require.NoError(t, os.Chtimes(oldFile, past, past))
 
 		sweepCfg := config{
 			commandRules:  canonicalRules(),
 			claudePID:     testPID,
-			outputArchive: NewOutputArchive(outDir),
+			outputArchive: archive.New(outDir),
 		}
 
 		input := `{"session_id":"new","cwd":"/tmp/x","source":"clear"}`

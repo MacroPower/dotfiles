@@ -1,4 +1,4 @@
-package main
+package compact_test
 
 import (
 	"strings"
@@ -6,12 +6,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/compact"
 )
 
 func TestParseCompactConfig(t *testing.T) {
 	t.Parallel()
 
-	type check func(t *testing.T, c *Compactor)
+	type check func(t *testing.T, c *compact.Compactor)
 
 	cases := map[string]struct {
 		in    string
@@ -20,43 +22,43 @@ func TestParseCompactConfig(t *testing.T) {
 	}{
 		"empty string yields disabled compactor": {
 			in: "",
-			check: func(t *testing.T, c *Compactor) {
+			check: func(t *testing.T, c *compact.Compactor) {
 				t.Helper()
 				assert.True(t, c.Empty())
 			},
 		},
 		"enable=false is disabled": {
 			in: `{"enable":false}`,
-			check: func(t *testing.T, c *Compactor) {
+			check: func(t *testing.T, c *compact.Compactor) {
 				t.Helper()
 				assert.True(t, c.Empty())
 			},
 		},
 		"full config round-trips": {
 			in: `{"enable":true,"stripAnsi":true,"minRunLength":4,"minBytes":1024,"streams":["stdout","stderr"]}`,
-			check: func(t *testing.T, c *Compactor) {
+			check: func(t *testing.T, c *compact.Compactor) {
 				t.Helper()
 				assert.False(t, c.Empty())
 				assert.Equal(t, []string{"stdout", "stderr"}, c.Streams())
-				assert.True(t, c.cfg.StripAnsi)
-				assert.Equal(t, 4, c.cfg.MinRunLength)
-				assert.Equal(t, 1024, c.cfg.MinBytes)
+				assert.True(t, c.Config().StripAnsi)
+				assert.Equal(t, 4, c.Config().MinRunLength)
+				assert.Equal(t, 1024, c.Config().MinBytes)
 			},
 		},
 		"single-stream config compacts only that stream": {
 			in: `{"enable":true,"streams":["stdout"]}`,
-			check: func(t *testing.T, c *Compactor) {
+			check: func(t *testing.T, c *compact.Compactor) {
 				t.Helper()
 				assert.False(t, c.Empty())
 				assert.Equal(t, []string{"stdout"}, c.Streams())
-				assert.False(t, c.cfg.StripAnsi, "unset bool stays false")
-				assert.Equal(t, defaultMinRunLength, c.cfg.MinRunLength, "numeric default applied")
-				assert.Equal(t, defaultMinBytes, c.cfg.MinBytes, "numeric default applied")
+				assert.False(t, c.Config().StripAnsi, "unset bool stays false")
+				assert.Equal(t, compact.DefaultMinRunLength, c.Config().MinRunLength, "numeric default applied")
+				assert.Equal(t, compact.DefaultMinBytes, c.Config().MinBytes, "numeric default applied")
 			},
 		},
 		"enabled but no streams is empty": {
 			in: `{"enable":true,"streams":[]}`,
-			check: func(t *testing.T, c *Compactor) {
+			check: func(t *testing.T, c *compact.Compactor) {
 				t.Helper()
 				assert.True(t, c.Empty(), "selecting no streams compacts nothing")
 				assert.Empty(t, c.Streams())
@@ -64,17 +66,17 @@ func TestParseCompactConfig(t *testing.T) {
 		},
 		"enabled with streams omitted is empty": {
 			in: `{"enable":true}`,
-			check: func(t *testing.T, c *Compactor) {
+			check: func(t *testing.T, c *compact.Compactor) {
 				t.Helper()
 				assert.True(t, c.Empty(), "an unset streams list compacts nothing")
 			},
 		},
 		"non-positive numeric knobs get defaults": {
 			in: `{"enable":true,"streams":["stdout"],"minRunLength":0,"minBytes":-5}`,
-			check: func(t *testing.T, c *Compactor) {
+			check: func(t *testing.T, c *compact.Compactor) {
 				t.Helper()
-				assert.Equal(t, defaultMinRunLength, c.cfg.MinRunLength)
-				assert.Equal(t, defaultMinBytes, c.cfg.MinBytes)
+				assert.Equal(t, compact.DefaultMinRunLength, c.Config().MinRunLength)
+				assert.Equal(t, compact.DefaultMinBytes, c.Config().MinBytes)
 			},
 		},
 		"unknown stream rejected": {
@@ -91,7 +93,7 @@ func TestParseCompactConfig(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			c, err := parseCompactConfig(tc.in)
+			c, err := compact.Parse(tc.in)
 			if tc.err {
 				require.Error(t, err)
 				return
@@ -116,19 +118,19 @@ func TestParseCompactConfigNixJSON(t *testing.T) {
 	// minRunLength = 3; minBytes = 2048; streams = ["stdout" "stderr"]; }`.
 	in := `{"enable":true,"minBytes":2048,"minRunLength":3,"streams":["stdout","stderr"],"stripAnsi":true}`
 
-	c, err := parseCompactConfig(in)
+	c, err := compact.Parse(in)
 	require.NoError(t, err)
 	require.False(t, c.Empty())
 	assert.Equal(t, []string{"stdout", "stderr"}, c.Streams())
-	assert.True(t, c.cfg.StripAnsi)
-	assert.Equal(t, 3, c.cfg.MinRunLength)
-	assert.Equal(t, 2048, c.cfg.MinBytes)
+	assert.True(t, c.Config().StripAnsi)
+	assert.Equal(t, 3, c.Config().MinRunLength)
+	assert.Equal(t, 2048, c.Config().MinBytes)
 }
 
 func TestCompactorNilAndEmpty(t *testing.T) {
 	t.Parallel()
 
-	var c *Compactor
+	var c *compact.Compactor
 
 	assert.True(t, c.Empty(), "nil receiver is empty")
 	assert.Nil(t, c.Streams(), "nil receiver selects no streams")
@@ -141,8 +143,8 @@ func TestCompactorNilAndEmpty(t *testing.T) {
 func TestCompactMarker(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "    [hook-router: +2 identical lines]", compactMarker(2))
-	assert.Equal(t, "    [hook-router: +49 identical lines]", compactMarker(49))
+	assert.Equal(t, "    [hook-router: +2 identical lines]", compact.Marker(2))
+	assert.Equal(t, "    [hook-router: +49 identical lines]", compact.Marker(49))
 }
 
 func TestStripANSI(t *testing.T) {
@@ -163,7 +165,7 @@ func TestStripANSI(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tc.want, stripANSI(tc.in))
+			assert.Equal(t, tc.want, compact.StripANSI(tc.in))
 		})
 	}
 }
@@ -199,39 +201,39 @@ func TestCollapseRuns(t *testing.T) {
 		"run at minRun collapses": {
 			in:     "a\na\na\nb",
 			minRun: 3,
-			want:   "a\n" + compactMarker(2) + "\nb",
+			want:   "a\n" + compact.Marker(2) + "\nb",
 		},
 		"run at start": {
 			in:     "a\na\na\nb\nc",
 			minRun: 3,
-			want:   "a\n" + compactMarker(2) + "\nb\nc",
+			want:   "a\n" + compact.Marker(2) + "\nb\nc",
 		},
 		"run at end": {
 			in:     "x\nb\nb\nb",
 			minRun: 3,
-			want:   "x\nb\n" + compactMarker(2),
+			want:   "x\nb\n" + compact.Marker(2),
 		},
 		"two independent runs with kept line between": {
 			in:     "A\nA\nA\nB\nA\nA\nA",
 			minRun: 3,
-			want:   "A\n" + compactMarker(2) + "\nB\nA\n" + compactMarker(2),
+			want:   "A\n" + compact.Marker(2) + "\nB\nA\n" + compact.Marker(2),
 		},
 		"blank-line run collapses": {
 			in:     "a\n\n\n\n",
 			minRun: 3,
-			want:   "a\n\n" + compactMarker(3),
+			want:   "a\n\n" + compact.Marker(3),
 		},
 		"crlf identical lines collapse (cr is content)": {
 			in:     "a\r\na\r\na\r\nb",
 			minRun: 3,
-			want:   "a\r\n" + compactMarker(2) + "\nb",
+			want:   "a\r\n" + compact.Marker(2) + "\nb",
 		},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tc.want, collapseRuns(tc.in, tc.minRun))
+			assert.Equal(t, tc.want, compact.CollapseRuns(tc.in, tc.minRun))
 		})
 	}
 }
@@ -243,22 +245,22 @@ func TestCompact(t *testing.T) {
 
 	// enabled is the common config: low MinBytes so small fixtures clear
 	// the size gate, leaving the per-case behavior under test.
-	enabled := CompactConfig{
+	enabled := compact.Config{
 		Enable:       true,
 		StripAnsi:    true,
 		MinRunLength: 3,
 		MinBytes:     1,
-		Streams:      compactStreams,
+		Streams:      []string{"stdout", "stderr"},
 	}
 
 	cases := map[string]struct {
-		cfg     CompactConfig
+		cfg     compact.Config
 		in      string
 		want    string
 		changed bool
 	}{
 		"disabled passes through": {
-			cfg:     CompactConfig{Enable: false},
+			cfg:     compact.Config{Enable: false},
 			in:      strings.Repeat(wide+"\n", 50),
 			want:    strings.Repeat(wide+"\n", 50),
 			changed: false,
@@ -290,19 +292,25 @@ func TestCompact(t *testing.T) {
 		"wide run collapses": {
 			cfg:     enabled,
 			in:      strings.Repeat(wide+"\n", 50),
-			want:    wide + "\n" + compactMarker(49) + "\n",
+			want:    wide + "\n" + compact.Marker(49) + "\n",
 			changed: true,
 		},
 		"collapse works with stripAnsi off": {
-			cfg:     CompactConfig{Enable: true, StripAnsi: false, MinRunLength: 3, MinBytes: 1, Streams: compactStreams},
+			cfg: compact.Config{
+				Enable: true, StripAnsi: false, MinRunLength: 3, MinBytes: 1,
+				Streams: []string{"stdout", "stderr"},
+			},
 			in:      strings.Repeat(wide+"\n", 50),
-			want:    wide + "\n" + compactMarker(49) + "\n",
+			want:    wide + "\n" + compact.Marker(49) + "\n",
 			changed: true,
 		},
 		"blank-line run collapses end-to-end": {
-			cfg:     CompactConfig{Enable: true, StripAnsi: false, MinRunLength: 3, MinBytes: 1, Streams: compactStreams},
+			cfg: compact.Config{
+				Enable: true, StripAnsi: false, MinRunLength: 3, MinBytes: 1,
+				Streams: []string{"stdout", "stderr"},
+			},
 			in:      "x" + strings.Repeat("\n", 61),
-			want:    "x\n\n" + compactMarker(60),
+			want:    "x\n\n" + compact.Marker(60),
 			changed: true,
 		},
 		"ansi-only stripped": {
@@ -314,7 +322,7 @@ func TestCompact(t *testing.T) {
 		"ansi plus repeats does both": {
 			cfg:     enabled,
 			in:      strings.Repeat("\x1b[32mok\x1b[0m\n", 5),
-			want:    "ok\n" + compactMarker(4) + "\n",
+			want:    "ok\n" + compact.Marker(4) + "\n",
 			changed: true,
 		},
 		"ansi-free no-repeat unchanged (fast path)": {
@@ -324,13 +332,16 @@ func TestCompact(t *testing.T) {
 			changed: false,
 		},
 		"below minBytes unchanged despite repeats": {
-			cfg:     CompactConfig{Enable: true, StripAnsi: true, Streams: compactStreams},
+			cfg:     compact.Config{Enable: true, StripAnsi: true, Streams: []string{"stdout", "stderr"}},
 			in:      strings.Repeat("xy\n", 10),
 			want:    strings.Repeat("xy\n", 10),
 			changed: false,
 		},
 		"collapse that would not shorten is suppressed (final gate)": {
-			cfg:     CompactConfig{Enable: true, StripAnsi: false, MinRunLength: 3, MinBytes: 1, Streams: compactStreams},
+			cfg: compact.Config{
+				Enable: true, StripAnsi: false, MinRunLength: 3, MinBytes: 1,
+				Streams: []string{"stdout", "stderr"},
+			},
 			in:      "ab\nab\nab\n",
 			want:    "ab\nab\nab\n",
 			changed: false,
@@ -341,7 +352,7 @@ func TestCompact(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			c := NewCompactor(tc.cfg)
+			c := compact.New(tc.cfg)
 			got, changed := c.Compact(tc.in)
 			assert.Equal(t, tc.changed, changed)
 			assert.Equal(t, tc.want, got)

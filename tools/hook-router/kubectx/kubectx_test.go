@@ -1,4 +1,4 @@
-package main
+package kubectx_test
 
 import (
 	"log/slog"
@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
 )
 
 // writeContextsConfig writes a minimal kubeconfig with the given
@@ -50,7 +52,7 @@ func TestKubectxSelected(t *testing.T) { //nolint:tparallel,paralleltest // subt
 		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", "")
 		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
 
-		assert.Equal(t, local, kubectxSelected())
+		assert.Equal(t, local, kubectx.Selected())
 	})
 
 	t.Run("guest context selected via union", func(t *testing.T) {
@@ -60,7 +62,7 @@ func TestKubectxSelected(t *testing.T) { //nolint:tparallel,paralleltest // subt
 		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
 		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
 
-		assert.Equal(t, local, kubectxSelected())
+		assert.Equal(t, local, kubectx.Selected())
 	})
 
 	t.Run("foreign current-context denied", func(t *testing.T) {
@@ -70,7 +72,7 @@ func TestKubectxSelected(t *testing.T) { //nolint:tparallel,paralleltest // subt
 		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
 		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
 
-		assert.Empty(t, kubectxSelected())
+		assert.Empty(t, kubectx.Selected())
 	})
 
 	t.Run("empty current-context denied", func(t *testing.T) {
@@ -79,7 +81,7 @@ func TestKubectxSelected(t *testing.T) { //nolint:tparallel,paralleltest // subt
 		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", "")
 		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
 
-		assert.Empty(t, kubectxSelected())
+		assert.Empty(t, kubectx.Selected())
 	})
 
 	t.Run("guest var unset falls back to local-only", func(t *testing.T) {
@@ -90,7 +92,7 @@ func TestKubectxSelected(t *testing.T) { //nolint:tparallel,paralleltest // subt
 		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", "")
 		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
 
-		assert.Empty(t, kubectxSelected())
+		assert.Empty(t, kubectx.Selected())
 	})
 
 	t.Run("missing guest file is no error and denies", func(t *testing.T) {
@@ -99,7 +101,7 @@ func TestKubectxSelected(t *testing.T) { //nolint:tparallel,paralleltest // subt
 		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", filepath.Join(t.TempDir(), "absent"))
 		t.Setenv("CLAUDE_KUBECTX_SIDECAR", "")
 
-		assert.Empty(t, kubectxSelected())
+		assert.Empty(t, kubectx.Selected())
 	})
 
 	t.Run("external sidecar present selects", func(t *testing.T) {
@@ -110,13 +112,13 @@ func TestKubectxSelected(t *testing.T) { //nolint:tparallel,paralleltest // subt
 		t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", "")
 		t.Setenv("CLAUDE_KUBECTX_SIDECAR", sidecar)
 
-		assert.Equal(t, local, kubectxSelected())
+		assert.Equal(t, local, kubectx.Selected())
 	})
 
 	t.Run("CLAUDE_KUBECTX_LOCAL unset denies", func(t *testing.T) {
 		t.Setenv("CLAUDE_KUBECTX_LOCAL", "")
 
-		assert.Empty(t, kubectxSelected())
+		assert.Empty(t, kubectx.Selected())
 	})
 }
 
@@ -134,7 +136,7 @@ func TestHandleSessionEnd(t *testing.T) { //nolint:tparallel,paralleltest // sub
 
 		t.Setenv("CLAUDE_KUBECTX_DIR", dir)
 
-		err := handleSessionEnd(t.Context(), logger)
+		err := kubectx.RemoveSessionDir(logger)
 		require.NoError(t, err)
 
 		_, err = os.Stat(dir)
@@ -145,7 +147,7 @@ func TestHandleSessionEnd(t *testing.T) { //nolint:tparallel,paralleltest // sub
 		// Cannot use t.Parallel with t.Setenv.
 		t.Setenv("CLAUDE_KUBECTX_DIR", "")
 
-		err := handleSessionEnd(t.Context(), logger)
+		err := kubectx.RemoveSessionDir(logger)
 		require.NoError(t, err)
 	})
 
@@ -153,7 +155,7 @@ func TestHandleSessionEnd(t *testing.T) { //nolint:tparallel,paralleltest // sub
 		// Cannot use t.Parallel with t.Setenv.
 		t.Setenv("CLAUDE_KUBECTX_DIR", filepath.Join(t.TempDir(), "claude-kubectx.42"))
 
-		err := handleSessionEnd(t.Context(), logger)
+		err := kubectx.RemoveSessionDir(logger)
 		require.NoError(t, err)
 	})
 
@@ -169,7 +171,7 @@ func TestHandleSessionEnd(t *testing.T) { //nolint:tparallel,paralleltest // sub
 
 		t.Setenv("CLAUDE_KUBECTX_DIR", dir)
 
-		err := handleSessionEnd(t.Context(), logger)
+		err := kubectx.RemoveSessionDir(logger)
 		require.NoError(t, err)
 
 		_, err = os.Stat(marker)
@@ -184,7 +186,7 @@ func TestHandleSessionEnd(t *testing.T) { //nolint:tparallel,paralleltest // sub
 
 		t.Setenv("CLAUDE_KUBECTX_DIR", dir)
 
-		err := handleSessionEnd(t.Context(), logger)
+		err := kubectx.RemoveSessionDir(logger)
 		require.NoError(t, err)
 
 		_, err = os.Stat(dir)
@@ -199,7 +201,7 @@ func TestHandleSessionEnd(t *testing.T) { //nolint:tparallel,paralleltest // sub
 
 		t.Setenv("CLAUDE_KUBECTX_DIR", dir)
 
-		err := handleSessionEnd(t.Context(), logger)
+		err := kubectx.RemoveSessionDir(logger)
 		require.NoError(t, err)
 
 		_, err = os.Stat(dir)
@@ -207,31 +209,43 @@ func TestHandleSessionEnd(t *testing.T) { //nolint:tparallel,paralleltest // sub
 	})
 }
 
-func TestIsClaudeKubectxDir(t *testing.T) {
-	t.Parallel()
+// TestRemoveSessionDir_BasenameShapeGuard pins the containment guard:
+// only a basename with the exact claude-kubectx.<pid> shape (canonical
+// positive decimal PID) is eligible for removal, so a rogue
+// CLAUDE_KUBECTX_DIR value cannot point the hook at an arbitrary path.
+func TestRemoveSessionDir_BasenameShapeGuard(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.Setenv
+	logger := slog.New(slog.DiscardHandler)
 
 	cases := map[string]struct {
-		path string
-		want bool
+		basename    string
+		wantRemoved bool
 	}{
-		"valid pid suffix":     {path: "/tmp/claude-kubectx.42", want: true},
-		"valid xdg parent":     {path: "/run/user/1000/claude-kubectx.99999", want: true},
-		"missing prefix":       {path: "/tmp/foo.42", want: false},
-		"missing pid suffix":   {path: "/tmp/claude-kubectx.", want: false},
-		"non-numeric suffix":   {path: "/tmp/claude-kubectx.abc", want: false},
-		"prefix only basename": {path: "/tmp/claude-kubectx", want: false},
-		"empty path":           {path: "", want: false},
-		"signed pid suffix":    {path: "/tmp/claude-kubectx.-1", want: false},
-		"plus-signed suffix":   {path: "/tmp/claude-kubectx.+5", want: false},
-		"leading-zero suffix":  {path: "/tmp/claude-kubectx.007", want: false},
-		"zero pid suffix":      {path: "/tmp/claude-kubectx.0", want: false},
+		"valid pid suffix":     {basename: "claude-kubectx.42", wantRemoved: true},
+		"valid large pid":      {basename: "claude-kubectx.99999", wantRemoved: true},
+		"missing prefix":       {basename: "foo.42", wantRemoved: false},
+		"missing pid suffix":   {basename: "claude-kubectx.", wantRemoved: false},
+		"non-numeric suffix":   {basename: "claude-kubectx.abc", wantRemoved: false},
+		"prefix only basename": {basename: "claude-kubectx", wantRemoved: false},
+		"signed pid suffix":    {basename: "claude-kubectx.-1", wantRemoved: false},
+		"plus-signed suffix":   {basename: "claude-kubectx.+5", wantRemoved: false},
+		"leading-zero suffix":  {basename: "claude-kubectx.007", wantRemoved: false},
+		"zero pid suffix":      {basename: "claude-kubectx.0", wantRemoved: false},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+			dir := filepath.Join(t.TempDir(), tc.basename)
+			require.NoError(t, os.MkdirAll(dir, 0o700))
+			t.Setenv("CLAUDE_KUBECTX_DIR", dir)
 
-			assert.Equal(t, tc.want, isClaudeKubectxDir(tc.path))
+			require.NoError(t, kubectx.RemoveSessionDir(logger))
+
+			_, err := os.Stat(dir)
+			if tc.wantRemoved {
+				assert.True(t, os.IsNotExist(err), "dir matching the session shape must be removed")
+			} else {
+				assert.NoError(t, err, "dir not matching the session shape must be preserved")
+			}
 		})
 	}
 }
@@ -266,7 +280,7 @@ func TestSweepKubectxDirs(t *testing.T) {
 		malformedDir := filepath.Join(parent, "claude-kubectx.notapid")
 		require.NoError(t, os.MkdirAll(malformedDir, 0o700))
 
-		sweepKubectxDirs(parent, logger)
+		kubectx.SweepOrphans(parent, logger)
 
 		_, err := os.Stat(liveDir)
 		assert.NoError(t, err, "live PID dir must be preserved")
@@ -286,23 +300,7 @@ func TestSweepKubectxDirs(t *testing.T) {
 
 		// Confirms the sweep tolerates a clean host that has not yet
 		// run any Claude sessions.
-		sweepKubectxDirs(filepath.Join(t.TempDir(), "never-created"), logger)
-	})
-}
-
-func TestPidAlive(t *testing.T) {
-	t.Parallel()
-
-	t.Run("own pid is alive", func(t *testing.T) {
-		t.Parallel()
-
-		assert.True(t, pidAlive(os.Getpid()))
-	})
-
-	t.Run("max pid is not alive", func(t *testing.T) {
-		t.Parallel()
-
-		assert.False(t, pidAlive(0x7FFFFFFF))
+		kubectx.SweepOrphans(filepath.Join(t.TempDir(), "never-created"), logger)
 	})
 }
 
@@ -314,7 +312,7 @@ func TestKubectxSweepParent(t *testing.T) { //nolint:tparallel,paralleltest // s
 		t.Setenv("XDG_RUNTIME_DIR", "/run/user/99")
 		t.Setenv("CLAUDE_KUBECTX_DIR", "/run/user/42/claude-kubectx.123")
 
-		assert.Equal(t, "/run/user/42", kubectxSweepParent())
+		assert.Equal(t, "/run/user/42", kubectx.SweepParent())
 	})
 
 	t.Run("uses XDG_RUNTIME_DIR when CLAUDE_KUBECTX_DIR unset", func(t *testing.T) {
@@ -322,7 +320,7 @@ func TestKubectxSweepParent(t *testing.T) { //nolint:tparallel,paralleltest // s
 		t.Setenv("CLAUDE_KUBECTX_DIR", "")
 		t.Setenv("XDG_RUNTIME_DIR", "/run/user/42")
 
-		assert.Equal(t, "/run/user/42", kubectxSweepParent())
+		assert.Equal(t, "/run/user/42", kubectx.SweepParent())
 	})
 
 	t.Run("falls back to /tmp when unset", func(t *testing.T) {
@@ -330,7 +328,7 @@ func TestKubectxSweepParent(t *testing.T) { //nolint:tparallel,paralleltest // s
 		t.Setenv("CLAUDE_KUBECTX_DIR", "")
 		t.Setenv("XDG_RUNTIME_DIR", "")
 
-		assert.Equal(t, "/tmp", kubectxSweepParent())
+		assert.Equal(t, "/tmp", kubectx.SweepParent())
 	})
 }
 
@@ -347,7 +345,7 @@ func TestSweepKubectxDirs_OnlyMatchingPrefix(t *testing.T) {
 	siblingPrefixed := filepath.Join(parent, "claude-something.42")
 	require.NoError(t, os.MkdirAll(siblingPrefixed, 0o700))
 
-	sweepKubectxDirs(parent, slog.New(slog.DiscardHandler))
+	kubectx.SweepOrphans(parent, slog.New(slog.DiscardHandler))
 
 	_, err := os.Stat(siblingPrefixed)
 	assert.NoError(t, err, "directory must not be removed unless basename has the kubectx prefix")

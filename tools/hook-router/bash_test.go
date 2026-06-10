@@ -12,125 +12,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"mvdan.cc/sh/v3/syntax"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/archive"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/compact"
 )
-
-func mustParse(t *testing.T, command string) *syntax.File {
-	t.Helper()
-
-	prog, err := syntax.NewParser().Parse(strings.NewReader(command), "")
-	require.NoError(t, err)
-
-	return prog
-}
-
-func TestHasKubectl(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		input string
-		want  bool
-	}{
-		"simple command": {
-			input: "kubectl get pods",
-			want:  true,
-		},
-		"bare kubectl": {
-			input: "kubectl",
-			want:  true,
-		},
-		"pipeline": {
-			input: "kubectl get pods | grep foo",
-			want:  true,
-		},
-		"subshell": {
-			input: "(kubectl get ns)",
-			want:  true,
-		},
-		"chained": {
-			input: "kubectl get pods && kubectl get svc",
-			want:  true,
-		},
-		"no match: already wrapped": {
-			input: "kubectl-claude get pods",
-		},
-		"no match: echo": {
-			input: "echo kubectl",
-		},
-		"no match: sh -c": {
-			input: `sh -c "kubectl get pods"`,
-		},
-		"no match: unrelated": {
-			input: "git status",
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			prog := mustParse(t, tt.input)
-			assert.Equal(t, tt.want, hasKubectl(prog))
-		})
-	}
-}
-
-func TestKubectlKubeconfigOverride(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		input string
-		want  bool
-	}{
-		"inline KUBECONFIG assignment": {
-			input: "KUBECONFIG=/x kubectl get pods",
-			want:  true,
-		},
-		"flag separate value": {
-			input: "kubectl --kubeconfig /x get pods",
-			want:  true,
-		},
-		"flag inline value": {
-			input: "kubectl --kubeconfig=/x get pods",
-			want:  true,
-		},
-		"flag in later position": {
-			input: "kubectl get pods --kubeconfig /x",
-			want:  true,
-		},
-		"inline KUBECONFIG expansion": {
-			input: "KUBECONFIG=$OTHER kubectl get pods",
-			want:  true,
-		},
-		"flag inline expansion value": {
-			input: "kubectl --kubeconfig=$VAR get pods",
-			want:  true,
-		},
-		"flag separate expansion value": {
-			input: "kubectl --kubeconfig $VAR get pods",
-			want:  true,
-		},
-		"no match: plain kubectl": {
-			input: "kubectl get pods",
-		},
-		"no match: KUBECONFIG on non-kubectl": {
-			input: "KUBECONFIG=/x helm list",
-		},
-		"no match: env wrapper out of scope": {
-			input: "env -i kubectl get pods",
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			prog := mustParse(t, tt.input)
-			_, got := kubectlKubeconfigOverride(prog)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
 
 // TestHandleBashAutoAllow exercises the --auto-allow paths in
 // [handleBash].
@@ -561,7 +446,7 @@ func TestHandlePostBash(t *testing.T) {
 
 			var count int
 
-			require.NoError(t, store.db.QueryRowContext(t.Context(),
+			require.NoError(t, store.DB().QueryRowContext(t.Context(),
 				`SELECT COUNT(*) FROM bash_failures`).Scan(&count))
 			assert.Equal(t, tt.wantRows, count)
 		})
@@ -594,7 +479,7 @@ func TestHandlePostBash_RecordsFailureFields(t *testing.T) {
 		exitCode                                                 int
 	)
 
-	err := store.db.QueryRowContext(t.Context(), `
+	err := store.DB().QueryRowContext(t.Context(), `
 		SELECT session_id, transcript_path, hook_event_name, cwd, command,
 		       stdout, stderr, is_error, interrupted, exit_code
 		FROM bash_failures`).Scan(
@@ -645,7 +530,7 @@ func TestHandlePostBash_Truncation(t *testing.T) {
 
 	var gotStdout, gotStderr string
 
-	require.NoError(t, store.db.QueryRowContext(t.Context(),
+	require.NoError(t, store.DB().QueryRowContext(t.Context(),
 		`SELECT stdout, stderr FROM bash_failures`).Scan(&gotStdout, &gotStderr))
 
 	assert.Len(t, gotStderr, bashStderrTailBytes, "stderr must be tail-truncated to 16 KiB")
@@ -692,7 +577,7 @@ func TestHandlePostBashCompact(t *testing.T) {
 	// test fixtures exercise the transforms rather than the byte gate. The
 	// variadic streams pick which tool_response fields are eligible.
 	enabledCompactor := func(streams ...string) config {
-		return config{compactor: NewCompactor(CompactConfig{
+		return config{compactor: compact.New(compact.Config{
 			Enable:       true,
 			StripAnsi:    true,
 			MinRunLength: 3,
@@ -707,7 +592,7 @@ func TestHandlePostBashCompact(t *testing.T) {
 	// files it writes can be inspected in isolation.
 	enabledArchiveCompactor := func(dir string, streams ...string) config {
 		cfg := enabledCompactor(streams...)
-		cfg.outputArchive = NewOutputArchive(dir)
+		cfg.outputArchive = archive.New(dir)
 
 		return cfg
 	}
@@ -738,7 +623,7 @@ func TestHandlePostBashCompact(t *testing.T) {
 		gotStdout, ok := updated["stdout"].(string)
 		require.True(t, ok)
 		assert.Less(t, len(gotStdout), len(in), "stdout must be shorter")
-		assert.Contains(t, gotStdout, compactMarker(49))
+		assert.Contains(t, gotStdout, compact.Marker(49))
 
 		// Sibling fields survive the shallow copy.
 		assert.Equal(t, false, updated["interrupted"])
@@ -753,7 +638,7 @@ func TestHandlePostBashCompact(t *testing.T) {
 			"stdout": strings.Repeat(wideStdout+"\n", 50),
 		})
 
-		cfg := config{compactor: NewCompactor(CompactConfig{})}
+		cfg := config{compactor: compact.New(compact.Config{})}
 
 		var stdout bytes.Buffer
 		require.NoError(t, handlePostBashCompact(input, &stdout, cfg, logger))
@@ -788,10 +673,10 @@ func TestHandlePostBashCompact(t *testing.T) {
 		t.Parallel()
 
 		// Default MinBytes (2048); the repeating fixture is far smaller.
-		cfg := config{compactor: NewCompactor(CompactConfig{
+		cfg := config{compactor: compact.New(compact.Config{
 			Enable:    true,
 			StripAnsi: true,
-			Streams:   compactStreams,
+			Streams:   []string{"stdout", "stderr"},
 		})}
 
 		input := postBashPayload(t, "noisy", map[string]any{
@@ -820,7 +705,9 @@ func TestHandlePostBashCompact(t *testing.T) {
 		warnLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 		var stdout bytes.Buffer
-		require.NoError(t, handlePostBashCompact([]byte("not json"), &stdout, enabledCompactor("stdout", "stderr"), warnLogger))
+
+		cfg := enabledCompactor("stdout", "stderr")
+		require.NoError(t, handlePostBashCompact([]byte("not json"), &stdout, cfg, warnLogger))
 		assert.Empty(t, stdout.Bytes())
 		assert.Contains(t, strings.ToLower(buf.String()), "parse hook input")
 	})
@@ -847,7 +734,7 @@ func TestHandlePostBashCompact(t *testing.T) {
 		gotStderr, ok := updated["stderr"].(string)
 		require.True(t, ok)
 		assert.Less(t, len(gotStderr), len(dirtyStderr), "stderr must be shorter")
-		assert.Contains(t, gotStderr, compactMarker(49))
+		assert.Contains(t, gotStderr, compact.Marker(49))
 	})
 
 	t.Run("clean stderr preserved verbatim while stdout collapses", func(t *testing.T) {
@@ -872,7 +759,7 @@ func TestHandlePostBashCompact(t *testing.T) {
 		gotStdout, ok := updated["stdout"].(string)
 		require.True(t, ok)
 		assert.Less(t, len(gotStdout), len(dirtyStdout))
-		assert.Contains(t, gotStdout, compactMarker(49))
+		assert.Contains(t, gotStdout, compact.Marker(49))
 	})
 
 	t.Run("stderr omitted from streams leaves a collapsible stderr alone", func(t *testing.T) {
@@ -897,7 +784,9 @@ func TestHandlePostBashCompact(t *testing.T) {
 		input := postBashPayload(t, "noisy", map[string]any{"stdout": raw})
 
 		var stdout bytes.Buffer
-		require.NoError(t, handlePostBashCompact(input, &stdout, enabledArchiveCompactor(dir, "stdout", "stderr"), logger))
+
+		cfg := enabledArchiveCompactor(dir, "stdout", "stderr")
+		require.NoError(t, handlePostBashCompact(input, &stdout, cfg, logger))
 
 		updated, ok := decodeUpdatedOutput(t, stdout.Bytes())
 		require.True(t, ok, "a compressible+archivable stdout must emit updatedToolOutput")
@@ -992,7 +881,9 @@ func TestHandlePostBashCompact(t *testing.T) {
 		})
 
 		var stdout bytes.Buffer
-		require.NoError(t, handlePostBashCompact(input, &stdout, enabledArchiveCompactor(dir, "stdout", "stderr"), logger))
+
+		cfg := enabledArchiveCompactor(dir, "stdout", "stderr")
+		require.NoError(t, handlePostBashCompact(input, &stdout, cfg, logger))
 
 		updated, ok := decodeUpdatedOutput(t, stdout.Bytes())
 		require.True(t, ok, "a changed stdout must emit updatedToolOutput even when stderr reverts")
@@ -1035,7 +926,7 @@ func TestHandlePostBashCompact(t *testing.T) {
 		assert.NotContains(t, got, "uncompacted", "a disabled archive must not append a pointer")
 
 		// Byte-identical to the pure compactor transform.
-		want, did := NewCompactor(CompactConfig{
+		want, did := compact.New(compact.Config{
 			Enable:       true,
 			StripAnsi:    true,
 			MinRunLength: 3,

@@ -1,4 +1,4 @@
-package main
+package archive
 
 import (
 	"crypto/rand"
@@ -12,57 +12,56 @@ import (
 	"time"
 )
 
-// compactionOutputTTL bounds how long an archived uncompacted-output
-// file lives before [sweepCompactionOutputs] removes it on the next
+// DefaultTTL bounds how long an archived uncompacted-output
+// file lives before [Sweep] removes it on the next
 // SessionStart. Seven days comfortably outlasts a single session, so a
 // pointer left in context rarely outlives the file it names; a
 // longer-lived session holding a stale pointer can simply re-run the
 // command. Tunable.
-const compactionOutputTTL = 7 * 24 * time.Hour
+const DefaultTTL = 7 * 24 * time.Hour
 
-// compactionRemintRetries bounds the O_EXCL collision retries in
-// [*OutputArchive.Annotate]. A collision needs two independent randHex
+// remintRetries bounds the O_EXCL collision retries in
+// [*Archive.Annotate]. A collision needs two independent randHex
 // draws to land the same 16-hex name in the same directory, so any
 // positive bound is astronomically more than enough.
-const compactionRemintRetries = 5
+const remintRetries = 5
 
-// OutputArchive persists the uncompacted content of a compacted Bash
+// Archive persists the uncompacted content of a compacted Bash
 // stream to its own file under dir, so a lossy compaction stays
-// recoverable: [*OutputArchive.Annotate] writes the raw stream and
+// recoverable: [*Archive.Annotate] writes the raw stream and
 // returns the compacted text plus a one-line pointer naming the file,
 // which the model reads only if it needs the dropped detail. Construct
-// with [NewOutputArchive].
+// with [New].
 //
 // A nil receiver or an empty dir is treated as disabled by
-// [*OutputArchive.Empty], so handlers can gate on Empty() before
-// touching any other method (mirrors [*Compactor.Empty]). [*OutputArchive.Dir]
-// and [*OutputArchive.Annotate] are likewise nil-safe.
-type OutputArchive struct {
+// [*Archive.Empty], so handlers can gate on Empty() before
+// touching any other method. [*Archive.Dir]
+// and [*Archive.Annotate] are likewise nil-safe.
+type Archive struct {
 	dir string
 }
 
-// NewOutputArchive builds an [*OutputArchive] writing to dir. An empty
-// dir yields a disabled archive (so [*OutputArchive.Empty] reports
+// New builds an [*Archive] writing to dir. An empty
+// dir yields a disabled archive (so [*Archive.Empty] reports
 // true), matching the wrapper passing no --compaction-output-dir.
-func NewOutputArchive(dir string) *OutputArchive {
-	return &OutputArchive{dir: dir}
+func New(dir string) *Archive {
+	return &Archive{dir: dir}
 }
 
 // Empty reports whether the archive would never write a file: a nil
 // receiver or an empty dir (archiving disabled). The nil-receiver guard
-// is load-bearing -- cfg.outputArchive is a nil *OutputArchive in the
-// bare config{} literals across the handler tests, and
-// [handlePostBashCompact] gates on Empty() before calling any other
-// method, so those tests stay green without constructing an archive.
-func (a *OutputArchive) Empty() bool {
+// is load-bearing: callers that wire no archive hold a nil *Archive,
+// and the compaction handler gates on Empty() before calling any other
+// method, so a disabled archive needs no construction.
+func (a *Archive) Empty() bool {
 	return a == nil || a.dir == ""
 }
 
 // Dir returns the directory archived files are written to, or "" for a
 // nil receiver or a disabled archive. It is the single source of the
-// sweep root for the SessionStart [sweepCompactionOutputs] call, so the
+// sweep root for the SessionStart [Sweep] call, so the
 // dir string is never duplicated into config.
-func (a *OutputArchive) Dir() string {
+func (a *Archive) Dir() string {
 	if a == nil {
 		return ""
 	}
@@ -82,7 +81,7 @@ func (a *OutputArchive) Dir() string {
 // sessionID and stream form the filename prefix; sessionID is external
 // input and is sanitized ([sanitizeForFilename]) before it touches the
 // path. Uniqueness comes from a [randHex] suffix written with O_EXCL.
-func (a *OutputArchive) Annotate(
+func (a *Archive) Annotate(
 	sessionID, stream, original, compacted string,
 	logger *slog.Logger,
 ) (string, bool) {
@@ -107,7 +106,7 @@ func (a *OutputArchive) Annotate(
 
 		path = filepath.Join(a.dir, prefix+suffix+".log")
 
-		return path, compactionPointerMarker(stream, path, len(original)), true
+		return path, PointerMarker(stream, path, len(original)), true
 	}
 
 	path, marker, ok := mint()
@@ -142,7 +141,7 @@ func (a *OutputArchive) Annotate(
 			break
 		}
 
-		if !errors.Is(err, fs.ErrExist) || attempt >= compactionRemintRetries {
+		if !errors.Is(err, fs.ErrExist) || attempt >= remintRetries {
 			logger.Warn("creating compaction output file",
 				slog.String("path", path),
 				slog.Any("error", err),
@@ -184,17 +183,18 @@ func (a *OutputArchive) Annotate(
 	return compacted + "\n" + marker, true
 }
 
-// compactionPointerMarker renders the one-line pointer appended to a
+// PointerMarker renders the one-line pointer appended to a
 // compacted stream. It carries the same four-space indent and
-// [hook-router: ...] namespace as [compactMarker] so the model
-// recognizes it as injected metadata rather than command output.
+// [hook-router: ...] namespace as the compact package's collapse
+// marker so the model recognizes it as injected metadata rather than
+// command output.
 //
 // "uncompacted" means "before hook-router's compaction"; n is the byte
 // length of the stream as the hook received it (already capped at the
 // pre-hook BASH_MAX_OUTPUT_LENGTH), so the count never implies recovery
 // of bytes Claude Code truncated before the hook ran. Reporting bytes
 // (not lines) sidesteps the trailing-newline line-count off-by-one.
-func compactionPointerMarker(stream, path string, n int) string {
+func PointerMarker(stream, path string, n int) string {
 	return fmt.Sprintf("    [hook-router: uncompacted %s saved to %s (%d bytes)]", stream, path, n)
 }
 
@@ -227,7 +227,7 @@ func sanitizeForFilename(s string) string {
 
 // randHex returns 8 cryptographically random bytes as a fixed-width
 // 16-character hex string. The fixed width is load-bearing for the
-// [*OutputArchive.Annotate] gate: a remint must not change the path
+// [*Archive.Annotate] gate: a remint must not change the path
 // length.
 func randHex() (string, error) {
 	var buf [8]byte
@@ -239,15 +239,15 @@ func randHex() (string, error) {
 	return hex.EncodeToString(buf[:]), nil
 }
 
-// sweepCompactionOutputs removes archived uncompacted-output files under
-// dir whose mtime is older than ttl. Runs in [run]'s SessionStart arm
-// (best-effort), independent of the store, so files outlive at most one
-// extra session window.
-// Mirrors [sweepKubectxDirs]: an empty dir or a missing dir
+// Sweep removes archived uncompacted-output files under
+// dir whose mtime is older than ttl. hook-router runs it on
+// SessionStart (best-effort), independent of the store, so files
+// outlive at most one extra session window.
+// Mirrors the kubectx orphan sweep: an empty dir or a missing dir
 // ([fs.ErrNotExist]) is a silent no-op; a remove that races a concurrent
 // sweep to [fs.ErrNotExist] is treated as success; other errors warn and
 // continue so one bad entry does not abort the sweep.
-func sweepCompactionOutputs(dir string, ttl time.Duration, logger *slog.Logger) {
+func Sweep(dir string, ttl time.Duration, logger *slog.Logger) {
 	if dir == "" {
 		return
 	}

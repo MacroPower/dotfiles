@@ -1,4 +1,4 @@
-package main
+package archive_test
 
 import (
 	"bytes"
@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/archive"
 )
 
 func TestOutputArchiveAnnotate(t *testing.T) {
@@ -22,7 +24,7 @@ func TestOutputArchiveAnnotate(t *testing.T) {
 		t.Parallel()
 
 		dir := t.TempDir()
-		a := NewOutputArchive(dir)
+		a := archive.New(dir)
 
 		// original carries ANSI and repeated lines; compacted is the
 		// already-shorter result. Annotate must persist original verbatim
@@ -52,7 +54,7 @@ func TestOutputArchiveAnnotate(t *testing.T) {
 		assert.False(t, strings.HasPrefix(rel, ".."), "archived path must stay under dir")
 
 		// Returned string is compacted + "\n" + marker naming that file.
-		wantMarker := compactionPointerMarker("stdout", path, len(original))
+		wantMarker := archive.PointerMarker("stdout", path, len(original))
 		assert.Equal(t, compacted+"\n"+wantMarker, annotated)
 	})
 
@@ -60,7 +62,7 @@ func TestOutputArchiveAnnotate(t *testing.T) {
 		t.Parallel()
 
 		dir := t.TempDir()
-		a := NewOutputArchive(dir)
+		a := archive.New(dir)
 
 		// compacted is only marginally shorter than original; the pointer
 		// marker (which embeds the abs path) pushes the annotated length
@@ -85,7 +87,7 @@ func TestOutputArchiveAnnotate(t *testing.T) {
 		t.Run("nil receiver", func(t *testing.T) {
 			t.Parallel()
 
-			var a *OutputArchive
+			var a *archive.Archive
 
 			assert.True(t, a.Empty())
 			assert.Equal(t, "", a.Dir())
@@ -98,7 +100,7 @@ func TestOutputArchiveAnnotate(t *testing.T) {
 		t.Run("empty dir", func(t *testing.T) {
 			t.Parallel()
 
-			a := NewOutputArchive("")
+			a := archive.New("")
 
 			assert.True(t, a.Empty())
 			assert.Equal(t, "", a.Dir())
@@ -120,7 +122,7 @@ func TestOutputArchiveAnnotate(t *testing.T) {
 		notDir := filepath.Join(base, "not-a-dir")
 		require.NoError(t, os.WriteFile(notDir, []byte("x"), 0o644))
 
-		a := NewOutputArchive(filepath.Join(notDir, "outputs"))
+		a := archive.New(filepath.Join(notDir, "outputs"))
 
 		var buf bytes.Buffer
 
@@ -136,7 +138,7 @@ func TestOutputArchiveAnnotate(t *testing.T) {
 		t.Parallel()
 
 		dir := t.TempDir()
-		a := NewOutputArchive(dir)
+		a := archive.New(dir)
 		original := strings.Repeat("x", 5000)
 
 		a1, ok1 := a.Annotate("sess", "stdout", original, "short", logger)
@@ -152,8 +154,14 @@ func TestOutputArchiveAnnotate(t *testing.T) {
 	})
 }
 
-func TestSanitizeForFilename(t *testing.T) {
+// TestAnnotateSanitizesSessionID pins the filename produced for
+// hostile session IDs: every byte outside [A-Za-z0-9_-] maps to '_',
+// an empty ID becomes "nosession", and the result always stays a
+// single path component directly under the archive dir.
+func TestAnnotateSanitizesSessionID(t *testing.T) {
 	t.Parallel()
+
+	logger := slog.New(slog.DiscardHandler)
 
 	tests := map[string]struct {
 		in   string
@@ -171,15 +179,20 @@ func TestSanitizeForFilename(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := sanitizeForFilename(tt.in)
-			assert.Equal(t, tt.want, got)
+			dir := t.TempDir()
+			a := archive.New(dir)
 
-			// The sanitized element must stay a single component under dir.
-			const dir = "/base/dir"
+			_, ok := a.Annotate(tt.in, "stdout", strings.Repeat("x", 5000), "short", logger)
+			require.True(t, ok)
 
-			joined := filepath.Join(dir, got)
-			assert.True(t, strings.HasPrefix(joined, dir+"/"), "sanitized element must stay under dir")
-			assert.Equal(t, got, filepath.Base(joined), "sanitized element must be a single path component")
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			require.Len(t, entries, 1, "the archived file must land directly under dir")
+
+			got := entries[0].Name()
+			assert.True(t, strings.HasPrefix(got, tt.want+"-stdout-"),
+				"filename %q must start with sanitized prefix %q", got, tt.want+"-stdout-")
+			assert.Equal(t, got, filepath.Base(got), "filename must be a single path component")
 		})
 	}
 }
@@ -189,10 +202,10 @@ func TestCompactionPointerMarker(t *testing.T) {
 
 	assert.Equal(t,
 		"    [hook-router: uncompacted stdout saved to /x/y.log (42 bytes)]",
-		compactionPointerMarker("stdout", "/x/y.log", 42))
+		archive.PointerMarker("stdout", "/x/y.log", 42))
 	assert.Equal(t,
 		"    [hook-router: uncompacted stderr saved to /x/y.log (7 bytes)]",
-		compactionPointerMarker("stderr", "/x/y.log", 7))
+		archive.PointerMarker("stderr", "/x/y.log", 7))
 }
 
 func TestSweepCompactionOutputs(t *testing.T) {
@@ -218,7 +231,7 @@ func TestSweepCompactionOutputs(t *testing.T) {
 		past := time.Now().Add(-2 * ttl)
 		require.NoError(t, os.Chtimes(oldFile, past, past))
 
-		sweepCompactionOutputs(dir, ttl, logger)
+		archive.Sweep(dir, ttl, logger)
 
 		_, err := os.Stat(oldFile)
 		assert.True(t, os.IsNotExist(err), "a file older than the TTL must be removed")
@@ -230,12 +243,12 @@ func TestSweepCompactionOutputs(t *testing.T) {
 	t.Run("missing dir is a silent no-op", func(t *testing.T) {
 		t.Parallel()
 
-		sweepCompactionOutputs(filepath.Join(t.TempDir(), "never-created"), time.Hour, logger)
+		archive.Sweep(filepath.Join(t.TempDir(), "never-created"), time.Hour, logger)
 	})
 
 	t.Run("empty dir string is a silent no-op", func(t *testing.T) {
 		t.Parallel()
 
-		sweepCompactionOutputs("", time.Hour, logger)
+		archive.Sweep("", time.Hour, logger)
 	})
 }

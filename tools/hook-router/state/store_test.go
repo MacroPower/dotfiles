@@ -1,4 +1,4 @@
-package main
+package state_test
 
 import (
 	"context"
@@ -12,23 +12,35 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
 )
 
 // intPtr lets test tables express a non-nil *int inline without
 // declaring a temporary.
 func intPtr(v int) *int { return &v }
 
+// boolToInt mirrors the 0/1 encoding the store uses for SQLite bool
+// columns, so assertions can compare raw rows against input structs.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+
+	return 0
+}
+
 // testPID is the canonical Claude-Code-window PID used in tests that
 // only exercise a single window's view of pending_plans. Tests that
 // validate per-window isolation pass explicit distinct PIDs instead.
 const testPID = "12345"
 
-func newTestStore(t *testing.T) *Store {
+func newTestStore(t *testing.T) *state.Store {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 
-	store, err := OpenStore(t.Context(), dbPath)
+	store, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -178,20 +190,20 @@ func TestStoreIndependentSessions(t *testing.T) {
 // hook-router processes hammering the same file.
 func hammerStore(ctx context.Context, dbPath, sessionID string, ops int) error {
 	for range ops {
-		store, err := OpenStore(ctx, dbPath)
+		store, err := state.Open(ctx, dbPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("opening store: %w", err)
 		}
 
 		_, err = store.IncrementExitPlanCount(ctx, sessionID)
 
 		closeErr := store.Close()
 		if err != nil {
-			return err
+			return fmt.Errorf("incrementing exit_plan_count: %w", err)
 		}
 
 		if closeErr != nil {
-			return closeErr
+			return fmt.Errorf("closing store: %w", closeErr)
 		}
 	}
 
@@ -259,7 +271,7 @@ func TestConsumePendingPlan_StaleReturnsNotFoundAndStaleRowSurvives(t *testing.T
 	require.NoError(t, err)
 
 	// Backdate the row beyond the TTL we'll pass in.
-	_, err = store.db.ExecContext(ctx,
+	_, err = store.DB().ExecContext(ctx,
 		`UPDATE pending_plans SET updated_at = datetime('now', '-10 seconds') WHERE claude_pid = ?`,
 		testPID)
 	require.NoError(t, err)
@@ -271,7 +283,7 @@ func TestConsumePendingPlan_StaleReturnsNotFoundAndStaleRowSurvives(t *testing.T
 	// Stale row survives Consume; MaybePruneStale handles eventual cleanup.
 	var count int
 
-	err = store.db.QueryRowContext(ctx,
+	err = store.DB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM pending_plans WHERE claude_pid = ?`, testPID).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "stale row must remain for MaybePruneStale to clean up")
@@ -325,7 +337,7 @@ func TestPruneStale_PrunesBothTables_Beyond24h(t *testing.T) {
 	_, err = store.SetPendingPlan(ctx, "stale-pid", "/p2.md", "sha2")
 	require.NoError(t, err)
 
-	_, err = store.db.ExecContext(ctx,
+	_, err = store.DB().ExecContext(ctx,
 		`UPDATE pending_plans SET updated_at = datetime('now', '-25 hours') WHERE claude_pid = ?`,
 		"stale-pid")
 	require.NoError(t, err)
@@ -336,20 +348,20 @@ func TestPruneStale_PrunesBothTables_Beyond24h(t *testing.T) {
 	// Stale session (>24h) -- must be pruned.
 	require.NoError(t, store.SetPlanPath(ctx, "stale-sess", "/sess2.md", "sha-b"))
 
-	_, err = store.db.ExecContext(ctx,
+	_, err = store.DB().ExecContext(ctx,
 		`UPDATE sessions SET updated_at = datetime('now', '-25 hours') WHERE session_id = ?`,
 		"stale-sess")
 	require.NoError(t, err)
 
-	require.NoError(t, store.pruneStale(ctx))
+	require.NoError(t, store.PruneStale(ctx))
 
 	var pendingCount, sessionCount int
 
-	require.NoError(t, store.db.QueryRowContext(ctx,
+	require.NoError(t, store.DB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM pending_plans`).Scan(&pendingCount))
 	assert.Equal(t, 1, pendingCount, "stale pending row must be pruned, fresh must survive")
 
-	require.NoError(t, store.db.QueryRowContext(ctx,
+	require.NoError(t, store.DB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM sessions`).Scan(&sessionCount))
 	assert.Equal(t, 1, sessionCount, "stale session row must be pruned, fresh must survive")
 }
@@ -362,7 +374,7 @@ func TestStore_ConcurrentWriters_DistinctSessions(t *testing.T) {
 
 	dbPath := filepath.Join(t.TempDir(), "concurrent.db")
 
-	seed, err := OpenStore(t.Context(), dbPath)
+	seed, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 	require.NoError(t, seed.Close())
 
@@ -391,7 +403,7 @@ func TestStore_ConcurrentWriters_DistinctSessions(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	store, err := OpenStore(t.Context(), dbPath)
+	store, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -413,7 +425,7 @@ func TestStore_ConcurrentWriters_SameSession(t *testing.T) {
 
 	dbPath := filepath.Join(t.TempDir(), "same-session.db")
 
-	seed, err := OpenStore(t.Context(), dbPath)
+	seed, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 	require.NoError(t, seed.Close())
 
@@ -442,7 +454,7 @@ func TestStore_ConcurrentWriters_SameSession(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	store, err := OpenStore(t.Context(), dbPath)
+	store, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -465,21 +477,21 @@ func TestStore_ShortContextSurfacesBusy(t *testing.T) {
 
 	dbPath := filepath.Join(t.TempDir(), "short-ctx.db")
 
-	holder, err := OpenStore(t.Context(), dbPath)
+	holder, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		require.NoError(t, holder.Close())
 	})
 
-	writer, err := OpenStore(t.Context(), dbPath)
+	writer, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		require.NoError(t, writer.Close())
 	})
 
-	conn, err := holder.db.Conn(t.Context())
+	conn, err := holder.DB().Conn(t.Context())
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -592,7 +604,7 @@ func TestDeletePendingPlan_OnlyMatchingPID(t *testing.T) {
 }
 
 // seedV4 writes the pre-migration shape into dbPath: open via
-// OpenStore (so `sessions` lands at the current shape), drop the
+// Open (so `sessions` lands at the current shape), drop the
 // current pending_plans, recreate it with the v4 single-column PK,
 // optionally insert seedRow, then roll user_version back to 4.
 // Reopening the resulting DB then triggers every queued migration.
@@ -600,13 +612,13 @@ func TestDeletePendingPlan_OnlyMatchingPID(t *testing.T) {
 func seedV4(t *testing.T, dbPath string, seedRow *struct{ cwd, planPath, baseSHA string }) {
 	t.Helper()
 
-	seed, err := OpenStore(t.Context(), dbPath)
+	seed, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 
-	_, err = seed.db.ExecContext(t.Context(), `DROP TABLE IF EXISTS pending_plans`)
+	_, err = seed.DB().ExecContext(t.Context(), `DROP TABLE IF EXISTS pending_plans`)
 	require.NoError(t, err)
 
-	_, err = seed.db.ExecContext(t.Context(), `
+	_, err = seed.DB().ExecContext(t.Context(), `
 		CREATE TABLE pending_plans (
 		    cwd        TEXT PRIMARY KEY,
 		    plan_path  TEXT NOT NULL DEFAULT '',
@@ -617,13 +629,13 @@ func seedV4(t *testing.T, dbPath string, seedRow *struct{ cwd, planPath, baseSHA
 	require.NoError(t, err)
 
 	if seedRow != nil {
-		_, err = seed.db.ExecContext(t.Context(),
+		_, err = seed.DB().ExecContext(t.Context(),
 			`INSERT INTO pending_plans (cwd, plan_path, base_sha) VALUES (?, ?, ?)`,
 			seedRow.cwd, seedRow.planPath, seedRow.baseSHA)
 		require.NoError(t, err)
 	}
 
-	_, err = seed.db.ExecContext(t.Context(), `PRAGMA user_version = 4`)
+	_, err = seed.DB().ExecContext(t.Context(), `PRAGMA user_version = 4`)
 	require.NoError(t, err)
 
 	require.NoError(t, seed.Close())
@@ -632,7 +644,7 @@ func seedV4(t *testing.T, dbPath string, seedRow *struct{ cwd, planPath, baseSHA
 // TestEnsureSchema_UpgradesFromV4 seeds a DB at the v4 shape of
 // pending_plans (single-column PK on `cwd`), reopens it, and checks
 // that the chained migrations land: user_version reaches the current
-// schemaVersion, pending_plans is recreated with the PID-only PK, and
+// state.SchemaVersion, pending_plans is recreated with the PID-only PK, and
 // a new claude_pid write succeeds.
 func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 	t.Parallel()
@@ -643,7 +655,7 @@ func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 		cwd: "/seed-cwd", planPath: "/seed.md", baseSHA: "seed-sha",
 	})
 
-	store, err := OpenStore(t.Context(), dbPath)
+	store, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -652,13 +664,13 @@ func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 
 	var version int
 
-	require.NoError(t, store.db.QueryRowContext(t.Context(),
+	require.NoError(t, store.DB().QueryRowContext(t.Context(),
 		`PRAGMA user_version`).Scan(&version))
-	assert.Equal(t, schemaVersion, version, "user_version must reach current schemaVersion after migration")
+	assert.Equal(t, state.SchemaVersion, version, "user_version must reach current state.SchemaVersion after migration")
 
 	// Introspect the new schema: pending_plans must have claude_pid as
 	// its sole primary-key column.
-	rows, err := store.db.QueryContext(t.Context(), `PRAGMA table_info(pending_plans)`)
+	rows, err := store.DB().QueryContext(t.Context(), `PRAGMA table_info(pending_plans)`)
 	require.NoError(t, err)
 
 	defer rows.Close()
@@ -700,7 +712,7 @@ func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 }
 
 // seedV6 writes the pre-migration shape into dbPath: open via
-// OpenStore (so other tables land at the current shape), drop the
+// Open (so other tables land at the current shape), drop the
 // current pending_plans, recreate it with the v6 composite PK on
 // (cwd, claude_pid), optionally insert seedRow, then roll user_version
 // back to 6. Reopening the resulting DB then triggers the v6→v7 step.
@@ -711,13 +723,13 @@ func seedV6(t *testing.T, dbPath string, seedRow *struct {
 ) {
 	t.Helper()
 
-	seed, err := OpenStore(t.Context(), dbPath)
+	seed, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 
-	_, err = seed.db.ExecContext(t.Context(), `DROP TABLE IF EXISTS pending_plans`)
+	_, err = seed.DB().ExecContext(t.Context(), `DROP TABLE IF EXISTS pending_plans`)
 	require.NoError(t, err)
 
-	_, err = seed.db.ExecContext(t.Context(), `
+	_, err = seed.DB().ExecContext(t.Context(), `
 		CREATE TABLE pending_plans (
 		    cwd        TEXT NOT NULL,
 		    claude_pid TEXT NOT NULL,
@@ -730,13 +742,13 @@ func seedV6(t *testing.T, dbPath string, seedRow *struct {
 	require.NoError(t, err)
 
 	if seedRow != nil {
-		_, err = seed.db.ExecContext(t.Context(),
+		_, err = seed.DB().ExecContext(t.Context(),
 			`INSERT INTO pending_plans (cwd, claude_pid, plan_path, base_sha) VALUES (?, ?, ?, ?)`,
 			seedRow.cwd, seedRow.claudePID, seedRow.planPath, seedRow.baseSHA)
 		require.NoError(t, err)
 	}
 
-	_, err = seed.db.ExecContext(t.Context(), `PRAGMA user_version = 6`)
+	_, err = seed.DB().ExecContext(t.Context(), `PRAGMA user_version = 6`)
 	require.NoError(t, err)
 
 	require.NoError(t, seed.Close())
@@ -745,7 +757,7 @@ func seedV6(t *testing.T, dbPath string, seedRow *struct {
 // TestEnsureSchema_UpgradesFromV6 seeds a DB at the v6 shape of
 // pending_plans (composite PK on (cwd, claude_pid)), reopens it, and
 // checks that the v6→v7 step lands: user_version reaches the current
-// schemaVersion, pending_plans is recreated with claude_pid as the sole
+// state.SchemaVersion, pending_plans is recreated with claude_pid as the sole
 // PK, and the stale seed row is gone.
 func TestEnsureSchema_UpgradesFromV6(t *testing.T) {
 	t.Parallel()
@@ -758,7 +770,7 @@ func TestEnsureSchema_UpgradesFromV6(t *testing.T) {
 		cwd: "/seed-cwd", claudePID: "seed-pid", planPath: "/seed.md", baseSHA: "seed-sha",
 	})
 
-	store, err := OpenStore(t.Context(), dbPath)
+	store, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -767,11 +779,11 @@ func TestEnsureSchema_UpgradesFromV6(t *testing.T) {
 
 	var version int
 
-	require.NoError(t, store.db.QueryRowContext(t.Context(),
+	require.NoError(t, store.DB().QueryRowContext(t.Context(),
 		`PRAGMA user_version`).Scan(&version))
-	assert.Equal(t, schemaVersion, version, "user_version must reach current schemaVersion after migration")
+	assert.Equal(t, state.SchemaVersion, version, "user_version must reach current state.SchemaVersion after migration")
 
-	rows, err := store.db.QueryContext(t.Context(), `PRAGMA table_info(pending_plans)`)
+	rows, err := store.DB().QueryContext(t.Context(), `PRAGMA table_info(pending_plans)`)
 	require.NoError(t, err)
 
 	defer rows.Close()
@@ -802,7 +814,7 @@ func TestEnsureSchema_UpgradesFromV6(t *testing.T) {
 	// The seed row from the v6 shape was dropped by the migration.
 	var count int
 
-	require.NoError(t, store.db.QueryRowContext(t.Context(),
+	require.NoError(t, store.DB().QueryRowContext(t.Context(),
 		`SELECT COUNT(*) FROM pending_plans`).Scan(&count))
 	assert.Equal(t, 0, count, "v6→v7 DROP must wipe the stale seed row")
 }
@@ -816,7 +828,7 @@ func TestEnsureSchema_UpgradesFromV6(t *testing.T) {
 // if a peer already bumped it.
 //
 // Shape: seed a v4 DB, race N goroutines opening it concurrently, each
-// writing a unique pid row after OpenStore returns. The final state
+// writing a unique pid row after Open returns. The final state
 // must have exactly N rows in pending_plans.
 func TestEnsureSchema_ConcurrentOpensConverge(t *testing.T) {
 	t.Parallel()
@@ -834,9 +846,9 @@ func TestEnsureSchema_ConcurrentOpensConverge(t *testing.T) {
 
 	for i := range goroutines {
 		wg.Go(func() {
-			store, openErr := OpenStore(t.Context(), dbPath)
+			store, openErr := state.Open(t.Context(), dbPath)
 			if openErr != nil {
-				errs <- fmt.Errorf("OpenStore: %w", openErr)
+				errs <- fmt.Errorf("Open: %w", openErr)
 				return
 			}
 
@@ -866,7 +878,7 @@ func TestEnsureSchema_ConcurrentOpensConverge(t *testing.T) {
 	}
 
 	// Reopen and verify final state.
-	store, err := OpenStore(t.Context(), dbPath)
+	store, err := state.Open(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -875,13 +887,13 @@ func TestEnsureSchema_ConcurrentOpensConverge(t *testing.T) {
 
 	var version int
 
-	require.NoError(t, store.db.QueryRowContext(t.Context(),
+	require.NoError(t, store.DB().QueryRowContext(t.Context(),
 		`PRAGMA user_version`).Scan(&version))
-	assert.Equal(t, schemaVersion, version, "concurrent opens must all settle on the current schemaVersion")
+	assert.Equal(t, state.SchemaVersion, version, "concurrent opens must all settle on the current state.SchemaVersion")
 
 	var count int
 
-	require.NoError(t, store.db.QueryRowContext(t.Context(),
+	require.NoError(t, store.DB().QueryRowContext(t.Context(),
 		`SELECT COUNT(*) FROM pending_plans`).Scan(&count))
 	assert.Equal(t, goroutines, count,
 		"each goroutine's post-migration write must survive; no peer's DROP must have eaten it")
@@ -891,11 +903,11 @@ func TestRecordBashFailure(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		failure  BashFailure
+		failure  state.BashFailure
 		wantExit sql.NullInt64
 	}{
 		"basic insert (nil exit_code maps to NULL)": {
-			failure: BashFailure{
+			failure: state.BashFailure{
 				SessionID: "s1",
 				Cwd:       "/tmp",
 				Command:   "false",
@@ -903,7 +915,7 @@ func TestRecordBashFailure(t *testing.T) {
 			wantExit: sql.NullInt64{Valid: false},
 		},
 		"is_error true": {
-			failure: BashFailure{
+			failure: state.BashFailure{
 				SessionID: "s1",
 				Cwd:       "/tmp",
 				Command:   "bogus",
@@ -912,7 +924,7 @@ func TestRecordBashFailure(t *testing.T) {
 			wantExit: sql.NullInt64{Valid: false},
 		},
 		"interrupted true": {
-			failure: BashFailure{
+			failure: state.BashFailure{
 				SessionID:   "s1",
 				Cwd:         "/tmp",
 				Command:     "sleep 999",
@@ -921,7 +933,7 @@ func TestRecordBashFailure(t *testing.T) {
 			wantExit: sql.NullInt64{Valid: false},
 		},
 		"non-nil exit_code zero is recorded, not NULL": {
-			failure: BashFailure{
+			failure: state.BashFailure{
 				SessionID: "s1",
 				Cwd:       "/tmp",
 				Command:   "weird",
@@ -931,7 +943,7 @@ func TestRecordBashFailure(t *testing.T) {
 			wantExit: sql.NullInt64{Int64: 0, Valid: true},
 		},
 		"exit_code 127 with stdout/stderr": {
-			failure: BashFailure{
+			failure: state.BashFailure{
 				SessionID:      "s1",
 				TranscriptPath: "/tmp/t.jsonl",
 				HookEventName:  "PostToolUse",
@@ -961,7 +973,7 @@ func TestRecordBashFailure(t *testing.T) {
 				gotExit                                     sql.NullInt64
 			)
 
-			err := store.db.QueryRowContext(ctx, `
+			err := store.DB().QueryRowContext(ctx, `
 				SELECT session_id, transcript_path, hook_event_name, cwd, command,
 				       stdout, stderr, is_error, interrupted, exit_code
 				FROM bash_failures`).Scan(
@@ -993,7 +1005,7 @@ func TestRecordBashFailure_AppendOrdering(t *testing.T) {
 	ctx := t.Context()
 
 	for i := range 5 {
-		require.NoError(t, store.RecordBashFailure(ctx, BashFailure{
+		require.NoError(t, store.RecordBashFailure(ctx, state.BashFailure{
 			SessionID: "s1",
 			Cwd:       "/tmp",
 			Command:   fmt.Sprintf("cmd-%d", i),
@@ -1001,7 +1013,7 @@ func TestRecordBashFailure_AppendOrdering(t *testing.T) {
 		}))
 	}
 
-	rows, err := store.db.QueryContext(ctx,
+	rows, err := store.DB().QueryContext(ctx,
 		`SELECT id, command FROM bash_failures ORDER BY id`)
 	require.NoError(t, err)
 
@@ -1029,7 +1041,7 @@ func TestRecordBashFailure_AppendOrdering(t *testing.T) {
 }
 
 // TestPruneStale_BashFailures30DayCutoff pins the 30-day cutoff
-// [*Store.pruneStale] applies to bash_failures: fresh rows and rows
+// [*state.Store.pruneStale] applies to bash_failures: fresh rows and rows
 // at 29 days survive, rows at 31 days are deleted.
 func TestPruneStale_BashFailures30DayCutoff(t *testing.T) {
 	t.Parallel()
@@ -1037,29 +1049,29 @@ func TestPruneStale_BashFailures30DayCutoff(t *testing.T) {
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	require.NoError(t, store.RecordBashFailure(ctx, BashFailure{
+	require.NoError(t, store.RecordBashFailure(ctx, state.BashFailure{
 		SessionID: "s1", Cwd: "/tmp", Command: "fresh",
 	}))
-	require.NoError(t, store.RecordBashFailure(ctx, BashFailure{
+	require.NoError(t, store.RecordBashFailure(ctx, state.BashFailure{
 		SessionID: "s1", Cwd: "/tmp", Command: "edge-29d",
 	}))
-	require.NoError(t, store.RecordBashFailure(ctx, BashFailure{
+	require.NoError(t, store.RecordBashFailure(ctx, state.BashFailure{
 		SessionID: "s1", Cwd: "/tmp", Command: "stale-31d",
 	}))
 
-	_, err := store.db.ExecContext(ctx,
+	_, err := store.DB().ExecContext(ctx,
 		`UPDATE bash_failures SET created_at = datetime('now', '-29 days') WHERE command = ?`,
 		"edge-29d")
 	require.NoError(t, err)
 
-	_, err = store.db.ExecContext(ctx,
+	_, err = store.DB().ExecContext(ctx,
 		`UPDATE bash_failures SET created_at = datetime('now', '-31 days') WHERE command = ?`,
 		"stale-31d")
 	require.NoError(t, err)
 
-	require.NoError(t, store.pruneStale(ctx))
+	require.NoError(t, store.PruneStale(ctx))
 
-	rows, err := store.db.QueryContext(ctx,
+	rows, err := store.DB().QueryContext(ctx,
 		`SELECT command FROM bash_failures ORDER BY command`)
 	require.NoError(t, err)
 

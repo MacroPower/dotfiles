@@ -1,7 +1,6 @@
-package main
+package kubectx
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,11 +13,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// kubectxDirPrefix is the basename prefix that [handleSessionEnd]
-// and [sweepKubectxDirs] use to identify per-session Claude kubectx
+// dirPrefix is the basename prefix that [RemoveSessionDir]
+// and [SweepOrphans] use to identify per-session Claude kubectx
 // directories. The Claude Code launcher wrapper writes the full path
 // as $XDG_RUNTIME_DIR/claude-kubectx.<pid> (falling back to /tmp).
-const kubectxDirPrefix = "claude-kubectx."
+const dirPrefix = "claude-kubectx."
 
 // kubeconfigContexts is the minimal kubeconfig shape the bash gate
 // needs: the active current-context plus the set of locally-defined
@@ -50,7 +49,7 @@ func loadKubeconfigContexts(path string) (*kubeconfigContexts, error) {
 	return &cfg, nil
 }
 
-// kubectxSelected returns the local merged kubeconfig path when a
+// Selected returns the local merged kubeconfig path when a
 // context is effectively selected for kubectl, or "" when nothing
 // usable is selected. The bash gate denies kubectl on "".
 //
@@ -74,7 +73,7 @@ func loadKubeconfigContexts(path string) (*kubeconfigContexts, error) {
 // current-context is read from local.yaml only, preserving the
 // "select first" authority even when the named context is defined in
 // the guest config.
-func kubectxSelected() string {
+func Selected() string {
 	local := os.Getenv("CLAUDE_KUBECTX_LOCAL")
 	if local == "" {
 		return ""
@@ -140,7 +139,7 @@ func contextInUnion(local *kubeconfigContexts, name string) bool {
 	return defines(cfg)
 }
 
-// handleSessionEnd removes the per-session kubectx directory rooted
+// RemoveSessionDir removes the per-session kubectx directory rooted
 // at $CLAUDE_KUBECTX_DIR. The directory is created by the Claude
 // Code launcher wrapper, populated by mcp-kubectx's
 // [publishSidecar], and unused after the session exits.
@@ -150,17 +149,17 @@ func contextInUnion(local *kubeconfigContexts, name string) bool {
 // fired by Claude Code as its session terminates, so a non-zero
 // exit would only produce noise the user cannot act on.
 //
-// Containment guard: the env value must end in $kubectxDirPrefix<pid>
-// or [handleSessionEnd] refuses to recurse. Without that check a
+// Containment guard: the env value must end in $dirPrefix<pid>
+// or [RemoveSessionDir] refuses to recurse. Without that check a
 // rogue env value (e.g. CLAUDE_KUBECTX_DIR=/home/user) would let
 // the hook nuke the user's home dir on session end.
-func handleSessionEnd(_ context.Context, logger *slog.Logger) error {
+func RemoveSessionDir(logger *slog.Logger) error {
 	dir := os.Getenv("CLAUDE_KUBECTX_DIR")
 	if dir == "" {
 		return nil
 	}
 
-	if !isClaudeKubectxDir(dir) {
+	if !isSessionDir(dir) {
 		logger.Warn("refusing to remove unrecognized CLAUDE_KUBECTX_DIR",
 			slog.String("dir", dir),
 		)
@@ -183,20 +182,20 @@ func handleSessionEnd(_ context.Context, logger *slog.Logger) error {
 	return nil
 }
 
-// kubectxDirPID extracts the PID encoded in a per-session kubectx
+// dirPID extracts the PID encoded in a per-session kubectx
 // directory's basename, reporting ok only when name has the exact
-// $kubectxDirPrefix<pid> shape the launcher wrapper produces: the
+// $dirPrefix<pid> shape the launcher wrapper produces: the
 // prefix followed by a canonical positive decimal PID. Non-canonical
 // suffixes (a leading sign, leading zeros, non-digits, or a
 // non-positive value) are rejected so neither the SessionEnd
 // containment guard nor the SessionStart sweep acts on a path that
 // only superficially resembles a session dir.
-func kubectxDirPID(name string) (int, bool) {
-	if !strings.HasPrefix(name, kubectxDirPrefix) {
+func dirPID(name string) (int, bool) {
+	if !strings.HasPrefix(name, dirPrefix) {
 		return 0, false
 	}
 
-	suffix := name[len(kubectxDirPrefix):]
+	suffix := name[len(dirPrefix):]
 
 	pid, err := strconv.Atoi(suffix)
 	if err != nil || pid <= 0 || strconv.Itoa(pid) != suffix {
@@ -206,27 +205,26 @@ func kubectxDirPID(name string) (int, bool) {
 	return pid, true
 }
 
-// isClaudeKubectxDir reports whether path has the
-// $kubectxDirPrefix<pid> basename shape produced by the launcher
+// isSessionDir reports whether path has the
+// $dirPrefix<pid> basename shape produced by the launcher
 // wrapper. Pinning the shape on both the basename and a canonical
 // PID suffix prevents removal of an arbitrary path injected through
 // the env var.
-func isClaudeKubectxDir(path string) bool {
-	_, ok := kubectxDirPID(filepath.Base(path))
+func isSessionDir(path string) bool {
+	_, ok := dirPID(filepath.Base(path))
 
 	return ok
 }
 
-// sweepKubectxDirs removes orphaned per-session kubectx directories
-// in parent whose PID suffix is no longer alive. Runs from
-// [handleSessionStart] (best-effort) so a crashed session that
-// skipped its SessionEnd hook gets cleaned up the next time Claude
-// starts.
+// SweepOrphans removes orphaned per-session kubectx directories
+// in parent whose PID suffix is no longer alive. hook-router runs it
+// on SessionStart (best-effort) so a crashed session that skipped its
+// SessionEnd hook gets cleaned up the next time Claude starts.
 //
 // parent defaults to $XDG_RUNTIME_DIR (with /tmp fallback) so each
 // host's tmpfs gets swept in isolation: a directory created on one
 // machine via NFS would not match the local PID set anyway.
-func sweepKubectxDirs(parent string, logger *slog.Logger) {
+func SweepOrphans(parent string, logger *slog.Logger) {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -242,7 +240,7 @@ func sweepKubectxDirs(parent string, logger *slog.Logger) {
 	for _, e := range entries {
 		name := e.Name()
 
-		pid, ok := kubectxDirPID(name)
+		pid, ok := dirPID(name)
 		if !ok {
 			continue
 		}
@@ -283,7 +281,7 @@ func pidAlive(pid int) bool {
 	return !errors.Is(err, syscall.ESRCH)
 }
 
-// kubectxSweepParent returns the directory the launcher wrapper
+// SweepParent returns the directory the launcher wrapper
 // writes per-session kubectx dirs into. The wrapper bakes the
 // resolved location into $CLAUDE_KUBECTX_DIR
 // ($XDG_RUNTIME_DIR/claude-kubectx.<pid>, falling back to /tmp), so
@@ -292,7 +290,7 @@ func pidAlive(pid int) bool {
 // even if hook-router's own $XDG_RUNTIME_DIR has since drifted.
 // Falls back to the wrapper's own resolution rule when the env var
 // is absent (an out-of-wrapper SessionStart).
-func kubectxSweepParent() string {
+func SweepParent() string {
 	if dir := os.Getenv("CLAUDE_KUBECTX_DIR"); dir != "" {
 		return filepath.Dir(dir)
 	}

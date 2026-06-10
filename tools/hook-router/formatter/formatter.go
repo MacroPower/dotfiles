@@ -1,4 +1,4 @@
-package main
+package formatter
 
 import (
 	"context"
@@ -13,15 +13,15 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 )
 
-// defaultFormatterTimeout bounds a single formatter invocation when a
-// rule omits its [FormatterRule.Timeout] override. Picked to absorb a
+// DefaultTimeout bounds a single formatter invocation when a
+// rule omits its [Rule.Timeout] override. Picked to absorb a
 // python-wrapped formatter's startup (mdformat: ~150ms cold) while
 // staying short enough that a wedged formatter does not add
 // user-visible latency to PostToolUse. Well below the 45s wall-clock
-// budget in [mainErr].
-const defaultFormatterTimeout = 5 * time.Second
+// budget hook-router allots to a whole invocation.
+const DefaultTimeout = 5 * time.Second
 
-// FormatterRule routes a single file path to one external formatter.
+// Rule routes a single file path to one external formatter.
 // [Run] appends the file path as the final argv element to Command,
 // so the formatter binary must accept a path positional. PathGlob is
 // matched with [doublestar.PathMatch]; `**` matches recursively
@@ -30,25 +30,25 @@ const defaultFormatterTimeout = 5 * time.Second
 //
 // JSON tags are camelCase because [builtins.toJSON] in home/claude.nix
 // emits attribute names verbatim.
-type FormatterRule struct {
+type Rule struct {
 	PathGlob string   `json:"pathGlob"`
 	Command  []string `json:"command"`
 	Timeout  string   `json:"timeout,omitempty"`
 }
 
 // ResolveTimeout returns the parsed [time.Duration] for
-// [FormatterRule.Timeout], or [defaultFormatterTimeout] when the rule
+// [Rule.Timeout], or [DefaultTimeout] when the rule
 // leaves it empty. Malformed durations also fall back to the default
 // silently; formatter timeouts are not load-bearing, so keep running
 // rather than fail closed.
-func (r FormatterRule) ResolveTimeout() time.Duration {
+func (r Rule) ResolveTimeout() time.Duration {
 	if r.Timeout == "" {
-		return defaultFormatterTimeout
+		return DefaultTimeout
 	}
 
 	d, err := time.ParseDuration(r.Timeout)
 	if err != nil || d <= 0 {
-		return defaultFormatterTimeout
+		return DefaultTimeout
 	}
 
 	return d
@@ -60,7 +60,7 @@ func (r FormatterRule) ResolveTimeout() time.Duration {
 // consumes. A missing file returns nil (no-op). Non-zero exit codes
 // return an [*exec.ExitError]; callers log and swallow so formatter
 // breakage never reaches Claude.
-func (r FormatterRule) Run(ctx context.Context, filePath string) error {
+func (r Rule) Run(ctx context.Context, filePath string) error {
 	if len(r.Command) == 0 {
 		return errors.New("formatter rule has empty command")
 	}
@@ -90,25 +90,25 @@ func (r FormatterRule) Run(ctx context.Context, filePath string) error {
 	return nil
 }
 
-// FormatterRules routes file paths to per-path formatter invocations
+// Engine routes file paths to per-path formatter invocations
 // for PostToolUse:Write/Edit/MultiEdit. Construct with
-// [NewFormatterRules] or [parseFormatterRules]; both return a non-nil
-// engine for empty input so callers can call [*FormatterRules.Match]
+// [New] or [Parse]; both return a non-nil
+// engine for empty input so callers can call [*Engine.Match]
 // without nil guards.
-type FormatterRules struct {
-	rules []FormatterRule
+type Engine struct {
+	rules []Rule
 }
 
-// NewFormatterRules builds a [*FormatterRules] from rules. A nil or
+// New builds a [*Engine] from rules. A nil or
 // empty slice yields an engine that matches nothing. Rules are
 // evaluated in slice order; the first matching glob wins.
-func NewFormatterRules(rules []FormatterRule) *FormatterRules {
-	return &FormatterRules{rules: rules}
+func New(rules []Rule) *Engine {
+	return &Engine{rules: rules}
 }
 
 // Empty reports whether the engine has no rules. A nil receiver
 // reports true.
-func (r *FormatterRules) Empty() bool {
+func (r *Engine) Empty() bool {
 	if r == nil {
 		return true
 	}
@@ -116,15 +116,25 @@ func (r *FormatterRules) Empty() bool {
 	return len(r.rules) == 0
 }
 
-// Match returns the first rule whose [FormatterRule.PathGlob] accepts
+// Rules returns a copy of the engine's rules in evaluation order. A
+// nil or empty engine returns nil.
+func (r *Engine) Rules() []Rule {
+	if r == nil || len(r.rules) == 0 {
+		return nil
+	}
+
+	return append([]Rule(nil), r.rules...)
+}
+
+// Match returns the first rule whose [Rule.PathGlob] accepts
 // filePath under [doublestar.PathMatch], and true. When no rule
 // matches, returns the zero value and false. A malformed glob is
 // treated as a non-match and matching continues to the next rule;
-// [parseFormatterRules] rejects malformed globs at parse time, so in
+// [Parse] rejects malformed globs at parse time, so in
 // practice that branch is unreachable.
-func (r *FormatterRules) Match(filePath string) (FormatterRule, bool) {
+func (r *Engine) Match(filePath string) (Rule, bool) {
 	if r == nil || len(r.rules) == 0 {
-		return FormatterRule{}, false
+		return Rule{}, false
 	}
 
 	for _, rule := range r.rules {
@@ -138,22 +148,22 @@ func (r *FormatterRules) Match(filePath string) (FormatterRule, bool) {
 		}
 	}
 
-	return FormatterRule{}, false
+	return Rule{}, false
 }
 
-// parseFormatterRules decodes the JSON payload passed via
-// --formatter-rules into a [*FormatterRules]. Empty input yields an
+// Parse decodes the JSON payload passed via
+// --formatter-rules into a [*Engine]. Empty input yields an
 // empty engine; malformed JSON returns an error so wrapper
 // misconfiguration is loud. Each rule must declare a non-empty
-// [FormatterRule.PathGlob] and at least one [FormatterRule.Command]
+// [Rule.PathGlob] and at least one [Rule.Command]
 // element; otherwise the rule is unusable and the function returns an
 // error.
-func parseFormatterRules(s string) (*FormatterRules, error) {
+func Parse(s string) (*Engine, error) {
 	if s == "" {
-		return NewFormatterRules(nil), nil
+		return New(nil), nil
 	}
 
-	var rules []FormatterRule
+	var rules []Rule
 
 	err := json.Unmarshal([]byte(s), &rules)
 	if err != nil {
@@ -175,5 +185,5 @@ func parseFormatterRules(s string) (*FormatterRules, error) {
 		}
 	}
 
-	return NewFormatterRules(rules), nil
+	return New(rules), nil
 }

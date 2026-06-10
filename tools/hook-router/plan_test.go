@@ -12,24 +12,28 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/compact"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/postimpl"
 )
 
-func makeHookJSON(t *testing.T, hook HookInput) []byte {
+func makeHookJSON(t *testing.T, in hook.Input) []byte {
 	t.Helper()
 
-	b, err := json.Marshal(hook)
+	b, err := json.Marshal(in)
 	require.NoError(t, err)
 
 	return b
 }
 
-// testCatalog returns a [*PostImplCatalog] matching the canonical
+// testCatalog returns a [*postimpl.Catalog] matching the canonical
 // skills declared in home/claude.nix. Tests that exercise
 // handlePostAskUserQuestion or handleStop pass this via cfg so the
 // Nix-driven validation and block-message rendering paths are the
 // same shape as production.
-func testCatalog() *PostImplCatalog {
-	return NewPostImplCatalog([]PostImplSkill{
+func testCatalog() *postimpl.Catalog {
+	return postimpl.New([]postimpl.Skill{
 		{Label: "/review-implementation", Description: "Review code changes against the plan."},
 		{Label: "/simplify", Description: "Review and simplify the implemented code."},
 		{Label: "/humanize", Description: "Clean up AI writing patterns in any prose/docs that changed."},
@@ -46,7 +50,7 @@ var cfg = config{
 	postImpl:     testCatalog(),
 	commitSkills: []string{"commit", "commit-push-pr", "merge"},
 	claudePID:    testPID,
-	compactor:    NewCompactor(CompactConfig{}),
+	compactor:    compact.New(compact.Config{}),
 }
 
 func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
@@ -56,7 +60,7 @@ func TestHandleExitPlanModePre_FirstCallDenies(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -88,7 +92,7 @@ func TestHandleExitPlanModePre_SecondCallAllowsAndRecords(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -128,7 +132,7 @@ func TestHandleExitPlanModePre_SkipPlanReviewAllowsFirstCall(t *testing.T) {
 		skipPlanReview: true,
 	}
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -154,7 +158,7 @@ func TestHandleExitPlanModePre_NoPlanPath(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{},
 	})
@@ -179,7 +183,7 @@ func TestHandleExitPlanModePre_EmptySessionAllows(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "",
 		ToolInput: map[string]any{"planFilePath": "/plan.md"},
 	})
@@ -202,7 +206,7 @@ func TestHandleEnterPlanMode_ResetsSession(t *testing.T) {
 	_, _ = store.IncrementExitPlanCount(ctx, "s1")
 	_ = store.SetPlanPath(ctx, "s1", "/plan.md", "sha1")
 
-	input := makeHookJSON(t, HookInput{SessionID: "s1"})
+	input := makeHookJSON(t, hook.Input{SessionID: "s1"})
 
 	err := handleEnterPlanMode(t.Context(), input, store, testPID, logger)
 	require.NoError(t, err)
@@ -221,7 +225,7 @@ func TestEnterPlanMode_SetsInPlanMode(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	ctx := t.Context()
 
-	input := makeHookJSON(t, HookInput{SessionID: "s1"})
+	input := makeHookJSON(t, hook.Input{SessionID: "s1"})
 
 	err := handleEnterPlanMode(t.Context(), input, store, testPID, logger)
 	require.NoError(t, err)
@@ -241,7 +245,7 @@ func TestExitPlanModePre_SecondCall_ClearsInPlanMode(t *testing.T) {
 
 	require.NoError(t, store.SetInPlanMode(ctx, "s1", true))
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/plan.md"},
 	})
@@ -272,7 +276,7 @@ func TestBugFix_OnlyDenied_StopAllowsThrough(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -284,7 +288,7 @@ func TestBugFix_OnlyDenied_StopAllowsThrough(t *testing.T) {
 
 	// Stop fires -- should allow through because plan_path is empty
 	// (only recorded on allow, not on deny).
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 	stdout.Reset()
 
 	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
@@ -299,7 +303,7 @@ func TestStopBlocksWithChanges(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -329,7 +333,7 @@ func TestStopBlocksWithChanges(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 	stdout.Reset()
 
 	err = handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
@@ -351,7 +355,7 @@ func TestStop_BlocksImplementationWithNoChanges(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -365,7 +369,7 @@ func TestStop_BlocksImplementationWithNoChanges(t *testing.T) {
 
 	// No changes -- Stop now blocks; the unified message must offer
 	// both branches so Claude can either confirm done or ask for input.
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 	stdout.Reset()
 
 	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
@@ -394,7 +398,7 @@ func TestStop_AllowsAfterPostImplAUQ(t *testing.T) {
 	dir := initTestRepo(t)
 
 	// Full plan flow: deny then allow.
-	planInput := makeHookJSON(t, HookInput{
+	planInput := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -423,7 +427,7 @@ func TestStop_AllowsAfterPostImplAUQ(t *testing.T) {
 	askInput := askInputWithLabel(t, "s1", "/review-implementation")
 	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, logger))
 
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 	stdout.Reset()
 
 	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
@@ -441,7 +445,7 @@ func TestStop_BlocksInPlanMode(t *testing.T) {
 
 	require.NoError(t, store.SetInPlanMode(ctx, "s1", true))
 
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 
 	var stdout bytes.Buffer
 
@@ -471,7 +475,7 @@ func TestStop_BlocksInPlanMode_WithPlanPathFromPriorRound(t *testing.T) {
 	require.NoError(t, store.SetPlanPath(ctx, "s1", "/old/plan.md", "old-sha"))
 	require.NoError(t, store.SetInPlanMode(ctx, "s1", true))
 
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 
 	var stdout bytes.Buffer
 
@@ -495,13 +499,13 @@ func TestStop_AllowsAfterCommitClear(t *testing.T) {
 	// Mid-implementation state.
 	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
 
-	promptInput := makeHookJSON(t, HookInput{
+	promptInput := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		Prompt:    "/commit",
 	})
 	require.NoError(t, handleUserPromptSubmit(t.Context(), promptInput, store, cfg, logger))
 
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 
 	var stdout bytes.Buffer
 
@@ -520,7 +524,7 @@ func TestUserPromptSubmit_CommitClearsSession(t *testing.T) {
 	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
 	require.NoError(t, store.SetInPlanMode(ctx, "s1", true))
 
-	input := makeHookJSON(t, HookInput{SessionID: "s1", Prompt: "/commit"})
+	input := makeHookJSON(t, hook.Input{SessionID: "s1", Prompt: "/commit"})
 
 	err := handleUserPromptSubmit(t.Context(), input, store, cfg, logger)
 	require.NoError(t, err)
@@ -545,7 +549,7 @@ func TestUserPromptSubmit_CommitWithArgsClears(t *testing.T) {
 
 	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
 
-	input := makeHookJSON(t, HookInput{SessionID: "s1", Prompt: "/commit feat: add foo"})
+	input := makeHookJSON(t, hook.Input{SessionID: "s1", Prompt: "/commit feat: add foo"})
 
 	err := handleUserPromptSubmit(t.Context(), input, store, cfg, logger)
 	require.NoError(t, err)
@@ -564,7 +568,7 @@ func TestUserPromptSubmit_CommitPushPrAlsoClears(t *testing.T) {
 
 	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
 
-	input := makeHookJSON(t, HookInput{SessionID: "s1", Prompt: "/commit-push-pr"})
+	input := makeHookJSON(t, hook.Input{SessionID: "s1", Prompt: "/commit-push-pr"})
 
 	err := handleUserPromptSubmit(t.Context(), input, store, cfg, logger)
 	require.NoError(t, err)
@@ -583,7 +587,7 @@ func TestUserPromptSubmit_MergeAlsoClears(t *testing.T) {
 
 	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
 
-	input := makeHookJSON(t, HookInput{SessionID: "s1", Prompt: "/merge"})
+	input := makeHookJSON(t, hook.Input{SessionID: "s1", Prompt: "/merge"})
 
 	err := handleUserPromptSubmit(t.Context(), input, store, cfg, logger)
 	require.NoError(t, err)
@@ -618,7 +622,7 @@ func TestUserPromptSubmit_NonCommitIsNoop(t *testing.T) {
 			sessionID := "s-" + name
 			require.NoError(t, store.SetPlanPath(ctx, sessionID, "/plan.md", "sha1"))
 
-			input := makeHookJSON(t, HookInput{SessionID: sessionID, Prompt: prompt})
+			input := makeHookJSON(t, hook.Input{SessionID: sessionID, Prompt: prompt})
 
 			err := handleUserPromptSubmit(t.Context(), input, store, cfg, logger)
 			require.NoError(t, err)
@@ -639,7 +643,7 @@ func TestStopHookActive_ClearsAndAllows(t *testing.T) {
 
 	_ = store.SetPlanPath(ctx, "s1", "/path/plan.md", "sha1")
 
-	stopInput := makeHookJSON(t, HookInput{
+	stopInput := makeHookJSON(t, hook.Input{
 		SessionID:      "s1",
 		StopHookActive: true,
 	})
@@ -663,7 +667,7 @@ func TestStopHookActive_ClearsAndAllows(t *testing.T) {
 func askInputWithLabel(t *testing.T, sessionID, label string) []byte {
 	t.Helper()
 
-	return makeHookJSON(t, HookInput{
+	return makeHookJSON(t, hook.Input{
 		SessionID: sessionID,
 		ToolName:  "AskUserQuestion",
 		ToolInput: map[string]any{
@@ -699,7 +703,7 @@ func TestHandlePostAskUserQuestion_MatchingLabelClearsSession(t *testing.T) {
 	assert.Equal(t, "", planPath)
 
 	// ...so a subsequent Stop allows through.
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 
 	var stdout bytes.Buffer
 
@@ -742,7 +746,7 @@ func TestHandlePostAskUserQuestion_EmptySessionIsNoop(t *testing.T) {
 	// Session() would itself INSERT a row.
 	var count int
 
-	require.NoError(t, store.db.QueryRowContext(context.Background(),
+	require.NoError(t, store.DB().QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM sessions`).Scan(&count))
 	assert.Equal(t, 0, count)
 }
@@ -781,7 +785,7 @@ func TestHandlePostAskUserQuestion_MalformedToolInputIsNoop(t *testing.T) {
 			sessionID := "s-" + name
 			require.NoError(t, store.SetPlanPath(t.Context(), sessionID, "/plan.md", "sha1"))
 
-			input := makeHookJSON(t, HookInput{
+			input := makeHookJSON(t, hook.Input{
 				SessionID: sessionID,
 				ToolName:  "AskUserQuestion",
 				ToolInput: toolInput,
@@ -809,7 +813,7 @@ func TestStop_AllowsAfterAsk_DespiteCommittedEdits(t *testing.T) {
 	dir := initTestRepo(t)
 
 	// Set up plan state.
-	planInput := makeHookJSON(t, HookInput{
+	planInput := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -853,7 +857,7 @@ func TestStop_AllowsAfterAsk_DespiteCommittedEdits(t *testing.T) {
 	}
 
 	// Stop must still allow: the gate fired once this cycle.
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 	stdout.Reset()
 
 	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
@@ -872,7 +876,7 @@ func TestStop_AllowsAfterAsk_DespiteUncommittedEdits(t *testing.T) {
 	dir := initTestRepo(t)
 
 	// Set up plan state.
-	planInput := makeHookJSON(t, HookInput{
+	planInput := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -905,7 +909,7 @@ func TestStop_AllowsAfterAsk_DespiteUncommittedEdits(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "impl.txt"), []byte("changed\n"), 0o644))
 
 	// Stop must still allow: the gate fired once this cycle.
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 	stdout.Reset()
 
 	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
@@ -926,7 +930,7 @@ func TestStop_ReArmsOnNextPlanCycle(t *testing.T) {
 	dir := initTestRepo(t)
 
 	// Cycle 1: approved plan, post-impl AUQ answered, Stop allows.
-	planInput := makeHookJSON(t, HookInput{
+	planInput := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -940,17 +944,17 @@ func TestStop_ReArmsOnNextPlanCycle(t *testing.T) {
 	askInput := askInputWithLabel(t, "s1", "/review-implementation")
 	require.NoError(t, handlePostAskUserQuestion(t.Context(), askInput, store, cfg, logger))
 
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 	stdout.Reset()
 	require.NoError(t, handleStop(t.Context(), stopInput, &stdout, store, cfg, logger))
 	assert.Empty(t, stdout.Bytes(), "Stop must allow after the post-impl AUQ")
 
 	// Cycle 2: EnterPlanMode re-arms; approved ExitPlanMode records a
 	// fresh plan_path.
-	enterInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	enterInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 	require.NoError(t, handleEnterPlanMode(t.Context(), enterInput, store, testPID, logger))
 
-	plan2Input := makeHookJSON(t, HookInput{
+	plan2Input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan2.md"},
 	})
@@ -985,7 +989,7 @@ func TestHandleStop_EscapeHatchWorksWhenStoreUnavailable(t *testing.T) {
 	// Simulate a dead backend by closing the underlying connection.
 	require.NoError(t, store.Close())
 
-	stopInput := makeHookJSON(t, HookInput{
+	stopInput := makeHookJSON(t, hook.Input{
 		SessionID:      "s1",
 		StopHookActive: true,
 	})
@@ -1008,7 +1012,7 @@ func TestHandleStop_FailsClosedOnStoreError(t *testing.T) {
 
 	require.NoError(t, store.Close())
 
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 
 	var stdout bytes.Buffer
 
@@ -1035,7 +1039,7 @@ func TestHandleExitPlanModePre_FailsClosedOnStoreError(t *testing.T) {
 
 	require.NoError(t, store.Close())
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
 	})
@@ -1062,112 +1066,13 @@ func TestStopAllowsEmptySession(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 
 	// No plan state set -- Stop should allow through.
-	stopInput := makeHookJSON(t, HookInput{SessionID: "s1"})
+	stopInput := makeHookJSON(t, hook.Input{SessionID: "s1"})
 
 	var stdout bytes.Buffer
 
 	err := handleStop(t.Context(), stopInput, &stdout, store, cfg, logger)
 	require.NoError(t, err)
 	assert.Empty(t, stdout.Bytes())
-}
-
-func TestParsePostImplSkills(t *testing.T) {
-	t.Parallel()
-
-	type check func(t *testing.T, cat *PostImplCatalog)
-
-	cases := map[string]struct {
-		in    string
-		err   bool
-		check check
-	}{
-		"empty string yields empty catalog": {
-			in: "",
-			check: func(t *testing.T, cat *PostImplCatalog) {
-				t.Helper()
-				assert.True(t, cat.Empty())
-				assert.False(t, cat.HasLabel("/review-implementation"))
-			},
-		},
-		"entry round-trips": {
-			in: `[{"label":"commit","description":"Create a git commit."}]`,
-			check: func(t *testing.T, cat *PostImplCatalog) {
-				t.Helper()
-				assert.True(t, cat.HasLabel("commit"))
-				// BuildAskReason renders the single bullet.
-				reason := cat.BuildAskReason("/p.md", "abc123")
-				assert.Contains(t, reason, "commit: Create a git commit.")
-			},
-		},
-		"malformed JSON returns error": {
-			in:  `[{"label":`,
-			err: true,
-		},
-		"duplicate labels are not deduped": {
-			in: `[{"label":"commit","description":"first"},{"label":"commit","description":"second"}]`,
-			check: func(t *testing.T, cat *PostImplCatalog) {
-				t.Helper()
-				assert.True(t, cat.HasLabel("commit"))
-
-				reason := cat.BuildAskReason("/p.md", "abc123")
-				// Both bullets render -- catalog trusts the Nix list as source of truth.
-				assert.Contains(t, reason, "commit: first")
-				assert.Contains(t, reason, "commit: second")
-			},
-		},
-	}
-
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			cat, err := parsePostImplSkills(tc.in)
-			if tc.err {
-				require.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
-			require.NotNil(t, cat)
-			tc.check(t, cat)
-		})
-	}
-}
-
-// TestBuildAskReason_EmptyCatalog documents the degraded-mode
-// fallback: with no skills, Stop still renders a (bullet-less) block
-// message rather than panicking. Production should never hit this
-// path (mainErr logs a warning when the catalog is empty) but the
-// invariant that handlers can call BuildAskReason without a nil-guard
-// is enforced here.
-func TestBuildAskReason_EmptyCatalog(t *testing.T) {
-	t.Parallel()
-
-	cat := NewPostImplCatalog(nil)
-	reason := cat.BuildAskReason("/p.md", "abc123")
-
-	assert.Contains(t, reason, "AskUserQuestion")
-	assert.Contains(t, reason, "/p.md")
-	assert.Contains(t, reason, "abc123")
-	assert.Contains(t, reason, "If you are not done")
-	assert.NotContains(t, reason, "  - ") // zero bullets rendered
-}
-
-// TestBuildAskReason_NotDoneBranchPresent enforces the unified-message
-// contract: the populated-catalog rendering must include all three
-// branches so Claude can ask a clarifying question, keep working, or
-// confirm done (post-impl AUQ).
-func TestBuildAskReason_NotDoneBranchPresent(t *testing.T) {
-	t.Parallel()
-
-	reason := testCatalog().BuildAskReason("/p.md", "abc123")
-
-	assert.Contains(t, reason, "completed the implementation")
-	assert.Contains(t, reason, "If you are not done")
-	assert.Contains(t, reason, "If you have a question for the user")
-	assert.Contains(t, reason, "/review-implementation")
-	assert.Contains(t, reason, "/p.md")
-	assert.Contains(t, reason, "abc123")
 }
 
 func TestHandleExitPlanModePre_FirstCallDoesNotSetPendingPlan(t *testing.T) {
@@ -1177,7 +1082,7 @@ func TestHandleExitPlanModePre_FirstCallDoesNotSetPendingPlan(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		Cwd:       dir,
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
@@ -1199,7 +1104,7 @@ func TestHandleExitPlanModePre_SecondCallSetsPendingPlan(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	dir := initTestRepo(t)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		Cwd:       dir,
 		ToolInput: map[string]any{"planFilePath": "/path/plan.md"},
@@ -1230,7 +1135,7 @@ func TestHandleSessionStart_MigratesPendingPlan(t *testing.T) {
 	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "new-sess",
 		Cwd:       cwd,
 		Source:    "clear",
@@ -1257,7 +1162,7 @@ func TestHandleSessionStart_NoPendingPlanIsNoOp(t *testing.T) {
 
 	cwd := t.TempDir()
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "new-sess",
 		Cwd:       cwd,
 		Source:    "clear",
@@ -1283,7 +1188,7 @@ func TestHandleSessionStart_EmptySessionIDIsNoOp(t *testing.T) {
 	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
-	input := makeHookJSON(t, HookInput{Cwd: cwd, Source: "clear"})
+	input := makeHookJSON(t, hook.Input{Cwd: cwd, Source: "clear"})
 
 	require.NoError(t, handleSessionStart(t.Context(), input, store, testPID, logger))
 
@@ -1306,12 +1211,12 @@ func TestHandleSessionStart_StalePendingPlanIgnored(t *testing.T) {
 	require.NoError(t, err)
 
 	// Backdate the row beyond the 3600s TTL.
-	_, err = store.db.ExecContext(ctx,
+	_, err = store.DB().ExecContext(ctx,
 		`UPDATE pending_plans SET updated_at = datetime('now', '-2 hours') WHERE claude_pid = ?`,
 		testPID)
 	require.NoError(t, err)
 
-	input := makeHookJSON(t, HookInput{
+	input := makeHookJSON(t, hook.Input{
 		SessionID: "new-sess",
 		Cwd:       cwd,
 		Source:    "clear",
@@ -1337,7 +1242,7 @@ func TestHandleEnterPlanMode_DeletesPendingPlan(t *testing.T) {
 	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
-	input := makeHookJSON(t, HookInput{SessionID: "s1", Cwd: cwd})
+	input := makeHookJSON(t, hook.Input{SessionID: "s1", Cwd: cwd})
 	require.NoError(t, handleEnterPlanMode(t.Context(), input, store, testPID, logger))
 
 	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
@@ -1357,7 +1262,7 @@ func TestHandleUserPromptSubmit_CommitSkill_DeletesPendingPlan(t *testing.T) {
 	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
-	input := makeHookJSON(t, HookInput{SessionID: "s1", Cwd: cwd, Prompt: "/commit"})
+	input := makeHookJSON(t, hook.Input{SessionID: "s1", Cwd: cwd, Prompt: "/commit"})
 	require.NoError(t, handleUserPromptSubmit(t.Context(), input, store, cfg, logger))
 
 	_, _, found, err := store.ConsumePendingPlan(ctx, testPID, 300)
@@ -1375,7 +1280,7 @@ func TestHandleStop_StopHookActive_DeletesPendingPlan(t *testing.T) {
 	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
-	stopInput := makeHookJSON(t, HookInput{
+	stopInput := makeHookJSON(t, hook.Input{
 		SessionID:      "s1",
 		Cwd:            t.TempDir(),
 		StopHookActive: true,
@@ -1399,7 +1304,7 @@ func TestHandlePostAskUserQuestion_DeletesPendingPlan(t *testing.T) {
 	_, err := store.SetPendingPlan(ctx, testPID, "/plan.md", "sha1")
 	require.NoError(t, err)
 
-	askInput := makeHookJSON(t, HookInput{
+	askInput := makeHookJSON(t, hook.Input{
 		SessionID: "s1",
 		Cwd:       t.TempDir(),
 		ToolName:  "AskUserQuestion",
@@ -1439,7 +1344,7 @@ func TestHandleSessionStart_DoesNotConsumeOtherInstancesPlan(t *testing.T) {
 	require.NoError(t, err)
 
 	// Window B's SessionStart fires. It must NOT consume A's row.
-	bInput := makeHookJSON(t, HookInput{
+	bInput := makeHookJSON(t, hook.Input{
 		SessionID: "new-sess-B",
 		Cwd:       cwd,
 		Source:    "clear",
@@ -1454,7 +1359,7 @@ func TestHandleSessionStart_DoesNotConsumeOtherInstancesPlan(t *testing.T) {
 
 	// Window A's SessionStart now fires; it must consume the row that B
 	// left untouched.
-	aInput := makeHookJSON(t, HookInput{
+	aInput := makeHookJSON(t, hook.Input{
 		SessionID: "new-sess-A",
 		Cwd:       cwd,
 		Source:    "clear",

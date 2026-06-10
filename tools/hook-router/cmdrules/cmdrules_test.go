@@ -1,11 +1,26 @@
-package main
+package cmdrules_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/syntax"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/cmdrules"
 )
+
+// mustParse parses command into a shell AST, failing the test on a
+// parse error.
+func mustParse(t *testing.T, command string) *syntax.File {
+	t.Helper()
+
+	prog, err := syntax.NewParser().Parse(strings.NewReader(command), "")
+	require.NoError(t, err)
+
+	return prog
+}
 
 const (
 	stashDeniedReason   = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
@@ -16,11 +31,12 @@ const (
 )
 
 // canonicalRules mirrors the rules wired into home/claude.nix for the
-// git and kubectx bundles. TestRun in main_test.go reuses it so
-// integration coverage stays in sync with matcher coverage. Update
-// here when home/claude.nix gains or drops rules.
-func canonicalRules() *CommandRules {
-	return NewCommandRules([]CommandRule{
+// git and kubectx bundles. The hook-router handler tests carry a copy
+// of the same fixture so integration coverage stays in sync with
+// matcher coverage. Update both when home/claude.nix gains or drops
+// rules.
+func canonicalRules() *cmdrules.Engine {
+	return cmdrules.New([]cmdrules.Rule{
 		{
 			Command: "git",
 			Args:    []string{"clone"},
@@ -49,7 +65,7 @@ func TestParseCommandRules(t *testing.T) {
 	cases := map[string]struct {
 		in   string
 		err  bool
-		want []CommandRule
+		want []cmdrules.Rule
 	}{
 		"empty string yields empty rules": {
 			in:   "",
@@ -57,13 +73,13 @@ func TestParseCommandRules(t *testing.T) {
 		},
 		"single rule round-trips": {
 			in: `[{"command":"git","args":["clone"],"reason":"r"}]`,
-			want: []CommandRule{
+			want: []cmdrules.Rule{
 				{Command: "git", Args: []string{"clone"}, Reason: "r"},
 			},
 		},
 		"rule with except round-trips": {
 			in: `[{"command":"git","args":["stash"],"except":["pop","apply"],"reason":"r"}]`,
-			want: []CommandRule{
+			want: []cmdrules.Rule{
 				{
 					Command: "git",
 					Args:    []string{"stash"},
@@ -74,19 +90,19 @@ func TestParseCommandRules(t *testing.T) {
 		},
 		"unknown fields are silently dropped": {
 			in: `[{"command":"git","args":["clone"],"reason":"r","foo":1,"bar":["x"]}]`,
-			want: []CommandRule{
+			want: []cmdrules.Rule{
 				{Command: "git", Args: []string{"clone"}, Reason: "r"},
 			},
 		},
 		"explicit deny action round-trips": {
 			in: `[{"command":"git","args":["clone"],"action":"deny","reason":"r"}]`,
-			want: []CommandRule{
+			want: []cmdrules.Rule{
 				{Command: "git", Args: []string{"clone"}, Action: "deny", Reason: "r"},
 			},
 		},
 		"ask action round-trips": {
 			in: `[{"command":"gh","args":["pr"],"except":["view"],"action":"ask","reason":"r"}]`,
-			want: []CommandRule{
+			want: []cmdrules.Rule{
 				{
 					Command: "gh",
 					Args:    []string{"pr"},
@@ -110,7 +126,7 @@ func TestParseCommandRules(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			rules, err := parseCommandRules(tc.in)
+			rules, err := cmdrules.Parse(tc.in)
 			if tc.err {
 				require.Error(t, err)
 				return
@@ -118,7 +134,7 @@ func TestParseCommandRules(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotNil(t, rules)
-			assert.Equal(t, tc.want, rules.rules)
+			assert.Equal(t, tc.want, rules.Rules())
 		})
 	}
 }
@@ -386,12 +402,13 @@ func TestCommandRulesCheck_Kubectx(t *testing.T) {
 	}
 }
 
-// ghAskRules mirrors the gh ask rules wired into the github bundle in
-// home/claude.nix: subcommand-scoped rules first, top-level fallback
-// last. Update here when home/claude.nix gains or drops rules.
-func ghAskRules() *CommandRules {
-	group := func(name string, except ...string) CommandRule {
-		return CommandRule{
+// ghAskRules mirrors the gh ask-rule bundle in home/claude.nix:
+// subcommand-scoped rules first, top-level fallback last. The
+// hook-router handler tests carry a copy of the same fixture. Update
+// both when home/claude.nix gains or drops rules.
+func ghAskRules() *cmdrules.Engine {
+	group := func(name string, except ...string) cmdrules.Rule {
+		return cmdrules.Rule{
 			Command: "gh",
 			Args:    []string{name},
 			Except:  except,
@@ -400,7 +417,7 @@ func ghAskRules() *CommandRules {
 		}
 	}
 
-	return NewCommandRules([]CommandRule{
+	return cmdrules.New([]cmdrules.Rule{
 		group("pr", "view", "list", "diff", "checks", "status"),
 		group("issue", "view", "list"),
 		group("run", "view", "list", "watch"),
@@ -509,7 +526,7 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 	t.Run("user-defined rule for arbitrary command fires on bare invocation", func(t *testing.T) {
 		t.Parallel()
 
-		rules := NewCommandRules([]CommandRule{
+		rules := cmdrules.New([]cmdrules.Rule{
 			{Command: "danger", Reason: "danger is blocked"},
 		})
 
@@ -523,7 +540,7 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 	t.Run("git rule with empty args denies every git invocation (footgun)", func(t *testing.T) {
 		t.Parallel()
 
-		rules := NewCommandRules([]CommandRule{
+		rules := cmdrules.New([]cmdrules.Rule{
 			{Command: "git", Reason: "no git"},
 		})
 
@@ -547,7 +564,7 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 		// is "--foo" rather than "select", so the rule does not
 		// match. A git rule would skip the flag and match at
 		// position 2.
-		rules := NewCommandRules([]CommandRule{
+		rules := cmdrules.New([]cmdrules.Rule{
 			{Command: "kubectx", Args: []string{"select"}, Reason: "blocked"},
 		})
 
@@ -565,7 +582,7 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 	t.Run("except with bare command+args still denies", func(t *testing.T) {
 		t.Parallel()
 
-		rules := NewCommandRules([]CommandRule{
+		rules := cmdrules.New([]cmdrules.Rule{
 			{
 				Command: "git",
 				Args:    []string{"stash"},
@@ -585,7 +602,7 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 
 		// `--keep-index` is the next positional after `stash` and
 		// is not in `except`, so the rule fires.
-		rules := NewCommandRules([]CommandRule{
+		rules := cmdrules.New([]cmdrules.Rule{
 			{
 				Command: "git",
 				Args:    []string{"stash"},
@@ -602,10 +619,10 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 	t.Run("aggregation order: first declared rule wins", func(t *testing.T) {
 		t.Parallel()
 
-		bundleRule := CommandRule{Command: "danger", Reason: "from bundle"}
-		extraRule := CommandRule{Command: "danger", Reason: "from extra"}
+		bundleRule := cmdrules.Rule{Command: "danger", Reason: "from bundle"}
+		extraRule := cmdrules.Rule{Command: "danger", Reason: "from extra"}
 
-		rules := NewCommandRules([]CommandRule{bundleRule, extraRule})
+		rules := cmdrules.New([]cmdrules.Rule{bundleRule, extraRule})
 		prog := mustParse(t, "danger now")
 		_, reason, denied := rules.Check(prog)
 		require.True(t, denied)
@@ -617,7 +634,7 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 
 		// The Nix wrapper serializes deny rules before ask rules, so
 		// a command covered by both resolves to deny.
-		rules := NewCommandRules([]CommandRule{
+		rules := cmdrules.New([]cmdrules.Rule{
 			{Command: "gh", Args: []string{"repo"}, Reason: "denied"},
 			{Command: "gh", Action: "ask", Reason: "asked"},
 		})
@@ -634,7 +651,7 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 
 		// Both rules could match `git stash` on the AST; the engine
 		// returns the first declared rule's reason.
-		rules := NewCommandRules([]CommandRule{
+		rules := cmdrules.New([]cmdrules.Rule{
 			{Command: "git", Args: []string{"stash"}, Reason: "first"},
 			{Command: "git", Args: []string{"stash"}, Reason: "second"},
 		})
@@ -648,7 +665,7 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 	t.Run("nil engine is a no-op match", func(t *testing.T) {
 		t.Parallel()
 
-		var rules *CommandRules
+		var rules *cmdrules.Engine
 		prog := mustParse(t, "git stash")
 		_, _, denied := rules.Check(prog)
 		assert.False(t, denied)
@@ -657,7 +674,7 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 	t.Run("empty engine is a no-op match", func(t *testing.T) {
 		t.Parallel()
 
-		rules := NewCommandRules(nil)
+		rules := cmdrules.New(nil)
 		prog := mustParse(t, "git stash")
 		_, _, denied := rules.Check(prog)
 		assert.False(t, denied)
@@ -667,7 +684,7 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 	t.Run("nil engine reports empty without panic", func(t *testing.T) {
 		t.Parallel()
 
-		var rules *CommandRules
+		var rules *cmdrules.Engine
 		assert.True(t, rules.Empty())
 	})
 }

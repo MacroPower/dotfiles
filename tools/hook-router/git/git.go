@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	"context"
@@ -7,15 +7,15 @@ import (
 	"strings"
 )
 
-// GitRunner executes git commands in a working directory.
-type GitRunner struct {
+// Runner executes git commands in a working directory.
+type Runner struct {
 	Dir string
 }
 
 // HasChanges reports whether there are code changes since baseSHA.
 // Falls back to checking working tree status if baseSHA is empty.
 // Returns false (not an error) if Dir is not a git repository.
-func (g *GitRunner) HasChanges(ctx context.Context, baseSHA string) (bool, error) {
+func (g *Runner) HasChanges(ctx context.Context, baseSHA string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-dir")
 	cmd.Dir = g.Dir
 
@@ -46,7 +46,7 @@ func (g *GitRunner) HasChanges(ctx context.Context, baseSHA string) (bool, error
 }
 
 // HeadSHA returns the current HEAD commit SHA.
-func (g *GitRunner) HeadSHA(ctx context.Context) (string, error) {
+func (g *Runner) HeadSHA(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
 	cmd.Dir = g.Dir
 

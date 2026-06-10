@@ -1,4 +1,4 @@
-package main
+package git_test
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/git"
 )
 
 func initTestRepo(t *testing.T) string {
@@ -48,10 +50,10 @@ func TestHeadSHA(t *testing.T) {
 	t.Parallel()
 
 	dir := initTestRepo(t)
-	git := &GitRunner{Dir: dir}
+	runner := &git.Runner{Dir: dir}
 	ctx := context.Background()
 
-	sha, err := git.HeadSHA(ctx)
+	sha, err := runner.HeadSHA(ctx)
 	require.NoError(t, err)
 	assert.Len(t, sha, 40)
 }
@@ -60,13 +62,13 @@ func TestHasChanges_NoChanges(t *testing.T) {
 	t.Parallel()
 
 	dir := initTestRepo(t)
-	git := &GitRunner{Dir: dir}
+	runner := &git.Runner{Dir: dir}
 	ctx := context.Background()
 
-	sha, err := git.HeadSHA(ctx)
+	sha, err := runner.HeadSHA(ctx)
 	require.NoError(t, err)
 
-	changed, err := git.HasChanges(ctx, sha)
+	changed, err := runner.HasChanges(ctx, sha)
 	require.NoError(t, err)
 	assert.False(t, changed)
 }
@@ -75,10 +77,10 @@ func TestHasChanges_WithCommit(t *testing.T) {
 	t.Parallel()
 
 	dir := initTestRepo(t)
-	git := &GitRunner{Dir: dir}
+	runner := &git.Runner{Dir: dir}
 	ctx := context.Background()
 
-	baseSHA, err := git.HeadSHA(ctx)
+	baseSHA, err := runner.HeadSHA(ctx)
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new\n"), 0o644))
@@ -94,7 +96,7 @@ func TestHasChanges_WithCommit(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 
-	changed, err := git.HasChanges(ctx, baseSHA)
+	changed, err := runner.HasChanges(ctx, baseSHA)
 	require.NoError(t, err)
 	assert.True(t, changed)
 }
@@ -103,15 +105,15 @@ func TestHasChanges_UncommittedChanges(t *testing.T) {
 	t.Parallel()
 
 	dir := initTestRepo(t)
-	git := &GitRunner{Dir: dir}
+	runner := &git.Runner{Dir: dir}
 	ctx := context.Background()
 
-	sha, err := git.HeadSHA(ctx)
+	sha, err := runner.HeadSHA(ctx)
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("changed\n"), 0o644))
 
-	changed, err := git.HasChanges(ctx, sha)
+	changed, err := runner.HasChanges(ctx, sha)
 	require.NoError(t, err)
 	assert.True(t, changed)
 }
@@ -120,18 +122,18 @@ func TestHasChanges_EmptyBaseSHA(t *testing.T) {
 	t.Parallel()
 
 	dir := initTestRepo(t)
-	git := &GitRunner{Dir: dir}
+	runner := &git.Runner{Dir: dir}
 	ctx := context.Background()
 
 	// No uncommitted changes, empty base SHA.
-	changed, err := git.HasChanges(ctx, "")
+	changed, err := runner.HasChanges(ctx, "")
 	require.NoError(t, err)
 	assert.False(t, changed)
 
 	// With uncommitted changes, empty base SHA.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new\n"), 0o644))
 
-	changed, err = git.HasChanges(ctx, "")
+	changed, err = runner.HasChanges(ctx, "")
 	require.NoError(t, err)
 	assert.True(t, changed)
 }
@@ -140,11 +142,10 @@ func TestHasChanges_NotGitRepo(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	git := &GitRunner{Dir: dir}
+	runner := &git.Runner{Dir: dir}
 	ctx := context.Background()
 
-	changed, err := git.HasChanges(ctx, "abc123")
+	changed, err := runner.HasChanges(ctx, "abc123")
 	require.NoError(t, err)
 	assert.False(t, changed)
 }
-

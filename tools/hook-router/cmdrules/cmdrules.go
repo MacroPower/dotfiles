@@ -1,4 +1,4 @@
-package main
+package cmdrules
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 // gitFlagsTakingValue lists top-level git flags that consume the
 // following argument as their value (e.g. `git -C dir clone url`). The
 // rule matcher skips both the flag and its value when locating the
-// positional args, but only when [CommandRule.Command] is exactly
+// positional args, but only when [Rule.Command] is exactly
 // "git". Other commands match strictly from position 1.
 var gitFlagsTakingValue = map[string]bool{
 	"-C":             true,
@@ -31,7 +31,7 @@ const (
 	actionAsk  = "ask"
 )
 
-// CommandRule matches a Bash command whose AST contains a call
+// Rule matches a Bash command whose AST contains a call
 // matching Command + Args and resolves it to a PreToolUse decision
 // per Action: "deny" (or "") blocks the call, "ask" forces a
 // permission prompt even when settings or sandbox auto-allow would
@@ -43,7 +43,7 @@ const (
 // When Command == "git", leading top-level git flags listed in
 // [gitFlagsTakingValue] (and their values) are skipped before matching
 // Args. Other commands match strictly from position 1.
-type CommandRule struct {
+type Rule struct {
 	Command string   `json:"command"`
 	Args    []string `json:"args,omitempty"`
 	Except  []string `json:"except,omitempty"`
@@ -53,35 +53,35 @@ type CommandRule struct {
 
 // Ask reports whether the rule resolves to an "ask" decision rather
 // than a deny.
-func (r CommandRule) Ask() bool {
+func (r Rule) Ask() bool {
 	return r.Action == actionAsk
 }
 
-// CommandRules is the deny/ask rule engine for PreToolUse:Bash.
-// Construct with [NewCommandRules] or [parseCommandRules]; both return
+// Engine is the deny/ask rule engine for PreToolUse:Bash.
+// Construct with [New] or [Parse]; both return
 // a non-nil zero value for empty input so callers can invoke
-// [*CommandRules.Check] without nil guards.
+// [*Engine.Check] without nil guards.
 //
 // Rules are evaluated in slice order and the first match wins, so
 // the caller building the list is responsible for ordering: deny
 // rules before ask rules preserves deny precedence, and within a
 // command's ask rules, subcommand-scoped rules must precede a
 // catch-all fallback for the same command.
-type CommandRules struct {
-	rules []CommandRule
+type Engine struct {
+	rules []Rule
 }
 
-// NewCommandRules builds a [*CommandRules] from the given rules. A nil
+// New builds a [*Engine] from the given rules. A nil
 // or empty slice yields an empty engine that matches nothing. Rules
 // are evaluated in slice order; the first match wins.
-func NewCommandRules(rules []CommandRule) *CommandRules {
-	return &CommandRules{rules: rules}
+func New(rules []Rule) *Engine {
+	return &Engine{rules: rules}
 }
 
 // Empty reports whether the engine has no rules. A nil receiver
 // reports true, so callers can treat nil and zero-rule engines
-// identically (mirrors [*CommandRules.Check]).
-func (r *CommandRules) Empty() bool {
+// identically (mirrors [*Engine.Check]).
+func (r *Engine) Empty() bool {
 	if r == nil {
 		return true
 	}
@@ -89,17 +89,27 @@ func (r *CommandRules) Empty() bool {
 	return len(r.rules) == 0
 }
 
+// Rules returns a copy of the engine's rules in evaluation order. A
+// nil or empty engine returns nil.
+func (r *Engine) Rules() []Rule {
+	if r == nil || len(r.rules) == 0 {
+		return nil
+	}
+
+	return append([]Rule(nil), r.rules...)
+}
+
 // Check walks prog once and returns the first matching rule along with
 // its reason. Every rule is evaluated against each [*syntax.CallExpr]
 // in declaration order; when two rules could match the same call, the
 // first declared wins.
-func (r *CommandRules) Check(prog *syntax.File) (CommandRule, string, bool) {
+func (r *Engine) Check(prog *syntax.File) (Rule, string, bool) {
 	if r == nil || len(r.rules) == 0 {
-		return CommandRule{}, "", false
+		return Rule{}, "", false
 	}
 
 	var (
-		matched CommandRule
+		matched Rule
 		found   bool
 	)
 
@@ -126,15 +136,15 @@ func (r *CommandRules) Check(prog *syntax.File) (CommandRule, string, bool) {
 	})
 
 	if !found {
-		return CommandRule{}, "", false
+		return Rule{}, "", false
 	}
 
 	return matched, matched.Reason, true
 }
 
-// matchRule reports whether call satisfies rule. See [CommandRule]
+// matchRule reports whether call satisfies rule. See [Rule]
 // for the matching semantics.
-func matchRule(call *syntax.CallExpr, rule CommandRule) bool {
+func matchRule(call *syntax.CallExpr, rule Rule) bool {
 	if len(call.Args) < 1 {
 		return false
 	}
@@ -232,18 +242,18 @@ func matchRule(call *syntax.CallExpr, rule CommandRule) bool {
 	return true
 }
 
-// parseCommandRules decodes the JSON payload passed via --command-rules
-// into a [*CommandRules]. Empty input yields an empty engine; malformed
+// Parse decodes the JSON payload passed via --command-rules
+// into a [*Engine]. Empty input yields an empty engine; malformed
 // JSON or an unknown rule action returns an error so wrapper
 // misconfiguration is loud. Unknown fields are silently dropped
-// (lenient json.Unmarshal), matching the post-impl skill parser in
-// plan.go.
-func parseCommandRules(s string) (*CommandRules, error) {
+// (lenient json.Unmarshal), matching the other hook-router JSON flag
+// parsers.
+func Parse(s string) (*Engine, error) {
 	if s == "" {
-		return NewCommandRules(nil), nil
+		return New(nil), nil
 	}
 
-	var rules []CommandRule
+	var rules []Rule
 
 	err := json.Unmarshal([]byte(s), &rules)
 	if err != nil {
@@ -258,5 +268,5 @@ func parseCommandRules(s string) (*CommandRules, error) {
 		}
 	}
 
-	return NewCommandRules(rules), nil
+	return New(rules), nil
 }

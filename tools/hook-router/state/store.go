@@ -1,4 +1,4 @@
-package main
+package state
 
 import (
 	"context"
@@ -69,8 +69,8 @@ var migrations = []string{
 	// WARNING: command/stdout/stderr can contain secrets (URLs with tokens,
 	// env vars echoed by shells). The DB stays local; treat it accordingly.
 	// stderr is kept verbatim (tail-biased 16 KiB) for human analysis only;
-	// the handler never re-reads it to decide whether a command failed.
-	// See handlePostBash precedence: is_error -> interrupted -> exit_code.
+	// the recorder never re-reads it to decide whether a command failed.
+	// Failure precedence: is_error -> interrupted -> exit_code.
 	`CREATE TABLE IF NOT EXISTS bash_failures (
 	    id              INTEGER PRIMARY KEY,
 	    session_id      TEXT NOT NULL,
@@ -98,21 +98,24 @@ var migrations = []string{
 
 const (
 	busyTimeoutMs            = 30000
-	schemaVersion            = 7
 	bashFailureRetentionDays = 30
 )
+
+// SchemaVersion is the PRAGMA user_version a fully migrated database
+// reports. [Open] migrates older databases forward to it.
+const SchemaVersion = 7
 
 // Store manages plan-guard session state in a SQLite database.
 type Store struct {
 	db *sql.DB
 }
 
-// OpenStore opens (or creates) the SQLite database at path and applies
+// Open opens (or creates) the SQLite database at path and applies
 // the schema. Concurrency settings are passed in the DSN so every pooled
 // connection inherits them (busy_timeout is per-connection). WAL and
 // synchronous=NORMAL are the standard pairing for concurrent readers and
 // a single writer at a time. The context bounds ping and schema setup.
-func OpenStore(ctx context.Context, path string) (*Store, error) {
+func Open(ctx context.Context, path string) (*Store, error) {
 	err := os.MkdirAll(filepath.Dir(path), 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("creating store directory: %w", err)
@@ -185,7 +188,7 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 		return fmt.Errorf("reading schema version: %w", err)
 	}
 
-	if version == schemaVersion {
+	if version == SchemaVersion {
 		return nil
 	}
 
@@ -218,7 +221,7 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 		return fmt.Errorf("rereading schema version: %w", err)
 	}
 
-	if version == schemaVersion {
+	if version == SchemaVersion {
 		_, err = conn.ExecContext(ctx, "COMMIT")
 		if err != nil {
 			return fmt.Errorf("committing no-op migration: %w", err)
@@ -243,7 +246,7 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 
 	// PRAGMA does not accept bound parameters; the version constant is a
 	// trusted int, so string interpolation is safe here.
-	_, err = conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion))
 	if err != nil {
 		return fmt.Errorf("setting schema version: %w", err)
 	}
@@ -262,23 +265,24 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 // invocation. The probabilistic gate spreads cleanup writes across
 // invocations so N concurrent processes don't all contend on the write
 // lock at startup. Returns ran=true when the gate passed and
-// [*Store.pruneStale] was invoked, plus any error from the prune.
+// [*Store.PruneStale] was invoked, plus any error from the prune.
 func (s *Store) MaybePruneStale(ctx context.Context) (bool, error) {
 	// Probabilistic gate, not a security-sensitive choice; weak RNG is fine.
 	if rand.IntN(20) != 0 { //nolint:gosec // statistical cleanup gate
 		return false, nil
 	}
 
-	return true, s.pruneStale(ctx)
+	return true, s.PruneStale(ctx)
 }
 
-// pruneStale removes stale rows: `sessions` and `pending_plans` past
+// PruneStale removes stale rows: `sessions` and `pending_plans` past
 // 24 hours, and `bash_failures` past [bashFailureRetentionDays] (the
 // failure history is kept longer than session state on purpose, since
-// analysis tools may want to look back across many sessions). Split
-// out from [*Store.MaybePruneStale] so tests can exercise cleanup
-// without fighting the probabilistic gate.
-func (s *Store) pruneStale(ctx context.Context) error {
+// analysis tools may want to look back across many sessions). The
+// deterministic entry point behind [*Store.MaybePruneStale], for
+// callers (and tests) that want cleanup without the probabilistic
+// gate.
+func (s *Store) PruneStale(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM sessions WHERE updated_at < datetime('now', '-24 hours')`)
 	if err != nil {
@@ -309,6 +313,15 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying database handle. It is an escape hatch for
+// inspection and maintenance (analysis queries over bash_failures, test
+// assertions against raw rows); session-lifecycle writes should go
+// through the typed methods so their UPSERT and timestamp semantics
+// hold.
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
 // Session returns the state for a session, creating it if it does not exist.
 func (s *Store) Session(ctx context.Context, id string) (exitPlanCount int, planPath string, baseSHA string, err error) {
 	_, err = s.db.ExecContext(ctx,
@@ -327,7 +340,8 @@ func (s *Store) Session(ctx context.Context, id string) (exitPlanCount int, plan
 	return exitPlanCount, planPath, baseSHA, nil
 }
 
-// IncrementExitPlanCount atomically increments the counter and returns the new value.
+// IncrementExitPlanCount atomically increments the counter and returns
+// the new value.
 func (s *Store) IncrementExitPlanCount(ctx context.Context, id string) (int, error) {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO sessions (session_id, exit_plan_count)
@@ -449,7 +463,7 @@ func (s *Store) ClearSession(ctx context.Context, id string) error {
 
 // SetPendingPlan UPSERTs a pending plan handoff keyed by claudePID.
 // The row is consumed by [*Store.ConsumePendingPlan] when the cleared
-// session's SessionStart hook fires; see plan.go's handleSessionStart.
+// session's SessionStart hook fires.
 // The PID is the OS-process identity of the Claude Code window, so the
 // key partitions handoffs per window: two windows each own their own
 // row and cannot overwrite each other.
@@ -502,8 +516,8 @@ func (s *Store) SetPendingPlan(ctx context.Context, claudePID, planPath, baseSHA
 // per-statement atomicity intact.
 //
 // The third return value reports whether a fresh row matched and was
-// deleted; false (with nil err) means no fresh row was present. The
-// caller (handleSessionStart) treats not-found as the no-migration path.
+// deleted; false (with nil err) means no fresh row was present. Callers
+// treat not-found as the no-migration path.
 func (s *Store) ConsumePendingPlan(
 	ctx context.Context,
 	claudePID string,

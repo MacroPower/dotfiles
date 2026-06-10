@@ -11,6 +11,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/archive"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/cmdrules"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/compact"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/formatter"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/postimpl"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
 )
 
 // config holds runtime settings resolved from the environment and
@@ -22,19 +31,19 @@ import (
 // cfg.commandRules.Check(...), and cfg.formatterRules.Empty() /
 // cfg.formatterRules.Match(...) without nil-guards. Handler tests
 // must construct all three as well (see testCatalog in plan_test.go,
-// [NewCommandRules], and [NewFormatterRules]).
+// [cmdrules.New], and [formatter.New]).
 //
 // compactor shares the same nil-safe contract: mainErr always wires it
 // to a non-nil (possibly disabled) value, but a bare config{} test
 // literal that does not exercise compaction may leave it nil, since
-// [*Compactor.Empty] and [*Compactor.Streams] guard a nil receiver.
+// [compact.Compactor.Empty] and [compact.Compactor.Streams] guard a nil receiver.
 // Handlers gate on cfg.compactor.Empty() (nil-safe) before calling any
 // other method.
 //
 // outputArchive shares that nil-safe contract too: mainErr always wires
 // it to a non-nil (possibly disabled) value, but a bare config{} test
-// literal may leave it nil, since [*OutputArchive.Empty],
-// [*OutputArchive.Dir], and [*OutputArchive.Annotate] guard a nil
+// literal may leave it nil, since [archive.Archive.Empty],
+// [archive.Archive.Dir], and [archive.Archive.Annotate] guard a nil
 // receiver. The compaction handler gates on cfg.outputArchive.Empty()
 // (nil-safe) before calling Annotate, and the SessionStart sweep reads
 // cfg.outputArchive.Dir() (nil-safe) for its root.
@@ -62,11 +71,11 @@ import (
 // clearing in_plan_mode, the pending-plan handoff) still happens, so
 // the Stop gate is unaffected.
 type config struct {
-	postImpl       *PostImplCatalog
-	commandRules   *CommandRules
-	formatterRules *FormatterRules
-	compactor      *Compactor
-	outputArchive  *OutputArchive
+	postImpl       *postimpl.Catalog
+	commandRules   *cmdrules.Engine
+	formatterRules *formatter.Engine
+	compactor      *compact.Compactor
+	outputArchive  *archive.Archive
 	commitSkills   []string
 	kubeconfigPath string
 	claudePID      string
@@ -84,10 +93,10 @@ func configFromEnv() config {
 	// The launcher wrapper sets $KUBECONFIG to a colon-list
 	// (local.yaml:sidecar), so a stat on it always fails. Selection
 	// is resolved from the local file's current-context plus the
-	// presence of usable creds; see [kubectxSelected]. A non-empty
+	// presence of usable creds; see [kubectx.Selected]. A non-empty
 	// return signals "a context is selected" to the bash handler;
 	// "" denies kubectl with the actionable select-first message.
-	cfg.kubeconfigPath = kubectxSelected()
+	cfg.kubeconfigPath = kubectx.Selected()
 
 	return cfg
 }
@@ -137,10 +146,10 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		return fmt.Errorf("reading stdin: %w", err)
 	}
 
-	var store *Store
+	var store *state.Store
 
 	if dbPath != "" && eventNeedsStore(event, tool, input) {
-		store, err = OpenStore(ctx, dbPath)
+		store, err = state.Open(ctx, dbPath)
 		if err != nil {
 			return fmt.Errorf("opening store: %w", err)
 		}
@@ -155,7 +164,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		}
 	}
 
-	catalog, err := parsePostImplSkills(postImplSkillsJSON)
+	catalog, err := postimpl.Parse(postImplSkillsJSON)
 	if err != nil {
 		return fmt.Errorf("parsing --post-impl-skills: %w", err)
 	}
@@ -169,7 +178,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		return fmt.Errorf("parsing --commit-skills: %w", err)
 	}
 
-	rules, err := parseCommandRules(commandRulesJSON)
+	rules, err := cmdrules.Parse(commandRulesJSON)
 	if err != nil {
 		return fmt.Errorf("parsing --command-rules: %w", err)
 	}
@@ -181,7 +190,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("command rules engine is empty")
 	}
 
-	formatters, err := parseFormatterRules(formatterRulesJSON)
+	formatters, err := formatter.Parse(formatterRulesJSON)
 	if err != nil {
 		return fmt.Errorf("parsing --formatter-rules: %w", err)
 	}
@@ -190,7 +199,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("formatter rules engine is empty")
 	}
 
-	compactor, err := parseCompactConfig(compactionConfigJSON)
+	compactor, err := compact.Parse(compactionConfigJSON)
 	if err != nil {
 		return fmt.Errorf("parsing --compaction-config: %w", err)
 	}
@@ -205,7 +214,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.commandRules = rules
 	cfg.formatterRules = formatters
 	cfg.compactor = compactor
-	cfg.outputArchive = NewOutputArchive(compactionOutputDir)
+	cfg.outputArchive = archive.New(compactionOutputDir)
 	cfg.autoAllow = autoAllow
 	cfg.skipPlanReview = skipPlanReview
 
@@ -213,7 +222,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 }
 
 // eventNeedsStore reports whether the dispatch for (event, tool) will
-// reach a handler that requires the SQLite [*Store]. PostToolUse with
+// reach a handler that requires the SQLite [*state.Store]. PostToolUse with
 // an empty tool peeks at the stdin payload's tool_name to resolve the
 // matcher-less fallback. Returns false for events whose only handler
 // is a no-op default (e.g. PreToolUse:Bash, PostToolUse:Read) so
@@ -227,7 +236,7 @@ func eventNeedsStore(event, tool string, input []byte) bool {
 	case "PostToolUse":
 		toolName := tool
 		if toolName == "" {
-			parsed, err := parseHookInput(input)
+			parsed, err := hook.ParseInput(input)
 			if err == nil {
 				toolName = parsed.ToolName
 			}
@@ -244,7 +253,7 @@ func run(
 	stdin io.Reader,
 	stdout io.Writer,
 	event, tool string,
-	store *Store,
+	store *state.Store,
 	cfg config,
 	logger *slog.Logger,
 ) error {
@@ -289,7 +298,7 @@ func run(
 		// honored as an override for ad-hoc invocations.
 		toolName := tool
 		if toolName == "" {
-			parsed, err := parseHookInput(input)
+			parsed, err := hook.ParseInput(input)
 			if err == nil {
 				toolName = parsed.ToolName
 			}
@@ -331,8 +340,8 @@ func run(
 		return handleStop(ctx, input, stdout, store, cfg, logger)
 
 	case "SessionStart":
-		sweepKubectxDirs(kubectxSweepParent(), logger)
-		sweepCompactionOutputs(cfg.outputArchive.Dir(), compactionOutputTTL, logger)
+		kubectx.SweepOrphans(kubectx.SweepParent(), logger)
+		archive.Sweep(cfg.outputArchive.Dir(), archive.DefaultTTL, logger)
 
 		if store == nil {
 			return nil
@@ -341,7 +350,12 @@ func run(
 		return handleSessionStart(ctx, input, store, cfg.claudePID, logger)
 
 	case "SessionEnd":
-		return handleSessionEnd(ctx, logger)
+		err := kubectx.RemoveSessionDir(logger)
+		if err != nil {
+			return fmt.Errorf("removing session kubectx dir: %w", err)
+		}
+
+		return nil
 
 	case "UserPromptSubmit":
 		if store == nil {
@@ -354,6 +368,18 @@ func run(
 		// Backward compat: no --event flag, treat as Bash PreToolUse.
 		return handleBash(input, stdout, cfg, logger)
 	}
+}
+
+// writeDecision encodes a hook decision document to w via
+// [hook.Encode]. The single wrap site keeps handler call sites as
+// plain tail calls while still attributing encode failures.
+func writeDecision(w io.Writer, v any) error {
+	err := hook.Encode(w, v)
+	if err != nil {
+		return fmt.Errorf("writing hook decision: %w", err)
+	}
+
+	return nil
 }
 
 // openLogger creates a JSON [*slog.Logger] writing to the named file.
