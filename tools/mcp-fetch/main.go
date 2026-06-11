@@ -15,6 +15,11 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/fetch"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/rules"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/stats"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/store"
 )
 
 const version = "0.1.0"
@@ -25,7 +30,7 @@ func main() {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		switch args[0] {
 		case "stats":
-			os.Exit(runStats(args[1:]))
+			os.Exit(stats.Run(args[1:]))
 		case "version":
 			fmt.Println(version)
 			os.Exit(0)
@@ -82,7 +87,7 @@ func serve(userAgent string, ignoreRobots, ignoreLLMs bool, proxyURL, rulesFile,
 	}
 	defer logCloser()
 
-	rules, err := LoadRules(rulesFile)
+	urlRules, err := rules.Load(rulesFile)
 	if err != nil {
 		return fmt.Errorf("loading URL rules: %w", err)
 	}
@@ -98,12 +103,12 @@ func serve(userAgent string, ignoreRobots, ignoreLLMs bool, proxyURL, rulesFile,
 		transport.Proxy = http.ProxyURL(u)
 	}
 
-	var store *Store
+	var st *store.Store
 
 	if dbPath != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 
-		store, err = OpenStore(ctx, dbPath)
+		st, err = store.Open(ctx, dbPath)
 
 		cancel()
 
@@ -111,11 +116,11 @@ func serve(userAgent string, ignoreRobots, ignoreLLMs bool, proxyURL, rulesFile,
 			return fmt.Errorf("opening store: %w", err)
 		}
 
-		defer func() { _ = store.Close() }()
+		defer func() { _ = st.Close() }()
 
 		pruneCtx, pruneCancel := context.WithTimeout(context.Background(), 45*time.Second)
 
-		ran, err := store.MaybePruneStale(pruneCtx)
+		ran, err := st.MaybePruneStale(pruneCtx)
 
 		pruneCancel()
 
@@ -127,35 +132,15 @@ func serve(userAgent string, ignoreRobots, ignoreLLMs bool, proxyURL, rulesFile,
 		}
 	}
 
-	h := newFetchHandler(
-		withUserAgent(userAgent),
-		withCheckRobots(!ignoreRobots),
-		withCheckLLMs(!ignoreLLMs),
-		withRules(rules),
-		withLogger(logger),
-		withStore(store),
+	h := fetch.New(
+		fetch.WithUserAgent(userAgent),
+		fetch.WithCheckRobots(!ignoreRobots),
+		fetch.WithCheckLLMs(!ignoreLLMs),
+		fetch.WithRules(urlRules),
+		fetch.WithLogger(logger),
+		fetch.WithStore(st),
+		fetch.WithTransport(transport),
 	)
-
-	h.client = &http.Client{
-		Transport: transport,
-		Timeout:   30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
-			}
-
-			err := h.validateURL(req.URL)
-			if err != nil {
-				return err
-			}
-
-			if h.checkRobots && req.URL.Host != via[len(via)-1].URL.Host {
-				return h.checkRobotsURL(req.Context(), req.URL)
-			}
-
-			return nil
-		},
-	}
 
 	srv := mcp.NewServer(
 		&mcp.Implementation{Name: "mcp-fetch", Version: version},
@@ -166,7 +151,7 @@ func serve(userAgent string, ignoreRobots, ignoreLLMs bool, proxyURL, rulesFile,
 		Name: "fetch",
 		Description: "Fetch a URL and return its content, HTML converted to Markdown by default. " +
 			"Pass a `pattern` (RE2 regex) to grep large pages down to matching lines.",
-	}, h.handle)
+	}, h.Handle)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 

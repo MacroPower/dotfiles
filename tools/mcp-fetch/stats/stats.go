@@ -1,4 +1,4 @@
-package main
+package stats
 
 import (
 	"context"
@@ -9,34 +9,37 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/dustin/go-humanize"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/store"
 )
 
 // statsOutcomeOrder is the display order for outcomes in the summary
 // report. Outcomes not in this list are appended in insertion order.
 var statsOutcomeOrder = []string{
-	OutcomeOK,
-	OutcomeDenied,
-	OutcomeRobotsDenied,
-	OutcomeHTTPError,
-	OutcomeFetchError,
-	OutcomeInvalidURL,
-	OutcomeBadPattern,
-	OutcomeInternalError,
+	store.OutcomeOK,
+	store.OutcomeDenied,
+	store.OutcomeRobotsDenied,
+	store.OutcomeHTTPError,
+	store.OutcomeFetchError,
+	store.OutcomeInvalidURL,
+	store.OutcomeBadPattern,
+	store.OutcomeInternalError,
 }
 
-// Summary is the structured view of stats output. The formatter
-// renders this; tests assert on its fields directly so they don't
-// churn on whitespace tweaks.
+// Summary is the structured view of stats output. [Format] renders this;
+// tests assert on its fields directly so they don't churn on whitespace
+// tweaks.
 type Summary struct {
 	Window        Window
 	DBPath        string
 	Outcomes      []OutcomeRow
-	TopHosts      []HostCount
-	Recent        []FetchRecord
+	TopHosts      []store.HostCount
+	Recent        []store.FetchRecord
 	Total         int
 	ResponseBytes int64
 	OutputBytes   int64
@@ -45,7 +48,7 @@ type Summary struct {
 	TopLimit      int
 }
 
-// Window describes the time bounds of the rows aggregated by Summary.
+// Window describes the time bounds of the rows aggregated by [Summary].
 type Window struct {
 	Since    time.Time // zero = "all time"
 	Earliest time.Time
@@ -59,7 +62,10 @@ type OutcomeRow struct {
 	Pct     float64
 }
 
-func runStats(args []string) int {
+// Run executes the `stats` subcommand: it parses flags, opens the store,
+// aggregates the history, and prints the report. It returns a process
+// exit code.
+func Run(args []string) int {
 	fs := flag.NewFlagSet("stats", flag.ContinueOnError)
 
 	dbPath := fs.String("db", "", "path to SQLite store (default: $XDG_STATE_HOME/mcp-fetch/fetches.db)")
@@ -78,7 +84,7 @@ func runStats(args []string) int {
 		return 2
 	}
 
-	resolved, err := resolveDBPath(*dbPath)
+	resolved, err := ResolveDBPath(*dbPath)
 	if err != nil {
 		return bail("%s", err.Error())
 	}
@@ -88,7 +94,7 @@ func runStats(args []string) int {
 		return bail("no fetch database at %s", resolved)
 	}
 
-	since, err := parseSinceFlag(*sinceStr)
+	since, err := ParseSince(*sinceStr)
 	if err != nil {
 		return bailCode(2, "invalid --since: %v", err)
 	}
@@ -96,40 +102,40 @@ func runStats(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	store, err := OpenStore(ctx, resolved)
+	st, err := store.Open(ctx, resolved)
 	if err != nil {
 		return bail("opening store: %v", err)
 	}
 
-	defer func() { _ = store.Close() }()
+	defer func() { _ = st.Close() }()
 
 	var sinceTime time.Time
 	if since > 0 {
 		sinceTime = time.Now().Add(-since)
 	}
 
-	stats, err := store.Summary(ctx, sinceTime)
+	summaryStats, err := st.Summary(ctx, sinceTime)
 	if err != nil {
 		return bail("querying summary: %v", err)
 	}
 
-	hosts, err := store.TopHosts(ctx, sinceTime, *top)
+	hosts, err := st.TopHosts(ctx, sinceTime, *top)
 	if err != nil {
 		return bail("querying top hosts: %v", err)
 	}
 
-	var recent []FetchRecord
+	var recent []store.FetchRecord
 	if *last > 0 {
-		recent, err = store.RecentFetches(ctx, *last)
+		recent, err = st.RecentFetches(ctx, *last)
 		if err != nil {
 			return bail("querying recent fetches: %v", err)
 		}
 	}
 
-	summary := buildSummary(resolved, stats, hosts, recent, *top)
+	summary := Build(resolved, summaryStats, hosts, recent, *top)
 	summary.Window.Since = sinceTime
 
-	formatSummary(os.Stdout, summary)
+	Format(os.Stdout, summary)
 
 	return 0
 }
@@ -146,9 +152,9 @@ func bailCode(code int, format string, a ...any) int {
 	return code
 }
 
-// resolveDBPath honors an explicit --db, then $XDG_STATE_HOME, then
+// ResolveDBPath honors an explicit --db, then $XDG_STATE_HOME, then
 // $HOME/.local/state. Returns an error when none of those resolve.
-func resolveDBPath(explicit string) (string, error) {
+func ResolveDBPath(explicit string) (string, error) {
 	if explicit != "" {
 		return explicit, nil
 	}
@@ -166,13 +172,13 @@ func resolveDBPath(explicit string) (string, error) {
 	)
 }
 
-// buildSummary turns the raw store output into the display-ready
-// [Summary]. No IO, so tests can hit it with fixtures.
-func buildSummary(
+// Build turns the raw store output into the display-ready [Summary]. No
+// IO, so tests can hit it with fixtures.
+func Build(
 	dbPath string,
-	stats SummaryStats,
-	hosts []HostCount,
-	recent []FetchRecord,
+	stats store.SummaryStats,
+	hosts []store.HostCount,
+	recent []store.FetchRecord,
 	topLimit int,
 ) Summary {
 	out := Summary{
@@ -247,10 +253,10 @@ func percent(part, total int) float64 {
 	return float64(part) * 100 / float64(total)
 }
 
-// formatSummary writes a human-readable report to w. ASCII only,
-// tab-aligned columns. Not intended as machine-readable output;
-// tests assert on [Summary] directly.
-func formatSummary(w io.Writer, s Summary) {
+// Format writes a human-readable report to w. ASCII only, tab-aligned
+// columns. Not intended as machine-readable output; tests assert on
+// [Summary] directly.
+func Format(w io.Writer, s Summary) {
 	_, _ = fmt.Fprintf(w, "DB:      %s\n", s.DBPath)
 	_, _ = fmt.Fprintf(w, "Window:  %s\n\n", formatWindow(s.Window, s.Total))
 
@@ -324,4 +330,46 @@ func formatWindow(w Window, total int) string {
 		prefix, total,
 		w.Earliest.Format(time.DateTime),
 		w.Latest.Format(time.DateTime))
+}
+
+// ParseSince parses the `--since` flag. [time.ParseDuration] does not
+// accept a `d` unit, so values matching exactly `^[0-9]+d$` are rewritten
+// to `<N>*24h` before parsing. Anything else - `1.5d`, `7d12h`, `7D` - is
+// passed straight to [time.ParseDuration] and surfaces its native parse
+// error.
+func ParseSince(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+
+	if isIntegerDays(s) {
+		days, err := time.ParseDuration(s[:len(s)-1] + "h")
+		if err != nil {
+			return 0, fmt.Errorf("parsing days: %w", err)
+		}
+
+		return days * 24, nil
+	}
+
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("parsing duration: %w", err)
+	}
+
+	return d, nil
+}
+
+func isIntegerDays(s string) bool {
+	if len(s) < 2 || s[len(s)-1] != 'd' {
+		return false
+	}
+
+	for _, r := range s[:len(s)-1] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+
+	return true
 }

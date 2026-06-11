@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -48,8 +47,8 @@ const (
 	pruneAgeDays = 90
 )
 
-// Outcome values stored in the `outcome` column. Each branch of
-// [*fetchHandler.handle] sets exactly one of these.
+// Outcome values stored in the `outcome` column. The fetch handler sets
+// exactly one of these per attempt.
 const (
 	OutcomeOK            = "ok"
 	OutcomeDenied        = "denied"
@@ -64,7 +63,7 @@ const (
 // FetchRecord is the metadata persisted for one fetch attempt.
 //
 // `RawMode`, `CacheHit`, and `Truncated` are stored as 0/1 because
-// modernc.org/sqlite has no automatic bool conversion; [boolToInt]
+// modernc.org/sqlite has no automatic bool conversion; [BoolToInt]
 // keeps the conversion explicit.
 //
 // Cache-hit rows have `StatusCode=0`, `ContentType=""`, and
@@ -94,12 +93,12 @@ type Store struct {
 	db *sql.DB
 }
 
-// OpenStore opens (or creates) the SQLite database at path and applies
-// the schema. Concurrency settings are passed in the DSN so every pooled
+// Open opens (or creates) the SQLite database at path and applies the
+// schema. Concurrency settings are passed in the DSN so every pooled
 // connection inherits them (busy_timeout is per-connection). WAL and
 // synchronous=NORMAL are the standard pairing for concurrent readers and
 // a single writer at a time. The context bounds ping and schema setup.
-func OpenStore(ctx context.Context, path string) (*Store, error) {
+func Open(ctx context.Context, path string) (*Store, error) {
 	err := os.MkdirAll(filepath.Dir(path), 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("creating store directory: %w", err)
@@ -189,7 +188,7 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 // probability per invocation. The probabilistic gate spreads cleanup
 // writes across invocations so concurrent processes don't all contend
 // on the write lock. Returns ran=true when the gate passed and
-// [*Store.pruneStale] was invoked, plus any error from the prune.
+// [*Store.Prune] was invoked, plus any error from the prune.
 //
 // The MCP server is one process per Claude session, so this only
 // fires on startup. Multi-day sessions accumulate stale rows until
@@ -200,13 +199,13 @@ func (s *Store) MaybePruneStale(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	return true, s.pruneStale(ctx)
+	return true, s.Prune(ctx)
 }
 
-// pruneStale deletes `fetches` rows older than [pruneAgeDays] days.
-// Split out from [*Store.MaybePruneStale] so tests can exercise the
-// cleanup path directly without fighting the probabilistic gate.
-func (s *Store) pruneStale(ctx context.Context) error {
+// Prune deletes `fetches` rows older than [pruneAgeDays] days. It is the
+// unconditional cleanup; [*Store.MaybePruneStale] gates it behind a
+// probabilistic check for the hot startup path.
+func (s *Store) Prune(ctx context.Context) error {
 	cutoff := fmt.Sprintf("-%d days", pruneAgeDays)
 
 	_, err := s.db.ExecContext(ctx,
@@ -480,54 +479,12 @@ func (s *Store) RecentFetches(ctx context.Context, limit int) ([]FetchRecord, er
 	return out, nil
 }
 
-// boolToInt maps a Go bool to the 0/1 representation used in the
+// BoolToInt maps a Go bool to the 0/1 representation used in the
 // schema. modernc.org/sqlite does not auto-convert booleans.
-func boolToInt(b bool) int {
+func BoolToInt(b bool) int {
 	if b {
 		return 1
 	}
 
 	return 0
-}
-
-// parseSinceFlag parses the `--since` flag for the stats subcommand.
-// `time.ParseDuration` does not accept a `d` unit, so values matching
-// exactly `^[0-9]+d$` are rewritten to `<N>*24h` before parsing.
-// Anything else - `1.5d`, `7d12h`, `7D` - is passed straight to
-// [time.ParseDuration] and surfaces its native parse error.
-func parseSinceFlag(s string) (time.Duration, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, nil
-	}
-
-	if isIntegerDays(s) {
-		days, err := time.ParseDuration(s[:len(s)-1] + "h")
-		if err != nil {
-			return 0, fmt.Errorf("parsing days: %w", err)
-		}
-
-		return days * 24, nil
-	}
-
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 0, fmt.Errorf("parsing duration: %w", err)
-	}
-
-	return d, nil
-}
-
-func isIntegerDays(s string) bool {
-	if len(s) < 2 || s[len(s)-1] != 'd' {
-		return false
-	}
-
-	for _, r := range s[:len(s)-1] {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-
-	return true
 }

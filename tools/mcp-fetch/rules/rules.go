@@ -1,4 +1,4 @@
-package main
+package rules
 
 import (
 	"encoding/json"
@@ -60,10 +60,10 @@ type compiledDeny struct {
 	except []compiledMatch
 }
 
-// LoadRules reads a JSON rules file and compiles all regex patterns.
+// Load reads a JSON rules file and compiles all regex patterns.
 // Returns empty [Rules] when path is empty (no filtering).
 // Fails fast on invalid regex.
-func LoadRules(path string) (*Rules, error) {
+func Load(path string) (*Rules, error) {
 	if path == "" {
 		return &Rules{}, nil
 	}
@@ -80,9 +80,17 @@ func LoadRules(path string) (*Rules, error) {
 		return nil, fmt.Errorf("parsing rules file: %w", err)
 	}
 
-	rules := &Rules{reason: f.Reason}
+	return Compile(f.Reason, f.Deny, f.Allow)
+}
 
-	for i, d := range f.Deny {
+// Compile builds [Rules] from deny and allow specs, compiling every
+// regex pattern. reason is the message returned when a non-empty allow
+// list rejects a URL ("" falls back to a default). Fails fast on
+// invalid regex. [Load] uses Compile after decoding the JSON file.
+func Compile(reason string, deny []DenyRule, allow []AllowRule) (*Rules, error) {
+	rules := &Rules{reason: reason}
+
+	for i, d := range deny {
 		cm, err := compileURLMatch(d.URLMatch)
 		if err != nil {
 			return nil, fmt.Errorf("deny rule %d: %w", i, err)
@@ -102,7 +110,7 @@ func LoadRules(path string) (*Rules, error) {
 		rules.deny = append(rules.deny, cd)
 	}
 
-	for i, a := range f.Allow {
+	for i, a := range allow {
 		cm, err := compileURLMatch(a.URLMatch)
 		if err != nil {
 			return nil, fmt.Errorf("allow rule %d: %w", i, err)
