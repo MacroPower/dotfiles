@@ -17,6 +17,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubeconfig"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/socket"
 )
 
 func resultText(t *testing.T, r *mcp.CallToolResult) string {
@@ -29,7 +33,7 @@ func resultText(t *testing.T, r *mcp.CallToolResult) string {
 	return tc.Text
 }
 
-func writeTestKubeconfig(t *testing.T, cfg kubeConfig) string {
+func writeTestKubeconfig(t *testing.T, cfg kubeconfig.Config) string {
 	t.Helper()
 
 	data, err := yaml.Marshal(&cfg)
@@ -41,25 +45,25 @@ func writeTestKubeconfig(t *testing.T, cfg kubeConfig) string {
 	return path
 }
 
-func testKubeconfig() kubeConfig {
-	return kubeConfig{
+func testKubeconfig() kubeconfig.Config {
+	return kubeconfig.Config{
 		APIVersion:     "v1",
 		Kind:           "Config",
 		CurrentContext: "prod",
-		Clusters: []namedCluster{
+		Clusters: []kubeconfig.NamedCluster{
 			{Name: "prod-cluster", Cluster: map[string]any{"server": "https://prod.example.com"}},
 			{Name: "staging-cluster", Cluster: map[string]any{"server": "https://staging.example.com"}},
 			{Name: "dev-cluster", Cluster: map[string]any{"server": "https://dev.example.com"}},
 		},
-		Contexts: []namedContext{
-			{Name: "prod", Context: contextDetails{Cluster: "prod-cluster", User: "admin"}},
+		Contexts: []kubeconfig.NamedContext{
+			{Name: "prod", Context: kubeconfig.Context{Cluster: "prod-cluster", User: "admin"}},
 			{
 				Name:    "staging",
-				Context: contextDetails{Cluster: "staging-cluster", User: "dev-user", Namespace: "default"},
+				Context: kubeconfig.Context{Cluster: "staging-cluster", User: "dev-user", Namespace: "default"},
 			},
-			{Name: "dev", Context: contextDetails{Cluster: "dev-cluster", User: "dev-user"}},
+			{Name: "dev", Context: kubeconfig.Context{Cluster: "dev-cluster", User: "dev-user"}},
 		},
-		Users: []namedUser{
+		Users: []kubeconfig.NamedUser{
 			{Name: "admin", User: map[string]any{"token": "admin-token"}},
 			{Name: "dev-user", User: map[string]any{"token": "dev-token"}},
 		},
@@ -324,12 +328,12 @@ func TestList(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.
 func TestListMergesLocalContexts(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	neutralizeWrapperEnv(t)
 
-	local := writeTestKubeconfig(t, kubeConfig{
+	local := writeTestKubeconfig(t, kubeconfig.Config{
 		APIVersion:     "v1",
 		Kind:           "Config",
 		CurrentContext: "kind-dev",
-		Contexts: []namedContext{
-			{Name: "kind-dev", Context: contextDetails{Cluster: "kind", User: "kind"}},
+		Contexts: []kubeconfig.NamedContext{
+			{Name: "kind-dev", Context: kubeconfig.Context{Cluster: "kind", User: "kind"}},
 		},
 	})
 	t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
@@ -384,13 +388,13 @@ func runListWithHost(t *testing.T, hostOut string) string {
 // with an external one drops the external line (local/guest wins).
 func TestListMergesGuestContexts(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.Setenv
 	t.Run("guest-only contexts enumerated as local", func(t *testing.T) {
-		local := writeTestKubeconfig(t, kubeConfig{
+		local := writeTestKubeconfig(t, kubeconfig.Config{
 			APIVersion: "v1", Kind: "Config", CurrentContext: "tald",
 		})
-		guest := writeTestKubeconfig(t, kubeConfig{
+		guest := writeTestKubeconfig(t, kubeconfig.Config{
 			APIVersion: "v1", Kind: "Config",
-			Contexts: []namedContext{
-				{Name: "tald", Context: contextDetails{Cluster: "tald", User: "tald"}},
+			Contexts: []kubeconfig.NamedContext{
+				{Name: "tald", Context: kubeconfig.Context{Cluster: "tald", User: "tald"}},
 			},
 		})
 		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
@@ -403,17 +407,17 @@ func TestListMergesGuestContexts(t *testing.T) { //nolint:tparallel,paralleltest
 	})
 
 	t.Run("name in both local and guest is listed once", func(t *testing.T) {
-		local := writeTestKubeconfig(t, kubeConfig{
+		local := writeTestKubeconfig(t, kubeconfig.Config{
 			APIVersion: "v1", Kind: "Config", CurrentContext: "shared",
-			Contexts: []namedContext{
-				{Name: "shared", Context: contextDetails{Cluster: "shared", User: "shared"}},
+			Contexts: []kubeconfig.NamedContext{
+				{Name: "shared", Context: kubeconfig.Context{Cluster: "shared", User: "shared"}},
 			},
 		})
-		guest := writeTestKubeconfig(t, kubeConfig{
+		guest := writeTestKubeconfig(t, kubeconfig.Config{
 			APIVersion: "v1", Kind: "Config",
-			Contexts: []namedContext{
-				{Name: "shared", Context: contextDetails{Cluster: "shared", User: "shared"}},
-				{Name: "tald", Context: contextDetails{Cluster: "tald", User: "tald"}},
+			Contexts: []kubeconfig.NamedContext{
+				{Name: "shared", Context: kubeconfig.Context{Cluster: "shared", User: "shared"}},
+				{Name: "tald", Context: kubeconfig.Context{Cluster: "tald", User: "tald"}},
 			},
 		})
 		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
@@ -426,10 +430,10 @@ func TestListMergesGuestContexts(t *testing.T) { //nolint:tparallel,paralleltest
 	})
 
 	t.Run("missing guest file is tolerated", func(t *testing.T) {
-		local := writeTestKubeconfig(t, kubeConfig{
+		local := writeTestKubeconfig(t, kubeconfig.Config{
 			APIVersion: "v1", Kind: "Config", CurrentContext: "kind-dev",
-			Contexts: []namedContext{
-				{Name: "kind-dev", Context: contextDetails{Cluster: "kind", User: "kind"}},
+			Contexts: []kubeconfig.NamedContext{
+				{Name: "kind-dev", Context: kubeconfig.Context{Cluster: "kind", User: "kind"}},
 			},
 		})
 		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
@@ -442,13 +446,13 @@ func TestListMergesGuestContexts(t *testing.T) { //nolint:tparallel,paralleltest
 	})
 
 	t.Run("guest name shadows colliding external", func(t *testing.T) {
-		local := writeTestKubeconfig(t, kubeConfig{
+		local := writeTestKubeconfig(t, kubeconfig.Config{
 			APIVersion: "v1", Kind: "Config", CurrentContext: "shared",
 		})
-		guest := writeTestKubeconfig(t, kubeConfig{
+		guest := writeTestKubeconfig(t, kubeconfig.Config{
 			APIVersion: "v1", Kind: "Config",
-			Contexts: []namedContext{
-				{Name: "shared", Context: contextDetails{Cluster: "shared", User: "shared"}},
+			Contexts: []kubeconfig.NamedContext{
+				{Name: "shared", Context: kubeconfig.Context{Cluster: "shared", User: "shared"}},
 			},
 		})
 		t.Setenv("CLAUDE_KUBECTX_LOCAL", local)
@@ -588,7 +592,7 @@ func TestSelectCtxValidation(t *testing.T) {
 			h := &handler{
 				envLookup: constLookup(""),
 				runHost:   fake.run,
-				sa:        saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+				sa:        serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 			}
 
 			result, _, err := h.selectCtx(t.Context(), nil, tc.input)
@@ -624,7 +628,7 @@ func TestSelectPublishesSidecarSymlink(t *testing.T) { //nolint:paralleltest // 
 		outputPath:     "/canonical/kubeconfig.yaml",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -674,7 +678,7 @@ func TestSelectReplacesStaleSidecarSymlink(t *testing.T) { //nolint:paralleltest
 		outputPath:     "/fresh/kubeconfig.yaml",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 
 	_, _, err = h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -834,7 +838,7 @@ func TestSelectShellsHostSelect(t *testing.T) { //nolint:paralleltest // uses t.
 		outputPath:     "/tmp/k.yaml",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -863,7 +867,7 @@ func newSelectArgsHandler(hosts []string) *handler {
 		outputPath:      "/tmp/k.yaml",
 		allowedAPIHosts: hosts,
 		envLookup:       constLookup(""),
-		sa:              saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:              serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 }
 
@@ -924,7 +928,7 @@ func TestSelectShellError(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 		outputPath:     "/tmp/k.yaml",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -945,7 +949,7 @@ func TestSelectShellInvalidJSON(t *testing.T) { //nolint:paralleltest // uses t.
 		outputPath:     "/tmp/k.yaml",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -976,7 +980,7 @@ func TestSelectCtxPopulatesCurrentSA(t *testing.T) { //nolint:paralleltest // us
 		outputPath:     "/canonical/kubeconfig.yaml",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 7200},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 7200},
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
@@ -1016,7 +1020,7 @@ func TestSelectCtxRestoresCurrentSAOnFailure(t *testing.T) { //nolint:parallelte
 		outputPath:     "/tmp/k.yaml",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 	h.currentSA.Store(prev)
 
@@ -1051,7 +1055,7 @@ func TestSelectCtxRestoresCurrentSAOnInvalidJSON(t *testing.T) { //nolint:parall
 		outputPath:     "/tmp/k.yaml",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 	h.currentSA.Store(prev)
 
@@ -1095,14 +1099,14 @@ func TestSelectExternalWritesLocalCurrentContext(t *testing.T) { //nolint:parall
 		outputPath:     scoped,
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "prod"})
 	require.NoError(t, err)
 	require.False(t, result.IsError, resultText(t, result))
 
-	cfg, err := loadKubeconfig(local)
+	cfg, err := kubeconfig.Load(local)
 	require.NoError(t, err)
 	assert.Equal(t, "prod", cfg.CurrentContext,
 		"external select must record current-context in the local file")
@@ -1122,11 +1126,11 @@ func TestSelectLocalContext(t *testing.T) { //nolint:paralleltest // uses t.Sete
 	tmp := neutralizeWrapperEnv(t)
 	local := filepath.Join(tmp, "local.yaml")
 
-	data, err := yaml.Marshal(&kubeConfig{
+	data, err := yaml.Marshal(&kubeconfig.Config{
 		APIVersion: "v1",
 		Kind:       "Config",
-		Contexts: []namedContext{
-			{Name: "kind-dev", Context: contextDetails{Cluster: "kind", User: "kind"}},
+		Contexts: []kubeconfig.NamedContext{
+			{Name: "kind-dev", Context: kubeconfig.Context{Cluster: "kind", User: "kind"}},
 		},
 	})
 	require.NoError(t, err)
@@ -1139,7 +1143,7 @@ func TestSelectLocalContext(t *testing.T) { //nolint:paralleltest // uses t.Sete
 		kubeconfigPath: "/admin/kube",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 	h.currentSA.Store(&currentSA{Context: "prod", SAName: "claude-sa-prev", Expiration: 3600})
 
@@ -1153,7 +1157,7 @@ func TestSelectLocalContext(t *testing.T) { //nolint:paralleltest // uses t.Sete
 	assert.Empty(t, fake.calls, "local select must not shell out to any host subcommand")
 	assert.Nil(t, h.currentSA.Load(), "local select must clear currentSA")
 
-	got, err := loadKubeconfig(local)
+	got, err := kubeconfig.Load(local)
 	require.NoError(t, err)
 	assert.Equal(t, "kind-dev", got.CurrentContext)
 
@@ -1178,11 +1182,11 @@ func TestSelectLocalContextWriteFailureKeepsPriorState(t *testing.T) { //nolint:
 	dir := t.TempDir()
 	local := filepath.Join(dir, "local.yaml")
 
-	data, err := yaml.Marshal(&kubeConfig{
+	data, err := yaml.Marshal(&kubeconfig.Config{
 		APIVersion: "v1",
 		Kind:       "Config",
-		Contexts: []namedContext{
-			{Name: "kind-dev", Context: contextDetails{Cluster: "kind", User: "kind"}},
+		Contexts: []kubeconfig.NamedContext{
+			{Name: "kind-dev", Context: kubeconfig.Context{Cluster: "kind", User: "kind"}},
 		},
 	})
 	require.NoError(t, err)
@@ -1201,7 +1205,7 @@ func TestSelectLocalContextWriteFailureKeepsPriorState(t *testing.T) { //nolint:
 		kubeconfigPath: "/admin/kube",
 		envLookup:      constLookup(""),
 		runHost:        (&fakeRunHost{}).run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 	h.currentSA.Store(prevSA)
 
@@ -1234,10 +1238,10 @@ func TestSelectGuestContextRoutesLocal(t *testing.T) { //nolint:paralleltest // 
 	local := filepath.Join(tmp, "local.yaml")
 	require.NoError(t, os.WriteFile(local, []byte("apiVersion: v1\nkind: Config\n"), 0o600))
 
-	guest := writeTestKubeconfig(t, kubeConfig{
+	guest := writeTestKubeconfig(t, kubeconfig.Config{
 		APIVersion: "v1", Kind: "Config",
-		Contexts: []namedContext{
-			{Name: "tald", Context: contextDetails{Cluster: "tald", User: "tald"}},
+		Contexts: []kubeconfig.NamedContext{
+			{Name: "tald", Context: kubeconfig.Context{Cluster: "tald", User: "tald"}},
 		},
 	})
 
@@ -1250,7 +1254,7 @@ func TestSelectGuestContextRoutesLocal(t *testing.T) { //nolint:paralleltest // 
 		kubeconfigPath: "/admin/kube",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 	h.currentSA.Store(&currentSA{Context: "prod", SAName: "claude-sa-prev", Expiration: 3600})
 
@@ -1261,7 +1265,7 @@ func TestSelectGuestContextRoutesLocal(t *testing.T) { //nolint:paralleltest // 
 	assert.Empty(t, fake.calls, "guest-local select must not shell out to any host subcommand")
 	assert.Nil(t, h.currentSA.Load(), "guest-local select must clear currentSA")
 
-	got, err := loadKubeconfig(local)
+	got, err := kubeconfig.Load(local)
 	require.NoError(t, err)
 	assert.Equal(t, "tald", got.CurrentContext, "selection must be recorded in local.yaml")
 	assert.Empty(t, got.Contexts, "guest context must not be copied into local.yaml")
@@ -1277,10 +1281,10 @@ func TestSelectGuestCollisionRoutesLocal(t *testing.T) { //nolint:paralleltest /
 	local := filepath.Join(tmp, "local.yaml")
 	require.NoError(t, os.WriteFile(local, []byte("apiVersion: v1\nkind: Config\n"), 0o600))
 
-	guest := writeTestKubeconfig(t, kubeConfig{
+	guest := writeTestKubeconfig(t, kubeconfig.Config{
 		APIVersion: "v1", Kind: "Config",
-		Contexts: []namedContext{
-			{Name: "shared", Context: contextDetails{Cluster: "shared", User: "shared"}},
+		Contexts: []kubeconfig.NamedContext{
+			{Name: "shared", Context: kubeconfig.Context{Cluster: "shared", User: "shared"}},
 		},
 	})
 
@@ -1293,7 +1297,7 @@ func TestSelectGuestCollisionRoutesLocal(t *testing.T) { //nolint:paralleltest /
 		kubeconfigPath: "/admin/kube",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "shared"})
@@ -1302,7 +1306,7 @@ func TestSelectGuestCollisionRoutesLocal(t *testing.T) { //nolint:paralleltest /
 
 	assert.Empty(t, fake.calls, "a colliding name must route local, never mint an SA")
 
-	got, err := loadKubeconfig(local)
+	got, err := kubeconfig.Load(local)
 	require.NoError(t, err)
 	assert.Equal(t, "shared", got.CurrentContext)
 }
@@ -1318,7 +1322,7 @@ func TestSetLocalCurrentContextRecreatesReapedFile(t *testing.T) { //nolint:para
 
 	require.NoError(t, setLocalCurrentContext("admin@local"))
 
-	cfg, err := loadKubeconfig(reaped)
+	cfg, err := kubeconfig.Load(reaped)
 	require.NoError(t, err)
 	assert.Equal(t, "admin@local", cfg.CurrentContext)
 	assert.Equal(t, "v1", cfg.APIVersion)
@@ -1335,10 +1339,10 @@ func TestSelectGuestContextRecreatesReapedLocal(t *testing.T) { //nolint:paralle
 	reaped := filepath.Join(t.TempDir(), "claude-kubectx.123", "local.yaml")
 	t.Setenv("CLAUDE_KUBECTX_LOCAL", reaped)
 
-	guest := writeTestKubeconfig(t, kubeConfig{
+	guest := writeTestKubeconfig(t, kubeconfig.Config{
 		APIVersion: "v1", Kind: "Config",
-		Contexts: []namedContext{
-			{Name: "admin@local", Context: contextDetails{Cluster: "local", User: "admin"}},
+		Contexts: []kubeconfig.NamedContext{
+			{Name: "admin@local", Context: kubeconfig.Context{Cluster: "local", User: "admin"}},
 		},
 	})
 	t.Setenv("CLAUDE_KUBECTX_GUEST_CONFIG", guest)
@@ -1349,7 +1353,7 @@ func TestSelectGuestContextRecreatesReapedLocal(t *testing.T) { //nolint:paralle
 		kubeconfigPath: "/admin/kube",
 		envLookup:      constLookup(""),
 		runHost:        fake.run,
-		sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+		sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 	}
 
 	result, _, err := h.selectCtx(t.Context(), nil, SelectInput{Context: "admin@local"})
@@ -1358,7 +1362,7 @@ func TestSelectGuestContextRecreatesReapedLocal(t *testing.T) { //nolint:paralle
 
 	assert.Empty(t, fake.calls, "guest-local select must not shell out")
 
-	cfg, err := loadKubeconfig(reaped)
+	cfg, err := kubeconfig.Load(reaped)
 	require.NoError(t, err)
 	assert.Equal(t, "admin@local", cfg.CurrentContext)
 }
@@ -1404,13 +1408,13 @@ func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses
 		Expiration: 3600,
 	})
 
-	listener, listenCleanup, err := h.listenSocket(t.Context(), socketPath, "ordering-inst")
+	listener, listenCleanup, err := socket.Listen(t.Context(), socketPath, "ordering-inst")
 	require.NoError(t, err)
 
 	t.Cleanup(listenCleanup)
 
-	_, err = os.Stat(sidecarPath(socketPath))
-	require.NoError(t, err, "sidecar must exist after listenSocket with a non-empty instance id")
+	_, err = os.Stat(socket.SidecarPath(socketPath))
+	require.NoError(t, err, "sidecar must exist after socket.Listen with a non-empty instance id")
 
 	h.mu.Lock()
 	h.socketListener = listener
@@ -1419,7 +1423,7 @@ func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
-	go h.serveSocket(ctx, listener, &h.socketWG)
+	go socket.Serve(ctx, listener, &h.socketWG, h.handleSocketConn)
 
 	connDone := make(chan struct{})
 
@@ -1470,7 +1474,7 @@ func TestSessionDirCleanupOrdering(t *testing.T) { //nolint:paralleltest // uses
 	_, err = os.Stat(socketPath)
 	assert.True(t, os.IsNotExist(err), "socket file must be unlinked by cleanup")
 
-	_, err = os.Stat(sidecarPath(socketPath))
+	_, err = os.Stat(socket.SidecarPath(socketPath))
 	assert.True(t, os.IsNotExist(err), "sidecar file must be unlinked by cleanup")
 
 	_, err = os.Stat(kubeconfigPath)

@@ -31,6 +31,20 @@ switch in `cli.go`:
   keeps the structural recursion guard (see
   [Recursion guard](#recursion-guard-and-the-env-chain)) honest.
 
+The `main` package holds only this wiring: dispatch, the `serve`
+handler and MCP tools, the `host *` flag parsing, and the
+wrapper-env plumbing. The domain logic underneath lives in
+independent, importable packages: `kubeconfig` (minimal config
+model), `kube` (narrow cluster-client interface + client-go
+implementation, with a recording fake in `kubetest`),
+`serviceaccount` (provisioning and the label taxonomy), `sweep`
+(orphan classification and deletion), `execplugin` (the kubectl
+exec credential protocol, both block and UDS client), `socket`
+(slot pool, sidecars, accept loop, liveness discovery),
+`identity` (instance and host ids), and `statedir` / `statefile`
+(XDG paths and atomic state-file writes). See the package docs in
+each directory for the per-package invariants.
+
 End-to-end credential flow:
 
 ```
@@ -447,8 +461,8 @@ runs in this order:
 SIGKILL leaks at most one SA + one kubeconfig file + one socket
 inode at the killed serve's slot. The leaked socket inode is
 reclaimed the next time a `serve` picks that slot during
-`acquireServeSocket`'s walk: `listenSocket`'s `clearStaleSocket`
-step dial-tests the path; ECONNREFUSED means the file is leftover
+`socket.Acquire`'s walk: `socket.Listen`'s stale-clearance step
+dial-tests the path; ECONNREFUSED means the file is leftover
 state and is unlinked before the bind, while a successful dial
 means a live peer holds the slot and the loop advances to the
 next slot.
@@ -564,7 +578,7 @@ wrap with `workmux host-exec`. `hostExecArgs` is a method on
 entry points nor `exec-plugin` construct a `*handler`, so they
 have no path to `runHost` and no way to invoke the wrapper.
 `host token` reads the cluster directly via
-`KubeClient.CreateTokenRequest`; `exec-plugin` is a pure UDS
+`kube.Client.CreateTokenRequest`; `exec-plugin` is a pure UDS
 client and does not even import the K8s client. The mechanism is
 syntactic. There is no path through the call graph; it is not a
 runtime env-var check.
@@ -695,8 +709,8 @@ entries as literal paths, not glob patterns; enumerating one
 literal entry per slot is the only way to allow a per-`serve`
 socket whose filename varies between processes.
 
-`acquireServeSocket` walks slot indices upward and re-uses
-`listenSocket`'s existing stale-vs-live dial probe to skip slots
+`socket.Acquire` walks slot indices upward and re-uses
+`socket.Listen`'s existing stale-vs-live dial probe to skip slots
 held by a live peer. Crash-leftover inodes are silently unlinked
 and reused. Concurrent `serve` instances on the same host occupy
 distinct slots; on exhaustion, startup fails with a clear error

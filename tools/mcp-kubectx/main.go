@@ -12,6 +12,10 @@ import (
 	"syscall"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/identity"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/socket"
 )
 
 const version = "0.1.0"
@@ -73,7 +77,7 @@ func runServe(ctx context.Context, args []string) error {
 		"name of the Role or ClusterRole to bind the ServiceAccount to (required)",
 	)
 	saRoleKind := fs.String(
-		"sa-role-kind", roleKindClusterRole,
+		"sa-role-kind", serviceaccount.RoleKindClusterRole,
 		"kind of role to bind: Role or ClusterRole",
 	)
 	saClusterScoped := fs.Bool(
@@ -124,20 +128,20 @@ func runServe(ctx context.Context, args []string) error {
 
 	slog.SetDefault(logger)
 
-	sa := saConfig{
-		role:          *saRole,
-		roleKind:      *saRoleKind,
-		clusterScoped: *saClusterScoped,
-		namespace:     *saNamespace,
-		expiration:    *saExpiration,
+	sa := serviceaccount.Config{
+		Role:          *saRole,
+		RoleKind:      *saRoleKind,
+		ClusterScoped: *saClusterScoped,
+		Namespace:     *saNamespace,
+		Expiration:    *saExpiration,
 	}
 
-	err = sa.validate()
+	err = sa.Validate()
 	if err != nil {
 		return fmt.Errorf("invalid service account config: %w", err)
 	}
 
-	instanceID, err := randomInstanceID()
+	instanceID, err := identity.New()
 	if err != nil {
 		return fmt.Errorf("generate instance id: %w", err)
 	}
@@ -146,12 +150,12 @@ func runServe(ctx context.Context, args []string) error {
 	// is shared with the guest through the Lima bind mount, but
 	// each env's sweep can only vouch for its own env's live
 	// serves, so the ids must split along the same line. See
-	// [loadOrCreateHostID].
+	// [identity.LoadOrCreateHost].
 	guest := os.Getenv(guestEnvVar) == "1"
 
-	hostID, err := loadOrCreateHostID(guest)
+	hostID, err := identity.LoadOrCreateHost(guest)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // LoadOrCreateHost already wraps identity.ErrLoadHost
 	}
 
 	h := &handler{
@@ -169,15 +173,15 @@ func runServe(ctx context.Context, args []string) error {
 
 	h.runHost = h.defaultRunHost
 
-	// acquireServeSocket walks slot 0..socketSlots-1 and binds the
+	// socket.Acquire walks slot 0..socketSlots-1 and binds the
 	// first free one. Its cleanup is dropped: sessionDir's cleanup
 	// already calls socketShutdown (close listener) + bestEffortRemove
 	// of socketPath, so calling both would just be redundant. The
 	// instanceID is written into the per-slot sidecar inside
-	// listenSocket before this returns; that write must happen
-	// before discoverLiveInstances runs below so the serve's own
-	// id appears in the live set.
-	sockPath, listener, _, err := h.acquireServeSocket(ctx, guest, h.socketSlots, h.instanceID)
+	// socket.Listen before this returns; that write must happen
+	// before socket.DiscoverLive runs below so the serve's own id
+	// appears in the live set.
+	sockPath, listener, _, err := socket.Acquire(ctx, guest, h.socketSlots, h.instanceID)
 	if err != nil {
 		return fmt.Errorf("bind serve socket: %w", err)
 	}
@@ -194,11 +198,11 @@ func runServe(ctx context.Context, args []string) error {
 	// the sweep's classifier reads a coherent snapshot. The serve's
 	// own slot is included because the sidecar write above completed
 	// successfully and the listener is already in the LISTEN state.
-	liveSet := h.discoverLiveInstances(ctx, h.socketSlots)
+	liveSet := socket.DiscoverLive(ctx, h.socketSlots, guest)
 
 	h.sweepWG.Go(func() { h.runSweep(ctx, liveSet) })
 
-	h.startServeSocket(ctx, listener, &h.socketWG)
+	socket.Start(ctx, listener, &h.socketWG, h.handleSocketConn)
 
 	srv := mcp.NewServer(
 		&mcp.Implementation{Name: "mcp-kubectx", Version: version},

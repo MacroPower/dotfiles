@@ -1,4 +1,4 @@
-package main
+package kube
 
 import (
 	"context"
@@ -18,15 +18,14 @@ import (
 // references in RoleBindings and ClusterRoleBindings.
 const roleKindClusterRole = "ClusterRole"
 
-// clientGoKubeClient implements [KubeClient] using client-go.
-type clientGoKubeClient struct {
+// Clientset implements [Client] using client-go.
+type Clientset struct {
 	clientset kubernetes.Interface
 }
 
-// NewKubeClientFromKubeconfig returns a [KubeClient] backed by
-// client-go, configured from the host kubeconfig file and targeting
-// the specified context.
-func NewKubeClientFromKubeconfig(kubeconfigPath, kubeContext string) (*clientGoKubeClient, error) {
+// NewClientset returns a [Clientset] backed by client-go, configured
+// from the host kubeconfig file and targeting the specified context.
+func NewClientset(kubeconfigPath, kubeContext string) (*Clientset, error) {
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
 		&clientcmd.ConfigOverrides{CurrentContext: kubeContext},
@@ -40,10 +39,12 @@ func NewKubeClientFromKubeconfig(kubeconfigPath, kubeContext string) (*clientGoK
 		return nil, fmt.Errorf("create clientset: %w", err)
 	}
 
-	return &clientGoKubeClient{clientset: cs}, nil
+	return &Clientset{clientset: cs}, nil
 }
 
-func (c *clientGoKubeClient) CreateServiceAccount(
+// CreateServiceAccount creates a ServiceAccount with the given
+// labels.
+func (c *Clientset) CreateServiceAccount(
 	ctx context.Context,
 	namespace, name string,
 	labels map[string]string,
@@ -61,7 +62,9 @@ func (c *clientGoKubeClient) CreateServiceAccount(
 	return nil
 }
 
-func (c *clientGoKubeClient) DeleteServiceAccount(ctx context.Context, namespace, name string) error {
+// DeleteServiceAccount deletes a ServiceAccount by namespace and
+// name.
+func (c *Clientset) DeleteServiceAccount(ctx context.Context, namespace, name string) error {
 	err := c.clientset.CoreV1().ServiceAccounts(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("delete service account: %w", err)
@@ -70,7 +73,10 @@ func (c *clientGoKubeClient) DeleteServiceAccount(ctx context.Context, namespace
 	return nil
 }
 
-func (c *clientGoKubeClient) CreateRoleBinding(
+// CreateRoleBinding creates a RoleBinding for the named
+// ServiceAccount referencing either a Role or, when clusterRole is
+// true, a ClusterRole.
+func (c *Clientset) CreateRoleBinding(
 	ctx context.Context,
 	namespace, name, roleRef, saName string,
 	clusterRole bool,
@@ -104,7 +110,8 @@ func (c *clientGoKubeClient) CreateRoleBinding(
 	return nil
 }
 
-func (c *clientGoKubeClient) DeleteRoleBinding(ctx context.Context, namespace, name string) error {
+// DeleteRoleBinding deletes a RoleBinding by namespace and name.
+func (c *Clientset) DeleteRoleBinding(ctx context.Context, namespace, name string) error {
 	err := c.clientset.RbacV1().RoleBindings(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("delete role binding: %w", err)
@@ -113,7 +120,9 @@ func (c *clientGoKubeClient) DeleteRoleBinding(ctx context.Context, namespace, n
 	return nil
 }
 
-func (c *clientGoKubeClient) CreateClusterRoleBinding(
+// CreateClusterRoleBinding creates a ClusterRoleBinding for the
+// named ServiceAccount referencing a ClusterRole.
+func (c *Clientset) CreateClusterRoleBinding(
 	ctx context.Context,
 	name, clusterRoleName, namespace, saName string,
 	labels map[string]string,
@@ -141,7 +150,8 @@ func (c *clientGoKubeClient) CreateClusterRoleBinding(
 	return nil
 }
 
-func (c *clientGoKubeClient) DeleteClusterRoleBinding(ctx context.Context, name string) error {
+// DeleteClusterRoleBinding deletes a ClusterRoleBinding by name.
+func (c *Clientset) DeleteClusterRoleBinding(ctx context.Context, name string) error {
 	err := c.clientset.RbacV1().ClusterRoleBindings().Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("delete cluster role binding: %w", err)
@@ -150,7 +160,9 @@ func (c *clientGoKubeClient) DeleteClusterRoleBinding(ctx context.Context, name 
 	return nil
 }
 
-func (c *clientGoKubeClient) ListServiceAccounts(
+// ListServiceAccounts lists ServiceAccounts across all namespaces
+// filtered by labelSelector.
+func (c *Clientset) ListServiceAccounts(
 	ctx context.Context,
 	labelSelector string,
 ) ([]ResourceRef, error) {
@@ -173,7 +185,9 @@ func (c *clientGoKubeClient) ListServiceAccounts(
 	return refs, nil
 }
 
-func (c *clientGoKubeClient) ListRoleBindings(
+// ListRoleBindings lists RoleBindings across all namespaces filtered
+// by labelSelector.
+func (c *Clientset) ListRoleBindings(
 	ctx context.Context,
 	labelSelector string,
 ) ([]ResourceRef, error) {
@@ -196,7 +210,9 @@ func (c *clientGoKubeClient) ListRoleBindings(
 	return refs, nil
 }
 
-func (c *clientGoKubeClient) ListClusterRoleBindings(
+// ListClusterRoleBindings lists ClusterRoleBindings filtered by
+// labelSelector.
+func (c *Clientset) ListClusterRoleBindings(
 	ctx context.Context,
 	labelSelector string,
 ) ([]ResourceRef, error) {
@@ -218,7 +234,9 @@ func (c *clientGoKubeClient) ListClusterRoleBindings(
 	return refs, nil
 }
 
-func (c *clientGoKubeClient) CreateTokenRequest(
+// CreateTokenRequest mints a short-lived ServiceAccount token via
+// the TokenRequest subresource and returns the token with its expiry.
+func (c *Clientset) CreateTokenRequest(
 	ctx context.Context,
 	namespace, saName string,
 	expiration time.Duration,
@@ -236,3 +254,6 @@ func (c *clientGoKubeClient) CreateTokenRequest(
 
 	return tr.Status.Token, tr.Status.ExpirationTimestamp.Time, nil
 }
+
+// Compile-time guard: Clientset must implement Client.
+var _ Client = (*Clientset)(nil)

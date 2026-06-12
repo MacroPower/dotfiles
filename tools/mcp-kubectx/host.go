@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,7 +15,13 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/execplugin"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubeconfig"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/socket"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/statedir"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/statefile"
 )
 
 // allowAPIServerHostFlag is the CLI flag name shared by `serve`
@@ -26,11 +31,11 @@ import (
 const allowAPIServerHostFlag = "allow-apiserver-host"
 
 // Package-level indirections used by the host subcommands. Tests
-// override these to inject a fake [KubeClient] and to capture
+// override these to inject a fake [kube.Client] and to capture
 // stdout without forking the binary.
 var (
-	hostKubeClient = func(kubeconfigPath, context string) (KubeClient, error) {
-		return NewKubeClientFromKubeconfig(kubeconfigPath, context)
+	hostKubeClient = func(kubeconfigPath, context string) (kube.Client, error) {
+		return kube.NewClientset(kubeconfigPath, context)
 	}
 	hostStdout io.Writer = os.Stdout
 )
@@ -45,43 +50,6 @@ func splitLeadingPositional(args []string) (string, []string, error) {
 	}
 
 	return args[0], args[1:], nil
-}
-
-// stateHomeDir returns the parent directory used for per-`serve`
-// kubeconfig files. Honors $XDG_STATE_HOME, falling back to
-// ~/.local/state when unset. Resolved on the host side because
-// the file lives on the host filesystem; a Lima-guest serve sees
-// the same path through the writable bind mount declared in
-// workmux's extra_mounts.
-func stateHomeDir() string {
-	return xdgStateSubdir("mcp-kubectx")
-}
-
-// xdgStateSubdir resolves $XDG_STATE_HOME/<sub> with the standard
-// ~/.local/state fallback. Centralized so [stateHomeDir] and
-// [socketStateDir] cannot drift on the lookup-and-fallback rules.
-func xdgStateSubdir(sub string) string {
-	if state := os.Getenv("XDG_STATE_HOME"); state != "" {
-		return filepath.Join(state, sub)
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".", ".local", "state", sub)
-	}
-
-	return filepath.Join(home, ".local", "state", sub)
-}
-
-// envTag returns "guest" when forGuest is true and "host" otherwise.
-// Used as the per-pid filename discriminator on both the kubeconfig
-// and the per-serve UDS path.
-func envTag(forGuest bool) string {
-	if forGuest {
-		return "guest"
-	}
-
-	return "host"
 }
 
 // resolveHostKubeconfigPath returns the kubeconfig path to read,
@@ -143,16 +111,16 @@ func insideClaudeKubectxDir(path string) bool {
 func runHostList(args []string) error {
 	fs := flag.NewFlagSet("host list", flag.ContinueOnError)
 
-	kubeconfig := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
+	kubeconfigPath := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
 
 	err := fs.Parse(args)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrParseHostListFlags, err)
 	}
 
-	cfg, err := loadKubeconfig(resolveHostKubeconfigPath(*kubeconfig))
+	cfg, err := kubeconfig.Load(resolveHostKubeconfigPath(*kubeconfigPath))
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // Load already wraps kubeconfig.ErrLoad
 	}
 
 	if len(cfg.Contexts) == 0 {
@@ -179,7 +147,7 @@ func runHostList(args []string) error {
 // success. The serve-side handler parses it back to register the
 // release callback and to surface the kubeconfig path to the MCP
 // caller. The binding name is not on the wire -- both sides derive
-// it from [bindingNameForSA].
+// it from [serviceaccount.BindingName].
 type HostSelectResult struct {
 	Path          string `json:"path"`
 	SAName        string `json:"saName"`
@@ -211,45 +179,19 @@ var (
 	ErrTokenMissingSA        = errors.New("--sa is required")
 	ErrTokenMissingNamespace = errors.New("--namespace is required")
 	ErrAPIServerNotAllowed   = errors.New("apiserver host not in allowlist")
+	ErrTokenRequest          = errors.New("token request")
+	ErrBuildKubeClient       = errors.New("build kubernetes client")
 	// ErrMissingHostID guards against running the sweep without a
 	// host-id selector. An empty host id would either match nothing
 	// (if no historical resources lack the label) or be unsafe (if
 	// they do): a footgun, so refuse outright.
 	ErrMissingHostID = errors.New("--host-id is required")
 	// ErrInvalidHostID guards the sweep selector against injection.
-	// [randomHex] produces 16 lowercase hex chars; any other shape
-	// is either a typo or a hand-crafted value with selector
+	// [identity.New] produces 16 lowercase hex chars; any other
+	// shape is either a typo or a hand-crafted value with selector
 	// metacharacters in it, so [runHostSweep] refuses to run.
 	ErrInvalidHostID = errors.New("--host-id must be 16 lowercase hex characters")
 )
-
-// clusterServerHost extracts the hostname from a kubeconfig
-// cluster's `server` URL. yaml.v3 always decodes string-keyed
-// maps into map[string]any, so a single type assertion covers
-// every well-formed kubeconfig.
-func clusterServerHost(cluster any) (string, error) {
-	m, ok := cluster.(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("cluster is not an object: %T", cluster)
-	}
-
-	server, ok := m["server"].(string)
-	if !ok || server == "" {
-		return "", fmt.Errorf("cluster.server missing or not a string")
-	}
-
-	u, err := url.Parse(server)
-	if err != nil {
-		return "", fmt.Errorf("parse cluster.server %q: %w", server, err)
-	}
-
-	host := u.Hostname()
-	if host == "" {
-		return "", fmt.Errorf("cluster.server %q has empty host", server)
-	}
-
-	return host, nil
-}
 
 // stringSliceFlag accumulates repeated occurrences of a string
 // flag into a slice.
@@ -273,10 +215,10 @@ func runHostSelect(ctx context.Context, args []string) error {
 
 	fs := flag.NewFlagSet("host select", flag.ContinueOnError)
 
-	kubeconfig := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
+	kubeconfigPath := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
 	outPath := fs.String(
 		"out-path", "",
-		"destination for the scoped kubeconfig (default: <stateHomeDir>/kubeconfig.<pid>.<env>.yaml)",
+		"destination for the scoped kubeconfig (default: <stateDir>/kubeconfig.<pid>.<env>.yaml)",
 	)
 	pid := fs.Int("pid", 0, "serve process pid (required when --out-path is empty; ignored otherwise)")
 	forGuest := fs.Bool(
@@ -291,7 +233,10 @@ func runHostSelect(ctx context.Context, args []string) error {
 			"because in the guest case the path lives on the guest fs but host select runs host-side.",
 	)
 	saRole := fs.String("sa-role-name", "", "name of the Role or ClusterRole to bind (required)")
-	saRoleKind := fs.String("sa-role-kind", roleKindClusterRole, "kind of role to bind: Role or ClusterRole")
+	saRoleKind := fs.String(
+		"sa-role-kind", serviceaccount.RoleKindClusterRole,
+		"kind of role to bind: Role or ClusterRole",
+	)
 	saClusterScoped := fs.Bool("sa-cluster-scoped", false, "create a ClusterRoleBinding instead of a RoleBinding")
 	saNamespace := fs.String(
 		"sa-namespace", "",
@@ -329,12 +274,12 @@ func runHostSelect(ctx context.Context, args []string) error {
 		}
 
 		resolvedOutPath = filepath.Join(
-			stateHomeDir(),
-			fmt.Sprintf("kubeconfig.%d.%s.yaml", *pid, envTag(*forGuest)),
+			statedir.Dir(),
+			fmt.Sprintf("kubeconfig.%d.%s.yaml", *pid, statedir.EnvTag(*forGuest)),
 		)
 	}
 
-	// Socket path defaults to socketPathForSlot(0, *forGuest)
+	// Socket path defaults to socket.PathForSlot(0, *forGuest)
 	// when --socket-path is empty. The default is only hit when
 	// `host select` runs standalone (effectively tests); in
 	// production, serve always forwards its own resolved slot path
@@ -342,30 +287,30 @@ func runHostSelect(ctx context.Context, args []string) error {
 	// matches what a single fresh serve would pick.
 	resolvedSocketPath := *socketPath
 	if resolvedSocketPath == "" {
-		resolvedSocketPath = socketPathForSlot(0, *forGuest)
+		resolvedSocketPath = socket.PathForSlot(0, *forGuest)
 	}
 
-	sa := saConfig{
-		role:          *saRole,
-		roleKind:      *saRoleKind,
-		clusterScoped: *saClusterScoped,
-		namespace:     *saNamespace,
-		expiration:    *saExpiration,
+	sa := serviceaccount.Config{
+		Role:          *saRole,
+		RoleKind:      *saRoleKind,
+		ClusterScoped: *saClusterScoped,
+		Namespace:     *saNamespace,
+		Expiration:    *saExpiration,
 	}
 
-	err = sa.validate()
+	err = sa.Validate()
 	if err != nil {
 		return fmt.Errorf("invalid service account config: %w", err)
 	}
 
-	hostKubeconfig := resolveHostKubeconfigPath(*kubeconfig)
+	hostKubeconfig := resolveHostKubeconfigPath(*kubeconfigPath)
 
-	cfg, err := loadKubeconfig(hostKubeconfig)
+	cfg, err := kubeconfig.Load(hostKubeconfig)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // Load already wraps kubeconfig.ErrLoad
 	}
 
-	var found *namedContext
+	var found *kubeconfig.NamedContext
 
 	for i := range cfg.Contexts {
 		if cfg.Contexts[i].Name == contextName {
@@ -378,7 +323,7 @@ func runHostSelect(ctx context.Context, args []string) error {
 		return fmt.Errorf("%w: %s", ErrContextNotFound, contextName)
 	}
 
-	var cluster *namedCluster
+	var cluster *kubeconfig.NamedCluster
 
 	for i := range cfg.Clusters {
 		if cfg.Clusters[i].Name == found.Context.Cluster {
@@ -394,9 +339,9 @@ func runHostSelect(ctx context.Context, args []string) error {
 	}
 
 	if len(allowedHosts) > 0 {
-		host, hostErr := clusterServerHost(cluster.Cluster)
+		host, hostErr := kubeconfig.ServerHost(cluster.Cluster)
 		if hostErr != nil {
-			return hostErr
+			return hostErr //nolint:wrapcheck // ServerHost errors are self-describing
 		}
 
 		// DNS hostnames are case-insensitive, so the kubeconfig
@@ -414,42 +359,42 @@ func runHostSelect(ctx context.Context, args []string) error {
 		return fmt.Errorf("%w: %w", ErrBuildKubeClient, err)
 	}
 
-	namespace := resolveSANamespace(sa, found)
+	namespace := serviceaccount.ResolveNamespace(sa, found.Context.Namespace)
 
-	saName, err := createSAWithBinding(ctx, client, sa, namespace, *saInstanceID, *saHostID)
+	saName, err := serviceaccount.CreateWithBinding(ctx, client, sa, namespace, *saInstanceID, *saHostID)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // CreateWithBinding already wraps with its sentinel errors
 	}
 
-	plugin := buildExecPlugin(resolvedSocketPath)
+	plugin := execplugin.New(resolvedSocketPath)
 
-	out := kubeConfig{
+	out := kubeconfig.Config{
 		APIVersion:     "v1",
 		Kind:           "Config",
 		CurrentContext: contextName,
-		Clusters:       []namedCluster{*cluster},
-		Contexts: []namedContext{{
+		Clusters:       []kubeconfig.NamedCluster{*cluster},
+		Contexts: []kubeconfig.NamedContext{{
 			Name: contextName,
-			Context: contextDetails{
+			Context: kubeconfig.Context{
 				Cluster:   found.Context.Cluster,
 				User:      saName,
 				Namespace: namespace,
 			},
 		}},
-		Users: []namedUser{{
+		Users: []kubeconfig.NamedUser{{
 			Name: saName,
 			User: map[string]any{"exec": plugin},
 		}},
 	}
 
-	data, err := yaml.Marshal(&out)
+	data, err := out.Marshal()
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrWriteKubeconfig, err)
+		return err //nolint:wrapcheck // Marshal already wraps kubeconfig.ErrWrite
 	}
 
-	err = writeFileSecure(resolvedOutPath, data)
+	err = statefile.WriteSecure(resolvedOutPath, data)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrWriteKubeconfig, err)
+		return fmt.Errorf("%w: %w", kubeconfig.ErrWrite, err)
 	}
 
 	result := HostSelectResult{
@@ -458,7 +403,7 @@ func runHostSelect(ctx context.Context, args []string) error {
 		Namespace:     namespace,
 		Kubeconfig:    hostKubeconfig,
 		Context:       contextName,
-		ClusterScoped: sa.clusterScoped,
+		ClusterScoped: sa.ClusterScoped,
 	}
 
 	enc := json.NewEncoder(hostStdout)
@@ -471,25 +416,10 @@ func runHostSelect(ctx context.Context, args []string) error {
 	return nil
 }
 
-// ExecCredential is the kubectl exec credential plugin output
-// schema. Only the fields kubectl reads on success are populated.
-type ExecCredential struct {
-	APIVersion string               `json:"apiVersion"`
-	Kind       string               `json:"kind"`
-	Status     ExecCredentialStatus `json:"status"`
-}
-
-// ExecCredentialStatus carries the bearer token kubectl uses for
-// the next API call. kubectl caches the credential by
-// expirationTimestamp and only re-invokes the plugin once it expires.
-type ExecCredentialStatus struct {
-	ExpirationTimestamp string `json:"expirationTimestamp"`
-	Token               string `json:"token"`
-}
-
 // runHostToken mints a fresh ServiceAccount token via TokenRequest
-// and prints an [ExecCredential] JSON document. Invoked by kubectl
-// (and other client-go consumers) through the exec auth plugin.
+// and prints an [execplugin.Credential] JSON document. Invoked by
+// kubectl (and other client-go consumers) through the exec auth
+// plugin.
 //
 // Does NOT read [guestEnvVar]: the guest/host distinction lives
 // only in serve. Recursion via `workmux host-exec` is impossible
@@ -497,11 +427,11 @@ type ExecCredentialStatus struct {
 func runHostToken(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("host token", flag.ContinueOnError)
 
-	kubeconfig := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
+	kubeconfigPath := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
 	contextName := fs.String("context", "", "kubeconfig context to use")
 	saName := fs.String("sa", "", "ServiceAccount name (required)")
 	namespace := fs.String("namespace", "", "ServiceAccount namespace (required)")
-	saExpiration := fs.Int("sa-expiration", defaultExpiration, "token lifetime in seconds")
+	saExpiration := fs.Int("sa-expiration", serviceaccount.DefaultExpiration, "token lifetime in seconds")
 
 	err := fs.Parse(args)
 	if err != nil {
@@ -516,23 +446,23 @@ func runHostToken(ctx context.Context, args []string) error {
 		return ErrTokenMissingNamespace
 	}
 
-	// Mirror saConfig.validate's cap: the serve path validates its
-	// expiration at startup, but this subcommand is reachable
-	// directly, and an unbounded value would both violate the
-	// documented 86400 cap and overflow time.Duration past ~9.2e9
-	// seconds.
-	if *saExpiration > maxExpiration {
-		return fmt.Errorf("%w: got %d", ErrExpirationTooLong, *saExpiration)
+	// Mirror serviceaccount.Config.Validate's cap: the serve path
+	// validates its expiration at startup, but this subcommand is
+	// reachable directly, and an unbounded value would both violate
+	// the documented 86400 cap and overflow time.Duration past
+	// ~9.2e9 seconds.
+	if *saExpiration > serviceaccount.MaxExpiration {
+		return fmt.Errorf("%w: got %d", serviceaccount.ErrExpirationTooLong, *saExpiration)
 	}
 
-	client, err := hostKubeClient(resolveHostKubeconfigPath(*kubeconfig), *contextName)
+	client, err := hostKubeClient(resolveHostKubeconfigPath(*kubeconfigPath), *contextName)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrBuildKubeClient, err)
 	}
 
 	expiration := time.Duration(*saExpiration) * time.Second
 	if expiration <= 0 {
-		expiration = time.Duration(defaultExpiration) * time.Second
+		expiration = time.Duration(serviceaccount.DefaultExpiration) * time.Second
 	}
 
 	token, expiry, err := client.CreateTokenRequest(ctx, *namespace, *saName, expiration)
@@ -540,10 +470,10 @@ func runHostToken(ctx context.Context, args []string) error {
 		return fmt.Errorf("%w: %w", ErrTokenRequest, err)
 	}
 
-	cred := ExecCredential{
-		APIVersion: execAuthAPIVersion,
+	cred := execplugin.Credential{
+		APIVersion: execplugin.APIVersion,
 		Kind:       "ExecCredential",
-		Status: ExecCredentialStatus{
+		Status: execplugin.CredentialStatus{
 			ExpirationTimestamp: expiry.UTC().Format(time.RFC3339),
 			Token:               token,
 		},
@@ -567,7 +497,7 @@ func runHostToken(ctx context.Context, args []string) error {
 func runHostRelease(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("host release", flag.ContinueOnError)
 
-	kubeconfig := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
+	kubeconfigPath := fs.String("kubeconfig", "", "path to host kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
 	contextName := fs.String("context", "", "kubeconfig context to use")
 	saName := fs.String("sa", "", "ServiceAccount name (required)")
 	namespace := fs.String("namespace", "", "ServiceAccount namespace (required)")
@@ -591,7 +521,7 @@ func runHostRelease(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	client, err := hostKubeClient(resolveHostKubeconfigPath(*kubeconfig), *contextName)
+	client, err := hostKubeClient(resolveHostKubeconfigPath(*kubeconfigPath), *contextName)
 	if err != nil {
 		slog.WarnContext(ctx, "build kube client for release",
 			slog.String("sa", *saName),
@@ -601,7 +531,7 @@ func runHostRelease(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	bindingName := bindingNameForSA(*saName)
+	bindingName := serviceaccount.BindingName(*saName)
 
 	// Binding and SA deletes are independent; running them in
 	// parallel halves the K8s API round-trips per release.

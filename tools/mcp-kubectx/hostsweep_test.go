@@ -3,185 +3,22 @@ package main
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubetest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/sweep"
 )
 
 // testHostID is the well-formed host id shared by every sweep
-// fixture. Centralized so [validHostID]'s format and the
+// fixture. Centralized so [identity.Valid]'s format and the
 // fixtures cannot drift independently.
 const testHostID = "0123456789abcdef"
-
-// TestShouldDeleteClassification table-drives the classifier
-// invariants the sweep depends on. The cases mirror the README's
-// recovery semantics: preserve missing-label resources
-// conservatively, preserve live-set resources, delete everything
-// else.
-func TestShouldDeleteClassification(t *testing.T) {
-	t.Parallel()
-
-	live := map[string]struct{}{
-		"inst-live": {},
-	}
-
-	tests := map[string]struct {
-		labels map[string]string
-		want   bool
-	}{
-		"missing instance-id label preserves": {
-			labels: map[string]string{managedByLabel: managedByValue},
-			want:   false,
-		},
-		"empty instance-id label preserves": {
-			labels: map[string]string{instanceIDLabel: ""},
-			want:   false,
-		},
-		"whitespace-only instance-id label preserves": {
-			labels: map[string]string{instanceIDLabel: "   "},
-			want:   false,
-		},
-		"live instance-id preserves": {
-			labels: map[string]string{instanceIDLabel: "inst-live"},
-			want:   false,
-		},
-		"unknown instance-id deletes": {
-			labels: map[string]string{instanceIDLabel: "inst-dead"},
-			want:   true,
-		},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			got := shouldDelete(ResourceRef{Labels: tc.labels}, live)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
-// TestSweepSelectorIncludesHostAndManagedBy pins that the
-// LabelSelector emitted by sweepSelector includes both the
-// managed-by value and the host id. The apiserver-side filter is
-// the cross-host safety boundary: a forgotten host-id token here
-// would let a sweep run by host A delete resources owned by host
-// B against a shared cluster.
-func TestSweepSelectorIncludesHostAndManagedBy(t *testing.T) {
-	t.Parallel()
-
-	selector := sweepSelector("host-abc")
-	assert.Contains(t, selector, managedByLabel+"="+managedByValue)
-	assert.Contains(t, selector, hostIDLabel+"=host-abc")
-}
-
-// TestCollectSweepOrphansEnumeratesAllKinds asserts that a single
-// collect call lists every supported resource kind and routes
-// each candidate into the right sweep slot.
-func TestCollectSweepOrphansEnumeratesAllKinds(t *testing.T) {
-	t.Parallel()
-
-	mock := &mockKubeClient{
-		listSAResp: []ResourceRef{
-			{Namespace: "ns1", Name: "sa-dead", Labels: map[string]string{instanceIDLabel: "dead"}},
-			{Namespace: "ns2", Name: "sa-live", Labels: map[string]string{instanceIDLabel: "live"}},
-		},
-		listRBResp: []ResourceRef{
-			{Namespace: "ns1", Name: "rb-dead", Labels: map[string]string{instanceIDLabel: "dead"}},
-		},
-		listCRBResp: []ResourceRef{
-			{Name: "crb-dead", Labels: map[string]string{instanceIDLabel: "dead"}},
-			{Name: "crb-pre", Labels: map[string]string{}},
-		},
-	}
-
-	live := map[string]struct{}{"live": {}}
-
-	got, err := collectSweepOrphans(t.Context(), mock, "selector", live)
-	require.NoError(t, err)
-
-	// Expect three orphans: sa-dead, rb-dead, crb-dead.
-	// Preserved: sa-live (in live set), crb-pre (missing label).
-	require.Len(t, got, 3)
-
-	byKind := map[resourceKind][]string{}
-	for _, c := range got {
-		byKind[c.kind] = append(byKind[c.kind], filepath.Join(c.ref.Namespace, c.ref.Name))
-	}
-
-	assert.Equal(t, []string{"ns1/sa-dead"}, byKind[resourceServiceAccount])
-	assert.Equal(t, []string{"ns1/rb-dead"}, byKind[resourceRoleBinding])
-	assert.Equal(t, []string{"crb-dead"}, byKind[resourceClusterRoleBinding])
-}
-
-// TestCollectSweepOrphansToleratesListError pins that a Forbidden
-// (or any other) list error on one kind does not abort the sweep.
-// Each kind is enumerated independently.
-func TestCollectSweepOrphansToleratesListError(t *testing.T) {
-	t.Parallel()
-
-	mock := &mockKubeClient{
-		listSAErr: errors.New("forbidden"),
-		listRBResp: []ResourceRef{
-			{Namespace: "ns", Name: "rb-dead", Labels: map[string]string{instanceIDLabel: "dead"}},
-		},
-		listCRBErr: errors.New("forbidden"),
-	}
-
-	got, err := collectSweepOrphans(t.Context(), mock, "selector", nil)
-	require.NoError(t, err, "partial list failure must not surface as ErrSweepList")
-	require.Len(t, got, 1)
-	assert.Equal(t, resourceRoleBinding, got[0].kind)
-	assert.Equal(t, "rb-dead", got[0].ref.Name)
-}
-
-// TestCollectSweepOrphansSurfacesErrSweepListWhenAllFail pins
-// the documented contract: ErrSweepList is returned only when
-// every list call fails outright. Operators see this when RBAC
-// forbids cluster-wide list on all three resource kinds.
-func TestCollectSweepOrphansSurfacesErrSweepListWhenAllFail(t *testing.T) {
-	t.Parallel()
-
-	mock := &mockKubeClient{
-		listSAErr:  errors.New("forbidden"),
-		listRBErr:  errors.New("forbidden"),
-		listCRBErr: errors.New("forbidden"),
-	}
-
-	got, err := collectSweepOrphans(t.Context(), mock, "selector", nil)
-	require.ErrorIs(t, err, ErrSweepList)
-	assert.Empty(t, got)
-}
-
-// TestDeleteSweepOrphansIssuesEveryDelete pins that the bounded
-// worker pool issues a Delete* call for every candidate even when
-// some fail. ErrSweepDelete is wrapped in the log line, never
-// surfaced from the function.
-func TestDeleteSweepOrphansIssuesEveryDelete(t *testing.T) {
-	t.Parallel()
-
-	mock := &mockKubeClient{
-		deleteSAErr:                 errors.New("not found"),
-		deleteClusterRoleBindingErr: errors.New("forbidden"),
-	}
-
-	orphans := []sweepCandidate{
-		{ref: ResourceRef{Namespace: "ns1", Name: "sa-1"}, kind: resourceServiceAccount},
-		{ref: ResourceRef{Namespace: "ns2", Name: "sa-2"}, kind: resourceServiceAccount},
-		{ref: ResourceRef{Namespace: "ns3", Name: "rb-1"}, kind: resourceRoleBinding},
-		{ref: ResourceRef{Name: "crb-1"}, kind: resourceClusterRoleBinding},
-	}
-
-	deleteSweepOrphans(t.Context(), mock, orphans)
-
-	sort.Strings(mock.deletedSAs)
-	assert.Equal(t, []string{"ns1/sa-1", "ns2/sa-2"}, mock.deletedSAs)
-	assert.Equal(t, []string{"ns3/rb-1"}, mock.deletedRoleBindings)
-	assert.Equal(t, []string{"crb-1"}, mock.deletedClusterRoleBindings)
-}
 
 // TestRunHostSweepEndToEnd exercises the full flag-parse +
 // classify + delete path with a fake client. Pins the contract
@@ -189,20 +26,20 @@ func TestDeleteSweepOrphansIssuesEveryDelete(t *testing.T) {
 // via --live-instance-id preserves the resources tagged with
 // that id and deletes the rest.
 func TestRunHostSweepEndToEnd(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &mockKubeClient{
-		listSAResp: []ResourceRef{
-			{Namespace: "ns", Name: "sa-live", Labels: map[string]string{instanceIDLabel: "live"}},
-			{Namespace: "ns", Name: "sa-dead", Labels: map[string]string{instanceIDLabel: "dead"}},
+	fake := &kubetest.Fake{
+		ListSAResp: []kube.ResourceRef{
+			{Namespace: "ns", Name: "sa-live", Labels: map[string]string{serviceaccount.InstanceIDLabel: "live"}},
+			{Namespace: "ns", Name: "sa-dead", Labels: map[string]string{serviceaccount.InstanceIDLabel: "dead"}},
 			{Namespace: "ns", Name: "sa-pre", Labels: map[string]string{}},
 		},
-		listRBResp: []ResourceRef{
-			{Namespace: "ns", Name: "rb-dead", Labels: map[string]string{instanceIDLabel: "dead"}},
+		ListRBResp: []kube.ResourceRef{
+			{Namespace: "ns", Name: "rb-dead", Labels: map[string]string{serviceaccount.InstanceIDLabel: "dead"}},
 		},
-		listCRBResp: []ResourceRef{
-			{Name: "crb-dead", Labels: map[string]string{instanceIDLabel: "dead"}},
+		ListCRBResp: []kube.ResourceRef{
+			{Name: "crb-dead", Labels: map[string]string{serviceaccount.InstanceIDLabel: "dead"}},
 		},
 	}
-	withHostKubeClient(t, mock)
+	withHostKubeClient(t, fake)
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
@@ -213,14 +50,14 @@ func TestRunHostSweepEndToEnd(t *testing.T) { //nolint:paralleltest // mutates p
 		"--live-instance-id", "live",
 	}))
 
-	require.Len(t, mock.listedSAs, 1)
-	assert.Contains(t, mock.listedSAs[0], managedByLabel+"="+managedByValue)
-	assert.Contains(t, mock.listedSAs[0], hostIDLabel+"="+testHostID)
+	require.Len(t, fake.ListedSAs, 1)
+	assert.Contains(t, fake.ListedSAs[0], serviceaccount.ManagedByLabel+"="+serviceaccount.ManagedByValue)
+	assert.Contains(t, fake.ListedSAs[0], serviceaccount.HostIDLabel+"="+testHostID)
 
-	assert.Equal(t, []string{"ns/sa-dead"}, mock.deletedSAs,
+	assert.Equal(t, []string{"ns/sa-dead"}, fake.DeletedSAs,
 		"only orphan SAs (dead instance, host-id matching) should be deleted")
-	assert.Equal(t, []string{"ns/rb-dead"}, mock.deletedRoleBindings)
-	assert.Equal(t, []string{"crb-dead"}, mock.deletedClusterRoleBindings)
+	assert.Equal(t, []string{"ns/rb-dead"}, fake.DeletedRoleBindings)
+	assert.Equal(t, []string{"crb-dead"}, fake.DeletedClusterRoleBindings)
 }
 
 // TestRunHostSweepRejectsInvalidHostID pins the input-validation
@@ -265,8 +102,8 @@ func TestRunHostSweepRejectsInvalidHostID(t *testing.T) {
 //
 //nolint:paralleltest // mutates package-level state
 func TestRunHostSweepResolvesCurrentContextWhenEmpty(t *testing.T) {
-	mock := &mockKubeClient{}
-	withHostKubeClient(t, mock)
+	fake := &kubetest.Fake{}
+	withHostKubeClient(t, fake)
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
@@ -275,7 +112,7 @@ func TestRunHostSweepResolvesCurrentContextWhenEmpty(t *testing.T) {
 		"--host-id", testHostID,
 	}))
 
-	require.NotEmpty(t, mock.listedSAs, "sweep must run even without --context")
+	require.NotEmpty(t, fake.ListedSAs, "sweep must run even without --context")
 }
 
 // TestRunHostSweepEmptyLiveSetSweepsAll pins the destructive
@@ -284,13 +121,13 @@ func TestRunHostSweepResolvesCurrentContextWhenEmpty(t *testing.T) {
 // and non-empty) gets deleted. The README documents the
 // caveat.
 func TestRunHostSweepEmptyLiveSetSweepsAll(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &mockKubeClient{
-		listSAResp: []ResourceRef{
-			{Namespace: "ns", Name: "sa-a", Labels: map[string]string{instanceIDLabel: "a"}},
-			{Namespace: "ns", Name: "sa-b", Labels: map[string]string{instanceIDLabel: "b"}},
+	fake := &kubetest.Fake{
+		ListSAResp: []kube.ResourceRef{
+			{Namespace: "ns", Name: "sa-a", Labels: map[string]string{serviceaccount.InstanceIDLabel: "a"}},
+			{Namespace: "ns", Name: "sa-b", Labels: map[string]string{serviceaccount.InstanceIDLabel: "b"}},
 		},
 	}
-	withHostKubeClient(t, mock)
+	withHostKubeClient(t, fake)
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
@@ -300,16 +137,16 @@ func TestRunHostSweepEmptyLiveSetSweepsAll(t *testing.T) { //nolint:paralleltest
 		"--host-id", testHostID,
 	}))
 
-	sort.Strings(mock.deletedSAs)
-	assert.Equal(t, []string{"ns/sa-a", "ns/sa-b"}, mock.deletedSAs)
+	sort.Strings(fake.DeletedSAs)
+	assert.Equal(t, []string{"ns/sa-a", "ns/sa-b"}, fake.DeletedSAs)
 }
 
 // TestRunHostSweepSkipsWhenNoContextResolved pins the no-context
 // safety net: a kubeconfig with empty current-context and no
 // --context flag must not crash; the sweep logs and returns 0.
 func TestRunHostSweepSkipsWhenNoContextResolved(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &mockKubeClient{}
-	withHostKubeClient(t, mock)
+	fake := &kubetest.Fake{}
+	withHostKubeClient(t, fake)
 
 	cfg := testKubeconfig()
 	cfg.CurrentContext = ""
@@ -321,24 +158,24 @@ func TestRunHostSweepSkipsWhenNoContextResolved(t *testing.T) { //nolint:paralle
 		"--host-id", testHostID,
 	}))
 
-	assert.Empty(t, mock.listedSAs, "no resolved context must skip list calls entirely")
+	assert.Empty(t, fake.ListedSAs, "no resolved context must skip list calls entirely")
 }
 
 // TestRunHostSweepToleratesPartialListForbidden pins that
 // Forbidden on one resource kind does not abort the sweep when
-// other kinds list successfully — the partial result is still
+// other kinds list successfully -- the partial result is still
 // classified and deleted.
 //
 //nolint:paralleltest // mutates package-level state
 func TestRunHostSweepToleratesPartialListForbidden(t *testing.T) {
-	mock := &mockKubeClient{
-		listSAErr: errors.New("forbidden"),
-		listRBErr: errors.New("forbidden"),
-		listCRBResp: []ResourceRef{
-			{Name: "crb-dead", Labels: map[string]string{instanceIDLabel: "dead"}},
+	fake := &kubetest.Fake{
+		ListSAErr: errors.New("forbidden"),
+		ListRBErr: errors.New("forbidden"),
+		ListCRBResp: []kube.ResourceRef{
+			{Name: "crb-dead", Labels: map[string]string{serviceaccount.InstanceIDLabel: "dead"}},
 		},
 	}
-	withHostKubeClient(t, mock)
+	withHostKubeClient(t, fake)
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
@@ -348,23 +185,23 @@ func TestRunHostSweepToleratesPartialListForbidden(t *testing.T) {
 		"--host-id", testHostID,
 	}))
 
-	assert.Equal(t, []string{"crb-dead"}, mock.deletedClusterRoleBindings,
+	assert.Equal(t, []string{"crb-dead"}, fake.DeletedClusterRoleBindings,
 		"the one listable kind must still get its orphans deleted")
 }
 
-// TestRunHostSweepSurfacesErrSweepListWhenAllFail pins the
+// TestRunHostSweepSurfacesErrListWhenAllFail pins the
 // total-failure mode: when every list call fails, runHostSweep
-// returns ErrSweepList so operators see a clean signal rather
+// returns sweep.ErrList so operators see a clean signal rather
 // than an empty no-op.
 //
 //nolint:paralleltest // mutates package-level state
-func TestRunHostSweepSurfacesErrSweepListWhenAllFail(t *testing.T) {
-	mock := &mockKubeClient{
-		listSAErr:  errors.New("forbidden"),
-		listRBErr:  errors.New("forbidden"),
-		listCRBErr: errors.New("forbidden"),
+func TestRunHostSweepSurfacesErrListWhenAllFail(t *testing.T) {
+	fake := &kubetest.Fake{
+		ListSAErr:  errors.New("forbidden"),
+		ListRBErr:  errors.New("forbidden"),
+		ListCRBErr: errors.New("forbidden"),
 	}
-	withHostKubeClient(t, mock)
+	withHostKubeClient(t, fake)
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
@@ -373,7 +210,7 @@ func TestRunHostSweepSurfacesErrSweepListWhenAllFail(t *testing.T) {
 		"--context", "prod",
 		"--host-id", testHostID,
 	})
-	require.ErrorIs(t, err, ErrSweepList)
+	require.ErrorIs(t, err, sweep.ErrList)
 }
 
 // TestHandlerRunSweepForwardsArgs pins the argv layout the serve
@@ -542,13 +379,13 @@ func TestRunHostSweepFlagParseError(t *testing.T) {
 // instance-id label twice -- once from the missing-label rule,
 // once from the empty-id rule).
 func TestRunHostSweepIgnoresEmptyLiveID(t *testing.T) { //nolint:paralleltest // mutates package-level state
-	mock := &mockKubeClient{
-		listSAResp: []ResourceRef{
-			{Namespace: "ns", Name: "sa-a", Labels: map[string]string{instanceIDLabel: ""}},
-			{Namespace: "ns", Name: "sa-b", Labels: map[string]string{instanceIDLabel: "real-id"}},
+	fake := &kubetest.Fake{
+		ListSAResp: []kube.ResourceRef{
+			{Namespace: "ns", Name: "sa-a", Labels: map[string]string{serviceaccount.InstanceIDLabel: ""}},
+			{Namespace: "ns", Name: "sa-b", Labels: map[string]string{serviceaccount.InstanceIDLabel: "real-id"}},
 		},
 	}
-	withHostKubeClient(t, mock)
+	withHostKubeClient(t, fake)
 
 	kubeconfigPath := writeTestKubeconfig(t, testKubeconfig())
 
@@ -561,5 +398,5 @@ func TestRunHostSweepIgnoresEmptyLiveID(t *testing.T) { //nolint:paralleltest //
 
 	// sa-a was preserved by the empty-label rule.
 	// sa-b should still be deleted (real-id not in live set).
-	assert.Equal(t, []string{"ns/sa-b"}, mock.deletedSAs)
+	assert.Equal(t, []string{"ns/sa-b"}, fake.DeletedSAs)
 }

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/execplugin"
 )
 
 // TestDispatchExecPlugin pins that `mcp-kubectx exec-plugin
@@ -17,7 +19,7 @@ func TestDispatchExecPlugin(t *testing.T) { //nolint:paralleltest // mutates pac
 	bogus := filepath.Join(t.TempDir(), "no-such.sock")
 
 	err := dispatch(t.Context(), []string{"mcp-kubectx", "exec-plugin", "--socket", bogus})
-	require.ErrorIs(t, err, ErrConnectExecPlugin,
+	require.ErrorIs(t, err, execplugin.ErrConnect,
 		"exec-plugin must route to runExecPluginClient")
 }
 

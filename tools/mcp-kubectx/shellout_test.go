@@ -10,14 +10,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
 
-// constLookup returns an envLookup that always returns val.
-// Tests use it to drive handler.isGuest without mutating process
-// env (which is goroutine-unsafe and breaks t.Parallel).
-func constLookup(val string) func(string) string {
-	return func(string) string { return val }
-}
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kube"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/kubetest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/serviceaccount"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-kubectx/statefile"
+)
 
 func TestHostExecArgsHost(t *testing.T) {
 	t.Parallel()
@@ -79,7 +77,7 @@ func fakeExecutable(t *testing.T, body string) string {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fake-mcp-kubectx")
 
-	err := writeFileSecure(path, []byte("#!/bin/sh\n"+body+"\n"))
+	err := statefile.WriteSecure(path, []byte("#!/bin/sh\n"+body+"\n"))
 	require.NoError(t, err)
 
 	require.NoError(t, exec.CommandContext(t.Context(), "chmod", "+x", path).Run())
@@ -122,18 +120,18 @@ func TestDefaultRunHostBinaryNotFound(t *testing.T) {
 // TestHostTokenSkipsWorkmuxWhenEnvSetToGuest pins the recursion
 // guard. Even with WM_SANDBOX_GUEST=1 in process env, runHostToken
 // reaches k8s directly because it does not own a *handler and
-// therefore has no path to runHost. The fake KubeClient records
+// therefore has no path to runHost. The fake kube.Client records
 // exactly one CreateTokenRequest call.
 func TestHostTokenSkipsWorkmuxWhenEnvSetToGuest(t *testing.T) { //nolint:paralleltest // uses t.Setenv
 	t.Setenv(guestEnvVar, "1")
 
-	mock := &mockKubeClient{
-		token:       "tok-abc",
-		tokenExpiry: time.Date(2026, 5, 1, 13, 0, 0, 0, time.UTC),
+	fake := &kubetest.Fake{
+		Token:       "tok-abc",
+		TokenExpiry: time.Date(2026, 5, 1, 13, 0, 0, 0, time.UTC),
 	}
 
 	prevClient := hostKubeClient
-	hostKubeClient = func(string, string) (KubeClient, error) { return mock, nil }
+	hostKubeClient = func(string, string) (kube.Client, error) { return fake, nil }
 	t.Cleanup(func() { hostKubeClient = prevClient })
 
 	var buf strings.Builder
@@ -151,11 +149,11 @@ func TestHostTokenSkipsWorkmuxWhenEnvSetToGuest(t *testing.T) { //nolint:paralle
 	})
 	require.NoError(t, err)
 
-	mock.mu.Lock()
-	defer mock.mu.Unlock()
+	fake.Lock()
+	defer fake.Unlock()
 
-	require.Len(t, mock.tokenRequests, 1, "host token must call k8s exactly once")
-	assert.Equal(t, "kube-system/claude-sa-x", mock.tokenRequests[0])
+	require.Len(t, fake.TokenRequests, 1, "host token must call k8s exactly once")
+	assert.Equal(t, "kube-system/claude-sa-x", fake.TokenRequests[0])
 	assert.Contains(t, buf.String(), `"token":"tok-abc"`)
 }
 
@@ -164,9 +162,9 @@ func TestHostTokenSkipsWorkmuxWhenEnvSetToGuest(t *testing.T) { //nolint:paralle
 // --out-path is omitted when h.outputPath is empty (host select
 // then defaults the kubeconfig path), and --socket-path is
 // forwarded verbatim from h.socketPath so the slot resolved at
-// serve startup by [*handler.acquireServeSocket] flows through
-// without re-derivation. The fixture sets h.socketPath directly
-// (mirroring what runServe does after a successful acquire).
+// serve startup by [socket.Acquire] flows through without
+// re-derivation. The fixture sets h.socketPath directly (mirroring
+// what runServe does after a successful acquire).
 func TestSelectArgsForGuestFlag(t *testing.T) {
 	t.Parallel()
 
@@ -195,7 +193,7 @@ func TestSelectArgsForGuestFlag(t *testing.T) {
 				kubeconfigPath: "/k",
 				pid:            4242,
 				socketPath:     tc.sock,
-				sa:             saConfig{role: "view", roleKind: "ClusterRole", expiration: 3600},
+				sa:             serviceaccount.Config{Role: "view", RoleKind: "ClusterRole", Expiration: 3600},
 				envLookup:      constLookup(tc.guest),
 			}
 

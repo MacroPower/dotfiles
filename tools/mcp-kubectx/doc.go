@@ -19,6 +19,32 @@
 // `exec-plugin` to ask serve for a short-lived ServiceAccount
 // token over a per-`serve` Unix domain socket.
 //
+// # Package layout
+//
+// The binary's wiring lives in this main package: the [dispatch] /
+// [dispatchHost] switch, the `serve` MCP handler with its
+// per-process state, the `host *` one-shot subcommands, and the
+// wrapper-env plumbing (merged-kubeconfig local view, hook-router
+// sidecar symlink). The domain logic underneath is published as
+// independent packages so each piece is importable and testable on
+// its own:
+//
+//   - kubeconfig: minimal kubeconfig model, load/marshal, apiserver
+//     host extraction.
+//   - kube: the narrow [kube.Client] interface plus its client-go
+//     implementation; kubetest carries the recording fake.
+//   - serviceaccount: SA + binding provisioning, the label taxonomy,
+//     binding-name convention, and flag-level config validation.
+//   - sweep: orphan classification and bounded best-effort deletion.
+//   - execplugin: both halves of the kubectl exec credential
+//     protocol (the user.exec block and the UDS fetch client).
+//   - socket: the per-`serve` UDS slot pool, sidecar attribution,
+//     accept loop, and liveness discovery.
+//   - identity: random instance ids and the persistent per-env host
+//     id.
+//   - statedir, statefile: XDG state-path resolution and
+//     atomic/secure state-file writes.
+//
 // # Binary layout
 //
 // One binary, two subcommand groups, one flat dispatch in [dispatch]
@@ -33,8 +59,8 @@
 //
 //   - serve: MCP stdio server. Owns the per-process kubeconfig
 //     path, parses --sa-* flags, binds the per-`serve` UDS via
-//     [*handler.acquireServeSocket] (which walks the slot pool
-//     described under "Socket slot pool" below), and shells out
+//     [socket.Acquire] (which walks the slot pool described under
+//     "Socket slot pool" below), and shells out
 //     to `host *` for every cluster-touching operation.
 //   - host list: prints the available kubeconfig contexts.
 //   - host select <ctx>: creates a ServiceAccount + role binding
@@ -44,7 +70,7 @@
 //     omitted, keyed off the --pid + --for-guest discriminator the
 //     serve forwards. Prints a JSON [HostSelectResult] on stdout.
 //   - host token: mints a fresh ServiceAccount token via
-//     TokenRequest and prints an [ExecCredential] JSON document.
+//     TokenRequest and prints an [execplugin.Credential] JSON document.
 //     Reached internally by serve through [*handler.runHost], not
 //     directly by kubectl.
 //   - host release: deletes a ServiceAccount and its binding.
@@ -54,13 +80,13 @@
 //     labeled `managed-by=mcp-kubectx,host-id=<own>`, then deletes
 //     orphans whose `instance-id` is absent from the
 //     --live-instance-id set. Best-effort: surfaces only
-//     [ErrSweepList] on total list-call failure, returns nil
+//     [sweep.ErrList] on total list-call failure, returns nil
 //     otherwise. `serve` launches it as a background goroutine at
 //     startup; an operator can also invoke it directly. Requires
 //     cluster-wide list verb on the host kubeconfig; see the
 //     orphan-sweep section in README.md.
 //   - exec-plugin: kubectl-facing UDS shim. Dials the per-`serve`
-//     socket, copies the response bytes (an [ExecCredential] JSON
+//     socket, copies the response bytes (an [execplugin.Credential] JSON
 //     document) to stdout, and exits. Pure UDS client; never
 //     constructs a [*handler] and never imports the K8s client.
 //
@@ -112,17 +138,17 @@
 //
 // The per-`serve` UDS lives at
 // <socketStateDir>/serve.<slot>.<env>.sock, where <slot> is a dense
-// integer 0..N-1 picked at startup by [*handler.acquireServeSocket].
+// integer 0..N-1 picked at startup by [socket.Acquire].
 // Slot indices replace the previous PID-based naming because Claude
 // Code's sandbox `allowUnixSockets` setting matches entries as
 // literal paths, not globs; enumerating one literal per slot is the
 // only way to allow a per-`serve` socket whose filename varies.
-// `acquireServeSocket` walks 0..N-1, skipping slots that are held
-// by a live peer (detected via [clearStaleSocket]'s dial probe) or
-// that race-lose at bind time (wrapped [syscall.EADDRINUSE] from
-// [*handler.listenSocket]). Crash-leftover inodes are unlinked by
-// `clearStaleSocket` and the slot is reused. When every slot is
-// held by a live peer, startup fails with [ErrAllSlotsBusy] naming
+// [socket.Acquire] walks 0..N-1, skipping slots that are held by a
+// live peer (detected via a short-deadline dial probe) or that
+// race-lose at bind time (wrapped [syscall.EADDRINUSE] from
+// [socket.Listen]). Crash-leftover inodes are unlinked and the slot
+// is reused. When every slot is held by a live peer, startup fails
+// with [socket.ErrAllSlotsBusy] naming
 // the slot count and the state directory; bumping --socket-slots
 // (and matching the literal allowlist on the consuming side) is
 // the remedy.
@@ -139,7 +165,7 @@
 // Creates a ServiceAccount + binding and writes a scoped kubeconfig.
 // The first positional argument is the context name. Path resolution
 // is split: serve owns the discriminator (pid + host/guest env);
-// host select owns the base directory ([stateHomeDir], read from
+// host select owns the base directory ([statedir.Dir], read from
 // the host's $XDG_STATE_HOME). When --out-path is empty, host select
 // requires --pid and resolves the path itself; an explicit
 // --out-path bypasses defaulting and is forwarded verbatim.
@@ -160,11 +186,12 @@
 //     --sa-namespace, --sa-expiration: same semantics as the `serve`
 //     flags above. `serve` forwards its own values verbatim.
 //   - --sa-instance-id: per-`serve` random identifier tagged on the
-//     created SA and binding via [instanceIDLabel]. `serve` forwards
+//     created SA and binding via [serviceaccount.InstanceIDLabel].
+//     `serve` forwards
 //     its own random id; empty omits the label.
 //   - --sa-host-id: persistent per-user-per-host identifier tagged
-//     via [hostIDLabel]. `serve` forwards the id loaded from
-//     [hostIDPath]; empty omits the label.
+//     via [serviceaccount.HostIDLabel]. `serve` forwards the id
+//     loaded from [identity.HostPath]; empty omits the label.
 //   - --allow-apiserver-host: hostname permitted as cluster.server.
 //     Repeatable; empty list allows any apiserver. When non-empty,
 //     the resolved cluster's `server` URL must have a matching
@@ -174,7 +201,7 @@
 // # host token flags
 //
 // Mints a short-lived ServiceAccount token via TokenRequest and
-// prints a single [ExecCredential] JSON document on stdout. Invoked
+// prints a single [execplugin.Credential] JSON document on stdout. Invoked
 // by kubectl (and any other client-go consumer) through the exec
 // auth plugin in the scoped kubeconfig.
 //
@@ -220,8 +247,8 @@
 // directory, which only ever holds mcp-kubectx kubeconfigs.
 // SIGKILL leaks at most one SA, one kubeconfig file, and one stale
 // socket inode at the killed serve's slot; the next serve that
-// reclaims that slot's path detects the leftover via
-// [clearStaleSocket] and unlinks it before binding.
+// reclaims that slot's path detects the leftover via the stale-probe
+// in [socket.Listen] and unlinks it before binding.
 //
 // Provisioned SAs and bindings carry three labels:
 // `app.kubernetes.io/managed-by=mcp-kubectx`,
@@ -230,13 +257,13 @@
 // a background `host sweep` at startup that lists labeled resources
 // for its own `host-id`, classifies each by `instance-id` against
 // the set of live serves (discovered through the per-slot UDS
-// sidecar in [*handler.discoverLiveInstances]), and
+// sidecar in [socket.DiscoverLive]), and
 // best-effort-deletes the orphans. Resources tagged only with
 // `managed-by` and no `host-id` cannot be attributed to a specific
 // host, so the sweep skips them; recovery is the manual `kubectl
 // delete` documented in the README. The selector pins on
 // `host-id`, persisted per env as `host.id` or `guest.id` (see
-// [loadOrCreateHostID]), so two operators on different machines
+// [identity.LoadOrCreateHost]), so two operators on different machines
 // cannot delete each other's resources — and neither can host- and
 // guest-side serves on the same machine, which share the
 // bind-mounted state dir but cannot observe each other's live
@@ -252,7 +279,7 @@
 // path to [*handler.defaultRunHost] and cannot decide to wrap with
 // `workmux host-exec`. Even when `WM_SANDBOX_GUEST=1` is set in
 // their env, they have no shell-out path. `host token` calls the
-// cluster directly via [KubeClient.CreateTokenRequest]. Pinned by
+// cluster directly via [kube.Client.CreateTokenRequest]. Pinned by
 // `TestHostTokenSkipsWorkmuxWhenEnvSetToGuest`.
 //
 // # In-sandbox merged kubeconfig
@@ -294,7 +321,7 @@
 // # See also
 //
 // README.md in this package carries the YAML kubeconfig samples (host
-// and guest variants), the [ExecCredential] JSON sample, the
+// and guest variants), the [execplugin.Credential] JSON sample, the
 // `home/claude.nix` `host_commands` deployment requirement, the
 // three-way merge and its collision-precedence invariant, and the
 // end-to-end env-chain explanation that closes the recursion-guard
