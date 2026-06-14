@@ -1529,7 +1529,7 @@ func (m *Tests) TestShellSSHReady(ctx context.Context) error {
 	}
 
 	// Helper scripts are baked in, executable, and on PATH.
-	for _, script := range []string{"fish-login", "container-init", "sshd-entrypoint"} {
+	for _, script := range []string{"fish-login", "container-init", "sshd-entrypoint", "relink-managed"} {
 		path := "/usr/local/bin/" + script
 		if _, err := ctr.WithExec([]string{"test", "-x", path}).Sync(ctx); err != nil {
 			return fmt.Errorf("%s not executable: %w", path, err)
@@ -1609,6 +1609,65 @@ func (m *Tests) TestShellSSHLogin(ctx context.Context) error {
 	fishRe := regexp.MustCompile(`FISH=\d`)
 	if !fishRe.MatchString(out) {
 		return fmt.Errorf("remote command did not run in fish, got:\n%s", out)
+	}
+
+	return nil
+}
+
+// TestShellRelinkManaged verifies that relink-managed heals a persisted
+// config dir whose home-manager symlinks were left pointing at an older
+// image's generation (see toolchains/dev/scripts/relink-managed.sh). It
+// dangles a managed link, seeds non-managed user state and an orphaned
+// home-manager-owned dead link, runs the heal, and asserts the managed
+// link is restored to the current generation, user state is untouched,
+// and the orphan is pruned.
+//
+// Not annotated with +check because it builds the full shell image
+// (snapshot + strip). Run manually:
+//
+//	dagger call -m toolchains/dev/tests test-shell-relink-managed
+func (m *Tests) TestShellRelinkManaged(ctx context.Context) error {
+	// CLAUDE.md is a guaranteed home-manager-managed symlink
+	// (home/claude.nix home.file.".claude/CLAUDE.md"). The fake store
+	// hash stands in for an older image's generation that no longer
+	// exists after an update.
+	const script = `set -e
+canary="$HOME/.claude/CLAUDE.md"
+fake=/nix/store/00000000000000000000000000000000-home-manager-files
+
+# Baseline: the managed canary resolves in the fresh image.
+good=$(readlink -f "$canary")
+[ -e "$good" ] || { echo "baseline canary target missing: $good"; exit 1; }
+
+# Simulate a persisted volume from an older image: point the managed
+# link at a now-nonexistent generation, seed non-managed user state, and
+# drop an orphaned home-manager-owned dead link inside a managed dir.
+ln -sfn "$fake/.claude/CLAUDE.md" "$canary"
+mkdir -p "$HOME/.claude/projects"
+echo userdata > "$HOME/.claude/projects/foo.jsonl"
+ln -sfn "$fake/.claude/removed-skill" "$HOME/.claude/orphan-link"
+
+# Pre-heal: the canary dangles.
+[ -e "$canary" ] && { echo "expected dangling canary before heal"; exit 1; }
+
+relink-managed
+
+# Post-heal: canary resolves to the current generation again...
+[ -e "$canary" ] || { echo "canary still dangling after heal"; exit 1; }
+[ "$(readlink -f "$canary")" = "$good" ] || { echo "canary not healed to original target"; exit 1; }
+# ...non-managed user state is untouched...
+[ "$(cat "$HOME/.claude/projects/foo.jsonl")" = "userdata" ] || { echo "user state clobbered"; exit 1; }
+# ...and the orphaned managed dead link was pruned.
+[ -L "$HOME/.claude/orphan-link" ] && { echo "orphan link not pruned"; exit 1; }
+echo OK
+`
+
+	_, err := dag.Dev().BuildShell().
+		WithEnvVariable("HOME", homeDir).
+		WithExec([]string{"sh", "-c", script}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("relink-managed heal: %w", err)
 	}
 
 	return nil

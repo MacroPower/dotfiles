@@ -41,6 +41,11 @@ const (
 	// sshdEntrypointPath provisions host keys and authorized_keys, then
 	// execs sshd in the foreground.
 	sshdEntrypointPath = "/usr/local/bin/sshd-entrypoint"
+
+	// relinkManagedPath re-links home-manager-managed files against the
+	// current image's generation, healing stale store symlinks left by a
+	// persisted config-dir volume after an image update.
+	relinkManagedPath = "/usr/local/bin/relink-managed"
 )
 
 var (
@@ -58,6 +63,11 @@ var (
 	// in the foreground.
 	//go:embed scripts/sshd-entrypoint.sh
 	sshdEntrypointScript string
+
+	// relinkManagedScript heals home-manager-managed symlinks that a
+	// persisted config-dir volume shadowed with an older image's links.
+	//go:embed scripts/relink-managed.sh
+	relinkManagedScript string
 
 	// sshSetupScript applies the static, build-time half of SSH
 	// readiness: the sshd privilege-separation user, the privsep chroot
@@ -80,5 +90,6 @@ func withSSHReadiness(ctr *dagger.Container) *dagger.Container {
 		WithNewFile(loginWrapperPath, loginWrapperScript, exec).
 		WithNewFile(containerInitPath, containerInitScript, exec).
 		WithNewFile(sshdEntrypointPath, sshdEntrypointScript, exec).
+		WithNewFile(relinkManagedPath, relinkManagedScript, exec).
 		WithExec([]string{"sh", "-c", sshSetupScript})
 }
