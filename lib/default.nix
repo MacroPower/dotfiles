@@ -33,7 +33,6 @@ let
     mcp-kagi = final.callPackage paths.mcp-kagi { };
     marksman-bin = final.callPackage paths.marksman-bin { };
     mcp-opentofu = final.callPackage paths.mcp-opentofu { };
-    leanspec-mcp = final.callPackage paths.leanspec-mcp { };
     leanspec-cli = final.callPackage paths.leanspec-cli { };
     claude-powerline = final.callPackage paths.claude-powerline { };
     claude-history = final.callPackage paths.claude-history { };

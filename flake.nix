@@ -168,7 +168,6 @@
                 mcp-kagi = ./pkgs/mcp-kagi.nix;
                 marksman-bin = ./pkgs/marksman-bin.nix;
                 mcp-opentofu = ./tools/mcp-opentofu/package.nix;
-                leanspec-mcp = ./pkgs/leanspec-mcp.nix;
                 leanspec-cli = ./pkgs/leanspec-cli.nix;
                 claude-powerline = ./pkgs/claude-powerline.nix;
                 claude-history = ./pkgs/claude-history.nix;
