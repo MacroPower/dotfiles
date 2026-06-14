@@ -266,6 +266,125 @@ func TestLogFile(t *testing.T) {
 	assert.NotContains(t, toolsListEntry, "error", "successful call should not log error")
 }
 
+// TestToolFilter covers the allow/deny decision logic, including the empty
+// filter (forwards everything) and deny taking precedence over allow.
+func TestToolFilter(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		allow      []string
+		deny       []string
+		name       string
+		wantActive bool
+		want       bool
+	}{
+		"empty filter forwards everything": {
+			name:       "anything",
+			wantActive: false,
+			want:       true,
+		},
+		"allowlist keeps listed": {
+			allow:      []string{"keep"},
+			name:       "keep",
+			wantActive: true,
+			want:       true,
+		},
+		"allowlist drops unlisted": {
+			allow:      []string{"keep"},
+			name:       "other",
+			wantActive: true,
+			want:       false,
+		},
+		"denylist drops listed": {
+			deny:       []string{"drop"},
+			name:       "drop",
+			wantActive: true,
+			want:       false,
+		},
+		"denylist keeps unlisted": {
+			deny:       []string{"drop"},
+			name:       "other",
+			wantActive: true,
+			want:       true,
+		},
+		"deny overrides allow": {
+			allow:      []string{"both"},
+			deny:       []string{"both"},
+			name:       "both",
+			wantActive: true,
+			want:       false,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newToolFilter(tc.allow, tc.deny)
+			assert.Equal(t, tc.wantActive, f.active())
+			assert.Equal(t, tc.want, f.permits(tc.name))
+		})
+	}
+}
+
+// TestProxyToolFilterDropsDenied verifies that --deny-tool removes the named
+// tool from tools/list end-to-end while leaving the rest intact.
+func TestProxyToolFilterDropsDenied(t *testing.T) {
+	t.Parallel()
+
+	upstream := mcp.NewServer(
+		&mcp.Implementation{Name: "upstream", Version: "v0.0.1"},
+		nil,
+	)
+	for _, name := range []string{"keep_me", "drop_me"} {
+		upstream.AddTool(&mcp.Tool{
+			Name:        name,
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil
+		})
+	}
+
+	handler := mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return upstream },
+		nil,
+	)
+	ts := httptest.NewServer(handler)
+	t.Cleanup(ts.Close)
+
+	localCli, localSrv := mcp.NewInMemoryTransports()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = run(ctx, []string{"--url", ts.URL, "--deny-tool", "drop_me"}, localSrv)
+	}()
+
+	client := mcp.NewClient(
+		&mcp.Implementation{Name: "test-client", Version: "v0.0.1"},
+		&mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}},
+	)
+	cs, err := client.Connect(ctx, localCli, nil)
+	require.NoError(t, err)
+
+	listRes, err := cs.ListTools(ctx, nil)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(listRes.Tools))
+	for _, tool := range listRes.Tools {
+		names = append(names, tool.Name)
+	}
+	assert.Equal(t, []string{"keep_me"}, names)
+
+	_ = cs.Close()
+	cancel()
+	wg.Wait()
+}
+
 // TestRunRequiresURL ensures the CLI fails cleanly when --url is absent.
 func TestRunRequiresURL(t *testing.T) {
 	t.Parallel()

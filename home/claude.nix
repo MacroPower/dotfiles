@@ -680,6 +680,18 @@ let
     exec ${pkgs.spacectl}/bin/spacectl "$@"
   '';
 
+  # --deny-tool flags for the github proxy, derived from the github tool
+  # bundle's own permissions.deny (the single source of truth). Denying a
+  # github MCP tool there also strips its schema from the proxy's tools/list,
+  # so it stops costing context tokens even though the upstream readonly
+  # endpoint still serves it. The mcp__github__ prefix is stripped back to the
+  # upstream tool name the proxy matches; non-MCP deny entries are ignored.
+  ghProxyDenyFlags = lib.concatMapStringsSep " " (t: "--deny-tool ${t}") (
+    map (lib.removePrefix "mcp__github__") (
+      lib.filter (lib.hasPrefix "mcp__github__") cfg.toolBundles.github.permissions.deny
+    )
+  );
+
   githubWrapper = pkgs.writeShellScript "github-mcp-wrapper" ''
     ${exportSecret "GH_TOKEN" "gh_token"}
     export GITHUB_PERSONAL_ACCESS_TOKEN="''${GH_TOKEN:-}"
@@ -687,6 +699,7 @@ let
       --url https://api.githubcopilot.com/mcp/readonly \
       --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN" \
       --log-file "${config.xdg.stateHome}/mcp-http-proxy/github.log" \
+      ${ghProxyDenyFlags} \
       "$@"
   '';
 
@@ -2012,6 +2025,11 @@ in
             ) ghReadOnlyGroups
           )
           ++ lib.concatMap ghAllowPair ghReadOnlyCommands;
+          # This list is the single source of truth for the github MCP tool
+          # filter: the proxy wrapper derives its --deny-tool flags from it
+          # (see ghProxyDenyFlags), so denying a tool here both blocks the
+          # call and strips the tool's schema from tools/list, reclaiming the
+          # context tokens it would otherwise cost.
           permissions.deny = [
             # GitHub MCP: deny redundant / low-value tools.
             "mcp__github__get_commit"
@@ -2024,8 +2042,9 @@ in
             "mcp__github__list_commits"
             "mcp__github__list_repository_collaborators"
             "mcp__github__search_users"
-            # GitHub MCP: deny all write/mutating tools.
-            # These are blocked by the MCP config and primarily denied here as a usage hint.
+            # GitHub MCP: deny all write/mutating tools. The readonly endpoint
+            # does not serve these, so the proxy filter is a no-op for them;
+            # they stay denied here as a usage hint and a guard.
             "mcp__github__actions_run_trigger"
             "mcp__github__add_comment_to_pending_review"
             "mcp__github__add_issue_comment"

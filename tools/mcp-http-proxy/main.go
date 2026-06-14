@@ -22,13 +22,14 @@ const (
 	connectTimeout = 30 * time.Second
 )
 
-// headerFlag collects repeatable --header K=V flags.
-type headerFlag []string
+// multiFlag collects a repeatable string flag (--header, --allow-tool,
+// --deny-tool).
+type multiFlag []string
 
-func (h *headerFlag) String() string { return strings.Join(*h, ",") }
+func (m *multiFlag) String() string { return strings.Join(*m, ",") }
 
-func (h *headerFlag) Set(v string) error {
-	*h = append(*h, v)
+func (m *multiFlag) Set(v string) error {
+	*m = append(*m, v)
 	return nil
 }
 
@@ -49,8 +50,10 @@ func run(ctx context.Context, args []string, localTransport mcp.Transport) error
 	url := fs.String("url", "", "upstream Streamable HTTP MCP endpoint")
 	logFile := fs.String("log-file", "", "path to JSON log file (append)")
 
-	var headers headerFlag
+	var headers, allowTools, denyTools multiFlag
 	fs.Var(&headers, "header", "HTTP header K=V (repeatable; values are expanded with os.ExpandEnv)")
+	fs.Var(&allowTools, "allow-tool", "upstream tool name to forward (repeatable; if any are set, only matching tools pass tools/list)")
+	fs.Var(&denyTools, "deny-tool", "upstream tool name to drop from tools/list (repeatable; takes precedence over --allow-tool)")
 
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("parsing flags: %w", err)
@@ -93,7 +96,7 @@ func run(ctx context.Context, args []string, localTransport mcp.Transport) error
 	}
 	defer func() { _ = cs.Close() }()
 
-	srv := newProxyServer(cs, cs.InitializeResult(), logger)
+	srv := newProxyServer(cs, cs.InitializeResult(), logger, newToolFilter(allowTools, denyTools))
 
 	if err := srv.Run(ctx, localTransport); err != nil {
 		return fmt.Errorf("running stdio server: %w", err)
@@ -139,7 +142,7 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // newProxyServer builds an [*mcp.Server] whose handlers forward incoming MCP
 // calls to cs. Upstream capabilities are copied onto the local server so the
 // stdio client sees the same feature set.
-func newProxyServer(cs *mcp.ClientSession, init *mcp.InitializeResult, logger *slog.Logger) *mcp.Server {
+func newProxyServer(cs *mcp.ClientSession, init *mcp.InitializeResult, logger *slog.Logger, filter *toolFilter) *mcp.Server {
 	opts := &mcp.ServerOptions{}
 	if init != nil {
 		opts.Capabilities = init.Capabilities
@@ -167,20 +170,90 @@ func newProxyServer(cs *mcp.ClientSession, init *mcp.InitializeResult, logger *s
 		&mcp.Implementation{Name: "mcp-http-proxy", Version: version},
 		opts,
 	)
-	srv.AddReceivingMiddleware(forwardingMiddleware(cs, logger))
+	srv.AddReceivingMiddleware(forwardingMiddleware(cs, logger, filter))
 	return srv
+}
+
+// toolFilter decides which upstream tool names survive in a tools/list
+// response. A tool passes when it is allowed (the allowlist is empty, or
+// contains the name) and not denied; deny takes precedence over allow. The
+// proxy drops filtered tool definitions before they reach the client, so
+// denied or unused upstream tools never cost context tokens even though the
+// upstream still serves them.
+type toolFilter struct {
+	allow map[string]struct{}
+	deny  map[string]struct{}
+}
+
+// newToolFilter builds a [*toolFilter] from allow and deny tool-name lists.
+func newToolFilter(allow, deny []string) *toolFilter {
+	f := &toolFilter{
+		allow: make(map[string]struct{}, len(allow)),
+		deny:  make(map[string]struct{}, len(deny)),
+	}
+	for _, name := range allow {
+		f.allow[name] = struct{}{}
+	}
+	for _, name := range deny {
+		f.deny[name] = struct{}{}
+	}
+	return f
+}
+
+// active reports whether the filter would remove any tool. When false, a
+// tools/list response is forwarded unmodified.
+func (f *toolFilter) active() bool {
+	return len(f.allow) > 0 || len(f.deny) > 0
+}
+
+// permits reports whether a tool with the given name should be forwarded.
+func (f *toolFilter) permits(name string) bool {
+	if _, denied := f.deny[name]; denied {
+		return false
+	}
+	if len(f.allow) == 0 {
+		return true
+	}
+	_, allowed := f.allow[name]
+	return allowed
+}
+
+// filterTools returns the tools the filter permits, preserving order. Dropped
+// names are logged so the reclaimed tokens are observable in the proxy log.
+func filterTools(tools []*mcp.Tool, f *toolFilter, logger *slog.Logger) []*mcp.Tool {
+	kept := make([]*mcp.Tool, 0, len(tools))
+	var dropped []string
+	for _, t := range tools {
+		if f.permits(t.Name) {
+			kept = append(kept, t)
+			continue
+		}
+		dropped = append(dropped, t.Name)
+	}
+	if len(dropped) > 0 {
+		logger.Info("filtered tools", "dropped_count", len(dropped), "dropped", dropped)
+	}
+	return kept
 }
 
 // forwardingMiddleware replaces the server's default receiving handler for
 // the MCP methods we proxy. Unknown methods (ping, initialize, notifications)
 // fall through to next so the SDK's default handling runs.
-func forwardingMiddleware(cs *mcp.ClientSession, logger *slog.Logger) mcp.Middleware {
+func forwardingMiddleware(cs *mcp.ClientSession, logger *slog.Logger, filter *toolFilter) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (res mcp.Result, err error) {
 			switch method {
 			case "tools/list":
 				defer logForward(logger, method, time.Now(), &err)
-				return cs.ListTools(ctx, req.GetParams().(*mcp.ListToolsParams))
+				var list *mcp.ListToolsResult
+				list, err = cs.ListTools(ctx, req.GetParams().(*mcp.ListToolsParams))
+				if err != nil || !filter.active() {
+					return list, err
+				}
+				// Filter each page independently; pagination via NextCursor
+				// is preserved, so later pages are filtered as they arrive.
+				list.Tools = filterTools(list.Tools, filter, logger)
+				return list, nil
 			case "tools/call":
 				defer logForward(logger, method, time.Now(), &err)
 				// CallToolParamsRaw (incoming) carries Arguments as json.RawMessage;

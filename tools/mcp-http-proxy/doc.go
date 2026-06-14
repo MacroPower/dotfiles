@@ -11,6 +11,10 @@
 //   - --url: upstream Streamable HTTP MCP endpoint (required)
 //   - --header K=V: repeatable; values are expanded with os.ExpandEnv so
 //     secrets can be passed through environment without landing in args
+//   - --allow-tool: repeatable; when any are set, only matching tool names
+//     survive in tools/list responses
+//   - --deny-tool: repeatable; tool names dropped from tools/list responses
+//     (takes precedence over --allow-tool)
 //   - --log-file: path to JSON log file (append); logs forwarded methods
 //
 // # Forwarding scope
@@ -20,6 +24,12 @@
 // resources/templates/list, prompts/list, prompts/get. Subscribe, unsubscribe,
 // and completion/complete are forwarded when the upstream advertises the
 // matching capability.
+//
+// tools/list responses are filtered by the --allow-tool/--deny-tool lists
+// before being returned, so tools the operator has classified as unused or
+// denied are removed from the client's view (and stop costing context tokens)
+// even though the upstream still serves them. tools/call is not filtered: a
+// dropped tool simply never appears for the client to call.
 //
 // # Limitations
 //
