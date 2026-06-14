@@ -1778,6 +1778,17 @@ in
       commit.description = "Wrap up the cycle by creating a git commit.";
     };
 
+    dotfiles.claude.extraCommandRules.deny = [
+      {
+        command = "grep";
+        reason = "Do not use `grep`. Use the Grep tool for searching file contents, or `rg` (ripgrep) in Bash -- it is faster and respects .gitignore.";
+      }
+      {
+        command = "find";
+        reason = "Do not use `find`. Use the Glob tool for finding files by name, or `fd` in Bash -- it is faster and respects .gitignore.";
+      }
+    ];
+
     dotfiles.claude.toolBundles = {
       fetch = {
         alwaysLoad = true;

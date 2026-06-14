@@ -688,3 +688,77 @@ func TestCommandRulesCheck_Generality(t *testing.T) {
 		assert.True(t, rules.Empty())
 	})
 }
+
+// TestCommandRulesCheck_GrepFind covers the top-level
+// extraCommandRules.deny rules wired in home/claude.nix that steer Bash
+// toward rg/fd (and the Grep/Glob tools) over grep/find. Both are bare
+// deny rules keyed on the command head literal.
+func TestCommandRulesCheck_GrepFind(t *testing.T) {
+	t.Parallel()
+
+	const (
+		grepReason = "use rg"
+		findReason = "use fd"
+	)
+
+	rules := cmdrules.New([]cmdrules.Rule{
+		{Command: "grep", Reason: grepReason},
+		{Command: "find", Reason: findReason},
+	})
+
+	cases := map[string]struct {
+		command    string
+		want       bool
+		wantReason string
+	}{
+		"bare grep": {
+			command:    "grep foo bar.txt",
+			want:       true,
+			wantReason: grepReason,
+		},
+		"grep in pipeline": {
+			command:    "cat x | grep foo",
+			want:       true,
+			wantReason: grepReason,
+		},
+		"bare find": {
+			command:    "find . -name x",
+			want:       true,
+			wantReason: findReason,
+		},
+		// `git grep` head literal is `git`, not `grep`, so the
+		// grep rule must not catch it.
+		"git grep is not grep": {
+			command: "git grep foo",
+			want:    false,
+		},
+		// `grep` here is an argument of `xargs`, not a command
+		// head, so the matcher does not see it.
+		"grep as xargs argument": {
+			command: "cat list | xargs grep foo",
+			want:    false,
+		},
+		"rg is allowed": {
+			command: "rg foo",
+			want:    false,
+		},
+		"fd is allowed": {
+			command: "fd x",
+			want:    false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tc.command)
+			_, reason, denied := rules.Check(prog)
+			assert.Equalf(t, tc.want, denied, "deny mismatch for %q", tc.command)
+
+			if tc.want {
+				assert.Equal(t, tc.wantReason, reason)
+			}
+		})
+	}
+}
