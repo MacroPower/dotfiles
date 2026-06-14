@@ -1971,30 +1971,21 @@ in
             command = "${githubWrapper}";
           };
           permissions.allow = [
-            "mcp__github__get_commit"
-            "mcp__github__get_copilot_job_status"
             "mcp__github__get_label"
             "mcp__github__get_latest_release"
-            "mcp__github__get_me"
             "mcp__github__get_release_by_tag"
             "mcp__github__get_tag"
-            "mcp__github__get_team_members"
-            "mcp__github__get_teams"
             "mcp__github__issue_read"
-            "mcp__github__list_branches"
-            "mcp__github__list_commits"
             "mcp__github__list_issue_types"
             "mcp__github__list_issues"
             "mcp__github__list_pull_requests"
             "mcp__github__list_releases"
-            "mcp__github__list_repository_collaborators"
             "mcp__github__list_tags"
             "mcp__github__pull_request_read"
             "mcp__github__search_code"
             "mcp__github__search_issues"
             "mcp__github__search_pull_requests"
             "mcp__github__search_repositories"
-            "mcp__github__search_users"
           ]
           # Read-only gh CLI commands, derived from the
           # ghReadOnlyGroups / ghReadOnlyCommands tables above. These
@@ -2011,7 +2002,17 @@ in
           )
           ++ lib.concatMap ghAllowPair ghReadOnlyCommands;
           permissions.deny = [
+            # GitHub MCP: deny redundant / low-value tools.
+            "mcp__github__get_commit"
+            "mcp__github__get_copilot_job_status"
             "mcp__github__get_file_contents"
+            "mcp__github__get_me"
+            "mcp__github__get_team_members"
+            "mcp__github__get_teams"
+            "mcp__github__list_branches"
+            "mcp__github__list_commits"
+            "mcp__github__list_repository_collaborators"
+            "mcp__github__search_users"
             # GitHub MCP: deny all write/mutating tools.
             # These are blocked by the MCP config and primarily denied here as a usage hint.
             "mcp__github__actions_run_trigger"
@@ -2077,42 +2078,42 @@ in
           fetchRules.deny = [
             {
               host = "api\\.github\\.com";
-              reason = "Use mcp__github__* tools instead of fetching the GitHub API directly.";
+              reason = "-> mcp__github__* / mcp__git__*";
             }
             {
               host = "github\\.com";
               path = "/[^/]+/[^/]+/issues(/.*)?";
-              reason = "Use mcp__github__list_issues or mcp__github__issue_read instead of fetching GitHub issue pages.";
+              reason = "-> mcp__github__list_issues / mcp__github__issue_read";
             }
             {
               host = "github\\.com";
               path = "/[^/]+/[^/]+/pulls?(/.*)?";
-              reason = "Use mcp__github__list_pull_requests or mcp__github__pull_request_read instead of fetching GitHub PR pages.";
+              reason = "-> mcp__github__list_pull_requests / mcp__github__pull_request_read";
             }
             {
               host = "github\\.com";
               path = "/[^/]+/[^/]+/(commit|compare)(/.*)?";
-              reason = "Use mcp__github__get_commit or mcp__github__list_commits instead of fetching GitHub commit pages.";
+              reason = "-> mcp__git__git_clone -> git show / git log";
             }
             {
               host = "github\\.com";
               path = "/[^/]+/[^/]+/releases(/.*)?";
-              reason = "Use mcp__github__list_releases or mcp__github__get_latest_release instead of fetching GitHub release pages.";
+              reason = "-> mcp__github__list_releases / mcp__github__get_latest_release";
             }
             {
               host = "github\\.com";
               path = "/[^/]+/[^/]+/tags(/.*)?";
-              reason = "Use mcp__github__list_tags or mcp__github__get_tag instead of fetching GitHub tag pages.";
+              reason = "-> mcp__github__list_tags / mcp__github__get_tag";
             }
             {
               host = "github\\.com";
               path = "/search(/.*)?";
-              reason = "Use mcp__github__search_code, mcp__github__search_issues, mcp__github__search_pull_requests, or mcp__github__search_repositories instead of fetching GitHub search pages.";
+              reason = "-> mcp__github__search_*";
             }
           ];
           instructions = {
             items = [
-              "Use `mcp__github__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)"
+              "Use `mcp__github__*` and `mcp__git__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)"
             ];
           };
         };
