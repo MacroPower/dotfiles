@@ -2864,6 +2864,7 @@ in
 
         ## Shell
         - `cd` persists between Bash calls only while it stays inside the project directory; a `cd` outside it resets the cwd to the project root on the next call.
+        - `grep` and `find` are blocked in Bash; use `rg` (ripgrep) and `fd` instead.
 
         ## Writing Style
         - Keep responses to plain ASCII text.
