@@ -58,7 +58,7 @@ func main() {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "git_clone",
-		Description: "Clone a git repository. Idempotent: clones if the destination does not exist, pulls (fast-forward only) if it does.",
+		Description: "Clone a git repo. Idempotent: clones if the dest is absent, else fast-forward pulls.",
 	}, h.handle)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

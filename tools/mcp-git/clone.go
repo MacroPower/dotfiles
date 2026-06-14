@@ -92,7 +92,7 @@ type CloneInput struct {
 
 	// TimeoutSeconds overrides the server default for this call.
 	// Zero means use the default; per-call disable is not supported.
-	TimeoutSeconds int `json:"timeout_seconds,omitzero" jsonschema:"Override the default per-operation timeout in seconds; 0 means use the server default (disable is operator-only via --timeout 0)"`
+	TimeoutSeconds int `json:"timeout_seconds,omitzero" jsonschema:"Override the default per-operation timeout in seconds; 0 means use the server default"`
 }
 
 // cloneHandler implements the git_clone tool handler.

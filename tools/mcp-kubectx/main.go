@@ -211,12 +211,12 @@ func runServe(ctx context.Context, args []string) error {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list",
-		Description: "List available Kubernetes contexts from the host kubeconfig.",
+		Description: "List Kubernetes contexts from the host kubeconfig.",
 	}, h.list)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "select",
-		Description: "Select a Kubernetes context and write a scoped kubeconfig to the configured output path.",
+		Description: "Select a Kubernetes context; writes a scoped kubeconfig.",
 	}, h.selectCtx)
 
 	err = srv.Run(ctx, &mcp.StdioTransport{})

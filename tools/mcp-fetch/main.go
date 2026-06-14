@@ -149,8 +149,8 @@ func serve(userAgent string, ignoreRobots, ignoreLLMs bool, proxyURL, rulesFile,
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: "fetch",
-		Description: "Fetch a URL and return its content, HTML converted to Markdown by default. " +
-			"Pass a `pattern` (RE2 regex) to grep large pages down to matching lines.",
+		Description: "Fetch a URL, converting HTML to Markdown by default. " +
+			"Pass `pattern` (RE2 regex) to grep large pages to matching lines.",
 	}, h.Handle)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
