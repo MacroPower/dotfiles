@@ -237,6 +237,7 @@ in
     with pkgs;
     [
       leanspec-cli
+      copilot-api-proxy
       go-task
       yq-go
       viddy

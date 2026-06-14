@@ -157,6 +157,7 @@
                 photo-cli = ./pkgs/photo-cli.nix;
                 mcp-git = ./tools/mcp-git/package.nix;
                 hook-router = ./tools/hook-router/package.nix;
+                copilot-api-proxy = ./tools/copilot-api-proxy/package.nix;
                 mcp-fetch = ./tools/mcp-fetch/package.nix;
                 mcp-http-proxy = ./tools/mcp-http-proxy/package.nix;
                 cookie = ./tools/cookie/package.nix;

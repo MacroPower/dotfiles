@@ -22,6 +22,7 @@ let
     photo-cli = final.callPackage paths.photo-cli { };
     mcp-git = final.callPackage paths.mcp-git { };
     hook-router = final.callPackage paths.hook-router { };
+    copilot-api-proxy = final.callPackage paths.copilot-api-proxy { };
     mcp-fetch = final.callPackage paths.mcp-fetch { };
     mcp-http-proxy = final.callPackage paths.mcp-http-proxy { };
     cookie = final.callPackage paths.cookie { };
