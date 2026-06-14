@@ -31,7 +31,6 @@ let
     radar-desktop = final.callPackage paths.radar-desktop { };
     helm-schema = final.callPackage paths.helm-schema { };
     mcp-kagi = final.callPackage paths.mcp-kagi { };
-    mcp-argocd = final.callPackage paths.mcp-argocd { };
     marksman-bin = final.callPackage paths.marksman-bin { };
     mcp-opentofu = final.callPackage paths.mcp-opentofu { };
     leanspec-mcp = final.callPackage paths.leanspec-mcp { };

@@ -671,14 +671,6 @@ let
     exec ${pkgs.mcp-kagi}/bin/kagimcp "$@"
   '';
 
-  argocdWrapper = pkgs.writeShellScript "argocd-mcp-wrapper" ''
-    ${exportSecrets {
-      ARGOCD_API_TOKEN = "argocd_api_token";
-      ARGOCD_BASE_URL = "argocd_base_url";
-    }}
-    exec ${pkgs.mcp-argocd}/bin/argocd-mcp "$@"
-  '';
-
   spaceliftWrapper = pkgs.writeShellScript "spacelift-mcp-wrapper" ''
     ${exportSecrets {
       SPACELIFT_API_KEY_ENDPOINT = "spacelift_api_key_endpoint";
@@ -2125,37 +2117,6 @@ in
           };
         };
 
-      argocd = {
-        servers.argocd = {
-          type = "stdio";
-          command = "${argocdWrapper}";
-          args = [ "stdio" ];
-        };
-        permissions.allow = [
-          "mcp__argocd__list_clusters"
-          "mcp__argocd__list_applications"
-          "mcp__argocd__get_application"
-          "mcp__argocd__get_application_resource_tree"
-          "mcp__argocd__get_application_managed_resources"
-          "mcp__argocd__get_application_workload_logs"
-          "mcp__argocd__get_resource_events"
-          "mcp__argocd__get_resource_actions"
-          "mcp__argocd__get_application_events"
-          "mcp__argocd__get_resources"
-        ];
-        permissions.ask = [
-          "mcp__argocd__create_application"
-          "mcp__argocd__update_application"
-          "mcp__argocd__delete_application"
-          "mcp__argocd__sync_application"
-          "mcp__argocd__run_resource_action"
-        ];
-        instructions = {
-          items = [
-            "Use `mcp__argocd__*` tools to interact with Argo CD. Do not use the `argocd` CLI directly."
-          ];
-        };
-      };
       opentofu = {
         servers.opentofu = {
           type = "stdio";

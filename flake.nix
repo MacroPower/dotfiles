@@ -166,7 +166,6 @@
                 radar-desktop = ./pkgs/radar-desktop.nix;
                 helm-schema = ./pkgs/helm-schema.nix;
                 mcp-kagi = ./pkgs/mcp-kagi.nix;
-                mcp-argocd = ./pkgs/mcp-argocd.nix;
                 marksman-bin = ./pkgs/marksman-bin.nix;
                 mcp-opentofu = ./tools/mcp-opentofu/package.nix;
                 leanspec-mcp = ./pkgs/leanspec-mcp.nix;
