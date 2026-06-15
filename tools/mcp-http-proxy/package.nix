@@ -10,12 +10,9 @@ buildGoModule {
   src = ./.;
   vendorHash = "sha256-gmgdLG5cwtuEj0dW5SnRfKrauC0lxDQuOOzQSngz5jo=";
 
-  # httptest.NewServer binds a TCP listener, which the Nix build sandbox
-  # does not permit. These two tests intentionally exercise the HTTP
-  # transport and are run outside Nix via `go test ./...` / `task test`.
-  checkFlags = [
-    "-skip=^TestProxyRoundTrip$|^TestLogFile$"
-  ];
+  # Several tests use httptest.NewServer, which binds to loopback. The Darwin
+  # sandbox blocks all network access by default; this flag whitelists loopback.
+  __darwinAllowLocalNetworking = true;
 
   meta = {
     description = "Stdio MCP server proxying to an upstream Streamable HTTP endpoint";
