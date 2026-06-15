@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -24,6 +25,11 @@ type Config struct {
 	AccessTokenURL  string
 	CopilotTokenURL string
 	GHEHost         string
+
+	// AccountType selects the Copilot data-plane host by subscription tier:
+	// individual, business, or enterprise (empty defaults to individual). See
+	// [Config.AccountTypeBaseURL]. It does not affect the token exchange.
+	AccountType string
 
 	// LogLevel is debug|info|warn|error (default info). LogFile, when set,
 	// receives JSON logs; otherwise serve and login log text to stderr and run
@@ -60,6 +66,7 @@ func Load() Config {
 		AccessTokenURL:  os.Getenv("COPILOT_ACCESS_TOKEN_URL"),
 		CopilotTokenURL: os.Getenv("COPILOT_TOKEN_URL"),
 		GHEHost:         os.Getenv("COPILOT_GHE_HOST"),
+		AccountType:     os.Getenv("COPILOT_ACCOUNT_TYPE"),
 		LogLevel:        os.Getenv("COPILOT_PROXY_LOG_LEVEL"),
 		LogFile:         os.Getenv("COPILOT_PROXY_LOG_FILE"),
 		Models: map[string]string{
@@ -127,6 +134,27 @@ func (c Config) ResolveEndpoints() (auth.Endpoints, bool) {
 		changed = true
 	}
 	return ep, changed
+}
+
+// AccountTypeBaseURL maps [Config.AccountType] to its Copilot data-plane host,
+// following the convention shared by the established proxies. An empty
+// AccountType returns ("", nil), meaning "no account-type override"; an
+// unrecognized value is an error so a typo never silently builds
+// api.<typo>.githubcopilot.com. The returned host does not affect the token
+// exchange, which is plan-independent.
+func (c Config) AccountTypeBaseURL() (string, error) {
+	switch strings.ToLower(strings.TrimSpace(c.AccountType)) {
+	case "":
+		return "", nil
+	case "individual":
+		return "https://api.githubcopilot.com", nil
+	case "business":
+		return "https://api.business.githubcopilot.com", nil
+	case "enterprise":
+		return "https://api.enterprise.githubcopilot.com", nil
+	default:
+		return "", fmt.Errorf("invalid COPILOT_ACCOUNT_TYPE %q: want individual, business, or enterprise", c.AccountType)
+	}
 }
 
 func envOr(key, def string) string {

@@ -77,7 +77,11 @@ func runServe(args []string) error {
 	}
 	defer closeLog()
 
-	mgr, err := auth.NewManager(managerOptions(cfg, logger)...)
+	managerOpts, err := managerOptions(cfg, logger)
+	if err != nil {
+		return err
+	}
+	mgr, err := auth.NewManager(managerOpts...)
 	if err != nil {
 		return err
 	}
@@ -169,7 +173,7 @@ func requireLoopbackOrKey(cfg Config) error {
 	return fmt.Errorf("refusing to bind %s without a master key; set COPILOT_PROXY_MASTER_KEY or bind a loopback address", cfg.ListenAddr)
 }
 
-func managerOptions(cfg Config, logger *slog.Logger) []auth.Option {
+func managerOptions(cfg Config, logger *slog.Logger) ([]auth.Option, error) {
 	opts := []auth.Option{auth.WithEditorHeaders(cfg.Editor), auth.WithLogger(logger)}
 	if cfg.DataDir != "" {
 		opts = append(opts, auth.WithDataDir(cfg.DataDir))
@@ -180,8 +184,15 @@ func managerOptions(cfg Config, logger *slog.Logger) []auth.Option {
 	if cfg.APIBase != "" {
 		opts = append(opts, auth.WithAPIBaseOverride(cfg.APIBase))
 	}
+	accountBase, err := cfg.AccountTypeBaseURL()
+	if err != nil {
+		return nil, err
+	}
+	if accountBase != "" {
+		opts = append(opts, auth.WithAccountTypeBase(accountBase))
+	}
 	if ep, ok := cfg.ResolveEndpoints(); ok {
 		opts = append(opts, auth.WithEndpoints(ep))
 	}
-	return opts
+	return opts, nil
 }

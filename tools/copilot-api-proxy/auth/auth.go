@@ -128,6 +128,7 @@ func (t CopilotToken) fresh(now time.Time) bool {
 //   - [WithEndpoints]
 //   - [WithEditorHeaders]
 //   - [WithAPIBaseOverride]
+//   - [WithAccountTypeBase]
 //   - [WithLogger]
 type Option func(*options)
 
@@ -140,6 +141,7 @@ type options struct {
 	endpoints       Endpoints
 	editor          EditorHeaders
 	apiBaseOverride string
+	accountTypeBase string
 	logger          *slog.Logger
 }
 
@@ -164,6 +166,13 @@ func WithEditorHeaders(e EditorHeaders) Option { return func(o *options) { o.edi
 // WithAPIBaseOverride forces the upstream base URL instead of reading it from
 // the token exchange. It is an [Option].
 func WithAPIBaseOverride(base string) Option { return func(o *options) { o.apiBaseOverride = base } }
+
+// WithAccountTypeBase sets the data-plane base URL derived from the Copilot
+// account type (individual/business/enterprise). It is consulted only when no
+// [WithAPIBaseOverride] is set, and takes precedence over the exchange's
+// endpoints.api so a plan tier can steer traffic to the per-plan host. It is
+// an [Option].
+func WithAccountTypeBase(base string) Option { return func(o *options) { o.accountTypeBase = base } }
 
 // WithLogger sets the logger used for the token lifecycle (exchange, refresh,
 // device flow). Defaults to a discarding logger. It is an [Option].
@@ -198,6 +207,7 @@ type Manager struct {
 	endpoints       Endpoints
 	editor          EditorHeaders
 	apiBaseOverride string
+	accountTypeBase string
 	ghToken         string
 	log             *slog.Logger
 
@@ -233,6 +243,7 @@ func NewManager(opts ...Option) (*Manager, error) {
 		endpoints:       o.endpoints,
 		editor:          o.editor,
 		apiBaseOverride: o.apiBaseOverride,
+		accountTypeBase: o.accountTypeBase,
 		ghToken:         strings.TrimSpace(tok),
 		log:             o.logger,
 	}, nil
@@ -409,6 +420,9 @@ func (m *Manager) exchange(ctx context.Context) (CopilotToken, error) {
 
 	base := m.apiBaseOverride
 	source := "override"
+	if base == "" && m.accountTypeBase != "" {
+		base, source = m.accountTypeBase, "account-type"
+	}
 	if base == "" {
 		base, source = tr.Endpoints.API, "exchange"
 	}

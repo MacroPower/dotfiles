@@ -45,7 +45,12 @@ func runWrap(args []string) error {
 	}
 	baseURL := "http://" + ln.Addr().String()
 
-	mgr, err := auth.NewManager(managerOptions(cfg, logger)...)
+	managerOpts, err := managerOptions(cfg, logger)
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
+	mgr, err := auth.NewManager(managerOpts...)
 	if err != nil {
 		_ = ln.Close()
 		return err

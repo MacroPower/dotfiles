@@ -105,6 +105,58 @@ func TestManagerStartTokenEndpointNotFoundNamesHost(t *testing.T) {
 	assert.Contains(t, err.Error(), srv.URL)
 }
 
+func TestExchangeBaseURLPrecedence(t *testing.T) {
+	t.Parallel()
+
+	const exchangeHost = "https://api.example.test"
+
+	tests := map[string]struct {
+		override        string
+		accountTypeBase string
+		want            string
+	}{
+		"exchange endpoints when neither set": {"", "", exchangeHost},
+		"account-type beats exchange":         {"", "https://api.business.githubcopilot.com", "https://api.business.githubcopilot.com"},
+		"override beats account-type":         {"https://override.example", "https://api.business.githubcopilot.com", "https://override.example"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"token":      "tid=x",
+					"expires_at": 9999999999,
+					"refresh_in": 1500,
+					"endpoints":  map[string]string{"api": exchangeHost},
+				})
+			}))
+			defer srv.Close()
+
+			opts := []auth.Option{
+				auth.WithGitHubToken("gh"),
+				auth.WithEndpoints(auth.Endpoints{CopilotToken: srv.URL}),
+				auth.WithDataDir(t.TempDir()),
+			}
+			if tc.override != "" {
+				opts = append(opts, auth.WithAPIBaseOverride(tc.override))
+			}
+			if tc.accountTypeBase != "" {
+				opts = append(opts, auth.WithAccountTypeBase(tc.accountTypeBase))
+			}
+
+			m, err := auth.NewManager(opts...)
+			require.NoError(t, err)
+			require.NoError(t, m.Start(t.Context()))
+
+			tok, err := m.Current(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, tok.BaseURL)
+		})
+	}
+}
+
 func TestManagerStartWithoutToken(t *testing.T) {
 	t.Parallel()
 

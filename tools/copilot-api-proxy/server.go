@@ -211,23 +211,39 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, body []byte, st
 	defer resp.Body.Close()
 
 	status := resp.StatusCode
+
+	// On a non-2xx the body is a small error envelope, not a stream, so capture
+	// it before relaying. It is the single most useful field for diagnosing a
+	// data-plane failure (e.g. a Business 404: path-not-found vs model-not-found
+	// vs network-routing-blocked), which the status alone cannot distinguish.
+	var errBody string
+	if status >= http.StatusBadRequest {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		_ = resp.Body.Close()
+		errBody = truncate(string(b), 512)
+		resp.Body = io.NopCloser(bytes.NewReader(b))
+	}
+
 	relay(w, resp)
 
 	// Logged after relay so duration_ms covers streaming to the client. A
 	// non-2xx upstream status is the proxy's most actionable signal, so it is
 	// logged at warn; successful requests stay at info for a readable trace.
 	level := slog.LevelInfo
-	if status >= http.StatusBadRequest {
-		level = slog.LevelWarn
-	}
-	s.logger().Log(r.Context(), level, "request",
+	attrs := []any{
 		"request_id", reqID,
 		"status", status,
 		"initiator", initiator,
 		"vision", vision,
 		"stream", stream,
 		"retried", retried,
-		"duration_ms", time.Since(start).Milliseconds())
+		"duration_ms", time.Since(start).Milliseconds(),
+	}
+	if status >= http.StatusBadRequest {
+		level = slog.LevelWarn
+		attrs = append(attrs, "upstream_url", tok.BaseURL+"/v1/messages", "error_body", errBody)
+	}
+	s.logger().Log(r.Context(), level, "request", attrs...)
 }
 
 func (s *Server) do(ctx context.Context, r *http.Request, tok auth.CopilotToken, body []byte, stream bool, initiator string, vision bool, reqID string) (*http.Response, error) {
@@ -405,4 +421,13 @@ func headerOr(r *http.Request, key, def string) string {
 		return v
 	}
 	return def
+}
+
+// truncate shortens s to at most n bytes, appending an ellipsis marker when it
+// trims, so a logged upstream error body stays bounded.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

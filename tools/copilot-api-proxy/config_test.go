@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/copilot-api-proxy/auth"
 )
@@ -100,6 +101,37 @@ func TestResolveEndpoints(t *testing.T) {
 			t.Parallel()
 			got, changed := tc.cfg.ResolveEndpoints()
 			assert.Equal(t, tc.changed, changed)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestAccountTypeBaseURL(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		accountType string
+		want        string
+		wantErr     bool
+	}{
+		"empty is no override": {"", "", false},
+		"individual":           {"individual", "https://api.githubcopilot.com", false},
+		"business":             {"business", "https://api.business.githubcopilot.com", false},
+		"enterprise":           {"enterprise", "https://api.enterprise.githubcopilot.com", false},
+		"case insensitive":     {"Business", "https://api.business.githubcopilot.com", false},
+		"padded":               {"  business  ", "https://api.business.githubcopilot.com", false},
+		"unknown errors":       {"team", "", true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := Config{AccountType: tc.accountType}.AccountTypeBaseURL()
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 		})
 	}

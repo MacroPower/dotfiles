@@ -55,6 +55,14 @@
 //   - COPILOT_API_BASE: override the upstream base URL (default: resolved from
 //     the token exchange, which is plan-specific — Individual, Business, and
 //     Enterprise each resolve to their own Copilot API host).
+//   - COPILOT_ACCOUNT_TYPE: individual (default), business, or enterprise.
+//     Selects the data-plane host (api.githubcopilot.com,
+//     api.business.githubcopilot.com, api.enterprise.githubcopilot.com). It
+//     does not affect the token exchange. Precedence for the base URL is
+//     COPILOT_API_BASE > COPILOT_ACCOUNT_TYPE > the exchange's endpoints.api >
+//     fallback. Note this only chooses the host; a Business request that still
+//     404s is a path, model-entitlement, or org network-routing issue, not a
+//     host one — raise COPILOT_PROXY_LOG_LEVEL and read the logged error_body.
 //   - COPILOT_TOKEN_URL, COPILOT_DEVICE_CODE_URL, COPILOT_ACCESS_TOKEN_URL:
 //     override the github.com control-plane auth URLs individually. Needed for
 //     GitHub Enterprise accounts whose Copilot token endpoint is not on
