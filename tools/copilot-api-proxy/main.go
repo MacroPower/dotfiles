@@ -123,6 +123,9 @@ func runLogin() error {
 	if cfg.DataDir != "" {
 		opts = append(opts, auth.WithDataDir(cfg.DataDir))
 	}
+	if ep, ok := cfg.ResolveEndpoints(); ok {
+		opts = append(opts, auth.WithEndpoints(ep))
+	}
 
 	tok, err := auth.Login(context.Background(), os.Stdout, opts...)
 	if err != nil {
@@ -164,6 +167,9 @@ func managerOptions(cfg Config) []auth.Option {
 	}
 	if cfg.APIBase != "" {
 		opts = append(opts, auth.WithAPIBaseOverride(cfg.APIBase))
+	}
+	if ep, ok := cfg.ResolveEndpoints(); ok {
+		opts = append(opts, auth.WithEndpoints(ep))
 	}
 	return opts
 }

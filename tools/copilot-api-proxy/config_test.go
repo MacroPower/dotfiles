@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"go.jacobcolvin.com/dotfiles/tools/copilot-api-proxy/auth"
 )
 
 func TestModelFor(t *testing.T) {
@@ -47,6 +49,60 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, "claude-sonnet-4.6", cfg.Models["sonnet"])
 	assert.Equal(t, "claude-haiku-4.5", cfg.Models["haiku"])
 	assert.Equal(t, "vscode-chat", cfg.Editor.IntegrationID)
+}
+
+func TestResolveEndpoints(t *testing.T) {
+	t.Parallel()
+
+	def := auth.DefaultEndpoints()
+
+	tests := map[string]struct {
+		cfg     Config
+		changed bool
+		want    auth.Endpoints
+	}{
+		"no overrides keeps defaults": {
+			cfg:     Config{},
+			changed: false,
+			want:    def,
+		},
+		"ghe host derives all three": {
+			cfg:     Config{GHEHost: "ghe.example.com"},
+			changed: true,
+			want: auth.Endpoints{
+				DeviceCode:   "https://ghe.example.com/login/device/code",
+				AccessToken:  "https://ghe.example.com/login/oauth/access_token",
+				CopilotToken: "https://api.ghe.example.com/copilot_internal/v2/token",
+			},
+		},
+		"explicit token url overrides ghe host": {
+			cfg:     Config{GHEHost: "ghe.example.com", CopilotTokenURL: "https://custom.example/token"},
+			changed: true,
+			want: auth.Endpoints{
+				DeviceCode:   "https://ghe.example.com/login/device/code",
+				AccessToken:  "https://ghe.example.com/login/oauth/access_token",
+				CopilotToken: "https://custom.example/token",
+			},
+		},
+		"single per-url override leaves the rest default": {
+			cfg:     Config{CopilotTokenURL: "https://custom.example/token"},
+			changed: true,
+			want: auth.Endpoints{
+				DeviceCode:   def.DeviceCode,
+				AccessToken:  def.AccessToken,
+				CopilotToken: "https://custom.example/token",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, changed := tc.cfg.ResolveEndpoints()
+			assert.Equal(t, tc.changed, changed)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestRequireLoopbackOrKey(t *testing.T) {

@@ -16,6 +16,15 @@ type Config struct {
 	GitHubToken string
 	APIBase     string
 
+	// Control-plane auth endpoint overrides. Empty values keep the public
+	// github.com defaults. GHEHost is a convenience that derives all three URLs
+	// from a single GitHub Enterprise host; the per-URL overrides take
+	// precedence over the derived values. See [Config.ResolveEndpoints].
+	DeviceCodeURL   string
+	AccessTokenURL  string
+	CopilotTokenURL string
+	GHEHost         string
+
 	// Models maps an Anthropic tier ("opus", "sonnet", "haiku", "default") to
 	// the Copilot model id it is served by.
 	Models map[string]string
@@ -40,6 +49,11 @@ func Load() Config {
 		MasterKey:   os.Getenv("COPILOT_PROXY_MASTER_KEY"),
 		GitHubToken: firstEnv("GITHUB_TOKEN", "GH_COPILOT_TOKEN"),
 		APIBase:     os.Getenv("COPILOT_API_BASE"),
+
+		DeviceCodeURL:   os.Getenv("COPILOT_DEVICE_CODE_URL"),
+		AccessTokenURL:  os.Getenv("COPILOT_ACCESS_TOKEN_URL"),
+		CopilotTokenURL: os.Getenv("COPILOT_TOKEN_URL"),
+		GHEHost:         os.Getenv("COPILOT_GHE_HOST"),
 		Models: map[string]string{
 			"opus":    envOr("COPILOT_MODEL_OPUS", "claude-opus-4.8"),
 			"sonnet":  envOr("COPILOT_MODEL_SONNET", "claude-sonnet-4.6"),
@@ -72,6 +86,39 @@ func (c Config) ModelFor(requested string) string {
 	default:
 		return c.Models["default"]
 	}
+}
+
+// ResolveEndpoints returns the auth endpoints to use, applying any overrides
+// from the configuration over the public GitHub defaults. The boolean reports
+// whether any override was applied, so callers can leave the defaults wired by
+// [auth.NewManager] untouched when nothing changed.
+//
+// GHEHost derives all three URLs from a single GitHub Enterprise host; the
+// per-URL overrides (DeviceCodeURL, AccessTokenURL, CopilotTokenURL) take
+// precedence over the derived values.
+func (c Config) ResolveEndpoints() (auth.Endpoints, bool) {
+	ep := auth.DefaultEndpoints()
+	changed := false
+
+	if h := c.GHEHost; h != "" {
+		ep.DeviceCode = "https://" + h + "/login/device/code"
+		ep.AccessToken = "https://" + h + "/login/oauth/access_token"
+		ep.CopilotToken = "https://api." + h + "/copilot_internal/v2/token"
+		changed = true
+	}
+	if c.DeviceCodeURL != "" {
+		ep.DeviceCode = c.DeviceCodeURL
+		changed = true
+	}
+	if c.AccessTokenURL != "" {
+		ep.AccessToken = c.AccessTokenURL
+		changed = true
+	}
+	if c.CopilotTokenURL != "" {
+		ep.CopilotToken = c.CopilotTokenURL
+		changed = true
+	}
+	return ep, changed
 }
 
 func envOr(key, def string) string {

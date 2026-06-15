@@ -42,10 +42,10 @@ func TestManagerStartAndCurrent(t *testing.T) {
 			body:    map[string]any{},
 			wantErr: auth.ErrUnauthorized,
 		},
-		"not found maps to unauthorized": {
+		"not found maps to token-endpoint-not-found": {
 			status:  http.StatusNotFound,
 			body:    map[string]any{},
-			wantErr: auth.ErrUnauthorized,
+			wantErr: auth.ErrTokenEndpointNotFound,
 		},
 	}
 
@@ -81,6 +81,28 @@ func TestManagerStartAndCurrent(t *testing.T) {
 			assert.Equal(t, tc.wantBase, tok.BaseURL)
 		})
 	}
+}
+
+func TestManagerStartTokenEndpointNotFoundNamesHost(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	m, err := auth.NewManager(
+		auth.WithGitHubToken("gh"),
+		auth.WithEndpoints(auth.Endpoints{CopilotToken: srv.URL}),
+		auth.WithDataDir(t.TempDir()),
+	)
+	require.NoError(t, err)
+
+	err = m.Start(t.Context())
+	require.ErrorIs(t, err, auth.ErrTokenEndpointNotFound)
+	// The message names the host that 404'd so a misrouted exchange is
+	// diagnosable rather than indistinguishable from a rejected credential.
+	assert.Contains(t, err.Error(), srv.URL)
 }
 
 func TestManagerStartWithoutToken(t *testing.T) {

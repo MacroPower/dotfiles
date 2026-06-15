@@ -13,6 +13,11 @@
 // their respective Copilot API hosts automatically, with no configuration.
 // COPILOT_API_BASE forces a base URL when the exchange cannot be relied on.
 //
+// The control-plane token exchange itself defaults to api.github.com. GitHub
+// Enterprise accounts whose Copilot token endpoint lives elsewhere redirect it
+// with COPILOT_TOKEN_URL or COPILOT_GHE_HOST; a 404 from this endpoint is
+// reported distinctly from a rejected credential.
+//
 // Copilot's edge validates the Anthropic-Beta header against an allowlist and
 // rejects unrecognized betas with a 400. The proxy forwards only betas Copilot
 // is known to accept and strips the rest (such as advisor-tool and context-1m),
@@ -50,6 +55,13 @@
 //   - COPILOT_API_BASE: override the upstream base URL (default: resolved from
 //     the token exchange, which is plan-specific — Individual, Business, and
 //     Enterprise each resolve to their own Copilot API host).
+//   - COPILOT_TOKEN_URL, COPILOT_DEVICE_CODE_URL, COPILOT_ACCESS_TOKEN_URL:
+//     override the github.com control-plane auth URLs individually. Needed for
+//     GitHub Enterprise accounts whose Copilot token endpoint is not on
+//     api.github.com.
+//   - COPILOT_GHE_HOST: convenience that derives all three control-plane URLs
+//     from a single GitHub Enterprise host (e.g. ghe.example.com). The per-URL
+//     overrides above take precedence over the derived values.
 //   - COPILOT_BETA_ALLOW: comma-separated Anthropic-Beta name prefixes to
 //     forward, replacing the built-in allowlist. Copilot 400s on betas it does
 //     not recognize, so unlisted betas are stripped.

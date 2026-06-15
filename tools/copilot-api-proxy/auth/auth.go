@@ -48,6 +48,14 @@ var (
 	// ErrUnauthorized indicates the GitHub token was rejected by Copilot's
 	// token endpoint (revoked, or the account lacks a Copilot seat).
 	ErrUnauthorized = errors.New("github token rejected by copilot")
+
+	// ErrTokenEndpointNotFound indicates the Copilot token-exchange endpoint
+	// returned 404. The token host is typically wrong for the account: a
+	// Copilot Business/Enterprise seat or a GitHub Enterprise host whose token
+	// endpoint is not api.github.com, or an account with no active Copilot seat.
+	// It is kept distinct from [ErrUnauthorized] so a misrouted exchange is not
+	// mistaken for a rejected credential.
+	ErrTokenEndpointNotFound = errors.New("copilot token endpoint not found")
 )
 
 // EditorHeaders are the static editor-identification headers Copilot requires
@@ -341,8 +349,10 @@ func (m *Manager) exchange(ctx context.Context) (CopilotToken, error) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
 	switch {
-	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusNotFound:
+	case resp.StatusCode == http.StatusUnauthorized:
 		return CopilotToken{}, fmt.Errorf("%w: status %d", ErrUnauthorized, resp.StatusCode)
+	case resp.StatusCode == http.StatusNotFound:
+		return CopilotToken{}, fmt.Errorf("%w: GET %s returned 404; for a Copilot Business/Enterprise or GitHub Enterprise account set COPILOT_TOKEN_URL (or COPILOT_GHE_HOST) to the correct token host, and verify an active Copilot seat", ErrTokenEndpointNotFound, m.endpoints.CopilotToken)
 	case resp.StatusCode != http.StatusOK:
 		return CopilotToken{}, fmt.Errorf("exchange token: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}

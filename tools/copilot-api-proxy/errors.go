@@ -35,6 +35,9 @@ func writeAnthropicError(w http.ResponseWriter, status int, errType, message str
 // writeAuthError maps a token-acquisition failure to an Anthropic error.
 func writeAuthError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, auth.ErrTokenEndpointNotFound):
+		writeAnthropicError(w, http.StatusNotFound, "not_found_error",
+			"copilot token endpoint returned 404; for a Business/Enterprise or GitHub Enterprise account set COPILOT_TOKEN_URL (or COPILOT_GHE_HOST) and verify an active Copilot seat")
 	case errors.Is(err, auth.ErrNoGitHubToken), errors.Is(err, auth.ErrUnauthorized):
 		writeAnthropicError(w, http.StatusUnauthorized, "authentication_error",
 			"copilot authentication failed; run `copilot-api-proxy login`")
