@@ -25,6 +25,12 @@ type Config struct {
 	CopilotTokenURL string
 	GHEHost         string
 
+	// LogLevel is debug|info|warn|error (default info). LogFile, when set,
+	// receives JSON logs; otherwise serve and login log text to stderr and run
+	// stays silent. See [newLogger].
+	LogLevel string
+	LogFile  string
+
 	// Models maps an Anthropic tier ("opus", "sonnet", "haiku", "default") to
 	// the Copilot model id it is served by.
 	Models map[string]string
@@ -54,6 +60,8 @@ func Load() Config {
 		AccessTokenURL:  os.Getenv("COPILOT_ACCESS_TOKEN_URL"),
 		CopilotTokenURL: os.Getenv("COPILOT_TOKEN_URL"),
 		GHEHost:         os.Getenv("COPILOT_GHE_HOST"),
+		LogLevel:        os.Getenv("COPILOT_PROXY_LOG_LEVEL"),
+		LogFile:         os.Getenv("COPILOT_PROXY_LOG_FILE"),
 		Models: map[string]string{
 			"opus":    envOr("COPILOT_MODEL_OPUS", "claude-opus-4.8"),
 			"sonnet":  envOr("COPILOT_MODEL_SONNET", "claude-sonnet-4.6"),

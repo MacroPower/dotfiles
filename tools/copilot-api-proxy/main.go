@@ -5,7 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -71,7 +71,13 @@ func runServe(args []string) error {
 		return err
 	}
 
-	mgr, err := auth.NewManager(managerOptions(cfg)...)
+	logger, closeLog, err := newLogger(cfg, true)
+	if err != nil {
+		return err
+	}
+	defer closeLog()
+
+	mgr, err := auth.NewManager(managerOptions(cfg, logger)...)
 	if err != nil {
 		return err
 	}
@@ -86,7 +92,7 @@ func runServe(args []string) error {
 		return err
 	}
 
-	srv := NewServer(mgr, cfg)
+	srv := NewServer(mgr, cfg, logger)
 	httpSrv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           srv.Handler(),
@@ -100,7 +106,7 @@ func runServe(args []string) error {
 		_ = httpSrv.Shutdown(shutCtx)
 	}()
 
-	log.Printf("copilot-api-proxy: listening on %s", cfg.ListenAddr)
+	logger.Info("listening", "addr", cfg.ListenAddr)
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -119,7 +125,13 @@ func runLogin() error {
 		dir = d
 	}
 
-	var opts []auth.Option
+	logger, closeLog, err := newLogger(cfg, true)
+	if err != nil {
+		return err
+	}
+	defer closeLog()
+
+	opts := []auth.Option{auth.WithLogger(logger)}
 	if cfg.DataDir != "" {
 		opts = append(opts, auth.WithDataDir(cfg.DataDir))
 	}
@@ -157,8 +169,8 @@ func requireLoopbackOrKey(cfg Config) error {
 	return fmt.Errorf("refusing to bind %s without a master key; set COPILOT_PROXY_MASTER_KEY or bind a loopback address", cfg.ListenAddr)
 }
 
-func managerOptions(cfg Config) []auth.Option {
-	opts := []auth.Option{auth.WithEditorHeaders(cfg.Editor)}
+func managerOptions(cfg Config, logger *slog.Logger) []auth.Option {
+	opts := []auth.Option{auth.WithEditorHeaders(cfg.Editor), auth.WithLogger(logger)}
 	if cfg.DataDir != "" {
 		opts = append(opts, auth.WithDataDir(cfg.DataDir))
 	}

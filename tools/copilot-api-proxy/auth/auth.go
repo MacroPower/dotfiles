@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -128,6 +128,7 @@ func (t CopilotToken) fresh(now time.Time) bool {
 //   - [WithEndpoints]
 //   - [WithEditorHeaders]
 //   - [WithAPIBaseOverride]
+//   - [WithLogger]
 type Option func(*options)
 
 type options struct {
@@ -139,6 +140,7 @@ type options struct {
 	endpoints       Endpoints
 	editor          EditorHeaders
 	apiBaseOverride string
+	logger          *slog.Logger
 }
 
 // WithGitHubToken supplies the GitHub OAuth token directly, bypassing the
@@ -163,6 +165,10 @@ func WithEditorHeaders(e EditorHeaders) Option { return func(o *options) { o.edi
 // the token exchange. It is an [Option].
 func WithAPIBaseOverride(base string) Option { return func(o *options) { o.apiBaseOverride = base } }
 
+// WithLogger sets the logger used for the token lifecycle (exchange, refresh,
+// device flow). Defaults to a discarding logger. It is an [Option].
+func WithLogger(l *slog.Logger) Option { return func(o *options) { o.logger = l } }
+
 func newOptions(opts ...Option) options {
 	o := options{
 		client:    &http.Client{Timeout: 30 * time.Second},
@@ -170,12 +176,16 @@ func newOptions(opts ...Option) options {
 		scope:     defaultScope,
 		endpoints: DefaultEndpoints(),
 		editor:    DefaultEditorHeaders(),
+		logger:    slog.New(slog.DiscardHandler),
 	}
 	for _, fn := range opts {
 		fn(&o)
 	}
 	if o.client == nil {
 		o.client = &http.Client{Timeout: 30 * time.Second}
+	}
+	if o.logger == nil {
+		o.logger = slog.New(slog.DiscardHandler)
 	}
 	return o
 }
@@ -189,6 +199,7 @@ type Manager struct {
 	editor          EditorHeaders
 	apiBaseOverride string
 	ghToken         string
+	log             *slog.Logger
 
 	// refreshMu serializes token exchanges so concurrent callers coalesce.
 	refreshMu sync.Mutex
@@ -223,6 +234,7 @@ func NewManager(opts ...Option) (*Manager, error) {
 		editor:          o.editor,
 		apiBaseOverride: o.apiBaseOverride,
 		ghToken:         strings.TrimSpace(tok),
+		log:             o.logger,
 	}, nil
 }
 
@@ -233,6 +245,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	if m.ghToken == "" {
 		return ErrNoGitHubToken
 	}
+	m.log.Debug("starting token manager", "token_endpoint", m.endpoints.CopilotToken)
 	if _, err := m.doRefresh(ctx, ""); err != nil {
 		return err
 	}
@@ -274,6 +287,7 @@ func (m *Manager) doRefresh(ctx context.Context, stale string) (CopilotToken, er
 		// otherwise fall through and exchange so a forced refresh always yields a
 		// usable token.
 		if cur.Bearer != stale && cur.fresh(time.Now()) {
+			m.log.Debug("reusing token minted by concurrent refresh")
 			return cur, nil
 		}
 	}
@@ -300,6 +314,7 @@ func (m *Manager) refreshLoop(ctx context.Context) {
 			d = minRefreshInterval
 		}
 
+		m.log.Debug("scheduling token refresh", "in_seconds", int(d.Seconds()))
 		timer := time.NewTimer(d)
 		select {
 		case <-ctx.Done():
@@ -309,7 +324,7 @@ func (m *Manager) refreshLoop(ctx context.Context) {
 		}
 
 		if _, err := m.doRefresh(ctx, ""); err != nil {
-			log.Printf("copilot-api-proxy: token refresh: %v", err)
+			m.log.Warn("proactive token refresh unsuccessful; will retry", "error", err)
 			select {
 			case <-ctx.Done():
 				return
@@ -340,6 +355,8 @@ func (m *Manager) exchange(ctx context.Context) (CopilotToken, error) {
 	req.Header.Set("Accept", "application/json")
 	m.editor.Apply(req.Header)
 
+	m.log.Debug("exchanging github token for copilot session token", "url", m.endpoints.CopilotToken)
+
 	resp, err := m.client.Do(req)
 	if err != nil {
 		return CopilotToken{}, fmt.Errorf("exchange token: %w", err)
@@ -347,6 +364,15 @@ func (m *Manager) exchange(ctx context.Context) (CopilotToken, error) {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+
+	if resp.StatusCode != http.StatusOK {
+		// Surface the upstream status and body: the body of a 401/404 is the
+		// signal that distinguishes a missing seat from a misrouted host.
+		m.log.Warn("copilot token exchange returned non-ok status",
+			"status", resp.StatusCode,
+			"url", m.endpoints.CopilotToken,
+			"body", truncate(strings.TrimSpace(string(body)), 256))
+	}
 
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
@@ -382,19 +408,40 @@ func (m *Manager) exchange(ctx context.Context) (CopilotToken, error) {
 	}
 
 	base := m.apiBaseOverride
+	source := "override"
 	if base == "" {
-		base = tr.Endpoints.API
+		base, source = tr.Endpoints.API, "exchange"
 	}
 	if base == "" {
-		base = fallbackAPIBase
+		base, source = fallbackAPIBase, "fallback"
 	}
+	base = strings.TrimRight(base, "/")
+
+	// base_url and its source are the first thing to check when an account
+	// authenticates but requests 404: a "fallback" source on a Business or
+	// Enterprise account means the exchange omitted endpoints.api and traffic
+	// is heading to the wrong host.
+	m.log.Info("minted copilot session token",
+		"base_url", base,
+		"base_url_source", source,
+		"expires_at", expiresAt.UTC().Format(time.RFC3339),
+		"refresh_at", refreshAt.UTC().Format(time.RFC3339))
 
 	return CopilotToken{
 		Bearer:    tr.Token,
-		BaseURL:   strings.TrimRight(base, "/"),
+		BaseURL:   base,
 		ExpiresAt: expiresAt,
 		RefreshAt: refreshAt,
 	}, nil
+}
+
+// truncate shortens s to at most n bytes, appending an ellipsis marker when it
+// trims, so logged response bodies stay bounded.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 // jsonInt decodes a JSON value that may be a number or a numeric string.

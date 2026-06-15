@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -32,13 +31,21 @@ func runWrap(args []string) error {
 	}
 	cfg.MasterKey = secret
 
+	// stderrSafe=false: claude owns the terminal, so the proxy logs nothing to
+	// stderr; set COPILOT_PROXY_LOG_FILE to capture a run's logs instead.
+	logger, closeLog, err := newLogger(cfg, false)
+	if err != nil {
+		return err
+	}
+	defer closeLog()
+
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return fmt.Errorf("open listener: %w", err)
 	}
 	baseURL := "http://" + ln.Addr().String()
 
-	mgr, err := auth.NewManager(managerOptions(cfg)...)
+	mgr, err := auth.NewManager(managerOptions(cfg, logger)...)
 	if err != nil {
 		_ = ln.Close()
 		return err
@@ -55,14 +62,16 @@ func runWrap(args []string) error {
 		return err
 	}
 
-	httpSrv := &http.Server{Handler: NewServer(mgr, cfg).Handler(), ReadHeaderTimeout: 30 * time.Second}
+	httpSrv := &http.Server{Handler: NewServer(mgr, cfg, logger).Handler(), ReadHeaderTimeout: 30 * time.Second}
 	go func() {
 		if err := httpSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("copilot-api-proxy: serve: %v", err)
+			logger.Error("proxy server stopped unexpectedly", "error", err)
 		}
 	}()
 
+	logger.Debug("per-instance proxy ready", "addr", baseURL)
 	code, err := launchClaude(args, baseURL, secret)
+	logger.Debug("claude exited", "code", code)
 
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	_ = httpSrv.Shutdown(shutCtx)

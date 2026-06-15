@@ -64,6 +64,23 @@ let
         --set TMPDIR "${config.home.homeDirectory}/.tflint.d/tmp"
     '';
   };
+
+  # copilot-api-proxy reads its log destination from COPILOT_PROXY_LOG_FILE.
+  # Its `run` mode (the `ccp` alias) stays silent on stderr so it never
+  # corrupts claude's TUI, and emits nothing at all unless this is set, so
+  # default it under the conventional XDG state dir alongside mcp-fetch,
+  # hook-router, and the other tools. --set-default keeps it overridable per
+  # invocation (e.g. with COPILOT_PROXY_LOG_LEVEL=debug); the binary creates
+  # the parent directory itself on first write.
+  copilotApiProxyWrapped = pkgs.symlinkJoin {
+    name = "copilot-api-proxy-wrapped";
+    paths = [ pkgs.copilot-api-proxy ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/copilot-api-proxy \
+        --set-default COPILOT_PROXY_LOG_FILE "${config.xdg.stateHome}/copilot-api-proxy/copilot-api-proxy.log"
+    '';
+  };
 in
 {
   programs = {
@@ -237,7 +254,7 @@ in
     with pkgs;
     [
       leanspec-cli
-      copilot-api-proxy
+      copilotApiProxyWrapped
       go-task
       yq-go
       viddy

@@ -207,7 +207,7 @@ func TestHandleMessagesForwardsAndRetries(t *testing.T) {
 		Editor:            auth.DefaultEditorHeaders(),
 		BetaAllowPrefixes: defaultBetaAllowPrefixes,
 	}
-	srv := NewServer(mgr, cfg)
+	srv := NewServer(mgr, cfg, nil)
 
 	body := `{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))

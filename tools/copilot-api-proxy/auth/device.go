@@ -67,6 +67,10 @@ func requestDeviceCode(ctx context.Context, o options) (deviceCode, error) {
 	if dc.DeviceCode == "" {
 		return deviceCode{}, errors.New("device code response missing device_code")
 	}
+	o.logger.Debug("requested device code",
+		"verification_uri", dc.VerificationURI,
+		"interval_seconds", dc.Interval,
+		"expires_in_seconds", dc.ExpiresIn)
 	return dc, nil
 }
 
@@ -94,11 +98,13 @@ func pollForToken(ctx context.Context, o options, dc deviceCode) (string, error)
 		}
 		switch {
 		case tok != "":
+			o.logger.Debug("device authorization granted")
 			return tok, nil
 		case errCode == "authorization_pending":
 			// keep polling at the current interval
 		case errCode == "slow_down":
 			interval += 5 * time.Second
+			o.logger.Debug("device polling slowed by server", "interval_seconds", int(interval.Seconds()))
 		case errCode == "expired_token", errCode == "access_denied":
 			return "", fmt.Errorf("device authorization rejected: %s", errCode)
 		case errCode != "":

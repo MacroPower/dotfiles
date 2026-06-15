@@ -65,6 +65,11 @@
 //   - COPILOT_BETA_ALLOW: comma-separated Anthropic-Beta name prefixes to
 //     forward, replacing the built-in allowlist. Copilot 400s on betas it does
 //     not recognize, so unlisted betas are stripped.
+//   - COPILOT_PROXY_LOG_LEVEL: debug, info (default), warn, or error.
+//     Per-request and token-refresh detail is emitted at debug.
+//   - COPILOT_PROXY_LOG_FILE: when set, logs are written here as JSON.
+//     Otherwise serve and login log text to stderr; run logs nothing (claude
+//     owns the terminal), so set this to capture a run's logs.
 //
 // # Authorization and Terms of Service
 //

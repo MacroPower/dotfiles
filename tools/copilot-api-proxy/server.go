@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/copilot-api-proxy/auth"
 )
@@ -21,12 +23,27 @@ type Server struct {
 	mgr    *auth.Manager
 	cfg    Config
 	client *http.Client
+	log    *slog.Logger
 }
 
 // NewServer constructs a Server. The upstream client has no timeout so it can
-// hold streaming responses open for the lifetime of a request.
-func NewServer(mgr *auth.Manager, cfg Config) *Server {
-	return &Server{mgr: mgr, cfg: cfg, client: &http.Client{}}
+// hold streaming responses open for the lifetime of a request. A nil logger
+// discards output.
+func NewServer(mgr *auth.Manager, cfg Config, logger *slog.Logger) *Server {
+	return &Server{mgr: mgr, cfg: cfg, client: &http.Client{}, log: logger}
+}
+
+// discardLogger backs [Server.logger] when no logger is set, so a directly
+// constructed zero-value Server (as in tests) logs nothing rather than
+// panicking on a nil *slog.Logger.
+var discardLogger = slog.New(slog.DiscardHandler)
+
+// logger returns the server's logger, or a discarding logger when unset.
+func (s *Server) logger() *slog.Logger {
+	if s.log == nil {
+		return discardLogger
+	}
+	return s.log
 }
 
 // Handler returns the proxy's HTTP routes.
@@ -52,6 +69,7 @@ type contentBlock struct {
 
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if !s.authorized(r) {
+		s.logger().Warn("rejected unauthorized request", "path", r.URL.Path, "remote", r.RemoteAddr)
 		writeAnthropicError(w, http.StatusUnauthorized, "authentication_error", "missing or invalid api key")
 		return
 	}
@@ -64,6 +82,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	prepared, stream, initiator, vision, err := s.prepare(body)
 	if err != nil {
+		s.logger().Warn("rejected invalid request body", "error", err, "bytes", len(body))
 		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
@@ -93,11 +112,13 @@ func (s *Server) prepare(body []byte) (out []byte, stream bool, initiator string
 	}
 	initiator, vision = scanMessages(msgs)
 
-	mapped, err := json.Marshal(s.cfg.ModelFor(requested))
+	mappedModel := s.cfg.ModelFor(requested)
+	mapped, err := json.Marshal(mappedModel)
 	if err != nil {
 		return nil, false, "", false, fmt.Errorf("encode model: %w", err)
 	}
 	raw["model"] = mapped
+	s.logger().Debug("mapped model", "requested", requested, "mapped", mappedModel)
 
 	// Re-encode with HTML escaping disabled so prompt text containing <, >, or
 	// & (XML tags like <system-reminder>, shell &&, comparison operators) is
@@ -147,40 +168,66 @@ func contentBlocks(raw json.RawMessage) []contentBlock {
 }
 
 func (s *Server) forward(w http.ResponseWriter, r *http.Request, body []byte, stream bool, initiator string, vision bool) {
+	start := time.Now()
+
+	// A single x-request-id is reused across the 401 retry so the upstream
+	// sees one logical request; it also correlates this proxy's log lines.
+	reqID := newRequestID()
+
 	tok, err := s.mgr.Current(r.Context())
 	if err != nil {
+		s.logger().Warn("token acquisition before request", "request_id", reqID, "error", err)
 		writeAuthError(w, err)
 		return
 	}
 
-	// A single x-request-id is reused across the 401 retry so the upstream
-	// sees one logical request.
-	reqID := newRequestID()
-
 	resp, err := s.do(r.Context(), r, tok, body, stream, initiator, vision, reqID)
 	if err != nil {
+		s.logger().Warn("upstream request error", "request_id", reqID, "error", err)
 		writeAnthropicError(w, http.StatusBadGateway, "api_error", err.Error())
 		return
 	}
 
+	retried := false
 	if resp.StatusCode == http.StatusUnauthorized {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 
+		s.logger().Debug("refreshing session token after upstream 401", "request_id", reqID)
+		retried = true
 		tok, err = s.mgr.ForceRefresh(r.Context(), tok.Bearer)
 		if err != nil {
+			s.logger().Warn("token refresh after 401", "request_id", reqID, "error", err)
 			writeAuthError(w, err)
 			return
 		}
 		resp, err = s.do(r.Context(), r, tok, body, stream, initiator, vision, reqID)
 		if err != nil {
+			s.logger().Warn("upstream request error after refresh", "request_id", reqID, "error", err)
 			writeAnthropicError(w, http.StatusBadGateway, "api_error", err.Error())
 			return
 		}
 	}
 	defer resp.Body.Close()
 
+	status := resp.StatusCode
 	relay(w, resp)
+
+	// Logged after relay so duration_ms covers streaming to the client. A
+	// non-2xx upstream status is the proxy's most actionable signal, so it is
+	// logged at warn; successful requests stay at info for a readable trace.
+	level := slog.LevelInfo
+	if status >= http.StatusBadRequest {
+		level = slog.LevelWarn
+	}
+	s.logger().Log(r.Context(), level, "request",
+		"request_id", reqID,
+		"status", status,
+		"initiator", initiator,
+		"vision", vision,
+		"stream", stream,
+		"retried", retried,
+		"duration_ms", time.Since(start).Milliseconds())
 }
 
 func (s *Server) do(ctx context.Context, r *http.Request, tok auth.CopilotToken, body []byte, stream bool, initiator string, vision bool, reqID string) (*http.Response, error) {
@@ -210,15 +257,23 @@ func (s *Server) do(ctx context.Context, r *http.Request, tok auth.CopilotToken,
 	// that Copilot has not allowlisted. Only betas matching the configured allow
 	// prefixes (and no deny prefix) survive; the rest are stripped.
 	req.Header.Set("Anthropic-Version", headerOr(r, "Anthropic-Version", "2023-06-01"))
-	if betas := filterBetas(r.Header.Values("Anthropic-Beta"), s.cfg.BetaAllowPrefixes); len(betas) > 0 {
+	betas := filterBetas(r.Header.Values("Anthropic-Beta"), s.cfg.BetaAllowPrefixes)
+	if len(betas) > 0 {
 		req.Header.Set("Anthropic-Beta", strings.Join(betas, ","))
 	}
+
+	s.logger().Debug("forwarding to upstream",
+		"request_id", reqID,
+		"url", req.URL.String(),
+		"bytes", len(body),
+		"betas_forwarded", betas)
 
 	return s.client.Do(req)
 }
 
 func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	if !s.authorized(r) {
+		s.logger().Warn("rejected unauthorized request", "path", r.URL.Path, "remote", r.RemoteAddr)
 		writeAnthropicError(w, http.StatusUnauthorized, "authentication_error", "missing or invalid api key")
 		return
 	}
@@ -247,7 +302,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 // handleCatchAll answers Claude Code's assorted startup probes with a benign
 // 200 so warmup never hard-fails.
-func (s *Server) handleCatchAll(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleCatchAll(w http.ResponseWriter, r *http.Request) {
+	s.logger().Debug("catch-all probe", "method", r.Method, "path", r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
