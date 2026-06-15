@@ -178,8 +178,11 @@ func managerOptions(cfg Config, logger *slog.Logger) ([]auth.Option, error) {
 	if cfg.DataDir != "" {
 		opts = append(opts, auth.WithDataDir(cfg.DataDir))
 	}
+	if cfg.CopilotToken != "" {
+		opts = append(opts, auth.WithGitHubToken(cfg.CopilotToken))
+	}
 	if cfg.GitHubToken != "" {
-		opts = append(opts, auth.WithGitHubToken(cfg.GitHubToken))
+		opts = append(opts, auth.WithFallbackGitHubToken(cfg.GitHubToken))
 	}
 	if cfg.APIBase != "" {
 		opts = append(opts, auth.WithAPIBaseOverride(cfg.APIBase))

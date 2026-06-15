@@ -39,9 +39,13 @@
 //
 // # Environment
 //
-//   - GITHUB_TOKEN: a GitHub OAuth token (from the device flow). Read in
-//     preference to the persisted token file. Classic PATs are not accepted
-//     by Copilot's token endpoint; use the login subcommand.
+//   - GH_COPILOT_TOKEN: an explicit GitHub token that overrides the persisted
+//     login token. Use for non-interactive setups; it must be a device-flow
+//     ghu_ token (the exchange rejects PATs and gh-CLI tokens).
+//   - GITHUB_TOKEN: a last-resort fallback, used only when GH_COPILOT_TOKEN is
+//     unset and no login token is stored. Token precedence is GH_COPILOT_TOKEN
+//     > login store > GITHUB_TOKEN, so an ambient GITHUB_TOKEN (typically a PAT
+//     or gh-CLI token Copilot rejects) no longer shadows the login token.
 //   - COPILOT_PROXY_ADDR: serve listen address (default 127.0.0.1:9876).
 //   - COPILOT_PROXY_CLAUDE: the claude binary the run subcommand launches
 //     (default "claude").

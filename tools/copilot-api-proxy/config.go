@@ -11,11 +11,18 @@ import (
 // Config holds the proxy's runtime configuration, assembled from the
 // environment by [Load].
 type Config struct {
-	ListenAddr  string
-	DataDir     string
-	MasterKey   string
-	GitHubToken string
-	APIBase     string
+	ListenAddr string
+	DataDir    string
+	MasterKey  string
+	APIBase    string
+
+	// CopilotToken (GH_COPILOT_TOKEN) is an explicit GitHub token that overrides
+	// the persisted login token. GitHubToken (GITHUB_TOKEN) is a last-resort
+	// fallback used only when neither is set, because a generic GITHUB_TOKEN is
+	// usually a PAT or gh-CLI token the Copilot exchange rejects. Precedence:
+	// GH_COPILOT_TOKEN > login store > GITHUB_TOKEN.
+	CopilotToken string
+	GitHubToken  string
 
 	// Control-plane auth endpoint overrides. Empty values keep the public
 	// github.com defaults. GHEHost is a convenience that derives all three URLs
@@ -56,11 +63,12 @@ type Config struct {
 func Load() Config {
 	def := auth.DefaultEditorHeaders()
 	return Config{
-		ListenAddr:  envOr("COPILOT_PROXY_ADDR", "127.0.0.1:9876"),
-		DataDir:     os.Getenv("COPILOT_PROXY_DATA_DIR"),
-		MasterKey:   os.Getenv("COPILOT_PROXY_MASTER_KEY"),
-		GitHubToken: firstEnv("GITHUB_TOKEN", "GH_COPILOT_TOKEN"),
-		APIBase:     os.Getenv("COPILOT_API_BASE"),
+		ListenAddr:   envOr("COPILOT_PROXY_ADDR", "127.0.0.1:9876"),
+		DataDir:      os.Getenv("COPILOT_PROXY_DATA_DIR"),
+		MasterKey:    os.Getenv("COPILOT_PROXY_MASTER_KEY"),
+		CopilotToken: os.Getenv("GH_COPILOT_TOKEN"),
+		GitHubToken:  os.Getenv("GITHUB_TOKEN"),
+		APIBase:      os.Getenv("COPILOT_API_BASE"),
 
 		DeviceCodeURL:   os.Getenv("COPILOT_DEVICE_CODE_URL"),
 		AccessTokenURL:  os.Getenv("COPILOT_ACCESS_TOKEN_URL"),
@@ -162,15 +170,6 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
-}
-
-func firstEnv(keys ...string) string {
-	for _, k := range keys {
-		if v := os.Getenv(k); v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // betaAllowPrefixes returns the configured Anthropic-Beta allow prefixes,

@@ -157,6 +157,60 @@ func TestExchangeBaseURLPrecedence(t *testing.T) {
 	}
 }
 
+func TestManagerTokenPrecedence(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		explicit string // WithGitHubToken (GH_COPILOT_TOKEN)
+		fallback string // WithFallbackGitHubToken (GITHUB_TOKEN)
+		stored   string // persisted login token
+		wantAuth string
+	}{
+		"explicit beats store and fallback": {"ghu_explicit", "ghu_fallback", "ghu_stored", "token ghu_explicit"},
+		"store beats fallback":              {"", "ghu_fallback", "ghu_stored", "token ghu_stored"},
+		"fallback when nothing else":        {"", "ghu_fallback", "", "token ghu_fallback"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotAuth string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotAuth = r.Header.Get("Authorization")
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"token":      "tid=x",
+					"expires_at": 9999999999,
+					"refresh_in": 1500,
+					"endpoints":  map[string]string{"api": "https://api.example.test"},
+				})
+			}))
+			defer srv.Close()
+
+			dir := t.TempDir()
+			if tc.stored != "" {
+				require.NoError(t, auth.SaveGitHubToken(dir, tc.stored))
+			}
+
+			opts := []auth.Option{
+				auth.WithEndpoints(auth.Endpoints{CopilotToken: srv.URL}),
+				auth.WithDataDir(dir),
+			}
+			if tc.explicit != "" {
+				opts = append(opts, auth.WithGitHubToken(tc.explicit))
+			}
+			if tc.fallback != "" {
+				opts = append(opts, auth.WithFallbackGitHubToken(tc.fallback))
+			}
+
+			m, err := auth.NewManager(opts...)
+			require.NoError(t, err)
+			require.NoError(t, m.Start(t.Context()))
+			assert.Equal(t, tc.wantAuth, gotAuth)
+		})
+	}
+}
+
 func TestManagerStartWithoutToken(t *testing.T) {
 	t.Parallel()
 

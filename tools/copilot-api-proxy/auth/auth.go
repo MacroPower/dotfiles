@@ -123,6 +123,7 @@ func (t CopilotToken) fresh(now time.Time) bool {
 
 // Option configures a [Manager] or [Login]. The available options are:
 //   - [WithGitHubToken]
+//   - [WithFallbackGitHubToken]
 //   - [WithDataDir]
 //   - [WithHTTPClient]
 //   - [WithEndpoints]
@@ -134,6 +135,7 @@ type Option func(*options)
 
 type options struct {
 	githubToken     string
+	fallbackToken   string
 	dataDir         string
 	client          *http.Client
 	clientID        string
@@ -145,9 +147,15 @@ type options struct {
 	logger          *slog.Logger
 }
 
-// WithGitHubToken supplies the GitHub OAuth token directly, bypassing the
-// token store. It is an [Option].
+// WithGitHubToken supplies the GitHub OAuth token directly, taking precedence
+// over the token store. It is an [Option].
 func WithGitHubToken(tok string) Option { return func(o *options) { o.githubToken = tok } }
+
+// WithFallbackGitHubToken supplies a GitHub OAuth token used only when no
+// [WithGitHubToken] is given and the token store is empty. It exists so a
+// generic ambient GITHUB_TOKEN remains a last resort rather than shadowing the
+// token minted by [Login]. It is an [Option].
+func WithFallbackGitHubToken(tok string) Option { return func(o *options) { o.fallbackToken = tok } }
 
 // WithDataDir sets the directory used to load and persist the GitHub token. It
 // is an [Option].
@@ -209,6 +217,7 @@ type Manager struct {
 	apiBaseOverride string
 	accountTypeBase string
 	ghToken         string
+	tokenSource     string
 	log             *slog.Logger
 
 	// refreshMu serializes token exchanges so concurrent callers coalesce.
@@ -232,9 +241,23 @@ func NewManager(opts ...Option) (*Manager, error) {
 		dir = d
 	}
 
-	tok := o.githubToken
+	// Precedence: an explicit token (GH_COPILOT_TOKEN) wins, then the persisted
+	// login token, then a generic fallback (GITHUB_TOKEN). The fallback ranks
+	// last so an ambient GITHUB_TOKEN -- usually a PAT or gh-CLI token the
+	// exchange rejects -- never shadows the token minted by Login.
+	tok, source := strings.TrimSpace(o.githubToken), "gh_copilot_token"
 	if tok == "" {
-		tok, _ = LoadGitHubToken(dir)
+		if stored, err := LoadGitHubToken(dir); err == nil && stored != "" {
+			tok, source = stored, "login_store"
+		}
+	}
+	if tok == "" {
+		if fb := strings.TrimSpace(o.fallbackToken); fb != "" {
+			tok, source = fb, "github_token"
+		}
+	}
+	if tok == "" {
+		source = ""
 	}
 
 	return &Manager{
@@ -244,7 +267,8 @@ func NewManager(opts ...Option) (*Manager, error) {
 		editor:          o.editor,
 		apiBaseOverride: o.apiBaseOverride,
 		accountTypeBase: o.accountTypeBase,
-		ghToken:         strings.TrimSpace(tok),
+		ghToken:         tok,
+		tokenSource:     source,
 		log:             o.logger,
 	}, nil
 }
@@ -256,7 +280,14 @@ func (m *Manager) Start(ctx context.Context) error {
 	if m.ghToken == "" {
 		return ErrNoGitHubToken
 	}
-	m.log.Debug("starting token manager", "token_endpoint", m.endpoints.CopilotToken)
+	m.log.Debug("starting token manager", "token_endpoint", m.endpoints.CopilotToken, "token_source", m.tokenSource)
+	// Only a ghu_ device-flow token is reliably accepted by the exchange; a
+	// gho_ (gh CLI) or PAT typically 404s/403s. Surface a likely mismatch so a
+	// shadowing GITHUB_TOKEN is diagnosable rather than a bare 404.
+	if !strings.HasPrefix(m.ghToken, "ghu_") {
+		m.log.Warn("github token is not a ghu_ device-flow token; the copilot exchange usually rejects other kinds",
+			"token_source", m.tokenSource, "token_kind", tokenKind(m.ghToken))
+	}
 	if _, err := m.doRefresh(ctx, ""); err != nil {
 		return err
 	}
@@ -447,6 +478,18 @@ func (m *Manager) exchange(ctx context.Context) (CopilotToken, error) {
 		ExpiresAt: expiresAt,
 		RefreshAt: refreshAt,
 	}, nil
+}
+
+// tokenKind returns the GitHub token's type prefix (ghu_, gho_, ghp_,
+// github_pat_, ...) for logging, so a wrong token is identifiable without
+// exposing the secret itself.
+func tokenKind(tok string) string {
+	for _, p := range []string{"github_pat_", "ghu_", "gho_", "ghp_", "ghs_", "ghr_"} {
+		if strings.HasPrefix(tok, p) {
+			return p
+		}
+	}
+	return "unknown"
 }
 
 // truncate shortens s to at most n bytes, appending an ellipsis marker when it
