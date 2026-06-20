@@ -634,6 +634,7 @@ let
           lib.escapeShellArg (builtins.toJSON (removeAttrs cfg.outputCompaction [ "saveFullOutput" ]))
         } \
         ${lib.optionalString cfg.outputCompaction.saveFullOutput ''--compaction-output-dir "${config.xdg.stateHome}/hook-router/outputs"''} \
+        ${lib.optionalString cfg.searchRewrite.enable "--search-rewrite-config ${lib.escapeShellArg (builtins.toJSON (removeAttrs cfg.searchRewrite [ "enable" ]))}"} \
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
         "$@"
@@ -1447,6 +1448,65 @@ in
         hook-router PostToolUse:Bash output compaction. camelCase keys so
         `builtins.toJSON` matches the Go struct tags in
         tools/hook-router/compactor.go CompactConfig.
+      '';
+    };
+
+    searchRewrite = mkOption {
+      type = types.submodule {
+        options = {
+          enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether hook-router transparently rewrites `grep` and
+              `find` Bash commands into `rg` and `bfs` on
+              PreToolUse:Bash. When false, no --search-rewrite-config
+              flag is passed and the wrapper leaves search commands
+              untouched.
+            '';
+          };
+          grep = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether to rewrite `grep` into `rg`, mapping the known
+              flag set and injecting exclude globs. Conservative:
+              commands using an unmapped flag or a BRE pattern that
+              would mis-translate are left untouched.
+            '';
+          };
+          find = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether to rewrite `find` into `bfs` with a global
+              `-exclude` prune of findExcludes injected after the
+              command word.
+            '';
+          };
+          findExcludes = mkOption {
+            type = types.listOf types.str;
+            default = [
+              ".git"
+              ".worktrees"
+              ".claude/worktrees"
+            ];
+            description = ''
+              Directories pruned from both rewrites. The single source
+              of truth shared by the hook (via --search-rewrite-config)
+              and the interactive fish `find` wrapper. A basename entry
+              (no slash) prunes by name; a slash-bearing entry prunes by
+              path. Each entry becomes a bfs `-exclude` clause and an rg
+              `-g` exclude glob.
+            '';
+          };
+        };
+      };
+      default = { };
+      description = ''
+        hook-router PreToolUse:Bash search rewriting. camelCase keys so
+        `builtins.toJSON` matches the Go struct tags in
+        tools/hook-router/searchrewrite/searchrewrite.go Config.
       '';
     };
 

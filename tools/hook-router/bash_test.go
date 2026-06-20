@@ -14,7 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/archive"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/cmdrules"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/compact"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 )
 
 // TestHandleBashAutoAllow exercises the --auto-allow paths in
@@ -334,6 +336,215 @@ func TestHandleBashAutoAllow(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes(),
 			"malformed JSON must hit the early-out, not the auto-allow encoder")
+	})
+}
+
+// TestHandleBashSearchRewrite covers the search-rewrite branch in
+// [handleBash]: read-only rewrites emit allow + updatedInput, non-read-only
+// commands are left untouched, and deny rules still win.
+func TestHandleBashSearchRewrite(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.DiscardHandler)
+
+	searchCfg := searchrewrite.Config{
+		Grep:         true,
+		Find:         true,
+		FindExcludes: []string{".git", ".worktrees", ".claude/worktrees"},
+	}
+
+	// inputWith builds a Bash payload carrying extra tool_input fields so
+	// the updatedInput carry-over can be asserted.
+	inputWith := func(t *testing.T, command string, extra map[string]any) []byte {
+		t.Helper()
+
+		ti := map[string]any{"command": command}
+		for k, v := range extra {
+			ti[k] = v
+		}
+
+		b, err := json.Marshal(map[string]any{"tool_input": ti})
+		require.NoError(t, err)
+
+		return b
+	}
+
+	t.Run("read-only find: allow with rewritten updatedInput", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules:  canonicalRules(),
+			searchRewrite: searchCfg,
+		}
+
+		var stdout bytes.Buffer
+
+		input := inputWith(t, `find . -name "*.go"`, map[string]any{
+			"description": "find go files",
+			"timeout":     float64(5000),
+		})
+
+		err := handleBash(input, &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "allow", hso["permissionDecision"])
+
+		updated, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok, "missing updatedInput")
+		assert.Equal(t,
+			`bfs -exclude \( -name .git -o -name .worktrees -o -path '*.claude/worktrees' \) . -name "*.go"`,
+			updated["command"],
+		)
+		// Sibling tool_input fields must carry over: updatedInput replaces
+		// the entire input object.
+		assert.Equal(t, "find go files", updated["description"])
+		assert.Equal(t, float64(5000), updated["timeout"])
+	})
+
+	t.Run("read-only grep: allow with rewritten updatedInput", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules:  canonicalRules(),
+			searchRewrite: searchCfg,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash([]byte(`{"tool_input":{"command":"grep -rn foo ."}}`), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "allow", hso["permissionDecision"])
+
+		updated, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok, "missing updatedInput")
+		assert.Equal(t,
+			`rg -n foo . -g '!.git' -g '!.worktrees' -g '!.claude/worktrees' -g '!**/.claude/worktrees'`,
+			updated["command"],
+		)
+	})
+
+	t.Run("non-read-only find -delete: no rewrite emitted", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules:  canonicalRules(),
+			searchRewrite: searchCfg,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash([]byte(`{"tool_input":{"command":"find . -delete"}}`), &stdout, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes(),
+			"a non-read-only command must fall through unrewritten")
+	})
+
+	t.Run("non-read-only redirection: no rewrite emitted", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules:  canonicalRules(),
+			searchRewrite: searchCfg,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash([]byte(`{"tool_input":{"command":"grep -rn foo . > out"}}`), &stdout, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("deny rule beats a rewritable command", func(t *testing.T) {
+		t.Parallel()
+
+		// A deny rule on a search command must win over the rewrite: the
+		// rewrite runs after commandRules.Check, so deny precedence holds.
+		cfg := config{
+			commandRules: cmdrules.New([]cmdrules.Rule{
+				{Command: "find", Reason: "no find allowed"},
+			}),
+			searchRewrite: searchCfg,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash([]byte(`{"tool_input":{"command":"find . -name x"}}`), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+	})
+
+	t.Run("autoAllow=true + read-only search: allow with updatedInput", func(t *testing.T) {
+		t.Parallel()
+
+		// The rewrite runs before the autoAllow fall-through, so a
+		// read-only search still gets its rewritten updatedInput rather
+		// than a plain auto-allow.
+		cfg := config{
+			commandRules:  canonicalRules(),
+			searchRewrite: searchCfg,
+			autoAllow:     true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash([]byte(`{"tool_input":{"command":"find . -name x"}}`), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "allow", hso["permissionDecision"])
+
+		updated, ok := hso["updatedInput"].(map[string]any)
+		require.True(t, ok, "read-only search must rewrite even under autoAllow")
+		assert.Contains(t, updated["command"], "bfs -exclude")
+	})
+
+	t.Run("non-read-only under autoAllow: plain auto-allow, no updatedInput", func(t *testing.T) {
+		t.Parallel()
+
+		// A non-read-only command is left unrewritten and falls through to
+		// the existing autoAllow branch, so no prompt-behavior regression.
+		cfg := config{
+			commandRules:  canonicalRules(),
+			searchRewrite: searchCfg,
+			autoAllow:     true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash([]byte(`{"tool_input":{"command":"find . -delete"}}`), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "allow", hso["permissionDecision"])
+		assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
+
+		_, hasUpdated := hso["updatedInput"]
+		assert.False(t, hasUpdated, "non-read-only command must not carry updatedInput")
 	})
 }
 

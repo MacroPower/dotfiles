@@ -19,6 +19,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/postimpl"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
 )
 
@@ -76,6 +77,7 @@ type config struct {
 	formatterRules *formatter.Engine
 	compactor      *compact.Compactor
 	outputArchive  *archive.Archive
+	searchRewrite  searchrewrite.Config
 	commitSkills   []string
 	kubeconfigPath string
 	claudePID      string
@@ -112,19 +114,20 @@ func main() {
 	formatterRules := flag.String("formatter-rules", "", "JSON array of file-formatter routing rules ({pathGlob, command, timeout})")
 	compactionConfig := flag.String("compaction-config", "", "JSON object configuring PostToolUse:Bash output compaction ({enable, stripAnsi, minRunLength, minBytes, streams})")
 	compactionOutputDir := flag.String("compaction-output-dir", "", "directory to archive a compacted Bash stream's uncompacted content to (\"\" disables archiving)")
+	searchRewriteConfig := flag.String("search-rewrite-config", "", "JSON object configuring PreToolUse:Bash search rewriting ({grep, find, findExcludes})")
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *formatterRules, *compactionConfig, *compactionOutputDir, *autoAllow, *skipPlanReview)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *formatterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *autoAllow, *skipPlanReview)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir string, autoAllow, skipPlanReview bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON string, autoAllow, skipPlanReview bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -208,6 +211,15 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("output compaction is disabled")
 	}
 
+	searchRewrite, err := searchrewrite.Parse(searchRewriteConfigJSON)
+	if err != nil {
+		return fmt.Errorf("parsing --search-rewrite-config: %w", err)
+	}
+
+	if !searchRewrite.Grep && !searchRewrite.Find {
+		logger.Debug("search rewriting is disabled")
+	}
+
 	cfg := configFromEnv()
 	cfg.postImpl = catalog
 	cfg.commitSkills = skills
@@ -215,6 +227,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.formatterRules = formatters
 	cfg.compactor = compactor
 	cfg.outputArchive = archive.New(compactionOutputDir)
+	cfg.searchRewrite = searchRewrite
 	cfg.autoAllow = autoAllow
 	cfg.skipPlanReview = skipPlanReview
 

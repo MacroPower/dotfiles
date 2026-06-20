@@ -11,6 +11,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
 )
 
@@ -157,6 +158,33 @@ func handleBash(input []byte, stdout io.Writer, cfg config, logger *slog.Logger)
 		}
 
 		return nil
+	}
+
+	// Transparently rewrite grep->rg and find->bfs. A rewrite is only
+	// emitted when the whole command is read-only, since the only
+	// documented way to carry updatedInput pairs it with an "allow"
+	// decision (deny/ask rules are still re-evaluated on the modified
+	// input). A non-read-only command is left untouched and falls through
+	// to the existing autoAllow branch unchanged, so a `find ... -delete`
+	// runs as plain find rather than being unsafely auto-approved.
+	if newCmd, readOnly, changed := searchrewrite.Rewrite(prog, command, cfg.searchRewrite); changed && readOnly {
+		updated := make(map[string]any, len(h.ToolInput))
+		for k, v := range h.ToolInput {
+			updated[k] = v
+		}
+
+		updated["command"] = newCmd
+
+		reason := "Rewrote search command (grep->rg, find->bfs) to skip ignored dirs and limit output."
+
+		logger.Info(
+			"allow",
+			slog.String("rule", "search-rewrite"),
+			slog.String("command", command),
+			slog.String("rewritten", newCmd),
+		)
+
+		return writeDecision(stdout, hook.AllowWithInput(reason, updated))
 	}
 
 	if cfg.autoAllow {

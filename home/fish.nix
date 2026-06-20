@@ -8,6 +8,19 @@
 let
   inherit (config.lib.stylix) colors;
   inherit (import ../lib/nerdfonts.nix) icons;
+
+  # Build the bfs `-exclude` prune expression from the shared exclude
+  # list, so the interactive `find` wrapper and the hook-router rewrite
+  # stay in sync. A basename entry prunes by `-name`, a slash-bearing
+  # entry by `-path '*<entry>'` (the leading `*` also matches when the
+  # dir is the search root). Parens are single-quoted so fish does not
+  # treat them as command substitution. The hook-router rewrite builds
+  # the same expression in Go (excludeExpr in
+  # tools/hook-router/searchrewrite/searchrewrite.go); keep both in sync.
+  findExcludes = config.dotfiles.claude.searchRewrite.findExcludes;
+  bfsExcludeExpr = lib.concatStringsSep " -o " (
+    map (e: if lib.hasInfix "/" e then "-path '*${e}'" else "-name ${e}") findExcludes
+  );
 in
 {
   # Fix low-contrast base16-fish colors using stylix palette
@@ -574,6 +587,13 @@ in
 
     functions = {
       fish_greeting = "";
+
+      # Interactive `find` -> bfs (a drop-in find replacement) with the
+      # shared excludes pruned. bfs free-mixes flags, paths, and
+      # expressions, so prepending `-exclude` before $argv is valid for
+      # any user args. Output ordering differs from find: bfs is
+      # breadth-first. Escape hatch: `command find`.
+      find = "command bfs -exclude '(' ${bfsExcludeExpr} ')' $argv";
     };
 
     plugins = [

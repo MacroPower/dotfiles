@@ -73,6 +73,26 @@ func Allow(reason string) map[string]any {
 	}
 }
 
+// AllowWithInput returns a PreToolUse decision that skips the analyzer's
+// permission prompt and replaces the tool's entire tool_input with
+// updated before the call runs. updatedInput is the only documented way
+// to carry a rewritten input, and it is paired with an "allow" decision
+// because a decision-less updatedInput is unreliable. Claude Code
+// re-evaluates the modified input against settings deny and ask rules, so
+// this never bypasses the user's permission rules. The replacement is
+// whole-object: updated entirely supplants the prior tool_input, so it
+// must carry every field that should survive (description, timeout, etc.).
+func AllowWithInput(reason string, updated map[string]any) map[string]any {
+	return map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName":            "PreToolUse",
+			"permissionDecision":       "allow",
+			"permissionDecisionReason": reason,
+			"updatedInput":             updated,
+		},
+	}
+}
+
 // Block returns a Stop decision that blocks the stop with the given
 // reason.
 func Block(reason string) map[string]any {

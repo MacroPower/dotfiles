@@ -255,6 +255,7 @@ in
     [
       leanspec-cli
       copilotApiProxyWrapped
+      bfs
       go-task
       yq-go
       viddy
