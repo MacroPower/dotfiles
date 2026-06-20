@@ -13,7 +13,7 @@
             readOnly = false;
             noExitOnCtrlC = false;
             ui = {
-              enableMouse = false;
+              enableMouse = true;
               headless = false;
               logoless = true;
               crumbsless = false;
