@@ -2608,6 +2608,7 @@ in
             };
             disableAutoMode = "disable";
             includeGitInstructions = false;
+            respondToBashCommands = true;
             inherit (cfg) attribution;
             permissions = {
               defaultMode = "plan";
@@ -2937,7 +2938,7 @@ in
       file.".claude/CLAUDE.md".text = ''
         ## Agents
         - Use `Agent({..., model: "<model>"})` to downgrade models for tasks where reasoning is not required.
-        - Explore agents (`subagent_type: "Explore"`) should use generally `model: "sonnet"` or `model: "haiku"`.
+        - Explore agents (`subagent_type: "Explore"`) inherit the session model by default; downgrade to `model: "sonnet"` or `model: "haiku"`.
         - Plan agents (`subagent_type: "Plan"`) should always use `model: "opus"`.
         - For generic agents, use your best judgement based on the task being assigned.
 

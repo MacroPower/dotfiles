@@ -7,21 +7,32 @@ allowed-tools: Read, Bash, Glob, Grep
 
 <!-- Customize conflict resolution strategy to match your preferences. -->
 
+<!-- Local deviation from upstream: workmux-store-meta-outside-config.patch
+moves branch.<n>.workmux-base from .git/config into
+$GIT_COMMON_DIR/workmux-config, so the base-branch lookups below read that
+file instead of upstream's plain `git config`. -->
+
 Rebase the current branch.
 
 Arguments: $ARGUMENTS
 
 Behavior:
 
-- No arguments: rebase on local main
+- No arguments: rebase on the current branch's workmux base branch
+  (`git config --file "$(git rev-parse --git-common-dir)/workmux-config"
+  branch.<current>.workmux-base`), falling back to local main when
+  none is configured
 - "origin": fetch origin, rebase on origin/main
 - "origin/branch": fetch origin, rebase on origin/branch
-- "branch": rebase on local branch
+- "branch": rebase on local branch (use "main" to force a rebase on local main)
 
 Steps:
 
 1. Parse arguments:
-   - No args → target is "main", no fetch
+   - No args → target is the current branch's workmux base branch
+     (`git config --file "$(git rev-parse --git-common-dir)/workmux-config"
+     --get branch.$(git branch --show-current).workmux-base`); if
+     that is empty, target is "main". No fetch.
    - Contains "/" (e.g., "origin/develop") → split into remote and branch, fetch
      remote, target is remote/branch
    - Just "origin" → fetch origin, target is "origin/main"
