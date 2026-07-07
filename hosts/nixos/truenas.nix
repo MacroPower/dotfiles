@@ -23,6 +23,12 @@
       };
     };
   homeModule = {
+    # home/fish.nix reads dotfiles.claude.searchRewrite, whose option is
+    # defined in home/claude.nix; every host imports it. Without this the
+    # home config fails to evaluate ("attribute 'claude' missing").
+    imports = [
+      ../../home/claude.nix
+    ];
     dotfiles = {
       git = {
         userName = "Jacob Colvin";
