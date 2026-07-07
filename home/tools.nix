@@ -104,7 +104,14 @@ in
       ];
     };
 
-    fzf.enable = true;
+    fzf = {
+      enable = true;
+      # Atuin owns Ctrl-R: its fish integration is sourced after fzf's and
+      # atuin.flags keeps it bound there. Drop fzf's redundant Ctrl-R history
+      # widget so the two stop fighting over the binding (fzf keeps Ctrl-T and
+      # Alt-C). Also silences home-manager's new Ctrl-R conflict warning.
+      historyWidget.command = "";
+    };
 
     zoxide.enable = true;
 

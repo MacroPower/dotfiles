@@ -25,5 +25,11 @@ in
       casks = [ "fuse-t" ];
       unsignedCasks = [ "fuse-t" ];
     };
+
+    # Homebrew 6.0 refuses to load casks from non-official taps until they
+    # are explicitly trusted (https://docs.brew.sh/Tap-Trust). Trust just the
+    # fuse-t cask rather than the whole macos-fuse-t/cask tap, so activation
+    # can install it without an interactive `brew trust` prompt.
+    nix-homebrew.trust.casks = [ "macos-fuse-t/cask/fuse-t" ];
   };
 }

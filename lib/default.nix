@@ -230,14 +230,14 @@ let
     deno =
       (prev.deno.override {
         librusty_v8 = final.fetchurl {
-          name = "librusty_v8-149.0.0";
-          url = "https://github.com/denoland/rusty_v8/releases/download/v149.0.0/librusty_v8_simdutf_release_${final.stdenv.hostPlatform.rust.rustcTarget}.a.gz";
+          name = "librusty_v8-149.3.0";
+          url = "https://github.com/denoland/rusty_v8/releases/download/v149.3.0/librusty_v8_simdutf_release_${final.stdenv.hostPlatform.rust.rustcTarget}.a.gz";
           hash =
             {
-              aarch64-darwin = "sha256-54gwgovFsu/BnoP4i2dGAv0UV4GiHb8x+9d/2xphHd4=";
-              x86_64-darwin = "sha256-QvExTdKoFkSwwZMzXJUJmA2aSazJ5h+2IURiw8NfJMc=";
-              aarch64-linux = "sha256-8MTNgU88hS7A+3xbRVUXlOwpeGPKqJDHdHO395nw3Ok=";
-              x86_64-linux = "sha256-ppoYAv51Hxeq5VpMmLHFOD7ppcDeSROS7ik55pzWL20=";
+              aarch64-darwin = "sha256-NM7YvkdoqSvQV27xKNoc0STYEg0Kj5i98NJg4G+Y7No=";
+              x86_64-darwin = "sha256-wMPA7cYxNoPqQaVxxsqPvsnoXk7fsoBwvzPGWroPKrE=";
+              aarch64-linux = "sha256-zOVYnRl958YJb7fNJvbKvYt1y5hTQb+bACHOnBVVruE=";
+              x86_64-linux = "sha256-hLvFwJ14pPybgsOoEDxkX2Kiotfya9JKSaV9Eg2KuDQ=";
             }
             .${final.stdenv.hostPlatform.system};
           meta.sourceProvenance = with final.lib.sourceTypes; [ binaryNativeCode ];
