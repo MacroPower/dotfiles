@@ -2891,6 +2891,7 @@ in
             showClearContextOnPlanAccept = true;
             fileCheckpointingEnabled = true;
             todoFeatureEnabled = true;
+            askUserQuestionTimeout = "never";
             showTurnDuration = true;
             terminalProgressBarEnabled = true;
             autoCompactEnabled = true;
