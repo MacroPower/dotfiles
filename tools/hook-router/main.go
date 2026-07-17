@@ -18,6 +18,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/formatter"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/postimpl"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
@@ -49,6 +50,11 @@ import (
 // (nil-safe) before calling Annotate, and the SessionStart sweep reads
 // cfg.outputArchive.Dir() (nil-safe) for its root.
 //
+// mcpRules shares the compactor's nil-safe contract: mainErr always
+// wires it to a non-nil (possibly empty) value, but a bare config{}
+// test literal may leave it nil, since [mcprules.Ruleset.Match] and
+// [mcprules.Ruleset.Empty] guard a nil receiver.
+//
 // commitSkills lists the wrap-up skill names (without leading slash)
 // whose UserPromptSubmit invocation clears plan-guard state. A nil or
 // empty slice disables the failsafe.
@@ -75,6 +81,7 @@ type config struct {
 	postImpl       *postimpl.Catalog
 	commandRules   *cmdrules.Engine
 	formatterRules *formatter.Engine
+	mcpRules       *mcprules.Ruleset
 	compactor      *compact.Compactor
 	outputArchive  *archive.Archive
 	searchRewrite  searchrewrite.Config
@@ -106,11 +113,12 @@ func configFromEnv() config {
 func main() {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
 	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, UserPromptSubmit)")
-	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion)")
+	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion, or the MCP routing sentinel)")
 	dbPath := flag.String("db", "", "path to SQLite state database")
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
 	commandRules := flag.String("command-rules", "", "JSON array of command deny/ask rules ({command, args, except, action, reason})")
+	mcpRules := flag.String("mcp-rules", "", "JSON object of MCP tool allow/ask/deny pattern lists ({allow, ask, deny}); patterns are exact names, bare server names, or trailing-* globs")
 	formatterRules := flag.String("formatter-rules", "", "JSON array of file-formatter routing rules ({pathGlob, command, timeout})")
 	compactionConfig := flag.String("compaction-config", "", "JSON object configuring PostToolUse:Bash output compaction ({enable, stripAnsi, minRunLength, minBytes, streams})")
 	compactionOutputDir := flag.String("compaction-output-dir", "", "directory to archive a compacted Bash stream's uncompacted content to (\"\" disables archiving)")
@@ -120,14 +128,14 @@ func main() {
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *formatterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *autoAllow, *skipPlanReview)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *autoAllow, *skipPlanReview)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON string, autoAllow, skipPlanReview bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON string, autoAllow, skipPlanReview bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -193,6 +201,17 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("command rules engine is empty")
 	}
 
+	mcp, err := mcprules.Parse(mcpRulesJSON)
+	if err != nil {
+		return fmt.Errorf("parsing --mcp-rules: %w", err)
+	}
+
+	if mcp.Empty() {
+		// A host with every MCP-contributing bundle disabled is a
+		// legitimate config, so log at debug like the command rules.
+		logger.Debug("mcp rules ruleset is empty")
+	}
+
 	formatters, err := formatter.Parse(formatterRulesJSON)
 	if err != nil {
 		return fmt.Errorf("parsing --formatter-rules: %w", err)
@@ -224,6 +243,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.postImpl = catalog
 	cfg.commitSkills = skills
 	cfg.commandRules = rules
+	cfg.mcpRules = mcp
 	cfg.formatterRules = formatters
 	cfg.compactor = compactor
 	cfg.outputArchive = archive.New(compactionOutputDir)
@@ -286,6 +306,11 @@ func run(
 		switch tool {
 		case "Bash":
 			return handleBash(input, stdout, cfg, logger)
+		case "MCP":
+			// Routing sentinel from the mcp__.* hook matcher; the
+			// real tool name comes from the stdin payload, since
+			// Claude Code injects no tool-name env var.
+			return handleMCP(input, stdout, cfg, logger)
 		case "ExitPlanMode":
 			if store == nil {
 				return nil

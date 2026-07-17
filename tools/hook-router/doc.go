@@ -5,6 +5,9 @@
 //
 //   - PreToolUse:Bash             -- evaluates command deny/ask rules from
 //     --command-rules JSON and rewrites kubectl with KUBECONFIG
+//   - PreToolUse:MCP              -- evaluates MCP tool allow/ask/deny lists
+//     from --mcp-rules JSON ("MCP" is a routing sentinel; the tool name
+//     comes from the payload)
 //   - PreToolUse:ExitPlanMode     -- gates plan exit behind plan-reviewer, records
 //     plan path and baseline commit on approval
 //   - PreToolUse:EnterPlanMode    -- resets plan session state
@@ -26,7 +29,8 @@
 // handlers that connect Claude Code's hook protocol to the underlying
 // engines. The engines themselves live in independent, importable
 // subpackages -- hook (protocol I/O), cmdrules (command deny/ask
-// rules), formatter (file-formatter routing), compact (output
+// rules), mcprules (MCP tool allow/ask/deny resolution),
+// formatter (file-formatter routing), compact (output
 // compaction), archive (uncompacted-output archiving), state (SQLite
 // session state), kubectx (kubectl gating and session dir lifecycle),
 // git (repo queries), and postimpl (post-implementation skill

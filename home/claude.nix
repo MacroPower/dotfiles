@@ -627,6 +627,22 @@ let
             )
           )
         } \
+        --mcp-rules ${
+          # The MCP entries of the same aggregated lists that feed
+          # settings.permissions, re-enforced at hook level because
+          # plan mode ignores settings allow rules for
+          # subagent-originated MCP calls
+          # (anthropics/claude-code#73633). Filtering by the mcp__
+          # prefix keeps hook and settings in lockstep as bundles
+          # change.
+          lib.escapeShellArg (
+            builtins.toJSON {
+              allow = lib.filter (lib.hasPrefix "mcp__") (bundledAllow ++ cfg.extraPermissions.allow);
+              ask = lib.filter (lib.hasPrefix "mcp__") (bundledAsk ++ cfg.extraPermissions.ask);
+              deny = lib.filter (lib.hasPrefix "mcp__") (bundledDeny ++ cfg.extraPermissions.deny);
+            }
+          )
+        } \
         --formatter-rules ${
           lib.escapeShellArg (builtins.toJSON (defaultFormatterRules ++ cfg.formatterRules))
         } \
@@ -2790,6 +2806,20 @@ in
                     {
                       type = "command";
                       command = "${lib.getExe hookRouter} --event PreToolUse --tool EnterPlanMode";
+                    }
+                  ];
+                }
+                {
+                  # All MCP tools route to one hook entry; "MCP" is a
+                  # routing sentinel and hook-router reads the real
+                  # tool name from the payload. Only this matcher
+                  # matches mcp__* names, so there is exactly one
+                  # decision emitter per MCP call.
+                  matcher = "mcp__.*";
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${lib.getExe hookRouter} --event PreToolUse --tool MCP";
                     }
                   ];
                 }

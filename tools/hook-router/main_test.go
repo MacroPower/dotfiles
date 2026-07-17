@@ -16,6 +16,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/archive"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/formatter"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
 )
 
 func TestEventNeedsStore(t *testing.T) {
@@ -33,6 +34,7 @@ func TestEventNeedsStore(t *testing.T) {
 		"PreToolUse ExitPlanMode":             {event: "PreToolUse", tool: "ExitPlanMode", want: true},
 		"PreToolUse EnterPlanMode":            {event: "PreToolUse", tool: "EnterPlanMode", want: true},
 		"PreToolUse Bash skips store":         {event: "PreToolUse", tool: "Bash", want: false},
+		"PreToolUse MCP skips store":          {event: "PreToolUse", tool: "MCP", want: false},
 		"PreToolUse unknown skips store":      {event: "PreToolUse", tool: "Read", want: false},
 		"PostToolUse AskUserQuestion via --tool": {
 			event: "PostToolUse", tool: "AskUserQuestion", want: true,
@@ -270,6 +272,48 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, "PreToolUse", hso["hookEventName"])
 		assert.Equal(t, "allow", hso["permissionDecision"])
 		assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
+	})
+
+	t.Run("PreToolUse MCP: allow match flows through run() to handleMCP", func(t *testing.T) {
+		t.Parallel()
+
+		mcpCfg := config{
+			mcpRules: mcprules.New([]string{"mcp__github__search_code"}, nil, nil),
+		}
+
+		input := `{"tool_name":"mcp__github__search_code"}`
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "MCP", nil, mcpCfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+		assert.Equal(t, "allow", hso["permissionDecision"])
+		assert.Contains(t, hso["permissionDecisionReason"], "mcp__github__search_code")
+	})
+
+	t.Run("PreToolUse MCP: unmatched tool emits nothing", func(t *testing.T) {
+		t.Parallel()
+
+		mcpCfg := config{
+			mcpRules: mcprules.New([]string{"mcp__github__search_code"}, nil, nil),
+		}
+
+		input := `{"tool_name":"mcp__leanspec__view"}`
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "MCP", nil, mcpCfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
 	})
 
 	t.Run("PreToolUse Bash: denied kubectx", func(t *testing.T) {
