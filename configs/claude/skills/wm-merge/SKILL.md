@@ -20,13 +20,13 @@ Commit, rebase, and merge the current branch.
 
 This command finishes work on the current branch by:
 
-1. Committing any staged changes
+1. Committing all uncommitted changes
 2. Rebasing onto the base branch
 3. Running `workmux merge` to merge and clean up
 
 ## Step 1: Commit
 
-Stage all changes and create a single git commit with an appropriate message. Skip this step if there are no changes.
+Check for staged, unstaged, and untracked changes with `git status --porcelain`. If there are changes, stage all of them with `git add -A`, review the staged diff, and create a single git commit with an appropriate message. Skip this step if the working tree is clean.
 
 The commit subject must be 70 characters or less. The description must wrap at 70 characters. Use plain ASCII characters only. Keep the description short and to the point.
 

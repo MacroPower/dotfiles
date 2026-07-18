@@ -187,7 +187,7 @@ the current repository.
 
 ### Fan-out / Fan-in
 
-Spawn multiple agents, wait for all, review, merge:
+Spawn multiple agents, then review and merge each one as soon as it finishes:
 
 ```bash
 # 1. Write ALL prompt files first (see "Spawn Agents" above)
@@ -199,25 +199,31 @@ workmux add docs-update -b -P "$tmpfile_docs"
 # 3. Confirm they started
 workmux wait auth-module api-tests docs-update --status working --timeout 120
 
-# 4. Wait for completion
-workmux wait auth-module api-tests docs-update --timeout 7200
+# 4. Wait for any agent to finish
+workmux wait auth-module api-tests docs-update --any --timeout 7200
 
-# 5. Review results
-workmux status
+# 5. Identify the finished agent, review its output, and merge it immediately
+workmux status auth-module api-tests docs-update
 workmux capture auth-module -n 50
-workmux capture api-tests -n 50
-
-# 6. Merge successful agents (one at a time, wait between each)
 workmux send auth-module "/merge"
 workmux wait auth-module --timeout 120
+
+# 6. Repeat with the remaining agents so completed work does not wait idle
+workmux wait api-tests docs-update --any --timeout 7200
+workmux status api-tests docs-update
+workmux capture docs-update -n 50
+workmux send docs-update "/merge"
+workmux wait docs-update --timeout 120
+
+workmux wait api-tests --timeout 7200
+workmux capture api-tests -n 50
 workmux send api-tests "/merge"
 workmux wait api-tests --timeout 120
-
-# 7. Send follow-up if needed
-workmux send docs-update "also add the API reference section"
-workmux wait docs-update
-workmux send docs-update "/merge"
 ```
+
+After each `--any` wait, use `workmux status` to identify every agent that is
+`done`. Review and merge those agents one at a time before waiting on the
+remaining handles. Keep finished handles out of subsequent wait commands.
 
 ## Rules
 
@@ -227,10 +233,13 @@ workmux send docs-update "/merge"
    session.
 3. **Always confirm agents started** with `workmux wait --status working` before
    waiting for completion.
-4. **Capture and review output** before merging. Do not blindly merge.
-5. **Merge one at a time** by sending `/merge` to each agent sequentially. Wait
+4. **Wait with `--any` when multiple agents are running.** As soon as an agent
+   finishes, identify it with `workmux status`, capture and review its output,
+   and merge it before waiting again on the remaining handles.
+5. **Capture and review output** before merging. Do not blindly merge.
+6. **Merge one at a time** by sending `/merge` to each agent sequentially. Wait
    for each merge to complete before starting the next to avoid conflicts.
-6. **Use `--timeout`** to avoid waiting forever. Handle timeout exits
+7. **Use `--timeout`** to avoid waiting forever. Handle timeout exits
    gracefully.
-7. **Prompt files should use relative paths** (each worktree has its own root).
-8. You are a coordinator, not an implementer. Never edit source files directly.
+8. **Prompt files should use relative paths** (each worktree has its own root).
+9. You are a coordinator, not an implementer. Never edit source files directly.

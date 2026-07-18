@@ -378,7 +378,7 @@ let
     (nurJacobColvinOverlay system)
     ryceeOverlay
     (workmuxOverlay system)
-    llm-agents.overlays.default
+    llm-agents.overlays.shared-nixpkgs
     dagger.overlays.default
   ];
 
