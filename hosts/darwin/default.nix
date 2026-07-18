@@ -14,16 +14,15 @@
 
   nix.linux-builder.enable = true;
   nix.linux-builder.config = {
+    # Only tune the VM host resources (these affect the macOS-side launch
+    # script, which builds natively). Do NOT set nix.gc / nix.settings here:
+    # those bake config-unique trivial units (nix-gc.timer, nix.conf,
+    # nix-daemon.service) that aren't in any binary cache, so a Mac with no
+    # running builder can't build them and the builder can never bootstrap.
+    # Keeping the guest nix config stock means its whole closure substitutes.
     virtualisation.diskSize = lib.mkForce (120 * 1024); # 120 GiB
     virtualisation.cores = 8;
     virtualisation.memorySize = lib.mkForce (8 * 1024); # 8 GiB
-    nix.settings.min-free = lib.mkForce 0;
-    nix.settings.max-free = lib.mkForce 0;
-    nix.gc = {
-      automatic = true;
-      dates = "weekly";
-      options = "--delete-older-than 30d";
-    };
   };
 
   homebrew = {
