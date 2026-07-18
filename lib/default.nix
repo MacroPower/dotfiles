@@ -344,6 +344,23 @@ let
     ];
   };
 
+  # backrefs' test_timeout (tests/test_bregex.py) busy-loops for a fixed
+  # wall-clock interval and asserts a TimeoutError fires; on a fast or contended
+  # builder the regex sub finishes first and the test fails with "DID NOT
+  # RAISE". It is pure timing flake, and the py3.12 build we pull in
+  # transitively (via mkdocs-material) isn't on cache.nixos.org, so it builds
+  # from source and trips the flake. Deselect just that test rather than
+  # disabling the whole install-check phase.
+  backrefsOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        backrefs = pyprev.backrefs.overrideAttrs (old: {
+          disabledTests = (old.disabledTests or [ ]) ++ [ "test_timeout" ];
+        });
+      })
+    ];
+  };
+
   sharedOverlays = system: [
     fetchurlOverlay
     lixOverlay
@@ -352,6 +369,7 @@ let
     fastmcpOverlay
     mcpOverlay
     aioboto3Overlay
+    backrefsOverlay
     direnvOverlay
     denoOverlay
     marksmanOverlay
