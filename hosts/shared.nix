@@ -10,7 +10,13 @@
     inherit (config.dotfiles.system) username;
   };
 
-  nix.package = pkgs.lixPackageSets.stable.lix;
+  # Pin Lix to 2.94 rather than tracking `stable`: Lix 2.95 removed
+  # builtins.fetchClosure (it is no longer even a known experimental feature).
+  # devbox's generated flakes fetch every package via fetchClosure from
+  # cache.nixos.org, so on 2.95 `devbox`/`print-dev-env` fails with
+  # "attribute 'fetchClosure' missing". Revisit when devbox stops relying on
+  # fetchClosure or Lix restores it.
+  nix.package = pkgs.lixPackageSets.lix_2_94.lix;
 
   # Use scheduled optimisation instead of auto-optimise-store to avoid
   # the .tmp-link race condition (NixOS/nix#7273), which also affects Lix.
