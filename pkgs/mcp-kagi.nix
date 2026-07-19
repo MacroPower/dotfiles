@@ -23,6 +23,11 @@ ps.buildPythonApplication {
 
   build-system = [ ps.hatchling ];
 
+  # The sdist pins pydantic~=2.12.5; nixpkgs moves faster than Kagi's
+  # generated client, and the pin is a codegen artifact, not a real
+  # ceiling. Relax it and let the imports check catch actual breakage.
+  pythonRelaxDeps = [ "pydantic" ];
+
   dependencies = with ps; [
     fastmcp
     pydantic
