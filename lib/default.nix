@@ -343,6 +343,91 @@ let
     ];
   };
 
+  # inline-snapshot's tests/test_docs.py asserts that code examples embedded
+  # in its own docs match freshly generated output byte-for-byte. The
+  # generated side is formatted with whatever black version is in nixpkgs, so
+  # a black bump shifts line breaks / hl_lines and the docs snapshots fail
+  # (assert '...' == '...' diffs on formatting only). We pull the py3.12
+  # build transitively (via mcp/fastmcp for kagimcp), which isn't on
+  # cache.nixos.org, so it builds from source and trips the skew. Deselect
+  # the docs-freshness tests; the functional suite still runs.
+  #
+  # test_empty_sub_snapshot snapshots pytest's terminal summary line, whose
+  # `=` padding is computed from the real elapsed time while the time itself
+  # is normalized to <time>. An inner pytest run crossing 10s (6-char
+  # "11.23s" vs 5-char "9.99s") shifts the padding by one `=` and fails the
+  # comparison, so the test flakes on slow builders.
+  inlineSnapshotOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        inline-snapshot = pyprev.inline-snapshot.overrideAttrs (old: {
+          disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [ "tests/test_docs.py" ];
+          disabledTests = (old.disabledTests or [ ]) ++ [ "test_empty_sub_snapshot" ];
+        });
+      })
+    ];
+  };
+
+  # geoip2's tests/webservice_test.py starts a werkzeug HTTP server bound to
+  # "localhost", which the darwin build sandbox cannot resolve ("nodename nor
+  # servname provided, or not known"), so all 52 webservice tests error with
+  # SystemExit before running. Pulled transitively on the py3.14 chain
+  # (mcp-nixos -> fastmcp -> py-key-value-aio -> moto -> django -> geoip2)
+  # and not on cache.nixos.org. Deselect the server-backed tests; the
+  # database-reader tests still run.
+  geoip2Overlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        geoip2 = pyprev.geoip2.overrideAttrs (old: {
+          disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [ "tests/webservice_test.py" ];
+        });
+      })
+    ];
+  };
+
+  # opentelemetry-instrumentation-requests' TestURLLib3InstrumentorWithRealSocket
+  # tests (tests/test_requests_ip_support.py) bind a real HTTPServer socket,
+  # which the darwin build sandbox denies (PermissionError on socket.bind).
+  # Pulled transitively via azure-cli on py3.14 and not on cache.nixos.org.
+  # Deselect the real-socket class; the mocket/httpretty suites still run.
+  otelRequestsOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        opentelemetry-instrumentation-requests =
+          pyprev.opentelemetry-instrumentation-requests.overrideAttrs
+            (old: {
+              disabledTests = (old.disabledTests or [ ]) ++ [
+                "TestURLLib3InstrumentorWithRealSocket"
+              ];
+            });
+      })
+    ];
+  };
+
+  # syrupy's xdist_two fixture param carries xfail("Not currently compatible
+  # with xdist"), promoted to strict by `xfail_strict = true` in its
+  # pyproject.toml — but the xfail nondeterministically passes, and a strict
+  # xfail that passes is reported as FAILED [XPASS(strict)]. Same kagimcp
+  # py3.12 chain as inline-snapshot above, so it builds from source and
+  # trips the flake. nixpkgs' pytestCheckHook attrs (disabledTests) are
+  # inert here because syrupy's derivation runs a hand-written checkPhase
+  # (`invoke test`), so demote the marker to non-strict in the source: an
+  # XPASS then reports as xpassed instead of failing the build.
+  syrupyOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        syrupy = pyprev.syrupy.overrideAttrs (old: {
+          postPatch = (old.postPatch or "") + ''
+            substituteInPlace tests/conftest.py \
+              --replace-fail \
+                'marks=pytest.mark.xfail(reason="Not currently compatible with xdist"),' \
+                'marks=pytest.mark.xfail(reason="Not currently compatible with xdist", strict=False),'
+          '';
+        });
+      })
+    ];
+  };
+
   sharedOverlays = system: [
     fetchurlOverlay
     lixOverlay
@@ -352,6 +437,10 @@ let
     mcpOverlay
     aioboto3Overlay
     backrefsOverlay
+    inlineSnapshotOverlay
+    geoip2Overlay
+    otelRequestsOverlay
+    syrupyOverlay
     direnvOverlay
     czkawkaOverlay
     marksmanOverlay
