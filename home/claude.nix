@@ -2968,6 +2968,9 @@ in
         ## Shell
         - `cd` persists between Bash calls only while it stays inside the project directory; a `cd` outside it resets the cwd to the project root on the next call.
 
+        ## Plan Mode
+        - Writing untracked files is allowed in plan mode: scratch notes, files under /tmp, and repo clones via `mcp__git__git_clone` are all fine. Only files tracked by git are off-limits until the plan is approved.
+
         ## Writing Style
         - Keep responses to plain ASCII text.
         - Acknowledge complexity and mixed feelings when they exist.
