@@ -35,6 +35,7 @@ func TestEventNeedsStore(t *testing.T) {
 		"PreToolUse EnterPlanMode":            {event: "PreToolUse", tool: "EnterPlanMode", want: true},
 		"PreToolUse Bash skips store":         {event: "PreToolUse", tool: "Bash", want: false},
 		"PreToolUse MCP skips store":          {event: "PreToolUse", tool: "MCP", want: false},
+		"PreToolUse FileWrite skips store":    {event: "PreToolUse", tool: "FileWrite", want: false},
 		"PreToolUse unknown skips store":      {event: "PreToolUse", tool: "Read", want: false},
 		"PostToolUse AskUserQuestion via --tool": {
 			event: "PostToolUse", tool: "AskUserQuestion", want: true,
@@ -314,6 +315,30 @@ func TestRun(t *testing.T) {
 		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "MCP", nil, mcpCfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("PreToolUse FileWrite: introduced dash flows through run() to deny", func(t *testing.T) {
+		t.Parallel()
+
+		fwCfg := config{enforceTypography: true}
+
+		input := `{"tool_name":"Write","tool_input":{"file_path":"/nonexistent/hook-router-test/new.md","content":"a — b"}}`
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "FileWrite", nil, fwCfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		err = json.Unmarshal(stdout.Bytes(), &result)
+		require.NoError(t, err)
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Contains(t, hso["permissionDecisionReason"], "U+2014")
 	})
 
 	t.Run("PreToolUse Bash: denied kubectx", func(t *testing.T) {

@@ -77,6 +77,11 @@ import (
 // plan mode. All plan-guard bookkeeping (plan path, baseline SHA,
 // clearing in_plan_mode, the pending-plan handoff) still happens, so
 // the Stop gate is unaffected.
+//
+// enforceTypography, when true, makes [handlePreFileWrite] deny
+// Write/Edit/MultiEdit calls that introduce non-ASCII typographic
+// characters (see the typography package). When false the handler is
+// a no-op, so an ad-hoc invocation without the flag stays silent.
 type config struct {
 	postImpl       *postimpl.Catalog
 	commandRules   *cmdrules.Engine
@@ -90,6 +95,8 @@ type config struct {
 	claudePID      string
 	autoAllow      bool
 	skipPlanReview bool
+
+	enforceTypography bool
 }
 
 func configFromEnv() config {
@@ -113,7 +120,7 @@ func configFromEnv() config {
 func main() {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
 	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, UserPromptSubmit)")
-	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion, or the MCP routing sentinel)")
+	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion, or the MCP/FileWrite routing sentinels)")
 	dbPath := flag.String("db", "", "path to SQLite state database")
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
@@ -125,17 +132,18 @@ func main() {
 	searchRewriteConfig := flag.String("search-rewrite-config", "", "JSON object configuring PreToolUse:Bash search rewriting ({grep, find, findExcludes})")
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
+	enforceTypography := flag.Bool("enforce-ascii-typography", false, "deny a Write/Edit/MultiEdit call that introduces non-ASCII dashes, curly quotes, or ellipsis")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *autoAllow, *skipPlanReview)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *autoAllow, *skipPlanReview, *enforceTypography)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON string, autoAllow, skipPlanReview bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON string, autoAllow, skipPlanReview, enforceTypography bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -250,6 +258,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.searchRewrite = searchRewrite
 	cfg.autoAllow = autoAllow
 	cfg.skipPlanReview = skipPlanReview
+	cfg.enforceTypography = enforceTypography
 
 	return run(ctx, bytes.NewReader(input), os.Stdout, event, tool, store, cfg, logger)
 }
@@ -324,6 +333,12 @@ func run(
 			}
 
 			return handleEnterPlanMode(ctx, input, store, cfg.claudePID, logger)
+
+		case "FileWrite":
+			// Routing sentinel from the Write|Edit|MultiEdit hook
+			// matcher; the real tool name comes from the stdin
+			// payload, mirroring the MCP sentinel.
+			return handlePreFileWrite(input, stdout, cfg, logger)
 
 		default:
 			return nil

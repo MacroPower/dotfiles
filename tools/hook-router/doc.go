@@ -11,6 +11,10 @@
 //   - PreToolUse:ExitPlanMode     -- gates plan exit behind plan-reviewer, records
 //     plan path and baseline commit on approval
 //   - PreToolUse:EnterPlanMode    -- resets plan session state
+//   - PreToolUse:Write/Edit/MultiEdit -- denies changes that introduce
+//     non-ASCII typographic characters (curly quotes, ellipsis, dashes
+//     other than '-') and suggests ASCII equivalents ("FileWrite" is
+//     a routing sentinel; the tool name comes from the payload)
 //   - PostToolUse:AskUserQuestion -- when the question's option labels identify it
 //     as the Stop-gate question, clears the session,
 //     releasing the Stop gate for the plan cycle
@@ -30,7 +34,8 @@
 // engines. The engines themselves live in independent, importable
 // subpackages -- hook (protocol I/O), cmdrules (command deny/ask
 // rules), mcprules (MCP tool allow/ask/deny resolution),
-// formatter (file-formatter routing), compact (output
+// formatter (file-formatter routing), typography (detection of newly
+// introduced typographic characters), compact (output
 // compaction), archive (uncompacted-output archiving), state (SQLite
 // session state), kubectx (kubectl gating and session dir lifecycle),
 // git (repo queries), and postimpl (post-implementation skill

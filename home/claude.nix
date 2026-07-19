@@ -660,6 +660,7 @@ let
         ${lib.optionalString cfg.searchRewrite.enable "--search-rewrite-config ${lib.escapeShellArg (builtins.toJSON (removeAttrs cfg.searchRewrite [ "enable" ]))}"} \
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
+        ${lib.optionalString cfg.enforceAsciiTypography "--enforce-ascii-typography"} \
         "$@"
     '';
   };
@@ -1097,6 +1098,22 @@ in
         path, baseline SHA, clearing in_plan_mode, the pending-plan
         handoff) still happens, so the Stop hook's post-implementation
         review gate is unaffected.
+      '';
+    };
+
+    enforceAsciiTypography = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Deny Write/Edit/MultiEdit calls that introduce non-ASCII
+        typographic characters into a file: dash punctuation other than
+        ASCII '-', the minus sign, curly quotation marks, and the
+        horizontal ellipsis. Only newly introduced characters are
+        blocked; characters already present in the file survive
+        editing. The deny message nudges toward ASCII equivalents
+        (restructure or "--" for dashes, straight quotes, "..." for
+        ellipsis). When false, no PreToolUse matcher is registered for
+        these tools and the wrapper omits the flag.
       '';
     };
 
@@ -2819,6 +2836,22 @@ in
                     {
                       type = "command";
                       command = "${lib.getExe hookRouter} --event PreToolUse --tool MCP";
+                    }
+                  ];
+                }
+              ]
+              ++ lib.optionals cfg.enforceAsciiTypography [
+                {
+                  # Write/Edit/MultiEdit route to one entry; "FileWrite"
+                  # is a routing sentinel and hook-router reads the real
+                  # tool name from the payload. Emits only deny or
+                  # nothing (never updatedInput), so the last-writer-wins
+                  # race the note above warns about cannot occur here.
+                  matcher = "Write|Edit|MultiEdit";
+                  hooks = [
+                    {
+                      type = "command";
+                      command = "${lib.getExe hookRouter} --event PreToolUse --tool FileWrite";
                     }
                   ];
                 }
