@@ -1870,17 +1870,6 @@ in
       commit.description = "Wrap up the cycle by creating a git commit.";
     };
 
-    dotfiles.claude.extraCommandRules.deny = [
-      {
-        command = "grep";
-        reason = "Do not use `grep`. Use the Grep tool for searching file contents, or `rg` (ripgrep) in Bash -- it is faster and respects .gitignore.";
-      }
-      {
-        command = "find";
-        reason = "Do not use `find`. Use the Glob tool for finding files by name, or `fd` in Bash -- it is faster and respects .gitignore.";
-      }
-    ];
-
     dotfiles.claude.toolBundles = {
       fetch = {
         alwaysLoad = true;
@@ -2978,7 +2967,6 @@ in
 
         ## Shell
         - `cd` persists between Bash calls only while it stays inside the project directory; a `cd` outside it resets the cwd to the project root on the next call.
-        - `grep` and `find` are blocked in Bash; use `rg` (ripgrep) and `fd` instead.
 
         ## Writing Style
         - Keep responses to plain ASCII text.
