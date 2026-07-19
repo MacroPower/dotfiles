@@ -32,6 +32,12 @@ let
 
   atuinServerDataDir = "${config.xdg.dataHome}/atuin-server";
 
+  # The macOS host's atuin encryption key, visible in the terrarium guest
+  # through a read-only Lima mount at the same absolute path. Shared
+  # between key_path (what atuin reads) and the systemd guards below
+  # (which keep atuin off when the mount is absent).
+  atuinKeyPath = "/Users/${config.dotfiles.username}/.local/share/atuin/key";
+
   # tfswitch refuses to create the immediate parent of its `-b` symlink
   # target and falls back to ~/bin when missing, which the Claude sandbox
   # denies. Activation materializes ~/.terraform.versions/bin; this mkdir
@@ -213,8 +219,10 @@ in
         # dir, which Lima mounts into the guest at the same absolute path.
         # The guest decrypts the same synced history as the host without a
         # local copy, so `atuin login` needs no `-k`. The mount is
-        # read-only, which is fine -- atuin only reads the key.
-        key_path = "/Users/${config.dotfiles.username}/.local/share/atuin/key";
+        # read-only, which is fine -- atuin only reads the key. The
+        # `systemd.user` guards below keep a missing mount from hanging
+        # every shell.
+        key_path = atuinKeyPath;
       };
     };
 
@@ -340,6 +348,37 @@ in
           "--force"
         ]
       );
+
+  # On terrarium the daemon is useless without the host key mount: it dies
+  # at startup ("could not load encryption key") while atuin-daemon.socket
+  # keeps listening, so every `atuin history start` -- run synchronously by
+  # fish's preexec hook on each Enter -- queues a connection the dead daemon
+  # never serves and blocks the shell until ctrl+c. When the socket is not
+  # listening at all, the client instead falls back to direct sqlite in
+  # ~10ms, silently. These guards force that fallback whenever the daemon
+  # cannot work:
+  #
+  # - ConditionPathExists on the socket is the load-bearing guard: no key,
+  #   no listener, instant fallback. The service gets the same condition
+  #   because default.target also starts it directly; without it a missing
+  #   key means a permanent crash loop (Restart=on-failure with capped
+  #   backoff) that systemd's default 5-in-10s start limit never trips.
+  # - The start limit handles every other crash cause: when a
+  #   socket-activated service hits its limit, systemd fails the socket
+  #   with service-start-limit-hit and closes the listener. The window is
+  #   widened past the default because the restart backoff paces starts at
+  #   ~2 per 10s. A transient flap can burn the budget and park atuin in
+  #   the sqlite fallback until the next login or a manual
+  #   `systemctl --user reset-failed 'atuin-daemon*'` -- degraded history
+  #   sync, never a hung shell.
+  systemd.user = lib.mkIf (config.dotfiles.hostname == "terrarium") {
+    sockets.atuin-daemon.Unit.ConditionPathExists = atuinKeyPath;
+    services.atuin-daemon.Unit = {
+      ConditionPathExists = atuinKeyPath;
+      StartLimitIntervalSec = "1h";
+      StartLimitBurst = 5;
+    };
+  };
 
   # Self-hosted atuin sync server, bound to loopback: the local client
   # reaches it directly and the Lima guest via host.lima.internal, but it
