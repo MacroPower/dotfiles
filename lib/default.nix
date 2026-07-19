@@ -207,51 +207,6 @@ let
     };
   };
 
-  # nixpkgs PR #489526 (merged 2026-04-20) switched deno to building
-  # rusty_v8 from source instead of fetching the upstream prebuilt
-  # static lib. The from-source build fails on aarch64-darwin: during
-  # the V8 link step rustc execs build/toolchain/apple/linker_driver.py
-  # and trips EPERM (the chromium_build submodule's shebangs aren't
-  # reachable by patchShebangs, and python3 is absent from rustc's
-  # reduced linker PATH). Other rusty_v8 consumers in nixpkgs (codex,
-  # brioche, windmill, ...) still use the prebuilt release asset, so
-  # point deno's librusty_v8 input back at the prebuilt and skip the
-  # V8 build entirely. Bump `version` and the four shas in lockstep
-  # with `pkgs.deno.passthru.librusty_v8.version` when updating nixpkgs.
-  #
-  # Separately, deno 2.7.13's checkPhase runs uv_compat's
-  # tty_reset_mode_restores_termios test, which calls termios reset on
-  # a non-TTY fd inside the sandbox and asserts the ECHO flag is
-  # restored. With no TTY backing the fd the assertion always fires
-  # (left: 0, right: 8). This matches the pattern of the existing
-  # "Darwin sandbox issues" skips in deno/package.nix; add ours to
-  # checkFlags via overrideAttrs.
-  denoOverlay = final: prev: {
-    deno =
-      (prev.deno.override {
-        librusty_v8 = final.fetchurl {
-          name = "librusty_v8-149.3.0";
-          url = "https://github.com/denoland/rusty_v8/releases/download/v149.3.0/librusty_v8_simdutf_release_${final.stdenv.hostPlatform.rust.rustcTarget}.a.gz";
-          hash =
-            {
-              aarch64-darwin = "sha256-NM7YvkdoqSvQV27xKNoc0STYEg0Kj5i98NJg4G+Y7No=";
-              x86_64-darwin = "sha256-wMPA7cYxNoPqQaVxxsqPvsnoXk7fsoBwvzPGWroPKrE=";
-              aarch64-linux = "sha256-zOVYnRl958YJb7fNJvbKvYt1y5hTQb+bACHOnBVVruE=";
-              x86_64-linux = "sha256-hLvFwJ14pPybgsOoEDxkX2Kiotfya9JKSaV9Eg2KuDQ=";
-            }
-            .${final.stdenv.hostPlatform.system};
-          meta.sourceProvenance = with final.lib.sourceTypes; [ binaryNativeCode ];
-        };
-      }).overrideAttrs
-        (old: {
-          checkFlags =
-            (old.checkFlags or [ ])
-            ++ final.lib.optionals final.stdenv.hostPlatform.isDarwin [
-              "--skip=uv_compat::tests::tty_reset_mode_restores_termios"
-            ];
-        });
-  };
-
   # Building marksman on Linux pulls in dotnetCorePackages.runtime_9_0,
   # which on aarch64-linux routes through the source-built dotnet-vmr-9.0.15
   # (a multi-hour build that aborts with SIGILL in its binary-allowance
@@ -371,7 +326,6 @@ let
     aioboto3Overlay
     backrefsOverlay
     direnvOverlay
-    denoOverlay
     marksmanOverlay
     grugFarOverlay
     cliHelpersOverlay
