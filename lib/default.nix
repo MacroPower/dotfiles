@@ -85,7 +85,18 @@ let
       nativeBuildInputs = [
         final.installShellFiles
         final.git
-      ];
+      ]
+      # nixpkgs' classic open-source ld64 crashes (Trace/BPT trap: 5) in
+      # its stubs pass when linking the mac-notification-sys Objective-C
+      # object pulled in via notify-rust. Link with LLVM ld64.lld instead,
+      # mirroring nixpkgs' own workaround for starship
+      # (NixOS/nixpkgs#540463). Drop once the cctools fix
+      # (NixOS/nixpkgs#536365) reaches our nixpkgs pin.
+      ++ final.lib.optionals final.stdenv.hostPlatform.isDarwin [ final.llvmPackages.lld ];
+
+      env = final.lib.optionalAttrs final.stdenv.hostPlatform.isDarwin {
+        NIX_CFLAGS_LINK = "-fuse-ld=lld";
+      };
 
       # Sandbox network_proxy and rpc tests need to bind TCP listeners,
       # which the Nix build sandbox does not permit.
@@ -207,6 +218,22 @@ let
     };
   };
 
+  # czkawka's GUI binaries (krokiet, cedinia) link mac-notification-sys via
+  # notify-rust and hit the same classic-ld64 stubs-pass crash as workmux
+  # (see workmuxOverlay). Same lld workaround; drop both together once the
+  # cctools fix (NixOS/nixpkgs#536365) reaches our nixpkgs pin.
+  czkawkaOverlay = final: prev: {
+    czkawka = prev.czkawka.overrideAttrs (
+      old:
+      final.lib.optionalAttrs final.stdenv.hostPlatform.isDarwin {
+        nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ final.llvmPackages.lld ];
+        env = (old.env or { }) // {
+          NIX_CFLAGS_LINK = "-fuse-ld=lld";
+        };
+      }
+    );
+  };
+
   # Building marksman on Linux pulls in dotnetCorePackages.runtime_9_0,
   # which on aarch64-linux routes through the source-built dotnet-vmr-9.0.15
   # (a multi-hour build that aborts with SIGILL in its binary-allowance
@@ -326,6 +353,7 @@ let
     aioboto3Overlay
     backrefsOverlay
     direnvOverlay
+    czkawkaOverlay
     marksmanOverlay
     grugFarOverlay
     cliHelpersOverlay
