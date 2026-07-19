@@ -268,6 +268,13 @@ let
     nerdfont = true;
     merge_strategy = "rebase";
     inherit (cfg.workmux) agent;
+    # Named agent entry consumed by the focused pane's <agent> placeholder.
+    # The structured agent path re-derives the command on every render, so
+    # workmux's double render_command() stays idempotent and agent mutations
+    # (sandbox skip-permissions flag, --fork/--continue resume args) apply.
+    # A raw pane command string is rendered twice, which double-wraps it in
+    # sh -c and breaks quoting under the devbox toolchain wrapper.
+    agents.${cfg.workmux.agent} = cfg.workmux.command;
     window_prefix = "wm-";
     worktree_dir = ".worktrees";
     status_format = false;
@@ -304,7 +311,7 @@ let
     ];
     panes = [
       {
-        inherit (cfg.workmux) command;
+        command = "<agent>";
         focus = true;
       }
       {
@@ -1676,12 +1683,12 @@ in
       agent = mkOption {
         type = types.str;
         default = "claude";
-        description = "Value emitted for workmux's top-level agent key in ~/.config/workmux/config.yaml. Workmux uses this label to pick the output-pattern profile for status routing (working / waiting / done). Override on hosts that drive workmux with a different coding agent.";
+        description = "Value emitted for workmux's top-level agent key in ~/.config/workmux/config.yaml. Workmux uses this label to pick the output-pattern profile for status routing (working / waiting / done) and to select which agents.<name> entry defines the launch command for the focused pane's <agent> placeholder. Override on hosts that drive workmux with a different coding agent.";
       };
       command = mkOption {
         type = types.str;
         default = "claude --permission-mode plan";
-        description = "Shell command launched in workmux's focused pane on session create. Decoupled from agent because flag conventions vary between coding agents.";
+        description = "Launch command registered as the agents.<agent> entry in workmux's config and consumed via the <agent> placeholder in the focused pane. Decoupled from agent because flag conventions vary between coding agents.";
       };
     };
 
