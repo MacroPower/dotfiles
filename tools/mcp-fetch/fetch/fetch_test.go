@@ -290,11 +290,12 @@ func TestContentCacheHit(t *testing.T) {
 	assert.Contains(t, resultText(t, r2), "hello")
 	assert.Equal(t, int32(1), calls.Load())
 
-	// Raw mode: separate cache entry, hits the server again.
+	// Raw mode: separate content entry, derived from the cached fetch
+	// without a second request.
 	r3, _, err := h.Handle(t.Context(), nil, fetch.Input{URL: target, Raw: true})
 	require.NoError(t, err)
 	assert.Contains(t, resultText(t, r3), "hello")
-	assert.Equal(t, int32(2), calls.Load())
+	assert.Equal(t, int32(1), calls.Load())
 }
 
 func TestAddTool(t *testing.T) {

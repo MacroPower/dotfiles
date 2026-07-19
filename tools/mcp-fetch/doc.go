@@ -4,7 +4,11 @@
 // It fetches a URL over HTTP, optionally converts HTML to Markdown using
 // readability extraction, and returns the result with pagination support.
 // An optional RE2 pattern filters the processed content to matching lines
-// (grep-style) before pagination is applied.
+// (grep-style) before pagination is applied. For client-rendered pages,
+// the render_js input executes the page's JavaScript in an embedded
+// pure-Go headless browser (gost-dom with the sobek engine) and converts
+// the resulting DOM instead; plain fetches of pages that look like empty
+// JS shells get a notice suggesting a render_js retry.
 // When --db is set, every fetch attempt (success or failure) is recorded
 // to a SQLite database; the `stats` subcommand reads that database and
 // prints a summary report.

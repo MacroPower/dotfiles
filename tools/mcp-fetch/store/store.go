@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -29,6 +30,8 @@ CREATE TABLE IF NOT EXISTS fetches (
     duration_ms     INTEGER NOT NULL DEFAULT 0,
     cache_hit       INTEGER NOT NULL DEFAULT 0,
     truncated       INTEGER NOT NULL DEFAULT 0,
+    render_js       INTEGER NOT NULL DEFAULT 0,
+    render_ok       INTEGER NOT NULL DEFAULT 0,
     error           TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_fetches_ts          ON fetches(ts);
@@ -36,9 +39,31 @@ CREATE INDEX IF NOT EXISTS idx_fetches_host        ON fetches(host);
 CREATE INDEX IF NOT EXISTS idx_fetches_outcome_ts  ON fetches(outcome, ts);
 `
 
+var (
+	// ErrSchemaTooNew is returned by [Open] when the database was
+	// written by a newer binary than this one; downgrading would
+	// misread columns this binary does not know about.
+	ErrSchemaTooNew = errors.New("database schema is newer than this binary supports")
+
+	// addedColumns lists the columns added to `fetches` after the
+	// original schema, in the order they shipped. ensureSchema
+	// converges on this list by inspecting the live table shape rather
+	// than the stamped version: the version stamp lands in a separate
+	// write from the DDL, so a crash or busy-timeout between the two
+	// leaves the shape ahead of the stamp, and ALTER TABLE has no IF
+	// NOT EXISTS form to absorb that.
+	addedColumns = []struct {
+		column string
+		ddl    string
+	}{
+		{"render_js", `ALTER TABLE fetches ADD COLUMN render_js INTEGER NOT NULL DEFAULT 0`},
+		{"render_ok", `ALTER TABLE fetches ADD COLUMN render_ok INTEGER NOT NULL DEFAULT 0`},
+	}
+)
+
 const (
 	busyTimeoutMs = 30000
-	schemaVersion = 1
+	schemaVersion = 2
 
 	// pruneAgeDays bounds the on-disk history. Long-lived servers prune
 	// once on startup; rows older than this are deleted on the next
@@ -62,9 +87,11 @@ const (
 
 // FetchRecord is the metadata persisted for one fetch attempt.
 //
-// `RawMode`, `CacheHit`, and `Truncated` are stored as 0/1 because
-// modernc.org/sqlite has no automatic bool conversion; [BoolToInt]
-// keeps the conversion explicit.
+// `RawMode`, `CacheHit`, `Truncated`, `RenderJS`, and `RenderOK` are
+// stored as 0/1 because modernc.org/sqlite has no automatic bool
+// conversion; [BoolToInt] keeps the conversion explicit. `RenderJS`
+// records the effective render flag (requested and applicable);
+// `RenderOK` whether the render was used for the returned content.
 //
 // Cache-hit rows have `StatusCode=0`, `ContentType=""`, and
 // `ResponseBytes=0`. The pair `cache_hit=1 AND status_code=0` is the
@@ -85,6 +112,8 @@ type FetchRecord struct {
 	DurationMs    int64
 	CacheHit      int
 	Truncated     int
+	RenderJS      int
+	RenderOK      int
 	StatusCode    int
 }
 
@@ -116,7 +145,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 
 	// MaxOpen=1 serializes intra-process writes on the Go connection
 	// mutex; inter-process contention is handled by the DSN busy_timeout.
-	// MaxIdle=1 is defensive — with MaxOpen=1 the pool can't hold more
+	// MaxIdle=1 is defensive: with MaxOpen=1 the pool can't hold more
 	// idle connections anyway, but it makes the intent explicit.
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
@@ -146,17 +175,25 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	return s, nil
 }
 
-// ensureSchema creates the schema on a fresh or out-of-date database
-// and is a cheap no-op (one PRAGMA read) on an already-current
-// database. The schema version gate keeps the hot path free of DDL
-// writes under concurrent load.
+// ensureSchema converges any older database on the current schema and
+// is a cheap no-op (one PRAGMA read) on an already-current database.
+// The schema version gate keeps the hot path free of DDL writes under
+// concurrent load.
 //
-// Cold-start race: when N processes open a fresh database concurrently,
-// all observe user_version == 0 and run CREATE TABLE IF NOT EXISTS plus
-// CREATE INDEX IF NOT EXISTS. The DDL is safe to race on. The final
-// PRAGMA user_version write serializes on SQLite's write lock under
-// the busy_timeout window, so readers see the version flip atomically
-// and converge on schemaVersion.
+// The stamped version only gates the fast path; it is never trusted to
+// describe the table shape. The stamp lands in a separate write from
+// the DDL, so a crash or busy-timeout between the two leaves an
+// out-of-date stamp on an upgraded table (or the reverse). Any time the
+// stamp is behind, the full idempotent DDL runs and each added column
+// is checked against the live table, so every reachable shape converges.
+//
+// Cold-start race: when N processes open the same database
+// concurrently, all may run the CREATE ... IF NOT EXISTS DDL, which is
+// safe to race on. Column adds race too; the loser of an ALTER race
+// re-checks the live shape instead of interpreting driver error text.
+// The final PRAGMA user_version write serializes on SQLite's write
+// lock under the busy_timeout window, so readers see the version flip
+// atomically and converge on schemaVersion.
 func (s *Store) ensureSchema(ctx context.Context) error {
 	var version int
 
@@ -169,9 +206,21 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 		return nil
 	}
 
+	if version > schemaVersion {
+		return fmt.Errorf("%w: version %d, this binary supports %d",
+			ErrSchemaTooNew, version, schemaVersion)
+	}
+
 	_, err = s.db.ExecContext(ctx, schema)
 	if err != nil {
 		return fmt.Errorf("creating schema: %w", err)
+	}
+
+	for _, col := range addedColumns {
+		err = s.ensureColumn(ctx, col.column, col.ddl)
+		if err != nil {
+			return err
+		}
 	}
 
 	// PRAGMA does not accept bound parameters; the version constant is a
@@ -182,6 +231,48 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// ensureColumn adds one column to `fetches` when the live table lacks
+// it. A failed ALTER re-checks the live shape: a concurrent open may
+// have added the column between the check and the ALTER, and the shape
+// is authoritative where driver error text is not.
+func (s *Store) ensureColumn(ctx context.Context, column, ddl string) error {
+	exists, err := s.columnExists(ctx, column)
+	if err != nil {
+		return err
+	}
+
+	if exists {
+		return nil
+	}
+
+	_, execErr := s.db.ExecContext(ctx, ddl)
+	if execErr == nil {
+		return nil
+	}
+
+	exists, err = s.columnExists(ctx, column)
+	if err == nil && exists {
+		return nil
+	}
+
+	return fmt.Errorf("adding column %s: %w", column, execErr)
+}
+
+// columnExists reports whether the `fetches` table has the named
+// column, via the pragma_table_info table-valued function.
+func (s *Store) columnExists(ctx context.Context, column string) (bool, error) {
+	var count int
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pragma_table_info('fetches') WHERE name = ?`,
+		column).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("inspecting table shape: %w", err)
+	}
+
+	return count > 0, nil
 }
 
 // MaybePruneStale runs the [pruneAgeDays]-day cleanup with ~5%
@@ -236,11 +327,13 @@ func (s *Store) Record(ctx context.Context, r FetchRecord) error {
 		`INSERT INTO fetches (
 			url, host, outcome, status_code, content_type,
 			response_bytes, output_bytes, raw_mode, max_length,
-			start_index, duration_ms, cache_hit, truncated, error
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			start_index, duration_ms, cache_hit, truncated,
+			render_js, render_ok, error
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.URL, r.Host, r.Outcome, r.StatusCode, r.ContentType,
 		r.ResponseBytes, r.OutputBytes, r.RawMode, r.MaxLength,
-		r.StartIndex, r.DurationMs, r.CacheHit, r.Truncated, r.Error,
+		r.StartIndex, r.DurationMs, r.CacheHit, r.Truncated,
+		r.RenderJS, r.RenderOK, r.Error,
 	)
 	if err != nil {
 		return fmt.Errorf("recording fetch: %w", err)
@@ -438,7 +531,8 @@ func (s *Store) RecentFetches(ctx context.Context, limit int) ([]FetchRecord, er
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT ts, url, host, outcome, status_code, content_type,
 			response_bytes, output_bytes, raw_mode, max_length,
-			start_index, duration_ms, cache_hit, truncated, error
+			start_index, duration_ms, cache_hit, truncated,
+			render_js, render_ok, error
 		FROM fetches ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("querying recent fetches: %w", err)
@@ -458,7 +552,7 @@ func (s *Store) RecentFetches(ctx context.Context, limit int) ([]FetchRecord, er
 			&ts, &r.URL, &r.Host, &r.Outcome, &r.StatusCode,
 			&r.ContentType, &r.ResponseBytes, &r.OutputBytes,
 			&r.RawMode, &r.MaxLength, &r.StartIndex, &r.DurationMs,
-			&r.CacheHit, &r.Truncated, &r.Error,
+			&r.CacheHit, &r.Truncated, &r.RenderJS, &r.RenderOK, &r.Error,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning recent fetch: %w", err)

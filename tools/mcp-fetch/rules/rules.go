@@ -60,6 +60,13 @@ type compiledDeny struct {
 	except []compiledMatch
 }
 
+// AllowedScheme reports whether the fetch tool may retrieve URLs with
+// the given scheme. Top-level fetches and rendered subresource requests
+// share this allow-list.
+func AllowedScheme(scheme string) bool {
+	return scheme == "http" || scheme == "https"
+}
+
 // Load reads a JSON rules file and compiles all regex patterns.
 // Returns empty [Rules] when path is empty (no filtering).
 // Fails fast on invalid regex.

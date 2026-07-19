@@ -332,3 +332,123 @@ func TestBoolToInt(t *testing.T) {
 	assert.Equal(t, 1, store.BoolToInt(true))
 	assert.Equal(t, 0, store.BoolToInt(false))
 }
+
+// v1Schema is the fetches DDL as it shipped at schema version 1, before
+// the render columns existed. The migration tests build databases with
+// it to prove Open upgrades in place. The version stamp is applied
+// separately: the v1 binary wrote the DDL and the stamp in separate
+// statements, so a database can hold this shape at user_version 0.
+const v1Schema = `
+CREATE TABLE IF NOT EXISTS fetches (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts              TEXT    NOT NULL DEFAULT (datetime('now')),
+    url             TEXT    NOT NULL,
+    host            TEXT    NOT NULL DEFAULT '',
+    outcome         TEXT    NOT NULL,
+    status_code     INTEGER NOT NULL DEFAULT 0,
+    content_type    TEXT    NOT NULL DEFAULT '',
+    response_bytes  INTEGER NOT NULL DEFAULT 0,
+    output_bytes    INTEGER NOT NULL DEFAULT 0,
+    raw_mode        INTEGER NOT NULL DEFAULT 0,
+    max_length      INTEGER NOT NULL DEFAULT 0,
+    start_index     INTEGER NOT NULL DEFAULT 0,
+    duration_ms     INTEGER NOT NULL DEFAULT 0,
+    cache_hit       INTEGER NOT NULL DEFAULT 0,
+    truncated       INTEGER NOT NULL DEFAULT 0,
+    error           TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_fetches_ts          ON fetches(ts);
+CREATE INDEX IF NOT EXISTS idx_fetches_host        ON fetches(host);
+CREATE INDEX IF NOT EXISTS idx_fetches_outcome_ts  ON fetches(outcome, ts);
+`
+
+func TestStoreMigrateV1(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		stampedVersion int
+	}{
+		"stamped v1": {stampedVersion: 1},
+		// A crash or busy-timeout between the v1 binary's DDL and its
+		// version stamp leaves the v1 table shape at user_version 0;
+		// Open must still add the render columns rather than trusting
+		// the stamp.
+		"unstamped v1 shape": {stampedVersion: 0},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			testStoreMigrateV1(t, tc.stampedVersion)
+		})
+	}
+}
+
+func testStoreMigrateV1(t *testing.T, stampedVersion int) {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "v1.db")
+
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(t.Context(), v1Schema)
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(t.Context(),
+		fmt.Sprintf("PRAGMA user_version = %d", stampedVersion))
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(t.Context(),
+		`INSERT INTO fetches (url, host, outcome) VALUES (?, ?, ?)`,
+		"https://old.test/", "old.test", store.OutcomeOK)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	st, err := store.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { require.NoError(t, st.Close()) })
+
+	// The pre-migration row reads back with zero-value render fields.
+	rows, err := st.RecentFetches(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "old.test", rows[0].Host)
+	assert.Equal(t, 0, rows[0].RenderJS)
+	assert.Equal(t, 0, rows[0].RenderOK)
+
+	// New rows round-trip the render fields through the added columns.
+	require.NoError(t, st.Record(t.Context(), store.FetchRecord{
+		URL: "https://new.test/", Host: "new.test", Outcome: store.OutcomeOK,
+		RenderJS: 1, RenderOK: 1,
+	}))
+
+	rows, err = st.RecentFetches(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	assert.Equal(t, 1, rows[0].RenderJS)
+	assert.Equal(t, 1, rows[0].RenderOK)
+
+	// A second Open of the migrated database is a clean no-op.
+	st2, err := store.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+	require.NoError(t, st2.Close())
+}
+
+func TestStoreOpen_NewerSchemaVersion(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "future.db")
+
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(t.Context(), `PRAGMA user_version = 999`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	_, err = store.Open(t.Context(), dbPath)
+	require.ErrorIs(t, err, store.ErrSchemaTooNew)
+}

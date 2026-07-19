@@ -14,5 +14,8 @@
 // [go.jacobcolvin.com/dotfiles/tools/mcp-fetch/content] (grep filtering
 // and pagination) and
 // [go.jacobcolvin.com/dotfiles/tools/mcp-fetch/markdown] (HTML to
-// Markdown).
+// Markdown). When the render_js input is set,
+// [go.jacobcolvin.com/dotfiles/tools/mcp-fetch/render] executes the
+// page's JavaScript in a headless browser first, best-effort: a failed
+// or empty render degrades to the plain conversion with a notice.
 package fetch

@@ -18,6 +18,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/content"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/llmstxt"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/markdown"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/render"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/robots"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/rules"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-fetch/store"
@@ -34,6 +35,12 @@ const (
 	maxRedirects     = 10
 	contentCacheSize = 64
 	contentCacheTTL  = time.Hour
+
+	// fetchCacheSize bounds the raw-response cache. Entries carry whole
+	// bodies (up to maxResponseBytes), so it is kept smaller than the
+	// derived-content cache; it only needs to cover the URLs a session
+	// is actively paginating, retrying, or re-deriving.
+	fetchCacheSize = 16
 
 	// recordTimeout caps how long the deferred Record call will wait
 	// when the request context has already been canceled. Detached
@@ -72,6 +79,7 @@ type Input struct {
 	IgnoreCase bool   `json:"ignore_case,omitzero" jsonschema:"Case-insensitive pattern (grep -i)"`
 	Context    int    `json:"context,omitzero"     jsonschema:"Lines of context around each match (grep -C, default 0)"`
 	Invert     bool   `json:"invert,omitzero"      jsonschema:"Return non-matching lines (grep -v)"`
+	RenderJS   bool   `json:"render_js,omitzero"   jsonschema:"Execute the page's JavaScript in a headless browser before converting to Markdown (for SPAs and client-rendered pages); ignored with raw"`
 }
 
 // Handler holds the shared state for the fetch tool handler.
@@ -81,12 +89,38 @@ type Handler struct {
 	rules        *rules.Rules
 	robots       *robots.Checker
 	llms         *llmstxt.Finder
+	renderer     *render.Renderer
+	renderOpts   []render.Option
 	store        *store.Store
 	log          *slog.Logger
-	contentCache *expirable.LRU[string, string]
+	contentCache *expirable.LRU[string, cachedContent]
+	fetchCache   *expirable.LRU[string, cachedFetch]
 	userAgent    string
 	checkRobots  bool
 	checkLLMs    bool
+}
+
+// cachedFetch is the fetch-cache value: the facts of one network fetch,
+// keyed by the requested URL. Every derived view (raw, markdown,
+// rendered) comes from this one entry, so raw/plain/render_js requests
+// for the same URL share a single network fetch and a failed render can
+// be retried without refetching the page.
+type cachedFetch struct {
+	finalURL    *url.URL
+	contentType string
+	body        []byte
+}
+
+// cachedContent is the content-cache value: one derived view of a
+// fetch (the processed output plus the JS-shell verdict, whether a
+// JavaScript render produced the content, and the post-redirect
+// origin), so hints, render stats, and the llms.txt probe stay correct
+// on cache hits.
+type cachedContent struct {
+	processed string
+	origin    string
+	jsShell   bool
+	rendered  bool
 }
 
 // Option configures a [Handler] via [New].
@@ -100,6 +134,7 @@ type Handler struct {
 //   - [WithLogger]
 //   - [WithTransport]
 //   - [WithClient]
+//   - [WithRenderOptions]
 type Option func(*Handler)
 
 // WithUserAgent sets the User-Agent header. See [Option].
@@ -147,6 +182,12 @@ func WithClient(c *http.Client) Option {
 	return func(h *Handler) { h.client = c }
 }
 
+// WithRenderOptions appends options for the JavaScript renderer, e.g.
+// [render.WithBudget] or subresource caps. See [Option].
+func WithRenderOptions(opts ...render.Option) Option {
+	return func(h *Handler) { h.renderOpts = append(h.renderOpts, opts...) }
+}
+
 // New constructs a [*Handler] from the given options. The content cache
 // defaults to an in-memory expirable LRU and the logger defaults to
 // discard, so a zero-option call returns a usable handler.
@@ -160,7 +201,8 @@ func New(opts ...Option) *Handler {
 	h := &Handler{
 		userAgent:    defaultUserAgent,
 		log:          slog.New(slog.DiscardHandler),
-		contentCache: expirable.NewLRU[string, string](contentCacheSize, nil, contentCacheTTL),
+		contentCache: expirable.NewLRU[string, cachedContent](contentCacheSize, nil, contentCacheTTL),
+		fetchCache:   expirable.NewLRU[string, cachedFetch](fetchCacheSize, nil, contentCacheTTL),
 		checkRobots:  true,
 		checkLLMs:    true,
 	}
@@ -180,6 +222,14 @@ func New(opts ...Option) *Handler {
 
 	h.robots = robots.New(h.client, h.userAgent, robots.WithLogger(h.log))
 	h.llms = llmstxt.New(h.client, h.userAgent, llmstxt.WithLogger(h.log))
+	h.renderer = render.New(h.client, append([]render.Option{
+		render.WithRules(h.rules),
+		render.WithLogger(h.log),
+		render.WithUserAgent(h.userAgent),
+	}, h.renderOpts...)...)
+	// The options are consumed by the renderer; the handler has no
+	// further use for the slice.
+	h.renderOpts = nil
 
 	h.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= maxRedirects {
@@ -203,7 +253,7 @@ func New(opts ...Option) *Handler {
 
 // validateURL checks that the URL uses an allowed scheme and passes URL rules.
 func (h *Handler) validateURL(u *url.URL) error {
-	if u.Scheme != "http" && u.Scheme != "https" {
+	if !rules.AllowedScheme(u.Scheme) {
 		return fmt.Errorf("%w: %s", ErrBadScheme, u.Scheme)
 	}
 
@@ -300,43 +350,86 @@ func (h *Handler) Handle(
 		slog.String("url", input.URL),
 	)
 
+	renderJS := input.RenderJS && !input.Raw
+	rec.RenderJS = store.BoolToInt(renderJS)
+
 	cacheKey := input.URL
-	if input.Raw {
+
+	switch {
+	case input.Raw:
 		cacheKey += "|raw"
+	case renderJS:
+		cacheKey += "|js"
 	}
 
-	processed, ok := h.contentCache.Get(cacheKey)
+	var (
+		processed    string
+		origin       string
+		jsShell      bool
+		renderFailed bool
+	)
+
+	cached, ok := h.contentCache.Get(cacheKey)
+	if !ok && renderJS && startIndex > 0 {
+		// A continuation pages over whatever the first call returned.
+		// When that call's render degraded, its content lives in the
+		// plain slot; serving it keeps pagination consistent instead
+		// of retrying the render for every page.
+		cached, ok = h.contentCache.Get(input.URL)
+	}
+
 	if ok {
 		rec.CacheHit = 1
+		processed = cached.processed
+		jsShell = cached.jsShell
+		origin = cached.origin
+
+		if cached.rendered {
+			rec.RenderOK = 1
+		}
 	} else {
-		body, contentType, status, err := h.doFetch(ctx, input.URL)
-		if err != nil {
-			rec.Error = err.Error()
+		fetched, fetchHit := h.fetchCache.Get(input.URL)
+		if fetchHit {
+			// No fresh HTTP: the same marker convention as a
+			// content-cache hit (status_code stays 0).
+			rec.CacheHit = 1
+		} else {
+			body, contentType, status, finalURL, err := h.doFetch(ctx, input.URL)
+			if err != nil {
+				rec.Error = err.Error()
 
-			switch {
-			case errors.Is(err, ErrHTTPStatus):
-				rec.Outcome = store.OutcomeHTTPError
-				rec.StatusCode = status
+				switch {
+				case errors.Is(err, ErrHTTPStatus):
+					rec.Outcome = store.OutcomeHTTPError
+					rec.StatusCode = status
 
-				return toolError(err), nil, nil
+					return toolError(err), nil, nil
 
-			case isToolError(err):
-				rec.Outcome = store.OutcomeFetchError
+				case isToolError(err):
+					rec.Outcome = store.OutcomeFetchError
 
-				return toolError(err), nil, nil
+					return toolError(err), nil, nil
 
-			default:
-				rec.Outcome = store.OutcomeFetchError
+				default:
+					rec.Outcome = store.OutcomeFetchError
 
-				return nil, nil, fmt.Errorf("fetching URL: %w", err)
+					return nil, nil, fmt.Errorf("fetching URL: %w", err)
+				}
 			}
+
+			rec.StatusCode = status
+			rec.ContentType = contentType
+			rec.ResponseBytes = len(body)
+
+			fetched = cachedFetch{body: body, contentType: contentType, finalURL: finalURL}
+			h.fetchCache.Add(input.URL, fetched)
 		}
 
-		rec.StatusCode = status
-		rec.ContentType = contentType
-		rec.ResponseBytes = len(body)
+		origin = fetched.finalURL.Scheme + "://" + fetched.finalURL.Host
 
-		processed, err = h.processBody(body, contentType, input.Raw)
+		bodyIsHTML := isHTML(fetched.body, fetched.contentType)
+
+		processed, err = h.processBody(fetched.body, fetched.contentType, input.Raw)
 		if err != nil {
 			rec.Outcome = store.OutcomeInternalError
 			rec.Error = err.Error()
@@ -344,7 +437,36 @@ func (h *Handler) Handle(
 			return nil, nil, fmt.Errorf("processing response: %w", err)
 		}
 
-		h.contentCache.Add(cacheKey, processed)
+		if renderJS && bodyIsHTML {
+			rendered, ok := h.renderPage(ctx, fetched.finalURL.String(), fetched.body, fetched.contentType)
+			if ok {
+				processed = rendered
+				rec.RenderOK = 1
+			} else {
+				renderFailed = true
+			}
+		}
+
+		if !input.Raw && (!renderJS || renderFailed) {
+			jsShell = bodyIsHTML && render.LooksLikeJSShell(fetched.body, processed)
+		}
+
+		// A render_js call that did not produce rendered content (the
+		// render failed or the body is not HTML) stores its output in
+		// the plain slot: the rendered slot must never pin
+		// non-rendered content, a plain fetch can reuse the entry, and
+		// a repeat render_js call retries from the cached fetch.
+		key := cacheKey
+		if renderJS && rec.RenderOK != 1 {
+			key = input.URL
+		}
+
+		h.contentCache.Add(key, cachedContent{
+			processed: processed,
+			origin:    origin,
+			jsShell:   jsShell,
+			rendered:  rec.RenderOK == 1,
+		})
 	}
 
 	filtered := processed
@@ -385,9 +507,15 @@ func (h *Handler) Handle(
 	rec.OutputBytes = len(result)
 	rec.Truncated = store.BoolToInt(truncated)
 
-	if h.checkLLMs && startIndex == 0 && u.Path != "/llms.txt" {
-		origin := u.Scheme + "://" + u.Host
+	if renderFailed && startIndex == 0 {
+		result += "\n\n<javascript rendering failed; returning non-rendered content>"
+	}
 
+	if jsShell && !renderJS && startIndex == 0 {
+		result += "\n\n<page appears to require JavaScript; retry with render_js=true to execute it>"
+	}
+
+	if h.checkLLMs && startIndex == 0 && u.Path != "/llms.txt" {
 		llmsURL := h.llms.Find(ctx, origin)
 		if llmsURL != "" {
 			result += fmt.Sprintf(
@@ -442,39 +570,114 @@ func (h *Handler) recordFetch(ctx context.Context, rec *store.FetchRecord, start
 	}
 }
 
-func (h *Handler) doFetch(ctx context.Context, rawURL string) ([]byte, string, int, error) {
+// doFetch performs the GET and returns the body, content type, status,
+// and the final URL after redirects, the base the renderer must use so
+// relative subresource URLs resolve against the right origin.
+func (h *Handler) doFetch(
+	ctx context.Context,
+	rawURL string,
+) ([]byte, string, int, *url.URL, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("building request: %w", err)
+		return nil, "", 0, nil, fmt.Errorf("building request: %w", err)
 	}
 
 	req.Header.Set("User-Agent", h.userAgent)
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("performing request: %w", err)
+		return nil, "", 0, nil, fmt.Errorf("performing request: %w", err)
 	}
 	defer h.closeBody(ctx, resp.Body, rawURL)
 
 	contentType := resp.Header.Get("Content-Type")
+	finalURL := resp.Request.URL
 
 	if resp.StatusCode >= 400 {
-		return nil, contentType, resp.StatusCode, fmt.Errorf("%w: status %d", ErrHTTPStatus, resp.StatusCode)
+		return nil, contentType, resp.StatusCode, finalURL,
+			fmt.Errorf("%w: status %d", ErrHTTPStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return nil, contentType, resp.StatusCode, fmt.Errorf("reading response: %w", err)
+		return nil, contentType, resp.StatusCode, finalURL,
+			fmt.Errorf("reading response: %w", err)
 	}
 
-	return body, contentType, resp.StatusCode, nil
+	return body, contentType, resp.StatusCode, finalURL, nil
+}
+
+// renderPage runs the JavaScript render for pageURL (the final URL
+// after redirects) and converts the resulting DOM. It reports ok=false
+// when the render failed or produced no readable content, in which
+// case the caller degrades to the plain conversion with a notice.
+func (h *Handler) renderPage(
+	ctx context.Context,
+	pageURL string,
+	body []byte,
+	contentType string,
+) (string, bool) {
+	rendered, err := h.renderer.Render(ctx, pageURL, render.Seed{
+		Body:        body,
+		ContentType: contentType,
+	})
+
+	var processed string
+	if err == nil {
+		processed, err = h.processBody(rendered, contentType, false)
+	}
+
+	if err != nil {
+		h.log.WarnContext(ctx, "render",
+			slog.String("url", pageURL),
+			slog.Any("error", err),
+		)
+
+		return "", false
+	}
+
+	if strings.TrimSpace(processed) == "" {
+		// The scripts ran but left nothing readable; degrade to the
+		// plain conversion. Even when that is also empty (a true SPA
+		// shell whose bundle failed), a blank page must report as a
+		// failed render, not pin an empty success in the cache.
+		h.log.WarnContext(ctx, "render produced empty content",
+			slog.String("url", pageURL),
+		)
+
+		return "", false
+	}
+
+	return processed, true
+}
+
+// htmlSniffLen bounds the body prefix isHTML lowercases; the doctype
+// or root tag sits at the very start of any document the sniff should
+// accept.
+const htmlSniffLen = 64
+
+// isHTML reports whether the response should be treated as an HTML
+// document, by content type or a prefix sniff. The sniff is
+// case-insensitive and accepts a doctype, since HTML served without a
+// text/html Content-Type overwhelmingly starts with `<!DOCTYPE html>`.
+func isHTML(body []byte, contentType string) bool {
+	if strings.Contains(contentType, "text/html") {
+		return true
+	}
+
+	sniff := bytes.TrimSpace(body)
+	if len(sniff) > htmlSniffLen {
+		sniff = sniff[:htmlSniffLen]
+	}
+
+	sniff = bytes.ToLower(sniff)
+
+	return bytes.HasPrefix(sniff, []byte("<!doctype html")) ||
+		bytes.HasPrefix(sniff, []byte("<html"))
 }
 
 func (h *Handler) processBody(body []byte, contentType string, raw bool) (string, error) {
-	isHTML := strings.Contains(contentType, "text/html") ||
-		bytes.HasPrefix(bytes.TrimSpace(body), []byte("<html"))
-
-	if !isHTML || raw {
+	if !isHTML(body, contentType) || raw {
 		var prefix string
 		if contentType != "" {
 			prefix = "Content-Type: " + contentType + "\n\n"
