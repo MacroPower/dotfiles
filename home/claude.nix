@@ -986,9 +986,12 @@ let
 
   readPermEntries = map (p: "Read(${toPermGlob p})") extraReadPaths;
 
+  # Edit(path) rules cover all file-editing tools (Write, Edit,
+  # NotebookEdit); a separate Write(path) rule is not matched by file
+  # permission checks and triggers a startup warning since Claude Code
+  # 2.1.210.
   writePermEntries = lib.concatMap (p: [
     "Read(${toPermGlob p})"
-    "Write(${toPermGlob p})"
     "Edit(${toPermGlob p})"
   ]) extraWritePaths;
 
