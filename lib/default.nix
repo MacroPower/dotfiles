@@ -368,6 +368,23 @@ let
     ];
   };
 
+  # py-key-value-aio (fastmcp's storage-backend library, pulled via kagimcp
+  # and mcp-nixos) drags aioboto3, moto, cfn-lint, django, and geoip2 into
+  # its check-only closure — moto alone runs a 30+ minute test suite, and
+  # several of those packages have sandbox-hostile or flaky tests of their
+  # own. The store backends are test-only there; skip the suite and the
+  # whole chain drops out of the build closure. Upstream CI validates
+  # releases.
+  pyKeyValueAioOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        py-key-value-aio = pyprev.py-key-value-aio.overridePythonAttrs (_: {
+          doCheck = false;
+        });
+      })
+    ];
+  };
+
   # geoip2's tests/webservice_test.py starts a werkzeug HTTP server bound to
   # "localhost", which the darwin build sandbox cannot resolve ("nodename nor
   # servname provided, or not known"), so all 52 webservice tests error with
@@ -439,6 +456,7 @@ let
     backrefsOverlay
     inlineSnapshotOverlay
     geoip2Overlay
+    pyKeyValueAioOverlay
     otelRequestsOverlay
     syrupyOverlay
     direnvOverlay

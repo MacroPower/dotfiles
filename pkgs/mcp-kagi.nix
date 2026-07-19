@@ -4,16 +4,10 @@
 }:
 
 let
-  # fastmcp's py-key-value-aio dependency pulls aioboto3/moto/cfn-lint into
-  # its test closure, and cfn-lint's integration tests fail at the current
-  # nixpkgs pin. The store backends are test-only there; skip the suite.
-  ps = python312Packages.overrideScope (
-    _: prev: {
-      py-key-value-aio = prev.py-key-value-aio.overridePythonAttrs (_: {
-        doCheck = false;
-      });
-    }
-  );
+  # py-key-value-aio's check suite is skipped globally by
+  # pyKeyValueAioOverlay in lib/default.nix, so the package set can be
+  # used as-is here.
+  ps = python312Packages;
 in
 
 ps.buildPythonApplication {
