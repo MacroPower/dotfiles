@@ -427,6 +427,25 @@ let
     ];
   };
 
+  # cyclopts (fastmcp's CLI framework, pulled via both kagimcp and
+  # mcp-nixos -> fastmcp) runs a large pytest suite -- shell-completion
+  # integration tests that spawn bash/fish/zsh subprocesses dominate the
+  # ~20-minute wall clock. It builds from source on our python chains
+  # (not on cache.nixos.org), so the suite runs on every closure rebuild.
+  # pytestCheckHook lands in installCheckPhase, which buildPythonPackage
+  # gates on doInstallCheck = (doCheck or true); overriding doCheck here
+  # flips that gate off and drops the check-only inputs. Upstream CI
+  # validates releases.
+  cycloptsOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        cyclopts = pyprev.cyclopts.overridePythonAttrs (_: {
+          doCheck = false;
+        });
+      })
+    ];
+  };
+
   # geoip2's tests/webservice_test.py starts a werkzeug HTTP server bound to
   # "localhost", which the darwin build sandbox cannot resolve ("nodename nor
   # servname provided, or not known"), so all 52 webservice tests error with
@@ -499,6 +518,7 @@ let
     azureCoreOverlay
     backrefsOverlay
     inlineSnapshotOverlay
+    cycloptsOverlay
     geoip2Overlay
     pyKeyValueAioOverlay
     otelRequestsOverlay
