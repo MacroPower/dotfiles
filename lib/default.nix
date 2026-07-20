@@ -208,6 +208,26 @@ let
     ];
   };
 
+  # aiohttp's test_heartbeat_does_not_timeout_while_receiving_large_frame
+  # (added in aio-libs/aiohttp#12030, "reset ws heartbeat on inbound data")
+  # drives a mocked event-loop clock and asserts no heartbeat PING is sent
+  # while a large frame is still streaming in. It leans on exact call_soon vs
+  # timer callback ordering, so under the loaded Nix sandbox it intermittently
+  # errors "Heartbeat PING sent while data was still being received". nixpkgs
+  # runs the suite via pytestCheckHook, so disabledTests (-k "not ...") is the
+  # right knob; skip just this one case rather than the whole check phase.
+  aiohttpOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        aiohttp = pyprev.aiohttp.overrideAttrs (old: {
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_heartbeat_does_not_timeout_while_receiving_large_frame"
+          ];
+        });
+      })
+    ];
+  };
+
   # direnv's checkPhase runs bash/fish/zsh integration test scripts
   # that take 10+ minutes per closure rebuild and occasionally hang on
   # tty operations under the macOS Nix sandbox. We trust upstream's
@@ -453,6 +473,7 @@ let
     fastmcpOverlay
     mcpOverlay
     aioboto3Overlay
+    aiohttpOverlay
     backrefsOverlay
     inlineSnapshotOverlay
     geoip2Overlay
