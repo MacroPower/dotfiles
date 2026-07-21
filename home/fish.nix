@@ -21,6 +21,25 @@ let
   bfsExcludeExpr = lib.concatStringsSep " -o " (
     map (e: if lib.hasInfix "/" e then "-path '*${e}'" else "-name ${e}") findExcludes
   );
+
+  # Directory the auto-start block ensures exists before launching tmux.
+  # A missing socket dir (e.g. after macOS clears /private/tmp on reboot)
+  # makes the tmux server fail to start. When null, the socket dir depends
+  # on the launching uid and is computed at runtime via `id -u`.
+  #
+  # On Darwin the path is pinned to the canonical /private/tmp/tmux-501,
+  # NOT `tmux-$(id -u)`: the Claude sandbox's unix-socket allowlist
+  # (home/claude.nix) hardcodes /private/tmp/tmux-501/default so an agent
+  # can reach the host tmux server, and everything must agree on that one
+  # path even when a shell runs as a non-501 uid. Keep this literal in sync
+  # with the fallback there.
+  tmuxSocketDir =
+    if config.dotfiles.tmux.socketPath != null then
+      builtins.dirOf config.dotfiles.tmux.socketPath
+    else if pkgs.stdenv.isDarwin then
+      "/private/tmp/tmux-501"
+    else
+      null;
 in
 {
   # Fix low-contrast base16-fish colors using stylix palette
@@ -466,6 +485,20 @@ in
       # rest of the file (per `man fish-doc`); it does not terminate the shell.
       # `exec true` is the portable way to actually replace the shell.
       if status is-interactive; and command -q tmux; and not set -q TMUX; and not set -q ZED_TERM; and test -z "$SSH_CONNECTION"
+        # tmux creates its own socket directory, but a missing one (e.g. after
+        # macOS clears /private/tmp on reboot) makes the server fail to start.
+        # Ensure it exists first, mode 0700 (tmux refuses a group/world-open
+        # socket dir). See tmuxSocketDir above for why Darwin pins tmux-501.
+        ${
+          if tmuxSocketDir != null then
+            "mkdir -p -m 0700 ${lib.escapeShellArg tmuxSocketDir}"
+          else
+            ''
+              set -l tmux_tmpdir /tmp
+              test -n "$TMUX_TMPDIR"; and set tmux_tmpdir "$TMUX_TMPDIR"
+              mkdir -p -m 0700 "$tmux_tmpdir/tmux-"(id -u)''
+        }
+
         tmux new-session -c "$HOME" \; set-option destroy-unattached on; and exec true
         set -l tmux_status $status
 
