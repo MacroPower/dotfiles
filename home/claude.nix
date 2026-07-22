@@ -2637,6 +2637,11 @@ in
           {
             env = {
               CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+              # Restore one level of nested subagent delegation. Claude
+              # Code 2.1.217 caps subagents at depth 1 by default, which
+              # stops a general-purpose/claude subagent (and in-process
+              # team teammates) from fanning out their own subagents.
+              CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH = "2";
             };
             disableAutoMode = "disable";
             includeGitInstructions = false;
@@ -2958,6 +2963,9 @@ in
             terminalProgressBarEnabled = true;
             autoCompactEnabled = true;
             autoCompactWindow = 666666;
+            # Straight-ASCII prompt input: no :shortcode: emoji expansion,
+            # matching enforceAsciiTypography and the plain-ASCII policy.
+            emojiCompletionEnabled = false;
           }
           // lib.optionalAttrs cfg.stylixTheme.enable {
             theme = "custom:stylix";
