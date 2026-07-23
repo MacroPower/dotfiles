@@ -330,6 +330,18 @@ let
     files = {
       copy = [
         ".claude"
+        # Seed new worktrees with the main checkout's tofu/terraform cache
+        # (.terraform is gitignored, so fresh worktrees would otherwise
+        # cold-init and re-download every provider and module). Bounded depths
+        # on purpose: worktree_dir is ".worktrees" *inside* the repo, so a
+        # recursive "**/.terraform" glob would descend into sibling worktrees
+        # and copy their provider caches. ".terraform" covers a root module at
+        # the repo root; "*/.terraform" covers a module one level down. Copies
+        # stay lightweight because .terraform/providers entries are symlinks
+        # into the shared plugin cache (see home/tools.nix) and workmux's
+        # copy_dir_recursive preserves symlinks rather than following them.
+        ".terraform"
+        "*/.terraform"
       ];
     };
     sandbox = lib.optionalAttrs cfg.lima.enable {

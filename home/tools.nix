@@ -306,9 +306,18 @@ in
   # sandbox (which blocks $HOME) can reach it via TF_CLI_CONFIG_FILE.
   # Credentials-free on purpose: backend tokens flow through TF_TOKEN_*
   # env vars sourced from sops.
+  #
+  # plugin_cache_dir shares downloaded providers across all checkouts and
+  # worktrees: providers download once into ~/.terraform.d/plugin-cache and
+  # each .terraform/providers entry becomes a symlink into it. This keeps the
+  # per-worktree .terraform copies workmux seeds (home/claude.nix files.copy)
+  # lightweight. Enabling the cache can make the *first* init in a pre-existing
+  # repo fail on a checksum mismatch if its lockfile lacks h1: hashes -- fix
+  # once with `tofu providers lock`.
   xdg.configFile."opentofu/tofurc".text = ''
     disable_checkpoint           = true
     disable_checkpoint_signature = true
+    plugin_cache_dir             = "${config.home.homeDirectory}/.terraform.d/plugin-cache"
   '';
 
   # tfswitch defaults to symlinking /usr/local/bin/tofu (denied by the
@@ -326,6 +335,11 @@ in
   # Materialize the directory at activation (independent of the tfswitchWrapped
   # runtime mkdir) so the configured bin path always wins.
   home.file.".terraform.versions/bin/.keep".text = "";
+
+  # tofu/terraform will not create the plugin_cache_dir themselves -- they warn
+  # and skip caching when it is absent. Materialize it at activation (same
+  # pattern as the tfswitch bin dir above) so the tofurc setting always takes.
+  home.file.".terraform.d/plugin-cache/.keep".text = "";
 
   home.sessionPath = [ "$HOME/.terraform.versions/bin" ];
 
