@@ -1885,6 +1885,7 @@ in
       wm-workmux.source = ../configs/claude/skills/wm-workmux;
       git-surgeon.source = ../configs/claude/skills/git-surgeon;
       humanize.source = ../configs/claude/skills/humanize;
+      presenterm.source = ../configs/claude/skills/presenterm;
       research.source = ../configs/claude/skills/research;
       review-implementation.source = ../configs/claude/skills/review-implementation;
       self-improve.source = ../configs/claude/skills/self-improve;
