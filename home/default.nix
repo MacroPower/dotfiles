@@ -65,6 +65,7 @@ in
     ./git.nix
     ./gpg.nix
     ./neovim.nix
+    ./presenterm.nix
     ./tools.nix
     ./dbs.nix
     ./secrets.nix
