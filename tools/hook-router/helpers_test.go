@@ -57,8 +57,9 @@ func canonicalRules() *cmdrules.Engine {
 }
 
 // ghAskRules mirrors the gh ask-rule bundle in home/claude.nix:
-// subcommand-scoped rules first, top-level fallback last. Matches the
-// same-named fixture in the cmdrules package tests.
+// subcommand-scoped rules first, top-level fallback last. Each group's
+// except set is the union of its allowed and redirected read-only
+// leaves. Matches the same-named fixture in the cmdrules package tests.
 func ghAskRules() *cmdrules.Engine {
 	group := func(name string, except ...string) cmdrules.Rule {
 		return cmdrules.Rule{
@@ -71,22 +72,59 @@ func ghAskRules() *cmdrules.Engine {
 	}
 
 	return cmdrules.New([]cmdrules.Rule{
-		group("pr", "view", "list", "diff", "checks", "status"),
-		group("issue", "view", "list"),
-		group("run", "view", "list", "watch"),
+		group("issue", "list", "view"),
+		group("pr", "checks", "status", "diff", "list", "view"),
+		group("release", "list", "view"),
 		group("repo", "view", "list"),
-		group("release", "view", "list"),
+		group("run", "view", "list", "watch"),
 		group("workflow", "view", "list"),
 		{
 			Command: "gh",
 			Except: []string{
-				"pr", "issue", "run", "repo", "release", "workflow",
-				"search", "status", "help", "version", "--version",
+				"issue", "pr", "release", "repo", "run", "workflow",
+				"status", "help", "version", "--version",
 			},
 			Action: "ask",
 			Reason: ghFallbackAskReason,
 		},
 	})
+}
+
+// ghRedirectReason mirrors the redirect deny reason produced in
+// home/claude.nix for a gh read subcommand with a github MCP equivalent.
+func ghRedirectReason(tool string) string {
+	return "Read via " + tool + " instead of the gh CLI."
+}
+
+// ghRedirectRules mirrors the gh redirect deny-rule bundle in
+// home/claude.nix. Matches the same-named fixture in the cmdrules
+// package tests.
+func ghRedirectRules() *cmdrules.Engine {
+	redirect := func(tool string, args ...string) cmdrules.Rule {
+		return cmdrules.Rule{
+			Command: "gh",
+			Args:    args,
+			Reason:  ghRedirectReason(tool),
+		}
+	}
+
+	return cmdrules.New([]cmdrules.Rule{
+		redirect("mcp__github__issue_read", "issue", "view"),
+		redirect("mcp__github__list_issues", "issue", "list"),
+		redirect("mcp__github__pull_request_read", "pr", "view"),
+		redirect("mcp__github__list_pull_requests", "pr", "list"),
+		redirect("mcp__github__pull_request_read (diff method)", "pr", "diff"),
+		redirect("mcp__github__get_release_by_tag / mcp__github__get_latest_release", "release", "view"),
+		redirect("mcp__github__list_releases", "release", "list"),
+		redirect("mcp__github__search_code / search_issues / search_pull_requests / search_repositories", "search"),
+	})
+}
+
+// ghRules mirrors the full production gh engine: redirect deny rules
+// before ask rules, matching the hook-router wrapper's serialization
+// order (all deny rules precede any ask rule).
+func ghRules() *cmdrules.Engine {
+	return cmdrules.New(append(ghRedirectRules().Rules(), ghAskRules().Rules()...))
 }
 
 // newTestStore opens a fresh [*state.Store] in a per-test temp dir and

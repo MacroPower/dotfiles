@@ -403,9 +403,12 @@ func TestCommandRulesCheck_Kubectx(t *testing.T) {
 }
 
 // ghAskRules mirrors the gh ask-rule bundle in home/claude.nix:
-// subcommand-scoped rules first, top-level fallback last. The
-// hook-router handler tests carry a copy of the same fixture. Update
-// both when home/claude.nix gains or drops rules.
+// subcommand-scoped rules first, top-level fallback last. Each group's
+// except set is the union of its allowed and redirected read-only
+// leaves, so only mutating subcommands ask; redirected reads are caught
+// by ghRedirectRules, which production evaluates first. The hook-router
+// handler tests carry a copy of the same fixture. Update all when
+// home/claude.nix gains or drops rules.
 func ghAskRules() *cmdrules.Engine {
 	group := func(name string, except ...string) cmdrules.Rule {
 		return cmdrules.Rule{
@@ -418,22 +421,61 @@ func ghAskRules() *cmdrules.Engine {
 	}
 
 	return cmdrules.New([]cmdrules.Rule{
-		group("pr", "view", "list", "diff", "checks", "status"),
-		group("issue", "view", "list"),
-		group("run", "view", "list", "watch"),
+		group("issue", "list", "view"),
+		group("pr", "checks", "status", "diff", "list", "view"),
+		group("release", "list", "view"),
 		group("repo", "view", "list"),
-		group("release", "view", "list"),
+		group("run", "view", "list", "watch"),
 		group("workflow", "view", "list"),
 		{
 			Command: "gh",
 			Except: []string{
-				"pr", "issue", "run", "repo", "release", "workflow",
-				"search", "status", "help", "version", "--version",
+				"issue", "pr", "release", "repo", "run", "workflow",
+				"status", "help", "version", "--version",
 			},
 			Action: "ask",
 			Reason: ghFallbackAskReason,
 		},
 	})
+}
+
+// ghRedirectReason mirrors the redirect deny reason produced in
+// home/claude.nix for a gh read subcommand that has a github MCP
+// equivalent.
+func ghRedirectReason(tool string) string {
+	return "Read via " + tool + " instead of the gh CLI."
+}
+
+// ghRedirectRules mirrors the gh redirect deny-rule bundle in
+// home/claude.nix: read-only gh subcommands with a github MCP
+// equivalent, denied and pointed at the MCP tool. The hook-router
+// handler tests carry a copy of the same fixture.
+func ghRedirectRules() *cmdrules.Engine {
+	redirect := func(tool string, args ...string) cmdrules.Rule {
+		return cmdrules.Rule{
+			Command: "gh",
+			Args:    args,
+			Reason:  ghRedirectReason(tool),
+		}
+	}
+
+	return cmdrules.New([]cmdrules.Rule{
+		redirect("mcp__github__issue_read", "issue", "view"),
+		redirect("mcp__github__list_issues", "issue", "list"),
+		redirect("mcp__github__pull_request_read", "pr", "view"),
+		redirect("mcp__github__list_pull_requests", "pr", "list"),
+		redirect("mcp__github__pull_request_read (diff method)", "pr", "diff"),
+		redirect("mcp__github__get_release_by_tag / mcp__github__get_latest_release", "release", "view"),
+		redirect("mcp__github__list_releases", "release", "list"),
+		redirect("mcp__github__search_code / search_issues / search_pull_requests / search_repositories", "search"),
+	})
+}
+
+// ghRules mirrors the full production gh engine: redirect deny rules
+// before ask rules, matching the serialization order in the hook-router
+// wrapper (all deny rules precede any ask rule).
+func ghRules() *cmdrules.Engine {
+	return cmdrules.New(append(ghRedirectRules().Rules(), ghAskRules().Rules()...))
 }
 
 func TestCommandRulesCheck_Ask(t *testing.T) {
@@ -447,11 +489,14 @@ func TestCommandRulesCheck_Ask(t *testing.T) {
 			input: "gh pr merge 1",
 			want:  ghGroupAskReason,
 		},
-		"gh pr view is exempt": {
+		"gh pr view not asked (redirect deny handles it in prod)": {
 			input: "gh pr view 1",
 		},
-		"gh pr view with flags is exempt": {
+		"gh pr view with flags not asked": {
 			input: "gh pr view 1 --json title",
+		},
+		"gh pr checks is exempt": {
+			input: "gh pr checks 1",
 		},
 		"bare gh pr asks (bare ignores except)": {
 			input: "gh pr",
@@ -483,8 +528,9 @@ func TestCommandRulesCheck_Ask(t *testing.T) {
 			input: "gh",
 			want:  ghFallbackAskReason,
 		},
-		"gh search is exempt at the fallback": {
+		"gh search hits the fallback ask (redirect deny wins in prod)": {
 			input: "gh search repos foo",
+			want:  ghFallbackAskReason,
 		},
 		"gh --version is exempt at the fallback": {
 			input: "gh --version",
@@ -515,6 +561,98 @@ func TestCommandRulesCheck_Ask(t *testing.T) {
 			if matched {
 				assert.Equal(t, tt.want, got)
 				assert.True(t, rule.Ask())
+			}
+		})
+	}
+}
+
+// TestCommandRulesCheck_Redirect exercises the full production gh engine
+// (redirect deny rules before ask rules): read-only gh subcommands with
+// a github MCP equivalent are denied and redirected, reads without one
+// stay on gh, and mutating subcommands still ask.
+func TestCommandRulesCheck_Redirect(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		input   string
+		want    string
+		wantAsk bool
+	}{
+		"gh issue view redirects to MCP": {
+			input: "gh issue view 1",
+			want:  ghRedirectReason("mcp__github__issue_read"),
+		},
+		"gh issue list redirects to MCP": {
+			input: "gh issue list",
+			want:  ghRedirectReason("mcp__github__list_issues"),
+		},
+		"gh pr view redirects to MCP (deny beats ask exempt)": {
+			input: "gh pr view 1 --json title",
+			want:  ghRedirectReason("mcp__github__pull_request_read"),
+		},
+		"gh pr list redirects to MCP": {
+			input: "gh pr list",
+			want:  ghRedirectReason("mcp__github__list_pull_requests"),
+		},
+		"gh pr diff redirects to MCP": {
+			input: "gh pr diff 2",
+			want:  ghRedirectReason("mcp__github__pull_request_read (diff method)"),
+		},
+		"gh release view redirects to MCP": {
+			input: "gh release view v1.2.3",
+			want:  ghRedirectReason("mcp__github__get_release_by_tag / mcp__github__get_latest_release"),
+		},
+		"gh release list redirects to MCP": {
+			input: "gh release list",
+			want:  ghRedirectReason("mcp__github__list_releases"),
+		},
+		"gh search redirects to MCP": {
+			input: "gh search repos foo",
+			want:  ghRedirectReason("mcp__github__search_code / search_issues / search_pull_requests / search_repositories"),
+		},
+		"gh pr checks stays on gh (no MCP equivalent)": {
+			input: "gh pr checks 1",
+		},
+		"gh pr status stays on gh": {
+			input: "gh pr status",
+		},
+		"gh run view stays on gh": {
+			input: "gh run view 123",
+		},
+		"gh repo view stays on gh": {
+			input: "gh repo view owner/repo",
+		},
+		"gh workflow list stays on gh": {
+			input: "gh workflow list",
+		},
+		"gh status stays on gh": {
+			input: "gh status",
+		},
+		"gh pr merge still asks (mutating, not redirected)": {
+			input:   "gh pr merge 1",
+			want:    ghGroupAskReason,
+			wantAsk: true,
+		},
+		"gh issue create still asks": {
+			input:   "gh issue create --title x",
+			want:    ghGroupAskReason,
+			wantAsk: true,
+		},
+	}
+
+	rules := ghRules()
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			rule, got, matched := rules.Check(prog)
+			assert.Equal(t, tt.want != "", matched)
+
+			if tt.want != "" {
+				assert.Equal(t, tt.want, got)
+				assert.Equal(t, tt.wantAsk, rule.Ask())
 			}
 		})
 	}

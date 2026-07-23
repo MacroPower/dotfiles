@@ -146,7 +146,29 @@ func TestHandleBashAutoAllow(t *testing.T) {
 		t.Parallel()
 
 		cfg := config{
-			commandRules: ghAskRules(),
+			commandRules: ghRules(),
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(hookInput(t, "gh pr checks 1"), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "allow", hso["permissionDecision"])
+		assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
+	})
+
+	t.Run("autoAllow=true, redirect match: deny emitted instead of auto-allow", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules: ghRules(),
 			autoAllow:    true,
 		}
 
@@ -160,8 +182,8 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		hso, ok := result["hookSpecificOutput"].(map[string]any)
 		require.True(t, ok)
-		assert.Equal(t, "allow", hso["permissionDecision"])
-		assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Equal(t, ghRedirectReason("mcp__github__pull_request_read"), hso["permissionDecisionReason"])
 	})
 
 	t.Run("autoAllow=true, kubectl with kubeconfig: allow without updatedInput", func(t *testing.T) {

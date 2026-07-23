@@ -2035,22 +2035,45 @@ in
 
       github =
         let
-          # Read-only gh CLI surface: the single source of truth for
-          # both the permission allow entries and the hook-router ask
-          # rules below. Each group maps a gh subcommand to its
-          # read-only leaves; ghReadOnlyCommands lists top-level gh
-          # commands that are read-only in their entirety. Mirrored by
-          # ghAskRules in tools/hook-router/command_rules_test.go;
-          # update both together.
-          ghReadOnlyGroups = {
+          # gh read subcommands that have a mcp__github__* equivalent.
+          # These are denied at the hook level and redirected to the MCP
+          # tool named in the value, so reads flow through the github MCP
+          # rather than the gh CLI. Write commands (issue/pr create, edit,
+          # ...) are intentionally absent here: the ask rules below leave
+          # them to the gh CLI. Mirrored by ghRedirectRules in
+          # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go; update
+          # all together.
+          ghRedirectGroups = {
+            issue = {
+              view = "mcp__github__issue_read";
+              list = "mcp__github__list_issues";
+            };
+            pr = {
+              view = "mcp__github__pull_request_read";
+              list = "mcp__github__list_pull_requests";
+              diff = "mcp__github__pull_request_read (diff method)";
+            };
+            release = {
+              view = "mcp__github__get_release_by_tag / mcp__github__get_latest_release";
+              list = "mcp__github__list_releases";
+            };
+          };
+          ghRedirectCommands = {
+            search = "mcp__github__search_code / search_issues / search_pull_requests / search_repositories";
+          };
+
+          # Read-only gh subcommands with no mcp__github__* equivalent
+          # (Actions runs, workflows, repo metadata, PR checks/status,
+          # notification status). The readonly proxy does not serve these,
+          # so they stay allowed on the gh CLI. Single source of truth for
+          # the permission allow entries below. Mirrored by ghAskRules in
+          # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go.
+          ghAllowGroups = {
             pr = [
-              "view"
-              "list"
-              "diff"
               "checks"
               "status"
             ];
-            issue = [
+            repo = [
               "view"
               "list"
             ];
@@ -2059,23 +2082,24 @@ in
               "list"
               "watch"
             ];
-            repo = [
-              "view"
-              "list"
-            ];
-            release = [
-              "view"
-              "list"
-            ];
             workflow = [
               "view"
               "list"
             ];
           };
-          ghReadOnlyCommands = [
-            "search"
+          ghAllowCommands = [
             "status"
           ];
+
+          # Every group carrying a read-only leaf (allowed or redirected),
+          # and its full read-only leaf set. The ask rules exempt these
+          # leaves so only mutating subcommands prompt; redirected leaves
+          # are already caught by the deny rules, which hook-router
+          # evaluates before any ask rule.
+          ghGroups = lib.attrNames (ghAllowGroups // ghRedirectGroups);
+          ghReadLeaves =
+            group: (ghAllowGroups.${group} or [ ]) ++ lib.attrNames (ghRedirectGroups.${group} or { });
+
           ghAllowPair = prefix: [
             "Bash(gh ${prefix})"
             "Bash(gh ${prefix} *)"
@@ -2103,20 +2127,21 @@ in
             "mcp__github__search_pull_requests"
             "mcp__github__search_repositories"
           ]
-          # Read-only gh CLI commands, derived from the
-          # ghReadOnlyGroups / ghReadOnlyCommands tables above. These
+          # Read-only gh CLI commands with no MCP equivalent, derived
+          # from the ghAllowGroups / ghAllowCommands tables above. These
           # cover hosts where the sandbox auto-allow is off; mutating gh
-          # commands are caught by the commandRules.ask rules below,
-          # which prompt on every host. An ask entry like Bash(gh *)
-          # would shadow all of these (permission rules evaluate
-          # deny -> ask -> allow, regardless of specificity), so gh must
-          # not appear in the ask list.
+          # commands are caught by the commandRules.ask rules below, and
+          # reads with an MCP equivalent by the commandRules.deny rules,
+          # which prompt / redirect on every host. An ask entry like
+          # Bash(gh *) would shadow all of these (permission rules
+          # evaluate deny -> ask -> allow, regardless of specificity), so
+          # gh must not appear in the ask list.
           ++ lib.concatLists (
             lib.mapAttrsToList (
               group: leaves: lib.concatMap (leaf: ghAllowPair "${group} ${leaf}") leaves
-            ) ghReadOnlyGroups
+            ) ghAllowGroups
           )
-          ++ lib.concatMap ghAllowPair ghReadOnlyCommands;
+          ++ lib.concatMap ghAllowPair ghAllowCommands;
           # This list is the single source of truth for the github MCP tool
           # filter: the proxy wrapper derives its --deny-tool flags from it
           # (see ghProxyDenyFlags), so denying a tool here both blocks the
@@ -2169,26 +2194,52 @@ in
             "mcp__github__update_pull_request_branch"
             "mcp__github__run_secret_scanning"
           ];
+          # Redirect read-only gh subcommands that have a github MCP
+          # equivalent to the MCP, derived from the ghRedirectGroups /
+          # ghRedirectCommands tables above. hook-router evaluates deny
+          # rules before ask rules, so these win over the mutating-command
+          # ask fallback below and over the sandbox auto-allow. Reads
+          # without an MCP equivalent stay allowed on gh; writes are left
+          # to the ask rules so the gh CLI still drives them.
+          commandRules.deny =
+            lib.concatLists (
+              lib.mapAttrsToList (
+                group: leaves:
+                lib.mapAttrsToList (leaf: tool: {
+                  command = "gh";
+                  args = [
+                    group
+                    leaf
+                  ];
+                  reason = "Read via ${tool} instead of the gh CLI.";
+                }) leaves
+              ) ghRedirectGroups
+            )
+            ++ lib.mapAttrsToList (cmd: tool: {
+              command = "gh";
+              args = [ cmd ];
+              reason = "Read via ${tool} instead of the gh CLI.";
+            }) ghRedirectCommands;
           # Fail-closed gating for the gh CLI, derived from the
-          # ghReadOnlyGroups / ghReadOnlyCommands tables above: read-only
-          # subcommands fall through (allowed by the permission entries
-          # above, or by the sandbox auto-allow), everything else gets a
-          # forced prompt -- including gh subcommands that do not exist
-          # yet. Order matters: subcommand-scoped rules run before the
-          # top-level fallback.
+          # ghGroups / ghAllowCommands tables above: read-only subcommands
+          # fall through (redirected by the deny rules above, allowed by
+          # the permission entries above, or by the sandbox auto-allow),
+          # everything else gets a forced prompt -- including gh
+          # subcommands that do not exist yet. Order matters:
+          # subcommand-scoped rules run before the top-level fallback.
           commandRules.ask =
-            lib.mapAttrsToList (group: leaves: {
+            map (group: {
               command = "gh";
               args = [ group ];
-              except = leaves;
+              except = ghReadLeaves group;
               reason = "This gh subcommand can mutate GitHub state. Confirm before running.";
-            }) ghReadOnlyGroups
+            }) ghGroups
             ++ [
               {
                 command = "gh";
                 except =
-                  lib.attrNames ghReadOnlyGroups
-                  ++ ghReadOnlyCommands
+                  ghGroups
+                  ++ ghAllowCommands
                   ++ [
                     "help"
                     "version"
