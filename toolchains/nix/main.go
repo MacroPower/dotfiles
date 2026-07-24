@@ -279,9 +279,11 @@ func (m *Nix) Lint(ctx context.Context) error {
 // Editorconfig validates files against .editorconfig rules.
 // +check
 func (m *Nix) Editorconfig(ctx context.Context) error {
+	// nix run rather than nix profile install: the profile lives on the
+	// persistent /nix/var/nix cache volume, and reinstalling after a
+	// nixpkgs-unstable bump conflicts with the previously installed copy.
 	_, err := m.base().
-		WithExec([]string{"nix", "profile", "install", "nixpkgs#editorconfig-checker"}).
-		WithExec([]string{"editorconfig-checker", "-no-color"}).
+		WithExec([]string{"nix", "run", "nixpkgs#editorconfig-checker", "--", "-no-color"}).
 		Sync(ctx)
 	return err
 }
