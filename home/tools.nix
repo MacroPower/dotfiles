@@ -304,8 +304,8 @@ in
 
   # Relocates the tofu CLI config out of ~/.terraform.d/ so the Claude
   # sandbox (which blocks $HOME) can reach it via TF_CLI_CONFIG_FILE.
-  # Credentials-free on purpose: backend tokens flow through TF_TOKEN_*
-  # env vars sourced from sops.
+  # Credentials-free on purpose: backend tokens are supplied at runtime
+  # via TF_TOKEN_* env vars, never stored here.
   #
   # plugin_cache_dir shares downloaded providers across all checkouts and
   # worktrees: providers download once into ~/.terraform.d/plugin-cache and

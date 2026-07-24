@@ -396,7 +396,6 @@ let
         "SPACELIFT_API_KEY_ID"
         "SPACELIFT_API_KEY_SECRET"
         "TF_CLI_CONFIG_FILE"
-        "TF_TOKEN_app_us_spacelift_io"
         "TERM_PROGRAM"
         "TERM_PROGRAM_VERSION"
         "ATUIN_USERNAME"
@@ -839,7 +838,6 @@ let
             SPACELIFT_API_KEY_ENDPOINT = "spacelift_api_key_endpoint";
             SPACELIFT_API_KEY_ID = "spacelift_api_key_id";
             SPACELIFT_API_KEY_SECRET = "spacelift_api_key_secret";
-            TF_TOKEN_app_us_spacelift_io = "tf_token_app_us_spacelift_io";
             ATUIN_USERNAME = "atuin_username";
             ATUIN_PASSWORD = "atuin_password";
           }}
