@@ -264,6 +264,32 @@ let
 
   workmux = "${lib.getExe' pkgs.workmux-bin "workmux"} set-window-status";
 
+  # Grants a workmux-created linked worktree's Claude session write access to
+  # the shared parent .git so git add/commit/rebase/push work under the macOS
+  # Seatbelt sandbox (the sandbox allowlists the worktree cwd but not the
+  # parent repo's .git; anthropics/claude-code#64792). hooks/ and config stay
+  # write-denied. Merges into (never overwrites) the
+  # .claude/settings.local.json that files.copy just seeded from the parent
+  # checkout.
+  worktreeAllowGitWrites = pkgs.writeShellScript "workmux-worktree-allow-git-writes" ''
+    set -euo pipefail
+    cd "''${WM_WORKTREE_PATH:-$PWD}"
+    common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+    settings=".claude/settings.local.json"
+    mkdir -p .claude
+    [ -f "$settings" ] || printf '{}' > "$settings"
+    tmp=$(mktemp)
+    ${pkgs.jq}/bin/jq \
+      --arg gitdir "$common_dir" \
+      '.sandbox.filesystem.allowWrite =
+          ((.sandbox.filesystem.allowWrite // []) + [$gitdir] | unique)
+        | .sandbox.filesystem.denyWrite =
+          ((.sandbox.filesystem.denyWrite // [])
+            + [$gitdir + "/hooks", $gitdir + "/config"] | unique)' \
+      "$settings" > "$tmp"
+    mv "$tmp" "$settings"
+  '';
+
   workmuxConfig = (pkgs.formats.yaml { }).generate "config.yaml" {
     nerdfont = true;
     merge_strategy = "rebase";
@@ -299,16 +325,24 @@ let
         info = "#${colors.base0C}";
       };
     };
-    post_create = lib.optionals cfg.lima.enable [
-      "direnv allow >/dev/null 2>&1 || true"
-      "lefthook install >/dev/null 2>&1 || true"
-      # Authenticate this fresh sandbox to the self-hosted atuin server so its
-      # shell history syncs with the host. Credentials arrive via
-      # env_passthrough; the key is read from the mounted host key (key_path).
-      # Best-effort: an unreachable server, missing creds, or a failed sync
-      # never aborts sandbox setup.
-      "atuin login -u \"$ATUIN_USERNAME\" -p \"$ATUIN_PASSWORD\" >/dev/null 2>&1 && atuin sync >/dev/null 2>&1 || true"
-    ];
+    post_create =
+      lib.optionals cfg.lima.enable [
+        "direnv allow >/dev/null 2>&1 || true"
+        "lefthook install >/dev/null 2>&1 || true"
+        # Authenticate this fresh sandbox to the self-hosted atuin server so its
+        # shell history syncs with the host. Credentials arrive via
+        # env_passthrough; the key is read from the mounted host key (key_path).
+        # Best-effort: an unreachable server, missing creds, or a failed sync
+        # never aborts sandbox setup.
+        "atuin login -u \"$ATUIN_USERNAME\" -p \"$ATUIN_PASSWORD\" >/dev/null 2>&1 && atuin sync >/dev/null 2>&1 || true"
+      ]
+      # Darwin-only because that's where the Seatbelt sandbox runs. Kept on
+      # even with lima: the agent pane runs in the VM (where the settings key
+      # is inert), but host-side Claude sessions opened in the worktree still
+      # need the write grant.
+      ++ lib.optionals sandboxEnabled [
+        "${worktreeAllowGitWrites}"
+      ];
     panes = [
       {
         command = "<agent>";
