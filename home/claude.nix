@@ -293,6 +293,12 @@ let
   workmuxConfig = (pkgs.formats.yaml { }).generate "config.yaml" {
     nerdfont = true;
     merge_strategy = "rebase";
+    # Start independent worktrees from the repo's effective main branch
+    # (configured main_branch or detected default) instead of whatever
+    # branch happens to be checked out, so spawning a task while sitting
+    # on a feature branch doesn't silently stack unrelated work on it.
+    # Explicit --base and --pr checkouts still take precedence.
+    base_branch = "auto";
     inherit (cfg.workmux) agent;
     # Named agent entry consumed by the focused pane's <agent> placeholder.
     # The structured agent path re-derives the command on every render, so
