@@ -217,7 +217,11 @@ func TestCheck(t *testing.T) {
 			if tt.deny != nil || tt.allow != nil || tt.reason != "" {
 				var err error
 
-				r, err = rules.Compile(tt.reason, tt.deny, tt.allow)
+				r, err = rules.Compile(rules.File{
+					Reason: tt.reason,
+					Deny:   tt.deny,
+					Allow:  tt.allow,
+				})
 				require.NoError(t, err)
 			}
 
@@ -233,11 +237,83 @@ func TestCheck(t *testing.T) {
 func TestCompileInvalidRegex(t *testing.T) {
 	t.Parallel()
 
-	_, err := rules.Compile("", []rules.DenyRule{{
-		URLMatch: rules.URLMatch{Host: "[invalid"},
-		Reason:   "bad",
-	}}, nil)
+	_, err := rules.Compile(rules.File{
+		Deny: []rules.DenyRule{{
+			URLMatch: rules.URLMatch{Host: "[invalid"},
+			Reason:   "bad",
+		}},
+	})
 	require.ErrorContains(t, err, "deny rule 0")
+
+	_, err = rules.Compile(rules.File{
+		RobotsExempt: []rules.URLMatch{{Host: "[invalid"}},
+	})
+	require.ErrorContains(t, err, "robots exemption 0")
+}
+
+func TestRobotsExempt(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		exempt []rules.URLMatch
+		url    string
+		want   bool
+	}{
+		"no exemptions": {
+			url:  "https://old.reddit.com/r/NixOS/",
+			want: false,
+		},
+		"host matches": {
+			exempt: []rules.URLMatch{{Host: `(.*\.)?reddit\.com`}},
+			url:    "https://old.reddit.com/r/NixOS/",
+			want:   true,
+		},
+		"apex matches": {
+			exempt: []rules.URLMatch{{Host: `(.*\.)?reddit\.com`}},
+			url:    "https://reddit.com/r/NixOS/",
+			want:   true,
+		},
+		"other host unaffected": {
+			exempt: []rules.URLMatch{{Host: `(.*\.)?reddit\.com`}},
+			url:    "https://example.com/r/NixOS/",
+			want:   false,
+		},
+		"lookalike host not matched": {
+			exempt: []rules.URLMatch{{Host: `(.*\.)?reddit\.com`}},
+			url:    "https://reddit.com.evil.test/r/NixOS/",
+			want:   false,
+		},
+		"path narrows exemption": {
+			exempt: []rules.URLMatch{{Host: `(.*\.)?reddit\.com`, Path: `/r/.*`}},
+			url:    "https://old.reddit.com/user/someone",
+			want:   false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := rules.Compile(rules.File{RobotsExempt: tt.exempt})
+			require.NoError(t, err)
+
+			u, err := url.ParseRequestURI(tt.url)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.want, r.RobotsExempt(u))
+		})
+	}
+}
+
+func TestRobotsExemptNilReceiver(t *testing.T) {
+	t.Parallel()
+
+	var r *rules.Rules
+
+	u, err := url.ParseRequestURI("https://old.reddit.com/r/NixOS/")
+	require.NoError(t, err)
+
+	assert.False(t, r.RobotsExempt(u))
 }
 
 func TestLoad(t *testing.T) {

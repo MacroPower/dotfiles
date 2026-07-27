@@ -7,4 +7,9 @@
 // not cover. Every pattern is an anchored full-match regexp over a
 // single URL component, so a host pattern never matches a substring of
 // a longer host.
+//
+// The same matcher drives robots.txt exemptions. A rules file names the
+// URLs whose robots.txt directives the fetcher ignores, which keeps the
+// decision per-site and visible in configuration rather than a global
+// switch that is easy to leave on and forget.
 package rules

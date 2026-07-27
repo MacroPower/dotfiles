@@ -32,18 +32,25 @@ type AllowRule struct {
 	URLMatch
 }
 
-// rulesFile is the JSON structure read from disk.
-type rulesFile struct {
+// File is the JSON structure of a rules file and the input to [Compile].
+type File struct {
 	Reason string      `json:"reason,omitempty"`
 	Deny   []DenyRule  `json:"deny,omitempty"`
 	Allow  []AllowRule `json:"allow,omitempty"`
+
+	// RobotsExempt lists URL patterns whose robots.txt directives are
+	// not enforced. Exemption is opt-in per pattern: enforcement stays
+	// on for every host the file does not name, so turning it off for
+	// one site cannot silently turn it off everywhere.
+	RobotsExempt []URLMatch `json:"robotsExempt,omitempty"`
 }
 
 // Rules holds compiled URL rules, ready for matching.
 type Rules struct {
-	reason string
-	deny   []compiledDeny
-	allow  []compiledMatch
+	reason       string
+	deny         []compiledDeny
+	allow        []compiledMatch
+	robotsExempt []compiledMatch
 }
 
 type compiledMatch struct {
@@ -80,24 +87,24 @@ func Load(path string) (*Rules, error) {
 		return nil, fmt.Errorf("reading rules file: %w", err)
 	}
 
-	var f rulesFile
+	var f File
 
 	err = json.Unmarshal(data, &f)
 	if err != nil {
 		return nil, fmt.Errorf("parsing rules file: %w", err)
 	}
 
-	return Compile(f.Reason, f.Deny, f.Allow)
+	return Compile(f)
 }
 
-// Compile builds [Rules] from deny and allow specs, compiling every
-// regex pattern. reason is the message returned when a non-empty allow
-// list rejects a URL ("" falls back to a default). Fails fast on
-// invalid regex. [Load] uses Compile after decoding the JSON file.
-func Compile(reason string, deny []DenyRule, allow []AllowRule) (*Rules, error) {
-	rules := &Rules{reason: reason}
+// Compile builds [Rules] from a [File], compiling every regex pattern.
+// [File.Reason] is the message returned when a non-empty allow list
+// rejects a URL ("" falls back to a default). Fails fast on invalid
+// regex. [Load] uses Compile after decoding the JSON file.
+func Compile(f File) (*Rules, error) {
+	rules := &Rules{reason: f.Reason}
 
-	for i, d := range deny {
+	for i, d := range f.Deny {
 		cm, err := compileURLMatch(d.URLMatch)
 		if err != nil {
 			return nil, fmt.Errorf("deny rule %d: %w", i, err)
@@ -117,13 +124,22 @@ func Compile(reason string, deny []DenyRule, allow []AllowRule) (*Rules, error) 
 		rules.deny = append(rules.deny, cd)
 	}
 
-	for i, a := range allow {
+	for i, a := range f.Allow {
 		cm, err := compileURLMatch(a.URLMatch)
 		if err != nil {
 			return nil, fmt.Errorf("allow rule %d: %w", i, err)
 		}
 
 		rules.allow = append(rules.allow, cm)
+	}
+
+	for i, e := range f.RobotsExempt {
+		cm, err := compileURLMatch(e)
+		if err != nil {
+			return nil, fmt.Errorf("robots exemption %d: %w", i, err)
+		}
+
+		rules.robotsExempt = append(rules.robotsExempt, cm)
 	}
 
 	return rules, nil
@@ -169,6 +185,24 @@ func (r *Rules) Check(u *url.URL) string {
 	}
 
 	return ""
+}
+
+// RobotsExempt reports whether u matches a [File.RobotsExempt] pattern
+// and so should skip robots.txt enforcement. A nil receiver, or a rules
+// file that names no exemptions, exempts nothing. Safe to call on a nil
+// receiver.
+func (r *Rules) RobotsExempt(u *url.URL) bool {
+	if r == nil {
+		return false
+	}
+
+	for _, e := range r.robotsExempt {
+		if e.matches(u) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (cm *compiledMatch) matches(u *url.URL) bool {

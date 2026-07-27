@@ -437,6 +437,65 @@ func TestCrossOriginRedirectRobotsCheck(t *testing.T) {
 	assert.Contains(t, resultText(t, result), "robots.txt")
 }
 
+func TestRobotsExemption(t *testing.T) {
+	t.Parallel()
+
+	// A site that disallows everything, the way reddit.com does.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/robots.txt":
+			w.Header().Set("Content-Type", "text/plain")
+			mustWrite(w, []byte("User-agent: *\nDisallow: /\n"))
+
+		default:
+			w.Header().Set("Content-Type", "text/plain")
+			mustWrite(w, []byte("page content"))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	srvURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	host := regexp.QuoteMeta(srvURL.Host)
+
+	tests := map[string]struct {
+		exempt []rules.URLMatch
+		want   string
+	}{
+		"enforced without an exemption": {
+			want: "robots.txt",
+		},
+		"exempt host bypasses robots.txt": {
+			exempt: []rules.URLMatch{{Host: host}},
+			want:   "page content",
+		},
+		"exemption for another host does not leak": {
+			exempt: []rules.URLMatch{{Host: `example\.com`}},
+			want:   "robots.txt",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := rules.Compile(rules.File{RobotsExempt: tt.exempt})
+			require.NoError(t, err)
+
+			h := newTestHandler(t, srv.Client(),
+				fetch.WithCheckRobots(true),
+				fetch.WithRules(r),
+			)
+
+			result, _, err := h.Handle(t.Context(), nil, fetch.Input{URL: srv.URL + "/page"})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Contains(t, resultText(t, result), tt.want)
+		})
+	}
+}
+
 func TestHandleLogging(t *testing.T) {
 	t.Parallel()
 
@@ -1082,7 +1141,7 @@ func newTestStore(t *testing.T) *store.Store {
 func mustRules(t *testing.T, deny ...rules.DenyRule) *rules.Rules {
 	t.Helper()
 
-	r, err := rules.Compile("", deny, nil)
+	r, err := rules.Compile(rules.File{Deny: deny})
 	require.NoError(t, err)
 
 	return r

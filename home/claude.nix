@@ -517,6 +517,7 @@ let
     }
     // {
       deny = map cleanRule (bundledFetchDeny ++ cfg.extraFetchRules.deny);
+      robotsExempt = map cleanAttrs (bundledFetchRobotsExempt ++ cfg.extraFetchRules.robotsExempt);
     }
     // lib.optionalAttrs cfg.fetchAllowlist {
       allow = map cleanAttrs (
@@ -605,6 +606,7 @@ let
           { host = "(.*\\.)?prometheus\\.io"; }
           { host = "(.*\\.)?pypi\\.org"; }
           { host = "(.*\\.)?python\\.org"; }
+          { host = "old\\.reddit\\.com"; }
           { host = "(.*\\.)?redis\\.io"; }
           { host = "(.*\\.)?rfc-editor\\.org"; }
           { host = "(.*\\.)?robusta\\.dev"; }
@@ -871,6 +873,7 @@ let
   bundledWritePaths = lib.concatMap (b: b.sandbox.allowWrite) bundleValues;
   bundledFetchDeny = lib.concatMap (b: b.fetchRules.deny) bundleValues;
   bundledFetchAllow = lib.concatMap (b: b.fetchRules.allow) bundleValues;
+  bundledFetchRobotsExempt = lib.concatMap (b: b.fetchRules.robotsExempt) bundleValues;
   bundledCommandDeny = lib.concatMap (b: b.commandRules.deny) bundleValues;
   bundledCommandAsk = lib.concatMap (b: b.commandRules.ask) bundleValues;
 
@@ -1415,10 +1418,19 @@ in
             default = [ ];
             description = "Additional allow rules appended to the base mcp-fetch allowlist.";
           };
+          robotsExempt = mkOption {
+            type = types.listOf urlMatchType;
+            default = [ ];
+            description = ''
+              Additional URL patterns exempted from mcp-fetch's robots.txt
+              enforcement. Enforcement stays on for every host not named
+              here, so exempting one site never disables it globally.
+            '';
+          };
         };
       };
       default = { };
-      description = "Extra mcp-fetch URL filtering rules merged with the base deny and allow lists.";
+      description = "Extra mcp-fetch URL filtering rules merged with the base deny, allow, and robots-exemption lists.";
     };
 
     extraCommandRules = mkOption {
@@ -1871,6 +1883,15 @@ in
                 default = [ ];
                 description = "mcp-fetch allow rules contributed by this bundle.";
               };
+              robotsExempt = mkOption {
+                type = types.listOf urlMatchType;
+                default = [ ];
+                description = ''
+                  URL patterns this bundle exempts from mcp-fetch's
+                  robots.txt enforcement. Enforcement stays on for every
+                  host not named here.
+                '';
+              };
             };
             commandRules = {
               deny = mkOption {
@@ -1965,9 +1986,23 @@ in
           "WebSearch"
           "WebFetch"
         ];
+        # Reddit's robots.txt is a blanket "Disallow: /" on every host it
+        # serves, aimed at bulk scrapers. These fetches are human-directed
+        # and one page at a time, so the exemption is scoped to reddit.com
+        # rather than turning enforcement off globally.
+        fetchRules.robotsExempt = [ { host = "(.*\\.)?reddit\\.com"; } ];
+        # www.reddit.com answers non-browser clients with a bot-verification
+        # interstitial; old.reddit.com serves the real thread markup.
+        fetchRules.deny = [
+          {
+            host = "(www\\.)?reddit\\.com";
+            reason = "www.reddit.com serves a bot-verification page instead of content. Fetch the same path on old.reddit.com instead.";
+          }
+        ];
         instructions = {
           items = [
             "Use `mcp__fetch__fetch` for fetching known URLs and web page content."
+            "Fetch Reddit threads from `old.reddit.com`; `www.reddit.com` returns a verification page, and the `.json` and `.rss` endpoints are rate-limited."
           ];
         };
       };

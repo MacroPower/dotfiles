@@ -190,10 +190,13 @@ func TestRenderRulesDeniedSubresource(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	denied, err := rules.Compile("test", []rules.DenyRule{{
-		URLMatch: rules.URLMatch{Path: `^/blocked\.js$`},
-		Reason:   "blocked by test",
-	}}, nil)
+	denied, err := rules.Compile(rules.File{
+		Reason: "test",
+		Deny: []rules.DenyRule{{
+			URLMatch: rules.URLMatch{Path: `^/blocked\.js$`},
+			Reason:   "blocked by test",
+		}},
+	})
 	require.NoError(t, err)
 
 	seed := page(`<div id="root"></div>` +

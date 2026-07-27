@@ -241,7 +241,7 @@ func New(opts ...Option) *Handler {
 			return err
 		}
 
-		if h.checkRobots && req.URL.Host != via[len(via)-1].URL.Host {
+		if h.enforceRobots(req.URL) && req.URL.Host != via[len(via)-1].URL.Host {
 			return h.robots.Check(req.Context(), req.URL)
 		}
 
@@ -249,6 +249,14 @@ func New(opts ...Option) *Handler {
 	}
 
 	return h
+}
+
+// enforceRobots reports whether robots.txt applies to u: enforcement
+// must be on globally and u must not match a robots exemption in the
+// rules file. Exemptions are per-URL so a site fetched under human
+// direction can opt out without disabling enforcement everywhere.
+func (h *Handler) enforceRobots(u *url.URL) bool {
+	return h.checkRobots && !h.rules.RobotsExempt(u)
 }
 
 // validateURL checks that the URL uses an allowed scheme and passes URL rules.
@@ -329,7 +337,7 @@ func (h *Handler) Handle(
 		return toolError(err), nil, nil
 	}
 
-	if h.checkRobots {
+	if h.enforceRobots(u) {
 		err = h.robots.Check(ctx, u)
 		if err != nil {
 			rec.Outcome = store.OutcomeRobotsDenied
