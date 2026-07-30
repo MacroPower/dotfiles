@@ -711,6 +711,12 @@ let
         } \
         ${lib.optionalString cfg.outputCompaction.saveFullOutput ''--compaction-output-dir "${config.xdg.stateHome}/hook-router/outputs"''} \
         ${lib.optionalString cfg.searchRewrite.enable "--search-rewrite-config ${lib.escapeShellArg (builtins.toJSON (removeAttrs cfg.searchRewrite [ "enable" ]))}"} \
+        --sleep-guard-config ${
+          # Passed unconditionally: enable travels inside the JSON (the
+          # --compaction-config pattern) because maxSeconds cannot double
+          # as a disabled sentinel.
+          lib.escapeShellArg (builtins.toJSON cfg.sleepGuard)
+        } \
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
         ${lib.optionalString cfg.enforceAsciiTypography "--enforce-ascii-typography"} \
@@ -1612,6 +1618,42 @@ in
         hook-router PreToolUse:Bash search rewriting. camelCase keys so
         `builtins.toJSON` matches the Go struct tags in
         tools/hook-router/searchrewrite/searchrewrite.go Config.
+      '';
+    };
+
+    sleepGuard = mkOption {
+      type = types.submodule {
+        options = {
+          enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether hook-router denies a foreground `sleep` on
+              PreToolUse:Bash. A `sleep` whose duration is not a
+              literal (`sleep $VAR`, `sleep $((5*60))`) is always
+              denied, since its length cannot be read. A Bash call with
+              `run_in_background` set is never checked: a poll loop
+              inside a background call is the documented way to wait on
+              a condition, so `sleep` there is correct rather than a
+              smell.
+            '';
+          };
+          maxSeconds = mkOption {
+            type = types.ints.positive;
+            default = 10;
+            description = ''
+              Longest foreground `sleep` that stays allowed, in seconds.
+              Durations sum across operands (`sleep 5 10` is 15s) and
+              GNU suffixes count (`5m` is 300s).
+            '';
+          };
+        };
+      };
+      default = { };
+      description = ''
+        hook-router PreToolUse:Bash foreground-`sleep` guard. camelCase
+        keys so `builtins.toJSON` matches the Go struct tags in
+        tools/hook-router/sleepguard/sleepguard.go Config.
       '';
     };
 
@@ -3152,6 +3194,15 @@ in
 
         ## Shell
         - `cd` persists between Bash calls only while it stays inside the project directory; a `cd` outside it resets the cwd to the project root on the next call.
+        - Never wait by sleeping; a foreground poll loop is the wrong shape even when each sleep is short.
+      ''
+      + lib.optionalString cfg.sleepGuard.enable ''
+        - A foreground `sleep` longer than ${toString cfg.sleepGuard.maxSeconds}s, or one whose duration a hook cannot read (`sleep $VAR`), is denied.
+      ''
+      + ''
+        - Long-running work belongs in a Bash call with `run_in_background: true`. The session stays free, you get a notification when the command exits, and `Read` fetches its captured output. `sleep` inside a background call is fine, so an `until <check>; do sleep 1; done` poll loop there is the right way to wait on a condition.
+        - For one notification per event rather than one on completion, use the `Monitor` tool. It is deferred, so load it with `ToolSearch("select:Monitor")` before calling it.
+        - Fire off independent work in parallel, then act on completion notifications as they arrive. A spawn-one, wait, spawn-the-next loop serializes work that could have run at once.
 
         ## Plan Mode
         - Writing untracked files is allowed in plan mode: scratch notes, files under /tmp, and repo clones via `mcp__git__git_clone` are all fine. Only files tracked by git are off-limits until the plan is approved.

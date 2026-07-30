@@ -12,6 +12,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/sleepguard"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
 )
 
@@ -120,6 +121,25 @@ func handleBash(input []byte, stdout io.Writer, cfg config, logger *slog.Logger)
 		)
 
 		return writeDecision(stdout, response)
+	}
+
+	background, _ := h.ToolInput["run_in_background"].(bool)
+
+	// Deny foreground sleep waits. The check runs after cmdrules
+	// so user-configured rules keep first-match precedence, before the
+	// kubectx branch because that branch returns early (`sleep 300;
+	// kubectl get po` would escape), and before searchrewrite/autoAllow
+	// so the deny beats the sandbox auto-allow.
+	if reason, deny := sleepguard.Check(prog, command, background, cfg.sleepGuard); deny {
+		logger.Info(
+			"denied",
+			slog.String("rule", "foreground-sleep"),
+			slog.String("command", command),
+			slog.Bool("run_in_background", background),
+			slog.String("reason", reason),
+		)
+
+		return writeDecision(stdout, hook.Deny(reason))
 	}
 
 	if kubectx.HasKubectl(prog) {

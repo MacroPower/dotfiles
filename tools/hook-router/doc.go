@@ -4,7 +4,10 @@
 // It handles PreToolUse, PostToolUse, and Stop hook events:
 //
 //   - PreToolUse:Bash             -- evaluates command deny/ask rules from
-//     --command-rules JSON and rewrites kubectl with KUBECONFIG
+//     --command-rules JSON, denies a foreground `sleep` over the
+//     --sleep-guard-config ceiling (run_in_background calls are exempt),
+//     rewrites read-only grep/find into rg/bfs, and rewrites kubectl
+//     with KUBECONFIG
 //   - PreToolUse:MCP              -- evaluates MCP tool allow/ask/deny lists
 //     from --mcp-rules JSON ("MCP" is a routing sentinel; the tool name
 //     comes from the payload)
@@ -33,10 +36,11 @@
 // handlers that connect Claude Code's hook protocol to the underlying
 // engines. The engines themselves live in independent, importable
 // subpackages -- hook (protocol I/O), cmdrules (command deny/ask
-// rules), mcprules (MCP tool allow/ask/deny resolution),
-// formatter (file-formatter routing), typography (detection of newly
-// introduced typographic characters), compact (output
-// compaction), archive (uncompacted-output archiving), state (SQLite
+// rules), mcprules (MCP tool allow/ask/deny resolution), formatter
+// (file-formatter routing), typography (detection of newly introduced
+// typographic characters), compact (output compaction), archive
+// (uncompacted-output archiving), searchrewrite (grep->rg / find->bfs
+// rewriting), sleepguard (foreground-sleep guard), state (SQLite
 // session state), kubectx (kubectl gating and session dir lifecycle),
 // git (repo queries), and postimpl (post-implementation skill
 // catalog). None of the subpackages import each other; only this

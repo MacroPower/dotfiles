@@ -56,6 +56,10 @@ In Claude Code, the Bash tool already enforces a timeout: 120000 ms
 parameter. For jobs that may run longer than 10 min, set
 `run_in_background: true` and use the `Read` tool to fetch captured
 stdout. The session stays unblocked and you're notified on completion.
+Do not add a foreground `sleep` to wait for it: the completion
+notification is the signal. To block on a condition instead, put the
+poll loop inside the background call itself
+(`until <check>; do sleep 1; done`).
 
 The shell's `timeout` utility is redundant under this harness; do not
 wrap commands with it.

@@ -17,7 +17,39 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/cmdrules"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/compact"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/sleepguard"
 )
+
+// bashInput builds a PreToolUse:Bash payload with the given
+// tool_input.command plus any extra tool_input fields
+// (run_in_background, description, timeout, ...).
+func bashInput(t *testing.T, command string, extra map[string]any) []byte {
+	t.Helper()
+
+	ti := map[string]any{"command": command}
+	for k, v := range extra {
+		ti[k] = v
+	}
+
+	b, err := json.Marshal(map[string]any{"tool_input": ti})
+	require.NoError(t, err)
+
+	return b
+}
+
+// preToolDecision unmarshals stdout as a PreToolUse decision document
+// and returns its hookSpecificOutput object.
+func preToolDecision(t *testing.T, stdout *bytes.Buffer) map[string]any {
+	t.Helper()
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+	hso, ok := result["hookSpecificOutput"].(map[string]any)
+	require.True(t, ok)
+
+	return hso
+}
 
 // TestHandleBashAutoAllow exercises the --auto-allow paths in
 // [handleBash].
@@ -25,17 +57,6 @@ func TestHandleBashAutoAllow(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.DiscardHandler)
-
-	hookInput := func(t *testing.T, command string) []byte {
-		t.Helper()
-
-		b, err := json.Marshal(map[string]any{
-			"tool_input": map[string]any{"command": command},
-		})
-		require.NoError(t, err)
-
-		return b
-	}
 
 	t.Run("autoAllow=false, simple command: stdout empty", func(t *testing.T) {
 		t.Parallel()
@@ -48,7 +69,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "echo $USER"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "echo $USER", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
 	})
@@ -63,7 +84,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "echo $USER"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "echo $USER", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -87,7 +108,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "git stash"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "git stash", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -108,7 +129,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "gh pr merge 1"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "gh pr merge 1", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -130,7 +151,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "gh api /user"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "gh api /user", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -152,7 +173,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "gh pr checks 1"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "gh pr checks 1", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -174,7 +195,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "gh pr view 1"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "gh pr view 1", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -197,7 +218,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "kubectl get pods"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "kubectl get pods", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -224,7 +245,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "kubectl get pods"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "kubectl get pods", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes(),
 			"without auto-allow, kubectl handler falls through to the normal permission flow")
@@ -240,7 +261,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "kubectl get pods"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "kubectl get pods", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -264,7 +285,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "kubectl --kubeconfig /etc/other get pods"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "kubectl --kubeconfig /etc/other get pods", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -287,7 +308,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "KUBECONFIG=/etc/other kubectl get pods"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "KUBECONFIG=/etc/other kubectl get pods", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -311,7 +332,7 @@ func TestHandleBashAutoAllow(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		err := handleBash(hookInput(t, "kubectl --kubeconfig /etc/other get pods"), &stdout, cfg, logger)
+		err := handleBash(bashInput(t, "kubectl --kubeconfig /etc/other get pods", nil), &stdout, cfg, logger)
 		require.NoError(t, err)
 
 		var result map[string]any
@@ -375,22 +396,6 @@ func TestHandleBashSearchRewrite(t *testing.T) {
 		FindExcludes: []string{".git", ".worktrees", ".claude/worktrees"},
 	}
 
-	// inputWith builds a Bash payload carrying extra tool_input fields so
-	// the updatedInput carry-over can be asserted.
-	inputWith := func(t *testing.T, command string, extra map[string]any) []byte {
-		t.Helper()
-
-		ti := map[string]any{"command": command}
-		for k, v := range extra {
-			ti[k] = v
-		}
-
-		b, err := json.Marshal(map[string]any{"tool_input": ti})
-		require.NoError(t, err)
-
-		return b
-	}
-
 	t.Run("read-only find: allow with rewritten updatedInput", func(t *testing.T) {
 		t.Parallel()
 
@@ -401,7 +406,7 @@ func TestHandleBashSearchRewrite(t *testing.T) {
 
 		var stdout bytes.Buffer
 
-		input := inputWith(t, `find . -name "*.go"`, map[string]any{
+		input := bashInput(t, `find . -name "*.go"`, map[string]any{
 			"description": "find go files",
 			"timeout":     float64(5000),
 		})
@@ -568,6 +573,89 @@ func TestHandleBashSearchRewrite(t *testing.T) {
 		_, hasUpdated := hso["updatedInput"]
 		assert.False(t, hasUpdated, "non-read-only command must not carry updatedInput")
 	})
+}
+
+// TestHandleBashSleepGuard covers the foreground-sleep branch in
+// [handleBash]: its placement after cmdrules and before the
+// early-returning kubectx branch, the run_in_background exemption, and
+// deny precedence over the sandbox auto-allow. Duration and matching
+// semantics live in the sleepguard package tests.
+func TestHandleBashSleepGuard(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.DiscardHandler)
+
+	cases := map[string]struct {
+		command        string
+		background     bool
+		autoAllow      bool
+		kubeconfigPath string
+		wantDeny       bool
+		// wantSleepReason asserts whether the deny reason is the sleep
+		// guard's own, as opposed to a first-match cmdrules reason.
+		wantSleepReason bool
+	}{
+		"foreground long sleep is denied": {
+			command:         "sleep 300",
+			wantDeny:        true,
+			wantSleepReason: true,
+		},
+		"run_in_background is exempt": {
+			command:    "sleep 300",
+			background: true,
+		},
+		"deny beats sandbox auto-allow": {
+			command:         "sleep 300",
+			autoAllow:       true,
+			wantDeny:        true,
+			wantSleepReason: true,
+		},
+		"cmdrules deny wins over the sleep guard": {
+			command:  "git stash; sleep 300",
+			wantDeny: true,
+		},
+		"guard runs before the early-returning kubectx branch": {
+			command:         "sleep 300; kubectl get po",
+			kubeconfigPath:  "/tmp/kubeconfig",
+			wantDeny:        true,
+			wantSleepReason: true,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := config{
+				commandRules:   canonicalRules(),
+				sleepGuard:     sleepguard.Config{Enable: true, MaxSeconds: 10},
+				autoAllow:      tc.autoAllow,
+				kubeconfigPath: tc.kubeconfigPath,
+			}
+
+			extra := map[string]any{}
+			if tc.background {
+				extra["run_in_background"] = true
+			}
+
+			var stdout bytes.Buffer
+
+			err := handleBash(bashInput(t, tc.command, extra), &stdout, cfg, logger)
+			require.NoError(t, err)
+
+			if !tc.wantDeny {
+				assert.Empty(t, stdout.Bytes())
+				return
+			}
+
+			hso := preToolDecision(t, &stdout)
+			assert.Equal(t, "deny", hso["permissionDecision"])
+
+			reason, ok := hso["permissionDecisionReason"].(string)
+			require.True(t, ok)
+			assert.Equal(t, tc.wantSleepReason, strings.HasPrefix(reason, "Foreground sleep"))
+		})
+	}
 }
 
 // postBashPayload builds a PostToolUse:Bash JSON payload with the

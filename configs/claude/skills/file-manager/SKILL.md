@@ -41,7 +41,9 @@ appear to hang for many minutes. Four rules:
 3. **Bound anything still unbounded** with the Bash tool's `timeout`
    (default 120000 ms, max 600000 ms) or `run_in_background: true` for
    jobs that may exceed 10 min. If a bounded run trips its limit, *stop
-   and re-plan*; do not bump the limit reflexively. See
+   and re-plan*; do not bump the limit reflexively. Never add a
+   foreground `sleep` to wait on a background job; the completion
+   notification is the signal that it exited. See
    [large-fs.md](references/large-fs.md#bounding-long-commands) for
    per-job sizing and the non-Claude-Code `timeout(1)` fallback.
 

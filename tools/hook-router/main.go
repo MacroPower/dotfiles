@@ -21,6 +21,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/postimpl"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/sleepguard"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
 )
 
@@ -82,6 +83,10 @@ import (
 // Write/Edit/MultiEdit calls that introduce non-ASCII typographic
 // characters (see the typography package). When false the handler is
 // a no-op, so an ad-hoc invocation without the flag stays silent.
+//
+// sleepGuard configures the [handleBash] foreground-sleep deny (see the
+// sleepguard package). Its zero value is a disabled guard, so a bare
+// config{} test literal is a no-op.
 type config struct {
 	postImpl       *postimpl.Catalog
 	commandRules   *cmdrules.Engine
@@ -90,6 +95,7 @@ type config struct {
 	compactor      *compact.Compactor
 	outputArchive  *archive.Archive
 	searchRewrite  searchrewrite.Config
+	sleepGuard     sleepguard.Config
 	commitSkills   []string
 	kubeconfigPath string
 	claudePID      string
@@ -130,20 +136,21 @@ func main() {
 	compactionConfig := flag.String("compaction-config", "", "JSON object configuring PostToolUse:Bash output compaction ({enable, stripAnsi, minRunLength, minBytes, streams})")
 	compactionOutputDir := flag.String("compaction-output-dir", "", "directory to archive a compacted Bash stream's uncompacted content to (\"\" disables archiving)")
 	searchRewriteConfig := flag.String("search-rewrite-config", "", "JSON object configuring PreToolUse:Bash search rewriting ({grep, find, findExcludes})")
+	sleepGuardConfig := flag.String("sleep-guard-config", "", "JSON object configuring the PreToolUse:Bash foreground-sleep guard ({enable, maxSeconds})")
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
 	enforceTypography := flag.Bool("enforce-ascii-typography", false, "deny a Write/Edit/MultiEdit call that introduces non-ASCII dashes, curly quotes, or ellipsis")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *autoAllow, *skipPlanReview, *enforceTypography)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *autoAllow, *skipPlanReview, *enforceTypography)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON string, autoAllow, skipPlanReview, enforceTypography bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON string, autoAllow, skipPlanReview, enforceTypography bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -247,6 +254,15 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("search rewriting is disabled")
 	}
 
+	sleepGuard, err := sleepguard.Parse(sleepGuardConfigJSON)
+	if err != nil {
+		return fmt.Errorf("parsing --sleep-guard-config: %w", err)
+	}
+
+	if !sleepGuard.Enable {
+		logger.Debug("foreground sleep guard is disabled")
+	}
+
 	cfg := configFromEnv()
 	cfg.postImpl = catalog
 	cfg.commitSkills = skills
@@ -256,6 +272,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.compactor = compactor
 	cfg.outputArchive = archive.New(compactionOutputDir)
 	cfg.searchRewrite = searchRewrite
+	cfg.sleepGuard = sleepGuard
 	cfg.autoAllow = autoAllow
 	cfg.skipPlanReview = skipPlanReview
 	cfg.enforceTypography = enforceTypography
