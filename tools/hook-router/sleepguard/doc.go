@@ -19,15 +19,27 @@
 // trivially routed around. Negative operands clamp to zero so they
 // cannot arithmetic a call under the ceiling.
 //
+// The duration ceiling alone is not enough: an agent that has
+// internalized "sleep over Ns is denied" waits with `sleep 6` filler
+// calls instead, burning foreground turns until a background task's
+// notification arrives. So beyond the ceiling, a command whose only
+// content is sleeps and no-op filler (`echo`, `printf`, `true`, `:`,
+// `jobs`, `wait`) is denied at any duration as a filler wait. The
+// ceiling then only governs sleeps embedded in real work -- the settle
+// idiom `kill "$pid"; sleep 1; pgrep -f server` stays allowed, a bare
+// `sleep 6` does not.
+//
 // Deliberate non-goals:
 //
-//   - The ceiling is per sleep call, not per command: `sleep 9; sleep
-//     9; sleep 9` stays allowed. Summing across a whole program would
-//     misread branches (an if/else runs only one arm).
-//   - No loop-context tracking. A foreground `while true; do sleep 5;
-//     done` with per-iteration sleeps under the ceiling is allowed; the
-//     Bash tool's own 120s default timeout bounds it, and the timeout
-//     error it produces is itself instructive.
+//   - The ceiling is per sleep call, not per command: `build; sleep 9;
+//     probe; sleep 9` stays allowed. Summing across a whole program
+//     would misread branches (an if/else runs only one arm).
+//   - No loop-context tracking. A foreground `until <check>; do sleep
+//     1; done` with a substantive check is allowed; the Bash tool's own
+//     120s default timeout bounds it, and the timeout error it produces
+//     is itself instructive. (A busy-wait like `while true; do sleep 5;
+//     done` still falls to the filler rule -- its only commands are
+//     `true` and `sleep`.)
 //   - Wrapper forms (`timeout 30 sleep 300`, `sh -c 'sleep 300'`, `env
 //     sleep 300`) are out of scope. This is a nudge, not a sandbox.
 //   - `sleep 300 &` is denied even though shell backgrounding means it

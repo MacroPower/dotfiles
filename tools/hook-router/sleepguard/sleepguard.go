@@ -29,6 +29,20 @@ var suffixes = map[byte]float64{
 	'd': 86400,
 }
 
+// trivial names commands that do no real work on their own, so their
+// presence does not stop a command from reading as pure time-passing.
+// `echo` and `printf` only narrate, `true`/`:` are no-ops, and
+// `jobs`/`wait` inspect a job table that is empty in a fresh tool-call
+// shell.
+var trivial = map[string]bool{
+	"echo":   true,
+	"printf": true,
+	"true":   true,
+	":":      true,
+	"jobs":   true,
+	"wait":   true,
+}
+
 // Config declares the foreground-sleep guard knobs. JSON tags are
 // camelCase because builtins.toJSON in home/claude.nix emits attribute
 // names verbatim and the Go struct tags must match.
@@ -76,9 +90,12 @@ func Parse(s string) (Config, error) {
 
 // Check walks prog and returns a deny reason for the first foreground
 // sleep call whose total duration exceeds the ceiling or cannot be
-// read. command is the original command text, used to quote the
-// offending call back in the reason. A background call is never checked
-// and returns ("", false), as does a disabled config.
+// read, or -- when every sleep is under the ceiling -- for a command
+// that is a filler wait: sleeps with nothing but [trivial] no-ops
+// around them, passing time in the foreground at any duration. command
+// is the original command text, used to quote the offending call back
+// in the reason. A background call is never checked and returns
+// ("", false), as does a disabled config.
 func Check(prog *syntax.File, command string, background bool, cfg Config) (string, bool) {
 	if !cfg.Enable || background {
 		return "", false
@@ -115,7 +132,68 @@ func Check(prog *syntax.File, command string, background bool, cfg Config) (stri
 		return false
 	})
 
+	if deny == "" {
+		if call, ok := fillerSleep(prog); ok {
+			deny = fillerReason(callSrc(command, call))
+		}
+	}
+
 	return deny, deny != ""
+}
+
+// fillerSleep reports whether prog is a filler wait: at least one
+// foreground sleep that actually passes time, with no command doing
+// real work around it. Commands in [trivial] do not count as real work,
+// so `sleep 6`, `sleep 1; echo waiting`, and `while true; do sleep 5;
+// done` all read as filler, while a settle inside real work (`kill
+// "$pid"; sleep 1; pgrep -f server`) does not. Sleeps that pass no time
+// (`sleep 0`, `sleep --help`) are ignored, and unreadable durations are
+// not considered here because the duration walk already denies them.
+func fillerSleep(prog *syntax.File) (*syntax.CallExpr, bool) {
+	var first *syntax.CallExpr
+
+	substantive := false
+
+	syntax.Walk(prog, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok {
+			return true
+		}
+
+		// Assignment-only statements (`X=5`) carry no command word and
+		// do no work worth counting either way.
+		if len(call.Args) == 0 {
+			return true
+		}
+
+		name, ok := literalWord(call.Args[0])
+		if !ok {
+			substantive = true
+
+			return true
+		}
+
+		base := path.Base(name)
+
+		switch {
+		case base == "sleep":
+			secs, readable := total(call)
+			if readable && secs > 0 && first == nil {
+				first = call
+			}
+		case trivial[base]:
+		default:
+			substantive = true
+		}
+
+		return true
+	})
+
+	if first == nil || substantive {
+		return nil, false
+	}
+
+	return first, true
 }
 
 // isSleep reports whether call's command word statically resolves to a
@@ -243,9 +321,9 @@ func callSrc(command string, call *syntax.CallExpr) string {
 	return src[:cut] + "..."
 }
 
-// reason builds the deny message: a first line naming the offending
-// call and why it trips the guard, then a shared body teaching the
-// waiting primitives that replace a foreground sleep.
+// reason builds the deny message for a duration violation: a first
+// line naming the offending call and why it trips the guard, then the
+// shared [guidance] body.
 func reason(src string, secs float64, readable bool, limit float64) string {
 	maxStr := formatSeconds(limit)
 
@@ -260,15 +338,29 @@ func reason(src string, secs float64, readable bool, limit float64) string {
 		clause = fmt.Sprintf("blocks this session for %ss (limit %ss)", formatSeconds(secs), maxStr)
 	}
 
-	return fmt.Sprintf("Foreground sleep is denied: `%s` %s.", src, clause) + "\n\n" +
-		"Do not wait by sleeping. Pick the shape that matches what you need:\n" +
+	return fmt.Sprintf("Foreground sleep is denied: `%s` %s.", src, clause) + "\n\n" + guidance()
+}
+
+// fillerReason builds the deny message for a filler wait: a command
+// that passes time in the foreground without doing real work, at any
+// duration.
+func fillerReason(src string) string {
+	return fmt.Sprintf("Filler wait denied: `%s` does nothing but pass time in the foreground.", src) + "\n\n" + guidance()
+}
+
+// guidance is the shared deny-message body: it names the waiting
+// primitives that replace a foreground sleep, says to end the turn
+// rather than idle, and bounds the one legitimate use of a short
+// foreground sleep.
+func guidance() string {
+	return "Do not wait by sleeping, and do not bide time with no-op filler (`true`, `jobs`, bare `echo`) between tool calls. If you are waiting on a background task or notification, END YOUR TURN: the notification arrives without you idling, and idle turns only delay it. Otherwise pick the shape that matches what you need:\n" +
 		"\n" +
 		"- Run the long thing in the background: set run_in_background: true on the Bash call. You get one notification when it exits, and the Read tool fetches its captured output.\n" +
 		"- Wait on a condition: put the poll loop inside a background Bash call, e.g. run_in_background: true with `until <check>; do sleep 1; done`. sleep is always allowed in a background call.\n" +
 		"- Get one notification per event (log lines, file changes, CI steps): use the Monitor tool. It is deferred, so load it first with ToolSearch(\"select:Monitor\").\n" +
 		"- Waiting on several things: start all of them first, then handle their completion notifications as they arrive. Do not spawn one, wait for it, then spawn the next -- that serializes work that could have run at once.\n" +
 		"\n" +
-		fmt.Sprintf("A foreground sleep of %ss or less is still allowed for a genuine short settle.", maxStr)
+		"A short sleep is allowed only as a settle step inside a command that does real work (e.g. `kill \"$pid\"; sleep 1; pgrep -f server`), never as the whole command."
 }
 
 // formatSeconds renders a duration without a spurious exponent or

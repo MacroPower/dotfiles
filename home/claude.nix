@@ -1631,20 +1631,24 @@ in
               Whether hook-router denies a foreground `sleep` on
               PreToolUse:Bash. A `sleep` whose duration is not a
               literal (`sleep $VAR`, `sleep $((5*60))`) is always
-              denied, since its length cannot be read. A Bash call with
-              `run_in_background` set is never checked: a poll loop
-              inside a background call is the documented way to wait on
-              a condition, so `sleep` there is correct rather than a
-              smell.
+              denied, since its length cannot be read. A command whose
+              only content is `sleep` plus no-op filler (`echo`,
+              `true`, `jobs`) is denied at any duration as a filler
+              wait, so the ceiling only governs sleeps embedded in real
+              work. A Bash call with `run_in_background` set is never
+              checked: a poll loop inside a background call is the
+              documented way to wait on a condition, so `sleep` there
+              is correct rather than a smell.
             '';
           };
           maxSeconds = mkOption {
             type = types.ints.positive;
             default = 10;
             description = ''
-              Longest foreground `sleep` that stays allowed, in seconds.
-              Durations sum across operands (`sleep 5 10` is 15s) and
-              GNU suffixes count (`5m` is 300s).
+              Longest foreground `sleep` embedded in real work that
+              stays allowed, in seconds. Durations sum across operands
+              (`sleep 5 10` is 15s) and GNU suffixes count (`5m` is
+              300s).
             '';
           };
         };
@@ -3197,7 +3201,8 @@ in
         - Never wait by sleeping; a foreground poll loop is the wrong shape even when each sleep is short.
       ''
       + lib.optionalString cfg.sleepGuard.enable ''
-        - A foreground `sleep` longer than ${toString cfg.sleepGuard.maxSeconds}s, or one whose duration a hook cannot read (`sleep $VAR`), is denied.
+        - A hook denies foreground waiting: a filler command that only passes time (`sleep 6`, `sleep 1; echo waiting`) at any duration, a `sleep` over ${toString cfg.sleepGuard.maxSeconds}s even inside real work, and a `sleep` whose duration it cannot read (`sleep $VAR`). A short `sleep` is only for a settle step inside a command doing real work (`kill "$pid"; sleep 1; pgrep -f server`).
+        - Do not bide time with no-op filler (`true`, `jobs`, bare `echo`) while a background task runs; end the turn instead -- the completion notification arrives on its own, and idle turns only delay it.
       ''
       + ''
         - Long-running work belongs in a Bash call with `run_in_background: true`. The session stays free, you get a notification when the command exits, and `Read` fetches its captured output. `sleep` inside a background call is fine, so an `until <check>; do sleep 1; done` poll loop there is the right way to wait on a condition.
