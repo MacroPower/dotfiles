@@ -3216,6 +3216,7 @@ in
         - `yq` (Go yq) queries and edits YAML/TOML/XML with `jq`-style syntax (`jq` is also available).
         - `agrind` (angle-grinder) slices and aggregates large log files with a query language; prefer it over long grep/awk pipelines.
         - `sponge` (moreutils) soaks up a pipeline's output before writing, allowing safe in-place file rewrites; `ts` prepends timestamps to lines.
+        - Any nixpkgs package can be used without installing it: `nix run nixpkgs#<pkg> -- <args>` for a one-shot program, `nix shell nixpkgs#<pkg> --command <cmd>` when the binary name differs from the attribute or you need several packages at once. The bare `nixpkgs#` ref resolves to this flake's pinned nixpkgs, so cache hits are near-certain and nothing persists in a profile.
 
         ## Plan Mode
         - Writing untracked files is allowed in plan mode: scratch notes, files under /tmp, and repo clones via `mcp__git__git_clone` are all fine. Only files tracked by git are off-limits until the plan is approved.
