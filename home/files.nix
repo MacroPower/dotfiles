@@ -6,6 +6,7 @@
     [
       fclones
       moreutils
+      rust-parallel
       renameutils
       rnr
       gdu
