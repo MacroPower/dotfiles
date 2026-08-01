@@ -3204,6 +3204,19 @@ in
         - For one notification per event rather than one on completion, use the `Monitor` tool. It is deferred, so load it with `ToolSearch("select:Monitor")` before calling it.
         - Fire off independent work in parallel, then act on completion notifications as they arrive. A spawn-one, wait, spawn-the-next loop serializes work that could have run at once.
 
+        ## Python
+        - Python is always available: `uv` manages a default interpreter on every host, so `python3` and `uv run` work with no setup.
+        - Reach for a Python script instead of bash once logic outgrows a simple pipeline: parsing structured data beyond a `jq`/`yq` one-liner, arithmetic or date math, multi-step text transforms, anything wanting data structures or real error handling. A short script in the scratchpad beats a fragile chain of shell escapes.
+        - Scripts that need third-party packages declare them inline with PEP 723 metadata (`# /// script` block with `dependencies = [...]`) and run via `uv run script.py`; uv resolves and caches the packages automatically. Never `pip install` into a shared environment.
+        - One-liners that need a package: `uv run --with <pkg> python -c '...'`.
+
+        ## Installed CLI Tools
+        - `coreutils` are ALWAYS the GNU versions: sed, awk, grep, find, diff, patch, tar, and make on PATH all come from nix's GNU releases, never BSD system tools. Use GNU syntax freely (`sed -i`, `date -d`, `readlink -f`, `sort -V`, `grep -P`), you do not need to write BSD fallbacks.
+        - `rust-parallel` runs commands in parallel: `rust-parallel -j4 cmd ::: a b c`, args from stdin, `-s` for shell pipelines. Per-job output is buffered, so results never interleave. Prefer it over `xargs -P` and over bare `parallel` (from moreutils).
+        - `yq` (Go yq) queries and edits YAML/TOML/XML with `jq`-style syntax (`jq` is also available).
+        - `agrind` (angle-grinder) slices and aggregates large log files with a query language; prefer it over long grep/awk pipelines.
+        - `sponge` (moreutils) soaks up a pipeline's output before writing, allowing safe in-place file rewrites; `ts` prepends timestamps to lines.
+
         ## Plan Mode
         - Writing untracked files is allowed in plan mode: scratch notes, files under /tmp, and repo clones via `mcp__git__git_clone` are all fine. Only files tracked by git are off-limits until the plan is approved.
 
