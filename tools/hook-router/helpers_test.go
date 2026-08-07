@@ -23,6 +23,7 @@ const testPID = "12345"
 const (
 	stashDeniedReason   = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
 	cloneDeniedReason   = "Direct git clone usage is blocked. Use mcp__git__git_clone instead."
+	gitRemoteAskReason  = "This git remote subcommand rewrites where the repository pushes and fetches. Confirm before running."
 	kubectxReason       = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
 	ghGroupAskReason    = "This gh subcommand can mutate GitHub state. Confirm before running."
 	ghFallbackAskReason = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
@@ -53,6 +54,14 @@ func canonicalRules() *cmdrules.Engine {
 			Command: "kubens",
 			Reason:  kubectxReason,
 		},
+		{
+			Command:    "git",
+			Args:       []string{"remote"},
+			Except:     []string{"-v", "--verbose", "show", "get-url", "-h", "--help"},
+			ExceptBare: true,
+			Action:     "ask",
+			Reason:     gitRemoteAskReason,
+		},
 	})
 }
 
@@ -72,7 +81,9 @@ func ghAskRules() *cmdrules.Engine {
 	}
 
 	return cmdrules.New([]cmdrules.Rule{
+		group("cache", "list"),
 		group("issue", "list", "view"),
+		group("label", "list"),
 		group("pr", "checks", "status", "diff", "list", "view"),
 		group("release", "list", "view"),
 		group("repo", "view", "list"),
@@ -81,8 +92,9 @@ func ghAskRules() *cmdrules.Engine {
 		{
 			Command: "gh",
 			Except: []string{
-				"issue", "pr", "release", "repo", "run", "workflow",
-				"status", "help", "version", "--version",
+				"cache", "issue", "label", "pr", "release", "repo",
+				"run", "workflow", "status", "help", "version",
+				"--version",
 			},
 			Action: "ask",
 			Reason: ghFallbackAskReason,

@@ -142,6 +142,50 @@ func TestHandleBashAutoAllow(t *testing.T) {
 		assert.Equal(t, ghGroupAskReason, hso["permissionDecisionReason"])
 	})
 
+	t.Run("autoAllow=true, git remote mutation: ask emitted", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules: canonicalRules(),
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(bashInput(t, "git remote set-url origin https://example.com/repo.git", nil), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "ask", hso["permissionDecision"])
+		assert.Equal(t, gitRemoteAskReason, hso["permissionDecisionReason"])
+	})
+
+	t.Run("autoAllow=true, git remote -v: falls through to auto-allow", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules: canonicalRules(),
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(bashInput(t, "git remote -v", nil), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "allow", hso["permissionDecision"])
+		assert.Equal(t, "sandbox auto-allow", hso["permissionDecisionReason"])
+	})
+
 	t.Run("autoAllow=false, ask match: ask emitted", func(t *testing.T) {
 		t.Parallel()
 

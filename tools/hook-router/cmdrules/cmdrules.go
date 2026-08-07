@@ -38,17 +38,20 @@ const (
 // otherwise let it run. When Except is non-empty, the call is
 // exempted only if it has at least one further positional arg whose
 // literal value appears in Except. A bare `command + args` invocation
-// (no further positional args) always fires regardless of Except.
+// (no further positional args) fires regardless of Except by default,
+// because a bare `git stash` is still a save form; ExceptBare inverts
+// that for groups whose bare form is a read, such as `git remote`.
 //
 // When Command == "git", leading top-level git flags listed in
 // [gitFlagsTakingValue] (and their values) are skipped before matching
 // Args. Other commands match strictly from position 1.
 type Rule struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args,omitempty"`
-	Except  []string `json:"except,omitempty"`
-	Action  string   `json:"action,omitempty"`
-	Reason  string   `json:"reason"`
+	Command    string   `json:"command"`
+	Args       []string `json:"args,omitempty"`
+	Except     []string `json:"except,omitempty"`
+	ExceptBare bool     `json:"exceptBare,omitempty"`
+	Action     string   `json:"action,omitempty"`
+	Reason     string   `json:"reason"`
 }
 
 // Ask reports whether the rule resolves to an "ask" decision rather
@@ -216,11 +219,12 @@ func matchRule(call *syntax.CallExpr, rule Rule) bool {
 
 	// idx points at the slot after the last args literal
 	// (idx == len(call.Args)-1 means we exhausted the call). Bare
-	// `command + args` (no further args) ignores Except, since a bare
-	// `git stash` is still a save form.
+	// `command + args` (no further args) ignores Except by default,
+	// since a bare `git stash` is still a save form; ExceptBare
+	// exempts it for groups whose bare form is a read.
 	candidateIdx := idx + 1
 	if candidateIdx >= len(call.Args) {
-		return true
+		return !rule.ExceptBare
 	}
 
 	cand := call.Args[candidateIdx]

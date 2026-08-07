@@ -162,7 +162,7 @@ let
   # Used for both deny rules (block the command) and ask rules (force
   # a permission prompt); the action is set by list membership when
   # the rules are serialized for the hook-router wrapper. See
-  # tools/hook-router/command_rules.go CommandRule for matching
+  # tools/hook-router/cmdrules/cmdrules.go Rule for matching
   # semantics; the JSON tags there must stay aligned with these option
   # names.
   commandRuleType = types.submodule {
@@ -195,7 +195,18 @@ let
           while still denying `git stash push`. No flag-skipping is
           applied to the candidate slot, so intervening flags break
           the exemption. Bare `command + args` calls (no further
-          arguments) always fire regardless of `except`.
+          arguments) fire regardless of `except` unless `exceptBare`
+          is set.
+        '';
+      };
+      exceptBare = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Whether a bare `command + args` call (no further arguments)
+          is exempt. Defaults to false because a bare `git stash` is
+          still a save form; set it for groups whose bare form is a
+          read, such as `git remote`.
         '';
       };
       reason = mkOption {
@@ -2053,72 +2064,237 @@ in
         };
       };
 
-      git = {
-        alwaysLoad = true;
-        servers.git = {
-          type = "stdio";
-          command = "${gitWrapper}";
-          args = [
-            "--allow-dir"
+      git =
+        let
+          # Git subcommands with no mutating mode: every form is a
+          # query, so the exact + glob pair is safe. Subcommands with a
+          # write mode (apply, archive, bundle, format-patch,
+          # hash-object, symbolic-ref, bisect, gc, update-ref, fsck)
+          # are absent on purpose and fall through to the normal
+          # prompt. fetch is included deliberately as an accepted risk:
+          # the common forms only update remote-tracking refs, though
+          # refspec forms (git fetch origin main:main, +refs/heads/*)
+          # can write local branches. Known write/exec escapes inside
+          # these subcommands include --output= on diff/log/show,
+          # grep -O, and --upload-pack= on fetch/ls-remote; all obscure
+          # enough to accept. The cherry pair cannot match
+          # git cherry-pick: the glob requires the trailing space.
+          gitReadCommands = [
+            "blame"
+            "cat-file"
+            "check-ignore"
+            "cherry"
+            "count-objects"
+            "describe"
+            "diff"
+            "diff-tree"
+            "fetch"
+            "for-each-ref"
+            "grep"
+            "help"
+            "log"
+            "ls-files"
+            "ls-remote"
+            "ls-tree"
+            "merge-base"
+            "name-rev"
+            "range-diff"
+            "rev-list"
+            "rev-parse"
+            "shortlog"
+            "show"
+            "show-ref"
+            "status"
+            "version"
+          ];
+
+          # Mixed subcommands: only the listed forms read. Spelled out
+          # one by one because a `git <group> *` glob would also cover
+          # the mutating verbs (git remote set-url, git branch -D,
+          # git config <key> <value>, git reflog expire). The =-joined
+          # flag variants sit alongside the space-separated ones
+          # because permission globs match literally and the = forms
+          # are what actually gets typed.
+          gitReadForms = [
+            "--version"
+            "remote"
+            "remote -v"
+            "remote --verbose"
+            "remote show"
+            "remote show *"
+            "remote get-url *"
+            "branch"
+            "branch -a"
+            "branch --all"
+            "branch -r"
+            "branch --remotes"
+            "branch -v"
+            "branch -vv"
+            "branch --list"
+            "branch --list *"
+            "branch --show-current"
+            "branch --contains *"
+            "branch --merged *"
+            "branch --no-merged *"
+            "branch --format *"
+            "branch --format=*"
+            "branch --sort *"
+            "branch --sort=*"
+            "tag"
+            "tag -l"
+            "tag -l *"
+            "tag -n *"
+            "tag -n*"
+            "tag --list"
+            "tag --list *"
+            "tag --contains *"
+            "tag --contains=*"
+            "tag --points-at *"
+            "tag --points-at=*"
+            "tag --sort *"
+            "tag --sort=*"
+            "stash list"
+            "stash list *"
+            "stash show"
+            "stash show *"
+            "config --get *"
+            "config --get-all *"
+            "config --get-regexp *"
+            "config --list"
+            "config --list *"
+            "config -l"
+            "config -l *"
+            "config get *"
+            "config list"
+            "config list *"
+            "worktree list"
+            "worktree list *"
+            "reflog"
+            "reflog show"
+            "reflog show *"
+            "submodule status"
+            "submodule status *"
+            "notes list"
+            "notes list *"
+            "notes show *"
+          ];
+
+          gitAllowPair = cmd: [
+            "Bash(git ${cmd})"
+            "Bash(git ${cmd} *)"
+          ];
+        in
+        {
+          alwaysLoad = true;
+          servers.git = {
+            type = "stdio";
+            command = "${gitWrapper}";
+            args = [
+              "--allow-dir"
+              "/tmp/git"
+              "--allow-dir"
+              "/private/tmp/git"
+            ];
+          };
+          permissions.allow = [
+            "mcp__git__git_clone"
+          ]
+          # Read-only git derived from the gitReadCommands /
+          # gitReadForms tables above. These matter on hosts where the
+          # sandbox auto-allow is off; on auto-allow hosts hook-router
+          # already allows them. An ask entry like Bash(git remote *)
+          # would shadow every one of these (permission rules evaluate
+          # deny -> ask -> allow, regardless of specificity), so the
+          # ask list below stays narrow and the mutating git remote
+          # verbs are gated by commandRules.ask instead.
+          ++ lib.concatMap gitAllowPair gitReadCommands
+          ++ map (form: "Bash(git ${form})") gitReadForms;
+          # Relocated from the top-level ask list so they sit next to
+          # the allow table they could shadow. Neither overlaps any
+          # entry above.
+          permissions.ask = [
+            "Bash(git push)"
+            "Bash(git push *)"
+            "Bash(git switch *)"
+          ];
+          sandbox.allowWrite = [
             "/tmp/git"
-            "--allow-dir"
             "/private/tmp/git"
           ];
-        };
-        permissions.allow = [ "mcp__git__git_clone" ];
-        sandbox.allowWrite = [
-          "/tmp/git"
-          "/private/tmp/git"
-        ];
-        commandRules.deny = [
-          {
-            command = "git";
-            args = [ "clone" ];
-            reason = "Direct git clone usage is blocked. Use mcp__git__git_clone instead.";
-          }
-          {
-            command = "git";
-            args = [ "stash" ];
-            except = [
-              "pop"
-              "apply"
-              "list"
-              "show"
-              "branch"
-              "drop"
-              "clear"
-            ];
-            reason = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.";
-          }
-        ];
-        fetchRules.deny = [
-          {
-            host = "raw\\.githubusercontent\\.com";
-            except = [ { path = ".*\\.md"; } ];
-            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching raw GitHub files.";
-          }
-          {
-            host = "github\\.com";
-            path = "/[^/]+/[^/]+/(blob|tree)(/.*)?";
-            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching GitHub file pages.";
-          }
-          {
-            host = "gitlab\\.com";
-            path = "/.+/-/(blob|tree)(/.*)?";
-            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching GitLab file pages.";
-          }
-          {
-            host = "codeberg\\.org";
-            path = "/[^/]+/[^/]+/src/(branch|commit|tag)/.*";
-            reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching Codeberg file pages.";
-          }
-        ];
-        instructions = {
-          items = [
-            "Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there."
+          # Mirrored by canonicalRules in
+          # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go;
+          # update together.
+          commandRules.deny = [
+            {
+              command = "git";
+              args = [ "clone" ];
+              reason = "Direct git clone usage is blocked. Use mcp__git__git_clone instead.";
+            }
+            {
+              command = "git";
+              args = [ "stash" ];
+              except = [
+                "pop"
+                "apply"
+                "list"
+                "show"
+                "branch"
+                "drop"
+                "clear"
+              ];
+              reason = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.";
+            }
           ];
+          # Replaces the old top-level Bash(git remote *) ask entry,
+          # which shadowed every remote read form above. exceptBare
+          # lets a bare `git remote` (a listing) through. Deliberately
+          # no top-level git catch-all: unlike gh, local git mutations
+          # (add, commit, restore) are routine and would prompt
+          # constantly.
+          commandRules.ask = [
+            {
+              command = "git";
+              args = [ "remote" ];
+              except = [
+                "-v"
+                "--verbose"
+                "show"
+                "get-url"
+                "-h"
+                "--help"
+              ];
+              exceptBare = true;
+              reason = "This git remote subcommand rewrites where the repository pushes and fetches. Confirm before running.";
+            }
+          ];
+          fetchRules.deny = [
+            {
+              host = "raw\\.githubusercontent\\.com";
+              except = [ { path = ".*\\.md"; } ];
+              reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching raw GitHub files.";
+            }
+            {
+              host = "github\\.com";
+              path = "/[^/]+/[^/]+/(blob|tree)(/.*)?";
+              reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching GitHub file pages.";
+            }
+            {
+              host = "gitlab\\.com";
+              path = "/.+/-/(blob|tree)(/.*)?";
+              reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching GitLab file pages.";
+            }
+            {
+              host = "codeberg\\.org";
+              path = "/[^/]+/[^/]+/src/(branch|commit|tag)/.*";
+              reason = "Use mcp__git__git_clone to clone the repo to /tmp/git/<owner>/<repo> and read files locally instead of fetching Codeberg file pages.";
+            }
+          ];
+          instructions = {
+            items = [
+              "Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there."
+            ];
+          };
         };
-      };
 
       kagi = {
         alwaysLoad = true;
@@ -2201,6 +2377,8 @@ in
           # the permission allow entries below. Mirrored by ghAskRules in
           # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go.
           ghAllowGroups = {
+            cache = [ "list" ];
+            label = [ "list" ];
             pr = [
               "checks"
               "status"
@@ -2929,14 +3107,11 @@ in
               ]
               ++ bundledDeny
               ++ cfg.extraPermissions.deny;
-              ask = [
-                "Bash(git push)"
-                "Bash(git push *)"
-                "Bash(git switch *)"
-                "Bash(git remote *)"
-              ]
-              ++ bundledAsk
-              ++ cfg.extraPermissions.ask;
+              # git entries live in the git tool bundle, next to the
+              # allow table they would otherwise shadow (permission
+              # rules evaluate deny -> ask -> allow, regardless of
+              # specificity).
+              ask = bundledAsk ++ cfg.extraPermissions.ask;
             };
             worktree.bgIsolation = "none";
             statusLine = {

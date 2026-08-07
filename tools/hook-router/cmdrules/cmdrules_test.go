@@ -25,6 +25,7 @@ func mustParse(t *testing.T, command string) *syntax.File {
 const (
 	stashDeniedReason   = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
 	cloneDeniedReason   = "Direct git clone usage is blocked. Use mcp__git__git_clone instead."
+	gitRemoteAskReason  = "This git remote subcommand rewrites where the repository pushes and fetches. Confirm before running."
 	kubectxReason       = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
 	ghGroupAskReason    = "This gh subcommand can mutate GitHub state. Confirm before running."
 	ghFallbackAskReason = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
@@ -55,6 +56,14 @@ func canonicalRules() *cmdrules.Engine {
 		{
 			Command: "kubens",
 			Reason:  kubectxReason,
+		},
+		{
+			Command:    "git",
+			Args:       []string{"remote"},
+			Except:     []string{"-v", "--verbose", "show", "get-url", "-h", "--help"},
+			ExceptBare: true,
+			Action:     "ask",
+			Reason:     gitRemoteAskReason,
 		},
 	})
 }
@@ -109,6 +118,19 @@ func TestParseCommandRules(t *testing.T) {
 					Except:  []string{"view"},
 					Action:  "ask",
 					Reason:  "r",
+				},
+			},
+		},
+		"exceptBare round-trips": {
+			in: `[{"command":"git","args":["remote"],"except":["-v"],"exceptBare":true,"action":"ask","reason":"r"}]`,
+			want: []cmdrules.Rule{
+				{
+					Command:    "git",
+					Args:       []string{"remote"},
+					Except:     []string{"-v"},
+					ExceptBare: true,
+					Action:     "ask",
+					Reason:     "r",
 				},
 			},
 		},
@@ -336,6 +358,87 @@ func TestCommandRulesCheck_GitClone(t *testing.T) {
 	}
 }
 
+func TestCommandRulesCheck_GitRemote(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		input string
+		want  string
+	}{
+		"git remote add asks": {
+			input: "git remote add origin https://example.com/repo.git",
+			want:  gitRemoteAskReason,
+		},
+		"git remote set-url asks": {
+			input: "git remote set-url origin https://example.com/repo.git",
+			want:  gitRemoteAskReason,
+		},
+		"git remote remove asks": {
+			input: "git remote remove origin",
+			want:  gitRemoteAskReason,
+		},
+		"git remote rename asks": {
+			input: "git remote rename origin upstream",
+			want:  gitRemoteAskReason,
+		},
+		"git remote prune asks": {
+			input: "git remote prune origin",
+			want:  gitRemoteAskReason,
+		},
+		"git -C dir remote set-url asks (flag skipping)": {
+			input: "git -C /tmp remote set-url origin https://example.com/repo.git",
+			want:  gitRemoteAskReason,
+		},
+		"git remote add in compound asks": {
+			input: "git status && git remote add o u",
+			want:  gitRemoteAskReason,
+		},
+		// Bare `git remote` is a listing, exempted via exceptBare.
+		"no match: bare git remote": {
+			input: "git remote",
+		},
+		"no match: git remote -v": {
+			input: "git remote -v",
+		},
+		"no match: git remote --verbose": {
+			input: "git remote --verbose",
+		},
+		"no match: git remote show": {
+			input: "git remote show origin",
+		},
+		"no match: git remote get-url": {
+			input: "git remote get-url origin",
+		},
+		// Bare exemption still applies after phase-1 git flag skipping.
+		"no match: git -C dir remote (bare after flag skip)": {
+			input: "git -C /tmp remote",
+		},
+		"no match: git -C dir remote -v": {
+			input: "git -C /tmp remote -v",
+		},
+		"no match: git status": {
+			input: "git status",
+		},
+	}
+
+	rules := canonicalRules()
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			rule, got, matched := rules.Check(prog)
+			assert.Equal(t, tt.want != "", matched)
+
+			if matched {
+				assert.Equal(t, tt.want, got)
+				assert.True(t, rule.Ask())
+			}
+		})
+	}
+}
+
 func TestCommandRulesCheck_Kubectx(t *testing.T) {
 	t.Parallel()
 
@@ -421,7 +524,9 @@ func ghAskRules() *cmdrules.Engine {
 	}
 
 	return cmdrules.New([]cmdrules.Rule{
+		group("cache", "list"),
 		group("issue", "list", "view"),
+		group("label", "list"),
 		group("pr", "checks", "status", "diff", "list", "view"),
 		group("release", "list", "view"),
 		group("repo", "view", "list"),
@@ -430,8 +535,9 @@ func ghAskRules() *cmdrules.Engine {
 		{
 			Command: "gh",
 			Except: []string{
-				"issue", "pr", "release", "repo", "run", "workflow",
-				"status", "help", "version", "--version",
+				"cache", "issue", "label", "pr", "release", "repo",
+				"run", "workflow", "status", "help", "version",
+				"--version",
 			},
 			Action: "ask",
 			Reason: ghFallbackAskReason,
