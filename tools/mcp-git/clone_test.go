@@ -116,7 +116,7 @@ func TestAcquireLock(t *testing.T) {
 func TestCheckDest(t *testing.T) {
 	t.Parallel()
 
-	h := &cloneHandler{
+	h := &handler{
 		allowDirs: []string{"/tmp/git", "/private/tmp/git"},
 	}
 
@@ -160,7 +160,7 @@ func TestCheckDest(t *testing.T) {
 func TestCheckDestNoRestrictions(t *testing.T) {
 	t.Parallel()
 
-	h := &cloneHandler{}
+	h := &handler{}
 
 	require.NoError(t, h.checkDest("/anywhere/at/all"))
 }
@@ -168,7 +168,7 @@ func TestCheckDestNoRestrictions(t *testing.T) {
 func TestHandleValidation(t *testing.T) {
 	t.Parallel()
 
-	h := &cloneHandler{}
+	h := &handler{}
 
 	tests := map[string]struct {
 		input CloneInput
@@ -212,7 +212,7 @@ func TestHandleValidation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			result, _, err := h.handle(t.Context(), nil, tt.input)
+			result, _, err := h.handleClone(t.Context(), nil, tt.input)
 			require.NoError(t, err)
 			require.True(t, result.IsError)
 			assert.Equal(t, tt.want, resultText(t, result))
@@ -292,7 +292,7 @@ func TestCredentialArgs(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			h := &cloneHandler{token: tt.token}
+			h := &handler{token: tt.token}
 			got := h.credentialArgs(tt.url)
 			assert.Equal(t, tt.want, got)
 		})
@@ -302,7 +302,7 @@ func TestCredentialArgs(t *testing.T) {
 func TestCheckURL(t *testing.T) {
 	t.Parallel()
 
-	h := &cloneHandler{}
+	h := &handler{}
 
 	tests := map[string]struct {
 		url string
@@ -360,7 +360,7 @@ func TestCheckURL(t *testing.T) {
 func TestCheckURLAllowInsecure(t *testing.T) {
 	t.Parallel()
 
-	h := &cloneHandler{allowInsecure: true}
+	h := &handler{allowInsecure: true}
 
 	require.NoError(t, h.checkURL("http://github.com/a/b"))
 	require.NoError(t, h.checkURL("git://github.com/a/b"))
@@ -369,7 +369,7 @@ func TestCheckURLAllowInsecure(t *testing.T) {
 func TestCheckURLAllowFile(t *testing.T) {
 	t.Parallel()
 
-	h := &cloneHandler{allowFileURLs: true}
+	h := &handler{allowFileURLs: true}
 
 	require.NoError(t, h.checkURL("/tmp/some/repo"))
 	require.NoError(t, h.checkURL("file:///tmp/some/repo"))
@@ -385,7 +385,7 @@ func TestCheckDestSymlink(t *testing.T) {
 	link := filepath.Join(allowDir, "escape")
 	require.NoError(t, os.Symlink(outside, link))
 
-	h := &cloneHandler{allowDirs: []string{allowDir}}
+	h := &handler{allowDirs: []string{allowDir}}
 
 	// A path through the symlink should be denied.
 	err := h.checkDest(filepath.Join(link, "repo"))
@@ -458,9 +458,9 @@ func TestCheckSparsePaths(t *testing.T) {
 func TestDeniedBranch(t *testing.T) {
 	t.Parallel()
 
-	h := &cloneHandler{allowFileURLs: true}
+	h := &handler{allowFileURLs: true}
 
-	result, _, err := h.handle(t.Context(), nil, CloneInput{
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:    "/tmp/repo",
 		Dest:   filepath.Join(t.TempDir(), "x"),
 		Branch: "--upload-pack=evil",
@@ -473,9 +473,9 @@ func TestDeniedBranch(t *testing.T) {
 func TestDeniedDest(t *testing.T) {
 	t.Parallel()
 
-	h := &cloneHandler{allowFileURLs: true}
+	h := &handler{allowFileURLs: true}
 
-	result, _, err := h.handle(t.Context(), nil, CloneInput{
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:  "/tmp/repo",
 		Dest: "--upload-pack=evil",
 	})
@@ -488,12 +488,12 @@ func TestHandleClone(t *testing.T) {
 	t.Parallel()
 
 	bare := initBareRepo(t)
-	h := &cloneHandler{allowFileURLs: true}
+	h := &handler{allowFileURLs: true}
 
 	dest := filepath.Join(t.TempDir(), "cloned")
 
 	// First call: clone.
-	result, _, err := h.handle(t.Context(), nil, CloneInput{
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
 	})
@@ -505,7 +505,7 @@ func TestHandleClone(t *testing.T) {
 	require.NoError(t, statErr, ".git directory should exist after clone")
 
 	// Second call: pull.
-	result, _, err = h.handle(t.Context(), nil, CloneInput{
+	result, _, err = h.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
 	})
@@ -518,12 +518,12 @@ func TestHandleCloneWithToken(t *testing.T) {
 	t.Parallel()
 
 	bare := initBareRepo(t)
-	h := &cloneHandler{allowFileURLs: true, token: "ghp_unused"}
+	h := &handler{allowFileURLs: true, token: "ghp_unused"}
 
 	dest := filepath.Join(t.TempDir(), "cloned")
 
 	// Clone with token set (file URL, so credential args are not injected).
-	result, _, err := h.handle(t.Context(), nil, CloneInput{
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
 	})
@@ -532,7 +532,7 @@ func TestHandleCloneWithToken(t *testing.T) {
 	assert.Contains(t, resultText(t, result), "Cloned")
 
 	// Pull with token set.
-	result, _, err = h.handle(t.Context(), nil, CloneInput{
+	result, _, err = h.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
 	})
@@ -547,24 +547,17 @@ func TestHandleCloneRef(t *testing.T) {
 	bare := initBareRepo(t)
 
 	// Create a tag in the bare repo via a temporary clone.
-	tmp := filepath.Join(t.TempDir(), "tag-work")
+	tmp := initWorkClone(t, bare)
 
-	for _, args := range [][]string{
-		{"git", "clone", bare, tmp},
-		{"git", "-C", tmp, "config", "user.email", "test@test.com"},
-		{"git", "-C", tmp, "config", "user.name", "Test"},
+	runGitCmds(t, [][]string{
 		{"git", "-C", tmp, "tag", "v1.0.0"},
 		{"git", "-C", tmp, "push", "--tags"},
-	} {
-		cmd := exec.CommandContext(t.Context(), args[0], args[1:]...) //nolint:gosec // test helper
-		cmd.Stderr = os.Stderr
-		require.NoError(t, cmd.Run(), "setup command failed: %v", args)
-	}
+	})
 
-	h := &cloneHandler{allowFileURLs: true}
+	h := &handler{allowFileURLs: true}
 	dest := filepath.Join(t.TempDir(), "cloned")
 
-	result, _, err := h.handle(t.Context(), nil, CloneInput{
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
 		Ref:  "v1.0.0",
@@ -586,38 +579,24 @@ func TestHandleCloneSparse(t *testing.T) {
 	bare := initBareRepo(t)
 
 	// Add files in src/ and docs/ directories.
-	tmp := filepath.Join(t.TempDir(), "sparse-work")
-
-	for _, args := range [][]string{
-		{"git", "clone", bare, tmp},
-		{"git", "-C", tmp, "config", "user.email", "test@test.com"},
-		{"git", "-C", tmp, "config", "user.name", "Test"},
-	} {
-		cmd := exec.CommandContext(t.Context(), args[0], args[1:]...) //nolint:gosec // test helper
-		cmd.Stderr = os.Stderr
-		require.NoError(t, cmd.Run(), "setup command failed: %v", args)
-	}
+	tmp := initWorkClone(t, bare)
 
 	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "src"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "docs"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(tmp, "src", "main.go"), []byte("package main"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(tmp, "docs", "README"), []byte("docs"), 0o644))
 
-	for _, args := range [][]string{
+	runGitCmds(t, [][]string{
 		{"git", "-C", tmp, "add", "."},
 		{"git", "-C", tmp, "commit", "-m", "add dirs"},
 		{"git", "-C", tmp, "push"},
-	} {
-		cmd := exec.CommandContext(t.Context(), args[0], args[1:]...) //nolint:gosec // test helper
-		cmd.Stderr = os.Stderr
-		require.NoError(t, cmd.Run(), "setup command failed: %v", args)
-	}
+	})
 
-	h := &cloneHandler{allowFileURLs: true}
+	h := &handler{allowFileURLs: true}
 	dest := filepath.Join(t.TempDir(), "cloned")
 
 	// Clone with sparse checkout.
-	result, _, err := h.handle(t.Context(), nil, CloneInput{
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:         bare,
 		Dest:        dest,
 		SparsePaths: []string{"src"},
@@ -634,7 +613,7 @@ func TestHandleCloneSparse(t *testing.T) {
 	require.ErrorIs(t, statErr, os.ErrNotExist, "docs/README should not exist in sparse checkout")
 
 	// Pull should still work.
-	result, _, err = h.handle(t.Context(), nil, CloneInput{
+	result, _, err = h.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
 	})
@@ -647,12 +626,12 @@ func TestHandleOriginMismatch(t *testing.T) {
 	t.Parallel()
 
 	bare := initBareRepo(t)
-	h := &cloneHandler{allowFileURLs: true}
+	h := &handler{allowFileURLs: true}
 
 	dest := filepath.Join(t.TempDir(), "cloned")
 
 	// Clone the repo.
-	result, _, err := h.handle(t.Context(), nil, CloneInput{
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
 	})
@@ -660,7 +639,7 @@ func TestHandleOriginMismatch(t *testing.T) {
 	require.False(t, result.IsError)
 
 	// Try to pull with a different URL.
-	result, _, err = h.handle(t.Context(), nil, CloneInput{
+	result, _, err = h.handleClone(t.Context(), nil, CloneInput{
 		URL:  "/tmp/different-repo",
 		Dest: dest,
 	})
@@ -713,7 +692,7 @@ func TestEffectiveTimeout(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			h := &cloneHandler{timeout: tt.handlerTimeout}
+			h := &handler{timeout: tt.handlerTimeout}
 			assert.Equal(t, tt.want, h.effectiveTimeout(tt.perCallSecs))
 		})
 	}
@@ -723,11 +702,11 @@ func TestHandleCloneTimeout(t *testing.T) {
 	t.Parallel()
 
 	bare := initBareRepo(t)
-	h := &cloneHandler{allowFileURLs: true, timeout: time.Nanosecond}
+	h := &handler{allowFileURLs: true, timeout: time.Nanosecond}
 
 	dest := filepath.Join(t.TempDir(), "cloned")
 
-	result, _, err := h.handle(t.Context(), nil, CloneInput{
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
 	})
@@ -736,16 +715,16 @@ func TestHandleCloneTimeout(t *testing.T) {
 	assert.Contains(t, resultText(t, result), "timed out")
 }
 
-func TestHandlePullTimeout(t *testing.T) {
+func TestHandleClonePullTimeout(t *testing.T) {
 	t.Parallel()
 
 	bare := initBareRepo(t)
 	dest := filepath.Join(t.TempDir(), "cloned")
 
 	// First call clones with no timeout configured.
-	cloneH := &cloneHandler{allowFileURLs: true}
+	cloneH := &handler{allowFileURLs: true}
 
-	result, _, err := cloneH.handle(t.Context(), nil, CloneInput{
+	result, _, err := cloneH.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
 	})
@@ -753,9 +732,9 @@ func TestHandlePullTimeout(t *testing.T) {
 	require.False(t, result.IsError, resultText(t, result))
 
 	// Second call takes the pull branch and trips the timeout.
-	pullH := &cloneHandler{allowFileURLs: true, timeout: time.Nanosecond}
+	pullH := &handler{allowFileURLs: true, timeout: time.Nanosecond}
 
-	result, _, err = pullH.handle(t.Context(), nil, CloneInput{
+	result, _, err = pullH.handleClone(t.Context(), nil, CloneInput{
 		URL:  bare,
 		Dest: dest,
 	})

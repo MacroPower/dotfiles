@@ -2194,10 +2194,25 @@ in
               "/tmp/git"
               "--allow-dir"
               "/private/tmp/git"
+              # git_fetch / git_pull / git_push operate on working
+              # checkouts, which live here. The allowlist is shared
+              # with git_clone's dest check, so clones into this tree
+              # are also allowed; the instruction below still points
+              # clone at /tmp/git.
+              "--allow-dir"
+              "${config.home.homeDirectory}/Documents/repos"
+              # Linux VMs (lima/terrarium) mount the macOS repos tree
+              # at its original /Users path; allow that spelling too.
+              # On darwin this duplicates the entry above, which is
+              # harmless.
+              "--allow-dir"
+              "/Users/${config.home.username}/Documents/repos"
             ];
           };
           permissions.allow = [
             "mcp__git__git_clone"
+            "mcp__git__git_fetch"
+            "mcp__git__git_pull"
           ]
           # Read-only git derived from the gitReadCommands /
           # gitReadForms tables above. These matter on hosts where the
@@ -2209,10 +2224,12 @@ in
           # verbs are gated by commandRules.ask instead.
           ++ lib.concatMap gitAllowPair gitReadCommands
           ++ map (form: "Bash(git ${form})") gitReadForms;
-          # Relocated from the top-level ask list so they sit next to
-          # the allow table they could shadow. Neither overlaps any
-          # entry above.
+          # Next to the allow table so shadowing is visible: the Bash
+          # forms were moved here from the top-level ask list, and the
+          # exact MCP name cannot shadow the MCP allow entries above.
+          # No entry overlaps the allow table.
           permissions.ask = [
+            "mcp__git__git_push"
             "Bash(git push)"
             "Bash(git push *)"
             "Bash(git switch *)"
@@ -2292,6 +2309,7 @@ in
           instructions = {
             items = [
               "Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there."
+              "Use `mcp__git__git_fetch`, `mcp__git__git_pull`, and `mcp__git__git_push` for git operations that contact a remote; plain `git` in Bash handles local work (add, commit, branch, rebase)."
             ];
           };
         };

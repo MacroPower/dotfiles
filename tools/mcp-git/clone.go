@@ -4,14 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -22,10 +19,6 @@ var (
 
 	// ErrMissingDest is returned when the dest field is empty.
 	ErrMissingDest = errors.New("dest is required")
-
-	// ErrDeniedDest is returned when dest is outside all
-	// allowed directories.
-	ErrDeniedDest = errors.New("dest not under any allowed directory")
 
 	// ErrDeniedURL is returned when the URL scheme is not
 	// allowed.
@@ -58,14 +51,10 @@ var (
 	// ErrClone wraps the underlying git clone failure.
 	ErrClone = errors.New("git clone failed")
 
-	// ErrTimeout is returned when a git operation exceeds the
-	// configured timeout.
-	ErrTimeout = errors.New("git operation timed out")
-
 	// scpPattern matches SCP-style git URLs (e.g., git@github.com:org/repo).
 	scpPattern = regexp.MustCompile(`^\w+@[\w.-]+:`)
 
-	// safeSchemes lists the URL prefixes accepted by [cloneHandler.checkURL].
+	// safeSchemes lists the URL prefixes accepted by [handler.checkURL].
 	safeSchemes = []string{
 		"https://",
 		"ssh://",
@@ -81,54 +70,18 @@ var (
 
 // CloneInput is the JSON input schema for the git_clone tool.
 type CloneInput struct {
-	URL          string   `json:"url"                    jsonschema:"Repository URL to clone"`
-	Dest         string   `json:"dest"                   jsonschema:"Destination directory path"`
-	Branch       string   `json:"branch,omitzero"        jsonschema:"Branch to clone"`
-	Ref          string   `json:"ref,omitzero"           jsonschema:"Branch or tag to check out (alias for branch)"`
-	Depth        int      `json:"depth,omitzero"         jsonschema:"Shallow clone depth"`
-	SingleBranch bool     `json:"single_branch,omitzero" jsonschema:"Clone only the specified branch"`
-	Sparse       bool     `json:"sparse,omitzero"        jsonschema:"Enable sparse checkout (only root files unless sparse_paths is set)"`
-	SparsePaths  []string `json:"sparse_paths,omitzero"  jsonschema:"Paths for sparse checkout (implies sparse)"`
-
-	// TimeoutSeconds overrides the server default for this call.
-	// Zero means use the default; per-call disable is not supported.
-	TimeoutSeconds int `json:"timeout_seconds,omitzero" jsonschema:"Override the default per-operation timeout in seconds; 0 means use the server default"`
+	URL            string   `json:"url"                      jsonschema:"Repository URL to clone"`
+	Dest           string   `json:"dest"                     jsonschema:"Destination directory path"`
+	Branch         string   `json:"branch,omitzero"          jsonschema:"Branch to clone"`
+	Ref            string   `json:"ref,omitzero"             jsonschema:"Branch or tag to check out (alias for branch)"`
+	SparsePaths    []string `json:"sparse_paths,omitzero"    jsonschema:"Paths for sparse checkout (implies sparse)"`
+	Depth          int      `json:"depth,omitzero"           jsonschema:"Shallow clone depth"`
+	TimeoutSeconds int      `json:"timeout_seconds,omitzero" jsonschema:"Override the default per-operation timeout in seconds; 0 means use the server default"`
+	SingleBranch   bool     `json:"single_branch,omitzero"   jsonschema:"Clone only the specified branch"`
+	Sparse         bool     `json:"sparse,omitzero"          jsonschema:"Enable sparse checkout (only root files unless sparse_paths is set)"`
 }
 
-// cloneHandler implements the git_clone tool handler.
-type cloneHandler struct {
-	allowDirs     []string
-	allowInsecure bool          // permit http:// and git:// URLs
-	allowFileURLs bool          // testing only: permit file:// and local path URLs
-	timeout       time.Duration // timeout bounds each git invocation; 0 disables.
-	token         string        // GitHub personal access token for HTTPS auth
-}
-
-// effectiveTimeout returns the timeout to apply for a single
-// git invocation. A non-zero perCallSecs overrides h.timeout;
-// otherwise h.timeout is used (and 0 disables the bound).
-func (h *cloneHandler) effectiveTimeout(perCallSecs int) time.Duration {
-	if perCallSecs > 0 {
-		return time.Duration(perCallSecs) * time.Second
-	}
-
-	return h.timeout
-}
-
-// timeoutError returns an [ErrTimeout]-wrapped error when ctx
-// has expired, and nil otherwise. Use it inside an existing
-// `if err != nil` branch around a git subprocess to convert a
-// generic subprocess failure into a recognizable timeout.
-func timeoutError(ctx context.Context) error {
-	ctxErr := ctx.Err()
-	if ctxErr == nil {
-		return nil
-	}
-
-	return fmt.Errorf("%w: %w", ErrTimeout, ctxErr)
-}
-
-func (h *cloneHandler) handle(
+func (h *handler) handleClone(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input CloneInput,
@@ -166,8 +119,9 @@ func (h *cloneHandler) handle(
 		input.Branch = input.Ref
 	}
 
-	if err := checkSparsePaths(input.SparsePaths); err != nil {
-		return toolError(err), nil, nil
+	sparseErr := checkSparsePaths(input.SparsePaths)
+	if sparseErr != nil {
+		return toolError(sparseErr), nil, nil
 	}
 
 	destErr := h.checkDest(input.Dest)
@@ -177,6 +131,7 @@ func (h *cloneHandler) handle(
 
 	if d := h.effectiveTimeout(input.TimeoutSeconds); d > 0 {
 		var cancel context.CancelFunc
+
 		ctx, cancel = context.WithTimeout(ctx, d)
 		defer cancel()
 	}
@@ -196,38 +151,17 @@ func (h *cloneHandler) handle(
 
 	info, statErr := os.Stat(gitDir)
 	if statErr == nil && info.IsDir() {
-		return h.pull(ctx, input.URL, input.Dest)
+		return h.pullExisting(ctx, input)
 	}
 
 	return h.clone(ctx, input)
-}
-
-// credentialArgs returns git -c flags that configure a
-// credential helper for GitHub HTTPS URLs. It returns nil when
-// no token is set or the URL is not an HTTPS GitHub URL.
-func (h *cloneHandler) credentialArgs(url string) []string {
-	if h.token == "" || !strings.HasPrefix(url, "https://github.com/") {
-		return nil
-	}
-
-	return []string{
-		"-c", "credential.helper=",
-		"-c", `credential.https://github.com.helper=!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f`,
-	}
-}
-
-// gitEnv returns the environment for git subprocesses. It
-// preserves the inherited environment and adds
-// GIT_TERMINAL_PROMPT=0 to prevent interactive prompts.
-func gitEnv() []string {
-	return append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 }
 
 // checkURL verifies that url uses a permitted scheme. Accepted
 // forms are https, ssh, and SCP-style (user@host:path).
 // Unencrypted schemes (http, git) require allowInsecure. File
 // URLs and local paths are rejected unless allowFileURLs is set.
-func (h *cloneHandler) checkURL(url string) error {
+func (h *handler) checkURL(url string) error {
 	if h.allowFileURLs {
 		return nil
 	}
@@ -253,112 +187,47 @@ func (h *cloneHandler) checkURL(url string) error {
 	return fmt.Errorf("%w: %s", ErrDeniedURL, url)
 }
 
-// checkDest verifies that dest is under one of the allowed
-// directories. If no directories are configured, all paths
-// are accepted. Symlinks along the path are resolved to
-// prevent directory escapes.
-func (h *cloneHandler) checkDest(dest string) error {
-	if len(h.allowDirs) == 0 {
-		return nil
-	}
-
-	abs, err := filepath.Abs(dest)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrDeniedDest, err)
-	}
-
-	abs = resolveExistingPrefix(abs)
-
-	for _, dir := range h.allowDirs {
-		rel, relErr := filepath.Rel(dir, abs)
-		if relErr != nil {
-			continue
-		}
-
-		if len(rel) >= 2 && rel[:2] == ".." {
-			continue
-		}
-
-		return nil
-	}
-
-	return fmt.Errorf(
-		"%w: must be under %v",
-		ErrDeniedDest, h.allowDirs,
-	)
-}
-
-// resolveExistingPrefix resolves symlinks for the longest
-// existing prefix of path and appends the remaining
-// unresolved suffix.
-func resolveExistingPrefix(path string) string {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err == nil {
-		return resolved
-	}
-
-	dir := filepath.Dir(path)
-	base := filepath.Base(path)
-
-	if dir == path {
-		return path
-	}
-
-	return filepath.Join(resolveExistingPrefix(dir), base)
-}
-
 //nolint:unparam // signature matches mcp.AddTool handler contract.
-func (h *cloneHandler) pull(ctx context.Context, url, dest string) (*mcp.CallToolResult, any, error) {
-	originErr := h.checkOrigin(ctx, url, dest)
+func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.CallToolResult, any, error) {
+	originErr := h.checkOrigin(ctx, input.URL, input.Dest)
 	if originErr != nil {
 		return toolError(originErr), nil, nil
 	}
 
-	args := h.credentialArgs(url)
-	args = append(args, "-C", dest, "pull", "--ff-only", "-q")
-
-	//nolint:gosec // G204: dest is user-provided input.
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Env = gitEnv()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
+	// runRemote takes the git-directory lock that the
+	// remote-operation tools use, nested under the dest lock
+	// handleClone already holds; the ordering is fixed, so it
+	// cannot deadlock.
+	out, err := h.runRemote(ctx, remoteOp{
+		repo:    input.Dest,
+		remote:  defaultRemote,
+		timeout: input.TimeoutSeconds,
+		args:    buildPullArgs(defaultRemote, PullInput{Repo: input.Dest}),
+	})
 	if err != nil {
-		if tErr := timeoutError(ctx); tErr != nil {
-			return toolError(tErr), nil, nil
-		}
-
-		slog.WarnContext(ctx, "pulling latest changes", slog.Any("error", err))
-
-		return toolError(fmt.Errorf("pulling latest changes in %s: %w", dest, err)), nil, nil
+		return toolError(fmt.Errorf("pulling latest changes in %s: %w", input.Dest, err)), nil, nil
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{
-			Text: fmt.Sprintf("Pulled latest changes in %s", dest),
-		}},
-	}, nil, nil
+	return remoteResult(
+		fmt.Sprintf("Pulled latest changes in %s", input.Dest),
+		out,
+	), nil, nil
 }
 
 // checkOrigin verifies that the existing repo at dest has an
 // origin remote URL matching url. Both sides are normalized by
 // stripping a trailing ".git" suffix before comparison.
-func (h *cloneHandler) checkOrigin(ctx context.Context, url, dest string) error {
-	//nolint:gosec // G204: dest is user-provided input.
-	cmd := exec.CommandContext(ctx, "git", "-C", dest, "remote", "get-url", "origin")
-	cmd.Env = gitEnv()
-
-	out, err := cmd.Output()
+func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
+	out, err := gitValue(ctx, "-C", dest, "remote", "get-url", "origin")
 	if err != nil {
-		if tErr := timeoutError(ctx); tErr != nil {
-			return tErr
+		if errors.Is(err, ErrTimeout) {
+			return err
 		}
 
 		return fmt.Errorf("%w: reading origin: %w", ErrOriginMismatch, err)
 	}
 
-	got := strings.TrimSuffix(strings.TrimSpace(string(out)), ".git")
+	got := strings.TrimSuffix(out, ".git")
 	want := strings.TrimSuffix(url, ".git")
 
 	if got != want {
@@ -369,22 +238,12 @@ func (h *cloneHandler) checkOrigin(ctx context.Context, url, dest string) error 
 }
 
 //nolint:unparam // signature matches mcp.AddTool handler contract.
-func (h *cloneHandler) clone(ctx context.Context, input CloneInput) (*mcp.CallToolResult, any, error) {
+func (h *handler) clone(ctx context.Context, input CloneInput) (*mcp.CallToolResult, any, error) {
 	args := h.credentialArgs(input.URL)
 	args = append(args, buildCloneArgs(input)...)
 
-	//nolint:gosec // G204: args are user-provided input.
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Env = gitEnv()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
+	_, err := runGit(ctx, args...)
 	if err != nil {
-		if tErr := timeoutError(ctx); tErr != nil {
-			return toolError(tErr), nil, nil
-		}
-
 		return toolError(fmt.Errorf("%w: %w", ErrClone, err)), nil, nil
 	}
 
@@ -392,18 +251,9 @@ func (h *cloneHandler) clone(ctx context.Context, input CloneInput) (*mcp.CallTo
 		scArgs := []string{"-C", input.Dest, "sparse-checkout", "set"}
 		scArgs = append(scArgs, input.SparsePaths...)
 
-		//nolint:gosec // G204: sparse paths are validated by checkSparsePaths.
-		scCmd := exec.CommandContext(ctx, "git", scArgs...)
-		scCmd.Env = gitEnv()
-		scCmd.Stdout = os.Stdout
-		scCmd.Stderr = os.Stderr
-
-		if scErr := scCmd.Run(); scErr != nil {
-			if tErr := timeoutError(ctx); tErr != nil {
-				return toolError(tErr), nil, nil
-			}
-
-			return toolError(fmt.Errorf("sparse checkout failed: %w", scErr)), nil, nil
+		_, scErr := runGit(ctx, scArgs...)
+		if scErr != nil {
+			return toolError(fmt.Errorf("setting sparse checkout: %w", scErr)), nil, nil
 		}
 	}
 
@@ -438,10 +288,8 @@ func checkSparsePaths(paths []string) error {
 			return fmt.Errorf("%w: %q contains control characters", ErrDeniedSparsePath, p)
 		}
 
-		for _, seg := range strings.Split(p, "/") {
-			if seg == ".." {
-				return fmt.Errorf("%w: %q contains '..'", ErrDeniedSparsePath, p)
-			}
+		if slices.Contains(strings.Split(p, "/"), "..") {
+			return fmt.Errorf("%w: %q contains '..'", ErrDeniedSparsePath, p)
 		}
 	}
 
@@ -475,48 +323,4 @@ func buildCloneArgs(input CloneInput) []string {
 	args = append(args, "--", input.URL, input.Dest)
 
 	return args
-}
-
-// acquireLock takes an exclusive flock on dest.lock and returns a cleanup
-// function that releases the lock and removes the file.
-func acquireLock(dest string) (func(), error) {
-	lockPath := dest + ".lock"
-
-	lockFile, err := os.Create(lockPath) //nolint:gosec // G301: dest is user-provided input.
-	if err != nil {
-		return nil, fmt.Errorf("creating lock file: %w", err)
-	}
-
-	//nolint:gosec // G115: Fd fits in int on all supported platforms.
-	err = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX)
-	if err != nil {
-		closeErr := lockFile.Close()
-		if closeErr != nil {
-			slog.Warn("closing lock file after flock failure", slog.Any("error", closeErr))
-		}
-
-		return nil, fmt.Errorf("acquiring lock: %w", err)
-	}
-
-	cleanup := func() {
-		closeErr := lockFile.Close()
-		if closeErr != nil {
-			slog.Warn("closing lock file", slog.Any("error", closeErr))
-		}
-
-		removeErr := os.Remove(lockPath)
-		if removeErr != nil {
-			slog.Warn("removing lock file", slog.Any("error", removeErr))
-		}
-	}
-
-	return cleanup, nil
-}
-
-// toolError wraps err as an MCP tool-level error result.
-func toolError(err error) *mcp.CallToolResult {
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
-		IsError: true,
-	}
 }

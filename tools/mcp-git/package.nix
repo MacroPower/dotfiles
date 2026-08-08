@@ -6,7 +6,7 @@
 
 buildGoModule {
   pname = "mcp-git";
-  version = "0.1.0";
+  version = "0.2.0";
 
   src = ./.;
   vendorHash = "sha256-gmgdLG5cwtuEj0dW5SnRfKrauC0lxDQuOOzQSngz5jo=";
