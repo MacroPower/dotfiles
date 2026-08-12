@@ -43,6 +43,9 @@ func (h *handler) handlePush(
 		push:    true,
 		timeout: input.TimeoutSeconds,
 		args:    buildPushArgs(remote, input),
+		// pre-push hooks are repo policy worth keeping, and push is
+		// the one remote operation gated by a permission prompt.
+		runHooks: true,
 	})
 	if err != nil {
 		return toolError(fmt.Errorf("%w: %w", ErrPush, err)), nil, nil

@@ -13,6 +13,13 @@
 // and force pushes cannot be expressed (git_push offers
 // force_with_lease explicitly).
 //
+// git_fetch and git_pull disable local git hooks (core.hooksPath):
+// hooks run with the server's privileges, outside any sandbox that
+// confines the caller, so repository-local hooks must not be a code
+// execution path for operations that run without a prompt. git_push
+// runs hooks normally; it is meant to sit behind a permission
+// prompt, and pre-push hooks are repo policy worth keeping.
+//
 // # Flags
 //
 //   - --allow-dir: restrict repository and destination paths to

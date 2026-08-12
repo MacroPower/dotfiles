@@ -279,6 +279,26 @@ func TestHandlePushUnknownRemote(t *testing.T) {
 		"error must name the remote, never its URL")
 }
 
+func TestHandlePushRunsHooks(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	work := initWorkClone(t, bare)
+
+	commitFile(t, work, "blocked.txt", "x", "blocked commit")
+
+	// Unlike fetch and pull, push keeps local hooks: it sits behind
+	// a permission prompt, and pre-push hooks are repo policy. A
+	// rejecting hook must therefore fail the push.
+	writeHook(t, work, "pre-push", "#!/bin/sh\nexit 1\n")
+
+	h := &handler{}
+
+	result, _, err := h.handlePush(t.Context(), nil, PushInput{Repo: work})
+	require.NoError(t, err)
+	require.True(t, result.IsError, "a rejecting pre-push hook must fail the push")
+}
+
 func TestHandlePushTimeout(t *testing.T) {
 	t.Parallel()
 

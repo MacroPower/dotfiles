@@ -196,6 +196,32 @@ func TestHandlePullRebaseConflictAborts(t *testing.T) {
 		gitOut(t, "-C", a, "log", "-1", "--format=%s"))
 }
 
+func TestHandlePullSkipsHooks(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	a := initWorkClone(t, bare)
+	b := initWorkClone(t, bare)
+
+	commitFile(t, b, "new.txt", "fresh", "add new file")
+	runGitCmds(t, [][]string{{"git", "-C", b, "push"}})
+
+	// Hooks execute outside the caller's sandbox, so the pull tool
+	// must never run them. post-merge fires on a plain fast-forward
+	// pull, which makes it the canary.
+	writeHook(t, a, "post-merge", "#!/bin/sh\ntouch hook-ran\n")
+
+	h := &handler{}
+
+	result, _, err := h.handlePull(t.Context(), nil, PullInput{Repo: a})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	_, statErr := os.Stat(filepath.Join(a, "hook-ran"))
+	require.ErrorIs(t, statErr, os.ErrNotExist,
+		"local hooks must not run during git_pull")
+}
+
 func TestHandlePullTimeout(t *testing.T) {
 	t.Parallel()
 

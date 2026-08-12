@@ -57,6 +57,19 @@ func currentBranch(t *testing.T, repo string) string {
 	return gitOut(t, "-C", repo, "symbolic-ref", "--short", "HEAD")
 }
 
+// writeHook installs an executable hook script in repo's default
+// hooks directory.
+func writeHook(t *testing.T, repo, name, script string) {
+	t.Helper()
+
+	hookDir := filepath.Join(repo, ".git", "hooks")
+	require.NoError(t, os.MkdirAll(hookDir, 0o755))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(hookDir, name), []byte(script), 0o755),
+	) //nolint:gosec // test hook must be executable
+}
+
 // commitFile writes content to name in repo and commits it.
 func commitFile(t *testing.T, repo, name, content, msg string) {
 	t.Helper()

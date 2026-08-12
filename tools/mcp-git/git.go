@@ -98,6 +98,11 @@ type remoteOp struct {
 
 	timeout int  // per-call timeout override in seconds
 	push    bool // resolve the remote's push URL, not its fetch URL
+
+	// runHooks permits local git hooks. Hooks execute with the
+	// server's privileges, outside the Bash sandbox, so only tools
+	// that sit behind a permission prompt should set it.
+	runHooks bool
 }
 
 // runRemote validates the repository, bounds the call by the
@@ -150,6 +155,15 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 	}
 
 	args := h.credentialArgs(url)
+
+	// Local git hooks (including an in-tree core.hooksPath enabled
+	// by repo config) would run with the server's privileges,
+	// outside the Bash sandbox. Point hooksPath at a non-directory
+	// so no hook can fire unless the tool opts in.
+	if !op.runHooks {
+		args = append(args, "-c", "core.hooksPath="+os.DevNull)
+	}
+
 	args = append(args, "-C", abs)
 	args = append(args, op.args...)
 

@@ -18,3 +18,4 @@ lima/*.qcow2.zst
 lima/result*
 .direnv/
 .task/
+tools/mcp-git/mcp-git
