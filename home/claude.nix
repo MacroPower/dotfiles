@@ -904,39 +904,48 @@ let
   # atuin reads the host encryption key (key_path).
   atuinDataDir = "${config.home.homeDirectory}/.local/share/atuin";
 
+  # mdformat's CommonMark core has no table parser, and stock pkgs.mdformat
+  # ships no plugins. Without mdformat-gfm every pipe table parses as a
+  # paragraph and `--wrap no` joins it onto one line, destroying it
+  # irrecoverably. `--no-extensions` disables the plugin and reintroduces
+  # that, so it must not come back; the explicit `--extensions` flags pin
+  # the entry points the plugin registers. mdformat-gfm also preserves task
+  # lists, strikethrough, and bare autolinks. The wrapped python binary is
+  # invoked directly through its store-path `/bin/mdformat` so
+  # hook-router-wrapper doesn't need it on PATH and the formatter's own
+  # python wrapper script stays intact.
+  mdformatBin = pkgs.mdformat.withPlugins (ps: [ ps.mdformat-gfm ]);
+
+  # `--compact-tables` leaves table cells unpadded, so a table doesn't get
+  # rewritten end-to-end whenever one cell's width changes.
+  mdformatCommand = [
+    "${mdformatBin}/bin/mdformat"
+    "--wrap"
+    "no"
+    "--number"
+    "--no-validate"
+    "--extensions"
+    "gfm"
+    "--extensions"
+    "tables"
+    "--compact-tables"
+    "--no-codeformatters"
+  ];
+
   # Default formatter routes auto-installed by hook-router on
   # PostToolUse:Write/Edit/MultiEdit. Plans and research notes
   # accumulate token-wasteful patterns (multi-blank-line runs, trailing
   # whitespace, inter-word double spaces) across many tool calls;
-  # mdformat collapses them in place. The wrapped python binary is
-  # invoked directly through its store-path `/bin/mdformat` so
-  # hook-router-wrapper doesn't need pkgs.mdformat on its PATH and the
-  # formatter's own python wrapper script stays intact.
+  # mdformat collapses them in place.
   defaultFormatterRules = [
     {
       pathGlob = "${config.home.homeDirectory}/.claude/plans/**/*.md";
-      command = [
-        "${pkgs.mdformat}/bin/mdformat"
-        "--wrap"
-        "no"
-        "--number"
-        "--no-validate"
-        "--no-extensions"
-        "--no-codeformatters"
-      ];
+      command = mdformatCommand;
       timeout = "5s";
     }
     {
       pathGlob = "${researchDir}/**/*.md";
-      command = [
-        "${pkgs.mdformat}/bin/mdformat"
-        "--wrap"
-        "no"
-        "--number"
-        "--no-validate"
-        "--no-extensions"
-        "--no-codeformatters"
-      ];
+      command = mdformatCommand;
       timeout = "5s";
     }
   ];
