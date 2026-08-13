@@ -531,7 +531,7 @@ func ghAskRules() *cmdrules.Engine {
 		group("pr", "checks", "status", "diff", "list", "view"),
 		group("release", "list", "view"),
 		group("repo", "view", "list"),
-		group("run", "view", "list", "watch"),
+		group("run", "watch", "view", "list"),
 		group("workflow", "view", "list"),
 		{
 			Command: "gh",
@@ -575,11 +575,16 @@ func ghRedirectRules() *cmdrules.Engine {
 		},
 		redirect("mcp__github__issue_read", "issue", "view"),
 		redirect("mcp__github__list_issues", "issue", "list"),
+		redirect("mcp__github__list_label", "label", "list"),
 		redirect("mcp__github__pull_request_read", "pr", "view"),
 		redirect("mcp__github__list_pull_requests", "pr", "list"),
 		redirect("mcp__github__pull_request_read (diff method)", "pr", "diff"),
 		redirect("mcp__github__get_release_by_tag / mcp__github__get_latest_release", "release", "view"),
 		redirect("mcp__github__list_releases", "release", "list"),
+		redirect("mcp__github__actions_get (get_workflow_run) / mcp__github__get_job_logs for logs", "run", "view"),
+		redirect("mcp__github__actions_list (list_workflow_runs)", "run", "list"),
+		redirect("mcp__github__actions_get (get_workflow)", "workflow", "view"),
+		redirect("mcp__github__actions_list (list_workflows)", "workflow", "list"),
 		redirect("mcp__github__search_code / search_issues / search_pull_requests / search_repositories", "search"),
 	})
 }
@@ -729,14 +734,38 @@ func TestCommandRulesCheck_Redirect(t *testing.T) {
 		"gh pr status stays on gh": {
 			input: "gh pr status",
 		},
-		"gh run view stays on gh": {
+		"gh run view redirects to MCP": {
 			input: "gh run view 123",
+			want:  ghRedirectReason("mcp__github__actions_get (get_workflow_run) / mcp__github__get_job_logs for logs"),
+		},
+		"gh run view --log redirects to MCP": {
+			input: "gh run view 123 --log",
+			want:  ghRedirectReason("mcp__github__actions_get (get_workflow_run) / mcp__github__get_job_logs for logs"),
+		},
+		"gh run list redirects to MCP": {
+			input: "gh run list --workflow ci.yaml",
+			want:  ghRedirectReason("mcp__github__actions_list (list_workflow_runs)"),
+		},
+		"gh run watch stays on gh (streams, no MCP equivalent)": {
+			input: "gh run watch 123",
+		},
+		"gh label list redirects to MCP": {
+			input: "gh label list",
+			want:  ghRedirectReason("mcp__github__list_label"),
+		},
+		"gh cache list stays on gh": {
+			input: "gh cache list",
 		},
 		"gh repo view stays on gh": {
 			input: "gh repo view owner/repo",
 		},
-		"gh workflow list stays on gh": {
+		"gh workflow view redirects to MCP": {
+			input: "gh workflow view ci.yaml",
+			want:  ghRedirectReason("mcp__github__actions_get (get_workflow)"),
+		},
+		"gh workflow list redirects to MCP": {
 			input: "gh workflow list",
+			want:  ghRedirectReason("mcp__github__actions_list (list_workflows)"),
 		},
 		"gh status stays on gh": {
 			input: "gh status",

@@ -787,11 +787,21 @@ let
     )
   );
 
+  # The x/all/readonly endpoint serves every read-only tool across all
+  # upstream toolsets. The narrower /mcp/readonly endpoint would serve
+  # only the `default` toolset (context, repos, issues, pull_requests,
+  # users), which carries no Actions, security-alert, discussion, or
+  # project tools. Claude reaches these through ToolSearch, so an
+  # unused tool costs one name in the deferred listing rather than a
+  # schema, and permissions.deny below stays the place where tool
+  # policy is spelled out. A new upstream tool appears here on its own
+  # and prompts on first use until it is allowed or denied; the
+  # readonly endpoint keeps writes out regardless.
   githubWrapper = pkgs.writeShellScript "github-mcp-wrapper" ''
     ${exportSecret "GH_TOKEN" "gh_token"}
     export GITHUB_PERSONAL_ACCESS_TOKEN="''${GH_TOKEN:-}"
     exec ${pkgs.mcp-http-proxy}/bin/mcp-http-proxy \
-      --url https://api.githubcopilot.com/mcp/readonly \
+      --url https://api.githubcopilot.com/mcp/x/all/readonly \
       --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN" \
       --log-file "${config.xdg.stateHome}/mcp-http-proxy/github.log" \
       ${ghProxyDenyFlags} \
@@ -2392,20 +2402,32 @@ in
               view = "mcp__github__get_release_by_tag / mcp__github__get_latest_release";
               list = "mcp__github__list_releases";
             };
+            label = {
+              list = "mcp__github__list_label";
+            };
+            run = {
+              view = "mcp__github__actions_get (get_workflow_run) / mcp__github__get_job_logs for logs";
+              list = "mcp__github__actions_list (list_workflow_runs)";
+            };
+            workflow = {
+              view = "mcp__github__actions_get (get_workflow)";
+              list = "mcp__github__actions_list (list_workflows)";
+            };
           };
           ghRedirectCommands = {
             search = "mcp__github__search_code / search_issues / search_pull_requests / search_repositories";
           };
 
           # Read-only gh subcommands with no mcp__github__* equivalent
-          # (Actions runs, workflows, repo metadata, PR checks/status,
-          # notification status). The readonly proxy does not serve these,
-          # so they stay allowed on the gh CLI. Single source of truth for
-          # the permission allow entries below. Mirrored by ghAskRules in
+          # (repo metadata, PR checks/status, run watching, notification
+          # status). The readonly proxy does not serve these, so they stay
+          # allowed on the gh CLI. `gh run watch` stays here because it
+          # streams a run to completion, which no MCP tool does. Single
+          # source of truth for the permission allow entries below.
+          # Mirrored by ghAskRules in
           # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go.
           ghAllowGroups = {
             cache = [ "list" ];
-            label = [ "list" ];
             pr = [
               "checks"
               "status"
@@ -2414,15 +2436,7 @@ in
               "view"
               "list"
             ];
-            run = [
-              "view"
-              "list"
-              "watch"
-            ];
-            workflow = [
-              "view"
-              "list"
-            ];
+            run = [ "watch" ];
           };
           ghAllowCommands = [
             "status"
@@ -2447,22 +2461,60 @@ in
             type = "stdio";
             command = "${githubWrapper}";
           };
+          # Every read-only tool the x/all/readonly endpoint serves that
+          # permissions.deny below does not strip. Spelled out so a tool
+          # added upstream lands outside this list and prompts on first
+          # use rather than running unannounced.
           permissions.allow = [
+            "mcp__github__actions_get"
+            "mcp__github__actions_list"
+            "mcp__github__check_dependency_vulnerabilities"
+            "mcp__github__get_code_quality_finding"
+            "mcp__github__get_code_scanning_alert"
+            "mcp__github__get_copilot_space"
+            "mcp__github__get_dependabot_alert"
+            "mcp__github__get_discussion"
+            "mcp__github__get_discussion_comments"
+            "mcp__github__get_gist"
+            "mcp__github__get_global_security_advisory"
+            "mcp__github__get_job_logs"
             "mcp__github__get_label"
             "mcp__github__get_latest_release"
+            "mcp__github__get_notification_details"
             "mcp__github__get_release_by_tag"
+            "mcp__github__get_secret_scanning_alert"
             "mcp__github__get_tag"
+            "mcp__github__github_support_docs_search"
             "mcp__github__issue_read"
+            "mcp__github__list_code_scanning_alerts"
+            "mcp__github__list_copilot_spaces"
+            "mcp__github__list_dependabot_alerts"
+            "mcp__github__list_discussion_categories"
+            "mcp__github__list_discussions"
+            "mcp__github__list_gists"
+            "mcp__github__list_global_security_advisories"
+            "mcp__github__list_issue_fields"
             "mcp__github__list_issue_types"
             "mcp__github__list_issues"
+            "mcp__github__list_label"
+            "mcp__github__list_notifications"
+            "mcp__github__list_org_repository_security_advisories"
             "mcp__github__list_pull_requests"
             "mcp__github__list_releases"
+            "mcp__github__list_repository_security_advisories"
+            "mcp__github__list_secret_scanning_alerts"
+            "mcp__github__list_starred_repositories"
             "mcp__github__list_tags"
+            "mcp__github__projects_get"
+            "mcp__github__projects_list"
             "mcp__github__pull_request_read"
             "mcp__github__search_code"
+            "mcp__github__search_commits"
             "mcp__github__search_issues"
+            "mcp__github__search_orgs"
             "mcp__github__search_pull_requests"
             "mcp__github__search_repositories"
+            "mcp__github__semantic_issue_similarity_search"
           ]
           # Read-only gh CLI commands with no MCP equivalent, derived
           # from the ghAllowGroups / ghAllowCommands tables above. These
@@ -2490,12 +2542,19 @@ in
             "mcp__github__get_copilot_job_status"
             "mcp__github__get_file_contents"
             "mcp__github__get_me"
+            # Browsing a repository's paths over the API is the same
+            # detour the fetch rules and the gh api deny close off; clone
+            # with mcp__git__git_clone and read the tree locally.
+            "mcp__github__get_repository_tree"
             "mcp__github__get_team_members"
             "mcp__github__get_teams"
             "mcp__github__list_branches"
             "mcp__github__list_commits"
             "mcp__github__list_repository_collaborators"
             "mcp__github__search_users"
+            # Overlaps mcp__kagi__kagi_search_fetch, which stays the one
+            # web search tool.
+            "mcp__github__web_search"
             # GitHub MCP: deny all write/mutating tools. The readonly endpoint
             # does not serve these, so the proxy filter is a no-op for them;
             # they stay denied here as a usage hint and a guard.
@@ -2639,7 +2698,7 @@ in
           ];
           instructions = {
             items = [
-              "Use `mcp__github__*` and `mcp__git__*` tools for reading GitHub data (issues, PRs, repos, code search, etc.)"
+              "Use `mcp__github__*` and `mcp__git__*` tools for reading GitHub data (issues, PRs, releases, Actions runs and job logs, security alerts, discussions, projects, code search, etc.)"
             ];
           };
         };
