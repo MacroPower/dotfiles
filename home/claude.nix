@@ -3395,7 +3395,7 @@ in
         ## Agents
         - Use `Agent({..., model: "<model>"})` to downgrade models for tasks where reasoning is not required.
         - Explore agents (`subagent_type: "Explore"`) inherit the session model by default; downgrade to `model: "sonnet"` or `model: "haiku"`.
-        - Plan agents (`subagent_type: "Plan"`) should always use `model: "opus"`.
+        - Plan agents (`subagent_type: "Plan"`) MUST never be downgraded; omit `model` so they inherit the session model.
         - For generic agents, use your best judgement based on the task being assigned.
 
         ## Shell
