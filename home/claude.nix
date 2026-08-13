@@ -2539,7 +2539,23 @@ in
           # without an MCP equivalent stay allowed on gh; writes are left
           # to the ask rules so the gh CLI still drives them.
           commandRules.deny =
-            lib.concatLists (
+            # `gh api` is the CLI form of fetching api.github.com, which
+            # the fetchRules below deny outright, and its
+            # repos/*/contents/* endpoints are the same repository-file
+            # browsing the git bundle denies on raw.githubusercontent.com
+            # and github.com blob/tree pages. Denied as a whole because
+            # the rule matcher compares positional args literally and
+            # cannot scope on an endpoint path. Mirrored by
+            # ghRedirectRules in
+            # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go.
+            [
+              {
+                command = "gh";
+                args = [ "api" ];
+                reason = "`gh api` reaches api.github.com, which is denied. Clone with mcp__git__git_clone to read repository files locally, or use the mcp__github__* tools for issues, PRs, releases, and search.";
+              }
+            ]
+            ++ lib.concatLists (
               lib.mapAttrsToList (
                 group: leaves:
                 lib.mapAttrsToList (leaf: tool: {

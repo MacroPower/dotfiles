@@ -29,6 +29,7 @@ const (
 	kubectxReason       = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
 	ghGroupAskReason    = "This gh subcommand can mutate GitHub state. Confirm before running."
 	ghFallbackAskReason = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
+	ghAPIDeniedReason   = "`gh api` reaches api.github.com, which is denied. Clone with mcp__git__git_clone to read repository files locally, or use the mcp__github__* tools for issues, PRs, releases, and search."
 )
 
 // canonicalRules mirrors the rules wired into home/claude.nix for the
@@ -553,9 +554,10 @@ func ghRedirectReason(tool string) string {
 }
 
 // ghRedirectRules mirrors the gh redirect deny-rule bundle in
-// home/claude.nix: read-only gh subcommands with a github MCP
-// equivalent, denied and pointed at the MCP tool. The hook-router
-// handler tests carry a copy of the same fixture.
+// home/claude.nix: the blanket `gh api` deny, then read-only gh
+// subcommands with a github MCP equivalent, denied and pointed at the
+// MCP tool. The hook-router handler tests carry a copy of the same
+// fixture.
 func ghRedirectRules() *cmdrules.Engine {
 	redirect := func(tool string, args ...string) cmdrules.Rule {
 		return cmdrules.Rule{
@@ -566,6 +568,11 @@ func ghRedirectRules() *cmdrules.Engine {
 	}
 
 	return cmdrules.New([]cmdrules.Rule{
+		{
+			Command: "gh",
+			Args:    []string{"api"},
+			Reason:  ghAPIDeniedReason,
+		},
 		redirect("mcp__github__issue_read", "issue", "view"),
 		redirect("mcp__github__list_issues", "issue", "list"),
 		redirect("mcp__github__pull_request_read", "pr", "view"),
@@ -622,7 +629,7 @@ func TestCommandRulesCheck_Ask(t *testing.T) {
 			input: "gh workflow run deploy.yml",
 			want:  ghGroupAskReason,
 		},
-		"gh api hits the fallback": {
+		"gh api hits the fallback ask (redirect deny wins in prod)": {
 			input: "gh api /user",
 			want:  ghFallbackAskReason,
 		},
@@ -743,6 +750,22 @@ func TestCommandRulesCheck_Redirect(t *testing.T) {
 			input:   "gh issue create --title x",
 			want:    ghGroupAskReason,
 			wantAsk: true,
+		},
+		"gh api is denied outright": {
+			input: "gh api /user",
+			want:  ghAPIDeniedReason,
+		},
+		"gh api repo contents is denied (file browsing)": {
+			input: "gh api repos/owner/repo/contents/README.md",
+			want:  ghAPIDeniedReason,
+		},
+		"gh api graphql is denied": {
+			input: "gh api graphql -f query='{viewer{login}}'",
+			want:  ghAPIDeniedReason,
+		},
+		"gh api in compound is denied": {
+			input: "gh repo view owner/repo && gh api /user",
+			want:  ghAPIDeniedReason,
 		},
 	}
 
