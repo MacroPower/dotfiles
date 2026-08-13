@@ -226,10 +226,15 @@ paths plus repo names is enough. The agent can read them on demand.
 Follow hard rule 2: all prompt-file `Write` calls in one turn, then all
 §6 `Bash` dispatches in one turn.
 
-## 6. Dispatch via tmux
+## 6. Dispatch
 
-Resolve the target session by **project path**, not by name. This handles the
-case where the user already has a session open on that path.
+Run `workmux add` with its working directory set to the target project and
+pass `--parent-session`; workmux creates the parent session when it does not
+exist, so never bootstrap with `tmux new-session` or `tmux new-window`.
+
+Resolve the session by **project path** first, not by name. This reuses a
+session the user already has open on that path, and avoids hijacking an
+unrelated session that merely shares the repo's name.
 
 ```bash
 PROJECT_PATH="$REPOS_ROOT/$TARGET_REPO"
@@ -244,15 +249,13 @@ if [ -z "$SESSION" ]; then
     SESSION="${TARGET_REPO}-${i}"
     i=$((i+1))
   done
-  tmux new-session -d -s "$SESSION" -c "$PROJECT_PATH"
 fi
 
-tmux new-window -t "$SESSION" -c "$PROJECT_PATH" \
-  "workmux add $(printf %q "$BRANCH") -b -P $(printf %q "$PROMPT_FILE"); exit"
+(cd "$PROJECT_PATH" && \
+  workmux add "$BRANCH" -b -P "$PROMPT_FILE" --parent-session "$SESSION")
 ```
 
-`printf %q` keeps the spawned shell parsing safe. `-b` keeps workmux from
-switching panes: the dispatcher session stays put.
+`-b` keeps workmux from switching panes: the dispatcher session stays put.
 
 ## 7. Report
 

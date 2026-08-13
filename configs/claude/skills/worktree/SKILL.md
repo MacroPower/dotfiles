@@ -122,6 +122,11 @@ Write ALL temp files first, THEN run all workmux commands.
 main repo or any other directory. The new worktree branches from whatever branch
 is checked out in the current directory.
 
+If `workmux add` reports that it cannot determine the tmux session for window
+placement (tool invocations can run without `$TMUX_PANE`), retry with
+`--parent-session <session>`, using the session already known from this
+conversation. If no session is known, ask the user instead of guessing.
+
 Step 1 - Write all prompt files (in parallel):
 
 ```bash

@@ -63,6 +63,11 @@ workmux add auth-module -b -P "$tmpfile_a"
 workmux add api-tests -b -P "$tmpfile_b"
 ```
 
+If `workmux add` reports that it cannot determine the tmux session for window
+placement, retry with `--parent-session <session>`. Use the intended session from
+the task or known coordinator context. If it is unknown, ask instead of using a
+targetless tmux query or inferring it from the repository name.
+
 Flags:
 
 - `-b`: background (do not switch to the new window)
@@ -70,6 +75,7 @@ Flags:
 - `-p <text>`: inline prompt (short tasks only)
 - `--name <handle>`: explicit handle name (otherwise derived from branch)
 - `--base <branch>`: base branch to branch from (default: current)
+- `--parent-session <session>`: tmux session that receives the agent window
 - `--fork`: fork an existing Claude Code conversation into a new worktree with full prior context
 
 ### Monitor Status
@@ -230,7 +236,8 @@ remaining handles. Keep finished handles out of subsequent wait commands.
 1. **Write ALL prompt files before spawning any agents.** Prompts should be
    self-contained with full context. Agents cannot see your conversation.
 2. **Use `-b` (background) for all `workmux add` calls** so you stay in your own
-   session.
+   session. If placement is ambiguous, retry with `--parent-session` as described
+   above.
 3. **Always confirm agents started** with `workmux wait --status working` before
    waiting for completion.
 4. **Wait with `--any` when multiple agents are running.** As soon as an agent
