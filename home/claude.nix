@@ -3105,6 +3105,15 @@ in
               # stops a general-purpose/claude subagent (and in-process
               # team teammates) from fanning out their own subagents.
               CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH = "2";
+              # Keep /code-review in the session it was typed in. As of
+              # Claude Code 2.1.229 it is the only command running in a
+              # "fork" context, which spawns its orchestrator into a
+              # backgrounded sub-conversation whose results often never
+              # land. This flag routes it inline and has it report
+              # through the ReportFindings tool instead. The read site
+              # is a bare Boolean(), so reverting means deleting this
+              # line -- "0" still reads as truthy.
+              CLAUDE_CODE_REPORT_FINDINGS = "1";
             };
             disableAutoMode = "disable";
             includeGitInstructions = false;
