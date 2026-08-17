@@ -26,6 +26,16 @@ tasks:
     cmds:
       - dagger check nix:flake-check
 
+  lock-diff:
+    desc: Show changed direct flake inputs as JSON (defaults to HEAD vs working tree)
+    cmds:
+      - python3 {{.TASKFILE_DIR}}/scripts/flake-lock-diff.py {{.CLI_ARGS}}
+
+  pkg-diff:
+    desc: Show version changes of installed packages between a git rev (default HEAD) and the working tree
+    cmds:
+      - uv run {{.TASKFILE_DIR}}/scripts/flake-pkg-diff.py {{.CLI_ARGS}}
+
   inventory:
     desc: Update README.md with installed package inventory
     cmds:
