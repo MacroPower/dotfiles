@@ -26,7 +26,7 @@ let
 
   # Claude Code's built-in sandbox. Darwin-only; the Linux backend is
   # unverified, and `failIfUnavailable = true` would break startup.
-  sandboxEnabled = pkgs.stdenv.isDarwin;
+  sandboxEnabled = pkgs.stdenv.hostPlatform.isDarwin;
 
   # True when the process is contained — by Claude Code's sandbox on
   # Darwin, or by the Lima VM on terrarium. Drives `--auto-allow` on
@@ -457,6 +457,9 @@ let
         isolation = "shared";
         projects_dir = "${config.home.homeDirectory}/Documents/repos";
         skip_default_provision = true;
+        # Shared isolation trades Git metadata isolation for writable repo
+        # mounts; workmux requires acknowledging that for unattended starts.
+        accept_reduced_git_metadata_isolation = true;
         inherit (cfg.lima) cpus;
         inherit (cfg.lima) memory;
         inherit (cfg.lima) disk;
@@ -1781,7 +1784,7 @@ in
       };
       useVault = mkOption {
         type = types.bool;
-        default = pkgs.stdenv.isDarwin;
+        default = pkgs.stdenv.hostPlatform.isDarwin;
         description = "Whether CLAUDE_RESEARCH_DIR resolves to the Obsidian vault. Defaults to true on Darwin. Set true on Linux hosts that have the vault mounted at the same absolute path as the Darwin host (e.g. terrarium inside a workmux sandbox).";
       };
     };
@@ -3521,11 +3524,13 @@ in
       + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n"
       + lib.optionalString (cfg.hostContext != "") "\n## Host Environment\n\n${cfg.hostContext}\n";
 
-      activation.ensureClaudeResearchDir = lib.mkIf (pkgs.stdenv.isDarwin || !cfg.research.useVault) (
-        lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-          run mkdir -p "${researchDir}"
-        ''
-      );
+      activation.ensureClaudeResearchDir =
+        lib.mkIf (pkgs.stdenv.hostPlatform.isDarwin || !cfg.research.useVault)
+          (
+            lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+              run mkdir -p "${researchDir}"
+            ''
+          );
 
       # Lima refuses to start when an extra_mounts host_path is
       # missing, and `host select` only creates this dir lazily on

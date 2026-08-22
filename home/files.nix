@@ -20,7 +20,7 @@
       dust
       _7zz
     ]
-    ++ lib.optionals pkgs.stdenv.isLinux [
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
       acl
       attr
       apfs-fuse

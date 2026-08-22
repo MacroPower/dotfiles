@@ -215,6 +215,9 @@
         AppleKeyboardUIMode = 2;
         # Click scrollbar to jump to clicked position instead of paging
         AppleScrollerPagingBehavior = true;
+        # Don't tint window backgrounds with the wallpaper color; stylix
+        # owns the palette
+        AppleReduceDesktopTinting = true;
         # Use F1–F12 as standard function keys without holding Fn
         "com.apple.keyboard.fnState" = true;
         # Disable window open/close animations for snappier feel

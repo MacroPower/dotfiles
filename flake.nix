@@ -34,6 +34,10 @@
     stylix = {
       url = "github:nix-community/stylix";
       inputs.nixpkgs.follows = "nixpkgs";
+      # stylix pins gnome-shell from gitlab.gnome.org, whose API archive
+      # endpoint 404s for unauthenticated fetches; use the GitHub mirror
+      # at the same rev.
+      inputs.gnome-shell.url = "github:GNOME/gnome-shell/e0fdc4c13250e9a9b8ea9594c83925274f4a5dca";
     };
     nix-index-database = {
       url = "github:nix-community/nix-index-database";

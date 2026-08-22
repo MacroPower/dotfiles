@@ -43,7 +43,7 @@ let
         # Finder); xdg -> $XDG_DATA_HOME/Trash on linux. gomi_dir is
         # cleared so a stale value can never silently flip auto -> legacy
         # (gomi internal/config/cli.go:264-267).
-        strategy = if pkgs.stdenv.isDarwin then "auto" else "xdg";
+        strategy = if pkgs.stdenv.hostPlatform.isDarwin then "auto" else "xdg";
         gomi_dir = "";
         home_fallback = config.dotfiles.gomi.homeFallback;
       };
@@ -208,7 +208,7 @@ in
         bandwhich
 
       ]
-      ++ lib.optionals pkgs.stdenv.isLinux [
+      ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
         conntrack-tools
         dnsmasq
         envoy-bin

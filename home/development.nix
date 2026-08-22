@@ -96,7 +96,7 @@ in
         zlib
         tcl
       ]
-      ++ lib.optionals pkgs.stdenv.isLinux [
+      ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
         pbcopy-osc52
       ];
   };

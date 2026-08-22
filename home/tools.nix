@@ -25,7 +25,7 @@ let
   atuinSyncAddress =
     if config.dotfiles.hostname == "terrarium" then
       "http://host.lima.internal:${toString atuinPort}"
-    else if pkgs.stdenv.isDarwin then
+    else if pkgs.stdenv.hostPlatform.isDarwin then
       "http://127.0.0.1:${toString atuinPort}"
     else
       null;
@@ -298,7 +298,7 @@ in
       pv
       progress
     ]
-    ++ lib.optionals pkgs.stdenv.isDarwin [
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
       mdcopy
     ];
 
@@ -353,7 +353,7 @@ in
   # before binding. Safe here because launchd only relaunches the agent after
   # the prior instance has exited, so force_cleanup's kill targets a dead pid.
   launchd.agents.atuin-daemon.config.ProgramArguments =
-    lib.mkIf (pkgs.stdenv.isDarwin && config.programs.atuin.daemon.enable)
+    lib.mkIf (pkgs.stdenv.hostPlatform.isDarwin && config.programs.atuin.daemon.enable)
       (
         lib.mkForce [
           (lib.getExe config.programs.atuin.package)
@@ -399,7 +399,7 @@ in
   # is never exposed to the LAN, so leaving registration open is low-risk.
   # ATUIN_CONFIG_DIR isolates server state from the home-manager-managed
   # client config at ~/.config/atuin.
-  launchd.agents.atuin-server = lib.mkIf pkgs.stdenv.isDarwin {
+  launchd.agents.atuin-server = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
     enable = true;
     config = {
       ProgramArguments = [
@@ -425,7 +425,7 @@ in
   # home-manager's setupLaunchAgents bootstraps the agent -- otherwise the
   # bootstrap fails on the missing log paths. Ordered after writeBoundary
   # (the dir's home lives under $HOME) and before setupLaunchAgents.
-  home.activation.ensureAtuinServerDir = lib.mkIf pkgs.stdenv.isDarwin (
+  home.activation.ensureAtuinServerDir = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin (
     lib.hm.dag.entryBetween [ "setupLaunchAgents" ] [ "writeBoundary" ] ''
       run mkdir -p ${lib.escapeShellArg atuinServerDataDir}
     ''

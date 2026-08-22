@@ -15,7 +15,7 @@ let
   );
 
   hasOsConfig = osConfig ? networking;
-  isDarwin = hasOsConfig && pkgs.stdenv.isDarwin;
+  isDarwin = hasOsConfig && pkgs.stdenv.hostPlatform.isDarwin;
   inherit (config.dotfiles) username hostname;
   flakeExpr = "builtins.getFlake (toString ./.)";
   # NixOS configs are keyed by hostname alone; darwin and home-manager use username@hostname.

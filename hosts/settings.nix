@@ -8,8 +8,11 @@
     "root"
     username
   ];
-  allowed-users = [ "root" ] ++ (if pkgs.stdenv.isDarwin then [ "@admin" ] else [ "@wheel" ]);
-  sandbox = if pkgs.stdenv.isLinux then true else "relaxed";
+  allowed-users = [
+    "root"
+  ]
+  ++ (if pkgs.stdenv.hostPlatform.isDarwin then [ "@admin" ] else [ "@wheel" ]);
+  sandbox = if pkgs.stdenv.hostPlatform.isLinux then true else "relaxed";
   substituters = [ "https://cache.nixos.org" ];
   trusted-substituters = [ "https://cache.nixos.org" ];
   trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" ];
@@ -25,4 +28,8 @@
   fallback = true;
   connect-timeout = 10;
   download-attempts = 3;
+  # A failing derivation (e.g. a flaky pytestCheckPhase) no longer aborts the
+  # whole build; everything not downstream of it still completes, so a rerun
+  # only rebuilds the failures.
+  keep-going = true;
 }

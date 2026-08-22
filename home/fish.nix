@@ -36,7 +36,7 @@ let
   tmuxSocketDir =
     if config.dotfiles.tmux.socketPath != null then
       builtins.dirOf config.dotfiles.tmux.socketPath
-    else if pkgs.stdenv.isDarwin then
+    else if pkgs.stdenv.hostPlatform.isDarwin then
       "/private/tmp/tmux-501"
     else
       null;

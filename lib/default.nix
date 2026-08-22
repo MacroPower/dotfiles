@@ -216,15 +216,41 @@ let
   # errors "Heartbeat PING sent while data was still being received". nixpkgs
   # runs the suite via pytestCheckHook, so disabledTests (-k "not ...") is the
   # right knob; skip just this one case rather than the whole check phase.
+  # Scoped to python 3.12: only the kagimcp chain builds aiohttp from
+  # source. The python 3.14 aiohttp is on cache.nixos.org, so its tests
+  # never run locally -- but patching it would fork the drv of anything
+  # whose build env pulls aiohttp (e.g. lix's python test env) and lose
+  # those substitutions.
   aiohttpOverlay = _final: prev: {
     pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        aiohttp = pyprev.aiohttp.overrideAttrs (old: {
-          disabledTests = (old.disabledTests or [ ]) ++ [
-            "test_heartbeat_does_not_timeout_while_receiving_large_frame"
-          ];
-        });
-      })
+      (
+        _pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          aiohttp = pyprev.aiohttp.overrideAttrs (old: {
+            disabledTests = (old.disabledTests or [ ]) ++ [
+              "test_heartbeat_does_not_timeout_while_receiving_large_frame"
+            ];
+          });
+        }
+      )
+    ];
+  };
+
+  # httpx2's TestKeepalivePing tests assert a 0.1s keepalive ping timer
+  # fires within a 0.2s wall-clock sleep against a mock stream; under a
+  # loaded build sandbox the timer misses the window and ping_received
+  # stays 0. Scoped to python 3.12: only the kagimcp chain builds httpx2
+  # from source; the python 3.14 build comes from cache.nixos.org.
+  httpx2Overlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (
+        _pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          httpx2 = pyprev.httpx2.overrideAttrs (old: {
+            disabledTests = (old.disabledTests or [ ]) ++ [ "TestKeepalivePing" ];
+          });
+        }
+      )
     ];
   };
 
@@ -308,6 +334,25 @@ let
         };
       };
     };
+  };
+
+  # curl-impersonate's dylib keeps upstream's @rpath install name on
+  # darwin, so every consumer linking it records an @rpath reference with
+  # no LC_RPATH to resolve it and dies at load time -- notably
+  # python3Packages.curl-cffi (a yt-dlp dependency) fails its
+  # pythonImportsCheck with "Library not loaded:
+  # @rpath/libcurl-impersonate.4.dylib ... no LC_RPATH's found".
+  # Backport of nixpkgs 9da1a5ec ("curl-impersonate: fix dylib install
+  # name on darwin"), which landed hours after this nixpkgs pin: run
+  # fixDarwinDylibNames so the install name becomes the absolute store
+  # path. Drop on the next nixpkgs bump.
+  curlImpersonateOverlay = final: prev: {
+    curl-impersonate = prev.curl-impersonate.overrideAttrs (
+      old:
+      prev.lib.optionalAttrs prev.stdenv.hostPlatform.isDarwin {
+        nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ final.fixDarwinDylibNames ];
+      }
+    );
   };
 
   # crates.io's edge (Fastly / Heroku) returns HTTP 403 for any request
@@ -399,14 +444,21 @@ let
   # is normalized to <time>. An inner pytest run crossing 10s (6-char
   # "11.23s" vs 5-char "9.99s") shifts the padding by one `=` and fails the
   # comparison, so the test flakes on slow builders.
+  # Scoped to python 3.12 (the kagimcp chain that builds from source).
+  # Unscoped, this forked python 3.14 inline-snapshot, which forked
+  # pydantic (test dep), then yarl, then aiohttp, then lix's python test
+  # env -- pushing lix itself off cache.nixos.org into a local build.
   inlineSnapshotOverlay = _final: prev: {
     pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        inline-snapshot = pyprev.inline-snapshot.overrideAttrs (old: {
-          disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [ "tests/test_docs.py" ];
-          disabledTests = (old.disabledTests or [ ]) ++ [ "test_empty_sub_snapshot" ];
-        });
-      })
+      (
+        _pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          inline-snapshot = pyprev.inline-snapshot.overrideAttrs (old: {
+            disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [ "tests/test_docs.py" ];
+            disabledTests = (old.disabledTests or [ ]) ++ [ "test_empty_sub_snapshot" ];
+          });
+        }
+      )
     ];
   };
 
@@ -491,23 +543,31 @@ let
   # inert here because syrupy's derivation runs a hand-written checkPhase
   # (`invoke test`), so demote the marker to non-strict in the source: an
   # XPASS then reports as xpassed instead of failing the build.
+  # Scoped to python 3.12: only the kagimcp chain builds from source and
+  # trips the flake. Patching every python scope would fork the drv of any
+  # package whose test suite pulls in syrupy (e.g. arrow-cpp via its
+  # python3.14 test env) and lose their cache.nixos.org substitutions.
   syrupyOverlay = _final: prev: {
     pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        syrupy = pyprev.syrupy.overrideAttrs (old: {
-          postPatch = (old.postPatch or "") + ''
-            substituteInPlace tests/conftest.py \
-              --replace-fail \
-                'marks=pytest.mark.xfail(reason="Not currently compatible with xdist"),' \
-                'marks=pytest.mark.xfail(reason="Not currently compatible with xdist", strict=False),'
-          '';
-        });
-      })
+      (
+        _pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          syrupy = pyprev.syrupy.overrideAttrs (old: {
+            postPatch = (old.postPatch or "") + ''
+              substituteInPlace tests/conftest.py \
+                --replace-fail \
+                  'marks=pytest.mark.xfail(reason="Not currently compatible with xdist"),' \
+                  'marks=pytest.mark.xfail(reason="Not currently compatible with xdist", strict=False),'
+            '';
+          });
+        }
+      )
     ];
   };
 
   sharedOverlays = system: [
     fetchurlOverlay
+    curlImpersonateOverlay
     lixOverlay
     localOverlay
     lupaOverlay
@@ -516,6 +576,7 @@ let
     aioboto3Overlay
     aiohttpOverlay
     azureCoreOverlay
+    httpx2Overlay
     backrefsOverlay
     inlineSnapshotOverlay
     cycloptsOverlay
