@@ -3188,7 +3188,7 @@ in
                 "Read(//**/.jira.d/config.yml)"
                 "Read(//**/.config/dagger/**)"
                 "Read(//**/.config/spacelift/**)"
-                "Read(//**/.spacelift/**)"
+                "Read(~/.spacelift/**)"
 
                 # Package manager credentials
                 "Read(//**/.npmrc)"
