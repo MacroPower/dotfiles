@@ -15,7 +15,6 @@ func testCatalog() *postimpl.Catalog {
 	return postimpl.New([]postimpl.Skill{
 		{Label: "/review-implementation", Description: "Review code changes against the plan."},
 		{Label: "/simplify", Description: "Review and simplify the implemented code."},
-		{Label: "/humanize", Description: "Clean up AI writing patterns in any prose/docs that changed."},
 		{Label: "/commit", Description: "Wrap up the cycle by creating a git commit."},
 	})
 }

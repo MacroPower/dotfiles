@@ -2022,8 +2022,8 @@ in
       wm-spawn.source = ../configs/claude/skills/wm-spawn;
       wm-workmux.source = ../configs/claude/skills/wm-workmux;
       git-surgeon.source = ../configs/claude/skills/git-surgeon;
-      humanize.source = ../configs/claude/skills/humanize;
       presenterm.source = ../configs/claude/skills/presenterm;
+      prose.source = ../configs/claude/skills/prose;
       research.source = ../configs/claude/skills/research;
       review-implementation.source = ../configs/claude/skills/review-implementation;
       self-improve.source = ../configs/claude/skills/self-improve;
@@ -2032,7 +2032,6 @@ in
     };
 
     dotfiles.claude.agents = {
-      humanizer.source = ../configs/claude/agents/humanizer.md;
       implementation-reviewer-code.source = ../configs/claude/agents/implementation-reviewer-code.md;
       implementation-reviewer-docs.source = ../configs/claude/agents/implementation-reviewer-docs.md;
       plan-reviewer.source = ../configs/claude/agents/plan-reviewer.md;
@@ -2041,7 +2040,6 @@ in
     dotfiles.claude.postImplSkills = {
       review-implementation.description = "Review code changes against the plan.";
       simplify.description = "Review and simplify the implemented code.";
-      humanize.description = "Clean up AI writing patterns in any prose/docs that changed.";
       commit.description = "Wrap up the cycle by creating a git commit.";
     };
 
@@ -3516,10 +3514,8 @@ in
         - Writing untracked files is allowed in plan mode: scratch notes, files under /tmp, and repo clones via `mcp__git__git_clone` are all fine. Only files tracked by git are off-limits until the plan is approved.
 
         ## Writing Style
+        - Always load the `prose` skill BEFORE writing ANY prose content.
         - Keep responses to plain ASCII text.
-        - Acknowledge complexity and mixed feelings when they exist.
-        - Don't enumerate what the code already shows; explain the how and why.
-        - Write comments and docs in the present tense, describing the system as it is, not how it changed.
       ''
       + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n"
       + lib.optionalString (cfg.hostContext != "") "\n## Host Environment\n\n${cfg.hostContext}\n";
