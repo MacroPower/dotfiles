@@ -1064,6 +1064,7 @@ let
     "~/.cache/nix"
     "~/.cache/helm"
     "~/.cache/gh"
+    "~/.config/gh"
     "~/.local/state/workmux"
     "~/.local/state/hook-router"
     "~/.local/state/gh"
