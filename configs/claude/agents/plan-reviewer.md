@@ -28,6 +28,7 @@ Required seed calls (issue them all up front):
 - `TaskCreate({subject: "Check edge cases", description: "Confirm failure modes and boundary conditions are considered where relevant.", activeForm: "Checking edge cases"})`
 - `TaskCreate({subject: "Check tests", description: "Confirm the plan identifies specific test additions or updates where appropriate.", activeForm: "Checking tests"})`
 - `TaskCreate({subject: "Check sequencing", description: "Confirm steps are ordered correctly with dependencies respected.", activeForm: "Checking sequencing"})`
+- `TaskCreate({subject: "Check skills", description: "Confirm the plan ends with a `## Skills` section listing the skills the implementer invokes before starting work.", activeForm: "Checking skills"})`
 
 ## What to check
 
@@ -72,6 +73,12 @@ Required seed calls (issue them all up front):
 **Check:** implementation steps are ordered so each one's dependencies already exist.
 
 **Flag:** steps that depend on later steps, or an order that leaves the tree broken between steps.
+
+### 8. Skills
+
+**Check:** the plan ends with a `## Skills` section that lists each skill the implementer invokes before starting work, with the reason it applies, or `None` when no skill applies. Compare the list against the skills available in the session and the work the plan describes.
+
+**Flag:** a missing section, a listed skill that does not exist or does not match the work, and an applicable skill the list omits (for example `prose` when the plan writes documentation or commit messages, `taskfile` when it edits a Taskfile).
 
 ## Output format
 

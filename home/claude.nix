@@ -3528,6 +3528,7 @@ in
 
         ## Plan Mode
         - Writing untracked files is allowed in plan mode: scratch notes, files under /tmp, and repo clones via `mcp__git__git_clone` are all fine. Only files tracked by git are off-limits until the plan is approved.
+        - Every plan ends with a `## Skills` section listing the skills the implementer invokes before starting work, one bullet per skill with the reason it applies (for example `prose` for any documentation or commit messages, `taskfile` for Taskfile edits). Write `None` when no skill applies. The implementer invokes each listed skill via the `Skill` tool before the first edit.
 
         ## Writing Style
         - Always load the `prose` skill BEFORE writing ANY prose content.
