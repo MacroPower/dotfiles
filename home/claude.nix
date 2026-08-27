@@ -1064,6 +1064,8 @@ let
     "~/.cache/nix"
     "~/.cache/helm"
     "~/.cache/gh"
+    "~/.cache/uv"
+    "~/.local/share/uv"
     # Recent gh releases also touch the config dir at runtime and fail
     # when it is read-only. Safe to expose: auth is env-var only (sops
     # GH_TOKEN), so gh never stores a token in hosts.yml, and the
