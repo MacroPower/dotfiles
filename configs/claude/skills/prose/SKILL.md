@@ -12,9 +12,9 @@ Apply these rules to all prose.
 
 ## 1. Active voice, named actor
 
-Make the actor the subject: "the scheduler retries the job", not "the job is
-retried". Passive voice hides who does what, and it creeps in most where the
-actor feels obvious:
+Make the actor the subject, so "the scheduler retries the job" rather than "the
+job is retried". Passive voice hides who does what, and it creeps in most where
+the actor feels obvious:
 
 - "All mutation is guarded by a lock" -> "A lock guards all mutation"
 - "Refills are computed lazily on each acquisition" -> "Each acquisition
@@ -40,18 +40,33 @@ useful version is "`.toSQL()` returns the exact string sent to the database" and
 restate it as a concrete instruction, fact, or number, and it could not appear
 unchanged in another project's docs.
 
-Specificity has one limit: distance. A docstring may detail its own method, but
-it does not name the private helpers that method calls. A README, announcement,
-or introduction page names only what a user can observe. If a detail matters,
-state its observable consequence instead.
+IMPORTANT: Specificity must scale with proximity. A docstring may detail its own
+method, but it does _not_ name the private helpers that method calls. A README,
+announcement, or introduction page names ONLY what a user can observe. If a
+detail matters, state its *observable consequence* instead.
 
 ## 3. Ordinary breaks get ordinary punctuation
 
-Commas, semicolons, and separate sentences carry ordinary clause breaks. Save
-the em dash for the rare break that earns it; more than about one per page reads
-as sales copy. A colon introduces a list or an example, never a mid-sentence
-connector: "a thread-safe token bucket: it refills at a fixed rate" needs a
-comma or a period there.
+Commas, periods, and conjunctions carry ordinary clause breaks. The em dash and
+the colon are both hinges that announce a reveal, and a page with several of
+them reads as sales copy. Save the em dash for the rare break that earns it. Use
+colon only for specific jobs: introducing a list, introducing a literal (a
+quoted string, a command, a value), or labeling a line (e.g. "Note: ...").
+
+The colon's most common misuse is standing in for an em dash. When an
+ASCII-only rule or a "no em dashes" rule takes the dash away, the sentence
+that wanted one tends to keep its shape and swap in a colon:
+
+- "A rate of zero is the mirror image: the bucket never refills"
+- "v1.0 is out: a thread-safe token bucket for Go"
+- "Lazy refill charges the arithmetic to the caller instead: Take runs in 40ns"
+
+Each of these reads identically with a dash in the colon's place, which is the
+tell. The reader does not get a list or a literal; they get a second clause
+spliced onto the first. What follows a colon is never an explanation, a
+consequence, a restatement, or an example sentence, however natural the colon
+feels there. If the words after it have their own subject and verb, or a dash
+would fit in the same slot, the colon is wrong.
 
 ## 4. Every word earns its place
 
@@ -82,5 +97,5 @@ Let ideas come in whatever number they naturally have; don't force groups of
 three.
 
 Pick one name per concept and keep it; repetition is clearer than synonym
-rotation, and this includes verbs: if the bucket "spends" tokens in one
+rotation, and this includes verbs. If the bucket "spends" tokens in one
 sentence, it does not "hand out" or "consume" them in the next.
