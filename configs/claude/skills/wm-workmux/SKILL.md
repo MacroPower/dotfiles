@@ -67,7 +67,8 @@ Key flags:
 ### List worktrees
 
 ```bash
-workmux list          # all worktrees
+workmux list          # worktrees in the current repo
+workmux list --all    # worktrees across every repo with a tracked agent
 workmux list --pr     # with GitHub PR status
 workmux list <name>   # filter by handle or branch
 ```
@@ -118,7 +119,8 @@ Use `project:handle` syntax to disambiguate when names collide.
 
 ```bash
 # Check agent statuses
-workmux status                          # all agents
+workmux status                          # agents in the current repo
+workmux status --all                    # agents across every tracked repo
 workmux status auth api-tests           # specific agents
 
 # Wait for agents

@@ -509,11 +509,9 @@ in
         set_color normal
       end
 
-      # Auto-start workmux sidebar (recovers if it died; skip floax popups)
+      # Auto-start workmux sidebar (idempotent; recovers if it died; skip floax popups)
       if set -q TMUX; and command -q workmux; and not set -q FLOAX
-        if not tmux show-option -gqv @workmux_sidebar_scope 2>/dev/null | string length -q
-          workmux sidebar --session >/dev/null 2>&1 &disown
-        end
+        workmux sidebar --session on >/dev/null 2>&1 &disown
       end
 
       ${config.dotfiles.shell.extraInteractiveInit}

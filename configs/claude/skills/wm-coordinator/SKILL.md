@@ -81,8 +81,11 @@ Flags:
 ### Monitor Status
 
 ```bash
-# Table of all active agents
+# Table of active agents in the current repo
 workmux status
+
+# Every tracked repo
+workmux status --all
 
 # Specific agents only
 workmux status auth api-tests
@@ -227,9 +230,9 @@ workmux send api-tests "/merge"
 workmux wait api-tests --timeout 120
 ```
 
-After each `--any` wait, use `workmux status` to identify every agent that is
-`done`. Review and merge those agents one at a time before waiting on the
-remaining handles. Keep finished handles out of subsequent wait commands.
+After each `--any` wait, use `workmux status` (add `--all` when agents span
+repos) to identify every agent that is `done`. Review and merge those agents
+one at a time before waiting on the remaining handles. Keep finished handles out of subsequent wait commands.
 
 ## Rules
 
