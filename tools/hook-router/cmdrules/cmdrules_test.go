@@ -589,11 +589,49 @@ func ghRedirectRules() *cmdrules.Engine {
 	})
 }
 
-// ghRules mirrors the full production gh engine: redirect deny rules
-// before ask rules, matching the serialization order in the hook-router
-// wrapper (all deny rules precede any ask rule).
+// ghWriteRedirectReason mirrors the redirect deny reason produced in
+// home/claude.nix for a gh write subcommand that has a github MCP
+// equivalent.
+func ghWriteRedirectReason(tool string) string {
+	return "Write via " + tool + " instead of the gh CLI."
+}
+
+// ghWriteRedirectRules mirrors the gh write-redirect deny-rule bundle
+// in home/claude.nix: mutating gh subcommands whose mutation an
+// ask-gated github MCP tool covers, denied and pointed at the MCP
+// tool. The hook-router handler tests carry a copy of the same
+// fixture.
+func ghWriteRedirectRules() *cmdrules.Engine {
+	redirect := func(tool string, args ...string) cmdrules.Rule {
+		return cmdrules.Rule{
+			Command: "gh",
+			Args:    args,
+			Reason:  ghWriteRedirectReason(tool),
+		}
+	}
+
+	return cmdrules.New([]cmdrules.Rule{
+		redirect("mcp__github__create_pull_request", "pr", "create"),
+		redirect("mcp__github__update_pull_request", "pr", "edit"),
+		redirect("mcp__github__update_pull_request (state: closed)", "pr", "close"),
+		redirect("mcp__github__update_pull_request (state: open)", "pr", "reopen"),
+		redirect("mcp__github__update_pull_request (draft: false)", "pr", "ready"),
+		redirect("mcp__github__merge_pull_request", "pr", "merge"),
+		redirect("mcp__github__pull_request_review_write (+ add_comment_to_pending_review for inline comments)", "pr", "review"),
+		redirect("mcp__github__update_pull_request_branch", "pr", "update-branch"),
+		redirect("mcp__github__actions_run_trigger (rerun_workflow_run / rerun_failed_jobs)", "run", "rerun"),
+		redirect("mcp__github__actions_run_trigger (cancel_workflow_run)", "run", "cancel"),
+		redirect("mcp__github__actions_run_trigger (run_workflow)", "workflow", "run"),
+	})
+}
+
+// ghRules mirrors the full production gh engine: read and write
+// redirect deny rules before ask rules, matching the serialization
+// order in the hook-router wrapper (all deny rules precede any ask
+// rule).
 func ghRules() *cmdrules.Engine {
-	return cmdrules.New(append(ghRedirectRules().Rules(), ghAskRules().Rules()...))
+	rules := append(ghRedirectRules().Rules(), ghWriteRedirectRules().Rules()...)
+	return cmdrules.New(append(rules, ghAskRules().Rules()...))
 }
 
 func TestCommandRulesCheck_Ask(t *testing.T) {
@@ -603,7 +641,7 @@ func TestCommandRulesCheck_Ask(t *testing.T) {
 		input string
 		want  string
 	}{
-		"gh pr merge asks via group rule": {
+		"gh pr merge asks via group rule (write redirect denies in prod)": {
 			input: "gh pr merge 1",
 			want:  ghGroupAskReason,
 		},
@@ -630,7 +668,7 @@ func TestCommandRulesCheck_Ask(t *testing.T) {
 		"gh run watch is exempt": {
 			input: "gh run watch 123",
 		},
-		"gh workflow run asks": {
+		"gh workflow run asks (write redirect denies in prod)": {
 			input: "gh workflow run deploy.yml",
 			want:  ghGroupAskReason,
 		},
@@ -685,9 +723,9 @@ func TestCommandRulesCheck_Ask(t *testing.T) {
 }
 
 // TestCommandRulesCheck_Redirect exercises the full production gh engine
-// (redirect deny rules before ask rules): read-only gh subcommands with
-// a github MCP equivalent are denied and redirected, reads without one
-// stay on gh, and mutating subcommands still ask.
+// (redirect deny rules before ask rules): gh subcommands with a github
+// MCP equivalent are denied and redirected, reads without one stay on
+// gh, and mutating subcommands without one still ask.
 func TestCommandRulesCheck_Redirect(t *testing.T) {
 	t.Parallel()
 
@@ -770,8 +808,45 @@ func TestCommandRulesCheck_Redirect(t *testing.T) {
 		"gh status stays on gh": {
 			input: "gh status",
 		},
-		"gh pr merge still asks (mutating, not redirected)": {
-			input:   "gh pr merge 1",
+		"gh pr merge redirects to MCP": {
+			input: "gh pr merge 1",
+			want:  ghWriteRedirectReason("mcp__github__merge_pull_request"),
+		},
+		"gh pr create redirects to MCP": {
+			input: "gh pr create --title x",
+			want:  ghWriteRedirectReason("mcp__github__create_pull_request"),
+		},
+		"gh pr close redirects to MCP": {
+			input: "gh pr close 1",
+			want:  ghWriteRedirectReason("mcp__github__update_pull_request (state: closed)"),
+		},
+		"gh pr review redirects to MCP": {
+			input: "gh pr review 1 --approve",
+			want:  ghWriteRedirectReason("mcp__github__pull_request_review_write (+ add_comment_to_pending_review for inline comments)"),
+		},
+		"gh pr update-branch redirects to MCP": {
+			input: "gh pr update-branch 1",
+			want:  ghWriteRedirectReason("mcp__github__update_pull_request_branch"),
+		},
+		"gh run rerun redirects to MCP": {
+			input: "gh run rerun 123",
+			want:  ghWriteRedirectReason("mcp__github__actions_run_trigger (rerun_workflow_run / rerun_failed_jobs)"),
+		},
+		"gh run cancel redirects to MCP": {
+			input: "gh run cancel 123",
+			want:  ghWriteRedirectReason("mcp__github__actions_run_trigger (cancel_workflow_run)"),
+		},
+		"gh workflow run redirects to MCP": {
+			input: "gh workflow run deploy.yml",
+			want:  ghWriteRedirectReason("mcp__github__actions_run_trigger (run_workflow)"),
+		},
+		"gh pr comment still asks (no MCP equivalent)": {
+			input:   "gh pr comment 1 --body hi",
+			want:    ghGroupAskReason,
+			wantAsk: true,
+		},
+		"gh run delete still asks (no MCP equivalent)": {
+			input:   "gh run delete 123",
 			want:    ghGroupAskReason,
 			wantAsk: true,
 		},

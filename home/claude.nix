@@ -781,7 +781,7 @@ let
   # --deny-tool flags for the github proxy, derived from the github tool
   # bundle's own permissions.deny (the single source of truth). Denying a
   # github MCP tool there also strips its schema from the proxy's tools/list,
-  # so it stops costing context tokens even though the upstream readonly
+  # so it stops costing context tokens even though the upstream
   # endpoint still serves it. The mcp__github__ prefix is stripped back to the
   # upstream tool name the proxy matches; non-MCP deny entries are ignored.
   ghProxyDenyFlags = lib.concatMapStringsSep " " (t: "--deny-tool ${t}") (
@@ -790,21 +790,21 @@ let
     )
   );
 
-  # The x/all/readonly endpoint serves every read-only tool across all
-  # upstream toolsets. The narrower /mcp/readonly endpoint would serve
-  # only the `default` toolset (context, repos, issues, pull_requests,
-  # users), which carries no Actions, security-alert, discussion, or
-  # project tools. Claude reaches these through ToolSearch, so an
-  # unused tool costs one name in the deferred listing rather than a
-  # schema, and permissions.deny below stays the place where tool
-  # policy is spelled out. A new upstream tool appears here on its own
-  # and prompts on first use until it is allowed or denied; the
-  # readonly endpoint keeps writes out regardless.
+  # The x/all endpoint serves every tool across all upstream toolsets.
+  # The narrower /mcp endpoint would serve only the `default` toolset
+  # (context, repos, issues, pull_requests, users), which carries no
+  # Actions, security-alert, discussion, or project tools. Claude
+  # reaches these through ToolSearch, so an unused tool costs one name
+  # in the deferred listing rather than a schema, and permissions.deny
+  # below stays the place where tool policy is spelled out: it strips
+  # every write tool except the ask-gated pull request set. A new
+  # upstream tool appears here on its own and prompts on first use
+  # until it is allowed or denied.
   githubWrapper = pkgs.writeShellScript "github-mcp-wrapper" ''
     ${exportSecret "GH_TOKEN" "gh_token"}
     export GITHUB_PERSONAL_ACCESS_TOKEN="''${GH_TOKEN:-}"
     exec ${pkgs.mcp-http-proxy}/bin/mcp-http-proxy \
-      --url https://api.githubcopilot.com/mcp/x/all/readonly \
+      --url https://api.githubcopilot.com/mcp/x/all \
       --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN" \
       --log-file "${config.xdg.stateHome}/mcp-http-proxy/github.log" \
       ${ghProxyDenyFlags} \
@@ -1064,6 +1064,10 @@ let
     "~/.cache/nix"
     "~/.cache/helm"
     "~/.cache/gh"
+    # Recent gh releases also touch the config dir at runtime and fail
+    # when it is read-only. Safe to expose: auth is env-var only (sops
+    # GH_TOKEN), so gh never stores a token in hosts.yml, and the
+    # hosts.yml Read deny below applies regardless.
     "~/.config/gh"
     "~/.local/state/workmux"
     "~/.local/state/hook-router"
@@ -2385,9 +2389,8 @@ in
           # gh read subcommands that have a mcp__github__* equivalent.
           # These are denied at the hook level and redirected to the MCP
           # tool named in the value, so reads flow through the github MCP
-          # rather than the gh CLI. Write commands (issue/pr create, edit,
-          # ...) are intentionally absent here: the ask rules below leave
-          # them to the gh CLI. Mirrored by ghRedirectRules in
+          # rather than the gh CLI. Write commands live in
+          # ghWriteRedirectGroups below. Mirrored by ghRedirectRules in
           # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go; update
           # all together.
           ghRedirectGroups = {
@@ -2420,9 +2423,41 @@ in
             search = "mcp__github__search_code / search_issues / search_pull_requests / search_repositories";
           };
 
+          # gh write subcommands whose mutation a github MCP tool in
+          # permissions.ask covers. These are denied at the hook level and
+          # redirected to the MCP tool named in the value, which prompts on
+          # each call, so the confirmation moves from the gh CLI ask rule
+          # to the MCP permission prompt. Writes with no equivalent (pr
+          # comment, run delete, workflow enable/disable, issue writes,
+          # ...) stay with the ask rules below. These leaves stay out of
+          # the ask-rule except lists on purpose: the deny rules win
+          # first, and dropping one falls back to a prompt rather than an
+          # allow. Mirrored by ghWriteRedirectRules in
+          # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go; update
+          # all together.
+          ghWriteRedirectGroups = {
+            pr = {
+              create = "mcp__github__create_pull_request";
+              edit = "mcp__github__update_pull_request";
+              close = "mcp__github__update_pull_request (state: closed)";
+              reopen = "mcp__github__update_pull_request (state: open)";
+              ready = "mcp__github__update_pull_request (draft: false)";
+              merge = "mcp__github__merge_pull_request";
+              review = "mcp__github__pull_request_review_write (+ add_comment_to_pending_review for inline comments)";
+              "update-branch" = "mcp__github__update_pull_request_branch";
+            };
+            run = {
+              rerun = "mcp__github__actions_run_trigger (rerun_workflow_run / rerun_failed_jobs)";
+              cancel = "mcp__github__actions_run_trigger (cancel_workflow_run)";
+            };
+            workflow = {
+              run = "mcp__github__actions_run_trigger (run_workflow)";
+            };
+          };
+
           # Read-only gh subcommands with no mcp__github__* equivalent
           # (repo metadata, PR checks/status, run watching, notification
-          # status). The readonly proxy does not serve these, so they stay
+          # status). The MCP does not serve these, so they stay
           # allowed on the gh CLI. `gh run watch` stays here because it
           # streams a run to completion, which no MCP tool does. Single
           # source of truth for the permission allow entries below.
@@ -2447,8 +2482,8 @@ in
           # Every group carrying a read-only leaf (allowed or redirected),
           # and its full read-only leaf set. The ask rules exempt these
           # leaves so only mutating subcommands prompt; redirected leaves
-          # are already caught by the deny rules, which hook-router
-          # evaluates before any ask rule.
+          # (read and write) are already caught by the deny rules, which
+          # hook-router evaluates before any ask rule.
           ghGroups = lib.attrNames (ghAllowGroups // ghRedirectGroups);
           ghReadLeaves =
             group: (ghAllowGroups.${group} or [ ]) ++ lib.attrNames (ghRedirectGroups.${group} or { });
@@ -2463,7 +2498,7 @@ in
             type = "stdio";
             command = "${githubWrapper}";
           };
-          # Every read-only tool the x/all/readonly endpoint serves that
+          # Every read-only tool the x/all endpoint serves that
           # permissions.deny below does not strip. Spelled out so a tool
           # added upstream lands outside this list and prompts on first
           # use rather than running unannounced.
@@ -2557,18 +2592,14 @@ in
             # Overlaps mcp__kagi__kagi_search_fetch, which stays the one
             # web search tool.
             "mcp__github__web_search"
-            # GitHub MCP: deny all write/mutating tools. The readonly endpoint
-            # does not serve these, so the proxy filter is a no-op for them;
-            # they stay denied here as a usage hint and a guard.
-            "mcp__github__actions_run_trigger"
-            "mcp__github__add_comment_to_pending_review"
+            # GitHub MCP: deny every write/mutating tool except the pull
+            # request set in permissions.ask below. The proxy filter strips
+            # the denied tools' schemas from tools/list.
             "mcp__github__add_issue_comment"
-            "mcp__github__add_reply_to_pull_request_comment"
             "mcp__github__assign_copilot_to_issue"
             "mcp__github__create_branch"
             "mcp__github__create_gist"
             "mcp__github__create_or_update_file"
-            "mcp__github__create_pull_request"
             "mcp__github__create_pull_request_with_copilot"
             "mcp__github__create_repository"
             "mcp__github__delete_file"
@@ -2579,26 +2610,38 @@ in
             "mcp__github__manage_notification_subscription"
             "mcp__github__manage_repository_notification_subscription"
             "mcp__github__mark_all_notifications_read"
-            "mcp__github__merge_pull_request"
             "mcp__github__projects_write"
-            "mcp__github__pull_request_review_write"
             "mcp__github__push_files"
             "mcp__github__request_copilot_review"
             "mcp__github__star_repository"
             "mcp__github__sub_issue_write"
             "mcp__github__unstar_repository"
             "mcp__github__update_gist"
+            "mcp__github__run_secret_scanning"
+          ];
+          # Pull request and Actions write tools, the only write surface
+          # the MCP serves here. Each call prompts, matching the ask gating
+          # on mutating gh CLI commands. add_comment_to_pending_review
+          # rides along with pull_request_review_write: a pending review
+          # needs both. actions_run_trigger triggers, re-runs, and cancels
+          # workflow runs.
+          permissions.ask = [
+            "mcp__github__actions_run_trigger"
+            "mcp__github__add_comment_to_pending_review"
+            "mcp__github__add_reply_to_pull_request_comment"
+            "mcp__github__create_pull_request"
+            "mcp__github__merge_pull_request"
+            "mcp__github__pull_request_review_write"
             "mcp__github__update_pull_request"
             "mcp__github__update_pull_request_branch"
-            "mcp__github__run_secret_scanning"
           ];
           # Redirect read-only gh subcommands that have a github MCP
           # equivalent to the MCP, derived from the ghRedirectGroups /
-          # ghRedirectCommands tables above. hook-router evaluates deny
-          # rules before ask rules, so these win over the mutating-command
-          # ask fallback below and over the sandbox auto-allow. Reads
-          # without an MCP equivalent stay allowed on gh; writes are left
-          # to the ask rules so the gh CLI still drives them.
+          # ghRedirectCommands / ghWriteRedirectGroups tables above.
+          # hook-router evaluates deny rules before ask rules, so these
+          # win over the mutating-command ask fallback below and over the
+          # sandbox auto-allow. Subcommands with no MCP equivalent stay on
+          # gh: reads run, writes prompt via the ask rules.
           commandRules.deny =
             # `gh api` is the CLI form of fetching api.github.com, which
             # the fetchRules below deny outright, and its
@@ -2633,7 +2676,20 @@ in
               command = "gh";
               args = [ cmd ];
               reason = "Read via ${tool} instead of the gh CLI.";
-            }) ghRedirectCommands;
+            }) ghRedirectCommands
+            ++ lib.concatLists (
+              lib.mapAttrsToList (
+                group: leaves:
+                lib.mapAttrsToList (leaf: tool: {
+                  command = "gh";
+                  args = [
+                    group
+                    leaf
+                  ];
+                  reason = "Write via ${tool} instead of the gh CLI.";
+                }) leaves
+              ) ghWriteRedirectGroups
+            );
           # Fail-closed gating for the gh CLI, derived from the
           # ghGroups / ghAllowCommands tables above: read-only subcommands
           # fall through (redirected by the deny rules above, allowed by

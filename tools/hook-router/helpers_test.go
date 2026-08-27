@@ -143,11 +143,47 @@ func ghRedirectRules() *cmdrules.Engine {
 	})
 }
 
-// ghRules mirrors the full production gh engine: redirect deny rules
-// before ask rules, matching the hook-router wrapper's serialization
-// order (all deny rules precede any ask rule).
+// ghWriteRedirectReason mirrors the redirect deny reason produced in
+// home/claude.nix for a gh write subcommand that has a github MCP
+// equivalent.
+func ghWriteRedirectReason(tool string) string {
+	return "Write via " + tool + " instead of the gh CLI."
+}
+
+// ghWriteRedirectRules mirrors the gh write-redirect deny-rule bundle
+// in home/claude.nix: mutating gh subcommands whose mutation an
+// ask-gated github MCP tool covers, denied and pointed at the MCP
+// tool. Matches the same-named fixture in the cmdrules package tests.
+func ghWriteRedirectRules() *cmdrules.Engine {
+	redirect := func(tool string, args ...string) cmdrules.Rule {
+		return cmdrules.Rule{
+			Command: "gh",
+			Args:    args,
+			Reason:  ghWriteRedirectReason(tool),
+		}
+	}
+
+	return cmdrules.New([]cmdrules.Rule{
+		redirect("mcp__github__create_pull_request", "pr", "create"),
+		redirect("mcp__github__update_pull_request", "pr", "edit"),
+		redirect("mcp__github__update_pull_request (state: closed)", "pr", "close"),
+		redirect("mcp__github__update_pull_request (state: open)", "pr", "reopen"),
+		redirect("mcp__github__update_pull_request (draft: false)", "pr", "ready"),
+		redirect("mcp__github__merge_pull_request", "pr", "merge"),
+		redirect("mcp__github__pull_request_review_write (+ add_comment_to_pending_review for inline comments)", "pr", "review"),
+		redirect("mcp__github__update_pull_request_branch", "pr", "update-branch"),
+		redirect("mcp__github__actions_run_trigger (rerun_workflow_run / rerun_failed_jobs)", "run", "rerun"),
+		redirect("mcp__github__actions_run_trigger (cancel_workflow_run)", "run", "cancel"),
+		redirect("mcp__github__actions_run_trigger (run_workflow)", "workflow", "run"),
+	})
+}
+
+// ghRules mirrors the full production gh engine: read and write
+// redirect deny rules before ask rules, matching the hook-router
+// wrapper's serialization order (all deny rules precede any ask rule).
 func ghRules() *cmdrules.Engine {
-	return cmdrules.New(append(ghRedirectRules().Rules(), ghAskRules().Rules()...))
+	rules := append(ghRedirectRules().Rules(), ghWriteRedirectRules().Rules()...)
+	return cmdrules.New(append(rules, ghAskRules().Rules()...))
 }
 
 // newTestStore opens a fresh [*state.Store] in a per-test temp dir and
