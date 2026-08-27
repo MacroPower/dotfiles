@@ -217,7 +217,7 @@ let
   };
 
   # File-formatter routing rule, evaluated by hook-router on
-  # PostToolUse:Write/Edit/MultiEdit. The matched file path is appended
+  # PostToolUse:Write/Edit. The matched file path is appended
   # as the final argv element when the rule's command runs. See
   # tools/hook-router/formatter_rules.go FormatterRule for matching
   # semantics; option names below are camelCase because
@@ -946,7 +946,7 @@ let
   ];
 
   # Default formatter routes auto-installed by hook-router on
-  # PostToolUse:Write/Edit/MultiEdit. Plans and research notes
+  # PostToolUse:Write/Edit. Plans and research notes
   # accumulate token-wasteful patterns (multi-blank-line runs, trailing
   # whitespace, inter-word double spaces) across many tool calls;
   # mdformat collapses them in place.
@@ -1202,7 +1202,7 @@ in
       type = types.bool;
       default = true;
       description = ''
-        Deny Write/Edit/MultiEdit calls that introduce non-ASCII
+        Deny Write/Edit calls that introduce non-ASCII
         typographic characters into a file: dash punctuation other than
         ASCII '-', the minus sign, curly quotation marks, and the
         horizontal ellipsis. Only newly introduced characters are
@@ -1516,7 +1516,7 @@ in
         built-in plans and research mdformat rules. Each rule maps an
         absolute file-path glob to a formatter argv; the matched path
         is appended as the final argument. Rules are evaluated in
-        order on PostToolUse:Write/Edit/MultiEdit and the first
+        order on PostToolUse:Write/Edit and the first
         matching glob wins.
       '';
     };
@@ -3325,158 +3325,117 @@ in
                 allowWrite = extraWritePaths;
               };
             };
-            hooks = {
-              # NOTE: All matching hooks run concurrently with the original input.
-              # Only one hook per tool should return updatedInput to avoid
-              # non-deterministic last-writer-wins races.
-              PreToolUse = [
-                {
-                  matcher = "Bash";
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${lib.getExe hookRouter} --event PreToolUse --tool Bash";
-                    }
-                  ];
-                }
-                {
-                  matcher = "ExitPlanMode";
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${lib.getExe hookRouter} --event PreToolUse --tool ExitPlanMode";
-                    }
-                  ];
-                }
-                {
-                  matcher = "EnterPlanMode";
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${lib.getExe hookRouter} --event PreToolUse --tool EnterPlanMode";
-                    }
-                  ];
-                }
-                {
-                  # All MCP tools route to one hook entry; "MCP" is a
-                  # routing sentinel and hook-router reads the real
-                  # tool name from the payload. Only this matcher
-                  # matches mcp__* names, so there is exactly one
-                  # decision emitter per MCP call.
-                  matcher = "mcp__.*";
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${lib.getExe hookRouter} --event PreToolUse --tool MCP";
-                    }
-                  ];
-                }
-              ]
-              ++ lib.optionals cfg.enforceAsciiTypography [
-                {
-                  # Write/Edit/MultiEdit route to one entry; "FileWrite"
-                  # is a routing sentinel and hook-router reads the real
-                  # tool name from the payload. Emits only deny or
-                  # nothing (never updatedInput), so the last-writer-wins
-                  # race the note above warns about cannot occur here.
-                  matcher = "Write|Edit|MultiEdit";
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${lib.getExe hookRouter} --event PreToolUse --tool FileWrite";
-                    }
-                  ];
-                }
-              ];
-              UserPromptSubmit = [
-                {
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${workmux} working";
-                    }
-                  ];
-                }
-                {
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${lib.getExe hookRouter} --event UserPromptSubmit";
-                    }
-                  ];
-                }
-              ];
-              Notification = [
-                {
-                  matcher = "permission_prompt|elicitation_dialog";
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${workmux} waiting";
-                    }
-                  ];
-                }
-              ];
-              PostToolUse = [
-                {
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${workmux} working";
-                    }
-                  ];
-                }
-                {
-                  # No matcher: hook-router routes by `tool_name` from
-                  # stdin so new handlers don't need parallel Nix
-                  # matcher updates.
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${lib.getExe hookRouter} --event PostToolUse";
-                    }
-                  ];
-                }
-              ];
-              Stop = [
-                {
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${workmux} done";
-                    }
-                  ];
-                }
-                {
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${lib.getExe hookRouter} --event Stop";
-                    }
-                  ];
-                }
-              ];
-              SessionStart = [
-                {
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${lib.getExe hookRouter} --event SessionStart";
-                    }
-                  ];
-                }
-              ];
-              SessionEnd = [
-                {
-                  hooks = [
-                    {
-                      type = "command";
-                      command = "${lib.getExe hookRouter} --event SessionEnd";
-                    }
-                  ];
-                }
-              ];
-            };
+            hooks =
+              let
+                # hook-router enforces its own 45s context timeout
+                # (tools/hook-router/main.go); 60s is a backstop for a
+                # hung process, not a working budget.
+                routerTimeout = 60;
+                router = event: tool: {
+                  type = "command";
+                  command =
+                    "${lib.getExe hookRouter} --event ${event}" + lib.optionalString (tool != null) " --tool ${tool}";
+                  timeout = routerTimeout;
+                };
+                # workmux hooks emit nothing Claude Code reads, so they
+                # run in the background and never block a turn.
+                status = s: {
+                  type = "command";
+                  command = "${workmux} ${s}";
+                  async = true;
+                };
+              in
+              {
+                # NOTE: All matching hooks run concurrently with the original input.
+                # Only one hook per tool should return updatedInput to avoid
+                # non-deterministic last-writer-wins races.
+                PreToolUse = [
+                  {
+                    matcher = "Bash";
+                    hooks = [ (router "PreToolUse" "Bash") ];
+                  }
+                  {
+                    matcher = "ExitPlanMode";
+                    hooks = [ ((router "PreToolUse" "ExitPlanMode") // { statusMessage = "plan gate"; }) ];
+                  }
+                  {
+                    matcher = "EnterPlanMode";
+                    hooks = [ (router "PreToolUse" "EnterPlanMode") ];
+                  }
+                  {
+                    # All MCP tools route to one hook entry; "MCP" is a
+                    # routing sentinel and hook-router reads the real
+                    # tool name from the payload. Only this matcher
+                    # matches mcp__* names, so there is exactly one
+                    # decision emitter per MCP call.
+                    matcher = "mcp__.*";
+                    hooks = [ (router "PreToolUse" "MCP") ];
+                  }
+                ]
+                ++ lib.optionals cfg.enforceAsciiTypography [
+                  {
+                    # Write and Edit route to one entry; "FileWrite" is a
+                    # routing sentinel and hook-router reads the real
+                    # tool name from the payload. Emits only deny or
+                    # nothing (never updatedInput), so the last-writer-wins
+                    # race the note above warns about cannot occur here.
+                    # Anchored: matchers are unanchored regexes, and a
+                    # bare `Edit` would also match NotebookEdit.
+                    matcher = "^(Write|Edit)$";
+                    hooks = [ (router "PreToolUse" "FileWrite") ];
+                  }
+                ];
+                UserPromptSubmit = [
+                  { hooks = [ (status "working") ]; }
+                  {
+                    # Claude Code caps UserPromptSubmit command hooks at
+                    # 30s by default; keep that rather than the 60s
+                    # backstop.
+                    hooks = [ ((router "UserPromptSubmit" null) // { timeout = 30; }) ];
+                  }
+                ];
+                Notification = [
+                  {
+                    matcher = "permission_prompt|elicitation_dialog";
+                    hooks = [ (status "waiting") ];
+                  }
+                ];
+                PostToolUse = [
+                  # Matcher-less on purpose: any tool result must flip the
+                  # window back from `waiting` to `working`.
+                  { hooks = [ (status "working") ]; }
+                  {
+                    # Mirrors hook-router's PostToolUse switch
+                    # (tools/hook-router/main.go). Every other tool is a
+                    # no-op there, so the matcher saves a process spawn
+                    # per call. Extend this list when a handler is added.
+                    matcher = "^(AskUserQuestion|Bash|Write|Edit)$";
+                    hooks = [ (router "PostToolUse" null) ];
+                  }
+                ];
+                Stop = [
+                  { hooks = [ (status "done") ]; }
+                  { hooks = [ ((router "Stop" null) // { statusMessage = "post-impl gate"; }) ]; }
+                ];
+                # Turn ended on an API error (rate limit, auth, overloaded,
+                # ...). workmux has no error status; `waiting` is the one
+                # that asks for attention and auto-clears on focus.
+                StopFailure = [
+                  { hooks = [ (status "waiting") ]; }
+                ];
+                SessionStart = [
+                  { hooks = [ (router "SessionStart" null) ]; }
+                ];
+                SessionEnd = [
+                  {
+                    # SessionEnd hooks share a 1.5s budget by default; a
+                    # per-hook timeout raises it (up to 60s). 10s gives the
+                    # kubectx session-dir cleanup room without delaying
+                    # exit noticeably.
+                    hooks = [ ((router "SessionEnd" null) // { timeout = 10; }) ];
+                  }
+                ];
+              };
             autoMemoryEnabled = false;
             alwaysThinkingEnabled = true;
             skipDangerousModePermissionPrompt = true;
