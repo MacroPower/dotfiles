@@ -2035,6 +2035,7 @@ in
       review-implementation.source = ../configs/claude/skills/review-implementation;
       self-improve.source = ../configs/claude/skills/self-improve;
       taskfile.source = ../configs/claude/skills/taskfile;
+      technical-writing.source = ../configs/claude/skills/technical-writing;
       web-archive.source = ../configs/claude/skills/web-archive;
     };
 
