@@ -565,37 +565,6 @@ let
     ];
   };
 
-  # Claude Code's built-in sandbox write-denies any directory named `config`
-  # or `hooks` at the root of the cwd / git root (the `["hooks","config"]`
-  # list in the bundled deny-list builder) as bare-repo defense -- but that
-  # loop never checks for the bare-repo indicators (HEAD/objects/refs) that
-  # gate the rest of the protection, so every ordinary repo with a top-level
-  # config/ folder is silently mounted read-only whenever the sandbox is on.
-  # Blank the list to an empty, byte-length-preserving array in the prebuilt
-  # bun bundle (see pkgs/claude-code-unprotect-config-dir.py for why this is
-  # safe: the real bare-repo protections live elsewhere and are untouched).
-  # The patch runs in postInstall on the raw binary, ahead of
-  # wrapProgram/wrapBuddy (Linux) and the ad-hoc re-signing hook (Darwin, so
-  # patching does not invalidate the signature); versionCheckHook then
-  # smoke-tests the wrapped result via doInstallCheck. Must sit after
-  # llm-agents.overlays.shared-nixpkgs so prev.llm-agents exists. Drop once
-  # upstream gates the denial on the bare-repo indicator check.
-  claudeCodeOverlay = _final: prev: {
-    llm-agents = prev.llm-agents // {
-      claude-code = prev.llm-agents.claude-code.overrideAttrs (old: {
-        nativeBuildInputs =
-          (old.nativeBuildInputs or [ ])
-          ++ [ prev.python3 ]
-          ++ prev.lib.optionals prev.stdenv.hostPlatform.isDarwin [
-            prev.darwin.autoSignDarwinBinariesHook
-          ];
-        postInstall = (old.postInstall or "") + ''
-          python3 ${../pkgs/claude-code-unprotect-config-dir.py} $out/bin/claude
-        '';
-      });
-    };
-  };
-
   sharedOverlays = system: [
     fetchurlOverlay
     curlImpersonateOverlay
@@ -624,7 +593,6 @@ let
     ryceeOverlay
     (workmuxOverlay system)
     llm-agents.overlays.shared-nixpkgs
-    claudeCodeOverlay
     dagger.overlays.default
   ];
 
