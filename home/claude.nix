@@ -981,6 +981,31 @@ let
     }
   ];
 
+  # Sops secrets that the wrappers above export into the session
+  # environment. The sandbox credentials block denies them, so no
+  # sandboxed command reads a token out of its own environment. Export
+  # sites: gitWrapper (762), kagiWrapper (767), spaceliftWrapper (772),
+  # githubWrapper (804), workmuxWrapped (866). Spelling the names out
+  # beats deriving them from those sites, which mix positional
+  # exportSecret calls, attrset exportSecrets calls, and literal export
+  # lines, and whose union would also pick up ARGOCD_BASE_URL, which is
+  # not a credential. DAGGER_CLOUD_TOKEN is missing here because the
+  # sandbox masks it instead. GITHUB_TOKEN and
+  # GITHUB_PERSONAL_ACCESS_TOKEN alias gh_token; literal export lines at
+  # 805 and 868-869 set them, so they have no sops secret of their own.
+  deniedCredentialVars = [
+    "ARGOCD_API_TOKEN"
+    "ATUIN_PASSWORD"
+    "ATUIN_USERNAME"
+    "GH_TOKEN"
+    "GITHUB_PERSONAL_ACCESS_TOKEN"
+    "GITHUB_TOKEN"
+    "KAGI_API_KEY"
+    "SPACELIFT_API_KEY_ENDPOINT"
+    "SPACELIFT_API_KEY_ID"
+    "SPACELIFT_API_KEY_SECRET"
+  ];
+
   extraDenyReadPaths = [ "/" ];
 
   extraReadPaths = [
@@ -3363,6 +3388,30 @@ in
                 denyRead = extraDenyReadPaths;
                 allowRead = lib.unique (extraReadPaths ++ extraWritePaths);
                 allowWrite = extraWritePaths;
+              };
+              credentials = {
+                # deny unsets the variable inside the sandbox; mask
+                # swaps it for a sentinel that the proxy substitutes
+                # back only on connections to injectHosts. Both Dagger
+                # hosts appear because every injectHosts entry must also
+                # appear in allowedDomains above, and no run has yet
+                # shown which of the two the CLI presents the token to.
+                # Narrow this once one does.
+                envVars =
+                  map (name: {
+                    inherit name;
+                    mode = "deny";
+                  }) deniedCredentialVars
+                  ++ [
+                    {
+                      name = "DAGGER_CLOUD_TOKEN";
+                      mode = "mask";
+                      injectHosts = [
+                        "api.dagger.cloud"
+                        "auth.dagger.cloud"
+                      ];
+                    }
+                  ];
               };
             };
             hooks =
