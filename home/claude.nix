@@ -3281,6 +3281,12 @@ in
                 # Secret managers & encryption
                 "Read(//**/.doppler/**)"
                 "Read(//**/age/keys.txt)"
+                # sops-nix decrypts to defaultSymlinkPath,
+                # ~/.config/sops-nix/secrets, a symlink into secrets.d
+                # under the darwin per-user temp dir, so both spellings
+                # appear here.
+                "Read(//**/sops-nix/**)"
+                "Read(//**/secrets.d/**)"
                 "Read(//**/rclone.conf)"
                 "Read(//**/.op/**)"
                 "Read(//**/.config/op/**)"
@@ -3412,6 +3418,36 @@ in
                       ];
                     }
                   ];
+                # The entries above cover the variables; these cover the
+                # files behind them, which sit inside the ~/.config
+                # grant in filesystem.allowRead. A filesystem.denyRead
+                # entry there would be inert, because allowRead takes
+                # precedence over denyRead for matching paths. Only an
+                # exact allowRead entry displaces a credentials.files
+                # deny, so these hold against the ancestor grant.
+                # sops-nix points ~/.config/sops-nix/secrets at
+                # secrets.d under the darwin per-user temp dir
+                # (defaultSecretsMountPoint is "%r/secrets.d", and %r
+                # resolves through `getconf DARWIN_USER_TEMP_DIR`),
+                # which the /var/folders entries in allowRead re-open in
+                # turn, so both spellings appear here. Without them a
+                # sandboxed `cat` still reads every token, and a
+                # sandboxed workmux call re-exports the lot into its own
+                # environment.
+                files = [
+                  {
+                    path = "${config.xdg.configHome}/sops-nix";
+                    mode = "deny";
+                  }
+                  {
+                    path = "/var/folders/*/*/T/secrets.d";
+                    mode = "deny";
+                  }
+                  {
+                    path = "/private/var/folders/*/*/T/secrets.d";
+                    mode = "deny";
+                  }
+                ];
               };
             };
             hooks =
