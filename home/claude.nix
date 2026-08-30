@@ -3343,10 +3343,20 @@ in
                 # (tools/hook-router/main.go); 60s is a backstop for a
                 # hung process, not a working budget.
                 routerTimeout = 60;
+                # Exec form: with `args` present Claude Code resolves
+                # `command` as an executable and spawns it directly, so no
+                # shell parses the store path or the flags.
                 router = event: tool: {
                   type = "command";
-                  command =
-                    "${lib.getExe hookRouter} --event ${event}" + lib.optionalString (tool != null) " --tool ${tool}";
+                  command = lib.getExe hookRouter;
+                  args = [
+                    "--event"
+                    event
+                  ]
+                  ++ lib.optionals (tool != null) [
+                    "--tool"
+                    tool
+                  ];
                   timeout = routerTimeout;
                 };
                 # workmux hooks emit nothing Claude Code reads, so they
