@@ -3348,6 +3348,16 @@ in
                   "sum.golang.org"
                 ]
                 ++ bundledDomains;
+                # Terminate TLS at the sandbox proxy with an ephemeral
+                # per-session CA, whose certificate Claude Code injects
+                # into the standard CA environment variables for
+                # sandboxed commands. The proxy substitutes masked
+                # credentials only on its egress leg, so a
+                # credentials.envVars mask entry does nothing without
+                # this. The attrset form is required. caCertPath and
+                # caKeyPath are optional and must be supplied together,
+                # and `true` fails validation.
+                tlsTerminate = { };
               };
               filesystem = {
                 denyRead = extraDenyReadPaths;
