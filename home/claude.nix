@@ -3430,9 +3430,31 @@ in
                     # Mirrors hook-router's PostToolUse switch
                     # (tools/hook-router/main.go). Every other tool is a
                     # no-op there, so the matcher saves a process spawn
-                    # per call. Extend this list when a handler is added.
-                    matcher = "^(AskUserQuestion|Bash|Write|Edit)$";
+                    # per call. Bash output compaction returns
+                    # updatedToolOutput, which Claude reads, so this entry
+                    # stays synchronous. Extend this list when a handler
+                    # is added, unless the handler returns nothing Claude
+                    # reads, which belongs on the entry below.
+                    matcher = "^(AskUserQuestion|Bash)$";
                     hooks = [ (router "PostToolUse" null) ];
+                  }
+                  {
+                    # The formatter is the whole PostToolUse handler for
+                    # Write and Edit and returns nothing Claude reads, so
+                    # it runs off the critical path. This buys latency and
+                    # not failure reporting: asyncRewake wakes Claude only
+                    # on exit code 2, hook-router exits 0 or 1
+                    # (tools/hook-router/main.go), and handlePostFileWrite
+                    # swallows formatter failures after a warn log
+                    # (tools/hook-router/filewrite.go), so failures stay in
+                    # the hook-router log. Reporting them needs an exit-2
+                    # path in Go.
+                    #
+                    # Passes no --tool: FileWrite is a PreToolUse routing
+                    # sentinel, and the PostToolUse switch reads the real
+                    # tool name from the payload.
+                    matcher = "^(Write|Edit)$";
+                    hooks = [ ((router "PostToolUse" null) // { asyncRewake = true; }) ];
                   }
                 ];
                 Stop = [
