@@ -160,6 +160,16 @@ tasks:
     cmds:
       - dagger check
 
+  format:
+    desc: Apply all auto-fixes (formatting and lint via treefmt)
+    cmds:
+      - task: nix:format
+
+  lint:
+    desc: Check formatting and lint (nixfmt, deadnix, statix via treefmt)
+    cmds:
+      - task: nix:lint
+
   publish:
     desc: Build and publish dev container to GHCR
     vars:
