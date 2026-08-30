@@ -3176,6 +3176,15 @@ in
               # line -- "0" still reads as truthy.
               CLAUDE_CODE_REPORT_FINDINGS = "1";
             };
+            # Prompt cache TTL. The main conversation holds a 1-hour
+            # cache so long thinking pauses and slow tool runs still hit
+            # it; everything spawned around it (subagents, workflows,
+            # background helpers) keeps the cheaper 5-minute writes,
+            # since those turns are short-lived anyway. Unset would mean
+            # "automatic", which already picks 1h for a subscription --
+            # setting both pins the split explicitly.
+            promptCacheTtl = "1h";
+            subagentPromptCacheTtl = "5m";
             disableAutoMode = "disable";
             includeGitInstructions = false;
             respondToBashCommands = true;
