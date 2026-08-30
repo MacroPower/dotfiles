@@ -738,6 +738,24 @@ let
     '';
   };
 
+  # Appends every settings and skills edit Claude Code reports, including
+  # the settings.local.json the workmux worktree hook writes. hook-router
+  # creates this directory in its own logger, so a host that has never run
+  # it needs the mkdir.
+  configChangeLog = pkgs.writeShellApplication {
+    name = "claude-config-change-log";
+    runtimeInputs = [ pkgs.jq ];
+    text = ''
+      log_dir="${config.xdg.stateHome}/hook-router"
+      # Exit code 2 blocks the config change and every other non-zero code
+      # only prints stderr. jq exits 2 when the append fails, so remap both
+      # failures to 1: a full disk must not stop a skill reload.
+      mkdir -p "$log_dir" || exit 1
+      jq -c '{ time: (now | todateiso8601), source, file_path }' \
+        >>"$log_dir/config-changes.log" || exit 1
+    '';
+  };
+
   # CA env vars injected into all stdio MCP servers
   caEnvVars = lib.optionalAttrs (config.dotfiles.caBundlePath != null) {
     NIX_SSL_CERT_FILE = config.dotfiles.caBundlePath;
@@ -3457,6 +3475,16 @@ in
                     hooks = [ ((router "PostToolUse" null) // { asyncRewake = true; }) ];
                   }
                 ];
+                # Fires when a tool call throws, not when one exits
+                # non-zero: the Bash tool returns normally on a non-zero
+                # exit and folds the code into stderr. The realistic
+                # trigger here is a sandbox violation, which is exactly
+                # when the window should ask for attention. Permission
+                # denials and pre-execution rejections do not fire it, so
+                # hook-router's own denies never reach it.
+                PostToolUseFailure = [
+                  { hooks = [ (status "waiting") ]; }
+                ];
                 Stop = [
                   { hooks = [ (status "done") ]; }
                   { hooks = [ ((router "Stop" null) // { statusMessage = "post-impl gate"; }) ]; }
@@ -3477,6 +3505,27 @@ in
                     # kubectx session-dir cleanup room without delaying
                     # exit noticeably.
                     hooks = [ ((router "SessionEnd" null) // { timeout = 10; }) ];
+                  }
+                ];
+                # Unanchored on purpose: a matcher of bare names and pipes
+                # takes Claude Code's literal path, splitting on `|` and
+                # testing exact membership, and `^(...)$` would force it
+                # onto the regex path instead.
+                #
+                # Synchronous rather than async: the script remaps its
+                # failures off exit code 2, the only code that blocks a
+                # config change, so it cannot block. A synchronous failure
+                # still prints stderr where an async one would vanish into
+                # a background log.
+                ConfigChange = [
+                  {
+                    matcher = "user_settings|local_settings|skills";
+                    hooks = [
+                      {
+                        type = "command";
+                        command = lib.getExe configChangeLog;
+                      }
+                    ];
                   }
                 ];
               };
