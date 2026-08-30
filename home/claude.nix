@@ -3656,10 +3656,36 @@ in
             fileCheckpointingEnabled = true;
             todoFeatureEnabled = true;
             askUserQuestionTimeout = "never";
+            # Remote-forwarded dialogs and held cross-session messages
+            # wait indefinitely instead of resolving to cancelled or
+            # denied after the 5m default, matching
+            # askUserQuestionTimeout above. Local-only prompts carry no
+            # deadline either way, and CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS
+            # still overrides this per session.
+            dialogExpiry = "never";
             showTurnDuration = true;
             terminalProgressBarEnabled = true;
             autoCompactEnabled = true;
             autoCompactWindow = 666666;
+            # Chat transcript retention. fewer-permission-prompts ranks
+            # allowlist candidates over the 50 most-recently-modified
+            # transcripts across every project, and the 30-day default
+            # expires that sample before it fills. The same period
+            # governs how long ~/.claude/skills/.trash holds what
+            # syncClaudeAiSkills below moves there.
+            cleanupPeriodDays = 90;
+            # Keep ~/.claude/skills Nix-owned. claude.ai skills
+            # otherwise download into skills/synced and re-sync every
+            # 10 minutes. False stops the downloads and moves anything
+            # already synced to skills/.trash at the next launch. Only
+            # false is honored; the server side decides when the
+            # feature turns on.
+            syncClaudeAiSkills = false;
+            # Prompt word-editing keys follow readline rather than the
+            # "classic" default. Ctrl+W deletes back to the previous
+            # whitespace, and a word is a run of letters and digits, so
+            # punctuation separates words. fish behaves the same way.
+            keybindingFlavor = "readline";
             # Straight-ASCII prompt input: no :shortcode: emoji expansion,
             # matching enforceAsciiTypography and the plain-ASCII policy.
             emojiCompletionEnabled = false;
