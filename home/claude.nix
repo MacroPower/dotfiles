@@ -3495,6 +3495,29 @@ in
                 StopFailure = [
                   { hooks = [ (status "waiting") ]; }
                 ];
+                # The Stop gate above covers the lead only, and
+                # teammateMode = "in-process" lets a teammate go idle
+                # around it. hook-router blocks each teammate's first idle
+                # attempt per plan cycle through exit code 2, the only
+                # channel this event reads a block from; a second attempt
+                # allows through, since the event carries no
+                # stop_hook_active to escape an unbounded gate with.
+                TeammateIdle = [
+                  { hooks = [ ((router "TeammateIdle" null) // { statusMessage = "post-impl gate"; }) ]; }
+                ];
+                # Matcher-less on purpose: every spawn is recorded, so no
+                # agent type needs naming here. hook-router reads
+                # agent_type and agent_id from the payload.
+                SubagentStart = [
+                  { hooks = [ (router "SubagentStart" null) ]; }
+                ];
+                # Matcher-less: both triggers are recorded. hook-router
+                # reads the trigger from the payload and emits nothing,
+                # which this event would otherwise parse as a decision
+                # document and could act on by cancelling the compaction.
+                PreCompact = [
+                  { hooks = [ (router "PreCompact" null) ]; }
+                ];
                 SessionStart = [
                   { hooks = [ (router "SessionStart" null) ]; }
                 ];
