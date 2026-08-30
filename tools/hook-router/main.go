@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -125,7 +126,7 @@ func configFromEnv() config {
 
 func main() {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
-	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, UserPromptSubmit)")
+	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, SessionStart, SessionEnd, UserPromptSubmit, SubagentStart, TeammateIdle, PreCompact)")
 	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion, or the MCP/FileWrite routing sentinels)")
 	dbPath := flag.String("db", "", "path to SQLite state database")
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
@@ -144,10 +145,21 @@ func main() {
 	flag.Parse()
 
 	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *autoAllow, *skipPlanReview, *enforceTypography)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
-		os.Exit(1)
+	if err == nil {
+		return
 	}
+
+	// The reason prints bare, without the "hook-router: " prefix the
+	// exit-1 path uses, because Claude Code hands the blocking event
+	// this stderr text verbatim as the feedback the agent reads.
+	var blocked *blockError
+	if errors.As(err, &blocked) {
+		fmt.Fprintln(os.Stderr, blocked.Reason)
+		os.Exit(2)
+	}
+
+	fmt.Fprintf(os.Stderr, "hook-router: %v\n", err)
+	os.Exit(1)
 }
 
 func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON string, autoAllow, skipPlanReview, enforceTypography bool) error {
@@ -288,7 +300,8 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 // [mainErr] can skip the SQLite open on the hot path.
 func eventNeedsStore(event, tool string, input []byte) bool {
 	switch event {
-	case "Stop", "SessionStart", "UserPromptSubmit":
+	case "Stop", "SessionStart", "UserPromptSubmit",
+		"SubagentStart", "TeammateIdle", "PreCompact":
 		return true
 	case "PreToolUse":
 		return tool == "ExitPlanMode" || tool == "EnterPlanMode"
@@ -434,10 +447,55 @@ func run(
 
 		return handleUserPromptSubmit(ctx, input, store, cfg, logger)
 
-	default:
+	case "SubagentStart":
+		if store == nil {
+			return nil
+		}
+
+		return handleSubagentStart(ctx, input, store, logger)
+
+	case "TeammateIdle":
+		if store == nil {
+			return nil
+		}
+
+		return handleTeammateIdle(ctx, input, store, cfg, logger)
+
+	case "PreCompact":
+		if store == nil {
+			return nil
+		}
+
+		return handlePreCompact(ctx, input, store, logger)
+
+	case "":
 		// Backward compat: no --event flag, treat as Bash PreToolUse.
 		return handleBash(input, stdout, cfg, logger)
+
+	default:
+		// An unrecognized event must not reach a handler. Falling
+		// through to handleBash would run the command-rule engine over
+		// a payload that carries no command, so a newly wired event
+		// whose handler is missing would be judged by Bash rules.
+		logger.Debug("unhandled event", slog.String("event", event))
+
+		return nil
 	}
+}
+
+// blockError signals that a handler blocked its event through exit code
+// 2 rather than a stdout decision document. TeammateIdle is the one
+// event hook-router handles that reads a block only from the exit code:
+// it has no hookSpecificOutput decision schema, and its JSON
+// alternative, {"continue": false}, stops the teammate outright instead
+// of sending it back to work. [main] prints Reason to stderr verbatim,
+// which is the feedback the teammate reads, and exits 2.
+type blockError struct {
+	Reason string
+}
+
+func (e *blockError) Error() string {
+	return e.Reason
 }
 
 // writeDecision encodes a hook decision document to w via

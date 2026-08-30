@@ -11,6 +11,9 @@ import (
 // Cwd, HookEventName, and TranscriptPath are sent on every event.
 // Source is set on SessionStart only (one of "startup", "resume",
 // "clear", "compact"). ToolResponse is set on PostToolUse only.
+// AgentID and AgentType are set on SubagentStart and SubagentStop,
+// TeammateName on TeammateIdle, and Trigger on PreCompact and
+// PostCompact (one of "manual", "auto").
 type Input struct {
 	SessionID      string         `json:"session_id"`
 	HookEventName  string         `json:"hook_event_name"`
@@ -22,6 +25,10 @@ type Input struct {
 	StopHookActive bool           `json:"stop_hook_active"`
 	Cwd            string         `json:"cwd"`
 	Source         string         `json:"source"`
+	AgentID        string         `json:"agent_id"`
+	AgentType      string         `json:"agent_type"`
+	TeammateName   string         `json:"teammate_name"`
+	Trigger        string         `json:"trigger"`
 }
 
 // ParseInput decodes the JSON payload Claude Code wrote to the hook's

@@ -139,7 +139,11 @@ func TestStoreResetSession(t *testing.T) {
 	_, _ = store.IncrementExitPlanCount(ctx, "s1")
 	_ = store.SetPlanPath(ctx, "s1", "/plan.md", "sha1")
 
-	err := store.ResetSession(ctx, "s1")
+	claimed, err := store.MarkTeammateIdleBlocked(ctx, "s1", "researcher")
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	err = store.ResetSession(ctx, "s1")
 	require.NoError(t, err)
 
 	count, planPath, baseSHA, err := store.Session(ctx, "s1")
@@ -147,6 +151,11 @@ func TestStoreResetSession(t *testing.T) {
 	assert.Equal(t, 0, count)
 	assert.Equal(t, "", planPath)
 	assert.Equal(t, "", baseSHA)
+
+	// A new plan cycle re-arms the TeammateIdle gate.
+	claimed, err = store.MarkTeammateIdleBlocked(ctx, "s1", "researcher")
+	require.NoError(t, err)
+	assert.True(t, claimed, "reset must drop the teammate's idle block")
 }
 
 func TestStoreClearSession(t *testing.T) {
@@ -157,13 +166,23 @@ func TestStoreClearSession(t *testing.T) {
 
 	_, _ = store.IncrementExitPlanCount(ctx, "s1")
 
-	err := store.ClearSession(ctx, "s1")
+	claimed, err := store.MarkTeammateIdleBlocked(ctx, "s1", "researcher")
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	err = store.ClearSession(ctx, "s1")
 	require.NoError(t, err)
 
 	// Session should be fresh after clear.
 	count, _, _, err := store.Session(ctx, "s1")
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)
+
+	// An answered post-impl question clears the session, which re-arms
+	// the TeammateIdle gate for the next cycle.
+	claimed, err = store.MarkTeammateIdleBlocked(ctx, "s1", "researcher")
+	require.NoError(t, err)
+	assert.True(t, claimed, "clear must drop the teammate's idle block")
 }
 
 func TestStoreIndependentSessions(t *testing.T) {
@@ -323,7 +342,7 @@ func TestDeletePendingPlan(t *testing.T) {
 // directly, bypassing MaybePruneStale's probabilistic gate. Both
 // `sessions` and `pending_plans` rows older than 24 hours must go;
 // fresh rows must survive.
-func TestPruneStale_PrunesBothTables_Beyond24h(t *testing.T) {
+func TestPruneStale_PrunesSessionScopedTables_Beyond24h(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
@@ -353,9 +372,35 @@ func TestPruneStale_PrunesBothTables_Beyond24h(t *testing.T) {
 		"stale-sess")
 	require.NoError(t, err)
 
+	// Fresh subagent spawn and idle block -- must survive.
+	require.NoError(t, store.RecordSubagentStart(ctx, state.SubagentStart{
+		SessionID: "fresh-sess", AgentID: "a1", AgentType: "Explore",
+	}))
+
+	_, err = store.MarkTeammateIdleBlocked(ctx, "fresh-sess", "researcher")
+	require.NoError(t, err)
+
+	// Stale subagent spawn and idle block (>24h) -- must be pruned.
+	require.NoError(t, store.RecordSubagentStart(ctx, state.SubagentStart{
+		SessionID: "stale-sess", AgentID: "a2", AgentType: "Plan",
+	}))
+
+	_, err = store.MarkTeammateIdleBlocked(ctx, "stale-sess", "reviewer")
+	require.NoError(t, err)
+
+	_, err = store.DB().ExecContext(ctx,
+		`UPDATE subagent_starts SET created_at = datetime('now', '-25 hours') WHERE session_id = ?`,
+		"stale-sess")
+	require.NoError(t, err)
+
+	_, err = store.DB().ExecContext(ctx,
+		`UPDATE teammate_idle_blocks SET created_at = datetime('now', '-25 hours') WHERE session_id = ?`,
+		"stale-sess")
+	require.NoError(t, err)
+
 	require.NoError(t, store.PruneStale(ctx))
 
-	var pendingCount, sessionCount int
+	var pendingCount, sessionCount, subagentCount, idleBlockCount int
 
 	require.NoError(t, store.DB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM pending_plans`).Scan(&pendingCount))
@@ -364,6 +409,14 @@ func TestPruneStale_PrunesBothTables_Beyond24h(t *testing.T) {
 	require.NoError(t, store.DB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM sessions`).Scan(&sessionCount))
 	assert.Equal(t, 1, sessionCount, "stale session row must be pruned, fresh must survive")
+
+	require.NoError(t, store.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM subagent_starts`).Scan(&subagentCount))
+	assert.Equal(t, 1, subagentCount, "stale subagent row must be pruned, fresh must survive")
+
+	require.NoError(t, store.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM teammate_idle_blocks`).Scan(&idleBlockCount))
+	assert.Equal(t, 1, idleBlockCount, "stale idle block must be pruned, fresh must survive")
 }
 
 // TestStore_ConcurrentWriters_DistinctSessions exercises inter-process
@@ -1089,4 +1142,150 @@ func TestPruneStale_BashFailures30DayCutoff(t *testing.T) {
 	require.NoError(t, rows.Err())
 	assert.Equal(t, []string{"edge-29d", "fresh"}, got,
 		"rows at 29 days and fresh must survive; 31-day row must be pruned")
+}
+
+// seedV7 writes the pre-migration shape into dbPath: open via Open (so
+// every table lands at the current shape), then undo the v7→v8 step by
+// dropping the two compaction columns and the two tables it added, and
+// roll user_version back to 7. Reopening the resulting DB then
+// re-triggers that step.
+//
+// Unlike [seedV6], which recreates a table wholesale, the v8 step is
+// additive, so the seed subtracts rather than rewrites.
+func seedV7(t *testing.T, dbPath string) {
+	t.Helper()
+
+	seed, err := state.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+
+	for _, stmt := range []string{
+		`ALTER TABLE sessions DROP COLUMN last_compact_trigger`,
+		`ALTER TABLE sessions DROP COLUMN last_compact_at`,
+		`DROP TABLE IF EXISTS subagent_starts`,
+		`DROP TABLE IF EXISTS teammate_idle_blocks`,
+		`PRAGMA user_version = 7`,
+	} {
+		_, err = seed.DB().ExecContext(t.Context(), stmt)
+		require.NoError(t, err, stmt)
+	}
+
+	require.NoError(t, seed.Close())
+}
+
+// TestEnsureSchema_UpgradesFromV7 seeds a DB at the v7 shape (no
+// compaction columns, no subagent_starts, no teammate_idle_blocks),
+// reopens it, and checks that the v7→v8 step lands: user_version
+// reaches the current state.SchemaVersion and every added column and
+// table is usable.
+func TestEnsureSchema_UpgradesFromV7(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "v7.db")
+
+	seedV7(t, dbPath)
+
+	store, err := state.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, store.Close())
+	})
+
+	var version int
+
+	require.NoError(t, store.DB().QueryRowContext(t.Context(),
+		`PRAGMA user_version`).Scan(&version))
+	assert.Equal(t, state.SchemaVersion, version, "user_version must reach current state.SchemaVersion after migration")
+
+	require.NoError(t, store.RecordCompaction(t.Context(), "s1", "manual"))
+	require.NoError(t, store.RecordSubagentStart(t.Context(), state.SubagentStart{
+		SessionID: "s1", AgentID: "a1", AgentType: "Explore",
+	}))
+
+	claimed, err := store.MarkTeammateIdleBlocked(t.Context(), "s1", "researcher")
+	require.NoError(t, err)
+	assert.True(t, claimed)
+}
+
+func TestStoreRecordSubagentStart(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	for _, a := range []state.SubagentStart{
+		{SessionID: "s1", AgentID: "a1", AgentType: "Explore"},
+		{SessionID: "s1", AgentID: "a2", AgentType: "Plan"},
+		{SessionID: "s2", AgentID: "a3", AgentType: "Explore"},
+	} {
+		require.NoError(t, store.RecordSubagentStart(ctx, a))
+	}
+
+	var count int
+
+	require.NoError(t, store.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM subagent_starts WHERE session_id = ?`, "s1").Scan(&count))
+	assert.Equal(t, 2, count, "rows are append-only and scoped to their session")
+
+	var agentType, agentID string
+
+	require.NoError(t, store.DB().QueryRowContext(ctx,
+		`SELECT agent_type, agent_id FROM subagent_starts WHERE session_id = ? ORDER BY id`,
+		"s2").Scan(&agentType, &agentID))
+	assert.Equal(t, "Explore", agentType)
+	assert.Equal(t, "a3", agentID)
+}
+
+func TestStoreMarkTeammateIdleBlocked(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	claimed, err := store.MarkTeammateIdleBlocked(ctx, "s1", "researcher")
+	require.NoError(t, err)
+	assert.True(t, claimed, "the first call claims the block")
+
+	claimed, err = store.MarkTeammateIdleBlocked(ctx, "s1", "researcher")
+	require.NoError(t, err)
+	assert.False(t, claimed, "the second call for the same teammate must not re-claim")
+
+	claimed, err = store.MarkTeammateIdleBlocked(ctx, "s1", "reviewer")
+	require.NoError(t, err)
+	assert.True(t, claimed, "a different teammate in the same session claims its own block")
+
+	claimed, err = store.MarkTeammateIdleBlocked(ctx, "s2", "researcher")
+	require.NoError(t, err)
+	assert.True(t, claimed, "the same teammate name in a different session claims its own block")
+}
+
+func TestStoreRecordCompaction(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	require.NoError(t, store.RecordCompaction(ctx, "s1", "auto"))
+
+	var trigger, at string
+
+	require.NoError(t, store.DB().QueryRowContext(ctx,
+		`SELECT last_compact_trigger, last_compact_at FROM sessions WHERE session_id = ?`,
+		"s1").Scan(&trigger, &at))
+	assert.Equal(t, "auto", trigger)
+	assert.NotEmpty(t, at)
+
+	// The stamp is an UPSERT: a later compaction overwrites it and
+	// leaves the plan state beside it alone.
+	require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
+	require.NoError(t, store.RecordCompaction(ctx, "s1", "manual"))
+
+	_, planPath, baseSHA, err := store.Session(ctx, "s1")
+	require.NoError(t, err)
+	assert.Equal(t, "/plan.md", planPath)
+	assert.Equal(t, "sha1", baseSHA)
+
+	require.NoError(t, store.DB().QueryRowContext(ctx,
+		`SELECT last_compact_trigger FROM sessions WHERE session_id = ?`, "s1").Scan(&trigger))
+	assert.Equal(t, "manual", trigger)
 }

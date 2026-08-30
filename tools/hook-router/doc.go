@@ -1,7 +1,7 @@
 // Hook-router is a Claude Code hook handler that inspects tool invocations
 // and manages plan-mode lifecycle state.
 //
-// It handles PreToolUse, PostToolUse, and Stop hook events:
+// It handles these hook events:
 //
 //   - PreToolUse:Bash             -- evaluates command deny/ask rules from
 //     --command-rules JSON, denies a foreground `sleep` over the
@@ -29,6 +29,18 @@
 //   - Stop                        -- blocks (with an AskUserQuestion-instructing
 //     message) until the post-impl question has been
 //     answered once for the current plan cycle
+//   - TeammateIdle                -- applies that same post-impl gate to an
+//     in-process teammate, once per teammate, through exit code 2
+//   - SubagentStart               -- records the spawned agent's type and id
+//   - PreCompact                  -- records the compaction trigger on the session
+//   - SessionStart                -- migrates a pending plan handoff onto the new
+//     session, and sweeps orphaned kubectx dirs and expired archives
+//   - SessionEnd                  -- removes the session's kubectx dir
+//   - UserPromptSubmit            -- clears plan-guard state when a wrap-up skill
+//     from --commit-skills is invoked
+//
+// An event with no case here is a no-op; the router never guesses a
+// handler for one it does not recognize.
 //
 // Session state is persisted in a SQLite database.
 //

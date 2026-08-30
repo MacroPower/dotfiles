@@ -68,7 +68,10 @@ func TestEventNeedsStore(t *testing.T) {
 			input: `not json`,
 			want:  false,
 		},
-		"unknown event skips store": {event: "Foo", want: false},
+		"SubagentStart always needs store": {event: "SubagentStart", want: true},
+		"TeammateIdle always needs store":  {event: "TeammateIdle", want: true},
+		"PreCompact always needs store":    {event: "PreCompact", want: true},
+		"unknown event skips store":        {event: "Foo", want: false},
 	}
 
 	for name, tc := range cases {
@@ -656,9 +659,111 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, stdout.Bytes())
 	})
 
-	t.Run("unknown event falls back to Bash handler", func(t *testing.T) {
+	t.Run("SubagentStart: no store is noop", func(t *testing.T) {
 		t.Parallel()
 
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(`{"session_id":"s1","agent_type":"Explore"}`),
+			&stdout, "SubagentStart", "", nil, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("SubagentStart routes to handler", func(t *testing.T) {
+		t.Parallel()
+
+		store := newTestStore(t)
+		ctx := t.Context()
+
+		var stdout bytes.Buffer
+
+		err := run(ctx, strings.NewReader(`{"session_id":"s1","agent_type":"Explore","agent_id":"a1"}`),
+			&stdout, "SubagentStart", "", store, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+
+		var count int
+
+		require.NoError(t, store.DB().QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM subagent_starts WHERE session_id = ?`, "s1").Scan(&count))
+		assert.Equal(t, 1, count)
+	})
+
+	t.Run("PreCompact: no store is noop", func(t *testing.T) {
+		t.Parallel()
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(`{"session_id":"s1","trigger":"auto"}`),
+			&stdout, "PreCompact", "", nil, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("PreCompact routes to handler and writes no stdout", func(t *testing.T) {
+		t.Parallel()
+
+		store := newTestStore(t)
+		ctx := t.Context()
+
+		var stdout bytes.Buffer
+
+		err := run(ctx, strings.NewReader(`{"session_id":"s1","trigger":"auto"}`),
+			&stdout, "PreCompact", "", store, cfg, logger)
+		require.NoError(t, err)
+
+		// PreCompact parses stdout as a decision document and can block
+		// compaction, so the handler must stay silent.
+		assert.Empty(t, stdout.Bytes())
+
+		var trigger string
+
+		require.NoError(t, store.DB().QueryRowContext(ctx,
+			`SELECT last_compact_trigger FROM sessions WHERE session_id = ?`, "s1").Scan(&trigger))
+		assert.Equal(t, "auto", trigger)
+	})
+
+	t.Run("TeammateIdle: no store is noop", func(t *testing.T) {
+		t.Parallel()
+
+		var stdout bytes.Buffer
+
+		err := run(t.Context(), strings.NewReader(`{"session_id":"s1","teammate_name":"researcher"}`),
+			&stdout, "TeammateIdle", "", nil, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("TeammateIdle blocks through the exit-2 path, not stdout", func(t *testing.T) {
+		t.Parallel()
+
+		store := newTestStore(t)
+		ctx := t.Context()
+
+		require.NoError(t, store.SetPlanPath(ctx, "s1", "/plan.md", "sha1"))
+
+		gateCfg := cfg
+		gateCfg.postImpl = testCatalog()
+
+		var stdout bytes.Buffer
+
+		err := run(ctx, strings.NewReader(`{"session_id":"s1","teammate_name":"researcher"}`),
+			&stdout, "TeammateIdle", "", store, gateCfg, logger)
+
+		var blocked *blockError
+
+		require.ErrorAs(t, err, &blocked)
+		assert.Contains(t, blocked.Reason, "/plan.md")
+		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("unknown event is a no-op", func(t *testing.T) {
+		t.Parallel()
+
+		// A command the Bash rules deny: reaching handleBash would
+		// emit a deny decision, so empty stdout proves the unknown
+		// event never got there.
 		input := makeInput(map[string]any{
 			"command": "git stash",
 		})
@@ -667,15 +772,7 @@ func TestRun(t *testing.T) {
 
 		err := run(t.Context(), strings.NewReader(input), &stdout, "Unknown", "", nil, cfg, logger)
 		require.NoError(t, err)
-
-		var result map[string]any
-
-		err = json.Unmarshal(stdout.Bytes(), &result)
-		require.NoError(t, err)
-
-		hso, ok := result["hookSpecificOutput"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Empty(t, stdout.Bytes())
 	})
 }
 

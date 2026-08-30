@@ -48,10 +48,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 // wraps the whole block in BEGIN IMMEDIATE and re-checks user_version
 // after acquiring the write lock.
 //
-// `bash_failures` is created with CREATE TABLE IF NOT EXISTS, which is
-// re-runnable; the "duplicate column name" guard only matches ALTER,
-// so it does not apply there. Concurrent migrators are still serialized
-// by the BEGIN IMMEDIATE wrapper in [*Store.ensureSchema].
+// `bash_failures`, `subagent_starts`, and `teammate_idle_blocks` are
+// created with CREATE TABLE IF NOT EXISTS, which is re-runnable; the
+// "duplicate column name" guard only matches ALTER, so it does not
+// apply there. Concurrent migrators are still serialized by the
+// BEGIN IMMEDIATE wrapper in [*Store.ensureSchema].
 var migrations = []string{
 	`ALTER TABLE sessions ADD COLUMN review_head_sha TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE sessions ADD COLUMN review_wt_hash TEXT NOT NULL DEFAULT ''`,
@@ -94,6 +95,33 @@ var migrations = []string{
 	    base_sha   TEXT NOT NULL DEFAULT '',
 	    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	)`,
+	`ALTER TABLE sessions ADD COLUMN last_compact_trigger TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE sessions ADD COLUMN last_compact_at TEXT NOT NULL DEFAULT ''`,
+	// subagent_starts: one row per Agent-tool spawn, recorded by the
+	// SubagentStart hook. Nothing reads it yet; it is the record the
+	// plan gate will consult once it detects a real plan-reviewer spawn
+	// instead of counting ExitPlanMode calls.
+	`CREATE TABLE IF NOT EXISTS subagent_starts (
+	    id         INTEGER PRIMARY KEY,
+	    session_id TEXT NOT NULL,
+	    agent_id   TEXT NOT NULL DEFAULT '',
+	    agent_type TEXT NOT NULL DEFAULT '',
+	    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)`,
+	`CREATE INDEX IF NOT EXISTS subagent_starts_created_at_idx
+	    ON subagent_starts(created_at)`,
+	// teammate_idle_blocks: one row per teammate the TeammateIdle gate
+	// has already blocked. TeammateIdle carries no stop_hook_active
+	// equivalent, so the row bounds the gate to one block per teammate
+	// and keeps a teammate that cannot clear the plan itself from
+	// looping. Keying on teammate_name rather than session_id alone
+	// gates every teammate, not just the first one to go idle.
+	`CREATE TABLE IF NOT EXISTS teammate_idle_blocks (
+	    session_id    TEXT NOT NULL,
+	    teammate_name TEXT NOT NULL,
+	    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+	    PRIMARY KEY (session_id, teammate_name)
+	)`,
 }
 
 const (
@@ -103,7 +131,7 @@ const (
 
 // SchemaVersion is the PRAGMA user_version a fully migrated database
 // reports. [Open] migrates older databases forward to it.
-const SchemaVersion = 7
+const SchemaVersion = 8
 
 // Store manages plan-guard session state in a SQLite database.
 type Store struct {
@@ -275,13 +303,15 @@ func (s *Store) MaybePruneStale(ctx context.Context) (bool, error) {
 	return true, s.PruneStale(ctx)
 }
 
-// PruneStale removes stale rows: `sessions` and `pending_plans` past
-// 24 hours, and `bash_failures` past [bashFailureRetentionDays] (the
-// failure history is kept longer than session state on purpose, since
-// analysis tools may want to look back across many sessions). The
-// deterministic entry point behind [*Store.MaybePruneStale], for
-// callers (and tests) that want cleanup without the probabilistic
-// gate.
+// PruneStale removes stale rows: `sessions`, `pending_plans`,
+// `subagent_starts`, and `teammate_idle_blocks` past 24 hours, and
+// `bash_failures` past [bashFailureRetentionDays] (the failure history
+// is kept longer than session state on purpose, since analysis tools
+// may want to look back across many sessions). The three session-scoped
+// tables share the sessions window because nothing outside the session
+// that wrote them reads them. The deterministic entry point behind
+// [*Store.MaybePruneStale], for callers (and tests) that want cleanup
+// without the probabilistic gate.
 func (s *Store) PruneStale(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM sessions WHERE updated_at < datetime('now', '-24 hours')`)
@@ -293,6 +323,18 @@ func (s *Store) PruneStale(ctx context.Context) error {
 		`DELETE FROM pending_plans WHERE updated_at < datetime('now', '-24 hours')`)
 	if err != nil {
 		return fmt.Errorf("pruning stale pending plans: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM subagent_starts WHERE created_at < datetime('now', '-24 hours')`)
+	if err != nil {
+		return fmt.Errorf("pruning stale subagent starts: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM teammate_idle_blocks WHERE created_at < datetime('now', '-24 hours')`)
+	if err != nil {
+		return fmt.Errorf("pruning stale teammate idle blocks: %w", err)
 	}
 
 	// bashFailureRetentionDays is a trusted int constant; SQLite's
@@ -388,6 +430,9 @@ func (s *Store) SetPlanPath(ctx context.Context, id, planPath, baseSHA string) e
 // an explicit [*Store.SetInPlanMode] call to flip the bit on, keeping
 // the bit's lifecycle owned by EnterPlanMode rather than coupling it
 // into ResetSession.
+//
+// The session's `teammate_idle_blocks` rows go too, so a new plan cycle
+// re-arms the TeammateIdle gate for every teammate it already blocked.
 func (s *Store) ResetSession(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO sessions (session_id)
@@ -403,6 +448,12 @@ func (s *Store) ResetSession(ctx context.Context, id string) error {
 		   updated_at = datetime('now')`, id)
 	if err != nil {
 		return fmt.Errorf("resetting session: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM teammate_idle_blocks WHERE session_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("resetting teammate idle blocks: %w", err)
 	}
 
 	return nil
@@ -450,12 +501,21 @@ func (s *Store) InPlanMode(ctx context.Context, id string) (bool, error) {
 	return v != 0, nil
 }
 
-// ClearSession removes a session entirely.
+// ClearSession removes a session entirely, including the
+// `teammate_idle_blocks` rows it owns. An answered post-impl question
+// clears the session, which re-arms the TeammateIdle gate for the next
+// plan cycle.
 func (s *Store) ClearSession(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM sessions WHERE session_id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("clearing session: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM teammate_idle_blocks WHERE session_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("clearing teammate idle blocks: %w", err)
 	}
 
 	return nil
@@ -600,6 +660,72 @@ func (s *Store) RecordBashFailure(ctx context.Context, f BashFailure) error {
 		f.Stdout, f.Stderr, boolToInt(f.IsError), boolToInt(f.Interrupted), exitCode)
 	if err != nil {
 		return fmt.Errorf("recording bash failure: %w", err)
+	}
+
+	return nil
+}
+
+// SubagentStart is the input shape for [*Store.RecordSubagentStart].
+type SubagentStart struct {
+	SessionID string
+	AgentID   string
+	AgentType string
+}
+
+// RecordSubagentStart appends a row to subagent_starts, one per Agent
+// tool spawn the SubagentStart hook observed. Rows are append-only and
+// pruned with the rest of the session state by [*Store.PruneStale].
+func (s *Store) RecordSubagentStart(ctx context.Context, a SubagentStart) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO subagent_starts (session_id, agent_id, agent_type)
+		 VALUES (?, ?, ?)`,
+		a.SessionID, a.AgentID, a.AgentType)
+	if err != nil {
+		return fmt.Errorf("recording subagent start: %w", err)
+	}
+
+	return nil
+}
+
+// MarkTeammateIdleBlocked claims the one TeammateIdle block a teammate
+// gets per plan cycle. It reports true when this call claimed the
+// block and false when the teammate was already blocked once.
+//
+// The claim is a single INSERT OR IGNORE, so two teammates racing on
+// the same key cannot both read true. [*Store.ClearSession] and
+// [*Store.ResetSession] drop the rows, which is what re-arms the gate
+// for the next plan cycle.
+func (s *Store) MarkTeammateIdleBlocked(ctx context.Context, id, teammate string) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO teammate_idle_blocks (session_id, teammate_name)
+		 VALUES (?, ?)`, id, teammate)
+	if err != nil {
+		return false, fmt.Errorf("marking teammate idle block: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("reading teammate idle block claim: %w", err)
+	}
+
+	return n > 0, nil
+}
+
+// RecordCompaction stamps the session row with the compaction trigger
+// ("manual" or "auto") and the time it fired. The marker is
+// observational: nothing reads it yet, and the plan-guard state it sits
+// beside already survives compaction because it lives in SQLite rather
+// than in the transcript.
+func (s *Store) RecordCompaction(ctx context.Context, id, trigger string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sessions (session_id, last_compact_trigger, last_compact_at)
+		 VALUES (?, ?, datetime('now'))
+		 ON CONFLICT(session_id) DO UPDATE SET
+		   last_compact_trigger = excluded.last_compact_trigger,
+		   last_compact_at = excluded.last_compact_at,
+		   updated_at = datetime('now')`, id, trigger)
+	if err != nil {
+		return fmt.Errorf("recording compaction: %w", err)
 	}
 
 	return nil
