@@ -384,11 +384,11 @@
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1787795179,
-        "narHash": "sha256-EGaBpUUnchs2VomZNEjyrZe5d3n71nQec8Yla13V2qc=",
+        "lastModified": 1788138553,
+        "narHash": "sha256-FLLDBQm/Y4MjW/wI4BuqJImiqF1bmLBVL3NCWQgmIDY=",
         "owner": "numtide",
         "repo": "llm-agents.nix",
-        "rev": "fcad69a0ea53a0361589b5a8821871922a51a277",
+        "rev": "076097b285f4d5fbf98e2d534396a23b1a629d7f",
         "type": "github"
       },
       "original": {
@@ -561,11 +561,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1787260429,
-        "narHash": "sha256-jLumAVlzO7JSAdMirvqQbmH2JOdP/q5NYV+SkNZhaWI=",
+        "lastModified": 1787626493,
+        "narHash": "sha256-JGc654qY7vWeZ/1eL4618fZurlClXA3K84XiiCC1fjE=",
         "ref": "refs/heads/main",
-        "rev": "a08e7e27110f846aa7e9e767cfe3164783de0dd9",
-        "revCount": 67,
+        "rev": "7c6fc43bfb0c782d22997e17975b3718927acd7a",
+        "revCount": 72,
         "type": "git",
         "url": "https://nur.jacobcolvin.com"
       },
@@ -825,11 +825,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1787774558,
-        "narHash": "sha256-qubWyOxzzODezZjNtQT71NmrFP7xoEGhMjbw/2QZnQk=",
+        "lastModified": 1788085765,
+        "narHash": "sha256-twHAd8m9tSoskIl7BUxYuY1p3+bqO38haKQUflsEbhg=",
         "owner": "raine",
         "repo": "workmux",
-        "rev": "0025eec2da459fe238dbf96d462ff2ecda610ed7",
+        "rev": "a72be9426136aa7af36c2bd7b3d92155b7be114e",
         "type": "github"
       },
       "original": {

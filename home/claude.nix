@@ -3614,6 +3614,21 @@ in
                   { hooks = [ (router "PreCompact" null) ]; }
                 ];
                 SessionStart = [
+                  {
+                    # register-agent binds the session id to the tmux pane so
+                    # the sidebar lists the agent at startup and the async
+                    # status hooks keep routing when the hook process falls
+                    # outside the pane's process tree (workmux refuses to
+                    # route status by working directory alone).
+                    matcher = "startup|resume|clear|fork";
+                    hooks = [
+                      {
+                        type = "command";
+                        command = "${lib.getExe' pkgs.workmux-bin "workmux"} register-agent";
+                        async = true;
+                      }
+                    ];
+                  }
                   { hooks = [ (router "SessionStart" null) ]; }
                 ];
                 SessionEnd = [
