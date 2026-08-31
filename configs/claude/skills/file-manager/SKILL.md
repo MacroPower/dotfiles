@@ -1,10 +1,8 @@
 ---
 name: file-manager
 description: >-
-  Manage, organize, sort, rename, dedupe, or archive files on disk.
-  Use when reshaping a directory tree, batch-renaming, deduplicating, sorting media
-  by date or location, mounting or extracting disk images, or cleaning up a folder.
-  Skip for git operations and code edits.
+  ALWAYS load BEFORE reorganizing, batch-renaming, deduplicating, sorting, or
+  archiving files on disk. SKIP for git operations and code edits.
 ---
 
 # file-manager

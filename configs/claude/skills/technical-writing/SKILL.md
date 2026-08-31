@@ -1,11 +1,8 @@
 ---
 name: technical-writing
 description: >-
-  Load this skill BEFORE writing or editing any technical documents: docs,
-  READMEs, guides, tutorials, reference pages, RFCs, design docs, or runbooks.
-  It layers document structure (Diataxis), reader address, one-statement
-  sentences, unambiguous syntax, and graded obligations (must, should, may)
-  on top of the prose skill.
+  ALWAYS Load BEFORE writing or editing any technical document (docs, READMEs,
+  guides, RFCs, design docs, runbooks).
 ---
 
 # Technical Writing

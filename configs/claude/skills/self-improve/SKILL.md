@@ -2,7 +2,7 @@
 name: self-improve
 description: >-
   Retrospective on the current session's friction (broken tool calls,
-  repeated prompts, wasted effort), with proposed fixes.
+  repeated prompts, wasted effort).
 ---
 
 # Self-Improve

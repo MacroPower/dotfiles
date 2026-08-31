@@ -1,12 +1,7 @@
 ---
 name: taskfile
 description: >-
-  Reference and guidance for writing Taskfiles (Taskfile.yaml) and using the
-  `task` / go-task CLI (https://taskfile.dev/). Trigger when the user edits or
-  creates Taskfile.yaml files, runs or troubleshoots the `task` CLI, or asks
-  about Task or `go-task`. SKIP when the user is discussing generic to-do lists,
-  Celery/Airflow/Luigi tasks, Claude Code's own TaskCreate/TaskList tools, or
-  macOS Reminders.
+  ALWAYS load BEFORE creating or editing Taskfiles (Taskfile.yaml, .taskfiles/*).
 ---
 
 # Taskfile Task Runner Reference

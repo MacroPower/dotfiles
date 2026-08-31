@@ -1,15 +1,8 @@
 ---
 name: presenterm
 description: >-
-  Reference and guidance for writing presenterm presentations (terminal
-  slideshows written in markdown) and using the `presenterm` CLI
-  (https://mfontanini.github.io/presenterm/). Trigger when the user creates or
-  edits a presenterm presentation, asks about slides in the terminal, uses
-  presenterm comment commands like `<!-- end_slide -->` or `<!-- pause -->`,
-  configures presenterm themes or config, or exports a presentation to
-  PDF/HTML. SKIP for PowerPoint/Keynote/Google Slides, reveal.js and other
-  browser-based slide tools, and generic markdown documents that aren't
-  presentations.
+  ALWAYS load BEFORE creating or editing presenterm presentations (markdown
+  slideshows rendered in the terminal) or using the `presenterm` CLI.
 ---
 
 # presenterm Reference

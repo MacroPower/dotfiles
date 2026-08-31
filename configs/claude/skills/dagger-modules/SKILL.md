@@ -1,11 +1,8 @@
 ---
 name: dagger-modules
 description: >-
-  Guide for creating Dagger modules, toolchains, and CI pipelines using the Go SDK.
-  Use this skill whenever the user wants to create or modify a Dagger module,
-  build a toolchain, write Dagger Functions in Go, or set up CI/CD with Dagger.
-  Also trigger when you see dagger.json, the dagger CLI, imports from dagger, or
-  references to the `dag` client.
+  ALWAYS load BEFORE creating or editing Dagger modules, Dagger Functions, or
+  Dagger-based CI pipelines.
 ---
 
 # Dagger Modules — Go SDK

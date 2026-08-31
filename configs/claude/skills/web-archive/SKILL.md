@@ -1,14 +1,7 @@
 ---
 name: web-archive
 description: >-
-  Archive web pages, videos, and full sites for offline use.
-
-  Trigger on "archive this page", "save this URL offline",
-  "snapshot this article", "mirror this site", "download this video",
-  "capture this thread", or any request to preserve web content for later.
-
-  SKIP for unrelated uses of "archive", for example tar/zip archives,
-  archived issues/PRs, mailing-list archives, and so on.
+  ALWAYS load BEFORE saving web pages, video, or audio for offline use.
 ---
 
 # Web Archive

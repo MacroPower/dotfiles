@@ -1,6 +1,8 @@
 ---
 name: git-surgeon
-description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fold, amend, squash, commit splitting, and commit reordering. Use when selectively staging, unstaging, discarding, reverting, squashing, splitting, or reordering individual diff hunks by ID instead of interactively.
+description: >-
+  ALWAYS load BEFORE selectively staging, discarding, amending, squashing, splitting,
+  or reordering individual git hunks or commits.
 ---
 
 # git-surgeon

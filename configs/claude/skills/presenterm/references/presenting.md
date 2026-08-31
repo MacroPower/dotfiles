@@ -34,7 +34,7 @@ Presentations can be exported to PDF and HTML.
 
 ## PDF
 
-Requires [weasyprint](https://pypi.org/project/weasyprint/) (a Python package; follow its install instructions, and activate its virtualenv if it lives in one):
+Requires [weasyprint](https://pypi.org/project/weasyprint/) (a Python package). Do not install it into a shared environment; use the `uv` one-shot below:
 
 ```bash
 presenterm --export-pdf demo.md            # writes demo.pdf
