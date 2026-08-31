@@ -2077,6 +2077,7 @@ in
       research.source = ../configs/claude/skills/research;
       review-implementation.source = ../configs/claude/skills/review-implementation;
       self-improve.source = ../configs/claude/skills/self-improve;
+      skill-creator.source = ../configs/claude/skills/skill-creator;
       taskfile.source = ../configs/claude/skills/taskfile;
       technical-writing.source = ../configs/claude/skills/technical-writing;
       web-archive.source = ../configs/claude/skills/web-archive;
@@ -3348,9 +3349,6 @@ in
               type = "command";
               command = "${pkgs.claude-powerline}/bin/claude-powerline";
               padding = 0;
-            };
-            enabledPlugins = {
-              "skill-creator@claude-plugins-official" = true;
             };
             sandbox = {
               enabled = sandboxEnabled;
