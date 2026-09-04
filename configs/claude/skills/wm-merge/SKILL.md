@@ -7,6 +7,11 @@ allowed-tools: Read, Bash, Glob, Grep
 
 <!-- Customize the commit style and rebase behavior to match your workflow. -->
 
+<!-- Local deviation from upstream: workmux-store-meta-outside-config.patch
+moves branch.<n>.workmux-base from .git/config into
+$GIT_COMMON_DIR/workmux-config, so the base-branch lookup below reads that
+file instead of upstream's plain `git config`. -->
+
 **Arguments:** `$ARGUMENTS`
 
 Check the arguments for flags:
@@ -57,7 +62,7 @@ If the codebase follows conventional commits (visible in recent commits above), 
 Get the base branch from git config:
 
 ```
-git config --local --get "branch.$(git branch --show-current).workmux-base"
+git config --file "$(git rev-parse --git-common-dir)/workmux-config" --get "branch.$(git branch --show-current).workmux-base"
 ```
 
 If no base branch is configured, default to "main".

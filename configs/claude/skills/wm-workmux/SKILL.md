@@ -24,7 +24,8 @@ context you already have. The worktree agent does all the work.
 - **Worktree directory**: defaults to `<repo>/.worktrees/<handle>` inside
   the project root
 - **Window prefix**: tmux windows are named `wm-<handle>` by default
-  (configurable via `window_prefix`)
+  (configurable via `window_prefix`, which supports a `{project}`
+  placeholder)
 - **Agent status**: agents report status via hooks: working, waiting (needs
   input), done (finished)
 
@@ -192,9 +193,10 @@ For the full configuration reference with all options documented, run
 
 ### Agent detection
 
-Built-in agents (`claude`, `gemini`, `codex`, `opencode`, `kiro-cli`,
-`vibe`) are auto-detected in pane commands and receive prompt injection
-automatically. The `<agent>` placeholder resolves to the configured agent.
+Built-in agents (`claude`, `gemini`, `agy`, `codex`, `opencode`, `kiro-cli`,
+`vibe`, `pi`, `omp`, `grok`) are auto-detected in pane commands and receive
+prompt injection automatically. The `<agent>` placeholder resolves to the
+configured agent.
 
 ## Common Workflows
 
