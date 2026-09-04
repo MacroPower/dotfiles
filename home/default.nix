@@ -148,6 +148,19 @@ in
       EDITOR = "nvim";
       VISUAL = "nvim";
       HOMEBREW_NO_AUTO_UPDATE = "1";
+
+      # Telemetry opt-outs. DO_NOT_TRACK is the cross-vendor
+      # convention (consoledonottrack.com); the rest are the
+      # per-tool switches for Microsoft CLIs, which ignore it and
+      # otherwise report to dc.services.visualstudio.com.
+      DO_NOT_TRACK = "1";
+      AZURE_CORE_COLLECT_TELEMETRY = "false";
+      AZURE_DEV_COLLECT_TELEMETRY = "no";
+      DOTNET_CLI_TELEMETRY_OPTOUT = "1";
+      DOTNET_NOLOGO = "1";
+      POWERSHELL_TELEMETRY_OPTOUT = "1";
+      POWERSHELL_UPDATECHECK = "Off";
+      FUNCTIONS_CORE_TOOLS_TELEMETRY_OPTOUT = "1";
     };
 
     packages =
