@@ -302,8 +302,8 @@
 
       # Reduce visual effects for snappier UI and less distraction
       universalaccess = {
-        # Skip animation when switching Spaces, opening Mission Control, etc.
-        reduceMotion = true;
+        # Keep animations when switching Spaces, opening Mission Control, etc.
+        reduceMotion = false;
         # Use solid backgrounds instead of translucent sidebars and menus
         reduceTransparency = true;
       };
