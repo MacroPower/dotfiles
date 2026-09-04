@@ -2091,6 +2091,7 @@ in
       skill-creator.source = ../configs/claude/skills/skill-creator;
       taskfile.source = ../configs/claude/skills/taskfile;
       technical-writing.source = ../configs/claude/skills/technical-writing;
+      upgrade.source = ../configs/claude/skills/upgrade;
       web-archive.source = ../configs/claude/skills/web-archive;
     };
 
