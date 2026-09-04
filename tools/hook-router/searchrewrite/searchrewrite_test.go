@@ -142,6 +142,18 @@ func TestRewrite(t *testing.T) {
 			want:    `bfs . -type f`,
 			changed: true,
 		},
+		"find nested in a grep substitution stays verbatim": {
+			command: `grep -l a $(find . -name '*.x')`,
+			cfg:     fullConfig(),
+			want:    `rg -l a $(find . -name '*.x') -g '!.git' -g '!.worktrees' -g '!.claude/worktrees' -g '!**/.claude/worktrees'`,
+			changed: true,
+		},
+		"grep nested in a find substitution rewrites both": {
+			command: `find $(grep -l a .) -type f`,
+			cfg:     fullConfig(),
+			want:    `bfs -exclude \( -name .git -o -name .worktrees -o -path '*.claude/worktrees' \) $(rg -l a . -g '!.git' -g '!.worktrees' -g '!.claude/worktrees' -g '!**/.claude/worktrees') -type f`,
+			changed: true,
+		},
 		"find in a pipeline rewrites the find stage only": {
 			command: `find . -name '*.go' | head`,
 			cfg:     fullConfig(),

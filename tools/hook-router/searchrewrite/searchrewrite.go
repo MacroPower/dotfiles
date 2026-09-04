@@ -161,6 +161,13 @@ func Rewrite(prog *syntax.File, command string, cfg Config) (newCmd string, read
 				end:     int(call.End().Offset()),
 				replace: span,
 			})
+
+			// The replacement splices every positional word verbatim,
+			// so a command substitution inside the grep call (`grep -l
+			// a $(find . -name '*.x')`) travels unchanged. Descending
+			// into it would record a second edit inside this one's
+			// span and applyEdits would splice backwards.
+			return false
 		}
 
 		return true
@@ -352,8 +359,9 @@ func looksBRE(pattern string) bool {
 }
 
 // applyEdits splices edits into command, copying unedited spans verbatim.
-// Edits are sorted by start offset; they never overlap because grep and
-// find rewrites touch disjoint spans.
+// Edits are sorted by start offset; they never overlap because a find
+// edit covers only its command word and [Rewrite] does not descend into
+// a rewritten grep call, so nothing nested inside a grep span is edited.
 func applyEdits(command string, edits []edit) string {
 	sort.Slice(edits, func(i, j int) bool {
 		return edits[i].start < edits[j].start
