@@ -990,7 +990,8 @@ let
   # exportSecret calls, attrset exportSecrets calls, and literal export
   # lines, and whose union would also pick up ARGOCD_BASE_URL, which is
   # not a credential. DAGGER_CLOUD_TOKEN is missing here because the
-  # sandbox masks it instead. GITHUB_TOKEN and
+  # Dagger CLI needs it inside the sandbox to reach Dagger Cloud, and
+  # mask mode (the middle ground) breaks on macOS. GITHUB_TOKEN and
   # GITHUB_PERSONAL_ACCESS_TOKEN alias gh_token; literal export lines at
   # 805 and 868-869 set them, so they have no sops secret of their own.
   deniedCredentialVars = [
@@ -3387,16 +3388,6 @@ in
                   "sum.golang.org"
                 ]
                 ++ bundledDomains;
-                # Terminate TLS at the sandbox proxy with an ephemeral
-                # per-session CA, whose certificate Claude Code injects
-                # into the standard CA environment variables for
-                # sandboxed commands. The proxy substitutes masked
-                # credentials only on its egress leg, so a
-                # credentials.envVars mask entry does nothing without
-                # this. The attrset form is required. caCertPath and
-                # caKeyPath are optional and must be supplied together,
-                # and `true` fails validation.
-                tlsTerminate = { };
               };
               filesystem = {
                 denyRead = extraDenyReadPaths;
@@ -3404,28 +3395,13 @@ in
                 allowWrite = extraWritePaths;
               };
               credentials = {
-                # deny unsets the variable inside the sandbox; mask
-                # swaps it for a sentinel that the proxy substitutes
-                # back only on connections to injectHosts. Both Dagger
-                # hosts appear because every injectHosts entry must also
-                # appear in allowedDomains above, and no run has yet
-                # shown which of the two the CLI presents the token to.
-                # Narrow this once one does.
-                envVars =
-                  map (name: {
-                    inherit name;
-                    mode = "deny";
-                  }) deniedCredentialVars
-                  ++ [
-                    {
-                      name = "DAGGER_CLOUD_TOKEN";
-                      mode = "mask";
-                      injectHosts = [
-                        "api.dagger.cloud"
-                        "auth.dagger.cloud"
-                      ];
-                    }
-                  ];
+                # deny unsets the variable inside the sandbox. Only
+                # allow and deny are used here: mask mode needs
+                # network.tlsTerminate, which breaks on macOS.
+                envVars = map (name: {
+                  inherit name;
+                  mode = "deny";
+                }) deniedCredentialVars;
                 # The entries above cover the variables; these cover the
                 # files behind them, which sit inside the ~/.config
                 # grant in filesystem.allowRead. A filesystem.denyRead
