@@ -1862,10 +1862,20 @@ in
             default = "";
             description = "Attribution footer appended to pull request descriptions. Empty string disables attribution.";
           };
+          sessionUrl = mkOption {
+            type = types.bool;
+            default = false;
+            description = ''
+              Append the claude.ai session link to commits (as a
+              Claude-Session trailer) and pull request descriptions made
+              from web and Remote Control sessions. Independent of the
+              commit and pr footers; Claude Code defaults it to true.
+            '';
+          };
         };
       };
       default = { };
-      description = "Per-host attribution strings for commits and PRs authored via Claude Code.";
+      description = "Per-host attribution settings for commits and PRs authored via Claude Code.";
     };
 
     lima = {
