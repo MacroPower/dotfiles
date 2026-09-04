@@ -3357,6 +3357,13 @@ in
               ask = bundledAsk ++ cfg.extraPermissions.ask;
             };
             worktree.bgIsolation = "none";
+            # "off" hides a bundled skill from both the model and the
+            # slash menu. update-config edits settings.json by hand,
+            # and this module regenerates that file on every
+            # activation.
+            skillOverrides = {
+              update-config = "off";
+            };
             statusLine = {
               type = "command";
               command = "${pkgs.claude-powerline}/bin/claude-powerline";
