@@ -3389,6 +3389,13 @@ in
                   "sum.golang.org"
                 ]
                 ++ bundledDomains;
+                # The sandbox blocks these even when an allowedDomains
+                # entry matches.
+                deniedDomains = [
+                  # Azure Application Insights telemetry sink. az,
+                  # dotnet, and VS Code tooling report here.
+                  "dc.services.visualstudio.com"
+                ];
               };
               filesystem = {
                 denyRead = extraDenyReadPaths;
