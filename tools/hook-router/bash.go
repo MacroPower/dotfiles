@@ -90,7 +90,11 @@ func handleBash(input []byte, stdout io.Writer, cfg config, logger *slog.Logger)
 		return nil
 	}
 
-	logger.Info("checking command", slog.String("command", command))
+	logger.Info("checking command",
+		slog.String("command", command),
+		slog.String("permission_mode", h.PermissionMode),
+		slog.String("agent_id", h.AgentID),
+	)
 
 	parser := syntax.NewParser()
 

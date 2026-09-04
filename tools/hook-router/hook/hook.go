@@ -24,6 +24,7 @@ type Input struct {
 	Prompt         string         `json:"prompt"`
 	StopHookActive bool           `json:"stop_hook_active"`
 	Cwd            string         `json:"cwd"`
+	PermissionMode string         `json:"permission_mode"`
 	Source         string         `json:"source"`
 	AgentID        string         `json:"agent_id"`
 	AgentType      string         `json:"agent_type"`
