@@ -3695,11 +3695,6 @@ in
             # false is honored; the server side decides when the
             # feature turns on.
             syncClaudeAiSkills = false;
-            # Prompt word-editing keys follow readline rather than the
-            # "classic" default. Ctrl+W deletes back to the previous
-            # whitespace, and a word is a run of letters and digits, so
-            # punctuation separates words. fish behaves the same way.
-            keybindingFlavor = "readline";
             # Straight-ASCII prompt input: no :shortcode: emoji expansion,
             # matching enforceAsciiTypography and the plain-ASCII policy.
             emojiCompletionEnabled = false;

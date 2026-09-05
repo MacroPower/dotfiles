@@ -157,7 +157,7 @@ in
 
     carapace = {
       enable = true;
-      ignoreCase = true;
+      environment.CARAPACE_MATCH = true;
     };
 
     fd.enable = true;
