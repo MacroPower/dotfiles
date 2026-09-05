@@ -3681,6 +3681,14 @@ in
             terminalProgressBarEnabled = true;
             autoCompactEnabled = true;
             autoCompactWindow = 666666;
+            # Inline Bash and background-task output up to the 128K
+            # character ceiling before Claude Code saves it to a file.
+            # hook-router's PostToolUse compaction collapses repeated
+            # lines in what arrives inline, so the model reads a nix or
+            # Dagger build's output directly instead of chasing the
+            # file pointer.
+            bashOutputMaxChars = 128000;
+            taskOutputMaxChars = 128000;
             # Chat transcript retention. fewer-permission-prompts ranks
             # allowlist candidates over the 50 most-recently-modified
             # transcripts across every project, and the 30-day default
