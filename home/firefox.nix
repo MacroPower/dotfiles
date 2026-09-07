@@ -239,6 +239,7 @@ in
           "browser.ml.chat.enabled" = false;
           "browser.ml.chat.page" = false;
           "browser.ai.control.sidebarChatbot" = "blocked";
+          "browser.ai.control.smartWindow" = "blocked";
 
           # Disable telemetry
           "toolkit.telemetry.enabled" = false;
