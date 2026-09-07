@@ -41,11 +41,14 @@ Creates a git worktree, runs file operations and hooks, creates a tmux
 window with configured pane layout, and switches to it.
 
 Key flags:
-- `--pr <number|url>`: checkout a GitHub pull request by number or full URL into
-  a new worktree. The local branch defaults to the PR head branch name. Pass
-  `<branch-name>` to override it, for example
+- `--pr <number|url>`: checkout a GitHub pull request or GitLab merge request
+  by number or full URL into a new worktree. The local branch defaults to the
+  PR head branch name. Pass `<branch-name>` to override it, for example
   `workmux add --pr https://github.com/owner/repo/pull/123 custom-name`. Requires
-  authenticated `gh`.
+  authenticated `gh` (GitHub) or `glab` 1.37.0 or newer (GitLab).
+- `--forge <github|gitlab>`: select the provider for a numeric `--pr`. Numbers
+  resolve to GitLab when origin is on gitlab.com and to GitHub otherwise; pass
+  `--forge gitlab` for self-hosted GitLab. Full URLs identify the provider.
 - `-b, --background`: create without switching to it
 - `-p <text>`: inline prompt for AI agent panes
 - `-P <file>`: prompt from file
@@ -63,6 +66,7 @@ Key flags:
 - `-n, --count <N>`: create N worktree instances
 - `--foreach <matrix>`: create worktrees from variable matrix
 - `--fork`: fork an existing Claude Code conversation into a new worktree, resuming with full context from a previous session
+- `-c, --continue`: resume the agent's most recent session at the destination worktree path (combine with `-p`/`-P`; conflicts with `--fork`)
 - `--no-hooks, --no-file-ops, --no-pane-cmds`: skip setup steps
 
 ### List worktrees
@@ -109,6 +113,7 @@ workmux rm --keep-branch      # keep the branch, remove worktree + window
 workmux open <name>           # open or switch to tmux window
 workmux open --new            # force a new window (creates suffix -2, -3)
 workmux open <name> -p "..."  # open with a prompt for agent panes
+workmux open <name> --continue  # reopen and resume the agent's last session
 workmux close <name>          # close tmux window, keep worktree
 ```
 

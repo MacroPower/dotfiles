@@ -94,9 +94,23 @@ For each task:
 2. Write the prompt to a temp file.
 3. Run `workmux add <worktree-name> -b -P <temp-file>`.
 
-Use relative paths in the prompt — each worktree has its own root.
+Use relative paths for files inside the repository, since each worktree has
+its own root. Keep user-provided attachment paths verbatim, including absolute
+paths to screenshots or other files outside the repository, and tell the agent
+to inspect them.
 
 ## Flags
+
+**`-a <model>` / `--agent <model>`**: Select the agent for the worktree. Remove
+this flag and its value from the task description, and pass them to every
+`workmux add` command as `--agent <model>`. This flag configures workmux and must
+not appear in the implementation prompt.
+
+For example, `/worktree -a gemini implement feature X` runs:
+
+```bash
+workmux add feature-x -b -P <prompt-file> --agent gemini
+```
 
 **`--merge`**: When passed, add instruction to use `/merge` skill at the end to
 commit, rebase, and merge the branch.
