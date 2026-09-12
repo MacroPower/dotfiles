@@ -34,6 +34,15 @@ database" states a fact. Every sentence passes two tests. You can restate it as
 a concrete instruction, fact, or number, and it could not appear unchanged in
 another project's docs.
 
+A stated fact needs no certificate. Once a sentence says what a function does,
+a follow-up that vouches for it ("That is the entire point of the function",
+"This is by design", "It does exactly that") names nothing the reader can
+observe, and it fails the second test outright, since the same words fit under
+any fact in any project's docs. Swapping in a negation ("It does not execute
+the statement") is the same certificate unless the opposite is a behavior a
+reader would expect from that name, the way "does not follow symlinks" corrects
+a real expectation.
+
 Detail scales with proximity. A docstring describes its own method but not the
 private helpers it calls. A README, announcement, or introduction names only
 what a user can observe, never the data structure behind the API, a buffer size,
@@ -64,6 +73,26 @@ Prefer the short everyday form: "to" over "in order to", "use" over "utilize"
 and "leverage", "because" over "due to the fact that". State the fact and let
 the reader judge its weight; "stands as", "serves as", and "plays a vital role"
 puff without informing. One hedge per claim at most.
+
+The same puff arrives as a word, clause, or sentence that insists on a fact
+already stated, or fences off a scope nobody questioned:
+
+- ".Number() returns the number, and nothing else" -> ".Number() returns the
+  number"
+- "As the name suggests, Flush simply writes the buffer to disk, no more and no
+  less" -> "Flush writes the buffer to disk"
+- "Close releases the file handle. This is deliberate." -> "Close releases the
+  file handle."
+- "Reset clears the counter to zero, which is exactly what you would expect" ->
+  "Reset clears the counter to zero"
+- "Value returns the current count without changing it" -> "Value returns the
+  current count"
+- "Len returns the number of entries. No magic, no caching, no surprises." ->
+  "Len returns the number of entries."
+
+The writer is weighing the fact on the reader's behalf. Delete any of these when
+the facts survive without it, and read every sentence's last clause on its own,
+since that is where most of them land.
 
 ## 5. Sentence Scope
 
