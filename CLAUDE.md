@@ -48,4 +48,6 @@ Claude Code config lives in this repo and is symlinked into `~/.claude/` by `hom
 - **Settings, hooks, slash commands, status line, MCP servers, env**: defined in `home/claude.nix` (the home-manager module that generates `settings.json` and writes files into `~/.claude/`).
 - **Global instructions (`~/.claude/CLAUDE.md`)**: also rendered by `home/claude.nix`.
 
+Permission rules, hook-router command rules, and fetch rules steer model behavior, such as pointing Claude at an MCP tool or prompting before a remote write. They are not a security boundary. The sandbox provides security by limiting access to credentials and the filesystem. Write and review these rules for the behavior they produce, and never add a rule or keep a prompt only to close an escape path.
+
 After editing, run `task switch` to re-link. Never edit files under `~/.claude/` directly -- the next `home-manager` activation will overwrite them.

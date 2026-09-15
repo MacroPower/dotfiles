@@ -2179,8 +2179,6 @@ in
         # on auto-allow hosts hook-router already allows git.
         # Permission rules evaluate deny -> ask -> allow regardless of
         # specificity, so each ask entry wins over Bash(git *).
-        # Bash(git *) also covers git's own exec paths, such as an
-        # alias set with `-c alias.x='!cmd'`.
         permissions.allow = [
           "mcp__git__git_clone"
           "mcp__git__git_fetch"
