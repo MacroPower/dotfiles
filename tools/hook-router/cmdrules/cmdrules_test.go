@@ -637,11 +637,11 @@ func TestCommandRulesCheck_Kubectx(t *testing.T) {
 
 // ghAskRules mirrors the gh ask-rule bundle in home/claude.nix:
 // subcommand-scoped rules first, top-level fallback last. Each group's
-// except set is the union of its allowed and redirected read-only
-// leaves, so only mutating subcommands ask; redirected reads are caught
-// by ghRedirectRules, which production evaluates first. The hook-router
-// handler tests carry a copy of the same fixture. Update all when
-// home/claude.nix gains or drops rules.
+// except set is the union of its allowed read-only or local-only leaves
+// and its redirected leaves, so every other subcommand asks; redirected
+// leaves are caught by ghRedirectRules, which production evaluates
+// first. The hook-router handler tests carry a copy of the same
+// fixture. Update all when home/claude.nix gains or drops rules.
 func ghAskRules() *cmdrules.Engine {
 	group := func(name string, except ...string) cmdrules.Rule {
 		return cmdrules.Rule{
@@ -654,20 +654,36 @@ func ghAskRules() *cmdrules.Engine {
 	}
 
 	return cmdrules.New([]cmdrules.Rule{
+		group("alias", "list"),
+		group("attestation", "download", "trusted-root", "verify"),
 		group("cache", "list"),
-		group("issue", "list", "view"),
+		group("codespace", "list", "logs", "view"),
+		group("config", "clear-cache", "get", "list"),
+		group("extension", "list", "search"),
+		group("gist", "clone", "list", "view"),
+		group("gpg-key", "list"),
+		group("issue", "status", "list", "view"),
 		group("label", "list"),
-		group("pr", "checks", "status", "diff", "list", "view"),
-		group("release", "list", "view"),
-		group("repo", "view", "list"),
-		group("run", "watch", "view", "list"),
+		group("org", "list"),
+		group("pr", "checkout", "checks", "status", "diff", "list", "view"),
+		group("project", "field-list", "item-list", "list", "view"),
+		group("release", "download", "verify", "verify-asset", "list", "view"),
+		group("repo", "gitignore", "license", "list", "set-default", "view"),
+		group("ruleset", "check", "list", "view"),
+		group("run", "download", "watch", "view", "list"),
+		group("secret", "list"),
+		group("ssh-key", "list"),
+		group("variable", "get", "list"),
 		group("workflow", "view", "list"),
 		{
 			Command: "gh",
 			Except: []string{
-				"cache", "issue", "label", "pr", "release", "repo",
-				"run", "workflow", "status", "help", "version",
-				"--version",
+				"alias", "attestation", "cache", "codespace", "config",
+				"extension", "gist", "gpg-key", "issue", "label", "org",
+				"pr", "project", "release", "repo", "ruleset", "run",
+				"secret", "ssh-key", "variable", "workflow",
+				"browse", "completion", "licenses", "status",
+				"help", "version", "--version",
 			},
 			Action: "ask",
 			Reason: ghFallbackAskReason,
@@ -782,6 +798,42 @@ func TestCommandRulesCheck_Ask(t *testing.T) {
 		},
 		"gh pr checks is exempt": {
 			input: "gh pr checks 1",
+		},
+		"gh pr checkout is exempt": {
+			input: "gh pr checkout 1",
+		},
+		"gh run download is exempt": {
+			input: "gh run download 123",
+		},
+		"gh config get is exempt": {
+			input: "gh config get editor",
+		},
+		"gh config set asks": {
+			input: "gh config set editor vim",
+			want:  ghGroupAskReason,
+		},
+		"gh secret set asks": {
+			input: "gh secret set TOKEN",
+			want:  ghGroupAskReason,
+		},
+		"gh repo clone asks": {
+			input: "gh repo clone owner/repo",
+			want:  ghGroupAskReason,
+		},
+		"gh repo read-file asks": {
+			input: "gh repo read-file README.md",
+			want:  ghGroupAskReason,
+		},
+		"gh codespace ssh asks": {
+			input: "gh codespace ssh",
+			want:  ghGroupAskReason,
+		},
+		"gh auth status hits the fallback": {
+			input: "gh auth status",
+			want:  ghFallbackAskReason,
+		},
+		"gh browse is exempt at the fallback": {
+			input: "gh browse",
 		},
 		"bare gh pr asks (bare ignores except)": {
 			input: "gh pr",

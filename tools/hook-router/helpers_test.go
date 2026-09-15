@@ -77,8 +77,9 @@ func canonicalRules() *cmdrules.Engine {
 
 // ghAskRules mirrors the gh ask-rule bundle in home/claude.nix:
 // subcommand-scoped rules first, top-level fallback last. Each group's
-// except set is the union of its allowed and redirected read-only
-// leaves. Matches the same-named fixture in the cmdrules package tests.
+// except set is the union of its allowed read-only or local-only leaves
+// and its redirected leaves. Matches the same-named fixture in the
+// cmdrules package tests.
 func ghAskRules() *cmdrules.Engine {
 	group := func(name string, except ...string) cmdrules.Rule {
 		return cmdrules.Rule{
@@ -91,20 +92,36 @@ func ghAskRules() *cmdrules.Engine {
 	}
 
 	return cmdrules.New([]cmdrules.Rule{
+		group("alias", "list"),
+		group("attestation", "download", "trusted-root", "verify"),
 		group("cache", "list"),
-		group("issue", "list", "view"),
+		group("codespace", "list", "logs", "view"),
+		group("config", "clear-cache", "get", "list"),
+		group("extension", "list", "search"),
+		group("gist", "clone", "list", "view"),
+		group("gpg-key", "list"),
+		group("issue", "status", "list", "view"),
 		group("label", "list"),
-		group("pr", "checks", "status", "diff", "list", "view"),
-		group("release", "list", "view"),
-		group("repo", "view", "list"),
-		group("run", "watch", "view", "list"),
+		group("org", "list"),
+		group("pr", "checkout", "checks", "status", "diff", "list", "view"),
+		group("project", "field-list", "item-list", "list", "view"),
+		group("release", "download", "verify", "verify-asset", "list", "view"),
+		group("repo", "gitignore", "license", "list", "set-default", "view"),
+		group("ruleset", "check", "list", "view"),
+		group("run", "download", "watch", "view", "list"),
+		group("secret", "list"),
+		group("ssh-key", "list"),
+		group("variable", "get", "list"),
 		group("workflow", "view", "list"),
 		{
 			Command: "gh",
 			Except: []string{
-				"cache", "issue", "label", "pr", "release", "repo",
-				"run", "workflow", "status", "help", "version",
-				"--version",
+				"alias", "attestation", "cache", "codespace", "config",
+				"extension", "gist", "gpg-key", "issue", "label", "org",
+				"pr", "project", "release", "repo", "ruleset", "run",
+				"secret", "ssh-key", "variable", "workflow",
+				"browse", "completion", "licenses", "status",
+				"help", "version", "--version",
 			},
 			Action: "ask",
 			Reason: ghFallbackAskReason,

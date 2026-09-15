@@ -2390,27 +2390,92 @@ in
             };
           };
 
-          # Read-only gh subcommands with no mcp__github__* equivalent
-          # (repo metadata, PR checks/status, run watching, notification
-          # status). The MCP does not serve these, so they stay
+          # gh subcommands with no mcp__github__* equivalent that read
+          # GitHub or only touch local state (pr checkout, downloads,
+          # gh's own config). The MCP does not serve these, so they stay
           # allowed on the gh CLI. `gh run watch` stays here because it
-          # streams a run to completion, which no MCP tool does. Single
-          # source of truth for the permission allow entries below.
-          # Mirrored by ghAskRules in
+          # streams a run to completion, which no MCP tool does. Some
+          # non-mutating forms stay out on purpose and prompt. auth
+          # stays out because `gh auth token` and `status --show-token`
+          # print credentials, `config set` because it can swap the
+          # browser, editor, or pager gh runs, and `repo clone`,
+          # `read-file`, and `read-dir` so repository reads keep going
+          # through mcp__git__git_clone. Single source of truth for the
+          # permission allow entries below. Mirrored by ghAskRules in
           # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go.
           ghAllowGroups = {
+            alias = [ "list" ];
+            attestation = [
+              "download"
+              "trusted-root"
+              "verify"
+            ];
             cache = [ "list" ];
+            codespace = [
+              "list"
+              "logs"
+              "view"
+            ];
+            config = [
+              "clear-cache"
+              "get"
+              "list"
+            ];
+            extension = [
+              "list"
+              "search"
+            ];
+            gist = [
+              "clone"
+              "list"
+              "view"
+            ];
+            "gpg-key" = [ "list" ];
+            issue = [ "status" ];
+            org = [ "list" ];
             pr = [
+              "checkout"
               "checks"
               "status"
             ];
-            repo = [
+            project = [
+              "field-list"
+              "item-list"
+              "list"
               "view"
+            ];
+            release = [
+              "download"
+              "verify"
+              "verify-asset"
+            ];
+            repo = [
+              "gitignore"
+              "license"
+              "list"
+              "set-default"
+              "view"
+            ];
+            ruleset = [
+              "check"
+              "list"
+              "view"
+            ];
+            run = [
+              "download"
+              "watch"
+            ];
+            secret = [ "list" ];
+            "ssh-key" = [ "list" ];
+            variable = [
+              "get"
               "list"
             ];
-            run = [ "watch" ];
           };
           ghAllowCommands = [
+            "browse"
+            "completion"
+            "licenses"
             "status"
           ];
 
@@ -2488,9 +2553,10 @@ in
             "mcp__github__search_repositories"
             "mcp__github__semantic_issue_similarity_search"
           ]
-          # Read-only gh CLI commands with no MCP equivalent, derived
-          # from the ghAllowGroups / ghAllowCommands tables above. These
-          # cover hosts where the sandbox auto-allow is off; mutating gh
+          # Read-only and local-only gh CLI commands with no MCP
+          # equivalent, derived from the ghAllowGroups / ghAllowCommands
+          # tables above. These cover hosts where the sandbox auto-allow
+          # is off; mutating gh
           # commands are caught by the commandRules.ask rules below, and
           # reads with an MCP equivalent by the commandRules.deny rules,
           # which prompt / redirect on every host. An ask entry like
