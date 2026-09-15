@@ -28,7 +28,6 @@ const (
 	fetchDeniedReason   = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead."
 	pullDeniedReason    = "Direct git pull usage is blocked. Use mcp__git__git_pull instead."
 	pushDeniedReason    = "Direct git push usage is blocked. Use mcp__git__git_push instead."
-	gitRemoteAskReason  = "This git remote subcommand rewrites where the repository pushes and fetches. Confirm before running."
 	kubectxReason       = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
 	ghGroupAskReason    = "This gh subcommand can mutate GitHub state. Confirm before running."
 	ghFallbackAskReason = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
@@ -75,14 +74,6 @@ func canonicalRules() *cmdrules.Engine {
 		{
 			Command: "kubens",
 			Reason:  kubectxReason,
-		},
-		{
-			Command:    "git",
-			Args:       []string{"remote"},
-			Except:     []string{"-v", "--verbose", "show", "get-url", "-h", "--help"},
-			ExceptBare: true,
-			Action:     "ask",
-			Reason:     gitRemoteAskReason,
 		},
 	})
 }
@@ -436,11 +427,10 @@ func TestCommandRulesCheck_GitRemoteOps(t *testing.T) {
 			input: "git push --force-with-lease",
 			want:  pushDeniedReason,
 		},
-		// The new rules key on the first positional, so they leave
-		// the remote ask and the stash deny to their own rules.
-		"no overlap: git remote update": {
+		// The rules key on the first positional, so git stash push stays
+		// with the stash deny and git remote update matches nothing.
+		"no match: git remote update": {
 			input: "git remote update",
-			want:  gitRemoteAskReason,
 		},
 		"no overlap: git stash push": {
 			input: "git stash push",
@@ -484,8 +474,24 @@ func TestCommandRulesCheck_GitRemoteOps(t *testing.T) {
 	}
 }
 
-func TestCommandRulesCheck_GitRemote(t *testing.T) {
+// TestCommandRulesCheck_ExceptBare pins the ExceptBare matcher
+// semantics. No production rule sets ExceptBare, so the test builds its
+// own engine around a git remote ask rule.
+func TestCommandRulesCheck_ExceptBare(t *testing.T) {
 	t.Parallel()
+
+	const reason = "git remote mutation"
+
+	rules := cmdrules.New([]cmdrules.Rule{
+		{
+			Command:    "git",
+			Args:       []string{"remote"},
+			Except:     []string{"-v", "--verbose", "show", "get-url", "-h", "--help"},
+			ExceptBare: true,
+			Action:     "ask",
+			Reason:     reason,
+		},
+	})
 
 	tests := map[string]struct {
 		input string
@@ -493,31 +499,31 @@ func TestCommandRulesCheck_GitRemote(t *testing.T) {
 	}{
 		"git remote add asks": {
 			input: "git remote add origin https://example.com/repo.git",
-			want:  gitRemoteAskReason,
+			want:  reason,
 		},
 		"git remote set-url asks": {
 			input: "git remote set-url origin https://example.com/repo.git",
-			want:  gitRemoteAskReason,
+			want:  reason,
 		},
 		"git remote remove asks": {
 			input: "git remote remove origin",
-			want:  gitRemoteAskReason,
+			want:  reason,
 		},
 		"git remote rename asks": {
 			input: "git remote rename origin upstream",
-			want:  gitRemoteAskReason,
+			want:  reason,
 		},
 		"git remote prune asks": {
 			input: "git remote prune origin",
-			want:  gitRemoteAskReason,
+			want:  reason,
 		},
 		"git -C dir remote set-url asks (flag skipping)": {
 			input: "git -C /tmp remote set-url origin https://example.com/repo.git",
-			want:  gitRemoteAskReason,
+			want:  reason,
 		},
 		"git remote add in compound asks": {
 			input: "git status && git remote add o u",
-			want:  gitRemoteAskReason,
+			want:  reason,
 		},
 		// Bare `git remote` is a listing, exempted via exceptBare.
 		"no match: bare git remote": {
@@ -546,8 +552,6 @@ func TestCommandRulesCheck_GitRemote(t *testing.T) {
 			input: "git status",
 		},
 	}
-
-	rules := canonicalRules()
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

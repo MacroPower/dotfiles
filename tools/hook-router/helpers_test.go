@@ -26,7 +26,6 @@ const (
 	fetchDeniedReason   = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead."
 	pullDeniedReason    = "Direct git pull usage is blocked. Use mcp__git__git_pull instead."
 	pushDeniedReason    = "Direct git push usage is blocked. Use mcp__git__git_push instead."
-	gitRemoteAskReason  = "This git remote subcommand rewrites where the repository pushes and fetches. Confirm before running."
 	kubectxReason       = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
 	ghGroupAskReason    = "This gh subcommand can mutate GitHub state. Confirm before running."
 	ghFallbackAskReason = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
@@ -72,14 +71,6 @@ func canonicalRules() *cmdrules.Engine {
 		{
 			Command: "kubens",
 			Reason:  kubectxReason,
-		},
-		{
-			Command:    "git",
-			Args:       []string{"remote"},
-			Except:     []string{"-v", "--verbose", "show", "get-url", "-h", "--help"},
-			ExceptBare: true,
-			Action:     "ask",
-			Reason:     gitRemoteAskReason,
 		},
 	})
 }
