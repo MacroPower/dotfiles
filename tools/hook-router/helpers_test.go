@@ -23,6 +23,9 @@ const testPID = "12345"
 const (
 	stashDeniedReason   = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
 	cloneDeniedReason   = "Direct git clone usage is blocked. Use mcp__git__git_clone instead."
+	fetchDeniedReason   = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead."
+	pullDeniedReason    = "Direct git pull usage is blocked. Use mcp__git__git_pull instead."
+	pushDeniedReason    = "Direct git push usage is blocked. Use mcp__git__git_push instead."
 	gitRemoteAskReason  = "This git remote subcommand rewrites where the repository pushes and fetches. Confirm before running."
 	kubectxReason       = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
 	ghGroupAskReason    = "This gh subcommand can mutate GitHub state. Confirm before running."
@@ -40,6 +43,21 @@ func canonicalRules() *cmdrules.Engine {
 			Command: "git",
 			Args:    []string{"clone"},
 			Reason:  cloneDeniedReason,
+		},
+		{
+			Command: "git",
+			Args:    []string{"fetch"},
+			Reason:  fetchDeniedReason,
+		},
+		{
+			Command: "git",
+			Args:    []string{"pull"},
+			Reason:  pullDeniedReason,
+		},
+		{
+			Command: "git",
+			Args:    []string{"push"},
+			Reason:  pushDeniedReason,
 		},
 		{
 			Command: "git",

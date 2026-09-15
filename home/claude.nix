@@ -2155,13 +2155,11 @@ in
           # write mode (apply, archive, bundle, format-patch,
           # hash-object, symbolic-ref, bisect, gc, update-ref, fsck)
           # are absent on purpose and fall through to the normal
-          # prompt. fetch is included deliberately as an accepted risk:
-          # the common forms only update remote-tracking refs, though
-          # refspec forms (git fetch origin main:main, +refs/heads/*)
-          # can write local branches. Known write/exec escapes inside
-          # these subcommands include --output= on diff/log/show,
-          # grep -O, and --upload-pack= on fetch/ls-remote; all obscure
-          # enough to accept. The cherry pair cannot match
+          # prompt. fetch is absent as well, because commandRules.deny
+          # sends it to mcp__git__git_fetch. Known write/exec escapes
+          # inside these subcommands include --output= on
+          # diff/log/show, grep -O, and --upload-pack= on ls-remote;
+          # all obscure enough to accept. The cherry pair cannot match
           # git cherry-pick: the glob requires the trailing space.
           gitReadCommands = [
             "blame"
@@ -2172,7 +2170,6 @@ in
             "describe"
             "diff"
             "diff-tree"
-            "fetch"
             "for-each-ref"
             "grep"
             "help"
@@ -2330,6 +2327,21 @@ in
               command = "git";
               args = [ "clone" ];
               reason = "Direct git clone usage is blocked. Use mcp__git__git_clone instead.";
+            }
+            {
+              command = "git";
+              args = [ "fetch" ];
+              reason = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead.";
+            }
+            {
+              command = "git";
+              args = [ "pull" ];
+              reason = "Direct git pull usage is blocked. Use mcp__git__git_pull instead.";
+            }
+            {
+              command = "git";
+              args = [ "push" ];
+              reason = "Direct git push usage is blocked. Use mcp__git__git_push instead.";
             }
             {
               command = "git";

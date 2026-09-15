@@ -102,7 +102,7 @@ func TestRun(t *testing.T) {
 		t.Parallel()
 
 		input := makeInput(map[string]any{
-			"command": "git pull origin main",
+			"command": "git log --oneline",
 		})
 
 		var stdout bytes.Buffer
@@ -116,7 +116,7 @@ func TestRun(t *testing.T) {
 		t.Parallel()
 
 		input := makeInput(map[string]any{
-			"command": "git pull origin main",
+			"command": "git log --oneline",
 		})
 
 		var stdout bytes.Buffer

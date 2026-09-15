@@ -25,6 +25,9 @@ func mustParse(t *testing.T, command string) *syntax.File {
 const (
 	stashDeniedReason   = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
 	cloneDeniedReason   = "Direct git clone usage is blocked. Use mcp__git__git_clone instead."
+	fetchDeniedReason   = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead."
+	pullDeniedReason    = "Direct git pull usage is blocked. Use mcp__git__git_pull instead."
+	pushDeniedReason    = "Direct git push usage is blocked. Use mcp__git__git_push instead."
 	gitRemoteAskReason  = "This git remote subcommand rewrites where the repository pushes and fetches. Confirm before running."
 	kubectxReason       = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
 	ghGroupAskReason    = "This gh subcommand can mutate GitHub state. Confirm before running."
@@ -43,6 +46,21 @@ func canonicalRules() *cmdrules.Engine {
 			Command: "git",
 			Args:    []string{"clone"},
 			Reason:  cloneDeniedReason,
+		},
+		{
+			Command: "git",
+			Args:    []string{"fetch"},
+			Reason:  fetchDeniedReason,
+		},
+		{
+			Command: "git",
+			Args:    []string{"pull"},
+			Reason:  pullDeniedReason,
+		},
+		{
+			Command: "git",
+			Args:    []string{"push"},
+			Reason:  pushDeniedReason,
 		},
 		{
 			Command: "git",
@@ -369,6 +387,97 @@ func TestCommandRulesCheck_GitClone(t *testing.T) {
 			assert.Equal(t, tt.want != "", denied)
 
 			if denied {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestCommandRulesCheck_GitRemoteOps(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		input string
+		want  string
+	}{
+		"git fetch": {
+			input: "git fetch",
+			want:  fetchDeniedReason,
+		},
+		"git fetch with flags and remote": {
+			input: "git fetch --tags origin",
+			want:  fetchDeniedReason,
+		},
+		"git -C dir fetch": {
+			input: "git -C /tmp/git/x fetch",
+			want:  fetchDeniedReason,
+		},
+		"git -C quoted dir fetch": {
+			input: `git -C "$dir" fetch`,
+			want:  fetchDeniedReason,
+		},
+		"git --git-dir quoted value fetch": {
+			input: `git --git-dir="$x" fetch`,
+			want:  fetchDeniedReason,
+		},
+		"git fetch in compound pipeline": {
+			input: "cd x && git fetch -q | tail -2",
+			want:  fetchDeniedReason,
+		},
+		"git pull": {
+			input: "git pull --rebase",
+			want:  pullDeniedReason,
+		},
+		"git push": {
+			input: "git push origin main",
+			want:  pushDeniedReason,
+		},
+		"git push force with lease": {
+			input: "git push --force-with-lease",
+			want:  pushDeniedReason,
+		},
+		// The new rules key on the first positional, so they leave
+		// the remote ask and the stash deny to their own rules.
+		"no overlap: git remote update": {
+			input: "git remote update",
+			want:  gitRemoteAskReason,
+		},
+		"no overlap: git stash push": {
+			input: "git stash push",
+			want:  stashDeniedReason,
+		},
+		"no match: git ls-remote": {
+			input: "git ls-remote origin",
+		},
+		"no match: git fetch-pack": {
+			input: "git fetch-pack",
+		},
+		"no match: git help push": {
+			input: "git help push",
+		},
+		"no match: echo git push": {
+			input: "echo git push",
+		},
+		// A non-literal positional ends collection.
+		"no match: quoted subcommand variable": {
+			input: `git "$sub" origin`,
+		},
+		"no match: expanded args before subcommand": {
+			input: "git $opts fetch",
+		},
+	}
+
+	rules := canonicalRules()
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			prog := mustParse(t, tt.input)
+			_, got, matched := rules.Check(prog)
+			assert.Equal(t, tt.want != "", matched)
+
+			if matched {
 				assert.Equal(t, tt.want, got)
 			}
 		})

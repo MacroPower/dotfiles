@@ -119,6 +119,28 @@ func TestHandleBashAutoAllow(t *testing.T) {
 		assert.Equal(t, "deny", hso["permissionDecision"])
 	})
 
+	t.Run("autoAllow=true, git fetch: deny redirects to the MCP tool", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules: canonicalRules(),
+			autoAllow:    true,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(bashInput(t, "git fetch --tags origin", nil), &stdout, cfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Equal(t, fetchDeniedReason, hso["permissionDecisionReason"])
+	})
+
 	t.Run("autoAllow=true, ask match: ask emitted instead of auto-allow", func(t *testing.T) {
 		t.Parallel()
 
