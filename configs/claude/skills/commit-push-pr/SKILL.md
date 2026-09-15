@@ -6,7 +6,7 @@ allowed-tools:
   - Bash(git checkout --branch:*)
   - Bash(git add:*)
   - Bash(git status:*)
-  - Bash(git push:*)
+  - mcp__git__git_push
   - Bash(git commit:*)
   - Bash(gh pr create:*)
 ---
@@ -39,6 +39,6 @@ Based on the above changes:
 
 1. Create a new branch if on main
 2. Create a single git commit with an appropriate message
-3. Push the branch to origin
+3. Push the branch to origin with `mcp__git__git_push`, passing the repository root's absolute path as `repo` and setting `set_upstream`. If the git MCP server rejects the repository path, ask the user to push the branch instead.
 4. Create a pull request using `gh pr create`
 5. You have the capability to call multiple tools in a single response. You MUST do all of the above in a single message. Do not use any other tools or do anything else. Do not send any other text or messages besides these tool calls.
