@@ -565,6 +565,26 @@ let
     ];
   };
 
+  # rich's test_brokenpipeerror pipes `python -m rich` into `head -1` and
+  # asserts python exits 1 from a BrokenPipeError. When rich writes its whole
+  # demo into the pipe buffer before head closes the read end, python never
+  # hits the broken pipe and exits 0, so the test fails. It failed on every
+  # run on the terrarium VM. Deselect just that test; the rest of the suite
+  # still runs. Scoped to python 3.12, the kagimcp chain that builds rich
+  # from source, so the override leaves other python scopes' drvs untouched.
+  richOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (
+        _pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          rich = pyprev.rich.overrideAttrs (old: {
+            disabledTests = (old.disabledTests or [ ]) ++ [ "test_brokenpipeerror" ];
+          });
+        }
+      )
+    ];
+  };
+
   sharedOverlays = system: [
     fetchurlOverlay
     curlImpersonateOverlay
@@ -584,6 +604,7 @@ let
     pyKeyValueAioOverlay
     otelRequestsOverlay
     syrupyOverlay
+    richOverlay
     direnvOverlay
     czkawkaOverlay
     marksmanOverlay
