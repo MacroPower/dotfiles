@@ -213,6 +213,10 @@ func TestCommandRulesCheck_GitStash(t *testing.T) {
 			input: "git --git-dir=/x stash",
 			want:  stashDeniedReason,
 		},
+		"git -C quoted dir stash": {
+			input: `git -C "$dir" stash`,
+			want:  stashDeniedReason,
+		},
 		// `--keep-index` is the candidate slot (no flag-skipping
 		// between args and except) and isn't in except, so deny.
 		"git stash --keep-index pop denies": {
@@ -222,6 +226,10 @@ func TestCommandRulesCheck_GitStash(t *testing.T) {
 		// `pop` is the candidate slot here, so allow.
 		"git stash pop --keep-index allows": {
 			input: "git stash pop --keep-index",
+		},
+		// Except still applies after a quoted flag value is skipped.
+		"no match: git -C quoted dir stash pop": {
+			input: `git -C "$dir" stash pop`,
 		},
 		"no match: git stash pop": {
 			input: "git stash pop",
@@ -320,6 +328,14 @@ func TestCommandRulesCheck_GitClone(t *testing.T) {
 		},
 		"git clone with env prefix": {
 			input: "GIT_TERMINAL_PROMPT=0 git clone https://example.com/repo.git",
+			want:  cloneDeniedReason,
+		},
+		"git -C quoted dir clone": {
+			input: `git -C "$dir" clone https://example.com/repo.git`,
+			want:  cloneDeniedReason,
+		},
+		"git -c quoted value clone": {
+			input: `git -c "k=v" clone https://example.com/repo.git`,
 			want:  cloneDeniedReason,
 		},
 		"no match: git status": {

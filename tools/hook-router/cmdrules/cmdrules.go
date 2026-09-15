@@ -42,9 +42,11 @@ const (
 // because a bare `git stash` is still a save form; ExceptBare inverts
 // that for groups whose bare form is a read, such as `git remote`.
 //
-// When Command == "git", leading top-level git flags listed in
-// [gitFlagsTakingValue] (and their values) are skipped before matching
-// Args. Other commands match strictly from position 1.
+// When Command == "git", leading top-level git flags are skipped
+// before matching Args, along with the value after each flag listed in
+// [gitFlagsTakingValue]. The value is skipped whether it is a literal,
+// quoted, or expanded word, so `git -C "$dir" clone` matches a clone
+// rule. Other commands match strictly from position 1.
 type Rule struct {
 	Command    string   `json:"command"`
 	Args       []string `json:"args,omitempty"`
@@ -165,8 +167,10 @@ func matchRule(call *syntax.CallExpr, rule Rule) bool {
 	// Phase 1 collects rule.Args (with git-specific flag skipping).
 	// Phase 2 takes the very next call.Arg as the Except candidate
 	// without flag skipping, so e.g. `git stash --keep-index pop`
-	// denies because `--keep-index` is the candidate. A non-literal
-	// arg ends collection; positionals collected so far still count.
+	// denies because `--keep-index` is the candidate. Flag skipping
+	// ignores the shape of a flag's value, so `git -C "$dir" clone`
+	// still reaches `clone`. A non-literal positional arg ends
+	// collection; positionals collected so far still count.
 	matched := 0
 	skipNext := false
 	idx := 0
@@ -178,6 +182,21 @@ func matchRule(call *syntax.CallExpr, rule Rule) bool {
 			break
 		}
 
+		if skipNext {
+			skipNext = false
+			continue
+		}
+
+		if head := leadingLit(arg); rule.Command == "git" && strings.HasPrefix(head, "-") {
+			// `--flag=value` carries the value inline, so only
+			// consume the next arg for the bare form.
+			if len(arg.Parts) == 1 && gitFlagsTakingValue[head] {
+				skipNext = true
+			}
+
+			continue
+		}
+
 		if len(arg.Parts) != 1 {
 			break
 		}
@@ -185,21 +204,6 @@ func matchRule(call *syntax.CallExpr, rule Rule) bool {
 		lit, ok := arg.Parts[0].(*syntax.Lit)
 		if !ok {
 			break
-		}
-
-		if skipNext {
-			skipNext = false
-			continue
-		}
-
-		if rule.Command == "git" && strings.HasPrefix(lit.Value, "-") {
-			// `--flag=value` carries the value inline, so only
-			// consume the next arg for the bare form.
-			if gitFlagsTakingValue[lit.Value] {
-				skipNext = true
-			}
-
-			continue
 		}
 
 		if lit.Value != rule.Args[matched] {
@@ -244,6 +248,21 @@ func matchRule(call *syntax.CallExpr, rule Rule) bool {
 	}
 
 	return true
+}
+
+// leadingLit returns the literal text that opens word, or "" when word
+// starts with a quote or expansion. `--git-dir="$x"` yields "--git-dir=".
+func leadingLit(word *syntax.Word) string {
+	if len(word.Parts) == 0 {
+		return ""
+	}
+
+	lit, ok := word.Parts[0].(*syntax.Lit)
+	if !ok {
+		return ""
+	}
+
+	return lit.Value
 }
 
 // Parse decodes the JSON payload passed via --command-rules
