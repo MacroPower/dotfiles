@@ -2541,6 +2541,7 @@ in
             "mcp__github__actions_get"
             "mcp__github__actions_list"
             "mcp__github__check_dependency_vulnerabilities"
+            "mcp__github__custom_properties_read"
             "mcp__github__get_code_quality_finding"
             "mcp__github__get_code_scanning_alert"
             "mcp__github__get_copilot_space"
@@ -2633,13 +2634,16 @@ in
             # request set in permissions.ask below. The proxy filter strips
             # the denied tools' schemas from tools/list.
             "mcp__github__add_issue_comment"
-            "mcp__github__assign_copilot_to_issue"
+            "mcp__github__assign_copilot_to_issue_with_intent"
             "mcp__github__create_branch"
             "mcp__github__create_gist"
             "mcp__github__create_or_update_file"
             "mcp__github__create_pull_request_with_copilot"
             "mcp__github__create_repository"
+            "mcp__github__create_repository_ruleset"
+            "mcp__github__custom_properties_write"
             "mcp__github__delete_file"
+            "mcp__github__discussion_comment_write"
             "mcp__github__dismiss_notification"
             "mcp__github__fork_repository"
             "mcp__github__issue_write"
@@ -2654,6 +2658,7 @@ in
             "mcp__github__sub_issue_write"
             "mcp__github__unstar_repository"
             "mcp__github__update_gist"
+            "mcp__github__update_issue_comment"
             "mcp__github__run_secret_scanning"
           ];
           # Pull request and Actions write tools, the only write surface
