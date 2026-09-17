@@ -2338,6 +2338,14 @@ in
           # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go; update
           # all together.
           ghRedirectGroups = {
+            discussion = {
+              view = "mcp__github__get_discussion (+ mcp__github__get_discussion_comments for the thread)";
+              list = "mcp__github__list_discussions";
+            };
+            gist = {
+              view = "mcp__github__get_gist";
+              list = "mcp__github__list_gists";
+            };
             issue = {
               view = "mcp__github__issue_read";
               list = "mcp__github__list_issues";
@@ -2353,6 +2361,17 @@ in
             };
             label = {
               list = "mcp__github__list_label";
+            };
+            project = {
+              view = "mcp__github__projects_get (get_project)";
+              list = "mcp__github__projects_list (list_projects)";
+              "field-list" = "mcp__github__projects_list (list_project_fields)";
+              "item-list" = "mcp__github__projects_list (list_project_items)";
+            };
+            ruleset = {
+              view = "mcp__github__repository_ruleset_read (get)";
+              list = "mcp__github__repository_ruleset_read (list)";
+              check = "mcp__github__repository_ruleset_read (get_rules_for_branch)";
             };
             run = {
               view = "mcp__github__actions_get (get_workflow_run) / mcp__github__get_job_logs for logs";
@@ -2434,11 +2453,6 @@ in
               "list"
               "search"
             ];
-            gist = [
-              "clone"
-              "list"
-              "view"
-            ];
             "gpg-key" = [ "list" ];
             issue = [ "status" ];
             org = [ "list" ];
@@ -2446,12 +2460,6 @@ in
               "checkout"
               "checks"
               "status"
-            ];
-            project = [
-              "field-list"
-              "item-list"
-              "list"
-              "view"
             ];
             release = [
               "download"
@@ -2463,11 +2471,6 @@ in
               "license"
               "list"
               "set-default"
-              "view"
-            ];
-            ruleset = [
-              "check"
-              "list"
               "view"
             ];
             run = [
@@ -2554,6 +2557,7 @@ in
             "mcp__github__projects_get"
             "mcp__github__projects_list"
             "mcp__github__pull_request_read"
+            "mcp__github__repository_ruleset_read"
             "mcp__github__search_code"
             "mcp__github__search_commits"
             "mcp__github__search_issues"
