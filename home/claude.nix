@@ -2418,6 +2418,30 @@ in
             };
           };
 
+          # gh subcommands that clone a repository or read files out of
+          # one over the API. They reach the same content the git
+          # bundle's `git clone` deny and the raw.githubusercontent.com
+          # fetch rule redirect, so they land on mcp__git__git_clone too.
+          # `repo view` prints the README by default, which makes it a
+          # file read; the endpoint serves no repository-metadata tool,
+          # so the reason names search_repositories for the --json form.
+          # Like ghWriteRedirectGroups these leaves stay out of the
+          # ask-rule except lists, so dropping a rule falls back to a
+          # prompt. Mirrored by ghCloneRedirectRules in
+          # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go; update
+          # all together.
+          ghCloneRedirectGroups = {
+            gist = {
+              clone = "mcp__git__git_clone";
+            };
+            repo = {
+              clone = "mcp__git__git_clone";
+              "read-dir" = "mcp__git__git_clone";
+              "read-file" = "mcp__git__git_clone";
+              view = "mcp__git__git_clone (the README) or mcp__github__search_repositories (repository metadata)";
+            };
+          };
+
           # gh subcommands with no mcp__github__* equivalent that read
           # GitHub or only touch local state (pr checkout, downloads,
           # gh's own config). The MCP does not serve these, so they stay
@@ -2425,10 +2449,10 @@ in
           # streams a run to completion, which no MCP tool does. Some
           # non-mutating forms stay out on purpose and prompt. auth
           # stays out because `gh auth token` and `status --show-token`
-          # print credentials, `config set` because it can swap the
-          # browser, editor, or pager gh runs, and `repo clone`,
-          # `read-file`, and `read-dir` so repository reads keep going
-          # through mcp__git__git_clone. Single source of truth for the
+          # print credentials, and `config set` because it can swap the
+          # browser, editor, or pager gh runs. `pr checks` stays here
+          # for the same reason as `run watch`: its --watch form streams
+          # to completion. Single source of truth for the
           # permission allow entries below. Mirrored by ghAskRules in
           # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go.
           ghAllowGroups = {
@@ -2471,7 +2495,6 @@ in
               "license"
               "list"
               "set-default"
-              "view"
             ];
             run = [
               "download"
@@ -2703,6 +2726,19 @@ in
                   reason = "Write via ${tool} instead of the gh CLI.";
                 }) leaves
               ) ghWriteRedirectGroups
+            )
+            ++ lib.concatLists (
+              lib.mapAttrsToList (
+                group: leaves:
+                lib.mapAttrsToList (leaf: tool: {
+                  command = "gh";
+                  args = [
+                    group
+                    leaf
+                  ];
+                  reason = "Read via ${tool} instead of the gh CLI.";
+                }) leaves
+              ) ghCloneRedirectGroups
             );
           # Fail-closed gating for the gh CLI, derived from the
           # ghGroups / ghAllowCommands tables above: read-only subcommands

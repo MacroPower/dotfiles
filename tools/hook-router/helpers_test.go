@@ -31,6 +31,7 @@ const (
 	ghGroupAskReason         = "This gh subcommand can mutate GitHub state. Confirm before running."
 	ghFallbackAskReason      = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
 	ghAPIDeniedReason        = "`gh api` reaches api.github.com, which is denied. Clone with mcp__git__git_clone to read repository files locally, or use the mcp__github__* tools for issues, PRs, releases, and search."
+	ghRepoViewTool           = "mcp__git__git_clone (the README) or mcp__github__search_repositories (repository metadata)"
 )
 
 // canonicalRules mirrors the rules wired into home/claude.nix for the
@@ -113,7 +114,7 @@ func ghAskRules() *cmdrules.Engine {
 		group("pr", "checkout", "checks", "status", "diff", "list", "view"),
 		group("project", "field-list", "item-list", "list", "view"),
 		group("release", "download", "verify", "verify-asset", "list", "view"),
-		group("repo", "gitignore", "license", "list", "set-default", "view"),
+		group("repo", "gitignore", "license", "list", "set-default"),
 		group("ruleset", "check", "list", "view"),
 		group("run", "download", "watch", "view", "list"),
 		group("secret", "list"),
@@ -226,8 +227,31 @@ func ghWriteRedirectRules() *cmdrules.Engine {
 // ghRules mirrors the full production gh engine: read and write
 // redirect deny rules before ask rules, matching the hook-router
 // wrapper's serialization order (all deny rules precede any ask rule).
+// ghCloneRedirectRules mirrors the gh clone-redirect deny-rule bundle
+// in home/claude.nix: gh subcommands that clone a repository or read
+// files out of one over the API, denied and pointed at
+// mcp__git__git_clone.
+func ghCloneRedirectRules() *cmdrules.Engine {
+	redirect := func(tool string, args ...string) cmdrules.Rule {
+		return cmdrules.Rule{
+			Command: "gh",
+			Args:    args,
+			Reason:  ghRedirectReason(tool),
+		}
+	}
+
+	return cmdrules.New([]cmdrules.Rule{
+		redirect("mcp__git__git_clone", "gist", "clone"),
+		redirect("mcp__git__git_clone", "repo", "clone"),
+		redirect("mcp__git__git_clone", "repo", "read-dir"),
+		redirect("mcp__git__git_clone", "repo", "read-file"),
+		redirect(ghRepoViewTool, "repo", "view"),
+	})
+}
+
 func ghRules() *cmdrules.Engine {
 	rules := append(ghRedirectRules().Rules(), ghWriteRedirectRules().Rules()...)
+	rules = append(rules, ghCloneRedirectRules().Rules()...)
 	return cmdrules.New(append(rules, ghAskRules().Rules()...))
 }
 

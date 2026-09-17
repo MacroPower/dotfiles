@@ -33,6 +33,7 @@ const (
 	ghGroupAskReason         = "This gh subcommand can mutate GitHub state. Confirm before running."
 	ghFallbackAskReason      = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
 	ghAPIDeniedReason        = "`gh api` reaches api.github.com, which is denied. Clone with mcp__git__git_clone to read repository files locally, or use the mcp__github__* tools for issues, PRs, releases, and search."
+	ghRepoViewTool           = "mcp__git__git_clone (the README) or mcp__github__search_repositories (repository metadata)"
 )
 
 // canonicalRules mirrors the rules wired into home/claude.nix for the
@@ -682,7 +683,7 @@ func ghAskRules() *cmdrules.Engine {
 		group("pr", "checkout", "checks", "status", "diff", "list", "view"),
 		group("project", "field-list", "item-list", "list", "view"),
 		group("release", "download", "verify", "verify-asset", "list", "view"),
-		group("repo", "gitignore", "license", "list", "set-default", "view"),
+		group("repo", "gitignore", "license", "list", "set-default"),
 		group("ruleset", "check", "list", "view"),
 		group("run", "download", "watch", "view", "list"),
 		group("secret", "list"),
@@ -800,8 +801,31 @@ func ghWriteRedirectRules() *cmdrules.Engine {
 // redirect deny rules before ask rules, matching the serialization
 // order in the hook-router wrapper (all deny rules precede any ask
 // rule).
+// ghCloneRedirectRules mirrors the gh clone-redirect deny-rule bundle
+// in home/claude.nix: gh subcommands that clone a repository or read
+// files out of one over the API, denied and pointed at
+// mcp__git__git_clone.
+func ghCloneRedirectRules() *cmdrules.Engine {
+	redirect := func(tool string, args ...string) cmdrules.Rule {
+		return cmdrules.Rule{
+			Command: "gh",
+			Args:    args,
+			Reason:  ghRedirectReason(tool),
+		}
+	}
+
+	return cmdrules.New([]cmdrules.Rule{
+		redirect("mcp__git__git_clone", "gist", "clone"),
+		redirect("mcp__git__git_clone", "repo", "clone"),
+		redirect("mcp__git__git_clone", "repo", "read-dir"),
+		redirect("mcp__git__git_clone", "repo", "read-file"),
+		redirect(ghRepoViewTool, "repo", "view"),
+	})
+}
+
 func ghRules() *cmdrules.Engine {
 	rules := append(ghRedirectRules().Rules(), ghWriteRedirectRules().Rules()...)
+	rules = append(rules, ghCloneRedirectRules().Rules()...)
 	return cmdrules.New(append(rules, ghAskRules().Rules()...))
 }
 
@@ -1001,8 +1025,9 @@ func TestCommandRulesCheck_Redirect(t *testing.T) {
 		"gh cache list stays on gh": {
 			input: "gh cache list",
 		},
-		"gh repo view stays on gh": {
+		"gh repo view redirects (README is a file read)": {
 			input: "gh repo view owner/repo",
+			want:  ghRedirectReason(ghRepoViewTool),
 		},
 		"gh workflow view redirects to MCP": {
 			input: "gh workflow view ci.yaml",
@@ -1088,6 +1113,18 @@ func TestCommandRulesCheck_Redirect(t *testing.T) {
 			input: "gh ruleset check main",
 			want:  ghRedirectReason("mcp__github__repository_ruleset_read (get_rules_for_branch)"),
 		},
+		"gh repo clone redirects to git clone": {
+			input: "gh repo clone owner/repo",
+			want:  ghRedirectReason("mcp__git__git_clone"),
+		},
+		"gh repo read-file redirects to git clone": {
+			input: "gh repo read-file README.md",
+			want:  ghRedirectReason("mcp__git__git_clone"),
+		},
+		"gh gist clone redirects to git clone": {
+			input: "gh gist clone abc123",
+			want:  ghRedirectReason("mcp__git__git_clone"),
+		},
 		"gh api is denied outright": {
 			input: "gh api /user",
 			want:  ghAPIDeniedReason,
@@ -1101,7 +1138,7 @@ func TestCommandRulesCheck_Redirect(t *testing.T) {
 			want:  ghAPIDeniedReason,
 		},
 		"gh api in compound is denied": {
-			input: "gh repo view owner/repo && gh api /user",
+			input: "gh cache list && gh api /user",
 			want:  ghAPIDeniedReason,
 		},
 	}
