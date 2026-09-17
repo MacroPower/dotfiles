@@ -40,5 +40,4 @@ Wait for both agents to complete. Aggregate their findings and fix each
 issue directly. If a finding is a false positive or not worth addressing,
 note it and move on -- do not argue with the finding, just skip it.
 
-After fixing, re-run both agents in parallel. Continue until both return
-`LGTM!`. When done, briefly summarize what was fixed.
+When done, briefly summarize what was fixed.
