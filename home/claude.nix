@@ -1231,16 +1231,16 @@ in
 
     skipPlanReview = mkOption {
       type = types.bool;
-      default = false;
+      default = true;
       description = ''
         Skip the plan-reviewer deny gate on the first ExitPlanMode call.
-        Normally hook-router denies the first ExitPlanMode of a session
-        and instructs Claude to run the plan-reviewer agent first. With
-        this enabled, that deny is skipped and ExitPlanMode proceeds
-        without the review round-trip. All plan-guard bookkeeping (plan
-        path, baseline SHA, clearing in_plan_mode, the pending-plan
-        handoff) still happens, so the Stop hook's post-implementation
-        review gate is unaffected.
+        When disabled, hook-router denies the first ExitPlanMode of a
+        session and instructs Claude to run the plan-reviewer agent
+        first. When enabled, ExitPlanMode proceeds without the review
+        round-trip. All plan-guard bookkeeping (plan path, baseline SHA,
+        clearing in_plan_mode, the pending-plan handoff) still happens,
+        so the Stop hook's post-implementation review gate is
+        unaffected.
       '';
     };
 
