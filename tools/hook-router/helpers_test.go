@@ -21,15 +21,16 @@ const testPID = "12345"
 // the copies here exist so the handler-level integration tests can
 // assert against the same decisions production emits.
 const (
-	stashDeniedReason   = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
-	cloneDeniedReason   = "Direct git clone usage is blocked. Use mcp__git__git_clone instead."
-	fetchDeniedReason   = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead."
-	pullDeniedReason    = "Direct git pull usage is blocked. Use mcp__git__git_pull instead."
-	pushDeniedReason    = "Direct git push usage is blocked. Use mcp__git__git_push instead."
-	kubectxReason       = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
-	ghGroupAskReason    = "This gh subcommand can mutate GitHub state. Confirm before running."
-	ghFallbackAskReason = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
-	ghAPIDeniedReason   = "`gh api` reaches api.github.com, which is denied. Clone with mcp__git__git_clone to read repository files locally, or use the mcp__github__* tools for issues, PRs, releases, and search."
+	stashDeniedReason        = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin."
+	cloneDeniedReason        = "Direct git clone usage is blocked. Use mcp__git__git_clone instead."
+	fetchDeniedReason        = "Direct git fetch usage is blocked. Use mcp__git__git_fetch instead."
+	pullDeniedReason         = "Direct git pull usage is blocked. Use mcp__git__git_pull instead."
+	pushDeniedReason         = "Direct git push usage is blocked. Use mcp__git__git_push instead."
+	remoteUpdateDeniedReason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead."
+	kubectxReason            = "Do not use kubectx or kubens directly. Use mcp__kubectx__list to list contexts and mcp__kubectx__select to switch contexts."
+	ghGroupAskReason         = "This gh subcommand can mutate GitHub state. Confirm before running."
+	ghFallbackAskReason      = "This gh subcommand is not on the read-only allowlist. Confirm before running; prefer mcp__github__* tools for reads."
+	ghAPIDeniedReason        = "`gh api` reaches api.github.com, which is denied. Clone with mcp__git__git_clone to read repository files locally, or use the mcp__github__* tools for issues, PRs, releases, and search."
 )
 
 // canonicalRules mirrors the rules wired into home/claude.nix for the
@@ -57,6 +58,11 @@ func canonicalRules() *cmdrules.Engine {
 			Command: "git",
 			Args:    []string{"push"},
 			Reason:  pushDeniedReason,
+		},
+		{
+			Command: "git",
+			Args:    []string{"remote", "update"},
+			Reason:  remoteUpdateDeniedReason,
 		},
 		{
 			Command: "git",

@@ -2228,6 +2228,17 @@ in
             reason = "Direct git push usage is blocked. Use mcp__git__git_push instead.";
           }
           {
+            # `git remote update` fetches every remote, so it reaches the
+            # network the same way `git fetch` does. The other `git
+            # remote` leaves stay local and fall through.
+            command = "git";
+            args = [
+              "remote"
+              "update"
+            ];
+            reason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead.";
+          }
+          {
             command = "git";
             args = [ "stash" ];
             except = [
