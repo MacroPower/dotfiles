@@ -527,8 +527,14 @@
         # Make Help Viewer windows non-floating so they behave like normal windows
         "com.apple.helpviewer".DevMode = true;
 
-        # Disable dictation auto-punctuation
-        "com.apple.assistant.support"."Dictation Auto Punctuation Enabled" = false;
+        # Enable keyboard dictation; the shortcut is set in
+        # com.apple.symbolichotkeys above (press Command twice)
+        "com.apple.HIToolbox".AppleDictationAutoEnable = 1;
+        "com.apple.assistant.support" = {
+          "Dictation Enabled" = true;
+          # Disable dictation auto-punctuation
+          "Dictation Auto Punctuation Enabled" = false;
+        };
       };
 
       # System-wide preferences (written to /Library/Preferences/, requires root)
