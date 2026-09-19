@@ -380,6 +380,7 @@
               moveRightASpace = 81;
               showApps = 160;
               dictation = 164;
+              siri = 176;
             };
             # NSEvent modifier flags (from NSEvent.h / CGEvent.h)
             modifiers = {
@@ -485,6 +486,11 @@
                   type = "modifier";
                 };
               };
+              # Legacy Siri hotkey (pre-Apple Intelligence); the current
+              # shortcut lives in com.apple.Siri below
+              "${toString hotkeys.siri}" = {
+                enabled = false;
+              };
             };
           };
         # Prevent Photos from auto-launching when a camera, phone, or SD card is connected
@@ -534,6 +540,14 @@
           "Dictation Enabled" = true;
           # Disable dictation auto-punctuation
           "Dictation Auto Punctuation Enabled" = false;
+        };
+        # Turn off Siri's keyboard shortcut. Type to Siri defaults to
+        # pressing Command twice and takes precedence over the dictation
+        # hotkey on the same chord. SAE is the Apple Intelligence variant;
+        # PreSAE is the shortcut used when Apple Intelligence is off.
+        "com.apple.Siri" = {
+          KeyboardShortcutSAE.enabled = false;
+          KeyboardShortcutPreSAE.enabled = false;
         };
       };
 
