@@ -396,14 +396,18 @@ func run(
 			return handlePostAskUserQuestion(ctx, input, store, cfg, logger)
 
 		case "Bash":
-			// The recorder is store-gated; the compactor is
-			// store-independent. Both run, but only
+			// The recorder is store-gated; the edit formatter and the
+			// compactor are store-independent. All three run, but only
 			// handlePostBashCompact writes to stdout, so there is at
 			// most one updatedToolOutput decision.
 			if store != nil {
 				if err := handlePostBash(ctx, input, store, logger); err != nil {
 					return err
 				}
+			}
+
+			if err := handlePostBashEdits(ctx, input, cfg, logger); err != nil {
+				return err
 			}
 
 			return handlePostBashCompact(input, stdout, cfg, logger)

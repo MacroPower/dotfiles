@@ -160,6 +160,129 @@ func TestHandlePostFileWriteMissingFilePath(t *testing.T) {
 	}
 }
 
+func TestHandlePostBashEdits(t *testing.T) {
+	t.Parallel()
+
+	const before = "# t\n\n\n\nbar\n"
+
+	// Collapses newline runs; formatted files lose the "\n\n\n" run.
+	collapse := []string{"sh", "-c", `tr -s '\n' < "$1" > "$1.tmp" && mv "$1.tmp" "$1"`, "sh"}
+
+	tests := map[string]struct {
+		// files maps a file name to whether the formatter must have
+		// touched it. Every file is created under a temp dir with the
+		// same starting content; the rule glob covers *.md only.
+		files map[string]bool
+		// response builds tool_response from the resolved paths.
+		response func(paths map[string]string) map[string]any
+	}{
+		"formats matching files and skips the rest": {
+			files: map[string]bool{"a.md": true, "b.md": true, "c.txt": false},
+			response: func(paths map[string]string) map[string]any {
+				return map[string]any{
+					"bashEditDiff": map[string]any{
+						"changedFiles": []any{paths["a.md"], paths["b.md"], paths["c.txt"]},
+					},
+				}
+			},
+		},
+		"ignores non-string entries": {
+			files: map[string]bool{"a.md": true},
+			response: func(paths map[string]string) map[string]any {
+				return map[string]any{
+					"bashEditDiff": map[string]any{
+						"changedFiles": []any{42, "", nil, paths["a.md"]},
+					},
+				}
+			},
+		},
+		"no bashEditDiff field": {
+			files: map[string]bool{"a.md": false},
+			response: func(map[string]string) map[string]any {
+				return map[string]any{"stdout": "ok"}
+			},
+		},
+		"bashEditDiff without changedFiles": {
+			files: map[string]bool{"a.md": false},
+			response: func(map[string]string) map[string]any {
+				return map[string]any{
+					"bashEditDiff": map[string]any{"unavailable": true},
+				}
+			},
+		},
+		"changedFiles wrong type": {
+			files: map[string]bool{"a.md": false},
+			response: func(paths map[string]string) map[string]any {
+				return map[string]any{
+					"bashEditDiff": map[string]any{"changedFiles": paths["a.md"]},
+				}
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			tmp := t.TempDir()
+			paths := make(map[string]string, len(tc.files))
+
+			for file := range tc.files {
+				p := filepath.Join(tmp, file)
+				require.NoError(t, os.WriteFile(p, []byte(before), 0o644))
+				paths[file] = p
+			}
+
+			rule := formatter.Rule{PathGlob: filepath.Join(tmp, "*.md"), Command: collapse}
+			cfg := config{formatterRules: formatter.New([]formatter.Rule{rule})}
+			logger := slog.New(slog.DiscardHandler)
+
+			input, err := json.Marshal(map[string]any{
+				"tool_name":     "Bash",
+				"tool_input":    map[string]any{"command": "sed -i s/a/b/ *"},
+				"tool_response": tc.response(paths),
+			})
+			require.NoError(t, err)
+
+			require.NoError(t, handlePostBashEdits(t.Context(), input, cfg, logger))
+
+			for file, want := range tc.files {
+				got, err := os.ReadFile(paths[file])
+				require.NoError(t, err)
+
+				if want {
+					assert.NotContains(t, string(got), "\n\n\n", file+" should be formatted")
+				} else {
+					assert.Equal(t, before, string(got), file+" should be untouched")
+				}
+			}
+		})
+	}
+}
+
+func TestHandlePostBashEditsEmptyEngine(t *testing.T) {
+	t.Parallel()
+
+	cfg := config{formatterRules: formatter.New(nil)}
+	logger := slog.New(slog.DiscardHandler)
+
+	input := []byte(`{"tool_name":"Bash","tool_response":{"bashEditDiff":{"changedFiles":["/tmp/x.md"]}}}`)
+
+	assert.NoError(t, handlePostBashEdits(t.Context(), input, cfg, logger))
+}
+
+func TestHandlePostBashEditsNoToolResponse(t *testing.T) {
+	t.Parallel()
+
+	rule := formatter.Rule{PathGlob: "/tmp/*.md", Command: []string{"true"}}
+	cfg := config{formatterRules: formatter.New([]formatter.Rule{rule})}
+	logger := slog.New(slog.DiscardHandler)
+
+	input := []byte(`{"tool_name":"Bash","tool_input":{"command":"ls"}}`)
+
+	assert.NoError(t, handlePostBashEdits(t.Context(), input, cfg, logger))
+}
+
 func TestHandlePostFileWriteFormatterFailureSwallowed(t *testing.T) {
 	t.Parallel()
 

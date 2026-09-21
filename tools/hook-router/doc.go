@@ -21,11 +21,15 @@
 //   - PostToolUse:AskUserQuestion -- when the question's option labels identify it
 //     as the Stop-gate question, clears the session,
 //     releasing the Stop gate for the plan cycle
-//   - PostToolUse:Bash            -- compacts redundant successful output (ANSI
-//     strip + run collapse) via updatedToolOutput; when archiving is on,
-//     writes the uncompacted stream to a file and appends a pointer so
-//     the dropped detail stays recoverable
+//   - PostToolUse:Bash            -- runs the matching file formatter on each
+//     file the command changed (tool_response.bashEditDiff.changedFiles,
+//     present when Claude Code's bashEditDiffEnabled setting is on), then
+//     compacts redundant successful output (ANSI strip + run collapse) via
+//     updatedToolOutput; when archiving is on, writes the uncompacted
+//     stream to a file and appends a pointer so the dropped detail stays
+//     recoverable
 //   - PostToolUse:Write/Edit/MultiEdit -- runs the matching file formatter
+//     on the written file
 //   - Stop                        -- blocks (with an AskUserQuestion-instructing
 //     message) until the post-impl question has been
 //     answered once for the current plan cycle

@@ -217,7 +217,8 @@ let
   };
 
   # File-formatter routing rule, evaluated by hook-router on
-  # PostToolUse:Write/Edit. The matched file path is appended
+  # PostToolUse:Write/Edit for the written file and on PostToolUse:Bash
+  # for each file the command changed. The matched file path is appended
   # as the final argv element when the rule's command runs. See
   # tools/hook-router/formatter_rules.go FormatterRule for matching
   # semantics; option names below are camelCase because
@@ -1562,8 +1563,9 @@ in
         built-in plans and research mdformat rules. Each rule maps an
         absolute file-path glob to a formatter argv; the matched path
         is appended as the final argument. Rules are evaluated in
-        order on PostToolUse:Write/Edit and the first
-        matching glob wins.
+        order on PostToolUse:Write/Edit for the written file and on
+        PostToolUse:Bash for each file the command changed
+        (bashEditDiffEnabled); the first matching glob wins.
       '';
     };
 
@@ -3540,7 +3542,9 @@ in
                     # no-op there, so the matcher saves a process spawn
                     # per call. Bash output compaction returns
                     # updatedToolOutput, which Claude reads, so this entry
-                    # stays synchronous. Extend this list when a handler
+                    # stays synchronous; the same invocation formats the
+                    # files a Bash command changed before compacting.
+                    # Extend this list when a handler
                     # is added, unless the handler returns nothing Claude
                     # reads, which belongs on the entry below.
                     matcher = "^(AskUserQuestion|Bash)$";
@@ -3683,6 +3687,14 @@ in
             # instead of chasing the file pointer. Background task output
             # always lands in a file that the model reads with Read.
             bashOutputMaxChars = 128000;
+            # Record which files a Bash command changed in its Git
+            # repository, in every permission mode. The Bash result
+            # carries a diff of up to five of them, and PostToolUse:Bash
+            # hooks receive the whole list as
+            # tool_response.bashEditDiff.changedFiles, which hook-router
+            # routes through formatterRules so a sed -i or tee edit is
+            # formatted like a Write or Edit.
+            bashEditDiffEnabled = true;
             # Chat transcript retention. fewer-permission-prompts ranks
             # allowlist candidates over the 50 most-recently-modified
             # transcripts across every project, and the 30-day default
