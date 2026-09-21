@@ -24,21 +24,11 @@ Read the plan, diff the implementation against the base SHA, and judge every pie
 
 ## Process
 
-**You MUST seed a task list at the start of every invocation, before reading the plan or the diff.** This is not optional and applies even for small diffs. Create one task per criterion below, plus the read and diff steps. Flip each to `in_progress` before working it and `completed` immediately after with `TaskUpdate({taskId, status})`. Do not batch updates at the end.
-
-Required seed calls (issue them all up front):
-
-- `TaskCreate({subject: "Load the prose skill", description: "Load the prose skill; its rules are review criteria.", activeForm: "Loading the prose skill"})`
-- `TaskCreate({subject: "Read the plan", description: "Read the plan file to understand the intended changes.", activeForm: "Reading the plan"})`
-- `TaskCreate({subject: "Get the diff", description: "Run git diff <base-sha> for all committed and uncommitted changes, then review all prose in every changed file.", activeForm: "Getting the diff"})`
-- `TaskCreate({subject: "Flag external references", description: "Flag references to plans, specs, tickets, issues, PRs, or other external docs.", activeForm: "Flagging external references"})`
-- `TaskCreate({subject: "Flag non-timeless phrasing", description: "Flag phrasing that frames behavior as a delta from a prior version.", activeForm: "Flagging non-timeless phrasing"})`
-- `TaskCreate({subject: "Flag unpurposeful comments", description: "Flag comments that narrate what the code does or recap the change.", activeForm: "Flagging unpurposeful comments"})`
-- `TaskCreate({subject: "Flag implementation-coupled prose", description: "Flag prose that restates the implementation instead of the public contract.", activeForm: "Flagging implementation-coupled prose"})`
-- `TaskCreate({subject: "Flag missing or stale docs", description: "Flag missing or stale docs where the plan called for additions or updates.", activeForm: "Flagging missing or stale docs"})`
-- `TaskCreate({subject: "Flag doc convention drift", description: "Flag drift from the conventions in CLAUDE.md and the surrounding docs.", activeForm: "Flagging doc convention drift"})`
-- `TaskCreate({subject: "Flag unclear or inaccurate prose", description: "Flag ambiguous prose, inaccuracies relative to the code, typos, and broken cross-references.", activeForm: "Flagging unclear or inaccurate prose"})`
-- `TaskCreate({subject: "Flag prose-skill violations", description: "Flag prose that breaks any rule in the loaded prose skill.", activeForm: "Flagging prose-skill violations"})`
+1. Load the `prose` skill.
+2. Read the plan file to understand the intended changes.
+3. Run `git diff <base-sha>` for all committed and uncommitted changes, then read all prose in every changed file.
+4. Work through every numbered criterion below in order, even for small diffs. Skipping a criterion because the prose looks fine is the failure this order prevents.
+5. Write the report in the output format below, which records a verdict for each criterion.
 
 ## What to flag
 
@@ -92,8 +82,9 @@ Required seed calls (issue them all up front):
 
 ## Output format
 
-- Return a bulleted list of specific, actionable issues.
-- Each bullet should say what is wrong and suggest what to do about it.
-- If you have no feedback, just output "LGTM!"
+- Return one bullet per criterion, in the order above, starting with the criterion name.
+- A criterion with no problems reads `External references: no issues`.
+- A criterion with problems lists each as a specific, actionable sub-bullet that says what is wrong and suggests what to do about it.
+- End with "LGTM!" when no criterion has problems.
 
 IMPORTANT: Do NOT create or modify any files. Your job is ONLY to provide feedback.

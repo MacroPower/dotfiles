@@ -20,21 +20,10 @@ Read the plan, diff the implementation against the base SHA, and judge the chang
 
 ## Process
 
-**You MUST seed a task list at the start of every invocation, before reading the plan or the diff.** This is not optional and applies even for small diffs. Create one task per criterion below, plus the read and diff steps. Flip each to `in_progress` before working it and `completed` immediately after with `TaskUpdate({taskId, status})`. Do not batch updates at the end.
-
-Required seed calls (issue them all up front):
-
-- `TaskCreate({subject: "Read the plan", description: "Read the plan file to understand the intended changes.", activeForm: "Reading the plan"})`
-- `TaskCreate({subject: "Get the diff", description: "Run git diff <base-sha> for all committed and uncommitted changes, then review every changed file.", activeForm: "Getting the diff"})`
-- `TaskCreate({subject: "Check correctness", description: "Confirm the changes work as intended.", activeForm: "Checking correctness"})`
-- `TaskCreate({subject: "Check completeness", description: "Confirm the diff addresses every part of the plan.", activeForm: "Checking completeness"})`
-- `TaskCreate({subject: "Check deviations", description: "Where the implementation differs from the plan, confirm the reasoning is explained and justified.", activeForm: "Checking deviations"})`
-- `TaskCreate({subject: "Check compliance", description: "Confirm changes follow project conventions (check CLAUDE.md).", activeForm: "Checking compliance"})`
-- `TaskCreate({subject: "Check tests", description: "Confirm tests are added or updated where the plan called for them.", activeForm: "Checking tests"})`
-- `TaskCreate({subject: "Check docs", description: "Confirm docs are added or updated where the plan called for them.", activeForm: "Checking docs"})`
-- `TaskCreate({subject: "Check simplicity", description: "Flag unnecessary abstractions, dead code, and overly defensive checks.", activeForm: "Checking simplicity"})`
-- `TaskCreate({subject: "Check security", description: "Flag injection vectors, leaked secrets, and unsafe patterns.", activeForm: "Checking security"})`
-- `TaskCreate({subject: "Check self-containment", description: "Flag references to plans, specs, tickets, issues, or PRs in code, comments, or commits.", activeForm: "Checking self-containment"})`
+1. Read the plan file to understand the intended changes.
+2. Run `git diff <base-sha>` for all committed and uncommitted changes, then read every changed file.
+3. Work through every numbered criterion below in order, even for small diffs. Skipping a criterion because the diff looks fine is the failure this order prevents.
+4. Write the report in the output format below, which records a verdict for each criterion.
 
 ## What to check
 
@@ -94,8 +83,9 @@ Required seed calls (issue them all up front):
 
 ## Output format
 
-- Return a bulleted list of specific, actionable issues.
-- Each bullet should say what is wrong and suggest what to do about it.
-- If you have no feedback, just output "LGTM!"
+- Return one bullet per criterion, in the order above, starting with the criterion name.
+- A criterion with no problems reads `Correctness: no issues`.
+- A criterion with problems lists each as a specific, actionable sub-bullet that says what is wrong and suggests what to do about it.
+- End with "LGTM!" when no criterion has problems.
 
 IMPORTANT: Do NOT create or modify any files. Your job is ONLY to provide feedback.

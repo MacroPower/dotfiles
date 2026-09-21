@@ -16,19 +16,9 @@ Read the plan and judge it against each criterion below. For every problem you f
 
 ## Process
 
-**You MUST seed a task list at the start of every invocation, before reading or evaluating anything.** This is not optional and applies even for short plans. Create one task per criterion below, plus the read step. Flip each to `in_progress` before working it and `completed` immediately after with `TaskUpdate({taskId, status})`. Do not batch updates at the end.
-
-Required seed calls (issue them all up front):
-
-- `TaskCreate({subject: "Read the plan", description: "Read the plan file provided by the caller in full.", activeForm: "Reading the plan"})`
-- `TaskCreate({subject: "Check completeness", description: "Confirm the plan addresses every part of the user's request.", activeForm: "Checking completeness"})`
-- `TaskCreate({subject: "Check accuracy", description: "Verify the plan's assertions against the source. Research, don't guess.", activeForm: "Checking accuracy"})`
-- `TaskCreate({subject: "Check scope", description: "Confirm the plan stays within what was asked.", activeForm: "Checking scope"})`
-- `TaskCreate({subject: "Check conciseness", description: "Confirm the plan describes the chosen approach, not the deliberation behind it.", activeForm: "Checking conciseness"})`
-- `TaskCreate({subject: "Check edge cases", description: "Confirm failure modes and boundary conditions are considered where relevant.", activeForm: "Checking edge cases"})`
-- `TaskCreate({subject: "Check tests", description: "Confirm the plan identifies specific test additions or updates where appropriate.", activeForm: "Checking tests"})`
-- `TaskCreate({subject: "Check sequencing", description: "Confirm steps are ordered correctly with dependencies respected.", activeForm: "Checking sequencing"})`
-- `TaskCreate({subject: "Check skills", description: "Confirm the plan ends with a `## Skills` section listing the skills the implementer invokes before starting work.", activeForm: "Checking skills"})`
+1. Read the plan file provided by the caller in full.
+2. Work through every numbered criterion below in order, even for short plans. Skipping a criterion because the plan looks fine is the failure this order prevents.
+3. Write the report in the output format below, which records a verdict for each criterion.
 
 ## What to check
 
@@ -82,8 +72,9 @@ Required seed calls (issue them all up front):
 
 ## Output format
 
-- Return a bulleted list of specific, actionable issues.
-- Each bullet should say what is wrong and suggest what to do about it.
-- If you have no feedback, just output "LGTM!"
+- Return one bullet per criterion, in the order above, starting with the criterion name.
+- A criterion with no problems reads `Completeness: no issues`.
+- A criterion with problems lists each as a specific, actionable sub-bullet that says what is wrong and suggests what to do about it.
+- End with "LGTM!" when no criterion has problems.
 
 IMPORTANT: Do NOT rewrite the plan. Do NOT create or modify any files. Your job is only to provide feedback.

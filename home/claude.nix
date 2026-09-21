@@ -3664,7 +3664,6 @@ in
             showThinkingSummaries = true;
             showClearContextOnPlanAccept = true;
             fileCheckpointingEnabled = true;
-            todoFeatureEnabled = true;
             askUserQuestionTimeout = "never";
             # Remote-forwarded dialogs and held cross-session messages
             # wait indefinitely instead of resolving to cancelled or
