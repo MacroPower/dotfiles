@@ -51,28 +51,32 @@ matters, state its observable consequence instead.
 
 ## 3. Punctuation
 
-Commas, periods, and conjunctions carry ordinary clause breaks. The em dash and
-the colon both announce a reveal, and a page with several reads as sales copy.
-Save the em dash for the rare break that earns it. A colon does three jobs only.
-It introduces a list, introduces a literal (a quoted string, a command, a
-value), or labels a line ("Note: ..."). It never introduces an explanation,
-consequence, restatement, or example sentence, however natural it feels there.
+Never put a colon between two clauses. What follows a colon is a list, a
+literal (a quoted string, a command, a path, a value), or the body of a
+labeled line ("Note: ..."). If the words after a colon have their own subject
+and verb, the colon is wrong, so end the sentence there with a period:
 
-The common misuse is a colon standing in for a banned em dash:
+- "Robots handling fails open: any fetch error counts as allowed" ->
+  "Robots handling fails open. Any fetch error counts as allowed."
+- "The check is a heuristic: a short page with no script also trips it" ->
+  "The check is a heuristic. A short page with no script also trips it."
+- "v1.0 is out: a thread-safe token bucket for Go" -> "v1.0 ships a
+  thread-safe token bucket for Go."
 
-- "A rate of zero is the mirror image: the bucket never refills"
-- "v1.0 is out: a thread-safe token bucket for Go"
+The habit is a claim with its reason or example spliced on after a colon, and
+it grows with the length of the document, because each one feels natural on
+its own. When a reason must stay attached, join it with "because" or "so".
 
-Each reads identically with an em dash in the colon's place, which is the tell.
-If the words after the colon have their own subject and verb, or an em dash
-would fit the same slot, the colon is wrong.
+Commas, periods, and conjunctions carry ordinary clause breaks. Save the em
+dash for the rare break that earns it; a page with several reads as sales
+copy.
 
 ## 4. Concision
 
-Prefer the short everyday form: "to" over "in order to", "use" over "utilize"
-and "leverage", "because" over "due to the fact that". State the fact and let
-the reader judge its weight; "stands as", "serves as", and "plays a vital role"
-puff without informing. One hedge per claim at most.
+Prefer the short everyday form. Write "to" over "in order to", "use" over
+"utilize" and "leverage", "because" over "due to the fact that". State the fact
+and let the reader judge its weight; "stands as", "serves as", and "plays a
+vital role" puff without informing. One hedge per claim at most.
 
 The same puff arrives as a word, clause, or sentence that insists on a fact
 already stated, or fences off a scope nobody questioned:
@@ -105,9 +109,9 @@ side its own sentence.
 ## 6. Tense
 
 Durable prose (docs, READMEs, comments, docstrings) describes the system as it
-is, never as a delta from a prior version: no "now supports", "previously", "the
-new flag". Git history records what changed. Prose whose job is describing a
-change (commit messages, PR descriptions, changelogs) is exempt.
+is, never as a delta from a prior version, so no "now supports", "previously",
+or "the new flag". Git history records what changed. Prose whose job is
+describing a change (commit messages, PR descriptions, changelogs) is exempt.
 
 ## 7. Structure
 
@@ -123,9 +127,8 @@ A header names the topic; the body makes the claim. Keep every header below the
 title to a noun phrase of one to three words. A header that narrates ("How
 matching works", "Deletion behavior and safety") scans slower, drifts out of
 date as the body changes, and breaks its fragment link on every rewording. The
-tells are sentence shapes: a leading "how", "why", "what", or "when"; a verb;
-"and" or a comma joining two ideas; a question mark. Drop the frame and keep the
-noun:
+tells are a leading "how", "why", "what", or "when", a verb, "and" or a comma
+joining two ideas, or a question mark. Drop the frame and keep the noun:
 
 - "How matching works" -> "Matching"
 - "Why we're doing this" -> "Motivation"
