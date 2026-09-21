@@ -124,6 +124,7 @@ in
     direnv = {
       enable = true;
       nix-direnv.enable = true;
+      enableGitIntegration = true;
       config = baseDirenvConfig // sandboxDirenvConfig;
     };
 
