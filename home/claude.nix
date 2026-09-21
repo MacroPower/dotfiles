@@ -3677,14 +3677,13 @@ in
             terminalProgressBarEnabled = true;
             autoCompactEnabled = true;
             autoCompactWindow = 666666;
-            # Inline Bash and background-task output up to the 128K
-            # character ceiling before Claude Code saves it to a file.
-            # hook-router's PostToolUse compaction collapses repeated
-            # lines in what arrives inline, so the model reads a nix or
-            # Dagger build's output directly instead of chasing the
-            # file pointer.
+            # Inline Bash output up to the 128K character ceiling before
+            # Claude Code saves it to a file. hook-router's PostToolUse
+            # compaction collapses repeated lines in what arrives inline,
+            # so the model reads a nix or Dagger build's output directly
+            # instead of chasing the file pointer. Background task output
+            # always lands in a file that the model reads with Read.
             bashOutputMaxChars = 128000;
-            taskOutputMaxChars = 128000;
             # Chat transcript retention. fewer-permission-prompts ranks
             # allowlist candidates over the 50 most-recently-modified
             # transcripts across every project, and the 30-day default
@@ -3692,13 +3691,14 @@ in
             # governs how long ~/.claude/skills/.trash holds what
             # syncClaudeAiSkills below moves there.
             cleanupPeriodDays = 90;
-            # Keep ~/.claude/skills Nix-owned. claude.ai skills
-            # otherwise download into skills/synced and re-sync every
-            # 10 minutes. False stops the downloads and moves anything
-            # already synced to skills/.trash at the next launch. Only
-            # false is honored; the server side decides when the
-            # feature turns on.
+            # Keep ~/.claude/skills and ~/.claude/plugins Nix-owned.
+            # Skills and plugins enabled on the claude.ai account
+            # otherwise download into skills/synced and plugins/synced
+            # at session start and re-sync every 10 minutes. False stops
+            # the downloads and moves already-synced skills to
+            # skills/.trash at the next launch. Only false is honored.
             syncClaudeAiSkills = false;
+            syncClaudeAiPlugins = false;
             # Straight-ASCII prompt input: no :shortcode: emoji expansion,
             # matching enforceAsciiTypography and the plain-ASCII policy.
             emojiCompletionEnabled = false;
@@ -3760,6 +3760,7 @@ in
       + ''
         - Long-running work belongs in a Bash call with `run_in_background: true`. The session stays free, you get a notification when the command exits, and `Read` fetches its captured output. `sleep` inside a background call is fine, so an `until <check>; do sleep 1; done` poll loop there is the right way to wait on a condition.
         - For one notification per event rather than one on completion, use the `Monitor` tool. It is deferred, so load it with `ToolSearch("select:Monitor")` before calling it.
+        - A Monitor watch ends after 30 minutes at most and sends a notification asking to be re-armed; re-arm it when the condition is still pending.
         - Fire off independent work in parallel, then act on completion notifications as they arrive. A spawn-one, wait, spawn-the-next loop serializes work that could have run at once.
 
         ## Python
