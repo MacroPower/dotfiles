@@ -216,46 +216,78 @@ let
     };
   };
 
-  # File-formatter routing rule, evaluated by hook-router on
-  # PostToolUse:Write/Edit for the written file and on PostToolUse:Bash
-  # for each file the command changed. The matched file path is appended
-  # as the final argv element when the rule's command runs. See
-  # tools/hook-router/formatter_rules.go FormatterRule for matching
-  # semantics; option names below are camelCase because
-  # `builtins.toJSON` emits attribute names verbatim and the Go struct
-  # tags expect camelCase.
-  formatterRuleType = types.submodule {
-    options = {
-      pathGlob = mkOption {
-        type = types.nonEmptyStr;
-        description = ''
-          Absolute file-path glob evaluated with doublestar v4
-          (`doublestar.PathMatch`), OS-separator aware like the older
-          `filepath.Match`. `**` crosses path separators only when it
-          occupies a full segment: `/a/**/*.md` is recursive, but
-          `/a/**foo` is not (the `**` degrades to a single `*`).
-          Tilde expansion does not happen at runtime, so the Nix
-          evaluator must produce the resolved absolute path (e.g.
-          `''${config.home.homeDirectory}/.claude/plans/*.md`).
-        '';
-      };
-      command = mkOption {
-        type = types.listOf types.nonEmptyStr;
-        description = ''
-          Formatter argv. The matched file path is appended as the
-          final argument, so the binary must accept a path positional.
-        '';
-      };
-      timeout = mkOption {
-        type = types.str;
-        default = "5s";
-        description = ''
-          Per-invocation wall-clock budget (Go time.ParseDuration
-          syntax). Defaults to 5s; malformed values silently fall
-          back to the default.
-        '';
+  # A path-to-command routing rule shared by the formatter and linter
+  # engines in hook-router. The matched file path is appended as the
+  # final argv element when the rule's command runs. Option names are
+  # camelCase because `builtins.toJSON` emits attribute names verbatim
+  # and the Go struct tags expect camelCase. `commandDescription`
+  # explains the command's contract and `defaultTimeout` is the budget
+  # the engine falls back to.
+  mkPathCommandRuleType =
+    {
+      commandDescription,
+      defaultTimeout,
+    }:
+    types.submodule {
+      options = {
+        pathGlob = mkOption {
+          type = types.nonEmptyStr;
+          description = ''
+            Absolute file-path glob evaluated with doublestar v4
+            (`doublestar.PathMatch`), OS-separator aware like the older
+            `filepath.Match`. `**` crosses path separators only when it
+            occupies a full segment, so `/a/**/*.md` is recursive while
+            `/a/**foo` is not (the `**` degrades to a single `*`). Brace
+            alternation (`*.{md,go}`) is supported. Tilde expansion does
+            not happen at runtime, so the Nix evaluator must produce the
+            resolved absolute path (e.g.
+            `''${config.home.homeDirectory}/.claude/plans/*.md`).
+          '';
+        };
+        command = mkOption {
+          type = types.listOf types.nonEmptyStr;
+          description = commandDescription;
+        };
+        timeout = mkOption {
+          type = types.str;
+          default = defaultTimeout;
+          description = ''
+            Per-invocation wall-clock budget (Go time.ParseDuration
+            syntax). Defaults to ${defaultTimeout}; malformed values
+            silently fall back to the default.
+          '';
+        };
       };
     };
+
+  # File-formatter routing rule, evaluated by hook-router on
+  # PostToolUse:Write/Edit/MultiEdit for the written file and on
+  # PostToolUse:Bash for each file the command changed. See
+  # tools/hook-router/formatter/formatter.go Rule for matching
+  # semantics.
+  formatterRuleType = mkPathCommandRuleType {
+    defaultTimeout = "5s";
+    commandDescription = ''
+      Formatter argv. The matched file path is appended as the final
+      argument, so the binary must accept a path positional. Exit codes
+      are logged and otherwise ignored.
+    '';
+  };
+
+  # File-linter routing rule, evaluated by hook-router on
+  # PostToolUse:Write/Edit/MultiEdit after the formatter has run. See
+  # tools/hook-router/linter/linter.go Rule for matching semantics.
+  linterRuleType = mkPathCommandRuleType {
+    defaultTimeout = "10s";
+    commandDescription = ''
+      Linter argv. The matched file path is appended as the final
+      argument, so the binary must accept a path positional. The
+      command follows one exit-code contract. 0 means the file is
+      clean. 1 means findings, one `path:line:col: message` line each
+      on stdout, which hook-router returns to Claude through exit code
+      2 (a Write reports every finding, an Edit only those on the
+      lines it wrote). Any other code is a crash, logged and swallowed.
+    '';
   };
 
   toPermGlob =
@@ -721,6 +753,7 @@ let
         --formatter-rules ${
           lib.escapeShellArg (builtins.toJSON (defaultFormatterRules ++ cfg.formatterRules))
         } \
+        --linter-rules ${lib.escapeShellArg (builtins.toJSON (defaultLinterRules ++ cfg.linterRules))} \
         --compaction-config ${
           lib.escapeShellArg (builtins.toJSON (removeAttrs cfg.outputCompaction [ "saveFullOutput" ]))
         } \
@@ -981,6 +1014,29 @@ let
       timeout = "5s";
     }
   ];
+
+  # Default linter routes installed by hook-router on
+  # PostToolUse:Write/Edit/MultiEdit. prose-lint runs the Weir rules in
+  # configs/harper against every markdown and source file Claude
+  # writes, and its findings come back as feedback before the next
+  # turn. Each exclude glob becomes a leading rule whose command exits
+  # 0 without output, so first-match-wins skips the file. The whole
+  # list is gated on proseLint.enable so disabling it drops the rule
+  # along with the binary.
+  defaultLinterRules = lib.optionals cfg.proseLint.enable (
+    map (glob: {
+      pathGlob = glob;
+      command = [ "${pkgs.coreutils}/bin/true" ];
+      timeout = "5s";
+    }) cfg.proseLint.excludeGlobs
+    ++ [
+      {
+        pathGlob = "/**/*.{${lib.concatStringsSep "," pkgs.prose-lint.passthru.extensions}}";
+        command = [ (lib.getExe pkgs.prose-lint) ];
+        timeout = "15s";
+      }
+    ]
+  );
 
   # Sops secrets that the wrappers above export into the session
   # environment. The sandbox credentials block denies them, so no
@@ -1566,6 +1622,52 @@ in
         order on PostToolUse:Write/Edit for the written file and on
         PostToolUse:Bash for each file the command changed
         (bashEditDiffEnabled); the first matching glob wins.
+      '';
+    };
+
+    proseLint = mkOption {
+      type = types.submodule {
+        options = {
+          enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Run prose-lint (the Weir rules in configs/harper) on every
+              markdown and source file Claude writes, and return its
+              findings as feedback before the next turn. Also installs
+              prose-lint and harper so the commit skills can lint
+              messages and rules can be iterated with `harper-cli
+              test`. When false, no linter rule is registered and the
+              packages are not installed.
+            '';
+          };
+          excludeGlobs = mkOption {
+            type = types.listOf types.nonEmptyStr;
+            default = [ ];
+            description = ''
+              Absolute file-path globs (doublestar syntax, see
+              formatterRules) that prose-lint skips. Each becomes a
+              leading linter rule that exits 0, so first-match-wins
+              stops the prose-lint rule from seeing the file.
+            '';
+          };
+        };
+      };
+      default = { };
+      description = "prose-lint hook settings.";
+    };
+
+    linterRules = mkOption {
+      type = types.listOf linterRuleType;
+      default = [ ];
+      description = ''
+        Extra hook-router linter routing rules, appended after the
+        built-in prose-lint rule. Each rule maps an absolute file-path
+        glob to a linter argv; the matched path is appended as the
+        final argument. Rules are evaluated in order on
+        PostToolUse:Write/Edit/MultiEdit after the formatter has run;
+        the first matching glob wins, so a rule here only fires on
+        files prose-lint does not cover.
       '';
     };
 
@@ -3513,7 +3615,7 @@ in
                     # race the note above warns about cannot occur here.
                     # Anchored: matchers are unanchored regexes, and a
                     # bare `Edit` would also match NotebookEdit.
-                    matcher = "^(Write|Edit)$";
+                    matcher = "^(Write|Edit|MultiEdit)$";
                     hooks = [ (router "PreToolUse" "FileWrite") ];
                   }
                 ];
@@ -3551,21 +3653,19 @@ in
                     hooks = [ (router "PostToolUse" null) ];
                   }
                   {
-                    # The formatter is the whole PostToolUse handler for
-                    # Write and Edit and returns nothing Claude reads, so
-                    # it runs off the critical path. This buys latency and
-                    # not failure reporting: asyncRewake wakes Claude only
-                    # on exit code 2, hook-router exits 0 or 1
-                    # (tools/hook-router/main.go), and handlePostFileWrite
-                    # swallows formatter failures after a warn log
-                    # (tools/hook-router/filewrite.go), so failures stay in
-                    # the hook-router log. Reporting them needs an exit-2
-                    # path in Go.
+                    # Write, Edit, and MultiEdit run the formatter and
+                    # then the linter off the critical path. asyncRewake
+                    # wakes Claude only on exit code 2, which is how
+                    # linter findings arrive (handlePostFileWrite returns
+                    # a blockError, tools/hook-router/filewrite.go); a
+                    # clean file exits 0 and Claude never hears from the
+                    # hook. hook-router logs formatter and linter crashes
+                    # and swallows them, so they stay in its own log.
                     #
                     # Passes no --tool: FileWrite is a PreToolUse routing
                     # sentinel, and the PostToolUse switch reads the real
                     # tool name from the payload.
-                    matcher = "^(Write|Edit)$";
+                    matcher = "^(Write|Edit|MultiEdit)$";
                     hooks = [ ((router "PostToolUse" null) // { asyncRewake = true; }) ];
                   }
                 ];
@@ -3747,6 +3847,10 @@ in
         pkgs.claude-history
         pkgs.git-surgeon
         pkgs.slugify
+      ]
+      ++ lib.optionals cfg.proseLint.enable [
+        pkgs.prose-lint
+        pkgs.harper
       ];
 
       file.".claude/themes/stylix.json" = lib.mkIf cfg.stylixTheme.enable {
