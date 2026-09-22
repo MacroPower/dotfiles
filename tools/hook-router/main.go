@@ -19,6 +19,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/formatter"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/linter"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/postimpl"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
@@ -36,6 +37,13 @@ import (
 // cfg.formatterRules.Match(...) without nil-guards. Handler tests
 // must construct all three as well (see testCatalog in plan_test.go,
 // [cmdrules.New], and [formatter.New]).
+//
+// linterRules shares the compactor's nil-safe contract below: mainErr
+// always wires it to a non-nil (possibly empty) value, but a bare
+// config{} test literal may leave it nil, since [linter.Engine.Empty]
+// and [linter.Engine.Match] guard a nil receiver. Its findings are the
+// one PostToolUse:Write/Edit/MultiEdit result Claude reads, delivered
+// as a [blockError].
 //
 // compactor shares the same nil-safe contract: mainErr always wires it
 // to a non-nil (possibly disabled) value, but a bare config{} test
@@ -92,6 +100,7 @@ type config struct {
 	postImpl       *postimpl.Catalog
 	commandRules   *cmdrules.Engine
 	formatterRules *formatter.Engine
+	linterRules    *linter.Engine
 	mcpRules       *mcprules.Ruleset
 	compactor      *compact.Compactor
 	outputArchive  *archive.Archive
@@ -134,6 +143,7 @@ func main() {
 	commandRules := flag.String("command-rules", "", "JSON array of command deny/ask rules ({command, args, except, action, reason})")
 	mcpRules := flag.String("mcp-rules", "", "JSON object of MCP tool allow/ask/deny pattern lists ({allow, ask, deny}); patterns are exact names, bare server names, or trailing-* globs")
 	formatterRules := flag.String("formatter-rules", "", "JSON array of file-formatter routing rules ({pathGlob, command, timeout})")
+	linterRules := flag.String("linter-rules", "", "JSON array of file-linter routing rules ({pathGlob, command, timeout}); findings block PostToolUse:Write/Edit/MultiEdit through exit code 2")
 	compactionConfig := flag.String("compaction-config", "", "JSON object configuring PostToolUse:Bash output compaction ({enable, stripAnsi, minRunLength, minBytes, streams})")
 	compactionOutputDir := flag.String("compaction-output-dir", "", "directory to archive a compacted Bash stream's uncompacted content to (\"\" disables archiving)")
 	searchRewriteConfig := flag.String("search-rewrite-config", "", "JSON object configuring PreToolUse:Bash search rewriting ({grep, find, findExcludes})")
@@ -144,7 +154,7 @@ func main() {
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *autoAllow, *skipPlanReview, *enforceTypography)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *autoAllow, *skipPlanReview, *enforceTypography)
 	if err == nil {
 		return
 	}
@@ -162,7 +172,7 @@ func main() {
 	os.Exit(1)
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON string, autoAllow, skipPlanReview, enforceTypography bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON string, autoAllow, skipPlanReview, enforceTypography bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -248,6 +258,15 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("formatter rules engine is empty")
 	}
 
+	linters, err := linter.Parse(linterRulesJSON)
+	if err != nil {
+		return fmt.Errorf("parsing --linter-rules: %w", err)
+	}
+
+	if linters.Empty() {
+		logger.Debug("linter rules engine is empty")
+	}
+
 	compactor, err := compact.Parse(compactionConfigJSON)
 	if err != nil {
 		return fmt.Errorf("parsing --compaction-config: %w", err)
@@ -281,6 +300,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.commandRules = rules
 	cfg.mcpRules = mcp
 	cfg.formatterRules = formatters
+	cfg.linterRules = linters
 	cfg.compactor = compactor
 	cfg.outputArchive = archive.New(compactionOutputDir)
 	cfg.searchRewrite = searchRewrite
@@ -488,12 +508,15 @@ func run(
 }
 
 // blockError signals that a handler blocked its event through exit code
-// 2 rather than a stdout decision document. TeammateIdle is the one
-// event hook-router handles that reads a block only from the exit code:
-// it has no hookSpecificOutput decision schema, and its JSON
-// alternative, {"continue": false}, stops the teammate outright instead
-// of sending it back to work. [main] prints Reason to stderr verbatim,
-// which is the feedback the teammate reads, and exits 2.
+// 2 rather than a stdout decision document. [main] prints Reason to
+// stderr verbatim, which is the feedback the agent reads, and exits 2.
+//
+// Two events use it. TeammateIdle has no hookSpecificOutput decision
+// schema, and its JSON alternative, {"continue": false}, stops the
+// teammate outright instead of sending it back to work.
+// PostToolUse:Write/Edit/MultiEdit runs with asyncRewake in
+// home/claude.nix, which wakes Claude only on exit code 2, so linter
+// findings travel this way too.
 type blockError struct {
 	Reason string
 }

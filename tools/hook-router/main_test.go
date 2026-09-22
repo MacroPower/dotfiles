@@ -16,6 +16,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/archive"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/formatter"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/linter"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
 )
 
@@ -464,6 +465,40 @@ func TestRun(t *testing.T) {
 		err = run(t.Context(), strings.NewReader(string(input)), &stdout, "PostToolUse", "", nil, cfg, logger)
 		require.NoError(t, err)
 		assert.Empty(t, stdout.Bytes())
+	})
+
+	t.Run("PostToolUse Write: linter findings return blockError and write nothing", func(t *testing.T) {
+		t.Parallel()
+
+		tmp := t.TempDir()
+		target := filepath.Join(tmp, "doc.md")
+		require.NoError(t, os.WriteFile(target, []byte("The job is retried.\n"), 0o644))
+
+		rule := linter.Rule{
+			PathGlob: filepath.Join(tmp, "*.md"),
+			Command:  []string{"sh", "-c", `printf '%s:1:9: Style::ProsePassive: Passive voice.\n' "$1"; exit 1`, "sh"},
+		}
+		lintCfg := config{
+			commandRules:   canonicalRules(),
+			formatterRules: formatter.New(nil),
+			linterRules:    linter.New([]linter.Rule{rule}),
+		}
+
+		input, err := json.Marshal(map[string]any{
+			"tool_name":  "Write",
+			"tool_input": map[string]any{"file_path": target},
+		})
+		require.NoError(t, err)
+
+		var stdout bytes.Buffer
+
+		err = run(t.Context(), strings.NewReader(string(input)), &stdout, "PostToolUse", "", nil, lintCfg, logger)
+
+		var blocked *blockError
+		require.ErrorAs(t, err, &blocked)
+		assert.Contains(t, blocked.Reason, "prose-lint: 1 finding in "+target)
+		assert.Contains(t, blocked.Reason, "Style::ProsePassive")
+		assert.Empty(t, stdout.Bytes(), "a block travels through exit code 2, never a decision document")
 	})
 
 	t.Run("PostToolUse stdin fallback routes Write/Edit/MultiEdit through formatter", func(t *testing.T) {

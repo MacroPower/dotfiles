@@ -6,7 +6,7 @@
 
 buildGoModule {
   pname = "hook-router";
-  version = "0.2.0";
+  version = "0.3.0";
 
   src = ./.;
   vendorHash = "sha256-WswEYDHOE0afiyOCY8MJeMoFhI5tjK0Ms5I/LLyUSy4=";
