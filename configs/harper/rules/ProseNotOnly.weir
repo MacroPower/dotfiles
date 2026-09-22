@@ -1,0 +1,7 @@
+expr main [(not only), (not just)]
+let message "Make the direct claim. If the contrast matters, give each side its own sentence."
+let description "Flags not only and not just constructions."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "The cache holds rules and results."

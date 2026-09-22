@@ -1,0 +1,7 @@
+expr main in order to
+let message "Write to."
+let description "Shortens in order to."
+let becomes "to"
+let kind "Style"
+test "Run make in order to build it." "Run make to build it."
+allows "Run make to build it."

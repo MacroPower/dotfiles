@@ -1,0 +1,10 @@
+expr main [([is, are, was, were, be, been, being, get, gets, got, getting] [VERB, (ADV VERB)]), ([is, are, was, were, be, been, being] * by)]
+let message "Passive voice. Make the actor the subject."
+let description "Flags a form of be or get followed by a verb, and a form of be followed by a word and by."
+let becomes ""
+let kind "Style"
+allows "The scheduler retries the job."
+allows "The scheduler is retrying the job."
+allows "She is tired."
+allows "The lock is free."
+allows "There is a lock."

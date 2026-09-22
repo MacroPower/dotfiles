@@ -1,0 +1,6 @@
+expr main —
+let message "Em dash. Use a period, a comma, or a conjunction."
+let description "Flags every em dash."
+let becomes ""
+let kind "Punctuation"
+allows "The job runs nightly, and the cache refills."

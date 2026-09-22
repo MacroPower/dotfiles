@@ -1,0 +1,7 @@
+expr main [(now [supports, accepts, returns, uses, handles, requires, defaults, includes]), previously, (the new), (no longer), (used to), (has been updated)]
+let message "Delta tense. Durable prose describes the system as it is, and git history records what changed."
+let description "Flags phrases that describe the system as a change from an earlier version."
+let becomes ""
+let kind "Style"
+allows "The flag defaults to five."
+allows "The parser supports tables."

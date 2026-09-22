@@ -1,0 +1,8 @@
+expr main [$leverage, $utilize]
+let message "Write use."
+let description "Replaces leverage and utilize, in every form, with use."
+let becomes "use"
+let kind "Style"
+test "We leverage the cache." "We use the cache."
+test "We utilize the cache." "We use the cache."
+allows "We use the cache."

@@ -1,0 +1,8 @@
+expr main [(no more and no less), (and nothing else), (this is deliberate), (this is intentional), (by design), (exactly what you would expect), (exactly what you'd expect), (no magic), (no surprises), (as the name [suggests, implies]), (the entire point), (the whole point), (it does exactly that), (without changing it)]
+let message "Certificate. A stated fact needs no vouching, so delete the phrase."
+let description "Flags phrases that insist on a fact the sentence already stated."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "Flush writes the buffer to disk."
+allows "Close releases the file handle."

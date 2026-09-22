@@ -1,0 +1,8 @@
+expr main , [ensuring, allowing, enabling, making, highlighting, fostering, providing, giving, helping, leading, resulting, improving, reducing, increasing, causing, creating, showing, demonstrating, indicating, meaning, keeping, letting, preventing, avoiding, streamlining, simplifying]
+let message "Participle tacked on after a comma. Give the point its own sentence."
+let description "Flags a comma followed by a participle that adds a consequence to the clause before it."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "The flags, including --foo, are optional."
+allows "The job runs nightly, using the cached index."
