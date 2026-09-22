@@ -5,6 +5,7 @@ allowed-tools:
   - Bash(git add:*)
   - Bash(git status:*)
   - Bash(git commit:*)
+  - Bash(prose-lint:*)
 ---
 
 ## Context
@@ -28,7 +29,7 @@ The type describes what the change does to the codebase:
 - refactor: changes code without changing behavior
 - perf: changes code to make it faster or use fewer resources
 - style: changes formatting or whitespace only, with no change to meaning
-- test: adds or corrects tests, and nothing else
+- test: adds or corrects tests
 - build: changes the build system or external dependencies (lockfiles, package
   manifests, Dockerfiles)
 - ci: changes CI configuration or scripts
@@ -41,8 +42,8 @@ Pick the type from what the diff touches, in this order:
 1. If every changed file is a test, use `test`. A repair to a broken test is
    still `test`.
 2. If every changed file is documentation, use `docs`.
-3. If the diff touches CI config, build files, or dependencies and nothing else,
-   use `ci` or `build`.
+3. If the diff touches only CI config, build files, or dependencies, use `ci`
+   or `build`.
 4. Otherwise the diff touches code, so choose among `feat`, `fix`, `refactor`,
    `perf`, and `style` based on its effect on behavior.
 
@@ -64,7 +65,7 @@ the commit. It is usually the package, module, or component name.
 
 ### Breaking Changes
 
-A change is breaking when someone who upgrades must edit their own code, config,
+A change breaks compatibility when someone who upgrades must edit their own code, config,
 or workflow to keep working. The type stays whatever the diff earns (`feat`,
 `fix`, `refactor`, and so on). The breaking marker sits on top of that type.
 
@@ -111,8 +112,21 @@ in one file can be three.
 For each change, in order:
 
 1. Stage only the paths that belong to it with `git add <path>...`.
-2. Commit it with its own message.
-3. Move to the next change. Do not stage the next change until the previous
+2. Lint the message you composed. The heredoc keeps `prose-lint` as the
+   command prefix so the allow rule matches without a pipeline:
+
+   ```sh
+   prose-lint --commit <<'EOF'
+   type(scope): summary
+
+   Body of the message.
+   EOF
+   ```
+
+   Fix every finding in the message and lint again until the command
+   exits 0 with no output.
+3. Commit it with the clean message.
+4. Move to the next change. Do not stage the next change until the previous
    commit exists.
 
 When a single file carries hunks from two different changes, stop and invoke
