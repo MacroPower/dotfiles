@@ -8,7 +8,8 @@
 # clause. `most` and `very` are left out because they open noun
 # phrases (`Default: the most recent tag`).
 expr adverbs [never, always, also, only, silently, still, then, already, just, now, usually, often, sometimes, rarely, immediately, eventually]
-expr main ![Note, Warning, Tip, Caution, Important]: [([it, they, we, you, I, there, he, she] *), ([DET, PRON] [VERB, AUX, @adverbs, (* [VERB, AUX, @adverbs]), (* * [VERB, AUX, @adverbs])])]
+expr labels [Note, Warning, Tip, Caution, Important, Deprecated, TODO, FIXME, BUG, HACK, XXX]
+expr main !@labels: [([it, they, we, you, I, there, he, she] *), ([DET, PRON] [VERB, AUX, @adverbs, (* [VERB, AUX, @adverbs]), (* * [VERB, AUX, @adverbs])])]
 let message "Colon between two clauses. End the sentence with a period, or join the clauses with because or so."
 let description "Flags a colon followed by a subject pronoun, or by a determiner and a verb within three words."
 let becomes ""
@@ -19,3 +20,5 @@ allows "Tip: you can skip the check."
 allows "Run this command: make test"
 allows "The options are: fast, slow, and medium."
 allows "Default: the most recent tag."
+allows "Deprecated: this method returns nil."
+allows "TODO: it needs a lock."

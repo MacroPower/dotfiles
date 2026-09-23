@@ -1,7 +1,16 @@
-expr main [(now [supports, accepts, returns, uses, handles, requires, defaults, includes]), previously, (the new), (no longer), (used to), (has been updated)]
+# `the new` is limited to nouns that name a change surface, because
+# `returns the new count` is ordinary return-value prose. `no longer`
+# is left out because docs use it for state transitions in time (`is
+# no longer valid after Close`) more often than for version deltas,
+# and the version-delta usage usually travels with `now` or
+# `previously` in the same paragraph.
+expr surfaces [flag, option, field, argument, parameter, command, subcommand, endpoint, syntax, format, default, behavior, behaviour, version, API, config, setting, method, function, package, mode]
+expr main [(now [supports, accepts, returns, uses, handles, requires, defaults, includes]), previously, (the new @surfaces), (used to), (has been updated)]
 let message "Delta tense. Durable prose describes the system as it is, and git history records what changed."
 let description "Flags phrases that describe the system as a change from an earlier version."
 let becomes ""
 let kind "Style"
 allows "The flag defaults to five."
 allows "The parser supports tables."
+allows "Set returns the new count."
+allows "The entry is no longer valid after Close."

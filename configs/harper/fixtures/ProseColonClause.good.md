@@ -9,3 +9,6 @@ Example: a rate of zero.
 Default: the most recent tag.
 Type: a list of strings.
 Robots handling fails open. Any fetch error counts as allowed.
+Deprecated: this method returns nil.
+TODO: it needs a lock.
+FIXME: the lock is never released.
