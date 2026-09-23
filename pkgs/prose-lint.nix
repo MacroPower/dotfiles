@@ -165,6 +165,7 @@ writeShellApplication {
 
   meta = {
     description = "Runs the prose Weir rules against one file or a commit message";
+    homepage = "https://github.com/MacroPower/dotfiles/blob/main/pkgs/prose-lint.nix";
     license = lib.licenses.asl20;
     mainProgram = "prose-lint";
   };
