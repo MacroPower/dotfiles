@@ -17,8 +17,10 @@ source file and returns its findings before your next turn. It reports
 passive voice, a colon between two clauses, a participle tacked on after
 a comma (`, ensuring`), puff words (`simply`, `serves as`), certificates
 (`by design`, `no surprises`), delta tense in durable prose (`now
-supports`, `previously`), `not only`, em dashes, and a header that
-narrates instead of naming its topic. A Bash hook runs the same check
+supports`, `previously`), `not only`, em dashes, a header that
+narrates instead of naming its topic, hedges (`I would argue that`),
+sentences past forty words, and redundant pairs (`most optimal`, `and
+also`, `all of the`). A Bash hook runs the same check
 on the message of a `git commit` or `gh pr create` and denies the
 command with the findings. Fix every finding rather than arguing with it.
 A rewrite that satisfies the rule costs less than the exception, and the

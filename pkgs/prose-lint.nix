@@ -47,10 +47,12 @@ let
     "zig"
   ];
 
-  allRules = lib.concatStringsSep "," prose-weirpack.passthru.ruleNames;
-  changeRules = lib.concatStringsSep "," (
-    lib.filter (r: r != "ProseTense") prose-weirpack.passthru.ruleNames
-  );
+  # The Weir rules plus the Harper built-ins listed in
+  # configs/harper/builtin-rules.txt. Both lists are fixture-checked
+  # when prose-weirpack builds.
+  ruleNames = prose-weirpack.passthru.ruleNames ++ prose-weirpack.passthru.builtinRules;
+  allRules = lib.concatStringsSep "," ruleNames;
+  changeRules = lib.concatStringsSep "," (lib.filter (r: r != "ProseTense") ruleNames);
 in
 writeShellApplication {
   name = "prose-lint";

@@ -1,12 +1,13 @@
-"""Check every Prose rule against its fixture pair.
+"""Check every Prose rule and enabled built-in rule against its fixture pair.
 
-Usage: check.py <weirpack> <fixtures dir> <heading.awk>
+Usage: check.py <weirpack> <fixtures dir> <heading.awk> <builtin-rules.txt>
 
-For each rule in the weirpack, fixtures/<Rule>.bad.md must produce a
-<Rule> lint on every non-blank line and fixtures/<Rule>.good.md must
-produce none. heading.awk checks ProseHeading in place of Harper. A rule
-without a fixture pair fails, so a typo in a rule name cannot pass
-silently. Exits 1 with one line per failure.
+For each rule in the weirpack and each name in builtin-rules.txt,
+fixtures/<Rule>.bad.md must produce a <Rule> lint on every non-blank
+line and fixtures/<Rule>.good.md must produce none. heading.awk checks
+ProseHeading in place of Harper. A rule without a fixture pair fails, so
+a typo in a rule name cannot pass silently. Exits 1 with one line per
+failure.
 """
 
 import json
@@ -21,6 +22,15 @@ HEADING_RULE = "ProseHeading"
 def rule_names(pack: Path) -> list[str]:
     with zipfile.ZipFile(pack) as zf:
         return sorted(Path(n).stem for n in zf.namelist() if n.endswith(".weir"))
+
+
+def builtin_names(listing: Path) -> list[str]:
+    names = []
+    for line in listing.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            names.append(line)
+    return names
 
 
 def harper_lines(pack: Path, rule: str, target: Path) -> set[int]:
@@ -94,14 +104,15 @@ def check_rule(
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 4:
+    if len(argv) != 5:
         print(__doc__.strip(), file=sys.stderr)
         return 2
     pack = Path(argv[1])
     fixtures = Path(argv[2])
     awk = Path(argv[3])
+    builtins = Path(argv[4])
 
-    rules = rule_names(pack) + [HEADING_RULE]
+    rules = rule_names(pack) + [HEADING_RULE] + builtin_names(builtins)
     failures: list[str] = []
     for rule in rules:
         if rule == HEADING_RULE:

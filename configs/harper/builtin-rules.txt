@@ -1,0 +1,20 @@
+# Harper built-in rules prose-lint enables next to the Prose* Weir
+# rules. One name per line; lines starting with # are comments. Each
+# rule needs a fixtures/<Rule>.bad.md and fixtures/<Rule>.good.md pair,
+# so a Harper upgrade that changes a rule fails the build the same way
+# a Weir edit does. Rules that misread identifiers, table cells, or
+# technical abbreviations (SpellCheck, SentenceCapitalization,
+# OxfordComma, the Expand* family) stay off on purpose.
+Hedging
+LongSentences
+RedundantSuperlatives
+MoreBetter
+VeryUnique
+AvoidAndAlso
+CondenseAllThe
+ComprisesOf
+RedundantThat
+MultipleFrequencyAdverbs
+RedundantProgressiveComparative
+Oxymorons
+LitotesDirectPositive

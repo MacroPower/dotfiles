@@ -16,6 +16,12 @@ let
     lib.filter (lib.hasSuffix ".weir") (builtins.attrNames (builtins.readDir rulesDir))
   );
 
+  # Harper built-in rules enabled next to the Weir rules, one per line
+  # with # comments, each covered by a fixture pair in the check phase.
+  builtinRules = lib.filter (l: l != "" && !lib.hasPrefix "#" l) (
+    map (l: lib.trim l) (lib.splitString "\n" (builtins.readFile ../configs/harper/builtin-rules.txt))
+  );
+
   manifest = builtins.toJSON {
     author = "Jacob Colvin";
     version = "0.1.0";
@@ -57,7 +63,7 @@ stdenvNoCC.mkDerivation {
     for rule in rules/*.weir; do
       harper-cli test --no-color "$rule"
     done
-    python3 check.py prose.weirpack fixtures heading.awk
+    python3 check.py prose.weirpack fixtures heading.awk builtin-rules.txt
     runHook postCheck
   '';
 
@@ -69,7 +75,7 @@ stdenvNoCC.mkDerivation {
   '';
 
   passthru = {
-    inherit ruleNames;
+    inherit ruleNames builtinRules;
   };
 
   meta = {

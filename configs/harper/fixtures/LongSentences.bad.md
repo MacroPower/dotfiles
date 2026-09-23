@@ -1,0 +1,1 @@
+The scheduler retries the job whenever the worker reports a transient failure and the retry budget for that job has not been spent yet and the queue is not paused by an operator and the job is not marked as terminal.
