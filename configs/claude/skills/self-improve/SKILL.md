@@ -90,7 +90,7 @@ Routing table -- map the cause to its source file:
 | A formatter mangled or skipped a file | `formatterRules` in `home/claude.nix` |
 | You used an MCP tool wrong | add/clarify a one-liner in the tool bundle's `instructions.items` in `home/claude.nix` -- those render into the global CLAUDE.md `## Tools` section |
 | A context-bloating habit (see Step 1) | a working-style line in global CLAUDE.md (the heredoc in `home/claude.nix`) or the tool bundle's `instructions.items` -- whichever shapes the behavior at its source |
-| A general "how to work here" rule was missing/wrong | global CLAUDE.md prose lives in the `".claude/CLAUDE.md".text` heredoc in `home/claude.nix` (Writing Style, Agents); project rules live in `CLAUDE.md` at the repo root (recommend the `/revise-claude-md` skill for these) |
+| A general "how to work here" rule was missing/wrong | global CLAUDE.md prose lives in the `".claude/CLAUDE.md".text` heredoc in `home/claude.nix` (Agents, Shell); project rules live in `CLAUDE.md` at the repo root (recommend the `/revise-claude-md` skill for these) |
 | Settings, hooks, MCP servers, env, status line | `home/claude.nix` |
 | Wrong/confusing repo code or docs unrelated to Claude | the relevant `.nix` / config file directly |
 

@@ -3971,10 +3971,6 @@ in
         ## Versioning
         - A project on a v0 release (latest tag starts with `0.`) or labeled UNSTABLE, ALPHA, or pre-release makes no compatibility promise, so make breaking changes freely there. Make the clean change instead of adding shims, deprecation paths, or fallbacks for the old behavior.
         - A project on v1 or later, or labeled STABLE or PRODUCTION, promises compatibility, so keep the old behavior working there. Code that has not shipped in a release yet carries no promise, so you MAY break it.
-
-        ## Writing Style
-        - Always load the `prose` skill BEFORE writing ANY prose content.
-        - Keep responses to plain ASCII text.
       ''
       + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n"
       + lib.optionalString (cfg.hostContext != "") "\n## Host Environment\n\n${cfg.hostContext}\n";
