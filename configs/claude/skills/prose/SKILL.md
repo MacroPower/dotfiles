@@ -37,12 +37,12 @@ per claim at most.
 
 ## Specificity
 
-Name the mechanism, the guarantee, or a number the reader can observe
-and rely on (a default, a limit, a return value), never the impression.
-`SQL you can read` describes a feeling; `.toSQL() returns the exact
-string sent to the database` states a fact. Every sentence passes two
-tests. You can restate it as a concrete instruction, fact, or number,
-and it could not appear unchanged in another project's docs.
+Detail scales with proximity. A docstring describes its own method but
+not the private helpers it calls. A README, announcement, or
+introduction names only what a user can observe, never the data
+structure behind the API, a buffer size, or a retry count nothing
+outside the code depends on. When an internal detail matters, state its
+observable consequence instead.
 
 A stated fact needs no certificate. A follow-up that vouches for a fact
 (`It does exactly that`), fences off a scope nobody questioned (`returns
@@ -53,13 +53,6 @@ is the same certificate unless the opposite is a behavior a reader
 would expect from that name, the way `does not follow symlinks`
 corrects a real expectation. Read every sentence's last clause on its
 own, since that is where most of these land.
-
-Detail scales with proximity. A docstring describes its own method but
-not the private helpers it calls. A README, announcement, or
-introduction names only what a user can observe, never the data
-structure behind the API, a buffer size, or a retry count nothing
-outside the code depends on. When an internal detail matters, state its
-observable consequence instead.
 
 ## Structure
 
