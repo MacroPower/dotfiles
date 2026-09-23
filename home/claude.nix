@@ -360,6 +360,16 @@ let
       sleeping = "󰤄";
       done = "󰄴";
     };
+    sidebar = {
+      # Order rows by attention: waiting, done, working, then sleeping.
+      # The default "recency" ordering moves rows on every status change.
+      sort = "priority";
+      # Section the list per repo. Stale agents fold behind each group's
+      # toggle (collapse_stale defaults to true). The `t` key switches
+      # grouping at runtime and that choice persists over this value until
+      # `workmux sidebar group --clear`.
+      group_by = "project";
+    };
     theme = {
       custom = {
         current_row_bg = "#${colors.base00}";
