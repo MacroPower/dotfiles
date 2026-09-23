@@ -6,8 +6,10 @@
 //   - PreToolUse:Bash             -- evaluates command deny/ask rules from
 //     --command-rules JSON, denies a foreground `sleep` over the
 //     --sleep-guard-config ceiling (run_in_background calls are exempt),
-//     rewrites read-only grep/find into rg/bfs, and rewrites kubectl
-//     with KUBECONFIG
+//     lints the commit message or pull request text a `git commit` or
+//     `gh pr create` carries through --message-lint-config and denies
+//     with the findings, rewrites read-only grep/find into rg/bfs, and
+//     rewrites kubectl with KUBECONFIG
 //   - PreToolUse:MCP              -- evaluates MCP tool allow/ask/deny lists
 //     from --mcp-rules JSON ("MCP" is a routing sentinel; the tool name
 //     comes from the payload)
@@ -60,7 +62,8 @@
 // filtering), typography (detection of newly introduced
 // typographic characters), compact (output compaction), archive
 // (uncompacted-output archiving), searchrewrite (grep->rg / find->bfs
-// rewriting), sleepguard (foreground-sleep guard), state (SQLite
+// rewriting), sleepguard (foreground-sleep guard), msglint (commit
+// message and pull request linting), state (SQLite
 // session state), kubectx (kubectl gating and session dir lifecycle),
 // git (repo queries), and postimpl (post-implementation skill
 // catalog). None of the subpackages import each other; only this

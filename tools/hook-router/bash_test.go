@@ -16,6 +16,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/archive"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/cmdrules"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/compact"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/msglint"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/sleepguard"
 )
@@ -721,6 +722,97 @@ func TestHandleBashSleepGuard(t *testing.T) {
 			reason, ok := hso["permissionDecisionReason"].(string)
 			require.True(t, ok)
 			assert.Equal(t, tc.wantSleepReason, strings.HasPrefix(reason, "Foreground sleep"))
+		})
+	}
+}
+
+func TestHandleBashMessageLint(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.DiscardHandler)
+
+	flagDeliberate := msglint.Config{Command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:3:1: Style::ProseCertificate: certificate'; exit 1; }; exit 0`}}
+
+	cases := map[string]struct {
+		command   string
+		lint      msglint.Config
+		autoAllow bool
+		wantDeny  bool
+		// wantLintReason asserts whether the deny reason is the message
+		// lint's own, as opposed to a first-match cmdrules reason.
+		wantLintReason bool
+	}{
+		"dirty commit message is denied with the findings": {
+			command:        "git commit -m \"$(cat <<'EOF'\nfix: a\n\nThis is deliberate.\nEOF\n)\"",
+			lint:           flagDeliberate,
+			wantDeny:       true,
+			wantLintReason: true,
+		},
+		"clean commit message passes": {
+			command: `git commit -m "fix: retry the job"`,
+			lint:    flagDeliberate,
+		},
+		"command without a message passes": {
+			command: `git status`,
+			lint:    flagDeliberate,
+		},
+		"deny beats sandbox auto-allow": {
+			command:        `git commit -m "This is deliberate."`,
+			lint:           flagDeliberate,
+			autoAllow:      true,
+			wantDeny:       true,
+			wantLintReason: true,
+		},
+		"cmdrules deny wins over the message lint": {
+			command:  `git stash; git commit -m "This is deliberate."`,
+			lint:     flagDeliberate,
+			wantDeny: true,
+		},
+		"linter crash falls through": {
+			command: `git commit -m "This is deliberate."`,
+			lint:    msglint.Config{Command: []string{"sh", "-c", `exit 2`}},
+		},
+		"disabled lint passes everything": {
+			command: `git commit -m "This is deliberate."`,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := config{
+				commandRules: canonicalRules(),
+				messageLint:  tc.lint,
+				autoAllow:    tc.autoAllow,
+			}
+
+			var stdout bytes.Buffer
+
+			err := handleBash(bashInput(t, tc.command, nil), &stdout, cfg, logger)
+			require.NoError(t, err)
+
+			if !tc.wantDeny {
+				if tc.autoAllow {
+					hso := preToolDecision(t, &stdout)
+					assert.Equal(t, "allow", hso["permissionDecision"])
+				} else {
+					assert.Empty(t, stdout.Bytes())
+				}
+
+				return
+			}
+
+			hso := preToolDecision(t, &stdout)
+			assert.Equal(t, "deny", hso["permissionDecision"])
+
+			reason, ok := hso["permissionDecisionReason"].(string)
+			require.True(t, ok)
+			assert.Equal(t, tc.wantLintReason, strings.HasPrefix(reason, "prose-lint:"))
+
+			if tc.wantLintReason {
+				assert.Contains(t, reason, "<stdin>:3:1:")
+			}
 		})
 	}
 }

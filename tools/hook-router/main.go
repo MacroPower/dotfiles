@@ -21,6 +21,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/linter"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/msglint"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/postimpl"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/sleepguard"
@@ -96,6 +97,10 @@ import (
 // sleepGuard configures the [handleBash] foreground-sleep deny (see the
 // sleepguard package). Its zero value is a disabled guard, so a bare
 // config{} test literal is a no-op.
+//
+// messageLint configures the [handleBash] commit-message and
+// pull-request lint (see the msglint package). Its zero value is a
+// disabled linter, so a bare config{} test literal is a no-op.
 type config struct {
 	postImpl       *postimpl.Catalog
 	commandRules   *cmdrules.Engine
@@ -106,6 +111,7 @@ type config struct {
 	outputArchive  *archive.Archive
 	searchRewrite  searchrewrite.Config
 	sleepGuard     sleepguard.Config
+	messageLint    msglint.Config
 	commitSkills   []string
 	kubeconfigPath string
 	claudePID      string
@@ -148,13 +154,14 @@ func main() {
 	compactionOutputDir := flag.String("compaction-output-dir", "", "directory to archive a compacted Bash stream's uncompacted content to (\"\" disables archiving)")
 	searchRewriteConfig := flag.String("search-rewrite-config", "", "JSON object configuring PreToolUse:Bash search rewriting ({grep, find, findExcludes})")
 	sleepGuardConfig := flag.String("sleep-guard-config", "", "JSON object configuring the PreToolUse:Bash foreground-sleep guard ({enable, maxSeconds})")
+	messageLintConfig := flag.String("message-lint-config", "", "JSON object configuring the PreToolUse:Bash commit-message and pull-request lint ({command, timeout}); the message arrives on the command's stdin")
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
 	enforceTypography := flag.Bool("enforce-ascii-typography", false, "deny a Write/Edit/MultiEdit call that introduces non-ASCII dashes, curly quotes, or ellipsis")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *autoAllow, *skipPlanReview, *enforceTypography)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *messageLintConfig, *autoAllow, *skipPlanReview, *enforceTypography)
 	if err == nil {
 		return
 	}
@@ -172,7 +179,7 @@ func main() {
 	os.Exit(1)
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON string, autoAllow, skipPlanReview, enforceTypography bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON string, autoAllow, skipPlanReview, enforceTypography bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -294,6 +301,15 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("foreground sleep guard is disabled")
 	}
 
+	messageLint, err := msglint.Parse(messageLintConfigJSON)
+	if err != nil {
+		return fmt.Errorf("parsing --message-lint-config: %w", err)
+	}
+
+	if messageLint.Empty() {
+		logger.Debug("message lint is disabled")
+	}
+
 	cfg := configFromEnv()
 	cfg.postImpl = catalog
 	cfg.commitSkills = skills
@@ -305,6 +321,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.outputArchive = archive.New(compactionOutputDir)
 	cfg.searchRewrite = searchRewrite
 	cfg.sleepGuard = sleepGuard
+	cfg.messageLint = messageLint
 	cfg.autoAllow = autoAllow
 	cfg.skipPlanReview = skipPlanReview
 	cfg.enforceTypography = enforceTypography

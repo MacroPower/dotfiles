@@ -11,6 +11,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/msglint"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/sleepguard"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
@@ -140,6 +141,30 @@ func handleBash(input []byte, stdout io.Writer, cfg config, logger *slog.Logger)
 			slog.String("rule", "foreground-sleep"),
 			slog.String("command", command),
 			slog.Bool("run_in_background", background),
+			slog.String("reason", reason),
+		)
+
+		return writeDecision(stdout, hook.Deny(reason))
+	}
+
+	// Lint the commit message or pull request text the command carries
+	// and deny with the findings, so Claude rewrites the text instead of
+	// committing it. Runs after the sleep guard for the same ordering
+	// reasons. A linter crash logs at warn and the command falls
+	// through, since a broken linter must never block a commit.
+	reason, deny, err := msglint.Check(context.Background(), prog, cfg.messageLint)
+	if err != nil {
+		logger.Warn("message lint failed",
+			slog.String("command", command),
+			slog.Any("error", err),
+		)
+	}
+
+	if deny {
+		logger.Info(
+			"denied",
+			slog.String("rule", "message-lint"),
+			slog.String("command", command),
 			slog.String("reason", reason),
 		)
 
