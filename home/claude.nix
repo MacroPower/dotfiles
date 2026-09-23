@@ -1924,6 +1924,32 @@ in
       description = "Claude Code agents keyed by agent name (no .md suffix). Defaults populated by this module; override `<name>.enable = false` to drop a bundled agent, or set `<name>.source` to add a custom one.";
     };
 
+    outputStyles = mkOption {
+      type = types.attrsOf (
+        types.submodule {
+          options = {
+            enable = mkOption {
+              type = types.bool;
+              default = true;
+              description = "Whether this output style is installed into ~/.claude/output-styles/<name>.md.";
+            };
+            source = mkOption {
+              type = types.either types.path types.lines;
+              description = "Output style markdown file path, or raw output style contents.";
+            };
+          };
+        }
+      );
+      default = { };
+      description = "Claude Code output styles keyed by file name (no .md suffix). Defaults populated by this module; override `<name>.enable = false` to drop a bundled style, or set `<name>.source` to add a custom one.";
+    };
+
+    outputStyle = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Output style Claude Code starts sessions with, matched against the `name` frontmatter of a custom style or a built-in name. Null leaves the built-in default active.";
+    };
+
     postImplSkills = mkOption {
       type = types.attrsOf (
         types.submodule (
@@ -2233,6 +2259,12 @@ in
       implementation-reviewer-docs.source = ../configs/claude/agents/implementation-reviewer-docs.md;
       plan-reviewer.source = ../configs/claude/agents/plan-reviewer.md;
     };
+
+    dotfiles.claude.outputStyles = {
+      plain.source = ../configs/claude/output-styles/plain.md;
+    };
+
+    dotfiles.claude.outputStyle = "Plain";
 
     dotfiles.claude.postImplSkills = {
       review-implementation.description = "Review code changes against the plan.";
@@ -3852,9 +3884,14 @@ in
           // lib.optionalAttrs cfg.stylixTheme.enable {
             theme = "custom:stylix";
           }
+          // lib.optionalAttrs (cfg.outputStyle != null) {
+            inherit (cfg) outputStyle;
+          }
         ) cfg.extraSettings;
 
         agents = lib.mapAttrs (_: a: a.source) (lib.filterAttrs (_: a: a.enable) cfg.agents);
+
+        outputStyles = lib.mapAttrs (_: o: o.source) (lib.filterAttrs (_: o: o.enable) cfg.outputStyles);
 
         skills = lib.mapAttrs (_: s: s.source) (lib.filterAttrs (_: s: s.enable) cfg.skills);
       };
