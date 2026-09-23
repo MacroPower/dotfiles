@@ -12,6 +12,7 @@ def overrides: {
   "nix-index":         { "homepage": "https://github.com/nix-community/nix-index",      "description": "Quickly locate nix packages with specific files", "license": "BSD-3-Clause" },
   "npm":               { "homepage": "https://www.npmjs.com",                            "description": "Package manager for JavaScript",                 "license": "Artistic-2.0" },
   "terminal-notifier": { "homepage": "https://github.com/julienXX/terminal-notifier",   "description": "Send macOS notifications from the terminal",     "license": "MIT" },
+  "vscode-langservers-extracted": { "homepage": "https://github.com/VSCodium/vscodium" },
   "vim":               { "homepage": "https://www.vim.org",                              "description": "Highly configurable text editor",                "license": "Vim" },
   "exa":               null,
   "man":               null,
