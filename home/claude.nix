@@ -765,6 +765,23 @@ let
           # as a disabled sentinel.
           lib.escapeShellArg (builtins.toJSON cfg.sleepGuard)
         } \
+        ${
+          # The same linter the Write/Edit hook runs, pointed at the
+          # message a `git commit` or `gh pr create` carries. The
+          # message arrives on stdin, and findings deny the command.
+          lib.optionalString cfg.proseLint.enable
+            "--message-lint-config ${
+              lib.escapeShellArg (
+                builtins.toJSON {
+                  command = [
+                    (lib.getExe pkgs.prose-lint)
+                    "--commit"
+                  ];
+                  timeout = "15s";
+                }
+              )
+            }"
+        } \
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
         ${lib.optionalString cfg.enforceAsciiTypography "--enforce-ascii-typography"} \
@@ -1634,11 +1651,13 @@ in
             description = ''
               Run prose-lint (the Weir rules in configs/harper) on every
               markdown and source file Claude writes, and return its
-              findings as feedback before the next turn. Also installs
-              prose-lint and harper so the commit skills can lint
-              messages and rules can be iterated with `harper-cli
-              test`. When false, no linter rule is registered and the
-              packages are not installed.
+              findings as feedback before the next turn. Also lint the
+              message a `git commit` or `gh pr create` carries on
+              PreToolUse:Bash and deny the command with the findings.
+              Installs prose-lint and harper so files can be linted by
+              hand and rules iterated with `harper-cli test`. When
+              false, no linter rule or message lint is registered and
+              the packages are not installed.
             '';
           };
           excludeGlobs = mkOption {

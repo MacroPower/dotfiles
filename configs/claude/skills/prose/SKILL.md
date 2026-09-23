@@ -18,8 +18,9 @@ passive voice, a colon between two clauses, a participle tacked on after
 a comma (`, ensuring`), puff words (`simply`, `serves as`), certificates
 (`by design`, `no surprises`), delta tense in durable prose (`now
 supports`, `previously`), `not only`, em dashes, and a header that
-narrates instead of naming its topic. The commit skills run the same
-check on commit messages. Fix every finding rather than arguing with it.
+narrates instead of naming its topic. A Bash hook runs the same check
+on the message of a `git commit` or `gh pr create` and denies the
+command with the findings. Fix every finding rather than arguing with it.
 A rewrite that satisfies the rule costs less than the exception, and the
 rule is deliberately blunt so the fix is mechanical. Run `prose-lint
 <file>` by hand on a file the hook does not cover, such as one written

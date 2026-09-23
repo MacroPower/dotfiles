@@ -5,7 +5,6 @@ allowed-tools:
   - Bash(git add:*)
   - Bash(git status:*)
   - Bash(git commit:*)
-  - Bash(prose-lint:*)
 ---
 
 ## Context
@@ -112,21 +111,10 @@ in one file can be three.
 For each change, in order:
 
 1. Stage only the paths that belong to it with `git add <path>...`.
-2. Lint the message you composed. The heredoc keeps `prose-lint` as the
-   command prefix so the allow rule matches without a pipeline:
-
-   ```sh
-   prose-lint --commit <<'EOF'
-   type(scope): summary
-
-   Body of the message.
-   EOF
-   ```
-
-   Fix every finding in the message and lint again until the command
-   exits 0 with no output.
-3. Commit it with the clean message.
-4. Move to the next change. Do not stage the next change until the previous
+2. Commit it with its own message. A hook lints the message and denies
+   the commit with its findings when the message breaks a prose rule, so
+   rewrite the message and commit again until it goes through.
+3. Move to the next change. Do not stage the next change until the previous
    commit exists.
 
 When a single file carries hunks from two different changes, stop and invoke
