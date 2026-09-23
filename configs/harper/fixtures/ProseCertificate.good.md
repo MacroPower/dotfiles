@@ -29,3 +29,13 @@ Run make in the repository root to build it.
 The bucket never refills when the rate is zero.
 The point of the cache is speed.
 Flush writes the buffer and Sync waits for the disk.
+The pieces are grouped by design system, not by team.
+Filter by design and status.
+Issues are triaged by design leads every Monday.
+The file has no magic bytes, so the loader inspects the extension.
+There is no magic-number check.
+Users reported no surprises after the migration.
+The no surprises policy applies to all releases.
+The interest rate rounds to the whole point.
+The entire point cloud fits in memory.
+The reader reads no more and no less than n bytes, or returns an error.

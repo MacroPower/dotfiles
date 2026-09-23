@@ -1,7 +1,11 @@
-expr main [(not only), (not just)]
+# `not just !any` skips the idiom `not just any file`; the glued hyphen
+# in `not just-in-time` already fails the whitespace match.
+expr main [(not only), (not just !any)]
 let message "Make the direct claim. If the contrast matters, give each side its own sentence."
 let description "Flags not only and not just constructions."
 let becomes ""
 let kind "Style"
 let scope "Sentence"
 allows "The cache holds rules and results."
+allows "Not just any file can be opened this way."
+allows "The runtime uses ahead-of-time compilation, not just-in-time."

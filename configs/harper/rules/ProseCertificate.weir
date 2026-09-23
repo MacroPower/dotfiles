@@ -1,4 +1,31 @@
-expr main [(no more and no less), (and nothing else), (this is deliberate), (this is intentional), (by design), (exactly what you would expect), (exactly what you'd expect), (no magic), (no surprises), (as the name [suggests, implies]), (the entire point), (the whole point), (it does exactly that), (without changing it)]
+# Each phrase is pinned to its certificate shape, because docs reuse
+# the same words with a plain meaning. `by design` counts only at the
+# end of a clause or after a form of `is` (`grouped by design system`
+# and `triaged by design leads` name a team; `reviewed by design,
+# engineering, and product` still fires, since the comma is a clause
+# end). `no magic` skips a following
+# noun (`no magic number`, `no magic bytes`). `no surprises` counts
+# only at the end of a clause (`reported no surprises after the
+# migration` is a report). `the whole point` needs `of`, `is`, `was`,
+# or `that` after it, or `is` before it (`rounds to the whole point`
+# and `the whole point cloud` are measurements). `no more and no less`
+# skips a following `than`, which turns it into a bound.
+#
+# `without changing it` and `and nothing else` stay unconditional. A
+# contrast that matters (`Fsck checks the filesystem without changing
+# it when invoked with -n`) reads better with the contrast named
+# (`With -n, fsck only reports`), and the skill lists both phrases as
+# the writer weighing a fact on the reader's behalf.
+# The clause-end list is written glued to the word before it
+# (`design[., ;, :, (,)]`), since a space in a pattern is a whitespace
+# token and clause punctuation follows the word directly. It is spelled
+# out each time because `design@end` tokenizes as one word. A bare
+# comma cannot sit in a list, because the comma separates list items,
+# so it is wrapped as a one-token sequence. A negated word after a
+# space (`less !than`) needs a word to consume, so each of those
+# branches has a clause-end twin.
+expr magic [number, numbers, byte, bytes, prefix, string, strings, value, values, constant, constants]
+expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (and nothing else), (this is deliberate), (this is intentional), (by design[., ;, :, (,)]), ([is, was] by design), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
 let message "Certificate. A stated fact needs no vouching, so delete the phrase."
 let description "Flags phrases that insist on a fact the sentence already stated."
 let becomes ""
@@ -6,3 +33,12 @@ let kind "Style"
 let scope "Sentence"
 allows "Flush writes the buffer to disk."
 allows "Close releases the file handle."
+allows "The pieces are grouped by design system, not by team."
+allows "Issues are triaged by design leads every Monday."
+allows "The file has no magic bytes, so the loader inspects the extension."
+allows "There is no magic-number check."
+allows "Users reported no surprises after the migration."
+allows "The no surprises policy applies to all releases."
+allows "The interest rate rounds to the whole point."
+allows "The entire point cloud fits in memory."
+allows "The reader reads no more and no less than n bytes, or returns an error."

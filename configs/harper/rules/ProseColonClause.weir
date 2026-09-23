@@ -2,16 +2,33 @@
 # exception sits directly against the colon: `image:` tokenizes as
 # `image` and `:` with no whitespace between them.
 #
-# Harper's tagger misses many third-person verbs after a noun phrase
-# (`refills`, `misses`, `trips`), so the determiner branch also
-# accepts an auxiliary or one of the adverbs that precede a verb in a
-# clause. `most` and `very` are left out because they open noun
-# phrases (`Default: the most recent tag`).
+# The two leading wildcards require two words before the word that
+# carries the colon. Docs open lines with labels of every kind
+# (`Usage:`, `Returns:`, `Step 1:`, `Known issue:`, a speaker name, a
+# conventional-commit type), and a label is one or two words at the
+# start of its sentence, so with the sentence scope no token precedes
+# it and the pattern cannot start. A clause has a subject and a verb
+# before its colon, so three words is the floor for a splice. The
+# label list still covers a label that follows other words.
+#
+# After the colon, a clause shows its finite verb as an auxiliary or
+# as an adverb in the second or third position (`the cache is cold`,
+# `the tests always pass`), or as a verb in the third (`the first rule
+# wins`). A bare VERB tag is not accepted in the first two positions:
+# the tagger marks participles and many nouns as verbs, so `the path
+# passed by Claude Code`, `the value set by the environment`, and `the
+# section on caching` would all read as clauses. The adverb is not
+# accepted directly after the determiner (`the only value`, `the
+# always-on mode`), and a relative or subject pronoun in the second
+# position (`the tag that was pushed`, `the host you are targeting`)
+# marks a noun phrase rather than a clause.
 expr adverbs [never, always, also, only, silently, still, then, already, just, now, usually, often, sometimes, rarely, immediately, eventually]
+expr aux [AUX, is, are, was, were, has, have, had, does, do, did, will, would, can, could, should, must, may, might, shall]
 expr labels [Note, Warning, Tip, Caution, Important, Deprecated, TODO, FIXME, BUG, HACK, XXX]
-expr main !@labels: [([it, they, we, you, I, there, he, she] *), ([DET, PRON] [VERB, AUX, @adverbs, (* [VERB, AUX, @adverbs]), (* * [VERB, AUX, @adverbs])])]
+expr rel [that, which, who, whose, where, when, it, you, we, they, I, he, she]
+expr main * * !@labels: [([it, they, we, you, I, there, he, she] *), ([DET, PRON] [@aux, (* [@aux, @adverbs]), (* !@rel [@aux, @adverbs, <VERB, !PROG>])])]
 let message "Colon between two clauses. End the sentence with a period, or join the clauses with because or so."
-let description "Flags a colon followed by a subject pronoun, or by a determiner and a verb within three words."
+let description "Flags a colon that follows a clause and introduces a subject pronoun, or a determiner and a verb within three words."
 let becomes ""
 let kind "Punctuation"
 let scope "Sentence"
@@ -22,3 +39,13 @@ allows "The options are: fast, slow, and medium."
 allows "Default: the most recent tag."
 allows "Deprecated: this method returns nil."
 allows "TODO: it needs a lock."
+allows "Usage: the program reads from stdin and writes to stdout."
+allows "Returns: the value stored in the cache, or nil."
+allows "Known issue: the cursor is hidden after exit."
+allows "Step 1: you install the package."
+allows "fix: the parser crashed on empty input."
+allows "Alice: I think the cache is stale."
+allows "Default: the only supported value."
+allows "The hook has one input: the path that changed."
+allows "The switch takes one argument: the host you are targeting."
+allows "It ships two artifacts: a tarball built from source and a checksum."

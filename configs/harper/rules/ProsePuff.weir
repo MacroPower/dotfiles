@@ -1,7 +1,21 @@
-expr main [simply, merely, (stands as), (serves as), (plays a [vital, crucial, key, critical, important] role), (in the event that)]
+# `stands as` and `serves as` need a determiner after `as`, because
+# the puff sense names a role (`serves as the root`, `stands as a
+# guard`) while the other readings compare or qualify (`stands as tall
+# as`, `stands as written`, `serves as many requests as`, `serves as
+# root`, `serves as-is`). `simply` and `merely` stay unconditional: a
+# product name or a mention of the word is rare in technical prose,
+# and the skill wants both gone from a sentence about behavior.
+expr main [simply, merely, (stands as DET), (serves as DET), (plays a [vital, crucial, key, critical, important] role), (in the event that)]
 let message "Puff. State the fact and let the reader judge its weight."
 let description "Flags words and phrases that inflate a claim without informing."
 let becomes ""
 let kind "Style"
 allows "The bucket refills every second."
 allows "The cache stands in front of the database."
+allows "The tower stands as tall as the building beside it."
+allows "The regulation stands as written until the appeal is decided."
+allows "The record stands as of this morning."
+allows "The server serves as many requests as the socket buffer allows."
+allows "The daemon serves as root, which is the reason for the seccomp filter."
+allows "The device serves as-is with no warranty."
+allows "The daemon serves as it always has, on port 80."

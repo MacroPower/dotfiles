@@ -8,3 +8,5 @@ Set the flag in the event that the disk fills.
 Simply run make to build the binary.
 The struct serves as the root of the tree.
 The lock merely guards the map.
+The server serves as a fallback when the primary is unreachable.
+The lease stands as the source of truth for ownership.

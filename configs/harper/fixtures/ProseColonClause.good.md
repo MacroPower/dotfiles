@@ -46,3 +46,19 @@ The limit applies per host, not per request.
 Both tests must pass.
 Run make in the repository root to build it.
 The bucket never refills when the rate is zero.
+Usage: the program reads from stdin and writes to stdout.
+Returns: the value stored in the cache, or nil.
+Known issue: the cursor is hidden after exit.
+Step 1: you install the package.
+fix: the parser crashed on empty input.
+Alice: I think the cache is stale.
+Default: the only supported value.
+Default: the port used by the server.
+See: the section on caching below.
+Reason: it fails on darwin.
+Option A: we vendor it.
+Windows: it uses backslashes.
+v1.2: the flag is renamed.
+The hook has one input: the path that changed.
+The switch takes one argument: the host you are targeting.
+It ships two artifacts: a tarball built from source and a checksum.

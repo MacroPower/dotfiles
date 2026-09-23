@@ -4,7 +4,11 @@
 # so a Harper upgrade that changes a rule fails the build the same way
 # a Weir edit does. Rules that misread identifiers, table cells, or
 # technical abbreviations (SpellCheck, SentenceCapitalization,
-# OxfordComma, the Expand* family) stay off on purpose.
+# OxfordComma, the Expand* family) stay off on purpose. So do three
+# rules whose only hits in technical prose were false: RedundantThat
+# fires on every grammatical `that that` (`the rule that that file
+# defines`), MultipleFrequencyAdverbs on a schedule with its exception
+# (`runs daily, never on weekends`), and Oxymorons on `found missing`.
 Hedging
 LongSentences
 RedundantSuperlatives
@@ -13,8 +17,5 @@ VeryUnique
 AvoidAndAlso
 CondenseAllThe
 ComprisesOf
-RedundantThat
-MultipleFrequencyAdverbs
 RedundantProgressiveComparative
-Oxymorons
 LitotesDirectPositive

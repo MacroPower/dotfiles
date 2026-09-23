@@ -1,13 +1,23 @@
+# Each branch is narrowed to the delta sense, because Go doc prose uses
+# the same words for runtime sequence far more often.
+#
+# `now VERB` requires a subject word before `now`, so `time.Now returns`,
+# a sentence-initial `Now returns`, and `deadline after now uses` pass
+# while `The parser now supports tables` fires.
+#
+# `previously` fires only as `was/were/had previously` or as the
+# sentence opener `Previously,`; `the previously cached value` is
+# ordering at runtime.
+#
 # `the new` is limited to nouns that name a change surface, because
-# `returns the new count` is ordinary return-value prose. `no longer`
-# is left out because docs use it for state transitions in time (`is
-# no longer valid after Close`) more often than for version deltas,
-# and the version-delta usage usually travels with `now` or
-# `previously` in the same paragraph. `used to` is narrowed to `used
-# to be`, because `the key used to sign tokens` is a reduced relative
-# clause, not a delta.
-expr surfaces [flag, option, field, argument, parameter, command, subcommand, endpoint, syntax, format, default, behavior, behaviour, version, API, config, setting, method, function, package, mode]
-expr main [(now [supports, accepts, returns, uses, handles, requires, defaults, includes]), previously, (the new @surfaces), (used to be), (has been updated)]
+# `returns the new count` and `validate the new config` are ordinary
+# runtime prose. `no longer`, `used to be`, and `has been updated` are
+# left out: docs use them for state changes in time (`is no longer
+# valid after Close`, `records what the limit used to be`, `wait until
+# the row has been updated`), and the delta form of `has been updated`
+# is a passive the passive rule already catches.
+expr surfaces [flag, option, field, argument, parameter, subcommand, endpoint, syntax, format, default, behavior, behaviour, setting, mode]
+expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), (was previously), (were previously), (had previously), (previously,), (the new @surfaces)]
 let message "Delta tense. Durable prose describes the system as it is, and git history records what changed."
 let description "Flags phrases that describe the system as a change from an earlier version."
 let becomes ""
@@ -17,3 +27,6 @@ allows "The parser supports tables."
 allows "Set returns the new count."
 allows "The entry is no longer valid after Close."
 allows "The key used to sign tokens lives in the secrets store."
+allows "Now returns the current local time."
+allows "The retry uses the previously cached value."
+allows "The watcher fires only after the file has been updated on disk."

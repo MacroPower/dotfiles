@@ -1,8 +1,19 @@
-expr main [$leverage, $utilize]
+# `leverage` counts only as a verb with an object (`leverage the
+# cache`, `leveraged its position`), because the noun is the common
+# sense in finance, hardware, and negotiation prose (`leverage ratio`,
+# `a leveraged buyout`, `more leverage`, `the leverage parameter`).
+# The rule flags instead of replacing, since a replacement would swallow
+# the object it matched. `$utilize` and `$utilise` never misfire, so
+# every form stays.
+expr main [$utilize, $utilise, ([leverage, leverages, leveraged, leveraging] [DET, PRON, PROPN, ADJ])]
 let message "Write use."
-let description "Replaces leverage and utilize, in every form, with use."
-let becomes "use"
+let description "Flags leverage as a verb and every form of utilize."
+let becomes ""
 let kind "Style"
-test "We leverage the cache." "We use the cache."
-test "We utilize the cache." "We use the cache."
 allows "We use the cache."
+allows "The fund's leverage ratio must stay below four after the acquisition closes."
+allows "The fund closed a leveraged buyout of the target."
+allows "A longer handle gives the wrench more leverage."
+allows "The leverage parameter accepts values from 1 to 125."
+allows "Highly leveraged firms fail first in a downturn."
+allows "Set leverage to 1 to disable margin trading."

@@ -5,15 +5,30 @@
 #
 # The filter `<VERB, !@stative>` requires one token to be a verb and
 # not one of the stative words the tagger also marks as verbs: a
-# progressive (`has been running` is active voice) and the participial
-# adjectives docs lean on (`the flag is set`, `is enabled by default`).
-# `by !default` keeps `is closed by the peer` while sparing `by
-# default`, which names a setting rather than an actor.
-expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available]
+# progressive (`has been running` is active voice), the participial
+# adjectives docs lean on (`the flag is set`, `is enabled by default`,
+# `the port is stuck`), and the naming idioms (`is called name`, `is
+# known as a handle`, `is meant for testing`).
+#
+# The `by` branch exists because the tagger misses many participles
+# (`is guarded by a lock`). It accepts any word the tagger does not
+# mark as an adjective, adverb, noun, or preposition, so a degree (`off
+# by one`) and a deadline (`empty by the time`) pass. Weir has no token
+# class for a number, so the object of `by` must be a determiner,
+# pronoun, or proper noun instead: that skips a dimension (`64 by 64`),
+# a criterion (`keyed by path`), and the phrases where `by` names no
+# actor (`by default`, `by design`, `by hand`), while `by a lock`, `by
+# the scheduler`, and `by git` still count as agents.
+#
+# Two shapes stay flagged on purpose: an identifier used as a predicate
+# noun (`The default is print`), which belongs in a code span, and a
+# resultative participle (`The issue is closed`), which the tagger
+# cannot tell from the event and which the skill rewrites anyway.
+expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, called, named, meant, supposed, bound, referred, prepared, advised, assured, reminded, warned]
 expr be [is, are, was, were, be, been, being]
-expr main [(@be [<VERB, !@stative>, (ADV <VERB, !@stative>)]), (@be * by !default)]
+expr main [(@be [<VERB, !@stative>, (ADV <VERB, !@stative>)]), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN])]
 let message "Passive voice. Make the actor the subject."
-let description "Flags a form of be followed by a verb, and a form of be followed by a word and by."
+let description "Flags a form of be followed by a verb, and a form of be followed by a word and by an agent."
 let becomes ""
 let kind "Style"
 allows "The scheduler retries the job."
@@ -26,3 +41,17 @@ allows "Get returns the value stored under key."
 allows "The flag is enabled by default."
 allows "When the flag is set, the hook skips the file."
 allows "The file is missing."
+allows "The count is off by one."
+allows "The queue is empty by the time the loop runs."
+allows "The image is 64 by 64 pixels."
+allows "The two panes are side by side."
+allows "The output is stable by design."
+allows "The mapping is done by hand."
+allows "The migration is done by Friday."
+allows "The field is called name."
+allows "The type is known as a handle."
+allows "The flag is meant for testing."
+allows "The port is stuck in CLOSE_WAIT."
+allows "Be warned that the flag is sticky."
+allows "The default is lookup by id."
+allows "The answer is yes by the way."

@@ -29,3 +29,11 @@ The limit applies per host, not per request.
 Both tests must pass.
 Run make in the repository root to build it.
 The bucket never refills when the rate is zero.
+The words allowing, enabling, and letting are near synonyms.
+The two options, keeping and dropping, are mutually exclusive.
+Strip trailing spaces, leading whitespace, and blank lines.
+Each key has a type, meaning, and default.
+Without a cache, resulting builds take twice as long.
+The job retries, providing that the budget allows it.
+The counters come in two families, increasing and decreasing.
+The struct has two callbacks, providing and consuming.

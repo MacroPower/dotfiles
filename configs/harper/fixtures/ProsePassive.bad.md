@@ -10,3 +10,8 @@ The file has been updated by the formatter.
 The size is unique, so the file is skipped.
 The lock, which is held by the writer, guards the map.
 Errors are logged and then ignored.
+The map is guarded by a mutex.
+The file is tracked by git.
+Unknown keys are ignored.
+The migration must be run before deploy.
+The variable is captured by the closure.

@@ -13,3 +13,7 @@
 ## What the hook reports
 
 ## Reading and writing entries
+
+## What's New
+
+## How an indented heading is caught

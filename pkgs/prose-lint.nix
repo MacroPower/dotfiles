@@ -127,17 +127,24 @@ writeShellApplication {
       *) exit 0 ;;
     esac
 
+    # A changelog describes deltas, so the tense rule is off, and its
+    # headings are release labels (`[1.2.0] - 2026-09-23 [YANKED]`), so
+    # the heading check is off too.
     base=$(basename "$file")
     rules=$all_rules
+    check_headings=1
     case "$base" in
-      CHANGELOG*|CHANGES*|HISTORY*) rules=$change_rules ;;
+      CHANGELOG*|CHANGES*|HISTORY*)
+        rules=$change_rules
+        check_headings=0
+        ;;
     esac
 
     # harper-cli prints the basename; restore the path it was given so
     # a finding names the file the way the caller does. ENVIRON avoids
     # awk -v's backslash processing.
     out=$(lint "$rules" "$file" | FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
-    if [ "$ext" = "md" ]; then
+    if [ "$ext" = "md" ] && [ "$check_headings" = 1 ]; then
       headings=$(awk -f "$heading" "$file")
       if [ -n "$headings" ]; then
         out="''${out:+$out

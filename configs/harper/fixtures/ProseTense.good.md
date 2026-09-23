@@ -35,3 +35,11 @@ Now the scheduler retries the job.
 The key used to sign tokens lives in the secrets store.
 The previous value is discarded by Set.
 Set returns the previous value.
+Now returns the current local time.
+The retry uses the previously cached value.
+The previously registered handler runs first.
+The watcher fires only after the file has been updated on disk.
+Any deadline after now uses the monotonic clock.
+Validate the new config before swapping it in.
+Compare the new version string with the old one and refuse a downgrade.
+The limit records what it used to be.

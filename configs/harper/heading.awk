@@ -3,9 +3,12 @@
 # hook and the build-time fixture check agree on every heading.
 #
 # A heading is reported when it has more than three words, starts
-# with how, why, what, or when, or ends with a question mark. YAML
-# front matter, fenced code blocks, and indented code blocks are
-# skipped. Level-one headings are the document title and are exempt.
+# with how, why, what, what's, or when, or ends with a question mark.
+# YAML front matter, fenced code blocks, and indented code blocks are
+# skipped. Level-one headings are the document title and are exempt,
+# and so is a heading that is one code span, since a command reference
+# names the exact command. Setext headings (text underlined with = or
+# -) are not examined; the formatter rewrites them to # headings.
 #
 # Output shape, one line per finding:
 #   <file>:<line>:1: Style::ProseHeading: <message>
@@ -60,18 +63,21 @@ fence_char != "" {
   next
 }
 
-/^#{2,6}[ \t]/ {
+/^ {0,3}#{2,6}[ \t]/ {
   text = $0
-  sub(/^#+[ \t]+/, "", text)
+  sub(/^ {0,3}#+[ \t]+/, "", text)
   sub(/[ \t]+#+[ \t]*$/, "", text)
   sub(/[ \t]+$/, "", text)
+  if (text ~ /^`[^`]+`$/) {
+    next
+  }
   words = split(text, parts, /[ \t]+/)
   lower = tolower(text)
   narrates = 0
   if (words > 3) {
     narrates = 1
   }
-  if (lower ~ /^(how|why|what|when)([ \t]|$)/) {
+  if (lower ~ /^(how|why|what|what's|when)([ \t]|$)/) {
     narrates = 1
   }
   if (text ~ /\?$/) {

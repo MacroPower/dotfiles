@@ -24,3 +24,5 @@ Both tests must pass.
 Run make in the repository root to build it.
 The bucket never refills when the rate is zero.
 The cache holds rules, not results.
+Not just any file can be opened this way.
+The runtime uses ahead-of-time compilation, not just-in-time.
