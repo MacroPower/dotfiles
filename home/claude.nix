@@ -3350,6 +3350,12 @@ in
               # is a bare Boolean(), so reverting means deleting this
               # line -- "0" still reads as truthy.
               CLAUDE_CODE_REPORT_FINDINGS = "1";
+              # Claude Code caps each MCP tool description and each
+              # server's instructions at 2,048 characters. mcp-nixos's
+              # `nix` tool description runs about 3,700 and loses its
+              # option-search and nvf notes past the cut. Added in
+              # Claude Code 2.1.280.
+              CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH = "4096";
             };
             # Prompt cache TTL. The main conversation holds a 1-hour
             # cache so long thinking pauses and slow tool runs still hit
