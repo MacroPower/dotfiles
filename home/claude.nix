@@ -3411,6 +3411,7 @@ in
             disableAutoMode = "disable";
             includeGitInstructions = false;
             respondToBashCommands = true;
+            awaySummaryEnabled = false;
             inherit (cfg) attribution;
             permissions = {
               allow = readPermEntries ++ writePermEntries ++ bundledAllow ++ cfg.extraPermissions.allow;
