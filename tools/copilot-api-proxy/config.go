@@ -78,10 +78,10 @@ func Load() Config {
 		LogLevel:        os.Getenv("COPILOT_PROXY_LOG_LEVEL"),
 		LogFile:         os.Getenv("COPILOT_PROXY_LOG_FILE"),
 		Models: map[string]string{
-			"opus":    envOr("COPILOT_MODEL_OPUS", "claude-opus-4.8"),
-			"sonnet":  envOr("COPILOT_MODEL_SONNET", "claude-sonnet-4.6"),
+			"opus":    envOr("COPILOT_MODEL_OPUS", "claude-opus-5"),
+			"sonnet":  envOr("COPILOT_MODEL_SONNET", "claude-sonnet-5"),
 			"haiku":   envOr("COPILOT_MODEL_HAIKU", "claude-haiku-4.5"),
-			"default": envOr("COPILOT_MODEL_DEFAULT", "claude-sonnet-4.6"),
+			"default": envOr("COPILOT_MODEL_DEFAULT", "claude-sonnet-5"),
 		},
 		BetaAllowPrefixes: betaAllowPrefixes(),
 		Editor: auth.EditorHeaders{

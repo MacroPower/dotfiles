@@ -23,8 +23,8 @@ func TestModelFor(t *testing.T) {
 		requested string
 		want      string
 	}{
-		"opus dashed":         {"claude-opus-4-8", "OPUS"},
-		"opus bracket suffix": {"claude-opus-4-8[1m]", "OPUS"},
+		"opus dashed":         {"claude-opus-5", "OPUS"},
+		"opus bracket suffix": {"claude-opus-5[1m]", "OPUS"},
 		"opus uppercase":      {"CLAUDE-OPUS", "OPUS"},
 		"sonnet dated":        {"claude-sonnet-4-5-20250929", "SONNET"},
 		"sonnet legacy":       {"claude-3-5-sonnet", "SONNET"},
@@ -46,8 +46,8 @@ func TestLoadDefaults(t *testing.T) {
 
 	cfg := Load()
 	assert.Equal(t, "127.0.0.1:9876", cfg.ListenAddr)
-	assert.Equal(t, "claude-opus-4.8", cfg.Models["opus"])
-	assert.Equal(t, "claude-sonnet-4.6", cfg.Models["sonnet"])
+	assert.Equal(t, "claude-opus-5", cfg.Models["opus"])
+	assert.Equal(t, "claude-sonnet-5", cfg.Models["sonnet"])
 	assert.Equal(t, "claude-haiku-4.5", cfg.Models["haiku"])
 	assert.Equal(t, "vscode-chat", cfg.Editor.IntegrationID)
 }

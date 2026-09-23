@@ -50,12 +50,12 @@ func TestPreparePreservesBodyAndRewritesModel(t *testing.T) {
 	t.Parallel()
 
 	cfg := Config{Models: map[string]string{
-		"opus": "claude-opus-4.8", "sonnet": "claude-sonnet-4.6",
-		"haiku": "claude-haiku-4.5", "default": "claude-sonnet-4.6",
+		"opus": "claude-opus-5", "sonnet": "claude-sonnet-5",
+		"haiku": "claude-haiku-4.5", "default": "claude-sonnet-5",
 	}}
 	s := &Server{cfg: cfg}
 
-	in := `{"model":"claude-opus-4-8[1m]","max_tokens":1234567890123,"stream":true,` +
+	in := `{"model":"claude-opus-5[1m]","max_tokens":1234567890123,"stream":true,` +
 		`"messages":[{"role":"user","content":"hi"}],"thinking":{"type":"enabled","budget_tokens":1024}}`
 
 	out, stream, initiator, vision, err := s.prepare([]byte(in))
@@ -66,7 +66,7 @@ func TestPreparePreservesBodyAndRewritesModel(t *testing.T) {
 
 	var got map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(out, &got))
-	assert.JSONEq(t, `"claude-opus-4.8"`, string(got["model"]))
+	assert.JSONEq(t, `"claude-opus-5"`, string(got["model"]))
 	// A large integer must survive re-marshaling without float rounding.
 	assert.Equal(t, "1234567890123", string(got["max_tokens"]))
 	// thinking is forwarded untouched.
@@ -86,7 +86,7 @@ func TestPrepareRejectsInvalidBody(t *testing.T) {
 func TestPreparePreservesSpecialCharacters(t *testing.T) {
 	t.Parallel()
 
-	s := &Server{cfg: Config{Models: map[string]string{"sonnet": "claude-sonnet-4.6", "default": "claude-sonnet-4.6"}}}
+	s := &Server{cfg: Config{Models: map[string]string{"sonnet": "claude-sonnet-5", "default": "claude-sonnet-5"}}}
 
 	// Literal <, >, & as a real Anthropic client sends them (not pre-escaped).
 	in := []byte(`{"model":"claude-sonnet-4-5","system":"emit <system-reminder> tags and run a && b > c","messages":[{"role":"user","content":"x"}]}`)
@@ -203,7 +203,7 @@ func TestHandleMessagesForwardsAndRetries(t *testing.T) {
 	require.NoError(t, mgr.Start(t.Context()))
 
 	cfg := Config{
-		Models:            map[string]string{"opus": "claude-opus-4.8", "sonnet": "claude-sonnet-4.6", "haiku": "claude-haiku-4.5", "default": "claude-sonnet-4.6"},
+		Models:            map[string]string{"opus": "claude-opus-5", "sonnet": "claude-sonnet-5", "haiku": "claude-haiku-4.5", "default": "claude-sonnet-5"},
 		Editor:            auth.DefaultEditorHeaders(),
 		BetaAllowPrefixes: defaultBetaAllowPrefixes,
 	}
@@ -222,7 +222,7 @@ func TestHandleMessagesForwardsAndRetries(t *testing.T) {
 	assert.Equal(t, int32(2), atomic.LoadInt32(&tokenCalls), "token exchanged at start and force-refreshed on 401")
 	assert.Equal(t, "user", gotInitiator)
 	assert.Equal(t, "Bearer tid=2", gotAuth, "retry uses the refreshed token")
-	assert.Equal(t, "claude-sonnet-4.6", gotModel, "model remapped by tier")
+	assert.Equal(t, "claude-sonnet-5", gotModel, "model remapped by tier")
 	assert.Equal(t, "application/json", gotContentType)
 	assert.Equal(t, "interleaved-thinking-2025-05-14", gotBeta, "denied beta stripped, allowed beta forwarded")
 }
