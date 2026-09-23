@@ -112,10 +112,10 @@ let
       # needs it.
       patches = [
         ../pkgs/workmux-allow-kube-read.patch
-        # ClaudeProfile's hardcoded skip-permissions flag activates bypass
-        # mode and clobbers --permission-mode plan in the pane command.
-        # Swap to the opt-in --allow-dangerously-skip-permissions so plan
-        # mode survives launch; the agent can still escalate mid-session.
+        # ClaudeProfile's hardcoded skip-permissions flag starts every pane
+        # in bypass mode. Swap to the opt-in
+        # --allow-dangerously-skip-permissions so panes start in the default
+        # mode; the agent can still escalate mid-session.
         ../pkgs/workmux-claude-allow-dangerous.patch
         # Claude Code's built-in sandbox hardcoded-denies writes to
         # .git/config, which blocks workmux's per-worktree metadata writes

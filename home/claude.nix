@@ -929,7 +929,7 @@ let
         --set CLAUDE_RESEARCH_DIR ${lib.escapeShellArg researchDir} \
         --set TF_CLI_CONFIG_FILE "${config.xdg.configHome}/opentofu/tofurc" \
         --set PLUGIN_UNIX_SOCKET_DIR "${config.home.homeDirectory}/.terraform.versions" \
-        ${lib.optionalString skipPerms "--set IS_SANDBOX 1 --add-flags --allow-dangerously-skip-permissions --add-flags --permission-mode --add-flags plan"}
+        ${lib.optionalString skipPerms "--set IS_SANDBOX 1 --add-flags --allow-dangerously-skip-permissions"}
     '';
   };
 
@@ -2065,7 +2065,7 @@ in
       };
       command = mkOption {
         type = types.str;
-        default = "claude --permission-mode plan";
+        default = "claude";
         description = "Launch command registered as the agents.<agent> entry in workmux's config and consumed via the <agent> placeholder in the focused pane. Decoupled from agent because flag conventions vary between coding agents.";
       };
     };
@@ -3413,7 +3413,6 @@ in
             respondToBashCommands = true;
             inherit (cfg) attribution;
             permissions = {
-              defaultMode = "plan";
               allow = readPermEntries ++ writePermEntries ++ bundledAllow ++ cfg.extraPermissions.allow;
               deny = [
                 # Key material & certificates
