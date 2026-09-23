@@ -5,3 +5,5 @@ She is tired.
 The lock is free.
 There is a lock.
 The value is a number.
+Get returns the value stored under key.
+Set stores value under key.

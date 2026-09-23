@@ -1,6 +1,10 @@
-expr main [([is, are, was, were, be, been, being, get, gets, got, getting] [VERB, (ADV VERB)]), ([is, are, was, were, be, been, being] * by)]
+# Forms of `get` are left out on purpose. Matching is case-insensitive,
+# so `Get returns the value` in a Go doc comment would trip a `get VERB`
+# branch, and Harper's tagger rarely marks the participle after `gets`
+# anyway (`gets flushed` goes unflagged either way).
+expr main [([is, are, was, were, be, been, being] [VERB, (ADV VERB)]), ([is, are, was, were, be, been, being] * by)]
 let message "Passive voice. Make the actor the subject."
-let description "Flags a form of be or get followed by a verb, and a form of be followed by a word and by."
+let description "Flags a form of be followed by a verb, and a form of be followed by a word and by."
 let becomes ""
 let kind "Style"
 allows "The scheduler retries the job."
@@ -8,3 +12,4 @@ allows "The scheduler is retrying the job."
 allows "She is tired."
 allows "The lock is free."
 allows "There is a lock."
+allows "Get returns the value stored under key."
