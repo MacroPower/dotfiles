@@ -11,11 +11,15 @@ let
   # dragging in store path references that crash the JSON serializer.
   clean = builtins.unsafeDiscardStringContext;
 
-  # Normalize meta.license (single attrset or list) into a comma-separated
-  # SPDX string, falling back to shortName for non-standard licenses.
+  # Normalize meta.license (single attrset, compound expression, or list)
+  # into an SPDX string, falling back to shortName for non-standard licenses.
+  # A compound expression (`licenseType = "compound"`) or a list of several
+  # licenses renders as "multiple".
   licenseName =
     l:
-    if builtins.isAttrs l then
+    if builtins.isAttrs l && l ? licenses then
+      if builtins.length l.licenses == 1 then licenseName (builtins.head l.licenses) else "multiple"
+    else if builtins.isAttrs l then
       clean (l.spdxId or (l.shortName or ""))
     else if builtins.isList l then
       if builtins.length l == 1 then licenseName (builtins.head l) else "multiple"
