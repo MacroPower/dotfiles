@@ -3,9 +3,11 @@
 # is left out because docs use it for state transitions in time (`is
 # no longer valid after Close`) more often than for version deltas,
 # and the version-delta usage usually travels with `now` or
-# `previously` in the same paragraph.
+# `previously` in the same paragraph. `used to` is narrowed to `used
+# to be`, because `the key used to sign tokens` is a reduced relative
+# clause, not a delta.
 expr surfaces [flag, option, field, argument, parameter, command, subcommand, endpoint, syntax, format, default, behavior, behaviour, version, API, config, setting, method, function, package, mode]
-expr main [(now [supports, accepts, returns, uses, handles, requires, defaults, includes]), previously, (the new @surfaces), (used to), (has been updated)]
+expr main [(now [supports, accepts, returns, uses, handles, requires, defaults, includes]), previously, (the new @surfaces), (used to be), (has been updated)]
 let message "Delta tense. Durable prose describes the system as it is, and git history records what changed."
 let description "Flags phrases that describe the system as a change from an earlier version."
 let becomes ""
@@ -14,3 +16,4 @@ allows "The flag defaults to five."
 allows "The parser supports tables."
 allows "Set returns the new count."
 allows "The entry is no longer valid after Close."
+allows "The key used to sign tokens lives in the secrets store."

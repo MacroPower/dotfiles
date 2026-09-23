@@ -13,3 +13,5 @@ That is the entire point of the function.
 That is the whole point of the function.
 It does exactly that.
 Value returns the current count without changing it.
+The function is by design idempotent.
+Len counts expired entries too. This is intentional.

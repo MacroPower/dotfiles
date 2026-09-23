@@ -19,3 +19,11 @@ title: How the front matter works
     # How an indented block is skipped
 
 The body: how prose is skipped.
+
+## Rate Limits
+
+### Nix Flakes
+
+## Errors
+
+#### Go

@@ -2,14 +2,27 @@
 # so `Get returns the value` in a Go doc comment would trip a `get VERB`
 # branch, and Harper's tagger rarely marks the participle after `gets`
 # anyway (`gets flushed` goes unflagged either way).
-expr main [([is, are, was, were, be, been, being] [VERB, (ADV VERB)]), ([is, are, was, were, be, been, being] * by)]
+#
+# The filter `<VERB, !@stative>` requires one token to be a verb and
+# not one of the stative words the tagger also marks as verbs: a
+# progressive (`has been running` is active voice) and the participial
+# adjectives docs lean on (`the flag is set`, `is enabled by default`).
+# `by !default` keeps `is closed by the peer` while sparing `by
+# default`, which names a setting rather than an actor.
+expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available]
+expr be [is, are, was, were, be, been, being]
+expr main [(@be [<VERB, !@stative>, (ADV <VERB, !@stative>)]), (@be * by !default)]
 let message "Passive voice. Make the actor the subject."
 let description "Flags a form of be followed by a verb, and a form of be followed by a word and by."
 let becomes ""
 let kind "Style"
 allows "The scheduler retries the job."
 allows "The scheduler is retrying the job."
+allows "The job has been running for an hour."
 allows "She is tired."
 allows "The lock is free."
 allows "There is a lock."
 allows "Get returns the value stored under key."
+allows "The flag is enabled by default."
+allows "When the flag is set, the hook skips the file."
+allows "The file is missing."
