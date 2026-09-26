@@ -14,5 +14,8 @@
     starship.enable = lib.mkDefault false;
     # Tmux: themed explicitly in tools.nix with stylix palette
     tmux.enable = lib.mkDefault false;
+    # Rofi: not installed; stylix's target still sets the renamed
+    # programs.rofi.font option, which triggers a home-manager warning
+    rofi.enable = lib.mkDefault false;
   };
 }
