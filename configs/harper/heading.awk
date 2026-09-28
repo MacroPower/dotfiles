@@ -2,13 +2,25 @@
 # naming a topic. prose-lint and check.py both run this file, so the
 # hook and the build-time fixture check agree on every heading.
 #
-# A heading is reported when it has more than three words, starts
-# with how, why, what, what's, or when, or ends with a question mark.
+# Only level-two headings are examined. A level-one heading is the
+# document title, and a deeper heading often labels a single case, so
+# neither is reported. A heading that is one code span is exempt too,
+# since a command reference names the exact command.
+#
+# A heading is reported when it starts with a question word or an
+# auxiliary, contains a pronoun, an auxiliary, or a subordinating
+# conjunction anywhere, ends with a question mark, or runs past six
+# words. These are closed word classes, so a noun phrase such as
+# `Printing YAML with Lipgloss Styles` passes while `How matching
+# works` and `Configuring the server before you start` are reported.
+# Harper's part-of-speech tagger is not used, because a heading has no
+# sentence around it and the tagger reads `works` and `ships` as nouns.
+# The rule misses a short sentence built only from open-class words,
+# such as `The scheduler retries jobs`.
+#
 # YAML front matter, fenced code blocks, and indented code blocks are
-# skipped. Level-one headings are the document title and are exempt,
-# and so is a heading that is one code span, since a command reference
-# names the exact command. Setext headings (text underlined with = or
-# -) are not examined; the formatter rewrites them to # headings.
+# skipped. Setext headings (text underlined with = or -) are not
+# examined, because the formatter rewrites them to # headings.
 #
 # Output shape, one line per finding:
 #   <file>:<line>:1: Style::ProseHeading: <message>
@@ -17,6 +29,16 @@ BEGIN {
   front_matter = 0
   fence_char = ""
   fence_len = 0
+  # Words that report a heading when it starts with one of them.
+  split("how why what what's when where which who do", list, " ")
+  for (i in list) {
+    opener[list[i]] = 1
+  }
+  # Words that report a heading wherever they appear.
+  split("you your we we're our us i my let's it's is are was were can will should must does don't if before after because until while once so", list, " ")
+  for (i in list) {
+    anywhere[list[i]] = 1
+  }
 }
 
 NR == 1 && $0 ~ /^---[ \t]*$/ {
@@ -63,7 +85,7 @@ fence_char != "" {
   next
 }
 
-/^ {0,3}#{2,6}[ \t]/ {
+/^ {0,3}##[ \t]/ {
   text = $0
   sub(/^ {0,3}#+[ \t]+/, "", text)
   sub(/[ \t]+#+[ \t]*$/, "", text)
@@ -71,19 +93,22 @@ fence_char != "" {
   if (text ~ /^`[^`]+`$/) {
     next
   }
-  words = split(text, parts, /[ \t]+/)
-  lower = tolower(text)
+  words = split(tolower(text), parts, /[ \t]+/)
   narrates = 0
-  if (words > 3) {
-    narrates = 1
-  }
-  if (lower ~ /^(how|why|what|what's|when)([ \t]|$)/) {
+  if (words > 6) {
     narrates = 1
   }
   if (text ~ /\?$/) {
     narrates = 1
   }
+  for (i = 1; i <= words; i++) {
+    word = parts[i]
+    gsub(/[^a-z']/, "", word)
+    if ((i == 1 && word in opener) || word in anywhere) {
+      narrates = 1
+    }
+  }
   if (narrates) {
-    printf "%s:%d:1: Style::ProseHeading: Heading \"%s\" narrates. Name the topic in one to three words.\n", FILENAME, NR, text
+    printf "%s:%d:1: Style::ProseHeading: Heading \"%s\" narrates. Name the topic as a short noun phrase.\n", FILENAME, NR, text
   }
 }

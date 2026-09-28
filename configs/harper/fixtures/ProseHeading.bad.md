@@ -1,7 +1,5 @@
 ## How matching works
 
-## Deletion behavior and safety
-
 ## Is it safe?
 
 ## Why we're doing this
@@ -12,8 +10,14 @@
 
 ## What the hook reports
 
-## Reading and writing entries
-
 ## What's New
+
+## Configuring the server before you start
+
+## Setting up your editor
+
+## Retries (if the upstream fails)
+
+## Release notes for the final quarter of the fiscal year
 
 ## How an indented heading is caught

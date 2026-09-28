@@ -10,6 +10,18 @@ title: How the front matter works
 
 ## Deletion
 
+## Deletion behavior and safety
+
+## Reading and writing entries
+
+## Printing YAML with Lipgloss Styles
+
+## Full YAML Viewport Example
+
+### How a level-three heading is skipped
+
+#### Why a level-four heading is skipped
+
 ```sh
 ## How a fenced comment is skipped
 ```
