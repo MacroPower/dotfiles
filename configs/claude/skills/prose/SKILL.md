@@ -66,7 +66,7 @@ repetition is clearer than synonym rotation.
 ## Headers
 
 A header names the topic; the body makes the claim. Keep every header
-below the title to a noun phrase of one to three words. The request
+below the title to a short noun phrase, usually one to three words. The request
 that asked for the document lists its topics in sentence form (`cover
 how matching works and how the SDK caches rules`); copying that
 phrasing into headers turns the outline into a paraphrase of the brief.
