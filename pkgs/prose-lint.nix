@@ -47,18 +47,26 @@ let
     "zig"
   ];
 
-  # The Weir rules plus the Harper built-ins listed in
-  # configs/harper/rules.toml. Both lists are fixture-checked when
-  # prose-weirpack builds.
+  # The Weir rules under their internal `<Name>_<Tier>` names plus the
+  # Harper built-ins, both read from the tier directories under
+  # configs/harper/rules and fixture-checked when prose-weirpack
+  # builds. A changelog turns off every tier's ProseTense.
   ruleNames = prose-weirpack.passthru.ruleNames ++ prose-weirpack.passthru.builtinRules;
   allRules = lib.concatStringsSep "," ruleNames;
-  changeRules = lib.concatStringsSep "," (lib.filter (r: r != "ProseTense") ruleNames);
+  changeRules = lib.concatStringsSep "," (lib.filter (r: !(lib.hasPrefix "ProseTense_" r)) ruleNames);
 
-  # Rule name to tier, one `Name=Tier` pair per line, for the awk step
-  # that tags each finding. The manifest covers every enabled rule, so
-  # a name missing from the map is a bug and tags as Required.
+  # Internal rule name to tier, one `Name=Tier` pair per line, for the
+  # awk step that tags each finding. The map covers every enabled
+  # rule, so a name missing from it is a bug and tags as Required.
   tierMap = lib.concatStringsSep "\n" (
     lib.mapAttrsToList (name: tier: "${name}=${tier}") prose-weirpack.passthru.tiers
+  );
+
+  # The awk checks, one `internal=path` pair per line. Each prints
+  # findings under its bare name, and the wrapper rewrites that to the
+  # internal name so the tag step reads the tier off the same map.
+  awkChecks = lib.concatStringsSep "\n" (
+    map (c: "${c.internal}=${prose-weirpack}/${c.path}") prose-weirpack.passthru.awkChecks
   );
 in
 writeShellApplication {
@@ -79,10 +87,10 @@ writeShellApplication {
     # failed and its stderr was passed through.
 
     pack=${prose-weirpack}/share/harper/prose.weirpack
-    heading=${prose-weirpack}/share/harper/heading.awk
     all_rules=${lib.escapeShellArg allRules}
     change_rules=${lib.escapeShellArg changeRules}
     tier_map=${lib.escapeShellArg tierMap}
+    awk_checks=${lib.escapeShellArg awkChecks}
     known_extensions=${lib.escapeShellArg ("," + lib.concatStringsSep "," extensions + ",")}
 
     # harper-cli looks up a user dictionary under $HOME and prints a
@@ -108,9 +116,10 @@ writeShellApplication {
     }
 
     # Inserts the `[Tier]` tag after `path:line:col:` on every finding,
-    # looking the rule up from its `Kind::Rule:` field, then orders the
-    # findings by tier and line. A rule missing from the map tags as
-    # Required, which fails safe.
+    # looking the rule up from its `Kind::Rule:` field, strips the
+    # `_Tier` suffix the weirpack build added to the rule name, then
+    # orders the findings by tier and line. A rule missing from the
+    # map tags as Required, which fails safe.
     tag() {
       TIER_MAP="$tier_map" awk '
         BEGIN {
@@ -135,11 +144,12 @@ writeShellApplication {
           rest = substr(line, RSTART + RLENGTH)
           split(substr(line, RSTART + 1), pos, ":")
           rule = ""
-          if (match(rest, /^[A-Za-z]+::[A-Za-z0-9]+:/)) {
+          if (match(rest, /^[A-Za-z]+::[A-Za-z0-9_]+:/)) {
             rule = substr(rest, 1, RLENGTH - 1)
             sub(/^[A-Za-z]+::/, "", rule)
           }
           t = (rule in tier) ? tier[rule] : "Required"
+          sub(/_(Required|Recommended|Optional):/, ":", rest)
           printf "%d\t%d\t%s[%s] %s\n", rank[t], pos[1], prefix, t, rest
         }
       ' | sort -t "$(printf '\t')" -k1,1n -k2,2n | cut -f3-
@@ -179,11 +189,11 @@ writeShellApplication {
     # the heading check is off too.
     base=$(basename "$file")
     rules=$all_rules
-    check_headings=1
+    changelog=0
     case "$base" in
       CHANGELOG*|CHANGES*|HISTORY*)
         rules=$change_rules
-        check_headings=0
+        changelog=1
         ;;
     esac
 
@@ -191,12 +201,23 @@ writeShellApplication {
     # a finding names the file the way the caller does. ENVIRON avoids
     # awk -v's backslash processing.
     out=$(lint "$rules" "$file" | FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
-    if [ "$ext" = "md" ] && [ "$check_headings" = 1 ]; then
-      headings=$(awk -f "$heading" "$file")
-      if [ -n "$headings" ]; then
-        out="''${out:+$out
-    }$headings"
-      fi
+
+    # The awk checks read markdown only. Each prints `Kind::Name:` and
+    # the sed below renames that to the internal `Kind::Name_Tier:` so
+    # the tag step finds it in the map.
+    if [ "$ext" = "md" ]; then
+      while IFS='=' read -r internal script; do
+        [ -n "$internal" ] || continue
+        name=''${internal%_*}
+        if [ "$changelog" = 1 ] && [ "$name" = ProseHeading ]; then
+          continue
+        fi
+        found=$(awk -f "$script" "$file" | sed "s/::$name:/::$internal:/")
+        if [ -n "$found" ]; then
+          out="''${out:+$out
+    }$found"
+        fi
+      done <<< "$awk_checks"
     fi
 
     if [ -n "$out" ]; then

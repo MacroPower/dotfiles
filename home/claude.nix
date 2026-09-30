@@ -1049,8 +1049,9 @@ let
   # PostToolUse:Write/Edit/MultiEdit. prose-lint runs the rules in
   # configs/harper against every markdown and source file Claude
   # writes, and its findings come back as feedback before the next
-  # turn, grouped by the tier configs/harper/rules.toml assigns each
-  # rule. Each exclude glob becomes a leading rule whose command exits
+  # turn, grouped by the tier each rule's directory under
+  # configs/harper/rules gives it. Each exclude glob becomes a leading
+  # rule whose command exits
   # 0 without output, so first-match-wins skips the file. The whole
   # list is gated on proseLint.enable so disabling it drops the rule
   # along with the binary.

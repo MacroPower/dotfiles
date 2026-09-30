@@ -1,0 +1,5 @@
+# Harper built-in rules enabled at the Recommended tier, one name per
+# line, each with a fixture pair under fixtures/recommended.
+LongSentences
+Hedging
+LitotesDirectPositive

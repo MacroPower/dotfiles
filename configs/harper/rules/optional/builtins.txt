@@ -1,0 +1,10 @@
+# Harper built-in rules enabled at the Optional tier, one name per
+# line, each with a fixture pair under fixtures/optional. These hit
+# false in technical prose often enough to stay out of the higher
+# tiers: RedundantThat fires on every grammatical `that that` (`the
+# rule that that file defines`), MultipleFrequencyAdverbs on a
+# schedule with its exception (`runs daily, never on weekends`), and
+# Oxymorons on `found missing`.
+RedundantThat
+MultipleFrequencyAdverbs
+Oxymorons

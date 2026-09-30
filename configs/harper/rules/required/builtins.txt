@@ -1,0 +1,14 @@
+# Harper built-in rules enabled at the Required tier, one name per
+# line. A built-in has no file of its own, so this list is what puts
+# it in a tier; every name needs a fixtures/required/<Rule>.bad.md and
+# .good.md pair, and a typo fails the build because its bad fixture
+# produces no lint. Rules that misread identifiers, table cells, or
+# technical abbreviations (SpellCheck, SentenceCapitalization,
+# OxfordComma, the Expand* family) stay off in every tier on purpose.
+VeryUnique
+MoreBetter
+ComprisesOf
+RedundantSuperlatives
+RedundantProgressiveComparative
+CondenseAllThe
+AvoidAndAlso
