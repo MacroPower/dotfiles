@@ -19,14 +19,9 @@
       url = "github:brumhard/krewfile";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    llm-agents = {
-      url = "github:numtide/llm-agents.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    workmux = {
-      url = "github:raine/workmux";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # No nixpkgs follows: building against llm-agents' own pinned nixpkgs
+    # lets its packages substitute from cache.numtide.com.
+    llm-agents.url = "github:numtide/llm-agents.nix";
     dagger = {
       url = "github:dagger/nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -176,7 +171,6 @@
                 claude-powerline = ./pkgs/claude-powerline.nix;
                 claude-history = ./pkgs/claude-history.nix;
                 playwright-cli = ./pkgs/playwright-cli.nix;
-                git-surgeon = ./pkgs/git-surgeon.nix;
                 comfyui = ./pkgs/comfyui.nix;
                 slugify = ./pkgs/slugify.nix;
                 mdcopy = ./pkgs/mdcopy.nix;

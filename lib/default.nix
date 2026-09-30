@@ -7,7 +7,6 @@ let
   inherit (inputs)
     nur-jacobcolvin
     llm-agents
-    workmux
     dagger
     sops-nix
     nix-index-database
@@ -37,7 +36,6 @@ let
     claude-powerline = final.callPackage paths.claude-powerline { };
     claude-history = final.callPackage paths.claude-history { };
     playwright-cli = final.callPackage paths.playwright-cli { };
-    git-surgeon = final.callPackage paths.git-surgeon { };
     comfyui = final.callPackage paths.comfyui { };
     slugify = final.callPackage paths.slugify { };
     mdcopy = final.callPackage paths.mdcopy { };
@@ -67,42 +65,33 @@ let
     };
   };
 
-  # Built directly via final.rustPlatform.buildRustPackage (instead of
-  # consuming workmux.packages.${system}.default) so the cargoDeps
-  # fetches go through our overlaid fetchurl. workmux's own flake
-  # evaluates against unmodified nixpkgs, which means the fetchurlOverlay
-  # injection would not reach the crate downloads there. Keep the
-  # buildRustPackage args in sync with workmux's flake.nix.
-  workmuxOverlay = _system: final: _prev: {
-    workmux-bin = final.rustPlatform.buildRustPackage {
-      pname = "workmux";
-      version = workmux.shortRev or workmux.dirtyShortRev or "dev";
-      src = workmux;
-      cargoLock = {
-        lockFile = "${workmux}/Cargo.lock";
-        outputHashes = {
-          "crossterm-0.29.0" = "sha256-rfAaqGylDaxx3bjmofifnzSh7Hmh21BzHp5fS/w2Z6I=";
-        };
-      };
-      nativeBuildInputs = [
-        final.installShellFiles
-        final.git
-      ]
+  # Expose llm-agents' own package set (built against its pinned nixpkgs)
+  # rather than overlays.shared-nixpkgs, so the packages substitute from
+  # cache.numtide.com instead of rebuilding against our nixpkgs.
+  llmAgentsOverlay = system: _final: _prev: {
+    llm-agents = llm-agents.packages.${system};
+  };
+
+  # workmux from llm-agents plus local patches. The patches force a local
+  # build, so workmux never substitutes from cache.numtide.com.
+  workmuxOverlay = system: final: _prev: {
+    workmux-bin = llm-agents.packages.${system}.workmux.overrideAttrs (old: {
       # nixpkgs' classic open-source ld64 crashes (Trace/BPT trap: 5) in
       # its stubs pass when linking the mac-notification-sys Objective-C
       # object pulled in via notify-rust. Link with LLVM ld64.lld instead,
       # mirroring nixpkgs' own workaround for starship
       # (NixOS/nixpkgs#540463). Drop once the cctools fix
-      # (NixOS/nixpkgs#536365) reaches our nixpkgs pin.
-      ++ final.lib.optionals final.stdenv.hostPlatform.isDarwin [ final.llvmPackages.lld ];
-
-      env = final.lib.optionalAttrs final.stdenv.hostPlatform.isDarwin {
-        NIX_CFLAGS_LINK = "-fuse-ld=lld";
-      };
-
-      # Sandbox network_proxy and rpc tests need to bind TCP listeners,
-      # which the Nix build sandbox does not permit.
-      doCheck = false;
+      # (NixOS/nixpkgs#536365) reaches llm-agents' nixpkgs pin.
+      nativeBuildInputs =
+        old.nativeBuildInputs
+        ++ final.lib.optionals final.stdenv.hostPlatform.isDarwin [
+          llm-agents.inputs.nixpkgs.legacyPackages.${system}.llvmPackages.lld
+        ];
+      env =
+        (old.env or { })
+        // final.lib.optionalAttrs final.stdenv.hostPlatform.isDarwin {
+          NIX_CFLAGS_LINK = "-fuse-ld=lld";
+        };
 
       # mcp-kubectx (declared in workmux host_commands) needs to read
       # ~/.kube/config. Upstream's host-exec sandbox unconditionally denies
@@ -110,7 +99,7 @@ let
       # every host_commands entry now gets read access to ~/.kube; today
       # that's only mcp-kubectx, so blast radius matches the binary that
       # needs it.
-      patches = [
+      patches = (old.patches or [ ]) ++ [
         ../pkgs/workmux-allow-kube-read.patch
         # ClaudeProfile's hardcoded skip-permissions flag starts every pane
         # in bypass mode. Swap to the opt-in
@@ -125,15 +114,7 @@ let
         # filename, outside the sandbox's protected set.
         ../pkgs/workmux-store-meta-outside-config.patch
       ];
-
-      postInstall = ''
-        export HOME=$TMPDIR
-        installShellCompletion --cmd workmux \
-          --bash <($out/bin/workmux completions bash) \
-          --fish <($out/bin/workmux completions fish) \
-          --zsh <($out/bin/workmux completions zsh)
-      '';
-    };
+    });
   };
 
   # nixpkgs at this pin builds lupa-2.8 with `LUPA_NO_BUNDLE=true` and
@@ -290,8 +271,8 @@ let
 
   # czkawka's GUI binaries (krokiet, cedinia) link mac-notification-sys via
   # notify-rust and hit the same classic-ld64 stubs-pass crash as workmux
-  # (see workmuxOverlay). Same lld workaround; drop both together once the
-  # cctools fix (NixOS/nixpkgs#536365) reaches our nixpkgs pin.
+  # (see workmuxOverlay). Same lld workaround; drop each once the cctools fix
+  # (NixOS/nixpkgs#536365) reaches the nixpkgs pin it builds against.
   czkawkaOverlay = final: prev: {
     czkawka = prev.czkawka.overrideAttrs (
       old:
@@ -615,7 +596,7 @@ let
     (nurJacobColvinOverlay system)
     ryceeOverlay
     (workmuxOverlay system)
-    llm-agents.overlays.shared-nixpkgs
+    (llmAgentsOverlay system)
     dagger.overlays.default
   ];
 

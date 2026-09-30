@@ -3921,7 +3921,7 @@ in
         pkgs.mcp-kubectx
         workmuxWrapped
         pkgs.claude-history
-        pkgs.git-surgeon
+        pkgs.llm-agents.git-surgeon
         pkgs.slugify
       ]
       ++ lib.optionals cfg.proseLint.enable [
