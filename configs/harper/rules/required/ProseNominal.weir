@@ -1,0 +1,14 @@
+# Each phrase is a weak verb plus a noun that names the real verb
+# (`make a decision`, `perform a lookup`, `take into account`), or a
+# copula plus an adjective that does the same (`is dependent on`).
+# The list is fixed to the phrases, because a `[make, perform] DET
+# NOUN` pattern would flag `make a copy` and `perform the request`,
+# where the noun is the object and no single verb replaces the pair.
+expr main [(make a decision), (makes a decision), (made a decision), (make decisions), (make a choice), (makes a choice), (make a comparison), (makes a comparison), (make an assumption), (makes an assumption), (make an attempt), (makes an attempt), (make use of), (makes use of), (make a determination), (makes a determination), (make a distinction), (makes a distinction), (make a selection), (makes a selection), (make a request), (makes a request), (make a call to), (makes a call to), (perform a check), (performs a check), (perform validation), (performs validation), (perform a lookup), (performs a lookup), (perform an update), (performs an update), (perform an analysis), (performs an analysis), (perform a search), (performs a search), (perform a comparison), (performs a comparison), (take a look), (takes a look), (take action), (takes action), (take into consideration), (takes into consideration), (take into account), (takes into account), (give consideration), (gives consideration), (provide support for), (provides support for), (is in charge of), (are in charge of), (conduct a review), (conducts a review), (carry out), (carries out), (carried out), (do a comparison), (does a comparison), (has an effect on), (have an effect on), (has an impact on), (have an impact on), (reach a decision), (reaches a decision), (come to a conclusion), (comes to a conclusion), (draw a conclusion), (draws a conclusion), (conduct an analysis), (conducts an analysis), (give an indication), (gives an indication), (is indicative of), (are indicative of), (is reflective of), (is dependent on), (is dependent upon), (are dependent on), (is reliant on), (are reliant on), (in need of), (has a need for), (have a need for), (provide a description of), (provides a description of), (give a description of), (gives a description of), (gain access to), (gains access to), (obtain access to), (put emphasis on), (puts emphasis on), (place emphasis on), (places emphasis on), (is of importance), (is of significance), (is of use)]
+let message "Nominalization. Use the verb."
+let description "Flags a weak verb plus noun where one verb does the work."
+let becomes ""
+let kind "Style"
+allows "The decoder makes a copy of the buffer before it writes."
+allows "The client performs the request and returns the body."
+allows "Set decides which bucket receives the token."

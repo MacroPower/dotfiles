@@ -5,7 +5,15 @@
 # root`, `serves as-is`). `simply` and `merely` stay unconditional: a
 # product name or a mention of the word is rare in technical prose,
 # and the skill wants both gone from a sentence about behavior.
-expr main [simply, merely, (stands as DET), (serves as DET), (plays a [vital, crucial, key, critical, important] role), (in the event that)]
+#
+# `slop` lists the marketing adjectives, stock verbs, and intensifiers
+# that inflate a README. `unlock`, `harness`, `landscape`, `realm`,
+# `underscore`, `critical`, `first class`, and `super` are left out,
+# because each names something in code (a mutex, a test harness, a
+# page orientation, a Kerberos realm, the character, a critical
+# section, a first-class function, a superclass call).
+expr slop [seamless, seamlessly, robust, powerful, elegant, elegantly, comprehensive, intuitive, effortless, effortlessly, blazing, blazingly, revolutionary, innovative, sophisticated, delve, delves, delving, (dive into), (deep dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, elevate, elevates, tapestry, journey, (navigate the [complexities, complexity, landscape, world, challenges]), crucial, vital, pivotal, paramount, testament, foster, fosters, showcase, showcases, (a breeze), holistic, synergy, groundbreaking, transformative, (rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad), (ever evolving), (rapidly evolving), (at its core), (at the heart of), (top notch), (battle tested), (production ready), (enterprise grade), (out of the box), (under the hood), (bells and whistles), (feature rich), (cutting edge), (state of the art), (lightning fast), (best in class), (world class), (next generation), (game changing), highly, extremely, incredibly]
+expr main [simply, merely, (stands as DET), (serves as DET), (plays a [vital, crucial, key, critical, important] role), (in the event that), @slop]
 let message "Puff. State the fact and let the reader judge its weight."
 let description "Flags words and phrases that inflate a claim without informing."
 let becomes ""
@@ -19,3 +27,7 @@ allows "The server serves as many requests as the socket buffer allows."
 allows "The daemon serves as root, which is the reason for the seccomp filter."
 allows "The device serves as-is with no warranty."
 allows "The daemon serves as it always has, on port 80."
+allows "Unlock releases the mutex."
+allows "The test harness builds the fixture once."
+allows "The realm names the Kerberos domain."
+allows "Names with an underscore are private."

@@ -1,0 +1,16 @@
+# The tense rule catches a change described from the past; this one
+# catches a claim dated to the present or promised for later. Bare
+# `currently` is too common as runtime state (`the currently selected
+# row`, `whether the item is currently available`), so it counts only
+# before a word that names support or a limit, or after a negated or
+# modal auxiliary. `TODO` stays out, because a code comment uses it
+# as a marker.
+expr main [(currently [supports, support, only, unsupported, not, no, limited, lacks, lack, requires, require, returns, accepts, uses, defaults, ignores, handles, allows, disallows, broken, missing, unimplemented, experimental, deprecated]), ([does, doesn't, do, don't, cannot, can't, will, won't] currently), (not currently), (at the moment), (right now), (for now), (at present), (as of now), (at this time), (as of today), (at the time of writing), (as of this writing), (in the current version), (in the current release), (in the latest version), (in the latest release), (in this version), (in this release), (going forward), (in the future), (in a future release), (in a future version), (in an upcoming release), (in upcoming releases), (in future releases), (in future versions), (will be added), (will be supported), (will be removed), (will be deprecated), (is planned), (are planned), (on the roadmap), (coming soon), (yet to be implemented), (not yet implemented), (not yet supported), (to be implemented)]
+let message "Delta tense. Durable prose describes the system as it is, and git history records what changed."
+let description "Flags phrases that date a claim to the current version or promise one for a later one."
+let becomes ""
+let kind "Style"
+allows "Available reports whether the item is currently available."
+allows "Cursor returns the currently selected row."
+allows "The parser supports tables."
+allows "TODO: handle the empty case."

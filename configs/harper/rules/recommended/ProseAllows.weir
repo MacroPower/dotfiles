@@ -1,0 +1,13 @@
+# Each phrase wraps a behavior in the ability to have it, so the fix
+# is to give the verb the subject (`Source lets you iterate over
+# lines` becomes `Source iterates over lines`). `is responsible for`
+# stays in the list, since `the caller is responsible for closing`
+# reads as well as `the caller closes`.
+expr main [(allows you to), (allow you to), (allows users to), (allow users to), (enables you to), (enable you to), (enables users to), (lets you), (let you), (lets users), (makes it possible to), (make it possible to), (gives you the ability to), (provides the ability to), (provides a way to), (offers the ability to), (offers a way to), (is designed to), (are designed to), (is intended to), (are intended to), (is meant to), (are meant to), (is responsible for), (are responsible for), (aims to), (aim to), (serves to), (serve to), (helps to), (help to), (helps you), (help you), (is used to), (are used to), (can be used to), (is capable of), (are capable of), (has the capability to), (have the capability to), (makes it easy to), (make it easy to), (makes it easier to), (makes it simple to)]
+let message "Describe what it does, not that it can. Give the verb the subject."
+let description "Flags phrases that wrap a behavior in the ability to have it."
+let becomes ""
+let kind "Style"
+allows "Source iterates over the lines of one or more documents."
+allows "The caller closes the handle after the last read."
+allows "The key used to sign tokens lives in the secrets store."

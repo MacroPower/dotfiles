@@ -1,0 +1,15 @@
+# Harper's Hedging rule matches three phrases, so this list carries
+# the rest. `kind of`, `sort of`, and `a bit` are left out, because
+# docs use them as nouns (`the kind of diff`, `a sort of index`, `sets
+# a bit in the mask`); `a little bit` stays. `rather` is left out too:
+# `rather than` is a contrast, and a `!than` guard misses it when a
+# comment line breaks between the two words.
+expr main [somewhat, arguably, essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), (appears to), (appear to), (tends to), (tend to), presumably, fairly, quite, (in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said)]
+let message "Hedge. State the claim or drop it."
+let description "Flags words that soften a claim without adding information."
+let becomes ""
+let kind "Style"
+allows "The printer takes the kind of each segment from the token."
+allows "The mask sets a bit for each enabled flag."
+allows "The walker visits the child rather than the alias."
+allows "A sort of index maps each anchor to its node."

@@ -1,0 +1,13 @@
+# Each phrase has a one-word equivalent (`because`, `before`, `can`,
+# `about`, `many`, `to`). `whether or not` is left out, because its
+# common sense in docs is `regardless of whether` (`renders the path
+# whether or not the binding has a location`), which `whether` alone
+# does not carry. `in order to` has its own rule with a rewrite.
+expr main [(due to the fact that), (owing to the fact that), (at this point in time), (at the present time), (for the purpose of), (in the process of), (is able to), (are able to), (was able to), (were able to), (be able to), (has the ability to), (have the ability to), (in spite of the fact that), (despite the fact that), (with regard to), (with regards to), (in regards to), (in regard to), (a number of), (the majority of), (a majority of), (prior to), (subsequent to), (in terms of), (in the case of), (in cases where), (in the case where), (in the event of), (it is possible to), (it is possible for), (as a result of), (for the reason that), (on the basis of), (in the absence of), (so as to), (in order for), (in the near future), (on a regular basis), (on a daily basis), (in a timely manner), (in an effort to), (in the course of), (with the exception of), (at all times), (in close proximity to), (until such time as), (in the majority of cases), (in conjunction with), (in accordance with)]
+let message "Wordy. Use the short form."
+let description "Flags stock phrases with a one-word equivalent."
+let becomes ""
+let kind "Style"
+allows "The path renders whether or not the binding has a location."
+allows "The scheduler retries the job because the lease expired."
+allows "Close the file before the next read."
