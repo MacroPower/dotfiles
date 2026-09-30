@@ -355,7 +355,7 @@ func fillerReason(src string) string {
 func guidance() string {
 	return "Do not wait by sleeping, and do not bide time with no-op filler (`true`, `jobs`, bare `echo`) between tool calls. If you are waiting on a background task or notification, END YOUR TURN: the notification arrives without you idling, and idle turns only delay it. Otherwise pick the shape that matches what you need:\n" +
 		"\n" +
-		"- Run the long thing in the background: set run_in_background: true on the Bash call. You get one notification when it exits, and the Read tool fetches its captured output.\n" +
+		"- Run the long thing in the background: set run_in_background: true on the Bash call. You get one notification when it exits, and the Read tool fetches its captured output. A background call stops at its timeout (30 minutes by default, 2 hours at most), so set timeout on anything that can run past 30 minutes.\n" +
 		"- Wait on a condition: put the poll loop inside a background Bash call, e.g. run_in_background: true with `until <check>; do sleep 1; done`. sleep is always allowed in a background call.\n" +
 		"- Get one notification per event (log lines, file changes, CI steps): use the Monitor tool. It is deferred, so load it first with ToolSearch(\"select:Monitor\").\n" +
 		"- Waiting on several things: start all of them first, then handle their completion notifications as they arrive. Do not spawn one, wait for it, then spawn the next -- that serializes work that could have run at once.\n" +
