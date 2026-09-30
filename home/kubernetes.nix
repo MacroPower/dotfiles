@@ -86,6 +86,9 @@ in
       kubecolor = {
         enable = true;
         enableAlias = true;
+        # kubecolor defaults to preset "auto", which probes the terminal
+        # background and always resolves to dark under TERM=tmux-*.
+        settings.preset = if config.stylix.polarity == "light" then "light" else "dark";
       };
     };
   };
