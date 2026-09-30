@@ -56,6 +56,8 @@ In Claude Code, the Bash tool already enforces a timeout: 120000 ms
 parameter. For jobs that may run longer than 10 min, set
 `run_in_background: true` and use the `Read` tool to fetch captured
 stdout. The session stays unblocked and you're notified on completion.
+A background call stops at its `timeout` too: 1800000 ms (30 min) by
+default, up to 7200000 ms (2 h). Split a job that needs longer.
 Do not add a foreground `sleep` to wait for it: the completion
 notification is the signal. To block on a condition instead, put the
 poll loop inside the background call itself
@@ -198,7 +200,8 @@ Pick one pattern based on expected runtime:
   fclones group -s 1M src/ > /tmp/dups.txt 2>&1
   ```
 
-- **Asynchronous (any duration)** -- set `run_in_background: true`.
+- **Asynchronous (up to 2 h)** -- set `run_in_background: true`, plus
+  `timeout: 7200000` for a job that may pass 30 min.
   Stdout is captured; fetch it with the `Read` tool. The session stays
   unblocked and you're notified on completion. Required for jobs that
   may exceed 10 min. Keep `2>&1` on the command so progress messages on
