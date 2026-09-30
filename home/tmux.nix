@@ -37,7 +37,7 @@ let
         --border-label ' sesh ' \
         --prompt '> ' \
         --header 'sessions' \
-        --preview 'tmux capture-pane -ep -t {} 2>/dev/null || echo "(no preview)"' \
+        --preview 'sesh preview --watch {}' \
         --preview-window 'right:50%:wrap')
       [ -n "$selected" ] && sesh connect "$selected"
     '';
