@@ -10,17 +10,32 @@
 let
   rulesDir = ../configs/harper/rules;
 
-  # The rule name is the file stem, so the directory listing is the
-  # single source of truth for every `--only` list downstream.
-  ruleNames = map (lib.removeSuffix ".weir") (
-    lib.filter (lib.hasSuffix ".weir") (builtins.attrNames (builtins.readDir rulesDir))
+  # configs/harper/rules.toml lists every enabled rule under its tier,
+  # so the manifest is the single source of truth for the `--only`
+  # lists downstream and for the tier tag prose-lint prints. A name
+  # with a rules/<Name>.weir file is a Weir rule, ProseHeading is the
+  # awk check, and the rest are Harper built-ins. check.py fails the
+  # build when a .weir file is missing from the manifest.
+  manifestRules = builtins.fromTOML (builtins.readFile ../configs/harper/rules.toml);
+
+  tierOrder = [
+    "required"
+    "recommended"
+    "optional"
+  ];
+
+  # Rule name to tier label, capitalized the way prose-lint prints it.
+  tiers = lib.listToAttrs (
+    lib.concatMap (
+      tier: map (name: lib.nameValuePair name (lib.toSentenceCase tier)) manifestRules.${tier}.rules
+    ) tierOrder
   );
 
-  # Harper built-in rules enabled next to the Weir rules, one per line
-  # with # comments, each covered by a fixture pair in the check phase.
-  builtinRules = lib.filter (l: l != "" && !lib.hasPrefix "#" l) (
-    map (l: lib.trim l) (lib.splitString "\n" (builtins.readFile ../configs/harper/builtin-rules.txt))
-  );
+  allNames = builtins.attrNames tiers;
+
+  ruleNames = lib.filter (name: builtins.pathExists (rulesDir + "/${name}.weir")) allNames;
+
+  builtinRules = lib.filter (name: !(lib.elem name ruleNames) && name != "ProseHeading") allNames;
 
   manifest = builtins.toJSON {
     author = "Jacob Colvin";
@@ -63,7 +78,7 @@ stdenvNoCC.mkDerivation {
     for rule in rules/*.weir; do
       harper-cli test --no-color "$rule"
     done
-    python3 check.py prose.weirpack fixtures heading.awk builtin-rules.txt
+    python3 check.py prose.weirpack fixtures heading.awk rules.toml
     runHook postCheck
   '';
 
@@ -75,7 +90,7 @@ stdenvNoCC.mkDerivation {
   '';
 
   passthru = {
-    inherit ruleNames builtinRules;
+    inherit ruleNames builtinRules tiers;
   };
 
   meta = {

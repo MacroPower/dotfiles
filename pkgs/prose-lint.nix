@@ -48,11 +48,18 @@ let
   ];
 
   # The Weir rules plus the Harper built-ins listed in
-  # configs/harper/builtin-rules.txt. Both lists are fixture-checked
-  # when prose-weirpack builds.
+  # configs/harper/rules.toml. Both lists are fixture-checked when
+  # prose-weirpack builds.
   ruleNames = prose-weirpack.passthru.ruleNames ++ prose-weirpack.passthru.builtinRules;
   allRules = lib.concatStringsSep "," ruleNames;
   changeRules = lib.concatStringsSep "," (lib.filter (r: r != "ProseTense") ruleNames);
+
+  # Rule name to tier, one `Name=Tier` pair per line, for the awk step
+  # that tags each finding. The manifest covers every enabled rule, so
+  # a name missing from the map is a bug and tags as Required.
+  tierMap = lib.concatStringsSep "\n" (
+    lib.mapAttrsToList (name: tier: "${name}=${tier}") prose-weirpack.passthru.tiers
+  );
 in
 writeShellApplication {
   name = "prose-lint";
@@ -65,15 +72,17 @@ writeShellApplication {
     # prose-lint <file>    lint a markdown or source file
     # prose-lint --commit  lint a commit message read from stdin
     #
-    # Prints one `path:line:col: Kind::Rule: message` line per finding
-    # and exits 1 when any were printed, 0 with no output when the file
-    # is clean or is not a kind Harper parses. Exit 2 means harper-cli
-    # itself failed and its stderr was passed through.
+    # Prints one `path:line:col: [Tier] Kind::Rule: message` line per
+    # finding, Required findings first and then by line, and exits 1
+    # when any were printed, 0 with no output when the file is clean or
+    # is not a kind Harper parses. Exit 2 means harper-cli itself
+    # failed and its stderr was passed through.
 
     pack=${prose-weirpack}/share/harper/prose.weirpack
     heading=${prose-weirpack}/share/harper/heading.awk
     all_rules=${lib.escapeShellArg allRules}
     change_rules=${lib.escapeShellArg changeRules}
+    tier_map=${lib.escapeShellArg tierMap}
     known_extensions=${lib.escapeShellArg ("," + lib.concatStringsSep "," extensions + ",")}
 
     # harper-cli looks up a user dictionary under $HOME and prints a
@@ -98,11 +107,49 @@ writeShellApplication {
       printf '%s\n' "$out" | sed '/^$/d'
     }
 
+    # Inserts the `[Tier]` tag after `path:line:col:` on every finding,
+    # looking the rule up from its `Kind::Rule:` field, then orders the
+    # findings by tier and line. A rule missing from the map tags as
+    # Required, which fails safe.
+    tag() {
+      TIER_MAP="$tier_map" awk '
+        BEGIN {
+          n = split(ENVIRON["TIER_MAP"], pairs, "\n")
+          for (i = 1; i <= n; i++) {
+            eq = index(pairs[i], "=")
+            tier[substr(pairs[i], 1, eq - 1)] = substr(pairs[i], eq + 1)
+          }
+          rank["Required"] = 1
+          rank["Recommended"] = 2
+          rank["Optional"] = 3
+        }
+        {
+          line = $0
+          # Split off the `path:line:col:` prefix at the first
+          # `:digits:digits:` run so a colon in the path survives.
+          if (!match(line, /:[0-9]+:[0-9]+: /)) {
+            print line
+            next
+          }
+          prefix = substr(line, 1, RSTART + RLENGTH - 1)
+          rest = substr(line, RSTART + RLENGTH)
+          split(substr(line, RSTART + 1), pos, ":")
+          rule = ""
+          if (match(rest, /^[A-Za-z]+::[A-Za-z0-9]+:/)) {
+            rule = substr(rest, 1, RLENGTH - 1)
+            sub(/^[A-Za-z]+::/, "", rule)
+          }
+          t = (rule in tier) ? tier[rule] : "Required"
+          printf "%d\t%d\t%s[%s] %s\n", rank[t], pos[1], prefix, t, rest
+        }
+      ' | sort -t "$(printf '\t')" -k1,1n -k2,2n | cut -f3-
+    }
+
     stderr_file=$(mktemp)
     trap 'rm -f "$stderr_file"' EXIT
 
     if [ "''${1:-}" = "--commit" ]; then
-      out=$(grep -v '^#' | lint "$change_rules")
+      out=$(grep -v '^#' | lint "$change_rules" | tag)
       if [ -n "$out" ]; then
         printf '%s\n' "$out"
         exit 1
@@ -153,7 +200,7 @@ writeShellApplication {
     fi
 
     if [ -n "$out" ]; then
-      printf '%s\n' "$out"
+      printf '%s\n' "$out" | tag
       exit 1
     fi
     exit 0

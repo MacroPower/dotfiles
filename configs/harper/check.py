@@ -1,22 +1,26 @@
-"""Check every Prose rule and enabled built-in rule against its fixture pair.
+"""Check every rule in the tier manifest against its fixture pair.
 
-Usage: check.py <weirpack> <fixtures dir> <heading.awk> <builtin-rules.txt>
+Usage: check.py <weirpack> <fixtures dir> <heading.awk> <rules.toml>
 
-For each rule in the weirpack and each name in builtin-rules.txt,
-fixtures/<Rule>.bad.md must produce a <Rule> lint on every non-blank
-line and fixtures/<Rule>.good.md must produce none. heading.awk checks
-ProseHeading in place of Harper. A rule without a fixture pair fails, so
-a typo in a rule name cannot pass silently. Exits 1 with one line per
-failure.
+For each name under a tier in rules.toml, fixtures/<Rule>.bad.md must
+produce a <Rule> lint on every non-blank line and fixtures/<Rule>.good.md
+must produce none. heading.awk checks ProseHeading in place of Harper.
+A rule without a fixture pair fails, so a typo in a built-in name
+cannot pass silently. A Weir rule in the weirpack that the manifest
+does not list fails too, as does a name under two tiers or a tier key
+the manifest does not define, so an untiered rule cannot ship. Exits 1
+with one line per failure.
 """
 
 import json
 import subprocess
 import sys
+import tomllib
 import zipfile
 from pathlib import Path
 
 HEADING_RULE = "ProseHeading"
+TIERS = ("required", "recommended", "optional")
 
 
 def rule_names(pack: Path) -> list[str]:
@@ -24,13 +28,21 @@ def rule_names(pack: Path) -> list[str]:
         return sorted(Path(n).stem for n in zf.namelist() if n.endswith(".weir"))
 
 
-def builtin_names(listing: Path) -> list[str]:
-    names = []
-    for line in listing.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            names.append(line)
-    return names
+def manifest_rules(manifest: Path) -> tuple[list[str], list[str]]:
+    """Return every rule name in tier order and the manifest's failures."""
+    data = tomllib.loads(manifest.read_text())
+    names: list[str] = []
+    failures: list[str] = []
+    for key in data:
+        if key not in TIERS:
+            failures.append(f"{manifest}: unknown tier [{key}]")
+    for tier in TIERS:
+        for name in data.get(tier, {}).get("rules", []):
+            if name in names:
+                failures.append(f"{manifest}: {name} appears under two tiers")
+                continue
+            names.append(name)
+    return names, failures
 
 
 def harper_lines(pack: Path, rule: str, target: Path) -> set[int]:
@@ -110,10 +122,12 @@ def main(argv: list[str]) -> int:
     pack = Path(argv[1])
     fixtures = Path(argv[2])
     awk = Path(argv[3])
-    builtins = Path(argv[4])
+    manifest = Path(argv[4])
 
-    rules = rule_names(pack) + [HEADING_RULE] + builtin_names(builtins)
-    failures: list[str] = []
+    rules, failures = manifest_rules(manifest)
+    for weir in rule_names(pack):
+        if weir not in rules:
+            failures.append(f"{manifest}: {weir} has a .weir file but no tier")
     for rule in rules:
         if rule == HEADING_RULE:
             failures += check_rule(rule, fixtures, lambda t: awk_lines(awk, t))
