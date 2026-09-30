@@ -169,7 +169,6 @@
                 mcp-opentofu = ./tools/mcp-opentofu/package.nix;
                 leanspec-cli = ./pkgs/leanspec-cli.nix;
                 claude-powerline = ./pkgs/claude-powerline.nix;
-                claude-history = ./pkgs/claude-history.nix;
                 playwright-cli = ./pkgs/playwright-cli.nix;
                 comfyui = ./pkgs/comfyui.nix;
                 slugify = ./pkgs/slugify.nix;

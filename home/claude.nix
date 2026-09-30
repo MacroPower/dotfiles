@@ -3921,7 +3921,6 @@ in
         pkgs.mcp-fetch
         pkgs.mcp-kubectx
         workmuxWrapped
-        pkgs.claude-history
         pkgs.llm-agents.git-surgeon
         pkgs.slugify
       ]

@@ -34,7 +34,6 @@ let
     mcp-opentofu = final.callPackage paths.mcp-opentofu { };
     leanspec-cli = final.callPackage paths.leanspec-cli { };
     claude-powerline = final.callPackage paths.claude-powerline { };
-    claude-history = final.callPackage paths.claude-history { };
     playwright-cli = final.callPackage paths.playwright-cli { };
     comfyui = final.callPackage paths.comfyui { };
     slugify = final.callPackage paths.slugify { };
