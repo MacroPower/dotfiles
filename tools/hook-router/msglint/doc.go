@@ -3,8 +3,16 @@
 // a command carries a commit message (`git commit -m`, `-F`, or a
 // `$(cat <<EOF)` substitution) or a pull request title and body
 // (`gh pr create --title --body`), the text goes to an external linter
-// on stdin, and any findings come back as a deny reason so Claude
+// on stdin, and the findings come back as a deny reason so Claude
 // rewrites the message before the command runs.
+//
+// The finding's [linter.Tier] sets how hard the deny pushes. A
+// Required finding denies the command every time. A Recommended
+// finding, with no Required one beside it, denies once. [Check] hands
+// the caller a waiver key for the message and the caller records it.
+// The identical command passes on its next run, which is how Claude
+// keeps a finding it judges a false positive. Optional findings never
+// deny on their own and only appear in a reason another tier raised.
 //
 // The linter sees literal text only. A message built from a parameter
 // expansion or an arbitrary command substitution has no text to read

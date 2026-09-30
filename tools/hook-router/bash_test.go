@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -19,6 +21,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/msglint"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/sleepguard"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
 )
 
 // bashInput builds a PreToolUse:Bash payload with the given
@@ -732,6 +735,8 @@ func TestHandleBashMessageLint(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 
 	flagDeliberate := msglint.Config{Command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:3:1: Style::ProseCertificate: certificate'; exit 1; }; exit 0`}}
+	flagPassive := msglint.Config{Command: []string{"sh", "-c", `grep -q passive && { echo '<stdin>:3:1: [Recommended] Style::ProsePassive: passive'; exit 1; }; exit 0`}}
+	flagThat := msglint.Config{Command: []string{"sh", "-c", `grep -q thatthat && { echo '<stdin>:3:1: [Optional] Repetition::RedundantThat: that'; exit 1; }; exit 0`}}
 
 	cases := map[string]struct {
 		command   string
@@ -775,6 +780,14 @@ func TestHandleBashMessageLint(t *testing.T) {
 		"disabled lint passes everything": {
 			command: `git commit -m "This is deliberate."`,
 		},
+		"Optional finding alone passes": {
+			command: `git commit -m "The rule thatthat matched."`,
+			lint:    flagThat,
+		},
+		"Recommended finding without a store falls through": {
+			command: `git commit -m "This is passive."`,
+			lint:    flagPassive,
+		},
 	}
 
 	for name, tc := range cases {
@@ -815,6 +828,68 @@ func TestHandleBashMessageLint(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestHandleBashMessageLintWaiver runs the same Recommended-only commit
+// three times against one store: the first run is denied and claims
+// the waiver, the identical rerun passes, and a changed message is
+// denied again as a new claim.
+func TestHandleBashMessageLintWaiver(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.DiscardHandler)
+	dbPath := filepath.Join(t.TempDir(), "state.db")
+
+	cfg := config{
+		commandRules: canonicalRules(),
+		messageLint:  msglint.Config{Command: []string{"sh", "-c", `grep -q passive && { echo '<stdin>:3:1: [Recommended] Style::ProsePassive: passive'; exit 1; }; exit 0`}},
+		openStore: func(ctx context.Context) (*state.Store, error) {
+			return state.Open(ctx, dbPath)
+		},
+	}
+
+	input := func(msg string) []byte {
+		t.Helper()
+
+		b, err := json.Marshal(map[string]any{
+			"session_id": "s1",
+			"tool_input": map[string]any{"command": `git commit -m "` + msg + `"`},
+		})
+		require.NoError(t, err)
+
+		return b
+	}
+
+	var first bytes.Buffer
+
+	require.NoError(t, handleBash(input("This is passive."), &first, cfg, logger))
+
+	hso := preToolDecision(t, &first)
+	assert.Equal(t, "deny", hso["permissionDecision"])
+
+	reason, ok := hso["permissionDecisionReason"].(string)
+	require.True(t, ok)
+	assert.Contains(t, reason, "Recommended: Fix each unless")
+	assert.Contains(t, reason, "runs again unchanged")
+
+	var rerun bytes.Buffer
+
+	require.NoError(t, handleBash(input("This is passive."), &rerun, cfg, logger))
+	assert.Empty(t, rerun.Bytes(), "the identical rerun must pass")
+
+	var changed bytes.Buffer
+
+	require.NoError(t, handleBash(input("This is passive too."), &changed, cfg, logger))
+	assert.Equal(t, "deny", preToolDecision(t, &changed)["permissionDecision"], "a changed message claims a new waiver")
+
+	var broken bytes.Buffer
+
+	cfg.openStore = func(context.Context) (*state.Store, error) {
+		return nil, errors.New("disk on fire")
+	}
+
+	require.NoError(t, handleBash(input("This is passive again."), &broken, cfg, logger))
+	assert.Empty(t, broken.Bytes(), "a store error must fail open")
 }
 
 // postBashPayload builds a PostToolUse:Bash JSON payload with the

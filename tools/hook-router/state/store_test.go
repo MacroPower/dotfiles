@@ -158,6 +158,23 @@ func TestStoreResetSession(t *testing.T) {
 	assert.True(t, claimed, "reset must drop the teammate's idle block")
 }
 
+func TestStoreResetSession_DropsMessageLintWaivers(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	claimed, err := store.MarkMessageLintWarned(ctx, "s1", "hash-a")
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	require.NoError(t, store.ResetSession(ctx, "s1"))
+
+	claimed, err = store.MarkMessageLintWarned(ctx, "s1", "hash-a")
+	require.NoError(t, err)
+	assert.True(t, claimed, "reset must drop the session's message lint waivers")
+}
+
 func TestStoreClearSession(t *testing.T) {
 	t.Parallel()
 
@@ -183,6 +200,23 @@ func TestStoreClearSession(t *testing.T) {
 	claimed, err = store.MarkTeammateIdleBlocked(ctx, "s1", "researcher")
 	require.NoError(t, err)
 	assert.True(t, claimed, "clear must drop the teammate's idle block")
+}
+
+func TestStoreClearSession_DropsMessageLintWaivers(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	claimed, err := store.MarkMessageLintWarned(ctx, "s1", "hash-a")
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	require.NoError(t, store.ClearSession(ctx, "s1"))
+
+	claimed, err = store.MarkMessageLintWarned(ctx, "s1", "hash-a")
+	require.NoError(t, err)
+	assert.True(t, claimed, "clear must drop the session's message lint waivers")
 }
 
 func TestStoreIndependentSessions(t *testing.T) {
@@ -388,6 +422,18 @@ func TestPruneStale_PrunesSessionScopedTables_Beyond24h(t *testing.T) {
 	_, err = store.MarkTeammateIdleBlocked(ctx, "stale-sess", "reviewer")
 	require.NoError(t, err)
 
+	// Fresh and stale message lint waivers follow the same window.
+	_, err = store.MarkMessageLintWarned(ctx, "fresh-sess", "hash-fresh")
+	require.NoError(t, err)
+
+	_, err = store.MarkMessageLintWarned(ctx, "stale-sess", "hash-stale")
+	require.NoError(t, err)
+
+	_, err = store.DB().ExecContext(ctx,
+		`UPDATE message_lint_waivers SET created_at = datetime('now', '-25 hours') WHERE session_id = ?`,
+		"stale-sess")
+	require.NoError(t, err)
+
 	_, err = store.DB().ExecContext(ctx,
 		`UPDATE subagent_starts SET created_at = datetime('now', '-25 hours') WHERE session_id = ?`,
 		"stale-sess")
@@ -400,7 +446,7 @@ func TestPruneStale_PrunesSessionScopedTables_Beyond24h(t *testing.T) {
 
 	require.NoError(t, store.PruneStale(ctx))
 
-	var pendingCount, sessionCount, subagentCount, idleBlockCount int
+	var pendingCount, sessionCount, subagentCount, idleBlockCount, waiverCount int
 
 	require.NoError(t, store.DB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM pending_plans`).Scan(&pendingCount))
@@ -417,6 +463,10 @@ func TestPruneStale_PrunesSessionScopedTables_Beyond24h(t *testing.T) {
 	require.NoError(t, store.DB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM teammate_idle_blocks`).Scan(&idleBlockCount))
 	assert.Equal(t, 1, idleBlockCount, "stale idle block must be pruned, fresh must survive")
+
+	require.NoError(t, store.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM message_lint_waivers`).Scan(&waiverCount))
+	assert.Equal(t, 1, waiverCount, "stale waiver must be pruned, fresh must survive")
 }
 
 // TestStore_ConcurrentWriters_DistinctSessions exercises inter-process
@@ -1205,6 +1255,78 @@ func TestEnsureSchema_UpgradesFromV7(t *testing.T) {
 	claimed, err := store.MarkTeammateIdleBlocked(t.Context(), "s1", "researcher")
 	require.NoError(t, err)
 	assert.True(t, claimed)
+}
+
+// seedV8 opens a fresh DB (walking every migration so every table
+// lands at the current shape), then undoes the v8→v9 step by dropping
+// message_lint_waivers and rolling user_version back to 8.
+func seedV8(t *testing.T, dbPath string) {
+	t.Helper()
+
+	seed, err := state.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+
+	for _, stmt := range []string{
+		`DROP TABLE IF EXISTS message_lint_waivers`,
+		`PRAGMA user_version = 8`,
+	} {
+		_, err = seed.DB().ExecContext(t.Context(), stmt)
+		require.NoError(t, err, stmt)
+	}
+
+	require.NoError(t, seed.Close())
+}
+
+// TestEnsureSchema_UpgradesFromV8 seeds a DB at the v8 shape (no
+// message_lint_waivers), reopens it, and checks that the v8→v9 step
+// lands: user_version reaches the current state.SchemaVersion and the
+// added table is usable.
+func TestEnsureSchema_UpgradesFromV8(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "v8.db")
+
+	seedV8(t, dbPath)
+
+	store, err := state.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, store.Close())
+	})
+
+	var version int
+
+	require.NoError(t, store.DB().QueryRowContext(t.Context(),
+		`PRAGMA user_version`).Scan(&version))
+	assert.Equal(t, state.SchemaVersion, version, "user_version must reach current state.SchemaVersion after migration")
+
+	claimed, err := store.MarkMessageLintWarned(t.Context(), "s1", "hash-a")
+	require.NoError(t, err)
+	assert.True(t, claimed)
+}
+
+func TestStoreMarkMessageLintWarned(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	claimed, err := store.MarkMessageLintWarned(ctx, "s1", "hash-a")
+	require.NoError(t, err)
+	assert.True(t, claimed, "the first call claims the deny")
+
+	claimed, err = store.MarkMessageLintWarned(ctx, "s1", "hash-a")
+	require.NoError(t, err)
+	assert.False(t, claimed, "the second call for the same message must not re-claim")
+
+	claimed, err = store.MarkMessageLintWarned(ctx, "s1", "hash-b")
+	require.NoError(t, err)
+	assert.True(t, claimed, "a different message in the same session claims its own deny")
+
+	claimed, err = store.MarkMessageLintWarned(ctx, "s2", "hash-a")
+	require.NoError(t, err)
+	assert.True(t, claimed, "the same message in a different session claims its own deny")
 }
 
 func TestStoreRecordSubagentStart(t *testing.T) {

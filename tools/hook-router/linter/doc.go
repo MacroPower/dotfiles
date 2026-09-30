@@ -13,4 +13,13 @@
 // to log and swallow. [Ranges] and [Filter] narrow findings to the
 // lines an edit touched, and [Format] renders them for the hook
 // channel.
+//
+// A finding may carry a `[Tier]` tag after `path:line:col:`, which
+// prose-lint prints from its rule manifest. The [Tier] sets what the
+// finding asks of Claude. A Required finding gets fixed, a Recommended
+// finding gets fixed unless the rule misread the sentence, and an
+// Optional finding gets fixed where the rewrite reads better. [Format]
+// groups findings under one header per tier so the instruction sits
+// next to the lines it covers, and an untagged line is Required so a
+// linter without tiers keeps its full weight.
 package linter

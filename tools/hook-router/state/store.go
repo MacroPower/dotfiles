@@ -48,11 +48,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 // wraps the whole block in BEGIN IMMEDIATE and re-checks user_version
 // after acquiring the write lock.
 //
-// `bash_failures`, `subagent_starts`, and `teammate_idle_blocks` are
-// created with CREATE TABLE IF NOT EXISTS, which is re-runnable; the
-// "duplicate column name" guard only matches ALTER, so it does not
-// apply there. Concurrent migrators are still serialized by the
-// BEGIN IMMEDIATE wrapper in [*Store.ensureSchema].
+// CREATE TABLE IF NOT EXISTS creates `bash_failures`,
+// `subagent_starts`, `teammate_idle_blocks`, and
+// `message_lint_waivers`, which is re-runnable; the "duplicate column
+// name" guard only matches ALTER, so it does not apply there.
+// Concurrent migrators are still serialized by the BEGIN IMMEDIATE
+// wrapper in [*Store.ensureSchema].
 var migrations = []string{
 	`ALTER TABLE sessions ADD COLUMN review_head_sha TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE sessions ADD COLUMN review_wt_hash TEXT NOT NULL DEFAULT ''`,
@@ -122,6 +123,16 @@ var migrations = []string{
 	    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
 	    PRIMARY KEY (session_id, teammate_name)
 	)`,
+	// message_lint_waivers: one row per commit or pull request message
+	// whose Recommended lint findings the Bash hook has already denied
+	// once. The hash is the SHA-256 of the message kind and text, so
+	// the identical command on its next run finds the row and passes.
+	`CREATE TABLE IF NOT EXISTS message_lint_waivers (
+	    session_id   TEXT NOT NULL,
+	    message_hash TEXT NOT NULL,
+	    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+	    PRIMARY KEY (session_id, message_hash)
+	)`,
 }
 
 const (
@@ -131,7 +142,7 @@ const (
 
 // SchemaVersion is the PRAGMA user_version a fully migrated database
 // reports. [Open] migrates older databases forward to it.
-const SchemaVersion = 8
+const SchemaVersion = 9
 
 // Store manages plan-guard session state in a SQLite database.
 type Store struct {
@@ -304,14 +315,14 @@ func (s *Store) MaybePruneStale(ctx context.Context) (bool, error) {
 }
 
 // PruneStale removes stale rows: `sessions`, `pending_plans`,
-// `subagent_starts`, and `teammate_idle_blocks` past 24 hours, and
-// `bash_failures` past [bashFailureRetentionDays] (the failure history
-// is kept longer than session state on purpose, since analysis tools
-// may want to look back across many sessions). The three session-scoped
-// tables share the sessions window because nothing outside the session
-// that wrote them reads them. The deterministic entry point behind
-// [*Store.MaybePruneStale], for callers (and tests) that want cleanup
-// without the probabilistic gate.
+// `subagent_starts`, `teammate_idle_blocks`, and `message_lint_waivers`
+// past 24 hours, and `bash_failures` past [bashFailureRetentionDays]
+// (the failure history outlives session state on purpose, since
+// analysis tools may want to look back across many sessions). The
+// session-scoped tables share the sessions window because nothing
+// outside the session that wrote them reads them. The deterministic
+// entry point behind [*Store.MaybePruneStale], for callers (and tests)
+// that want cleanup without the probabilistic gate.
 func (s *Store) PruneStale(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM sessions WHERE updated_at < datetime('now', '-24 hours')`)
@@ -335,6 +346,12 @@ func (s *Store) PruneStale(ctx context.Context) error {
 		`DELETE FROM teammate_idle_blocks WHERE created_at < datetime('now', '-24 hours')`)
 	if err != nil {
 		return fmt.Errorf("pruning stale teammate idle blocks: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM message_lint_waivers WHERE created_at < datetime('now', '-24 hours')`)
+	if err != nil {
+		return fmt.Errorf("pruning stale message lint waivers: %w", err)
 	}
 
 	// bashFailureRetentionDays is a trusted int constant; SQLite's
@@ -432,7 +449,8 @@ func (s *Store) SetPlanPath(ctx context.Context, id, planPath, baseSHA string) e
 // into ResetSession.
 //
 // The session's `teammate_idle_blocks` rows go too, so a new plan cycle
-// re-arms the TeammateIdle gate for every teammate it already blocked.
+// re-arms the TeammateIdle gate for every teammate it already blocked,
+// and so do its `message_lint_waivers` rows.
 func (s *Store) ResetSession(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO sessions (session_id)
@@ -454,6 +472,12 @@ func (s *Store) ResetSession(ctx context.Context, id string) error {
 		`DELETE FROM teammate_idle_blocks WHERE session_id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("resetting teammate idle blocks: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM message_lint_waivers WHERE session_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("resetting message lint waivers: %w", err)
 	}
 
 	return nil
@@ -502,9 +526,9 @@ func (s *Store) InPlanMode(ctx context.Context, id string) (bool, error) {
 }
 
 // ClearSession removes a session entirely, including the
-// `teammate_idle_blocks` rows it owns. An answered post-impl question
-// clears the session, which re-arms the TeammateIdle gate for the next
-// plan cycle.
+// `teammate_idle_blocks` and `message_lint_waivers` rows it owns. An
+// answered post-impl question clears the session, which re-arms the
+// TeammateIdle gate for the next plan cycle.
 func (s *Store) ClearSession(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM sessions WHERE session_id = ?`, id)
@@ -516,6 +540,12 @@ func (s *Store) ClearSession(ctx context.Context, id string) error {
 		`DELETE FROM teammate_idle_blocks WHERE session_id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("clearing teammate idle blocks: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM message_lint_waivers WHERE session_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("clearing message lint waivers: %w", err)
 	}
 
 	return nil
@@ -706,6 +736,32 @@ func (s *Store) MarkTeammateIdleBlocked(ctx context.Context, id, teammate string
 	n, err := res.RowsAffected()
 	if err != nil {
 		return false, fmt.Errorf("reading teammate idle block claim: %w", err)
+	}
+
+	return n > 0, nil
+}
+
+// MarkMessageLintWarned claims the one deny a commit or pull request
+// message with Recommended lint findings gets per session. It reports
+// true when this call claimed the deny and false when an earlier call
+// already claimed it for the same message hash, which is when the
+// caller lets the command through.
+//
+// The claim is a single INSERT OR IGNORE, so two runs racing on the
+// same key cannot both read true. [*Store.ClearSession] and
+// [*Store.ResetSession] drop the rows, and [*Store.PruneStale] removes
+// them on the 24-hour window.
+func (s *Store) MarkMessageLintWarned(ctx context.Context, id, hash string) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO message_lint_waivers (session_id, message_hash)
+		 VALUES (?, ?)`, id, hash)
+	if err != nil {
+		return false, fmt.Errorf("marking message lint waiver: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("reading message lint waiver claim: %w", err)
 	}
 
 	return n > 0, nil

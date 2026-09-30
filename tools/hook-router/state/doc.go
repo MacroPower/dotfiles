@@ -1,8 +1,10 @@
 // Package state persists hook-router's session state in SQLite:
 // plan-guard lifecycle rows keyed by session_id, pending plan handoffs
 // keyed by the Claude Code window PID, a log of failed Bash commands
-// for later analysis, the subagents each session spawned, and the
-// teammates the idle gate has already blocked once.
+// for later analysis, the subagents each session spawned, the
+// teammates the idle gate has already blocked once, and the commit and
+// pull request messages the lint has already denied once for
+// Recommended findings.
 //
 // Everything keyed by session_id shares that key's lifecycle: clearing
 // or resetting a session drops the rows that gate its next plan cycle,

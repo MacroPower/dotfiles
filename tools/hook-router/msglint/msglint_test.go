@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/linter"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/msglint"
 )
 
@@ -170,7 +171,7 @@ func TestLint(t *testing.T) {
 	cases := map[string]struct {
 		command []string
 		timeout string
-		want    []string
+		want    []linter.Finding
 		err     bool
 	}{
 		"exit 0 is clean": {
@@ -179,7 +180,16 @@ func TestLint(t *testing.T) {
 		},
 		"exit 1 returns stdout lines": {
 			command: []string{"sh", "-c", `cat >/dev/null; printf '<stdin>:1:1: bad\n\n<stdin>:3:1: worse\n'; exit 1`},
-			want:    []string{"<stdin>:1:1: bad", "<stdin>:3:1: worse"},
+			want: []linter.Finding{
+				{Line: 1, Text: "<stdin>:1:1: bad"},
+				{Line: 3, Text: "<stdin>:3:1: worse"},
+			},
+		},
+		"tier tags are parsed": {
+			command: []string{"sh", "-c", `cat >/dev/null; printf '<stdin>:1:1: [Optional] bad\n'; exit 1`},
+			want: []linter.Finding{
+				{Line: 1, Text: "<stdin>:1:1: bad", Tier: linter.Optional},
+			},
 		},
 		"exit 1 without output is clean": {
 			command: []string{"sh", "-c", `cat >/dev/null; exit 1`},
@@ -187,7 +197,7 @@ func TestLint(t *testing.T) {
 		},
 		"stdin carries the text": {
 			command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:1:1: certificate'; exit 1; }; exit 0`},
-			want:    []string{"<stdin>:1:1: certificate"},
+			want:    []linter.Finding{{Line: 1, Text: "<stdin>:1:1: certificate"}},
 		},
 		"exit 2 fails": {
 			command: []string{"sh", "-c", `echo boom >&2; exit 2`},
@@ -234,31 +244,82 @@ func TestLintDisabled(t *testing.T) {
 	assert.Nil(t, got)
 }
 
+// tierLinter builds a fake linter that reports one finding per tag it
+// finds in the message: `deliberate` is Required, `passive` is
+// Recommended, and `thatthat` is Optional, each on its own line.
+func tierLinter() msglint.Config {
+	return msglint.Config{Command: []string{"sh", "-c", `
+		msg=$(cat)
+		rc=0
+		case "$msg" in *deliberate*) echo '<stdin>:3:1: [Required] Style::ProseCertificate: certificate'; rc=1;; esac
+		case "$msg" in *passive*) echo '<stdin>:4:1: [Recommended] Style::ProsePassive: passive'; rc=1;; esac
+		case "$msg" in *thatthat*) echo '<stdin>:5:1: [Optional] Repetition::RedundantThat: that'; rc=1;; esac
+		exit $rc
+	`}}
+}
+
 func TestCheck(t *testing.T) {
 	t.Parallel()
 
-	flagDeliberate := msglint.Config{Command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:3:1: Style::ProseCertificate: certificate'; exit 1; }; exit 0`}}
+	untagged := msglint.Config{Command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:3:1: Style::ProseCertificate: certificate'; exit 1; }; exit 0`}}
 
 	cases := map[string]struct {
-		command    string
-		cfg        msglint.Config
-		wantDeny   bool
-		wantReason string
-		err        bool
+		command     string
+		cfg         msglint.Config
+		wantDeny    bool
+		wantWaiver  bool
+		wantReason  []string
+		absentLines []string
+		err         bool
 	}{
-		"dirty commit is denied with the findings": {
+		"Required finding denies": {
 			command:    "git commit -m \"$(cat <<'EOF'\nfix: a\n\nThis is deliberate.\nEOF\n)\"",
-			cfg:        flagDeliberate,
+			cfg:        tierLinter(),
 			wantDeny:   true,
-			wantReason: "prose-lint: 1 finding in the commit message.",
+			wantReason: []string{"prose-lint: 1 finding in the commit message.", "Required: Fix each.", "<stdin>:3:1:"},
+		},
+		"untagged finding is Required and denies": {
+			command:    `git commit -m "This is deliberate."`,
+			cfg:        untagged,
+			wantDeny:   true,
+			wantReason: []string{"Required: Fix each.", "<stdin>:3:1: Style::ProseCertificate"},
+		},
+		"Recommended finding alone returns a waiver key": {
+			command:    `git commit -m "This is passive."`,
+			cfg:        tierLinter(),
+			wantWaiver: true,
+			wantReason: []string{"Recommended: Fix each unless", "<stdin>:4:1:", "runs again unchanged"},
+		},
+		"Optional finding alone passes": {
+			command: `git commit -m "The rule thatthat matched."`,
+			cfg:     tierLinter(),
+		},
+		"Required beside Recommended and Optional denies and lists all three": {
+			command:     `git commit -m "deliberate passive thatthat"`,
+			cfg:         tierLinter(),
+			wantDeny:    true,
+			wantReason:  []string{"3 findings", "Required: Fix each.\n<stdin>:3:1:", "Recommended: Fix each unless the finding misreads the sentence.\n<stdin>:4:1:", "Optional: Fix each where the rewrite reads better.\n<stdin>:5:1:"},
+			absentLines: []string{"runs again unchanged"},
+		},
+		"Recommended beside Optional waives and lists both": {
+			command:    `git commit -m "passive thatthat"`,
+			cfg:        tierLinter(),
+			wantWaiver: true,
+			wantReason: []string{"<stdin>:4:1:", "<stdin>:5:1:", "runs again unchanged"},
+		},
+		"Required in one message beats a waiver in another": {
+			command:    `git commit -m "This is deliberate." && gh pr create -t "feat: a" -b "This is passive."`,
+			cfg:        tierLinter(),
+			wantDeny:   true,
+			wantReason: []string{"in the commit message.", "in the pull request.", "<stdin>:3:1:", "<stdin>:4:1:"},
 		},
 		"clean commit passes": {
 			command: `git commit -m "fix: retry the job"`,
-			cfg:     flagDeliberate,
+			cfg:     tierLinter(),
 		},
 		"command without a message passes": {
 			command: `git status`,
-			cfg:     flagDeliberate,
+			cfg:     tierLinter(),
 		},
 		"disabled config passes everything": {
 			command: `git commit -m "This is deliberate."`,
@@ -266,9 +327,9 @@ func TestCheck(t *testing.T) {
 		},
 		"dirty pull request names its kind": {
 			command:    `gh pr create -t "feat: a" -b "This is deliberate."`,
-			cfg:        flagDeliberate,
+			cfg:        tierLinter(),
 			wantDeny:   true,
-			wantReason: "in the pull request.",
+			wantReason: []string{"in the pull request."},
 		},
 		"linter crash returns the error": {
 			command: `git commit -m "fix: a"`,
@@ -281,7 +342,7 @@ func TestCheck(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			reason, deny, err := msglint.Check(t.Context(), parse(t, tc.command), tc.cfg)
+			res, err := msglint.Check(t.Context(), parse(t, tc.command), tc.cfg)
 			if tc.err {
 				require.ErrorIs(t, err, msglint.ErrLintFailed)
 
@@ -289,14 +350,43 @@ func TestCheck(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			assert.Equal(t, tc.wantDeny, deny)
+			assert.Equal(t, tc.wantDeny, res.Deny)
+			assert.Equal(t, tc.wantWaiver, res.WaiverKey != "", res.WaiverKey)
 
-			if tc.wantDeny {
-				assert.Contains(t, reason, tc.wantReason)
-				assert.Contains(t, reason, "<stdin>:3:1:")
-			} else {
-				assert.Empty(t, reason)
+			if !tc.wantDeny && !tc.wantWaiver {
+				assert.Equal(t, msglint.Result{}, res)
+
+				return
+			}
+
+			for _, want := range tc.wantReason {
+				assert.Contains(t, res.Reason, want)
+			}
+
+			for _, absent := range tc.absentLines {
+				assert.NotContains(t, res.Reason, absent)
 			}
 		})
 	}
+}
+
+func TestCheckWaiverKey(t *testing.T) {
+	t.Parallel()
+
+	cfg := tierLinter()
+
+	first, err := msglint.Check(t.Context(), parse(t, `git commit -m "This is passive."`), cfg)
+	require.NoError(t, err)
+
+	same, err := msglint.Check(t.Context(), parse(t, `git commit --message "This is passive."`), cfg)
+	require.NoError(t, err)
+	assert.Equal(t, first.WaiverKey, same.WaiverKey, "the key follows the message text, not the flag spelling")
+
+	other, err := msglint.Check(t.Context(), parse(t, `git commit -m "This is passive too."`), cfg)
+	require.NoError(t, err)
+	assert.NotEqual(t, first.WaiverKey, other.WaiverKey)
+
+	pr, err := msglint.Check(t.Context(), parse(t, `gh pr create -t "This is passive."`), cfg)
+	require.NoError(t, err)
+	assert.NotEqual(t, first.WaiverKey, pr.WaiverKey, "the kind is part of the key")
 }

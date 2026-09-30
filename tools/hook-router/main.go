@@ -101,6 +101,12 @@ import (
 // messageLint configures the [handleBash] commit-message and
 // pull-request lint (see the msglint package). Its zero value is a
 // disabled linter, so a bare config{} test literal is a no-op.
+//
+// openStore opens the SQLite store on demand for the one PreToolUse:Bash
+// path that needs it, the message-lint waiver for a Recommended
+// finding. [eventNeedsStore] keeps the store closed for PreToolUse:Bash
+// so the hot path skips the open, and this opener is how the handler
+// reaches it anyway. nil disables the waiver, which fails open.
 type config struct {
 	postImpl       *postimpl.Catalog
 	commandRules   *cmdrules.Engine
@@ -112,6 +118,7 @@ type config struct {
 	searchRewrite  searchrewrite.Config
 	sleepGuard     sleepguard.Config
 	messageLint    msglint.Config
+	openStore      func(context.Context) (*state.Store, error)
 	commitSkills   []string
 	kubeconfigPath string
 	claudePID      string
@@ -323,6 +330,13 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.sleepGuard = sleepGuard
 	cfg.messageLint = messageLint
 	cfg.autoAllow = autoAllow
+
+	if dbPath != "" {
+		cfg.openStore = func(ctx context.Context) (*state.Store, error) {
+			return state.Open(ctx, dbPath)
+		}
+	}
+
 	cfg.skipPlanReview = skipPlanReview
 	cfg.enforceTypography = enforceTypography
 
@@ -381,7 +395,7 @@ func run(
 	case "PreToolUse":
 		switch tool {
 		case "Bash":
-			return handleBash(input, stdout, cfg, logger)
+			return handleBashCtx(ctx, input, stdout, cfg, logger)
 		case "MCP":
 			// Routing sentinel from the mcp__.* hook matcher; the
 			// real tool name comes from the stdin payload, since
@@ -511,7 +525,7 @@ func run(
 
 	case "":
 		// Backward compat: no --event flag, treat as Bash PreToolUse.
-		return handleBash(input, stdout, cfg, logger)
+		return handleBashCtx(ctx, input, stdout, cfg, logger)
 
 	default:
 		// An unrecognized event must not reach a handler. Falling

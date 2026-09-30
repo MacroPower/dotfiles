@@ -193,6 +193,32 @@ func TestParseFindings(t *testing.T) {
 				{Line: 10, Text: "/a/b.md:10:4: Style::Y: worse"},
 			},
 		},
+		"tier tag is parsed and stripped": {
+			out: "/a.md:3:1: [Required] Style::X: bad\n/a.md:4:1: [Recommended] Style::Y: shape\n/a.md:5:1: [Optional] Repetition::Z: maybe\n",
+			want: []linter.Finding{
+				{Line: 3, Text: "/a.md:3:1: Style::X: bad", Tier: linter.Required},
+				{Line: 4, Text: "/a.md:4:1: Style::Y: shape", Tier: linter.Recommended},
+				{Line: 5, Text: "/a.md:5:1: Repetition::Z: maybe", Tier: linter.Optional},
+			},
+		},
+		"untagged line is Required": {
+			out: "/a.md:3:1: Style::X: bad\n",
+			want: []linter.Finding{
+				{Line: 3, Text: "/a.md:3:1: Style::X: bad", Tier: linter.Required},
+			},
+		},
+		"unknown tag is kept in the text": {
+			out: "/a.md:3:1: [Nope] Style::X: bad\n",
+			want: []linter.Finding{
+				{Line: 3, Text: "/a.md:3:1: [Nope] Style::X: bad", Tier: linter.Required},
+			},
+		},
+		"tagged path with a colon": {
+			out: "/a/c:d.md:7:1: [Optional] msg\n",
+			want: []linter.Finding{
+				{Line: 7, Text: "/a/c:d.md:7:1: msg", Tier: linter.Optional},
+			},
+		},
 		"path with a colon still parses the first digits pair": {
 			out: "/a/c:d.md:7:1: msg\n",
 			want: []linter.Finding{
@@ -316,7 +342,37 @@ func TestFormat(t *testing.T) {
 		t.Parallel()
 
 		got := linter.Format("/a.md", []linter.Finding{{Line: 1, Text: "/a.md:1:1: msg"}}, linter.MaxFindings)
-		assert.Equal(t, "prose-lint: 1 finding in /a.md. Fix each before continuing.\n/a.md:1:1: msg", got)
+		assert.Equal(t, "prose-lint: 1 finding in /a.md.\nRequired: Fix each.\n/a.md:1:1: msg", got)
+	})
+
+	t.Run("findings group under one header per tier in tier order", func(t *testing.T) {
+		t.Parallel()
+
+		findings := []linter.Finding{
+			{Line: 1, Text: "opt", Tier: linter.Optional},
+			{Line: 2, Text: "req", Tier: linter.Required},
+			{Line: 3, Text: "rec", Tier: linter.Recommended},
+			{Line: 4, Text: "req2", Tier: linter.Required},
+		}
+
+		got := linter.Format("/a.md", findings, linter.MaxFindings)
+		assert.Equal(t, "prose-lint: 4 findings in /a.md.\n"+
+			"Required: Fix each.\nreq\nreq2\n"+
+			"Recommended: Fix each unless the finding misreads the sentence.\nrec\n"+
+			"Optional: Fix each where the rewrite reads better.\nopt", got)
+	})
+
+	t.Run("truncation keeps Required findings and never ends on a header", func(t *testing.T) {
+		t.Parallel()
+
+		findings := []linter.Finding{
+			{Line: 1, Text: "opt", Tier: linter.Optional},
+			{Line: 2, Text: "req", Tier: linter.Required},
+			{Line: 3, Text: "rec", Tier: linter.Recommended},
+		}
+
+		got := linter.Format("/a.md", findings, 1)
+		assert.Equal(t, "prose-lint: 3 findings in /a.md.\nRequired: Fix each.\nreq\n... and 2 more", got)
 	})
 
 	t.Run("count limit truncates with a trailer", func(t *testing.T) {
@@ -328,7 +384,7 @@ func TestFormat(t *testing.T) {
 		}
 
 		got := linter.Format("/a.md", findings, 2)
-		assert.Equal(t, "prose-lint: 5 findings in /a.md. Fix each before continuing.\nline\nline\n... and 3 more", got)
+		assert.Equal(t, "prose-lint: 5 findings in /a.md.\nRequired: Fix each.\nline\nline\n... and 3 more", got)
 	})
 
 	t.Run("byte limit truncates with a trailer", func(t *testing.T) {

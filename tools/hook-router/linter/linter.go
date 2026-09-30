@@ -44,7 +44,75 @@ var (
 	// `path:line:col: message` finding. The lazy path match lets the
 	// first `:digits:` pair after it win.
 	findingLine = regexp.MustCompile(`^.*?:(\d+):`)
+
+	// findingTier extracts the `[Tier]` tag prose-lint prints after
+	// `path:line:col:` and captures the text around it so the tag can
+	// be stripped. The lazy path match mirrors findingLine.
+	findingTier = regexp.MustCompile(`^(.*?:\d+:\d+: )\[(Required|Recommended|Optional)\] (.*)$`)
 )
+
+// Tier is how hard a finding pushes. prose-lint tags each finding with
+// its rule's tier, and the file-write hook and the message lint read
+// the tag to decide what to ask of Claude.
+type Tier int
+
+const (
+	// Required findings have a mechanical fix. A file write asks for
+	// each fix, and a commit or pull request message with one is
+	// denied every time.
+	Required Tier = iota
+	// Recommended findings come from shape detectors that can misread
+	// a sentence. A file write asks for the fix unless the rule
+	// misread the sentence, and a commit or pull request message is
+	// denied once; the identical command passes on its next run.
+	Recommended
+	// Optional findings are suggestions. A file write asks for the
+	// fix where the rewrite reads better, and the message lint never
+	// denies a command for one.
+	Optional
+)
+
+// Tiers lists every tier in the order [Format] groups them.
+var Tiers = []Tier{Required, Recommended, Optional}
+
+// String returns the tier's name as prose-lint prints it.
+func (t Tier) String() string {
+	switch t {
+	case Required:
+		return "Required"
+	case Recommended:
+		return "Recommended"
+	case Optional:
+		return "Optional"
+	default:
+		return "Required"
+	}
+}
+
+// Instruction returns the per-tier line [Format] prints under the
+// tier's header, telling Claude what the findings ask of it.
+func (t Tier) Instruction() string {
+	switch t {
+	case Recommended:
+		return "Fix each unless the finding misreads the sentence."
+	case Optional:
+		return "Fix each where the rewrite reads better."
+	default:
+		return "Fix each."
+	}
+}
+
+// parseTier maps the tag text prose-lint prints to its [Tier].
+func parseTier(s string) Tier {
+	switch s {
+	case "Recommended":
+		return Recommended
+	case "Optional":
+		return Optional
+	default:
+		return Required
+	}
+}
 
 // Rule routes a single file path to one external linter. [Rule.Run]
 // appends the file path as the final argv element to Command, so the
@@ -60,12 +128,14 @@ type Rule struct {
 	Timeout  string   `json:"timeout,omitempty"`
 }
 
-// Finding is one line of linter output. Text is the raw output line
-// and Line is the 1-based line the finding refers to, or 0 when the
-// line could not be parsed.
+// Finding is one line of linter output. Text is the output line with
+// its `[Tier]` tag stripped, Line is the 1-based line the finding
+// refers to, or 0 when the line could not be parsed, and Tier is the
+// tag's tier, or [Required] when the line carried no tag.
 type Finding struct {
 	Text string
 	Line int
+	Tier Tier
 }
 
 // LineRange is an inclusive 1-based span of lines in a file.
@@ -142,7 +212,10 @@ func (r Rule) Run(ctx context.Context, filePath string) ([]Finding, error) {
 
 // ParseFindings splits linter stdout into one [Finding] per non-empty
 // line. A line without a leading `path:line:` prefix keeps Line 0 so
-// [Filter] drops it and a whole-file report still shows it.
+// [Filter] drops it and a whole-file report still shows it. A
+// `[Tier]` tag after `path:line:col:` sets Tier and is stripped from
+// Text; a line without one is [Required], so a linter that prints no
+// tags keeps its findings at full weight.
 func ParseFindings(out string) []Finding {
 	var findings []Finding
 
@@ -151,7 +224,12 @@ func ParseFindings(out string) []Finding {
 			continue
 		}
 
-		f := Finding{Text: line}
+		f := Finding{Text: line, Tier: Required}
+
+		if m := findingTier.FindStringSubmatch(line); m != nil {
+			f.Tier = parseTier(m[2])
+			f.Text = m[1] + m[3]
+		}
 
 		if m := findingLine.FindStringSubmatch(line); m != nil {
 			n, err := strconv.Atoi(m[1])
@@ -215,10 +293,12 @@ func Filter(findings []Finding, ranges []LineRange) []Finding {
 }
 
 // Format renders findings as the feedback Claude reads: a header line
-// naming the file and the count, then one finding per line, truncated
-// after limit findings or [MaxFormatBytes] with a trailing
-// "... and N more" line. An empty findings slice renders an empty
-// string.
+// naming the file and the count, then the findings grouped under one
+// header per tier in [Tiers] order, each header carrying the tier's
+// [Tier.Instruction]. The list truncates after limit findings or
+// [MaxFormatBytes] with a trailing "... and N more" line, so Required
+// findings are the ones that survive a long report. An empty findings
+// slice renders an empty string.
 func Format(path string, findings []Finding, limit int) string {
 	if len(findings) == 0 {
 		return ""
@@ -231,23 +311,37 @@ func Format(path string, findings []Finding, limit int) string {
 
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "prose-lint: %d %s in %s. Fix each before continuing.\n", len(findings), noun, path)
+	fmt.Fprintf(&b, "prose-lint: %d %s in %s.\n", len(findings), noun, path)
 
 	shown := 0
 
-	for _, f := range findings {
-		if shown >= limit || b.Len()+len(f.Text)+1 > MaxFormatBytes {
-			break
+	for _, tier := range Tiers {
+		header := false
+
+		for _, f := range findings {
+			if f.Tier != tier {
+				continue
+			}
+
+			// The tier header travels with its first finding, so a
+			// truncated list never ends on an empty header.
+			line := f.Text
+			if !header {
+				line = fmt.Sprintf("%s: %s\n%s", tier, tier.Instruction(), f.Text)
+			}
+
+			if shown >= limit || b.Len()+len(line)+1 > MaxFormatBytes {
+				fmt.Fprintf(&b, "... and %d more\n", len(findings)-shown)
+
+				return strings.TrimRight(b.String(), "\n")
+			}
+
+			b.WriteString(line)
+			b.WriteByte('\n')
+
+			header = true
+			shown++
 		}
-
-		b.WriteString(f.Text)
-		b.WriteByte('\n')
-
-		shown++
-	}
-
-	if shown < len(findings) {
-		fmt.Fprintf(&b, "... and %d more\n", len(findings)-shown)
 	}
 
 	return strings.TrimRight(b.String(), "\n")

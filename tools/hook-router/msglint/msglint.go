@@ -3,6 +3,8 @@ package msglint
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,8 @@ import (
 	"time"
 
 	"mvdan.cc/sh/v3/syntax"
+
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/linter"
 )
 
 // DefaultTimeout bounds a single linter invocation when [Config.Timeout]
@@ -81,10 +85,11 @@ func (c Config) ResolveTimeout() time.Duration {
 }
 
 // Lint runs the linter with text on stdin and returns its findings, one
-// per stdout line. Exit 0 and exit 1 with empty stdout both return nil.
-// Any other outcome returns an error wrapping [ErrLintFailed] with the
-// linter's stderr in the message.
-func (c Config) Lint(ctx context.Context, text string) ([]string, error) {
+// per stdout line through [linter.ParseFindings], so each carries the
+// tier its `[Tier]` tag names. Exit 0 and exit 1 with empty stdout both
+// return nil. Any other outcome returns an error wrapping
+// [ErrLintFailed] with the linter's stderr in the message.
+func (c Config) Lint(ctx context.Context, text string) ([]linter.Finding, error) {
 	if c.Empty() {
 		return nil, nil
 	}
@@ -106,61 +111,155 @@ func (c Config) Lint(ctx context.Context, text string) ([]string, error) {
 
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-		var findings []string
-
-		for line := range strings.SplitSeq(stdout.String(), "\n") {
-			if strings.TrimSpace(line) != "" {
-				findings = append(findings, line)
-			}
-		}
-
-		return findings, nil
+		return linter.ParseFindings(stdout.String()), nil
 	}
 
 	return nil, fmt.Errorf("%w: running %s: %w (stderr: %s)",
 		ErrLintFailed, c.Command[0], err, strings.TrimSpace(stderr.String()))
 }
 
-// Check lints every message in prog and returns a deny reason when any
-// of them has findings. A disabled config or a command without a
-// literal message returns false with no error. A linter crash returns
-// the error and no decision, so the caller can log it and fall through.
-func Check(ctx context.Context, prog *syntax.File, cfg Config) (string, bool, error) {
+// Result is the outcome of [Check]. Deny is set when a message has a
+// Required finding, and the caller refuses the command every time.
+// WaiverKey is set when no message has a Required finding but one has
+// a Recommended finding. The caller denies the first run and lets the
+// identical command through once it has recorded the key, so Claude
+// can keep a Recommended finding it judges a false positive by running
+// the command again unchanged. Reason is the deny text for either
+// case. A message with Optional findings alone leaves all three
+// fields empty, and the command passes.
+type Result struct {
+	Reason    string
+	WaiverKey string
+	Deny      bool
+}
+
+// Check lints every message in prog and reports what to do with the
+// command. A disabled config or a command without a literal message
+// returns the zero [Result] with no error. A linter crash returns the
+// error and no decision, so the caller can log it and fall through.
+func Check(ctx context.Context, prog *syntax.File, cfg Config) (Result, error) {
 	if cfg.Empty() {
-		return "", false, nil
+		return Result{}, nil
 	}
 
-	var b strings.Builder
+	type linted struct {
+		msg      Message
+		findings []linter.Finding
+	}
+
+	var (
+		res     Result
+		waivers []string
+		msgs    []linted
+	)
 
 	for _, m := range Messages(prog) {
 		findings, err := cfg.Lint(ctx, m.Text)
 		if err != nil {
-			return "", false, err
+			return Result{}, err
 		}
 
 		if len(findings) == 0 {
 			continue
 		}
 
-		noun := "findings"
-		if len(findings) == 1 {
-			noun = "finding"
+		msgs = append(msgs, linted{msg: m, findings: findings})
+
+		worst := linter.Optional
+		for _, f := range findings {
+			worst = min(worst, f.Tier)
 		}
 
-		fmt.Fprintf(&b, "prose-lint: %d %s in the %s. Line numbers count from the first line of the message. Fix each and run the command again with the corrected text.\n",
-			len(findings), noun, m.Kind)
+		switch worst {
+		case linter.Required:
+			res.Deny = true
+		case linter.Recommended:
+			waivers = append(waivers, waiverKey(m))
+		}
+	}
+
+	if !res.Deny && len(waivers) == 0 {
+		return Result{}, nil
+	}
+
+	// Every linted message goes into the reason, so a message with
+	// Optional findings alone still shows them when another message
+	// denies the command.
+	var b strings.Builder
+
+	for _, l := range msgs {
+		writeReason(&b, l.msg.Kind, l.findings)
+	}
+
+	if !res.Deny {
+		// One key covers every message in the command, so a rerun of
+		// the whole command is what clears it.
+		res.WaiverKey = joinKeys(waivers)
+
+		b.WriteString("A Recommended finding that misreads its sentence passes when the command runs again unchanged.\n")
+	}
+
+	res.Reason = strings.TrimRight(b.String(), "\n")
+
+	return res, nil
+}
+
+// writeReason appends one message's findings to the deny reason,
+// grouped under a header per tier in [linter.Tiers] order.
+func writeReason(b *strings.Builder, kind string, findings []linter.Finding) {
+	noun := "findings"
+	if len(findings) == 1 {
+		noun = "finding"
+	}
+
+	fmt.Fprintf(b, "prose-lint: %d %s in the %s. Line numbers count from the first line of the message. Fix each and run the command again with the corrected text.\n",
+		len(findings), noun, kind)
+
+	for _, tier := range linter.Tiers {
+		header := false
 
 		for _, f := range findings {
-			b.WriteString(f)
+			if f.Tier != tier {
+				continue
+			}
+
+			if !header {
+				fmt.Fprintf(b, "%s: %s\n", tier, tier.Instruction())
+
+				header = true
+			}
+
+			b.WriteString(f.Text)
 			b.WriteByte('\n')
 		}
 	}
+}
 
-	if b.Len() == 0 {
-		return "", false, nil
+// waiverKey returns the SHA-256 of a message's kind and text, hex
+// encoded, so the same text under the same command shape maps to the
+// same key on a rerun.
+func waiverKey(m Message) string {
+	h := sha256.New()
+	h.Write([]byte(m.Kind))
+	h.Write([]byte{0})
+	h.Write([]byte(m.Text))
+
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// joinKeys folds several message keys into one so a command with two
+// messages claims one waiver. A single key passes through unchanged.
+func joinKeys(keys []string) string {
+	if len(keys) == 1 {
+		return keys[0]
 	}
 
-	return strings.TrimRight(b.String(), "\n"), true, nil
+	h := sha256.New()
+	for _, k := range keys {
+		h.Write([]byte(k))
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Messages returns every commit message and pull request text that
