@@ -13,9 +13,18 @@
   ]
   ++ (if pkgs.stdenv.hostPlatform.isDarwin then [ "@admin" ] else [ "@wheel" ]);
   sandbox = if pkgs.stdenv.hostPlatform.isLinux then true else "relaxed";
-  substituters = [ "https://cache.nixos.org" ];
-  trusted-substituters = [ "https://cache.nixos.org" ];
-  trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" ];
+  substituters = [
+    "https://cache.nixos.org"
+    "https://cache.numtide.com"
+  ];
+  trusted-substituters = [
+    "https://cache.nixos.org"
+    "https://cache.numtide.com"
+  ];
+  trusted-public-keys = [
+    "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+    "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
+  ];
   require-sigs = true;
   # Fetch cached outputs even for derivations that set allowSubstitutes = false.
   # The nix-darwin linux-builder VM pulls in trivial aarch64-linux files (e.g.
