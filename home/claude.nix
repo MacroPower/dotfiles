@@ -3950,6 +3950,7 @@ in
       ''
       + ''
         - Long-running work belongs in a Bash call with `run_in_background: true`. The session stays free, you get a notification when the command exits, and `Read` fetches its captured output. `sleep` inside a background call is fine, so an `until <check>; do sleep 1; done` poll loop there is the right way to wait on a condition.
+        - A background command stops at its `timeout`, which defaults to 30 minutes and allows at most 2 hours (`7200000`). Set `timeout` on a background call that can run past 30 minutes, and split work that needs more than 2 hours.
         - For one notification per event rather than one on completion, use the `Monitor` tool. It is deferred, so load it with `ToolSearch("select:Monitor")` before calling it.
         - A Monitor watch ends after 30 minutes at most and sends a notification asking to be re-armed; re-arm it when the condition is still pending.
         - Fire off independent work in parallel, then act on completion notifications as they arrive. A spawn-one, wait, spawn-the-next loop serializes work that could have run at once.
