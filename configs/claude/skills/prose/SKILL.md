@@ -12,13 +12,26 @@ description: >-
 
 A hook runs `prose-lint` after every Write and Edit of a markdown or
 source file and returns its findings before your next turn, and a Bash
-hook denies a `git commit` or `gh pr create` whose message breaks a
-rule. Fix every finding rather than arguing with it. The rules are
-deliberately blunt, so the fix is mechanical and a rewrite costs less
-than the exception. The linter matches word lists, so it misses many
-sentences with the shapes below; write to the rule, not to the
-linter. Run `prose-lint <file>` by hand on a file the hook does not
-cover, such as one written through Bash.
+hook lints the message a `git commit` or `gh pr create` carries. Each
+finding is tagged with its rule's tier, and the tier sets what it asks
+of you.
+
+A Required finding names an exact phrase with a mechanical fix, so fix
+it. The Bash hook denies a commit or PR message with one every time.
+
+A Recommended finding comes from a shape detector, so fix it unless it
+misreads the sentence. The Bash hook denies a commit or PR message
+with one once; when you judge the finding false, run the unchanged
+command again and it passes.
+
+An Optional finding is a suggestion, so fix it where the rewrite reads
+better. It never denies a command on its own.
+
+The rules are deliberately blunt, so a fix is usually cheaper than the
+exception. The linter matches word lists, so it misses many sentences
+with the shapes below; write to the rule, not to the linter. Run
+`prose-lint <file>` by hand on a file the hook does not cover, such as
+one written through Bash.
 
 ## Sentence Shape
 

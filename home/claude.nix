@@ -778,7 +778,10 @@ let
         ${
           # The same linter the Write/Edit hook runs, pointed at the
           # message a `git commit` or `gh pr create` carries. The
-          # message arrives on stdin, and findings deny the command.
+          # message arrives on stdin. A Required finding denies the
+          # command every time, a Recommended finding denies it once
+          # and lets the identical rerun through, and an Optional
+          # finding never denies on its own.
           lib.optionalString cfg.proseLint.enable
             "--message-lint-config ${
               lib.escapeShellArg (
@@ -1043,10 +1046,11 @@ let
   ];
 
   # Default linter routes installed by hook-router on
-  # PostToolUse:Write/Edit/MultiEdit. prose-lint runs the Weir rules in
+  # PostToolUse:Write/Edit/MultiEdit. prose-lint runs the rules in
   # configs/harper against every markdown and source file Claude
   # writes, and its findings come back as feedback before the next
-  # turn. Each exclude glob becomes a leading rule whose command exits
+  # turn, grouped by the tier configs/harper/rules.toml assigns each
+  # rule. Each exclude glob becomes a leading rule whose command exits
   # 0 without output, so first-match-wins skips the file. The whole
   # list is gated on proseLint.enable so disabling it drops the rule
   # along with the binary.
