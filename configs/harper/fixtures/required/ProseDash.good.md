@@ -1,5 +1,9 @@
 The job runs nightly, and the cache refills.
-The flag -- once set -- skips the check.
+Run prose-lint --commit on the message.
+A well-known bug hides here.
+The range 1-5 is closed.
+The -1 value means unset.
+Use the `--` separator before paths.
 Is reports whether any error in err's tree matches target.
 Set stores value under key and returns the previous value.
 Close releases the file handle and returns any error from the close.
