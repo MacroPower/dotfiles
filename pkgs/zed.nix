@@ -56,8 +56,7 @@ let
     srcs.${stdenvNoCC.hostPlatform.system}
       or (throw "Unsupported system: ${stdenvNoCC.hostPlatform.system}");
 
-  inherit (stdenvNoCC) isDarwin;
-  inherit (stdenvNoCC) isLinux;
+  inherit (stdenvNoCC.hostPlatform) isDarwin isLinux;
 
   linuxLibs = [
     alsa-lib
