@@ -45,8 +45,8 @@ colon between two clauses; if the words after a colon have their own
 subject and verb, end the sentence there with a period, or join the
 clauses with `because` or `so`. Do not end a sentence on a participle
 tacked on after a comma (`, returning an error`, `, ensuring the cache
-stays warm`), and do not wrap a claim in `not only X but Y`. One hedge
-per claim at most.
+stays warm`), and do not wrap a claim in `not only X but Y`. Do not
+hedge a claim; state it or drop it.
 
 ## Specificity
 
