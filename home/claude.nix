@@ -803,6 +803,7 @@ let
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
         ${lib.optionalString cfg.enforceAsciiTypography "--enforce-ascii-typography"} \
+        ${lib.optionalString cfg.rmGuard "--rm-guard"} \
         "$@"
     '';
   };
@@ -1891,6 +1892,24 @@ in
         hook-router PreToolUse:Bash foreground-`sleep` guard. camelCase
         keys so `builtins.toJSON` matches the Go struct tags in
         tools/hook-router/sleepguard/sleepguard.go Config.
+      '';
+    };
+
+    rmGuard = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Whether hook-router denies an `rm` or `rmdir` on PreToolUse:Bash
+        when Claude Code cannot prove the target safe. That covers a
+        target that starts with a variable that can expand to nothing
+        (`rm -rf $DIR/$name`), a command substitution target, a
+        relative glob after a `cd`, a glob in a directory that is not
+        a literal path, and a glob that spans more than one directory
+        level. Claude Code forces a permission prompt on those shapes
+        in every permission mode, and an unattended session waits out
+        the prompt before it can retry. The deny reaches the agent
+        first and carries the rewrite. See tools/hook-router/rmguard
+        for the matching rules.
       '';
     };
 
@@ -3967,6 +3986,11 @@ in
         - For one notification per event rather than one on completion, use the `Monitor` tool. It is deferred, so load it with `ToolSearch("select:Monitor")` before calling it.
         - A Monitor watch ends after 30 minutes at most and sends a notification asking to be re-armed; re-arm it when the condition is still pending.
         - Fire off independent work in parallel, then act on completion notifications as they arrive. A spawn-one, wait, spawn-the-next loop serializes work that could have run at once.
+      ''
+      + lib.optionalString cfg.rmGuard ''
+        - A hook denies `rm` and `rmdir` on a target Claude Code cannot check before the command runs, because Claude Code forces a permission prompt on it in every permission mode. Give `rm` literal paths. Guard a leading variable with `:?` (`rm -rf "''${DIR:?}/''${name:?}"`). Do not remove the output of a command substitution (`rm -rf $(...)`); run it first and remove the paths it prints. Do not `cd` before a relative glob (`cd build && rm -rf ./*`). Do not put a trailing `/*` under `~`, `..`, a variable, or another glob (`rm -rf ~/x/*`, `rm -rf build/*/*`).
+      ''
+      + ''
 
         ## Python
         - Python is always available: `uv` manages a default interpreter on every host, so `python3` and `uv run` work with no setup.

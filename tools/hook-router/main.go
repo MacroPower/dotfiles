@@ -98,6 +98,11 @@ import (
 // sleepguard package). Its zero value is a disabled guard, so a bare
 // config{} test literal is a no-op.
 //
+// rmGuard, when true, makes [handleBash] deny an rm or rmdir whose
+// target Claude Code would stop on a permission prompt (see the
+// rmguard package). When false the handler skips the check, so a
+// bare config{} test literal is a no-op.
+//
 // messageLint configures the [handleBash] commit-message and
 // pull-request lint (see the msglint package). Its zero value is a
 // disabled linter, so a bare config{} test literal is a no-op.
@@ -123,6 +128,7 @@ type config struct {
 	kubeconfigPath string
 	claudePID      string
 	autoAllow      bool
+	rmGuard        bool
 	skipPlanReview bool
 
 	enforceTypography bool
@@ -164,11 +170,12 @@ func main() {
 	messageLintConfig := flag.String("message-lint-config", "", "JSON object configuring the PreToolUse:Bash commit-message and pull-request lint ({command, timeout}); the message arrives on the command's stdin")
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
+	rmGuard := flag.Bool("rm-guard", false, "deny a PreToolUse:Bash rm or rmdir whose target Claude Code would stop on a permission prompt (variable-leading or statically unresolvable)")
 	enforceTypography := flag.Bool("enforce-ascii-typography", false, "deny a Write/Edit/MultiEdit call that introduces non-ASCII dashes, curly quotes, or ellipsis")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *messageLintConfig, *autoAllow, *skipPlanReview, *enforceTypography)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *messageLintConfig, *autoAllow, *skipPlanReview, *enforceTypography, *rmGuard)
 	if err == nil {
 		return
 	}
@@ -186,7 +193,7 @@ func main() {
 	os.Exit(1)
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON string, autoAllow, skipPlanReview, enforceTypography bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON string, autoAllow, skipPlanReview, enforceTypography, rmGuard bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -330,6 +337,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.sleepGuard = sleepGuard
 	cfg.messageLint = messageLint
 	cfg.autoAllow = autoAllow
+	cfg.rmGuard = rmGuard
 
 	if dbPath != "" {
 		cfg.openStore = func(ctx context.Context) (*state.Store, error) {

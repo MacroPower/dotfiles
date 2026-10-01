@@ -12,6 +12,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/msglint"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/rmguard"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/sleepguard"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
@@ -152,6 +153,26 @@ func handleBashCtx(ctx context.Context, input []byte, stdout io.Writer, cfg conf
 		)
 
 		return writeDecision(stdout, hook.Deny(reason))
+	}
+
+	// Deny rm and rmdir on a target Claude Code cannot prove safe: one
+	// that starts with a possibly-empty variable, or one it cannot
+	// resolve before the command runs. Claude Code forces a permission
+	// prompt on those shapes in every permission mode, and this deny
+	// reaches the agent first with the rewrite. Runs before the message
+	// lint so a command denied here does not spend that lint's
+	// once-per-message waiver.
+	if cfg.rmGuard {
+		if reason, deny := rmguard.Check(prog, command); deny {
+			logger.Info(
+				"denied",
+				slog.String("rule", "rm-unresolvable-target"),
+				slog.String("command", command),
+				slog.String("reason", reason),
+			)
+
+			return writeDecision(stdout, hook.Deny(reason))
+		}
 	}
 
 	// Lint the commit message or pull request text the command carries

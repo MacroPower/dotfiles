@@ -19,6 +19,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/cmdrules"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/compact"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/msglint"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/rmguard"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/sleepguard"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
@@ -725,6 +726,99 @@ func TestHandleBashSleepGuard(t *testing.T) {
 			reason, ok := hso["permissionDecisionReason"].(string)
 			require.True(t, ok)
 			assert.Equal(t, tc.wantSleepReason, strings.HasPrefix(reason, "Foreground sleep"))
+		})
+	}
+}
+
+// TestHandleBashRmGuard covers the rm guard branch in
+// [handleBash]: the flag that enables it, its placement after cmdrules
+// and before the early-returning kubectx branch, and deny precedence
+// over the sandbox auto-allow. Matching semantics live in the rmguard
+// package tests.
+func TestHandleBashRmGuard(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.DiscardHandler)
+
+	cases := map[string]struct {
+		command        string
+		disabled       bool
+		background     bool
+		autoAllow      bool
+		kubeconfigPath string
+		wantDeny       bool
+		// wantRmReason asserts whether the deny reason is the rm
+		// guard's own, as opposed to a first-match cmdrules reason.
+		wantRmReason bool
+	}{
+		"variable-path rm is denied": {
+			command:      "rm -rf $S/$d",
+			wantDeny:     true,
+			wantRmReason: true,
+		},
+		"disabled guard falls through": {
+			command:  "rm -rf $S/$d",
+			disabled: true,
+		},
+		"guarded path falls through": {
+			command: `rm -rf "${S:?}/${d:?}"`,
+		},
+		"run_in_background is not exempt": {
+			command:      "rm -rf $S/$d",
+			background:   true,
+			wantDeny:     true,
+			wantRmReason: true,
+		},
+		"deny beats sandbox auto-allow": {
+			command:      "rm -rf $S/$d",
+			autoAllow:    true,
+			wantDeny:     true,
+			wantRmReason: true,
+		},
+		"cmdrules deny wins over the rm guard": {
+			command:  "git stash; rm -rf $X/",
+			wantDeny: true,
+		},
+		"guard runs before the early-returning kubectx branch": {
+			command:        "rm -rf $X/; kubectl get po",
+			kubeconfigPath: "/tmp/kubeconfig",
+			wantDeny:       true,
+			wantRmReason:   true,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := config{
+				commandRules:   canonicalRules(),
+				rmGuard:        !tc.disabled,
+				autoAllow:      tc.autoAllow,
+				kubeconfigPath: tc.kubeconfigPath,
+			}
+
+			extra := map[string]any{}
+			if tc.background {
+				extra["run_in_background"] = true
+			}
+
+			var stdout bytes.Buffer
+
+			err := handleBash(bashInput(t, tc.command, extra), &stdout, cfg, logger)
+			require.NoError(t, err)
+
+			if !tc.wantDeny {
+				assert.Empty(t, stdout.Bytes())
+				return
+			}
+
+			hso := preToolDecision(t, &stdout)
+			assert.Equal(t, "deny", hso["permissionDecision"])
+
+			reason, ok := hso["permissionDecisionReason"].(string)
+			require.True(t, ok)
+			assert.Equal(t, tc.wantRmReason, strings.HasPrefix(reason, rmguard.ReasonPrefix))
 		})
 	}
 }
