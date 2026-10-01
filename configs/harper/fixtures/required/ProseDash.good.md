@@ -6,3 +6,8 @@ The -1 value means unset.
 Use the `--` separator before paths.
 The range 12-14 is inclusive.
 The flag is --commit.
+Pass -v to print each step.
+The window holds `n - 1` entries.
+
+- The list marker is not a dash.
+- Each item starts with a hyphen.
