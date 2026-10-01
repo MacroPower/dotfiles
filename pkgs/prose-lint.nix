@@ -98,10 +98,10 @@ writeShellApplication {
     # success path discards below.
     export HOME="''${TMPDIR:-/tmp}"
 
-    # Runs harper-cli with one rule list over the remaining arguments
-    # (a file, or nothing for stdin). harper-cli exits 1 when it found
-    # lints; any other non-zero code is a crash, so its stderr is passed
-    # through and the wrapper exits 2 for hook-router to log.
+    # Runs harper-cli with one rule list over one file. harper-cli exits
+    # 1 when it found lints; any other non-zero code is a crash, so its
+    # stderr is passed through and the wrapper exits 2 for hook-router
+    # to log.
     lint() {
       local rules="$1"
       shift
@@ -155,13 +155,19 @@ writeShellApplication {
       ' | sort -t "$(printf '\t')" -k1,1n -k2,2n | cut -f3-
     }
 
-    stderr_file=$(mktemp)
-    trap 'rm -f "$stderr_file"' EXIT
+    tmp_dir=$(mktemp -d)
+    trap 'rm -rf "$tmp_dir"' EXIT
+    stderr_file=$tmp_dir/stderr
 
-    # Git comment lines are blanked rather than deleted, so each finding
-    # keeps the line number it has in the message.
+    # A commit or PR message is markdown, but harper-cli reads stdin as
+    # plain text and would lint the phrases inside code spans, so the
+    # message is copied to a .md file first. Git comment lines are
+    # blanked rather than deleted, so each finding keeps the line number
+    # it has in the message.
     if [ "''${1:-}" = "--commit" ]; then
-      out=$(sed 's/^#.*//' | lint "$change_rules" | tag)
+      message=$tmp_dir/message.md
+      sed 's/^#.*//' >"$message"
+      out=$(lint "$change_rules" "$message" | sed 's/^[^:]*:/<stdin>:/' | tag)
       if [ -n "$out" ]; then
         printf '%s\n' "$out"
         exit 1
