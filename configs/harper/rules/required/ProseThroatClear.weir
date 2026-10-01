@@ -1,16 +1,24 @@
 # Each phrase announces a point instead of making it, so the whole
 # list is unconditional. `clearly`, `interestingly`, `importantly`,
-# `notably`, and `crucially` count only with a glued comma, the
-# sentence-adverb shape (`Clearly, the cache is cold`), because the
-# bare adverb modifies a verb (`the error prints clearly`).
+# `notably`, `crucially`, and `in other words` count only with a
+# glued comma, the sentence-adverb shape (`Clearly, the cache is
+# cold`). The bare form modifies a verb (`the error prints clearly`,
+# `restates it in other words`). `to be clear` also needs
+# the start of a clause after its comma, since the infinitive takes a
+# list of adjectives (`comments to be clear, accurate, and readable`).
+# A comma ends Harper's default chunk, so the rule reads whole
+# sentences to see past it.
 #
 # `note that` sits in the Recommended tier, because a commit subject
 # uses `note` as a verb (`docs: note that the flag is sticky`).
-expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (as mentioned), (as noted), (as stated), (as discussed), (as described [above, earlier, before, previously]), obviously, (of course), (clearly,), (in other words), (to put it simply), (put simply), (simply put), (that is to say), (to be clear), (make no mistake), (it goes without saying), (worth mentioning), (interestingly,), (importantly,), (notably,), (crucially,)]
+expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (as mentioned), (as noted), (as stated), (as discussed), (as described [above, earlier, before, previously]), obviously, (of course), (clearly,), (in other words,), (to put it simply), (put simply), (simply put), (that is to say), (to be clear, [DET, PRON, PROPN, NOUN]), (make no mistake), (it goes without saying), (worth mentioning), (interestingly,), (importantly,), (notably,), (crucially,)]
 let message "Throat clearing. Delete the phrase and state the point."
 let description "Flags phrases that announce a point instead of making it."
 let becomes ""
 let kind "Style"
+let scope "Sentence"
 allows "The error prints clearly on a dark background."
 allows "The lookup is not an offset into the token list."
 allows "The note field holds free text."
+allows "The summary restates the claim in other words."
+allows "Rewrite the comments to be clear, accurate, and readable."

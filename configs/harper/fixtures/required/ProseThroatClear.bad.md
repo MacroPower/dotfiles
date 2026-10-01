@@ -5,4 +5,5 @@ Obviously, the job retries on a lease error.
 Clearly, the cache is cold after a restart.
 In other words, the bucket refills every second.
 It goes without saying that Close is idempotent.
+To be clear, the cache is cold after a restart.
 It's worth mentioning that the flag defaults to five.
