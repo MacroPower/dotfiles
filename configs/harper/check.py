@@ -7,8 +7,10 @@ recommended, or optional. A .weir file is a Weir rule the weirpack
 carries under the internal name <Rule>_<Tier>, an .awk file is a check
 run with awk in place of Harper, and builtins.txt names the Harper
 built-ins the tier enables. For each rule, fixtures/<tier>/<Rule>.bad.md
-must produce a lint on every non-blank line and
-fixtures/<tier>/<Rule>.good.md must produce none.
+must produce a lint on every non-blank line, and neither
+fixtures/<tier>/<Rule>.good.md nor the shared fixtures/common.good.md
+may produce one. The shared file holds ordinary technical prose that
+every rule must pass, so a line added there covers all the rules.
 
 A rule without a fixture pair fails, so a typo in a built-in name
 cannot pass silently. A fixture pair without a rule fails too, so a
@@ -25,6 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 TIERS = ("required", "recommended", "optional")
+COMMON = "common.good.md"
 
 
 @dataclass(frozen=True)
@@ -158,8 +161,9 @@ def check_rule(rule: Rule, pack: Path, fixtures: Path) -> list[str]:
     got = report(bad)
     for line in sorted(want - got):
         failures.append(f"{bad}:{line}: expected a {rule.name} lint")
-    for line in sorted(report(good)):
-        failures.append(f"{good}:{line}: unexpected {rule.name} lint")
+    for target in (good, fixtures / COMMON):
+        for line in sorted(report(target)):
+            failures.append(f"{target}:{line}: unexpected {rule.name} lint")
     return failures
 
 
@@ -186,6 +190,9 @@ def main(argv: list[str]) -> int:
     fixtures = Path(argv[2])
     rules_dir = Path(argv[3])
 
+    if not (fixtures / COMMON).is_file():
+        print(f"{fixtures / COMMON}: missing the shared good fixture")
+        return 1
     rules, failures = collect_rules(rules_dir)
     packed = pack_names(pack)
     for rule in rules:
