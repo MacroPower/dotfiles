@@ -1662,6 +1662,12 @@ in
       '';
     };
 
+    clauth.enable = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Install clauth, the Claude Code account switcher and usage monitor.";
+    };
+
     proseLint = mkOption {
       type = types.submodule {
         options = {
@@ -3929,6 +3935,7 @@ in
         pkgs.llm-agents.git-surgeon
         pkgs.slugify
       ]
+      ++ lib.optionals cfg.clauth.enable [ pkgs.clauth ]
       ++ lib.optionals cfg.proseLint.enable [
         pkgs.prose-lint
         pkgs.harper

@@ -150,6 +150,7 @@
                 hostLinux = ./hosts/linux/default.nix;
                 stylix = ./lib/stylix.nix;
                 chief = ./pkgs/chief.nix;
+                clauth = ./pkgs/clauth.nix;
                 displayplacer = ./pkgs/displayplacer.nix;
                 otel-tui = ./pkgs/otel-tui.nix;
                 zed-bin = ./pkgs/zed.nix;

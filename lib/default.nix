@@ -15,6 +15,7 @@ let
 
   localOverlay = final: _prev: {
     chief = final.callPackage paths.chief { };
+    clauth = final.callPackage paths.clauth { };
     otel-tui = final.callPackage paths.otel-tui { };
     displayplacer = final.callPackage paths.displayplacer { };
     zed-bin = final.callPackage paths.zed-bin { };
