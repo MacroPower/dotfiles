@@ -2,17 +2,20 @@
 # naming a topic. prose-lint and check.py both run this file, so the
 # hook and the build-time fixture check agree on every heading.
 #
-# Only level-two headings are examined. A level-one heading is the
-# document title, and a deeper heading often labels a single case, so
-# neither is reported. A heading that is one code span is exempt too,
-# since a command reference names the exact command.
+# The check skips a level-one heading, since it is the document title,
+# and a heading that is one code span, since a command reference names
+# the exact command.
 #
-# A heading is reported when it starts with a question word or an
-# auxiliary, contains a pronoun, an auxiliary, or a subordinating
-# conjunction anywhere, ends with a question mark, or runs past six
-# words. These are closed word classes, so a noun phrase such as
-# `Printing YAML with Lipgloss Styles` passes while `How matching
-# works` and `Configuring the server before you start` are reported.
+# The check reports a heading at any level from two down when it
+# starts with a question word or an auxiliary, or ends with a question
+# mark. At level two it also reports a heading that contains a
+# pronoun, an auxiliary, or a subordinating conjunction anywhere, or
+# that runs past six words. A deeper heading skips those two checks,
+# because it often labels a single case (`Retries after a lease error`)
+# and can run longer than a section name. These are closed word
+# classes, so a noun phrase such as `Printing YAML with Lipgloss
+# Styles` passes while the check reports `How matching works` and
+# `Configuring the server before you start`.
 # Harper's part-of-speech tagger is not used, because a heading has no
 # sentence around it and the tagger reads `works` and `ships` as nouns.
 # The rule misses a short sentence built only from open-class words,
@@ -85,9 +88,12 @@ fence_char != "" {
   next
 }
 
-/^ {0,3}##[ \t]/ {
+/^ {0,3}#{2,6}[ \t]/ {
   text = $0
-  sub(/^ {0,3}#+[ \t]+/, "", text)
+  sub(/^ {0,3}/, "", text)
+  match(text, /^#+/)
+  level = RLENGTH
+  sub(/^#+[ \t]+/, "", text)
   sub(/[ \t]+#+[ \t]*$/, "", text)
   sub(/[ \t]+$/, "", text)
   if (text ~ /^`[^`]+`$/) {
@@ -95,7 +101,7 @@ fence_char != "" {
   }
   words = split(tolower(text), parts, /[ \t]+/)
   narrates = 0
-  if (words > 6) {
+  if (level == 2 && words > 6) {
     narrates = 1
   }
   if (text ~ /\?$/) {
@@ -104,7 +110,10 @@ fence_char != "" {
   for (i = 1; i <= words; i++) {
     word = parts[i]
     gsub(/[^a-z']/, "", word)
-    if ((i == 1 && word in opener) || word in anywhere) {
+    if (i == 1 && word in opener) {
+      narrates = 1
+    }
+    if (level == 2 && word in anywhere) {
       narrates = 1
     }
   }

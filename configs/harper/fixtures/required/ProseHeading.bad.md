@@ -21,3 +21,11 @@
 ## Release notes for the final quarter of the fiscal year
 
 ## How an indented heading is caught
+
+### How a level-three heading is caught
+
+#### Why a level-four heading is caught
+
+### Retry the request?
+
+##### Which cache wins

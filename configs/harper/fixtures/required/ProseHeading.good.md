@@ -18,9 +18,11 @@ title: How the front matter works
 
 ## Full YAML Viewport Example
 
-### How a level-three heading is skipped
+### Retries after a lease error
 
-#### Why a level-four heading is skipped
+#### Release notes for the final quarter of the fiscal year
+
+### Your Settings
 
 ```sh
 ## How a fenced comment is skipped
