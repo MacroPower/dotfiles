@@ -50,10 +50,17 @@ let
   # The Weir rules under their internal `<Name>_<Tier>` names plus the
   # Harper built-ins, both read from the tier directories under
   # configs/harper/rules and fixture-checked when prose-weirpack
-  # builds. A changelog turns off every tier's ProseTense.
+  # builds. A changelog and a commit message both describe a change,
+  # so each turns off every tier's ProseTense and ProseCurrently.
   ruleNames = prose-weirpack.passthru.ruleNames ++ prose-weirpack.passthru.builtinRules;
   allRules = lib.concatStringsSep "," ruleNames;
-  changeRules = lib.concatStringsSep "," (lib.filter (r: !(lib.hasPrefix "ProseTense_" r)) ruleNames);
+  deltaRules = [
+    "ProseTense_"
+    "ProseCurrently_"
+  ];
+  changeRules = lib.concatStringsSep "," (
+    lib.filter (r: !(lib.any (prefix: lib.hasPrefix prefix r) deltaRules)) ruleNames
+  );
 
   # Internal rule name to tier, one `Name=Tier` pair per line, for the
   # awk step that tags each finding. The map covers every enabled
@@ -192,7 +199,7 @@ writeShellApplication {
       *) exit 0 ;;
     esac
 
-    # A changelog describes deltas, so the tense rule is off, and its
+    # A changelog describes deltas, so the tense rules are off, and its
     # headings are release labels (`[1.2.0] - 2026-09-23 [YANKED]`), so
     # the heading check is off too.
     base=$(basename "$file")
