@@ -1,4 +1,4 @@
-The job fails due to the fact that the lease expired.
+The job fails owing to the fact that the lease expired.
 Close the file prior to the next read.
 The scheduler is able to retry the job.
 A number of flags take a value.
