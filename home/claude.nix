@@ -460,6 +460,11 @@ let
         "TERM_PROGRAM_VERSION"
         "ATUIN_USERNAME"
         "ATUIN_PASSWORD"
+        # Per-launch effort for the sandboxed agent, set as
+        # `CLAUDE_CODE_EFFORT_LEVEL=high workmux sandbox agent`. /effort
+        # can't save a level because home-manager links settings.json
+        # from the read-only nix store.
+        "CLAUDE_CODE_EFFORT_LEVEL"
       ];
       extra_mounts = [
         {
