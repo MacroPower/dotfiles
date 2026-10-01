@@ -2993,6 +2993,7 @@ in
           instructions = {
             items = [
               "Use `mcp__github__*` and `mcp__git__*` tools for reading GitHub data (issues, PRs, releases, Actions runs and job logs, security alerts, discussions, projects, code search, etc.)"
+              "The `gh` CLI is available for functions the `mcp__github__*` tools do not serve. A hook redirects the `gh` subcommands that have an MCP equivalent. Note that `gh api` is always denied."
             ];
           };
         };
