@@ -162,6 +162,35 @@ writeShellApplication {
       ' | sort -t "$(printf '\t')" -k1,1n -k2,2n | cut -f3-
     }
 
+    # Drops a ProseColonClause finding that starts inside a bold label
+    # opening its line (`- **Retry budget**: the job stops after five
+    # attempts`). Harper's markdown parser drops the emphasis, so the
+    # rule reads the label words as the subject of a clause, while the
+    # colon after a label names a term and joins no two clauses. A
+    # finding that starts after the label, on a second colon in the
+    # same line, stays.
+    drop_label_colons() {
+      SRC="$1" awk '
+        BEGIN {
+          while ((getline src < ENVIRON["SRC"]) > 0) {
+            n++
+            if (match(src, /^[ \t]*(([-*+]|[0-9]+[.)])[ \t]+)?[*][*][^*]+([*][*]:|:[*][*])/)) {
+              label_end[n] = RLENGTH
+            }
+          }
+        }
+        {
+          if (match($0, /:[0-9]+:[0-9]+: [A-Za-z]+::ProseColonClause_/)) {
+            split(substr($0, RSTART + 1), pos, ":")
+            if ((pos[1] in label_end) && pos[2] <= label_end[pos[1]]) {
+              next
+            }
+          }
+          print
+        }
+      '
+    }
+
     tmp_dir=$(mktemp -d)
     trap 'rm -rf "$tmp_dir"' EXIT
     stderr_file=$tmp_dir/stderr
@@ -174,7 +203,8 @@ writeShellApplication {
     if [ "''${1:-}" = "--commit" ]; then
       message=$tmp_dir/message.md
       sed 's/^#.*//' >"$message"
-      out=$(lint "$change_rules" "$message" | sed 's/^[^:]*:/<stdin>:/' | tag)
+      out=$(lint "$change_rules" "$message" | drop_label_colons "$message" |
+        sed 's/^[^:]*:/<stdin>:/' | tag)
       if [ -n "$out" ]; then
         printf '%s\n' "$out"
         exit 1
@@ -215,7 +245,8 @@ writeShellApplication {
     # harper-cli prints the basename; restore the path it was given so
     # a finding names the file the way the caller does. ENVIRON avoids
     # awk -v's backslash processing.
-    out=$(lint "$rules" "$file" | FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
+    out=$(lint "$rules" "$file" | drop_label_colons "$file" |
+      FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
 
     # The awk checks read markdown only. Each prints `Kind::Name:` and
     # the sed below renames that to the internal `Kind::Name_Tier:` so
