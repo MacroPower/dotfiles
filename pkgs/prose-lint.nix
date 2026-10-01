@@ -7,11 +7,13 @@
 }:
 
 let
-  # Extensions Harper parses with a comment-only or markdown parser.
+  # Extensions Harper parses with a comment-only, markdown, or Org
+  # parser.
   # Anything else falls back to plain text and lints every line, so
   # the wrapper refuses it rather than flagging string literals.
   extensions = [
     "md"
+    "markdown"
     "c"
     "cpp"
     "h"
@@ -31,9 +33,11 @@ let
     "kts"
     "lua"
     "nix"
+    "org"
     "php"
     "ps1"
     "py"
+    "pyi"
     "rb"
     "rs"
     "scala"
@@ -251,7 +255,7 @@ writeShellApplication {
     # The awk checks read markdown only. Each prints `Kind::Name:` and
     # the sed below renames that to the internal `Kind::Name_Tier:` so
     # the tag step finds it in the map.
-    if [ "$ext" = "md" ]; then
+    if [ "$ext" = md ] || [ "$ext" = markdown ]; then
       while IFS='=' read -r internal script; do
         [ -n "$internal" ] || continue
         name=''${internal%_*}
