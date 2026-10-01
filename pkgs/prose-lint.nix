@@ -158,8 +158,10 @@ writeShellApplication {
     stderr_file=$(mktemp)
     trap 'rm -f "$stderr_file"' EXIT
 
+    # Git comment lines are blanked rather than deleted, so each finding
+    # keeps the line number it has in the message.
     if [ "''${1:-}" = "--commit" ]; then
-      out=$(grep -v '^#' | lint "$change_rules" | tag)
+      out=$(sed 's/^#.*//' | lint "$change_rules" | tag)
       if [ -n "$out" ]; then
         printf '%s\n' "$out"
         exit 1
