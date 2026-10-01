@@ -1,0 +1,12 @@
+# The Required rule of the same name holds every other throat-clearing
+# phrase. `note that` sits here, because a commit subject uses `note`
+# as a verb (`docs: note that the flag is sticky`), and no pattern
+# tells that verb from the filler that opens `Note that the cache is
+# cold`.
+expr main note that
+let message "Throat clearing. Delete the phrase and state the point."
+let description "Flags note that, which announces a point instead of making it."
+let becomes ""
+let kind "Style"
+allows "The note field holds free text."
+allows "Each note has a title and a body."
