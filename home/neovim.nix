@@ -27,7 +27,7 @@ in
       taplo
       marksman
       dockerfile-language-server
-      terraform-ls
+      tofu-ls
 
       # Formatters / linters used by conform.nvim and nvim-lint
       stylua
@@ -604,6 +604,9 @@ in
         plugin = nvim-lspconfig;
         type = "lua";
         config = ''
+          -- Neovim has no built-in filetype for OpenTofu's .tofu extension.
+          vim.filetype.add({ extension = { tofu = "terraform" } })
+
           vim.diagnostic.config({
             virtual_text = { prefix = "●" },
             severity_sort = true,
@@ -644,7 +647,8 @@ in
             taplo = {},
             marksman = {},
             dockerls = {},
-            terraformls = {},
+            tofu_ls = { filetypes = { "terraform", "terraform-vars" } },
+            tflint = {},
             lua_ls = {
               settings = {
                 Lua = {
@@ -779,6 +783,7 @@ in
               vue = { "prettierd" },
               svelte = { "prettierd" },
               terraform = { "tofu_fmt" },
+              ["terraform-vars"] = { "tofu_fmt" },
               python = { "ruff_format" },
             },
             format_on_save = {
