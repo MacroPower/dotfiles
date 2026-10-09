@@ -1,0 +1,275 @@
+diff --git a/internal/devpkg/narinfo_cache.go b/internal/devpkg/narinfo_cache.go
+index c37d84e9..98c0e94a 100644
+--- a/internal/devpkg/narinfo_cache.go
++++ b/internal/devpkg/narinfo_cache.go
+@@ -15,7 +15,10 @@
+ )
+ 
+ // binaryCache is the store from which to fetch this package's binaries.
+-// It is used as FromStore in builtins.fetchClosure.
++// It is used as the substituter when builtins.appendContext triggers
++// store->ensurePath() during flake evaluation. Devbox pre-builds each package
++// before generating the flake so the path is normally already in the local
++// store; if it isn't (e.g. after GC), Nix will fetch it from this cache.
+ const binaryCache = "https://cache.nixos.org"
+ 
+ // useDefaultOutputs is a special value for the outputName parameter of
+diff --git a/internal/nix/command.go b/internal/nix/command.go
+index 902f2a33..68b657f2 100644
+--- a/internal/nix/command.go
++++ b/internal/nix/command.go
+@@ -5,7 +5,7 @@
+ func init() {
+ 	Default.ExtraArgs = Args{
+ 		"--extra-experimental-features", "ca-derivations",
+-		"--option", "experimental-features", "nix-command flakes fetch-closure",
++		"--option", "experimental-features", "nix-command flakes",
+ 	}
+ 
+ 	// Add GitHub access token if available to avoid rate limiting
+diff --git a/internal/nix/install.go b/internal/nix/install.go
+index 2d6654b5..9f4f0430 100644
+--- a/internal/nix/install.go
++++ b/internal/nix/install.go
+@@ -81,22 +81,6 @@ func EnsureNixInstalled(ctx context.Context, writer io.Writer, withDaemonFunc fu
+ 			)
+ 			return
+ 		}
+-
+-		// Lix 2.95 removed builtins.fetchClosure, which Devbox relies on to
+-		// install packages from a binary cache. Detect it early and print a
+-		// clear compatibility hint instead of a cryptic
+-		// "attribute 'fetchClosure' missing" error later on.
+-		if info, infoErr := nix.Default.Info(); infoErr == nil && !info.SupportsFetchClosure() {
+-			err = usererr.New(
+-				"Devbox is not compatible with your Nix installation (Lix %s). "+
+-					"Lix removed `builtins.fetchClosure` in version %s, which "+
+-					"Devbox relies on to install packages. Please switch to Nix "+
+-					"(https://nixos.org/download), or downgrade to Lix < %[2]s.\n",
+-				info.Version,
+-				nix.LixVersionWithoutFetchClosure,
+-			)
+-			return
+-		}
+ 	}()
+ 
+ 	if BinaryInstalled() {
+diff --git a/internal/nix/nix.go b/internal/nix/nix.go
+index 3b99d2d4..fd05120f 100644
+--- a/internal/nix/nix.go
++++ b/internal/nix/nix.go
+@@ -117,7 +117,7 @@ func FlakeNixpkgs(commit string) string {
+ }
+ 
+ func ExperimentalFlags() []string {
+-	options := []string{"nix-command", "flakes", "fetch-closure"}
++	options := []string{"nix-command", "flakes"}
+ 	return []string{
+ 		"--extra-experimental-features", "ca-derivations",
+ 		"--option", "experimental-features", strings.Join(options, " "),
+diff --git a/internal/shellgen/flake_input.go b/internal/shellgen/flake_input.go
+index 03a9b97e..7f66a236 100644
+--- a/internal/shellgen/flake_input.go
++++ b/internal/shellgen/flake_input.go
+@@ -57,7 +57,9 @@ func (f *flakeInput) BuildInputsForSymlinkJoin() ([]*SymlinkJoin, error) {
+ 		}
+ 
+ 		// Skip packages that are already in the binary cache. These will be directly
+-		// included in the buildInputs using `builtins.fetchClosure` of their store paths.
++		// included in the buildInputs using `builtins.appendContext` of their store
++		// paths, which causes Nix to substitute them from the binary cache during
++		// eval if they aren't present locally.
+ 		inCache, err := pkg.IsInBinaryCache()
+ 		if err != nil {
+ 			return nil, err
+diff --git a/internal/shellgen/flake_plan.go b/internal/shellgen/flake_plan.go
+index 91063fe5..ea70ca4f 100644
+--- a/internal/shellgen/flake_plan.go
++++ b/internal/shellgen/flake_plan.go
+@@ -171,12 +171,6 @@ func (g *glibcPatchFlake) addOutput(pkg *devpkg.Package) error {
+ 	if g.Outputs.Packages == nil {
+ 		g.Outputs.Packages = map[string]map[string]string{nix.System(): {}}
+ 	}
+-	if cached, err := pkg.IsInBinaryCache(); err == nil && cached {
+-		if expr, err := g.fetchClosureExpr(pkg); err == nil {
+-			g.Outputs.Packages[nix.System()][relAttrPath] = expr
+-			return nil
+-		}
+-	}
+ 
+ 	inputAttrPath, err := g.inputRelativeAttrPath(pkg)
+ 	if err != nil {
+@@ -240,22 +234,6 @@ func (g *glibcPatchFlake) inputRelativeAttrPath(pkg *devpkg.Package) (string, er
+ 	return atrrPath, nil
+ }
+ 
+-// TODO: this only handles the first store path, but we should handle all of them
+-func (g *glibcPatchFlake) fetchClosureExpr(pkg *devpkg.Package) (string, error) {
+-	storePaths, err := pkg.InputAddressedPaths()
+-	if err != nil {
+-		return "", err
+-	}
+-	if len(storePaths) == 0 {
+-		return "", fmt.Errorf("no store path for package %s", pkg.Raw)
+-	}
+-	return fmt.Sprintf(`builtins.fetchClosure {
+-  fromStore = "%s";
+-  fromPath = "%s";
+-  inputAddressed = true;
+-}`, "devpkg.BinaryCache", storePaths[0]), nil
+-}
+-
+ // copySystemCUDALib searches for the system's libcuda.so shared library and
+ // copies it in the flake's lib directory.
+ func (g *glibcPatchFlake) copySystemCUDALib(flakeDir string) error {
+diff --git a/internal/shellgen/tmpl/flake.nix.tmpl b/internal/shellgen/tmpl/flake.nix.tmpl
+index 3bd0513f..50e0ae3f 100644
+--- a/internal/shellgen/tmpl/flake.nix.tmpl
++++ b/internal/shellgen/tmpl/flake.nix.tmpl
+@@ -40,17 +40,19 @@
+             {{- range $_, $pkg := .Packages }}
+             {{- range $_, $output := $pkg.GetOutputsWithCache }}
+             {{ if $output.CacheURI -}}
+-            (builtins.trace "downloading {{ $pkg.Versioned }}" (builtins.fetchClosure {
+-              {{/*
+-                HACK HACK HACK! fetchClosure only supports http(s) caches and not
+-                s3 caches. Until we implement that, we put a fake store here.
+-                Since we pre-build everything, fetchClosure will not actually
+-                fetch anything and just use the local version. This may break
+-                if user somehow removes the local store path.
++            (builtins.trace "downloading {{ $pkg.Versioned }}" (builtins.appendContext "{{ $pkg.InputAddressedPathForOutput $output.Name }}" {
++              {{- /*
++                appendContext attaches a store-path context to the string so
++                that Nix calls store->ensurePath() during eval, substituting
++                the path from configured substituters (cache.nixos.org) if it
++                isn't already present locally. Devbox pre-builds each package
++                before generating this flake, so the path should usually be
++                in the local store at this point; if it isn't (e.g. after a
++                GC), Nix will fetch it automatically. This replaces the prior
++                builtins.fetchClosure hack, which required the experimental
++                "fetch-closure" feature and broke on Lix >= 2.95.
+               */}}
+-              fromStore = "https://cache.nixos.org";
+-              fromPath = "{{ $pkg.InputAddressedPathForOutput $output.Name }}";
+-              inputAddressed = true;
++              "{{ $pkg.InputAddressedPathForOutput $output.Name }}" = { path = true; };
+             }))
+             {{- end }}
+             {{- end }}
+diff --git a/nix/nix.go b/nix/nix.go
+index f793b606..406a5511 100644
+--- a/nix/nix.go
++++ b/nix/nix.go
+@@ -202,12 +202,11 @@ func (n *Nix) Info() (Info, error) {
+ 	MinVersion = Version2_18
+ )
+ 
+-// LixVersionWithoutFetchClosure is the first Lix version that removed
+-// builtins.fetchClosure, which Devbox relies on to install packages from a
+-// binary cache. Devbox is not compatible with Lix at or above this version.
+-//
+-// See https://lix.systems/blog/2026-03-25-lix-2.95-release/.
+-const LixVersionWithoutFetchClosure = "2.95.0"
++// IsLix reports whether the Nix installation is the Lix fork, which identifies
++// itself as "Lix, like Nix" in the parenthetical of its "nix --version" output.
++func (i Info) IsLix() bool {
++	return strings.Contains(strings.ToLower(i.Implementation), "lix")
++}
+ 
+ // versionRegexp matches the first line of "nix --version" output.
+ //
+@@ -365,29 +364,6 @@ func (i Info) AtLeast(version string) bool {
+ 	return semver.Compare("v"+prerelease, version) >= 0
+ }
+ 
+-// IsLix reports whether the Nix installation is the Lix fork, which identifies
+-// itself as "Lix, like Nix" in the parenthetical of its "nix --version" output.
+-func (i Info) IsLix() bool {
+-	return strings.Contains(strings.ToLower(i.Implementation), "lix")
+-}
+-
+-// SupportsFetchClosure reports whether the Nix installation provides
+-// builtins.fetchClosure, which Devbox relies on to install packages from a
+-// binary cache. The Lix fork removed fetchClosure in version 2.95, so Devbox is
+-// not compatible with it (see LixVersionWithoutFetchClosure). When the version
+-// cannot be determined, this returns true to avoid blocking on a false
+-// positive.
+-func (i Info) SupportsFetchClosure() bool {
+-	if !i.IsLix() {
+-		return true
+-	}
+-	// Compare against the lowest possible prerelease of the removal version
+-	// (e.g. "2.95.0-0") so that Lix 2.95 prereleases, which have also dropped
+-	// fetchClosure, are treated as unsupported. A plain "2.95.0" boundary would
+-	// let them through, since semver sorts a prerelease below its release.
+-	return !i.AtLeast(LixVersionWithoutFetchClosure + "-0")
+-}
+-
+ // sourceProfileMutex guards against multiple goroutines attempting to source
+ // the Nix profile scripts concurrently.
+ var sourceProfileMutex sync.Mutex
+diff --git a/nix/nix_test.go b/nix/nix_test.go
+index 8e7ab336..e01c2626 100644
+--- a/nix/nix_test.go
++++ b/nix/nix_test.go
+@@ -251,60 +251,6 @@ func TestInfoIsLix(t *testing.T) {
+ 	}
+ }
+ 
+-func TestInfoSupportsFetchClosure(t *testing.T) {
+-	cases := []struct {
+-		name string
+-		info Info
+-		want bool
+-	}{
+-		{
+-			name: "nix",
+-			info: Info{Implementation: "Nix", Version: "2.34.6"},
+-			want: true,
+-		},
+-		{
+-			name: "lix before 2.95",
+-			info: Info{Implementation: "Lix, like Nix", Version: "2.94.0"},
+-			want: true,
+-		},
+-		{
+-			name: "lix prerelease before 2.95",
+-			info: Info{Implementation: "Lix, like Nix", Version: "2.90.0-beta.1"},
+-			want: true,
+-		},
+-		{
+-			name: "lix 2.95",
+-			info: Info{Implementation: "Lix, like Nix", Version: "2.95.0"},
+-			want: false,
+-		},
+-		{
+-			// A 2.95 prerelease has also dropped fetchClosure and must be
+-			// treated as unsupported, even though semver sorts it below 2.95.0.
+-			name: "lix 2.95 prerelease",
+-			info: Info{Implementation: "Lix, like Nix", Version: "2.95.0-beta.1"},
+-			want: false,
+-		},
+-		{
+-			name: "lix after 2.95",
+-			info: Info{Implementation: "Lix, like Nix", Version: "2.95.2"},
+-			want: false,
+-		},
+-		{
+-			// Unknown version: assume support to avoid a false positive.
+-			name: "lix unknown version",
+-			info: Info{Implementation: "Lix, like Nix"},
+-			want: true,
+-		},
+-	}
+-	for _, tt := range cases {
+-		t.Run(tt.name, func(t *testing.T) {
+-			if got := tt.info.SupportsFetchClosure(); got != tt.want {
+-				t.Errorf("SupportsFetchClosure() = %v, want %v", got, tt.want)
+-			}
+-		})
+-	}
+-}
+-
+ func TestNixBinaryFallbackPaths(t *testing.T) {
+ 	paths := nixBinaryFallbackPaths()
+ 	if len(paths) == 0 {

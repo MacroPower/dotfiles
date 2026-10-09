@@ -55,29 +55,16 @@ let
       ;
   };
 
-  # nixpkgs 97bf56b78 (2026-09-28) links every lix with `-z,noexecstack`.
-  # Apple's ld64 rejects `-z`, so on darwin meson's compiler check fails with
-  # "Compiler clang++ cannot compile programs" and the pinned lix_2_94 cannot
-  # build. Upstream fixed it in NixOS/nixpkgs#568529 (31a68c07f) by making
-  # the flag ELF-only; this mirrors that fix for the pinned revision. Drop it
-  # once the nixpkgs pin includes that commit.
-  lixDarwinLdflagsOverlay =
-    _final: prev:
-    prev.lib.optionalAttrs prev.stdenv.hostPlatform.isDarwin {
-      lixPackageSets = prev.lixPackageSets.extend (
-        _lixFinal: lixPrev: {
-          lix_2_94 = lixPrev.lix_2_94.overrideScope (
-            _scopeFinal: scopePrev: {
-              lix = scopePrev.lix.overrideAttrs (old: {
-                env = old.env // {
-                  NIX_LDFLAGS = "";
-                };
-              });
-            }
-          );
-        }
-      );
-    };
+  # Stock devbox reads packages with builtins.fetchClosure, which Lix 2.95
+  # removed, and devbox 0.18.3 and later refuse to start on that Lix. This
+  # patch is jetify-com/devbox#2997 rebased onto 0.18.4. It makes the
+  # generated flake use builtins.appendContext and deletes the Lix check.
+  # Drop it once a devbox release includes that change.
+  devboxOverlay = _final: prev: {
+    devbox = prev.devbox.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [ ../pkgs/devbox-lix-append-context.patch ];
+    });
+  };
 
   ryceeOverlay = final: prev: {
     firefox-addons = final.callPackage (inputs.rycee-nur + "/pkgs/firefox-addons") {
@@ -595,7 +582,7 @@ let
   sharedOverlays = system: [
     fetchurlOverlay
     curlImpersonateOverlay
-    lixDarwinLdflagsOverlay
+    devboxOverlay
     lixOverlay
     localOverlay
     lupaOverlay
