@@ -3733,7 +3733,7 @@ in
                 ];
                 Notification = [
                   {
-                    matcher = "permission_prompt|elicitation_dialog";
+                    matcher = "permission_prompt|elicitation_dialog|elicitation_url_dialog";
                     hooks = [ (status "waiting") ];
                   }
                 ];
