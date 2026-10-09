@@ -191,16 +191,27 @@ func offender(call *syntax.CallExpr, changed bool) (*syntax.Word, kind) {
 // classify returns the rule word trips, or [kindNone]. changed says
 // whether the command changes directory before the removal, and
 // parents whether the call is an rmdir that also removes parent
-// directories.
+// directories. A glob rule wins over the variable rule, because a
+// `:?` guard on the variable leaves the glob in place.
 func classify(word *syntax.Word, changed, parents bool) kind {
-	if dangerous(word) {
-		return kindVariable
-	}
-
 	if wholeSubstitution(word) {
 		return kindSubstitution
 	}
 
+	if k := globKind(word, changed, parents); k != kindNone {
+		return k
+	}
+
+	if dangerous(word) {
+		return kindVariable
+	}
+
+	return kindNone
+}
+
+// globKind returns the glob rule word trips, or [kindNone]. changed
+// and parents carry the same facts as in [classify].
+func globKind(word *syntax.Word, changed, parents bool) kind {
 	s := shape(word)
 	relative := !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "~") && !strings.HasPrefix(s, "$")
 

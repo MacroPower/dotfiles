@@ -1,6 +1,7 @@
 package rmguard_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -32,8 +33,7 @@ func TestCheck(t *testing.T) {
 	}{
 		"two variables":                  {command: `rm -rf $S/$d`, deny: true},
 		"quoted variable, bare slash":    {command: `rm -rf "$X"/`, deny: true},
-		"glob after slash":               {command: `rm -rf $X/*`, deny: true},
-		"quoted variable, glob":          {command: `rm -rf "$X"/*`, deny: true},
+		"suffix glob after slash":        {command: `rm -rf $X/*.log`, deny: true},
 		"braced variable":                {command: `rm -rf ${X}/`, deny: true},
 		"double slash":                   {command: `rm -rf $X//`, deny: true},
 		"escaped slash":                  {command: `rm -rf $X\/`, deny: true},
@@ -41,7 +41,6 @@ func TestCheck(t *testing.T) {
 		"empty default, top-level name":  {command: `rm -rf "${X:-}/tmp"`, deny: true},
 		"variable default":               {command: `rm -rf ${X:-$Y}/`, deny: true},
 		"quoted empty default":           {command: `rm -rf ${X-""}/`, deny: true},
-		"top-level name with glob":       {command: `rm -rf $X/usr/*`, deny: true},
 		"positional parameter":           {command: `rm -rf $1/`, deny: true},
 		"operand after double dash":      {command: `rm -rf -- $X/`, deny: true},
 		"dash operand after double dash": {command: `rm -rf -- -x $X/`, deny: true},
@@ -106,12 +105,12 @@ func TestCheckReason(t *testing.T) {
 			want:    "write the target as `${S:?}/${d:?}`,",
 		},
 		"glob stays unquoted": {
-			command: `rm -rf $X/*`,
-			want:    "write the target as `${X:?}/*`,",
+			command: `rm -rf $X/*.log`,
+			want:    "write the target as `${X:?}/*.log`,",
 		},
 		"quoting is kept": {
-			command: `rm -rf "$X"/*`,
-			want:    "write the target as `\"${X:?}\"/*`,",
+			command: `rm -rf "$X"/`,
+			want:    "write the target as `\"${X:?}\"/`,",
 		},
 		"guarded variables are left alone": {
 			command: `rm -rf "$S/${d:?}"`,
@@ -139,6 +138,42 @@ func TestCheckReason(t *testing.T) {
 			require.True(t, deny)
 			assert.Contains(t, reason, tc.want)
 			assert.Contains(t, reason, "literal path")
+		})
+	}
+}
+
+// TestCheckRewrite pins that the guard accepts the target its own deny
+// reason suggests.
+func TestCheckRewrite(t *testing.T) {
+	t.Parallel()
+
+	suggestion := regexp.MustCompile("write the target as `([^`]+)`")
+
+	operands := map[string]string{
+		"two variables":      `$S/$d`,
+		"quoted variable":    `"$X"/`,
+		"braced variable":    `${X}/`,
+		"suffix glob":        `$X/*.log`,
+		"top-level name":     `"$X/tmp"`,
+		"substitution after": `$X/$(basename "$p")`,
+	}
+
+	for name, operand := range operands {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			command := "rm -rf " + operand
+
+			reason, deny := rmguard.Check(mustParse(t, command), command)
+			require.True(t, deny)
+
+			match := suggestion.FindStringSubmatch(reason)
+			require.NotNil(t, match, reason)
+
+			fixed := "rm -rf " + match[1]
+
+			reason, deny = rmguard.Check(mustParse(t, fixed), fixed)
+			assert.False(t, deny, reason)
 		})
 	}
 }
@@ -179,6 +214,10 @@ func TestCheckUnresolvable(t *testing.T) {
 		"glob in a parent segment":       {command: `rm -rf */foo/*`, want: depth},
 		"absolute two-level glob":        {command: `rm -rf /tmp/x/*/*`, want: depth},
 		"later operand":                  {command: `rm -rf ./a ~/*`, want: base},
+		"glob below an empty variable":   {command: `rm -rf $X/*`, want: base},
+		"glob below a quoted variable":   {command: `rm -rf "$X"/*`, want: base},
+		"glob below a guarded variable":  {command: `rm -rf "${X:?}"/*`, want: base},
+		"top-level name with glob":       {command: `rm -rf $X/usr/*`, want: base},
 		"single-level glob":              {command: `rm -rf build/*`},
 		"bare glob":                      {command: `rm -rf *`},
 		"dot glob":                       {command: `rm -rf ./*`},

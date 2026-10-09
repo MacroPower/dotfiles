@@ -23,7 +23,7 @@
 // in the operand is a plain name, the reason shows the operand with
 // each one changed to `${NAME:?}` and every other byte kept, so
 // quoting and globs keep their meaning. Otherwise it gives the generic
-// advice.
+// advice. The guard accepts the rewritten target.
 //
 // # Unresolvable Targets
 //
@@ -40,6 +40,10 @@
 //     build/*/*`.
 //
 // A quoted or escaped glob character is literal and never matches.
+//
+// A target that also starts with a possibly-empty variable, such as
+// `rm -rf $X/*`, gets the glob advice. A `:?` guard on the variable
+// would leave the glob in place.
 //
 // Deliberate non-goals:
 //
