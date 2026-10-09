@@ -3971,6 +3971,7 @@ in
         - Explore agents (`subagent_type: "Explore"`) inherit the session model by default; downgrade to `model: "sonnet"` or `model: "haiku"`.
         - Plan agents (`subagent_type: "Plan"`) MUST never be downgraded; omit `model` so they inherit the session model.
         - For generic agents, use your best judgement based on the task being assigned.
+        - Use `Agent({..., effort: "low"})` for mechanical work such as file searches and single-fact lookups. Omit `effort` otherwise, and never set it on Plan agents.
 
         ## Shell
         - `cd` persists between Bash calls only while it stays inside the project directory; a `cd` outside it resets the cwd to the project root on the next call.
