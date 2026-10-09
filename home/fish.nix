@@ -96,6 +96,7 @@ in
   programs.starship = {
     enable = true;
     enableFishIntegration = false;
+    validateFiles.config = true;
 
     settings = {
       add_newline = false;
