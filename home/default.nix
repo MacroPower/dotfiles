@@ -42,7 +42,7 @@ let
         # auto -> macOS Finder Trash on darwin (~/.Trash, restorable from
         # Finder); xdg -> $XDG_DATA_HOME/Trash on linux. gomi_dir is
         # cleared so a stale value can never silently flip auto -> legacy
-        # (gomi internal/config/cli.go:264-267).
+        # (gomi internal/cli/cli.go:264-267).
         strategy = if pkgs.stdenv.hostPlatform.isDarwin then "auto" else "xdg";
         gomi_dir = "";
         home_fallback = config.dotfiles.gomi.homeFallback;
