@@ -200,7 +200,6 @@ in
               icon = "https://kagi.com/favicon.ico";
               definedAliases = [ "@k" ];
             };
-            "amazondotcom-us".metaData.hidden = true;
             "bing".metaData.hidden = true;
             "ebay".metaData.hidden = true;
             "wikipedia".metaData.hidden = true;
