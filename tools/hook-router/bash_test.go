@@ -763,6 +763,11 @@ func TestHandleBashRmGuard(t *testing.T) {
 		"guarded path falls through": {
 			command: `rm -rf "${S:?}/${d:?}"`,
 		},
+		"inline script is denied": {
+			command:      `fd -t d . src/ -x bash -c 'rm -rf $S/$d'`,
+			wantDeny:     true,
+			wantRmReason: true,
+		},
 		"run_in_background is not exempt": {
 			command:      "rm -rf $S/$d",
 			background:   true,

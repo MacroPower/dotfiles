@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -28,10 +29,35 @@ var commands = map[string]bool{
 	"rmdir": true,
 }
 
+// shells names the executables that run a script passed with `-c`.
+var shells = map[string]bool{
+	"sh":   true,
+	"bash": true,
+	"zsh":  true,
+	"dash": true,
+	"ksh":  true,
+	"ash":  true,
+}
+
+// optionArg matches the shell options that take the next word as
+// their argument: a short cluster holding `o` or `O`, or one of the
+// long options that name a file.
+var optionArg = regexp.MustCompile(`^(?:[-+][A-Za-z]*[oO][A-Za-z]*|--rcfile|--init-file)$`)
+
+// commandFlag matches a short option cluster that holds `c`, which
+// makes the shell read its script from the next operand.
+var commandFlag = regexp.MustCompile(`^-[A-Za-z]*c[A-Za-z]*$`)
+
+// positional matches a positional parameter or one that expands to
+// all of them.
+var positional = regexp.MustCompile(`^(?:\d+|[@*])$`)
+
 // rootChild matches the text after the leading `$VAR/` when it names a
 // top-level directory, optionally followed by glob segments. The
 // directory list comes from the Claude Code binary.
-var rootChild = regexp.MustCompile(`^(?:bin|boot|dev|etc|home|lib|lib32|lib64|libx32|media|mnt|opt|proc|root|run|sbin|srv|sys|tmp|usr|var|snap|nix|lost\+found|private|cores|Applications|Library|System|Users|Volumes|Windows|ProgramData|cygdrive)(?:/+\*+)*/*$`)
+var rootChild = regexp.MustCompile(
+	`^(?:bin|boot|dev|etc|home|lib|lib32|lib64|libx32|media|mnt|opt|proc|root|run|sbin|srv|sys|tmp|usr|var|snap|nix|lost\+found|private|cores|Applications|Library|System|Users|Volumes|Windows|ProgramData|cygdrive)(?:/+\*+)*/*$`,
+)
 
 // plainName matches a parameter that is an ordinary variable name.
 var plainName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -86,17 +112,43 @@ type piece struct {
 	subst bool
 }
 
+// script is one shell program under inspection: the command the Bash
+// tool runs, or a script that one of its calls passes to a shell with
+// `-c`.
+type script struct {
+	// bound names the positional parameters that the shell call
+	// gives a non-empty literal value.
+	bound map[string]bool
+	// src is the program's source text, which the AST offsets index.
+	src string
+	// shell is the name of the shell that runs an inline script, as
+	// the command writes it. It is empty for the Bash tool's own
+	// command.
+	shell string
+	// changed says the command changes directory before the script
+	// runs.
+	changed bool
+}
+
 // Check walks prog and returns a deny reason for the first `rm` or
 // `rmdir` operand that Claude Code would force a permission prompt on.
 // The package documentation lists the shapes. command is the original
 // command text, used to quote the call and build the suggested
 // rewrite.
 func Check(prog *syntax.File, command string) (string, bool) {
+	deny := script{src: command}.check(prog)
+
+	return deny, deny != ""
+}
+
+// check walks prog and returns the deny reason for its first offending
+// call, or the empty string.
+func (s script) check(prog *syntax.File) string {
 	var deny string
 
 	// Offset of the first directory change, or past the end when the
-	// command has none.
-	firstChange := uint(len(command)) + 1
+	// script has none.
+	firstChange := uint(len(s.src)) + 1
 
 	syntax.Walk(prog, func(node syntax.Node) bool {
 		call, ok := node.(*syntax.CallExpr)
@@ -115,12 +167,20 @@ func Check(prog *syntax.File, command string) (string, bool) {
 		}
 
 		call, ok := node.(*syntax.CallExpr)
-		if !ok || !named(call, commands) {
+		if !ok {
 			return true
 		}
 
-		if operand, k := offender(call, firstChange < call.Pos().Offset()); k != kindNone {
-			deny = reason(command, call, operand, k)
+		changed := s.changed || firstChange < call.Pos().Offset()
+
+		if !named(call, commands) {
+			deny = s.inline(call, changed)
+
+			return true
+		}
+
+		if operand, k := s.offender(call, changed); k != kindNone {
+			deny = s.reason(call, operand, k)
 
 			return false
 		}
@@ -128,7 +188,178 @@ func Check(prog *syntax.File, command string) (string, bool) {
 		return true
 	})
 
-	return deny, deny != ""
+	return deny
+}
+
+// inline returns the deny reason for the script that call passes to a
+// shell with `-c`. It returns the empty string when call carries no
+// such script, when the script does not parse, and when no rule flags
+// it. changed says whether the command changes directory before call.
+func (s script) inline(call *syntax.CallExpr, changed bool) string {
+	word, shell, rest := scriptWord(call)
+	if word == nil {
+		return ""
+	}
+
+	src, outer, ok := s.render(word)
+	if !ok {
+		return ""
+	}
+
+	prog, err := syntax.NewParser().Parse(strings.NewReader(src), "")
+	if err != nil {
+		return ""
+	}
+
+	inner := script{src: src, shell: shell, changed: changed}
+	if !outer {
+		inner.bound = bind(rest)
+	}
+
+	return inner.check(prog)
+}
+
+// scriptWord returns the script that call passes to a shell with
+// `-c`, the name of that shell as written, and the words after the
+// script, which the shell binds to `$0`, `$1`, and so on. The shell is
+// the first word that names one, so a wrapper such as `find -exec sh
+// -c` or `xargs bash -c` counts. The script is nil when call names no
+// shell or the shell gets no `-c` script.
+func scriptWord(call *syntax.CallExpr) (*syntax.Word, string, []*syntax.Word) {
+	start, shell := -1, ""
+
+	for i, arg := range call.Args {
+		if name, ok := literalWord(arg); ok && shells[path.Base(name)] {
+			start, shell = i, name
+
+			break
+		}
+	}
+
+	if start < 0 {
+		return nil, "", nil
+	}
+
+	args := call.Args[start+1:]
+	inline := false
+
+	// The script is the shell's first operand, and only when a `-c`
+	// comes before it.
+	for i := 0; i < len(args); i++ {
+		lit, ok := literalWord(args[i])
+
+		switch {
+		case ok && lit == "--":
+			i++
+		case ok && (optionArg.MatchString(lit) || commandFlag.MatchString(lit)):
+			inline = inline || commandFlag.MatchString(lit)
+
+			if optionArg.MatchString(lit) {
+				i++
+			}
+
+			continue
+		case isFlag(args[i]), ok && len(lit) > 1 && lit[0] == '+':
+			continue
+		}
+
+		if !inline || i >= len(args) {
+			return nil, "", nil
+		}
+
+		return args[i], shell, args[i+1:]
+	}
+
+	return nil, "", nil
+}
+
+// bind returns the positional parameters that rest gives a non-empty
+// literal value. rest holds the words after an inline script, which
+// the shell binds to `$0`, `$1`, and so on. A bound `$1` also binds
+// `$@` and `$*`.
+func bind(rest []*syntax.Word) map[string]bool {
+	bound := map[string]bool{}
+
+	for i, word := range rest {
+		if lit, ok := literalWord(word); ok && lit != "" {
+			bound[strconv.Itoa(i)] = true
+		}
+	}
+
+	if bound["1"] {
+		bound["@"], bound["*"] = true, true
+	}
+
+	return bound
+}
+
+// render returns the text the inner shell receives for the script
+// word of a `-c` call. It drops the quoting the outer shell consumes
+// and keeps each outer expansion as its source text, so the rules read
+// an expansion the outer shell performs as one in the script. outer
+// reports whether one of those expansions is a positional parameter.
+// Such a parameter belongs to the outer shell and takes no value from
+// the words after the script. ok is false for a script in ANSI-C
+// quotes (`$'...'`), which the guard does not decode.
+func (s script) render(word *syntax.Word) (string, bool, bool) {
+	var b strings.Builder
+
+	outer := false
+
+	expansion := func(part syntax.WordPart) {
+		if pe, ok := part.(*syntax.ParamExp); ok && pe.Param != nil && positional.MatchString(pe.Param.Value) {
+			outer = true
+		}
+
+		b.WriteString(s.src[part.Pos().Offset():part.End().Offset()])
+	}
+
+	for _, part := range word.Parts {
+		switch p := part.(type) {
+		case *syntax.Lit:
+			b.WriteString(unescape(p.Value, ""))
+		case *syntax.SglQuoted:
+			if p.Dollar {
+				return "", false, false
+			}
+
+			b.WriteString(p.Value)
+		case *syntax.DblQuoted:
+			for _, dp := range p.Parts {
+				if lit, ok := dp.(*syntax.Lit); ok {
+					b.WriteString(unescape(lit.Value, "$`\"\\\n"))
+				} else {
+					expansion(dp)
+				}
+			}
+		default:
+			expansion(part)
+		}
+	}
+
+	return b.String(), outer, true
+}
+
+// unescape removes the backslashes the shell consumes from text. In
+// double quotes a backslash escapes only the characters in special.
+// Unquoted text passes an empty special, where a backslash escapes any
+// character. An escaped newline joins two lines and leaves nothing.
+func unescape(text, special string) string {
+	var b strings.Builder
+
+	for i := 0; i < len(text); i++ {
+		if text[i] == '\\' && i+1 < len(text) && (special == "" || strings.IndexByte(special, text[i+1]) >= 0) {
+			i++
+
+			if text[i] == '\n' {
+				continue
+			}
+		}
+
+		b.WriteByte(text[i])
+	}
+
+	return b.String()
 }
 
 // named reports whether call's command word statically resolves to
@@ -151,7 +382,7 @@ func named(call *syntax.CallExpr, names map[string]bool) bool {
 // a literal starting with `-` is a flag; every other word is an
 // operand. changed says whether the command changes directory before
 // call.
-func offender(call *syntax.CallExpr, changed bool) (*syntax.Word, kind) {
+func (s script) offender(call *syntax.CallExpr, changed bool) (*syntax.Word, kind) {
 	var operands []*syntax.Word
 
 	operandsOnly, parents := false, false
@@ -180,7 +411,7 @@ func offender(call *syntax.CallExpr, changed bool) (*syntax.Word, kind) {
 	parents = parents && path.Base(name) == "rmdir"
 
 	for _, operand := range operands {
-		if k := classify(operand, changed, parents); k != kindNone {
+		if k := s.classify(operand, changed, parents); k != kindNone {
 			return operand, k
 		}
 	}
@@ -193,7 +424,7 @@ func offender(call *syntax.CallExpr, changed bool) (*syntax.Word, kind) {
 // parents whether the call is an rmdir that also removes parent
 // directories. A glob rule wins over the variable rule, because a
 // `:?` guard on the variable leaves the glob in place.
-func classify(word *syntax.Word, changed, parents bool) kind {
+func (s script) classify(word *syntax.Word, changed, parents bool) kind {
 	if wholeSubstitution(word) {
 		return kindSubstitution
 	}
@@ -202,7 +433,7 @@ func classify(word *syntax.Word, changed, parents bool) kind {
 		return k
 	}
 
-	if dangerous(word) {
+	if s.dangerous(word) {
 		return kindVariable
 	}
 
@@ -210,7 +441,7 @@ func classify(word *syntax.Word, changed, parents bool) kind {
 }
 
 // globKind returns the glob rule word trips, or [kindNone]. changed
-// and parents carry the same facts as in [classify].
+// and parents carry the same facts as in [script.classify].
 func globKind(word *syntax.Word, changed, parents bool) kind {
 	s := shape(word)
 	relative := !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "~") && !strings.HasPrefix(s, "$")
@@ -346,9 +577,9 @@ func isFlag(word *syntax.Word) bool {
 // dangerous reports whether word starts with a possibly-empty
 // parameter expansion followed by a slash, with nothing after the
 // slash that keeps the path below a top-level directory.
-func dangerous(word *syntax.Word) bool {
+func (s script) dangerous(word *syntax.Word) bool {
 	pieces := flatten(word)
-	if len(pieces) < 2 || pieces[0].param == nil || !bare(pieces[0].param) || !pieces[1].lit {
+	if len(pieces) < 2 || pieces[0].param == nil || !s.bare(pieces[0].param) || !pieces[1].lit {
 		return false
 	}
 
@@ -422,9 +653,10 @@ func flatten(word *syntax.Word) []piece {
 // bare reports whether pe expands to nothing when its parameter is
 // unset or empty: a plain `$X` or `${X}`, or a default form whose
 // default is empty or another simple variable. An error form (`:?`)
-// and every other operator are not bare.
-func bare(pe *syntax.ParamExp) bool {
-	if !simple(pe) {
+// and every other operator are not bare, and neither is a positional
+// parameter the shell call binds.
+func (s script) bare(pe *syntax.ParamExp) bool {
+	if !simple(pe) || s.bound[pe.Param.Value] {
 		return false
 	}
 
@@ -446,7 +678,7 @@ func bare(pe *syntax.ParamExp) bool {
 	case 0:
 		return true
 	case 1:
-		return def[0].param != nil && def[0].param.Exp == nil && simple(def[0].param)
+		return def[0].param != nil && def[0].param.Exp == nil && s.bare(def[0].param)
 	default:
 		return false
 	}
@@ -466,14 +698,14 @@ func simple(pe *syntax.ParamExp) bool {
 // changed to `${NAME:?}` and every other byte kept. It reports false
 // when a bare expansion is not a plain `$NAME` or `${NAME}`, where no
 // mechanical rewrite applies.
-func rewrite(command string, operand *syntax.Word) (string, bool) {
+func (s script) rewrite(operand *syntax.Word) (string, bool) {
 	var b strings.Builder
 
 	pos := operand.Pos().Offset()
 
 	for _, p := range flatten(operand) {
 		pe := p.param
-		if pe == nil || !bare(pe) {
+		if pe == nil || !s.bare(pe) {
 			continue
 		}
 
@@ -481,13 +713,13 @@ func rewrite(command string, operand *syntax.Word) (string, bool) {
 			return "", false
 		}
 
-		b.WriteString(command[pos:pe.Pos().Offset()])
+		b.WriteString(s.src[pos:pe.Pos().Offset()])
 		b.WriteString("${" + pe.Param.Value + ":?}")
 
 		pos = pe.End().Offset()
 	}
 
-	b.WriteString(command[pos:operand.End().Offset()])
+	b.WriteString(s.src[pos:operand.End().Offset()])
 
 	return b.String(), true
 }
@@ -528,19 +760,34 @@ func nodeSrc(command string, node syntax.Node) string {
 
 // reason builds the deny message: a first line naming the offending
 // call and operand, then why Claude Code prompts on the shape and how
-// to rewrite it.
-func reason(command string, call *syntax.CallExpr, operand *syntax.Word, k kind) string {
+// to rewrite it. For an inline script the first line also names the
+// shell that runs it.
+func (s script) reason(call *syntax.CallExpr, operand *syntax.Word, k kind) string {
 	const prompt = "Claude Code forces a permission prompt on this shape, and no permission mode or allow rule skips it."
 
-	callSrc, target := nodeSrc(command, call), nodeSrc(command, operand)
+	callSrc, target := nodeSrc(s.src, call), nodeSrc(s.src, operand)
+
+	where := ""
+	if s.shell != "" {
+		where = fmt.Sprintf(" in the script passed to `%s -c`", s.shell)
+	}
 
 	if k == kindVariable {
 		fix := "add `:?` to the leading variable so the command fails when it is empty, e.g. `\"${VAR:?}/...\"`"
-		if fixed, ok := rewrite(command, operand); ok {
-			fix = fmt.Sprintf("write the target as `%s`, which fails instead of expanding when a variable is empty", fixed)
+		if fixed, ok := s.rewrite(operand); ok {
+			fix = fmt.Sprintf(
+				"write the target as `%s`, which fails instead of expanding when a variable is empty",
+				fixed,
+			)
 		}
 
-		return fmt.Sprintf("%s `%s` targets `%s`, which starts with a variable expansion and resolves to `/` or a top-level directory when that variable is empty.", ReasonPrefix, callSrc, target) + "\n\n" +
+		return fmt.Sprintf(
+			"%s `%s`%s targets `%s`, which starts with a variable expansion and resolves to `/` or a top-level directory when that variable is empty.",
+			ReasonPrefix,
+			callSrc,
+			where,
+			target,
+		) + "\n\n" +
 			prompt + " Rerun the command with a target that cannot expand to the root:\n" +
 			"\n" +
 			"- Either " + fix + ".\n" +
@@ -564,6 +811,6 @@ func reason(command string, call *syntax.CallExpr, operand *syntax.Word, k kind)
 		fix = "Write the directory as a literal absolute path. To empty a directory, remove the directory itself and recreate it."
 	}
 
-	return fmt.Sprintf("%s `%s` targets `%s`, which %s.", UnresolvablePrefix, callSrc, target, why) + "\n\n" +
+	return fmt.Sprintf("%s `%s`%s targets `%s`, which %s.", UnresolvablePrefix, callSrc, where, target, why) + "\n\n" +
 		prompt + " " + fix
 }

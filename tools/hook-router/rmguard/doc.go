@@ -45,6 +45,19 @@
 // `rm -rf $X/*`, gets the glob advice. A `:?` guard on the variable
 // would leave the glob in place.
 //
+// # Inline Scripts
+//
+// The same rules apply to a script that a call passes to `sh`, `bash`,
+// `zsh`, `dash`, `ksh`, or `ash` with `-c`. The shell can be the
+// command or an argument of a wrapper, as in `find -exec sh -c` and
+// `xargs bash -c`.
+//
+// The guard reads the script as the inner shell receives it. An
+// expansion that the outer shell performs in a double-quoted script
+// counts as an expansion in the script. A positional parameter that
+// the call binds to a non-empty literal word is never empty, so `$1`
+// in `sh -c 'rm -rf "$1"/' _ /data` does not match the variable rule.
+//
 // Deliberate non-goals:
 //
 //   - Parity with Claude Code. The rules follow the patterns in its
@@ -55,7 +68,10 @@
 //   - Claude Code's checks for a variable assigned in the same command
 //     to a dangerous directory, for a critical system path, and for
 //     the working directory or its ancestors.
-//   - Wrapper forms (`sudo rm`, `xargs rm`, `sh -c 'rm ...'`).
+//   - Wrapper forms that take the removal as arguments (`sudo rm`,
+//     `xargs rm`, `find -exec rm`).
+//   - A script in ANSI-C quotes (`sh -c $'...'`), and a script a shell
+//     reads from a file or from standard input.
 //   - A run_in_background exemption. The built-in prompt fires for a
 //     background call too.
 package rmguard

@@ -1905,11 +1905,12 @@ in
         (`rm -rf $DIR/$name`), a command substitution target, a
         relative glob after a `cd`, a glob in a directory that is not
         a literal path, and a glob that spans more than one directory
-        level. Claude Code forces a permission prompt on those shapes
-        in every permission mode, and an unattended session waits out
-        the prompt before it can retry. The deny reaches the agent
-        first and carries the rewrite. See tools/hook-router/rmguard
-        for the matching rules.
+        level. The guard also reads a script that a call passes to a
+        shell with `-c`. Claude Code forces a permission prompt on
+        those shapes in every permission mode, and an unattended
+        session waits out the prompt before it can retry. The deny
+        reaches the agent first and carries the rewrite. See
+        tools/hook-router/rmguard for the matching rules.
       '';
     };
 

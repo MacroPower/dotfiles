@@ -251,3 +251,125 @@ func TestCheckUnresolvable(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckInline pins how the guard reads a script that a call passes
+// to a shell with `-c`, and the rule each denied script trips.
+func TestCheckInline(t *testing.T) {
+	t.Parallel()
+
+	const (
+		variable     = "starts with a variable expansion"
+		substitution = "output of a command substitution"
+		changeDir    = "relative glob after a directory change"
+		base         = "directory that is not a literal path"
+		depth        = "more than one directory level"
+	)
+
+	cases := map[string]struct {
+		command string
+		// want is a phrase from the expected rule's reason; empty
+		// means the command passes.
+		want string
+	}{
+		"single-quoted script":             {command: `sh -c 'rm -rf $X/'`, want: variable},
+		"outer expansion in double quotes": {command: `bash -c "rm -rf \"$X\"/"`, want: variable},
+		"escaped inner expansion":          {command: `bash -c "rm -rf \$X/"`, want: variable},
+		"unquoted script word":             {command: `sh -c rm\ -rf\ \$X/`, want: variable},
+		"clustered flags":                  {command: `bash -lc 'rm -rf $X/'`, want: variable},
+		"option with an argument":          {command: `bash -euo pipefail -c 'rm -rf $X/'`, want: variable},
+		"long option":                      {command: `bash --norc -c 'rm -rf $X/'`, want: variable},
+		"shell by path":                    {command: `/bin/sh -c 'rm -rf $X/'`, want: variable},
+		"zsh":                              {command: `zsh -c 'rm -rf $X/'`, want: variable},
+		"find exec, outer positional": {
+			command: `find . -type d -exec sh -c "rm -rf \"$1\"/" _ {} \;`,
+			want:    variable,
+		},
+		"find exec, glob below an outer positional": {
+			command: `find . -name '*.tmp' -exec sh -c "rm -rf \"$1\"/*" _ {} \;`,
+			want:    base,
+		},
+		"xargs leaves the positional unset": {command: `xargs sh -c 'rm -rf "$1"/' _`, want: variable},
+		"unbound later positional":          {command: `sh -c 'rm -rf "$2"/' _ /data`, want: variable},
+		"positional bound to an expansion":  {command: `sh -c 'rm -rf "$1"/' _ "$DIR"`, want: variable},
+		"positional bound to nothing":       {command: `sh -c 'rm -rf "$1"/' _ ""`, want: variable},
+		"nested shells":                     {command: `sh -c "bash -c 'rm -rf \$X/'"`, want: variable},
+		"inside a subshell":                 {command: `(sh -c 'rm -rf $X/')`, want: variable},
+		"substitution":                      {command: `sh -c 'rm -rf $(find . -name x)'`, want: substitution},
+		"outer substitution":                {command: `sh -c "rm -rf $(find . -name x)"`, want: substitution},
+		"cd inside the script":              {command: `sh -c 'cd build && rm -rf ./*'`, want: changeDir},
+		"cd before the shell":               {command: `cd build && sh -c 'rm -rf ./*'`, want: changeDir},
+		"home glob":                         {command: `sh -c 'rm -rf ~/*'`, want: base},
+		"glob below a bound positional":     {command: `sh -c 'rm -rf "$1"/*' _ {}`, want: base},
+		"two glob levels":                   {command: `sh -c 'rm -rf build/*/*'`, want: depth},
+
+		"bound positional":                {command: `sh -c 'rm -rf "$1"/' _ /data`},
+		"find exec, bound positional":     {command: `find . -type d -exec sh -c 'rm -rf "$1"/' _ {} \;`},
+		"bound all-arguments parameter":   {command: `sh -c 'rm -rf "$@"/' _ /data`},
+		"error on empty":                  {command: `sh -c 'rm -rf "${X:?}/"'`},
+		"literal path":                    {command: `sh -c 'rm -rf ./build'`},
+		"rm as an argument":               {command: `sh -c 'echo rm -rf $X/'`},
+		"single-quoted inside the script": {command: `sh -c "rm -rf '\$X/'"`},
+		"script file, not a script":       {command: `sh run.sh -c 'rm -rf $X/'`},
+		"no command flag":                 {command: `sh -x 'rm -rf $X/'`},
+		"flag after double dash":          {command: `sh -- -c 'rm -rf $X/'`},
+		"shell in one quoted word":        {command: `echo 'sh -c "rm -rf $X/"'`},
+		"cd after the shell":              {command: `sh -c 'rm -rf ./*'; cd build`},
+		"ANSI-C quoted script":            {command: `sh -c $'rm -rf $X/'`},
+		"script that does not parse":      {command: `sh -c 'rm -rf $X/ ('`},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			reason, deny := rmguard.Check(mustParse(t, tc.command), tc.command)
+			if tc.want == "" {
+				assert.False(t, deny, reason)
+				return
+			}
+
+			require.True(t, deny)
+			assert.Contains(t, reason, tc.want)
+		})
+	}
+}
+
+// TestCheckInlineReason pins how the deny reason for an inline script
+// names the shell and quotes the script's own text.
+func TestCheckInlineReason(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		command string
+		want    []string
+	}{
+		"script text and rewrite": {
+			command: `bash -c "rm -rf \"$X\"/build/ \$Y/"`,
+			want: []string{
+				"`rm -rf \"$X\"/build/ $Y/` in the script passed to `bash -c` targets `$Y/`,",
+				"write the target as `${Y:?}/`,",
+			},
+		},
+		"shell is named as written": {
+			command: `find . -exec /bin/sh -c 'rm -rf ~/*' \;`,
+			want:    []string{"`rm -rf ~/*` in the script passed to `/bin/sh -c` targets `~/*`,"},
+		},
+		"innermost shell is named": {
+			command: `sh -c "bash -c 'rm -rf \$X/'"`,
+			want:    []string{"in the script passed to `bash -c`"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			reason, deny := rmguard.Check(mustParse(t, tc.command), tc.command)
+			require.True(t, deny)
+
+			for _, want := range tc.want {
+				assert.Contains(t, reason, want)
+			}
+		})
+	}
+}
