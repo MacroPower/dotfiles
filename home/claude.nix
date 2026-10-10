@@ -1317,10 +1317,11 @@ in
       type = types.bool;
       default = false;
       description = ''
-        Allow toggling Claude Code into bypass-permissions mode at
-        runtime (Shift+Tab). Sets IS_SANDBOX=1, passes
-        --allow-dangerously-skip-permissions, pre-trusts the home
-        directory, and runs gh auth login.
+        Start Claude Code in bypass-permissions mode instead of
+        accept-edits mode. Sets IS_SANDBOX=1, passes
+        --allow-dangerously-skip-permissions, sets
+        permissions.defaultMode to bypassPermissions, pre-trusts the
+        home directory, and runs gh auth login.
       '';
     };
 
@@ -3440,6 +3441,7 @@ in
             awaySummaryEnabled = false;
             inherit (cfg) attribution;
             permissions = {
+              defaultMode = if skipPerms then "bypassPermissions" else "acceptEdits";
               allow = readPermEntries ++ writePermEntries ++ bundledAllow ++ cfg.extraPermissions.allow;
               deny = [
                 # Key material & certificates
