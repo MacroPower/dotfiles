@@ -639,6 +639,27 @@ let
     ];
   };
 
+  # pyjwt's test_fetch_data_rejects_redirect_without_contacting_destination
+  # binds a ThreadingHTTPServer on 127.0.0.1, which the darwin build
+  # sandbox denies (PermissionError on socket.bind). Deselect that test.
+  # The rest of the suite still runs. Scoped to python 3.12, where only
+  # the kagimcp chain builds pyjwt from source. The python 3.14 build
+  # comes from cache.nixos.org.
+  pyjwtOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (
+        _pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          pyjwt = pyprev.pyjwt.overrideAttrs (old: {
+            disabledTests = (old.disabledTests or [ ]) ++ [
+              "test_fetch_data_rejects_redirect_without_contacting_destination"
+            ];
+          });
+        }
+      )
+    ];
+  };
+
   sharedOverlays = system: [
     fetchurlOverlay
     curlImpersonateOverlay
@@ -663,6 +684,7 @@ let
     anyioOverlay
     psutilOverlay
     isortOverlay
+    pyjwtOverlay
     direnvOverlay
     czkawkaOverlay
     marksmanOverlay
