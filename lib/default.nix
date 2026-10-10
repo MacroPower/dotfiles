@@ -43,9 +43,21 @@ let
     prose-lint = final.callPackage paths.prose-lint { };
   };
 
+  # kat, kclipper, and kcl-lsp are GoReleaser-generated packages that take a
+  # bare `system` argument. callPackage fills it from the deprecated
+  # `pkgs.system` alias, which warns on every evaluation. Pass the system
+  # explicitly.
   nurJacobColvinOverlay =
-    system: _final: _prev:
-    nur-jacobcolvin.packages.${system};
+    system: _final: prev:
+    let
+      nurPkgs = nur-jacobcolvin.packages.${system};
+    in
+    nurPkgs
+    // prev.lib.genAttrs [
+      "kat"
+      "kclipper"
+      "kcl-lsp"
+    ] (name: nurPkgs.${name}.override { inherit system; });
 
   lixOverlay = _final: prev: {
     inherit (prev.lixPackageSets.stable)
@@ -677,6 +689,14 @@ let
     ];
   };
 
+  # dagger/nix's GoReleaser-generated package takes a bare `system`
+  # argument. callPackage fills it from the deprecated `pkgs.system` alias,
+  # which warns on every evaluation. Pass the host platform's system
+  # explicitly. Must follow dagger.overlays.default in sharedOverlays.
+  daggerSystemOverlay = final: prev: {
+    dagger = prev.dagger.override { inherit (final.stdenv.hostPlatform) system; };
+  };
+
   sharedOverlays = system: [
     fetchurlOverlay
     curlImpersonateOverlay
@@ -713,6 +733,7 @@ let
     (workmuxOverlay system)
     (llmAgentsOverlay system)
     dagger.overlays.default
+    daggerSystemOverlay
   ];
 
   sharedStylixConfig = import paths.stylix;
