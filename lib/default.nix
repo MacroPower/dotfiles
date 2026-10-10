@@ -599,6 +599,24 @@ let
     ];
   };
 
+  # psutil's test_heap_info asserts that glibc reports mmap-backed heap
+  # bytes in use. A python 3.12 test worker on the terrarium VM holds
+  # none, so mmap_used is 0 and the test fails. Scoped to python 3.12,
+  # where only the kagimcp chain builds psutil from source. nixpkgs
+  # already skips psutil's checks on darwin.
+  psutilOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (
+        _pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          psutil = pyprev.psutil.overrideAttrs (old: {
+            disabledTests = (old.disabledTests or [ ]) ++ [ "test_heap_info" ];
+          });
+        }
+      )
+    ];
+  };
+
   sharedOverlays = system: [
     fetchurlOverlay
     curlImpersonateOverlay
@@ -621,6 +639,7 @@ let
     syrupyOverlay
     richOverlay
     anyioOverlay
+    psutilOverlay
     direnvOverlay
     czkawkaOverlay
     marksmanOverlay
