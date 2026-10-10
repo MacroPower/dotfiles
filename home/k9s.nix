@@ -8,7 +8,7 @@
           k9s = {
             liveViewAutoRefresh = true;
             screenDumpDir = "/tmp/k9s-screen-dumps";
-            refreshRate = 1;
+            refreshRate = 5;
             maxConnRetry = 5;
             readOnly = false;
             noExitOnCtrlC = false;
