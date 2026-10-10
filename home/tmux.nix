@@ -643,7 +643,7 @@ let
     scratchPopup = {
       group = "popups";
       name = "Scratch terminal";
-      key = "\`";
+      key = "`";
       cmd = ''run-shell "tmux-floax-run scratch"'';
     };
     scratchMenu = {
