@@ -3415,11 +3415,6 @@ in
           {
             env = {
               CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
-              # Restore one level of nested subagent delegation. Claude
-              # Code 2.1.217 caps subagents at depth 1 by default, which
-              # stops a general-purpose/claude subagent (and in-process
-              # team teammates) from fanning out their own subagents.
-              CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH = "2";
               # Keep /code-review in the session it was typed in. As of
               # Claude Code 2.1.229 it is the only command running in a
               # "fork" context, which spawns its orchestrator into a
