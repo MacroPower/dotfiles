@@ -617,6 +617,28 @@ let
     ];
   };
 
+  # isort's check phase pulls pylama, vulture, pint, uncertainties, and
+  # scipy into the kagimcp closure through fastapi and inline-snapshot.
+  # None of them is on cache.nixos.org for python 3.12, so scipy builds
+  # from source and runs its suite. Its test_unitarity draws unseeded
+  # random matrices and checks them against a 1e-15 tolerance, which
+  # one draw missed on the terrarium VM. Skip isort's suite so the
+  # whole chain drops out of the build closure. Upstream CI validates
+  # releases. Scoped to python 3.12, because the python 3.14 isort
+  # comes from cache.nixos.org.
+  isortOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (
+        _pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          isort = pyprev.isort.overridePythonAttrs (_: {
+            doCheck = false;
+          });
+        }
+      )
+    ];
+  };
+
   sharedOverlays = system: [
     fetchurlOverlay
     curlImpersonateOverlay
@@ -640,6 +662,7 @@ let
     richOverlay
     anyioOverlay
     psutilOverlay
+    isortOverlay
     direnvOverlay
     czkawkaOverlay
     marksmanOverlay
