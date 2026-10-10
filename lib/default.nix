@@ -579,6 +579,26 @@ let
     ];
   };
 
+  # anyio's test_tls_connectable wraps the server side of a TLS stream
+  # with a hostname. Python 3.12.15 rejects that in wrap_bio with
+  # "server_hostname can only be specified in client mode", and python
+  # 3.14 accepts it. The streams the failed test leaves open then fail
+  # two unrelated later tests with unraisable exception warnings.
+  # Scoped to python 3.12, where only the kagimcp chain builds anyio
+  # from source. The python 3.14 build comes from cache.nixos.org.
+  anyioOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (
+        _pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          anyio = pyprev.anyio.overrideAttrs (old: {
+            disabledTests = (old.disabledTests or [ ]) ++ [ "test_tls_connectable" ];
+          });
+        }
+      )
+    ];
+  };
+
   sharedOverlays = system: [
     fetchurlOverlay
     curlImpersonateOverlay
@@ -600,6 +620,7 @@ let
     otelRequestsOverlay
     syrupyOverlay
     richOverlay
+    anyioOverlay
     direnvOverlay
     czkawkaOverlay
     marksmanOverlay
