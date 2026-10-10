@@ -551,6 +551,26 @@
           };
         };
 
+        # Enter on a Certificate or ExternalSecret opens the Secret it
+        # writes instead of the describe view, which stays on `d`. k9s
+        # matches a jump on the exact group/version the cluster serves,
+        # so both ExternalSecret versions carry the rule.
+        jumps =
+          let
+            externalSecretToSecret = {
+              targetGVR = "v1/secrets";
+              fieldSelector = "metadata.name={{.status.binding.name}}";
+            };
+          in
+          {
+            "cert-manager.io/v1/certificates" = {
+              targetGVR = "v1/secrets";
+              fieldSelector = "metadata.name={{.spec.secretName}}";
+            };
+            "external-secrets.io/v1/externalsecrets" = externalSecretToSecret;
+            "external-secrets.io/v1beta1/externalsecrets" = externalSecretToSecret;
+          };
+
         views = {
           "external-secrets.io/v1beta1/externalsecrets" = {
             sortColumn = "NAME:asc";
