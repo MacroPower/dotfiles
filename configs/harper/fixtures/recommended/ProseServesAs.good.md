@@ -7,3 +7,4 @@ The server serves as many requests as the socket buffer allows.
 The daemon serves as root, which is the reason for the seccomp filter.
 The device serves as-is with no warranty.
 The daemon serves as it always has, on port 80.
+The daemon acts as root while it binds the port.
