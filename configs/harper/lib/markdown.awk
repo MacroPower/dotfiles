@@ -10,8 +10,10 @@
 # destinations, and bare URLs to spaces, so columns stay put. It skips
 # YAML front matter, fenced code at any indentation or inside a
 # blockquote, indented code (an indented line after a blank line
-# outside a list, so a nested list item still counts), and HTML
-# comments. Under the C locale the nix build sandbox uses, gawk reads
+# outside a list, so a nested list item still counts), HTML comments,
+# and a MyST directive's opening fence with the `:name: value` option
+# lines under it, which a shortcode pattern would read as an emoji
+# (`:class: tip`). Under the C locale the nix build sandbox uses, gawk reads
 # bytes, so column() converts a byte offset to the character column a
 # reader sees.
 #
@@ -27,6 +29,7 @@ BEGIN {
   in_list = 0
   in_indent = 0
   in_comment = 0
+  myst_options = 0
   raw_mode = ENVIRON["RAW"] != ""
   # A UTF-8 locale reads é as one character; the C locale the nix
   # build sandbox runs under reads it as two bytes.
@@ -162,6 +165,7 @@ in_comment {
 
 /^[ \t]*$/ {
   prev_blank = 1
+  myst_options = 0
   next
 }
 
@@ -185,6 +189,16 @@ in_comment {
     prev_blank = 0
     next
   }
+  if (raw ~ /^[ \t]*:::+[ \t]*\{[^}]*\}/) {
+    myst_options = 1
+    prev_blank = 0
+    next
+  }
+  if (myst_options && raw ~ /^[ \t]*:[A-Za-z][A-Za-z0-9_-]*:([ \t]|$)/) {
+    prev_blank = 0
+    next
+  }
+  myst_options = 0
   if (raw ~ /^[ \t]*<!--/ && raw !~ /-->/) {
     in_comment = 1
     next

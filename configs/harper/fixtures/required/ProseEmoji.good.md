@@ -35,3 +35,9 @@ A paragraph ends the list.
 -->
 
 Arrow → is not an emoji.
+
+:::{note}
+:class: tip
+:link-type: ref
+The cache is warm after a restart.
+:::
