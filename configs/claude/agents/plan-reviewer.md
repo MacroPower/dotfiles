@@ -38,7 +38,7 @@ Read the plan and judge it against each criterion below. For every problem you f
 
 **Check:** the plan stays within what was asked.
 
-**Flag:** defensive handling of impossible cases, backwards-compat shims, and other gold-plating that nobody requested.
+**Flag:** defensive handling of impossible cases, backwards-compat shims, and other extras that nobody requested.
 
 ### 4. Conciseness
 

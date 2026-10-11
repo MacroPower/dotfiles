@@ -1,0 +1,32 @@
+# Each word is a metaphor that reads as technical but names nothing a
+# plainer word does not (`the bedrock of the design` becomes `what the
+# design depends on`).
+#
+# Several words count only inside their metaphor phrase, because a
+# product or a field uses the bare word. Weir ignores case and the
+# tagger never marks `Bedrock` or `Nexus` as a proper noun, so the
+# phrase is the only guard against AWS Bedrock (`hand the response to
+# Amazon Bedrock for processing`, which is why `bedrock for` needs
+# `the`) and Sonatype Nexus. `paradigm` counts only as `paradigm shift`
+# or `new paradigm`, since `programming paradigm` is a term of art, and
+# `north star` passes before `metric`, which names a product metric.
+#
+# `modality` is left out, because machine-learning docs use it for an
+# input type (`an image modality`), and so are `vantage` (a cost tool)
+# and `locus` (genetics and math). `vector`, `primitive`, `surface`,
+# `harness`, `scaffolding`, `ratchet`, and `evacuate` stay out too,
+# since each names something in code or operations (a math type, a
+# language built-in, an attack surface, a test harness, a code
+# generator, a lint baseline that only tightens, a node drain).
+expr main [substrate, substrates, endgame, flywheel, flywheels, (bedrock of), (the bedrock for), (nexus [of, between]), (paradigm shift), (new paradigm), (north[-, ( )]star!(( )[metric, metrics])), (gold[-, ( )]plating), (gold[-, ( )]plated), (wedge in)]
+let message "Metaphor noun. Use the concrete word."
+let description "Flags metaphor nouns that stand in for a concrete term."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "Deploy the model on Amazon Bedrock in us-east-1."
+allows "The response goes back to Amazon Bedrock for further processing."
+allows "Push the artifact to Nexus before the release job runs."
+allows "The model accepts an image modality and a text modality."
+allows "Go supports more than one programming paradigm."
+allows "Our north star metric is weekly active users."
