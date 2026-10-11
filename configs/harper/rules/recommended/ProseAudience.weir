@@ -1,0 +1,17 @@
+# A pitch to every possible reader (`Whether you're a beginner or an
+# expert, the CLI fits your workflow`) names no reader in particular,
+# so the fix names who the feature is for or drops the clause.
+#
+# `whether you are a` also opens a real condition (`the check reports
+# whether you are a member of the group`), so the pitch needs the `or`
+# that pairs two kinds of reader, up to three words after the article.
+# Each gap length is its own alternative, since a list picks its
+# longest match and never backtracks. `whether you're new to` counts
+# without the `or`, because a condition rarely asks it.
+expr you [you're, (you are)]
+expr main [(whether @you [a, an] * or), (whether @you [a, an] * * or), (whether @you [a, an] * * * or), (whether @you new to)]
+let message "Audience pitch. Name who the feature is for, or delete the clause."
+let description "Flags a clause that pitches to every kind of reader, such as whether you're a beginner or an expert."
+let becomes ""
+let kind "Style"
+allows "The check reports whether you are a member of the group."
