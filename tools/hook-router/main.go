@@ -89,11 +89,6 @@ import (
 // clearing in_plan_mode, the pending-plan handoff) still happens, so
 // the Stop gate is unaffected.
 //
-// enforceTypography, when true, makes [handlePreFileWrite] deny
-// Write/Edit/MultiEdit calls that introduce non-ASCII typographic
-// characters (see the typography package). When false the handler is
-// a no-op, so an ad-hoc invocation without the flag stays silent.
-//
 // sleepGuard configures the [handleBash] foreground-sleep deny (see the
 // sleepguard package). Its zero value is a disabled guard, so a bare
 // config{} test literal is a no-op.
@@ -130,8 +125,6 @@ type config struct {
 	autoAllow      bool
 	rmGuard        bool
 	skipPlanReview bool
-
-	enforceTypography bool
 }
 
 func configFromEnv() config {
@@ -155,7 +148,7 @@ func configFromEnv() config {
 func main() {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
 	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, SessionStart, SessionEnd, UserPromptSubmit, SubagentStart, TeammateIdle, PreCompact)")
-	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion, or the MCP/FileWrite routing sentinels)")
+	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion, or the MCP routing sentinel)")
 	dbPath := flag.String("db", "", "path to SQLite state database")
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
@@ -171,11 +164,10 @@ func main() {
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
 	rmGuard := flag.Bool("rm-guard", false, "deny a PreToolUse:Bash rm or rmdir whose target Claude Code would stop on a permission prompt (variable-leading or statically unresolvable)")
-	enforceTypography := flag.Bool("enforce-ascii-typography", false, "deny a Write/Edit/MultiEdit call that introduces non-ASCII dashes, curly quotes, or ellipsis")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *messageLintConfig, *autoAllow, *skipPlanReview, *enforceTypography, *rmGuard)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *messageLintConfig, *autoAllow, *skipPlanReview, *rmGuard)
 	if err == nil {
 		return
 	}
@@ -193,7 +185,7 @@ func main() {
 	os.Exit(1)
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON string, autoAllow, skipPlanReview, enforceTypography, rmGuard bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON string, autoAllow, skipPlanReview, rmGuard bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -346,7 +338,6 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	}
 
 	cfg.skipPlanReview = skipPlanReview
-	cfg.enforceTypography = enforceTypography
 
 	return run(ctx, bytes.NewReader(input), os.Stdout, event, tool, store, cfg, logger)
 }
@@ -422,12 +413,6 @@ func run(
 			}
 
 			return handleEnterPlanMode(ctx, input, store, cfg.claudePID, logger)
-
-		case "FileWrite":
-			// Routing sentinel from the Write|Edit|MultiEdit hook
-			// matcher; the real tool name comes from the stdin
-			// payload, mirroring the MCP sentinel.
-			return handlePreFileWrite(input, stdout, cfg, logger)
 
 		default:
 			return nil

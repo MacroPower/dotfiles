@@ -321,30 +321,6 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, stdout.Bytes())
 	})
 
-	t.Run("PreToolUse FileWrite: introduced dash flows through run() to deny", func(t *testing.T) {
-		t.Parallel()
-
-		fwCfg := config{enforceTypography: true}
-
-		input := `{"tool_name":"Write","tool_input":{"file_path":"/nonexistent/hook-router-test/new.md","content":"a — b"}}`
-
-		var stdout bytes.Buffer
-
-		err := run(t.Context(), strings.NewReader(input), &stdout, "PreToolUse", "FileWrite", nil, fwCfg, logger)
-		require.NoError(t, err)
-
-		var result map[string]any
-
-		err = json.Unmarshal(stdout.Bytes(), &result)
-		require.NoError(t, err)
-
-		hso, ok := result["hookSpecificOutput"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "PreToolUse", hso["hookEventName"])
-		assert.Equal(t, "deny", hso["permissionDecision"])
-		assert.Contains(t, hso["permissionDecisionReason"], "U+2014")
-	})
-
 	t.Run("PreToolUse Bash: denied kubectx", func(t *testing.T) {
 		t.Parallel()
 

@@ -802,7 +802,6 @@ let
         } \
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
-        ${lib.optionalString cfg.enforceAsciiTypography "--enforce-ascii-typography"} \
         ${lib.optionalString cfg.rmGuard "--rm-guard"} \
         "$@"
     '';
@@ -1337,22 +1336,6 @@ in
         clearing in_plan_mode, the pending-plan handoff) still happens,
         so the Stop hook's post-implementation review gate is
         unaffected.
-      '';
-    };
-
-    enforceAsciiTypography = mkOption {
-      type = types.bool;
-      default = true;
-      description = ''
-        Deny Write/Edit calls that introduce non-ASCII
-        typographic characters into a file: dash punctuation other than
-        ASCII '-', the minus sign, curly quotation marks, and the
-        horizontal ellipsis. Only newly introduced characters are
-        blocked; characters already present in the file survive
-        editing. The deny message nudges toward ASCII equivalents
-        (restructure or "--" for dashes, straight quotes, "..." for
-        ellipsis). When false, no PreToolUse matcher is registered for
-        these tools and the wrapper omits the flag.
       '';
     };
 
@@ -3700,19 +3683,6 @@ in
                     matcher = "mcp__.*";
                     hooks = [ (router "PreToolUse" "MCP") ];
                   }
-                ]
-                ++ lib.optionals cfg.enforceAsciiTypography [
-                  {
-                    # Write and Edit route to one entry; "FileWrite" is a
-                    # routing sentinel and hook-router reads the real
-                    # tool name from the payload. Emits only deny or
-                    # nothing (never updatedInput), so the last-writer-wins
-                    # race the note above warns about cannot occur here.
-                    # Anchored: matchers are unanchored regexes, and a
-                    # bare `Edit` would also match NotebookEdit.
-                    matcher = "^(Write|Edit|MultiEdit)$";
-                    hooks = [ (router "PreToolUse" "FileWrite") ];
-                  }
                 ];
                 UserPromptSubmit = [
                   { hooks = [ (status "working") ]; }
@@ -3757,9 +3727,8 @@ in
                     # hook. hook-router logs formatter and linter crashes
                     # and swallows them, so they stay in its own log.
                     #
-                    # Passes no --tool: FileWrite is a PreToolUse routing
-                    # sentinel, and the PostToolUse switch reads the real
-                    # tool name from the payload.
+                    # Passes no --tool: the PostToolUse switch reads the
+                    # real tool name from the payload.
                     matcher = "^(Write|Edit|MultiEdit)$";
                     hooks = [ ((router "PostToolUse" null) // { asyncRewake = true; }) ];
                   }
@@ -3906,7 +3875,7 @@ in
             syncClaudeAiSkills = false;
             syncClaudeAiPlugins = false;
             # Straight-ASCII prompt input: no :shortcode: emoji expansion,
-            # matching enforceAsciiTypography and the plain-ASCII policy.
+            # matching the plain-ASCII policy.
             emojiCompletionEnabled = false;
           }
           // lib.optionalAttrs cfg.stylixTheme.enable {

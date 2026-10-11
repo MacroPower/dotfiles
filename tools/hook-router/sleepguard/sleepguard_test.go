@@ -152,7 +152,7 @@ func TestCheckConfig(t *testing.T) {
 // TestCheckReason pins the deny message contents: the offending call is
 // quoted back, the measured duration and ceiling are interpolated, the
 // waiting alternatives are named, and the text is pure ASCII (the repo's
-// typography policy applies to hook output too).
+// plain-ASCII policy applies to hook output too).
 func TestCheckReason(t *testing.T) {
 	t.Parallel()
 

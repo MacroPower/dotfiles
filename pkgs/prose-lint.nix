@@ -491,9 +491,9 @@ writeShellApplication {
     out=$(printf '%s\n' "$out" | sed '/^$/d' | drop_label_colons "$file" |
       FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
 
-    # The awk checks read markdown only. Each prints `Kind::Name:` and
-    # the sed below renames that to the internal `Kind::Name_Tier:` so
-    # the tag step finds it in the map.
+    # The awk checks read markdown, and only ProseTypography reads other
+    # files. Each prints `Kind::Name:` and the sed below renames that to
+    # the internal `Kind::Name_Tier:` so the tag step finds it in the map.
     if [ "$ext" = md ] || [ "$ext" = markdown ]; then
       while IFS='=' read -r internal script; do
         [ -n "$internal" ] || continue
@@ -502,6 +502,17 @@ writeShellApplication {
           continue
         fi
         found=$(awk -f "$script" "$file" | sed "s/::$name:/::$internal:/")
+        if [ -n "$found" ]; then
+          out="''${out:+$out
+    }$found"
+        fi
+      done <<< "$awk_checks"
+    else
+      # ProseTypography also reads source files, where RAW=1 checks
+      # every line whole, string literals included.
+      while IFS='=' read -r internal script; do
+        [ "''${internal%_*}" = ProseTypography ] || continue
+        found=$(RAW=1 awk -f "$script" "$file" | sed "s/::ProseTypography:/::$internal:/")
         if [ -n "$found" ]; then
           out="''${out:+$out
     }$found"
