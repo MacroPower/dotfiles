@@ -23,3 +23,6 @@ The server is production-ready.
 It ships a state-of-the-art parser.
 The CLI works out-of-the-box.
 The walker is lightning-fast.
+The parser is robust.
+A robust parser reads the header.
+The theme elevates the whole design.
