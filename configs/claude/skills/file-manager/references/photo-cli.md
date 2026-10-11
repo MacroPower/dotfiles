@@ -53,7 +53,7 @@ files for iPhone Live Photos travel alongside their photo. Extend via
 
 API keys for the paid providers go in `PHOTO_CLI_BIG_DATA_CLOUD_API_KEY`,
 `PHOTO_CLI_GOOGLE_MAPS_API_KEY`, or `PHOTO_CLI_LOCATIONIQ_API_KEY` (or via
-`photo-cli settings -k <KeyName> -v <key>`). OpenStreetMap needs no key.
+`photo-cli settings -k <KeyName> -v <key>`). OpenStreetMap does not need a key.
 
 ## Idiomatic invocations
 

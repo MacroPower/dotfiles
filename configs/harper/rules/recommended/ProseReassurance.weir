@@ -40,7 +40,7 @@
 expr tagged [ADJ, ADP, ADV, AUX, CCONJ, DET, INTJ, NOUN, NUM, PART, PRON, PROPN, SCONJ, SYM, VERB, X]
 expr magic [number, numbers, byte, bytes, prefix, string, strings, value, values, constant, constants]
 expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (no more, no less !than), (no more, no less[., ;, :, (,)]), (nothing more, nothing less), (nothing more and nothing less), (and nothing else!( )), (and nothing else !@tagged!( )), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
-let message "Reassurance. A stated fact needs no vouching, so delete the phrase."
+let message "Reassurance. A stated fact does not need vouching, so delete the phrase."
 let description "Flags phrases that insist on a fact the sentence already stated."
 let becomes ""
 let kind "Style"

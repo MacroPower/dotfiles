@@ -106,7 +106,7 @@ Triage its output package by package:
   release notes. The same rule covers fish, neovim, kitty, git, and every other
   tool with config here.
 - Minor/patch bumps of leaf tools with no config here (a bare package entry or
-  a lone `enable = true`) need no research; fold them into the final report as
+  a lone `enable = true`) do not need research; fold them into the final report as
   a one-line version summary.
 - Remaining nixpkgs breakage (evaluation failures, removed attributes) still
   surfaces in Step 7, and only then is it worth researching the specific

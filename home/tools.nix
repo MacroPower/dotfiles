@@ -219,7 +219,7 @@ in
         # Read the encryption key straight from the macOS host's atuin data
         # dir, which Lima mounts into the guest at the same absolute path.
         # The guest decrypts the same synced history as the host without a
-        # local copy, so `atuin login` needs no `-k`. The mount is
+        # local copy, so `atuin login` does not need `-k`. The mount is
         # read-only, which is fine -- atuin only reads the key. The
         # `systemd.user` guards below keep a missing mount from hanging
         # every shell.

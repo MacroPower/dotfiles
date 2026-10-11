@@ -29,7 +29,7 @@
 # after a negation (`you can't just use a container`), where it
 # carries the contrast. `just` counts only before an imperative verb,
 # since it also means `only` or `a moment ago` (`just one entry`, `the
-# file was just created`). `is easy to` and `it's easy to` need no
+# file was just created`). `is easy to` and `it's easy to` do not need a
 # guard, since a negation splits them (`is not easy to`).
 expr neg [not, never, isn't, aren't, wasn't, weren't, can't, cannot, couldn't, won't, doesn't, don't, didn't, shouldn't]
 expr verbs [run, use, add, call, set, pass, type, install, copy, edit, change, create, delete, remove, update, point, drop, put, write, open, click]

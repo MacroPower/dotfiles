@@ -45,7 +45,7 @@ git status --porcelain -- <manifests and lockfiles>
 If they are dirty, stop and ask. Otherwise the diff mixes the user's pending
 edits with the bump and reverting becomes destructive. Other dirty files are
 fine. A clean lockfile also means the committed version at HEAD is the "before"
-for diffing, so you need no snapshot.
+for diffing, so you do not need a snapshot.
 
 ## Step 3: Bump
 
