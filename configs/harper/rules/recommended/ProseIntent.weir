@@ -1,0 +1,13 @@
+# Each phrase wraps a behavior in its purpose or duty, so the fix is to
+# give the verb the subject (`the hook is designed to run after every
+# write` becomes `the hook runs after every write`). `is responsible
+# for` stays in the list, since `the caller is responsible for closing`
+# reads as well as `the caller closes`. `is meant for` stays out,
+# because it names a use (`the flag is meant for testing`).
+expr main [(is designed to), (are designed to), (is intended to), (are intended to), (is meant to), (are meant to), (is responsible for), (are responsible for), (aims to), (aim to), (serves to), (serve to)]
+let message "Describe what it does, not what it is for. Give the verb the subject."
+let description "Flags phrases that wrap a behavior in its purpose or duty."
+let becomes ""
+let kind "Style"
+allows "The caller closes the handle after the last read."
+allows "The flag is meant for testing."
