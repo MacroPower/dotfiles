@@ -1,0 +1,22 @@
+# Each phrase announces what the text is about to do (`Let's dive in`,
+# `In this section, we'll explore the scheduler`) instead of doing it,
+# so the fix deletes the announcement and opens on the first point.
+#
+# The `let's` and `we'll` phrases are spelled out, because the bare
+# verbs also narrate code (`we'll take the lock`, `let's try the fast
+# path`). `In this section` counts only with the glued comma of an
+# opener and the subject of a clause after it, since mid-sentence it
+# locates a setting (`the keys in this section of the config`) or ends
+# a clause (`the features we cover in this chapter, so see the
+# reference`). The throat-clearing rule holds the
+# signposts that point at what the reader can see (`as you can see`).
+expr main [(let's dive), (let's explore), (let's take a look), (let's take a closer look), (let's look at), (let's break down), (let's break it down), (let's walk through), (let's unpack), (let's examine), (let's recap), (let's review), (let's get started), (let's begin), (let's start by), (let's see how), (let's see what), (let's jump in), (let's jump into), (we'll explore), (we will explore), (we'll cover), (we will cover), (we'll walk through), (we will walk through), (we'll dive), (we'll take a look), (we'll look at), (we will look at), (we'll discuss), (we will discuss), (we'll examine), (we will examine), (in this [section, guide, article, document, post, tutorial, chapter], [DET, PRON, PROPN, NOUN]), ([walk, walks, walking] you through)]
+let message "Signpost. Delete the announcement and open on the first point."
+let description "Flags phrases that announce what the text is about to do, such as let's dive in or in this section."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "Let's Encrypt issues the certificate."
+allows "The keys in this section of the config are optional."
+allows "If the lock is free, we'll take it."
+allows "Cargo does more than the features we cover in this chapter, so see the reference."
