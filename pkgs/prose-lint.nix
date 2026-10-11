@@ -321,6 +321,39 @@ writeShellApplication {
       ' "$2"
     }
 
+    # Ends a shadow comment line with a period instead of a colon when
+    # the next comment line opens a list item (`- `, `* `, `+ `, `1. `).
+    # Harper joins a run of comment lines into one paragraph, so the
+    # colon rule would read the first item as a clause after the colon
+    # (`AND one of: - it names a context`). The period ends the lead-in
+    # the way the list's own block does in rendered docs, and it keeps
+    # every column in place.
+    end_list_leads() {
+      awk '
+        function item(s, text) {
+          text = s
+          if (!sub(/^[ \t]*(\/\/|#)/, "", text)) {
+            return 0
+          }
+          return text ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/
+        }
+        NR > 1 {
+          if (prev != "x" && item($0) && match(prev, /:[ \t]*$/)) {
+            prev = substr(prev, 1, RSTART - 1) "." substr(prev, RSTART + 1)
+          }
+          print prev
+        }
+        {
+          prev = $0
+        }
+        END {
+          if (NR > 0) {
+            print prev
+          }
+        }
+      '
+    }
+
     # Moves each finding on a line the shifts file lists one column
     # left, undoing the `#` that comment_lines put in front of it.
     unshift() {
@@ -445,7 +478,7 @@ writeShellApplication {
       shadow=$tmp_dir/shadow.$shadow_ext
       shifts=$tmp_dir/shifts
       : >"$shifts"
-      comment_lines "$shadow_kind" "$file" "$shifts" >"$shadow"
+      comment_lines "$shadow_kind" "$file" "$shifts" | end_list_leads >"$shadow"
       out=$(
         printf '%s\n' "$out" | drop_comment_lines "$shadow" | sed '/^$/d'
         lint "$rules" "$shadow" | unshift "$shifts"
