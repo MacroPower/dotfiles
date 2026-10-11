@@ -8,9 +8,10 @@
 
 let
   # Extensions Harper parses with a comment-only, markdown, or Org
-  # parser.
-  # Anything else falls back to plain text and lints every line, so
-  # the wrapper refuses it rather than flagging string literals.
+  # parser, plus the Terraform extensions, whose comments the wrapper
+  # lints through a shadow file. Anything else falls back to plain
+  # text and lints every line, so the wrapper refuses it rather than
+  # flagging string literals.
   extensions = [
     "md"
     "markdown"
@@ -25,6 +26,7 @@ let
     "go"
     "groovy"
     "gradle"
+    "hcl"
     "hs"
     "java"
     "js"
@@ -45,6 +47,8 @@ let
     "bash"
     "sol"
     "swift"
+    "tf"
+    "tfvars"
     "toml"
     "ts"
     "tsx"
@@ -198,12 +202,18 @@ writeShellApplication {
     # Prints the file's full-line comments at their lines and columns
     # and an `x` on every other line. The `x` keeps two comments that
     # code separates from merging into one run, which a blank line
-    # would allow. A Go comment needs whitespace or the line end after
-    # `//`, so a directive (`//go:build`, `//nolint:`) stays out. A
-    # Python comment needs the same after `#`, which leaves out a
-    # shebang, and a line inside a triple-quoted string never counts.
-    # The string tracking toggles on an odd count of triple quotes in a
-    # line, which is close enough for comments.
+    # would allow. A comment needs whitespace or the line end after its
+    # marker, so a Go directive (`//go:build`, `//nolint:`) and a
+    # shebang stay out.
+    #
+    # The kind picks the markers. Go takes `//`. Python takes `#`,
+    # and a line inside a triple-quoted string never counts; the string
+    # tracking toggles on an odd count of triple quotes in a line, which
+    # is close enough for comments. HCL takes `#` and `//`, writes `//`
+    # as `# ` so the shell shadow reads it at the same width, and skips
+    # each heredoc body (`<<-EOF` to `EOF`), since a `user_data` script
+    # carries `#` lines of its own. HCL block comments stay out, because
+    # they mostly hold commented-out code.
     #
     # The per-line parser strips trailing `-`, `#`, `/`, `*`, and `!`
     # along with the marker, which would hide a `--` that ends a line,
@@ -211,21 +221,36 @@ writeShellApplication {
     comment_lines() {
       KIND="$1" awk '
         {
-          keep = 0
-          if (ENVIRON["KIND"] == "go") {
+          kind = ENVIRON["KIND"]
+          if (kind == "go") {
             keep = $0 ~ /^[ \t]*\/\/([ \t]|$)/
-          } else if (!in_string) {
-            keep = $0 ~ /^[ \t]*#([ \t]|$)/
+          } else if (kind == "hcl") {
+            keep = heredoc == "" && $0 ~ /^[ \t]*(#|\/\/)([ \t]|$)/
+          } else {
+            keep = !in_string && $0 ~ /^[ \t]*#([ \t]|$)/
           }
           if (!keep) {
-            if (ENVIRON["KIND"] != "go") {
-              line = $0
+            line = $0
+            if (kind == "py") {
               if (gsub(/"""|\047\047\047/, "", line) % 2 == 1) {
                 in_string = !in_string
+              }
+            } else if (kind == "hcl") {
+              gsub(/^[ \t]+|[ \t]+$/, "", line)
+              if (heredoc != "") {
+                if (line == heredoc) {
+                  heredoc = ""
+                }
+              } else if (match(line, /<<-?[A-Za-z_][A-Za-z0-9_]*$/)) {
+                heredoc = substr(line, RSTART, RLENGTH)
+                sub(/^<<-?/, "", heredoc)
               }
             }
             print "x"
             next
+          }
+          if (kind == "hcl" && match($0, /^[ \t]*\/\//)) {
+            $0 = substr($0, 1, RLENGTH - 2) "# " substr($0, RLENGTH + 1)
           }
           text = $0
           sub(/^[ \t]*(\/\/|#)/, "", text)
@@ -290,7 +315,7 @@ writeShellApplication {
 
     file=$1
     case "$file" in
-      */node_modules/*|*/vendor/*|*/.git/*|*/harper/fixtures/*) exit 0 ;;
+      */node_modules/*|*/vendor/*|*/.git/*|*/.terraform/*|*/harper/fixtures/*) exit 0 ;;
     esac
     [ -f "$file" ] || exit 0
 
@@ -321,15 +346,23 @@ writeShellApplication {
     # line: Rust for `//` and shell for `#`. A finding on a comment line
     # comes from the shadow, and a finding on any other line, such as a
     # docstring or a trailing comment, comes from the file itself.
-    shadow_ext=""
+    #
+    # Harper has no HCL parser and would read a Terraform file as plain
+    # text, code included, so the shadow is the only lint there and a
+    # trailing comment goes unchecked.
     case "$ext" in
-      go) shadow_ext="rs" ;;
-      py|pyi) shadow_ext="sh" ;;
+      go) shadow_kind="go" shadow_ext="rs" ;;
+      py|pyi) shadow_kind="py" shadow_ext="sh" ;;
+      tf|tfvars|hcl) shadow_kind="hcl" shadow_ext="sh" ;;
+      *) shadow_kind="" shadow_ext="" ;;
     esac
-    out=$(lint "$rules" "$file")
-    if [ -n "$shadow_ext" ]; then
+    out=""
+    if [ "$shadow_kind" != "hcl" ]; then
+      out=$(lint "$rules" "$file")
+    fi
+    if [ -n "$shadow_kind" ]; then
       shadow=$tmp_dir/shadow.$shadow_ext
-      comment_lines "$ext" "$file" >"$shadow"
+      comment_lines "$shadow_kind" "$file" >"$shadow"
       out=$(
         printf '%s\n' "$out" | drop_comment_lines "$shadow" | sed '/^$/d'
         lint "$rules" "$shadow"
