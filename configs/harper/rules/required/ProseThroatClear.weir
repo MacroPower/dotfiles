@@ -5,10 +5,13 @@
 # (`Clearly,`), the restatement rule (`in other words,`), and the pivot
 # rule (`that said,`).
 #
+# `as we can see` and `as you might expect` point at what the reader
+# already sees or expects, the way `as you can see` does.
+#
 # `note that` sits in the Recommended rule of the same name, because a
 # commit subject uses `note` as a verb (`docs: note that the flag is
 # sticky`).
-expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (of course), (make no mistake), (it goes without saying), (at the end of the day), (as a matter of fact), (worth mentioning)]
+expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (as we can see), (as we have seen), (as we've seen), (as you might expect), (as you would expect), (as you'd expect), (of course), (make no mistake), (it goes without saying), (at the end of the day), (as a matter of fact), (worth mentioning)]
 let message "Throat clearing. Delete the phrase and state the point."
 let description "Flags phrases that announce a point instead of making it."
 let becomes ""
