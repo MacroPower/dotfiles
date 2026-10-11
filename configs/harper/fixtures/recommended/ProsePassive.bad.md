@@ -16,3 +16,9 @@ Unknown keys are ignored.
 The migration must be run before deploy.
 The variable is captured by the closure.
 The file is skipped
+The job is retried.
+The value is cached, and the entry is evicted.
+The value is not written to disk.
+The key is never rotated.
+The job isn't retried.
+The timeout can be configured.

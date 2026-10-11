@@ -20,6 +20,13 @@
 # actor (`by default`, `by design`, `by hand`), while `by a lock`, `by
 # the scheduler`, and `by git` still count as agents.
 #
+# The tagger marks many participles as adjectives (`cached`,
+# `retried`, `flushed`), so `missed` lists the common ones by hand.
+# `exported` and `deprecated` stay out, because a Go doc uses each to
+# name a state (`the field is exported`, `the method is deprecated`).
+# `not` sits beside the adverb slot, since the tagger does not mark it
+# as one (`the value is not written`).
+#
 # The `!-` glued after the verb skips a hyphenated compound whose
 # first half the tagger marks as a verb (`is read-only`, `are
 # fail-open`). It matches at the end of a clause too, so `the file is
@@ -30,8 +37,10 @@
 # resultative participle (`The issue is closed`), which the tagger
 # cannot tell from the event and which the skill rewrites anyway.
 expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, called, named, meant, supposed, bound, referred, prepared, advised, assured, reminded, warned]
-expr be [is, are, was, were, be, been, being]
-expr main [(@be [<VERB, !@stative>, (ADV <VERB, !@stative>)]!-), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN])]
+expr missed [cached, compiled, computed, configured, decoded, discarded, encoded, evicted, fetched, flushed, hashed, linted, normalized, parsed, patched, persisted, propagated, queued, redirected, reset, restarted, retried, revoked, rotated, sanitized, serialized, stripped, synced, tagged, truncated, validated]
+expr be [is, are, was, were, be, been, being, isn't, aren't, wasn't, weren't]
+expr verb [<VERB, !@stative>, @missed]
+expr main [(@be [@verb, ([ADV, not] @verb)]!-), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN])]
 let message "Passive voice. Make the actor the subject."
 let description "Flags a form of be followed by a verb, and a form of be followed by a word and by an agent."
 let becomes ""
@@ -56,6 +65,8 @@ allows "The migration is done by Friday."
 allows "The field is called name."
 allows "The type is known as a handle."
 allows "The flag is meant for testing."
+allows "The field is exported."
+allows "The method is deprecated."
 allows "The port is stuck in CLOSE_WAIT."
 allows "Be warned that the flag is sticky."
 allows "The default is lookup by id."

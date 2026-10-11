@@ -35,3 +35,6 @@ The default is lookup by id.
 The answer is yes by the way.
 The lock is read-only while the sweep runs.
 Reads are fail-open and writes are fail-closed.
+The field is exported.
+The method is deprecated.
+The value is not empty.
