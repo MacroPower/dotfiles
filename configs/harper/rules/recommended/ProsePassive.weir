@@ -45,17 +45,30 @@
 # the opener the pivot rule reports. The first branch takes every
 # other form of `be` through the filter `<@be, !being>`.
 #
+# Matching ignores case, so a Go method named `Is` reads as the verb
+# (`errors.Is matches when any error in the tree matches`). The forms
+# of `be` count only when the token glued before them is not a period.
+# Weir has no lookbehind, so the filter consumes that token and then
+# narrows the finding back to the passive. A sentence that opens with
+# a form of `be` is usually a question, but a list item that continues
+# its lead-in also opens with one (`- are created automatically`), and
+# the filter misses that passive. Four such items turned up in about
+# 900 human-written docs, fewer than the method names a Go commit
+# message mentions. `live` is stative because the tagger marks it as a
+# verb (`a caller whose context is live`).
+#
 # Two shapes stay flagged on purpose: an identifier used as a predicate
 # noun (`The default is print`), which belongs in a code span, and a
 # resultative participle (`The issue is closed`), which the tagger
 # cannot tell from the event and which the skill rewrites anyway.
-expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, called, named, meant, supposed, designed, intended, bound, referred, prepared, advised, assured, reminded, warned]
+expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, live, called, named, meant, supposed, designed, intended, bound, referred, prepared, advised, assured, reminded, warned]
 expr missed [cached, compiled, computed, configured, decoded, discarded, encoded, evicted, fetched, flushed, hashed, linted, normalized, parsed, patched, persisted, propagated, queued, redirected, reset, restarted, retried, revoked, rotated, sanitized, serialized, stripped, synced, tagged, truncated, validated]
 expr be [is, are, was, were, be, been, being, isn't, aren't, wasn't, weren't]
 expr verb [<VERB, !@stative>, @missed]
 expr agentive [set, unset, enabled, disabled, required, needed, expected, allowed, supported, broken, known, built, made, fixed, called, named, designed, intended, bound, prepared, advised, assured, reminded, warned]
 expr agent [(DET ![time, way]), PRON, PROPN]
-expr main [(<@be, !being> [@verb, ([ADV, not] @verb)]!-), (being [<@verb, !said>, ([ADV, not] @verb)]!-), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN]), (@be [@agentive, ([ADV, not] @agentive)] by @agent)]
+expr passive [(<@be, !being> [@verb, ([ADV, not] @verb)]!-), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN]), (@be [@agentive, ([ADV, not] @agentive)] by @agent)]
+expr main [<(!(.)@passive), @passive>, (being [<@verb, !said>, ([ADV, not] @verb)]!-)]
 let message "Passive voice. Make the actor the subject."
 let description "Flags a form of be followed by a verb, and a form of be followed by a word and by an agent."
 let becomes ""
@@ -92,3 +105,5 @@ allows "The value is set by hand."
 allows "The lock is read-only while the sweep runs."
 allows "Reads are fail-open and writes are fail-closed."
 allows "That being said, the hook skips the file."
+allows "The errors.Is call matches when any error in the tree matches."
+allows "A caller whose context is live loads again."

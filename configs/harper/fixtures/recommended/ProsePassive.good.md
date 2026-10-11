@@ -43,3 +43,5 @@ The value is set by hand.
 That being said, the hook skips the file.
 The hook is designed to run after every write.
 The buffer is intended to hold one frame.
+The errors.Is call matches when any error in the tree matches.
+A caller whose context is live loads again.
