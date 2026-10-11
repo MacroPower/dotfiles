@@ -12,3 +12,4 @@ A robust parser reads the header.
 The project has a vibrant community.
 The lock ordering is intricate.
 Setup is a breeze.
+The tool is a game-changer for teams that ship daily.

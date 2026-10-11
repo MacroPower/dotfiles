@@ -5,7 +5,10 @@
 #
 # `unlock`, `harness`, `landscape`, `realm`, and `underscore` are left
 # out, because each names something in code (a mutex, a test harness,
-# a page orientation, a Kerberos realm, the character). `elevate
+# a page orientation, a Kerberos realm, the character). The stock
+# phrases built on them count instead (`harness the power`, `unlock the
+# full potential`, `the landscape of`, `the realm of`), and the
+# importance rule holds `underscores the importance`. `elevate
 # privileges` names a security operation, so `elevate` skips a
 # following `privileges` or `permissions`.
 #
@@ -13,7 +16,7 @@
 # inflection through Harper's dictionary. A space in a pattern matches
 # only whitespace, so `deep[-, ( )]dive` matches the spaced and the
 # hyphenated spelling alike.
-expr main [delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates] ![privilege, privileges, permissions]), tapestry, journey, (navigate the [complexities, complexity, landscape, world, challenges]), testament, $foster, $showcase, $garner, $boast, interplay, intricacies, synergy, (at its core), (at its heart), (at the heart of), (under the hood)]
+expr main [delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates] ![privilege, privileges, permissions]), tapestry, journey, (navigate the [complexities, complexity, landscape, world, challenges]), testament, $foster, $showcase, $garner, $boast, interplay, intricacies, synergy, (at its core), (at its heart), (at the heart of), (under the hood), nuanced, multifaceted, meticulous, meticulously, bolster, bolsters, bolstered, bolstering, spearhead, spearheads, spearheaded, spearheading, supercharge, supercharges, supercharged, supercharging, revolutionize, revolutionizes, revolutionized, revolutionizing, embark, embarks, embarked, embarking, ([harness, harnesses, harnessing] the power), ([unlock, unlocks, unlocking] the potential), ([unlock, unlocks, unlocking] the [full, true] potential), (the realm of), (landscape of), ([strike, strikes, striking] a balance), (key takeaway), (key takeaways)]
 let message "Stock word. Use the plain word it stands for."
 let description "Flags stock words and phrases, such as delve, showcase, and tapestry, that stand in for a plainer word."
 let becomes ""
@@ -23,3 +26,4 @@ allows "The test harness builds the fixture once."
 allows "The realm names the Kerberos domain."
 allows "Names with an underscore are private."
 allows "The installer elevates privileges with sudo."
+allows "Rotate the page to landscape orientation before printing."

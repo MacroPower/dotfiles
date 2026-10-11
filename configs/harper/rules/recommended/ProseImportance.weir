@@ -2,7 +2,7 @@
 # it (`the retry is crucial` becomes `without the retry, a lease error
 # fails the job`). `critical` is left out, because it names a critical
 # section.
-expr main [crucial, vital, pivotal, paramount, (plays a [vital, crucial, key, critical, important] role)]
+expr main [crucial, vital, pivotal, paramount, invaluable, indispensable, (plays a [vital, crucial, key, critical, important] role), ([underscore, underscores, highlight, highlights] the [importance, need])]
 let message "Importance claim. Say what depends on it, or delete the word."
 let description "Flags words that rate a part as important without saying what depends on it."
 let becomes ""
