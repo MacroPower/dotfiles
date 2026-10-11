@@ -3,7 +3,14 @@
 # point carry its own weight. Each counts only with a glued comma, the
 # sentence-adverb shape. The bare form modifies a verb or an adjective
 # (`the error prints clearly`, `obviously irrelevant`).
-expr main [(obviously,), (clearly,), (interestingly,), (importantly,), (notably,), (crucially,)]
+#
+# `clearly` and `obviously` also end a clause as manner adverbs before
+# a comma (`to see it more clearly, consider the listing`), so each
+# also needs the subject of a new clause after the comma: a
+# determiner, pronoun, proper noun, or noun. The restatement rule
+# guards `to be clear,` the same way. The other adverbs rarely end a
+# clause, so they count with the comma alone.
+expr main [([obviously, clearly], [DET, PRON, PROPN, NOUN]), (interestingly,), (importantly,), (notably,), (crucially,)]
 let message "Sentence adverb. Delete it and let the point carry its own weight."
 let description "Flags a sentence-opening adverb such as clearly or notably that rates the point that follows."
 let becomes ""
@@ -11,3 +18,5 @@ let kind "Style"
 let scope "Sentence"
 allows "The error prints clearly on a dark background."
 allows "Do not make the negative queries obviously irrelevant."
+allows "To see it more clearly, consider the listing below."
+allows "The log shows the cause clearly, so start there."
