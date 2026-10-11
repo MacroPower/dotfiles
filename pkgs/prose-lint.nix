@@ -215,7 +215,15 @@ writeShellApplication {
     # as `# ` so the shell shadow reads it at the same width, and skips
     # each heredoc body (`<<-EOF` to `EOF`), since a `user_data` script
     # carries `#` lines of its own. HCL block comments stay out, because
-    # they mostly hold commented-out code. YAML takes `#` and skips each
+    # they mostly hold commented-out code.
+    #
+    # HCL also lints each `description` string, which a reader sees in
+    # docs and plan output. A quoted one becomes a comment that starts
+    # with `#` where its opening quote stood. A heredoc one has its
+    # body lines turned into comments, with the last leading space of
+    # each line as the `#`; a body line with no leading space gains a
+    # `#` in front, and the wrapper records its line in the shifts file
+    # so the findings move back one column. YAML takes `#` and skips each
     # block scalar body (`run: |`), which often holds a shell script.
     # The body runs while lines are blank or indented past the line
     # that opened it; that bound misses a comment at the mapping level
@@ -225,7 +233,7 @@ writeShellApplication {
     # along with the marker, which would hide a `--` that ends a line,
     # so a comment line with text that ends in one of them gains ` x`.
     comment_lines() {
-      KIND="$1" awk '
+      KIND="$1" SHIFTS="$3" awk '
         BEGIN {
           block = -1
         }
@@ -259,10 +267,33 @@ writeShellApplication {
               if (heredoc != "") {
                 if (line == heredoc) {
                   heredoc = ""
+                  described = 0
+                } else if (described && line != "") {
+                  if (match($0, /^[ \t]+/)) {
+                    $0 = substr($0, 1, RLENGTH - 1) "#" substr($0, RLENGTH + 1)
+                  } else {
+                    $0 = "#" $0
+                    print NR > ENVIRON["SHIFTS"]
+                  }
+                  keep = 1
                 }
+              } else if (match($0, /^[ \t]*description[ \t]*=[ \t]*"/)) {
+                quote = RLENGTH
+                rest = substr($0, quote + 1)
+                for (i = 1; i <= length(rest); i++) {
+                  c = substr(rest, i, 1)
+                  if (c == "\\") {
+                    i++
+                  } else if (c == "\"") {
+                    break
+                  }
+                }
+                $0 = sprintf("%*s", quote - 1, "") "#" substr(rest, 1, i - 1)
+                keep = 1
               } else if (match(line, /<<-?[A-Za-z_][A-Za-z0-9_]*$/)) {
                 heredoc = substr(line, RSTART, RLENGTH)
                 sub(/^<<-?/, "", heredoc)
+                described = line ~ /^description[ \t]*=/
               }
             } else if (kind == "yaml") {
               if (line ~ /[:-][ \t]+([&!][^ \t]+[ \t]+)*[|>][-+1-9]*[ \t]*(#.*)?$/) {
@@ -270,8 +301,10 @@ writeShellApplication {
                 block = RLENGTH
               }
             }
-            print "x"
-            next
+            if (!keep) {
+              print "x"
+              next
+            }
           }
           if (kind == "hcl" && match($0, /^[ \t]*\/\//)) {
             $0 = substr($0, 1, RLENGTH - 2) "# " substr($0, RLENGTH + 1)
@@ -285,6 +318,27 @@ writeShellApplication {
           }
         }
       ' "$2"
+    }
+
+    # Moves each finding on a line the shifts file lists one column
+    # left, undoing the `#` that comment_lines put in front of it.
+    unshift() {
+      SHIFTS="$1" awk '
+        BEGIN {
+          while ((getline n < ENVIRON["SHIFTS"]) > 0) {
+            shifted[n] = 1
+          }
+        }
+        {
+          if (match($0, /:[0-9]+:[0-9]+: /)) {
+            split(substr($0, RSTART + 1), pos, ":")
+            if ((pos[1] in shifted) && pos[2] > 1) {
+              $0 = substr($0, 1, RSTART) pos[1] ":" (pos[2] - 1) ": " substr($0, RSTART + RLENGTH)
+            }
+          }
+          print
+        }
+      '
     }
 
     # Drops each finding on a line the shadow file keeps, since the
@@ -388,10 +442,12 @@ writeShellApplication {
     esac
     if [ -n "$shadow_kind" ]; then
       shadow=$tmp_dir/shadow.$shadow_ext
-      comment_lines "$shadow_kind" "$file" >"$shadow"
+      shifts=$tmp_dir/shifts
+      : >"$shifts"
+      comment_lines "$shadow_kind" "$file" "$shifts" >"$shadow"
       out=$(
         printf '%s\n' "$out" | drop_comment_lines "$shadow" | sed '/^$/d'
-        lint "$rules" "$shadow"
+        lint "$rules" "$shadow" | unshift "$shifts"
       )
     fi
 
