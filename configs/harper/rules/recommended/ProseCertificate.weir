@@ -20,7 +20,13 @@
 # of a new clause (`touches the file and nothing else references it`).
 # Its guard `else!( )` takes any token but whitespace right after the
 # phrase, so it also counts at the end of a list item with no period,
-# while a line break inside a paragraph reads as whitespace.
+# while a line break inside a paragraph reads as whitespace. A twin
+# branch takes a space and then a token outside every part-of-speech
+# tag with no space after it, which is how a pattern names the open
+# paren of a citation (`and nothing else (see the keyword table)`),
+# since Weir has no escape for a literal paren. The glued token keeps
+# out a verb the tagger left untagged (`and nothing else deletes it`),
+# because a space follows a word.
 # The clause-end list is written glued to the word before it
 # (`design[., ;, :, (,)]`), since a space in a pattern is a whitespace
 # token and clause punctuation follows the word directly. It is spelled
@@ -29,8 +35,9 @@
 # so it is wrapped as a one-token sequence. A negated word after a
 # space (`less !than`) needs a word to consume, so each of those
 # branches has a clause-end twin.
+expr tagged [ADJ, ADP, ADV, AUX, CCONJ, DET, INTJ, NOUN, NUM, PART, PRON, PROPN, SCONJ, SYM, VERB, X]
 expr magic [number, numbers, byte, bytes, prefix, string, strings, value, values, constant, constants]
-expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (and nothing else!( )), (this is deliberate), (this is intentional), (by design[., ;, :, (,)]), ([is, was] by design), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
+expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (and nothing else!( )), (and nothing else !@tagged!( )), (this is deliberate), (this is intentional), (by design[., ;, :, (,)]), ([is, was] by design), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
 let message "Certificate. A stated fact needs no vouching, so delete the phrase."
 let description "Flags phrases that insist on a fact the sentence already stated."
 let becomes ""
@@ -48,3 +55,4 @@ allows "The interest rate rounds to the whole point."
 allows "The entire point cloud fits in memory."
 allows "The reader reads no more and no less than n bytes, or returns an error."
 allows "Probe touches the file and nothing else references it."
+allows "The prune does not touch it, and nothing else deletes it."

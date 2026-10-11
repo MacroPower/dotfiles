@@ -17,5 +17,7 @@ The interest rate rounds to the whole point.
 The entire point cloud fits in memory.
 The reader reads no more and no less than n bytes, or returns an error.
 Probe touches the file and nothing else references it.
+The fix touches one file and nothing else in either module changes.
 The pass rewrites the header and nothing else
 references the file.
+The prune does not touch it, and nothing else deletes it.

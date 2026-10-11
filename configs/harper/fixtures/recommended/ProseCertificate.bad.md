@@ -21,4 +21,5 @@ No magic is involved; the loader reads the environment variable.
 The whole point is that the bucket allows bursts.
 ReadFull reads exactly n bytes, no more and no less, or returns an error.
 Probe reads the file and nothing else; it never writes.
+The schema keeps contentEncoding and nothing else (see the keyword table).
 You buy interpretation and nothing else
