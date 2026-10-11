@@ -7,3 +7,5 @@ The new endpoint accepts a cursor.
 The client now uses HTTP/2.
 Previously, the parser rejected tables.
 The tool had previously prompted on every run.
+The client can now retry the request.
+The parser now also reads tables.

@@ -20,3 +20,5 @@ Any deadline after now uses the monotonic clock.
 Validate the new config before swapping it in.
 Compare the new version string with the old one and refuse a downgrade.
 The limit records what it used to be.
+The row is now consumed.
+The deadline is now plus five seconds.

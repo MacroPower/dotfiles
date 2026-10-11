@@ -5,6 +5,11 @@
 # a sentence-initial `Now returns`, and `deadline after now uses` pass
 # while `The parser now supports tables` fires.
 #
+# `can now` and `now also` count anywhere (`the client can now retry`,
+# `the parser now also reads tables`). `is now` and `now has` stay
+# out, because a test comment narrates runtime state with them (`the
+# row is now consumed`, `the store now has two rows`).
+#
 # `previously` fires only as `was/were/had previously` or as the
 # sentence opener `Previously,`; `the previously cached value` is
 # ordering at runtime.
@@ -17,7 +22,7 @@
 # the row has been updated`), and the delta form of `has been updated`
 # is a passive the passive rule already catches.
 expr surfaces [flag, option, field, argument, parameter, subcommand, endpoint, syntax, format, default, behavior, behaviour, setting, mode]
-expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), (was previously), (were previously), (had previously), (previously,), (the new @surfaces)]
+expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), ([can, does] now), (now also), (was previously), (were previously), (had previously), (previously,), (the new @surfaces)]
 let message "Delta tense. Durable prose describes the system as it is, and git history records what changed."
 let description "Flags phrases that describe the system as a change from an earlier version."
 let becomes ""
@@ -29,4 +34,6 @@ allows "The entry is no longer valid after Close."
 allows "The key used to sign tokens lives in the secrets store."
 allows "Now returns the current local time."
 allows "The retry uses the previously cached value."
+allows "The row is now consumed."
+allows "The deadline is now plus five seconds."
 allows "The watcher fires only after the file has been updated on disk."
