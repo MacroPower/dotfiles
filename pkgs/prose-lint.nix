@@ -211,7 +211,11 @@ writeShellApplication {
     # marker, so a Go directive (`//go:build`, `//nolint:`) and a
     # shebang stay out.
     #
-    # The kind picks the markers. Go takes `//`. Python takes `#`,
+    # The kind picks the markers. Go takes `//`, and a line whose marker
+    # a tab follows sits in a gofmt code block, so the shadow keeps only
+    # its marker. The line still counts as a comment, which drops the
+    # file's own findings on it, and the code inside goes unlinted.
+    # Python takes `#`,
     # and a line inside a triple-quoted string never counts; the string
     # tracking toggles on an odd count of triple quotes in a line, which
     # is close enough for comments. HCL takes `#` and `//`, writes `//`
@@ -252,6 +256,11 @@ writeShellApplication {
             block = -1
           }
           if (kind == "go") {
+            if ($0 ~ /^[ \t]*\/\/\t/) {
+              match($0, /^[ \t]*\/\//)
+              print substr($0, 1, RLENGTH)
+              next
+            }
             keep = $0 ~ /^[ \t]*\/\/([ \t]|$)/
           } else if (kind == "hcl") {
             keep = heredoc == "" && $0 ~ /^[ \t]*(#|\/\/)([ \t]|$)/
