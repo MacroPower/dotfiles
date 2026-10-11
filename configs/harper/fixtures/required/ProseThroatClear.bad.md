@@ -7,3 +7,5 @@ In other words, the bucket refills every second.
 It goes without saying that Close is idempotent.
 To be clear, the cache is cold after a restart.
 It's worth mentioning that the flag defaults to five.
+As noted, the limit is five.
+As discussed earlier, the walk skips aliases.
