@@ -16,3 +16,6 @@ The no surprises policy applies to all releases.
 The interest rate rounds to the whole point.
 The entire point cloud fits in memory.
 The reader reads no more and no less than n bytes, or returns an error.
+Probe touches the file and nothing else references it.
+The pass rewrites the header and nothing else
+references the file.

@@ -20,3 +20,5 @@ The bus is idle-high by design, so a stuck-low line reads as a fault.
 No magic is involved; the loader reads the environment variable.
 The whole point is that the bucket allows bursts.
 ReadFull reads exactly n bytes, no more and no less, or returns an error.
+Probe reads the file and nothing else; it never writes.
+You buy interpretation and nothing else

@@ -11,11 +11,16 @@
 # and `the whole point cloud` are measurements). `no more and no less`
 # skips a following `than`, which turns it into a bound.
 #
-# `without changing it` and `and nothing else` stay unconditional. A
-# contrast that matters (`Fsck checks the filesystem without changing
-# it when invoked with -n`) reads better with the contrast named
-# (`With -n, fsck only reports`), and the skill lists both phrases as
-# the writer weighing a fact on the reader's behalf.
+# `without changing it` stays unconditional. A contrast that matters
+# (`Fsck checks the filesystem without changing it when invoked with
+# -n`) reads better with the contrast named (`With -n, fsck only
+# reports`), and the skill lists the phrase as the writer weighing a
+# fact on the reader's behalf. `and nothing else` counts only at the
+# end of a clause, because before a verb `nothing else` is the subject
+# of a new clause (`touches the file and nothing else references it`).
+# Its guard `else!( )` takes any token but whitespace right after the
+# phrase, so it also counts at the end of a list item with no period,
+# while a line break inside a paragraph reads as whitespace.
 # The clause-end list is written glued to the word before it
 # (`design[., ;, :, (,)]`), since a space in a pattern is a whitespace
 # token and clause punctuation follows the word directly. It is spelled
@@ -25,7 +30,7 @@
 # space (`less !than`) needs a word to consume, so each of those
 # branches has a clause-end twin.
 expr magic [number, numbers, byte, bytes, prefix, string, strings, value, values, constant, constants]
-expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (and nothing else), (this is deliberate), (this is intentional), (by design[., ;, :, (,)]), ([is, was] by design), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
+expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (and nothing else!( )), (this is deliberate), (this is intentional), (by design[., ;, :, (,)]), ([is, was] by design), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
 let message "Certificate. A stated fact needs no vouching, so delete the phrase."
 let description "Flags phrases that insist on a fact the sentence already stated."
 let becomes ""
@@ -42,3 +47,4 @@ allows "The no surprises policy applies to all releases."
 allows "The interest rate rounds to the whole point."
 allows "The entire point cloud fits in memory."
 allows "The reader reads no more and no less than n bytes, or returns an error."
+allows "Probe touches the file and nothing else references it."
