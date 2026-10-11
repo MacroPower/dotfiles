@@ -12,3 +12,6 @@ In the future, the hook denies the command.
 Support for tables is planned.
 Two features are planned for the next cycle.
 Anchors are yet to be implemented.
+At the moment, the sweep skips symlinks.
+The sweep skips symlinks at the moment.
+The sweep skips symlinks at the moment
