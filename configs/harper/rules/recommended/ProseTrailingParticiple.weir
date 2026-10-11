@@ -1,27 +1,28 @@
 # A curated list, because `, PROG` fires on `, including`, `, using`,
 # and `, according`. Words that double as nouns or conjunctions carry
-# the word that marks the tail sense: `leading to`, `resulting in`,
+# the word that marks the trailing sense: `leading to`, `resulting in`,
 # `meaning that` or `meaning the`, `providing` without `that`,
 # `falling back` or `falling through`, and `failing` or `contributing`
 # without a noun after it (`failing test output` names the output, and
 # `contributing guide` names a document). After `thereby`
-# or `thus` any participle counts. The trailing `![,, and, or]` skips
+# or `thus` any participle counts. The final `![,, and, or]` skips
 # a gerund that is one item in a list (`allowing, enabling, and
 # letting`) or a pair (`keeping and dropping`); with Weir's whitespace
 # tokens, a comma glued to the word fails the match on its own.
 #
 # Two shapes stay flagged on purpose, since a word rule cannot tell
-# them from a tail and both rewrite cleanly: a gerund subject after a
-# fronted clause (`If the file is missing, creating it is the caller's
-# job`) and a participle phrase bracketed by commas (`The scheduler,
-# allowing for clock skew, waits five seconds`).
+# them from a trailing participial phrase and both rewrite cleanly: a
+# gerund subject after a fronted clause (`If the file is missing,
+# creating it is the caller's job`) and a participle phrase bracketed
+# by commas (`The scheduler, allowing for clock skew, waits five
+# seconds`).
 #
 # `fostering` and `showcasing` stay out, because the stock-word rule
 # reports every form of both words and one word should draw one
 # finding.
 expr plain [ensuring, allowing, enabling, making, highlighting, giving, helping, improving, reducing, increasing, causing, creating, showing, demonstrating, indicating, keeping, letting, preventing, avoiding, streamlining, simplifying, matching, returning, preserving, leaving, mirroring, appending, reflecting, underscoring, emphasizing, symbolizing]
 expr main , [(@plain ![,, and, or]), (failing ![NOUN, ,, and, or]), (contributing ![NOUN, ,, and, or]), (falling [back, through]), ([thereby, thus] PROG), (leading to), (resulting in), (meaning [that, the, a, an, it, you, we, they]), (providing ![that, and, or])]
-let message "Participle tacked on after a comma. Give the point its own sentence."
+let message "Trailing participial phrase. Give the point its own sentence."
 let description "Flags a comma followed by a participle that adds a consequence to the clause before it."
 let becomes ""
 let kind "Style"

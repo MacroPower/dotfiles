@@ -1,7 +1,7 @@
 # Each phrase is a chat reply's framing, which says nothing about the
 # subject. The Recommended rule of the same name holds the phrases that
-# human-written READMEs also use. `of course` sits in the
-# throat-clearing rule, so it draws one finding.
+# human-written READMEs also use. `of course` sits in the filler rule,
+# so it draws one finding.
 #
 # Weir reads `!` as negation, so a pattern cannot name a literal
 # exclamation mark. `certainly` and `absolutely` count instead when no

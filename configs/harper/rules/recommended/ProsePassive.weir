@@ -42,7 +42,7 @@
 # or `by the way`.
 #
 # `being` takes any participle but `said`, since `That being said` is
-# the opener the pivot rule reports. The first branch takes every
+# the opener the concessive rule reports. The first branch takes every
 # other form of `be` through the filter `<@be, !being>`.
 #
 # Matching ignores case, so a Go method named `Is` reads as the verb

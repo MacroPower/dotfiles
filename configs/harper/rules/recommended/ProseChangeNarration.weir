@@ -1,4 +1,4 @@
-# Each branch is narrowed to the delta sense, because Go doc prose uses
+# Each branch is narrowed to the change sense, because Go doc prose uses
 # the same words for runtime sequence far more often.
 #
 # `now VERB` requires a subject word before `now`, so `time.Now returns`,
@@ -25,11 +25,11 @@
 # runtime prose. `no longer`, `used to be`, and `has been updated` are
 # left out: docs use them for state changes in time (`is no longer
 # valid after Close`, `records what the limit used to be`, `wait until
-# the row has been updated`), and the delta form of `has been updated`
+# the row has been updated`), and the change sense of `has been updated`
 # is a passive the passive rule already catches.
 expr surfaces [flag, option, field, argument, parameter, subcommand, endpoint, syntax, format, default, behavior, behaviour, setting, mode]
 expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), ([can, does] now), (now also), (was previously), (were previously), (had previously), (previously,), (previously [DET, PRON, PROPN]), ([before, after, with] this change), ([updated, changed] to use), (refactored to), (the new @surfaces)]
-let message "Delta tense. Durable prose describes the system as it is, and git history records what changed."
+let message "Change narration. Durable prose describes the system as it is, and git history records what changed."
 let description "Flags phrases that describe the system as a change from an earlier version."
 let becomes ""
 let kind "Style"

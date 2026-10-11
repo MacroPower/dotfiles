@@ -61,17 +61,17 @@ let
   # Harper built-ins, both read from the tier directories under
   # configs/harper/rules and fixture-checked when prose-weirpack
   # builds. A changelog and a commit message both describe a change,
-  # so each turns off every tier's ProseTense, ProseCurrently, and
-  # ProseRoadmap.
+  # so each turns off every tier's ProseChangeNarration, ProseCurrently,
+  # and ProseRoadmap.
   ruleNames = prose-weirpack.passthru.ruleNames ++ prose-weirpack.passthru.builtinRules;
   allRules = lib.concatStringsSep "," ruleNames;
-  deltaRules = [
-    "ProseTense_"
+  timeSensitiveRules = [
+    "ProseChangeNarration_"
     "ProseCurrently_"
     "ProseRoadmap_"
   ];
   changeRules = lib.concatStringsSep "," (
-    lib.filter (r: !(lib.any (prefix: lib.hasPrefix prefix r) deltaRules)) ruleNames
+    lib.filter (r: !(lib.any (prefix: lib.hasPrefix prefix r) timeSensitiveRules)) ruleNames
   );
 
   # Internal rule name to tier, one `Name=Tier` pair per line, for the
@@ -468,9 +468,9 @@ writeShellApplication {
       *) exit 0 ;;
     esac
 
-    # A changelog describes deltas, so the tense rules are off, and its
-    # headings are release labels (`[1.2.0] - 2026-09-23 [YANKED]`), so
-    # the heading check is off too.
+    # A changelog describes changes, so the time-sensitive rules are off,
+    # and its headings are release labels (`[1.2.0] - 2026-09-23
+    # [YANKED]`), so the heading check is off too.
     base=$(basename "$file")
     rules=$all_rules
     changelog=0

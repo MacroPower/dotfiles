@@ -13,7 +13,7 @@
 # writers also hyphenate takes `[-, ( )]` between its words and
 # matches `battle tested` and `battle-tested` alike.
 expr main [seamless, seamlessly, (robust !to), (robust!( )), powerful, elegant, elegantly, comprehensive, intuitive, effortless, effortlessly, blazing, blazingly, revolutionary, innovative, sophisticated, intricate, vibrant, (a breeze), holistic, groundbreaking, transformative, (ever[-, ( )]evolving), (rapidly evolving), (top[-, ( )]notch), (battle[-, ( )]tested), (production[-, ( )]ready), (enterprise[-, ( )]grade), (out[-, ( )]of[-, ( )]the[-, ( )]box), (bells and whistles), (feature[-, ( )]rich), (cutting[-, ( )]edge), (state[-, ( )]of[-, ( )]the[-, ( )]art), (lightning[-, ( )]fast), (best[-, ( )]in[-, ( )]class), (world[-, ( )]class), (next[-, ( )]generation), (game[-, ( )]changing), (game[-, ( )]changer), (game[-, ( )]changers)]
-let message "Puff. State the fact and let the reader judge its weight."
+let message "Marketing language. State the fact and let the reader judge its weight."
 let description "Flags marketing adjectives that inflate a claim without informing."
 let becomes ""
 let kind "Style"

@@ -2,8 +2,8 @@
 # that the walk never revisits a node` becomes `the walk never
 # revisits a node`). Four rules hold the narrower shapes: the
 # back-reference rule (`as mentioned above`), the sentence-adverb rule
-# (`Clearly,`), the restatement rule (`in other words,`), and the pivot
-# rule (`that said,`).
+# (`Clearly,`), the restatement rule (`in other words,`), and the
+# concessive rule (`that said,`).
 #
 # `as we can see` and `as you might expect` point at what the reader
 # already sees or expects, the way `as you can see` does.
@@ -12,7 +12,7 @@
 # commit subject uses `note` as a verb (`docs: note that the flag is
 # sticky`).
 expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (as we can see), (as we have seen), (as we've seen), (as you might expect), (as you would expect), (as you'd expect), (of course), (make no mistake), (it goes without saying), (at the end of the day), (as a matter of fact), (worth mentioning)]
-let message "Throat clearing. Delete the phrase and state the point."
+let message "Filler phrase. Delete the phrase and state the point."
 let description "Flags phrases that announce a point instead of making it."
 let becomes ""
 let kind "Style"
