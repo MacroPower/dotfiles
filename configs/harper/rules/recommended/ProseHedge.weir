@@ -12,7 +12,13 @@
 # `appears to` skips a determiner, pronoun, or proper noun after it,
 # where it means `becomes visible to` (`the prompt appears to the
 # user`).
-expr main [somewhat, arguably, perhaps, probably, maybe, (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), ([appears, appear] to ![DET, PRON, PROPN]), (tends to), (tend to), presumably, fairly, quite]
+#
+# `fairly` and `quite` count only as degree words, before an
+# adjective, an adverb, or (for `quite`) a determiner (`fairly
+# standard`, `quite a large scope`). Before a verb, `fairly` means
+# justly (`a normalizer that ignores whitespace can fairly ignore line
+# breaks`).
+expr main [somewhat, arguably, perhaps, probably, maybe, (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), ([appears, appear] to ![DET, PRON, PROPN]), (tends to), (tend to), presumably, (fairly [ADJ, ADV]), (quite [ADJ, ADV, DET])]
 let message "Hedge. State the claim or drop it."
 let description "Flags words that soften a claim without adding information."
 let becomes ""
@@ -24,3 +30,4 @@ allows "A sort of index maps each anchor to its node."
 allows "What kind of error does it return?"
 allows "Load returns a non-nil, possibly empty map."
 allows "The prompt appears to the user after login."
+allows "A normalizer that ignores whitespace can fairly ignore line breaks too."

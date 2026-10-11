@@ -7,3 +7,4 @@ This kind of failure is rare.
 Load returns a non-nil, possibly empty map.
 The prompt appears to the user after login.
 The banner appears to them on startup.
+A normalizer that ignores whitespace can fairly ignore line breaks too.
