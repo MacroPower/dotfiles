@@ -22,3 +22,4 @@ Compare the new version string with the old one and refuse a downgrade.
 The limit records what it used to be.
 The row is now consumed.
 The deadline is now plus five seconds.
+The value previously stored under the key is returned.

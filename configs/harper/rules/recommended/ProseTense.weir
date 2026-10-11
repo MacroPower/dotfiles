@@ -10,9 +10,15 @@
 # out, because a test comment narrates runtime state with them (`the
 # row is now consumed`, `the store now has two rows`).
 #
-# `previously` fires only as `was/were/had previously` or as the
-# sentence opener `Previously,`; `the previously cached value` is
-# ordering at runtime.
+# `previously` fires only as `was/were/had previously`, as the
+# sentence opener `Previously,`, or before the subject of a clause
+# (`Previously the walker visited aliases twice`); `the previously
+# cached value` is ordering at runtime.
+#
+# A code comment narrates the edit that produced it (`Before this
+# change, the walker visited aliases twice`, `Updated to use the
+# cached index`), which belongs in the commit message. A passive form
+# (`was refactored to`) also draws the passive rule's finding.
 #
 # `the new` is limited to nouns that name a change surface, because
 # `returns the new count` and `validate the new config` are ordinary
@@ -22,7 +28,7 @@
 # the row has been updated`), and the delta form of `has been updated`
 # is a passive the passive rule already catches.
 expr surfaces [flag, option, field, argument, parameter, subcommand, endpoint, syntax, format, default, behavior, behaviour, setting, mode]
-expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), ([can, does] now), (now also), (was previously), (were previously), (had previously), (previously,), (the new @surfaces)]
+expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), ([can, does] now), (now also), (was previously), (were previously), (had previously), (previously,), (previously [DET, PRON, PROPN]), ([before, after, with] this change), ([updated, changed] to use), (refactored to), (the new @surfaces)]
 let message "Delta tense. Durable prose describes the system as it is, and git history records what changed."
 let description "Flags phrases that describe the system as a change from an earlier version."
 let becomes ""
@@ -37,3 +43,4 @@ allows "The retry uses the previously cached value."
 allows "The row is now consumed."
 allows "The deadline is now plus five seconds."
 allows "The watcher fires only after the file has been updated on disk."
+allows "The value previously stored under the key is returned."
