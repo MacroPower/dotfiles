@@ -41,6 +41,13 @@ tasks:
 
   switch:
     desc: Apply nix config for the current host
+    preconditions:
+      # Activation writes TCC-protected defaults (com.apple.universalaccess),
+      # which needs Full Disk Access. macOS upgrades can revoke the grant.
+      - sh: '[ "$(uname)" != Darwin ] || head -c1 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" >/dev/null 2>&1'
+        msg: |-
+          This terminal lacks Full Disk Access, so activation would fail writing com.apple.universalaccess.
+          Grant it in System Settings > Privacy & Security > Full Disk Access, then quit and reopen the terminal app (and run `tmux kill-server`).
     cmds:
       - task: _switch-nh
         if: "command -v nh &>/dev/null"
