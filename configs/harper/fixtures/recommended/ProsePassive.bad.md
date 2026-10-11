@@ -26,3 +26,5 @@ The flag is set by the caller.
 The binary is built by the pipeline.
 The header is required by the spec.
 The field is not required by the schema.
+A checksum is used to verify the download.
+Bytes can be used to read the buffer.
