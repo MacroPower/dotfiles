@@ -14,3 +14,5 @@ Without a cache, resulting builds take twice as long.
 The job retries, providing that the budget allows it.
 The counters come in two families, increasing and decreasing.
 The struct has two callbacks, providing and consuming.
+Error reports, failing test output, and security warnings keep their detail.
+The report lists passing, failing, and skipped tests.
