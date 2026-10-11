@@ -2,7 +2,6 @@ The pipeline is seamless and robust.
 The library is a powerful and elegant tool.
 The CLI works out of the box.
 The walker is blazingly fast on deep trees.
-The parser is highly configurable.
 The framework is battle-tested.
 The server is production-ready.
 It ships a state-of-the-art parser.

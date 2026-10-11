@@ -3,20 +3,20 @@
 # first-class function, a superclass call). `enduring` stays out too
 # (`enduring storage outlives the pod`).
 #
-# Two words keep a technical sense behind a guard. `robust to` names a
-# statistical property (`robust to outliers`), and `highly available`
-# names a deployment shape. A negated word after a space needs a word
-# to consume, so `robust` has a twin for a clause end (`robust!( )`).
+# `robust` keeps a technical sense behind a guard, since `robust to`
+# names a statistical property (`robust to outliers`). A negated word
+# after a space needs a word to consume, so `robust` has a twin for a
+# clause end (`robust!( )`). `highly` sits in the intensifier rule,
+# because it raises an adjective rather than selling a feature.
 #
 # A space in a pattern matches only whitespace, so each compound that
 # writers also hyphenate takes `[-, ( )]` between its words and
 # matches `battle tested` and `battle-tested` alike.
-expr main [seamless, seamlessly, (robust !to), (robust!( )), powerful, elegant, elegantly, comprehensive, intuitive, effortless, effortlessly, blazing, blazingly, revolutionary, innovative, sophisticated, intricate, vibrant, (a breeze), holistic, groundbreaking, transformative, (ever[-, ( )]evolving), (rapidly evolving), (top[-, ( )]notch), (battle[-, ( )]tested), (production[-, ( )]ready), (enterprise[-, ( )]grade), (out[-, ( )]of[-, ( )]the[-, ( )]box), (bells and whistles), (feature[-, ( )]rich), (cutting[-, ( )]edge), (state[-, ( )]of[-, ( )]the[-, ( )]art), (lightning[-, ( )]fast), (best[-, ( )]in[-, ( )]class), (world[-, ( )]class), (next[-, ( )]generation), (game[-, ( )]changing), (highly !available)]
+expr main [seamless, seamlessly, (robust !to), (robust!( )), powerful, elegant, elegantly, comprehensive, intuitive, effortless, effortlessly, blazing, blazingly, revolutionary, innovative, sophisticated, intricate, vibrant, (a breeze), holistic, groundbreaking, transformative, (ever[-, ( )]evolving), (rapidly evolving), (top[-, ( )]notch), (battle[-, ( )]tested), (production[-, ( )]ready), (enterprise[-, ( )]grade), (out[-, ( )]of[-, ( )]the[-, ( )]box), (bells and whistles), (feature[-, ( )]rich), (cutting[-, ( )]edge), (state[-, ( )]of[-, ( )]the[-, ( )]art), (lightning[-, ( )]fast), (best[-, ( )]in[-, ( )]class), (world[-, ( )]class), (next[-, ( )]generation), (game[-, ( )]changing)]
 let message "Puff. State the fact and let the reader judge its weight."
 let description "Flags marketing adjectives that inflate a claim without informing."
 let becomes ""
 let kind "Style"
 allows "The bucket refills every second."
 allows "The estimator is robust to outliers."
-allows "The cluster is highly available."
 allows "Go has first-class functions."
