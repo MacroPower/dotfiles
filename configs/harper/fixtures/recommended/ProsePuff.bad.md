@@ -27,3 +27,6 @@ The parser is robust.
 A robust parser reads the header.
 The theme elevates the whole design.
 The constructor stops assigning them, simply.
+Put simply, the cache is a map.
+To put it simply, the cache is a map.
+Simply, the cache is a map.

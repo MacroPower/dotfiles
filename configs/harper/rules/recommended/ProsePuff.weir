@@ -5,9 +5,11 @@
 # root`, `serves as-is`). `simply` and `merely` stay unconditional
 # otherwise: a product name or a mention of the word is rare in
 # technical prose, and the skill wants both gone from a sentence about
-# behavior. `simply` skips a following ` put` or comma (`Simply put,`,
-# `Put simply,`), which the throat-clearing rule reports. The guard
-# sits glued to the word so it reads the token right after it.
+# behavior. `simply` skips a following ` put`, since the throat-clearing
+# rule reports `Simply put`. The guard sits glued to the word so it
+# reads the token right after it. `Put simply` and `To put it simply`
+# count here instead of in that rule, because no pattern can look back
+# from `simply` to the `put` before it.
 #
 # Three words keep a technical sense behind a guard. `robust to`
 # names a statistical property (`robust to outliers`), `elevate
@@ -27,7 +29,7 @@
 # page orientation, a Kerberos realm, the character, a critical
 # section, a first-class function, a superclass call).
 expr slop [seamless, seamlessly, (robust !to), (robust!( )), powerful, elegant, elegantly, comprehensive, intuitive, effortless, effortlessly, blazing, blazingly, revolutionary, innovative, sophisticated, delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates] ![privilege, privileges, permissions]), tapestry, journey, (navigate the [complexities, complexity, landscape, world, challenges]), crucial, vital, pivotal, paramount, testament, foster, fosters, showcase, showcases, (a breeze), holistic, synergy, groundbreaking, transformative, (rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad), (ever[-, ( )]evolving), (rapidly evolving), (at its core), (at the heart of), (top[-, ( )]notch), (battle[-, ( )]tested), (production[-, ( )]ready), (enterprise[-, ( )]grade), (out[-, ( )]of[-, ( )]the[-, ( )]box), (under the hood), (bells and whistles), (feature[-, ( )]rich), (cutting[-, ( )]edge), (state[-, ( )]of[-, ( )]the[-, ( )]art), (lightning[-, ( )]fast), (best[-, ( )]in[-, ( )]class), (world[-, ( )]class), (next[-, ( )]generation), (game[-, ( )]changing), (highly !available), extremely, incredibly]
-expr main [(simply![(( )put), (,)]), merely, (stands as DET), (serves as DET), (plays a [vital, crucial, key, critical, important] role), @slop]
+expr main [(simply!(( )put)), merely, (stands as DET), (serves as DET), (plays a [vital, crucial, key, critical, important] role), @slop]
 let message "Puff. State the fact and let the reader judge its weight."
 let description "Flags words and phrases that inflate a claim without informing."
 let becomes ""
@@ -49,4 +51,3 @@ allows "The estimator is robust to outliers."
 allows "The installer elevates privileges with sudo."
 allows "The cluster is highly available."
 allows "Simply put, the cache is a map."
-allows "Put simply, the cache is a map."
