@@ -57,12 +57,12 @@ structure behind the API, a buffer size, or a retry count nothing
 outside the code depends on. When an internal detail matters, state its
 observable consequence instead.
 
-A stated fact needs no certificate. A follow-up that vouches for a fact
+A stated fact needs no reassurance. A follow-up that vouches for a fact
 (`It does exactly that`), fences off a scope nobody questioned (`returns
 the number, and nothing else`), or restates it in other words names
 nothing the reader can observe, and the same words fit under any fact
 in any project's docs. A negation (`It does not execute the statement`)
-is the same certificate unless the opposite is a behavior a reader
+is the same reassurance unless the opposite is a behavior a reader
 would expect from that name, the way `does not follow symlinks`
 corrects a real expectation. Read every sentence's last clause on its
 own, since that is where most of these land.
