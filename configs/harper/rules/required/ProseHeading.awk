@@ -8,7 +8,7 @@
 #
 # The check reports a heading at any level from two down when it
 # starts with a question word or an auxiliary, or ends with a question
-# mark. At level two it also reports a heading that contains a
+# mark or a colon. At level two it also reports a heading that contains a
 # pronoun, an auxiliary, or a subordinating conjunction anywhere, or
 # that runs past six words. A deeper heading skips those two checks,
 # because it often labels a single case (`Retries after a lease error`)
@@ -38,7 +38,7 @@ BEGIN {
     opener[list[i]] = 1
   }
   # Words that report a heading wherever they appear.
-  split("you your we we're our us i my let's it's is are was were can will should must does don't if before after because until while once so", list, " ")
+  split("you your we we're our us i my let's it it's they they're that is are was were has have can will should must does don't if before after because until while once so", list, " ")
   for (i in list) {
     anywhere[list[i]] = 1
   }
@@ -104,7 +104,7 @@ fence_char != "" {
   if (level == 2 && words > 6) {
     narrates = 1
   }
-  if (text ~ /\?$/) {
+  if (text ~ /[?:]$/) {
     narrates = 1
   }
   for (i = 1; i <= words; i++) {

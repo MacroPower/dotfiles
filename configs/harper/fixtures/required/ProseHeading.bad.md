@@ -35,3 +35,9 @@
 ### Is it safe
 
 #### Should retries back off
+
+## Rules it skips
+
+## Flags that have changed
+
+## Setup:
