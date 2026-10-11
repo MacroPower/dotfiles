@@ -1,0 +1,14 @@
+# Each phrase points back at an earlier passage without naming it, so
+# the fix links the section it means or drops the phrase. `as
+# mentioned`, `as noted`, `as stated`, and `as discussed` count only
+# with a glued comma or before `above`, `earlier`, `before`, or
+# `previously`, the words `as described` needs too. Before a source
+# the phrase cites it (`as stated in RFC 9110`).
+expr main [(as [mentioned, noted, stated, discussed, described] [above, earlier, before, previously]), (as [mentioned, noted, stated, discussed],)]
+let message "Back-reference. Link the section it means, or delete the phrase."
+let description "Flags as mentioned above and similar phrases that point back without naming the passage."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "The header is parsed as stated in RFC 9110."
+allows "The limit is five, as noted in the changelog."

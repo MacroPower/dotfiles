@@ -1,0 +1,13 @@
+# Each adverb opens a sentence by rating the point that follows
+# (`Clearly, the cache is cold`), so the fix deletes it and lets the
+# point carry its own weight. Each counts only with a glued comma, the
+# sentence-adverb shape. The bare form modifies a verb or an adjective
+# (`the error prints clearly`, `obviously irrelevant`).
+expr main [(obviously,), (clearly,), (interestingly,), (importantly,), (notably,), (crucially,)]
+let message "Sentence adverb. Delete it and let the point carry its own weight."
+let description "Flags a sentence-opening adverb such as clearly or notably that rates the point that follows."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "The error prints clearly on a dark background."
+allows "Do not make the negative queries obviously irrelevant."
