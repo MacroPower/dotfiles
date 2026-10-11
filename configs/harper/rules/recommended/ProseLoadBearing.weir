@@ -1,0 +1,20 @@
+# `load-bearing` says that something depends on a part without naming
+# what. When nothing does, the word goes. When something does, the
+# sentence names it (`The nil-receiver guard is load-bearing` becomes
+# `The nil-receiver guard lets a caller with no compactor call Run`).
+#
+# A space in a pattern matches only whitespace, so `[-, ( )]` takes the
+# hyphenated and the spaced spelling alike. The literal sense before
+# `wall`, `beam`, or `column` passes. The guard sits glued to `bearing`
+# so it reads the token right after it, which also lets a phrase at the
+# end of a line count.
+expr literal [$wall, $beam, $column]
+expr main load[-, ( )]bearing!(( )@literal)
+let message "Load-bearing. Name what breaks without it, or delete the word."
+let description "Flags load-bearing as a metaphor for a part that something depends on."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "Remove the load-bearing wall last."
+allows "Two load bearing beams hold the deck."
+allows "The nil-receiver guard lets a caller with no compactor call Run."
