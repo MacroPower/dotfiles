@@ -7,3 +7,7 @@ The client carries out the request.
 The limit has an effect on throughput.
 The output is dependent on the locale.
 The caller gains access to the buffer through Bytes.
+The decoder performed a lookup on the anchor table.
+The loader is making use of the cached index.
+The walker took into account the alias depth.
+The planner drew a conclusion from the trace.
