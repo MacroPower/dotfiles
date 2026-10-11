@@ -1,0 +1,33 @@
+# A sentence that denies one framing and asserts another (`This isn't
+# a cache; it's a ledger`) spends its first clause on a claim nobody
+# made. The fix states what the thing is, and gives the contrast a
+# sentence of its own only when a reader would expect the denied
+# framing.
+#
+# The semicolon branch takes any words between the negation and the
+# semicolon. The comma branch needs a determiner, `about`, or a
+# minimizer on both sides of the comma (`isn't about speed, it's about
+# correctness`), because a conditional takes the same shape with a
+# predicate (`If the file isn't found, it's created`), and Weir has no
+# lookbehind for the `if`. A sentence that splits the two clauses with
+# a period (`It's not about speed. It's about correctness.`) passes,
+# since a rule reads one sentence at a time.
+#
+# Each gap length is its own alternative ending in the punctuation,
+# the way the not-only rule writes its `but` tail. A space in a pattern
+# is a whitespace token, so each `*` is one word, and the punctuation
+# sits glued to the last one.
+expr neg [isn't, aren't, wasn't, weren't, (is not), (are not), (was not), (were not)]
+expr then [it's, they're, (it is), (they are), (it was), (they were)]
+expr lead [DET, about, just, only, merely, simply]
+expr semi [(*;), (* *;), (* * *;), (* * * *;), (* * * * *;), (* * * * * *;)]
+expr comma [(*,), (* *,), (* * *,), (* * * *,), (* * * * *,)]
+expr main [(@neg @semi @then), (@neg @lead @comma @then [DET, about])]
+let message "Reframe. State what it is, and give the contrast its own sentence only if a reader expects it."
+let description "Flags a clause that denies one framing before asserting another, such as this isn't a cache; it's a ledger."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "If the file isn't found, it's created."
+allows "The value isn't a number, so the parser rejects it."
+allows "The cache is a ledger of every decision the scheduler makes."
