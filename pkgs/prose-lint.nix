@@ -8,8 +8,8 @@
 
 let
   # Extensions Harper parses with a comment-only, markdown, or Org
-  # parser, plus the Terraform extensions, whose comments the wrapper
-  # lints through a shadow file. Anything else falls back to plain
+  # parser, plus the Terraform and YAML extensions, whose comments the
+  # wrapper lints through a shadow file. Anything else falls back to plain
   # text and lints every line, so the wrapper refuses it rather than
   # flagging string literals.
   extensions = [
@@ -52,6 +52,8 @@ let
     "toml"
     "ts"
     "tsx"
+    "yaml"
+    "yml"
     "zig"
   ];
 
@@ -213,19 +215,36 @@ writeShellApplication {
     # as `# ` so the shell shadow reads it at the same width, and skips
     # each heredoc body (`<<-EOF` to `EOF`), since a `user_data` script
     # carries `#` lines of its own. HCL block comments stay out, because
-    # they mostly hold commented-out code.
+    # they mostly hold commented-out code. YAML takes `#` and skips each
+    # block scalar body (`run: |`), which often holds a shell script.
+    # The body runs while lines are blank or indented past the line
+    # that opened it; that bound misses a comment at the mapping level
+    # right after `- key: |`, which errs toward linting less.
     #
     # The per-line parser strips trailing `-`, `#`, `/`, `*`, and `!`
     # along with the marker, which would hide a `--` that ends a line,
     # so a comment line with text that ends in one of them gains ` x`.
     comment_lines() {
       KIND="$1" awk '
+        BEGIN {
+          block = -1
+        }
         {
           kind = ENVIRON["KIND"]
+          if (kind == "yaml" && block >= 0) {
+            match($0, /^[ \t]*/)
+            if ($0 ~ /^[ \t]*$/ || RLENGTH > block) {
+              print "x"
+              next
+            }
+            block = -1
+          }
           if (kind == "go") {
             keep = $0 ~ /^[ \t]*\/\/([ \t]|$)/
           } else if (kind == "hcl") {
             keep = heredoc == "" && $0 ~ /^[ \t]*(#|\/\/)([ \t]|$)/
+          } else if (kind == "yaml") {
+            keep = $0 ~ /^[ \t]*#([ \t]|$)/
           } else {
             keep = !in_string && $0 ~ /^[ \t]*#([ \t]|$)/
           }
@@ -244,6 +263,11 @@ writeShellApplication {
               } else if (match(line, /<<-?[A-Za-z_][A-Za-z0-9_]*$/)) {
                 heredoc = substr(line, RSTART, RLENGTH)
                 sub(/^<<-?/, "", heredoc)
+              }
+            } else if (kind == "yaml") {
+              if (line ~ /[:-][ \t]+([&!][^ \t]+[ \t]+)*[|>][-+1-9]*[ \t]*(#.*)?$/) {
+                match(line, /^[ \t]*/)
+                block = RLENGTH
               }
             }
             print "x"
@@ -347,19 +371,21 @@ writeShellApplication {
     # comes from the shadow, and a finding on any other line, such as a
     # docstring or a trailing comment, comes from the file itself.
     #
-    # Harper has no HCL parser and would read a Terraform file as plain
-    # text, code included, so the shadow is the only lint there and a
-    # trailing comment goes unchecked.
+    # Harper has no HCL or YAML parser and would read a Terraform or
+    # YAML file as plain text, code included, so the shadow is the only
+    # lint there and a trailing comment goes unchecked.
     case "$ext" in
       go) shadow_kind="go" shadow_ext="rs" ;;
       py|pyi) shadow_kind="py" shadow_ext="sh" ;;
       tf|tfvars|hcl) shadow_kind="hcl" shadow_ext="sh" ;;
+      yaml|yml) shadow_kind="yaml" shadow_ext="sh" ;;
       *) shadow_kind="" shadow_ext="" ;;
     esac
     out=""
-    if [ "$shadow_kind" != "hcl" ]; then
-      out=$(lint "$rules" "$file")
-    fi
+    case "$shadow_kind" in
+      hcl|yaml) ;;
+      *) out=$(lint "$rules" "$file") ;;
+    esac
     if [ -n "$shadow_kind" ]; then
       shadow=$tmp_dir/shadow.$shadow_ext
       comment_lines "$shadow_kind" "$file" >"$shadow"
