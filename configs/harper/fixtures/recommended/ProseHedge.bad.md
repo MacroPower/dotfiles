@@ -6,8 +6,6 @@ The parser seems to accept tabs.
 The limit tends to be too low.
 The job is fairly quick.
 The output is quite large.
-I think the flag should default to five.
-It could be argued that the lock is unnecessary.
 The parser is perhaps slow.
 The walker probably leaks.
 Maybe the cache is cold.

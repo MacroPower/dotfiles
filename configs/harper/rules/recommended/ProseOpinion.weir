@@ -1,0 +1,10 @@
+# Each phrase frames a claim as someone's view, the writer's own (`I
+# think`) or an unnamed arguer's (`it could be argued`), so the fix
+# states the claim or gives the evidence for it.
+expr main [(in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said)]
+let message "Opinion marker. State the claim, or give the evidence for it."
+let description "Flags phrases that frame a claim as someone's view instead of stating it."
+let becomes ""
+let kind "Style"
+allows "The flag should default to five."
+allows "The view model holds the form state."
