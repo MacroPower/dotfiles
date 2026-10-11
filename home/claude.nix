@@ -1060,12 +1060,22 @@ let
   # 0 without output, so first-match-wins skips the file. The whole
   # list is gated on proseLint.enable so disabling it drops the rule
   # along with the binary.
+  #
+  # Claude Code keeps each session's scratchpad and task output under
+  # /tmp/claude-<uid>, and the files there are throwaway scripts and
+  # notes no reader sees, so those paths always lead the exclude list.
+  # The globs match any uid, since standalone home-manager has none to
+  # read.
+  proseLintScratchGlobs = [
+    "/tmp/claude-*/**"
+    "/private/tmp/claude-*/**"
+  ];
   defaultLinterRules = lib.optionals cfg.proseLint.enable (
     map (glob: {
       pathGlob = glob;
       command = [ "${pkgs.coreutils}/bin/true" ];
       timeout = "5s";
-    }) cfg.proseLint.excludeGlobs
+    }) (proseLintScratchGlobs ++ cfg.proseLint.excludeGlobs)
     ++ [
       {
         pathGlob = "/**/*.{${lib.concatStringsSep "," pkgs.prose-lint.passthru.extensions}}";
@@ -1678,7 +1688,9 @@ in
               Absolute file-path globs (doublestar syntax, see
               formatterRules) that prose-lint skips. Each becomes a
               leading linter rule that exits 0, so first-match-wins
-              stops the prose-lint rule from seeing the file.
+              stops the prose-lint rule from seeing the file. The
+              session scratchpad under /tmp/claude-<uid> is always
+              skipped, so the list need not name it.
             '';
           };
         };
