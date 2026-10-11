@@ -3,10 +3,19 @@
 # from an apparent one (`a line is added only when the file genuinely
 # ends in a blank line`). The adjective `genuine` stays out, since it
 # usually means authentic (`the badge in the footer is genuine`).
-expr main genuinely
+#
+# `very`, `really`, `truly`, and `actually` sit here too, because each
+# hit 30 to 130 lines in about 900 human-written docs, and `actually`
+# often marks a real contrast with what the reader expects (`the file
+# is actually a symlink`). `very` skips a preceding `the`, `this`, or
+# `that`, where it means exact (`the very first entry`). Weir has no
+# lookbehind, so the filter consumes the word before and narrows the
+# finding back to `very`.
+expr main [genuinely, <(![the, this, that] very), very>, really, truly, actually]
 let message "Intensifier. Give the number, or delete the word."
-let description "Flags genuinely, which usually raises a claim without informing."
+let description "Flags genuinely, very, really, truly, and actually, which usually raise a claim without informing."
 let becomes ""
 let kind "Style"
 allows "The badge in the footer is genuine."
 allows "The path is contended under load."
+allows "The very first entry holds the header."
