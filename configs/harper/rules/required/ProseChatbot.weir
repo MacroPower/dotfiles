@@ -10,7 +10,14 @@
 # the word so it reads the token right after it. A closing paren cannot
 # sit in the list, since it ends the list, so `(absolutely)` still
 # fires, and so does the word at the end of a line.
-expr main [(hope this helps), (hope that helps), (great question), (you're absolutely right), (you are absolutely right), (I'd be happy to), (I would be happy to), ([certainly, absolutely]![( ), ,, ., ?, ;, :, -, /])]
+#
+# `you're right` counts only with punctuation glued after it (`You're
+# right, the cache was stale`), which leaves `you're right-clicking`
+# and `you're right next to the limit`. `good catch` and `great catch`
+# skip a following code word (`a good catch block`). `here's the
+# updated` and its kin hand a reply back to the asker.
+expr code [block, blocks, clause, clauses, statement, statements, handler, handlers, arm, arms]
+expr main [(hope this helps), (hope that helps), (hope [this, that] [clarifies, clears]), (great question), (good question), ([great, good] catch!(( )@code)), ([you're, (you are)] right!([( ), -, /])), ([here's, (here is), (here are)] the [updated, revised, corrected, fixed]), (you're absolutely right), (you are absolutely right), (I'd be happy to), (I would be happy to), ([certainly, absolutely]![( ), ,, ., ?, ;, :, -, /])]
 let message "Chatbot phrase. Delete it and respond directly."
 let description "Flags phrases that frame a reply as a chat instead of stating the point."
 let becomes ""
@@ -19,3 +26,5 @@ let scope "Sentence"
 allows "The absolutely-positioned element overlaps the header."
 allows "The fix is certainly correct."
 allows "Is it safe? Certainly."
+allows "A good catch block logs the error before it rethrows."
+allows "Make sure you're right-clicking the tray icon."
