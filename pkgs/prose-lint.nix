@@ -195,6 +195,73 @@ writeShellApplication {
       '
     }
 
+    # Prints the file's full-line comments at their lines and columns
+    # and an `x` on every other line. The `x` keeps two comments that
+    # code separates from merging into one run, which a blank line
+    # would allow. A Go comment needs whitespace or the line end after
+    # `//`, so a directive (`//go:build`, `//nolint:`) stays out. A
+    # Python comment needs the same after `#`, which leaves out a
+    # shebang, and a line inside a triple-quoted string never counts.
+    # The string tracking toggles on an odd count of triple quotes in a
+    # line, which is close enough for comments.
+    #
+    # The per-line parser strips trailing `-`, `#`, `/`, `*`, and `!`
+    # along with the marker, which would hide a `--` that ends a line,
+    # so a comment line with text that ends in one of them gains ` x`.
+    comment_lines() {
+      KIND="$1" awk '
+        {
+          keep = 0
+          if (ENVIRON["KIND"] == "go") {
+            keep = $0 ~ /^[ \t]*\/\/([ \t]|$)/
+          } else if (!in_string) {
+            keep = $0 ~ /^[ \t]*#([ \t]|$)/
+          }
+          if (!keep) {
+            if (ENVIRON["KIND"] != "go") {
+              line = $0
+              if (gsub(/"""|\047\047\047/, "", line) % 2 == 1) {
+                in_string = !in_string
+              }
+            }
+            print "x"
+            next
+          }
+          text = $0
+          sub(/^[ \t]*(\/\/|#)/, "", text)
+          if (text ~ /[^-#\/*! \t]/ && text ~ /[-#\/*!][ \t]*$/) {
+            print $0 " x"
+          } else {
+            print
+          }
+        }
+      ' "$2"
+    }
+
+    # Drops each finding on a line the shadow file keeps, since the
+    # shadow lint reports those lines.
+    drop_comment_lines() {
+      SHADOW="$1" awk '
+        BEGIN {
+          while ((getline src < ENVIRON["SHADOW"]) > 0) {
+            n++
+            if (src != "x") {
+              comment[n] = 1
+            }
+          }
+        }
+        {
+          if (match($0, /:[0-9]+:[0-9]+: /)) {
+            split(substr($0, RSTART + 1), pos, ":")
+            if (pos[1] in comment) {
+              next
+            }
+          }
+          print
+        }
+      '
+    }
+
     tmp_dir=$(mktemp -d)
     trap 'rm -rf "$tmp_dir"' EXIT
     stderr_file=$tmp_dir/stderr
@@ -246,10 +313,33 @@ writeShellApplication {
         ;;
     esac
 
+    # Harper strips the marker from only the first line of a run of Go
+    # or Python line comments, so a phrase that wraps onto the next
+    # comment line never matches. The wrapper copies the full-line
+    # comments into a shadow file at the same lines and columns and
+    # lints it as a language whose parser strips the marker from every
+    # line: Rust for `//` and shell for `#`. A finding on a comment line
+    # comes from the shadow, and a finding on any other line, such as a
+    # docstring or a trailing comment, comes from the file itself.
+    shadow_ext=""
+    case "$ext" in
+      go) shadow_ext="rs" ;;
+      py|pyi) shadow_ext="sh" ;;
+    esac
+    out=$(lint "$rules" "$file")
+    if [ -n "$shadow_ext" ]; then
+      shadow=$tmp_dir/shadow.$shadow_ext
+      comment_lines "$ext" "$file" >"$shadow"
+      out=$(
+        printf '%s\n' "$out" | drop_comment_lines "$shadow" | sed '/^$/d'
+        lint "$rules" "$shadow"
+      )
+    fi
+
     # harper-cli prints the basename; restore the path it was given so
     # a finding names the file the way the caller does. ENVIRON avoids
     # awk -v's backslash processing.
-    out=$(lint "$rules" "$file" | drop_label_colons "$file" |
+    out=$(printf '%s\n' "$out" | sed '/^$/d' | drop_label_colons "$file" |
       FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
 
     # The awk checks read markdown only. Each prints `Kind::Name:` and
