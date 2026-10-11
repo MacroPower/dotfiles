@@ -6,3 +6,4 @@ Rewrite the comments to be clear, accurate, and readable.
 The goal is to be clear, concise, and correct.
 The header is parsed as stated in RFC 9110.
 The limit is five, as noted in the changelog.
+Do not make the negative queries obviously irrelevant.
