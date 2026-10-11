@@ -1,0 +1,12 @@
+# The Required rule of the same name holds every other
+# nominalization. These two sit here, because the single verb often
+# shifts the meaning. `The client makes a request to the endpoint`
+# does not become `requests the endpoint`, and an attacker who gains
+# access to a host has not yet accessed anything on it.
+expr main [([$make, made] a request), ([$gain, $obtain] access to)]
+let message "Nominalization. Use the verb."
+let description "Flags make a request and gain access to, which one verb often replaces."
+let becomes ""
+let kind "Style"
+allows "The client requests a token before each call."
+allows "The caller reads the buffer through Bytes."
