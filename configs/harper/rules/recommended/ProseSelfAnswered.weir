@@ -1,16 +1,16 @@
 # A noun phrase asked as a question and answered in the next sentence
-# (`The result? A build that finishes in half the time.`) stages a
-# reveal instead of stating the point. The fix states it (`The build
-# finishes in half the time`).
+# (`The result? A build that finishes in half the time.`) holds back
+# the point instead of stating it, a device rhetoric calls hypophora.
+# The fix states the point (`The build finishes in half the time`).
 #
-# The list holds the nouns that set up a reveal. Nouns that end a real
+# The list holds the nouns that set up an answer. Nouns that end a real
 # question stay out (`What's the difference?`, `What is the fix?`,
 # `What was the outcome?`). A real question that ends on a listed noun
 # still fires (`What was the result?`), since a rule cannot see the
 # start of the sentence, but technical prose rarely asks one.
-expr reveal [result, catch, upshot, kicker, verdict, takeaway, twist, payoff, culprit, trick, secret, downside, upside]
-expr main [(the @reveal?), (the [best, worst] part?), (the [good, bad] news?), (the short answer?)]
-let message "Staged reveal. State the point as a sentence instead of asking for it."
+expr setup [result, catch, upshot, kicker, verdict, takeaway, twist, payoff, culprit, trick, secret, downside, upside]
+expr main [(the @setup?), (the [best, worst] part?), (the [good, bad] news?), (the short answer?)]
+let message "Self-answered question. State the point as a sentence instead of asking for it."
 let description "Flags a noun phrase posed as a question and answered in the next sentence, such as The result? or The best part?"
 let becomes ""
 let kind "Style"

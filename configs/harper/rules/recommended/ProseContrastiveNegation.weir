@@ -1,8 +1,8 @@
-# A sentence that denies one framing and asserts another (`This isn't
-# a cache; it's a ledger`) spends its first clause on a claim nobody
-# made. The fix states what the thing is, and gives the contrast a
-# sentence of its own only when a reader would expect the denied
-# framing.
+# A contrastive negation denies one framing and asserts another
+# (`This isn't a cache; it's a ledger`), so its first clause answers a
+# claim nobody made. The fix states what the thing is, and gives the
+# contrast a sentence of its own only when a reader would expect the
+# denied framing.
 #
 # The semicolon branch takes any words between the negation and the
 # semicolon. The comma branch needs a determiner, `about`, or a
@@ -23,7 +23,7 @@ expr lead [DET, about, just, only, merely, simply]
 expr semi [(*;), (* *;), (* * *;), (* * * *;), (* * * * *;), (* * * * * *;)]
 expr comma [(*,), (* *,), (* * *,), (* * * *,), (* * * * *,)]
 expr main [(@neg @semi @then), (@neg @lead @comma @then [DET, about])]
-let message "Reframe. State what it is, and give the contrast its own sentence only if a reader expects it."
+let message "Contrastive negation. State what it is, and give the contrast its own sentence only if a reader expects it."
 let description "Flags a clause that denies one framing before asserting another, such as this isn't a cache; it's a ledger."
 let becomes ""
 let kind "Style"
