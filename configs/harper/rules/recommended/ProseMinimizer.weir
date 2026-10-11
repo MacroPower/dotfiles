@@ -1,7 +1,8 @@
-# Each word tells the reader a step is easy or a behavior is small,
-# which the reader judges for themselves. Neither needs a guard for a
-# product name or a mention of the word, since both are rare in
-# technical prose, and the skill wants both gone from a sentence about
+# Each word tells the reader a step is easy or a behavior is small
+# (`simply`, `merely`, `easily`, `straightforward`, `just run`), which
+# the reader judges for themselves. None needs a guard for a product
+# name or a mention of the word, since both are rare in technical
+# prose, and the skill wants the words gone from a sentence about
 # behavior.
 #
 # `simply` skips a following ` put`, since the restatement rule
@@ -17,16 +18,25 @@
 # and the filter narrows the finding back to the word. A space in a
 # pattern is itself a whitespace token, so `!@neg @word` reads a word,
 # a space, and the minimizer. That branch needs a token before the
-# word, so a sentence that opens with one counts through the other
-# two, which need a verb or a glued comma after it (`Simply run make`,
-# `Simply, the cache is a map`). Those two also fire after a negation
-# when a verb follows (`is not simply copied`), a shape rare enough to
-# leave.
-expr neg [not, never, isn't, aren't, wasn't, weren't]
-expr word [(simply!(( )put)), merely]
-expr main [<(!@neg @word), @word>, (simply[(( )<VERB, !put>), (,)]), (merely[(( )VERB), (,)])]
+# word, so a sentence that opens with `simply` or `merely` counts
+# through the other two, which need a verb or a glued comma after it
+# (`Simply run make`, `Simply, the cache is a map`). Those two also
+# fire after a negation when a verb follows (`is not simply copied`),
+# a shape rare enough to leave.
+#
+# The other words have no opener branch, so a sentence that opens with
+# one passes (`Just run make`). A branch for `just` would also fire
+# after a negation (`you can't just use a container`), where it
+# carries the contrast. `just` counts only before an imperative verb,
+# since it also means `only` or `a moment ago` (`just one entry`, `the
+# file was just created`). `is easy to` and `it's easy to` need no
+# guard, since a negation splits them (`is not easy to`).
+expr neg [not, never, isn't, aren't, wasn't, weren't, can't, cannot, couldn't, won't, doesn't, don't, didn't, shouldn't]
+expr verbs [run, use, add, call, set, pass, type, install, copy, edit, change, create, delete, remove, update, point, drop, put, write, open, click]
+expr word [(simply!(( )put)), merely, easily, trivially, straightforward, (easy to use), (just @verbs)]
+expr main [<(!@neg @word), @word>, (simply[(( )<VERB, !put>), (,)]), (merely[(( )VERB), (,)]), (is easy to), (it's easy to)]
 let message "Minimizer. Delete the word and let the reader judge the weight."
-let description "Flags simply and merely, which tell the reader a step is easy or a behavior is small."
+let description "Flags simply, merely, easily, and similar words that tell the reader a step is easy or a behavior is small."
 let becomes ""
 let kind "Style"
 let scope "Sentence"
@@ -34,3 +44,7 @@ allows "Flush writes the buffer to disk."
 allows "Simply put, the cache is a map."
 allows "The offset is not simply an index into the token list."
 allows "It isn't merely a cache."
+allows "WriteValue cannot easily tell whether the input aliases the buffer."
+allows "The migration is not straightforward."
+allows "You can't just use a container for this."
+allows "The file was just created."
