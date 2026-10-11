@@ -61,12 +61,14 @@ let
   # Harper built-ins, both read from the tier directories under
   # configs/harper/rules and fixture-checked when prose-weirpack
   # builds. A changelog and a commit message both describe a change,
-  # so each turns off every tier's ProseTense and ProseCurrently.
+  # so each turns off every tier's ProseTense, ProseCurrently, and
+  # ProseRoadmap.
   ruleNames = prose-weirpack.passthru.ruleNames ++ prose-weirpack.passthru.builtinRules;
   allRules = lib.concatStringsSep "," ruleNames;
   deltaRules = [
     "ProseTense_"
     "ProseCurrently_"
+    "ProseRoadmap_"
   ];
   changeRules = lib.concatStringsSep "," (
     lib.filter (r: !(lib.any (prefix: lib.hasPrefix prefix r) deltaRules)) ruleNames
