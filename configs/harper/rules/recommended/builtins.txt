@@ -2,8 +2,12 @@
 # line, each with a fixture pair under fixtures/recommended.
 # CondenseAllThe sits here rather than under Required, because its
 # rewrite reads worse in a list of quantifiers (`some or all of the
-# whitespace` becomes `some or all the whitespace`).
+# whitespace` becomes `some or all the whitespace`). RepeatedWords
+# catches a word doubled where an edit spliced two sentences (`the
+# the`), and it sits here rather than under Required because it also
+# reports a grammatical `that that` or `had had`.
 LongSentences
 Hedging
 LitotesDirectPositive
 CondenseAllThe
+RepeatedWords
