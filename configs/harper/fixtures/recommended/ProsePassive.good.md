@@ -38,3 +38,5 @@ Reads are fail-open and writes are fail-closed.
 The field is exported.
 The method is deprecated.
 The value is not empty.
+The flag is set by the time the hook runs.
+The value is set by hand.

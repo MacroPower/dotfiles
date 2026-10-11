@@ -22,3 +22,7 @@ The value is not written to disk.
 The key is never rotated.
 The job isn't retried.
 The timeout can be configured.
+The flag is set by the caller.
+The binary is built by the pipeline.
+The header is required by the spec.
+The field is not required by the schema.

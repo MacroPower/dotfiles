@@ -32,6 +32,13 @@
 # fail-open`). It matches at the end of a clause too, so `the file is
 # skipped.` still counts.
 #
+# A stative word still reads as a passive when an agent follows it
+# (`the flag is set by the caller`, `the binary is built by the
+# pipeline`), so `agentive` lists the stative words that take one.
+# The agent must start with a determiner, pronoun, or proper noun, as
+# in the `by` branch, and the determiner may not open `by the time`
+# or `by the way`.
+#
 # Two shapes stay flagged on purpose: an identifier used as a predicate
 # noun (`The default is print`), which belongs in a code span, and a
 # resultative participle (`The issue is closed`), which the tagger
@@ -40,7 +47,9 @@ expr stative [PROG, missing, done, set, unset, enabled, disabled, required, need
 expr missed [cached, compiled, computed, configured, decoded, discarded, encoded, evicted, fetched, flushed, hashed, linted, normalized, parsed, patched, persisted, propagated, queued, redirected, reset, restarted, retried, revoked, rotated, sanitized, serialized, stripped, synced, tagged, truncated, validated]
 expr be [is, are, was, were, be, been, being, isn't, aren't, wasn't, weren't]
 expr verb [<VERB, !@stative>, @missed]
-expr main [(@be [@verb, ([ADV, not] @verb)]!-), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN])]
+expr agentive [set, unset, enabled, disabled, required, needed, expected, allowed, supported, broken, known, built, made, fixed, called, named, bound, prepared, advised, assured, reminded, warned]
+expr agent [(DET ![time, way]), PRON, PROPN]
+expr main [(@be [@verb, ([ADV, not] @verb)]!-), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN]), (@be [@agentive, ([ADV, not] @agentive)] by @agent)]
 let message "Passive voice. Make the actor the subject."
 let description "Flags a form of be followed by a verb, and a form of be followed by a word and by an agent."
 let becomes ""
@@ -71,5 +80,7 @@ allows "The port is stuck in CLOSE_WAIT."
 allows "Be warned that the flag is sticky."
 allows "The default is lookup by id."
 allows "The answer is yes by the way."
+allows "The flag is set by the time the hook runs."
+allows "The value is set by hand."
 allows "The lock is read-only while the sweep runs."
 allows "Reads are fail-open and writes are fail-closed."
