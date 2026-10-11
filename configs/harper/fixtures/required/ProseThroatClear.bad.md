@@ -9,3 +9,5 @@ To be clear, the cache is cold after a restart.
 It's worth mentioning that the flag defaults to five.
 As noted, the limit is five.
 As discussed earlier, the walk skips aliases.
+At the end of the day, the cache is cold.
+As a matter of fact, the walk never revisits a node.
