@@ -1,0 +1,12 @@
+# The Recommended rule of the same name holds every other intensifier.
+# `genuinely` sits here, because it sometimes separates a real case
+# from an apparent one (`a line is added only when the file genuinely
+# ends in a blank line`). The adjective `genuine` stays out, since it
+# usually means authentic (`the badge in the footer is genuine`).
+expr main genuinely
+let message "Intensifier. Give the number, or delete the word."
+let description "Flags genuinely, which usually raises a claim without informing."
+let becomes ""
+let kind "Style"
+allows "The badge in the footer is genuine."
+allows "The path is contended under load."

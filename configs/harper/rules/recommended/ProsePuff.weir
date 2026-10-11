@@ -1,61 +1,22 @@
-# `stands as` and `serves as` need a determiner after `as`, because
-# the puff sense names a role (`serves as the root`, `stands as a
-# guard`) while the other readings compare or qualify (`stands as tall
-# as`, `stands as written`, `serves as many requests as`, `serves as
-# root`, `serves as-is`). `simply` and `merely` stay unconditional
-# otherwise: a product name or a mention of the word is rare in
-# technical prose, and the skill wants both gone from a sentence about
-# behavior. `simply` skips a following ` put`, since the throat-clearing
-# rule reports `Simply put`. The guard sits glued to the word so it
-# reads the token right after it. `Put simply` and `To put it simply`
-# count here instead of in that rule, because no pattern can look back
-# from `simply` to the `put` before it.
+# Each word sells a feature instead of describing it. `first class`
+# and `super` are left out, because each names something in code (a
+# first-class function, a superclass call). `enduring` stays out too
+# (`enduring storage outlives the pod`).
 #
-# Three words keep a technical sense behind a guard. `robust to`
-# names a statistical property (`robust to outliers`), `elevate
-# privileges` names a security operation, and `highly available`
+# Two words keep a technical sense behind a guard. `robust to` names a
+# statistical property (`robust to outliers`), and `highly available`
 # names a deployment shape. A negated word after a space needs a word
-# to consume, so `robust` has a twin for a clause end
-# (`robust!( )`).
+# to consume, so `robust` has a twin for a clause end (`robust!( )`).
 #
 # A space in a pattern matches only whitespace, so each compound that
 # writers also hyphenate takes `[-, ( )]` between its words and
 # matches `battle tested` and `battle-tested` alike.
-#
-# `slop` lists the marketing adjectives, stock verbs, and intensifiers
-# that inflate a README. `unlock`, `harness`, `landscape`, `realm`,
-# `underscore`, `critical`, `first class`, and `super` are left out,
-# because each names something in code (a mutex, a test harness, a
-# page orientation, a Kerberos realm, the character, a critical
-# section, a first-class function, a superclass call). `enduring`
-# stays out too (`enduring storage outlives the pod`).
-#
-# `$foster`, `$showcase`, `$garner`, and `$boast` expand to every
-# inflection through Harper's dictionary. The intensifiers include
-# `significantly`, which also fires on a statistical claim (`differs
-# significantly at p < 0.01`); no guard tells the two apart, and the
-# adjective (`statistically significant`) passes. The stock closers
-# (`only time will tell`) end a section without saying anything.
-expr slop [seamless, seamlessly, (robust !to), (robust!( )), powerful, elegant, elegantly, comprehensive, intuitive, effortless, effortlessly, blazing, blazingly, revolutionary, innovative, sophisticated, delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates] ![privilege, privileges, permissions]), tapestry, journey, (navigate the [complexities, complexity, landscape, world, challenges]), crucial, vital, pivotal, paramount, testament, $foster, $showcase, $garner, $boast, interplay, intricate, intricacies, vibrant, (a breeze), holistic, synergy, groundbreaking, transformative, (rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad), (ever[-, ( )]evolving), (rapidly evolving), (at its core), (at the heart of), (top[-, ( )]notch), (battle[-, ( )]tested), (production[-, ( )]ready), (enterprise[-, ( )]grade), (out[-, ( )]of[-, ( )]the[-, ( )]box), (under the hood), (bells and whistles), (feature[-, ( )]rich), (cutting[-, ( )]edge), (state[-, ( )]of[-, ( )]the[-, ( )]art), (lightning[-, ( )]fast), (best[-, ( )]in[-, ( )]class), (world[-, ( )]class), (next[-, ( )]generation), (game[-, ( )]changing), (highly !available), extremely, incredibly, significantly, dramatically, drastically, greatly, vastly, tremendously, massively, hugely, (the future looks bright), (only time will tell), (exciting times ahead), (the possibilities are endless)]
-expr main [(simply!(( )put)), merely, (stands as DET), (serves as DET), (plays a [vital, crucial, key, critical, important] role), @slop]
+expr main [seamless, seamlessly, (robust !to), (robust!( )), powerful, elegant, elegantly, comprehensive, intuitive, effortless, effortlessly, blazing, blazingly, revolutionary, innovative, sophisticated, intricate, vibrant, (a breeze), holistic, groundbreaking, transformative, (ever[-, ( )]evolving), (rapidly evolving), (top[-, ( )]notch), (battle[-, ( )]tested), (production[-, ( )]ready), (enterprise[-, ( )]grade), (out[-, ( )]of[-, ( )]the[-, ( )]box), (bells and whistles), (feature[-, ( )]rich), (cutting[-, ( )]edge), (state[-, ( )]of[-, ( )]the[-, ( )]art), (lightning[-, ( )]fast), (best[-, ( )]in[-, ( )]class), (world[-, ( )]class), (next[-, ( )]generation), (game[-, ( )]changing), (highly !available)]
 let message "Puff. State the fact and let the reader judge its weight."
-let description "Flags words and phrases that inflate a claim without informing."
+let description "Flags marketing adjectives that inflate a claim without informing."
 let becomes ""
 let kind "Style"
 allows "The bucket refills every second."
-allows "The cache stands in front of the database."
-allows "The tower stands as tall as the building beside it."
-allows "The regulation stands as written until the appeal is decided."
-allows "The record stands as of this morning."
-allows "The server serves as many requests as the socket buffer allows."
-allows "The daemon serves as root, which is the reason for the seccomp filter."
-allows "The device serves as-is with no warranty."
-allows "The daemon serves as it always has, on port 80."
-allows "Unlock releases the mutex."
-allows "The test harness builds the fixture once."
-allows "The realm names the Kerberos domain."
-allows "Names with an underscore are private."
 allows "The estimator is robust to outliers."
-allows "The installer elevates privileges with sudo."
 allows "The cluster is highly available."
-allows "Simply put, the cache is a map."
+allows "Go has first-class functions."

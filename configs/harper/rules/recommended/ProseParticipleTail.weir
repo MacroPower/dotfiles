@@ -16,8 +16,9 @@
 # job`) and a participle phrase bracketed by commas (`The scheduler,
 # allowing for clock skew, waits five seconds`).
 #
-# `fostering` and `showcasing` stay out, because the puff rule reports
-# every form of both words and one word should draw one finding.
+# `fostering` and `showcasing` stay out, because the stock-word rule
+# reports every form of both words and one word should draw one
+# finding.
 expr plain [ensuring, allowing, enabling, making, highlighting, giving, helping, improving, reducing, increasing, causing, creating, showing, demonstrating, indicating, keeping, letting, preventing, avoiding, streamlining, simplifying, matching, returning, preserving, leaving, mirroring, appending, reflecting, underscoring, emphasizing, symbolizing]
 expr main , [(@plain ![,, and, or]), (failing ![NOUN, ,, and, or]), (contributing ![NOUN, ,, and, or]), (falling [back, through]), ([thereby, thus] PROG), (leading to), (resulting in), (meaning [that, the, a, an, it, you, we, they]), (providing ![that, and, or])]
 let message "Participle tacked on after a comma. Give the point its own sentence."

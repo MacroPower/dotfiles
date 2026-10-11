@@ -1,0 +1,10 @@
+# Each phrase inflates a count without giving it, so the fix gives the
+# count (`a wide range of styles` becomes `forty styles`) or writes
+# `many`.
+expr main [(rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad)]
+let message "Vague quantity. Give the count, or write many."
+let description "Flags phrases such as wide range and plethora of that inflate a count without giving it."
+let becomes ""
+let kind "Style"
+allows "The catalog holds forty styles."
+allows "The range covers ports 1 through 1024."

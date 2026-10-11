@@ -7,7 +7,7 @@
 # clear, accurate, and readable`). A comma ends Harper's default
 # chunk, so the rule reads whole sentences to see past it.
 #
-# `put simply` and `to put it simply` sit in the puff rule, which
+# `put simply` and `to put it simply` sit in the minimizer rule, which
 # reports every `simply` but the one before `put`, so each set of
 # words draws one finding.
 expr main [(in other words,), (simply put), (that is to say), (to be clear, [DET, PRON, PROPN, NOUN])]

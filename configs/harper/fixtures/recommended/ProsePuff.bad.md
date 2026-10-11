@@ -1,22 +1,7 @@
-Flush simply writes the buffer to disk.
-The flag merely toggles the check.
-The cache stands as the first line of defense.
-The index serves as a lookup table.
-The scheduler plays a vital role in throughput.
-The retry plays a key role in recovery.
-Simply run make to build the binary.
-The struct serves as the root of the tree.
-The lock merely guards the map.
-The server serves as a fallback when the primary is unreachable.
-The lease stands as the source of truth for ownership.
 The pipeline is seamless and robust.
 The library is a powerful and elegant tool.
-Delve into the config to unleash its features.
-The retry logic is crucial to the design.
-The theme catalog showcases a wide range of styles.
 The CLI works out of the box.
 The walker is blazingly fast on deep trees.
-The API is extremely flexible.
 The parser is highly configurable.
 The framework is battle-tested.
 The server is production-ready.
@@ -25,17 +10,6 @@ The CLI works out-of-the-box.
 The walker is lightning-fast.
 The parser is robust.
 A robust parser reads the header.
-The theme elevates the whole design.
-The constructor stops assigning them, simply.
-Put simply, the cache is a map.
-To put it simply, the cache is a map.
-Simply, the cache is a map.
-The project boasts a vibrant community.
-The cache is significantly faster.
-The PR garnered three approvals.
-Only time will tell whether the API sticks.
-The release fosters reuse across teams.
-The demo is showcasing the new parser.
-The interplay between the lock and the cache is intricate.
-The rewrite greatly reduces memory use.
-The future looks bright for the project.
+The project has a vibrant community.
+The lock ordering is intricate.
+Setup is a breeze.

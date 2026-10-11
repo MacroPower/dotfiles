@@ -1,0 +1,8 @@
+# Each line ends a section without saying anything, so the fix ends
+# the section on its last fact.
+expr main [(the future looks bright), (only time will tell), (exciting times ahead), (the possibilities are endless)]
+let message "Stock closer. Delete it and end on the last fact."
+let description "Flags stock lines that end a section without saying anything."
+let becomes ""
+let kind "Style"
+allows "The event log records every retry."

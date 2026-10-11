@@ -1,0 +1,15 @@
+# The Recommended rule of the same name holds every other stock word.
+# `enhance` and the sentence adverb `Additionally,` sit here, because
+# each also appears in plain human-written docs, and `Additionally,`
+# hit 47 of them in the kubernetes and nix.dev docs. `enhanced` stays
+# out, because it opens feature names (`Enhanced Networking`, `Security
+# Enhanced Linux`). `additionally` counts only with a glued comma,
+# since mid-sentence it modifies a verb (`the flag additionally checks
+# the signature`).
+expr main [enhance, enhances, enhancing, (additionally,)]
+let message "Stock word. Use the plain word it stands for."
+let description "Flags enhance and a sentence-opening additionally, which stand in for improve and also."
+let becomes ""
+let kind "Style"
+allows "The enhancement label marks feature requests."
+allows "The flag additionally checks the signature."

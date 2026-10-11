@@ -1,0 +1,14 @@
+# Each adverb raises a claim without measuring it, so the fix gives the
+# number (`significantly faster` becomes `twice as fast`) or drops the
+# word. The Optional rule of the same name holds `genuinely`.
+#
+# `significantly` also fires on a statistical claim (`differs
+# significantly at p < 0.01`); no guard tells the two apart, and the
+# adjective (`statistically significant`) passes.
+expr main [extremely, incredibly, significantly, dramatically, drastically, greatly, vastly, tremendously, massively, hugely]
+let message "Intensifier. Give the number, or delete the word."
+let description "Flags adverbs that intensify a claim without measuring it."
+let becomes ""
+let kind "Style"
+allows "The rewrite halves memory use."
+allows "The difference is statistically significant at p < 0.05."

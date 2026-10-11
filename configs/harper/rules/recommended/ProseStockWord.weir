@@ -1,0 +1,25 @@
+# Each word or phrase stands in for a plainer one (`delve into` for
+# `read`, `showcase` for `show`, `tapestry` for `mix`) and turns up far
+# more in generated text than in docs a person wrote. The Optional rule
+# of the same name holds the words that human-written docs also use.
+#
+# `unlock`, `harness`, `landscape`, `realm`, and `underscore` are left
+# out, because each names something in code (a mutex, a test harness,
+# a page orientation, a Kerberos realm, the character). `elevate
+# privileges` names a security operation, so `elevate` skips a
+# following `privileges` or `permissions`.
+#
+# `$foster`, `$showcase`, `$garner`, and `$boast` expand to every
+# inflection through Harper's dictionary. A space in a pattern matches
+# only whitespace, so `deep[-, ( )]dive` matches the spaced and the
+# hyphenated spelling alike.
+expr main [delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates] ![privilege, privileges, permissions]), tapestry, journey, (navigate the [complexities, complexity, landscape, world, challenges]), testament, $foster, $showcase, $garner, $boast, interplay, intricacies, synergy, (at its core), (at the heart of), (under the hood)]
+let message "Stock word. Use the plain word it stands for."
+let description "Flags stock words and phrases, such as delve, showcase, and tapestry, that stand in for a plainer word."
+let becomes ""
+let kind "Style"
+allows "Unlock releases the mutex."
+allows "The test harness builds the fixture once."
+allows "The realm names the Kerberos domain."
+allows "Names with an underscore are private."
+allows "The installer elevates privileges with sudo."

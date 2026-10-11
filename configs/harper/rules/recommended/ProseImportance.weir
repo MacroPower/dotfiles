@@ -1,0 +1,11 @@
+# Each word rates a part as important without saying what depends on
+# it (`the retry is crucial` becomes `without the retry, a lease error
+# fails the job`). `critical` is left out, because it names a critical
+# section.
+expr main [crucial, vital, pivotal, paramount, (plays a [vital, crucial, key, critical, important] role)]
+let message "Importance claim. Say what depends on it, or delete the word."
+let description "Flags words that rate a part as important without saying what depends on it."
+let becomes ""
+let kind "Style"
+allows "The mutex guards the critical section."
+allows "The key role field names the primary role."
