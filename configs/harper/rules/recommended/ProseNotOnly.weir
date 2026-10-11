@@ -9,9 +9,13 @@
 # leaves no space before `not`. The branch also needs a token before
 # `not`, so a sentence that opens with `Not only` counts through the
 # second branch, which needs the inverted auxiliary after it (`Not only
-# does the cache hold rules`). The rule misses a sentence that opens
-# with `Not only` and no inversion (`Not only the cache but the log
-# grows`), and a paired shape that starts after a comma.
+# does the cache hold rules`), or through the third. That branch finds
+# the paired shape anywhere, after a comma too, by matching `but` up to
+# eight words after `not only` or `not just`. Each gap length is its
+# own alternative ending in `but`, because a list picks its longest
+# match and never backtracks, so a gap list followed by `but` would
+# swallow the `but`. The last word before `but` may carry a comma
+# (`Not only the cache, but the log grows`).
 #
 # `not just !any` skips the idiom `not just any file`; the glued hyphen
 # in `not just-in-time` already fails the whitespace match.
@@ -19,9 +23,11 @@
 # a cache`, `it is more than just a cache`).
 expr aux [does, do, did, is, are, was, were, can, could, will, would, has, have, should, must]
 expr which [only, (just !any)]
-expr main [<(!(,)( )not @which), (not @which)>, (not only @aux), ([isn't, aren't, wasn't, weren't] just), (more than just)]
+expr last [*, (*,)]
+expr tail [(@last but), (* @last but), (* * @last but), (* * * @last but), (* * * * @last but), (* * * * * @last but), (* * * * * * @last but), (* * * * * * * @last but)]
+expr main [<(!(,)( )not @which), (not @which)>, (not only @aux), (not [only, just] @tail), ([isn't, aren't, wasn't, weren't] just), (more than just)]
 let message "Make the direct claim. If the contrast matters, give each side its own sentence."
-let description "Flags not only and not just constructions, except a correction after a comma or an open paren."
+let description "Flags not only and not just constructions, except an unpaired correction after a comma or an open paren."
 let becomes ""
 let kind "Style"
 let scope "Sentence"
