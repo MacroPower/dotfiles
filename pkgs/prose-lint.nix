@@ -218,7 +218,8 @@ writeShellApplication {
     # they mostly hold commented-out code.
     #
     # HCL also lints each `description` string, which a reader sees in
-    # docs and plan output. A quoted one becomes a comment that starts
+    # docs and plan output, and each validation `error_message`, which a
+    # reader sees when an input fails. A quoted one becomes a comment that starts
     # with `#` where its opening quote stood. A heredoc one has its
     # body lines turned into comments, with the last leading space of
     # each line as the `#`; a body line with no leading space gains a
@@ -277,7 +278,7 @@ writeShellApplication {
                   }
                   keep = 1
                 }
-              } else if (match($0, /^[ \t]*description[ \t]*=[ \t]*"/)) {
+              } else if (match($0, /^[ \t]*(description|error_message)[ \t]*=[ \t]*"/)) {
                 quote = RLENGTH
                 rest = substr($0, quote + 1)
                 for (i = 1; i <= length(rest); i++) {
@@ -293,7 +294,7 @@ writeShellApplication {
               } else if (match(line, /<<-?[A-Za-z_][A-Za-z0-9_]*$/)) {
                 heredoc = substr(line, RSTART, RLENGTH)
                 sub(/^<<-?/, "", heredoc)
-                described = line ~ /^description[ \t]*=/
+                described = line ~ /^(description|error_message)[ \t]*=/
               }
             } else if (kind == "yaml") {
               if (line ~ /[:-][ \t]+([&!][^ \t]+[ \t]+)*[|>][-+1-9]*[ \t]*(#.*)?$/) {
