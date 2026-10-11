@@ -1,13 +1,32 @@
+# The skill bans the paired shape (`not only X but Y`), so a `not just`
+# or `not only` after a comma or an open paren passes. That shape is a
+# trailing correction (`Name the log events, not just the sentinel`,
+# `(not just the prune)`), which names a contrast the reader needs.
+#
+# Weir has no lookbehind, so the first branch consumes the token
+# before the space ahead of `not` and the filter narrows the finding
+# back to the phrase. A comma fails that token, and an open paren
+# leaves no space before `not`. The branch also needs a token before
+# `not`, so a sentence that opens with `Not only` counts through the
+# second branch, which needs the inverted auxiliary after it (`Not only
+# does the cache hold rules`). The rule misses a sentence that opens
+# with `Not only` and no inversion (`Not only the cache but the log
+# grows`), and a paired shape that starts after a comma.
+#
 # `not just !any` skips the idiom `not just any file`; the glued hyphen
 # in `not just-in-time` already fails the whitespace match.
 # `isn't just` and `more than just` make the same move (`it isn't just
 # a cache`, `it is more than just a cache`).
-expr main [(not only), (not just !any), ([isn't, aren't, wasn't, weren't] just), (more than just)]
+expr aux [does, do, did, is, are, was, were, can, could, will, would, has, have, should, must]
+expr which [only, (just !any)]
+expr main [<(!(,)( )not @which), (not @which)>, (not only @aux), ([isn't, aren't, wasn't, weren't] just), (more than just)]
 let message "Make the direct claim. If the contrast matters, give each side its own sentence."
-let description "Flags not only and not just constructions."
+let description "Flags not only and not just constructions, except a correction after a comma or an open paren."
 let becomes ""
 let kind "Style"
 let scope "Sentence"
 allows "The cache holds rules and results."
 allows "Not just any file can be opened this way."
 allows "The runtime uses ahead-of-time compilation, not just-in-time."
+allows "Name the log events, not just the sentinel."
+allows "Refusing the run (not just the prune) also prevents the race."
