@@ -10,3 +10,5 @@ The upload is fully complete after the last chunk.
 The sweep continued on to the next entry.
 The branches were merged together.
 The handler returned back to the caller.
+The write could potentially fail on a full disk.
+The write can potentially race with Close.

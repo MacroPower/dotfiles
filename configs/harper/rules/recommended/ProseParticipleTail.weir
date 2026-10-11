@@ -2,8 +2,9 @@
 # and `, according`. Words that double as nouns or conjunctions carry
 # the word that marks the tail sense: `leading to`, `resulting in`,
 # `meaning that` or `meaning the`, `providing` without `that`,
-# `falling back` or `falling through`, and `failing` without a noun
-# after it (`failing test output` names the output). After `thereby`
+# `falling back` or `falling through`, and `failing` or `contributing`
+# without a noun after it (`failing test output` names the output, and
+# `contributing guide` names a document). After `thereby`
 # or `thus` any participle counts. The trailing `![,, and, or]` skips
 # a gerund that is one item in a list (`allowing, enabling, and
 # letting`) or a pair (`keeping and dropping`); with Weir's whitespace
@@ -14,8 +15,11 @@
 # fronted clause (`If the file is missing, creating it is the caller's
 # job`) and a participle phrase bracketed by commas (`The scheduler,
 # allowing for clock skew, waits five seconds`).
-expr plain [ensuring, allowing, enabling, making, highlighting, fostering, giving, helping, improving, reducing, increasing, causing, creating, showing, demonstrating, indicating, keeping, letting, preventing, avoiding, streamlining, simplifying, matching, returning, preserving, leaving, mirroring, appending]
-expr main , [(@plain ![,, and, or]), (failing ![NOUN, ,, and, or]), (falling [back, through]), ([thereby, thus] PROG), (leading to), (resulting in), (meaning [that, the, a, an, it, you, we, they]), (providing ![that, and, or])]
+#
+# `fostering` and `showcasing` stay out, because the puff rule reports
+# every form of both words and one word should draw one finding.
+expr plain [ensuring, allowing, enabling, making, highlighting, giving, helping, improving, reducing, increasing, causing, creating, showing, demonstrating, indicating, keeping, letting, preventing, avoiding, streamlining, simplifying, matching, returning, preserving, leaving, mirroring, appending, reflecting, underscoring, emphasizing, symbolizing]
+expr main , [(@plain ![,, and, or]), (failing ![NOUN, ,, and, or]), (contributing ![NOUN, ,, and, or]), (falling [back, through]), ([thereby, thus] PROG), (leading to), (resulting in), (meaning [that, the, a, an, it, you, we, they]), (providing ![that, and, or])]
 let message "Participle tacked on after a comma. Give the point its own sentence."
 let description "Flags a comma followed by a participle that adds a consequence to the clause before it."
 let becomes ""
@@ -31,3 +35,4 @@ allows "Without a cache, resulting builds take twice as long."
 allows "The job retries, providing that the budget allows it."
 allows "The struct has two callbacks, providing and consuming."
 allows "Error reports, failing test output, and security warnings keep their detail."
+allows "Read the README, contributing guide, and changelog."

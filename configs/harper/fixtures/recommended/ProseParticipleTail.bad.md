@@ -19,3 +19,8 @@ The proxy forwards each header, preserving its order.
 The tag follows the upstream name, mirroring the release.
 The writer flushes each line, appending a newline.
 The lookup tries the cache, falling back to the store.
+Each fix lands upstream, contributing to a faster release.
+The refactor drops the global lock, underscoring the move to per-shard state.
+The struct copies each field, reflecting the schema.
+The banner turns red, emphasizing the failure.
+The icon turns gray, symbolizing a paused job.

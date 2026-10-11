@@ -16,3 +16,5 @@ The counters come in two families, increasing and decreasing.
 The struct has two callbacks, providing and consuming.
 Error reports, failing test output, and security warnings keep their detail.
 The report lists passing, failing, and skipped tests.
+Read the README, contributing guide, and changelog.
+Before contributing, sign the CLA.

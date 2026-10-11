@@ -20,3 +20,5 @@ The estimator is robust to outliers.
 The installer elevates privileges with sudo.
 The cluster is highly available.
 Simply put, the cache is a map.
+The difference is statistically significant at p < 0.05.
+Enduring storage outlives the pod.
