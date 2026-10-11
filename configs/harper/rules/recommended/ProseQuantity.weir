@@ -1,10 +1,14 @@
 # Each phrase inflates a count without giving it, so the fix gives the
 # count (`a wide range of styles` becomes `forty styles`) or writes
 # `many`.
-expr main [(rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad)]
+#
+# `a host of` skips a following determiner, where `host` names a
+# machine (`a host of the cluster`).
+expr main [(rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad), (wide array), (vast array), (broad range), (diverse range), (a host of ![the, this, that, a, an, each, every, its, their]), (a whole host), (a slew of), countless]
 let message "Vague quantity. Give the count, or write many."
 let description "Flags phrases such as wide range and plethora of that inflate a count without giving it."
 let becomes ""
 let kind "Style"
 allows "The catalog holds forty styles."
 allows "The range covers ports 1 through 1024."
+allows "Drain a host of the cluster before the upgrade."
