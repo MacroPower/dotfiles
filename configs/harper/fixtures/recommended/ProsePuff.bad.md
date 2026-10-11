@@ -26,3 +26,4 @@ The walker is lightning-fast.
 The parser is robust.
 A robust parser reads the header.
 The theme elevates the whole design.
+The constructor stops assigning them, simply.

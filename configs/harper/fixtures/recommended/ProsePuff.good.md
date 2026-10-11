@@ -19,3 +19,6 @@ Names with an underscore are private.
 The estimator is robust to outliers.
 The installer elevates privileges with sudo.
 The cluster is highly available.
+Simply put, the cache is a map.
+Put simply, the cache is a map.
+To put it simply, the cache is a map.
