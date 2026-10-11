@@ -6,9 +6,6 @@ Len returns the number of entries.
 Value returns the current count.
 The point of the cache is speed.
 Flush writes the buffer and Sync waits for the disk.
-The pieces are grouped by design system, not by team.
-Filter by design and status.
-Issues are triaged by design leads every Monday.
 The file has no magic bytes, so the loader inspects the extension.
 There is no magic-number check.
 Users reported no surprises after the migration.

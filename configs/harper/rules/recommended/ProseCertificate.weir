@@ -1,9 +1,8 @@
+# Each phrase vouches for a fact the sentence already stated. The
+# deliberate rule holds the phrases that vouch for a choice instead.
+#
 # Each phrase is pinned to its certificate shape, because docs reuse
-# the same words with a plain meaning. `by design` counts only at the
-# end of a clause or after a form of `is` (`grouped by design system`
-# and `triaged by design leads` name a team; `reviewed by design,
-# engineering, and product` still fires, since the comma is a clause
-# end). `no magic` skips a following
+# the same words with a plain meaning. `no magic` skips a following
 # noun (`no magic number`, `no magic bytes`). `no surprises` counts
 # only at the end of a clause (`reported no surprises after the
 # migration` is a report). `the whole point` needs `of`, `is`, `was`,
@@ -27,17 +26,18 @@
 # since Weir has no escape for a literal paren. The glued token keeps
 # out a verb the tagger left untagged (`and nothing else deletes it`),
 # because a space follows a word.
+#
 # The clause-end list is written glued to the word before it
-# (`design[., ;, :, (,)]`), since a space in a pattern is a whitespace
-# token and clause punctuation follows the word directly. It is spelled
-# out each time because `design@end` tokenizes as one word. A bare
-# comma cannot sit in a list, because the comma separates list items,
-# so it is wrapped as a one-token sequence. A negated word after a
-# space (`less !than`) needs a word to consume, so each of those
-# branches has a clause-end twin.
+# (`surprises[., ;, :, (,)]`), since a space in a pattern is a
+# whitespace token and clause punctuation follows the word directly. It
+# is spelled out each time because `surprises@end` tokenizes as one
+# word. A bare comma cannot sit in a list, because the comma separates
+# list items, so it is wrapped as a one-token sequence. A negated word
+# after a space (`less !than`) needs a word to consume, so each of
+# those branches has a clause-end twin.
 expr tagged [ADJ, ADP, ADV, AUX, CCONJ, DET, INTJ, NOUN, NUM, PART, PRON, PROPN, SCONJ, SYM, VERB, X]
 expr magic [number, numbers, byte, bytes, prefix, string, strings, value, values, constant, constants]
-expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (and nothing else!( )), (and nothing else !@tagged!( )), (this is deliberate), (this is intentional), (by design[., ;, :, (,)]), ([is, was] by design), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
+expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (and nothing else!( )), (and nothing else !@tagged!( )), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
 let message "Certificate. A stated fact needs no vouching, so delete the phrase."
 let description "Flags phrases that insist on a fact the sentence already stated."
 let becomes ""
@@ -45,8 +45,6 @@ let kind "Style"
 let scope "Sentence"
 allows "Flush writes the buffer to disk."
 allows "Close releases the file handle."
-allows "The pieces are grouped by design system, not by team."
-allows "Issues are triaged by design leads every Monday."
 allows "The file has no magic bytes, so the loader inspects the extension."
 allows "There is no magic-number check."
 allows "Users reported no surprises after the migration."

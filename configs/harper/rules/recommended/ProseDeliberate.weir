@@ -1,0 +1,20 @@
+# Each phrase vouches that a choice was deliberate without giving the
+# reason, so the fix gives the reason (`the pin is unused by design`
+# becomes `the pin is unused, since the board pulls it high`) or drops
+# the phrase.
+#
+# `by design` counts only at the end of a clause or after a form of
+# `is`, because before a noun it names a team or a field (`grouped by
+# design system`, `triaged by design leads`). `reviewed by design,
+# engineering, and product` still fires, since the comma is a clause
+# end. The clause-end list sits glued to `design`, the way the
+# certificate rule writes it.
+expr main [(this is deliberate), (this is intentional), (by design[., ;, :, (,)]), ([is, was] by design)]
+let message "Intent certificate. Give the reason for the choice, or delete the phrase."
+let description "Flags phrases that vouch a choice was deliberate without giving the reason."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "Close releases the file handle."
+allows "The pieces are grouped by design system, not by team."
+allows "Issues are triaged by design leads every Monday."
