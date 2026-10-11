@@ -5,3 +5,5 @@ A sort of index maps each anchor to its node.
 What kind of error does it return?
 This kind of failure is rare.
 Load returns a non-nil, possibly empty map.
+The prompt appears to the user after login.
+The banner appears to them on startup.

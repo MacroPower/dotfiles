@@ -7,7 +7,11 @@
 # (`a non-nil, possibly empty map`). `rather` is left out as well,
 # because `rather than` is a contrast and a `!than` guard misses it
 # when a comment line breaks between the two words.
-expr main [somewhat, arguably, perhaps, probably, maybe, (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), (appears to), (appear to), (tends to), (tend to), presumably, fairly, quite, (in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said)]
+#
+# `appears to` skips a determiner, pronoun, or proper noun after it,
+# where it means `becomes visible to` (`the prompt appears to the
+# user`).
+expr main [somewhat, arguably, perhaps, probably, maybe, (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), ([appears, appear] to ![DET, PRON, PROPN]), (tends to), (tend to), presumably, fairly, quite, (in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said)]
 let message "Hedge. State the claim or drop it."
 let description "Flags words that soften a claim without adding information."
 let becomes ""
@@ -18,3 +22,4 @@ allows "The walker visits the child rather than the alias."
 allows "A sort of index maps each anchor to its node."
 allows "What kind of error does it return?"
 allows "Load returns a non-nil, possibly empty map."
+allows "The prompt appears to the user after login."
