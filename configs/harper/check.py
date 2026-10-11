@@ -12,6 +12,13 @@ fixtures/<tier>/<Rule>.good.md nor the shared fixtures/common.good.md
 may produce one. The shared file holds ordinary technical prose that
 every rule must pass, so a line added there covers all the rules.
 
+Each plain phrase a Weir rule lists in its main expression, directly
+or through a referenced list, must also fire on its own in a probe
+sentence. A list entry that a guard or a typo has broken therefore
+fails the build. An entry that contains a shorter entry of the same
+rule fails too, since the shorter one already matches every sentence
+it does.
+
 A rule without a fixture pair fails, so a typo in a built-in name
 cannot pass silently. A fixture pair without a rule fails too, so a
 rule moved between tiers takes its fixtures along. A built-in listed
@@ -20,14 +27,24 @@ tier directory. Exits 1 with one line per failure.
 """
 
 import json
+import re
 import subprocess
 import sys
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 TIERS = ("required", "recommended", "optional")
 COMMON = "common.good.md"
+
+# A list entry made only of words, which a probe sentence can quote.
+# An uppercase tag such as DET or PROG names a word class instead.
+PLAIN_ENTRY = re.compile(r"[A-Za-z']+( [A-Za-z']+)*")
+TAGS = frozenset(
+    "ADJ ADP ADV AUX CCONJ DET INTJ NOUN NUM PART PRON PROPN PUNCT SCONJ SYM VERB X PROG".split()
+)
+EXPR_LINE = re.compile(r"expr (\w+) (.*)")
 
 
 @dataclass(frozen=True)
@@ -167,6 +184,85 @@ def check_rule(rule: Rule, pack: Path, fixtures: Path) -> list[str]:
     return failures
 
 
+def split_alternatives(body: str) -> list[str]:
+    """Split a `[a, (b c), [d, e]]` list into its top-level alternatives."""
+    inner = body.strip()[1:-1]
+    parts: list[str] = []
+    depth = 0
+    current = ""
+    for ch in inner:
+        if ch in "([<":
+            depth += 1
+        elif ch in ")]>":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append(current.strip())
+            current = ""
+        else:
+            current += ch
+    if current.strip():
+        parts.append(current.strip())
+    return parts
+
+
+def plain_entries(weir: Path) -> list[str]:
+    """Return the word-only phrases the rule's main expression lists.
+
+    An `@name` alternative that refers to a list contributes that
+    list's phrases, since each one matches on its own. A bare word or
+    a parenthesized sequence of bare words counts as a phrase, and so
+    does a main expression that is one such sequence.
+    """
+    exprs: dict[str, str] = {}
+    for line in weir.read_text().splitlines():
+        m = EXPR_LINE.fullmatch(line.strip())
+        if m:
+            exprs[m.group(1)] = m.group(2)
+
+    def plain(alt: str) -> bool:
+        return bool(PLAIN_ENTRY.fullmatch(alt)) and not TAGS & set(alt.split())
+
+    def walk(body: str, seen: frozenset[str]) -> list[str]:
+        body = body.strip()
+        if not (body.startswith("[") and body.endswith("]")):
+            return [body] if plain(body) else []
+        found: list[str] = []
+        for alt in split_alternatives(body):
+            if alt.startswith("@") and alt[1:] in exprs and alt[1:] not in seen:
+                found += walk(exprs[alt[1:]], seen | {alt[1:]})
+                continue
+            if alt.startswith("(") and alt.endswith(")"):
+                alt = alt[1:-1].strip()
+            if plain(alt):
+                found.append(alt)
+        return found
+
+    return walk(exprs.get("main", ""), frozenset({"main"}))
+
+
+def check_entries(rule: Rule, pack: Path) -> list[str]:
+    """Probe each plain entry of a Weir rule and compare it with the others."""
+    entries = plain_entries(rule.path)
+    if not entries:
+        return []
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = Path(tmp) / "probe.md"
+        probe.write_text("\n\n".join(f"Then {e} happens here." for e in entries) + "\n")
+        got = harper_lines(pack, rule.internal, probe)
+    for i, entry in enumerate(entries):
+        if 2 * i + 1 not in got:
+            failures.append(f"{rule.path}: entry `{entry}` never fires on its own")
+    words = [f" {e.lower()} " for e in entries]
+    for long, long_words in zip(entries, words):
+        for short, short_words in zip(entries, words):
+            if short != long and short_words in long_words:
+                failures.append(
+                    f"{rule.path}: entry `{long}` repeats `{short}`, which already matches it"
+                )
+    return failures
+
+
 def orphan_fixtures(fixtures: Path, rules: list[Rule]) -> list[str]:
     """Return a failure per fixture file whose rule is not in its tier."""
     known = {(r.tier, r.name) for r in rules}
@@ -201,6 +297,8 @@ def main(argv: list[str]) -> int:
     failures += orphan_fixtures(fixtures, rules)
     for rule in rules:
         failures += check_rule(rule, pack, fixtures)
+        if rule.kind == "weir":
+            failures += check_entries(rule, pack)
 
     for f in failures:
         print(f)
