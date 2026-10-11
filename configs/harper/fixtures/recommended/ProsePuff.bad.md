@@ -18,3 +18,8 @@ The CLI works out of the box.
 The walker is blazingly fast on deep trees.
 The API is extremely flexible.
 The parser is highly configurable.
+The framework is battle-tested.
+The server is production-ready.
+It ships a state-of-the-art parser.
+The CLI works out-of-the-box.
+The walker is lightning-fast.
