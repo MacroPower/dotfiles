@@ -833,7 +833,7 @@ func TestHandleBashMessageLint(t *testing.T) {
 
 	logger := slog.New(slog.DiscardHandler)
 
-	flagDeliberate := msglint.Config{Command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:3:1: Style::ProseCertificate: certificate'; exit 1; }; exit 0`}}
+	flagDeliberate := msglint.Config{Command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:3:1: Style::ProseReassurance: reassurance'; exit 1; }; exit 0`}}
 	flagPassive := msglint.Config{Command: []string{"sh", "-c", `grep -q passive && { echo '<stdin>:3:1: [Recommended] Style::ProsePassive: passive'; exit 1; }; exit 0`}}
 	flagThat := msglint.Config{Command: []string{"sh", "-c", `grep -q thatthat && { echo '<stdin>:3:1: [Optional] Repetition::RedundantThat: that'; exit 1; }; exit 0`}}
 

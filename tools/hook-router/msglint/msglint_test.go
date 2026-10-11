@@ -196,8 +196,8 @@ func TestLint(t *testing.T) {
 			want:    nil,
 		},
 		"stdin carries the text": {
-			command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:1:1: certificate'; exit 1; }; exit 0`},
-			want:    []linter.Finding{{Line: 1, Text: "<stdin>:1:1: certificate"}},
+			command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:1:1: reassurance'; exit 1; }; exit 0`},
+			want:    []linter.Finding{{Line: 1, Text: "<stdin>:1:1: reassurance"}},
 		},
 		"exit 2 fails": {
 			command: []string{"sh", "-c", `echo boom >&2; exit 2`},
@@ -251,7 +251,7 @@ func tierLinter() msglint.Config {
 	return msglint.Config{Command: []string{"sh", "-c", `
 		msg=$(cat)
 		rc=0
-		case "$msg" in *deliberate*) echo '<stdin>:3:1: [Required] Style::ProseCertificate: certificate'; rc=1;; esac
+		case "$msg" in *deliberate*) echo '<stdin>:3:1: [Required] Style::ProseReassurance: reassurance'; rc=1;; esac
 		case "$msg" in *passive*) echo '<stdin>:4:1: [Recommended] Style::ProsePassive: passive'; rc=1;; esac
 		case "$msg" in *thatthat*) echo '<stdin>:5:1: [Optional] Repetition::RedundantThat: that'; rc=1;; esac
 		exit $rc
@@ -261,7 +261,7 @@ func tierLinter() msglint.Config {
 func TestCheck(t *testing.T) {
 	t.Parallel()
 
-	untagged := msglint.Config{Command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:3:1: Style::ProseCertificate: certificate'; exit 1; }; exit 0`}}
+	untagged := msglint.Config{Command: []string{"sh", "-c", `grep -q deliberate && { echo '<stdin>:3:1: Style::ProseReassurance: reassurance'; exit 1; }; exit 0`}}
 
 	cases := map[string]struct {
 		command     string
@@ -282,7 +282,7 @@ func TestCheck(t *testing.T) {
 			command:    `git commit -m "This is deliberate."`,
 			cfg:        untagged,
 			wantDeny:   true,
-			wantReason: []string{"Required: Fix each.", "<stdin>:3:1: Style::ProseCertificate"},
+			wantReason: []string{"Required: Fix each.", "<stdin>:3:1: Style::ProseReassurance"},
 		},
 		"Recommended finding alone returns a waiver key": {
 			command:    `git commit -m "This is passive."`,
