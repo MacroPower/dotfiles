@@ -33,7 +33,7 @@ BEGIN {
   fence_char = ""
   fence_len = 0
   # Words that report a heading when it starts with one of them.
-  split("how why what what's when where which who do", list, " ")
+  split("how why what what's when where which who do does did is are was were has have can could will would should must", list, " ")
   for (i in list) {
     opener[list[i]] = 1
   }

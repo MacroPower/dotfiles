@@ -29,3 +29,9 @@
 ### Retry the request?
 
 ##### Which cache wins
+
+### Can the cache go stale
+
+### Is it safe
+
+#### Should retries back off
