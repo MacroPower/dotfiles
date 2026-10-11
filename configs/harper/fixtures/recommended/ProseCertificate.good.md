@@ -18,3 +18,4 @@ The fix touches one file and nothing else in either module changes.
 The pass rewrites the header and nothing else
 references the file.
 The prune does not touch it, and nothing else deletes it.
+The reader reads no more, no less than n bytes.

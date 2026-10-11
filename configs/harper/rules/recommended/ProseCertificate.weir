@@ -8,7 +8,9 @@
 # migration` is a report). `the whole point` needs `of`, `is`, `was`,
 # or `that` after it, or `is` before it (`rounds to the whole point`
 # and `the whole point cloud` are measurements). `no more and no less`
-# skips a following `than`, which turns it into a bound.
+# skips a following `than`, which turns it into a bound, and so does
+# its comma form (`no more, no less`). `nothing more, nothing less`
+# never takes `than`, so it counts as written.
 #
 # `without changing it` stays unconditional. A contrast that matters
 # (`Fsck checks the filesystem without changing it when invoked with
@@ -37,7 +39,7 @@
 # those branches has a clause-end twin.
 expr tagged [ADJ, ADP, ADV, AUX, CCONJ, DET, INTJ, NOUN, NUM, PART, PRON, PROPN, SCONJ, SYM, VERB, X]
 expr magic [number, numbers, byte, bytes, prefix, string, strings, value, values, constant, constants]
-expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (and nothing else!( )), (and nothing else !@tagged!( )), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
+expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (no more, no less !than), (no more, no less[., ;, :, (,)]), (nothing more, nothing less), (nothing more and nothing less), (and nothing else!( )), (and nothing else !@tagged!( )), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
 let message "Certificate. A stated fact needs no vouching, so delete the phrase."
 let description "Flags phrases that insist on a fact the sentence already stated."
 let becomes ""
@@ -52,5 +54,6 @@ allows "The no surprises policy applies to all releases."
 allows "The interest rate rounds to the whole point."
 allows "The entire point cloud fits in memory."
 allows "The reader reads no more and no less than n bytes, or returns an error."
+allows "The reader reads no more, no less than n bytes."
 allows "Probe touches the file and nothing else references it."
 allows "The prune does not touch it, and nothing else deletes it."

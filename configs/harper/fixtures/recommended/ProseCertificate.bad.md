@@ -15,4 +15,7 @@ The whole point is that the bucket allows bursts.
 ReadFull reads exactly n bytes, no more and no less, or returns an error.
 Probe reads the file and nothing else; it never writes.
 The schema keeps contentEncoding and nothing else (see the keyword table).
+The function returns the value. Nothing more, nothing less.
+The hook formats the file, nothing more and nothing less.
+The parser reads one line, no more, no less.
 You buy interpretation and nothing else
