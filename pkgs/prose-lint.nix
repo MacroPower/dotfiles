@@ -108,6 +108,7 @@ writeShellApplication {
     change_rules=${lib.escapeShellArg changeRules}
     tier_map=${lib.escapeShellArg tierMap}
     awk_checks=${lib.escapeShellArg awkChecks}
+    awk_lib=${prose-weirpack}/${prose-weirpack.passthru.awkLib}
     known_extensions=${lib.escapeShellArg ("," + lib.concatStringsSep "," extensions + ",")}
 
     # harper-cli looks up a user dictionary under $HOME and prints a
@@ -501,7 +502,7 @@ writeShellApplication {
         if [ "$changelog" = 1 ] && [ "$name" = ProseHeading ]; then
           continue
         fi
-        found=$(awk -f "$script" "$file" | sed "s/::$name:/::$internal:/")
+        found=$(AWKPATH="$awk_lib" awk -f "$script" "$file" | sed "s/::$name:/::$internal:/")
         if [ -n "$found" ]; then
           out="''${out:+$out
     }$found"
@@ -512,7 +513,7 @@ writeShellApplication {
       # every line whole, string literals included.
       while IFS='=' read -r internal script; do
         [ "''${internal%_*}" = ProseTypography ] || continue
-        found=$(RAW=1 awk -f "$script" "$file" | sed "s/::ProseTypography:/::$internal:/")
+        found=$(RAW=1 AWKPATH="$awk_lib" awk -f "$script" "$file" | sed "s/::ProseTypography:/::$internal:/")
         if [ -n "$found" ]; then
           out="''${out:+$out
     }$found"

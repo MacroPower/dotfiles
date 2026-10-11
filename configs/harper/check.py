@@ -1,12 +1,13 @@
 """Check every rule in the tier directories against its fixture pair.
 
-Usage: check.py <weirpack> <fixtures dir> <rules dir>
+Usage: check.py <weirpack> <fixtures dir> <rules dir> <awk lib dir>
 
 A rule's tier is the directory under rules/ that holds it: required,
 recommended, or optional. A .weir file is a Weir rule the weirpack
 carries under the internal name <Rule>_<Tier>, an .awk file is a check
 run with awk in place of Harper, and builtins.txt names the Harper
-built-ins the tier enables. For each rule, fixtures/<tier>/<Rule>.bad.md
+built-ins the tier enables. The awk lib dir goes on AWKPATH, so a check
+can `@include` the shared markdown reader. For each rule, fixtures/<tier>/<Rule>.bad.md
 must produce a lint on every non-blank line, and neither
 fixtures/<tier>/<Rule>.good.md nor the shared fixtures/common.good.md
 may produce one. The shared file holds ordinary technical prose that
@@ -27,6 +28,7 @@ tier directory. Exits 1 with one line per failure.
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -137,12 +139,13 @@ def harper_lines(pack: Path, rule: str, target: Path) -> set[int]:
     return lines
 
 
-def awk_lines(awk: Path, target: Path) -> set[int]:
+def awk_lines(awk: Path, lib: Path, target: Path) -> set[int]:
     proc = subprocess.run(
         ["awk", "-f", str(awk), str(target)],
         capture_output=True,
         text=True,
         check=True,
+        env={**os.environ, "AWKPATH": str(lib)},
     )
     lines: set[int] = set()
     for line in proc.stdout.splitlines():
@@ -156,7 +159,7 @@ def expected_lines(target: Path) -> set[int]:
     }
 
 
-def check_rule(rule: Rule, pack: Path, fixtures: Path) -> list[str]:
+def check_rule(rule: Rule, pack: Path, fixtures: Path, lib: Path) -> list[str]:
     bad = fixtures / rule.tier / f"{rule.name}.bad.md"
     good = fixtures / rule.tier / f"{rule.name}.good.md"
     failures: list[str] = []
@@ -167,7 +170,7 @@ def check_rule(rule: Rule, pack: Path, fixtures: Path) -> list[str]:
     if rule.kind == "awk":
 
         def report(target: Path) -> set[int]:
-            return awk_lines(rule.path, target)
+            return awk_lines(rule.path, lib, target)
 
     else:
 
@@ -279,12 +282,13 @@ def orphan_fixtures(fixtures: Path, rules: list[Rule]) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 4:
+    if len(argv) != 5:
         print(__doc__.strip(), file=sys.stderr)
         return 2
     pack = Path(argv[1])
     fixtures = Path(argv[2])
     rules_dir = Path(argv[3])
+    lib = Path(argv[4])
 
     if not (fixtures / COMMON).is_file():
         print(f"{fixtures / COMMON}: missing the shared good fixture")
@@ -296,7 +300,7 @@ def main(argv: list[str]) -> int:
             failures.append(f"{rule.path}: not in the weirpack as {rule.internal}")
     failures += orphan_fixtures(fixtures, rules)
     for rule in rules:
-        failures += check_rule(rule, pack, fixtures)
+        failures += check_rule(rule, pack, fixtures, lib)
         if rule.kind == "weir":
             failures += check_entries(rule, pack)
 

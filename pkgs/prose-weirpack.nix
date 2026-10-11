@@ -14,9 +14,11 @@ let
   # rules/recommended, or rules/optional. A `.weir` file is a Weir
   # rule, an `.awk` file is a check prose-lint runs on markdown next
   # to Harper, and `builtins.txt` names the Harper built-ins the tier
-  # enables. check.py fails the build when a rule has no fixture pair
-  # under fixtures/<tier>, when two tiers list the same built-in, or
-  # when a fixture pair has no rule.
+  # enables. An awk check that reads markdown includes
+  # lib/markdown.awk, so the build installs lib next to the checks and
+  # each caller puts it on AWKPATH. check.py fails the build when a
+  # rule has no fixture pair under fixtures/<tier>, when two tiers list
+  # the same built-in, or when a fixture pair has no rule.
   tierOrder = [
     "required"
     "recommended"
@@ -60,6 +62,9 @@ let
   ruleNames = lib.concatMap (t: map (name: internalName name t.tier) t.weir) tiersList;
 
   builtinRules = lib.concatMap (t: t.builtin) tiersList;
+
+  # The directory under $out that holds the shared awk reader.
+  awkLib = "share/harper/awk/lib";
 
   # One entry per awk check: the internal name prose-lint tags it
   # with, and its path under $out.
@@ -140,13 +145,14 @@ stdenvNoCC.mkDerivation {
     for rule in rules/*/*.weir; do
       harper-cli test --no-color "$rule"
     done
-    python3 check.py prose.weirpack fixtures rules
+    python3 check.py prose.weirpack fixtures rules lib
     runHook postCheck
   '';
 
   installPhase = ''
     runHook preInstall
     install -D -m 0644 prose.weirpack "$out/share/harper/prose.weirpack"
+    install -D -m 0644 lib/markdown.awk "$out/${awkLib}/markdown.awk"
     ${lib.concatMapStringsSep "\n" (
       c: ''install -D -m 0644 rules/${c.tier}/${c.name}.awk "$out/${c.path}"''
     ) awkChecks}
@@ -158,6 +164,7 @@ stdenvNoCC.mkDerivation {
       ruleNames
       builtinRules
       awkChecks
+      awkLib
       tiers
       ;
   };
