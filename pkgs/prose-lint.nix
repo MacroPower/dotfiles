@@ -402,19 +402,38 @@ writeShellApplication {
       '
     }
 
+    # Runs every awk check over a markdown file and prints the findings
+    # under their internal names. Each check prints `Kind::Name:`, and
+    # the sed renames that to `Kind::Name_Tier:` so the tag step finds
+    # it in the map. A second argument of 1 skips ProseHeading, whose
+    # rules do not fit a changelog's release labels.
+    markdown_checks() {
+      local internal script name
+      while IFS='=' read -r internal script; do
+        [ -n "$internal" ] || continue
+        name=''${internal%_*}
+        if [ "$2" = 1 ] && [ "$name" = ProseHeading ]; then
+          continue
+        fi
+        AWKPATH="$awk_lib" awk -f "$script" "$1" | sed "s/::$name:/::$internal:/"
+      done <<< "$awk_checks"
+    }
+
     tmp_dir=$(mktemp -d)
     trap 'rm -rf "$tmp_dir"' EXIT
     stderr_file=$tmp_dir/stderr
 
     # A commit or PR message is markdown, but harper-cli reads stdin as
     # plain text and would lint the phrases inside code spans, so the
-    # message is copied to a .md file first. Git comment lines are
-    # blanked rather than deleted, so each finding keeps the line number
-    # it has in the message.
+    # message is copied to a .md file first, where the awk checks read
+    # it too. A `#` line stays, since git keeps it in a message given
+    # with -m or -F, and in a PR body it is a heading.
     if [ "''${1:-}" = "--commit" ]; then
       message=$tmp_dir/message.md
-      sed 's/^#.*//' >"$message"
-      out=$(lint "$change_rules" "$message" | drop_label_colons "$message" |
+      cat >"$message"
+      found=$(lint "$change_rules" "$message" | drop_label_colons "$message")
+      checks=$(markdown_checks "$message" 0)
+      out=$(printf '%s\n%s\n' "$found" "$checks" | sed '/^$/d' |
         sed 's/^[^:]*:/<stdin>:/' | tag)
       if [ -n "$out" ]; then
         printf '%s\n' "$out"
@@ -495,21 +514,13 @@ writeShellApplication {
       FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
 
     # The awk checks read markdown, and only ProseTypography reads other
-    # files. Each prints `Kind::Name:` and the sed below renames that to
-    # the internal `Kind::Name_Tier:` so the tag step finds it in the map.
+    # files.
     if [ "$ext" = md ] || [ "$ext" = markdown ]; then
-      while IFS='=' read -r internal script; do
-        [ -n "$internal" ] || continue
-        name=''${internal%_*}
-        if [ "$changelog" = 1 ] && [ "$name" = ProseHeading ]; then
-          continue
-        fi
-        found=$(AWKPATH="$awk_lib" awk -f "$script" "$file" | sed "s/::$name:/::$internal:/")
-        if [ -n "$found" ]; then
-          out="''${out:+$out
+      found=$(markdown_checks "$file" "$changelog")
+      if [ -n "$found" ]; then
+        out="''${out:+$out
     }$found"
-        fi
-      done <<< "$awk_checks"
+      fi
     else
       # ProseTypography also reads source files, where RAW=1 checks
       # every line whole, string literals included.
