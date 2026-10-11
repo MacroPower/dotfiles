@@ -1,8 +1,6 @@
 The job fails owing to the fact that the lease expired.
 Close the file prior to the next read.
 The scheduler is able to retry the job.
-A number of flags take a value.
-The limit applies in terms of bytes.
 In the event of a timeout, the client retries.
 It is possible to disable the cache.
 Run make so as to build it.

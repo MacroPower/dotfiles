@@ -1,0 +1,12 @@
+# The Required rule of the same name holds every other wordy phrase.
+# These two sit here, because each also has a literal sense the short
+# form does not carry. `a number of` counts something (`Read returns
+# a number of bytes`), and `in terms of` names a unit (`the cost is
+# expressed in terms of bytes`).
+expr main [(a number of), (in terms of)]
+let message "Wordy. Use the short form."
+let description "Flags a number of and in terms of, which most sentences can replace with one word."
+let becomes ""
+let kind "Style"
+allows "Many flags take a value."
+allows "The limit counts bytes."
