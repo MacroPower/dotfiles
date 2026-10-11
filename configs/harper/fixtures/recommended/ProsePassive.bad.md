@@ -29,3 +29,4 @@ The field is not required by the schema.
 The job is being retried.
 A checksum is used to verify the download.
 Bytes can be used to read the buffer.
+The parser was designed by the platform team.
