@@ -20,13 +20,18 @@
 # actor (`by default`, `by design`, `by hand`), while `by a lock`, `by
 # the scheduler`, and `by git` still count as agents.
 #
+# The `!-` glued after the verb skips a hyphenated compound whose
+# first half the tagger marks as a verb (`is read-only`, `are
+# fail-open`). It matches at the end of a clause too, so `the file is
+# skipped.` still counts.
+#
 # Two shapes stay flagged on purpose: an identifier used as a predicate
 # noun (`The default is print`), which belongs in a code span, and a
 # resultative participle (`The issue is closed`), which the tagger
 # cannot tell from the event and which the skill rewrites anyway.
 expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, called, named, meant, supposed, bound, referred, prepared, advised, assured, reminded, warned]
 expr be [is, are, was, were, be, been, being]
-expr main [(@be [<VERB, !@stative>, (ADV <VERB, !@stative>)]), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN])]
+expr main [(@be [<VERB, !@stative>, (ADV <VERB, !@stative>)]!-), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN])]
 let message "Passive voice. Make the actor the subject."
 let description "Flags a form of be followed by a verb, and a form of be followed by a word and by an agent."
 let becomes ""
@@ -55,3 +60,5 @@ allows "The port is stuck in CLOSE_WAIT."
 allows "Be warned that the flag is sticky."
 allows "The default is lookup by id."
 allows "The answer is yes by the way."
+allows "The lock is read-only while the sweep runs."
+allows "Reads are fail-open and writes are fail-closed."

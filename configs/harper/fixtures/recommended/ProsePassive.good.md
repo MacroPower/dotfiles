@@ -33,3 +33,5 @@ The port is stuck in CLOSE_WAIT.
 Be warned that the flag is sticky.
 The default is lookup by id.
 The answer is yes by the way.
+The lock is read-only while the sweep runs.
+Reads are fail-open and writes are fail-closed.

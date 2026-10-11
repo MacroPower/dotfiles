@@ -15,3 +15,4 @@ The file is tracked by git.
 Unknown keys are ignored.
 The migration must be run before deploy.
 The variable is captured by the closure.
+The file is skipped
