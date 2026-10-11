@@ -1,0 +1,21 @@
+# Each phrase is a chat reply's framing, which says nothing about the
+# subject. The Recommended rule of the same name holds the phrases that
+# human-written READMEs also use. `of course` sits in the
+# throat-clearing rule, so it draws one finding.
+#
+# Weir reads `!` as negation, so a pattern cannot name a literal
+# exclamation mark. `certainly` and `absolutely` count instead when no
+# space or other punctuation follows them, which leaves the `!` of a
+# chat opener (`Certainly! Here is the fix`). The guard sits glued to
+# the word so it reads the token right after it. A closing paren cannot
+# sit in the list, since it ends the list, so `(absolutely)` still
+# fires, and so does the word at the end of a line.
+expr main [(hope this helps), (hope that helps), (great question), (you're absolutely right), (you are absolutely right), (I'd be happy to), (I would be happy to), ([certainly, absolutely]![( ), ,, ., ?, ;, :, -, /])]
+let message "Chatbot phrase. Delete it and respond directly."
+let description "Flags phrases that frame a reply as a chat instead of stating the point."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "The absolutely-positioned element overlaps the header."
+allows "The fix is certainly correct."
+allows "Is it safe? Certainly."
