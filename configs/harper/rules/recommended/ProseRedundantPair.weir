@@ -1,0 +1,11 @@
+# The Required rule of the same name holds every other redundant
+# pair. `still remain` sits here, because `still` can stress that a
+# state outlasted an event (`three entries still remain after the
+# sweep`), a contrast `remain` alone does not carry.
+expr main still $remain
+let message "Redundant pair. One of the two words carries the meaning."
+let description "Flags still remain, where remain alone usually carries the meaning."
+let becomes ""
+let kind "Style"
+allows "The lock remains held after Close."
+allows "Three entries survive the sweep."
