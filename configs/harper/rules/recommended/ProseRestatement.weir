@@ -1,0 +1,13 @@
+# The Required rule of the same name holds every other restatement.
+# `In short,` and `Ultimately,` sit here, because each also leads a
+# point the paragraph has not made yet (`Ultimately, your applications
+# run as containers inside Pods`). Each counts only with the glued
+# comma of an opener, since mid-sentence `ultimately` places a step
+# last (`the request ultimately reaches the scheduler`).
+expr main [(in short,), (ultimately,)]
+let message "Restatement. Make the first statement stand alone, and delete the phrase."
+let description "Flags in short and ultimately as sentence openers that announce a summary."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "The request ultimately reaches the scheduler."

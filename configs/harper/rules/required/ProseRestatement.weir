@@ -7,10 +7,16 @@
 # clear, accurate, and readable`). A comma ends Harper's default
 # chunk, so the rule reads whole sentences to see past it.
 #
+# A summary opener (`In summary,`, `In conclusion,`, `To sum up,`)
+# announces that the paragraph is about to say its point again, so it
+# counts here too, with the glued comma of an opener. The Recommended
+# rule of the same name holds the openers that also lead a new point
+# (`In short,`, `Ultimately,`).
+#
 # `put simply` and `to put it simply` sit in the minimizer rule, which
 # reports every `simply` but the one before `put`, so each set of
 # words draws one finding.
-expr main [(in other words,), (simply put), (that is to say), (to be clear, [DET, PRON, PROPN, NOUN])]
+expr main [(in other words,), (simply put), (that is to say), (to be clear, [DET, PRON, PROPN, NOUN]), (in summary,), (in conclusion,), (to sum up,), (to summarize,), (all in all,)]
 let message "Restatement. Make the first statement stand alone, and delete the phrase."
 let description "Flags phrases that announce the writer is about to say a thing again."
 let becomes ""

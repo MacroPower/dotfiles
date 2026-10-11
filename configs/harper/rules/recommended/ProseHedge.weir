@@ -18,7 +18,7 @@
 # standard`, `quite a large scope`). Before a verb, `fairly` means
 # justly (`a normalizer that ignores whitespace can fairly ignore line
 # breaks`).
-expr main [somewhat, arguably, perhaps, probably, maybe, (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), ([appears, appear] to ![DET, PRON, PROPN]), (tends to), (tend to), presumably, (fairly [ADJ, ADV]), (quite [ADJ, ADV, DET])]
+expr main [somewhat, arguably, perhaps, probably, maybe, (in essence), (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), ([appears, appear] to ![DET, PRON, PROPN]), (tends to), (tend to), presumably, (fairly [ADJ, ADV]), (quite [ADJ, ADV, DET])]
 let message "Hedge. State the claim or drop it."
 let description "Flags words that soften a claim without adding information."
 let becomes ""

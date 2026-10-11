@@ -12,3 +12,4 @@ Under the hood, the cache is a map.
 The guide shows how to navigate the complexities of the config.
 The walk is a journey through the tree.
 The test suite is a testament to the design.
+The cache is, at its heart, a map.

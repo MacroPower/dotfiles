@@ -12,3 +12,4 @@ Maybe the cache is cold.
 The index is kind of slow.
 The value appears to be stale.
 This is quite a large scope.
+In essence, the cache is a map from keys to rules.
