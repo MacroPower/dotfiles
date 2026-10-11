@@ -187,6 +187,7 @@ in
         # Media & graphics
         imagemagick
         ffmpeg
+        sox
         graphviz
 
         # NUR packages (nur.jacobcolvin.com)
