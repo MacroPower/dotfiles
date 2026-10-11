@@ -1,17 +1,36 @@
 # Each word tells the reader a step is easy or a behavior is small,
-# which the reader judges for themselves. Both stay unconditional: a
-# product name or a mention of the word is rare in technical prose, and
-# the skill wants both gone from a sentence about behavior.
+# which the reader judges for themselves. Neither needs a guard for a
+# product name or a mention of the word, since both are rare in
+# technical prose, and the skill wants both gone from a sentence about
+# behavior.
 #
 # `simply` skips a following ` put`, since the restatement rule
 # reports `Simply put`. The guard sits glued to the word so it reads
 # the token right after it. `Put simply` and `To put it simply` count
 # here instead, because no pattern can look back from `simply` to the
 # `put` before it.
-expr main [(simply!(( )put)), merely]
+#
+# After a negation the word carries a contrast (`it is not simply an
+# offset`), and deleting it flips the claim, so the not-only rule's
+# shape applies instead. Weir has no lookbehind, so the first branch
+# consumes the token before the word, which must not be a negation,
+# and the filter narrows the finding back to the word. A space in a
+# pattern is itself a whitespace token, so `!@neg @word` reads a word,
+# a space, and the minimizer. That branch needs a token before the
+# word, so a sentence that opens with one counts through the other
+# two, which need a verb or a glued comma after it (`Simply run make`,
+# `Simply, the cache is a map`). Those two also fire after a negation
+# when a verb follows (`is not simply copied`), a shape rare enough to
+# leave.
+expr neg [not, never, isn't, aren't, wasn't, weren't]
+expr word [(simply!(( )put)), merely]
+expr main [<(!@neg @word), @word>, (simply[(( )<VERB, !put>), (,)]), (merely[(( )VERB), (,)])]
 let message "Minimizer. Delete the word and let the reader judge the weight."
 let description "Flags simply and merely, which tell the reader a step is easy or a behavior is small."
 let becomes ""
 let kind "Style"
+let scope "Sentence"
 allows "Flush writes the buffer to disk."
 allows "Simply put, the cache is a map."
+allows "The offset is not simply an index into the token list."
+allows "It isn't merely a cache."
