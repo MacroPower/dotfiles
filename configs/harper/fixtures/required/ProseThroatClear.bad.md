@@ -11,3 +11,7 @@ As noted, the limit is five.
 As discussed earlier, the walk skips aliases.
 At the end of the day, the cache is cold.
 As a matter of fact, the walk never revisits a node.
+That being said, the cache is cold after a restart.
+That said, the cache is cold after a restart.
+Having said that, the cache is cold after a restart.
+With that said, the cache is cold after a restart.

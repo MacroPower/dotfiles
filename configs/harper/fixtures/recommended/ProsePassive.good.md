@@ -40,3 +40,4 @@ The method is deprecated.
 The value is not empty.
 The flag is set by the time the hook runs.
 The value is set by hand.
+That being said, the hook skips the file.

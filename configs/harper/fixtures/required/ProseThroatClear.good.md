@@ -7,3 +7,4 @@ The goal is to be clear, concise, and correct.
 The header is parsed as stated in RFC 9110.
 The limit is five, as noted in the changelog.
 Do not make the negative queries obviously irrelevant.
+The error that said the disk was full came from the writer.

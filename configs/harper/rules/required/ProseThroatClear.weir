@@ -14,9 +14,14 @@
 # `previously`, the words `as described` needs too. Before a source
 # the phrase cites it (`as stated in RFC 9110`).
 #
+# `that being said` counts as written. `that said`, `having said that`,
+# and `with that said` need the glued comma of an opener, since without
+# it `that said` is often a relative clause (`the error that said the
+# disk was full`).
+#
 # `note that` sits in the Recommended tier, because a commit subject
 # uses `note` as a verb (`docs: note that the flag is sticky`).
-expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (as [mentioned, noted, stated, discussed, described] [above, earlier, before, previously]), (as [mentioned, noted, stated, discussed],), (obviously,), (of course), (clearly,), (in other words,), (to put it simply), (put simply), (simply put), (that is to say), (to be clear, [DET, PRON, PROPN, NOUN]), (make no mistake), (it goes without saying), (at the end of the day), (as a matter of fact), (worth mentioning), (interestingly,), (importantly,), (notably,), (crucially,)]
+expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (as [mentioned, noted, stated, discussed, described] [above, earlier, before, previously]), (as [mentioned, noted, stated, discussed],), (obviously,), (of course), (clearly,), (in other words,), (to put it simply), (put simply), (simply put), (that is to say), (to be clear, [DET, PRON, PROPN, NOUN]), (make no mistake), (it goes without saying), (at the end of the day), (as a matter of fact), (worth mentioning), (interestingly,), (importantly,), (notably,), (crucially,), (that being said), (that said,), (having said that,), (with that said,)]
 let message "Throat clearing. Delete the phrase and state the point."
 let description "Flags phrases that announce a point instead of making it."
 let becomes ""
@@ -29,3 +34,4 @@ allows "The note field holds free text."
 allows "The summary restates the claim in other words."
 allows "Rewrite the comments to be clear, accurate, and readable."
 allows "The header is parsed as stated in RFC 9110."
+allows "The error that said the disk was full came from the writer."

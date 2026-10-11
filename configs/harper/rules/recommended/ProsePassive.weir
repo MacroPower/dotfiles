@@ -39,6 +39,10 @@
 # in the `by` branch, and the determiner may not open `by the time`
 # or `by the way`.
 #
+# `being` takes any participle but `said`, since `That being said` is
+# the opener the throat-clearing rule reports. The first branch takes
+# every other form of `be` through the filter `<@be, !being>`.
+#
 # Two shapes stay flagged on purpose: an identifier used as a predicate
 # noun (`The default is print`), which belongs in a code span, and a
 # resultative participle (`The issue is closed`), which the tagger
@@ -49,7 +53,7 @@ expr be [is, are, was, were, be, been, being, isn't, aren't, wasn't, weren't]
 expr verb [<VERB, !@stative>, @missed]
 expr agentive [set, unset, enabled, disabled, required, needed, expected, allowed, supported, broken, known, built, made, fixed, called, named, bound, prepared, advised, assured, reminded, warned]
 expr agent [(DET ![time, way]), PRON, PROPN]
-expr main [(@be [@verb, ([ADV, not] @verb)]!-), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN]), (@be [@agentive, ([ADV, not] @agentive)] by @agent)]
+expr main [(<@be, !being> [@verb, ([ADV, not] @verb)]!-), (being [<@verb, !said>, ([ADV, not] @verb)]!-), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN]), (@be [@agentive, ([ADV, not] @agentive)] by @agent)]
 let message "Passive voice. Make the actor the subject."
 let description "Flags a form of be followed by a verb, and a form of be followed by a word and by an agent."
 let becomes ""
@@ -84,3 +88,4 @@ allows "The flag is set by the time the hook runs."
 allows "The value is set by hand."
 allows "The lock is read-only while the sweep runs."
 allows "Reads are fail-open and writes are fail-closed."
+allows "That being said, the hook skips the file."
