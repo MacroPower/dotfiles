@@ -12,7 +12,10 @@
 # pronoun, an auxiliary, or a subordinating conjunction anywhere, or
 # that runs past six words. A deeper heading skips those two checks,
 # because it often labels a single case (`Retries after a lease error`)
-# and can run longer than a section name. These are closed word
+# and can run longer than a section name. A possessive (`your`, `our`)
+# that opens a level-two heading passes, since it starts a noun phrase
+# (`Your Task`), while one after a verb still counts (`Setting up your
+# editor`). These are closed word
 # classes, so a noun phrase such as `Printing YAML with Lipgloss
 # Styles` passes while the check reports `How matching works` and
 # `Configuring the server before you start`.
@@ -42,6 +45,9 @@ BEGIN {
   for (i in list) {
     anywhere[list[i]] = 1
   }
+  # Words from the list above that pass as the heading's first word.
+  possessive["your"] = 1
+  possessive["our"] = 1
 }
 
 NR == 1 && $0 ~ /^---[ \t]*$/ {
@@ -113,7 +119,7 @@ fence_char != "" {
     if (i == 1 && word in opener) {
       narrates = 1
     }
-    if (level == 2 && word in anywhere) {
+    if (level == 2 && word in anywhere && !(i == 1 && word in possessive)) {
       narrates = 1
     }
   }
