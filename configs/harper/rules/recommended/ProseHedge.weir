@@ -1,10 +1,13 @@
 # Harper's Hedging rule matches three phrases, so this list carries
-# the rest. `kind of`, `sort of`, and `a bit` are left out, because
-# docs use them as nouns (`the kind of diff`, `a sort of index`, `sets
-# a bit in the mask`); `a little bit` stays. `rather` is left out too:
-# `rather than` is a contrast, and a `!than` guard misses it when a
-# comment line breaks between the two words.
-expr main [somewhat, arguably, essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), (appears to), (appear to), (tends to), (tend to), presumably, fairly, quite, (in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said)]
+# the rest. `kind of` and `sort of` count only before an adjective,
+# adverb, or verb and without a determiner before them, because docs
+# use them as nouns (`the kind of diff`, `a sort of index`). `a bit`
+# is left out, since a mask sets a bit; `a little bit` stays.
+# `possibly` is left out too, because it gives the range of a value
+# (`a non-nil, possibly empty map`). `rather` is left out as well,
+# because `rather than` is a contrast and a `!than` guard misses it
+# when a comment line breaks between the two words.
+expr main [somewhat, arguably, perhaps, probably, maybe, (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), (appears to), (appear to), (tends to), (tend to), presumably, fairly, quite, (in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said)]
 let message "Hedge. State the claim or drop it."
 let description "Flags words that soften a claim without adding information."
 let becomes ""
@@ -13,3 +16,5 @@ allows "The printer takes the kind of each segment from the token."
 allows "The mask sets a bit for each enabled flag."
 allows "The walker visits the child rather than the alias."
 allows "A sort of index maps each anchor to its node."
+allows "What kind of error does it return?"
+allows "Load returns a non-nil, possibly empty map."
