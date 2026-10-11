@@ -53,3 +53,9 @@ The body: how prose is skipped.
 ## Your Task
 
 ## Our Approach
+
+## Summary
+
+## Overview
+
+## Next Steps

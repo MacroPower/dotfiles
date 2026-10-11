@@ -43,3 +43,13 @@
 ## Flags that have changed
 
 ## Setup:
+
+## Conclusion
+
+## Final Thoughts
+
+### Key Takeaways
+
+## TL;DR
+
+## Wrapping Up

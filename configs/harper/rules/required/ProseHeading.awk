@@ -24,6 +24,12 @@
 # The rule misses a short sentence built only from open-class words,
 # such as `The scheduler retries jobs`.
 #
+# A heading at any level from two down that only announces a wrap-up
+# (`Conclusion`, `Final Thoughts`, `Key Takeaways`, `TL;DR`) names no
+# topic, so the check reports it too. `Summary`,
+# `Overview`, and `Next Steps` pass, since human-written docs and PR
+# descriptions use them as section names.
+#
 # YAML front matter, fenced code blocks, and indented code blocks are
 # skipped. Setext headings (text underlined with = or -) are not
 # examined, because the formatter rewrites them to # headings.
@@ -48,6 +54,11 @@ BEGIN {
   # Words from the list above that pass as the heading's first word.
   possessive["your"] = 1
   possessive["our"] = 1
+  # Whole headings that announce a wrap-up.
+  n = split("conclusion|conclusions|final thoughts|closing thoughts|concluding thoughts|key takeaways|takeaways|wrapping up|wrap-up|in summary|in closing|tl;dr|tldr", list, "|")
+  for (i = 1; i <= n; i++) {
+    closer[list[i]] = 1
+  }
 }
 
 NR == 1 && $0 ~ /^---[ \t]*$/ {
@@ -123,7 +134,12 @@ fence_char != "" {
       narrates = 1
     }
   }
-  if (narrates) {
+  name = tolower(text)
+  sub(/[.!:]+$/, "", name)
+  gsub(/[ \t]+/, " ", name)
+  if (name in closer) {
+    printf "%s:%d:1: Style::ProseHeading: Heading \"%s\" names no topic. Name the topic as a short noun phrase.\n", FILENAME, NR, text
+  } else if (narrates) {
     printf "%s:%d:1: Style::ProseHeading: Heading \"%s\" narrates. Name the topic as a short noun phrase.\n", FILENAME, NR, text
   }
 }
