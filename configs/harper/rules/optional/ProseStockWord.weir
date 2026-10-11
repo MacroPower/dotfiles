@@ -6,9 +6,14 @@
 # Enhanced Linux`). `additionally` counts only with a glued comma,
 # since mid-sentence it modifies a verb (`the flag additionally checks
 # the signature`).
-expr main [enhance, enhances, enhancing, (additionally,)]
+#
+# `Moreover` and `furthermore` join `Additionally,` here, since the
+# two hit 24 lines in about 900 human-written docs. Neither modifies a
+# verb, so both count without the comma. `facilitate` sits here too,
+# because it hit 18 lines of the same docs (`to facilitate testing`).
+expr main [enhance, enhances, enhancing, (additionally,), moreover, furthermore, facilitate, facilitates, facilitated, facilitating]
 let message "Stock word. Use the plain word it stands for."
-let description "Flags enhance and a sentence-opening additionally, which stand in for improve and also."
+let description "Flags enhance, facilitate, and the additive openers additionally, moreover, and furthermore, which stand in for improve, help, and also."
 let becomes ""
 let kind "Style"
 allows "The enhancement label marks feature requests."
