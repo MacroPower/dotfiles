@@ -46,7 +46,8 @@ subject and verb, end the sentence there with a period, or join the
 clauses with `because` or `so`. Do not end a sentence on a participle
 tacked on after a comma (`, returning an error`, `, ensuring the cache
 stays warm`), and do not wrap a claim in `not only X but Y`. Do not
-hedge a claim; state it or drop it.
+hedge a claim; state it or drop it. Put a negation on the verb, so
+`does not need npm` rather than `needs no npm`.
 
 ## Specificity
 
@@ -57,7 +58,7 @@ structure behind the API, a buffer size, or a retry count nothing
 outside the code depends on. When an internal detail matters, state its
 observable consequence instead.
 
-A stated fact needs no reassurance. A follow-up that vouches for a fact
+A stated fact does not need reassurance. A follow-up that vouches for a fact
 (`It does exactly that`), fences off a scope nobody questioned (`returns
 the number, and nothing else`), or restates it in other words names
 nothing the reader can observe, and the same words fit under any fact
