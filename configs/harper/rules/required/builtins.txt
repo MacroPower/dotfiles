@@ -10,6 +10,5 @@ MoreBetter
 ComprisesOf
 RedundantSuperlatives
 RedundantProgressiveComparative
-CondenseAllThe
 AvoidAndAlso
 RedundantAlmostNearly

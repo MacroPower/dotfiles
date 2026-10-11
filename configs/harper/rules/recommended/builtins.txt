@@ -1,5 +1,9 @@
 # Harper built-in rules enabled at the Recommended tier, one name per
 # line, each with a fixture pair under fixtures/recommended.
+# CondenseAllThe sits here rather than under Required, because its
+# rewrite reads worse in a list of quantifiers (`some or all of the
+# whitespace` becomes `some or all the whitespace`).
 LongSentences
 Hedging
 LitotesDirectPositive
+CondenseAllThe
