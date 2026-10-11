@@ -9,3 +9,4 @@ Run make so as to build it.
 In order for the hook to fire, the file must exist.
 The sweep runs on a regular basis.
 Errors are reported in a timely manner.
+The caller will be able to cancel the request.
