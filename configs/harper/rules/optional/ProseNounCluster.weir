@@ -1,0 +1,13 @@
+# A run of nouns hides how each noun relates to the next (`the state
+# snapshot format upgrade logic`), and the reader has to guess which
+# noun modifies which. Four nouns in a row is past the three-noun
+# limit the technical-writing skill sets. The tagger marks some
+# adjectives and verbs as nouns, and a heading or table cell often
+# names a thing with a noun string on purpose, so the rule is a
+# suggestion.
+expr main [(NOUN NOUN NOUN NOUN)]
+let message "Noun cluster. Break it up with of, for, or a relative clause."
+let description "Flags four nouns in a row, which hide how each noun relates to the next."
+let becomes ""
+let kind "Style"
+allows "The release notes branch is protected."
