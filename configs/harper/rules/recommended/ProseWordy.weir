@@ -1,11 +1,14 @@
 # The Required rule of the same name holds every other wordy phrase.
-# These two sit here, because each also has a literal sense the short
-# form does not carry. `a number of` counts something (`Read returns
-# a number of bytes`), and `in terms of` names a unit (`the cost is
-# expressed in terms of bytes`).
-expr main [(a number of), (in terms of)]
+# These sit here, because each also has a literal sense the short form
+# does not carry. `a number of` counts something (`Read returns a
+# number of bytes`), `in terms of` names a unit (`the cost is
+# expressed in terms of bytes`), and `with respect to` names a variable
+# (`the derivative with respect to x`). `on the order of` stays out,
+# because it also names a sequence (`depend on the order of the
+# members`).
+expr main [(a number of), (in terms of), (with respect to), (in relation to), (in light of), (by means of), (in such a way that), (in a manner that)]
 let message "Wordy. Use the short form."
-let description "Flags a number of and in terms of, which most sentences can replace with one word."
+let description "Flags a number of, in terms of, with respect to, and similar phrases that most sentences can replace with one word."
 let becomes ""
 let kind "Style"
 allows "Many flags take a value."
