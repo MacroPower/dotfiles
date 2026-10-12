@@ -1,0 +1,21 @@
+# `only` before a verb can limit the verb or anything after it (`the
+# hook only fails on growth` versus `the hook fails only on growth`),
+# so the reader has to pick. The technical-writing skill keeps `only`
+# beside the word it limits. The rule counts `only` between a subject
+# and its verb, and the filter narrows the finding to `only` and the
+# verb. A progressive (`is only running`) stays out, since the tagger
+# reads it as part of the verb phrase, and so does `need`, because the
+# obligation rule reports `needs to`.
+#
+# It hit 124 lines in the kubernetes, nix.dev, and Go docs, and 10 of
+# 10 sampled hits could move `only` beside the word it limits. Some
+# writers mean the verb itself (`the flag only warns`), so the rule is
+# a suggestion.
+expr verb <VERB, !PROG, ![need, needs]>
+expr main <([NOUN, PRON, PROPN, that, which, who] only @verb), (only @verb)>
+let message "Only before the verb. Move only beside the word it limits."
+let description "Flags only between a subject and its verb, where it can limit the verb or anything after it."
+let becomes ""
+let kind "Style"
+allows "The hook fails only on growth."
+allows "Only the owner can delete the file."

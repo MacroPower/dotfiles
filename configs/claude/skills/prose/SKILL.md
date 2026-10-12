@@ -104,6 +104,8 @@ that second one.
 - Write `might` for a possibility, `can` for an ability, and the present
   tense for a consequence, not `could` or `would` (`the write fails`,
   not `the write would fail`).
+- Put `only` beside the word it limits, so `fails only on growth`
+  rather than `only fails on growth`.
 - Never write `please`. Give the instruction.
 - Write `whether`, not `if`, after a verb of checking, so `check
   whether the file exists`. After such a verb, `if` also reads as a
