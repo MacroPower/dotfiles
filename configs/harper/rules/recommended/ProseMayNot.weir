@@ -1,0 +1,15 @@
+# `may not` reads two ways, as a prohibition (`the name may not be a
+# dot`) or as a possibility (`the cache may not be warm`), and the
+# kubernetes docs use both. The fix writes `must not` for a prohibition
+# and `might not` for a possibility. `may or may not` counts too, since
+# it ends in the same words and hedges the claim as well.
+#
+# It hit 55 lines in the kubernetes and nix.dev docs, and 10 of 10
+# sampled hits could be read either way.
+expr main may not
+let message "May not. Write must not for a prohibition, or might not for a possibility."
+let description "Flags may not, which reads as a prohibition or as a possibility."
+let becomes ""
+let kind "Style"
+allows "The name must not be a dot."
+allows "The cache might not be warm."
