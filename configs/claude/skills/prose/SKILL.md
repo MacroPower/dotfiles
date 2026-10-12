@@ -51,6 +51,11 @@ claim in `not only X but Y`. Do not hedge a claim. State it or drop it.
 Put a negation on the verb, so `does not need npm` rather than `needs
 no npm`.
 
+Point `this` and `which` at a noun, never at a whole clause. In `This
+means the pool is empty`, the reader has to pick which part of the last
+sentence `this` names. Name the noun instead (`The nil default
+means`).
+
 Write what the system does in the simple present and a past event in
 the simple past. Do not stack helping verbs around a participle
 (`would have been configured`, `can be configured`). Give the verb an

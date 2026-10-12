@@ -1,0 +1,28 @@
+# A bare `this` or `which` that points at a whole clause (`This means
+# the cache stays warm`, `, which means the pool is empty`) leaves the
+# reader to pick which part of the last sentence it names. The fix
+# names the noun (`This retry means`) or joins the two claims.
+#
+# `this` counts only before a verb that states a consequence. `This is`
+# alone also names a field or a section (`this is set to True`), so it
+# counts only before `because`, `why`, or `how`. The allows rule
+# reports `allows you to`, `lets you`, `gives you`, and `makes it
+# possible`, so a guard glued to each verb skips those. `helps` is left
+# out, because the chatbot rule reports `hope this helps` and the
+# allows rule reports `helps to` and `helps you`.
+#
+# It hit 203 lines in the kubernetes and nix.dev docs, and 10 of 10
+# sampled hits pointed at a whole clause.
+expr verb [means, meant, ensures, happens, prevents, causes, keeps, works, matters, (makes!(( )it)), (allows!(( )[you, users])), (lets!(( )[you, users])), (gives!(( )you))]
+expr main [(this @verb), (this [is, was] [because, why, how]), ((,) which means)]
+let message "Bare this or which. Name the noun it points at, or join the two claims."
+let description "Flags this and which used as a pronoun for a whole earlier clause."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "This retry means the cache stays warm."
+allows "This field holds the name."
+allows "This change fixes the race."
+allows "This lets you pin the version."
+allows "Hope this helps."
+allows "For a Pod, this is set to True before the sandbox starts."
