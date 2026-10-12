@@ -101,6 +101,9 @@ that second one.
   recommended` hide the grade.
 - Never write `may not`, because it reads as a prohibition or as a
   possibility. Write `must not` or `might not`.
+- Write `might` for a possibility, `can` for an ability, and the present
+  tense for a consequence, not `could` or `would` (`the write fails`,
+  not `the write would fail`).
 - Never write `please`. Give the instruction.
 - Write `whether`, not `if`, after a verb of checking, so `check
   whether the file exists`. After such a verb, `if` also reads as a

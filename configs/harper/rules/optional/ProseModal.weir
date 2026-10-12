@@ -1,0 +1,27 @@
+# `would` and `could` state a possibility or a consequence without
+# saying how likely it is, and `could` also means ability. The
+# technical-writing skill writes `might` for a possibility, `can` for
+# an ability, and the present tense for a consequence (`the write
+# would fail` becomes `the write fails`). `could not` passes, since it
+# is the past of `cannot` (`the parser could not read the file`).
+#
+# Guards glued to each word skip the phrases other rules report: `would
+# say` and `could argue` (the opinion rule), `would expect` (the filler
+# and reassurance rules), `would be happy` (the chatbot rule), and
+# `could possibly` and `could potentially` (the redundant-pair rule).
+#
+# The two words hit 612 lines in the kubernetes, nix.dev, and Go docs,
+# and 10 of 10 sampled hits stated a possibility, an ability, or a
+# consequence. Both words also narrate a hypothetical
+# that the reader asked for (`if you raised the limit, the job would
+# finish`), so the rule is a suggestion.
+expr main [(would![(( )[say, argue, expect]), (( )be( )happy)]), (could![(( )[not, argue, possibly, potentially]), (( )be( )argued)])]
+let message "Would or could. Write might for a possibility, can for an ability, or the present tense for a consequence."
+let description "Flags would and could, which hide whether a sentence states a possibility, an ability, or a consequence."
+let becomes ""
+let kind "Style"
+allows "The parser could not read the file."
+allows "One could argue the flag is redundant."
+allows "As you would expect, the cache is cold."
+allows "I would be happy to help."
+allows "The write fails when the disk is full."

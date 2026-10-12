@@ -154,10 +154,10 @@ everything as mandatory, and both readings cause outages.
 - **will**: later behavior. "The server will close idle connections after 30
   seconds" promises and never instructs. "Will" never carries an obligation.
 
-Write "could" only as the past of "can" ("the parser could not read the file").
-Never write "could" or "would" for a possibility or a consequence. Write "might"
-for a possibility and the present tense for a consequence: "the write fails",
-not "the write would fail".
+Write `could` only as the past of `can` (`the parser could not read the file`).
+Never write `could` or `would` for a possibility or a consequence. Write `might`
+for a possibility and the present tense for a consequence: `the write fails`,
+not `the write would fail`.
 
 Replace every vague middle word with the graded one. `needs to`, `is expected
 to`, `is required to`, `it is important to`, and `it is recommended that` all
