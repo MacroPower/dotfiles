@@ -7,3 +7,9 @@ The tool offers a wide array of output formats.
 The module provides a host of helpers for parsing.
 The library supports a diverse range of backends.
 The guide covers countless edge cases.
+
+The library exposes numerous helpers.
+
+The scheduler fits various kinds of workload.
+
+The flag supports a variety of formats.
