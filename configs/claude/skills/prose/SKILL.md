@@ -75,6 +75,7 @@ that second one.
   meaning, so a reader who does not know it cannot parse it.
 - Spell out every negation, so `do not` rather than `don't`. A reader
   who misses the `n't` reads the opposite claim.
+- Never write `and/or`. Write `the host, the port, or both`.
 
 ## Specificity
 
