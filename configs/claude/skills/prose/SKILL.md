@@ -55,6 +55,9 @@ Point `this` and `which` at a noun, never at a whole clause. In `This
 means the pool is empty`, the reader has to pick which part of the last
 sentence `this` names. Name the noun instead (`The nil default
 means`).
+Never write `respectively`, `the former`, or `the latter`. Each makes
+the reader map items back to an earlier list, and the mapping breaks
+when the list changes order. Repeat the noun.
 
 Write what the system does in the simple present and a past event in
 the simple past. Do not stack helping verbs around a participle

@@ -1,0 +1,24 @@
+# `respectively`, `the former`, and `the latter` make the reader map
+# each item back to an earlier list, and the mapping breaks when the
+# list is reordered. The fix repeats the noun or pairs each item with
+# its value in one clause.
+#
+# `former` and `latter` are also plain adjectives (`the former
+# maintainer`, `the latter half`), so the filter skips the nouns those
+# take. The tagger marks a verb after `the former` as a noun (`The
+# former drops writes`), so a part-of-speech guard cannot do this. A
+# negated word after a space needs a word to consume, so a clause-end
+# twin takes `the latter.` and `the former,`.
+#
+# It hit 28 lines in the kubernetes and nix.dev docs, and 10 of 10
+# sampled hits were back-references.
+expr sense [maintainer, maintainers, owner, owners, employee, employees, member, members, colleague, colleagues, partner, partners, president, head, half, part, parts, stage, stages, years, days, decades]
+expr main [respectively, <(the [former, latter] !@sense), (the [former, latter])>, (the [former, latter][., ;, :, (,)])]
+let message "Positional reference. Repeat the noun, or pair each item with its value."
+let description "Flags respectively, the former, and the latter, which make the reader map items back to an earlier list."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "The former maintainer wrote the parser."
+allows "The latter half of the file is empty."
+allows "The host flag sets the host, and the port flag sets the port."
