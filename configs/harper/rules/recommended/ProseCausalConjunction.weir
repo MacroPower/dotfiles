@@ -3,10 +3,18 @@
 #
 # After a comma, `since` before a determiner, pronoun, or proper noun
 # marked a cause in 13 of 14 sampled hits (`, since the lock is
-# held`). A sentence that opens with `Since` marks time about half the
-# time (`Since v2.3, the flag ...`), and a word rule cannot tell the
-# two apart, so the rule skips it. A temporal `since` after a comma
-# (`, since the upgrade landed`) still fires.
+# held`). A temporal `since` after a comma (`, since the upgrade
+# landed`) still fires.
+#
+# Without a comma, `since` counts when a present-tense auxiliary follows
+# its subject, directly or after one word (`since the lock is held`,
+# `Since this is rarely needed`). A temporal `since` names a past event
+# (`since the upgrade landed`) or a version (`Since v2.3, the flag
+# ...`), so it has no such auxiliary and passes. All 24 hits of this
+# shape in the kubernetes and nix.dev docs marked a cause. The filter
+# narrows the finding to `since`. `needs` and `will` stay out of the
+# auxiliary list, because the obligation, no-negation, and future-tense
+# rules report the words after them.
 #
 # `as` counts only before a subject pronoun and a finite verb (`, as
 # it is deprecated`). `you` and `we` stay out, because `as you can
@@ -14,9 +22,10 @@
 # and `does` stay out, because `, as it does for any key` compares.
 expr subject [it, they, this, these, there]
 expr verb [is, are, was, were, has, have, can, will]
-expr main , [(since [DET, PRON, PROPN]), (as @subject @verb)]
+expr aux [is, are, has, have, can, cannot, does, do]
+expr main [((,) [(since [DET, PRON, PROPN]), (as @subject @verb)]), <(since [DET, PRON, PROPN] @aux), since>, <(since [DET, PRON, PROPN] * @aux), since>]
 let message "Causal since or as. Write because."
-let description "Flags since and as after a comma where they mark a cause, which because marks in one reading."
+let description "Flags since and as where they mark a cause, which because marks in one reading."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

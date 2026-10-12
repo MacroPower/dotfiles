@@ -7,3 +7,5 @@ The hook skips the key, as it does for any unknown key.
 The job runs as root.
 
 As you can see, the output has two columns.
+
+The pod has run since the upgrade landed.
