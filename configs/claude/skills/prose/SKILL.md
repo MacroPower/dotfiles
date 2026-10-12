@@ -83,6 +83,7 @@ that second one.
   grade.
 - Never write `may not`, because it reads as a prohibition or as a
   possibility. Write `must not` or `might not`.
+- Never write `please`. Give the instruction.
 
 ## Specificity
 

@@ -1,0 +1,19 @@
+# `please` softens an instruction without changing it, and the
+# technical-writing skill bans it. `please note` sits in the Required
+# filler rule, so the guard glued to the word skips it. The guard also
+# skips `please` before clause punctuation, where it means `wish` (`the
+# threads set the mask as they please`). The rule sits
+# at Recommended because a README invites contributions with it
+# (`Please open an issue`), the way the Recommended chatbot rule keeps
+# `feel free to`.
+#
+# It hit 82 lines in the kubernetes and nix.dev docs, and 10 of 10
+# sampled hits softened an instruction.
+expr main please![(( )note), ., ;, :, (,)]
+let message "Please. Delete it and give the instruction."
+let description "Flags please, which softens an instruction without changing it."
+let becomes ""
+let kind "Style"
+allows "Open an issue for any bug you find."
+allows "The pleased reviewer approved the change."
+allows "The threads set the mask as they please."

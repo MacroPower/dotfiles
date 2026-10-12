@@ -76,8 +76,8 @@ Write for your reader, not about the system.
 - A note gives information and never an instruction. A reader who skips every
   note still completes the procedure.
 - Put the common case first and the exceptions after it.
-- Never write "please" in an instruction. Never write "simply", "easy", or
-  "quickly" in a procedure. A reader who found the step simple did not open the
+- Never write `please` in an instruction. Never write `simply`, `easy`, or
+  `quickly` in a procedure. A reader who found the step simple did not open the
   docs.
 - Never pre-announce ("we will soon support...").
 - Name the destination in the link text, and never write "click here". You
@@ -164,7 +164,7 @@ to`, `is required to`, `it is important to`, and `it is recommended that` all
 hide which level applies. Other phrases hide it too.
 
 Never write "should" for a hard requirement. Never write "must" for advice.
-Never soften a "must" with "please" or "try to". Keep the words lowercase.
+Never soften a `must` with `please` or `try to`. Keep the words lowercase.
 Capitalizing them is a convention of standards documents and adds no clarity.
 
 IMPORTANT: An obligation binds a person. Grade what the reader must do, and
