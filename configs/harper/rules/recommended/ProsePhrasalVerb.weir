@@ -1,0 +1,26 @@
+# An idiomatic phrasal verb means something its words do not add up
+# to (`figure out`, `kick off`, `get rid of`). A reader who does not
+# know the idiom cannot parse it, and a dictionary lookup of each word
+# fails. Each phrase here has a one-word verb that says the same
+# thing: find, learn, write, become, start, create, send, remove,
+# examine, meet, show, read, exclude, fix, connect, stop, review, wait,
+# or assemble.
+#
+# Phrases that docs use as technical terms or in their literal sense
+# stay out: `fall back` (`fallback`), `go through` (`the request goes
+# through the proxy`), `make up`, `leave out`, `lay out`, `carry
+# over`, and `call out` (`calls out to a subprocess`). The Optional
+# rule of the same name holds `set up`, `clean up`, `show up`, and
+# `turn into`, which docs use often and mostly read one way.
+#
+# Each verb lists its forms by hand, irregular ones included (`found`,
+# `brought`, `dug`).
+expr main [([find, finds, found, finding] out), ([figure, figures, figured, figuring] out), ([come, comes, came, coming] up with), ([end, ends, ended, ending] up), ([kick, kicks, kicked, kicking] off), ([spin, spins, spun, spinning] up), ([bring, brings, brought, bringing] up), ([fire, fires, fired, firing] off), ([get, gets, got, gotten, getting] rid of), ([look, looks, looked, looking] into), ([come, comes, came, coming] across), ([run, runs, ran, running] into), ([point, points, pointed, pointing] out), ([pick, picks, picked, picking] up), ([weed, weeds, weeded, weeding] out), ([boil, boils, boiled, boiling] down), ([rule, rules, ruled, ruling] out), ([sort, sorts, sorted, sorting] out), ([dig, digs, dug, digging] into), ([wire, wires, wired, wiring] up), ([hook, hooks, hooked, hooking] up), ([give, gives, gave, given, giving] up), ([go, goes, went, gone, going] over), ([hold, holds, held, holding] off), ([put, puts, putting] together)]
+let message "Phrasal verb. Use one verb, such as find, start, or remove."
+let description "Flags idiomatic phrasal verbs, such as figure out and kick off, that one plain verb replaces."
+let becomes ""
+let kind "Style"
+allows "The finder returns the first match."
+allows "The request goes through the proxy."
+allows "The client falls back to the default."
+allows "The end of the list holds the newest entry."
