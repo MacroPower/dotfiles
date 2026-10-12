@@ -1,0 +1,39 @@
+# Each phrase states an obligation without saying how strong it is, so
+# the reader cannot tell a requirement from advice. The fix writes
+# `must` for a requirement and `should` for advice, the grades the
+# technical-writing skill defines, or a bare command for a step.
+#
+# `need to` skips a negation before it (`you do not need to restart`),
+# which states that no obligation exists, and a determiner, where
+# `need` is a noun (`the need to scale`). Weir has no lookbehind, so
+# the filter consumes the word before `need` and narrows the finding
+# back to the phrase. `If you need to X, do Y` still counts, because
+# Weir cannot anchor a branch to the start of a sentence, and a branch
+# that catches `You need to restart` also catches `if you need to`. The
+# skill's condition-first form reads better anyway (`To X, do Y`), so
+# the message names it.
+#
+# `it is important to` counts here except before the verbs that the
+# Required filler rule reports (`it is important to note`).
+# `recommended` is stative in the passive rule, so `it is recommended
+# that` draws one finding, from this rule. `you want to` is left out,
+# because `If you want to X, do Y` is a fork the skill allows.
+#
+# Across the kubernetes and nix.dev docs, `need to` and its kin hit 558
+# lines before the guards, and 7 of 10 sampled hits were vague
+# obligations. All three misses were `If you want to`.
+expr need [need, needs]
+expr neg [not, never, don't, doesn't, didn't, DET]
+expr wrap [expected, required, supposed]
+expr verbs [note, remember, understand, mention, realize, recognize]
+expr main [<(!@neg @need to), (@need to)>, ([is, are] @wrap to), ([is, are] recommended), <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>, (it is advisable), (it is a good idea), (you'll want to), (you will want to), ([may, might] want to), (be sure to), (make sure to), (ought to), (must try to), shall]
+let message "Vague obligation. Write must for a requirement or should for advice, or open with To and the goal."
+let description "Flags needs to, is expected to, is recommended, and other phrases that hide how strong an obligation is."
+let becomes ""
+let kind "Style"
+allows "You do not need to restart the node."
+allows "The plan covers the need to scale reads."
+allows "It is important to note the version."
+allows "If you want to pin the version, set the tag."
+allows "A timeout is required for every request."
+allows "You must pin the version."

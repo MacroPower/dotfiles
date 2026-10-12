@@ -78,6 +78,9 @@ that second one.
 - Never write `and/or`. Write `the host, the port, or both`.
 - Never form a plural with `(s)`, as in `file(s)`. Write the plural, or
   write `one or more`.
+- Grade an obligation with `must` for a requirement or `should` for
+  advice. `needs to`, `is expected to`, and `is recommended` hide the
+  grade.
 
 ## Specificity
 

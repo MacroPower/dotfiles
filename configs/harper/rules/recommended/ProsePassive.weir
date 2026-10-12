@@ -10,7 +10,8 @@
 # `the port is stuck`), the naming idioms (`is called name`, `is
 # known as a handle`, `is meant for testing`), and the purpose
 # wrappers the intent rule reports (`is designed to`, `is intended
-# to`), so each draws one finding.
+# to`), so each draws one finding. `recommended` is stative for the
+# same reason, since the obligation rule reports `is recommended`.
 #
 # The `by` branch exists because the tagger misses many participles
 # (`is guarded by a lock`). It accepts any word the tagger does not
@@ -61,7 +62,7 @@
 # noun (`The default is print`), which belongs in a code span, and a
 # resultative participle (`The issue is closed`), which the tagger
 # cannot tell from the event and which the skill rewrites anyway.
-expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, live, called, named, meant, supposed, designed, intended, bound, referred, prepared, advised, assured, reminded, warned]
+expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, live, called, named, meant, supposed, recommended, designed, intended, bound, referred, prepared, advised, assured, reminded, warned]
 expr missed [cached, compiled, computed, configured, decoded, discarded, encoded, evicted, fetched, flushed, hashed, linted, normalized, parsed, patched, persisted, propagated, queued, redirected, reset, restarted, retried, revoked, rotated, sanitized, serialized, stripped, synced, tagged, truncated, validated]
 expr be [is, are, was, were, be, been, being, isn't, aren't, wasn't, weren't]
 expr verb [<VERB, !@stative>, @missed]
@@ -94,6 +95,7 @@ allows "The field is called name."
 allows "The type is known as a handle."
 allows "The flag is meant for testing."
 allows "The hook is designed to run after every write."
+allows "It is recommended that you pin the version."
 allows "The field is exported."
 allows "The method is deprecated."
 allows "The port is stuck in CLOSE_WAIT."

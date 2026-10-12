@@ -159,8 +159,8 @@ Never write "could" or "would" for a possibility or a consequence. Write "might"
 for a possibility and the present tense for a consequence: "the write fails",
 not "the write would fail".
 
-Replace every vague middle word with the graded one. "needs to", "is expected
-to", "is required to", "it is important to", and "it is recommended that" all
+Replace every vague middle word with the graded one. `needs to`, `is expected
+to`, `is required to`, `it is important to`, and `it is recommended that` all
 hide which level applies. Other phrases hide it too.
 
 Never write "should" for a hard requirement. Never write "must" for advice.
