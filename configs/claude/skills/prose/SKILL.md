@@ -120,6 +120,10 @@ from that name, the way `does not follow symlinks` corrects a real
 expectation. Read every sentence's last clause on its own, because most
 of these land there.
 
+Name every item of a list, or say at the start that the list is
+partial (`such as`). A list that ends with `etc.` or `and so on` leaves
+its contents to the reader.
+
 ## Durability
 
 Docs and comments stay in place while the code under them changes, so
