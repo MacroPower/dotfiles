@@ -159,6 +159,9 @@ passage or adds one between.
 Let ideas come in the number they naturally have. Do not force groups
 of three.
 
+Give each paragraph one topic and six sentences or fewer. A longer
+paragraph usually carries a second topic.
+
 One name per concept, including verbs. If the bucket `spends` tokens in
 one sentence, it does not `hand out` or `consume` them in the next.
 Repetition is clearer than synonym rotation.
