@@ -1,0 +1,13 @@
+# `while` marks time (`while the lock is held`), so a reader who meets
+# it after a comma has to decide whether it marks a contrast instead
+# (`reads are fast, while writes are slow`). After a comma, it marked
+# a contrast in about 80% of sampled hits. The rest marked time (`It
+# is served anyway, while the refresher catches up`), which is why the
+# rule is a suggestion. `while` with no comma before it passes.
+expr main , (while [DET, PRON, PROPN])
+let message "While after a comma. Write but for a contrast, or split the sentence."
+let description "Flags while after a comma, where it usually marks a contrast that but marks in one reading."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "The hook waits while the lock is held."
