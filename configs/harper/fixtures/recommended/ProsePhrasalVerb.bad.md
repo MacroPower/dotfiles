@@ -17,3 +17,11 @@ The script picks up the config from the home directory.
 The maintainers looked into the crash.
 
 You might run into a timeout on a slow link.
+
+The controller keeps track of each lease.
+
+The hook takes care of the cleanup.
+
+Go ahead and run make.
+
+The team phased out the old flag.
