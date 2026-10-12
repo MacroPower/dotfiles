@@ -59,6 +59,11 @@ Never write `respectively`, `the former`, or `the latter`. Each makes
 the reader map items back to an earlier list, and the mapping breaks
 when the list changes order. Repeat the noun.
 
+Open a sentence with its real subject, not with `there is` or `it is`.
+`There are three files that hold the config` becomes `Three files
+hold the config`, and `It is likely that the pod restarts` becomes
+`The pod might restart`.
+
 Write what the system does in the simple present and a past event in
 the simple past. Do not stack helping verbs around a participle
 (`would have been configured`, `can be configured`). Give the verb an
