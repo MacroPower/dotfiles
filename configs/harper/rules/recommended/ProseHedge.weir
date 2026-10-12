@@ -1,5 +1,11 @@
 # Harper's Hedging rule matches three phrases, so this list carries
-# the rest. The opinion rule holds the phrases that frame a claim as
+# the rest. `should work` and its kin count only after `it`, `this`, or
+# `that`, where they hedge a claim about the code (`this should fix
+# the race`). After `you` they give advice, which the
+# technical-writing skill writes with `should`. `should help` stays
+# out, because the allows rule reports `help you`. `in a way` stays out
+# too, since it also names a manner (`in a way that keeps the order`).
+# The Optional rule of the same name holds `relatively`. The opinion rule holds the phrases that frame a claim as
 # someone's view. `kind of` and `sort of` count only before an
 # adjective, adverb, or verb and without a determiner before them,
 # because docs use them as nouns (`the kind of diff`, `a sort of
@@ -18,12 +24,14 @@
 # standard`, `quite a large scope`). Before a verb, `fairly` means
 # justly (`a normalizer that ignores whitespace can fairly ignore line
 # breaks`).
-expr main [somewhat, arguably, perhaps, probably, maybe, (in essence), (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), ([appears, appear] to ![DET, PRON, PROPN]), (tends to), (tend to), presumably, (fairly [ADJ, ADV]), (quite [ADJ, ADV, DET])]
+expr main [somewhat, arguably, perhaps, probably, maybe, (in essence), (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), ([appears, appear] to ![DET, PRON, PROPN]), (tends to), (tend to), presumably, (fairly [ADJ, ADV]), (quite [ADJ, ADV, DET]), apparently, seemingly, supposedly, ostensibly, (in theory), (in principle), (in a sense), ([it, this, that] should [work, fix, resolve, suffice]), ([it, this, that] should be [fine, enough, safe, ok, okay])]
 let message "Hedge. State the claim or drop it."
 let description "Flags words that soften a claim without adding information."
 let becomes ""
 let kind "Style"
 allows "The printer takes the kind of each segment from the token."
+allows "You should fix the typo before you merge."
+allows "The cache evicts entries in a way that keeps the order."
 allows "The mask sets a bit for each enabled flag."
 allows "The walker visits the child rather than the alias."
 allows "A sort of index maps each anchor to its node."

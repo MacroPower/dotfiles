@@ -13,3 +13,11 @@ The index is kind of slow.
 The value appears to be stale.
 This is quite a large scope.
 In essence, the cache is a map from keys to rules.
+
+The cache is apparently cold on the first run.
+
+In theory, the lock is never contended.
+
+This should fix the race.
+
+It should be fine to restart the node.
