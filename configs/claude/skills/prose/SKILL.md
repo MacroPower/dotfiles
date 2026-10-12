@@ -75,9 +75,6 @@ that second one.
   meaning, so a reader who does not know it cannot parse it.
 - Spell out every negation, so `do not` rather than `don't`. A reader
   who misses the `n't` reads the opposite claim.
-- Never write a Latin abbreviation. Write `for example` and `that is`,
-  and say at the start when a list is partial instead of ending it with
-  `etc.`
 
 ## Specificity
 
