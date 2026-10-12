@@ -132,7 +132,7 @@ No sentence is open to two readings.
   "Both...and", "either...or", and "if...then" are free disambiguators.
 - Make text in parentheses a full grammatical unit, its own sentence, or a bare
   citation label. Never form plurals with "(s)".
-- Never use a slash. Write "a, b, or both" instead of "a/b" or "and/or".
+- Never use a slash. Write `a, b, or both` instead of `a/b` or `and/or`.
 - Reread every "with". It can name a companion, a tool, or a property, so
   "Restart the pod with the new config" reads two ways.
 - Skip idioms, colloquialisms, and metaphors. A non-native reader, a translator,

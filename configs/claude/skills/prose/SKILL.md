@@ -92,7 +92,8 @@ that second one.
   `here` or `this page`.
 - Spell out every negation, so `do not` rather than `don't`. A reader
   who misses the `n't` reads the opposite claim.
-- Never write `and/or`. Write `the host, the port, or both`.
+- Never join two words with a slash (`read/write`, `and/or`). Write
+  `reads and writes`, or `the host, the port, or both`.
 - Never form a plural with `(s)`, as in `file(s)`. Write the plural, or
   write `one or more`.
 - Grade an obligation with `must` for a requirement or `should` for
