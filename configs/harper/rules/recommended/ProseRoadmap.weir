@@ -13,7 +13,7 @@
 # `still`, or `remains` before it, since the bare infinitive names a
 # capability (`allows a filesystem to be implemented in user space`).
 expr when [be, is, are, was, were, time, date, point, timestamp, deadline, cutoff, moment, instant, far, further]
-expr main [(going forward), <(!@when in the future!,), (in the future)>, (in the future,), (in a future release), (in a future version), (in an upcoming release), (in upcoming releases), (in future releases), (in future versions), (will be added), (will be supported), (will be removed), (will be deprecated), ([is, are] planned !by), ([is, are] planned!( )), (on the roadmap), (coming soon), (not yet implemented), (not yet supported), ([yet, still, remains, remain] to be implemented)]
+expr main [(going forward), <(!@when in the future!,), (in the future)>, (in the future,), (in a future release), (in a future version), (in an upcoming release), (in upcoming releases), (in future releases), (in future versions), (will be added), (will be supported), (will be removed), (will be deprecated), ([is, are] planned !by), ([is, are] planned!( )), (on the roadmap), (coming soon), (not yet implemented), (not yet supported), ([yet, still, remains, remain] to be implemented), (will soon), (soon be)]
 let message "Roadmap promise. Describe the system as it ships, and keep plans in the issue tracker."
 let description "Flags phrases that promise a change for a later version."
 let becomes ""

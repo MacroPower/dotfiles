@@ -7,3 +7,7 @@ In the future, the hook denies the command.
 Support for tables is planned.
 Two features are planned for the next cycle.
 Anchors are yet to be implemented.
+
+The parser will soon read tables.
+
+Tables should soon be supported.
