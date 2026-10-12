@@ -65,10 +65,12 @@ hold the config`, and `It is likely that the pod restarts` becomes
 `The pod might restart`.
 
 Write what the system does in the simple present and a past event in
-the simple past. Do not stack helping verbs around a participle
-(`would have been configured`, `can be configured`). Give the verb an
-actor instead (`you can configure`). The progressive names an ongoing
-state, and these rules allow it (`is retrying`, `has been running`).
+the simple past. Keep `will` for a later event, so `running make
+builds the binary` rather than `running make will build the binary`.
+Do not stack helping verbs around a participle (`would have been
+configured`, `can be configured`). Give the verb an actor instead
+(`you can configure`). The progressive names an ongoing state, and
+these rules allow it (`is retrying`, `has been running`).
 
 ## Words
 

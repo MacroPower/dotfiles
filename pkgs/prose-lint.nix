@@ -62,12 +62,14 @@ let
   # configs/harper/rules and fixture-checked when prose-weirpack
   # builds. A changelog and a commit message both describe a change,
   # so each turns off every tier's ProseChangeNarration, ProseCurrently,
-  # and ProseRoadmap.
+  # and ProseRoadmap. Each also turns off ProseFutureTense, because a
+  # message about a change may say what the system does after it.
   ruleNames = prose-weirpack.passthru.ruleNames ++ prose-weirpack.passthru.builtinRules;
   allRules = lib.concatStringsSep "," ruleNames;
   timeSensitiveRules = [
     "ProseChangeNarration_"
     "ProseCurrently_"
+    "ProseFutureTense_"
     "ProseRoadmap_"
   ];
   changeRules = lib.concatStringsSep "," (
