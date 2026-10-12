@@ -96,8 +96,8 @@ that second one.
 - Never form a plural with `(s)`, as in `file(s)`. Write the plural, or
   write `one or more`.
 - Grade an obligation with `must` for a requirement or `should` for
-  advice. `needs to`, `is expected to`, and `is recommended` hide the
-  grade.
+  advice, in lowercase. `needs to`, `is expected to`, and `is
+  recommended` hide the grade.
 - Never write `may not`, because it reads as a prohibition or as a
   possibility. Write `must not` or `might not`.
 - Never write `please`. Give the instruction.
