@@ -9,3 +9,13 @@ The sweep runs on a regular basis.
 Errors are reported in a timely manner.
 The caller will be able to cancel the request.
 Set the flag in the event that the disk fills.
+
+The pool holds a large number of idle connections.
+
+The vast majority of requests hit the cache.
+
+The limit is in excess of five hundred.
+
+First of all, stop the writer.
+
+The question is as to whether the lock is held.
