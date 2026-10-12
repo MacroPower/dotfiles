@@ -143,6 +143,10 @@ longer`). A count of things the system can grow (`the three modes`,
 `both backends`) goes stale with the next one. Give the command that
 regenerates the count, or drop it.
 
+Link a passage by name, never by position (`described above`, `the
+next section`). A positional reference breaks when someone moves the
+passage or adds one between.
+
 ## Structure
 
 Let ideas come in the number they naturally have. Do not force groups

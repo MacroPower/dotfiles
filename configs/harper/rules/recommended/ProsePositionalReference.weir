@@ -1,0 +1,24 @@
+# Each phrase points at a passage by where it sits (`described above`,
+# `the next section`), so it breaks when someone moves the passage or
+# adds one between. The fix links the section by name.
+#
+# The rule counts references to a passage, not to a block beside the
+# sentence. `the example below` and `the table above` usually sit next
+# to their block, the way `the following` does, so they stay out. The
+# required back-reference rule reports `as described above`, so the
+# filter skips a verb after `as`. Weir has no lookbehind, so the filter
+# consumes the word before and narrows the finding back to the phrase.
+#
+# It hit 37 lines in the kubernetes, nix.dev, and Go docs, and 13 of 14
+# sampled hits pointed at a passage by position. The miss described a
+# layout (`the paragraph below the list`).
+expr where [above, below]
+expr verbs [see, described, mentioned, explained, discussed, outlined]
+expr main [<(!as @verbs @where), (@verbs @where)>, (the [section, sections, paragraph, chapter] @where), (the [next, previous, preceding] [section, chapter])]
+let message "Positional reference. Link the section by name."
+let description "Flags described above, the next section, and similar references that point at a passage by position."
+let becomes ""
+let kind "Style"
+allows "The backoff follows the restart policy in Pod Lifecycle."
+allows "The header is parsed as described above."
+allows "In the example below, the claim requests one device."
