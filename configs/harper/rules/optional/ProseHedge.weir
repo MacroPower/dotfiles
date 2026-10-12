@@ -1,0 +1,13 @@
+# The Recommended rule of the same name holds every other hedge.
+# `relatively` sits here, because it sometimes states a real
+# comparison (`relatively few nodes run the agent, compared with the
+# fleet`). Most hits give no baseline (`a relatively small number of
+# objects`), so the fix gives the number or the baseline. `potentially`
+# stays out, because the redundant-pair rule reports `could
+# potentially`.
+expr main relatively
+let message "Hedge. State the claim or drop it."
+let description "Flags relatively, which softens a claim without giving a baseline."
+let becomes ""
+let kind "Style"
+allows "Few nodes run the agent."
