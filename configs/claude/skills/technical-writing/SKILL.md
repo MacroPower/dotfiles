@@ -8,8 +8,14 @@ description: >-
 # Technical Writing
 
 The `prose` skill sets the sentence rules (voice, specificity, punctuation,
-concision, tense, naming, and headers) and applies throughout. This skill adds
-what a document needs beyond the sentence rules.
+concision, tense, word choice, durability, naming, and headers) and applies
+throughout. This skill adds what a document needs beyond the sentence rules.
+
+The Reader, Load, and Ambiguity rules adapt the writing rules of ASD-STE100
+Simplified Technical English, not its dictionary. STE conflicts with these rules
+in two places, and these rules win. STE turns verbs into nouns ("do a test of").
+It writes "can" where these rules write "may" or "might", and "must" where they
+write "should".
 
 ## 1. Mode
 
@@ -58,29 +64,41 @@ reading them.
 Write for your reader, not about the system.
 
 - Address the reader as "you", in the present tense. Reserve "will" for what
-  genuinely happens later.
+  happens later.
 - Write instructions as commands: "Click Submit." Never write "should be done",
   and never narrate ("the component must be installed").
 - Put the condition before the instruction: "To delete the document, click
   Delete." The reader skips what does not apply. Put the warning before the step
   it guards.
+- Open a warning with the command or the condition. State the risk in the next
+  sentence: "Do not delete the volume while the pod runs. The pod loses its
+  data."
+- A note gives information and never an instruction. A reader who skips every
+  note still completes the procedure.
 - Put the common case first and the exceptions after it.
 - Never write "please" in an instruction. Never write "simply", "easy", or
-  "quickly" in a procedure. If it were simple, the reader would not be here.
+  "quickly" in a procedure. A reader who found the step simple did not open the
+  docs.
 - Never pre-announce ("we will soon support...").
 - Name the destination in the link text, and never write "click here". You
-  should prefer a sentence of context on the page over a link off it.
+  should prefer a sentence of context on the page to a link off it.
 - Use numbered lists for sequences and bullets everywhere else. Introduce a list
-  with a complete sentence and keep the items parallel.
-- Set code in code font, set UI elements in bold, and use serial commas. Drop
-  "etc." and say at the start when a list is partial.
+  with a complete sentence and keep the items parallel. Keep a list one level
+  deep, and do not mix steps with descriptions in one list.
+- Set code in code font, set UI elements in bold, and use serial commas.
 
 ## 3. Load
 
 Each sentence carries one thing, so the reader loads one statement at a time.
 
-- Give each sentence one instruction, or one thought everywhere else. You should
-  split instructions past about 20 words, and other sentences past about 25.
+- Give each sentence one instruction, or one thought everywhere else. Two
+  instructions share a sentence only when the reader does both at the same time.
+  You should split instructions past about 20 words, and other sentences past
+  about 25.
+- When you split a sentence, carry the relation into the second sentence with
+  "so", "but", or "then".
+- Give each paragraph one topic. Open it with the sentence that names the topic,
+  and keep it to six sentences or fewer.
 - Those limits are a ceiling, not a target. Split the sentence that carries two
   thoughts. Keep the long one that carries a single fact with its condition or
   consequence.
@@ -98,8 +116,8 @@ No sentence is open to two readings.
 
 - Keep "only" and "not" beside the word they change. "only fails on growth" and
   "fails only on growth" say different things.
-- Break up noun strings. "the proto import budget check script" becomes "the
-  script that checks the proto-import budget".
+- Keep a noun string to three nouns or fewer. "the proto import budget check
+  script" becomes "the script that checks the proto-import budget".
 - Make every "it", "they", and "this" point at one obvious noun. Repeat the noun
   whenever the reference is not obvious. Never point "this" or "which" at a
   whole clause.
@@ -112,12 +130,13 @@ No sentence is open to two readings.
   not "the client and host".
 - Say which parts "and" or "or" join when a sentence can group two ways.
   "Both...and", "either...or", and "if...then" are free disambiguators.
-- Use a period. Never use a semicolon.
 - Make text in parentheses a full grammatical unit, its own sentence, or a bare
   citation label. Never form plurals with "(s)".
 - Never use a slash. Write "a, b, or both" instead of "a/b" or "and/or".
-- Skip idioms, colloquialisms, Latin abbreviations, and metaphors. A non-native
-  reader, a translator, and an agent all parse plain constructions best.
+- Reread every "with". It can name a companion, a tool, or a property, so
+  "Restart the pod with the new config" reads two ways.
+- Skip idioms, colloquialisms, and metaphors. A non-native reader, a translator,
+  and an agent all parse plain constructions best.
 
 ## 5. Obligations
 
@@ -135,22 +154,32 @@ everything as mandatory, and both readings cause outages.
 - **will**: later behavior. "The server will close idle connections after 30
   seconds" promises and never instructs. "Will" never carries an obligation.
 
+Write "could" only as the past of "can" ("the parser could not read the file").
+Never write "could" or "would" for a possibility or a consequence. Write "might"
+for a possibility and the present tense for a consequence: "the write fails",
+not "the write would fail".
+
 Replace every vague middle word with the graded one. "needs to", "is expected
 to", "is required to", "it is important to", and "it is recommended that" all
-hide which level applies, and they are not the only phrases that do. Never write
-"should" for a hard requirement. Never write "must" for advice. Never soften a
-"must" with "please" or "try to". Keep the words lowercase. Capitalizing them is
-a convention of standards documents and adds no clarity.
+hide which level applies. Other phrases hide it too.
+
+Never write "should" for a hard requirement. Never write "must" for advice.
+Never soften a "must" with "please" or "try to". Keep the words lowercase.
+Capitalizing them is a convention of standards documents and adds no clarity.
 
 IMPORTANT: An obligation binds a person. Grade what the reader must do, and
 leave the system's own behavior in the present tense. "The reaper must run a dry
-run first" reads as a rule that the reader could break. The reaper is code, and
-"the reaper runs a dry run first" is what you mean. A rule with a documented
-default is not a "must". If an unset tag falls back to `ephemeral`, setting the
-tag is a "may" or "should", and the reader who skips it gets the fallback. Grade
-obligations in every document. A runbook's data-loss warning and a how-to's
-ordering constraint earn the same "must" as a clause in a standard. Left bare,
-they read as one more step.
+run first" reads as a rule that the reader can break. The reaper is code, and
+"the reaper runs a dry run first" is what you mean.
+
+A rule with a documented default is not a "must". If an unset tag falls back to
+`ephemeral`, setting the tag is a "may" or "should", and the reader who skips it
+gets the fallback.
+
+Grade obligations in every document. A runbook's data-loss warning and a
+how-to's ordering constraint earn the same "must" as a clause in a standard.
+Left bare, they read as one more step. An ordinary step does not take "must",
+because a bare command already instructs.
 
 ## 6. Scope
 
