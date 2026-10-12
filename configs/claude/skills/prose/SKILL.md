@@ -84,6 +84,9 @@ that second one.
 - Never write `may not`, because it reads as a prohibition or as a
   possibility. Write `must not` or `might not`.
 - Never write `please`. Give the instruction.
+- Write `whether`, not `if`, after a verb of checking, so `check
+  whether the file exists`. After such a verb, `if` also reads as a
+  condition.
 
 ## Specificity
 
