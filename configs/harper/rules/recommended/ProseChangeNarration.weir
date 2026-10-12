@@ -20,6 +20,14 @@
 # cached index`), which belongs in the commit message. A passive form
 # (`was refactored to`) also draws the passive rule's finding.
 #
+# `than before` compares the system with an earlier version of itself.
+# `than previously` stays out, because a Go doc uses it for a value set
+# earlier at run time (`larger than previously set with
+# SetMaxReadFrameSize`). `the old` and `the previous` count after
+# `than` or `unlike` only before a word that names a version, because
+# Go doc prose uses them for runtime order (`unlike the previous call`,
+# `greater than the old value`).
+#
 # `the new` is limited to nouns that name a change surface, because
 # `returns the new count` and `validate the new config` are ordinary
 # runtime prose. `no longer`, `used to be`, and `has been updated` are
@@ -27,8 +35,9 @@
 # valid after Close`, `records what the limit used to be`, `wait until
 # the row has been updated`), and the change sense of `has been updated`
 # is a passive the passive rule already catches.
+expr versions [version, versions, release, releases, behavior, behaviour, implementation, API, default, defaults, format]
 expr surfaces [flag, option, field, argument, parameter, subcommand, endpoint, syntax, format, default, behavior, behaviour, setting, mode]
-expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), ([can, does] now), (now also), (was previously), (were previously), (had previously), (previously,), (previously [DET, PRON, PROPN]), ([before, after, with] this change), ([updated, changed] to use), (refactored to), (the new @surfaces)]
+expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), ([can, does] now), (now also), (was previously), (were previously), (had previously), (previously,), (previously [DET, PRON, PROPN]), ([before, after, with] this change), ([updated, changed] to use), (refactored to), (the new @surfaces), (than before), ([than, unlike] the [old, previous] @versions)]
 let message "Change narration. Durable prose describes the system as it is, and git history records what changed."
 let description "Flags phrases that describe the system as a change from an earlier version."
 let becomes ""
@@ -36,6 +45,8 @@ let kind "Style"
 allows "The flag defaults to five."
 allows "The parser supports tables."
 allows "Set returns the new count."
+allows "The value must be greater than the old value."
+allows "Unlike the previous call, Close returns an error."
 allows "The entry is no longer valid after Close."
 allows "The key used to sign tokens lives in the secrets store."
 allows "Now returns the current local time."

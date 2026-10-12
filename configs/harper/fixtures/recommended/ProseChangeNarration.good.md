@@ -23,3 +23,7 @@ The limit records what it used to be.
 The row is now consumed.
 The deadline is now plus five seconds.
 The value previously stored under the key is returned.
+
+The value must be greater than the old value.
+
+Unlike the previous call, Close returns an error.

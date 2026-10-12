@@ -15,3 +15,9 @@ With this change, the client retries on a lease error.
 Updated to use the cached index.
 Changed to use a buffered channel.
 The loader was refactored to skip the second read.
+
+The parser is faster than before.
+
+The flag behaves unlike the previous release.
+
+The cache uses less memory than the old implementation.
