@@ -1,0 +1,16 @@
+# A negative contraction hides the negation in a two-letter suffix
+# (`isn't`, `don't`), and a reader who skims past the `n't` reads the
+# opposite claim. The full form gives `not` a word of its own.
+#
+# ProsePassive, ProseContrastiveNegation, ProseMinimizer,
+# ProseCurrently, and ProseNotOnly keep their contracted forms, so
+# `the value isn't written` draws a passive finding beside this one on
+# the first pass. A curly apostrophe (`don’t`) does not match, because
+# ProseTypography reports the curly quote first.
+expr main [don't, doesn't, didn't, isn't, aren't, wasn't, weren't, can't, couldn't, won't, wouldn't, shouldn't, mustn't, hasn't, haven't, hadn't, needn't]
+let message "Negative contraction. Write not as its own word."
+let description "Flags don't, isn't, can't, and the other negative contractions, which hide a negation in a suffix."
+let becomes ""
+let kind "Style"
+allows "The cache does not expire."
+allows "The client cannot retry."
