@@ -1,0 +1,22 @@
+# A semicolon joins two clauses that could each stand as a sentence,
+# and the reader has to find the seam between them. A period puts the
+# seam where the reader expects one. The rule flags a word with a
+# semicolon glued to it.
+#
+# A closing paren before the mark passes, so a call in a comment
+# (`foo();`) stays quiet. A loop header in a source comment (`for (i =
+# 0; i < n; i++)`) still fires, which is why the rule sits at
+# Recommended. Harper does not tag a digit glued to a semicolon as a
+# number, so `5;` passes either way and NUM stays out of the class.
+#
+# Splitting a contrastive negation (`This isn't a cache; it's a
+# ledger`) at the semicolon silences ProseContrastiveNegation, which
+# reads one sentence at a time, but the denied framing remains. Drop
+# the first clause instead of splitting it.
+expr main [([NOUN, VERB, ADJ, ADV, PRON, PROPN, DET];)]
+let message "Semicolon. End the sentence with a period."
+let description "Flags a semicolon after a word, where it joins two clauses that could each stand as a sentence."
+let becomes ""
+let kind "Punctuation"
+allows "Call foo(); the hook returns."
+allows "The value is 5; the limit is 10."
