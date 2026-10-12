@@ -1,0 +1,25 @@
+# `since` also marks time and `as` also marks manner or comparison, so
+# a reader has to pick the reading. `because` marks only a cause.
+#
+# After a comma, `since` before a determiner, pronoun, or proper noun
+# marked a cause in 13 of 14 sampled hits (`, since the lock is
+# held`). A sentence that opens with `Since` marks time about half the
+# time (`Since v2.3, the flag ...`), and a word rule cannot tell the
+# two apart, so the rule skips it. A temporal `since` after a comma
+# (`, since the upgrade landed`) still fires.
+#
+# `as` counts only before a subject pronoun and a finite verb (`, as
+# it is deprecated`). `you` and `we` stay out, because `as you can
+# see` and `as we have seen` are the filler ProseFiller reports. `do`
+# and `does` stay out, because `, as it does for any key` compares.
+expr subject [it, they, this, these, there]
+expr verb [is, are, was, were, has, have, can, will]
+expr main , [(since [DET, PRON, PROPN]), (as @subject @verb)]
+let message "Causal since or as. Write because."
+let description "Flags since and as after a comma where they mark a cause, which because marks in one reading."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "Since v2.3, the flag defaults to true."
+allows "The hook skips the key, as it does for any unknown key."
+allows "The job runs as root."
