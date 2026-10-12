@@ -6,3 +6,7 @@ In this version, the cache holds one entry.
 At the moment, the sweep skips symlinks.
 The sweep skips symlinks at the moment.
 The sweep skips symlinks at the moment
+
+Nowadays the parser reads tables.
+
+Until recently, the flag defaulted to five.

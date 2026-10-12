@@ -11,7 +11,7 @@
 # called`). Its guard `moment!( )` takes any token but whitespace right
 # after the phrase, which covers punctuation and the end of a list
 # item.
-expr main [(currently [supports, support, only, unsupported, not, no, limited, lacks, lack, requires, require, returns, accepts, uses, defaults, ignores, handles, allows, disallows, broken, missing, unimplemented, experimental, deprecated]), ([does, doesn't, do, don't, cannot, can't, will, won't] currently), (not currently), (at the moment!( )), (right now), (for now), (at present), (as of now), (at this time), (as of today), (at the time of writing), (as of this writing), (in the current version), (in the current release), (in the latest version), (in the latest release), (in this version), (in this release)]
+expr main [(currently [supports, support, only, unsupported, not, no, limited, lacks, lack, requires, require, returns, accepts, uses, defaults, ignores, handles, allows, disallows, broken, missing, unimplemented, experimental, deprecated]), ([does, doesn't, do, don't, cannot, can't, will, won't] currently), (not currently), (at the moment!( )), (right now), (for now), (at present), (as of now), (at this time), (as of today), (at the time of writing), (as of this writing), (in the current version), (in the current release), (in the latest version), (in the latest release), (in this version), (in this release), nowadays, (these days), lately, (until recently)]
 let message "Time-sensitive wording. Durable prose describes the system as it is, and git history records what changed."
 let description "Flags phrases that date a claim to the current version."
 let becomes ""
