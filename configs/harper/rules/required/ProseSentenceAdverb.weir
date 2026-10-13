@@ -15,7 +15,7 @@
 # other adverbs rarely end a clause, so they count with the comma alone.
 expr main [([obviously, clearly], [DET, PRON, PROPN, NOUN]), (interestingly,), (importantly,), (notably,), (crucially,)]
 let message "Sentence adverb. Delete it and let the point carry its own weight."
-let description "Flags a sentence-opening adverb such as clearly or notably that rates the point that follows."
+let description "Flags a sentence-opening adverb such as `clearly` or `notably` that rates the point that follows."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

@@ -9,8 +9,8 @@
 # redundant-pair rule reports `various different`, and the filter
 # narrows the finding back to `various`.
 expr main [(rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad), (wide array), (vast array), (broad range), (diverse range), (a host of ![the, this, that, a, an, each, every, its, their]), (a whole host), (a slew of), countless, numerous, <(various !different), various>, (a variety of)]
-let message "Vague quantity. Write many, or name the items."
-let description "Flags phrases such as wide range and plethora of that inflate a count without giving it."
+let message "Vague quantity. Write `many`, or name the items."
+let description "Flags phrases such as `wide range` and `plethora of` that inflate a count without giving it."
 let becomes ""
 let kind "Style"
 allows "The catalog holds forty styles."

@@ -7,8 +7,8 @@
 # It hit 3 lines in the measure.py corpus, and all 3 left the interval
 # to the reader (`the bi-weekly SIG meetings`).
 expr main [biweekly, bimonthly, biannual, biannually, biyearly, (bi-[weekly, monthly, annual, annually, yearly])]
-let message "Ambiguous frequency. Write the interval, such as twice a week or every two weeks."
-let description "Flags biweekly, bimonthly, biannual, and biyearly, which each name two intervals."
+let message "Ambiguous frequency. Write the interval, such as `twice a week` or `every two weeks`."
+let description "Flags `biweekly`, `bimonthly`, `biannual`, and `biyearly`, which each name two intervals."
 let becomes ""
 let kind "Style"
 allows "The report runs every two weeks."

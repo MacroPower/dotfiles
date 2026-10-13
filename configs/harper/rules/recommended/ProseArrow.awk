@@ -19,6 +19,6 @@ function prose(text,   hit) {
   if (match(text, ascii)) {
     hit = substr(text, RSTART, RLENGTH)
     gsub(/[ \t]/, "", hit)
-    printf "%s:%d:%d: Style::ProseArrow: Arrow %s stands in for a verb. Write the verb, or use > for a menu path.\n", FILENAME, FNR, column(text, RSTART + (substr(text, RSTART, 1) ~ /[ \t]/)), hit
+    printf "%s:%d:%d: Style::ProseArrow: Arrow `%s` stands in for a verb. Write the verb, or use `>` for a menu path.\n", FILENAME, FNR, column(text, RSTART + (substr(text, RSTART, 1) ~ /[ \t]/)), hit
   }
 }

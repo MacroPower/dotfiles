@@ -6,7 +6,7 @@
 # names a thing with a noun string on purpose, so the rule is a
 # suggestion.
 expr main [(NOUN NOUN NOUN NOUN)]
-let message "Noun cluster. Break it up with of, for, or a relative clause."
+let message "Noun cluster. Break it up with `of`, `for`, or a relative clause."
 let description "Flags four nouns in a row, which hide how each noun relates to the next."
 let becomes ""
 let kind "Style"

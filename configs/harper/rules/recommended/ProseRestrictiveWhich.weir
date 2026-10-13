@@ -16,8 +16,8 @@
 # hits the clause either picked out a thing or needed its comma.
 expr verb [AUX, VERB]
 expr main <(![is, are, was, were, there's] <NOUN, !PRON> which @verb), which>
-let message "Restrictive which. Write that for a restrictive clause, or put a comma before which."
-let description "Flags which after a noun with no comma before it, where that or a comma tells the reader which clause it opens."
+let message "Restrictive `which`. Write `that` for a restrictive clause, or put a comma before `which`."
+let description "Flags `which` after a noun with no comma before it, where `that` or a comma tells the reader which clause it opens."
 let becomes ""
 let kind "Style"
 allows "The file that holds the key is read once."

@@ -20,8 +20,8 @@
 expr noun [checks, tests]
 expr verb [check, test, checked, checking, tested, testing, determine, determines, determined, determining, verify, verifies, verified, verifying, see, sees, seeing, decide, decides, decided, deciding, ask, asks, asked, asking, detect, detects, detected, detecting, tell, tells, telling]
 expr main [<(![DET, ADJ, NUM] @noun if), (@noun if)>, (@verb if)]
-let message "If for whether. Write whether after a verb of checking."
-let description "Flags check if, determine if, and similar phrases where if stands in for whether."
+let message "`if` for `whether`. Write `whether` after a verb of checking."
+let description "Flags `check if`, `determine if`, and similar phrases where `if` stands in for `whether`."
 let becomes ""
 let kind "Style"
 allows "Check whether the file exists."

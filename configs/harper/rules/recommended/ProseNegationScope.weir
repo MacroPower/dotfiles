@@ -13,8 +13,8 @@
 #
 # It hit 3 lines in the measure.py corpus, and all 3 meant none.
 expr main ([all, both] [<NOUN, !PRON>, (<[NOUN, ADJ, PROPN], !PRON> NOUN), (of [them, these, those])] [are, do, were, have, can, will, should, must] not)
-let message "Negation scope. Write not all or none, whichever the sentence means."
-let description "Flags all and both before a negated plural verb, where not can deny all or each one."
+let message "Negation scope. Write `not all` or `none`, whichever the sentence means."
+let description "Flags `all` and `both` before a negated plural verb, where `not` can deny all or each one."
 let becomes ""
 let kind "Style"
 allows "Not all nodes run the agent."

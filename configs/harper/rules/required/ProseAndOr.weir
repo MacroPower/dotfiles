@@ -2,8 +2,8 @@
 # sentence allows. Writing them out (`the host, the port, or both`)
 # names each one.
 expr main and/or
-let message "And/or. Write a, b, or both."
-let description "Flags and/or, which leaves the reader to work out which combinations the sentence allows."
+let message "`and/or`. Write `a, b, or both`."
+let description "Flags `and/or`, which leaves the reader to work out which combinations the sentence allows."
 let becomes ""
 let kind "Style"
 allows "Pass the host, the port, or both."

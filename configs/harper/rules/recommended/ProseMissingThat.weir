@@ -27,8 +27,8 @@ expr w ![that, which, who, to, PRON, CCONJ, (,)]
 expr det <[DET, your, its, their, our], !that>
 expr rest @det [(@w @aux), (@w @w @aux), (@w @w @w @aux)]
 expr main [<(@imper @rest), @imper>, <(![this, which] @third @rest), @third>]
-let message "Missing that. Write that after the verb, so the noun after it does not read as its object."
-let description "Flags ensure, means, and similar verbs that open a clause without that."
+let message "Missing `that`. Write `that` after the verb, so the noun after it does not read as its object."
+let description "Flags `ensure`, `means`, and similar verbs that open a clause without `that`."
 let becomes ""
 let kind "Style"
 allows "Ensure that the file exists."

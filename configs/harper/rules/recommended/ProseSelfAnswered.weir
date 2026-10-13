@@ -12,7 +12,7 @@
 expr setup [result, catch, upshot, kicker, verdict, takeaway, twist, payoff, culprit, trick, secret, downside, upside]
 expr main [(the @setup?), (the [best, worst] part?), (the [good, bad] news?), (the short answer?)]
 let message "Self-answered question. State the point as a sentence instead of asking for it."
-let description "Flags a noun phrase posed as a question and answered in the next sentence, such as The result? or The best part?"
+let description "Flags a noun phrase posed as a question and answered in the next sentence, such as `The result?` or `The best part?`"
 let becomes ""
 let kind "Style"
 allows "The result is a build that finishes in half the time."

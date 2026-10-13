@@ -12,7 +12,7 @@
 # It hit 7 lines in the kubernetes and nix.dev docs.
 expr main [(low[-, ( )]hanging fruit), (heavy lifting), (moving parts), (rabbit hole), (rabbit holes), (silver bullet), (double[-, ( )]edged sword), (in a nutshell), (no[-, ( )]brainer), ballpark, (on the same page), (circle back), (touch base), (lion's share), (tip of the iceberg), (move the needle), (rule of thumb), (can of worms), (slippery slope), (big picture), (in the long run), (par for the course), (by and large), (behind the scenes), (under the covers), (kick the tires), (out of the woods), (in the weeds), (sweet spot), (hand[-, ( )]wave), (hand[-, ( )]waving), (hand[-, ( )]wavy), footgun, footguns]
 let message "Idiom. Write the literal meaning."
-let description "Flags idioms, such as heavy lifting and rule of thumb, whose words do not add up to their meaning."
+let description "Flags idioms, such as `heavy lifting` and `rule of thumb`, whose words do not add up to their meaning."
 let becomes ""
 let kind "Style"
 allows "The scheduler does most of the work."

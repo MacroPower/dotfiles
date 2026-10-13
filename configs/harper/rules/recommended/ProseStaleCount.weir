@@ -21,7 +21,7 @@ expr count [two, three, four, five, six, seven, eight, nine, ten]
 expr set [modes, backends, providers, drivers, plugins, formats, platforms, implementations, strategies, policies, profiles, levels, kinds, types, options, flags, subcommands, commands, endpoints, protocols, runtimes, engines, tiers, methods, algorithms, categories, versions, integrations, adapters, targets, architectures, ways]
 expr main (@verbs @count [@set, (* @set)])
 let message "Stale count. Drop the number, or name each item."
-let description "Flags a count of a set that can grow, such as supports two modes, which goes stale when the set grows."
+let description "Flags a count of a set that can grow, such as `supports two modes`, which goes stale when the set grows."
 let becomes ""
 let kind "Style"
 allows "The API supports the single and all disruption modes."

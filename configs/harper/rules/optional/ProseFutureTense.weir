@@ -25,7 +25,7 @@ expr skip [we, time]
 expr roadmap [added, supported, removed, deprecated]
 expr main <(!@skip will [<VERB, !want>, (be ![@roadmap, able])]), will>
 let message "Future tense. Write the present tense for what the system does."
-let description "Flags will before a verb, where the present tense usually describes what the system does."
+let description "Flags `will` before a verb, where the present tense usually describes what the system does."
 let becomes ""
 let kind "Style"
 allows "Running make builds the binary."

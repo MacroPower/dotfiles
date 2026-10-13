@@ -30,6 +30,15 @@ flagged `which`, a relative pronoun, so it became `ProseBroadReference`.
 Each label must be unique. Only the tiers of one rule share a name and
 a label (the Recommended and Optional `ProseHedge`).
 
+## Messages
+
+Wrap every word that a message or a description mentions in backticks,
+so the reader can tell the word apart from the sentence around it.
+Quote each flagged word, each replacement, each example phrase, and
+each `%s` in an awk message that prints the matched text. A label that
+is the flagged word itself is a lowercase code span (`` `seam`. ``),
+and a label that names a grammar term stays plain (`Passive voice.`).
+
 ## Comments
 
 Write each rule's comment for an engineer with no linguistics

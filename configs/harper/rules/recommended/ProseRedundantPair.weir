@@ -4,7 +4,7 @@
 # sweep`), a contrast `remain` alone does not carry.
 expr main still $remain
 let message "Redundant pair. Delete the word the other one includes."
-let description "Flags still remain, where remain alone usually carries the meaning."
+let description "Flags `still remain`, where `remain` alone usually carries the meaning."
 let becomes ""
 let kind "Style"
 allows "The lock remains held after Close."

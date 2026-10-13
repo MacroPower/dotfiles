@@ -75,7 +75,7 @@ function reset() {
 function flush(   i) {
   for (i = 1; i <= held; i++) {
     if (tolower(substr(para, held_at[i])) !~ ("(^|[^a-z])the[ \t]+" held_noun[i] "([^a-z]|$)")) {
-      printf "%s:%d:%d: Style::ProseIndefiniteOpener: Indefinite opener. A or an opens a sentence before a present-tense verb. Write a claim about a whole class with a plural subject or with every.\n", held_file[i], held_line[i], held_col[i]
+      printf "%s:%d:%d: Style::ProseIndefiniteOpener: Indefinite opener. `a` or `an` opens a sentence before a present-tense verb. Write a claim about a whole class with a plural subject or with `every`.\n", held_file[i], held_line[i], held_col[i]
     }
   }
   held = 0
@@ -126,7 +126,7 @@ function prose(text,   rest, pos, tok, col, word, base) {
       if (word == "a" || word == "an") {
         run++
         if (run == 2) {
-          printf "%s:%d:%d: Style::ProseIndefiniteOpener: Indefinite opener. A or an opens two sentences in a row. Write a claim about a whole class with a plural subject or with every.\n", FILENAME, FNR, column(text, col)
+          printf "%s:%d:%d: Style::ProseIndefiniteOpener: Indefinite opener. `a` or `an` opens two sentences in a row. Write a claim about a whole class with a plural subject or with `every`.\n", FILENAME, FNR, column(text, col)
         } else if (run == 1) {
           scan = 1
           scan_line = FNR

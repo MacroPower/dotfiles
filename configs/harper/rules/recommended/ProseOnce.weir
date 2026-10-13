@@ -17,8 +17,8 @@
 # It hit 83 lines in the measure.py corpus, and 20 of 20 sampled hits
 # meant after or when.
 expr main <(!(,)( )once( )<[DET, PRON, PROPN], ![a, an, every, each, per, more, again, or, and, in, for]>), once>
-let message "Once. Write after or when."
-let description "Flags once where it opens a clause in the middle of a sentence, where it also reads as one time."
+let message "`once`. Write `after` or `when`."
+let description "Flags `once` where it opens a clause in the middle of a sentence, where it also reads as one time."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

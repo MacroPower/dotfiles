@@ -20,6 +20,6 @@ function BEGIN_CHECK() {
 function prose(text,   hit) {
   if (match(text, plural) && substr(text, RSTART, RLENGTH) !~ /^(len|cap)\(/) {
     hit = substr(text, RSTART, RLENGTH)
-    printf "%s:%d:%d: Style::ProsePluralParen: Plural %s in parentheses. Write the plural, or write one or more.\n", FILENAME, FNR, column(text, RSTART), hit
+    printf "%s:%d:%d: Style::ProsePluralParen: Plural `%s` in parentheses. Write the plural, or write `one or more`.\n", FILENAME, FNR, column(text, RSTART), hit
   }
 }

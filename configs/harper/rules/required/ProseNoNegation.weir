@@ -10,8 +10,8 @@
 # replacing, because the fix depends on tense and person (`does not
 # need`, `do not need`, `did not need`).
 expr main ([needs, need, needed, requires, require, required] no ![more, less, fewer, longer])
-let message "No-negation. Negate the verb, so needs no npm becomes does not need npm."
-let description "Flags need and require negated through their object."
+let message "No-negation. Negate the verb, so `needs no npm` becomes `does not need npm`."
+let description "Flags `need` and `require` negated through their object."
 let becomes ""
 let kind "Style"
 allows "Consuming sites do not need npm."

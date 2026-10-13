@@ -13,7 +13,7 @@
 # the reader can see (`as you can see`).
 expr main [(let's dive), (let's explore), (let's take a look), (let's take a closer look), (let's look at), (let's break down), (let's break it down), (let's walk through), (let's unpack), (let's examine), (let's recap), (let's review), (let's get started), (let's begin), (let's start by), (let's see how), (let's see what), (let's jump in), (let's jump into), (we'll explore), (we will explore), (we'll cover), (we will cover), (we'll walk through), (we will walk through), (we'll dive), (we'll take a look), (we'll look at), (we will look at), (we'll discuss), (we will discuss), (we'll examine), (we will examine), (in this [section, guide, article, document, post, tutorial, chapter], [DET, PRON, PROPN, NOUN]), ([walk, walks, walking] you through)]
 let message "Signpost. Delete the announcement and open on the first point."
-let description "Flags phrases that announce what the text is about to do, such as let's dive in or in this section."
+let description "Flags phrases that announce what the text is about to do, such as `let's dive in` or `in this section`."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

@@ -10,8 +10,8 @@
 # It hit 82 lines in the kubernetes and nix.dev docs, and 10 of 10
 # sampled hits softened an instruction.
 expr main please![(( )note), ., ;, :, (,)]
-let message "Please. Delete it and give the instruction."
-let description "Flags please, which softens an instruction without changing it."
+let message "`please`. Delete it and give the instruction."
+let description "Flags `please`, which softens an instruction without changing it."
 let becomes ""
 let kind "Style"
 allows "Open an issue for any bug you find."

@@ -18,8 +18,8 @@
 # that the reader asked for (`if you raised the limit, the job would
 # finish`), so the rule is a suggestion.
 expr main [(would![(( )[say, argue, expect]), (( )be( )happy)]), (could![(( )[not, argue, possibly, potentially]), (( )be( )argued)])]
-let message "Modal verb. Write might for a possibility, can for an ability, or the present tense for a consequence."
-let description "Flags would and could, which hide whether a sentence states a possibility, an ability, or a consequence."
+let message "Modal verb. Write `might` for a possibility, `can` for an ability, or the present tense for a consequence."
+let description "Flags `would` and `could`, which hide whether a sentence states a possibility, an ability, or a consequence."
 let becomes ""
 let kind "Style"
 allows "The parser could not read the file."

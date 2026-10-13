@@ -6,8 +6,8 @@
 # becomes become. The nouns `setup` and `cleanup` are one word and
 # pass.
 expr main [([set, sets, setting] up), ([clean, cleans, cleaned, cleaning] up), ([show, shows, showed, shown, showing] up), ([turn, turns, turned, turning] into)]
-let message "Phrasal verb. Use one verb, such as configure, delete, appear, or become."
-let description "Flags set up, clean up, show up, and turn into, which one plain verb often replaces."
+let message "Phrasal verb. Use one verb, such as `configure`, `delete`, `appear`, or `become`."
+let description "Flags `set up`, `clean up`, `show up`, and `turn into`, which one plain verb often replaces."
 let becomes ""
 let kind "Style"
 allows "The setup script installs the hooks."

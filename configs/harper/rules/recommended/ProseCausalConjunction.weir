@@ -29,8 +29,8 @@ expr subject [it, they, this, these, there]
 expr verb [is, are, was, were, has, have, can, will]
 expr aux [is, are, has, have, can, cannot, does, do]
 expr main [((,) [(since [DET, PRON, PROPN]), (as @subject @verb)]), <(since [DET, PRON, PROPN] @aux), since>, <(since [DET, PRON, PROPN] * @aux), since>]
-let message "Causal since or as. Write because."
-let description "Flags since and as where they mark a cause, which because marks in one reading."
+let message "Causal `since` or `as`. Write `because`."
+let description "Flags `since` and `as` where they mark a cause, which `because` marks in one reading."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

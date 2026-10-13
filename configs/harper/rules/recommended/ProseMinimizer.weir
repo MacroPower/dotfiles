@@ -38,7 +38,7 @@ expr verbs [run, use, add, call, set, pass, type, install, copy, edit, change, c
 expr word [(simply!(( )put)), merely, easily, trivially, straightforward, (easy to use), (just @verbs)]
 expr main [<(!@neg @word), @word>, (simply[(( )<VERB, !put>), (,)]), (merely[(( )VERB), (,)]), (is easy to), (it's easy to)]
 let message "Minimizer. Delete the word and let the reader judge the weight."
-let description "Flags simply, merely, easily, and similar words that tell the reader a step is easy or a behavior is small."
+let description "Flags `simply`, `merely`, `easily`, and similar words that tell the reader a step is easy or a behavior is small."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

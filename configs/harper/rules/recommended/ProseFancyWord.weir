@@ -20,7 +20,7 @@
 # hyphenated spelling alike.
 expr main [delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates] ![privilege, privileges, permissions]), tapestry, journey, (navigate the [complexities, complexity, landscape, world, challenges]), testament, $foster, $showcase, $garner, $boast, interplay, intricacies, synergy, (at its core), (at its heart), (at the heart of), (under the hood), nuanced, multifaceted, meticulous, meticulously, bolster, bolsters, bolstered, bolstering, spearhead, spearheads, spearheaded, spearheading, supercharge, supercharges, supercharged, supercharging, revolutionize, revolutionizes, revolutionized, revolutionizing, embark, embarks, embarked, embarking, ([harness, harnesses, harnessing] the power), ([unlock, unlocks, unlocking] the potential), ([unlock, unlocks, unlocking] the [full, true] potential), (the realm of), (landscape of), ([strike, strikes, striking] a balance), (key takeaway), (key takeaways)]
 let message "Fancy word. Use the plain word it stands for."
-let description "Flags fancy words and phrases, such as delve, showcase, and tapestry, that stand in for a plainer word."
+let description "Flags fancy words and phrases, such as `delve`, `showcase`, and `tapestry`, that stand in for a plainer word."
 let becomes ""
 let kind "Style"
 allows "Unlock releases the mutex."

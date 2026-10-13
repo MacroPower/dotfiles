@@ -21,8 +21,8 @@
 # where `can` reads the same.
 expr skip [not, want, possibly, potentially]
 expr main <(!you may <[VERB, AUX, ADV], !@skip>), may>
-let message "May for a possibility. Write might, or can for an ability."
-let description "Flags may outside you may, where it usually states a possibility that might states in one reading."
+let message "`may` for a possibility. Write `might`, or `can` for an ability."
+let description "Flags `may` outside `you may`, where it usually states a possibility that `might` states in one reading."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

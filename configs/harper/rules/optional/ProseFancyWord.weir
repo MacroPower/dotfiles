@@ -14,7 +14,7 @@
 # because it hit 18 lines of the same docs (`to facilitate testing`).
 expr main [enhance, enhances, enhancing, (additionally,), moreover, furthermore, facilitate, facilitates, facilitated, facilitating]
 let message "Fancy word. Use the plain word it stands for."
-let description "Flags enhance, facilitate, and the additive openers additionally, moreover, and furthermore, which stand in for improve, help, and also."
+let description "Flags `enhance`, `facilitate`, and the additive openers `additionally`, `moreover`, and `furthermore`, which stand in for `improve`, `help`, and `also`."
 let becomes ""
 let kind "Style"
 allows "The enhancement label marks feature requests."

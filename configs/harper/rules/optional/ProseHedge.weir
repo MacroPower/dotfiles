@@ -29,7 +29,7 @@ expr person [caller, callers, consumer, consumers, user, users, reader, readers,
 expr result [pass, fail, print, display, show, look, appear, succeed, output, produce, compile]
 expr main [relatively, effectively, virtually, practically, <(<NOUN, !PRON, !@person> should @result), should>]
 let message "Hedge. State the claim or drop it."
-let description "Flags relatively, effectively, virtually, and practically, which soften a claim or read two ways."
+let description "Flags `relatively`, `effectively`, `virtually`, and `practically`, which soften a claim or read two ways."
 let becomes ""
 let kind "Style"
 allows "Few nodes run the agent."

@@ -8,7 +8,7 @@
 # expired`).
 expr main [(note that), (notice that), (remember that)]
 let message "Filler phrase. Delete the phrase and state the point."
-let description "Flags note that, notice that, and remember that, which announce a point instead of making it."
+let description "Flags `note that`, `notice that`, and `remember that`, which announce a point instead of making it."
 let becomes ""
 let kind "Style"
 allows "The note field holds free text."

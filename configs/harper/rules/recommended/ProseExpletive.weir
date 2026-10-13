@@ -24,7 +24,7 @@ expr rel [that, which, who]
 expr does [does, do, did]
 expr main [(@there * @rel), (@there * * @rel), (@there * * * @rel), ([(it is), (it was), it's] <ADJ, !advisable> that), (what * @does is), (what * * @does is), (what * * * @does is), (the reason [is, was] that)]
 let message "Expletive opener. Make the real subject the subject of the sentence."
-let description "Flags there is ... that, it is ... that, and similar openers that delay the real subject."
+let description "Flags `there is ... that`, `it is ... that`, and similar openers that delay the real subject."
 let becomes ""
 let kind "Style"
 allows "Three files hold the config."

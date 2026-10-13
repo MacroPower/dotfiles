@@ -10,8 +10,8 @@
 # end of a line count.
 expr literal [$wall, $beam, $column]
 expr main load[-, ( )]bearing!(( )@literal)
-let message "Load-bearing. Name what breaks without it, or delete the word."
-let description "Flags load-bearing as a metaphor for a part that something depends on."
+let message "`load-bearing`. Name what breaks without it, or delete the word."
+let description "Flags `load-bearing` as a metaphor for a part that something depends on."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

@@ -22,7 +22,7 @@ expr verbs [see, described, mentioned, explained, discussed, outlined]
 expr passage [situation, situations, scenario, scenarios, problem, problems, (use cases), tradeoffs, limitations, risks, considerations]
 expr main [<(!as @verbs @where), (@verbs @where)>, (the [section, sections, paragraph, chapter] @where), (the [next, previous, preceding] [section, chapter]), (the [above, preceding] @passage), ([given, following, notwithstanding, despite, besides, (in addition to), (based on)] the above)]
 let message "Positional reference. Link the section by name."
-let description "Flags described above, the next section, and similar references that point at a passage by position."
+let description "Flags `described above`, `the next section`, and similar references that point at a passage by position."
 let becomes ""
 let kind "Style"
 allows "The backoff follows the restart policy in Pod Lifecycle."

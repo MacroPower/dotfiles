@@ -81,7 +81,7 @@ function prose(text,   at, word) {
     }
     word = substr(text, at)
     sub(/[^A-Z].*/, "", word)
-    finding[++held] = sprintf("%s:%d:%d: Style::ProseCapsObligation: Uppercase obligation %s. Write it in lowercase for a person, or state what the system does in the present tense.", FILENAME, FNR, column(text, at), word)
+    finding[++held] = sprintf("%s:%d:%d: Style::ProseCapsObligation: Uppercase obligation `%s`. Write it in lowercase for a person, or state what the system does in the present tense.", FILENAME, FNR, column(text, at), word)
   }
 }
 

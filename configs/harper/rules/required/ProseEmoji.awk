@@ -61,5 +61,5 @@ function prose(text,   hit, col, start, end) {
   } else {
     return
   }
-  printf "%s:%d:%d: Style::ProseEmoji: Emoji %s decorates the text. Delete it, or say the point in words.\n", FILENAME, FNR, col, hit
+  printf "%s:%d:%d: Style::ProseEmoji: Emoji `%s` decorates the text. Delete it, or say the point in words.\n", FILENAME, FNR, col, hit
 }

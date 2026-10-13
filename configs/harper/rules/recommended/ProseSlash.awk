@@ -34,7 +34,7 @@ function prose(text,   rest, base, at, hit) {
     match(hit, /^[a-z]+\/[a-z]+/)
     hit = substr(hit, 1, RLENGTH)
     if (hit != "and/or") {
-      printf "%s:%d:%d: Style::ProseSlash: Slash in %s. Join the words with and or or, or set a path or name in a code span.\n", FILENAME, FNR, column(text, base + at), hit
+      printf "%s:%d:%d: Style::ProseSlash: Slash in `%s`. Join the words with `and` or `or`, or set a path or name in a code span.\n", FILENAME, FNR, column(text, base + at), hit
       return
     }
     base += at + RLENGTH - 1

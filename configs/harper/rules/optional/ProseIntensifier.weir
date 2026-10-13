@@ -13,7 +13,7 @@
 # finding back to `very`.
 expr main [genuinely, <(![the, this, that] very), very>, really, truly, actually]
 let message "Intensifier. Give the number, or delete the word."
-let description "Flags genuinely, very, really, truly, and actually, which usually raise a claim without informing."
+let description "Flags `genuinely`, `very`, `really`, `truly`, and `actually`, which usually raise a claim without informing."
 let becomes ""
 let kind "Style"
 allows "The badge in the footer is genuine."

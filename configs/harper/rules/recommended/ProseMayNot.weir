@@ -7,8 +7,8 @@
 # It hit 55 lines in the kubernetes and nix.dev docs, and all 10
 # sampled hits allowed either reading.
 expr main may not
-let message "May not. Write must not for a prohibition, or might not for a possibility."
-let description "Flags may not, which reads as a prohibition or as a possibility."
+let message "`may not`. Write `must not` for a prohibition, or `might not` for a possibility."
+let description "Flags `may not`, which reads as a prohibition or as a possibility."
 let becomes ""
 let kind "Style"
 allows "The name must not be a dot."

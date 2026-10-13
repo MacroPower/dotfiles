@@ -11,7 +11,7 @@
 expr you [you're, (you are)]
 expr main [(whether @you [a, an] * or), (whether @you [a, an] * * or), (whether @you [a, an] * * * or), (whether @you new to)]
 let message "Vague audience. Name who the feature is for, or delete the clause."
-let description "Flags a clause that pitches to every kind of reader, such as whether you're a beginner or an expert."
+let description "Flags a clause that pitches to every kind of reader, such as `whether you're a beginner or an expert`."
 let becomes ""
 let kind "Style"
 allows "The check reports whether you are a member of the group."

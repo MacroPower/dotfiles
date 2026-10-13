@@ -10,8 +10,8 @@
 # object, which a rewrite to `use` drops. `$utilize` and `$utilise`
 # never misfire, so every form stays.
 expr main [$utilize, $utilise, ([leverage, leverages, leveraged, leveraging] [DET, PRON, PROPN, ADJ])]
-let message "Fancy word. Write use."
-let description "Flags leverage as a verb and every form of utilize."
+let message "Fancy word. Write `use`."
+let description "Flags `leverage` as a verb and every form of `utilize`."
 let becomes ""
 let kind "Style"
 allows "We use the cache."

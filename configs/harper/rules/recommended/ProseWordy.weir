@@ -8,7 +8,7 @@
 # members`).
 expr main [(a number of), (in terms of), (with respect to), (in relation to), (in light of), (by means of), (in such a way that), (in a manner that)]
 let message "Wordy. Use the short form."
-let description "Flags a number of, in terms of, with respect to, and similar phrases that most sentences can replace with one word."
+let description "Flags `a number of`, `in terms of`, `with respect to`, and similar phrases that most sentences can replace with one word."
 let becomes ""
 let kind "Style"
 allows "Many flags take a value."

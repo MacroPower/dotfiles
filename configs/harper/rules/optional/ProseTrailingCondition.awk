@@ -52,7 +52,7 @@ function sentence(n,   first, i, depth, w, t) {
       if (w == "unless" && first == "avoid") {
         continue
       }
-      printf "%s:%d:%d: Style::ProseTrailingCondition: Trailing condition. Move the %s clause to the start of the sentence.\n", sentence_file, tok_line[i], tok_col[i], w
+      printf "%s:%d:%d: Style::ProseTrailingCondition: Trailing condition. Move the `%s` clause to the start of the sentence.\n", sentence_file, tok_line[i], tok_col[i], w
       return
     }
     depth += gsub(/\(/, "(", t) - gsub(/\)/, ")", t)

@@ -3,7 +3,7 @@
 # guides use them to invite a reader (`feel free to open an issue`).
 expr main [(feel free to), (happy to help), (let me know if)]
 let message "Chatbot phrase. Delete it and respond directly."
-let description "Flags feel free to, happy to help, and let me know if, which frame text as a chat reply."
+let description "Flags `feel free to`, `happy to help`, and `let me know if`, which frame text as a chat reply."
 let becomes ""
 let kind "Style"
 allows "Open an issue for any bug you find."

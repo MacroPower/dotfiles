@@ -30,6 +30,6 @@ function prose(text,   lower, at, hit) {
       hit = substr(hit, 2)
     }
     sub(/[^a-z]+$/, "", hit)
-    printf "%s:%d:%d: Style::ProseOpenList: Open-ended list %s. Name every item, or open the list with such as.\n", FILENAME, FNR, column(text, at), hit
+    printf "%s:%d:%d: Style::ProseOpenList: Open-ended list `%s`. Name every item, or open the list with `such as`.\n", FILENAME, FNR, column(text, at), hit
   }
 }

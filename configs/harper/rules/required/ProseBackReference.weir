@@ -12,7 +12,7 @@
 # passage.
 expr main [(as [mentioned, noted, stated, discussed, described] [above, earlier, before, previously]), (as [mentioned, noted, stated, discussed],), aforementioned, (above[-, ( )]mentioned)]
 let message "Back-reference. Name or link what it points at, or delete the phrase."
-let description "Flags as mentioned above and similar phrases that point back without naming the passage."
+let description "Flags `as mentioned above` and similar phrases that point back without naming the passage."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

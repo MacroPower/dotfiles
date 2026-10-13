@@ -23,7 +23,7 @@
 expr verb [means, meant, ensures, happens, prevents, causes, keeps, works, matters, (makes!(( )it)), (allows!(( )[you, users])), (lets!(( )[you, users])), (gives!(( )you))]
 expr main [(this @verb), (this [is, was] [because, why, how]), ((,) which means), ((,) which [is, was] [why, because, how])]
 let message "Broad reference. Name the noun it points at, or join the two claims."
-let description "Flags this and which used as a pronoun for a whole earlier clause."
+let description "Flags `this` and `which` used as a pronoun for a whole earlier clause."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

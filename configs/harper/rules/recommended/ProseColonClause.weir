@@ -34,7 +34,7 @@ expr aux [AUX, is, are, was, were, has, have, had, does, do, did, will, would, c
 expr labels [Note, Warning, Tip, Caution, Important, Deprecated, TODO, FIXME, BUG, HACK, XXX]
 expr rel [that, which, who, whose, where, when, it, you, we, they, I, he, she]
 expr main * * !@labels: [([it, they, we, you, I, there, he, she] *), ([DET, PRON] [@aux, (* [@aux, @adverbs]), (* !@rel [@aux, @adverbs, <VERB, !PROG>])])]
-let message "Colon between two clauses. End the sentence with a period, or join the clauses with because or so."
+let message "Colon between two clauses. End the sentence with a period, or join the clauses with `because` or `so`."
 let description "Flags a colon that follows a clause and introduces a subject pronoun, or a determiner and a verb within three words."
 let becomes ""
 let kind "Punctuation"

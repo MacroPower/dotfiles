@@ -23,8 +23,8 @@
 expr literal [tensor, tensors, array, arrays, matrix, matrices, ndarray]
 expr word [shape, shapes]
 expr main [<(!@literal @word!(( )of( )DET( )@literal)), @word>, shaped]
-let message "Shape. Name the interface, type, or format it stands for."
-let description "Flags shape and X-shaped where they stand in for an interface, a type, or a format."
+let message "`shape`. Name the interface, type, or format it stands for."
+let description "Flags `shape` and `X-shaped` where they stand in for an interface, a type, or a format."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

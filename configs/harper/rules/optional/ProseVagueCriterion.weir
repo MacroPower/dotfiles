@@ -18,7 +18,7 @@
 expr word [appropriate, appropriately, properly, suitable, suitably, reasonable, reasonably, sensible, sane]
 expr main @word!(( )[for, to])
 let message "Vague criterion. Name the condition that makes it right."
-let description "Flags appropriate, properly, reasonable, and similar words that leave the reader to supply a criterion."
+let description "Flags `appropriate`, `properly`, `reasonable`, and similar words that leave the reader to supply a criterion."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

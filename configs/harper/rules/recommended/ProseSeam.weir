@@ -12,8 +12,8 @@
 # of a line count.
 expr literal [flashing, tape, tapes, sealer, sealant, roof, roofs, roofing, weld, welds, welded, metal, allowance, ripper]
 expr main [seam, seams]![(( )@literal), /]
-let message "Seam. Name the function, interface, or hook it means, or delete the word."
-let description "Flags seam as a metaphor for a point where code joins or swaps behavior."
+let message "`seam`. Name the function, interface, or hook it means, or delete the word."
+let description "Flags `seam` as a metaphor for a point where code joins or swaps behavior."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

@@ -27,7 +27,7 @@ expr semi [(*;), (* *;), (* * *;), (* * * *;), (* * * * *;), (* * * * * *;)]
 expr comma [(*,), (* *,), (* * *,), (* * * *,), (* * * * *,)]
 expr main [(@neg @semi @then), (@neg @lead @comma @then [DET, about])]
 let message "Contrastive negation. State what it is, and give the contrast its own sentence only if a reader expects it."
-let description "Flags a clause that denies one framing before asserting another, such as this isn't a cache; it's a ledger."
+let description "Flags a clause that denies one framing before asserting another, such as `this isn't a cache; it's a ledger`."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

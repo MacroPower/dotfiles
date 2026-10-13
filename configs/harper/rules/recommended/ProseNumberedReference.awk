@@ -34,7 +34,7 @@ function BEGIN_CHECK() {
 }
 
 function report(at, what) {
-  printf "%s:%d:%d: Style::ProseNumberedReference: Numbered reference %s. Name the function or the section, or link a commit permalink.\n", FILENAME, FNR, column($0, at), what
+  printf "%s:%d:%d: Style::ProseNumberedReference: Numbered reference `%s`. Name the function or the section, or link a commit permalink.\n", FILENAME, FNR, column($0, at), what
 }
 
 function prose(text,   at, hit, ref) {

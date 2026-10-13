@@ -6,7 +6,7 @@
 # last (`the request ultimately reaches the scheduler`).
 expr main [(in short,), (ultimately,)]
 let message "Restatement. Make the first statement stand alone, and delete the phrase."
-let description "Flags in short and ultimately as sentence openers that announce a summary."
+let description "Flags `in short` and `ultimately` as sentence openers that announce a summary."
 let becomes ""
 let kind "Style"
 let scope "Sentence"
