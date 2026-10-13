@@ -10,8 +10,8 @@
 # anyway (`gets flushed` goes unflagged either way).
 #
 # The filter `<VERB, !@stative>` requires one token to be a verb and not
-# one of the stative words, the words that name a state rather than an
-# action, which the tagger also marks as verbs. The stative list holds a
+# one of the stative words. Stative words name a state rather than an
+# action, and the tagger also marks them as verbs. The stative list holds a
 # progressive, a form of `be` plus an `-ing` verb (`has been running` is
 # active voice). It also holds the participles that docs use as
 # adjectives (`the flag is set`, `is enabled by default`, `the port is

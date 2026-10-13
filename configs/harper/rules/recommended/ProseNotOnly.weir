@@ -6,7 +6,7 @@
 # Weir has no lookbehind, so the first branch consumes the token before
 # the space ahead of `not` and the filter narrows the finding back to
 # the phrase. A comma fails that token, and an open paren leaves no
-# space before `not`. The branch also needs a token before `not`, so a
+# space before `not`. The branch also needs a token before `not`. A
 # sentence that opens with `Not only` counts through the second branch,
 # which needs the helping verb that this form moves ahead of the subject
 # (`Not only does the cache hold rules`), or through the third. That

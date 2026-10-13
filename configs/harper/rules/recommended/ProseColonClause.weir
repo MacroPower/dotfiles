@@ -15,16 +15,17 @@
 # before its colon, so three words is the floor for a splice. The
 # label list still covers a label that follows other words.
 #
-# After the colon, a clause shows itself by an auxiliary, a helping verb
-# such as `is`, `has`, or `can`, or by an adverb in the second or third
-# position (`the cache is cold`, `the tests always pass`), or by a verb
-# in the third (`the first rule wins`). The pattern rejects a bare VERB
+# After the colon, three signs mark a clause. One is an auxiliary, a
+# helping verb such as `is`, `has`, or `can` (`the cache is cold`).
+# Another is an adverb in the second or third position (`the tests
+# always pass`), and the last is a verb in the third (`the first rule
+# wins`). The pattern rejects a bare VERB
 # tag in the first two positions, because the tagger marks participles
 # (`-ing` and `-ed` verb forms) and many nouns as verbs. Without that
 # limit, `the path passed by Claude Code`, `the value set by the
 # environment`, and `the section on caching` all read as clauses. The
 # pattern also rejects an adverb directly after a determiner such as
-# `the` (`the only value`, `the always-on mode`), and a pronoun such as
+# `the` (`the only value`, `the always-on mode`). A pronoun such as
 # `that` or `you` in the second position (`the tag that was pushed`,
 # `the host you are targeting`) marks a noun phrase, a noun and the
 # words attached to it, rather than a clause.

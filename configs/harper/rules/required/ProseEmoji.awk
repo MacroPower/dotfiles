@@ -9,8 +9,8 @@
 # mark in a table cell or a prompt glyph is text, not decoration.
 #
 # A range needs a UTF-8 locale. BEGIN_CHECK reads `utf8`, which the
-# reader sets when gawk reads a two-byte character as one, and under
-# the C locale spells the same block as its UTF-8 bytes, so the output
+# reader sets when gawk reads a two-byte character as one. Under the C
+# locale it spells the same block as its UTF-8 bytes, so the output
 # matches in both.
 #
 # Output format, one line per finding:

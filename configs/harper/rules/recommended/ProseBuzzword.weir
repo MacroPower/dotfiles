@@ -6,7 +6,7 @@
 # product or a field uses the bare word. Weir ignores case and the
 # tagger never marks `Bedrock` or `Nexus` as a proper noun, so the
 # phrase is the only guard against AWS Bedrock (`hand the response to
-# Amazon Bedrock for processing`, which is why `bedrock for` needs
+# Amazon Bedrock for processing`, the reason `bedrock for` needs
 # `the`) and Sonatype Nexus. `paradigm` counts only as `paradigm shift`
 # or `new paradigm`, because `programming paradigm` is a term of art, and
 # `north star` passes before `metric`, which names a product metric.
@@ -14,8 +14,8 @@
 # `modality` is left out, because machine-learning docs use it for an
 # input type (`an image modality`), and so are `vantage` (a cost tool)
 # and `locus` (genetics and math). `vector`, `primitive`, `surface`,
-# `harness`, `scaffolding`, `ratchet`, and `evacuate` stay out too,
-# because each names something in code or operations (a math type, a
+# `harness`, `scaffolding`, `ratchet`, and `evacuate` stay out too.
+# Each names something in code or operations (a math type, a
 # language built-in, an attack surface, a test harness, a code
 # generator, a lint baseline that only tightens, a node drain).
 expr main [substrate, substrates, endgame, flywheel, flywheels, (bedrock of), (the bedrock for), (nexus [of, between]), (paradigm shift), (new paradigm), (north[-, ( )]star!(( )[metric, metrics])), (gold[-, ( )]plating), (gold[-, ( )]plated), (wedge in)]

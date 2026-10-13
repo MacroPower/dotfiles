@@ -1,10 +1,10 @@
-# Each word tells the reader a step is easy or a behavior is small
+# Each word tells the reader that a step is easy or a behavior is small
 # (`simply`, `merely`, `easily`, `straightforward`, `just run`), which
 # the reader judges for themselves. Technical writers call these
 # minimizing words, because each makes a step sound smaller. None needs
-# a guard for a product name or a mention of the word, because both are
-# rare in technical prose, and the skill wants the words gone from a
-# sentence about behavior.
+# a guard for a product name or a mention of the word. Both are rare in
+# technical prose, and the skill wants the words gone from a sentence
+# about behavior.
 #
 # `simply` skips a following ` put`, because the restatement rule
 # reports `Simply put`. The guard sits glued to the word so it reads

@@ -1,8 +1,8 @@
 # `may` reads two ways, as permission (`the caller may pass nil`) or as
 # a possibility (`the cache may be stale`). The technical-writing skill
 # keeps `may` for an option a person is free to take and writes
-# `might` for a possibility, so the rule counts `may` before a verb or
-# an adverb after any word but `you`. The fix writes `might` for a
+# `might` for a possibility. The rule counts `may` before a verb or an
+# adverb after any word but `you`. The fix writes `might` for a
 # possibility and `can` for an ability or a permission.
 #
 # The guard on the next word skips the phrases other rules report:

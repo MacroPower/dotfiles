@@ -18,11 +18,11 @@
 # own.
 #
 # Two forms stay flagged on purpose, because a word rule cannot tell
-# them from a trailing participial phrase and both rewrite cleanly: a
-# gerund subject after a clause that opens the sentence (`If the file is
-# missing, creating it is the caller's job`) and a participle phrase
-# bracketed by commas (`The scheduler, allowing for clock skew, waits
-# five seconds`).
+# them from a trailing participial phrase and both rewrite cleanly. One
+# is a gerund subject after a clause that opens the sentence (`If the
+# file is missing, creating it is the caller's job`). The other is a
+# participle phrase bracketed by commas (`The scheduler, allowing for
+# clock skew, waits five seconds`).
 #
 # `fostering` and `showcasing` stay out, because the fancy-word rule
 # reports every form of both words and one word should draw one finding.

@@ -6,9 +6,10 @@
 # title, and a heading that is one code span, because a command
 # reference names the exact command.
 #
-# The check reports a heading at any level from two down when it starts
+# The check reports a heading at any level from two down that starts
 # with a question word or an auxiliary (a helping verb such as `is`,
-# `has`, or `can`), or ends with a question mark or a colon. At level
+# `has`, or `can`). It also reports one that ends with a question mark
+# or a colon. At level
 # two it also reports a heading that contains a pronoun, an auxiliary,
 # or a subordinating conjunction (`because`, `when`, `if`) anywhere, or
 # that runs past six words. Deeper headings skip those two checks,

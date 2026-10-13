@@ -4,9 +4,9 @@
 #
 # The paragraph boundaries follow ProseSentenceLength. Paragraphs end
 # at a skipped line, a line the reader passes as blank, and the start
-# of a list item, heading, table row, or HTML line, so each list item
-# counts as its own paragraph. Sentences end at a `.`,
-# `?`, or `!` before whitespace or the line end, after any closing
+# of a list item, heading, table row, or HTML line. Each list item
+# therefore counts as its own paragraph. Sentences end at a `.`, `?`,
+# or `!` before whitespace or the line end, after any closing
 # quote, paren, bracket, or emphasis. `e.g.`, `i.e.`, `vs.`, and `cf.`
 # do not end a sentence, and neither does a three-period ellipsis
 # (`an implicit "About..." in front`). Words after the last sentence

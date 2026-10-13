@@ -3,10 +3,11 @@
 # idiomatic one means something its words do not add up to (`figure
 # out`, `kick off`, `get rid of`). A reader who does not know the idiom
 # cannot parse it, and a dictionary lookup of each word fails. Each
-# phrase here has a one-word verb that says the same thing: find, learn,
-# write, become, start, create, send, remove, examine, meet, show, read,
-# exclude, fix, connect, stop, review, wait, assemble, track, handle,
-# watch, apply, retire, exit, or locate. `go ahead and` adds nothing, so
+# phrase here has a one-word verb that says the same thing: `find`,
+# `learn`, `write`, `become`, `start`, `create`, `send`, `remove`,
+# `examine`, `meet`, `show`, `read`, `exclude`, `fix`, `connect`,
+# `stop`, `review`, `wait`, `assemble`, `track`, `handle`, `watch`,
+# `apply`, `retire`, `exit`, or `locate`. `go ahead and` adds nothing, so
 # the fix deletes it.
 #
 # Phrases that docs use as technical terms or in their literal sense

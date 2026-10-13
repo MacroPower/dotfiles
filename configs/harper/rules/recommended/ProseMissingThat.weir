@@ -4,10 +4,11 @@
 # object and has to reread when the clause's own verb arrives. `that`
 # marks the clause from its first word (`ensure that the order holds`).
 #
-# The rule counts the verb when a determiner (a word that introduces a
-# noun, such as `the`, `a`, or `this`), one to three more words, and
-# then an auxiliary (a helping verb such as `is`, `has`, or `can`) or
-# one of `exists`, `runs`, `matches`, `contains`, and `fails` follow it.
+# The rule counts the verb when a determiner follows it, a word that
+# introduces a noun, such as `the`, `a`, or `this`. One to three more
+# words come next, and then an auxiliary (a helping verb such as `is`,
+# `has`, or `can`) or one of `exists`, `runs`, `matches`, `contains`,
+# and `fails`.
 # The words in between exclude `that`, `which`, `who`, `to`, pronouns,
 # conjunctions, and commas, because each one ends the noun or opens a
 # clause of its own (`check your docs to be sure`). The filter narrows

@@ -4,8 +4,8 @@
 # the workers`). The reader has to hold the sentence open across the
 # aside, so a long one reads better as a sentence of its own.
 #
-# The check counts the words between the parentheses, after the reader
-# blanks code spans, and reports an aside of eight or more words when a
+# The check counts the words between the parentheses after the reader
+# blanks code spans. It reports an aside of eight or more words when a
 # lowercase word follows it, a sign that the sentence goes on. An aside
 # at the end of a sentence passes. Each part of a hyphenated word
 # counts, the way the sentence-length check counts it.
