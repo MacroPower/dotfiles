@@ -3951,13 +3951,13 @@ in
         - Never wait by sleeping; a foreground poll loop is the wrong shape even when each sleep is short.
       ''
       + lib.optionalString cfg.sleepGuard.enable ''
-        - A hook denies foreground waiting: a filler command that only passes time (`sleep 6`, `sleep 1; echo waiting`) at any duration, a `sleep` over ${toString cfg.sleepGuard.maxSeconds}s even inside real work, and a `sleep` whose duration it cannot read (`sleep $VAR`). A short `sleep` is only for a settle step inside a command doing real work (`kill "$pid"; sleep 1; pgrep -f server`).
+        - A hook denies foreground waiting: a filler command that only passes time (`sleep 6`, `sleep 1; echo waiting`) at any duration, a `sleep` over ${toString cfg.sleepGuard.maxSeconds}s even inside real work, and a `sleep` whose duration it cannot read (`sleep $VAR`). Short sleeps belong only in a settle step inside a command doing real work (`kill "$pid"; sleep 1; pgrep -f server`).
         - Do not bide time with no-op filler (`true`, `jobs`, bare `echo`) while a background task runs; end the turn instead -- the completion notification arrives on its own, and idle turns only delay it.
       ''
       + ''
         - Long-running work belongs in a Bash call with `run_in_background: true`. The session stays free, you get a notification when the command exits, and `Read` fetches its captured output. `sleep` inside a background call is fine, so an `until <check>; do sleep 1; done` poll loop there is the right way to wait on a condition.
         - For one notification per event rather than one on completion, use the `Monitor` tool. It is deferred, so load it with `ToolSearch("select:Monitor")` before calling it.
-        - A Monitor watch ends after 30 minutes at most and sends a notification asking to be re-armed; re-arm it when the condition is still pending.
+        - Monitor watches end after 30 minutes at most and send a notification asking to be re-armed. Re-arm the watch when its condition is still pending.
         - Fire off independent work in parallel, then act on completion notifications as they arrive. A spawn-one, wait, spawn-the-next loop serializes work that could have run at once.
       ''
       + lib.optionalString cfg.rmGuard ''
@@ -3984,8 +3984,8 @@ in
         - Every plan ends with a `## Skills` section listing the skills the implementer invokes before starting work, one bullet per skill with the reason it applies (for example `prose` for any documentation or commit messages, `taskfile` for Taskfile edits). Write `None` when no skill applies. The implementer invokes each listed skill via the `Skill` tool before the first edit.
 
         ## Versioning
-        - A project on a v0 release (latest tag starts with `0.`) or labeled UNSTABLE, ALPHA, or pre-release makes no compatibility promise, so make breaking changes freely there. Make the clean change instead of adding shims, deprecation paths, or fallbacks for the old behavior.
-        - A project on v1 or later, or labeled STABLE or PRODUCTION, promises compatibility, so keep the old behavior working there. Code that has not shipped in a release yet carries no promise, so you MAY break it.
+        - Projects on a v0 release (latest tag starts with `0.`) or labeled UNSTABLE, ALPHA, or pre-release make no compatibility promise, so make breaking changes freely there. Make the clean change instead of adding shims, deprecation paths, or fallbacks for the old behavior.
+        - Projects on v1 or later, or labeled STABLE or PRODUCTION, promise compatibility, so keep the old behavior working there. Code that has not shipped in a release yet carries no promise, so you MAY break it.
       ''
       + lib.optionalString (bundledInstructions != "") "\n${bundledInstructions}\n"
       + lib.optionalString (cfg.hostContext != "") "\n## Host Environment\n\n${cfg.hostContext}\n";

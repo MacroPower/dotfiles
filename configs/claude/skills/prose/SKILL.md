@@ -11,21 +11,21 @@ description: >-
 ## Linter
 
 A hook runs `prose-lint` after every Write and Edit of a markdown or
-source file and returns its findings before your next turn. A Bash hook
-lints the message that a `git commit` or `gh pr create` carries.
-`prose-lint` tags each finding with its rule's tier, and the tier sets
-what it asks of you.
+source file and returns its findings before your next turn. The Bash
+hook also lints the message that a `git commit` or `gh pr create`
+carries. `prose-lint` tags each finding with its rule's tier, and the
+tier sets what it asks of you.
 
-A Required finding names an exact phrase with a mechanical fix, so fix
-it. The Bash hook denies a commit or PR message with one every time.
+Required findings name an exact phrase with a mechanical fix, so fix
+them. The Bash hook denies a commit or PR message with one every time.
 
-A Recommended finding comes from a shape detector, so fix it unless it
-misreads the sentence. The Bash hook denies a commit or PR message
-with one once. When you judge the finding false, run the unchanged
+Recommended findings come from shape detectors, so fix each one unless
+it misreads the sentence. The Bash hook denies a commit or PR message
+with one once. When you judge a finding false, run the unchanged
 command again and it passes.
 
-An Optional finding is a suggestion, so fix it where the rewrite reads
-better. It never denies a command on its own.
+Optional findings are suggestions, so fix each one where the rewrite
+reads better. They never deny a command on their own.
 
 The rules are deliberately blunt, so a fix is usually cheaper than the
 exception. The linter matches word lists, so it misses many sentences
@@ -129,43 +129,43 @@ that second one.
 
 ## Specificity
 
-Detail scales with proximity. A docstring describes its own method but
-not the private helpers it calls. A README, announcement, or
-introduction names only what a user can observe. It never names the data
-structure behind the API, a buffer size, or a retry count that nothing
-outside the code depends on. When an internal detail matters, state its
-observable consequence instead.
+Detail scales with proximity. Docstrings describe their own method but
+not the private helpers it calls. READMEs, announcements, and
+introductions name only what a user can observe. They never name the
+data structure behind the API, a buffer size, or a retry count that
+nothing outside the code depends on. When an internal detail matters,
+state its observable consequence instead.
 
-A stated fact does not need reassurance. A follow-up that vouches for a
-fact (`It does exactly that`), fences off a scope nobody questioned
-(`returns the number, and nothing else`), or restates it in other words
-names nothing the reader can observe, and the same words fit any fact in
-any project's docs. A negation (`It does not execute the statement`) is
-the same reassurance unless the opposite is a behavior a reader expects
-from that name, the way `does not follow symlinks` corrects a real
-expectation. Read every sentence's last clause on its own, because most
+Stated facts do not need reassurance. Follow-ups that vouch for a fact
+(`It does exactly that`), fence off a scope nobody questioned
+(`returns the number, and nothing else`), or reword the fact name
+nothing the reader can observe. The same words fit any fact in any
+project's docs. Negations (`It does not execute the statement`) are the
+same reassurance unless a reader expects the opposite behavior from
+that name. `does not follow symlinks` passes, because it corrects a
+real expectation. Read every sentence's last clause on its own, because most
 of these land there.
 
 Name every item of a list, or say at the start that the list is
-partial (`such as`). A list that ends with `etc.` or `and so on` leaves
-its contents to the reader.
+partial (`such as`). Lists that end with `etc.` or `and so on` leave
+their contents to the reader.
 
 ## Durability
 
 Docs and comments stay in place while the code under them changes, so
-write each sentence to stay true through those changes. A commit
-message describes one change, and this section does not apply to it.
+write each sentence to stay true through those changes. Commit
+messages describe one change, and this section does not apply to them.
 
 One fact per sentence also means that a change to the system edits or
 deletes one sentence. Do not tie a fact to another fact that changes on
 its own (`unlike the v1 API`, `faster than the old path`) unless the
 comparison is the point. Do not date a claim (`currently`, `new`, `no
-longer`). A count of things the system can grow (`the three modes`,
-`both backends`) goes stale with the next one. Give the command that
-regenerates the count, or drop it.
+longer`). Counts of things the system can grow (`the three modes`,
+`both backends`) go stale when the system adds one more. Give the
+command that regenerates the count, or drop it.
 
 Link a passage by name, never by position (`described above`, `the
-next section`). A positional reference breaks when someone moves the
+next section`). Positional references break when someone moves the
 passage or adds one between.
 
 ## Structure
@@ -173,8 +173,8 @@ passage or adds one between.
 Let ideas come in the number they naturally have. Do not force groups
 of three.
 
-Give each paragraph one topic and six sentences or fewer. A longer
-paragraph usually carries a second topic.
+Give each paragraph one topic and six sentences or fewer. Longer
+paragraphs usually carry a second topic.
 
 One name per concept, including verbs. If the bucket `spends` tokens in
 one sentence, it does not `hand out` or `consume` them in the next.
@@ -184,7 +184,7 @@ before.
 
 ## Headers
 
-A header names the topic, and the body makes the claim. Keep every
+Each header names a topic, and the body under it makes the claim. Keep every
 header below the title to a short noun phrase, usually one to three
 words. The request that asked for the document lists its topics in
 sentence form (`cover how matching works and how the SDK caches rules`).

@@ -73,7 +73,7 @@ Write for your reader, not about the system.
 - Open a warning with the command or the condition. State the risk in the next
   sentence: "Do not delete the volume while the pod runs. The pod loses its
   data."
-- A note gives information and never an instruction. A reader who skips every
+- Notes give information and never an instruction. A reader who skips every
   note still completes the procedure.
 - Put the common case first and the exceptions after it.
 - Never write `please` in an instruction. Never write `simply`, `easy`, or
