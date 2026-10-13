@@ -130,6 +130,17 @@ def git(dest: Path, *args: str) -> str:
     return proc.stdout.strip()
 
 
+def run_tool(cmd: list[str], env: dict[str, str] | None = None) -> str:
+    """Return the command's stdout, or exit with its stderr when it fails."""
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    except OSError as err:
+        sys.exit(f"measure.py: cannot run {cmd[0]}: {err.strerror}")
+    if proc.returncode != 0:
+        sys.exit(f"measure.py: {' '.join(cmd)} exited {proc.returncode}: {proc.stderr.strip()}")
+    return proc.stdout
+
+
 def head(dest: Path) -> str | None:
     if not (dest / ".git").exists():
         return None
@@ -231,11 +242,8 @@ def make_shadows(docs: list[tuple[Source, Path, Path]], tmp: Path) -> list[Doc]:
 
     def one(item: tuple[int, tuple[Source, Path, Path]]) -> Doc:
         i, (src, dest, path) = item
-        proc = subprocess.run(
-            [prose_lint, "--shadow", str(path)], capture_output=True, text=True, check=True
-        )
         out = shadow_dir / f"{i}{SHADOW_EXT[src.corpus]}"
-        out.write_text(proc.stdout)
+        out.write_text(run_tool([prose_lint, "--shadow", str(path)]))
         return Doc(src.repo, str(path.relative_to(dest)), out)
 
     with ThreadPoolExecutor() as pool:
@@ -292,15 +300,8 @@ def lint_awk(docs: list[Doc], checks: list[tuple[str, Path]]) -> list[Hit]:
 
     def one(item: tuple[Doc, tuple[str, Path]]) -> list[Hit]:
         doc, (internal, script) = item
-        proc = subprocess.run(
-            ["awk", "-f", str(script), str(doc.lint_path)],
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env,
-        )
         found = []
-        for out in proc.stdout.splitlines():
+        for out in run_tool(["awk", "-f", str(script), str(doc.lint_path)], env).splitlines():
             m = AWK_LINE.match(out)
             if m:
                 line = int(m["line"])
