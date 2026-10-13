@@ -12,3 +12,5 @@ A normalizer that ignores whitespace can fairly ignore line breaks too.
 You should fix the typo before you merge.
 
 The cache evicts entries in a way that keeps the order.
+
+Run the build, and the prompt appears.
