@@ -7,3 +7,5 @@ The flag defaults to five, which means the pool holds five entries.
 The token is short-lived. This allows rotation without a restart.
 
 The hook skips the check. This is because the file is generated.
+
+The lock is held, which is why the write waits.
