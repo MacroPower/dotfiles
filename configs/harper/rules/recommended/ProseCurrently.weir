@@ -3,8 +3,9 @@
 # catches a claim dated to the present. Bare `currently` is too common
 # as runtime state (`the currently selected row`, `whether the item is
 # currently available`), so it counts only before a word that names
-# support or a limit, or after a negated or modal auxiliary. `TODO`
-# stays out, because a code comment uses it as a marker.
+# support or a limit, or after a helping verb such as `does`, `cannot`,
+# or `will`. `TODO` stays out, because a code comment uses it as a
+# marker.
 #
 # `at the moment` counts only at the end of a clause, because before a
 # clause it means `when` (`spends its tokens at the moment it is

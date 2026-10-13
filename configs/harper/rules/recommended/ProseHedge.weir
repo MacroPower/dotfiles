@@ -1,20 +1,24 @@
-# Harper's Hedging rule matches three phrases, so this list carries
-# the rest. `should work` and its kin count only after `it`, `this`, or
-# `that`, where they hedge a claim about the code (`this should fix
-# the race`). After `you` they give advice, which the
-# technical-writing skill writes with `should`. `should help` stays
-# out, because the allows rule reports `help you`. `in a way` stays out
-# too, because it also names a manner (`in a way that keeps the
-# order`). The Optional rule of the same name holds `relatively`,
-# `effectively`, `virtually`, and `practically`. The opinion rule holds
-# the phrases that frame a claim as someone's view. `kind of` and `sort
-# of` count only before an adjective, adverb, or verb and without a
-# determiner before them, because docs use them as nouns (`the kind of
-# diff`, `a sort of index`). `a bit` is left out, because a mask sets a
-# bit. `a little bit` stays. `possibly` is left out too, because it gives the range of a
-# value (`a non-nil, possibly empty map`). `rather` is left out as
-# well, because `rather than` is a contrast and a `!than` guard misses
-# it when a comment line breaks between the two words.
+# A hedge is a word or phrase that keeps the writer from committing to a
+# claim (`this should fix the race`, `probably`, `to some extent`).
+#
+# Harper's Hedging rule matches three phrases, so this list carries the
+# rest. `should work` and its kin count only after `it`, `this`, or
+# `that`, where they hedge a claim about the code (`this should fix the
+# race`). After `you` they give advice, which the technical-writing
+# skill writes with `should`. `should help` stays out, because the
+# allows rule reports `help you`. `in a way` stays out too, because it
+# also names a manner (`in a way that keeps the order`). The Optional
+# rule of the same name holds `relatively`, `effectively`, `virtually`,
+# and `practically`. The opinion rule holds the phrases that frame a
+# claim as someone's view. `kind of` and `sort of` count only before an
+# adjective, adverb, or verb and without a determiner (a word that
+# introduces a noun, such as `the`, `a`, or `this`) before them, because
+# docs use them as nouns (`the kind of diff`, `a sort of index`). `a
+# bit` is left out, because a mask sets a bit. `a little bit` stays.
+# `possibly` is left out too, because it gives the range of a value (`a
+# non-nil, possibly empty map`). `rather` is left out as well, because
+# `rather than` is a contrast and a `!than` guard misses it when a
+# comment line breaks between the two words.
 #
 # `appears to` skips a determiner, pronoun, or proper noun after it,
 # where it means `becomes visible to` (`the prompt appears to the

@@ -2,17 +2,17 @@
 # (`check if the file exists`), and `whether` reads one way.
 #
 # The plurals `checks` and `tests` are also nouns, which take a
-# conditional `if` (`skips these checks if the file is generated`,
-# `run the tests if you changed the parser`), so the first branch skips
-# them after a determiner, adjective, or number. Weir has no
-# lookbehind, so the filter consumes the word before and narrows the
-# finding back to the phrase. The singular `check if` and `test if`
-# count without that guard, because a sentence often opens with them
-# (`Check if the file exists`) and a filter needs a word before the
-# match. The noun reading before a conditional `if` never turned up in
-# the corpus. `know` is left out, because the chatbot rule reports
-# `let me know if`, and `report` is left out, because `a bug report
-# if` is a noun.
+# conditional `if` (`skips these checks if the file is generated`, `run
+# the tests if you changed the parser`), so the first branch skips them
+# after a determiner (a word that introduces a noun, such as `the`, `a`,
+# or `this`), adjective, or number. Weir has no lookbehind, so the
+# filter consumes the word before and narrows the finding back to the
+# phrase. The singular `check if` and `test if` count without that
+# guard, because a sentence often opens with them (`Check if the file
+# exists`) and a filter needs a word before the match. The noun reading
+# before a conditional `if` never turned up in the corpus. `know` is
+# left out, because the chatbot rule reports `let me know if`, and
+# `report` is left out, because `a bug report if` is a noun.
 #
 # It hit 45 lines in the kubernetes and nix.dev docs, and 9 of 10
 # sampled hits meant whether. The miss was a condition after `see`

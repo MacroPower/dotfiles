@@ -1,6 +1,8 @@
-# Each adverb raises a claim without measuring it, so the fix gives the
-# number (`significantly faster` becomes `twice as fast`) or drops the
-# word. The Optional rule of the same name holds `genuinely`.
+# Grammar calls an adverb that strengthens a claim an intensifier
+# (`extremely`, `significantly`). Each one here raises a claim without
+# measuring it, so the fix gives the number (`significantly faster`
+# becomes `twice as fast`) or drops the word. The Optional rule of the
+# same name holds `genuinely`.
 #
 # `significantly` also fires on a statistical claim (`differs
 # significantly at p < 0.01`). No guard tells the two apart, and the

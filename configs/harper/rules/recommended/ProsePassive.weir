@@ -1,28 +1,36 @@
+# Passive voice makes the thing acted on the subject of the sentence. It
+# names the actor, which grammar calls the agent, after `by` or not at
+# all (`the file is read by the parser`, `the job is retried`). The rule
+# matches a form of `be` followed by a participle, the `-ed` or `-en`
+# form of a verb (`retried`, `written`).
+#
 # Forms of `get` are left out on purpose. Matching is case-insensitive,
 # so a `get VERB` branch fires on `Get returns the value` in a Go doc
 # comment, and Harper's tagger rarely marks the participle after `gets`
 # anyway (`gets flushed` goes unflagged either way).
 #
-# The filter `<VERB, !@stative>` requires one token to be a verb and
-# not one of the stative words the tagger also marks as verbs. The
-# stative list holds a progressive (`has been running` is active
-# voice), the participial adjectives docs lean on (`the flag is set`,
-# `is enabled by default`, `the port is stuck`), and the naming idioms
-# (`is called name`, `is known as a handle`, `is meant for testing`).
-# It also holds the purpose wrappers the intent rule reports
-# (`is designed to`, `is intended to`), so each draws one finding.
-# `recommended` is stative for the same reason, because the obligation
-# rule reports `is recommended`.
+# The filter `<VERB, !@stative>` requires one token to be a verb and not
+# one of the stative words, the words that name a state rather than an
+# action, which the tagger also marks as verbs. The stative list holds a
+# progressive, a form of `be` plus an `-ing` verb (`has been running` is
+# active voice). It also holds the participles that docs use as
+# adjectives (`the flag is set`, `is enabled by default`, `the port is
+# stuck`) and the naming idioms (`is called name`, `is known as a
+# handle`, `is meant for testing`). The purpose wrappers the intent rule
+# reports sit there too (`is designed to`, `is intended to`), so each
+# draws one finding. `recommended` is stative for the same reason,
+# because the obligation rule reports `is recommended`.
 #
-# The `by` branch exists because the tagger misses many participles
-# (`is guarded by a lock`). It accepts any word the tagger does not
-# mark as an adjective, adverb, noun, or preposition, so a degree (`off
-# by one`) and a deadline (`empty by the time`) pass. Weir has no token
-# class for a number, so the object of `by` must be a determiner,
-# pronoun, or proper noun instead: that skips a dimension (`64 by 64`),
-# a criterion (`keyed by path`), and the phrases where `by` names no
-# actor (`by default`, `by design`, `by hand`), while `by a lock`, `by
-# the scheduler`, and `by git` still count as agents.
+# The `by` branch exists because the tagger misses many participles (`is
+# guarded by a lock`). It accepts any word the tagger does not mark as
+# an adjective, adverb, noun, or preposition, so a degree (`off by one`)
+# and a deadline (`empty by the time`) pass. Weir has no token class for
+# a number, so the object of `by` must be a determiner (a word that
+# introduces a noun, such as `the`, `a`, or `this`), a pronoun, or a
+# proper noun instead. That skips a dimension (`64 by 64`), a criterion
+# (`keyed by path`), and the phrases where `by` names no actor (`by
+# default`, `by design`, `by hand`). `by a lock`, `by the scheduler`,
+# and `by git` still count as agents.
 #
 # The tagger marks many participles as adjectives (`cached`,
 # `retried`, `flushed`), so `missed` lists the common ones by hand.
@@ -59,10 +67,11 @@
 # message mentions. `live` is stative because the tagger marks it as a
 # verb (`a caller whose context is live`).
 #
-# Two forms stay flagged on purpose: an identifier used as a predicate
-# noun (`The default is print`), which belongs in a code span, and a
-# resultative participle (`The issue is closed`), which the tagger
-# cannot tell from the event and which the skill rewrites anyway.
+# Two forms stay flagged on purpose. One is an identifier used as a noun
+# after `is` (`The default is print`), which belongs in a code span. The
+# other is a participle that names the state an event leaves behind
+# (`The issue is closed`). The tagger cannot tell it from the event, and
+# the skill rewrites it anyway.
 expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, live, called, named, meant, supposed, recommended, designed, intended, bound, referred, prepared, advised, assured, reminded, warned]
 expr missed [cached, compiled, computed, configured, decoded, discarded, encoded, evicted, fetched, flushed, hashed, linted, normalized, parsed, patched, persisted, propagated, queued, redirected, reset, restarted, retried, revoked, rotated, sanitized, serialized, stripped, synced, tagged, truncated, validated]
 expr be [is, are, was, were, be, been, being, isn't, aren't, wasn't, weren't]

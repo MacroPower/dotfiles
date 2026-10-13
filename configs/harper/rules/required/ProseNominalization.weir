@@ -1,15 +1,16 @@
-# Each phrase is a weak verb plus a noun that names the real verb
-# (`make a decision`, `perform a lookup`, `take into account`), or a
-# copula plus an adjective that does the same (`is dependent on`).
-# The list names each phrase in full, because a pattern such as
-# `[make, perform] DET NOUN` also matches `make a copy` and
-# `perform the request`, where the noun is the object and no single
-# verb replaces the pair.
+# Grammar calls a noun made from a verb a nominalization (`decision`
+# from `decide`). Each phrase is a weak verb plus a noun that names the
+# real verb (`make a decision`, `perform a lookup`, `take into
+# account`), or a form of `be` plus an adjective that does the same (`is
+# dependent on`). The list names each phrase in full, because a pattern
+# such as `[make, perform] DET NOUN` also matches `make a copy` and
+# `perform the request`, where the noun is the object and no single verb
+# replaces the pair.
 #
-# Each verb carries its inflections. `$perform` expands to perform,
-# performs, performed, and performing through Harper's dictionary,
-# and the lists below add what the dictionary leaves out, such as
-# `made`, `took`, and `drew`. `provide` lists its forms by hand,
+# Each verb carries its forms for tense and person. `$perform` expands
+# to perform, performs, performed, and performing through Harper's
+# dictionary, and the lists below add what the dictionary leaves out,
+# such as `made`, `took`, and `drew`. `provide` lists its forms by hand,
 # because `$provide` also matches `provider` (`provider support for
 # Kubernetes`).
 #

@@ -8,10 +8,10 @@
 # a `PUNCT` nor a `SYM` guard matches one. A citation at the end of the
 # sentence still fires, because the guard reads only the next token.
 #
-# `industry reports` needs a finding verb after it, because the bare
-# noun phrase names real filings (`industry reports are filed
-# monthly`). `many believe` also fires on a question (`how many
-# believe it?`), which technical prose rarely asks.
+# `industry reports` needs a finding verb after it, because the phrase
+# alone names real filings (`industry reports are filed monthly`). `many
+# believe` also fires on a question (`how many believe it?`), which
+# technical prose rarely asks.
 expr tagged [ADJ, ADP, ADV, AUX, CCONJ, DET, INTJ, NOUN, NUM, PART, PRON, PROPN, SCONJ, SYM, VERB, X]
 expr claim [believe, say, agree, suggest, warn, recommend, argue, claim]
 expr finding [show, shows, showed, suggest, suggests, indicate, indicates]

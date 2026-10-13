@@ -1,6 +1,7 @@
-# Each phrase announces what the text is about to do (`Let's dive in`,
-# `In this section, we'll explore the scheduler`) instead of doing it,
-# so the fix deletes the announcement and opens on the first point.
+# Each phrase is a signpost, the writing-guide term for a phrase that
+# announces what the text is about to do (`Let's dive in`, `In this
+# section, we'll explore the scheduler`) instead of doing it. The fix
+# deletes the announcement and opens on the first point.
 #
 # The `let's` and `we'll` phrases are spelled out, because the bare
 # verbs also narrate code (`we'll take the lock`, `let's try the fast

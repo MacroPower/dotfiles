@@ -4,20 +4,22 @@
 # technical-writing skill defines, or a bare command for a step.
 #
 # `need to` skips a negation before it (`you do not need to restart`),
-# which states that no obligation exists, and a determiner, where
-# `need` is a noun (`the need to scale`). Weir has no lookbehind, so
-# the filter consumes the word before `need` and narrows the finding
-# back to the phrase. `If you need to X, do Y` still counts, because
-# Weir cannot anchor a branch to the start of a sentence, and a branch
-# that catches `You need to restart` also catches `if you need to`. The
-# skill's condition-first form reads better anyway (`To X, do Y`), so
-# the message names it.
+# which states that no obligation exists, and a determiner (a word that
+# introduces a noun, such as `the`, `a`, or `this`), where `need` is a
+# noun (`the need to scale`). Weir has no lookbehind, so the filter
+# consumes the word before `need` and narrows the finding back to the
+# phrase. `If you need to X, do Y` still counts, because Weir cannot
+# anchor a branch to the start of a sentence, and a branch that catches
+# `You need to restart` also catches `if you need to`. The skill's
+# condition-first form reads better anyway (`To X, do Y`), so the
+# message names it.
 #
 # `it is important to` counts here except before the verbs that the
-# Required filler rule reports (`it is important to note`).
-# `recommended` is stative in the passive rule, so `it is recommended
-# that` draws one finding, from this rule. `you want to` is left out,
-# because `If you want to X, do Y` is a fork the skill allows.
+# Required filler rule reports (`it is important to note`). The passive
+# rule lists `recommended` as a stative word, one that names a state, so
+# `it is recommended that` draws one finding, from this rule. `you want
+# to` is left out, because `If you want to X, do Y` is a fork the skill
+# allows.
 #
 # Across the kubernetes and nix.dev docs, `need to` and its kin hit 558
 # lines before the guards, and 7 of 10 sampled hits were vague

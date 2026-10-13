@@ -1,25 +1,30 @@
-# `since` also marks time and `as` also marks manner or comparison, so
-# a reader has to pick the reading. `because` marks only a cause.
+# A causal conjunction joins a cause to the claim it explains (`the job
+# fails because the disk is full`). `since` also marks time and `as`
+# also marks manner or comparison, so a reader has to pick the reading.
+# `because` marks only a cause.
 #
-# After a comma, `since` before a determiner, pronoun, or proper noun
-# marked a cause in 13 of 14 sampled hits (`, since the lock is
-# held`). A temporal `since` after a comma (`, since the upgrade
-# landed`) still fires.
+# After a comma, `since` before a determiner (a word that introduces a
+# noun, such as `the`, `a`, or `this`), pronoun, or proper noun marked a
+# cause in 13 of 14 sampled hits (`, since the lock is held`). A
+# temporal `since` after a comma (`, since the upgrade landed`) still
+# fires.
 #
-# Without a comma, `since` counts when a present-tense auxiliary follows
-# its subject, directly or after one word (`since the lock is held`,
-# `Since this is rarely needed`). A temporal `since` names a past event
-# (`since the upgrade landed`) or a version (`Since v2.3, the flag
-# ...`), so it has no such auxiliary and passes. All 24 hits of this
-# form in the kubernetes and nix.dev docs marked a cause. The filter
-# narrows the finding to `since`. `needs` and `will` stay out of the
-# auxiliary list, because the obligation, no-negation, and future-tense
-# rules report the words after them.
+# Without a comma, `since` counts when a present-tense auxiliary, a
+# helping verb such as `is`, `has`, or `can`, follows its subject,
+# directly or after one word (`since the lock is held`, `Since this is
+# rarely needed`). A temporal `since` names a past event (`since the
+# upgrade landed`) or a version (`Since v2.3, the flag ...`), so it has
+# no such auxiliary and passes. All 24 hits of this form in the
+# kubernetes and nix.dev docs marked a cause. The filter narrows the
+# finding to `since`. `needs` and `will` stay out of the auxiliary list,
+# because the obligation, no-negation, and future-tense rules report the
+# words after them.
 #
-# `as` counts only before a subject pronoun and a finite verb (`, as
-# it is deprecated`). `you` and `we` stay out, because `as you can
-# see` and `as we have seen` are the filler ProseFiller reports. `do`
-# and `does` stay out, because `, as it does for any key` compares.
+# `as` counts only before a subject pronoun (`I`, `you`, `he`, `she`,
+# `it`, `we`, or `they`) and a verb that carries a tense (`, as it is
+# deprecated`). `you` and `we` stay out, because `as you can see` and
+# `as we have seen` are the filler ProseFiller reports. `do` and `does`
+# stay out, because `, as it does for any key` compares.
 expr subject [it, they, this, these, there]
 expr verb [is, are, was, were, has, have, can, will]
 expr aux [is, are, has, have, can, cannot, does, do]

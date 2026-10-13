@@ -1,3 +1,7 @@
+# A clause is a subject and its verb (`the tests pass`). A colon between
+# two clauses packs two points into one sentence, so the fix ends the
+# sentence at the colon or joins the clauses with `because` or `so`.
+#
 # A space in a Weir pattern matches a whitespace token, so the label
 # exception sits directly against the colon. Harper splits `image:`
 # into `image` and `:` with no whitespace between them.
@@ -11,18 +15,19 @@
 # before its colon, so three words is the floor for a splice. The
 # label list still covers a label that follows other words.
 #
-# After the colon, a clause shows its finite verb as an auxiliary or
-# as an adverb in the second or third position (`the cache is cold`,
-# `the tests always pass`), or as a verb in the third (`the first rule
-# wins`). The pattern rejects a bare VERB tag in the first two
-# positions, because the tagger marks participles and many nouns as
-# verbs. Without that limit, `the path passed by Claude Code`, `the
-# value set by the environment`, and `the section on caching` all read
-# as clauses. The pattern also rejects an adverb directly after the
-# determiner (`the only value`, `the always-on mode`), and a relative
-# or subject pronoun in the second
-# position (`the tag that was pushed`, `the host you are targeting`)
-# marks a noun phrase rather than a clause.
+# After the colon, a clause shows itself by an auxiliary, a helping verb
+# such as `is`, `has`, or `can`, or by an adverb in the second or third
+# position (`the cache is cold`, `the tests always pass`), or by a verb
+# in the third (`the first rule wins`). The pattern rejects a bare VERB
+# tag in the first two positions, because the tagger marks participles
+# (`-ing` and `-ed` verb forms) and many nouns as verbs. Without that
+# limit, `the path passed by Claude Code`, `the value set by the
+# environment`, and `the section on caching` all read as clauses. The
+# pattern also rejects an adverb directly after a determiner such as
+# `the` (`the only value`, `the always-on mode`), and a pronoun such as
+# `that` or `you` in the second position (`the tag that was pushed`,
+# `the host you are targeting`) marks a noun phrase, a noun and the
+# words attached to it, rather than a clause.
 expr adverbs [never, always, also, only, silently, still, then, already, just, now, usually, often, sometimes, rarely, immediately, eventually]
 expr aux [AUX, is, are, was, were, has, have, had, does, do, did, will, would, can, could, should, must, may, might, shall]
 expr labels [Note, Warning, Tip, Caution, Important, Deprecated, TODO, FIXME, BUG, HACK, XXX]

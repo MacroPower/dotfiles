@@ -3,18 +3,18 @@
 # trailing correction (`Name the log events, not just the sentinel`,
 # `(not just the prune)`), which names a contrast the reader needs.
 #
-# Weir has no lookbehind, so the first branch consumes the token
-# before the space ahead of `not` and the filter narrows the finding
-# back to the phrase. A comma fails that token, and an open paren
-# leaves no space before `not`. The branch also needs a token before
-# `not`, so a sentence that opens with `Not only` counts through the
-# second branch, which needs the inverted auxiliary after it (`Not only
-# does the cache hold rules`), or through the third. That branch finds
-# the paired form anywhere, after a comma too, by matching `but` up to
-# eight words after `not only` or `not just`. Each gap length is its
-# own alternative ending in `but`, because a list picks its longest
-# match and never backtracks, so a gap list followed by `but` swallows
-# the `but`. The last word before `but` can carry a comma
+# Weir has no lookbehind, so the first branch consumes the token before
+# the space ahead of `not` and the filter narrows the finding back to
+# the phrase. A comma fails that token, and an open paren leaves no
+# space before `not`. The branch also needs a token before `not`, so a
+# sentence that opens with `Not only` counts through the second branch,
+# which needs the helping verb that this form moves ahead of the subject
+# (`Not only does the cache hold rules`), or through the third. That
+# branch finds the paired form anywhere, after a comma too, by matching
+# `but` up to eight words after `not only` or `not just`. Each gap
+# length is its own alternative ending in `but`, because a list picks
+# its longest match and never backtracks, so a gap list followed by
+# `but` swallows the `but`. The last word before `but` can carry a comma
 # (`Not only the cache, but the log grows`).
 #
 # `not just !any` skips the idiom `not just any file`. The glued hyphen

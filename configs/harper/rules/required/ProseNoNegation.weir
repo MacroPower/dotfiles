@@ -1,12 +1,14 @@
-# `needs no npm` negates the verb through its object, so the reader
-# meets the noun before learning the sentence is negative. Moving the
-# negation onto the verb (`does not need npm`) puts it first. Only
-# `need` and `require` count, because `has no header` and `takes no
-# arguments` read as plain idiom. A comparative after `no` (`requires
-# no more than 2 GB`, `need no longer wait`) states a bound or a time
-# instead, so the guard skips `more`, `less`, `fewer`, and `longer`.
-# The rule flags instead of replacing, because the fix depends on tense
-# and person (`does not need`, `do not need`, `did not need`).
+# `needs no npm` negates the verb through its object, the noun the verb
+# acts on, so the reader meets the noun before learning the sentence is
+# negative. Moving the negation onto the verb (`does not need npm`) puts
+# it first. Linguists call the first form no-negation, after its `no`,
+# and the second not-negation. Only `need` and `require` count, because
+# `has no header` and `takes no arguments` read as plain idiom. A
+# comparison word after `no` (`requires no more than 2 GB`, `need no
+# longer wait`) states a bound or a time instead, so the guard skips
+# `more`, `less`, `fewer`, and `longer`. The rule flags instead of
+# replacing, because the fix depends on tense and person (`does not
+# need`, `do not need`, `did not need`).
 expr main ([needs, need, needed, requires, require, required] no ![more, less, fewer, longer])
 let message "No-negation. Negate the verb, so needs no npm becomes does not need npm."
 let description "Flags need and require negated through their object."

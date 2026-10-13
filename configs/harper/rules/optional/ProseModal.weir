@@ -1,9 +1,11 @@
-# `would` and `could` state a possibility or a consequence without
-# saying how likely it is, and `could` also means ability. The
-# technical-writing skill writes `might` for a possibility, `can` for
-# an ability, and the present tense for a consequence (`the write
-# would fail` becomes `the write fails`). `could not` passes, because
-# it is the past of `cannot` (`the parser could not read the file`).
+# Modal verbs are the helping verbs that mark possibility, ability, or
+# obligation, such as `can`, `might`, and `must`. `would` and `could`
+# state a possibility or a consequence without saying how likely it is,
+# and `could` also means ability. The technical-writing skill writes
+# `might` for a possibility, `can` for an ability, and the present tense
+# for a consequence (`the write would fail` becomes `the write fails`).
+# `could not` passes, because it is the past of `cannot` (`the parser
+# could not read the file`).
 #
 # Guards glued to each word skip the phrases other rules report: `would
 # say` and `could argue` (the opinion rule), `would expect` (the filler

@@ -1,11 +1,13 @@
 # Reports the second of two sentences in a row that open with `a` or
 # `an` in one markdown paragraph (`A task is a unit of work. A task runs
-# on one worker.`). The singular `a task` reads two ways, as one
-# particular task or as any task, and a run of such openers reads like
-# a glossary. The prose skill writes a claim about a whole class with a
-# plural subject (`Tasks run on one worker`) or with `every`, and keeps
-# `a` and `an` for one instance that the sentence introduces. A run
-# reports once however long it grows.
+# on one worker.`). Grammar calls `a` and `an` the indefinite article,
+# because each introduces a noun without pointing at a particular one,
+# and calls `the` the definite article. The singular `a task` reads two
+# ways, as one particular task or as any task, and a run of such openers
+# reads like a glossary. The prose skill writes a claim about a whole
+# class with a plural subject (`Tasks run on one worker`) or with
+# `every`, and keeps `a` and `an` for one instance that the sentence
+# introduces. A run reports once however long it grows.
 #
 # The paragraph and sentence boundaries follow ProseParagraphLength,
 # run-in labels and ellipses included. Sentences that open with a code

@@ -1,8 +1,8 @@
-# A `this` or `which` with broad reference points at a whole clause
-# (`This means the cache stays warm`, `, which means the pool is
-# empty`), so the reader has to pick which part of the last sentence it
-# names. The fix names the noun (`This retry means`) or joins the two
-# claims.
+# Broad reference is the grammar term for a `this` or `which` that
+# points at a whole earlier statement instead of at one noun (`This
+# means the cache stays warm`, `, which means the pool is empty`). The
+# reader has to pick which part of the last sentence the pronoun names.
+# The fix names the noun (`This retry means`) or joins the two claims.
 #
 # `this` counts only before a verb that states a consequence. `This is`
 # alone also names a field or a section (`this is set to True`), so it

@@ -6,19 +6,21 @@
 # title, and a heading that is one code span, because a command
 # reference names the exact command.
 #
-# The check reports a heading at any level from two down when it
-# starts with a question word or an auxiliary, or ends with a question
-# mark or a colon. At level two it also reports a heading that contains a
-# pronoun, an auxiliary, or a subordinating conjunction anywhere, or
+# The check reports a heading at any level from two down when it starts
+# with a question word or an auxiliary (a helping verb such as `is`,
+# `has`, or `can`), or ends with a question mark or a colon. At level
+# two it also reports a heading that contains a pronoun, an auxiliary,
+# or a subordinating conjunction (`because`, `when`, `if`) anywhere, or
 # that runs past six words. Deeper headings skip those two checks,
-# because they often label a single case (`Retries after a lease
-# error`) and can run longer than a section name. A possessive (`your`,
-# `our`) that opens a level-two heading passes, because it starts a
-# noun phrase (`Your Task`), but one after a verb still counts
-# (`Setting up your editor`). The word lists hold closed word classes,
-# so a noun phrase such as `Printing YAML with Lipgloss Styles` passes,
-# and the check reports `How matching works` and `Configuring the
-# server before you start`.
+# because they often label a single case (`Retries after a lease error`)
+# and can run longer than a section name. A possessive (`your`, `our`)
+# that opens a level-two heading passes, because it starts a noun
+# phrase, a noun and the words attached to it (`Your Task`), but one
+# after a verb still counts (`Setting up your editor`). The word lists
+# hold only small fixed word classes, such as pronouns and helping
+# verbs, so a noun phrase such as `Printing YAML with Lipgloss Styles`
+# passes, and the check reports `How matching works` and `Configuring
+# the server before you start`.
 #
 # The check does not use Harper's part-of-speech tagger, because a
 # heading has no sentence around it and the tagger reads `works` and

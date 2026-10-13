@@ -1,10 +1,10 @@
 # `stands as`, `serves as`, and `acts as` dress up `is` as a role (`the
-# index serves as a lookup table` becomes `the index is a lookup
-# table`, and `the driver acts as a proxy` becomes `the driver
-# proxies`).
-# Each needs a determiner after `as`, because the other readings
-# compare or qualify (`stands as tall as`, `stands as written`, `serves
-# as many requests as`, `serves as root`, `serves as-is`).
+# index serves as a lookup table` becomes `the index is a lookup table`,
+# and `the driver acts as a proxy` becomes `the driver proxies`). Each
+# needs a determiner (a word that introduces a noun, such as `the`, `a`,
+# or `this`) after `as`, because the other readings compare or qualify
+# (`stands as tall as`, `stands as written`, `serves as many requests
+# as`, `serves as root`, `serves as-is`).
 expr main [(stands as DET), (serves as DET), ([acts, act] as DET)]
 let message "Write is."
 let description "Flags stands as, serves as, and acts as before a noun phrase, where is carries the meaning."

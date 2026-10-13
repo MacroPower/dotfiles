@@ -5,13 +5,16 @@
 # denied framing.
 #
 # The semicolon branch takes any words between the negation and the
-# semicolon. The comma branch needs a determiner, `about`, or a
-# minimizer on both sides of the comma (`isn't about speed, it's about
-# correctness`), because a conditional takes the same form with a
-# predicate (`If the file isn't found, it's created`), and Weir has no
-# lookbehind for the `if`. A sentence that splits the two clauses with
-# a period (`It's not about speed. It's about correctness.`) passes,
-# because a rule reads one sentence at a time.
+# semicolon. The comma branch needs a determiner (a word that introduces
+# a noun, such as `the`, `a`, or `this`), `about`, or a minimizing word
+# (`just`, `only`, `merely`, `simply`) after the negation, and a
+# determiner or `about` after `it's` (`isn't about speed, it's about
+# correctness`). Those guards keep out an `if` sentence, which takes the
+# same form with a verb after `it's` (`If the file isn't found, it's
+# created`), because Weir has no lookbehind for the `if`. A sentence
+# that splits the two clauses with a period (`It's not about speed. It's
+# about correctness.`) passes, because a rule reads one sentence at a
+# time.
 #
 # Each gap length is its own alternative ending in the punctuation,
 # the way the not-only rule writes its `but` tail. A space in a pattern

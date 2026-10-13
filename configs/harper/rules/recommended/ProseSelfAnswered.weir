@@ -1,7 +1,8 @@
-# A noun phrase asked as a question and answered in the next sentence
-# (`The result? A build that finishes in half the time.`) holds back
-# the point instead of stating it, a device rhetoric calls hypophora.
-# The fix states the point (`The build finishes in half the time`).
+# A short phrase built on a noun, posed as a question and answered in
+# the next sentence (`The result? A build that finishes in half the
+# time.`), holds back the point instead of stating it. Rhetoric calls
+# this device hypophora. The fix states the point (`The build finishes
+# in half the time`).
 #
 # The list holds the nouns that introduce an answer. Nouns that end a
 # real question stay out (`What's the difference?`, `What is the fix?`,

@@ -1,9 +1,11 @@
-# Each phrase concedes the point before it and turns away from it, so
-# the fix writes `but` or opens the sentence with the new point.
-# `that being said` counts as written. `that said`, `having said
-# that`, and `with that said` need the glued comma of an opener, since
-# without it `that said` is often a relative clause (`the error that
-# said the disk was full`).
+# Grammar calls each phrase a concessive opener, because it grants the
+# point before it and then turns away from it (`That said, the default
+# suits most hosts`). The fix writes `but` or opens the sentence with
+# the new point. `that being said` counts as written. `that said`,
+# `having said that`, and `with that said` need the glued comma of an
+# opener, because without it `that said` often opens a relative clause,
+# a clause that describes the noun before it (`the error that said the
+# disk was full`).
 expr main [(that being said), (that said,), (having said that,), (with that said,)]
 let message "Concessive opener. Write but, or delete the phrase and state the point."
 let description "Flags that said and similar openers that turn away from the point before them."
