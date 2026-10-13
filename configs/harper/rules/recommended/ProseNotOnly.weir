@@ -26,7 +26,7 @@ expr which [only, (just !any)]
 expr last [*, (*,)]
 expr tail [(@last but), (* @last but), (* * @last but), (* * * @last but), (* * * * @last but), (* * * * * @last but), (* * * * * * @last but), (* * * * * * * @last but)]
 expr main [<(!(,)( )not @which), (not @which)>, (not only @aux), (not [only, just] @tail), ([isn't, aren't, wasn't, weren't] just), (more than just)]
-let message "Make the direct claim. If the contrast matters, give each side its own sentence."
+let message "Not only or not just. Make the direct claim, and give a needed contrast its own sentence."
 let description "Flags not only and not just constructions, except an unpaired correction after a comma or an open paren."
 let becomes ""
 let kind "Style"
