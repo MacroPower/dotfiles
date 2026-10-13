@@ -14,7 +14,7 @@
 # a suggestion.
 expr verb <VERB, !PROG, ![need, needs]>
 expr main <([NOUN, PRON, PROPN, that, which, who] only @verb), (only @verb)>
-let message "Only before the verb. Move only beside the word it limits."
+let message "Misplaced only. Move only beside the word it limits."
 let description "Flags only between a subject and its verb, where it can limit the verb or anything after it."
 let becomes ""
 let kind "Style"
