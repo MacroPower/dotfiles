@@ -100,8 +100,9 @@ writeShellApplication {
   ];
 
   text = ''
-    # prose-lint <file>    lint a markdown or source file
-    # prose-lint --commit  lint a commit message read from stdin
+    # prose-lint <file>           lint a markdown or source file
+    # prose-lint --commit         lint a commit message read from stdin
+    # prose-lint --shadow <file>  print the comment shadow of a source file
     #
     # Prints one `path:line:col: [Tier] Kind::Rule: message` line per
     # finding, Required findings first and then by line, and exits 1
@@ -492,35 +493,19 @@ writeShellApplication {
       exit 0
     fi
 
+    shadow_only=0
+    if [ "''${1:-}" = "--shadow" ]; then
+      shadow_only=1
+      shift
+    fi
+
     if [ "$#" -ne 1 ]; then
-      echo "usage: prose-lint <file> | prose-lint --commit" >&2
+      echo "usage: prose-lint <file> | prose-lint --commit | prose-lint --shadow <file>" >&2
       exit 2
     fi
 
     file=$1
-    case "$file" in
-      */node_modules/*|*/vendor/*|*/.git/*|*/.terraform/*|*/harper/fixtures/*) exit 0 ;;
-    esac
-    [ -f "$file" ] || exit 0
-
     ext=''${file##*.}
-    case "$known_extensions" in
-      *",$ext,"*) ;;
-      *) exit 0 ;;
-    esac
-
-    # A changelog describes changes, so the time-sensitive rules are off,
-    # and its headings are release labels (`[1.2.0] - 2026-09-23
-    # [YANKED]`), so the heading check is off too.
-    base=$(basename "$file")
-    rules=$all_rules
-    changelog=0
-    case "$base" in
-      CHANGELOG*|CHANGES*|HISTORY*)
-        rules=$change_rules
-        changelog=1
-        ;;
-    esac
 
     # Harper strips the marker from only the first line of a run of Go
     # or Python line comments, so a phrase that wraps onto the next
@@ -542,6 +527,43 @@ writeShellApplication {
       weir|awk) shadow_kind="hash" shadow_ext="sh" ;;
       *) shadow_kind="" shadow_ext="" ;;
     esac
+
+    # --shadow prints the shadow and stops, so a corpus measurement
+    # lints comments the same way the hook does. It drops the shifts
+    # files, so a finding on a line that close_spans shifted reads one
+    # column right of the source.
+    if [ "$shadow_only" = 1 ]; then
+      if [ -z "$shadow_kind" ]; then
+        echo "prose-lint: $file has no comment shadow" >&2
+        exit 2
+      fi
+      comment_lines "$shadow_kind" "$file" /dev/null | end_list_leads | close_spans /dev/null
+      exit 0
+    fi
+
+    case "$file" in
+      */node_modules/*|*/vendor/*|*/.git/*|*/.terraform/*|*/harper/fixtures/*) exit 0 ;;
+    esac
+    [ -f "$file" ] || exit 0
+
+    case "$known_extensions" in
+      *",$ext,"*) ;;
+      *) exit 0 ;;
+    esac
+
+    # A changelog describes changes, so the time-sensitive rules are off,
+    # and its headings are release labels (`[1.2.0] - 2026-09-23
+    # [YANKED]`), so the heading check is off too.
+    base=$(basename "$file")
+    rules=$all_rules
+    changelog=0
+    case "$base" in
+      CHANGELOG*|CHANGES*|HISTORY*)
+        rules=$change_rules
+        changelog=1
+        ;;
+    esac
+
     out=""
     case "$shadow_kind" in
       hcl|yaml|hash) ;;
