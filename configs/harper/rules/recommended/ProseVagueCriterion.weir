@@ -1,0 +1,23 @@
+# Each phrase leaves the reader to supply a criterion the writer knows
+# (`set the timeout as needed`), so the fix names it (`set the timeout
+# longer than the slowest request`) or drops the phrase when every
+# case applies. The Optional rule of the same name holds the adjectives
+# and adverbs (`appropriate`, `properly`).
+#
+# `as required` counts only without `by` after it, because `as required
+# by the spec` names the criterion. The guard sits glued to `required`
+# so it reads the token right after it, which also lets the phrase at
+# the end of a line count.
+#
+# It hit 35 lines in the kubernetes and nix.dev docs, and 14 of 15
+# sampled hits left the criterion unstated. The miss described lazy
+# evaluation (`computes values when needed`), where the phrase names
+# the criterion.
+expr main [(as needed), (as necessary), (as appropriate), (as applicable), (as required!(( )by)), (where needed), (where necessary), (where appropriate), (where applicable), (when needed), (when necessary), (when appropriate), (when applicable), (if needed), (if necessary), (if appropriate), (if applicable)]
+let message "Vague criterion. Name the condition the reader should check, or drop the phrase."
+let description "Flags as needed, where applicable, if necessary, and similar phrases that leave the reader to supply a criterion."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "Set the timeout longer than the slowest request."
+allows "Pin the version as required by the release policy."
