@@ -91,8 +91,21 @@ that second one.
   `because`.
 - Never write `while` for a contrast, because it also marks time. Write
   `but`, or split the sentence.
+- Never write `once` for `after` or `when`, because it also counts one
+  time (`runs once`). Write `after` or `when`.
 - Never write `over`, `under`, `above`, or `below` for a quantity.
   Write `more than`, `fewer than`, or `less than`.
+- Never write `biweekly`, `bimonthly`, or `biannual`, because each names
+  two intervals. Write `twice a week` or `every two weeks`.
+- Write `that` before a clause that picks out which thing you mean
+  (`the file that holds the key`). Write `, which` before a clause that
+  adds a fact about a thing already named (`the config file, which
+  holds the key`).
+- Never put `not` on the verb after `all` or `both` (`all nodes are not
+  ready`), because it can deny `all` or each node. Write `not all` or
+  `none`.
+- Say whether a range includes each end (`between 1 and 100,
+  inclusive`).
 - Prefer a one-word verb to an idiomatic phrasal verb, so `find` rather
   than `figure out`, `start` rather than `kick off`, and `remove` rather
   than `get rid of`. The words of an idiom do not add up to its
