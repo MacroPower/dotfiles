@@ -55,7 +55,7 @@ and cons.
 
 You must not mix modes in a reader-facing document. A tutorial carries no
 reference table, reference carries no teaching, and a how-to carries no
-argument. Split and link instead. A rulebook or a skill file may carry its
+argument. Split and link instead. A rulebook or a skill file can carry its
 reference glossary inline, because the reader applies the rules at the point of
 reading them.
 
@@ -147,7 +147,8 @@ everything as mandatory, and both readings cause outages.
 - **must**, **must not**: an absolute requirement or prohibition.
 - **should**, **should not**: a recommendation. The reader may deviate after
   weighing the consequences, so say what those consequences are.
-- **may**: a true option, and the choice costs nothing either way.
+- **may**: a true option for a person, and the choice costs nothing either way.
+  Write "might", not "may", for what a system might do.
 - **can**: ability. "The client can retry" says retrying is possible, not
   permitted or advised.
 - **might**: possibility. "The cache might be stale" is a fact, not a rule.

@@ -1,0 +1,33 @@
+# `may` reads two ways, as permission (`the caller may pass nil`) or as
+# a possibility (`the cache may be stale`). The technical-writing skill
+# keeps `may` for an option a person is free to take and writes
+# `might` for a possibility, so the rule counts `may` before a verb or
+# an adverb after any word but `you`. The fix writes `might` for a
+# possibility and `can` for an ability or a permission.
+#
+# The guard on the next word skips the phrases other rules report:
+# `may not` and `may or may not` (the may-not rule), `may want to`
+# (the obligation rule), and `may possibly` and `may potentially` (the
+# redundant-pair rule). The verb or adverb after `may` keeps out the
+# month, which a number, a comma, or a noun follows (`in May 2026`, `the
+# May release`). Weir has no lookbehind, so the filter consumes the
+# word before `may` and narrows the finding back to it. A sentence that
+# opens with `May` is a question or a date, so it passes. ProseCapsObligation
+# also reports an uppercase `MAY`, which takes a second fix.
+#
+# It hit 367 lines in the kubernetes and nix.dev docs, and 17 of 20
+# sampled hits stated a possibility. The other three stated an ability
+# or a permission (`an implementation may represent the backend`),
+# where `can` reads the same.
+expr skip [not, want, possibly, potentially]
+expr main <(!you may <[VERB, AUX, ADV], !@skip>), may>
+let message "May for a possibility. Write might, or can for an ability."
+let description "Flags may outside you may, where it usually states a possibility that might states in one reading."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "You may skip the tag."
+allows "The cache might be stale after a restart."
+allows "The name may not be a dot."
+allows "You may want to pin the version."
+allows "Version 2 shipped in May."

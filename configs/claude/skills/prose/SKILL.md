@@ -104,8 +104,10 @@ that second one.
 - Never write `may not`, because it reads as a prohibition or as a
   possibility. Write `must not` or `might not`.
 - Write `might` for a possibility, `can` for an ability, and the present
-  tense for a consequence, not `could` or `would` (`the write fails`,
-  not `the write would fail`).
+  tense for a consequence (`the cache might be stale`, `the write
+  fails`). Do not write `may`, `could`, or `would` for any of the
+  three. Keep `may` for an option a person is free to take (`you may
+  skip the tag`).
 - Put `only` beside the word it limits, so `fails only on growth`
   rather than `only fails on growth`.
 - Never write `please`. Give the instruction.
