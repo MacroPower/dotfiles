@@ -63,7 +63,7 @@ let
   # Harper built-ins, both read from the tier directories under
   # configs/harper/rules and fixture-checked when prose-weirpack
   # builds. A changelog and a commit message both describe a change,
-  # so each turns off every tier's ProseChangeNarration, ProseCurrently,
+  # so each turns off every tier's ProseChangeNarration, ProseDatedClaim,
   # and ProseRoadmap. Each also turns off ProseFutureTense, because a
   # message about a change might say what the system does after it.
   # The list holds name prefixes, and it turns off the Weir rules and
@@ -72,7 +72,7 @@ let
   allRules = lib.concatStringsSep "," ruleNames;
   timeSensitiveRules = [
     "ProseChangeNarration_"
-    "ProseCurrently_"
+    "ProseDatedClaim_"
     "ProseFutureTense_"
     "ProseRoadmap_"
   ];

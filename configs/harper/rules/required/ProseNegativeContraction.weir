@@ -3,7 +3,7 @@
 # opposite claim. The full form gives `not` a word of its own.
 #
 # ProsePassive, ProseContrastiveNegation, ProseMinimizer,
-# ProseCurrently, and ProseNotOnly keep their contracted forms, so
+# ProseDatedClaim, and ProseNotOnly keep their contracted forms, so
 # `the value isn't written` draws a passive finding beside this one on
 # the first pass. A curly apostrophe (`don’t`) does not match, because
 # ProseTypography reports the curly quote first.
