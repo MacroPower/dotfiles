@@ -49,7 +49,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from check import TIERS, Rule, collect_rules
+# Importing check writes a __pycache__ directory beside it unless this
+# flag is set, and git shows the directory as untracked.
+sys.dont_write_bytecode = True
+
+from check import TIERS, Rule, collect_rules  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 RULES = HERE / "rules"
