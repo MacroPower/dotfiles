@@ -95,7 +95,7 @@ The generated skill is **model-invocable** (no `disable-model-invocation` in its
 frontmatter), so trigger keywords matter and a single sentence leaves the
 trigger thin. Aim for 2-4 sentences: a one-line summary, a "Trigger when..."
 clause naming concrete file patterns and CLI verbs, and an optional "SKIP when..."
-clause for likely false positives. Example shape:
+clause for likely false positives. Example:
 
 > Reference and guidance for writing X (config files, the `x` CLI). Trigger when
 > the user edits `x.yml` / `.xrc.yml`, asks about schema keys (a, b, c), runs or
@@ -107,7 +107,7 @@ Then call `AskUserQuestion` with two questions, in order:
 1. "Skill name?" with options:
    - `Use derived value (Recommended)` -> the auto value
    - `Edit` -> user types a replacement in the auto-provided "Other" field
-2. "Skill description?" with the same two-option shape.
+2. "Skill description?" with the same two options.
 
 Loop the question until both fields are confirmed. Then:
 
@@ -264,7 +264,7 @@ The sidecars exist solely for your Step 10 report to the user.
 No artificial line cap. Density target: each section summary is dense enough
 that the user rarely needs to open the linked reference for routine questions,
 but short enough that the SKILL.md fits comfortably in a single read. Preserve
-canonical schemas, full CLI flag tables, and short runnable code shapes inline;
+canonical schemas, full CLI flag tables, and short runnable code examples inline;
 push longer code blocks, exhaustive enumerations, and rarely-touched detail to
 the references file.
 

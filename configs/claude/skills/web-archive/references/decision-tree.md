@@ -1,4 +1,4 @@
-# Decision tree: URL shape -> tool
+# Decision tree: URL pattern -> tool
 
 WACZ-first. Browsertrix handles every web-page case. Escalate only
 when the input is media, or when the capture requires interaction
@@ -6,7 +6,7 @@ browsertrix cannot script.
 
 ## Step 1: classify the URL
 
-| URL shape | Tool | Notes |
+| URL pattern | Tool | Notes |
 | --- | --- | --- |
 | Anything that renders as a web page | `browsertrix-crawler` | Static HTML, JS-rendered SPAs, infinite-scroll feeds, logged-in dashboards. The crawler runs a real Chromium, so JS execution and dynamic content are free. |
 | Video host (`youtube.com`, `youtu.be`, `vimeo.com`, `twitch.tv`, `bilibili.com`, `*.m3u8`) | `yt-dlp` | WACZ is the wrong container for raw media -- use yt-dlp's native muxing. |

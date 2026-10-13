@@ -72,7 +72,7 @@ func DoThing(client *dagger.Client) *dagger.Directory {
 
 Every exported method on the main object becomes a Dagger Function. Read [go-patterns.md](references/go-patterns.md) for the full catalog of patterns.
 
-The basic shape:
+A minimal module:
 
 ```go
 type MyModule struct{}

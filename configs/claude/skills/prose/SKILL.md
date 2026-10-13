@@ -19,7 +19,7 @@ tier sets what it asks of you.
 Required findings name an exact phrase with a mechanical fix, so fix
 them. The Bash hook denies a commit or PR message with one every time.
 
-Recommended findings come from shape detectors, so fix each one unless
+Recommended findings come from pattern detectors, so fix each one unless
 it misreads the sentence. The Bash hook denies a commit or PR message
 with one once. When you judge a finding false, run the unchanged
 command again and it passes.
@@ -29,11 +29,11 @@ reads better. They never deny a command on their own.
 
 The rules are deliberately blunt, so a fix is usually cheaper than the
 exception. The linter matches word lists, so it misses many sentences
-with the shapes below. Write to the rule, not to the linter. Run
+with the patterns below. Write to the rule, not to the linter. Run
 `prose-lint <file>` by hand on a file the hook does not cover, such as
 one written through Bash.
 
-## Sentence Shape
+## Sentences
 
 Make the actor the subject, so `the scheduler retries the job` rather
 than `the job is retried`. Passive creeps into the back half of a

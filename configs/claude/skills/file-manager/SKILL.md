@@ -15,7 +15,7 @@ These tools will happily walk a TB-scale tree or millions of files and
 appear to hang for many minutes. Four rules:
 
 1. **Probe before recursing.** Run a depth-1 walk first to learn the
-   shape of the tree:
+   layout of the tree:
 
    ```bash
    df -h <dir>                                    # filesystem capacity

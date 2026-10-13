@@ -17,7 +17,7 @@ fd --max-depth 2 -t f . <dir> | wc -l                # depth-2 fanout
 
 The depth-2 fanout is the slowest probe; pass `timeout: 30000` to the
 Bash tool for any deeper-than-default walk (depth-2 or below) when the
-tree shape is unknown.
+tree size is unknown.
 
 Rough thresholds:
 
@@ -125,7 +125,7 @@ files build in-memory tables that scale with file count. Mitigations:
 ## Monitoring progress
 
 Long ops on a TB tree are blind by default. Pick the wrapper that fits
-the shape of the work:
+the operation:
 
 - **Tool built-ins, no wrapper needed:**
   - `fclones group` -- progress bar + ETA on stderr (suppress with

@@ -71,7 +71,7 @@ When the domain is unclear at organize-time, dump into a single
 | Date only | `yyyy-MM-dd` | `2026-04-28` |
 | Date + time | `yyyy-MM-dd_HH-mm-ss` | `2026-04-28_14-30-00` |
 
-24-hour clock. RFC 3339 shape with `:` replaced by `-` so the name
+24-hour clock. RFC 3339 format with `:` replaced by `-` so the name
 stays path-safe. Names carry wall-clock / civil time as recorded --
 no zone marker. Any zone information needed downstream lives in
 sidecar metadata (EXIF, a sibling README, a manifest), not the

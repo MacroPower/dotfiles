@@ -21,7 +21,7 @@ cannot script the interaction, hand off to `/playwright-cli`.
 | Video, audio, podcast feed | `yt-dlp <url>` | `<slug>.mkv` / `<slug>.opus` |
 | Multi-step interactive capture browsertrix cannot script | `/playwright-cli` | PDF / HTML / PNG |
 
-URL-shape heuristics, plus when to escalate from a single page to a
+URL-pattern heuristics, plus when to escalate from a single page to a
 crawl, live in [references/decision-tree.md](references/decision-tree.md).
 
 ## Output convention

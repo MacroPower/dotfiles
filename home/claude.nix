@@ -1903,7 +1903,7 @@ in
         a literal path, and a glob that spans more than one directory
         level. The guard also reads a script that a call passes to a
         shell with `-c`. Claude Code forces a permission prompt on
-        those shapes in every permission mode, and an unattended
+        those patterns in every permission mode, and an unattended
         session waits out the prompt before it can retry. The deny
         reaches the agent first and carries the rewrite. See
         tools/hook-router/rmguard for the matching rules.
@@ -3948,7 +3948,7 @@ in
 
         ## Shell
         - `cd` persists between Bash calls only while it stays inside the project directory; a `cd` outside it resets the cwd to the project root on the next call.
-        - Never wait by sleeping; a foreground poll loop is the wrong shape even when each sleep is short.
+        - Never wait by sleeping; a foreground poll loop breaks this rule even when each sleep is short.
       ''
       + lib.optionalString cfg.sleepGuard.enable ''
         - A hook denies foreground waiting: a filler command that only passes time (`sleep 6`, `sleep 1; echo waiting`) at any duration, a `sleep` over ${toString cfg.sleepGuard.maxSeconds}s even inside real work, and a `sleep` whose duration it cannot read (`sleep $VAR`). Short sleeps belong only in a settle step inside a command doing real work (`kill "$pid"; sleep 1; pgrep -f server`).
