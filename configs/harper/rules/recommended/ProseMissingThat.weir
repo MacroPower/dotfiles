@@ -1,0 +1,36 @@
+# A verb such as `ensure` or `means` takes either a noun (`ensure the
+# order`) or a clause, a subject and its verb (`ensure the order
+# holds`). Without `that`, the reader takes the noun as the verb's
+# object and has to reread when the clause's own verb arrives. `that`
+# marks the clause from its first word (`ensure that the order holds`).
+#
+# The rule counts the verb when a determiner (a word that introduces a
+# noun, such as `the`, `a`, or `this`), one to three more words, and
+# then an auxiliary (a helping verb such as `is`, `has`, or `can`) or
+# one of `exists`, `runs`, `matches`, `contains`, and `fails` follow it.
+# The words in between exclude `that`, `which`, `who`, `to`, pronouns,
+# conjunctions, and commas, because each one ends the noun or opens a
+# clause of its own (`check your docs to be sure`). The filter narrows
+# the finding to the verb. `specify`, `see`, `states`, and `find` stay
+# out, because a noun and a description of it follow them more often
+# than a clause does. `this` and `which` before a verb that ends in `s`
+# skip the match, because the broad-reference rule reports `this means`
+# and `, which means`.
+#
+# It hit 82 lines in the measure.py corpus, and 20 of 20 sampled hits
+# dropped the `that` before a clause.
+expr imper [ensure, verify, confirm, (make sure), assume, check, remember, notice]
+expr third [ensures, means, says, knows, shows, indicates, guarantees, expects, tells]
+expr aux [AUX, exists, runs, matches, contains, fails]
+expr w ![that, which, who, to, PRON, CCONJ, (,)]
+expr det <[DET, your, its, their, our], !that>
+expr rest @det [(@w @aux), (@w @w @aux), (@w @w @w @aux)]
+expr main [<(@imper @rest), @imper>, <(![this, which] @third @rest), @third>]
+let message "Missing that. Write that after the verb, so the noun after it does not read as its object."
+let description "Flags ensure, means, and similar verbs that open a clause without that."
+let becomes ""
+let kind "Style"
+allows "Ensure that the file exists."
+allows "Check the file before the build."
+allows "This means the pool is empty."
+allows "Check your docs to be sure."
