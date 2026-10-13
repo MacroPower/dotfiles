@@ -2,15 +2,19 @@
 # technical-writing skill keeps a paragraph to one topic and six
 # sentences or fewer, and a longer one usually carries a second topic.
 #
-# The paragraph and sentence boundaries follow ProseSentenceLength. A
-# paragraph ends at a skipped line, a line the reader passes as blank,
-# and the start of a list item, heading, table row, or HTML line, so
-# each list item counts as its own paragraph. A sentence ends at a `.`,
+# The paragraph boundaries follow ProseSentenceLength. Paragraphs end
+# at a skipped line, a line the reader passes as blank, and the start
+# of a list item, heading, table row, or HTML line, so each list item
+# counts as its own paragraph. Sentences end at a `.`,
 # `?`, or `!` before whitespace or the line end, after any closing
 # quote, paren, bracket, or emphasis. `e.g.`, `i.e.`, `vs.`, and `cf.`
-# do not end a sentence. Words after the last sentence end count as one
-# more sentence. A finding names the line and column where the
-# paragraph starts.
+# do not end a sentence, and neither does a three-period ellipsis
+# (`an implicit "About..." in front`). Words after the last sentence
+# end count as one more sentence. A run-in label in bold that ends in a
+# period or a colon (`**Tutorial.** The learner's success`) names the
+# paragraph's topic, so a label that opens the paragraph counts as no
+# sentence. Each finding names the line and column where the paragraph
+# starts.
 #
 # Output shape, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseParagraphLength: <message>
@@ -43,6 +47,9 @@ function prose(text,   rest, pos, tok, col) {
   if (text ~ /^[ \t]*(#+([ \t]|$)|[|<])/) {
     return
   }
+  if (!open && sentences == 0) {
+    text = blank(text, "^[ \t]*(([-*+]|[0-9]+[.)])[ \t]+)?(\\*\\*[^*]+[.:]\\*\\*|__[^_]+[.:]__)")
+  }
   rest = text
   pos = 0
   while (match(rest, /[^ \t]+/)) {
@@ -62,7 +69,7 @@ function prose(text,   rest, pos, tok, col) {
       start_col = column(text, col)
     }
     open = 1
-    if (tok ~ /[.?!]["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {
+    if (tok ~ /[.?!]["')*_\]]*$/ && tok !~ /\.\.\.["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {
       sentences++
       open = 0
     }
