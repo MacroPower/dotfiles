@@ -113,7 +113,9 @@ that second one.
   write `one or more`.
 - Grade an obligation with `must` for a requirement or `should` for
   advice, in lowercase. `needs to`, `is expected to`, and `is
-  recommended` hide the grade.
+  recommended` hide the grade. For what the system does, write the
+  present tense, so `the server listens` rather than `the server needs
+  to listen`.
 - Never write `may not`, because it reads as a prohibition or as a
   possibility. Write `must not` or `might not`.
 - Write `might` for a possibility, `can` for an ability, and the present
