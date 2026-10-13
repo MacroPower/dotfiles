@@ -5,9 +5,18 @@
 # objects`), so the fix gives the number or the baseline. `potentially`
 # stays out, because the redundant-pair rule reports `could
 # potentially`.
-expr main relatively
+#
+# `effectively`, `virtually`, and `practically` each read two ways.
+# `the flag effectively disables the cache` can mean that the flag
+# disables it in effect but not in name, or that it disables it well.
+# `practically` means `almost` or `in practice`. The three sit here,
+# because the plain sense is sometimes the one meant (`use the cache
+# effectively`). They hit 14 paragraphs in the kubernetes and nix.dev
+# docs.
+expr main [relatively, effectively, virtually, practically]
 let message "Hedge. State the claim or drop it."
-let description "Flags relatively, which softens a claim without giving a baseline."
+let description "Flags relatively, effectively, virtually, and practically, which soften a claim or read two ways."
 let becomes ""
 let kind "Style"
 allows "Few nodes run the agent."
+allows "The flag disables the cache."
