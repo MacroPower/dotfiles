@@ -3,7 +3,7 @@
 # state outlasted an event (`three entries still remain after the
 # sweep`), a contrast `remain` alone does not carry.
 expr main still $remain
-let message "Redundant pair. One of the two words carries the meaning."
+let message "Redundant pair. Delete the word the other one includes."
 let description "Flags still remain, where remain alone usually carries the meaning."
 let becomes ""
 let kind "Style"
