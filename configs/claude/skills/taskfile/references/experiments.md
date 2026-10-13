@@ -98,7 +98,7 @@ If the maintainers decide that an issue has enough support and is a breaking
 change or is complex/controversial enough to require user feedback, then the
 issue will be marked with the `status: proposal` label. At this point, the issue
 becomes a proposal and a period of consultation begins. During this period, we
-request that users provide feedback on the proposal and how it might effect
+request that users provide feedback on the proposal and how it might affect
 their use of Task. It is up to the discretion of the maintainers to decide how
 long this period lasts.
 
