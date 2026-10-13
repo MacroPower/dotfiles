@@ -38,7 +38,7 @@
 expr versions [version, versions, release, releases, behavior, behaviour, implementation, API, default, defaults, format]
 expr surfaces [flag, option, field, argument, parameter, subcommand, endpoint, syntax, format, default, behavior, behaviour, setting, mode]
 expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), ([can, does] now), (now also), (was previously), (were previously), (had previously), (previously,), (previously [DET, PRON, PROPN]), ([before, after, with] this change), ([updated, changed] to use), (refactored to), (the new @surfaces), (than before), ([than, unlike] the [old, previous] @versions)]
-let message "Change narration. Durable prose describes the system as it is, and git history records what changed."
+let message "Change narration. Describe the system as it is, and move the change to the commit message."
 let description "Flags phrases that describe the system as a change from an earlier version."
 let becomes ""
 let kind "Style"
