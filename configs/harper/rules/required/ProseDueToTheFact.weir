@@ -1,5 +1,5 @@
 expr main due to the fact that
-let message "Write because."
+let message "Due to the fact that. Write because."
 let description "Shortens due to the fact that."
 let becomes "because"
 let kind "Style"
