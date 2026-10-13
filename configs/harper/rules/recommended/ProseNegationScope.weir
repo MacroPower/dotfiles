@@ -1,0 +1,22 @@
+# The scope of a negation is the part of the sentence that `not`
+# denies. In `all nodes do not run the agent`, `not` can deny `all`, so
+# that some nodes run it, or it can deny `run` for each node, so that
+# none do. `Not all nodes run the agent` and `no node runs the agent`
+# each read one way.
+#
+# The rule counts `all` or `both`, then a noun, an adjective or a noun
+# before a noun, or `of them`, `of these`, or `of those`, and then a
+# plural verb such as `are`, `do`, or `can` before `not`. Only plural
+# verbs count, because a singular verb means that `all` sits in a
+# phrase of its own (`a check across all claims does not run`). `each`
+# stays out, because `each file is not cached` reads only as none.
+#
+# It hit 3 lines in the measure.py corpus, and all 3 meant none.
+expr main ([all, both] [<NOUN, !PRON>, (<[NOUN, ADJ, PROPN], !PRON> NOUN), (of [them, these, those])] [are, do, were, have, can, will, should, must] not)
+let message "Negation scope. Write not all or none, whichever the sentence means."
+let description "Flags all and both before a negated plural verb, where not can deny all or each one."
+let becomes ""
+let kind "Style"
+allows "Not all nodes run the agent."
+allows "None of the nodes run the agent."
+allows "A check across all claims does not run."
