@@ -10,7 +10,7 @@
 # options table labels a column with it. Words glued to an underscore
 # or a digit are identifiers (`MAY_FAIL`) and pass too.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseCapsObligation: <message>
 
 @include "markdown.awk"

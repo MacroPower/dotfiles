@@ -7,7 +7,7 @@
 # breaking marker (`feat!:`). The reader blanks code spans first, so a
 # mark inside one passes.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseExclamation: <message>
 
 @include "markdown.awk"

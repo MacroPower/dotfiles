@@ -16,7 +16,7 @@
 # sentence. Each finding names the line and column where the paragraph
 # starts.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseParagraphLength: <message>
 
 @include "markdown.awk"

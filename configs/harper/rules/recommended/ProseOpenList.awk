@@ -11,7 +11,7 @@
 # compares (`safer and more convenient`). The reader blanks code spans
 # first, so a match inside one passes.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseOpenList: <message>
 
 @include "markdown.awk"

@@ -4,7 +4,7 @@
 #
 # `I would argue` stays out, because Harper's Hedging rule reports it.
 # `honestly`, `frankly`, and `personally` count only with a glued
-# comma, the sentence-adverb shape, since mid-sentence they modify a
+# comma, the sentence-adverb form, since mid-sentence they modify a
 # verb (`the tool reports the error honestly`).
 expr main [(in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said), (I'd argue), (I'd say), (I would say), (in my experience), (to be honest), (if you ask me), (honestly,), (frankly,), (personally,)]
 let message "Opinion marker. State the claim, or give the evidence for it."

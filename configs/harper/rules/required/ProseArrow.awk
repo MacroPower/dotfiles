@@ -6,7 +6,7 @@
 # up, down, and northeast arrows stay out, because docs use them as a
 # link icon or a UI glyph.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseArrow: <message>
 
 @include "markdown.awk"

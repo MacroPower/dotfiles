@@ -18,7 +18,7 @@
 # lines count no words. Each finding names the line and column where
 # the sentence starts.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseSentenceLength: <message>
 
 @include "markdown.awk"

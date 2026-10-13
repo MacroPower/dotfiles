@@ -7,7 +7,7 @@
 # prose-lint runs the check on a markdown file as prose and on every
 # other file it lints with RAW=1 set, which checks each line whole.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Punctuation::ProseTypography: <message>
 
 @include "markdown.awk"

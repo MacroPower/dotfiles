@@ -59,7 +59,7 @@
 # message mentions. `live` is stative because the tagger marks it as a
 # verb (`a caller whose context is live`).
 #
-# Two shapes stay flagged on purpose: an identifier used as a predicate
+# Two forms stay flagged on purpose: an identifier used as a predicate
 # noun (`The default is print`), which belongs in a code span, and a
 # resultative participle (`The issue is closed`), which the tagger
 # cannot tell from the event and which the skill rewrites anyway.

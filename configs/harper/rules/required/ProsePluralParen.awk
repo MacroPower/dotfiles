@@ -6,7 +6,7 @@
 # code spans, so a call such as `len(s)` passes inside one. It hit 40
 # lines in the kubernetes and nix.dev docs, every one a plural.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProsePluralParen: <message>
 
 @include "markdown.awk"

@@ -6,7 +6,7 @@
 # significantly at p < 0.01`). No guard tells the two apart, and the
 # adjective (`statistically significant`) passes.
 #
-# `highly available` names a deployment shape, so `highly` skips a
+# `highly available` names a redundant deployment, so `highly` skips a
 # following `available`.
 expr main [extremely, incredibly, significantly, dramatically, drastically, greatly, vastly, tremendously, massively, hugely, (highly !available)]
 let message "Intensifier. Give the number, or delete the word."

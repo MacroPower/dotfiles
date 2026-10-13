@@ -7,7 +7,7 @@
 #
 # The literal sense passes before a construction word (`seam tape`, `a
 # standing seam roof`) and before a slash (`seam/flashing checks`), the
-# shape a roofing scope list takes. The guard sits glued to the word so
+# form a roofing scope list takes. The guard sits glued to the word so
 # it reads the token right after it, which also lets a word at the end
 # of a line count.
 expr literal [flashing, tape, tapes, sealer, sealant, roof, roofs, roofing, weld, welds, welded, metal, allowance, ripper]

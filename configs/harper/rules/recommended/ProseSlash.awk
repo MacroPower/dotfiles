@@ -13,7 +13,7 @@
 # sampled hits joined two words that `and` or `or` can join. The miss
 # was the shorthand `k/k` for the kubernetes repository.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseSlash: <message>
 
 @include "markdown.awk"

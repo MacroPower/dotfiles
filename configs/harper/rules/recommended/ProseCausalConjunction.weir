@@ -11,7 +11,7 @@
 # `Since this is rarely needed`). A temporal `since` names a past event
 # (`since the upgrade landed`) or a version (`Since v2.3, the flag
 # ...`), so it has no such auxiliary and passes. All 24 hits of this
-# shape in the kubernetes and nix.dev docs marked a cause. The filter
+# form in the kubernetes and nix.dev docs marked a cause. The filter
 # narrows the finding to `since`. `needs` and `will` stay out of the
 # auxiliary list, because the obligation, no-negation, and future-tense
 # rules report the words after them.

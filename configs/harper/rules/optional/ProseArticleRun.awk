@@ -18,7 +18,7 @@
 # fired 0.0 to 0.2 times per 100 sentences, and about 3 times per 100
 # in the prose skill and these rule comments.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseArticleRun: <message>
 
 @include "markdown.awk"

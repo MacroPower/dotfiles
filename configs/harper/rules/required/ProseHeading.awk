@@ -35,7 +35,7 @@
 # code blocks. It does not examine Setext headings (text underlined
 # with = or -), because the formatter rewrites them to # headings.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:1: Style::ProseHeading: <message>
 
 BEGIN {

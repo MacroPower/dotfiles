@@ -15,7 +15,7 @@
 # It hit 16 lines in the kubernetes and nix.dev docs, and every hit but
 # `the above two keys` stated a quantity.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseOverUnder: <message>
 
 @include "markdown.awk"

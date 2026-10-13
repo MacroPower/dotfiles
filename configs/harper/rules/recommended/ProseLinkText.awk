@@ -9,7 +9,7 @@
 # a link inside a code span passes. An image (`![here](x.png)`) passes,
 # because its alt text describes the picture.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseLinkText: <message>
 
 @include "markdown.awk"

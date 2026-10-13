@@ -13,7 +13,7 @@
 # the C locale spells the same block as its UTF-8 bytes, so the output
 # matches in both.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseEmoji: <message>
 
 @include "markdown.awk"

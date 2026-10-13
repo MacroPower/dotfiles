@@ -3,7 +3,7 @@
 # the Unicode arrows. This one sits a tier lower because a spaced ASCII
 # arrow also appears in prose that quotes code without a code span.
 #
-# Output shape, one line per finding:
+# Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseArrow: <message>
 
 @include "markdown.awk"

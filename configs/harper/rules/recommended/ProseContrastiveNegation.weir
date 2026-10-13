@@ -7,7 +7,7 @@
 # The semicolon branch takes any words between the negation and the
 # semicolon. The comma branch needs a determiner, `about`, or a
 # minimizer on both sides of the comma (`isn't about speed, it's about
-# correctness`), because a conditional takes the same shape with a
+# correctness`), because a conditional takes the same form with a
 # predicate (`If the file isn't found, it's created`), and Weir has no
 # lookbehind for the `if`. A sentence that splits the two clauses with
 # a period (`It's not about speed. It's about correctness.`) passes,

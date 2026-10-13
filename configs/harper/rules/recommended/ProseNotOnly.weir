@@ -1,5 +1,5 @@
-# The skill bans the paired shape (`not only X but Y`), so a `not just`
-# or `not only` after a comma or an open paren passes. That shape is a
+# The skill bans the paired form (`not only X but Y`), so a `not just`
+# or `not only` after a comma or an open paren passes. That form is a
 # trailing correction (`Name the log events, not just the sentinel`,
 # `(not just the prune)`), which names a contrast the reader needs.
 #
@@ -10,7 +10,7 @@
 # `not`, so a sentence that opens with `Not only` counts through the
 # second branch, which needs the inverted auxiliary after it (`Not only
 # does the cache hold rules`), or through the third. That branch finds
-# the paired shape anywhere, after a comma too, by matching `but` up to
+# the paired form anywhere, after a comma too, by matching `but` up to
 # eight words after `not only` or `not just`. Each gap length is its
 # own alternative ending in `but`, because a list picks its longest
 # match and never backtracks, so a gap list followed by `but` swallows

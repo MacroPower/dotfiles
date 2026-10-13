@@ -12,8 +12,8 @@
 # `put` before it.
 #
 # After a negation the word carries a contrast (`it is not simply an
-# offset`), and deleting it flips the claim, so the not-only rule's
-# shape applies instead. Weir has no lookbehind, so the first branch
+# offset`), and deleting it flips the claim, so the not-only rule
+# applies instead. Weir has no lookbehind, so the first branch
 # consumes the token before the word, which must not be a negation,
 # and the filter narrows the finding back to the word. A space in a
 # pattern is itself a whitespace token, so `!@neg @word` reads a word,
@@ -22,7 +22,7 @@
 # through the other two, which need a verb or a glued comma after it
 # (`Simply run make`, `Simply, the cache is a map`). Those two also
 # fire after a negation when a verb follows (`is not simply copied`),
-# a shape rare enough to leave.
+# a case rare enough to leave.
 #
 # The other words have no opener branch, so a sentence that opens with
 # one passes (`Just run make`). A branch for `just` would also fire
