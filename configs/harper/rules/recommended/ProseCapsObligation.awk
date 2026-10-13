@@ -31,6 +31,6 @@ function prose(text,   at, word) {
     }
     word = substr(text, at)
     sub(/[^A-Z].*/, "", word)
-    printf "%s:%d:%d: Style::ProseCapsObligation: Uppercase %s. Write it in lowercase.\n", FILENAME, FNR, column(text, at), word
+    printf "%s:%d:%d: Style::ProseCapsObligation: Uppercase obligation %s. Write it in lowercase for a person, or state what the system does in the present tense.\n", FILENAME, FNR, column(text, at), word
   }
 }
