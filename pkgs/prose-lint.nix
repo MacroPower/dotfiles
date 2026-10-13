@@ -66,8 +66,10 @@ let
   # so each turns off every tier's ProseChangeNarration, ProseDatedClaim,
   # and ProseRoadmap. Each also turns off ProseFutureTense, because a
   # message about a change might say what the system does after it.
-  # The list holds name prefixes, and it turns off the Weir rules and
-  # the awk checks that match one.
+  # A message describes the system at one commit, so each turns off
+  # ProseStaleCount, whose counts stay true there. The list holds name
+  # prefixes, and it turns off the Weir rules and the awk checks that
+  # match one.
   ruleNames = prose-weirpack.passthru.ruleNames ++ prose-weirpack.passthru.builtinRules;
   allRules = lib.concatStringsSep "," ruleNames;
   timeSensitiveRules = [
@@ -75,6 +77,7 @@ let
     "ProseDatedClaim_"
     "ProseFutureTense_"
     "ProseRoadmap_"
+    "ProseStaleCount_"
   ];
   timeSensitive = name: lib.any (prefix: lib.hasPrefix prefix name) timeSensitiveRules;
   changeRules = lib.concatStringsSep "," (lib.filter (r: !(timeSensitive r)) ruleNames);
