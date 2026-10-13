@@ -6,7 +6,7 @@
 # (`stands as tall as`, `stands as written`, `serves as many requests
 # as`, `serves as root`, `serves as-is`).
 expr main [(stands as DET), (serves as DET), ([acts, act] as DET)]
-let message "Write is."
+let message "Serves as, acts as, or stands as. Write is, or the verb the role names."
 let description "Flags stands as, serves as, and acts as before a noun phrase, where is carries the meaning."
 let becomes ""
 let kind "Style"
