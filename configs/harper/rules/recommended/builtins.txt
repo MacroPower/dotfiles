@@ -11,3 +11,4 @@ Hedging
 LitotesDirectPositive
 CondenseAllThe
 RepeatedWords
+AllowTo
