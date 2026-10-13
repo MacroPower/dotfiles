@@ -7,7 +7,7 @@
 #
 # Each verb carries its inflections. `$merge` expands to merge,
 # merges, merged, and merging through Harper's dictionary. `return`,
-# `reply`, and `plan` list their forms by hand, since the dictionary
+# `reply`, and `plan` list their forms by hand, because the dictionary
 # gives no past tense for them.
 #
 # `still remain` sits in the Recommended rule of the same name.

@@ -1,17 +1,18 @@
 # Forms of `get` are left out on purpose. Matching is case-insensitive,
-# so `Get returns the value` in a Go doc comment would trip a `get VERB`
-# branch, and Harper's tagger rarely marks the participle after `gets`
+# so a `get VERB` branch fires on `Get returns the value` in a Go doc
+# comment, and Harper's tagger rarely marks the participle after `gets`
 # anyway (`gets flushed` goes unflagged either way).
 #
 # The filter `<VERB, !@stative>` requires one token to be a verb and
-# not one of the stative words the tagger also marks as verbs: a
-# progressive (`has been running` is active voice), the participial
-# adjectives docs lean on (`the flag is set`, `is enabled by default`,
-# `the port is stuck`), the naming idioms (`is called name`, `is
-# known as a handle`, `is meant for testing`), and the purpose
-# wrappers the intent rule reports (`is designed to`, `is intended
-# to`), so each draws one finding. `recommended` is stative for the
-# same reason, since the obligation rule reports `is recommended`.
+# not one of the stative words the tagger also marks as verbs. The
+# stative list holds a progressive (`has been running` is active
+# voice), the participial adjectives docs lean on (`the flag is set`,
+# `is enabled by default`, `the port is stuck`), and the naming idioms
+# (`is called name`, `is known as a handle`, `is meant for testing`).
+# It also holds the purpose wrappers the intent rule reports
+# (`is designed to`, `is intended to`), so each draws one finding.
+# `recommended` is stative for the same reason, because the obligation
+# rule reports `is recommended`.
 #
 # The `by` branch exists because the tagger misses many participles
 # (`is guarded by a lock`). It accepts any word the tagger does not
@@ -27,7 +28,7 @@
 # `retried`, `flushed`), so `missed` lists the common ones by hand.
 # `exported` and `deprecated` stay out, because a Go doc uses each to
 # name a state (`the field is exported`, `the method is deprecated`).
-# `not` sits beside the adverb slot, since the tagger does not mark it
+# `not` sits beside the adverb slot, because the tagger does not mark it
 # as one (`the value is not written`).
 #
 # The `!-` glued after the verb skips a hyphenated compound whose
@@ -35,14 +36,14 @@
 # fail-open`). It matches at the end of a clause too, so `the file is
 # skipped.` still counts.
 #
-# A stative word still reads as a passive when an agent follows it
+# Stative words still read as a passive when an agent follows them
 # (`the flag is set by the caller`, `the binary is built by the
 # pipeline`), so `agentive` lists the stative words that take one.
 # The agent must start with a determiner, pronoun, or proper noun, as
-# in the `by` branch, and the determiner may not open `by the time`
+# in the `by` branch, and the determiner must not open `by the time`
 # or `by the way`.
 #
-# `being` takes any participle but `said`, since `That being said` is
+# `being` takes any participle but `said`, because `That being said` is
 # the opener the concessive rule reports. The first branch takes every
 # other form of `be` through the filter `<@be, !being>`.
 #

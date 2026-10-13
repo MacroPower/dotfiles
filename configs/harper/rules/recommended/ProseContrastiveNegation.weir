@@ -11,7 +11,7 @@
 # predicate (`If the file isn't found, it's created`), and Weir has no
 # lookbehind for the `if`. A sentence that splits the two clauses with
 # a period (`It's not about speed. It's about correctness.`) passes,
-# since a rule reads one sentence at a time.
+# because a rule reads one sentence at a time.
 #
 # Each gap length is its own alternative ending in the punctuation,
 # the way the not-only rule writes its `but` tail. A space in a pattern

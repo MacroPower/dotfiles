@@ -1,4 +1,4 @@
-# `please` softens an instruction without changing it, and the
+# `please` softens an instruction but adds no content to it, and the
 # technical-writing skill bans it. `please note` sits in the Required
 # filler rule, so the guard glued to the word skips it. The guard also
 # skips `please` before clause punctuation, where it means `wish` (`the

@@ -8,17 +8,17 @@ carries under the internal name <Rule>_<Tier>, an .awk file is a check
 run with awk in place of Harper, and builtins.txt names the Harper
 built-ins the tier enables. The awk lib dir goes on AWKPATH, so a check
 can `@include` the shared markdown reader. For each rule, fixtures/<tier>/<Rule>.bad.md
-must produce a lint on every non-blank line, and neither
-fixtures/<tier>/<Rule>.good.md nor the shared fixtures/common.good.md
-may produce one. The shared file holds ordinary technical prose that
+must produce a lint on every non-blank line, and both
+fixtures/<tier>/<Rule>.good.md and the shared fixtures/common.good.md
+must produce none. The shared file holds ordinary technical prose that
 every rule must pass, so a line added there covers all the rules.
 
 Each plain phrase a Weir rule lists in its main expression, directly
 or through a referenced list, must also fire on its own in a probe
-sentence. A list entry that a guard or a typo has broken therefore
-fails the build. An entry that contains a shorter entry of the same
-rule fails too, since the shorter one already matches every sentence
-it does.
+sentence. List entries that a guard or a typo has broken therefore
+fail the build. Entries that contain a shorter entry of the same rule
+fail too, because the shorter one already matches every sentence they
+do.
 
 A rule without a fixture pair fails, so a typo in a built-in name
 cannot pass silently. A fixture pair without a rule fails too, so a
@@ -212,7 +212,7 @@ def plain_entries(weir: Path) -> list[str]:
     """Return the word-only phrases the rule's main expression lists.
 
     An `@name` alternative that refers to a list contributes that
-    list's phrases, since each one matches on its own. A bare word or
+    list's phrases, because each one matches on its own. A bare word or
     a parenthesized sequence of bare words counts as a phrase, and so
     does a main expression that is one such sequence.
     """

@@ -2,37 +2,38 @@
 # naming a topic. prose-lint and check.py both run this file, so the
 # hook and the build-time fixture check agree on every heading.
 #
-# The check skips a level-one heading, since it is the document title,
-# and a heading that is one code span, since a command reference names
-# the exact command.
+# The check skips a level-one heading, because it is the document
+# title, and a heading that is one code span, because a command
+# reference names the exact command.
 #
 # The check reports a heading at any level from two down when it
 # starts with a question word or an auxiliary, or ends with a question
 # mark or a colon. At level two it also reports a heading that contains a
 # pronoun, an auxiliary, or a subordinating conjunction anywhere, or
-# that runs past six words. A deeper heading skips those two checks,
-# because it often labels a single case (`Retries after a lease error`)
-# and can run longer than a section name. A possessive (`your`, `our`)
-# that opens a level-two heading passes, since it starts a noun phrase
-# (`Your Task`), while one after a verb still counts (`Setting up your
-# editor`). These are closed word
-# classes, so a noun phrase such as `Printing YAML with Lipgloss
-# Styles` passes while the check reports `How matching works` and
-# `Configuring the server before you start`.
-# Harper's part-of-speech tagger is not used, because a heading has no
-# sentence around it and the tagger reads `works` and `ships` as nouns.
-# The rule misses a short sentence built only from open-class words,
-# such as `The scheduler retries jobs`.
+# that runs past six words. Deeper headings skip those two checks,
+# because they often label a single case (`Retries after a lease
+# error`) and can run longer than a section name. A possessive (`your`,
+# `our`) that opens a level-two heading passes, because it starts a
+# noun phrase (`Your Task`), but one after a verb still counts
+# (`Setting up your editor`). The word lists hold closed word classes,
+# so a noun phrase such as `Printing YAML with Lipgloss Styles` passes,
+# and the check reports `How matching works` and `Configuring the
+# server before you start`.
 #
-# A heading at any level from two down that only announces a wrap-up
+# The check does not use Harper's part-of-speech tagger, because a
+# heading has no sentence around it and the tagger reads `works` and
+# `ships` as nouns. The rule misses a short sentence built only from
+# open-class words, such as `The scheduler retries jobs`.
+#
+# A heading at any level from two down that announces only a wrap-up
 # (`Conclusion`, `Final Thoughts`, `Key Takeaways`, `TL;DR`) names no
-# topic, so the check reports it too. `Summary`,
-# `Overview`, and `Next Steps` pass, since human-written docs and PR
-# descriptions use them as section names.
+# topic, so the check reports it too. `Summary`, `Overview`, and
+# `Next Steps` pass, because human-written docs and PR descriptions use
+# them as section names.
 #
-# YAML front matter, fenced code blocks, and indented code blocks are
-# skipped. Setext headings (text underlined with = or -) are not
-# examined, because the formatter rewrites them to # headings.
+# The check skips YAML front matter, fenced code blocks, and indented
+# code blocks. It does not examine Setext headings (text underlined
+# with = or -), because the formatter rewrites them to # headings.
 #
 # Output shape, one line per finding:
 #   <file>:<line>:1: Style::ProseHeading: <message>

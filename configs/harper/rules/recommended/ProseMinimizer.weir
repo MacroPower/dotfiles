@@ -1,11 +1,11 @@
 # Each word tells the reader a step is easy or a behavior is small
 # (`simply`, `merely`, `easily`, `straightforward`, `just run`), which
 # the reader judges for themselves. None needs a guard for a product
-# name or a mention of the word, since both are rare in technical
+# name or a mention of the word, because both are rare in technical
 # prose, and the skill wants the words gone from a sentence about
 # behavior.
 #
-# `simply` skips a following ` put`, since the restatement rule
+# `simply` skips a following ` put`, because the restatement rule
 # reports `Simply put`. The guard sits glued to the word so it reads
 # the token right after it. `Put simply` and `To put it simply` count
 # here instead, because no pattern can look back from `simply` to the
@@ -28,9 +28,9 @@
 # one passes (`Just run make`). A branch for `just` would also fire
 # after a negation (`you can't just use a container`), where it
 # carries the contrast. `just` counts only before an imperative verb,
-# since it also means `only` or `a moment ago` (`just one entry`, `the
+# because it also means `only` or `a moment ago` (`just one entry`, `the
 # file was just created`). `is easy to` and `it's easy to` do not need a
-# guard, since a negation splits them (`is not easy to`).
+# guard, because a negation splits them (`is not easy to`).
 expr neg [not, never, isn't, aren't, wasn't, weren't, can't, cannot, couldn't, won't, doesn't, don't, didn't, shouldn't]
 expr verbs [run, use, add, call, set, pass, type, install, copy, edit, change, create, delete, remove, update, point, drop, put, write, open, click]
 expr word [(simply!(( )put)), merely, easily, trivially, straightforward, (easy to use), (just @verbs)]

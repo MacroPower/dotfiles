@@ -3,13 +3,13 @@
 # last two of `---`), and two hyphens glued to the word before them
 # (`nightly--the`). A hyphen pair after whitespace and glued to the
 # word after it is a long flag (`--commit`) and passes. A bare `--`
-# separator in prose fires; write it in a code span.
+# separator in prose fires, and the fix sets it in a code span.
 #
 # A single hyphen with whitespace and a word on both sides stands in
-# for a dash too (`excluded on purpose - the`), since a writer barred
-# from the em dash reaches for it next. A glued hyphen passes
-# (`well-known`, `1-5`, `-1`), and so does a list marker, which has no
-# word before it.
+# for a dash too (`excluded on purpose - the`), because a writer barred
+# from the em dash reaches for it next. Glued hyphens pass
+# (`well-known`, `1-5`, `-1`), and so do list markers, which have no
+# word before them.
 expr word [NOUN, VERB, ADJ, ADV, PRON, DET, PROPN, NUM]
 expr main [—, –, (-- ), (@word--), (@word - @word)]
 let message "Dash. Use a period, a comma, or a conjunction."

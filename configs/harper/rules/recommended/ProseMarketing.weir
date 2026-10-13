@@ -3,7 +3,7 @@
 # first-class function, a superclass call). `enduring` stays out too
 # (`enduring storage outlives the pod`).
 #
-# `robust` keeps a technical sense behind a guard, since `robust to`
+# `robust` keeps a technical sense behind a guard, because `robust to`
 # names a statistical property (`robust to outliers`). A negated word
 # after a space needs a word to consume, so `robust` has a twin for a
 # clause end (`robust!( )`). `highly` sits in the intensifier rule,

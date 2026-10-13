@@ -20,23 +20,23 @@
 # end of a clause, because before a verb `nothing else` is the subject
 # of a new clause (`touches the file and nothing else references it`).
 # Its guard `else!( )` takes any token but whitespace right after the
-# phrase, so it also counts at the end of a list item with no period,
-# while a line break inside a paragraph reads as whitespace. A twin
-# branch takes a space and then a token outside every part-of-speech
-# tag with no space after it, which is how a pattern names the open
-# paren of a citation (`and nothing else (see the keyword table)`),
-# since Weir has no escape for a literal paren. The glued token keeps
-# out a verb the tagger left untagged (`and nothing else deletes it`),
-# because a space follows a word.
+# phrase, so it also counts at the end of a list item with no period.
+# A line break inside a paragraph reads as whitespace, so the guard
+# fails there. Weir has no escape for a literal paren, so a twin branch
+# names the open paren of a citation another way
+# (`and nothing else (see the keyword table)`). It takes a space and
+# then a token outside every part-of-speech tag with no space after it.
+# The glued token keeps out a verb the tagger left untagged
+# (`and nothing else deletes it`), because a space follows a word.
 #
-# The clause-end list is written glued to the word before it
-# (`surprises[., ;, :, (,)]`), since a space in a pattern is a
-# whitespace token and clause punctuation follows the word directly. It
-# is spelled out each time because `surprises@end` tokenizes as one
-# word. A bare comma cannot sit in a list, because the comma separates
-# list items, so it is wrapped as a one-token sequence. A negated word
-# after a space (`less !than`) needs a word to consume, so each of
-# those branches has a clause-end twin.
+# Each clause-end list sits glued to the word before it
+# (`surprises[., ;, :, (,)]`), because a space in a pattern is a
+# whitespace token and clause punctuation follows the word directly.
+# Each branch spells the list out, because `surprises@end` tokenizes as
+# one word. A bare comma cannot sit in a list, because the comma
+# separates list items, so the pattern wraps it as a one-token sequence.
+# Negated words after a space (`less !than`) need a word to consume, so
+# each of those branches has a clause-end twin.
 expr tagged [ADJ, ADP, ADV, AUX, CCONJ, DET, INTJ, NOUN, NUM, PART, PRON, PROPN, SCONJ, SYM, VERB, X]
 expr magic [number, numbers, byte, bytes, prefix, string, strings, value, values, constant, constants]
 expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (no more, no less !than), (no more, no less[., ;, :, (,)]), (nothing more, nothing less), (nothing more and nothing less), (and nothing else!( )), (and nothing else !@tagged!( )), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]

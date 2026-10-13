@@ -2,9 +2,9 @@
 # cache`, `leveraged its position`), because the noun is the common
 # sense in finance, hardware, and negotiation prose (`leverage ratio`,
 # `a leveraged buyout`, `more leverage`, `the leverage parameter`).
-# The rule flags instead of replacing, since a replacement would swallow
-# the object it matched. `$utilize` and `$utilise` never misfire, so
-# every form stays.
+# The rule flags instead of replacing, because the match includes the
+# object, which a rewrite to `use` drops. `$utilize` and `$utilise`
+# never misfire, so every form stays.
 expr main [$utilize, $utilise, ([leverage, leverages, leveraged, leveraging] [DET, PRON, PROPN, ADJ])]
 let message "Write use."
 let description "Flags leverage as a verb and every form of utilize."

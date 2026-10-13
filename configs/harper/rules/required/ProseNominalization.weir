@@ -1,15 +1,16 @@
 # Each phrase is a weak verb plus a noun that names the real verb
 # (`make a decision`, `perform a lookup`, `take into account`), or a
 # copula plus an adjective that does the same (`is dependent on`).
-# The list is fixed to the phrases, because a `[make, perform] DET
-# NOUN` pattern would flag `make a copy` and `perform the request`,
-# where the noun is the object and no single verb replaces the pair.
+# The list names each phrase in full, because a pattern such as
+# `[make, perform] DET NOUN` also matches `make a copy` and
+# `perform the request`, where the noun is the object and no single
+# verb replaces the pair.
 #
 # Each verb carries its inflections. `$perform` expands to perform,
 # performs, performed, and performing through Harper's dictionary,
 # and the lists below add what the dictionary leaves out, such as
 # `made`, `took`, and `drew`. `provide` lists its forms by hand,
-# since `$provide` also matches `provider` (`provider support for
+# because `$provide` also matches `provider` (`provider support for
 # Kubernetes`).
 #
 # `make a request` and `gain access to` sit in the Recommended rule of

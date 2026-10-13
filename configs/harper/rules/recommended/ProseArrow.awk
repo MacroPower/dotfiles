@@ -9,8 +9,8 @@
 @include "markdown.awk"
 
 function BEGIN_CHECK() {
-  # A spaced arrow (`plan -> apply`) stands in for a verb. A glued one
-  # (`x->y`, `x=>x+1`) is code written without a code span, which the
+  # A spaced arrow (`plan -> apply`) stands in for a verb. Glued arrows
+  # (`x->y`, `x=>x+1`) are code written without a code span, which the
   # check leaves alone.
   ascii = "(^|[ \t])(->|=>|<-)([ \t]|$)"
 }

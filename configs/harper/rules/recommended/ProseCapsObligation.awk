@@ -6,9 +6,9 @@
 #
 # The obligation rule already reports `is REQUIRED to` and `is
 # RECOMMENDED`, and the may-not rule reports `MAY NOT`, so this check
-# skips those forms. A word alone in a table cell passes, since an
-# options table labels a column with it. A word glued to an underscore
-# or a digit is an identifier (`MAY_FAIL`) and passes too.
+# skips those forms. A word alone in a table cell passes, because an
+# options table labels a column with it. Words glued to an underscore
+# or a digit are identifiers (`MAY_FAIL`) and pass too.
 #
 # Output shape, one line per finding:
 #   <file>:<line>:<col>: Style::ProseCapsObligation: <message>

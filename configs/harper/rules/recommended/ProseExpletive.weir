@@ -1,12 +1,12 @@
 # An expletive opener fills the subject slot with `there` or `it` and
 # moves the real subject later (`There are three files that hold the
 # config` becomes `Three files hold the config`, and `it is possible
-# that the cache is stale` becomes `the cache might be stale`). A
-# pseudo-cleft (`What the hook does is skip the file`) and `the reason
-# is that` do the same.
+# that the cache is stale` becomes `the cache might be stale`).
+# Pseudo-clefts (`What the hook does is skip the file`) and `the
+# reason is that` do the same.
 #
 # `there is` counts only with a relative pronoun one to three words
-# later, since `there is a lock` states that a thing exists. Each gap
+# later, because `there is a lock` states that a thing exists. Each gap
 # length is its own alternative, the way the not-only rule writes its
 # `but` tail. `it is advisable that` stays out, because the obligation
 # rule reports `it is advisable`.

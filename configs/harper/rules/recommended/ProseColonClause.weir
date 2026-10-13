@@ -1,11 +1,11 @@
 # A space in a Weir pattern matches a whitespace token, so the label
-# exception sits directly against the colon: `image:` tokenizes as
-# `image` and `:` with no whitespace between them.
+# exception sits directly against the colon. Harper splits `image:`
+# into `image` and `:` with no whitespace between them.
 #
 # The two leading wildcards require two words before the word that
 # carries the colon. Docs open lines with labels of every kind
 # (`Usage:`, `Returns:`, `Step 1:`, `Known issue:`, a speaker name, a
-# conventional-commit type), and a label is one or two words at the
+# conventional-commit type). Each label is one or two words at the
 # start of its sentence, so with the sentence scope no token precedes
 # it and the pattern cannot start. A clause has a subject and a verb
 # before its colon, so three words is the floor for a splice. The
@@ -14,12 +14,13 @@
 # After the colon, a clause shows its finite verb as an auxiliary or
 # as an adverb in the second or third position (`the cache is cold`,
 # `the tests always pass`), or as a verb in the third (`the first rule
-# wins`). A bare VERB tag is not accepted in the first two positions:
-# the tagger marks participles and many nouns as verbs, so `the path
-# passed by Claude Code`, `the value set by the environment`, and `the
-# section on caching` would all read as clauses. The adverb is not
-# accepted directly after the determiner (`the only value`, `the
-# always-on mode`), and a relative or subject pronoun in the second
+# wins`). The pattern rejects a bare VERB tag in the first two
+# positions, because the tagger marks participles and many nouns as
+# verbs. Without that limit, `the path passed by Claude Code`, `the
+# value set by the environment`, and `the section on caching` all read
+# as clauses. The pattern also rejects an adverb directly after the
+# determiner (`the only value`, `the always-on mode`), and a relative
+# or subject pronoun in the second
 # position (`the tag that was pushed`, `the host you are targeting`)
 # marks a noun phrase rather than a clause.
 expr adverbs [never, always, also, only, silently, still, then, already, just, now, usually, often, sometimes, rarely, immediately, eventually]

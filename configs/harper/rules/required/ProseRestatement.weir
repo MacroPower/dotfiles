@@ -1,9 +1,9 @@
 # Each phrase announces that the writer is about to say a thing again,
 # so the fix makes the first statement clear enough to stand alone and
 # drops the phrase. `in other words` counts only with a glued comma,
-# since the bare form ends a clause (`restates it in other words`).
+# because the bare form ends a clause (`restates it in other words`).
 # `to be clear` also needs the start of a clause after its comma,
-# since the infinitive takes a list of adjectives (`comments to be
+# because the infinitive takes a list of adjectives (`comments to be
 # clear, accurate, and readable`). A comma ends Harper's default
 # chunk, so the rule reads whole sentences to see past it.
 #

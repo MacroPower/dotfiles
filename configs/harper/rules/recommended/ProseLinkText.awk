@@ -7,7 +7,7 @@
 # the check matches the raw line in `$0`, which keeps the same columns.
 # It counts a match only when the blanked line still holds its `[`, so
 # a link inside a code span passes. An image (`![here](x.png)`) passes,
-# since its alt text describes the picture.
+# because its alt text describes the picture.
 #
 # Output shape, one line per finding:
 #   <file>:<line>:<col>: Style::ProseLinkText: <message>

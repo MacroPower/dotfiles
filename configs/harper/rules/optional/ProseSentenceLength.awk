@@ -4,19 +4,19 @@
 # so this check covers the band between them as a suggestion.
 #
 # The count follows LongSentences, so one sentence never draws both
-# findings: each part of a hyphenated word counts (`read-only` is two
+# findings. Each part of a hyphenated word counts (`read-only` is two
 # words), and a token with no letter (`42`, `|`) counts as none. The
 # reader blanks code spans, so a span counts as none either.
 #
-# A sentence runs across the lines of a paragraph and ends at a `.`,
-# `?`, or `!` before whitespace or the line end, after any closing
-# quote, paren, bracket, or emphasis. A paragraph ends at a skipped
-# line, which a blank line or a fenced block leaves, and at a line the
-# reader passes as blank, which a bare `>` between two quoted
-# paragraphs becomes. A list item, a heading, a table row, or a line
-# that opens with an HTML tag starts a new one. A heading, a table row,
-# and an HTML line count no words. A finding names the line and column
-# where the sentence starts.
+# Sentences run across the lines of a paragraph and end at a `.`, `?`,
+# or `!` before whitespace or the line end, after any closing quote,
+# paren, bracket, or emphasis. Paragraphs end at a skipped line, which
+# a blank line or a fenced block leaves, and at a line the reader
+# passes as blank, which a bare `>` between two quoted paragraphs
+# becomes. List items, headings, table rows, and lines that open with
+# an HTML tag each start a new one. Headings, table rows, and HTML
+# lines count no words. Each finding names the line and column where
+# the sentence starts.
 #
 # Output shape, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseSentenceLength: <message>

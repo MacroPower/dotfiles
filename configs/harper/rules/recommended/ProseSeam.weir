@@ -1,8 +1,9 @@
-# `seam` borrows the legacy-code term for a place where behavior can be
-# swapped without an edit, and it rarely says which place. When the
-# sentence means one, it names the function, interface, or hook (`the
-# injection seam` becomes `the Now field that tests replace`). When it
-# means none, the word goes.
+# `seam` borrows the legacy-code term for a place where a test can swap
+# in other behavior without an edit, and it rarely says which place.
+# When the sentence means one, it names the function, interface, or
+# hook (`the injection seam` becomes
+# `the Now field that tests replace`). When it means none, the word
+# goes.
 #
 # The literal sense passes before a construction word (`seam tape`, `a
 # standing seam roof`) and before a slash (`seam/flashing checks`), the

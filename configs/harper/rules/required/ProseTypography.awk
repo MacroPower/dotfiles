@@ -14,7 +14,7 @@
 
 function BEGIN_CHECK() {
   # Each character as its UTF-8 bytes in octal, joined by `|`. A
-  # bracket expression of bytes fails under a UTF-8 locale, while this
+  # bracket expression of bytes fails under a UTF-8 locale, but this
   # alternation matches the same text under any locale.
   bad = "\342\200\220|\342\200\221|\342\200\222|\342\200\225|\342\200\230|\342\200\231|\342\200\232|\342\200\233|\342\200\234|\342\200\235|\342\200\236|\342\200\237|\342\200\246|\342\210\222"
 }

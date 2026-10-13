@@ -1,6 +1,7 @@
-# `will` puts what the system does now into the future (`running make
-# will build the binary`), and the reader has to work out whether the
-# sentence describes a later event or the system's normal behavior.
+# `will` puts the system's present behavior into the future
+# (`running make will build the binary`), and the reader has to work
+# out whether the sentence describes a later event or the system's
+# normal behavior.
 # The technical-writing skill writes the present tense for what the
 # system does and keeps `will` for a later event, which a word rule
 # cannot tell apart, so the rule is a suggestion.
@@ -15,7 +16,8 @@
 # added`, `will be supported`, `will be removed`, and `will be
 # deprecated`, which the roadmap rule reports, and `will be able to`,
 # which the wordy rule reports. prose-lint turns the rule off for a
-# commit message, which may describe what the change will do.
+# commit message, because a commit message describes what the system
+# does after the change lands.
 #
 # It hit 1447 lines in the kubernetes, nix.dev, and Go docs, and 10 of
 # 10 sampled hits described the system's normal behavior.

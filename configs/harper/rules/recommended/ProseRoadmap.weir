@@ -4,13 +4,13 @@
 #
 # Three phrases keep a runtime sense behind a guard. `in the future`
 # skips a form of `be` or a time noun before it (`the timestamp must
-# be in the future`, `a cutoff in the future`); the filter narrows the
+# be in the future`, `a cutoff in the future`). The filter narrows the
 # finding to the phrase itself, and a glued comma has its own branch
 # so the sentence opener (`In the future, ...`) still counts once.
 # `is planned` skips an agent (`the query is planned by the
 # optimizer`), with a clause-end twin because a negated word after a
 # space needs a word to consume. `to be implemented` needs `yet`,
-# `still`, or `remains` before it, since the bare infinitive names a
+# `still`, or `remains` before it, because the bare infinitive names a
 # capability (`allows a filesystem to be implemented in user space`).
 expr when [be, is, are, was, were, time, date, point, timestamp, deadline, cutoff, moment, instant, far, further]
 expr main [(going forward), <(!@when in the future!,), (in the future)>, (in the future,), (in a future release), (in a future version), (in an upcoming release), (in upcoming releases), (in future releases), (in future versions), (will be added), (will be supported), (will be removed), (will be deprecated), ([is, are] planned !by), ([is, are] planned!( )), (on the roadmap), (coming soon), (not yet implemented), (not yet supported), ([yet, still, remains, remain] to be implemented), (will soon), (soon be)]

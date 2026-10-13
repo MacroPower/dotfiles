@@ -1,4 +1,4 @@
-# Each branch is narrowed to the change sense, because Go doc prose uses
+# Each branch matches only the change sense, because Go doc prose uses
 # the same words for runtime sequence far more often.
 #
 # `now VERB` requires a subject word before `now`, so `time.Now returns`,
@@ -12,12 +12,12 @@
 #
 # `previously` fires only as `was/were/had previously`, as the
 # sentence opener `Previously,`, or before the subject of a clause
-# (`Previously the walker visited aliases twice`); `the previously
-# cached value` is ordering at runtime.
+# (`Previously the walker visited aliases twice`). In `the previously
+# cached value`, the word orders events at runtime.
 #
-# A code comment narrates the edit that produced it (`Before this
+# Code comments that narrate the edit that produced them (`Before this
 # change, the walker visited aliases twice`, `Updated to use the
-# cached index`), which belongs in the commit message. A passive form
+# cached index`) belong in the commit message. A passive form
 # (`was refactored to`) also draws the passive rule's finding.
 #
 # `than before` compares the system with an earlier version of itself.

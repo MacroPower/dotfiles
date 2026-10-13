@@ -13,11 +13,11 @@
 # the paired shape anywhere, after a comma too, by matching `but` up to
 # eight words after `not only` or `not just`. Each gap length is its
 # own alternative ending in `but`, because a list picks its longest
-# match and never backtracks, so a gap list followed by `but` would
-# swallow the `but`. The last word before `but` may carry a comma
+# match and never backtracks, so a gap list followed by `but` swallows
+# the `but`. The last word before `but` can carry a comma
 # (`Not only the cache, but the log grows`).
 #
-# `not just !any` skips the idiom `not just any file`; the glued hyphen
+# `not just !any` skips the idiom `not just any file`. The glued hyphen
 # in `not just-in-time` already fails the whitespace match.
 # `isn't just` and `more than just` make the same move (`it isn't just
 # a cache`, `it is more than just a cache`).

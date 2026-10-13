@@ -1,11 +1,12 @@
-# Reports an emoji in markdown prose: a pictograph, flag, or skin tone
-# in U+1F000 to U+1FAFF, a symbol whose default presentation is emoji
-# (a check mark button, a sparkle, a star), any symbol followed by the
-# U+FE0F emoji selector, a keycap, or a `:shortcode:`. Every prose line
-# counts, since emoji turn up in link text, table cells, and summaries
-# as often as in headings and list items. The U+2600 to U+27BF block
-# stays out as a range, because a plain check mark in a table cell or a
-# prompt glyph is text, not decoration.
+# Reports an emoji in markdown prose. Emoji include the pictographs,
+# flags, and skin tones in U+1F000 to U+1FAFF, and the symbols whose
+# default presentation is emoji. Those symbols include a check mark
+# button, a sparkle, and a star. Any symbol followed by the U+FE0F
+# emoji selector counts too, and so do keycaps and `:shortcode:` names.
+# Every prose line counts, because emoji turn up in link text, table
+# cells, and summaries as often as in headings and list items. The
+# U+2600 to U+27BF block stays out as a range, because a plain check
+# mark in a table cell or a prompt glyph is text, not decoration.
 #
 # A range needs a UTF-8 locale. BEGIN_CHECK reads `utf8`, which the
 # reader sets when gawk reads a two-byte character as one, and under
@@ -28,8 +29,8 @@ function BEGIN_CHECK(   list, n, i, bmp) {
   }
   # U+FE0F asks for emoji presentation, U+20E3 builds a keycap, and
   # U+1F000 to U+1FAFF holds the pictographs, flags, and skin tones.
-  # A range needs a UTF-8 locale; under the C locale the same block is
-  # spelled as its UTF-8 bytes.
+  # A range needs a UTF-8 locale. Under the C locale, the code spells
+  # the same block as its UTF-8 bytes.
   if (utf8) {
     smp = "[🀀-🫿]"
   } else {

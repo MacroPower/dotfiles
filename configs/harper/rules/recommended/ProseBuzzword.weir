@@ -8,14 +8,14 @@
 # phrase is the only guard against AWS Bedrock (`hand the response to
 # Amazon Bedrock for processing`, which is why `bedrock for` needs
 # `the`) and Sonatype Nexus. `paradigm` counts only as `paradigm shift`
-# or `new paradigm`, since `programming paradigm` is a term of art, and
+# or `new paradigm`, because `programming paradigm` is a term of art, and
 # `north star` passes before `metric`, which names a product metric.
 #
 # `modality` is left out, because machine-learning docs use it for an
 # input type (`an image modality`), and so are `vantage` (a cost tool)
 # and `locus` (genetics and math). `vector`, `primitive`, `surface`,
 # `harness`, `scaffolding`, `ratchet`, and `evacuate` stay out too,
-# since each names something in code or operations (a math type, a
+# because each names something in code or operations (a math type, a
 # language built-in, an attack surface, a test harness, a code
 # generator, a lint baseline that only tightens, a node drain).
 expr main [substrate, substrates, endgame, flywheel, flywheels, (bedrock of), (the bedrock for), (nexus [of, between]), (paradigm shift), (new paradigm), (north[-, ( )]star!(( )[metric, metrics])), (gold[-, ( )]plating), (gold[-, ( )]plated), (wedge in)]

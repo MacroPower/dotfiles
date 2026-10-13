@@ -2,8 +2,8 @@
 # saying how likely it is, and `could` also means ability. The
 # technical-writing skill writes `might` for a possibility, `can` for
 # an ability, and the present tense for a consequence (`the write
-# would fail` becomes `the write fails`). `could not` passes, since it
-# is the past of `cannot` (`the parser could not read the file`).
+# would fail` becomes `the write fails`). `could not` passes, because
+# it is the past of `cannot` (`the parser could not read the file`).
 #
 # Guards glued to each word skip the phrases other rules report: `would
 # say` and `could argue` (the opinion rule), `would expect` (the filler

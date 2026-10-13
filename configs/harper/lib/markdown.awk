@@ -9,13 +9,13 @@
 # spans, HTML code, kbd, samp, and pre elements, autolinks, link
 # destinations, and bare URLs to spaces, so columns stay put. It skips
 # YAML front matter, fenced code at any indentation or inside a
-# blockquote, indented code (an indented line after a blank line
-# outside a list, so a nested list item still counts), HTML comments,
-# and a MyST directive's opening fence with the `:name: value` option
-# lines under it, which a shortcode pattern would read as an emoji
-# (`:class: tip`). Under the C locale the nix build sandbox uses, gawk reads
-# bytes, so column() converts a byte offset to the character column a
-# reader sees.
+# blockquote, and HTML comments. It also skips indented code (an
+# indented line after a blank line outside a list, so a nested list
+# item still counts). It skips a MyST directive's opening fence and the
+# `:name: value` option lines under it, because ProseEmoji's shortcode
+# pattern matches an option such as `:class: tip`. Under the C locale
+# the nix build sandbox uses, gawk reads bytes, so column() converts a
+# byte offset to the character column a reader sees.
 #
 # With RAW=1 in the environment, the reader passes every line to
 # prose() whole, string literals included, for a source file with no
@@ -31,8 +31,8 @@ BEGIN {
   in_comment = 0
   myst_options = 0
   raw_mode = ENVIRON["RAW"] != ""
-  # A UTF-8 locale reads é as one character; the C locale the nix
-  # build sandbox runs under reads it as two bytes.
+  # A UTF-8 locale reads é as one character, and the C locale that the
+  # nix build sandbox runs under reads it as two bytes.
   utf8 = length("é") == 1
   BEGIN_CHECK()
 }
@@ -57,8 +57,9 @@ function blank(s, re,   out) {
   return out s
 }
 
-# Blanks each inline code span: a backtick run closed by the next run
-# of the same length. An unclosed run stays literal.
+# Blanks each inline code span. Spans open with a run of backticks and
+# close at the next run of the same length. An unclosed run stays
+# literal.
 function strip_code(s,   out, i, L, c, n, j, m, found) {
   out = ""
   i = 1

@@ -8,14 +8,14 @@
 # space or other punctuation follows them, which leaves the `!` of a
 # chat opener (`Certainly! Here is the fix`). The guard sits glued to
 # the word so it reads the token right after it. A closing paren cannot
-# sit in the list, since it ends the list, so `(absolutely)` still
+# sit in the list, because it ends the list, so `(absolutely)` still
 # fires, and so does the word at the end of a line.
 #
 # `you're right` counts only with punctuation glued after it (`You're
 # right, the cache was stale`), which leaves `you're right-clicking`
 # and `you're right next to the limit`. `good catch` and `great catch`
-# skip a following code word (`a good catch block`). `here's the
-# updated` and its kin hand a reply back to the asker.
+# skip a following code word (`a good catch block`). The phrase
+# `here's the updated` and its kin return a reply to the asker.
 expr code [block, blocks, clause, clauses, statement, statements, handler, handlers, arm, arms]
 expr main [(hope this helps), (hope that helps), (hope [this, that] [clarifies, clears]), (great question), (good question), ([great, good] catch!(( )@code)), ([you're, (you are)] right!([( ), -, /])), ([here's, (here is), (here are)] the [updated, revised, corrected, fixed]), (you're absolutely right), (you are absolutely right), (I'd be happy to), (I would be happy to), ([certainly, absolutely]![( ), ,, ., ?, ;, :, -, /])]
 let message "Chatbot phrase. Delete it and respond directly."

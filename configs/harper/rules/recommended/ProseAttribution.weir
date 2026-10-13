@@ -2,11 +2,11 @@
 # the fix names the source or drops the claim.
 #
 # `research shows` and `studies have shown` pass when a citation in
-# parens or brackets follows (`Research shows (Smith 2021) that`). A
-# bracket carries no part-of-speech tag, so the guard `!( !@tagged)`
-# rejects a following word with any tag and keeps the bracket; a
-# `PUNCT` or `SYM` guard never matches it. A citation at the end of the
-# sentence still fires, since the guard reads only the next token.
+# parens or brackets follows (`Research shows (Smith 2021) that`).
+# Brackets carry no part-of-speech tag, so the guard `!( !@tagged)`
+# rejects a following word with any tag and keeps the bracket. Neither
+# a `PUNCT` nor a `SYM` guard matches one. A citation at the end of the
+# sentence still fires, because the guard reads only the next token.
 #
 # `industry reports` needs a finding verb after it, because the bare
 # noun phrase names real filings (`industry reports are filed

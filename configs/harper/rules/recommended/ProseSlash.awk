@@ -1,16 +1,16 @@
 # Reports two lowercase words joined by a slash in markdown prose
 # (`read/write`, `client/server`). The slash can mean `and`, `or`, or
 # `per`, so the reader picks one, and the technical-writing skill bans
-# it. The Required and/or rule reports `and/or`, so this check skips
-# it.
+# it. The Required ProseAndOr rule reports `and/or`, so this check
+# skips it.
 #
-# A path or URL passes: a slash before or after the pair (`/etc/hosts`,
+# Paths and URLs pass: a slash before or after the pair (`/etc/hosts`,
 # `a/b/c`), a `.`, `~`, `:`, or `@` before it, or a file extension
 # after it. A capitalized pair passes too (`I/O`, `CI/CD`, `TCP/IP`).
 # The reader blanks code spans first, so a match inside one passes.
 #
 # It hit 126 lines in the kubernetes and nix.dev docs, and 9 of 10
-# sampled hits joined two words that `and` or `or` could join. The miss
+# sampled hits joined two words that `and` or `or` can join. The miss
 # was the shorthand `k/k` for the kubernetes repository.
 #
 # Output shape, one line per finding:

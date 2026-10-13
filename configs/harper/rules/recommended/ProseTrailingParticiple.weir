@@ -7,10 +7,10 @@
 # `contributing guide` names a document). After `thereby`
 # or `thus` any participle counts. The final `![,, and, or]` skips
 # a gerund that is one item in a list (`allowing, enabling, and
-# letting`) or a pair (`keeping and dropping`); with Weir's whitespace
+# letting`) or a pair (`keeping and dropping`). With Weir's whitespace
 # tokens, a comma glued to the word fails the match on its own.
 #
-# Two shapes stay flagged on purpose, since a word rule cannot tell
+# Two shapes stay flagged on purpose, because a word rule cannot tell
 # them from a trailing participial phrase and both rewrite cleanly: a
 # gerund subject after a fronted clause (`If the file is missing,
 # creating it is the caller's job`) and a participle phrase bracketed

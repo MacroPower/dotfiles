@@ -1,5 +1,5 @@
 # The change-narration rule catches a change described from the past,
-# and the roadmap rule catches a claim promised for later; this one
+# and the roadmap rule catches a claim promised for later. This rule
 # catches a claim dated to the present. Bare `currently` is too common
 # as runtime state (`the currently selected row`, `whether the item is
 # currently available`), so it counts only before a word that names

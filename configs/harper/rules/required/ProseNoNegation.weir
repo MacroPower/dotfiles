@@ -5,7 +5,7 @@
 # arguments` read as plain idiom. A comparative after `no` (`requires
 # no more than 2 GB`, `need no longer wait`) states a bound or a time
 # instead, so the guard skips `more`, `less`, `fewer`, and `longer`.
-# The rule flags instead of replacing, since the fix depends on tense
+# The rule flags instead of replacing, because the fix depends on tense
 # and person (`does not need`, `do not need`, `did not need`).
 expr main ([needs, need, needed, requires, require, required] no ![more, less, fewer, longer])
 let message "No-negation. Negate the verb, so needs no npm becomes does not need npm."
