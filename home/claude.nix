@@ -917,6 +917,14 @@ let
 
   # Wrap claude with its invocation-time env so vars survive boundaries that
   # do not propagate the shell env (lima VMs, ssh without SendEnv, etc.).
+  #
+  # CLAUDE_CODE_DISABLE_INLINE_SHELL_RM_PROMPT turns off Claude Code's
+  # removal check for `sh -c` scripts. That check prompts in every
+  # permission mode on any script that runs `rm` and that it cannot
+  # analyze. hook-router's rmguard still checks those scripts for unsafe
+  # `rm` targets. Claude Code reads this variable only from its launch
+  # environment and ignores it in settings.json `env`, so the wrapper
+  # sets it.
   claudeWrapped = pkgs.symlinkJoin {
     name = "claude-code-wrapped";
     paths = [ pkgs.llm-agents.claude-code ];
@@ -933,6 +941,7 @@ let
         ${kubectxKubeconfigRunArgs} \
         --set CLAUDE_CODE_TMUX_TRUECOLOR 1 \
         --set CLAUDE_CODE_NO_FLICKER 1 \
+        --set CLAUDE_CODE_DISABLE_INLINE_SHELL_RM_PROMPT 1 \
         --set DISABLE_AUTOUPDATER 1 \
         --set CLAUDE_RESEARCH_DIR ${lib.escapeShellArg researchDir} \
         --set TF_CLI_CONFIG_FILE "${config.xdg.configHome}/opentofu/tofurc" \
