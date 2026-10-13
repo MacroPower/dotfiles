@@ -61,7 +61,7 @@ const (
 	// each fix, and a commit or pull request message with one is
 	// denied every time.
 	Required Tier = iota
-	// Recommended findings come from shape detectors that can misread
+	// Recommended findings come from pattern detectors that can misread
 	// a sentence. A file write asks for the fix unless the rule
 	// misread the sentence, and a commit or pull request message is
 	// denied once; the identical command passes on its next run.

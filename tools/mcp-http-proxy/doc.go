@@ -35,7 +35,7 @@
 //
 // Notifications are not forwarded in either direction. The SDK's generic
 // middleware hook requires returning a value of an unexported Result type to
-// respond to notification-shaped methods, which cannot be constructed from
+// respond to notification methods, which cannot be constructed from
 // outside the mcp package. As a result:
 //
 //   - Local notifications/cancelled, notifications/progress, logging/setLevel

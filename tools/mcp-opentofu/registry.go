@@ -64,14 +64,14 @@ type ProviderVersionDocs struct {
 	Datasources []DocItem `json:"datasources"`
 }
 
-// ProviderVersion is the response shape of
+// ProviderVersion holds the response body of
 // /providers/{ns}/{name}/{ver}/index.json.
 type ProviderVersion struct {
 	ID   string              `json:"id"`
 	Docs ProviderVersionDocs `json:"docs"`
 }
 
-// Provider is the response shape of /providers/{ns}/{name}/index.json.
+// Provider holds the response body of /providers/{ns}/{name}/index.json.
 type Provider struct {
 	Addr        Addr      `json:"addr"`
 	Description string    `json:"description"`
@@ -80,7 +80,7 @@ type Provider struct {
 	Popularity  int       `json:"popularity"`
 }
 
-// Module is the response shape of /modules/{ns}/{name}/{target}/index.json.
+// Module holds the response body of /modules/{ns}/{name}/{target}/index.json.
 //
 // ForkOf is always present; non-fork modules carry the sentinel
 // {Display:"//", Namespace:"", Name:"", Target:""}, so the renderer compares

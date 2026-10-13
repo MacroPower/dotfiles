@@ -112,7 +112,7 @@ func Block(reason string) map[string]any {
 
 // UpdatedOutput returns a PostToolUse decision that replaces the
 // tool's surfaced output with updated. Claude Code requires updated to
-// match the tool's output shape, so callers re-emit the whole
+// match the tool's output schema, so callers re-emit the whole
 // tool_response map with only the rewritten fields overwritten.
 func UpdatedOutput(updated map[string]any) map[string]any {
 	return map[string]any{
@@ -123,7 +123,7 @@ func UpdatedOutput(updated map[string]any) map[string]any {
 	}
 }
 
-// Encode writes v to w as a single JSON document, the shape Claude
+// Encode writes v to w as a single JSON document, the format Claude
 // Code reads hook decisions from on stdout.
 func Encode(w io.Writer, v any) error {
 	err := json.NewEncoder(w).Encode(v)

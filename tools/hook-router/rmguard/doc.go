@@ -27,7 +27,7 @@
 //
 // # Unresolvable Targets
 //
-// Four more shapes match, each with its own advice:
+// Four more patterns match, each with its own advice:
 //
 //   - A target made only of command substitutions, such as `rm -rf
 //     $(find . -name x)`.

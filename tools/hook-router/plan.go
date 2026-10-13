@@ -196,7 +196,7 @@ func handleExitPlanModePre(
 // The signature deliberately omits an io.Writer: this handler must
 // never produce updatedInput, because workmux's PostToolUse entry
 // runs concurrently and only one hook per tool may mutate input.
-// Expected tool_input shape (walk defensively with comma-ok):
+// Expected tool_input structure (walk defensively with comma-ok):
 //
 //	{ "questions": [{ "options": [{"label": "..."}, ...] }, ...] }
 func handlePostAskUserQuestion(
@@ -247,7 +247,7 @@ func handlePostAskUserQuestion(
 
 // hasPostImplLabel walks tool_input["questions"][].options[].label and
 // reports whether any label matches a [*postimpl.Catalog] label. All
-// type assertions use comma-ok; malformed shapes are treated as "no
+// type assertions use comma-ok, so a malformed input counts as "no
 // match". An empty catalog matches nothing.
 func hasPostImplLabel(toolInput map[string]any, cat *postimpl.Catalog) bool {
 	if toolInput == nil {

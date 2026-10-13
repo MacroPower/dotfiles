@@ -168,7 +168,7 @@ func matchRule(call *syntax.CallExpr, rule Rule) bool {
 	// Phase 2 takes the very next call.Arg as the Except candidate
 	// without flag skipping, so e.g. `git stash --keep-index pop`
 	// denies because `--keep-index` is the candidate. Flag skipping
-	// ignores the shape of a flag's value, so `git -C "$dir" clone`
+	// accepts a non-literal flag value, so `git -C "$dir" clone`
 	// still reaches `clone`. A non-literal positional arg ends
 	// collection; positionals collected so far still count.
 	matched := 0

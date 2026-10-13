@@ -47,10 +47,10 @@ var (
 
 	// addedColumns lists the columns added to `fetches` after the
 	// original schema, in the order they shipped. ensureSchema
-	// converges on this list by inspecting the live table shape rather
+	// converges on this list by inspecting the live table schema rather
 	// than the stamped version: the version stamp lands in a separate
 	// write from the DDL, so a crash or busy-timeout between the two
-	// leaves the shape ahead of the stamp, and ALTER TABLE has no IF
+	// leaves the schema ahead of the stamp, and ALTER TABLE has no IF
 	// NOT EXISTS form to absorb that.
 	addedColumns = []struct {
 		column string
@@ -181,16 +181,16 @@ func Open(ctx context.Context, path string) (*Store, error) {
 // concurrent load.
 //
 // The stamped version only gates the fast path; it is never trusted to
-// describe the table shape. The stamp lands in a separate write from
+// describe the table schema. The stamp lands in a separate write from
 // the DDL, so a crash or busy-timeout between the two leaves an
 // out-of-date stamp on an upgraded table (or the reverse). Any time the
 // stamp is behind, the full idempotent DDL runs and each added column
-// is checked against the live table, so every reachable shape converges.
+// is checked against the live table, so every reachable schema converges.
 //
 // Cold-start race: when N processes open the same database
 // concurrently, all may run the CREATE ... IF NOT EXISTS DDL, which is
 // safe to race on. Column adds race too; the loser of an ALTER race
-// re-checks the live shape instead of interpreting driver error text.
+// re-checks the live schema instead of interpreting driver error text.
 // The final PRAGMA user_version write serializes on SQLite's write
 // lock under the busy_timeout window, so readers see the version flip
 // atomically and converge on schemaVersion.
@@ -234,8 +234,8 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 }
 
 // ensureColumn adds one column to `fetches` when the live table lacks
-// it. A failed ALTER re-checks the live shape: a concurrent open may
-// have added the column between the check and the ALTER, and the shape
+// it. A failed ALTER re-checks the live schema: a concurrent open may
+// have added the column between the check and the ALTER, and the schema
 // is authoritative where driver error text is not.
 func (s *Store) ensureColumn(ctx context.Context, column, ddl string) error {
 	exists, err := s.columnExists(ctx, column)

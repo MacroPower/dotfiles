@@ -210,7 +210,7 @@ func TestHandleSessionEnd(t *testing.T) { //nolint:tparallel,paralleltest // sub
 }
 
 // TestRemoveSessionDir_BasenameShapeGuard pins the containment guard:
-// only a basename with the exact claude-kubectx.<pid> shape (canonical
+// only a basename with the exact claude-kubectx.<pid> pattern (canonical
 // positive decimal PID) is eligible for removal, so a rogue
 // CLAUDE_KUBECTX_DIR value cannot point the hook at an arbitrary path.
 func TestRemoveSessionDir_BasenameShapeGuard(t *testing.T) { //nolint:tparallel,paralleltest // subtests use t.Setenv
@@ -333,7 +333,7 @@ func TestKubectxSweepParent(t *testing.T) { //nolint:tparallel,paralleltest // s
 }
 
 // Sanity check that the sweep is wired up to remove dirs whose
-// basename matches the launcher wrapper's PID-suffixed shape (not
+// basename matches the launcher wrapper's PID-suffixed pattern (not
 // just any directory inside parent).
 func TestSweepKubectxDirs_OnlyMatchingPrefix(t *testing.T) {
 	t.Parallel()
@@ -350,6 +350,6 @@ func TestSweepKubectxDirs_OnlyMatchingPrefix(t *testing.T) {
 	_, err := os.Stat(siblingPrefixed)
 	assert.NoError(t, err, "directory must not be removed unless basename has the kubectx prefix")
 
-	// Defensive: explicitly confirm the test pinned the right shape.
+	// Defensive: explicitly confirm the test pinned the right pattern.
 	require.True(t, strings.HasPrefix(filepath.Base(siblingPrefixed), "claude-"))
 }

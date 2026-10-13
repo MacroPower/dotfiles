@@ -18,9 +18,9 @@ type anthropicError struct {
 	} `json:"error"`
 }
 
-// writeAnthropicError synthesizes an Anthropic-shaped error response. It is
-// used for proxy-internal failures; upstream Copilot errors are already
-// Anthropic-shaped and are relayed unchanged.
+// writeAnthropicError writes an error response in the Anthropic format for
+// a proxy-internal failure. Upstream Copilot errors already use that format,
+// and [relay] passes them through unchanged.
 func writeAnthropicError(w http.ResponseWriter, status int, errType, message string) {
 	var e anthropicError
 	e.Type = "error"

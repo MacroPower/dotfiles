@@ -158,7 +158,7 @@ func handleBashCtx(ctx context.Context, input []byte, stdout io.Writer, cfg conf
 	// Deny rm and rmdir on a target Claude Code cannot prove safe: one
 	// that starts with a possibly-empty variable, or one it cannot
 	// resolve before the command runs. Claude Code forces a permission
-	// prompt on those shapes in every permission mode, and this deny
+	// prompt on those patterns in every permission mode, and this deny
 	// reaches the agent first with the rewrite. Runs before the message
 	// lint so a command denied here does not spend that lint's
 	// once-per-message waiver.

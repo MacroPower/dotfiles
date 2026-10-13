@@ -106,7 +106,7 @@ func TestParseCompactConfig(t *testing.T) {
 	}
 }
 
-// TestParseCompactConfigNixJSON pins the wire shape produced by
+// TestParseCompactConfigNixJSON pins the wire format produced by
 // builtins.toJSON on home/claude.nix's outputCompaction submodule. Nix
 // emits attribute names verbatim in lexicographic order, so a rename on
 // either side that broke this round-trip would mis-parse every
@@ -114,7 +114,7 @@ func TestParseCompactConfig(t *testing.T) {
 func TestParseCompactConfigNixJSON(t *testing.T) {
 	t.Parallel()
 
-	// Exact shape of `builtins.toJSON { enable = true; stripAnsi = true;
+	// Exact output of `builtins.toJSON { enable = true; stripAnsi = true;
 	// minRunLength = 3; minBytes = 2048; streams = ["stdout" "stderr"]; }`.
 	in := `{"enable":true,"minBytes":2048,"minRunLength":3,"streams":["stdout","stderr"],"stripAnsi":true}`
 

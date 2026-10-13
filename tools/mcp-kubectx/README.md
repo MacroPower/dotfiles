@@ -165,7 +165,7 @@ See [Threat-model shift for local contexts](#threat-model-shift-for-local-contex
 
 ## Scoped kubeconfigs
 
-`host select` writes a single uniform shape regardless of
+`host select` writes kubeconfigs with the same fields regardless of
 `--for-guest`. The cluster section is copied verbatim from the
 selected context in the host kubeconfig. The `user.exec` block is
 the same tiny UDS shim in both host- and guest-side kubeconfigs:
@@ -207,8 +207,8 @@ host and the in-Lima profiles via `home.packages` in
 The `--for-guest` flag is a _path discriminator_ only: it flips
 the `<env>` token between `host` and `guest` in the defaulted
 kubeconfig and socket filenames so a host serve and a Lima-guest
-serve cannot collide on the same path. Kubectl sees a uniform
-plugin shape either way.
+serve cannot collide on the same path. Kubectl runs the same
+exec plugin either way.
 
 ## ExecCredential output
 

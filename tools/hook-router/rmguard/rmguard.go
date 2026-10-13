@@ -74,7 +74,7 @@ var changeDir = map[string]bool{
 	"popd":  true,
 }
 
-// globTail matches the trailing `/*` segments of a target shape and
+// globTail matches the trailing `/*` segments of a target pattern and
 // captures them.
 var globTail = regexp.MustCompile(`((?:/\*+)+)/*$`)
 
@@ -132,7 +132,7 @@ type script struct {
 
 // Check walks prog and returns a deny reason for the first `rm` or
 // `rmdir` operand that Claude Code would force a permission prompt on.
-// The package documentation lists the shapes. command is the original
+// The package documentation lists the patterns. command is the original
 // command text, used to quote the call and build the suggested
 // rewrite.
 func Check(prog *syntax.File, command string) (string, bool) {
@@ -759,7 +759,7 @@ func nodeSrc(command string, node syntax.Node) string {
 }
 
 // reason builds the deny message: a first line naming the offending
-// call and operand, then why Claude Code prompts on the shape and how
+// call and operand, then why Claude Code prompts on the pattern and how
 // to rewrite it. For an inline script the first line also names the
 // shell that runs it.
 func (s script) reason(call *syntax.CallExpr, operand *syntax.Word, k kind) string {

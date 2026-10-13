@@ -26,7 +26,7 @@ func New() (string, error) {
 // RandomHex returns a hex-encoded random string with the given
 // number of bytes. Shared by [New] and the ServiceAccount name
 // suffix so both pull from the same crypto/rand source and surface
-// a consistent error shape.
+// the same error.
 func RandomHex(n int) (string, error) {
 	b := make([]byte, n)
 
@@ -40,7 +40,7 @@ func RandomHex(n int) (string, error) {
 
 // Valid reports whether s matches the format [New] produces: exactly
 // 16 lowercase hex characters. The check guards the sweep's
-// LabelSelector against injection -- any other shape is either a
+// LabelSelector against injection -- any other value is either a
 // typo or a hand-crafted value with selector metacharacters in it.
 func Valid(s string) bool {
 	if len(s) != 16 {
@@ -71,7 +71,7 @@ func HostPath(forGuest bool) string {
 // created atomically (tmp + rename) so a concurrent reader never
 // observes a truncated or empty file. Persisted content that fails
 // [Valid] (empty, torn, or hand-edited) is regenerated rather than
-// returned: the sweep rejects any other shape, so passing it through
+// returned: the sweep rejects any other value, so passing it through
 // would permanently disable the sweep while resources keep getting
 // labeled with it.
 //

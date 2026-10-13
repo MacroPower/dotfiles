@@ -239,8 +239,8 @@ func TestStoreIndependentSessions(t *testing.T) {
 }
 
 // hammerStore opens a fresh Store per iteration and increments the given
-// session, simulating the real per-invocation shape of N concurrent
-// hook-router processes hammering the same file.
+// session, the way each of N concurrent hook-router processes opens the
+// same file once per invocation.
 func hammerStore(ctx context.Context, dbPath, sessionID string, ops int) error {
 	for range ops {
 		store, err := state.Open(ctx, dbPath)
@@ -706,8 +706,8 @@ func TestDeletePendingPlan_OnlyMatchingPID(t *testing.T) {
 	assert.Equal(t, "/plan-A.md", planPath)
 }
 
-// seedV4 writes the pre-migration shape into dbPath: open via
-// Open (so `sessions` lands at the current shape), drop the
+// seedV4 writes the pre-migration schema into dbPath: open via
+// Open (so `sessions` lands at the current schema), drop the
 // current pending_plans, recreate it with the v4 single-column PK,
 // optionally insert seedRow, then roll user_version back to 4.
 // Reopening the resulting DB then triggers every queued migration.
@@ -744,7 +744,7 @@ func seedV4(t *testing.T, dbPath string, seedRow *struct{ cwd, planPath, baseSHA
 	require.NoError(t, seed.Close())
 }
 
-// TestEnsureSchema_UpgradesFromV4 seeds a DB at the v4 shape of
+// TestEnsureSchema_UpgradesFromV4 seeds a DB at the v4 schema of
 // pending_plans (single-column PK on `cwd`), reopens it, and checks
 // that the chained migrations land: user_version reaches the current
 // state.SchemaVersion, pending_plans is recreated with the PID-only PK, and
@@ -801,7 +801,7 @@ func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 	assert.Equal(t, map[string]int{"claude_pid": 1}, pkCols,
 		"claude_pid must be the sole primary-key column")
 
-	// The seed row from the v4 shape was dropped by the migration; a
+	// The seed row from the v4 schema was dropped by the migration; a
 	// fresh write with the new PID-only key must succeed.
 	_, err = store.SetPendingPlan(t.Context(), "fresh-pid", "/fresh.md", "fresh-sha")
 	require.NoError(t, err)
@@ -814,8 +814,8 @@ func TestEnsureSchema_UpgradesFromV4(t *testing.T) {
 	assert.Equal(t, "fresh-sha", baseSHA)
 }
 
-// seedV6 writes the pre-migration shape into dbPath: open via
-// Open (so other tables land at the current shape), drop the
+// seedV6 writes the pre-migration schema into dbPath: open via
+// Open (so other tables land at the current schema), drop the
 // current pending_plans, recreate it with the v6 composite PK on
 // (cwd, claude_pid), optionally insert seedRow, then roll user_version
 // back to 6. Reopening the resulting DB then triggers the v6→v7 step.
@@ -857,7 +857,7 @@ func seedV6(t *testing.T, dbPath string, seedRow *struct {
 	require.NoError(t, seed.Close())
 }
 
-// TestEnsureSchema_UpgradesFromV6 seeds a DB at the v6 shape of
+// TestEnsureSchema_UpgradesFromV6 seeds a DB at the v6 schema of
 // pending_plans (composite PK on (cwd, claude_pid)), reopens it, and
 // checks that the v6→v7 step lands: user_version reaches the current
 // state.SchemaVersion, pending_plans is recreated with claude_pid as the sole
@@ -914,7 +914,7 @@ func TestEnsureSchema_UpgradesFromV6(t *testing.T) {
 	assert.Equal(t, map[string]int{"claude_pid": 1}, pkCols,
 		"claude_pid must be the sole primary-key column")
 
-	// The seed row from the v6 shape was dropped by the migration.
+	// The seed row from the v6 schema was dropped by the migration.
 	var count int
 
 	require.NoError(t, store.DB().QueryRowContext(t.Context(),
@@ -1194,8 +1194,8 @@ func TestPruneStale_BashFailures30DayCutoff(t *testing.T) {
 		"rows at 29 days and fresh must survive; 31-day row must be pruned")
 }
 
-// seedV7 writes the pre-migration shape into dbPath: open via Open (so
-// every table lands at the current shape), then undo the v7→v8 step by
+// seedV7 writes the pre-migration schema into dbPath: open via Open (so
+// every table lands at the current schema), then undo the v7→v8 step by
 // dropping the two compaction columns and the two tables it added, and
 // roll user_version back to 7. Reopening the resulting DB then
 // re-triggers that step.
@@ -1222,7 +1222,7 @@ func seedV7(t *testing.T, dbPath string) {
 	require.NoError(t, seed.Close())
 }
 
-// TestEnsureSchema_UpgradesFromV7 seeds a DB at the v7 shape (no
+// TestEnsureSchema_UpgradesFromV7 seeds a DB at the v7 schema (no
 // compaction columns, no subagent_starts, no teammate_idle_blocks),
 // reopens it, and checks that the v7→v8 step lands: user_version
 // reaches the current state.SchemaVersion and every added column and
@@ -1258,7 +1258,7 @@ func TestEnsureSchema_UpgradesFromV7(t *testing.T) {
 }
 
 // seedV8 opens a fresh DB (walking every migration so every table
-// lands at the current shape), then undoes the v8→v9 step by dropping
+// lands at the current schema), then undoes the v8→v9 step by dropping
 // message_lint_waivers and rolling user_version back to 8.
 func seedV8(t *testing.T, dbPath string) {
 	t.Helper()
@@ -1277,7 +1277,7 @@ func seedV8(t *testing.T, dbPath string) {
 	require.NoError(t, seed.Close())
 }
 
-// TestEnsureSchema_UpgradesFromV8 seeds a DB at the v8 shape (no
+// TestEnsureSchema_UpgradesFromV8 seeds a DB at the v8 schema (no
 // message_lint_waivers), reopens it, and checks that the v8→v9 step
 // lands: user_version reaches the current state.SchemaVersion and the
 // added table is usable.

@@ -80,7 +80,7 @@ func TestParse(t *testing.T) {
 	}
 }
 
-// TestParseNixJSON pins the wire shape produced by builtins.toJSON on
+// TestParseNixJSON pins the wire format produced by builtins.toJSON on
 // home/claude.nix's linterRuleType submodule, including the brace
 // alternation the default prose-lint rule relies on.
 func TestParseNixJSON(t *testing.T) {

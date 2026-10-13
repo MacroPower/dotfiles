@@ -7,7 +7,7 @@ import (
 )
 
 // Skill describes one post-implementation slash command Claude may
-// invoke when a plan's Stop gate fires. The shape mirrors the JSON
+// invoke when a plan's Stop gate fires. Its fields mirror the JSON
 // emitted by the Nix-side `postImplSkills` list: field order and tag
 // casing must match or [builtins.toJSON] output will silently unmarshal
 // to zero values.

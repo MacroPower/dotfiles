@@ -1,4 +1,4 @@
-// Package content shapes fetched text for return to the caller: it
+// Package content prepares fetched text for return to the caller: it
 // filters lines with a grep-style RE2 matcher and slices the result to a
 // rune-window page.
 //

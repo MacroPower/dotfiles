@@ -5,7 +5,7 @@
 // [Credential] JSON document from a running `serve`.
 //
 // The plugin block is a function only of the socket path. Both
-// host- and guest-side serves write the same shape, so kubectl never
+// host- and guest-side serves write the same block, so kubectl never
 // sees the workmux host-exec wrapper; the guest/host routing happens
 // server-side after the shim's bytes cross the socket.
 //

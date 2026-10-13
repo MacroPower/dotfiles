@@ -230,7 +230,7 @@ func TestHostSelectClusterEntryMissing(t *testing.T) { //nolint:paralleltest // 
 }
 
 // TestHostSelectExecPluginShape pins the uniform exec-plugin
-// shape across forGuest=true/false. The two variants no longer
+// block across forGuest=true/false. The two variants no longer
 // differ -- both write the same `mcp-kubectx exec-plugin --socket
 // <path>` block. Only the socket path env discriminator (`host`
 // vs. `guest`) flips. The test forwards --socket-path explicitly
@@ -709,7 +709,7 @@ func TestHostReleaseMissingFlags(t *testing.T) { //nolint:paralleltest // mutate
 
 // readKubeconfigExec reads the kubeconfig at path and returns its
 // users[0].user.exec block decoded into [execplugin.Plugin]. Helper for
-// asserting host select wrote the right exec-plugin shape.
+// asserting host select wrote the right exec-plugin block.
 func readKubeconfigExec(t *testing.T, path string) execplugin.Plugin {
 	t.Helper()
 

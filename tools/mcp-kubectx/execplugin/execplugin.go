@@ -18,7 +18,7 @@ type Plugin struct {
 // New returns the `user.exec` config for the scoped kubeconfig. The
 // plugin is a tiny in-binary UDS client (`mcp-kubectx exec-plugin
 // --socket <path>`); only the per-`serve` socket path varies. Both
-// host- and guest-side serves write the same shape, so kubectl never
+// host- and guest-side serves write the same block, so kubectl never
 // sees the workmux host-exec wrapper. The wrapper still happens
 // server side: a guest serve decides between a direct fork and
 // `workmux host-exec` for the in-process token call, transparent to

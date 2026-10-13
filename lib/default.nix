@@ -393,7 +393,7 @@ let
     # fetchurl // { ... }, or attribute lookup against fetchurl.
     #
     # fetchurl accepts either a plain attrset or a fixed-point function
-    # (finalAttrs: { ... }); handle both shapes so `args // {...}` does
+    # (finalAttrs: { ... }); handle both forms so `args // {...}` does
     # not error against a function.
     fetchurl =
       let

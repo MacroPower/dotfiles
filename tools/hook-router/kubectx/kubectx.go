@@ -19,7 +19,7 @@ import (
 // as $XDG_RUNTIME_DIR/claude-kubectx.<pid> (falling back to /tmp).
 const dirPrefix = "claude-kubectx."
 
-// kubeconfigContexts is the minimal kubeconfig shape the bash gate
+// kubeconfigContexts is the minimal kubeconfig subset the bash gate
 // needs: the active current-context plus the set of locally-defined
 // context names. Cluster/user/auth material is intentionally not
 // modeled -- the gate only decides whether a context is selectable,
@@ -32,7 +32,7 @@ type kubeconfigContexts struct {
 }
 
 // loadKubeconfigContexts reads and parses the named kubeconfig into
-// the minimal [kubeconfigContexts] shape.
+// a [kubeconfigContexts].
 func loadKubeconfigContexts(path string) (*kubeconfigContexts, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -184,7 +184,7 @@ func RemoveSessionDir(logger *slog.Logger) error {
 
 // dirPID extracts the PID encoded in a per-session kubectx
 // directory's basename, reporting ok only when name has the exact
-// $dirPrefix<pid> shape the launcher wrapper produces: the
+// $dirPrefix<pid> pattern the launcher wrapper produces: the
 // prefix followed by a canonical positive decimal PID. Non-canonical
 // suffixes (a leading sign, leading zeros, non-digits, or a
 // non-positive value) are rejected so neither the SessionEnd
@@ -206,8 +206,8 @@ func dirPID(name string) (int, bool) {
 }
 
 // isSessionDir reports whether path has the
-// $dirPrefix<pid> basename shape produced by the launcher
-// wrapper. Pinning the shape on both the basename and a canonical
+// $dirPrefix<pid> basename pattern produced by the launcher
+// wrapper. Pinning the pattern on both the basename and a canonical
 // PID suffix prevents removal of an arbitrary path injected through
 // the env var.
 func isSessionDir(path string) bool {

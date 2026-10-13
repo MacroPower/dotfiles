@@ -370,7 +370,7 @@ var hopByHop = map[string]bool{
 // relay copies the upstream response to the client, flushing as data arrives
 // so SSE events reach the client immediately. Upstream errors are relayed with
 // their status and body unchanged: Copilot's native endpoint already returns
-// Anthropic-shaped error bodies.
+// error bodies in the Anthropic format.
 func relay(w http.ResponseWriter, resp *http.Response) {
 	skip := connectionTokens(resp.Header)
 	for k, vv := range resp.Header {

@@ -337,7 +337,7 @@ func TestBoolToInt(t *testing.T) {
 // the render columns existed. The migration tests build databases with
 // it to prove Open upgrades in place. The version stamp is applied
 // separately: the v1 binary wrote the DDL and the stamp in separate
-// statements, so a database can hold this shape at user_version 0.
+// statements, so a database can hold this schema at user_version 0.
 const v1Schema = `
 CREATE TABLE IF NOT EXISTS fetches (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -370,7 +370,7 @@ func TestStoreMigrateV1(t *testing.T) {
 	}{
 		"stamped v1": {stampedVersion: 1},
 		// A crash or busy-timeout between the v1 binary's DDL and its
-		// version stamp leaves the v1 table shape at user_version 0;
+		// version stamp leaves the v1 table schema at user_version 0;
 		// Open must still add the render columns rather than trusting
 		// the stamp.
 		"unstamped v1 shape": {stampedVersion: 0},

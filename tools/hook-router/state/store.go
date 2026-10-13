@@ -656,7 +656,7 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// BashFailure is the input shape for [*Store.RecordBashFailure].
+// BashFailure holds the input to [*Store.RecordBashFailure].
 // ExitCode is a pointer because Claude Code does not always include
 // exit_code on the tool_response payload; nil maps to SQL NULL.
 type BashFailure struct {
@@ -695,7 +695,7 @@ func (s *Store) RecordBashFailure(ctx context.Context, f BashFailure) error {
 	return nil
 }
 
-// SubagentStart is the input shape for [*Store.RecordSubagentStart].
+// SubagentStart holds the input to [*Store.RecordSubagentStart].
 type SubagentStart struct {
 	SessionID string
 	AgentID   string

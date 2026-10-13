@@ -188,7 +188,7 @@ var (
 	ErrMissingHostID = errors.New("--host-id is required")
 	// ErrInvalidHostID guards the sweep selector against injection.
 	// [identity.New] produces 16 lowercase hex chars; any other
-	// shape is either a typo or a hand-crafted value with selector
+	// value is either a typo or a hand-crafted value with selector
 	// metacharacters in it, so [runHostSweep] refuses to run.
 	ErrInvalidHostID = errors.New("--host-id must be 16 lowercase hex characters")
 )

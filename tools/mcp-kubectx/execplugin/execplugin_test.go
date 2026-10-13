@@ -33,8 +33,8 @@ func shortTempDir(t *testing.T) string {
 	return dir
 }
 
-// TestNewUniform pins the shape of the kubectl exec plugin block.
-// The shape is a function only of the socket path; every other input
+// TestNewUniform pins the kubectl exec plugin block.
+// The block depends only on the socket path; every other input
 // that the previous two-variant design carried (kubeconfig path,
 // context, SA name, namespace, expiration, for-guest) is
 // deliberately gone.

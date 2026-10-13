@@ -78,7 +78,7 @@ func TestParseFormatterRules(t *testing.T) {
 	}
 }
 
-// TestParseFormatterRulesNixJSON pins the wire shape produced by
+// TestParseFormatterRulesNixJSON pins the wire format produced by
 // builtins.toJSON on home/claude.nix's formatterRuleType submodule.
 // The Nix attribute names are emitted verbatim, so a future rename
 // on either side that breaks this round-trip would fail every
@@ -86,7 +86,7 @@ func TestParseFormatterRules(t *testing.T) {
 func TestParseFormatterRulesNixJSON(t *testing.T) {
 	t.Parallel()
 
-	// Exact shape of `builtins.toJSON [{ pathGlob = "/x/plans/*.md"; command = ["/nix/store/abc/bin/mdformat"]; timeout = "5s"; }]`.
+	// Exact output of `builtins.toJSON [{ pathGlob = "/x/plans/*.md"; command = ["/nix/store/abc/bin/mdformat"]; timeout = "5s"; }]`.
 	in := `[{"command":["/nix/store/abc/bin/mdformat"],"pathGlob":"/x/plans/*.md","timeout":"5s"}]`
 
 	rules, err := formatter.Parse(in)

@@ -236,7 +236,7 @@ func writeReason(b *strings.Builder, kind string, findings []linter.Finding) {
 }
 
 // waiverKey returns the SHA-256 of a message's kind and text, hex
-// encoded, so the same text under the same command shape maps to the
+// encoded, so the same text under the same message kind maps to the
 // same key on a rerun.
 func waiverKey(m Message) string {
 	h := sha256.New()
@@ -461,7 +461,7 @@ var ghValueFlags = map[string]bool{
 
 // ghPRCreate extracts the title and body of a `gh pr create` call as
 // one text, title first and a blank line between, so the linter sees
-// the same shape as a commit message.
+// the same layout as a commit message.
 func ghPRCreate(call *syntax.CallExpr, stmt *syntax.Stmt) (Message, bool) {
 	args := call.Args
 	if len(args) < 3 {
@@ -648,7 +648,7 @@ func partLiteral(p syntax.WordPart) (string, bool) {
 }
 
 // catHeredoc returns the heredoc body of a `$(cat <<EOF ... EOF)`
-// substitution, the shape Claude Code uses for multi-line messages.
+// substitution, the form Claude Code uses for multi-line messages.
 func catHeredoc(sub *syntax.CmdSubst) (string, bool) {
 	if len(sub.Stmts) != 1 {
 		return "", false

@@ -31,7 +31,7 @@ func makeHookJSON(t *testing.T, in hook.Input) []byte {
 // skills declared in home/claude.nix. Tests that exercise
 // handlePostAskUserQuestion or handleStop pass this via cfg so the
 // Nix-driven validation and block-message rendering paths are the
-// same shape as production.
+// same as in production.
 func testCatalog() *postimpl.Catalog {
 	return postimpl.New([]postimpl.Skill{
 		{Label: "/review-implementation", Description: "Review code changes against the plan."},
@@ -43,7 +43,7 @@ func testCatalog() *postimpl.Catalog {
 // cfg is the shared [config] used by every test in this file that
 // exercises handleStop or handlePostAskUserQuestion. Declaring it at
 // package scope keeps handler call sites uniform; tests that need a
-// different shape (e.g. empty catalog for degraded-mode assertions)
+// different config (e.g. empty catalog for degraded-mode assertions)
 // declare their own local cfg, which shadows this one.
 var cfg = config{
 	postImpl:     testCatalog(),

@@ -789,7 +789,7 @@ func TestRun(t *testing.T) {
 
 // writeLocalKubeconfig writes a local.yaml with the given
 // current-context and locally-defined context names, returning its
-// path. An empty current produces the bare-stub shape.
+// path. An empty current produces a bare stub.
 func writeLocalKubeconfig(t *testing.T, current string, contexts ...string) string {
 	t.Helper()
 
