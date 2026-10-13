@@ -10,3 +10,11 @@ The sweep skips symlinks at the moment
 Nowadays the parser reads tables.
 
 Until recently, the flag defaulted to five.
+
+The flag was recently added.
+
+The API gained a watch endpoint this year.
+
+The team shipped the parser last year.
+
+The watch endpoint lands this quarter.
