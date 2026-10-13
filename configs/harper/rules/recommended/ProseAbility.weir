@@ -5,7 +5,7 @@
 # to`, `are used to`, and `can be used to` stay out, because the
 # passive rule reports them.
 expr main [(allows you to), (allow you to), (allows users to), (allow users to), (enables you to), (enable you to), (enables users to), (lets you), (let you), (lets users), (makes it possible to), (make it possible to), (gives you the ability to), (provides the ability to), (provides a way to), (offers the ability to), (offers a way to), (helps to), (help to), (helps you), (help you), (is capable of), (are capable of), (has the capability to), (have the capability to), (makes it easy to), (make it easy to), (makes it easier to), (makes it simple to)]
-let message "Describe what it does, not that it can. Give the verb the subject."
+let message "Ability phrase. State what the subject does, with the behavior as its verb."
 let description "Flags phrases that wrap a behavior in the ability to have it."
 let becomes ""
 let kind "Style"

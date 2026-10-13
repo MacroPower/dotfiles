@@ -6,11 +6,11 @@
 #
 # `this` counts only before a verb that states a consequence. `This is`
 # alone also names a field or a section (`this is set to True`), so it
-# counts only before `because`, `why`, or `how`. The allows rule
+# counts only before `because`, `why`, or `how`. The ability rule
 # reports `allows you to`, `lets you`, `gives you`, and `makes it
 # possible`, so a guard glued to each verb skips those. `helps` is left
 # out, because the chatbot rule reports `hope this helps` and the
-# allows rule reports `helps to` and `helps you`.
+# ability rule reports `helps to` and `helps you`.
 #
 # It hit 203 lines in the kubernetes and nix.dev docs, and 10 of 10
 # sampled hits pointed at a whole clause.
