@@ -1,7 +1,9 @@
 # Each phrase states an obligation without saying how strong it is, so
 # the reader cannot tell a requirement from advice. The fix writes
 # `must` for a requirement and `should` for advice, the grades the
-# technical-writing skill defines, or a bare command for a step.
+# technical-writing skill defines, or a bare command for a step. When
+# the subject is the system, the fix states what it does in the present
+# tense (`the server needs to listen` becomes `the server listens`).
 #
 # `need to` skips a negation before it (`you do not need to restart`),
 # which states that no obligation exists, and a determiner (a word that
@@ -29,7 +31,7 @@ expr neg [not, never, don't, doesn't, didn't, DET]
 expr wrap [expected, required, supposed]
 expr verbs [note, remember, understand, mention, realize, recognize]
 expr main [<(!@neg @need to), (@need to)>, ([is, are] @wrap to), ([is, are] recommended), <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>, (it is advisable), (it is a good idea), (you'll want to), (you will want to), ([may, might] want to), (be sure to), (make sure to), (ought to), (must try to), shall]
-let message "Vague obligation. Write must for a requirement or should for advice, or open with To and the goal."
+let message "Vague obligation. Write must or should for what a person does, the present tense for what the system does, or open with To and the goal."
 let description "Flags needs to, is expected to, is recommended, and other phrases that hide how strong an obligation is."
 let becomes ""
 let kind "Style"
