@@ -8,13 +8,14 @@
 
 let
   # Extensions Harper parses with a comment-only, markdown, or Org
-  # parser, plus the Terraform and YAML extensions, whose comments the
-  # wrapper lints through a shadow file. Anything else falls back to plain
+  # parser, plus the Terraform, YAML, Weir, and awk extensions, whose
+  # comments the wrapper lints through a shadow file. Anything else falls back to plain
   # text and lints every line, so the wrapper refuses it rather than
   # flagging string literals.
   extensions = [
     "md"
     "markdown"
+    "awk"
     "c"
     "cpp"
     "h"
@@ -52,6 +53,7 @@ let
     "toml"
     "ts"
     "tsx"
+    "weir"
     "yaml"
     "yml"
     "zig"
@@ -237,7 +239,8 @@ writeShellApplication {
     # block scalar body (`run: |`), which often holds a shell script.
     # The body runs while lines are blank or indented past the line
     # that opened it; that bound misses a comment at the mapping level
-    # right after `- key: |`, which errs toward linting less.
+    # right after `- key: |`, which errs toward linting less. Weir and
+    # awk take `#`, the same as any other kind.
     #
     # The per-line parser strips trailing `-`, `#`, `/`, `*`, and `!`
     # along with the marker, which would hide a `--` that ends a line,
@@ -528,19 +531,20 @@ writeShellApplication {
     # comes from the shadow, and a finding on any other line, such as a
     # docstring or a trailing comment, comes from the file itself.
     #
-    # Harper has no HCL or YAML parser and would read a Terraform or
-    # YAML file as plain text, code included, so the shadow is the only
-    # lint there and a trailing comment goes unchecked.
+    # Harper has no HCL, YAML, Weir, or awk parser and would read those
+    # files as plain text, code included, so the shadow is the only lint
+    # there and a trailing comment goes unchecked.
     case "$ext" in
       go) shadow_kind="go" shadow_ext="rs" ;;
       py|pyi) shadow_kind="py" shadow_ext="sh" ;;
       tf|tfvars|hcl) shadow_kind="hcl" shadow_ext="sh" ;;
       yaml|yml) shadow_kind="yaml" shadow_ext="sh" ;;
+      weir|awk) shadow_kind="hash" shadow_ext="sh" ;;
       *) shadow_kind="" shadow_ext="" ;;
     esac
     out=""
     case "$shadow_kind" in
-      hcl|yaml) ;;
+      hcl|yaml|hash) ;;
       *) out=$(lint "$rules" "$file") ;;
     esac
     if [ -n "$shadow_kind" ]; then
@@ -571,9 +575,10 @@ writeShellApplication {
         out="''${out:+$out
     }$found"
       fi
-    else
+    elif [ "$shadow_kind" != hash ]; then
       # ProseTypography also reads source files, where RAW=1 checks
-      # every line whole, string literals included.
+      # every line whole, string literals included. A Weir rule or an
+      # awk check holds the characters it reports, so neither is read.
       while IFS='=' read -r internal script; do
         [ "''${internal%_*}" = ProseTypography ] || continue
         found=$(RAW=1 AWKPATH="$awk_lib" awk -f "$script" "$file" | sed "s/::ProseTypography:/::$internal:/")
