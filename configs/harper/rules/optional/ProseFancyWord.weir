@@ -1,4 +1,5 @@
-# The Recommended rule of the same name holds every other fancy word.
+# The Required and Recommended rules of the same name hold every other
+# fancy word.
 # `enhance` and the opener `Additionally,` sit here, because each also
 # appears in plain human-written docs, and `Additionally,` hit 47 of
 # them in the kubernetes and nix.dev docs. `enhanced` stays out, because

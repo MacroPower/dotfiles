@@ -1,7 +1,9 @@
 # Each word or phrase stands in for a plainer one (`delve into` for
 # `read`, `showcase` for `show`, `tapestry` for `mix`) and turns up far
-# more in generated text than in docs a person wrote. The Optional rule
-# of the same name holds the words that human-written docs also use.
+# more in generated text than in docs a person wrote. The Required rule
+# of the same name holds `utilize` and `leverage`, whose plain word is
+# always `use`, and the Optional rule holds the words that
+# human-written docs also use.
 #
 # `unlock`, `harness`, `landscape`, `realm`, and `underscore` are left
 # out, because each names something in code (a mutex, a test harness,

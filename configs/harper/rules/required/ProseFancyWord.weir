@@ -1,3 +1,7 @@
+# `utilize` and `leverage` stand in for `use`, so the message names the
+# plain word. The Recommended and Optional rules of the same name hold
+# the other fancy words, whose plain word differs from word to word.
+#
 # `leverage` counts only as a verb with an object (`leverage the
 # cache`, `leveraged its position`), because the noun is the common
 # sense in finance, hardware, and negotiation prose (`leverage ratio`,
@@ -6,7 +10,7 @@
 # object, which a rewrite to `use` drops. `$utilize` and `$utilise`
 # never misfire, so every form stays.
 expr main [$utilize, $utilise, ([leverage, leverages, leveraged, leveraging] [DET, PRON, PROPN, ADJ])]
-let message "Write use."
+let message "Fancy word. Write use."
 let description "Flags leverage as a verb and every form of utilize."
 let becomes ""
 let kind "Style"

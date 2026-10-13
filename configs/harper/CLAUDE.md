@@ -27,8 +27,8 @@ term fits, write the plain compound, even when it runs long.
 The term must fit every word the rule flags. `ProseDemonstrative` also
 flagged `which`, a relative pronoun, so it became `ProseBroadReference`.
 
-Each label must be unique. Only the two tiers of one rule share a name
-and a label (the Recommended and Optional `ProseHedge`).
+Each label must be unique. Only the tiers of one rule share a name and
+a label (the Recommended and Optional `ProseHedge`).
 
 ## Comments
 
