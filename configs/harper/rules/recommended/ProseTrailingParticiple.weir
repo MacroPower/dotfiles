@@ -17,7 +17,7 @@
 # by commas (`The scheduler, allowing for clock skew, waits five
 # seconds`).
 #
-# `fostering` and `showcasing` stay out, because the stock-word rule
+# `fostering` and `showcasing` stay out, because the fancy-word rule
 # reports every form of both words and one word should draw one
 # finding.
 expr plain [ensuring, allowing, enabling, making, highlighting, giving, helping, improving, reducing, increasing, causing, creating, showing, demonstrating, indicating, keeping, letting, preventing, avoiding, streamlining, simplifying, matching, returning, preserving, leaving, mirroring, appending, reflecting, underscoring, emphasizing, symbolizing]

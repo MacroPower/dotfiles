@@ -1,10 +1,10 @@
-# Each idiom means something its words do not add up to, so a reader
-# who does not know it cannot parse it, and a translator renders it
-# word for word. The fix writes the literal meaning (`the heavy lifting`
-# becomes `most of the work`, `a rule of thumb` becomes `a default`).
-# The phrasal-verb rule holds the idioms built on a verb, the
-# stock-word rule holds `under the hood` and `at its core`, and the
-# filler rule holds `at the end of the day`.
+# Each idiom means something its words do not add up to, so a reader who
+# does not know it cannot parse it, and a translator renders it word for
+# word. The fix writes the literal meaning (`the heavy lifting` becomes
+# `most of the work`, `a rule of thumb` becomes `a default`). The
+# phrasal-verb rule holds the idioms built on a verb, the fancy-word
+# rule holds `under the hood` and `at its core`, and the filler rule
+# holds `at the end of the day`.
 #
 # A space in a pattern matches only whitespace, so each compound that
 # writers also hyphenate takes `[-, ( )]` between its words.

@@ -19,7 +19,7 @@
 # in the prose skill and these rule comments.
 #
 # Output format, one line per finding:
-#   <file>:<line>:<col>: Style::ProseArticleRun: <message>
+#   <file>:<line>:<col>: Style::ProseIndefiniteOpener: <message>
 
 @include "markdown.awk"
 
@@ -66,7 +66,7 @@ function prose(text,   rest, pos, tok, col, word) {
       if (word == "a" || word == "an") {
         run++
         if (run == 2) {
-          printf "%s:%d:%d: Style::ProseArticleRun: Second sentence in a row that opens with a or an. Write a claim about a whole class with a plural subject or with every.\n", FILENAME, FNR, column(text, col)
+          printf "%s:%d:%d: Style::ProseIndefiniteOpener: Second sentence in a row that opens with a or an. Write a claim about a whole class with a plural subject or with every.\n", FILENAME, FNR, column(text, col)
         }
       } else {
         run = 0

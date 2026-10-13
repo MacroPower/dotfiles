@@ -14,7 +14,7 @@
 # sampled hits were back-references.
 expr sense [maintainer, maintainers, owner, owners, employee, employees, member, members, colleague, colleagues, partner, partners, president, head, half, part, parts, stage, stages, years, days, decades]
 expr main [respectively, <(the [former, latter] !@sense), (the [former, latter])>, (the [former, latter][., ;, :, (,)])]
-let message "Positional reference. Repeat the noun, or pair each item with its value."
+let message "Former, latter, or respectively. Repeat the noun, or pair each item with its value."
 let description "Flags respectively, the former, and the latter, which make the reader map items back to an earlier list."
 let becomes ""
 let kind "Style"

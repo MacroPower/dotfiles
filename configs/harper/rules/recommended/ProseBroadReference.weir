@@ -1,7 +1,8 @@
-# A bare `this` or `which` that points at a whole clause (`This means
-# the cache stays warm`, `, which means the pool is empty`) leaves the
-# reader to pick which part of the last sentence it names. The fix
-# names the noun (`This retry means`) or joins the two claims.
+# A `this` or `which` with broad reference points at a whole clause
+# (`This means the cache stays warm`, `, which means the pool is
+# empty`), so the reader has to pick which part of the last sentence it
+# names. The fix names the noun (`This retry means`) or joins the two
+# claims.
 #
 # `this` counts only before a verb that states a consequence. `This is`
 # alone also names a field or a section (`this is set to True`), so it
@@ -15,7 +16,7 @@
 # sampled hits pointed at a whole clause.
 expr verb [means, meant, ensures, happens, prevents, causes, keeps, works, matters, (makes!(( )it)), (allows!(( )[you, users])), (lets!(( )[you, users])), (gives!(( )you))]
 expr main [(this @verb), (this [is, was] [because, why, how]), ((,) which means)]
-let message "Bare this or which. Name the noun it points at, or join the two claims."
+let message "Broad reference. Name the noun it points at, or join the two claims."
 let description "Flags this and which used as a pronoun for a whole earlier clause."
 let becomes ""
 let kind "Style"

@@ -1,4 +1,4 @@
-# The Recommended rule of the same name holds every other stock word.
+# The Recommended rule of the same name holds every other fancy word.
 # `enhance` and the sentence adverb `Additionally,` sit here, because
 # each also appears in plain human-written docs, and `Additionally,`
 # hit 47 of them in the kubernetes and nix.dev docs. `enhanced` stays
@@ -12,7 +12,7 @@
 # verb, so both count without the comma. `facilitate` sits here too,
 # because it hit 18 lines of the same docs (`to facilitate testing`).
 expr main [enhance, enhances, enhancing, (additionally,), moreover, furthermore, facilitate, facilitates, facilitated, facilitating]
-let message "Stock word. Use the plain word it stands for."
+let message "Fancy word. Use the plain word it stands for."
 let description "Flags enhance, facilitate, and the additive openers additionally, moreover, and furthermore, which stand in for improve, help, and also."
 let becomes ""
 let kind "Style"
