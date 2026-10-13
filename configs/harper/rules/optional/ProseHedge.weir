@@ -11,12 +11,29 @@
 # disables it in effect but not in name, or that it disables it well.
 # `practically` means `almost` or `in practice`. The three sit here,
 # because the plain sense is sometimes the one meant (`use the cache
-# effectively`). They hit 14 paragraphs in the kubernetes and nix.dev
-# docs.
-expr main [relatively, effectively, virtually, practically]
+# effectively`). They hit 65 lines in the measure.py corpus, and 8 of
+# 10 sampled hits softened a claim or read two ways.
+#
+# `should` after a noun and before a verb that names a visible result
+# (`the test should pass`, `the output should look like this`) hedges
+# the result of a step, so the fix states it (`the test passes`). The
+# noun must not be a pronoun, because the Recommended rule reports `it
+# should work`, or a person such as `caller`, where `should` gives
+# advice. `return`, `contain`, and `include` stay out, because API docs
+# state a requirement with them (`implementations should return a
+# copy`). The filter narrows the finding to `should`. It hit 19 lines in
+# the measure.py corpus, and 16 of 19 hedged a result. The misses
+# stated a requirement or a condition (`if any of those instances
+# should fail`), so the branch is a suggestion.
+expr person [caller, callers, consumer, consumers, user, users, reader, readers, developer, developers, operator, operators, administrator, administrators]
+expr result [pass, fail, print, display, show, look, appear, succeed, output, produce, compile]
+expr main [relatively, effectively, virtually, practically, <(<NOUN, !PRON, !@person> should @result), should>]
 let message "Hedge. State the claim or drop it."
 let description "Flags relatively, effectively, virtually, and practically, which soften a claim or read two ways."
 let becomes ""
 let kind "Style"
 allows "Few nodes run the agent."
 allows "The flag disables the cache."
+allows "The test passes."
+allows "The caller should pass a listener."
+allows "Implementations should return a copy."
