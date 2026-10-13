@@ -20,6 +20,16 @@
 # With RAW=1 in the environment, the reader passes every line to
 # prose() whole, string literals included, for a source file with no
 # markdown structure.
+#
+# With SHADOW=1 in the environment, the reader takes the comment shadow
+# that prose-lint builds from a source file. Each comment line keeps its
+# line and column there, and every other line reads `x`. The reader
+# takes an `x` line as blank, so the comments on each side of a line of
+# code stay apart. It blanks the comment marker (`#`, `//`, `///`,
+# `//!`, or `--`) to spaces, so the columns stay put, and drops the ` x`
+# that the shadow adds after a line that ends in `-`, `#`, `/`, `*`, or
+# `!`. It also turns off the indented-code rule, because comment text
+# is often indented under its marker.
 
 BEGIN {
   front_matter = 0
@@ -31,6 +41,7 @@ BEGIN {
   in_comment = 0
   myst_options = 0
   raw_mode = ENVIRON["RAW"] != ""
+  shadow_mode = ENVIRON["SHADOW"] != ""
   # A UTF-8 locale reads é as one character, and the C locale that the
   # nix build sandbox runs under reads it as two bytes.
   utf8 = length("é") == 1
@@ -40,6 +51,17 @@ BEGIN {
 raw_mode {
   prose($0)
   next
+}
+
+shadow_mode {
+  if ($0 == "x") {
+    $0 = ""
+  } else if (match($0, /^[ \t]*(\/\/[\/!]?|#|--)/)) {
+    $0 = spaces(RLENGTH) substr($0, RLENGTH + 1)
+    if ($0 ~ /[-#\/*!][ \t]* x$/) {
+      $0 = substr($0, 1, length($0) - 2)
+    }
+  }
 }
 
 function spaces(n,   s) {
@@ -170,7 +192,7 @@ in_comment {
   next
 }
 
-/^(    |\t)/ && (in_indent || (prev_blank && !in_list)) {
+!shadow_mode && /^(    |\t)/ && (in_indent || (prev_blank && !in_list)) {
   in_indent = 1
   prev_blank = 0
   next

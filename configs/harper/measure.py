@@ -25,7 +25,8 @@ every tier's rules under their internal names and the scratch rule as
 <stem>_Scratch. Go comments reach the rules through the shadow that
 `prose-lint --shadow` prints, which the hook lints too. Set PROSE_LINT
 to run a prose-lint other than the one on PATH. The awk checks read
-markdown only, so they skip the go sources.
+the same shadow with SHADOW=1, which blanks each comment marker, the
+way prose-lint runs them on comments.
 
 run prints the harper version, a hash of corpus.json, the hits and the
 lines with a hit for each source, and a seeded sample of hits. Each
@@ -295,8 +296,10 @@ def lint_weir(docs: list[Doc], pack: Path, only: list[str], env: dict[str, str])
     return hits
 
 
-def lint_awk(docs: list[Doc], checks: list[tuple[str, Path]]) -> list[Hit]:
+def lint_awk(docs: list[Doc], checks: list[tuple[str, Path]], shadow: bool = False) -> list[Hit]:
     env = {**os.environ, "AWKPATH": str(LIB)}
+    if shadow:
+        env["SHADOW"] = "1"
 
     def one(item: tuple[Doc, tuple[str, Path]]) -> list[Hit]:
         doc, (internal, script) = item
@@ -390,7 +393,7 @@ def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], dig
         if weir_only:
             hits += lint_weir(md_docs + go_docs, pack, weir_only, env)
         if checks:
-            hits += lint_awk(md_docs, checks)
+            hits += lint_awk(md_docs, checks) + lint_awk(go_docs, checks, shadow=True)
 
     names = weir_only + [c[0] for c in checks]
     print(f"{version}, corpus {digest}")
