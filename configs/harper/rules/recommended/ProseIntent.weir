@@ -5,7 +5,7 @@
 # reads as well as `the caller closes`. `is meant for` stays out,
 # because it names a use (`the flag is meant for testing`).
 expr main [(is designed to), (are designed to), (is intended to), (are intended to), (is meant to), (are meant to), (is responsible for), (are responsible for), (aims to), (aim to), (serves to), (serve to)]
-let message "Describe what it does, not what it is for. Give the verb the subject."
+let message "Intent phrase. State what the subject does, with the behavior as its verb."
 let description "Flags phrases that wrap a behavior in its purpose or duty."
 let becomes ""
 let kind "Style"
