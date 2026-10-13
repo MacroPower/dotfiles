@@ -32,7 +32,7 @@ Apply the two questions to the whole document, and to any sentence that you are
 unsure about.
 
 **Tutorial.** The learner's success is your job. Open with what they will build,
-never with what they will "learn". Every step produces a visible result. State
+never with what they will "learn". Every step produces a visible result, so state
 what appears: the output, the prompt change, and the log line. Cut explanation
 to one clause and a link. Write as "we", in commands: "First, do x. Now, do y."
 
