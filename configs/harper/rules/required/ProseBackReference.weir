@@ -4,8 +4,14 @@
 # with a glued comma or before `above`, `earlier`, `before`, or
 # `previously`, the words `as described` needs too. Before a source
 # the phrase cites it (`as stated in RFC 9110`).
-expr main [(as [mentioned, noted, stated, discussed, described] [above, earlier, before, previously]), (as [mentioned, noted, stated, discussed],)]
-let message "Back-reference. Link the section it means, or delete the phrase."
+#
+# `aforementioned` and `above-mentioned` point back the same way, and a
+# space in a pattern matches only whitespace, so the `above` branch
+# matches the hyphenated and the spaced spelling. The two hit 7 lines
+# in the measure.py corpus, and all 7 pointed back without naming the
+# passage.
+expr main [(as [mentioned, noted, stated, discussed, described] [above, earlier, before, previously]), (as [mentioned, noted, stated, discussed],), aforementioned, (above[-, ( )]mentioned)]
+let message "Back-reference. Name or link what it points at, or delete the phrase."
 let description "Flags as mentioned above and similar phrases that point back without naming the passage."
 let becomes ""
 let kind "Style"
