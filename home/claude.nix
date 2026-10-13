@@ -916,7 +916,7 @@ let
       "--run 'export KUBECONFIG=\"$CLAUDE_KUBECTX_LOCAL:$CLAUDE_KUBECTX_SIDECAR\"'";
 
   # Wrap claude with its invocation-time env so vars survive boundaries that
-  # don't propagate the shell env (lima VMs, ssh without SendEnv, etc.).
+  # do not propagate the shell env (lima VMs, ssh without SendEnv, etc.).
   claudeWrapped = pkgs.symlinkJoin {
     name = "claude-code-wrapped";
     paths = [ pkgs.llm-agents.claude-code ];
