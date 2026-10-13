@@ -59,6 +59,15 @@ Never write `respectively`, `the former`, or `the latter`. Each makes
 the reader map items back to an earlier list, and the mapping breaks
 when the list changes order. Repeat the noun.
 
+Write a claim about every member of a class with a plural subject
+(`Required findings name an exact phrase`) or with `every`. Keep `a`
+and `an` for one instance that the sentence introduces. The singular
+`a finding` reads two ways, as one particular finding or as any
+finding. When each member has its own one of something, write `each`
+(`each worker owns a queue`), because the plural `workers own a queue`
+also reads as one shared queue. When the next sentence keeps the same
+subject, open it with `it` or `they` instead of repeating the noun.
+
 Open a sentence with its real subject, not with `there is` or `it is`.
 `There are three files that hold the config` becomes `Three files
 hold the config`, and `It is likely that the pod restarts` becomes
@@ -169,7 +178,9 @@ paragraph usually carries a second topic.
 
 One name per concept, including verbs. If the bucket `spends` tokens in
 one sentence, it does not `hand out` or `consume` them in the next.
-Repetition is clearer than synonym rotation.
+Repetition is clearer than synonym rotation. Pronouns are not synonyms,
+so `it` and `they` still stand in for the subject of the sentence
+before.
 
 ## Headers
 

@@ -119,8 +119,9 @@ No sentence is open to two readings.
 - Keep a noun string to three nouns or fewer. "the proto import budget check
   script" becomes "the script that checks the proto-import budget".
 - Make every "it", "they", and "this" point at one obvious noun. Repeat the noun
-  whenever the reference is not obvious. Never point "this" or "which" at a
-  whole clause.
+  whenever the reference is not obvious. The subject of the sentence before is
+  obvious, so "it" or "they" can stand in for it. Never point "this" or "which"
+  at a whole clause.
 - Give every clause its verb. "Phase 1 moves the converters and Phase 2 the
   runtime" leaves Phase 2 without one.
 - Keep the small words that show structure. "Ensure that the switch is off"
