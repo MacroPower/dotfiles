@@ -10,8 +10,8 @@
 let
   rulesDir = ../configs/harper/rules;
 
-  # A rule's tier is the directory it lives in: rules/required,
-  # rules/recommended, or rules/optional. A `.weir` file is a Weir
+  # A rule's tier is the directory it lives in: `rules/required`,
+  # `rules/recommended`, or `rules/optional`. A `.weir` file is a Weir
   # rule, an `.awk` file is a check prose-lint runs on markdown next
   # to Harper, and `builtins.txt` names the Harper built-ins the tier
   # enables. An awk check that reads markdown includes
@@ -29,7 +29,7 @@ let
   # rule of the same name only if the stems differ. The build renames
   # each Weir rule to `<Name>_<Tier>` inside the weirpack, and
   # prose-lint strips the suffix from each finding after it reads the
-  # tier off it. Built-ins keep their bare name, since a built-in can
+  # tier off it. Built-ins keep their bare name, because a built-in can
   # sit in one tier only.
   internalName = name: tier: "${name}_${lib.toSentenceCase tier}";
 
@@ -137,7 +137,7 @@ stdenvNoCC.mkDerivation {
   doCheck = true;
 
   # harper-cli looks for a user dictionary under $HOME and prints a
-  # note when none exists; pointing HOME at the build dir keeps that
+  # note when none exists. Pointing HOME at the build dir keeps that
   # lookup inside the sandbox.
   checkPhase = ''
     runHook preCheck

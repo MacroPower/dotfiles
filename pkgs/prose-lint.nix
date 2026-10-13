@@ -106,7 +106,7 @@ let
 
   # Internal rule name to tier, one `Name=Tier` pair per line, for the
   # awk step that tags each finding. The map covers every enabled
-  # rule, so a name missing from it is a bug and tags as Required.
+  # rule, so a name missing from it is a bug and gets the Required tag.
   tierMap = lib.concatStringsSep "\n" (
     lib.mapAttrsToList (name: tier: "${name}=${tier}") prose-weirpack.passthru.tiers
   );
@@ -131,8 +131,8 @@ writeShellApplication {
     # prose-lint --shadow <file>  print the comment shadow of a source file
     #
     # Prints one `path:line:col: [Tier] Kind::Rule: message` line per
-    # finding, Required findings first and then by line, and exits 1
-    # when any were printed, 0 with no output when the file is clean or
+    # finding, Required findings first and then by line. Exits 1 when
+    # any were printed, and 0 with no output when the file is clean or
     # is not a kind Harper parses. Exit 2 means harper-cli itself
     # failed and its stderr was passed through.
 
@@ -169,8 +169,8 @@ writeShellApplication {
     }
 
     # Inserts the `[Tier]` tag after `path:line:col:` on every finding,
-    # looking the rule up from its `Kind::Rule:` field, strips the
-    # `_Tier` suffix the weirpack build added to the rule name, then
+    # looking the rule up from its `Kind::Rule:` field. Then strips the
+    # `_Tier` suffix the weirpack build added to the rule name and
     # orders the findings by tier and line. A rule missing from the
     # map tags as Required, which fails safe.
     tag() {
@@ -211,8 +211,8 @@ writeShellApplication {
     # Drops a ProseColonClause finding that starts inside a bold label
     # opening its line (`- **Retry budget**: the job stops after five
     # attempts`). Harper's markdown parser drops the emphasis, so the
-    # rule reads the label words as the subject of a clause, while the
-    # colon after a label names a term and joins no two clauses. A
+    # rule reads the label words as the subject of a clause. The colon
+    # after a label names a term and joins no two clauses. A
     # finding that starts after the label, on a second colon in the
     # same line, stays.
     drop_label_colons() {
@@ -262,7 +262,7 @@ writeShellApplication {
     # reader sees when an input fails. A quoted one becomes a comment that starts
     # with `#` where its opening quote stood. A heredoc one has its
     # body lines turned into comments, with the last leading space of
-    # each line as the `#`; a body line with no leading space gains a
+    # each line as the `#`. A body line with no leading space gains a
     # `#` in front, and the wrapper records its line in the shifts file
     # so the findings move back one column. YAML takes `#` and skips each
     # block scalar body (`run: |`), which often holds a shell script.
@@ -532,9 +532,9 @@ writeShellApplication {
     stderr_file=$tmp_dir/stderr
 
     # A commit or PR message is markdown, but harper-cli reads stdin as
-    # plain text and would lint the phrases inside code spans, so the
-    # message is copied to a .md file first, where the awk checks read
-    # it too. A `#` line stays, since git keeps it in a message given
+    # plain text and would lint the phrases inside code spans. The
+    # wrapper copies the message to a .md file first, where the awk
+    # checks read it too. A `#` line stays, since git keeps it in a message given
     # with -m or -F, and in a PR body it is a heading.
     if [ "''${1:-}" = "--commit" ]; then
       message=$tmp_dir/message.md
@@ -567,15 +567,15 @@ writeShellApplication {
     # Harper strips the marker from only the first line of a run of Go
     # or Python line comments, so a phrase that wraps onto the next
     # comment line never matches. The wrapper copies the full-line
-    # comments into a shadow file at the same lines and columns and
-    # lints it as a language whose parser strips the marker from every
-    # line: Rust for `//` and shell for `#`. A finding on a comment line
+    # comments into a shadow file at the same lines and columns. It lints
+    # the shadow as a language whose parser strips the marker from every
+    # line, Rust for `//` and shell for `#`. A finding on a comment line
     # comes from the shadow, and a finding on any other line, such as a
     # docstring or a trailing comment, comes from the file itself.
     #
     # Harper has no HCL, YAML, Weir, or awk parser and would read those
-    # files as plain text, code included, so the shadow is the only lint
-    # there and a trailing comment goes unchecked.
+    # files as plain text, code included. The shadow is the only lint
+    # there, and a trailing comment goes unchecked.
     case "$ext" in
       go) shadow_kind="go" shadow_ext="rs" ;;
       py|pyi) shadow_kind="py" shadow_ext="sh" ;;
