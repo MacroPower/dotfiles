@@ -99,6 +99,10 @@ that second one.
   meaning, so a reader who does not know it cannot parse it.
 - Never write an idiom (`heavy lifting`, `rule of thumb`, `behind the
   scenes`). Write its literal meaning.
+- Never write `shape` or `X-shaped` for an interface, a type, or a
+  format. The reader has to guess which one it means. Name it, so
+  `implements Duck` rather than `Duck-shaped`, and `the same fields as
+  the v1 response` rather than `the same shape as the v1 response`.
 - Name the destination in link text (`the installation guide`), never
   `here` or `this page`.
 - Spell out every negation, so `do not` rather than `don't`. A reader

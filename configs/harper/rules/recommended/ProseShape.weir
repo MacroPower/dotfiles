@@ -1,0 +1,36 @@
+# `shape` names the outline of an object. Docs borrow it for an
+# interface, a type, or a wire format (`a Duck-shaped value`, `the same
+# shape as the v1 response`), and the reader has to guess which one the
+# writer meant. The fix names it, so `Duck-shaped` becomes `implements
+# Duck` and `the same shape as the v1 response` becomes `the same fields
+# as the v1 response`. The verb (`two pressures shape the design`) and
+# the idiom `in good shape` hide the same detail, so the rule reports
+# every form but `shaping`, which `traffic shaping` keeps as a term of
+# art.
+#
+# Tensor and array docs use `shape` for the size of each dimension, so
+# `shape` after `tensor`, `array`, or `matrix` passes, and so does
+# `shape of the tensor`. Weir has no lookbehind, so the filter consumes
+# the word before `shape` and narrows the finding back to it. A
+# sentence that opens with `Shape` therefore passes. Machine-learning
+# docs still trip the rule on `output shapes` and `the same shape`, and
+# the transformers docs hit it 109 times, nearly all for tensors.
+#
+# In the docs of 37 other cloned repositories it hit 272 lines, and 38
+# of 40 sampled hits used the word for a type, a format, a structure,
+# or an idiom. The other two named a literal outline (`a diamond shaped
+# icon`).
+expr literal [tensor, tensors, array, arrays, matrix, matrices, ndarray]
+expr word [shape, shapes]
+expr main [<(!@literal @word!(( )of( )DET( )@literal)), @word>, shaped]
+let message "Shape. Name the interface, type, or format it stands for."
+let description "Flags shape and X-shaped where they stand in for an interface, a type, or a format."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "The tensor shape must match the weight matrix."
+allows "Check the array shape before the call."
+allows "The shape of the tensor must match the weights."
+allows "The router applies traffic shaping to egress."
+allows "Reshape the array before the call."
+allows "The mock implements Duck."
