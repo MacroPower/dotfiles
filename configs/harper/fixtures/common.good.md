@@ -7,7 +7,7 @@ The flag is enabled by default.
 
 The feature is disabled on Linux.
 When the flag is set, the hook skips the file.
-A timeout is required for every request.
+The timeout is required for every request.
 The value is optional and defaults to five.
 The list is empty after Sweep.
 The pointer is nil when the lookup misses.
