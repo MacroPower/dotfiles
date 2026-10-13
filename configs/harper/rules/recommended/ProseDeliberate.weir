@@ -10,7 +10,7 @@
 # end. The clause-end list sits glued to `design`, the way the
 # reassurance rule writes it.
 expr main [(this is deliberate), (this is intentional), (by design[., ;, :, (,)]), ([is, was] by design)]
-let message "Unexplained choice. Give the reason for the choice, or delete the phrase."
+let message "Deliberate choice. Give the reason for the choice, or delete the phrase."
 let description "Flags phrases that vouch a choice was deliberate without giving the reason."
 let becomes ""
 let kind "Style"
