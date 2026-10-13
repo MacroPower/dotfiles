@@ -12,3 +12,4 @@ RedundantSuperlatives
 RedundantProgressiveComparative
 AvoidAndAlso
 RedundantAlmostNearly
+ThenThan
