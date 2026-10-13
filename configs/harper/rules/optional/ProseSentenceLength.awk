@@ -10,13 +10,14 @@
 #
 # Sentences run across the lines of a paragraph and end at a `.`, `?`,
 # or `!` before whitespace or the line end, after any closing quote,
-# paren, bracket, or emphasis. Paragraphs end at a skipped line, which
-# a blank line or a fenced block leaves, and at a line the reader
-# passes as blank, which a bare `>` between two quoted paragraphs
-# becomes. List items, headings, table rows, and lines that open with
-# an HTML tag each start a new one. Headings, table rows, and HTML
-# lines count no words. Each finding names the line and column where
-# the sentence starts.
+# paren, bracket, or emphasis. `e.g.`, `i.e.`, `vs.`, and `cf.` do not
+# end a sentence, the way ProseParagraphLength reads them. Paragraphs
+# end at a skipped line, which a blank line or a fenced block leaves,
+# and at a line the reader passes as blank, which a bare `>` between two
+# quoted paragraphs becomes. List items, headings, table rows, and
+# lines that open with an HTML tag each start a new one. Headings, table
+# rows, and HTML lines count no words. Each finding names the line and
+# column where the sentence starts.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseSentenceLength: <message>
@@ -66,7 +67,7 @@ function prose(text,   rest, pos, tok, col, parts, n, i) {
         words++
       }
     }
-    if (tok ~ /[.?!]["')*_\]]*$/) {
+    if (tok ~ /[.?!]["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {
       flush()
     }
   }
