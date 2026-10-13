@@ -1,0 +1,46 @@
+{
+  "exclude": ["LICENSE*", "*_test.go", "testdata"],
+  "sources": [
+    {
+      "repo": "kubernetes/website",
+      "corpus": "docs",
+      "commit": "f1984c4eaa5f04d388c7055c603ce4387a1a31bd",
+      "paths": ["content/en/docs/concepts", "content/en/blog/_posts/2024"]
+    },
+    {
+      "repo": "NixOS/nix.dev",
+      "corpus": "docs",
+      "commit": "fa3764c129e03badd665c4913462ed60f1d77f44",
+      "paths": ["source"]
+    },
+    {
+      "repo": "rust-lang/book",
+      "corpus": "docs",
+      "commit": "1500248d8f230566e4ec9f27fcbb8fe9e2898ab1",
+      "paths": ["src"]
+    },
+    {
+      "repo": "gohugoio/hugoDocs",
+      "corpus": "docs",
+      "commit": "b732eba6c2642cdbfd05b9ed761d4831af5fe541",
+      "paths": []
+    },
+    {
+      "repo": "golang/go",
+      "corpus": "go",
+      "commit": "2c3c1caad2079458fa7248ea1814797fc2e94e8a",
+      "paths": [
+        "src/bufio",
+        "src/context",
+        "src/database/sql",
+        "src/encoding/json",
+        "src/io",
+        "src/net/http",
+        "src/os",
+        "src/strings",
+        "src/sync",
+        "src/time"
+      ]
+    }
+  ]
+}
