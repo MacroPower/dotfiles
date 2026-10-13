@@ -1,5 +1,5 @@
 expr main in order to
-let message "Write to."
+let message "In order to. Write to."
 let description "Shortens in order to."
 let becomes "to"
 let kind "Style"
