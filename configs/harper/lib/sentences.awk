@@ -8,14 +8,16 @@
 # A token is a run of characters other than whitespace, punctuation
 # included. sentence() reads token i from `tok[i]`, its line from
 # `tok_line[i]`, and its character column from `tok_col[i]`. The file
-# that holds the sentence is in `sentence_file`.
+# that holds the sentence is in `sentence_file`. sentence_words(n)
+# counts the words of the sentence for a length check.
 #
 # Sentences run across the lines of a paragraph and end at a token that
 # ends in `.`, `?`, or `!`, after any closing quote, paren, bracket, or
 # emphasis. `e.g.`, `i.e.`, `vs.`, `cf.`, and a three-period ellipsis
 # do not end a sentence. Paragraphs end at a skipped line, which a
-# blank line or a fenced block leaves, and at a line the reader passes
-# as blank, which a bare `>` between two quoted paragraphs becomes.
+# blank line or a fenced block leaves. They also end at a line the
+# reader passes as blank, which a bare `>` between two quoted paragraphs
+# becomes.
 # List items, headings, table rows, and lines that open with an HTML
 # tag each start a new paragraph. Headings, table rows, and HTML lines
 # hold no sentences, and the marker that opens a list item is not a
@@ -60,6 +62,27 @@ function prose(text,   rest, pos, t, col) {
       end_sentence()
     }
   }
+}
+
+# Returns the number of words in the sentence and sets `words_from` to
+# the index of the first token that holds one. Each part of a hyphenated
+# word counts (`read-only` is two words), and a token with no letter
+# (`42`, `|`) counts as none.
+function sentence_words(n,   i, k, m, parts, words) {
+  words = 0
+  words_from = 0
+  for (i = 1; i <= n; i++) {
+    m = split(tok[i], parts, "-")
+    for (k = 1; k <= m; k++) {
+      if (parts[k] ~ /[A-Za-z]/) {
+        if (!words_from) {
+          words_from = i
+        }
+        words++
+      }
+    }
+  }
+  return words
 }
 
 END {
