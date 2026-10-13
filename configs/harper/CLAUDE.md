@@ -81,6 +81,31 @@ To rename a rule:
    including references such as `the stock-word rule`, and update each
    one.
 
+## Measurement
+
+`corpus.json` pins the measurement corpus: the kubernetes, nix.dev,
+Rust book, and Hugo docs, and the comments of ten Go standard library
+packages. `measure.py` lints it with a rule and prints the hits for
+each source and a seeded sample of hits.
+
+```bash
+python3 configs/harper/measure.py fetch
+python3 configs/harper/measure.py run ProseHedge
+python3 configs/harper/measure.py run --weir scratch/ProseDraft.weir --sample 20
+```
+
+Judge each sampled hit by hand, and count the hits that the rule
+reports correctly. Each new or changed rule cites the hits and the
+sampled precision in its comment:
+
+```text
+It hit 57 lines in the measure.py corpus, and 16 of 16 sampled hits
+were conjunctions.
+```
+
+Rule comments that predate the corpus cite counts from other runs. Measure such a rule again the next time it changes,
+and replace its numbers.
+
 ## Verification
 
 Build the weirpack from the repository root. The build runs every rule
