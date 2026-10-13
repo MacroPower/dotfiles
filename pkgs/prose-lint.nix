@@ -368,20 +368,56 @@ writeShellApplication {
       '
     }
 
-    # Moves each finding on a line the shifts file lists one column
-    # left, undoing the `#` that comment_lines put in front of it.
-    unshift() {
+    # Closes an inline code span that a comment line leaves open and
+    # reopens it on the next comment line. Harper reads the code spans
+    # of each comment line on their own, so the words of a span that
+    # wraps between two lines (`keep in` and `mind`) would read as
+    # prose. A line with an odd number of backticks leaves its span
+    # open, so it gains a backtick at its end. The next comment line
+    # gains one right after its marker, which moves its text one column
+    # right, so the wrapper records the line in the shifts file. A line
+    # that is not a comment ends the run.
+    close_spans() {
       SHIFTS="$1" awk '
+        {
+          if ($0 == "x") {
+            open = 0
+            print
+            next
+          }
+          if (open && match($0, /^[ \t]*(\/\/|#)[ \t]?/)) {
+            $0 = substr($0, 1, RLENGTH) "`" substr($0, RLENGTH + 1)
+            print NR > ENVIRON["SHIFTS"]
+          }
+          line = $0
+          open = gsub(/`/, "", line) % 2 == 1
+          if (open) {
+            $0 = $0 "`"
+          }
+          print
+        }
+      '
+    }
+
+    # Moves each finding on a line the shifts files list one column left
+    # for each time they list it. That undoes the `#` that comment_lines
+    # put in front of the line and the backtick that close_spans put
+    # after its marker.
+    unshift() {
+      SHIFTS="$(printf '%s\n' "$@")" awk '
         BEGIN {
-          while ((getline n < ENVIRON["SHIFTS"]) > 0) {
-            shifted[n] = 1
+          n = split(ENVIRON["SHIFTS"], files, "\n")
+          for (i = 1; i <= n; i++) {
+            while ((getline line < files[i]) > 0) {
+              shifted[line]++
+            }
           }
         }
         {
           if (match($0, /:[0-9]+:[0-9]+: /)) {
             split(substr($0, RSTART + 1), pos, ":")
-            if ((pos[1] in shifted) && pos[2] > 1) {
-              $0 = substr($0, 1, RSTART) pos[1] ":" (pos[2] - 1) ": " substr($0, RSTART + RLENGTH)
+            if ((pos[1] in shifted) && pos[2] > shifted[pos[1]]) {
+              $0 = substr($0, 1, RSTART) pos[1] ":" (pos[2] - shifted[pos[1]]) ": " substr($0, RSTART + RLENGTH)
             }
           }
           print
@@ -510,11 +546,14 @@ writeShellApplication {
     if [ -n "$shadow_kind" ]; then
       shadow=$tmp_dir/shadow.$shadow_ext
       shifts=$tmp_dir/shifts
+      span_shifts=$tmp_dir/span_shifts
       : >"$shifts"
-      comment_lines "$shadow_kind" "$file" "$shifts" | end_list_leads >"$shadow"
+      : >"$span_shifts"
+      comment_lines "$shadow_kind" "$file" "$shifts" | end_list_leads |
+        close_spans "$span_shifts" >"$shadow"
       out=$(
         printf '%s\n' "$out" | drop_comment_lines "$shadow" | sed '/^$/d'
-        lint "$rules" "$shadow" | unshift "$shifts"
+        lint "$rules" "$shadow" | unshift "$shifts" "$span_shifts"
       )
     fi
 
