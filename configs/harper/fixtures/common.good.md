@@ -13,7 +13,7 @@ The list is empty after Sweep.
 The pointer is nil when the lookup misses.
 
 Every method is safe for concurrent use.
-The context is done once the deadline passes.
+The context is done after the deadline passes.
 The file is missing.
 The job has been running for an hour.
 The path is relative to the repository root.
