@@ -463,7 +463,7 @@ The key distinction: in git repos, absolute paths resolve from the repo root; re
 
 ## Toolchain Design
 
-A toolchain is a module optimized for zero-code consumption. Instead of importing it, users install it and call functions directly.
+Toolchains are modules optimized for zero-code consumption. Instead of importing one, users install it and call its functions directly.
 
 ### Design principles
 

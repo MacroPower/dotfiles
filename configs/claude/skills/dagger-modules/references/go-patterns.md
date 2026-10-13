@@ -138,7 +138,7 @@ type MyModule struct {
 
 - Fields must be **exported** (capitalized) to serialize correctly across Dagger calls
 - Use `// +private` on struct fields to hide them from the API while keeping serialization
-- A module has exactly one constructor
+- Each module has exactly one constructor
 - Constructor parameters become flags on the `dagger` command directly (e.g., `dagger call --name=Foo message`)
 
 ---

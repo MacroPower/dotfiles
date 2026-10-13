@@ -64,7 +64,7 @@ the commit. It is usually the package, module, or component name.
 
 ### Breaking Changes
 
-A change breaks compatibility when someone who upgrades must edit their own code, config,
+Changes break compatibility when someone who upgrades must edit their own code, config,
 or workflow to keep working. The type stays whatever the diff earns (`feat`,
 `fix`, `refactor`, and so on). The breaking marker sits on top of that type.
 
@@ -103,7 +103,7 @@ the client.
 Commit the above changes as one commit per logical change, never as one commit
 for the whole diff.
 
-A logical change is one thing a reviewer can accept or revert on its own. Two
+Each logical change is one thing a reviewer can accept or revert on its own. Two
 edits belong in one commit only when neither makes sense without the other.
 Files are not the unit; a diff across three files can be one change, and a diff
 in one file can be three.
@@ -111,9 +111,9 @@ in one file can be three.
 For each change, in order:
 
 1. Stage only the paths that belong to it with `git add <path>...`.
-2. Commit it with its own message. A hook lints the message and denies
-   the commit with its findings when the message breaks a prose rule, so
-   rewrite the message and commit again until it goes through.
+2. Commit it with its own message. When the message breaks a prose rule,
+   a hook denies the commit with its findings. Rewrite the message and
+   commit again until it goes through.
 3. Move to the next change. Do not stage the next change until the previous
    commit exists.
 

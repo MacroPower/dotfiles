@@ -38,7 +38,7 @@ If the codebase follows conventional commits (visible in recent commits above), 
 Based on the above changes:
 
 1. Create a new branch if on main
-2. Create a single git commit with an appropriate message. A hook lints the commit message and the PR body and denies the command with its findings when either breaks a prose rule, so rewrite the text and run the command again.
+2. Create a single git commit with an appropriate message. When the commit message or the PR body breaks a prose rule, a hook denies the command with its findings. Rewrite the text and run the command again.
 3. Push the branch to origin with `mcp__git__git_push`, passing the repository root's absolute path as `repo` and setting `set_upstream`. If the git MCP server rejects the repository path, ask the user to push the branch instead.
 4. Create a pull request using `gh pr create`
 5. You have the capability to call multiple tools in a single response. You MUST do all of the above in a single message. Do not use any other tools or do anything else. Do not send any other text or messages besides these tool calls.

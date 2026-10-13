@@ -13,8 +13,8 @@ are allowed but should be avoided.
 
 ## Periods are reserved for semantic compound extensions
 
-A *semantic extension* is one a tool dispatches on -- the kernel,
-filesystem, parser, or build system reads it. `.json`, `.tar`, `.zst`,
+*Semantic extensions* are the ones a tool dispatches on, because the
+kernel, filesystem, parser, or build system reads them. `.json`, `.tar`, `.zst`,
 `.d.ts`, `.schema.json` qualify. Locale tags (`.en`), version markers
 (`.v2`), draft markers (`.draft`), and date stamps do **not** -- they
 belong inside the stem with `-` or `_`.
@@ -178,8 +178,8 @@ Rare. Flag the deviation explicitly:
 
 - If a third-party tool *requires* a specific name,
   keep the upstream name intact.
-- An upstream archive ships filenames you cannot control without
-  losing provenance -- preserve the original under `vendor/` or
-  `upstream/` and put the renamed copy alongside.
+- Upstream archives ship filenames you cannot control without losing
+  provenance. Preserve the original under `vendor/` or `upstream/` and
+  put the renamed copy alongside.
 - The file is a checksum/manifest pointing at other files (`sha1.lst`),
   match whatever names it references.

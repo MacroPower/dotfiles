@@ -68,7 +68,7 @@ Theme files are YAML. Root attributes either style a specific element type (slid
 
 ## Extending themes
 
-A custom theme can extend a built-in or custom theme and override only what it wants:
+Custom themes can extend a built-in or custom theme and override only what they want:
 
 ```yaml
 extends: dark
@@ -271,7 +271,7 @@ alert:
 
 ## Color palette
 
-A palette defines named colors and named foreground/background pairs ("classes"):
+The `palette` key defines named colors and named pairs of foreground and background colors ("classes"):
 
 ```yaml
 palette:

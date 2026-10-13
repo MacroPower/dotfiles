@@ -156,7 +156,7 @@ flowchart TB
   kubectl ==>|"view-scoped token"| remote[("remote API server<br/>real cluster -- view-scoped")]
 ```
 
-A local context is only reachable where a cluster can physically run.
+Local contexts are reachable only where a cluster can physically run.
 Only the Lima terrarium has a container runtime, so on the Darwin host
 and in the Dagger container `local.yaml` stays an inert stub and every
 selection takes the external path -- the local edge above is live only
@@ -326,9 +326,9 @@ implementation holds: **`select` routes by union membership first.** A
 name in `local.yaml` or the guest config takes the local (no-SA) path;
 only a name absent from both takes the external SA path. Given that,
 the _selected_ context name is defined in exactly one effective
-source. A guest/local selection's name is in the guest config and
-never in the sidecar -- a prior `select` of that name would itself have
-routed local, so `host select` never minted an SA for it. An external
+source. Each guest or local selection's name is in the guest config
+and never in the sidecar -- a prior `select` of that name would itself have
+routed local, so `host select` never minted an SA for it. Each external
 selection's name is, by the routing check, absent from the guest
 config, so the sidecar is its only definition. kubectl only resolves
 `current-context`, so merge order never confuses creds for the current
@@ -403,8 +403,8 @@ fallback, since everything lives in the one merged `$KUBECONFIG`.
 ### Threat-model shift for local contexts
 
 The scoped-kubeconfig property above -- "no token material lives on
-disk inside the VM" -- does **not** hold for local contexts. A
-local context carries usable inline cluster-admin creds _inside_ the
+disk inside the VM" -- does **not** hold for local contexts. Local
+contexts carry usable inline cluster-admin creds _inside_ the
 sandbox: in `local.yaml` for an in-sandbox tool's cluster, or in the
 guest's `~/.kube/config` for a guest-local one. That is safe only
 because the cluster is a throwaway in-VM cluster with no reachability
@@ -652,7 +652,7 @@ select`, which builds the path:
 serve process id. Falls back to `~/.local/state/mcp-kubectx/...`
 when `$XDG_STATE_HOME` is unset on the host.
 
-A guest-side `serve` reads the host's `$XDG_STATE_HOME` because
+Guest-side `serve` reads the host's `$XDG_STATE_HOME` because
 `workmux host-exec` runs `host select` on the host, so the env
 introspection happens host-side. The guest sees the file at the
 same absolute path through a writable bind mount of

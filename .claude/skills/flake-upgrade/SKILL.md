@@ -13,7 +13,7 @@ description: >-
 
 # Flake Upgrade
 
-A bare `nix flake update` moves the lock but leaves the config behind: deprecated
+Running `nix flake update` on its own moves the lock but leaves the config behind: deprecated
 options keep evaluating with warnings until they break, renamed options fail at the
 worst time, and new upstream features go unnoticed. This workflow bumps the lock,
 then actually reads what changed upstream and adapts the config to it.
@@ -29,8 +29,8 @@ conflicting edits and keeps the final judgment in one place.
 Confirm `flake.nix` and `flake.lock` are clean in git (`git status --porcelain
 flake.nix flake.lock`). If they are dirty, stop and ask -- otherwise the lock diff
 mixes the user's pending changes with the bump, and reverting becomes destructive.
-Other dirty files are fine. A clean lock also means the committed `flake.lock` at
-HEAD serves as the "before" for diffing -- no snapshot needed.
+Other dirty files are fine. Keeping the lock clean also means the committed
+`flake.lock` at HEAD is the "before" for diffing, so you do not need a snapshot.
 
 ## Step 2: Bump
 

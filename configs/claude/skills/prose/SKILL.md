@@ -10,8 +10,8 @@ description: >-
 
 ## Linter
 
-A hook runs `prose-lint` after every Write and Edit of a markdown or
-source file and returns its findings before your next turn. The Bash
+After every Write and Edit of a markdown or source file, a hook runs
+`prose-lint` and returns its findings before your next turn. The Bash
 hook also lints the message that a `git commit` or `gh pr create`
 carries. `prose-lint` tags each finding with its rule's tier, and the
 tier sets what it asks of you.

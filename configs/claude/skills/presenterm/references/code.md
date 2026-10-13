@@ -114,7 +114,7 @@ echo hello world
 <!-- snippet_output: foo -->
 ```
 
-A snippet can be referenced multiple times in slides at or after the one defining it; it executes once and every reference shows that execution's output.
+Slides at or after the one that defines a snippet can reference it multiple times. The snippet executes once, and every reference shows that execution's output.
 
 ## Validating snippets
 

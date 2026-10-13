@@ -1,6 +1,6 @@
 # Writing Presentations
 
-A presentation is a single markdown file. Slides are delimited by the `end_slide` comment command. Most common markdown elements work: ordered/unordered lists, headings, formatted text (bold, italics, strikethrough, inline code), code blocks, block quotes, tables, etc.
+Each presentation is a single markdown file. Slides are delimited by the `end_slide` comment command. Most common markdown elements work: ordered/unordered lists, headings, formatted text (bold, italics, strikethrough, inline code), code blocks, block quotes, tables, etc.
 
 ## Front matter and the introduction slide
 
@@ -54,7 +54,7 @@ Slides end at an explicit `end_slide` comment:
 
 Two options change this behavior (see [configuration.md](configuration.md)):
 
-- `implicit_slide_ends: true`: a slide title implies the previous slide ended.
+- `implicit_slide_ends: true`: each slide title ends the previous slide.
 - `end_slide_shorthand: true`: thematic breaks (`---`) also delimit slides.
 
 ## Colored text
@@ -89,7 +89,7 @@ Terminal support is verified at startup; font size changes are ignored on unsupp
 
 # Comment Commands
 
-presenterm uses HTML comments as commands for behavior vanilla markdown can't express. `presenterm --list-comment-commands` prints all of them. A single-line HTML comment is assumed to be a command (unless `command_prefix` is configured); multi-line comments are treated as plain comments.
+presenterm uses HTML comments as commands for behavior vanilla markdown can't express. `presenterm --list-comment-commands` prints all of them. presenterm reads each single-line HTML comment as a command (unless `command_prefix` is set) and treats multi-line comments as plain comments.
 
 ## pause
 

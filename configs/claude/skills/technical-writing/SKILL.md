@@ -53,8 +53,8 @@ design decisions, history, constraints, and alternatives. Opinion belongs here
 and nowhere else. Weigh the trade-offs and state your judgment. Do not list pros
 and cons.
 
-You must not mix modes in a reader-facing document. A tutorial carries no
-reference table, reference carries no teaching, and a how-to carries no
+You must not mix modes in a reader-facing document. Tutorials carry no
+reference tables, reference carries no teaching, and how-tos carry no
 argument. Split and link instead. A rulebook or a skill file can carry its
 reference glossary inline, because the reader applies the rules at the point of
 reading them.
@@ -180,7 +180,7 @@ gets the fallback.
 
 Grade obligations in every document. A runbook's data-loss warning and a
 how-to's ordering constraint earn the same "must" as a clause in a standard.
-Left bare, they read as one more step. An ordinary step does not take "must",
+Left bare, they read as one more step. Ordinary steps do not take "must",
 because a bare command already instructs.
 
 ## 6. Scope

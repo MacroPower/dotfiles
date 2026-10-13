@@ -7,9 +7,9 @@ presenterm reads a `config.yaml` from its configuration directory:
 - `~/Library/Application Support/presenterm/` on macOS
 - `~/AppData/Roaming/presenterm/config/` on Windows
 
-A custom path can be given via `--config-file` or the `PRESENTERM_CONFIG_FILE` environment variable. A [sample config](https://github.com/mfontanini/presenterm/blob/master/config.sample.yaml) exists in the repo. Custom themes live in `themes/` next to the config file.
+To use a custom path, pass `--config-file` or set the `PRESENTERM_CONFIG_FILE` environment variable. The repo has a [sample config](https://github.com/mfontanini/presenterm/blob/master/config.sample.yaml). Custom themes live in `themes/` next to the config file.
 
-A JSON schema is available for YAML language servers; add this line at the top of the config file:
+presenterm publishes a JSON schema for YAML language servers. To use it, add this line at the top of the config file:
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/mfontanini/presenterm/master/config-file-schema.json
@@ -21,7 +21,7 @@ Options can be set in the config file under `options:` OR in a presentation's fr
 
 ## implicit_slide_ends
 
-A slide title implies the previous slide ended, removing the need for `<!-- end_slide -->` between slides:
+With this option, each slide title ends the previous slide, so you can drop `<!-- end_slide -->` between slides:
 
 ```markdown
 ---

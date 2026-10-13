@@ -8,7 +8,7 @@ description: >-
 
 **Scope:** $ARGUMENTS
 
-A bare update command moves the lockfile and leaves the code behind. Deprecated
+Running the update command on its own moves the lockfile and leaves the code behind. Deprecated
 APIs keep working with warnings until they break, renamed options fail at the
 worst time, and new upstream features go unnoticed. This workflow bumps the
 pins, then reads what changed upstream and adapts the project to it.
@@ -20,8 +20,9 @@ which avoids conflicting edits and keeps the final judgment in one place.
 
 ## Step 1: Survey
 
-Read the scope line above. Empty means every dependency the project declares. A
-dependency name means just that one. An ecosystem name narrows to that manifest.
+Read the scope line above. When it is empty, upgrade every dependency the
+project declares. When it names a dependency, upgrade only that one, and when
+it names an ecosystem, narrow to that manifest.
 The words `latest` or `major` mean raise version constraints rather than update
 within them (see Step 3).
 
@@ -44,8 +45,8 @@ git status --porcelain -- <manifests and lockfiles>
 
 If they are dirty, stop and ask. Otherwise the diff mixes the user's pending
 edits with the bump and reverting becomes destructive. Other dirty files are
-fine. A clean lockfile also means the committed version at HEAD is the "before"
-for diffing, so you do not need a snapshot.
+fine. Keeping the lockfile clean also means the committed version at HEAD is the
+"before" for diffing, so you do not need a snapshot.
 
 ## Step 3: Bump
 
@@ -110,9 +111,9 @@ every changed dependency into one of two tiers.
 - The carrier itself. The rules above triage its expanded rows from Step 4
   one by one; the carrier's own log is never the changelog.
 
-"Transitive" describes how a package arrives, not how much it matters. A tool
-the project runs or configures is a direct dependency in every sense that
-counts, even when a package collection or an aggregator flake supplies it.
+"Transitive" describes how a package arrives, not how much it matters. Tools
+the project runs or configures are direct dependencies in every sense that
+counts, even when a package collection or an aggregator flake supplies them.
 Triage it under its own name and version range.
 
 When unsure, research. An agent that reports "pure maintenance" costs little; a
@@ -171,9 +172,9 @@ CARRIED is empty, say so in one line and stop.
 For a package that arrived through a carrier, fill the template with the
 package's own repo and version range, never the carrier's, and point the agent
 at the project's configuration for that package as the usage to judge against.
-A carrier commit titled `<tool>: 1.4.0 -> 1.5.0` is a pointer to a changelog,
-not a changelog. An agent that reads the carrier's log in place of the tool's
-release notes has researched the wrong thing.
+Carrier commits titled `<tool>: 1.4.0 -> 1.5.0` are pointers to a changelog,
+not changelogs. Agents that read the carrier's log in place of the tool's
+release notes have researched the wrong thing.
 
 While agents run, do not busy-wait. End the turn and act on completion
 notifications as they arrive.

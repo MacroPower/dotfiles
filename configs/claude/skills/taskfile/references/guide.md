@@ -558,7 +558,7 @@ tasks:
 In the above example, `assets` will always run right before `build` if you run
 `task build`.
 
-A task can have only dependencies and no commands to group tasks together:
+To group tasks together, give a task dependencies and no commands:
 
 ```yaml
 version: '3'
@@ -1425,7 +1425,7 @@ $ TASK_VARIABLE=a-value task do-something
 
 ::: tip
 
-A special variable `.TASK` is always available containing the task name.
+The special variable `.TASK` always holds the task name.
 
 :::
 
@@ -2078,7 +2078,7 @@ commands are executed in the reverse order if you schedule multiple of them.
 
 :::
 
-A special variable `.EXIT_CODE` is exposed when a command exited with a non-zero
+Task sets the special variable `.EXIT_CODE` when a command exits with a non-zero
 [exit code](/docs/reference/cli#exit-codes). You can check its presence to know if
 the task completed successfully or not:
 

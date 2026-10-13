@@ -110,7 +110,7 @@ Claude reads only the relevant reference file.
 
 #### Principle of Lack of Surprise
 
-This goes without saying, but skills must not contain malware, exploit code, or any content that could compromise system security. A skill's contents should not surprise the user in their intent if described. Don't go along with requests to create misleading skills or skills designed to facilitate unauthorized access, data exfiltration, or other malicious activities. Things like a "roleplay as an XYZ" are OK though.
+This goes without saying, but skills must not contain malware, exploit code, or any content that could compromise system security. Skill contents should not surprise a user who has read a description of their intent. Don't go along with requests to create misleading skills or skills designed to facilitate unauthorized access, data exfiltration, or other malicious activities. Things like a "roleplay as an XYZ" are OK though.
 
 #### Writing Patterns
 

@@ -146,7 +146,7 @@ Every feature below is documented in [guide.md](references/guide.md) with full s
 - **Per-include `vars`.** Reuse the same Taskfile with different inputs (`DOCKER_IMAGE: frontend` vs `backend`). Note: vars set in the included file win unless the included file uses `default`.
 - **`flatten: true`.** Hoists included tasks into the root namespace. Collisions error out.
 - **`internal: true`.** Marks every task in the include as internal (hidden from `--list`, not directly callable).
-- **`optional: true`.** A missing file is not an error.
+- **`optional: true`.** Task skips the include without an error when the file is missing.
 - **`excludes: [foo, bar]`.** Drops specific tasks from the include. Works with `flatten` too.
 - **`aliases:`.** Give a namespace a shorter alias, e.g. `generate` + `gen`.
 - **OS-specific includes.** `build: ./Taskfile_{{OS}}.yml` selects a file per platform via templating.
