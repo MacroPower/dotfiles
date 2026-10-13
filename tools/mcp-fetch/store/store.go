@@ -269,7 +269,7 @@ func (s *Store) columnExists(ctx context.Context, column string) (bool, error) {
 		`SELECT COUNT(*) FROM pragma_table_info('fetches') WHERE name = ?`,
 		column).Scan(&count)
 	if err != nil {
-		return false, fmt.Errorf("inspecting table shape: %w", err)
+		return false, fmt.Errorf("inspecting table schema: %w", err)
 	}
 
 	return count > 0, nil
