@@ -90,6 +90,20 @@ let
     map (c: c.name) (lib.filter (c: timeSensitive c.internal) prose-weirpack.passthru.awkChecks)
   );
 
+  # The awk checks that also read source comments, through the shadow
+  # of the file's comments. ProseArrow stays out, because a comment
+  # often draws an arrow on purpose (`a -> b`).
+  commentChecks = [
+    "ProseCapsObligation"
+    "ProseEmoji"
+    "ProseNumberedReference"
+    "ProseOpenList"
+    "ProseOverUnder"
+    "ProsePluralParen"
+    "ProseSentenceLength"
+    "ProseSlash"
+  ];
+
   # Internal rule name to tier, one `Name=Tier` pair per line, for the
   # awk step that tags each finding. The map covers every enabled
   # rule, so a name missing from it is a bug and tags as Required.
@@ -126,6 +140,7 @@ writeShellApplication {
     all_rules=${lib.escapeShellArg allRules}
     change_rules=${lib.escapeShellArg changeRules}
     change_skips=${lib.escapeShellArg changeSkips}
+    comment_checks=${lib.escapeShellArg (lib.concatStringsSep " " commentChecks)}
     tier_map=${lib.escapeShellArg tierMap}
     awk_checks=${lib.escapeShellArg awkChecks}
     awk_lib=${prose-weirpack}/${prose-weirpack.passthru.awkLib}
@@ -253,8 +268,12 @@ writeShellApplication {
     # block scalar body (`run: |`), which often holds a shell script.
     # The body runs while lines are blank or indented past the line
     # that opened it; that bound misses a comment at the mapping level
-    # right after `- key: |`, which errs toward linting less. Weir and
-    # awk take `#`, the same as any other kind.
+    # right after `- key: |`, which errs toward linting less. Weir, awk,
+    # and the other `#` languages take `#`, the same as any other kind.
+    # Rust, JavaScript, and the other `//` languages take `//`, `///`, and
+    # `//!` (kind slash), and Haskell and Lua take `--` (kind dash). Only
+    # the awk checks read those shadows, because Harper parses the
+    # comments of those languages itself.
     #
     # The per-line parser strips trailing `-`, `#`, `/`, `*`, and `!`
     # along with the marker, which would hide a `--` that ends a line,
@@ -281,6 +300,10 @@ writeShellApplication {
               next
             }
             keep = $0 ~ /^[ \t]*\/\/([ \t]|$)/
+          } else if (kind == "slash") {
+            keep = $0 ~ /^[ \t]*\/\/[\/!]?([ \t]|$)/
+          } else if (kind == "dash") {
+            keep = $0 ~ /^[ \t]*--([ \t]|$)/
           } else if (kind == "hcl") {
             keep = heredoc == "" && $0 ~ /^[ \t]*(#|\/\/)([ \t]|$)/
           } else if (kind == "yaml") {
@@ -342,7 +365,7 @@ writeShellApplication {
             $0 = substr($0, 1, RLENGTH - 2) "# " substr($0, RLENGTH + 1)
           }
           text = $0
-          sub(/^[ \t]*(\/\/|#)/, "", text)
+          sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", text)
           if (text ~ /[^-#\/*! \t]/ && text ~ /[-#\/*!][ \t]*$/) {
             print $0 " x"
           } else {
@@ -363,7 +386,7 @@ writeShellApplication {
       awk '
         function item(s, text) {
           text = s
-          if (!sub(/^[ \t]*(\/\/|#)/, "", text)) {
+          if (!sub(/^[ \t]*(\/\/[\/!]?|#|--)/, "", text)) {
             return 0
           }
           return text ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/
@@ -402,7 +425,7 @@ writeShellApplication {
             print
             next
           }
-          if (open && match($0, /^[ \t]*(\/\/|#)[ \t]?/)) {
+          if (open && match($0, /^[ \t]*(\/\/[\/!]?|#|--)[ \t]?/)) {
             $0 = substr($0, 1, RLENGTH) "`" substr($0, RLENGTH + 1)
             print NR > ENVIRON["SHIFTS"]
           }
@@ -483,6 +506,27 @@ writeShellApplication {
       done <<< "$awk_checks"
     }
 
+    # Runs the awk checks that commentChecks names over the comment
+    # shadow of a source file, with SHADOW=1 so the reader blanks each
+    # comment marker. It prints the findings under their internal names,
+    # the way markdown_checks does. ProseSlash skips Go, whose comments
+    # name import paths and media types (`net/http`, `text/plain`).
+    comment_checks() {
+      local internal script name
+      while IFS='=' read -r internal script; do
+        [ -n "$internal" ] || continue
+        name=''${internal%_*}
+        case " $comment_checks " in
+          *" $name "*) ;;
+          *) continue ;;
+        esac
+        if [ "$name" = ProseSlash ] && [ "$2" = go ]; then
+          continue
+        fi
+        SHADOW=1 AWKPATH="$awk_lib" awk -f "$script" "$1" | sed "s/::$name:/::$internal:/"
+      done <<< "$awk_checks"
+    }
+
     tmp_dir=$(mktemp -d)
     trap 'rm -rf "$tmp_dir"' EXIT
     stderr_file=$tmp_dir/stderr
@@ -541,16 +585,25 @@ writeShellApplication {
       *) shadow_kind="" shadow_ext="" ;;
     esac
 
+    # The awk checks read a shadow of every source file's comments, so
+    # they also reach the languages whose comments Harper parses itself.
+    case "$ext" in
+      nix|sh|bash|rb|toml|ex|exs|ps1) comment_kind="hash" ;;
+      rs|c|cpp|h|cs|dart|gleam|groovy|gradle|java|js|jsx|kt|kts|php|scala|sol|swift|ts|tsx|zig) comment_kind="slash" ;;
+      hs|lua) comment_kind="dash" ;;
+      *) comment_kind=$shadow_kind ;;
+    esac
+
     # --shadow prints the shadow and stops, so a corpus measurement
     # lints comments the same way the hook does. It drops the shifts
     # files, so a finding on a line that close_spans shifted reads one
     # column right of the source.
     if [ "$shadow_only" = 1 ]; then
-      if [ -z "$shadow_kind" ]; then
+      if [ -z "$comment_kind" ]; then
         echo "prose-lint: $file has no comment shadow" >&2
         exit 2
       fi
-      comment_lines "$shadow_kind" "$file" /dev/null | end_list_leads | close_spans /dev/null
+      comment_lines "$comment_kind" "$file" /dev/null | end_list_leads | close_spans /dev/null
       exit 0
     fi
 
@@ -602,8 +655,8 @@ writeShellApplication {
     out=$(printf '%s\n' "$out" | sed '/^$/d' | drop_label_colons "$file" |
       FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
 
-    # The awk checks read markdown, and only ProseTypography reads other
-    # files.
+    # The awk checks read markdown. ProseTypography also reads other
+    # files whole, and the comment checks below read their comments.
     if [ "$ext" = md ] || [ "$ext" = markdown ]; then
       found=$(markdown_checks "$file" "$skips")
       if [ -n "$found" ]; then
@@ -622,6 +675,28 @@ writeShellApplication {
     }$found"
         fi
       done <<< "$awk_checks"
+    fi
+
+    # The comment checks read the shadow that the lint above built, or a
+    # shadow of their own for a language whose comments Harper parses
+    # itself. unshift moves each finding back to the source column, and
+    # the awk step names the source file in place of the shadow.
+    if [ -n "$comment_kind" ]; then
+      if [ -z "$shadow_kind" ]; then
+        shadow=$tmp_dir/comments
+        shifts=$tmp_dir/shifts
+        span_shifts=$tmp_dir/span_shifts
+        : >"$shifts"
+        : >"$span_shifts"
+        comment_lines "$comment_kind" "$file" "$shifts" | end_list_leads |
+          close_spans "$span_shifts" >"$shadow"
+      fi
+      found=$(comment_checks "$shadow" "$comment_kind" | unshift "$shifts" "$span_shifts" |
+        FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
+      if [ -n "$found" ]; then
+        out="''${out:+$out
+    }$found"
+      fi
     fi
 
     if [ -n "$out" ]; then

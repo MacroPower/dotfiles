@@ -1,13 +1,15 @@
 # Reports a reference to a numbered line of a file in markdown prose
-# (`main.go:42`, `line 40`, `lines 10-20`) and a GitHub link to a line
-# on a branch (`blob/main/cli.go#L264`). The numbers move when someone
-# edits the file, and nothing points the editor at the reference. The
-# fix names the function or the section, or links a commit permalink,
-# whose lines stay put.
+# and source comments. It reports a file name with a line number after
+# a colon, the word `line` or `lines` before a number, and a GitHub link
+# to a line on a branch (`blob/main/cli.go#L264`). The numbers move when
+# someone edits the file, and nothing points the editor at the
+# reference. The fix names the function or the section, or links a
+# commit permalink, whose lines stay put.
 #
 # The check reads the raw line in `$0`, which keeps the code spans and
 # link destinations that the reader blanks, because most of these
-# references sit inside one (`cli.go:264-267` in backticks). A file
+# references sit inside one. That also reaches this comment, so its
+# examples describe the forms instead of spelling them out. A file
 # reference needs an extension from a list of source and config
 # formats, so a host and port (`example.com:443`) passes. A link to a
 # commit hash of six or more hex digits or to a version tag (`v1.2.3`)
@@ -16,8 +18,8 @@
 # because a commit pins the lines it names.
 #
 # It hit 12 lines in the measure.py corpus, and 10 of 12 named a line of
-# a file that can change. The misses numbered lines of output or of an
-# option value (`To emphasize lines 2, 3, 4, and 7`).
+# a file that can change. The misses numbered the lines of a backtrace
+# and the lines that a Hugo option highlights.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseNumberedReference: <message>
