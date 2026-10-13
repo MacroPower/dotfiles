@@ -65,7 +65,9 @@ let
   # builds. A changelog and a commit message both describe a change,
   # so each turns off every tier's ProseChangeNarration, ProseCurrently,
   # and ProseRoadmap. Each also turns off ProseFutureTense, because a
-  # message about a change may say what the system does after it.
+  # message about a change might say what the system does after it.
+  # The list holds name prefixes, and it turns off the Weir rules and
+  # the awk checks that match one.
   ruleNames = prose-weirpack.passthru.ruleNames ++ prose-weirpack.passthru.builtinRules;
   allRules = lib.concatStringsSep "," ruleNames;
   timeSensitiveRules = [
@@ -74,8 +76,13 @@ let
     "ProseFutureTense_"
     "ProseRoadmap_"
   ];
-  changeRules = lib.concatStringsSep "," (
-    lib.filter (r: !(lib.any (prefix: lib.hasPrefix prefix r) timeSensitiveRules)) ruleNames
+  timeSensitive = name: lib.any (prefix: lib.hasPrefix prefix name) timeSensitiveRules;
+  changeRules = lib.concatStringsSep "," (lib.filter (r: !(timeSensitive r)) ruleNames);
+
+  # The bare names of the awk checks that a changelog and a commit
+  # message skip, separated by spaces.
+  changeSkips = lib.concatStringsSep " " (
+    map (c: c.name) (lib.filter (c: timeSensitive c.internal) prose-weirpack.passthru.awkChecks)
   );
 
   # Internal rule name to tier, one `Name=Tier` pair per line, for the
@@ -113,6 +120,7 @@ writeShellApplication {
     pack=${prose-weirpack}/share/harper/prose.weirpack
     all_rules=${lib.escapeShellArg allRules}
     change_rules=${lib.escapeShellArg changeRules}
+    change_skips=${lib.escapeShellArg changeSkips}
     tier_map=${lib.escapeShellArg tierMap}
     awk_checks=${lib.escapeShellArg awkChecks}
     awk_lib=${prose-weirpack}/${prose-weirpack.passthru.awkLib}
@@ -456,16 +464,16 @@ writeShellApplication {
     # Runs every awk check over a markdown file and prints the findings
     # under their internal names. Each check prints `Kind::Name:`, and
     # the sed renames that to `Kind::Name_Tier:` so the tag step finds
-    # it in the map. A second argument of 1 skips ProseHeading, whose
-    # rules do not fit a changelog's release labels.
+    # it in the map. The second argument lists the bare names of the
+    # checks to skip, separated by spaces.
     markdown_checks() {
       local internal script name
       while IFS='=' read -r internal script; do
         [ -n "$internal" ] || continue
         name=''${internal%_*}
-        if [ "$2" = 1 ] && [ "$name" = ProseHeading ]; then
-          continue
-        fi
+        case " $2 " in
+          *" $name "*) continue ;;
+        esac
         AWKPATH="$awk_lib" awk -f "$script" "$1" | sed "s/::$name:/::$internal:/"
       done <<< "$awk_checks"
     }
@@ -483,7 +491,7 @@ writeShellApplication {
       message=$tmp_dir/message.md
       cat >"$message"
       found=$(lint "$change_rules" "$message" | drop_label_colons "$message")
-      checks=$(markdown_checks "$message" 0)
+      checks=$(markdown_checks "$message" "$change_skips")
       out=$(printf '%s\n%s\n' "$found" "$checks" | sed '/^$/d' |
         sed 's/^[^:]*:/<stdin>:/' | tag)
       if [ -n "$out" ]; then
@@ -556,11 +564,11 @@ writeShellApplication {
     # [YANKED]`), so the heading check is off too.
     base=$(basename "$file")
     rules=$all_rules
-    changelog=0
+    skips=""
     case "$base" in
       CHANGELOG*|CHANGES*|HISTORY*)
         rules=$change_rules
-        changelog=1
+        skips="$change_skips ProseHeading"
         ;;
     esac
 
@@ -592,7 +600,7 @@ writeShellApplication {
     # The awk checks read markdown, and only ProseTypography reads other
     # files.
     if [ "$ext" = md ] || [ "$ext" = markdown ]; then
-      found=$(markdown_checks "$file" "$changelog")
+      found=$(markdown_checks "$file" "$skips")
       if [ -n "$found" ]; then
         out="''${out:+$out
     }$found"
