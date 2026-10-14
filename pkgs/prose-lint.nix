@@ -596,6 +596,18 @@ in
     tmp_dir=$(mktemp -d)
     trap 'rm -rf "$tmp_dir"' EXIT
     stderr_file=$tmp_dir/stderr
+    norm_dir=$tmp_dir/norm
+    mkdir "$norm_dir"
+
+    # Straightens a curly apostrophe (U+2019) between two letters.
+    # The Weir rules list contractions with a straight apostrophe, so
+    # without this step a curly one hides them until ProseTypography's
+    # fix lands, and each such line costs two edits. Harper reads the
+    # straightened copy, and ProseTypography reads the original. Both
+    # apostrophes are one character, so columns stay put.
+    straighten() {
+      awk '{ print gensub(/([A-Za-z])\342\200\231([A-Za-z])/, "\\1\047\\2", "g") }'
+    }
 
     # A commit or PR message is markdown, but harper-cli reads stdin as
     # plain text and would lint the phrases inside code spans. The
@@ -605,7 +617,8 @@ in
     if [ "''${1:-}" = "--commit" ]; then
       message=$tmp_dir/message.md
       cat >"$message"
-      found=$(lint "$change_rules" "$message" | drop_label_colons "$message")
+      straighten <"$message" >"$norm_dir/message.md"
+      found=$(lint "$change_rules" "$norm_dir/message.md" | drop_label_colons "$message")
       checks=$(markdown_checks "$message" "$change_skips")
       out=$(printf '%s\n%s\n' "$found" "$checks" | sed '/^$/d' |
         sed 's/^[^:]*:/<stdin>:/' | tag)
@@ -669,7 +682,7 @@ in
         echo "prose-lint: $file has no comment shadow" >&2
         exit 2
       fi
-      comment_lines "$comment_kind" "$file" /dev/null | end_list_leads | close_spans /dev/null
+      comment_lines "$comment_kind" "$file" /dev/null | end_list_leads | close_spans /dev/null | straighten
       exit 0
     fi
 
@@ -699,7 +712,10 @@ in
     out=""
     case "$shadow_kind" in
       hcl|yaml|hash) ;;
-      *) out=$(lint "$rules" "$file") ;;
+      *)
+        straighten <"$file" >"$norm_dir/$base"
+        out=$(lint "$rules" "$norm_dir/$base")
+        ;;
     esac
     if [ -n "$shadow_kind" ]; then
       shadow=$tmp_dir/shadow.$shadow_ext
@@ -708,7 +724,7 @@ in
       : >"$shifts"
       : >"$span_shifts"
       comment_lines "$shadow_kind" "$file" "$shifts" | end_list_leads |
-        close_spans "$span_shifts" >"$shadow"
+        close_spans "$span_shifts" | straighten >"$shadow"
       out=$(
         printf '%s\n' "$out" | drop_comment_lines "$shadow" | sed '/^$/d'
         lint "$rules" "$shadow" | unshift "$shifts" "$span_shifts"
@@ -759,7 +775,7 @@ in
         : >"$shifts"
         : >"$span_shifts"
         comment_lines "$comment_kind" "$file" "$shifts" | end_list_leads |
-          close_spans "$span_shifts" >"$shadow"
+          close_spans "$span_shifts" | straighten >"$shadow"
       fi
       found=$(comment_checks "$shadow" "$comment_kind" | unshift "$shifts" "$span_shifts" |
         FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
