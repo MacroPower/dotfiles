@@ -9,7 +9,8 @@
 # spans, HTML code, kbd, samp, and pre elements, autolinks, link
 # destinations, and bare URLs to spaces, so columns stay put. It skips
 # YAML front matter, fenced code at any indentation or inside a
-# blockquote, and HTML comments. It also skips indented code (an
+# blockquote, HTML comments, and link reference definitions
+# (`[guide]: https://example.com`). It also skips indented code (an
 # indented line after a blank line outside a list, so a nested list
 # item still counts). It skips a MyST directive's opening fence and the
 # `:name: value` option lines under it, because ProseEmoji's shortcode
@@ -222,6 +223,12 @@ in_comment {
     next
   }
   myst_options = 0
+  # A link reference definition (`[guide]: https://example.com`) holds
+  # a label and a URL, not prose. A footnote (`[^1]: text`) stays.
+  if (raw ~ /^ {0,3}\[[^]^][^]]*\]:[ \t]*[^ \t]+[ \t]*("[^"]*")?[ \t]*$/) {
+    prev_blank = 0
+    next
+  }
   if (raw ~ /^[ \t]*<!--/ && raw !~ /-->/) {
     in_comment = 1
     next

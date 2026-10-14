@@ -25,3 +25,7 @@ Both tests must pass.
 Run make in the repository root to build it.
 The bucket never refills when the rate is zero.
 The rule that matched wins, and that is the whole contract.
+
+[guide]: https://example.com/guide
+[api reference]: ../reference/api.md "The API reference"
+[release notes]: https://example.com/releases/v2
