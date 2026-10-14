@@ -1,6 +1,7 @@
 {
   lib,
   writeShellApplication,
+  runCommand,
   harper,
   gawk,
   prose-weirpack,
@@ -118,7 +119,7 @@ let
     map (c: "${c.internal}=${prose-weirpack}/${c.path}") prose-weirpack.passthru.awkChecks
   );
 in
-writeShellApplication {
+(writeShellApplication {
   name = "prose-lint";
   runtimeInputs = [
     harper
@@ -278,12 +279,23 @@ writeShellApplication {
     # The per-line parser strips trailing `-`, `#`, `/`, `*`, and `!`
     # along with the marker, which would hide a `--` that ends a line,
     # so a comment line with text that ends in one of them gains ` x`.
+    #
+    # The file's license header prints as `x` too, because its text
+    # must stay verbatim (see license_lines).
     comment_lines() {
-      KIND="$1" SHIFTS="$3" awk '
+      KIND="$1" SHIFTS="$3" LICENSE="$(license_lines "$2")" awk '
         BEGIN {
           block = -1
+          n = split(ENVIRON["LICENSE"], header, "\n")
+          for (i = 1; i <= n; i++) {
+            license[header[i]] = 1
+          }
         }
         {
+          if (NR in license) {
+            print "x"
+            next
+          }
           kind = ENVIRON["KIND"]
           if (kind == "yaml" && block >= 0) {
             match($0, /^[ \t]*/)
@@ -373,6 +385,60 @@ writeShellApplication {
           }
         }
       ' "$2"
+    }
+
+    # Prints the line numbers of a source file's license header, one per
+    # line. The header is the file's first run of full-line comments,
+    # after any blank lines and a shebang, when one of its lines names a
+    # copyright or a license. License text must stay verbatim, so no
+    # finding on it can be fixed, and the wrapper drops them all.
+    license_lines() {
+      awk '
+        !started && (/^[ \t]*$/ || (NR == 1 && /^#!/)) {
+          next
+        }
+        /^[ \t]*(\/\/[\/!]?|#|--)([ \t]|$)/ {
+          started = 1
+          run[NR] = 1
+          if (/Copyright|SPDX-License-Identifier|Licensed under|license that can be found/) {
+            found = 1
+          }
+          next
+        }
+        {
+          exit
+        }
+        END {
+          if (found) {
+            for (line in run) {
+              print line
+            }
+          }
+        }
+      ' "$1"
+    }
+
+    # Drops each finding on a line of the source file's license header.
+    # The shadow already blanks the header, and this step drops the
+    # findings that Harper reports when it reads the file itself.
+    license_drop() {
+      LICENSE="$(license_lines "$1")" awk '
+        BEGIN {
+          n = split(ENVIRON["LICENSE"], header, "\n")
+          for (i = 1; i <= n; i++) {
+            license[header[i]] = 1
+          }
+        }
+        {
+          if (match($0, /:[0-9]+:[0-9]+: /)) {
+            split(substr($0, RSTART + 1), pos, ":")
+            if (pos[1] in license) {
+              next
+            }
+          }
+          print
+        }
+      '
     }
 
     # Ends a shadow comment line with a period instead of a colon when
@@ -649,6 +715,10 @@ writeShellApplication {
       )
     fi
 
+    if [ -n "$comment_kind" ]; then
+      out=$(printf '%s\n' "$out" | license_drop "$file")
+    fi
+
     # harper-cli prints the basename; restore the path it was given so
     # a finding names the file the way the caller does. ENVIRON avoids
     # awk -v's backslash processing.
@@ -716,4 +786,28 @@ writeShellApplication {
     license = lib.licenses.asl20;
     mainProgram = "prose-lint";
   };
-}
+}).overrideAttrs
+  (
+    finalAttrs: prev: {
+      passthru = prev.passthru // {
+        # Lints source files that open with a license header and expects no
+        # finding, then lints a control file whose first comment is no
+        # license and expects one. configs/harper/CLAUDE.md gives the
+        # command that builds it.
+        tests.license-headers = runCommand "prose-lint-license-headers" { } ''
+          cp ${../configs/harper/fixtures/license}/* .
+          for f in bsd.go apache.go apache.py apache.ts; do
+            if ! ${lib.getExe finalAttrs.finalPackage} "$PWD/$f"; then
+              echo "$f: the license header drew a finding" >&2
+              exit 1
+            fi
+          done
+          if ${lib.getExe finalAttrs.finalPackage} "$PWD/control.go"; then
+            echo "control.go: expected a finding" >&2
+            exit 1
+          fi
+          touch "$out"
+        '';
+      };
+    }
+  )
