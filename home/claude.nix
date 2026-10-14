@@ -285,8 +285,9 @@ let
       command follows one exit-code contract. 0 means the file is
       clean. 1 means findings, one `path:line:col: message` line each
       on stdout, which hook-router returns to Claude through exit code
-      2 (a Write reports every finding, an Edit only those on the
-      lines it wrote). Any other code is a crash, logged and swallowed.
+      2 (a Write reports every finding, an Edit those on the lines it
+      wrote and those it created elsewhere in the file). Any other
+      code is a crash, logged and swallowed.
     '';
   };
 

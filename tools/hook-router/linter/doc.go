@@ -10,9 +10,13 @@
 // linter follows one exit-code contract: 0 means clean, 1 means
 // findings on stdout (one `path:line:col: message` line each), and any
 // other code is a crash, reported as [ErrLinterFailed] for the caller
-// to log and swallow. [Ranges] and [Filter] narrow findings to the
-// lines an edit touched, and [Format] renders them for the hook
-// channel.
+// to log and swallow. [Format] renders findings for the hook channel.
+//
+// An edit reports the findings on the lines it wrote, plus every
+// finding it created elsewhere in the file. A finding counts as created
+// when the file before the edit has no finding with the same message
+// on the same line text. A finding that the edit moved stays quiet,
+// and so does an older finding on a line the edit did not change.
 //
 // A finding may carry a `[Tier]` tag after `path:line:col:`, which
 // prose-lint prints from its rule manifest. The [Tier] sets what the

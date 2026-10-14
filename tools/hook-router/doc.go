@@ -32,7 +32,8 @@
 //     on the written file, then the matching linter from --linter-rules;
 //     findings block through exit code 2 so the asyncRewake hook entry
 //     wakes Claude with them (a Write reports every finding, an Edit
-//     only those on the lines it wrote)
+//     those on the lines it wrote and those it created elsewhere in
+//     the file)
 //   - Stop                        -- blocks (with an AskUserQuestion-instructing
 //     message) until the post-impl question has been
 //     answered once for the current plan cycle

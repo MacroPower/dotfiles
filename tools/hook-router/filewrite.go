@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/linter"
@@ -142,8 +144,14 @@ func formatPath(ctx context.Context, cfg config, filePath string, logger *slog.L
 // lintPath runs the first linter rule whose glob accepts filePath and
 // returns its findings as a [*blockError]. A path no rule matches, a
 // clean file, and a linter that fails (logged at warn) all return nil.
-// A Write reports every finding; an Edit or MultiEdit reports only the
-// findings on lines it wrote, see [touchedFindings].
+// A Write reports every finding. An Edit or MultiEdit reports the
+// findings on lines it wrote, see [touchedFindings], plus every finding
+// it created elsewhere in the file, see [freshFindings].
+//
+// The hook runs in the background, so a second edit to the same file
+// can land before this one lints it. This hook then reports the
+// findings the second edit created, and the second edit's hook reports
+// them again. The race repeats findings but never drops one.
 func lintPath(ctx context.Context, cfg config, h hook.Input, filePath string, logger *slog.Logger) error {
 	rule, ok := cfg.linterRules.Match(filePath)
 	if !ok {
@@ -162,36 +170,75 @@ func lintPath(ctx context.Context, cfg config, h hook.Input, filePath string, lo
 	}
 
 	total := len(findings)
-	findings = touchedFindings(h, filePath, findings, logger)
+	reported := findings
+	fresh := 0
+
+	if len(findings) > 0 && h.ToolName != "Write" {
+		reported, fresh = editFindings(ctx, rule, h, filePath, findings, logger)
+	}
 
 	logger.Info("linted file",
 		slog.String("file_path", filePath),
 		slog.String("linter", rule.Command[0]),
 		slog.String("tool", h.ToolName),
 		slog.Int("findings", total),
-		slog.Int("reported", len(findings)),
+		slog.Int("fresh", fresh),
+		slog.Int("reported", len(reported)),
 	)
 
-	if len(findings) == 0 {
+	if len(reported) == 0 {
 		return nil
 	}
 
-	return &blockError{Reason: linter.Format(filePath, findings, linter.MaxFindings)}
+	return &blockError{Reason: linter.Format(filePath, reported, linter.MaxFindings)}
+}
+
+// editFindings returns the findings an Edit or MultiEdit reports, in
+// the linter's order: the [touchedFindings] and the [freshFindings],
+// each finding once. It also returns the number of fresh findings.
+// When reading the file fails, the function reports every finding.
+func editFindings(
+	ctx context.Context,
+	rule linter.Rule,
+	h hook.Input,
+	filePath string,
+	findings []linter.Finding,
+	logger *slog.Logger,
+) ([]linter.Finding, int) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		logger.Warn("reading linted file",
+			slog.String("file_path", filePath),
+			slog.Any("error", err),
+		)
+
+		return findings, 0
+	}
+
+	touched := touchedFindings(h, filePath, string(content), findings, logger)
+	if len(touched) == len(findings) {
+		return touched, 0
+	}
+
+	fresh := freshFindings(ctx, rule, h, filePath, string(content), findings, logger)
+
+	return mergeFindings(findings, touched, fresh), len(fresh)
 }
 
 // touchedFindings narrows findings to the lines an Edit or MultiEdit
-// wrote, so a file whose older findings Claude is not touching does
-// not rewake it on every edit. Every occurrence of each new_string
-// counts, since the Edit tool only requires old_string to be unique.
-// A Write keeps every finding. An edit whose new_string values are all
-// empty (a deletion) reports nothing, because no written line can
-// carry a finding. When the file lacks a new_string (the formatter
-// rewrote it), the function reports every finding, with an info log.
-func touchedFindings(h hook.Input, filePath string, findings []linter.Finding, logger *slog.Logger) []linter.Finding {
-	if len(findings) == 0 {
-		return nil
-	}
-
+// wrote into content, the file after the edit. A file whose older
+// findings Claude is not touching then does not rewake it on every
+// edit. Every occurrence of each new_string counts, because the Edit
+// tool requires only old_string to be unique. An edit whose new_string
+// values are all empty (a deletion) wrote no line, so it touches no
+// finding. When the file lacks a new_string (the formatter rewrote
+// it), the function reports every finding, with an info log.
+func touchedFindings(
+	h hook.Input,
+	filePath, content string,
+	findings []linter.Finding,
+	logger *slog.Logger,
+) []linter.Finding {
 	var needles []string
 
 	switch h.ToolName {
@@ -212,16 +259,6 @@ func touchedFindings(h hook.Input, filePath string, findings []linter.Finding, l
 		return findings
 	}
 
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		logger.Warn("reading linted file",
-			slog.String("file_path", filePath),
-			slog.Any("error", err),
-		)
-
-		return findings
-	}
-
 	var ranges []linter.LineRange
 
 	for _, needle := range needles {
@@ -229,7 +266,7 @@ func touchedFindings(h hook.Input, filePath string, findings []linter.Finding, l
 			continue
 		}
 
-		hits := linter.Ranges(string(content), needle)
+		hits := linter.Ranges(content, needle)
 		if len(hits) == 0 {
 			logger.Info("edit text not found after formatting, reporting every finding",
 				slog.String("file_path", filePath),
@@ -242,6 +279,100 @@ func touchedFindings(h hook.Input, filePath string, findings []linter.Finding, l
 	}
 
 	return linter.Filter(findings, ranges)
+}
+
+// freshFindings returns the findings an edit created anywhere in the
+// file. [touchedFindings] misses such a finding when it anchors on a
+// line the edit did not write. A sentence check, for example, anchors
+// on the sentence's first line. An edit to the end of a long sentence
+// then leaves its finding outside the written lines.
+//
+// The function lints tool_response.originalFile, the file before the
+// edit, and passes the findings from both lints to [linter.Fresh]. The
+// copy keeps the file's base name, because the linter picks its rules
+// by extension and by name. A payload without originalFile returns
+// nil, and so does a pre-edit lint that fails. The edit then reports
+// its touched findings alone.
+func freshFindings(
+	ctx context.Context,
+	rule linter.Rule,
+	h hook.Input,
+	filePath, content string,
+	findings []linter.Finding,
+	logger *slog.Logger,
+) []linter.Finding {
+	original, ok := h.ToolResponse["originalFile"].(string)
+	if !ok {
+		return nil
+	}
+
+	dir, err := os.MkdirTemp("", "hook-router-lint-")
+	if err != nil {
+		logger.Warn("creating pre-edit lint dir", slog.Any("error", err))
+		return nil
+	}
+
+	defer func() {
+		err := os.RemoveAll(dir)
+		if err != nil {
+			logger.Warn("removing pre-edit lint dir", slog.String("dir", dir), slog.Any("error", err))
+		}
+	}()
+
+	copyPath := filepath.Join(dir, filepath.Base(filePath))
+
+	err = os.WriteFile(copyPath, []byte(original), 0o600)
+	if err != nil {
+		logger.Warn("writing pre-edit copy", slog.String("file_path", filePath), slog.Any("error", err))
+		return nil
+	}
+
+	before, err := rule.Run(ctx, copyPath)
+	if err != nil {
+		logger.Warn("pre-edit linter run failed",
+			slog.String("file_path", filePath),
+			slog.String("linter", rule.Command[0]),
+			slog.Any("error", err),
+		)
+
+		return nil
+	}
+
+	// The linter names the path it got in every line, including a
+	// finding with no line number. Left in place, the copy's path
+	// keeps that finding from matching its post-edit counterpart.
+	for i := range before {
+		before[i].Text = strings.ReplaceAll(before[i].Text, copyPath, filePath)
+	}
+
+	return linter.Fresh(findings, content, before, original)
+}
+
+// mergeFindings returns the findings that appear in a, in b, or in
+// both, in the order of all. a and b must each keep the order of all,
+// which [linter.Filter] and [linter.Fresh] do.
+func mergeFindings(all, a, b []linter.Finding) []linter.Finding {
+	var merged []linter.Finding
+
+	i, j := 0, 0
+
+	for _, f := range all {
+		inA := i < len(a) && a[i] == f
+		if inA {
+			i++
+		}
+
+		inB := j < len(b) && b[j] == f
+		if inB {
+			j++
+		}
+
+		if inA || inB {
+			merged = append(merged, f)
+		}
+	}
+
+	return merged
 }
 
 // stringField returns fields[key] when it is a string, else "".

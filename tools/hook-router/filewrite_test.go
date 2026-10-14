@@ -16,11 +16,28 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/linter"
 )
 
-// lintLines is a linter script that reports every line of its input,
-// so a handler test can check which lines survive the touched-lines
-// filter. Exits 1 with one `path:N:1: Style::Test: <text>` finding per
-// line.
-var lintLines = []string{"sh", "-c", `n=0; while IFS= read -r line; do n=$((n+1)); printf '%s:%d:1: Style::Test: %s\n' "$1" "$n" "$line"; done < "$1"; exit 1`, "sh"}
+const (
+	// lintLinesScript is a linter script that reports every line of its
+	// input, so a handler test can check which lines survive the
+	// touched-lines filter. Exits 1 with one
+	// `path:N:1: Style::Test: <text>` finding per line.
+	lintLinesScript = `n=0; while IFS= read -r line; do n=$((n+1)); printf '%s:%d:1: Style::Test: %s\n' "$1" "$n" "$line"; done < "$1"; exit 1`
+
+	// lintCountScript is a linter script that reports one finding on
+	// the first line, naming the file's base name and line count. The
+	// finding anchors away from an edit the way a sentence check does.
+	// The base name in its message makes a pre-edit copy under another
+	// name look like a change.
+	lintCountScript = `printf '%s:1:1: Style::Count: %s has %s lines\n' "$1" "$(basename "$1")" "$(wc -l < "$1" | tr -d ' ')"; exit 1`
+)
+
+var (
+	// lintLines is the linter argv that runs [lintLinesScript].
+	lintLines = []string{"sh", "-c", lintLinesScript, "sh"}
+
+	// lintCount is the linter argv that runs [lintCountScript].
+	lintCount = []string{"sh", "-c", lintCountScript, "sh"}
+)
 
 func TestHandlePostFileWriteLint(t *testing.T) {
 	t.Parallel()
@@ -28,9 +45,12 @@ func TestHandlePostFileWriteLint(t *testing.T) {
 	const content = "one\ntwo\nthree\n"
 
 	cases := map[string]struct {
-		toolName  string
-		toolInput map[string]any
-		wantLines []string
+		// command is the linter argv, or lintLines when nil.
+		command      []string
+		toolName     string
+		toolInput    map[string]any
+		toolResponse map[string]any
+		wantLines    []string
 	}{
 		"Write reports every finding": {
 			toolName:  "Write",
@@ -47,7 +67,7 @@ func TestHandlePostFileWriteLint(t *testing.T) {
 			toolInput: map[string]any{"old_string": "x", "new_string": "two\nthree"},
 			wantLines: []string{":2:1:", ":3:1:"},
 		},
-		"Edit with an empty new_string reports nothing": {
+		"Edit with an empty new_string and no originalFile reports nothing": {
 			toolName:  "Edit",
 			toolInput: map[string]any{"old_string": "gone", "new_string": ""},
 			wantLines: nil,
@@ -67,6 +87,46 @@ func TestHandlePostFileWriteLint(t *testing.T) {
 			},
 			wantLines: []string{":1:1:", ":3:1:"},
 		},
+		"Edit reports a finding it created outside its lines": {
+			command:      lintCount,
+			toolName:     "Edit",
+			toolInput:    map[string]any{"old_string": "", "new_string": "three"},
+			toolResponse: map[string]any{"originalFile": "one\ntwo\n"},
+			wantLines:    []string{":1:1:"},
+		},
+		"Edit without originalFile reports only its lines": {
+			command:   lintCount,
+			toolName:  "Edit",
+			toolInput: map[string]any{"old_string": "", "new_string": "three"},
+			wantLines: nil,
+		},
+		"Edit that leaves a finding unchanged does not report it": {
+			command:      lintCount,
+			toolName:     "Edit",
+			toolInput:    map[string]any{"old_string": "thre", "new_string": "three"},
+			toolResponse: map[string]any{"originalFile": "one\ntwo\nthre\n"},
+			wantLines:    nil,
+		},
+		"deletion reports a finding it created": {
+			command:      lintCount,
+			toolName:     "Edit",
+			toolInput:    map[string]any{"old_string": "four\n", "new_string": ""},
+			toolResponse: map[string]any{"originalFile": "one\ntwo\nthree\nfour\n"},
+			wantLines:    []string{":1:1:"},
+		},
+		"finding both touched and fresh is reported once": {
+			toolName:     "Edit",
+			toolInput:    map[string]any{"old_string": "2", "new_string": "two"},
+			toolResponse: map[string]any{"originalFile": "one\n2\nthree\n"},
+			wantLines:    []string{":2:1:"},
+		},
+		"failed pre-edit lint reports only the lines it wrote": {
+			command:      []string{"sh", "-c", `if grep -q PRE-EDIT "$1"; then exit 2; fi; ` + lintLinesScript, "sh"},
+			toolName:     "Edit",
+			toolInput:    map[string]any{"old_string": "2", "new_string": "two"},
+			toolResponse: map[string]any{"originalFile": "PRE-EDIT\n2\nthree\n"},
+			wantLines:    []string{":2:1:"},
+		},
 	}
 
 	for name, tc := range cases {
@@ -77,7 +137,12 @@ func TestHandlePostFileWriteLint(t *testing.T) {
 			target := filepath.Join(tmp, "doc.md")
 			require.NoError(t, os.WriteFile(target, []byte(content), 0o644))
 
-			rule := linter.Rule{PathGlob: filepath.Join(tmp, "*.md"), Command: lintLines}
+			command := tc.command
+			if command == nil {
+				command = lintLines
+			}
+
+			rule := linter.Rule{PathGlob: filepath.Join(tmp, "*.md"), Command: command}
 			cfg := config{formatterRules: formatter.New(nil), linterRules: linter.New([]linter.Rule{rule})}
 			logger := slog.New(slog.DiscardHandler)
 
@@ -86,7 +151,11 @@ func TestHandlePostFileWriteLint(t *testing.T) {
 				toolInput[k] = v
 			}
 
-			input, err := json.Marshal(map[string]any{"tool_name": tc.toolName, "tool_input": toolInput})
+			input, err := json.Marshal(map[string]any{
+				"tool_name":     tc.toolName,
+				"tool_input":    toolInput,
+				"tool_response": tc.toolResponse,
+			})
 			require.NoError(t, err)
 
 			err = handlePostFileWrite(t.Context(), input, cfg, logger)
@@ -104,8 +173,8 @@ func TestHandlePostFileWriteLint(t *testing.T) {
 				assert.Contains(t, blocked.Reason, target+want)
 			}
 
-			assert.Equal(t, len(tc.wantLines), strings.Count(blocked.Reason, "Style::Test"),
-				"only the touched lines should be reported")
+			assert.Equal(t, len(tc.wantLines), strings.Count(blocked.Reason, target+":"),
+				"only the wanted lines should be reported")
 		})
 	}
 }

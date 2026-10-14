@@ -329,6 +329,94 @@ func TestFilter(t *testing.T) {
 	}
 }
 
+func TestFresh(t *testing.T) {
+	t.Parallel()
+
+	// lint is one linter run: the file text and the linter's stdout.
+	type lint struct {
+		content string
+		out     string
+	}
+
+	cases := map[string]struct {
+		before lint
+		after  lint
+		want   []string
+	}{
+		"new rule on an unchanged line is fresh": {
+			before: lint{
+				content: "Some text.\nThe cache layer serves\nthe reads.\n",
+				out:     "/a.md:1:1: Style::X: old\n",
+			},
+			after: lint{
+				content: "Some text.\nThe cache layer serves\nas the main store.\n",
+				out:     "/a.md:1:1: Style::X: old\n/a.md:2:17: Style::ServesAs: serves as\n",
+			},
+			want: []string{"/a.md:2:17: Style::ServesAs: serves as"},
+		},
+		"unchanged finding on a moved line is not fresh": {
+			before: lint{content: "bad line\n", out: "/a.md:1:1: Style::X: bad\n"},
+			after:  lint{content: "new\nbad line\n", out: "/a.md:2:1: Style::X: bad\n"},
+			want:   nil,
+		},
+		"changed message on the same line is fresh": {
+			before: lint{
+				content: "A long sentence\nends here.\n",
+				out:     "/a.md:1:1: Readability::Length: Sentence of 33 words.\n",
+			},
+			after: lint{
+				content: "A long sentence\nends later here.\n",
+				out:     "/a.md:1:1: Readability::Length: Sentence of 34 words.\n",
+			},
+			want: []string{"/a.md:1:1: Readability::Length: Sentence of 34 words."},
+		},
+		"duplicate lines count each one": {
+			before: lint{content: "dup\nother\n", out: "/a.md:1:1: Style::X: bad\n"},
+			after: lint{
+				content: "dup\nother\ndup\n",
+				out:     "/a.md:1:1: Style::X: bad\n/a.md:3:1: Style::X: bad\n",
+			},
+			want: []string{"/a.md:3:1: Style::X: bad"},
+		},
+		"renumbered list item is not fresh": {
+			before: lint{content: "1. a\n2. b\n3. bad item\n", out: "/a.md:3:4: Style::X: bad\n"},
+			after:  lint{content: "1. a\n2. new\n3. b\n4. bad item\n", out: "/a.md:4:4: Style::X: bad\n"},
+			want:   nil,
+		},
+		"different paths at the same finding are not fresh": {
+			before: lint{content: "bad\n", out: "/tmp/copy/a.md:1:1: Style::X: bad\n"},
+			after:  lint{content: "bad\n", out: "/repo/a.md:1:1: Style::X: bad\n"},
+			want:   nil,
+		},
+		"finding without a line number matches on its whole text": {
+			before: lint{content: "a\n", out: "note one\n"},
+			after:  lint{content: "a\n", out: "note one\nnote two\n"},
+			want:   []string{"note two"},
+		},
+		"line past the end anchors on empty text": {
+			before: lint{content: "a\n", out: "/a.md:5:1: Style::X: bad\n"},
+			after:  lint{content: "a\nb\n", out: "/a.md:7:1: Style::X: bad\n"},
+			want:   nil,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			before := linter.ParseFindings(tc.before.out)
+			after := linter.ParseFindings(tc.after.out)
+
+			var got []string
+			for _, f := range linter.Fresh(after, tc.after.content, before, tc.before.content) {
+				got = append(got, f.Text)
+			}
+
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestFormat(t *testing.T) {
 	t.Parallel()
 

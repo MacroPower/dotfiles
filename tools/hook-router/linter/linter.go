@@ -49,6 +49,15 @@ var (
 	// `path:line:col:` and captures the text around it so the tag can
 	// be stripped. The lazy path match mirrors findingLine.
 	findingTier = regexp.MustCompile(`^(.*?:\d+:\d+: )\[(Required|Recommended|Optional)\] (.*)$`)
+
+	// findingPrefix matches the `path:line:col: ` prefix of a finding,
+	// with the column optional. The lazy path match mirrors findingLine.
+	findingPrefix = regexp.MustCompile(`^.*?:\d+:(?:\d+:)? ?`)
+
+	// anchorIndent matches the leading whitespace and list marker of a
+	// line, so a list item that mdformat renumbered keeps its anchor
+	// text.
+	anchorIndent = regexp.MustCompile(`^\s*(?:(?:\d+[.)]|[-*+])\s+)?`)
 )
 
 // Tier is how hard a finding pushes. prose-lint tags each finding with
@@ -290,6 +299,63 @@ func Filter(findings []Finding, ranges []LineRange) []Finding {
 	}
 
 	return kept
+}
+
+// Fresh returns the findings that an edit created. after holds the
+// file's findings following the edit, and before holds them ahead of
+// it. afterContent and beforeContent hold the file text each list came
+// from. The result keeps the order of after.
+//
+// Fresh matches each finding to a counterpart on its message and on
+// the text of its anchor line. The anchor text drops the line's
+// leading whitespace and list marker. The path, the line number, and
+// the column play no part. A finding that the edit moved keeps its
+// match, and so does a finding on a list item that mdformat
+// renumbered.
+//
+// A rule that fires on a line the edit left alone gives a fresh
+// finding when it did not fire there before. A changed message, such
+// as a new word count, also makes a finding fresh. Each finding in
+// before matches one finding in after at most, so a repeated line
+// keeps its count. A finding without a line number matches on its
+// whole text.
+func Fresh(after []Finding, afterContent string, before []Finding, beforeContent string) []Finding {
+	beforeLines := strings.Split(beforeContent, "\n")
+	afterLines := strings.Split(afterContent, "\n")
+
+	counts := make(map[string]int, len(before))
+	for _, f := range before {
+		counts[findingKey(f, beforeLines)]++
+	}
+
+	var fresh []Finding
+
+	for _, f := range after {
+		key := findingKey(f, afterLines)
+		if counts[key] > 0 {
+			counts[key]--
+			continue
+		}
+
+		fresh = append(fresh, f)
+	}
+
+	return fresh
+}
+
+// findingKey returns the text [Fresh] matches f on. lines is the
+// content f came from, split on newlines.
+func findingKey(f Finding, lines []string) string {
+	if f.Line <= 0 {
+		return f.Text
+	}
+
+	var anchor string
+	if f.Line <= len(lines) {
+		anchor = anchorIndent.ReplaceAllString(lines[f.Line-1], "")
+	}
+
+	return findingPrefix.ReplaceAllString(f.Text, "") + "\x00" + anchor
 }
 
 // Format renders findings as the feedback Claude reads: a header line
