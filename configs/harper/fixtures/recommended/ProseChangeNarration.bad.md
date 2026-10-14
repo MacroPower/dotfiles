@@ -21,3 +21,5 @@ The parser is faster than before.
 The flag behaves unlike the previous release.
 
 The cache uses less memory than the old implementation.
+
+The field was previously named port.

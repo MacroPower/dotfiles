@@ -11,3 +11,7 @@ Anchors are yet to be implemented.
 The parser will soon read tables.
 
 Tables should soon be supported.
+
+Support for tables will be added.
+
+In the future, we plan to add a watch endpoint.

@@ -2,10 +2,17 @@
 # and the roadmap rule catches a claim promised for later. This rule
 # catches a claim dated to the present. Bare `currently` is too common
 # as runtime state (`the currently selected row`, `whether the item is
-# currently available`), so it counts only before a word that names
+# currently available`). It counts only before a word that names
 # support or a limit, or after a helping verb such as `does`, `cannot`,
 # or `will`. `TODO` stays out, because a code comment uses it as a
 # marker.
+#
+# `for now` skips a comma and a word that starts a tutorial's own next
+# step (`For now, let's focus on the parser`, `For now, all you need is
+# the flag`), because there it defers a topic and dates nothing. The
+# filter narrows the finding back to the phrase. `we` still counts
+# there, because a code comment writes `For now, we panic` for a limit
+# of the code.
 #
 # `at the moment` counts only at the end of a clause, because before a
 # clause it means `when` (`spends its tokens at the moment it is
@@ -19,10 +26,15 @@
 # quarter` date a claim to the calendar. `this year` skips `since` and
 # `of` before it, where it names a time in a computation (`seconds since
 # this year`). Its filter needs a word before the phrase, so a sentence
-# that opens with `This year` passes. These branches hit 4 lines in the
-# measure.py corpus, and all 4 dated a claim.
+# that opens with `This year` passes. `still experimental`, `still in
+# beta`, `still under development`, and `relatively new` date a claim to
+# a release stage that ends.
+#
+# It hit 159 lines in the measure.py corpus, and 13 of 20 sampled hits
+# dated a claim. Most misses were tutorial narration about the reader's
+# own code (`For now, the trait has no methods`).
 expr chg [added, introduced, changed, removed, deprecated, released]
-expr main [(currently [supports, support, only, unsupported, not, no, limited, lacks, lack, requires, require, returns, accepts, uses, defaults, ignores, handles, allows, disallows, broken, missing, unimplemented, experimental, deprecated]), ([does, doesn't, do, don't, cannot, can't, will, won't] currently), (not currently), (at the moment!( )), (right now), (for now), (at present), (as of now), (at this time), (as of today), (at the time of writing), (as of this writing), (in the current version), (in the current release), (in the latest version), (in the latest release), (in this version), (in this release), nowadays, (these days), lately, (until recently), <(![most, least] recently @chg), (recently @chg)>, <(![since, of] this year), (this year)>, (last year), (this quarter)]
+expr main [(currently [supports, support, only, unsupported, not, no, limited, lacks, lack, requires, require, returns, accepts, uses, defaults, ignores, handles, allows, disallows, broken, missing, unimplemented, experimental, deprecated]), ([does, doesn't, do, don't, cannot, can't, will, won't] currently), (not currently), (at the moment!( )), (right now), <(for now!(,( )[all, let's, let, just, you, you'll, ignore, focus, don't])), (for now)>, (at present), (as of now), (at this time), (as of today), (at the time of writing), (as of this writing), (in the current version), (in the current release), (in the latest version), (in the latest release), (in this version), (in this release), nowadays, (these days), lately, (until recently), <(![most, least] recently @chg), (recently @chg)>, <(![since, of] this year), (this year)>, (last year), (this quarter), (still [experimental, alpha, beta, unstable]), (still in [alpha, beta, preview]), (still under development), (still under active development), (relatively new)]
 let message "Dated claim. Delete the time phrase and state what the system does."
 let description "Flags phrases that date a claim to the current version."
 let becomes ""
@@ -35,3 +47,4 @@ allows "TODO: handle the empty case."
 allows "Reserve spends its tokens at the moment it is called."
 allows "The cache evicts the least recently added entry."
 allows "The table counts seconds since this year."
+allows "For now, let's focus on the parser."

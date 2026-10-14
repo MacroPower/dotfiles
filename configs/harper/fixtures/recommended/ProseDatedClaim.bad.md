@@ -18,3 +18,11 @@ The API gained a watch endpoint this year.
 The team shipped the parser last year.
 
 The watch endpoint lands this quarter.
+
+The API is still experimental.
+
+The nftables mode is still relatively new.
+
+Tracing is still under active development.
+
+For now, we skip symlinks.

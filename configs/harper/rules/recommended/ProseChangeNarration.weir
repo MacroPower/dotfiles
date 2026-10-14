@@ -10,10 +10,14 @@
 # out, because a test comment narrates runtime state with them (`the
 # row is now consumed`, `the store now has two rows`).
 #
-# `previously` fires only as `was/were/had previously`, as the
-# sentence opener `Previously,`, or before the subject of a clause
-# (`Previously the walker visited aliases twice`). In `the previously
-# cached value`, the word orders events at runtime.
+# `previously` fires only as `had previously`, as the sentence opener
+# `Previously,`, or before the subject of a clause (`Previously the
+# walker visited aliases twice`). In `the previously cached value`, the
+# word orders events at runtime. `was previously` and `were previously`
+# count only before a word that names or ranks a feature, such as
+# `named`, `hidden`, or `deprecated` (`the field was previously named
+# port`). Before any other word they describe runtime state (`the
+# connections that were previously connected`).
 #
 # Code comments that narrate the edit that produced them (`Before this
 # change, the walker visited aliases twice`, `Updated to use the
@@ -35,9 +39,15 @@
 # valid after Close`, `records what the limit used to be`, `wait until
 # the row has been updated`), and the change sense of `has been updated`
 # is a passive the passive rule already catches.
+#
+# It hit 66 lines in the measure.py corpus, and 13 of 20 sampled hits
+# narrated a change. Most misses were a tutorial's progress (`You can
+# now conquer the world with Nix`) or a back-reference (`As described
+# previously,`), which the back-reference rule also reports.
 expr versions [version, versions, release, releases, behavior, behaviour, implementation, API, default, defaults, format]
 expr surfaces [flag, option, field, argument, parameter, subcommand, endpoint, syntax, format, default, behavior, behaviour, setting, mode]
-expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), ([can, does] now), (now also), (was previously), (were previously), (had previously), (previously,), (previously [DET, PRON, PROPN]), ([before, after, with] this change), ([updated, changed] to use), (refactored to), (the new @surfaces), (than before), ([than, unlike] the [old, previous] @versions)]
+expr named [named, called, known, renamed, hidden, deprecated, experimental, required, optional]
+expr main [([NOUN, PROPN, PRON, DET, ADJ, NUM] now [supports, accepts, returns, uses, handles, requires, defaults, includes]), ([can, does] now), (now also), ([was, were] previously @named), (had previously), (previously,), (previously [DET, PRON, PROPN]), ([before, after, with] this change), ([updated, changed] to use), (refactored to), (the new @surfaces), (than before), ([than, unlike] the [old, previous] @versions)]
 let message "Change narration. Describe the system as it is, and move the change to the commit message."
 let description "Flags phrases that describe the system as a change from an earlier version."
 let becomes ""
@@ -55,3 +65,4 @@ allows "The row is now consumed."
 allows "The deadline is now plus five seconds."
 allows "The watcher fires only after the file has been updated on disk."
 allows "The value previously stored under the key is returned."
+allows "The call fails unless the entry was previously removed."

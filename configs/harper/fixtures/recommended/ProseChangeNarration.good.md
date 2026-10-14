@@ -27,3 +27,7 @@ The value previously stored under the key is returned.
 The value must be greater than the old value.
 
 Unlike the previous call, Close returns an error.
+
+CloseIdleConnections closes the connections that were previously connected.
+
+The call fails unless the entry was previously removed.
