@@ -23,3 +23,4 @@ graph LR; A → B
 
 The request goes from the client to the proxy, then to the server.
 The flow goes plan -> apply -> verify.
+Yes: Hugo generates the site.

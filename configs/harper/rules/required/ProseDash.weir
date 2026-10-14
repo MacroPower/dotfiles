@@ -1,18 +1,26 @@
 # Harper reads `--` as two hyphen tokens, so the double dash has two
-# forms: two hyphens before whitespace (`nightly -- the`, and the
-# last two of `---`), and two hyphens glued to the word before them
-# (`nightly--the`). A hyphen pair after whitespace and glued to the
+# forms. One is two hyphens before whitespace (`nightly -- the`, and the
+# last two of `---`). The other is two hyphens glued to the word before
+# them (`nightly--the`). A hyphen pair after whitespace and glued to the
 # word after it is a long flag (`--commit`) and passes. A bare `--`
 # separator in prose fires, and the fix sets it in a code span.
 #
 # A single hyphen with whitespace and a word on both sides stands in
-# for a dash too (`excluded on purpose - the`), because a writer barred
-# from the em dash reaches for it next. Glued hyphens pass
+# for a dash too (`excluded on purpose - the`). A writer barred from the
+# em dash reaches for it next. Glued hyphens pass
 # (`well-known`, `1-5`, `-1`), and so do list markers, which have no
 # word before them.
+#
+# The message names a fix for each use of the dash. Between two clauses,
+# a period or a joining word (`and`, `but`, `so`) replaces it. A clause
+# is a subject and its verb, such as `the tests pass`. Commas set off an
+# aside, and a colon follows a list-item label (`- **Cache**: holds the
+# reads`). It hit 343 lines in the measure.py corpus, and 20 of 20
+# sampled hits used a dash as punctuation. Twelve of them separated a
+# list-item label from its text.
 expr word [NOUN, VERB, ADJ, ADV, PRON, DET, PROPN, NUM]
 expr main [—, –, (-- ), (@word--), (@word - @word)]
-let message "Dash. Use a period, a comma, or a conjunction."
+let message "Dash. End the sentence with a period, or join the clauses with `and`, `but`, or `so`. Set an aside in commas, and put a colon after a list-item label."
 let description "Flags every em dash and en dash, and a double or spaced hyphen used as one."
 let becomes ""
 let kind "Punctuation"

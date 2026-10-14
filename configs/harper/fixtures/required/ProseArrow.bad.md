@@ -21,3 +21,5 @@ Open **Settings → Integrations** and connect the service.
 > Text ``a ` b`` then x → y after the span.
 
 - **Retry budget** → five attempts
+
+Yes → Hugo generates the site.

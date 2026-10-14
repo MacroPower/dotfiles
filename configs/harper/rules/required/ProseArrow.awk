@@ -6,6 +6,13 @@
 # up, down, and northeast arrows stay out, because docs use them as a
 # link icon or a UI glyph.
 #
+# The message names three fixes: the verb that the arrow stands for
+# (`the client calls the proxy`), a colon after a label (`Yes: Hugo
+# builds the site`), and `>` for a menu path. It hit 47 lines in the
+# measure.py corpus, and 20 of 20 sampled hits stood in for a word.
+# Eight followed a label (`Yes →`), six mapped one value to another
+# (`< → &lt;`), and six drew a flow (`Pod → Node`).
+#
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseArrow: <message>
 
@@ -27,6 +34,6 @@ function prose(text,   hit) {
   text = blank(text, keyname)
   if (match(text, arrow)) {
     hit = substr(text, RSTART, RLENGTH)
-    printf "%s:%d:%d: Style::ProseArrow: Arrow `%s` stands in for a verb. Write the verb, or use `>` for a menu path.\n", FILENAME, FNR, column(text, RSTART), hit
+    printf "%s:%d:%d: Style::ProseArrow: Arrow `%s` stands in for a word. Write the verb, a colon after a label, or `>` for a menu path.\n", FILENAME, FNR, column(text, RSTART), hit
   }
 }

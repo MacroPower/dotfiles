@@ -9,3 +9,6 @@ Wait for it--then retry.
 The job runs nightly - the cache refills.
 Transitive nodes are excluded on purpose - only direct inputs count.
 The cache is cold - the first request misses.
+
+- [Hercules CI](https://hercules-ci.com/) - continuous integration.
+- **Cache** - holds the last hundred reads.

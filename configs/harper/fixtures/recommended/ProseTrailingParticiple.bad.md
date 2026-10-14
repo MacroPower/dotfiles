@@ -24,3 +24,7 @@ The refactor drops the global lock, underscoring the move to per-shard state.
 The struct copies each field, reflecting the schema.
 The banner turns red, emphasizing the failure.
 The icon turns gray, symbolizing a paused job.
+The parser rejects the header, requiring a retry.
+The write fails, breaking the build.
+Sub subtracts two instants, producing a Duration.
+The lock is held for the sweep, forcing every writer to wait.

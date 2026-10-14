@@ -1,16 +1,20 @@
 # A participle is the `-ing` or `-ed` form of a verb (`returning`,
 # `cached`). A trailing participial phrase is a phrase built on one and
 # tacked on after a comma to add a consequence to the clause before it
-# (`The write fails, returning an error`). The fix gives the consequence
-# its own sentence.
+# (`The write fails, returning an error`). A clause is a subject and its
+# verb, such as `the tests pass`. The fix joins the consequence with
+# `so` (`The write fails, so it returns an error`), or gives it a
+# sentence that names its subject. A participle hides who acts, so the
+# rewrite names the subject either way.
 #
 # A curated list, because `, PROG` fires on `, including`, `, using`,
-# and `, according`. Words that double as nouns or conjunctions carry
-# the word that marks the trailing sense: `leading to`, `resulting in`,
-# `meaning that` or `meaning the`, `providing` without `that`, `falling
-# back` or `falling through`, and `failing` or `contributing` without a
-# noun after it (`failing test output` names the output, and
-# `contributing guide` names a document). After `thereby` or `thus` any
+# and `, according`. Words that double as nouns or joining words match
+# only with the word that marks the trailing sense. These pairs are
+# `leading to`, `resulting in`, `meaning that`, `meaning the`, `falling
+# back`, and `falling through`. `providing` matches without `that` after
+# it, and `failing` or `contributing` without a noun after it (`failing
+# test output` names the output, and `contributing guide` names a
+# document). After `thereby` or `thus` any
 # participle counts. The final `![,, and, or]` skips a gerund, an `-ing`
 # form used as a noun, that is one item in a list (`allowing, enabling,
 # and letting`) or a pair (`keeping and dropping`). With Weir's
@@ -26,9 +30,16 @@
 #
 # `fostering` and `showcasing` stay out, because the fancy-word rule
 # reports every form of both words and one word should draw one finding.
-expr plain [ensuring, allowing, enabling, making, highlighting, giving, helping, improving, reducing, increasing, causing, creating, showing, demonstrating, indicating, keeping, letting, preventing, avoiding, streamlining, simplifying, matching, returning, preserving, leaving, mirroring, appending, reflecting, underscoring, emphasizing, symbolizing]
+# `adding` stays out, because it more often opens a gerund subject after
+# an opener (`For example, adding one month yields`).
+#
+# It hit 533 lines in the measure.py corpus, and 17 of 20 sampled hits
+# added a consequence to the clause before them. The misses were a list
+# of gerunds, a gerund subject after an opener, and a phrase that
+# describes the noun before it (`an ok value, indicating success`).
+expr plain [ensuring, allowing, enabling, making, highlighting, giving, helping, improving, reducing, increasing, causing, creating, showing, demonstrating, indicating, keeping, letting, preventing, avoiding, streamlining, simplifying, matching, returning, preserving, leaving, mirroring, appending, reflecting, underscoring, emphasizing, symbolizing, forcing, requiring, triggering, producing, yielding, breaking, freeing, saving, exposing, rendering, blocking, costing, wasting, removing, dropping]
 expr main , [(@plain ![,, and, or]), (failing ![NOUN, ,, and, or]), (contributing ![NOUN, ,, and, or]), (falling [back, through]), ([thereby, thus] PROG), (leading to), (resulting in), (meaning [that, the, a, an, it, you, we, they]), (providing ![that, and, or])]
-let message "Trailing participial phrase. Give the point its own sentence."
+let message "Trailing participial phrase. Join the consequence with `so`, or give it a sentence that names its subject."
 let description "Flags a comma followed by a participle that adds a consequence to the clause before it."
 let becomes ""
 let kind "Style"

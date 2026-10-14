@@ -11,3 +11,5 @@ The window holds `n - 1` entries.
 
 - The list marker is not a dash.
 - Each item starts with a hyphen.
+- [Hercules CI](https://hercules-ci.com/): continuous integration.
+- **Cache**: holds the last hundred reads.
