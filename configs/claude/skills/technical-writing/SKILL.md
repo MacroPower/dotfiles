@@ -7,9 +7,10 @@ description: >-
 
 # Technical Writing
 
-The `prose` skill sets the sentence rules (voice, specificity, punctuation,
-concision, tense, word choice, durability, naming, and headers) and applies
-throughout. This skill adds what a document needs beyond the sentence rules.
+The `prose` skill sets the sentence rules and applies throughout. The sentence
+rules cover voice, specificity, punctuation, concision, tense, word choice,
+durability, naming, and headers. This skill adds what a document needs beyond
+the sentence rules.
 
 The Reader, Load, and Ambiguity rules adapt the writing rules of ASD-STE100
 Simplified Technical English, not its dictionary. STE conflicts with these rules
@@ -31,8 +32,8 @@ pair of answers names the mode.
 Apply the two questions to the whole document, and to any sentence that you are
 unsure about.
 
-**Tutorial.** The learner's success is your job. Open with what they will build,
-never with what they will "learn". Every step produces a visible result, so state
+**Tutorial.** The learner's success is your job. Open with what they build,
+never with what they "learn". Every step produces a visible result, so state
 what appears: the output, the prompt change, and the log line. Cut explanation
 to one clause and a link. Write as "we", and give each step its own number.
 
@@ -71,6 +72,9 @@ Write for your reader, not about the system.
 - Put the condition before the instruction: "To delete the document, click
   Delete." The reader skips what does not apply. Put the warning before the step
   it guards.
+- Keep that condition short. When the sentence runs long and its condition takes
+  ten words or more, give the condition a sentence of its own, then give the
+  instruction.
 - Open a warning with the command or the condition. State the risk in the next
   sentence: "Do not delete the volume while the pod runs. The pod loses its
   data."
@@ -96,7 +100,9 @@ Each sentence carries one thing, so the reader loads one statement at a time.
 - When you split a sentence, carry the relation into the second sentence with
   "so", "but", or "then".
 - Give each paragraph one topic. Open it with the sentence that names the topic,
-  and keep it to six sentences or fewer.
+  and keep it to six sentences or fewer. Never make "it", "they", or "this" the
+  subject of that first sentence. A reader who jumps to the paragraph cannot see
+  what those point at, and a moved paragraph changes what they name.
 - Those limits are a ceiling, not a target. Split the sentence that carries two
   thoughts. Keep the long one that carries a single fact with its condition or
   consequence.
@@ -109,6 +115,12 @@ Each sentence carries one thing, so the reader loads one statement at a time.
   picks the wrong one.
 
 ## 4. Layout
+
+Open the document with its point, such as what the reader can do or decide
+after reading it, or the conclusion. In a tutorial, the point is what the reader
+builds. Background, history, and motivation follow the point. Open each section
+with a sentence that states its point before any subheading, list, table, or
+code block.
 
 Choose each passage's form from its content. Prose carries reasoning, because
 only prose keeps the `because`, `so`, and `but` that tie one claim to the next.
@@ -146,8 +158,14 @@ without content, and it drops the relations that prose states.
   topic.
 - Do not make a list of one item, or a list whose items need `because` or `so`
   to connect them.
-- Do not repeat a list or a table in the prose around it. Introduce it with one
-  complete sentence that says what it holds.
+- Do not repeat a list or a table in the prose around it. Introduce each list,
+  table, and code block with one complete sentence that says what it holds.
+- Never put two callouts in a row.
+- Bold only UI elements and the run-in label that opens a list item or a
+  paragraph.
+- Write emphasis into the sentence, not the typeface. Never write a word in
+  capitals for emphasis. Prompt files for an agent, such as skills and
+  CLAUDE.md, may keep capitals for emphasis.
 - Keep each table cell to a phrase or one short sentence. A cell that needs a
   paragraph belongs in prose.
 - Keep list items parallel and one level deep, and do not mix steps with
@@ -174,8 +192,9 @@ No sentence is open to two readings.
   not "the client and host".
 - Say which parts "and" or "or" join when a sentence can group two ways.
   "Both...and", "either...or", and "if...then" are free disambiguators.
-- Make text in parentheses a full grammatical unit, its own sentence, or a bare
-  citation label. Never form plurals with "(s)".
+- Make text in parentheses a full grammatical unit, its own sentence, a bare
+  citation label, or an acronym after its expansion. Never form plurals with
+  "(s)".
 - Never use a slash. Write `a, b, or both` instead of `a/b` or `and/or`.
 - Reread every "with". It can name a companion, a tool, or a property, so
   "Restart the pod with the new config" reads two ways.
@@ -253,12 +272,12 @@ After:
 > files that import protos. If the count exceeds the budget, CI fails. You must
 > run `budget.mjs --write` only to lower the budget.
 
-By layer: "`budget.mjs` reads" supplies an actor (`prose`, Active Voice), and
+By layer: "`budget.mjs` reads" supplies an actor (`prose`, Sentences), and
 the script's real name replaces "ratchet" (`prose`, Specificity). The rewrite
 breaks the five-noun string into clauses, and "if exceeded" gains its subject,
 the count (Ambiguity). The failure condition moves ahead of the step it
 explains, and "only" sits beside the verb it changes (Reader, Load). The rewrite
-grades the restriction instead of leaving it bare (Obligations). The hedge is
+grades the restriction instead of leaving it bare (Obligations). The filler is
 gone (`prose`, Concision).
 
 Before:

@@ -41,6 +41,9 @@ scheduler retries the job`, not `the job is retried`). Passive creeps
 into the back half of a sentence, after `so`, `and`, or `which`, so
 check the second half of every sentence as closely as the opening.
 
+Keep the verb close to its subject. When a parenthetical or a `which`
+clause sits between them, give it its own sentence.
+
 Each point gets its own sentence with a subject and a verb. Never use a
 semicolon, and never put a colon between two clauses. If the words
 after a colon have their own subject and verb, end the sentence there
@@ -151,11 +154,16 @@ that second one.
 - Never stack two negatives in one clause (`does not run unless`,
   `cannot start without`, `not unlike`). State the positive case, so
   `runs only when the caller holds the lock`.
+- Never put `because` right after a negated verb. `The job did not fail
+  because the disk was full` reads two ways. Put the cause first, or
+  split the sentence.
 - Write `for example` or `such as` instead of `e.g.`, and `that is`
   instead of `i.e.`. Readers confuse the two, which turns a partial
   list into a complete one.
 - Write `only` where `just` limits something, and `exactly` or
   `immediately` where it means one of those. Delete it everywhere else.
+- Spell out each acronym at its first use (`Container Storage Interface
+  (CSI)`) unless every reader knows it (`HTTP`, `JSON`).
 
 ## Specificity
 
@@ -202,6 +210,9 @@ passage or adds one between.
 
 ## Structure
 
+Open each document and each section with its point, then the
+background.
+
 Let ideas come in the number they naturally have. Do not force groups
 of three.
 
@@ -225,6 +236,24 @@ one sentence, it does not `hand out` or `consume` them in the next.
 Repetition is clearer than synonym rotation. Pronouns are not synonyms,
 so `it` and `they` still stand in for the subject of the sentence
 before.
+
+## Punctuation
+
+Never write an em dash, an en dash, or a hyphen with a space on each
+side as a dash. End the sentence with a period, or join the clauses
+with `and`, `but`, or `so`. Set an aside in commas, and put a colon
+after the label that opens a list item. Write straight quotes and
+three periods, never curly quotes or the ellipsis character. Never
+write an emoji or an exclamation mark. Never let an arrow stand in for
+a verb (`client → proxy`). Write the verb, or `>` for a menu path.
+
+## Concision
+
+Write the one-word form of a stock phrase, so `because` rather than
+`due to the fact that`, and `can` rather than `is able to`. Delete a
+sentence that announces the next one or restates the last one. Name
+the concrete thing instead of a buzzword (`substrate`, `flywheel`) or
+a marketing adjective (`seamless`, `powerful`).
 
 ## Headers
 
