@@ -1,0 +1,32 @@
+# `only` before a verb can limit the verb or anything after it (`the
+# hook only fails on growth` versus `the hook fails only on growth`), so
+# the reader has to pick. The technical-writing skill keeps `only`
+# beside the word it limits. The rule counts `only` before a verb when a
+# subject sits right before it (`the hook only fails`). It also counts
+# `only` after an auxiliary, a helping verb such as `is`, `has`, or
+# `can` (`can only run`, `has only seen`). The filter narrows the
+# finding to `only` and the verb.
+#
+# A progressive, a form of `be` plus an `-ing` verb (`is only running`),
+# stays out, because the tagger reads it as part of the verb phrase.
+# `need` stays out, because the obligation rule reports `needs to`.
+# `that`, `which`, and `who` before `only` stay out. In `requests that
+# only read objects`, `only` limits the requests to the ones that read,
+# so moving it changes the meaning.
+#
+# It hit 339 lines in the measure.py corpus, and in 20 of 20 sampled
+# hits `only` can move beside the word it limits (`can only run on
+# Linux` becomes `can run only on Linux`). Some writers mean the verb
+# itself (`references only borrow`), and the rule misfires there.
+expr verb <VERB, !PROG, ![need, needs]>
+expr lead <[NOUN, PRON, PROPN, can, cannot, must, should, will, would, could, may, might, is, are, was, were, be, been, has, have, had, do, does, did], ![that, which, who]>
+expr main <(@lead only @verb), (only @verb)>
+let message "Misplaced `only`. Move `only` beside the word it limits."
+let description "Flags `only` between a subject or a helping verb and the verb after it, where it can limit the verb or anything after it."
+let becomes ""
+let kind "Style"
+allows "The hook fails only on growth."
+allows "Only the owner can delete the file."
+allows "You can set the flag only once."
+allows "The hook is only running once."
+allows "The webhook skips requests that only read objects."
