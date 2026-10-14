@@ -147,6 +147,9 @@ that second one.
 - Write `whether`, not `if`, after a verb of checking, so `check
   whether the file exists`. After such a verb, `if` also reads as a
   condition.
+- Never stack two negatives in one clause (`does not run unless`,
+  `cannot start without`, `not unlike`). State the positive case, so
+  `runs only when the caller holds the lock`.
 - Write `for example` or `such as` instead of `e.g.`, and `that is`
   instead of `i.e.`. Readers confuse the two, which turns a partial
   list into a complete one.
@@ -183,8 +186,8 @@ write each sentence to stay true through those changes. Commit
 messages describe one change, and this section does not apply to them.
 
 One fact per sentence also means that a change to the system edits or
-deletes one sentence. Do not tie a fact to another fact that changes on
-its own (`unlike the v1 API`, `faster than the old path`) unless the
+deletes one sentence. Tie a fact to another fact that changes on its
+own (`unlike the v1 API`, `faster than the old path`) only when the
 comparison is the point. Do not date a claim (`currently`, `new`, `no
 longer`). Name the version instead of `older`, `newer`, `recent`, or
 `modern` (`kernels 5.8 and later`). Counts of things the system can
