@@ -22,3 +22,11 @@ images:
 cpus: 2
 memory: 2GiB
 disk: 20GiB
+
+# Attach the Mac's speakers and microphone as a virtio-sound device so
+# voice mode in Claude Code works inside the VM. Lima marks these fields
+# experimental. They need Lima 2.3.0 or later and the VZ driver, which
+# Lima picks by default on macOS.
+audio:
+  device: vz
+  microphone: true

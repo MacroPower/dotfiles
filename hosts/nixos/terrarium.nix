@@ -25,12 +25,26 @@
       # bursts across a few worktrees; raise the ceiling for this dev VM.
       services.openssh.settings.MaxSessions = 100;
 
-      # Override login shell to bash. workmux sandbox generates POSIX shell
-      # syntax (export VAR=value) and passes it via `limactl shell -- eval`,
-      # which uses the login shell. Fish cannot parse POSIX export syntax.
-      users.users.${config.dotfiles.system.username}.shell = lib.mkForce pkgs.bash;
+      users.users.${config.dotfiles.system.username} = {
+        # Override login shell to bash. workmux sandbox generates POSIX shell
+        # syntax (export VAR=value) and passes it via `limactl shell -- eval`,
+        # which uses the login shell. Fish cannot parse POSIX export syntax.
+        shell = lib.mkForce pkgs.bash;
+        # Voice capture reads the virtio-sound device that lima/terrarium.yaml
+        # attaches. /dev/snd is root:audio 0660, and logind does not grant a
+        # seat ACL to SSH sessions such as `limactl shell`.
+        extraGroups = [ "audio" ];
+      };
 
-      environment.systemPackages = [ pkgs.terrarium ];
+      # Claude Code's native recorder loads libasound through nix-ld.
+      # arecord from alsa-utils is its fallback recorder and lists capture
+      # devices with `arecord -l`.
+      programs.nix-ld.libraries = [ pkgs.alsa-lib ];
+
+      environment.systemPackages = [
+        pkgs.terrarium
+        pkgs.alsa-utils
+      ];
 
       # Cap retained generations so kernels + initrds don't fill the
       # ~250M Lima /boot partition. Five is enough headroom to roll
