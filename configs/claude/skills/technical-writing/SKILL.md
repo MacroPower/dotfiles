@@ -34,7 +34,7 @@ unsure about.
 **Tutorial.** The learner's success is your job. Open with what they will build,
 never with what they will "learn". Every step produces a visible result, so state
 what appears: the output, the prompt change, and the log line. Cut explanation
-to one clause and a link. Write as "we", in commands: "First, do x. Now, do y."
+to one clause and a link. Write as "we", and give each step its own number.
 
 **How-to.** Solve a problem that a person has, not an operation that a machine
 performs. Assume competence and skip teaching. Do not add background or
@@ -45,13 +45,14 @@ array").
 **Reference.** Describe, and only describe. Reference gives no instruction, no
 persuasion, and no opinion. State facts, options, limits, and errors without
 hedging. Mirror the structure of the thing described, and generate from code
-where you can.
+where you can. Set options, fields, and limits in tables.
 
 **Explanation.** Cover one bounded topic that reads well away from the product.
 Each title tolerates an implicit "About..." in front. Anchor on a real "why":
 design decisions, history, constraints, and alternatives. Opinion belongs here
-and nowhere else. Weigh the trade-offs and state your judgment. Do not list pros
-and cons.
+and nowhere else. Weigh the trade-offs and state your judgment in prose. Tables
+can set the alternatives side by side, but a list of pros and cons without a
+judgment does not replace the argument.
 
 You must not mix modes in a reader-facing document. Tutorials carry no
 reference tables, reference carries no teaching, and how-tos carry no
@@ -82,9 +83,6 @@ Write for your reader, not about the system.
 - Never pre-announce ("we will soon support...").
 - Name the destination in the link text, and never write "click here". You
   should prefer a sentence of context on the page to a link off it.
-- Use numbered lists for sequences and bullets everywhere else. Introduce a list
-  with a complete sentence and keep the items parallel. Keep a list one level
-  deep, and do not mix steps with descriptions in one list.
 - Set code in code font, set UI elements in bold, and use serial commas.
 
 ## 3. Load
@@ -110,7 +108,52 @@ Each sentence carries one thing, so the reader loads one statement at a time.
   reads as a relative clause, an adjective, or a new predicate, and the reader
   picks the wrong one.
 
-## 4. Ambiguity
+## 4. Layout
+
+Choose each passage's form from its content. Prose carries reasoning, because
+only prose keeps the `because`, `so`, and `but` that tie one claim to the next.
+Lists, tables, and diagrams carry content whose parts play the same role. The
+forms work together. The lead sentence states the claim, and the list or table
+under it holds the cases.
+
+| Content                                               | Form            |
+| ----------------------------------------------------- | --------------- |
+| Steps that the reader performs in order               | Numbered list   |
+| Items that play the same role and each carry a clause | Bulleted list   |
+| Items that share two or more attributes               | Table           |
+| A flow that branches, merges, or loops                | Mermaid diagram |
+| Cause, consequence, trade-off, or judgment            | Prose           |
+
+A series of short items stays in its sentence. Prose hides the other forms in a
+few recognizable ways. Rewrite the passage when you find one.
+
+- Sentences that walk through steps with `first`, `then`, and `finally` hide a
+  numbered list.
+- Consecutive sentences that open the same way hide a list or a table.
+  `The --dry-run flag prints...` and `The --force flag skips...` open the same
+  way.
+- Every series whose items each carry a clause hides a bulleted list.
+- Paragraphs that each describe one option by the same attributes hide a table.
+  Each paragraph becomes a row, and each attribute becomes a column.
+- Past about 250 words of prose with no list, table, code block, or diagram,
+  check whether the passage hides one of these forms.
+
+Give every element content that the reader needs. Decoration adds structure
+without content, and it drops the relations that prose states.
+
+- Do not add a heading, bold text, a callout, or a horizontal rule to break up a
+  page. A heading fixes a long passage only when the text under it starts a new
+  topic.
+- Do not make a list of one item, or a list whose items need `because` or `so`
+  to connect them.
+- Do not repeat a list or a table in the prose around it. Introduce it with one
+  complete sentence that says what it holds.
+- Keep each table cell to a phrase or one short sentence. A cell that needs a
+  paragraph belongs in prose.
+- Keep list items parallel and one level deep, and do not mix steps with
+  descriptions in one list.
+
+## 5. Ambiguity
 
 No sentence is open to two readings.
 
@@ -139,7 +182,7 @@ No sentence is open to two readings.
 - Skip idioms, colloquialisms, and metaphors. A non-native reader, a translator,
   and an agent all parse plain constructions best.
 
-## 5. Obligations
+## 6. Obligations
 
 Grade every obligation, and give each word one meaning for the whole document. A
 reader who cannot tell a hard rule from advice treats everything as optional, or
@@ -183,18 +226,19 @@ how-to's ordering constraint earn the same "must" as a clause in a standard.
 Left bare, they read as one more step. Ordinary steps do not take "must",
 because a bare command already instructs.
 
-## 6. Scope
+## 7. Scope
 
 These rules reach past the documentation set.
 
 - PR descriptions and commit messages are writing too. Every layer except Mode
-  applies to them.
+  applies to them. Commit messages do not render markdown, so they take
+  Layout's lists and skip its tables and diagrams.
 - Product UI strings are not documentation. You must use the product's copy
   guidelines for those.
 - A count or a directory tree in prose is true only at the commit that lands the
   number. You must include the command that regenerates it.
 
-## 7. Example
+## 8. Examples
 
 Before:
 
@@ -216,3 +260,31 @@ the count (Ambiguity). The failure condition moves ahead of the step it
 explains, and "only" sits beside the verb it changes (Reader, Load). The rewrite
 grades the restriction instead of leaving it bare (Obligations). The hedge is
 gone (`prose`, Concision).
+
+Before:
+
+> Required findings name an exact phrase with a mechanical fix, so fix them. The
+> Bash hook denies a commit or PR message with one every time.
+>
+> Recommended findings come from pattern detectors, so fix each one unless it
+> misreads the sentence. The Bash hook denies a commit or PR message with one
+> once.
+>
+> Optional findings are suggestions, so fix each one where the rewrite reads
+> better. They never deny a command on their own.
+
+After:
+
+> Each tier says how often its rules misread a sentence, so it sets what a
+> finding asks of you.
+>
+> | Tier        | Rules match                      | Your fix                               | Commit or PR message                    |
+> | ----------- | -------------------------------- | -------------------------------------- | --------------------------------------- |
+> | Required    | An exact phrase                  | Apply the mechanical fix               | The hook denies it every time           |
+> | Recommended | A pattern that can misread       | Fix it unless it misreads the sentence | The hook denies it once, then passes it |
+> | Optional    | A pattern that suggests a change | Fix it where the rewrite reads better  | The hook never denies it                |
+
+By layer: the three paragraphs describe each tier by the same three attributes,
+so each paragraph becomes a row and each attribute a column (Layout). The lead
+sentence keeps the reason that the paragraphs gave with "so", because the table
+cannot hold it (Layout).

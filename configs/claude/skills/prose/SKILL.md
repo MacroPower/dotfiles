@@ -13,19 +13,18 @@ description: >-
 After every Write and Edit of a markdown or source file, a hook runs
 `prose-lint` and returns its findings before your next turn. The Bash
 hook also lints the message that a `git commit` or `gh pr create`
-carries. `prose-lint` tags each finding with its rule's tier, and the
-tier sets what it asks of you.
+carries. `prose-lint` tags each finding with its rule's tier. Each tier
+says how often its rules misread a sentence, so it sets what a finding
+asks of you.
 
-Required findings name an exact phrase with a mechanical fix, so fix
-them. The Bash hook denies a commit or PR message with one every time.
+| Tier        | Rules match                      | Your fix                               | Commit or PR message                    |
+| ----------- | -------------------------------- | -------------------------------------- | --------------------------------------- |
+| Required    | An exact phrase                  | Apply the mechanical fix               | The hook denies it every time           |
+| Recommended | A pattern that can misread       | Fix it unless it misreads the sentence | The hook denies it once, then passes it |
+| Optional    | A pattern that suggests a change | Fix it where the rewrite reads better  | The hook never denies it                |
 
-Recommended findings come from pattern detectors, so fix each one unless
-it misreads the sentence. The Bash hook denies a commit or PR message
-with one once. When you judge a finding false, run the unchanged
-command again and it passes.
-
-Optional findings are suggestions, so fix each one where the rewrite
-reads better. They never deny a command on their own.
+When you judge a Recommended finding false, run the unchanged command
+again.
 
 The rules are deliberately blunt, so a fix is usually cheaper than the
 exception. The linter matches word lists, so it misses many sentences
@@ -194,6 +193,18 @@ of three.
 
 Give each paragraph one topic and six sentences or fewer. Longer
 paragraphs usually carry a second topic.
+
+Give parallel content a parallel form. Number steps that run in order.
+Put items that play the same role and each carry their own clause in a
+bulleted list. Leave a series of short items in its sentence. In
+markdown that renders tables, put items compared on two or more
+attributes in a table.
+
+Keep reasoning in prose, because a list drops the `because` and `so`
+that tie one claim to the next. Give every element content. Do not
+bullet a single point, and do not repeat a table in the sentences
+around it. Do not add a heading or bold text only to break up a page.
+The Layout section of the `technical-writing` skill covers documents.
 
 One name per concept, including verbs. If the bucket `spends` tokens in
 one sentence, it does not `hand out` or `consume` them in the next.
