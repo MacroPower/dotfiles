@@ -103,6 +103,14 @@ for u in $WANTED_UNITS; do
   systemctl start "$u" || echo "Failed to start $u"
 done
 
+# Lima >= 2.2.0 expects the guest to create /run/host-services, where
+# ssh.forwardAgent symlinks the agent socket. Mirrors upstream's
+# 26-host-services.sh boot script.
+echo "Mkdir /run/host-services"
+mkdir -p /run/host-services
+chmod 700 /run/host-services
+chown -R "$LIMA_CIDATA_USER" /run/host-services
+
 # Run system provisioning scripts
 echo "Running system provisioning scripts"
 if [ -d "@CIDATA_MNT@"/provision.system ]; then
