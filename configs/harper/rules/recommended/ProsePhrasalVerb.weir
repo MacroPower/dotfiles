@@ -7,8 +7,8 @@
 # `learn`, `write`, `become`, `start`, `create`, `send`, `remove`,
 # `examine`, `meet`, `show`, `read`, `exclude`, `fix`, `connect`,
 # `stop`, `review`, `wait`, `assemble`, `track`, `handle`, `watch`,
-# `apply`, `retire`, `exit`, or `locate`. `go ahead and` adds nothing, so
-# the fix deletes it.
+# `apply`, `retire`, `exit`, `locate`, `perform`, or `run`. `go ahead
+# and` adds nothing, so the fix deletes it.
 #
 # Phrases that docs use as technical terms or in their literal sense
 # stay out: `fall back` (`fallback`), `go through` (`the request goes
@@ -19,7 +19,10 @@
 #
 # Each verb lists its forms by hand, irregular ones included (`found`,
 # `brought`, `dug`).
-expr main [([find, finds, found, finding] out), ([figure, figures, figured, figuring] out), ([come, comes, came, coming] up with), ([end, ends, ended, ending] up), ([kick, kicks, kicked, kicking] off), ([spin, spins, spun, spinning] up), ([bring, brings, brought, bringing] up), ([fire, fires, fired, firing] off), ([get, gets, got, gotten, getting] rid of), ([look, looks, looked, looking] into), ([come, comes, came, coming] across), ([run, runs, ran, running] into), ([point, points, pointed, pointing] out), ([pick, picks, picked, picking] up), ([weed, weeds, weeded, weeding] out), ([boil, boils, boiled, boiling] down), ([rule, rules, ruled, ruling] out), ([sort, sorts, sorted, sorting] out), ([dig, digs, dug, digging] into), ([wire, wires, wired, wiring] up), ([hook, hooks, hooked, hooking] up), ([give, gives, gave, given, giving] up), ([go, goes, went, gone, going] over), ([hold, holds, held, holding] off), ([put, puts, putting] together), ([keep, keeps, kept, keeping] track of), ([take, takes, took, taken, taking] care of), ([deal, deals, dealt, dealing] with), ([keep, keeps, kept, keeping] an eye on), ([go, goes, went, going] ahead and), ([come, comes, came, coming] into play), ([iron, irons, ironed, ironing] out), ([phase, phases, phased, phasing] out), ([bail, bails, bailed, bailing] out), ([zero, zeroes, zeros, zeroed, zeroing] in on)]
+#
+# It hit 296 lines in the measure.py corpus, and 20 of 20 sampled hits
+# had a one-word verb.
+expr main [([find, finds, found, finding] out), ([figure, figures, figured, figuring] out), ([come, comes, came, coming] up with), ([end, ends, ended, ending] up), ([kick, kicks, kicked, kicking] off), ([spin, spins, spun, spinning] up), ([bring, brings, brought, bringing] up), ([fire, fires, fired, firing] off), ([get, gets, got, gotten, getting] rid of), ([look, looks, looked, looking] into), ([come, comes, came, coming] across), ([run, runs, ran, running] into), ([point, points, pointed, pointing] out), ([pick, picks, picked, picking] up), ([weed, weeds, weeded, weeding] out), ([boil, boils, boiled, boiling] down), ([rule, rules, ruled, ruling] out), ([sort, sorts, sorted, sorting] out), ([dig, digs, dug, digging] into), ([wire, wires, wired, wiring] up), ([hook, hooks, hooked, hooking] up), ([give, gives, gave, given, giving] up), ([go, goes, went, gone, going] over), ([hold, holds, held, holding] off), ([put, puts, putting] together), ([keep, keeps, kept, keeping] track of), ([take, takes, took, taken, taking] care of), ([deal, deals, dealt, dealing] with), ([keep, keeps, kept, keeping] an eye on), ([go, goes, went, going] ahead and), ([come, comes, came, coming] into play), ([iron, irons, ironed, ironing] out), ([phase, phases, phased, phasing] out), ([bail, bails, bailed, bailing] out), ([zero, zeroes, zeros, zeroed, zeroing] in on), ([carry, carries, carried, carrying] out)]
 let message "Phrasal verb. Use one verb, such as `find`, `start`, or `remove`."
 let description "Flags idiomatic phrasal verbs, such as `figure out` and `kick off`, that one plain verb replaces."
 let becomes ""

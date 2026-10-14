@@ -1,11 +1,12 @@
 # Grammar calls a noun made from a verb a nominalization (`decision`
-# from `decide`). Each phrase is a weak verb plus a noun that names the
-# real verb (`make a decision`, `perform a lookup`, `take into
-# account`), or a form of `be` plus an adjective that does the same (`is
-# dependent on`). The list names each phrase in full, because a pattern
-# such as `[make, perform] DET NOUN` also matches `make a copy` and
-# `perform the request`, where the noun is the object and no single verb
-# replaces the pair.
+# from `decide`). Most phrases here are a weak verb plus a noun that
+# names the real verb (`make a decision`, `perform a lookup`, `take into
+# account`). Others pair a form of `be` with an adjective or a phrase
+# that does the same (`is dependent on`, `is in violation of`). The list
+# names each phrase in full. A pattern such as
+# `[make, perform] DET NOUN` also matches `make a copy` and
+# `perform the request`, where the noun is the object and no single
+# verb replaces the pair.
 #
 # Each verb carries its forms for tense and person. `$perform` expands
 # to perform, performs, performed, and performing through Harper's
@@ -14,15 +15,20 @@
 # because `$provide` also matches `provider` (`provider support for
 # Kubernetes`).
 #
-# `make a request` and `gain access to` sit in the Recommended rule of
-# the same name.
+# `make a request` stays out, because the bare verb reads worse in most
+# hits (`to make a request with custom headers`). `gain access to`
+# counts, though in the security sense (`an attacker exploits a flaw to
+# gain access`) the verb `access` loses the sense of obtaining.
+#
+# It hit 97 lines in the measure.py corpus, and 20 of 20 sampled hits
+# had one verb that replaces the pair.
 expr make [$make, made]
 expr take [$take, taking, took, taken]
 expr give [$give, gave, given]
 expr provide [provide, provides, provided, providing]
 expr have [has, have, had, having]
 expr be [is, are, was, were]
-expr main [(@make [(a decision), decisions, (a choice), (a comparison), (an assumption), (an attempt), (use of), (a determination), (a distinction), (a selection), (a call to)]), ($perform [(a check), validation, (a lookup), (an update), (an analysis), (a search), (a comparison)]), (@take [(a look), action, (into consideration), (into account)]), (@give [consideration, (an indication), (a description of)]), (@provide [(support for), (a description of)]), (@be in charge of), ($conduct [(a review), (an analysis)]), ($carry out), ([do, does, did, doing] a comparison), (@have [(an effect on), (an impact on), (a need for)]), ($reach a decision), ([$come, came] to a conclusion), ([$draw, drew, drawn] a conclusion), (@be [(indicative of), (reflective of), (dependent on), (dependent upon), (reliant on)]), (in need of), ([$put, putting] emphasis on), ($place emphasis on), (@be of [importance, significance, use])]
+expr main [(@make [(a decision), (the decision), decisions, (a choice), (a comparison), (an assumption), (the assumption), (an attempt), (use of), (a determination), (a distinction), (a selection), (a call to), (changes to), (a change to), modifications, (a modification to)]), ($perform [(a check), validation, (a lookup), (an update), (an analysis), (a search), (a comparison)]), (@take [(a look), action, (into consideration), (into account)]), (@give [consideration, (an indication), (a description of)]), (@provide [(support for), (a description of)]), (@be in charge of), (@be in violation of), ([$gain, $obtain] access to), ($conduct [(a review), (an analysis)]), ([do, does, did, doing] a comparison), (@have [(an effect on), (an impact on), (a need for)]), ($reach [(a decision), (the conclusion)]), ([$come, came] to [a, the] conclusion), ([$draw, drew, drawn] a conclusion), (@be [(indicative of), (reflective of), (dependent on), (dependent upon), (reliant on)]), (in need of), ([$put, putting] emphasis on), ($place emphasis on), (@be of [importance, significance, use])]
 let message "Nominalization. Use the verb."
 let description "Flags a weak verb plus noun where one verb does the work."
 let becomes ""
