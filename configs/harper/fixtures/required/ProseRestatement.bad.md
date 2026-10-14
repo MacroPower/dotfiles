@@ -7,3 +7,7 @@ In conclusion, the scheduler retries every failed job.
 To sum up, the cache holds every rule.
 To summarize, the hook formats the file.
 All in all, the change halves memory use.
+Put differently, the lock is per shard.
+Said differently, the lock is per shard.
+Stated differently, the lock is per shard.
+To put it another way, the lock is per shard.

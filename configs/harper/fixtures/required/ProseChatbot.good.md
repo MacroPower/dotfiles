@@ -7,3 +7,5 @@ A good catch block logs the error before it rethrows.
 Make sure you're right-clicking the tray icon.
 If you're right next to the limit, the request fails.
 Here is the config the installer writes.
+That is a good point to set a breakpoint.
+You are welcome to open an issue.

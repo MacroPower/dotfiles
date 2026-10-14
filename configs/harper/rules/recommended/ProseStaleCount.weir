@@ -1,7 +1,8 @@
 # A count of a set that the system can grow (`supports two modes`) goes
 # stale when someone adds a third, and nothing points the editor at the
-# sentence. The fix drops the number (`supports these modes`) or names
-# each item (`supports the single and all modes`).
+# sentence. The fix drops the number (`supports these modes`), names
+# each item (`supports the single and all modes`), or gives the command
+# that lists them (`kubectl api-resources lists the kinds`).
 #
 # The rule counts a verb that states the count (`there are`,
 # `supports`, `provides`, `offers`, `has`, `ships with`, `includes`,
@@ -13,14 +14,15 @@
 # and `both backends` stay out, because in 12 of 14 sampled hits they
 # pointed back at items the paragraph had just listed.
 #
-# It hit 61 lines in the measure.py corpus, and 18 of 20 sampled hits
-# counted a set that can grow. The misses counted a fixed pair (`two
-# kinds of output: standard output and standard error`).
+# It hit 62 lines in the measure.py corpus, and 19 of 20 sampled hits
+# counted a set that can grow. The miss split a set in two (`two types
+# of system components: those that typically run in a container`, and
+# those that do not).
 expr verbs [(there are), supports, provides, offers, has, (ships with), includes, defines, accepts, (comes with)]
 expr count [two, three, four, five, six, seven, eight, nine, ten]
 expr set [modes, backends, providers, drivers, plugins, formats, platforms, implementations, strategies, policies, profiles, levels, kinds, types, options, flags, subcommands, commands, endpoints, protocols, runtimes, engines, tiers, methods, algorithms, categories, versions, integrations, adapters, targets, architectures, ways]
 expr main (@verbs @count [@set, (* @set)])
-let message "Stale count. Drop the number, or name each item."
+let message "Stale count. Drop the number, name each item, or give the command that lists them."
 let description "Flags a count of a set that can grow, such as `supports two modes`, which goes stale when the set grows."
 let becomes ""
 let kind "Style"

@@ -1,23 +1,30 @@
-# Each phrase announces that the writer is about to say a thing again,
-# so the fix makes the first statement clear enough to stand alone and
-# drops the phrase. `in other words` counts only with a glued comma,
-# because the bare form ends a clause (`restates it in other words`).
+# Each phrase announces that the writer is about to say a thing again.
+# The fix keeps the clearer of the two statements, and deletes both the
+# other one and the phrase. `in other words` counts only with a glued
+# comma, because the bare form ends a clause (`restates it in other
+# words`). `put differently`, `said differently`, `stated differently`,
+# and `to put it another way` need the comma too. `That is,` stays out,
+# because the Latin-abbreviation rule offers it as the fix for `i.e.`.
 # `to be clear` also needs the start of a clause after its comma,
 # because the infinitive takes a list of adjectives (`comments to be
-# clear, accurate, and readable`). A comma ends Harper's default
-# chunk, so the rule reads whole sentences to see past it.
+# clear, accurate, and readable`). A comma ends Harper's default chunk,
+# so the rule reads whole sentences to see past it.
 #
 # A summary opener (`In summary,`, `In conclusion,`, `To sum up,`)
-# announces that the paragraph is about to say its point again, so it
-# counts here too, with the glued comma of an opener. The Recommended
-# rule of the same name holds the openers that also lead a new point
-# (`In short,`, `Ultimately,`).
+# announces that the paragraph is about to say its point again. It
+# counts here too, with the glued comma of an opener. The fix moves a
+# closing summary to the start, where it tells the reader what the
+# paragraph shows. The Recommended rule of the same name holds the
+# openers that also lead a new point (`In short,`, `Ultimately,`).
 #
 # `put simply` and `to put it simply` sit in the minimizer rule, which
-# reports every `simply` but the one before `put`, so each set of
-# words draws one finding.
-expr main [(in other words,), (simply put), (that is to say), (to be clear, [DET, PRON, PROPN, NOUN]), (in summary,), (in conclusion,), (to sum up,), (to summarize,), (all in all,)]
-let message "Restatement. Make the first statement stand alone, and delete the phrase."
+# reports every `simply` but the one before `put`, so each set of words
+# draws one finding.
+#
+# It hit 77 lines in the measure.py corpus, and 20 of 20 sampled hits
+# opened a restatement or a summary.
+expr main [(in other words,), (simply put), (that is to say), (to be clear, [DET, PRON, PROPN, NOUN]), (in summary,), (in conclusion,), (to sum up,), (to summarize,), (all in all,), (put differently,), (said differently,), (stated differently,), (to put it another way,)]
+let message "Restatement. Keep the clearer of the two statements, and delete the other one and the phrase. Move a closing summary to the start."
 let description "Flags phrases that announce the writer is about to say a thing again."
 let becomes ""
 let kind "Style"

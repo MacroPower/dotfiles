@@ -9,7 +9,7 @@
 # letters before Harper reads the text. A contraction with a curly
 # apostrophe therefore draws this rule beside ProseTypography.
 expr main [don't, doesn't, didn't, isn't, aren't, wasn't, weren't, can't, couldn't, won't, wouldn't, shouldn't, mustn't, hasn't, haven't, hadn't, needn't]
-let message "Negative contraction. Write `not` as its own word."
+let message "Negative contraction. Write the full form, such as `does not` or `cannot`."
 let description "Flags `don't`, `isn't`, `can't`, and the other negative contractions, which hide a negation in a suffix."
 let becomes ""
 let kind "Style"

@@ -6,10 +6,32 @@
 # can describe a reader or a program doing either (`you might notice
 # that the pods restart`, `the cache must remember that the key
 # expired`).
-expr main [(note that), (notice that), (remember that)]
+#
+# After a determiner (a word that introduces a noun, such as `the`,
+# `a`, or `this`), an adjective, or a noun, `note` and `notice` are
+# nouns. The `that` after them opens a description (`add a note that
+# explains the flag`, `a copyright notice that is included`). The list
+# names the determiners instead of the `DET` tag, because Harper tags
+# `all` in `First of all note that` as one. Weir has no lookbehind. A
+# guard that reads the word before `note` fails when no word comes
+# before it, so it misses `Note that` at the start of a sentence. The
+# first branch therefore matches the whole noun phrase, a noun and the
+# words attached to it. It then narrows the match to the empty point
+# before `that`. Harper reports nothing for an empty match, but it skips
+# every later match that starts before that point, so the `note that`
+# inside the noun phrase passes.
+#
+# It hit 356 lines in the measure.py corpus, and 20 of 20 sampled hits
+# announced a point.
+expr before [a, an, the, this, each, every, another, your, our, their, its, ADJ, NOUN]
+expr noun [note, notice]
+expr main [<(@before @noun that), (that), ()>, (note that), (notice that), (remember that)]
 let message "Filler phrase. Delete the phrase and state the point."
 let description "Flags `note that`, `notice that`, and `remember that`, which announce a point instead of making it."
 let becomes ""
 let kind "Style"
 allows "The note field holds free text."
 allows "Each note has a title and a body."
+allows "Add a note that explains the flag."
+allows "The note that the reviewer wrote lists every change."
+allows "The license requires a copyright notice that names the author."

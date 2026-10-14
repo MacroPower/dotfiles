@@ -7,3 +7,5 @@ The cache might be stale.
 It is advisable that you pin the version.
 
 The reason for the retry is the lock.
+
+The `--no-cache` flag disables the cache.

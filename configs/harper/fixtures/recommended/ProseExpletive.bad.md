@@ -11,3 +11,5 @@ It is likely that the pod restarts.
 What the hook does is skip the file.
 
 The reason is that the lock is held.
+
+There is a flag that disables the cache.

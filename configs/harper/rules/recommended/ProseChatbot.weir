@@ -1,9 +1,14 @@
 # The Required rule of the same name holds every other chatbot phrase.
-# These three sit here, because human-written READMEs and contributing
-# guides use them to invite a reader (`feel free to open an issue`).
-expr main [(feel free to), (happy to help), (let me know if)]
-let message "Chatbot phrase. Delete it and respond directly."
-let description "Flags `feel free to`, `happy to help`, and `let me know if`, which frame text as a chat reply."
+# These four sit here, because human-written READMEs and contributing
+# guides use them to invite a reader (`feel free to open an issue`,
+# `don't hesitate to ask`). The fix gives the instruction (`open an
+# issue`) or states the option (`you can open an issue`).
+#
+# It hit 15 lines in the measure.py corpus, and 15 of 15 sampled hits
+# invited the reader.
+expr main [(feel free to), (happy to help), (let me know if), ([don't, (do not)] hesitate to)]
+let message "Chatbot phrase. Delete it, and give the instruction or the option directly."
+let description "Flags `feel free to`, `happy to help`, `let me know if`, and `don't hesitate to`, which frame text as a chat reply."
 let becomes ""
 let kind "Style"
 allows "Open an issue for any bug you find."

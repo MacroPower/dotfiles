@@ -11,11 +11,15 @@
 # `industry reports` needs a finding verb after it, because the phrase
 # alone names real filings (`industry reports are filed monthly`). `many
 # believe` also fires on a question (`how many believe it?`), which
-# technical prose rarely asks.
+# technical prose rarely asks. `many developers think`, `some say`, and
+# `conventional wisdom` credit a claim to a crowd the same way.
+#
+# It hit no lines in the measure.py corpus, so no sample measures its
+# precision.
 expr tagged [ADJ, ADP, ADV, AUX, CCONJ, DET, INTJ, NOUN, NUM, PART, PRON, PROPN, SCONJ, SYM, VERB, X]
 expr claim [believe, say, agree, suggest, warn, recommend, argue, claim]
 expr finding [show, shows, showed, suggest, suggests, indicate, indicates]
-expr main [(experts @claim), (according to experts), (industry reports @finding), (some critics), (critics @claim), ([studies, research] @finding!( !@tagged)), ([studies, research] [has, have] shown!( !@tagged)), (many believe), (it is [widely, generally, commonly, often] [believed, known, said, accepted]), (is widely [regarded, considered, seen])]
+expr main [(experts @claim), (according to experts), (industry reports @finding), (some critics), (critics @claim), ([studies, research] @finding!( !@tagged)), ([studies, research] [has, have] shown!( !@tagged)), (many believe), (many [people, developers, engineers, users] [believe, think, say, agree]), (some say), (conventional wisdom), (it is [widely, generally, commonly, often] [believed, known, said, accepted]), (is widely [regarded, considered, seen])]
 let message "Vague attribution. Name the source or delete the claim."
 let description "Flags a claim credited to unnamed experts, studies, or critics."
 let becomes ""

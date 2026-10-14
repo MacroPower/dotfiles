@@ -8,16 +8,27 @@
 # space or other punctuation follows them, which leaves the `!` of a
 # chat opener (`Certainly! Here is the fix`). The guard sits glued to
 # the word so it reads the token right after it. A closing paren cannot
-# sit in the list, because it ends the list, so `(absolutely)` still
-# fires, and so does the word at the end of a line.
+# sit in the list, because it ends the list. `(absolutely)` therefore
+# still fires, and so does the word at the end of a line.
 #
 # `you're right` counts only with punctuation glued after it (`You're
 # right, the cache was stale`), which leaves `you're right-clicking`
 # and `you're right next to the limit`. `good catch` and `great catch`
 # skip a following code word (`a good catch block`). The phrase
 # `here's the updated` and its kin return a reply to the asker.
+#
+# `apologies for`, `I apologize`, and `sorry for the confusion` answer
+# a complaint, and `excellent question` and `glad you asked` praise the
+# asker. `that's a good point` and `you're welcome` count only with
+# punctuation glued after them, the way `you're right` does. That
+# guard passes `a good point to set a breakpoint` and `you are welcome
+# to open an issue`.
+#
+# It hit 1 line in the measure.py corpus, and 0 of 1 sampled hits was a
+# chat reply. The miss asked the reader to test a guess (`check to see
+# if you're right!`). The phrases for apologies and praise hit none.
 expr code [block, blocks, clause, clauses, statement, statements, handler, handlers, arm, arms]
-expr main [(hope this helps), (hope that helps), (hope [this, that] [clarifies, clears]), (great question), (good question), ([great, good] catch!(( )@code)), ([you're, (you are)] right!([( ), -, /])), ([here's, (here is), (here are)] the [updated, revised, corrected, fixed]), (you're absolutely right), (you are absolutely right), (I'd be happy to), (I would be happy to), ([certainly, absolutely]![( ), ,, ., ?, ;, :, -, /])]
+expr main [(hope this helps), (hope that helps), (hope [this, that] [clarifies, clears]), (great question), (good question), ([great, good] catch!(( )@code)), ([you're, (you are)] right!([( ), -, /])), ([here's, (here is), (here are)] the [updated, revised, corrected, fixed]), (you're absolutely right), (you are absolutely right), (I'd be happy to), (I would be happy to), ([certainly, absolutely]![( ), ,, ., ?, ;, :, -, /]), (apologies for), (I apologize), (sorry for the confusion), ([(that's), (that is)] a [great, good, fair, valid, excellent] point![( ), -, /]), ([excellent, fantastic] question), ([(you're), (you are)] welcome![( ), -, /]), (glad you asked)]
 let message "Chatbot phrase. Delete it and respond directly."
 let description "Flags phrases that frame a reply as a chat instead of stating the point."
 let becomes ""
@@ -28,3 +39,5 @@ allows "The fix is certainly correct."
 allows "Is it safe? Certainly."
 allows "A good catch block logs the error before it rethrows."
 allows "Make sure you're right-clicking the tray icon."
+allows "That is a good point to set a breakpoint."
+allows "You are welcome to open an issue."

@@ -1,12 +1,16 @@
 # Grammar calls each phrase a concessive opener, because it grants the
 # point before it and then turns away from it (`That said, the default
 # suits most hosts`). The fix writes `but` or opens the sentence with
-# the new point. `that being said` counts as written. `that said`,
-# `having said that`, and `with that said` need the glued comma of an
-# opener, because without it `that said` often opens a relative clause,
-# a clause that describes the noun before it (`the error that said the
-# disk was full`).
-expr main [(that being said), (that said,), (having said that,), (with that said,)]
+# the new point. `that being said` and `this being said` count as
+# written. `that said`, `having said that`, and `with that said` need
+# the glued comma of an opener, because without it `that said` often
+# opens a relative clause, a clause that describes the noun before it
+# (`the error that said the disk was full`). `having said this` and
+# `with this said` need the comma too, the way their `that` forms do.
+#
+# It hit 2 lines in the measure.py corpus, and 2 of 2 sampled hits
+# turned away from the point before them.
+expr main [(that being said), (that said,), (having said that,), (with that said,), (this being said), (having said this,), (with this said,)]
 let message "Concessive opener. Write `but`, or delete the phrase and state the point."
 let description "Flags `that said` and similar openers that turn away from the point before them."
 let becomes ""

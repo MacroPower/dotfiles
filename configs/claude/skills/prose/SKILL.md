@@ -71,9 +71,9 @@ also reads as one shared queue. When the next sentence keeps the same
 subject, open it with `it` or `they` instead of repeating the noun.
 
 Open a sentence with its real subject, not with `there is` or `it is`.
-`There are three files that hold the config` becomes `Three files
-hold the config`, and `It is likely that the pod restarts` becomes
-`The pod might restart`.
+`There is a flag that disables the cache` becomes `The --no-cache
+flag disables the cache`, and `It is likely that the pod restarts`
+becomes `The pod might restart`.
 
 Write what the system does in the simple present and a past event in
 the simple past. Keep `will` for a later event, so `running make
@@ -189,8 +189,8 @@ comparison is the point. Do not date a claim (`currently`, `new`, `no
 longer`). Name the version instead of `older`, `newer`, `recent`, or
 `modern` (`kernels 5.8 and later`). Counts of things the system can
 grow (`the three modes`, `both backends`) go stale when the system
-adds one more. Give the command that regenerates the count, or drop
-it.
+adds one more. Give the command that regenerates the count, name each
+item, or drop the count.
 
 Link a passage by name, never by position (`described above`, `the
 next section`). Positional references break when someone moves the

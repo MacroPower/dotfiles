@@ -11,3 +11,9 @@ As you might expect, the cache hits on the second call.
 The retry backs off, as you would expect.
 Please note that the cache is cold.
 It is important to note that the cache is cold.
+It's worth pointing out that the lock is per shard.
+It bears mentioning that the lock is per shard.
+It bears repeating that the lock is per shard.
+It should be mentioned that the lock is per shard.
+It should be stressed that the lock is per shard.
+It's worth remembering that the lock is per shard.

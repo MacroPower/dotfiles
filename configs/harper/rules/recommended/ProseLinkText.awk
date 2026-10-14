@@ -1,7 +1,8 @@
 # Reports link text that names no destination in markdown prose
-# (`[here](url)`, `[this page][ref]`). A reader who scans the links
-# sees `here` with no hint of where it goes, and the technical-writing
-# skill asks for link text that names the destination.
+# (`[here](url)`, `[this page][ref]`, `[more info](url)`, `[this
+# section](#x)`). A reader who scans the links sees `here` with no hint
+# of where it goes. The technical-writing skill asks for link text that
+# names the destination.
 #
 # The reader blanks a link's `](url)` before prose() sees the line, so
 # the check matches the raw line in `$0`, which keeps the same columns.
@@ -9,13 +10,16 @@
 # a link inside a code span passes. An image (`![here](x.png)`) passes,
 # because its alt text describes the picture.
 #
+# It hit 9 lines in the measure.py corpus, and 9 of 9 sampled hits
+# named no destination.
+#
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseLinkText: <message>
 
 @include "markdown.awk"
 
 function BEGIN_CHECK() {
-  vague = "(^|[^!])\\[(here|click here|this|this link|link|this page|this doc|this document|this article|this post|read more|more|learn more)\\](\\(|\\[)"
+  vague = "(^|[^!])\\[(here|click here|this|this link|link|this page|this doc|this document|this article|this post|this section|this guide|read more|more|learn more|see more|more info|more information|more details)\\](\\(|\\[)"
 }
 
 function prose(text,   lower, at, hit) {
@@ -30,6 +34,6 @@ function prose(text,   lower, at, hit) {
     }
     hit = substr($0, at + 1)
     sub(/\].*/, "", hit)
-    printf "%s:%d:%d: Style::ProseLinkText: Link text \"%s\" names no destination. Name the page or section it opens.\n", FILENAME, FNR, column(text, at), hit
+    printf "%s:%d:%d: Style::ProseLinkText: Link text `%s` names no destination. Name the page or section it opens.\n", FILENAME, FNR, column(text, at), hit
   }
 }

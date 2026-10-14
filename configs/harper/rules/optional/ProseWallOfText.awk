@@ -27,6 +27,6 @@ function BEGIN_CHECK() {
 
 function run(words) {
   if (words >= min_words && words <= max_words) {
-    printf "%s:%d:%d: Readability::ProseWallOfText: Wall of text. %d words of prose with no list, table, or code block. Move steps, parallel items, or comparisons into a list or a table, and keep the reasoning in prose. A heading fixes it only when the text under it starts a new topic.\n", run_file, run_line, run_col, words
+    printf "%s:%d:%d: Readability::ProseWallOfText: Wall of text. %d words with no list, table, or code block. Move steps or parallel items into a list or a table, and keep reasoning in prose. Add a heading only where the topic changes.\n", run_file, run_line, run_col, words
   }
 }

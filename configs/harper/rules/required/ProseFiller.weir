@@ -6,12 +6,20 @@
 # concessive rule (`that said,`).
 #
 # `as we can see` and `as you might expect` point at what the reader
-# already sees or expects, the way `as you can see` does.
+# already sees or expects, the way `as you can see` does. `worth
+# pointing out`, `worth remembering`, `bears mentioning`, `bears
+# repeating`, `it should be mentioned`, and `it should be stressed`
+# announce a point the way `worth noting` does.
 #
 # `note that` sits in the Recommended rule of the same name, because a
 # commit subject uses `note` as a verb (`docs: note that the flag is
 # sticky`).
-expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (as we can see), (as we have seen), (as we've seen), (as you might expect), (as you would expect), (as you'd expect), (of course), (make no mistake), (it goes without saying), (at the end of the day), (as a matter of fact), (worth mentioning)]
+#
+# It hit 96 lines in the measure.py corpus, and 18 of 20 sampled hits
+# announced a point. The misses were an interview answer (`Of course.`)
+# and a claim of importance (`the underlying dynamic is important to
+# keep in mind`).
+expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (as we can see), (as we have seen), (as we've seen), (as you might expect), (as you would expect), (as you'd expect), (of course), (make no mistake), (it goes without saying), (at the end of the day), (as a matter of fact), (worth mentioning), (worth pointing out), (bears mentioning), (bears repeating), (it should be mentioned), (it should be stressed), (worth remembering)]
 let message "Filler phrase. Delete the phrase and state the point."
 let description "Flags phrases that announce a point instead of making it."
 let becomes ""
