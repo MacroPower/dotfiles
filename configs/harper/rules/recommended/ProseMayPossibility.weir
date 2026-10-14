@@ -12,8 +12,9 @@
 # month, which a number, a comma, or a noun follows (`in May 2026`, `the
 # May release`). Weir has no lookbehind, so the filter consumes the
 # word before `may` and narrows the finding back to it. A sentence that
-# opens with `May` is a question or a date, so it passes. ProseCapsObligation
-# also reports an uppercase `MAY`, which takes a second fix.
+# opens with `May` is a question or a date, so it passes.
+# ProseCapsEmphasis also reports an uppercase `MAY`, which takes a
+# second fix.
 #
 # It hit 367 lines in the kubernetes and nix.dev docs, and 17 of 20
 # sampled hits stated a possibility. The other three stated an ability

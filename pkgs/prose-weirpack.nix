@@ -79,6 +79,31 @@ let
     }) t.awk
   ) tiersList;
 
+  # The awk checks that also read source comments, from
+  # configs/harper/comment-checks.txt. Each entry holds the check's bare
+  # name and the comment kinds it skips, written `!<kind>` after the
+  # name. prose-lint and measure.py both read this list.
+  commentChecksFile = ../configs/harper/comment-checks.txt;
+  commentChecks =
+    map
+      (
+        line:
+        let
+          words = lib.filter (w: w != "") (lib.splitString " " line);
+        in
+        {
+          name = lib.head words;
+          skip = map (lib.removePrefix "!") (lib.tail words);
+          flags = lib.tail words;
+        }
+      )
+      (
+        lib.filter (l: l != "" && !lib.hasPrefix "#" l) (
+          map lib.trim (lib.splitString "\n" (builtins.readFile commentChecksFile))
+        )
+      );
+  awkNames = lib.concatMap (t: t.awk) tiersList;
+
   # Internal rule name to tier label, the map prose-lint embeds.
   tiers = lib.listToAttrs (
     lib.concatMap (
@@ -101,6 +126,12 @@ in
 assert lib.assertMsg (lib.all (
   e: lib.elem e tierOrder
 ) entries) "configs/harper/rules holds an entry outside the tier directories: ${toString entries}";
+assert lib.assertMsg (lib.all (
+  c: lib.elem c.name awkNames
+) commentChecks) "configs/harper/comment-checks.txt names a check that is not an awk rule";
+assert lib.assertMsg (lib.all (c: lib.all (lib.hasPrefix "!") c.flags)
+  commentChecks
+) "configs/harper/comment-checks.txt holds a word after a name that does not start with !";
 stdenvNoCC.mkDerivation {
   pname = "prose-weirpack";
   version = "0.1.0";
@@ -170,6 +201,7 @@ stdenvNoCC.mkDerivation {
       awkLib
       tiers
       ;
+    commentChecks = map (c: { inherit (c) name skip; }) commentChecks;
   };
 
   meta = {

@@ -92,18 +92,11 @@ let
   );
 
   # The awk checks that also read source comments, through the shadow
-  # of the file's comments. ProseArrow stays out, because a comment
-  # often draws an arrow on purpose (`a -> b`).
-  commentChecks = [
-    "ProseCapsObligation"
-    "ProseEmoji"
-    "ProseNumberedReference"
-    "ProseOpenList"
-    "ProseOverUnder"
-    "ProsePluralParen"
-    "ProseSentenceLength"
-    "ProseSlash"
-  ];
+  # of the file's comments. configs/harper/comment-checks.txt lists them
+  # and the comment kinds each one skips. A skip becomes a `Name!kind`
+  # word that comment_checks looks up.
+  commentChecks = prose-weirpack.passthru.commentChecks;
+  commentSkips = lib.concatMap (c: map (kind: "${c.name}!${kind}") c.skip) commentChecks;
 
   # Internal rule name to tier, one `Name=Tier` pair per line, for the
   # awk step that tags each finding. The map covers every enabled
@@ -141,7 +134,8 @@ in
     all_rules=${lib.escapeShellArg allRules}
     change_rules=${lib.escapeShellArg changeRules}
     change_skips=${lib.escapeShellArg changeSkips}
-    comment_checks=${lib.escapeShellArg (lib.concatStringsSep " " commentChecks)}
+    comment_checks=${lib.escapeShellArg (lib.concatStringsSep " " (map (c: c.name) commentChecks))}
+    comment_skips=${lib.escapeShellArg (lib.concatStringsSep " " commentSkips)}
     tier_map=${lib.escapeShellArg tierMap}
     awk_checks=${lib.escapeShellArg awkChecks}
     awk_lib=${prose-weirpack}/${prose-weirpack.passthru.awkLib}
@@ -593,8 +587,9 @@ in
     # Runs the awk checks that commentChecks names over the comment
     # shadow of a source file, with SHADOW=1 so the reader blanks each
     # comment marker. It prints the findings under their internal names,
-    # the way markdown_checks does. ProseSlash skips Go, whose comments
-    # name import paths and media types (`net/http`, `text/plain`).
+    # the way markdown_checks does. The second argument is the comment
+    # kind, and a check skips each kind that comment-checks.txt lists
+    # after its name.
     comment_checks() {
       local internal script name
       while IFS='=' read -r internal script; do
@@ -604,9 +599,12 @@ in
           *" $name "*) ;;
           *) continue ;;
         esac
-        if [ "$name" = ProseSlash ] && [ "$2" = go ]; then
-          continue
-        fi
+        case " $comment_skips " in
+          *" $name!$2 "*) continue ;;
+        esac
+        case " $skips " in
+          *" $name "*) continue ;;
+        esac
         SHADOW=1 AWKPATH="$awk_lib" awk -f "$script" "$1" | sed "s/::$name:/::$internal:/"
       done <<< "$awk_checks"
     }
@@ -724,6 +722,15 @@ in
       CHANGELOG*|CHANGES*|HISTORY*)
         rules=$change_rules
         skips="$change_skips ProseHeading"
+        ;;
+    esac
+
+    # Prompt files for an agent (skills, agent definitions, CLAUDE.md,
+    # and AGENTS.md) write capitals for emphasis on purpose, so
+    # ProseCapsEmphasis skips them.
+    case "$file" in
+      configs/claude/* | */configs/claude/* | .claude/* | */.claude/* | CLAUDE.md | */CLAUDE.md | AGENTS.md | */AGENTS.md | SKILL.md | */SKILL.md)
+        skips="$skips ProseCapsEmphasis"
         ;;
     esac
 

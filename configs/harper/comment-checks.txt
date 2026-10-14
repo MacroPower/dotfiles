@@ -1,0 +1,19 @@
+# The awk checks that also read source comments, one name per line.
+# prose-lint runs each one over the comment shadow of a source file,
+# and measure.py runs the same list on the Go corpus. The weirpack
+# build fails when a name here is not an awk check under rules/.
+#
+# A `!<kind>` after a name skips one comment kind: go, py, hcl, yaml,
+# hash, slash, or dash. ProseSlash skips Go, whose comments name import
+# paths and media types (`net/http`, `text/plain`).
+#
+# ProseArrow stays out, because a comment often draws an arrow on
+# purpose (`a -> b`).
+ProseCapsEmphasis
+ProseEmoji
+ProseNumberedReference
+ProseOpenList
+ProseOverUnder
+ProsePluralParen
+ProseSentenceLength
+ProseSlash !go
