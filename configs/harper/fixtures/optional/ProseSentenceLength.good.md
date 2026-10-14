@@ -36,3 +36,11 @@ Signed-off-by: Pat Doe <pat@example.com>
 
 A second retry doubles the latency of a failing request and rarely succeeds.
 </details>
+
+When the hook finds a file that it cannot parse, it reports the path and the line number to the caller and then continues with the next file in the list.
+
+When the last attempt fails after three retries with a growing delay between them, the scheduler marks the job as dead and posts an alert to the on-call channel.
+
+The image pipeline converts every uploaded picture to the smallest format that the browser accepts, such as AVIF, PNG, or WebP, before it stores the result.
+
+Step 3: the importer reads every row of the source table and writes the converted rows in batches of one hundred to the destination table before it exits.
