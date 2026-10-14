@@ -16,11 +16,11 @@ import (
 // (shared by Write, Edit, and MultiEdit), runs the matching formatter
 // rule first so linter line numbers refer to the formatted file, then
 // the matching linter rule. Linter findings come back as a
-// [*blockError]; [main] prints its Reason to stderr and exits 2, which
-// is what the asyncRewake hook entry in home/claude.nix wakes Claude
-// on. Formatter and linter crashes log at warn and are otherwise
-// swallowed, so a wedged or missing tool never reaches the hook JSON
-// channel.
+// [*blockError]. [main] prints its Reason to stderr and exits 2, and
+// the hook entry in home/claude.nix hands that stderr to the agent that
+// made the edit (see [agentScope]). The handler logs formatter and
+// linter crashes at warn and swallows them, so a wedged or missing tool
+// never reaches the hook JSON channel.
 //
 // Emits no hookSpecificOutput.
 func handlePostFileWrite(

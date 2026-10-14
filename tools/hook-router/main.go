@@ -107,7 +107,12 @@ import (
 // finding. [eventNeedsStore] keeps the store closed for PreToolUse:Bash
 // so the hot path skips the open, and this opener is how the handler
 // reaches it anyway. nil disables the waiver, which fails open.
+//
+// agentScope limits [run] to payloads from the main conversation or to
+// payloads from a subagent (see [agentScope]). Its zero value handles
+// every payload, so a bare config{} test literal is unaffected.
 type config struct {
+	agentScope     agentScope
 	postImpl       *postimpl.Catalog
 	commandRules   *cmdrules.Engine
 	formatterRules *formatter.Engine
@@ -145,6 +150,58 @@ func configFromEnv() config {
 	return cfg
 }
 
+// errUnknownAgentScope reports an --agent-scope value that names no
+// [agentScope].
+var errUnknownAgentScope = errors.New("unknown agent scope")
+
+// agentScope selects the payloads [run] handles by their caller. Claude
+// Code sets agent_id on every payload a subagent's tool call fires, and
+// leaves it empty on the main conversation's payloads.
+//
+// The scope lets one event carry two hook entries that each handle
+// one caller. Claude Code delivers an asyncRewake hook's exit-2 stderr
+// to the main conversation, even when a subagent made the tool call.
+// home/claude.nix therefore keeps the asyncRewake Write/Edit/MultiEdit
+// entry for [scopeMain] and adds a synchronous one for
+// [scopeSubagent], whose exit-2 stderr reaches the subagent that made
+// the call.
+type agentScope string
+
+const (
+	// scopeAll handles every payload. It is the zero value.
+	scopeAll agentScope = ""
+
+	// scopeMain handles payloads without an agent_id.
+	scopeMain agentScope = "main"
+
+	// scopeSubagent handles payloads with an agent_id.
+	scopeSubagent agentScope = "subagent"
+)
+
+// parseAgentScope returns the [agentScope] that s names. An empty s
+// returns [scopeAll].
+func parseAgentScope(s string) (agentScope, error) {
+	switch scope := agentScope(s); scope {
+	case scopeAll, scopeMain, scopeSubagent:
+		return scope, nil
+	default:
+		return "", fmt.Errorf("%w: %q", errUnknownAgentScope, s)
+	}
+}
+
+// accepts reports whether the scope handles a payload whose agent_id
+// is agentID.
+func (s agentScope) accepts(agentID string) bool {
+	switch s {
+	case scopeMain:
+		return agentID == ""
+	case scopeSubagent:
+		return agentID != ""
+	default:
+		return true
+	}
+}
+
 func main() {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
 	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, SessionStart, SessionEnd, UserPromptSubmit, SubagentStart, TeammateIdle, PreCompact)")
@@ -164,10 +221,11 @@ func main() {
 	autoAllow := flag.Bool("auto-allow", false, "emit PreToolUse \"allow\" on fall-through (use only when a sandbox is enforcing containment)")
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
 	rmGuard := flag.Bool("rm-guard", false, "deny a PreToolUse:Bash rm or rmdir whose target Claude Code would stop on a permission prompt (variable-leading or statically unresolvable)")
+	agentScope := flag.String("agent-scope", "", "handle only payloads from the main conversation (\"main\", no agent_id) or only payloads from a subagent (\"subagent\", agent_id set); \"\" handles every payload")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *messageLintConfig, *autoAllow, *skipPlanReview, *rmGuard)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *messageLintConfig, *agentScope, *autoAllow, *skipPlanReview, *rmGuard)
 	if err == nil {
 		return
 	}
@@ -185,7 +243,7 @@ func main() {
 	os.Exit(1)
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON string, autoAllow, skipPlanReview, rmGuard bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON, agentScopeName string, autoAllow, skipPlanReview, rmGuard bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -316,7 +374,13 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("message lint is disabled")
 	}
 
+	scope, err := parseAgentScope(agentScopeName)
+	if err != nil {
+		return fmt.Errorf("parsing --agent-scope: %w", err)
+	}
+
 	cfg := configFromEnv()
+	cfg.agentScope = scope
 	cfg.postImpl = catalog
 	cfg.commitSkills = skills
 	cfg.commandRules = rules
@@ -389,6 +453,20 @@ func run(
 		slog.String("tool", tool),
 		slog.Int("ppid", os.Getppid()),
 	)
+
+	// An unparsable payload falls through, so the handler logs it the
+	// way it does without a scope.
+	if cfg.agentScope != scopeAll {
+		parsed, err := hook.ParseInput(input)
+		if err == nil && !cfg.agentScope.accepts(parsed.AgentID) {
+			logger.DebugContext(ctx, "payload outside agent scope",
+				slog.String("scope", string(cfg.agentScope)),
+				slog.String("agent_id", parsed.AgentID),
+			)
+
+			return nil
+		}
+	}
 
 	switch event {
 	case "PreToolUse":
@@ -538,9 +616,11 @@ func run(
 // Two events use it. TeammateIdle has no hookSpecificOutput decision
 // schema, and its JSON alternative, {"continue": false}, stops the
 // teammate outright instead of sending it back to work.
-// PostToolUse:Write/Edit/MultiEdit runs with asyncRewake in
-// home/claude.nix, which wakes Claude only on exit code 2, so linter
-// findings travel this way too.
+// PostToolUse:Write/Edit/MultiEdit sends linter findings this way too.
+// Its main-conversation entry in home/claude.nix runs with asyncRewake,
+// which wakes Claude only on exit code 2. Its subagent entry runs
+// synchronously, and Claude Code shows the subagent a PostToolUse
+// hook's exit-2 stderr.
 type blockError struct {
 	Reason string
 }

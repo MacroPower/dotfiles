@@ -29,11 +29,11 @@
 //     stream to a file and appends a pointer so the dropped detail stays
 //     recoverable
 //   - PostToolUse:Write/Edit/MultiEdit -- runs the matching file formatter
-//     on the written file, then the matching linter from --linter-rules;
-//     findings block through exit code 2 so the asyncRewake hook entry
-//     wakes Claude with them (a Write reports every finding, an Edit
-//     those on the lines it wrote and those it created elsewhere in
-//     the file)
+//     on the written file, then the matching linter from --linter-rules.
+//     Findings block through exit code 2, which reaches the agent that
+//     made the edit. A Write reports every finding, and an Edit reports
+//     those on the lines it wrote and those it created elsewhere in the
+//     file.
 //   - Stop                        -- blocks (with an AskUserQuestion-instructing
 //     message) until the post-impl question has been
 //     answered once for the current plan cycle
@@ -49,6 +49,10 @@
 //
 // An event with no case here is a no-op; the router never guesses a
 // handler for one it does not recognize.
+//
+// With --agent-scope, the router handles only the payloads from the
+// main conversation or only those from a subagent, and ignores the
+// rest. Two hook entries on one event can then each serve one caller.
 //
 // Session state is persisted in a SQLite database.
 //

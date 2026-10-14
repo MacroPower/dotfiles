@@ -787,6 +787,96 @@ func TestRun(t *testing.T) {
 	})
 }
 
+func TestParseAgentScope(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		in   string
+		want agentScope
+		err  error
+	}{
+		"empty handles every payload": {in: "", want: scopeAll},
+		"main":                        {in: "main", want: scopeMain},
+		"subagent":                    {in: "subagent", want: scopeSubagent},
+		"unknown value":               {in: "teammate", err: errUnknownAgentScope},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := parseAgentScope(tc.in)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestRunAgentScope(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		scope   agentScope
+		agentID string
+		// want reports whether the payload reaches the linter.
+		want bool
+	}{
+		"all handles the main conversation":    {scope: scopeAll, want: true},
+		"all handles a subagent":               {scope: scopeAll, agentID: "a1", want: true},
+		"main handles the main conversation":   {scope: scopeMain, want: true},
+		"main skips a subagent":                {scope: scopeMain, agentID: "a1"},
+		"subagent skips the main conversation": {scope: scopeSubagent},
+		"subagent handles a subagent":          {scope: scopeSubagent, agentID: "a1", want: true},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			tmp := t.TempDir()
+			target := filepath.Join(tmp, "doc.md")
+			require.NoError(t, os.WriteFile(target, []byte("one\n"), 0o644))
+
+			rule := linter.Rule{PathGlob: filepath.Join(tmp, "*.md"), Command: lintLines}
+			cfg := config{
+				agentScope:     tc.scope,
+				formatterRules: formatter.New(nil),
+				linterRules:    linter.New([]linter.Rule{rule}),
+			}
+			logger := slog.New(slog.DiscardHandler)
+
+			input, err := json.Marshal(map[string]any{
+				"agent_id":   tc.agentID,
+				"tool_name":  "Write",
+				"tool_input": map[string]any{"file_path": target},
+			})
+			require.NoError(t, err)
+
+			var stdout bytes.Buffer
+
+			err = run(t.Context(), strings.NewReader(string(input)), &stdout, "PostToolUse", "", nil, cfg, logger)
+			assert.Empty(t, stdout.Bytes())
+
+			if !tc.want {
+				require.NoError(t, err)
+
+				return
+			}
+
+			var blocked *blockError
+
+			require.ErrorAs(t, err, &blocked)
+			assert.Contains(t, blocked.Reason, target+":1:1:")
+		})
+	}
+}
+
 // writeLocalKubeconfig writes a local.yaml with the given
 // current-context and locally-defined context names, returning its
 // path. An empty current produces a bare stub.

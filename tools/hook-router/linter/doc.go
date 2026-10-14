@@ -3,7 +3,8 @@
 // reads. It backs hook-router's PostToolUse:Write/Edit/MultiEdit
 // handling: after Claude Code writes a file and the formatter has run,
 // the first matching rule's linter runs against it, and any findings
-// come back through exit code 2 so asyncRewake wakes Claude with them.
+// come back through exit code 2, which Claude Code shows to the agent
+// that wrote the file.
 //
 // Rules arrive as JSON (pathGlob, command, timeout) and the engine
 // evaluates them in declaration order with first match winning. A
