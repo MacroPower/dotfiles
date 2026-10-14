@@ -101,7 +101,7 @@ Content after a `pause` only shows up once you advance the presentation:
 
 ## font_size
 
-Sets the font size (1-7, default 1) for the remainder of the slide. kitty-only, see above.
+Sets the font size (1-7, default 1) for the remainder of the slide. kitty-only, see [Font sizes](#font-sizes).
 
 ```html
 <!-- font_size: 2 -->
@@ -175,7 +175,7 @@ Includes an external markdown file as if it were part of the presentation:
 <!-- include: foo.md -->
 ```
 
-Paths referenced by an included file resolve relative to that file. E.g. if you include `foo/bar.md` and it references image `tar.png`, the image is looked up at `foo/tar.png`.
+Paths referenced by an included file resolve relative to that file. For example, if you include `foo/bar.md` and it references image `tar.png`, the image is looked up at `foo/tar.png`.
 
 ## no_footer
 
@@ -205,7 +205,7 @@ centered
 
 ## speaker_note
 
-A note only shown in a `--listen-speaker-notes` instance (see [presenting.md](presenting.md)):
+A note shown only in a `--listen-speaker-notes` instance (see [presenting.md](presenting.md)):
 
 ```markdown
 <!-- speaker_note: this is a speaker note -->
@@ -289,7 +289,7 @@ Because we just reset the layout, this text is now below both of the columns.
 
 ## Centering content
 
-A layout like `[1, 3, 1]` where you only write into column 1 centers your content in the middle 60% of the screen.
+A layout like `[1, 3, 1]` where you write only into column 1 centers your content in the middle 60% of the screen.
 
 While running, press `T` to toggle a visual grid that shows column boundaries.
 

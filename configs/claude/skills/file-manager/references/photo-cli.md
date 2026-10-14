@@ -33,7 +33,7 @@ files for iPhone Live Photos travel alongside their photo. Extend via
 | `--folder-append-location` | `-p` | `Prefix` (1) or `Suffix` for the folder decoration. |
 | `--number-style` | `-n` | Suffix style for duplicate timestamps: `PaddingZeroCharacter` (2), etc. |
 | `--reverse-geocode` | `-e` | Provider: `OpenStreetMapFoundation` (2), `BigDataCloud` (1), `GoogleMaps` (3), `LocationIq` (5). |
-| `--openstreetmap-properties` | `-r` | OSM admin levels to use, space-separated. e.g. `country city town suburb`. |
+| `--openstreetmap-properties` | `-r` | OSM admin levels to use, space-separated. For example, `country city town suburb`. |
 | `--no-coordinate` | `-c` | Action for photos with no GPS: `Continue` (0), `PreventProcess` (1), `DontCopyToOutput` (2), `InSubFolder` (3). |
 | `--no-taken-date` | `-t` | Action for photos with no date: `Continue` (0), `PreventProcess` (1), `DontCopyToOutput` (2), `InSubFolder` (3), `AppendToEndOrderByFileName` (4). |
 | `--verify` | `-v` | Verify each copy with SHA1; writes `sha1.lst`. |

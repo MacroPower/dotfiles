@@ -102,7 +102,7 @@ Rationale, edge cases, normalization recipes:
 - **Pull fields from documents** ->
   `jq` (JSON -- see [inspect.md](references/inspect.md)),
   `yq` (YAML).
-- **Tweak EXIF beyond `photo-cli`** (e.g. shift timestamps, rename single files by tag) ->
+- **Tweak EXIF beyond `photo-cli`** (for example, shift timestamps or rename single files by tag) ->
   `exiftool`.
   See [images.md](references/images.md).
 - **Optimize images** ->
@@ -153,7 +153,7 @@ The pattern for any non-trivial reorganization:
    NUL-delimited pipes at scale).
 5. **Verify** afterwards: post-move tree (`eza -lT --level=2 dst/`),
    file count parity (`fd -t f . src/ | wc -l` vs `fd -t f . dst/ | wc -l`),
-   and -- for destructive ops -- confirm the trash holds what you
+   and -- for destructive ops -- confirm that the trash holds what you
    expect before anything is emptied.
 
 For media, try `photo-cli copy` before writing date / location sorting

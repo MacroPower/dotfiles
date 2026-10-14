@@ -23,7 +23,7 @@ Open the matching reference file for full detail. Summaries below are for quick 
 
 ## Taskfile Basics
 
-Scaffold a new Taskfile with `task --init` (optionally takes a directory or filename, e.g. `task --init ./subdir` or `task --init Custom.yml`). That produces something like:
+Scaffold a new Taskfile with `task --init` (optionally takes a directory or filename, such as `task --init ./subdir` or `task --init Custom.yml`). That produces something like:
 
 ```yaml
 version: '3'
@@ -44,7 +44,7 @@ tasks:
       - go build ./cmd/main.go
 ```
 
-Run tasks with `task <name>` (e.g. `task build`). Bare `task` runs the `default` task. Task discovers `Taskfile.yml` in the current directory and walks up the tree until it finds one, so `cd` into a subdir and `task` still works. Use `--dir <path>` or `--taskfile <file>` to target a specific location.
+Run tasks with `task <name>` (for example, `task build`). Bare `task` runs the `default` task. Task discovers `Taskfile.yml` in the current directory and walks up the tree until it finds one, so `cd` into a subdir and `task` still works. Use `--dir <path>` or `--taskfile <file>` to target a specific location.
 
 Commands run through [mvdan/sh](https://github.com/mvdan/sh), a native Go sh interpreter, so `sh`-style syntax works on every platform including Windows. Any binary you invoke must still be on `PATH`.
 
@@ -75,7 +75,7 @@ Keys you'll reach for most often. Full detail in [schema.md](references/schema.m
 - `aliases`: alternate names. Works on included namespaces too.
 - `internal: true`: hides the task from `--list` and blocks direct invocation. Only callable from other tasks.
 - `silent: true`: suppress command echoing for this task.
-- `interactive: true`: task needs a TTY (e.g. `less`, `vim`). Task adjusts stdio accordingly.
+- `interactive: true`: task needs a TTY, for example to run `less` or `vim`. Task adjusts stdio accordingly.
 - `watch: true`: pair with `task --watch` to re-run on file changes in `sources:`.
 
 ## CLI Cheatsheet
@@ -148,7 +148,7 @@ Every feature below is documented in [guide.md](references/guide.md) with full s
 - **`internal: true`.** Marks every task in the include as internal (hidden from `--list`, not directly callable).
 - **`optional: true`.** Task skips the include without an error when the file is missing.
 - **`excludes: [foo, bar]`.** Drops specific tasks from the include. Works with `flatten` too.
-- **`aliases:`.** Give a namespace a shorter alias, e.g. `generate` + `gen`.
+- **`aliases:`.** Give a namespace a shorter alias, for example `generate` + `gen`.
 - **OS-specific includes.** `build: ./Taskfile_{{OS}}.yml` selects a file per platform via templating.
 - **Per-include `dir`.** Forces included tasks to run in a specific directory regardless of caller cwd.
 
@@ -209,7 +209,7 @@ Every feature below is documented in [guide.md](references/guide.md) with full s
 ### Interaction and safety
 
 - **`interactive: true` on a task.** Task wires stdio through so TUIs (`vim`, `less`, `fzf`) work.
-- **`prompt:` on a task.** Warning prompt shown before running, e.g. for destructive deploys. Skipped with `--yes` / `TASK_ASSUME_YES`, or in non-TTY CI contexts.
+- **`prompt:` on a task.** Warning prompt shown before running, for example on destructive deploys. Skipped with `--yes` / `TASK_ASSUME_YES`, or in non-TTY CI contexts.
 - **Watch mode.** `task --watch <name>` re-runs on changes to `sources:`. Set `watch: true` on a task to watch by default. `-I 1s` tunes the interval.
 
 ### Convenience

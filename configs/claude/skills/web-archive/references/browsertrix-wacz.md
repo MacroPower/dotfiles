@@ -64,10 +64,10 @@ with `-- --behaviors <list>`:
 
 | Behavior | Effect |
 | --- | --- |
-| `autoscroll` | Scrolls to the bottom, triggering lazy-loaded content. Use for infinite-scroll feeds (Twitter, Mastodon, long Reddit threads). |
+| `autoscroll` | Scrolls to the bottom so lazy-loaded content loads. Use for infinite-scroll feeds (Twitter, Mastodon, long Reddit threads). |
 | `autoplay` | Auto-plays media so it loads into the WARC. |
 | `autofetch` | Fires loaders for `srcset`, `<link rel=preload>`, and other speculative assets. |
-| `siteSpecific` | Enables host-specific behaviors (e.g. for Twitter / Instagram patterns). |
+| `siteSpecific` | Enables host-specific behaviors (for example, Twitter / Instagram patterns). |
 
 Example for a Twitter thread with autoplay added on top of the defaults:
 

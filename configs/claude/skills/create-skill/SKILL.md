@@ -70,7 +70,7 @@ For repos:
    (mdBook / GitBook).
 4. `$REPO_ROOT/README.md` H2 sections.
 
-Record the discovery method (e.g. `llms-full.txt`, `sitemap.xml`,
+Record the discovery method (such as `llms-full.txt`, `sitemap.xml`,
 `docs/ traversal`). It feeds the "snapshot of <source>" line in the generated
 SKILL.md (see the template in Step 8).
 
@@ -95,7 +95,7 @@ The generated skill is **model-invocable** (no `disable-model-invocation` in its
 frontmatter), so trigger keywords matter and a single sentence leaves the
 trigger thin. Aim for 2-4 sentences: a one-line summary, a "Trigger when..."
 clause naming concrete file patterns and CLI verbs, and an optional "SKIP when..."
-clause for likely false positives. Example:
+clause for common false positives. Example:
 
 > Reference and guidance for writing X (config files, the `x` CLI). Trigger when
 > the user edits `x.yml` / `.xrc.yml`, asks about schema keys (a, b, c), runs or
@@ -136,8 +136,9 @@ absolute URLs. For repo partitions, `source_refs` are absolute file paths under
 `mcp__fetch__fetch` for URLs).
 
 **Edge cases:**
-- **Zero sections** (e.g. README with no H2s, llms.txt with only a single H1):
-  fall through to the next discovery method from Step 3. If the next method also
+- **Zero sections:** fall through to the next discovery method from Step 3.
+  For example, a README with no H2s or an llms.txt with only a single H1 yields
+  zero sections. If the next method also
   yields zero, abort and ask the user to point at a more structured source.
 - **One section:** dispatch a single crawler. Skip the parallelism scaffolding.
 

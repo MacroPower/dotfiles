@@ -60,7 +60,7 @@ theme:
 
 ## Loading custom themes
 
-On startup presenterm loads every `.yaml` file in the `themes` directory under the config directory (e.g. `~/.config/presenterm/themes` on Linux) and makes it available like a built-in: usable via `--theme`, `theme.name`, etc.
+On startup presenterm loads every `.yaml` file in the `themes` directory under the config directory (for example, `~/.config/presenterm/themes` on Linux) and makes it available like a built-in: usable via `--theme`, `theme.name`, etc.
 
 # Theme Definition
 

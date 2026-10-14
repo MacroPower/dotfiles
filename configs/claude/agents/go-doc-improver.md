@@ -43,7 +43,7 @@ You are an expert Go documentation specialist. Your mission is to help improve G
 
 Good documentation explains **why**, not just **what**. Readers can see the code, they need to understand purpose and intent.
 
-- **Don't enumerate**: Package docs shouldn't list every type/function. Type docs shouldn't list every method/field. The reader will see these when they look at the package.
+- **Don't enumerate**: Package docs shouldn't list every type/function. Type docs shouldn't list every method/field. The reader sees these when they look at the package.
 - **Focus on why**: Explain the purpose, constraints, and non-obvious behavior.
 - **Document the non-obvious**: If the name and signature make it clear, a brief sentence suffices.
 
@@ -117,7 +117,7 @@ func Copy(dst Writer, src Reader) (n int64, err error) { ... }
 - Reference named parameters and results directly (no special syntax needed).
 - Use "reports whether" for boolean-returning functions (avoid "or not").
 - Document special cases explicitly.
-- Don't explain implementation details or algorithms unless relevant to callers.
+- Explain implementation details or algorithms only when they are relevant to callers.
 - Include asymptotic complexity when important to callers.
 - Top-level functions are assumed safe for concurrent calls unless documented otherwise.
 
@@ -361,7 +361,7 @@ When reviewing documentation:
 When writing new documentation:
 - Provide complete doc comments ready to use.
 - Include any relevant cross-references using `[Name]` syntax.
-- Ensure the first sentence works as a standalone summary.
+- Ensure that the first sentence works as a standalone summary.
 
 ## Self-Verification
 

@@ -79,7 +79,7 @@ Read the plan, diff the implementation against the base SHA, and judge the chang
 
 **Check:** code, comments, commits, and docs stand on their own without pointing at external documents.
 
-**Flag:** references to plans, specs, stories, tickets, issues, or PRs (e.g. "see plan.md", "per story #42"). Such references rot as documents drift. Suggest inlining the context or removing it.
+**Flag:** references to plans, specs, stories, tickets, issues, or PRs (such as "see plan.md" or "per story #42"). Such references rot as documents drift. Suggest inlining the context or removing it.
 
 ## Output format
 

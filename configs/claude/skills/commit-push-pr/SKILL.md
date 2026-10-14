@@ -24,20 +24,20 @@ If the codebase follows conventional commits (visible in recent commits above), 
 
 - build: changes that affect the build system or external dependencies
 - ci: changes to our CI configuration files and scripts
-- docs: documentation only changes
+- docs: changes that touch only documentation
 - feat: a new feature
 - fix: a bug fix
 - perf: a code change that improves performance
 - refactor: a code change that neither fixes a bug nor adds a feature
-- style: changes that do not affect the meaning of the code (e.g. white-space, formatting)
+- style: changes that do not affect the meaning of the code (such as white-space or formatting)
 - test: adding missing tests or correcting existing tests
-- chore: changes that affect auxiliary tools (e.g. linter version/configs)
+- chore: changes that affect auxiliary tools (such as linter version/configs)
 
 ## Your task
 
 Based on the above changes:
 
-1. Create a new branch if on main
+1. If on main, create a new branch
 2. Create a single git commit with an appropriate message. When the commit message or the PR body breaks a prose rule, a hook denies the command with its findings. Rewrite the text and run the command again.
 3. Push the branch to origin with `mcp__git__git_push`, passing the repository root's absolute path as `repo` and setting `set_upstream`. If the git MCP server rejects the repository path, ask the user to push the branch instead.
 4. Create a pull request using `gh pr create`

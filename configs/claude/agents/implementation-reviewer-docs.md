@@ -40,7 +40,7 @@ Read the plan, diff the implementation against the base SHA, and judge every pie
 
 ### 2. Non-timeless phrasing
 
-**Problem:** phrasing that frames behavior as a delta from a prior version ("now does X", "previously did Y", "newly added Z", "the new flag", "before this feature", "existing release flow only needed Q") rots the moment the next commit lands. Git history already records what changed, and a file should read the same whether the reader arrived at this commit or wrote it from scratch.
+**Problem:** phrasing that frames behavior as a delta from a prior version rots the moment the next commit lands. Examples include "now does X", "previously did Y", "newly added Z", "the new flag", "before this feature", and "existing release flow needed only Q". Git history already records what changed, and a file should read the same whether the reader arrived at this commit or wrote it from scratch.
 
 **Solution:** suggest a rewrite that states the present behavior directly, with no reference to what it used to be.
 

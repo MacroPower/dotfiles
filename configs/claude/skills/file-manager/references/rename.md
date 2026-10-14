@@ -83,6 +83,6 @@ fd --max-depth 6 -t f . nested/ -x bash -c '
 ' _ {}
 ```
 
-`{/}` is the basename, `{//}` is the *full parent path* (e.g.
+`{/}` is the basename, `{//}` is the *full parent path* (for example,
 `nested/a/b`, not just `b`). The bash form replaces `/` with `_` so each
 file gets a unique flat name.

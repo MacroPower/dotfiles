@@ -139,7 +139,7 @@ type MyModule struct {
 - Fields must be **exported** (capitalized) to serialize correctly across Dagger calls
 - Use `// +private` on struct fields to hide them from the API while keeping serialization
 - Each module has exactly one constructor
-- Constructor parameters become flags on the `dagger` command directly (e.g., `dagger call --name=Foo message`)
+- Constructor parameters become flags on the `dagger` command directly (for example, `dagger call --name=Foo message`)
 
 ---
 
@@ -191,7 +191,7 @@ func (m *MyModule) Build() *dagger.Container {
 
 ### When to include `context.Context`
 
-Include `ctx` whenever the function makes Dagger API calls that resolve values (`.Stdout(ctx)`, `.Sync(ctx)`, `.Export(ctx, ...)`). If the function only constructs a pipeline without resolving, `ctx` is not needed.
+Include `ctx` whenever the function makes Dagger API calls that resolve values (`.Stdout(ctx)`, `.Sync(ctx)`, `.Export(ctx, ...)`). If the function constructs a pipeline and resolves nothing, `ctx` is not needed.
 
 ### When to return `error`
 
@@ -465,7 +465,7 @@ func (a *Account) URL() string {
 }
 ```
 
-Custom types are automatically prefixed with the main object name in the API schema (e.g., `MyModuleOrganization`, `MyModuleAccount`).
+Custom types are automatically prefixed with the main object name in the API schema (for example, `MyModuleOrganization` and `MyModuleAccount`).
 
 ---
 
@@ -531,7 +531,7 @@ func (m *MyModule) Deploy(ctx context.Context, app Buildable) error {
 }
 ```
 
-Any module implementing the `Build` method can be passed as a `Buildable`. The SDK auto-generates conversion functions (e.g., `AsMyModuleBuildable()`).
+Any module implementing the `Build` method can be passed as a `Buildable`. The SDK auto-generates conversion functions (for example, `AsMyModuleBuildable()`).
 
 Interface function signature rules:
 - Must embed `DaggerObject`
@@ -726,4 +726,4 @@ Module-level description (comment before `package main`). The first comment bloc
 package main
 ```
 
-These comments appear in `dagger functions`, `dagger call --help`, and on daggerverse.dev. Good documentation is essential for LLM integration — when modules are attached to an LLM environment, function comments become tool descriptions that the LLM uses to decide which tools to call and how.
+These comments appear in `dagger functions`, `dagger call --help`, and on daggerverse.dev. LLM integration depends on good documentation — when modules are attached to an LLM environment, function comments become tool descriptions that the LLM uses to decide which tools to call and how.

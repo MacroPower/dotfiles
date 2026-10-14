@@ -19,7 +19,7 @@ The user decides what to act on.
 
 You are writing an honest retrospective, not padding a list. A short report
 with two real findings beats ten speculative ones. The value is in catching
-things that will recur -- a missing permission that prompts every time, a
+things that recur -- a missing permission that prompts every time, a
 CLAUDE.md line that misled you, a tool you used wrong because nothing told you
 the right way. One-off slips that were your own fault and won't repeat are
 noise; leave them out or note them briefly without a proposed fix.
@@ -49,16 +49,16 @@ Re-read the session looking for:
   the task needed. Look for whole large files read when one section would do,
   unfiltered command output dumped into context (a full log instead of a
   grep), broad searches run inline instead of delegated to an Explore agent,
-  re-reads of files already in context, and verbose MCP responses you only
-  needed one field from. A single oversized read can cost more context than
-  the rest of the session combined, and that cost compounds: it triggers
+  re-reads of files already in context, and verbose MCP responses you needed
+  only one field from. A single oversized read can cost more context than the
+  rest of the session combined, and that cost compounds: it triggers
   earlier compaction, which loses detail and causes rework. Only flag cases
   where guidance or tooling could have steered around it.
 - **User corrections**: anywhere the user redirected you. Each is a signal
   that something upstream set the wrong expectation.
 
 If the session is long and context was compacted, detail may have dropped out.
-Reflect on what's in context; you don't need the raw transcript unless the user
+Reflect on what's in context; you need the raw transcript only when the user
 points you at one.
 
 ## Step 2: Diagnose root cause

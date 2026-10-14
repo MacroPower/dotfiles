@@ -19,24 +19,25 @@ If you invent details the user didn't give you — file paths, function names,
 a proposed approach, what to change — the worktree agent treats them as
 ground truth and builds on top of fabricated context. Anything you write that
 isn't grounded in the user's message, this conversation, or a file you just
-re-read is a hallucination the agent will commit to.
+re-read is a hallucination the agent commits to.
 
 ## Size the prompt to the context that exists
 
-The prompt's length should track the context the worktree agent will
-inherit, not how thorough you'd like to sound.
+The prompt's length should track the context the worktree agent
+inherits, not how thorough you'd like to sound.
 
 **Cold-start tasks** (user's request stands alone, no relevant prior
 conversation): relay the task in the user's framing, plus pointers to
 anything authoritative — spec file paths, PR numbers, issue links. That's
 it. The agent explores from there.
 
-**Tasks built on this conversation** (user says "do option 2", "use the
-approach we discussed", "apply the plan we just drafted"): the agent does
-not see this conversation. Summarize the decisions that actually matter
-for the task — what was chosen, what was ruled out, any constraints the
-user named — and include that in the prompt. Stick to things that were
-actually said; don't fill gaps with plausible-sounding extras.
+**Tasks built on this conversation**: the agent does not see this
+conversation. The user signals these tasks with requests such as
+"do option 2", "use the approach we discussed", or "apply the plan we just
+drafted". Summarize the decisions that actually matter for the task — what
+was chosen, what was ruled out, any constraints the user named — and include
+that in the prompt. Stick to things that were actually said; don't fill gaps
+with plausible-sounding extras.
 
 `--fork` copies the entire conversation into the new worktree, which
 bloats the agent's context with everything you discussed, including
@@ -74,7 +75,7 @@ thinness by guessing.
 
 ## Skill delegation
 
-If the user references a skill (e.g., `/auto`, `/plan-review`), instruct
+If the user references a skill (such as `/auto` or `/plan-review`), instruct
 the agent to use that skill rather than writing out manual steps. Pass
 through any flags the user gave.
 

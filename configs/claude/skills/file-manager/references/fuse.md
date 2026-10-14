@@ -20,7 +20,7 @@ use of `7zz`.
 | exFAT | fuse-exfat | `mount.exfat-fuse` | Linux |
 
 For FAT32 there is no FUSE driver in this configuration -- extract
-with `7zz` (see below).
+with `7zz` (see the [7zz extraction section](#7zz----extract-disk-images)).
 
 ```bash
 mkdir -p /mnt/img

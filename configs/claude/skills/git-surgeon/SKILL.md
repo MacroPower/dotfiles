@@ -133,7 +133,7 @@ git-surgeon split HEAD \
 ## Committing to another branch
 
 Use `commit-to` when working in a worktree and you need to commit changes to a
-branch checked out elsewhere (e.g., main):
+branch checked out elsewhere (such as main):
 
 1. Run `git-surgeon hunks` to list hunks
 2. Commit to another branch: `git-surgeon commit-to main <id1> <id2> -m "message"`

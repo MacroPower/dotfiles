@@ -104,7 +104,7 @@ Commit the above changes as one commit per logical change, never as one commit
 for the whole diff.
 
 Each logical change is one thing a reviewer can accept or revert on its own. Two
-edits belong in one commit only when neither makes sense without the other.
+edits belong in one commit only when each needs the other to make sense.
 Files are not the unit; a diff across three files can be one change, and a diff
 in one file can be three.
 

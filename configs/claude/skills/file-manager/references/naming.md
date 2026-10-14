@@ -178,7 +178,7 @@ Rare. Flag the deviation explicitly:
 
 - If a third-party tool *requires* a specific name,
   keep the upstream name intact.
-- Upstream archives ship filenames you cannot control without losing
+- Upstream archives ship filenames that you can change only by losing
   provenance. Preserve the original under `vendor/` or `upstream/` and
   put the renamed copy alongside.
 - The file is a checksum/manifest pointing at other files (`sha1.lst`),

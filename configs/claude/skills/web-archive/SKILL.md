@@ -38,8 +38,8 @@ Default layout:
 - `<slug>`: `slugify` applied to the page title or, when no title is
   available, the last URL path segment.
 - `<ext>`: `.wacz` for web pages; `.mkv` / `.opus` for `yt-dlp`.
-- Never overwrite an existing archive without an explicit
-  "re-archive" intent from the user.
+- Overwrite an existing archive only when the user states an explicit
+  "re-archive" intent.
 - Override: when the user explicitly names a directory ("save to this
   repo", "save here"), use that instead.
 

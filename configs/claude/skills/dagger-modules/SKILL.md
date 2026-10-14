@@ -50,7 +50,7 @@ my-module/
     └── telemetry/
 ```
 
-Each installed dependency gets its own kebab-cased bindings file there (e.g. `my-dep.gen.go`), which keeps `dagger develop` diffs small when dependencies change.
+Each installed dependency gets its own kebab-cased bindings file there (for example, `my-dep.gen.go`), which keeps `dagger develop` diffs small when dependencies change.
 
 Split across multiple files in the same package freely. Only the top-level package is part of the public API.
 
@@ -135,7 +135,7 @@ dag.ModuleName().FunctionName(ctx)
 Each function should do one thing well. Accept typed inputs, return typed outputs. Functions run in sandboxed containers — they have no implicit access to the host.
 
 ### Lazy evaluation
-Dagger operations are lazy — nothing executes until a scalar value is resolved (via `ctx`). Build pipelines by chaining operations. Don't resolve intermediate values unless you need them. Use `Sync(ctx)` when you need to force execution for side effects without extracting a value.
+Dagger operations are lazy — nothing executes until a scalar value is resolved (via `ctx`). Build pipelines by chaining operations. Resolve intermediate values only when you need them. Use `Sync(ctx)` when you need to force execution for side effects without extracting a value.
 
 ### Immutability drives caching
 Every Dagger operation takes immutable inputs and produces immutable outputs. This content-addressing enables automatic caching. Embrace the functional, pipeline-style approach.
@@ -195,7 +195,7 @@ Key annotations:
 - `// +optional` — argument is not required. When omitted, Go scalars receive their zero value (`""`, `0`, `false`); pointer/object types receive `nil`
 - `// +default="value"` — default value for scalar arguments
 - `// +defaultPath="."` — default path for Directory/File args. In git repos: absolute paths resolve from the repo root, relative paths from the `dagger.json` directory. Outside git repos: all paths resolve from the `dagger.json` directory
-- `// +defaultAddress="image:tag"` — default image for Container args (e.g., `"alpine:latest"`, `"golang:1.22"`)
+- `// +defaultAddress="image:tag"` — default image for Container args (for example, `"alpine:latest"` or `"golang:1.22"`)
 - `// +ignore=["pattern", ...]` — exclude files from Directory/File args using gitignore-style patterns. Supports negation (`!`) to re-include. Order matters: `["*", "!**/*.go"]` includes only Go files
 - `// +private` — hide a struct field from the API (still serialized)
 
@@ -362,9 +362,9 @@ dagger call deploy --token=vault://path/to/secret.item  # HashiCorp Vault
 dagger call deploy --token=aws://prod/github/token      # AWS Secrets Manager
 ```
 
-Always pass an explicit scheme. A bare, scheme-less value is deprecated and emits a warning prompting you to add a scheme prefix (e.g. `env://`); a future release will require it.
+Always pass an explicit scheme. A bare, scheme-less value is deprecated and emits a warning prompting you to add a scheme prefix (for example, `env://`). The warning also says that a future release requires the prefix.
 
-Function arguments (including secret references) can be persisted as user-defaults in a local `.env` file (named `MODULE_ARG` or `TYPE_FUNC_ARG`, case-insensitive). Dagger stores the *reference* (e.g. `env://API_TOKEN`), never the raw secret value, so the `.env` holds no secret material.
+Function arguments (including secret references) can be persisted as user-defaults in a local `.env` file (named `MODULE_ARG` or `TYPE_FUNC_ARG`, case-insensitive). Dagger stores the *reference* (for example, `env://API_TOKEN`), never the raw secret value, so the `.env` holds no secret material.
 
 By default, secrets with identical plaintext share cache entries. For rotating secrets that should still share cache, use a `cacheKey`:
 

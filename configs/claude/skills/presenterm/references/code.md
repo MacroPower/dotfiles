@@ -1,6 +1,6 @@
 # Code Snippets
 
-Code blocks are annotated by appending flags after the language: `+line_numbers`, `+exec`, `+render`, etc. Multiple flags compose, e.g. ```` ```bash +exec +line_numbers ````.
+Code blocks are annotated by appending flags after the language: `+line_numbers`, `+exec`, `+render`, etc. Multiple flags compose, for example ```` ```bash +exec +line_numbers ````.
 
 ## Snippet flag summary
 
@@ -8,7 +8,7 @@ Code blocks are annotated by appending flags after the language: `+line_numbers`
 | --- | --- |
 | `+line_numbers` | Show line numbers on the left |
 | `+exec` | Executable via `ctrl+e` (requires `-x` or config opt-in) |
-| `+exec:<executor>` | Execute with an alternative executor (e.g. `rust-script`) |
+| `+exec:<executor>` | Execute with an alternative executor, such as `rust-script` |
 | `+auto_exec` | Like `+exec` but runs without pressing `ctrl+e` |
 | `+exec_replace` | Auto-execute and replace the snippet with its output (requires `-X` or config opt-in) |
 | `+image` | Like `+exec_replace` but output must be a jpg/png image, rendered as such |
@@ -155,7 +155,7 @@ fn main() {
 
 ## Styled execution output
 
-Output containing ANSI color/style escape codes is rendered with those styles. Tools often disable color when not on a TTY, so force it, e.g. `ls /tmp --color=always`.
+Output containing ANSI color/style escape codes is rendered with those styles. Tools often disable color when not on a TTY, so force it, for example with `ls /tmp --color=always`.
 
 ## Hiding code lines
 

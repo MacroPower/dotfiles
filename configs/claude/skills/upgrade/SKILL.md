@@ -56,11 +56,11 @@ Two policies, chosen by dependency and scope:
   range. Run the tool's in-range update. List the dependencies whose latest
   release falls outside their range in the final report so the user can decide
   on majors separately.
-- **To latest** is the default for unconstrained pins (a flake input, a CI
-  action ref, a hook rev, an image tag, a toolchain version), and for any
+- **To latest** is the default for unconstrained pins, and for any
   dependency when the scope says `latest` or `major` or names a single
-  dependency. Raising a constraint means editing the manifest as well as the
-  lock.
+  dependency. Unconstrained pins include a flake input, a CI action ref, a
+  hook rev, an image tag, and a toolchain version. Raising a constraint means
+  editing the manifest as well as the lock.
 
 Keep the project's pin style. A digest- or SHA-pinned reference stays pinned
 that way, with the new value and an updated version comment. If nothing changed

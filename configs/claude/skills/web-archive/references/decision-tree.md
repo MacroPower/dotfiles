@@ -14,10 +14,11 @@ browsertrix cannot script.
 | Raw `*.pdf` link | `browsertrix-crawler` | The crawler captures the PDF byte-for-byte inside the WARC. Replay shows the original PDF; download via `wacz extract` to get a standalone file. |
 | Capture that requires multi-step interaction browsertrix cannot script | `/playwright-cli` handoff | See [playwright-handoff.md](playwright-handoff.md). |
 
-When a URL fits more than one row (a YouTube watch page links to a
-video but is itself a web page), pick the row matching the user's
-intent. "Save this YouTube video" -> `yt-dlp`. "Snapshot this YouTube
-page so I can read the comments offline" -> `browsertrix-crawler`.
+When a URL fits more than one row, pick the row matching the user's
+intent. A YouTube watch page fits more than one row, because it links
+to a video but is itself a web page. "Save this YouTube video" ->
+`yt-dlp`. "Snapshot this YouTube page so I can read the comments
+offline" -> `browsertrix-crawler`.
 
 ## Step 2: single page vs site crawl
 
