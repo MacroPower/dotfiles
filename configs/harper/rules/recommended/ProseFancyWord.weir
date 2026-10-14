@@ -1,9 +1,11 @@
 # Each word or phrase stands in for a plainer one (`delve into` for
-# `read`, `showcase` for `show`, `tapestry` for `mix`) and turns up far
-# more in generated text than in docs a person wrote. The Required rule
-# of the same name holds `utilize` and `leverage`, whose plain word is
-# always `use`, and the Optional rule holds the words that
-# human-written docs also use.
+# `read`, `showcase` for `show`, `tapestry` for `mix`). Each turns up
+# far more in generated text than in docs a person wrote. The Required
+# rule of the same name holds `utilize` and `leverage`, whose plain word
+# is always `use`. The Optional rule holds the words that human-written
+# docs also use. The idiom rule holds `under the hood`,
+# `at its core`, and `strike a balance`, whose fix writes the literal
+# meaning.
 #
 # `unlock`, `harness`, `landscape`, `realm`, and `underscore` are left
 # out, because each names something in code (a mutex, a test harness,
@@ -18,7 +20,11 @@
 # of the word through Harper's dictionary. A space in a pattern matches
 # only whitespace, so `deep[-, ( )]dive` matches the spaced and the
 # hyphenated spelling alike.
-expr main [delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates] ![privilege, privileges, permissions]), tapestry, journey, (navigate the [complexities, complexity, landscape, world, challenges]), testament, $foster, $showcase, $garner, $boast, interplay, intricacies, synergy, (at its core), (at its heart), (at the heart of), (under the hood), nuanced, multifaceted, meticulous, meticulously, bolster, bolsters, bolstered, bolstering, spearhead, spearheads, spearheaded, spearheading, supercharge, supercharges, supercharged, supercharging, revolutionize, revolutionizes, revolutionized, revolutionizing, embark, embarks, embarked, embarking, ([harness, harnesses, harnessing] the power), ([unlock, unlocks, unlocking] the potential), ([unlock, unlocks, unlocking] the [full, true] potential), (the realm of), (landscape of), ([strike, strikes, striking] a balance), (key takeaway), (key takeaways)]
+#
+# It hit 60 lines in the measure.py corpus, and 19 of 20 sampled hits
+# stood in for a plainer word. The miss was the name `Learning Journey
+# Working Group`.
+expr main [delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates] ![privilege, privileges, permissions]), tapestry, journey, ([navigate, navigates, navigating] the [complexities, complexity, landscape, world, challenges]), testament, $foster, $showcase, $garner, $boast, interplay, intricacies, synergy, nuanced, multifaceted, meticulous, meticulously, bolster, bolsters, bolstered, bolstering, spearhead, spearheads, spearheaded, spearheading, supercharge, supercharges, supercharged, supercharging, revolutionize, revolutionizes, revolutionized, revolutionizing, embark, embarks, embarked, embarking, ([harness, harnesses, harnessing] the power), ([unlock, unlocks, unlocking] the potential), ([unlock, unlocks, unlocking] the [full, true] potential), (the realm of), (landscape of), (key takeaway), (key takeaways)]
 let message "Fancy word. Use the plain word it stands for."
 let description "Flags fancy words and phrases, such as `delve`, `showcase`, and `tapestry`, that stand in for a plainer word."
 let becomes ""

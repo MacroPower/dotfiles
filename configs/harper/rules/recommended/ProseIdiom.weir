@@ -1,19 +1,27 @@
-# Each idiom means something its words do not add up to, so a reader who
+# Each idiom means something its words do not add up to. A reader who
 # does not know it cannot parse it, and a translator renders it word for
 # word. The fix writes the literal meaning (`the heavy lifting` becomes
 # `most of the work`, `a rule of thumb` becomes `a default`). The
-# phrasal-verb rule holds the idioms built on a verb, the fancy-word
-# rule holds `under the hood` and `at its core`, and the filler rule
-# holds `at the end of the day`.
+# phrasal-verb rule holds the idioms built on a verb, and the filler
+# rule holds `at the end of the day`.
+#
+# `on the same page` counts only after `we`, `everyone`, `team`, or a
+# similar word for people, either directly or after a form of `be`,
+# `get`, or `stay` (`get everyone on the same page`, `we are on the same
+# page`). Other subjects take its literal sense, a place in one document
+# (`a fragment on the same page`, `the figures appear on the same
+# page`).
 #
 # A space in a pattern matches only whitespace, so each compound that
 # writers also hyphenate takes `[-, ( )]` between its words.
 #
-# It hit 7 lines in the kubernetes and nix.dev docs.
-expr main [(low[-, ( )]hanging fruit), (heavy lifting), (moving parts), (rabbit hole), (rabbit holes), (silver bullet), (double[-, ( )]edged sword), (in a nutshell), (no[-, ( )]brainer), ballpark, (on the same page), (circle back), (touch base), (lion's share), (tip of the iceberg), (move the needle), (rule of thumb), (can of worms), (slippery slope), (big picture), (in the long run), (par for the course), (by and large), (behind the scenes), (under the covers), (kick the tires), (out of the woods), (in the weeds), (sweet spot), (hand[-, ( )]wave), (hand[-, ( )]waving), (hand[-, ( )]wavy), footgun, footguns]
+# It hit 23 lines in the measure.py corpus, and 20 of 20 sampled hits
+# were idioms.
+expr main [(low[-, ( )]hanging fruit), (heavy lifting), (moving parts), (rabbit hole), (rabbit holes), (silver bullet), (double[-, ( )]edged sword), (in a nutshell), (no[-, ( )]brainer), ballpark, ([we, we're, everyone, everybody, team, teams, us, they, they're, you're] on the same page), ([we, everyone, everybody, team, teams, they, you] [is, are, was, were, be, get, gets, got, stay, stays] on the same page), (under the hood), (at its core), (at its heart), (at the heart of), ([strike, strikes, striking] a balance), (circle back), (touch base), (lion's share), (tip of the iceberg), (move the needle), (rule of thumb), (can of worms), (slippery slope), (big picture), (in the long run), (par for the course), (by and large), (behind the scenes), (under the covers), (kick the tires), (out of the woods), (in the weeds), (sweet spot), (hand[-, ( )]wave), (hand[-, ( )]waving), (hand[-, ( )]wavy), footgun, footguns]
 let message "Idiom. Write the literal meaning."
 let description "Flags idioms, such as `heavy lifting` and `rule of thumb`, whose words do not add up to their meaning."
 let becomes ""
 let kind "Style"
 allows "The scheduler does most of the work."
 allows "The parser has few parts that change at run time."
+allows "Link to a fragment on the same page."
