@@ -181,9 +181,11 @@ One fact per sentence also means that a change to the system edits or
 deletes one sentence. Do not tie a fact to another fact that changes on
 its own (`unlike the v1 API`, `faster than the old path`) unless the
 comparison is the point. Do not date a claim (`currently`, `new`, `no
-longer`). Counts of things the system can grow (`the three modes`,
-`both backends`) go stale when the system adds one more. Give the
-command that regenerates the count, or drop it.
+longer`). Name the version instead of `older`, `newer`, `recent`, or
+`modern` (`kernels 5.8 and later`). Counts of things the system can
+grow (`the three modes`, `both backends`) go stale when the system
+adds one more. Give the command that regenerates the count, or drop
+it.
 
 Link a passage by name, never by position (`described above`, `the
 next section`). Positional references break when someone moves the

@@ -1,0 +1,27 @@
+# A version named relative to the writer's present (`in older
+# versions`, `newer kernels`, `a recent version of client-go`) leaves
+# the reader to guess where the line falls, and the line moves with
+# every release. The fix names the version (`before v1.24`, `kernels
+# 5.8 and later`). The dated-claim rule catches a claim dated to the
+# present, and the roadmap rule catches `in a future release`.
+#
+# `older versions` and its kin count only after `in` or before `of`,
+# and `recent` and `newer` count only after `a` or `the`, because a
+# bare `older versions` often means any earlier version. `modern`,
+# `newer`, `older`, and `recent` count before a noun for hardware or
+# platforms (`modern CPUs`, `older kernels`).
+#
+# It hit 16 lines in the measure.py corpus, and 13 of 16 left the
+# version to the reader. The misses were a generic `earlier versions of
+# an API`, `older versions of Kubernetes` with a clause that defines
+# them, and `modern CPUs`, which has no version to name.
+expr when [older, earlier, newer, recent, prior, previous]
+expr main [(in @when [versions, releases]), ([a, the] [recent, newer] [version, release]), ([newer, older, recent, modern] [kernels, browsers, CPUs, processors, distributions, compilers]), ([older, newer, earlier, recent] versions of)]
+let message "Relative version. Name the version, such as `before v1.24` or `5.8 and later`."
+let description "Flags `in older versions`, `newer kernels`, and similar phrases that name a version relative to the present."
+let becomes ""
+let kind "Style"
+let scope "Sentence"
+allows "Before v1.24, the flag defaulted to false."
+allows "Kernels 5.8 and later support the option."
+allows "Roll back to the previous version of the Deployment."

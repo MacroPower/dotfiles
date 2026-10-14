@@ -68,8 +68,9 @@ let
   # and ProseRoadmap. Each also turns off ProseFutureTense, because a
   # message about a change might say what the system does after it.
   # A message describes the system at one commit, so each turns off
-  # ProseStaleCount, whose counts stay true there, and
-  # ProseNumberedReference, whose line numbers the commit pins. The list
+  # ProseStaleCount, whose counts stay true there,
+  # ProseNumberedReference, whose line numbers the commit pins, and
+  # ProseRelativeVersion, whose `older` and `newer` the commit dates. The list
   # holds name prefixes, and it turns off the Weir rules and the awk
   # checks that match one.
   ruleNames = prose-weirpack.passthru.ruleNames ++ prose-weirpack.passthru.builtinRules;
@@ -79,6 +80,7 @@ let
     "ProseDatedClaim_"
     "ProseFutureTense_"
     "ProseNumberedReference_"
+    "ProseRelativeVersion_"
     "ProseRoadmap_"
     "ProseStaleCount_"
   ];
