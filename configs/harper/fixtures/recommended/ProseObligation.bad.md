@@ -33,3 +33,11 @@ The caller ought to close the handle.
 You must try to close the handle.
 
 The caller shall close the handle.
+
+It is necessary to restart the node.
+
+Users are encouraged to pin the version.
+
+Users are strongly encouraged to pin the version.
+
+Operators are advised to pin the version.

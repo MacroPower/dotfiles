@@ -5,32 +5,48 @@
 # the subject is the system, the fix states what it does in the present
 # tense (`the server needs to listen` becomes `the server listens`).
 #
-# `need to` skips a negation before it (`you do not need to restart`),
-# which states that no obligation exists, and a determiner (a word that
-# introduces a noun, such as `the`, `a`, or `this`), where `need` is a
-# noun (`the need to scale`). Weir has no lookbehind, so the filter
-# consumes the word before `need` and narrows the finding back to the
-# phrase. `If you need to X, do Y` still counts, because Weir cannot
-# anchor a branch to the start of a sentence, and a branch that catches
-# `You need to restart` also catches `if you need to`. The skill's
-# condition-first form reads better anyway (`To X, do Y`), so the
-# message names it.
+# `need to` skips the word before it when that word states that no
+# obligation exists, such as a negation (`you do not need to restart`,
+# `you won't need to restart`). It skips `only`, which states what
+# suffices (`you only need to set the flag once`). It skips a modal
+# verb, a helping verb that marks possibility, such as `might` or
+# `could`, because the sentence then describes a case that might not
+# arise (`you might need to restart`). It also skips a determiner (a
+# word that introduces a noun, such as `the`, `a`, or `this`), where
+# `need` is a noun (`the need to scale`). Weir has no lookbehind, so the
+# filter consumes the word before `need` and narrows the finding back to
+# the phrase. `need to know` passes, because `everything you need to
+# know` states no duty.
 #
-# `it is important to` counts here except before the verbs that the
-# Required filler rule reports (`it is important to note`). The passive
-# rule lists `recommended` as a stative word, one that names a state, so
-# `it is recommended that` draws one finding, from this rule. `you want
-# to` is left out, because `If you want to X, do Y` is a fork the skill
-# allows.
+# `If you need to X, do Y` still counts, because Weir cannot anchor a
+# branch to the start of a sentence, and a branch that catches `You need
+# to restart` also catches `if you need to`. The skill's condition-first
+# form reads better anyway (`To X, do Y`), so the message names it.
 #
-# Across the kubernetes and nix.dev docs, `need to` and its kin hit 558
-# lines before the guards, and 7 of 10 sampled hits were vague
-# obligations. All three misses were `If you want to`.
+# `it is necessary to`, `it is essential to`, `it is critical to`, and
+# `it is best to` hide the grade the same way. So do `are advised to`
+# and `are encouraged to`, with or without an adverb before the
+# participle (`users are strongly encouraged to`). `it is important to`
+# counts here except before the verbs that the Required filler rule
+# reports (`it is important to note`). The passive rule lists
+# `recommended`, `advised`, and `encouraged` as stative words, ones that
+# name a state, so `it is recommended that` and `are encouraged to` each
+# draw one finding, from this rule. `you want to` is left out, because
+# `If you want to X, do Y` is a fork the skill allows. The Optional tier
+# reports `has to` and `have to`, which often state a reason or a burden
+# instead.
+#
+# It hit 835 lines in the measure.py corpus, and 15 of 20 sampled hits
+# stated obligations that `must`, `should`, the present tense, or a `To`
+# opener states more clearly. The misses described a situation (`your
+# Pods need to communicate with the API server`) or a hypothetical (`Say
+# we need to work with`), or they quoted license text (`shall any
+# Contributor be liable`).
 expr need [need, needs]
-expr neg [not, never, don't, doesn't, didn't, DET]
+expr neg [not, never, don't, doesn't, didn't, won't, wouldn't, shouldn't, only, might, may, would, could, DET]
 expr wrap [expected, required, supposed]
 expr verbs [note, remember, understand, mention, realize, recognize]
-expr main [<(!@neg @need to), (@need to)>, ([is, are] @wrap to), ([is, are] recommended), <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>, (it is advisable), (it is a good idea), (you'll want to), (you will want to), ([may, might] want to), (be sure to), (make sure to), (ought to), (must try to), shall]
+expr main [<(!@neg @need to !know), (@need to)>, ([(it is), it's] [necessary, essential, critical, best] to), ([is, are] [advised, encouraged] to), ([is, are] ADV [advised, encouraged] to), ([is, are] @wrap to), ([is, are] recommended), <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>, (it is advisable), (it is a good idea), (you'll want to), (you will want to), ([may, might] want to), (be sure to), (make sure to), (ought to), (must try to), shall]
 let message "Vague obligation. Write `must` or `should` for what a person does, the present tense for what the system does, or open with `To` and the goal."
 let description "Flags `needs to`, `is expected to`, `is recommended`, and other phrases that hide how strong an obligation is."
 let becomes ""
@@ -41,3 +57,6 @@ allows "It is important to note the version."
 allows "If you want to pin the version, set the tag."
 allows "A timeout is required for every request."
 allows "You must pin the version."
+allows "You might need to restart the node."
+allows "You only need to set the flag once."
+allows "Read the guide for everything you need to know."

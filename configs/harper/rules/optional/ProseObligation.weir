@@ -1,0 +1,41 @@
+# `has to` and `have to` state an obligation without saying how strong
+# it is, so the reader cannot tell a requirement from advice. The fix
+# writes `must` for a requirement and `should` for advice, the grades
+# the technical-writing skill defines, or a bare command for a step.
+# When the subject is the system, the fix states what it does in the
+# present tense (`the runtime has to pull the image` becomes `the
+# runtime pulls the image`). The rule is a suggestion, because the
+# phrases often state a reason or a burden that `must` does not make
+# clearer (`because we have to wait for the whole response`). The
+# Recommended tier reports `need to` and the other phrases that read as
+# advice.
+#
+# The guard skips the word before `has` or `have` when it states that no
+# obligation exists, such as a negation (`you do not have to restart`,
+# `you won't have to restart`) or `necessarily`. It skips a modal verb,
+# a helping verb that marks possibility, such as `might`, `could`, or
+# `would` and its contraction (`you'd have to`). The sentence then
+# describes a case that might not arise. It skips `only`, which
+# states what suffices (`you only have to set the flag once`), and `to`,
+# which names a burden (`we don't want to have to update the test`).
+# Weir has no lookbehind, so the filter consumes that word and narrows
+# the finding back to the phrase. The guard after the phrase skips `has
+# to do with` and `has to offer`, which state no obligation.
+#
+# It hit 148 lines in the measure.py corpus, and 15 of 20 sampled hits
+# stated obligations that `must` or the present tense states more
+# clearly. The misses stated a reason or a burden (`the amount of code
+# you have to write`), a hypothetical (`likely have to change if it
+# were modifying the list`), or a question (`do we have to worry`).
+expr hneg [not, never, don't, doesn't, didn't, shouldn't, won't, wouldn't, would, we'd, you'd, necessarily, might, may, could, to, only]
+expr main <(!@hneg [has, have] to ![do, offer]), ([has, have] to)>
+let message "Vague obligation. Write `must` or `should` for what a person does, the present tense for what the system does, or open with `To` and the goal."
+let description "Flags `has to` and `have to`, which hide how strong an obligation is."
+let becomes ""
+let kind "Style"
+allows "The fix has to do with the cache."
+allows "You would have to restart the node."
+allows "You won't have to restart the node."
+allows "See what the release has to offer."
+allows "PVCs do not necessarily have to request a class."
+allows "You only have to set the flag once."
