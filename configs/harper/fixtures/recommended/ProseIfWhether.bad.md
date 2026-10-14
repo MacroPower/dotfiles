@@ -13,3 +13,7 @@ Verify if the binary cache works.
 Wait a minute and see if the rollout succeeds.
 
 It is hard to tell if the lock is held.
+
+Run the probe to confirm if the pod is ready.
+
+The parser does not validate if the input is JSON.

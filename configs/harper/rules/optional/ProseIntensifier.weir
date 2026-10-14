@@ -1,18 +1,24 @@
-# The Recommended rule of the same name holds every other intensifier.
-# `genuinely` sits here, because it sometimes separates a real case
-# from an apparent one (`a line is added only when the file genuinely
-# ends in a blank line`). The adjective `genuine` stays out, because it
-# usually means authentic (`the badge in the footer is genuine`).
+# Grammar calls an adverb that strengthens a claim an intensifier
+# (`very`, `really`). The Recommended rule of the same name holds every
+# other intensifier. `genuinely` sits here, because it sometimes
+# separates a real case from an apparent one (`a line is added only when
+# the file genuinely ends in a blank line`). The adjective `genuine`
+# stays out, because it usually means authentic (`the badge in the
+# footer is genuine`).
 #
 # `very`, `really`, `truly`, and `actually` sit here too, because each
-# hit 30 to 130 lines in about 900 human-written docs, and `actually`
-# often marks a real contrast with what the reader expects (`the file
-# is actually a symlink`). `very` skips a preceding `the`, `this`, or
+# hit 14 to 139 lines in the measure.py corpus, and `actually` often
+# marks a real contrast with what the reader expects (`the file is
+# actually a symlink`). `very` skips a preceding `the`, `this`, or
 # `that`, where it means exact (`the very first entry`). Weir has no
 # lookbehind, so the filter consumes the word before and narrows the
 # finding back to `very`.
+#
+# It hit 318 lines in the measure.py corpus, and 15 of 20 sampled hits
+# read as well without the word. The other 5 used `actually` for a real
+# contrast (`the number of bytes actually written`).
 expr main [genuinely, <(![the, this, that] very), very>, really, truly, actually]
-let message "Intensifier. Give the number, or delete the word."
+let message "Intensifier. Delete the word, or give a number that stays true, such as a protocol limit."
 let description "Flags `genuinely`, `very`, `really`, `truly`, and `actually`, which usually raise a claim without informing."
 let becomes ""
 let kind "Style"

@@ -1,18 +1,23 @@
 # Each phrase has a one-word equivalent (`because`, `before`, `can`,
-# `about`, `most`, `many`, `few`, `first`, `whether`, `to`). `whether
-# or not` is left out, because its common sense in docs is `regardless
-# of whether` (`renders the path whether or not the binding has a
-# location`), which `whether` alone does not carry. `be able to`
-# counts only after `is`, `are`, `was`, `were`, or `will`, where `can`
-# or `could` replaces it. After `must` or `should` it has no short
-# form (`the caller must be able to cancel`). `in order to` and `due
-# to the fact that` each have their own rule with a rewrite, and
-# `close proximity` sits in the redundant-pair rule, so none of them
-# repeats here as a second finding on the same words.
+# `about`, `most`, `many`, `few`, `enough`, `first`, `whether`,
+# `similarly`, `for`, `to`). `whether or not` is left out, because its
+# common sense in docs is `regardless of whether` (`renders the path
+# whether or not the binding has a location`), which `whether` alone
+# does not carry. `be able to` counts only after `is`, `are`, `was`,
+# `were`, or `will`, where `can` or `could` replaces it. After `must` or
+# `should` it has no short form (`the caller must be able to cancel`).
+# `in order to` and `due to the fact that` each have their own rule with
+# a rewrite, and `close proximity` sits in the redundant-pair rule.
+# None of them repeats here as a second finding on the same words.
+# `at the same time as` stays out, because its one-word form `while`
+# also reads as a contrast.
 #
 # `a number of` and `in terms of` sit in the Recommended rule of the
 # same name, because each also has a literal sense.
-expr main [(owing to the fact that), (at this point in time), (at the present time), (for the purpose of), (in the process of), (is able to), (are able to), (was able to), (were able to), (will be able to), (has the ability to), (have the ability to), (in spite of the fact that), (despite the fact that), (with regard to), (with regards to), (in regards to), (in regard to), (the majority of), (a majority of), (prior to), (subsequent to), (in the case of), (in cases where), (in the case where), (in the event of), (in the event that), (it is possible to), (it is possible for), (as a result of), (for the reason that), (on the basis of), (in the absence of), (so as to), (in order for), (in the near future), (on a regular basis), (on a daily basis), (in a timely manner), (in an effort to), (in the course of), (with the exception of), (at all times), (until such time as), (in conjunction with), (in accordance with), (a large number of), (a small number of), (the vast majority of), (in excess of), (upwards of), (as to whether), (for all intents and purposes), (first of all), (last but not least), (in and of itself), (with reference to), (in reference to), (pertaining to), (on account of), (by virtue of), (during the course of)]
+#
+# It hit 322 lines in the measure.py corpus, and 20 of 20 sampled hits
+# had a shorter form.
+expr main [(owing to the fact that), (at this point in time), (at the present time), (for the purpose of), (in the process of), (is able to), (are able to), (was able to), (were able to), (will be able to), (has the ability to), (have the ability to), (in spite of the fact that), (despite the fact that), (with regard to), (with regards to), (in regards to), (in regard to), (the majority of), (a majority of), (prior to), (subsequent to), (in the case of), (in cases where), (in the case where), (in the event of), (in the event that), (it is possible to), (it is possible for), (as a result of), (for the reason that), (on the basis of), (in the absence of), (so as to), (in order for), (in the near future), (on a regular basis), (on a daily basis), (in a timely manner), (in an effort to), (in the course of), (with the exception of), (at all times), (until such time as), (in conjunction with), (in accordance with), (a large number of), (a small number of), (the vast majority of), (in excess of), (upwards of), (as to whether), (for all intents and purposes), (first of all), (last but not least), (in and of itself), (with reference to), (in reference to), (pertaining to), (on account of), (by virtue of), (during the course of), (a sufficient number of), (in a similar way), (in a similar manner), (in a similar fashion), (for the sake of), (with the aim of)]
 let message "Wordy. Use the short form."
 let description "Flags stock phrases with a one-word equivalent."
 let becomes ""

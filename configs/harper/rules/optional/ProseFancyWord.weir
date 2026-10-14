@@ -1,21 +1,32 @@
 # The Required and Recommended rules of the same name hold every other
-# fancy word.
-# `enhance` and the opener `Additionally,` sit here, because each also
-# appears in plain human-written docs, and `Additionally,` hit 47 of
-# them in the kubernetes and nix.dev docs. `enhanced` stays out, because
-# it opens feature names (`Enhanced Networking`, `Security Enhanced
-# Linux`). `additionally` counts only with a glued comma, because
-# mid-sentence it modifies a verb (`the flag additionally checks the
-# signature`).
+# fancy word. Each word here also appears in plain human-written docs,
+# so a finding suggests a change rather than asking for one.
+#
+# `enhance` hit 40 lines of the measure.py corpus, and the opener
+# `Additionally,` hit 63. `enhanced` stays out, because it opens
+# feature names (`Enhanced Networking`, `Security Enhanced Linux`).
+# `additionally` counts only with a glued comma, because mid-sentence
+# it modifies a verb (`the flag additionally checks the signature`).
 #
 # `Moreover` and `furthermore` join `Additionally,` here, because the
-# two hit 24 lines in about 900 human-written docs. Neither modifies a
-# verb, so both count without the comma. `facilitate` sits here too,
-# because it hit 18 lines of the same docs (`to facilitate testing`).
-expr main [enhance, enhances, enhancing, (additionally,), moreover, furthermore, facilitate, facilitates, facilitated, facilitating]
-let message "Fancy word. Use the plain word it stands for."
-let description "Flags `enhance`, `facilitate`, and the additive openers `additionally`, `moreover`, and `furthermore`, which stand in for `improve`, `help`, and `also`."
+# two hit 24 lines of the same corpus. Neither modifies a verb, so both
+# count without the comma. `facilitate` sits here too, because it hit 20
+# lines (`to facilitate testing`).
+#
+# `as per` and `per` before `the`, `its`, `your`, or `their` stand in
+# for `according to` (`per the setting`), and hit 19 lines. `per` alone
+# stays out, because it also names a rate (`requests per user`). `As
+# such,` stands in for `so` and hit 25 lines. It counts only with its
+# comma, because without one it names a role (`the value is treated as
+# such`).
+#
+# It hit 191 lines in the measure.py corpus, and 20 of 20 sampled hits
+# stood in for a plainer word.
+expr main [enhance, enhances, enhancing, (additionally,), moreover, furthermore, facilitate, facilitates, facilitated, facilitating, (as per), (per [the, its, your, their]), (as such,)]
+let message "Fancy word. Write `improve` or `extend` for `enhance`, `according to` for `as per` or `per the`, and `so` for `as such`. State what the subject does instead of `facilitate`. Delete `additionally`, `moreover`, or `furthermore`, or write `also`."
+let description "Flags `enhance`, `facilitate`, `as per`, `per the`, and the openers `additionally`, `moreover`, `furthermore`, and `as such`, which stand in for plainer words."
 let becomes ""
 let kind "Style"
 allows "The enhancement label marks feature requests."
 allows "The flag additionally checks the signature."
+allows "The quota counts requests per user."

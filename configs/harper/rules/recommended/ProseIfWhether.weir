@@ -3,22 +3,22 @@
 #
 # The plurals `checks` and `tests` are also nouns, which take a
 # conditional `if` (`skips these checks if the file is generated`, `run
-# the tests if you changed the parser`), so the first branch skips them
+# the tests if you changed the parser`). So the first branch skips them
 # after a determiner (a word that introduces a noun, such as `the`, `a`,
-# or `this`), adjective, or number. Weir has no lookbehind, so the
+# or `this`), an adjective, or a number. Weir has no lookbehind, so the
 # filter consumes the word before and narrows the finding back to the
 # phrase. The singular `check if` and `test if` count without that
 # guard, because a sentence often opens with them (`Check if the file
-# exists`) and a filter needs a word before the match. The noun reading
-# before a conditional `if` never turned up in the corpus. `know` is
-# left out, because the chatbot rule reports `let me know if`, and
-# `report` is left out, because `a bug report if` is a noun.
+# exists`) and a filter needs a word before the match. `know` is left
+# out, because the chatbot rule reports `let me know if`, and `report`
+# is left out, because `a bug report if` is a noun. `find out` is left
+# out, because the phrasal-verb rule reports it.
 #
-# It hit 45 lines in the kubernetes and nix.dev docs, and 9 of 10
-# sampled hits meant whether. The miss was a condition after `see`
-# (`the user you see if you run ps`).
+# It hit 115 lines in the measure.py corpus, and 19 of 20 sampled hits
+# meant whether. The miss was the noun `check` before a condition (`the
+# duration to the next check if a quicker check is required`).
 expr noun [checks, tests]
-expr verb [check, test, checked, checking, tested, testing, determine, determines, determined, determining, verify, verifies, verified, verifying, see, sees, seeing, decide, decides, decided, deciding, ask, asks, asked, asking, detect, detects, detected, detecting, tell, tells, telling]
+expr verb [check, test, checked, checking, tested, testing, determine, determines, determined, determining, verify, verifies, verified, verifying, see, sees, seeing, decide, decides, decided, deciding, ask, asks, asked, asking, detect, detects, detected, detecting, tell, tells, telling, confirm, confirms, confirming, validate, validates, validating]
 expr main [<(![DET, ADJ, NUM] @noun if), (@noun if)>, (@verb if)]
 let message "`if` for `whether`. Write `whether` after a verb of checking."
 let description "Flags `check if`, `determine if`, and similar phrases where `if` stands in for `whether`."

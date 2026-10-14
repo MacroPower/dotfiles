@@ -1,11 +1,24 @@
 # Each phrase wraps a behavior in its purpose or duty, so the fix is to
 # give the verb the subject (`the hook is designed to run after every
-# write` becomes `the hook runs after every write`). `is responsible
-# for` stays in the list, because `the caller is responsible for closing`
-# reads as well as `the caller closes`. `is meant for` stays out,
-# because it names a use (`the flag is meant for testing`).
-expr main [(is designed to), (are designed to), (is intended to), (are intended to), (is meant to), (are meant to), (is responsible for), (are responsible for), (aims to), (aim to), (serves to), (serve to)]
-let message "Intent phrase. State what the subject does, with the behavior as its verb."
+# write` becomes `the hook runs after every write`). When the phrase
+# states a duty that binds a person, the fix grades it with `must` or
+# `should`, as the technical-writing skill asks (`the caller is
+# responsible for closing the body` becomes `the caller must close the
+# body`). `is meant for` stays out, because it names a use (`the flag is
+# meant for testing`).
+#
+# `exists to` and `the purpose of ... is to` wrap a behavior the same
+# way (`the flag exists to skip the cache` becomes `the flag skips the
+# cache`). In a pattern, `*` matches one word, so the purpose phrase
+# appears twice. One form takes a one-word noun after `of`, and the
+# other takes a two-word one (`the goal of this flag is to`).
+#
+# It hit 150 lines in the measure.py corpus, and 18 of 20 sampled hits
+# read better with the behavior as the verb or with `must`. The 2 misses
+# named a goal that the subject might not reach (`the project aims to
+# not break compatibility`).
+expr main [(is designed to), (are designed to), (is intended to), (are intended to), (is meant to), (are meant to), (is responsible for), (are responsible for), (aims to), (aim to), (serves to), (serve to), (exists to), (exist to), (the [purpose, goal] of * [is, was] to), (the [purpose, goal] of * * [is, was] to)]
+let message "Intent phrase. State what the subject does, with the behavior as its verb, or write `must` or `should` for a person's duty."
 let description "Flags phrases that wrap a behavior in its purpose or duty."
 let becomes ""
 let kind "Style"

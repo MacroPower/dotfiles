@@ -1,21 +1,29 @@
 # A sentence adverb comments on the whole sentence after it instead of
 # modifying one verb or adjective. Each adverb here opens a sentence by
-# rating the point that follows (`Clearly, the cache is cold`), so the
-# fix deletes it and lets the point carry its own weight. Each counts
-# only with a glued comma, the sentence-adverb form. The bare form
-# modifies a verb or an adjective (`the error prints clearly`,
-# `obviously irrelevant`).
+# rating the point that follows (`Clearly, the cache is cold`,
+# `Unfortunately, the cache is cold`). The fix deletes it and lets the
+# point carry its own weight. Each counts only with a glued comma, the
+# sentence-adverb form. The bare form modifies a verb or an adjective
+# (`the error prints clearly`, `obviously irrelevant`).
 #
 # `clearly` and `obviously` can also end a clause before a comma as
 # manner adverbs, which say how something happens (`to see it more
-# clearly, consider the listing`). So each also needs the subject of a
-# new clause after the comma: a determiner (a word that introduces a
-# noun, such as `the`, `a`, or `this`), a pronoun, a proper noun, or a
-# noun. The restatement rule guards `to be clear,` the same way. The
-# other adverbs rarely end a clause, so they count with the comma alone.
-expr main [([obviously, clearly], [DET, PRON, PROPN, NOUN]), (interestingly,), (importantly,), (notably,), (crucially,)]
+# clearly, consider the listing`). So each also needs a word after the
+# comma that can open a new clause. That word is a determiner (a word
+# that introduces a noun, such as `the`, `a`, or `this`), a pronoun, a
+# proper noun, or a noun. The restatement rule guards `to be clear,` the
+# same way. The other adverbs rarely end a clause, so they count with
+# the comma alone.
+#
+# `Ideally,` stays out, because it marks a goal that the system can miss
+# (`Ideally, every controller fits the specification`). Deleting it
+# turns the goal into a claim.
+#
+# It hit 58 lines in the measure.py corpus, and 20 of 20 sampled hits
+# were sentence adverbs.
+expr main [([obviously, clearly], [DET, PRON, PROPN, NOUN]), (interestingly,), (importantly,), (notably,), (crucially,), (unfortunately,), (fortunately,), (luckily,), (thankfully,), (surprisingly,), (unsurprisingly,), (sadly,), (remarkably,), (admittedly,)]
 let message "Sentence adverb. Delete it and let the point carry its own weight."
-let description "Flags a sentence-opening adverb such as `clearly` or `notably` that rates the point that follows."
+let description "Flags a sentence-opening adverb such as `clearly`, `notably`, or `unfortunately` that rates the point that follows."
 let becomes ""
 let kind "Style"
 let scope "Sentence"
@@ -23,3 +31,4 @@ allows "The error prints clearly on a dark background."
 allows "Do not make the negative queries obviously irrelevant."
 allows "To see it more clearly, consider the listing below."
 allows "The log shows the cause clearly, so start there."
+allows "Ideally, every controller fits the specification."

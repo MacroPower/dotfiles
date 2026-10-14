@@ -19,3 +19,15 @@ The limit is in excess of five hundred.
 First of all, stop the writer.
 
 The question is as to whether the lock is held.
+
+The pool waits until a sufficient number of workers start.
+
+The parser reads the header in a similar way.
+
+The parser reads the header in a similar manner as the body.
+
+The scheduler retries the job in a similar fashion.
+
+The field exists for the sake of serialization.
+
+The scheduler retries the job with the aim of recovery.
