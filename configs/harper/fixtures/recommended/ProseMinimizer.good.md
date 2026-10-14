@@ -8,3 +8,5 @@ The migration is not straightforward.
 You can't just use a container for this.
 The file was just created.
 The list holds just one entry.
+The cache fills quickly under load.
+Reads finish more easily when the cache is warm.

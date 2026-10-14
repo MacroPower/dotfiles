@@ -150,6 +150,8 @@ that second one.
 - Write `for example` or `such as` instead of `e.g.`, and `that is`
   instead of `i.e.`. Readers confuse the two, which turns a partial
   list into a complete one.
+- Write `only` where `just` limits something, and `exactly` or
+  `immediately` where it means one of those. Delete it everywhere else.
 
 ## Specificity
 

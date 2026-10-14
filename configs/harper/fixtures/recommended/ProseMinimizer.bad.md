@@ -13,3 +13,5 @@ It's easy to add a rule.
 The tool is lightweight and easy to use.
 Most callers should just use Close.
 The value is trivially copied.
+To quickly set up the project, run make.
+You can quickly add a rule.
