@@ -226,9 +226,13 @@ in_comment {
     in_comment = 1
     next
   }
+  # A list runs from its first item to the next line that follows a
+  # blank line without an indent. A heading or a table row also ends it.
   if (raw ~ /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/) {
     in_list = 1
   } else if (prev_blank && raw !~ /^[ \t]/) {
+    in_list = 0
+  } else if (raw ~ /^ {0,3}(#+([ \t]|$)|\|)/) {
     in_list = 0
   }
   prev_blank = 0
