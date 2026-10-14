@@ -5,3 +5,7 @@ The kubelet will emit a warning when swap is on.
 The scheduler will try to place the pod.
 
 The pod will be created in the default namespace.
+
+The default handler will be used.
+
+You will need Docker on every host.

@@ -1,3 +1,8 @@
+You can configure the timeout.
+The job is retried.
+The cache might be stale.
+The flag will be removed in a future release.
+The default handler will be used.
 A lock guards all mutation.
 The scheduler retries the job.
 The scheduler is retrying the job.

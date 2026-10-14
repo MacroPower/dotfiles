@@ -34,10 +34,12 @@ one written through Bash.
 
 ## Sentences
 
-Make the actor the subject, so `the scheduler retries the job` rather
-than `the job is retried`. Passive creeps into the back half of a
-sentence, after `so`, `and`, or `which`, so check the second half of
-every sentence as closely as the opening.
+Name the actor after a modal such as `must`, `should`, or `can` (`you
+can configure the timeout`, not `the timeout can be configured`).
+Elsewhere, name the actor when the reader cannot tell who acts (`the
+scheduler retries the job`, not `the job is retried`). Passive creeps
+into the back half of a sentence, after `so`, `and`, or `which`, so
+check the second half of every sentence as closely as the opening.
 
 Each point gets its own sentence with a subject and a verb. Never use a
 semicolon, and never put a colon between two clauses. If the words

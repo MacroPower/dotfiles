@@ -1,0 +1,44 @@
+# The future tense puts `will` before a verb (`running make will build
+# the binary`). The reader cannot tell whether the sentence describes
+# a later event or the system's normal behavior. The technical-writing
+# skill writes the present tense for what the system does and keeps
+# `will` for a later event. A word rule cannot tell the two apart, but
+# most hits describe normal behavior.
+#
+# The rule also reports `will be` plus a participle, the `-ing` or `-ed`
+# form of a verb (`the default handler will be used`), which the passive
+# rule leaves to it. The example in the message rewrites such a sentence
+# in the present tense with the actor as the subject (`the kubelet uses
+# the default handler`), so one fix clears it.
+#
+# The filter narrows the finding to `will`, so a rule that reports the
+# words after it keeps its own finding (`will give up`). A sentence that
+# opens with `Will` is a question, and the filter needs a word before
+# `will`, so it passes. The guard skips `we will`, which the signpost
+# rule reports (`we will explore`), and `time will tell`, which the
+# closing-cliche rule reports. It also skips `will want` and `will need
+# to`, which the obligation rule reports. `will need` before a noun
+# still counts (`you will need Docker`). The roadmap rule reports `will
+# be added`, `will be supported`, `will be removed`, and `will be
+# deprecated`, and the wordy rule reports `will be able to`, so the
+# guard skips those too. prose-lint turns the rule off for a commit
+# message, because a commit message describes what the system does
+# after the change lands.
+#
+# It hit 2169 lines in the measure.py corpus, and 20 of 20 sampled hits
+# described the system's normal behavior.
+expr skip [we, time]
+expr roadmap [added, supported, removed, deprecated]
+expr main <(!@skip will [<VERB, ![want, need]>, (need !to), (be ![@roadmap, able])]), will>
+let message "Future tense. Write the present tense for what the system does, such as `the kubelet uses the default handler`."
+let description "Flags `will` before a verb, where the present tense usually describes what the system does."
+let becomes ""
+let kind "Style"
+allows "Running make builds the binary."
+allows "Will the job retry?"
+allows "We will explore the scheduler."
+allows "Only time will tell."
+allows "The flag will be removed in the next release."
+allows "You will want to pin the version."
+allows "The caller will be able to cancel the request."
+allows "The job will need to restart."

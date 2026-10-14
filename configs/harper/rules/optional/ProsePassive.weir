@@ -1,0 +1,143 @@
+# Passive voice makes the thing acted on the subject of the sentence. It
+# names the actor, which grammar calls the agent, after `by` or not at
+# all (`the file is read by the parser`, `the job is retried`). The rule
+# matches a form of `be` followed by a participle, the `-ing` or `-ed`
+# form of a verb (`retried`, `written`).
+#
+# The Recommended tier reports a passive after a modal verb, a helping
+# verb that marks possibility, ability, or obligation, such as `can`,
+# `might`, and `must` (`the timeout can be configured`). The
+# future-tense rule reports the `will` in `will be` plus a participle.
+# This tier reports every other passive. It is a suggestion, because
+# naming the actor there helps less often. The bare word `be` counts
+# only when the token before it is not a modal verb, `not`, or an adverb
+# (`can also be configured`). The two tiers therefore never report the
+# same span. Weir has no lookbehind, so the filter consumes that token
+# and narrows the finding back to the passive. A passive after `to`
+# stays in this tier (`to be configured`).
+#
+# Forms of `get` are left out on purpose. Matching is case-insensitive,
+# so a `get VERB` branch fires on `Get returns the value` in a Go doc
+# comment. Harper's tagger also rarely marks the participle after `gets`
+# (`gets flushed` goes unflagged either way).
+#
+# The filter `<VERB, !@stative>` requires one token to be a verb and not
+# one of the stative words. Stative words name a state rather than an
+# action, and the tagger also marks them as verbs. The stative list holds a
+# progressive, a form of `be` plus an `-ing` verb (`has been running` is
+# active voice). It also holds the participles that docs use as
+# adjectives (`the flag is set`, `is enabled by default`, `the port is
+# stuck`) and the naming idioms (`is called name`, `is known as a
+# handle`, `is meant for testing`). The purpose wrappers the intent rule
+# reports sit there too (`is designed to`, `is intended to`), so each
+# draws one finding. `recommended`, `advised`, and `encouraged` are
+# stative for the same reason, because the obligation rule reports `is
+# recommended` and `are encouraged to`.
+#
+# The `by` branch exists because the tagger misses many participles (`is
+# guarded by a lock`). It accepts any word the tagger does not mark as
+# an adjective, adverb, noun, or preposition, so a degree (`off by one`)
+# and a deadline (`empty by the time`) pass. Weir has no token class for
+# a number, so the object of `by` must be a pronoun, a proper noun, or a
+# determiner instead. A determiner is a word that introduces a noun,
+# such as `the`, `a`, or `this`. That skips a dimension (`64 by 64`), a
+# criterion (`keyed by path`), and the phrases where `by` names no actor
+# (`by default`, `by design`, `by hand`). `by a lock`, `by the
+# scheduler`, and `by git` still count as agents.
+#
+# The tagger marks many participles as adjectives (`cached`,
+# `retried`, `flushed`), so `missed` lists the common ones by hand.
+# `exported` and `deprecated` stay out, because a Go doc uses each to
+# name a state (`the field is exported`, `the method is deprecated`).
+# `not` sits beside the adverb slot, because the tagger does not mark it
+# as one (`the value is not written`).
+#
+# The `!-` glued after the verb skips a hyphenated compound whose
+# first half the tagger marks as a verb (`is read-only`, `are
+# fail-open`). It matches at the end of a clause too, so `the file is
+# skipped.` still counts.
+#
+# Stative words still read as a passive when an agent follows them
+# (`the flag is set by the caller`, `the binary is built by the
+# pipeline`), so `agentive` lists the stative words that take one.
+# The agent must start with a determiner, pronoun, or proper noun, as
+# in the `by` branch, and the determiner must not open `by the time`
+# or `by the way`.
+#
+# `being` takes any participle but `said`, because `That being said` is
+# the opener the concessive rule reports. The first branch takes every
+# other form of `be` through the filter `<@be, !being>`.
+#
+# Matching ignores case, so a Go method named `Is` reads as the verb
+# (`errors.Is matches when any error in the tree matches`). The forms
+# of `be` count only when the token glued before them is not a period.
+# Weir has no lookbehind, so the filter consumes that token and then
+# narrows the finding back to the passive. A sentence that opens with
+# a form of `be` is usually a question. A list item that continues its
+# lead-in also opens with one (`- are created automatically`), and the
+# filter misses that passive. Four such items turned up in about
+# 900 human-written docs, fewer than the method names a Go commit
+# message mentions. `live` is stative because the tagger marks it as a
+# verb (`a caller whose context is live`).
+#
+# Two forms stay flagged on purpose. One is an identifier used as a noun
+# after `is` (`The default is print`), which belongs in a code span. The
+# other is a participle that names the state an event leaves behind
+# (`The issue is closed`). The tagger cannot tell it from the event, and
+# the skill rewrites it anyway.
+#
+# It hit 6150 lines in the measure.py corpus, and 20 of 20 sampled hits
+# were passives.
+expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, live, called, named, meant, supposed, recommended, designed, intended, bound, referred, prepared, advised, assured, reminded, warned, encouraged]
+expr missed [cached, compiled, computed, configured, decoded, discarded, encoded, evicted, fetched, flushed, hashed, linted, normalized, parsed, patched, persisted, propagated, queued, redirected, reset, restarted, retried, revoked, rotated, sanitized, serialized, stripped, synced, tagged, truncated, validated]
+expr be [is, are, was, were, been, being, isn't, aren't, wasn't, weren't]
+expr verb [<VERB, !@stative>, @missed]
+expr agentive [set, unset, enabled, disabled, required, needed, expected, allowed, supported, broken, known, built, made, fixed, called, named, designed, intended, bound, prepared, advised, assured, reminded, warned]
+expr agent [(DET ![time, way]), PRON, PROPN]
+expr passive [(<@be, !being> [@verb, ([ADV, not] @verb)]!-), (@be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN]), (@be [@agentive, ([ADV, not] @agentive)] by @agent)]
+expr modal [must, should, can, cannot, could, may, might, will, would, shall, can't, won't, shouldn't, couldn't, wouldn't, mustn't]
+expr bare [(be [@verb, ([ADV, not] @verb)]!-), (be <!@stative, !ADJ, !ADV, !NOUN, !ADP, !DET, !PRON, !INTJ> by [DET, PRON, PROPN]), (be [@agentive, ([ADV, not] @agentive)] by @agent)]
+expr main [<(!(.)@passive), @passive>, <(![@modal, not, ADV] @bare), @bare>, (being [<@verb, !said>, ([ADV, not] @verb)]!-)]
+let message "Passive voice. Name the actor when the reader needs to know who acts."
+let description "Flags a passive without a modal verb before it, such as `the job is retried` or `the map is guarded by a lock`."
+let becomes ""
+let kind "Style"
+allows "The scheduler retries the job."
+allows "The scheduler is retrying the job."
+allows "The job has been running for an hour."
+allows "She is tired."
+allows "The lock is free."
+allows "There is a lock."
+allows "Get returns the value stored under key."
+allows "The flag is enabled by default."
+allows "When the flag is set, the hook skips the file."
+allows "The file is missing."
+allows "The count is off by one."
+allows "The queue is empty by the time the loop runs."
+allows "The image is 64 by 64 pixels."
+allows "The two panes are side by side."
+allows "The output is stable by design."
+allows "The mapping is done by hand."
+allows "The migration is done by Friday."
+allows "The field is called name."
+allows "The type is known as a handle."
+allows "The flag is meant for testing."
+allows "The hook is designed to run after every write."
+allows "It is recommended that you pin the version."
+allows "The field is exported."
+allows "The method is deprecated."
+allows "The port is stuck in CLOSE_WAIT."
+allows "Be warned that the flag is sticky."
+allows "The default is lookup by id."
+allows "The answer is yes by the way."
+allows "The flag is set by the time the hook runs."
+allows "The value is set by hand."
+allows "The lock is read-only while the sweep runs."
+allows "Reads are fail-open and writes are fail-closed."
+allows "That being said, the hook skips the file."
+allows "The errors.Is call matches when any error in the tree matches."
+allows "A caller whose context is live loads again."
+allows "The timeout can be configured."
+allows "The flag can also be configured."
+allows "The lock must not be copied."
+allows "Users are encouraged to pin the version."
