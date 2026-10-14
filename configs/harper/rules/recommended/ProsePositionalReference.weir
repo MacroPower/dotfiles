@@ -5,9 +5,12 @@
 # The rule counts references to a passage, not to a block beside the
 # sentence. `the example below` and `the table above` usually sit next
 # to their block, the way `the following` does, so they stay out. The
-# required back-reference rule reports `as described above`, so the
-# filter skips a verb after `as`. Weir has no lookbehind, so the filter
-# consumes the word before and narrows the finding back to the phrase.
+# required back-reference rule reports `as described above` and `as
+# described earlier`, so the filter skips those verbs after `as`. Weir
+# has no lookbehind, so the filter consumes the word before and narrows
+# the finding back to the phrase. `below` and `later` count after `as`
+# too (`as described below`), because the back-reference rule reports
+# only the words that point back.
 #
 # A bare `the above` stays out too, because it usually points at the
 # code block right above it (`The above produces the same output`). It
@@ -15,17 +18,32 @@
 # preceding risks`) and as the object of a word that takes the whole
 # passage (`given the above`, `in addition to the above`).
 #
-# It hit 70 lines in the measure.py corpus, and 20 of 20 sampled hits
-# pointed at a passage by position.
+# `earlier in this guide` and `later in this chapter` count, except
+# before a comma and the subject of a clause (`Later in this section,
+# you set the flag`), where the signpost rule reports the opener.
+# `introduced` and `listed` stay out, because they name when a feature
+# arrived (`Generics were introduced later`) or where an item sits
+# (`variants listed later in the enum`). Two misses remain: `the ID that
+# you noted earlier`, where the reader took the note, and `later in this
+# chapter` after a section the sentence already links by name.
+#
+# It hit 115 lines in the measure.py corpus, and 17 of 20 sampled hits
+# pointed at a passage by position. The 3 misses were of those two
+# kinds.
 expr where [above, below]
 expr verbs [see, described, mentioned, explained, discussed, outlined]
+expr since [described, mentioned, explained, discussed, outlined, covered, noted]
 expr passage [situation, situations, scenario, scenarios, problem, problems, (use cases), tradeoffs, limitations, risks, considerations]
-expr main [<(!as @verbs @where), (@verbs @where)>, (the [section, sections, paragraph, chapter] @where), (the [next, previous, preceding] [section, chapter]), (the [above, preceding] @passage), ([given, following, notwithstanding, despite, besides, (in addition to), (based on)] the above)]
+expr docs [guide, page, document, section, chapter, tutorial, doc, post, article, book]
+expr main [<(!as @verbs above), (@verbs above)>, (@verbs below), (the [section, sections, paragraph, chapter] @where), (the [next, previous, preceding] [section, chapter]), (the [above, preceding] @passage), ([given, following, notwithstanding, despite, besides, (in addition to), (based on)] the above), <(!as @since [earlier, previously]), (@since [earlier, previously])>, (@since later), (the [next, previous, preceding, prior] [paragraph, paragraphs]), <([earlier, later] in this @docs!(,( )[DET, PRON, PROPN, NOUN])), ([earlier, later] in this @docs)>]
 let message "Positional reference. Link the section by name."
 let description "Flags `described above`, `the next section`, and similar references that point at a passage by position."
 let becomes ""
 let kind "Style"
+let scope "Sentence"
 allows "The backoff follows the restart policy in Pod Lifecycle."
 allows "The header is parsed as described above."
 allows "In the example below, the claim requests one device."
 allows "The above produces the same output."
+allows "Variants listed later in the enum compare greater."
+allows "Generics were introduced later, in Go 1.18."

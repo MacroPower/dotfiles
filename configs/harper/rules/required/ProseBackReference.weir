@@ -1,16 +1,27 @@
 # Each phrase points back at an earlier passage without naming it, so
-# the fix links the section it means or drops the phrase. `as
-# mentioned`, `as noted`, `as stated`, and `as discussed` count only
-# with a glued comma or before `above`, `earlier`, `before`, or
-# `previously`, the words `as described` needs too. Before a source
-# the phrase cites it (`as stated in RFC 9110`).
+# the fix links the section it means or drops the phrase. `as` and a
+# verb of saying, such as `as mentioned` or `as explained`, count before
+# `above`, `earlier`, `before`, or `previously`, after `previously` or
+# `already` (`as already noted`), and after `we` (`as we saw earlier`).
+# `as mentioned`, `as noted`, `as stated`, and `as discussed` also count
+# with a glued comma. Before a source the phrase cites it (`as stated in
+# RFC 9110`), so it passes, but `as previously described in RFC 9110`
+# still counts, a rare miss the rule accepts.
 #
-# `aforementioned` and `above-mentioned` point back the same way, and a
-# space in a pattern matches only whitespace, so the `above` branch
-# matches the hyphenated and the spaced spelling. The two hit 7 lines
-# in the measure.py corpus, and all 7 pointed back without naming the
-# passage.
-expr main [(as [mentioned, noted, stated, discussed, described] [above, earlier, before, previously]), (as [mentioned, noted, stated, discussed],), aforementioned, (above[-, ( )]mentioned)]
+# `aforementioned`, `above-mentioned`, and `previously mentioned` point
+# back the same way, and a space in a pattern matches only whitespace,
+# so the `above` branch matches the hyphenated and the spaced spelling.
+# The positional-reference rule reports the same verbs without `as`
+# (`described earlier`, `outlined below`), so each phrase draws one
+# finding.
+#
+# It hit 41 lines in the measure.py corpus, and 18 of 20 sampled hits
+# pointed back without naming the passage. The 2 misses linked the
+# section in the same sentence (`As described above in Container
+# restart policy`).
+expr verbs [mentioned, noted, stated, discussed, described, explained, outlined, covered]
+expr earlier [above, earlier, before, previously]
+expr main [(as @verbs @earlier), (as [previously, already] @verbs), (as we [saw, discussed, noted, mentioned, explained] @earlier), (as [mentioned, noted, stated, discussed],), aforementioned, (above[-, ( )][mentioned, noted]), (previously mentioned)]
 let message "Back-reference. Name or link what it points at, or delete the phrase."
 let description "Flags `as mentioned above` and similar phrases that point back without naming the passage."
 let becomes ""
