@@ -86,7 +86,10 @@ To rename a rule:
 2. In an awk rule, update the name in the output-format comment and in
    every `printf`.
 3. Update the label at the start of the message.
-4. Search `configs/harper/rules` and `configs/claude` for the old term,
+4. Update the name in `configs/harper/comment-checks.txt` and in
+   `pkgs/prose-lint.nix`, which names some rules for commit messages
+   and for agent prompt files.
+5. Search `configs/harper/rules` and `configs/claude` for the old term,
    including references such as `the stock-word rule`, and update each
    one.
 
@@ -114,6 +117,50 @@ were conjunctions.
 
 Rule comments that predate the corpus cite counts from other runs. Measure such a rule again the next time it changes,
 and replace its numbers.
+
+## Measured and Rejected
+
+These candidates fired mostly on clear prose when matched by words and
+part-of-speech tags, or their fix did not make the text clearer. The
+counts come from measure.py with harper-cli 2.12.0 on corpus
+d23da847be27. Measure a candidate again before reviving it.
+
+- Stacked prepositions (`the number of devices of this type`): 25
+  hits, and about 5 of 25 slowed a reader.
+- Reduced relatives with `by` (`the URL returned by this function`):
+  22 hits, and 0 of 22 misread.
+- Nested relative clauses: 14 hits, and about 3 of 14 forced a re-read.
+- Comparatives without `than`: 312 docs hits, and about 6 of 20 lacked
+  a baseline.
+- Long openers in sentences of 25 words or fewer: 529 hits, and about
+  6 of 25 forced a re-read.
+- `not` before `because`: 50 hits, and about 5 of 25 read two ways.
+- Noun clusters of four nouns (the removed ProseNounCluster): 313 hits,
+  and about 5 of 20 read better broken up. The tagger reads many verbs
+  as nouns.
+- Frequency adverbs (`usually`, `typically`): 882 hits, mostly accurate
+  statements of typical behavior.
+- `via` in ProseFancyWord: 301 hits for a small gain.
+- `latest`: 88 hits, mostly durable instructions or runtime state.
+- `still`: 101 hits, and about 10% dated a claim.
+- Bold or italic on one stress word: 157 hits, mostly contrastive focus
+  that carries meaning.
+- One-item lists: 115 hits, mostly a See also section with one link.
+- A heading followed directly by a subheading: 79 hits, and about 11 of
+  20 needed a lead sentence.
+- A code block of 8 or more lines right under a heading: 87 docs hits.
+  The heading or the comments in the block already introduced most of
+  them.
+- Undefined acronyms: 348 docs hits, and about 35 of 44 named an
+  acronym the file never spelled out. The rule needs a list of about
+  150 known acronyms, which needs upkeep.
+- ProseBroadReference for any verb after `this`: 306 hits, and 16 of
+  25 were correct.
+- ProseSemicolon after a word the tagger leaves untagged: 394 more
+  hits, and 9 of 25 were correct. The misses were HTML entities, code
+  such as `);`, and vCard data, and a guard against them is unmeasured.
+- The CondenseAllThe built-in: 72 hits, and none of 20 sampled read
+  better as `all the`.
 
 ## Verification
 
