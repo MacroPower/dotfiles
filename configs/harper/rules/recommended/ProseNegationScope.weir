@@ -4,19 +4,30 @@
 # none do. `Not all nodes run the agent` and `no node runs the agent`
 # each read one way.
 #
-# The rule counts `all` or `both`, then a noun, an adjective or a noun
-# before a noun, or `of them`, `of these`, or `of those`, and then a
-# plural verb such as `are`, `do`, or `can` before `not`. Only plural
-# verbs count, because a singular verb means that `all` sits in a
-# phrase of its own (`a check across all claims does not run`). `each`
-# stays out, because `each file is not cached` reads only as none.
+# The rule counts `all` or `both` before a negated plural verb, such as
+# `are not`, `do not`, or `cannot`. Between them sits a noun, an
+# adjective or a noun before a noun, or `of them`, `of these`, or `of
+# those`. `all the`, `all of the`, `all these`, and their kin count
+# before a noun of one or two words. Only plural verbs count, because a
+# singular verb means that `all` sits in a phrase of its own (`a check
+# across all claims does not run`).
 #
-# It hit 3 lines in the measure.py corpus, and all 3 meant none.
-expr main ([all, both] [<NOUN, !PRON>, (<[NOUN, ADJ, PROPN], !PRON> NOUN), (of [them, these, those])] [are, do, were, have, can, will, should, must] not)
-let message "Negation scope. Write `not all` or `none`, whichever the sentence means."
-let description "Flags `all` and `both` before a negated plural verb, where `not` can deny all or each one."
+# `every` and its noun count before a singular verb and `not` (`every
+# node does not run the agent`), and so do `everything`, `everyone`,
+# and `everybody`. `each` stays out, because `each node does not run
+# the agent` reads only as none.
+#
+# It hit 3 lines in the measure.py corpus, and all 3 meant none. The
+# `every` and `all the` forms hit none.
+expr verbs [are, do, were, have, can, will, should, must, did, would, could, may, might]
+expr np [NOUN, (ADJ NOUN), (NOUN NOUN)]
+expr main [([all, both] [<NOUN, !PRON>, (<[NOUN, ADJ, PROPN], !PRON> NOUN), (of [them, these, those])] [are, do, were, have, can, will, should, must] not), ([all, both] [the, these, those, (of the), (of these), (of those), (of our), (of your)] @np @verbs not), ([all, both] [<NOUN, !PRON>, (<[NOUN, ADJ, PROPN], !PRON> NOUN), (of [them, these, those])] cannot), (every @np [is, does, can, will, has, was, should, must, would] not), ([everything, everyone, everybody] [is, does, can, will, has, was] not)]
+let message "Negation scope. Move `not` before `all` or `every`, or write `none`, whichever the sentence means."
+let description "Flags `all`, `both`, or `every` before a negated verb, where `not` can deny all or each one."
 let becomes ""
 let kind "Style"
 allows "Not all nodes run the agent."
 allows "None of the nodes run the agent."
 allows "A check across all claims does not run."
+allows "Not every node runs the agent."
+allows "Each node does not run the agent."

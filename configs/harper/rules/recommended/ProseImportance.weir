@@ -1,11 +1,19 @@
 # Each word rates a part as important without saying what depends on
 # it (`the retry is crucial` becomes `without the retry, a lease error
-# fails the job`). `critical` is left out, because it names a critical
-# section.
-expr main [crucial, vital, pivotal, paramount, invaluable, indispensable, (plays a [vital, crucial, key, critical, important] role), ([underscore, underscores, highlight, highlights] the [importance, need])]
+# fails the job`). `critical` counts only before `to` or `for` (`the
+# lock is critical to the sweep`), because alone it names a critical
+# section. `essential` skips a hyphen before it, because `non-essential`
+# names a class of request rather than rating one part.
+#
+# It hit 65 lines in the measure.py corpus, and 18 of 20 sampled hits
+# rated a part without saying what depends on it. Both misses used
+# `essential` for a class (`any essential settings`), the way
+# `non-essential` does.
+expr main [crucial, <(!-essential), essential>, (critical [to, for]), cornerstone, linchpin, vital, pivotal, paramount, invaluable, indispensable, (plays a [vital, crucial, key, critical, important] role), ([underscore, underscores, highlight, highlights] the [importance, need])]
 let message "Importance claim. Say what depends on it, or delete the word."
 let description "Flags words that rate a part as important without saying what depends on it."
 let becomes ""
 let kind "Style"
 allows "The mutex guards the critical section."
 allows "The key role field names the primary role."
+allows "Isolate non-essential requests."

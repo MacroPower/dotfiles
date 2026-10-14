@@ -1,33 +1,39 @@
-# Broad reference is the grammar term for a `this` or `which` that
-# points at a whole earlier statement instead of at one noun (`This
+# Broad reference is the grammar term for a `this`, `that`, or `which`
+# that points at a whole earlier statement instead of at one noun (`This
 # means the cache stays warm`, `, which means the pool is empty`). The
 # reader has to pick which part of the last sentence the pronoun names.
 # The fix names the noun (`This retry means`) or joins the two claims.
 #
-# `this` counts only before a verb that states a consequence. `This is`
-# alone also names a field or a section (`this is set to True`), so it
-# counts only before `because`, `why`, or `how`. `which` counts only
-# after a comma, and only before `means` or before `is why`, `is
-# because`, or `is how` (`, which is why the write waits`). `, which
-# allows` and its kin stay out, because in about half of the sampled
-# hits `which` pointed at the noun before the comma (`the mirroring
-# feature, which allows`). The ability rule reports `allows you to`,
-# `lets you`, `gives you`, and `makes it possible`, so a guard glued to
-# each verb skips those. `helps` is left out, because the chatbot rule
-# reports `hope this helps` and the ability rule reports `helps to` and
-# `helps you`.
+# `this` counts only before a verb that states a consequence, such as
+# `means`, `causes`, or `leads`, with or without `also` or `then`
+# between them (`this also means`). `This is` alone also names a field
+# or a section (`this is set to True`), so it counts only before
+# `because`, `why`, or `how`. `that` counts only before `means`, and it
+# also matches a `that` that points at the noun before it (`a value that
+# means no value is present`), a miss the rule accepts.
 #
-# It hit 390 lines in the measure.py corpus, and 19 of 20 sampled hits
-# pointed at a whole clause. The miss pointed at a value (`Default is
-# direct, which means git clone`).
-expr verb [means, meant, ensures, happens, prevents, causes, keeps, works, matters, (makes!(( )it)), (allows!(( )[you, users])), (lets!(( )[you, users])), (gives!(( )you))]
-expr main [(this @verb), (this [is, was] [because, why, how]), ((,) which means), ((,) which [is, was] [why, because, how])]
+# `which` counts only after a comma, and only before `means`, `causes`,
+# `leads`, `results`, or the past form of the last three, or before `is
+# why`, `is because`, or `is how` (`, which is why the write waits`).
+# `, which allows` and its kin stay out, because in about half of the
+# sampled hits `which` pointed at the noun before the comma (`the
+# mirroring feature, which allows`). The ability rule reports `allows
+# you to`, `lets you`, `gives you`, and `makes it possible`, so a guard
+# glued to each verb skips those. `helps` is left out, because the
+# chatbot rule reports `hope this helps` and the ability rule reports
+# `helps to` and `helps you`.
+#
+# It hit 436 lines in the measure.py corpus, and 20 of 20 sampled hits
+# pointed at a whole clause.
+expr verb [means, meant, ensures, happens, prevents, causes, keeps, works, matters, leads, led, results, resulted, (makes!(( )it)), (allows!(( )[you, users])), (lets!(( )[you, users])), (gives!(( )you))]
+expr main [(this @verb), (this [also, then] @verb), (that means), ((,) which [causes, caused, leads, led, results, resulted]), (this [is, was] [because, why, how]), ((,) which means), ((,) which [is, was] [why, because, how])]
 let message "Broad reference. Name the noun it points at, or join the two claims."
-let description "Flags `this` and `which` used as a pronoun for a whole earlier clause."
+let description "Flags `this`, `that`, and `which` used as a pronoun for a whole earlier clause."
 let becomes ""
 let kind "Style"
 let scope "Sentence"
 allows "This retry means the cache stays warm."
+allows "This retry leads to a second write."
 allows "This field holds the name."
 allows "This change fixes the race."
 allows "This lets you pin the version."
