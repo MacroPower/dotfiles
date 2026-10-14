@@ -3671,6 +3671,18 @@ in
                   ];
                   timeout = routerTimeout;
                 };
+                # Limits a router hook to the main conversation's
+                # payloads or to a subagent's (see agentScope in
+                # tools/hook-router/main.go).
+                scoped =
+                  scope: hook:
+                  hook
+                  // {
+                    args = hook.args ++ [
+                      "--agent-scope"
+                      scope
+                    ];
+                  };
                 # workmux hooks emit nothing Claude Code reads, so they
                 # run in the background and never block a turn.
                 status = s: {
@@ -3741,18 +3753,30 @@ in
                   }
                   {
                     # Write, Edit, and MultiEdit run the formatter and
-                    # then the linter off the critical path. asyncRewake
-                    # wakes Claude only on exit code 2, which is how
-                    # linter findings arrive (handlePostFileWrite returns
-                    # a blockError, tools/hook-router/filewrite.go); a
+                    # then the linter. Linter findings arrive through
+                    # exit code 2 (handlePostFileWrite returns a
+                    # blockError, tools/hook-router/filewrite.go). A
                     # clean file exits 0 and Claude never hears from the
                     # hook. hook-router logs formatter and linter crashes
                     # and swallows them, so they stay in its own log.
                     #
+                    # Claude Code delivers an asyncRewake hook's exit-2
+                    # stderr to the main conversation, even for a
+                    # subagent's edit, so --agent-scope splits the work
+                    # between two entries. The main conversation's edits
+                    # run off the critical path with asyncRewake, which
+                    # wakes Claude only on exit code 2. A subagent's
+                    # edits run synchronously, so Claude Code shows the
+                    # findings to the subagent that made the edit. Each
+                    # entry exits 0 on the other caller's payloads.
+                    #
                     # Passes no --tool: the PostToolUse switch reads the
                     # real tool name from the payload.
                     matcher = "^(Write|Edit|MultiEdit)$";
-                    hooks = [ ((router "PostToolUse" null) // { asyncRewake = true; }) ];
+                    hooks = [
+                      ((scoped "main" (router "PostToolUse" null)) // { asyncRewake = true; })
+                      (scoped "subagent" (router "PostToolUse" null))
+                    ];
                   }
                 ];
                 # Fires when a tool call throws, not when one exits
