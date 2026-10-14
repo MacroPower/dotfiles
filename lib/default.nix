@@ -78,6 +78,25 @@ let
     });
   };
 
+  # Lima 2.3.0-beta.1 adds `audio.microphone`, which passes the Mac's
+  # microphone into a VZ guest as a virtio-sound capture stream. Claude
+  # Code voice mode in the terrarium VM needs it. Drop this override when
+  # nixpkgs ships lima 2.3.0 or later.
+  limaOverlay = final: prev: {
+    lima = prev.lima.overrideAttrs (
+      finalAttrs: _old: {
+        version = "2.3.0-beta.1";
+        src = final.fetchFromGitHub {
+          owner = "lima-vm";
+          repo = "lima";
+          tag = "v${finalAttrs.version}";
+          hash = "sha256-CPvHlbdJ5tI4M+sxWLFpCH/aXA0ilqBqSv2F1FZlr9U=";
+        };
+        vendorHash = "sha256-FP6piTL4SMPZUXaMiNUuZRTn2uraGi6ok1o6gYUvlcs=";
+      }
+    );
+  };
+
   ryceeOverlay = final: prev: {
     firefox-addons = final.callPackage (inputs.rycee-nur + "/pkgs/firefox-addons") {
       buildMozillaXpiAddon =
@@ -701,6 +720,7 @@ let
     fetchurlOverlay
     curlImpersonateOverlay
     devboxOverlay
+    limaOverlay
     lixOverlay
     localOverlay
     lupaOverlay
