@@ -15,10 +15,11 @@ let
   # rule, an `.awk` file is a check prose-lint runs on markdown next
   # to Harper, and `builtins.txt` names the Harper built-ins the tier
   # enables. An awk check that reads markdown includes
-  # lib/markdown.awk or lib/sentences.awk, so the build installs lib
-  # next to the checks and each caller puts it on AWKPATH. check.py fails the build when a
-  # rule has no fixture pair under fixtures/<tier>, when two tiers list
-  # the same built-in, or when a fixture pair has no rule.
+  # lib/markdown.awk, lib/sentences.awk, or lib/runs.awk. The build
+  # installs each one next to the checks, and each caller puts the
+  # directory on AWKPATH. check.py fails the build when a rule has no
+  # fixture pair under fixtures/<tier>. It also fails when two tiers
+  # list the same built-in, or when a fixture pair has no rule.
   tierOrder = [
     "required"
     "recommended"
@@ -154,6 +155,7 @@ stdenvNoCC.mkDerivation {
     install -D -m 0644 prose.weirpack "$out/share/harper/prose.weirpack"
     install -D -m 0644 lib/markdown.awk "$out/${awkLib}/markdown.awk"
     install -D -m 0644 lib/sentences.awk "$out/${awkLib}/sentences.awk"
+    install -D -m 0644 lib/runs.awk "$out/${awkLib}/runs.awk"
     ${lib.concatMapStringsSep "\n" (
       c: ''install -D -m 0644 rules/${c.tier}/${c.name}.awk "$out/${c.path}"''
     ) awkChecks}
