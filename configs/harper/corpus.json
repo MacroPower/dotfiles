@@ -1,5 +1,5 @@
 {
-  "exclude": ["LICENSE*", "*_test.go", "testdata"],
+  "exclude": ["LICENSE*", "*_test.go", "testdata", "emojis.md"],
   "sources": [
     {
       "repo": "kubernetes/website",

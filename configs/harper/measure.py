@@ -21,17 +21,26 @@ run takes each rule by its file name (ProseHedge), or as <tier>/<Rule>
 (optional/ProseHedge) for one tier. A name that no tier holds runs as a
 Harper built-in. --weir and --awk add a scratch rule from a file that
 no tier holds. The Weir rules run from a scratch weirpack that holds
-every tier's rules under their internal names and the scratch rule as
-<stem>_Scratch. Go comments reach the rules through the shadow that
-`prose-lint --shadow` prints, which the hook lints too. Set PROSE_LINT
-to run a prose-lint other than the one on PATH. The awk checks read
-the same shadow with SHADOW=1, which blanks each comment marker, the
-way prose-lint runs them on comments.
+the named rules under their internal names and the scratch rule as
+<stem>_Scratch.
 
-run prints the harper version, a hash of corpus.json, the hits and the
-lines with a hit for each source, and a seeded sample of hits. Each
-sampled hit shows its location, the text the rule matched, and the line
-around it.
+Go files reach the rules the way the hook reads them. The Weir rules
+lint the comment shadow that `prose-lint --shadow` prints. They also
+lint the Go file itself and keep the hits on lines the shadow leaves
+out, such as a trailing comment. Set PROSE_LINT to run a prose-lint
+other than the one on PATH. On Go, only the awk checks that
+comment-checks.txt lists run, and each reads the shadow with SHADOW=1,
+which blanks each comment marker. A check that the list marks `!go`
+skips Go, and a scratch check runs on Go only when the list names its
+stem. ProseTypography reads the raw Go file with RAW=1, string
+literals included, as the hook does. Harper reads each file with a
+curly apostrophe between two letters straightened, as the hook does.
+
+run prints the harper version, a hash of corpus.json, and a table of
+the files, hits, and lines with a hit for each source. The `top` column
+gives the share of the source's hits that its busiest file holds. Then
+it prints a seeded sample of hits. Each sampled hit shows its location,
+the text the rule matched, and the line around it.
 """
 
 import argparse
@@ -60,6 +69,7 @@ HERE = Path(__file__).resolve().parent
 RULES = HERE / "rules"
 LIB = HERE / "lib"
 CORPUS = HERE / "corpus.json"
+COMMENT_CHECKS = HERE / "comment-checks.txt"
 
 # harper-cli lints this many files per run. A run of about 400 files
 # takes under a second.
@@ -92,11 +102,16 @@ class Source:
 
 @dataclass(frozen=True)
 class Doc:
-    """One linted file: where Harper reads it and how a hit names it."""
+    """One linted file: where Harper reads it and how a hit names it.
+
+    For a Go file, lint_path is the comment shadow and raw_path is the
+    file itself. For a markdown file, both name the file.
+    """
 
     source: str
     name: str
     lint_path: Path
+    raw_path: Path
 
 
 @dataclass(frozen=True)
@@ -117,6 +132,16 @@ def load_corpus() -> tuple[list[Source], list[str], str]:
         Source(s["repo"], s["corpus"], s["commit"], tuple(s["paths"])) for s in data["sources"]
     ]
     return sources, data["exclude"], hashlib.sha256(raw).hexdigest()[:12]
+
+
+def comment_checks() -> dict[str, frozenset[str]]:
+    """Return each check that comment-checks.txt lists with the kinds it skips."""
+    listed: dict[str, frozenset[str]] = {}
+    for line in COMMENT_CHECKS.read_text().splitlines():
+        words = line.split()
+        if words and not words[0].startswith("#"):
+            listed[words[0]] = frozenset(w.removeprefix("!") for w in words[1:])
+    return listed
 
 
 def default_root() -> Path:
@@ -213,11 +238,10 @@ def resolve(names: list[str]) -> tuple[list[Rule], list[str]]:
     return picked, builtins
 
 
-def build_pack(tmp: Path, scratch: Path | None) -> Path:
-    """Zip every tier's Weir rules and the scratch rule the way the build does."""
+def build_pack(tmp: Path, scratch: Path | None, rules: list[Rule]) -> Path:
+    """Zip the given Weir rules and the scratch rule the way the build does."""
     pack_dir = tmp / "pack"
     pack_dir.mkdir()
-    rules, _ = collect_rules(RULES)
     for rule in rules:
         if rule.kind == "weir":
             shutil.copy(rule.path, pack_dir / f"{rule.internal}.weir")
@@ -245,7 +269,7 @@ def make_shadows(docs: list[tuple[Source, Path, Path]], tmp: Path) -> list[Doc]:
         i, (src, dest, path) = item
         out = shadow_dir / f"{i}{SHADOW_EXT[src.corpus]}"
         out.write_text(run_tool([prose_lint, "--shadow", str(path)]))
-        return Doc(src.repo, str(path.relative_to(dest)), out)
+        return Doc(src.repo, str(path.relative_to(dest)), out, path)
 
     with ThreadPoolExecutor() as pool:
         return list(pool.map(one, enumerate(docs)))
@@ -296,10 +320,86 @@ def lint_weir(docs: list[Doc], pack: Path, only: list[str], env: dict[str, str])
     return hits
 
 
-def lint_awk(docs: list[Doc], checks: list[tuple[str, Path]], shadow: bool = False) -> list[Hit]:
+# A curly apostrophe between two letters, which prose-lint straightens
+# before Harper reads the text.
+CURLY = re.compile("([A-Za-z])\u2019([A-Za-z])")
+
+
+def straightened(docs: list[Doc], tmp: Path) -> list[Doc]:
+    """Return copies of the docs with each curly apostrophe straightened.
+
+    prose-lint lints such a copy with Harper and runs the awk checks on
+    the original, so the Weir rules read these copies.
+    """
+    out_dir = tmp / "straight"
+    out_dir.mkdir()
+    copies = []
+    for i, doc in enumerate(docs):
+        copy = out_dir / f"{i}{doc.lint_path.suffix}"
+        text = doc.lint_path.read_text(errors="surrogateescape")
+        copy.write_text(CURLY.sub(r"\1'\2", text), errors="surrogateescape")
+        copies.append(Doc(doc.source, doc.name, copy, doc.raw_path))
+    return copies
+
+
+COMMENT_LINE = re.compile(r"^[ \t]*(//[/!]?|#|--)([ \t]|$)")
+LICENSE_WORDS = re.compile(r"Copyright|SPDX-License-Identifier|Licensed under|license that can be found")
+
+
+def license_lines(path: Path) -> set[int]:
+    """Return the lines of the file's license header, as prose-lint finds them.
+
+    The header is the first run of full-line comments, after any blank
+    lines and a shebang, when one of its lines names a copyright or a
+    license.
+    """
+    run: set[int] = set()
+    found = False
+    for i, line in enumerate(path.read_text(errors="replace").splitlines(), start=1):
+        if not run and (not line.strip() or (i == 1 and line.startswith("#!"))):
+            continue
+        if not COMMENT_LINE.match(line):
+            break
+        run.add(i)
+        found = found or bool(LICENSE_WORDS.search(line))
+    return run if found else set()
+
+
+def code_lines(docs: list[Doc]) -> set[tuple[str, str, int]]:
+    """Return the lines of each Go doc where the hook keeps Harper's own hits.
+
+    Those are the lines its shadow leaves out as `x`, except the lines of
+    the license header, whose findings prose-lint drops.
+    """
+    found: set[tuple[str, str, int]] = set()
+    for doc in docs:
+        header = license_lines(doc.raw_path)
+        for i, line in enumerate(doc.lint_path.read_text().splitlines(), start=1):
+            if line == "x" and i not in header:
+                found.add((doc.source, doc.name, i))
+    return found
+
+
+# The checks that prose-lint skips in a prompt file for an agent, which
+# writes capitals for emphasis on purpose.
+AGENT_FILE_SKIPS = frozenset({"ProseCapsEmphasis"})
+
+
+def agent_file(name: str) -> bool:
+    path = Path(name)
+    return (
+        path.name in {"AGENTS.md", "CLAUDE.md", "SKILL.md"}
+        or ".claude" in path.parts
+        or name.startswith("configs/claude/")
+        or "/configs/claude/" in name
+    )
+
+
+def lint_awk(docs: list[Doc], checks: list[tuple[str, Path]], mode: str = "") -> list[Hit]:
+    """Run each check on each doc, with mode SHADOW or RAW set to 1."""
     env = {**os.environ, "AWKPATH": str(LIB)}
-    if shadow:
-        env["SHADOW"] = "1"
+    if mode:
+        env[mode] = "1"
 
     def one(item: tuple[Doc, tuple[str, Path]]) -> list[Hit]:
         doc, (internal, script) = item
@@ -321,7 +421,12 @@ def lint_awk(docs: list[Doc], checks: list[tuple[str, Path]], shadow: bool = Fal
                 )
         return found
 
-    work = [(doc, check) for doc in docs for check in checks]
+    work = [
+        (doc, check)
+        for doc in docs
+        for check in checks
+        if not (check[0].rsplit("_", 1)[0] in AGENT_FILE_SKIPS and agent_file(doc.name))
+    ]
     with ThreadPoolExecutor() as pool:
         return [hit for found in pool.map(one, work) for hit in found]
 
@@ -365,7 +470,7 @@ def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], dig
         tmp = Path(tmp_name)
         env = {**os.environ, "HOME": str(tmp)}
         version = harper("--version", env=env).stdout.strip()
-        pack = build_pack(tmp, scratch_weir)
+        pack = build_pack(tmp, scratch_weir, picked)
         if scratch_weir:
             proc = harper("test", "--no-color", str(scratch_weir), env=env)
             if proc.returncode != 0:
@@ -374,7 +479,7 @@ def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], dig
 
         files = {src.repo: source_files(root, src, exclude) for src in chosen}
         md_docs = [
-            Doc(src.repo, str(path.relative_to(root / src.repo)), path)
+            Doc(src.repo, str(path.relative_to(root / src.repo)), path, path)
             for src in chosen
             if src.corpus == "docs"
             for path in files[src.repo]
@@ -389,26 +494,65 @@ def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], dig
             tmp,
         )
 
+        raw_go = [Doc(d.source, d.name, d.raw_path, d.raw_path) for d in go_docs]
         hits: list[Hit] = []
         if weir_only:
-            hits += lint_weir(md_docs + go_docs, pack, weir_only, env)
+            # prose-lint --shadow straightens the shadows already.
+            straight = straightened(md_docs + raw_go, tmp)
+            straight_md, straight_go = straight[: len(md_docs)], straight[len(md_docs) :]
+            hits += lint_weir(straight_md + go_docs, pack, weir_only, env)
+            # The hook also lints the Go file itself and keeps the hits
+            # on lines that hold no full-line comment.
+            code = code_lines(go_docs)
+            hits += [
+                h
+                for h in lint_weir(straight_go, pack, weir_only, env)
+                if (h.source, h.name, h.line) in code
+            ]
         if checks:
-            hits += lint_awk(md_docs, checks) + lint_awk(go_docs, checks, shadow=True)
+            listed = comment_checks()
+
+            def base(internal: str) -> str:
+                return internal.rsplit("_", 1)[0]
+
+            on_comments = [
+                c for c in checks if base(c[0]) in listed and "go" not in listed[base(c[0])]
+            ]
+            typography = [c for c in checks if base(c[0]) == "ProseTypography"]
+            hits += lint_awk(md_docs, checks)
+            hits += lint_awk(go_docs, on_comments, "SHADOW")
+            hits += lint_awk(raw_go, typography, "RAW")
 
     names = weir_only + [c[0] for c in checks]
     print(f"{version}, corpus {digest}")
     print(f"rules: {', '.join(names)}")
     print()
-    rows = [("source", "files", "hits", "lines")]
+    def top(found: list[Hit]) -> str:
+        if not found:
+            return "-"
+        per_file: dict[tuple[str, str], int] = {}
+        for h in found:
+            per_file[(h.source, h.name)] = per_file.get((h.source, h.name), 0) + 1
+        return f"{100 * max(per_file.values()) // len(found)}%"
+
+    rows = [("source", "files", "hits", "lines", "top")]
     for src in chosen:
         mine = [h for h in hits if h.source == src.repo]
         lines = {(h.name, h.line) for h in mine}
-        rows.append((src.repo, str(len(files[src.repo])), str(len(mine)), str(len(lines))))
+        rows.append(
+            (src.repo, str(len(files[src.repo])), str(len(mine)), str(len(lines)), top(mine))
+        )
     total_lines = {(h.source, h.name, h.line) for h in hits}
     rows.append(
-        ("total", str(sum(len(f) for f in files.values())), str(len(hits)), str(len(total_lines)))
+        (
+            "total",
+            str(sum(len(f) for f in files.values())),
+            str(len(hits)),
+            str(len(total_lines)),
+            top(hits),
+        )
     )
-    widths = [max(len(row[i]) for row in rows) for i in range(4)]
+    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
     for row in rows:
         print(
             row[0].ljust(widths[0]),
