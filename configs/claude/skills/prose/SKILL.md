@@ -62,7 +62,8 @@ when the list changes order. Repeat the noun.
 
 Write a claim about every member of a class with a plural subject
 (`Required findings name an exact phrase`) or with `every`. Keep `a`
-and `an` for one instance that the sentence introduces. The singular
+and `an` for one instance that the sentence introduces. Definitions
+keep `a` (`A task is a unit of work`). The singular
 `a finding` reads two ways, as one particular finding or as any
 finding. When each member has its own one of something, write `each`
 (`each worker owns a queue`), because the plural `workers own a queue`

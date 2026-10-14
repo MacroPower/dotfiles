@@ -3,21 +3,27 @@
 # a time`). Grammar calls `a` and `an` the indefinite article, because
 # each introduces a noun without pointing at a particular one, and calls
 # `the` the definite article. The singular `a reader` reads two ways, as
-# one particular reader or as any reader, so the sentence is harder to
-# read than its plural (`Readers open one rule file at a time`). The
-# prose skill writes a claim about a whole class with a plural subject
-# or with `every`, and keeps `a` and `an` for one instance that the
-# sentence introduces.
+# one particular reader or as any reader. The plural reads one way
+# (`Readers open one rule file at a time`). The prose skill writes a
+# claim about a whole class with a plural subject or with `every`. It
+# keeps `a` and `an` for one instance that the sentence introduces.
 #
 # The check reports two forms. The first is an opening `a` or `an` with
 # a present-tense verb in the next four words (`A task is`, `A failed
 # task can retry`). Awk has no part-of-speech tagger, so a lowercase
-# word that ends in `s` counts as the verb, and so do `is`, `has`,
-# `can`, and the other helping verbs in `helpers`. The scan stops at a
+# word that ends in `s` counts as the verb. `is`, `has`, `can`, and the
+# other helping verbs in `helpers` count too. The scan stops at a
 # comma and at a preposition or conjunction such as `of`, `with`, or
 # `and`, so `A list of tasks` passes. Past-tense verbs do not end in
 # `s`, so `A user reported the bug` passes, and so does a quantity after
 # the article (`A few seconds later`).
+#
+# Definitions pass (`A task is a unit of work`). When the verb is `is`
+# and `a`, `an`, `the`, or `one` follows it, the sentence names a term,
+# and no reader takes the subject for one particular task. Glossaries
+# open each entry this way, and the plural reads worse there (`Tasks are
+# units of work`). The skip drops 154 of 580 hits in the measure.py
+# docs, and 20 of 20 sampled drops were definitions.
 #
 # A sentence that introduces one instance takes the same form (`A cache
 # sits in front of the store`), and a later sentence names it with `the`
@@ -27,7 +33,7 @@
 #
 # The second form is the second of two sentences in a row that open with
 # `a` or `an` in one paragraph (`A task is a unit of work. A task runs
-# on one worker.`), which catches openers the verb test misses. Each
+# on one worker.`). It catches openers that the verb test misses. Each
 # run reports once however long it grows, and its later sentences skip
 # the verb test.
 #
@@ -37,12 +43,10 @@
 # the span. Each finding names the line and column of the sentence's
 # first word.
 #
-# Across about 24,500 sentences of the kubernetes, nix.dev, Rust book,
-# and Hugo docs, the verb test fired 1.6 times per 100 sentences and the
-# run test 0.1 times. In 38 of 40 sampled verb-test hits, the sentence
-# made a claim about a whole class. The two misses introduced one thing
-# that the paragraph never named again (`A JSON schema is available for
-# YAML language servers`).
+# It hit 424 lines in the measure.py docs, and 18 of 20 sampled hits
+# made a claim about a whole class. The misses were a list label (`(a)`)
+# and a sentence that named no class (`A simple case is to create one
+# object`).
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseIndefiniteOpener: <message>
@@ -63,6 +67,7 @@ function BEGIN_CHECK() {
 
 function reset() {
   flush()
+  pending_def = 0
   run = 0
   opening = 1
   fresh = 1
@@ -121,6 +126,12 @@ function prose(text,   rest, pos, tok, col, word, base) {
     fresh = 0
     word = tolower(tok)
     gsub(/^[^a-z]+|[^a-z]+$/, "", word)
+    if (pending_def) {
+      pending_def = 0
+      if (word ~ /^(a|an|the|one)$/) {
+        held--
+      }
+    }
     if (opening) {
       opening = 0
       if (word == "a" || word == "an") {
@@ -146,6 +157,9 @@ function prose(text,   rest, pos, tok, col, word, base) {
         held_noun[held] = noun
         held_at[held] = base + pos
         scan = 0
+        if (word == "is" && tok !~ /[,;:.]["')*_\]]*$/) {
+          pending_def = 1
+        }
       } else if (scan >= 2 && word ~ stops || scan >= 4) {
         scan = 0
       } else {

@@ -16,3 +16,7 @@ Readers open one rule file at a time.
 A user reported the bug yesterday.
 
 A few seconds later, the pod restarts.
+
+A _leaf bundle_ is a directory that holds an index file.
+
+A common use case is the selection of random pages.
