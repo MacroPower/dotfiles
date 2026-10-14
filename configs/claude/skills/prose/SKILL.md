@@ -147,6 +147,9 @@ that second one.
 - Write `whether`, not `if`, after a verb of checking, so `check
   whether the file exists`. After such a verb, `if` also reads as a
   condition.
+- Write `for example` or `such as` instead of `e.g.`, and `that is`
+  instead of `i.e.`. Readers confuse the two, which turns a partial
+  list into a complete one.
 
 ## Specificity
 

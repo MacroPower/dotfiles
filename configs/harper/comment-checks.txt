@@ -11,6 +11,7 @@
 # purpose (`a -> b`).
 ProseCapsEmphasis
 ProseEmoji
+ProseLatinAbbreviation
 ProseNumberedReference
 ProseOpenList
 ProseOverUnder
