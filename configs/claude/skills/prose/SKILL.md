@@ -67,8 +67,9 @@ keep `a` (`A task is a unit of work`). The singular
 `a finding` reads two ways, as one particular finding or as any
 finding. When each member has its own one of something, write `each`
 (`each worker owns a queue`), because the plural `workers own a queue`
-also reads as one shared queue. When the next sentence keeps the same
-subject, open it with `it` or `they` instead of repeating the noun.
+also reads as one shared queue. When the next sentence in the same
+paragraph keeps the same subject, open it with `it` or `they` instead
+of repeating the noun.
 
 Open a sentence with its real subject, not with `there is` or `it is`.
 `There is a flag that disables the cache` becomes `The --no-cache
