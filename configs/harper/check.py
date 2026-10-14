@@ -7,11 +7,17 @@ recommended, or optional. A .weir file is a Weir rule the weirpack
 carries under the internal name <Rule>_<Tier>, an .awk file is a check
 run with awk in place of Harper, and builtins.txt names the Harper
 built-ins the tier enables. The awk lib dir goes on AWKPATH, so a check
-can `@include` the shared markdown reader. For each rule, fixtures/<tier>/<Rule>.bad.md
-must produce a lint on every non-blank line, and both
-fixtures/<tier>/<Rule>.good.md and the shared fixtures/common.good.md
-must produce none. The shared file holds ordinary technical prose that
-every rule must pass, so a line added there covers all the rules.
+can `@include` the shared markdown reader. For each rule,
+fixtures/<tier>/<Rule>.bad.md must produce a lint on every non-blank
+line, and both fixtures/<tier>/<Rule>.good.md and the shared
+fixtures/common.good.md must produce none. A line that holds only `>`
+marks is a blank line inside a blockquote, so it counts as blank. A bad
+line that ends in an HTML comment that holds `same finding` does not
+need a lint of its own, because a finding on an earlier line covers it.
+A rule that reports one line for a span of several lines, such as a run
+of paragraphs, marks every line after the first. The shared file holds
+ordinary technical prose that every rule must pass, so a line added
+there covers all the rules.
 
 Each plain phrase a Weir rule lists in its main expression, directly
 or through a referenced list, must also fire on its own in a probe
@@ -153,9 +159,14 @@ def awk_lines(awk: Path, lib: Path, target: Path) -> set[int]:
     return lines
 
 
+SAME_FINDING = "<!-- same finding -->"
+
+
 def expected_lines(target: Path) -> set[int]:
     return {
-        i for i, line in enumerate(target.read_text().splitlines(), start=1) if line.strip()
+        i
+        for i, line in enumerate(target.read_text().splitlines(), start=1)
+        if line.replace(">", "").strip() and not line.rstrip().endswith(SAME_FINDING)
     }
 
 
