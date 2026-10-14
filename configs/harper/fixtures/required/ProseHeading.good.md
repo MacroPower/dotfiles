@@ -40,7 +40,7 @@ The body: how prose is skipped.
 
 ## Errors
 
-#### Go
+### Go
 
 ## `nix flake update --commit-lock-file`
 
@@ -59,3 +59,7 @@ The body: how prose is skipped.
 ## Overview
 
 ## Next Steps
+
+## Security features in the Linux kernel {#linux-security}
+
+## Control flow with `if let`

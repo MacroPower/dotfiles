@@ -1,42 +1,32 @@
-# Reports markdown headings below the title that narrate instead of
-# naming a topic. prose-lint and check.py both run this file, so the
-# hook and the build-time fixture check agree on every heading.
+# Reports markdown headings below the title that name no topic: a
+# wrap-up (`Conclusion`, `Final Thoughts`, `Key Takeaways`, `TL;DR`), or
+# a heading that ends in a colon (`Setup:`). prose-lint and check.py
+# both run this file, so the hook and the build-time fixture check agree
+# on every heading.
+#
+# A wrap-up announces where the document ends, not what the section
+# holds. `Summary`, `Overview`, and `Next Steps` pass, because
+# human-written docs and PR descriptions use them as section names. A
+# heading already sets its section apart from the text, so a colon at
+# its end adds nothing, and the fix deletes it.
+#
+# The Recommended rule of the same name reports headings that narrate
+# (`How matching works`) or run long. Those triggers misread a heading
+# more often, so a commit that draws them passes on its second try.
 #
 # The check skips a level-one heading, because it is the document
-# title, and a heading that is one code span, because a command
-# reference names the exact command.
-#
-# The check reports a heading at any level from two down that starts
-# with a question word or an auxiliary (a helping verb such as `is`,
-# `has`, or `can`). It also reports one that ends with a question mark
-# or a colon. At level
-# two it also reports a heading that contains a pronoun, an auxiliary,
-# or a subordinating conjunction (`because`, `when`, `if`) anywhere, or
-# that runs past six words. Deeper headings skip those two checks,
-# because they often label a single case (`Retries after a lease error`)
-# and can run longer than a section name. A possessive (`your`, `our`)
-# that opens a level-two heading passes, because it starts a noun
-# phrase, a noun and the words attached to it (`Your Task`), but one
-# after a verb still counts (`Setting up your editor`). The word lists
-# hold only small fixed word classes, such as pronouns and helping
-# verbs, so a noun phrase such as `Printing YAML with Lipgloss Styles`
-# passes, and the check reports `How matching works` and `Configuring
-# the server before you start`.
-#
-# The check does not use Harper's part-of-speech tagger, because a
-# heading has no sentence around it and the tagger reads `works` and
-# `ships` as nouns. The rule misses a short sentence built only from
-# open-class words, such as `The scheduler retries jobs`.
-#
-# A heading at any level from two down that announces only a wrap-up
-# (`Conclusion`, `Final Thoughts`, `Key Takeaways`, `TL;DR`) names no
-# topic, so the check reports it too. `Summary`, `Overview`, and
-# `Next Steps` pass, because human-written docs and PR descriptions use
-# them as section names.
+# title. It also skips a heading that is one code span, because a
+# command reference names the exact command. A trailing attribute list
+# (`{#linux-security}`) is markup, so the check drops it first. A heading
+# that holds a code span prints in a double-backtick span, so its own
+# backticks stay inside the quote.
 #
 # The check skips YAML front matter, fenced code blocks, and indented
 # code blocks. It does not examine Setext headings (text underlined
 # with = or -), because the formatter rewrites them to # headings.
+#
+# It hit 15 lines in the measure.py docs, and 15 of 15 were wrap-ups or
+# trailing colons (`Conclusion`, `Linux:`).
 #
 # Output format, one line per finding:
 #   <file>:<line>:1: Style::ProseHeading: <message>
@@ -45,24 +35,20 @@ BEGIN {
   front_matter = 0
   fence_char = ""
   fence_len = 0
-  # Words that report a heading when it starts with one of them.
-  split("how why what what's when where which who do does did is are was were has have can could will would should must", list, " ")
-  for (i in list) {
-    opener[list[i]] = 1
-  }
-  # Words that report a heading wherever they appear.
-  split("you your we we're our us i my let's it it's they they're that is are was were has have can will should must does don't if before after because until while once so", list, " ")
-  for (i in list) {
-    anywhere[list[i]] = 1
-  }
-  # Words from the list above that pass as the heading's first word.
-  possessive["your"] = 1
-  possessive["our"] = 1
   # Whole headings that announce a wrap-up.
   n = split("conclusion|conclusions|final thoughts|closing thoughts|concluding thoughts|key takeaways|takeaways|wrapping up|wrap-up|in summary|in closing|tl;dr|tldr", list, "|")
   for (i = 1; i <= n; i++) {
     closer[list[i]] = 1
   }
+}
+
+# Returns the heading text as a code span. A heading that holds a code
+# span gets a double-backtick span, so its own backticks stay inside.
+function quote(s) {
+  if (s ~ /`/) {
+    return "`` " s " ``"
+  }
+  return "`" s "`"
 }
 
 NR == 1 && $0 ~ /^---[ \t]*$/ {
@@ -111,39 +97,19 @@ fence_char != "" {
 
 /^ {0,3}#{2,6}[ \t]/ {
   text = $0
-  sub(/^ {0,3}/, "", text)
-  match(text, /^#+/)
-  level = RLENGTH
-  sub(/^#+[ \t]+/, "", text)
+  sub(/^ {0,3}#+[ \t]+/, "", text)
   sub(/[ \t]+#+[ \t]*$/, "", text)
   sub(/[ \t]+$/, "", text)
   if (text ~ /^`[^`]+`$/) {
     next
   }
-  words = split(tolower(text), parts, /[ \t]+/)
-  narrates = 0
-  if (level == 2 && words > 6) {
-    narrates = 1
-  }
-  if (text ~ /[?:]$/) {
-    narrates = 1
-  }
-  for (i = 1; i <= words; i++) {
-    word = parts[i]
-    gsub(/[^a-z']/, "", word)
-    if (i == 1 && word in opener) {
-      narrates = 1
-    }
-    if (level == 2 && word in anywhere && !(i == 1 && word in possessive)) {
-      narrates = 1
-    }
-  }
+  sub(/[ \t]*\{[#.][^}]*\}[ \t]*$/, "", text)
   name = tolower(text)
   sub(/[.!:]+$/, "", name)
   gsub(/[ \t]+/, " ", name)
   if (name in closer) {
-    printf "%s:%d:1: Style::ProseHeading: Heading \"%s\" names no topic. Name the topic as a short noun phrase.\n", FILENAME, NR, text
-  } else if (narrates) {
-    printf "%s:%d:1: Style::ProseHeading: Heading \"%s\" narrates. Name the topic as a short noun phrase.\n", FILENAME, NR, text
+    printf "%s:%d:1: Style::ProseHeading: Heading %s names no topic. Name the topic as a short noun phrase.\n", FILENAME, NR, quote(text)
+  } else if (text ~ /:$/) {
+    printf "%s:%d:1: Style::ProseHeading: Heading %s ends in a colon. Delete the colon.\n", FILENAME, NR, quote(text)
   }
 }

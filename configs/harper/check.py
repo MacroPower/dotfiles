@@ -13,7 +13,8 @@ line, and both fixtures/<tier>/<Rule>.good.md and the shared
 fixtures/common.good.md must produce none. A line that holds only `>`
 marks is a blank line inside a blockquote, so it counts as blank. A bad
 line that ends in an HTML comment that holds `same finding` does not
-need a lint of its own, because a finding on an earlier line covers it.
+need a lint of its own, because a finding on a nearby line covers it,
+such as the heading after it that skips a level.
 A rule that reports one line for a span of several lines, such as a run
 of paragraphs, marks every line after the first. An awk rule can also
 have fixtures/<tier>/<Rule>.raw.txt, which it reads with RAW=1 the way
