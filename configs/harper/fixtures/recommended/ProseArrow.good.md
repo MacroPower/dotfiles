@@ -6,3 +6,6 @@ The request goes client → proxy.
 ```sh
 a -> b
 ```
+
+Match on `Some(x)
+=> x` to unwrap the value.

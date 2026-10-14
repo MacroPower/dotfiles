@@ -41,6 +41,7 @@ BEGIN {
   in_indent = 0
   in_comment = 0
   myst_options = 0
+  span_open = 0
   raw_mode = ENVIRON["RAW"] != ""
   shadow_mode = ENVIRON["SHADOW"] != ""
   # A UTF-8 locale reads é as one character, and the C locale that the
@@ -81,12 +82,41 @@ function blank(s, re,   out) {
 }
 
 # Blanks each inline code span. Spans open with a run of backticks and
-# close at the next run of the same length. An unclosed run stays
-# literal.
+# close at the next run of the same length. An unclosed run blanks the
+# rest of its line, because a span can wrap onto the next line of its
+# paragraph. When a run of the same length appears on the next line,
+# the span closes there. Otherwise the run was literal, and the next
+# line reads as prose.
 function strip_code(s,   out, i, L, c, n, j, m, found) {
   out = ""
   i = 1
   L = length(s)
+  if (span_open) {
+    j = 1
+    found = 0
+    while (j <= L) {
+      if (substr(s, j, 1) == "`") {
+        m = 0
+        while (substr(s, j + m, 1) == "`") {
+          m++
+        }
+        if (m == span_open) {
+          found = 1
+          break
+        }
+        j += m
+      } else {
+        j++
+      }
+    }
+    # A span closes on the next line or not at all. With no closer
+    # here, the run was literal, and this line reads as prose.
+    if (found) {
+      out = spaces(j + span_open - 1)
+      i = j + span_open
+    }
+    span_open = 0
+  }
   while (i <= L) {
     c = substr(s, i, 1)
     if (c == "\\") {
@@ -124,8 +154,9 @@ function strip_code(s,   out, i, L, c, n, j, m, found) {
       out = out spaces(j + n - i)
       i = j + n
     } else {
-      out = out substr(s, i, n)
-      i += n
+      out = out spaces(L - i + 1)
+      span_open = n
+      break
     }
   }
   return out
@@ -189,6 +220,7 @@ in_comment {
 
 /^[ \t]*$/ {
   prev_blank = 1
+  span_open = 0
   myst_options = 0
   next
 }
@@ -205,6 +237,7 @@ in_comment {
   if (raw ~ /^[ \t]*(```|~~~)/) {
     line = raw
     sub(/^[ \t]*/, "", line)
+    span_open = 0
     fence_char = substr(line, 1, 1)
     fence_len = 0
     while (substr(line, fence_len + 1, 1) == fence_char) {
@@ -243,5 +276,10 @@ in_comment {
     in_list = 0
   }
   prev_blank = 0
+  # A list item, heading, table row, or HTML line starts a new block,
+  # so a code span open on the line before ends there.
+  if (raw ~ /^[ \t]*(([-*+]|[0-9]+[.)])[ \t]|#+([ \t]|$)|[|<])/) {
+    span_open = 0
+  }
   prose(clean(raw))
 }
