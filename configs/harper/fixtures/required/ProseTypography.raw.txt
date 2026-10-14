@@ -1,0 +1,2 @@
+var ellipsis = "…"
+var quotes = map[rune]rune{'“': '"'}

@@ -15,7 +15,10 @@ marks is a blank line inside a blockquote, so it counts as blank. A bad
 line that ends in an HTML comment that holds `same finding` does not
 need a lint of its own, because a finding on an earlier line covers it.
 A rule that reports one line for a span of several lines, such as a run
-of paragraphs, marks every line after the first. The shared file holds
+of paragraphs, marks every line after the first. An awk rule can also
+have fixtures/<tier>/<Rule>.raw.txt, which it reads with RAW=1 the way
+prose-lint reads a source file, and which must produce a lint on every
+non-blank line. The shared file holds
 ordinary technical prose that every rule must pass, so a line added
 there covers all the rules.
 
@@ -157,18 +160,23 @@ def harper_findings(pack: Path, rule: str, target: Path) -> set[tuple[int, str]]
     return found
 
 
-def awk_lines(awk: Path, lib: Path, target: Path) -> set[int]:
-    return {line for line, _ in awk_findings(awk, lib, target)}
+def awk_lines(awk: Path, lib: Path, target: Path, raw: bool = False) -> set[int]:
+    return {line for line, _ in awk_findings(awk, lib, target, raw)}
 
 
-def awk_findings(awk: Path, lib: Path, target: Path) -> set[tuple[int, str]]:
+def awk_findings(
+    awk: Path, lib: Path, target: Path, raw: bool = False
+) -> set[tuple[int, str]]:
     """Return the line and message of each finding the check prints."""
+    env = {**os.environ, "AWKPATH": str(lib)}
+    if raw:
+        env["RAW"] = "1"
     proc = subprocess.run(
         ["awk", "-f", str(awk), str(target)],
         capture_output=True,
         text=True,
         check=True,
-        env={**os.environ, "AWKPATH": str(lib)},
+        env=env,
     )
     found: set[tuple[int, str]] = set()
     for line in proc.stdout.splitlines():
@@ -213,6 +221,11 @@ def check_rule(rule: Rule, pack: Path, fixtures: Path, lib: Path) -> list[str]:
     for target in (good, fixtures / COMMON):
         for line in sorted(report(target)):
             failures.append(f"{target}:{line}: unexpected {rule.name} lint")
+    raw = fixtures / rule.tier / f"{rule.name}.raw.txt"
+    if rule.kind == "awk" and raw.is_file():
+        got = awk_lines(rule.path, lib, raw, raw=True)
+        for line in sorted(expected_lines(raw) - got):
+            failures.append(f"{raw}:{line}: expected a {rule.name} lint with RAW=1")
     return failures
 
 
