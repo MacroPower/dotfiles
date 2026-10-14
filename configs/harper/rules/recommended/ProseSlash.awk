@@ -9,9 +9,20 @@
 # after it. A capitalized pair passes too (`I/O`, `CI/CD`, `TCP/IP`).
 # The reader blanks code spans first, so a match inside one passes.
 #
-# It hit 126 lines in the kubernetes and nix.dev docs, and 9 of 10
-# sampled hits joined two words that `and` or `or` can join. The miss
-# was the shorthand `k/k` for the kubernetes repository.
+# Names pass as well. A quote, a `[`, or an `=` before the pair marks a
+# quoted value, a link, or an attribute (`"text/plain"`,
+# `[database/sql]`, `targetDir="images/qr"`). A pair before `package`
+# names an import path (`the net/http package`), and a pair that opens
+# with `golang/` or `kubernetes/` names a repository. A pair that opens
+# with a top-level media type such as `text` or `image` passes
+# (`text/html`). Pairs that end in another such type or in `binary`
+# still report (`audio/video`, `text/binary`), because they join two
+# words.
+#
+# It hit 162 lines in the measure.py corpus, and 17 of 20 sampled hits
+# joined two words that `and` or `or` can join. The misses named a
+# thing: a Hugo edition (`extended/deploy`), the shorthand `k/k` for
+# the kubernetes repository, and a namespace and name in a table.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseSlash: <message>
@@ -19,10 +30,13 @@
 @include "markdown.awk"
 
 function BEGIN_CHECK() {
-  pair = "(^|[^A-Za-z0-9_./~:@-])[a-z]+/[a-z]+([^A-Za-z0-9_/.-]|\\.([^A-Za-z0-9]|$)|$)"
+  pair = "(^|[^A-Za-z0-9_./~:@\"'=[-])[a-z]+/[a-z]+([^A-Za-z0-9_/.-]|\\.([^A-Za-z0-9]|$)|$)"
+  owner = "^(golang|kubernetes)/"
+  media = "^(application|text|image|audio|video|multipart|font)/"
+  kinds = "/(application|text|image|audio|video|multipart|font|binary)$"
 }
 
-function prose(text,   rest, base, at, hit) {
+function prose(text,   rest, base, at, hit, after) {
   rest = text
   base = 0
   while (match(rest, pair)) {
@@ -33,7 +47,8 @@ function prose(text,   rest, base, at, hit) {
     hit = substr(rest, at)
     match(hit, /^[a-z]+\/[a-z]+/)
     hit = substr(hit, 1, RLENGTH)
-    if (hit != "and/or") {
+    after = substr(rest, at + RLENGTH)
+    if (hit != "and/or" && hit !~ owner && !(hit ~ media && hit !~ kinds) && after !~ /^[ \t]+packages?([^a-z]|$)/) {
       printf "%s:%d:%d: Style::ProseSlash: Slash in `%s`. Join the words with `and` or `or`, or set a path or name in a code span.\n", FILENAME, FNR, column(text, base + at), hit
       return
     }
