@@ -1,0 +1,19 @@
+# A hedge is a word that marks a claim as a possibility, such as `might`
+# or `possibly`. Each pair here stacks two hedges on one claim (`could
+# potentially fail`). The prose rules keep `might` for a possibility,
+# so the fix writes `might` in place of both words. The redundant-pair
+# rule leaves these pairs out, because its fix deletes one word, and
+# `may` or `could` alone then draws the may-possibility or modal rule.
+#
+# It hit 17 lines in the measure.py corpus, and in 15 of 17 sampled hits
+# `might` fit. In the other two, `can potentially` named an ability
+# (`can potentially meet its scheduling policy criteria`), where `can`
+# fits.
+expr main ([may, might, could, can] [possibly, potentially])
+let message "Double hedge. Write `might`, or `can` for an ability."
+let description "Flags `could potentially` and similar pairs that mark one possibility twice."
+let becomes "might"
+let kind "Style"
+test "The write could potentially fail on a full disk." "The write might fail on a full disk."
+allows "A potentially unsafe call fails the build."
+allows "The write might fail on a full disk."

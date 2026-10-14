@@ -8,7 +8,7 @@
 # The guard on the next word skips the phrases other rules report:
 # `may not` and `may or may not` (the may-not rule), `may want to`
 # (the obligation rule), and `may possibly` and `may potentially` (the
-# redundant-pair rule). The verb or adverb after `may` keeps out the
+# double-hedge rule). The verb or adverb after `may` keeps out the
 # month, which a number, a comma, or a noun follows (`in May 2026`, `the
 # May release`). Weir has no lookbehind, so the filter consumes the
 # word before `may` and narrows the finding back to it. A sentence that
