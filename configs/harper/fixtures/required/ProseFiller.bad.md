@@ -9,3 +9,5 @@ As we can see, the cache hits on the second call.
 As we have seen, the walk never revisits a node.
 As you might expect, the cache hits on the second call.
 The retry backs off, as you would expect.
+Please note that the cache is cold.
+It is important to note that the cache is cold.

@@ -26,6 +26,13 @@ fail the build. Entries that contain a shorter entry of the same rule
 fail too, because the shorter one already matches every sentence they
 do.
 
+Two tiers of one rule must not report the same phrase. For each rule
+name in more than one tier, each tier's bad fixture runs through the
+other tiers' rules, and a hit on one of its lines fails, unless the
+fixture's own tier reports that line with the same message. prose-lint
+keeps only the higher tier of two such findings, so that case shows
+one finding.
+
 A rule without a fixture pair fails, so a typo in a built-in name
 cannot pass silently. A fixture pair without a rule fails too, so a
 rule moved between tiers takes its fixtures along. A built-in listed
@@ -115,6 +122,11 @@ def collect_rules(rules_dir: Path) -> tuple[list[Rule], list[str]]:
 
 def harper_lines(pack: Path, rule: str, target: Path) -> set[int]:
     """Return the 1-based lines on which Harper reports `rule` in `target`."""
+    return {line for line, _ in harper_findings(pack, rule, target)}
+
+
+def harper_findings(pack: Path, rule: str, target: Path) -> set[tuple[int, str]]:
+    """Return the line and message of each `rule` finding in `target`."""
     proc = subprocess.run(
         [
             "harper-cli",
@@ -137,15 +149,20 @@ def harper_lines(pack: Path, rule: str, target: Path) -> set[int]:
         raise RuntimeError(f"harper-cli exited {proc.returncode} on {target}: {proc.stderr}")
     if not proc.stdout.strip():
         return set()
-    lines: set[int] = set()
+    found: set[tuple[int, str]] = set()
     for file_report in json.loads(proc.stdout):
         for lint in file_report["lints"]:
             if lint["rule"] == rule:
-                lines.add(int(lint["line"]))
-    return lines
+                found.add((int(lint["line"]), lint["message"]))
+    return found
 
 
 def awk_lines(awk: Path, lib: Path, target: Path) -> set[int]:
+    return {line for line, _ in awk_findings(awk, lib, target)}
+
+
+def awk_findings(awk: Path, lib: Path, target: Path) -> set[tuple[int, str]]:
+    """Return the line and message of each finding the check prints."""
     proc = subprocess.run(
         ["awk", "-f", str(awk), str(target)],
         capture_output=True,
@@ -153,10 +170,11 @@ def awk_lines(awk: Path, lib: Path, target: Path) -> set[int]:
         check=True,
         env={**os.environ, "AWKPATH": str(lib)},
     )
-    lines: set[int] = set()
+    found: set[tuple[int, str]] = set()
     for line in proc.stdout.splitlines():
-        lines.add(int(line.split(":", 3)[1]))
-    return lines
+        _, number, _, rest = line.split(":", 3)
+        found.add((int(number), rest.split(": ", 1)[1]))
+    return found
 
 
 SAME_FINDING = "<!-- same finding -->"
@@ -195,6 +213,36 @@ def check_rule(rule: Rule, pack: Path, fixtures: Path, lib: Path) -> list[str]:
     for target in (good, fixtures / COMMON):
         for line in sorted(report(target)):
             failures.append(f"{target}:{line}: unexpected {rule.name} lint")
+    return failures
+
+
+def findings(rule: Rule, pack: Path, lib: Path, target: Path) -> set[tuple[int, str]]:
+    if rule.kind == "awk":
+        return awk_findings(rule.path, lib, target)
+    return harper_findings(pack, rule.internal, target)
+
+
+def check_tiers(rules: list[Rule], pack: Path, fixtures: Path, lib: Path) -> list[str]:
+    """Fail each bad line that another tier of the same rule also reports."""
+    by_name: dict[str, list[Rule]] = {}
+    for rule in rules:
+        by_name.setdefault(rule.name, []).append(rule)
+    failures: list[str] = []
+    for tiers in by_name.values():
+        for own in tiers:
+            bad = fixtures / own.tier / f"{own.name}.bad.md"
+            if not bad.is_file():
+                continue
+            want = expected_lines(bad)
+            mine = findings(own, pack, lib, bad)
+            for other in tiers:
+                if other is own:
+                    continue
+                for line, message in sorted(findings(other, pack, lib, bad)):
+                    if line in want and (line, message) not in mine:
+                        failures.append(
+                            f"{bad}:{line}: the {other.tier} {other.name} also reports this line"
+                        )
     return failures
 
 
@@ -310,6 +358,7 @@ def main(argv: list[str]) -> int:
         if rule.kind == "weir" and rule.internal not in packed:
             failures.append(f"{rule.path}: not in the weirpack as {rule.internal}")
     failures += orphan_fixtures(fixtures, rules)
+    failures += check_tiers(rules, pack, fixtures, lib)
     for rule in rules:
         failures += check_rule(rule, pack, fixtures, lib)
         if rule.kind == "weir":

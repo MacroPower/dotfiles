@@ -2,22 +2,29 @@
 # `where applicable`). These words sit here, because human-written docs
 # use them about three times as often as the phrases, and a word rule
 # cannot see a criterion named a few words later (`an appropriate label
-# matching topologyKey`). Each
-# word counts only without `for` or `to` after it, the two words that
-# most often introduce the criterion (`suitable for bootstrapping`). The
-# fix names the criterion (`choose an appropriate timeout` becomes
-# `choose a timeout longer than the slowest request`).
+# matching topologyKey`). Each word counts only without `for` or `to`
+# after it, the two words that most often introduce the criterion
+# (`suitable for bootstrapping`). The fix names the criterion (`choose
+# an appropriate timeout` becomes `choose a timeout longer than the
+# slowest request`).
 #
 # `proper` is left out, because it names a math term (`a proper
 # subset`), and `relevant` is left out, because it usually points at a
-# named thing (`the relevant API reference`).
+# named thing (`the relevant API reference`). `reasonably` counts only
+# before an adjective or an adverb (`reasonably fast`), because before a
+# verb it means plausibly (`you might reasonably expect`). Only
+# `appropriate` passes after `as`, `where`, `when`, or `if`, because the
+# Recommended rule reports those phrases (`where appropriate`), and one
+# word should draw one finding. Weir has no lookbehind, so the filter
+# consumes the word before and narrows the finding back to
+# `appropriate`.
 #
-# It hit 119 lines in the kubernetes and nix.dev docs, and 18 of 20
-# sampled hits left the criterion unstated. Both misses named it later
-# in the sentence (`an appropriate label matching topologyKey`).
-expr word [appropriate, appropriately, properly, suitable, suitably, reasonable, reasonably, sensible, sane]
-expr main @word!(( )[for, to])
-let message "Vague criterion. Name the condition that makes it right."
+# It hit 224 lines in the measure.py corpus, and about 15 of 25 sampled
+# hits left the criterion unstated.
+expr word [appropriately, properly, suitable, suitably, reasonable, sensible, sane]
+expr fit [appropriate]
+expr main [<(![as, where, when, if] @fit!(( )[for, to])), @fit>, (@word!(( )[for, to])), (reasonably [ADJ, ADV])]
+let message "Vague criterion. Name the condition that makes it right, or drop the word."
 let description "Flags `appropriate`, `properly`, `reasonable`, and similar words that leave the reader to supply a criterion."
 let becomes ""
 let kind "Style"
@@ -25,3 +32,5 @@ let scope "Sentence"
 allows "The image is suitable for bootstrapping the control plane."
 allows "The limit is appropriate to a single tenant."
 allows "Choose a timeout longer than the slowest request."
+allows "Restructure the manuals where appropriate."
+allows "You might reasonably expect the cache to be warm."

@@ -174,6 +174,11 @@ in
     # `_Tier` suffix the weirpack build added to the rule name and
     # orders the findings by tier and line. A rule missing from the
     # map tags as Required, which fails safe.
+    #
+    # Two tiers of one rule can report one phrase, such as the Required
+    # ProseFiller on `please note that` and the Recommended one on the
+    # `note that` inside it. When two findings share a line, a rule
+    # name, and a message, only the one with the higher tier prints.
     tag() {
       TIER_MAP="$tier_map" awk '
         BEGIN {
@@ -204,7 +209,20 @@ in
           }
           t = (rule in tier) ? tier[rule] : "Required"
           sub(/_(Required|Recommended|Optional):/, ":", rest)
-          printf "%d\t%d\t%s[%s] %s\n", rank[t], pos[1], prefix, t, rest
+          kept++
+          entry[kept] = sprintf("%d\t%d\t%s[%s] %s", rank[t], pos[1], prefix, t, rest)
+          entry_rank[kept] = rank[t]
+          entry_key[kept] = pos[1] "\t" rest
+          if (!(entry_key[kept] in best) || rank[t] < best[entry_key[kept]]) {
+            best[entry_key[kept]] = rank[t]
+          }
+        }
+        END {
+          for (j = 1; j <= kept; j++) {
+            if (entry_rank[j] == best[entry_key[j]]) {
+              print entry[j]
+            }
+          }
         }
       ' | sort -t "$(printf '\t')" -k1,1n -k2,2n | cut -f3-
     }
