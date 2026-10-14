@@ -1,0 +1,22 @@
+# `various` inflates a count without giving it. It often adds nothing
+# (`handles various edge cases` says no more than `handles edge
+# cases`), so the fix names the items, or deletes the word when the
+# sentence lists them. It sits apart from the Recommended rule of the
+# same name, because `various` also means `different` (`users from
+# various backgrounds`), and deleting it there changes the meaning.
+#
+# `various` skips `different`, because the redundant-pair rule reports
+# `various different`, and the filter narrows the finding back to
+# `various`.
+#
+# It hit 119 lines in the measure.py corpus, and 18 of 20 sampled hits
+# lost no meaning without `various`. Only 7 of the 18 read clearer, and
+# the other 2 meant `different` (`various sizes`). The small gain keeps
+# the rule Optional.
+expr main [<(various !different), various>]
+let message "Vague quantity. Name the items, or delete `various` when the items follow."
+let description "Flags `various`, which inflates a count without giving it."
+let becomes ""
+let kind "Style"
+allows "The parser handles three edge cases."
+allows "The tools use various different formats."

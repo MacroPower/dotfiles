@@ -1,18 +1,31 @@
-# Each phrase inflates a count without giving it, so the fix writes
-# `many` or names the items (`a wide range of styles` becomes `the
-# serif, sans, and mono styles`). The fix does not give the count,
+# Each phrase inflates a count without giving it, so the fix names the
+# items or writes `many` or `several` (`a wide range of styles` becomes
+# `the serif, sans, and mono styles`). The fix does not give the count,
 # because a count of a set that can grow goes stale.
 #
 # `a host of` skips a following determiner (a word that introduces a
 # noun, such as `the`, `a`, or `this`), where `host` names a machine (`a
-# host of the cluster`). `various` skips `different`, because the
-# redundant-pair rule reports `various different`, and the filter
-# narrows the finding back to `various`.
-expr main [(rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad), (wide array), (vast array), (broad range), (diverse range), (a host of ![the, this, that, a, an, each, every, its, their]), (a whole host), (a slew of), countless, numerous, <(various !different), various>, (a variety of)]
-let message "Vague quantity. Write `many`, or name the items."
+# host of the cluster`).
+#
+# `a significant number of` and its kin with `huge`, `substantial`,
+# `considerable`, or `good` report here. `a large number of` stays out,
+# because the Required ProseWordy rule reports it. `a certain number of`
+# and `a limited number of` stay out, because `many` changes or reverses
+# their meaning. `a large amount of` stays out, because `many` does not
+# fit a noun with no plural (`memory`).
+#
+# The Optional rule of the same name holds `various`.
+#
+# It hit 46 lines in the measure.py corpus, and 18 of 20 sampled hits
+# stood for a count that the sentence did not give. The misses used
+# `variety` for a kind (`lifetimes: a variety of generics`) or for
+# `different` (`values with a variety of types`).
+expr main [(rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad), (wide array), (vast array), (broad range), (diverse range), (a host of ![the, this, that, a, an, each, every, its, their]), (a whole host), (a slew of), countless, numerous, (a variety of), (a [huge, significant, substantial, considerable, good] number of)]
+let message "Vague quantity. Name the items, or write `many` or `several`."
 let description "Flags phrases such as `wide range` and `plethora of` that inflate a count without giving it."
 let becomes ""
 let kind "Style"
 allows "The catalog holds forty styles."
 allows "The range covers ports 1 through 1024."
 allows "Drain a host of the cluster before the upgrade."
+allows "The job retries five times."

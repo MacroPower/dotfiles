@@ -10,6 +10,6 @@ The guide covers countless edge cases.
 
 The library exposes numerous helpers.
 
-The scheduler fits various kinds of workload.
-
 The flag supports a variety of formats.
+
+The job retries a significant number of times.
