@@ -5,8 +5,9 @@
 # produces no lint. Rules that misread identifiers, table cells, or
 # technical abbreviations (SpellCheck, SentenceCapitalization,
 # OxfordComma, the Expand* family) stay off in every tier on purpose.
+# MoreBetter stays off, because it reads `one or more larger files` as
+# a doubled comparative.
 VeryUnique
-MoreBetter
 ComprisesOf
 RedundantSuperlatives
 RedundantProgressiveComparative

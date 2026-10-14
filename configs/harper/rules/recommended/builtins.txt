@@ -1,13 +1,11 @@
 # Harper built-in rules enabled at the Recommended tier, one name per
 # line, each with a fixture pair under fixtures/recommended.
-# CondenseAllThe sits here rather than under Required, because its
-# rewrite reads worse in a list of quantifiers (`some or all of the
-# whitespace` becomes `some or all the whitespace`). RepeatedWords
-# catches a word doubled where an edit spliced two sentences (`the
-# the`), and it sits here rather than under Required because it also
-# reports a grammatical `that that` or `had had`.
+# CondenseAllThe stays off, because `all the` saves one word and reads
+# worse after `some or`. RepeatedWords catches a word doubled where an
+# edit spliced two sentences (`the the`), and it sits here rather than
+# under Required because it also reports a grammatical `that that` or
+# `had had`.
 Hedging
 LitotesDirectPositive
-CondenseAllThe
 RepeatedWords
 AllowTo
