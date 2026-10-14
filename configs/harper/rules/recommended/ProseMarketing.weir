@@ -1,22 +1,28 @@
 # Each word sells a feature instead of describing it. `first class`
 # and `super` are left out, because each names something in code (a
 # first-class function, a superclass call). `enduring` stays out too
-# (`enduring storage outlives the pod`).
+# (`enduring storage outlives the pod`). The rule hit 119 lines in the
+# measure.py corpus, and 16 of 20 sampled hits sold a feature. The
+# misses used `comprehensive` for complete (`a comprehensive discovery
+# document`) and `powerful` for privileged (`powerful pods`).
 #
-# `robust` keeps a technical sense behind a guard, because `robust to`
-# names a statistical property (`robust to outliers`). A negated word
-# after a space needs a word to consume, so `robust` has a twin for a
-# clause end (`robust!( )`). `highly` sits in the intensifier rule,
-# because it raises an adjective rather than selling a feature.
+# `robust` keeps a technical sense behind a guard. `robust to` names a
+# statistical property (`robust to outliers`), and `robust against`
+# names a fault that the code survives (`robust against wall clock
+# jumps`). A negated word after a space needs a word to consume, so
+# `robust` has a twin for a clause end (`robust!( )`). `highly` sits in
+# the intensifier rule, because it raises an adjective rather than
+# selling a feature.
 #
 # A space in a pattern matches only whitespace, so each compound that
 # writers also hyphenate takes `[-, ( )]` between its words and
 # matches `battle tested` and `battle-tested` alike.
-expr main [seamless, seamlessly, (robust !to), (robust!( )), powerful, elegant, elegantly, comprehensive, intuitive, effortless, effortlessly, blazing, blazingly, revolutionary, innovative, sophisticated, intricate, vibrant, (a breeze), holistic, groundbreaking, transformative, (ever[-, ( )]evolving), (rapidly evolving), (top[-, ( )]notch), (battle[-, ( )]tested), (production[-, ( )]ready), (enterprise[-, ( )]grade), (out[-, ( )]of[-, ( )]the[-, ( )]box), (bells and whistles), (feature[-, ( )]rich), (cutting[-, ( )]edge), (state[-, ( )]of[-, ( )]the[-, ( )]art), (lightning[-, ( )]fast), (best[-, ( )]in[-, ( )]class), (world[-, ( )]class), (next[-, ( )]generation), (game[-, ( )]changing), (game[-, ( )]changer), (game[-, ( )]changers)]
+expr main [seamless, seamlessly, (robust ![to, against]), (robust!( )), powerful, elegant, elegantly, comprehensive, intuitive, effortless, effortlessly, blazing, blazingly, revolutionary, innovative, sophisticated, intricate, vibrant, (a breeze), holistic, groundbreaking, transformative, (ever[-, ( )]evolving), (rapidly evolving), (top[-, ( )]notch), (battle[-, ( )]tested), (production[-, ( )]ready), (enterprise[-, ( )]grade), (out[-, ( )]of[-, ( )]the[-, ( )]box), (bells and whistles), (feature[-, ( )]rich), (cutting[-, ( )]edge), (state[-, ( )]of[-, ( )]the[-, ( )]art), (lightning[-, ( )]fast), (best[-, ( )]in[-, ( )]class), (world[-, ( )]class), (next[-, ( )]generation), (game[-, ( )]changing), (game[-, ( )]changer), (game[-, ( )]changers)]
 let message "Marketing language. State the fact and let the reader judge its weight."
 let description "Flags marketing adjectives that inflate a claim without informing."
 let becomes ""
 let kind "Style"
 allows "The bucket refills every second."
 allows "The estimator is robust to outliers."
+allows "The clock is robust against wall clock jumps."
 allows "Go has first-class functions."

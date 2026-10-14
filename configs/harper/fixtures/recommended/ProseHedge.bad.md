@@ -23,3 +23,7 @@ This should fix the race.
 It should be fine to restart the node.
 
 Run the build, and you should see the prompt.
+
+The fix likely resolves the race.
+
+The cache is most likely stale.

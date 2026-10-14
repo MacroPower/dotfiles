@@ -14,3 +14,9 @@ You should fix the typo before you merge.
 The cache evicts entries in a way that keeps the order.
 
 Run the build, and the prompt appears.
+
+Cold caches are more likely to miss.
+
+Pods likely to need more memory get a larger limit.
+
+It is likely that the pod restarts.

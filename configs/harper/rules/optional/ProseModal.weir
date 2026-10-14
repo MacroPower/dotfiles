@@ -10,14 +10,21 @@
 # Guards glued to each word skip the phrases other rules report: `would
 # say` and `could argue` (the opinion rule), `would expect` (the filler
 # and reassurance rules), `would be happy` (the chatbot rule), and
-# `could possibly` and `could potentially` (the redundant-pair rule).
+# `could possibly` and `could potentially` (the double-hedge rule).
 #
-# The two words hit 612 lines in the kubernetes, nix.dev, and Go docs,
-# and 10 of 10 sampled hits stated a possibility, an ability, or a
-# consequence. Both words also narrate a hypothetical
-# that the reader asked for (`if you raised the limit, the job would
-# finish`), so the rule is a suggestion.
-expr main [(would![(( )[say, argue, expect]), (( )be( )happy)]), (could![(( )[not, argue, possibly, potentially]), (( )be( )argued)])]
+# The guards also skip phrases that none of the three fixes fits.
+# `would like`, `would love`, and `would rather` state a wish, which
+# `want` or `prefer` states plainly (`we would like to thank the
+# reviewers`). `would otherwise` states what happens when a condition
+# does not hold (`fields that would otherwise conflict`). `would you`
+# and `could you` ask a question. These guards dropped 70 hits in the
+# measure.py corpus.
+#
+# The two words hit 960 lines in the measure.py corpus, and 16 of 20
+# sampled hits stated a possibility, an ability, or a consequence. The
+# misses narrated a hypothetical, where the condition is the point
+# (`it would be less work if`), so the rule is a suggestion.
+expr main [(would![(( )[say, argue, expect, like, love, rather, otherwise, you]), (( )be( )happy)]), (could![(( )[not, argue, possibly, potentially, you]), (( )be( )argued)])]
 let message "Modal verb. Write `might` for a possibility, `can` for an ability, or the present tense for a consequence."
 let description "Flags `would` and `could`, which hide whether a sentence states a possibility, an ability, or a consequence."
 let becomes ""
@@ -26,4 +33,6 @@ allows "The parser could not read the file."
 allows "One could argue the flag is redundant."
 allows "As you would expect, the cache is cold."
 allows "I would be happy to help."
+allows "We would like to thank the reviewers."
+allows "Could you describe the project?"
 allows "The write fails when the disk is full."

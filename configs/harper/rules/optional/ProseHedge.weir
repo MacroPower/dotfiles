@@ -3,16 +3,22 @@
 # comparison (`relatively few nodes run the agent, compared with the
 # fleet`). Most hits give no baseline (`a relatively small number of
 # objects`), so the fix gives the number or the baseline. `potentially`
-# stays out, because the redundant-pair rule reports `could
-# potentially`.
+# stays out, because the double-hedge rule reports `could potentially`.
 #
-# `effectively`, `virtually`, and `practically` each read two ways.
-# `the flag effectively disables the cache` can mean that the flag
-# disables it in effect but not in name, or that it disables it well.
-# `practically` means `almost` or `in practice`. The three sit here,
-# because the plain sense is sometimes the one meant (`use the cache
-# effectively`). They hit 65 lines in the measure.py corpus, and 8 of
-# 10 sampled hits softened a claim or read two ways.
+# `virtually` and `practically` each read two ways. `virtually` means
+# `almost` or names a virtual copy (`virtually hoisted`), and
+# `practically` means `almost` or `in practice`. The two sit here,
+# because the plain sense is sometimes the one meant. `effectively`
+# stays out. In 29 of its 39 hits in the measure.py corpus it meant `in
+# effect` (`higher values are effectively ignored`), where dropping it
+# makes the claim false, and in the other 10 it named a manner (`use
+# labels effectively`).
+#
+# The rule hit 46 lines in the measure.py corpus, and 18 of 20 sampled
+# hits softened a claim or a result. The misses stated a requirement
+# (`all tests should pass regardless`) or a design (`what the pool
+# should look like`). The message offers to name the condition that the
+# claim depends on, which fits a writer with real doubt.
 #
 # `should` after a noun and before a verb that names a visible result
 # (`the test should pass`, `the output should look like this`) hedges
@@ -22,18 +28,19 @@
 # advice. `return`, `contain`, and `include` stay out, because API docs
 # state a requirement with them (`implementations should return a
 # copy`). The filter narrows the finding to `should`. It hit 19 lines in
-# the measure.py corpus, and 16 of 19 hedged a result. The misses
-# stated a requirement or a condition (`if any of those instances
-# should fail`), so the branch is a suggestion.
+# the measure.py corpus, and 15 of 19 hedged a result. The misses
+# stated a requirement, a condition, or a design (`if any of those
+# instances should fail`), so the branch is a suggestion.
 expr person [caller, callers, consumer, consumers, user, users, reader, readers, developer, developers, operator, operators, administrator, administrators]
 expr result [pass, fail, print, display, show, look, appear, succeed, output, produce, compile]
-expr main [relatively, effectively, virtually, practically, <(<NOUN, !PRON, !@person> should @result), should>]
-let message "Hedge. State the claim or drop it."
-let description "Flags `relatively`, `effectively`, `virtually`, and `practically`, which soften a claim or read two ways."
+expr main [relatively, virtually, practically, <(<NOUN, !PRON, !@person> should @result), should>]
+let message "Hedge. State the claim, name the condition it depends on, or drop it."
+let description "Flags `relatively`, `virtually`, and `practically`, which soften a claim or read two ways, and `should` before a visible result."
 let becomes ""
 let kind "Style"
 allows "Few nodes run the agent."
 allows "The flag disables the cache."
+allows "Higher values are effectively ignored."
 allows "The test passes."
 allows "The caller should pass a listener."
 allows "Implementations should return a copy."

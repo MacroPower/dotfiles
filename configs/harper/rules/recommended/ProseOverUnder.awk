@@ -1,9 +1,9 @@
 # Reports `over`, `under`, `above`, or `below` before a number in
-# markdown prose (`over 40 entries`, `under five seconds`). Each word
-# also names a place, so `more than`, `fewer than`, or `less than`
-# states the quantity in one reading. Harper does not tag a digit as a
-# number, so no Weir pattern can name one, and the check is awk. It
-# reaches markdown files and commit messages only.
+# prose (`over 40 entries`, `under five seconds`). Each word also names
+# a place, so `more than`, `fewer than`, or `less than` states the
+# quantity in one reading. Harper does not tag a digit as a number, so
+# no Weir pattern can name one, and the check is awk. It reads markdown
+# files, commit messages, and source comments.
 #
 # A number is a digit, a spelled number from two to ten, `half`,
 # `twice`, `a dozen`, `a hundred`, `a thousand`, or `hundreds` and its
@@ -12,8 +12,16 @@
 # passage (`the above two keys`), so the check skips them. The reader
 # blanks code spans first, so a match inside one passes.
 #
-# It hit 16 lines in the kubernetes and nix.dev docs, and every hit but
-# `the above two keys` stated a quantity.
+# The check also skips three phrases where the word has one reading.
+# `generic over` names the type parameters of a generic type (`generic
+# over two types`). After `split`, `over` names where the text breaks
+# (`split the command over two lines`). After `falls`, `drops`, or
+# `rises`, the verb already names the direction (`the memory falls
+# below 1GiB`). That guard also passes `drops over 40 packets`, where
+# `drops` means discards, a case rare enough to leave.
+#
+# It hit 26 lines in the measure.py corpus, and 20 of 20 sampled hits
+# compared a quantity or a version number.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseOverUnder: <message>
@@ -26,6 +34,8 @@ function BEGIN_CHECK() {
 
 function prose(text,   lower, at, word) {
   lower = blank(tolower(text), "(^|[^a-z])the[ \t]+(above|below)")
+  lower = blank(lower, "(^|[^a-z])(generic|falls?|drops?|rises?)[ \t]+(over|under|above|below)")
+  lower = blank(lower, "(^|[^a-z])split[ \t][^.;:]*[ \t]over")
   if (match(lower, amount)) {
     at = RSTART
     if (substr(lower, at, 1) !~ /[a-z]/) {
