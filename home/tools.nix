@@ -213,7 +213,10 @@ in
       // lib.optionalAttrs (atuinSyncAddress != null) {
         sync_address = atuinSyncAddress;
         auto_sync = true;
-        sync_frequency = "5m";
+        # The daemon runs every periodic sync and reads its interval from
+        # daemon.sync_frequency. The top-level sync_frequency applies only
+        # when the daemon is off.
+        daemon.sync_frequency = "5m";
       }
       // lib.optionalAttrs (config.dotfiles.hostname == "terrarium") {
         # Read the encryption key straight from the macOS host's atuin data
