@@ -27,6 +27,10 @@ let
     "appearance.json" = mkConfig "appearance.json" {
       translucency = false;
       cssTheme = themeName;
+      # Obsidian 1.14.2 and later read this value only when a vault first
+      # opens on a device, and copy it into that device's own font size.
+      # Changing it here does not resize a vault that a device has
+      # already opened.
       baseFontSize = fonts.sizes.terminal;
       interfaceFontFamily = fonts.sansSerif.name;
       textFontFamily = fonts.sansSerif.name;
@@ -67,7 +71,6 @@ let
       slash-command = true;
       editor-status = true;
       bookmarks = true;
-      markdown-importer = true;
       zk-prefixer = false;
       random-note = false;
       outline = true;
