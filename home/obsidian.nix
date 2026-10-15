@@ -229,6 +229,15 @@ let
       --gray-1: #${colors.base03};
       --gray-2: #${colors.base05};
 
+      /* Obsidian palette (highlights, callouts, canvas cards) */
+      --color-red: #${colors.base08};
+      --color-orange: #${colors.base09};
+      --color-yellow: #${colors.base0A};
+      --color-green: #${colors.base0B};
+      --color-cyan: #${colors.base0C};
+      --color-blue: #${colors.base0D};
+      --color-purple: #${colors.base0E};
+
       /* Syntax highlighting */
       --code-normal: #${colors.base05};
       --code-comment: #${colors.base03};
@@ -246,6 +255,8 @@ let
       --ribbon-background: var(--background-primary);
       --drag-ghost-background: var(--background-secondary-alt);
       --background-modifier-message: var(--background-secondary-alt);
+      --tooltip-color: var(--text-normal);
+      --notice-color: var(--text-normal);
       --tab-outline-color: transparent;
       --divider-color: transparent;
       --prompt-border-color: var(--panel-border-color);
