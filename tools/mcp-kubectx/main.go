@@ -212,6 +212,7 @@ func runServe(ctx context.Context, args []string) error {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list",
 		Description: "List Kubernetes contexts from the host kubeconfig.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, h.list)
 
 	mcp.AddTool(srv, &mcp.Tool{

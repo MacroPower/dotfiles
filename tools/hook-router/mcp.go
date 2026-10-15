@@ -10,13 +10,16 @@ import (
 
 // handleMCP resolves an MCP tool call against the --mcp-rules
 // allow/ask/deny lists and emits the matching PreToolUse decision.
-// The lists mirror the MCP entries of settings.json permissions, but
-// are enforced here because plan mode ignores settings allow rules for
-// subagent-originated MCP calls (anthropics/claude-code#73633) while
-// hook decisions still apply. None of the branches are gated on
-// cfg.autoAllow: the rules encode user-declared permissions, not
-// sandbox containment, so they hold on every host. Unmatched tools and
-// malformed input fall through to the normal permission flow.
+// The lists mirror the MCP entries of settings.json permissions. The
+// hook enforces them as well because plan mode ignores settings allow
+// rules for subagent-originated MCP calls
+// (anthropics/claude-code#73633). Claude Code 2.1.299 and later honor
+// an allow from this hook in plan mode only for tools whose server sets
+// readOnlyHint. A subagent's call to any other tool reaches the
+// permission prompt. None of the branches are gated on cfg.autoAllow:
+// the rules encode user-declared permissions, not sandbox containment,
+// so they hold on every host. Unmatched tools and malformed input fall
+// through to the normal permission flow.
 func handleMCP(input []byte, stdout io.Writer, cfg config, logger *slog.Logger) error {
 	h, err := hook.ParseInput(input)
 	if err != nil {

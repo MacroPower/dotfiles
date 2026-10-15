@@ -71,26 +71,31 @@ func run() error {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolSearch,
 		Description: "Search the OpenTofu Registry for providers, modules, resources, and data sources. Use bare terms (no 'terraform-provider-'/'terraform-module-' prefix).",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, h.handleSearch)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolProviderDetails,
 		Description: "OpenTofu provider details. Omit the 'terraform-provider-' prefix in the name.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, h.handleProviderDetails)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolModuleDetails,
 		Description: "OpenTofu module details. Use the simple module name, not the full repository name.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, h.handleModuleDetails)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolResourceDocs,
 		Description: "OpenTofu resource documentation.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, h.handleResourceDocs)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolDatasourceDocs,
 		Description: "OpenTofu data source documentation.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, h.handleDatasourceDocs)
 
 	addRegistryInfoResource(srv)
