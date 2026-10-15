@@ -43,12 +43,19 @@ let
       license = rawLicense;
     };
 
+  # Names of the programs whose enable option is visible. home-manager
+  # hides the enable option of every renamed or removed program, and
+  # reading a renamed one traces an obsolete-option warning.
+  programNames =
+    programOptions: programs:
+    builtins.filter (name: programOptions.${name}.enable.visible or true) (builtins.attrNames programs);
+
   # Extract enabled programs from a home-manager config's programs attrset.
   # Uses tryEval to skip removed/broken modules.
   extractPrograms =
-    programs:
+    programOptions: programs:
     let
-      names = builtins.attrNames programs;
+      names = programNames programOptions programs;
       tryProgram =
         name:
         let
@@ -106,7 +113,7 @@ let
   # `home.packages`. The jq pipeline dedupes on name, so overlap with home.packages
   # or another program's package is harmless.
   extractProgramExtraPackages =
-    programs:
+    programOptions: programs:
     let
       tryExtras =
         name:
@@ -128,7 +135,7 @@ let
         else
           [ ];
     in
-    builtins.concatMap tryExtras (builtins.attrNames programs);
+    builtins.concatMap tryExtras (programNames programOptions programs);
 
   # Extract Homebrew cask/brew names (strings), sorted.
   extractBrewNames =
@@ -138,14 +145,18 @@ let
     );
 
   # Build inventory for a home-manager config.
-  hmInventory = hmCfg: {
+  hmInventory = hmCfg: hmOptions: {
     nixPackages = extractPackages (
       hmCfg.home.packages
-      ++ extractProgramExtraPackages hmCfg.programs
+      ++ extractProgramExtraPackages hmOptions.programs hmCfg.programs
       ++ (hmCfg.dotfiles.extraInventoryPackages or [ ])
     );
-    programs = extractPrograms hmCfg.programs;
+    programs = extractPrograms hmOptions.programs hmCfg.programs;
   };
+
+  # Options of a home-manager user nested under a darwin or NixOS host.
+  nestedHmOptions =
+    cfg: username: cfg.options.home-manager.users.valueMeta.attrs.${username}.configuration.options;
 
   # Darwin hosts: HM nested under home-manager.users.<username>.
   darwinInventory =
@@ -154,7 +165,7 @@ let
       inherit (cfg.config.dotfiles.system) username;
       hmCfg = cfg.config.home-manager.users.${username};
     in
-    hmInventory hmCfg
+    hmInventory hmCfg (nestedHmOptions cfg username)
     // {
       platform = "darwin";
       homebrewCasks = extractBrewNames (cfg.config.homebrew.casks or [ ]);
@@ -168,10 +179,10 @@ let
       users = cfg.config.home-manager.users or { };
       username = builtins.head (builtins.attrNames users);
     in
-    hmInventory users.${username} // { platform = "linux"; };
+    hmInventory users.${username} (nestedHmOptions cfg username) // { platform = "linux"; };
 
   # Standalone home-manager: config is the HM config directly.
-  homeInventory = _: cfg: hmInventory cfg.config // { platform = "linux"; };
+  homeInventory = _: cfg: hmInventory cfg.config cfg.options // { platform = "linux"; };
 
   inventory =
     lib.mapAttrs darwinInventory (self.darwinConfigurations or { })
