@@ -183,7 +183,6 @@ let
       --background-secondary-alt: #${colors.base00};
       --background-modifier-border: #${colors.base02};
       --background-modifier-form-field: #${colors.base01};
-      --background-modifier-form-field-highlighted: #${colors.base02};
       --background-modifier-box-shadow: rgba(0, 0, 0, 0.3);
       --background-modifier-success: #${colors.base0B};
       --background-modifier-error: #${colors.base08};
