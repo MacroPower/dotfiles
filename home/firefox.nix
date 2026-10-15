@@ -246,10 +246,8 @@ in
           "toolkit.telemetry.archive.enabled" = false;
           "datareporting.healthreport.uploadEnabled" = false;
           "datareporting.policy.dataSubmissionEnabled" = false;
-          "browser.ping-centre.telemetry" = false;
 
-          # Disable Pocket
-          "extensions.pocket.enabled" = false;
+          # Hide recommended stories on the new tab page
           "browser.newtabpage.activity-stream.feeds.section.topstories" = false;
 
           # Disable activity stream telemetry and sponsored content
