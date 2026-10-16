@@ -12,7 +12,11 @@
     "root"
   ]
   ++ (if pkgs.stdenv.hostPlatform.isDarwin then [ "@admin" ] else [ "@wheel" ]);
-  sandbox = if pkgs.stdenv.hostPlatform.isLinux then true else "relaxed";
+  # macOS Seatbelt rejects a sandbox profile whose path data for one
+  # operation exceeds 64 KiB. Sandboxed builds with more than about 1060
+  # store paths in their input closure therefore fail with no log output
+  # (NixOS/nix#4119). darwin-system and home-manager-files exceed that cap.
+  sandbox = pkgs.stdenv.hostPlatform.isLinux;
   substituters = [
     "https://cache.nixos.org"
     "https://cache.numtide.com"
