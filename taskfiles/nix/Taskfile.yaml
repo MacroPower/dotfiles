@@ -40,6 +40,7 @@ tasks:
     desc: Update README.md with installed package inventory
     cmds:
       - "{{.TASKFILE_DIR}}/scripts/update-inventory.sh"
+      - nix fmt -- README.md
 
   sbom:
     desc: Generate CycloneDX SBOM for the home-manager closure
