@@ -59,12 +59,14 @@ let
       "kcl-lsp"
     ] (name: nurPkgs.${name}.override { inherit system; });
 
-  lixOverlay = _final: prev: {
-    inherit (prev.lixPackageSets.stable)
-      nixpkgs-review
-      nix-eval-jobs
-      nix-fast-build
-      ;
+  lixOverlay = final: prev: {
+    # The Lix scope builds nixpkgs-review and nix-fast-build by overriding
+    # the top-level packages of the same name. Inheriting them from the
+    # scope makes each one depend on itself, so override the prev versions
+    # the same way the scope does.
+    inherit (final.lixPackageSets.stable) nix-eval-jobs;
+    nixpkgs-review = prev.nixpkgs-review.override { nix = final.lixPackageSets.stable.lix; };
+    nix-fast-build = prev.nix-fast-build.override { inherit (final) nix-eval-jobs; };
   };
 
   # Stock devbox reads packages with builtins.fetchClosure, which Lix 2.95
