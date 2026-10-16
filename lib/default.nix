@@ -155,6 +155,13 @@ let
         # $GIT_COMMON_DIR/workmux-config -- same directory, different
         # filename, outside the sandbox's protected set.
         ../pkgs/workmux-store-meta-outside-config.patch
+        # The Lima supervisor passes the RPC token and every
+        # env_passthrough value as `export` statements in the limactl
+        # arguments. ps shows those arguments to every user on the host
+        # and in the guest. Write the secrets to a private file on the
+        # per-VM state mount instead. The guest shell reads the file and
+        # deletes it.
+        ../pkgs/workmux-env-file-for-secrets.patch
       ];
     });
   };
