@@ -4135,21 +4135,25 @@ in
             echo "syncClaudeJson: synced $MCP_COUNT MCP servers to ~/.claude.json" >&2
           '';
 
-      # Best-effort propagation of the GitHub PAT to fish and gh. Kept
-      # separate from syncClaudeJson so a sops-nix failure cannot prevent
-      # the MCP merge from running.
+      # Best-effort GitHub PAT upkeep for fish and gh. Kept separate from
+      # syncClaudeJson so a sops-nix failure cannot prevent the MCP merge
+      # from running.
       activation.syncClaudeSecrets = lib.mkIf sopsEnabled (
         lib.hm.dag.entryAfter [ "sops-nix" "syncClaudeJson" ] ''
-          # Set GitHub PAT as a universal fish variable for MCP auth
-          if [ -f "${secretPath "gh_token"}" ]; then
-            GH_TOKEN=$(cat "${secretPath "gh_token"}" 2>/dev/null || true)
-            if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
-              ${pkgs.fish}/bin/fish -c "set -Ux GITHUB_PERSONAL_ACCESS_TOKEN ''${GH_TOKEN}"
-            fi
+          # Earlier generations stored the PAT as a universal fish
+          # variable. Fish writes universal variables in plaintext to
+          # fish_variables, and a sandboxed fish reloads them past the
+          # credentials scrub. githubWrapper exports the PAT itself, so
+          # erase that copy. Drop this once every host has switched.
+          if [ -z "$DRY_RUN_CMD" ]; then
+            ${pkgs.fish}/bin/fish -c 'set -eU GITHUB_PERSONAL_ACCESS_TOKEN' 2>/dev/null || true
           fi
 
           ${lib.optionalString skipPerms ''
             # Authenticate gh with the scoped PAT (sandbox only)
+            if [ -f "${secretPath "gh_token"}" ]; then
+              GH_TOKEN=$(cat "${secretPath "gh_token"}" 2>/dev/null || true)
+            fi
             if [ -z "$DRY_RUN_CMD" ] && [ -n "''${GH_TOKEN:-}" ]; then
               echo "''${GH_TOKEN}" | ${pkgs.gh}/bin/gh auth login --with-token
             fi
