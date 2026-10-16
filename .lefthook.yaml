@@ -1,5 +1,12 @@
 pre-commit:
-  commands:
-    check:
+  jobs:
+    # Runs before check, so the lint step sees the regenerated README.
+    - name: inventory
+      glob:
+        - "*.nix"
+        - flake.lock
+        - taskfiles/nix/scripts/*
+      run: task nix:inventory && git add README.md
+    - name: check
       use_stdin: true
       run: task check
