@@ -30,9 +30,10 @@
         # syntax (export VAR=value) and passes it via `limactl shell -- eval`,
         # which uses the login shell. Fish cannot parse POSIX export syntax.
         shell = lib.mkForce pkgs.bash;
-        # Voice capture reads the virtio-sound device that lima/terrarium.yaml
-        # attaches. /dev/snd is root:audio 0660, and logind does not grant a
-        # seat ACL to SSH sessions such as `limactl shell`.
+        # Voice capture reads the virtio-sound device that Lima attaches
+        # through ~/.lima/_config/default.yaml (home/virtualization.nix).
+        # /dev/snd is root:audio 0660, and logind does not grant a seat ACL
+        # to SSH sessions such as `limactl shell`.
         extraGroups = [ "audio" ];
       };
 
