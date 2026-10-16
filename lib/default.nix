@@ -336,6 +336,22 @@ let
     };
   };
 
+  # atuin 18.23.0's checkPhase fails on both aarch64 platforms at the
+  # nixpkgs pin, so Hydra cached no build for them. On darwin, the e2e
+  # tests source the host's /etc/bashrc and run the installed atuin
+  # instead of the one under test (fixed by NixOS/nixpkgs#574509). On
+  # aarch64-linux, a timing test in atuin-common fails when the builder
+  # is busy. Hydra cached x86_64-linux, so it keeps the stock package. Drop
+  # this once nixpkgs-unstable includes #574509 and Hydra caches atuin
+  # for both aarch64 platforms.
+  atuinOverlay = _final: prev: {
+    atuin =
+      if prev.stdenv.hostPlatform.isAarch64 then
+        prev.atuin.overrideAttrs { doCheck = false; }
+      else
+        prev.atuin;
+  };
+
   # czkawka's GUI binaries (krokiet, cedinia) link mac-notification-sys via
   # notify-rust and hit the same classic-ld64 stubs-pass crash as workmux
   # (see workmuxOverlay). Same lld workaround; drop each once the cctools fix
@@ -751,6 +767,7 @@ let
     isortOverlay
     pyjwtOverlay
     direnvOverlay
+    atuinOverlay
     czkawkaOverlay
     marksmanOverlay
     grugFarOverlay
