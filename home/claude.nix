@@ -888,12 +888,16 @@ let
   # every write tool except the ask-gated pull request set. A new
   # upstream tool appears here on its own and prompts on first use
   # until it is allowed or denied.
+  #
+  # The single quotes around the header keep the token out of the proxy's
+  # arguments, where ps shows it to every user. The proxy expands the
+  # variable from its own environment.
   githubWrapper = pkgs.writeShellScript "github-mcp-wrapper" ''
     ${exportSecret "GH_TOKEN" "gh_token"}
     export GITHUB_PERSONAL_ACCESS_TOKEN="''${GH_TOKEN:-}"
     exec ${pkgs.mcp-http-proxy}/bin/mcp-http-proxy \
       --url https://api.githubcopilot.com/mcp/x/all \
-      --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN" \
+      --header 'Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN' \
       --log-file "${config.xdg.stateHome}/mcp-http-proxy/github.log" \
       ${ghProxyDenyFlags} \
       "$@"
