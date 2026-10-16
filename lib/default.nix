@@ -60,6 +60,22 @@ let
     ] (name: nurPkgs.${name}.override { inherit system; });
 
   lixOverlay = final: prev: {
+    # nixpkgs passes -Dmimalloc=disabled to every Lix build, but only Lix
+    # 2.96 and later define that Meson option, so Lix 2.95 fails to
+    # configure. NixOS/nixpkgs#573942 limits the flag to 2.96. Drop this
+    # override once nixpkgs-unstable includes that change.
+    lixPackageSets = prev.lixPackageSets.extend (
+      _: lprev: {
+        lix_2_95 = lprev.lix_2_95.overrideScope (
+          _: sprev: {
+            lix = sprev.lix.overrideAttrs (old: {
+              mesonFlags = prev.lib.remove "-Dmimalloc=disabled" old.mesonFlags;
+            });
+          }
+        );
+      }
+    );
+
     # The Lix scope builds nixpkgs-review and nix-fast-build by overriding
     # the top-level packages of the same name. Inheriting them from the
     # scope makes each one depend on itself, so override the prev versions
