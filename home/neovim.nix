@@ -462,7 +462,6 @@ in
                 background = "transparent",
                 theme      = "dark",
                 scale      = 2,
-                cli_args   = { "--no-sandbox" },
               },
             },
           })
