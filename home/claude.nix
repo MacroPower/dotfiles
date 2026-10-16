@@ -3892,6 +3892,10 @@ in
             dialogExpiry = "never";
             showTurnDuration = true;
             terminalProgressBarEnabled = true;
+            # Lets Claude send proactive push notifications to the mobile
+            # app. Toggling it in /config replaces the settings.json link
+            # with a plain file, which blocks the next activation.
+            agentPushNotifEnabled = true;
             autoCompactEnabled = true;
             autoCompactWindow = 666666;
             # Inline Bash output up to the 128K character ceiling before
