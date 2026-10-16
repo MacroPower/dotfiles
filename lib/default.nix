@@ -352,23 +352,6 @@ let
     );
   };
 
-  # contour 0.6.3 picks std::simd whenever the <simd> header exists. GCC
-  # 16 ships that header but leaves it empty below C++26, and contour
-  # builds as C++23, so the build fails on simd::native_simd. This is
-  # the fix from contour-terminal/contour#1944, which tests the feature
-  # macro instead. The NixOS hosts build contour for its terminfo output
-  # (environment.enableAllTerminfo), and cache.nixos.org has no build at
-  # this nixpkgs pin. Drop it once nixpkgs ships a contour release that
-  # includes the fix.
-  contourOverlay = _final: prev: {
-    contour = prev.contour.overrideAttrs (old: {
-      postPatch = (old.postPatch or "") + ''
-        substituteInPlace src/vtbackend/Image.cpp \
-          --replace-fail '#if __has_include(<simd>)' '#if (__cpp_lib_simd >= 202411L)'
-      '';
-    });
-  };
-
   # Building marksman on Linux pulls in dotnetCorePackages.runtime_9_0,
   # which on aarch64-linux routes through the source-built dotnet-vmr-9.0.15
   # (a multi-hour build that aborts with SIGILL in its binary-allowance
@@ -769,7 +752,6 @@ let
     pyjwtOverlay
     direnvOverlay
     czkawkaOverlay
-    contourOverlay
     marksmanOverlay
     grugFarOverlay
     cliHelpersOverlay
