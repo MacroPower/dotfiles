@@ -395,6 +395,9 @@ let
         # env_passthrough; the key is read from the mounted host key (key_path).
         # Best-effort: an unreachable server, missing creds, or a failed sync
         # never aborts sandbox setup.
+        # atuin 18.23 reads the password only from -p or a terminal prompt,
+        # so ps shows it for the few seconds the login takes. atuin 18.24.0
+        # falls back to ATUIN_PASSWORD. Drop -p when nixpkgs ships 18.24.0.
         "atuin login -u \"$ATUIN_USERNAME\" -p \"$ATUIN_PASSWORD\" >/dev/null 2>&1 && atuin sync >/dev/null 2>&1 || true"
       ]
       # Darwin-only because that's where the Seatbelt sandbox runs. Kept on
