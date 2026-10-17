@@ -38,16 +38,24 @@
     masApps = { };
   };
 
-  darwinModule = _: {
-    dotfiles.system.darwin.bluetoothAac.enable = true;
-    dotfiles.system.darwin.epsonScanV19II.enable = true;
-    dotfiles.system.darwin.fork.enable = true;
-    dotfiles.system.darwin.fuseT.enable = true;
-    dotfiles.system.darwin.hyperkey.enable = true;
-    dotfiles.system.darwin.linearmouse.enable = true;
-    dotfiles.system.darwin.smbTuning.enable = true;
-    dotfiles.system.darwin.spotlight.enable = true;
-  };
+  darwinModule =
+    { lib, ... }:
+    {
+      # mypyc-compiled packages (mypy on the kagimcp py3.12 chain) compile one
+      # huge generated C file. At the shared 8 GiB, cc1 gets OOM-killed even
+      # with no other jobs. Launch-script-only, so the guest still
+      # substitutes. mkOverride 40 beats the shared mkForce (priority 50).
+      nix.linux-builder.config.virtualisation.memorySize = lib.mkOverride 40 (32 * 1024); # 32 GiB
+
+      dotfiles.system.darwin.bluetoothAac.enable = true;
+      dotfiles.system.darwin.epsonScanV19II.enable = true;
+      dotfiles.system.darwin.fork.enable = true;
+      dotfiles.system.darwin.fuseT.enable = true;
+      dotfiles.system.darwin.hyperkey.enable = true;
+      dotfiles.system.darwin.linearmouse.enable = true;
+      dotfiles.system.darwin.smbTuning.enable = true;
+      dotfiles.system.darwin.spotlight.enable = true;
+    };
 
   homeModule =
     { ... }:
