@@ -630,6 +630,46 @@ let
     ];
   };
 
+  # uvloop's test_call_at asserts a timer fires within 70 ms of its
+  # deadline. On a loaded linux-builder VM it took 80 ms and failed the
+  # build. Scoped to python 3.12, where only the kagimcp chain builds
+  # uvloop from source, so other python scopes keep their cached drvs.
+  uvloopOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (
+        _pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          uvloop = pyprev.uvloop.overrideAttrs (old: {
+            disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
+              "tests/test_base.py::TestBaseUV::test_call_at"
+            ];
+          });
+        }
+      )
+    ];
+  };
+
+  # sse-starlette's suite times pings, timeouts, and disconnects against
+  # wall-clock deadlines. On a loaded linux-builder VM a different test
+  # fails each run (an extra ping, a cancel-scope deadline). Skip the
+  # check phase and trust upstream CI. nixpkgs omits starlette from
+  # dependencies and only gets it through fastapi in the check inputs, so
+  # add it back or pythonRuntimeDepsCheck fails. Scoped to python 3.12
+  # like uvloopOverlay above.
+  sseStarletteOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (
+        pyfinal: pyprev:
+        prev.lib.optionalAttrs (pyprev.python.pythonVersion == "3.12") {
+          sse-starlette = pyprev.sse-starlette.overridePythonAttrs (old: {
+            doCheck = false;
+            dependencies = old.dependencies ++ [ pyfinal.starlette ];
+          });
+        }
+      )
+    ];
+  };
+
   # psutil's test_heap_info asserts that glibc reports mmap-backed heap
   # bytes in use. A python 3.12 test worker on the terrarium VM holds
   # none, so mmap_used is 0 and the test fails. Scoped to python 3.12,
@@ -720,6 +760,8 @@ let
     syrupyOverlay
     richOverlay
     anyioOverlay
+    uvloopOverlay
+    sseStarletteOverlay
     psutilOverlay
     isortOverlay
     pyjwtOverlay
