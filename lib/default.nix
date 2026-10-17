@@ -304,28 +304,6 @@ let
     ];
   };
 
-  # azure-core's tests/conftest.py has an autouse, package-scoped `testserver`
-  # fixture that spawns `flask run` on localhost and polls an HTTP /health
-  # endpoint; when the server isn't confirmed in its retry budget it raises
-  # ValueError("Didn't start!"), which errors the entire collected suite
-  # (200+ tests, even trivial test_utils.py ones), not just the ones that hit
-  # the server. Being autouse it can't be deselected per-test. nixpkgs already
-  # carries the upstream loopback fix (__darwinAllowLocalNetworking, flask as a
-  # check input), but the local-server health poll is still too fragile under
-  # the sandbox -- it surfaces here because the uncached python3.14 variant
-  # builds from source and runs the checks. Same subprocess-server-won't-come-
-  # up story as mcpOverlay/fastmcpOverlay above: trust upstream CI and skip the
-  # check phase (doInstallCheck gates pytestCheckHook; doCheck is already off).
-  azureCoreOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        azure-core = pyprev.azure-core.overrideAttrs {
-          doInstallCheck = false;
-        };
-      })
-    ];
-  };
-
   # direnv's checkPhase runs bash/fish/zsh integration test scripts
   # that take 10+ minutes per closure rebuild and occasionally hang on
   # tty operations under the macOS Nix sandbox. We trust upstream's
@@ -581,25 +559,6 @@ let
     ];
   };
 
-  # opentelemetry-instrumentation-requests' TestURLLib3InstrumentorWithRealSocket
-  # tests (tests/test_requests_ip_support.py) bind a real HTTPServer socket,
-  # which the darwin build sandbox denies (PermissionError on socket.bind).
-  # Pulled transitively via azure-cli on py3.14 and not on cache.nixos.org.
-  # Deselect the real-socket class; the mocket/httpretty suites still run.
-  otelRequestsOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        opentelemetry-instrumentation-requests =
-          pyprev.opentelemetry-instrumentation-requests.overrideAttrs
-            (old: {
-              disabledTests = (old.disabledTests or [ ]) ++ [
-                "TestURLLib3InstrumentorWithRealSocket"
-              ];
-            });
-      })
-    ];
-  };
-
   # syrupy's xdist_two fixture param carries xfail("Not currently compatible
   # with xdist"), promoted to strict by `xfail_strict = true` in its
   # pyproject.toml — but the xfail nondeterministically passes, and a strict
@@ -752,14 +711,12 @@ let
     mcpOverlay
     aioboto3Overlay
     aiohttpOverlay
-    azureCoreOverlay
     httpx2Overlay
     backrefsOverlay
     inlineSnapshotOverlay
     cycloptsOverlay
     geoip2Overlay
     pyKeyValueAioOverlay
-    otelRequestsOverlay
     syrupyOverlay
     richOverlay
     anyioOverlay
