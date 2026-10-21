@@ -55,6 +55,7 @@ tasks:
   pkg:update:
     desc: Update custom package derivations in pkgs/
     cmds:
+      - bash pkgs/aven-update.sh
       - bash pkgs/chief-update.sh
       - bash pkgs/clauth-update.sh
       - bash pkgs/displayplacer-update.sh

@@ -150,6 +150,7 @@
                 hostMac = ./hosts/darwin/default.nix;
                 hostLinux = ./hosts/linux/default.nix;
                 stylix = ./lib/stylix.nix;
+                aven = ./pkgs/aven.nix;
                 chief = ./pkgs/chief.nix;
                 clauth = ./pkgs/clauth.nix;
                 displayplacer = ./pkgs/displayplacer.nix;

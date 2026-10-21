@@ -14,6 +14,7 @@ let
     ;
 
   localOverlay = final: _prev: {
+    aven = final.callPackage paths.aven { };
     chief = final.callPackage paths.chief { };
     clauth = final.callPackage paths.clauth { };
     otel-tui = final.callPackage paths.otel-tui { };
