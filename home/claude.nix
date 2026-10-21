@@ -829,6 +829,33 @@ let
     '';
   };
 
+  # Loads open aven tasks into a session started inside a tracked project.
+  # `aven prime` prints the full aven skill ahead of the task list. The
+  # skills block below installs that skill for Claude to load on demand, so
+  # the hook keeps only the task sections. It prints nothing outside a
+  # tracked project or when the project has no open work, and a failing
+  # `aven` never blocks startup.
+  avenPrime = pkgs.writeShellApplication {
+    name = "claude-aven-prime";
+    runtimeInputs = [
+      pkgs.aven
+      pkgs.gnused
+    ];
+    text = ''
+      out=$(aven prime 2>/dev/null) || exit 0
+      case $out in
+      *"## Open Issues"*) ;;
+      *) exit 0 ;;
+      esac
+      case $out in
+      *"Summary: total=0 "*) exit 0 ;;
+      esac
+      echo "aven tracks tasks for this project. Load the \`aven\` skill before running \`aven\` commands."
+      echo
+      sed -n '/^## Local Conventions/,$p' <<<"$out"
+    '';
+  };
+
   # CA env vars injected into all stdio MCP servers
   caEnvVars = lib.optionalAttrs (config.dotfiles.caBundlePath != null) {
     NIX_SSL_CERT_FILE = config.dotfiles.caBundlePath;
@@ -2278,6 +2305,7 @@ in
 
   config = {
     dotfiles.claude.skills = {
+      aven.source = "${pkgs.aven}/share/aven/skills/claude";
       commit.source = ../configs/claude/skills/commit;
       commit-push-pr.source = ../configs/claude/skills/commit-push-pr;
       create-skill.source = ../configs/claude/skills/create-skill;
@@ -3398,6 +3426,18 @@ in
         };
       };
 
+      aven = {
+        permissions.allow = [
+          "Bash(aven)"
+          "Bash(aven *)"
+        ];
+        # The task database, its attachments, and the log all live here.
+        sandbox.allowWrite = [ "~/.local/state/aven" ];
+        instructions.items = [
+          "Refs like `APP-7KQ9` name aven tasks. Load the `aven` skill before running `aven` commands."
+        ];
+      };
+
       claude-ai-integrations = {
         # Claude.ai web-app integration auth tools with no configured server here.
         # Denied defensively in case such a server gets wired up by accident.
@@ -3846,6 +3886,16 @@ in
                     ];
                   }
                   { hooks = [ (router "SessionStart" null) ]; }
+                  {
+                    matcher = "startup|clear";
+                    hooks = [
+                      {
+                        type = "command";
+                        command = lib.getExe avenPrime;
+                        timeout = 10;
+                      }
+                    ];
+                  }
                 ];
                 SessionEnd = [
                   {
