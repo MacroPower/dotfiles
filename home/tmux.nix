@@ -273,6 +273,32 @@ let
     '';
   };
 
+  # aven infers its project from the working directory, so these open in the
+  # active pane's directory instead of a persistent floax session.
+  tmuxAvenPopup = pkgs.writeShellApplication {
+    name = "tmux-aven-popup";
+    runtimeInputs = [
+      pkgs.tmux
+      tmuxPopupRun
+    ];
+    text = ''
+      cwd=$(tmux display-message -p '#{pane_current_path}')
+      tmux-popup-run -T " aven " -w 80% -h 80% -d "$cwd" aven tui -p
+    '';
+  };
+
+  tmuxAvenAddPopup = pkgs.writeShellApplication {
+    name = "tmux-aven-add-popup";
+    runtimeInputs = [
+      pkgs.tmux
+      tmuxPopupRun
+    ];
+    text = ''
+      cwd=$(tmux display-message -p '#{pane_current_path}')
+      tmux-popup-run -T " add task " -w 120 -h 30 -d "$cwd" aven tui --add-task-only
+    '';
+  };
+
   tmux-floax = pkgs.tmuxPlugins.mkTmuxPlugin {
     pluginName = "tmux-floax";
     rtpFilePath = "floax.tmux";
@@ -671,6 +697,19 @@ let
       cmd = ''run-shell "tmux-floax-run --width 60% --height 30% obsidian tmux-obsidian-task"'';
     };
 
+    avenPopup = {
+      group = "popups";
+      name = "Tasks (aven)";
+      key = "A";
+      cmd = ''run-shell "tmux-aven-popup"'';
+    };
+    avenAddTask = {
+      group = "popups";
+      name = "Add task (aven)";
+      key = "+";
+      cmd = ''run-shell "tmux-aven-add-popup"'';
+    };
+
     # Pickers stay as display-popup (need parent pane context)
     filePicker = {
       group = "popups";
@@ -784,6 +823,8 @@ let
         b.gituiPopup
         b.lazydockerPopup
         b.filePicker
+        b.avenPopup
+        b.avenAddTask
         b.obsidianTask
       ];
     }
@@ -1260,6 +1301,8 @@ in
     tmuxPopupRun
     tmuxSeshPopup
     tmuxFilePopup
+    tmuxAvenPopup
+    tmuxAvenAddPopup
     tmuxFloaxRun
     pkgs.sesh
   ];
