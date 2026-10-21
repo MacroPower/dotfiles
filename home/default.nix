@@ -57,6 +57,7 @@ in
 {
   imports = [
     ./options.nix
+    ./aven.nix
     ./btrix.nix
     ./ca-certificates.nix
     ./stylix.nix
