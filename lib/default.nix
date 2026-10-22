@@ -347,6 +347,47 @@ let
     );
   };
 
+  # harper builds its curated dictionary from the rune files on every
+  # start, which takes about 160ms of each harper-cli run. prose-lint runs
+  # harper-cli on every file Claude writes, so the cost adds up. The patch
+  # lets a build embed the finished dictionary. The overlay builds harper
+  # once with the patch, dumps the dictionary with that build, and builds
+  # again with HARPER_PRECOMPUTED_DICT naming the dump. The patch also
+  # changes Cargo.lock, so the overlay fetches the vendored crates again.
+  # When nixpkgs bumps harper, the patch might stop applying. Rebase it on
+  # the new tag, or drop this overlay.
+  harperOverlay = final: prev: {
+    harper =
+      let
+        patch = ../pkgs/harper-precomputed-dict.patch;
+        unembedded = prev.harper.overrideAttrs (old: {
+          patches = (old.patches or [ ]) ++ [ patch ];
+          cargoDeps = final.rustPlatform.fetchCargoVendor {
+            inherit (old) src;
+            name = "${old.pname}-${old.version}";
+            patches = [ patch ];
+            hash = "sha256-UYtsjzphNnQfHlSkLqbE9bfGr39DRGR+kXZC/zPe6Zc=";
+          };
+          # The embedded build runs the tests.
+          doCheck = false;
+          doInstallCheck = false;
+        });
+        dictionary = final.runCommand "harper-curated-dictionary" { } ''
+          ${unembedded}/bin/harper-cli dump-curated-dictionary "$out"
+        '';
+      in
+      unembedded.overrideAttrs (old: {
+        env = (old.env or { }) // {
+          HARPER_PRECOMPUTED_DICT = "${dictionary}";
+        };
+        doCheck = prev.harper.doCheck;
+        doInstallCheck = prev.harper.doInstallCheck;
+        passthru = (old.passthru or { }) // {
+          inherit dictionary unembedded;
+        };
+      });
+  };
+
   # Building marksman on Linux pulls in dotnetCorePackages.runtime_9_0,
   # which on aarch64-linux routes through the source-built dotnet-vmr-9.0.15
   # (a multi-hour build that aborts with SIGILL in its binary-allowance
@@ -769,6 +810,7 @@ let
     direnvOverlay
     atuinOverlay
     czkawkaOverlay
+    harperOverlay
     marksmanOverlay
     grugFarOverlay
     cliHelpersOverlay
