@@ -151,15 +151,17 @@ in
     # Runs harper-cli with one rule list over one file. harper-cli exits
     # 1 when it found lints; any other non-zero code is a crash, so its
     # stderr is passed through and the wrapper exits 2 for hook-router
-    # to log.
+    # to log. Each call keeps its stderr in a file of its own, because
+    # two calls can run at once.
     lint() {
       local rules="$1"
       shift
-      local out rc=0
+      local out err rc=0
+      err=$(mktemp -p "$tmp_dir")
       out=$(harper-cli lint --weirpacks "$pack" --only "$rules" -o \
-        --format compact --quiet "$@" 2>"$stderr_file") || rc=$?
+        --format compact --quiet "$@" 2>"$err") || rc=$?
       if [ "$rc" -ge 2 ]; then
-        cat "$stderr_file" >&2
+        cat "$err" >&2
         exit 2
       fi
       printf '%s\n' "$out" | sed '/^$/d'
@@ -575,15 +577,46 @@ in
     # it in the map. The second argument lists the bare names of the
     # checks to skip, separated by spaces.
     markdown_checks() {
-      local internal script name
+      local internal script name dir
+      dir=$(mktemp -d -p "$tmp_dir")
       while IFS='=' read -r internal script; do
         [ -n "$internal" ] || continue
         name=''${internal%_*}
         case " $2 " in
           *" $name "*) continue ;;
         esac
-        AWKPATH="$awk_lib" awk -f "$script" "$1" | sed "s/::$name:/::$internal:/"
+        start_check "$dir" "$internal" "$script" "$1" ""
       done <<< "$awk_checks"
+      collect_checks "$dir"
+    }
+
+    # Starts one awk check in the background with SHADOW set to the
+    # fifth argument. Its findings go under their internal name into a
+    # file of their own in the directory the first argument names. The
+    # checks share no state, so they all run at once. The PID goes
+    # into check_pids for collect_checks.
+    check_pids=()
+    start_check() {
+      local name=''${2%_*}
+      SHADOW="$5" AWKPATH="$awk_lib" awk -f "$3" "$4" |
+        sed "s/::$name:/::$2:/" >"$1/$2" &
+      check_pids+=("$!")
+    }
+
+    # Waits for every check that start_check started, so a failed check
+    # fails the wrapper, and prints the findings in the directory the
+    # argument names.
+    collect_checks() {
+      local pid f
+      for pid in "''${check_pids[@]}"; do
+        wait "$pid"
+      done
+      check_pids=()
+      for f in "$1"/*; do
+        if [ -e "$f" ]; then
+          cat "$f"
+        fi
+      done
     }
 
     # Runs the awk checks that commentChecks names over the comment
@@ -593,7 +626,8 @@ in
     # kind, and a check skips each kind that comment-checks.txt lists
     # after its name.
     comment_checks() {
-      local internal script name
+      local internal script name dir
+      dir=$(mktemp -d -p "$tmp_dir")
       while IFS='=' read -r internal script; do
         [ -n "$internal" ] || continue
         name=''${internal%_*}
@@ -607,13 +641,13 @@ in
         case " $skips " in
           *" $name "*) continue ;;
         esac
-        SHADOW=1 AWKPATH="$awk_lib" awk -f "$script" "$1" | sed "s/::$name:/::$internal:/"
+        start_check "$dir" "$internal" "$script" "$1" 1
       done <<< "$awk_checks"
+      collect_checks "$dir"
     }
 
     tmp_dir=$(mktemp -d)
     trap 'rm -rf "$tmp_dir"' EXIT
-    stderr_file=$tmp_dir/stderr
     norm_dir=$tmp_dir/norm
     mkdir "$norm_dir"
 
@@ -636,8 +670,11 @@ in
       message=$tmp_dir/message.md
       cat >"$message"
       straighten <"$message" >"$norm_dir/message.md"
+      markdown_checks "$message" "$change_skips" >"$tmp_dir/checks" &
+      checks_pid=$!
       found=$(lint "$change_rules" "$norm_dir/message.md" | drop_label_colons "$message")
-      checks=$(markdown_checks "$message" "$change_skips")
+      wait "$checks_pid"
+      checks=$(cat "$tmp_dir/checks")
       out=$(printf '%s\n%s\n' "$found" "$checks" | sed '/^$/d' |
         sed 's/^[^:]*:/<stdin>:/' | tag)
       if [ -n "$out" ]; then
@@ -736,25 +773,81 @@ in
         ;;
     esac
 
-    out=""
-    case "$shadow_kind" in
-      hcl|yaml|hash) ;;
-      *)
-        straighten <"$file" >"$norm_dir/$base"
-        out=$(lint "$rules" "$norm_dir/$base")
-        ;;
-    esac
-    if [ -n "$shadow_kind" ]; then
-      shadow=$tmp_dir/shadow.$shadow_ext
+    # The shadow holds the file's comments for the shadow lint and the
+    # comment checks. A language whose comments Harper parses itself
+    # gets one for the comment checks alone.
+    if [ -n "$comment_kind" ]; then
+      if [ -n "$shadow_kind" ]; then
+        shadow=$tmp_dir/shadow.$shadow_ext
+      else
+        shadow=$tmp_dir/comments
+      fi
       shifts=$tmp_dir/shifts
       span_shifts=$tmp_dir/span_shifts
       : >"$shifts"
       : >"$span_shifts"
-      comment_lines "$shadow_kind" "$file" "$shifts" | end_list_leads |
+      comment_lines "$comment_kind" "$file" "$shifts" | end_list_leads |
         close_spans "$span_shifts" | straighten >"$shadow"
+    fi
+
+    # The harper-cli runs and the awk checks share no state, so each
+    # one runs in the background. The wrapper waits for all of them
+    # before it joins their findings. Each harper-cli run spends most
+    # of its time loading the weirpack, so the runs overlap that time.
+    pids=()
+    : >"$tmp_dir/file_found"
+    : >"$tmp_dir/shadow_found"
+    : >"$tmp_dir/checks_found"
+    : >"$tmp_dir/comment_found"
+    case "$shadow_kind" in
+      hcl|yaml|hash) ;;
+      *)
+        straighten <"$file" >"$norm_dir/$base"
+        lint "$rules" "$norm_dir/$base" >"$tmp_dir/file_found" &
+        pids+=("$!")
+        ;;
+    esac
+    if [ -n "$shadow_kind" ]; then
+      lint "$rules" "$shadow" | unshift "$shifts" "$span_shifts" >"$tmp_dir/shadow_found" &
+      pids+=("$!")
+    fi
+
+    # The awk checks read markdown. ProseTypography also reads other
+    # files whole, and the comment checks read their comments.
+    if [ "$ext" = md ] || [ "$ext" = markdown ]; then
+      markdown_checks "$file" "$skips" >"$tmp_dir/checks_found" &
+      pids+=("$!")
+    elif [ "$shadow_kind" != hash ]; then
+      # ProseTypography also reads source files, where RAW=1 checks
+      # every line whole, string literals included. A Weir rule or an
+      # awk check holds the characters it reports, so neither is read.
+      while IFS='=' read -r internal script; do
+        [ "''${internal%_*}" = ProseTypography ] || continue
+        RAW=1 AWKPATH="$awk_lib" awk -f "$script" "$file" |
+          sed "s/::ProseTypography:/::$internal:/" >"$tmp_dir/checks_found" &
+        pids+=("$!")
+      done <<< "$awk_checks"
+    fi
+
+    # unshift moves each comment finding back to the source column, and
+    # the awk step names the source file in place of the shadow.
+    if [ -n "$comment_kind" ]; then
+      comment_checks "$shadow" "$comment_kind" | unshift "$shifts" "$span_shifts" |
+        FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }' >"$tmp_dir/comment_found" &
+      pids+=("$!")
+    fi
+
+    for pid in "''${pids[@]}"; do
+      wait "$pid"
+    done
+
+    # A finding on a comment line comes from the shadow lint, so the
+    # file's own finding there drops.
+    out=$(cat "$tmp_dir/file_found")
+    if [ -n "$shadow_kind" ]; then
       out=$(
         printf '%s\n' "$out" | drop_comment_lines "$shadow" | sed '/^$/d'
-        lint "$rules" "$shadow" | unshift "$shifts" "$span_shifts"
+        cat "$tmp_dir/shadow_found"
       )
     fi
 
@@ -768,49 +861,12 @@ in
     out=$(printf '%s\n' "$out" | sed '/^$/d' | drop_label_colons "$file" |
       FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
 
-    # The awk checks read markdown. ProseTypography also reads other
-    # files whole, and the comment checks below read their comments.
-    if [ "$ext" = md ] || [ "$ext" = markdown ]; then
-      found=$(markdown_checks "$file" "$skips")
-      if [ -n "$found" ]; then
+    for found in "$tmp_dir/checks_found" "$tmp_dir/comment_found"; do
+      if [ -s "$found" ]; then
         out="''${out:+$out
-    }$found"
+    }$(cat "$found")"
       fi
-    elif [ "$shadow_kind" != hash ]; then
-      # ProseTypography also reads source files, where RAW=1 checks
-      # every line whole, string literals included. A Weir rule or an
-      # awk check holds the characters it reports, so neither is read.
-      while IFS='=' read -r internal script; do
-        [ "''${internal%_*}" = ProseTypography ] || continue
-        found=$(RAW=1 AWKPATH="$awk_lib" awk -f "$script" "$file" | sed "s/::ProseTypography:/::$internal:/")
-        if [ -n "$found" ]; then
-          out="''${out:+$out
-    }$found"
-        fi
-      done <<< "$awk_checks"
-    fi
-
-    # The comment checks read the shadow that the lint above built, or a
-    # shadow of their own for a language whose comments Harper parses
-    # itself. unshift moves each finding back to the source column, and
-    # the awk step names the source file in place of the shadow.
-    if [ -n "$comment_kind" ]; then
-      if [ -z "$shadow_kind" ]; then
-        shadow=$tmp_dir/comments
-        shifts=$tmp_dir/shifts
-        span_shifts=$tmp_dir/span_shifts
-        : >"$shifts"
-        : >"$span_shifts"
-        comment_lines "$comment_kind" "$file" "$shifts" | end_list_leads |
-          close_spans "$span_shifts" | straighten >"$shadow"
-      fi
-      found=$(comment_checks "$shadow" "$comment_kind" | unshift "$shifts" "$span_shifts" |
-        FILE="$file" awk '{ sub(/^[^:]*:/, ENVIRON["FILE"] ":"); print }')
-      if [ -n "$found" ]; then
-        out="''${out:+$out
-    }$found"
-      fi
-    fi
+    done
 
     if [ -n "$out" ]; then
       printf '%s\n' "$out" | tag
