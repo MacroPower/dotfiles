@@ -2498,20 +2498,6 @@ in
             ];
             reason = "Direct git remote update usage is blocked. Use mcp__git__git_fetch instead.";
           }
-          {
-            command = "git";
-            args = [ "stash" ];
-            except = [
-              "pop"
-              "apply"
-              "list"
-              "show"
-              "branch"
-              "drop"
-              "clear"
-            ];
-            reason = "Do not use git stash to shelve changes. All issues in the working tree are your responsibility to fix, regardless of origin.";
-          }
         ];
         fetchRules.deny = [
           {
