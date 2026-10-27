@@ -33,7 +33,7 @@ tasks:
     cmds:
       - >-
         sops exec-env {{.SOPS_FILE}} '
-        atuin register -u "$ATUIN_USERNAME" -e "$ATUIN_EMAIL" -p "$ATUIN_PASSWORD"'
+        atuin register -u "$ATUIN_USERNAME" -e "$ATUIN_EMAIL"'
       - atuin sync
 
   login:
@@ -42,5 +42,5 @@ tasks:
     cmds:
       - >-
         sops exec-env {{.SOPS_FILE}} '
-        atuin login -u "$ATUIN_USERNAME" -p "$ATUIN_PASSWORD"'
+        atuin login -u "$ATUIN_USERNAME"'
       - atuin sync
