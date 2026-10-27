@@ -17,6 +17,11 @@
       push.autoSetupRemote = true;
       rebase.autoStash = true;
       fetch.prune = true;
+      # workmux reads origin/HEAD to find the branch that new worktrees
+      # start from (base_branch = "auto" in home/claude.nix). By default,
+      # fetch never updates an existing origin/HEAD, so the ref still names
+      # the old branch after the remote changes its default branch.
+      fetch.followRemoteHEAD = "always";
       init.defaultBranch = "main";
     };
 
