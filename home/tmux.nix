@@ -489,7 +489,7 @@ let
       group = "windows";
       name = "Rename";
       key = "R";
-      cmd = ''command-prompt -I "#W" "rename-window -- \"%%\""'';
+      cmd = ''command-prompt -I "#W" "rename-window -- \"%%%\""'';
     };
     killWindow = {
       group = "windows";
@@ -575,13 +575,13 @@ let
       group = "panes";
       name = "Grab/join pane";
       key = "g";
-      cmd = ''choose-window "join-pane -h -s \"%%\""'';
+      cmd = ''choose-window "join-pane -h -s \"%%%\""'';
     };
     movePane = {
       group = "panes";
       name = "Send to window";
       key = "m";
-      cmd = ''command-prompt -p "send pane to:" "join-pane -h -t \"%%\""'';
+      cmd = ''command-prompt -p "send pane to:" "join-pane -h -t \"%%%\""'';
     };
     killPane = {
       group = "panes";
@@ -638,7 +638,7 @@ let
       group = "sessions";
       name = "Rename";
       key = "$";
-      cmd = ''command-prompt -I "#S" "rename-session -- \"%%\""'';
+      cmd = ''command-prompt -I "#S" "rename-session -- \"%%%\""'';
     };
     newSession = {
       group = "sessions";
