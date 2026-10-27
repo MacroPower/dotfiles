@@ -3463,6 +3463,11 @@ in
       claude-code = {
         enable = true;
         package = claudeWrapped;
+        # Pin the legacy location. This module writes .claude/CLAUDE.md,
+        # themes, and sandbox rules against ~/.claude directly, and
+        # preferXdgDirectories moves the default to ~/.config/claude at
+        # stateVersion 26.11.
+        configDir = "${config.home.homeDirectory}/.claude";
 
         settings = lib.recursiveUpdate (
           {
