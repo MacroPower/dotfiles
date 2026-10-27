@@ -1231,8 +1231,11 @@ in
       set -g set-titles-string "#S / #W"
       set -g automatic-rename-format "#{?#{m:.*-wrapped,#{pane_current_command}},#{s/^\\.//;s/-wrapped$//:pane_current_command},#{pane_current_command}}#{?pane_in_mode, (#{pane_mode}),}#{?pane_dead,[dead],}"
 
-      # Scrollbars disabled - modal scrollbars cause text reflow on width change
-      set -g pane-scrollbars off
+      # Modal scrollbars appear while scrolling in copy mode. tmux 3.8 draws
+      # them over the pane, so the pane keeps its width and the text does
+      # not reflow.
+      set -g pane-scrollbars modal
+      set -g pane-scrollbars-style "bg=#${tmux.bg},fg=#${tmux.muted}"
 
       # --- Keybindings (generated from shared binding definitions) ---
       ${bindLines}
