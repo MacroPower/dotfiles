@@ -1179,6 +1179,15 @@ in
       set -g popup-border-style "fg=#${tmux.muted}"
       set -g popup-border-lines rounded
 
+      # tmux 3.8 gives popups and menus a dark grey background by default.
+      # Keep the terminal background so every popup and menu matches the
+      # floax popups, whose -s style replaces popup-style. Menu borders
+      # match popup-border-style, and the selected item matches mode-style.
+      set -g popup-style default
+      set -g menu-style "fg=#${tmux.fg}"
+      set -g menu-border-style "fg=#${tmux.muted}"
+      set -g menu-selected-style "bg=#${tmux.surface},fg=#${tmux.highlight}"
+
       # Messages
       set -g message-style "bg=#${tmux.surface},fg=#${tmux.fg}"
       set -g message-command-style "bg=#${tmux.surface},fg=#${tmux.fg}"
