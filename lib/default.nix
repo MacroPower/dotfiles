@@ -329,17 +329,14 @@ let
     };
   };
 
-  # atuin 18.23.0's checkPhase fails on both aarch64 platforms at the
-  # nixpkgs pin, so Hydra cached no build for them. On darwin, the e2e
-  # tests source the host's /etc/bashrc and run the installed atuin
-  # instead of the one under test (fixed by NixOS/nixpkgs#574509). On
-  # aarch64-linux, a timing test in atuin-common fails when the builder
-  # is busy. Hydra cached x86_64-linux, so it keeps the stock package. Drop
-  # this once nixpkgs-unstable includes #574509 and Hydra caches atuin
-  # for both aarch64 platforms.
+  # Hydra has no cached atuin build for aarch64-linux at the nixpkgs pin,
+  # so terrarium builds it locally. A timing test in atuin-common fails
+  # when the builder is busy, so skip the check phase there. Every other
+  # platform keeps the stock package, which cache.nixos.org serves. Drop
+  # this when Hydra caches atuin for aarch64-linux.
   atuinOverlay = _final: prev: {
     atuin =
-      if prev.stdenv.hostPlatform.isAarch64 then
+      if prev.stdenv.hostPlatform.isAarch64 && prev.stdenv.hostPlatform.isLinux then
         prev.atuin.overrideAttrs { doCheck = false; }
       else
         prev.atuin;
