@@ -11,8 +11,8 @@ version: "3"
 # plaintext password is written to disk. Registration writes the encryption
 # key to ~/.local/share/atuin/key.
 #
-# The workmux sandbox VMs auto-login on create (see home/claude.nix
-# post_create) rather than via a task, so there is no VM login task here.
+# The workmux Lima guest logs itself in from a Claude SessionStart hook
+# (atuinSandboxLogin in home/claude.nix), so this file has no VM login task.
 
 vars:
   SOPS_FILE: secrets/dotfiles.yaml

@@ -390,15 +390,6 @@ let
       lib.optionals cfg.lima.enable [
         "direnv allow >/dev/null 2>&1 || true"
         "lefthook install >/dev/null 2>&1 || true"
-        # Authenticate this fresh sandbox to the self-hosted atuin server so its
-        # shell history syncs with the host. Credentials arrive via
-        # env_passthrough; the key is read from the mounted host key (key_path).
-        # Best-effort: an unreachable server, missing creds, or a failed sync
-        # never aborts sandbox setup.
-        # atuin 18.23 reads the password only from -p or a terminal prompt,
-        # so ps shows it for the few seconds the login takes. atuin 18.24.0
-        # falls back to ATUIN_PASSWORD. Drop -p when nixpkgs ships 18.24.0.
-        "atuin login -u \"$ATUIN_USERNAME\" -p \"$ATUIN_PASSWORD\" >/dev/null 2>&1 && atuin sync >/dev/null 2>&1 || true"
       ]
       # Darwin-only because that's where the Seatbelt sandbox runs. Kept on
       # even with lima: the agent pane runs in the VM (where the settings key
@@ -853,6 +844,33 @@ let
       echo "aven tracks tasks for this project. Load the \`aven\` skill before running \`aven\` commands."
       echo
       sed -n '/^## Local Conventions/,$p' <<<"$out"
+    '';
+  };
+
+  # Logs the workmux Lima guest in to the self-hosted atuin server, so its
+  # shell history syncs with the macOS host. workmux runs post_create on the
+  # host, so only a hook inside the guest reaches the guest's atuin. The
+  # guest agent receives ATUIN_USERNAME and ATUIN_PASSWORD through
+  # env_passthrough, and its hooks inherit them. Without the password, atuin
+  # prompts for it on the terminal, so the script exits when either variable
+  # is empty.
+  #
+  # atuin reads the answer to its key prompt from stdin, which carries the
+  # hook's JSON input. The printf answers with a blank line instead, so atuin
+  # loads the mounted host key (key_path). atuin reads the password from
+  # ATUIN_PASSWORD, so it never appears in argv. The shared VM keeps atuin's
+  # session token on its own disk, so atuin login returns early in every
+  # later Claude session.
+  atuinSandboxLogin = pkgs.writeShellApplication {
+    name = "claude-atuin-sandbox-login";
+    runtimeInputs = [ config.programs.atuin.package ];
+    text = ''
+      if [ -z "''${ATUIN_USERNAME:-}" ] || [ -z "''${ATUIN_PASSWORD:-}" ]; then
+        exit 0
+      fi
+      if printf '\n' | atuin login -u "$ATUIN_USERNAME" >/dev/null 2>&1; then
+        atuin sync >/dev/null 2>&1 || true
+      fi
     '';
   };
 
@@ -3898,6 +3916,21 @@ in
                         type = "command";
                         command = lib.getExe avenPrime;
                         timeout = 10;
+                      }
+                    ];
+                  }
+                ]
+                ++ lib.optionals (config.dotfiles.hostname == "terrarium") [
+                  {
+                    # Every recreated VM starts logged out, and workmux can
+                    # start its first agent with --continue or --resume, so
+                    # the matcher includes resume.
+                    matcher = "startup|resume";
+                    hooks = [
+                      {
+                        type = "command";
+                        command = lib.getExe atuinSandboxLogin;
+                        async = true;
                       }
                     ];
                   }
