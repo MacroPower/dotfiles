@@ -14,8 +14,8 @@
   environment.enableAllTerminfo = true;
 
   programs.nh = {
-    enable = true;
     flake = "/home/${config.dotfiles.system.username}/repos/dotfiles";
+    clean.dates = "03:15";
   };
 
   programs.nix-ld = {

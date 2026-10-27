@@ -40,9 +40,16 @@
       ];
   };
 
-  nix.gc = {
-    automatic = true;
-    options = "--delete-older-than 30d";
+  programs.nh = {
+    enable = true;
+    clean = {
+      enable = true;
+      # --keep 5 leaves rollback targets on hosts that go more than 30 days
+      # between switches. --no-gcroots keeps result links and nix-direnv
+      # shells rooted at any age, so a project untouched for 30 days still
+      # has its dev shell.
+      extraArgs = "--keep 5 --keep-since 30d --no-gcroots";
+    };
   };
 
   programs.fish.enable = true;
