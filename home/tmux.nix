@@ -1178,6 +1178,12 @@ in
       set -g pane-active-border-style "fg=#${tmux.accent}"
       set -g popup-border-style "fg=#${tmux.muted}"
       set -g popup-border-lines rounded
+      set -g display-panes-border-style "fg=#${tmux.muted}"
+      set -g tree-mode-border-style "fg=#${tmux.muted}"
+
+      # Pane numbers from display-panes match the pane border colors
+      set -g display-panes-colour "#${tmux.muted}"
+      set -g display-panes-active-colour "#${tmux.accent}"
 
       # tmux 3.8 gives popups and menus a dark grey background by default.
       # Keep the terminal background so every popup and menu matches the
