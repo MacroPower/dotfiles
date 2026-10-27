@@ -1261,17 +1261,15 @@ in
       # --- Terminal support ---
 
       # Ghostty
+      # tmux 3.8 detects Ghostty from its XTVERSION reply and enables the
+      # Ghostty feature set, which includes RGB, extkeys, and sync.
+      #
       # `always` (not `on`) so tmux forwards CSI u extended keys to inner
       # apps even when they don't advertise support. Claude Code doesn't
       # emit `CSI > 4 ; N m` or `CSI ? 2027 h`, so `on` would downgrade
       # Shift+Enter to plain \r and break multi-line input.
       set -g extended-keys always
-      set -as terminal-features ',xterm-ghostty:RGB'
-      set -as terminal-features ',xterm-ghostty:extkeys'
-      set -as terminal-features ',xterm-ghostty:sync'
-      set -as terminal-features ',xterm-ghostty:strike'
       set -as terminal-features ',xterm-ghostty:sixel'
-      set -as terminal-overrides ',xterm-ghostty:Ss=\E[%p1%d q:Se=\E[2 q'
 
       # Hyperlink (OSC 8) support
       set -as terminal-features ',*:hyperlinks'
