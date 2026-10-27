@@ -1169,6 +1169,9 @@ in
       }"
 
       set -g window-status-activity-style "none"
+      # tmux 3.8 underlines the current tab by default. The format above
+      # draws the current tab itself.
+      set -g window-status-current-style default
 
       # Borders
       set -g pane-border-style "fg=#${tmux.muted}"
