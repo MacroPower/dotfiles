@@ -217,11 +217,21 @@ let
   # on each bump. Trust upstream CI and skip the check phase entirely.
   # pytestCheckHook runs in installCheckPhase, so doInstallCheck is the
   # right gate (doCheck already defaults false for pure-python builds).
+  #
+  # fastmcp 3.x does not support mcp 2.x, and nixpkgs marks fastmcp-slim
+  # broken when its mcp argument is 2.x or later. That breaks kagimcp and
+  # mcp-nixos. Build fastmcp-slim against mcp_1, the same workaround
+  # nixpkgs applies to music-assistant. Nothing else in the fastmcp
+  # closure depends on mcp, so the override does not pull in a second
+  # mcp version. Drop it when nixpkgs ships fastmcp 4.x.
   fastmcpOverlay = _final: prev: {
     pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
+      (pyfinal: pyprev: {
         fastmcp = pyprev.fastmcp.overrideAttrs {
           doInstallCheck = false;
+        };
+        fastmcp-slim = pyprev.fastmcp-slim.override {
+          mcp = pyfinal.mcp_1;
         };
       })
     ];
@@ -232,11 +242,15 @@ let
   # rebuilds in the Nix sandbox dozens of them time out at once and
   # fail the whole build (started with one test, grew to 40+ across
   # four files on later bumps). Same story as fastmcp above: trust
-  # upstream CI and skip the check phase entirely.
+  # upstream CI and skip the check phase entirely. mcp_1 carries the same
+  # test suite and gets the same treatment.
   mcpOverlay = _final: prev: {
     pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
       (_pyfinal: pyprev: {
         mcp = pyprev.mcp.overrideAttrs {
+          doInstallCheck = false;
+        };
+        mcp_1 = pyprev.mcp_1.overrideAttrs {
           doInstallCheck = false;
         };
       })
@@ -366,7 +380,7 @@ let
             inherit (old) src;
             name = "${old.pname}-${old.version}";
             patches = [ patch ];
-            hash = "sha256-UYtsjzphNnQfHlSkLqbE9bfGr39DRGR+kXZC/zPe6Zc=";
+            hash = "sha256-dCHrRybBEo0wqUDzSoJbISwrhYlnm5aa5iDrOEmkTXs=";
           };
           # The embedded build runs the tests.
           doCheck = false;
@@ -773,6 +787,31 @@ let
     ];
   };
 
+  # nixpkgs ships invoke 3, and no fabric release supports it, so nixpkgs
+  # marks fabric 3.2.3 broken (`fabric/fabric#2376`). azure-cli depends on
+  # fabric, so every host that installs azure-cli fails to evaluate. Build
+  # the unreleased fabric commit that adds invoke 3 support, the same fix
+  # NixOS/nixpkgs#576874 proposes. Drop this overlay when that PR reaches
+  # nixpkgs-unstable.
+  fabricOverlay = _final: prev: {
+    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+      (_pyfinal: pyprev: {
+        fabric = pyprev.fabric.overridePythonAttrs (old: {
+          version = "3.2.3-unstable-2026-04-07";
+          src = prev.fetchFromGitHub {
+            owner = "fabric";
+            repo = "fabric";
+            rev = "cc098ad475dbbe2e10aba72692d83aee58919570";
+            hash = "sha256-Z1tGcjdLrzbqcbS6XwapSgDNpyLbBiO21yeqi7XhbpQ=";
+          };
+          meta = old.meta // {
+            broken = false;
+          };
+        });
+      })
+    ];
+  };
+
   # dagger/nix's GoReleaser-generated package takes a bare `system`
   # argument. callPackage fills it from the deprecated `pkgs.system` alias,
   # which warns on every evaluation. Pass the host platform's system
@@ -807,6 +846,7 @@ let
     psutilOverlay
     isortOverlay
     pyjwtOverlay
+    fabricOverlay
     direnvOverlay
     atuinOverlay
     czkawkaOverlay

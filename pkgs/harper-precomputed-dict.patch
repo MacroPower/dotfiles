@@ -1,8 +1,8 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index 0f9166f..dca2058 100644
+index d73b81e..5f54587 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -2032,6 +2032,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -2048,6 +2048,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "a6956a1e60e2d1412b44b4169d44a03dae518f8583d3e10090c912c105e48447"
  dependencies = [
   "rayon",
@@ -10,15 +10,15 @@ index 0f9166f..dca2058 100644
  ]
  
  [[package]]
-@@ -2697,6 +2698,7 @@ name = "harper-core"
- version = "2.12.0"
+@@ -2713,6 +2714,7 @@ name = "harper-core"
+ version = "2.13.0"
  dependencies = [
   "ammonia",
 + "bincode",
-  "bitflags 2.13.1",
+  "bitflags 2.13.2",
   "blanket",
   "boxcar",
-@@ -3516,6 +3518,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -3533,6 +3535,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "936de6c22f08e7135a921f8ada907acd0d88880c4f42b5591f634b9f1dd8e07f"
  dependencies = [
   "fid-rs",
@@ -26,7 +26,7 @@ index 0f9166f..dca2058 100644
  ]
  
  [[package]]
-@@ -6097,6 +6100,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -6112,6 +6115,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "f6f88f4b0a1ebd6c3d16be3e45eb0e8089372ccadd88849b7ca162ba64b5e6f6"
  dependencies = [
   "louds-rs",
@@ -35,10 +35,10 @@ index 0f9166f..dca2058 100644
  
  [[package]]
 diff --git a/harper-cli/src/main.rs b/harper-cli/src/main.rs
-index 46719e6..668ba24 100644
+index 67ef36d..65523e5 100644
 --- a/harper-cli/src/main.rs
 +++ b/harper-cli/src/main.rs
-@@ -193,6 +193,13 @@ enum Args {
+@@ -199,6 +199,13 @@ enum Args {
      },
      /// Print harper-core version.
      CoreVersion,
@@ -52,7 +52,7 @@ index 46719e6..668ba24 100644
      /// Rename a flag in the dictionary and affixes.
      RenameFlag {
          /// The old flag.
-@@ -569,6 +576,10 @@ fn main() -> anyhow::Result<()> {
+@@ -577,6 +584,10 @@ fn main() -> anyhow::Result<()> {
              println!("harper-core v{}", harper_core::core_version());
              Ok(())
          }
@@ -64,7 +64,7 @@ index 46719e6..668ba24 100644
          Args::TrainBrillTagger {
              datasets: dataset,
 diff --git a/harper-core/Cargo.toml b/harper-core/Cargo.toml
-index b259656..78d4d07 100644
+index 33fff34..2dcf908 100644
 --- a/harper-core/Cargo.toml
 +++ b/harper-core/Cargo.toml
 @@ -33,7 +33,8 @@ ammonia = "4.1.2"
