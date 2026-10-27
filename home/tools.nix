@@ -352,34 +352,14 @@ in
 
   home.sessionPath = [ "$HOME/.terraform.versions/bin" ];
 
-  # The home-manager atuin module starts the daemon with `atuin daemon start`,
-  # the one start path that skips stale-socket cleanup. An unclean termination
-  # (panic, hard reboot, SIGKILL) leaves ~/.local/share/atuin/daemon.sock
-  # behind; every subsequent start then fails at UnixListener::bind with
-  # EADDRINUSE and exits 1, so launchd crash-loops the agent and atuin (which
-  # has no sqlite fallback in daemon mode) silently drops all history. The
-  # `--force` flag runs force_cleanup() to remove the stale socket + pidfile
-  # before binding. Safe here because launchd only relaunches the agent after
-  # the prior instance has exited, so force_cleanup's kill targets a dead pid.
-  launchd.agents.atuin-daemon.config.ProgramArguments =
-    lib.mkIf (pkgs.stdenv.hostPlatform.isDarwin && config.programs.atuin.daemon.enable)
-      (
-        lib.mkForce [
-          (lib.getExe config.programs.atuin.package)
-          "daemon"
-          "start"
-          "--force"
-        ]
-      );
-
-  # On terrarium the daemon is useless without the host key mount: it dies
-  # at startup ("could not load encryption key") while atuin-daemon.socket
-  # keeps listening, so every `atuin history start` -- run synchronously by
-  # fish's preexec hook on each Enter -- queues a connection the dead daemon
-  # never serves and blocks the shell until ctrl+c. When the socket is not
-  # listening at all, the client instead falls back to direct sqlite in
-  # ~10ms, silently. These guards force that fallback whenever the daemon
-  # cannot work:
+  # On terrarium the daemon is useless without the host key mount. It dies
+  # at startup ("could not load encryption key"), but atuin-daemon.socket
+  # keeps listening. Fish's preexec hook runs `atuin history start` on each
+  # Enter and waits for it. Against the dead daemon, each call stalls the
+  # shell for 0.5 to 2 seconds before atuin saves the command locally. When
+  # the socket is not listening at all, the client instead falls back to
+  # direct sqlite in ~10ms, silently. These guards force that fallback
+  # whenever the daemon cannot work:
   #
   # - ConditionPathExists on the socket is the load-bearing guard: no key,
   #   no listener, instant fallback. The service gets the same condition
