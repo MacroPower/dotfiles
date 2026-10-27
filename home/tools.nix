@@ -87,6 +87,60 @@ let
         --set-default COPILOT_PROXY_LOG_FILE "${config.xdg.stateHome}/copilot-api-proxy/copilot-api-proxy.log"
     '';
   };
+
+  # On macOS, carapace ranks the BSD completers in its darwin and bsd
+  # groups above the GNU completers in its unix group. The macOS hosts
+  # put GNU coreutils, findutils, diffutils, patch, sed, and tar first on
+  # PATH (home/default.nix). These choice files pin each of those commands
+  # to its GNU completer. carapace reads the first line of each choice file as
+  # name@group. GNU diff has its completer in the common group.
+  gnuCarapaceChoices = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin (
+    lib.listToAttrs (
+      map (name: lib.nameValuePair "carapace/choices/${name}" { text = "${name}@unix\n"; }) [
+        "base64"
+        "basename"
+        "cat"
+        "chgrp"
+        "chmod"
+        "chown"
+        "cksum"
+        "cp"
+        "cut"
+        "date"
+        "dd"
+        "df"
+        "dirname"
+        "du"
+        "env"
+        "find"
+        "head"
+        "id"
+        "ln"
+        "ls"
+        "mkdir"
+        "mv"
+        "od"
+        "patch"
+        "rm"
+        "rmdir"
+        "sed"
+        "sort"
+        "stat"
+        "tail"
+        "tar"
+        "tee"
+        "touch"
+        "tr"
+        "uniq"
+        "wc"
+        "who"
+        "xargs"
+      ]
+    )
+    // {
+      "carapace/choices/diff".text = "diff@common\n";
+    }
+  );
 in
 {
   programs = {
@@ -323,11 +377,14 @@ in
   # lightweight. Enabling the cache can make the *first* init in a pre-existing
   # repo fail on a checksum mismatch if its lockfile lacks h1: hashes -- fix
   # once with `tofu providers lock`.
-  xdg.configFile."opentofu/tofurc".text = ''
-    disable_checkpoint           = true
-    disable_checkpoint_signature = true
-    plugin_cache_dir             = "${config.home.homeDirectory}/.terraform.d/plugin-cache"
-  '';
+  xdg.configFile = {
+    "opentofu/tofurc".text = ''
+      disable_checkpoint           = true
+      disable_checkpoint_signature = true
+      plugin_cache_dir             = "${config.home.homeDirectory}/.terraform.d/plugin-cache"
+    '';
+  }
+  // gnuCarapaceChoices;
 
   # tfswitch defaults to symlinking /usr/local/bin/tofu (denied by the
   # Claude sandbox) and falls back to ~/bin (creation also denied).
