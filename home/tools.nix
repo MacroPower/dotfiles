@@ -177,6 +177,11 @@ in
         style = "auto";
         keymap_mode = "auto";
 
+        # atuin 18.24 and later put a fresh install's data in ~/.atuin/data.
+        # Pin the XDG location, which the Lima key mount, key_path, and the
+        # Claude sandbox deny rule all name.
+        data_dir = "${config.xdg.dataHome}/atuin";
+
         # Show synced history from all machines by default
         filter_mode = "global";
         # Auto-filter by git repo when inside one
