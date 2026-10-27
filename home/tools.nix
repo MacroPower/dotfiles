@@ -188,6 +188,10 @@ in
       settings = {
         git_protocol = "ssh";
         editor = "nvim";
+        # Interactive `gh auth login` requests short-lived tokens that gh
+        # refreshes itself, instead of tokens that never expire. The
+        # --with-token login in home/claude.nix ignores this setting.
+        expiring_credentials = "enabled";
       };
     };
 
