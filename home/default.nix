@@ -80,9 +80,13 @@ in
       enable = true;
       enableDefaultConfig = false;
       includes = config.dotfiles.sshIncludes;
+      # Apple's /usr/bin/ssh exits before connecting when it does not support
+      # a KexAlgorithms entry. OpenSSH 9.9 added mlkem768x25519-sha256 and
+      # sntrup761x25519-sha512, and Apple first shipped 9.9 in macOS 15.4, so
+      # every Mac must run macOS 15.4 or later.
       extraConfig = ''
         SendEnv COLORTERM
-        KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
+        KexAlgorithms mlkem768x25519-sha256,sntrup761x25519-sha512,sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
         Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
         MACs hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com
         HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,ssh-ed25519,sk-ssh-ed25519-cert-v01@openssh.com,sk-ssh-ed25519@openssh.com
