@@ -1269,7 +1269,6 @@ in
       # emit `CSI > 4 ; N m` or `CSI ? 2027 h`, so `on` would downgrade
       # Shift+Enter to plain \r and break multi-line input.
       set -g extended-keys always
-      set -as terminal-features ',xterm-ghostty:sixel'
 
       # Hyperlink (OSC 8) support
       set -as terminal-features ',*:hyperlinks'
