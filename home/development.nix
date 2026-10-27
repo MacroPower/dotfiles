@@ -75,6 +75,11 @@ in
     activation = {
       installPython = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         run ${pkgs.uv}/bin/uv python install --default
+        # `install --default` counts any installed Python as a match, so it
+        # never installs a newer patch release or rebuild. `upgrade` does,
+        # and `|| true` keeps its download error from failing an offline
+        # switch.
+        run ${pkgs.uv}/bin/uv python upgrade || true
       '';
     };
 
