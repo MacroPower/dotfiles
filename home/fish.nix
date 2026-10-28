@@ -599,7 +599,6 @@ in
       lzd = "lazydocker";
       hf = "hyperfine";
       ps = "procs";
-      man = "tldr";
       ccp = "copilot-api-proxy run";
     };
 
