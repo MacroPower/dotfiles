@@ -342,6 +342,25 @@ let
         prev.atuin;
   };
 
+  # harlequin's test_a_timed_out_run_closes_its_connection_once_the_work_stopped
+  # runs a query with --timeout 0.1 against a stuck mock adapter and asserts
+  # the connection closed after the worker left. Under a loaded build sandbox
+  # the worker misses the window and the test fails. cache.nixos.org has no
+  # harlequin build for aarch64-linux at the nixpkgs pin, so terrarium runs
+  # the suite locally; skip just this case there. Every other platform keeps
+  # the stock package so its cached build still substitutes.
+  harlequinOverlay = _final: prev: {
+    harlequin =
+      if prev.stdenv.hostPlatform.isAarch64 && prev.stdenv.hostPlatform.isLinux then
+        prev.harlequin.overrideAttrs (old: {
+          disabledTests = (old.disabledTests or [ ]) ++ [
+            "test_a_timed_out_run_closes_its_connection_once_the_work_stopped"
+          ];
+        })
+      else
+        prev.harlequin;
+  };
+
   # czkawka's GUI binaries (krokiet, cedinia) link mac-notification-sys via
   # notify-rust and hit the same classic-ld64 stubs-pass crash as workmux
   # (see workmuxOverlay). Same lld workaround; drop each once the cctools fix
@@ -846,6 +865,7 @@ let
     fabricOverlay
     direnvOverlay
     atuinOverlay
+    harlequinOverlay
     czkawkaOverlay
     harperOverlay
     marksmanOverlay
