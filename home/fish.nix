@@ -580,7 +580,6 @@ in
       wm = "workmux";
       wmd = "workmux dashboard";
       wms = "workmux sandbox shell -- fish";
-      wma = "workmux sandbox agent";
       wmap = "workmux add -A -P";
       tf = "tofu";
       t = "task";
@@ -626,7 +625,26 @@ in
       # any user args. Output ordering differs from find: bfs is
       # breadth-first. Escape hatch: `command find`.
       find = "command bfs -exclude '(' ${bfsExcludeExpr} ')' $argv";
+
+      # `wma xhigh` starts the sandboxed agent at that effort level.
+      # Arguments after the level, or all arguments when the first is not
+      # a level, pass through to `workmux sandbox agent`.
+      wma = {
+        description = "workmux sandbox agent with an optional effort level";
+        body = ''
+          switch "$argv[1]"
+            case low medium high xhigh max
+              CLAUDE_CODE_EFFORT_LEVEL=$argv[1] workmux sandbox agent $argv[2..]
+            case '*'
+              workmux sandbox agent $argv
+          end
+        '';
+      };
     };
+
+    completions.wma = ''
+      complete -c wma -f -n __fish_is_first_arg -a 'low medium high xhigh max'
+    '';
 
     plugins = [
       {
