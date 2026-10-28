@@ -90,8 +90,11 @@ in
         nodejs
         gcc
 
-        # Linters
+        # Linters & formatters
+        cspell
         editorconfig-checker
+        prettier
+        shellcheck
 
         # Python build dependencies
         openssl
