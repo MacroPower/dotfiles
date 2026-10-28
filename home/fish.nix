@@ -600,7 +600,6 @@ in
       hf = "hyperfine";
       curl = "xh";
       ps = "procs";
-      wc = "tokei";
       man = "tldr";
       ccp = "copilot-api-proxy run";
     };
