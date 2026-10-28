@@ -598,7 +598,6 @@ in
       ping = "gping";
       lzd = "lazydocker";
       hf = "hyperfine";
-      curl = "xh";
       ps = "procs";
       man = "tldr";
       ccp = "copilot-api-proxy run";
