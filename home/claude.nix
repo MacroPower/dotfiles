@@ -3972,7 +3972,8 @@ in
             terminalProgressBarEnabled = true;
             # Lets Claude send proactive push notifications to the mobile
             # app. Toggling it in /config replaces the settings.json link
-            # with a plain file, which blocks the next activation.
+            # with a plain file. The next activation moves that file to
+            # a timestamped backup (home.backupCommand in home/default.nix).
             agentPushNotifEnabled = true;
             autoCompactEnabled = true;
             autoCompactWindow = 666666;

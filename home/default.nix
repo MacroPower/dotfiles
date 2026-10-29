@@ -52,6 +52,18 @@ let
       permanent_delete.enable = true;
     };
   };
+
+  # Moves a file that stands in the way of a home-manager link to a
+  # timestamped backup beside it. A fixed `.bak` suffix fails the
+  # activation when the previous backup still exists, which Claude Code
+  # triggers each time it rewrites settings.json as a plain file.
+  hmBackup = pkgs.writeShellApplication {
+    name = "hm-backup";
+    runtimeInputs = [ pkgs.coreutils-full ];
+    text = ''
+      mv -- "$1" "$1.$(date +%Y%m%d-%H%M%S).bak"
+    '';
+  };
 in
 
 {
@@ -142,6 +154,7 @@ in
   home = {
     stateVersion = "26.05";
     preferXdgDirectories = true;
+    backupCommand = lib.getExe hmBackup;
 
     sessionPath = [
       "$HOME/.local/bin"

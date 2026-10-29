@@ -892,7 +892,6 @@ let
     {
       useGlobalPkgs = true;
       useUserPackages = true;
-      backupFileExtension = "bak";
       sharedModules = hmSharedModules;
       users.${username} = {
         imports = [
