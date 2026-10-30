@@ -22,7 +22,9 @@ in
   config = lib.mkIf cfg.enable {
     dotfiles.system.homebrew = {
       taps = [ "macos-fuse-t/cask" ];
-      casks = [ "fuse-t" ];
+      # Fully qualified: `homebrew/cask` now ships its own fuse-t cask, which
+      # shadows the tap's cask when referenced by its short name.
+      casks = [ "macos-fuse-t/cask/fuse-t" ];
       unsignedCasks = [ "fuse-t" ];
     };
 

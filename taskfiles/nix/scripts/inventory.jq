@@ -81,8 +81,9 @@ sort_by(.entry.name) |
   linux:     [.[] | select((.platforms | contains(["linux"])) and ((.platforms | contains(["darwin"])) | not)) | .entry]
 } |
 
-# Homebrew casks across all hosts, deduplicated.
-. as $grouped | [$inv[] | .homebrewCasks // [] | .[]] | unique | sort | . as $casks |
+# Homebrew casks across all hosts, deduplicated by short name (tap prefix
+# dropped).
+. as $grouped | [$inv[] | .homebrewCasks // [] | .[] | split("/") | last] | unique | sort | . as $casks |
 
 # Render sections, skipping empty ones.
 "## Package Inventory\n\n" +
