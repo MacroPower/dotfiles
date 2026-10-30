@@ -1,0 +1,34 @@
+diff --git a/internal/cmd/stack/mcp.go b/internal/cmd/stack/mcp.go
+index 32edbf7..e814f80 100644
+--- a/internal/cmd/stack/mcp.go
++++ b/internal/cmd/stack/mcp.go
+@@ -590,7 +590,6 @@ func registerLocalPreviewTool(s *server.MCPServer, options McpOptions) {
+ 			mcp.Description("Limit the planning operation to only the given module, resource, or resource instance and all of its dependencies."),
+ 			mcp.WithStringItems(),
+ 		),
+-		mcp.WithString("path", mcp.Description("The path to the local workspace. If not provided, the current working directory will be used.")),
+ 		mcp.WithString(
+ 			"await_for_completion",
+ 			mcp.Description("Wait for the run to complete before returning the result. If true, the tool will wait for the run to complete and return logs once it is complete."),
+@@ -637,11 +636,6 @@ func registerLocalPreviewTool(s *server.MCPServer, options McpOptions) {
+ 
+ 		targets := request.GetStringSlice("targets", make([]string, 0))
+ 
+-		var path *string
+-		if p := request.GetString("path", ""); p != "" {
+-			path = &p
+-		}
+-
+ 		awaitForCompletion := request.GetString("await_for_completion", "true") == "true"
+ 
+ 		// Save and restore CWD: createLocalPreviewRun with FindRepositoryRoot=true
+@@ -662,8 +656,7 @@ func registerLocalPreviewTool(s *server.MCPServer, options McpOptions) {
+ 				StackID:            stackID,
+ 				EnvironmentVars:    envVars,
+ 				Targets:            targets,
+-				Path:               path,
+-				FindRepositoryRoot: path == nil,
++				FindRepositoryRoot: true,
+ 				DisregardGitignore: false,
+ 				UseHeaders:         options.UseHeadersForLocalPreview,
+ 				NoUpload:           false,

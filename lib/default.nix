@@ -103,6 +103,15 @@ let
   # get_stack_run_logs, so Claude can preview modules without calling
   # `spacectl module` directly.
   #
+  # The stack local_preview tool takes a `path` argument that filters an
+  # archive of the server's working directory and skips the walk up to the
+  # git root. It works only when Claude Code starts at the repository root
+  # and `path` names a subdirectory. Every other `path` uploads an empty
+  # archive or one without the stack's project root. The second patch
+  # removes the argument, so local_preview always uploads the repository
+  # that contains the server's working directory. Drop it when upstream
+  # makes `path` choose the directory to upload.
+  #
   # nixpkgs ships spacectl 1.26.0. 1.29.1 requires Go 1.27, newer than
   # nixpkgs' default Go. The Nix sandbox points SSL_CERT_FILE at a missing
   # file, and 1.29.1 loads SSL_CERT_FILE as its CA bundle. preCheck unsets
@@ -120,7 +129,10 @@ let
           hash = "sha256-G/WtGQ/bDeqArAi9ld/1TnjPmu6n1zQZwsbMUG4NCho=";
         };
         vendorHash = "sha256-DRkrrePtUipTy79ZmA1QddTOvry0KRRh/G9UHa4HLPE=";
-        patches = (old.patches or [ ]) ++ [ ../pkgs/spacectl-module-mcp-tools.patch ];
+        patches = (old.patches or [ ]) ++ [
+          ../pkgs/spacectl-module-mcp-tools.patch
+          ../pkgs/spacectl-stack-local-preview-no-path.patch
+        ];
         preCheck = (old.preCheck or "") + ''
           unset SSL_CERT_FILE
         '';
