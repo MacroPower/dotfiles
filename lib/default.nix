@@ -102,10 +102,30 @@ let
   # get_module_run_logs, the module twins of local_preview and
   # get_stack_run_logs, so Claude can preview modules without calling
   # `spacectl module` directly.
-  spacectlOverlay = _final: prev: {
-    spacectl = prev.spacectl.overrideAttrs (old: {
-      patches = (old.patches or [ ]) ++ [ ../pkgs/spacectl-module-mcp-tools.patch ];
-    });
+  #
+  # nixpkgs ships spacectl 1.26.0. 1.29.1 requires Go 1.27, newer than
+  # nixpkgs' default Go. The Nix sandbox points SSL_CERT_FILE at a missing
+  # file, and 1.29.1 loads SSL_CERT_FILE as its CA bundle. preCheck unsets
+  # it so the registry credentials tests pass. Drop the version, src,
+  # vendorHash, buildGoModule, and preCheck overrides when nixpkgs ships
+  # spacectl 1.29.1 or later.
+  spacectlOverlay = final: prev: {
+    spacectl = (prev.spacectl.override { buildGoModule = final.buildGo127Module; }).overrideAttrs (
+      finalAttrs: old: {
+        version = "1.29.1";
+        src = final.fetchFromGitHub {
+          owner = "spacelift-io";
+          repo = "spacectl";
+          tag = "v${finalAttrs.version}";
+          hash = "sha256-G/WtGQ/bDeqArAi9ld/1TnjPmu6n1zQZwsbMUG4NCho=";
+        };
+        vendorHash = "sha256-DRkrrePtUipTy79ZmA1QddTOvry0KRRh/G9UHa4HLPE=";
+        patches = (old.patches or [ ]) ++ [ ../pkgs/spacectl-module-mcp-tools.patch ];
+        preCheck = (old.preCheck or "") + ''
+          unset SSL_CERT_FILE
+        '';
+      }
+    );
   };
 
   # Lima 2.3.0-beta.1 adds `audio.microphone`, which passes the Mac's
