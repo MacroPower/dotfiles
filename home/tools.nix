@@ -332,6 +332,11 @@ in
     };
   };
 
+  # The Dagger CLI removes engine containers of other versions, and their
+  # caches, when it starts its own engine. Keep them so that projects pinned
+  # to different Dagger versions each keep their own engine.
+  home.sessionVariables.DAGGER_LEAVE_OLD_ENGINE = "1";
+
   home.packages =
     with pkgs;
     [
