@@ -16,9 +16,17 @@
   # later (see limaOverlay in lib/default.nix). The VZ driver reads
   # "default" as virtio-sound. QEMU reads it as CoreAudio playback and
   # ignores microphone.
+  #
+  # The port rule keeps Lima from forwarding the guest's aven sync proxy
+  # (home/aven.nix) back to the host. The aven server already owns that
+  # host port. Before the server starts, a forward loops the proxy into
+  # itself and holds the port the server needs.
   home.file.".lima/_config/default.yaml".text = ''
     audio:
       device: default
       microphone: true
+    portForwards:
+      - guestPort: 3746
+        ignore: true
   '';
 }
