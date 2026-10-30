@@ -450,6 +450,7 @@ let
         "SPACELIFT_API_KEY_ENDPOINT"
         "SPACELIFT_API_KEY_ID"
         "SPACELIFT_API_KEY_SECRET"
+        "HASS_TOKEN"
         "TF_CLI_CONFIG_FILE"
         "TERM_PROGRAM"
         "TERM_PROGRAM_VERSION"
@@ -1026,6 +1027,7 @@ let
             SPACELIFT_API_KEY_ENDPOINT = "spacelift_api_key_endpoint";
             SPACELIFT_API_KEY_ID = "spacelift_api_key_id";
             SPACELIFT_API_KEY_SECRET = "spacelift_api_key_secret";
+            HASS_TOKEN = "hass_token";
             ATUIN_USERNAME = "atuin_username";
             ATUIN_PASSWORD = "atuin_password";
           }}
@@ -1158,7 +1160,9 @@ let
   # lines, and whose union would also pick up ARGOCD_BASE_URL, which is
   # not a credential. DAGGER_CLOUD_TOKEN is missing here because the
   # Dagger CLI needs it inside the sandbox to reach Dagger Cloud, and
-  # mask mode (the middle ground) breaks on macOS. GITHUB_TOKEN and
+  # mask mode (the middle ground) breaks on macOS. HASS_TOKEN is missing
+  # because sandboxed commands call the Home Assistant API with it.
+  # GITHUB_TOKEN and
   # GITHUB_PERSONAL_ACCESS_TOKEN alias gh_token; literal export lines at
   # 805 and 868-869 set them, so they have no sops secret of their own.
   deniedCredentialVars = [

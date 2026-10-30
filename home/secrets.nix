@@ -14,6 +14,7 @@ lib.mkIf config.dotfiles.sops.enable {
       spacelift_api_key_endpoint.key = "SPACELIFT_API_KEY_ENDPOINT";
       spacelift_api_key_id.key = "SPACELIFT_API_KEY_ID";
       spacelift_api_key_secret.key = "SPACELIFT_API_KEY_SECRET";
+      hass_token.key = "HASS_TOKEN";
       # Rendered to disk so the workmux wrapper can cat and export them into
       # the sandbox for atuin auto-login. (ATUIN_EMAIL does not need rendering --
       # only the host register task reads it, via `sops exec-env`.)
