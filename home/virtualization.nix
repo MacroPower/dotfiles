@@ -17,16 +17,19 @@
   # "default" as virtio-sound. QEMU reads it as CoreAudio playback and
   # ignores microphone.
   #
-  # The port rule keeps Lima from forwarding the guest's aven sync proxy
-  # (home/aven.nix) back to the host. The aven server already owns that
-  # host port. Before the server starts, a forward loops the proxy into
-  # itself and holds the port the server needs.
+  # The port rules keep Lima from forwarding aven's guest ports
+  # (home/aven.nix) back to the host, where the Mac's own aven processes
+  # need them. 3746 is the sync proxy: a forward that starts before the
+  # aven server loops the proxy into itself and holds the server's port.
+  # 47631 is the daemon's wake address, which both daemons bind.
   home.file.".lima/_config/default.yaml".text = ''
     audio:
       device: default
       microphone: true
     portForwards:
       - guestPort: 3746
+        ignore: true
+      - guestPort: 47631
         ignore: true
   '';
 }
