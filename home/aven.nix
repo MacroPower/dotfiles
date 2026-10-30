@@ -11,14 +11,10 @@ let
   # the server URL from the setup invitation. So the guest proxies its own
   # loopback port to the Mac through the Lima host gateway
   # (host.lima.internal), and both sides reach the server at the same URL.
-  # Other hosts keep a local-only database.
-  #
-  # Enrollment is a one-time manual step, because invitations carry keys:
-  #   1. On the Mac: aven server setup --url http://127.0.0.1:3746
-  #   2. On the device whose tasks to keep: aven sync setup
-  #   3. On that device: aven sync invite
-  #   4. On the other device: aven sync join
+  # Other hosts keep a local-only database. The Mac's database is the
+  # starting point of the synced data, and avenSyncLink enrolls the VMs.
   syncPort = 3746;
+  syncUrl = "http://127.0.0.1:${toString syncPort}";
   isTerrarium = config.dotfiles.hostname == "terrarium";
   isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
   syncEnabled = isDarwin || isTerrarium;
@@ -27,6 +23,86 @@ let
   # only once `aven server setup` has created this file.
   serverDb = "${config.xdg.stateHome}/aven/server/sync-server.sqlite";
   daemonLogDir = "${config.home.homeDirectory}/Library/Logs/aven";
+
+  # Enrolls the Mac and every running Lima VM that has aven in sync, and
+  # skips whatever already syncs. On first run it prepares the server
+  # storage and sets up sync from the Mac's database. Then, for each VM
+  # that has not joined, it opens an invitation on the Mac and pipes it to
+  # `aven sync join` in the guest. Invitations carry the sync keys, so they
+  # stay in a private temporary file and never reach the log.
+  avenSyncLink = pkgs.writeShellApplication {
+    name = "aven-sync-link";
+    runtimeInputs = [
+      pkgs.aven
+      pkgs.coreutils
+      pkgs.curl
+      pkgs.gnugrep
+      pkgs.jq
+      pkgs.lima
+    ];
+    text = ''
+      url=${lib.escapeShellArg syncUrl}
+
+      # An interrupted setup resumes with a fresh server invitation, which
+      # keeps the server's setup identity.
+      state=$(aven sync status --json | jq -r .state)
+      if [ "$state" = not-set-up ] || [ "$state" = setup-incomplete ]; then
+        echo "Setting up sync from this Mac's database"
+        invitation=$(aven server setup --url "$url" --invitation-only)
+        # launchd starts the server once the storage exists.
+        for _ in $(seq 30); do
+          curl -s -o /dev/null "$url" && break
+          sleep 1
+        done
+        aven sync setup --yes <<<"$invitation"
+      fi
+
+      guest() {
+        local vm=$1
+        shift
+        limactl shell --workdir / "$vm" -- bash -lc "$*"
+      }
+
+      invite_out=$(mktemp)
+      trap 'rm -f "$invite_out"' EXIT
+
+      mapfile -t vms < <(limactl list --format '{{.Name}} {{.Status}}' | grep ' Running$' | cut -d' ' -f1)
+      for vm in "''${vms[@]}"; do
+        state=$(guest "$vm" 'command -v aven >/dev/null && aven sync status --json' </dev/null | jq -r .state) || continue
+        [ "$state" = not-set-up ] || continue
+        # A guest that cannot reach the server fails the join partway and
+        # leaves it to resume instead of starting over. The proxy accepts
+        # connections even with the server down, so probe over HTTP.
+        if ! guest "$vm" "curl -s -o /dev/null --max-time 5 $url" </dev/null 2>/dev/null; then
+          echo "Skipping $vm: it cannot reach the sync server yet"
+          continue
+        fi
+
+        echo "Enrolling $vm"
+        aven sync invite >"$invite_out" &
+        invite_pid=$!
+        for _ in $(seq 30); do
+          grep -q '^AVEN:' "$invite_out" && break
+          kill -0 "$invite_pid" 2>/dev/null || break
+          sleep 1
+        done
+        if ! grep -q '^AVEN:' "$invite_out"; then
+          echo "No invitation for $vm" >&2
+          kill "$invite_pid" 2>/dev/null || true
+          wait "$invite_pid" || true
+          continue
+        fi
+        if grep -m1 '^AVEN:' "$invite_out" | timeout 120 limactl shell --workdir / "$vm" -- bash -lc 'aven sync join --yes'; then
+          wait "$invite_pid"
+        else
+          echo "Joining $vm failed" >&2
+          aven sync invite --cancel || true
+          kill "$invite_pid" 2>/dev/null || true
+          wait "$invite_pid" || true
+        fi
+      done
+    '';
+  };
 
   # Starts a workmux agent on the task selected in the aven TUI. Runs from the
   # directory aven opened in, which must belong to the task's project, so the
@@ -122,7 +198,7 @@ let
 in
 {
   home = {
-    packages = [ pkgs.aven ];
+    packages = [ pkgs.aven ] ++ lib.optional isDarwin avenSyncLink;
 
     # Nix pins aven, so the self-update check only produces noise.
     sessionVariables.AVEN_NO_UPDATE_CHECK = "1";
@@ -174,6 +250,20 @@ in
         KeepAlive.PathState.${serverDb} = true;
         StandardOutPath = "${dirOf serverDb}/server.log";
         StandardErrorPath = "${dirOf serverDb}/server.err.log";
+      };
+    };
+
+    # Workmux creates sandbox VMs on demand, so the link runs every five
+    # minutes to enroll new ones. Once everything syncs, a run only reads
+    # sync status.
+    aven-sync-link = {
+      enable = true;
+      config = {
+        ProgramArguments = [ (lib.getExe avenSyncLink) ];
+        RunAtLoad = true;
+        StartInterval = 300;
+        StandardOutPath = "${daemonLogDir}/sync-link.log";
+        StandardErrorPath = "${daemonLogDir}/sync-link.log";
       };
     };
   };
