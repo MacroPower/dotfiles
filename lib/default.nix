@@ -97,6 +97,17 @@ let
     });
   };
 
+  # spacectl's MCP server covers stack runs (local preview, run logs) but
+  # only module metadata. This patch adds local_preview_module and
+  # get_module_run_logs, the module twins of local_preview and
+  # get_stack_run_logs, so Claude can preview modules without calling
+  # `spacectl module` directly.
+  spacectlOverlay = _final: prev: {
+    spacectl = prev.spacectl.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [ ../pkgs/spacectl-module-mcp-tools.patch ];
+    });
+  };
+
   # Lima 2.3.0-beta.1 adds `audio.microphone`, which passes the Mac's
   # microphone into a VZ guest as a virtio-sound capture stream. Claude
   # Code voice mode in the terrarium VM needs it. Drop this override when
@@ -840,6 +851,7 @@ let
     fetchurlOverlay
     curlImpersonateOverlay
     devboxOverlay
+    spacectlOverlay
     limaOverlay
     lixOverlay
     localOverlay

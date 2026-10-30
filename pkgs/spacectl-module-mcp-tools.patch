@@ -1,0 +1,375 @@
+diff --git a/internal/cmd/mcp/mcp.go b/internal/cmd/mcp/mcp.go
+index da73196..9a79e54 100644
+--- a/internal/cmd/mcp/mcp.go
++++ b/internal/cmd/mcp/mcp.go
+@@ -45,7 +45,9 @@ func Command() cmd.Command {
+ 								stack.RegisterMCPTools(s, stack.McpOptions{
+ 									UseHeadersForLocalPreview: false,
+ 								})
+-								module.RegisterMCPTools(s)
++								module.RegisterMCPTools(s, module.McpOptions{
++									UseHeadersForLocalPreview: false,
++								})
+ 								policy.RegisterMCPTools(s)
+ 								graphql.RegisterMCPTools(s)
+ 								spaceliftcontext.RegisterMCPTools(s)
+@@ -69,7 +71,9 @@ func Command() cmd.Command {
+ 								stack.RegisterMCPTools(s, stack.McpOptions{
+ 									UseHeadersForLocalPreview: true,
+ 								})
+-								module.RegisterMCPTools(s)
++								module.RegisterMCPTools(s, module.McpOptions{
++									UseHeadersForLocalPreview: true,
++								})
+ 								policy.RegisterMCPTools(s)
+ 								graphql.RegisterMCPTools(s)
+ 								spaceliftcontext.RegisterMCPTools(s)
+diff --git a/internal/cmd/module/mcp.go b/internal/cmd/module/mcp.go
+index cb4b909..8119d49 100644
+--- a/internal/cmd/module/mcp.go
++++ b/internal/cmd/module/mcp.go
+@@ -16,13 +16,15 @@ import (
+ )
+ 
+ // RegisterMCPTools registers module-related MCP tools
+-func RegisterMCPTools(s *server.MCPServer) {
++func RegisterMCPTools(s *server.MCPServer, options McpOptions) {
+ 	registerModuleGuideTool(s)
+ 	registerListModulesTool(s)
+ 	registerGetModuleTool(s)
+ 	registerListModuleVersionsTool(s)
+ 	registerGetModuleVersionTool(s)
+ 	registerSearchModulesTool(s)
++	registerGetModuleRunLogsTool(s)
++	registerModuleLocalPreviewTool(s, options)
+ }
+ 
+ // registerModuleGuideTool registers the module operations guide tool
+diff --git a/internal/cmd/module/mcp_runs.go b/internal/cmd/module/mcp_runs.go
+new file mode 100644
+index 0000000..713ec11
+--- /dev/null
++++ b/internal/cmd/module/mcp_runs.go
+@@ -0,0 +1,322 @@
++package module
++
++import (
++	"context"
++	"fmt"
++	"os"
++	"path/filepath"
++	"strings"
++
++	"github.com/mark3labs/mcp-go/mcp"
++	"github.com/mark3labs/mcp-go/server"
++	"github.com/mholt/archiver/v3"
++	"github.com/pkg/errors"
++	"github.com/shurcooL/graphql"
++
++	"github.com/spacelift-io/spacectl/client/structs"
++	"github.com/spacelift-io/spacectl/internal"
++	"github.com/spacelift-io/spacectl/internal/cmd/authenticated"
++	"github.com/spacelift-io/spacectl/internal/logs"
++)
++
++const maxLocalPreviewRunLogLines = 1000
++
++// McpOptions configures the module MCP tools.
++type McpOptions struct {
++	UseHeadersForLocalPreview bool
++}
++
++func registerGetModuleRunLogsTool(s *server.MCPServer) {
++	moduleRunLogsTool := mcp.NewTool("get_module_run_logs",
++		mcp.WithDescription(`Retrieve logs for a specific run of a Spacelift module, such as a test run started by a proposed version or a local preview. You can use skip and limit parameters to retrieve specific line ranges.`),
++		mcp.WithToolAnnotation(mcp.ToolAnnotation{
++			Title:        "Get Module Run Logs",
++			ReadOnlyHint: new(true),
++		}),
++		mcp.WithString("module_id", mcp.Description("The ID of the module"), mcp.Required()),
++		mcp.WithString("run_id", mcp.Description("The ID of the run"), mcp.Required()),
++		mcp.WithNumber("skip", mcp.Description("Skip the first N lines of the log output. Can be used together with `limit` parameter for pagination.")),
++		mcp.WithNumber("limit", mcp.Description("The maximum number of log lines to retrieve. Can be used together with `skip` parameter for pagination.")),
++	)
++
++	s.AddTool(moduleRunLogsTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
++		authenticated.Ensure(ctx, nil)
++		moduleID, err := request.RequireString("module_id")
++		if err != nil {
++			return nil, err
++		}
++
++		runID, err := request.RequireString("run_id")
++		if err != nil {
++			return nil, err
++		}
++
++		var skip, limit *int
++		if skipVal := request.GetInt("skip", -1); skipVal >= 0 {
++			skip = &skipVal
++		}
++
++		if limitVal := request.GetInt("limit", -1); limitVal >= 0 {
++			limit = &limitVal
++		}
++
++		runLogs, terminal, err := collectModuleRunLogs(ctx, moduleID, runID)
++		if err != nil {
++			return nil, err
++		}
++
++		output := fmt.Sprintf("Logs for run %s in module %s:\n\n%s", runID, moduleID, runLogs)
++
++		if terminal != nil {
++			output += fmt.Sprintf("\n\nRun completed with state: %s", terminal.State)
++		}
++
++		output = trimStringByLines(output, skip, limit)
++
++		return mcp.NewToolResultText(output), nil
++	})
++}
++
++func registerModuleLocalPreviewTool(s *server.MCPServer, options McpOptions) {
++	localPreviewTool := mcp.NewTool("local_preview_module",
++		mcp.WithDescription(`Start a preview (proposed version) of a module based on the local workspace. Packs the repository containing the given path, uploads it, and triggers the module's test runs. Respects .gitignore and .terraformignore.`),
++		mcp.WithToolAnnotation(mcp.ToolAnnotation{
++			Title: "Module Local Preview",
++		}),
++		mcp.WithString("module_id", mcp.Description("The ID of the module"), mcp.Required()),
++		mcp.WithArray(
++			"tests",
++			mcp.Description("Limit the preview to the given test IDs. If not provided, all tests run."),
++			mcp.WithStringItems(),
++		),
++		mcp.WithString("path", mcp.Description("A path inside the module's repository. The repository root containing it is uploaded. If not provided, the current working directory will be used.")),
++		mcp.WithString(
++			"await_for_completion",
++			mcp.Description("Wait for the runs to complete before returning the result. If true, the tool will wait for every run to complete and return their logs."),
++			mcp.DefaultString("true"),
++			mcp.Enum("true", "false"),
++		),
++	)
++
++	s.AddTool(localPreviewTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
++		authenticated.Ensure(ctx, nil)
++		moduleID, err := request.RequireString("module_id")
++		if err != nil {
++			return nil, err
++		}
++
++		tests := request.GetStringSlice("tests", make([]string, 0))
++		awaitForCompletion := request.GetString("await_for_completion", "true") == "true"
++
++		// Save and restore CWD: moving to the repository root calls os.Chdir().
++		// We restore afterward so the long-running MCP server process does not keep
++		// a permanently changed working directory.
++		origDir, err := os.Getwd()
++		if err != nil {
++			return nil, fmt.Errorf("failed to get working directory: %w", err)
++		}
++		defer os.Chdir(origDir) //nolint: errcheck
++
++		if p := request.GetString("path", ""); p != "" {
++			if err := os.Chdir(p); err != nil {
++				return nil, fmt.Errorf("couldn't change directory to %q: %w", p, err)
++			}
++		}
++
++		var outputBuilder strings.Builder
++
++		runs, err := createModuleLocalPreviewRuns(ctx, moduleID, tests, options.UseHeadersForLocalPreview, &outputBuilder)
++		if err != nil {
++			return nil, fmt.Errorf("failed to create module local preview: %w", err)
++		}
++
++		output := outputBuilder.String()
++
++		for _, run := range runs {
++			output += fmt.Sprintf("Run %s (%s) can be visited at %s\n", run.ID, run.Title, authenticated.Client().URL(
++				"/module/%s/run/%s",
++				moduleID,
++				run.ID,
++			))
++		}
++
++		if !awaitForCompletion {
++			return mcp.NewToolResultText(output), nil
++		}
++
++		for _, run := range runs {
++			runLogs, terminal, err := collectModuleRunLogs(ctx, moduleID, run.ID)
++			if err != nil {
++				return nil, err
++			}
++
++			output += fmt.Sprintf("\n\nLogs for run '%s' (%s):\n\n%s", run.ID, run.Title, runLogs)
++
++			if terminal != nil {
++				output += fmt.Sprintf("\n\nRun '%s' completed with state: %s\n", run.ID, terminal.State)
++			}
++		}
++
++		outputLines := strings.Split(output, "\n")
++		outputLinesCount := len(outputLines)
++		// Limit the number of lines, because mcp clients often limit output tokens. The "get_module_run_logs" tool paginates, so callers can page through the full logs with it.
++		if outputLinesCount > maxLocalPreviewRunLogLines {
++			fromIndex := outputLinesCount - maxLocalPreviewRunLogLines
++
++			outputLines = outputLines[fromIndex:]
++			output = strings.Join(outputLines, "\n")
++			output = fmt.Sprintf("... %d lines omitted. Use 'get_module_run_logs' tool to view the full logs ...\n%s", outputLinesCount-maxLocalPreviewRunLogLines, output)
++		}
++
++		return mcp.NewToolResultText(output), nil
++	})
++}
++
++// createModuleLocalPreviewRuns packs the repository containing the current
++// working directory, uploads it, and proposes a module version from it.
++func createModuleLocalPreviewRuns(ctx context.Context, moduleID string, tests []string, useHeaders bool, writer *strings.Builder) ([]runQuery, error) {
++	if err := internal.MoveToRepositoryRoot(); err != nil {
++		return nil, fmt.Errorf("couldn't move to repository root: %w", err)
++	}
++
++	fmt.Fprintln(writer, "Packing local workspace...")
++
++	var workspaceID string
++	var uploadURL string
++	var headers map[string]string
++
++	uploadVariables := map[string]any{
++		"stack": graphql.ID(moduleID),
++	}
++
++	if useHeaders {
++		var headersMutation struct {
++			UploadLocalWorkspace struct {
++				ID            string            `graphql:"id"`
++				UploadURL     string            `graphql:"uploadUrl"`
++				UploadHeaders structs.StringMap `graphql:"uploadHeaders"`
++			} `graphql:"uploadLocalWorkspace(stack: $stack)"`
++		}
++
++		if err := authenticated.Client().Mutate(ctx, &headersMutation, uploadVariables); err != nil {
++			return nil, fmt.Errorf("failed to upload local workspace: %w", err)
++		}
++
++		workspaceID = headersMutation.UploadLocalWorkspace.ID
++		uploadURL = headersMutation.UploadLocalWorkspace.UploadURL
++		headers = headersMutation.UploadLocalWorkspace.UploadHeaders.StdMap()
++	} else {
++		var basicMutation struct {
++			UploadLocalWorkspace struct {
++				ID        string `graphql:"id"`
++				UploadURL string `graphql:"uploadUrl"`
++			} `graphql:"uploadLocalWorkspace(stack: $stack)"`
++		}
++
++		if err := authenticated.Client().Mutate(ctx, &basicMutation, uploadVariables); err != nil {
++			return nil, fmt.Errorf("failed to upload local workspace: %w", err)
++		}
++
++		workspaceID = basicMutation.UploadLocalWorkspace.ID
++		uploadURL = basicMutation.UploadLocalWorkspace.UploadURL
++	}
++
++	fp := filepath.Join(os.TempDir(), "spacectl", "local-workspace", fmt.Sprintf("%s.tar.gz", workspaceID))
++
++	matchFn, err := internal.GetIgnoreMatcherFn(ctx, nil, []string{".terraformignore", ".gitignore"}, false)
++	if err != nil {
++		return nil, fmt.Errorf("couldn't analyze .gitignore and .terraformignore files")
++	}
++
++	tgz := *archiver.DefaultTarGz
++	tgz.ForceArchiveImplicitTopLevelFolder = true
++	tgz.MatchFn = matchFn
++
++	if err := tgz.Archive([]string{"."}, fp); err != nil {
++		return nil, fmt.Errorf("couldn't archive local directory: %w", err)
++	}
++
++	defer os.Remove(fp)
++
++	fmt.Fprintln(writer, "Uploading local workspace...")
++
++	if err := internal.UploadArchive(ctx, uploadURL, fp, headers, false); err != nil {
++		return nil, fmt.Errorf("couldn't upload archive: %w", err)
++	}
++
++	var triggerMutation struct {
++		VersionProposeLocalWorkspace []runQuery `graphql:"versionProposeLocalWorkspace(module: $module, workspace: $workspace, testIds: $testIds)"`
++	}
++
++	testIDs := []graphql.String{}
++	for _, test := range tests {
++		testIDs = append(testIDs, graphql.String(test))
++	}
++
++	triggerVariables := map[string]any{
++		"module":    graphql.ID(moduleID),
++		"workspace": graphql.ID(workspaceID),
++		"testIds":   testIDs,
++	}
++
++	if err := authenticated.Client().Mutate(ctx, &triggerMutation, triggerVariables); err != nil {
++		return nil, err
++	}
++
++	return triggerMutation.VersionProposeLocalWorkspace, nil
++}
++
++// collectModuleRunLogs follows a module run until it reaches a terminal state
++// and returns its logs.
++func collectModuleRunLogs(ctx context.Context, moduleID, runID string) (string, *structs.RunStateTransition, error) {
++	logLines := make(chan string)
++	done := make(chan struct{})
++	var runLogs strings.Builder
++
++	go func() {
++		defer close(done)
++		for line := range logLines {
++			runLogs.WriteString(line)
++		}
++	}()
++
++	terminal, err := logs.NewModuleExplorer(moduleID, runID).RunFilteredStates(ctx, logLines)
++	close(logLines)
++	<-done
++
++	if err != nil {
++		return "", nil, errors.Wrap(err, "failed to collect run logs")
++	}
++
++	return runLogs.String(), terminal, nil
++}
++
++func trimStringByLines(input string, skip *int, limit *int) string {
++	startLine := 0
++	if skip != nil {
++		startLine = max(*skip, 0)
++	}
++
++	lines := strings.Split(input, "\n")
++
++	if startLine >= len(lines) {
++		return fmt.Sprintf("No more log lines available. You have reached the end of the list. Total number of log lines: %d. Skipped %d lines.", len(lines), startLine)
++	}
++
++	endLine := len(lines)
++	if limit != nil {
++		endLine = min(startLine+*limit, len(lines))
++	}
++
++	newResult := strings.Join(lines[startLine:endLine], "\n")
++
++	if startLine > 0 {
++		newResult = fmt.Sprintf("... %d lines before ...\n%s", startLine, newResult)
++	}
++
++	if endLine < len(lines) {
++		newResult = fmt.Sprintf("%s\n... %d more lines available ...", newResult, len(lines)-endLine)
++	}
++
++	return newResult
++}

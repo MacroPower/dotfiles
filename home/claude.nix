@@ -3140,6 +3140,7 @@ in
           "mcp__spacelift__get_graphql_type_details"
           "mcp__spacelift__get_module"
           "mcp__spacelift__get_module_guide"
+          "mcp__spacelift__get_module_run_logs"
           "mcp__spacelift__get_module_version"
           "mcp__spacelift__get_policy"
           "mcp__spacelift__get_policy_sample"
@@ -3163,6 +3164,7 @@ in
           "mcp__spacelift__list_stacks"
           "mcp__spacelift__list_worker_pools"
           "mcp__spacelift__local_preview"
+          "mcp__spacelift__local_preview_module"
           "mcp__spacelift__search_contexts"
           "mcp__spacelift__search_graphql_schema_fields"
           "mcp__spacelift__search_modules"
@@ -3298,6 +3300,22 @@ in
               "list-versions"
             ];
             reason = "Use `mcp__spacelift__list_module_versions` instead of `spacectl module list-versions`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "module"
+              "local-preview"
+            ];
+            reason = "Use `mcp__spacelift__local_preview_module` instead of `spacectl module local-preview`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "module"
+              "logs"
+            ];
+            reason = "Use `mcp__spacelift__get_module_run_logs` instead of `spacectl module logs`.";
           }
           {
             command = "spacectl";
