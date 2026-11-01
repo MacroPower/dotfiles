@@ -100,6 +100,7 @@ func handleBashCtx(ctx context.Context, input []byte, stdout io.Writer, cfg conf
 	}
 
 	logger.Info("checking command",
+		slog.String("tool_name", h.ToolName),
 		slog.String("command", command),
 		slog.String("permission_mode", h.PermissionMode),
 		slog.String("agent_id", h.AgentID),
@@ -136,7 +137,14 @@ func handleBashCtx(ctx context.Context, input []byte, stdout io.Writer, cfg conf
 		return writeDecision(stdout, response)
 	}
 
+	// Monitor commands reach this handler too, because the PreToolUse
+	// matcher in home/claude.nix names Monitor. Their payload carries
+	// tool_name "Monitor" and no run_in_background field. Claude Code
+	// runs every Monitor script in the background, so the sleep guard
+	// treats it like a background Bash call.
+	monitor := h.ToolName == "Monitor"
 	background, _ := h.ToolInput["run_in_background"].(bool)
+	background = background || monitor
 
 	// Deny foreground sleep waits. The check runs after cmdrules
 	// so user-configured rules keep first-match precedence, before the
@@ -236,7 +244,9 @@ func handleBashCtx(ctx context.Context, input []byte, stdout io.Writer, cfg conf
 	// input). A non-read-only command is left untouched and falls through
 	// to the existing autoAllow branch unchanged, so a `find ... -delete`
 	// runs as plain find rather than being unsafely auto-approved.
-	if newCmd, readOnly, changed := searchrewrite.Rewrite(prog, command, cfg.searchRewrite); changed && readOnly {
+	// Monitor commands keep their text. A Monitor script filters a
+	// stream, and Claude Code turns each line it prints into an event.
+	if newCmd, readOnly, changed := searchrewrite.Rewrite(prog, command, cfg.searchRewrite); changed && readOnly && !monitor {
 		updated := make(map[string]any, len(h.ToolInput))
 		for k, v := range h.ToolInput {
 			updated[k] = v

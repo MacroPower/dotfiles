@@ -31,12 +31,25 @@ import (
 func bashInput(t *testing.T, command string, extra map[string]any) []byte {
 	t.Helper()
 
+	return toolInput(t, "", command, extra)
+}
+
+// toolInput builds a PreToolUse payload like [bashInput] and sets
+// tool_name when toolName is not empty.
+func toolInput(t *testing.T, toolName, command string, extra map[string]any) []byte {
+	t.Helper()
+
 	ti := map[string]any{"command": command}
 	for k, v := range extra {
 		ti[k] = v
 	}
 
-	b, err := json.Marshal(map[string]any{"tool_input": ti})
+	payload := map[string]any{"tool_input": ti}
+	if toolName != "" {
+		payload["tool_name"] = toolName
+	}
+
+	b, err := json.Marshal(payload)
 	require.NoError(t, err)
 
 	return b
@@ -564,6 +577,22 @@ func TestHandleBashSearchRewrite(t *testing.T) {
 		assert.Empty(t, stdout.Bytes())
 	})
 
+	t.Run("Monitor command: no rewrite emitted", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config{
+			commandRules:  canonicalRules(),
+			searchRewrite: searchCfg,
+		}
+
+		var stdout bytes.Buffer
+
+		err := handleBash(toolInput(t, "Monitor", "grep -rn foo .", nil), &stdout, cfg, logger)
+		require.NoError(t, err)
+		assert.Empty(t, stdout.Bytes(),
+			"a Monitor command must run as written")
+	})
+
 	t.Run("deny rule beats a rewritable command", func(t *testing.T) {
 		t.Parallel()
 
@@ -659,6 +688,7 @@ func TestHandleBashSleepGuard(t *testing.T) {
 
 	cases := map[string]struct {
 		command        string
+		toolName       string
 		background     bool
 		autoAllow      bool
 		kubeconfigPath string
@@ -675,6 +705,15 @@ func TestHandleBashSleepGuard(t *testing.T) {
 		"run_in_background is exempt": {
 			command:    "sleep 300",
 			background: true,
+		},
+		"foreground poll loop is denied": {
+			command:         "until test -f /tmp/done; do sleep 30; done",
+			wantDeny:        true,
+			wantSleepReason: true,
+		},
+		"Monitor poll loop is exempt": {
+			command:  "until test -f /tmp/done; do sleep 30; done",
+			toolName: "Monitor",
 		},
 		"deny beats sandbox auto-allow": {
 			command:         "sleep 300",
@@ -712,7 +751,7 @@ func TestHandleBashSleepGuard(t *testing.T) {
 
 			var stdout bytes.Buffer
 
-			err := handleBash(bashInput(t, tc.command, extra), &stdout, cfg, logger)
+			err := handleBash(toolInput(t, tc.toolName, tc.command, extra), &stdout, cfg, logger)
 			require.NoError(t, err)
 
 			if !tc.wantDeny {

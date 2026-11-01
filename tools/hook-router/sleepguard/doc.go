@@ -4,7 +4,10 @@
 // notifications, poll loops inside those background calls, and the
 // Monitor tool.
 //
-// A Bash call with run_in_background set is never checked. That
+// The guard never checks a background call. The caller marks a Bash
+// call with run_in_background set as background. It marks a Monitor
+// command the same way, because Claude Code runs every Monitor script
+// in the background. That
 // exemption is the point, not a loophole: a poll loop like `until
 // <check>; do sleep 1; done` inside a background call is the wait
 // idiom this guard steers toward, so `sleep` there is correct rather

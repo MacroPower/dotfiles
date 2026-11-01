@@ -3776,7 +3776,14 @@ in
                 # non-deterministic last-writer-wins races.
                 PreToolUse = [
                   {
-                    matcher = "Bash";
+                    # Claude Code 2.1.314 and later also fire a "Bash"
+                    # matcher on Monitor commands. They rename the tool to
+                    # Bash and drop every input field except command and
+                    # description. Naming Monitor here matches it as its
+                    # own tool, so hook-router gets tool_name "Monitor".
+                    # It then tells a Monitor script from a foreground
+                    # Bash call.
+                    matcher = "Bash|Monitor";
                     hooks = [ (router "PreToolUse" "Bash") ];
                   }
                   {
@@ -4098,7 +4105,7 @@ in
         - Do not bide time with no-op filler (`true`, `jobs`, bare `echo`) while a background task runs; end the turn instead -- the completion notification arrives on its own, and idle turns only delay it.
       ''
       + ''
-        - Long-running work belongs in a Bash call with `run_in_background: true`. The session stays free, you get a notification when the command exits, and `Read` fetches its captured output. `sleep` inside a background call is fine, so an `until <check>; do sleep 1; done` poll loop there is the right way to wait on a condition.
+        - Long-running work belongs in a Bash call with `run_in_background: true`. The session stays free, you get a notification when the command exits, and `Read` fetches its captured output. `sleep` inside a background call or a Monitor script is fine, so an `until <check>; do sleep 1; done` poll loop there is the right way to wait on a condition.
         - For one notification per event rather than one on completion, use the `Monitor` tool. It is deferred, so load it with `ToolSearch("select:Monitor")` before calling it.
         - Monitor watches end after 30 minutes at most and send a notification asking to be re-armed. Re-arm the watch when its condition is still pending.
         - Fire off independent work in parallel, then act on completion notifications as they arrive. A spawn-one, wait, spawn-the-next loop serializes work that could have run at once.
