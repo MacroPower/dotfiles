@@ -499,25 +499,6 @@ let
     };
   };
 
-  # curl-impersonate's dylib keeps upstream's @rpath install name on
-  # darwin, so every consumer linking it records an @rpath reference with
-  # no LC_RPATH to resolve it and dies at load time -- notably
-  # python3Packages.curl-cffi (a yt-dlp dependency) fails its
-  # pythonImportsCheck with "Library not loaded:
-  # @rpath/libcurl-impersonate.4.dylib ... no LC_RPATH's found".
-  # Backport of nixpkgs 9da1a5ec ("curl-impersonate: fix dylib install
-  # name on darwin"), which landed hours after this nixpkgs pin: run
-  # fixDarwinDylibNames so the install name becomes the absolute store
-  # path. Drop on the next nixpkgs bump.
-  curlImpersonateOverlay = final: prev: {
-    curl-impersonate = prev.curl-impersonate.overrideAttrs (
-      old:
-      prev.lib.optionalAttrs prev.stdenv.hostPlatform.isDarwin {
-        nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ final.fixDarwinDylibNames ];
-      }
-    );
-  };
-
   # crates.io's edge (Fastly / Heroku) returns HTTP 403 for any request
   # whose User-Agent header starts with "curl/". Nix's fetchurl invokes
   # curl with its default UA, so every fetchCrate / importCargoLock
@@ -877,7 +858,6 @@ let
 
   sharedOverlays = system: [
     fetchurlOverlay
-    curlImpersonateOverlay
     devboxOverlay
     spacectlOverlay
     limaOverlay
