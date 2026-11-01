@@ -54,8 +54,10 @@
       url = "github:zhaofengli/nix-homebrew";
       inputs.brew-src.follows = "brew-src";
     };
-    # Pinned ahead of nix-homebrew's own pin: the homebrew-cask tap uses cask
-    # DSL (`zap :not_required`) that older Homebrew releases fail to parse.
+    # This repo pins Homebrew itself instead of taking nix-homebrew's pin.
+    # The homebrew-cask tap tracks HEAD, so it can adopt cask DSL
+    # (`zap :not_required`) before nix-homebrew bumps its pin to a Homebrew
+    # that parses it. Keep this version at or above nix-homebrew's pin.
     brew-src = {
       url = "github:Homebrew/brew/7.0.11";
       flake = false;
