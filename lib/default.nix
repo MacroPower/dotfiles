@@ -372,14 +372,18 @@ let
     };
   };
 
-  # Hydra has no cached atuin build for aarch64-linux at the nixpkgs pin,
-  # so terrarium builds it locally. A timing test in atuin-common fails
-  # when the builder is busy, so skip the check phase there. Every other
-  # platform keeps the stock package, which cache.nixos.org serves. Drop
-  # this when Hydra caches atuin for aarch64-linux.
+  # Hydra has no cached atuin build for aarch64-linux or darwin at the
+  # nixpkgs pin, so terrarium and the Macs build it locally. Its timing
+  # and e2e session tests fail when the builder is busy, so skip the check
+  # phase there. x86_64-linux keeps the stock package, which
+  # cache.nixos.org serves. Drop each platform from the condition when
+  # Hydra caches atuin for it.
   atuinOverlay = _final: prev: {
     atuin =
-      if prev.stdenv.hostPlatform.isAarch64 && prev.stdenv.hostPlatform.isLinux then
+      if
+        prev.stdenv.hostPlatform.isDarwin
+        || (prev.stdenv.hostPlatform.isAarch64 && prev.stdenv.hostPlatform.isLinux)
+      then
         prev.atuin.overrideAttrs { doCheck = false; }
       else
         prev.atuin;
