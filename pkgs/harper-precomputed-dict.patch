@@ -1,5 +1,5 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index d73b81e..5f54587 100644
+index 99d23604..162edaa4 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
 @@ -2048,6 +2048,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10,15 +10,24 @@ index d73b81e..5f54587 100644
  ]
  
  [[package]]
-@@ -2713,6 +2714,7 @@ name = "harper-core"
- version = "2.13.0"
+@@ -2714,6 +2715,7 @@ name = "harper-core"
+ version = "3.0.0"
  dependencies = [
   "ammonia",
 + "bincode",
   "bitflags 2.13.2",
   "blanket",
   "boxcar",
-@@ -3533,6 +3535,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -3274,6 +3276,8 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
+ dependencies = [
+  "equivalent",
+  "hashbrown 0.17.1",
++ "serde",
++ "serde_core",
+ ]
+ 
+ [[package]]
+@@ -3535,6 +3539,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "936de6c22f08e7135a921f8ada907acd0d88880c4f42b5591f634b9f1dd8e07f"
  dependencies = [
   "fid-rs",
@@ -26,7 +35,7 @@ index d73b81e..5f54587 100644
  ]
  
  [[package]]
-@@ -6112,6 +6115,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -6124,6 +6129,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "f6f88f4b0a1ebd6c3d16be3e45eb0e8089372ccadd88849b7ca162ba64b5e6f6"
  dependencies = [
   "louds-rs",
@@ -35,7 +44,7 @@ index d73b81e..5f54587 100644
  
  [[package]]
 diff --git a/harper-cli/src/main.rs b/harper-cli/src/main.rs
-index 67ef36d..65523e5 100644
+index 2d314b5c..d5e76f4f 100644
 --- a/harper-cli/src/main.rs
 +++ b/harper-cli/src/main.rs
 @@ -199,6 +199,13 @@ enum Args {
@@ -52,7 +61,7 @@ index 67ef36d..65523e5 100644
      /// Rename a flag in the dictionary and affixes.
      RenameFlag {
          /// The old flag.
-@@ -577,6 +584,10 @@ fn main() -> anyhow::Result<()> {
+@@ -582,6 +589,10 @@ fn main() -> anyhow::Result<()> {
              println!("harper-core v{}", harper_core::core_version());
              Ok(())
          }
@@ -64,21 +73,23 @@ index 67ef36d..65523e5 100644
          Args::TrainBrillTagger {
              datasets: dataset,
 diff --git a/harper-core/Cargo.toml b/harper-core/Cargo.toml
-index 33fff34..2dcf908 100644
+index cdebb62b..19b065bb 100644
 --- a/harper-core/Cargo.toml
 +++ b/harper-core/Cargo.toml
-@@ -33,7 +33,8 @@ ammonia = "4.1.2"
- harper-brill = { path = "../harper-brill", version = "2.0.0" }
- harper-thesaurus = { path = "../harper-thesaurus", version = "2.0.0", optional = true }
+@@ -33,8 +33,9 @@ ammonia = "4.1.2"
+ harper-brill = { path = "../harper-brill", version = "3.0.0" }
+ harper-thesaurus = { path = "../harper-thesaurus", version = "3.0.0", optional = true }
  bitflags = { version = "2.11.0", features = ["serde"] }
 -trie-rs = "0.4.2"
+-indexmap = "2.13.1"
 +trie-rs = { version = "0.4.2", features = ["serde"] }
 +bincode = { version = "2.0.1", default-features = false, features = ["serde", "std"] }
++indexmap = { version = "2.13.1", features = ["serde"] }
  zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
  regex = "1.12.3"
  boxcar = { version = "0.2.14", optional = true }
 diff --git a/harper-core/build.rs b/harper-core/build.rs
-index df200a1..71779c0 100644
+index df200a1b..71779c0a 100644
 --- a/harper-core/build.rs
 +++ b/harper-core/build.rs
 @@ -70,6 +70,15 @@ fn rust_string_literal(value: &str) -> String {
@@ -98,7 +109,7 @@ index df200a1..71779c0 100644
      let weir_rule_dir = manifest_dir.join("./src/linting/weir_rules");
      let out_dir = Path::new(&env::var("OUT_DIR").unwrap()).to_path_buf();
 diff --git a/harper-core/src/spell/fst_dictionary.rs b/harper-core/src/spell/fst_dictionary.rs
-index e4d9cff..3ad843e 100644
+index f28df671..4d6dcc61 100644
 --- a/harper-core/src/spell/fst_dictionary.rs
 +++ b/harper-core/src/spell/fst_dictionary.rs
 @@ -25,8 +25,12 @@ pub struct FstDictionary {
@@ -141,7 +152,7 @@ index e4d9cff..3ad843e 100644
      /// This can be expensive, so only use this if fast fuzzy searches are worth it.
      pub fn new(mut words: Vec<(CharString, DictWordMetadata)>) -> Self {
 diff --git a/harper-core/src/spell/mod.rs b/harper-core/src/spell/mod.rs
-index e4631e9..ae755c2 100644
+index 96ba0f26..655da9c2 100644
 --- a/harper-core/src/spell/mod.rs
 +++ b/harper-core/src/spell/mod.rs
 @@ -9,6 +9,7 @@ pub use self::dictionary::Dictionary;
@@ -150,7 +161,7 @@ index e4631e9..ae755c2 100644
  pub use self::mutable_dictionary::MutableDictionary;
 +pub use self::precomputed::encode as encode_precomputed_curated;
  pub use self::trie_dictionary::TrieDictionary;
- pub use self::word_id::WordId;
+ pub use self::word_id::{CanonicalWordId, CaseFoldedWordId};
  
 @@ -16,6 +17,7 @@ mod dictionary;
  mod fst_dictionary;
@@ -161,10 +172,10 @@ index e4631e9..ae755c2 100644
  mod trie_dictionary;
  mod word_id;
 diff --git a/harper-core/src/spell/mutable_dictionary.rs b/harper-core/src/spell/mutable_dictionary.rs
-index 32a35e0..3ec5411 100644
+index 0d4bc926..d8a58823 100644
 --- a/harper-core/src/spell/mutable_dictionary.rs
 +++ b/harper-core/src/spell/mutable_dictionary.rs
-@@ -5,6 +5,7 @@ use super::{
+@@ -3,6 +3,7 @@ use super::{
  };
  use crate::edit_distance::edit_distance_min_alloc;
  use itertools::Itertools;
@@ -172,7 +183,7 @@ index 32a35e0..3ec5411 100644
  use std::sync::Arc;
  use std::{borrow::Cow, sync::LazyLock};
  
-@@ -21,7 +22,7 @@ use super::dictionary::Dictionary;
+@@ -18,7 +19,7 @@ use super::dictionary::Dictionary;
  ///
  /// To combine the contents of multiple dictionaries, regardless of type, use
  /// [`super::MergedDictionary`].
@@ -181,43 +192,24 @@ index 32a35e0..3ec5411 100644
  pub struct MutableDictionary {
      /// All English words
      word_map: WordMap,
-@@ -29,15 +30,23 @@ pub struct MutableDictionary {
- 
+@@ -27,6 +28,11 @@ pub struct MutableDictionary {
  /// The uncached function that is used to produce the original copy of the
  /// curated dictionary.
--fn uncached_inner_new() -> Arc<MutableDictionary> {
--    MutableDictionary::from_rune_files(
--        include_str!("../../dictionary.dict"),
--        include_str!("../../annotations.json"),
--    )
--    .map(Arc::new)
--    .unwrap_or_else(|e| panic!("Failed to load curated dictionary: {}", e))
-+pub(super) fn uncached_inner_new() -> Arc<MutableDictionary> {
-+    if let Some(precomputed) = super::precomputed::get() {
-+        return precomputed.mutable.clone();
-+    }
+ fn uncached_inner_new() -> Arc<MutableDictionary> {
 +    build_curated()
 +}
 +
 +/// Builds the curated dictionary from its rune files.
 +pub(super) fn build_curated() -> Arc<MutableDictionary> {
-+    MutableDictionary::from_rune_files(CURATED_WORDS, CURATED_ATTRIBUTES)
-+        .map(Arc::new)
-+        .unwrap_or_else(|e| panic!("Failed to load curated dictionary: {}", e))
- }
- 
-+pub(super) const CURATED_WORDS: &str = include_str!("../../dictionary.dict");
-+pub(super) const CURATED_ATTRIBUTES: &str = include_str!("../../annotations.json");
-+
- static DICT: LazyLock<Arc<MutableDictionary>> = LazyLock::new(uncached_inner_new);
- 
- impl MutableDictionary {
+     MutableDictionary::from_rune_files(
+         super::dictionary::CURATED_DICT_STR,
+         super::dictionary::ANNOTATIONS_STR,
 diff --git a/harper-core/src/spell/precomputed.rs b/harper-core/src/spell/precomputed.rs
 new file mode 100644
-index 0000000..75038e0
+index 00000000..de3c854b
 --- /dev/null
 +++ b/harper-core/src/spell/precomputed.rs
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,171 @@
 +//! The curated dictionary in a precomputed binary form.
 +//!
 +//! Building the curated dictionary from its rune files expands every affix
@@ -238,7 +230,8 @@ index 0000000..75038e0
 +use serde::{Deserialize, Serialize};
 +use trie_rs::Trie;
 +
-+use super::mutable_dictionary::{CURATED_ATTRIBUTES, CURATED_WORDS, build_curated};
++use super::dictionary::{ANNOTATIONS_STR, CURATED_DICT_STR};
++use super::mutable_dictionary::build_curated;
 +use super::{FstDictionary, MutableDictionary, TrieDictionary};
 +
 +#[derive(Serialize)]
@@ -290,28 +283,23 @@ index 0000000..75038e0
 +}
 +
 +fn source_hash() -> u64 {
-+    FixedState::default().hash_one((CURATED_WORDS, CURATED_ATTRIBUTES))
++    FixedState::default().hash_one((CURATED_DICT_STR, ANNOTATIONS_STR))
 +}
 +
 +/// Builds the curated dictionary from its rune files and encodes it for a
 +/// build with `HARPER_PRECOMPUTED_DICT`.
 +pub fn encode() -> Vec<u8> {
-+    let mutable = build_curated();
-+    let fst: Arc<FstDictionary> = Arc::new((*mutable).clone().into());
++    let fst: Arc<FstDictionary> = Arc::new((*build_curated()).clone().into());
 +    let trie = TrieDictionary::new(fst.clone());
 +
-+    // The FST dictionary rebuilds its own word list from the curated one.
-+    // The decoded dictionaries share one list, which holds only when the
-+    // two match.
-+    assert!(
-+        **fst.mutable_dict() == *mutable,
-+        "The FST dictionary's word list differs from the curated one."
-+    );
-+
++    // The FST dictionary rebuilds its own word list from the curated one,
++    // in sorted order. Its word map indexes entries by insertion order, so
++    // the encoding keeps the FST's list, which is the one every lookup
++    // through the curated FST and trie dictionaries reads.
 +    bincode::serde::encode_to_vec(
 +        EncodedRef {
 +            source_hash: source_hash(),
-+            mutable: &mutable,
++            mutable: fst.mutable_dict(),
 +            fst: fst.fst_bytes(),
 +            trie: trie.trie(),
 +        },
@@ -360,11 +348,10 @@ index 0000000..75038e0
 +    #[test]
 +    fn round_trips() {
 +        let decoded = decode(&encode()).expect("The encoding should decode.");
-+        let built = build_curated();
-+        assert_eq!(*decoded.mutable, *built);
++        let expected: FstDictionary = (*build_curated()).clone().into();
++        assert_eq!(*decoded.mutable, **expected.mutable_dict());
 +
 +        let fst = decoded.take_fst();
-+        let expected: FstDictionary = (*built).clone().into();
 +        assert_eq!(fst.fst_bytes(), expected.fst_bytes());
 +
 +        let trie = decoded.take_trie();
@@ -395,7 +382,7 @@ index 0000000..75038e0
 +    }
 +}
 diff --git a/harper-core/src/spell/trie_dictionary.rs b/harper-core/src/spell/trie_dictionary.rs
-index a8b582d..b731ae7 100644
+index 660ab881..1a93e1cf 100644
 --- a/harper-core/src/spell/trie_dictionary.rs
 +++ b/harper-core/src/spell/trie_dictionary.rs
 @@ -15,8 +15,15 @@ pub struct TrieDictionary<D: Dictionary> {
@@ -427,24 +414,35 @@ index a8b582d..b731ae7 100644
  }
  
  impl<D: Dictionary> Dictionary for TrieDictionary<D> {
-diff --git a/harper-core/src/spell/word_map.rs b/harper-core/src/spell/word_map.rs
-index 8f97ec8..6ed66a8 100644
---- a/harper-core/src/spell/word_map.rs
-+++ b/harper-core/src/spell/word_map.rs
-@@ -1,16 +1,17 @@
- use hashbrown::{HashMap, hash_map::IntoValues};
+diff --git a/harper-core/src/spell/word_map/mod.rs b/harper-core/src/spell/word_map/mod.rs
+index e080dd64..4f58d77f 100644
+--- a/harper-core/src/spell/word_map/mod.rs
++++ b/harper-core/src/spell/word_map/mod.rs
+@@ -5,6 +5,7 @@ use std::{
+ 
+ use hashbrown::{DefaultHashBuilder, HashMap};
+ use indexmap::IndexMap;
 +use serde::{Deserialize, Serialize};
  
- use crate::{CharString, DictWordMetadata};
- 
- use super::WordId;
- 
- /// The underlying data structure for the `MutableDictionary`.
+ use crate::{
+     DictWordMetadata,
+@@ -32,7 +33,7 @@ type CanonicalStorage = IndexMap<CanonicalWordId, WordMapEntry, DefaultHashBuild
+ /// efficient case-folded lookups.
+ ///
+ /// This is the underlying data structure for all other dictionaries (at the time of writing).
 -#[derive(Debug, Clone, Eq, PartialEq, Default)]
 +#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
  pub struct WordMap {
-     inner: HashMap<WordId, WordMapEntry>,
- }
+     /// Underlying container for the entries in the word map.
+     canonical: CanonicalStorage,
+diff --git a/harper-core/src/spell/word_map/word_map_entry.rs b/harper-core/src/spell/word_map/word_map_entry.rs
+index 047ec195..33c3bb5c 100644
+--- a/harper-core/src/spell/word_map/word_map_entry.rs
++++ b/harper-core/src/spell/word_map/word_map_entry.rs
+@@ -1,6 +1,8 @@
++use serde::{Deserialize, Serialize};
++
+ use crate::{CharString, DictWordMetadata, spell::word_id::WordIdPair};
  
 -#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 +#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]

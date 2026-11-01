@@ -439,7 +439,7 @@ let
             inherit (old) src;
             name = "${old.pname}-${old.version}";
             patches = [ patch ];
-            hash = "sha256-dCHrRybBEo0wqUDzSoJbISwrhYlnm5aa5iDrOEmkTXs=";
+            hash = "sha256-JTA+S+BcitX7WJJNoluV85zi/CTGK+pQikO4Fj2+Om8=";
           };
           # The embedded build runs the tests.
           doCheck = false;
@@ -871,14 +871,6 @@ let
     ];
   };
 
-  # dagger/nix's GoReleaser-generated package takes a bare `system`
-  # argument. callPackage fills it from the deprecated `pkgs.system` alias,
-  # which warns on every evaluation. Pass the host platform's system
-  # explicitly. Must follow dagger.overlays.default in sharedOverlays.
-  daggerSystemOverlay = final: prev: {
-    dagger = prev.dagger.override { inherit (final.stdenv.hostPlatform) system; };
-  };
-
   sharedOverlays = system: [
     fetchurlOverlay
     curlImpersonateOverlay
@@ -920,7 +912,6 @@ let
     (workmuxOverlay system)
     (llmAgentsOverlay system)
     dagger.overlays.default
-    daggerSystemOverlay
   ];
 
   sharedStylixConfig = import paths.stylix;
