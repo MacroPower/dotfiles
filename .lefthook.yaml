@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://lefthook.dev/schema.json
 pre-commit:
   jobs:
     # Runs before check, so the lint step sees the regenerated README.
