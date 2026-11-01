@@ -200,7 +200,7 @@ tasks:
         --tz "{{.TZ | default "America/New_York"}}"
         --colorterm "{{.COLORTERM}}"
         --kagi-api-key env://KAGI_API_KEY
-        --interactive'
+        --shell-on-error'
 
   sandbox:
     desc: Launch an interactive dev container with network firewall
@@ -212,4 +212,4 @@ tasks:
         --tz "{{.TZ | default "America/New_York"}}"
         --colorterm "{{.COLORTERM}}"
         --kagi-api-key env://KAGI_API_KEY
-        --interactive'
+        --shell-on-error'
