@@ -231,6 +231,8 @@ in
           "signon.rememberSignons" = false;
           "signon.management.page.breach-alerts.enabled" = false;
           "signon.firefoxRelay.feature" = "disabled";
+          # Hide the Passwords sidebar tool that 159 adds by default
+          "browser.contextual-password-manager.enabled" = false;
           "extensions.formautofill.addresses.enabled" = false;
           "extensions.formautofill.creditCards.enabled" = false;
 
