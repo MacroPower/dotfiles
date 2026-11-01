@@ -4026,7 +4026,8 @@ in
             # transcripts across every project, and the 30-day default
             # expires that sample before it fills. The same period
             # governs how long ~/.claude/skills/.trash holds what
-            # syncClaudeAiSkills below moves there.
+            # syncClaudeAiSkills below moves there. Claude Code 2.1.314
+            # and later also cap that folder at about 1024 entries.
             cleanupPeriodDays = 90;
             # Keep ~/.claude/skills and ~/.claude/plugins Nix-owned.
             # Skills and plugins enabled on the claude.ai account
