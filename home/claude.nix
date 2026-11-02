@@ -3470,13 +3470,14 @@ in
       };
 
       self-improve = {
-        # The self-improve skill replaces Claude Code's built-in feedback
-        # drafts. It files each notable issue as an aven task in the
-        # dotfiles project, where the config that caused it lives. A
-        # blanket deny removes the tool from the model's context.
+        # The track-issue skill replaces Claude Code's built-in feedback
+        # drafts. It files each notable issue with Claude Code or its
+        # config as an aven task in the dotfiles project. That project holds
+        # the config that caused the issue. A blanket deny removes the tool
+        # from the model's context.
         permissions.deny = [ "SendFeedback" ];
         instructions.items = [
-          "When you hit a notable issue with Claude Code or its config, start a fork with `Agent({subagent_type: \"fork\", prompt: \"Invoke the self-improve skill with args: <one-line summary of the issue>\"})`, then return to the task. The fork inherits the conversation, so it can quote the evidence, and it files the task in the background. When the Agent tool offers no fork type, invoke the skill directly instead. Notable issues include a tool failure that you resolved or abandoned, a safe command that a hook or permission rule denied, and a skill or CLAUDE.md line that misled you. A missing capability that blocked a reasonable request also counts, and so does a user correction or complaint about how you worked."
+          "When you hit a notable issue with Claude Code or its config, start `Agent({subagent_type: \"fork\", prompt: \"Invoke the track-issue skill for this Claude Code issue: <one-line summary>\"})` and continue the task. Invoke the skill directly when forks are unavailable. Notable issues include a failed or wrongly denied tool call, misleading guidance, a missing capability, and a user complaint about how you worked."
         ];
       };
 
