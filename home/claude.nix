@@ -2976,6 +2976,26 @@ in
             "mcp__github__update_pull_request"
             "mcp__github__update_pull_request_branch"
           ];
+          # The prose that the write tools above publish. A cmdrules deny
+          # redirects `gh pr create` to create_pull_request, so these
+          # entries are what lints pull request text.
+          proseLint.toolFields = {
+            mcp__github__create_pull_request = [
+              "title"
+              "body"
+            ];
+            mcp__github__update_pull_request = [
+              "title"
+              "body"
+            ];
+            mcp__github__merge_pull_request = [
+              "commit_title"
+              "commit_message"
+            ];
+            mcp__github__pull_request_review_write = [ "body" ];
+            mcp__github__add_comment_to_pending_review = [ "body" ];
+            mcp__github__add_reply_to_pull_request_comment = [ "body" ];
+          };
           # Redirect read-only gh subcommands that have a github MCP
           # equivalent to the MCP, derived from the ghRedirectGroups /
           # ghRedirectCommands / ghWriteRedirectGroups tables above.
