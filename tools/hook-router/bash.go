@@ -188,7 +188,7 @@ func handleBashCtx(ctx context.Context, input []byte, stdout io.Writer, cfg conf
 	// committing it. Runs after the sleep guard for the same ordering
 	// reasons. A linter crash logs at warn and the command falls
 	// through, since a broken linter must never block a commit.
-	if reason, deny := lintMessages(ctx, prog, command, h.SessionID, cfg, logger); deny {
+	if reason, deny := lintMessages(ctx, msglint.Messages(prog), slog.String("command", command), h.SessionID, cfg, logger); deny {
 		logger.Info(
 			"denied",
 			slog.String("rule", "message-lint"),
@@ -271,75 +271,6 @@ func handleBashCtx(ctx context.Context, input []byte, stdout io.Writer, cfg conf
 	}
 
 	return nil
-}
-
-// lintMessages runs the message lint over prog and reports whether to
-// deny the command and why. A Required finding denies every time. A
-// Recommended finding with no Required one denies once per message:
-// the first run claims the message's waiver key in the store and is
-// denied, and a rerun of the identical command finds the key claimed
-// and passes. The store opens lazily through cfg.openStore, so the
-// PreToolUse:Bash hot path only pays for SQLite when a waiver is in
-// play. No opener, a store error, or a linter crash all fail open with
-// a log line, since a broken hook must never block a commit.
-func lintMessages(ctx context.Context, prog *syntax.File, command, sessionID string, cfg config, logger *slog.Logger) (string, bool) {
-	res, err := msglint.Check(ctx, prog, cfg.messageLint)
-	if err != nil {
-		logger.Warn("message lint failed",
-			slog.String("command", command),
-			slog.Any("error", err),
-		)
-
-		return "", false
-	}
-
-	if res.Deny {
-		return res.Reason, true
-	}
-
-	if res.WaiverKey == "" {
-		return "", false
-	}
-
-	if cfg.openStore == nil {
-		logger.Warn("message lint waiver skipped: no store configured",
-			slog.String("command", command),
-		)
-
-		return "", false
-	}
-
-	store, err := cfg.openStore(ctx)
-	if err != nil {
-		logger.Warn("message lint waiver skipped: opening store",
-			slog.String("command", command),
-			slog.Any("error", err),
-		)
-
-		return "", false
-	}
-	defer store.Close()
-
-	claimed, err := store.MarkMessageLintWarned(ctx, sessionID, res.WaiverKey)
-	if err != nil {
-		logger.Warn("message lint waiver skipped: claiming waiver",
-			slog.String("command", command),
-			slog.Any("error", err),
-		)
-
-		return "", false
-	}
-
-	if !claimed {
-		logger.Info("message lint waived on rerun",
-			slog.String("command", command),
-			slog.String("message_hash", res.WaiverKey),
-		)
-
-		return "", false
-	}
-
-	return res.Reason, true
 }
 
 // handlePostBash records bash command failures for later analysis.

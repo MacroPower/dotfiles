@@ -159,3 +159,49 @@ func TestRulesetNilSafe(t *testing.T) {
 	_, _, matched := rs.Match("mcp__fetch__fetch")
 	assert.False(t, matched)
 }
+
+func TestMatchPattern(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		pattern string
+		tool    string
+		want    bool
+	}{
+		"exact name matches": {
+			pattern: "mcp__slack__post_message",
+			tool:    "mcp__slack__post_message",
+			want:    true,
+		},
+		"exact name rejects a sibling tool": {
+			pattern: "mcp__slack__post_message",
+			tool:    "mcp__slack__post_reply",
+		},
+		"glob matches by prefix": {
+			pattern: "mcp__slack__post_*",
+			tool:    "mcp__slack__post_reply",
+			want:    true,
+		},
+		"glob rejects another prefix": {
+			pattern: "mcp__slack__post_*",
+			tool:    "mcp__slack__list_channels",
+		},
+		"bare server matches its tools": {
+			pattern: "mcp__slack",
+			tool:    "mcp__slack__post_message",
+			want:    true,
+		},
+		"bare server rejects a server that shares its prefix": {
+			pattern: "mcp__slack",
+			tool:    "mcp__slackbot__post_message",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, mcprules.MatchPattern(tc.pattern, tc.tool))
+		})
+	}
+}

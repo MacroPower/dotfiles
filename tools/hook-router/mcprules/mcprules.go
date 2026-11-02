@@ -64,7 +64,7 @@ func (r *Ruleset) Match(tool string) (decision, pattern string, matched bool) {
 
 	for _, group := range groups {
 		for _, p := range group.patterns {
-			if matchPattern(p, tool) {
+			if MatchPattern(p, tool) {
 				return group.decision, p, true
 			}
 		}
@@ -73,13 +73,15 @@ func (r *Ruleset) Match(tool string) (decision, pattern string, matched bool) {
 	return "", "", false
 }
 
-// matchPattern reports whether tool satisfies pattern. Three forms are
-// supported, mirroring Claude Code's MCP permission-rule syntax plus a
-// glob extension: a trailing-* pattern prefix-matches the tool name; a
-// bare server pattern (no tool segment after the server name, e.g.
-// "mcp__github") matches every tool on that server; anything else
-// matches exactly.
-func matchPattern(pattern, tool string) bool {
+// MatchPattern reports whether tool satisfies pattern. The pattern
+// syntax mirrors Claude Code's MCP permission rules, plus a glob form:
+//
+//   - A pattern ending in * matches every tool name with the prefix
+//     before it.
+//   - A bare server pattern, with no tool segment after the server
+//     name (such as "mcp__github"), matches every tool on that server.
+//   - Any other pattern matches one tool name exactly.
+func MatchPattern(pattern, tool string) bool {
 	if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
 		return strings.HasPrefix(tool, prefix)
 	}

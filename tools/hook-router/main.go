@@ -99,14 +99,16 @@ import (
 // bare config{} test literal is a no-op.
 //
 // messageLint configures the [handleBash] commit-message and
-// pull-request lint (see the msglint package). Its zero value is a
-// disabled linter, so a bare config{} test literal is a no-op.
+// pull-request lint and the [handleMCP] tool-argument lint (see the
+// msglint package). Its zero value is a disabled linter, so a bare
+// config{} test literal is a no-op.
 //
-// openStore opens the SQLite store on demand for the one PreToolUse:Bash
-// path that needs it, the message-lint waiver for a Recommended
-// finding. [eventNeedsStore] keeps the store closed for PreToolUse:Bash
-// so the hot path skips the open, and this opener is how the handler
-// reaches it anyway. nil disables the waiver, which fails open.
+// openStore opens the SQLite store on demand for the message-lint
+// waiver for a Recommended finding, on PreToolUse:Bash and
+// PreToolUse:MCP. [eventNeedsStore] keeps the store closed for both
+// so the hot path skips the open, and this opener is how
+// [lintMessages] reaches it anyway. nil disables the waiver, which
+// fails open.
 //
 // agentScope limits [run] to payloads from the main conversation or to
 // payloads from a subagent (see [agentScope]). Its zero value handles
@@ -477,7 +479,7 @@ func run(
 			// Routing sentinel from the mcp__.* hook matcher; the
 			// real tool name comes from the stdin payload, since
 			// Claude Code injects no tool-name env var.
-			return handleMCP(input, stdout, cfg, logger)
+			return handleMCP(ctx, input, stdout, cfg, logger)
 		case "ExitPlanMode":
 			if store == nil {
 				return nil

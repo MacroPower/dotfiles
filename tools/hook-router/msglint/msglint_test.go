@@ -145,6 +145,13 @@ func TestParse(t *testing.T) {
 		"command and timeout":    {in: `{"command":["prose-lint","--commit"],"timeout":"3s"}`, want: msglint.Config{Command: []string{"prose-lint", "--commit"}, Timeout: "3s"}},
 		"malformed JSON errors":  {in: `{"command":`, err: true},
 		"empty command disables": {in: `{"command":[]}`, want: msglint.Config{Command: []string{}}},
+		"tool fields": {
+			in: `{"command":["prose-lint"],"toolFields":[{"tool":"mcp__slack__post_message","fields":["text"]}]}`,
+			want: msglint.Config{
+				Command:    []string{"prose-lint"},
+				ToolFields: []msglint.ToolField{{Tool: "mcp__slack__post_message", Fields: []string{"text"}}},
+			},
+		},
 	}
 
 	for name, tc := range cases {
@@ -161,6 +168,72 @@ func TestParse(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 			assert.Equal(t, len(tc.want.Command) == 0, got.Empty())
+		})
+	}
+}
+
+func TestToolMessages(t *testing.T) {
+	t.Parallel()
+
+	cfg := msglint.Config{ToolFields: []msglint.ToolField{
+		{Tool: "mcp__github__create_pull_request", Fields: []string{"title", "body"}},
+		{Tool: "mcp__github__*", Fields: []string{"body", "comment"}},
+		{Tool: "mcp__slack", Fields: []string{"text"}},
+	}}
+
+	cases := map[string]struct {
+		tool  string
+		input map[string]any
+		want  []msglint.Message
+	}{
+		"exact match keeps config field order": {
+			tool:  "mcp__github__create_pull_request",
+			input: map[string]any{"body": "The body.", "title": "Add a flag", "head": "feature"},
+			want: []msglint.Message{
+				{Kind: "`title` field of mcp__github__create_pull_request", Text: "Add a flag"},
+				{Kind: "`body` field of mcp__github__create_pull_request", Text: "The body."},
+			},
+		},
+		"glob match adds its fields without repeating one": {
+			tool:  "mcp__github__create_pull_request",
+			input: map[string]any{"body": "The body.", "comment": "A note."},
+			want: []msglint.Message{
+				{Kind: "`body` field of mcp__github__create_pull_request", Text: "The body."},
+				{Kind: "`comment` field of mcp__github__create_pull_request", Text: "A note."},
+			},
+		},
+		"glob match alone": {
+			tool:  "mcp__github__update_pull_request",
+			input: map[string]any{"title": "Not listed for this tool", "body": "The body."},
+			want: []msglint.Message{
+				{Kind: "`body` field of mcp__github__update_pull_request", Text: "The body."},
+			},
+		},
+		"bare server match": {
+			tool:  "mcp__slack__post_message",
+			input: map[string]any{"channel": "C1", "text": "Hello."},
+			want: []msglint.Message{
+				{Kind: "`text` field of mcp__slack__post_message", Text: "Hello."},
+			},
+		},
+		"non-string, missing, and blank values drop out": {
+			tool:  "mcp__github__create_pull_request",
+			input: map[string]any{"title": 42.0, "body": " \n\t"},
+		},
+		"unmatched tool has no messages": {
+			tool:  "mcp__fetch__fetch",
+			input: map[string]any{"text": "Hello.", "body": "Hello."},
+		},
+		"nil input has no messages": {
+			tool: "mcp__slack__post_message",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, cfg.ToolMessages(tc.tool, tc.input))
 		})
 	}
 }
@@ -331,6 +404,9 @@ func TestCheck(t *testing.T) {
 			wantDeny:   true,
 			wantReason: []string{"in the pull request."},
 		},
+		"no messages passes": {
+			cfg: tierLinter(),
+		},
 		"linter crash returns the error": {
 			command: `git commit -m "fix: a"`,
 			cfg:     msglint.Config{Command: []string{"sh", "-c", `exit 2`}},
@@ -342,7 +418,7 @@ func TestCheck(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := msglint.Check(t.Context(), parse(t, tc.command), tc.cfg)
+			res, err := msglint.Check(t.Context(), msglint.Messages(parse(t, tc.command)), tc.cfg)
 			if tc.err {
 				require.ErrorIs(t, err, msglint.ErrLintFailed)
 
@@ -375,18 +451,30 @@ func TestCheckWaiverKey(t *testing.T) {
 
 	cfg := tierLinter()
 
-	first, err := msglint.Check(t.Context(), parse(t, `git commit -m "This is passive."`), cfg)
+	first, err := msglint.Check(t.Context(), msglint.Messages(parse(t, `git commit -m "This is passive."`)), cfg)
 	require.NoError(t, err)
 
-	same, err := msglint.Check(t.Context(), parse(t, `git commit --message "This is passive."`), cfg)
+	same, err := msglint.Check(t.Context(), msglint.Messages(parse(t, `git commit --message "This is passive."`)), cfg)
 	require.NoError(t, err)
 	assert.Equal(t, first.WaiverKey, same.WaiverKey, "the key follows the message text, not the flag spelling")
 
-	other, err := msglint.Check(t.Context(), parse(t, `git commit -m "This is passive too."`), cfg)
+	other, err := msglint.Check(t.Context(), msglint.Messages(parse(t, `git commit -m "This is passive too."`)), cfg)
 	require.NoError(t, err)
 	assert.NotEqual(t, first.WaiverKey, other.WaiverKey)
 
-	pr, err := msglint.Check(t.Context(), parse(t, `gh pr create -t "This is passive."`), cfg)
+	pr, err := msglint.Check(t.Context(), msglint.Messages(parse(t, `gh pr create -t "This is passive."`)), cfg)
 	require.NoError(t, err)
 	assert.NotEqual(t, first.WaiverKey, pr.WaiverKey, "the kind is part of the key")
+
+	cfg.ToolFields = []msglint.ToolField{{Tool: "mcp__github", Fields: []string{"body"}}}
+	input := map[string]any{"body": "This is passive."}
+
+	create, err := msglint.Check(t.Context(), cfg.ToolMessages("mcp__github__create_pull_request", input), cfg)
+	require.NoError(t, err)
+	assert.NotEmpty(t, create.WaiverKey)
+	assert.Contains(t, create.Reason, "in the `body` field of mcp__github__create_pull_request.")
+
+	update, err := msglint.Check(t.Context(), cfg.ToolMessages("mcp__github__update_pull_request", input), cfg)
+	require.NoError(t, err)
+	assert.NotEqual(t, create.WaiverKey, update.WaiverKey, "the tool name is part of the key")
 }

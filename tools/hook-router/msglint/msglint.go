@@ -16,6 +16,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/linter"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
 )
 
 // DefaultTimeout bounds a single linter invocation when [Config.Timeout]
@@ -31,16 +32,28 @@ const DefaultTimeout = 15 * time.Second
 var ErrLintFailed = errors.New("message lint failed")
 
 // Config declares the message linter. Command runs with the message on
-// stdin. JSON tags are camelCase because builtins.toJSON in
-// home/claude.nix emits attribute names verbatim. The zero value is a
-// disabled linter.
+// stdin. ToolFields names the MCP tool arguments that [Config.ToolMessages]
+// hands to the same linter. JSON tags are camelCase because
+// builtins.toJSON in home/claude.nix emits attribute names verbatim.
+// The zero value is a disabled linter.
 type Config struct {
-	Command []string `json:"command"`
-	Timeout string   `json:"timeout,omitempty"`
+	Command    []string    `json:"command"`
+	Timeout    string      `json:"timeout,omitempty"`
+	ToolFields []ToolField `json:"toolFields,omitempty"`
 }
 
-// Message is one piece of text a command hands to git or gh. Kind
-// names it for the deny reason ("commit message" or "pull request").
+// ToolField names the top-level tool_input keys of an MCP tool whose
+// string values are prose to lint. Tool takes the pattern syntax of
+// [mcprules.MatchPattern], so one entry can cover a server or a family
+// of tools.
+type ToolField struct {
+	Tool   string   `json:"tool"`
+	Fields []string `json:"fields"`
+}
+
+// Message is one piece of text that leaves through a command or a tool
+// call. Kind names it for the deny reason, such as "commit message" or
+// "`body` field of mcp__github__create_pull_request".
 type Message struct {
 	Kind string
 	Text string
@@ -118,26 +131,66 @@ func (c Config) Lint(ctx context.Context, text string) ([]linter.Finding, error)
 		ErrLintFailed, c.Command[0], err, strings.TrimSpace(stderr.String()))
 }
 
+// ToolMessages returns the prose arguments of one MCP tool call, in the
+// order [Config.ToolFields] lists them. Every entry whose pattern
+// matches tool contributes its fields, and a field named by two entries
+// yields one [Message]. A missing key, a non-string value, and a value
+// of only whitespace drop out, so the linter sees text alone.
+func (c Config) ToolMessages(tool string, input map[string]any) []Message {
+	var (
+		msgs []Message
+		seen = map[string]bool{}
+	)
+
+	for _, tf := range c.ToolFields {
+		if !mcprules.MatchPattern(tf.Tool, tool) {
+			continue
+		}
+
+		for _, field := range tf.Fields {
+			if seen[field] {
+				continue
+			}
+
+			seen[field] = true
+
+			text, ok := input[field].(string)
+			if !ok || strings.TrimSpace(text) == "" {
+				continue
+			}
+
+			msgs = append(msgs, Message{
+				Kind: "`" + field + "` field of " + tool,
+				Text: text,
+			})
+		}
+	}
+
+	return msgs
+}
+
 // Result is the outcome of [Check]. Deny is set when a message has a
-// Required finding, and the caller refuses the command every time.
+// Required finding, and the caller refuses the call every time.
 // WaiverKey is set when no message has a Required finding but one has
 // a Recommended finding. The caller denies the first run and lets the
-// identical command through once it has recorded the key, so Claude
-// can keep a Recommended finding it judges a false positive by running
-// the command again unchanged. Reason is the deny text for either
-// case. A message with Optional findings alone leaves all three
-// fields empty, and the command passes.
+// identical call through after it records the key. Claude keeps a
+// Recommended finding it judges a false positive by running the call
+// again unchanged. Reason is the deny text for either case. A message
+// with Optional findings alone leaves all three fields empty, and the
+// call passes.
 type Result struct {
 	Reason    string
 	WaiverKey string
 	Deny      bool
 }
 
-// Check lints every message in prog and reports what to do with the
-// command. A disabled config or a command without a literal message
-// returns the zero [Result] with no error. A linter crash returns the
-// error and no decision, so the caller can log it and fall through.
-func Check(ctx context.Context, prog *syntax.File, cfg Config) (Result, error) {
+// Check lints msgs and reports what to do with the command or tool call
+// that carries them. [Messages] collects them from a shell command, and
+// [Config.ToolMessages] collects them from an MCP tool call. A disabled
+// config or an empty msgs returns the zero [Result] with no error. A
+// linter crash returns the error and no decision, so the caller can log
+// it and fall through.
+func Check(ctx context.Context, msgs []Message, cfg Config) (Result, error) {
 	if cfg.Empty() {
 		return Result{}, nil
 	}
@@ -150,10 +203,10 @@ func Check(ctx context.Context, prog *syntax.File, cfg Config) (Result, error) {
 	var (
 		res     Result
 		waivers []string
-		msgs    []linted
+		dirty   []linted
 	)
 
-	for _, m := range Messages(prog) {
+	for _, m := range msgs {
 		findings, err := cfg.Lint(ctx, m.Text)
 		if err != nil {
 			return Result{}, err
@@ -163,7 +216,7 @@ func Check(ctx context.Context, prog *syntax.File, cfg Config) (Result, error) {
 			continue
 		}
 
-		msgs = append(msgs, linted{msg: m, findings: findings})
+		dirty = append(dirty, linted{msg: m, findings: findings})
 
 		worst := linter.Optional
 		for _, f := range findings {
@@ -187,16 +240,16 @@ func Check(ctx context.Context, prog *syntax.File, cfg Config) (Result, error) {
 	// denies the command.
 	var b strings.Builder
 
-	for _, l := range msgs {
+	for _, l := range dirty {
 		writeReason(&b, l.msg.Kind, l.findings)
 	}
 
 	if !res.Deny {
-		// One key covers every message in the command, so a rerun of
-		// the whole command is what clears it.
+		// One key covers every message in the command or tool call, so
+		// a rerun of the whole call is what clears it.
 		res.WaiverKey = joinKeys(waivers)
 
-		b.WriteString("A Recommended finding that misreads its sentence passes when the command runs again unchanged.\n")
+		b.WriteString("A Recommended finding that misreads its sentence passes when the same tool call runs again unchanged.\n")
 	}
 
 	res.Reason = strings.TrimRight(b.String(), "\n")
@@ -212,7 +265,7 @@ func writeReason(b *strings.Builder, kind string, findings []linter.Finding) {
 		noun = "finding"
 	}
 
-	fmt.Fprintf(b, "prose-lint: %d %s in the %s. Line numbers count from the first line of the message. Fix each and run the command again with the corrected text.\n",
+	fmt.Fprintf(b, "prose-lint: %d %s in the %s. Line numbers count from the first line of the message. Fix each and run the tool call again with the corrected text.\n",
 		len(findings), noun, kind)
 
 	for _, tier := range linter.Tiers {

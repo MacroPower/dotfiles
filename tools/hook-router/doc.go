@@ -14,7 +14,10 @@
 //     rewrites kubectl with KUBECONFIG
 //   - PreToolUse:MCP              -- evaluates MCP tool allow/ask/deny lists
 //     from --mcp-rules JSON ("MCP" is a routing sentinel; the tool name
-//     comes from the payload)
+//     comes from the payload). It lints the tool arguments that the
+//     toolFields of --message-lint-config name, and findings deny the
+//     call before the allow or ask decision. A deny-listed tool skips
+//     the lint.
 //   - PreToolUse:ExitPlanMode     -- gates plan exit behind plan-reviewer, records
 //     plan path and baseline commit on approval
 //   - PreToolUse:EnterPlanMode    -- resets plan session state
@@ -65,10 +68,11 @@
 // filtering), compact (output compaction), archive
 // (uncompacted-output archiving), searchrewrite (grep->rg / find->bfs
 // rewriting), sleepguard (foreground-sleep guard), rmguard
-// (unresolvable rm target guard), msglint (commit
-// message and pull request linting), state (SQLite
+// (unresolvable rm target guard), msglint (commit message, pull
+// request, and MCP tool argument linting), state (SQLite
 // session state), kubectx (kubectl gating and session dir lifecycle),
 // git (repo queries), and postimpl (post-implementation skill
-// catalog). None of the subpackages import each other; only this
-// package composes them.
+// catalog). The one import between subpackages is msglint's use of
+// linter for findings and mcprules for tool patterns. Only this package
+// composes them.
 package main
