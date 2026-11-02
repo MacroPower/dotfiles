@@ -1118,7 +1118,9 @@ in
 
       # Status bar layout
       set -g status-position bottom
-      set -g status-interval 1
+      # Each refresh runs every #() command through /bin/sh, and macOS
+      # syspolicyd scans each unsigned Nix binary it launches.
+      set -g status-interval 5
       set -g status-left-length 40
       set -g status-right-length 120
       set -g status-style "bg=#${tmux.bg},fg=#${tmux.fg}"
@@ -1140,9 +1142,9 @@ in
           "#[fg=#${tmux.dim},bg=#${tmux.bg}]"
           "#(tmux-status-context)"
           "#[fg=#${tmux.surface},bg=#${tmux.bg}]${plr}"
-          "#[fg=#${tmux.fg},bg=#${tmux.surface}] #(whoami)@#h "
+          "#[fg=#${tmux.fg},bg=#${tmux.surface}] #{user}@#h "
           "#[fg=#{?client_prefix,##${tmux.accentAlt},##${tmux.accent}},bg=#${tmux.surface}]${plr}"
-          "#[fg=#${tmux.dark},bg=#{?client_prefix,##${tmux.accentAlt},##${tmux.accent}},bold] %I:%M:%S %p "
+          "#[fg=#${tmux.dark},bg=#{?client_prefix,##${tmux.accentAlt},##${tmux.accent}},bold] %I:%M %p "
         ]
       }"
 
