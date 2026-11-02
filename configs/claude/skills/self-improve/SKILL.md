@@ -1,8 +1,9 @@
 ---
 name: self-improve
 description: >-
-  Retrospective on the current session's friction (broken tool calls,
-  repeated prompts, wasted effort).
+  Load when you hit a notable issue with Claude Code or its config, or for a
+  retrospective on the session's friction (broken tool calls, repeated
+  prompts, wasted effort).
 ---
 
 # Self-Improve
@@ -12,6 +13,9 @@ an aven task in the `dotfiles` project, written as a bug report. The
 dotfiles repo generates Claude Code's whole config: skills, agents, hooks,
 permission rules, MCP servers, and the global CLAUDE.md. Friction from any
 of those belongs in a task.
+
+When `args` name one issue, file only that issue. Skip the Friction step
+and triage that issue alone. Without `args`, review the whole session.
 
 Describe the problem and stop there. Do not read the dotfiles repo, trace
 the cause into its files, or propose a fix. Whoever takes the task
@@ -127,3 +131,7 @@ Tell the user, in a few lines, which tasks you filed and which existing
 tasks you added notes to. Give each ref and its title. If the session had no
 systemic friction, say that you filed nothing. Filing nothing beats
 inventing tasks.
+
+After a one-issue run, give the ref and title in one line. In a fork, that
+line is your final report, so stop there and leave the conversation's task
+to the main thread. Outside a fork, return to your task.
