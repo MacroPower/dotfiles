@@ -53,6 +53,17 @@ tasks:
         if: "command -v nh &>/dev/null"
       - task: _switch-direct
         if: "! command -v nh &>/dev/null"
+      - task: _remove-store-links
+
+  # Darwin hosts skip store optimisation (see hosts/shared.nix). Removing the
+  # leftover index keeps the deduplicated hard links and their disk savings.
+  _remove-store-links:
+    internal: true
+    platforms: [darwin]
+    status:
+      - test ! -d /nix/store/.links
+    cmds:
+      - sudo rm -rf /nix/store/.links
 
   _switch-nh:
     internal: true

@@ -14,9 +14,13 @@
   # devboxOverlay in lib/default.nix patches devbox to run without it.
   nix.package = pkgs.lixPackageSets.stable.lix;
 
-  # Use scheduled optimisation instead of auto-optimise-store to avoid
-  # the .tmp-link race condition (NixOS/nix#7273), which also affects Lix.
-  nix.optimise.automatic = true;
+  # Store optimisation keeps a hard link to every deduplicated file in
+  # /nix/store/.links, which grows to millions of entries. On macOS,
+  # syspolicyd malware scans of Nix binaries walk that directory without
+  # pause, so darwin hosts skip optimisation. Hosts that optimise use the
+  # scheduled job instead of auto-optimise-store to avoid the .tmp-link
+  # race condition (NixOS/nix#7273), which also affects Lix.
+  nix.optimise.automatic = !pkgs.stdenv.isDarwin;
 
   nixpkgs = {
     flake.setFlakeRegistry = true;
