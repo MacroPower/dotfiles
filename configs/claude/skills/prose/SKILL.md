@@ -13,9 +13,10 @@ description: >-
 After every Write and Edit of a markdown or source file, a hook runs
 `prose-lint` and returns its findings before your next turn. The Bash
 hook also lints the message that a `git commit` or `gh pr create`
-carries. `prose-lint` tags each finding with its rule's tier. Each tier
-says how often its rules misread a sentence, so it sets what a finding
-asks of you.
+carries. The MCP hook lints the prose arguments of tools such as
+`mcp__github__create_pull_request` before the call runs. `prose-lint`
+tags each finding with its rule's tier. Each tier says how often its
+rules misread a sentence, so it sets what a finding asks of you.
 
 | Tier        | Rules match                      | Your fix                               | Commit or PR message                    |
 | ----------- | -------------------------------- | -------------------------------------- | --------------------------------------- |
