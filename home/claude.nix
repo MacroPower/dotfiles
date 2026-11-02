@@ -825,9 +825,11 @@ let
   # Loads open aven tasks into a session started inside a tracked project.
   # `aven prime` prints the full aven skill ahead of the task list. The
   # skills block below installs that skill for Claude to load on demand, so
-  # the hook keeps only the task sections. It prints nothing outside a
-  # tracked project or when the project has no open work, and a failing
-  # `aven` never blocks startup.
+  # the hook keeps only the task sections. Inside a tracked project it
+  # always prints the rule that sends out-of-scope issues to the
+  # track-issue skill. A project with no open work still collects them.
+  # It prints nothing outside a tracked project, and a failing `aven` never
+  # blocks startup.
   avenPrime = pkgs.writeShellApplication {
     name = "claude-aven-prime";
     runtimeInputs = [
@@ -840,10 +842,11 @@ let
       *"## Open Issues"*) ;;
       *) exit 0 ;;
       esac
+      echo "aven tracks tasks for this project. Load the \`aven\` skill before running \`aven\` commands."
+      echo "When you notice a bug outside the current task, or the user defers one, file it with the \`track-issue\` skill instead of fixing it or dropping it."
       case $out in
       *"Summary: total=0 "*) exit 0 ;;
       esac
-      echo "aven tracks tasks for this project. Load the \`aven\` skill before running \`aven\` commands."
       echo
       sed -n '/^## Local Conventions/,$p' <<<"$out"
     '';
@@ -2350,6 +2353,7 @@ in
       skill-creator.source = ../configs/claude/skills/skill-creator;
       taskfile.source = ../configs/claude/skills/taskfile;
       technical-writing.source = ../configs/claude/skills/technical-writing;
+      track-issue.source = ../configs/claude/skills/track-issue;
       upgrade.source = ../configs/claude/skills/upgrade;
       web-archive.source = ../configs/claude/skills/web-archive;
     };
