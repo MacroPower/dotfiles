@@ -7,122 +7,123 @@ description: >-
 
 # Self-Improve
 
-Look back over this session, find where you hit friction, and propose fixes
-to the user's dotfiles repo at `~/Documents/repos/dotfiles`. The rough edges
-you just hit should turn into concrete changes to the config that
-future sessions load.
+Review this session, find where you hit friction, and file each problem as
+an aven task in the `dotfiles` project, written as a bug report. The
+dotfiles repo generates Claude Code's whole config: skills, agents, hooks,
+permission rules, MCP servers, and the global CLAUDE.md. Friction from any
+of those belongs in a task.
 
-This is a **report-only** skill. Diagnose and propose; do not edit any files.
-The user decides what to act on.
+Describe the problem and stop there. Do not read the dotfiles repo, trace
+the cause into its files, or propose a fix. Whoever takes the task
+investigates the cause in the repo. Your job is to record what happened
+while the evidence is still in context.
 
 ## Mindset
 
-You are writing an honest retrospective, not padding a list. A short report
-with two real findings beats ten speculative ones. The value is in catching
-things that recur -- a missing permission that prompts every time, a
-CLAUDE.md line that misled you, a tool you used wrong because nothing told you
-the right way. One-off slips that were your own fault and won't repeat are
-noise; leave them out or note them briefly without a proposed fix.
+File honest tasks. Two real tasks beat ten speculative ones. The value is
+in catching problems that recur. Examples include a missing permission that
+prompts every time, a CLAUDE.md line that misled you, and a tool you used
+wrong because nothing told you the right way.
 
-Cite evidence. Every finding should point at something that actually happened
-this session -- quote the tool error, the denied command, the user's
-correction, the dead end you backtracked from. If you can't point to it, you're
-inventing it.
+Cite evidence. Every task points at something that happened this session:
+the tool error, the denied command, the user's correction, the dead end you
+backtracked from. If you cannot point to it, you are inventing it.
 
-## Step 1: Gather the friction
+## Step 1: Friction
 
-Re-read the session looking for:
+Re-read the session for these kinds of friction:
 
-- **Tool calls that broke**: errors, denials (a Bash command blocked by
-  hook-router, a fetch blocked by the allowlist), MCP tools that returned
-  unexpected output or that you called the wrong way.
-- **Recurring permission prompts**: the same safe command asking for approval
-  over and over.
+- **Tool calls that broke**: errors, denials, and MCP tools that returned
+  unexpected output or that you called the wrong way. Denials include a Bash
+  command that hook-router blocked and a fetch that the allowlist blocked.
+- **Recurring permission prompts**: the same safe command, asking for
+  approval every time it runs.
 - **Confusing or contradictory guidance**: a CLAUDE.md line, skill, or agent
-  instruction that pointed you wrong, was ambiguous, or contradicted what the
-  user actually wanted.
-- **Missing context**: something you had to discover by trial and error that a
-  doc could have told you up front.
-- **Repeated manual work**: a multi-step dance you did by hand that a skill,
-  script, or Taskfile target could capture.
+  instruction that misled you, was ambiguous, or contradicted what the user
+  wanted.
+- **Missing context**: a fact that you found by experiment because no doc
+  stated it.
+- **Repeated manual work**: a multi-step sequence you did by hand that a
+  skill, script, or Taskfile target can capture.
 - **Context bloat**: actions that pulled far more into the conversation than
-  the task needed. Look for whole large files read when one section would do,
-  unfiltered command output dumped into context (a full log instead of a
-  grep), broad searches run inline instead of delegated to an Explore agent,
-  re-reads of files already in context, and verbose MCP responses you needed
-  only one field from. A single oversized read can cost more context than the
-  rest of the session combined, and that cost compounds: it triggers
-  earlier compaction, which loses detail and causes rework. Only flag cases
-  where guidance or tooling could have steered around it.
-- **User corrections**: anywhere the user redirected you. Each is a signal
-  that something upstream set the wrong expectation.
+  the task needed, where guidance or tooling can prevent the bloat. Signs
+  include whole large files read when one section suffices, and unfiltered
+  command output dumped into context (a full log instead of a grep). Other
+  signs are broad searches run inline instead of delegated to an Explore
+  agent, and re-reads of files already in context. Verbose MCP responses
+  count when you needed only one field from them.
+- **User corrections**: anywhere the user redirected you. Each correction
+  signals that something upstream set the wrong expectation.
 
-If the session is long and context was compacted, detail may have dropped out.
-Reflect on what's in context; you need the raw transcript only when the user
-points you at one.
+Context bloat earns a task even when nothing broke. A single oversized read
+can cost more context than the rest of the session combined. That cost
+compounds, because it triggers earlier compaction, which loses detail and
+causes rework.
 
-## Step 2: Diagnose root cause
+Compaction drops detail from long sessions. Work from what is in context,
+and read the raw transcript only when the user points you at one.
 
-For each friction point, ask: *was this systemic, or a one-off?* Then trace
-each systemic one to a cause specific enough to fix. "The fetch failed" is an
-observation; "the host isn't in the mcp-fetch allowlist" is a cause you can
-route.
+## Step 2: Triage
 
-## Step 3: Route each fix to the right place
+For each friction point, decide whether it is systemic or a one-off.
+Systemic friction recurs in later sessions until someone changes the
+config. Keep each systemic friction point as a problem to file. Drop the
+one-offs, such as a slip that was your own fault and does not recur.
 
-Our dotfiles repo is **nix-darwin + home-manager**, and Claude Code's entire
-config is generated from it and symlinked into `~/.claude/`.
+## Step 3: Duplicates
 
-**Never propose editing anything under `~/.claude/` directly.** Those are
-symlinks; the next `home-manager` activation overwrites them. Always route to
-the source in the dotfiles repo.
+Load the `aven` skill before running `aven` commands. For each problem,
+search the `dotfiles` project for an existing task:
 
-Routing table -- map the cause to its source file:
-
-| Friction | Source to change |
-|---|---|
-| A skill gave bad/missing guidance | `configs/claude/skills/<name>/SKILL.md` |
-| An agent underperformed | `configs/claude/agents/<name>.md` |
-| A **new** skill or agent is warranted | create the file above **and** register it in the `dotfiles.claude.skills` / `.agents` attrset in `home/claude.nix` (recommend the `/skill-creator` skill) |
-| Recurring permission prompt on a safe command | `permissions.allow` via `home/claude.nix` (or recommend the `/fewer-permission-prompts` skill) |
-| A safe Bash command was wrongly denied | the `commandRules` / `extraCommandRules.deny` entry in `home/claude.nix` -- relax the rule or add an `except` |
-| A fetch was blocked by the allowlist | add the host to `extraFetchRules.allow` (or the bundle's `fetchRules`) in `home/claude.nix` |
-| A formatter mangled or skipped a file | `formatterRules` in `home/claude.nix` |
-| You used an MCP tool wrong | add/clarify a one-liner in the tool bundle's `instructions.items` in `home/claude.nix` -- those render into the global CLAUDE.md `## Tools` section |
-| A context-bloating habit (see Step 1) | a working-style line in global CLAUDE.md (the heredoc in `home/claude.nix`) or the tool bundle's `instructions.items` -- whichever controls the behavior at its source |
-| A general "how to work here" rule was missing/wrong | global CLAUDE.md prose lives in the `".claude/CLAUDE.md".text` heredoc in `home/claude.nix` (Agents, Shell); project rules live in `CLAUDE.md` at the repo root (recommend the `/revise-claude-md` skill for these) |
-| Settings, hooks, MCP servers, env, status line | `home/claude.nix` |
-| Wrong/confusing repo code or docs unrelated to Claude | the relevant `.nix` / config file directly |
-
-Keep proposals minimal and in the repo's idiom: explicit config over magic,
-present-tense comments, named lists over discovery. A proposal that fights the
-house style won't get applied.
-
-## Step 4: Write the report
-
-Use this structure. Tag each finding **docs**, **code**, or **tooling**, and
-give a confidence level so the user can triage.
-
-```
-# Self-Improvement Review
-
-## Session summary
-<1-2 lines: what this session was actually about>
-
-## Findings
-
-### 1. <short title> [tooling] (confidence: high)
-- **What happened**: <evidence -- quote the error / denial / correction>
-- **Root cause**: <the specific, fixable cause>
-- **Proposed fix**: `<file path>` -- <the concrete change>
-- **How to apply**: <hand edit + `task switch`, or `/fewer-permission-prompts`, etc.>
-
-### 2. ...
-
-## Noted, not proposed
-<one-off slips or low-value observations, one line each -- or omit if none>
+```sh
+aven search --project dotfiles "<key terms>"
 ```
 
-If you find nothing systemic worth fixing, say so plainly. "This session ran
-clean; nothing to propose" is a perfectly good result and far better than
-manufacturing findings to fill the template.
+- **Open match**: append this session's evidence with `aven note <ref>`
+  instead of filing a duplicate.
+- **Done match**: the problem returned after the fix. File a new task, then
+  link the two with `aven related add <new-ref> <old-ref>`.
+- **Canceled match**: the user decided not to pursue the problem. Do not
+  refile it. Mention the ref in your summary.
+
+## Step 4: Filing
+
+File one task per problem, so the user can triage and close each task
+separately. Pass `--project dotfiles` because the session might run in
+another repo, and aven otherwise files the task under that repo's project.
+
+```sh
+aven add --project dotfiles --label self-improve "<title>" \
+  --description-stdin <<'EOF'
+## Observed
+<the behavior you saw, and how many times it happened this session>
+
+## Expected
+<the behavior you expected>
+
+## Reproduction
+<the minimal context that triggers it: the repo, the request, the tool call>
+
+## Evidence
+<verbatim error text, the denied command, or the user's words>
+EOF
+```
+
+Write the title in sentence case and name the symptom, not the fix. Write
+`Fetch allowlist blocks docs.rs`, not `Add docs.rs to the fetch allowlist`.
+
+When the session shows where a behavior came from, quote that source under
+Evidence. Examples include a hook denial that names its rule and the skill
+line that told you to act. Do not search for the source beyond what the
+session shows.
+
+Redact secrets, tokens, and credentials from every quoted error and command.
+Leave the status at the `inbox` default and the priority unset, so the user
+sets both during triage.
+
+## Step 5: Summary
+
+Tell the user, in a few lines, which tasks you filed and which existing
+tasks you added notes to. Give each ref and its title. If the session had no
+systemic friction, say that you filed nothing. Filing nothing beats
+inventing tasks.
