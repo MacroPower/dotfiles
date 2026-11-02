@@ -291,6 +291,11 @@ let
     '';
   };
 
+  # MCP tool pattern to the top-level tool_input keys whose string
+  # values hook-router lints on PreToolUse. See
+  # tools/hook-router/msglint/msglint.go ToolField for matching semantics.
+  proseToolFieldsType = types.attrsOf (types.listOf types.nonEmptyStr);
+
   toPermGlob =
     path:
     let
@@ -779,11 +784,12 @@ let
         } \
         ${
           # The same linter the Write/Edit hook runs, pointed at the
-          # message a `git commit` or `gh pr create` carries. The
-          # message arrives on stdin. A Required finding denies the
-          # command every time, a Recommended finding denies it once
-          # and lets the identical rerun through, and an Optional
-          # finding never denies on its own.
+          # message a `git commit` or `gh pr create` carries and at the
+          # MCP tool arguments that toolFields names. Each text arrives
+          # on stdin. A Required finding denies the call every time, a
+          # Recommended finding denies it once and lets the identical
+          # rerun through, and an Optional finding never denies on its
+          # own.
           lib.optionalString cfg.proseLint.enable
             "--message-lint-config ${
               lib.escapeShellArg (
@@ -793,6 +799,7 @@ let
                     "--commit"
                   ];
                   timeout = "15s";
+                  toolFields = lib.mapAttrsToList (tool: fields: { inherit tool fields; }) proseToolFields;
                 }
               )
             }"
@@ -1061,6 +1068,11 @@ let
   bundledFetchRobotsExempt = lib.concatMap (b: b.fetchRules.robotsExempt) bundleValues;
   bundledCommandDeny = lib.concatMap (b: b.commandRules.deny) bundleValues;
   bundledCommandAsk = lib.concatMap (b: b.commandRules.ask) bundleValues;
+  # Bundle entries and the user's own merge per tool pattern, and a field
+  # named twice for one pattern lints once.
+  proseToolFields = lib.zipAttrsWith (_: lists: lib.unique (lib.concatLists lists)) (
+    map (b: b.proseLint.toolFields) bundleValues ++ [ cfg.proseLint.toolFields ]
+  );
 
   researchDir =
     if cfg.research.useVault then
@@ -1742,13 +1754,34 @@ in
             description = ''
               Run prose-lint (the Weir rules in configs/harper) on every
               markdown and source file Claude writes, and return its
-              findings as feedback before the next turn. Also lint the
-              message a `git commit` or `gh pr create` carries on
-              PreToolUse:Bash and deny the command with the findings.
-              Installs prose-lint and harper so files can be linted by
-              hand and rules iterated with `harper-cli test`. When
-              false, no linter rule or message lint is registered and
-              the packages are not installed.
+              findings as feedback before the next turn. Also lint, on
+              PreToolUse, the message a `git commit` or `gh pr create`
+              carries and the MCP tool arguments that toolFields names,
+              and deny the call with the findings. Installs prose-lint
+              and harper so files can be linted by hand and rules
+              iterated with `harper-cli test`. When false, no linter
+              rule or message lint is registered and the packages are
+              not installed.
+            '';
+          };
+          toolFields = mkOption {
+            type = proseToolFieldsType;
+            default = { };
+            example = {
+              mcp__slack__post_message = [ "text" ];
+            };
+            description = ''
+              MCP tool arguments that prose-lint checks before the call
+              runs. Each key is a tool pattern in the MCP permission
+              rule syntax: an exact tool name, a trailing `*` prefix
+              glob, or a bare `mcp__<server>` for every tool on a
+              server. Each value lists top-level tool_input keys whose
+              string values go to the linter one at a time. Tool
+              bundles add their own entries through
+              `toolBundles.<name>.proseLint.toolFields`. Findings deny
+              the call with the commit-message tier policy. Only
+              `mcp__` tool names reach the hook, so a key for any other
+              tool has no effect.
             '';
           };
           excludeGlobs = mkOption {
@@ -2293,6 +2326,17 @@ in
                   host not named here.
                 '';
               };
+            };
+            proseLint.toolFields = mkOption {
+              type = proseToolFieldsType;
+              default = { };
+              description = ''
+                MCP tool arguments that prose-lint checks, contributed by
+                this bundle. The format matches `proseLint.toolFields`,
+                and the entries merge with it. Aggregated at `enable`
+                granularity, so the bundle's rules turn off with the
+                bundle.
+              '';
             };
             commandRules = {
               deny = mkOption {
