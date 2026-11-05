@@ -4101,14 +4101,13 @@ in
             # routes through formatterRules so a sed -i or tee edit is
             # formatted like a Write or Edit.
             bashEditDiffEnabled = true;
-            # Chat transcript retention. fewer-permission-prompts ranks
-            # allowlist candidates over the 50 most-recently-modified
-            # transcripts across every project, and the 30-day default
-            # expires that sample before it fills. The same period
-            # governs how long ~/.claude/skills/.trash holds what
+            # Chat transcript retention in days. Claude Code rejects 0
+            # and has no keep-forever value, so 36500 (about 100 years)
+            # keeps transcripts indefinitely. The same period governs
+            # how long ~/.claude/skills/.trash holds what
             # syncClaudeAiSkills below moves there. Claude Code 2.1.314
             # and later also cap that folder at about 1024 entries.
-            cleanupPeriodDays = 90;
+            cleanupPeriodDays = 36500;
             # Keep ~/.claude/skills and ~/.claude/plugins Nix-owned.
             # Skills and plugins enabled on the claude.ai account
             # otherwise download into skills/synced and plugins/synced
