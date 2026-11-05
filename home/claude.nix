@@ -1193,9 +1193,14 @@ let
     "SPACELIFT_API_KEY_SECRET"
   ];
 
-  extraDenyReadPaths = [ "/" ];
+  # Default sandbox rules. Each list seeds an entry set under
+  # dotfiles.claude.sandbox at mkDefault priority, so a host can drop an
+  # entry by setting it to false. The settings.json lists and the
+  # Read and Edit permission entries read the merged sets back through
+  # sandboxFilesystem and sandboxNetwork.
+  defaultDenyReadPaths = [ "/" ];
 
-  extraReadPaths = [
+  defaultReadPaths = [
     "/nix/store"
     "/nix/var/nix/profiles"
 
@@ -1288,7 +1293,7 @@ let
   ]
   ++ bundledReadPaths;
 
-  extraWritePaths = [
+  defaultWritePaths = [
     "~/go/pkg"
     "~/Library/Caches"
     "~/.cache/nix"
@@ -1321,7 +1326,40 @@ let
   ++ claudeTmpPaths
   ++ bundledWritePaths;
 
-  readPermEntries = map (p: "Read(${toPermGlob p})") extraReadPaths;
+  defaultUnixSockets = [
+    "/nix/var/nix/daemon-socket/socket"
+    (
+      if config.dotfiles.tmux.socketPath != null then
+        config.dotfiles.tmux.socketPath
+      else
+        "/private/tmp/tmux-501/default"
+    )
+  ]
+  ++ bundledSockets;
+
+  defaultAllowedDomains = [
+    "jacobcolvin.com"
+    "registry.dagger.io"
+    "api.dagger.cloud"
+    "auth.dagger.cloud"
+    "proxy.golang.org"
+    "sum.golang.org"
+  ]
+  ++ bundledDomains;
+
+  # The sandbox blocks these even when an allowedDomains entry matches.
+  defaultDeniedDomains = [
+    # Azure Application Insights telemetry sink. az, dotnet, and VS Code
+    # tooling report here.
+    "dc.services.visualstudio.com"
+  ];
+
+  defaultRules = entries: lib.genAttrs entries (_: lib.mkDefault true);
+  enabledRules = rules: lib.attrNames (lib.filterAttrs (_: enabled: enabled) rules);
+  sandboxFilesystem = lib.mapAttrs (_: enabledRules) cfg.sandbox.filesystem;
+  sandboxNetwork = lib.mapAttrs (_: enabledRules) cfg.sandbox.network;
+
+  readPermEntries = map (p: "Read(${toPermGlob p})") sandboxFilesystem.allowRead;
 
   # Edit(path) rules cover all file-editing tools (Write, Edit,
   # NotebookEdit); a separate Write(path) rule is not matched by file
@@ -1330,7 +1368,7 @@ let
   writePermEntries = lib.concatMap (p: [
     "Read(${toPermGlob p})"
     "Edit(${toPermGlob p})"
-  ]) extraWritePaths;
+  ]) sandboxFilesystem.allowWrite;
 
   bundledInstructions =
     let
@@ -2229,6 +2267,49 @@ in
       description = "Additional permission entries appended to the base allow/deny/ask lists.";
     };
 
+    sandbox =
+      let
+        ruleSet =
+          description:
+          mkOption {
+            type = types.attrsOf types.bool;
+            default = { };
+            inherit description;
+          };
+      in
+      mkOption {
+        type = types.submodule {
+          options = {
+            filesystem = {
+              allowRead = ruleSet "Paths that sandboxed commands can read. Each enabled path also gets a Read permission allow rule.";
+              allowWrite = ruleSet "Paths that sandboxed commands can read and write. Each enabled path also gets Read and Edit permission allow rules.";
+              denyRead = ruleSet "Paths that sandboxed commands cannot read. An allowRead or allowWrite entry overrides this list for the paths it matches.";
+              denyWrite = ruleSet "Paths that sandboxed commands cannot write, including paths under an allowWrite entry.";
+            };
+            network = {
+              allowUnixSockets = ruleSet "Unix socket paths that sandboxed commands can connect to. Claude Code matches each entry as an exact path, not a glob.";
+              allowedDomains = ruleSet "Network domains that sandboxed commands can reach.";
+              deniedDomains = ruleSet "Network domains that the sandbox blocks, even when an allowedDomains entry matches.";
+            };
+          };
+        };
+        default = { };
+        example = lib.literalExpression ''
+          {
+            filesystem.allowWrite."~/Documents/notes" = true;
+            filesystem.allowRead."/opt/homebrew" = false;
+            network.allowedDomains."example.com" = true;
+          }
+        '';
+        description = ''
+          Sandbox rules written to the `sandbox` block of settings.json,
+          keyed by path, socket, or domain. Set an entry to `true` to add
+          it, or to `false` to remove it. This module and the enabled
+          tool bundles set their entries with `lib.mkDefault`, so a host
+          can remove any of them with a plain `false`.
+        '';
+      };
+
     toolBundles = mkOption {
       type = types.attrsOf (
         types.submodule {
@@ -2413,6 +2494,19 @@ in
     };
 
     dotfiles.claude.outputStyle = "Plain";
+
+    dotfiles.claude.sandbox = {
+      filesystem = {
+        allowRead = defaultRules defaultReadPaths;
+        allowWrite = defaultRules defaultWritePaths;
+        denyRead = defaultRules defaultDenyReadPaths;
+      };
+      network = {
+        allowUnixSockets = defaultRules defaultUnixSockets;
+        allowedDomains = defaultRules defaultAllowedDomains;
+        deniedDomains = defaultRules defaultDeniedDomains;
+      };
+    };
 
     dotfiles.claude.postImplSkills = {
       review-implementation.description = "Review code changes against the plan.";
@@ -3736,37 +3830,11 @@ in
               enableWeakerNetworkIsolation = true;
               network = {
                 allowLocalBinding = true;
-                allowUnixSockets = [
-                  "/nix/var/nix/daemon-socket/socket"
-                  (
-                    if config.dotfiles.tmux.socketPath != null then
-                      config.dotfiles.tmux.socketPath
-                    else
-                      "/private/tmp/tmux-501/default"
-                  )
-                ]
-                ++ bundledSockets;
-                allowedDomains = [
-                  "jacobcolvin.com"
-                  "registry.dagger.io"
-                  "api.dagger.cloud"
-                  "auth.dagger.cloud"
-                  "proxy.golang.org"
-                  "sum.golang.org"
-                ]
-                ++ bundledDomains;
-                # The sandbox blocks these even when an allowedDomains
-                # entry matches.
-                deniedDomains = [
-                  # Azure Application Insights telemetry sink. az,
-                  # dotnet, and VS Code tooling report here.
-                  "dc.services.visualstudio.com"
-                ];
+                inherit (sandboxNetwork) allowUnixSockets allowedDomains deniedDomains;
               };
               filesystem = {
-                denyRead = extraDenyReadPaths;
-                allowRead = lib.unique (extraReadPaths ++ extraWritePaths);
-                allowWrite = extraWritePaths;
+                inherit (sandboxFilesystem) denyRead allowWrite denyWrite;
+                allowRead = lib.unique (sandboxFilesystem.allowRead ++ sandboxFilesystem.allowWrite);
               };
               credentials = {
                 # deny unsets the variable inside the sandbox. Only
