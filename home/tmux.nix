@@ -252,6 +252,9 @@ let
   # already unset (snapshot lacks _sidebar-sync), capture nothing, restore
   # nothing. The outermost wrapper holds the real snapshot and restores on
   # exit (last-to-finish wins).
+  #
+  # Each direction joins its set-hook commands with `;` into one tmux
+  # call, so a popup costs three tmux processes in total.
   workmuxHooksLib = pkgs.writeText "workmux-hooks.sh" ''
     _WORKMUX_HOOKS=(
       'after-new-session[99]'
@@ -261,35 +264,35 @@ let
       'client-session-changed[98]'
       'after-kill-pane[98]'
     )
-    _hooks_file=""
+    # Alternating hook names and commands from the snapshot.
+    _saved_hooks=()
 
     _suppress_workmux_hooks() {
-      local _all_hooks
-      _all_hooks=$(tmux show-hooks -g 2>/dev/null || true)
-      if echo "$_all_hooks" | grep -q '_sidebar-sync'; then
-        _hooks_file=$(mktemp)
-        echo "$_all_hooks" > "$_hooks_file"
-        local _h
-        for _h in "''${_WORKMUX_HOOKS[@]}"; do
-          tmux set-hook -gu "$_h" 2>/dev/null || true
-        done
-      fi
+      local _all_hooks _h _line _args=()
+      _all_hooks=$(tmux show-hooks -g 2>/dev/null) || return 0
+      [[ $_all_hooks == *_sidebar-sync* ]] || return 0
+      for _h in "''${_WORKMUX_HOOKS[@]}"; do
+        # show-hooks -g lines look like: hook-name[index] command...
+        while IFS= read -r _line; do
+          if [[ $_line == "$_h "* ]]; then
+            _saved_hooks+=("$_h" "''${_line#"$_h "}")
+          fi
+        done <<<"$_all_hooks"
+        [ "''${#_args[@]}" -gt 0 ] && _args+=(";")
+        _args+=(set-hook -gu "$_h")
+      done
+      tmux "''${_args[@]}" 2>/dev/null || true
     }
 
     _restore_workmux_hooks() {
-      if [ -n "$_hooks_file" ] && [ -f "$_hooks_file" ]; then
-        local _h _line _cmd
-        for _h in "''${_WORKMUX_HOOKS[@]}"; do
-          # show-hooks -g lines look like: hook-name[index] command...
-          _line=$(grep -F "$_h " "$_hooks_file" || true)
-          if [ -n "$_line" ]; then
-            _cmd="''${_line#"$_h "}"
-            tmux set-hook -g "$_h" "$_cmd" 2>/dev/null || true
-          fi
-        done
-        rm -f "$_hooks_file"
-        _hooks_file=""
-      fi
+      local _i _args=()
+      for ((_i = 0; _i < ''${#_saved_hooks[@]}; _i += 2)); do
+        [ "''${#_args[@]}" -gt 0 ] && _args+=(";")
+        _args+=(set-hook -g "''${_saved_hooks[_i]}" "''${_saved_hooks[_i + 1]}")
+      done
+      _saved_hooks=()
+      [ "''${#_args[@]}" -gt 0 ] || return 0
+      tmux "''${_args[@]}" 2>/dev/null || true
     }
   '';
 
