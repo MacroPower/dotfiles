@@ -761,9 +761,9 @@ let
           # change.
           lib.escapeShellArg (
             builtins.toJSON {
-              allow = lib.filter (lib.hasPrefix "mcp__") (bundledAllow ++ cfg.extraPermissions.allow);
-              ask = lib.filter (lib.hasPrefix "mcp__") (bundledAsk ++ cfg.extraPermissions.ask);
-              deny = lib.filter (lib.hasPrefix "mcp__") (bundledDeny ++ cfg.extraPermissions.deny);
+              allow = lib.filter (lib.hasPrefix "mcp__") (enabledRules cfg.permissions.allow);
+              ask = lib.filter (lib.hasPrefix "mcp__") (enabledRules cfg.permissions.ask);
+              deny = lib.filter (lib.hasPrefix "mcp__") (enabledRules cfg.permissions.deny);
             }
           )
         } \
@@ -1353,6 +1353,112 @@ let
     # tooling report here.
     "dc.services.visualstudio.com"
   ];
+
+  # Default permission rules. Each list seeds an entry set under
+  # dotfiles.claude.permissions at mkDefault priority, so a host can drop
+  # an entry by setting it to false. Tool bundle entries join the same
+  # sets, so a host can drop those the same way.
+  defaultDenyPermissions = [
+    # Key material & certificates
+    "Read(//**/*.key)"
+    "Read(//**/*.p12)"
+    "Read(//**/*.jks)"
+    "Read(//**/*.asc)"
+    "Read(//**/*.keystore)"
+    "Read(//**/*.kdbx)"
+    "Read(//**/wallet.dat)"
+    "Read(//**/keystore/**)"
+    "Read(//**/.ssh/**)"
+    "Read(//**/.gnupg/**)"
+
+    # Generic secrets
+    "Read(//**/.env)"
+    "Read(//**/.env.*)"
+    "Read(//**/.secrets/**)"
+    "Read(//**/.git-credentials)"
+    "Read(//**/git/credentials)"
+    "Read(//**/.netrc)"
+    "Read(//**/.curlrc)"
+    "Read(//**/.wgetrc)"
+    "Read(//**/.password-store/**)"
+
+    # Cloud credentials
+    "Read(//**/.aws/credentials)"
+    "Read(//**/.aws/config)"
+    "Read(//**/.aws/sso/**)"
+    "Read(//**/.azure/**)"
+    "Read(//**/.config/gcloud/**)"
+    "Read(//**/.config/hcloud/config.json)"
+    "Read(//**/.config/argocd/**)"
+    "Read(//**/.snyk)"
+    "Read(//**/.wrangler/**)"
+
+    # Container & Kubernetes
+    "Read(//**/.docker/config.json)"
+    "Read(//**/.docker/certs.d/**)"
+    "Read(//**/.config/containers/auth.json)"
+    "Read(//**/.talos/**)"
+    "Read(//**/.cosign/**)"
+    "Read(//**/.helm/repository/repositories.yaml)"
+
+    # Secret managers & encryption
+    "Read(//**/.doppler/**)"
+    "Read(//**/age/keys.txt)"
+    # sops-nix decrypts to defaultSymlinkPath,
+    # ~/.config/sops-nix/secrets, a symlink into secrets.d
+    # under the darwin per-user temp dir, so both spellings
+    # appear here.
+    "Read(//**/sops-nix/**)"
+    "Read(//**/secrets.d/**)"
+    "Read(//**/rclone.conf)"
+    "Read(//**/.op/**)"
+    "Read(//**/.config/op/**)"
+
+    # IaC state & credentials
+    "Read(//**/credentials.tfrc.json)"
+    "Read(//**/.terraformrc)"
+    "Read(//**/.terraform.d/credentials.tfrc.json)"
+    "Read(//**/*.tfstate)"
+    "Read(//**/*.tfstate.*)"
+    "Read(//**/.pulumi/credentials.json)"
+
+    # CI/CD & deployment tokens
+    "Read(//**/.config/gh/hosts.yml)"
+    "Read(//**/.jira.d/config.yml)"
+    "Read(//**/.config/dagger/**)"
+    "Read(//**/.config/spacelift/**)"
+    "Read(~/.spacelift/**)"
+
+    # Package manager credentials
+    "Read(//**/.npmrc)"
+    "Read(//**/.pypirc)"
+    "Read(//**/.cargo/credentials.toml)"
+    "Read(//**/.gem/credentials)"
+    "Read(//**/.m2/settings.xml)"
+    "Read(//**/.m2/settings-security.xml)"
+    "Read(//**/.gradle/gradle.properties)"
+    "Read(//**/.composer/auth.json)"
+    "Read(//**/.config/poetry/auth.toml)"
+    "Read(//**/.bunfig.toml)"
+
+    # Claude Code credentials
+    "Read(//**/.claude/.credentials.json)"
+
+    # Developer tool sessions & generated keys
+    "Read(//**/atuin/key)"
+    "Read(//**/.lima/_config/user)"
+  ]
+  # On the Lima guest image ~/.kube/config is a readable
+  # local kubectx source (guestKubeconfigLocal); everywhere
+  # else it holds host admin creds and stays denied. The
+  # sidecar and scoped kubeconfigs live under
+  # $CLAUDE_KUBECTX_DIR / $XDG_STATE_HOME, not any .kube/
+  # path, so they are unaffected either way.
+  ++ lib.optionals (!cfg.guestKubeconfigLocal) [
+    "Read(//**/.kube/config)"
+    "Read(//**/.kube/config*)"
+  ]
+  ++ bundledDeny;
 
   defaultRules = entries: lib.genAttrs entries (_: lib.mkDefault true);
   enabledRules = rules: lib.attrNames (lib.filterAttrs (_: enabled: enabled) rules);
@@ -2243,29 +2349,21 @@ in
       };
     };
 
-    extraPermissions = mkOption {
-      type = types.submodule {
-        options = {
-          allow = mkOption {
-            type = types.listOf types.str;
-            default = [ ];
-            description = "Additional tool patterns appended to the permissions allow list.";
+    permissions =
+      let
+        ruleSet =
+          description:
+          mkOption {
+            type = types.attrsOf types.bool;
+            default = { };
+            inherit description;
           };
-          deny = mkOption {
-            type = types.listOf types.str;
-            default = [ ];
-            description = "Additional tool patterns appended to the permissions deny list.";
-          };
-          ask = mkOption {
-            type = types.listOf types.str;
-            default = [ ];
-            description = "Additional tool patterns appended to the permissions ask list.";
-          };
-        };
+      in
+      {
+        allow = ruleSet "Tool patterns for the permissions allow list. Set an entry to false to drop it. The sandbox allowRead and allowWrite paths add their own Read and Edit rules on top of this set.";
+        deny = ruleSet "Tool patterns for the permissions deny list. Set an entry to false to drop it.";
+        ask = ruleSet "Tool patterns for the permissions ask list. Set an entry to false to drop it.";
       };
-      default = { };
-      description = "Additional permission entries appended to the base allow/deny/ask lists.";
-    };
 
     sandbox =
       let
@@ -2506,6 +2604,12 @@ in
         allowedDomains = defaultRules defaultAllowedDomains;
         deniedDomains = defaultRules defaultDeniedDomains;
       };
+    };
+
+    dotfiles.claude.permissions = {
+      allow = defaultRules bundledAllow;
+      deny = defaultRules defaultDenyPermissions;
+      ask = defaultRules bundledAsk;
     };
 
     dotfiles.claude.postImplSkills = {
@@ -3700,114 +3804,13 @@ in
             inherit (cfg) attribution;
             permissions = {
               defaultMode = if skipPerms then "bypassPermissions" else "acceptEdits";
-              allow = readPermEntries ++ writePermEntries ++ bundledAllow ++ cfg.extraPermissions.allow;
-              deny = [
-                # Key material & certificates
-                "Read(//**/*.key)"
-                "Read(//**/*.p12)"
-                "Read(//**/*.jks)"
-                "Read(//**/*.asc)"
-                "Read(//**/*.keystore)"
-                "Read(//**/*.kdbx)"
-                "Read(//**/wallet.dat)"
-                "Read(//**/keystore/**)"
-                "Read(//**/.ssh/**)"
-                "Read(//**/.gnupg/**)"
-
-                # Generic secrets
-                "Read(//**/.env)"
-                "Read(//**/.env.*)"
-                "Read(//**/.secrets/**)"
-                "Read(//**/.git-credentials)"
-                "Read(//**/git/credentials)"
-                "Read(//**/.netrc)"
-                "Read(//**/.curlrc)"
-                "Read(//**/.wgetrc)"
-                "Read(//**/.password-store/**)"
-
-                # Cloud credentials
-                "Read(//**/.aws/credentials)"
-                "Read(//**/.aws/config)"
-                "Read(//**/.aws/sso/**)"
-                "Read(//**/.azure/**)"
-                "Read(//**/.config/gcloud/**)"
-                "Read(//**/.config/hcloud/config.json)"
-                "Read(//**/.config/argocd/**)"
-                "Read(//**/.snyk)"
-                "Read(//**/.wrangler/**)"
-
-                # Container & Kubernetes
-                "Read(//**/.docker/config.json)"
-                "Read(//**/.docker/certs.d/**)"
-                "Read(//**/.config/containers/auth.json)"
-                "Read(//**/.talos/**)"
-                "Read(//**/.cosign/**)"
-                "Read(//**/.helm/repository/repositories.yaml)"
-
-                # Secret managers & encryption
-                "Read(//**/.doppler/**)"
-                "Read(//**/age/keys.txt)"
-                # sops-nix decrypts to defaultSymlinkPath,
-                # ~/.config/sops-nix/secrets, a symlink into secrets.d
-                # under the darwin per-user temp dir, so both spellings
-                # appear here.
-                "Read(//**/sops-nix/**)"
-                "Read(//**/secrets.d/**)"
-                "Read(//**/rclone.conf)"
-                "Read(//**/.op/**)"
-                "Read(//**/.config/op/**)"
-
-                # IaC state & credentials
-                "Read(//**/credentials.tfrc.json)"
-                "Read(//**/.terraformrc)"
-                "Read(//**/.terraform.d/credentials.tfrc.json)"
-                "Read(//**/*.tfstate)"
-                "Read(//**/*.tfstate.*)"
-                "Read(//**/.pulumi/credentials.json)"
-
-                # CI/CD & deployment tokens
-                "Read(//**/.config/gh/hosts.yml)"
-                "Read(//**/.jira.d/config.yml)"
-                "Read(//**/.config/dagger/**)"
-                "Read(//**/.config/spacelift/**)"
-                "Read(~/.spacelift/**)"
-
-                # Package manager credentials
-                "Read(//**/.npmrc)"
-                "Read(//**/.pypirc)"
-                "Read(//**/.cargo/credentials.toml)"
-                "Read(//**/.gem/credentials)"
-                "Read(//**/.m2/settings.xml)"
-                "Read(//**/.m2/settings-security.xml)"
-                "Read(//**/.gradle/gradle.properties)"
-                "Read(//**/.composer/auth.json)"
-                "Read(//**/.config/poetry/auth.toml)"
-                "Read(//**/.bunfig.toml)"
-
-                # Claude Code credentials
-                "Read(//**/.claude/.credentials.json)"
-
-                # Developer tool sessions & generated keys
-                "Read(//**/atuin/key)"
-                "Read(//**/.lima/_config/user)"
-              ]
-              # On the Lima guest image ~/.kube/config is a readable
-              # local kubectx source (guestKubeconfigLocal); everywhere
-              # else it holds host admin creds and stays denied. The
-              # sidecar and scoped kubeconfigs live under
-              # $CLAUDE_KUBECTX_DIR / $XDG_STATE_HOME, not any .kube/
-              # path, so they are unaffected either way.
-              ++ lib.optionals (!cfg.guestKubeconfigLocal) [
-                "Read(//**/.kube/config)"
-                "Read(//**/.kube/config*)"
-              ]
-              ++ bundledDeny
-              ++ cfg.extraPermissions.deny;
+              allow = readPermEntries ++ writePermEntries ++ enabledRules cfg.permissions.allow;
+              deny = enabledRules cfg.permissions.deny;
               # git entries live in the git tool bundle, next to the
               # allow table they would otherwise shadow (permission
               # rules evaluate deny -> ask -> allow, regardless of
               # specificity).
-              ask = bundledAsk ++ cfg.extraPermissions.ask;
+              ask = enabledRules cfg.permissions.ask;
             };
             worktree.bgIsolation = "none";
             # "off" hides a bundled skill from both the model and the
