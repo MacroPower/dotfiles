@@ -312,7 +312,40 @@ let
     in
     if cleaned ? except then cleaned // { except = map cleanAttrs cleaned.except; } else cleaned;
 
-  workmux = "${lib.getExe' pkgs.workmux-bin "workmux"} set-window-status";
+  # Runs `workmux set-window-status <status>` for the Claude Code hooks.
+  # Each call loads the workmux config, which spawns two or three git
+  # processes, and then spawns about six tmux processes. PostToolUse fires
+  # after every tool call and passes --dedupe, which skips the call when
+  # this pane last sent the same status less than 30 seconds ago. The
+  # status stays "working" through a turn, so the skip changes nothing
+  # the sidebar shows. workmux keeps status_ts while the status is
+  # unchanged, and UserPromptSubmit, which never dedupes, still clears an
+  # interrupted mark at the start of each turn.
+  workmuxStatus = pkgs.writeShellApplication {
+    name = "workmux-status";
+    runtimeInputs = [ pkgs.coreutils ];
+    text = ''
+      status=$1
+      dedupe=''${2:-}
+      # Host panes carry TMUX_PANE. A sandboxed agent in the Lima guest
+      # does not, but each one gets its own WM_RPC_PORT.
+      key=''${TMUX_PANE:-''${WM_RPC_PORT:-}}
+      if [ -n "$key" ]; then
+        dir="''${XDG_RUNTIME_DIR:-''${TMPDIR:-/tmp}}/workmux-status"
+        file="$dir/''${key//[^A-Za-z0-9]/_}"
+        printf -v now '%(%s)T' -1
+        last="" ts=""
+        [ -r "$file" ] && { read -r last ts <"$file" || true; }
+        if [ "$dedupe" = --dedupe ] && [ "$last" = "$status" ] &&
+          [[ $ts =~ ^[0-9]+$ ]] && [ $((now - ts)) -lt 30 ]; then
+          exit 0
+        fi
+        [ -d "$dir" ] || mkdir -p "$dir"
+        printf '%s %s\n' "$status" "$now" >"$file"
+      fi
+      exec ${lib.getExe' pkgs.workmux-bin "workmux"} set-window-status "$status"
+    '';
+  };
 
   # Grants a workmux-created linked worktree's Claude session write access to
   # the shared parent .git so git add/commit/rebase/push work under the macOS
@@ -3927,7 +3960,7 @@ in
                 # run in the background and never block a turn.
                 status = s: {
                   type = "command";
-                  command = "${workmux} ${s}";
+                  command = "${lib.getExe workmuxStatus} ${s}";
                   async = true;
                 };
               in
@@ -3981,9 +4014,10 @@ in
                   }
                 ];
                 PostToolUse = [
-                  # Matcher-less on purpose: any tool result must flip the
-                  # window back from `waiting` to `working`.
-                  { hooks = [ (status "working") ]; }
+                  # Matcher-less on purpose, because any tool result must flip
+                  # the window back from `waiting` to `working`. --dedupe skips
+                  # the repeats within a turn (see workmuxStatus).
+                  { hooks = [ (status "working --dedupe") ]; }
                   {
                     # Mirrors hook-router's PostToolUse switch
                     # (tools/hook-router/main.go). Every other tool is a
