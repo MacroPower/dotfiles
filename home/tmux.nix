@@ -1152,25 +1152,28 @@ in
     extraConfig = ''
       # --- smart-splits.nvim integration ---
       # Forward C-h/j/k/l (navigation) and C-S-h/j/k/l (resize) to the
-      # active pane when it is running an nvim/vim/fzf process; otherwise
-      # select-pane / resize-pane in that direction. The grep regex uses
-      # `\S` (the `\\S` here is Nix string escaping for a single backslash).
-      is_vim="ps -o state=,comm= -t '#{pane_tty}' \
-          | grep -iqE '^[^TXZ ]+ +(\\S+\\/)?g?(view|l?n?vim?x?|fzf)(diff)?$'"
+      # active pane when it is running nvim, vim, or fzf. In any other
+      # pane, the keys select or resize the pane in that direction. tmux
+      # evaluates the `if -F` format itself, so a keypress spawns no
+      # process. The smart-splits tmux backend sets @pane-is-vim, which also
+      # covers an nvim that runs under another program, such as `git
+      # commit`. The pane_current_command match covers fzf, and nvim when
+      # no backend sets the option.
+      is_vim='#{||:#{@pane-is-vim},#{m/r:^\.?(g?(view|l?n?vim?x?|fzf)(diff)?)(-wrapped)?$,#{pane_current_command}}}'
 
-      bind-key -n C-h if-shell "$is_vim" 'send-keys C-h' 'select-pane -L'
-      bind-key -n C-j if-shell "$is_vim" 'send-keys C-j' 'select-pane -D'
-      bind-key -n C-k if-shell "$is_vim" 'send-keys C-k' 'select-pane -U'
-      bind-key -n C-l if-shell "$is_vim" 'send-keys C-l' 'select-pane -R'
+      bind-key -n C-h if -F "$is_vim" 'send-keys C-h' 'select-pane -L'
+      bind-key -n C-j if -F "$is_vim" 'send-keys C-j' 'select-pane -D'
+      bind-key -n C-k if -F "$is_vim" 'send-keys C-k' 'select-pane -U'
+      bind-key -n C-l if -F "$is_vim" 'send-keys C-l' 'select-pane -R'
 
       # Resize via Ctrl+Shift+hjkl. Spelled `C-S-h` (not `C-H`) because
       # tmux collapses `C-H` to `C-h` -- the legacy control byte is
       # identical (0x08), so the explicit `S-` modifier is required and
       # only works with extended-keys on (set further down in this file).
-      bind-key -n 'C-S-h' if-shell "$is_vim" 'send-keys C-S-h' 'resize-pane -L 3'
-      bind-key -n 'C-S-j' if-shell "$is_vim" 'send-keys C-S-j' 'resize-pane -D 3'
-      bind-key -n 'C-S-k' if-shell "$is_vim" 'send-keys C-S-k' 'resize-pane -U 3'
-      bind-key -n 'C-S-l' if-shell "$is_vim" 'send-keys C-S-l' 'resize-pane -R 3'
+      bind-key -n 'C-S-h' if -F "$is_vim" 'send-keys C-S-h' 'resize-pane -L 3'
+      bind-key -n 'C-S-j' if -F "$is_vim" 'send-keys C-S-j' 'resize-pane -D 3'
+      bind-key -n 'C-S-k' if -F "$is_vim" 'send-keys C-S-k' 'resize-pane -U 3'
+      bind-key -n 'C-S-l' if -F "$is_vim" 'send-keys C-S-l' 'resize-pane -R 3'
 
       bind-key -r -T copy-mode-vi C-h select-pane -L
       bind-key -r -T copy-mode-vi C-j select-pane -D
