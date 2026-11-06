@@ -1377,6 +1377,9 @@ let
     "auth.dagger.cloud"
     "proxy.golang.org"
     "sum.golang.org"
+    # GitHub serves release downloads from here after redirecting
+    # github.com/<owner>/<repo>/releases/download URLs.
+    "release-assets.githubusercontent.com"
   ]
   ++ bundledDomains;
 
