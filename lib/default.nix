@@ -112,6 +112,10 @@ let
   # that contains the server's working directory. Drop it when upstream
   # makes `path` choose the directory to upload.
   #
+  # The third patch adds run_stack_task, the MCP twin of `spacectl stack
+  # task`. It runs a shell command on a stack's worker and returns the
+  # task's logs.
+  #
   # nixpkgs ships spacectl 1.26.0. 1.29.1 requires Go 1.27, newer than
   # nixpkgs' default Go. The Nix sandbox points SSL_CERT_FILE at a missing
   # file, and 1.29.1 loads SSL_CERT_FILE as its CA bundle. preCheck unsets
@@ -132,6 +136,7 @@ let
         patches = (old.patches or [ ]) ++ [
           ../pkgs/spacectl-module-mcp-tools.patch
           ../pkgs/spacectl-stack-local-preview-no-path.patch
+          ../pkgs/spacectl-stack-task-mcp-tool.patch
         ];
         preCheck = (old.preCheck or "") + ''
           unset SSL_CERT_FILE

@@ -3439,6 +3439,7 @@ in
           "mcp__spacelift__trigger_stack_run"
           "mcp__spacelift__discard_stack_run"
           "mcp__spacelift__confirm_stack_run"
+          "mcp__spacelift__run_stack_task"
         ];
         permissions.deny = [
           "mcp__spacelift__list_api_keys"
@@ -3550,6 +3551,15 @@ in
               "replan"
             ];
             reason = "Use `mcp__spacelift__trigger_stack_run` instead of `spacectl stack replan`.";
+          }
+          {
+            command = "spacectl";
+            args = [
+              "stack"
+              "task"
+            ];
+            except = [ "list" ];
+            reason = "Use `mcp__spacelift__run_stack_task` instead of `spacectl stack task`.";
           }
           {
             command = "spacectl";

@@ -1,0 +1,154 @@
+diff --git a/internal/cmd/stack/mcp.go b/internal/cmd/stack/mcp.go
+index e814f80..9a18b9e 100644
+--- a/internal/cmd/stack/mcp.go
++++ b/internal/cmd/stack/mcp.go
+@@ -33,6 +33,7 @@ func RegisterMCPTools(s *server.MCPServer, options McpOptions) {
+ 	registerTriggerStackRunTool(s)
+ 	registerDiscardStackRunTool(s)
+ 	registerConfirmStackRunTool(s)
++	registerRunStackTaskTool(s)
+ 	registerListResourcesTool(s)
+ 	registerLocalPreviewTool(s, options)
+ }
+diff --git a/internal/cmd/stack/mcp_task.go b/internal/cmd/stack/mcp_task.go
+new file mode 100644
+index 0000000..dc3ddb2
+--- /dev/null
++++ b/internal/cmd/stack/mcp_task.go
+@@ -0,0 +1,136 @@
++package stack
++
++import (
++	"context"
++	"fmt"
++	"strings"
++
++	"github.com/mark3labs/mcp-go/mcp"
++	"github.com/mark3labs/mcp-go/server"
++	"github.com/pkg/errors"
++	"github.com/shurcooL/graphql"
++
++	"github.com/spacelift-io/spacectl/client/structs"
++	"github.com/spacelift-io/spacectl/internal/cmd/authenticated"
++	"github.com/spacelift-io/spacectl/internal/logs"
++)
++
++const maxTaskLogLines = 1000
++
++func registerRunStackTaskTool(s *server.MCPServer) {
++	runStackTaskTool := mcp.NewTool("run_stack_task",
++		mcp.WithDescription(`Run a task on a Spacelift stack. A task runs one shell command in the stack's workspace on a worker, such as "terraform state list" or "tofu state rm <address>". Tasks can change state and infrastructure. Use get_stack_run and get_stack_run_logs with the returned run ID to follow a task.`),
++		mcp.WithToolAnnotation(mcp.ToolAnnotation{
++			Title: "Run Stack Task",
++		}),
++		mcp.WithString("stack_id", mcp.Description("The ID of the stack"), mcp.Required()),
++		mcp.WithString("command", mcp.Description("The shell command to run"), mcp.Required()),
++		mcp.WithString(
++			"skip_initialization",
++			mcp.Description("Skip the initialization phase, such as terraform init, before the command runs."),
++			mcp.DefaultString("false"),
++			mcp.Enum("true", "false"),
++		),
++		mcp.WithString(
++			"await_for_completion",
++			mcp.Description("Wait for the task to complete before returning the result. If true, the tool waits for the task to complete and returns its logs."),
++			mcp.DefaultString("true"),
++			mcp.Enum("true", "false"),
++		),
++	)
++
++	s.AddTool(runStackTaskTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
++		authenticated.Ensure(ctx, nil)
++		stackID, err := request.RequireString("stack_id")
++		if err != nil {
++			return nil, err
++		}
++
++		command, err := request.RequireString("command")
++		if err != nil {
++			return nil, err
++		}
++
++		skipInitialization := request.GetString("skip_initialization", "false") == "true"
++		awaitForCompletion := request.GetString("await_for_completion", "true") == "true"
++
++		var mutation struct {
++			TaskCreate struct {
++				ID string `graphql:"id"`
++			} `graphql:"taskCreate(stack: $stack, command: $command, skipInitialization: $noinit)"`
++		}
++
++		variables := map[string]any{
++			"stack":   graphql.ID(stackID),
++			"command": graphql.String(command),
++			"noinit":  new(graphql.Boolean(skipInitialization)),
++		}
++
++		if err := authenticated.Client().Mutate(ctx, &mutation, variables); err != nil {
++			return nil, errors.Wrap(err, "failed to start task")
++		}
++
++		runID := mutation.TaskCreate.ID
++
++		output := fmt.Sprintf("Started task %s in stack %s\n", runID, stackID)
++		output += fmt.Sprintf("The live task can be visited at %s\n", authenticated.Client().URL(
++			"/stack/%s/run/%s",
++			stackID,
++			runID,
++		))
++
++		if !awaitForCompletion {
++			return mcp.NewToolResultText(output), nil
++		}
++
++		taskLogs, terminal, err := collectStackRunLogs(ctx, stackID, runID)
++		if err != nil {
++			// The task started, so tell the caller its ID instead of inviting a retry.
++			return nil, fmt.Errorf("task %s started, but collecting its logs failed: %w", runID, err)
++		}
++
++		output += "\n\nTask logs:\n\n" + taskLogs
++
++		if terminal != nil {
++			output += fmt.Sprintf("\n\nTask '%s' completed with state: %s\n", runID, terminal.State)
++		}
++
++		outputLines := strings.Split(output, "\n")
++		outputLinesCount := len(outputLines)
++		// Limit the number of lines, because mcp clients often limit output tokens. The "get_stack_run_logs" tool paginates, so callers can page through the full logs with it.
++		if outputLinesCount > maxTaskLogLines {
++			fromIndex := outputLinesCount - maxTaskLogLines
++
++			outputLines = outputLines[fromIndex:]
++			output = strings.Join(outputLines, "\n")
++			output = fmt.Sprintf("... %d lines omitted. Use 'get_stack_run_logs' tool to view the full logs ...\n%s", outputLinesCount-maxTaskLogLines, output)
++		}
++
++		return mcp.NewToolResultText(output), nil
++	})
++}
++
++// collectStackRunLogs follows a stack run until it reaches a terminal state
++// and returns its logs.
++func collectStackRunLogs(ctx context.Context, stackID, runID string) (string, *structs.RunStateTransition, error) {
++	logLines := make(chan string)
++	done := make(chan struct{})
++	var runLogs strings.Builder
++
++	go func() {
++		defer close(done)
++		for line := range logLines {
++			runLogs.WriteString(line)
++		}
++	}()
++
++	terminal, err := logs.NewStackExplorer(stackID, runID).RunFilteredStates(ctx, logLines)
++	close(logLines)
++	<-done
++
++	if err != nil {
++		return "", nil, errors.Wrap(err, "failed to collect run logs")
++	}
++
++	return runLogs.String(), terminal, nil
++}
