@@ -510,9 +510,17 @@ in
         set_color normal
       end
 
-      # Auto-start workmux sidebar (idempotent; recovers if it died; skip floax popups)
-      if set -q TMUX; and command -q workmux; and not set -q FLOAX
-        workmux sidebar --session on >/dev/null 2>&1 &disown
+      # Auto-start workmux sidebar (idempotent; recovers if it died; skip floax popups).
+      # `workmux sidebar --session on` costs a config load (git) and about
+      # ten tmux calls, so a split in a window that already has a sidebar
+      # skips it. One tmux call checks the window's panes for the sidebar
+      # role. A new window still runs it, and so does workmux's own
+      # after-new-window hook, which also restarts a dead daemon.
+      if set -q TMUX; and set -q TMUX_PANE; and command -q workmux; and not set -q FLOAX
+        set -l has_sidebar (tmux display-message -p -t $TMUX_PANE '#{P:#{?#{==:#{@workmux_role},sidebar},1,}}' 2>/dev/null)
+        if test -z "$has_sidebar"
+          workmux sidebar --session on >/dev/null 2>&1 &disown
+        end
       end
 
       ${config.dotfiles.shell.extraInteractiveInit}
