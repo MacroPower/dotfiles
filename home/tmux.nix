@@ -84,65 +84,123 @@ let
     '';
   };
 
+  # tmux reruns a finished #() command on every status redraw that lands in
+  # a new second, and window activity or a workmux status change triggers
+  # a redraw. tmux never reruns a #() command that is still running, and
+  # it shows the latest line the command printed. So this script runs for
+  # the life of the client and prints a line only when a segment changes.
+  #
+  # tmux sends SIGTERM when it frees the job, on client detach or
+  # `refresh-client -S`. The script also exits when the server is gone.
   tmuxStatusContext = pkgs.writeShellApplication {
     name = "tmux-status-context";
-    runtimeInputs = [ pkgs.yq-go ];
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.yq-go
+    ];
     text = ''
-      # Source env vars forwarded by tmux update-environment
-      eval "$(tmux show-environment -s 2>/dev/null | grep -v '^unset ')" || true
+      # Prints the kubeconfig path on the first line and the segments on
+      # the second. The caller runs it in a subshell, so session variables
+      # from one pass do not leak into the next.
+      render() {
+        local line
+        # tmux gives #() commands the global environment only, so apply the
+        # session's forwarded variables. Skip "unset" lines to keep the
+        # global value of anything the session removed.
+        while IFS= read -r line; do
+          case $line in
+            unset\ * | "") ;;
+            *) eval "$line" ;;
+          esac
+        done <<<"$1"
 
-      out=""
+        local out=""
 
-      # Kubernetes context. The mcp-kubectx wrapper splits $KUBECONFIG
-      # into a merged colon-list whose first entry, $CLAUDE_KUBECTX_LOCAL,
-      # holds the authoritative current-context for both local and
-      # external selections. Prefer it; fall back to the first $KUBECONFIG
-      # entry, then the default kubeconfig.
-      cfg="''${CLAUDE_KUBECTX_LOCAL:-}"
-      if [ -z "$cfg" ]; then
-        cfg="''${KUBECONFIG:-}"
-        cfg="''${cfg%%:*}"
-      fi
-      cfg="''${cfg:-$HOME/.kube/config}"
-      if [ -f "$cfg" ]; then
-        ctx=$(yq '.current-context // ""' "$cfg" 2>/dev/null || true)
-        if [ -n "$ctx" ]; then
-          ns=$(yq '.contexts[] | select(.name == "'"$ctx"'") | .context.namespace // ""' "$cfg" 2>/dev/null || true)
-          k8s="${icons.kubernetes} $ctx"
-          [ -n "$ns" ] && k8s="$k8s($ns)"
-          out="$out#[fg=#${colors.base0D}] $k8s "
+        # Kubernetes context. The mcp-kubectx wrapper splits $KUBECONFIG
+        # into a merged colon-list whose first entry, $CLAUDE_KUBECTX_LOCAL,
+        # holds the authoritative current-context for both local and
+        # external selections. Prefer it; fall back to the first $KUBECONFIG
+        # entry, then the default kubeconfig.
+        local cfg="''${CLAUDE_KUBECTX_LOCAL:-}"
+        if [ -z "$cfg" ]; then
+          cfg="''${KUBECONFIG:-}"
+          cfg="''${cfg%%:*}"
         fi
-      fi
+        cfg="''${cfg:-$HOME/.kube/config}"
+        if [ -f "$cfg" ]; then
+          local ctx="" ns=""
+          # shellcheck disable=SC2016 # $c is a yq variable
+          IFS=$'\t' read -r ctx ns <<<"$(yq '(.current-context // "") as $c | [$c, ([.contexts[] | select(.name == $c) | .context.namespace][0] // "")] | @tsv' "$cfg" 2>/dev/null || true)"
+          if [ -n "$ctx" ]; then
+            local k8s="${icons.kubernetes} $ctx"
+            [ -n "$ns" ] && k8s="$k8s($ns)"
+            out="$out#[fg=#${colors.base0D}] $k8s "
+          fi
+        fi
 
-      # Docker context (skip if empty or "default")
-      dctx="''${DOCKER_CONTEXT:-}"
-      if [ -n "$dctx" ] && [ "$dctx" != "default" ]; then
-        out="$out#[fg=#${colors.base0D}] ${icons.docker} $dctx "
-      fi
+        # Docker context (skip if empty or "default")
+        local dctx="''${DOCKER_CONTEXT:-}"
+        if [ -n "$dctx" ] && [ "$dctx" != "default" ]; then
+          out="$out#[fg=#${colors.base0D}] ${icons.docker} $dctx "
+        fi
 
-      # AWS
-      if [ -n "''${AWS_PROFILE:-}" ]; then
-        aws_seg="${icons.aws} ''${AWS_PROFILE}"
-        [ -n "''${AWS_DEFAULT_REGION:-}" ] && aws_seg="$aws_seg@''${AWS_DEFAULT_REGION}"
-        out="$out#[fg=#${colors.base09}] $aws_seg "
-      fi
+        # AWS
+        if [ -n "''${AWS_PROFILE:-}" ]; then
+          local aws_seg="${icons.aws} ''${AWS_PROFILE}"
+          [ -n "''${AWS_DEFAULT_REGION:-}" ] && aws_seg="$aws_seg@''${AWS_DEFAULT_REGION}"
+          out="$out#[fg=#${colors.base09}] $aws_seg "
+        fi
 
-      # Azure
-      if [ -n "''${AZURE_SUBSCRIPTION:-}" ]; then
-        out="$out#[fg=#${colors.base0D}] ${icons.azure} ''${AZURE_SUBSCRIPTION} "
-      fi
+        # Azure
+        if [ -n "''${AZURE_SUBSCRIPTION:-}" ]; then
+          out="$out#[fg=#${colors.base0D}] ${icons.azure} ''${AZURE_SUBSCRIPTION} "
+        fi
 
-      # GCloud
-      gcloud_account="''${CLOUDSDK_CORE_ACCOUNT:-}"
-      gcloud_project="''${CLOUDSDK_CORE_PROJECT:-}"
-      if [ -n "$gcloud_account" ] || [ -n "$gcloud_project" ]; then
-        gc="${icons.gcloud} "
-        [ -n "$gcloud_account" ] && gc="$gc$gcloud_account"
-        [ -n "$gcloud_project" ] && gc="$gc($gcloud_project)"
-        out="$out#[fg=#${colors.base0D}] $gc "
-      fi
+        # GCloud
+        local gcloud_account="''${CLOUDSDK_CORE_ACCOUNT:-}"
+        local gcloud_project="''${CLOUDSDK_CORE_PROJECT:-}"
+        if [ -n "$gcloud_account" ] || [ -n "$gcloud_project" ]; then
+          local gc="${icons.gcloud} "
+          [ -n "$gcloud_account" ] && gc="$gc$gcloud_account"
+          [ -n "$gcloud_project" ] && gc="$gc($gcloud_project)"
+          out="$out#[fg=#${colors.base0D}] $gc "
+        fi
 
-      printf '%s' "$out"
+        printf '%s\n%s\n' "$cfg" "$out"
+      }
+
+      stamp="''${TMPDIR:-/tmp}/tmux-status-context.$$"
+      trap 'rm -f "$stamp"' EXIT
+      trap 'exit 0' TERM HUP INT
+
+      # `read -t` on a FIFO that this script holds open for reading and
+      # writing never gets data or EOF, so each pass waits without
+      # spawning sleep.
+      mkfifo "$stamp.fifo"
+      exec 3<>"$stamp.fifo"
+      rm -f "$stamp.fifo"
+
+      prev_env=$'\x01'
+      prev_out=$'\x01'
+      cfg=""
+      out=""
+      while :; do
+        env=$(tmux show-environment -s 2>/dev/null) || exit 0
+        if [ "$env" != "$prev_env" ] || [ "$cfg" -nt "$stamp" ]; then
+          prev_env=$env
+          # Touch the stamp before render reads the kubeconfig, so a write
+          # during render still counts as newer on the next pass.
+          : >"$stamp"
+          # $() drops the newline after empty segments, so the second read
+          # hits EOF.
+          { IFS= read -r cfg || true; IFS= read -r out || true; } <<<"$(render "$env")"
+          if [ "$out" != "$prev_out" ]; then
+            prev_out=$out
+            printf '%s\n' "$out"
+          fi
+        fi
+        read -rt 5 -u 3 _ || true
+      done
     '';
   };
 
@@ -431,7 +489,9 @@ let
       group = "general";
       name = "Reload config";
       key = "r";
-      cmd = ''source-file ~/.config/tmux/tmux.conf \; display-message "Config reloaded"'';
+      # refresh-client -S restarts tmux-status-context, which otherwise
+      # keeps running the script it started with.
+      cmd = ''source-file ~/.config/tmux/tmux.conf \; refresh-client -S \; display-message "Config reloaded"'';
     };
     clearScreen = {
       group = "general";
@@ -1118,8 +1178,9 @@ in
 
       # Status bar layout
       set -g status-position bottom
-      # Each refresh runs every #() command through /bin/sh, and macOS
-      # syspolicyd scans each unsigned Nix binary it launches.
+      # Each refresh reruns every finished #() command through /bin/sh,
+      # and macOS syspolicyd scans each unsigned Nix binary it launches.
+      # tmux-status-context stays running, so a refresh does not rerun it.
       set -g status-interval 5
       set -g status-left-length 40
       set -g status-right-length 120
