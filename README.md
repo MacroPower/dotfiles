@@ -217,7 +217,7 @@
 | [dav1d](https://github.com/videolan/dav1d)                         | 1.5.3        | Cross-platform AV1 decoder focused on speed and correctness                                                    | BSD-2-Clause      |
 | [displayplacer](https://github.com/jakehilborn/displayplacer)      | 1.4.0        | macOS command line utility to configure multi-display resolutions and arrangements                             | MIT               |
 | [drawio](https://about.draw.io/)                                   | 32.6.1       | Desktop version of draw.io for creating diagrams                                                               | GPL-3.0-only      |
-| [firefox](https://www.mozilla.org/firefox/)                        | 159.0.1      | Mozilla Firefox, free web browser (binary package)                                                             | firefox           |
+| [firefox](https://www.mozilla.org/firefox/)                        | 158.0.1      | Mozilla Firefox, free web browser (binary package)                                                             | firefox           |
 | [ghostty](https://ghostty.org/)                                    | 1.4.0        | Fast, native, feature-rich terminal emulator pushing modern features                                           | MIT               |
 | [gtk4](https://www.gtk.org/)                                       | 4.22.4       | Multi-platform toolkit for creating graphical user interfaces                                                  | LGPL-2.0-or-later |
 | [k9s](https://github.com/derailed/k9s)                             | 0.51.0       | Kubernetes CLI To Manage Your Clusters In Style                                                                | Apache-2.0        |

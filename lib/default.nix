@@ -483,6 +483,40 @@ let
     marksman = final.marksman-bin;
   };
 
+  # The Firefox 159 binary from nixpkgs' firefox-bin does not launch on
+  # the macOS hosts, so they pin Firefox 158.0.1. The firefox-bin
+  # derivation reads its version and download table from the `generated`
+  # argument. This overlay swaps in the 158.0.1 en-US entries, with the
+  # hashes from Mozilla's SHA256SUMS for that release. Remove the pin
+  # after a 159 or later firefox-bin launches on macOS.
+  firefoxBinOverlay = _final: prev: {
+    firefox-bin-unwrapped = prev.firefox-bin-unwrapped.override {
+      generated = {
+        version = "158.0.1";
+        sources = [
+          {
+            url = "https://archive.mozilla.org/pub/firefox/releases/158.0.1/mac/en-US/Firefox%20158.0.1.dmg";
+            locale = "en-US";
+            arch = "mac";
+            sha256 = "1d7aa96b51fc9110185047de18228ac87238fba5e42bba53c9d696f88878cba6";
+          }
+          {
+            url = "https://archive.mozilla.org/pub/firefox/releases/158.0.1/linux-x86_64/en-US/firefox-158.0.1.tar.xz";
+            locale = "en-US";
+            arch = "linux-x86_64";
+            sha256 = "dce45470139242cf294eb6ada3d192a9bb334696842b02b71ade448a139eb41a";
+          }
+          {
+            url = "https://archive.mozilla.org/pub/firefox/releases/158.0.1/linux-aarch64/en-US/firefox-158.0.1.tar.xz";
+            locale = "en-US";
+            arch = "linux-aarch64";
+            sha256 = "7f880a6607b9608fc35f8814f7fbe7163c71e9680a8d3c0b27f35ff2fcfcb653";
+          }
+        ];
+      };
+    };
+  };
+
   # nixpkgs runs grug-far.nvim's mini.test suite during build whenever
   # lua is 5.1-compatible and the host isn't darwin (luajit2.1 hits this
   # on linux). The override at pkgs/development/lua-modules/overrides.nix
@@ -868,6 +902,7 @@ let
     czkawkaOverlay
     harperOverlay
     marksmanOverlay
+    firefoxBinOverlay
     grugFarOverlay
     cliHelpersOverlay
     (nurJacobColvinOverlay system)
