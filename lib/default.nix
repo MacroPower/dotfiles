@@ -836,31 +836,6 @@ let
     ];
   };
 
-  # nixpkgs ships invoke 3, and no fabric release supports it, so nixpkgs
-  # marks fabric 3.2.3 broken (`fabric/fabric#2376`). azure-cli depends on
-  # fabric, so every host that installs azure-cli fails to evaluate. Build
-  # the unreleased fabric commit that adds invoke 3 support, the same fix
-  # NixOS/nixpkgs#576874 proposes. Drop this overlay when that PR reaches
-  # nixpkgs-unstable.
-  fabricOverlay = _final: prev: {
-    pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-      (_pyfinal: pyprev: {
-        fabric = pyprev.fabric.overridePythonAttrs (old: {
-          version = "3.2.3-unstable-2026-04-07";
-          src = prev.fetchFromGitHub {
-            owner = "fabric";
-            repo = "fabric";
-            rev = "cc098ad475dbbe2e10aba72692d83aee58919570";
-            hash = "sha256-Z1tGcjdLrzbqcbS6XwapSgDNpyLbBiO21yeqi7XhbpQ=";
-          };
-          meta = old.meta // {
-            broken = false;
-          };
-        });
-      })
-    ];
-  };
-
   sharedOverlays = system: [
     fetchurlOverlay
     devboxOverlay
@@ -887,7 +862,6 @@ let
     psutilOverlay
     isortOverlay
     pyjwtOverlay
-    fabricOverlay
     direnvOverlay
     atuinOverlay
     harlequinOverlay
