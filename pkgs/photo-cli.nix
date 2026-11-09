@@ -10,9 +10,15 @@ buildDotnetGlobalTool {
 
   nugetHash = "sha256-WnblYclz249HlMlIZihEK0GWHWHqynmuwcWr20zzluY=";
 
-  # 0.4.0 targets net10.0; the default dotnet-sdk_8 can't read the tool layout
+  # 0.4.0 targets net10.0; the default dotnet-sdk_8 cannot read the tool layout
   # and aborts with "DotnetToolSettings.xml not found".
   dotnet-sdk = dotnetCorePackages.sdk_10_0;
+  # buildDotnetGlobalTool defaults dotnet-runtime to its own callPackage
+  # argument, the 8.0 SDK, not to the SDK passed above. That pulls the
+  # source-built dotnet 8 runtime into the closure, which the darwin cache
+  # drops whenever swift rebuilds. The 10.0 SDK runs the tool and the cache
+  # carries it.
+  dotnet-runtime = dotnetCorePackages.sdk_10_0;
 
   meta = {
     description = "Photo organizer: extract EXIF dates/locations, copy into organized folders";
