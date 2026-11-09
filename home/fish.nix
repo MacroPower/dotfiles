@@ -631,15 +631,17 @@ in
       # breadth-first. Escape hatch: `command find`.
       find = "command bfs -exclude '(' ${bfsExcludeExpr} ')' $argv";
 
-      # `wma xhigh` starts the sandboxed agent at that effort level.
-      # Arguments after the level, or all arguments when the first is not
-      # a level, pass through to `workmux sandbox agent`.
+      # `wma xhigh` starts the sandboxed agent at that effort level, and
+      # its subagents too. Since Claude Code 2.1.317 a subagent on another
+      # model falls back to that model's default effort instead of the
+      # session's. Arguments after the level, or all arguments when the
+      # first is not a level, pass through to `workmux sandbox agent`.
       wma = {
         description = "workmux sandbox agent with an optional effort level";
         body = ''
           switch "$argv[1]"
             case low medium high xhigh max
-              CLAUDE_CODE_EFFORT_LEVEL=$argv[1] workmux sandbox agent $argv[2..]
+              CLAUDE_CODE_EFFORT_LEVEL=$argv[1] CLAUDE_CODE_SUBAGENT_EFFORT=$argv[1] workmux sandbox agent $argv[2..]
             case '*'
               workmux sandbox agent $argv
           end

@@ -504,9 +504,13 @@ let
         # Per-launch effort for the sandboxed agent, set as
         # `CLAUDE_CODE_EFFORT_LEVEL=high workmux sandbox agent` or through
         # the `wma high` fish function in home/fish.nix. /effort
-        # can't save a level because home-manager links settings.json
-        # from the read-only nix store.
+        # cannot save a level because home-manager links settings.json
+        # from the read-only nix store. Since Claude Code 2.1.317 a
+        # subagent on a different model no longer inherits the session
+        # level. The generated CLAUDE.md asks for such downgrades on
+        # Explore agents, so `wma` sets the subagent variable too.
         "CLAUDE_CODE_EFFORT_LEVEL"
+        "CLAUDE_CODE_SUBAGENT_EFFORT"
       ];
       extra_mounts = [
         {
