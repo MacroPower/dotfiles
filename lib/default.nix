@@ -470,17 +470,17 @@ let
       });
   };
 
-  # Building marksman on Linux pulls in dotnetCorePackages.runtime_9_0,
-  # which on aarch64-linux routes through the source-built dotnet-vmr-9.0.15
-  # (a multi-hour build that aborts with SIGILL in its binary-allowance
-  # scanner), and even when the binary runtime is swapped in, the F# build
-  # under Apple-Silicon virtualization (Lima/QEMU) crashes the SDK with
-  # SIGILL during fsc invocations. Upstream publishes self-contained
-  # AOT-compiled binaries that sidestep the whole dotnet build chain; use
-  # those on Linux and keep the nixpkgs source build on Darwin where it
-  # works without a hitch.
-  marksmanOverlay = final: prev: {
-    marksman = if prev.stdenv.hostPlatform.isLinux then final.marksman-bin else prev.marksman;
+  # nixpkgs builds marksman against dotnetCorePackages.runtime_9_0, the
+  # source-built dotnet runtime. On aarch64-linux that build runs for hours
+  # and aborts with SIGILL in its binary-allowance scanner. Even with the
+  # binary runtime swapped in, the F# build under Apple-Silicon
+  # virtualization (Lima/QEMU) crashes the SDK with SIGILL during fsc
+  # invocations. On aarch64-darwin the cache drops the runtime whenever
+  # swift rebuilds, which leaves a multi-hour local build that Hydra itself
+  # failed. Upstream publishes self-contained AOT-compiled binaries that
+  # sidestep the whole dotnet build chain, so every host uses those.
+  marksmanOverlay = final: _prev: {
+    marksman = final.marksman-bin;
   };
 
   # nixpkgs runs grug-far.nvim's mini.test suite during build whenever

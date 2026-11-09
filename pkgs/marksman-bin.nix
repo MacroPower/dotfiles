@@ -19,6 +19,10 @@ let
       url = "https://github.com/artempyanykh/marksman/releases/download/${version}/marksman-linux-x64";
       hash = "sha256-vlCY6CEyGSacR/wNkWpm+jHOBgLslnR1xyImCqvyYIc=";
     };
+    "aarch64-darwin" = {
+      url = "https://github.com/artempyanykh/marksman/releases/download/${version}/marksman-macos";
+      hash = "sha256-aoAcF7WsDbppeHxSgrOzvUFuZsliU/rgmNMRxrvRgzs=";
+    };
   };
 
   src =
@@ -34,9 +38,11 @@ stdenv.mkDerivation {
   dontUnpack = true;
   dontStrip = true;
 
-  nativeBuildInputs = [ autoPatchelfHook ];
+  # The Linux binaries link against system icu and zlib, so autoPatchelf
+  # points them at the nix store copies. The macOS binary is self-contained.
+  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
 
-  buildInputs = [
+  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [
     icu
     zlib
     stdenv.cc.cc.lib
