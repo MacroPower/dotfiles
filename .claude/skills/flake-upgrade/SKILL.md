@@ -91,7 +91,9 @@ reports version changes for exactly the packages the host configs install
 (whichever input provides them - nixpkgs, NURs, custom `pkgs/`), plus version
 changes for the declared Homebrew casks and brews between the bumped tap revs.
 It runs two full inventory evals, so it takes a couple of minutes: start it in
-the background first, then spawn Step 5's agents while it runs.
+the background first, then spawn Step 5's agents while it runs. Start
+`task nix:build-plan` in the background at the same time. It takes longer
+still, and Step 7 reads its output.
 
 Triage its output package by package:
 
@@ -209,13 +211,65 @@ Fix evaluation errors and rerun until clean. Watch stderr for deprecation
 warnings too -- fixing them now is the point of this skill.
 
 If any `.nix` files were edited, run `task format`. The full `task check`
-(Dagger e2e) is slow; leave it to the user unless they asked for it.
+(Dagger e2e) is slow, so leave it to the user unless they asked for it.
+
+Evaluation passing means that the config is valid, not that the switch is
+cheap. Read the build plan that Step 4 started, or run it now:
+
+```bash
+task nix:build-plan
+```
+
+It evaluates every host, runs `nix build --dry-run` against each system
+derivation, and lists the derivations the host compiles itself instead of
+fetching from the binary cache. The script counts the derivations that a
+cache never carries (text files, wrappers, downloads) and lists the rest.
+Each listed cache miss carries a `new` flag from a comparison with the same
+evaluation at HEAD. The misses the bump introduced therefore stand apart from
+the ones this repo's overlays always cause. The dry run skips paths the local
+store already holds. The flag is therefore complete only on a machine that has
+built neither revision, such as the Lima VM this skill usually runs in.
+
+A new cache miss on anything larger than a script is a finding, not a build
+to wait for. Hydra has not built that derivation for the host's platform, or
+its build failed. Either way the switch compiles it for hours and might fail
+at the end. Trace it to the installed package with
+`nix why-depends --derivation <system-drv> <miss-drv>`. Then choose one of
+three fixes:
+
+- Wait for the cache.
+- Pin the package to a version the cache holds.
+- Drop the dependency, usually by taking a binary runtime in place of a
+  source build.
+
+A dotnet runtime appearing here after a swift bump is the canonical case. The
+installed tools were photo-cli and marksman, and the fix was in how they chose
+their runtime, not in dotnet.
+
+The same output carries `overlay_drift`. The flake's `overlayTargets` output
+names the nixpkgs attributes that this repo's overlays modify in place.
+Entries appear for those whose plain nixpkgs derivation changed name, src, or
+patches between HEAD and the new lock. pkg-diff cannot see
+these, because an overlay that re-sources a package also pins the version it
+reports. Treat every entry as a finding. Open the overlay in
+`lib/default.nix`, read its comment, and pick one outcome:
+
+- nixpkgs now carries the fix: remove the overlay.
+- The overlay's patch no longer applies: rebase it.
+- The change is unrelated to the overlay: keep it and say so.
+
+The fabric overlay is the canonical case. nixpkgs adopted the invoke 3 patch
+that the overlay pulled from upstream, so the overlay's replacement src made
+that patch fail to apply. The version diff showed nothing. While there, check
+the overlays whose comments state a removal condition ("drop when nixpkgs
+ships X") against the new nixpkgs, whether or not they drifted.
 
 ## Step 8: Report
 
 Summarize per input: what changed upstream, what was migrated (with file
 references), which opportunities were adopted, and which were deliberately left
-as suggestions. Each wave 2 package gets its own entry under the input that
+as suggestions. List each new cache miss and each overlay drift entry from
+the build plan with the decision taken on it. Each wave 2 package gets its own entry under the input that
 carried it, with the same detail as an input. Note inputs and packages that
 were pure maintenance in one line each. Offer
 to commit (the repo's commit skill applies); do not commit unasked.

@@ -36,6 +36,11 @@ tasks:
     cmds:
       - uv run {{.TASKFILE_DIR}}/scripts/flake-pkg-diff.py {{.CLI_ARGS}}
 
+  build-plan:
+    desc: Show what each host would compile locally instead of fetching, flagging cache misses new since a git rev (default HEAD)
+    cmds:
+      - uv run {{.TASKFILE_DIR}}/scripts/flake-build-plan.py {{.CLI_ARGS}}
+
   inventory:
     desc: Update README.md with installed package inventory
     cmds:

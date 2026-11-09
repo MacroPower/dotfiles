@@ -912,6 +912,88 @@ let
     dagger.overlays.default
   ];
 
+  # The overlays above that change a nixpkgs package in place, through
+  # override, overrideAttrs, a patch, or a replacement src. The others add
+  # packages from this repo or from another input. `task nix:build-plan`
+  # diffs the nixpkgs-side derivation behind every attribute these touch
+  # between two revisions. nixpkgs can add a patch or swap a src under an
+  # overlay without moving the version, and the overlay then fails to
+  # build. The fabric overlay broke that way when nixpkgs adopted the
+  # invoke 3 patch it carried.
+  nixpkgsModifyingOverlays = [
+    fetchurlOverlay
+    devboxOverlay
+    spacectlOverlay
+    limaOverlay
+    lixOverlay
+    lupaOverlay
+    fastmcpOverlay
+    mcpOverlay
+    aioboto3Overlay
+    aiohttpOverlay
+    httpx2Overlay
+    backrefsOverlay
+    inlineSnapshotOverlay
+    cycloptsOverlay
+    geoip2Overlay
+    pyKeyValueAioOverlay
+    syrupyOverlay
+    richOverlay
+    anyioOverlay
+    uvloopOverlay
+    sseStarletteOverlay
+    psutilOverlay
+    isortOverlay
+    pyjwtOverlay
+    direnvOverlay
+    atuinOverlay
+    harlequinOverlay
+    czkawkaOverlay
+    harperOverlay
+    firefoxBinOverlay
+    grugFarOverlay
+    cliHelpersOverlay
+  ];
+
+  # Attribute paths those overlays override, such as "harper" or
+  # "python3Packages.fabric". The function applies each overlay to plain
+  # nixpkgs and reads only the names of its result, so nothing builds or
+  # evaluates deeply. It applies python package extensions to every python
+  # package set in turn, because several extensions act only on one
+  # interpreter version. Each name appears under the first set that
+  # produced it.
+  overlayTargets =
+    system:
+    let
+      pkgs = import inputs.nixpkgs { inherit system; };
+      lib = inputs.nixpkgs.lib;
+      results = map (overlay: overlay pkgs pkgs) nixpkgsModifyingOverlays;
+      topLevel = lib.concatMap (
+        result: lib.filter (name: name != "pythonPackagesExtensions") (builtins.attrNames result)
+      ) results;
+      newExtensions = lib.concatMap (
+        result:
+        lib.drop (builtins.length pkgs.pythonPackagesExtensions) (result.pythonPackagesExtensions or [ ])
+      ) results;
+      pythonSets = lib.filter (set: pkgs ? ${set}) [
+        "python3Packages"
+        "python312Packages"
+        "python313Packages"
+      ];
+      namesIn =
+        set:
+        lib.concatMap (extension: builtins.attrNames (extension pkgs.${set} pkgs.${set})) newExtensions;
+      pythonTargets = lib.foldl' (
+        acc: set:
+        let
+          seen = map (target: lib.last (lib.splitString "." target)) acc;
+          fresh = lib.filter (name: !(builtins.elem name seen)) (namesIn set);
+        in
+        acc ++ map (name: "${set}.${name}") fresh
+      ) [ ] pythonSets;
+    in
+    lib.unique (topLevel ++ pythonTargets);
+
   sharedStylixConfig = import paths.stylix;
 
   hmSharedModules = [
@@ -962,4 +1044,5 @@ in
       mkHomeManagerBlock
       ;
   };
+  inherit overlayTargets;
 }

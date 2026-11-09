@@ -193,6 +193,7 @@
             mkDarwin
             mkHome
             mkNixOS
+            overlayTargets
             ;
         in
         {
@@ -228,6 +229,10 @@
             inherit self;
             inherit (nixpkgs) lib;
           };
+
+          # Attribute paths that this repo's overlays modify in nixpkgs, as a
+          # JSON list for `task nix:build-plan` (see lib/default.nix).
+          overlayTargets = builtins.toJSON (overlayTargets "x86_64-linux");
         };
     };
 }
