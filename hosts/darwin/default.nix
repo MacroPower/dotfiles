@@ -682,7 +682,11 @@
 
   security.pam.services.sudo_local = {
     touchIdAuth = true;
-    watchIdAuth = true;
+    # pam-watchid builds with swiftpm, swift-build, and swift-syntax. At
+    # nixpkgs 4fe25e1 the aarch64-darwin cache lacks all of them, so the
+    # switch compiles the swift toolchain locally. Re-enable when
+    # `task nix:build-plan -- --host Mac` stops listing pam-watchid.
+    watchIdAuth = false;
     reattach = true;
   };
 
