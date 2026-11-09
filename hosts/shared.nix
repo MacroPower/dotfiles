@@ -20,7 +20,7 @@
   # pause, so darwin hosts skip optimisation. Hosts that optimise use the
   # scheduled job instead of auto-optimise-store to avoid the .tmp-link
   # race condition (NixOS/nix#7273), which also affects Lix.
-  nix.optimise.automatic = !pkgs.stdenv.isDarwin;
+  nix.optimise.automatic = !pkgs.stdenv.hostPlatform.isDarwin;
 
   nixpkgs = {
     flake.setFlakeRegistry = true;
