@@ -28,11 +28,18 @@ let
   # unverified, and `failIfUnavailable = true` would break startup.
   sandboxEnabled = pkgs.stdenv.hostPlatform.isDarwin;
 
-  # True when the process is contained — by Claude Code's sandbox on
-  # Darwin, or by the Lima VM on terrarium. Drives `--auto-allow` on
+  # True when something contains the process: Claude Code's sandbox on
+  # Darwin, or the Lima VM on terrarium. Drives `--auto-allow` on
   # hook-router, which lets the bash hook emit PreToolUse "allow" and
   # skip the static analyzer prompt on shell expansions. See
   # tools/hook-router/main.go config.autoAllow.
+  #
+  # Claude Code 2.1.299 and later ignore that "allow" in plan mode for a
+  # command that is not read-only. The wrapper therefore also passes
+  # --allow-dangerously-skip-permissions here, because plan mode stops
+  # prompting for commands when bypassPermissions is in the mode cycle.
+  # Plan mode then approves file-tool writes too, so hook-router's
+  # --write-guard asks before one lands outside the sandbox write paths.
   autoAllowEnabled = sandboxEnabled || config.dotfiles.hostname == "terrarium";
 
   # Returns the sops secret path when sops is enabled, or a nonexistent
@@ -840,6 +847,7 @@ let
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
         ${lib.optionalString cfg.rmGuard "--rm-guard"} \
+        ${lib.optionalString sandboxEnabled "--write-guard"} \
         "$@"
     '';
   };
@@ -1044,7 +1052,10 @@ let
         --set CLAUDE_RESEARCH_DIR ${lib.escapeShellArg researchDir} \
         --set TF_CLI_CONFIG_FILE "${config.xdg.configHome}/opentofu/tofurc" \
         --set PLUGIN_UNIX_SOCKET_DIR "${config.home.homeDirectory}/.terraform.versions" \
-        ${lib.optionalString skipPerms "--set IS_SANDBOX 1 --add-flags --allow-dangerously-skip-permissions"}
+        ${lib.optionalString skipPerms "--set IS_SANDBOX 1"} \
+        ${lib.optionalString (
+          skipPerms || autoAllowEnabled
+        ) "--add-flags --allow-dangerously-skip-permissions"}
     '';
   };
 
@@ -3999,6 +4010,16 @@ in
                     # decision emitter per MCP call.
                     matcher = "mcp__.*";
                     hooks = [ (router "PreToolUse" "MCP") ];
+                  }
+                  {
+                    # "FileWrite" is a routing sentinel like "MCP". On a
+                    # host with --write-guard, hook-router asks before a
+                    # file tool in plan or bypassPermissions mode writes
+                    # a path that the sandbox denies to commands
+                    # (tools/hook-router/filewriteguard.go). Elsewhere it
+                    # exits without output.
+                    matcher = "^(Write|Edit|MultiEdit|NotebookEdit)$";
+                    hooks = [ (router "PreToolUse" "FileWrite") ];
                   }
                 ];
                 UserPromptSubmit = [

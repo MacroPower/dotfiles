@@ -26,6 +26,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/searchrewrite"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/sleepguard"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/writeguard"
 )
 
 // config holds runtime settings resolved from the environment and
@@ -113,6 +114,12 @@ import (
 // agentScope limits [run] to payloads from the main conversation or to
 // payloads from a subagent (see [agentScope]). Its zero value handles
 // every payload, so a bare config{} test literal is unaffected.
+//
+// writeGuardDirs, when non-nil, turns on the [handleFileWritePre] guard
+// and returns the directories its sandbox write policy resolves against
+// for a session in cwd. mainErr sets it to [writeguard.DirsFromEnv]
+// under --write-guard. nil disables the guard, so a bare config{} test
+// literal is a no-op.
 type config struct {
 	agentScope     agentScope
 	postImpl       *postimpl.Catalog
@@ -126,6 +133,7 @@ type config struct {
 	sleepGuard     sleepguard.Config
 	messageLint    msglint.Config
 	openStore      func(context.Context) (*state.Store, error)
+	writeGuardDirs func(cwd string) (writeguard.Dirs, error)
 	commitSkills   []string
 	kubeconfigPath string
 	claudePID      string
@@ -224,10 +232,11 @@ func main() {
 	skipPlanReview := flag.Bool("skip-plan-review", false, "skip the first-call ExitPlanMode deny that forces plan-reviewer (plan-guard bookkeeping still runs)")
 	rmGuard := flag.Bool("rm-guard", false, "deny a PreToolUse:Bash rm or rmdir whose target Claude Code would stop on a permission prompt (variable-leading or statically unresolvable)")
 	agentScope := flag.String("agent-scope", "", "handle only payloads from the main conversation (\"main\", no agent_id) or only payloads from a subagent (\"subagent\", agent_id set); \"\" handles every payload")
+	writeGuard := flag.Bool("write-guard", false, "ask before a Write, Edit, MultiEdit, or NotebookEdit call in plan or bypassPermissions mode writes a path the sandbox denies to commands (use only where Claude Code's sandbox is on)")
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *messageLintConfig, *agentScope, *autoAllow, *skipPlanReview, *rmGuard)
+	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *messageLintConfig, *agentScope, *autoAllow, *skipPlanReview, *rmGuard, *writeGuard)
 	if err == nil {
 		return
 	}
@@ -245,7 +254,7 @@ func main() {
 	os.Exit(1)
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON, agentScopeName string, autoAllow, skipPlanReview, rmGuard bool) error {
+func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON, agentScopeName string, autoAllow, skipPlanReview, rmGuard, writeGuard bool) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
@@ -397,6 +406,12 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.autoAllow = autoAllow
 	cfg.rmGuard = rmGuard
 
+	if writeGuard {
+		cfg.writeGuardDirs = func(cwd string) (writeguard.Dirs, error) {
+			return writeguard.DirsFromEnv(os.Getenv, cwd)
+		}
+	}
+
 	if dbPath != "" {
 		cfg.openStore = func(ctx context.Context) (*state.Store, error) {
 			return state.Open(ctx, dbPath)
@@ -480,6 +495,11 @@ func run(
 			// real tool name comes from the stdin payload, since
 			// Claude Code injects no tool-name env var.
 			return handleMCP(ctx, input, stdout, cfg, logger)
+		case "FileWrite":
+			// Routing sentinel from the Write/Edit/MultiEdit/NotebookEdit
+			// hook matcher. The handler reads the real tool name and
+			// path from the payload.
+			return handleFileWritePre(input, stdout, cfg, logger)
 		case "ExitPlanMode":
 			if store == nil {
 				return nil

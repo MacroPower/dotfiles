@@ -321,6 +321,32 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, stdout.Bytes())
 	})
 
+	t.Run("PreToolUse FileWrite: write guard flows through run()", func(t *testing.T) {
+		t.Parallel()
+
+		guardCfg, root, _ := guardFixture(t)
+
+		input, err := json.Marshal(map[string]any{
+			"tool_name":       "Write",
+			"permission_mode": "plan",
+			"tool_input":      map[string]any{"file_path": filepath.Join(root, "outside.md")},
+		})
+		require.NoError(t, err)
+
+		var stdout bytes.Buffer
+
+		err = run(t.Context(), bytes.NewReader(input), &stdout, "PreToolUse", "FileWrite", nil, guardCfg, logger)
+		require.NoError(t, err)
+
+		var result map[string]any
+
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+		hso, ok := result["hookSpecificOutput"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "ask", hso["permissionDecision"])
+	})
+
 	t.Run("PreToolUse Bash: denied kubectx", func(t *testing.T) {
 		t.Parallel()
 
