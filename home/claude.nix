@@ -4298,7 +4298,7 @@ in
         pkgs.mcp-fetch
         pkgs.mcp-kubectx
         workmuxWrapped
-        pkgs.llm-agents.git-surgeon
+        pkgs.git-surgeon
         pkgs.slugify
       ]
       ++ lib.optionals cfg.clauth.enable [ pkgs.clauth ]

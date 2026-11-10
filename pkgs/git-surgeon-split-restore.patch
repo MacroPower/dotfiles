@@ -1,0 +1,272 @@
+diff --git a/src/hunk.rs b/src/hunk.rs
+index b518580..b5f46fc 100644
+--- a/src/hunk.rs
++++ b/src/hunk.rs
+@@ -806,6 +806,25 @@ pub fn edit_todo(file: &str, sources: &[String], target: &str, mode: &str) -> Re
+                 lines.insert(target_idx + 1, source_line);
+             }
+         }
++        "edit" => {
++            // Git abbreviates todo SHAs to whatever length is unique in the
++            // repository (or to core.abbrev), so match the todo SHA as a
++            // prefix of the full target SHA instead of assuming 7 characters.
++            let target_idx = lines.iter().position(|l| {
++                let mut words = l.split_whitespace();
++                matches!(words.next(), Some("pick" | "p"))
++                    && words.next().is_some_and(|sha| target.starts_with(sha))
++            });
++            let target_idx = target_idx.ok_or_else(|| {
++                anyhow::anyhow!("target commit {} not found in todo", target_short)
++            })?;
++            let rest = lines[target_idx]
++                .trim_start()
++                .split_once(char::is_whitespace)
++                .map(|(_, rest)| rest.to_string())
++                .unwrap_or_default();
++            lines[target_idx] = format!("edit {}", rest);
++        }
+         _ => anyhow::bail!("unknown edit-todo mode: {}", mode),
+     }
+ 
+@@ -1241,10 +1260,69 @@ pub fn reword(commit: &str, message: &str) -> Result<()> {
+ }
+ 
+ /// Split a commit into multiple commits by hunk selection.
++/// What a failed split needs in order to put the repository back.
++#[derive(Default)]
++struct SplitRestore {
++    /// True from the first history rewrite until the picked commits exist.
++    armed: bool,
++    /// Commit being split.
++    target_sha: String,
++    /// Branch tip before the split started.
++    orig_head: String,
++    /// True when the target is not HEAD and a rebase is paused on it.
++    in_rebase: bool,
++}
++
+ pub fn split(
+     commit: &str,
+     pick_groups: &[crate::PickGroup],
+     rest_message: Option<&[String]>,
++) -> Result<()> {
++    let mut restore = SplitRestore::default();
++    let result = split_inner(commit, pick_groups, rest_message, &mut restore);
++    if result.is_err() && restore.armed {
++        restore_failed_split(&restore);
++    }
++    result
++}
++
++/// Put HEAD, the index, and the working tree back to their state before a
++/// failed split. Split requires a clean working tree and only ever leaves the
++/// target commit's content in it, so a hard reset to the target loses nothing.
++fn restore_failed_split(restore: &SplitRestore) {
++    let run = |args: &[&str]| {
++        Command::new("git")
++            .args(args)
++            .output()
++            .map(|o| o.status.success())
++            .unwrap_or(false)
++    };
++
++    let mut ok = run(&["reset", "--hard", &restore.target_sha]);
++    if restore.in_rebase && rebase_in_progress() {
++        ok &= run(&["rebase", "--abort"]);
++    }
++    let head = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "HEAD"]))
++        .map(|s| s.trim().to_string())
++        .unwrap_or_default();
++
++    if ok && head == restore.orig_head {
++        eprintln!("split failed; restored the repository to its previous state");
++    } else {
++        eprintln!("error: split failed and the repository could not be restored");
++        eprintln!("to restore it manually, run:");
++        if restore.in_rebase {
++            eprintln!("  git rebase --abort");
++        }
++        eprintln!("  git reset --hard {}", restore.orig_head);
++    }
++}
++
++fn split_inner(
++    commit: &str,
++    pick_groups: &[crate::PickGroup],
++    rest_message: Option<&[String]>,
++    restore: &mut SplitRestore,
+ ) -> Result<()> {
+     // Check working tree is clean
+     let status = Command::new("git")
+@@ -1358,19 +1436,28 @@ pub fn split(
+     }
+ 
+     if !is_head {
+-        start_rebase_at_commit(&target_sha)?;
+-    } else {
+-        // HEAD: just reset
+-        let output = Command::new("git")
+-            .args(["reset", "HEAD~"])
+-            .output()
+-            .context("failed to reset HEAD")?;
+-        if !output.status.success() {
+-            anyhow::bail!(
+-                "git reset failed: {}",
+-                String::from_utf8_lossy(&output.stderr)
+-            );
+-        }
++        // Pauses the rebase with HEAD at the target, or fails with the
++        // repository unchanged.
++        start_rebase_at_commit(&target_sha, &head_sha)?;
++    }
++
++    // From here on a failure must put the repository back.
++    restore.target_sha = target_sha.clone();
++    restore.orig_head = head_sha.clone();
++    restore.in_rebase = !is_head;
++    restore.armed = true;
++
++    // HEAD is the target commit in both cases. Move its changes to the
++    // working tree.
++    let output = Command::new("git")
++        .args(["reset", "HEAD~"])
++        .output()
++        .context("failed to reset HEAD")?;
++    if !output.status.success() {
++        anyhow::bail!(
++            "git reset failed: {}",
++            String::from_utf8_lossy(&output.stderr)
++        );
+     }
+ 
+     // Now changes are in the working tree. Stage and commit each pick group
+@@ -1525,6 +1612,10 @@ pub fn split(
+         eprintln!("committed: {}", subject);
+     }
+ 
++    // The split commits exist. A conflict while replaying later commits is
++    // left for the user to resolve.
++    restore.armed = false;
++
+     // Continue rebase if non-HEAD
+     if !is_head {
+         let output = Command::new("git")
+@@ -1557,6 +1648,10 @@ fn check_no_rebase_in_progress() -> Result<()> {
+     Ok(())
+ }
+ 
++fn rebase_in_progress() -> bool {
++    check_no_rebase_in_progress().is_err()
++}
++
+ /// Squash commits from <commit>..HEAD into a single commit.
+ pub fn squash(commit: &str, message: &str, force: bool, preserve_author: bool) -> Result<()> {
+     check_no_rebase_in_progress()?;
+@@ -1738,17 +1833,22 @@ pub fn squash(commit: &str, message: &str, force: bool, preserve_author: bool) -
+     Ok(())
+ }
+ 
+-fn start_rebase_at_commit(target_sha: &str) -> Result<()> {
++/// Start an interactive rebase that pauses on `target_sha`, leaving HEAD at
++/// that commit. On failure the repository is back at `orig_head`.
++fn start_rebase_at_commit(target_sha: &str, orig_head: &str) -> Result<()> {
+     let is_root = Command::new("git")
+         .args(["rev-parse", "--verify", &format!("{}^", target_sha)])
+         .output()
+         .map(|o| !o.status.success())
+         .unwrap_or(false);
+ 
+-    // We need a custom sequence editor that marks the target commit as "edit"
+-    let short_sha = &target_sha[..7.min(target_sha.len())];
+-    // Use sed to change "pick <sha>" to "edit <sha>" for the target commit
+-    let sed_script = format!("s/^pick {} /edit {} /", short_sha, short_sha);
++    // Use our own todo editor to mark the target commit as "edit"
++    let exe = std::env::current_exe().context("failed to get current executable path")?;
++    let editor = format!(
++        "{} _edit-todo --target {} --mode edit",
++        exe.display(),
++        target_sha
++    );
+ 
+     let mut rebase_cmd = Command::new("git");
+     rebase_cmd.args(["rebase", "-i", "--autostash"]);
+@@ -1757,28 +1857,39 @@ fn start_rebase_at_commit(target_sha: &str) -> Result<()> {
+     } else {
+         rebase_cmd.arg(format!("{}~1", target_sha));
+     }
+-    rebase_cmd.env(
+-        "GIT_SEQUENCE_EDITOR",
+-        format!("sed -i.bak '{}'", sed_script),
+-    );
++    rebase_cmd.env("GIT_SEQUENCE_EDITOR", &editor);
+ 
+     let output = rebase_cmd.output().context("failed to start rebase")?;
+-    if !output.status.success() {
+-        let stderr = String::from_utf8_lossy(&output.stderr);
+-        anyhow::bail!("rebase failed: {}", stderr);
++    let head = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "HEAD"]))
++        .map(|s| s.trim().to_string())
++        .unwrap_or_default();
++
++    // The rebase must be paused with HEAD at the target. If the todo edit did
++    // not take effect, the rebase runs to completion and HEAD is the branch
++    // tip, and resetting HEAD~ there would drop the wrong commit.
++    if output.status.success() && rebase_in_progress() && head == target_sha {
++        return Ok(());
+     }
+ 
+-    // Now we should be paused at the target commit. Reset it.
+-    let output = Command::new("git")
+-        .args(["reset", "HEAD~"])
+-        .output()
+-        .context("failed to reset commit")?;
+-    if !output.status.success() {
+-        anyhow::bail!(
+-            "git reset failed: {}",
+-            String::from_utf8_lossy(&output.stderr)
+-        );
++    if rebase_in_progress() {
++        let _ = Command::new("git").args(["rebase", "--abort"]).output();
++    }
++    let head = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "HEAD"]))
++        .map(|s| s.trim().to_string())
++        .unwrap_or_default();
++    if head != orig_head {
++        // The working tree was clean when the split started.
++        let _ = Command::new("git")
++            .args(["reset", "--hard", orig_head])
++            .output();
+     }
+ 
+-    Ok(())
++    if !output.status.success() {
++        let stderr = String::from_utf8_lossy(&output.stderr);
++        anyhow::bail!("rebase failed: {}", stderr);
++    }
++    anyhow::bail!(
++        "rebase did not stop at commit {}; nothing was changed",
++        &target_sha[..7.min(target_sha.len())]
++    );
+ }
+diff --git a/src/main.rs b/src/main.rs
+index ab5c0f3..82c1379 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -107,7 +107,7 @@ enum Commands {
+         #[arg(long, group = "position")]
+         to_end: bool,
+     },
+-    /// Hidden: rewrite rebase todo for fold or move
++    /// Hidden: rewrite rebase todo for fold, move, or split
+     #[command(name = "_edit-todo", hide = true)]
+     EditTodo {
+         /// Path to the rebase todo file
+@@ -118,7 +118,7 @@ enum Commands {
+         /// Target commit SHA
+         #[arg(long)]
+         target: String,
+-        /// Rewrite mode: fixup (default Git todo action) or move
++        /// Rewrite mode: fixup (default Git todo action), move, move-before, or edit
+         #[arg(long, default_value = "fixup")]
+         mode: String,
+     },

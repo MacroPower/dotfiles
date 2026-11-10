@@ -233,6 +233,20 @@ let
     });
   };
 
+  # git-surgeon 0.1.17 marks the commit that `split` edits with a sed
+  # script that matches the first 7 characters of its SHA. Git writes
+  # longer SHAs in the rebase todo of a large repository, so the rebase
+  # runs to completion and split resets the branch tip instead of the
+  # target. The patch matches the todo SHA as a prefix, checks that the
+  # rebase paused at the target, and restores the repository when a
+  # split fails. The patch forces a local build. Drop this overlay when
+  # upstream ships the fix.
+  gitSurgeonOverlay = system: _final: _prev: {
+    git-surgeon = llm-agents.packages.${system}.git-surgeon.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [ ../pkgs/git-surgeon-split-restore.patch ];
+    });
+  };
+
   # nixpkgs at this pin builds lupa-2.8 with `LUPA_NO_BUNDLE=true` and
   # without fetching git submodules. setup.py then falls through to its
   # pkg-config fallback (find_lua_build) and produces a single unversioned
@@ -908,6 +922,7 @@ let
     (nurJacobColvinOverlay system)
     ryceeOverlay
     (workmuxOverlay system)
+    (gitSurgeonOverlay system)
     (llmAgentsOverlay system)
     dagger.overlays.default
   ];
