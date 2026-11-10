@@ -771,7 +771,7 @@ let
     name = "hook-router-wrapper";
     runtimeInputs = [
       pkgs.hook-router
-      pkgs.git
+      config.programs.git.package
     ];
     # The --command-rules JSON is shell-escaped via lib.escapeShellArg
     # (single-quoted). Backticks inside the JSON are literal data, but

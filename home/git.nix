@@ -1,8 +1,27 @@
-{ config, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
+let
+  # The terrarium VM reads each checkout through a virtiofs mount. On
+  # that mount, open() of .git/index fails with ENOENT while another
+  # process renames a new index over it, and git reads a missing index
+  # as an empty one. A commit in the guest has recorded an empty tree
+  # that way. The patch retries the open while lstat() still finds the
+  # file. It changes only this package, so nothing else in the closure
+  # rebuilds. The install check runs the whole git test suite, so the
+  # override skips it.
+  gitRetryIndexOpen = (pkgs.git.override { doInstallCheck = false; }).overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ../pkgs/git-retry-index-open.patch ];
+  });
+in
 {
   programs.git = {
     enable = true;
+    package = lib.mkIf (config.dotfiles.hostname == "terrarium") gitRetryIndexOpen;
 
     settings = {
       user = {

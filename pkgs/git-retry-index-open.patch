@@ -1,0 +1,43 @@
+--- a/read-cache.c
++++ b/read-cache.c
+@@ -2208,6 +2208,31 @@
+ 		istate->sparse_index = 1;
+ }
+ 
++/*
++ * On some shared filesystems, such as virtiofs, open() fails with
++ * ENOENT while another process renames a new index over the path,
++ * although lstat() still finds the file. A caller that takes that
++ * ENOENT for a missing index reads an empty index, and a later write
++ * records it. Retry for up to 3 seconds while lstat() finds the file.
++ */
++static int open_index(const char *path)
++{
++	struct stat st;
++	int tries;
++
++	for (tries = 0; ; tries++) {
++		int fd = open(path, O_RDONLY);
++
++		if (fd >= 0 || errno != ENOENT)
++			return fd;
++		if (tries >= 300 || lstat(path, &st)) {
++			errno = ENOENT;
++			return -1;
++		}
++		sleep_millisec(10);
++	}
++}
++
+ /* remember to discard_cache() before reading a different cache! */
+ int do_read_index(struct index_state *istate, const char *path, int must_exist)
+ {
+@@ -2227,7 +2252,7 @@
+ 
+ 	istate->timestamp.sec = 0;
+ 	istate->timestamp.nsec = 0;
+-	fd = open(path, O_RDONLY);
++	fd = open_index(path);
+ 	if (fd < 0) {
+ 		if (!must_exist && errno == ENOENT) {
+ 			set_new_index_sparsity(istate);
