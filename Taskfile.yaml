@@ -178,6 +178,13 @@ tasks:
     cmds:
       - dagger check
 
+  # dagger resolves the toolchains' source directory from the root of a
+  # git repository, so the copy becomes one before the checks run.
+  check:staged:
+    desc: Run all Dagger checks on the staged tree
+    cmds:
+      - scripts/staged-tree.sh sh -c 'git init -q . && dagger check'
+
   format:
     desc: Apply all auto-fixes (formatting and lint via treefmt)
     cmds:

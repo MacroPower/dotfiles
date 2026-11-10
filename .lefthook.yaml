@@ -1,5 +1,8 @@
 # yaml-language-server: $schema=https://lefthook.dev/schema.json
 pre-commit:
+  # Both jobs read a copy of the staged tree. A commit that stages part
+  # of the working tree gets the inventory of its own content. The
+  # checks do not see the unstaged changes around it.
   jobs:
     # Runs before check, so the lint step sees the regenerated README.
     - name: inventory
@@ -7,7 +10,7 @@ pre-commit:
         - "*.nix"
         - flake.lock
         - taskfiles/nix/scripts/*
-      run: task nix:inventory && git add README.md
+      run: task nix:inventory -- --staged && git add README.md
     - name: check
       use_stdin: true
-      run: task check
+      run: task check:staged

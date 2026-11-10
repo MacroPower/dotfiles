@@ -42,9 +42,9 @@ tasks:
       - uv run {{.TASKFILE_DIR}}/scripts/flake-build-plan.py {{.CLI_ARGS}}
 
   inventory:
-    desc: Update README.md with installed package inventory
+    desc: Update README.md with installed package inventory (pass --staged to read the staged tree)
     cmds:
-      - "{{.TASKFILE_DIR}}/scripts/update-inventory.sh"
+      - "{{.TASKFILE_DIR}}/scripts/update-inventory.sh {{.CLI_ARGS}}"
       - nix fmt -- README.md
 
   sbom:
