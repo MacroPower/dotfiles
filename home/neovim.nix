@@ -3,6 +3,21 @@
 let
   base00 = "#${config.lib.stylix.colors.base00}";
   inherit (import ../lib/nerdfonts.nix) icons;
+
+  # smart-splits.nvim 3.0.0 ships no multiplexer backends, and nixpkgs
+  # does not package this one. The backend sets the tmux pane option
+  # @pane-is-vim, which the C-hjkl bindings in tmux.nix read.
+  smart-splits-backend-tmux = pkgs.vimUtils.buildVimPlugin {
+    pname = "smart-splits-backend-tmux";
+    version = "0-unstable-2026-10-02";
+    src = pkgs.fetchFromGitHub {
+      owner = "smart-splits-nvim";
+      repo = "backend-tmux";
+      rev = "9e9e6aa9b3eb7a8d3896a993611622ac97abff52";
+      hash = "sha256-RcJdM6wFHZOEOK+cXVIT10anktqGgIilPmojFpdY+4g=";
+    };
+    dependencies = [ pkgs.vimPlugins.smart-splits-nvim ];
+  };
 in
 {
   programs.neovim = {
@@ -188,15 +203,16 @@ in
           vim.keymap.set("n", "<leader>r", builtin.resume, { desc = "resume picker" })
         '';
       }
+      smart-splits-backend-tmux
       {
         plugin = smart-splits-nvim;
         type = "lua";
         config = ''
           require("smart-splits").setup({
-            multiplexer_integration = "tmux",
-            at_edge = "stop",
-            default_amount = 3,
-            cursor_follows_swapped_bufs = true,
+            mux = { backend = "smart-splits-backend-tmux" },
+            move = { at_edge = "stop" },
+            resize = { amount = 3 },
+            swap = { move_cursor = true },
             ignored_buftypes = { "nofile", "quickfix", "prompt" },
             ignored_filetypes = { "minifiles", "TelescopePrompt", "trouble", "Trouble" },
           })
