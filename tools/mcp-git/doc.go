@@ -3,9 +3,11 @@
 //
 // git_clone clones a repository if the destination does not already
 // exist, or pulls (fast-forward only) if it does, holding a flock on
-// <dest>.lock beside the destination. git_fetch,
-// git_pull, and git_push operate on an existing local repository:
-// they resolve the repository's git directory (worktree-aware), take
+// <dest>.lock beside the destination. When the destination holds a
+// .git directory that git cannot open, git_clone renames the
+// destination to <dest>.corrupt-<timestamp> and clones again.
+// git_fetch, git_pull, and git_push operate on an existing local
+// repository: they resolve its git directory (worktree-aware), take
 // a flock on <gitdir>/mcp-git.lock, resolve the named remote's URL
 // so the GH_TOKEN credential helper can authenticate it, and run the
 // corresponding git subcommand with captured output. Remote and ref

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -47,6 +48,10 @@ var (
 	// ErrOriginMismatch is returned when the existing repo's
 	// origin URL does not match the requested URL.
 	ErrOriginMismatch = errors.New("origin URL mismatch")
+
+	// ErrCorruptDest is returned when dest holds a .git directory that
+	// git cannot open and the directory cannot be moved aside.
+	ErrCorruptDest = errors.New("dest holds a corrupt git directory")
 
 	// ErrClone wraps the underlying git clone failure.
 	ErrClone = errors.New("git clone failed")
@@ -150,11 +155,63 @@ func (h *handler) handleClone(
 	gitDir := filepath.Join(input.Dest, ".git")
 
 	info, statErr := os.Stat(gitDir)
-	if statErr == nil && info.IsDir() {
+	if statErr != nil || !info.IsDir() {
+		return h.clone(ctx, input, "")
+	}
+
+	repoErr := checkGitDir(ctx, gitDir)
+	if repoErr == nil {
 		return h.pullExisting(ctx, input)
 	}
 
-	return h.clone(ctx, input)
+	if errors.Is(repoErr, ErrTimeout) {
+		return toolError(repoErr), nil, nil
+	}
+
+	aside, asideErr := h.moveAside(input.Dest)
+	if asideErr != nil {
+		return toolError(asideErr), nil, nil
+	}
+
+	return h.clone(ctx, input, aside)
+}
+
+// checkGitDir reports whether git can open gitDir as a repository.
+// A cleanup job that deletes old files one at a time, such as
+// systemd-tmpfiles on /tmp, can remove HEAD and config and keep the
+// rest of the directory. The --git-dir flag stops git from walking
+// up to a repository that encloses the destination.
+func checkGitDir(ctx context.Context, gitDir string) error {
+	_, err := gitValue(ctx, "--git-dir", gitDir, "rev-parse", "--git-dir")
+	if err != nil {
+		if errors.Is(err, ErrTimeout) {
+			return err
+		}
+
+		return fmt.Errorf("%w: %s", ErrNotRepo, gitDir)
+	}
+
+	return nil
+}
+
+// moveAside renames a corrupt checkout at dest to a timestamped
+// sibling path and returns that path, so a clone can take dest. It
+// renames the checkout and deletes nothing, because the working tree
+// can hold files that exist nowhere else.
+func (h *handler) moveAside(dest string) (string, error) {
+	aside := fmt.Sprintf("%s.corrupt-%s", filepath.Clean(dest), time.Now().UTC().Format("20060102T150405.000000000Z"))
+
+	destErr := h.checkDest(aside)
+	if destErr != nil {
+		return "", fmt.Errorf("%w: %s: %w", ErrCorruptDest, dest, destErr)
+	}
+
+	err := os.Rename(dest, aside)
+	if err != nil {
+		return "", fmt.Errorf("%w: %s: delete it and retry: %w", ErrCorruptDest, dest, err)
+	}
+
+	return aside, nil
 }
 
 // checkURL verifies that url uses a permitted scheme. Accepted
@@ -237,8 +294,12 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 	return nil
 }
 
+// clone runs git clone for input. A non-empty aside names the path
+// that a corrupt checkout at the destination moved to, and the
+// result message reports it.
+//
 //nolint:unparam // signature matches mcp.AddTool handler contract.
-func (h *handler) clone(ctx context.Context, input CloneInput) (*mcp.CallToolResult, any, error) {
+func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*mcp.CallToolResult, any, error) {
 	args := h.credentialArgs(input.URL)
 	args = append(args, buildCloneArgs(input)...)
 
@@ -260,6 +321,10 @@ func (h *handler) clone(ctx context.Context, input CloneInput) (*mcp.CallToolRes
 	msg := fmt.Sprintf("Cloned %s into %s", input.URL, input.Dest)
 	if len(input.SparsePaths) > 0 {
 		msg += fmt.Sprintf(" (sparse: %s)", strings.Join(input.SparsePaths, ", "))
+	}
+
+	if aside != "" {
+		msg += fmt.Sprintf(". The previous checkout had a corrupt .git directory and moved to %s", aside)
 	}
 
 	return &mcp.CallToolResult{

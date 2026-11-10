@@ -78,7 +78,7 @@ func main() {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "git_clone",
-		Description: "Clone a git repo. Idempotent: clones if the dest is absent, else fast-forward pulls.",
+		Description: "Clone a git repo. Idempotent: clones if the dest is absent, else fast-forward pulls. A dest whose .git directory is corrupt moves aside and is cloned again.",
 	}, h.handleClone)
 
 	mcp.AddTool(srv, &mcp.Tool{

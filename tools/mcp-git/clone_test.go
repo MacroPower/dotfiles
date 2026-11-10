@@ -648,6 +648,88 @@ func TestHandleOriginMismatch(t *testing.T) {
 	assert.Contains(t, resultText(t, result), "origin URL mismatch")
 }
 
+func TestHandleCloneCorruptDest(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		remove []string
+	}{
+		"missing HEAD and config": {remove: []string{"HEAD", "config"}},
+		"missing HEAD":            {remove: []string{"HEAD"}},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			bare := initBareRepo(t)
+			h := &handler{allowFileURLs: true}
+
+			// A repository encloses dest, so the check must not
+			// walk up and accept the parent as the checkout.
+			parent := t.TempDir()
+			runGitCmds(t, [][]string{{"git", "init", "-q", parent}})
+
+			dest := filepath.Join(parent, "cloned")
+
+			result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+
+			for _, f := range tc.remove {
+				require.NoError(t, os.Remove(filepath.Join(dest, ".git", f)))
+			}
+
+			require.NoError(t, os.WriteFile(filepath.Join(dest, "local.txt"), []byte("keep"), 0o644))
+
+			result, _, err = h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+			assert.Contains(t, resultText(t, result), "Cloned")
+
+			asides, err := filepath.Glob(dest + ".corrupt-*")
+			require.NoError(t, err)
+			require.Len(t, asides, 1)
+			assert.Contains(t, resultText(t, result), asides[0])
+
+			kept, err := os.ReadFile(filepath.Join(asides[0], "local.txt"))
+			require.NoError(t, err)
+			assert.Equal(t, "keep", string(kept))
+
+			// The new checkout is a working repository again.
+			result, _, err = h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+			assert.Contains(t, resultText(t, result), "Pulled")
+		})
+	}
+}
+
+func TestHandleCloneCorruptDestOutsideAllowDir(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	// dest is the allowed directory itself, so its sibling is not
+	// an allowed path and the checkout must stay in place.
+	h := &handler{allowFileURLs: true, allowDirs: resolveAllowDirs([]string{dest})}
+
+	result, _, err := h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	require.NoError(t, os.Remove(filepath.Join(dest, ".git", "HEAD")))
+
+	result, _, err = h.handleClone(t.Context(), nil, CloneInput{URL: bare, Dest: dest})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	assert.Contains(t, resultText(t, result), ErrCorruptDest.Error())
+
+	_, statErr := os.Stat(filepath.Join(dest, ".git"))
+	require.NoError(t, statErr)
+}
+
 func TestEffectiveTimeout(t *testing.T) {
 	t.Parallel()
 
