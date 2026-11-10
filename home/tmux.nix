@@ -374,6 +374,30 @@ let
 
   floaxScripts = "${tmux-floax}/share/tmux-plugins/tmux-floax/scripts";
 
+  # Saves the tmux environment with tmux-resurrect every 10 minutes.
+  # tmux-continuum saves through a #() command in status-right, and tmux
+  # reruns a finished #() command on a status redraw, so this loop sleeps
+  # between saves instead. The config starts the loop with `run-shell -b`,
+  # so every config reload starts another copy. Each copy records its PID
+  # in @resurrect-autosave-pid, and a copy exits when the option names a
+  # different PID or the server is gone, so one loop saves per server.
+  tmuxResurrectAutosave = pkgs.writeShellApplication {
+    name = "tmux-resurrect-autosave";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.tmux
+    ];
+    text = ''
+      tmux set-option -g @resurrect-autosave-pid "$$"
+
+      while sleep 600; do
+        owner=$(tmux show-option -gqv @resurrect-autosave-pid 2>/dev/null) || exit 0
+        [ "$owner" = "$$" ] || exit 0
+        ${pkgs.tmuxPlugins.resurrect}/share/tmux-plugins/resurrect/scripts/save.sh quiet >/dev/null 2>&1 || true
+      done
+    '';
+  };
+
   tmuxFloaxRun = pkgs.writeShellApplication {
     name = "tmux-floax-run";
     excludeShellChecks = [ "SC1091" ];
@@ -1139,13 +1163,7 @@ in
           set -g @resurrect-capture-pane-contents 'on'
           set -g @resurrect-strategy-nvim 'session'
           set -g @resurrect-processes '"~btm" "~lazydocker" "~gitui"'
-        '';
-      }
-      {
-        plugin = continuum;
-        extraConfig = ''
-          set -g @continuum-restore 'off'
-          set -g @continuum-save-interval '10'
+          run-shell -b ${lib.getExe tmuxResurrectAutosave}
         '';
       }
     ];
