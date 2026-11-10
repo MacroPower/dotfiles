@@ -15,7 +15,19 @@ root=$(git rev-parse --show-toplevel)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-git -C "$root" checkout-index --all --prefix="$tmp/"
+# On the Lima virtiofs mount, opening .git/index can fail for about a
+# second while another process replaces the file. Git reads a missing
+# index as an empty one, so the loop exports again when the copy is
+# empty.
+for attempt in 1 2 3 4 5; do
+  git -C "$root" checkout-index --all --prefix="$tmp/"
+  [[ -n $(ls -A "$tmp") ]] && break
+  if ((attempt == 5)); then
+    echo "staged-tree: git read an index with no entries; retry the commit" >&2
+    exit 1
+  fi
+  sleep 1
+done
 
 # A hook inherits GIT_DIR and GIT_INDEX_FILE. Unset them so that a git
 # command in the copy cannot write to this repository.
