@@ -2606,6 +2606,7 @@ in
   config = {
     dotfiles.claude.skills = {
       aven.source = "${pkgs.aven}/share/aven/skills/claude";
+      aven-ultraclose.source = ../configs/claude/skills/aven-ultraclose;
       commit.source = ../configs/claude/skills/commit;
       commit-push-pr.source = ../configs/claude/skills/commit-push-pr;
       create-skill.source = ../configs/claude/skills/create-skill;
