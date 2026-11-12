@@ -52,6 +52,12 @@ func run() int {
 	defer cancel()
 
 	err := dispatch(ctx, os.Args[1:], os.Stdin, os.Stdout)
+
+	// The flag package already printed the usage.
+	if errors.Is(err, flag.ErrHelp) {
+		return 0
+	}
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 
