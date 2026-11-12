@@ -114,33 +114,36 @@ func parseFlags(name string, args []string) (options, error) {
 	}
 
 	if o.stateDir == "" {
-		o.stateDir, err = defaultStateDir()
+		o.stateDir, err = xdgDir("XDG_STATE_HOME", ".local/state")
 		if err != nil {
 			return options{}, err
 		}
 	}
 
 	if o.cacheDir == "" {
-		dir, err := os.UserCacheDir()
+		o.cacheDir, err = xdgDir("XDG_CACHE_HOME", ".cache")
 		if err != nil {
-			return options{}, fmt.Errorf("locating the cache directory: %w", err)
+			return options{}, err
 		}
-
-		o.cacheDir = filepath.Join(dir, "mcp-destiny")
 	}
 
 	return o, nil
 }
 
-func defaultStateDir() (string, error) {
-	dir := os.Getenv("XDG_STATE_HOME")
+// xdgDir returns the mcp-destiny directory inside the XDG base directory
+// that the environment variable env names. An unset variable selects
+// fallback, a path relative to the home directory. Every platform follows
+// the XDG layout, so the state directory and the cache directory share one
+// convention.
+func xdgDir(env, fallback string) (string, error) {
+	dir := os.Getenv(env)
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", fmt.Errorf("locating the home directory: %w", err)
 		}
 
-		dir = filepath.Join(home, ".local", "state")
+		dir = filepath.Join(home, fallback)
 	}
 
 	return filepath.Join(dir, "mcp-destiny"), nil
