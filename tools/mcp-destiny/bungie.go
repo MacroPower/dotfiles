@@ -104,6 +104,7 @@ type ProfileItem struct {
 	State          int    `json:"state"`
 	Hash           uint32 `json:"itemHash"`
 	BucketHash     uint32 `json:"bucketHash"`
+	Lockable       bool   `json:"lockable"`
 }
 
 // ProfileCharacter is one Bungie DestinyCharacterComponent.
@@ -181,10 +182,12 @@ type Profile struct {
 	} `json:"profileInventory"`
 }
 
-// ItemAction identifies one item for a transfer, an equip, or a Postmaster
-// pull. CharacterID names the character that holds the item on a transfer
-// to the vault, and the character that receives it otherwise. StackSize is
-// the number of units of a stackable item, and zero means one.
+// ItemAction identifies one item for a transfer, an equip, a Postmaster
+// pull, or a lock change. CharacterID names the character that holds the
+// item on a transfer to the vault or a lock change, and the character that
+// receives it otherwise. A lock change of an item in the vault names the
+// most recently played character. StackSize is the number of units of a
+// stackable item, and zero means one.
 type ItemAction struct {
 	InstanceID  string
 	CharacterID string
@@ -314,6 +317,18 @@ func (b *Bungie) PullFromPostmaster(ctx context.Context, creds Credentials, acti
 	}
 
 	return b.call(ctx, creds, http.MethodPost, "/Destiny2/Actions/Items/PullFromPostmaster/", body, nil)
+}
+
+// SetLockState locks or unlocks an instanced item.
+func (b *Bungie) SetLockState(ctx context.Context, creds Credentials, action ItemAction, locked bool) error {
+	body := map[string]any{
+		"state":          locked,
+		"itemId":         action.InstanceID,
+		"characterId":    action.CharacterID,
+		"membershipType": action.Membership.Type,
+	}
+
+	return b.call(ctx, creds, http.MethodPost, "/Destiny2/Actions/Items/SetLockState/", body, nil)
 }
 
 // call performs one platform request and unwraps the Bungie response

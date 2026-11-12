@@ -24,6 +24,7 @@ const (
 	pathProfile  = "/Destiny2/3/Profile/4611/"
 	pathTransfer = "/Destiny2/Actions/Items/TransferItem/"
 	pathEquip    = "/Destiny2/Actions/Items/EquipItem/"
+	pathLock     = "/Destiny2/Actions/Items/SetLockState/"
 )
 
 func TestServerListsTools(t *testing.T) {
@@ -53,7 +54,7 @@ func TestServerListsTools(t *testing.T) {
 		toolStatus, toolLogin, toolCompleteLogin, toolListCharacters, toolListItems, toolGetItem, toolMoveItems,
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolRemoveAutotagRule,
-		toolMoveStack, toolSetAutotagEnabled,
+		toolMoveStack, toolSetLock, toolSetAutotagEnabled,
 	}, names)
 
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
@@ -517,6 +518,118 @@ func TestMoveItemsSnapshotAge(t *testing.T) {
 	_, isError = call(t, f.h.handleMoveItems, MoveItemsInput{InstanceIDs: []string{"1001"}, Target: "hunter"})
 	require.False(t, isError)
 	assert.Equal(t, later, f.h.snapshot.Fetched, "a move restarts the age of the snapshot")
+}
+
+func TestSetLockTool(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	got, isError := call(t, f.h.handleSetLock, SetLockInput{
+		InstanceIDs: []string{"1002", "1003"},
+		Locked:      true,
+	})
+	assert.False(t, isError)
+	assert.Equal(t, "- Locked Gjallarhorn (1002).\n- Locked Midnight Coup (1003).", got)
+
+	locks := f.bungie.calls(http.MethodPost, pathLock)
+	require.Len(t, locks, 2)
+	assert.Equal(t, map[string]any{
+		"state":          true,
+		"itemId":         "1002",
+		"characterId":    hunterID,
+		"membershipType": float64(3),
+	}, locks[0].Body)
+	assert.Equal(t, "1003", locks[1].Body["itemId"])
+
+	got, isError = call(t, f.h.handleSetLock, SetLockInput{InstanceIDs: []string{"1001"}})
+	assert.False(t, isError)
+	assert.Equal(t, "- Unlocked Fatebringer (1001).", got)
+
+	locks = f.bungie.calls(http.MethodPost, pathLock)
+	require.Len(t, locks, 3)
+	assert.Equal(t, false, locks[2].Body["state"])
+
+	// The snapshot carries the lock changes, so the next read does not ask
+	// Bungie for a profile that might predate them.
+	got, isError = call(t, f.h.handleListItems, ListItemsInput{})
+	assert.False(t, isError)
+	assert.Contains(t, got, "1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 | Vault |  | locked\n")
+	assert.Contains(t, got, "1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 | Hunter |  | locked")
+	assert.Contains(t, got, "1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 | Vault | keep | "+
+		"favorite, masterwork, note\n")
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+}
+
+func TestSetLockToolErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		bungieError string
+		want        string
+		in          SetLockInput
+	}{
+		"bungie refuses": {
+			in:          SetLockInput{InstanceIDs: []string{"1002"}, Locked: true},
+			bungieError: `{"ErrorCode": 1623, "ErrorStatus": "DestinyItemNotFound", "Message": "gone"}`,
+			want: "- Gjallarhorn (1002) did not lock: setting the lock state: " +
+				"bungie: DestinyItemNotFound: gone.",
+		},
+		"unknown instance rejects the batch": {
+			in:   SetLockInput{InstanceIDs: []string{"1002", "9"}, Locked: true},
+			want: "invalid input: no item in the inventory has the instance id 9",
+		},
+		"no ids": {
+			in:   SetLockInput{Locked: true},
+			want: "invalid input: pass between 1 and 200 instance ids",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.bungieError = tc.bungieError
+
+			got, isError := call(t, f.h.handleSetLock, tc.in)
+			assert.True(t, isError)
+			assert.Equal(t, tc.want, got)
+
+			item, ok := f.h.snapshot.Find("1002")
+			require.True(t, ok)
+			assert.False(t, item.Locked)
+		})
+	}
+}
+
+func TestSetLockToolSnapshotAge(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+	require.False(t, isError)
+
+	later := fixtureNow.Add(10 * time.Second)
+	f.h.now = func() time.Time { return later }
+
+	stuck, ok := f.h.snapshot.Find("1003")
+	require.True(t, ok)
+
+	stuck.Lockable = false
+	refusal := "- Midnight Coup (1003) did not lock: cannot change the lock: Midnight Coup cannot be locked."
+
+	got, isError := call(t, f.h.handleSetLock, SetLockInput{InstanceIDs: []string{"1003"}, Locked: true})
+	assert.True(t, isError)
+	assert.Equal(t, refusal, got)
+	assert.Empty(t, f.bungie.calls(http.MethodPost, pathLock))
+	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a call that changed nothing keeps the age of the snapshot")
+
+	got, isError = call(t, f.h.handleSetLock, SetLockInput{InstanceIDs: []string{"1003", "1002"}, Locked: true})
+	assert.False(t, isError, "one item locked")
+	assert.Equal(t, refusal+"\n- Locked Gjallarhorn (1002).", got)
+	assert.Equal(t, later, f.h.snapshot.Fetched, "a lock change restarts the age of the snapshot")
 }
 
 func TestSetTag(t *testing.T) {

@@ -99,10 +99,10 @@ type Item struct {
 	Note         string
 	Perks        []Perk
 	Stats        []Stat
-	Hash         uint32
 	ClassType    int
 	Power        int
 	Quantity     int
+	Hash         uint32
 	Equipped     bool
 	Postmaster   bool
 	Locked       bool
@@ -110,12 +110,13 @@ type Item struct {
 	Crafted      bool
 	Transferable bool
 	Equippable   bool
+	Lockable     bool
 	Favorite     bool
 }
 
 // Snapshot is the inventory of every character and the vault at one moment.
-// Moves update it in place, because Bungie can serve the state from before
-// a move for some seconds after the move.
+// Moves and lock changes update it in place, because Bungie can serve the
+// state from before a change for some seconds after the change.
 type Snapshot struct {
 	Fetched    time.Time
 	byID       map[string]*Item
@@ -213,6 +214,7 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 		Crafted:      pi.State&stateCrafted != 0,
 		Transferable: transferable,
 		Equippable:   def.Equippable,
+		Lockable:     pi.Lockable,
 	}
 
 	if def.ClassType != classAny {

@@ -21,15 +21,28 @@ const (
 	markDigits = 20
 )
 
-// ErrMove reports a move that the inventory state forbids before any Bungie
-// request, such as a transfer of an item that is not transferable.
-var ErrMove = errors.New("cannot move")
+var (
+	// ErrMove reports a move that the inventory state forbids before any
+	// Bungie request, such as a transfer of an item that is not
+	// transferable.
+	ErrMove = errors.New("cannot move")
+
+	// ErrLock reports a lock change that the inventory state forbids
+	// before any Bungie request, such as a lock of an item that Bungie
+	// does not let the player lock.
+	ErrLock = errors.New("cannot change the lock")
+)
 
 // ItemMover performs the Bungie item actions that a move consists of.
 type ItemMover interface {
 	Transfer(ctx context.Context, action ItemAction, toVault bool) error
 	Equip(ctx context.Context, action ItemAction) error
 	PullFromPostmaster(ctx context.Context, action ItemAction) error
+}
+
+// ItemLocker performs the Bungie request that locks or unlocks an item.
+type ItemLocker interface {
+	SetLockState(ctx context.Context, action ItemAction, locked bool) error
 }
 
 // Move brings item to target, which is "vault" or a character id, and
@@ -346,6 +359,39 @@ func (s *Snapshot) MoveStack(
 	}
 
 	return name, moved, nil
+}
+
+// SetLock locks item in the live game when locked is set, and unlocks it
+// otherwise. It records the new state in the snapshot when Bungie accepts
+// the change.
+//
+// Bungie requires a character in every lock request. An item in the vault
+// belongs to no character, so SetLock names the most recently played one,
+// as Destiny Item Manager does.
+func (s *Snapshot) SetLock(ctx context.Context, locker ItemLocker, item *Item, locked bool) error {
+	if !item.Lockable {
+		return fmt.Errorf("%w: %s cannot be locked", ErrLock, item.Name)
+	}
+
+	action := ItemAction{InstanceID: item.InstanceID, ItemHash: item.Hash, CharacterID: item.Owner}
+
+	_, owned := s.Character(item.Owner)
+	if !owned {
+		if len(s.Characters) == 0 {
+			return fmt.Errorf("%w: the account has no character to name in the request", ErrLock)
+		}
+
+		action.CharacterID = s.Characters[0].ID
+	}
+
+	err := locker.SetLockState(ctx, action, locked)
+	if err != nil {
+		return fmt.Errorf("setting the lock state: %w", err)
+	}
+
+	item.Locked = locked
+
+	return nil
 }
 
 // NewestMark returns the highest instance id among the equippable items, in

@@ -33,11 +33,12 @@ const (
 // fixtureProfile is a Bungie profile response body. The Hunter has the
 // latest play date. It has a hand cannon and a helmet equipped, a second
 // hand cannon in its inventory, and a third at the Postmaster. The vault
-// holds a hand cannon with sockets and stats and a rocket launcher.
+// holds a hand cannon with sockets and stats and a rocket launcher. Every
+// instanced item is lockable, and the vault hand cannon is locked.
 const fixtureProfile = `{
 	"profileInventory": {"data": {"items": [
-		{"itemHash": 100, "itemInstanceId": "1001", "quantity": 1, "location": 2, "bucketHash": 138197802, "state": 5},
-		{"itemHash": 101, "itemInstanceId": "1002", "quantity": 1, "location": 2, "bucketHash": 138197802},
+		{"itemHash": 100, "itemInstanceId": "1001", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802, "state": 5},
+		{"itemHash": 101, "itemInstanceId": "1002", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802},
 		{"itemHash": 300, "quantity": 42, "location": 1, "bucketHash": 1469714392}
 	]}},
 	"characters": {"data": {
@@ -46,15 +47,15 @@ const fixtureProfile = `{
 	}},
 	"characterInventories": {"data": {
 		"c1": {"items": [
-			{"itemHash": 102, "itemInstanceId": "1003", "quantity": 1, "location": 1, "bucketHash": 1498876634},
-			{"itemHash": 100, "itemInstanceId": "1005", "quantity": 1, "location": 4, "bucketHash": 215593132, "transferStatus": 2}
+			{"itemHash": 102, "itemInstanceId": "1003", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 1498876634},
+			{"itemHash": 100, "itemInstanceId": "1005", "lockable": true, "quantity": 1, "location": 4, "bucketHash": 215593132, "transferStatus": 2}
 		]},
 		"c2": {"items": []}
 	}},
 	"characterEquipment": {"data": {
 		"c1": {"items": [
-			{"itemHash": 200, "itemInstanceId": "1004", "quantity": 1, "location": 1, "bucketHash": 3448274439, "transferStatus": 1},
-			{"itemHash": 100, "itemInstanceId": "1006", "quantity": 1, "location": 1, "bucketHash": 1498876634, "transferStatus": 1}
+			{"itemHash": 200, "itemInstanceId": "1004", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 3448274439, "transferStatus": 1},
+			{"itemHash": 100, "itemInstanceId": "1006", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 1498876634, "transferStatus": 1}
 		]},
 		"c2": {"items": []}
 	}},

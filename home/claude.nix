@@ -3478,6 +3478,7 @@ in
         permissions.ask = [
           "mcp__destiny__move_items"
           "mcp__destiny__move_stack"
+          "mcp__destiny__set_lock"
           "mcp__destiny__set_tag"
           "mcp__destiny__set_favorite"
           "mcp__destiny__set_note"

@@ -50,6 +50,15 @@ func (m *stepMover) PullFromPostmaster(_ context.Context, action ItemAction) err
 	return m.step("pull to " + action.CharacterID)
 }
 
+func (m *stepMover) SetLockState(_ context.Context, action ItemAction, locked bool) error {
+	name := "unlock "
+	if locked {
+		name = "lock "
+	}
+
+	return m.step(name + action.InstanceID + " on " + action.CharacterID)
+}
+
 func TestMove(t *testing.T) {
 	t.Parallel()
 
@@ -416,6 +425,98 @@ func TestMoveStackStopsHalfway(t *testing.T) {
 	stacks, err := s.Filter(ItemFilter{Kind: kindOther})
 	require.NoError(t, err)
 	assert.Len(t, stacks, 2, "the emptied stack leaves the snapshot")
+}
+
+func TestSetLock(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		err          error
+		id           string
+		owner        string
+		fail         string
+		want         []string
+		locked       bool
+		wantLocked   bool
+		notLockable  bool
+		noCharacters bool
+	}{
+		"vault item names the most recently played character": {
+			id:         "1002",
+			locked:     true,
+			want:       []string{"lock 1002 on c1"},
+			wantLocked: true,
+		},
+		"unlock a vault item": {
+			id:   "1001",
+			want: []string{"unlock 1001 on c1"},
+		},
+		"character item names the character that holds it": {
+			id:         "1003",
+			owner:      titanID,
+			locked:     true,
+			want:       []string{"lock 1003 on c2"},
+			wantLocked: true,
+		},
+		"item that cannot be locked": {
+			id:          "1002",
+			locked:      true,
+			notLockable: true,
+			err:         ErrLock,
+		},
+		"account without a character": {
+			id:           "1002",
+			locked:       true,
+			noCharacters: true,
+			err:          ErrLock,
+		},
+		"bungie refuses a lock": {
+			id:     "1002",
+			locked: true,
+			fail:   "lock 1002 on c1",
+			err:    errStep,
+		},
+		"bungie refuses an unlock": {
+			id:         "1001",
+			fail:       "unlock 1001 on c1",
+			err:        errStep,
+			wantLocked: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := fixtureSnapshot(t)
+			mover := &stepMover{fail: tc.fail}
+
+			item, ok := s.Find(tc.id)
+			require.True(t, ok)
+
+			if tc.owner != "" {
+				item.Owner = tc.owner
+			}
+
+			if tc.notLockable {
+				item.Lockable = false
+			}
+
+			if tc.noCharacters {
+				s.Characters = nil
+			}
+
+			err := s.SetLock(t.Context(), mover, item, tc.locked)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, tc.want, mover.steps)
+			assert.Equal(t, tc.wantLocked, item.Locked)
+		})
+	}
 }
 
 func TestNewestMark(t *testing.T) {

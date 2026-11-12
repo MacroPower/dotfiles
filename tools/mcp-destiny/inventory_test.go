@@ -54,7 +54,13 @@ func TestNewSnapshot(t *testing.T) {
 		Masterwork:   true,
 		Transferable: true,
 		Equippable:   true,
+		Lockable:     true,
 	}, vaulted)
+
+	stacks, err := s.Filter(ItemFilter{Kind: kindOther})
+	require.NoError(t, err)
+	require.Len(t, stacks, 1)
+	assert.False(t, stacks[0].Lockable, "a stack is not lockable")
 
 	helmet, ok := s.Find("1004")
 	require.True(t, ok)

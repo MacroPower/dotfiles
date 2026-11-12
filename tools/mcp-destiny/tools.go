@@ -26,6 +26,7 @@ const (
 	toolGetItem             = "get_item"
 	toolMoveItems           = "move_items"
 	toolMoveStack           = "move_stack"
+	toolSetLock             = "set_lock"
 	toolListTags            = "list_tags"
 	toolSetTag              = "set_tag"
 	toolSetFavorite         = "set_favorite"
@@ -128,6 +129,12 @@ type MoveStackInput struct {
 	Amount   int    `json:"amount,omitzero" jsonschema:"Number of units to move (default: every unit outside the destination)"`
 }
 
+// SetLockInput is the input schema of the set_lock tool.
+type SetLockInput struct {
+	InstanceIDs []string `json:"instance_ids" jsonschema:"Instance ids from list_items"`
+	Locked      bool     `json:"locked"       jsonschema:"true to lock the items, false to unlock them"`
+}
+
 // SetAutotagEnabledInput is the input schema of the set_autotag_enabled
 // tool.
 type SetAutotagEnabledInput struct {
@@ -184,7 +191,8 @@ type RemoveAutotagRuleInput struct {
 }
 
 // handler holds the shared state of the tool handlers. The mutex serializes
-// tool calls, because moves update the cached snapshot in place.
+// tool calls, because moves and lock changes update the cached snapshot in
+// place.
 type handler struct {
 	service  *Service
 	bungie   *Bungie
@@ -463,6 +471,70 @@ func (h *handler) handleMoveStack(
 	}
 
 	return textResult(fmt.Sprintf("Moved %d of %s to the %s.", moved, name, target)), nil, nil
+}
+
+func (h *handler) handleSetLock(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in SetLockInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	s, err := h.loadSnapshot(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolSetLock, err)
+	}
+
+	items, err := findItems(s, in.InstanceIDs)
+	if err != nil {
+		return h.toolError(ctx, toolSetLock, err)
+	}
+
+	membership, err := h.membership(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolSetLock, err)
+	}
+
+	locker := bungieMover{h: h, membership: membership}
+	verb, done := "lock", "Locked"
+
+	if !in.Locked {
+		verb, done = "unlock", "Unlocked"
+	}
+
+	var b strings.Builder
+
+	failed := 0
+
+	for _, item := range items {
+		err := s.SetLock(ctx, locker, item, in.Locked)
+		if err != nil {
+			failed++
+
+			h.log.WarnContext(ctx, "lock change failed",
+				slog.String("instance_id", item.InstanceID),
+				slog.Any("error", err),
+			)
+			fmt.Fprintf(&b, "- %s (%s) did not %s: %v.\n", item.Name, item.InstanceID, verb, err)
+
+			continue
+		}
+
+		fmt.Fprintf(&b, "- %s %s (%s).\n", done, item.Name, item.InstanceID)
+	}
+
+	// Bungie can serve the lock state from before a change for some
+	// seconds. A snapshot that a change updated therefore stays in use for
+	// a full TTL.
+	if failed < len(items) {
+		s.Fetched = h.now()
+	}
+
+	result := textResult(strings.TrimRight(b.String(), "\n"))
+	result.IsError = failed == len(items)
+
+	return result, nil, nil
 }
 
 func (h *handler) handleListTags(
@@ -1302,8 +1374,8 @@ func (h *handler) bungieKey(ctx context.Context) (string, error) {
 	return h.apiKey, nil
 }
 
-// bungieMover adapts the handler to [ItemMover]. It adds the membership
-// and the credentials to each action.
+// bungieMover adapts the handler to [ItemMover] and [ItemLocker]. It adds
+// the membership and the credentials to each action.
 type bungieMover struct {
 	h          *handler
 	membership Membership
@@ -1333,6 +1405,15 @@ func (m bungieMover) PullFromPostmaster(ctx context.Context, action ItemAction) 
 
 	return m.h.withBungie(ctx, func(creds Credentials) error {
 		return m.h.bungie.PullFromPostmaster(ctx, creds, action)
+	})
+}
+
+// SetLockState implements [ItemLocker].
+func (m bungieMover) SetLockState(ctx context.Context, action ItemAction, locked bool) error {
+	action.Membership = m.membership
+
+	return m.h.withBungie(ctx, func(creds Credentials) error {
+		return m.h.bungie.SetLockState(ctx, creds, action, locked)
 	})
 }
 

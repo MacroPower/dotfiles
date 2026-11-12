@@ -348,6 +348,13 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleMoveStack)
 
 	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolSetLock,
+		Description: "Lock or unlock item instances in the live game. The game does not let the player " +
+			"dismantle a locked item. list_items and get_item show the lock as the locked flag.",
+		Annotations: additive,
+	}, h.handleSetLock)
+
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolListTags,
 		Description: "List the tag ids of Agg's Destiny Vault Manager with the number of held items that carry each one.",
 		Annotations: readOnly,

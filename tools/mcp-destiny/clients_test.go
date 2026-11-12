@@ -370,6 +370,8 @@ func TestBungieActions(t *testing.T) {
 	require.NoError(t, b.Transfer(t.Context(), creds, action, true))
 	require.NoError(t, b.Equip(t.Context(), creds, action))
 	require.NoError(t, b.PullFromPostmaster(t.Context(), creds, action))
+	require.NoError(t, b.SetLockState(t.Context(), creds, action, true))
+	require.NoError(t, b.SetLockState(t.Context(), creds, action, false))
 
 	transfer := rec.calls(http.MethodPost, "/Destiny2/Actions/Items/TransferItem/")
 	require.Len(t, transfer, 1)
@@ -399,4 +401,14 @@ func TestBungieActions(t *testing.T) {
 		"characterId":       hunterID,
 		"membershipType":    float64(3),
 	}, pull[0].Body)
+
+	locks := rec.calls(http.MethodPost, "/Destiny2/Actions/Items/SetLockState/")
+	require.Len(t, locks, 2)
+	assert.Equal(t, map[string]any{
+		"state":          true,
+		"itemId":         "1001",
+		"characterId":    hunterID,
+		"membershipType": float64(3),
+	}, locks[0].Body)
+	assert.Equal(t, false, locks[1].Body["state"])
 }
