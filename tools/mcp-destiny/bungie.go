@@ -193,25 +193,12 @@ type ItemAction struct {
 	ItemHash    uint32
 }
 
-// BungieOption configures a [*Bungie]. See [WithBungieURL],
-// [WithBungieHTTPClient], and [WithBungieUserAgent].
+// BungieOption configures a [*Bungie]. See [WithBungieURL].
 type BungieOption func(*Bungie)
 
 // WithBungieURL overrides the platform base URL. It is a [BungieOption].
 func WithBungieURL(u string) BungieOption {
 	return func(b *Bungie) { b.baseURL = strings.TrimRight(u, "/") }
-}
-
-// WithBungieHTTPClient overrides the underlying [*http.Client]. It is a
-// [BungieOption].
-func WithBungieHTTPClient(hc *http.Client) BungieOption {
-	return func(b *Bungie) { b.http = hc }
-}
-
-// WithBungieUserAgent overrides the User-Agent header. It is a
-// [BungieOption].
-func WithBungieUserAgent(ua string) BungieOption {
-	return func(b *Bungie) { b.userAgent = ua }
 }
 
 // Bungie is the HTTP client for the Bungie platform API. Every request

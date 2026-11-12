@@ -130,26 +130,13 @@ type AutotagSnapshot struct {
 	Rules []AutotagRule `json:"rules"`
 }
 
-// ServiceOption configures a [*Service]. See [WithServiceURL],
-// [WithServiceHTTPClient], and [WithServiceUserAgent].
+// ServiceOption configures a [*Service]. See [WithServiceURL].
 type ServiceOption func(*Service)
 
 // WithServiceURL overrides the base URL of Agg's Destiny Vault Manager. It
 // is a [ServiceOption].
 func WithServiceURL(u string) ServiceOption {
 	return func(s *Service) { s.baseURL = strings.TrimRight(u, "/") }
-}
-
-// WithServiceHTTPClient overrides the underlying [*http.Client]. It is a
-// [ServiceOption].
-func WithServiceHTTPClient(hc *http.Client) ServiceOption {
-	return func(s *Service) { s.http = hc }
-}
-
-// WithServiceUserAgent overrides the User-Agent header. It is a
-// [ServiceOption].
-func WithServiceUserAgent(ua string) ServiceOption {
-	return func(s *Service) { s.userAgent = ua }
 }
 
 // Service is the HTTP client for Agg's Destiny Vault Manager. The deployment
