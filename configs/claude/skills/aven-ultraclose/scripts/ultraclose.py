@@ -35,7 +35,8 @@ SETTLED = ("landed", "closed")
 PRIORITY = {"urgent": 0, "high": 1, "medium": 2, "low": 3, "none": 4}
 # Files that match a shared glob hold no lock, so two running tasks may
 # both edit them. The scheduler matches each glob against "/" plus the
-# path relative to the repository.
+# path relative to the repository. The run config holds these globs
+# plus the glob of each init --shared flag.
 DEFAULT_SHARED = [
     "*_test.*",
     "*/test_*",
@@ -202,7 +203,7 @@ def cmd_init(a):
         "limit": a.limit,
         "rounds": a.rounds,
         "check": a.check,
-        "shared": a.shared or DEFAULT_SHARED,
+        "shared": list(dict.fromkeys(DEFAULT_SHARED + (a.shared or []))),
         "diskFloorGb": a.disk_floor_gb,
     }
     (run / "state.json").write_text(json.dumps({"config": cfg, "tasks": {}}))
@@ -516,7 +517,12 @@ def main():
     s.add_argument("--limit", type=int, default=5)
     s.add_argument("--rounds", type=int, default=6)
     s.add_argument("--check", default="")
-    s.add_argument("--shared", action="append")
+    s.add_argument(
+        "--shared",
+        action="append",
+        metavar="GLOB",
+        help="add a glob to the default test-file globs",
+    )
     s.add_argument("--disk-floor-gb", type=float, default=30)
     s.add_argument("--force", action="store_true")
     s.set_defaults(fn=cmd_init)

@@ -63,8 +63,8 @@ approved task.
 4. Run `ultraclose.py init --run <scratchpad>/ultraclose --limit <N>`. Pass
    `--check '<command>'` with the full check of the project, unless the
    commit hook already runs that check. Pass `--shared <glob>` for each kind
-   of file that two running tasks may both edit. The default covers test
-   files.
+   of file that two running tasks may both edit. Each `--shared` glob adds to
+   the default globs, which cover test files.
 5. Write `rules.md` in the run directory. Every agent reads it, so state
    each rule as an instruction:
    - The commands that build, test, and run the full check.
