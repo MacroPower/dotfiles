@@ -290,6 +290,14 @@ func (s *Snapshot) MoveStack(
 		return name, 0, fmt.Errorf("%w: the account has no character to name in the transfer", ErrMove)
 	}
 
+	// A stack that a transfer emptied leaves the snapshot, also when a
+	// later transfer fails.
+	defer func() {
+		s.Items = slices.DeleteFunc(s.Items, func(item *Item) bool {
+			return item.InstanceID == "" && item.Quantity <= 0
+		})
+	}()
+
 	moved := 0
 
 	for _, source := range sources {
@@ -336,10 +344,6 @@ func (s *Snapshot) MoveStack(
 
 		dest.Quantity += units
 	}
-
-	s.Items = slices.DeleteFunc(s.Items, func(item *Item) bool {
-		return item.InstanceID == "" && item.Quantity <= 0
-	})
 
 	return name, moved, nil
 }

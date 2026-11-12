@@ -393,6 +393,31 @@ func TestMoveStackErrors(t *testing.T) {
 	}
 }
 
+func TestMoveStackStopsHalfway(t *testing.T) {
+	t.Parallel()
+
+	s := fixtureSnapshot(t)
+
+	s.Items = append(s.Items, &Item{
+		Hash:         300,
+		Name:         "Enhancement Core",
+		Kind:         kindOther,
+		Owner:        ownerAccount,
+		Quantity:     8,
+		Transferable: true,
+	})
+
+	_, moved, err := s.MoveStack(t.Context(), &stepMover{fail: "to vault from c1 x8"}, 300, 0, true)
+	require.ErrorIs(t, err, errStep)
+	assert.Equal(t, 42, moved)
+	assert.Equal(t, 42, stackUnits(s, ownerVault))
+	assert.Equal(t, 8, stackUnits(s, ownerAccount))
+
+	stacks, err := s.Filter(ItemFilter{Kind: kindOther})
+	require.NoError(t, err)
+	assert.Len(t, stacks, 2, "the emptied stack leaves the snapshot")
+}
+
 func TestNewestMark(t *testing.T) {
 	t.Parallel()
 
