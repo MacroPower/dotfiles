@@ -5,6 +5,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -916,6 +918,20 @@ func TestReadLine(t *testing.T) {
 
 	_, err = readLine(ctx, blocked)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestOpenLoggerDirectory(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), "state")
+
+	_, closeLog, err := openLogger(filepath.Join(dir, "destiny.log"))
+	require.NoError(t, err)
+	t.Cleanup(closeLog)
+
+	info, err := os.Stat(dir)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
 }
 
 func TestDispatch(t *testing.T) {

@@ -416,7 +416,9 @@ func openLogger(path string) (*slog.Logger, func(), error) {
 		return slog.New(slog.DiscardHandler), func() {}, nil
 	}
 
-	err := os.MkdirAll(filepath.Dir(path), 0o755)
+	// The log file can share the directory of the token file, so only the
+	// owner can enter a directory that this call creates.
+	err := os.MkdirAll(filepath.Dir(path), 0o700)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating log directory: %w", err)
 	}
