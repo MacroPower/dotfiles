@@ -597,8 +597,10 @@ func TestSetNote(t *testing.T) {
 	tests := map[string]struct {
 		wantBody map[string]any
 		want     string
-		in       SetNoteInput
-		isError  bool
+		// notes replaces the notes that the fake service stores.
+		notes   string
+		in      SetNoteInput
+		isError bool
 	}{
 		"instance note carries the item hash": {
 			in:   SetNoteInput{TargetID: "1002", Body: "keep for raids"},
@@ -620,6 +622,21 @@ func TestSetNote(t *testing.T) {
 			want:    "invalid input: no item in the inventory has the instance id 9",
 			isError: true,
 		},
+		"removal takes the item hash of the stored note": {
+			in: SetNoteInput{TargetID: "9"},
+			notes: `{"notes": [
+				{"kind": "instance", "targetId": "9", "itemHash": 555, "body": "dismantled", "removed": false}
+			]}`,
+			want: "Removed the note.",
+			wantBody: map[string]any{
+				"kind": "instance", "targetId": "9", "itemHash": float64(555), "body": "", "removed": true,
+			},
+		},
+		"removal of an unknown instance without a note": {
+			in:      SetNoteInput{TargetID: "9"},
+			want:    "invalid input: no item in the inventory and no saved note has the instance id 9",
+			isError: true,
+		},
 		"unknown kind": {
 			in:      SetNoteInput{TargetID: "1001", Kind: "vendor", Body: "x"},
 			want:    `invalid input: kind "vendor" is not instance, item, or set`,
@@ -637,6 +654,9 @@ func TestSetNote(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
+			if tc.notes != "" {
+				f.serviceData[pathNotes] = tc.notes
+			}
 
 			got, isError := call(t, f.h.handleSetNote, tc.in)
 			assert.Equal(t, tc.isError, isError)

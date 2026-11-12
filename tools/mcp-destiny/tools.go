@@ -637,19 +637,32 @@ func (h *handler) handleSetNote(
 
 	change := Note{Kind: kind, TargetID: in.TargetID, Body: body, Removed: body == ""}
 
+	var item *Item
+
 	if kind == noteInstance {
 		s, err := h.loadSnapshot(ctx, false)
 		if err != nil {
 			return h.toolError(ctx, toolSetNote, err)
 		}
 
-		item, ok := s.Find(in.TargetID)
-		if !ok {
+		found, ok := s.Find(in.TargetID)
+
+		switch {
+		case ok:
+			item = found
+			change.ItemHash = &item.Hash
+
+		case change.Removed:
+			// The service requires an item hash, and the item left the
+			// inventory, so the stored note supplies the hash.
+			change.ItemHash, err = h.noteItemHash(ctx, in.TargetID)
+			if err != nil {
+				return h.toolError(ctx, toolSetNote, err)
+			}
+
+		default:
 			return h.toolError(ctx, toolSetNote, unknownInstances([]string{in.TargetID}))
 		}
-
-		change.ItemHash = &item.Hash
-		item.Note = body
 	}
 
 	err := h.withSession(ctx, func(session string) error {
@@ -657,6 +670,10 @@ func (h *handler) handleSetNote(
 	})
 	if err != nil {
 		return h.toolError(ctx, toolSetNote, err)
+	}
+
+	if item != nil {
+		item.Note = body
 	}
 
 	if change.Removed {
@@ -1130,6 +1147,34 @@ func (h *handler) writeTags(ctx context.Context, changes []ItemTag) error {
 	}
 
 	return nil
+}
+
+// noteItemHash returns the item hash that the service stores with the
+// instance note of instanceID.
+func (h *handler) noteItemHash(ctx context.Context, instanceID string) (*uint32, error) {
+	var notes []Note
+
+	err := h.withSession(ctx, func(session string) error {
+		var err error
+
+		notes, err = h.service.Notes(ctx, session)
+
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reading notes: %w", err)
+	}
+
+	for _, note := range notes {
+		if note.Kind == noteInstance && note.TargetID == instanceID && !note.Removed && note.ItemHash != nil {
+			return note.ItemHash, nil
+		}
+	}
+
+	return nil, fmt.Errorf(
+		"%w: no item in the inventory and no saved note has the instance id %s",
+		ErrInvalidInput, instanceID,
+	)
 }
 
 func (h *handler) perkPreferences(ctx context.Context) ([]PerkPreference, error) {
