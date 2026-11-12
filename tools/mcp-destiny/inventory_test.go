@@ -43,7 +43,11 @@ func TestNewSnapshot(t *testing.T) {
 		Quantity:   1,
 		Perks: []Perk{
 			{Name: "Explosive Payload", Type: "Trait", Options: []string{"Rampage"}},
-			{Name: "Firefly", Type: "Trait"},
+			{
+				Name:        "Firefly",
+				Type:        "Trait",
+				Description: "Precision final blows cause targets to explode.\n\n Explosions deal Solar damage. ",
+			},
 		},
 		Stats:        []Stat{{Name: "Range", Value: 55}},
 		Locked:       true,

@@ -242,6 +242,8 @@ func TestGetItem(t *testing.T) {
 		"Perks:",
 		"- Explosive Payload (Trait), can swap to Rampage",
 		"- Firefly (Trait)",
+		"  Precision final blows cause targets to explode.",
+		"  Explosions deal Solar damage.",
 		"",
 		"Stats:",
 		"- Range: 55",

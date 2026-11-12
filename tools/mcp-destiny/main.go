@@ -325,8 +325,9 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleListItems)
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        toolGetItem,
-		Description: "Show one item instance in full: perks with the alternatives each socket can swap to, stats, tag, note, and location.",
+		Name: toolGetItem,
+		Description: "Show one item instance in full: perks with their descriptions and the alternatives each socket can swap to, " +
+			"stats, tag, note, and location.",
 		Annotations: readOnly,
 	}, h.handleGetItem)
 

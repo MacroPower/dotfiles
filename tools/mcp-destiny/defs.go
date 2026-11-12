@@ -22,7 +22,7 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v1-"
+	defsCachePrefix = "defs-v2-"
 
 	artifactCore    = "core"
 	artifactBuckets = "InventoryBucket"
@@ -31,10 +31,12 @@ const (
 	artifactStats   = "Stat"
 )
 
-// Bungie DestinyItemType values that classify gear.
+// Bungie DestinyItemType values that classify gear and plugs. Bungie
+// names the plug type Mod, and weapon perks carry it too.
 const (
 	itemTypeArmor  = 2
 	itemTypeWeapon = 3
+	itemTypePlug   = 19
 )
 
 // classAny is the Bungie DestinyClass value of an item that every class can
@@ -47,8 +49,11 @@ var ErrDefs = errors.New("definitions")
 
 // ItemDef is the subset of a Bungie inventory item definition that the
 // server reads. Perks, mods, and shaders are item definitions too.
+// The loader keeps Description only for plugs, so the cache file stays
+// small.
 type ItemDef struct {
 	Name            string `json:"name"`
+	Description     string `json:"description,omitempty"`
 	TypeName        string `json:"type,omitempty"`
 	Tier            string `json:"tier,omitempty"`
 	ItemType        int    `json:"itemType,omitempty"`
@@ -260,7 +265,8 @@ func (l *DefsLoader) read(ctx context.Context, file string, decode func(io.Reade
 type rawItem struct {
 	EquippingBlock    *struct{} `json:"equippingBlock"`
 	DisplayProperties struct {
-		Name string `json:"name"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
 	} `json:"displayProperties"`
 	ItemTypeDisplayName string `json:"itemTypeDisplayName"`
 	Inventory           struct {
@@ -296,7 +302,7 @@ func decodeItems(r io.Reader, items map[uint32]ItemDef) error {
 			return fmt.Errorf("reading item record: %w", err)
 		}
 
-		items[raw.Hash] = ItemDef{
+		def := ItemDef{
 			Name:            raw.DisplayProperties.Name,
 			TypeName:        raw.ItemTypeDisplayName,
 			Tier:            raw.Inventory.TierTypeName,
@@ -307,6 +313,12 @@ func decodeItems(r io.Reader, items map[uint32]ItemDef) error {
 			NonTransferable: raw.Inventory.NonTransferrableOriginal,
 			Equippable:      raw.EquippingBlock != nil,
 		}
+
+		if raw.ItemType == itemTypePlug {
+			def.Description = raw.DisplayProperties.Description
+		}
+
+		items[raw.Hash] = def
 	}
 
 	return nil
@@ -383,9 +395,10 @@ func (l *DefsLoader) readCache(ctx context.Context, version string) (*Defs, bool
 	return &defs, true
 }
 
-// writeCache saves defs and deletes the cache files of other manifest
-// versions. A cache failure costs only the next process a download, so
-// writeCache logs it and continues.
+// writeCache saves defs and deletes every other cache file, both those of
+// other manifest versions and those of other layouts. A cache failure
+// costs only the next process a download, so writeCache logs it and
+// continues.
 func (l *DefsLoader) writeCache(ctx context.Context, defs *Defs) {
 	if l.cacheDir == "" {
 		return
@@ -403,7 +416,9 @@ func (l *DefsLoader) writeCache(ctx context.Context, defs *Defs) {
 		return
 	}
 
-	old, err := filepath.Glob(filepath.Join(l.cacheDir, defsCachePrefix+"*.json"))
+	// The pattern matches the cache files of every layout, so a bump of
+	// defsCachePrefix also removes the files of the old layout.
+	old, err := filepath.Glob(filepath.Join(l.cacheDir, "defs-v*.json"))
 	if err != nil {
 		return
 	}

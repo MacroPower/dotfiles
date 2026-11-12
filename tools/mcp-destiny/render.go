@@ -195,6 +195,7 @@ func renderItem(s *Snapshot, item *Item) string {
 			}
 
 			b.WriteString("\n")
+			writeDescription(&b, perk.Description)
 		}
 	}
 
@@ -207,6 +208,18 @@ func renderItem(s *Snapshot, item *Item) string {
 	}
 
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// writeDescription writes each line of a perk description indented under
+// its list item. It drops the blank lines between paragraphs, so the perk
+// list has no gaps.
+func writeDescription(b *strings.Builder, description string) {
+	for line := range strings.Lines(description) {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			fmt.Fprintf(b, "  %s\n", line)
+		}
+	}
 }
 
 func writeField(b *strings.Builder, label, value string) {

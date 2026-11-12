@@ -58,11 +58,14 @@ var (
 )
 
 // Perk is one plug in a visible socket of an item, such as a weapon trait
-// or an armor mod. Options names the other plugs that the socket can hold.
+// or an armor mod. Description is the text of the plug definition, which
+// is empty for some plugs. Options names the other plugs that the socket
+// can hold.
 type Perk struct {
-	Name    string
-	Type    string
-	Options []string
+	Name        string
+	Type        string
+	Description string
+	Options     []string
 }
 
 // Stat is one named stat value of an item instance.
@@ -261,7 +264,7 @@ func perksOf(profile *Profile, defs *Defs, instanceID string) []Perk {
 			continue
 		}
 
-		perk := Perk{Name: plug.Name, Type: plug.TypeName}
+		perk := Perk{Name: plug.Name, Type: plug.TypeName, Description: plug.Description}
 
 		for _, option := range options[strconv.Itoa(i)] {
 			def, ok := defs.Items[option.Hash]

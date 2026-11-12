@@ -19,3 +19,4 @@ lima/result*
 .direnv/
 .task/
 tools/mcp-git/mcp-git
+tools/mcp-destiny/mcp-destiny

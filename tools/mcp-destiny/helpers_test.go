@@ -99,8 +99,11 @@ func fixtureDefs() *Defs {
 	}
 
 	plug := func(name, typeName string) ItemDef {
-		return ItemDef{Name: name, TypeName: typeName, ItemType: 19, ClassType: classAny}
+		return ItemDef{Name: name, TypeName: typeName, ItemType: itemTypePlug, ClassType: classAny}
 	}
+
+	firefly := plug("Firefly", "Trait")
+	firefly.Description = "Precision final blows cause targets to explode.\n\n Explosions deal Solar damage. "
 
 	return &Defs{
 		Version: "v1",
@@ -125,7 +128,7 @@ func fixtureDefs() *Defs {
 				ClassType: classAny,
 			},
 			900: plug("Explosive Payload", "Trait"),
-			901: plug("Firefly", "Trait"),
+			901: firefly,
 			902: plug("Default Shader", "Restore Defaults"),
 			903: plug("Rampage", "Trait"),
 			904: plug("Kill Clip", "Trait"),
