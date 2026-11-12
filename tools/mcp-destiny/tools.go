@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -623,7 +624,7 @@ func (h *handler) handleSetNote(
 			fmt.Errorf("%w: kind %q is not instance, item, or set", ErrInvalidInput, in.Kind))
 	}
 
-	if in.TargetID == "" || len([]rune(in.Body)) > maxNoteLength {
+	if in.TargetID == "" || utf16Len(in.Body) > maxNoteLength {
 		return h.toolError(ctx, toolSetNote, fmt.Errorf(
 			"%w: a note needs a target_id and a body of at most %d characters",
 			ErrInvalidInput, maxNoteLength,
@@ -992,7 +993,7 @@ func mergeRule(rules []AutotagRule, in SaveAutotagRuleInput) (AutotagRule, error
 		rule.Position = *in.Position
 	}
 
-	if rule.Query == "" || len(rule.Query) > maxQueryLength {
+	if rule.Query == "" || utf16Len(rule.Query) > maxQueryLength {
 		return AutotagRule{}, fmt.Errorf(
 			"%w: a rule query has between 1 and %d characters", ErrInvalidInput, maxQueryLength,
 		)
@@ -1284,6 +1285,18 @@ func (h *handler) withSession(ctx context.Context, fn func(session string) error
 	}
 
 	return fn(t.Session)
+}
+
+// utf16Len returns the length of s in UTF-16 code units. The service
+// enforces its length limits in that unit.
+func utf16Len(s string) int {
+	n := 0
+
+	for _, r := range s {
+		n += utf16.RuneLen(r)
+	}
+
+	return n
 }
 
 func (h *handler) bungieKey(ctx context.Context) (string, error) {

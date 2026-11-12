@@ -669,6 +669,11 @@ func TestSetNote(t *testing.T) {
 			want:    "invalid input: a note needs a target_id and a body of at most 2000 characters",
 			isError: true,
 		},
+		"body too long in UTF-16 code units": {
+			in:      SetNoteInput{TargetID: "1001", Body: strings.Repeat("\U0001F600", maxNoteLength/2+1)},
+			want:    "invalid input: a note needs a target_id and a body of at most 2000 characters",
+			isError: true,
+		},
 	}
 
 	for name, tc := range tests {
@@ -800,6 +805,10 @@ func TestSaveAutotagRule(t *testing.T) {
 	yes := true
 	position := 0
 
+	// The query is 600 UTF-16 code units and 1800 bytes.
+	wide := strings.Repeat("\u706b", 600)
+	long := strings.Repeat("\U0001F600", maxQueryLength/2+1)
+
 	tests := map[string]struct {
 		wantRule map[string]any
 		want     string
@@ -844,6 +853,18 @@ func TestSaveAutotagRule(t *testing.T) {
 		},
 		"empty query": {
 			in:      SaveAutotagRuleInput{ID: "r1", Query: &empty},
+			want:    "invalid input: a rule query has between 1 and 1000 characters",
+			isError: true,
+		},
+		"query within the limit in UTF-16 code units": {
+			in: SaveAutotagRuleInput{ID: "r1", Query: &wide},
+			wantRule: map[string]any{
+				"id": "r1", "query": wide, "tagId": "pve", "vault": false,
+				"enabled": true, "position": float64(0), "removed": false,
+			},
+		},
+		"query too long in UTF-16 code units": {
+			in:      SaveAutotagRuleInput{ID: "r1", Query: &long},
 			want:    "invalid input: a rule query has between 1 and 1000 characters",
 			isError: true,
 		},
