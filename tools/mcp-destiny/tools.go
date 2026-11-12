@@ -1115,16 +1115,18 @@ func (h *handler) loadAnnotated(ctx context.Context, refresh bool) (*Snapshot, [
 	)
 
 	err = h.withSession(ctx, func(session string) error {
-		var err error
+		var (
+			wg       sync.WaitGroup
+			tagsErr  error
+			notesErr error
+		)
 
-		tags, err = h.service.Tags(ctx, session)
-		if err != nil {
-			return err
-		}
+		// The two reads are independent, so they share one wait.
+		wg.Go(func() { tags, tagsErr = h.service.Tags(ctx, session) })
+		wg.Go(func() { notes, notesErr = h.service.Notes(ctx, session) })
+		wg.Wait()
 
-		notes, err = h.service.Notes(ctx, session)
-
-		return err
+		return errors.Join(tagsErr, notesErr)
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading tags and notes: %w", err)
