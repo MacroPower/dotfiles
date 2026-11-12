@@ -590,15 +590,7 @@ func (h *handler) handleListNotes(
 		return h.toolError(ctx, toolListNotes, err)
 	}
 
-	var notes []Note
-
-	err = h.withSession(ctx, func(session string) error {
-		var err error
-
-		notes, err = h.service.Notes(ctx, session)
-
-		return err
-	})
+	notes, err := h.notes(ctx)
 	if err != nil {
 		return h.toolError(ctx, toolListNotes, err)
 	}
@@ -846,14 +838,8 @@ func (h *handler) handleSetAutotagEnabled(
 		mark = s.NewestMark()
 	}
 
-	applied := false
-
-	err := h.withSession(ctx, func(session string) error {
-		var err error
-
-		applied, err = h.service.SetAutotagEnabled(ctx, session, in.Enabled, mark)
-
-		return err
+	applied, err := sessionValue(ctx, h, func(session string) (bool, error) {
+		return h.service.SetAutotagEnabled(ctx, session, in.Enabled, mark)
 	})
 	if err != nil {
 		return h.toolError(ctx, toolSetAutotagEnabled, err)
@@ -1155,15 +1141,7 @@ func (h *handler) writeTags(ctx context.Context, changes []ItemTag) error {
 // noteItemHash returns the item hash that the service stores with the
 // instance note of instanceID.
 func (h *handler) noteItemHash(ctx context.Context, instanceID string) (*uint32, error) {
-	var notes []Note
-
-	err := h.withSession(ctx, func(session string) error {
-		var err error
-
-		notes, err = h.service.Notes(ctx, session)
-
-		return err
-	})
+	notes, err := h.notes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("reading notes: %w", err)
 	}
@@ -1180,32 +1158,22 @@ func (h *handler) noteItemHash(ctx context.Context, instanceID string) (*uint32,
 	)
 }
 
-func (h *handler) perkPreferences(ctx context.Context) ([]PerkPreference, error) {
-	var prefs []PerkPreference
-
-	err := h.withSession(ctx, func(session string) error {
-		var err error
-
-		prefs, err = h.service.PerkPreferences(ctx, session)
-
-		return err
+func (h *handler) notes(ctx context.Context) ([]Note, error) {
+	return sessionValue(ctx, h, func(session string) ([]Note, error) {
+		return h.service.Notes(ctx, session)
 	})
+}
 
-	return prefs, err
+func (h *handler) perkPreferences(ctx context.Context) ([]PerkPreference, error) {
+	return sessionValue(ctx, h, func(session string) ([]PerkPreference, error) {
+		return h.service.PerkPreferences(ctx, session)
+	})
 }
 
 func (h *handler) autotag(ctx context.Context) (AutotagSnapshot, error) {
-	var snapshot AutotagSnapshot
-
-	err := h.withSession(ctx, func(session string) error {
-		var err error
-
-		snapshot, err = h.service.Autotag(ctx, session)
-
-		return err
+	return sessionValue(ctx, h, func(session string) (AutotagSnapshot, error) {
+		return h.service.Autotag(ctx, session)
 	})
-
-	return snapshot, err
 }
 
 // membership returns the Destiny membership of the signed-in account. The
@@ -1287,6 +1255,22 @@ func (h *handler) withSession(ctx context.Context, fn func(session string) error
 	}
 
 	return fn(t.Session)
+}
+
+// sessionValue runs fn through [*handler.withSession] and returns the value
+// of the last run.
+func sessionValue[T any](ctx context.Context, h *handler, fn func(session string) (T, error)) (T, error) {
+	var out T
+
+	err := h.withSession(ctx, func(session string) error {
+		var err error
+
+		out, err = fn(session)
+
+		return err
+	})
+
+	return out, err
 }
 
 // utf16Len returns the length of s in UTF-16 code units. The service
