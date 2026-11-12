@@ -81,6 +81,26 @@ func TestStatusAndLogin(t *testing.T) {
 	assert.False(t, isError)
 	assert.Contains(t, got, "https://www.bungie.net/en/OAuth/Authorize?client_id=54520")
 
+	saved, err := f.h.auth.Saved()
+	require.NoError(t, err)
+
+	saved.RefreshExpires = fixtureNow.Add(-time.Hour)
+	require.NoError(t, f.h.auth.store.Save(saved))
+
+	got, isError = call(t, f.h.handleStatus, EmptyInput{})
+	assert.False(t, isError)
+	assert.Contains(t, got, "Signed in: no")
+	assert.Contains(t, got, "expired on 2026-11-12 11:00 UTC")
+
+	saved.RefreshToken = ""
+	saved.RefreshExpires = time.Time{}
+	require.NoError(t, f.h.auth.store.Save(saved))
+
+	got, isError = call(t, f.h.handleStatus, EmptyInput{})
+	assert.False(t, isError)
+	assert.Contains(t, got, "Signed in: yes")
+	assert.Contains(t, got, "Sign-in expires with the access token")
+
 	require.NoError(t, f.h.auth.Logout())
 
 	got, isError = call(t, f.h.handleStatus, EmptyInput{})

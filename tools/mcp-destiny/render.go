@@ -34,6 +34,22 @@ func renderStatus(t Tokens, signedIn bool, serviceURL, tokenPath string, now tim
 		return b.String()
 	}
 
+	// The sign-in lasts as long as the refresh token. Without a refresh
+	// token it ends with the access token.
+	refreshes := t.RefreshToken != "" && !t.RefreshExpires.IsZero()
+
+	expires := t.AccessExpires
+	if refreshes {
+		expires = t.RefreshExpires
+	}
+
+	if !now.Before(expires) {
+		fmt.Fprintf(&b, "Signed in: no\n\nThe sign-in of Bungie.net membership %s expired on %s. "+
+			"Call the login tool to sign in again.", t.BungieID, expires.Format(timeLayout))
+
+		return b.String()
+	}
+
 	b.WriteString("Signed in: yes\n")
 	fmt.Fprintf(&b, "Bungie.net membership: %s\n", t.BungieID)
 
@@ -43,13 +59,10 @@ func renderStatus(t Tokens, signedIn bool, serviceURL, tokenPath string, now tim
 
 	fmt.Fprintf(&b, "Access token expires: %s\n", t.AccessExpires.Format(timeLayout))
 
-	switch {
-	case t.RefreshExpires.IsZero():
-		b.WriteString("Sign-in expires with the access token, because Bungie issued no refresh token.")
-	case now.After(t.RefreshExpires):
-		b.WriteString("The sign-in expired. Call the login tool to sign in again.")
-	default:
+	if refreshes {
 		fmt.Fprintf(&b, "Sign-in expires: %s", t.RefreshExpires.Format(timeLayout))
+	} else {
+		b.WriteString("Sign-in expires with the access token, because Bungie issued no refresh token.")
 	}
 
 	return b.String()
