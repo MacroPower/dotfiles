@@ -1309,6 +1309,7 @@ type bungieMover struct {
 	membership Membership
 }
 
+// Transfer implements [ItemMover].
 func (m bungieMover) Transfer(ctx context.Context, action ItemAction, toVault bool) error {
 	action.Membership = m.membership
 
@@ -1317,6 +1318,7 @@ func (m bungieMover) Transfer(ctx context.Context, action ItemAction, toVault bo
 	})
 }
 
+// Equip implements [ItemMover].
 func (m bungieMover) Equip(ctx context.Context, action ItemAction) error {
 	action.Membership = m.membership
 
@@ -1325,6 +1327,7 @@ func (m bungieMover) Equip(ctx context.Context, action ItemAction) error {
 	})
 }
 
+// PullFromPostmaster implements [ItemMover].
 func (m bungieMover) PullFromPostmaster(ctx context.Context, action ItemAction) error {
 	action.Membership = m.membership
 
