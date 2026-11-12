@@ -264,9 +264,9 @@ type rawItem struct {
 	} `json:"displayProperties"`
 	ItemTypeDisplayName string `json:"itemTypeDisplayName"`
 	Inventory           struct {
-		TierTypeName            string `json:"tierTypeName"`
-		BucketTypeHash          uint32 `json:"bucketTypeHash"`
-		NonTransferrableOrignal bool   `json:"nonTransferrableOriginal"`
+		TierTypeName             string `json:"tierTypeName"`
+		BucketTypeHash           uint32 `json:"bucketTypeHash"`
+		NonTransferrableOriginal bool   `json:"nonTransferrableOriginal"`
 	} `json:"inventory"`
 	Hash              uint32 `json:"hash"`
 	ItemType          int    `json:"itemType"`
@@ -304,7 +304,7 @@ func decodeItems(r io.Reader, items map[uint32]ItemDef) error {
 			ItemType:        raw.ItemType,
 			ClassType:       raw.ClassType,
 			DamageType:      raw.DefaultDamageType,
-			NonTransferable: raw.Inventory.NonTransferrableOrignal,
+			NonTransferable: raw.Inventory.NonTransferrableOriginal,
 			Equippable:      raw.EquippingBlock != nil,
 		}
 	}
