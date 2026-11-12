@@ -179,6 +179,7 @@
                 mcp-kagi = ./pkgs/mcp-kagi.nix;
                 marksman-bin = ./pkgs/marksman-bin.nix;
                 mcp-opentofu = ./tools/mcp-opentofu/package.nix;
+                mcp-destiny = ./tools/mcp-destiny/package.nix;
                 leanspec-cli = ./pkgs/leanspec-cli.nix;
                 claude-powerline = ./pkgs/claude-powerline.nix;
                 playwright-cli = ./pkgs/playwright-cli.nix;

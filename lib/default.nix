@@ -34,6 +34,7 @@ let
     mcp-kagi = final.callPackage paths.mcp-kagi { };
     marksman-bin = final.callPackage paths.marksman-bin { };
     mcp-opentofu = final.callPackage paths.mcp-opentofu { };
+    mcp-destiny = final.callPackage paths.mcp-destiny { };
     leanspec-cli = final.callPackage paths.leanspec-cli { };
     claude-powerline = final.callPackage paths.claude-powerline { };
     playwright-cli = final.callPackage paths.playwright-cli { };

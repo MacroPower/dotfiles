@@ -3441,6 +3441,55 @@ in
         ];
       };
 
+      destiny = {
+        # A personal tool, so each host that wants it sets
+        # `toolBundles.destiny.enable = true`.
+        enable = lib.mkDefault false;
+        servers.destiny = {
+          type = "stdio";
+          command = "${pkgs.mcp-destiny}/bin/mcp-destiny";
+          args = [
+            "serve"
+            "--state-dir"
+            "${config.xdg.stateHome}/mcp-destiny"
+            "--cache-dir"
+            "${config.xdg.cacheHome}/mcp-destiny"
+            "--log-file"
+            "${config.xdg.stateHome}/mcp-destiny/destiny.log"
+          ];
+        };
+        # The sign-in tools write only the local token file, so they sit
+        # with the reads.
+        permissions.allow = [
+          "mcp__destiny__status"
+          "mcp__destiny__login"
+          "mcp__destiny__complete_login"
+          "mcp__destiny__list_characters"
+          "mcp__destiny__list_items"
+          "mcp__destiny__get_item"
+          "mcp__destiny__list_tags"
+          "mcp__destiny__list_notes"
+          "mcp__destiny__list_perk_preferences"
+          "mcp__destiny__list_autotag_rules"
+        ];
+        # Each of these tools changes the live game inventory or the data
+        # that the web client syncs.
+        permissions.ask = [
+          "mcp__destiny__move_items"
+          "mcp__destiny__move_stack"
+          "mcp__destiny__set_tag"
+          "mcp__destiny__set_favorite"
+          "mcp__destiny__set_note"
+          "mcp__destiny__set_perk_preferences"
+          "mcp__destiny__save_autotag_rule"
+          "mcp__destiny__remove_autotag_rule"
+          "mcp__destiny__set_autotag_enabled"
+        ];
+        instructions.items = [
+          "Use `mcp__destiny__*` tools for the Destiny 2 inventory, tags, and notes in Agg's Destiny Vault Manager."
+        ];
+      };
+
       spacelift = {
         servers.spacelift = {
           type = "stdio";
@@ -4302,6 +4351,8 @@ in
         pkgs.slugify
       ]
       ++ lib.optionals cfg.clauth.enable [ pkgs.clauth ]
+      # `mcp-destiny login` signs in from a terminal.
+      ++ lib.optionals cfg.toolBundles.destiny.enable [ pkgs.mcp-destiny ]
       ++ lib.optionals cfg.proseLint.enable [
         pkgs.prose-lint
         pkgs.harper
