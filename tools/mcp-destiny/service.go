@@ -24,6 +24,10 @@ const (
 
 	// maxArtifactBytes caps one definition artifact.
 	maxArtifactBytes = 128 << 20
+
+	// grantRefusal opens the message that the service returns when the
+	// Bungie token endpoint answers with a 4xx status.
+	grantRefusal = "Token endpoint returned 4"
 )
 
 var (
@@ -34,6 +38,10 @@ var (
 	// ErrUnauthorized reports that Agg's Destiny Vault Manager or Bungie
 	// rejected the presented token. Callers refresh the tokens and retry.
 	ErrUnauthorized = errors.New("unauthorized")
+
+	// ErrGrantRejected reports that Bungie refused an authorization code or
+	// a refresh token. The user signs in again to recover.
+	ErrGrantRejected = errors.New("grant rejected")
 )
 
 // ArtifactIndex lists the definition artifacts the service publishes.
@@ -202,6 +210,10 @@ func (s *Service) tokens(ctx context.Context, path string, body any) (TokenRespo
 	var out TokenResponse
 
 	err := s.call(ctx, http.MethodPost, path, "", body, &out)
+	if errors.Is(err, ErrService) && strings.Contains(err.Error(), grantRefusal) {
+		return TokenResponse{}, fmt.Errorf("%w: %w", ErrGrantRejected, err)
+	}
+
 	if err != nil {
 		return TokenResponse{}, err
 	}

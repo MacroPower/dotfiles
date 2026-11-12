@@ -179,6 +179,40 @@ func TestServiceWrites(t *testing.T) {
 	}}, rules[0].Body)
 }
 
+func TestServiceGrantRejected(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		body     string
+		rejected bool
+	}{
+		"Bungie refuses the grant": {
+			body:     `{"error": "Token endpoint returned 400 {\"error\":\"invalid_grant\"}"}`,
+			rejected: true,
+		},
+		"Bungie is unavailable": {
+			body: `{"error": "Token endpoint returned 503 maintenance"}`,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			u, _ := serve(t, http.StatusInternalServerError, tc.body)
+
+			_, err := NewService(WithServiceURL(u)).RefreshTokens(t.Context(), "revoked")
+			require.ErrorIs(t, err, ErrService)
+
+			if tc.rejected {
+				require.ErrorIs(t, err, ErrGrantRejected)
+			} else {
+				require.NotErrorIs(t, err, ErrGrantRejected)
+			}
+		})
+	}
+}
+
 func TestServiceUnauthorized(t *testing.T) {
 	t.Parallel()
 

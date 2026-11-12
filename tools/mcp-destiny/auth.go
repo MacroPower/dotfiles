@@ -27,8 +27,9 @@ const (
 )
 
 var (
-	// ErrNotSignedIn reports that the token file is missing or that its
-	// refresh token has expired. The user signs in again to recover.
+	// ErrNotSignedIn reports that the token file is missing, that its
+	// refresh token has expired, or that Bungie rejected its refresh token.
+	// The user signs in again to recover.
 	ErrNotSignedIn = errors.New("not signed in")
 
 	// ErrLogin reports a pasted redirect URL that [*Auth.CompleteLogin]
@@ -312,6 +313,10 @@ func (a *Auth) Refresh(ctx context.Context, stale string) (Tokens, error) {
 	}
 
 	resp, err := a.broker.RefreshTokens(ctx, t.RefreshToken)
+	if errors.Is(err, ErrGrantRejected) {
+		return Tokens{}, fmt.Errorf("%w: Bungie rejected the saved sign-in: %w", ErrNotSignedIn, err)
+	}
+
 	if err != nil {
 		return Tokens{}, fmt.Errorf("refreshing tokens: %w", err)
 	}

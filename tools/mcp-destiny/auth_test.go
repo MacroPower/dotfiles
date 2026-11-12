@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -296,6 +297,56 @@ func TestRefresh(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantAccess, got.AccessToken)
 			assert.Equal(t, tc.wantRefresh, broker.refreshes)
+		})
+	}
+}
+
+func TestRefreshErrors(t *testing.T) {
+	t.Parallel()
+
+	saved := Tokens{
+		AccessToken:    "access-1",
+		AccessExpires:  fixtureNow.Add(-time.Hour),
+		RefreshToken:   "refresh-1",
+		RefreshExpires: fixtureNow.Add(24 * time.Hour),
+		Session:        "session-1",
+	}
+
+	tests := map[string]struct {
+		broker     error
+		err        error
+		wantSignIn bool
+	}{
+		"Bungie rejected the refresh token": {
+			broker:     fmt.Errorf("%w: %w", ErrGrantRejected, ErrService),
+			err:        ErrGrantRejected,
+			wantSignIn: true,
+		},
+		"the service is unavailable": {
+			broker: ErrService,
+			err:    ErrService,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			auth, broker, store := newTestAuth(t, &saved)
+			broker.err = tc.broker
+
+			_, err := auth.Tokens(t.Context())
+			require.ErrorIs(t, err, tc.err)
+
+			if tc.wantSignIn {
+				require.ErrorIs(t, err, ErrNotSignedIn)
+			} else {
+				require.NotErrorIs(t, err, ErrNotSignedIn)
+			}
+
+			kept, err := store.Load()
+			require.NoError(t, err)
+			assert.Equal(t, saved, kept, "a refresh that did not succeed keeps the token file")
 		})
 	}
 }
