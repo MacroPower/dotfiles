@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -467,6 +468,29 @@ func TestMoveItemsErrors(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestMoveItemsSnapshotAge(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+	require.False(t, isError)
+
+	later := fixtureNow.Add(10 * time.Second)
+	f.h.now = func() time.Time { return later }
+	f.bungieError = `{"ErrorCode": 1623, "ErrorStatus": "DestinyItemNotFound", "Message": "gone"}`
+
+	_, isError = call(t, f.h.handleMoveItems, MoveItemsInput{InstanceIDs: []string{"1001"}, Target: "hunter"})
+	require.True(t, isError)
+	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a call that moved nothing keeps the age of the snapshot")
+
+	f.bungieError = ""
+
+	_, isError = call(t, f.h.handleMoveItems, MoveItemsInput{InstanceIDs: []string{"1001"}, Target: "hunter"})
+	require.False(t, isError)
+	assert.Equal(t, later, f.h.snapshot.Fetched, "a move restarts the age of the snapshot")
 }
 
 func TestSetTag(t *testing.T) {

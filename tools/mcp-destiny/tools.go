@@ -375,9 +375,18 @@ func (h *handler) handleMoveItems(
 	var b strings.Builder
 
 	failed := 0
+	changed := false
 
 	for _, item := range items {
+		owner, postmaster, equipped := item.Owner, item.Postmaster, item.Equipped
+
 		replacement, err := s.Move(ctx, mover, item, target, in.Equip)
+
+		// A move that fails can still complete some of its steps.
+		if replacement != nil || item.Owner != owner || item.Postmaster != postmaster || item.Equipped != equipped {
+			changed = true
+		}
+
 		if err != nil {
 			failed++
 
@@ -398,9 +407,13 @@ func (h *handler) handleMoveItems(
 		b.WriteString("\n")
 	}
 
-	// Bungie can serve the state from before a move for some seconds, so
-	// the updated snapshot stays in use for a full TTL.
-	s.Fetched = h.now()
+	// Bungie can serve the state from before a move for some seconds. A
+	// snapshot that a move updated therefore stays in use for a full TTL.
+	// A call that moved nothing keeps the age of the snapshot, so a stale
+	// snapshot still expires.
+	if changed {
+		s.Fetched = h.now()
+	}
 
 	result := textResult(strings.TrimRight(b.String(), "\n"))
 	result.IsError = failed == len(items)
