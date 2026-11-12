@@ -303,11 +303,17 @@ func TestRefresh(t *testing.T) {
 func TestSetMembership(t *testing.T) {
 	t.Parallel()
 
-	auth, _, store := newTestAuth(t, &Tokens{AccessToken: "access-1", Session: "session-1"})
+	auth, _, store := newTestAuth(t, &Tokens{AccessToken: "access-1", Session: "session-1", BungieID: "42"})
 
-	require.NoError(t, auth.SetMembership(Membership{ID: "4611", Type: 3}))
+	require.NoError(t, auth.SetMembership("7", Membership{ID: "9000", Type: 1}))
 
 	saved, err := store.Load()
+	require.NoError(t, err)
+	assert.True(t, saved.Membership.IsZero(), "the tokens belong to a different account")
+
+	require.NoError(t, auth.SetMembership("42", Membership{ID: "4611", Type: 3}))
+
+	saved, err = store.Load()
 	require.NoError(t, err)
 	assert.Equal(t, Membership{ID: "4611", Type: 3}, saved.Membership)
 	assert.Equal(t, "access-1", saved.AccessToken)

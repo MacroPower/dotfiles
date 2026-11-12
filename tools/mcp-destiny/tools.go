@@ -1231,7 +1231,7 @@ func (h *handler) membership(ctx context.Context) (Membership, error) {
 		return Membership{}, fmt.Errorf("resolving the Destiny membership: %w", err)
 	}
 
-	err = h.auth.SetMembership(m)
+	err = h.auth.SetMembership(t.BungieID, m)
 	if err != nil {
 		h.log.WarnContext(ctx, "recording membership", slog.Any("error", err))
 	}

@@ -327,9 +327,11 @@ func (a *Auth) Refresh(ctx context.Context, stale string) (Tokens, error) {
 	return next, nil
 }
 
-// SetMembership records the Destiny membership of the signed-in account in
-// the token file.
-func (a *Auth) SetMembership(m Membership) error {
+// SetMembership records the Destiny membership of the Bungie.net account
+// bungieID in the token file. It leaves the file unchanged when the file
+// holds the tokens of a different account. The accounts differ when another
+// process signs in between the membership lookup and this call.
+func (a *Auth) SetMembership(bungieID string, m Membership) error {
 	unlock, err := a.store.lock()
 	if err != nil {
 		return err
@@ -339,6 +341,10 @@ func (a *Auth) SetMembership(m Membership) error {
 	t, err := a.store.Load()
 	if err != nil {
 		return err
+	}
+
+	if t.BungieID != bungieID {
+		return nil
 	}
 
 	t.Membership = m
