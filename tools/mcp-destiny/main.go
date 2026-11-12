@@ -165,8 +165,8 @@ func runLogin(ctx context.Context, args []string, stdin io.Reader, stdout io.Wri
 		return fmt.Errorf("writing the prompt: %w", err)
 	}
 
-	line, err := bufio.NewReader(stdin).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
+	line, err := readLine(ctx, stdin)
+	if err != nil {
 		return fmt.Errorf("reading the redirected URL: %w", err)
 	}
 
@@ -186,6 +186,35 @@ func runLogin(ctx context.Context, args []string, stdin io.Reader, stdout io.Wri
 	}
 
 	return nil
+}
+
+// readLine reads one line from r, and the end of the input also ends the
+// line. It returns the error of ctx when ctx ends first, because a read
+// from a terminal does not stop on an interrupt.
+func readLine(ctx context.Context, r io.Reader) (string, error) {
+	type result struct {
+		err  error
+		line string
+	}
+
+	done := make(chan result, 1)
+
+	go func() {
+		line, err := bufio.NewReader(r).ReadString('\n')
+		done <- result{line: line, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", fmt.Errorf("waiting for input: %w", ctx.Err())
+
+	case res := <-done:
+		if res.err != nil && !errors.Is(res.err, io.EOF) {
+			return "", res.err
+		}
+
+		return res.line, nil
+	}
 }
 
 // runLogout deletes the saved tokens.

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -872,6 +874,28 @@ func TestCompleteLoginTool(t *testing.T) {
 	got, isError := call(t, f.h.handleCompleteLogin, CompleteLoginInput{RedirectURL: ""})
 	assert.True(t, isError)
 	assert.Equal(t, "login: nothing pasted", got)
+}
+
+func TestReadLine(t *testing.T) {
+	t.Parallel()
+
+	got, err := readLine(t.Context(), strings.NewReader("first\nsecond\n"))
+	require.NoError(t, err)
+	assert.Equal(t, "first\n", got)
+
+	got, err = readLine(t.Context(), strings.NewReader("no newline"))
+	require.NoError(t, err)
+	assert.Equal(t, "no newline", got, "the end of the input ends the line")
+
+	// A pipe without a writer blocks like a terminal that waits for input.
+	blocked, w := io.Pipe()
+	t.Cleanup(func() { require.NoError(t, w.Close()) })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err = readLine(ctx, blocked)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestDispatch(t *testing.T) {
