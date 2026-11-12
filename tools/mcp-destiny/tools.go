@@ -24,6 +24,7 @@ const (
 	toolListCharacters      = "list_characters"
 	toolListItems           = "list_items"
 	toolGetItem             = "get_item"
+	toolCompareDuplicates   = "compare_duplicates"
 	toolMoveItems           = "move_items"
 	toolMoveStack           = "move_stack"
 	toolSetLock             = "set_lock"
@@ -56,6 +57,9 @@ const (
 
 	defaultItemLimit = 50
 	maxItemLimit     = 200
+
+	defaultWeaponLimit = 10
+	maxWeaponLimit     = 50
 
 	// maxBatch caps the instance ids of one write. The service rejects a
 	// tag write of more than 1000 rows, and an item contributes at most a
@@ -113,6 +117,16 @@ type ListItemsInput struct {
 // GetItemInput is the input schema of the get_item tool.
 type GetItemInput struct {
 	InstanceID string `json:"instance_id" jsonschema:"Instance id from list_items"`
+}
+
+// CompareDuplicatesInput is the input schema of the compare_duplicates
+// tool. Without a name or an instance id, the tool compares every weapon
+// that has more than one copy, a page at a time.
+type CompareDuplicatesInput struct {
+	Name       string `json:"name,omitzero"        jsonschema:"Weapon name in any letter case, such as 'Fatebringer'. A name that no weapon has selects the one weapon whose name contains it"`
+	InstanceID string `json:"instance_id,omitzero" jsonschema:"Instance id of one copy, from list_items"`
+	Limit      int    `json:"limit,omitzero"       jsonschema:"Without name and instance_id: maximum number of weapons to return (default 10, maximum 50)"`
+	Offset     int    `json:"offset,omitzero"      jsonschema:"Without name and instance_id: number of weapons to skip (default 0)"`
 }
 
 // MoveItemsInput is the input schema of the move_items tool.
@@ -344,6 +358,68 @@ func (h *handler) handleGetItem(
 	}
 
 	return textResult(renderItem(s, item)), nil, nil
+}
+
+func (h *handler) handleCompareDuplicates(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in CompareDuplicatesInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	name := strings.TrimSpace(in.Name)
+	if name != "" && in.InstanceID != "" {
+		return h.toolError(ctx, toolCompareDuplicates,
+			fmt.Errorf("%w: pass name or instance_id, not both", ErrInvalidInput))
+	}
+
+	s, _, err := h.loadAnnotated(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolCompareDuplicates, err)
+	}
+
+	if in.InstanceID != "" {
+		item, ok := s.Find(in.InstanceID)
+		if !ok {
+			return h.toolError(ctx, toolCompareDuplicates, unknownInstances([]string{in.InstanceID}))
+		}
+
+		if item.Kind != kindWeapon {
+			return h.toolError(ctx, toolCompareDuplicates,
+				fmt.Errorf("%w: %s (%s) is not a weapon", ErrInvalidInput, item.InstanceID, item.Name))
+		}
+
+		return textResult(renderWeaponGroup(s, s.GroupOf(item))), nil, nil
+	}
+
+	if name != "" {
+		group, err := s.CopiesOf(name)
+		if err != nil {
+			return h.toolError(ctx, toolCompareDuplicates, err)
+		}
+
+		return textResult(renderWeaponGroup(s, group)), nil, nil
+	}
+
+	var dupes []WeaponGroup
+
+	for _, group := range s.WeaponGroups() {
+		if len(group.Copies) > 1 {
+			dupes = append(dupes, group)
+		}
+	}
+
+	limit := in.Limit
+	if limit <= 0 {
+		limit = defaultWeaponLimit
+	}
+
+	limit = min(limit, maxWeaponLimit)
+	offset := min(max(in.Offset, 0), len(dupes))
+	page := dupes[offset:min(offset+limit, len(dupes))]
+
+	return textResult(renderDuplicates(s, page, offset, len(dupes))), nil, nil
 }
 
 func (h *handler) handleMoveItems(

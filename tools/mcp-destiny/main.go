@@ -332,6 +332,15 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleGetItem)
 
 	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolCompareDuplicates,
+		Description: "Compare the copies of one weapon side by side: perks with the alternatives each socket can swap to, " +
+			"power, location, tag, and flags such as the favorite mark. Pass a weapon name or the instance id of one copy. " +
+			"Without either, it compares every weapon that has more than one copy, a page at a time. " +
+			"The copies of a reissue and of its Adept, Timelost, or Harrowed version count as copies of one weapon.",
+		Annotations: readOnly,
+	}, h.handleCompareDuplicates)
+
+	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolMoveItems,
 		Description: "Move item instances to the vault or to a character in the live game, and optionally equip them. " +
 			"Pulls items from the Postmaster first. Before it transfers an equipped item, it equips another item " +

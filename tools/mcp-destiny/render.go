@@ -210,6 +210,78 @@ func renderItem(s *Snapshot, item *Item) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// renderDuplicates renders one page of the weapons that have more than one
+// copy. Offset and total count weapons, not copies.
+func renderDuplicates(s *Snapshot, groups []WeaponGroup, offset, total int) string {
+	if total == 0 {
+		return "No weapon has more than one copy."
+	}
+
+	if len(groups) == 0 {
+		return fmt.Sprintf("Offset %d is past the last of %d weapons that have more than one copy.", offset, total)
+	}
+
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Weapons %d-%d of %d that have more than one copy.", offset+1, offset+len(groups), total)
+
+	if offset+len(groups) < total {
+		fmt.Fprintf(&b, " Pass offset=%d for the next page.", offset+len(groups))
+	}
+
+	for _, group := range groups {
+		b.WriteString("\n\n")
+		b.WriteString(renderWeaponGroup(s, group))
+	}
+
+	return b.String()
+}
+
+// renderWeaponGroup renders the copies of one weapon as a table with one
+// row per copy. The name column tells a version such as "(Adept)" from the
+// base weapon.
+func renderWeaponGroup(s *Snapshot, group WeaponGroup) string {
+	var b strings.Builder
+
+	noun := "copies"
+	if len(group.Copies) == 1 {
+		noun = "copy"
+	}
+
+	fmt.Fprintf(&b, "%s: %d %s\n\n", group.Name, len(group.Copies), noun)
+	b.WriteString("instance id | name | type | power | location | tag | flags | perks\n")
+
+	for _, item := range group.Copies {
+		perks := make([]string, 0, len(item.Perks))
+		for _, perk := range item.Perks {
+			perks = append(perks, perkLabel(perk))
+		}
+
+		b.WriteString(strings.Join([]string{
+			item.InstanceID,
+			item.Name,
+			typeLabel(item),
+			powerLabel(item),
+			s.LocationLabel(item),
+			item.Tag,
+			strings.Join(flagsOf(item), ", "),
+			strings.Join(perks, "; "),
+		}, " | "))
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// perkLabel names a perk and the other plugs that its socket can hold.
+func perkLabel(perk Perk) string {
+	if len(perk.Options) == 0 {
+		return perk.Name
+	}
+
+	return perk.Name + " (can swap to " + strings.Join(perk.Options, ", ") + ")"
+}
+
 // writeDescription writes each line of a perk description indented under
 // its list item. It drops the blank lines between paragraphs, so the perk
 // list has no gaps.

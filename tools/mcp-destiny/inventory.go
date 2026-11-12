@@ -55,7 +55,21 @@ var (
 	// ErrUnknownTarget reports a location name that matches neither the
 	// vault nor exactly one character.
 	ErrUnknownTarget = errors.New("unknown location")
+
+	// ErrUnknownWeapon reports a weapon name that selects no
+	// [WeaponGroup] or more than one.
+	ErrUnknownWeapon = errors.New("unknown weapon")
+
+	// versionSuffixes end the names of the weapon versions that drop from
+	// harder activities. Destiny Item Manager counts a copy of such a
+	// version as a copy of the base weapon, and [WeaponGroup] counts it the
+	// same way.
+	versionSuffixes = []string{"(Adept)", "(Timelost)", "(Harrowed)"}
 )
+
+// maxSuggestions caps the weapon names that an [ErrUnknownWeapon] error
+// suggests.
+const maxSuggestions = 10
 
 // Perk is one plug in a visible socket of an item, such as a weapon trait
 // or an armor mod. Description is the text of the plug definition, which
@@ -577,6 +591,128 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 			return containsFold(p.Name, perk)
 		})
 	}, nil
+}
+
+// WeaponGroup holds every copy of one weapon. Name is the weapon name
+// without a version suffix such as "(Adept)". A reissue has its own item
+// hashes, but its copies share the group of the original weapon because
+// the names match.
+type WeaponGroup struct {
+	Name   string
+	Copies []*Item
+}
+
+// WeaponGroups returns the weapons of the snapshot grouped by
+// [WeaponGroup.Name] and ordered by that name. The copies of each group
+// follow the default order of [*Snapshot.Filter].
+func (s *Snapshot) WeaponGroups() []WeaponGroup {
+	var groups []WeaponGroup
+
+	index := map[string]int{}
+
+	for _, item := range s.Items {
+		if item.Kind != kindWeapon {
+			continue
+		}
+
+		name := baseName(item.Name)
+
+		i, ok := index[name]
+		if !ok {
+			i = len(groups)
+			index[name] = i
+			groups = append(groups, WeaponGroup{Name: name})
+		}
+
+		groups[i].Copies = append(groups[i].Copies, item)
+	}
+
+	slices.SortFunc(groups, func(a, b WeaponGroup) int { return cmp.Compare(a.Name, b.Name) })
+
+	for _, g := range groups {
+		slices.SortFunc(g.Copies, func(a, b *Item) int {
+			return cmp.Or(cmp.Compare(a.Name, b.Name), compareIDs(a.InstanceID, b.InstanceID))
+		})
+	}
+
+	return groups
+}
+
+// CopiesOf returns the [WeaponGroup] that name selects. It compares name
+// with each group name without regard to case or to a version suffix such
+// as "(Adept)". It prefers a group whose name matches in case to one whose
+// name differs only in case. When no group has the name, CopiesOf
+// selects the one group whose name contains name without its suffix, or
+// that holds a copy whose full name contains name. A bare suffix such as
+// "(Adept)" thus selects only a group that holds a copy of that version.
+func (s *Snapshot) CopiesOf(name string) (WeaponGroup, error) {
+	base := baseName(name)
+	lower := strings.ToLower(base)
+	query := strings.ToLower(strings.TrimSpace(name))
+
+	var folded, similar []WeaponGroup
+
+	for _, g := range s.WeaponGroups() {
+		switch {
+		case g.Name == base:
+			return g, nil
+		case strings.EqualFold(g.Name, base):
+			folded = append(folded, g)
+		case base != "" && containsFold(g.Name, lower),
+			query != "" && slices.ContainsFunc(g.Copies, func(c *Item) bool { return containsFold(c.Name, query) }):
+			similar = append(similar, g)
+		}
+	}
+
+	if len(folded) > 0 {
+		similar = folded
+	}
+
+	if len(similar) == 0 {
+		return WeaponGroup{}, fmt.Errorf(
+			"%w: no weapon in the inventory has a name that contains %q", ErrUnknownWeapon, name,
+		)
+	}
+
+	if len(similar) == 1 {
+		return similar[0], nil
+	}
+
+	names := make([]string, 0, min(len(similar), maxSuggestions))
+	for _, g := range similar[:min(len(similar), maxSuggestions)] {
+		names = append(names, g.Name)
+	}
+
+	return WeaponGroup{}, fmt.Errorf(
+		"%w: %q matches %d weapons, so pass a full name, such as %s",
+		ErrUnknownWeapon, name, len(similar), strings.Join(names, ", "),
+	)
+}
+
+// GroupOf returns the [WeaponGroup] that holds item. An item that no group
+// holds, such as a piece of armor, forms a group of its own.
+func (s *Snapshot) GroupOf(item *Item) WeaponGroup {
+	for _, g := range s.WeaponGroups() {
+		if slices.Contains(g.Copies, item) {
+			return g
+		}
+	}
+
+	return WeaponGroup{Name: baseName(item.Name), Copies: []*Item{item}}
+}
+
+// baseName removes a version suffix from a weapon name. It matches the
+// suffix without regard to case.
+func baseName(name string) string {
+	name = strings.TrimSpace(name)
+
+	for _, suffix := range versionSuffixes {
+		if len(name) >= len(suffix) && strings.EqualFold(name[len(name)-len(suffix):], suffix) {
+			return strings.TrimSpace(name[:len(name)-len(suffix)])
+		}
+	}
+
+	return name
 }
 
 // containsFold reports whether s contains the lowercase string lower,

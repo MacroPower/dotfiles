@@ -3468,6 +3468,7 @@ in
           "mcp__destiny__list_characters"
           "mcp__destiny__list_items"
           "mcp__destiny__get_item"
+          "mcp__destiny__compare_duplicates"
           "mcp__destiny__list_tags"
           "mcp__destiny__list_notes"
           "mcp__destiny__list_perk_preferences"

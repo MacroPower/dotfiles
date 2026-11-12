@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,7 +54,8 @@ func TestServerListsTools(t *testing.T) {
 	}
 
 	assert.ElementsMatch(t, []string{
-		toolStatus, toolLogin, toolCompleteLogin, toolListCharacters, toolListItems, toolGetItem, toolMoveItems,
+		toolStatus, toolLogin, toolCompleteLogin, toolListCharacters, toolListItems, toolGetItem,
+		toolCompareDuplicates, toolMoveItems,
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolRemoveAutotagRule,
 		toolMoveStack, toolSetLock, toolSetAutotagEnabled,
@@ -253,6 +257,206 @@ func TestGetItem(t *testing.T) {
 	got, isError = call(t, f.h.handleGetItem, GetItemInput{InstanceID: "9"})
 	assert.True(t, isError)
 	assert.Equal(t, "invalid input: no item in the inventory has the instance id 9", got)
+}
+
+func TestCompareDuplicates(t *testing.T) {
+	t.Parallel()
+
+	fatebringer := []string{
+		"Fatebringer: 3 copies",
+		"",
+		"instance id | name | type | power | location | tag | flags | perks",
+		"1001 | Fatebringer | Kinetic Hand Cannon | 2010 | Vault | keep | favorite, locked, masterwork, note | " +
+			"Explosive Payload (can swap to Rampage); Firefly",
+		"1005 | Fatebringer | Kinetic Hand Cannon | 1970 | Hunter (postmaster) |  |  | ",
+		"1006 | Fatebringer | Kinetic Hand Cannon | 1980 | Hunter (equipped) |  |  | ",
+	}
+
+	everyDuplicate := strings.Join(append([]string{
+		"Weapons 1-1 of 1 that have more than one copy.",
+		"",
+	}, fatebringer...), "\n")
+
+	tests := map[string]struct {
+		// edit changes the cached snapshot before the call.
+		edit    func(*Snapshot)
+		want    string
+		in      CompareDuplicatesInput
+		isError bool
+	}{
+		"name": {
+			in:   CompareDuplicatesInput{Name: "fatebringer"},
+			want: strings.Join(fatebringer, "\n"),
+		},
+		"instance id": {
+			in:   CompareDuplicatesInput{InstanceID: "1006"},
+			want: strings.Join(fatebringer, "\n"),
+		},
+		"one copy": {
+			in: CompareDuplicatesInput{Name: "coup"},
+			want: strings.Join([]string{
+				"Midnight Coup: 1 copy",
+				"",
+				"instance id | name | type | power | location | tag | flags | perks",
+				"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | ",
+			}, "\n"),
+		},
+		"instance id of a weapon whose name differs only in case": {
+			edit: func(s *Snapshot) {
+				coup, _ := s.Find("1003")
+				twin := *coup
+				twin.InstanceID = "1007"
+				twin.Name = "MIDNIGHT COUP"
+				s.add(&twin)
+			},
+			in: CompareDuplicatesInput{InstanceID: "1003"},
+			want: strings.Join([]string{
+				"Midnight Coup: 1 copy",
+				"",
+				"instance id | name | type | power | location | tag | flags | perks",
+				"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | ",
+			}, "\n"),
+		},
+		"every weapon with more than one copy": {
+			want: everyDuplicate,
+		},
+		"blank name": {
+			in:   CompareDuplicatesInput{Name: "   "},
+			want: everyDuplicate,
+		},
+		"no weapon with more than one copy": {
+			edit: func(s *Snapshot) {
+				s.Items = slices.DeleteFunc(s.Items, func(item *Item) bool {
+					return item.InstanceID == "1005" || item.InstanceID == "1006"
+				})
+			},
+			want: "No weapon has more than one copy.",
+		},
+		"offset past the end": {
+			in:   CompareDuplicatesInput{Offset: 5},
+			want: "Offset 1 is past the last of 1 weapons that have more than one copy.",
+		},
+		"name and instance id": {
+			in:      CompareDuplicatesInput{Name: "fatebringer", InstanceID: "1001"},
+			want:    "invalid input: pass name or instance_id, not both",
+			isError: true,
+		},
+		"armor": {
+			in:      CompareDuplicatesInput{InstanceID: "1004"},
+			want:    "invalid input: 1004 (Celestial Nighthawk) is not a weapon",
+			isError: true,
+		},
+		"unknown instance": {
+			in:      CompareDuplicatesInput{InstanceID: "9"},
+			want:    "invalid input: no item in the inventory has the instance id 9",
+			isError: true,
+		},
+		"unknown name": {
+			in:      CompareDuplicatesInput{Name: "hand"},
+			want:    `unknown weapon: no weapon in the inventory has a name that contains "hand"`,
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			if tc.edit != nil {
+				s, err := f.h.loadSnapshot(t.Context(), false)
+				require.NoError(t, err)
+				tc.edit(s)
+			}
+
+			got, isError := call(t, f.h.handleCompareDuplicates, tc.in)
+			assert.Equal(t, tc.isError, isError)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestCompareDuplicatesPaging(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	s, err := f.h.loadSnapshot(t.Context(), false)
+	require.NoError(t, err)
+
+	// A second Midnight Coup gives the inventory two weapons with copies.
+	coup, ok := s.Find("1003")
+	require.True(t, ok)
+
+	twin := *coup
+	twin.InstanceID = "1007"
+	twin.Owner = ownerVault
+	s.add(&twin)
+
+	got, isError := call(t, f.h.handleCompareDuplicates, CompareDuplicatesInput{Limit: 1, Offset: 1})
+	assert.False(t, isError)
+	assert.Equal(t, strings.Join([]string{
+		"Weapons 2-2 of 2 that have more than one copy.",
+		"",
+		"Midnight Coup: 2 copies",
+		"",
+		"instance id | name | type | power | location | tag | flags | perks",
+		"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | ",
+		"1007 | Midnight Coup | Kinetic Hand Cannon | 2005 | Vault |  |  | ",
+	}, "\n"), got)
+
+	got, isError = call(t, f.h.handleCompareDuplicates, CompareDuplicatesInput{Limit: 1})
+	assert.False(t, isError)
+	assert.True(t, strings.HasPrefix(got,
+		"Weapons 1-1 of 2 that have more than one copy. Pass offset=1 for the next page.\n\nFatebringer: 3 copies"))
+}
+
+func TestCompareDuplicatesLimit(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		want  string
+		limit int
+	}{
+		"default": {
+			want: "Weapons 1-10 of 61 that have more than one copy. Pass offset=10 for the next page.",
+		},
+		"maximum": {
+			limit: 1000,
+			want:  "Weapons 1-50 of 61 that have more than one copy. Pass offset=50 for the next page.",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			s, err := f.h.loadSnapshot(t.Context(), false)
+			require.NoError(t, err)
+
+			coup, ok := s.Find("1003")
+			require.True(t, ok)
+
+			// Sixty more weapons with two copies each join Fatebringer.
+			for i := range 60 {
+				for j := range 2 {
+					twin := *coup
+					twin.InstanceID = strconv.Itoa(2000 + 2*i + j)
+					twin.Name = fmt.Sprintf("Replica %02d", i)
+					s.add(&twin)
+				}
+			}
+
+			got, isError := call(t, f.h.handleCompareDuplicates, CompareDuplicatesInput{Limit: tc.limit})
+			assert.False(t, isError)
+
+			header, _, _ := strings.Cut(got, "\n")
+			assert.Equal(t, tc.want, header)
+		})
+	}
 }
 
 func TestRefreshOnUnauthorized(t *testing.T) {

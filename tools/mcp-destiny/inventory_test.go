@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -272,6 +275,229 @@ func TestResolveOwner(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// groupSnapshot holds a reissue of Fatebringer under its own item hash and
+// a Timelost copy. It also holds a weapon whose name contains the name of
+// another weapon, two weapons whose names differ only in letter case, and
+// items that are not weapons.
+func groupSnapshot() *Snapshot {
+	return &Snapshot{Items: []*Item{
+		{InstanceID: "12", Hash: 110, Name: "Fatebringer", Kind: kindWeapon},
+		{InstanceID: "3", Hash: 102, Name: "Midnight Coup", Kind: kindWeapon},
+		{InstanceID: "9", Hash: 100, Name: "Fatebringer", Kind: kindWeapon},
+		{InstanceID: "4", Hash: 120, Name: "Fatebringer (Timelost)", Kind: kindWeapon},
+		{InstanceID: "5", Hash: 200, Name: "Fatebringer Helm", Kind: kindArmor},
+		{Hash: 300, Name: "Enhancement Core", Kind: kindOther},
+		{InstanceID: "6", Hash: 130, Name: "Austringer", Kind: kindWeapon},
+		{InstanceID: "7", Hash: 140, Name: "Midnight Coup Replica", Kind: kindWeapon},
+		{InstanceID: "8", Hash: 150, Name: "Ace of Spades", Kind: kindWeapon},
+		{InstanceID: "10", Hash: 160, Name: "ACE OF SPADES", Kind: kindWeapon},
+	}}
+}
+
+func TestWeaponGroups(t *testing.T) {
+	t.Parallel()
+
+	got := map[string][]string{}
+
+	var names []string
+
+	for _, group := range groupSnapshot().WeaponGroups() {
+		names = append(names, group.Name)
+		got[group.Name] = ids(group.Copies)
+	}
+
+	assert.Equal(t, []string{
+		"ACE OF SPADES", "Ace of Spades", "Austringer", "Fatebringer", "Midnight Coup", "Midnight Coup Replica",
+	}, names)
+	assert.Equal(t, map[string][]string{
+		"ACE OF SPADES":         {"10"},
+		"Ace of Spades":         {"8"},
+		"Austringer":            {"6"},
+		"Fatebringer":           {"9", "12", "4"},
+		"Midnight Coup":         {"3"},
+		"Midnight Coup Replica": {"7"},
+	}, got, "a reissue and a Timelost copy join the base weapon, ordered by name and then by acquisition")
+}
+
+func TestCopiesOf(t *testing.T) {
+	t.Parallel()
+
+	s := groupSnapshot()
+
+	tests := map[string]struct {
+		err  error
+		name string
+		want []string
+	}{
+		"exact name in any case": {
+			name: "FATEBRINGER",
+			want: []string{"9", "12", "4"},
+		},
+		"version suffix": {
+			name: "fatebringer (timelost)",
+			want: []string{"9", "12", "4"},
+		},
+		"unique substring": {
+			name: "austr",
+			want: []string{"6"},
+		},
+		"exact name beats a longer match": {
+			name: "midnight coup",
+			want: []string{"3"},
+		},
+		"exact case beats another case": {
+			name: "Ace of Spades",
+			want: []string{"8"},
+		},
+		"exact case in capitals": {
+			name: "ACE OF SPADES",
+			want: []string{"10"},
+		},
+		"names that differ only in case": {
+			name: "ace of spades",
+			err:  ErrUnknownWeapon,
+		},
+		"text of a version suffix": {
+			name: "timelost",
+			want: []string{"9", "12", "4"},
+		},
+		"bare suffix that a copy has": {
+			name: "(timelost)",
+			want: []string{"9", "12", "4"},
+		},
+		"bare suffix that no copy has": {
+			name: "(adept)",
+			err:  ErrUnknownWeapon,
+		},
+		"ambiguous substring": {
+			name: "ringer",
+			err:  ErrUnknownWeapon,
+		},
+		"armor does not count": {
+			name: "helm",
+			err:  ErrUnknownWeapon,
+		},
+		"no match": {
+			name: "thorn",
+			err:  ErrUnknownWeapon,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := s.CopiesOf(tc.name)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, ids(got.Copies))
+		})
+	}
+}
+
+func TestCopiesOfSuggestions(t *testing.T) {
+	t.Parallel()
+
+	// Twelve weapons share a substring, which is more than the error names.
+	many := &Snapshot{}
+	for i := range 12 {
+		many.Items = append(many.Items, &Item{
+			InstanceID: strconv.Itoa(i + 1),
+			Name:       fmt.Sprintf("Ringer %02d", i+1),
+			Kind:       kindWeapon,
+		})
+	}
+
+	tests := map[string]struct {
+		s    *Snapshot
+		name string
+		want string
+	}{
+		"two matches": {
+			s:    groupSnapshot(),
+			name: "ringer",
+			want: `unknown weapon: "ringer" matches 2 weapons, so pass a full name, such as Austringer, Fatebringer`,
+		},
+		"names that differ only in case": {
+			s:    groupSnapshot(),
+			name: "ace of spades",
+			want: `unknown weapon: "ace of spades" matches 2 weapons, so pass a full name, ` +
+				`such as ACE OF SPADES, Ace of Spades`,
+		},
+		"more matches than the error names": {
+			s:    many,
+			name: "ringer",
+			want: `unknown weapon: "ringer" matches 12 weapons, so pass a full name, such as ` +
+				`Ringer 01, Ringer 02, Ringer 03, Ringer 04, Ringer 05, ` +
+				`Ringer 06, Ringer 07, Ringer 08, Ringer 09, Ringer 10`,
+		},
+		"bare suffix": {
+			s:    groupSnapshot(),
+			name: "(Adept)",
+			want: `unknown weapon: no weapon in the inventory has a name that contains "(Adept)"`,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := tc.s.CopiesOf(tc.name)
+			require.EqualError(t, err, tc.want)
+		})
+	}
+}
+
+func TestGroupOf(t *testing.T) {
+	t.Parallel()
+
+	s := groupSnapshot()
+
+	tests := map[string]struct {
+		id       string
+		wantName string
+		want     []string
+	}{
+		"version copy": {
+			id:       "4",
+			wantName: "Fatebringer",
+			want:     []string{"9", "12", "4"},
+		},
+		"names that differ only in case": {
+			id:       "8",
+			wantName: "Ace of Spades",
+			want:     []string{"8"},
+		},
+		"capitals": {
+			id:       "10",
+			wantName: "ACE OF SPADES",
+			want:     []string{"10"},
+		},
+		"armor": {
+			id:       "5",
+			wantName: "Fatebringer Helm",
+			want:     []string{"5"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			item := s.Items[slices.IndexFunc(s.Items, func(item *Item) bool { return item.InstanceID == tc.id })]
+
+			got := s.GroupOf(item)
+			assert.Equal(t, tc.wantName, got.Name)
+			assert.Equal(t, tc.want, ids(got.Copies))
 		})
 	}
 }
