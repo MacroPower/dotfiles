@@ -181,6 +181,12 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 
 	postmaster := pi.BucketHash == bucketPostmaster || pi.Location == itemLocationPostmaster
 
+	// Bungie can report an item as not transferable for as long as it sits
+	// in the Postmaster. A move pulls the item first, so the definition
+	// alone decides whether a Postmaster item transfers.
+	transferable := !def.NonTransferable &&
+		(postmaster || pi.TransferStatus&transferNotTransferable == 0)
+
 	slot := pi.BucketHash
 	if slot == bucketVault || slot == bucketPostmaster {
 		slot = def.Bucket
@@ -202,7 +208,7 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 		Locked:       pi.State&stateLocked != 0,
 		Masterwork:   pi.State&stateMasterwork != 0,
 		Crafted:      pi.State&stateCrafted != 0,
-		Transferable: !def.NonTransferable && pi.TransferStatus&transferNotTransferable == 0,
+		Transferable: transferable,
 		Equippable:   def.Equippable,
 	}
 

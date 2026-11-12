@@ -65,6 +65,7 @@ func TestNewSnapshot(t *testing.T) {
 	assert.True(t, lost.Postmaster)
 	assert.Equal(t, "Kinetic Weapons", lost.Slot, "a Postmaster item takes the slot of its definition")
 	assert.Equal(t, "Hunter (postmaster)", s.LocationLabel(lost))
+	assert.True(t, lost.Transferable, "the transfer status of a Postmaster item does not block a move")
 }
 
 func TestAnnotate(t *testing.T) {

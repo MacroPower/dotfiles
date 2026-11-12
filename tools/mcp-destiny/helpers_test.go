@@ -47,7 +47,7 @@ const fixtureProfile = `{
 	"characterInventories": {"data": {
 		"c1": {"items": [
 			{"itemHash": 102, "itemInstanceId": "1003", "quantity": 1, "location": 1, "bucketHash": 1498876634},
-			{"itemHash": 100, "itemInstanceId": "1005", "quantity": 1, "location": 4, "bucketHash": 215593132}
+			{"itemHash": 100, "itemInstanceId": "1005", "quantity": 1, "location": 4, "bucketHash": 215593132, "transferStatus": 2}
 		]},
 		"c2": {"items": []}
 	}},
