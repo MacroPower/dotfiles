@@ -381,6 +381,18 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleSetLock)
 
 	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolSetPerk,
+		Description: "Make a perk active on an item instance in the live game, such as a weapon trait or a barrel. " +
+			"The perk must be one that get_item lists as a swap for a socket of the item. " +
+			"Bungie refuses a plug that costs materials to insert. It also allows the change only while the character " +
+			"that holds the item is offline, in orbit, or in a social space. For an item in the vault, " +
+			"that character is the most recently played one. " +
+			"get_item and list_items show the stats of the item from before the change until the next inventory fetch, " +
+			"up to 30 seconds later.",
+		Annotations: additive,
+	}, h.handleSetPerk)
+
+	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolListLoadouts,
 		Description: "List the loadouts that each character saved in the game, with the instance id, name, slot, " +
 			"and location of each item. The server cannot read the name, icon, or color that the game shows " +

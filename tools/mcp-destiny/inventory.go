@@ -77,15 +77,42 @@ var (
 // suggests.
 const maxSuggestions = 10
 
-// Perk is one plug in a visible socket of an item, such as a weapon trait
-// or an armor mod. Description is the text of the plug definition, which
-// is empty for some plugs. Options names the other plugs that the socket
-// can hold.
-type Perk struct {
+// Plug is one plug that a socket of an item holds or can hold. Hash is the
+// item hash of the plug definition, and Description is the text of that
+// definition, which is empty for some plugs.
+type Plug struct {
 	Name        string
 	Type        string
 	Description string
-	Options     []string
+	Hash        uint32
+}
+
+// Perk is the active plug in one visible socket of an item, such as a
+// weapon trait or an armor mod. Socket is the index of the socket in the
+// socket list of the item. Options lists the other plugs that Bungie
+// allows the socket to hold, one for each name. A name that has both a
+// base and an enhanced plug keeps the enhanced one.
+type Perk struct {
+	Plug
+
+	Options []Plug
+
+	// plugs lists each plug that Bungie allows the socket to hold, and
+	// [optionsOf] picks Options from them. A perk change picks Options
+	// again, so they match the Options of the next profile fetch.
+	plugs []Plug
+
+	Socket int
+}
+
+// OptionNames returns the name of each plug in [Perk.Options].
+func (p Perk) OptionNames() []string {
+	names := make([]string, 0, len(p.Options))
+	for _, option := range p.Options {
+		names = append(names, option.Name)
+	}
+
+	return names
 }
 
 // Stat is one named stat value of an item instance.
@@ -191,8 +218,8 @@ type Currency struct {
 
 // Snapshot is the inventory of every character and the vault at one moment,
 // with the loadouts that the characters saved in the game. Moves, lock
-// changes, and loadout equips update it in place, because Bungie can serve
-// stale state for some seconds after a change.
+// changes, perk changes, and loadout equips update it in place, because
+// Bungie can serve stale state for some seconds after a change.
 //
 // Buckets lists the vault, the buckets that hold the equipment and the items
 // that a player manages, and the Postmaster. Each character has its own copy
@@ -434,21 +461,53 @@ func perksOf(profile *Profile, defs *Defs, instanceID string) []Perk {
 			continue
 		}
 
-		perk := Perk{Name: plug.Name, Type: plug.TypeName, Description: plug.Description}
+		perk := Perk{Plug: plugOf(plug, socket.PlugHash), Socket: i}
 
 		for _, option := range options[strconv.Itoa(i)] {
 			def, ok := defs.Items[option.Hash]
-			if !ok || def.Name == plug.Name || slices.Contains(perk.Options, def.Name) {
-				continue
+			if ok && option.CanInsert {
+				perk.plugs = append(perk.plugs, plugOf(def, option.Hash))
 			}
-
-			perk.Options = append(perk.Options, def.Name)
 		}
 
+		perk.Options = optionsOf(perk.plugs, perk.Plug)
 		perks = append(perks, perk)
 	}
 
 	return perks
+}
+
+func plugOf(def ItemDef, hash uint32) Plug {
+	return Plug{Name: def.Name, Type: def.TypeName, Description: def.Description, Hash: hash}
+}
+
+// optionsOf returns the plugs that a socket that holds active can swap to,
+// one for each name other than the name of active. A name that has both a
+// base and an enhanced plug keeps the enhanced one.
+func optionsOf(plugs []Plug, active Plug) []Plug {
+	var options []Plug
+
+	for _, plug := range plugs {
+		if plug.Name == active.Name {
+			continue
+		}
+
+		kept := slices.IndexFunc(options, func(p Plug) bool { return p.Name == plug.Name })
+		switch {
+		case kept < 0:
+			options = append(options, plug)
+		case isEnhanced(plug):
+			options[kept] = plug
+		}
+	}
+
+	return options
+}
+
+// isEnhanced reports whether a plug is the enhanced variant of a perk. The
+// type of an enhanced plug starts with "Enhanced", such as "Enhanced Trait".
+func isEnhanced(plug Plug) bool {
+	return strings.HasPrefix(plug.Type, "Enhanced")
 }
 
 // isPerk reports whether a plug changes how an item plays. It rejects
@@ -546,6 +605,17 @@ func (s *Snapshot) Character(id string) (Character, bool) {
 	return Character{}, false
 }
 
+// lastPlayed returns the most recently played character, which
+// [NewSnapshot] puts first in Characters. It returns false when the account
+// has no character.
+func (s *Snapshot) lastPlayed() (Character, bool) {
+	if len(s.Characters) == 0 {
+		return Character{}, false
+	}
+
+	return s.Characters[0], true
+}
+
 // ResolveOwner turns a location name into an owner value. A name is
 // "vault", a character id, or a class name that exactly one character has.
 func (s *Snapshot) ResolveOwner(name string) (string, error) {
@@ -566,11 +636,12 @@ func (s *Snapshot) ResolveOwner(name string) (string, error) {
 // letter case. An empty name selects the most recently played character.
 func (s *Snapshot) ResolveCharacter(name string) (Character, error) {
 	if name == "" {
-		if len(s.Characters) == 0 {
+		c, ok := s.lastPlayed()
+		if !ok {
 			return Character{}, fmt.Errorf("%w: the account has no characters", ErrUnknownTarget)
 		}
 
-		return s.Characters[0], nil
+		return c, nil
 	}
 
 	if strings.EqualFold(name, ownerVault) {

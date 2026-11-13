@@ -48,11 +48,22 @@ func TestNewSnapshot(t *testing.T) {
 		Quantity:   1,
 		Bucket:     bucketKinetic,
 		Perks: []Perk{
-			{Name: "Explosive Payload", Type: "Trait", Options: []string{"Rampage"}},
 			{
-				Name:        "Firefly",
-				Type:        "Trait",
-				Description: "Precision final blows cause targets to explode.\n\n Explosions deal Solar damage. ",
+				Plug:    Plug{Name: "Explosive Payload", Type: "Trait", Hash: 900},
+				Options: []Plug{{Name: "Rampage", Type: "Trait", Hash: 903}},
+				plugs: []Plug{
+					{Name: "Explosive Payload", Type: "Trait", Hash: 900},
+					{Name: "Rampage", Type: "Trait", Hash: 903},
+				},
+			},
+			{
+				Plug: Plug{
+					Name:        "Firefly",
+					Type:        "Trait",
+					Description: "Precision final blows cause targets to explode.\n\n Explosions deal Solar damage. ",
+					Hash:        901,
+				},
+				Socket: 1,
 			},
 		},
 		Stats:        []Stat{{Name: "Range", Value: 55}},

@@ -30,6 +30,7 @@ const (
 	pathTransfer = "/Destiny2/Actions/Items/TransferItem/"
 	pathEquip    = "/Destiny2/Actions/Items/EquipItem/"
 	pathLock     = "/Destiny2/Actions/Items/SetLockState/"
+	pathInsert   = "/Destiny2/Actions/Items/InsertSocketPlugFree/"
 	pathLoadout  = "/Destiny2/Actions/Loadouts/EquipLoadout/"
 )
 
@@ -65,8 +66,8 @@ func TestServerListsTools(t *testing.T) {
 		toolCompareDuplicates, toolMoveItems,
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolRemoveAutotagRule,
-		toolMoveStack, toolSetLock, toolSetAutotagEnabled, toolListActivityHistory, toolListLoadouts,
-		toolEquipLoadout,
+		toolMoveStack, toolSetLock, toolSetPerk, toolSetAutotagEnabled, toolListActivityHistory,
+		toolListLoadouts, toolEquipLoadout,
 	}, names)
 
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
@@ -1113,6 +1114,134 @@ func TestSetLockToolSnapshotAge(t *testing.T) {
 	assert.False(t, isError, "one item locked")
 	assert.Equal(t, refusal+"\n- Locked Gjallarhorn (1002).", got)
 	assert.Equal(t, later, f.h.snapshot.Fetched, "a lock change restarts the age of the snapshot")
+}
+
+func TestSetPerkTool(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+	require.False(t, isError)
+
+	got, isError := call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: " rampage "})
+	assert.False(t, isError)
+	assert.Equal(t, "Replaced Explosive Payload with Rampage on Fatebringer (1001). "+
+		"Its stats keep their old values until the next inventory fetch.", got)
+
+	inserts := f.bungie.calls(http.MethodPost, pathInsert)
+	require.Len(t, inserts, 1)
+	assert.Equal(t, map[string]any{
+		"plug": map[string]any{
+			"socketIndex":     float64(0),
+			"socketArrayType": float64(0),
+			"plugItemHash":    float64(903),
+		},
+		"itemId":         "1001",
+		"characterId":    hunterID,
+		"membershipType": float64(3),
+	}, inserts[0].Body)
+
+	// The snapshot carries the new perk, so the next read does not ask
+	// Bungie for a profile that might predate it.
+	got, isError = call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
+	assert.False(t, isError)
+	assert.Contains(t, got, "Perks:\n- Rampage (Trait), can swap to Explosive Payload\n- Firefly (Trait)\n")
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+
+	got, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Rampage"})
+	assert.False(t, isError)
+	assert.Equal(t, "Rampage is already active on Fatebringer (1001).", got)
+	assert.Len(t, f.bungie.calls(http.MethodPost, pathInsert), 1, "an active perk sends no request")
+}
+
+func TestSetPerkToolSnapshotAge(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+	require.False(t, isError)
+
+	later := fixtureNow.Add(10 * time.Second)
+	f.h.now = func() time.Time { return later }
+
+	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Explosive Payload"})
+	require.False(t, isError)
+	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a perk that is already active keeps the age of the snapshot")
+
+	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Kill Clip"})
+	require.True(t, isError)
+	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a perk that no socket offers keeps the age of the snapshot")
+	assert.Empty(t, f.bungie.calls(http.MethodPost, pathInsert))
+
+	f.bungieError = `{"ErrorCode": 1634, "ErrorStatus": "DestinyCharacterNotInTower", "Message": "not in a social space"}`
+
+	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Rampage"})
+	require.True(t, isError)
+	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a swap that Bungie refuses keeps the age of the snapshot")
+	assert.Len(t, f.bungie.calls(http.MethodPost, pathInsert), 1)
+
+	f.bungieError = ""
+
+	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Rampage"})
+	require.False(t, isError)
+	assert.Equal(t, later, f.h.snapshot.Fetched, "a perk change restarts the age of the snapshot")
+}
+
+func TestSetPerkToolErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		bungieError string
+		want        string
+		in          SetPerkInput
+	}{
+		"bungie refuses": {
+			in:          SetPerkInput{InstanceID: "1001", Perk: "Rampage"},
+			bungieError: `{"ErrorCode": 1634, "ErrorStatus": "DestinyCharacterNotInTower", "Message": "not in a social space"}`,
+			want:        "inserting Rampage: bungie: DestinyCharacterNotInTower: not in a social space",
+		},
+		"perk that no socket can swap to": {
+			in: SetPerkInput{InstanceID: "1001", Perk: "Kill Clip"},
+			want: `cannot change the perk: no socket of Fatebringer can swap to "Kill Clip". ` +
+				"Sockets that can swap: Explosive Payload (can swap to Rampage)",
+		},
+		"replace names no active perk": {
+			in: SetPerkInput{InstanceID: "1001", Perk: "Rampage", Replace: " Kill Clip "},
+			want: `cannot change the perk: Fatebringer has no active perk named "Kill Clip". ` +
+				"Its perks are Explosive Payload, Firefly",
+		},
+		"unknown instance": {
+			in:   SetPerkInput{InstanceID: "9", Perk: "Rampage"},
+			want: "invalid input: no item in the inventory has the instance id 9",
+		},
+		"no perk name": {
+			in:   SetPerkInput{InstanceID: "1001", Perk: " "},
+			want: "invalid input: a perk change needs a perk name",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.bungieError = tc.bungieError
+
+			got, isError := call(t, f.h.handleSetPerk, tc.in)
+			assert.True(t, isError)
+			assert.Equal(t, tc.want, got)
+
+			if f.h.snapshot == nil {
+				return
+			}
+
+			item, ok := f.h.snapshot.Find("1001")
+			require.True(t, ok)
+			assert.Equal(t, "Explosive Payload", item.Perks[0].Name)
+		})
+	}
 }
 
 func TestListLoadouts(t *testing.T) {

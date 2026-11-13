@@ -129,7 +129,7 @@ const fixtureProfile = `{
 			]}
 		}},
 		"reusablePlugs": {"data": {
-			"1001": {"plugs": {"0": [{"plugItemHash": 900}, {"plugItemHash": 903}]}}
+			"1001": {"plugs": {"0": [{"plugItemHash": 900, "canInsert": true}, {"plugItemHash": 903, "canInsert": true}]}}
 		}}
 	}
 }`
@@ -245,6 +245,7 @@ func fixtureDefs() *Defs {
 			905:            plug("Kill Clip", "Enhanced Trait"),
 			906:            plug("Chill Clip", "Trait"),
 			907:            plug("Arrowhead Brake", "Barrel"),
+			908:            plug("Chill Clip", "Enhanced Trait"),
 			itemGlimmer:    {Name: "Glimmer", TypeName: "Currency", ClassType: classAny},
 			itemBrightDust: {Name: "Bright Dust", TypeName: "Currency", ClassType: classAny},
 		},

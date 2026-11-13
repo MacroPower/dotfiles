@@ -1,19 +1,20 @@
 // Mcp-destiny is an MCP server (stdio transport) for Agg's Destiny Vault
 // Manager. The project lives at https://github.com/agg23/destiny-inventory.
 // The tools read the Destiny 2 inventory of the signed-in account and edit
-// the data that the web client keeps per account. They also move and lock
-// items and equip saved loadouts in the live game.
+// the data that the web client keeps per account. They also move items,
+// lock them, change their perks, and equip saved loadouts in the live
+// game.
 //
 // # Data Sources
 //
 // The server talks to two APIs. Agg's Destiny Vault Manager stores tags,
 // notes, perk preferences, and autotag rules, serves the Destiny definition
 // artifacts, and brokers the Bungie OAuth exchange. The Bungie platform API
-// serves the inventory, the saved loadouts, and the activity history, and
-// it performs transfers, equips, lock changes, and loadout equips. The
-// server joins a Bungie profile with the definitions to give every item a
-// name, a type, perks, and stats. The definitions also name each activity
-// of the history.
+// serves the inventory, the saved loadouts, and the activity history. It
+// also performs transfers, equips, lock changes, perk changes, and loadout
+// equips. The server joins a Bungie profile with the definitions to give
+// every item a name, a type, perks, and stats. The definitions also name
+// each activity of the history.
 //
 // Tags follow the web client. An item carries at most one of the tags that
 // the web client defines, and the favorite mark is a separate flag. The web

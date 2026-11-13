@@ -41,6 +41,11 @@ const (
 	stateCrafted    = 8
 )
 
+// socketArrayDefault is the Bungie DestinySocketArrayType value that
+// selects the socket list of an item, which the sockets component of a
+// profile reports.
+const socketArrayDefault = 0
+
 var (
 	// profileComponents lists the GetProfile components that
 	// [*Bungie.Profile] requests. They cover profiles, profile inventories,
@@ -134,9 +139,13 @@ type ProfileSocket struct {
 	IsVisible bool   `json:"isVisible"`
 }
 
-// ProfilePlug is one Bungie DestinyItemPlugBase.
+// ProfilePlug is one Bungie DestinyItemPlugBase. CanInsert reports whether
+// the plug meets the insertion rules of its definition, such as the level
+// that unlocks an enhanced trait. Bungie can still refuse an insert, such
+// as one that costs materials.
 type ProfilePlug struct {
-	Hash uint32 `json:"plugItemHash"`
+	Hash      uint32 `json:"plugItemHash"`
+	CanInsert bool   `json:"canInsert"`
 }
 
 // ProfileItems is a list of items inside a profile component.
@@ -241,11 +250,13 @@ func (p HistoryPeriod) Value(key string) float64 {
 }
 
 // ItemAction identifies one item for a transfer, an equip, a Postmaster
-// pull, or a lock change. CharacterID names the character that holds the
-// item on a transfer to the vault or a lock change, and the character that
-// receives it otherwise. A lock change of an item in the vault names the
-// most recently played character. StackSize is the number of units of a
-// stackable item, and zero means one.
+// pull, a lock change, or a plug insert. CharacterID names the character
+// that receives the item on a transfer from the vault, an equip, or a
+// Postmaster pull. Every other action names the character that holds the
+// item. For an item that no character holds, such as one in the vault or
+// in an account-wide bucket, it names the most recently played character.
+// StackSize is the number of units of a stackable item, and zero means
+// one.
 type ItemAction struct {
 	InstanceID  string
 	CharacterID string
@@ -430,6 +441,31 @@ func (b *Bungie) SetLockState(ctx context.Context, creds Credentials, action Ite
 	}
 
 	return b.call(ctx, creds, http.MethodPost, "/Destiny2/Actions/Items/SetLockState/", body, nil)
+}
+
+// InsertSocketPlugFree inserts the plug with the item hash plugHash into
+// the socket at index socket of an instanced item. Bungie inserts only a
+// plug that costs nothing and that a later insert can reverse, such as a
+// weapon perk.
+func (b *Bungie) InsertSocketPlugFree(
+	ctx context.Context,
+	creds Credentials,
+	action ItemAction,
+	socket int,
+	plugHash uint32,
+) error {
+	body := map[string]any{
+		"plug": map[string]any{
+			"socketIndex":     socket,
+			"socketArrayType": socketArrayDefault,
+			"plugItemHash":    plugHash,
+		},
+		"itemId":         action.InstanceID,
+		"characterId":    action.CharacterID,
+		"membershipType": action.Membership.Type,
+	}
+
+	return b.call(ctx, creds, http.MethodPost, "/Destiny2/Actions/Items/InsertSocketPlugFree/", body, nil)
 }
 
 // EquipLoadout equips a loadout that the character saved in the game.

@@ -243,7 +243,7 @@ func renderItem(s *Snapshot, item *Item) string {
 			fmt.Fprintf(&b, "- %s (%s)", perk.Name, perk.Type)
 
 			if len(perk.Options) > 0 {
-				fmt.Fprintf(&b, ", can swap to %s", strings.Join(perk.Options, ", "))
+				fmt.Fprintf(&b, ", can swap to %s", strings.Join(perk.OptionNames(), ", "))
 			}
 
 			b.WriteString("\n")
@@ -436,7 +436,7 @@ func perkLabel(perk Perk) string {
 		return perk.Name
 	}
 
-	return perk.Name + " (can swap to " + strings.Join(perk.Options, ", ") + ")"
+	return perk.Name + " (can swap to " + strings.Join(perk.OptionNames(), ", ") + ")"
 }
 
 // writeDescription writes each line of a perk description indented under

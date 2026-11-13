@@ -28,6 +28,7 @@ const (
 	toolMoveItems           = "move_items"
 	toolMoveStack           = "move_stack"
 	toolSetLock             = "set_lock"
+	toolSetPerk             = "set_perk"
 	toolListLoadouts        = "list_loadouts"
 	toolEquipLoadout        = "equip_loadout"
 	toolListTags            = "list_tags"
@@ -168,6 +169,13 @@ type SetLockInput struct {
 	Locked      bool     `json:"locked"       jsonschema:"true to lock the items, false to unlock them"`
 }
 
+// SetPerkInput is the input schema of the set_perk tool.
+type SetPerkInput struct {
+	InstanceID string `json:"instance_id"      jsonschema:"Instance id from list_items"`
+	Perk       string `json:"perk"             jsonschema:"Perk to make active in any letter case, such as 'Rampage'. get_item lists the perks that each socket can swap to"`
+	Replace    string `json:"replace,omitzero" jsonschema:"Active perk to swap out, in any letter case. Pass it when more than one socket can swap to the perk"`
+}
+
 // ListLoadoutsInput is the input schema of the list_loadouts tool.
 type ListLoadoutsInput struct {
 	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to list the loadouts of every character"`
@@ -235,8 +243,8 @@ type RemoveAutotagRuleInput struct {
 }
 
 // handler holds the shared state of the tool handlers. The mutex serializes
-// tool calls, because moves and lock changes update the cached snapshot in
-// place.
+// tool calls, because moves, lock changes, perk changes, and loadout
+// equips update the cached snapshot in place.
 type handler struct {
 	service  *Service
 	bungie   *Bungie
@@ -729,6 +737,58 @@ func (h *handler) handleSetLock(
 	result.IsError = failed == len(items)
 
 	return result, nil, nil
+}
+
+func (h *handler) handleSetPerk(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in SetPerkInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	name := strings.TrimSpace(in.Perk)
+	if name == "" {
+		return h.toolError(ctx, toolSetPerk, fmt.Errorf("%w: a perk change needs a perk name", ErrInvalidInput))
+	}
+
+	s, err := h.loadSnapshot(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolSetPerk, err)
+	}
+
+	item, ok := s.Find(in.InstanceID)
+	if !ok {
+		return h.toolError(ctx, toolSetPerk, unknownInstances([]string{in.InstanceID}))
+	}
+
+	membership, err := h.membership(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolSetPerk, err)
+	}
+
+	inserter := bungieMover{h: h, membership: membership}
+
+	from, to, err := s.SetPerk(ctx, inserter, item, name, strings.TrimSpace(in.Replace))
+	if err != nil {
+		return h.toolError(ctx, toolSetPerk, err)
+	}
+
+	if from == to {
+		return textResult(
+			fmt.Sprintf("%s is already active on %s (%s).", to.Name, item.Name, item.InstanceID),
+		), nil, nil
+	}
+
+	// Bungie can serve the sockets from before a change for some seconds.
+	// A snapshot that a change updated therefore stays in use for a full
+	// TTL.
+	s.Fetched = h.now()
+
+	return textResult(fmt.Sprintf(
+		"Replaced %s with %s on %s (%s). Its stats keep their old values until the next inventory fetch.",
+		from.Name, to.Name, item.Name, item.InstanceID,
+	)), nil, nil
 }
 
 func (h *handler) handleListLoadouts(
@@ -1653,9 +1713,9 @@ func (h *handler) bungieKey(ctx context.Context) (string, error) {
 	return h.apiKey, nil
 }
 
-// bungieMover adapts the handler to [ItemMover], [ItemLocker], and
-// [LoadoutEquipper]. It adds the membership and the credentials to each
-// action.
+// bungieMover adapts the handler to [ItemMover], [ItemLocker],
+// [PlugInserter], and [LoadoutEquipper]. It adds the membership and the
+// credentials to each action.
 type bungieMover struct {
 	h          *handler
 	membership Membership
@@ -1694,6 +1754,15 @@ func (m bungieMover) SetLockState(ctx context.Context, action ItemAction, locked
 
 	return m.h.withBungie(ctx, func(creds Credentials) error {
 		return m.h.bungie.SetLockState(ctx, creds, action, locked)
+	})
+}
+
+// InsertSocketPlugFree implements [PlugInserter].
+func (m bungieMover) InsertSocketPlugFree(ctx context.Context, action ItemAction, socket int, plugHash uint32) error {
+	action.Membership = m.membership
+
+	return m.h.withBungie(ctx, func(creds Credentials) error {
+		return m.h.bungie.InsertSocketPlugFree(ctx, creds, action, socket, plugHash)
 	})
 }
 

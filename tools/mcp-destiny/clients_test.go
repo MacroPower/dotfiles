@@ -481,6 +481,7 @@ func TestBungieActions(t *testing.T) {
 	require.NoError(t, b.PullFromPostmaster(t.Context(), creds, action))
 	require.NoError(t, b.SetLockState(t.Context(), creds, action, true))
 	require.NoError(t, b.SetLockState(t.Context(), creds, action, false))
+	require.NoError(t, b.InsertSocketPlugFree(t.Context(), creds, action, 3, 903))
 	require.NoError(t, b.EquipLoadout(t.Context(), creds, LoadoutAction{
 		CharacterID: hunterID,
 		Membership:  action.Membership,
@@ -525,6 +526,19 @@ func TestBungieActions(t *testing.T) {
 		"membershipType": float64(3),
 	}, locks[0].Body)
 	assert.Equal(t, false, locks[1].Body["state"])
+
+	inserts := rec.calls(http.MethodPost, "/Destiny2/Actions/Items/InsertSocketPlugFree/")
+	require.Len(t, inserts, 1)
+	assert.Equal(t, map[string]any{
+		"plug": map[string]any{
+			"socketIndex":     float64(3),
+			"socketArrayType": float64(0),
+			"plugItemHash":    float64(903),
+		},
+		"itemId":         "1001",
+		"characterId":    hunterID,
+		"membershipType": float64(3),
+	}, inserts[0].Body)
 
 	loadouts := rec.calls(http.MethodPost, "/Destiny2/Actions/Loadouts/EquipLoadout/")
 	require.Len(t, loadouts, 1)

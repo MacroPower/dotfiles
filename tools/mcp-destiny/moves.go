@@ -393,16 +393,12 @@ func (s *Snapshot) SetLock(ctx context.Context, locker ItemLocker, item *Item, l
 		return fmt.Errorf("%w: %s cannot be locked", ErrLock, item.Name)
 	}
 
-	action := ItemAction{InstanceID: item.InstanceID, ItemHash: item.Hash, CharacterID: item.Owner}
-
-	_, owned := s.Character(item.Owner)
-	if !owned {
-		if len(s.Characters) == 0 {
-			return fmt.Errorf("%w: the account has no character to name in the request", ErrLock)
-		}
-
-		action.CharacterID = s.Characters[0].ID
+	character, ok := s.requestCharacter(item)
+	if !ok {
+		return fmt.Errorf("%w: the account has no character to name in the request", ErrLock)
 	}
+
+	action := ItemAction{InstanceID: item.InstanceID, ItemHash: item.Hash, CharacterID: character}
 
 	err := locker.SetLockState(ctx, action, locked)
 	if err != nil {
@@ -412,6 +408,21 @@ func (s *Snapshot) SetLock(ctx context.Context, locker ItemLocker, item *Item, l
 	item.Locked = locked
 
 	return nil
+}
+
+// requestCharacter returns the character that a Bungie request about item
+// names. An item on a character names that character. Every other item,
+// such as one in the vault or in an account-wide bucket, names the most
+// recently played one. It returns false when the account has no character.
+func (s *Snapshot) requestCharacter(item *Item) (string, bool) {
+	_, owned := s.Character(item.Owner)
+	if owned {
+		return item.Owner, true
+	}
+
+	c, ok := s.lastPlayed()
+
+	return c.ID, ok
 }
 
 // NewestMark returns the highest instance id among the equippable items, in
