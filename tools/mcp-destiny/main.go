@@ -596,6 +596,8 @@ func newServer(h *handler) *mcp.Server {
 			"Both ignore letter case and accents. " +
 			"The tool refuses a query with any other term, such as a bare word or is:masterwork, " +
 			"and the refusal names each such term together with the filters that the tool evaluates. " +
+			"A term whose value the web client rejects, such as count:=<2, returns an error that names the term " +
+			"and says that the web client skips a rule with the query. " +
 			"The query can combine the filters with and, or, -, and parentheses. " +
 			"The preview ignores rule order. An earlier rule can take a matching item first, " +
 			"so a match does not mean that a saved rule takes the item.",

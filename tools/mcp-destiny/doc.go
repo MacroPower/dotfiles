@@ -235,6 +235,15 @@
 // are the is: words and the filter names that the list of filters leaves
 // out. The web client might still accept such a term.
 //
+// A filter value that the web client rejects, such as count:=<2 or
+// dupe:foo, also voids the preview. The web client skips an autotag rule
+// whose query holds such a value, even a value that its search bar
+// completes, such as dupe:ite. The tool returns an error that says so
+// and names each such term. The error leaves out the terms outside the
+// set, because the web client skips the rule whatever those terms mean. A
+// dupe: value that the web client accepts but the tool does not evaluate,
+// such as dupe:stats, is a term outside the set.
+//
 // The list of filters gives the meaning of each one. Each is: word also
 // works as not:<word>.
 //
@@ -272,9 +281,28 @@
 //   - is:primary, is:special, and is:heavy: an item that takes the ammo
 //     type that the word names. An item whose definition gives no ammo
 //     type, such as armor, matches none of them.
+//   - is:dupe and dupe:item: an item that shares its name, class, tier,
+//     and bucket with another item of the account, in any location. The
+//     web client keeps the suffix (Adept), (Timelost), or (Harrowed) in a
+//     weapon name, so such a weapon never matches its base weapon. Only
+//     equipment that the game can lock matches, except emblems, artifacts,
+//     and the default shader.
+//   - is:incurrentchar: an item of the character that the player played
+//     last, or an item in an account-wide bucket other than the vault.
+//   - is:currentclass: an item of the class of the character that the
+//     player played last.
 //   - tag:<value>: an item whose tag is the value. Only the tags that the
 //     web client defines count, so tag:none matches nothing. The value
 //     favorite matches an item with the favorite mark.
+//   - count:<range>: an item whose number of copies is in the range, such
+//     as count:>=2. The copies are the items of the account with the name,
+//     class, tier, and bucket of the item. Only equipment that the game can
+//     lock counts, except emblems. The range is an operator and a number.
+//     The operator is =, <, <=, >, >=, or empty, and the empty operator
+//     tests equality.
+//   - id:<value>: the item with that instance id.
+//   - hash:<value>: an item with that item hash. The tool reads the value
+//     as the web client does, so hash:12abc is hash:12.
 //   - name:<text>: an item with a word in its name that starts with the
 //     text, so name:hunger matches Gnawing Hunger and name:unger does not.
 //     When the folded text starts with a character other than an ASCII

@@ -1509,8 +1509,9 @@ func (h *handler) handleSaveAutotagRule(
 }
 
 // handlePreviewAutotagRule lists the owned items that a rule query
-// matches. It refuses a query that does not parse or that holds a term
-// outside the filter table before it sends any request.
+// matches. It refuses a query that does not parse, that holds a value that
+// the web client rejects, or that holds a term outside the filter table
+// before it sends any request.
 func (h *handler) handlePreviewAutotagRule(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -1526,6 +1527,10 @@ func (h *handler) handlePreviewAutotagRule(
 	}
 
 	query := compileQuery(root)
+	if len(query.invalid) > 0 {
+		return h.toolError(ctx, toolPreviewAutotagRule, invalidQuery(query.invalid))
+	}
+
 	if len(query.unsupported) > 0 {
 		return h.toolError(ctx, toolPreviewAutotagRule, unsupportedQuery(query.unsupported))
 	}
@@ -1535,13 +1540,13 @@ func (h *handler) handlePreviewAutotagRule(
 		return h.toolError(ctx, toolPreviewAutotagRule, err)
 	}
 
-	_, ok := s.lastPlayed()
+	current, ok := s.lastPlayed()
 	if !ok {
 		return h.toolError(ctx, toolPreviewAutotagRule, errNoCharacter)
 	}
 
 	owned := ownedItems(s)
-	matches := query.matches(owned)
+	matches := query.matches(searchContext{current: current, items: builtItems(s)}, owned)
 
 	limit := in.Limit
 	if limit <= 0 {

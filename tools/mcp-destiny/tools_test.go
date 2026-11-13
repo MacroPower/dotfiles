@@ -5745,10 +5745,146 @@ func TestPreviewUnsupported(t *testing.T) {
 		"is:sniperrifle, is:shotgun, is:machinegun, is:lmg, is:rocketlauncher, is:sidearm, is:sword, "+
 		"is:grenadelauncher, is:heavygrenadelauncher, is:specialgrenadelauncher, is:tracerifle, "+
 		"is:linearfusionrifle, is:lfr, is:submachine, is:smg, is:bow, is:glaive, is:transmat, "+
-		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, tag:, name:, "+
+		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, is:dupe, "+
+		"is:incurrentchar, is:currentclass, tag:, dupe:item, count:, id:, hash:, name:, "+
 		"and exactname:. Each is: word also works as not:<word>.", got)
 	assert.Empty(t, f.service.all())
 	assert.Empty(t, f.bungie.all())
+}
+
+func TestPreviewInvalidValue(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query string
+		want  string
+	}{
+		"count: operators in the wrong order": {
+			query: "count:=<2",
+			want: "invalid input: the web client rejects count:=<2, " +
+				"so it skips an autotag rule with this query",
+		},
+		"unknown dupe: value": {
+			query: "dupe:foo",
+			want:  "invalid input: the web client rejects dupe:foo, so it skips an autotag rule with this query",
+		},
+		"invalid and unsupported terms": {
+			query: "is:masterwork dupe:foo or count:abc",
+			want: "invalid input: the web client rejects dupe:foo, count:abc, " +
+				"so it skips an autotag rule with this query",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
+			assert.True(t, isError)
+			assert.Equal(t, tc.want, got)
+			assert.Empty(t, f.service.all())
+			assert.Empty(t, f.bungie.all())
+		})
+	}
+}
+
+func TestPreviewUnsupportedDupeValue(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon dupe:stats"})
+	assert.True(t, isError)
+	assert.True(t, strings.HasPrefix(got, "unsupported query: the server does not evaluate dupe:stats, "), got)
+	assert.Empty(t, f.service.all())
+	assert.Empty(t, f.bungie.all())
+}
+
+func TestPreviewDupe(t *testing.T) {
+	t.Parallel()
+
+	// The Hunter holds one copy of a pair of hand cannons, and the vault
+	// holds the other copy. Midnight Coup has one copy. The helmets are a
+	// pair of armor pieces, so is:weapon leaves them out.
+	f := newFakes(t)
+	f.profileBody = `{"ErrorCode": 1, "Response": {
+		"characters": {"data": {
+			"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
+		}},
+		"profileInventory": {"data": {"items": [
+			{"itemHash": 100, "itemInstanceId": "2002", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802},
+			{"itemHash": 200, "itemInstanceId": "2004", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802}
+		]}},
+		"characterInventories": {"data": {"c1": {"items": [
+			{"itemHash": 100, "itemInstanceId": "2001", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 1498876634},
+			{"itemHash": 102, "itemInstanceId": "2003", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 1498876634},
+			{"itemHash": 200, "itemInstanceId": "2005", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 3448274439}
+		]}}}
+	}}`
+
+	matched, owned, rows := preview(t, f, "is:weapon is:dupe")
+	assert.Equal(t, 2, matched)
+	assert.Equal(t, 5, owned)
+	assert.Equal(t, []string{"2001", "2002"}, rows)
+
+	_, _, rows = preview(t, f, "is:dupe")
+	assert.Equal(t, []string{"2004", "2005", "2001", "2002"}, rows)
+}
+
+func TestPreviewDupeGroupsBuiltItems(t *testing.T) {
+	t.Parallel()
+
+	// The Hunter holds one copy of Midnight Coup and a stack with the same
+	// key, which the game cannot lock. Hash 403 is a weapon whose
+	// definition names the bucket that holds dummy items. DIM builds its
+	// lost copy at the Postmaster, but not its vault copy, so the lost
+	// copy has no other copy to match.
+	f := newFakes(t)
+	f.h.defs.defs.Items[403] = ItemDef{
+		Name:       "Dummy",
+		Bucket:     bucketForbidden,
+		ItemType:   itemTypeWeapon,
+		ClassType:  classAny,
+		Equippable: true,
+	}
+	f.profileBody = `{"ErrorCode": 1, "Response": {
+		"characters": {"data": {
+			"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
+		}},
+		"profileInventory": {"data": {"items": [
+			{"itemHash": 403, "itemInstanceId": "2005", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802}
+		]}},
+		"characterInventories": {"data": {"c1": {"items": [
+			{"itemHash": 102, "itemInstanceId": "2003", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 1498876634},
+			{"itemHash": 102, "quantity": 1, "location": 1, "bucketHash": 1498876634},
+			{"itemHash": 403, "itemInstanceId": "2006", "lockable": true, "quantity": 1, "location": 4, "bucketHash": 215593132}
+		]}}}
+	}}`
+
+	matched, owned, rows := preview(t, f, "is:dupe")
+	assert.Equal(t, 1, matched)
+	assert.Equal(t, 2, owned)
+	assert.Equal(t, []string{"2003"}, rows)
+
+	_, _, rows = preview(t, f, "count:2")
+	assert.Empty(t, rows)
+
+	_, _, rows = preview(t, f, "count:1")
+	assert.Equal(t, []string{"2006", "2003"}, rows)
+}
+
+func TestPreviewCurrentCharacter(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	_, _, rows := preview(t, f, "is:incurrentchar")
+	assert.Equal(t, []string{"1004", "1005", "1006", "1003"}, rows)
+
+	_, _, rows = preview(t, f, "is:currentclass")
+	assert.Equal(t, []string{"1004"}, rows)
 }
 
 func TestPreviewParseError(t *testing.T) {

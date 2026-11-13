@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,19 +23,31 @@ func compiled(t *testing.T, query string) compiledQuery {
 	return compileQuery(root)
 }
 
-// matchIDs returns the instance id of each item that query matches, in
-// the order of items. Every term of query must be supported.
+// matchIDs returns the instance id of each item that query matches in a
+// search context whose items are items, in the order of items. Every term
+// of query must be supported.
 func matchIDs(t *testing.T, query string, items []*Item) []string {
+	t.Helper()
+
+	return contextMatchIDs(t, query, searchContext{items: items})
+}
+
+// contextMatchIDs returns the instance id of each item of ctx that query
+// matches in ctx, in the order of the items. Every term of query must be
+// supported.
+func contextMatchIDs(t *testing.T, query string, ctx searchContext) []string {
 	t.Helper()
 
 	q := compiled(t, query)
 	require.Empty(t, q.unsupported)
+	require.Empty(t, q.invalid)
 	require.NotNil(t, q.test)
 
+	test := q.test(ctx)
 	out := []string{}
 
-	for _, item := range items {
-		if q.test(item) {
+	for _, item := range ctx.items {
+		if test(item) {
 			out = append(out, item.InstanceID)
 		}
 	}
@@ -91,24 +104,26 @@ func TestOwnedItems(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 
 	s := NewSnapshot(&p, defs, fixtureNow)
+	built := builtItems(s)
 	owned := ownedItems(s)
 
 	tests := map[string]struct {
-		id   string
-		hash uint32
-		want bool
+		id    string
+		hash  uint32
+		built bool
+		owned bool
 	}{
-		"weapon on a character":              {hash: 102, id: "1003", want: true},
-		"weapon in the vault":                {hash: 100, id: "1001", want: true},
-		"weapon at the postmaster":           {hash: 100, id: "1005", want: true},
-		"armor piece":                        {hash: 200, id: "1004", want: true},
-		"lost weapon of the dummy bucket":    {hash: 403, id: "2006", want: true},
-		"stack":                              {hash: 300},
-		"stack of an equippable definition":  {hash: 100},
-		"instanced item without equipping":   {hash: 400, id: "2001"},
-		"item without a definition":          {hash: 999, id: "2008"},
-		"emote":                              {hash: 401, id: "2002"},
-		"finisher":                           {hash: 402, id: "2003"},
+		"weapon on a character":              {hash: 102, id: "1003", built: true, owned: true},
+		"weapon in the vault":                {hash: 100, id: "1001", built: true, owned: true},
+		"weapon at the postmaster":           {hash: 100, id: "1005", built: true, owned: true},
+		"armor piece":                        {hash: 200, id: "1004", built: true, owned: true},
+		"lost weapon of the dummy bucket":    {hash: 403, id: "2006", built: true, owned: true},
+		"stack":                              {hash: 300, built: true},
+		"stack of an equippable definition":  {hash: 100, built: true},
+		"instanced item without equipping":   {hash: 400, id: "2001", built: true},
+		"item without a definition":          {hash: 999, id: "2008", built: true},
+		"emote":                              {hash: 401, id: "2002", built: true},
+		"finisher":                           {hash: 402, id: "2003", built: true},
 		"held item in the forbidden bucket":  {hash: 403, id: "2007"},
 		"held item in the other dummy":       {hash: 403, id: "2004"},
 		"vault item of the forbidden bucket": {hash: 403, id: "2005"},
@@ -123,7 +138,8 @@ func TestOwnedItems(t *testing.T) {
 			})
 			require.GreaterOrEqual(t, i, 0)
 
-			assert.Equal(t, tc.want, slices.Contains(owned, s.Items[i]))
+			assert.Equal(t, tc.built, slices.Contains(built, s.Items[i]), "built")
+			assert.Equal(t, tc.owned, slices.Contains(owned, s.Items[i]), "owned")
 		})
 	}
 }
@@ -428,6 +444,7 @@ func TestCompileQueryUnsupported(t *testing.T) {
 
 			q := compiled(t, tc.query)
 			assert.Equal(t, tc.want, q.unsupported)
+			assert.Empty(t, q.invalid)
 			assert.Nil(t, q.test)
 		})
 	}
@@ -444,7 +461,8 @@ func TestSupportedKeywords(t *testing.T) {
 		"is:sidearm", "is:sword", "is:grenadelauncher", "is:heavygrenadelauncher",
 		"is:specialgrenadelauncher", "is:tracerifle", "is:linearfusionrifle", "is:lfr", "is:submachine",
 		"is:smg", "is:bow", "is:glaive", "is:transmat", "is:weaponmod", "is:armormod", "is:reptoken",
-		"is:primary", "is:special", "is:heavy", "tag:", "name:", "exactname:",
+		"is:primary", "is:special", "is:heavy", "is:dupe", "is:incurrentchar", "is:currentclass", "tag:",
+		"dupe:item", "count:", "id:", "hash:", "name:", "exactname:",
 	}
 	assert.Equal(t, want, supportedKeywords())
 
@@ -458,7 +476,8 @@ func TestSupportedKeywords(t *testing.T) {
 		"is:sniperrifle, is:shotgun, is:machinegun, is:lmg, is:rocketlauncher, is:sidearm, is:sword, "+
 		"is:grenadelauncher, is:heavygrenadelauncher, is:specialgrenadelauncher, is:tracerifle, "+
 		"is:linearfusionrifle, is:lfr, is:submachine, is:smg, is:bow, is:glaive, is:transmat, "+
-		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, tag:, name:, "+
+		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, is:dupe, "+
+		"is:incurrentchar, is:currentclass, tag:, dupe:item, count:, id:, hash:, name:, "+
 		"and exactname:. Each is: word also works as not:<word>.", err.Error())
 }
 
@@ -494,7 +513,510 @@ func TestCompiledQueryMatches(t *testing.T) {
 		{InstanceID: "5", Name: "Celestial Nighthawk", Bucket: bucketHelmet},
 	}
 
-	assert.Equal(t, []string{"9", "100", "20"}, ids(compiled(t, "is:weapon").matches(items)))
+	got := compiled(t, "is:weapon").matches(searchContext{items: items}, items)
+	assert.Equal(t, []string{"9", "100", "20"}, ids(got))
+}
+
+func TestRangeComparator(t *testing.T) {
+	t.Parallel()
+
+	overloads := rangeFormat{overloads: map[string]float64{"worthy": 10, "arrivals": 11}}
+
+	tests := map[string]struct {
+		format rangeFormat
+		value  string
+		number float64
+		want   bool
+	}{
+		"<10 of 8":                {value: "<10", number: 8, want: true},
+		"<10 of 10":               {value: "<10", number: 10},
+		">10 of 10":               {value: ">10", number: 10},
+		">10 of 15":               {value: ">10", number: 15, want: true},
+		"<=10 of 10":              {value: "<=10", number: 10, want: true},
+		">=10 of 10":              {value: ">=10", number: 10, want: true},
+		"<=10 of 8":               {value: "<=10", number: 8, want: true},
+		">=10 of 15":              {value: ">=10", number: 15, want: true},
+		"<=10 of 15":              {value: "<=10", number: 15},
+		">=10 of 8":               {value: ">=10", number: 8},
+		"=10 of 10":               {value: "=10", number: 10, want: true},
+		"=10 of 15":               {value: "=10", number: 15},
+		"10 of 10":                {value: "10", number: 10, want: true},
+		"overloads <worthy of 8":  {format: overloads, value: "<worthy", number: 8, want: true},
+		"overloads <worthy of 10": {format: overloads, value: "<worthy", number: 10},
+		"overloads >10 of 10":     {format: overloads, value: ">10", number: 10},
+		"overloads >10 of 15":     {format: overloads, value: ">10", number: 15, want: true},
+		"overloads <=worthy of 10": {
+			format: overloads, value: "<=worthy", number: 10, want: true,
+		},
+		"overloads >=worthy of 10": {
+			format: overloads, value: ">=worthy", number: 10, want: true,
+		},
+		"overloads =worthy of 10":  {format: overloads, value: "=worthy", number: 10, want: true},
+		"overloads =worthy of 15":  {format: overloads, value: "=worthy", number: 15},
+		"overloads arrivals of 11": {format: overloads, value: "arrivals", number: 11, want: true},
+		"overloads arrivals of 10": {format: overloads, value: "arrivals", number: 10},
+		"a decimal number":         {value: "2.5", number: 2.5, want: true},
+		"a decimal number of 2":    {value: "2.5", number: 2},
+		"a number past a float64": {
+			value: "<9" + strings.Repeat("0", 400), number: math.MaxFloat64, want: true,
+		},
+		"a word outside overloads":  {format: overloads, value: "<12", number: 11, want: true},
+		"a number among overloads":  {format: overloads, value: "11", number: 11, want: true},
+		"an operator before a word": {format: overloads, value: ">arrivals", number: 12, want: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			compare, err := tc.format.comparator(tc.value)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, compare(tc.number))
+		})
+	}
+}
+
+func TestRangeComparatorInvalid(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		value string
+		valid bool
+	}{
+		"operators in the wrong order": {value: "=<2"},
+		"less or greater":              {value: "<>2"},
+		"double equals":                {value: "==2"},
+		"three operators":              {value: "<<=2"},
+		"a word":                       {value: "abc"},
+		"an empty value":               {value: ""},
+		"an operator alone":            {value: ">="},
+		"a trailing dot":               {value: "2."},
+		"a leading dot":                {value: ".5"},
+		"constructor without a table":  {value: "constructor"},
+		"__proto__ without a table":    {value: "__proto__"},
+		"a decimal number":             {value: "2.5", valid: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			compare, err := rangeFormat{}.comparator(tc.value)
+			if tc.valid {
+				require.NoError(t, err)
+				assert.NotNil(t, compare)
+
+				return
+			}
+
+			require.ErrorIs(t, err, errNotRange)
+			assert.Nil(t, compare)
+		})
+	}
+}
+
+func TestRangeComparatorPrototypeKeys(t *testing.T) {
+	t.Parallel()
+
+	format := rangeFormat{overloads: map[string]float64{"worthy": 10, "arrivals": 11}}
+
+	tests := map[string]struct {
+		value string
+		valid bool
+	}{
+		"constructor":                      {value: "constructor", valid: true},
+		"constructor after an operator":    {value: ">=constructor", valid: true},
+		"__proto__":                        {value: "__proto__", valid: true},
+		"__proto__ after an operator":      {value: "<__proto__", valid: true},
+		"constructor after a bad operator": {value: "=<constructor"},
+		"toString in lowercase":            {value: "tostring"},
+		"a word that starts with a key":    {value: "constructors"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			compare, err := format.comparator(tc.value)
+			if !tc.valid {
+				require.ErrorIs(t, err, errNotRange)
+
+				return
+			}
+
+			require.NoError(t, err)
+
+			for n := range 21 {
+				assert.False(t, compare(float64(n)), n)
+			}
+		})
+	}
+}
+
+// comparableWeapon returns a legendary kinetic weapon of every class that
+// DIM marks as comparable.
+func comparableWeapon(id, name string) *Item {
+	return &Item{
+		InstanceID: id,
+		Name:       name,
+		Tier:       "Legendary",
+		ClassType:  classAny,
+		Bucket:     bucketKinetic,
+		Equippable: true,
+		Lockable:   true,
+	}
+}
+
+func TestItemDupeID(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		item *Item
+		want string
+	}{
+		"weapon": {
+			item: comparableWeapon("1", "Fatebringer"),
+			want: "Fatebringer3Legendary1498876634",
+		},
+		"adept weapon keeps its suffix": {
+			item: comparableWeapon("2", "Fatebringer (Adept)"),
+			want: "Fatebringer (Adept)3Legendary1498876634",
+		},
+		"translation key of the adept suffix": {
+			item: comparableWeapon("3", "Filter.Adept Fatebringer"),
+			want: "Fatebringer3Legendary1498876634",
+		},
+		"translation keys in another case": {
+			item: comparableWeapon("4", "FILTER-TIMELOST Fatebringer filter.harrowed"),
+			want: "Fatebringer3Legendary1498876634",
+		},
+		"every match of a key": {
+			item: comparableWeapon("5", "Filter.AdeptFate Filter.Adeptbringer"),
+			want: "Fate bringer3Legendary1498876634",
+		},
+		"line terminator in a key": {
+			item: comparableWeapon("6", "Filter\u2028Adept Fatebringer"),
+			want: "Filter\u2028Adept Fatebringer3Legendary1498876634",
+		},
+		"character outside the Basic Multilingual Plane in a key": {
+			item: comparableWeapon("7", "Filter\U0001F600Adept Fatebringer"),
+			want: "Filter\U0001F600Adept Fatebringer3Legendary1498876634",
+		},
+		"long s in a key": {
+			item: comparableWeapon("8", "Filter.Timelo\u017ft Fatebringer"),
+			want: "Filter.Timelo\u017ft Fatebringer3Legendary1498876634",
+		},
+		"weapon name trimmed of JavaScript whitespace": {
+			item: comparableWeapon("9", "\ufeffFatebringer\u3000"),
+			want: "Fatebringer3Legendary1498876634",
+		},
+		"armor keeps its spaces": {
+			item: &Item{Name: "Helm ", Tier: "Exotic", ClassType: classHunter, Bucket: bucketHelmet},
+			want: "Helm 1Exotic3448274439",
+		},
+		"armor keeps a translation key": {
+			item: &Item{Name: "Filter.Adept Helm", Tier: "Exotic", ClassType: classTitan, Bucket: bucketHelmet},
+			want: "Filter.Adept Helm0Exotic3448274439",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, itemDupeID(tc.item))
+		})
+	}
+
+	assert.Equal(t, itemDupeID(comparableWeapon("1", "Fatebringer")), itemDupeID(comparableWeapon("2", "Fatebringer")))
+	assert.NotEqual(
+		t,
+		itemDupeID(comparableWeapon("1", "Fatebringer")),
+		itemDupeID(comparableWeapon("2", "Fatebringer (Adept)")),
+	)
+}
+
+func TestIsDupe(t *testing.T) {
+	t.Parallel()
+
+	// pair returns two comparable copies of a weapon, after edit changes
+	// each copy.
+	pair := func(name string, edit func(*Item)) []*Item {
+		items := []*Item{comparableWeapon(name+" 1", name), comparableWeapon(name+" 2", name)}
+		for _, item := range items {
+			edit(item)
+		}
+
+		return items
+	}
+
+	tests := map[string]struct {
+		items []*Item
+		want  []string
+	}{
+		"pair": {
+			items: pair("Fatebringer", func(*Item) {}),
+			want:  []string{"Fatebringer 1", "Fatebringer 2"},
+		},
+		"adept copy and base weapon": {
+			items: []*Item{comparableWeapon("adept", "Fatebringer (Adept)"), comparableWeapon("base", "Fatebringer")},
+			want:  []string{},
+		},
+		"single copy": {
+			items: []*Item{comparableWeapon("single", "Fatebringer")},
+			want:  []string{},
+		},
+		"pair of emblems": {
+			items: pair("Emblem", func(item *Item) { item.Bucket = bucketEmblems }),
+			want:  []string{},
+		},
+		"pair in the Artifacts bucket": {
+			items: pair("Artifact", func(item *Item) { item.Bucket = bucketArtifacts }),
+			want:  []string{},
+		},
+		"pair of default shaders": {
+			items: pair("Default Shader", func(item *Item) { item.Hash = hashDefaultShader }),
+			want:  []string{},
+		},
+		"pair without a lock": {
+			items: pair("Fatebringer", func(item *Item) { item.Lockable = false }),
+			want:  []string{},
+		},
+		"pair of emotes": {
+			items: pair("Wave", func(item *Item) { item.Bucket = bucketEmotes }),
+			want:  []string{},
+		},
+		"same name in two classes": {
+			items: []*Item{comparableWeapon("titan", "Helm"), {
+				InstanceID: "hunter", Name: "Helm", Tier: "Legendary", ClassType: classHunter,
+				Bucket: bucketKinetic, Equippable: true, Lockable: true,
+			}},
+			want: []string{},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, "is:dupe", tc.items))
+		})
+	}
+}
+
+func TestIsDupeGroupsEveryItem(t *testing.T) {
+	t.Parallel()
+
+	unlockable := comparableWeapon("unlockable", "Fatebringer")
+	unlockable.Lockable = false
+
+	items := []*Item{comparableWeapon("comparable", "Fatebringer"), unlockable}
+
+	assert.Equal(t, []string{"comparable"}, matchIDs(t, "is:dupe", items))
+	assert.Equal(t, []string{"unlockable"}, matchIDs(t, "not:dupe", items))
+}
+
+func TestCount(t *testing.T) {
+	t.Parallel()
+
+	unlockable := comparableWeapon("unlockable", "Midnight Coup")
+	unlockable.Lockable = false
+
+	emblem := comparableWeapon("emblem", "Emblem")
+	emblem.Bucket = bucketEmblems
+
+	items := []*Item{
+		comparableWeapon("copy 1", "Midnight Coup"),
+		comparableWeapon("copy 2", "Midnight Coup"),
+		unlockable,
+		comparableWeapon("adept", "Fatebringer (Adept)"),
+		comparableWeapon("base", "Fatebringer"),
+		emblem,
+	}
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"at least two":    {query: "count:>=2", want: []string{"copy 1", "copy 2", "unlockable"}},
+		"exactly two":     {query: "count:=2", want: []string{"copy 1", "copy 2", "unlockable"}},
+		"one":             {query: "count:1", want: []string{"adept", "base"}},
+		"zero":            {query: "count:0", want: []string{"emblem"}},
+		"fewer than two":  {query: "count:<2", want: []string{"adept", "base", "emblem"}},
+		"decimal number":  {query: "count:2.5", want: []string{}},
+		"negated":         {query: "-count:>1", want: []string{"adept", "base", "emblem"}},
+		"with is:dupe":    {query: "count:2 is:dupe", want: []string{"copy 1", "copy 2"}},
+		"or another term": {query: "count:0 or is:dupe", want: []string{"copy 1", "copy 2", "emblem"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, tc.query, items))
+		})
+	}
+}
+
+func TestDupeValues(t *testing.T) {
+	t.Parallel()
+
+	items := []*Item{
+		comparableWeapon("copy 1", "Midnight Coup"),
+		comparableWeapon("copy 2", "Midnight Coup"),
+		comparableWeapon("single", "Fatebringer"),
+	}
+
+	assert.Equal(t, matchIDs(t, "is:dupe", items), matchIDs(t, "dupe:item", items))
+	assert.Equal(t, []string{"copy 1", "copy 2"}, matchIDs(t, "dupe:item", items))
+
+	tests := map[string]struct {
+		query       string
+		unsupported []string
+		invalid     []string
+	}{
+		"another key":             {query: "dupe:stats", unsupported: []string{"dupe:stats"}},
+		"the last key":            {query: "dupe:customstatlower", unsupported: []string{"dupe:customstatlower"}},
+		"two keys":                {query: "dupe:item+stats", unsupported: []string{"dupe:item+stats"}},
+		"a repeated key":          {query: "dupe:item+item", unsupported: []string{"dupe:item+item"}},
+		"an unknown value":        {query: "dupe:foo", invalid: []string{"dupe:foo"}},
+		"a key and an unknown":    {query: "dupe:item+foo", invalid: []string{"dupe:item+foo"}},
+		"the is: word as a value": {query: "dupe:dupe", invalid: []string{"dupe:dupe"}},
+		"an empty value":          {query: `dupe:""`, invalid: []string{`dupe:""`}},
+		"a trailing plus":         {query: "dupe:item+", invalid: []string{"dupe:item+"}},
+		"a prefix of a key":       {query: "is:weapon dupe:ite", invalid: []string{"dupe:ite"}},
+		"a key and a prefix":      {query: "dupe:stats+ite", invalid: []string{"dupe:stats+ite"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			q := compiled(t, tc.query)
+			assert.Equal(t, tc.unsupported, q.unsupported)
+			assert.Equal(t, tc.invalid, q.invalid)
+			assert.Nil(t, q.test)
+		})
+	}
+}
+
+func TestHashAndID(t *testing.T) {
+	t.Parallel()
+
+	items := []*Item{
+		{InstanceID: "1001", Hash: 1234},
+		{InstanceID: "1002", Hash: 1234},
+		{InstanceID: "1003", Hash: 99},
+		{InstanceID: "1004"},
+	}
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"hash":                          {query: "hash:1234", want: []string{"1001", "1002"}},
+		"hash before letters":           {query: "hash:1234abc", want: []string{"1001", "1002"}},
+		"hash with a leading space":     {query: `hash:" 1234"`, want: []string{"1001", "1002"}},
+		"hash with a leading tab":       {query: "hash:\"\t1234\"", want: []string{"1001", "1002"}},
+		"hash with leading zeros":       {query: "hash:001234", want: []string{"1001", "1002"}},
+		"hash with a plus sign":         {query: "hash:+1234", want: []string{"1001", "1002"}},
+		"hash with a decimal part":      {query: "hash:1234.9", want: []string{"1001", "1002"}},
+		"hash without digits":           {query: "hash:abc", want: []string{}},
+		"negative hash":                 {query: "hash:-1234", want: []string{}},
+		"negative zero":                 {query: "hash:-0", want: []string{"1004"}},
+		"hash past a uint32":            {query: "hash:4294968530", want: []string{}},
+		"hash with a space after sign":  {query: `hash:"+ 1234"`, want: []string{}},
+		"hash in hexadecimal":           {query: "hash:0x4d2", want: []string{"1004"}},
+		"hash with a space after digit": {query: `hash:"99 1234"`, want: []string{"1003"}},
+		"id":                            {query: "id:1003", want: []string{"1003"}},
+		"id with letters":               {query: "id:1003abc", want: []string{}},
+		"id that names a hash":          {query: "id:1234", want: []string{}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, tc.query, items))
+		})
+	}
+}
+
+func TestCurrentCharacter(t *testing.T) {
+	t.Parallel()
+
+	ctx := searchContext{
+		current: Character{ID: hunterID, ClassType: classHunter},
+		items: []*Item{
+			{InstanceID: "hunter armor", Owner: hunterID, ClassType: classHunter},
+			{InstanceID: "hunter weapon", Owner: hunterID, ClassType: classAny},
+			{InstanceID: "account", Owner: ownerAccount, ClassType: classAny},
+			{InstanceID: "vault armor", Owner: ownerVault, ClassType: classHunter},
+			{InstanceID: "vault weapon", Owner: ownerVault, ClassType: classAny},
+			{InstanceID: "titan armor", Owner: titanID, ClassType: classTitan},
+			{InstanceID: "titan holds hunter armor", Owner: titanID, ClassType: classHunter},
+		},
+	}
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"is:incurrentchar": {
+			query: "is:incurrentchar",
+			want:  []string{"hunter armor", "hunter weapon", "account"},
+		},
+		"is:currentclass": {
+			query: "is:currentclass",
+			want:  []string{"hunter armor", "vault armor", "titan holds hunter armor"},
+		},
+		"not:incurrentchar": {
+			query: "not:incurrentchar",
+			want:  []string{"vault armor", "vault weapon", "titan armor", "titan holds hunter armor"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, contextMatchIDs(t, tc.query, ctx))
+		})
+	}
+}
+
+func TestCompileQueryInvalidFirst(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"invalid and unsupported": {query: "count:=<2 is:masterwork", want: []string{"count:=<2"}},
+		"unsupported first":       {query: "is:masterwork or count:<>2", want: []string{"count:<>2"}},
+		"negated":                 {query: "-dupe:foo is:weapon", want: []string{"dupe:foo"}},
+		"two terms in query order": {
+			query: "dupe:foo perk:outlaw (count:==2 or dupe:foo)",
+			want:  []string{"dupe:foo", "count:==2"},
+		},
+		"an unsupported dupe: value": {query: "dupe:stats count:abc", want: []string{"count:abc"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			q := compiled(t, tc.query)
+			assert.Equal(t, tc.want, q.invalid)
+			assert.Empty(t, q.unsupported)
+			assert.Nil(t, q.test)
+		})
+	}
+
+	err := invalidQuery([]string{"count:=<2", "dupe:foo"})
+	require.ErrorIs(t, err, ErrInvalidInput)
+	assert.Equal(t, "invalid input: the web client rejects count:=<2, dupe:foo, "+
+		"so it skips an autotag rule with this query", err.Error())
 }
 
 // namedItems returns one item for each of names, with the name as its
@@ -832,7 +1354,7 @@ func matchNames(t *testing.T, query string, items []*Item) []string {
 	require.Empty(t, q.unsupported)
 
 	names := []string{}
-	for _, item := range q.matches(items) {
+	for _, item := range q.matches(searchContext{items: items}, items) {
 		names = append(names, item.Name)
 	}
 
@@ -846,7 +1368,7 @@ func TestWeaponTypeWords(t *testing.T) {
 
 	assert.Equal(t, []string{"Ace of Spades", "Fatebringer"}, matchNames(t, "is:handcannon", items))
 
-	for _, item := range compiled(t, "is:handcannon").matches(items) {
+	for _, item := range compiled(t, "is:handcannon").matches(searchContext{items: items}, items) {
 		assert.Equal(t, "Hand Cannon", item.TypeName)
 	}
 }
