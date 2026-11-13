@@ -77,10 +77,25 @@
 // each game mode in the web client or with the set_perk_preferences
 // tool. A disliked perk never counts in its game mode, also when the
 // sheet picks it. A liked perk counts as a pick, and the line of its
-// column marks it with "(liked)". A liked perk counts only in the socket
-// in which the copy rolled a pick of the column. The web client also
-// counts a liked perk in a column in which the copy rolled no pick. It
-// can therefore rate such a copy higher.
+// column marks it with "(liked)".
+//
+// A liked perk counts in the socket of its perk column. That socket is
+// the first socket in which the copy rolled a pick of the column. When
+// the copy rolled no pick of the column, the plug sets of the weapon
+// definition name the socket. A plug set lists the plugs that one socket
+// of the weapon can roll. The socket of the column is then the first
+// socket whose plug set lists a pick of the column.
+//
+// A liked perk therefore also earns a column in which the copy rolled no
+// pick, when it sits in the socket whose plug set lists a pick of the
+// column. The web client finds the socket of a column in the same two
+// steps. The column is a miss when the perk list of the copy leaves out
+// the socket that the plug sets name.
+//
+// The server reads the plug sets from the detail artifact and the
+// plugsets artifact of the service. On a deployment whose artifact index
+// lacks one of the two artifacts, a liked perk earns a column only beside
+// a pick that the copy rolled.
 //
 // Each column line of the get_item output also names the perks that the
 // sheet picks for the column, after the words "The sheet picks". The
@@ -110,6 +125,10 @@
 //   - A socket for which the profile lists no plugs counts only its
 //     active plug. DIM takes the plugs of such a socket from the
 //     definitions.
+//   - For a column in which the copy rolled no pick, the rating reads the
+//     plug set of every socket of the weapon definition. It stops at the
+//     first socket whose plug set lists a pick. DIM drops each socket
+//     that it cannot class, so the web client can find a later socket.
 //
 // The active plug of a kept socket always counts. When the profile lists
 // no perks for a copy, the server did not see the roll. Such a copy reads
@@ -139,12 +158,12 @@
 // still shows the rest of its output, because the item, its perks, and
 // its stats are correct without a rating.
 //
-// The server takes the names of the picks from the Destiny definitions.
-// It keeps the loaded definitions in memory for one hour and then asks
-// the service for the manifest version again. It loads the definitions
-// again when the version changed. A call that fetches the profile reads
-// the definitions before the profile, and it returns an error result
-// when that read does not succeed.
+// The server takes the names of the picks and the plug sets from the
+// Destiny definitions. It keeps the loaded definitions in memory for one
+// hour and then asks the service for the manifest version again. It
+// loads the definitions again when the version changed. A call that
+// fetches the profile reads the definitions before the profile, and it
+// returns an error result when that read does not succeed.
 //
 // A call that reuses the profile of an earlier call reads the
 // definitions only for the ratings. When that read does not succeed,

@@ -1923,10 +1923,11 @@ func (h *handler) perkPreferences(ctx context.Context) ([]PerkPreference, error)
 // without ratings costs.
 //
 // The definitions can belong to a later manifest version than the
-// definitions that built the cached snapshot. A rating takes only the
-// names of the picks from them, so the later version changes only
-// those names. The next profile fetch builds the snapshot from the
-// later version.
+// definitions that built the cached snapshot. A rating takes the names
+// of the picks and the plug sets of the weapon from them. The later
+// version therefore changes only those names and the socket of a column
+// in which the copy rolled no pick. The next profile fetch builds the
+// snapshot from the later version.
 func (h *handler) ratingSources(ctx context.Context) map[string]RatingSource {
 	states := h.sheets.Load(ctx)
 

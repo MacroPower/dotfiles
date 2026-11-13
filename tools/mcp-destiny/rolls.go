@@ -54,8 +54,8 @@ type Rating struct {
 // no rating. Stances maps the name of each perk that the user likes or
 // dislikes for the mode to its stance. [stancesByMode] builds the map.
 // A source without Stances rates a copy from the sheet picks alone.
-// Defs names the picks of each perk column, and every source with a
-// Sheet holds it.
+// Defs names the picks of each perk column and holds the plug sets of
+// each weapon, and every source with a Sheet holds it.
 type RatingSource struct {
 	Sheet   *Sheet
 	Stances map[string]string
@@ -102,6 +102,11 @@ func stancesByMode(prefs []PerkPreference) map[string]map[string]string {
 // that the snapshot keeps. Destiny Item Manager builds another socket
 // list, and the package documentation lists where the two differ.
 //
+// The definitions of the source hold the plug sets of the weapon. The
+// plug sets name the socket of a column in which the copy rolled no
+// pick. A perk that the user likes can then earn the column. A source
+// whose definitions hold no plug sets leaves such a column a miss.
+//
 // Each column verdict also names the picks of its column. The names
 // come from the definitions of the source and not from the copy. A
 // column that no socket of the copy matches therefore still names its
@@ -130,7 +135,7 @@ func rate(source RatingSource, item *Item) Rating {
 		misses := 0
 
 		for _, column := range columns {
-			verdict := judgeColumn(item.Perks, column, source.Stances)
+			verdict := judgeColumn(source.Defs, item, column, source.Stances)
 			verdict.Picks = picksOf(source.Defs, column, source.Stances)
 
 			if verdict.Missed() {
@@ -151,48 +156,83 @@ func rate(source RatingSource, item *Item) Rating {
 // stance of the user toward each perk, under the name that an enhanced
 // perk shares with its base perk.
 //
-// The socket of the column is the first socket that holds a pick. The
-// stances play no part in that choice, so a disliked pick still claims
-// the column for its socket. A column has no fixed socket index, so two
-// columns can resolve to one socket. A column whose picks no socket
-// holds is a miss, also when the copy holds a perk that the user likes.
+// [columnSocket] finds the socket of the column. A column without a
+// socket is a miss, also when the copy holds a perk that the user
+// likes.
 //
 // That socket earns the column with each plug that the user likes, and
 // with each pick that the user does not dislike. The hits name those
 // plugs, one time for each name. The active plug of the socket comes
 // first when it is one of them. The column is a miss when the socket
 // holds no such plug.
-func judgeColumn(perks []Perk, column []uint32, stances map[string]string) ColumnVerdict {
-	for _, perk := range perks {
-		plugs := socketPlugs(perk)
+func judgeColumn(defs *Defs, item *Item, column []uint32, stances map[string]string) ColumnVerdict {
+	socket, ok := columnSocket(defs, item, column)
+	if !ok {
+		return ColumnVerdict{}
+	}
 
-		picked := slices.ContainsFunc(plugs, func(plug Plug) bool { return slices.Contains(column, plug.Hash) })
-		if !picked {
+	var hits []Hit
+
+	for _, plug := range socketPlugs(socket) {
+		stance := stances[basePerkName(plug.Name)]
+
+		wanted := stance == stanceUp || (stance != stanceDown && slices.Contains(column, plug.Hash))
+		if !wanted {
 			continue
 		}
 
-		var hits []Hit
-
-		for _, plug := range plugs {
-			stance := stances[basePerkName(plug.Name)]
-
-			wanted := stance == stanceUp || (stance != stanceDown && slices.Contains(column, plug.Hash))
-			if !wanted {
-				continue
-			}
-
-			// A base trait and its enhanced trait share one name, and
-			// the active plug is also one of the reusable plugs.
-			named := slices.ContainsFunc(hits, func(hit Hit) bool { return hit.Name == plug.Name })
-			if !named {
-				hits = append(hits, Hit{Name: plug.Name, Liked: stance == stanceUp})
-			}
+		// A base trait and its enhanced trait share one name, and the
+		// active plug is also one of the reusable plugs.
+		named := slices.ContainsFunc(hits, func(hit Hit) bool { return hit.Name == plug.Name })
+		if !named {
+			hits = append(hits, Hit{Name: plug.Name, Liked: stance == stanceUp})
 		}
-
-		return ColumnVerdict{Hits: hits}
 	}
 
-	return ColumnVerdict{}
+	return ColumnVerdict{Hits: hits}
+}
+
+// columnSocket returns the socket of item that a perk column describes.
+// It reports false when the copy has no such socket. Column lists the
+// plug hashes that the sheet picks.
+//
+// The socket of the column is the first socket of the copy that holds a
+// pick. The stances of the user play no part in that choice, so a
+// disliked pick still claims the column for its socket. A column has no
+// fixed socket index, so two columns can resolve to one socket.
+//
+// When no socket of the copy holds a pick, the plug sets of the weapon
+// definition decide. The socket of the column is then the first socket
+// of the definition whose plug set lists a pick. That socket holds no
+// pick, so only a perk that the user likes can earn the column in it.
+// The web client of Agg's Destiny Vault Manager resolves a column in
+// the same two steps.
+//
+// The sockets of a copy have the indexes of the sockets of its
+// definition. The column has no socket when [Item.Perks] leaves out the
+// socket that the plug sets name, such as a socket that the profile
+// hides. The function then tries no later socket of the definition.
+func columnSocket(defs *Defs, item *Item, column []uint32) (Perk, bool) {
+	for _, perk := range item.Perks {
+		picked := slices.ContainsFunc(socketPlugs(perk), func(plug Plug) bool {
+			return slices.Contains(column, plug.Hash)
+		})
+		if picked {
+			return perk, true
+		}
+	}
+
+	index, ok := defs.plugSetSocket(item.Hash, column)
+	if !ok {
+		return Perk{}, false
+	}
+
+	i := slices.IndexFunc(item.Perks, func(perk Perk) bool { return perk.Socket == index })
+	if i < 0 {
+		return Perk{}, false
+	}
+
+	return item.Perks[i], true
 }
 
 // picksOf names the perks that the sheet picks for one perk column, in

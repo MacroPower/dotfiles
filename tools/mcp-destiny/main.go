@@ -367,8 +367,8 @@ func newServer(h *handler) *mcp.Server {
 			"The copy hits a column with each pick of the column that it has. " +
 			"The rating counts the perk preferences of the user for the game mode of the sheet. " +
 			"A disliked perk never counts, also when the sheet picks it. " +
-			"A liked perk counts as a pick, but only in the socket in which the copy rolled a pick of the column. " +
-			"The web client also counts a liked perk in a column in which the copy rolled no pick. " +
+			"A liked perk counts as a pick for the perk column of its socket, " +
+			"also when the copy rolled no pick of that column. " +
 			"One line for each column names the perks that count, with '(liked)' after each liked perk, " +
 			"or says that the column missed. " +
 			"After the words 'The sheet picks', the line also names the perks that the sheet picks for the column. " +
@@ -540,9 +540,7 @@ func newServer(h *handler) *mcp.Server {
 		Name: toolSetPerkPreferences,
 		Description: "Mark weapon traits as liked or disliked for PvE or PvP, or clear a preference. " +
 			"The roll ratings of the web client and of get_item count a liked trait as a pick of the roll sheet, " +
-			"and they never count a disliked one. " +
-			"get_item counts a liked trait only in the socket in which the copy rolled a pick of the perk column. " +
-			"The web client also counts a liked trait in a column in which the copy rolled no pick.",
+			"and they never count a disliked one.",
 		Annotations: additive,
 	}, h.handleSetPerkPreferences)
 

@@ -379,7 +379,9 @@ func TestRateStances(t *testing.T) {
 			want:    []ColumnVerdict{{Hits: []Hit{liked("Rampage")}}},
 			overall: "S",
 		},
-		"liked perk in a socket without a pick of the column misses": {
+		// The copy rolled no pick of the second column, and no plug set
+		// names the socket of the column.
+		"liked perk misses a column that rolled no pick when the definitions hold no plug sets": {
 			stances: map[string]string{"Firefly": stanceUp},
 			perks:   rolledPerks(),
 			columns: [][]uint32{{900}, {904}},
@@ -480,6 +482,203 @@ func TestRateStancesOfOneMode(t *testing.T) {
 	for _, mode := range perkModes {
 		source := listed("S", []uint32{900})
 		source.Stances = stances[mode]
+
+		got := rate(source, item)
+
+		require.NotNilf(t, got.Roll, "mode %s", mode)
+		assert.Equalf(t, want[mode], got.Roll.Columns, "mode %s", mode)
+	}
+}
+
+// TestRatePlugSets rates a copy against one sheet row with the tier S
+// and the given columns. The definitions of the source give the weapon
+// the given plug set hash for each socket index, and they hold the given
+// plug sets.
+func TestRatePlugSets(t *testing.T) {
+	t.Parallel()
+
+	likesFirefly := map[string]string{"Firefly": stanceUp}
+	liked := ColumnVerdict{Hits: []Hit{{Name: "Firefly", Liked: true}}}
+
+	tests := map[string]struct {
+		stances  map[string]string
+		plugSets map[uint32][]uint32
+		// overall is the tier of the copy.
+		overall string
+		perks   []Perk
+		sockets []uint32
+		columns [][]uint32
+		want    []ColumnVerdict
+	}{
+		"liked perk in the plug set socket earns the column and keeps the tier": {
+			stances:  likesFirefly,
+			perks:    rolledPerks(),
+			sockets:  []uint32{0, 40},
+			plugSets: map[uint32][]uint32{40: {901, 904, 905}},
+			columns:  [][]uint32{{900}, {904, 905}},
+			want:     []ColumnVerdict{hits("Explosive Payload"), liked},
+			overall:  "S",
+		},
+		"column without a like stays a miss and moves the tier down one step": {
+			perks:    rolledPerks(),
+			sockets:  []uint32{0, 40},
+			plugSets: map[uint32][]uint32{40: {901, 904, 905}},
+			columns:  [][]uint32{{900}, {904, 905}},
+			want:     []ColumnVerdict{hits("Explosive Payload"), {}},
+			overall:  "A",
+		},
+		"liked perk that is not active earns the column": {
+			stances: likesFirefly,
+			perks: []Perk{
+				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}},
+				{Plug: plugKillClip, plugs: []Plug{plugKillClip, plugFirefly}, Socket: 1},
+			},
+			sockets:  []uint32{0, 40},
+			plugSets: map[uint32][]uint32{40: {906}},
+			columns:  [][]uint32{{906}},
+			want:     []ColumnVerdict{liked},
+			overall:  "S",
+		},
+		"perk without a stance beside the liked perk is no hit": {
+			stances: likesFirefly,
+			perks: []Perk{
+				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}},
+				{Plug: plugFirefly, plugs: []Plug{plugFirefly, plugKillClip}, Socket: 1},
+			},
+			sockets:  []uint32{0, 40},
+			plugSets: map[uint32][]uint32{40: {906}},
+			columns:  [][]uint32{{906}},
+			want:     []ColumnVerdict{liked},
+			overall:  "S",
+		},
+		// The first socket rolled the pick, so it is the socket of the
+		// column. The plug set of the second socket also lists the
+		// pick, and the rating does not read it.
+		"socket that rolled a disliked pick keeps the column from the plug set socket": {
+			stances:  map[string]string{"Explosive Payload": stanceDown, "Firefly": stanceUp},
+			perks:    rolledPerks(),
+			sockets:  []uint32{0, 40},
+			plugSets: map[uint32][]uint32{40: {900}},
+			columns:  [][]uint32{{900}},
+			want:     []ColumnVerdict{{}},
+			overall:  "A",
+		},
+		// The liked Firefly sits in the second socket.
+		"first socket whose plug set lists the pick is the socket of the column": {
+			stances:  likesFirefly,
+			perks:    rolledPerks(),
+			sockets:  []uint32{40, 41},
+			plugSets: map[uint32][]uint32{40: {904}, 41: {904}},
+			columns:  [][]uint32{{904}},
+			want:     []ColumnVerdict{{}},
+			overall:  "A",
+		},
+		"one liked perk earns two columns that resolve to one plug set socket": {
+			stances:  likesFirefly,
+			perks:    rolledPerks(),
+			sockets:  []uint32{0, 40},
+			plugSets: map[uint32][]uint32{40: {904, 906}},
+			columns:  [][]uint32{{904}, {906}},
+			want:     []ColumnVerdict{liked, liked},
+			overall:  "S",
+		},
+		// The web client has the same case, "leaves a column unresolved
+		// when the pick is nowhere on the weapon".
+		"pick that no plug set lists stays a miss": {
+			stances:  likesFirefly,
+			perks:    rolledPerks(),
+			sockets:  []uint32{40, 41},
+			plugSets: map[uint32][]uint32{40: {900, 903}, 41: {901, 906}},
+			columns:  [][]uint32{{904}},
+			want:     []ColumnVerdict{{}},
+			overall:  "A",
+		},
+		// The perk list holds the sockets 0 and 1, and the plug set of
+		// socket 2 lists the pick.
+		"plug set socket that the perk list leaves out is a miss": {
+			stances:  likesFirefly,
+			perks:    rolledPerks(),
+			sockets:  []uint32{0, 0, 40},
+			plugSets: map[uint32][]uint32{40: {904}},
+			columns:  [][]uint32{{904}},
+			want:     []ColumnVerdict{{}},
+			overall:  "A",
+		},
+		// The plug sets of the sockets 0 and 1 list the pick. The perk
+		// list leaves out socket 0, and the liked Firefly sits in
+		// socket 1. The rating stops at socket 0.
+		"later plug set socket does not stand in for one that the perk list leaves out": {
+			stances: likesFirefly,
+			perks: []Perk{
+				{Plug: plugFirefly, plugs: []Plug{plugFirefly}, Socket: 1},
+				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}, Socket: 2},
+			},
+			sockets:  []uint32{40, 41},
+			plugSets: map[uint32][]uint32{40: {904}, 41: {904}},
+			columns:  [][]uint32{{904}},
+			want:     []ColumnVerdict{{}},
+			overall:  "A",
+		},
+		// The perk list leaves out socket 0, so the entry of socket 1
+		// is its first entry.
+		"plug set socket is the perk with its socket index": {
+			stances: likesFirefly,
+			perks: []Perk{
+				{Plug: plugFirefly, plugs: []Plug{plugFirefly}, Socket: 1},
+				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}, Socket: 2},
+			},
+			sockets:  []uint32{0, 40},
+			plugSets: map[uint32][]uint32{40: {904}},
+			columns:  [][]uint32{{904}},
+			want:     []ColumnVerdict{liked},
+			overall:  "S",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			source := listed("S", tc.columns...)
+			source.Stances = tc.stances
+			source.Defs = &Defs{Sockets: map[uint32][]uint32{100: tc.sockets}, PlugSets: tc.plugSets}
+
+			got := rate(source, &Item{Hash: 100, Perks: tc.perks})
+
+			require.NoError(t, got.Err)
+			require.NotNil(t, got.Roll)
+			assert.Equal(t, tc.want, got.Roll.Columns)
+			assert.Equal(t, tc.overall, got.Roll.Overall)
+		})
+	}
+}
+
+// TestRatePlugSetsOfOneMode pins that a liked perk earns a column that
+// rolled no pick only in its own game mode. The user likes Firefly for
+// PvE, and the plug set of the socket of Firefly lists the pick of the
+// second column. The web client has the same case, "counts a perk pushed
+// up as a hit in that mode only".
+func TestRatePlugSetsOfOneMode(t *testing.T) {
+	t.Parallel()
+
+	item := &Item{Hash: 100, Perks: rolledPerks()}
+
+	stances := stancesByMode([]PerkPreference{
+		{Mode: modePvE, Perk: "Firefly", Stance: stanceUp},
+	})
+
+	want := map[string][]ColumnVerdict{
+		modePvE: {hits("Explosive Payload"), {Hits: []Hit{{Name: "Firefly", Liked: true}}}},
+		modePvP: {hits("Explosive Payload"), {}},
+	}
+
+	for _, mode := range perkModes {
+		source := listed("S", []uint32{900}, []uint32{904})
+		source.Stances = stances[mode]
+		source.Defs = &Defs{
+			Sockets:  map[uint32][]uint32{100: {0, 40}},
+			PlugSets: map[uint32][]uint32{40: {904}},
+		}
 
 		got := rate(source, item)
 
@@ -621,8 +820,8 @@ func TestRatePicks(t *testing.T) {
 			},
 		},
 		// The liked Firefly sits in a socket without a pick of the
-		// second column, so it neither earns the column nor joins its
-		// picks.
+		// second column, and the definitions hold no plug sets. Firefly
+		// therefore neither earns the column nor joins its picks.
 		"liked perk outside the column does not join the picks": {
 			stances: map[string]string{"Firefly": stanceUp},
 			perks:   rolledPerks(),

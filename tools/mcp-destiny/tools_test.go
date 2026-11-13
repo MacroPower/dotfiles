@@ -40,6 +40,15 @@ const loadoutsIntro = "Loadouts saved in the game. A loadout number is the posit
 	"on the in-game loadout screen, counted from 1. The server cannot read the name, icon, " +
 	"or color that the game shows for a loadout. Pass the character and the loadout number to equip_loadout."
 
+// killClipPlugSet gives socket 1 of Fatebringer (100) a plug set that
+// lists Firefly and the two Kill Clip plugs. Fatebringer has no plug set
+// for socket 0. Socket 1 of instance 1001 holds Firefly, which the fake
+// perk preferences like for PvE.
+func killClipPlugSet(d *Defs) {
+	d.Sockets = map[uint32][]uint32{100: {0, 40}}
+	d.PlugSets = map[uint32][]uint32{40: {901, 904, 905}}
+}
+
 func TestServerListsTools(t *testing.T) {
 	t.Parallel()
 
@@ -578,6 +587,37 @@ func TestListItems(t *testing.T) {
 			in:      ListItemsInput{MinPvERating: "A", MinPvPRating: "D"},
 			want:    pvpD,
 		},
+		// Instance 1001 rolled no pick of the second column of the Aegis
+		// sheet. The plug set of the socket with the liked Firefly lists
+		// Kill Clip, the pick of that column. The copy therefore hits
+		// the column for PvE and keeps the tier of the weapon.
+		"liked perk raises the rating of a copy that rolled no pick of a column": {
+			prepare: func(f *fakes) {
+				bothSheets(f)
+				killClipPlugSet(f.h.defs.defs)
+			},
+			in: ListItemsInput{IncludeRatings: true},
+			want: strings.Join(slices.Concat([]string{
+				"Items 1-6 of 6.",
+				"",
+				ratedHeader,
+			}, rated(
+				"S | D (sheet C)",
+				"roll unknown (sheet S) | roll unknown (sheet C)",
+				"roll unknown (sheet S) | roll unknown (sheet C)",
+				"A | not listed",
+				"no tier | not listed",
+			)), "\n"),
+		},
+		// No roll reaches the PvE tier S without the plug sets.
+		"minimum keeps a copy whose rating a liked perk raises": {
+			prepare: func(f *fakes) {
+				bothSheets(f)
+				killClipPlugSet(f.h.defs.defs)
+			},
+			in:   ListItemsInput{MinPvERating: "S"},
+			want: pvpD,
+		},
 		"minimum with rating columns": {
 			prepare: bothSheets,
 			in:      ListItemsInput{MinPvERating: "A", IncludeRatings: true},
@@ -1041,6 +1081,13 @@ func TestGetItem(t *testing.T) {
 		pickedPvP = `{"rolls": [{"category": "Hand Cannon", "tier": "C", "hashes": [100], ` +
 			`"slots": [[900, 903], [904, 905]]}]}`
 
+		// Both sheets pick Explosive Payload for the first column and
+		// the two Kill Clip plugs for the second.
+		clipAegis = `{"rolls": [{"category": "HCs", "tier": "S", "rank": 3, "ranked": 62, "hashes": [100], ` +
+			`"slots": [[900], [904, 905]]}]}`
+		clipPvP = `{"rolls": [{"category": "Hand Cannon", "tier": "C", "hashes": [100], ` +
+			`"slots": [[900], [904, 905]]}]}`
+
 		// likesPayloadForPvP holds the fake perk preferences and a PvP
 		// like of Explosive Payload.
 		likesPayloadForPvP = `{"preferences": [
@@ -1075,6 +1122,8 @@ func TestGetItem(t *testing.T) {
 		// bodies holds the body of each sheet file that the service
 		// serves.
 		bodies map[string]string
+		// defs changes the fixture definitions before the call.
+		defs func(*Defs)
 		// prefsBody replaces the perk preferences that the service
 		// serves.
 		prefsBody string
@@ -1430,6 +1479,51 @@ func TestGetItem(t *testing.T) {
 			configs: 2,
 			prefs:   1,
 		},
+		// The copy rolled no pick of the second column. The plug set of
+		// the socket with Firefly lists the picks of that column, so
+		// that socket is the socket of the column. The user likes
+		// Firefly only for PvE.
+		"liked perk earns a column that rolled no pick in its game mode only": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    clipAegis,
+				"pvprolls.a.json": clipPvP,
+			},
+			defs: killClipPlugSet,
+			id:   "1001",
+			want: fatebringer(
+				"- PvE: S for this roll, S on the Aegis sheet (rank 3 of 62 in HCs), 2 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload. The sheet picks Explosive Payload",
+				"  Column 2: hit with Firefly (liked). The sheet picks Kill Clip",
+				"- PvP: D for this roll, C on the PvP sheet (in Hand Cannon), 1 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload. The sheet picks Explosive Payload",
+				"  Column 2: miss. The sheet picks Kill Clip",
+			),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+			prefs:   1,
+		},
+		// The definitions hold no plug sets, so no socket of the copy
+		// is the socket of the second column.
+		"liked perk earns no column that rolled no pick without the plug sets": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    clipAegis,
+				"pvprolls.a.json": clipPvP,
+			},
+			id: "1001",
+			want: fatebringer(
+				"- PvE: A for this roll, S on the Aegis sheet (rank 3 of 62 in HCs), 1 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload. The sheet picks Explosive Payload",
+				"  Column 2: miss. The sheet picks Kill Clip",
+				"- PvP: D for this roll, C on the PvP sheet (in Hand Cannon), 1 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload. The sheet picks Explosive Payload",
+				"  Column 2: miss. The sheet picks Kill Clip",
+			),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+			prefs:   1,
+		},
 		// The result is not an error result, and the perks and the
 		// stats still print.
 		"unreadable definitions replace the rating of each loaded sheet": {
@@ -1539,6 +1633,10 @@ func TestGetItem(t *testing.T) {
 
 			if tc.noPrefs {
 				delete(f.serviceData, pathPrefs)
+			}
+
+			if tc.defs != nil {
+				tc.defs(f.h.defs.defs)
 			}
 
 			if tc.noDefs {
@@ -2558,6 +2656,22 @@ func TestCompareDuplicates(t *testing.T) {
 						"not listed | not listed | Explosive Payload (can swap to Rampage); Firefly",
 				},
 			), "\n"),
+		},
+		// The Aegis sheet gains a second column, which picks Kill Clip
+		// (904). Instance 1001 rolled no pick of that column, so it
+		// reads "A (sheet S)" without the plug sets. The plug set of
+		// the socket with the liked Firefly lists Kill Clip, so the
+		// copy hits the column for PvE.
+		"liked perk raises the rating of a copy that rolled no pick of a column": {
+			prepare: func(f *fakes) {
+				bothSheets(f)
+				killClipPlugSet(f.h.defs.defs)
+
+				f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [` +
+					`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900], [904]]}]}`
+			},
+			in:   CompareDuplicatesInput{Name: "fatebringer"},
+			want: strings.Join(rated, "\n"),
 		},
 		// The index lists a file that the service does not serve. A mode
 		// whose sheet did not load never reads "not listed".

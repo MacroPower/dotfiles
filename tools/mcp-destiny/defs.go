@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,9 +24,11 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v6-"
+	defsCachePrefix = "defs-v7-"
 
 	artifactCore            = "core"
+	artifactDetail          = "detail"
+	artifactPlugSets        = "plugsets"
 	artifactBuckets         = "InventoryBucket"
 	artifactDamage          = "DamageType"
 	artifactClasses         = "Class"
@@ -130,13 +134,25 @@ type VendorDef struct {
 // destinations, and the places that an [ActivityDef] points at.
 // ActivityRewards names the reward items of the activities. VendorItems
 // names the items and currencies that the vendors list. Both name dummy
-// items, which Items leaves out. Activities, ActivityTypes, Destinations,
-// Places, ActivityRewards, Vendors, and VendorItems are empty when the
-// service index lists no artifact for them.
+// items, which Items leaves out.
+//
+// Sockets maps the item hash of a weapon to one plug set hash for each
+// socket of the weapon, by socket index. A zero marks a socket without a
+// plug set. PlugSets maps the hash of each plug set that Sockets names to
+// the hashes of the plugs that the set lists. The roll ratings read both
+// maps to find the socket of a perk column in which a copy rolled no
+// pick. Only weapons have roll ratings, so Sockets holds only weapons.
+//
+// Activities, ActivityTypes, Destinations, Places, ActivityRewards,
+// Vendors, VendorItems, Sockets, and PlugSets are empty when the service
+// index lists no artifact for them. PlugSets is also empty when the index
+// lists no artifact for Sockets.
 type Defs struct {
 	Items           map[uint32]ItemDef     `json:"items"`
 	Buckets         map[uint32]BucketDef   `json:"buckets"`
 	Stats           map[uint32]string      `json:"stats"`
+	Sockets         map[uint32][]uint32    `json:"sockets"`
+	PlugSets        map[uint32][]uint32    `json:"plugSets"`
 	Activities      map[uint32]ActivityDef `json:"activities"`
 	ActivityTypes   map[uint32]string      `json:"activityTypes"`
 	Destinations    map[uint32]string      `json:"destinations"`
@@ -168,6 +184,27 @@ func (d *Defs) TraitNames() map[string]string {
 	}
 
 	return names
+}
+
+// plugSetSocket returns the lowest index of a socket of a weapon whose
+// plug set lists a pick of a perk column. Hash is the item hash of the
+// weapon, and column lists the plug hashes of the picks. It reports
+// false when no plug set of the weapon lists a pick. A socket without a
+// plug set never matches, also when PlugSets has an entry for the hash
+// zero.
+func (d *Defs) plugSetSocket(hash uint32, column []uint32) (int, bool) {
+	for i, set := range d.Sockets[hash] {
+		if set == 0 {
+			continue
+		}
+
+		listed := slices.ContainsFunc(d.PlugSets[set], func(plug uint32) bool { return slices.Contains(column, plug) })
+		if listed {
+			return i, true
+		}
+	}
+
+	return 0, false
 }
 
 // basePerkName returns the name that an enhanced perk shares with its base
@@ -275,6 +312,8 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 		Items:           map[uint32]ItemDef{},
 		Buckets:         map[uint32]BucketDef{},
 		Stats:           map[uint32]string{},
+		Sockets:         map[uint32][]uint32{},
+		PlugSets:        map[uint32][]uint32{},
 		Activities:      map[uint32]ActivityDef{},
 		ActivityTypes:   map[uint32]string{},
 		Destinations:    map[uint32]string{},
@@ -292,6 +331,43 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 	}
 
 	err := readRecords(ctx, l, files, func(raw rawItem) { defs.Items[raw.Hash] = raw.item() })
+	if err != nil {
+		return nil, err
+	}
+
+	// The roll ratings read the plug sets only for a perk column in which
+	// a copy rolled no pick. They therefore keep working on a deployment
+	// whose index lists no detail artifact or no plugsets artifact.
+	//
+	// The loader keeps the socket list of each weapon of the core
+	// artifact, and then each plug set that those socket lists name. The
+	// detail read therefore follows the core read, and the plugsets read
+	// follows the detail read.
+	err = readRecords(ctx, l, index.Files[artifactDetail], func(raw rawDetail) {
+		sets := raw.plugSets()
+		if len(sets) > 0 && defs.Items[raw.Hash].ItemType == itemTypeWeapon {
+			defs.Sockets[raw.Hash] = sets
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	named := map[uint32]bool{}
+
+	for _, sets := range defs.Sockets {
+		for _, set := range sets {
+			if set != 0 {
+				named[set] = true
+			}
+		}
+	}
+
+	err = readRecords(ctx, l, index.Files[artifactPlugSets], func(raw rawPlugSet) {
+		if named[raw.Hash] {
+			defs.PlugSets[raw.Hash] = raw.plugs()
+		}
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -430,6 +506,57 @@ func (raw rawItem) item() ItemDef {
 	}
 
 	return def
+}
+
+// rawDetail is the subset of a record of the detail artifact that the
+// loader reads. The record holds the socket entries of an item
+// definition, in the order of the sockets of each copy.
+type rawDetail struct {
+	Sockets struct {
+		SocketEntries []struct {
+			ReusablePlugSetHash   uint32 `json:"reusablePlugSetHash"`
+			RandomizedPlugSetHash uint32 `json:"randomizedPlugSetHash"`
+		} `json:"socketEntries"`
+	} `json:"sockets"`
+	Hash uint32 `json:"hash"`
+}
+
+// plugSets returns the plug set hash of each socket entry of the record,
+// and zero for an entry without a plug set. An entry takes its reusable
+// plug set, or its randomized plug set when it has no reusable one, as
+// Destiny Item Manager does.
+func (raw rawDetail) plugSets() []uint32 {
+	entries := raw.Sockets.SocketEntries
+	sets := make([]uint32, len(entries))
+
+	for i, entry := range entries {
+		sets[i] = cmp.Or(entry.ReusablePlugSetHash, entry.RandomizedPlugSetHash)
+	}
+
+	return sets
+}
+
+// rawPlugSet is the subset of a record of the plugsets artifact that the
+// loader reads.
+type rawPlugSet struct {
+	ReusablePlugItems []struct {
+		PlugItemHash uint32 `json:"plugItemHash"`
+	} `json:"reusablePlugItems"`
+	Hash uint32 `json:"hash"`
+}
+
+// plugs returns the hash of each plug that the plug set lists, in the
+// order of the record and one time each.
+func (raw rawPlugSet) plugs() []uint32 {
+	plugs := make([]uint32, 0, len(raw.ReusablePlugItems))
+
+	for _, plug := range raw.ReusablePlugItems {
+		if !slices.Contains(plugs, plug.PlugItemHash) {
+			plugs = append(plugs, plug.PlugItemHash)
+		}
+	}
+
+	return plugs
 }
 
 // readRecords reads the files of an array artifact in order and streams
