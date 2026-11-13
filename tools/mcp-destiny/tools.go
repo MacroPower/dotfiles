@@ -27,6 +27,7 @@ const (
 	toolCompareDuplicates   = "compare_duplicates"
 	toolMoveItems           = "move_items"
 	toolMoveStack           = "move_stack"
+	toolStageJunk           = "stage_junk"
 	toolSetLock             = "set_lock"
 	toolSetPerk             = "set_perk"
 	toolListLoadouts        = "list_loadouts"
@@ -185,6 +186,12 @@ type MoveStackInput struct {
 	Target   string `json:"target"          jsonschema:"Destination: 'vault' or 'inventory'"`
 	ItemHash uint32 `json:"item_hash"       jsonschema:"Item hash of the stack, from the list_items row"`
 	Amount   int    `json:"amount,omitzero" jsonschema:"Number of units to move (default: every unit outside the destination)"`
+}
+
+// StageJunkInput is the input schema of the stage_junk tool.
+type StageJunkInput struct {
+	Slot      string `json:"slot"               jsonschema:"Part of the name of a weapon or armor slot in any letter case, such as 'kinetic' or 'helmet'"`
+	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to stage on the most recently played character"`
 }
 
 // SetLockInput is the input schema of the set_lock tool.
@@ -876,6 +883,94 @@ func (h *handler) handleMoveStack(
 	}
 
 	return textResult(fmt.Sprintf("Moved %d of %s to the %s.", moved, name, target)), nil, nil
+}
+
+func (h *handler) handleStageJunk(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in StageJunkInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	s, _, err := h.loadAnnotated(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolStageJunk, err)
+	}
+
+	c, err := s.ResolveCharacter(in.Character)
+	if err != nil {
+		return h.toolError(ctx, toolStageJunk, err)
+	}
+
+	bucket, err := s.ResolveSlot(in.Slot)
+	if err != nil {
+		return h.toolError(ctx, toolStageJunk, err)
+	}
+
+	plan := s.JunkPlan(c, bucket)
+
+	// At the end of a run the user has moved the keepers back, so the slot
+	// holds keepers when no junk is left.
+	if len(plan.Staged) == 0 && len(plan.Waiting) == 0 {
+		return textResult(renderNoJunk(s, c, bucket, plan)), nil, nil
+	}
+
+	// The game cannot undo a dismantle, so the tool adds no junk to a slot
+	// that holds an item that the user did not tag junk.
+	if len(plan.Keepers) > 0 {
+		return h.toolError(ctx, toolStageJunk, keeperRefusal(s, c, bucket, plan.Keepers))
+	}
+
+	membership, err := h.membership(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolStageJunk, err)
+	}
+
+	mover := bungieMover{h: h, membership: membership}
+	batch := plan.Waiting[:min(plan.Room, len(plan.Waiting))]
+
+	var failures []string
+
+	changed := false
+
+	for _, item := range batch {
+		owner := item.Owner
+
+		// The batch holds only unequipped items, so no move equips a
+		// replacement.
+		_, err := s.Move(ctx, mover, item, c.ID, false)
+
+		// A move that fails can still complete its transfer to the vault.
+		if item.Owner != owner {
+			changed = true
+		}
+
+		if err != nil {
+			h.log.WarnContext(ctx, "move failed",
+				slog.String("instance_id", item.InstanceID),
+				slog.Any("error", err),
+			)
+
+			failures = append(failures, fmt.Sprintf("- %s (%s) did not move: %v. It is at %s.",
+				item.Name, item.InstanceID, err, s.LocationLabel(item)))
+		}
+	}
+
+	// Bungie can serve the state from before a move for some seconds. A
+	// snapshot that a move changed therefore stays in use for a full TTL,
+	// and a call that moved nothing keeps the age of the snapshot.
+	if changed {
+		s.Fetched = h.now()
+	}
+
+	// Move updates the snapshot after each step that succeeds. A second
+	// plan therefore matches the game, also after a move that stopped
+	// halfway.
+	result := textResult(renderStagedJunk(s, c, bucket, s.JunkPlan(c, bucket), failures))
+	result.IsError = len(batch) > 0 && len(failures) == len(batch)
+
+	return result, nil, nil
 }
 
 func (h *handler) handleSetLock(

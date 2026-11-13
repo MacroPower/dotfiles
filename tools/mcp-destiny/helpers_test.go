@@ -604,6 +604,10 @@ type fakes struct {
 	artifactFiles map[string][]string
 	// bungieData holds the GET response body of each Bungie path.
 	bungieData map[string]string
+	// bungieErrorIf limits bungieError to the actions whose request body
+	// it selects, such as the transfers of one item. A nil bungieErrorIf
+	// selects every action.
+	bungieErrorIf func(body map[string]any) bool
 	// activitiesBody is the response body of the profile request that
 	// asks only for the activities. When it is empty, that request gets
 	// fixtureProfile, the same body as the snapshot request.
@@ -696,7 +700,8 @@ func newFakes(t *testing.T) *fakes {
 		case req.Method == http.MethodGet && f.bungieData[req.Path] != "":
 			writeJSON(t, w, http.StatusOK, f.bungieData[req.Path])
 		case req.Method == http.MethodPost && f.bungieError != "" &&
-			(f.bungieErrorPath == "" || req.Path == f.bungieErrorPath):
+			(f.bungieErrorPath == "" || req.Path == f.bungieErrorPath) &&
+			(f.bungieErrorIf == nil || f.bungieErrorIf(req.Body)):
 			writeJSON(t, w, http.StatusOK, f.bungieError)
 		case req.Method == http.MethodPost:
 			writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": 0}`)

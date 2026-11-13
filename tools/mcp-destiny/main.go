@@ -459,6 +459,20 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleMoveStack)
 
 	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolStageJunk,
+		Description: "Stage items tagged junk in one weapon or armor slot of a character, so that the user " +
+			"can dismantle them in the game. The Bungie API has no request that dismantles an item. " +
+			"The tool fills the free places of the slot with junk from the vault and the other characters " +
+			"in the live game, and it lists every unequipped item that the slot then holds. " +
+			"Call it again after the user dismantled them, until it reports that no junk is left. " +
+			"It moves nothing when the slot holds an unequipped item that is not tagged junk, and it names " +
+			"those items so that move_items can move them to the vault first. It skips junk that is equipped, " +
+			"at the Postmaster, not transferable, or for another class. Without character, it stages on " +
+			"the most recently played character.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool)},
+	}, h.handleStageJunk)
+
+	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolSetLock,
 		Description: "Lock or unlock item instances in the live game. The game does not let the player " +
 			"dismantle a locked item. list_items and get_item show the lock as the locked flag.",

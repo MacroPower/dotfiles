@@ -77,7 +77,7 @@ func TestServerListsTools(t *testing.T) {
 		toolCompareDuplicates, toolMoveItems,
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolRemoveAutotagRule,
-		toolMoveStack, toolSetLock, toolSetPerk, toolSetAutotagEnabled, toolListActivityHistory,
+		toolMoveStack, toolStageJunk, toolSetLock, toolSetPerk, toolSetAutotagEnabled, toolListActivityHistory,
 		toolListLoadouts, toolEquipLoadout, toolGetStats, toolListVendors, toolListActivities,
 	}, names)
 
@@ -94,6 +94,11 @@ func TestServerListsTools(t *testing.T) {
 
 		case toolGetItem:
 			assert.Contains(t, tool.Description, "a pick can be a perk that this version cannot roll")
+
+		case toolStageJunk:
+			assert.Equal(t, &mcp.ToolAnnotations{DestructiveHint: new(bool)}, tool.Annotations)
+			assert.Contains(t, tool.Description, "The Bungie API has no request that dismantles an item")
+			assert.Contains(t, tool.Description, "so that the user can dismantle them in the game")
 		}
 	}
 
@@ -3723,6 +3728,456 @@ func TestMoveItemsSnapshotAge(t *testing.T) {
 	_, isError = call(t, f.h.handleMoveItems, MoveItemsInput{InstanceIDs: []string{"1001"}, Target: "hunter"})
 	require.False(t, isError)
 	assert.Equal(t, later, f.h.snapshot.Fetched, "a move restarts the age of the snapshot")
+}
+
+// Texts of the stage_junk results that the tests share.
+const (
+	noJunkClosing = "If you moved other items out of the slot for this run, move them back with move_items."
+	lockLine      = "The game does not let the player dismantle a locked item. set_lock unlocks it."
+	nothingStaged = "No junk is in the slot, so the user has nothing to dismantle. " +
+		"Call stage_junk again to stage the junk that waits."
+	fixtureRefusal = "cannot move: Kinetic Weapons on Hunter holds unequipped gear that is not tagged junk: " +
+		"Midnight Coup (1003). stage_junk moved nothing. Move that gear to the vault with move_items, " +
+		"with target vault and instance_ids 1003. Then call stage_junk again. After stage_junk reports " +
+		"that no junk is left, move that gear back with move_items and target c1."
+	goneError = `{"ErrorCode": 1623, "ErrorStatus": "DestinyItemNotFound", "Message": "gone"}`
+)
+
+func dismantleLine(staged int) string {
+	return fmt.Sprintf("Each listed item is tagged junk, and the user dismantles them in the game. "+
+		"Do not dismantle when the number of unequipped items that the game shows in the slot is higher than %d, "+
+		"because stage_junk did not check an item that reached the slot after the last inventory fetch. "+
+		"Call stage_junk again after the user dismantled them. "+
+		"A call in the next 30 seconds might reuse this inventory copy and list the same items.", staged)
+}
+
+func skippedLine(skipped int) string {
+	return fmt.Sprintf("Junk of this slot that stage_junk skips: %d. "+
+		"Each one is equipped, at the Postmaster, not transferable, or for another class.", skipped)
+}
+
+// junkTags returns a tag body of the fake service that tags each instance
+// in ids junk and tags no other instance.
+func junkTags(t *testing.T, ids ...string) string {
+	t.Helper()
+
+	rows := []ItemTag{}
+	for _, id := range ids {
+		rows = append(rows, ItemTag{InstanceID: id, TagID: tagJunk, UpdatedAt: 5})
+	}
+
+	raw, err := json.Marshal(map[string]any{"defs": []any{}, "items": rows, "now": 10})
+	require.NoError(t, err)
+
+	return string(raw)
+}
+
+// kineticWeapon returns a weapon of the kinetic slot that every class can
+// use, for a test to add to the snapshot.
+func kineticWeapon(id, name, owner string) *Item {
+	hash := uint32(100)
+	if name == "Midnight Coup" {
+		hash = 102
+	}
+
+	return &Item{
+		InstanceID:   id,
+		Name:         name,
+		TypeName:     "Hand Cannon",
+		Slot:         "Kinetic Weapons",
+		Owner:        owner,
+		Kind:         kindWeapon,
+		ClassType:    classAny,
+		Quantity:     1,
+		Hash:         hash,
+		Bucket:       bucketKinetic,
+		Transferable: true,
+		Equippable:   true,
+		Lockable:     true,
+	}
+}
+
+// transferSteps describes each transfer request as the instance id and
+// the direction, such as "1001 to c1" or "1007 to the vault from c2".
+func transferSteps(reqs []request) []string {
+	var steps []string
+
+	for _, req := range reqs {
+		step := fmt.Sprintf("%v to %v", req.Body["itemId"], req.Body["characterId"])
+		if req.Body["transferToVault"] == true {
+			step = fmt.Sprintf("%v to the vault from %v", req.Body["itemId"], req.Body["characterId"])
+		}
+
+		steps = append(steps, step)
+	}
+
+	return steps
+}
+
+// bungiePosts returns the Bungie actions that a fake received.
+func bungiePosts(f *fakes) []request {
+	return slices.DeleteFunc(f.bungie.all(), func(req request) bool { return req.Method != http.MethodPost })
+}
+
+func TestStageJunk(t *testing.T) {
+	t.Parallel()
+
+	refuseEvery := func(map[string]any) bool { return true }
+	moveFailure := func(name, id, target string) string {
+		return fmt.Sprintf("- %s (%s) did not move: transferring to %s: bungie: DestinyItemNotFound: gone. "+
+			"It is at Vault.", name, id, target)
+	}
+	kinetic := StageJunkInput{Slot: "kinetic"}
+
+	tests := map[string]struct {
+		refuse    func(body map[string]any) bool
+		in        StageJunkInput
+		want      string
+		junk      []string
+		add       []*Item
+		transfers []string
+		capacity  int
+		isError   bool
+		moved     bool
+	}{
+		"no junk": {
+			in:   kinetic,
+			want: "No junk is left for Kinetic Weapons on Hunter.\n" + noJunkClosing,
+		},
+		"no junk with skipped junk": {
+			in:   kinetic,
+			junk: []string{"1006", "1005"},
+			want: "No junk is left for Kinetic Weapons on Hunter.\n" + skippedLine(2) + "\n" + noJunkClosing,
+		},
+		"refusal with waiting junk": {
+			in:      kinetic,
+			junk:    []string{"1001"},
+			want:    fixtureRefusal,
+			isError: true,
+		},
+		"refusal with junk in the slot": {
+			in:      kinetic,
+			junk:    []string{"1007"},
+			add:     []*Item{kineticWeapon("1007", "Fatebringer", hunterID)},
+			want:    fixtureRefusal,
+			isError: true,
+		},
+		"refusal lists every keeper": {
+			in:   kinetic,
+			junk: []string{"1001"},
+			add:  []*Item{kineticWeapon("1007", "Fatebringer", hunterID)},
+			want: "cannot move: Kinetic Weapons on Hunter holds unequipped gear that is not tagged junk: " +
+				"Fatebringer (1007), Midnight Coup (1003). stage_junk moved nothing. Move that gear to the vault " +
+				"with move_items, with target vault and instance_ids 1007, 1003. Then call stage_junk again. " +
+				"After stage_junk reports that no junk is left, move that gear back with move_items and target c1.",
+			isError: true,
+		},
+		"stage from the vault": {
+			in:   kinetic,
+			junk: []string{"1001", "1003"},
+			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n" +
+				"- Fatebringer (1001), locked\n" +
+				"- Midnight Coup (1003)\n" +
+				"The game does not let the player dismantle a locked item. set_lock unlocks it.\n" +
+				"Junk that waits for the next call: 0\n" +
+				"Each listed item is tagged junk, and the user dismantles them in the game. Do not dismantle " +
+				"when the number of unequipped items that the game shows in the slot is higher than 2, because " +
+				"stage_junk did not check an item that reached the slot after the last inventory fetch. Call " +
+				"stage_junk again after the user dismantled them. A call in the next 30 seconds might reuse " +
+				"this inventory copy and list the same items.",
+			transfers: []string{"1001 to c1"},
+			moved:     true,
+		},
+		"stage from another character": {
+			in:   kinetic,
+			junk: []string{"1003", "1007"},
+			add:  []*Item{kineticWeapon("1007", "Fatebringer", titanID)},
+			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n" +
+				"- Fatebringer (1007)\n" +
+				"- Midnight Coup (1003)\n" +
+				"Junk that waits for the next call: 0\n" +
+				dismantleLine(2),
+			transfers: []string{"1007 to the vault from c2", "1007 to c1"},
+			moved:     true,
+		},
+		"batch stops at the room": {
+			in:   kinetic,
+			junk: []string{"1001", "1003", "1007", "1008"},
+			add: []*Item{
+				kineticWeapon("1007", "Midnight Coup", ownerVault),
+				kineticWeapon("1008", "Fatebringer", ownerVault),
+			},
+			capacity: 4,
+			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 3\n" +
+				"- Fatebringer (1001), locked\n" +
+				"- Fatebringer (1008)\n" +
+				"- Midnight Coup (1003)\n" +
+				lockLine + "\n" +
+				"Junk that waits for the next call: 1\n" +
+				dismantleLine(3),
+			transfers: []string{"1001 to c1", "1008 to c1"},
+			moved:     true,
+		},
+		"no room": {
+			in:       kinetic,
+			junk:     []string{"1001", "1003"},
+			capacity: 2,
+			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 1\n" +
+				"- Midnight Coup (1003)\n" +
+				"Junk that waits for the next call: 1\n" +
+				dismantleLine(1),
+		},
+		"nothing waits": {
+			in:   kinetic,
+			junk: []string{"1003"},
+			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 1\n" +
+				"- Midnight Coup (1003)\n" +
+				"Junk that waits for the next call: 0\n" +
+				dismantleLine(1),
+		},
+		"one move does not succeed": {
+			in:     kinetic,
+			junk:   []string{"1001", "1003", "1007"},
+			add:    []*Item{kineticWeapon("1007", "Midnight Coup", ownerVault)},
+			refuse: func(body map[string]any) bool { return body["itemId"] == "1001" },
+			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n" +
+				"- Midnight Coup (1003)\n" +
+				"- Midnight Coup (1007)\n" +
+				moveFailure("Fatebringer", "1001", "Hunter") + "\n" +
+				"Junk that waits for the next call: 1\n" +
+				dismantleLine(2),
+			transfers: []string{"1001 to c1", "1007 to c1"},
+			moved:     true,
+		},
+		"second transfer does not succeed": {
+			in:     kinetic,
+			junk:   []string{"1003", "1007"},
+			add:    []*Item{kineticWeapon("1007", "Fatebringer", titanID)},
+			refuse: func(body map[string]any) bool { return body["transferToVault"] == false },
+			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 1\n" +
+				"- Midnight Coup (1003)\n" +
+				moveFailure("Fatebringer", "1007", "Hunter") + "\n" +
+				"Junk that waits for the next call: 1\n" +
+				dismantleLine(1),
+			transfers: []string{"1007 to the vault from c2", "1007 to c1"},
+			isError:   true,
+			moved:     true,
+		},
+		"every move fails with junk in the slot": {
+			in:     kinetic,
+			junk:   []string{"1001", "1003"},
+			refuse: refuseEvery,
+			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 1\n" +
+				"- Midnight Coup (1003)\n" +
+				moveFailure("Fatebringer", "1001", "Hunter") + "\n" +
+				"Junk that waits for the next call: 1\n" +
+				dismantleLine(1),
+			transfers: []string{"1001 to c1"},
+			isError:   true,
+		},
+		"every move fails with an empty slot": {
+			in:     StageJunkInput{Slot: "kinetic", Character: "titan"},
+			junk:   []string{"1001"},
+			refuse: refuseEvery,
+			want: "Unequipped items in Kinetic Weapons on Titan after this call: 0\n" +
+				moveFailure("Fatebringer", "1001", "Titan") + "\n" +
+				"Junk that waits for the next call: 1\n" +
+				nothingStaged,
+			transfers: []string{"1001 to c2"},
+			isError:   true,
+		},
+		"item count": {
+			in:   kinetic,
+			junk: []string{"1001", "1003", "1007"},
+			add:  []*Item{kineticWeapon("1007", "Midnight Coup", ownerVault)},
+			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 3\n" +
+				"- Fatebringer (1001), locked\n" +
+				"- Midnight Coup (1003)\n" +
+				"- Midnight Coup (1007)\n" +
+				lockLine + "\n" +
+				"Junk that waits for the next call: 0\n" +
+				dismantleLine(3),
+			transfers: []string{"1001 to c1", "1007 to c1"},
+			moved:     true,
+		},
+		"character input": {
+			in:   StageJunkInput{Slot: "kinetic", Character: "titan"},
+			junk: []string{"1001"},
+			want: "Unequipped items in Kinetic Weapons on Titan after this call: 1\n" +
+				"- Fatebringer (1001), locked\n" +
+				lockLine + "\n" +
+				"Junk that waits for the next call: 0\n" +
+				dismantleLine(1),
+			transfers: []string{"1001 to c2"},
+			moved:     true,
+		},
+		"unknown character": {
+			in:      StageJunkInput{Slot: "kinetic", Character: "warlock"},
+			junk:    []string{"1001", "1003"},
+			want:    `unknown location: "warlock" is not a character id or a class name`,
+			isError: true,
+		},
+		"character error wins over slot error": {
+			in:      StageJunkInput{Slot: "boots", Character: "warlock"},
+			junk:    []string{"1001", "1003"},
+			want:    `unknown location: "warlock" is not a character id or a class name`,
+			isError: true,
+		},
+		"slot error": {
+			in:   StageJunkInput{Slot: "boots"},
+			junk: []string{"1001", "1003"},
+			want: `invalid input: slot "boots" matches no weapon or armor slot, ` +
+				"so pass one of Kinetic Weapons, Power Weapons, Helmet",
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.serviceData[pathTags] = junkTags(t, tc.junk...)
+
+			s, err := f.h.loadSnapshot(t.Context(), false)
+			require.NoError(t, err)
+
+			for _, item := range tc.add {
+				s.add(item)
+			}
+
+			if tc.capacity > 0 {
+				i := slices.IndexFunc(s.Buckets, func(b Bucket) bool { return b.Hash == bucketKinetic })
+				require.GreaterOrEqual(t, i, 0)
+
+				s.Buckets[i].Capacity = tc.capacity
+			}
+
+			if tc.refuse != nil {
+				f.bungieError = goneError
+				f.bungieErrorIf = tc.refuse
+			}
+
+			later := fixtureNow.Add(10 * time.Second)
+			f.h.now = func() time.Time { return later }
+
+			got, isError := call(t, f.h.handleStageJunk, tc.in)
+			assert.Equal(t, tc.want, got)
+			assert.Equal(t, tc.isError, isError)
+
+			transfers := f.bungie.calls(http.MethodPost, pathTransfer)
+			assert.Equal(t, tc.transfers, transferSteps(transfers))
+			assert.Len(t, bungiePosts(f), len(transfers), "the call sends no equip and no Postmaster request")
+
+			wantFetched := fixtureNow
+			if tc.moved {
+				wantFetched = later
+			}
+
+			assert.Equal(t, wantFetched, f.h.snapshot.Fetched)
+		})
+	}
+}
+
+func TestStageJunkLines(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		line   string
+		junk   []string
+		absent bool
+	}{
+		"lock line":       {junk: []string{"1001", "1003"}, line: lockLine},
+		"no lock line":    {junk: []string{"1003"}, line: lockLine, absent: true},
+		"skipped line":    {junk: []string{"1003", "1005", "1006"}, line: skippedLine(2)},
+		"no skipped line": {junk: []string{"1003"}, line: "stage_junk skips", absent: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.serviceData[pathTags] = junkTags(t, tc.junk...)
+
+			got, isError := call(t, f.h.handleStageJunk, StageJunkInput{Slot: "kinetic"})
+			assert.False(t, isError)
+
+			if tc.absent {
+				assert.NotContains(t, got, tc.line)
+			} else {
+				assert.Contains(t, got, tc.line)
+			}
+		})
+	}
+}
+
+func TestStageJunkSnapshotAge(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+	require.False(t, isError)
+
+	later := fixtureNow.Add(10 * time.Second)
+	f.h.now = func() time.Time { return later }
+	kinetic := StageJunkInput{Slot: "kinetic"}
+
+	_, isError = call(t, f.h.handleStageJunk, kinetic)
+	require.False(t, isError)
+	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a call without junk keeps the age of the snapshot")
+
+	f.serviceData[pathTags] = junkTags(t, "1001")
+
+	_, isError = call(t, f.h.handleStageJunk, kinetic)
+	require.True(t, isError)
+	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a refusal keeps the age of the snapshot")
+
+	f.serviceData[pathTags] = junkTags(t, "1001", "1003")
+	f.bungieError = goneError
+
+	_, isError = call(t, f.h.handleStageJunk, kinetic)
+	require.True(t, isError)
+	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a call that moved nothing keeps the age of the snapshot")
+
+	f.bungieError = ""
+
+	_, isError = call(t, f.h.handleStageJunk, kinetic)
+	require.False(t, isError)
+	assert.Equal(t, later, f.h.snapshot.Fetched, "a move restarts the age of the snapshot")
+}
+
+func TestStageJunkReadsTags(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.serviceData[pathTags] = junkTags(t, "1001")
+
+	got, isError := call(t, f.h.handleStageJunk, StageJunkInput{Slot: "kinetic"})
+	assert.True(t, isError)
+	assert.Equal(t, fixtureRefusal, got)
+
+	f.serviceData[pathTags] = junkTags(t, "1001", "1003")
+
+	got, isError = call(t, f.h.handleStageJunk, StageJunkInput{Slot: "kinetic"})
+	assert.False(t, isError)
+	assert.True(t, strings.HasPrefix(got, "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n"), got)
+
+	assert.Len(t, f.service.calls(http.MethodGet, pathTags), 2, "every call reads the tags")
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
+}
+
+func TestStageJunkLoadError(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.serviceData[pathTags] = ""
+
+	got, isError := call(t, f.h.handleStageJunk, StageJunkInput{Slot: "kinetic"})
+	assert.True(t, isError)
+	assert.True(t, strings.HasPrefix(got, "reading tags and notes:"), got)
+	assert.Empty(t, bungiePosts(f))
 }
 
 func TestSetLockTool(t *testing.T) {

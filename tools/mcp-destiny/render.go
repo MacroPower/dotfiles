@@ -527,6 +527,97 @@ func renderLoadoutEquip(s *Snapshot, l Loadout, result LoadoutEquip, err error) 
 	return b.String()
 }
 
+// renderNoJunk reports that no junk sits in bucket on character c and
+// that none waits.
+func renderNoJunk(s *Snapshot, c Character, bucket Bucket, plan JunkPlan) string {
+	lines := []string{fmt.Sprintf("No junk is left for %s on %s.", bucket.Name, s.OwnerLabel(c.ID))}
+	lines = appendSkippedJunk(lines, plan.Skipped)
+	lines = append(lines, "If you moved other items out of the slot for this run, move them back with move_items.")
+
+	return strings.Join(lines, "\n")
+}
+
+// renderStagedJunk lists the junk that bucket on character c holds after
+// a stage_junk call. Plan is the plan after the moves, and failures holds
+// one line for each move that did not succeed.
+func renderStagedJunk(s *Snapshot, c Character, bucket Bucket, plan JunkPlan, failures []string) string {
+	staged := len(plan.Staged)
+	lines := []string{fmt.Sprintf(
+		"Unequipped items in %s on %s after this call: %d", bucket.Name, s.OwnerLabel(c.ID), staged,
+	)}
+
+	locked := false
+
+	for _, item := range plan.Staged {
+		line := fmt.Sprintf("- %s (%s)", item.Name, item.InstanceID)
+		if item.Locked {
+			line += ", locked"
+			locked = true
+		}
+
+		lines = append(lines, line)
+	}
+
+	if locked {
+		lines = append(lines, "The game does not let the player dismantle a locked item. set_lock unlocks it.")
+	}
+
+	lines = append(lines, failures...)
+	lines = append(lines, fmt.Sprintf("Junk that waits for the next call: %d", len(plan.Waiting)))
+	lines = appendSkippedJunk(lines, plan.Skipped)
+
+	if staged == 0 {
+		lines = append(lines, "No junk is in the slot, so the user has nothing to dismantle. "+
+			"Call stage_junk again to stage the junk that waits.")
+
+		return strings.Join(lines, "\n")
+	}
+
+	lines = append(lines, fmt.Sprintf(
+		"Each listed item is tagged junk, and the user dismantles them in the game. "+
+			"Do not dismantle when the number of unequipped items that the game shows in the slot is higher than %d, "+
+			"because stage_junk did not check an item that reached the slot after the last inventory fetch. "+
+			"Call stage_junk again after the user dismantled them. "+
+			"A call in the next %d seconds might reuse this inventory copy and list the same items.",
+		staged, int(snapshotTTL/time.Second),
+	))
+
+	return strings.Join(lines, "\n")
+}
+
+// appendSkippedJunk adds the line that counts the skipped junk of a slot
+// to lines. It leaves lines as they are when skipped is 0.
+func appendSkippedJunk(lines []string, skipped int) []string {
+	if skipped == 0 {
+		return lines
+	}
+
+	return append(lines, fmt.Sprintf("Junk of this slot that stage_junk skips: %d. "+
+		"Each one is equipped, at the Postmaster, not transferable, or for another class.", skipped))
+}
+
+// keeperRefusal returns the [ErrMove] error of a stage_junk call that
+// finds keepers in bucket on character c. The error names each keeper
+// and tells the model how to move the keepers out and back.
+func keeperRefusal(s *Snapshot, c Character, bucket Bucket, keepers []*Item) error {
+	names := make([]string, 0, len(keepers))
+	ids := make([]string, 0, len(keepers))
+
+	for _, item := range keepers {
+		names = append(names, fmt.Sprintf("%s (%s)", item.Name, item.InstanceID))
+		ids = append(ids, item.InstanceID)
+	}
+
+	//nolint:staticcheck // ST1005: The model reads the text as the tool result, which ends in a sentence.
+	return fmt.Errorf(
+		"%w: %s on %s holds unequipped gear that is not tagged junk: %s. stage_junk moved nothing. "+
+			"Move that gear to the vault with move_items, with target vault and instance_ids %s. "+
+			"Then call stage_junk again. After stage_junk reports that no junk is left, "+
+			"move that gear back with move_items and target %s.",
+		ErrMove, bucket.Name, s.OwnerLabel(c.ID), strings.Join(names, ", "), strings.Join(ids, ", "), c.ID,
+	)
+}
+
 // perkLabel names a perk and the other plugs that its socket can hold.
 func perkLabel(perk Perk) string {
 	if len(perk.Options) == 0 {

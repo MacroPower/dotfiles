@@ -3,7 +3,9 @@
 // The tools read the Destiny 2 inventory of the signed-in account and edit
 // the data that the web client keeps per account. They also move items,
 // lock them, change their perks, and equip saved loadouts in the live
-// game.
+// game. The Bungie API has no dismantle request, so stage_junk moves the
+// items with the junk tag into one slot of a character for the user to
+// dismantle in the game.
 //
 // # Data Sources
 //

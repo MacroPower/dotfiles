@@ -3484,6 +3484,7 @@ in
         permissions.ask = [
           "mcp__destiny__move_items"
           "mcp__destiny__move_stack"
+          "mcp__destiny__stage_junk"
           "mcp__destiny__set_lock"
           "mcp__destiny__set_perk"
           "mcp__destiny__equip_loadout"
