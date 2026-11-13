@@ -79,6 +79,9 @@ func TestServerListsTools(t *testing.T) {
 		case toolGetStats:
 			require.NotNil(t, tool.Annotations)
 			assert.True(t, tool.Annotations.ReadOnlyHint)
+
+		case toolSaveAutotagRule:
+			assert.Contains(t, tool.Description, "A rule needs a tag_id or vault=true")
 		}
 	}
 
@@ -2179,29 +2182,67 @@ func TestPerkPreferences(t *testing.T) {
 	}
 }
 
+// fixtureRuleWithoutAction is an autotag body whose one rule has neither a
+// tag nor the vault flag. The service accepts such a rule, so a client other
+// than the web client can store one.
+const fixtureRuleWithoutAction = `{"rules": [
+	{"id": "r3", "query": "is:armor", "vault": false, "enabled": true, "position": 0, "removed": false, "updatedAt": 5}
+], "state": {"enabled": true, "mark": "00000000000000001006", "updatedAt": 5}, "now": 10}`
+
 func TestListAutotagRules(t *testing.T) {
 	t.Parallel()
 
-	f := newFakes(t)
+	tests := map[string]struct {
+		autotag string
+		want    []string
+	}{
+		"rules in evaluation order": {
+			want: []string{
+				`- 0. [enabled] "rate:>=a": tag pve (id r1)`,
+				`- 1. [disabled] "is:dupe": move to vault (id r2)`,
+			},
+		},
+		"stored rule without an action": {
+			autotag: fixtureRuleWithoutAction,
+			want:    []string{`- 0. [enabled] "is:armor": no action (id r3)`},
+		},
+	}
 
-	got, isError := call(t, f.h.handleListAutotagRules, EmptyInput{})
-	assert.False(t, isError)
-	assert.Equal(t, strings.Join([]string{
-		"Autotagging is on.",
-		"",
-		"Rules in evaluation order. The first enabled rule that matches a new item wins.",
-		`- 0. [enabled] "rate:>=a": tag pve (id r1)`,
-		`- 1. [disabled] "is:dupe": move to vault (id r2)`,
-	}, "\n"), got)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			if tc.autotag != "" {
+				f.serviceData[pathAutotag] = tc.autotag
+			}
+
+			got, isError := call(t, f.h.handleListAutotagRules, EmptyInput{})
+			assert.False(t, isError)
+			assert.Equal(t, strings.Join(append([]string{
+				"Autotagging is on.",
+				"",
+				"Rules in evaluation order. The first enabled rule that matches a new item wins.",
+			}, tc.want...), "\n"), got)
+		})
+	}
 }
 
 func TestSaveAutotagRule(t *testing.T) {
 	t.Parallel()
 
+	const (
+		noAction = "invalid input: a rule needs a tag_id or vault=true, " +
+			"so add one or remove the rule with remove_autotag_rule"
+		badQuery = "invalid input: a rule query has between 1 and 1000 characters"
+	)
+
 	query := "is:weapon misses:2"
 	empty := ""
+	spaces := "  "
 	junk := "junk"
 	yes := true
+	no := false
 	position := 0
 
 	// The query is 600 UTF-16 code units and 1800 bytes.
@@ -2210,14 +2251,30 @@ func TestSaveAutotagRule(t *testing.T) {
 
 	tests := map[string]struct {
 		wantRule map[string]any
-		want     string
-		in       SaveAutotagRuleInput
-		isError  bool
+		// autotag replaces the autotag body of the fixture when it is set.
+		autotag string
+		want    string
+		in      SaveAutotagRuleInput
+		isError bool
 	}{
 		"create appends after the last live rule": {
 			in: SaveAutotagRuleInput{Query: &query, TagID: &junk, Vault: &yes},
 			wantRule: map[string]any{
 				"query": "is:weapon misses:2", "tagId": "junk", "vault": true,
+				"enabled": true, "position": float64(2), "removed": false,
+			},
+		},
+		"create with a tag only": {
+			in: SaveAutotagRuleInput{Query: &query, TagID: &junk},
+			wantRule: map[string]any{
+				"query": "is:weapon misses:2", "tagId": "junk", "vault": false,
+				"enabled": true, "position": float64(2), "removed": false,
+			},
+		},
+		"create with vault only": {
+			in: SaveAutotagRuleInput{Query: &query, Vault: &yes},
+			wantRule: map[string]any{
+				"query": "is:weapon misses:2", "vault": true,
 				"enabled": true, "position": float64(2), "removed": false,
 			},
 		},
@@ -2228,12 +2285,87 @@ func TestSaveAutotagRule(t *testing.T) {
 				"enabled": true, "position": float64(0), "removed": false,
 			},
 		},
-		"update clears the tag": {
-			in: SaveAutotagRuleInput{ID: "r1", TagID: &empty},
+		"update swaps the tag for the vault flag": {
+			in: SaveAutotagRuleInput{ID: "r1", TagID: &empty, Vault: &yes},
 			wantRule: map[string]any{
-				"id": "r1", "query": "rate:>=a", "vault": false,
+				"id": "r1", "query": "rate:>=a", "vault": true,
 				"enabled": true, "position": float64(0), "removed": false,
 			},
+		},
+		"update swaps the vault flag for a tag": {
+			in: SaveAutotagRuleInput{ID: "r2", Vault: &no, TagID: &junk},
+			wantRule: map[string]any{
+				"id": "r2", "query": "is:dupe", "tagId": "junk", "vault": false,
+				"enabled": false, "position": float64(1), "removed": false,
+			},
+		},
+		"update adds vault to a stored rule without an action": {
+			autotag: fixtureRuleWithoutAction,
+			in:      SaveAutotagRuleInput{ID: "r3", Vault: &yes},
+			wantRule: map[string]any{
+				"id": "r3", "query": "is:armor", "vault": true,
+				"enabled": true, "position": float64(0), "removed": false,
+			},
+		},
+		"update adds a tag to a stored rule without an action": {
+			autotag: fixtureRuleWithoutAction,
+			in:      SaveAutotagRuleInput{ID: "r3", TagID: &junk},
+			wantRule: map[string]any{
+				"id": "r3", "query": "is:armor", "tagId": "junk", "vault": false,
+				"enabled": true, "position": float64(0), "removed": false,
+			},
+		},
+		"create with a query only": {
+			in:      SaveAutotagRuleInput{Query: &query},
+			want:    noAction,
+			isError: true,
+		},
+		"create with an empty tag and no vault": {
+			in:      SaveAutotagRuleInput{Query: &query, TagID: &empty},
+			want:    noAction,
+			isError: true,
+		},
+		"create with a tag of spaces": {
+			in:      SaveAutotagRuleInput{Query: &query, TagID: &spaces},
+			want:    noAction,
+			isError: true,
+		},
+		"create with vault false": {
+			in:      SaveAutotagRuleInput{Query: &query, Vault: &no},
+			want:    noAction,
+			isError: true,
+		},
+		"update clears the tag": {
+			in:      SaveAutotagRuleInput{ID: "r1", TagID: &empty},
+			want:    noAction,
+			isError: true,
+		},
+		"update turns the vault flag off": {
+			in:      SaveAutotagRuleInput{ID: "r2", Vault: &no},
+			want:    noAction,
+			isError: true,
+		},
+		"update of a stored rule without an action": {
+			autotag: fixtureRuleWithoutAction,
+			in:      SaveAutotagRuleInput{ID: "r3", Enabled: &no},
+			want:    noAction,
+			isError: true,
+		},
+		"query update of a stored rule without an action": {
+			autotag: fixtureRuleWithoutAction,
+			in:      SaveAutotagRuleInput{ID: "r3", Query: &query},
+			want:    noAction,
+			isError: true,
+		},
+		"empty query wins over the missing action": {
+			in:      SaveAutotagRuleInput{ID: "r1", Query: &empty, TagID: &empty},
+			want:    badQuery,
+			isError: true,
+		},
+		"missing query wins over the missing action": {
+			in:      SaveAutotagRuleInput{},
+			want:    "invalid input: a new rule needs a query",
+			isError: true,
 		},
 		"create needs a query": {
 			in:      SaveAutotagRuleInput{TagID: &junk},
@@ -2252,7 +2384,7 @@ func TestSaveAutotagRule(t *testing.T) {
 		},
 		"empty query": {
 			in:      SaveAutotagRuleInput{ID: "r1", Query: &empty},
-			want:    "invalid input: a rule query has between 1 and 1000 characters",
+			want:    badQuery,
 			isError: true,
 		},
 		"query within the limit in UTF-16 code units": {
@@ -2264,7 +2396,7 @@ func TestSaveAutotagRule(t *testing.T) {
 		},
 		"query too long in UTF-16 code units": {
 			in:      SaveAutotagRuleInput{ID: "r1", Query: &long},
-			want:    "invalid input: a rule query has between 1 and 1000 characters",
+			want:    badQuery,
 			isError: true,
 		},
 	}
@@ -2274,6 +2406,9 @@ func TestSaveAutotagRule(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
+			if tc.autotag != "" {
+				f.serviceData[pathAutotag] = tc.autotag
+			}
 
 			got, isError := call(t, f.h.handleSaveAutotagRule, tc.in)
 			assert.Equal(t, tc.isError, isError)

@@ -248,7 +248,7 @@ type SetPerkPreferencesInput struct {
 // A nil field keeps the stored value on an update.
 type SaveAutotagRuleInput struct {
 	Query    *string `json:"query,omitempty"    jsonschema:"Item search in the search syntax of Agg's Destiny Vault Manager, such as 'is:weapon misses:2 is:dupe'. Required for a new rule"`
-	TagID    *string `json:"tag_id,omitempty"   jsonschema:"Tag id that the rule applies. An empty string makes the rule apply no tag"`
+	TagID    *string `json:"tag_id,omitempty"   jsonschema:"Tag id that the rule applies. An empty string makes the rule apply no tag, and the rule then needs vault=true"`
 	Vault    *bool   `json:"vault,omitempty"    jsonschema:"Move matching items to the vault (default false)"`
 	Enabled  *bool   `json:"enabled,omitempty"  jsonschema:"Whether the rule runs (default true)"`
 	Position *int    `json:"position,omitempty" jsonschema:"Evaluation order, lowest first. A new rule defaults to last"`
@@ -1516,7 +1516,12 @@ func unknownTrait(perk string, traits map[string]string) error {
 
 // mergeRule builds the rule that a save_autotag_rule call writes. With an
 // id it overlays the given fields on the stored rule. Without an id it
-// creates a rule that evaluates last.
+// creates a rule that evaluates last. It rejects a built rule that has no
+// action, which is a rule with an empty tag id and a false vault flag. An
+// enabled rule without an action takes the items that it matches from the
+// rules after it and neither tags nor vaults them. A stored rule without an
+// action also disables the Save button of the rule editor of the web client
+// until the user gives the rule an action or removes it.
 func mergeRule(rules []AutotagRule, in SaveAutotagRuleInput) (AutotagRule, error) {
 	var rule AutotagRule
 
@@ -1575,6 +1580,13 @@ func mergeRule(rules []AutotagRule, in SaveAutotagRuleInput) (AutotagRule, error
 		return AutotagRule{}, fmt.Errorf(
 			"%w: tag_id %q is not one of %s",
 			ErrInvalidInput, rule.TagID, strings.Join(tagOrder, ", "),
+		)
+	}
+
+	if rule.TagID == "" && !rule.Vault {
+		return AutotagRule{}, fmt.Errorf(
+			"%w: a rule needs a tag_id or vault=true, so add one or remove the rule with %s",
+			ErrInvalidInput, toolRemoveAutotagRule,
 		)
 	}
 

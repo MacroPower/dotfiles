@@ -497,7 +497,9 @@ func newServer(h *handler) *mcp.Server {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolSaveAutotagRule,
-		Description: "Create an autotag rule, or update one by id. The web client runs the rules. " +
+		Description: "Create an autotag rule, or update one by id. " +
+			"A rule needs a tag_id or vault=true, and the tool refuses a rule that has neither. " +
+			"The web client runs the rules. " +
 			"It skips a rule whose query does not parse, and this tool cannot check the query syntax.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool)},
 	}, h.handleSaveAutotagRule)
