@@ -209,6 +209,24 @@
 // The server keeps the tokens in tokens.json in the state directory and
 // refreshes them until the Bungie refresh token expires.
 //
+// # Upstream
+//
+// The server follows the web client and the service of Agg's Destiny
+// Vault Manager at the commit that passthru.upstream.rev in package.nix
+// names. The server mirrors a subset of upstream on purpose, so the
+// commit records the upstream code that the server was last checked
+// against. The upstream repository vendors DIM as the vendor/DIM
+// submodule. The DIM commit that the server follows is the pin of that
+// submodule in the upstream commit. The command git ls-tree <rev>
+// vendor/DIM prints it in a clone of the upstream repository. For the
+// current pin, the DIM commit is dd9fc5d01041a218fcebd536f4de11678057d8ae.
+//
+// An upgrade diffs upstream from the pinned commit to the head of its
+// default branch. It also diffs DIM from the submodule pin of the old
+// commit to the submodule pin of the new commit. It then moves
+// passthru.upstream.rev to the new commit and sets the DIM commit in
+// this section to the submodule pin of the new commit.
+//
 // # Subcommands
 //
 //   - serve: run the MCP server. It is the default subcommand.

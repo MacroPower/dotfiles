@@ -35,6 +35,16 @@ Prefer those. They encode pins, exclusions, and post-update steps that a generic
 command skips. Dependabot or Renovate config is worth a line in the report,
 since the bot will otherwise re-open the same bumps.
 
+Also find every upstream pin. An upstream pin records the commit of a project
+that this project mirrors or ports by hand, without a build dependency on it.
+One example is `passthru.upstream` in a Nix package. Package managers do not
+read upstream pins, so their update commands leave each pin in place. Look for
+the pins in package definitions, in docs that name an upstream commit, and in
+comments beside a commit hash.
+
+A commit that follows from an upstream pin is not a pin of its own. One example
+is the submodule commit that the pinned upstream commit records.
+
 ## Step 2: Preflight
 
 Confirm the manifests and lockfiles are clean in git:
@@ -59,8 +69,11 @@ Two policies, chosen by dependency and scope:
 - **To latest** is the default for unconstrained pins, and for any
   dependency when the scope says `latest` or `major` or names a single
   dependency. Unconstrained pins include a flake input, a CI action ref, a
-  hook rev, an image tag, and a toolchain version. Raising a constraint means
-  editing the manifest as well as the lock.
+  hook rev, an image tag, a toolchain version, and an upstream pin. Raising a
+  constraint means editing the manifest as well as the lock. Move each
+  upstream pin to the head of the default branch of its upstream repository.
+  Set each recorded commit that follows from the pin to its value at the new
+  upstream commit, not to the head of its own default branch.
 
 Keep the project's pin style. A digest- or SHA-pinned reference stays pinned
 that way, with the new value and an updated version comment. If nothing changed
@@ -102,6 +115,9 @@ every changed dependency into one of two tiers.
   keys and add flags in minor and patch releases, and the carrier's release
   notes never mention it.
 - A pinned git ref that moved by more than a few commits.
+- An upstream pin that moved, by any number of commits. The project copies
+  upstream code by hand, so its build and tests do not show what changed
+  upstream.
 
 **Version-only tier** (a one-line note in the report):
 
@@ -176,6 +192,31 @@ Carrier commits titled `<tool>: 1.4.0 -> 1.5.0` are pointers to a changelog,
 not changelogs. Agents that read the carrier's log in place of the tool's
 release notes have researched the wrong thing.
 
+For an upstream pin, the usage to judge against is the code that mirrors or
+ports upstream. Such code includes a client of an upstream service, a reader of
+an upstream file format, and a port of an upstream function. Fill the template
+with the old and new commit, and append this paragraph to the prompt:
+
+```
+This dependency is an upstream pin. The project does not build against
+upstream. It mirrors or ports upstream code by hand in <paths>. Judge every
+change in the range against what that code mirrors, such as a changed service
+route, a changed file format, or a change to a ported function. Under
+OPPORTUNITIES, list every new upstream feature that the project can mirror,
+not only the features that extend what the project mirrors.
+```
+
+When the upstream repository pins another repository as a submodule and the
+project ports code from that submodule, append this paragraph as well:
+
+```
+Upstream pins <submodule repo URL> as the submodule <path>, and this project
+ports code from it. Diff that range too. Run `git ls-tree <old> <path>` and
+`git ls-tree <new> <path>` in the upstream clone to find the two submodule
+commits, clone the submodule repository, and judge its log between those
+commits the same way.
+```
+
 While agents run, do not busy-wait. End the turn and act on completion
 notifications as they arrive.
 
@@ -210,5 +251,7 @@ Summarize per dependency: what changed upstream, what you migrated (with file
 references), which opportunities you adopted, and which you left as suggestions.
 A package researched through a carrier gets its own entry under that carrier.
 Note version-only bumps in one line each, and list the majors that the
-within-constraints policy left behind. Offer to commit (the project's commit
+within-constraints policy left behind. For each upstream pin, list every
+upstream change in the range that the upgrade left unported. Give each change
+one line, so the user can file it. Offer to commit (the project's commit
 skill applies); do not commit unasked.
