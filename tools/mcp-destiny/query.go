@@ -374,7 +374,7 @@ func parseAtom(tokens *queryTokens) (*QueryNode, error) {
 			return filter, nil
 		}
 
-		filter.Type = "is"
+		filter.Type = filterIs
 
 		return &QueryNode{Op: OpNot, Operand: filter}, nil
 

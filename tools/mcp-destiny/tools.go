@@ -41,6 +41,7 @@ const (
 	toolSetPerkPreferences  = "set_perk_preferences"
 	toolListAutotagRules    = "list_autotag_rules"
 	toolSaveAutotagRule     = "save_autotag_rule"
+	toolPreviewAutotagRule  = "preview_autotag_rule"
 	toolRemoveAutotagRule   = "remove_autotag_rule"
 	toolSetAutotagEnabled   = "set_autotag_enabled"
 	toolListActivityHistory = "list_activity_history"
@@ -265,6 +266,15 @@ type SaveAutotagRuleInput struct {
 	Enabled  *bool   `json:"enabled,omitempty"  jsonschema:"Whether the rule runs (default true)"`
 	Position *int    `json:"position,omitempty" jsonschema:"Evaluation order, lowest first. A new rule defaults to last"`
 	ID       string  `json:"id,omitzero"        jsonschema:"Id of the rule to update, from list_autotag_rules. Omit to create a rule"`
+}
+
+// PreviewAutotagRuleInput is the input schema of the preview_autotag_rule
+// tool.
+type PreviewAutotagRuleInput struct {
+	Query   string `json:"query"            jsonschema:"Item search in the search syntax of Agg's Destiny Vault Manager, such as 'is:weapon is:unlocked -tag:keep'. The tool evaluates only the filters that its description names"`
+	Limit   int    `json:"limit,omitzero"   jsonschema:"Maximum number of items to return (default 50, maximum 200)"`
+	Offset  int    `json:"offset,omitzero"  jsonschema:"Number of matching items to skip (default 0)"`
+	Refresh bool   `json:"refresh,omitzero" jsonschema:"Fetch the inventory from Bungie again instead of reusing a copy up to 30 seconds old"`
 }
 
 // RemoveAutotagRuleInput is the input schema of the remove_autotag_rule
@@ -1489,6 +1499,53 @@ func (h *handler) handleSaveAutotagRule(
 	}
 
 	return textResult("Saved the rule:\n" + renderRule(rule)), nil, nil
+}
+
+// handlePreviewAutotagRule lists the owned items that a rule query
+// matches. It refuses a query that does not parse or that holds a term
+// outside the filter table before it sends any request.
+func (h *handler) handlePreviewAutotagRule(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in PreviewAutotagRuleInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// The trim matches the query that save_autotag_rule stores.
+	root, err := parseQuery(strings.TrimSpace(in.Query))
+	if err != nil {
+		return h.toolError(ctx, toolPreviewAutotagRule, fmt.Errorf("%w: %w", ErrInvalidInput, err))
+	}
+
+	query := compileQuery(root)
+	if len(query.unsupported) > 0 {
+		return h.toolError(ctx, toolPreviewAutotagRule, unsupportedQuery(query.unsupported))
+	}
+
+	s, _, err := h.loadAnnotated(ctx, in.Refresh)
+	if err != nil {
+		return h.toolError(ctx, toolPreviewAutotagRule, err)
+	}
+
+	_, ok := s.lastPlayed()
+	if !ok {
+		return h.toolError(ctx, toolPreviewAutotagRule, errNoCharacter)
+	}
+
+	owned := ownedItems(s)
+	matches := query.matches(owned)
+
+	limit := in.Limit
+	if limit <= 0 {
+		limit = defaultItemLimit
+	}
+
+	limit = min(limit, maxItemLimit)
+	offset := min(max(in.Offset, 0), len(matches))
+	page := matches[offset:min(offset+limit, len(matches))]
+
+	return textResult(renderPreview(s, page, offset, len(matches), len(owned))), nil, nil
 }
 
 func (h *handler) handleRemoveAutotagRule(

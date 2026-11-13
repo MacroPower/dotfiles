@@ -250,6 +250,19 @@ func renderItems(
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// renderPreview renders one page of the items that an autotag rule query
+// matches. Total counts the matches, and owned counts the items that the
+// preview evaluated. A first line gives both counts before the output of
+// [renderItems].
+func renderPreview(s *Snapshot, page []*Item, offset, total, owned int) string {
+	if total == 0 {
+		return "No owned item matches the query."
+	}
+
+	return fmt.Sprintf("%d of %d owned items match.\n", total, owned) +
+		renderItems(s, page, offset, total, "", false, nil)
+}
+
 // renderItem renders one item in full. For a weapon, ratings holds the
 // [Rating] of each game mode, and the output gains the roll ratings
 // block. Ratings is nil for every other item.

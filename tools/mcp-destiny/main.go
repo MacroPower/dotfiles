@@ -577,6 +577,24 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleSaveAutotagRule)
 
 	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolPreviewAutotagRule,
+		Description: "List the owned items that an autotag rule query matches, " +
+			"so that the user can test a rule before saving it with save_autotag_rule. " +
+			"The query uses the search syntax of the web client. " +
+			"The tool evaluates it over the items that the rule editor of the web client previews, " +
+			"which are the instanced weapons, armor, and other equipment in every location, the vault included, " +
+			"except emotes and finishers. Each row has the columns of list_items. " +
+			"The tool evaluates a closed set of filters, which are " + listWithAnd(supportedKeywords()) + ". " +
+			"Each is: word also works as not:<word>. " +
+			"The tool refuses a query with any other term, such as a bare word or is:masterwork, " +
+			"and the refusal names each such term together with the filters that the tool evaluates. " +
+			"The query can combine the filters with and, or, -, and parentheses. " +
+			"The preview ignores rule order. An earlier rule can take a matching item first, " +
+			"so a match does not mean that a saved rule takes the item.",
+		Annotations: readOnly,
+	}, h.handlePreviewAutotagRule)
+
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolRemoveAutotagRule,
 		Description: "Remove an autotag rule by id.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},

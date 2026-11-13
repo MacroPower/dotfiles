@@ -9,12 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Class types of the fixture characters.
-const (
-	classTitan  = 0
-	classHunter = 1
-)
-
 func TestResolveSlot(t *testing.T) {
 	t.Parallel()
 

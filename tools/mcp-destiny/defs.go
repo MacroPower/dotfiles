@@ -50,9 +50,14 @@ const (
 	itemTypePlug   = 19
 )
 
-// classAny is the Bungie DestinyClass value of an item that every class can
-// use.
-const classAny = 3
+// Bungie DestinyClass values. classAny is the value of an item that every
+// class can use.
+const (
+	classTitan   = 0
+	classHunter  = 1
+	classWarlock = 2
+	classAny     = 3
+)
 
 // Bungie BucketCategory values of the buckets that hold items that a player
 // sees and manages.

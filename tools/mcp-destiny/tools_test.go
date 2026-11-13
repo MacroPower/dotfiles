@@ -76,7 +76,8 @@ func TestServerListsTools(t *testing.T) {
 		toolStatus, toolLogin, toolCompleteLogin, toolListCharacters, toolListItems, toolGetItem,
 		toolCompareDuplicates, toolMoveItems,
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
-		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolRemoveAutotagRule,
+		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolPreviewAutotagRule,
+		toolRemoveAutotagRule,
 		toolMoveStack, toolStageJunk, toolSetLock, toolSetPerk, toolSetAutotagEnabled, toolListActivityHistory,
 		toolListLoadouts, toolEquipLoadout, toolGetStats, toolListVendors, toolListActivities,
 	}, names)
@@ -85,6 +86,11 @@ func TestServerListsTools(t *testing.T) {
 		switch tool.Name {
 		case toolListVendors, toolListActivities:
 			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
+		case toolPreviewAutotagRule:
+			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
+			assert.Contains(t, tool.Description, "is:weapon, is:armor")
+			assert.Contains(t, tool.Description, "so a match does not mean that a saved rule takes the item")
+
 		case toolGetStats:
 			require.NotNil(t, tool.Annotations)
 			assert.True(t, tool.Annotations.ReadOnlyHint)
@@ -5372,6 +5378,389 @@ func TestRemoveAutotagRule(t *testing.T) {
 	got, isError = call(t, f.h.handleRemoveAutotagRule, RemoveAutotagRuleInput{ID: "nope"})
 	assert.True(t, isError)
 	assert.Equal(t, `invalid input: no autotag rule has the id "nope"`, got)
+}
+
+// The texts of the preview_autotag_rule tool.
+const (
+	previewNoMatch = "No owned item matches the query."
+	previewHeader  = "instance id | name | type | tier | power | stat total | location | tag | flags"
+)
+
+// tagRows returns a tags response body of the fake service that holds
+// rows.
+func tagRows(t *testing.T, rows ...ItemTag) string {
+	t.Helper()
+
+	if rows == nil {
+		rows = []ItemTag{}
+	}
+
+	raw, err := json.Marshal(map[string]any{"defs": []any{}, "items": rows, "now": 10})
+	require.NoError(t, err)
+
+	return string(raw)
+}
+
+// preview runs preview_autotag_rule with query. It returns the number of
+// matches, the number of owned items, and the instance id of each row. The
+// result must not be an error.
+func preview(t *testing.T, f *fakes, query string) (int, int, []string) {
+	t.Helper()
+
+	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: query})
+	require.False(t, isError, got)
+
+	if got == previewNoMatch {
+		return 0, len(ownedItems(f.h.snapshot)), []string{}
+	}
+
+	var matched, owned int
+
+	_, err := fmt.Sscanf(got, "%d of %d owned items match.", &matched, &owned)
+	require.NoError(t, err, got)
+
+	_, table, ok := strings.Cut(got, previewHeader+"\n")
+	require.True(t, ok, got)
+
+	rows := []string{}
+	for line := range strings.SplitSeq(table, "\n") {
+		id, _, _ := strings.Cut(line, " | ")
+		rows = append(rows, id)
+	}
+
+	return matched, owned, rows
+}
+
+func TestPreviewNegates(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	weapons, owned, _ := preview(t, f, "is:weapon")
+	assert.Equal(t, 5, weapons)
+	assert.Equal(t, 6, owned)
+
+	others, owned, rows := preview(t, f, "-is:weapon")
+	assert.Equal(t, owned-weapons, others)
+	assert.Equal(t, []string{"1004"}, rows)
+}
+
+func TestPreviewInVault(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	matched, _, rows := preview(t, f, "is:invault")
+	assert.Positive(t, matched)
+	assert.Equal(t, []string{"1001", "1002"}, rows)
+
+	for _, id := range rows {
+		item, ok := f.h.snapshot.Find(id)
+		require.True(t, ok)
+		assert.Equal(t, ownerVault, item.Owner)
+	}
+}
+
+func TestPreviewTagKeep(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.serviceData[pathTags] = tagRows(t)
+
+	_, _, rows := preview(t, f, "tag:keep")
+	assert.Empty(t, rows)
+
+	f.serviceData[pathTags] = tagRows(t, ItemTag{InstanceID: "1003", ItemHash: 102, TagID: "keep", UpdatedAt: 5})
+
+	_, _, rows = preview(t, f, "tag:keep")
+	assert.Equal(t, []string{"1003"}, rows)
+
+	f.serviceData[pathTags] = tagRows(
+		t,
+		ItemTag{InstanceID: "1003", ItemHash: 102, TagID: "keep", UpdatedAt: 6, Removed: true},
+	)
+
+	_, _, rows = preview(t, f, "tag:keep")
+	assert.Empty(t, rows)
+}
+
+func TestPreviewFavorite(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	favorite := ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagFavorite, UpdatedAt: 5}
+	junk := ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 5}
+	f.serviceData[pathTags] = tagRows(t, favorite, junk)
+
+	for _, query := range []string{"is:favorite", "tag:favorite", "tag:junk"} {
+		_, _, rows := preview(t, f, query)
+		assert.Equal(t, []string{"1003"}, rows, query)
+	}
+
+	junk.Removed = true
+	f.serviceData[pathTags] = tagRows(t, favorite, junk)
+
+	_, _, rows := preview(t, f, "is:favorite")
+	assert.Equal(t, []string{"1003"}, rows)
+
+	favorite.Removed = true
+	f.serviceData[pathTags] = tagRows(t, favorite, junk)
+
+	_, _, rows = preview(t, f, "is:favorite")
+	assert.Empty(t, rows)
+}
+
+func TestPreviewNoMatch(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "tag:none"})
+	assert.False(t, isError)
+	assert.Equal(t, previewNoMatch, got)
+}
+
+func TestPreviewPaging(t *testing.T) {
+	t.Parallel()
+
+	const (
+		first   = "5 of 6 owned items match."
+		row1001 = "1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Vault | keep | " +
+			"favorite, locked, masterwork, note"
+		row1005 = "1005 | Fatebringer | Kinetic Hand Cannon | Legendary | 1970 |  | Hunter (postmaster) |  | "
+		row1006 = "1006 | Fatebringer | Kinetic Hand Cannon | Legendary | 1980 |  | Hunter (equipped) |  | "
+		row1002 = "1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 |  | Vault |  | "
+		row1003 = "1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 |  | Hunter |  | "
+	)
+
+	// The Hunter of manyProfile holds one kinetic weapon more than a page
+	// holds at most. manyRows holds the rows of the first maxItemLimit of
+	// those weapons.
+	manyItems := make([]string, 0, maxItemLimit+1)
+	manyRows := make([]string, 0, maxItemLimit)
+
+	for i := range maxItemLimit + 1 {
+		manyItems = append(manyItems, fmt.Sprintf(
+			`{"itemHash": 100, "itemInstanceId": "%d", "quantity": 1, "location": 1, "bucketHash": 1498876634}`,
+			5000+i,
+		))
+
+		if i < maxItemLimit {
+			manyRows = append(
+				manyRows,
+				fmt.Sprintf("%d | Fatebringer | Kinetic Hand Cannon | Legendary |  |  | Hunter |  | ", 5000+i),
+			)
+		}
+	}
+
+	manyPage := slices.Concat([]string{
+		"201 of 201 owned items match.", "Items 1-200 of 201. Pass offset=200 for the next page.", "", previewHeader,
+	}, manyRows)
+	defaultPage := slices.Concat([]string{
+		"201 of 201 owned items match.", "Items 1-50 of 201. Pass offset=50 for the next page.", "", previewHeader,
+	}, manyRows[:defaultItemLimit])
+
+	manyProfile := `{"ErrorCode": 1, "Response": {
+		"characters": {"data": {
+			"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
+		}},
+		"characterInventories": {"data": {"c1": {"items": [` + strings.Join(manyItems, ",\n") + `]}}}
+	}}`
+
+	tests := map[string]struct {
+		in      PreviewAutotagRuleInput
+		profile string
+		want    []string
+	}{
+		"every match": {
+			in:   PreviewAutotagRuleInput{Query: "is:weapon"},
+			want: []string{first, "Items 1-5 of 5.", "", previewHeader, row1001, row1005, row1006, row1002, row1003},
+		},
+		"first page": {
+			in:   PreviewAutotagRuleInput{Query: "is:weapon", Limit: 1},
+			want: []string{first, "Items 1-1 of 5. Pass offset=1 for the next page.", "", previewHeader, row1001},
+		},
+		"middle page": {
+			in: PreviewAutotagRuleInput{Query: "is:weapon", Limit: 2, Offset: 1},
+			want: []string{
+				first, "Items 2-3 of 5. Pass offset=3 for the next page.", "", previewHeader, row1005, row1006,
+			},
+		},
+		"last page": {
+			in:   PreviewAutotagRuleInput{Query: "is:weapon", Limit: 2, Offset: 4},
+			want: []string{first, "Items 5-5 of 5.", "", previewHeader, row1003},
+		},
+		"default limit": {
+			in:      PreviewAutotagRuleInput{Query: "is:weapon"},
+			profile: manyProfile,
+			want:    defaultPage,
+		},
+		"limit past the maximum": {
+			in:      PreviewAutotagRuleInput{Query: "is:weapon", Limit: maxItemLimit + 1},
+			profile: manyProfile,
+			want:    manyPage,
+		},
+		"negative offset": {
+			in:   PreviewAutotagRuleInput{Query: "is:weapon", Limit: 1, Offset: -3},
+			want: []string{first, "Items 1-1 of 5. Pass offset=1 for the next page.", "", previewHeader, row1001},
+		},
+		"offset past the last match": {
+			in:   PreviewAutotagRuleInput{Query: "is:weapon", Offset: 9},
+			want: []string{first, "Offset 5 is past the last of 5 matching items."},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.profileBody = tc.profile
+
+			got, isError := call(t, f.h.handlePreviewAutotagRule, tc.in)
+			assert.False(t, isError)
+			assert.Equal(t, strings.Join(tc.want, "\n"), got)
+		})
+	}
+}
+
+func TestPreviewRefresh(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	for range 2 {
+		_, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon"})
+		require.False(t, isError)
+	}
+
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
+
+	_, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon", Refresh: true})
+	require.False(t, isError)
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 2, "refresh fetches the profile again")
+}
+
+func TestPreviewUnsupported(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	got, isError := call(
+		t,
+		f.h.handlePreviewAutotagRule,
+		PreviewAutotagRuleInput{Query: "is:weapon or is:masterwork"},
+	)
+	assert.True(t, isError)
+	assert.Equal(t, "unsupported query: the server does not evaluate is:masterwork, so it previews nothing. "+
+		"The web client might still accept these terms. "+
+		"The server evaluates is:weapon, is:armor, is:equipment, is:equippable, is:equipped, is:invault, "+
+		"is:postmaster, is:inpostmaster, is:locked, is:unlocked, is:titan, is:hunter, is:warlock, "+
+		"is:favorite, and tag:. Each is: word also works as not:<word>.", got)
+	assert.Empty(t, f.service.all())
+	assert.Empty(t, f.bungie.all())
+}
+
+func TestPreviewParseError(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query string
+		want  string
+	}{
+		"stray paren": {
+			query: "is:weapon )",
+			want:  `invalid input: the query has a ")" that closes no "(", and the web client ignores ")"`,
+		},
+		"trailing or with a space": {
+			query: "is:weapon or ",
+			want: `invalid input: the web client reads the unquoted word "or" as a search for that word, ` +
+				`not as an operator. Quote the word to search for it`,
+		},
+		"unclosed quote": {
+			query: `name:"abc`,
+			want:  `invalid input: the quote in "name:\"abc" never closes`,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
+			assert.True(t, isError)
+			assert.Equal(t, tc.want, got)
+			assert.Empty(t, f.service.all())
+			assert.Empty(t, f.bungie.all())
+
+			query := tc.query
+			tag := tagJunk
+
+			saved, isError := call(t, f.h.handleSaveAutotagRule, SaveAutotagRuleInput{Query: &query, TagID: &tag})
+			assert.True(t, isError)
+			assert.Equal(t, saved, got)
+		})
+	}
+}
+
+func TestPreviewEmpty(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query string
+	}{
+		"empty":  {query: ""},
+		"spaces": {query: "   "},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
+			assert.True(t, isError)
+			assert.Equal(t, "invalid input: the query has no search term", got)
+			assert.Empty(t, f.service.all())
+			assert.Empty(t, f.bungie.all())
+		})
+	}
+}
+
+func TestPreviewNoCharacter(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.profileBody = `{"ErrorCode": 1, "Response": {
+		"profileInventory": {"data": {"items": [
+			{"itemHash": 100, "itemInstanceId": "1001", "quantity": 1, "location": 2, "bucketHash": 138197802}
+		]}},
+		"characters": {"data": {}}
+	}}`
+
+	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon"})
+	assert.True(t, isError)
+	assert.Equal(t, "the account has no character, so the server previews nothing. "+
+		"The web client matches every item when it has no current character.", got)
+}
+
+func TestPreviewProfileError(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.profileBody = `{"ErrorCode": 5, "ErrorStatus": "SystemDisabled", "Message": "down"}`
+
+	want, isError := call(t, f.h.handleListItems, ListItemsInput{})
+	require.True(t, isError)
+
+	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon"})
+	assert.True(t, isError)
+	assert.Equal(t, want, got)
+	assert.True(t, strings.HasPrefix(got, "fetching the profile:"), got)
 }
 
 func TestCompleteLoginTool(t *testing.T) {

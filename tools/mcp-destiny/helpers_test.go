@@ -18,16 +18,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Bucket hashes of the fixture slots.
+// Bucket hashes of the fixture slots that no production code reads.
 const (
-	bucketKinetic     uint32 = 1498876634
-	bucketPower       uint32 = 953998645
-	bucketHelmet      uint32 = 3448274439
 	bucketConsumables uint32 = 1469714392
-	bucketEngrams     uint32 = 375726501
 	bucketQuests      uint32 = 1345459588
 	bucketMaterials   uint32 = 3865314626
-	bucketMessages    uint32 = 3161908920
 )
 
 // Item hashes of the fixture currencies.
@@ -610,8 +605,12 @@ type fakes struct {
 	bungieErrorIf func(body map[string]any) bool
 	// activitiesBody is the response body of the profile request that
 	// asks only for the activities. When it is empty, that request gets
-	// fixtureProfile, the same body as the snapshot request.
+	// the body of the snapshot request: profileBody when it is set, and
+	// fixtureProfile otherwise.
 	activitiesBody string
+	// profileBody is the response body of every other profile request.
+	// When it is empty, those requests get fixtureProfile.
+	profileBody string
 	// staleSession and staleAccess are tokens that the fakes reject.
 	staleSession string
 	staleAccess  string
@@ -695,6 +694,8 @@ func newFakes(t *testing.T) *fakes {
 		case req.Path == "/Destiny2/3/Profile/4611/" && f.activitiesBody != "" &&
 			strings.HasPrefix(req.Query, "components=204&"):
 			writeJSON(t, w, http.StatusOK, f.activitiesBody)
+		case req.Path == "/Destiny2/3/Profile/4611/" && f.profileBody != "":
+			writeJSON(t, w, http.StatusOK, f.profileBody)
 		case req.Path == "/Destiny2/3/Profile/4611/":
 			writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+fixtureProfile+`}`)
 		case req.Method == http.MethodGet && f.bungieData[req.Path] != "":

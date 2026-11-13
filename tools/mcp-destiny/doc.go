@@ -202,6 +202,45 @@
 // rating cells of the mode read "unavailable", and one line before the
 // first table gives the reason.
 //
+// # Autotag Preview
+//
+// The preview_autotag_rule tool lists the owned items that an autotag
+// rule query matches, so that the user can test a rule before saving it.
+// The tool evaluates the query over the items that the rule editor of the
+// web client previews. Those items are the instanced weapons, armor, and
+// other equipment in every location, the vault and the Postmaster
+// included. The rule editor leaves out emotes, finishers, and the dummy
+// items that DIM never shows, and so does the tool. The preview ignores
+// the order of the rules, so an earlier rule can take an item that the
+// preview lists.
+//
+// The tool evaluates a closed set of filters. One term outside the set
+// voids the whole preview, because the web client voids a whole query
+// when one term is invalid. The tool then lists nothing and names each
+// such term. Bare words and quoted strings are terms outside the set. So
+// are the is: words and the filter names that the list of filters leaves
+// out. The web client might still accept such a term.
+//
+// The list of filters gives the meaning of each one. Each is: word also
+// works as not:<word>.
+//
+//   - is:weapon: an item of the kinetic, energy, or power weapon bucket.
+//   - is:armor: an item of the helmet, gauntlets, chest armor, leg armor,
+//     or class armor bucket.
+//   - is:equipment and is:equippable: an item that DIM marks as equipment.
+//     Every item of the preview is equipment.
+//   - is:equipped: an item that a character has equipped.
+//   - is:invault: an item in the vault.
+//   - is:postmaster and is:inpostmaster: a lost item at the Postmaster,
+//     or an item in the Engrams, Messages, or Special Orders bucket.
+//   - is:locked: a locked item that the game can lock.
+//   - is:unlocked: an unlocked item that the game can lock.
+//   - is:titan, is:hunter, and is:warlock: an item of that class.
+//   - is:favorite: an item with the favorite mark.
+//   - tag:<value>: an item whose tag is the value. Only the tags that the
+//     web client defines count, so tag:none matches nothing. The value
+//     favorite matches an item with the favorite mark.
+//
 // # Sign-in
 //
 // Bungie redirects a sign-in to the one URL registered for the deployment,
