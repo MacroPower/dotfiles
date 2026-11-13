@@ -1786,44 +1786,113 @@ func TestRatingReasons(t *testing.T) {
 func TestCompareDuplicates(t *testing.T) {
 	t.Parallel()
 
-	fatebringer := []string{
-		"Fatebringer: 3 copies",
-		"",
-		"instance id | name | type | power | location | tag | flags | perks",
-		"1001 | Fatebringer | Kinetic Hand Cannon | 2010 | Vault | keep | favorite, locked, masterwork, note | " +
-			"Explosive Payload (can swap to Rampage); Firefly",
-		"1005 | Fatebringer | Kinetic Hand Cannon | 1970 | Hunter (postmaster) |  |  | ",
-		"1006 | Fatebringer | Kinetic Hand Cannon | 1980 | Hunter (equipped) |  |  | ",
+	const (
+		// Each sheet lists Fatebringer (100) with one perk column. The
+		// Aegis sheet gives the weapon the tier S, and the PvP sheet
+		// gives it the tier C.
+		//
+		// Instance 1001 holds Explosive Payload (900) with Rampage (903)
+		// beside it in one socket, so it hits the column of the Aegis
+		// sheet. The fake perk preferences dislike Rampage for PvP, so
+		// the copy misses the column of the PvP sheet. The profile lists
+		// no perks for instances 1005 and 1006.
+		aegisSheet = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900]]}]}`
+		pvpSheet   = `{"rolls": [{"tier": "C", "hashes": [100], "slots": [[903]]}]}`
+
+		noAegis = "PvE: rating unavailable: the service publishes no Aegis sheet"
+		noPvP   = "PvP: rating unavailable: the service publishes no PvP sheet"
+
+		header   = "instance id | name | type | power | location | tag | flags | pve rating | pvp rating | perks"
+		noRating = "unavailable | unavailable"
+
+		// The rating cells of a copy without perks.
+		unknownBoth  = "roll unknown (sheet S) | roll unknown (sheet C)"
+		unknownAegis = "roll unknown (sheet S) | unavailable"
+	)
+
+	// aegisOnly makes the service publish only the Aegis sheet.
+	aegisOnly := func(f *fakes) {
+		f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+		f.serviceData["/artifacts/rolls.a.json"] = aegisSheet
 	}
 
-	everyDuplicate := strings.Join(append([]string{
+	// bothSheets makes the service publish the Aegis sheet and the PvP
+	// sheet.
+	bothSheets := func(f *fakes) {
+		aegisOnly(f)
+
+		f.artifactFiles["pvprolls"] = []string{"pvprolls.a.json"}
+		f.serviceData["/artifacts/pvprolls.a.json"] = pvpSheet
+	}
+
+	// fatebringer returns the table of the Fatebringer copies in the
+	// fixture profile. Cells holds the two rating cells of each copy, in
+	// row order.
+	fatebringer := func(cells ...string) []string {
+		return []string{
+			"Fatebringer: 3 copies",
+			"",
+			header,
+			"1001 | Fatebringer | Kinetic Hand Cannon | 2010 | Vault | keep | favorite, locked, masterwork, note | " +
+				cells[0] + " | Explosive Payload (can swap to Rampage); Firefly",
+			"1005 | Fatebringer | Kinetic Hand Cannon | 1970 | Hunter (postmaster) |  |  | " + cells[1] + " | ",
+			"1006 | Fatebringer | Kinetic Hand Cannon | 1980 | Hunter (equipped) |  |  | " + cells[2] + " | ",
+		}
+	}
+
+	// unrated is the table without a sheet, and rated is the table with
+	// the two sheets. ratedAegis is the table with only the Aegis sheet.
+	unrated := fatebringer(noRating, noRating, noRating)
+	rated := fatebringer("S | D (sheet C)", unknownBoth, unknownBoth)
+	ratedAegis := fatebringer("S | unavailable", unknownAegis, unknownAegis)
+
+	// oneGroup is the result of a call that selects Fatebringer without
+	// a sheet.
+	oneGroup := strings.Join(slices.Concat([]string{noAegis, noPvP, ""}, unrated), "\n")
+
+	// everyDuplicate is the result of a call that selects no weapon,
+	// without a sheet.
+	everyDuplicate := strings.Join(slices.Concat([]string{
 		"Weapons 1-1 of 1 that have more than one copy.",
+		noAegis,
+		noPvP,
 		"",
-	}, fatebringer...), "\n")
+	}, unrated), "\n")
+
+	// oneCopy is the result of a call that selects Midnight Coup without
+	// a sheet.
+	oneCopy := strings.Join([]string{
+		noAegis,
+		noPvP,
+		"",
+		"Midnight Coup: 1 copy",
+		"",
+		header,
+		"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | " + noRating + " | ",
+	}, "\n")
 
 	tests := map[string]struct {
+		// prepare changes the fakes before the call.
+		prepare func(*fakes)
 		// edit changes the cached snapshot before the call.
-		edit    func(*Snapshot)
+		edit func(*Snapshot)
+		// want is the output. "{service}" stands for the base URL of the
+		// service.
 		want    string
 		in      CompareDuplicatesInput
 		isError bool
 	}{
 		"name": {
 			in:   CompareDuplicatesInput{Name: "fatebringer"},
-			want: strings.Join(fatebringer, "\n"),
+			want: oneGroup,
 		},
 		"instance id": {
 			in:   CompareDuplicatesInput{InstanceID: "1006"},
-			want: strings.Join(fatebringer, "\n"),
+			want: oneGroup,
 		},
 		"one copy": {
-			in: CompareDuplicatesInput{Name: "coup"},
-			want: strings.Join([]string{
-				"Midnight Coup: 1 copy",
-				"",
-				"instance id | name | type | power | location | tag | flags | perks",
-				"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | ",
-			}, "\n"),
+			in:   CompareDuplicatesInput{Name: "coup"},
+			want: oneCopy,
 		},
 		"instance id of a weapon whose name differs only in case": {
 			edit: func(s *Snapshot) {
@@ -1833,13 +1902,8 @@ func TestCompareDuplicates(t *testing.T) {
 				twin.Name = "MIDNIGHT COUP"
 				s.add(&twin)
 			},
-			in: CompareDuplicatesInput{InstanceID: "1003"},
-			want: strings.Join([]string{
-				"Midnight Coup: 1 copy",
-				"",
-				"instance id | name | type | power | location | tag | flags | perks",
-				"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | ",
-			}, "\n"),
+			in:   CompareDuplicatesInput{InstanceID: "1003"},
+			want: oneCopy,
 		},
 		"every weapon with more than one copy": {
 			want: everyDuplicate,
@@ -1880,6 +1944,93 @@ func TestCompareDuplicates(t *testing.T) {
 			want:    `unknown weapon: no weapon in the inventory has a name that contains "hand"`,
 			isError: true,
 		},
+		// A result whose game modes all have ratings starts with the
+		// title of the group.
+		"name with both sheets": {
+			prepare: bothSheets,
+			in:      CompareDuplicatesInput{Name: "fatebringer"},
+			want:    strings.Join(rated, "\n"),
+		},
+		"instance id with both sheets": {
+			prepare: bothSheets,
+			in:      CompareDuplicatesInput{InstanceID: "1006"},
+			want:    strings.Join(rated, "\n"),
+		},
+		"every weapon with more than one copy, with both sheets": {
+			prepare: bothSheets,
+			want: strings.Join(slices.Concat([]string{
+				"Weapons 1-1 of 1 that have more than one copy.",
+				"",
+			}, rated), "\n"),
+		},
+		"name with only the Aegis sheet": {
+			prepare: aegisOnly,
+			in:      CompareDuplicatesInput{Name: "fatebringer"},
+			want:    strings.Join(slices.Concat([]string{noPvP, ""}, ratedAegis), "\n"),
+		},
+		"every weapon with more than one copy, with only the Aegis sheet": {
+			prepare: aegisOnly,
+			want: strings.Join(slices.Concat([]string{
+				"Weapons 1-1 of 1 that have more than one copy.",
+				noPvP,
+				"",
+			}, ratedAegis), "\n"),
+		},
+		// The group holds the Adept copy under the name of the base
+		// weapon. Each sheet lists only the item hash of the base weapon,
+		// so the Adept copy does not take the rating of that row. The
+		// service holds no tag and no note for the new instance.
+		"Adept copy beside copies of the base weapon": {
+			prepare: bothSheets,
+			edit: func(s *Snapshot) {
+				base, _ := s.Find("1001")
+				adept := *base
+				adept.InstanceID = "1007"
+				adept.Name = "Fatebringer (Adept)"
+				adept.Hash = 110
+				s.add(&adept)
+			},
+			in: CompareDuplicatesInput{Name: "fatebringer"},
+			want: strings.Join(slices.Concat(
+				[]string{"Fatebringer: 4 copies", "", header},
+				// The rows of the three copies of the base weapon.
+				rated[3:],
+				[]string{
+					"1007 | Fatebringer (Adept) | Kinetic Hand Cannon | 2010 | Vault |  | locked, masterwork | " +
+						"not listed | not listed | Explosive Payload (can swap to Rampage); Firefly",
+				},
+			), "\n"),
+		},
+		// The index lists a file that the service does not serve. A mode
+		// whose sheet did not load never reads "not listed".
+		"name with a sheet that does not load": {
+			prepare: func(f *fakes) {
+				f.artifactFiles = map[string][]string{"rolls": {"rolls.x.json"}}
+			},
+			in: CompareDuplicatesInput{Name: "fatebringer"},
+			want: strings.Join(slices.Concat([]string{
+				"PvE: rating unavailable: fetching artifact rolls.x.json: " +
+					"service: {service}/artifacts/rolls.x.json returned status 404",
+				noPvP,
+				"",
+			}, unrated), "\n"),
+		},
+		// The mode with a sheet reports the perk preferences, and the
+		// mode without a sheet keeps the reason of the sheet. The call
+		// still returns the table.
+		"name without the perk preferences": {
+			prepare: func(f *fakes) {
+				aegisOnly(f)
+				delete(f.serviceData, pathPrefs)
+			},
+			in: CompareDuplicatesInput{Name: "fatebringer"},
+			want: strings.Join(slices.Concat([]string{
+				"PvE: rating unavailable: reading perk preferences: " +
+					"service: GET /api/perk-preferences?since=0 returned status 404: Not found",
+				noPvP,
+				"",
+			}, unrated), "\n"),
+		},
 	}
 
 	for name, tc := range tests {
@@ -1887,6 +2038,10 @@ func TestCompareDuplicates(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
+
+			if tc.prepare != nil {
+				tc.prepare(f)
+			}
 
 			if tc.edit != nil {
 				s, err := f.h.loadSnapshot(t.Context(), false)
@@ -1896,20 +2051,22 @@ func TestCompareDuplicates(t *testing.T) {
 
 			got, isError := call(t, f.h.handleCompareDuplicates, tc.in)
 			assert.Equal(t, tc.isError, isError)
-			assert.Equal(t, tc.want, got)
+			assert.Equal(t, strings.ReplaceAll(tc.want, "{service}", f.h.service.BaseURL()), got)
 		})
 	}
 }
 
-func TestCompareDuplicatesPaging(t *testing.T) {
-	t.Parallel()
+// twoDuplicates returns fakes whose cached snapshot holds two weapons
+// with more than one copy. The fixture profile holds the copies of
+// Fatebringer, and instance 1007 is a second Midnight Coup in the vault.
+func twoDuplicates(t *testing.T) *fakes {
+	t.Helper()
 
 	f := newFakes(t)
 
 	s, err := f.h.loadSnapshot(t.Context(), false)
 	require.NoError(t, err)
 
-	// A second Midnight Coup gives the inventory two weapons with copies.
 	coup, ok := s.Find("1003")
 	require.True(t, ok)
 
@@ -1918,22 +2075,59 @@ func TestCompareDuplicatesPaging(t *testing.T) {
 	twin.Owner = ownerVault
 	s.add(&twin)
 
+	return f
+}
+
+func TestCompareDuplicatesPaging(t *testing.T) {
+	t.Parallel()
+
+	f := twoDuplicates(t)
+
 	got, isError := call(t, f.h.handleCompareDuplicates, CompareDuplicatesInput{Limit: 1, Offset: 1})
 	assert.False(t, isError)
 	assert.Equal(t, strings.Join([]string{
 		"Weapons 2-2 of 2 that have more than one copy.",
+		"PvE: rating unavailable: the service publishes no Aegis sheet",
+		"PvP: rating unavailable: the service publishes no PvP sheet",
 		"",
 		"Midnight Coup: 2 copies",
 		"",
-		"instance id | name | type | power | location | tag | flags | perks",
-		"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | ",
-		"1007 | Midnight Coup | Kinetic Hand Cannon | 2005 | Vault |  |  | ",
+		"instance id | name | type | power | location | tag | flags | pve rating | pvp rating | perks",
+		"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | unavailable | unavailable | ",
+		"1007 | Midnight Coup | Kinetic Hand Cannon | 2005 | Vault |  |  | unavailable | unavailable | ",
 	}, "\n"), got)
 
 	got, isError = call(t, f.h.handleCompareDuplicates, CompareDuplicatesInput{Limit: 1})
 	assert.False(t, isError)
-	assert.True(t, strings.HasPrefix(got,
-		"Weapons 1-1 of 2 that have more than one copy. Pass offset=1 for the next page.\n\nFatebringer: 3 copies"))
+	assert.True(t, strings.HasPrefix(got, strings.Join([]string{
+		"Weapons 1-1 of 2 that have more than one copy. Pass offset=1 for the next page.",
+		"PvE: rating unavailable: the service publishes no Aegis sheet",
+		"PvP: rating unavailable: the service publishes no PvP sheet",
+		"",
+		"Fatebringer: 3 copies",
+	}, "\n")))
+}
+
+// TestCompareDuplicatesPageRatings pins what the ratings cost on a page
+// with more than one table. The page gives the reason of each game mode
+// without ratings one time, and the call reads the perk preferences one
+// time.
+func TestCompareDuplicatesPageRatings(t *testing.T) {
+	t.Parallel()
+
+	f := twoDuplicates(t)
+
+	got, isError := call(t, f.h.handleCompareDuplicates, CompareDuplicatesInput{})
+	assert.False(t, isError)
+
+	header, _, _ := strings.Cut(got, "\n")
+	assert.Equal(t, "Weapons 1-2 of 2 that have more than one copy.", header)
+	assert.Contains(t, got, "\n\nFatebringer: 3 copies\n")
+	assert.Contains(t, got, "\n\nMidnight Coup: 2 copies\n")
+
+	assert.Equal(t, 1, strings.Count(got, "PvE: rating unavailable"))
+	assert.Equal(t, 1, strings.Count(got, "PvP: rating unavailable"))
+	assert.Len(t, f.service.calls(http.MethodGet, pathPrefs), 1)
 }
 
 func TestCompareDuplicatesLimit(t *testing.T) {

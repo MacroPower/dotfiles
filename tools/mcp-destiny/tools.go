@@ -500,6 +500,14 @@ func (h *handler) handleCompareDuplicates(
 		return h.toolError(ctx, toolCompareDuplicates, err)
 	}
 
+	// Every table shows the roll ratings, so one read of the rating
+	// inputs serves every form of the result. The read returns no
+	// error, so it does not change the result of a check that follows
+	// it. A call that returns no table still sends the rating requests,
+	// such as a call with the instance id of an armor piece. A rating
+	// input that the server cannot read costs only the rating cells.
+	sources := h.ratingSources(ctx)
+
 	if in.InstanceID != "" {
 		item, ok := s.Find(in.InstanceID)
 		if !ok {
@@ -511,7 +519,7 @@ func (h *handler) handleCompareDuplicates(
 				fmt.Errorf("%w: %s (%s) is not a weapon", ErrInvalidInput, item.InstanceID, item.Name))
 		}
 
-		return textResult(renderWeaponGroup(s, s.GroupOf(item))), nil, nil
+		return textResult(renderSingleGroup(s, s.GroupOf(item), sources)), nil, nil
 	}
 
 	if name != "" {
@@ -520,7 +528,7 @@ func (h *handler) handleCompareDuplicates(
 			return h.toolError(ctx, toolCompareDuplicates, err)
 		}
 
-		return textResult(renderWeaponGroup(s, group)), nil, nil
+		return textResult(renderSingleGroup(s, group, sources)), nil, nil
 	}
 
 	var dupes []WeaponGroup
@@ -540,7 +548,7 @@ func (h *handler) handleCompareDuplicates(
 	offset := min(max(in.Offset, 0), len(dupes))
 	page := dupes[offset:min(offset+limit, len(dupes))]
 
-	return textResult(renderDuplicates(s, page, offset, len(dupes))), nil, nil
+	return textResult(renderDuplicates(s, page, offset, len(dupes), sources)), nil, nil
 }
 
 func (h *handler) handleListActivityHistory(

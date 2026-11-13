@@ -379,9 +379,17 @@ func newServer(h *handler) *mcp.Server {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolCompareDuplicates,
 		Description: "Compare the copies of one weapon side by side: perks with the alternatives each socket can swap to, " +
-			"power, location, tag, and flags such as the favorite mark. Pass a weapon name or the instance id of one copy. " +
+			"roll ratings, power, location, tag, and flags such as the favorite mark. " +
+			"Pass a weapon name or the instance id of one copy. " +
 			"Without either, it compares every weapon that has more than one copy, a page at a time. " +
-			"The copies of a reissue and of its Adept, Timelost, or Harrowed version count as copies of one weapon.",
+			"Each row gives the roll rating of the copy for PvE and for PvP, in the cell texts that list_items describes. " +
+			"The PvE rating comes from the Aegis sheet, and the PvP rating comes from the PvP sheet. " +
+			"The result gives the reason for each game mode whose cells read 'unavailable', in one line for each mode. " +
+			"Each group holds every copy of one weapon name, " +
+			"and the copies of a reissue and of its Adept, Timelost, or Harrowed version count as copies of one weapon. " +
+			"The server rates each copy by its own item hash. " +
+			"Adept copies therefore read 'not listed' beside rated copies of the base weapon " +
+			"when the sheet has no row for the Adept version.",
 		Annotations: readOnly,
 	}, h.handleCompareDuplicates)
 

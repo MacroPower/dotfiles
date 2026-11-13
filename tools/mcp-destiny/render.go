@@ -308,7 +308,19 @@ func renderItem(s *Snapshot, item *Item, ratings map[string]Rating) string {
 
 // renderDuplicates renders one page of the weapons that have more than one
 // copy. Offset and total count weapons, not copies.
-func renderDuplicates(s *Snapshot, groups []WeaponGroup, offset, total int) string {
+//
+// Sources holds the [RatingSource] of each game mode. Every table of
+// the page shows the rating columns of [renderWeaponGroup]. One line
+// for each game mode without ratings gives the reason, between the
+// first line and the first table. The lines print one time for the
+// page, also when the page holds several tables. A result without a
+// table has no such line.
+func renderDuplicates(
+	s *Snapshot,
+	groups []WeaponGroup,
+	offset, total int,
+	sources map[string]RatingSource,
+) string {
 	if total == 0 {
 		return "No weapon has more than one copy."
 	}
@@ -325,18 +337,46 @@ func renderDuplicates(s *Snapshot, groups []WeaponGroup, offset, total int) stri
 		fmt.Fprintf(&b, " Pass offset=%d for the next page.", offset+len(groups))
 	}
 
+	for _, reason := range ratingReasons(sources) {
+		b.WriteString("\n" + reason)
+	}
+
 	for _, group := range groups {
 		b.WriteString("\n\n")
-		b.WriteString(renderWeaponGroup(s, group))
+		b.WriteString(renderWeaponGroup(s, group, sources))
 	}
 
 	return b.String()
 }
 
+// renderSingleGroup renders the copies of one weapon as a whole result.
+// The output is the table of [renderWeaponGroup]. Before the table, one
+// line for each game mode without ratings gives the reason, and a blank
+// line follows those lines. When every game mode has ratings, the
+// output starts with the title of the table.
+func renderSingleGroup(s *Snapshot, group WeaponGroup, sources map[string]RatingSource) string {
+	table := renderWeaponGroup(s, group, sources)
+
+	reasons := ratingReasons(sources)
+	if len(reasons) == 0 {
+		return table
+	}
+
+	return strings.Join(reasons, "\n") + "\n\n" + table
+}
+
 // renderWeaponGroup renders the copies of one weapon as a table with one
 // row per copy. The name column tells a version such as "(Adept)" from the
 // base weapon.
-func renderWeaponGroup(s *Snapshot, group WeaponGroup) string {
+//
+// Sources holds the [RatingSource] of each game mode, with an entry for
+// every mode in [perkModes]. The table has one rating column for each
+// game mode, between the flags and the perks. Each rating cell holds
+// the [ratingCell] of its copy. A version such as "(Adept)" therefore
+// gets the rating of its own item hash, not the rating of the base
+// weapon. One result can hold several tables, so the caller writes the
+// reason of each game mode without ratings.
+func renderWeaponGroup(s *Snapshot, group WeaponGroup, sources map[string]RatingSource) string {
 	var b strings.Builder
 
 	noun := "copies"
@@ -345,15 +385,16 @@ func renderWeaponGroup(s *Snapshot, group WeaponGroup) string {
 	}
 
 	fmt.Fprintf(&b, "%s: %d %s\n\n", group.Name, len(group.Copies), noun)
-	b.WriteString("instance id | name | type | power | location | tag | flags | perks\n")
+	b.WriteString("instance id | name | type | power | location | tag | flags")
+
+	for _, mode := range perkModes {
+		b.WriteString(" | " + mode + " rating")
+	}
+
+	b.WriteString(" | perks\n")
 
 	for _, item := range group.Copies {
-		perks := make([]string, 0, len(item.Perks))
-		for _, perk := range item.Perks {
-			perks = append(perks, perkLabel(perk))
-		}
-
-		b.WriteString(strings.Join([]string{
+		fields := []string{
 			item.InstanceID,
 			item.Name,
 			typeLabel(item),
@@ -361,8 +402,20 @@ func renderWeaponGroup(s *Snapshot, group WeaponGroup) string {
 			s.LocationLabel(item),
 			item.Tag,
 			strings.Join(flagsOf(item), ", "),
-			strings.Join(perks, "; "),
-		}, " | "))
+		}
+
+		for _, mode := range perkModes {
+			fields = append(fields, ratingCell(sources[mode], item))
+		}
+
+		perks := make([]string, 0, len(item.Perks))
+		for _, perk := range item.Perks {
+			perks = append(perks, perkLabel(perk))
+		}
+
+		fields = append(fields, strings.Join(perks, "; "))
+
+		b.WriteString(strings.Join(fields, " | "))
 		b.WriteString("\n")
 	}
 

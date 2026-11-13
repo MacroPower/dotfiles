@@ -132,6 +132,12 @@
 // ratings of the other mode, so it works when only its own mode has
 // ratings.
 //
+// The compare_duplicates tool shows the roll rating of each copy for
+// each game mode in every table, in the rating cells of the list_items
+// table. A game mode without ratings does not fail the call. The
+// rating cells of the mode read "unavailable", and one line before the
+// first table gives the reason.
+//
 // # Sign-in
 //
 // Bungie redirects a sign-in to the one URL registered for the deployment,
