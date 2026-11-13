@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"regexp"
 	"slices"
@@ -116,6 +117,7 @@ const (
 	filterRateBase   = "ratebase"
 	filterRatingBase = "ratingbase"
 	filterMisses     = "misses"
+	filterSetBonus   = "setbonus"
 	filterVerdict    = "verdict"
 
 	// pvpPrefix starts the name of each rating filter that reads the PvP
@@ -125,8 +127,6 @@ const (
 
 // The reasons that the server cannot decide a rating filter for an item.
 const (
-	// reasonSetBonus applies to an item outside the weapon buckets.
-	reasonSetBonus = "the server does not read the set bonuses of this item, which rate: and ratebase: also count"
 	// reasonNoPerks applies to a copy without perks on a sheet row with
 	// perk columns.
 	reasonNoPerks = "the profile lists no perks for this copy"
@@ -232,6 +232,16 @@ var (
 	// rangeOperators lists the operators of a range value that DIM
 	// accepts.
 	rangeOperators = []string{"", "=", "<", "<=", ">", ">="}
+
+	// setBonusPieces maps each size prefix of a value of setbonus:, such
+	// as 4pc in setbonus:4pc:s, to the number of pieces that the set bonus
+	// needs.
+	setBonusPieces = map[string]int{"2pc": 2, "4pc": 4}
+
+	// setBonusQueries lists the values of setbonus: and pvpsetbonus: that
+	// the web client accepts. DIM accepts only the suggestions of a filter
+	// of the format query.
+	setBonusQueries = setBonusSuggestions()
 
 	// powerRange is the range format of power: and light:. DIM reads
 	// each word of its table powerLevelByKeyword as a power level of the
@@ -368,12 +378,14 @@ var (
 		ratingFilter(filterRateBase, modePvE, tierRange, baseValues),
 		ratingFilter(filterRatingBase, modePvE, tierRange, baseValues),
 		ratingFilter(filterMisses, modePvE, rangeFormat{}, missValues),
+		setBonusFilter(filterSetBonus, modePvE),
 		verdictFilter(filterVerdict, modePvE),
 		ratingFilter(pvpPrefix+filterRate, modePvP, tierRange, rollValues),
 		ratingFilter(pvpPrefix+filterRating, modePvP, tierRange, rollValues),
 		ratingFilter(pvpPrefix+filterRateBase, modePvP, tierRange, baseValues),
 		ratingFilter(pvpPrefix+filterRatingBase, modePvP, tierRange, baseValues),
 		ratingFilter(pvpPrefix+filterMisses, modePvP, rangeFormat{}, missValues),
+		setBonusFilter(pvpPrefix+filterSetBonus, modePvP),
 		verdictFilter(pvpPrefix+filterVerdict, modePvP),
 	}
 
@@ -825,21 +837,16 @@ func listWithAnd(words []string) string {
 }
 
 // builtItems returns the items of s that DIM builds. DIM builds no item
-// whose current bucket holds dummy items. The current bucket of a lost
-// item is the Lost Items bucket of the Postmaster, and the current bucket
-// of every other item is Item.Bucket. DIM also builds no item without a
-// definition, but the snapshot keeps such an item under the name "Unknown
-// item N", and so does builtItems.
+// whose current bucket holds dummy items, as [inDummyBucket] decides. The
+// web client also builds no item whose item set its definitions lack, as
+// [setBuilt] decides. DIM also builds no item without a definition, but
+// the snapshot keeps such an item under the name "Unknown item N", and so
+// does builtItems.
 func builtItems(s *Snapshot) []*Item {
 	var built []*Item
 
 	for _, item := range s.Items {
-		current := item.Bucket
-		if item.Lost {
-			current = bucketPostmaster
-		}
-
-		if current != bucketForbidden && current != bucketDummy {
+		if !inDummyBucket(item) && setBuilt(s, item) {
 			built = append(built, item)
 		}
 	}
@@ -847,21 +854,83 @@ func builtItems(s *Snapshot) []*Item {
 	return built
 }
 
+// inDummyBucket reports whether the current bucket of item holds dummy
+// items. The current bucket of a lost item is the Lost Items bucket of
+// the Postmaster, and the current bucket of every other item is
+// Item.Bucket.
+func inDummyBucket(item *Item) bool {
+	current := item.Bucket
+	if item.Lost {
+		current = bucketPostmaster
+	}
+
+	return current == bucketForbidden || current == bucketDummy
+}
+
+// setBuilt reports whether the web client can build the item set of item.
+// DIM looks up the set of every item with a set hash other than 0. The
+// lookup of the web client throws for a set that the EquipableItemSet
+// definitions lack, and for every set when the service index lists no
+// EquipableItemSet artifact. DIM then adds no item.
+func setBuilt(s *Snapshot, item *Item) bool {
+	return item.SetHash == 0 || (s.ItemSetsListed && item.SetKnown)
+}
+
 // ownedItems returns the items that the rule editor of the web client
-// previews a rule against. The editor keeps each instanced item of
-// [builtItems] that DIM marks as equipment, in every location. DIM marks
-// an item whose definition has an equipping block, except an emote or a
-// finisher.
+// previews a rule against. The editor keeps each item of [builtItems]
+// that [previewable] accepts, in every location.
 func ownedItems(s *Snapshot) []*Item {
 	var owned []*Item
 
 	for _, item := range builtItems(s) {
-		if item.InstanceID != "" && isEquipment(item) {
+		if previewable(item) {
 			owned = append(owned, item)
 		}
 	}
 
 	return owned
+}
+
+// previewable reports whether the rule editor of the web client previews
+// a rule against item when DIM builds it. The editor keeps an instanced
+// item that DIM marks as equipment. DIM marks an item whose definition has
+// an equipping block, except an emote or a finisher.
+func previewable(item *Item) bool {
+	return item.InstanceID != "" && isEquipment(item)
+}
+
+// unbuiltLine returns the line that counts the owned items that
+// [ownedItems] leaves out because the web client cannot build their item
+// set, as [setBuilt] decides. It returns "" when ownedItems leaves out no
+// such item. The line gives one reason, because the service index either
+// lists the EquipableItemSet artifact or does not.
+func unbuiltLine(s *Snapshot) string {
+	left := 0
+
+	for _, item := range s.Items {
+		if !inDummyBucket(item) && !setBuilt(s, item) && previewable(item) {
+			left++
+		}
+	}
+
+	if left == 0 {
+		return ""
+	}
+
+	if s.ItemSetsListed {
+		return fmt.Sprintf(
+			"The server leaves out %d owned items whose item set the EquipableItemSet definitions lack, "+
+				"because the web client builds no such item.",
+			left,
+		)
+	}
+
+	return fmt.Sprintf(
+		"The server leaves out %d owned items that belong to an item set, "+
+			"because the service publishes no EquipableItemSet artifact "+
+			"and the web client builds no such item without it.",
+		left,
+	)
 }
 
 // isEquipment reports whether DIM marks item as equipment. The web client
@@ -1385,10 +1454,9 @@ func ratingFilter(
 	return searchFilter{name: name, mode: mode, value: read}
 }
 
-// rollValues returns the numbers of rate: and rating: for item. The first
-// number is the tier of the roll that [rate] gives the copy. The web
-// client also tests the tier of each set bonus of the item, which
-// [setBonusValues] describes.
+// rollValues returns the numbers of rate: and rating: for item. The
+// numbers are the tier of each set bonus of the item, which [setValues]
+// gives, and the tier of the roll that [rate] gives the copy.
 //
 // A copy without perks on a row with perk columns has a tier that the
 // server cannot read. The web client rates such a copy from the socket
@@ -1396,7 +1464,7 @@ func ratingFilter(
 // gives no copy a tier, so the server decides a copy without perks on such
 // a row.
 func rollValues(source RatingSource, item *Item) ratingValues {
-	v := setBonusValues(item)
+	v := setValues(source, item)
 
 	roll := rate(source, item).Roll
 	if roll == nil {
@@ -1415,11 +1483,11 @@ func rollValues(source RatingSource, item *Item) ratingValues {
 }
 
 // baseValues returns the numbers of ratebase: and ratingbase: for item.
-// The first number is the tier of the sheet row of the item hash,
-// whatever the copy rolled. The web client also tests the tier of each
-// set bonus of the item, which [setBonusValues] describes.
+// The numbers are the tier of each set bonus of the item, which
+// [setValues] gives, and the tier of the sheet row of the item hash,
+// whatever the copy rolled.
 func baseValues(source RatingSource, item *Item) ratingValues {
-	v := setBonusValues(item)
+	v := setValues(source, item)
 
 	roll := rate(source, item).Roll
 	if roll != nil {
@@ -1456,17 +1524,91 @@ func missValues(source RatingSource, item *Item) ratingValues {
 	return ratingValues{numbers: []float64{float64(missed)}}
 }
 
-// setBonusValues returns the numbers of the set bonuses of item, which
-// rate: and ratebase: also test in the web client. The server does not
-// read set bonuses. The web client describes set bonuses as bonuses of
-// armor sets, so a weapon has no such number. Every other item gets
-// reasonSetBonus in place of its numbers.
-func setBonusValues(item *Item) ratingValues {
-	if slices.Contains(weaponBuckets, item.Bucket) {
-		return ratingValues{}
+// setValues returns the number of the tier of each set bonus of item that
+// the sheet of source rates, as rate: and ratebase: test them in the web
+// client. A bonus without a tier adds no number. An item without a set
+// has no number.
+func setValues(source RatingSource, item *Item) ratingValues {
+	var v ratingValues
+
+	for _, bonus := range setRatings(item, source.Sheet) {
+		v.numbers = appendTier(v.numbers, bonus.Tier)
 	}
 
-	return ratingValues{reasons: []string{reasonSetBonus}}
+	return v
+}
+
+// setRatings returns the [SetBonus] of each sandbox perk of the item set
+// of item that sheet rates, in the order of the set. setRatings of the web
+// client also sorts the bonuses by their pieces, but no filter reads that
+// order. A nil sheet rates no bonus.
+func setRatings(item *Item, sheet *Sheet) []SetBonus {
+	if sheet == nil {
+		return nil
+	}
+
+	var bonuses []SetBonus
+
+	for _, perk := range item.SetPerks {
+		bonus, ok := sheet.SetBonuses[perk]
+		if ok {
+			bonuses = append(bonuses, bonus)
+		}
+	}
+
+	return bonuses
+}
+
+// setBonusFilter returns the filter setbonus: of the name name, which
+// reads the set bonuses that the sheet of mode rates. The value is a tier,
+// such as s, or a size prefix and a tier, such as 4pc:s. The filter
+// matches an item with a set bonus of that tier, and a size prefix also
+// requires that the bonus need that number of pieces. The filter rejects
+// every value outside setBonusQueries, as DIM does.
+func setBonusFilter(name, mode string) searchFilter {
+	read := func(value string) (queryTest, error) {
+		if !slices.Contains(setBonusQueries, value) {
+			return nil, fmt.Errorf("%w: %s:%s", errInvalidValue, name, value)
+		}
+
+		size, tier, sized := strings.Cut(value, ":")
+		if !sized {
+			tier = size
+		}
+
+		pieces := setBonusPieces[size]
+		want := lowerTiers[tier]
+
+		return fromDecided(func(ctx searchContext) func(*Item) bool {
+			sheet := ctx.sources[mode].Sheet
+
+			return func(item *Item) bool {
+				return slices.ContainsFunc(setRatings(item, sheet), func(bonus SetBonus) bool {
+					return bonus.Tier == want && (!sized || bonus.Pieces == pieces)
+				})
+			}
+		}), nil
+	}
+
+	return searchFilter{name: name, mode: mode, value: read}
+}
+
+// setBonusSuggestions returns the values of setBonusQueries, as the web
+// client builds its suggestions of setbonus:. They are each tier in
+// lowercase, and then each size prefix of setBonusPieces with each tier.
+func setBonusSuggestions() []string {
+	values := make([]string, 0, len(tiers)*(len(setBonusPieces)+1))
+	for _, tier := range tiers {
+		values = append(values, strings.ToLower(tier))
+	}
+
+	for _, size := range slices.Sorted(maps.Keys(setBonusPieces)) {
+		for _, tier := range tiers {
+			values = append(values, size+":"+strings.ToLower(tier))
+		}
+	}
+
+	return values
 }
 
 // appendTier appends the number that tierRange gives tier to numbers. A

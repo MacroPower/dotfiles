@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 )
 
 // Game modes of the roll sheets and the perk preferences.
@@ -18,6 +19,10 @@ const (
 var (
 	// tiers lists the tiers of the roll sheets, best first.
 	tiers = []string{"S", "A", "B", "C", "D", "E", "F"}
+
+	// lowerTiers maps the lowercase form of each tier of tiers to the
+	// tier.
+	lowerTiers = lowercaseTiers()
 
 	// sheetArtifacts names the artifact that holds the roll sheet of each
 	// game mode.
@@ -53,14 +58,26 @@ type SheetRow struct {
 	Ranked   int
 }
 
-// Sheet is one roll sheet. The item hash of a weapon keys each map.
-// Each column lists the plug hashes that the sheet picks for one perk
-// column. Versions holds, for each hash with columns, the hashes of the
-// row that gives the hash its columns. The hash itself is one of them.
+// SetBonus is the rating that a roll sheet gives one armor set bonus.
+// Tier is a tier of [tiers], or empty for a bonus without a tier. Pieces
+// is the number of pieces of the set that the bonus needs, such as 2 or
+// 4.
+type SetBonus struct {
+	Tier   string
+	Pieces int
+}
+
+// Sheet is one roll sheet. The item hash of a weapon keys Rows, Columns,
+// and Versions. Each column lists the plug hashes that the sheet picks for
+// one perk column. Versions holds, for each hash with columns, the hashes
+// of the row that gives the hash its columns. The hash itself is one of
+// them. SetBonuses holds the rated set bonuses, keyed by the sandbox perk
+// hash of each bonus.
 type Sheet struct {
-	Rows     map[uint32]SheetRow
-	Columns  map[uint32][][]uint32
-	Versions map[uint32][]uint32
+	Rows       map[uint32]SheetRow
+	Columns    map[uint32][][]uint32
+	Versions   map[uint32][]uint32
+	SetBonuses map[uint32]SetBonus
 }
 
 // SheetState is the sheet of one game mode, or the reason that the
@@ -81,6 +98,11 @@ type rawSheet struct {
 		Rank     int        `json:"rank"`
 		Ranked   int        `json:"ranked"`
 	} `json:"rolls"`
+	SetBonuses []struct {
+		Tier   string `json:"tier"`
+		Hash   uint32 `json:"hash"`
+		Pieces int    `json:"pieces"`
+	} `json:"setBonuses"`
 }
 
 // decodeSheet reads the body of one roll sheet file.
@@ -93,6 +115,12 @@ type rawSheet struct {
 // columns, and the hashes of that row are the versions of the hash. The
 // SheetRow and the columns of one hash can therefore come from different
 // rows.
+//
+// A later set bonus with the hash of an earlier one replaces it, as the
+// web client does. The web client lowercases the tier of a set bonus
+// before it compares the tier. The decode therefore keeps the tier of
+// [tiers] whose lowercase form equals the lowercase form of the text,
+// and an empty tier for any other text.
 func decodeSheet(r io.Reader) (*Sheet, error) {
 	var raw rawSheet
 
@@ -102,9 +130,10 @@ func decodeSheet(r io.Reader) (*Sheet, error) {
 	}
 
 	sheet := &Sheet{
-		Rows:     map[uint32]SheetRow{},
-		Columns:  map[uint32][][]uint32{},
-		Versions: map[uint32][]uint32{},
+		Rows:       map[uint32]SheetRow{},
+		Columns:    map[uint32][][]uint32{},
+		Versions:   map[uint32][]uint32{},
+		SetBonuses: map[uint32]SetBonus{},
 	}
 
 	for _, roll := range raw.Rolls {
@@ -144,6 +173,10 @@ func decodeSheet(r io.Reader) (*Sheet, error) {
 		}
 	}
 
+	for _, bonus := range raw.SetBonuses {
+		sheet.SetBonuses[bonus.Hash] = SetBonus{Tier: lowerTiers[strings.ToLower(bonus.Tier)], Pieces: bonus.Pieces}
+	}
+
 	// A loaded sheet without rows reports every weapon as missing from
 	// the sheet. An empty file does not support that claim, so the decode
 	// rejects it.
@@ -152,6 +185,18 @@ func decodeSheet(r io.Reader) (*Sheet, error) {
 	}
 
 	return sheet, nil
+}
+
+// lowercaseTiers returns the map of lowerTiers. A lookup of a lowercase
+// text in the map matches what the web client matches. Folding the case
+// of the text matches more, because it also reads U+017F as s.
+func lowercaseTiers() map[string]string {
+	lower := make(map[string]string, len(tiers))
+	for _, tier := range tiers {
+		lower[strings.ToLower(tier)] = tier
+	}
+
+	return lower
 }
 
 // tierRank returns the position of tier in [tiers], best first. A missing

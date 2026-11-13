@@ -40,6 +40,7 @@ func newFakeArtifacts() *fakeArtifacts {
 			artifactActivityRewards: {"activity-rewards-0.json", "activity-rewards-1.json"},
 			artifactVendors:         {"vendors.json"},
 			artifactVendorItems:     {"vendor-items-0.json", "vendor-items-1.json"},
+			artifactItemSets:        {"item-sets.json"},
 		},
 		files: map[string]string{
 			"core-0.json": `[
@@ -68,7 +69,11 @@ func newFakeArtifacts() *fakeArtifacts {
 				{"hash": 404, "displayProperties": {"name": "Lightkeeper Shell"}, "itemTypeDisplayName": "Ghost Shell",
 				 "itemType": 24, "classType": 3,
 				 "inventory": {"tierTypeName": "Uncommon", "tierType": 3, "bucketTypeHash": 4023194814},
-				 "stats": {"disablePrimaryStatDisplay": true, "primaryBaseStatHash": 0}}
+				 "stats": {"disablePrimaryStatDisplay": true, "primaryBaseStatHash": 0}},
+				{"hash": 405, "displayProperties": {"name": "Iron Truage Helm"}, "itemTypeDisplayName": "Helmet",
+				 "itemType": 2, "classType": 1,
+				 "inventory": {"tierTypeName": "Legendary", "tierType": 5, "bucketTypeHash": 3448274439},
+				 "equippingBlock": {"ammoType": 0, "equipableItemSetHash": 3727270518}}
 			]`,
 			// The service build splits the detail array across files.
 			// Fatebringer has a socket with only a randomized plug set,
@@ -170,6 +175,17 @@ func newFakeArtifacts() *fakeArtifacts {
 				{"hash": 501, "name": "Legendary Shards", "standIn": 400},
 				{"hash": 502, "name": ""}
 			]`,
+			// The service build keeps each set definition whole. The set
+			// of Iron Truage Helm has a 2-piece and a 4-piece bonus, and
+			// the other set has no bonus.
+			"item-sets.json": `{
+				"3727270518": {"hash": 3727270518, "displayProperties": {"name": "Iron Truage"},
+				 "setItems": [405], "setPerks": [
+					{"requiredSetCount": 2, "sandboxPerkHash": 1360604600},
+					{"requiredSetCount": 4, "sandboxPerkHash": 1360604601}
+				 ], "index": 0, "redacted": false},
+				"12": {"hash": 12, "setItems": [], "setPerks": [], "index": 1, "redacted": false}
+			}`,
 		},
 	}
 }
@@ -204,10 +220,10 @@ func TestDefsLoader(t *testing.T) {
 	clock := WithDefsClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade. The
-	// layout without the tier type, the primary stat flag, and the damage
-	// type hashes has the prefix defs-v8-. Its file holds the manifest
-	// version of the service, and the loader does not read it.
-	stale := filepath.Join(dir, "defs-v8-245114.26_1.json")
+	// layout without the item sets has the prefix defs-v9-. Its file holds
+	// the manifest version of the service, and the loader does not read
+	// it.
+	stale := filepath.Join(dir, "defs-v9-245114.26_1.json")
 	require.NoError(t, os.WriteFile(stale, []byte(`{"version": "245114.26/1"}`), 0o644))
 
 	loader := NewDefsLoader(source, dir, clock)
@@ -280,6 +296,18 @@ func TestDefsLoader(t *testing.T) {
 				ClassType:                 classAny,
 				DisablePrimaryStatDisplay: true,
 			},
+			// The loader keeps the item set of the equipping block.
+			405: {
+				Name:       "Iron Truage Helm",
+				TypeName:   "Helmet",
+				Tier:       "Legendary",
+				TierType:   5,
+				Bucket:     bucketHelmet,
+				ItemType:   itemTypeArmor,
+				ClassType:  classHunter,
+				Equippable: true,
+				SetHash:    3727270518,
+			},
 			900: {
 				Name:        "Firefly",
 				Description: "Precision final blows explode.",
@@ -303,6 +331,7 @@ func TestDefsLoader(t *testing.T) {
 		Stats:    map[uint32]string{1240592695: "Range"},
 		Sockets:  fixtureSockets(),
 		PlugSets: map[uint32][]uint32{40: {900, 12345}, 41: {}, 45: {900}},
+		ItemSets: map[uint32][]uint32{3727270518: {1360604600, 1360604601}, 12: {}},
 		Activities: map[uint32]ActivityDef{
 			3022541210: {
 				Name:        "Vault of Glass: Master",
@@ -331,11 +360,12 @@ func TestDefsLoader(t *testing.T) {
 			itemGlimmer: "Glimmer",
 			501:         "Legendary Shards",
 		},
-		DamageEnums: map[uint32]int{3373582085: 1, 2303181850: 2},
-		DamageTypes: map[int]string{1: "Kinetic", 2: "Arc"},
-		Classes:     map[int]string{1: "Hunter"},
+		DamageEnums:    map[uint32]int{3373582085: 1, 2303181850: 2},
+		DamageTypes:    map[int]string{1: "Kinetic", 2: "Arc"},
+		Classes:        map[int]string{1: "Hunter"},
+		ItemSetsListed: true,
 	}, got)
-	assert.Len(t, source.fetched, 19)
+	assert.Len(t, source.fetched, 20)
 
 	// Writing the cache removes the file of the older layout.
 	files, err := filepath.Glob(filepath.Join(dir, "*"))
@@ -363,7 +393,7 @@ func TestDefsLoader(t *testing.T) {
 	rebuilt, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "245200.1", rebuilt.Version)
-	assert.Len(t, source.fetched, 19)
+	assert.Len(t, source.fetched, 20)
 
 	files, err = filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
@@ -429,6 +459,18 @@ func TestDefsLoaderWithoutOptionalArtifacts(t *testing.T) {
 				assert.Subset(t, fetched, []string{"plugsets-0.json", "plugsets-1.json"})
 			},
 		},
+		// The build still records whether the index lists the item sets.
+		"item sets": {
+			artifact: artifactItemSets,
+			files:    []string{"item-sets.json"},
+			field:    func(d *Defs) any { return d.ItemSets },
+			check: func(t *testing.T, got *Defs, _ []string) {
+				t.Helper()
+
+				assert.False(t, got.ItemSetsListed)
+				assert.Equal(t, uint32(3727270518), got.Items[405].SetHash)
+			},
+		},
 		"plug sets": {
 			artifact: artifactPlugSets,
 			files:    []string{"plugsets-0.json", "plugsets-1.json"},
@@ -451,7 +493,7 @@ func TestDefsLoaderWithoutOptionalArtifacts(t *testing.T) {
 			got, err := NewDefsLoader(source, "").Get(t.Context())
 			require.NoError(t, err)
 			assert.Empty(t, tc.field(got))
-			assert.Len(t, got.Items, 7)
+			assert.Len(t, got.Items, 8)
 
 			for _, file := range tc.files {
 				assert.NotContains(t, source.fetched, file)
@@ -502,6 +544,10 @@ func TestDefsLoaderErrors(t *testing.T) {
 		"activity reward fetch fails": {
 			break_: func(f *fakeArtifacts) { delete(f.files, "activity-rewards-1.json") },
 			err:    ErrService,
+		},
+		"item set table is not an object": {
+			break_: func(f *fakeArtifacts) { f.files["item-sets.json"] = `[]` },
+			err:    ErrDefs,
 		},
 		"vendor table is not an object": {
 			break_: func(f *fakeArtifacts) { f.files["vendors.json"] = `[]` },
@@ -565,7 +611,7 @@ func TestDefsLoaderIgnoresCorruptCache(t *testing.T) {
 
 	got, err := loader.Get(t.Context())
 	require.NoError(t, err)
-	assert.Len(t, got.Items, 7)
+	assert.Len(t, got.Items, 8)
 }
 
 func TestPlugSetSocket(t *testing.T) {

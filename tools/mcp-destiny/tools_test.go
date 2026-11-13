@@ -5751,6 +5751,9 @@ func TestListAutotagRulesNew(t *testing.T) {
 		// preferences.
 		rated   bool
 		isError bool
+		// helmetSet gives the helmet an item set that the definitions
+		// lack.
+		helmetSet uint32
 	}{
 		"first match": {
 			autotag: autotagBody(storedRule("r1", "is:dupe", "junk", 0, true), weapon),
@@ -5881,9 +5884,23 @@ func TestListAutotagRulesNew(t *testing.T) {
 				header, "",
 				`- 0. [enabled] "rate:>=a": tag junk (id r1). New items it takes: 0`,
 				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 1`, thorn, "",
-				"New items that the server cannot place: 2",
-				`  - Fatebringer (1007), Hunter: undecided at rule 0 "rate:>=a": ` + reasonNoPerks,
-				`  - Wormhusk Crown (1009), Hunter: undecided at rule 0 "rate:>=a": ` + reasonSetBonus, "",
+				"New items that the server cannot place: 1",
+				`  - Fatebringer (1007), Hunter: undecided at rule 0 "rate:>=a": ` + reasonNoPerks, "",
+				"New items that no rule takes: 1", helmet, "",
+				noVault, "",
+				footer,
+			},
+		},
+		// The web client builds no item whose item set its definitions
+		// lack, so neither the mark nor the new items count the helmet.
+		"a new item that the web client does not build": {
+			autotag:   autotagBody(weapon),
+			helmetSet: 4001,
+			want: []string{
+				"Autotagging is on. The next claim moves the stored mark from 00000000000000001006 " +
+					"to 00000000000000001008 and offers 2 new items to the rules. Nothing was claimed.",
+				"",
+				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 2`, fatebringer, thorn, "",
 				"New items that no rule takes: 0", "",
 				noVault, "",
 				footer,
@@ -6010,6 +6027,7 @@ func TestListAutotagRulesNew(t *testing.T) {
 				ItemType:   itemTypeArmor,
 				ClassType:  1,
 				Equippable: true,
+				SetHash:    tc.helmetSet,
 			}
 
 			if tc.sheet {
@@ -7291,8 +7309,9 @@ func TestPreviewUnsupported(t *testing.T) {
 		"is:seasonalartifacts, is:ghost, is:emblems, is:ships, is:vehicle, is:emotes, is:finishers, "+
 		"is:accessories, is:consumables, is:modifications, is:haspower, is:haslight, is:autotagged, tag:, "+
 		"dupe:item, count:, id:, hash:, name:, exactname:, power:, light:, rate:, rating:, ratebase:, "+
-		"ratingbase:, misses:, verdict:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, pvpmisses:, "+
-		"and pvpverdict:. Each is: word also works as not:<word>.", got)
+		"ratingbase:, misses:, setbonus:, verdict:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, "+
+		"pvpmisses:, pvpsetbonus:, and pvpverdict:. "+
+		"Each is: word also works as not:<word>.", got)
 	assert.Empty(t, f.service.all())
 	assert.Empty(t, f.bungie.all())
 }
@@ -7659,7 +7678,6 @@ const (
 
 	undecidedHeading = "The server cannot decide these items:"
 	undecidedHeader  = "instance id | name | location | reason"
-	undecidedHelmet  = "1004 | Celestial Nighthawk | Hunter (equipped) | " + reasonSetBonus
 	undecided1005    = "1005 | Fatebringer | Hunter (postmaster) | " + reasonNoPerks
 	undecided1006    = "1006 | Fatebringer | Hunter (equipped) | " + reasonNoPerks
 
@@ -7701,7 +7719,7 @@ func TestPreviewUndecided(t *testing.T) {
 	t.Parallel()
 
 	const (
-		first   = "2 of 6 owned items match, and the server cannot decide 3 more."
+		first   = "2 of 6 owned items match, and the server cannot decide 2 more."
 		row1001 = "1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Vault | keep | " +
 			"favorite, locked, masterwork, note"
 		row1002 = "1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 |  | Vault |  | "
@@ -7715,28 +7733,28 @@ func TestPreviewUndecided(t *testing.T) {
 			in: PreviewAutotagRuleInput{Query: "rate:>=a"},
 			want: []string{
 				first, "Items 1-2 of 2.", "", previewHeader, row1001, row1002, "",
-				undecidedHeading, undecidedHeader, undecidedHelmet, undecided1005, undecided1006,
+				undecidedHeading, undecidedHeader, undecided1005, undecided1006,
 			},
 		},
 		"one row of each": {
 			in: PreviewAutotagRuleInput{Query: "rate:>=a", Limit: 1},
 			want: []string{
 				first, "Items 1-1 of 2. Pass offset=1 for the next page.", "", previewHeader, row1001, "",
-				undecidedHeading, undecidedHeader, undecidedHelmet, "2 more undecided items are not shown.",
+				undecidedHeading, undecidedHeader, undecided1005, "1 more undecided items are not shown.",
 			},
 		},
 		"the offset pages only the matches": {
 			in: PreviewAutotagRuleInput{Query: "rate:>=a", Limit: 1, Offset: 1},
 			want: []string{
 				first, "Items 2-2 of 2.", "", previewHeader, row1002, "",
-				undecidedHeading, undecidedHeader, undecidedHelmet, "2 more undecided items are not shown.",
+				undecidedHeading, undecidedHeader, undecided1005, "1 more undecided items are not shown.",
 			},
 		},
 		"an offset past the last match": {
 			in: PreviewAutotagRuleInput{Query: "rate:>=a", Offset: 5},
 			want: []string{
 				first, "Offset 2 is past the last of 2 matching items.", "",
-				undecidedHeading, undecidedHeader, undecidedHelmet, undecided1005, undecided1006,
+				undecidedHeading, undecidedHeader, undecided1005, undecided1006,
 			},
 		},
 		"a decided query keeps its text": {
@@ -7765,11 +7783,12 @@ func TestPreviewUndecidedNoMatch(t *testing.T) {
 	f := newFakes(t)
 	withAegisSheet(f)
 
-	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:armor rate:>=a"})
+	// No roll of the sheet rates S, so rate:s matches no decided item.
+	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "rate:s"})
 	assert.False(t, isError)
 	assert.Equal(t, strings.Join([]string{
-		"No owned item matches the query, and the server cannot decide 1 more.", "",
-		undecidedHeading, undecidedHeader, undecidedHelmet,
+		"No owned item matches the query, and the server cannot decide 2 more.", "",
+		undecidedHeading, undecidedHeader, undecided1005, undecided1006,
 	}, "\n"), got)
 
 	got, isError = call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon rate:f"})
@@ -7781,6 +7800,95 @@ func TestPreviewUndecidedNoMatch(t *testing.T) {
 
 	_, _, rows := preview(t, f, "is:weapon ratebase:f")
 	assert.Empty(t, rows, "a decided query without a match keeps the no-match text")
+}
+
+// The lines that end a preview or a save count that leaves out items that
+// the web client does not build.
+const (
+	unbuiltNoArtifact = "The server leaves out 1 owned items that belong to an item set, " +
+		"because the service publishes no EquipableItemSet artifact " +
+		"and the web client builds no such item without it."
+	unbuiltMissingSet = "The server leaves out 1 owned items whose item set the EquipableItemSet definitions lack, " +
+		"because the web client builds no such item."
+)
+
+// withUnbuiltHelmet gives the Hunter of f a second helmet, instance 1007,
+// whose definition names the item set 7. The definitions hold no item
+// set, so the web client never builds the helmet. Listed records whether
+// the service index lists the EquipableItemSet artifact.
+func withUnbuiltHelmet(f *fakes, listed bool) {
+	defs := f.h.defs.defs
+	defs.Items[201] = ItemDef{
+		Name:       "Iron Truage Helm",
+		TypeName:   "Helmet",
+		Tier:       "Legendary",
+		TierType:   tierTypeLegendary,
+		Bucket:     bucketHelmet,
+		ItemType:   itemTypeArmor,
+		ClassType:  classHunter,
+		Equippable: true,
+		SetHash:    7,
+	}
+	defs.ItemSetsListed = listed
+
+	held := `{"itemHash": 201, "itemInstanceId": "1007", "lockable": true, "quantity": 1, ` +
+		`"location": 1, "bucketHash": 3448274439}, `
+	f.profileBody = `{"ErrorCode": 1, "Response": ` +
+		strings.Replace(fixtureProfile, `"c1": {"items": [`, `"c1": {"items": [`+held, 1) + `}`
+}
+
+func TestPreviewLeavesOutUnbuilt(t *testing.T) {
+	t.Parallel()
+
+	const row1004 = "1004 | Celestial Nighthawk | Helmet | Exotic | 2000 | 55 | Hunter (equipped) |  | "
+
+	tests := map[string]struct {
+		query  string
+		want   []string
+		listed bool
+	}{
+		"the service publishes no item sets": {
+			query: "is:armor",
+			want: []string{
+				"1 of 6 owned items match.", "Items 1-1 of 1.", "", previewHeader, row1004, "", unbuiltNoArtifact,
+			},
+		},
+		"the definitions lack the item set": {
+			query:  "is:armor",
+			listed: true,
+			want: []string{
+				"1 of 6 owned items match.", "Items 1-1 of 1.", "", previewHeader, row1004, "", unbuiltMissingSet,
+			},
+		},
+		"no match": {
+			query: "is:titan",
+			want:  []string{previewNoMatch, "", unbuiltNoArtifact},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			withUnbuiltHelmet(f, tc.listed)
+
+			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
+			assert.False(t, isError)
+			assert.Equal(t, strings.Join(tc.want, "\n"), got)
+
+			// The other tools keep the helmet that the preview leaves out.
+			_, ok := f.h.snapshot.Find("1007")
+			assert.True(t, ok)
+		})
+	}
+
+	// A preview without such an item ends with its table.
+	f := newFakes(t)
+
+	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:armor"})
+	assert.False(t, isError)
+	assert.True(t, strings.HasSuffix(got, "\n"+row1004), got)
 }
 
 func TestPreviewRatingModeMissing(t *testing.T) {
@@ -7888,9 +7996,74 @@ func TestSaveAutotagRuleUndecided(t *testing.T) {
 	got, isError := saveJunkRule(t, f, "rate:>=a")
 	assert.False(t, isError)
 	assert.Equal(t, "Saved the rule:\n- 2. [enabled] \"rate:>=a\": tag junk (id new)\n"+
-		"The query matches 2 owned items now, and the server cannot decide 3 more. "+
+		"The query matches 2 owned items now, and the server cannot decide 2 more. "+
 		"The count ignores the other rules, so an earlier rule can take some of these items first.", got)
 	assert.Len(t, f.service.calls(http.MethodPost, pathAutotag), 1)
+}
+
+func TestSaveAutotagRuleLeavesOutUnbuilt(t *testing.T) {
+	t.Parallel()
+
+	// noCharacters holds the helmet 1007 of withUnbuiltHelmet in the vault
+	// of an account without a character.
+	const noCharacters = `{"ErrorCode": 1, "Response": {
+		"profileInventory": {"data": {"items": [
+			{"itemHash": 201, "itemInstanceId": "1007", "lockable": true, "quantity": 1, "location": 2,
+				"bucketHash": 138197802}
+		]}},
+		"characters": {"data": {}}
+	}}`
+
+	tests := map[string]struct {
+		// profile replaces the profile of withUnbuiltHelmet when it is set.
+		profile string
+		query   string
+		want    string
+	}{
+		"a count": {
+			query: "is:armor",
+			want: "Saved the rule:\n- 2. [enabled] \"is:armor\": tag junk (id new)\n" +
+				"The query matches 1 owned items now. " +
+				"The count ignores the other rules, so an earlier rule can take some of these items first.\n" +
+				unbuiltNoArtifact,
+		},
+		"a line without a count": {
+			query: "is:masterwork",
+			want: "Saved the rule:\n- 2. [enabled] \"is:masterwork\": tag junk (id new)\n" +
+				"The server does not evaluate is:masterwork, so it did not count the items that the query matches. " +
+				"The web client might still accept those terms and run the rule.",
+		},
+		"an account without a character": {
+			profile: noCharacters,
+			query:   "is:armor",
+			want: "Saved the rule:\n- 2. [enabled] \"is:armor\": tag junk (id new)\n" +
+				"The rule is saved, but the account has no character, " +
+				"so the server did not count the items that the query matches.",
+		},
+		"a game mode without ratings": {
+			query: "pvprate:>=a",
+			want: "Saved the rule:\n- 2. [enabled] \"pvprate:>=a\": tag junk (id new)\n" +
+				"The rule is saved, but the query reads a game mode without ratings, " +
+				"so the server did not count the items that the query matches. " + noPvPSheet,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			withUnbuiltHelmet(f, false)
+
+			if tc.profile != "" {
+				f.profileBody = tc.profile
+			}
+
+			got, isError := saveJunkRule(t, f, tc.query)
+			assert.False(t, isError)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestSaveAutotagRuleRatingModeMissing(t *testing.T) {
@@ -7958,11 +8131,11 @@ func TestPreviewExampleRules(t *testing.T) {
 		},
 		"keep top PvE rolls": {
 			query: "rate:>=a",
-			want:  "2 of 6 owned items match, and the server cannot decide 3 more.",
+			want:  "2 of 6 owned items match, and the server cannot decide 2 more.",
 		},
 		"keep top PvP rolls": {
 			query: "pvprate:>=a",
-			want:  "No owned item matches the query, and the server cannot decide 3 more.",
+			want:  "No owned item matches the query, and the server cannot decide 2 more.",
 		},
 		"junk worse copies": {
 			query: "verdict:worse pvpverdict:worse",

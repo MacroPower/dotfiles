@@ -479,8 +479,9 @@ func TestSupportedKeywords(t *testing.T) {
 		"is:leg", "is:classitem", "is:subclass", "is:seasonalartifacts", "is:ghost", "is:emblems", "is:ships",
 		"is:vehicle", "is:emotes", "is:finishers", "is:accessories", "is:consumables", "is:modifications",
 		"is:haspower", "is:haslight", "is:autotagged", "tag:", "dupe:item", "count:", "id:", "hash:", "name:",
-		"exactname:", "power:", "light:", "rate:", "rating:", "ratebase:", "ratingbase:", "misses:", "verdict:",
-		"pvprate:", "pvprating:", "pvpratebase:", "pvpratingbase:", "pvpmisses:", "pvpverdict:",
+		"exactname:", "power:", "light:", "rate:", "rating:", "ratebase:", "ratingbase:", "misses:", "setbonus:",
+		"verdict:", "pvprate:", "pvprating:", "pvpratebase:", "pvpratingbase:", "pvpmisses:", "pvpsetbonus:",
+		"pvpverdict:",
 	}
 	assert.Equal(t, want, supportedKeywords())
 
@@ -502,8 +503,9 @@ func TestSupportedKeywords(t *testing.T) {
 		"is:seasonalartifacts, is:ghost, is:emblems, is:ships, is:vehicle, is:emotes, is:finishers, "+
 		"is:accessories, is:consumables, is:modifications, is:haspower, is:haslight, is:autotagged, tag:, "+
 		"dupe:item, count:, id:, hash:, name:, exactname:, power:, light:, rate:, rating:, ratebase:, "+
-		"ratingbase:, misses:, verdict:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, pvpmisses:, "+
-		"and pvpverdict:. Each is: word also works as not:<word>.", err.Error())
+		"ratingbase:, misses:, setbonus:, verdict:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, "+
+		"pvpmisses:, pvpsetbonus:, and pvpverdict:. "+
+		"Each is: word also works as not:<word>.", err.Error())
 }
 
 func TestListWithAnd(t *testing.T) {
@@ -1585,11 +1587,11 @@ func TestKleene(t *testing.T) {
 	t.Parallel()
 
 	var (
-		yes      = outcome{state: match}
-		no       = outcome{}
-		setBonus = outcome{reasons: []string{reasonSetBonus}, state: undecided}
-		noPerks  = outcome{reasons: []string{reasonNoPerks}, state: undecided}
-		both     = outcome{reasons: []string{reasonSetBonus, reasonNoPerks}, state: undecided}
+		yes     = outcome{state: match}
+		no      = outcome{}
+		other   = outcome{reasons: []string{"another reason"}, state: undecided}
+		noPerks = outcome{reasons: []string{reasonNoPerks}, state: undecided}
+		both    = outcome{reasons: []string{"another reason", reasonNoPerks}, state: undecided}
 	)
 
 	tests := map[string]struct {
@@ -1598,23 +1600,23 @@ func TestKleene(t *testing.T) {
 	}{
 		"match and match":                {got: yes.and(yes), want: yes},
 		"match and no match":             {got: yes.and(no), want: no},
-		"match and undecided":            {got: yes.and(setBonus), want: setBonus},
+		"match and undecided":            {got: yes.and(other), want: other},
 		"no match and match":             {got: no.and(yes), want: no},
 		"no match and no match":          {got: no.and(no), want: no},
-		"no match and undecided":         {got: no.and(setBonus), want: no},
-		"undecided and match":            {got: setBonus.and(yes), want: setBonus},
-		"undecided and no match":         {got: setBonus.and(no), want: no},
-		"undecided and undecided":        {got: setBonus.and(noPerks), want: both},
-		"and keeps each reason one time": {got: setBonus.and(both), want: both},
+		"no match and undecided":         {got: no.and(other), want: no},
+		"undecided and match":            {got: other.and(yes), want: other},
+		"undecided and no match":         {got: other.and(no), want: no},
+		"undecided and undecided":        {got: other.and(noPerks), want: both},
+		"and keeps each reason one time": {got: other.and(both), want: both},
 		"match or match":                 {got: yes.or(yes), want: yes},
 		"match or no match":              {got: yes.or(no), want: yes},
-		"match or undecided":             {got: yes.or(setBonus), want: yes},
+		"match or undecided":             {got: yes.or(other), want: yes},
 		"no match or match":              {got: no.or(yes), want: yes},
 		"no match or no match":           {got: no.or(no), want: no},
-		"no match or undecided":          {got: no.or(setBonus), want: setBonus},
-		"undecided or match":             {got: setBonus.or(yes), want: yes},
-		"undecided or no match":          {got: setBonus.or(no), want: setBonus},
-		"undecided or undecided":         {got: setBonus.or(noPerks), want: both},
+		"no match or undecided":          {got: no.or(other), want: other},
+		"undecided or match":             {got: other.or(yes), want: yes},
+		"undecided or no match":          {got: other.or(no), want: other},
+		"undecided or undecided":         {got: other.or(noPerks), want: both},
 		"or keeps each reason one time":  {got: both.or(noPerks), want: both},
 		"not match":                      {got: yes.not(), want: no},
 		"not no match":                   {got: no.not(), want: yes},
@@ -1755,60 +1757,48 @@ func (tests judgeTests) run(t *testing.T, ctx searchContext) {
 	}
 }
 
-// Reasons of the rating tests.
-var (
-	setBonusOnly = []string{reasonSetBonus}
-	noPerksOnly  = []string{reasonNoPerks}
-	bothReasons  = []string{reasonSetBonus, reasonNoPerks}
-)
+// noPerksOnly holds the reason of a copy without perks on a sheet row
+// with perk columns.
+var noPerksOnly = []string{reasonNoPerks}
 
 func TestRateRange(t *testing.T) {
 	t.Parallel()
 
-	// rateOpen holds the items that each rate: value of the Aegis sheet
-	// leaves undecided when no known value passes.
-	rateOpen := map[string][]string{
+	// open holds the copies without perks on a row with a tier and perk
+	// columns, which each rate: value of the Aegis sheet leaves undecided.
+	// The armor of the context has no set, so rate: decides it.
+	open := map[string][]string{
 		"unknown":        noPerksOnly,
-		"helmet":         setBonusOnly,
-		"rated helmet":   setBonusOnly,
-		"unknown helmet": bothReasons,
-	}
-
-	// atLeastA holds the items that rate:>=a leaves undecided. The tier A
-	// of the row of hash 101 passes for rated helmet.
-	atLeastA := map[string][]string{
-		"unknown":        noPerksOnly,
-		"helmet":         setBonusOnly,
-		"unknown helmet": bothReasons,
+		"unknown helmet": noPerksOnly,
 	}
 
 	judgeTests{
 		"A or better": {
 			query:     "rate:>=a",
 			matches:   []string{"s", "a", "exotic", "rated helmet"},
-			undecided: atLeastA,
+			undecided: open,
 		},
 		"a number tests the tier value": {
 			query:     "rate:>=5",
 			matches:   []string{"s", "a", "exotic", "rated helmet"},
-			undecided: atLeastA,
+			undecided: open,
 		},
 		"rating: is rate:": {
 			query:     "rating:>=a",
 			matches:   []string{"s", "a", "exotic", "rated helmet"},
-			undecided: atLeastA,
+			undecided: open,
 		},
-		"equal to B":   {query: "rate:b", matches: []string{"b"}, undecided: rateOpen},
-		"worse than A": {query: "rate:<a", matches: []string{"b"}, undecided: rateOpen},
+		"equal to B":   {query: "rate:b", matches: []string{"b"}, undecided: open},
+		"worse than A": {query: "rate:<a", matches: []string{"b"}, undecided: open},
 		"constructor matches nothing": {
 			query:     "rate:constructor",
 			matches:   []string{},
-			undecided: rateOpen,
+			undecided: open,
 		},
 		"__proto__ matches nothing": {
 			query:     "rate:__proto__",
 			matches:   []string{},
-			undecided: rateOpen,
+			undecided: open,
 		},
 	}.run(t, ratingContext())
 
@@ -1832,30 +1822,20 @@ func TestRateRange(t *testing.T) {
 func TestRateBase(t *testing.T) {
 	t.Parallel()
 
-	// sOpen holds the items that ratebase:s leaves undecided. Every armor
-	// piece gets the set bonus reason, and the row of unknown helmet has
-	// the tier A, which does not pass.
-	sOpen := map[string][]string{
-		"helmet":         setBonusOnly,
-		"rated helmet":   setBonusOnly,
-		"unknown helmet": setBonusOnly,
-	}
-
+	// ratebase: reads no perks, and the armor of the context has no set,
+	// so ratebase: decides every item.
 	judgeTests{
 		"the row of a roll that stepped down": {
-			query:     "ratebase:s",
-			matches:   []string{"s", "a", "b"},
-			undecided: sOpen,
+			query:   "ratebase:s",
+			matches: []string{"s", "a", "b"},
 		},
 		"ratingbase: is ratebase:": {
-			query:     "ratingbase:s",
-			matches:   []string{"s", "a", "b"},
-			undecided: sOpen,
+			query:   "ratingbase:s",
+			matches: []string{"s", "a", "b"},
 		},
 		"a copy without perks has the tier of its row": {
-			query:     "ratebase:>=a",
-			matches:   []string{"s", "a", "b", "exotic", "unknown", "rated helmet", "unknown helmet"},
-			undecided: map[string][]string{"helmet": setBonusOnly},
+			query:   "ratebase:>=a",
+			matches: []string{"s", "a", "b", "exotic", "unknown", "rated helmet", "unknown helmet"},
 		},
 	}.run(t, ratingContext())
 
@@ -1890,70 +1870,23 @@ func TestMisses(t *testing.T) {
 	}
 }
 
-func TestRateArmorUndecided(t *testing.T) {
-	t.Parallel()
-
-	ctx := ratingContext()
-
-	tests := map[string]struct {
-		query string
-		// helmet is the outcome of the armor that no sheet lists.
-		helmet outcome
-		// rated is the outcome of the armor whose hash has an Aegis row
-		// with the tier A.
-		rated outcome
-	}{
-		"rate: cannot decide armor": {
-			query:  "rate:>=a",
-			helmet: outcome{reasons: setBonusOnly, state: undecided},
-			rated:  outcome{state: match},
-		},
-		"another tier of the row": {
-			query:  "rate:s",
-			helmet: outcome{reasons: setBonusOnly, state: undecided},
-			rated:  outcome{reasons: setBonusOnly, state: undecided},
-		},
-		"is:weapon decides armor": {
-			query:  "is:weapon rate:>=a",
-			helmet: outcome{},
-			rated:  outcome{},
-		},
-		"is:armor or rate: matches armor": {
-			query:  "rate:>=a or is:armor",
-			helmet: outcome{state: match},
-			rated:  outcome{state: match},
-		},
-		"a negated rate: stays undecided": {
-			query:  "-rate:>=a",
-			helmet: outcome{reasons: setBonusOnly, state: undecided},
-			rated:  outcome{},
-		},
-		"misses: reads no set bonus": {
-			query:  "misses:>=0",
-			helmet: outcome{},
-			rated:  outcome{},
-		},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			test := compiled(t, tc.query).test(ctx)
-
-			helmet := slices.IndexFunc(ctx.items, func(item *Item) bool { return item.InstanceID == "helmet" })
-			rated := slices.IndexFunc(ctx.items, func(item *Item) bool { return item.InstanceID == "rated helmet" })
-
-			assert.Equal(t, tc.helmet, test(ctx.items[helmet]))
-			assert.Equal(t, tc.rated, test(ctx.items[rated]))
-		})
-	}
-}
-
 func TestRateUnknownRoll(t *testing.T) {
 	t.Parallel()
 
+	// set helmet is armor without perks on the row of hash 103, as unknown
+	// helmet is. Its item set has a 4-piece bonus that the Aegis sheet
+	// rates S.
 	ctx := ratingContext()
+	ctx.sources[modePvE].Sheet.SetBonuses = map[uint32]SetBonus{perkFourPiece: {Tier: "S", Pieces: 4}}
+	ctx.items = append(ctx.items, &Item{
+		InstanceID: "set helmet",
+		Name:       "set helmet",
+		Hash:       103,
+		Bucket:     bucketHelmet,
+		SetHash:    7,
+		SetKnown:   true,
+		SetPerks:   []uint32{perkFourPiece},
+	})
 
 	tests := map[string]struct {
 		query string
@@ -1975,10 +1908,10 @@ func TestRateUnknownRoll(t *testing.T) {
 			id:    "unknown no tier",
 			want:  outcome{},
 		},
-		"armor without perks has both reasons": {
+		"armor without perks on a row with columns has the perk reason": {
 			query: "rate:>=a",
 			id:    "unknown helmet",
-			want:  outcome{reasons: bothReasons, state: undecided},
+			want:  outcome{reasons: noPerksOnly, state: undecided},
 		},
 		"two terms give each reason one time": {
 			query: "rate:>=a misses:>=0",
@@ -1994,6 +1927,21 @@ func TestRateUnknownRoll(t *testing.T) {
 			query: "is:weapon rate:>=a",
 			id:    "unknown helmet",
 			want:  outcome{},
+		},
+		"a set bonus that passes decides a copy without perks": {
+			query: "rate:s",
+			id:    "set helmet",
+			want:  outcome{state: match},
+		},
+		"a set bonus that passes beside the tier of the row": {
+			query: "rate:>=a",
+			id:    "set helmet",
+			want:  outcome{state: match},
+		},
+		"a copy without perks stays undecided when no set bonus passes": {
+			query: "rate:f",
+			id:    "set helmet",
+			want:  outcome{reasons: noPerksOnly, state: undecided},
 		},
 	}
 
@@ -2056,10 +2004,12 @@ func TestPvPKeywords(t *testing.T) {
 func TestEvaluate(t *testing.T) {
 	t.Parallel()
 
+	// Two copies of weapon 103 without perks share the name b, so rate:b
+	// leaves both undecided.
 	ctx := ratingContext()
 	ctx.items = slices.Concat(ctx.items, []*Item{
-		{InstanceID: "20", Name: "b", Bucket: bucketHelmet},
-		{InstanceID: "3", Name: "b", Bucket: bucketHelmet},
+		{InstanceID: "20", Name: "b", Hash: 103, Bucket: bucketKinetic},
+		{InstanceID: "3", Name: "b", Hash: 103, Bucket: bucketKinetic},
 	})
 
 	result := compiled(t, "rate:b").evaluate(ctx, ctx.items)
@@ -2071,7 +2021,7 @@ func TestEvaluate(t *testing.T) {
 		assert.NotEmpty(t, u.reasons, u.item.InstanceID)
 	}
 
-	assert.Equal(t, []string{"3", "20", "helmet", "rated helmet", "unknown", "unknown helmet"}, got)
+	assert.Equal(t, []string{"3", "20", "unknown", "unknown helmet"}, got)
 }
 
 func TestUnratedReason(t *testing.T) {
@@ -2777,4 +2727,390 @@ func TestDupeKeyRarity(t *testing.T) {
 
 	got := matchIDs(t, "is:dupe", []*Item{renamed, comparableWeapon("legendary", "Fatebringer")})
 	assert.Equal(t, []string{"renamed", "legendary"}, got)
+}
+
+// Sandbox perk hashes of the set bonuses of the set bonus tests.
+const (
+	perkTwoPiece  uint32 = 1360604600
+	perkFourPiece uint32 = 1360604601
+	perkNoTier    uint32 = 1360604602
+	perkUnrated   uint32 = 1360604603
+)
+
+// setBonusContext returns a search context whose armor covers the set
+// bonus filters, keyed by instance id, in this order:
+//
+//   - set has a 2-piece bonus that the Aegis sheet rates C and a 4-piece
+//     bonus that it rates S. The PvP sheet rates the 2-piece bonus A.
+//   - untiered has a 4-piece bonus on an Aegis row without a tier.
+//   - unrated has a bonus that neither sheet rates.
+//   - no set has no item set.
+//
+// No sheet lists a weapon row for the armor, so only the set bonuses
+// rate it.
+func setBonusContext() searchContext {
+	pve := &Sheet{
+		Rows: map[uint32]SheetRow{100: {Tier: "S"}},
+		SetBonuses: map[uint32]SetBonus{
+			perkTwoPiece:  {Tier: "C", Pieces: 2},
+			perkFourPiece: {Tier: "S", Pieces: 4},
+			perkNoTier:    {Pieces: 4},
+		},
+	}
+	pvp := &Sheet{
+		Rows:       map[uint32]SheetRow{100: {Tier: "C"}},
+		SetBonuses: map[uint32]SetBonus{perkTwoPiece: {Tier: "A", Pieces: 2}},
+	}
+
+	armor := func(id string, perks ...uint32) *Item {
+		return &Item{
+			InstanceID: id,
+			Name:       id,
+			Hash:       200,
+			Bucket:     bucketHelmet,
+			SetHash:    3727270518,
+			SetKnown:   true,
+			SetPerks:   perks,
+		}
+	}
+
+	return searchContext{
+		items: []*Item{
+			armor("set", perkTwoPiece, perkFourPiece),
+			armor("untiered", perkNoTier),
+			armor("unrated", perkUnrated),
+			{InstanceID: "no set", Name: "no set", Hash: 200, Bucket: bucketHelmet},
+		},
+		sources: map[string]RatingSource{
+			modePvE: {Sheet: pve, Defs: &Defs{}},
+			modePvP: {Sheet: pvp, Defs: &Defs{}},
+		},
+	}
+}
+
+func TestSetBonusValues(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, []string{
+		"s", "a", "b", "c", "d", "e", "f",
+		"2pc:s", "2pc:a", "2pc:b", "2pc:c", "2pc:d", "2pc:e", "2pc:f",
+		"4pc:s", "4pc:a", "4pc:b", "4pc:c", "4pc:d", "4pc:e", "4pc:f",
+	}, setBonusQueries)
+
+	tests := map[string]struct {
+		query string
+		valid bool
+	}{
+		"a tier":                        {query: "setbonus:s", valid: true},
+		"a size and a tier":             {query: "setbonus:4pc:s", valid: true},
+		"an uppercase value":            {query: "setbonus:2PC:F", valid: true},
+		"the pvp form":                  {query: "pvpsetbonus:2pc:a", valid: true},
+		"a size that DIM does not know": {query: "setbonus:3pc:s"},
+		"a size without a tier":         {query: "setbonus:4pc"},
+		"a tier outside S to F":         {query: "setbonus:x"},
+		"a size after the tier":         {query: "setbonus:s:4pc"},
+		"a range":                       {query: "setbonus:>=a"},
+		"the pvp form of a bad size":    {query: "pvpsetbonus:3pc:s"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			q := compiled(t, tc.query)
+			assert.Empty(t, q.unsupported)
+
+			if tc.valid {
+				assert.Empty(t, q.invalid)
+				assert.NotNil(t, q.test)
+
+				return
+			}
+
+			assert.Equal(t, []string{tc.query}, q.invalid)
+		})
+	}
+
+	for _, value := range setBonusQueries {
+		assert.Empty(t, compiled(t, "setbonus:"+value).invalid, value)
+	}
+}
+
+func TestSetBonusMatch(t *testing.T) {
+	t.Parallel()
+
+	judgeTests{
+		"a tier of either bonus":             {query: "setbonus:s", matches: []string{"set"}},
+		"the tier of the 4-piece bonus":      {query: "setbonus:4pc:s", matches: []string{"set"}},
+		"the 2-piece bonus has another tier": {query: "setbonus:2pc:s", matches: []string{}},
+		"the tier of the 2-piece bonus":      {query: "setbonus:2pc:c", matches: []string{"set"}},
+		"a tier without a bonus":             {query: "setbonus:a", matches: []string{}},
+		"rate: tests each bonus":             {query: "rate:>=a", matches: []string{"set"}},
+		"rate: matches the weaker bonus":     {query: "rate:c", matches: []string{"set"}},
+		"ratebase: tests each bonus":         {query: "ratebase:>=a", matches: []string{"set"}},
+		"rating: and ratingbase: too": {
+			query:   "rating:s ratingbase:s",
+			matches: []string{"set"},
+		},
+		"a bonus without a tier has no value": {query: "rate:>=f", matches: []string{"set"}},
+		"no bonus passes":                     {query: "rate:<c", matches: []string{}},
+		"misses: reads no set bonus":          {query: "misses:>=0", matches: []string{}},
+		"a negated term decides the armor": {
+			query:   "-setbonus:s",
+			matches: []string{"untiered", "unrated", "no set"},
+		},
+	}.run(t, setBonusContext())
+}
+
+func TestSetBonusNone(t *testing.T) {
+	t.Parallel()
+
+	// The armor named helmet has no item set, and no sheet lists its hash.
+	ctx := ratingContext()
+
+	i := slices.IndexFunc(ctx.items, func(item *Item) bool { return item.InstanceID == "helmet" })
+	require.GreaterOrEqual(t, i, 0)
+
+	armor := ctx.items[i]
+	require.Zero(t, armor.SetHash)
+
+	tests := map[string]struct {
+		query string
+		want  outcome
+	}{
+		"rate: decides armor without a set":     {query: "rate:>=a", want: outcome{}},
+		"ratebase: decides armor without a set": {query: "ratebase:>=a", want: outcome{}},
+		"setbonus: decides armor without a set": {query: "setbonus:s", want: outcome{}},
+		"a negated rate: matches":               {query: "-rate:>=a", want: outcome{state: match}},
+		"is:armor or rate: matches":             {query: "rate:>=a or is:armor", want: outcome{state: match}},
+		"is:weapon decides armor":               {query: "is:weapon rate:>=a", want: outcome{}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, compiled(t, tc.query).test(ctx)(armor))
+		})
+	}
+
+	result := compiled(t, "rate:>=a").evaluate(ctx, []*Item{armor})
+	assert.Empty(t, result.matches)
+	assert.Empty(t, result.undecided)
+}
+
+func TestPvPSetBonus(t *testing.T) {
+	t.Parallel()
+
+	ctx := setBonusContext()
+
+	tests := map[string]struct {
+		query string
+		want  []string
+		modes []string
+	}{
+		"pvpsetbonus: reads the PvP sheet": {query: "pvpsetbonus:a", want: []string{"set"}, modes: []string{modePvP}},
+		"pvpsetbonus: takes a size": {
+			query: "pvpsetbonus:2pc:a",
+			want:  []string{"set"},
+			modes: []string{modePvP},
+		},
+		"the PvP sheet rates no 4-piece bonus": {
+			query: "pvpsetbonus:4pc:s",
+			want:  []string{},
+			modes: []string{modePvP},
+		},
+		"setbonus: reads the Aegis sheet":  {query: "setbonus:a", want: []string{}, modes: []string{modePvE}},
+		"pvprate: tests the PvP set bonus": {query: "pvprate:a", want: []string{"set"}, modes: []string{modePvP}},
+		"pvpratebase: tests the PvP bonus": {query: "pvpratebase:a", want: []string{"set"}, modes: []string{modePvP}},
+		"pvprate: below the PvP set bonus": {query: "pvprate:<a", want: []string{}, modes: []string{modePvP}},
+		"both modes in the order of modes": {
+			query: "pvpsetbonus:a setbonus:s",
+			want:  []string{"set"},
+			modes: []string{modePvE, modePvP},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.modes, compiled(t, tc.query).modes)
+			assert.Equal(t, tc.want, contextMatchIDs(t, tc.query, ctx))
+		})
+	}
+}
+
+// setSnapshot returns a snapshot whose Hunter holds three helmets. Helmet
+// 2001 belongs to the item set 7, and helmet 2002 belongs to the item set
+// 8. Helmet 1004 belongs to no set. The Hunter also holds a stack of a
+// definition with the item set 8, which is not an owned item. Sets holds
+// the item sets of the definitions, and listed records whether the
+// service index lists the EquipableItemSet artifact.
+func setSnapshot(t *testing.T, listed bool, sets map[uint32][]uint32) *Snapshot {
+	t.Helper()
+
+	const profile = `{
+		"characters": {"data": {
+			"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
+		}},
+		"characterInventories": {"data": {"c1": {"items": [
+			{"itemHash": 210, "itemInstanceId": "2001", "quantity": 1, "location": 1, "bucketHash": 3448274439},
+			{"itemHash": 211, "itemInstanceId": "2002", "quantity": 1, "location": 1, "bucketHash": 3448274439},
+			{"itemHash": 212, "quantity": 3, "location": 1, "bucketHash": 3448274439}
+		]}}},
+		"characterEquipment": {"data": {"c1": {"items": [
+			{"itemHash": 200, "itemInstanceId": "1004", "quantity": 1, "location": 1, "bucketHash": 3448274439}
+		]}}}
+	}`
+
+	helmet := func(name string, set uint32) ItemDef {
+		return ItemDef{
+			Name:       name,
+			TypeName:   "Helmet",
+			Bucket:     bucketHelmet,
+			ItemType:   itemTypeArmor,
+			ClassType:  classHunter,
+			Equippable: true,
+			SetHash:    set,
+		}
+	}
+
+	defs := fixtureDefs()
+	defs.Items[210] = helmet("Iron Truage Helm", 7)
+	defs.Items[211] = helmet("Wild Hunt Mask", 8)
+	defs.Items[212] = helmet("Wild Hunt Stack", 8)
+	defs.ItemSets = sets
+	defs.ItemSetsListed = listed
+
+	var p Profile
+
+	require.NoError(t, json.Unmarshal([]byte(profile), &p))
+
+	return NewSnapshot(&p, defs, fixtureNow)
+}
+
+func TestBuiltItemsWithoutArtifact(t *testing.T) {
+	t.Parallel()
+
+	s := setSnapshot(t, false, map[uint32][]uint32{})
+	assert.False(t, s.ItemSetsListed)
+
+	assert.Equal(t, []string{"1004"}, ids(builtItems(s)))
+	assert.Equal(t, []string{"1004"}, ids(ownedItems(s)))
+
+	ctx := searchContext{items: builtItems(s)}
+	assert.Equal(t, []string{"1004"}, contextMatchIDs(t, "is:armor", ctx))
+
+	assert.Equal(t, "The server leaves out 2 owned items that belong to an item set, "+
+		"because the service publishes no EquipableItemSet artifact "+
+		"and the web client builds no such item without it.", unbuiltLine(s))
+
+	// The index decides alone, so a set that the definitions hold does not
+	// keep its item when the index lists no artifact.
+	held := setSnapshot(t, false, map[uint32][]uint32{7: {perkTwoPiece}})
+	assert.Equal(t, []string{"1004"}, ids(ownedItems(held)))
+}
+
+func TestBuiltItemsMissingSet(t *testing.T) {
+	t.Parallel()
+
+	s := setSnapshot(t, true, map[uint32][]uint32{7: {perkTwoPiece, perkFourPiece}})
+	assert.True(t, s.ItemSetsListed)
+
+	known, ok := s.Find("2001")
+	require.True(t, ok)
+	assert.Equal(t, uint32(7), known.SetHash)
+	assert.True(t, known.SetKnown)
+	assert.Equal(t, []uint32{perkTwoPiece, perkFourPiece}, known.SetPerks)
+
+	missing, ok := s.Find("2002")
+	require.True(t, ok)
+	assert.Equal(t, uint32(8), missing.SetHash)
+	assert.False(t, missing.SetKnown)
+	assert.Nil(t, missing.SetPerks)
+
+	assert.Equal(t, []string{"2001", "1004"}, ids(builtItems(s)))
+	assert.Equal(t, []string{"2001", "1004"}, ids(ownedItems(s)))
+	assert.Equal(t, "The server leaves out 1 owned items whose item set the EquipableItemSet definitions lack, "+
+		"because the web client builds no such item.", unbuiltLine(s))
+
+	every := setSnapshot(t, true, map[uint32][]uint32{7: {perkTwoPiece}, 8: {}})
+	assert.Equal(t, []string{"2001", "2002", "1004"}, ids(ownedItems(every)))
+	assert.Empty(t, unbuiltLine(every))
+	assert.Empty(t, unbuiltLine(fixtureSnapshot(t)))
+}
+
+func TestUnbuiltLineSkipsDummyBuckets(t *testing.T) {
+	t.Parallel()
+
+	helmet := func(id string, bucket uint32, lost bool) *Item {
+		return &Item{
+			InstanceID: id,
+			Name:       id,
+			Bucket:     bucket,
+			Equippable: true,
+			Lost:       lost,
+			SetHash:    8,
+		}
+	}
+
+	// Every helmet belongs to a set that the definitions lack. The dummy
+	// bucket rule already leaves out the helmets in the two dummy buckets,
+	// so the line does not count them. The current bucket of the lost
+	// helmet is the Lost Items bucket, so the line counts it.
+	s := &Snapshot{
+		ItemSetsListed: true,
+		Items: []*Item{
+			helmet("helmet", bucketHelmet, false),
+			helmet("dummy", bucketDummy, false),
+			helmet("forbidden", bucketForbidden, false),
+			helmet("lost", bucketDummy, true),
+		},
+	}
+
+	assert.Empty(t, ownedItems(s))
+	assert.Equal(t, "The server leaves out 2 owned items whose item set the EquipableItemSet definitions lack, "+
+		"because the web client builds no such item.", unbuiltLine(s))
+}
+
+func TestDupeSkipsUnbuilt(t *testing.T) {
+	t.Parallel()
+
+	helmet := func(id, name string, set uint32, known bool) *Item {
+		return &Item{
+			InstanceID: id,
+			Name:       name,
+			TierType:   tierTypeLegendary,
+			ClassType:  classHunter,
+			Bucket:     bucketHelmet,
+			Equippable: true,
+			Lockable:   true,
+			SetHash:    set,
+			SetKnown:   known,
+		}
+	}
+
+	// Helmets 1 and 2 belong to a set that the definitions lack. Helmet 5
+	// shares their name but belongs to no set. Helmets 3 and 4 belong to a
+	// set that the definitions hold.
+	s := &Snapshot{
+		ItemSetsListed: true,
+		Items: []*Item{
+			helmet("1", "Wild Hunt Mask", 8, false),
+			helmet("2", "Wild Hunt Mask", 8, false),
+			helmet("5", "Wild Hunt Mask", 0, false),
+			helmet("3", "Iron Truage Helm", 7, true),
+			helmet("4", "Iron Truage Helm", 7, true),
+		},
+	}
+
+	matches := func(query string) []string {
+		return ids(compiled(t, query).evaluate(searchContext{items: builtItems(s)}, ownedItems(s)).matches)
+	}
+
+	assert.Equal(t, []string{"3", "4"}, matches("is:dupe"))
+	assert.Equal(t, []string{"3", "4"}, matches("dupe:item"))
+	assert.Equal(t, []string{"5"}, matches("count:1"))
+	assert.Empty(t, matches("count:3"))
 }

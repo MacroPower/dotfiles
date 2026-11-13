@@ -24,7 +24,7 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v9-"
+	defsCachePrefix = "defs-v10-"
 
 	artifactCore            = "core"
 	artifactDetail          = "detail"
@@ -40,6 +40,7 @@ const (
 	artifactActivityRewards = "ActivityReward"
 	artifactVendors         = "Vendor"
 	artifactVendorItems     = "VendorItem"
+	artifactItemSets        = "EquipableItemSet"
 )
 
 // Bungie DestinyItemType values that classify gear and plugs. Bungie
@@ -93,7 +94,8 @@ var ErrDefs = errors.New("definitions")
 // small. Categories holds the item category hashes of the definition, in
 // the order of the definition. AmmoType is the Bungie DestinyAmmunitionType
 // value of the equipping block, and zero when the definition has no
-// equipping block.
+// equipping block. SetHash is the hash of the equipable item set of the
+// equipping block, and zero when the definition names no set.
 //
 // Tier is the tier name that the definition displays, and TierType is the
 // Bungie TierType value that DIM reads for the rarity. TierType is
@@ -112,6 +114,7 @@ type ItemDef struct {
 	AmmoType                  int      `json:"ammoType,omitempty"`
 	TierType                  int      `json:"tierType,omitempty"`
 	Bucket                    uint32   `json:"bucket,omitempty"`
+	SetHash                   uint32   `json:"setHash,omitempty"`
 	NonTransferable           bool     `json:"nonTransferable,omitempty"`
 	Equippable                bool     `json:"equippable,omitempty"`
 	DisablePrimaryStatDisplay bool     `json:"disablePrimaryStatDisplay,omitempty"`
@@ -176,16 +179,23 @@ type VendorDef struct {
 // maps to find the socket of a perk column in which a copy rolled no
 // pick. Only weapons have roll ratings, so Sockets holds only weapons.
 //
+// ItemSets maps the hash of each equipable item set to the sandbox perk
+// hashes of the set bonuses of the set, in the order of the definition.
+// ItemSetsListed records whether the service index lists the
+// EquipableItemSet artifact. The web client builds no item whose set the
+// artifact lacks, so the preview reads both fields.
+//
 // Activities, ActivityTypes, Destinations, Places, ActivityRewards,
-// Vendors, VendorItems, Sockets, and PlugSets are empty when the service
-// index lists no artifact for them. PlugSets is also empty when the index
-// lists no artifact for Sockets.
+// Vendors, VendorItems, Sockets, PlugSets, and ItemSets are empty when the
+// service index lists no artifact for them. PlugSets is also empty when
+// the index lists no artifact for Sockets.
 type Defs struct {
 	Items           map[uint32]ItemDef     `json:"items"`
 	Buckets         map[uint32]BucketDef   `json:"buckets"`
 	Stats           map[uint32]string      `json:"stats"`
 	Sockets         map[uint32][]uint32    `json:"sockets"`
 	PlugSets        map[uint32][]uint32    `json:"plugSets"`
+	ItemSets        map[uint32][]uint32    `json:"itemSets"`
 	Activities      map[uint32]ActivityDef `json:"activities"`
 	ActivityTypes   map[uint32]string      `json:"activityTypes"`
 	Destinations    map[uint32]string      `json:"destinations"`
@@ -197,6 +207,7 @@ type Defs struct {
 	DamageTypes     map[int]string         `json:"damageTypes"`
 	Classes         map[int]string         `json:"classes"`
 	Version         string                 `json:"version"`
+	ItemSetsListed  bool                   `json:"itemSetsListed"`
 }
 
 // TraitNames maps the lowercase name of every weapon trait to its display
@@ -349,6 +360,7 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 		Stats:           map[uint32]string{},
 		Sockets:         map[uint32][]uint32{},
 		PlugSets:        map[uint32][]uint32{},
+		ItemSets:        map[uint32][]uint32{},
 		Activities:      map[uint32]ActivityDef{},
 		ActivityTypes:   map[uint32]string{},
 		Destinations:    map[uint32]string{},
@@ -434,7 +446,11 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 
 	// The inventory tools read neither the activity definitions nor the
 	// vendor definitions. They therefore keep working on a deployment whose
-	// index lists none of these artifacts.
+	// index lists none of these artifacts. The item sets decide which items
+	// the web client builds. The preview leaves out each item with a set
+	// when the index lists no item sets, as the web client does.
+	defs.ItemSetsListed = len(index.Files[artifactItemSets]) > 0
+
 	optional := map[string]func(io.Reader) error{
 		artifactActivities: func(r io.Reader) error {
 			return decodeTable(r, func(hash uint32, row activityRow) { defs.Activities[hash] = row.activity() })
@@ -450,6 +466,9 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 		},
 		artifactVendors: func(r io.Reader) error {
 			return decodeTable(r, func(hash uint32, row vendorRow) { defs.Vendors[hash] = row.vendor() })
+		},
+		artifactItemSets: func(r io.Reader) error {
+			return decodeTable(r, func(hash uint32, row itemSetRow) { defs.ItemSets[hash] = row.perks() })
 		},
 	}
 
@@ -509,7 +528,8 @@ func (l *DefsLoader) read(ctx context.Context, file string, decode func(io.Reade
 // reads.
 type rawItem struct {
 	EquippingBlock *struct {
-		AmmoType int `json:"ammoType"`
+		AmmoType             int    `json:"ammoType"`
+		EquipableItemSetHash uint32 `json:"equipableItemSetHash"`
 	} `json:"equippingBlock"`
 	DisplayProperties struct {
 		Name        string `json:"name"`
@@ -561,6 +581,7 @@ func (raw rawItem) item() ItemDef {
 
 	if raw.EquippingBlock != nil {
 		def.AmmoType = raw.EquippingBlock.AmmoType
+		def.SetHash = raw.EquippingBlock.EquipableItemSetHash
 	}
 
 	if raw.ItemType == itemTypePlug {
@@ -773,6 +794,26 @@ func (row vendorRow) vendor() VendorDef {
 	}
 
 	return def
+}
+
+// itemSetRow is the subset of a record of the EquipableItemSet artifact
+// that the loader reads. The service build keeps each set definition
+// whole. Each entry of SetPerks is one set bonus.
+type itemSetRow struct {
+	SetPerks []struct {
+		SandboxPerkHash uint32 `json:"sandboxPerkHash"`
+	} `json:"setPerks"`
+}
+
+// perks returns the sandbox perk hash of each set bonus of the record, in
+// the order of the record.
+func (row itemSetRow) perks() []uint32 {
+	perks := make([]uint32, 0, len(row.SetPerks))
+	for _, perk := range row.SetPerks {
+		perks = append(perks, perk.SandboxPerkHash)
+	}
+
+	return perks
 }
 
 // decodeTable reads a JSON object that maps definition hashes to records.

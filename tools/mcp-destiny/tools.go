@@ -2021,7 +2021,9 @@ func ownedCounts(evals []ruleEval, items []*Item) []ruleCount {
 // handleSaveAutotagRule writes the rule that [mergeRule] builds. When the
 // call passes a query, it refuses a query that holds a value that the web
 // client rejects before it writes the rule. After the write, the result
-// counts the owned items that the query matches.
+// counts the owned items that the query matches. The line of [unbuiltLine]
+// follows the count when the count leaves out items that the web client
+// does not build.
 func (h *handler) handleSaveAutotagRule(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -2058,7 +2060,12 @@ func (h *handler) handleSaveAutotagRule(
 
 	text := "Saved the rule:\n" + renderRule(rule)
 	if in.Query != nil {
-		text += "\n" + renderSaveCount(h.countRuleMatches(ctx, query))
+		count, unbuilt := h.countRuleMatches(ctx, query)
+
+		text += "\n" + renderSaveCount(count)
+		if unbuilt != "" {
+			text += "\n" + unbuilt
+		}
 	}
 
 	return textResult(text), nil, nil
@@ -2090,29 +2097,32 @@ func compileRuleQuery(query string) (compiledQuery, error) {
 // to 30 seconds old. It reads the rating sources only for a query with a
 // rating filter. A game mode without ratings that the query reads gives
 // the reason of the mode in place of the counts.
-func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) saveCount {
+//
+// The second result is the line of [unbuiltLine] for the counts. It is
+// "" when the result holds no counts.
+func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) (saveCount, string) {
 	if len(query.unsupported) > 0 {
-		return saveCount{unsupported: query.unsupported}
+		return saveCount{unsupported: query.unsupported}, ""
 	}
 
 	s, _, err := h.loadAnnotated(ctx, false)
 	if err != nil {
-		return saveCount{err: err}
+		return saveCount{err: err}, ""
 	}
 
 	current, ok := s.lastPlayed()
 	if !ok {
-		return saveCount{noCharacter: true}
+		return saveCount{noCharacter: true}, ""
 	}
 
 	sources, reason := h.querySources(ctx, query)
 	if reason != "" {
-		return saveCount{unrated: reason}
+		return saveCount{unrated: reason}, ""
 	}
 
 	result := query.evaluate(searchContext{current: current, items: builtItems(s), sources: sources}, ownedItems(s))
 
-	return saveCount{matches: len(result.matches), undecided: len(result.undecided)}
+	return saveCount{matches: len(result.matches), undecided: len(result.undecided)}, unbuiltLine(s)
 }
 
 // querySources returns the [RatingSource] of each game mode for a query
@@ -2137,7 +2147,9 @@ func (h *handler) querySources(ctx context.Context, query compiledQuery) (map[st
 // query with a rating filter, after the inventory. A game mode without
 // ratings that the query reads fails the call with the reason of the
 // mode. The result lists the items whose outcome the server cannot decide
-// in a section of their own.
+// in a section of their own. The line of [unbuiltLine] ends the result,
+// after a blank line, when the preview leaves out items that the web
+// client does not build.
 func (h *handler) handlePreviewAutotagRule(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -2183,7 +2195,12 @@ func (h *handler) handlePreviewAutotagRule(
 	offset := min(max(in.Offset, 0), len(matches))
 	page := matches[offset:min(offset+limit, len(matches))]
 
-	return textResult(renderPreview(s, page, offset, len(matches), len(owned), result.undecided, limit)), nil, nil
+	text := renderPreview(s, page, offset, len(matches), len(owned), result.undecided, limit)
+	if unbuilt := unbuiltLine(s); unbuilt != "" {
+		text += "\n\n" + unbuilt
+	}
+
+	return textResult(text), nil, nil
 }
 
 func (h *handler) handleRemoveAutotagRule(

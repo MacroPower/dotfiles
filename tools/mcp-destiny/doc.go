@@ -69,9 +69,11 @@
 // matches. The count covers that query alone, as if no other rule existed,
 // so an earlier rule can take some of those items. The result also counts
 // the items whose outcome the server cannot decide, which the Autotag
-// Preview section describes. The tool saves a query that reads a game mode
-// without ratings. Its result then gives the reason of the mode in place
-// of the counts.
+// Preview section describes. The counts leave out the items that the web
+// client does not build, as the preview does, and a line after the counts
+// gives the number of such items. The tool saves a query that reads a game
+// mode without ratings. Its result then gives the reason of the mode in
+// place of the counts.
 //
 // The web client records profile changes only while it is open in a
 // browser. It diffs each Bungie profile that it fetches against the one
@@ -253,6 +255,14 @@
 // the order of the rules, so an earlier rule can take an item that the
 // preview lists.
 //
+// The web client builds no item whose item set the EquipableItemSet
+// definitions lack. When the service publishes no EquipableItemSet
+// artifact, it builds no item with an item set at all. No rule sees such
+// an item, so the preview leaves it out too, also from the items that
+// is:dupe, count:, and verdict: compare. The last line of the result
+// counts the items that the preview leaves out for this reason and names
+// the reason. The other tools, such as list_items, keep such items.
+//
 // The tool evaluates a closed set of filters. One term outside the set
 // voids the whole preview, because the web client voids a whole query
 // when one term is invalid. The tool then lists nothing and names each
@@ -368,21 +378,26 @@
 //     outside the set.
 //   - rate:<range> and rating:<range>: a copy whose roll has a tier in the
 //     range on the Aegis sheet. The tier of the roll is the tier that the
-//     get_item tool gives the copy. The web client also tests the tier of
-//     each set bonus of the item.
+//     get_item tool gives the copy. An item with a set bonus whose tier is
+//     in the range also matches.
 //   - ratebase:<range> and ratingbase:<range>: an item whose row on the
-//     Aegis sheet has a tier in the range, whatever the copy rolled. The
-//     web client also tests the tier of each set bonus of the item.
+//     Aegis sheet has a tier in the range, whatever the copy rolled. An
+//     item with a set bonus whose tier is in the range also matches.
 //   - misses:<range>: a copy whose count of missed perk columns is in the
 //     range, such as misses:>=1. Only a copy on a row with perk columns
 //     has the count.
+//   - setbonus:<value>: an item with a set bonus that the Aegis sheet
+//     rates at the tier of the value. The value is a tier from s to f, such
+//     as setbonus:a. The value 2pc:<tier> or 4pc:<tier> also requires that
+//     the bonus need 2 or 4 pieces of the set, such as setbonus:4pc:s. The
+//     web client rejects every other value, such as setbonus:3pc:s.
 //   - verdict:<value>: a copy whose verdict against the other copies on
 //     its row of the Aegis sheet is the value. The value is better, same,
 //     worse, only, or mixed. A weapon that the sheet does not list and a
 //     copy on a row without perk columns match no value.
-//   - pvprate:, pvprating:, pvpratebase:, pvpratingbase:, pvpmisses:, and
-//     pvpverdict: each match what the filter without the prefix pvp
-//     matches, but they read the PvP sheet.
+//   - pvprate:, pvprating:, pvpratebase:, pvpratingbase:, pvpmisses:,
+//     pvpsetbonus:, and pvpverdict: each match what the filter without the
+//     prefix pvp matches, but they read the PvP sheet.
 //
 // The rarity filters read the tier type of the definition, as DIM does,
 // and not the tier name that list_items shows. DIM reads a definition
@@ -401,6 +416,14 @@
 // ratebase:. The rating filters rate each roll as the Roll Ratings section
 // describes. A rating can therefore differ from the rating of the web
 // client in the ways that the section lists.
+//
+// The set bonuses of an item are the bonuses of its item set that the
+// sheet rates. The sheet rates each bonus by the sandbox perk that the
+// set definition names. rate:, ratebase:, and their other names test the
+// tier of each such bonus besides the tier of the roll or the row. An item
+// therefore matches when one of its set bonuses has a tier in the range,
+// whatever its roll. An item without an item set has no set bonus. The
+// rating filters include setbonus: and pvpsetbonus:.
 //
 // The verdict filters compare the perk columns that a copy hits with the
 // columns that each of its rivals hits, as the web client does. The
@@ -435,14 +458,12 @@
 // limit items, and the offset pages only the matches. The server leaves an
 // item undecided for these reasons:
 //
-//   - The server does not read set bonuses, which rate: and ratebase: also
-//     test. It treats a weapon as an item without set bonuses. Every other
-//     item is undecided at those filters, unless the tier of its roll or
-//     its row passes the range.
 //   - The profile lists no perks for a copy on a row with perk columns.
 //     The web client can still rate the copy from the definitions, so the
 //     copy is undecided at rate: and misses:. The server decides such a
-//     copy at ratebase:, and at rate: on a row without a tier.
+//     copy at ratebase:, and at rate: on a row without a tier. It also
+//     decides such a copy at rate: when a set bonus of the item has a tier
+//     in the range.
 //   - The profile lists no perks for a copy on a row with perk columns,
 //     or for one of its rivals. The web client gives no verdict to a copy
 //     whose sockets come from the definitions, and it leaves such a rival
@@ -453,9 +474,7 @@
 // does not match when one of its terms does not match, and an or matches
 // when one of its terms matches. Otherwise an undecided term makes the and
 // or the or undecided. A negated undecided term stays undecided. The query
-// is:weapon rate:>=a therefore decides every item outside the weapon
-// buckets. Among the weapons, it leaves undecided only a copy without perks
-// on a row with a tier and perk columns.
+// is:exotic rate:>=a therefore decides every item that is not exotic.
 //
 // The name filters fold the item name and the text before they compare
 // them, as the web client does. The fold removes letter case and
@@ -480,13 +499,14 @@
 // that the service stores. The web client pads each id with zeros to 20
 // digits and compares the padded ids as text, and so does the tool. It
 // counts the items that the rule editor previews, which the Autotag
-// Preview section describes, so emotes and finishers never count. The
-// claim moves the mark to the highest such id, the vault included. The web
-// client offers the rules only the new items outside the vault. The tool
-// therefore counts the new items in the vault and gives them to no rule.
-// It counts an equipment item in an account bucket as an item outside the
-// vault. DIM files such an item under the vault when its bucket has no
-// vault bucket. The web client then does not offer the item to the rules.
+// Preview section describes. Emotes, finishers, and the items that the
+// web client does not build therefore never count. The claim moves the
+// mark to the highest such id, the vault included. The web client offers
+// the rules only the new items outside the vault. The tool therefore
+// counts the new items in the vault and gives them to no rule. It counts
+// an equipment item in an account bucket as an item outside the vault.
+// DIM files such an item under the vault when its bucket has no vault
+// bucket. The web client then does not offer the item to the rules.
 //
 // Each new item goes to the first enabled rule, in rule order, whose query
 // matches it. A rule without a tag and without the vault flag still takes

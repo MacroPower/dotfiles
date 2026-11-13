@@ -189,6 +189,11 @@ type Character struct {
 // TagRule is the id of the autotag rule that set Tag. It is empty when a
 // person set the tag, and when Tag is outside the tags that the web
 // client defines.
+//
+// SetHash is the hash of the equipable item set of the definition, and 0
+// for an item without a set. SetKnown marks an item whose set the
+// definitions hold, and SetPerks then holds the sandbox perk hashes of the
+// set bonuses of the set.
 type Item struct {
 	Categories   []int64
 	InstanceID   string
@@ -205,6 +210,7 @@ type Item struct {
 	Note         string
 	Perks        []Perk
 	Stats        []Stat
+	SetPerks     []uint32
 	ClassType    int
 	AmmoType     int
 	TierType     int
@@ -214,6 +220,7 @@ type Item struct {
 	Quantity     int
 	Hash         uint32
 	Bucket       uint32
+	SetHash      uint32
 	Equipped     bool
 	Postmaster   bool
 	Lost         bool
@@ -224,6 +231,7 @@ type Item struct {
 	Equippable   bool
 	Lockable     bool
 	Favorite     bool
+	SetKnown     bool
 }
 
 // StatTotal returns the sum of the stat values of an armor piece. It reports
@@ -286,23 +294,28 @@ type Currency struct {
 // LoadoutSlots holds the number of loadout slots of each character, keyed
 // by character id. The count includes the empty slots, which Loadouts
 // leaves out.
+//
+// ItemSetsListed records whether the service index listed the
+// EquipableItemSet artifact for the definitions of the snapshot.
 type Snapshot struct {
-	Fetched      time.Time
-	byID         map[string]*Item
-	LoadoutSlots map[string]int
-	Characters   []Character
-	Items        []*Item
-	Buckets      []Bucket
-	Currencies   []Currency
-	Loadouts     []Loadout
+	Fetched        time.Time
+	byID           map[string]*Item
+	LoadoutSlots   map[string]int
+	Characters     []Character
+	Items          []*Item
+	Buckets        []Bucket
+	Currencies     []Currency
+	Loadouts       []Loadout
+	ItemSetsListed bool
 }
 
 // NewSnapshot resolves a Bungie profile against the definitions.
 func NewSnapshot(profile *Profile, defs *Defs, fetched time.Time) *Snapshot {
 	s := &Snapshot{
-		Fetched: fetched,
-		byID:    map[string]*Item{},
-		Buckets: slotBuckets(defs),
+		Fetched:        fetched,
+		byID:           map[string]*Item{},
+		Buckets:        slotBuckets(defs),
+		ItemSetsListed: defs.ItemSetsListed,
 	}
 
 	for _, c := range profile.Characters.Data {
@@ -466,6 +479,7 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 		Categories:   itemCategories(def.Categories),
 		ClassType:    def.ClassType,
 		AmmoType:     def.AmmoType,
+		SetHash:      def.SetHash,
 		Owner:        owner,
 		Quantity:     pi.Quantity,
 		Equipped:     equipped,
@@ -481,6 +495,12 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 
 	if def.ClassType != classAny {
 		item.Class = defs.Classes[def.ClassType]
+	}
+
+	perks, ok := defs.ItemSets[def.SetHash]
+	if def.SetHash != 0 && ok {
+		item.SetKnown = true
+		item.SetPerks = perks
 	}
 
 	damage := def.DamageType

@@ -625,6 +625,8 @@ func newServer(h *handler) *mcp.Server {
 			"When the call passes a query, the result counts the owned items that the query matches " +
 			"at the moment of the call, as if no other rule existed. " +
 			"It counts apart from the matches the items whose outcome the server cannot decide. " +
+			"The count leaves out each item whose item set the EquipableItemSet definitions lack, " +
+			"as preview_autotag_rule does, and a line after the count gives the number of such items. " +
 			"For a query that reads a game mode without ratings, the result gives the reason of that mode " +
 			"in place of the counts.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool)},
@@ -637,7 +639,10 @@ func newServer(h *handler) *mcp.Server {
 			"The query uses the search syntax of the web client. " +
 			"The tool evaluates it over the items that the rule editor of the web client previews, " +
 			"which are the instanced weapons, armor, and other equipment in every location, the vault included, " +
-			"except emotes and finishers. Each row has the columns of list_items. " +
+			"except emotes and finishers. " +
+			"The tool also leaves out each item whose item set the EquipableItemSet definitions lack, " +
+			"because the web client builds no such item, and the last line of the result counts those items. " +
+			"Each row has the columns of list_items. " +
 			"The tool evaluates a closed set of filters, which are " + listWithAnd(supportedKeywords()) + ". " +
 			"Each is: word also works as not:<word>. " +
 			"name:<text> matches an item with a word in its name that starts with the text, " +
@@ -649,14 +654,17 @@ func newServer(h *handler) *mcp.Server {
 			"and rate:>=b means B or better. " +
 			"ratebase:<range> tests the tier of the row of the item on the sheet, whatever the copy rolled, " +
 			"and misses:<range> tests the number of perk columns that the roll missed. " +
+			"setbonus:<tier> matches armor with a set bonus that the sheet rates at that tier, such as setbonus:a, " +
+			"and setbonus:2pc:<tier> and setbonus:4pc:<tier> also test the number of pieces of the bonus. " +
+			"rate: and ratebase: also test the tier of each set bonus of the item. " +
 			"verdict:<value> compares the perk columns that a copy hits with those of the other copies " +
 			"on its sheet row, the vault included, and the value is better, same, worse, only, or mixed. " +
 			"rating: and ratingbase: are other names of rate: and ratebase:, " +
 			"and the forms with the prefix pvp read the PvP sheet. " +
 			"The tool lists in a section of its own each item whose outcome the server cannot decide, " +
 			"with the reason, and never counts such an item as a match. " +
-			"For example, the server does not read set bonuses, " +
-			"so it leaves items other than weapons undecided at rate: and ratebase:. " +
+			"For example, the profile lists no perks for some copies, " +
+			"so the server leaves such a copy on a sheet row with perk columns undecided at rate: and misses:. " +
 			"It also leaves a copy undecided at verdict: when the profile lists no perks for the copy " +
 			"or for another copy on its sheet row. " +
 			"A query that reads a game mode without ratings returns an error with the reason of that mode. " +
