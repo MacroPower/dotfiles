@@ -40,6 +40,13 @@ task file, the commit message (`msg.txt`), and the review history. The
 repository's git config records the path of the run directory, so every
 command finds it.
 
+The run directory also holds a copy of `close-task.js`. The `init`, `next`,
+and `args` commands of `ultraclose.py` each refresh that copy from the skill
+directory. Pass only the copy to Workflow. Workflow refuses a script file
+that has more than one hard link. The skill directory holds symlinks into
+the Nix store. Store optimisation can add a hard link to a store file in
+the middle of a run.
+
 ## Scope
 
 The queue is every open task that is not an epic, including each task that
@@ -99,9 +106,10 @@ Repeat until the run ends:
    running tasks share a file outside the shared globs. It prints one input
    object per started task.
 2. Launch one Workflow per object:
-   `Workflow({scriptPath: "${CLAUDE_SKILL_DIR}/scripts/close-task.js", args: <object>})`.
-   One task per Workflow lets each task land the moment it finishes. Leave
-   `model` unset so that agents follow the session model.
+   `Workflow({scriptPath: "<run>/close-task.js", args: <object>})`. The
+   `run` field of the object holds the path of the run directory. One task
+   per Workflow lets each task land the moment it finishes. Leave `model`
+   unset so that agents follow the session model.
 3. Keep `ultraclose.py watch` running in a background Bash call. It exits
    when free disk space runs low.
 4. End the turn. Each Workflow completion wakes you with a result. Act on

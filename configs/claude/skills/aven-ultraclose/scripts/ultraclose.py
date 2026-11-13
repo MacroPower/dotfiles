@@ -2,9 +2,14 @@
 """Scheduler and landing queue for the aven-ultraclose skill.
 
 Run every command from inside the repository. The run directory holds
-state.json, rules.md, notes.md, logs/, and one directory per task. The
-repository's git config records its path as ultraclose.run, so a later
-session finds the run without arguments.
+state.json, rules.md, notes.md, logs/, one directory per task, and a copy
+of close-task.js. The repository's git config records its path as
+ultraclose.run, so a later session finds the run without arguments.
+
+The init, next, and args commands each copy close-task.js from the
+directory of this script into the run directory. Pass that copy to the
+Workflow tool as scriptPath. The tool refuses the script in the skill
+directory after Nix store optimisation hard-links it.
 
   init --run DIR [--limit N] [--rounds N] [--check CMD]
        [--shared GLOB]... [--disk-floor-gb N] [--force]
@@ -46,6 +51,9 @@ DEFAULT_SHARED = [
     "*/testdata/*",
     "*/__tests__/*",
 ]
+# The Workflow script, which sits beside this file. Each run keeps a copy
+# of it under the same name.
+WORKFLOW = "close-task.js"
 
 
 def die(msg):
@@ -175,6 +183,36 @@ def workflow_args(st, run, ref, resume=None):
     }
 
 
+def install_workflow(run):
+    """Write the copy of close-task.js that the Workflow tool loads.
+
+    The Workflow tool refuses a script file that has more than one hard
+    link. The skill directory holds symlinks into the Nix store, where
+    store optimisation can add a hard link to a file in the middle of a
+    run. The copy in the run directory is a regular file with one link,
+    and its content matches the script beside this file.
+
+    The tool also refuses a script file that a rename replaces during
+    the load. A copy that the tool can load stays in place, so a next or
+    args command can run at the same time as a Workflow launch.
+    """
+    script = Path(__file__).with_name(WORKFLOW).read_bytes()
+    copy = run / WORKFLOW
+    loadable = (
+        copy.is_file()
+        and not copy.is_symlink()
+        and copy.stat().st_nlink == 1
+        and copy.read_bytes() == script
+    )
+    if not loadable:
+        # A rename gives the copy a new inode, so the links of the old
+        # file do not carry to it.
+        tmp = run / f"{WORKFLOW}.tmp"
+        tmp.unlink(missing_ok=True)
+        tmp.write_bytes(script)
+        tmp.replace(copy)
+
+
 def cmd_init(a):
     repo = main_checkout()
     old = sh("git", "config", "--get", "ultraclose.run", cwd=repo, check=False)
@@ -187,6 +225,7 @@ def cmd_init(a):
     run = Path(a.run).resolve()
     for d in (run, run / "tasks", run / "logs"):
         d.mkdir(parents=True, exist_ok=True)
+    install_workflow(run)
     ignored = sh(
         "git", "check-ignore", "-q", ".claude/worktrees/x", cwd=repo, check=False
     )
@@ -284,6 +323,7 @@ def cmd_next(a):
     repo = main_checkout()
     run = run_dir(repo)
     with state(run) as st:
+        install_workflow(run)
         launched = []
         for ref in pick(st):
             start(st, run, ref)
@@ -296,6 +336,7 @@ def cmd_args(a):
     run = run_dir(repo)
     with state(run) as st:
         t = st["tasks"].get(a.ref) or die(f"unknown task {a.ref}")
+        install_workflow(run)
         history = run / "tasks" / a.ref / "history.md"
         done = 0
         if history.exists():
