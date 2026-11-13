@@ -22,13 +22,14 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v3-"
+	defsCachePrefix = "defs-v4-"
 
-	artifactCore    = "core"
-	artifactBuckets = "InventoryBucket"
-	artifactDamage  = "DamageType"
-	artifactClasses = "Class"
-	artifactStats   = "Stat"
+	artifactCore       = "core"
+	artifactBuckets    = "InventoryBucket"
+	artifactDamage     = "DamageType"
+	artifactClasses    = "Class"
+	artifactStats      = "Stat"
+	artifactActivities = "Activity"
 )
 
 // Bungie DestinyItemType values that classify gear and plugs. Bungie
@@ -88,16 +89,26 @@ type BucketDef struct {
 	Account  bool   `json:"account,omitempty"`
 }
 
+// ActivityDef is the subset of a Bungie activity definition that the server
+// reads. Name is the full name that the definition stores, with its
+// difficulty labels, such as "Vault of Glass: Master".
+type ActivityDef struct {
+	Name string `json:"name"`
+}
+
 // Defs holds the Destiny definitions that turn the hashes of a Bungie
-// profile into names. The Bungie enum value keys DamageTypes and Classes,
-// and the definition hash keys the other maps.
+// profile and of the activity history into names. The Bungie enum value
+// keys DamageTypes and Classes, and the definition hash keys the other
+// maps. Activities is empty when the service index lists no activity
+// artifact.
 type Defs struct {
-	Items       map[uint32]ItemDef   `json:"items"`
-	Buckets     map[uint32]BucketDef `json:"buckets"`
-	Stats       map[uint32]string    `json:"stats"`
-	DamageTypes map[int]string       `json:"damageTypes"`
-	Classes     map[int]string       `json:"classes"`
-	Version     string               `json:"version"`
+	Items       map[uint32]ItemDef     `json:"items"`
+	Buckets     map[uint32]BucketDef   `json:"buckets"`
+	Stats       map[uint32]string      `json:"stats"`
+	Activities  map[uint32]ActivityDef `json:"activities"`
+	DamageTypes map[int]string         `json:"damageTypes"`
+	Classes     map[int]string         `json:"classes"`
+	Version     string                 `json:"version"`
 }
 
 // TraitNames maps the lowercase name of every weapon trait to its display
@@ -226,6 +237,7 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 		Items:       map[uint32]ItemDef{},
 		Buckets:     map[uint32]BucketDef{},
 		Stats:       map[uint32]string{},
+		Activities:  map[uint32]ActivityDef{},
 		DamageTypes: map[int]string{},
 		Classes:     map[int]string{},
 	}
@@ -259,6 +271,20 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 
 		err := l.read(ctx, files[0], func(r io.Reader) error {
 			return decodeTable(r, add)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// The inventory tools do not read the activity names, so they keep
+	// working on a deployment whose index lists no activity artifact.
+	files = index.Files[artifactActivities]
+	if len(files) > 0 {
+		err := l.read(ctx, files[0], func(r io.Reader) error {
+			return decodeTable(r, func(hash uint32, row namedRow) {
+				defs.Activities[hash] = ActivityDef(row)
+			})
 		})
 		if err != nil {
 			return nil, err
@@ -348,8 +374,8 @@ func decodeItems(r io.Reader, items map[uint32]ItemDef) error {
 	return nil
 }
 
-// tableRow is the subset of a definition table record that [decodeTable]
-// reads.
+// tableRow is the subset of a full definition table record that the
+// loader reads. The record keeps its name under displayProperties.
 type tableRow struct {
 	DisplayProperties struct {
 		Name string `json:"name"`
@@ -374,9 +400,17 @@ func (row tableRow) bucket() BucketDef {
 	}
 }
 
+// namedRow is the subset of a projected definition table record that the
+// loader reads. The service build projects some tables, such as Activity,
+// to records that carry the name at the top level.
+type namedRow struct {
+	Name string `json:"name"`
+}
+
 // decodeTable reads a JSON object that maps definition hashes to records.
-func decodeTable(r io.Reader, add func(hash uint32, row tableRow)) error {
-	var table map[string]tableRow
+// The caller picks the record type Row, such as [tableRow] or [namedRow].
+func decodeTable[Row any](r io.Reader, add func(hash uint32, row Row)) error {
+	var table map[string]Row
 
 	err := json.NewDecoder(r).Decode(&table)
 	if err != nil {

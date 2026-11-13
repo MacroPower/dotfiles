@@ -597,6 +597,60 @@ func TestResolveOwner(t *testing.T) {
 	}
 }
 
+func TestResolveCharacter(t *testing.T) {
+	t.Parallel()
+
+	s := fixtureSnapshot(t)
+
+	shared := fixtureSnapshot(t)
+	shared.Characters = append(shared.Characters, Character{ID: "c3", Class: "Titan"})
+
+	// The fixture Hunter has the lowest character id and the latest play
+	// time. The Titan in titanLast has the latest play time instead, so the
+	// empty name must follow the play time and not the id.
+	var profile Profile
+
+	require.NoError(t, json.Unmarshal([]byte(fixtureProfile), &profile))
+
+	titan := profile.Characters.Data[titanID]
+	titan.LastPlayed = fixtureNow
+	profile.Characters.Data[titanID] = titan
+
+	titanLast := NewSnapshot(&profile, fixtureDefs(), fixtureNow)
+
+	tests := map[string]struct {
+		err      error
+		snapshot *Snapshot
+		name     string
+		want     string
+	}{
+		"character id":                {snapshot: s, name: "c2", want: titanID},
+		"unique class":                {snapshot: s, name: "HUNTER", want: hunterID},
+		"most recently played hunter": {snapshot: s, name: "", want: hunterID},
+		"most recently played titan":  {snapshot: titanLast, name: "", want: titanID},
+		"vault":                       {snapshot: s, name: "Vault", err: ErrUnknownTarget},
+		"unknown name":                {snapshot: s, name: "tower", err: ErrUnknownTarget},
+		"shared class":                {snapshot: shared, name: "titan", err: ErrUnknownTarget},
+		"no characters":               {snapshot: &Snapshot{}, name: "", err: ErrUnknownTarget},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := tc.snapshot.ResolveCharacter(tc.name)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got.ID)
+		})
+	}
+}
+
 // groupSnapshot holds a reissue of Fatebringer under its own item hash and
 // a Timelost copy. It also holds a weapon whose name contains the name of
 // another weapon, two weapons whose names differ only in letter case, and

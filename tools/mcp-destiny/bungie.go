@@ -184,6 +184,41 @@ type Profile struct {
 	} `json:"profileCurrencies"`
 }
 
+// HistoryActivity is the subset of a Bungie DestinyHistoricalStatsActivity
+// that the server reads. ReferenceID is the hash of the activity
+// definition. DirectorActivityHash is the hash of the activity that the
+// director launched, which differs from ReferenceID for a run that a
+// playlist started. InstanceID identifies the run.
+type HistoryActivity struct {
+	InstanceID           string `json:"instanceId"`
+	ReferenceID          uint32 `json:"referenceId"`
+	DirectorActivityHash uint32 `json:"directorActivityHash"`
+	Mode                 int    `json:"mode"`
+}
+
+// HistoryValue is the subset of a Bungie DestinyHistoricalStatsValue that
+// the server reads.
+type HistoryValue struct {
+	Basic struct {
+		Value float64 `json:"value"`
+	} `json:"basic"`
+}
+
+// HistoryPeriod is one Bungie DestinyHistoricalStatsPeriodGroup, which
+// records one run of an activity by one character. Period is the start time
+// of the run. Values maps each stat id, such as "kills", to its value.
+type HistoryPeriod struct {
+	Period   time.Time               `json:"period"`
+	Values   map[string]HistoryValue `json:"values"`
+	Activity HistoryActivity         `json:"activityDetails"`
+}
+
+// Value returns the value of the stat with the id key, or zero when the
+// run lacks the stat.
+func (p HistoryPeriod) Value(key string) float64 {
+	return p.Values[key].Basic.Value
+}
+
 // ItemAction identifies one item for a transfer, an equip, a Postmaster
 // pull, or a lock change. CharacterID names the character that holds the
 // item on a transfer to the vault or a lock change, and the character that
@@ -281,6 +316,39 @@ func (b *Bungie) Profile(ctx context.Context, creds Credentials, m Membership) (
 	}
 
 	return &out, nil
+}
+
+// ActivityHistory fetches one page of the runs of a character, newest
+// first. Page 0 holds the newest count runs. A page past the last run
+// returns no rows, because Bungie leaves the activities out of that
+// response.
+//
+// The web client requests this page without the changing query parameter
+// of [*Bungie.Profile], and so does ActivityHistory. A page that Bungie
+// serves from its cache might therefore miss a run that ended in the last
+// minute.
+func (b *Bungie) ActivityHistory(
+	ctx context.Context,
+	creds Credentials,
+	m Membership,
+	characterID string,
+	count, page int,
+) ([]HistoryPeriod, error) {
+	path := fmt.Sprintf(
+		"/Destiny2/%d/Account/%s/Character/%s/Stats/Activities/?count=%d&page=%d",
+		m.Type, m.ID, characterID, count, page,
+	)
+
+	var out struct {
+		Activities []HistoryPeriod `json:"activities"`
+	}
+
+	err := b.call(ctx, creds, http.MethodGet, path, nil, &out)
+	if err != nil {
+		return nil, err
+	}
+
+	return out.Activities, nil
 }
 
 // Transfer moves an item between the vault and a character.

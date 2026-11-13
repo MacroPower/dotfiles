@@ -349,6 +349,15 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleCompareDuplicates)
 
 	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolListActivityHistory,
+		Description: "List the activities that the user played most recently, newest first, such as raids, strikes, " +
+			"and Crucible matches. Each row gives the start time, the character, the activity name, the duration, " +
+			"whether the run was completed, the kills, the deaths, and the instance id of the run. " +
+			"Without character, it merges the runs of every character.",
+		Annotations: readOnly,
+	}, h.handleListActivityHistory)
+
+	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolMoveItems,
 		Description: "Move item instances to the vault or to a character in the live game, and optionally equip them. " +
 			"Pulls items from the Postmaster first. Before it transfers an equipped item, it equips another item " +

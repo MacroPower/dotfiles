@@ -9,9 +9,10 @@
 // The server talks to two APIs. Agg's Destiny Vault Manager stores tags,
 // notes, perk preferences, and autotag rules, serves the Destiny definition
 // artifacts, and brokers the Bungie OAuth exchange. The Bungie platform API
-// serves the inventory and performs transfers, equips, and lock changes.
-// The server joins a Bungie profile with the definitions to give every item
-// a name, a type, perks, and stats.
+// serves the inventory and the activity history, and it performs
+// transfers, equips, and lock changes. The server joins a Bungie profile
+// with the definitions to give every item a name, a type, perks, and
+// stats. The definitions also name each activity of the history.
 //
 // Tags follow the web client. An item carries at most one of the tags that
 // the web client defines, and the favorite mark is a separate flag. The web

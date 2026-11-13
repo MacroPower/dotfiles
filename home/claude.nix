@@ -3473,6 +3473,7 @@ in
           "mcp__destiny__list_notes"
           "mcp__destiny__list_perk_preferences"
           "mcp__destiny__list_autotag_rules"
+          "mcp__destiny__list_activity_history"
         ];
         # Each of these tools changes the live game inventory or the data
         # that the web client syncs.
@@ -3489,7 +3490,7 @@ in
           "mcp__destiny__set_autotag_enabled"
         ];
         instructions.items = [
-          "Use `mcp__destiny__*` tools for the Destiny 2 inventory, tags, and notes in Agg's Destiny Vault Manager."
+          "Use `mcp__destiny__*` tools for Destiny 2 account data in Agg's Destiny Vault Manager, such as the inventory, tags, notes, and activity history."
         ];
       };
 

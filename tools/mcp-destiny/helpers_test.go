@@ -105,6 +105,66 @@ const fixtureProfile = `{
 	}
 }`
 
+// Activity history paths of the fixture characters.
+const (
+	pathHunterHistory = "/Destiny2/3/Account/4611/Character/c1/Stats/Activities/"
+	pathTitanHistory  = "/Destiny2/3/Account/4611/Character/c2/Stats/Activities/"
+)
+
+// fixtureHunterHistory is the Bungie response body of page 0 of the
+// activity history of the Hunter. The newest run is a raid that the
+// definitions name by its reference id. The second run comes from a
+// playlist, so only its director activity hash has a definition. Neither
+// hash of the third run has a definition with a name, and the run lacks
+// the kills and the deaths.
+const fixtureHunterHistory = `{"ErrorCode": 1, "Response": {"activities": [
+	{"period": "2026-11-11T21:00:00Z",
+	 "activityDetails": {"referenceId": 3022541210, "directorActivityHash": 3022541210, "instanceId": "9001",
+	  "mode": 4, "isPrivate": false},
+	 "values": {
+		"activityDurationSeconds": {"statId": "activityDurationSeconds", "basic": {"value": 3723, "displayValue": "1h 2m"}},
+		"completed": {"basic": {"value": 1}},
+		"kills": {"basic": {"value": 84}},
+		"deaths": {"basic": {"value": 2}}
+	 }},
+	{"period": "2026-11-10T19:30:00Z",
+	 "activityDetails": {"referenceId": 1111, "directorActivityHash": 2222, "instanceId": "9002", "mode": 3},
+	 "values": {
+		"activityDurationSeconds": {"basic": {"value": 1290}},
+		"completed": {"basic": {"value": 1}},
+		"kills": {"basic": {"value": 150}},
+		"deaths": {"basic": {"value": 0}}
+	 }},
+	{"period": "2026-11-09T08:00:00Z",
+	 "activityDetails": {"referenceId": 3333, "directorActivityHash": 3334, "instanceId": "9003", "mode": 6},
+	 "values": {
+		"activityDurationSeconds": {"basic": {"value": 45}},
+		"completed": {"basic": {"value": 0}}
+	 }}
+]}}`
+
+// fixtureTitanHistory is the Bungie response body of page 0 of the
+// activity history of the Titan. Both hashes of the newest run have a
+// definition, and the two definitions differ.
+const fixtureTitanHistory = `{"ErrorCode": 1, "Response": {"activities": [
+	{"period": "2026-11-11T18:00:00Z",
+	 "activityDetails": {"referenceId": 4444, "directorActivityHash": 5555, "instanceId": "9004", "mode": 10},
+	 "values": {
+		"activityDurationSeconds": {"basic": {"value": 600}},
+		"completed": {"basic": {"value": 0}},
+		"kills": {"basic": {"value": 12}},
+		"deaths": {"basic": {"value": 9}}
+	 }},
+	{"period": "2026-11-01T12:00:00Z",
+	 "activityDetails": {"referenceId": 2222, "directorActivityHash": 2222, "instanceId": "9005", "mode": 3},
+	 "values": {
+		"activityDurationSeconds": {"basic": {"value": 1800}},
+		"completed": {"basic": {"value": 1}},
+		"kills": {"basic": {"value": 60}},
+		"deaths": {"basic": {"value": 1}}
+	 }}
+]}}`
+
 func fixtureDefs() *Defs {
 	weapon := func(name, typeName, tier string, bucket uint32, damage int) ItemDef {
 		return ItemDef{
@@ -176,7 +236,14 @@ func fixtureDefs() *Defs {
 				Account:  true,
 			},
 		},
-		Stats:       map[uint32]string{1: "Range", 2: "Health", 3: "Grenade"},
+		Stats: map[uint32]string{1: "Range", 2: "Health", 3: "Grenade"},
+		Activities: map[uint32]ActivityDef{
+			3022541210: {Name: "Vault of Glass: Master"},
+			2222:       {Name: "Vanguard Ops"},
+			3334:       {},
+			4444:       {Name: "Control"},
+			5555:       {Name: "Crucible"},
+		},
 		DamageTypes: map[int]string{1: "Kinetic", 3: "Solar"},
 		Classes:     map[int]string{0: "Titan", 1: "Hunter", 2: "Warlock"},
 	}
@@ -194,11 +261,13 @@ func fixtureSnapshot(t *testing.T) *Snapshot {
 
 var fixtureNow = time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
 
-// request is one request that a fake server received.
+// request is one request that a fake server received. Query is the raw
+// query string of the URL.
 type request struct {
 	Body   map[string]any
 	Method string
 	Path   string
+	Query  string
 	Auth   string
 }
 
@@ -214,7 +283,12 @@ func (r *recorder) record(t *testing.T, req *http.Request) request {
 	raw, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 
-	out := request{Method: req.Method, Path: req.URL.Path, Auth: req.Header.Get("Authorization")}
+	out := request{
+		Method: req.Method,
+		Path:   req.URL.Path,
+		Query:  req.URL.RawQuery,
+		Auth:   req.Header.Get("Authorization"),
+	}
 
 	if len(raw) > 0 {
 		require.NoError(t, json.Unmarshal(raw, &out.Body))
@@ -263,6 +337,8 @@ type fakes struct {
 
 	// serviceData holds the GET response body of each service path.
 	serviceData map[string]string
+	// bungieData holds the GET response body of each Bungie path.
+	bungieData map[string]string
 	// staleSession and staleAccess are tokens that the fakes reject.
 	staleSession string
 	staleAccess  string
@@ -276,6 +352,10 @@ func newFakes(t *testing.T) *fakes {
 	f := &fakes{
 		service: &recorder{},
 		bungie:  &recorder{},
+		bungieData: map[string]string{
+			pathHunterHistory: fixtureHunterHistory,
+			pathTitanHistory:  fixtureTitanHistory,
+		},
 		serviceData: map[string]string{
 			"/api/tags": `{"defs": [], "items": [
 				{"instanceId": "1001", "itemHash": 100, "tagId": "keep", "removed": false, "updatedAt": 5},
@@ -337,6 +417,8 @@ func newFakes(t *testing.T) *fakes {
 
 		case req.Path == "/Destiny2/3/Profile/4611/":
 			writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+fixtureProfile+`}`)
+		case req.Method == http.MethodGet && f.bungieData[req.Path] != "":
+			writeJSON(t, w, http.StatusOK, f.bungieData[req.Path])
 		case req.Method == http.MethodPost && f.bungieError != "":
 			writeJSON(t, w, http.StatusOK, f.bungieError)
 		case req.Method == http.MethodPost:

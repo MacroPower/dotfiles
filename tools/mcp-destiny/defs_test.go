@@ -14,9 +14,10 @@ import (
 )
 
 // fakeArtifacts is an [ArtifactSource] that serves artifacts from memory
-// and counts the fetches.
+// and counts the fetches. Index lists the files of each artifact.
 type fakeArtifacts struct {
 	files   map[string]string
+	index   map[string][]string
 	version string
 	fetched []string
 }
@@ -24,6 +25,14 @@ type fakeArtifacts struct {
 func newFakeArtifacts() *fakeArtifacts {
 	return &fakeArtifacts{
 		version: "245114.26/1",
+		index: map[string][]string{
+			artifactCore:       {"core-0.json", "core-1.json"},
+			artifactBuckets:    {"buckets.json"},
+			artifactDamage:     {"damage.json"},
+			artifactClasses:    {"classes.json"},
+			artifactStats:      {"stats.json"},
+			artifactActivities: {"activities.json"},
+		},
 		files: map[string]string{
 			"core-0.json": `[
 				{"hash": 100, "displayProperties": {"name": "Fatebringer", "description": "Fortune favors.", "icon": "/a.png"},
@@ -48,21 +57,19 @@ func newFakeArtifacts() *fakeArtifacts {
 			"damage.json":  `{"3373582085": {"displayProperties": {"name": "Kinetic"}, "enumValue": 1}}`,
 			"classes.json": `{"671679327": {"displayProperties": {"name": "Hunter"}, "classType": 1}}`,
 			"stats.json":   `{"1240592695": {"displayProperties": {"name": "Range"}}}`,
+			// The service build projects each activity to a record with a
+			// top-level name.
+			"activities.json": `{
+				"3022541210": {"hash": 3022541210, "name": "Vault of Glass: Master", "description": "Raid.",
+				 "activityTypeHash": 2043403989, "modeTypes": [4], "isPlaylist": false},
+				"2693136600": {"hash": 2693136600, "name": "Deep Stone Crypt", "modeTypes": [4]}
+			}`,
 		},
 	}
 }
 
 func (f *fakeArtifacts) Config(context.Context) (ServiceConfig, error) {
-	return ServiceConfig{Artifacts: ArtifactIndex{
-		ManifestVersion: f.version,
-		Files: map[string][]string{
-			artifactCore:    {"core-0.json", "core-1.json"},
-			artifactBuckets: {"buckets.json"},
-			artifactDamage:  {"damage.json"},
-			artifactClasses: {"classes.json"},
-			artifactStats:   {"stats.json"},
-		},
-	}}, nil
+	return ServiceConfig{Artifacts: ArtifactIndex{ManifestVersion: f.version, Files: f.index}}, nil
 }
 
 func (f *fakeArtifacts) Artifact(_ context.Context, file string) (io.ReadCloser, error) {
@@ -132,16 +139,20 @@ func TestDefsLoader(t *testing.T) {
 				Account:  true,
 			},
 		},
-		Stats:       map[uint32]string{1240592695: "Range"},
+		Stats: map[uint32]string{1240592695: "Range"},
+		Activities: map[uint32]ActivityDef{
+			3022541210: {Name: "Vault of Glass: Master"},
+			2693136600: {Name: "Deep Stone Crypt"},
+		},
 		DamageTypes: map[int]string{1: "Kinetic"},
 		Classes:     map[int]string{1: "Hunter"},
 	}, got)
-	assert.Len(t, source.fetched, 6)
+	assert.Len(t, source.fetched, 7)
 
 	// Writing the cache removes the file of the older layout.
 	files, err := filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
-	assert.Equal(t, []string{filepath.Join(dir, "defs-v3-245114.26_1.json")}, files)
+	assert.Equal(t, []string{filepath.Join(dir, defsCachePrefix+"245114.26_1.json")}, files)
 
 	// A second call inside the recheck window asks the service nothing.
 	source.fetched = nil
@@ -164,11 +175,24 @@ func TestDefsLoader(t *testing.T) {
 	rebuilt, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "245200.1", rebuilt.Version)
-	assert.Len(t, source.fetched, 6)
+	assert.Len(t, source.fetched, 7)
 
 	files, err = filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
-	assert.Equal(t, []string{filepath.Join(dir, "defs-v3-245200.1.json")}, files)
+	assert.Equal(t, []string{filepath.Join(dir, defsCachePrefix+"245200.1.json")}, files)
+}
+
+func TestDefsLoaderWithoutActivities(t *testing.T) {
+	t.Parallel()
+
+	source := newFakeArtifacts()
+	delete(source.index, artifactActivities)
+
+	got, err := NewDefsLoader(source, "").Get(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, got.Activities)
+	assert.Len(t, got.Items, 3)
+	assert.NotContains(t, source.fetched, "activities.json")
 }
 
 func TestDefsLoaderErrors(t *testing.T) {
@@ -184,6 +208,14 @@ func TestDefsLoaderErrors(t *testing.T) {
 		},
 		"table key is not a hash": {
 			break_: func(f *fakeArtifacts) { f.files["stats.json"] = `{"range": {}}` },
+			err:    ErrDefs,
+		},
+		"activity table is not an object": {
+			break_: func(f *fakeArtifacts) { f.files["activities.json"] = `[]` },
+			err:    ErrDefs,
+		},
+		"table artifact is missing from the index": {
+			break_: func(f *fakeArtifacts) { delete(f.index, artifactStats) },
 			err:    ErrDefs,
 		},
 		"artifact fetch fails": {

@@ -39,6 +39,7 @@ const (
 	toolSaveAutotagRule     = "save_autotag_rule"
 	toolRemoveAutotagRule   = "remove_autotag_rule"
 	toolSetAutotagEnabled   = "set_autotag_enabled"
+	toolListActivityHistory = "list_activity_history"
 )
 
 // Note kinds that the service stores.
@@ -60,6 +61,12 @@ const (
 
 	defaultWeaponLimit = 10
 	maxWeaponLimit     = 50
+
+	defaultHistoryLimit = 25
+
+	// maxHistoryLimit is the page size that the web client requests from
+	// the activity history.
+	maxHistoryLimit = 250
 
 	// maxBatch caps the instance ids of one write. The service rejects a
 	// tag write of more than 1000 rows, and an item contributes at most a
@@ -130,6 +137,13 @@ type CompareDuplicatesInput struct {
 	InstanceID string `json:"instance_id,omitzero" jsonschema:"Instance id of one copy, from list_items"`
 	Limit      int    `json:"limit,omitzero"       jsonschema:"Without name and instance_id: maximum number of weapons to return (default 10, maximum 50)"`
 	Offset     int    `json:"offset,omitzero"      jsonschema:"Without name and instance_id: number of weapons to skip (default 0)"`
+}
+
+// ListActivityHistoryInput is the input schema of the
+// list_activity_history tool.
+type ListActivityHistoryInput struct {
+	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to list the runs of every character"`
+	Limit     int    `json:"limit,omitzero"     jsonschema:"Maximum number of runs to return, newest first (default 25, maximum 250)"`
 }
 
 // MoveItemsInput is the input schema of the move_items tool.
@@ -426,6 +440,91 @@ func (h *handler) handleCompareDuplicates(
 	page := dupes[offset:min(offset+limit, len(dupes))]
 
 	return textResult(renderDuplicates(s, page, offset, len(dupes))), nil, nil
+}
+
+func (h *handler) handleListActivityHistory(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in ListActivityHistoryInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	limit := in.Limit
+	if limit <= 0 {
+		limit = defaultHistoryLimit
+	}
+
+	limit = min(limit, maxHistoryLimit)
+
+	s, err := h.loadSnapshot(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolListActivityHistory, err)
+	}
+
+	characters := s.Characters
+	scope := "the account"
+
+	if in.Character != "" {
+		c, err := s.ResolveCharacter(in.Character)
+		if err != nil {
+			return h.toolError(ctx, toolListActivityHistory, err)
+		}
+
+		characters = []Character{c}
+		scope = s.OwnerLabel(c.ID)
+	}
+
+	membership, err := h.membership(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolListActivityHistory, err)
+	}
+
+	defs, err := h.defs.Get(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolListActivityHistory, fmt.Errorf("loading definitions: %w", err))
+	}
+
+	pages := make([][]HistoryPeriod, len(characters))
+
+	err = h.withBungie(ctx, func(creds Credentials) error {
+		var wg sync.WaitGroup
+
+		errs := make([]error, len(characters))
+
+		// Each of the newest limit runs of the account is among the newest
+		// limit runs of its character. Page 0 of each character therefore
+		// holds them all.
+		for i, c := range characters {
+			wg.Go(func() {
+				pages[i], errs[i] = h.bungie.ActivityHistory(ctx, creds, membership, c.ID, limit, 0)
+				if errs[i] != nil {
+					errs[i] = fmt.Errorf("character %s: %w", c.ID, errs[i])
+				}
+			})
+		}
+
+		wg.Wait()
+
+		return errors.Join(errs...)
+	})
+	if err != nil {
+		return h.toolError(ctx, toolListActivityHistory, fmt.Errorf("fetching the activity history: %w", err))
+	}
+
+	var runs []historyRun
+
+	for i, c := range characters {
+		for _, period := range pages[i] {
+			runs = append(runs, historyRun{HistoryPeriod: period, Character: s.OwnerLabel(c.ID)})
+		}
+	}
+
+	slices.SortStableFunc(runs, func(a, b historyRun) int { return b.Period.Compare(a.Period) })
+
+	runs = runs[:min(limit, len(runs))]
+
+	return textResult(renderActivityHistory(defs, runs, scope, limit)), nil, nil
 }
 
 func (h *handler) handleMoveItems(

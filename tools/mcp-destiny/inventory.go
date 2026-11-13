@@ -57,8 +57,9 @@ var (
 	// or a Sort of "stat" in a filter without a Stat.
 	ErrInvalidFilter = errors.New("invalid filter")
 
-	// ErrUnknownTarget reports a location name that matches neither the
-	// vault nor exactly one character.
+	// ErrUnknownTarget reports a location or character name that the caller
+	// does not accept, such as a class name that several characters share.
+	// [*Snapshot.ResolveCharacter] also rejects the vault with it.
 	ErrUnknownTarget = errors.New("unknown location")
 
 	// ErrUnknownWeapon reports a weapon name that selects no
@@ -548,30 +549,67 @@ func (s *Snapshot) ResolveOwner(name string) (string, error) {
 		return ownerVault, nil
 	}
 
-	var matches []string
-
-	for _, c := range s.Characters {
-		if c.ID == name {
-			return c.ID, nil
-		}
-
-		if strings.EqualFold(c.Class, name) {
-			matches = append(matches, c.ID)
-		}
+	c, err := s.matchCharacter(name, `"vault", a character id, or a class name`)
+	if err != nil {
+		return "", err
 	}
 
-	if len(matches) == 1 {
-		return matches[0], nil
+	return c.ID, nil
+}
+
+// ResolveCharacter returns the character that name selects. A name is a
+// character id or a class name that exactly one character has, in any
+// letter case. An empty name selects the most recently played character.
+func (s *Snapshot) ResolveCharacter(name string) (Character, error) {
+	if name == "" {
+		if len(s.Characters) == 0 {
+			return Character{}, fmt.Errorf("%w: the account has no characters", ErrUnknownTarget)
+		}
+
+		return s.Characters[0], nil
 	}
 
-	if len(matches) > 1 {
-		return "", fmt.Errorf(
-			"%w: %q matches characters %s, so pass a character id",
-			ErrUnknownTarget, name, strings.Join(matches, ", "),
+	if strings.EqualFold(name, ownerVault) {
+		return Character{}, fmt.Errorf(
+			"%w: the vault is not a character, so pass a character id or a class name", ErrUnknownTarget,
 		)
 	}
 
-	return "", fmt.Errorf("%w: %q is not \"vault\", a character id, or a class name", ErrUnknownTarget, name)
+	return s.matchCharacter(name, "a character id or a class name")
+}
+
+// matchCharacter returns the character whose id is name, or the one
+// character whose class is name in any letter case. Accepted describes the
+// names that the caller takes, for the error that an unknown name returns.
+func (s *Snapshot) matchCharacter(name, accepted string) (Character, error) {
+	var matches []Character
+
+	for _, c := range s.Characters {
+		if c.ID == name {
+			return c, nil
+		}
+
+		if strings.EqualFold(c.Class, name) {
+			matches = append(matches, c)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return Character{}, fmt.Errorf("%w: %q is not %s", ErrUnknownTarget, name, accepted)
+	case 1:
+		return matches[0], nil
+	}
+
+	ids := make([]string, 0, len(matches))
+	for _, c := range matches {
+		ids = append(ids, c.ID)
+	}
+
+	return Character{}, fmt.Errorf(
+		"%w: %q matches characters %s, so pass a character id",
+		ErrUnknownTarget, name, strings.Join(ids, ", "),
+	)
 }
 
 // OwnerLabel names an owner value for display.

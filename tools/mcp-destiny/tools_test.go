@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -59,7 +60,7 @@ func TestServerListsTools(t *testing.T) {
 		toolCompareDuplicates, toolMoveItems,
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolRemoveAutotagRule,
-		toolMoveStack, toolSetLock, toolSetAutotagEnabled,
+		toolMoveStack, toolSetLock, toolSetAutotagEnabled, toolListActivityHistory,
 	}, names)
 
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
@@ -563,6 +564,170 @@ func TestCompareDuplicatesLimit(t *testing.T) {
 
 			header, _, _ := strings.Cut(got, "\n")
 			assert.Equal(t, tc.want, header)
+		})
+	}
+}
+
+func TestListActivityHistory(t *testing.T) {
+	t.Parallel()
+
+	const header = "started | character | activity | duration | result | kills | deaths | instance id"
+
+	tests := map[string]struct {
+		in      ListActivityHistoryInput
+		data    map[string]string
+		queries map[string][]string
+		want    string
+		isError bool
+	}{
+		"every character": {
+			queries: map[string][]string{
+				pathHunterHistory: {"count=25&page=0"},
+				pathTitanHistory:  {"count=25&page=0"},
+			},
+			want: strings.Join([]string{
+				"The 5 newest runs of the account.",
+				"",
+				header,
+				"2026-11-11 21:00 UTC | Hunter | Vault of Glass: Master | 1h2m3s | completed | 84 | 2 | 9001",
+				"2026-11-11 18:00 UTC | Titan | Control | 10m0s | incomplete | 12 | 9 | 9004",
+				"2026-11-10 19:30 UTC | Hunter | Vanguard Ops | 21m30s | completed | 150 | 0 | 9002",
+				"2026-11-09 08:00 UTC | Hunter | Activity 3333 | 45s | incomplete | 0 | 0 | 9003",
+				"2026-11-01 12:00 UTC | Titan | Vanguard Ops | 30m0s | completed | 60 | 1 | 9005",
+			}, "\n"),
+		},
+		"limit": {
+			in: ListActivityHistoryInput{Limit: 2},
+			queries: map[string][]string{
+				pathHunterHistory: {"count=2&page=0"},
+				pathTitanHistory:  {"count=2&page=0"},
+			},
+			want: strings.Join([]string{
+				"The 2 newest runs of the account. Pass a larger limit, up to 250, for older runs.",
+				"",
+				header,
+				"2026-11-11 21:00 UTC | Hunter | Vault of Glass: Master | 1h2m3s | completed | 84 | 2 | 9001",
+				"2026-11-11 18:00 UTC | Titan | Control | 10m0s | incomplete | 12 | 9 | 9004",
+			}, "\n"),
+		},
+		"class name": {
+			in: ListActivityHistoryInput{Character: "TITAN", Limit: 1000},
+			queries: map[string][]string{
+				pathTitanHistory: {"count=250&page=0"},
+			},
+			want: strings.Join([]string{
+				"The 2 newest runs of Titan.",
+				"",
+				header,
+				"2026-11-11 18:00 UTC | Titan | Control | 10m0s | incomplete | 12 | 9 | 9004",
+				"2026-11-01 12:00 UTC | Titan | Vanguard Ops | 30m0s | completed | 60 | 1 | 9005",
+			}, "\n"),
+		},
+		"one run": {
+			in: ListActivityHistoryInput{Character: hunterID, Limit: 1},
+			queries: map[string][]string{
+				pathHunterHistory: {"count=1&page=0"},
+			},
+			want: strings.Join([]string{
+				"The newest run of Hunter. Pass a larger limit, up to 250, for older runs.",
+				"",
+				header,
+				"2026-11-11 21:00 UTC | Hunter | Vault of Glass: Master | 1h2m3s | completed | 84 | 2 | 9001",
+			}, "\n"),
+		},
+		"no runs": {
+			data: map[string]string{
+				pathHunterHistory: `{"ErrorCode": 1, "Response": {}}`,
+				pathTitanHistory:  `{"ErrorCode": 1, "Response": {}}`,
+			},
+			queries: map[string][]string{
+				pathHunterHistory: {"count=25&page=0"},
+				pathTitanHistory:  {"count=25&page=0"},
+			},
+			want: "The activity history of the account holds no runs.",
+		},
+		"vault": {
+			in:      ListActivityHistoryInput{Character: "vault"},
+			want:    "unknown location: the vault is not a character, so pass a character id or a class name",
+			isError: true,
+		},
+		"unknown character": {
+			in:      ListActivityHistoryInput{Character: "tower"},
+			want:    `unknown location: "tower" is not a character id or a class name`,
+			isError: true,
+		},
+		"Bungie refuses one character": {
+			data: map[string]string{
+				pathTitanHistory: `{"ErrorCode": 1665, "ErrorStatus": "DestinyPrivacyRestriction", "Message": "Private."}`,
+			},
+			queries: map[string][]string{
+				pathHunterHistory: {"count=25&page=0"},
+				pathTitanHistory:  {"count=25&page=0"},
+			},
+			want:    "fetching the activity history: character c2: bungie: DestinyPrivacyRestriction: Private.",
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			maps.Copy(f.bungieData, tc.data)
+
+			got, isError := call(t, f.h.handleListActivityHistory, tc.in)
+			assert.Equal(t, tc.isError, isError)
+			assert.Equal(t, tc.want, got)
+
+			for _, path := range []string{pathHunterHistory, pathTitanHistory} {
+				var queries []string
+				for _, req := range f.bungie.calls(http.MethodGet, path) {
+					queries = append(queries, req.Query)
+				}
+
+				assert.Equal(t, tc.queries[path], queries, path)
+			}
+		})
+	}
+}
+
+func TestActivityName(t *testing.T) {
+	t.Parallel()
+
+	defs := fixtureDefs()
+
+	tests := map[string]struct {
+		activity HistoryActivity
+		want     string
+	}{
+		"reference id": {
+			activity: HistoryActivity{ReferenceID: 3022541210},
+			want:     "Vault of Glass: Master",
+		},
+		"reference id first": {
+			activity: HistoryActivity{ReferenceID: 4444, DirectorActivityHash: 5555},
+			want:     "Control",
+		},
+		"director hash": {
+			activity: HistoryActivity{ReferenceID: 1111, DirectorActivityHash: 2222},
+			want:     "Vanguard Ops",
+		},
+		"definition without a name": {
+			activity: HistoryActivity{ReferenceID: 3334, DirectorActivityHash: 2222},
+			want:     "Vanguard Ops",
+		},
+		"no definition": {
+			activity: HistoryActivity{ReferenceID: 3333, DirectorActivityHash: 3334},
+			want:     "Activity 3333",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, activityName(defs, tc.activity))
 		})
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -315,6 +316,84 @@ func TestBungieProfile(t *testing.T) {
 		{Hash: itemBrightDust, Quantity: 1500, Location: 1, BucketHash: 2689798311},
 		{Hash: 77, Quantity: 3, Location: 1, BucketHash: 2689798305},
 	}, got.ProfileCurrencies.Data.Items)
+}
+
+func TestBungieActivityHistory(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		body string
+		want []HistoryPeriod
+	}{
+		"page of runs": {
+			body: `{"ErrorCode": 1, "Response": {"activities": [
+				{"period": "2026-08-19T21:14:00Z",
+				 "activityDetails": {"referenceId": 42, "directorActivityHash": 77, "instanceId": "500", "mode": 4},
+				 "values": {
+					"activityDurationSeconds": {"statId": "activityDurationSeconds", "basic": {"value": 2221}},
+					"completed": {"basic": {"value": 1}}
+				 }}
+			]}}`,
+			want: []HistoryPeriod{{
+				Period: time.Date(2026, 8, 19, 21, 14, 0, 0, time.UTC),
+				Activity: HistoryActivity{
+					InstanceID:           "500",
+					ReferenceID:          42,
+					DirectorActivityHash: 77,
+					Mode:                 4,
+				},
+				Values: map[string]HistoryValue{
+					"activityDurationSeconds": historyValue(2221),
+					"completed":               historyValue(1),
+				},
+			}},
+		},
+		"page past the last run": {
+			body: `{"ErrorCode": 1, "Response": {}}`,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			u, rec := serve(t, http.StatusOK, tc.body)
+
+			got, err := NewBungie(WithBungieURL(u)).ActivityHistory(
+				t.Context(),
+				Credentials{APIKey: "key", AccessToken: "access"},
+				Membership{ID: "4611", Type: 3},
+				hunterID,
+				25,
+				2,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+
+			calls := rec.calls(http.MethodGet, "/Destiny2/3/Account/4611/Character/c1/Stats/Activities/")
+			require.Len(t, calls, 1)
+			assert.Equal(t, "count=25&page=2", calls[0].Query)
+			assert.Equal(t, "Bearer access", calls[0].Auth)
+		})
+	}
+}
+
+func TestHistoryPeriodValue(t *testing.T) {
+	t.Parallel()
+
+	period := HistoryPeriod{Values: map[string]HistoryValue{"kills": historyValue(84)}}
+
+	assert.InDelta(t, 84, period.Value("kills"), 0)
+	assert.Zero(t, period.Value("deaths"))
+}
+
+// historyValue returns a stat value of the activity history.
+func historyValue(v float64) HistoryValue {
+	var out HistoryValue
+
+	out.Basic.Value = v
+
+	return out
 }
 
 func TestBungieErrors(t *testing.T) {

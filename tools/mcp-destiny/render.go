@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -413,6 +414,75 @@ func flagsOf(item *Item) []string {
 	}
 
 	return flags
+}
+
+// historyRun is one row of the activity history. Character names the
+// character that played the run.
+type historyRun struct {
+	Character string
+
+	HistoryPeriod
+}
+
+// renderActivityHistory renders runs in their order. Scope names the owner
+// of the runs, such as "Hunter" or "the account". Limit is the number of
+// runs that the caller asked for.
+func renderActivityHistory(defs *Defs, runs []historyRun, scope string, limit int) string {
+	if len(runs) == 0 {
+		return "The activity history of " + scope + " holds no runs."
+	}
+
+	var b strings.Builder
+
+	if len(runs) == 1 {
+		fmt.Fprintf(&b, "The newest run of %s.", scope)
+	} else {
+		fmt.Fprintf(&b, "The %d newest runs of %s.", len(runs), scope)
+	}
+
+	if len(runs) == limit && limit < maxHistoryLimit {
+		fmt.Fprintf(&b, " Pass a larger limit, up to %d, for older runs.", maxHistoryLimit)
+	}
+
+	b.WriteString("\n\nstarted | character | activity | duration | result | kills | deaths | instance id\n")
+
+	for _, run := range runs {
+		result := "incomplete"
+		if run.Value("completed") == 1 {
+			result = "completed"
+		}
+
+		seconds := math.Round(run.Value("activityDurationSeconds"))
+
+		b.WriteString(strings.Join([]string{
+			run.Period.UTC().Format(timeLayout),
+			run.Character,
+			activityName(defs, run.Activity),
+			(time.Duration(seconds) * time.Second).String(),
+			result,
+			strconv.Itoa(int(math.Round(run.Value("kills")))),
+			strconv.Itoa(int(math.Round(run.Value("deaths")))),
+			run.Activity.InstanceID,
+		}, " | "))
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// activityName names the activity of a run. It looks up the reference id
+// first and the director activity hash second, in the order of the web
+// client. It skips a definition without a name, and it names a run that
+// neither hash names "Activity <reference id>".
+func activityName(defs *Defs, activity HistoryActivity) string {
+	for _, hash := range []uint32{activity.ReferenceID, activity.DirectorActivityHash} {
+		def := defs.Activities[hash]
+		if def.Name != "" {
+			return def.Name
+		}
+	}
+
+	return fmt.Sprintf("Activity %d", activity.ReferenceID)
 }
 
 func renderTags(s *Snapshot) string {
