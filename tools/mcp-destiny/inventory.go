@@ -47,10 +47,42 @@ const (
 // beside its one ordinary tag.
 const tagFavorite = "favorite"
 
+// Rarity names that Destiny Item Manager (DIM) gives a Bungie TierType
+// value. [rarityName] maps each value to its name.
+const (
+	rarityUnknown   = "Unknown"
+	rarityCurrency  = "Currency"
+	rarityCommon    = "Common"
+	rarityUncommon  = "Uncommon"
+	rarityRare      = "Rare"
+	rarityLegendary = "Legendary"
+	rarityExotic    = "Exotic"
+)
+
+// Stat hashes of the primary stats that DIM counts as power. DIM names
+// statAttackD1 Attack in its Destiny 1 table.
+const (
+	statAttack   uint32 = 1480404414
+	statDefense  uint32 = 3897883278
+	statPower    uint32 = 1935470627
+	statAttackD1 uint32 = 368428387
+)
+
 var (
 	// tagOrder lists the tag ids that the web client defines, in its
 	// display order. The web client ignores stored tag definitions.
 	tagOrder = []string{"keep", "pvp", "pve", "junk", "infuse", "archive"}
+
+	// rarityNames holds the rarity name of DIM for each Bungie TierType
+	// value, by value.
+	rarityNames = []string{
+		rarityUnknown, rarityCurrency, rarityCommon, rarityUncommon, rarityRare, rarityLegendary, rarityExotic,
+	}
+
+	// lightStats lists the hashes of the primary stats that DIM counts as
+	// power. DIM joins its Destiny 2 list and its Destiny 1 list, and the
+	// Destiny 1 list adds statAttackD1.
+	lightStats = []uint32{statAttack, statDefense, statPower, statAttackD1}
 
 	// ErrInvalidFilter reports an [ItemFilter] field with an unknown value,
 	// such as a Stat that no item has. It also reports a positive MinStat
@@ -140,6 +172,23 @@ type Character struct {
 // [Snapshot.Buckets] lists. Categories holds the item category hashes of
 // the definition after the changes that [itemCategories] makes. AmmoType
 // is the Bungie DestinyAmmunitionType value of the definition.
+//
+// Tier is the tier name that the definition displays. TierType is the
+// Bungie TierType value of the definition, which [rarityName] maps to the
+// rarity of Destiny Item Manager (DIM).
+//
+// Damage names the damage type of the instance, or the default damage
+// type of the definition when the instance has none. Element is the
+// Bungie DamageType value of the damage type of the instance alone, and 0
+// when the instance has none or the definitions lack it.
+//
+// Power is the value of the primary stat of the instance. LightPower is
+// the value that DIM counts as power, and 0 for a primary stat that DIM
+// does not count, as [lightPower] decides.
+//
+// TagRule is the id of the autotag rule that set Tag. It is empty when a
+// person set the tag, and when Tag is outside the tags that the web
+// client defines.
 type Item struct {
 	Categories   []int64
 	InstanceID   string
@@ -152,12 +201,16 @@ type Item struct {
 	Owner        string
 	Kind         string
 	Tag          string
+	TagRule      string
 	Note         string
 	Perks        []Perk
 	Stats        []Stat
 	ClassType    int
 	AmmoType     int
+	TierType     int
+	Element      int
 	Power        int
+	LightPower   int
 	Quantity     int
 	Hash         uint32
 	Bucket       uint32
@@ -399,6 +452,7 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 		Name:         def.Name,
 		TypeName:     def.TypeName,
 		Tier:         def.Tier,
+		TierType:     def.TierType,
 		Slot:         defs.Buckets[slot].Name,
 		Bucket:       slot,
 		Kind:         kindOf(def),
@@ -428,10 +482,16 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 	if ok {
 		if inst.PrimaryStat != nil {
 			item.Power = inst.PrimaryStat.Value
+			item.LightPower = lightPower(def, *inst.PrimaryStat)
 		}
 
 		if inst.DamageType != 0 {
 			damage = inst.DamageType
+		}
+
+		element, known := defs.DamageEnums[inst.DamageTypeHash]
+		if inst.DamageTypeHash != 0 && known {
+			item.Element = element
 		}
 	}
 
@@ -443,6 +503,32 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 	item.Stats = statsOf(profile, defs, pi.InstanceID)
 
 	return item
+}
+
+// lightPower returns the power that DIM counts for an item of def whose
+// instance has the primary stat stat. DIM keeps the primary stat only
+// when the definition shows it and its bucket is neither Subclass nor
+// Artifacts. It then counts the value when the stat is one of lightStats.
+// Every other primary stat counts as 0.
+func lightPower(def ItemDef, stat ProfileStat) int {
+	shown := def.Bucket != bucketSubclass && def.Bucket != bucketArtifacts && !def.DisablePrimaryStatDisplay
+	if !shown || !slices.Contains(lightStats, stat.Hash) {
+		return 0
+	}
+
+	return stat.Value
+}
+
+// rarityName returns the rarity name that DIM gives the Bungie TierType
+// value tierType. DIM names each value after the rarity that the game
+// shows, so the Bungie value Basic is Common and Superior is Legendary.
+// DIM names a value outside 0 to 6, inclusive, Common.
+func rarityName(tierType int) string {
+	if tierType < 0 || tierType >= len(rarityNames) {
+		return rarityCommon
+	}
+
+	return rarityNames[tierType]
 }
 
 // itemCategories returns the item category hashes of a definition with
@@ -588,14 +674,27 @@ func statsOf(profile *Profile, defs *Defs, instanceID string) []Stat {
 	return stats
 }
 
-// Annotate replaces the tag, favorite flag, and note of every item with the
-// values that the service stores.
+// Annotate replaces the tag, the autotag rule of the tag, the favorite
+// flag, and the note of every item with the values that the service
+// stores. The rule is the rule id of the row that holds the tag, as the
+// web client reads it. The web client reads a rule only for a tag that it
+// defines. A row without a rule id marks a tag that a person set.
 func (s *Snapshot) Annotate(tags []ItemTag, notes []Note) {
 	held := map[string][]string{}
 
+	// rules maps the instance id and the tag id of each row to the rule id
+	// of the row.
+	rules := map[[2]string]string{}
+
 	for _, row := range tags {
-		if !row.Removed {
-			held[row.InstanceID] = append(held[row.InstanceID], row.TagID)
+		if row.Removed {
+			continue
+		}
+
+		held[row.InstanceID] = append(held[row.InstanceID], row.TagID)
+
+		if row.RuleID != "" {
+			rules[[2]string{row.InstanceID, row.TagID}] = row.RuleID
 		}
 	}
 
@@ -612,7 +711,12 @@ func (s *Snapshot) Annotate(tags []ItemTag, notes []Note) {
 
 		item.Favorite = slices.Contains(ids, tagFavorite)
 		item.Tag = primaryTag(ids)
+		item.TagRule = ""
 		item.Note = bodies[item.InstanceID]
+
+		if slices.Contains(tagOrder, item.Tag) {
+			item.TagRule = rules[[2]string{item.InstanceID, item.Tag}]
+		}
 	}
 }
 

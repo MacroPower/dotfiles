@@ -1248,8 +1248,10 @@ func (h *handler) handleSetTag(
 		return h.toolError(ctx, toolSetTag, err)
 	}
 
+	// A tag that a person sets carries no rule id.
 	for _, item := range items {
 		item.Tag = tag
+		item.TagRule = ""
 	}
 
 	if tag == "" {

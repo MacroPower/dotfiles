@@ -45,7 +45,7 @@ func newFakeArtifacts() *fakeArtifacts {
 			"core-0.json": `[
 				{"hash": 100, "displayProperties": {"name": "Fatebringer", "description": "Fortune favors.", "icon": "/a.png"},
 				 "itemTypeDisplayName": "Hand Cannon", "itemType": 3, "classType": 3, "defaultDamageType": 1,
-				 "inventory": {"tierTypeName": "Legendary", "bucketTypeHash": 1498876634},
+				 "inventory": {"tierTypeName": "Legendary", "tierType": 5, "bucketTypeHash": 1498876634},
 				 "equippingBlock": {"ammoType": 1}, "stats": {"stats": {}}},
 				{"hash": 900, "displayProperties": {"name": "Firefly", "description": "Precision final blows explode."},
 				 "itemTypeDisplayName": "Trait",
@@ -54,7 +54,8 @@ func newFakeArtifacts() *fakeArtifacts {
 			"core-1.json": `[
 				{"hash": 400, "displayProperties": {"name": "Hawkmoon"}, "itemTypeDisplayName": "Hand Cannon",
 				 "itemType": 3, "classType": 3,
-				 "inventory": {"tierTypeName": "Exotic", "bucketTypeHash": 1498876634, "nonTransferrableOriginal": true}},
+				 "inventory": {"tierTypeName": "Exotic", "tierType": 6, "bucketTypeHash": 1498876634,
+				  "nonTransferrableOriginal": true}},
 				{"hash": 401, "displayProperties": {"name": "Midnight Coup"}, "itemTypeDisplayName": "Hand Cannon",
 				 "itemType": 3, "classType": 3, "itemCategoryHashes": []},
 				{"hash": 402, "displayProperties": {"name": "Austringer"}, "itemTypeDisplayName": "Hand Cannon",
@@ -62,8 +63,12 @@ func newFakeArtifacts() *fakeArtifacts {
 				{"hash": 403, "displayProperties": {"name": "Sleeper Simulant"},
 				 "itemTypeDisplayName": "Linear Fusion Rifle", "itemType": 3, "classType": 3,
 				 "itemCategoryHashes": [1, 4, 9, 1504945536],
-				 "inventory": {"tierTypeName": "Exotic", "bucketTypeHash": 953998645},
-				 "equippingBlock": {"ammoType": 3, "equipmentSlotTypeHash": 953998645}}
+				 "inventory": {"tierTypeName": "Exotic", "tierType": 6, "bucketTypeHash": 953998645},
+				 "equippingBlock": {"ammoType": 3, "equipmentSlotTypeHash": 953998645}},
+				{"hash": 404, "displayProperties": {"name": "Lightkeeper Shell"}, "itemTypeDisplayName": "Ghost Shell",
+				 "itemType": 24, "classType": 3,
+				 "inventory": {"tierTypeName": "Uncommon", "tierType": 3, "bucketTypeHash": 4023194814},
+				 "stats": {"disablePrimaryStatDisplay": true, "primaryBaseStatHash": 0}}
 			]`,
 			// The service build splits the detail array across files.
 			// Fatebringer has a socket with only a randomized plug set,
@@ -112,7 +117,10 @@ func newFakeArtifacts() *fakeArtifacts {
 				"138197802": {"displayProperties": {"name": "General"}, "scope": 1, "category": 1,
 				 "bucketOrder": 30, "itemCount": 700, "location": 2}
 			}`,
-			"damage.json":  `{"3373582085": {"displayProperties": {"name": "Kinetic"}, "enumValue": 1}}`,
+			"damage.json": `{
+				"3373582085": {"displayProperties": {"name": "Kinetic"}, "enumValue": 1},
+				"2303181850": {"displayProperties": {"name": "Arc"}, "enumValue": 2}
+			}`,
 			"classes.json": `{"671679327": {"displayProperties": {"name": "Hunter"}, "classType": 1}}`,
 			"stats.json":   `{"1240592695": {"displayProperties": {"name": "Range"}}}`,
 			// The service build projects each activity to a SlimActivity
@@ -196,10 +204,10 @@ func TestDefsLoader(t *testing.T) {
 	clock := WithDefsClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade. The
-	// layout without the item categories and the ammo type has the prefix
-	// defs-v7-. Its file holds the manifest version of the service, and
-	// the loader does not read it.
-	stale := filepath.Join(dir, "defs-v7-245114.26_1.json")
+	// layout without the tier type, the primary stat flag, and the damage
+	// type hashes has the prefix defs-v8-. Its file holds the manifest
+	// version of the service, and the loader does not read it.
+	stale := filepath.Join(dir, "defs-v8-245114.26_1.json")
 	require.NoError(t, os.WriteFile(stale, []byte(`{"version": "245114.26/1"}`), 0o644))
 
 	loader := NewDefsLoader(source, dir, clock)
@@ -213,6 +221,7 @@ func TestDefsLoader(t *testing.T) {
 				Name:       "Fatebringer",
 				TypeName:   "Hand Cannon",
 				Tier:       "Legendary",
+				TierType:   5,
 				Bucket:     bucketKinetic,
 				ItemType:   itemTypeWeapon,
 				ClassType:  classAny,
@@ -224,13 +233,28 @@ func TestDefsLoader(t *testing.T) {
 				Name:            "Hawkmoon",
 				TypeName:        "Hand Cannon",
 				Tier:            "Exotic",
+				TierType:        6,
 				Bucket:          bucketKinetic,
 				ItemType:        itemTypeWeapon,
 				ClassType:       classAny,
 				NonTransferable: true,
 			},
-			401: {Name: "Midnight Coup", TypeName: "Hand Cannon", ItemType: itemTypeWeapon, ClassType: classAny},
-			402: {Name: "Austringer", TypeName: "Hand Cannon", ItemType: itemTypeWeapon, ClassType: classAny},
+			// A record without a tier type gets the tier type that DIM
+			// names Common.
+			401: {
+				Name:      "Midnight Coup",
+				TypeName:  "Hand Cannon",
+				TierType:  tierTypeBasic,
+				ItemType:  itemTypeWeapon,
+				ClassType: classAny,
+			},
+			402: {
+				Name:      "Austringer",
+				TypeName:  "Hand Cannon",
+				TierType:  tierTypeBasic,
+				ItemType:  itemTypeWeapon,
+				ClassType: classAny,
+			},
 			// The loader keeps the categories of the definition. The
 			// snapshot drops the fusion rifle category of a linear fusion
 			// rifle.
@@ -242,14 +266,26 @@ func TestDefsLoader(t *testing.T) {
 				ItemType:   itemTypeWeapon,
 				ClassType:  classAny,
 				Categories: []uint32{1, 4, 9, 1504945536},
+				TierType:   6,
 				AmmoType:   ammoHeavy,
 				Equippable: true,
+			},
+			404: {
+				Name:                      "Lightkeeper Shell",
+				TypeName:                  "Ghost Shell",
+				Tier:                      "Uncommon",
+				TierType:                  3,
+				Bucket:                    bucketGhost,
+				ItemType:                  24,
+				ClassType:                 classAny,
+				DisablePrimaryStatDisplay: true,
 			},
 			900: {
 				Name:        "Firefly",
 				Description: "Precision final blows explode.",
 				TypeName:    "Trait",
 				Tier:        "Common",
+				TierType:    tierTypeBasic,
 				ItemType:    itemTypePlug,
 				ClassType:   classAny,
 			},
@@ -295,7 +331,8 @@ func TestDefsLoader(t *testing.T) {
 			itemGlimmer: "Glimmer",
 			501:         "Legendary Shards",
 		},
-		DamageTypes: map[int]string{1: "Kinetic"},
+		DamageEnums: map[uint32]int{3373582085: 1, 2303181850: 2},
+		DamageTypes: map[int]string{1: "Kinetic", 2: "Arc"},
 		Classes:     map[int]string{1: "Hunter"},
 	}, got)
 	assert.Len(t, source.fetched, 19)
@@ -414,7 +451,7 @@ func TestDefsLoaderWithoutOptionalArtifacts(t *testing.T) {
 			got, err := NewDefsLoader(source, "").Get(t.Context())
 			require.NoError(t, err)
 			assert.Empty(t, tc.field(got))
-			assert.Len(t, got.Items, 6)
+			assert.Len(t, got.Items, 7)
 
 			for _, file := range tc.files {
 				assert.NotContains(t, source.fetched, file)
@@ -528,7 +565,7 @@ func TestDefsLoaderIgnoresCorruptCache(t *testing.T) {
 
 	got, err := loader.Get(t.Context())
 	require.NoError(t, err)
-	assert.Len(t, got.Items, 6)
+	assert.Len(t, got.Items, 7)
 }
 
 func TestPlugSetSocket(t *testing.T) {

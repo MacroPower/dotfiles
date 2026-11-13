@@ -32,6 +32,13 @@ const (
 	bucketFinishers     uint32 = 3683254069
 	bucketEmblems       uint32 = 4274335291
 	bucketArtifacts     uint32 = 1506418338
+	bucketSubclass      uint32 = 3284755031
+	bucketGhost         uint32 = 4023194814
+	bucketShips         uint32 = 284967655
+	bucketVehicle       uint32 = 2025709351
+	bucketAccessories   uint32 = 687325600
+	bucketConsumables   uint32 = 1469714392
+	bucketModifications uint32 = 3313201758
 
 	// bucketForbidden and bucketDummy hold the dummy items that DIM
 	// leaves out of every store. DIM names them THE_FORBIDDEN_BUCKET
@@ -70,6 +77,18 @@ const (
 	categoryArmorMods               int64 = 4104513227
 )
 
+// Bungie DamageType values that the element filters read. DIM names the
+// value damageThermal solar. The value 5, which Bungie names Raid, has no
+// filter.
+const (
+	damageKinetic = 1
+	damageArc     = 2
+	damageThermal = 3
+	damageVoid    = 4
+	damageStasis  = 6
+	damageStrand  = 7
+)
+
 // hashDefaultShader is the item hash of the default shader, which DIM
 // leaves out of the matches of its dupe filters. DIM names it
 // DEFAULT_SHADER.
@@ -85,6 +104,8 @@ const (
 	filterHash      = "hash"
 	filterName      = "name"
 	filterExactName = "exactname"
+	filterPower     = "power"
+	filterLight     = "light"
 )
 
 // jsDot is a character class that matches what a dot matches in a
@@ -110,6 +131,10 @@ var (
 	// errNotRange reports a value that the range format of DIM rejects.
 	errNotRange = errors.New("not a range")
 
+	// errOverloadValue reports a word of a range value that DIM reads as
+	// a number that the preview lacks, such as pinnaclecap.
+	errOverloadValue = errors.New("the preview lacks the number of the word")
+
 	// errNoCharacter reports an account without a character. The web
 	// client then has no current character, and its search matches every
 	// item.
@@ -121,6 +146,7 @@ var (
 	)
 
 	// The buckets of the categories of DIM that the search filters read.
+	// The Lost Items bucket of the Postmaster is bucketPostmaster.
 	weaponBuckets     = []uint32{bucketKinetic, bucketEnergy, bucketPower}
 	armorBuckets      = []uint32{bucketHelmet, bucketGauntlets, bucketChestArmor, bucketLegArmor, bucketClassArmor}
 	postmasterBuckets = []uint32{bucketEngrams, bucketMessages, bucketSpecialOrders}
@@ -139,6 +165,20 @@ var (
 	rangeOverload = regexp.MustCompile(`^([<=>]{0,2})(\w+)$`)
 	rangeNumber   = regexp.MustCompile(`^([<=>]{0,2})(\d+(?:\.\d+)?)$`)
 
+	// rangeOperators lists the operators of a range value that DIM
+	// accepts.
+	rangeOperators = []string{"", "=", "<", "<=", ">", ">="}
+
+	// powerRange is the range format of power: and light:. DIM reads
+	// each word of its table powerLevelByKeyword as a power level of the
+	// season, and the preview lacks the season table. The empty overloads
+	// still accept constructor and __proto__, which the table of DIM
+	// accepts because it is an object.
+	powerRange = rangeFormat{
+		overloads:   map[string]float64{},
+		unsupported: []string{"powerfloor", "softcap", "powerfulcap", "pinnaclecap"},
+	}
+
 	// adeptPatterns are the patterns that stripAdept of DIM removes from a
 	// weapon name, in its order. DIM builds each one with the flags gi from
 	// a translation of Filter.Adept, Filter.Timelost, or Filter.Harrowed.
@@ -156,8 +196,8 @@ var (
 	// searchFilters lists the filters that the preview evaluates, in the
 	// order that the text of [ErrUnsupportedQuery] names them.
 	searchFilters = []searchFilter{
-		{name: filterIs, word: "weapon", match: inBuckets(weaponBuckets)},
-		{name: filterIs, word: "armor", match: inBuckets(armorBuckets)},
+		{name: filterIs, word: "weapon", match: inBuckets(weaponBuckets...)},
+		{name: filterIs, word: "armor", match: inBuckets(armorBuckets...)},
 		{name: filterIs, word: "equipment", match: isEquipment},
 		{name: filterIs, word: "equippable", match: isEquipment},
 		{name: filterIs, word: "equipped", match: func(item *Item) bool { return item.Equipped }},
@@ -206,6 +246,50 @@ var (
 		{name: filterIs, word: "dupe", build: isDupe},
 		{name: filterIs, word: "incurrentchar", build: inCurrentChar},
 		{name: filterIs, word: "currentclass", build: currentClass},
+		{name: filterIs, word: "common", match: ofRarity(rarityCommon)},
+		{name: filterIs, word: "uncommon", match: ofRarity(rarityUncommon)},
+		{name: filterIs, word: "rare", match: ofRarity(rarityRare)},
+		{name: filterIs, word: "legendary", match: ofRarity(rarityLegendary)},
+		{name: filterIs, word: "exotic", match: ofRarity(rarityExotic)},
+		{name: filterIs, word: "white", match: ofRarity(rarityCommon)},
+		{name: filterIs, word: "green", match: ofRarity(rarityUncommon)},
+		{name: filterIs, word: "blue", match: ofRarity(rarityRare)},
+		{name: filterIs, word: "purple", match: ofRarity(rarityLegendary)},
+		{name: filterIs, word: "yellow", match: ofRarity(rarityExotic)},
+		{name: filterIs, word: "kinetic", match: ofElement(damageKinetic)},
+		{name: filterIs, word: "arc", match: ofElement(damageArc)},
+		{name: filterIs, word: "solar", match: ofElement(damageThermal)},
+		{name: filterIs, word: "void", match: ofElement(damageVoid)},
+		{name: filterIs, word: "stasis", match: ofElement(damageStasis)},
+		{name: filterIs, word: "strand", match: ofElement(damageStrand)},
+		{name: filterIs, word: "light", match: ofElement(damageArc, damageThermal, damageVoid)},
+		{name: filterIs, word: "dark", match: ofElement(damageStasis, damageStrand)},
+		{name: filterIs, word: "engrams", match: inBuckets(bucketEngrams)},
+		{name: filterIs, word: "lostitems", match: inBuckets(bucketPostmaster)},
+		{name: filterIs, word: "messages", match: inBuckets(bucketMessages)},
+		{name: filterIs, word: "specialorders", match: inBuckets(bucketSpecialOrders)},
+		{name: filterIs, word: "kineticslot", match: inBuckets(bucketKinetic)},
+		{name: filterIs, word: "energy", match: inBuckets(bucketEnergy)},
+		{name: filterIs, word: "power", match: inBuckets(bucketPower)},
+		{name: filterIs, word: "helmet", match: inBuckets(bucketHelmet)},
+		{name: filterIs, word: "gauntlets", match: inBuckets(bucketGauntlets)},
+		{name: filterIs, word: "chest", match: inBuckets(bucketChestArmor)},
+		{name: filterIs, word: "leg", match: inBuckets(bucketLegArmor)},
+		{name: filterIs, word: "classitem", match: inBuckets(bucketClassArmor)},
+		{name: filterIs, word: "subclass", match: inBuckets(bucketSubclass)},
+		{name: filterIs, word: "seasonalartifacts", match: inBuckets(bucketArtifacts)},
+		{name: filterIs, word: "ghost", match: inBuckets(bucketGhost)},
+		{name: filterIs, word: "emblems", match: inBuckets(bucketEmblems)},
+		{name: filterIs, word: "ships", match: inBuckets(bucketShips)},
+		{name: filterIs, word: "vehicle", match: inBuckets(bucketVehicle)},
+		{name: filterIs, word: "emotes", match: inBuckets(bucketEmotes)},
+		{name: filterIs, word: "finishers", match: inBuckets(bucketFinishers)},
+		{name: filterIs, word: "accessories", match: inBuckets(bucketAccessories)},
+		{name: filterIs, word: "consumables", match: inBuckets(bucketConsumables)},
+		{name: filterIs, word: "modifications", match: inBuckets(bucketModifications)},
+		{name: filterIs, word: "haspower", match: hasPower},
+		{name: filterIs, word: "haslight", match: hasPower},
+		{name: filterIs, word: "autotagged", match: isAutotagged},
 		{name: filterTag, value: itemValue(tagMatch)},
 		{name: filterDupe, word: "item", value: dupeValue},
 		{name: filterCount, value: countValue},
@@ -213,6 +297,8 @@ var (
 		{name: filterHash, value: itemValue(hashMatch)},
 		{name: filterName, value: itemValue(nameMatch)},
 		{name: filterExactName, value: itemValue(exactNameMatch)},
+		{name: filterPower, value: powerValue},
+		{name: filterLight, value: powerValue},
 	}
 
 	// isFilters maps each is: word of searchFilters to the builder of its
@@ -258,8 +344,8 @@ type searchFilter struct {
 	// value reads the value of a filter that takes one, such as tag:keep,
 	// and returns the builder of its predicate. It returns an error that
 	// wraps errInvalidValue for a value that the web client rejects. It
-	// returns errUnsupportedTerm for a value that the preview does not
-	// evaluate.
+	// returns an error that wraps errUnsupportedTerm for a value that the
+	// preview does not evaluate.
 	value func(args string) (queryTest, error)
 	// name is the filter name, such as "is" or "tag".
 	name string
@@ -387,12 +473,12 @@ func appendNew(terms []string, term string) []string {
 }
 
 // filterTest returns the predicate builder of the filter node n. It
-// returns errUnsupportedTerm when the preview does not evaluate the
-// filter or its value. It returns an error that wraps errInvalidValue
-// when the web client rejects the value. Only the table decides which is:
-// words the preview evaluates, so is:constructor and is:__proto__ stay
-// unsupported. DIM finds both words on the prototype of its filter table
-// and matches nothing.
+// returns an error that wraps errUnsupportedTerm when the preview does
+// not evaluate the filter or its value. It returns an error that wraps
+// errInvalidValue when the web client rejects the value. Only the table
+// decides which is: words the preview evaluates, so is:constructor and
+// is:__proto__ stay unsupported. DIM finds both words on the prototype
+// of its filter table and matches nothing.
 func filterTest(n *QueryNode) (queryTest, error) {
 	if n.Type == filterIs {
 		build, ok := isFilters[n.Args]
@@ -534,8 +620,10 @@ func isComparable(item *Item) bool {
 // inBuckets returns the predicate of an item whose bucket is one of
 // buckets. DIM reads the bucket of the definition. Item.Bucket holds it
 // for an item in the vault or in the Lost Items bucket, and holds the
-// profile bucket for every other item.
-func inBuckets(buckets []uint32) func(*Item) bool {
+// profile bucket for every other item. An item at the Postmaster
+// therefore matches the bucket of its definition, and not the Lost Items
+// bucket.
+func inBuckets(buckets ...uint32) func(*Item) bool {
 	return func(item *Item) bool { return slices.Contains(buckets, item.Bucket) }
 }
 
@@ -565,6 +653,50 @@ func inCategory(categories ...int64) func(*Item) bool {
 // DestinyAmmunitionType value ammoType.
 func ofAmmo(ammoType int) func(*Item) bool {
 	return func(item *Item) bool { return item.AmmoType == ammoType }
+}
+
+// ofRarity returns the predicate of an item whose rarity is the DIM rarity
+// name rarity. DIM reads the rarity from the tier type of the definition,
+// as [rarityName] maps it, and not from the tier name that the definition
+// displays.
+func ofRarity(rarity string) func(*Item) bool {
+	return func(item *Item) bool { return rarityName(item.TierType) == rarity }
+}
+
+// ofElement returns the predicate of an item whose instance has one of
+// the Bungie DamageType values elements. An item without an element
+// matches none.
+func ofElement(elements ...int) func(*Item) bool {
+	return func(item *Item) bool { return slices.Contains(elements, item.Element) }
+}
+
+// hasPower reports whether DIM counts a power for item. It is the
+// predicate of is:haspower and is:haslight.
+func hasPower(item *Item) bool {
+	return item.LightPower > 0
+}
+
+// isAutotagged reports whether an autotag rule set the tag of item, as
+// is:autotagged of the web client reads it. A tag that a person set
+// clears the mark.
+func isAutotagged(item *Item) bool {
+	return item.TagRule != ""
+}
+
+// powerValue reads the range value of the filters power: and light:, as
+// DIM reads it with [powerRange]. The predicate compares the power that
+// DIM counts, so an item without power matches no value, also power:<10.
+// A word of DIM such as pinnaclecap after a valid operator is a term that
+// the preview does not evaluate.
+func powerValue(value string) (queryTest, error) {
+	compare, err := powerRange.valueComparator(value)
+	if err != nil {
+		return nil, err
+	}
+
+	test := func(item *Item) bool { return item.LightPower != 0 && compare(float64(item.LightPower)) }
+
+	return func(searchContext) func(*Item) bool { return test }, nil
 }
 
 // tagMatch returns the predicate of the filter tag:value, as the web
@@ -721,9 +853,9 @@ func dupeValue(value string) (queryTest, error) {
 // comparable items for count:, so its groups differ from those of
 // is:dupe.
 func countValue(value string) (queryTest, error) {
-	compare, err := rangeFormat{}.comparator(value)
+	compare, err := rangeFormat{}.valueComparator(value)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errInvalidValue, err)
+		return nil, err
 	}
 
 	return func(ctx searchContext) func(*Item) bool {
@@ -749,16 +881,18 @@ func dupeCounts(items []*Item, keep func(*Item) bool) map[string]int {
 
 // itemDupeID returns the key that groups the copies of item, as itemDupeID
 // of DIM builds it. The key joins the name, the decimal class type, the
-// tier name, and the decimal bucket hash without separators. A weapon
-// name goes through [stripAdept] first. The web client classifies no
-// item, so the key never falls back to the item hash.
+// rarity name of [rarityName], and the decimal bucket hash without
+// separators. A weapon name goes through [stripAdept] first. The web
+// client classifies no item, so the key never falls back to the item
+// hash.
 func itemDupeID(item *Item) string {
 	name := item.Name
 	if slices.Contains(weaponBuckets, item.Bucket) {
 		name = stripAdept(name)
 	}
 
-	return name + strconv.Itoa(item.ClassType) + item.Tier + strconv.FormatUint(uint64(item.Bucket), 10)
+	return name + strconv.Itoa(item.ClassType) + rarityName(item.TierType) +
+		strconv.FormatUint(uint64(item.Bucket), 10)
 }
 
 // stripAdept removes every match of each of adeptPatterns from name, in
@@ -792,9 +926,28 @@ func currentClass(ctx searchContext) func(*Item) bool {
 // rangeFormat is the range format of DIM, which reads a value such as >=2
 // as a comparison with a number. overloads maps each word that stands for
 // a number in the value, such as a season name. A nil map marks a filter
-// without an overload table in DIM.
+// without an overload table in DIM. unsupported lists the words of the
+// overload table of DIM whose number the preview lacks.
 type rangeFormat struct {
-	overloads map[string]float64
+	overloads   map[string]float64
+	unsupported []string
+}
+
+// valueComparator returns the predicate of a number for the value of a
+// range filter. It returns an error that wraps errInvalidValue for a value
+// that DIM rejects. For a word of unsupported, it returns an error that
+// wraps errUnsupportedTerm and errOverloadValue.
+func (f rangeFormat) valueComparator(value string) (func(float64) bool, error) {
+	compare, err := f.comparator(value)
+
+	switch {
+	case errors.Is(err, errNotRange):
+		return nil, fmt.Errorf("%w: %w", errInvalidValue, err)
+	case errors.Is(err, errOverloadValue):
+		return nil, fmt.Errorf("%w: %w", errUnsupportedTerm, err)
+	}
+
+	return compare, err
 }
 
 // comparator returns the predicate of a number for the range value, as
@@ -803,7 +956,22 @@ type rangeFormat struct {
 // =, <, <=, >, and >=. The empty operator and = both test equality. The
 // comparator returns an error that wraps errNotRange for every other
 // value, the empty value included.
+//
+// The comparator returns an error that wraps errOverloadValue for a word
+// of unsupported after a valid operator. DIM reads the word before it
+// checks the operator, but the comparator checks the operator first. A
+// word of unsupported after an invalid operator therefore gives
+// errNotRange, because DIM rejects that operator whatever the word is.
 func (f rangeFormat) comparator(value string) (func(float64) bool, error) {
+	m := rangeOverload.FindStringSubmatch(value)
+	if len(m) == 3 && slices.Contains(f.unsupported, m[2]) {
+		if !slices.Contains(rangeOperators, m[1]) {
+			return nil, fmt.Errorf("%w: unknown operator %q", errNotRange, m[1])
+		}
+
+		return nil, fmt.Errorf("%w: %s", errOverloadValue, m[2])
+	}
+
 	op, operand, ok := f.operand(value)
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", errNotRange, value)

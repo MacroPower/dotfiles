@@ -935,3 +935,253 @@ func TestItemCategories(t *testing.T) {
 		})
 	}
 }
+
+// instanceItem returns the item that [NewSnapshot] builds from defs for a
+// held item of the definition hash in the profile bucket bucket. Instance
+// is the JSON object of the instance component of the item.
+func instanceItem(t *testing.T, defs *Defs, hash, bucket uint32, instance string) *Item {
+	t.Helper()
+
+	body := fmt.Sprintf(`{
+		"characterInventories": {"data": {"c1": {"items": [
+			{"itemHash": %d, "itemInstanceId": "1", "quantity": 1, "location": 1, "bucketHash": %d}
+		]}}},
+		"itemComponents": {"instances": {"data": {"1": %s}}}
+	}`, hash, bucket, instance)
+
+	var p Profile
+
+	require.NoError(t, json.Unmarshal([]byte(body), &p))
+
+	item, ok := NewSnapshot(&p, defs, fixtureNow).Find("1")
+	require.True(t, ok)
+
+	return item
+}
+
+func TestNewItemElement(t *testing.T) {
+	t.Parallel()
+
+	// The definitions name the damage types of Kinetic and Arc, and they
+	// lack the hash 999. Riskrunner has the default damage type Arc.
+	defs := fixtureDefs()
+	defs.DamageEnums = map[uint32]int{3373582085: damageKinetic, 2303181850: damageArc}
+	defs.DamageTypes[damageArc] = "Arc"
+	defs.DamageTypes[damageVoid] = "Void"
+	defs.Items[110] = ItemDef{
+		Name:       "Riskrunner",
+		TypeName:   "Submachine Gun",
+		Bucket:     bucketEnergy,
+		ItemType:   itemTypeWeapon,
+		ClassType:  classAny,
+		DamageType: damageArc,
+		Equippable: true,
+	}
+
+	tests := map[string]struct {
+		instance   string
+		want       int
+		wantDamage string
+	}{
+		"damage type hash of Arc": {
+			instance:   `{"damageType": 2, "damageTypeHash": 2303181850}`,
+			want:       damageArc,
+			wantDamage: "Arc",
+		},
+		"damage type hash of Kinetic": {
+			instance:   `{"damageType": 1, "damageTypeHash": 3373582085}`,
+			want:       damageKinetic,
+			wantDamage: "Kinetic",
+		},
+		"no damage type hash": {
+			instance:   `{"damageType": 0}`,
+			wantDamage: "Arc",
+		},
+		"null damage type hash": {
+			instance:   `{"damageType": 0, "damageTypeHash": null}`,
+			wantDamage: "Arc",
+		},
+		"damage type hash that the definitions lack": {
+			instance:   `{"damageType": 4, "damageTypeHash": 999}`,
+			wantDamage: "Void",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			item := instanceItem(t, defs, 110, bucketEnergy, tc.instance)
+			assert.Equal(t, tc.want, item.Element)
+			assert.Equal(t, tc.wantDamage, item.Damage)
+		})
+	}
+}
+
+func TestNewItemLightPower(t *testing.T) {
+	t.Parallel()
+
+	defs := fixtureDefs()
+	defs.Items[120] = ItemDef{
+		Name:       "Iron Banner Artifact",
+		Bucket:     bucketArtifacts,
+		ClassType:  classAny,
+		Equippable: true,
+	}
+	defs.Items[121] = ItemDef{Name: "Voidwalker", Bucket: bucketSubclass, ClassType: classWarlock, Equippable: true}
+	defs.Items[122] = ItemDef{
+		Name:                      "Lightkeeper Shell",
+		Bucket:                    bucketGhost,
+		ClassType:                 classAny,
+		Equippable:                true,
+		DisablePrimaryStatDisplay: true,
+	}
+
+	tests := map[string]struct {
+		instance  string
+		hash      uint32
+		bucket    uint32
+		want      int
+		wantPower int
+	}{
+		"Power": {
+			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
+			hash:      100,
+			bucket:    bucketKinetic,
+			want:      1900,
+			wantPower: 1900,
+		},
+		"Attack": {
+			instance:  `{"primaryStat": {"statHash": 1480404414, "value": 1890}}`,
+			hash:      100,
+			bucket:    bucketKinetic,
+			want:      1890,
+			wantPower: 1890,
+		},
+		"Defense": {
+			instance:  `{"primaryStat": {"statHash": 3897883278, "value": 1880}}`,
+			hash:      200,
+			bucket:    bucketHelmet,
+			want:      1880,
+			wantPower: 1880,
+		},
+		"Attack of Destiny 1": {
+			instance:  `{"primaryStat": {"statHash": 368428387, "value": 400}}`,
+			hash:      100,
+			bucket:    bucketKinetic,
+			want:      400,
+			wantPower: 400,
+		},
+		"another stat": {
+			instance:  `{"primaryStat": {"statHash": 9, "value": 2010}}`,
+			hash:      100,
+			bucket:    bucketKinetic,
+			wantPower: 2010,
+		},
+		"no primary stat": {
+			instance: `{"damageType": 1}`,
+			hash:     100,
+			bucket:   bucketKinetic,
+		},
+		"Artifacts bucket": {
+			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 50}}`,
+			hash:      120,
+			bucket:    bucketArtifacts,
+			wantPower: 50,
+		},
+		"Subclass bucket": {
+			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
+			hash:      121,
+			bucket:    bucketSubclass,
+			wantPower: 1900,
+		},
+		"hidden primary stat": {
+			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
+			hash:      122,
+			bucket:    bucketGhost,
+			wantPower: 1900,
+		},
+		"Subclass definition in another profile bucket": {
+			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
+			hash:      121,
+			bucket:    bucketKinetic,
+			wantPower: 1900,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			item := instanceItem(t, defs, tc.hash, tc.bucket, tc.instance)
+			assert.Equal(t, tc.want, item.LightPower)
+			assert.Equal(t, tc.wantPower, item.Power)
+		})
+	}
+}
+
+func TestAnnotateTagRule(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		rows    []ItemTag
+		wantTag string
+		want    string
+	}{
+		"keep row with a rule id": {
+			rows:    []ItemTag{{InstanceID: "1001", TagID: "keep", RuleID: "rule-1"}},
+			wantTag: "keep",
+			want:    "rule-1",
+		},
+		"keep row without a rule id": {
+			rows:    []ItemTag{{InstanceID: "1001", TagID: "keep"}},
+			wantTag: "keep",
+		},
+		"removed row with a rule id": {
+			rows: []ItemTag{{InstanceID: "1001", TagID: "keep", RuleID: "rule-1", Removed: true}},
+		},
+		"tag outside the tags of the web client": {
+			rows:    []ItemTag{{InstanceID: "1001", TagID: "wishlist", RuleID: "rule-1"}},
+			wantTag: "wishlist",
+		},
+		"rule of a tag that the item does not show": {
+			rows: []ItemTag{
+				{InstanceID: "1001", TagID: "junk", RuleID: "rule-1"},
+				{InstanceID: "1001", TagID: "keep"},
+			},
+			wantTag: "keep",
+		},
+		"rule of the favorite mark": {
+			rows: []ItemTag{
+				{InstanceID: "1001", TagID: tagFavorite, RuleID: "rule-1"},
+				{InstanceID: "1001", TagID: "keep"},
+			},
+			wantTag: "keep",
+		},
+		"rule of another item": {
+			rows: []ItemTag{
+				{InstanceID: "1002", TagID: "keep", RuleID: "rule-1"},
+				{InstanceID: "1001", TagID: "keep"},
+			},
+			wantTag: "keep",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := fixtureSnapshot(t)
+
+			// An earlier annotation sets a rule, which the next one
+			// replaces.
+			s.Annotate([]ItemTag{{InstanceID: "1001", TagID: "keep", RuleID: "rule-0"}}, nil)
+			s.Annotate(tc.rows, nil)
+
+			item, ok := s.Find("1001")
+			require.True(t, ok)
+			assert.Equal(t, tc.wantTag, item.Tag)
+			assert.Equal(t, tc.want, item.TagRule)
+		})
+	}
+}

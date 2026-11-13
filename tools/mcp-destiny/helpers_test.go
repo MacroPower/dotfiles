@@ -20,9 +20,8 @@ import (
 
 // Bucket hashes of the fixture slots that no production code reads.
 const (
-	bucketConsumables uint32 = 1469714392
-	bucketQuests      uint32 = 1345459588
-	bucketMaterials   uint32 = 3865314626
+	bucketQuests    uint32 = 1345459588
+	bucketMaterials uint32 = 3865314626
 )
 
 // Item hashes of the fixture currencies.

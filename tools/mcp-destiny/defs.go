@@ -24,7 +24,7 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v8-"
+	defsCachePrefix = "defs-v9-"
 
 	artifactCore            = "core"
 	artifactDetail          = "detail"
@@ -78,6 +78,11 @@ const (
 // character shares.
 const bucketScopeAccount = 1
 
+// tierTypeBasic is the Bungie TierType value that the loader stores for a
+// definition without a tier type. Destiny Item Manager (DIM) names the
+// value Common, and it also reads a missing tier type as Common.
+const tierTypeBasic = 2
+
 // ErrDefs reports definition artifacts that are missing from the service
 // index or that do not decode.
 var ErrDefs = errors.New("definitions")
@@ -89,19 +94,27 @@ var ErrDefs = errors.New("definitions")
 // the order of the definition. AmmoType is the Bungie DestinyAmmunitionType
 // value of the equipping block, and zero when the definition has no
 // equipping block.
+//
+// Tier is the tier name that the definition displays, and TierType is the
+// Bungie TierType value that DIM reads for the rarity. TierType is
+// [tierTypeBasic] when the definition gives no tier type.
+// DisablePrimaryStatDisplay marks a definition whose primary stat the game
+// hides.
 type ItemDef struct {
-	Name            string   `json:"name"`
-	Description     string   `json:"description,omitempty"`
-	TypeName        string   `json:"type,omitempty"`
-	Tier            string   `json:"tier,omitempty"`
-	Categories      []uint32 `json:"categories,omitempty"`
-	ItemType        int      `json:"itemType,omitempty"`
-	ClassType       int      `json:"classType"`
-	DamageType      int      `json:"damageType,omitempty"`
-	AmmoType        int      `json:"ammoType,omitempty"`
-	Bucket          uint32   `json:"bucket,omitempty"`
-	NonTransferable bool     `json:"nonTransferable,omitempty"`
-	Equippable      bool     `json:"equippable,omitempty"`
+	Name                      string   `json:"name"`
+	Description               string   `json:"description,omitempty"`
+	TypeName                  string   `json:"type,omitempty"`
+	Tier                      string   `json:"tier,omitempty"`
+	Categories                []uint32 `json:"categories,omitempty"`
+	ItemType                  int      `json:"itemType,omitempty"`
+	ClassType                 int      `json:"classType"`
+	DamageType                int      `json:"damageType,omitempty"`
+	AmmoType                  int      `json:"ammoType,omitempty"`
+	TierType                  int      `json:"tierType,omitempty"`
+	Bucket                    uint32   `json:"bucket,omitempty"`
+	NonTransferable           bool     `json:"nonTransferable,omitempty"`
+	Equippable                bool     `json:"equippable,omitempty"`
+	DisablePrimaryStatDisplay bool     `json:"disablePrimaryStatDisplay,omitempty"`
 }
 
 // BucketDef is the subset of a Bungie inventory bucket definition that the
@@ -147,6 +160,8 @@ type VendorDef struct {
 // hashes come from a Bungie profile, the activity history, the activities
 // of a character, and the vendor stock. The Bungie enum value keys
 // DamageTypes and Classes, and the definition hash keys the other maps.
+// DamageEnums maps the hash of each damage type definition to its Bungie
+// enum value, which keys DamageTypes.
 //
 // ActivityTypes, Destinations, and Places name the activity types, the
 // destinations, and the places that an [ActivityDef] points at.
@@ -178,6 +193,7 @@ type Defs struct {
 	ActivityRewards map[uint32]string      `json:"activityRewards"`
 	Vendors         map[uint32]VendorDef   `json:"vendors"`
 	VendorItems     map[uint32]string      `json:"vendorItems"`
+	DamageEnums     map[uint32]int         `json:"damageEnums"`
 	DamageTypes     map[int]string         `json:"damageTypes"`
 	Classes         map[int]string         `json:"classes"`
 	Version         string                 `json:"version"`
@@ -340,6 +356,7 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 		ActivityRewards: map[uint32]string{},
 		Vendors:         map[uint32]VendorDef{},
 		VendorItems:     map[uint32]string{},
+		DamageEnums:     map[uint32]int{},
 		DamageTypes:     map[int]string{},
 		Classes:         map[int]string{},
 	}
@@ -394,7 +411,10 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 	tables := map[string]func(hash uint32, row tableRow){
 		artifactBuckets: func(hash uint32, row tableRow) { defs.Buckets[hash] = row.bucket() },
 		artifactStats:   func(hash uint32, row tableRow) { defs.Stats[hash] = row.DisplayProperties.Name },
-		artifactDamage:  func(_ uint32, row tableRow) { defs.DamageTypes[row.EnumValue] = row.DisplayProperties.Name },
+		artifactDamage: func(hash uint32, row tableRow) {
+			defs.DamageTypes[row.EnumValue] = row.DisplayProperties.Name
+			defs.DamageEnums[hash] = row.EnumValue
+		},
 		artifactClasses: func(_ uint32, row tableRow) { defs.Classes[row.ClassType] = row.DisplayProperties.Name },
 	}
 
@@ -498,10 +518,14 @@ type rawItem struct {
 	ItemTypeDisplayName string   `json:"itemTypeDisplayName"`
 	ItemCategoryHashes  []uint32 `json:"itemCategoryHashes"`
 	Inventory           struct {
+		TierType                 *int   `json:"tierType"`
 		TierTypeName             string `json:"tierTypeName"`
 		BucketTypeHash           uint32 `json:"bucketTypeHash"`
 		NonTransferrableOriginal bool   `json:"nonTransferrableOriginal"`
 	} `json:"inventory"`
+	Stats struct {
+		DisablePrimaryStatDisplay bool `json:"disablePrimaryStatDisplay"`
+	} `json:"stats"`
 	Hash              uint32 `json:"hash"`
 	ItemType          int    `json:"itemType"`
 	ClassType         int    `json:"classType"`
@@ -512,15 +536,21 @@ type rawItem struct {
 // holds.
 func (raw rawItem) item() ItemDef {
 	def := ItemDef{
-		Name:            raw.DisplayProperties.Name,
-		TypeName:        raw.ItemTypeDisplayName,
-		Tier:            raw.Inventory.TierTypeName,
-		Bucket:          raw.Inventory.BucketTypeHash,
-		ItemType:        raw.ItemType,
-		ClassType:       raw.ClassType,
-		DamageType:      raw.DefaultDamageType,
-		NonTransferable: raw.Inventory.NonTransferrableOriginal,
-		Equippable:      raw.EquippingBlock != nil,
+		Name:                      raw.DisplayProperties.Name,
+		TypeName:                  raw.ItemTypeDisplayName,
+		Tier:                      raw.Inventory.TierTypeName,
+		TierType:                  tierTypeBasic,
+		Bucket:                    raw.Inventory.BucketTypeHash,
+		ItemType:                  raw.ItemType,
+		ClassType:                 raw.ClassType,
+		DamageType:                raw.DefaultDamageType,
+		NonTransferable:           raw.Inventory.NonTransferrableOriginal,
+		Equippable:                raw.EquippingBlock != nil,
+		DisablePrimaryStatDisplay: raw.Stats.DisablePrimaryStatDisplay,
+	}
+
+	if raw.Inventory.TierType != nil {
+		def.TierType = *raw.Inventory.TierType
 	}
 
 	// The cache file leaves out an empty list, so an empty list stays nil

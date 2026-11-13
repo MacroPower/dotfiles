@@ -4787,6 +4787,50 @@ func TestSetTag(t *testing.T) {
 	}
 }
 
+func TestSetTagClearsRule(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		tag  string
+		want string
+	}{
+		"the same tag":  {tag: "keep", want: "keep"},
+		"another tag":   {tag: tagJunk, want: tagJunk},
+		"no tag at all": {tag: tagNone},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.serviceData[pathTags] = tagRows(t, ItemTag{
+				InstanceID: "1001",
+				ItemHash:   100,
+				TagID:      "keep",
+				RuleID:     "rule-1",
+				UpdatedAt:  5,
+			})
+
+			s, _, err := f.h.loadAnnotated(t.Context(), false)
+			require.NoError(t, err)
+
+			items, err := findItems(s, []string{"1001"})
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			require.Equal(t, "rule-1", items[0].TagRule)
+
+			_, isError := call(t, f.h.handleSetTag, SetTagInput{InstanceIDs: []string{"1001"}, Tag: tc.tag})
+			require.False(t, isError)
+
+			// The cached snapshot holds the hand tag without the rule id.
+			assert.Same(t, s, f.h.snapshot)
+			assert.Equal(t, tc.want, items[0].Tag)
+			assert.Empty(t, items[0].TagRule)
+		})
+	}
+}
+
 func TestSetFavorite(t *testing.T) {
 	t.Parallel()
 
@@ -5905,10 +5949,16 @@ func TestPreviewUnsupported(t *testing.T) {
 		"is:favorite, is:autorifle, is:handcannon, is:pulserifle, is:scoutrifle, is:fusionrifle, "+
 		"is:sniperrifle, is:shotgun, is:machinegun, is:lmg, is:rocketlauncher, is:sidearm, is:sword, "+
 		"is:grenadelauncher, is:heavygrenadelauncher, is:specialgrenadelauncher, is:tracerifle, "+
-		"is:linearfusionrifle, is:lfr, is:submachine, is:smg, is:bow, is:glaive, is:transmat, "+
-		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, is:dupe, "+
-		"is:incurrentchar, is:currentclass, tag:, dupe:item, count:, id:, hash:, name:, "+
-		"and exactname:. Each is: word also works as not:<word>.", got)
+		"is:linearfusionrifle, is:lfr, is:submachine, is:smg, is:bow, is:glaive, is:transmat, is:weaponmod, "+
+		"is:armormod, is:reptoken, is:primary, is:special, is:heavy, is:dupe, is:incurrentchar, "+
+		"is:currentclass, is:common, is:uncommon, is:rare, is:legendary, is:exotic, is:white, is:green, "+
+		"is:blue, is:purple, is:yellow, is:kinetic, is:arc, is:solar, is:void, is:stasis, is:strand, "+
+		"is:light, is:dark, is:engrams, is:lostitems, is:messages, is:specialorders, is:kineticslot, "+
+		"is:energy, is:power, is:helmet, is:gauntlets, is:chest, is:leg, is:classitem, is:subclass, "+
+		"is:seasonalartifacts, is:ghost, is:emblems, is:ships, is:vehicle, is:emotes, is:finishers, "+
+		"is:accessories, is:consumables, is:modifications, is:haspower, is:haslight, is:autotagged, tag:, "+
+		"dupe:item, count:, id:, hash:, name:, exactname:, power:, and light:. Each is: word also works as "+
+		"not:<word>.", got)
 	assert.Empty(t, f.service.all())
 	assert.Empty(t, f.bungie.all())
 }
@@ -6034,6 +6084,112 @@ func TestPreviewDupeGroupsBuiltItems(t *testing.T) {
 
 	_, _, rows = preview(t, f, "count:1")
 	assert.Equal(t, []string{"2006", "2003"}, rows)
+}
+
+// inventoryFieldFakes returns fakes whose vault holds Gjallarhorn and two
+// copies of Fatebringer. The definitions give Gjallarhorn the exotic tier
+// type and Fatebringer the legendary one. Gjallarhorn deals Solar damage
+// and has 1950 power. One Fatebringer deals Arc damage and has 1850
+// power, and the other deals Kinetic damage and has 1900 power.
+func inventoryFieldFakes(t *testing.T) *fakes {
+	t.Helper()
+
+	f := newFakes(t)
+	defs := f.h.defs.defs
+	defs.DamageEnums = map[uint32]int{3373582085: damageKinetic, 2303181850: damageArc, 1847026933: damageThermal}
+
+	for hash, tierType := range map[uint32]int{100: tierTypeLegendary, 101: tierTypeExotic} {
+		def := defs.Items[hash]
+		def.TierType = tierType
+		defs.Items[hash] = def
+	}
+
+	f.profileBody = `{"ErrorCode": 1, "Response": {
+		"characters": {"data": {
+			"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
+		}},
+		"profileInventory": {"data": {"items": [
+			{"itemHash": 101, "itemInstanceId": "2001", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802},
+			{"itemHash": 100, "itemInstanceId": "2002", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802},
+			{"itemHash": 100, "itemInstanceId": "2003", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802}
+		]}},
+		"itemComponents": {"instances": {"data": {
+			"2001": {"damageType": 3, "damageTypeHash": 1847026933, "primaryStat": {"statHash": 1480404414, "value": 1950}},
+			"2002": {"damageType": 2, "damageTypeHash": 2303181850, "primaryStat": {"statHash": 1480404414, "value": 1850}},
+			"2003": {"damageType": 1, "damageTypeHash": 3373582085, "primaryStat": {"statHash": 1480404414, "value": 1900}}
+		}}}
+	}}`
+
+	return f
+}
+
+func TestPreviewInventoryFields(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"exotic weapon":          {query: "is:exotic is:weapon", want: []string{"2001"}},
+		"legendary":              {query: "is:legendary", want: []string{"2002", "2003"}},
+		"power below 1900":       {query: "is:weapon power:<1900", want: []string{"2002"}},
+		"light of at least 1900": {query: "light:>=1900", want: []string{"2003", "2001"}},
+		"arc":                    {query: "is:arc", want: []string{"2002"}},
+		"light damage":           {query: "is:light", want: []string{"2002", "2001"}},
+		"power weapon slot":      {query: "is:power", want: []string{"2001"}},
+		"has power":              {query: "is:haspower", want: []string{"2002", "2003", "2001"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			_, _, rows := preview(t, inventoryFieldFakes(t), tc.query)
+			assert.Equal(t, tc.want, rows)
+		})
+	}
+}
+
+func TestPreviewUnsupportedPowerWord(t *testing.T) {
+	t.Parallel()
+
+	f := inventoryFieldFakes(t)
+
+	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "power:>=pinnaclecap"})
+	assert.True(t, isError)
+	assert.True(t, strings.HasPrefix(got, "unsupported query: the server does not evaluate power:>=pinnaclecap, "), got)
+
+	got, isError = call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "power:=<pinnaclecap"})
+	assert.True(t, isError)
+	assert.Equal(t, "invalid input: the web client rejects power:=<pinnaclecap, "+
+		"so it skips an autotag rule with this query", got)
+	assert.Empty(t, f.service.all())
+	assert.Empty(t, f.bungie.all())
+}
+
+func TestPreviewAutotagged(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.serviceData[pathTags] = tagRows(t, ItemTag{
+		InstanceID: "1003",
+		ItemHash:   102,
+		TagID:      tagJunk,
+		RuleID:     "rule-1",
+		UpdatedAt:  5,
+	})
+
+	_, _, rows := preview(t, f, "is:autotagged")
+	assert.Equal(t, []string{"1003"}, rows)
+
+	// A tag that a person sets carries no rule id.
+	f.serviceData[pathTags] = tagRows(t, ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 6})
+
+	_, _, rows = preview(t, f, "is:autotagged")
+	assert.Empty(t, rows)
+
+	_, _, rows = preview(t, f, "tag:junk")
+	assert.Equal(t, []string{"1003"}, rows)
 }
 
 func TestPreviewCurrentCharacter(t *testing.T) {

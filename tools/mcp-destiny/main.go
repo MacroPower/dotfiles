@@ -598,6 +598,8 @@ func newServer(h *handler) *mcp.Server {
 			"name:<text> matches an item with a word in its name that starts with the text, " +
 			"and exactname:<text> matches an item whose whole name is the text. " +
 			"Both ignore letter case and accents. " +
+			"power:<range> and light:<range> compare the power that the web client counts with a number, " +
+			"such as power:>=1900. The tool refuses a season word in the range, such as pinnaclecap. " +
 			"The tool refuses a query with any other term, such as a bare word or is:masterwork, " +
 			"and the refusal names each such term together with the filters that the tool evaluates. " +
 			"A term whose value the web client rejects, such as count:=<2, returns an error that names the term " +

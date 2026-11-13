@@ -287,7 +287,7 @@
 //   - is:primary, is:special, and is:heavy: an item that takes the ammo
 //     type that the word names. An item whose definition gives no ammo
 //     type, such as armor, matches none of them.
-//   - is:dupe and dupe:item: an item that shares its name, class, tier,
+//   - is:dupe and dupe:item: an item that shares its name, class, rarity,
 //     and bucket with another item of the account, in any location. The
 //     web client keeps the suffix (Adept), (Timelost), or (Harrowed) in a
 //     weapon name, so such a weapon never matches its base weapon. Only
@@ -297,12 +297,36 @@
 //     last, or an item in an account-wide bucket other than the vault.
 //   - is:currentclass: an item of the class of the character that the
 //     player played last.
+//   - is:common and is:white: an item of the rarity Common.
+//   - is:uncommon and is:green: an item of the rarity Uncommon.
+//   - is:rare and is:blue: an item of the rarity Rare.
+//   - is:legendary and is:purple: an item of the rarity Legendary.
+//   - is:exotic and is:yellow: an item of the rarity Exotic.
+//   - is:kinetic, is:arc, is:solar, is:void, is:stasis, and is:strand: an
+//     item whose instance deals the damage type that the word names.
+//   - is:light: an item whose instance deals Arc, Solar, or Void damage.
+//   - is:dark: an item whose instance deals Stasis or Strand damage.
+//   - is:engrams, is:lostitems, is:messages, and is:specialorders: an
+//     item whose definition names the Postmaster bucket of the word. A
+//     weapon at the Postmaster matches its weapon slot and not
+//     is:lostitems.
+//   - is:kineticslot, is:energy, is:power, is:helmet, is:gauntlets,
+//     is:chest, is:leg, and is:classitem: an item whose definition names
+//     the weapon or armor bucket of the word.
+//   - is:subclass, is:seasonalartifacts, is:ghost, is:emblems, is:ships,
+//     is:vehicle, is:emotes, is:finishers, is:accessories,
+//     is:consumables, and is:modifications: an item whose definition
+//     names the bucket of the word. The preview leaves out emotes and
+//     finishers, so is:emotes and is:finishers match nothing.
+//   - is:haspower and is:haslight: an item with a power that DIM counts.
+//   - is:autotagged: an item whose tag an autotag rule set. A tag that a
+//     person sets, such as with set_tag, clears the mark.
 //   - tag:<value>: an item whose tag is the value. Only the tags that the
 //     web client defines count, so tag:none matches nothing. The value
 //     favorite matches an item with the favorite mark.
 //   - count:<range>: an item whose number of copies is in the range, such
 //     as count:>=2. The copies are the items of the account with the name,
-//     class, tier, and bucket of the item. Only equipment that the game can
+//     class, rarity, and bucket of the item. Only equipment that the game can
 //     lock counts, except emblems. The range is an operator and a number.
 //     The operator is =, <, <=, >, >=, or empty, and the empty operator
 //     tests equality.
@@ -316,6 +340,22 @@
 //     anywhere in the name.
 //   - exactname:<text>: an item whose whole name is the text, so
 //     exactname:"gnawing hunger" does not match Gnawing Hunger (Adept).
+//   - power:<range> and light:<range>: an item whose power is in the
+//     range, such as power:>=1900. The range has the syntax of count:. An
+//     item without a power that DIM counts matches no range, so
+//     power:<10 skips it. DIM also reads the words powerfloor, softcap,
+//     powerfulcap, and pinnaclecap as the power levels of the season. The
+//     tool lacks those levels, so a range with such a word is a term
+//     outside the set.
+//
+// The rarity filters read the tier type of the definition, as DIM does,
+// and not the tier name that list_items shows. DIM reads a definition
+// without a tier type as Common. The damage type filters read only the
+// damage type of the instance, as the web client does, so an item whose
+// instance has none matches none of them. DIM counts the primary stat of
+// an item as its power when the stat is Attack, Defense, or Power. It
+// does not count the primary stat of a subclass, of an artifact, or of an
+// item whose definition hides the primary stat.
 //
 // The name filters fold the item name and the text before they compare
 // them, as the web client does. The fold removes letter case and

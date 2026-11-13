@@ -132,11 +132,15 @@ type ProfileCharacter struct {
 	Light      int       `json:"light"`
 }
 
-// ProfileInstance is one Bungie DestinyItemInstanceComponent.
+// ProfileInstance is one Bungie DestinyItemInstanceComponent. DamageType
+// is the Bungie DamageType value of the instance. DamageTypeHash is the
+// hash of the damage type definition of the instance, and zero when the
+// instance has none.
 type ProfileInstance struct {
-	PrimaryStat *ProfileStat `json:"primaryStat"`
-	DamageType  int          `json:"damageType"`
-	IsEquipped  bool         `json:"isEquipped"`
+	PrimaryStat    *ProfileStat `json:"primaryStat"`
+	DamageType     int          `json:"damageType"`
+	DamageTypeHash uint32       `json:"damageTypeHash"`
+	IsEquipped     bool         `json:"isEquipped"`
 }
 
 // ProfileStat is one Bungie DestinyStat.

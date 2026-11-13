@@ -13,6 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Bungie TierType values of the test items, named after the rarity that
+// DIM gives each value. The value of Common is tierTypeBasic.
+const (
+	tierTypeUnknown   = 0
+	tierTypeCurrency  = 1
+	tierTypeUncommon  = 3
+	tierTypeRare      = 4
+	tierTypeLegendary = 5
+	tierTypeExotic    = 6
+)
+
 // compiled parses and compiles query, which must parse.
 func compiled(t *testing.T, query string) compiledQuery {
 	t.Helper()
@@ -454,15 +465,21 @@ func TestSupportedKeywords(t *testing.T) {
 	t.Parallel()
 
 	want := []string{
-		"is:weapon", "is:armor", "is:equipment", "is:equippable", "is:equipped", "is:invault",
-		"is:postmaster", "is:inpostmaster", "is:locked", "is:unlocked", "is:titan", "is:hunter",
-		"is:warlock", "is:favorite", "is:autorifle", "is:handcannon", "is:pulserifle", "is:scoutrifle",
-		"is:fusionrifle", "is:sniperrifle", "is:shotgun", "is:machinegun", "is:lmg", "is:rocketlauncher",
-		"is:sidearm", "is:sword", "is:grenadelauncher", "is:heavygrenadelauncher",
-		"is:specialgrenadelauncher", "is:tracerifle", "is:linearfusionrifle", "is:lfr", "is:submachine",
-		"is:smg", "is:bow", "is:glaive", "is:transmat", "is:weaponmod", "is:armormod", "is:reptoken",
-		"is:primary", "is:special", "is:heavy", "is:dupe", "is:incurrentchar", "is:currentclass", "tag:",
-		"dupe:item", "count:", "id:", "hash:", "name:", "exactname:",
+		"is:weapon", "is:armor", "is:equipment", "is:equippable", "is:equipped", "is:invault", "is:postmaster",
+		"is:inpostmaster", "is:locked", "is:unlocked", "is:titan", "is:hunter", "is:warlock", "is:favorite",
+		"is:autorifle", "is:handcannon", "is:pulserifle", "is:scoutrifle", "is:fusionrifle", "is:sniperrifle",
+		"is:shotgun", "is:machinegun", "is:lmg", "is:rocketlauncher", "is:sidearm", "is:sword",
+		"is:grenadelauncher", "is:heavygrenadelauncher", "is:specialgrenadelauncher", "is:tracerifle",
+		"is:linearfusionrifle", "is:lfr", "is:submachine", "is:smg", "is:bow", "is:glaive", "is:transmat",
+		"is:weaponmod", "is:armormod", "is:reptoken", "is:primary", "is:special", "is:heavy", "is:dupe",
+		"is:incurrentchar", "is:currentclass", "is:common", "is:uncommon", "is:rare", "is:legendary", "is:exotic",
+		"is:white", "is:green", "is:blue", "is:purple", "is:yellow", "is:kinetic", "is:arc", "is:solar", "is:void",
+		"is:stasis", "is:strand", "is:light", "is:dark", "is:engrams", "is:lostitems", "is:messages",
+		"is:specialorders", "is:kineticslot", "is:energy", "is:power", "is:helmet", "is:gauntlets", "is:chest",
+		"is:leg", "is:classitem", "is:subclass", "is:seasonalartifacts", "is:ghost", "is:emblems", "is:ships",
+		"is:vehicle", "is:emotes", "is:finishers", "is:accessories", "is:consumables", "is:modifications",
+		"is:haspower", "is:haslight", "is:autotagged", "tag:", "dupe:item", "count:", "id:", "hash:", "name:",
+		"exactname:", "power:", "light:",
 	}
 	assert.Equal(t, want, supportedKeywords())
 
@@ -475,10 +492,16 @@ func TestSupportedKeywords(t *testing.T) {
 		"is:favorite, is:autorifle, is:handcannon, is:pulserifle, is:scoutrifle, is:fusionrifle, "+
 		"is:sniperrifle, is:shotgun, is:machinegun, is:lmg, is:rocketlauncher, is:sidearm, is:sword, "+
 		"is:grenadelauncher, is:heavygrenadelauncher, is:specialgrenadelauncher, is:tracerifle, "+
-		"is:linearfusionrifle, is:lfr, is:submachine, is:smg, is:bow, is:glaive, is:transmat, "+
-		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, is:dupe, "+
-		"is:incurrentchar, is:currentclass, tag:, dupe:item, count:, id:, hash:, name:, "+
-		"and exactname:. Each is: word also works as not:<word>.", err.Error())
+		"is:linearfusionrifle, is:lfr, is:submachine, is:smg, is:bow, is:glaive, is:transmat, is:weaponmod, "+
+		"is:armormod, is:reptoken, is:primary, is:special, is:heavy, is:dupe, is:incurrentchar, "+
+		"is:currentclass, is:common, is:uncommon, is:rare, is:legendary, is:exotic, is:white, is:green, "+
+		"is:blue, is:purple, is:yellow, is:kinetic, is:arc, is:solar, is:void, is:stasis, is:strand, "+
+		"is:light, is:dark, is:engrams, is:lostitems, is:messages, is:specialorders, is:kineticslot, "+
+		"is:energy, is:power, is:helmet, is:gauntlets, is:chest, is:leg, is:classitem, is:subclass, "+
+		"is:seasonalartifacts, is:ghost, is:emblems, is:ships, is:vehicle, is:emotes, is:finishers, "+
+		"is:accessories, is:consumables, is:modifications, is:haspower, is:haslight, is:autotagged, tag:, "+
+		"dupe:item, count:, id:, hash:, name:, exactname:, power:, and light:. Each is: word also works as "+
+		"not:<word>.", err.Error())
 }
 
 func TestListWithAnd(t *testing.T) {
@@ -653,6 +676,42 @@ func TestRangeComparatorPrototypeKeys(t *testing.T) {
 	}
 }
 
+func TestRangeComparatorUnsupported(t *testing.T) {
+	t.Parallel()
+
+	format := rangeFormat{overloads: map[string]float64{"worthy": 10}, unsupported: []string{"pinnaclecap"}}
+
+	tests := map[string]struct {
+		value string
+		err   error
+	}{
+		"a word without an operator":       {value: "pinnaclecap", err: errOverloadValue},
+		"a word after an operator":         {value: ">=pinnaclecap", err: errOverloadValue},
+		"a word after an invalid operator": {value: "=<pinnaclecap", err: errNotRange},
+		"a word after three operators":     {value: "<<=pinnaclecap", err: errNotRange},
+		"a word that starts with the word": {value: "pinnaclecaps", err: errNotRange},
+		"a word of the overloads":          {value: "<worthy"},
+		"a number":                         {value: "<10"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			compare, err := format.comparator(tc.value)
+			if tc.err == nil {
+				require.NoError(t, err)
+				assert.True(t, compare(5))
+
+				return
+			}
+
+			require.ErrorIs(t, err, tc.err)
+			assert.Nil(t, compare)
+		})
+	}
+}
+
 // comparableWeapon returns a legendary kinetic weapon of every class that
 // DIM marks as comparable.
 func comparableWeapon(id, name string) *Item {
@@ -660,6 +719,7 @@ func comparableWeapon(id, name string) *Item {
 		InstanceID: id,
 		Name:       name,
 		Tier:       "Legendary",
+		TierType:   tierTypeLegendary,
 		ClassType:  classAny,
 		Bucket:     bucketKinetic,
 		Equippable: true,
@@ -711,11 +771,16 @@ func TestItemDupeID(t *testing.T) {
 			want: "Fatebringer3Legendary1498876634",
 		},
 		"armor keeps its spaces": {
-			item: &Item{Name: "Helm ", Tier: "Exotic", ClassType: classHunter, Bucket: bucketHelmet},
+			item: &Item{Name: "Helm ", TierType: tierTypeExotic, ClassType: classHunter, Bucket: bucketHelmet},
 			want: "Helm 1Exotic3448274439",
 		},
 		"armor keeps a translation key": {
-			item: &Item{Name: "Filter.Adept Helm", Tier: "Exotic", ClassType: classTitan, Bucket: bucketHelmet},
+			item: &Item{
+				Name:      "Filter.Adept Helm",
+				TierType:  tierTypeExotic,
+				ClassType: classTitan,
+				Bucket:    bucketHelmet,
+			},
 			want: "Filter.Adept Helm0Exotic3448274439",
 		},
 	}
@@ -788,8 +853,8 @@ func TestIsDupe(t *testing.T) {
 		},
 		"same name in two classes": {
 			items: []*Item{comparableWeapon("titan", "Helm"), {
-				InstanceID: "hunter", Name: "Helm", Tier: "Legendary", ClassType: classHunter,
-				Bucket: bucketKinetic, Equippable: true, Lockable: true,
+				InstanceID: "hunter", Name: "Helm", Tier: "Legendary", TierType: tierTypeLegendary,
+				ClassType: classHunter, Bucket: bucketKinetic, Equippable: true, Lockable: true,
 			}},
 			want: []string{},
 		},
@@ -1512,4 +1577,304 @@ func TestCategoryWords(t *testing.T) {
 			assert.Equal(t, []string{strconv.FormatInt(tc.category, 10)}, matchIDs(t, "is:"+word, items))
 		})
 	}
+}
+
+func TestRarityWords(t *testing.T) {
+	t.Parallel()
+
+	// The uncommon item displays the tier name Common, which DIM does not
+	// read.
+	items := []*Item{
+		{InstanceID: "exotic helmet", Tier: "Exotic", TierType: tierTypeExotic, Bucket: bucketHelmet},
+		{InstanceID: "legendary helmet", Tier: "Legendary", TierType: tierTypeLegendary, Bucket: bucketHelmet},
+		{InstanceID: "exotic weapon", Tier: "Exotic", TierType: tierTypeExotic, Bucket: bucketKinetic},
+		{InstanceID: "rare", Tier: "Rare", TierType: tierTypeRare},
+		{InstanceID: "uncommon", Tier: "Common", TierType: tierTypeUncommon},
+		{InstanceID: "common", Tier: "Basic", TierType: tierTypeBasic},
+		{InstanceID: "unknown", TierType: tierTypeUnknown},
+		{InstanceID: "currency", TierType: tierTypeCurrency},
+		{InstanceID: "past the table", TierType: 9},
+		{InstanceID: "negative", TierType: -1},
+	}
+
+	tests := map[string]struct {
+		words []string
+		want  []string
+	}{
+		"common":    {words: []string{"common", "white"}, want: []string{"common", "past the table", "negative"}},
+		"uncommon":  {words: []string{"uncommon", "green"}, want: []string{"uncommon"}},
+		"rare":      {words: []string{"rare", "blue"}, want: []string{"rare"}},
+		"legendary": {words: []string{"legendary", "purple"}, want: []string{"legendary helmet"}},
+		"exotic":    {words: []string{"exotic", "yellow"}, want: []string{"exotic helmet", "exotic weapon"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			for _, word := range tc.words {
+				assert.Equal(t, tc.want, matchIDs(t, "is:"+word, items), word)
+			}
+		})
+	}
+
+	assert.Equal(t, []string{"exotic helmet"}, matchIDs(t, "is:exotic is:armor", items))
+
+	none := "-is:common -is:uncommon -is:rare -is:legendary -is:exotic"
+	assert.Equal(t, []string{"unknown", "currency"}, matchIDs(t, none, items))
+}
+
+func TestElementWords(t *testing.T) {
+	t.Parallel()
+
+	var items []*Item
+	for element := range 8 {
+		items = append(items, &Item{InstanceID: strconv.Itoa(element), Element: element})
+	}
+
+	tests := map[string]struct {
+		want []string
+	}{
+		"kinetic": {want: []string{"1"}},
+		"arc":     {want: []string{"2"}},
+		"solar":   {want: []string{"3"}},
+		"void":    {want: []string{"4"}},
+		"stasis":  {want: []string{"6"}},
+		"strand":  {want: []string{"7"}},
+		"light":   {want: []string{"2", "3", "4"}},
+		"dark":    {want: []string{"6", "7"}},
+	}
+
+	for word, tc := range tests {
+		t.Run(word, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, "is:"+word, items))
+		})
+	}
+
+	none := "-is:kinetic -is:arc -is:solar -is:void -is:stasis -is:strand -is:light -is:dark"
+	assert.Equal(t, []string{"0", "5"}, matchIDs(t, none, items))
+}
+
+func TestSlotWords(t *testing.T) {
+	t.Parallel()
+
+	// Each bucket is the BucketHashes value of DIM that the word reads.
+	tests := map[string]struct {
+		bucket uint32
+	}{
+		"engrams":           {bucket: 375726501},
+		"lostitems":         {bucket: 215593132},
+		"messages":          {bucket: 3161908920},
+		"specialorders":     {bucket: 1367666825},
+		"kineticslot":       {bucket: 1498876634},
+		"energy":            {bucket: 2465295065},
+		"power":             {bucket: 953998645},
+		"helmet":            {bucket: 3448274439},
+		"gauntlets":         {bucket: 3551918588},
+		"chest":             {bucket: 14239492},
+		"leg":               {bucket: 20886954},
+		"classitem":         {bucket: 1585787867},
+		"subclass":          {bucket: 3284755031},
+		"seasonalartifacts": {bucket: 1506418338},
+		"ghost":             {bucket: 4023194814},
+		"emblems":           {bucket: 4274335291},
+		"ships":             {bucket: 284967655},
+		"vehicle":           {bucket: 2025709351},
+		"emotes":            {bucket: 1107761855},
+		"finishers":         {bucket: 3683254069},
+		"accessories":       {bucket: 687325600},
+		"consumables":       {bucket: 1469714392},
+		"modifications":     {bucket: 3313201758},
+	}
+
+	// The lost weapon sits in the Lost Items bucket, and its definition
+	// names the kinetic bucket. Each other item sits in the bucket of one
+	// word and takes the word as its instance id.
+	items := []*Item{{InstanceID: "lost weapon", Bucket: bucketKinetic, Lost: true, Postmaster: true}}
+	for word, tc := range tests {
+		items = append(items, &Item{InstanceID: word, Bucket: tc.bucket})
+	}
+
+	for word := range tests {
+		t.Run(word, func(t *testing.T) {
+			t.Parallel()
+
+			want := []string{word}
+			if word == "kineticslot" {
+				want = []string{"lost weapon", word}
+			}
+
+			assert.Equal(t, want, matchIDs(t, "is:"+word, items))
+		})
+	}
+}
+
+func TestPowerRange(t *testing.T) {
+	t.Parallel()
+
+	// The item without power has a primary stat that DIM does not count.
+	items := []*Item{
+		{InstanceID: "1900", Power: 1900, LightPower: 1900},
+		{InstanceID: "5", Power: 5, LightPower: 5},
+		{InstanceID: "no power", Power: 2000},
+	}
+
+	tests := map[string]struct {
+		value string
+		want  []string
+	}{
+		"at least 10":                 {value: ">=10", want: []string{"1900"}},
+		"fewer than 10":               {value: "<10", want: []string{"5"}},
+		"fewer than 1900":             {value: "<1900", want: []string{"5"}},
+		"equal to 1900":               {value: "1900", want: []string{"1900"}},
+		"equal to 0":                  {value: "=0", want: []string{}},
+		"more than 0":                 {value: ">0", want: []string{"1900", "5"}},
+		"constructor":                 {value: "constructor", want: []string{}},
+		"__proto__ after an operator": {value: ">=__proto__", want: []string{}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, "power:"+tc.value, items), "power")
+			assert.Equal(t, tc.want, matchIDs(t, "light:"+tc.value, items), "light")
+		})
+	}
+}
+
+func TestPowerRangeValues(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query       string
+		unsupported []string
+		invalid     []string
+	}{
+		"pinnaclecap after an operator": {
+			query:       "power:>=pinnaclecap",
+			unsupported: []string{"power:>=pinnaclecap"},
+		},
+		"powerfloor":   {query: "power:powerfloor", unsupported: []string{"power:powerfloor"}},
+		"softcap":      {query: "light:<softcap", unsupported: []string{"light:<softcap"}},
+		"powerfulcap":  {query: "light:=powerfulcap", unsupported: []string{"light:=powerfulcap"}},
+		"a word":       {query: "power:abc", invalid: []string{"power:abc"}},
+		"a bad order":  {query: "power:=<10", invalid: []string{"power:=<10"}},
+		"an empty one": {query: `light:""`, invalid: []string{`light:""`}},
+		"pinnaclecap after a bad operator": {
+			query:   "power:=<pinnaclecap",
+			invalid: []string{"power:=<pinnaclecap"},
+		},
+		"a bad operator before an unsupported word": {
+			query:   "power:>=pinnaclecap light:<>softcap",
+			invalid: []string{"light:<>softcap"},
+		},
+		"a word that starts with pinnaclecap": {
+			query:   "power:pinnaclecaps",
+			invalid: []string{"power:pinnaclecaps"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			q := compiled(t, tc.query)
+			assert.Equal(t, tc.unsupported, q.unsupported)
+			assert.Equal(t, tc.invalid, q.invalid)
+			assert.Nil(t, q.test)
+		})
+	}
+}
+
+func TestPowerValueErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		value string
+		errs  []error
+	}{
+		"a season word": {
+			value: "pinnaclecap",
+			errs:  []error{errUnsupportedTerm, errOverloadValue},
+		},
+		"a season word after >=": {
+			value: ">=pinnaclecap",
+			errs:  []error{errUnsupportedTerm, errOverloadValue},
+		},
+		"a season word after a bad operator": {value: "=<pinnaclecap", errs: []error{errInvalidValue, errNotRange}},
+		"a word outside the table":           {value: "abc", errs: []error{errInvalidValue, errNotRange}},
+		"a number":                           {value: "<10"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			build, err := powerValue(tc.value)
+			if tc.errs == nil {
+				require.NoError(t, err)
+				assert.NotNil(t, build)
+
+				return
+			}
+
+			for _, want := range tc.errs {
+				require.ErrorIs(t, err, want)
+			}
+
+			assert.Nil(t, build)
+		})
+	}
+}
+
+func TestHasPower(t *testing.T) {
+	t.Parallel()
+
+	items := []*Item{
+		{InstanceID: "counted", Power: 1900, LightPower: 1900},
+		{InstanceID: "not counted", Power: 2010},
+		{InstanceID: "no primary stat"},
+	}
+
+	for _, query := range []string{"is:haspower", "is:haslight"} {
+		assert.Equal(t, []string{"counted"}, matchIDs(t, query, items), query)
+	}
+}
+
+func TestAutotagged(t *testing.T) {
+	t.Parallel()
+
+	s := fixtureSnapshot(t)
+	owned := ownedItems(s)
+	target := owned[0]
+
+	matches := func(query string) []string {
+		return ids(compiled(t, query).matches(searchContext{items: builtItems(s)}, owned))
+	}
+
+	s.Annotate([]ItemTag{{InstanceID: target.InstanceID, TagID: tagJunk, RuleID: "rule-1"}}, nil)
+	assert.Equal(t, []string{target.InstanceID}, matches("is:autotagged"))
+
+	// A tag that a person sets carries no rule id.
+	s.Annotate([]ItemTag{{InstanceID: target.InstanceID, TagID: tagJunk}}, nil)
+	assert.Empty(t, matches("is:autotagged"))
+	assert.Equal(t, []string{target.InstanceID}, matches("tag:junk"))
+}
+
+func TestDupeKeyRarity(t *testing.T) {
+	t.Parallel()
+
+	rare := comparableWeapon("rare", "Fatebringer")
+	rare.TierType = tierTypeRare
+
+	assert.Equal(t, []string{}, matchIDs(t, "is:dupe", []*Item{rare, comparableWeapon("legendary", "Fatebringer")}))
+
+	renamed := comparableWeapon("renamed", "Fatebringer")
+	renamed.Tier = "Superior"
+
+	got := matchIDs(t, "is:dupe", []*Item{renamed, comparableWeapon("legendary", "Fatebringer")})
+	assert.Equal(t, []string{"renamed", "legendary"}, got)
 }
