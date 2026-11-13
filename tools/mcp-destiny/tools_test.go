@@ -183,10 +183,10 @@ func TestListItems(t *testing.T) {
 			want: strings.Join([]string{
 				"Items 1-2 of 2.",
 				"",
-				"instance id | name | type | tier | power | location | tag | flags | perks",
-				"1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 | Vault | keep | " +
+				"instance id | name | type | tier | power | stat total | location | tag | flags | perks",
+				"1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Vault | keep | " +
 					"favorite, locked, masterwork, note | Explosive Payload, Firefly",
-				"1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 | Vault |  |  | ",
+				"1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 |  | Vault |  |  | ",
 			}, "\n"),
 		},
 		"paging": {
@@ -194,9 +194,9 @@ func TestListItems(t *testing.T) {
 			want: strings.Join([]string{
 				"Items 3-4 of 6. Pass offset=4 for the next page.",
 				"",
-				"instance id | name | type | tier | power | location | tag | flags",
-				"1004 | Celestial Nighthawk | Helmet | Exotic | 2000 | Hunter (equipped) |  | ",
-				"1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 | Vault |  | ",
+				"instance id | name | type | tier | power | stat total | location | tag | flags",
+				"1004 | Celestial Nighthawk | Helmet | Exotic | 2000 | 55 | Hunter (equipped) |  | ",
+				"1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 |  | Vault |  | ",
 			}, "\n"),
 		},
 		"stack": {
@@ -204,9 +204,38 @@ func TestListItems(t *testing.T) {
 			want: strings.Join([]string{
 				"Items 1-1 of 1.",
 				"",
-				"instance id | name | type | tier | power | location | tag | flags",
-				"stack of 42 (item hash 300) | Enhancement Core | Material | Legendary |  | Account |  | ",
+				"instance id | name | type | tier | power | stat total | location | tag | flags",
+				"stack of 42 (item hash 300) | Enhancement Core | Material | Legendary |  |  | Account |  | ",
 			}, "\n"),
+		},
+		"minimum stat total": {
+			in: ListItemsInput{MinTotal: 55},
+			want: strings.Join([]string{
+				"Items 1-1 of 1.",
+				"",
+				"instance id | name | type | tier | power | stat total | location | tag | flags",
+				"1004 | Celestial Nighthawk | Helmet | Exotic | 2000 | 55 | Hunter (equipped) |  | ",
+			}, "\n"),
+		},
+		"sort by a named stat": {
+			in: ListItemsInput{Stat: "HEALTH", Sort: sortStat, Limit: 2},
+			want: strings.Join([]string{
+				"Items 1-2 of 6. Pass offset=2 for the next page.",
+				"",
+				"instance id | name | type | tier | power | stat total | health | location | tag | flags",
+				"1004 | Celestial Nighthawk | Helmet | Exotic | 2000 | 55 | 30 | Hunter (equipped) |  | ",
+				"1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  |  | Vault | keep | " +
+					"favorite, locked, masterwork, note",
+			}, "\n"),
+		},
+		"minimum value of a named stat": {
+			in:   ListItemsInput{Stat: "health", MinStat: 31},
+			want: "No items match.",
+		},
+		"unknown stat": {
+			in:      ListItemsInput{Stat: "mobility"},
+			want:    `invalid filter: no item in the inventory has a stat named "mobility", so pass one of Grenade, Health, Range`,
+			isError: true,
 		},
 		"no match": {
 			in:   ListItemsInput{Query: "thorn"},
@@ -232,6 +261,50 @@ func TestListItems(t *testing.T) {
 			got, isError := call(t, f.h.handleListItems, tc.in)
 			assert.Equal(t, tc.isError, isError)
 			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestRenderItemsStatTotal(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		item *Item
+		want string
+	}{
+		"armor with a total of 0": {
+			item: &Item{
+				Name:  "Zero Helmet",
+				Kind:  kindArmor,
+				Stats: []Stat{{Name: "Grenade", Value: 0}, {Name: "Health", Value: 0}},
+			},
+			want: "0",
+		},
+		"armor without stats": {
+			item: &Item{Name: "Bare Helmet", Kind: kindArmor},
+			want: "",
+		},
+		"weapon with stats": {
+			item: &Item{Name: "Ace of Spades", Kind: kindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
+			want: "",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			tc.item.InstanceID = "21"
+			tc.item.Owner = ownerVault
+			tc.item.Transferable = true
+
+			got := renderItems(&Snapshot{}, []*Item{tc.item}, 0, 1, "", false)
+			assert.Equal(t, strings.Join([]string{
+				"Items 1-1 of 1.",
+				"",
+				"instance id | name | type | tier | power | stat total | location | tag | flags",
+				"21 | " + tc.item.Name + " |  |  |  | " + tc.want + " | Vault |  | ",
+			}, "\n"), got)
 		})
 	}
 }
@@ -611,7 +684,7 @@ func TestMoveStackTool(t *testing.T) {
 
 	got, isError = call(t, f.h.handleListItems, ListItemsInput{Kind: kindOther, Location: "vault"})
 	assert.False(t, isError)
-	assert.Contains(t, got, "stack of 12 (item hash 300) | Enhancement Core | Material | Legendary |  | Vault")
+	assert.Contains(t, got, "stack of 12 (item hash 300) | Enhancement Core | Material | Legendary |  |  | Vault")
 
 	tests := map[string]struct {
 		want string
@@ -793,9 +866,9 @@ func TestSetLockTool(t *testing.T) {
 	// Bungie for a profile that might predate them.
 	got, isError = call(t, f.h.handleListItems, ListItemsInput{})
 	assert.False(t, isError)
-	assert.Contains(t, got, "1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 | Vault |  | locked\n")
-	assert.Contains(t, got, "1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 | Hunter |  | locked")
-	assert.Contains(t, got, "1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 | Vault | keep | "+
+	assert.Contains(t, got, "1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 |  | Vault |  | locked\n")
+	assert.Contains(t, got, "1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 |  | Hunter |  | locked")
+	assert.Contains(t, got, "1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Vault | keep | "+
 		"favorite, masterwork, note\n")
 	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
 }

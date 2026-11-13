@@ -43,11 +43,12 @@ const (
 // fixtureProfile is a Bungie profile response body. The Hunter has the
 // latest play date. It has a hand cannon and a helmet equipped, a second
 // hand cannon in its inventory, and a third at the Postmaster. The vault
-// holds a hand cannon with sockets and stats and a rocket launcher. Every
-// instanced item is lockable, and the vault hand cannon is locked. The
-// account holds a stack of consumables, glimmer, bright dust, and a
-// currency that the definitions lack. The consumables stack carries the
-// vault location, because Bungie gives that location to every profile item.
+// holds a hand cannon with sockets and stats and a rocket launcher. The
+// helmet has a stat total of 55. Every instanced item is lockable, and the
+// vault hand cannon is locked. The account holds a stack of consumables,
+// glimmer, bright dust, and a currency that the definitions lack. The
+// consumables stack carries the vault location, because Bungie gives that
+// location to every profile item.
 const fixtureProfile = `{
 	"profileInventory": {"data": {"items": [
 		{"itemHash": 100, "itemInstanceId": "1001", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802, "state": 5},
@@ -87,7 +88,8 @@ const fixtureProfile = `{
 			"1006": {"damageType": 1, "primaryStat": {"statHash": 9, "value": 1980}, "isEquipped": true}
 		}},
 		"stats": {"data": {
-			"1001": {"stats": {"1": {"statHash": 1, "value": 55}, "7": {"statHash": 7, "value": 3}}}
+			"1001": {"stats": {"1": {"statHash": 1, "value": 55}, "7": {"statHash": 7, "value": 3}}},
+			"1004": {"stats": {"2": {"statHash": 2, "value": 30}, "3": {"statHash": 3, "value": 25}}}
 		}},
 		"sockets": {"data": {
 			"1001": {"sockets": [
@@ -174,7 +176,7 @@ func fixtureDefs() *Defs {
 				Account:  true,
 			},
 		},
-		Stats:       map[uint32]string{1: "Range"},
+		Stats:       map[uint32]string{1: "Range", 2: "Health", 3: "Grenade"},
 		DamageTypes: map[int]string{1: "Kinetic", 3: "Solar"},
 		Classes:     map[int]string{0: "Titan", 1: "Hunter", 2: "Warlock"},
 	}

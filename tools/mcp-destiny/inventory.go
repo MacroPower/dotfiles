@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -38,6 +39,8 @@ const (
 	sortName   = "name"
 	sortPower  = "power"
 	sortNewest = "newest"
+	sortTotal  = "total"
+	sortStat   = "stat"
 )
 
 // tagFavorite is the tag id that marks a favorite. An item carries it
@@ -49,7 +52,9 @@ var (
 	// display order. The web client ignores stored tag definitions.
 	tagOrder = []string{"keep", "pvp", "pve", "junk", "infuse", "archive"}
 
-	// ErrInvalidFilter reports an [ItemFilter] field with an unknown value.
+	// ErrInvalidFilter reports an [ItemFilter] field with an unknown value,
+	// such as a Stat that no item has. It also reports a positive MinStat
+	// or a Sort of "stat" in a filter without a Stat.
 	ErrInvalidFilter = errors.New("invalid filter")
 
 	// ErrUnknownTarget reports a location name that matches neither the
@@ -134,6 +139,35 @@ type Item struct {
 	Equippable   bool
 	Lockable     bool
 	Favorite     bool
+}
+
+// StatTotal returns the sum of the stat values of an armor piece. It reports
+// false for an item without a stat total. Items other than armor have no
+// stat total, and neither does armor whose stats the profile omits.
+func (i *Item) StatTotal() (int, bool) {
+	if i.Kind != kindArmor || len(i.Stats) == 0 {
+		return 0, false
+	}
+
+	total := 0
+	for _, stat := range i.Stats {
+		total += stat.Value
+	}
+
+	return total, true
+}
+
+// StatValue returns the value of the stat with the given name, which it
+// matches without regard to case. It reports false when the item lacks the
+// stat.
+func (i *Item) StatValue(name string) (int, bool) {
+	for _, stat := range i.Stats {
+		if strings.EqualFold(stat.Name, name) {
+			return stat.Value, true
+		}
+	}
+
+	return 0, false
 }
 
 // Bucket is an inventory bucket that holds a fixed number of items, such as
@@ -595,12 +629,24 @@ type ItemFilter struct {
 	Tag string
 	// Perk matches a substring of a perk name.
 	Perk string
-	// Sort is "name", "power", or "newest".
+	// Stat names the stat that MinStat and the "stat" sort read, such as
+	// "health". It matches the full name of a stat that an item in the
+	// snapshot has.
+	Stat string
+	// Sort is "name", "power", "newest", "total" for the highest stat total
+	// first, or "stat" for the highest value of Stat first.
 	Sort string
 	// MinPower and MaxPower bound the power level, inclusive. Zero turns a
 	// bound off.
 	MinPower int
 	MaxPower int
+	// MinTotal is the lowest stat total to include. Only armor has a stat
+	// total, so a positive MinTotal selects only armor. Zero turns the bound
+	// off.
+	MinTotal int
+	// MinStat is the lowest value of Stat to include. A positive MinStat
+	// rejects every item that lacks the stat. Zero turns the bound off.
+	MinStat int
 	// Favorite selects only favorites.
 	Favorite bool
 }
@@ -636,11 +682,97 @@ func (s *Snapshot) Filter(f ItemFilter) ([]*Item, error) {
 			return compareIDs(b.InstanceID, a.InstanceID)
 		})
 
+	case sortTotal:
+		slices.SortStableFunc(out, func(a, b *Item) int {
+			return cmp.Or(
+				cmp.Compare(totalRank(b), totalRank(a)),
+				cmp.Compare(a.Name, b.Name),
+				compareIDs(a.InstanceID, b.InstanceID),
+			)
+		})
+
+	case sortStat:
+		if f.Stat == "" {
+			return nil, fmt.Errorf("%w: sort %q needs a stat name", ErrInvalidFilter, f.Sort)
+		}
+
+		slices.SortStableFunc(out, func(a, b *Item) int {
+			return cmp.Or(
+				cmp.Compare(statRank(b, f.Stat), statRank(a, f.Stat)),
+				cmp.Compare(a.Name, b.Name),
+				compareIDs(a.InstanceID, b.InstanceID),
+			)
+		})
+
 	default:
-		return nil, fmt.Errorf("%w: sort %q is not name, power, or newest", ErrInvalidFilter, f.Sort)
+		return nil, fmt.Errorf(
+			"%w: sort %q is not name, power, newest, total, or stat", ErrInvalidFilter, f.Sort,
+		)
 	}
 
 	return out, nil
+}
+
+// totalRank returns the stat total of item. An item without a stat total
+// ranks below every item that has one, including armor with a total of 0.
+func totalRank(item *Item) int {
+	total, ok := item.StatTotal()
+	if !ok {
+		return math.MinInt
+	}
+
+	return total
+}
+
+// statRank returns the value of the named stat of item. An item that lacks
+// the stat ranks below every item that has it.
+func statRank(item *Item, name string) int {
+	value, ok := item.StatValue(name)
+	if !ok {
+		return math.MinInt
+	}
+
+	return value
+}
+
+// statNames returns the names of the stats that the items of the snapshot
+// have, in alphabetical order.
+func (s *Snapshot) statNames() []string {
+	var names []string
+
+	for _, item := range s.Items {
+		for _, stat := range item.Stats {
+			if !slices.Contains(names, stat.Name) {
+				names = append(names, stat.Name)
+			}
+		}
+	}
+
+	slices.Sort(names)
+
+	return names
+}
+
+// checkStat reports an [ErrInvalidFilter] error when no item of the
+// snapshot has a stat named name. An empty name passes.
+func (s *Snapshot) checkStat(name string) error {
+	if name == "" {
+		return nil
+	}
+
+	names := s.statNames()
+
+	switch {
+	case slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(n, name) }):
+		return nil
+	case len(names) == 0:
+		return fmt.Errorf("%w: no item in the inventory has stats", ErrInvalidFilter)
+	default:
+		return fmt.Errorf(
+			"%w: no item in the inventory has a stat named %q, so pass one of %s",
+			ErrInvalidFilter, name, strings.Join(names, ", "),
+		)
+	}
 }
 
 // compareIDs orders instance ids by numeric value. Bungie issues ascending
@@ -675,6 +807,15 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 		owner = resolved
 	}
 
+	if f.MinStat > 0 && f.Stat == "" {
+		return nil, fmt.Errorf("%w: a minimum stat value needs a stat name", ErrInvalidFilter)
+	}
+
+	err := s.checkStat(f.Stat)
+	if err != nil {
+		return nil, err
+	}
+
 	query := strings.ToLower(f.Query)
 	slot := strings.ToLower(f.Slot)
 	perk := strings.ToLower(f.Perk)
@@ -695,6 +836,8 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 			f.Damage != "" && !strings.EqualFold(item.Damage, f.Damage),
 			f.MinPower > 0 && item.Power < f.MinPower,
 			f.MaxPower > 0 && item.Power > f.MaxPower,
+			f.MinTotal > 0 && totalRank(item) < f.MinTotal,
+			f.MinStat > 0 && statRank(item, f.Stat) < f.MinStat,
 			f.Favorite && !item.Favorite,
 			tag == tagNone && item.Tag != "",
 			tag == tagAny && item.Tag == "",

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -400,6 +401,157 @@ func TestFilter(t *testing.T) {
 			got, err := s.Filter(tc.filter)
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, ids(got))
+		})
+	}
+}
+
+func TestFilterStats(t *testing.T) {
+	t.Parallel()
+
+	helmet := func(id string, health, grenade int) *Item {
+		return &Item{
+			InstanceID: id,
+			Name:       "Helmet " + id,
+			Kind:       kindArmor,
+			Stats:      []Stat{{Name: "Grenade", Value: grenade}, {Name: "Health", Value: health}},
+		}
+	}
+
+	// The items that tie on a total or a stat are out of name order. The
+	// tie-breaks of the total sort and the stat sort put them in name order.
+	s := &Snapshot{Items: []*Item{
+		helmet("13", 20, 20),
+		helmet("12", 10, 40),
+		helmet("11", 30, 10),
+		{InstanceID: "15", Name: "Bare Helmet", Kind: kindArmor},
+		{InstanceID: "14", Name: "Ace of Spades", Kind: kindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
+	}}
+
+	// The copies of one name are out of instance id order.
+	twins := &Snapshot{Items: []*Item{
+		{InstanceID: "31", Name: "Twin Helmet", Kind: kindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
+		{InstanceID: "30", Name: "Twin Helmet", Kind: kindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
+	}}
+
+	// The name order of the tied items is the reverse of their instance id
+	// order, so a tie-break on the instance id alone fails.
+	rivals := &Snapshot{Items: []*Item{
+		{InstanceID: "40", Name: "Beta Helmet", Kind: kindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
+		{InstanceID: "41", Name: "Alpha Helmet", Kind: kindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
+	}}
+
+	tests := map[string]struct {
+		snapshot *Snapshot
+		err      error
+		msg      string
+		filter   ItemFilter
+		want     []string
+	}{
+		"total sort puts items without a total last": {
+			filter: ItemFilter{Sort: sortTotal},
+			want:   []string{"12", "11", "13", "14", "15"},
+		},
+		"total sort puts a zero total ahead of items without a total": {
+			snapshot: &Snapshot{Items: []*Item{
+				{InstanceID: "19", Name: "Ace of Spades", Kind: kindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
+				{InstanceID: "20", Name: "Bare Helmet", Kind: kindArmor},
+				{
+					InstanceID: "21",
+					Name:       "Zero Helmet",
+					Kind:       kindArmor,
+					Stats:      []Stat{{Name: "Grenade", Value: 0}, {Name: "Health", Value: 0}},
+				},
+			}},
+			filter: ItemFilter{Sort: sortTotal},
+			want:   []string{"21", "19", "20"},
+		},
+		"total sort orders copies of one name by instance id": {
+			snapshot: twins,
+			filter:   ItemFilter{Sort: sortTotal},
+			want:     []string{"30", "31"},
+		},
+		"total sort orders a tie by name ahead of instance id": {
+			snapshot: rivals,
+			filter:   ItemFilter{Sort: sortTotal},
+			want:     []string{"41", "40"},
+		},
+		"minimum total is inclusive and selects only armor": {
+			filter: ItemFilter{MinTotal: 40},
+			want:   []string{"11", "12", "13"},
+		},
+		"stat sort puts items without the stat last": {
+			filter: ItemFilter{Stat: "health", Sort: sortStat},
+			want:   []string{"11", "13", "12", "14", "15"},
+		},
+		"stat sort puts a zero value ahead of items without the stat": {
+			snapshot: &Snapshot{Items: []*Item{
+				{InstanceID: "17", Name: "Ace of Spades", Kind: kindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
+				{InstanceID: "18", Name: "Zero Helmet", Kind: kindArmor, Stats: []Stat{{Name: "Health", Value: 0}}},
+			}},
+			filter: ItemFilter{Stat: "health", Sort: sortStat},
+			want:   []string{"18", "17"},
+		},
+		"stat sort orders copies of one name by instance id": {
+			snapshot: twins,
+			filter:   ItemFilter{Stat: "health", Sort: sortStat},
+			want:     []string{"30", "31"},
+		},
+		"stat sort orders a tie by name ahead of instance id": {
+			snapshot: rivals,
+			filter:   ItemFilter{Stat: "health", Sort: sortStat},
+			want:     []string{"41", "40"},
+		},
+		"minimum stat is inclusive": {
+			filter: ItemFilter{Stat: "HEALTH", MinStat: 20},
+			want:   []string{"11", "13"},
+		},
+		"minimum stat of a weapon": {
+			filter: ItemFilter{Stat: "range", MinStat: 50},
+			want:   []string{"14"},
+		},
+		"stat alone does not filter": {
+			filter: ItemFilter{Stat: "grenade"},
+			want:   []string{"14", "15", "11", "12", "13"},
+		},
+		"unknown stat": {
+			filter: ItemFilter{Stat: "mobility"},
+			err:    ErrInvalidFilter,
+			msg:    `invalid filter: no item in the inventory has a stat named "mobility", so pass one of Grenade, Health, Range`,
+		},
+		"stat in an inventory without stats": {
+			snapshot: &Snapshot{Items: []*Item{{InstanceID: "16", Kind: kindArmor}}},
+			filter:   ItemFilter{Stat: "health"},
+			err:      ErrInvalidFilter,
+			msg:      "invalid filter: no item in the inventory has stats",
+		},
+		"minimum stat without a stat": {
+			filter: ItemFilter{MinStat: 10},
+			err:    ErrInvalidFilter,
+			msg:    "invalid filter: a minimum stat value needs a stat name",
+		},
+		"stat sort without a stat": {
+			filter: ItemFilter{Sort: sortStat},
+			err:    ErrInvalidFilter,
+			msg:    `invalid filter: sort "stat" needs a stat name`,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			snapshot := cmp.Or(tc.snapshot, s)
+
+			got, err := snapshot.Filter(tc.filter)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				assert.EqualError(t, err, tc.msg)
 
 				return
 			}

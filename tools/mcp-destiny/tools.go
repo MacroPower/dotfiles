@@ -104,9 +104,12 @@ type ListItemsInput struct {
 	Location     string `json:"location,omitzero"      jsonschema:"vault, postmaster, equipped, characters (any character), a character id, or a class name"`
 	Tag          string `json:"tag,omitzero"           jsonschema:"Tag id from list_tags, 'none' for untagged items, or 'any' for tagged items"`
 	Perk         string `json:"perk,omitzero"          jsonschema:"Case-insensitive substring of a perk the item has equipped, such as 'kill clip'"`
-	Sort         string `json:"sort,omitzero"          jsonschema:"name (default), power (highest first), or newest (most recently acquired first)"`
+	Stat         string `json:"stat,omitzero"          jsonschema:"Case-insensitive full name of one stat, such as 'health' for armor or 'range' for weapons. Adds a column with its value, and min_stat and sort=stat read it"`
+	Sort         string `json:"sort,omitzero"          jsonschema:"name (default), power (highest first), newest (most recently acquired first), total (highest armor stat total first), or stat (highest value of the stat that stat names first)"`
 	MinPower     int    `json:"min_power,omitzero"     jsonschema:"Lowest power level to include"`
 	MaxPower     int    `json:"max_power,omitzero"     jsonschema:"Highest power level to include"`
+	MinTotal     int    `json:"min_total,omitzero"     jsonschema:"Lowest armor stat total to include. Only armor has a stat total, so a positive value returns only armor"`
+	MinStat      int    `json:"min_stat,omitzero"      jsonschema:"Lowest value of the stat that stat names. Items that lack the stat do not match"`
 	Limit        int    `json:"limit,omitzero"         jsonschema:"Maximum number of items to return (default 50, maximum 200)"`
 	Offset       int    `json:"offset,omitzero"        jsonschema:"Number of matching items to skip (default 0)"`
 	Favorite     bool   `json:"favorite,omitzero"      jsonschema:"Return only favorites"`
@@ -318,9 +321,12 @@ func (h *handler) handleListItems(
 		Location: in.Location,
 		Tag:      in.Tag,
 		Perk:     in.Perk,
+		Stat:     in.Stat,
 		Sort:     in.Sort,
 		MinPower: in.MinPower,
 		MaxPower: in.MaxPower,
+		MinTotal: in.MinTotal,
+		MinStat:  in.MinStat,
 		Favorite: in.Favorite,
 	})
 	if err != nil {
@@ -336,7 +342,7 @@ func (h *handler) handleListItems(
 	offset := min(max(in.Offset, 0), len(items))
 	page := items[offset:min(offset+limit, len(items))]
 
-	return textResult(renderItems(s, page, offset, len(items), in.IncludePerks)), nil, nil
+	return textResult(renderItems(s, page, offset, len(items), in.Stat, in.IncludePerks)), nil, nil
 }
 
 func (h *handler) handleGetItem(

@@ -151,7 +151,11 @@ func slotsLabel(used, capacity int) string {
 	return fmt.Sprintf("%d/%d", used, capacity)
 }
 
-func renderItems(s *Snapshot, items []*Item, offset, total int, perks bool) string {
+// renderItems renders one page of items as a table. The stat total column
+// is empty for every item without a stat total, such as a weapon. A nonempty
+// stat adds a column with the value of that stat, and perks adds a column
+// with the equipped perks.
+func renderItems(s *Snapshot, items []*Item, offset, total int, stat string, perks bool) string {
 	if total == 0 {
 		return "No items match."
 	}
@@ -168,7 +172,13 @@ func renderItems(s *Snapshot, items []*Item, offset, total int, perks bool) stri
 		fmt.Fprintf(&b, " Pass offset=%d for the next page.", offset+len(items))
 	}
 
-	b.WriteString("\n\ninstance id | name | type | tier | power | location | tag | flags")
+	b.WriteString("\n\ninstance id | name | type | tier | power | stat total")
+
+	if stat != "" {
+		b.WriteString(" | " + strings.ToLower(stat))
+	}
+
+	b.WriteString(" | location | tag | flags")
 
 	if perks {
 		b.WriteString(" | perks")
@@ -182,16 +192,13 @@ func renderItems(s *Snapshot, items []*Item, offset, total int, perks bool) stri
 			id = fmt.Sprintf("stack of %d (item hash %d)", item.Quantity, item.Hash)
 		}
 
-		fields := []string{
-			id,
-			item.Name,
-			typeLabel(item),
-			item.Tier,
-			powerLabel(item),
-			s.LocationLabel(item),
-			item.Tag,
-			strings.Join(flagsOf(item), ", "),
+		fields := []string{id, item.Name, typeLabel(item), item.Tier, powerLabel(item), totalLabel(item)}
+
+		if stat != "" {
+			fields = append(fields, statLabel(item, stat))
 		}
+
+		fields = append(fields, s.LocationLabel(item), item.Tag, strings.Join(flagsOf(item), ", "))
 
 		if perks {
 			names := make([]string, 0, len(item.Perks))
@@ -358,6 +365,24 @@ func powerLabel(item *Item) string {
 	}
 
 	return strconv.Itoa(item.Power)
+}
+
+func totalLabel(item *Item) string {
+	total, ok := item.StatTotal()
+	if !ok {
+		return ""
+	}
+
+	return strconv.Itoa(total)
+}
+
+func statLabel(item *Item, name string) string {
+	value, ok := item.StatValue(name)
+	if !ok {
+		return ""
+	}
+
+	return strconv.Itoa(value)
 }
 
 func flagsOf(item *Item) []string {
