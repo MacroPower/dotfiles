@@ -337,7 +337,8 @@ func newServer(h *handler) *mcp.Server {
 			"A cell reads 'no tier' for a weapon that the sheet lists without a tier, " +
 			"and 'roll unknown' with the sheet tier for a copy whose perks the profile does not list. " +
 			"It reads 'not listed' for a weapon that the sheet does not list, " +
-			"and 'unavailable' when the server has no sheet for the game mode or cannot read the perk preferences. " +
+			"and 'unavailable' when the server has no sheet for the game mode, " +
+			"or cannot read the perk preferences or the Destiny definitions. " +
 			"A line before the table gives the reason for each unavailable game mode. " +
 			"The rating cells of every item that is not a weapon are empty. " +
 			"The min_pve_rating input takes a tier from S to F and keeps only the weapon copies " +
@@ -370,12 +371,16 @@ func newServer(h *handler) *mcp.Server {
 			"The web client also counts a liked perk in a column in which the copy rolled no pick. " +
 			"One line for each column names the perks that count, with '(liked)' after each liked perk, " +
 			"or says that the column missed. " +
+			"After the words 'The sheet picks', the line also names the perks that the sheet picks for the column. " +
+			"The sheet lists its picks across every version of the weapon, " +
+			"so a pick can be a perk that this version cannot roll. " +
+			"The list leaves out the perks that the user dislikes for the game mode. " +
 			"The note that the sheet gives the weapon follows the column lines, after the label 'Sheet note'. " +
 			"The rating reads the perks that this tool lists, " +
 			"and a pick that sits beside the active perk in a socket counts. " +
 			"The web client reads another socket list, so its rating of a copy can differ. " +
 			"A copy for which the profile lists no perks reads 'roll unknown'. " +
-			"When the server has no sheet for a game mode or cannot read the perk preferences, " +
+			"When the server has no sheet for a game mode, or cannot read the perk preferences or the Destiny definitions, " +
 			"the line of that mode names the reason.",
 		Annotations: readOnly,
 	}, h.handleGetItem)

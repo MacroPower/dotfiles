@@ -1905,38 +1905,58 @@ func (h *handler) perkPreferences(ctx context.Context) ([]PerkPreference, error)
 // the mode. It does not read the item, so one result rates every item
 // of a call.
 //
-// It reads the roll sheets through the sheet store and the perk
-// preferences from the service. The read of the preferences runs on
-// every call, also when no mode has a sheet, and the handler keeps no
-// copy of them. A preference that the user changes in the web client
-// therefore counts in the next call.
+// It reads the roll sheets through the sheet store, then the perk
+// preferences from the service, then the definitions through the
+// definition loader. The read of the preferences runs on every call,
+// also when no mode has a sheet, and the handler keeps no copy of them.
+// A preference that the user changes in the web client therefore counts
+// in the next call. The read of the definitions also runs on every
+// call. The loader serves the loaded definitions from memory for
+// [defsRecheck], so most calls send no request for them.
 //
 // A mode without a sheet carries the reason of the sheet. When the
 // server cannot read the preferences, every other mode carries that
-// reason, which wraps [ErrNoRating] and the error of the read. The
-// method therefore returns no error, and each caller decides what a mode
+// reason. When the server reads the preferences but cannot read the
+// definitions, every other mode carries the reason of the definitions.
+// Both reasons wrap [ErrNoRating] and the error of the read. The method
+// therefore returns no error, and each caller decides what a mode
 // without ratings costs.
+//
+// The definitions can belong to a later manifest version than the
+// definitions that built the cached snapshot. A rating takes only the
+// names of the picks from them, so the later version changes only
+// those names. The next profile fetch builds the snapshot from the
+// later version.
 func (h *handler) ratingSources(ctx context.Context) map[string]RatingSource {
 	states := h.sheets.Load(ctx)
 
-	prefs, err := h.perkPreferences(ctx)
-	if err != nil {
-		err = fmt.Errorf("%w: reading perk preferences: %w", ErrNoRating, err)
+	prefs, prefsErr := h.perkPreferences(ctx)
+	if prefsErr != nil {
+		prefsErr = fmt.Errorf("%w: reading perk preferences: %w", ErrNoRating, prefsErr)
+	}
+
+	defs, defsErr := h.defs.Get(ctx)
+	if defsErr != nil {
+		defsErr = fmt.Errorf("%w: loading definitions: %w", ErrNoRating, defsErr)
 	}
 
 	stances := stancesByMode(prefs)
 	sources := make(map[string]RatingSource, len(perkModes))
 
+	// The cases follow the order of the reads, so the reason of an
+	// earlier read stays in place of the reason of a later read.
 	for _, mode := range perkModes {
 		state := states[mode]
 
 		switch {
 		case state.Err != nil:
 			sources[mode] = RatingSource{Err: state.Err}
-		case err != nil:
-			sources[mode] = RatingSource{Err: err}
+		case prefsErr != nil:
+			sources[mode] = RatingSource{Err: prefsErr}
+		case defsErr != nil:
+			sources[mode] = RatingSource{Err: defsErr}
 		default:
-			sources[mode] = RatingSource{Sheet: state.Sheet, Stances: stances[mode]}
+			sources[mode] = RatingSource{Sheet: state.Sheet, Stances: stances[mode], Defs: defs}
 		}
 	}
 

@@ -17,9 +17,11 @@ type Hit struct {
 }
 
 // ColumnVerdict judges one perk column of a sheet row. A column without
-// hits is a miss.
+// hits is a miss. Picks names the perks that the sheet picks for the
+// column, on a hit and on a miss. [picksOf] builds the list.
 type ColumnVerdict struct {
-	Hits []Hit
+	Hits  []Hit
+	Picks []string
 }
 
 // Missed reports whether the copy has no wanted perk in the column.
@@ -52,9 +54,12 @@ type Rating struct {
 // no rating. Stances maps the name of each perk that the user likes or
 // dislikes for the mode to its stance. [stancesByMode] builds the map.
 // A source without Stances rates a copy from the sheet picks alone.
+// Defs names the picks of each perk column, and every source with a
+// Sheet holds it.
 type RatingSource struct {
 	Sheet   *Sheet
 	Stances map[string]string
+	Defs    *Defs
 	Err     error
 }
 
@@ -96,6 +101,11 @@ func stancesByMode(prefs []PerkPreference) map[string]map[string]string {
 // The rating reads [Item.Perks], so it sees the sockets and the plugs
 // that the snapshot keeps. Destiny Item Manager builds another socket
 // list, and the package documentation lists where the two differ.
+//
+// Each column verdict also names the picks of its column. The names
+// come from the definitions of the source and not from the copy. A
+// column that no socket of the copy matches therefore still names its
+// picks.
 func rate(source RatingSource, item *Item) Rating {
 	// The reason comes first, so only a loaded sheet can report a weapon
 	// as missing from it.
@@ -121,6 +131,8 @@ func rate(source RatingSource, item *Item) Rating {
 
 		for _, column := range columns {
 			verdict := judgeColumn(item.Perks, column, source.Stances)
+			verdict.Picks = picksOf(source.Defs, column, source.Stances)
+
 			if verdict.Missed() {
 				misses++
 			}
@@ -181,6 +193,34 @@ func judgeColumn(perks []Perk, column []uint32, stances map[string]string) Colum
 	}
 
 	return ColumnVerdict{}
+}
+
+// picksOf names the perks that the sheet picks for one perk column, in
+// the order of the column. Column lists the plug hashes of the picks,
+// and defs gives each hash its name. Stances gives the stance of the
+// user toward each perk, under the name that an enhanced perk shares
+// with its base perk.
+//
+// The list holds each name one time, so a base trait and an enhanced
+// trait that share a name give one entry. It leaves out each hash that
+// defs does not define and each perk that the user dislikes. A liked
+// perk enters the list only when the column picks it.
+//
+// The sheet fills a column from every version of the weapon. A pick can
+// therefore be a perk that the rated version cannot roll.
+func picksOf(defs *Defs, column []uint32, stances map[string]string) []string {
+	var picks []string
+
+	for _, hash := range column {
+		def, ok := defs.Items[hash]
+		if !ok || slices.Contains(picks, def.Name) || stances[basePerkName(def.Name)] == stanceDown {
+			continue
+		}
+
+		picks = append(picks, def.Name)
+	}
+
+	return picks
 }
 
 // socketPlugs returns each plug that the socket of perk holds, with the

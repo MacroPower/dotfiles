@@ -543,8 +543,11 @@ func perkLabel(perk Perk) string {
 // gives the tier of the copy and counts the columns that hit. One line
 // for each column follows, numbered from 1 in sheet order. The line of a
 // column that hit names each perk that earns the column, and it marks
-// each perk that the user likes. The note of the row comes last, for
-// every copy of the weapon, because the note describes the weapon.
+// each perk that the user likes. The line of every column then names
+// the picks of the column, after the words "The sheet picks". A column
+// without a pick to name has no such sentence. The note of the row
+// comes last, for every copy of the weapon, because the note describes
+// the weapon.
 func writeRating(b *strings.Builder, mode string, rating Rating) {
 	if rating.Err != nil {
 		fmt.Fprintf(b, "- %s\n", ratingReason(mode, rating.Err))
@@ -594,23 +597,27 @@ func writeRating(b *strings.Builder, mode string, rating Rating) {
 	}
 
 	for i, column := range roll.Columns {
-		if column.Missed() {
-			fmt.Fprintf(b, "  Column %d: miss\n", i+1)
+		verdict := "miss"
 
-			continue
-		}
+		if !column.Missed() {
+			names := make([]string, 0, len(column.Hits))
+			for _, hit := range column.Hits {
+				name := hit.Name
+				if hit.Liked {
+					name += " (liked)"
+				}
 
-		names := make([]string, 0, len(column.Hits))
-		for _, hit := range column.Hits {
-			name := hit.Name
-			if hit.Liked {
-				name += " (liked)"
+				names = append(names, name)
 			}
 
-			names = append(names, name)
+			verdict = "hit with " + strings.Join(names, ", ")
 		}
 
-		fmt.Fprintf(b, "  Column %d: hit with %s\n", i+1, strings.Join(names, ", "))
+		if len(column.Picks) > 0 {
+			verdict += ". The sheet picks " + strings.Join(column.Picks, ", ")
+		}
+
+		fmt.Fprintf(b, "  Column %d: %s\n", i+1, verdict)
 	}
 
 	writeSheetNote(b, roll.Row.Notes)

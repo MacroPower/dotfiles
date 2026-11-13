@@ -25,10 +25,26 @@ func rolledPerks() []Perk {
 	}
 }
 
+// rollDefs returns definitions that name the plugs of the pick cases.
+// Plugs 904 and 905 are the base trait and the enhanced trait of one
+// name. The enhanced Rampage, plug 909, has a name of its own. The
+// definitions do not hold plug 999.
+func rollDefs() *Defs {
+	return &Defs{Items: map[uint32]ItemDef{
+		900: {Name: "Explosive Payload"},
+		901: {Name: "Firefly"},
+		903: {Name: "Rampage"},
+		904: {Name: "Kill Clip"},
+		905: {Name: "Kill Clip"},
+		906: {Name: "Chill Clip"},
+		909: {Name: "Rampage Enhanced"},
+	}}
+}
+
 // listed returns the source of a loaded sheet that gives item 100 a row
 // with the given tier and perk columns. As in a decoded sheet, a row
 // without columns has no entry in the column map. The source has no
-// stance map.
+// stance map. Its definitions are empty, so its verdicts name no pick.
 func listed(tier string, columns ...[]uint32) RatingSource {
 	sheet := &Sheet{
 		Rows:    map[uint32]SheetRow{100: {Tier: tier}},
@@ -39,7 +55,7 @@ func listed(tier string, columns ...[]uint32) RatingSource {
 		sheet.Columns[100] = columns
 	}
 
-	return RatingSource{Sheet: sheet}
+	return RatingSource{Sheet: sheet, Defs: &Defs{}}
 }
 
 // hits returns the verdict of a column that hit with the named perks,
@@ -72,10 +88,13 @@ func TestRate(t *testing.T) {
 			err:    errNoSheet,
 		},
 		"weapon that the sheet does not list has no roll": {
-			source: RatingSource{Sheet: &Sheet{
-				Rows:    map[uint32]SheetRow{101: {Tier: "B"}},
-				Columns: map[uint32][][]uint32{101: {{900}}},
-			}},
+			source: RatingSource{
+				Sheet: &Sheet{
+					Rows:    map[uint32]SheetRow{101: {Tier: "B"}},
+					Columns: map[uint32][][]uint32{101: {{900}}},
+				},
+				Defs: &Defs{},
+			},
 			perks: rolledPerks(),
 		},
 		"row without columns keeps its tier": {
@@ -466,6 +485,199 @@ func TestRateStancesOfOneMode(t *testing.T) {
 
 		require.NotNilf(t, got.Roll, "mode %s", mode)
 		assert.Equalf(t, want[mode], got.Roll.Columns, "mode %s", mode)
+	}
+}
+
+func TestPicksOf(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		stances map[string]string
+		column  []uint32
+		want    []string
+	}{
+		"picks keep the order of the column hashes": {
+			column: []uint32{903, 900, 904},
+			want:   []string{"Rampage", "Explosive Payload", "Kill Clip"},
+		},
+		"base plug and enhanced plug of one name give one entry": {
+			column: []uint32{904, 900, 905},
+			want:   []string{"Kill Clip", "Explosive Payload"},
+		},
+		"plug with the Enhanced suffix is an entry of its own": {
+			column: []uint32{903, 909},
+			want:   []string{"Rampage", "Rampage Enhanced"},
+		},
+		"hash without a definition drops out between two picks": {
+			column: []uint32{900, 999, 903},
+			want:   []string{"Explosive Payload", "Rampage"},
+		},
+		"disliked pick drops out": {
+			stances: map[string]string{"Rampage": stanceDown},
+			column:  []uint32{900, 903, 904},
+			want:    []string{"Explosive Payload", "Kill Clip"},
+		},
+		"disliked base name drops a pick with the Enhanced suffix": {
+			stances: map[string]string{"Rampage": stanceDown},
+			column:  []uint32{909, 900},
+			want:    []string{"Explosive Payload"},
+		},
+		"liked pick stays in the list one time": {
+			stances: map[string]string{"Kill Clip": stanceUp},
+			column:  []uint32{904, 905, 900},
+			want:    []string{"Kill Clip", "Explosive Payload"},
+		},
+		"liked perk that the column does not pick stays out": {
+			stances: map[string]string{"Firefly": stanceUp},
+			column:  []uint32{900},
+			want:    []string{"Explosive Payload"},
+		},
+		"stance that is neither up nor down changes nothing": {
+			stances: map[string]string{"Rampage": "sideways"},
+			column:  []uint32{903},
+			want:    []string{"Rampage"},
+		},
+		"column whose picks are all disliked gives no pick": {
+			stances: map[string]string{"Rampage": stanceDown, "Kill Clip": stanceDown},
+			column:  []uint32{903, 904, 905, 909},
+		},
+		"column whose hashes all lack a definition gives no pick": {
+			column: []uint32{998, 999},
+		},
+		"column without hashes gives no pick": {},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, picksOf(rollDefs(), tc.column, tc.stances))
+		})
+	}
+}
+
+// TestPicksOfOneMode pins that a dislike drops a pick only in its own
+// game mode. The user dislikes Rampage for PvP.
+func TestPicksOfOneMode(t *testing.T) {
+	t.Parallel()
+
+	stances := stancesByMode([]PerkPreference{
+		{Mode: modePvP, Perk: "Rampage", Stance: stanceDown},
+	})
+
+	want := map[string][]string{
+		modePvE: {"Explosive Payload", "Rampage"},
+		modePvP: {"Explosive Payload"},
+	}
+
+	for _, mode := range perkModes {
+		got := picksOf(rollDefs(), []uint32{900, 903}, stances[mode])
+
+		assert.Equalf(t, want[mode], got, "mode %s", mode)
+	}
+}
+
+// TestRatePicks rates a copy against one sheet row with the tier S and
+// the given columns. The source carries the given stances and the
+// definitions of [rollDefs].
+func TestRatePicks(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		stances map[string]string
+		perks   []Perk
+		columns [][]uint32
+		want    []ColumnVerdict
+	}{
+		"hit column carries its picks": {
+			perks:   rolledPerks(),
+			columns: [][]uint32{{900, 903}},
+			want: []ColumnVerdict{{
+				Hits:  []Hit{{Name: "Explosive Payload"}, {Name: "Rampage"}},
+				Picks: []string{"Explosive Payload", "Rampage"},
+			}},
+		},
+		"missed column carries its picks when no socket holds one": {
+			perks:   rolledPerks(),
+			columns: [][]uint32{{904, 905, 906}},
+			want:    []ColumnVerdict{{Picks: []string{"Kill Clip", "Chill Clip"}}},
+		},
+		// The plug list of the socket holds Firefly alone, so the copy
+		// cannot hold Chill Clip in the column.
+		"pick that no socket can hold is named beside a pick that rolled": {
+			perks:   rolledPerks(),
+			columns: [][]uint32{{901, 906}},
+			want: []ColumnVerdict{{
+				Hits:  []Hit{{Name: "Firefly"}},
+				Picks: []string{"Firefly", "Chill Clip"},
+			}},
+		},
+		"each column carries its own picks": {
+			perks:   rolledPerks(),
+			columns: [][]uint32{{900}, {904}},
+			want: []ColumnVerdict{
+				{Hits: []Hit{{Name: "Explosive Payload"}}, Picks: []string{"Explosive Payload"}},
+				{Picks: []string{"Kill Clip"}},
+			},
+		},
+		// The liked Firefly sits in a socket without a pick of the
+		// second column, so it neither earns the column nor joins its
+		// picks.
+		"liked perk outside the column does not join the picks": {
+			stances: map[string]string{"Firefly": stanceUp},
+			perks:   rolledPerks(),
+			columns: [][]uint32{{900}, {904}},
+			want: []ColumnVerdict{
+				{Hits: []Hit{{Name: "Explosive Payload"}}, Picks: []string{"Explosive Payload"}},
+				{Picks: []string{"Kill Clip"}},
+			},
+		},
+		"liked perk that earns the column beside a pick does not join the picks": {
+			stances: map[string]string{"Explosive Payload": stanceUp},
+			perks:   rolledPerks(),
+			columns: [][]uint32{{903}},
+			want: []ColumnVerdict{{
+				Hits:  []Hit{{Name: "Explosive Payload", Liked: true}, {Name: "Rampage"}},
+				Picks: []string{"Rampage"},
+			}},
+		},
+		"disliked only pick is neither a hit nor a pick": {
+			stances: map[string]string{"Explosive Payload": stanceDown},
+			perks:   rolledPerks(),
+			columns: [][]uint32{{900}, {901}},
+			want: []ColumnVerdict{
+				{},
+				{Hits: []Hit{{Name: "Firefly"}}, Picks: []string{"Firefly"}},
+			},
+		},
+		"disliked base name drops a pick with the Enhanced suffix": {
+			stances: map[string]string{"Rampage": stanceDown},
+			perks:   []Perk{{Plug: plugRampageEnhanced, plugs: []Plug{plugRampageEnhanced}}},
+			columns: [][]uint32{{909}},
+			want:    []ColumnVerdict{{}},
+		},
+		"row without columns has no column verdict": {
+			perks: rolledPerks(),
+		},
+		"copy without perks has no column verdict": {
+			columns: [][]uint32{{900, 903}},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			source := listed("S", tc.columns...)
+			source.Stances = tc.stances
+			source.Defs = rollDefs()
+
+			got := rate(source, &Item{Hash: 100, Perks: tc.perks})
+
+			require.NoError(t, got.Err)
+			require.NotNil(t, got.Roll)
+			assert.Equal(t, tc.want, got.Roll.Columns)
+		})
 	}
 }
 

@@ -82,6 +82,15 @@
 // counts a liked perk in a column in which the copy rolled no pick. It
 // can therefore rate such a copy higher.
 //
+// Each column line of the get_item output also names the perks that the
+// sheet picks for the column, after the words "The sheet picks". The
+// line of a missed column therefore says which perks to look for in
+// another copy. The sheet lists its picks across every version of the
+// weapon, so a pick can be a perk that this version cannot roll. The
+// list leaves out each perk that the user dislikes for the game mode.
+// A column line without a pick to name ends after its verdict. Only the
+// get_item tool names the picks.
+//
 // The web client rates the socket list that Destiny Item Manager (DIM)
 // builds. The server rates the perks that get_item lists, so the user can
 // check a rating against the perks in the same result. The two ratings of
@@ -129,6 +138,22 @@
 // sheet did not load keeps the reason of the sheet. The get_item tool
 // still shows the rest of its output, because the item, its perks, and
 // its stats are correct without a rating.
+//
+// The server takes the names of the picks from the Destiny definitions.
+// It keeps the loaded definitions in memory for one hour and then asks
+// the service for the manifest version again. It loads the definitions
+// again when the version changed. A call that fetches the profile reads
+// the definitions before the profile, and it returns an error result
+// when that read does not succeed.
+//
+// A call that reuses the profile of an earlier call reads the
+// definitions only for the ratings. When that read does not succeed,
+// each game mode that has no other reason reports the reason of the
+// definitions in place of its rating, for every weapon. A game mode
+// whose sheet did not load keeps the reason of the sheet. When the
+// server can read neither the preferences nor the definitions, the game
+// mode reports the reason of the preferences. The get_item tool still
+// shows the rest of its output.
 //
 // A game mode without ratings does not fail a list_items call that
 // only shows the ratings. The rating cells of the mode read
