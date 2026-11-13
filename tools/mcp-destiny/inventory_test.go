@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
@@ -44,6 +45,7 @@ func TestNewSnapshot(t *testing.T) {
 		ClassType:  classAny,
 		Power:      2010,
 		Quantity:   1,
+		Bucket:     bucketKinetic,
 		Perks: []Perk{
 			{Name: "Explosive Payload", Type: "Trait", Options: []string{"Rampage"}},
 			{
@@ -64,6 +66,7 @@ func TestNewSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, stacks, 1)
 	assert.False(t, stacks[0].Lockable, "a stack is not lockable")
+	assert.Equal(t, ownerAccount, stacks[0].Owner, "a Consumables stack at the vault location belongs to the account")
 
 	helmet, ok := s.Find("1004")
 	require.True(t, ok)
@@ -76,9 +79,172 @@ func TestNewSnapshot(t *testing.T) {
 	lost, ok := s.Find("1005")
 	require.True(t, ok)
 	assert.True(t, lost.Postmaster)
+	assert.True(t, lost.Lost)
 	assert.Equal(t, "Kinetic Weapons", lost.Slot, "a Postmaster item takes the slot of its definition")
 	assert.Equal(t, "Hunter (postmaster)", s.LocationLabel(lost))
 	assert.True(t, lost.Transferable, "the transfer status of a Postmaster item does not block a move")
+}
+
+func TestSlotBuckets(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		defs *Defs
+		want []Bucket
+	}{
+		"equipment before items": {
+			defs: fixtureDefs(),
+			want: []Bucket{
+				{Name: "Vault", Hash: bucketVault, Capacity: 700, Account: true},
+				{Name: "Kinetic Weapons", Hash: bucketKinetic, Capacity: 10},
+				{Name: "Power Weapons", Hash: bucketPower, Capacity: 10},
+				{Name: "Helmet", Hash: bucketHelmet, Capacity: 10},
+				{Name: "Consumables", Hash: bucketConsumables, Capacity: 50, Account: true},
+				{Name: "Engrams", Hash: bucketEngrams, Capacity: 10},
+				{Name: "Postmaster", Hash: bucketPostmaster, Capacity: 21},
+			},
+		},
+		"unnamed buckets and the Postmaster stay out of the middle": {
+			defs: &Defs{Buckets: map[uint32]BucketDef{
+				bucketVault: {
+					Name:     "General",
+					Capacity: 700,
+					Category: bucketCategoryItem,
+					Order:    30,
+					Account:  true,
+				},
+				bucketPostmaster: {Name: "Lost Items", Capacity: 21, Category: bucketCategoryItem, Order: 10},
+				bucketKinetic: {
+					Name:     "Kinetic Weapons",
+					Capacity: 10,
+					Category: bucketCategoryEquippable,
+					Order:    20,
+				},
+				3796357825: {Capacity: 10, Category: bucketCategoryEquippable, Order: 120},
+			}},
+			want: []Bucket{
+				{Name: "Vault", Hash: bucketVault, Capacity: 700, Account: true},
+				{Name: "Kinetic Weapons", Hash: bucketKinetic, Capacity: 10},
+				{Name: "Postmaster", Hash: bucketPostmaster, Capacity: 21},
+			},
+		},
+		"definitions without buckets": {
+			defs: &Defs{},
+			want: []Bucket{
+				{Name: "Vault", Hash: bucketVault, Account: true},
+				{Name: "Postmaster", Hash: bucketPostmaster},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, slotBuckets(tc.defs))
+		})
+	}
+}
+
+func TestSlotsUsed(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		move   string
+		target string
+		owner  string
+		extra  []ProfileItem
+		bucket uint32
+		want   int
+	}{
+		"equipped items take slots": {
+			bucket: bucketKinetic,
+			owner:  hunterID,
+			want:   2,
+		},
+		"another character": {
+			bucket: bucketKinetic,
+			owner:  titanID,
+		},
+		"postmaster": {
+			bucket: bucketPostmaster,
+			owner:  hunterID,
+			want:   1,
+		},
+		"messages take no Postmaster slot": {
+			extra: []ProfileItem{
+				{Hash: 300, Quantity: 1, Location: itemLocationPostmaster, BucketHash: bucketMessages},
+				{Hash: 300, Quantity: 2, Location: itemLocationPostmaster, BucketHash: bucketMessages},
+			},
+			bucket: bucketPostmaster,
+			owner:  hunterID,
+			want:   1,
+		},
+		"vault ignores the owner": {
+			bucket: bucketVault,
+			owner:  hunterID,
+			want:   2,
+		},
+		"account bucket counts stacks": {
+			bucket: bucketConsumables,
+			owner:  hunterID,
+			want:   1,
+		},
+		"move to the vault frees the slot": {
+			move:   "1003",
+			target: ownerVault,
+			bucket: bucketKinetic,
+			owner:  hunterID,
+			want:   1,
+		},
+		"move to the vault takes a vault slot": {
+			move:   "1003",
+			target: ownerVault,
+			bucket: bucketVault,
+			want:   3,
+		},
+		"pull frees the Postmaster slot": {
+			move:   "1005",
+			target: hunterID,
+			bucket: bucketPostmaster,
+			owner:  hunterID,
+		},
+		"pulled item takes a slot of its bucket": {
+			move:   "1005",
+			target: hunterID,
+			bucket: bucketKinetic,
+			owner:  hunterID,
+			want:   3,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var profile Profile
+
+			require.NoError(t, json.Unmarshal([]byte(fixtureProfile), &profile))
+
+			hunter := profile.CharacterInventories.Data[hunterID]
+			hunter.Items = append(hunter.Items, tc.extra...)
+			profile.CharacterInventories.Data[hunterID] = hunter
+
+			s := NewSnapshot(&profile, fixtureDefs(), fixtureNow)
+
+			if tc.move != "" {
+				item, ok := s.Find(tc.move)
+				require.True(t, ok)
+
+				_, err := s.Move(t.Context(), &stepMover{}, item, tc.target, false)
+				require.NoError(t, err)
+			}
+
+			i := slices.IndexFunc(s.Buckets, func(b Bucket) bool { return b.Hash == tc.bucket })
+			require.GreaterOrEqual(t, i, 0)
+			assert.Equal(t, tc.want, s.SlotsUsed(s.Buckets[i], tc.owner))
+		})
+	}
 }
 
 func TestAnnotate(t *testing.T) {

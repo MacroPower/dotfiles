@@ -22,7 +22,7 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v2-"
+	defsCachePrefix = "defs-v3-"
 
 	artifactCore    = "core"
 	artifactBuckets = "InventoryBucket"
@@ -42,6 +42,17 @@ const (
 // classAny is the Bungie DestinyClass value of an item that every class can
 // use.
 const classAny = 3
+
+// Bungie BucketCategory values of the buckets that hold items that a player
+// sees and manages.
+const (
+	bucketCategoryItem       = 1
+	bucketCategoryEquippable = 3
+)
+
+// bucketScopeAccount is the Bungie BucketScope value of a bucket that every
+// character shares.
+const bucketScopeAccount = 1
 
 // ErrDefs reports definition artifacts that are missing from the service
 // index or that do not decode.
@@ -64,16 +75,29 @@ type ItemDef struct {
 	Equippable      bool   `json:"equippable,omitempty"`
 }
 
+// BucketDef is the subset of a Bungie inventory bucket definition that the
+// server reads. Capacity is the number of items that the bucket holds, and
+// each stack takes one of them. Category is the Bungie BucketCategory value,
+// and Order is the position of the bucket in the display order of the game.
+// Account marks a bucket that every character shares, such as the vault.
+type BucketDef struct {
+	Name     string `json:"name"`
+	Capacity int    `json:"capacity,omitempty"`
+	Category int    `json:"category,omitempty"`
+	Order    int    `json:"order,omitempty"`
+	Account  bool   `json:"account,omitempty"`
+}
+
 // Defs holds the Destiny definitions that turn the hashes of a Bungie
 // profile into names. The Bungie enum value keys DamageTypes and Classes,
 // and the definition hash keys the other maps.
 type Defs struct {
-	Items       map[uint32]ItemDef `json:"items"`
-	Buckets     map[uint32]string  `json:"buckets"`
-	Stats       map[uint32]string  `json:"stats"`
-	DamageTypes map[int]string     `json:"damageTypes"`
-	Classes     map[int]string     `json:"classes"`
-	Version     string             `json:"version"`
+	Items       map[uint32]ItemDef   `json:"items"`
+	Buckets     map[uint32]BucketDef `json:"buckets"`
+	Stats       map[uint32]string    `json:"stats"`
+	DamageTypes map[int]string       `json:"damageTypes"`
+	Classes     map[int]string       `json:"classes"`
+	Version     string               `json:"version"`
 }
 
 // TraitNames maps the lowercase name of every weapon trait to its display
@@ -200,7 +224,7 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 	defs := &Defs{
 		Version:     index.ManifestVersion,
 		Items:       map[uint32]ItemDef{},
-		Buckets:     map[uint32]string{},
+		Buckets:     map[uint32]BucketDef{},
 		Stats:       map[uint32]string{},
 		DamageTypes: map[int]string{},
 		Classes:     map[int]string{},
@@ -221,7 +245,7 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 	}
 
 	tables := map[string]func(hash uint32, row tableRow){
-		artifactBuckets: func(hash uint32, row tableRow) { defs.Buckets[hash] = row.DisplayProperties.Name },
+		artifactBuckets: func(hash uint32, row tableRow) { defs.Buckets[hash] = row.bucket() },
 		artifactStats:   func(hash uint32, row tableRow) { defs.Stats[hash] = row.DisplayProperties.Name },
 		artifactDamage:  func(_ uint32, row tableRow) { defs.DamageTypes[row.EnumValue] = row.DisplayProperties.Name },
 		artifactClasses: func(_ uint32, row tableRow) { defs.Classes[row.ClassType] = row.DisplayProperties.Name },
@@ -330,8 +354,24 @@ type tableRow struct {
 	DisplayProperties struct {
 		Name string `json:"name"`
 	} `json:"displayProperties"`
-	EnumValue int `json:"enumValue"`
-	ClassType int `json:"classType"`
+	EnumValue   int `json:"enumValue"`
+	ClassType   int `json:"classType"`
+	Scope       int `json:"scope"`
+	Category    int `json:"category"`
+	BucketOrder int `json:"bucketOrder"`
+	ItemCount   int `json:"itemCount"`
+}
+
+// bucket returns the bucket definition that an inventory bucket record
+// holds.
+func (row tableRow) bucket() BucketDef {
+	return BucketDef{
+		Name:     row.DisplayProperties.Name,
+		Capacity: row.ItemCount,
+		Category: row.Category,
+		Order:    row.BucketOrder,
+		Account:  row.Scope == bucketScopeAccount,
+	}
 }
 
 // decodeTable reads a JSON object that maps definition hashes to records.

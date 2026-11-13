@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -240,6 +241,56 @@ func TestMoveRejectsStacks(t *testing.T) {
 
 	_, err = s.Move(t.Context(), &stepMover{}, stacks[0], ownerVault, false)
 	require.ErrorIs(t, err, ErrMove)
+	require.EqualError(t, err, "cannot move: Enhancement Core is a stack, which the move_stack tool moves")
+}
+
+func TestMoveRejectsAccountItems(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		target string
+	}{
+		"to a character": {target: hunterID},
+		"to the vault":   {target: ownerVault},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var profile Profile
+
+			require.NoError(t, json.Unmarshal([]byte(fixtureProfile), &profile))
+
+			// Bungie places some instanced items in account-wide buckets.
+			profile.ProfileInventory.Data.Items = append(profile.ProfileInventory.Data.Items, ProfileItem{
+				InstanceID:     "2001",
+				Quantity:       1,
+				Location:       2,
+				TransferStatus: 2,
+				Hash:           300,
+				BucketHash:     bucketConsumables,
+			})
+
+			s := NewSnapshot(&profile, fixtureDefs(), fixtureNow)
+
+			item, ok := s.Find("2001")
+			require.True(t, ok)
+			require.Equal(t, ownerAccount, item.Owner)
+
+			mover := &stepMover{}
+
+			_, err := s.Move(t.Context(), mover, item, tc.target, false)
+			require.ErrorIs(t, err, ErrMove)
+			require.EqualError(
+				t,
+				err,
+				"cannot move: Enhancement Core sits in an account-wide bucket, and move_items moves only character and vault items",
+			)
+			assert.Empty(t, mover.steps)
+			assert.Equal(t, ownerAccount, item.Owner)
+		})
+	}
 }
 
 func TestReplacementFor(t *testing.T) {

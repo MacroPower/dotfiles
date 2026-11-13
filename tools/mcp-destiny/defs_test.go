@@ -39,7 +39,12 @@ func newFakeArtifacts() *fakeArtifacts {
 				 "itemType": 3, "classType": 3,
 				 "inventory": {"tierTypeName": "Exotic", "bucketTypeHash": 1498876634, "nonTransferrableOriginal": true}}
 			]`,
-			"buckets.json": `{"1498876634": {"displayProperties": {"name": "Kinetic Weapons"}}}`,
+			"buckets.json": `{
+				"1498876634": {"displayProperties": {"name": "Kinetic Weapons"}, "scope": 0, "category": 3,
+				 "bucketOrder": 20, "itemCount": 10, "location": 1},
+				"138197802": {"displayProperties": {"name": "General"}, "scope": 1, "category": 1,
+				 "bucketOrder": 30, "itemCount": 700, "location": 2}
+			}`,
 			"damage.json":  `{"3373582085": {"displayProperties": {"name": "Kinetic"}, "enumValue": 1}}`,
 			"classes.json": `{"671679327": {"displayProperties": {"name": "Hunter"}, "classType": 1}}`,
 			"stats.json":   `{"1240592695": {"displayProperties": {"name": "Range"}}}`,
@@ -80,7 +85,7 @@ func TestDefsLoader(t *testing.T) {
 	clock := WithDefsClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "defs-v1-245114.26_1.json"), []byte("{}"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "defs-v2-245114.26_1.json"), []byte("{}"), 0o644))
 
 	loader := NewDefsLoader(source, dir, clock)
 
@@ -117,7 +122,16 @@ func TestDefsLoader(t *testing.T) {
 				ClassType:   classAny,
 			},
 		},
-		Buckets:     map[uint32]string{bucketKinetic: "Kinetic Weapons"},
+		Buckets: map[uint32]BucketDef{
+			bucketKinetic: {Name: "Kinetic Weapons", Capacity: 10, Category: bucketCategoryEquippable, Order: 20},
+			bucketVault: {
+				Name:     "General",
+				Capacity: 700,
+				Category: bucketCategoryItem,
+				Order:    30,
+				Account:  true,
+			},
+		},
 		Stats:       map[uint32]string{1240592695: "Range"},
 		DamageTypes: map[int]string{1: "Kinetic"},
 		Classes:     map[int]string{1: "Hunter"},
@@ -127,7 +141,7 @@ func TestDefsLoader(t *testing.T) {
 	// Writing the cache removes the file of the older layout.
 	files, err := filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
-	assert.Equal(t, []string{filepath.Join(dir, "defs-v2-245114.26_1.json")}, files)
+	assert.Equal(t, []string{filepath.Join(dir, "defs-v3-245114.26_1.json")}, files)
 
 	// A second call inside the recheck window asks the service nothing.
 	source.fetched = nil
@@ -154,7 +168,7 @@ func TestDefsLoader(t *testing.T) {
 
 	files, err = filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
-	assert.Equal(t, []string{filepath.Join(dir, "defs-v2-245200.1.json")}, files)
+	assert.Equal(t, []string{filepath.Join(dir, "defs-v3-245200.1.json")}, files)
 }
 
 func TestDefsLoaderErrors(t *testing.T) {

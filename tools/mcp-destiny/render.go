@@ -92,19 +92,63 @@ func renderCharacters(s *Snapshot) string {
 			"- %s | id %s | power %d | last played %s | %d equipped, %d in inventory, %d at the Postmaster\n",
 			c.Class, c.ID, c.Power, c.LastPlayed.Format(timeLayout), equipped, held, postmaster,
 		)
+		fmt.Fprintf(&b, "  Slots used: %s\n", slotsList(s, c.ID, func(bucket Bucket) bool { return !bucket.Account }))
 	}
 
-	vault := 0
+	vault := Bucket{Hash: bucketVault, Account: true}
 
-	for _, item := range s.Items {
-		if item.Owner == ownerVault {
-			vault++
+	for _, bucket := range s.Buckets {
+		if bucket.Hash == bucketVault {
+			vault = bucket
 		}
 	}
 
-	fmt.Fprintf(&b, "\nVault: %d items", vault)
+	fmt.Fprintf(&b, "\nVault: %s slots used\n", slotsLabel(s.SlotsUsed(vault, ownerVault), vault.Capacity))
 
-	return b.String()
+	account := slotsList(s, ownerAccount, func(bucket Bucket) bool {
+		return bucket.Account && bucket.Hash != bucketVault
+	})
+	if account != "" {
+		fmt.Fprintf(&b, "Account-wide slots used: %s\n", account)
+	}
+
+	if len(s.Currencies) == 0 {
+		b.WriteString("\nCurrencies: none")
+
+		return b.String()
+	}
+
+	b.WriteString("\nCurrencies:\n")
+
+	for _, currency := range s.Currencies {
+		fmt.Fprintf(&b, "- %s: %d\n", currency.Name, currency.Quantity)
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// slotsList names each bucket that keep selects with the slots that the
+// items of owner take there, such as "Kinetic Weapons 7/10".
+func slotsList(s *Snapshot, owner string, keep func(Bucket) bool) string {
+	var parts []string
+
+	for _, bucket := range s.Buckets {
+		if keep(bucket) {
+			parts = append(parts, bucket.Name+" "+slotsLabel(s.SlotsUsed(bucket, owner), bucket.Capacity))
+		}
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+// slotsLabel writes used slots out of capacity, such as "7/10". It writes
+// the used slots alone when the capacity is unknown.
+func slotsLabel(used, capacity int) string {
+	if capacity <= 0 {
+		return strconv.Itoa(used)
+	}
+
+	return fmt.Sprintf("%d/%d", used, capacity)
 }
 
 func renderItems(s *Snapshot, items []*Item, offset, total int, perks bool) string {

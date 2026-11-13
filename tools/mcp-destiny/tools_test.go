@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -128,11 +129,45 @@ func TestListCharacters(t *testing.T) {
 		"Characters, most recently played first:",
 		"- Hunter | id c1 | power 2000 | last played 2026-11-10 12:00 UTC | " +
 			"2 equipped, 1 in inventory, 1 at the Postmaster",
+		"  Slots used: Kinetic Weapons 2/10, Power Weapons 0/10, Helmet 1/10, Engrams 0/10, Postmaster 1/21",
 		"- Titan | id c2 | power 1990 | last played 2026-11-01 12:00 UTC | " +
 			"0 equipped, 0 in inventory, 0 at the Postmaster",
+		"  Slots used: Kinetic Weapons 0/10, Power Weapons 0/10, Helmet 0/10, Engrams 0/10, Postmaster 0/21",
 		"",
-		"Vault: 2 items",
+		"Vault: 2/700 slots used",
+		"Account-wide slots used: Consumables 1/50",
+		"",
+		"Currencies:",
+		"- Glimmer: 250000",
+		"- Bright Dust: 1500",
+		"- Unknown item 77: 3",
 	}, "\n"), got)
+}
+
+func TestRenderCharactersWithoutDefinitions(t *testing.T) {
+	t.Parallel()
+
+	var profile Profile
+
+	require.NoError(t, json.Unmarshal([]byte(fixtureProfile), &profile))
+
+	profile.ProfileCurrencies.Data.Items = nil
+	defs := fixtureDefs()
+	defs.Buckets = nil
+
+	assert.Equal(t, strings.Join([]string{
+		"Characters, most recently played first:",
+		"- Hunter | id c1 | power 2000 | last played 2026-11-10 12:00 UTC | " +
+			"2 equipped, 1 in inventory, 1 at the Postmaster",
+		"  Slots used: Postmaster 1",
+		"- Titan | id c2 | power 1990 | last played 2026-11-01 12:00 UTC | " +
+			"0 equipped, 0 in inventory, 0 at the Postmaster",
+		"  Slots used: Postmaster 0",
+		"",
+		"Vault: 2 slots used",
+		"",
+		"Currencies: none",
+	}, "\n"), renderCharacters(NewSnapshot(&profile, defs, fixtureNow)))
 }
 
 func TestListItems(t *testing.T) {

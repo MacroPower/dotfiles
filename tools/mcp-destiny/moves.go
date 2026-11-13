@@ -78,6 +78,7 @@ func (s *Snapshot) Move(
 		}
 
 		item.Postmaster = false
+		item.Lost = false
 	}
 
 	var replacement *Item
@@ -128,8 +129,15 @@ func (s *Snapshot) Move(
 }
 
 func (s *Snapshot) checkMove(item *Item, target string, equip bool) error {
-	if item.InstanceID == "" || item.Owner == ownerAccount {
+	if item.InstanceID == "" {
 		return fmt.Errorf("%w: %s is a stack, which the move_stack tool moves", ErrMove, item.Name)
+	}
+
+	if item.Owner == ownerAccount {
+		return fmt.Errorf(
+			"%w: %s sits in an account-wide bucket, and move_items moves only character and vault items",
+			ErrMove, item.Name,
+		)
 	}
 
 	if item.Owner != target && !item.Transferable {

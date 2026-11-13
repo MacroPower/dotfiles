@@ -291,6 +291,32 @@ func TestBungiePrimaryMembership(t *testing.T) {
 	}
 }
 
+func TestBungieProfile(t *testing.T) {
+	t.Parallel()
+
+	var components string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/Destiny2/3/Profile/4611/", r.URL.Path)
+
+		components = r.URL.Query().Get("components")
+
+		writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+fixtureProfile+`}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	got, err := NewBungie(WithBungieURL(srv.URL)).
+		Profile(t.Context(), Credentials{APIKey: "key", AccessToken: "access"}, Membership{ID: "4611", Type: 3})
+	require.NoError(t, err)
+
+	assert.Equal(t, "100,102,103,200,201,205,300,304,305,310", components)
+	assert.Equal(t, []ProfileItem{
+		{Hash: itemGlimmer, Quantity: 250000, Location: 1, BucketHash: 2689798308},
+		{Hash: itemBrightDust, Quantity: 1500, Location: 1, BucketHash: 2689798311},
+		{Hash: 77, Quantity: 3, Location: 1, BucketHash: 2689798305},
+	}, got.ProfileCurrencies.Data.Items)
+}
+
 func TestBungieErrors(t *testing.T) {
 	t.Parallel()
 

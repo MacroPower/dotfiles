@@ -98,7 +98,13 @@ type Character struct {
 }
 
 // Item is one inventory entry with its hashes resolved to names. Owner is
-// a character id, "vault", or "account" for account-wide stacks.
+// a character id, "vault", or "account" for an item in an account-wide
+// bucket other than the vault, such as a Consumables stack. Bucket is the
+// hash of the bucket that Slot names, which the item occupies when it is
+// outside the vault and the Postmaster. Postmaster marks every item at
+// the Postmaster, such as a lost item or a message. Lost marks an item in
+// the Lost Items bucket of the Postmaster, the only Postmaster bucket that
+// [Snapshot.Buckets] lists.
 type Item struct {
 	InstanceID   string
 	Name         string
@@ -117,8 +123,10 @@ type Item struct {
 	Power        int
 	Quantity     int
 	Hash         uint32
+	Bucket       uint32
 	Equipped     bool
 	Postmaster   bool
+	Lost         bool
 	Locked       bool
 	Masterwork   bool
 	Crafted      bool
@@ -128,14 +136,38 @@ type Item struct {
 	Favorite     bool
 }
 
+// Bucket is an inventory bucket that holds a fixed number of items, such as
+// the kinetic weapons of a character or the vault. Every item and every
+// stack in a bucket takes one slot. Account marks a bucket that every
+// character shares. A zero Capacity means that the definitions do not give
+// the capacity.
+type Bucket struct {
+	Name     string
+	Capacity int
+	Hash     uint32
+	Account  bool
+}
+
+// Currency is the balance of one currency of the account, such as glimmer.
+type Currency struct {
+	Name     string
+	Quantity int
+}
+
 // Snapshot is the inventory of every character and the vault at one moment.
 // Moves and lock changes update it in place, because Bungie can serve the
 // state from before a change for some seconds after the change.
+//
+// Buckets lists the vault, the buckets that hold the equipment and the items
+// that a player manages, and the Postmaster. Each character has its own copy
+// of every bucket that is not an account bucket.
 type Snapshot struct {
 	Fetched    time.Time
 	byID       map[string]*Item
 	Characters []Character
 	Items      []*Item
+	Buckets    []Bucket
+	Currencies []Currency
 }
 
 // NewSnapshot resolves a Bungie profile against the definitions.
@@ -143,6 +175,7 @@ func NewSnapshot(profile *Profile, defs *Defs, fetched time.Time) *Snapshot {
 	s := &Snapshot{
 		Fetched: fetched,
 		byID:    map[string]*Item{},
+		Buckets: slotBuckets(defs),
 	}
 
 	for _, c := range profile.Characters.Data {
@@ -159,9 +192,12 @@ func NewSnapshot(profile *Profile, defs *Defs, fetched time.Time) *Snapshot {
 		return cmp.Or(b.LastPlayed.Compare(a.LastPlayed), cmp.Compare(a.ID, b.ID))
 	})
 
+	// Bungie gives the vault location to every profile item, also to the
+	// stacks in account-wide buckets such as Consumables. Only the bucket
+	// marks a vault item.
 	for _, pi := range profile.ProfileInventory.Data.Items {
 		owner := ownerAccount
-		if pi.BucketHash == bucketVault || pi.Location == itemLocationVault {
+		if pi.BucketHash == bucketVault {
 			owner = ownerVault
 		}
 
@@ -180,7 +216,84 @@ func NewSnapshot(profile *Profile, defs *Defs, fetched time.Time) *Snapshot {
 		}
 	}
 
+	for _, pi := range profile.ProfileCurrencies.Data.Items {
+		name := defs.Items[pi.Hash].Name
+		if name == "" {
+			name = fmt.Sprintf("Unknown item %d", pi.Hash)
+		}
+
+		s.Currencies = append(s.Currencies, Currency{Name: name, Quantity: pi.Quantity})
+	}
+
 	return s
+}
+
+// slotBuckets returns the buckets of [Snapshot.Buckets]. The vault comes
+// first and the Postmaster last, and both take the names that the location
+// labels use. Between them come the named buckets with a capacity whose
+// category holds equipment or items, the equipment buckets first.
+func slotBuckets(defs *Defs) []Bucket {
+	var managed []Bucket
+
+	for hash, def := range defs.Buckets {
+		switch {
+		case hash == bucketVault, hash == bucketPostmaster, def.Name == "", def.Capacity <= 0:
+		case def.Category == bucketCategoryEquippable, def.Category == bucketCategoryItem:
+			managed = append(managed, Bucket{Name: def.Name, Hash: hash, Capacity: def.Capacity, Account: def.Account})
+		}
+	}
+
+	slices.SortFunc(managed, func(a, b Bucket) int {
+		da, db := defs.Buckets[a.Hash], defs.Buckets[b.Hash]
+
+		return cmp.Or(
+			cmp.Compare(db.Category, da.Category),
+			cmp.Compare(da.Order, db.Order),
+			cmp.Compare(a.Name, b.Name),
+			cmp.Compare(a.Hash, b.Hash),
+		)
+	})
+
+	out := []Bucket{{Name: "Vault", Hash: bucketVault, Capacity: defs.Buckets[bucketVault].Capacity, Account: true}}
+	out = append(out, managed...)
+
+	return append(out, Bucket{
+		Name:     "Postmaster",
+		Hash:     bucketPostmaster,
+		Capacity: defs.Buckets[bucketPostmaster].Capacity,
+	})
+}
+
+// SlotsUsed returns the number of slots that items take in bucket. For a
+// bucket that each character has, it counts the items of the character with
+// the id owner, equipped items included. An account bucket ignores owner.
+func (s *Snapshot) SlotsUsed(bucket Bucket, owner string) int {
+	used := 0
+
+	for _, item := range s.Items {
+		if occupies(item, bucket, owner) {
+			used++
+		}
+	}
+
+	return used
+}
+
+// occupies reports whether item takes a slot of bucket. An item in the vault
+// or in the Lost Items bucket takes a slot there and not in the bucket of its
+// slot. Every other item at the Postmaster, such as a message, occupies no
+// bucket that [Snapshot.Buckets] lists.
+func occupies(item *Item, bucket Bucket, owner string) bool {
+	switch {
+	case bucket.Hash == bucketVault:
+		return item.Owner == ownerVault
+	case bucket.Hash == bucketPostmaster:
+		return item.Owner == owner && item.Lost
+	case bucket.Account:
+		owner = ownerAccount
+	}
+
+	return item.Owner == owner && !item.Postmaster && item.Bucket == bucket.Hash
 }
 
 func (s *Snapshot) add(item *Item) {
@@ -216,13 +329,15 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 		Name:         def.Name,
 		TypeName:     def.TypeName,
 		Tier:         def.Tier,
-		Slot:         defs.Buckets[slot],
+		Slot:         defs.Buckets[slot].Name,
+		Bucket:       slot,
 		Kind:         kindOf(def),
 		ClassType:    def.ClassType,
 		Owner:        owner,
 		Quantity:     pi.Quantity,
 		Equipped:     equipped,
 		Postmaster:   postmaster,
+		Lost:         pi.BucketHash == bucketPostmaster,
 		Locked:       pi.State&stateLocked != 0,
 		Masterwork:   pi.State&stateMasterwork != 0,
 		Crafted:      pi.State&stateCrafted != 0,

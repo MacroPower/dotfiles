@@ -22,6 +22,16 @@ const (
 	bucketPower       uint32 = 953998645
 	bucketHelmet      uint32 = 3448274439
 	bucketConsumables uint32 = 1469714392
+	bucketEngrams     uint32 = 375726501
+	bucketQuests      uint32 = 1345459588
+	bucketMaterials   uint32 = 3865314626
+	bucketMessages    uint32 = 3161908920
+)
+
+// Item hashes of the fixture currencies.
+const (
+	itemGlimmer    uint32 = 3159615086
+	itemBrightDust uint32 = 2817410917
 )
 
 // Character ids of the fixture profile.
@@ -34,12 +44,20 @@ const (
 // latest play date. It has a hand cannon and a helmet equipped, a second
 // hand cannon in its inventory, and a third at the Postmaster. The vault
 // holds a hand cannon with sockets and stats and a rocket launcher. Every
-// instanced item is lockable, and the vault hand cannon is locked.
+// instanced item is lockable, and the vault hand cannon is locked. The
+// account holds a stack of consumables, glimmer, bright dust, and a
+// currency that the definitions lack. The consumables stack carries the
+// vault location, because Bungie gives that location to every profile item.
 const fixtureProfile = `{
 	"profileInventory": {"data": {"items": [
 		{"itemHash": 100, "itemInstanceId": "1001", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802, "state": 5},
 		{"itemHash": 101, "itemInstanceId": "1002", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802},
-		{"itemHash": 300, "quantity": 42, "location": 1, "bucketHash": 1469714392}
+		{"itemHash": 300, "quantity": 42, "location": 2, "bucketHash": 1469714392}
+	]}},
+	"profileCurrencies": {"data": {"items": [
+		{"itemHash": 3159615086, "quantity": 250000, "location": 1, "bucketHash": 2689798308},
+		{"itemHash": 2817410917, "quantity": 1500, "location": 1, "bucketHash": 2689798311},
+		{"itemHash": 77, "quantity": 3, "location": 1, "bucketHash": 2689798305}
 	]}},
 	"characters": {"data": {
 		"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"},
@@ -128,20 +146,33 @@ func fixtureDefs() *Defs {
 				Bucket:    bucketConsumables,
 				ClassType: classAny,
 			},
-			900: plug("Explosive Payload", "Trait"),
-			901: firefly,
-			902: plug("Default Shader", "Restore Defaults"),
-			903: plug("Rampage", "Trait"),
-			904: plug("Kill Clip", "Trait"),
-			905: plug("Kill Clip", "Enhanced Trait"),
-			906: plug("Chill Clip", "Trait"),
-			907: plug("Arrowhead Brake", "Barrel"),
+			900:            plug("Explosive Payload", "Trait"),
+			901:            firefly,
+			902:            plug("Default Shader", "Restore Defaults"),
+			903:            plug("Rampage", "Trait"),
+			904:            plug("Kill Clip", "Trait"),
+			905:            plug("Kill Clip", "Enhanced Trait"),
+			906:            plug("Chill Clip", "Trait"),
+			907:            plug("Arrowhead Brake", "Barrel"),
+			itemGlimmer:    {Name: "Glimmer", TypeName: "Currency", ClassType: classAny},
+			itemBrightDust: {Name: "Bright Dust", TypeName: "Currency", ClassType: classAny},
 		},
-		Buckets: map[uint32]string{
-			bucketKinetic:     "Kinetic Weapons",
-			bucketPower:       "Power Weapons",
-			bucketHelmet:      "Helmet",
-			bucketConsumables: "Consumables",
+		Buckets: map[uint32]BucketDef{
+			bucketVault:      {Name: "General", Capacity: 700, Category: bucketCategoryItem, Order: 30, Account: true},
+			bucketPostmaster: {Name: "Lost Items", Capacity: 21},
+			bucketKinetic:    {Name: "Kinetic Weapons", Capacity: 10, Category: bucketCategoryEquippable, Order: 20},
+			bucketPower:      {Name: "Power Weapons", Capacity: 10, Category: bucketCategoryEquippable, Order: 40},
+			bucketHelmet:     {Name: "Helmet", Capacity: 10, Category: bucketCategoryEquippable, Order: 50},
+			bucketEngrams:    {Name: "Engrams", Capacity: 10, Category: bucketCategoryItem, Order: 40},
+			bucketMaterials:  {Name: "Materials", Category: bucketCategoryItem, Order: 10},
+			bucketQuests:     {Name: "Quests", Capacity: 63},
+			bucketConsumables: {
+				Name:     "Consumables",
+				Capacity: 50,
+				Category: bucketCategoryItem,
+				Order:    30,
+				Account:  true,
+			},
 		},
 		Stats:       map[uint32]string{1: "Range"},
 		DamageTypes: map[int]string{1: "Kinetic", 3: "Solar"},

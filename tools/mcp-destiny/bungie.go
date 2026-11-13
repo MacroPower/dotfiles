@@ -28,11 +28,9 @@ const (
 	bucketPostmaster uint32 = 215593132
 )
 
-// Item location values of the Bungie ItemLocation enum.
-const (
-	itemLocationVault      = 2
-	itemLocationPostmaster = 4
-)
+// itemLocationPostmaster is the Postmaster value of the Bungie ItemLocation
+// enum.
+const itemLocationPostmaster = 4
 
 // Bit flags of the Bungie TransferStatuses and ItemState enums.
 const (
@@ -46,9 +44,10 @@ const (
 var (
 	// profileComponents lists the GetProfile components that
 	// [*Bungie.Profile] requests. They cover profiles, profile inventories,
-	// characters, character inventories, and character equipment. The item
-	// components cover instances, stats, sockets, and reusable plugs.
-	profileComponents = []int{100, 102, 200, 201, 205, 300, 304, 305, 310}
+	// profile currencies, characters, character inventories, and character
+	// equipment. The item components cover instances, stats, sockets, and
+	// reusable plugs.
+	profileComponents = []int{100, 102, 103, 200, 201, 205, 300, 304, 305, 310}
 
 	// ErrBungie marks failures that originate from the Bungie platform API.
 	// A [*BungieError] carries the platform error code.
@@ -180,6 +179,9 @@ type Profile struct {
 	ProfileInventory struct {
 		Data ProfileItems `json:"data"`
 	} `json:"profileInventory"`
+	ProfileCurrencies struct {
+		Data ProfileItems `json:"data"`
+	} `json:"profileCurrencies"`
 }
 
 // ItemAction identifies one item for a transfer, an equip, a Postmaster
@@ -256,7 +258,8 @@ func (b *Bungie) PrimaryMembership(ctx context.Context, creds Credentials) (Memb
 	return out.DestinyMemberships[0], nil
 }
 
-// Profile fetches the inventory of every character and the vault.
+// Profile fetches the inventory of every character and the vault, and the
+// currency balances of the account.
 func (b *Bungie) Profile(ctx context.Context, creds Credentials, m Membership) (*Profile, error) {
 	components := make([]string, 0, len(profileComponents))
 	for _, c := range profileComponents {

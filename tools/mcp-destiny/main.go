@@ -312,8 +312,12 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleCompleteLogin)
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        toolListCharacters,
-		Description: "List the Destiny 2 characters with their ids, classes, power, and item counts, plus the vault count.",
+		Name: toolListCharacters,
+		Description: "List the Destiny 2 characters with their ids, classes, power, item counts, " +
+			"and the used and total slots of each bucket, such as kinetic weapons and the Postmaster. " +
+			"The Postmaster slots count only the lost items and leave out the messages. " +
+			"The result also gives the used and total slots of the vault and the account-wide buckets, " +
+			"and the balance of each currency, such as glimmer.",
 		Annotations: readOnly,
 	}, h.handleListCharacters)
 
