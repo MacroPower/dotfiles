@@ -479,8 +479,8 @@ func TestSupportedKeywords(t *testing.T) {
 		"is:leg", "is:classitem", "is:subclass", "is:seasonalartifacts", "is:ghost", "is:emblems", "is:ships",
 		"is:vehicle", "is:emotes", "is:finishers", "is:accessories", "is:consumables", "is:modifications",
 		"is:haspower", "is:haslight", "is:autotagged", "tag:", "dupe:item", "count:", "id:", "hash:", "name:",
-		"exactname:", "power:", "light:", "rate:", "rating:", "ratebase:", "ratingbase:", "misses:", "pvprate:",
-		"pvprating:", "pvpratebase:", "pvpratingbase:", "pvpmisses:",
+		"exactname:", "power:", "light:", "rate:", "rating:", "ratebase:", "ratingbase:", "misses:", "verdict:",
+		"pvprate:", "pvprating:", "pvpratebase:", "pvpratingbase:", "pvpmisses:", "pvpverdict:",
 	}
 	assert.Equal(t, want, supportedKeywords())
 
@@ -502,8 +502,8 @@ func TestSupportedKeywords(t *testing.T) {
 		"is:seasonalartifacts, is:ghost, is:emblems, is:ships, is:vehicle, is:emotes, is:finishers, "+
 		"is:accessories, is:consumables, is:modifications, is:haspower, is:haslight, is:autotagged, tag:, "+
 		"dupe:item, count:, id:, hash:, name:, exactname:, power:, light:, rate:, rating:, ratebase:, "+
-		"ratingbase:, misses:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, and pvpmisses:. "+
-		"Each is: word also works as not:<word>.", err.Error())
+		"ratingbase:, misses:, verdict:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, pvpmisses:, "+
+		"and pvpverdict:. Each is: word also works as not:<word>.", err.Error())
 }
 
 func TestListWithAnd(t *testing.T) {
@@ -2118,6 +2118,365 @@ func TestUnratedReason(t *testing.T) {
 	require.ErrorIs(t, err, errUnratedMode)
 	assert.Equal(t, "the query reads a game mode without ratings. "+
 		"PvP: rating unavailable: the service publishes no PvP sheet", err.Error())
+}
+
+func TestVerdictOf(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		mine   []int
+		rivals [][]int
+		want   string
+	}{
+		"a copy without rivals stands alone": {
+			mine: []int{0},
+			want: verdictOnly,
+		},
+		"a rival with a superset of the hits": {
+			mine:   []int{0},
+			rivals: [][]int{{0, 1}},
+			want:   verdictWorse,
+		},
+		"a rival with the same hits": {
+			mine:   []int{0},
+			rivals: [][]int{{0}},
+			want:   verdictEqual,
+		},
+		"rivals with strict subsets of the hits": {
+			mine:   []int{0, 1},
+			rivals: [][]int{{0}, nil},
+			want:   verdictBetter,
+		},
+		"a trade of hits": {
+			mine:   []int{0},
+			rivals: [][]int{{1}},
+			want:   verdictMixed,
+		},
+		"the strongest of two rivals decides": {
+			mine:   []int{0},
+			rivals: [][]int{{0}, {0, 1}},
+			want:   verdictWorse,
+		},
+		"two copies that miss every column": {
+			rivals: [][]int{nil},
+			want:   verdictEqual,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, verdictOf(tc.mine, tc.rivals))
+		})
+	}
+}
+
+// hitting returns the perks of a copy on a row whose columns
+// verdictColumns returns. The copy hits the first column when first holds and the second column when
+// second holds. It holds a perk in each socket, so the profile lists
+// perks for it.
+func hitting(first, second bool) []Perk {
+	perks := []Perk{{Plug: plugFirefly}, {Plug: plugRampage, Socket: 1}}
+
+	if first {
+		perks[0].Plug = plugExplosivePayload
+	}
+
+	if second {
+		perks[1].Plug = plugKillClip
+	}
+
+	return perks
+}
+
+// verdictColumns returns the perk columns of each row with columns of
+// verdictContext. The first column picks Explosive Payload, and the
+// second picks Kill Clip.
+func verdictColumns() [][]uint32 {
+	return [][]uint32{{plugExplosivePayload.Hash}, {plugKillClip.Hash}}
+}
+
+// verdictContext returns a search context whose items cover the verdict
+// filters, keyed by instance id. The Aegis sheet gives each weapon hash
+// below except 999 a row. Every row except the row of 140 has the columns
+// of verdictColumns:
+//
+//   - best (100) and worse (101) are copies of a weapon and its reissue,
+//     which share a row. Copy best hits both columns, and worse hits the
+//     first, so best is better and worse is worse. Copy best sits in the
+//     vault.
+//   - same a and same b (110) each hit the first column, so each is equal
+//     to the other.
+//   - mixed a (120) hits the first column, and mixed b (120) hits the
+//     second, so each is mixed.
+//   - lone (130) is the only copy of its weapon.
+//   - exotic (140) sits on a row without columns, and unlisted (999) is a
+//     weapon that neither sheet lists.
+//   - no perks (150) has no perks, and beside no perks (150) hits the
+//     first column. The verdict of both is undecided.
+//
+// The PvP sheet lists only weapon 120, with one column that picks Kill
+// Clip. Copy mixed b hits it, and mixed a misses it.
+func verdictContext() searchContext {
+	pve := &Sheet{
+		Rows: map[uint32]SheetRow{
+			100: {Tier: "S"}, 101: {Tier: "S"}, 110: {Tier: "A"}, 120: {Tier: "B"}, 130: {Tier: "C"},
+			140: {Tier: "A"}, 150: {Tier: "D"},
+		},
+		Columns: map[uint32][][]uint32{
+			100: verdictColumns(), 101: verdictColumns(), 110: verdictColumns(), 120: verdictColumns(),
+			130: verdictColumns(), 150: verdictColumns(),
+		},
+		Versions: map[uint32][]uint32{
+			100: {100, 101}, 101: {100, 101}, 110: {110}, 120: {120}, 130: {130}, 150: {150},
+		},
+	}
+	pvp := &Sheet{
+		Rows:     map[uint32]SheetRow{120: {Tier: "A"}},
+		Columns:  map[uint32][][]uint32{120: {{plugKillClip.Hash}}},
+		Versions: map[uint32][]uint32{120: {120}},
+	}
+
+	weapon := func(id string, hash uint32, perks []Perk) *Item {
+		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bucketKinetic, Owner: hunterID, Perks: perks}
+	}
+
+	best := weapon("best", 100, hitting(true, true))
+	best.Owner = ownerVault
+
+	return searchContext{
+		items: []*Item{
+			best,
+			weapon("worse", 101, hitting(true, false)),
+			weapon("same a", 110, hitting(true, false)),
+			weapon("same b", 110, hitting(true, false)),
+			weapon("mixed a", 120, hitting(true, false)),
+			weapon("mixed b", 120, hitting(false, true)),
+			weapon("lone", 130, hitting(true, true)),
+			weapon("exotic", 140, nil),
+			weapon("unlisted", 999, hitting(true, true)),
+			weapon("no perks", 150, nil),
+			weapon("beside no perks", 150, hitting(true, false)),
+		},
+		sources: map[string]RatingSource{
+			modePvE: {Sheet: pve, Defs: &Defs{}},
+			modePvP: {Sheet: pvp, Defs: &Defs{}},
+		},
+	}
+}
+
+// verdictOpen returns the items whose verdict on the Aegis sheet of
+// verdictContext the server cannot decide, with their reasons.
+func verdictOpen() map[string][]string {
+	return map[string][]string{
+		"no perks":        {reasonVerdictNoPerks},
+		"beside no perks": {reasonVerdictNoPerks},
+	}
+}
+
+func TestVerdictRivals(t *testing.T) {
+	t.Parallel()
+
+	// The versions of 300 and 301 list 300 twice. The sheet gives 311,
+	// a version of 310, no row of its own, which a decoded sheet never
+	// does.
+	sheet := &Sheet{
+		Rows: map[uint32]SheetRow{300: {Tier: "A"}, 301: {Tier: "A"}, 302: {Tier: "A"}, 310: {Tier: "A"}},
+		Columns: map[uint32][][]uint32{
+			300: verdictColumns(),
+			301: verdictColumns(),
+			302: verdictColumns(),
+			310: verdictColumns(),
+		},
+		Versions: map[uint32][]uint32{
+			300: {300, 301, 300}, 301: {300, 301, 300}, 302: {302}, 310: {310, 311}, 311: {310, 311},
+		},
+	}
+
+	weapon := func(id string, hash uint32, owner string, perks []Perk) *Item {
+		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bucketKinetic, Owner: owner, Perks: perks}
+	}
+
+	stack := weapon("", 300, hunterID, hitting(true, true))
+	ctx := searchContext{
+		items: []*Item{
+			weapon("original", 300, hunterID, hitting(true, false)),
+			weapon("reissue", 301, ownerVault, hitting(true, true)),
+			weapon("unrelated", 302, hunterID, hitting(true, true)),
+			weapon("listed", 310, hunterID, hitting(true, false)),
+			weapon("unrated", 311, hunterID, hitting(true, true)),
+			stack,
+		},
+		sources: map[string]RatingSource{modePvE: {Sheet: sheet, Defs: &Defs{}}},
+	}
+
+	copies := copiesByHash(ctx.items)
+
+	rivals := map[string][]string{}
+	for _, item := range ctx.items[:5] {
+		rivals[item.InstanceID] = ids(rivalsOf(sheet, copies, item))
+	}
+
+	assert.Equal(t, map[string][]string{
+		"original":  {"reissue"},
+		"reissue":   {"original"},
+		"unrelated": {},
+		"listed":    {"unrated"},
+		"unrated":   {"listed"},
+	}, rivals)
+
+	// The copy without an instance id is not a rival of another copy.
+	// Every copy of 300 and 301 is a rival of it.
+	assert.Equal(t, []string{"original", "reissue"}, ids(rivalsOf(sheet, copies, stack)))
+
+	// The reissue in the vault beats the original. The rival of listed
+	// has no sheet row, so it drops out.
+	ctx.items = ctx.items[:5]
+	judgeTests{
+		"the reissue in the vault is a rival":    {query: "verdict:worse", matches: []string{"original"}},
+		"the original is a rival of the reissue": {query: "verdict:better", matches: []string{"reissue"}},
+		"a weapon without rivals":                {query: "verdict:only", matches: []string{"unrelated", "listed"}},
+	}.run(t, ctx)
+}
+
+func TestVerdictValues(t *testing.T) {
+	t.Parallel()
+
+	judgeTests{
+		"better": {query: "verdict:better", matches: []string{"best"}, undecided: verdictOpen()},
+		"same is the kind equal": {
+			query:     "verdict:same",
+			matches:   []string{"same a", "same b"},
+			undecided: verdictOpen(),
+		},
+		"worse": {query: "verdict:worse", matches: []string{"worse"}, undecided: verdictOpen()},
+		"only":  {query: "verdict:only", matches: []string{"lone"}, undecided: verdictOpen()},
+		"mixed": {query: "verdict:mixed", matches: []string{"mixed a", "mixed b"}, undecided: verdictOpen()},
+		"either": {
+			query:     "verdict:better or verdict:worse",
+			matches:   []string{"best", "worse"},
+			undecided: verdictOpen(),
+		},
+		"a negated value": {
+			query:     "is:weapon -verdict:mixed",
+			matches:   []string{"best", "worse", "same a", "same b", "lone", "exotic", "unlisted"},
+			undecided: verdictOpen(),
+		},
+	}.run(t, verdictContext())
+
+	for _, query := range []string{
+		"verdict:equal", "verdict:bett", "verdict:constructor", "verdict:__proto__", "pvpverdict:equal",
+		"verdict:better+worse",
+	} {
+		assert.Equal(t, []string{query}, compiled(t, query).invalid, query)
+	}
+
+	assert.Equal(t, []string{modePvE}, compiled(t, "verdict:Better").modes)
+}
+
+func TestVerdictNoColumns(t *testing.T) {
+	t.Parallel()
+
+	ctx := verdictContext()
+
+	for _, value := range []string{"better", "same", "worse", "only", "mixed"} {
+		for _, query := range []string{"verdict:" + value, "pvpverdict:" + value} {
+			matches, open := judge(t, query, ctx)
+
+			for _, id := range []string{"exotic", "unlisted"} {
+				assert.NotContains(t, matches, id, query)
+				assert.NotContains(t, open, id, query)
+			}
+		}
+	}
+}
+
+func TestVerdictUndecided(t *testing.T) {
+	t.Parallel()
+
+	ctx := verdictContext()
+
+	tests := map[string]struct {
+		query string
+		id    string
+		want  outcome
+	}{
+		"a copy without perks": {
+			query: "verdict:only",
+			id:    "no perks",
+			want:  outcome{reasons: []string{reasonVerdictNoPerks}, state: undecided},
+		},
+		"a copy whose only rival has no perks": {
+			query: "verdict:only",
+			id:    "beside no perks",
+			want:  outcome{reasons: []string{reasonVerdictNoPerks}, state: undecided},
+		},
+		"verdict:better is undecided too": {
+			query: "verdict:better",
+			id:    "beside no perks",
+			want:  outcome{reasons: []string{reasonVerdictNoPerks}, state: undecided},
+		},
+		"misses: adds its own reason": {
+			query: "verdict:worse or misses:>=0",
+			id:    "no perks",
+			want:  outcome{reasons: []string{reasonVerdictNoPerks, reasonNoPerks}, state: undecided},
+		},
+		"another term decides the copy": {
+			query: "verdict:worse is:invault",
+			id:    "no perks",
+			want:  outcome{},
+		},
+		"a sheet that does not list the weapon decides it": {
+			query: "pvpverdict:only",
+			id:    "no perks",
+			want:  outcome{},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			i := slices.IndexFunc(ctx.items, func(item *Item) bool { return item.InstanceID == tc.id })
+			require.GreaterOrEqual(t, i, 0)
+
+			assert.Equal(t, tc.want, compiled(t, tc.query).test(ctx)(ctx.items[i]))
+		})
+	}
+}
+
+func TestPvPVerdict(t *testing.T) {
+	t.Parallel()
+
+	ctx := verdictContext()
+
+	tests := map[string]struct {
+		query string
+		want  []string
+		modes []string
+	}{
+		"better":  {query: "pvpverdict:better", want: []string{"mixed b"}, modes: []string{modePvP}},
+		"worse":   {query: "pvpverdict:worse", want: []string{"mixed a"}, modes: []string{modePvP}},
+		"only":    {query: "pvpverdict:only", want: []string{}, modes: []string{modePvP}},
+		"same":    {query: "pvpverdict:same", want: []string{}, modes: []string{modePvP}},
+		"mixed":   {query: "pvpverdict:mixed", want: []string{}, modes: []string{modePvP}},
+		"verdict": {query: "verdict:mixed", want: []string{"mixed a", "mixed b"}, modes: []string{modePvE}},
+		"each keyword reads its own sheet": {
+			query: "verdict:mixed pvpverdict:better",
+			want:  []string{"mixed b"},
+			modes: []string{modePvE, modePvP},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.modes, compiled(t, tc.query).modes)
+			assert.Equal(t, tc.want, contextMatchIDs(t, tc.query, ctx))
+		})
+	}
 }
 
 func TestRarityWords(t *testing.T) {

@@ -116,6 +116,7 @@ const (
 	filterRateBase   = "ratebase"
 	filterRatingBase = "ratingbase"
 	filterMisses     = "misses"
+	filterVerdict    = "verdict"
 
 	// pvpPrefix starts the name of each rating filter that reads the PvP
 	// sheet.
@@ -129,6 +130,28 @@ const (
 	// reasonNoPerks applies to a copy without perks on a sheet row with
 	// perk columns.
 	reasonNoPerks = "the profile lists no perks for this copy"
+	// reasonVerdictNoPerks applies at a verdict filter to a copy without
+	// perks on a sheet row with perk columns. It also applies to each
+	// rival of such a copy.
+	reasonVerdictNoPerks = "the profile lists no perks for this copy or for another copy on its sheet row"
+)
+
+// The kinds of verdict that [verdictOf] gives a copy against its rivals,
+// as the web client names them. The hits of a copy are the perk columns
+// that it hits.
+const (
+	// verdictOnly is the verdict of a copy without rivals.
+	verdictOnly = "only"
+	// verdictBetter is the verdict of a copy whose hits are a strict
+	// superset of the hits of each rival.
+	verdictBetter = "better"
+	// verdictEqual is the verdict of a copy with the hits of a rival.
+	verdictEqual = "equal"
+	// verdictWorse is the verdict of a copy whose hits are a strict
+	// subset of the hits of a rival.
+	verdictWorse = "worse"
+	// verdictMixed is the verdict of every other copy with rivals.
+	verdictMixed = "mixed"
 )
 
 // outcomeState tells whether a test matches one item, does not match it,
@@ -345,11 +368,13 @@ var (
 		ratingFilter(filterRateBase, modePvE, tierRange, baseValues),
 		ratingFilter(filterRatingBase, modePvE, tierRange, baseValues),
 		ratingFilter(filterMisses, modePvE, rangeFormat{}, missValues),
+		verdictFilter(filterVerdict, modePvE),
 		ratingFilter(pvpPrefix+filterRate, modePvP, tierRange, rollValues),
 		ratingFilter(pvpPrefix+filterRating, modePvP, tierRange, rollValues),
 		ratingFilter(pvpPrefix+filterRateBase, modePvP, tierRange, baseValues),
 		ratingFilter(pvpPrefix+filterRatingBase, modePvP, tierRange, baseValues),
 		ratingFilter(pvpPrefix+filterMisses, modePvP, rangeFormat{}, missValues),
+		verdictFilter(pvpPrefix+filterVerdict, modePvP),
 	}
 
 	// isFilters maps each is: word of searchFilters to the builder of its
@@ -366,6 +391,17 @@ var (
 	// better. DIM tries an overload before a number, so rate:>=5 means
 	// rate:>=a.
 	tierRange = rangeFormat{overloads: tierOverloads()}
+
+	// verdictKinds maps each value of the verdict filters to the kind of
+	// verdict that the value matches, as VERDICT_KINDS of the web client
+	// maps it. The value same matches the kind equal.
+	verdictKinds = map[string]string{
+		"better": verdictBetter,
+		"same":   verdictEqual,
+		"worse":  verdictWorse,
+		"only":   verdictOnly,
+		"mixed":  verdictMixed,
+	}
 
 	// wordStart matches a text that starts with a character of \w. The \w
 	// of Go and the \w of a JavaScript regular expression without the u
@@ -1454,4 +1490,203 @@ func tierOverloads() map[string]float64 {
 	}
 
 	return overloads
+}
+
+// verdictFilter returns the verdict filter of the name name, which reads
+// the sheet of mode. The value is a key of verdictKinds, and the filter
+// rejects any other value, as the web client does. The filter matches a
+// copy whose verdict in [verdictIn] is the kind of the value. A copy
+// without a verdict is a no match. A copy whose verdict the server cannot
+// decide is undecided, whatever the value.
+func verdictFilter(name, mode string) searchFilter {
+	read := func(value string) (queryTest, error) {
+		kind, ok := verdictKinds[value]
+		if !ok {
+			return nil, fmt.Errorf("%w: %s:%s", errInvalidValue, name, value)
+		}
+
+		return func(ctx searchContext) func(*Item) outcome {
+			source := ctx.sources[mode]
+			copies := copiesByHash(ctx.items)
+
+			return func(item *Item) outcome {
+				got, known := verdictIn(source, copies, item)
+				if !known {
+					return outcome{reasons: []string{reasonVerdictNoPerks}, state: undecided}
+				}
+
+				return decided(got == kind)
+			}
+		}, nil
+	}
+
+	return searchFilter{name: name, mode: mode, value: read}
+}
+
+// verdictIn returns the kind of verdict that the source of one game mode
+// gives item against its rivals, as verdictIn of the web client does.
+// Copies holds the items with an instance id, keyed by item hash, as
+// [copiesByHash] builds it. [rivalsOf] picks the rivals. Each rival that
+// [rate] gives no roll drops out.
+//
+// The kind is empty for a copy without a verdict. A weapon that the sheet
+// does not list has none, and so has a copy on a row without perk
+// columns.
+//
+// The second result is false when the server cannot decide the verdict.
+// The profile then lists no perks for the copy or for one of its rivals.
+// The web client gives no verdict to a copy whose sockets are missing or
+// come from the definitions, and it drops such a rival. The server cannot
+// tell such a copy from one whose perks the web client reads. A rival
+// without perks leaves the verdict undecided also when another rival
+// already makes the copy worse.
+func verdictIn(source RatingSource, copies map[uint32][]*Item, item *Item) (string, bool) {
+	roll := rate(source, item).Roll
+
+	switch {
+	case roll == nil:
+		return "", true
+	case roll.Unknown:
+		return "", false
+	case len(roll.Columns) == 0:
+		return "", true
+	}
+
+	var rivals [][]int
+
+	for _, other := range rivalsOf(source.Sheet, copies, item) {
+		rival := rate(source, other).Roll
+
+		switch {
+		case rival == nil:
+			continue
+		case rival.Unknown:
+			return "", false
+		}
+
+		rivals = append(rivals, hitSet(rival))
+	}
+
+	return verdictOf(hitSet(roll), rivals), true
+}
+
+// copiesByHash returns the items of items that have an instance id, keyed
+// by item hash. The web client finds the rivals of a copy among every
+// item of the account, the vault included. It leaves out each item
+// without an instance id.
+func copiesByHash(items []*Item) map[uint32][]*Item {
+	copies := map[uint32][]*Item{}
+
+	for _, item := range items {
+		if item.InstanceID != "" {
+			copies[item.Hash] = append(copies[item.Hash], item)
+		}
+	}
+
+	return copies
+}
+
+// rivalsOf returns the rivals of item, which are the other copies whose
+// hash is a version of the hash of item on sheet. Copies holds the
+// candidates, keyed by item hash. The versions of a hash are its entry in
+// Sheet.Versions, and a hash without an entry has only itself as a
+// version. A hash that the entry lists twice adds its copies one time.
+func rivalsOf(sheet *Sheet, copies map[uint32][]*Item, item *Item) []*Item {
+	versions, ok := sheet.Versions[item.Hash]
+	if !ok {
+		versions = []uint32{item.Hash}
+	}
+
+	var (
+		seen   []uint32
+		rivals []*Item
+	)
+
+	for _, hash := range versions {
+		if slices.Contains(seen, hash) {
+			continue
+		}
+
+		seen = append(seen, hash)
+
+		for _, other := range copies[hash] {
+			if other.InstanceID != item.InstanceID {
+				rivals = append(rivals, other)
+			}
+		}
+	}
+
+	return rivals
+}
+
+// hitSet returns the index of each perk column of roll that the copy
+// hits, in order.
+func hitSet(roll *Roll) []int {
+	var hits []int
+
+	for i, column := range roll.Columns {
+		if !column.Missed() {
+			hits = append(hits, i)
+		}
+	}
+
+	return hits
+}
+
+// verdictOf returns the kind of verdict of a copy against its rivals, as
+// verdictOf of the web client gives it. Mine holds the indexes of the
+// perk columns that the copy hits, and rivals holds those of each rival.
+// The sets compare index by index, also when the columns of two copies
+// come from different rows of the sheet.
+//
+// The first kind whose rule holds is the verdict:
+//
+//   - verdictOnly, when the copy has no rival.
+//   - verdictWorse, when the hits of a rival are a strict superset of the
+//     hits of the copy.
+//   - verdictEqual, when a rival has the hits of the copy.
+//   - verdictBetter, when the hits of each rival are a strict subset of
+//     the hits of the copy.
+//   - verdictMixed, in every other case.
+func verdictOf(mine []int, rivals [][]int) string {
+	if len(rivals) == 0 {
+		return verdictOnly
+	}
+
+	relations := make([]string, 0, len(rivals))
+	for _, theirs := range rivals {
+		relations = append(relations, relateHits(mine, theirs))
+	}
+
+	switch {
+	case slices.Contains(relations, verdictWorse):
+		return verdictWorse
+	case slices.Contains(relations, verdictEqual):
+		return verdictEqual
+	case !slices.ContainsFunc(relations, func(kind string) bool { return kind != verdictBetter }):
+		return verdictBetter
+	default:
+		return verdictMixed
+	}
+}
+
+// relateHits returns the kind of verdict of a copy that hits the perk
+// columns of mine against one rival that hits those of theirs. A copy
+// that gains no column and loses none is equal. A copy that gains a
+// column and loses none is better, and one that loses a column and gains
+// none is worse. A copy that gains a column and loses another is mixed.
+func relateHits(mine, theirs []int) string {
+	gained := slices.ContainsFunc(mine, func(i int) bool { return !slices.Contains(theirs, i) })
+	lost := slices.ContainsFunc(theirs, func(i int) bool { return !slices.Contains(mine, i) })
+
+	switch {
+	case !gained && !lost:
+		return verdictEqual
+	case !lost:
+		return verdictBetter
+	case !gained:
+		return verdictWorse
+	default:
+		return verdictMixed
+	}
 }

@@ -27,7 +27,8 @@ func TestDecodeSheet(t *testing.T) {
 				Rows: map[uint32]SheetRow{
 					1: {Tier: "S", Category: "HCs", Notes: "Add clear.\n\nPairs with Firefly.", Rank: 3, Ranked: 62},
 				},
-				Columns: map[uint32][][]uint32{},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"row without a rank has the rank 0": {
@@ -38,14 +39,16 @@ func TestDecodeSheet(t *testing.T) {
 				Rows: map[uint32]SheetRow{
 					1: {Tier: "A", Category: "Exotic Weapons", Notes: "Boss damage.", Ranked: 40},
 				},
-				Columns: map[uint32][][]uint32{},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"row without a note has an empty note": {
 			body: `{"rolls": [{"category": "HCs", "tier": "S", "rank": 3, "ranked": 62, "hashes": [1]}]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "S", Category: "HCs", Rank: 3, Ranked: 62}},
-				Columns: map[uint32][][]uint32{},
+				Rows:     map[uint32]SheetRow{1: {Tier: "S", Category: "HCs", Rank: 3, Ranked: 62}},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"earlier row with the better tier keeps every field": {
@@ -54,8 +57,9 @@ func TestDecodeSheet(t *testing.T) {
 				{"category": "Reissues", "tier": "C", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "A", Category: "HCs", Notes: "first", Rank: 3, Ranked: 62}},
-				Columns: map[uint32][][]uint32{},
+				Rows:     map[uint32]SheetRow{1: {Tier: "A", Category: "HCs", Notes: "first", Rank: 3, Ranked: 62}},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"later row with the better tier gives every field": {
@@ -67,7 +71,8 @@ func TestDecodeSheet(t *testing.T) {
 				Rows: map[uint32]SheetRow{
 					1: {Tier: "A", Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9},
 				},
-				Columns: map[uint32][][]uint32{},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"later of two rows with equal tiers gives every field": {
@@ -79,7 +84,8 @@ func TestDecodeSheet(t *testing.T) {
 				Rows: map[uint32]SheetRow{
 					1: {Tier: "B", Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9},
 				},
-				Columns: map[uint32][][]uint32{},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"later of two rows without a tier gives every field": {
@@ -88,8 +94,9 @@ func TestDecodeSheet(t *testing.T) {
 				{"category": "Reissues", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9}},
-				Columns: map[uint32][][]uint32{},
+				Rows:     map[uint32]SheetRow{1: {Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9}},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"row without a tier replaces a row with a tier outside S to F": {
@@ -98,8 +105,9 @@ func TestDecodeSheet(t *testing.T) {
 				{"category": "Reissues", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9}},
-				Columns: map[uint32][][]uint32{},
+				Rows:     map[uint32]SheetRow{1: {Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9}},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		// The row that wins has no rank and no note. The hash does not
@@ -110,8 +118,9 @@ func TestDecodeSheet(t *testing.T) {
 				{"category": "Reissues", "tier": "F", "ranked": 9, "hashes": [1]}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "F", Category: "Reissues", Ranked: 9}},
-				Columns: map[uint32][][]uint32{},
+				Rows:     map[uint32]SheetRow{1: {Tier: "F", Category: "Reissues", Ranked: 9}},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"row without a tier replaces no field of a row with one": {
@@ -120,15 +129,17 @@ func TestDecodeSheet(t *testing.T) {
 				{"category": "Reissues", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "F", Category: "HCs", Ranked: 62}},
-				Columns: map[uint32][][]uint32{},
+				Rows:     map[uint32]SheetRow{1: {Tier: "F", Category: "HCs", Ranked: 62}},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"lone row without a tier has an empty tier": {
 			body: `{"rolls": [{"hashes": [1]}]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {}},
-				Columns: map[uint32][][]uint32{},
+				Rows:     map[uint32]SheetRow{1: {}},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"tier outside S to F reads as no tier": {
@@ -138,8 +149,9 @@ func TestDecodeSheet(t *testing.T) {
 				{"tier": "A+", "hashes": [3]}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {}, 2: {}, 3: {}},
-				Columns: map[uint32][][]uint32{},
+				Rows:     map[uint32]SheetRow{1: {}, 2: {}, 3: {}},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"row with a tier outside S to F does not replace a row with a tier": {
@@ -148,8 +160,9 @@ func TestDecodeSheet(t *testing.T) {
 				{"tier": "SS", "hashes": [1]}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "F"}},
-				Columns: map[uint32][][]uint32{},
+				Rows:     map[uint32]SheetRow{1: {Tier: "F"}},
+				Columns:  map[uint32][][]uint32{},
+				Versions: map[uint32][]uint32{},
 			},
 		},
 		"first row with columns sets the columns": {
@@ -158,8 +171,9 @@ func TestDecodeSheet(t *testing.T) {
 				{"tier": "B", "hashes": [1], "slots": [[13]]}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "B"}},
-				Columns: map[uint32][][]uint32{1: {{10}, {11, 12}}},
+				Rows:     map[uint32]SheetRow{1: {Tier: "B"}},
+				Columns:  map[uint32][][]uint32{1: {{10}, {11, 12}}},
+				Versions: map[uint32][]uint32{1: {1}},
 			},
 		},
 		"row without columns sets none": {
@@ -169,8 +183,9 @@ func TestDecodeSheet(t *testing.T) {
 				{"tier": "B", "hashes": [1], "slots": [[13]]}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "B"}, 2: {Tier: "B"}, 3: {Tier: "B"}},
-				Columns: map[uint32][][]uint32{1: {{13}}},
+				Rows:     map[uint32]SheetRow{1: {Tier: "B"}, 2: {Tier: "B"}, 3: {Tier: "B"}},
+				Columns:  map[uint32][][]uint32{1: {{13}}},
+				Versions: map[uint32][]uint32{1: {1}},
 			},
 		},
 		"tier and columns of one hash come from different rows": {
@@ -179,8 +194,9 @@ func TestDecodeSheet(t *testing.T) {
 				{"tier": "S", "hashes": [1], "slots": [[13]]}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "S"}},
-				Columns: map[uint32][][]uint32{1: {{10}, {11}}},
+				Rows:     map[uint32]SheetRow{1: {Tier: "S"}},
+				Columns:  map[uint32][][]uint32{1: {{10}, {11}}},
+				Versions: map[uint32][]uint32{1: {1}},
 			},
 		},
 		"fields and columns of one hash come from different rows": {
@@ -193,7 +209,8 @@ func TestDecodeSheet(t *testing.T) {
 				Rows: map[uint32]SheetRow{
 					1: {Tier: "S", Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9},
 				},
-				Columns: map[uint32][][]uint32{1: {{10}, {11}}},
+				Columns:  map[uint32][][]uint32{1: {{10}, {11}}},
+				Versions: map[uint32][]uint32{1: {1}},
 			},
 		},
 		// The sheet file has more fields than the decode reads.
@@ -209,7 +226,8 @@ func TestDecodeSheet(t *testing.T) {
 					1: {Tier: "B", Category: "Pulses", Notes: "both", Rank: 2, Ranked: 59},
 					2: {Tier: "B", Category: "Pulses", Notes: "both", Rank: 2, Ranked: 59},
 				},
-				Columns: map[uint32][][]uint32{1: {{10}, {11}}, 2: {{10}, {11}}},
+				Columns:  map[uint32][][]uint32{1: {{10}, {11}}, 2: {{10}, {11}}},
+				Versions: map[uint32][]uint32{1: {1, 2}, 2: {1, 2}},
 			},
 		},
 	}
@@ -221,6 +239,48 @@ func TestDecodeSheet(t *testing.T) {
 			got, err := decodeSheet(strings.NewReader(tc.body))
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestDecodeSheetVersions(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		want map[uint32][]uint32
+		body string
+	}{
+		"each hash of a row with columns gets the hashes of the row": {
+			body: `{"rolls": [{"tier": "B", "hashes": [1, 2], "slots": [[10]]}]}`,
+			want: map[uint32][]uint32{1: {1, 2}, 2: {1, 2}},
+		},
+		"a hash first listed on a row without columns gets the row with columns": {
+			body: `{"rolls": [
+				{"tier": "A", "hashes": [1, 3], "slots": []},
+				{"tier": "B", "hashes": [1, 2], "slots": [[10]]}
+			]}`,
+			want: map[uint32][]uint32{1: {1, 2}, 2: {1, 2}},
+		},
+		"the first row with columns gives the versions": {
+			body: `{"rolls": [
+				{"tier": "B", "hashes": [1, 2], "slots": [[10]]},
+				{"tier": "S", "hashes": [1, 3], "slots": [[11]]}
+			]}`,
+			want: map[uint32][]uint32{1: {1, 2}, 2: {1, 2}, 3: {1, 3}},
+		},
+		"a hash listed only on a row without columns has no versions": {
+			body: `{"rolls": [{"tier": "A", "hashes": [1], "slots": []}, {"tier": "A", "hashes": [2]}]}`,
+			want: map[uint32][]uint32{},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := decodeSheet(strings.NewReader(tc.body))
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got.Versions)
 		})
 	}
 }

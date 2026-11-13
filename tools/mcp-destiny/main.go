@@ -642,12 +642,16 @@ func newServer(h *handler) *mcp.Server {
 			"and rate:>=b means B or better. " +
 			"ratebase:<range> tests the tier of the row of the item on the sheet, whatever the copy rolled, " +
 			"and misses:<range> tests the number of perk columns that the roll missed. " +
+			"verdict:<value> compares the perk columns that a copy hits with those of the other copies " +
+			"on its sheet row, the vault included, and the value is better, same, worse, only, or mixed. " +
 			"rating: and ratingbase: are other names of rate: and ratebase:, " +
 			"and the forms with the prefix pvp read the PvP sheet. " +
 			"The tool lists in a section of its own each item whose outcome the server cannot decide, " +
 			"with the reason, and never counts such an item as a match. " +
 			"For example, the server does not read set bonuses, " +
 			"so it leaves items other than weapons undecided at rate: and ratebase:. " +
+			"It also leaves a copy undecided at verdict: when the profile lists no perks for the copy " +
+			"or for another copy on its sheet row. " +
 			"A query that reads a game mode without ratings returns an error with the reason of that mode. " +
 			"The tool refuses a query with any other term, such as a bare word or is:masterwork, " +
 			"and the refusal names each such term together with the filters that the tool evaluates. " +

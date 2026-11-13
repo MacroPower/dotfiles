@@ -376,9 +376,13 @@
 //   - misses:<range>: a copy whose count of missed perk columns is in the
 //     range, such as misses:>=1. Only a copy on a row with perk columns
 //     has the count.
-//   - pvprate:, pvprating:, pvpratebase:, pvpratingbase:, and pvpmisses:
-//     each match what the filter without the prefix pvp matches, but they
-//     read the PvP sheet.
+//   - verdict:<value>: a copy whose verdict against the other copies on
+//     its row of the Aegis sheet is the value. The value is better, same,
+//     worse, only, or mixed. A weapon that the sheet does not list and a
+//     copy on a row without perk columns match no value.
+//   - pvprate:, pvprating:, pvpratebase:, pvpratingbase:, pvpmisses:, and
+//     pvpverdict: each match what the filter without the prefix pvp
+//     matches, but they read the PvP sheet.
 //
 // The rarity filters read the tier type of the definition, as DIM does,
 // and not the tier name that list_items shows. DIM reads a definition
@@ -397,6 +401,25 @@
 // ratebase:. The rating filters rate each roll as the Roll Ratings section
 // describes. A rating can therefore differ from the rating of the web
 // client in the ways that the section lists.
+//
+// The verdict filters compare the perk columns that a copy hits with the
+// columns that each of its rivals hits, as the web client does. The
+// rivals of a copy are the other copies of each weapon on the sheet row
+// that gives the copy its perk columns, in every location, the vault
+// included. A reissue that shares the row of its weapon is therefore a
+// rival. The first of these rules that holds gives the verdict:
+//
+//   - only: the copy has no rival.
+//   - worse: a rival hits each column that the copy hits, and another
+//     column.
+//   - same: a rival hits the columns that the copy hits and no other.
+//   - better: the copy hits each column that each rival hits, and another
+//     column.
+//   - mixed: every other copy with rivals.
+//
+// Two copies whose columns come from different rows compare the columns
+// by position, as the web client does. The rating filters include
+// verdict: and pvpverdict:.
 //
 // Each rating filter reads the sheet, the perk preferences, and the
 // definitions of its game mode. A query that reads a game mode without
@@ -420,6 +443,11 @@
 //     The web client can still rate the copy from the definitions, so the
 //     copy is undecided at rate: and misses:. The server decides such a
 //     copy at ratebase:, and at rate: on a row without a tier.
+//   - The profile lists no perks for a copy on a row with perk columns,
+//     or for one of its rivals. The web client gives no verdict to a copy
+//     whose sockets come from the definitions, and it leaves such a rival
+//     out. The copy is undecided at each value of verdict:, also when
+//     another rival already makes the copy worse.
 //
 // The operators combine an undecided term with the other terms. An and
 // does not match when one of its terms does not match, and an or matches

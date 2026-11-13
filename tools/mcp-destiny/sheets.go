@@ -53,12 +53,14 @@ type SheetRow struct {
 	Ranked   int
 }
 
-// Sheet is one roll sheet. The item hash of a weapon keys both maps.
+// Sheet is one roll sheet. The item hash of a weapon keys each map.
 // Each column lists the plug hashes that the sheet picks for one perk
-// column.
+// column. Versions holds, for each hash with columns, the hashes of the
+// row that gives the hash its columns. The hash itself is one of them.
 type Sheet struct {
-	Rows    map[uint32]SheetRow
-	Columns map[uint32][][]uint32
+	Rows     map[uint32]SheetRow
+	Columns  map[uint32][][]uint32
+	Versions map[uint32][]uint32
 }
 
 // SheetState is the sheet of one game mode, or the reason that the
@@ -88,8 +90,9 @@ type rawSheet struct {
 // and the later of two rows with equal tiers replaces the earlier one.
 // Every field of the SheetRow of one hash therefore comes from one row
 // of the file. The first row with perk columns gives the hash its
-// columns. The SheetRow and the columns of one hash can therefore come
-// from different rows.
+// columns, and the hashes of that row are the versions of the hash. The
+// SheetRow and the columns of one hash can therefore come from different
+// rows.
 func decodeSheet(r io.Reader) (*Sheet, error) {
 	var raw rawSheet
 
@@ -99,8 +102,9 @@ func decodeSheet(r io.Reader) (*Sheet, error) {
 	}
 
 	sheet := &Sheet{
-		Rows:    map[uint32]SheetRow{},
-		Columns: map[uint32][][]uint32{},
+		Rows:     map[uint32]SheetRow{},
+		Columns:  map[uint32][][]uint32{},
+		Versions: map[uint32][]uint32{},
 	}
 
 	for _, roll := range raw.Rolls {
@@ -135,6 +139,7 @@ func decodeSheet(r io.Reader) (*Sheet, error) {
 			_, ok := sheet.Columns[hash]
 			if !ok {
 				sheet.Columns[hash] = roll.Slots
+				sheet.Versions[hash] = roll.Hashes
 			}
 		}
 	}

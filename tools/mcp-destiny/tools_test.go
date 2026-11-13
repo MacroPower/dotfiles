@@ -6520,8 +6520,8 @@ func TestPreviewUnsupported(t *testing.T) {
 		"is:seasonalartifacts, is:ghost, is:emblems, is:ships, is:vehicle, is:emotes, is:finishers, "+
 		"is:accessories, is:consumables, is:modifications, is:haspower, is:haslight, is:autotagged, tag:, "+
 		"dupe:item, count:, id:, hash:, name:, exactname:, power:, light:, rate:, rating:, ratebase:, "+
-		"ratingbase:, misses:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, and pvpmisses:. "+
-		"Each is: word also works as not:<word>.", got)
+		"ratingbase:, misses:, verdict:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, pvpmisses:, "+
+		"and pvpverdict:. Each is: word also works as not:<word>.", got)
 	assert.Empty(t, f.service.all())
 	assert.Empty(t, f.bungie.all())
 }
@@ -6881,6 +6881,11 @@ const (
 		`{"category": "Exotic Weapons", "tier": "A", "hashes": [101], "slots": []}, ` +
 		`{"category": "HCs", "hashes": [102], "slots": []}]}`
 
+	// previewPvPSheet rates Fatebringer (100) C with one perk column,
+	// which picks Rampage (903). The fake perk preferences dislike
+	// Rampage for PvP, so instance 1001 misses the column.
+	previewPvPSheet = `{"rolls": [{"category": "Hand Cannon", "tier": "C", "hashes": [100], "slots": [[903]]}]}`
+
 	undecidedHeading = "The server cannot decide these items:"
 	undecidedHeader  = "instance id | name | location | reason"
 	undecidedHelmet  = "1004 | Celestial Nighthawk | Hunter (equipped) | " + reasonSetBonus
@@ -6896,6 +6901,15 @@ const (
 func withAegisSheet(f *fakes) {
 	f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
 	f.serviceData["/artifacts/rolls.a.json"] = previewAegisSheet
+}
+
+// withBothSheets makes the service of f publish previewAegisSheet and
+// previewPvPSheet.
+func withBothSheets(f *fakes) {
+	withAegisSheet(f)
+
+	f.artifactFiles["pvprolls"] = []string{"pvprolls.a.json"}
+	f.serviceData["/artifacts/pvprolls.a.json"] = previewPvPSheet
 }
 
 // ratingRequests returns the paths of the requests of f for a roll sheet
@@ -7146,6 +7160,60 @@ func TestSaveAutotagRuleInvalidRating(t *testing.T) {
 				", so it skips an autotag rule with this query", got)
 			assert.Empty(t, f.service.calls(http.MethodPost, pathAutotag))
 			assert.Empty(t, f.bungie.all())
+		})
+	}
+}
+
+func TestPreviewExampleRules(t *testing.T) {
+	t.Parallel()
+
+	const verdictRows = "1001 | Fatebringer | Vault | " + reasonVerdictNoPerks + "\n" +
+		"1005 | Fatebringer | Hunter (postmaster) | " + reasonVerdictNoPerks + "\n" +
+		"1006 | Fatebringer | Hunter (equipped) | " + reasonVerdictNoPerks
+
+	// Each query is the query of an example rule of the rule editor of
+	// the web client. The profile lists no perks for two of the three
+	// copies of Fatebringer, so the server cannot decide the verdict of
+	// any copy.
+	tests := map[string]struct {
+		query string
+		// want opens the text of the result.
+		want string
+	}{
+		"keep better copies": {
+			query: "verdict:better or pvpverdict:better",
+			want: "No owned item matches the query, and the server cannot decide 3 more.\n\n" +
+				undecidedHeading + "\n" + undecidedHeader + "\n" + verdictRows,
+		},
+		"keep top PvE rolls": {
+			query: "rate:>=a",
+			want:  "2 of 6 owned items match, and the server cannot decide 3 more.",
+		},
+		"keep top PvP rolls": {
+			query: "pvprate:>=a",
+			want:  "No owned item matches the query, and the server cannot decide 3 more.",
+		},
+		"junk worse copies": {
+			query: "verdict:worse pvpverdict:worse",
+			want: "No owned item matches the query, and the server cannot decide 3 more.\n\n" +
+				undecidedHeading + "\n" + undecidedHeader + "\n" + verdictRows,
+		},
+		"junk spare rolls that miss both columns": {
+			query: "is:weapon misses:2 is:dupe",
+			want:  "No owned item matches the query, and the server cannot decide 2 more.",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			withBothSheets(f)
+
+			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
+			assert.False(t, isError, got)
+			assert.True(t, strings.HasPrefix(got, tc.want), got)
 		})
 	}
 }
