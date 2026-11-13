@@ -32,6 +32,36 @@ const (
 	bucketDummy     uint32 = 3621873013
 )
 
+// Item category hashes that the search filters and [itemCategories] read.
+// Each value is an ItemCategoryHashes value of DIM. A special grenade
+// launcher holds the negative of categoryGrenadeLaunchers.
+const (
+	categoryWeapon                  int64 = 1
+	categoryPowerWeapon             int64 = 4
+	categoryAutoRifle               int64 = 5
+	categoryHandCannon              int64 = 6
+	categoryPulseRifle              int64 = 7
+	categoryScoutRifle              int64 = 8
+	categoryFusionRifle             int64 = 9
+	categorySniperRifle             int64 = 10
+	categoryShotgun                 int64 = 11
+	categoryMachineGun              int64 = 12
+	categoryRocketLauncher          int64 = 13
+	categorySidearm                 int64 = 14
+	categorySword                   int64 = 54
+	categoryGrenadeLaunchers        int64 = 153950757
+	categoryShipModsTransmatEffects int64 = 208981632
+	categoryWeaponMods              int64 = 610365472
+	categoryLinearFusionRifles      int64 = 1504945536
+	categoryReputationTokens        int64 = 2088636411
+	categoryTraceRifles             int64 = 2489664120
+	categoryDummies                 int64 = 3109687656
+	categoryBows                    int64 = 3317538576
+	categoryGlaives                 int64 = 3871742104
+	categorySubmachineGuns          int64 = 3954685534
+	categoryArmorMods               int64 = 4104513227
+)
+
 // Filter names of the search syntax that the preview evaluates.
 const (
 	filterIs  = "is"
@@ -75,6 +105,39 @@ var (
 		{name: filterIs, word: "hunter", match: ofClass(classHunter)},
 		{name: filterIs, word: "warlock", match: ofClass(classWarlock)},
 		{name: filterIs, word: "favorite", match: func(item *Item) bool { return item.Favorite }},
+		{name: filterIs, word: "autorifle", match: inCategory(categoryAutoRifle)},
+		{name: filterIs, word: "handcannon", match: inCategory(categoryHandCannon)},
+		{name: filterIs, word: "pulserifle", match: inCategory(categoryPulseRifle)},
+		{name: filterIs, word: "scoutrifle", match: inCategory(categoryScoutRifle)},
+		{name: filterIs, word: "fusionrifle", match: inCategory(categoryFusionRifle)},
+		{name: filterIs, word: "sniperrifle", match: inCategory(categorySniperRifle)},
+		{name: filterIs, word: "shotgun", match: inCategory(categoryShotgun)},
+		{name: filterIs, word: "machinegun", match: inCategory(categoryMachineGun)},
+		{name: filterIs, word: "lmg", match: inCategory(categoryMachineGun)},
+		{name: filterIs, word: "rocketlauncher", match: inCategory(categoryRocketLauncher)},
+		{name: filterIs, word: "sidearm", match: inCategory(categorySidearm)},
+		{name: filterIs, word: "sword", match: inCategory(categorySword)},
+		{
+			name:  filterIs,
+			word:  "grenadelauncher",
+			match: inCategory(categoryGrenadeLaunchers, -categoryGrenadeLaunchers),
+		},
+		{name: filterIs, word: "heavygrenadelauncher", match: inCategory(categoryGrenadeLaunchers)},
+		{name: filterIs, word: "specialgrenadelauncher", match: inCategory(-categoryGrenadeLaunchers)},
+		{name: filterIs, word: "tracerifle", match: inCategory(categoryTraceRifles)},
+		{name: filterIs, word: "linearfusionrifle", match: inCategory(categoryLinearFusionRifles)},
+		{name: filterIs, word: "lfr", match: inCategory(categoryLinearFusionRifles)},
+		{name: filterIs, word: "submachine", match: inCategory(categorySubmachineGuns)},
+		{name: filterIs, word: "smg", match: inCategory(categorySubmachineGuns)},
+		{name: filterIs, word: "bow", match: inCategory(categoryBows)},
+		{name: filterIs, word: "glaive", match: inCategory(categoryGlaives)},
+		{name: filterIs, word: "transmat", match: inCategory(categoryShipModsTransmatEffects)},
+		{name: filterIs, word: "weaponmod", match: inCategory(categoryWeaponMods)},
+		{name: filterIs, word: "armormod", match: inCategory(categoryArmorMods)},
+		{name: filterIs, word: "reptoken", match: inCategory(categoryReputationTokens)},
+		{name: filterIs, word: "primary", match: ofAmmo(ammoPrimary)},
+		{name: filterIs, word: "special", match: ofAmmo(ammoSpecial)},
+		{name: filterIs, word: "heavy", match: ofAmmo(ammoHeavy)},
 		{name: filterTag, value: tagMatch},
 	}
 
@@ -301,6 +364,20 @@ func inPostmaster(item *Item) bool {
 // value classType.
 func ofClass(classType int) func(*Item) bool {
 	return func(item *Item) bool { return item.ClassType == classType }
+}
+
+// inCategory returns the predicate of an item whose item categories hold
+// one of categories.
+func inCategory(categories ...int64) func(*Item) bool {
+	return func(item *Item) bool {
+		return slices.ContainsFunc(item.Categories, func(c int64) bool { return slices.Contains(categories, c) })
+	}
+}
+
+// ofAmmo returns the predicate of an item for the Bungie
+// DestinyAmmunitionType value ammoType.
+func ofAmmo(ammoType int) func(*Item) bool {
+	return func(item *Item) bool { return item.AmmoType == ammoType }
 }
 
 // tagMatch returns the predicate of the filter tag:value, as the web

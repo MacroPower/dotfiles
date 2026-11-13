@@ -137,8 +137,11 @@ type Character struct {
 // outside the vault and the Postmaster. Postmaster marks every item at
 // the Postmaster, such as a lost item or a message. Lost marks an item in
 // the Lost Items bucket of the Postmaster, the only Postmaster bucket that
-// [Snapshot.Buckets] lists.
+// [Snapshot.Buckets] lists. Categories holds the item category hashes of
+// the definition after the changes that [itemCategories] makes. AmmoType
+// is the Bungie DestinyAmmunitionType value of the definition.
 type Item struct {
+	Categories   []int64
 	InstanceID   string
 	Name         string
 	TypeName     string
@@ -153,6 +156,7 @@ type Item struct {
 	Perks        []Perk
 	Stats        []Stat
 	ClassType    int
+	AmmoType     int
 	Power        int
 	Quantity     int
 	Hash         uint32
@@ -398,7 +402,9 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 		Slot:         defs.Buckets[slot].Name,
 		Bucket:       slot,
 		Kind:         kindOf(def),
+		Categories:   itemCategories(def.Categories),
 		ClassType:    def.ClassType,
+		AmmoType:     def.AmmoType,
 		Owner:        owner,
 		Quantity:     pi.Quantity,
 		Equipped:     equipped,
@@ -437,6 +443,46 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 	item.Stats = statsOf(profile, defs, pi.InstanceID)
 
 	return item
+}
+
+// itemCategories returns the item category hashes of a definition with
+// the two changes that Destiny Item Manager (DIM) makes to them, in the
+// order that DIM makes them.
+//
+// First, a special grenade launcher gets the negative of
+// [categoryGrenadeLaunchers] in place of that hash. DIM marks an item as a
+// special grenade launcher when its categories hold [categoryWeapon] and
+// [categoryGrenadeLaunchers] and lack [categoryDummies] and
+// [categoryPowerWeapon]. Second, a linear fusion rifle loses the first
+// [categoryFusionRifle], so a search for fusion rifles leaves out linear
+// fusion rifles.
+//
+// DIM also adds categories to a few item hashes from a table of its own.
+// No search filter of the preview reads those categories, so
+// itemCategories leaves the table out.
+func itemCategories(categories []uint32) []int64 {
+	var out []int64
+	for _, category := range categories {
+		out = append(out, int64(category))
+	}
+
+	special := slices.Contains(out, categoryWeapon) &&
+		!slices.Contains(out, categoryDummies) &&
+		slices.Contains(out, categoryGrenadeLaunchers) &&
+		!slices.Contains(out, categoryPowerWeapon)
+	if special {
+		out = slices.DeleteFunc(out, func(category int64) bool { return category == categoryGrenadeLaunchers })
+		out = append(out, -categoryGrenadeLaunchers)
+	}
+
+	if slices.Contains(out, categoryLinearFusionRifles) {
+		i := slices.Index(out, categoryFusionRifle)
+		if i >= 0 {
+			out = slices.Delete(out, i, i+1)
+		}
+	}
+
+	return out
 }
 
 func kindOf(def ItemDef) string {

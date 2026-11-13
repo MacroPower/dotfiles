@@ -884,3 +884,54 @@ func TestGroupOf(t *testing.T) {
 		})
 	}
 }
+
+func TestItemCategories(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		categories []uint32
+		want       []int64
+	}{
+		"no categories": {},
+		"special grenade launcher": {
+			categories: []uint32{1, 153950757},
+			want:       []int64{1, -153950757},
+		},
+		"special grenade launcher keeps the order of the other categories": {
+			categories: []uint32{1, 153950757, 3},
+			want:       []int64{1, 3, -153950757},
+		},
+		"heavy grenade launcher": {
+			categories: []uint32{1, 153950757, 4},
+			want:       []int64{1, 153950757, 4},
+		},
+		"dummy grenade launcher": {
+			categories: []uint32{1, 3109687656, 153950757},
+			want:       []int64{1, 3109687656, 153950757},
+		},
+		"grenade launcher category without the weapon category": {
+			categories: []uint32{153950757},
+			want:       []int64{153950757},
+		},
+		"linear fusion rifle": {
+			categories: []uint32{1, 9, 1504945536},
+			want:       []int64{1, 1504945536},
+		},
+		"linear fusion rifle loses only the first fusion rifle category": {
+			categories: []uint32{9, 1504945536, 9},
+			want:       []int64{1504945536, 9},
+		},
+		"fusion rifle": {
+			categories: []uint32{1, 9},
+			want:       []int64{1, 9},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, itemCategories(tc.categories))
+		})
+	}
+}

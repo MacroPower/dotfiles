@@ -237,6 +237,27 @@
 //   - is:unlocked: an unlocked item that the game can lock.
 //   - is:titan, is:hunter, and is:warlock: an item of that class.
 //   - is:favorite: an item with the favorite mark.
+//   - is:autorifle, is:handcannon, is:pulserifle, is:scoutrifle,
+//     is:sniperrifle, is:shotgun, is:rocketlauncher, is:sidearm, is:sword,
+//     is:tracerifle, is:bow, and is:glaive: a weapon of the type that the
+//     word names.
+//   - is:fusionrifle: a fusion rifle. A linear fusion rifle does not
+//     match.
+//   - is:machinegun and is:lmg: a machine gun.
+//   - is:linearfusionrifle and is:lfr: a linear fusion rifle.
+//   - is:submachine and is:smg: a submachine gun.
+//   - is:grenadelauncher: a grenade launcher of any ammo type.
+//   - is:heavygrenadelauncher: a grenade launcher of the power weapon
+//     category.
+//   - is:specialgrenadelauncher: a grenade launcher outside the power
+//     weapon category.
+//   - is:transmat: a transmat effect.
+//   - is:weaponmod: a weapon mod.
+//   - is:armormod: an armor mod.
+//   - is:reptoken: a reputation token.
+//   - is:primary, is:special, and is:heavy: an item that takes the ammo
+//     type that the word names. An item whose definition gives no ammo
+//     type, such as armor, matches none of them.
 //   - tag:<value>: an item whose tag is the value. Only the tags that the
 //     web client defines count, so tag:none matches nothing. The value
 //     favorite matches an item with the favorite mark.

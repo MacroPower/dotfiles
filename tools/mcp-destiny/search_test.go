@@ -2,7 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -436,7 +439,12 @@ func TestSupportedKeywords(t *testing.T) {
 	want := []string{
 		"is:weapon", "is:armor", "is:equipment", "is:equippable", "is:equipped", "is:invault",
 		"is:postmaster", "is:inpostmaster", "is:locked", "is:unlocked", "is:titan", "is:hunter",
-		"is:warlock", "is:favorite", "tag:",
+		"is:warlock", "is:favorite", "is:autorifle", "is:handcannon", "is:pulserifle", "is:scoutrifle",
+		"is:fusionrifle", "is:sniperrifle", "is:shotgun", "is:machinegun", "is:lmg", "is:rocketlauncher",
+		"is:sidearm", "is:sword", "is:grenadelauncher", "is:heavygrenadelauncher",
+		"is:specialgrenadelauncher", "is:tracerifle", "is:linearfusionrifle", "is:lfr", "is:submachine",
+		"is:smg", "is:bow", "is:glaive", "is:transmat", "is:weaponmod", "is:armormod", "is:reptoken",
+		"is:primary", "is:special", "is:heavy", "tag:",
 	}
 	assert.Equal(t, want, supportedKeywords())
 
@@ -446,7 +454,12 @@ func TestSupportedKeywords(t *testing.T) {
 		"so it previews nothing. The web client might still accept these terms. "+
 		"The server evaluates is:weapon, is:armor, is:equipment, is:equippable, is:equipped, is:invault, "+
 		"is:postmaster, is:inpostmaster, is:locked, is:unlocked, is:titan, is:hunter, is:warlock, "+
-		"is:favorite, and tag:. Each is: word also works as not:<word>.", err.Error())
+		"is:favorite, is:autorifle, is:handcannon, is:pulserifle, is:scoutrifle, is:fusionrifle, "+
+		"is:sniperrifle, is:shotgun, is:machinegun, is:lmg, is:rocketlauncher, is:sidearm, is:sword, "+
+		"is:grenadelauncher, is:heavygrenadelauncher, is:specialgrenadelauncher, is:tracerifle, "+
+		"is:linearfusionrifle, is:lfr, is:submachine, is:smg, is:bow, is:glaive, is:transmat, "+
+		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, and tag:. "+
+		"Each is: word also works as not:<word>.", err.Error())
 }
 
 func TestListWithAnd(t *testing.T) {
@@ -482,4 +495,259 @@ func TestCompiledQueryMatches(t *testing.T) {
 	}
 
 	assert.Equal(t, []string{"9", "100", "20"}, ids(compiled(t, "is:weapon").matches(items)))
+}
+
+// weaponTypeItems returns the owned items of a vault that holds ten weapons
+// and a helmet. The items pass through [NewSnapshot], so their item
+// categories carry the changes of [itemCategories].
+func weaponTypeItems(t *testing.T) []*Item {
+	t.Helper()
+
+	defs := fixtureDefs()
+
+	item := func(name, typeName string, bucket uint32, ammoType int, categories ...int64) ItemDef {
+		def := ItemDef{
+			Name:       name,
+			TypeName:   typeName,
+			Tier:       "Legendary",
+			Bucket:     bucket,
+			ItemType:   itemTypeWeapon,
+			ClassType:  classAny,
+			AmmoType:   ammoType,
+			Equippable: true,
+		}
+
+		for _, category := range categories {
+			def.Categories = append(def.Categories, uint32(category))
+		}
+
+		return def
+	}
+
+	// Each literal category is a hash of DIM that no search filter reads.
+	// KineticWeapon is 2, EnergyWeapon is 3, Armor is 20, and Helmets is
+	// 45.
+	defs.Items[500] = item("Fatebringer", "Hand Cannon", bucketKinetic, ammoPrimary,
+		categoryWeapon, 2, categoryHandCannon)
+	defs.Items[501] = item("Ace of Spades", "Hand Cannon", bucketKinetic, ammoPrimary,
+		categoryWeapon, 2, categoryHandCannon)
+	defs.Items[502] = item("Beloved", "Sniper Rifle", bucketEnergy, ammoSpecial,
+		categoryWeapon, 3, categorySniperRifle)
+	defs.Items[503] = item("Matador 64", "Shotgun", bucketKinetic, ammoSpecial,
+		categoryWeapon, 2, categoryShotgun)
+	defs.Items[504] = item("Plug One.1", "Fusion Rifle", bucketEnergy, ammoSpecial,
+		categoryWeapon, 3, categoryFusionRifle)
+	defs.Items[505] = item("Sleeper Simulant", "Linear Fusion Rifle", bucketPower, ammoHeavy,
+		categoryWeapon, categoryPowerWeapon, categoryFusionRifle, categoryLinearFusionRifles)
+	defs.Items[506] = item("Thunderlord", "Machine Gun", bucketPower, ammoHeavy,
+		categoryWeapon, categoryPowerWeapon, categoryMachineGun)
+	defs.Items[507] = item("Riskrunner", "Submachine Gun", bucketEnergy, ammoPrimary,
+		categoryWeapon, 3, categorySubmachineGuns)
+	defs.Items[508] = item("Wendigo GL3", "Grenade Launcher", bucketPower, ammoHeavy,
+		categoryWeapon, categoryPowerWeapon, categoryGrenadeLaunchers)
+	defs.Items[509] = item("Forbearance", "Grenade Launcher", bucketEnergy, ammoSpecial,
+		categoryWeapon, 3, categoryGrenadeLaunchers)
+	defs.Items[510] = ItemDef{
+		Name:       "Celestial Nighthawk",
+		TypeName:   "Helmet",
+		Tier:       "Exotic",
+		Bucket:     bucketHelmet,
+		ItemType:   itemTypeArmor,
+		ClassType:  classHunter,
+		Categories: []uint32{20, 45},
+		Equippable: true,
+	}
+
+	var vault []string
+	for hash := 500; hash <= 510; hash++ {
+		vault = append(vault, fmt.Sprintf(
+			`{"itemHash": %d, "itemInstanceId": "%d", "quantity": 1, "location": 2, "bucketHash": %d}`,
+			hash, hash*10, bucketVault,
+		))
+	}
+
+	profile := `{
+		"characters": {"data": {
+			"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
+		}},
+		"profileInventory": {"data": {"items": [` + strings.Join(vault, ",") + `]}}
+	}`
+
+	var p Profile
+
+	require.NoError(t, json.Unmarshal([]byte(profile), &p))
+
+	owned := ownedItems(NewSnapshot(&p, defs, fixtureNow))
+	require.Len(t, owned, 11)
+
+	return owned
+}
+
+// matchNames returns the name of each item of items that query matches,
+// in the order of [compiledQuery.matches].
+func matchNames(t *testing.T, query string, items []*Item) []string {
+	t.Helper()
+
+	q := compiled(t, query)
+	require.Empty(t, q.unsupported)
+
+	names := []string{}
+	for _, item := range q.matches(items) {
+		names = append(names, item.Name)
+	}
+
+	return names
+}
+
+func TestWeaponTypeWords(t *testing.T) {
+	t.Parallel()
+
+	items := weaponTypeItems(t)
+
+	assert.Equal(t, []string{"Ace of Spades", "Fatebringer"}, matchNames(t, "is:handcannon", items))
+
+	for _, item := range compiled(t, "is:handcannon").matches(items) {
+		assert.Equal(t, "Hand Cannon", item.TypeName)
+	}
+}
+
+func TestWeaponTypeOr(t *testing.T) {
+	t.Parallel()
+
+	items := weaponTypeItems(t)
+
+	got := matchNames(t, "(is:sniperrifle or is:shotgun)", items)
+	assert.Equal(t, []string{"Beloved", "Matador 64"}, got)
+}
+
+func TestWeaponTypeAliases(t *testing.T) {
+	t.Parallel()
+
+	items := weaponTypeItems(t)
+
+	tests := map[string]struct {
+		alias string
+		word  string
+		want  []string
+	}{
+		"lfr": {alias: "is:lfr", word: "is:linearfusionrifle", want: []string{"Sleeper Simulant"}},
+		"lmg": {alias: "is:lmg", word: "is:machinegun", want: []string{"Thunderlord"}},
+		"smg": {alias: "is:smg", word: "is:submachine", want: []string{"Riskrunner"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchNames(t, tc.word, items))
+			assert.Equal(t, tc.want, matchNames(t, tc.alias, items))
+		})
+	}
+
+	// The snapshot drops the fusion rifle category of a linear fusion
+	// rifle.
+	assert.Equal(t, []string{"Plug One.1"}, matchNames(t, "is:fusionrifle", items))
+}
+
+func TestGrenadeLaunchers(t *testing.T) {
+	t.Parallel()
+
+	items := weaponTypeItems(t)
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"both":    {query: "is:grenadelauncher", want: []string{"Forbearance", "Wendigo GL3"}},
+		"heavy":   {query: "is:heavygrenadelauncher", want: []string{"Wendigo GL3"}},
+		"special": {query: "is:specialgrenadelauncher", want: []string{"Forbearance"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchNames(t, tc.query, items))
+		})
+	}
+}
+
+func TestAmmoWords(t *testing.T) {
+	t.Parallel()
+
+	items := weaponTypeItems(t)
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"primary": {query: "is:primary", want: []string{"Ace of Spades", "Fatebringer", "Riskrunner"}},
+		"special": {
+			query: "is:special",
+			want:  []string{"Beloved", "Forbearance", "Matador 64", "Plug One.1"},
+		},
+		"heavy":        {query: "is:heavy", want: []string{"Sleeper Simulant", "Thunderlord", "Wendigo GL3"}},
+		"no ammo type": {query: "-is:primary -is:special -is:heavy", want: []string{"Celestial Nighthawk"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchNames(t, tc.query, items))
+		})
+	}
+}
+
+func TestCategoryWords(t *testing.T) {
+	t.Parallel()
+
+	// Each hash is the ItemCategoryHashes value of DIM that the word reads.
+	tests := map[string]struct {
+		category int64
+	}{
+		"autorifle":              {category: 5},
+		"handcannon":             {category: 6},
+		"pulserifle":             {category: 7},
+		"scoutrifle":             {category: 8},
+		"fusionrifle":            {category: 9},
+		"sniperrifle":            {category: 10},
+		"shotgun":                {category: 11},
+		"machinegun":             {category: 12},
+		"lmg":                    {category: 12},
+		"rocketlauncher":         {category: 13},
+		"sidearm":                {category: 14},
+		"sword":                  {category: 54},
+		"heavygrenadelauncher":   {category: 153950757},
+		"specialgrenadelauncher": {category: -153950757},
+		"tracerifle":             {category: 2489664120},
+		"linearfusionrifle":      {category: 1504945536},
+		"lfr":                    {category: 1504945536},
+		"submachine":             {category: 3954685534},
+		"smg":                    {category: 3954685534},
+		"bow":                    {category: 3317538576},
+		"glaive":                 {category: 3871742104},
+		"transmat":               {category: 208981632},
+		"weaponmod":              {category: 610365472},
+		"armormod":               {category: 4104513227},
+		"reptoken":               {category: 2088636411},
+	}
+
+	// The items hold one category each, so a word matches only the item of
+	// its own category.
+	var items []*Item
+	for _, tc := range tests {
+		id := strconv.FormatInt(tc.category, 10)
+		if !slices.ContainsFunc(items, func(item *Item) bool { return item.InstanceID == id }) {
+			items = append(items, &Item{InstanceID: id, Categories: []int64{tc.category}})
+		}
+	}
+
+	for word, tc := range tests {
+		t.Run(word, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, []string{strconv.FormatInt(tc.category, 10)}, matchIDs(t, "is:"+word, items))
+		})
+	}
 }

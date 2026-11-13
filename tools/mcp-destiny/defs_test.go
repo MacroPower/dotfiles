@@ -56,9 +56,14 @@ func newFakeArtifacts() *fakeArtifacts {
 				 "itemType": 3, "classType": 3,
 				 "inventory": {"tierTypeName": "Exotic", "bucketTypeHash": 1498876634, "nonTransferrableOriginal": true}},
 				{"hash": 401, "displayProperties": {"name": "Midnight Coup"}, "itemTypeDisplayName": "Hand Cannon",
-				 "itemType": 3, "classType": 3},
+				 "itemType": 3, "classType": 3, "itemCategoryHashes": []},
 				{"hash": 402, "displayProperties": {"name": "Austringer"}, "itemTypeDisplayName": "Hand Cannon",
-				 "itemType": 3, "classType": 3}
+				 "itemType": 3, "classType": 3},
+				{"hash": 403, "displayProperties": {"name": "Sleeper Simulant"},
+				 "itemTypeDisplayName": "Linear Fusion Rifle", "itemType": 3, "classType": 3,
+				 "itemCategoryHashes": [1, 4, 9, 1504945536],
+				 "inventory": {"tierTypeName": "Exotic", "bucketTypeHash": 953998645},
+				 "equippingBlock": {"ammoType": 3, "equipmentSlotTypeHash": 953998645}}
 			]`,
 			// The service build splits the detail array across files.
 			// Fatebringer has a socket with only a randomized plug set,
@@ -191,10 +196,10 @@ func TestDefsLoader(t *testing.T) {
 	clock := WithDefsClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade. The
-	// layout without the sockets and the plug sets has the prefix
-	// defs-v6-. Its file holds the manifest version of the service, and
+	// layout without the item categories and the ammo type has the prefix
+	// defs-v7-. Its file holds the manifest version of the service, and
 	// the loader does not read it.
-	stale := filepath.Join(dir, "defs-v6-245114.26_1.json")
+	stale := filepath.Join(dir, "defs-v7-245114.26_1.json")
 	require.NoError(t, os.WriteFile(stale, []byte(`{"version": "245114.26/1"}`), 0o644))
 
 	loader := NewDefsLoader(source, dir, clock)
@@ -212,6 +217,7 @@ func TestDefsLoader(t *testing.T) {
 				ItemType:   itemTypeWeapon,
 				ClassType:  classAny,
 				DamageType: 1,
+				AmmoType:   ammoPrimary,
 				Equippable: true,
 			},
 			400: {
@@ -225,6 +231,20 @@ func TestDefsLoader(t *testing.T) {
 			},
 			401: {Name: "Midnight Coup", TypeName: "Hand Cannon", ItemType: itemTypeWeapon, ClassType: classAny},
 			402: {Name: "Austringer", TypeName: "Hand Cannon", ItemType: itemTypeWeapon, ClassType: classAny},
+			// The loader keeps the categories of the definition. The
+			// snapshot drops the fusion rifle category of a linear fusion
+			// rifle.
+			403: {
+				Name:       "Sleeper Simulant",
+				TypeName:   "Linear Fusion Rifle",
+				Tier:       "Exotic",
+				Bucket:     bucketPower,
+				ItemType:   itemTypeWeapon,
+				ClassType:  classAny,
+				Categories: []uint32{1, 4, 9, 1504945536},
+				AmmoType:   ammoHeavy,
+				Equippable: true,
+			},
 			900: {
 				Name:        "Firefly",
 				Description: "Precision final blows explode.",
@@ -394,7 +414,7 @@ func TestDefsLoaderWithoutOptionalArtifacts(t *testing.T) {
 			got, err := NewDefsLoader(source, "").Get(t.Context())
 			require.NoError(t, err)
 			assert.Empty(t, tc.field(got))
-			assert.Len(t, got.Items, 5)
+			assert.Len(t, got.Items, 6)
 
 			for _, file := range tc.files {
 				assert.NotContains(t, source.fetched, file)
@@ -508,7 +528,7 @@ func TestDefsLoaderIgnoresCorruptCache(t *testing.T) {
 
 	got, err := loader.Get(t.Context())
 	require.NoError(t, err)
-	assert.Len(t, got.Items, 5)
+	assert.Len(t, got.Items, 6)
 }
 
 func TestPlugSetSocket(t *testing.T) {

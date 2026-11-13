@@ -24,7 +24,7 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v7-"
+	defsCachePrefix = "defs-v8-"
 
 	artifactCore            = "core"
 	artifactDetail          = "detail"
@@ -66,6 +66,14 @@ const (
 	bucketCategoryEquippable = 3
 )
 
+// Bungie DestinyAmmunitionType values. An item without an equipping block
+// has the ammo type zero.
+const (
+	ammoPrimary = 1
+	ammoSpecial = 2
+	ammoHeavy   = 3
+)
+
 // bucketScopeAccount is the Bungie BucketScope value of a bucket that every
 // character shares.
 const bucketScopeAccount = 1
@@ -77,18 +85,23 @@ var ErrDefs = errors.New("definitions")
 // ItemDef is the subset of a Bungie inventory item definition that the
 // server reads. Perks, mods, and shaders are item definitions too.
 // The loader keeps Description only for plugs, so the cache file stays
-// small.
+// small. Categories holds the item category hashes of the definition, in
+// the order of the definition. AmmoType is the Bungie DestinyAmmunitionType
+// value of the equipping block, and zero when the definition has no
+// equipping block.
 type ItemDef struct {
-	Name            string `json:"name"`
-	Description     string `json:"description,omitempty"`
-	TypeName        string `json:"type,omitempty"`
-	Tier            string `json:"tier,omitempty"`
-	ItemType        int    `json:"itemType,omitempty"`
-	ClassType       int    `json:"classType"`
-	DamageType      int    `json:"damageType,omitempty"`
-	Bucket          uint32 `json:"bucket,omitempty"`
-	NonTransferable bool   `json:"nonTransferable,omitempty"`
-	Equippable      bool   `json:"equippable,omitempty"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description,omitempty"`
+	TypeName        string   `json:"type,omitempty"`
+	Tier            string   `json:"tier,omitempty"`
+	Categories      []uint32 `json:"categories,omitempty"`
+	ItemType        int      `json:"itemType,omitempty"`
+	ClassType       int      `json:"classType"`
+	DamageType      int      `json:"damageType,omitempty"`
+	AmmoType        int      `json:"ammoType,omitempty"`
+	Bucket          uint32   `json:"bucket,omitempty"`
+	NonTransferable bool     `json:"nonTransferable,omitempty"`
+	Equippable      bool     `json:"equippable,omitempty"`
 }
 
 // BucketDef is the subset of a Bungie inventory bucket definition that the
@@ -177,7 +190,8 @@ type Defs struct {
 func (d *Defs) TraitNames() map[string]string {
 	names := map[string]string{}
 
-	for _, item := range d.Items {
+	for hash := range d.Items {
+		item := d.Items[hash]
 		if item.TypeName != "Trait" && item.TypeName != "Enhanced Trait" {
 			continue
 		}
@@ -474,12 +488,15 @@ func (l *DefsLoader) read(ctx context.Context, file string, decode func(io.Reade
 // rawItem is the subset of a record of the core artifact that the loader
 // reads.
 type rawItem struct {
-	EquippingBlock    *struct{} `json:"equippingBlock"`
+	EquippingBlock *struct {
+		AmmoType int `json:"ammoType"`
+	} `json:"equippingBlock"`
 	DisplayProperties struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	} `json:"displayProperties"`
-	ItemTypeDisplayName string `json:"itemTypeDisplayName"`
+	ItemTypeDisplayName string   `json:"itemTypeDisplayName"`
+	ItemCategoryHashes  []uint32 `json:"itemCategoryHashes"`
 	Inventory           struct {
 		TierTypeName             string `json:"tierTypeName"`
 		BucketTypeHash           uint32 `json:"bucketTypeHash"`
@@ -504,6 +521,16 @@ func (raw rawItem) item() ItemDef {
 		DamageType:      raw.DefaultDamageType,
 		NonTransferable: raw.Inventory.NonTransferrableOriginal,
 		Equippable:      raw.EquippingBlock != nil,
+	}
+
+	// The cache file leaves out an empty list, so an empty list stays nil
+	// in a build too.
+	if len(raw.ItemCategoryHashes) > 0 {
+		def.Categories = raw.ItemCategoryHashes
+	}
+
+	if raw.EquippingBlock != nil {
+		def.AmmoType = raw.EquippingBlock.AmmoType
 	}
 
 	if raw.ItemType == itemTypePlug {
