@@ -28,6 +28,8 @@ const (
 	toolMoveItems           = "move_items"
 	toolMoveStack           = "move_stack"
 	toolSetLock             = "set_lock"
+	toolListLoadouts        = "list_loadouts"
+	toolEquipLoadout        = "equip_loadout"
 	toolListTags            = "list_tags"
 	toolSetTag              = "set_tag"
 	toolSetFavorite         = "set_favorite"
@@ -164,6 +166,17 @@ type MoveStackInput struct {
 type SetLockInput struct {
 	InstanceIDs []string `json:"instance_ids" jsonschema:"Instance ids from list_items"`
 	Locked      bool     `json:"locked"       jsonschema:"true to lock the items, false to unlock them"`
+}
+
+// ListLoadoutsInput is the input schema of the list_loadouts tool.
+type ListLoadoutsInput struct {
+	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to list the loadouts of every character"`
+}
+
+// EquipLoadoutInput is the input schema of the equip_loadout tool.
+type EquipLoadoutInput struct {
+	Character string `json:"character" jsonschema:"Character id, or a class name that exactly one character has"`
+	Loadout   int    `json:"loadout"   jsonschema:"Loadout number from list_loadouts, which counts the in-game loadout screen from 1"`
 }
 
 // SetAutotagEnabledInput is the input schema of the set_autotag_enabled
@@ -716,6 +729,91 @@ func (h *handler) handleSetLock(
 	result.IsError = failed == len(items)
 
 	return result, nil, nil
+}
+
+func (h *handler) handleListLoadouts(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in ListLoadoutsInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	s, err := h.loadSnapshot(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolListLoadouts, err)
+	}
+
+	characters := s.Characters
+
+	if in.Character != "" {
+		c, err := s.ResolveCharacter(in.Character)
+		if err != nil {
+			return h.toolError(ctx, toolListLoadouts, err)
+		}
+
+		characters = []Character{c}
+	}
+
+	return textResult(renderLoadouts(s, characters)), nil, nil
+}
+
+func (h *handler) handleEquipLoadout(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in EquipLoadoutInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Each character numbers its own loadouts, so an empty name returns an
+	// error instead of selecting the most recently played character.
+	if in.Character == "" {
+		return h.toolError(ctx, toolEquipLoadout, fmt.Errorf(
+			"%w: pass the character of the loadout as a character id or a class name", ErrUnknownTarget,
+		))
+	}
+
+	s, err := h.loadSnapshot(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolEquipLoadout, err)
+	}
+
+	c, err := s.ResolveCharacter(in.Character)
+	if err != nil {
+		return h.toolError(ctx, toolEquipLoadout, err)
+	}
+
+	loadout, err := s.FindLoadout(c.ID, in.Loadout)
+	if err != nil {
+		return h.toolError(ctx, toolEquipLoadout, err)
+	}
+
+	membership, err := h.membership(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolEquipLoadout, err)
+	}
+
+	result, err := s.EquipLoadout(ctx, bungieMover{h: h, membership: membership}, loadout)
+
+	// Bungie can serve the state from before an equip for some seconds. A
+	// snapshot that the call updated therefore stays in use for a full TTL.
+	if result.Changed {
+		s.Fetched = h.now()
+	}
+
+	if err != nil {
+		h.log.WarnContext(ctx, "loadout equip failed",
+			slog.String("character_id", c.ID),
+			slog.Int("loadout", loadout.Number),
+			slog.Any("error", err),
+		)
+	}
+
+	out := textResult(renderLoadoutEquip(s, loadout, result, err))
+	out.IsError = err != nil
+
+	return out, nil, nil
 }
 
 func (h *handler) handleListTags(
@@ -1555,8 +1653,9 @@ func (h *handler) bungieKey(ctx context.Context) (string, error) {
 	return h.apiKey, nil
 }
 
-// bungieMover adapts the handler to [ItemMover] and [ItemLocker]. It adds
-// the membership and the credentials to each action.
+// bungieMover adapts the handler to [ItemMover], [ItemLocker], and
+// [LoadoutEquipper]. It adds the membership and the credentials to each
+// action.
 type bungieMover struct {
 	h          *handler
 	membership Membership
@@ -1595,6 +1694,15 @@ func (m bungieMover) SetLockState(ctx context.Context, action ItemAction, locked
 
 	return m.h.withBungie(ctx, func(creds Credentials) error {
 		return m.h.bungie.SetLockState(ctx, creds, action, locked)
+	})
+}
+
+// EquipLoadout implements [LoadoutEquipper].
+func (m bungieMover) EquipLoadout(ctx context.Context, action LoadoutAction) error {
+	action.Membership = m.membership
+
+	return m.h.withBungie(ctx, func(creds Credentials) error {
+		return m.h.bungie.EquipLoadout(ctx, creds, action)
 	})
 }
 

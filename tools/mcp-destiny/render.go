@@ -325,6 +325,111 @@ func renderWeaponGroup(s *Snapshot, group WeaponGroup) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// renderLoadouts lists the saved loadouts of characters as one table per
+// character, with a row per loadout item.
+func renderLoadouts(s *Snapshot, characters []Character) string {
+	var b strings.Builder
+
+	b.WriteString("Loadouts saved in the game. A loadout number is the position of the loadout " +
+		"on the in-game loadout screen, counted from 1. The server cannot read the name, icon, " +
+		"or color that the game shows for a loadout. Pass the character and the loadout number to equip_loadout.")
+
+	for _, c := range characters {
+		label := s.OwnerLabel(c.ID)
+		saved := s.LoadoutsOf(c.ID)
+
+		if len(saved) == 0 {
+			fmt.Fprintf(&b, "\n\n%s (id %s): no saved loadouts", label, c.ID)
+
+			continue
+		}
+
+		fmt.Fprintf(&b, "\n\n%s (id %s):\n", label, c.ID)
+		b.WriteString("loadout | instance id | name | slot | location")
+
+		for _, l := range saved {
+			for _, id := range l.InstanceIDs {
+				item, ok := s.Find(id)
+				if !ok {
+					fmt.Fprintf(&b, "\n%d | %s | not in the inventory |  | ", l.Number, id)
+
+					continue
+				}
+
+				fmt.Fprintf(&b, "\n%d | %s | %s | %s | %s",
+					l.Number, item.InstanceID, item.Name, item.Slot, s.LocationLabel(item))
+			}
+		}
+	}
+
+	return b.String()
+}
+
+// renderLoadoutEquip describes what an equip_loadout call did. A non-nil
+// err says why the call stopped.
+func renderLoadoutEquip(s *Snapshot, l Loadout, result LoadoutEquip, err error) string {
+	var b strings.Builder
+
+	target := s.OwnerLabel(l.CharacterID)
+
+	for _, move := range result.Moves {
+		// A move that starts on the character of the loadout pulls the
+		// item from the Postmaster.
+		from := s.OwnerLabel(move.From)
+		if move.From == l.CharacterID {
+			from = "the Postmaster"
+		}
+
+		fmt.Fprintf(&b, "- Moved %s (%s) from %s to %s.", move.Item.Name, move.Item.InstanceID, from, target)
+
+		if move.Replacement != nil {
+			fmt.Fprintf(&b, " Equipped %s (%s) in its place on %s.",
+				move.Replacement.Name, move.Replacement.InstanceID, s.OwnerLabel(move.From))
+		}
+
+		b.WriteString("\n")
+	}
+
+	if stopped := result.Stopped; stopped != nil {
+		fmt.Fprintf(&b, "- %s (%s) did not reach %s. It is at %s.",
+			stopped.Item.Name, stopped.Item.InstanceID, target, s.LocationLabel(stopped.Item))
+
+		if stopped.Replacement != nil {
+			fmt.Fprintf(&b, " Equipped %s (%s) in its place on %s.",
+				stopped.Replacement.Name, stopped.Replacement.InstanceID, s.OwnerLabel(stopped.From))
+		}
+
+		b.WriteString("\n")
+	}
+
+	if err != nil {
+		// A Bungie message ends with its own period.
+		reason := strings.TrimRight(err.Error(), ".")
+		fmt.Fprintf(&b, "Loadout %d is not equipped on %s: %s.", l.Number, target, reason)
+
+		return b.String()
+	}
+
+	names := make([]string, 0, len(result.Items))
+	for _, item := range result.Items {
+		names = append(names, fmt.Sprintf("%s (%s)", item.Name, item.InstanceID))
+	}
+
+	fmt.Fprintf(&b, "Equipped loadout %d on %s", l.Number, target)
+
+	if len(names) > 0 {
+		fmt.Fprintf(&b, ": %s", strings.Join(names, ", "))
+	}
+
+	b.WriteString(".")
+
+	if len(result.Missing) > 0 {
+		fmt.Fprintf(&b, " The inventory does not hold these loadout items: %s.", strings.Join(result.Missing, ", "))
+	}
+
+	return b.String()
+}
+
 // perkLabel names a perk and the other plugs that its socket can hold.
 func perkLabel(perk Perk) string {
 	if len(perk.Options) == 0 {

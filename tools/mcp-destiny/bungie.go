@@ -44,10 +44,10 @@ const (
 var (
 	// profileComponents lists the GetProfile components that
 	// [*Bungie.Profile] requests. They cover profiles, profile inventories,
-	// profile currencies, characters, character inventories, and character
-	// equipment. The item components cover instances, stats, sockets, and
-	// reusable plugs.
-	profileComponents = []int{100, 102, 103, 200, 201, 205, 300, 304, 305, 310}
+	// profile currencies, characters, character inventories, character
+	// equipment, and character loadouts. The item components cover
+	// instances, stats, sockets, and reusable plugs.
+	profileComponents = []int{100, 102, 103, 200, 201, 205, 206, 300, 304, 305, 310}
 
 	// ErrBungie marks failures that originate from the Bungie platform API.
 	// A [*BungieError] carries the platform error code.
@@ -144,6 +144,24 @@ type ProfileItems struct {
 	Items []ProfileItem `json:"items"`
 }
 
+// ProfileLoadout is one Bungie DestinyLoadoutComponent, a loadout that a
+// character saved in the game. In a loadout that holds nothing, every item
+// has the instance id "0".
+type ProfileLoadout struct {
+	Items []ProfileLoadoutItem `json:"items"`
+}
+
+// ProfileLoadoutItem is one Bungie DestinyLoadoutItemComponent.
+type ProfileLoadoutItem struct {
+	InstanceID string `json:"itemInstanceId"`
+}
+
+// ProfileLoadouts is the Bungie DestinyLoadoutsComponent of one character.
+// The position of a loadout in Loadouts is its loadout index.
+type ProfileLoadouts struct {
+	Loadouts []ProfileLoadout `json:"loadouts"`
+}
+
 // Profile is the subset of a Bungie DestinyProfileResponse that the server
 // reads.
 type Profile struct {
@@ -156,6 +174,9 @@ type Profile struct {
 	CharacterEquipment struct {
 		Data map[string]ProfileItems `json:"data"`
 	} `json:"characterEquipment"`
+	CharacterLoadouts struct {
+		Data map[string]ProfileLoadouts `json:"data"`
+	} `json:"characterLoadouts"`
 	ItemComponents struct {
 		Instances struct {
 			Data map[string]ProfileInstance `json:"data"`
@@ -231,6 +252,15 @@ type ItemAction struct {
 	Membership  Membership
 	StackSize   int
 	ItemHash    uint32
+}
+
+// LoadoutAction identifies one loadout that a character saved in the game.
+// Index is the position of the loadout among the loadouts of the
+// character, counted from zero.
+type LoadoutAction struct {
+	CharacterID string
+	Membership  Membership
+	Index       int
 }
 
 // BungieOption configures a [*Bungie]. See [WithBungieURL].
@@ -400,6 +430,17 @@ func (b *Bungie) SetLockState(ctx context.Context, creds Credentials, action Ite
 	}
 
 	return b.call(ctx, creds, http.MethodPost, "/Destiny2/Actions/Items/SetLockState/", body, nil)
+}
+
+// EquipLoadout equips a loadout that the character saved in the game.
+func (b *Bungie) EquipLoadout(ctx context.Context, creds Credentials, action LoadoutAction) error {
+	body := map[string]any{
+		"loadoutIndex":   action.Index,
+		"characterId":    action.CharacterID,
+		"membershipType": action.Membership.Type,
+	}
+
+	return b.call(ctx, creds, http.MethodPost, "/Destiny2/Actions/Loadouts/EquipLoadout/", body, nil)
 }
 
 // call performs one platform request and unwraps the Bungie response

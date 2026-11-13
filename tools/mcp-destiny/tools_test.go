@@ -30,7 +30,12 @@ const (
 	pathTransfer = "/Destiny2/Actions/Items/TransferItem/"
 	pathEquip    = "/Destiny2/Actions/Items/EquipItem/"
 	pathLock     = "/Destiny2/Actions/Items/SetLockState/"
+	pathLoadout  = "/Destiny2/Actions/Loadouts/EquipLoadout/"
 )
+
+const loadoutsIntro = "Loadouts saved in the game. A loadout number is the position of the loadout " +
+	"on the in-game loadout screen, counted from 1. The server cannot read the name, icon, " +
+	"or color that the game shows for a loadout. Pass the character and the loadout number to equip_loadout."
 
 func TestServerListsTools(t *testing.T) {
 	t.Parallel()
@@ -60,7 +65,8 @@ func TestServerListsTools(t *testing.T) {
 		toolCompareDuplicates, toolMoveItems,
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolRemoveAutotagRule,
-		toolMoveStack, toolSetLock, toolSetAutotagEnabled, toolListActivityHistory,
+		toolMoveStack, toolSetLock, toolSetAutotagEnabled, toolListActivityHistory, toolListLoadouts,
+		toolEquipLoadout,
 	}, names)
 
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
@@ -1107,6 +1113,240 @@ func TestSetLockToolSnapshotAge(t *testing.T) {
 	assert.False(t, isError, "one item locked")
 	assert.Equal(t, refusal+"\n- Locked Gjallarhorn (1002).", got)
 	assert.Equal(t, later, f.h.snapshot.Fetched, "a lock change restarts the age of the snapshot")
+}
+
+func TestListLoadouts(t *testing.T) {
+	t.Parallel()
+
+	hunter := strings.Join([]string{
+		"Hunter (id c1):",
+		"loadout | instance id | name | slot | location",
+		"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped)",
+		"2 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)",
+		"3 | 1001 | Fatebringer | Kinetic Weapons | Vault",
+		"3 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)",
+		"3 | 9999 | not in the inventory |  | ",
+	}, "\n")
+	titan := strings.Join([]string{
+		"Titan (id c2):",
+		"loadout | instance id | name | slot | location",
+		"1 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped)",
+	}, "\n")
+
+	tests := map[string]struct {
+		want     string
+		in       ListLoadoutsInput
+		hunterOn bool
+		isError  bool
+	}{
+		"every character": {
+			want: loadoutsIntro + "\n\n" + hunter + "\n\n" + titan,
+		},
+		"one character": {
+			in:   ListLoadoutsInput{Character: "titan"},
+			want: loadoutsIntro + "\n\n" + titan,
+		},
+		"character without loadouts": {
+			in:       ListLoadoutsInput{Character: titanID},
+			hunterOn: true,
+			want:     loadoutsIntro + "\n\nTitan (id c2): no saved loadouts",
+		},
+		"vault": {
+			in:      ListLoadoutsInput{Character: "vault"},
+			want:    "unknown location: the vault is not a character, so pass a character id or a class name",
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			if tc.hunterOn {
+				_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+				require.False(t, isError)
+
+				f.h.snapshot.Loadouts = f.h.snapshot.LoadoutsOf(hunterID)
+			}
+
+			got, isError := call(t, f.h.handleListLoadouts, tc.in)
+			assert.Equal(t, tc.isError, isError)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestEquipLoadoutTool(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	got, isError := call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: "titan", Loadout: 1})
+	assert.False(t, isError)
+	assert.Equal(t, "- Moved Fatebringer (1006) from Hunter to Titan. "+
+		"Equipped Midnight Coup (1003) in its place on Hunter.\n"+
+		"Equipped loadout 1 on Titan: Fatebringer (1006).", got)
+
+	equips := f.bungie.calls(http.MethodPost, pathEquip)
+	require.Len(t, equips, 1)
+	assert.Equal(t, "1003", equips[0].Body["itemId"])
+	assert.Len(t, f.bungie.calls(http.MethodPost, pathTransfer), 2)
+
+	loadouts := f.bungie.calls(http.MethodPost, pathLoadout)
+	require.Len(t, loadouts, 1)
+	assert.Equal(t, map[string]any{
+		"loadoutIndex":   float64(0),
+		"characterId":    titanID,
+		"membershipType": float64(3),
+	}, loadouts[0].Body)
+
+	got, isError = call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: hunterID, Loadout: 3})
+	assert.False(t, isError)
+	assert.Equal(t, "- Moved Fatebringer (1001) from Vault to Hunter.\n"+
+		"Equipped loadout 3 on Hunter: Fatebringer (1001), Celestial Nighthawk (1004). "+
+		"The inventory does not hold these loadout items: 9999.", got)
+
+	loadouts = f.bungie.calls(http.MethodPost, pathLoadout)
+	require.Len(t, loadouts, 2)
+	assert.Equal(t, map[string]any{
+		"loadoutIndex":   float64(2),
+		"characterId":    hunterID,
+		"membershipType": float64(3),
+	}, loadouts[1].Body)
+
+	// The snapshot carries the equips, so the next read does not ask Bungie
+	// for a profile that might predate them.
+	got, isError = call(t, f.h.handleListItems, ListItemsInput{Kind: kindWeapon})
+	assert.False(t, isError)
+	assert.Contains(t, got, "1006 | Fatebringer | Kinetic Hand Cannon | Legendary | 1980 |  | Titan (equipped) |  | \n")
+	assert.Contains(
+		t,
+		got,
+		"1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Hunter (equipped) | keep | ",
+	)
+	assert.Contains(t, got, "1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 |  | Hunter |  | ")
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+}
+
+func TestEquipLoadoutToolErrors(t *testing.T) {
+	t.Parallel()
+
+	notHere := `{"ErrorCode": 1671, "ErrorStatus": "DestinyCannotPerformActionAtThisLocation", ` +
+		`"Message": "Not here."}`
+
+	tests := map[string]struct {
+		bungieError     string
+		bungieErrorPath string
+		want            string
+		wantVaultCannon string
+		in              EquipLoadoutInput
+		wantFetched     bool
+	}{
+		"loadout that holds nothing": {
+			in: EquipLoadoutInput{Character: "hunter", Loadout: 1},
+			want: "unknown loadout: Hunter has no saved loadout with the number 1. " +
+				"Its saved loadouts have the numbers 2, 3",
+			wantVaultCannon: "Vault",
+		},
+		"no character": {
+			in:              EquipLoadoutInput{Loadout: 2},
+			want:            "unknown location: pass the character of the loadout as a character id or a class name",
+			wantVaultCannon: "Vault",
+		},
+		"vault": {
+			in:              EquipLoadoutInput{Character: "vault", Loadout: 1},
+			want:            "unknown location: the vault is not a character, so pass a character id or a class name",
+			wantVaultCannon: "Vault",
+		},
+		"bungie refuses the equip": {
+			in:          EquipLoadoutInput{Character: "hunter", Loadout: 2},
+			bungieError: notHere,
+			want: "Loadout 2 is not equipped on Hunter: equipping the loadout: " +
+				"bungie: DestinyCannotPerformActionAtThisLocation: Not here.",
+			wantVaultCannon: "Vault",
+		},
+		"bungie refuses the equip after a move": {
+			in:              EquipLoadoutInput{Character: "hunter", Loadout: 3},
+			bungieError:     notHere,
+			bungieErrorPath: pathLoadout,
+			want: "- Moved Fatebringer (1001) from Vault to Hunter.\n" +
+				"Loadout 3 is not equipped on Hunter: equipping the loadout: " +
+				"bungie: DestinyCannotPerformActionAtThisLocation: Not here.",
+			wantVaultCannon: "Hunter",
+			wantFetched:     true,
+		},
+		"bungie refuses a move": {
+			in:          EquipLoadoutInput{Character: "titan", Loadout: 1},
+			bungieError: `{"ErrorCode": 1623, "ErrorStatus": "DestinyItemNotFound", "Message": "gone"}`,
+			want: "- Fatebringer (1006) did not reach Titan. It is at Hunter (equipped).\n" +
+				"Loadout 1 is not equipped on Titan: moving Fatebringer (1006) to Titan: " +
+				"equipping Midnight Coup in its place: bungie: DestinyItemNotFound: gone.",
+			wantVaultCannon: "Vault",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+			require.False(t, isError)
+
+			later := fixtureNow.Add(10 * time.Second)
+			f.h.now = func() time.Time { return later }
+			f.bungieError = tc.bungieError
+			f.bungieErrorPath = tc.bungieErrorPath
+
+			got, isError := call(t, f.h.handleEquipLoadout, tc.in)
+			assert.True(t, isError)
+			assert.Equal(t, tc.want, got)
+
+			if tc.wantFetched {
+				assert.Equal(
+					t,
+					later,
+					f.h.snapshot.Fetched,
+					"a call that changed the game restarts the age of the snapshot",
+				)
+			} else {
+				assert.Equal(
+					t,
+					fixtureNow,
+					f.h.snapshot.Fetched,
+					"a call that changed nothing keeps the age of the snapshot",
+				)
+			}
+
+			cannon, ok := f.h.snapshot.Find("1001")
+			require.True(t, ok)
+			assert.Equal(t, tc.wantVaultCannon, f.h.snapshot.LocationLabel(cannon), "the vault hand cannon")
+
+			item, ok := f.h.snapshot.Find("1006")
+			require.True(t, ok)
+			assert.Equal(t, hunterID, item.Owner)
+			assert.True(t, item.Equipped)
+		})
+	}
+}
+
+func TestEquipLoadoutToolSnapshotAge(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+	require.False(t, isError)
+
+	later := fixtureNow.Add(10 * time.Second)
+	f.h.now = func() time.Time { return later }
+
+	_, isError = call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: "hunter", Loadout: 2})
+	require.False(t, isError)
+	assert.Equal(t, later, f.h.snapshot.Fetched, "an equip restarts the age of the snapshot")
 }
 
 func TestSetTag(t *testing.T) {

@@ -49,6 +49,12 @@ const (
 // glimmer, bright dust, and a currency that the definitions lack. The
 // consumables stack carries the vault location, because Bungie gives that
 // location to every profile item.
+//
+// The Hunter saved three loadouts in the game. The first holds nothing.
+// The second holds the equipped hand cannon and helmet. The third holds the
+// vault hand cannon, the helmet, and an item that left the inventory. The
+// Titan saved one loadout, which holds the hand cannon that the Hunter has
+// equipped.
 const fixtureProfile = `{
 	"profileInventory": {"data": {"items": [
 		{"itemHash": 100, "itemInstanceId": "1001", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802, "state": 5},
@@ -77,6 +83,29 @@ const fixtureProfile = `{
 			{"itemHash": 100, "itemInstanceId": "1006", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 1498876634, "transferStatus": 1}
 		]},
 		"c2": {"items": []}
+	}},
+	"characterLoadouts": {"data": {
+		"c1": {"loadouts": [
+			{"nameHash": 2166136261, "iconHash": 2166136261, "colorHash": 2166136261, "items": [
+				{"itemInstanceId": "0", "plugItemHashes": [2166136261]},
+				{"itemInstanceId": "0", "plugItemHashes": [2166136261]}
+			]},
+			{"nameHash": 1, "iconHash": 2, "colorHash": 3, "items": [
+				{"itemInstanceId": "1006", "plugItemHashes": [2166136261]},
+				{"itemInstanceId": "1004", "plugItemHashes": [2166136261]}
+			]},
+			{"nameHash": 4, "iconHash": 5, "colorHash": 6, "items": [
+				{"itemInstanceId": "1001", "plugItemHashes": [900, 901]},
+				{"itemInstanceId": "1004", "plugItemHashes": [2166136261]},
+				{"itemInstanceId": "9999", "plugItemHashes": [2166136261]},
+				{"itemInstanceId": "0", "plugItemHashes": [2166136261]}
+			]}
+		]},
+		"c2": {"loadouts": [
+			{"nameHash": 7, "iconHash": 8, "colorHash": 9, "items": [
+				{"itemInstanceId": "1006", "plugItemHashes": [2166136261]}
+			]}
+		]}
 	}},
 	"itemComponents": {
 		"instances": {"data": {
@@ -342,8 +371,10 @@ type fakes struct {
 	// staleSession and staleAccess are tokens that the fakes reject.
 	staleSession string
 	staleAccess  string
-	// bungieError is the body that the Bungie item actions return.
-	bungieError string
+	// bungieError is the body that the Bungie actions return. A set
+	// bungieErrorPath limits it to the action at that path.
+	bungieError     string
+	bungieErrorPath string
 }
 
 func newFakes(t *testing.T) *fakes {
@@ -419,7 +450,8 @@ func newFakes(t *testing.T) *fakes {
 			writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+fixtureProfile+`}`)
 		case req.Method == http.MethodGet && f.bungieData[req.Path] != "":
 			writeJSON(t, w, http.StatusOK, f.bungieData[req.Path])
-		case req.Method == http.MethodPost && f.bungieError != "":
+		case req.Method == http.MethodPost && f.bungieError != "" &&
+			(f.bungieErrorPath == "" || req.Path == f.bungieErrorPath):
 			writeJSON(t, w, http.StatusOK, f.bungieError)
 		case req.Method == http.MethodPost:
 			writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": 0}`)

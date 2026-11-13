@@ -310,12 +310,16 @@ func TestBungieProfile(t *testing.T) {
 		Profile(t.Context(), Credentials{APIKey: "key", AccessToken: "access"}, Membership{ID: "4611", Type: 3})
 	require.NoError(t, err)
 
-	assert.Equal(t, "100,102,103,200,201,205,300,304,305,310", components)
+	assert.Equal(t, "100,102,103,200,201,205,206,300,304,305,310", components)
 	assert.Equal(t, []ProfileItem{
 		{Hash: itemGlimmer, Quantity: 250000, Location: 1, BucketHash: 2689798308},
 		{Hash: itemBrightDust, Quantity: 1500, Location: 1, BucketHash: 2689798311},
 		{Hash: 77, Quantity: 3, Location: 1, BucketHash: 2689798305},
 	}, got.ProfileCurrencies.Data.Items)
+
+	loadouts := got.CharacterLoadouts.Data[titanID].Loadouts
+	require.Len(t, loadouts, 1)
+	assert.Equal(t, []ProfileLoadoutItem{{InstanceID: "1006"}}, loadouts[0].Items)
 }
 
 func TestBungieActivityHistory(t *testing.T) {
@@ -477,6 +481,11 @@ func TestBungieActions(t *testing.T) {
 	require.NoError(t, b.PullFromPostmaster(t.Context(), creds, action))
 	require.NoError(t, b.SetLockState(t.Context(), creds, action, true))
 	require.NoError(t, b.SetLockState(t.Context(), creds, action, false))
+	require.NoError(t, b.EquipLoadout(t.Context(), creds, LoadoutAction{
+		CharacterID: hunterID,
+		Membership:  action.Membership,
+		Index:       2,
+	}))
 
 	transfer := rec.calls(http.MethodPost, "/Destiny2/Actions/Items/TransferItem/")
 	require.Len(t, transfer, 1)
@@ -516,4 +525,12 @@ func TestBungieActions(t *testing.T) {
 		"membershipType": float64(3),
 	}, locks[0].Body)
 	assert.Equal(t, false, locks[1].Body["state"])
+
+	loadouts := rec.calls(http.MethodPost, "/Destiny2/Actions/Loadouts/EquipLoadout/")
+	require.Len(t, loadouts, 1)
+	assert.Equal(t, map[string]any{
+		"loadoutIndex":   float64(2),
+		"characterId":    hunterID,
+		"membershipType": float64(3),
+	}, loadouts[0].Body)
 }

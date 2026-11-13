@@ -2,17 +2,18 @@
 // Manager. The project lives at https://github.com/agg23/destiny-inventory.
 // The tools read the Destiny 2 inventory of the signed-in account and edit
 // the data that the web client keeps per account. They also move and lock
-// items in the live game.
+// items and equip saved loadouts in the live game.
 //
 // # Data Sources
 //
 // The server talks to two APIs. Agg's Destiny Vault Manager stores tags,
 // notes, perk preferences, and autotag rules, serves the Destiny definition
 // artifacts, and brokers the Bungie OAuth exchange. The Bungie platform API
-// serves the inventory and the activity history, and it performs
-// transfers, equips, and lock changes. The server joins a Bungie profile
-// with the definitions to give every item a name, a type, perks, and
-// stats. The definitions also name each activity of the history.
+// serves the inventory, the saved loadouts, and the activity history, and
+// it performs transfers, equips, lock changes, and loadout equips. The
+// server joins a Bungie profile with the definitions to give every item a
+// name, a type, perks, and stats. The definitions also name each activity
+// of the history.
 //
 // Tags follow the web client. An item carries at most one of the tags that
 // the web client defines, and the favorite mark is a separate flag. The web
@@ -46,5 +47,6 @@
 //   - --cache-dir: directory of the definition cache (default:
 //     $XDG_CACHE_HOME/mcp-destiny)
 //   - --log-file: path to JSON log file (append), which records tool
-//     errors, failed moves, and failed lock changes
+//     errors, failed moves, failed lock changes, and failed loadout
+//     equips
 package main

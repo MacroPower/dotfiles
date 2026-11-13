@@ -167,15 +167,12 @@ func (s *Snapshot) checkMove(item *Item, target string, equip bool) error {
 // unequip equips the replacement for an equipped item on the character
 // that holds it, which frees the item for a transfer.
 func (s *Snapshot) unequip(ctx context.Context, mover ItemMover, item *Item) (*Item, error) {
-	replacement := s.replacementFor(item)
-	if replacement == nil {
-		return nil, fmt.Errorf(
-			"%w: %s is equipped on %s, which holds no other item to equip in that slot",
-			ErrMove, item.Name, s.OwnerLabel(item.Owner),
-		)
+	replacement, err := s.requireReplacement(item)
+	if err != nil {
+		return nil, err
 	}
 
-	err := mover.Equip(ctx, ItemAction{
+	err = mover.Equip(ctx, ItemAction{
 		InstanceID:  replacement.InstanceID,
 		ItemHash:    replacement.Hash,
 		CharacterID: item.Owner,
@@ -185,6 +182,21 @@ func (s *Snapshot) unequip(ctx context.Context, mover ItemMover, item *Item) (*I
 	}
 
 	s.markEquipped(replacement)
+
+	return replacement, nil
+}
+
+// requireReplacement returns the item that replacementFor picks for an
+// equipped item. It returns an [ErrMove] error when replacementFor finds
+// none.
+func (s *Snapshot) requireReplacement(item *Item) (*Item, error) {
+	replacement := s.replacementFor(item)
+	if replacement == nil {
+		return nil, fmt.Errorf(
+			"%w: %s is equipped on %s, which holds no other item to equip in that slot",
+			ErrMove, item.Name, s.OwnerLabel(item.Owner),
+		)
+	}
 
 	return replacement, nil
 }

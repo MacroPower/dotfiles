@@ -381,6 +381,29 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleSetLock)
 
 	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolListLoadouts,
+		Description: "List the loadouts that each character saved in the game, with the instance id, name, slot, " +
+			"and location of each item. The server cannot read the name, icon, or color that the game shows " +
+			"for a loadout, so the character and the loadout number identify it.",
+		Annotations: readOnly,
+	}, h.handleListLoadouts)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolEquipLoadout,
+		Description: "Equip a loadout that a character saved in the game, by its character and its number " +
+			"from list_loadouts. The game does not pull loadout items from another character, so the tool " +
+			"first moves each loadout item that the character does not hold to that character. " +
+			"It also pulls loadout items from the Postmaster. Before it moves an item that another character " +
+			"has equipped, it equips a replacement that the other character holds for that slot, so the gear " +
+			"of the other character changes. The tool changes nothing when a loadout item that another " +
+			"character holds is not transferable, or when another character has it equipped and does not " +
+			"hold a replacement for its slot. " +
+			"A failed move stops the tool before it equips the loadout. " +
+			"Bungie allows equipping only while the character is offline, in orbit, or in a social space.",
+		Annotations: additive,
+	}, h.handleEquipLoadout)
+
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolListTags,
 		Description: "List the tag ids of Agg's Destiny Vault Manager with the number of held items that carry each one.",
 		Annotations: readOnly,
