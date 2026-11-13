@@ -217,7 +217,10 @@ func renderItems(s *Snapshot, items []*Item, offset, total int, stat string, per
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func renderItem(s *Snapshot, item *Item) string {
+// renderItem renders one item in full. For a weapon, sheets holds the
+// sheet state of each game mode, and the output gains the roll ratings
+// block. Sheets is nil for every other item.
+func renderItem(s *Snapshot, item *Item, sheets map[string]SheetState) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s\n", item.Name)
@@ -248,6 +251,14 @@ func renderItem(s *Snapshot, item *Item) string {
 
 			b.WriteString("\n")
 			writeDescription(&b, perk.Description)
+		}
+	}
+
+	if sheets != nil {
+		b.WriteString("\nRoll ratings:\n")
+
+		for _, mode := range perkModes {
+			writeRating(&b, mode, item.Hash, sheets[mode])
 		}
 	}
 
@@ -437,6 +448,35 @@ func perkLabel(perk Perk) string {
 	}
 
 	return perk.Name + " (can swap to " + strings.Join(perk.OptionNames(), ", ") + ")"
+}
+
+// writeRating writes the roll rating line of one game mode for the weapon
+// with the given item hash. The line gives the tier of the weapon on the
+// sheet of the mode, or the reason that the server has no sheet.
+func writeRating(b *strings.Builder, mode string, hash uint32, state SheetState) {
+	fmt.Fprintf(b, "- %s: ", modeLabels[mode])
+
+	if state.Err != nil {
+		fmt.Fprintf(b, "%s\n", state.Err)
+
+		return
+	}
+
+	label := sheetLabels[mode]
+
+	row, ok := state.Sheet.Rows[hash]
+	if !ok {
+		fmt.Fprintf(b, "not on the %s\n", label)
+
+		return
+	}
+
+	tier := row.Tier
+	if tier == "" {
+		tier = "no tier"
+	}
+
+	fmt.Fprintf(b, "%s on the %s, perk columns: %d\n", tier, label, len(state.Sheet.Columns[hash]))
 }
 
 // writeDescription writes each line of a perk description indented under

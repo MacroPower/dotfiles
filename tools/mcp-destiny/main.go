@@ -266,6 +266,7 @@ func runServe(ctx context.Context, args []string) error {
 		bungie:  NewBungie(),
 		auth:    o.auth(service),
 		defs:    NewDefsLoader(service, o.cacheDir, WithDefsLogger(logger)),
+		sheets:  NewSheetStore(service),
 		log:     logger,
 		now:     time.Now,
 	}
@@ -335,7 +336,10 @@ func newServer(h *handler) *mcp.Server {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolGetItem,
 		Description: "Show one item instance in full: perks with their descriptions and the alternatives each socket can swap to, " +
-			"stats, tag, note, and location.",
+			"stats, tag, note, and location. " +
+			"A weapon also shows the tier, from S (best) to F, that the Aegis sheet (PvE) and the PvP sheet give it, " +
+			"with one line for each sheet. When the server has no sheet for a game mode, " +
+			"the line of that mode names the reason.",
 		Annotations: readOnly,
 	}, h.handleGetItem)
 

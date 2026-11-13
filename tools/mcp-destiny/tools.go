@@ -90,7 +90,9 @@ const (
 )
 
 var (
-	perkModes   = []string{"pve", "pvp"}
+	// perkModes lists the game modes in display order. The perk
+	// preferences and the roll sheets share the list.
+	perkModes   = []string{modePvE, modePvP}
 	perkStances = []string{"up", "down"}
 
 	// ErrInvalidInput reports a tool argument that the handler rejects
@@ -268,12 +270,14 @@ type GetStatsInput struct {
 
 // handler holds the shared state of the tool handlers. The mutex serializes
 // tool calls, because moves, lock changes, perk changes, and loadout
-// equips update the cached snapshot in place.
+// equips update the cached snapshot in place. The sheet store has no lock
+// of its own, so the same mutex guards it.
 type handler struct {
 	service  *Service
 	bungie   *Bungie
 	auth     *Auth
 	defs     *DefsLoader
+	sheets   *SheetStore
 	log      *slog.Logger
 	now      func() time.Time
 	snapshot *Snapshot
@@ -422,7 +426,14 @@ func (h *handler) handleGetItem(
 		return h.toolError(ctx, toolGetItem, unknownInstances([]string{in.InstanceID}))
 	}
 
-	return textResult(renderItem(s, item)), nil, nil
+	// Only weapons have roll ratings, so every other item costs no sheet
+	// request. A sheet that does not load costs only its rating line.
+	var sheets map[string]SheetState
+	if item.Kind == kindWeapon {
+		sheets = h.sheets.Load(ctx)
+	}
+
+	return textResult(renderItem(s, item, sheets)), nil, nil
 }
 
 func (h *handler) handleCompareDuplicates(

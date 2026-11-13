@@ -32,6 +32,27 @@
 // closes. The get_stats tool reads those buckets back from the service. It
 // therefore reports only the changes that a browser recorded and posted.
 //
+// # Roll Ratings
+//
+// The service publishes a roll sheet for each game mode. The Aegis sheet
+// rates weapons for PvE, and the service publishes it as the rolls
+// artifact. The PvP sheet rates weapons for PvP, and the service publishes
+// it as the pvprolls artifact. Each sheet gives a weapon a tier from S,
+// the best tier, to F. The get_item tool shows the tier that each sheet
+// gives a weapon.
+//
+// The server reads the artifact index of the service on every call that
+// needs a sheet. It identifies a loaded sheet by its file name, because
+// the service names each artifact file after a hash of the content. The
+// server therefore downloads a sheet only when the index lists a file name
+// that differs from the name of the loaded sheet. It keeps a sheet only in
+// memory, so each server process downloads each sheet.
+//
+// When a sheet does not load, the tool reports the reason on the line of
+// that game mode and still shows the rest of its output. The server does
+// not remember the load, so the next call that needs the sheet downloads
+// the file again.
+//
 // # Sign-in
 //
 // Bungie redirects a sign-in to the one URL registered for the deployment,

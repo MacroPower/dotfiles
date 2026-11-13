@@ -577,6 +577,18 @@ func writeJSON(t *testing.T, w http.ResponseWriter, status int, body string) {
 	require.NoError(t, err)
 }
 
+// configBody returns the /api/config response body whose artifact index
+// lists files.
+func configBody(t *testing.T, files map[string][]string) string {
+	t.Helper()
+
+	raw, err := json.Marshal(files)
+	require.NoError(t, err)
+
+	return `{"apiKey": "key", "clientId": "54520", "artifacts": {"manifestVersion": "v1", "files": ` +
+		string(raw) + `}}`
+}
+
 // fakes is a handler wired to a fake Agg's Destiny Vault Manager service
 // and a fake Bungie platform.
 type fakes struct {
@@ -586,6 +598,10 @@ type fakes struct {
 
 	// serviceData holds the GET response body of each service path.
 	serviceData map[string]string
+	// artifactFiles holds the file list of each artifact that the index
+	// of the service lists. The service serves a listed file only when
+	// serviceData holds a body for its path under /artifacts/.
+	artifactFiles map[string][]string
 	// bungieData holds the GET response body of each Bungie path.
 	bungieData map[string]string
 	// activitiesBody is the response body of the profile request that
@@ -605,8 +621,9 @@ func newFakes(t *testing.T) *fakes {
 	t.Helper()
 
 	f := &fakes{
-		service: &recorder{},
-		bungie:  &recorder{},
+		service:       &recorder{},
+		bungie:        &recorder{},
+		artifactFiles: map[string][]string{},
 		bungieData: map[string]string{
 			pathHunterHistory: fixtureHunterHistory,
 			pathTitanHistory:  fixtureTitanHistory,
@@ -641,8 +658,7 @@ func newFakes(t *testing.T) *fakes {
 
 		switch {
 		case req.Path == "/api/config":
-			writeJSON(t, w, http.StatusOK,
-				`{"apiKey": "key", "clientId": "54520", "artifacts": {"manifestVersion": "v1", "files": {}}}`)
+			writeJSON(t, w, http.StatusOK, configBody(t, f.artifactFiles))
 
 		case req.Path == "/api/auth/refresh":
 			writeJSON(t, w, http.StatusOK, `{"access_token": "access-2", "expires_in": 3600,
@@ -718,6 +734,7 @@ func newFakes(t *testing.T) *fakes {
 		bungie:  NewBungie(WithBungieURL(bungie.URL)),
 		auth:    NewAuth(store, client, WithAuthClock(now)),
 		defs:    defs,
+		sheets:  NewSheetStore(client),
 		log:     slog.New(slog.DiscardHandler),
 		now:     now,
 	}

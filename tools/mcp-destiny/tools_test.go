@@ -358,36 +358,212 @@ func TestSnapshotCache(t *testing.T) {
 func TestGetItem(t *testing.T) {
 	t.Parallel()
 
-	f := newFakes(t)
+	// fatebringer returns the output for instance 1001 with the given
+	// rating lines.
+	fatebringer := func(pve, pvp string) string {
+		return strings.Join([]string{
+			"Fatebringer",
+			"Instance id: 1001",
+			"Item hash: 100",
+			"Type: Kinetic Hand Cannon",
+			"Tier: Legendary",
+			"Slot: Kinetic Weapons",
+			"Power: 2010",
+			"Location: Vault",
+			"Tag: keep",
+			"Flags: favorite, locked, masterwork, note",
+			"Note: god roll",
+			"",
+			"Perks:",
+			"- Explosive Payload (Trait), can swap to Rampage",
+			"- Firefly (Trait)",
+			"  Precision final blows cause targets to explode.",
+			"  Explosions deal Solar damage.",
+			"",
+			"Roll ratings:",
+			pve,
+			pvp,
+			"",
+			"Stats:",
+			"- Range: 55",
+		}, "\n")
+	}
 
-	got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
-	assert.False(t, isError)
-	assert.Equal(t, strings.Join([]string{
-		"Fatebringer",
-		"Instance id: 1001",
-		"Item hash: 100",
-		"Type: Kinetic Hand Cannon",
-		"Tier: Legendary",
-		"Slot: Kinetic Weapons",
-		"Power: 2010",
-		"Location: Vault",
-		"Tag: keep",
-		"Flags: favorite, locked, masterwork, note",
-		"Note: god roll",
-		"",
-		"Perks:",
-		"- Explosive Payload (Trait), can swap to Rampage",
-		"- Firefly (Trait)",
-		"  Precision final blows cause targets to explode.",
-		"  Explosions deal Solar damage.",
-		"",
-		"Stats:",
-		"- Range: 55",
-	}, "\n"), got)
+	const (
+		noAegis = "- PvE: rating unavailable: the service publishes no Aegis sheet"
+		noPvP   = "- PvP: rating unavailable: the service publishes no PvP sheet"
 
-	got, isError = call(t, f.h.handleGetItem, GetItemInput{InstanceID: "9"})
-	assert.True(t, isError)
-	assert.Equal(t, "invalid input: no item in the inventory has the instance id 9", got)
+		// Fatebringer is item 100 and Gjallarhorn is item 101. The row
+		// of an exotic has no perk columns.
+		tiered     = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900, 903], [901]]}]}`
+		untiered   = `{"rolls": [{"hashes": [100], "slots": [[900]]}]}`
+		columnless = `{"rolls": [{"tier": "A", "hashes": [100], "slots": []}]}`
+		elsewhere  = `{"rolls": [{"tier": "B", "hashes": [101], "slots": []}]}`
+	)
+
+	tests := map[string]struct {
+		// files holds the file list of each artifact in the service
+		// index.
+		files map[string][]string
+		// bodies holds the body of each sheet file that the service
+		// serves.
+		bodies map[string]string
+		id     string
+		// want is the output. "{service}" stands for the base URL of the
+		// service.
+		want string
+		// fetched lists the artifact paths that the call requests.
+		fetched []string
+		// configs counts the requests for /api/config. The first tool
+		// call reads the Bungie API key from it, and each sheet load
+		// reads the artifact index from it.
+		configs int
+		isError bool
+	}{
+		"service publishes neither sheet": {
+			id:      "1001",
+			want:    fatebringer(noAegis, noPvP),
+			configs: 2,
+		},
+		"row with a tier and row without a tier": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    tiered,
+				"pvprolls.a.json": untiered,
+			},
+			id: "1001",
+			want: fatebringer(
+				"- PvE: S on the Aegis sheet, perk columns: 2",
+				"- PvP: no tier on the PvP sheet, perk columns: 1",
+			),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+		},
+		"row without columns and sheet that does not list the weapon": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    columnless,
+				"pvprolls.a.json": elsewhere,
+			},
+			id: "1001",
+			want: fatebringer(
+				"- PvE: A on the Aegis sheet, perk columns: 0",
+				"- PvP: not on the PvP sheet",
+			),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+		},
+		"sheet that does not list the weapon and sheet that the index does not list": {
+			files:   map[string][]string{"rolls": {"rolls.a.json"}},
+			bodies:  map[string]string{"rolls.a.json": elsewhere},
+			id:      "1001",
+			want:    fatebringer("- PvE: not on the Aegis sheet", noPvP),
+			fetched: []string{"/artifacts/rolls.a.json"},
+			configs: 2,
+		},
+		"listed sheet file returns 404": {
+			files:  map[string][]string{"rolls": {"rolls.x.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{"pvprolls.a.json": tiered},
+			id:     "1001",
+			want: fatebringer(
+				"- PvE: rating unavailable: fetching artifact rolls.x.json: "+
+					"service: {service}/artifacts/rolls.x.json returned status 404",
+				"- PvP: S on the PvP sheet, perk columns: 2",
+			),
+			fetched: []string{"/artifacts/rolls.x.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+		},
+		"sheet file does not decode": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.x.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    tiered,
+				"pvprolls.x.json": `{"rolls": []}`,
+			},
+			id: "1001",
+			want: fatebringer(
+				"- PvE: S on the Aegis sheet, perk columns: 2",
+				"- PvP: rating unavailable: decoding artifact pvprolls.x.json: the roll sheet lists no weapon",
+			),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.x.json"},
+			configs: 2,
+		},
+		"weapon without perks and stats ends with the ratings": {
+			files:  map[string][]string{"rolls": {"rolls.a.json"}},
+			bodies: map[string]string{"rolls.a.json": tiered},
+			id:     "1005",
+			want: strings.Join([]string{
+				"Fatebringer",
+				"Instance id: 1005",
+				"Item hash: 100",
+				"Type: Kinetic Hand Cannon",
+				"Tier: Legendary",
+				"Slot: Kinetic Weapons",
+				"Power: 1970",
+				"Location: Hunter (postmaster)",
+				"",
+				"Roll ratings:",
+				"- PvE: S on the Aegis sheet, perk columns: 2",
+				noPvP,
+			}, "\n"),
+			fetched: []string{"/artifacts/rolls.a.json"},
+			configs: 2,
+		},
+		"armor has no ratings and reads no sheet": {
+			files:  map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{"rolls.a.json": tiered, "pvprolls.a.json": tiered},
+			id:     "1004",
+			want: strings.Join([]string{
+				"Celestial Nighthawk",
+				"Instance id: 1004",
+				"Item hash: 200",
+				"Type: Helmet",
+				"Tier: Exotic",
+				"Slot: Helmet",
+				"Class: Hunter",
+				"Power: 2000",
+				"Location: Hunter (equipped)",
+				"",
+				"Stats:",
+				"- Grenade: 25",
+				"- Health: 30",
+			}, "\n"),
+			configs: 1,
+		},
+		"unknown instance id": {
+			id:      "9",
+			want:    "invalid input: no item in the inventory has the instance id 9",
+			configs: 1,
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.artifactFiles = tc.files
+
+			for file, body := range tc.bodies {
+				f.serviceData["/artifacts/"+file] = body
+			}
+
+			got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: tc.id})
+			assert.Equal(t, tc.isError, isError)
+			assert.Equal(t, strings.ReplaceAll(tc.want, "{service}", f.h.service.BaseURL()), got)
+
+			var fetched []string
+
+			for _, req := range f.service.all() {
+				if strings.HasPrefix(req.Path, "/artifacts/") {
+					fetched = append(fetched, req.Path)
+				}
+			}
+
+			assert.Equal(t, tc.fetched, fetched)
+			assert.Len(t, f.service.calls(http.MethodGet, "/api/config"), tc.configs)
+		})
+	}
 }
 
 func TestCompareDuplicates(t *testing.T) {
