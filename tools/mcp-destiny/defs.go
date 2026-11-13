@@ -22,14 +22,16 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v4-"
+	defsCachePrefix = "defs-v5-"
 
-	artifactCore       = "core"
-	artifactBuckets    = "InventoryBucket"
-	artifactDamage     = "DamageType"
-	artifactClasses    = "Class"
-	artifactStats      = "Stat"
-	artifactActivities = "Activity"
+	artifactCore        = "core"
+	artifactBuckets     = "InventoryBucket"
+	artifactDamage      = "DamageType"
+	artifactClasses     = "Class"
+	artifactStats       = "Stat"
+	artifactActivities  = "Activity"
+	artifactVendors     = "Vendor"
+	artifactVendorItems = "VendorItem"
 )
 
 // Bungie DestinyItemType values that classify gear and plugs. Bungie
@@ -96,16 +98,31 @@ type ActivityDef struct {
 	Name string `json:"name"`
 }
 
+// VendorDef is the subset of a Bungie vendor definition that the server
+// reads. The failure indexes of a sale pick the reasons that the sale
+// fails from FailureStrings, and some of its entries are empty.
+// Categories maps the index of each display category to its name.
+type VendorDef struct {
+	Categories     map[int]string `json:"categories,omitempty"`
+	Name           string         `json:"name,omitempty"`
+	Subtitle       string         `json:"subtitle,omitempty"`
+	FailureStrings []string       `json:"failureStrings,omitempty"`
+}
+
 // Defs holds the Destiny definitions that turn the hashes of a Bungie
-// profile and of the activity history into names. The Bungie enum value
-// keys DamageTypes and Classes, and the definition hash keys the other
-// maps. Activities is empty when the service index lists no activity
-// artifact.
+// profile, of the activity history, and of the vendor stock into names.
+// The Bungie enum value keys DamageTypes and Classes, and the definition
+// hash keys the other maps. VendorItems names the items and currencies
+// that the vendors list, among them the dummy items that Items leaves out.
+// Activities, Vendors, and VendorItems are empty when the service index
+// lists no artifact for them.
 type Defs struct {
 	Items       map[uint32]ItemDef     `json:"items"`
 	Buckets     map[uint32]BucketDef   `json:"buckets"`
 	Stats       map[uint32]string      `json:"stats"`
 	Activities  map[uint32]ActivityDef `json:"activities"`
+	Vendors     map[uint32]VendorDef   `json:"vendors"`
+	VendorItems map[uint32]string      `json:"vendorItems"`
 	DamageTypes map[int]string         `json:"damageTypes"`
 	Classes     map[int]string         `json:"classes"`
 	Version     string                 `json:"version"`
@@ -238,6 +255,8 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 		Buckets:     map[uint32]BucketDef{},
 		Stats:       map[uint32]string{},
 		Activities:  map[uint32]ActivityDef{},
+		Vendors:     map[uint32]VendorDef{},
+		VendorItems: map[uint32]string{},
 		DamageTypes: map[int]string{},
 		Classes:     map[int]string{},
 	}
@@ -247,13 +266,9 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 		return nil, fmt.Errorf("%w: the service index lists no %s artifact", ErrDefs, artifactCore)
 	}
 
-	for _, file := range files {
-		err := l.read(ctx, file, func(r io.Reader) error {
-			return decodeItems(r, defs.Items)
-		})
-		if err != nil {
-			return nil, err
-		}
+	err := readRecords(ctx, l, files, func(raw rawItem) { defs.Items[raw.Hash] = raw.item() })
+	if err != nil {
+		return nil, err
 	}
 
 	tables := map[string]func(hash uint32, row tableRow){
@@ -277,18 +292,37 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 		}
 	}
 
-	// The inventory tools do not read the activity names, so they keep
-	// working on a deployment whose index lists no activity artifact.
-	files = index.Files[artifactActivities]
-	if len(files) > 0 {
-		err := l.read(ctx, files[0], func(r io.Reader) error {
-			return decodeTable(r, func(hash uint32, row namedRow) {
-				defs.Activities[hash] = ActivityDef(row)
-			})
-		})
+	// The inventory tools read neither the activity names nor the vendor
+	// definitions. They therefore keep working on a deployment whose index
+	// lists none of these artifacts.
+	optional := map[string]func(io.Reader) error{
+		artifactActivities: func(r io.Reader) error {
+			return decodeTable(r, func(hash uint32, row namedRow) { defs.Activities[hash] = ActivityDef(row) })
+		},
+		artifactVendors: func(r io.Reader) error {
+			return decodeTable(r, func(hash uint32, row vendorRow) { defs.Vendors[hash] = row.vendor() })
+		},
+	}
+
+	for name, decode := range optional {
+		files := index.Files[name]
+		if len(files) == 0 {
+			continue
+		}
+
+		err := l.read(ctx, files[0], decode)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	err = readRecords(ctx, l, index.Files[artifactVendorItems], func(row hashedRow) {
+		if row.Name != "" {
+			defs.VendorItems[row.Hash] = row.Name
+		}
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return defs, nil
@@ -310,7 +344,7 @@ func (l *DefsLoader) read(ctx context.Context, file string, decode func(io.Reade
 	return nil
 }
 
-// rawItem is the subset of an artifact item record that [decodeItems]
+// rawItem is the subset of a record of the core artifact that the loader
 // reads.
 type rawItem struct {
 	EquippingBlock    *struct{} `json:"equippingBlock"`
@@ -330,9 +364,49 @@ type rawItem struct {
 	DefaultDamageType int    `json:"defaultDamageType"`
 }
 
-// decodeItems streams a JSON array of item records into items, so the
-// full artifact never sits in memory.
-func decodeItems(r io.Reader, items map[uint32]ItemDef) error {
+// item returns the item definition that a record of the core artifact
+// holds.
+func (raw rawItem) item() ItemDef {
+	def := ItemDef{
+		Name:            raw.DisplayProperties.Name,
+		TypeName:        raw.ItemTypeDisplayName,
+		Tier:            raw.Inventory.TierTypeName,
+		Bucket:          raw.Inventory.BucketTypeHash,
+		ItemType:        raw.ItemType,
+		ClassType:       raw.ClassType,
+		DamageType:      raw.DefaultDamageType,
+		NonTransferable: raw.Inventory.NonTransferrableOriginal,
+		Equippable:      raw.EquippingBlock != nil,
+	}
+
+	if raw.ItemType == itemTypePlug {
+		def.Description = raw.DisplayProperties.Description
+	}
+
+	return def
+}
+
+// readRecords reads the files of an array artifact in order and streams
+// each record into add. The service build splits a large array artifact
+// into several files, and the index lists each one. The caller picks the
+// record type Row, such as [rawItem] or [hashedRow]. It reads nothing when
+// files is empty.
+func readRecords[Row any](ctx context.Context, l *DefsLoader, files []string, add func(row Row)) error {
+	for _, file := range files {
+		err := l.read(ctx, file, func(r io.Reader) error {
+			return decodeRecords(r, add)
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// decodeRecords streams a JSON array of records into add, so the full
+// array never sits in memory.
+func decodeRecords[Row any](r io.Reader, add func(row Row)) error {
 	dec := json.NewDecoder(r)
 
 	tok, err := dec.Token()
@@ -341,34 +415,18 @@ func decodeItems(r io.Reader, items map[uint32]ItemDef) error {
 	}
 
 	if tok != json.Delim('[') {
-		return fmt.Errorf("%w: item artifact is not a JSON array", ErrDefs)
+		return fmt.Errorf("%w: artifact is not a JSON array", ErrDefs)
 	}
 
 	for dec.More() {
-		var raw rawItem
+		var row Row
 
-		err := dec.Decode(&raw)
+		err := dec.Decode(&row)
 		if err != nil {
-			return fmt.Errorf("reading item record: %w", err)
+			return fmt.Errorf("reading record: %w", err)
 		}
 
-		def := ItemDef{
-			Name:            raw.DisplayProperties.Name,
-			TypeName:        raw.ItemTypeDisplayName,
-			Tier:            raw.Inventory.TierTypeName,
-			Bucket:          raw.Inventory.BucketTypeHash,
-			ItemType:        raw.ItemType,
-			ClassType:       raw.ClassType,
-			DamageType:      raw.DefaultDamageType,
-			NonTransferable: raw.Inventory.NonTransferrableOriginal,
-			Equippable:      raw.EquippingBlock != nil,
-		}
-
-		if raw.ItemType == itemTypePlug {
-			def.Description = raw.DisplayProperties.Description
-		}
-
-		items[raw.Hash] = def
+		add(row)
 	}
 
 	return nil
@@ -407,8 +465,59 @@ type namedRow struct {
 	Name string `json:"name"`
 }
 
+// hashedRow is the subset of a projected record of an array artifact that
+// the loader reads. The service build projects some arrays, such as
+// VendorItem, to records that carry the hash and the name at the top
+// level.
+type hashedRow struct {
+	Name string `json:"name"`
+	Hash uint32 `json:"hash"`
+}
+
+// vendorRow is the subset of a record of the Vendor artifact that the
+// loader reads. The service build projects each vendor definition to a
+// record that keeps the name, the subtitle, the failure strings, and the
+// display categories.
+type vendorRow struct {
+	DisplayProperties struct {
+		Name     string `json:"name"`
+		Subtitle string `json:"subtitle"`
+	} `json:"displayProperties"`
+	FailureStrings    []string `json:"failureStrings"`
+	DisplayCategories []struct {
+		Name  string `json:"name"`
+		Index int    `json:"index"`
+	} `json:"displayCategories"`
+}
+
+// vendor returns the vendor definition that a record of the Vendor
+// artifact holds.
+func (row vendorRow) vendor() VendorDef {
+	def := VendorDef{
+		Name:     row.DisplayProperties.Name,
+		Subtitle: row.DisplayProperties.Subtitle,
+	}
+
+	// The cache file leaves out an empty list, so an empty list stays nil
+	// in a build too.
+	if len(row.FailureStrings) > 0 {
+		def.FailureStrings = row.FailureStrings
+	}
+
+	for _, category := range row.DisplayCategories {
+		if def.Categories == nil {
+			def.Categories = map[int]string{}
+		}
+
+		def.Categories[category.Index] = category.Name
+	}
+
+	return def
+}
+
 // decodeTable reads a JSON object that maps definition hashes to records.
-// The caller picks the record type Row, such as [tableRow] or [namedRow].
+// The caller picks the record type Row, such as [tableRow], [namedRow], or
+// [vendorRow].
 func decodeTable[Row any](r io.Reader, add func(hash uint32, row Row)) error {
 	var table map[string]Row
 

@@ -11,11 +11,12 @@
 // notes, perk preferences, autotag rules, and the profile changes that the
 // web client records. It also serves the Destiny definition artifacts and
 // brokers the Bungie OAuth exchange. The Bungie platform API serves the
-// inventory, the saved loadouts, and the activity history. It also performs
-// transfers, equips, lock changes, perk changes, and loadout equips. The
-// server joins a Bungie profile with the definitions to give every item a
-// name, a type, perks, and stats. The definitions also name each activity
-// of the history.
+// inventory, the saved loadouts, the activity history, and the live stock
+// of the vendors. It also performs transfers, equips, lock changes, perk
+// changes, and loadout equips. The server joins a Bungie profile with the
+// definitions to give every item a name, a type, perks, and stats. The
+// definitions also name each activity of the history, each vendor, and the
+// items that the vendors sell.
 //
 // Tags follow the web client. An item carries at most one of the tags that
 // the web client defines, and the favorite mark is a separate flag. The web

@@ -43,6 +43,7 @@ const (
 	toolRemoveAutotagRule   = "remove_autotag_rule"
 	toolSetAutotagEnabled   = "set_autotag_enabled"
 	toolListActivityHistory = "list_activity_history"
+	toolListVendors         = "list_vendors"
 	toolGetStats            = "get_stats"
 )
 
@@ -148,6 +149,13 @@ type CompareDuplicatesInput struct {
 type ListActivityHistoryInput struct {
 	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to list the runs of every character"`
 	Limit     int    `json:"limit,omitzero"     jsonschema:"Maximum number of runs to return, newest first (default 25, maximum 250)"`
+}
+
+// ListVendorsInput is the input schema of the list_vendors tool. Without
+// a vendor, the tool lists the vendors of the character.
+type ListVendorsInput struct {
+	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to read the most recently played character"`
+	Vendor    string `json:"vendor,omitzero"    jsonschema:"Vendor hash, or a vendor name in any letter case, such as 'Banshee-44'. A name that no vendor has selects the one vendor whose name contains it. Omit to list the vendors"`
 }
 
 // MoveItemsInput is the input schema of the move_items tool.
@@ -552,6 +560,62 @@ func (h *handler) handleListActivityHistory(
 	runs = runs[:min(limit, len(runs))]
 
 	return textResult(renderActivityHistory(defs, runs, scope, limit)), nil, nil
+}
+
+func (h *handler) handleListVendors(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in ListVendorsInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	s, err := h.loadSnapshot(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolListVendors, err)
+	}
+
+	c, err := s.ResolveCharacter(in.Character)
+	if err != nil {
+		return h.toolError(ctx, toolListVendors, err)
+	}
+
+	membership, err := h.membership(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolListVendors, err)
+	}
+
+	defs, err := h.defs.Get(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolListVendors, fmt.Errorf("loading definitions: %w", err))
+	}
+
+	var resp *VendorsResponse
+
+	err = h.withBungie(ctx, func(creds Credentials) error {
+		var err error
+
+		resp, err = h.bungie.Vendors(ctx, creds, membership, c.ID)
+
+		return err
+	})
+	if err != nil {
+		return h.toolError(ctx, toolListVendors, fmt.Errorf("fetching the vendors: %w", err))
+	}
+
+	vendors := readVendors(resp, defs)
+	owner := s.OwnerLabel(c.ID)
+
+	if strings.TrimSpace(in.Vendor) == "" {
+		return textResult(renderVendors(vendors, owner)), nil, nil
+	}
+
+	v, err := selectVendor(vendors, in.Vendor, owner)
+	if err != nil {
+		return h.toolError(ctx, toolListVendors, err)
+	}
+
+	return textResult(renderVendor(v, owner)), nil, nil
 }
 
 func (h *handler) handleMoveItems(

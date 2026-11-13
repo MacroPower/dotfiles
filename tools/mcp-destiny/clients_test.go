@@ -574,6 +574,70 @@ func TestBungieProfile(t *testing.T) {
 	assert.Equal(t, []ProfileLoadoutItem{{InstanceID: "1006"}}, loadouts[0].Items)
 }
 
+func TestBungieVendors(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(t, r)
+		assert.Equal(t, "key", r.Header.Get("X-Api-Key"))
+
+		writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": {
+			"vendors": {"data": {
+				"672118013": {"vendorHash": 672118013, "enabled": true, "canPurchase": true,
+				 "nextRefreshDate": "2026-11-13T17:00:00Z", "vendorLocationIndex": 0}
+			}},
+			"categories": {"data": {
+				"672118013": {"categories": [{"displayCategoryIndex": 2, "itemIndexes": [7, 4]}]}
+			}},
+			"sales": {"data": {
+				"672118013": {"saleItems": {
+					"7": {"vendorItemIndex": 7, "itemHash": 100, "quantity": 1, "saleStatus": 8,
+					 "failureIndexes": [1], "augments": 0, "apiPurchasable": false,
+					 "costs": [{"itemHash": 3159615086, "quantity": 50000, "hasConditionalVisibility": false}]}
+				}}
+			}}
+		}}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	b := NewBungie(WithBungieURL(srv.URL))
+	b.now = func() time.Time { return fixtureNow }
+
+	vendors, err := b.Vendors(
+		t.Context(),
+		Credentials{APIKey: "key", AccessToken: "access"},
+		Membership{ID: "4611", Type: 3},
+		hunterID,
+	)
+	require.NoError(t, err)
+
+	calls := rec.calls(http.MethodGet, "/Destiny2/3/Profile/4611/Character/c1/Vendors/")
+	require.Len(t, calls, 1)
+	assert.Equal(t, "components=400,401,402&_="+strconv.FormatInt(fixtureNow.UnixMilli(), 10), calls[0].Query)
+	assert.Equal(t, "Bearer access", calls[0].Auth)
+
+	assert.Equal(t, map[uint32]VendorComponent{
+		672118013: {Hash: 672118013, Enabled: true, NextRefreshDate: time.Date(2026, 11, 13, 17, 0, 0, 0, time.UTC)},
+	}, vendors.Vendors.Data)
+	assert.Equal(t, map[uint32]VendorCategories{
+		672118013: {Categories: []VendorCategory{{DisplayCategoryIndex: 2, ItemIndexes: []int{7, 4}}}},
+	}, vendors.Categories.Data)
+	assert.Equal(t, map[uint32]VendorSales{
+		672118013: {SaleItems: map[int]VendorSale{
+			7: {
+				VendorItemIndex: 7,
+				ItemHash:        100,
+				Quantity:        1,
+				SaleStatus:      8,
+				FailureIndexes:  []int{1},
+				Costs:           []VendorCost{{ItemHash: itemGlimmer, Quantity: 50000}},
+			},
+		}},
+	}, vendors.Sales.Data)
+}
+
 func TestBungieActivityHistory(t *testing.T) {
 	t.Parallel()
 

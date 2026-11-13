@@ -73,8 +73,8 @@ var (
 	versionSuffixes = []string{"(Adept)", "(Timelost)", "(Harrowed)"}
 )
 
-// maxSuggestions caps the weapon names that an [ErrUnknownWeapon] error
-// suggests.
+// maxSuggestions caps the names that an [ErrUnknownWeapon] or an
+// [ErrUnknownVendor] error suggests.
 const maxSuggestions = 10
 
 // Plug is one plug that a socket of an item holds or can hold. Hash is the

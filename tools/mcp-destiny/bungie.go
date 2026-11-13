@@ -54,6 +54,11 @@ var (
 	// instances, stats, sockets, and reusable plugs.
 	profileComponents = []int{100, 102, 103, 200, 201, 205, 206, 300, 304, 305, 310}
 
+	// vendorComponents lists the GetVendors components that
+	// [*Bungie.Vendors] requests. They cover vendors, vendor categories, and
+	// vendor sales.
+	vendorComponents = []int{400, 401, 402}
+
 	// ErrBungie marks failures that originate from the Bungie platform API.
 	// A [*BungieError] carries the platform error code.
 	ErrBungie = errors.New("bungie")
@@ -249,6 +254,72 @@ func (p HistoryPeriod) Value(key string) float64 {
 	return p.Values[key].Basic.Value
 }
 
+// VendorComponent is the subset of a Bungie DestinyVendorComponent that
+// the server reads. Enabled is false when the vendor might not be visible
+// in the game. NextRefreshDate is the time when the stock of the vendor
+// rotates next.
+type VendorComponent struct {
+	NextRefreshDate time.Time `json:"nextRefreshDate"`
+	Hash            uint32    `json:"vendorHash"`
+	Enabled         bool      `json:"enabled"`
+}
+
+// VendorCategory is one Bungie DestinyVendorCategory. DisplayCategoryIndex
+// indexes the display categories of the vendor definition. ItemIndexes
+// lists the vendor item indexes of the sales in the category, in display
+// order.
+type VendorCategory struct {
+	ItemIndexes          []int `json:"itemIndexes"`
+	DisplayCategoryIndex int   `json:"displayCategoryIndex"`
+}
+
+// VendorCategories is the subset of a Bungie
+// DestinyVendorCategoriesComponent that the server reads.
+type VendorCategories struct {
+	Categories []VendorCategory `json:"categories"`
+}
+
+// VendorCost is one Bungie DestinyItemQuantity among the costs of a sale.
+// ItemHash names the currency.
+type VendorCost struct {
+	ItemHash uint32 `json:"itemHash"`
+	Quantity int    `json:"quantity"`
+}
+
+// VendorSale is the subset of a Bungie DestinyVendorSaleItemComponent that
+// the server reads. SaleStatus holds the Bungie VendorItemStatus flags,
+// which are zero when the character can buy the item. FailureIndexes
+// index the failure strings of the vendor definition.
+type VendorSale struct {
+	FailureIndexes  []int        `json:"failureIndexes"`
+	Costs           []VendorCost `json:"costs"`
+	VendorItemIndex int          `json:"vendorItemIndex"`
+	Quantity        int          `json:"quantity"`
+	SaleStatus      int          `json:"saleStatus"`
+	ItemHash        uint32       `json:"itemHash"`
+}
+
+// VendorSales is the subset of a Bungie
+// PersonalDestinyVendorSaleItemSetComponent that the server reads. The
+// vendor item index keys SaleItems.
+type VendorSales struct {
+	SaleItems map[int]VendorSale `json:"saleItems"`
+}
+
+// VendorsResponse is the subset of a Bungie DestinyVendorsResponse that the
+// server reads. The vendor hash keys each map.
+type VendorsResponse struct {
+	Vendors struct {
+		Data map[uint32]VendorComponent `json:"data"`
+	} `json:"vendors"`
+	Categories struct {
+		Data map[uint32]VendorCategories `json:"data"`
+	} `json:"categories"`
+	Sales struct {
+		Data map[uint32]VendorSales `json:"data"`
+	} `json:"sales"`
+}
+
 // ItemAction identifies one item for a transfer, an equip, a Postmaster
 // pull, a lock change, or a plug insert. CharacterID names the character
 // that receives the item on a transfer from the vault, an equip, or a
@@ -337,17 +408,7 @@ func (b *Bungie) PrimaryMembership(ctx context.Context, creds Credentials) (Memb
 // Profile fetches the inventory of every character and the vault, and the
 // currency balances of the account.
 func (b *Bungie) Profile(ctx context.Context, creds Credentials, m Membership) (*Profile, error) {
-	components := make([]string, 0, len(profileComponents))
-	for _, c := range profileComponents {
-		components = append(components, strconv.Itoa(c))
-	}
-
-	// Bungie serves a cached snapshot for a repeated URL, so a changing
-	// query parameter requests the latest state.
-	path := fmt.Sprintf(
-		"/Destiny2/%d/Profile/%s/?components=%s&_=%d",
-		m.Type, m.ID, strings.Join(components, ","), b.now().UnixMilli(),
-	)
+	path := fmt.Sprintf("/Destiny2/%d/Profile/%s/?%s", m.Type, m.ID, b.componentsQuery(profileComponents))
 
 	var out Profile
 
@@ -357,6 +418,44 @@ func (b *Bungie) Profile(ctx context.Context, creds Credentials, m Membership) (
 	}
 
 	return &out, nil
+}
+
+// Vendors fetches the vendors of one character and the stock of each one
+// at the moment of the call. Bungie lists the vendors whose stock can
+// rotate, so the response leaves out preview vendors and kiosks. The stock
+// and the sale status differ per character.
+func (b *Bungie) Vendors(
+	ctx context.Context,
+	creds Credentials,
+	m Membership,
+	characterID string,
+) (*VendorsResponse, error) {
+	path := fmt.Sprintf(
+		"/Destiny2/%d/Profile/%s/Character/%s/Vendors/?%s",
+		m.Type, m.ID, characterID, b.componentsQuery(vendorComponents),
+	)
+
+	var out VendorsResponse
+
+	err := b.call(ctx, creds, http.MethodGet, path, nil, &out)
+	if err != nil {
+		return nil, err
+	}
+
+	return &out, nil
+}
+
+// componentsQuery returns the query string that requests components from
+// a Destiny endpoint. Bungie serves a cached snapshot for a repeated URL,
+// so the query also carries a changing parameter that requests the latest
+// state.
+func (b *Bungie) componentsQuery(components []int) string {
+	parts := make([]string, 0, len(components))
+	for _, c := range components {
+		parts = append(parts, strconv.Itoa(c))
+	}
+
+	return fmt.Sprintf("components=%s&_=%d", strings.Join(parts, ","), b.now().UnixMilli())
 }
 
 // ActivityHistory fetches one page of the runs of a character, newest

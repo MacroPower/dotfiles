@@ -590,6 +590,124 @@ func activityName(defs *Defs, activity HistoryActivity) string {
 	return fmt.Sprintf("Activity %d", activity.ReferenceID)
 }
 
+// renderVendors renders vendors as a table with one row per vendor. Owner
+// names the character that sees the vendors, such as "Hunter".
+func renderVendors(vendors []Vendor, owner string) string {
+	if len(vendors) == 0 {
+		return "Bungie lists no vendors for " + owner + "."
+	}
+
+	var b strings.Builder
+
+	if len(vendors) == 1 {
+		fmt.Fprintf(&b, "The vendor of %s.", owner)
+	} else {
+		fmt.Fprintf(&b, "The %d vendors of %s.", len(vendors), owner)
+	}
+
+	b.WriteString(" Pass vendor with a hash or a name to list the sales of one vendor.")
+	b.WriteString("\n\nname | subtitle | hash | sales | next refresh | flags\n")
+
+	for _, v := range vendors {
+		b.WriteString(strings.Join([]string{
+			v.Name,
+			v.Subtitle,
+			strconv.FormatUint(uint64(v.Hash), 10),
+			strconv.Itoa(v.SaleCount()),
+			refreshLabel(v.NextRefresh),
+			strings.Join(vendorFlags(v), ", "),
+		}, " | "))
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// renderVendor renders the sales of one vendor under the names of their
+// categories. Owner names the character that sees the stock.
+func renderVendor(v Vendor, owner string) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "%s\n", v.Name)
+	writeField(&b, "Subtitle", v.Subtitle)
+	fmt.Fprintf(&b, "Vendor hash: %d\n", v.Hash)
+	fmt.Fprintf(&b, "Character: %s\n", owner)
+	fmt.Fprintf(&b, "Next refresh: %s\n", refreshLabel(v.NextRefresh))
+	writeField(&b, "Flags", strings.Join(vendorFlags(v), ", "))
+	fmt.Fprintf(&b, "Sales: %d\n", v.SaleCount())
+
+	for _, group := range v.Groups {
+		fmt.Fprintf(&b, "\n%s:\n", group.Name)
+
+		for _, sale := range group.Sales {
+			fmt.Fprintf(&b, "- %s | %s | %s\n", saleLabel(sale), costLabel(sale.Costs), statusLabel(sale))
+		}
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// refreshLabel formats the next refresh time of a vendor. Bungie reports
+// the year 9999 for a vendor whose stock never rotates, and the label of
+// that time is "never". The label of the zero time is "unknown".
+func refreshLabel(t time.Time) string {
+	switch {
+	case t.IsZero():
+		return "unknown"
+	case t.Year() >= 9999:
+		return "never"
+	default:
+		return t.UTC().Format(timeLayout)
+	}
+}
+
+func vendorFlags(v Vendor) []string {
+	if v.Disabled {
+		return []string{"disabled"}
+	}
+
+	return nil
+}
+
+// saleLabel names the item of a sale, with the quantity when the sale
+// gives more than one.
+func saleLabel(sale Sale) string {
+	if sale.Quantity > 1 {
+		return fmt.Sprintf("%s x%d", sale.Name, sale.Quantity)
+	}
+
+	return sale.Name
+}
+
+// costLabel lists the costs of a sale, such as "50000 Glimmer, 10
+// Legendary Shards". The label of a sale without a cost is "no cost".
+func costLabel(costs []Cost) string {
+	if len(costs) == 0 {
+		return "no cost"
+	}
+
+	parts := make([]string, 0, len(costs))
+	for _, cost := range costs {
+		parts = append(parts, fmt.Sprintf("%d %s", cost.Quantity, cost.Name))
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+// statusLabel says whether the character can buy the item of a sale. The
+// label of an unavailable sale carries its failure strings.
+func statusLabel(sale Sale) string {
+	if sale.Available {
+		return "available"
+	}
+
+	if len(sale.Reasons) == 0 {
+		return "unavailable"
+	}
+
+	return "unavailable: " + strings.Join(sale.Reasons, "; ")
+}
+
 func renderTags(s *Snapshot) string {
 	counts := map[string]int{}
 	favorites := 0

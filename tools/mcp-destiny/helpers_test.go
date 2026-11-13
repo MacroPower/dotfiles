@@ -195,6 +195,105 @@ const fixtureTitanHistory = `{"ErrorCode": 1, "Response": {"activities": [
 	 }}
 ]}}`
 
+// Hashes of the fixture vendors. Two vendors share the name Xûr. The
+// definitions do not name the sub-vendor of Eververse.
+const (
+	vendorBanshee   uint32 = 672118013
+	vendorTess      uint32 = 3361454721
+	vendorXur       uint32 = 2190858386
+	vendorXurOffers uint32 = 3751514131
+	vendorTessRow   uint32 = 2168194999
+	vendorNameless  uint32 = 1111
+)
+
+// Vendor paths of the fixture characters.
+const (
+	pathHunterVendors = "/Destiny2/3/Profile/4611/Character/c1/Vendors/"
+	pathTitanVendors  = "/Destiny2/3/Profile/4611/Character/c2/Vendors/"
+)
+
+// fixtureHunterVendors is the Bungie GetVendors response body of the
+// Hunter. Banshee-44 lists its categories out of display order, and its
+// third category has no name. Its fourth category lists only a weapon that
+// Banshee-44 displays without selling it, and the status of that sale also
+// carries the NoUnlock failure bit. Banshee-44 sells a weapon that the
+// Hunter cannot buy yet, three items that no category lists, and an item
+// that no definition names. The failure indexes of the weapon that the
+// Hunter cannot buy include a negative index and an index past the last
+// failure string of Banshee-44. The sales list the sub-vendor of
+// Eververse, and the vendors do not. Xûr is disabled, and the stock of the
+// other Xûr never rotates.
+const fixtureHunterVendors = `{"ErrorCode": 1, "Response": {
+	"vendors": {"data": {
+		"672118013": {"vendorHash": 672118013, "enabled": true, "nextRefreshDate": "2026-11-13T17:00:00Z"},
+		"3361454721": {"vendorHash": 3361454721, "enabled": true, "nextRefreshDate": "2026-11-17T17:00:00Z"},
+		"2190858386": {"vendorHash": 2190858386, "enabled": false, "nextRefreshDate": "2026-11-14T17:00:00Z"},
+		"3751514131": {"vendorHash": 3751514131, "enabled": true, "nextRefreshDate": "9999-12-31T23:59:59.999Z"},
+		"1111": {"vendorHash": 1111, "enabled": true, "nextRefreshDate": "2026-11-13T17:00:00Z"}
+	}},
+	"categories": {"data": {
+		"672118013": {"categories": [
+			{"displayCategoryIndex": 1, "itemIndexes": [5, 6]},
+			{"displayCategoryIndex": 3, "itemIndexes": [3]},
+			{"displayCategoryIndex": 0, "itemIndexes": [2, 1, 4]},
+			{"displayCategoryIndex": 2, "itemIndexes": [8]}
+		]},
+		"3361454721": {"categories": [{"displayCategoryIndex": 0, "itemIndexes": [0]}]},
+		"2168194999": {"categories": [{"displayCategoryIndex": 0, "itemIndexes": [0]}]}
+	}},
+	"sales": {"data": {
+		"672118013": {"saleItems": {
+			"0": {"vendorItemIndex": 0, "itemHash": 100, "quantity": 1, "saleStatus": 0,
+			 "costs": [{"itemHash": 3159615086, "quantity": 5}]},
+			"1": {"vendorItemIndex": 1, "itemHash": 100, "quantity": 1, "saleStatus": 0, "costs": [
+				{"itemHash": 3159615086, "quantity": 50000},
+				{"itemHash": 501, "quantity": 10},
+				{"itemHash": 0, "quantity": 5},
+				{"itemHash": 300, "quantity": 0}
+			]},
+			"2": {"vendorItemIndex": 2, "itemHash": 102, "quantity": 1, "saleStatus": 8, "failureIndexes": [1, 0, -1, 2, 9],
+			 "costs": [{"itemHash": 3159615086, "quantity": 1000}]},
+			"3": {"vendorItemIndex": 3, "itemHash": 101, "quantity": 1, "saleStatus": 8200, "costs": []},
+			"4": {"vendorItemIndex": 4, "itemHash": 999, "quantity": 1, "saleStatus": 0,
+			 "costs": [{"itemHash": 3159615086, "quantity": 10}]},
+			"5": {"vendorItemIndex": 5, "itemHash": 500, "quantity": 5, "saleStatus": 0,
+			 "costs": [{"itemHash": 501, "quantity": 2}]},
+			"6": {"vendorItemIndex": 6, "itemHash": 300, "quantity": 1, "saleStatus": 0},
+			"7": {"vendorItemIndex": 7, "itemHash": 300, "quantity": 3, "saleStatus": 2,
+			 "costs": [{"itemHash": 77, "quantity": 4}]},
+			"8": {"vendorItemIndex": 8, "itemHash": 500, "quantity": 1, "saleStatus": 0,
+			 "costs": [{"itemHash": 3159615086, "quantity": 500}]},
+			"10": {"vendorItemIndex": 10, "itemHash": 501, "quantity": 2, "saleStatus": 0,
+			 "costs": [{"itemHash": 3159615086, "quantity": 100}]}
+		}},
+		"3361454721": {"saleItems": {
+			"0": {"vendorItemIndex": 0, "itemHash": 502, "quantity": 1, "saleStatus": 0,
+			 "costs": [{"itemHash": 2817410917, "quantity": 500}]}
+		}},
+		"2168194999": {"saleItems": {
+			"0": {"vendorItemIndex": 0, "itemHash": 503, "quantity": 1, "saleStatus": 0,
+			 "costs": [{"itemHash": 2817410917, "quantity": 700}]}
+		}}
+	}}
+}}`
+
+// fixtureTitanVendors is the Bungie GetVendors response body of the Titan.
+// Banshee-44 sells the Titan a weapon that the Hunter cannot buy yet.
+const fixtureTitanVendors = `{"ErrorCode": 1, "Response": {
+	"vendors": {"data": {
+		"672118013": {"vendorHash": 672118013, "enabled": true, "nextRefreshDate": "2026-11-13T17:00:00Z"}
+	}},
+	"categories": {"data": {
+		"672118013": {"categories": [{"displayCategoryIndex": 0, "itemIndexes": [2]}]}
+	}},
+	"sales": {"data": {
+		"672118013": {"saleItems": {
+			"2": {"vendorItemIndex": 2, "itemHash": 102, "quantity": 1, "saleStatus": 0,
+			 "costs": [{"itemHash": 3159615086, "quantity": 1000}]}
+		}}
+	}}
+}}`
+
 func fixtureDefs() *Defs {
 	weapon := func(name, typeName, tier string, bucket uint32, damage int) ItemDef {
 		return ItemDef{
@@ -274,6 +373,28 @@ func fixtureDefs() *Defs {
 			3334:       {},
 			4444:       {Name: "Control"},
 			5555:       {Name: "Crucible"},
+		},
+		Vendors: map[uint32]VendorDef{
+			vendorBanshee: {
+				Name:           "Banshee-44",
+				Subtitle:       "Gunsmith",
+				FailureStrings: []string{"", "Requires Gunsmith rank 10.", "Already Purchased on Account"},
+				Categories:     map[int]string{0: "Weapons", 1: "Materials", 2: "", 3: "Exotic Weapons"},
+			},
+			vendorTess: {
+				Name:       "Tess Everis",
+				Subtitle:   "Eververse Trading Company",
+				Categories: map[int]string{0: "Featured"},
+			},
+			vendorXur:       {Name: "Xûr", Subtitle: "Agent of the Nine"},
+			vendorXurOffers: {Name: "Xûr", Subtitle: "Strange Gear Offers"},
+			vendorNameless:  {},
+		},
+		VendorItems: map[uint32]string{
+			500: "Ammo Synthesis",
+			501: "Legendary Shards",
+			502: "Eververse Engram",
+			503: "Ornament of the Hunt",
 		},
 		DamageTypes: map[int]string{1: "Kinetic", 3: "Solar"},
 		Classes:     map[int]string{0: "Titan", 1: "Hunter", 2: "Warlock"},
@@ -396,6 +517,8 @@ func newFakes(t *testing.T) *fakes {
 		bungieData: map[string]string{
 			pathHunterHistory: fixtureHunterHistory,
 			pathTitanHistory:  fixtureTitanHistory,
+			pathHunterVendors: fixtureHunterVendors,
+			pathTitanVendors:  fixtureTitanVendors,
 		},
 		serviceData: map[string]string{
 			"/api/tags": `{"defs": [], "items": [

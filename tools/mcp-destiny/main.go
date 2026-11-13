@@ -358,6 +358,21 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleListActivityHistory)
 
 	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolListVendors,
+		Description: "List the vendors of one character, such as Banshee-44 or Xûr, and what each one sells " +
+			"at the moment of the call. Bungie lists the vendors whose stock rotates and leaves out preview vendors " +
+			"and kiosks. The stock and whether the character can buy each item differ per character. " +
+			"Without character, it reads the most recently played character. " +
+			"Without vendor, it lists one row per vendor with its name, subtitle, hash, number of sales, " +
+			"and next refresh time. A disabled flag marks a vendor that Bungie reports as not accessible. " +
+			"With vendor, it lists the sales of that vendor under their category names. " +
+			"Each sale gives the item, the quantity when it is more than one, and the costs. " +
+			"It also says whether the character can buy the item, with the reasons from the game when it cannot. " +
+			"A sale that shows no cost is often a rank reward or a screen that the vendor opens, not a free item.",
+		Annotations: readOnly,
+	}, h.handleListVendors)
+
+	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolMoveItems,
 		Description: "Move item instances to the vault or to a character in the live game, and optionally equip them. " +
 			"Pulls items from the Postmaster first. Before it transfers an equipped item, it equips another item " +

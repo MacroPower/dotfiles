@@ -68,11 +68,14 @@ func TestServerListsTools(t *testing.T) {
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolRemoveAutotagRule,
 		toolMoveStack, toolSetLock, toolSetPerk, toolSetAutotagEnabled, toolListActivityHistory,
-		toolListLoadouts, toolEquipLoadout, toolGetStats,
+		toolListLoadouts, toolEquipLoadout, toolGetStats, toolListVendors,
 	}, names)
 
 	for _, tool := range tools.Tools {
-		if tool.Name == toolGetStats {
+		switch tool.Name {
+		case toolListVendors:
+			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
+		case toolGetStats:
 			require.NotNil(t, tool.Annotations)
 			assert.True(t, tool.Annotations.ReadOnlyHint)
 		}
@@ -745,6 +748,223 @@ func TestActivityName(t *testing.T) {
 			assert.Equal(t, tc.want, activityName(defs, tc.activity))
 		})
 	}
+}
+
+func TestListVendors(t *testing.T) {
+	t.Parallel()
+
+	banshee := strings.Join([]string{
+		"Banshee-44",
+		"Subtitle: Gunsmith",
+		"Vendor hash: 672118013",
+		"Character: Hunter",
+		"Next refresh: 2026-11-13 17:00 UTC",
+		"Sales: 8",
+		"",
+		"Weapons:",
+		"- Midnight Coup | 1000 Glimmer | unavailable: Requires Gunsmith rank 10.; Already Purchased on Account",
+		"- Fatebringer | 50000 Glimmer, 10 Legendary Shards | available",
+		"",
+		"Materials:",
+		"- Ammo Synthesis x5 | 2 Legendary Shards | available",
+		"- Enhancement Core | no cost | available",
+		"",
+		"Category 2:",
+		"- Ammo Synthesis | 500 Glimmer | available",
+		"",
+		"Uncategorized:",
+		"- Fatebringer | 5 Glimmer | available",
+		"- Enhancement Core x3 | 4 Item 77 | unavailable",
+		"- Legendary Shards x2 | 100 Glimmer | available",
+	}, "\n")
+
+	list := strings.Join([]string{
+		"The 6 vendors of Hunter. Pass vendor with a hash or a name to list the sales of one vendor.",
+		"",
+		"name | subtitle | hash | sales | next refresh | flags",
+		"Banshee-44 | Gunsmith | 672118013 | 8 | 2026-11-13 17:00 UTC | ",
+		"Tess Everis | Eververse Trading Company | 3361454721 | 1 | 2026-11-17 17:00 UTC | ",
+		"Vendor 1111 |  | 1111 | 0 | 2026-11-13 17:00 UTC | ",
+		"Vendor 2168194999 |  | 2168194999 | 1 | unknown | ",
+		"Xûr | Agent of the Nine | 2190858386 | 0 | 2026-11-14 17:00 UTC | disabled",
+		"Xûr | Strange Gear Offers | 3751514131 | 0 | never | ",
+	}, "\n")
+
+	tests := map[string]struct {
+		in      ListVendorsInput
+		data    map[string]string
+		paths   []string
+		want    string
+		isError bool
+	}{
+		"vendor list": {
+			paths: []string{pathHunterVendors},
+			want:  list,
+		},
+		"blank vendor": {
+			in:    ListVendorsInput{Vendor: "  "},
+			paths: []string{pathHunterVendors},
+			want:  list,
+		},
+		"vendor by exact name": {
+			in:    ListVendorsInput{Vendor: "Banshee-44"},
+			paths: []string{pathHunterVendors},
+			want:  banshee,
+		},
+		"vendor by part of its name": {
+			in:    ListVendorsInput{Vendor: " banshee "},
+			paths: []string{pathHunterVendors},
+			want:  banshee,
+		},
+		"vendor by hash": {
+			in:    ListVendorsInput{Vendor: "3361454721"},
+			paths: []string{pathHunterVendors},
+			want: strings.Join([]string{
+				"Tess Everis",
+				"Subtitle: Eververse Trading Company",
+				"Vendor hash: 3361454721",
+				"Character: Hunter",
+				"Next refresh: 2026-11-17 17:00 UTC",
+				"Sales: 1",
+				"",
+				"Featured:",
+				"- Eververse Engram | 500 Bright Dust | available",
+			}, "\n"),
+		},
+		"vendor without a definition": {
+			in:    ListVendorsInput{Vendor: "2168194999"},
+			paths: []string{pathHunterVendors},
+			want: strings.Join([]string{
+				"Vendor 2168194999",
+				"Vendor hash: 2168194999",
+				"Character: Hunter",
+				"Next refresh: unknown",
+				"Sales: 1",
+				"",
+				"Category 0:",
+				"- Ornament of the Hunt | 700 Bright Dust | available",
+			}, "\n"),
+		},
+		"disabled vendor": {
+			in:    ListVendorsInput{Vendor: "2190858386"},
+			paths: []string{pathHunterVendors},
+			want: strings.Join([]string{
+				"Xûr",
+				"Subtitle: Agent of the Nine",
+				"Vendor hash: 2190858386",
+				"Character: Hunter",
+				"Next refresh: 2026-11-14 17:00 UTC",
+				"Flags: disabled",
+				"Sales: 0",
+			}, "\n"),
+		},
+		"vendors that share a name": {
+			in:      ListVendorsInput{Vendor: "Xûr"},
+			paths:   []string{pathHunterVendors},
+			want:    `unknown vendor: "Xûr" matches 2 vendors, so pass a vendor hash, such as Xûr (2190858386), Xûr (3751514131)`,
+			isError: true,
+		},
+		"ambiguous part of a name": {
+			in:    ListVendorsInput{Vendor: "vendor"},
+			paths: []string{pathHunterVendors},
+			want: `unknown vendor: "vendor" matches 2 vendors, so pass a vendor hash, ` +
+				`such as Vendor 1111 (1111), Vendor 2168194999 (2168194999)`,
+			isError: true,
+		},
+		"unknown vendor name": {
+			in:      ListVendorsInput{Vendor: "Zavala"},
+			paths:   []string{pathHunterVendors},
+			want:    `unknown vendor: no vendor of Hunter has a name that contains "Zavala"`,
+			isError: true,
+		},
+		"unknown vendor hash": {
+			in:      ListVendorsInput{Vendor: "42"},
+			paths:   []string{pathHunterVendors},
+			want:    "unknown vendor: no vendor of Hunter has the hash 42",
+			isError: true,
+		},
+		"character by class name": {
+			in:    ListVendorsInput{Character: "TITAN"},
+			paths: []string{pathTitanVendors},
+			want: strings.Join([]string{
+				"The vendor of Titan. Pass vendor with a hash or a name to list the sales of one vendor.",
+				"",
+				"name | subtitle | hash | sales | next refresh | flags",
+				"Banshee-44 | Gunsmith | 672118013 | 1 | 2026-11-13 17:00 UTC | ",
+			}, "\n"),
+		},
+		"vendor of a character by id": {
+			in:    ListVendorsInput{Character: titanID, Vendor: "banshee-44"},
+			paths: []string{pathTitanVendors},
+			want: strings.Join([]string{
+				"Banshee-44",
+				"Subtitle: Gunsmith",
+				"Vendor hash: 672118013",
+				"Character: Titan",
+				"Next refresh: 2026-11-13 17:00 UTC",
+				"Sales: 1",
+				"",
+				"Weapons:",
+				"- Midnight Coup | 1000 Glimmer | available",
+			}, "\n"),
+		},
+		"no vendors": {
+			data:  map[string]string{pathHunterVendors: `{"ErrorCode": 1, "Response": {}}`},
+			paths: []string{pathHunterVendors},
+			want:  "Bungie lists no vendors for Hunter.",
+		},
+		"vault": {
+			in:      ListVendorsInput{Character: "vault"},
+			want:    "unknown location: the vault is not a character, so pass a character id or a class name",
+			isError: true,
+		},
+		"Bungie refuses": {
+			data: map[string]string{
+				pathHunterVendors: `{"ErrorCode": 1627, "ErrorStatus": "DestinyVendorNotFound", "Message": "Not found."}`,
+			},
+			paths:   []string{pathHunterVendors},
+			want:    "fetching the vendors: bungie: DestinyVendorNotFound: Not found.",
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			maps.Copy(f.bungieData, tc.data)
+
+			got, isError := call(t, f.h.handleListVendors, tc.in)
+			assert.Equal(t, tc.isError, isError)
+			assert.Equal(t, tc.want, got)
+
+			var paths []string
+
+			for _, path := range []string{pathHunterVendors, pathTitanVendors} {
+				for _, req := range f.bungie.calls(http.MethodGet, path) {
+					paths = append(paths, req.Path)
+					assert.Regexp(t, `^components=400,401,402&_=\d+$`, req.Query)
+				}
+			}
+
+			assert.Equal(t, tc.paths, paths)
+		})
+	}
+}
+
+func TestListVendorsRefetches(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	for range 2 {
+		got, isError := call(t, f.h.handleListVendors, ListVendorsInput{})
+		require.False(t, isError, got)
+	}
+
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathHunterVendors), 2)
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
 }
 
 func TestRefreshOnUnauthorized(t *testing.T) {

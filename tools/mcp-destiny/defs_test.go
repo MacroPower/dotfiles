@@ -26,12 +26,14 @@ func newFakeArtifacts() *fakeArtifacts {
 	return &fakeArtifacts{
 		version: "245114.26/1",
 		index: map[string][]string{
-			artifactCore:       {"core-0.json", "core-1.json"},
-			artifactBuckets:    {"buckets.json"},
-			artifactDamage:     {"damage.json"},
-			artifactClasses:    {"classes.json"},
-			artifactStats:      {"stats.json"},
-			artifactActivities: {"activities.json"},
+			artifactCore:        {"core-0.json", "core-1.json"},
+			artifactBuckets:     {"buckets.json"},
+			artifactDamage:      {"damage.json"},
+			artifactClasses:     {"classes.json"},
+			artifactStats:       {"stats.json"},
+			artifactActivities:  {"activities.json"},
+			artifactVendors:     {"vendors.json"},
+			artifactVendorItems: {"vendor-items-0.json", "vendor-items-1.json"},
 		},
 		files: map[string]string{
 			"core-0.json": `[
@@ -64,6 +66,28 @@ func newFakeArtifacts() *fakeArtifacts {
 				 "activityTypeHash": 2043403989, "modeTypes": [4], "isPlaylist": false},
 				"2693136600": {"hash": 2693136600, "name": "Deep Stone Crypt", "modeTypes": [4]}
 			}`,
+			// The service build projects each vendor to a SlimVendor record.
+			"vendors.json": `{
+				"672118013": {"hash": 672118013,
+				 "displayProperties": {"name": "Banshee-44", "subtitle": "Gunsmith", "icon": "/b.png"},
+				 "failureStrings": ["", "Requires Gunsmith rank 10."], "acceptedItems": [],
+				 "displayCategories": [
+					{"index": 0, "identifier": "category_weapons", "name": "Weapons"},
+					{"index": 2, "identifier": "category_materials", "name": ""}
+				 ],
+				 "itemSorts": [0, 1]},
+				"2168194999": {"hash": 2168194999, "displayProperties": {"name": "", "subtitle": ""},
+				 "failureStrings": [], "acceptedItems": [], "displayCategories": [], "itemSorts": []}
+			}`,
+			// The service build splits the VendorItem array across files.
+			"vendor-items-0.json": `[
+				{"hash": 500, "name": "Ammo Synthesis", "icon": "/c.png", "gearTier": {"low": 1, "high": 2}},
+				{"hash": 3159615086, "name": "Glimmer"}
+			]`,
+			"vendor-items-1.json": `[
+				{"hash": 501, "name": "Legendary Shards", "standIn": 400},
+				{"hash": 502, "name": ""}
+			]`,
 		},
 	}
 }
@@ -144,10 +168,24 @@ func TestDefsLoader(t *testing.T) {
 			3022541210: {Name: "Vault of Glass: Master"},
 			2693136600: {Name: "Deep Stone Crypt"},
 		},
+		Vendors: map[uint32]VendorDef{
+			672118013: {
+				Name:           "Banshee-44",
+				Subtitle:       "Gunsmith",
+				FailureStrings: []string{"", "Requires Gunsmith rank 10."},
+				Categories:     map[int]string{0: "Weapons", 2: ""},
+			},
+			2168194999: {},
+		},
+		VendorItems: map[uint32]string{
+			500:         "Ammo Synthesis",
+			itemGlimmer: "Glimmer",
+			501:         "Legendary Shards",
+		},
 		DamageTypes: map[int]string{1: "Kinetic"},
 		Classes:     map[int]string{1: "Hunter"},
 	}, got)
-	assert.Len(t, source.fetched, 7)
+	assert.Len(t, source.fetched, 10)
 
 	// Writing the cache removes the file of the older layout.
 	files, err := filepath.Glob(filepath.Join(dir, "*"))
@@ -175,24 +213,55 @@ func TestDefsLoader(t *testing.T) {
 	rebuilt, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "245200.1", rebuilt.Version)
-	assert.Len(t, source.fetched, 7)
+	assert.Len(t, source.fetched, 10)
 
 	files, err = filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
 	assert.Equal(t, []string{filepath.Join(dir, defsCachePrefix+"245200.1.json")}, files)
 }
 
-func TestDefsLoaderWithoutActivities(t *testing.T) {
+func TestDefsLoaderWithoutOptionalArtifacts(t *testing.T) {
 	t.Parallel()
 
-	source := newFakeArtifacts()
-	delete(source.index, artifactActivities)
+	tests := map[string]struct {
+		field    func(*Defs) any
+		artifact string
+		files    []string
+	}{
+		"activities": {
+			artifact: artifactActivities,
+			files:    []string{"activities.json"},
+			field:    func(d *Defs) any { return d.Activities },
+		},
+		"vendors": {
+			artifact: artifactVendors,
+			files:    []string{"vendors.json"},
+			field:    func(d *Defs) any { return d.Vendors },
+		},
+		"vendor items": {
+			artifact: artifactVendorItems,
+			files:    []string{"vendor-items-0.json", "vendor-items-1.json"},
+			field:    func(d *Defs) any { return d.VendorItems },
+		},
+	}
 
-	got, err := NewDefsLoader(source, "").Get(t.Context())
-	require.NoError(t, err)
-	assert.Empty(t, got.Activities)
-	assert.Len(t, got.Items, 3)
-	assert.NotContains(t, source.fetched, "activities.json")
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			source := newFakeArtifacts()
+			delete(source.index, tc.artifact)
+
+			got, err := NewDefsLoader(source, "").Get(t.Context())
+			require.NoError(t, err)
+			assert.Empty(t, tc.field(got))
+			assert.Len(t, got.Items, 3)
+
+			for _, file := range tc.files {
+				assert.NotContains(t, source.fetched, file)
+			}
+		})
+	}
 }
 
 func TestDefsLoaderErrors(t *testing.T) {
@@ -213,6 +282,18 @@ func TestDefsLoaderErrors(t *testing.T) {
 		"activity table is not an object": {
 			break_: func(f *fakeArtifacts) { f.files["activities.json"] = `[]` },
 			err:    ErrDefs,
+		},
+		"vendor table is not an object": {
+			break_: func(f *fakeArtifacts) { f.files["vendors.json"] = `[]` },
+			err:    ErrDefs,
+		},
+		"second vendor item file is not an array": {
+			break_: func(f *fakeArtifacts) { f.files["vendor-items-1.json"] = `{"hash": 501}` },
+			err:    ErrDefs,
+		},
+		"vendor item fetch fails": {
+			break_: func(f *fakeArtifacts) { delete(f.files, "vendor-items-1.json") },
+			err:    ErrService,
 		},
 		"table artifact is missing from the index": {
 			break_: func(f *fakeArtifacts) { delete(f.index, artifactStats) },
