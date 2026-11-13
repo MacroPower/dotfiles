@@ -270,6 +270,7 @@ func runServe(ctx context.Context, args []string) error {
 		log:     logger,
 		now:     time.Now,
 	}
+	h.loadoutNames = NewLoadoutNameStore(bungieManifest{h: h})
 
 	err = newServer(h).Run(ctx, &mcp.StdioTransport{})
 	if err != nil {
@@ -493,9 +494,13 @@ func newServer(h *handler) *mcp.Server {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolListLoadouts,
-		Description: "List the loadouts that each character saved in the game, with the instance id, name, slot, " +
-			"and location of each item. The server cannot read the name, icon, or color that the game shows " +
-			"for a loadout, so the character and the loadout number identify it.",
+		Description: "List the loadouts that each character saved in the game. Each loadout carries the name " +
+			"that the game shows for it, and each item shows its instance id, name, slot, and location. " +
+			"The server reads the loadout names from the Bungie manifest. When it cannot read them, " +
+			"the result gives the reason and lists the loadouts by number. " +
+			"The server cannot show the icon or the color of a loadout, because the game defines both " +
+			"only as images. Several loadouts can share a name, so the character and the loadout number " +
+			"identify a loadout.",
 		Annotations: readOnly,
 	}, h.handleListLoadouts)
 

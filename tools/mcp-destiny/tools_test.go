@@ -37,8 +37,9 @@ const (
 )
 
 const loadoutsIntro = "Loadouts saved in the game. A loadout number is the position of the loadout " +
-	"on the in-game loadout screen, counted from 1. The server cannot read the name, icon, " +
-	"or color that the game shows for a loadout. Pass the character and the loadout number to equip_loadout."
+	"on the in-game loadout screen, counted from 1. The server cannot show the icon or the color " +
+	"of a loadout, because the game defines both only as images. " +
+	"Pass the character and the loadout number to equip_loadout."
 
 // killClipPlugSet gives socket 1 of Fatebringer (100) a plug set that
 // lists Firefly and the two Kill Clip plugs. Fatebringer has no plug set
@@ -4435,38 +4436,92 @@ func TestSetPerkToolErrors(t *testing.T) {
 func TestListLoadouts(t *testing.T) {
 	t.Parallel()
 
-	hunter := strings.Join([]string{
-		"Hunter (id c1):",
-		"loadout | instance id | name | slot | location",
-		"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped)",
-		"2 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)",
-		"3 | 1001 | Fatebringer | Kinetic Weapons | Vault",
-		"3 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)",
-		"3 | 9999 | not in the inventory |  | ",
-	}, "\n")
-	titan := strings.Join([]string{
-		"Titan (id c2):",
-		"loadout | instance id | name | slot | location",
-		"1 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped)",
-	}, "\n")
+	// hunter returns the section of the Hunter with the heading lines of
+	// its loadouts 2 and 3.
+	hunter := func(second, third string) string {
+		return strings.Join([]string{
+			"Hunter (id c1):",
+			"loadout | instance id | name | slot | location",
+			second,
+			"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped)",
+			"2 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)",
+			third,
+			"3 | 1001 | Fatebringer | Kinetic Weapons | Vault",
+			"3 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)",
+			"3 | 9999 | not in the inventory |  | ",
+		}, "\n")
+	}
+
+	// titan returns the section of the Titan with the heading line of its
+	// loadout 1.
+	titan := func(first string) string {
+		return strings.Join([]string{
+			"Titan (id c2):",
+			"loadout | instance id | name | slot | location",
+			first,
+			"1 | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped)",
+		}, "\n")
+	}
+
+	named := hunter("Loadout 2: Raid Night", "Loadout 3: Trials") + "\n\n" + titan("Loadout 1: Crucible")
+	numbered := hunter("Loadout 2", "Loadout 3") + "\n\n" + titan("Loadout 1")
+	unavailable := loadoutsIntro + "\nLoadout names unavailable: "
 
 	tests := map[string]struct {
+		edit     func(f *fakes)
 		want     string
 		in       ListLoadoutsInput
 		hunterOn bool
 		isError  bool
 	}{
 		"every character": {
-			want: loadoutsIntro + "\n\n" + hunter + "\n\n" + titan,
+			want: loadoutsIntro + "\n\n" + named,
 		},
 		"one character": {
 			in:   ListLoadoutsInput{Character: "titan"},
-			want: loadoutsIntro + "\n\n" + titan,
+			want: loadoutsIntro + "\n\n" + titan("Loadout 1: Crucible"),
 		},
 		"character without loadouts": {
 			in:       ListLoadoutsInput{Character: titanID},
 			hunterOn: true,
 			want:     loadoutsIntro + "\n\nTitan (id c2): no saved loadouts",
+		},
+		"name hash that the table lacks": {
+			edit: func(f *fakes) {
+				f.bungieData[pathLoadoutNames] = `{"1": {"hash": 1, "name": "Raid Night"}}`
+			},
+			want: loadoutsIntro + "\n\n" + hunter("Loadout 2: Raid Night", "Loadout 3: unnamed") +
+				"\n\n" + titan("Loadout 1: unnamed"),
+		},
+		"redacted name without text": {
+			edit: func(f *fakes) {
+				f.bungieData[pathLoadoutNames] = `{"7": {"hash": 7, "name": "", "redacted": true}}`
+			},
+			in:   ListLoadoutsInput{Character: "titan"},
+			want: loadoutsIntro + "\n\n" + titan("Loadout 1: unnamed"),
+		},
+		"manifest does not load": {
+			edit: func(f *fakes) { delete(f.bungieData, pathManifest) },
+			want: unavailable + "reading the Bungie manifest: bungie: ParameterParseFailure: no route\n\n" +
+				numbered,
+		},
+		"manifest lists no name table": {
+			edit: func(f *fakes) {
+				f.bungieData[pathManifest] = `{"ErrorCode": 1, "Response": {"jsonWorldComponentContentPaths": {
+					"fr": {"DestinyLoadoutNameDefinition": "/fr.json"}}}}`
+			},
+			want: unavailable + "the Bungie manifest lists no loadout name table\n\n" + numbered,
+		},
+		"name table does not download": {
+			edit: func(f *fakes) { delete(f.bungieData, pathLoadoutNames) },
+			want: unavailable + "fetching " + pathLoadoutNames + ": bungie: content file returned status 404\n\n" +
+				numbered,
+		},
+		"name table does not decode": {
+			edit: func(f *fakes) { f.bungieData[pathLoadoutNames] = `{"1": {"hash": 1,` },
+			in:   ListLoadoutsInput{Character: "titan"},
+			want: unavailable + "decoding " + pathLoadoutNames +
+				": reading the loadout name table: unexpected EOF\n\n" + titan("Loadout 1"),
 		},
 		"vault": {
 			in:      ListLoadoutsInput{Character: "vault"},
@@ -4480,6 +4535,10 @@ func TestListLoadouts(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
+
+			if tc.edit != nil {
+				tc.edit(f)
+			}
 
 			if tc.hunterOn {
 				_, isError := call(t, f.h.handleListCharacters, EmptyInput{})

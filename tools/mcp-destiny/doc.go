@@ -23,6 +23,20 @@
 // the vendors sell. For each activity that a character can play, they give
 // the name, the type, the location, and the names of the rewards.
 //
+// The definition artifacts of the service leave out the tables that name
+// saved loadouts. The list_loadouts tool therefore reads the loadout names
+// from the Destiny manifest that Bungie publishes. The manifest gives the
+// path of the content file of each definition table. Each path carries an
+// identifier that Bungie changes with every manifest release, so a path
+// names one version of the table. The server reads the manifest on every
+// list_loadouts call. It downloads the name table only when the manifest
+// gives a path that differs from the path of the loaded table. It keeps
+// the table only in memory. When the names do not load, list_loadouts
+// gives the reason and lists the loadouts by number. The server keeps only
+// a table that loaded, so a failed load leaves any kept table in place.
+// The next call tries again, and it downloads the table unless the server
+// already holds the table of the path that the manifest gives.
+//
 // Tags follow the web client. An item carries at most one of the tags that
 // the web client defines, and the favorite mark is a separate flag.
 //

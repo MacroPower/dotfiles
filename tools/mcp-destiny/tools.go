@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"slices"
 	"strings"
@@ -290,20 +291,22 @@ type GetStatsInput struct {
 
 // handler holds the shared state of the tool handlers. The mutex serializes
 // tool calls, because moves, lock changes, perk changes, and loadout
-// equips update the cached snapshot in place. The sheet store has no lock
-// of its own, so the same mutex guards it.
+// equips update the cached snapshot in place. The sheet store and the
+// loadout name store have no lock of their own, so the same mutex guards
+// them.
 type handler struct {
-	service  *Service
-	bungie   *Bungie
-	auth     *Auth
-	defs     *DefsLoader
-	sheets   *SheetStore
-	log      *slog.Logger
-	now      func() time.Time
-	snapshot *Snapshot
-	apiKeyAt time.Time
-	apiKey   string
-	mu       sync.Mutex
+	service      *Service
+	bungie       *Bungie
+	auth         *Auth
+	defs         *DefsLoader
+	sheets       *SheetStore
+	loadoutNames *LoadoutNameStore
+	log          *slog.Logger
+	now          func() time.Time
+	snapshot     *Snapshot
+	apiKeyAt     time.Time
+	apiKey       string
+	mu           sync.Mutex
 }
 
 func (h *handler) handleStatus(
@@ -1123,7 +1126,11 @@ func (h *handler) handleListLoadouts(
 		characters = []Character{c}
 	}
 
-	return textResult(renderLoadouts(s, characters)), nil, nil
+	// The loadouts do not depend on the names, so a table that does not
+	// load leaves the loadouts in the result.
+	names := h.loadoutNames.Load(ctx)
+
+	return textResult(renderLoadouts(s, characters, names)), nil, nil
 }
 
 func (h *handler) handleEquipLoadout(
@@ -2322,6 +2329,32 @@ func (m bungieMover) EquipLoadout(ctx context.Context, action LoadoutAction) err
 	return m.h.withBungie(ctx, func(creds Credentials) error {
 		return m.h.bungie.EquipLoadout(ctx, creds, action)
 	})
+}
+
+// bungieManifest adapts the handler to [ManifestSource]. It adds the
+// credentials to each manifest read.
+type bungieManifest struct {
+	h *handler
+}
+
+// Manifest implements [ManifestSource].
+func (m bungieManifest) Manifest(ctx context.Context) (map[string]string, error) {
+	var paths map[string]string
+
+	err := m.h.withBungie(ctx, func(creds Credentials) error {
+		var err error
+
+		paths, err = m.h.bungie.Manifest(ctx, creds)
+
+		return err
+	})
+
+	return paths, err
+}
+
+// Content implements [ManifestSource].
+func (m bungieManifest) Content(ctx context.Context, path string) (io.ReadCloser, error) {
+	return m.h.bungie.Content(ctx, path)
 }
 
 // toolError logs err and returns it as a tool result with

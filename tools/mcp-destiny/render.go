@@ -436,13 +436,20 @@ func renderWeaponGroup(s *Snapshot, group WeaponGroup, sources map[string]Rating
 }
 
 // renderLoadouts lists the saved loadouts of characters as one table per
-// character, with a row per loadout item.
-func renderLoadouts(s *Snapshot, characters []Character) string {
+// character, with a row per loadout item. The [loadoutHeading] of each
+// loadout sits above its rows. When names holds no table, one line after
+// the opening paragraph gives the reason.
+func renderLoadouts(s *Snapshot, characters []Character, names LoadoutNameState) string {
 	var b strings.Builder
 
 	b.WriteString("Loadouts saved in the game. A loadout number is the position of the loadout " +
-		"on the in-game loadout screen, counted from 1. The server cannot read the name, icon, " +
-		"or color that the game shows for a loadout. Pass the character and the loadout number to equip_loadout.")
+		"on the in-game loadout screen, counted from 1. The server cannot show the icon or the color " +
+		"of a loadout, because the game defines both only as images. " +
+		"Pass the character and the loadout number to equip_loadout.")
+
+	if names.Err != nil {
+		b.WriteString("\nLoadout names unavailable: " + names.Err.Error())
+	}
 
 	for _, c := range characters {
 		label := s.OwnerLabel(c.ID)
@@ -458,6 +465,8 @@ func renderLoadouts(s *Snapshot, characters []Character) string {
 		b.WriteString("loadout | instance id | name | slot | location")
 
 		for _, l := range saved {
+			b.WriteString("\n" + loadoutHeading(l, names))
+
 			for _, id := range l.InstanceIDs {
 				item, ok := s.Find(id)
 				if !ok {
@@ -473,6 +482,23 @@ func renderLoadouts(s *Snapshot, characters []Character) string {
 	}
 
 	return b.String()
+}
+
+// loadoutHeading returns the heading line of one saved loadout, such as
+// "Loadout 2: Raid Night". A name hash that the table lacks, or an entry
+// without text, reads "unnamed". When names holds no table, the line
+// gives only the number.
+func loadoutHeading(l Loadout, names LoadoutNameState) string {
+	if names.Table == nil {
+		return fmt.Sprintf("Loadout %d", l.Number)
+	}
+
+	name := names.Table[l.NameHash].Name
+	if name == "" {
+		name = "unnamed"
+	}
+
+	return fmt.Sprintf("Loadout %d: %s", l.Number, name)
 }
 
 // renderLoadoutEquip describes what an equip_loadout call did. A non-nil

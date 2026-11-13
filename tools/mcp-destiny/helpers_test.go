@@ -193,6 +193,35 @@ const fixtureProfile = `{
 	}
 }`
 
+// Paths of the fixture manifest and of its English loadout name table.
+const (
+	pathManifest     = "/Destiny2/Manifest/"
+	pathLoadoutNames = "/common/destiny2_content/json/en/DestinyLoadoutNameDefinition-a1.json"
+)
+
+// fixtureManifest is the Bungie GetDestinyManifest response body. Its
+// English tables include the loadout name table at pathLoadoutNames. The
+// French tables name another file.
+const fixtureManifest = `{"ErrorCode": 1, "Response": {"version": "v1", "jsonWorldComponentContentPaths": {
+	"en": {
+		"DestinyInventoryItemDefinition": "/common/destiny2_content/json/en/DestinyInventoryItemDefinition-a1.json",
+		"DestinyLoadoutNameDefinition": "` + pathLoadoutNames + `"
+	},
+	"fr": {
+		"DestinyLoadoutNameDefinition": "/common/destiny2_content/json/fr/DestinyLoadoutNameDefinition-a1.json"
+	}
+}}}`
+
+// fixtureLoadoutNames is the content file of the loadout name table. It
+// names the saved loadouts of fixtureProfile, and it holds a redacted
+// entry without a name.
+const fixtureLoadoutNames = `{
+	"1": {"hash": 1, "index": 0, "name": "Raid Night", "redacted": false},
+	"4": {"hash": 4, "index": 1, "name": "Trials", "redacted": false},
+	"7": {"hash": 7, "index": 2, "name": "Crucible", "redacted": false},
+	"10": {"hash": 10, "index": 3, "name": "", "redacted": true}
+}`
+
 // Activity history paths of the fixture characters.
 const (
 	pathHunterHistory = "/Destiny2/3/Account/4611/Character/c1/Stats/Activities/"
@@ -597,7 +626,9 @@ type fakes struct {
 	// of the service lists. The service serves a listed file only when
 	// serviceData holds a body for its path under /artifacts/.
 	artifactFiles map[string][]string
-	// bungieData holds the GET response body of each Bungie path.
+	// bungieData holds the GET response body of each Bungie path. The
+	// fake serves the platform and the content files of the manifest, so
+	// it also holds the body of each content file.
 	bungieData map[string]string
 	// bungieErrorIf limits bungieError to the actions whose request body
 	// it selects, such as the transfers of one item. A nil bungieErrorIf
@@ -628,6 +659,8 @@ func newFakes(t *testing.T) *fakes {
 		bungie:        &recorder{},
 		artifactFiles: map[string][]string{},
 		bungieData: map[string]string{
+			pathManifest:      fixtureManifest,
+			pathLoadoutNames:  fixtureLoadoutNames,
 			pathHunterHistory: fixtureHunterHistory,
 			pathTitanHistory:  fixtureTitanHistory,
 			pathHunterVendors: fixtureHunterVendors,
@@ -737,13 +770,14 @@ func newFakes(t *testing.T) *fakes {
 
 	f.h = &handler{
 		service: client,
-		bungie:  NewBungie(WithBungieURL(bungie.URL)),
+		bungie:  NewBungie(WithBungieURL(bungie.URL), WithBungieContentURL(bungie.URL)),
 		auth:    NewAuth(store, client, WithAuthClock(now)),
 		defs:    defs,
 		sheets:  NewSheetStore(client),
 		log:     slog.New(slog.DiscardHandler),
 		now:     now,
 	}
+	f.h.loadoutNames = NewLoadoutNameStore(bungieManifest{h: f.h})
 
 	return f
 }

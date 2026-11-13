@@ -24,13 +24,19 @@ var ErrUnknownLoadout = errors.New("unknown loadout")
 // serves them. An id that the snapshot does not hold names an item that
 // left the inventory.
 //
-// The game also gives each loadout a name, an icon, and a color. Their
-// definitions are missing from the artifacts of the service, so the
-// character and the number identify a loadout.
+// NameHash, IconHash, and ColorHash identify the name, the icon, and the
+// color that the game shows for the loadout. The definition artifacts of
+// the service leave out the tables that these hashes key, and a
+// [*LoadoutNameStore] reads the name table from the Destiny manifest.
+// Several loadouts can share a name, so the character and the number
+// identify a loadout.
 type Loadout struct {
 	CharacterID string
 	InstanceIDs []string
 	Number      int
+	NameHash    uint32
+	IconHash    uint32
+	ColorHash   uint32
 }
 
 // LoadoutEquipper performs the Bungie actions that equipping a saved
@@ -75,7 +81,13 @@ func loadoutsOf(profile *Profile) []Loadout {
 
 	for id, set := range profile.CharacterLoadouts.Data {
 		for i, saved := range set.Loadouts {
-			l := Loadout{CharacterID: id, Number: i + 1}
+			l := Loadout{
+				CharacterID: id,
+				Number:      i + 1,
+				NameHash:    saved.NameHash,
+				IconHash:    saved.IconHash,
+				ColorHash:   saved.ColorHash,
+			}
 
 			for _, item := range saved.Items {
 				if item.InstanceID != "" && item.InstanceID != emptyLoadoutItem {

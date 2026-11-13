@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-const defaultBungieURL = "https://www.bungie.net/Platform"
+const (
+	defaultBungieURL        = "https://www.bungie.net/Platform"
+	defaultBungieContentURL = "https://www.bungie.net"
+)
 
 // Bungie platform error codes that mean the access token is unusable.
 const (
@@ -165,9 +168,15 @@ type ProfileItems struct {
 
 // ProfileLoadout is one Bungie DestinyLoadoutComponent, a loadout that a
 // character saved in the game. In a loadout that holds nothing, every item
-// has the instance id "0".
+// has the instance id "0". NameHash, IconHash, and ColorHash identify the
+// name, the icon, and the color that the game shows for the loadout. Each
+// one keys its own definition table of the Destiny manifest, such as
+// DestinyLoadoutNameDefinition for NameHash.
 type ProfileLoadout struct {
-	Items []ProfileLoadoutItem `json:"items"`
+	Items     []ProfileLoadoutItem `json:"items"`
+	NameHash  uint32               `json:"nameHash"`
+	IconHash  uint32               `json:"iconHash"`
+	ColorHash uint32               `json:"colorHash"`
 }
 
 // ProfileLoadoutItem is one Bungie DestinyLoadoutItemComponent.
@@ -421,7 +430,8 @@ type LoadoutAction struct {
 	Index       int
 }
 
-// BungieOption configures a [*Bungie]. See [WithBungieURL].
+// BungieOption configures a [*Bungie]. See [WithBungieURL] and
+// [WithBungieContentURL].
 type BungieOption func(*Bungie)
 
 // WithBungieURL overrides the platform base URL. It is a [BungieOption].
@@ -429,23 +439,33 @@ func WithBungieURL(u string) BungieOption {
 	return func(b *Bungie) { b.baseURL = strings.TrimRight(u, "/") }
 }
 
-// Bungie is the HTTP client for the Bungie platform API. Every request
-// carries the API key of Agg's Destiny Vault Manager and the access token of the
-// signed-in account.
+// WithBungieContentURL overrides the base URL of the content files that
+// the Destiny manifest names. It is a [BungieOption].
+func WithBungieContentURL(u string) BungieOption {
+	return func(b *Bungie) { b.contentURL = strings.TrimRight(u, "/") }
+}
+
+// Bungie is the HTTP client for the Bungie platform API. Every platform
+// request carries the API key of Agg's Destiny Vault Manager and the
+// access token of the signed-in account. The client also downloads the
+// content files that the Destiny manifest names, and those requests carry
+// no credentials.
 type Bungie struct {
-	http      *http.Client
-	now       func() time.Time
-	baseURL   string
-	userAgent string
+	http       *http.Client
+	now        func() time.Time
+	baseURL    string
+	contentURL string
+	userAgent  string
 }
 
 // NewBungie returns a [*Bungie] configured with the given options.
 func NewBungie(opts ...BungieOption) *Bungie {
 	b := &Bungie{
-		http:      &http.Client{Timeout: defaultTimeout},
-		now:       time.Now,
-		baseURL:   defaultBungieURL,
-		userAgent: defaultUserAgent,
+		http:       &http.Client{Timeout: defaultTimeout},
+		now:        time.Now,
+		baseURL:    defaultBungieURL,
+		contentURL: defaultBungieContentURL,
+		userAgent:  defaultUserAgent,
 	}
 	for _, opt := range opts {
 		opt(b)
@@ -543,6 +563,52 @@ func (b *Bungie) Activities(
 	}
 
 	return out.CharacterActivities.Data, nil
+}
+
+// Manifest returns the path of the English content file of each
+// definition table of the Destiny manifest, keyed by the name of the
+// table, such as DestinyLoadoutNameDefinition. [*Bungie.Content] opens a
+// path. The map is empty when the manifest lists no English tables.
+func (b *Bungie) Manifest(ctx context.Context, creds Credentials) (map[string]string, error) {
+	var out struct {
+		Paths map[string]map[string]string `json:"jsonWorldComponentContentPaths"`
+	}
+
+	err := b.call(ctx, creds, http.MethodGet, "/Destiny2/Manifest/", nil, &out)
+	if err != nil {
+		return nil, err
+	}
+
+	return out.Paths["en"], nil
+}
+
+// Content opens one content file that the Destiny manifest names, such as
+// a definition table. Path is a path that [*Bungie.Manifest] returns. The
+// file lives under the content base URL, not under the platform base URL.
+// The caller closes the returned reader.
+func (b *Bungie) Content(ctx context.Context, path string) (io.ReadCloser, error) {
+	u := b.contentURL + path
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("building request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", b.userAgent)
+
+	//nolint:bodyclose // The caller closes the returned reader.
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("performing request: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		closeBody(ctx, resp.Body, u)
+
+		return nil, fmt.Errorf("%w: content file returned status %d", ErrBungie, resp.StatusCode)
+	}
+
+	return &limitedBody{Reader: io.LimitReader(resp.Body, maxArtifactBytes), body: resp.Body}, nil
 }
 
 // componentsQuery returns the query string that requests components from

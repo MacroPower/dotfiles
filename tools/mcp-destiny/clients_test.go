@@ -571,7 +571,77 @@ func TestBungieProfile(t *testing.T) {
 
 	loadouts := got.CharacterLoadouts.Data[titanID].Loadouts
 	require.Len(t, loadouts, 1)
-	assert.Equal(t, []ProfileLoadoutItem{{InstanceID: "1006"}}, loadouts[0].Items)
+	assert.Equal(t, ProfileLoadout{
+		Items:     []ProfileLoadoutItem{{InstanceID: "1006"}},
+		NameHash:  7,
+		IconHash:  8,
+		ColorHash: 9,
+	}, loadouts[0])
+}
+
+func TestBungieManifest(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		body string
+		want map[string]string
+	}{
+		"English tables": {
+			body: fixtureManifest,
+			want: map[string]string{
+				"DestinyInventoryItemDefinition": "/common/destiny2_content/json/en/DestinyInventoryItemDefinition-a1.json",
+				loadoutNameTable:                 pathLoadoutNames,
+			},
+		},
+		"no English tables": {
+			body: `{"ErrorCode": 1, "Response": {"jsonWorldComponentContentPaths": {"fr": {"A": "/a.json"}}}}`,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			u, rec := serve(t, http.StatusOK, tc.body)
+
+			got, err := NewBungie(WithBungieURL(u)).
+				Manifest(t.Context(), Credentials{APIKey: "key", AccessToken: "access"})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+
+			calls := rec.calls(http.MethodGet, pathManifest)
+			require.Len(t, calls, 1)
+			assert.Equal(t, "Bearer access", calls[0].Auth)
+		})
+	}
+}
+
+func TestBungieContent(t *testing.T) {
+	t.Parallel()
+
+	platform, platformRec := serve(t, http.StatusOK, `{"ErrorCode": 1, "Response": {}}`)
+	content, contentRec := serve(t, http.StatusOK, fixtureLoadoutNames)
+
+	b := NewBungie(WithBungieURL(platform), WithBungieContentURL(content+"/"))
+
+	body, err := b.Content(t.Context(), pathLoadoutNames)
+	require.NoError(t, err)
+
+	raw, err := io.ReadAll(body)
+	require.NoError(t, err)
+	require.NoError(t, body.Close())
+	assert.JSONEq(t, fixtureLoadoutNames, string(raw))
+
+	calls := contentRec.calls(http.MethodGet, pathLoadoutNames)
+	require.Len(t, calls, 1)
+	assert.Empty(t, calls[0].Auth, "a content request carries no access token")
+	assert.Empty(t, platformRec.all(), "a content request does not reach the platform base URL")
+
+	missing, _ := serve(t, http.StatusNotFound, `{}`)
+
+	_, err = NewBungie(WithBungieContentURL(missing)).Content(t.Context(), pathLoadoutNames)
+	require.ErrorIs(t, err, ErrBungie)
+	require.EqualError(t, err, "bungie: content file returned status 404")
 }
 
 func TestBungieVendors(t *testing.T) {

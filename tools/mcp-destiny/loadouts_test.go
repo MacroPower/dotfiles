@@ -20,9 +20,30 @@ func TestSnapshotLoadouts(t *testing.T) {
 	s := fixtureSnapshot(t)
 
 	assert.Equal(t, []Loadout{
-		{CharacterID: hunterID, Number: 2, InstanceIDs: []string{"1006", "1004"}},
-		{CharacterID: hunterID, Number: 3, InstanceIDs: []string{"1001", "1004", "9999"}},
-		{CharacterID: titanID, Number: 1, InstanceIDs: []string{"1006"}},
+		{
+			CharacterID: hunterID,
+			Number:      2,
+			InstanceIDs: []string{"1006", "1004"},
+			NameHash:    1,
+			IconHash:    2,
+			ColorHash:   3,
+		},
+		{
+			CharacterID: hunterID,
+			Number:      3,
+			InstanceIDs: []string{"1001", "1004", "9999"},
+			NameHash:    4,
+			IconHash:    5,
+			ColorHash:   6,
+		},
+		{
+			CharacterID: titanID,
+			Number:      1,
+			InstanceIDs: []string{"1006"},
+			NameHash:    7,
+			IconHash:    8,
+			ColorHash:   9,
+		},
 	}, s.Loadouts, "the loadouts follow the character id, then the number")
 }
 
@@ -33,13 +54,20 @@ func TestFindLoadout(t *testing.T) {
 		err         error
 		characterID string
 		want        string
+		wantLoadout Loadout
 		number      int
-		wantIDs     []string
 	}{
 		"saved loadout": {
 			characterID: hunterID,
 			number:      3,
-			wantIDs:     []string{"1001", "1004", "9999"},
+			wantLoadout: Loadout{
+				CharacterID: hunterID,
+				Number:      3,
+				InstanceIDs: []string{"1001", "1004", "9999"},
+				NameHash:    4,
+				IconHash:    5,
+				ColorHash:   6,
+			},
 		},
 		"loadout that holds nothing": {
 			characterID: hunterID,
@@ -72,7 +100,7 @@ func TestFindLoadout(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			assert.Equal(t, Loadout{CharacterID: tc.characterID, Number: tc.number, InstanceIDs: tc.wantIDs}, got)
+			assert.Equal(t, tc.wantLoadout, got)
 		})
 	}
 }
