@@ -44,6 +44,7 @@ const (
 	toolSetAutotagEnabled   = "set_autotag_enabled"
 	toolListActivityHistory = "list_activity_history"
 	toolListVendors         = "list_vendors"
+	toolListActivities      = "list_activities"
 	toolGetStats            = "get_stats"
 )
 
@@ -156,6 +157,15 @@ type ListActivityHistoryInput struct {
 type ListVendorsInput struct {
 	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to read the most recently played character"`
 	Vendor    string `json:"vendor,omitzero"    jsonschema:"Vendor hash, or a vendor name in any letter case, such as 'Banshee-44'. A name that no vendor has selects the one vendor whose name contains it. Omit to list the vendors"`
+}
+
+// ListActivitiesInput is the input schema of the list_activities tool.
+type ListActivitiesInput struct {
+	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to read the most recently played character"`
+	Query     string `json:"query,omitzero"     jsonschema:"Case-insensitive substring of the activity name, the activity type, the location, the focused reward, or a bonus loot name, such as 'raid' or 'deepsight'"`
+	Limit     int    `json:"limit,omitzero"     jsonschema:"Maximum number of activities to return (default 50, maximum 200)"`
+	Offset    int    `json:"offset,omitzero"    jsonschema:"Number of matching activities to skip (default 0)"`
+	Rewards   bool   `json:"rewards,omitzero"   jsonschema:"Return only the activities that still offer bonus drops, a focused reward, or bonus loot this week"`
 }
 
 // MoveItemsInput is the input schema of the move_items tool.
@@ -616,6 +626,65 @@ func (h *handler) handleListVendors(
 	}
 
 	return textResult(renderVendor(v, owner)), nil, nil
+}
+
+func (h *handler) handleListActivities(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in ListActivitiesInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	s, err := h.loadSnapshot(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolListActivities, err)
+	}
+
+	c, err := s.ResolveCharacter(in.Character)
+	if err != nil {
+		return h.toolError(ctx, toolListActivities, err)
+	}
+
+	membership, err := h.membership(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolListActivities, err)
+	}
+
+	defs, err := h.defs.Get(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolListActivities, fmt.Errorf("loading definitions: %w", err))
+	}
+
+	var activities map[string]CharacterActivities
+
+	// The rewards change when the character claims one, so every call
+	// fetches the activities again instead of reusing the snapshot.
+	err = h.withBungie(ctx, func(creds Credentials) error {
+		var err error
+
+		activities, err = h.bungie.Activities(ctx, creds, membership)
+
+		return err
+	})
+	if err != nil {
+		return h.toolError(ctx, toolListActivities, fmt.Errorf("fetching the activities: %w", err))
+	}
+
+	listed := activities[c.ID].Available
+	all := readActivities(listed, defs)
+	rows := filterActivities(all, in.Query, in.Rewards)
+
+	limit := in.Limit
+	if limit <= 0 {
+		limit = defaultItemLimit
+	}
+
+	limit = min(limit, maxItemLimit)
+	offset := min(max(in.Offset, 0), len(rows))
+	page := rows[offset:min(offset+limit, len(rows))]
+
+	return textResult(renderActivities(page, offset, len(rows), len(all), len(listed), s.OwnerLabel(c.ID))), nil, nil
 }
 
 func (h *handler) handleMoveItems(

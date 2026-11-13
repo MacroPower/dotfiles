@@ -373,6 +373,22 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleListVendors)
 
 	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolListActivities,
+		Description: "List the activities that one character can play, such as raids, dungeons, and Crucible playlists, " +
+			"with the rewards that each one still offers this week. The game drops a reward from the list after " +
+			"the character claims it. Without character, it reads the most recently played character. " +
+			"Each row gives the activity name, the activity type, the location, the recommended power, " +
+			"the number of bonus drops, the focused reward, the bonus loot, a featured flag for an activity in the " +
+			"featured carousel of the Portal, and the activity hash. The rows follow the reward ranking of the " +
+			"Activities page of the web client, without its sections, its rule that puts Quickplay rows first, or its " +
+			"power key: the most bonus drops first, then the activities with a focused reward, then those with " +
+			"bonus loot, then the featured ones, then by name. Pass rewards=true to list only the activities that still " +
+			"offer a reward. The list leaves out the activities that the game hides and the Story and Social activities, " +
+			"and it lists each difficulty of an activity on its own row.",
+		Annotations: readOnly,
+	}, h.handleListActivities)
+
+	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolMoveItems,
 		Description: "Move item instances to the vault or to a character in the live game, and optionally equip them. " +
 			"Pulls items from the Postmaster first. Before it transfers an equipped item, it equips another item " +

@@ -708,6 +708,93 @@ func statusLabel(sale Sale) string {
 	return "unavailable: " + strings.Join(sale.Reasons, "; ")
 }
 
+// renderActivities renders one page of the activities of a character as a
+// table. Listed counts the activities that Bungie lists for the character,
+// and kept counts the ones that [readActivities] keeps from them. Offset
+// and total count the kept activities that match the query and the
+// rewards flag. Owner names the character, such as "Hunter". The power and
+// bonus drops columns are empty for an activity without them.
+func renderActivities(rows []ActivityRow, offset, total, kept, listed int, owner string) string {
+	switch {
+	case listed == 0:
+		return "Bungie lists no activities that " + owner + " can play."
+	case kept == 0 && listed == 1:
+		return "The list leaves out the one activity that Bungie lists for " + owner +
+			", because the game hides it, the definitions do not name it, or it is a Story or Social activity."
+
+	case kept == 0:
+		return fmt.Sprintf("The list leaves out all %d activities that Bungie lists for %s, because the game "+
+			"hides them, the definitions do not name them, or they are Story or Social activities.", listed, owner)
+
+	case total == 0:
+		return "No activities of " + owner + " match."
+	case len(rows) == 0:
+		return fmt.Sprintf("Offset %d is past the last of %d matching activities.", offset, total)
+	}
+
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Activities %d-%d of %d for %s, with the rewards that each one still offers this week.",
+		offset+1, offset+len(rows), total, owner)
+
+	if offset+len(rows) < total {
+		fmt.Fprintf(&b, " Pass offset=%d for the next page.", offset+len(rows))
+	}
+
+	b.WriteString("\n\nactivity | type | location | power | bonus drops | focus | bonus loot | flags | hash\n")
+
+	for _, row := range rows {
+		var power, drops, focus string
+
+		if row.Power > 0 {
+			power = strconv.Itoa(row.Power)
+		}
+
+		if row.BonusDrops > 0 {
+			drops = strconv.Itoa(row.BonusDrops)
+		}
+
+		if row.Focus != nil {
+			focus = lootLabel(*row.Focus)
+		}
+
+		loot := make([]string, 0, len(row.Loot))
+		for _, one := range row.Loot {
+			loot = append(loot, lootLabel(one))
+		}
+
+		var flags string
+		if row.Featured {
+			flags = "featured"
+		}
+
+		b.WriteString(strings.Join([]string{
+			row.Name,
+			row.Type,
+			row.Location,
+			power,
+			drops,
+			focus,
+			strings.Join(loot, ", "),
+			flags,
+			strconv.FormatUint(uint64(row.Hash), 10),
+		}, " | "))
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// lootLabel names a reward item, with the quantity when Bungie reports
+// more than one.
+func lootLabel(loot Loot) string {
+	if loot.Quantity > 1 {
+		return fmt.Sprintf("%s x%d", loot.Name, loot.Quantity)
+	}
+
+	return loot.Name
+}
+
 func renderTags(s *Snapshot) string {
 	counts := map[string]int{}
 	favorites := 0

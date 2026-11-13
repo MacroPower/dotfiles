@@ -22,16 +22,20 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v5-"
+	defsCachePrefix = "defs-v6-"
 
-	artifactCore        = "core"
-	artifactBuckets     = "InventoryBucket"
-	artifactDamage      = "DamageType"
-	artifactClasses     = "Class"
-	artifactStats       = "Stat"
-	artifactActivities  = "Activity"
-	artifactVendors     = "Vendor"
-	artifactVendorItems = "VendorItem"
+	artifactCore            = "core"
+	artifactBuckets         = "InventoryBucket"
+	artifactDamage          = "DamageType"
+	artifactClasses         = "Class"
+	artifactStats           = "Stat"
+	artifactActivities      = "Activity"
+	artifactActivityTypes   = "ActivityType"
+	artifactDestinations    = "Destination"
+	artifactPlaces          = "Place"
+	artifactActivityRewards = "ActivityReward"
+	artifactVendors         = "Vendor"
+	artifactVendorItems     = "VendorItem"
 )
 
 // Bungie DestinyItemType values that classify gear and plugs. Bungie
@@ -93,9 +97,17 @@ type BucketDef struct {
 
 // ActivityDef is the subset of a Bungie activity definition that the server
 // reads. Name is the full name that the definition stores, with its
-// difficulty labels, such as "Vault of Glass: Master".
+// difficulty labels, such as "Vault of Glass: Master". Type, Destination,
+// and Place hold the hashes of the activity type, the destination, and the
+// place of the activity. Each one is zero when the definition lacks it.
+// Mode is the Bungie DestinyActivityModeType value of the activity itself,
+// such as 2 for Story.
 type ActivityDef struct {
-	Name string `json:"name"`
+	Name        string `json:"name"`
+	Mode        int    `json:"mode,omitempty"`
+	Type        uint32 `json:"type,omitempty"`
+	Destination uint32 `json:"destination,omitempty"`
+	Place       uint32 `json:"place,omitempty"`
 }
 
 // VendorDef is the subset of a Bungie vendor definition that the server
@@ -109,23 +121,32 @@ type VendorDef struct {
 	FailureStrings []string       `json:"failureStrings,omitempty"`
 }
 
-// Defs holds the Destiny definitions that turn the hashes of a Bungie
-// profile, of the activity history, and of the vendor stock into names.
-// The Bungie enum value keys DamageTypes and Classes, and the definition
-// hash keys the other maps. VendorItems names the items and currencies
-// that the vendors list, among them the dummy items that Items leaves out.
-// Activities, Vendors, and VendorItems are empty when the service index
-// lists no artifact for them.
+// Defs holds the Destiny definitions that turn hashes into names. The
+// hashes come from a Bungie profile, the activity history, the activities
+// of a character, and the vendor stock. The Bungie enum value keys
+// DamageTypes and Classes, and the definition hash keys the other maps.
+//
+// ActivityTypes, Destinations, and Places name the activity types, the
+// destinations, and the places that an [ActivityDef] points at.
+// ActivityRewards names the reward items of the activities. VendorItems
+// names the items and currencies that the vendors list. Both name dummy
+// items, which Items leaves out. Activities, ActivityTypes, Destinations,
+// Places, ActivityRewards, Vendors, and VendorItems are empty when the
+// service index lists no artifact for them.
 type Defs struct {
-	Items       map[uint32]ItemDef     `json:"items"`
-	Buckets     map[uint32]BucketDef   `json:"buckets"`
-	Stats       map[uint32]string      `json:"stats"`
-	Activities  map[uint32]ActivityDef `json:"activities"`
-	Vendors     map[uint32]VendorDef   `json:"vendors"`
-	VendorItems map[uint32]string      `json:"vendorItems"`
-	DamageTypes map[int]string         `json:"damageTypes"`
-	Classes     map[int]string         `json:"classes"`
-	Version     string                 `json:"version"`
+	Items           map[uint32]ItemDef     `json:"items"`
+	Buckets         map[uint32]BucketDef   `json:"buckets"`
+	Stats           map[uint32]string      `json:"stats"`
+	Activities      map[uint32]ActivityDef `json:"activities"`
+	ActivityTypes   map[uint32]string      `json:"activityTypes"`
+	Destinations    map[uint32]string      `json:"destinations"`
+	Places          map[uint32]string      `json:"places"`
+	ActivityRewards map[uint32]string      `json:"activityRewards"`
+	Vendors         map[uint32]VendorDef   `json:"vendors"`
+	VendorItems     map[uint32]string      `json:"vendorItems"`
+	DamageTypes     map[int]string         `json:"damageTypes"`
+	Classes         map[int]string         `json:"classes"`
+	Version         string                 `json:"version"`
 }
 
 // TraitNames maps the lowercase name of every weapon trait to its display
@@ -250,15 +271,19 @@ func (l *DefsLoader) Get(ctx context.Context) (*Defs, error) {
 
 func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, error) {
 	defs := &Defs{
-		Version:     index.ManifestVersion,
-		Items:       map[uint32]ItemDef{},
-		Buckets:     map[uint32]BucketDef{},
-		Stats:       map[uint32]string{},
-		Activities:  map[uint32]ActivityDef{},
-		Vendors:     map[uint32]VendorDef{},
-		VendorItems: map[uint32]string{},
-		DamageTypes: map[int]string{},
-		Classes:     map[int]string{},
+		Version:         index.ManifestVersion,
+		Items:           map[uint32]ItemDef{},
+		Buckets:         map[uint32]BucketDef{},
+		Stats:           map[uint32]string{},
+		Activities:      map[uint32]ActivityDef{},
+		ActivityTypes:   map[uint32]string{},
+		Destinations:    map[uint32]string{},
+		Places:          map[uint32]string{},
+		ActivityRewards: map[uint32]string{},
+		Vendors:         map[uint32]VendorDef{},
+		VendorItems:     map[uint32]string{},
+		DamageTypes:     map[int]string{},
+		Classes:         map[int]string{},
 	}
 
 	files := index.Files[artifactCore]
@@ -292,12 +317,21 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 		}
 	}
 
-	// The inventory tools read neither the activity names nor the vendor
-	// definitions. They therefore keep working on a deployment whose index
-	// lists none of these artifacts.
+	// The inventory tools read neither the activity definitions nor the
+	// vendor definitions. They therefore keep working on a deployment whose
+	// index lists none of these artifacts.
 	optional := map[string]func(io.Reader) error{
 		artifactActivities: func(r io.Reader) error {
-			return decodeTable(r, func(hash uint32, row namedRow) { defs.Activities[hash] = ActivityDef(row) })
+			return decodeTable(r, func(hash uint32, row activityRow) { defs.Activities[hash] = row.activity() })
+		},
+		artifactActivityTypes: func(r io.Reader) error {
+			return decodeTable(r, func(hash uint32, row namedRow) { defs.ActivityTypes[hash] = row.Name })
+		},
+		artifactDestinations: func(r io.Reader) error {
+			return decodeTable(r, func(hash uint32, row namedRow) { defs.Destinations[hash] = row.Name })
+		},
+		artifactPlaces: func(r io.Reader) error {
+			return decodeTable(r, func(hash uint32, row namedRow) { defs.Places[hash] = row.Name })
 		},
 		artifactVendors: func(r io.Reader) error {
 			return decodeTable(r, func(hash uint32, row vendorRow) { defs.Vendors[hash] = row.vendor() })
@@ -314,6 +348,18 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	// The core artifact leaves out dummy items, and the rewards of the
+	// activities are dummies, so only the ActivityReward artifact names
+	// them.
+	err = readRecords(ctx, l, index.Files[artifactActivityRewards], func(row hashedRow) {
+		if row.Name != "" {
+			defs.ActivityRewards[row.Hash] = row.Name
+		}
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	err = readRecords(ctx, l, index.Files[artifactVendorItems], func(row hashedRow) {
@@ -459,16 +505,41 @@ func (row tableRow) bucket() BucketDef {
 }
 
 // namedRow is the subset of a projected definition table record that the
-// loader reads. The service build projects some tables, such as Activity,
-// to records that carry the name at the top level.
+// loader reads. The service build projects some tables, such as
+// ActivityType, to records that carry the name at the top level.
 type namedRow struct {
 	Name string `json:"name"`
 }
 
+// activityRow is the subset of a record of the Activity artifact that the
+// loader reads. The service build projects each activity definition to a
+// record with top-level fields. The record carries the name and the hashes
+// of the type, the destination, and the place. ModeType is the direct mode
+// type of the definition.
+type activityRow struct {
+	Name             string `json:"name"`
+	ModeType         int    `json:"modeType"`
+	ActivityTypeHash uint32 `json:"activityTypeHash"`
+	DestinationHash  uint32 `json:"destinationHash"`
+	PlaceHash        uint32 `json:"placeHash"`
+}
+
+// activity returns the activity definition that a record of the Activity
+// artifact holds.
+func (row activityRow) activity() ActivityDef {
+	return ActivityDef{
+		Name:        row.Name,
+		Mode:        row.ModeType,
+		Type:        row.ActivityTypeHash,
+		Destination: row.DestinationHash,
+		Place:       row.PlaceHash,
+	}
+}
+
 // hashedRow is the subset of a projected record of an array artifact that
 // the loader reads. The service build projects some arrays, such as
-// VendorItem, to records that carry the hash and the name at the top
-// level.
+// VendorItem and ActivityReward, to records that carry the hash and the
+// name at the top level.
 type hashedRow struct {
 	Name string `json:"name"`
 	Hash uint32 `json:"hash"`
@@ -517,7 +588,7 @@ func (row vendorRow) vendor() VendorDef {
 
 // decodeTable reads a JSON object that maps definition hashes to records.
 // The caller picks the record type Row, such as [tableRow], [namedRow], or
-// [vendorRow].
+// [activityRow].
 func decodeTable[Row any](r io.Reader, add func(hash uint32, row Row)) error {
 	var table map[string]Row
 

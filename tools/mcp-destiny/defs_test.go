@@ -26,14 +26,18 @@ func newFakeArtifacts() *fakeArtifacts {
 	return &fakeArtifacts{
 		version: "245114.26/1",
 		index: map[string][]string{
-			artifactCore:        {"core-0.json", "core-1.json"},
-			artifactBuckets:     {"buckets.json"},
-			artifactDamage:      {"damage.json"},
-			artifactClasses:     {"classes.json"},
-			artifactStats:       {"stats.json"},
-			artifactActivities:  {"activities.json"},
-			artifactVendors:     {"vendors.json"},
-			artifactVendorItems: {"vendor-items-0.json", "vendor-items-1.json"},
+			artifactCore:            {"core-0.json", "core-1.json"},
+			artifactBuckets:         {"buckets.json"},
+			artifactDamage:          {"damage.json"},
+			artifactClasses:         {"classes.json"},
+			artifactStats:           {"stats.json"},
+			artifactActivities:      {"activities.json"},
+			artifactActivityTypes:   {"activity-types.json"},
+			artifactDestinations:    {"destinations.json"},
+			artifactPlaces:          {"places.json"},
+			artifactActivityRewards: {"activity-rewards-0.json", "activity-rewards-1.json"},
+			artifactVendors:         {"vendors.json"},
+			artifactVendorItems:     {"vendor-items-0.json", "vendor-items-1.json"},
 		},
 		files: map[string]string{
 			"core-0.json": `[
@@ -59,13 +63,31 @@ func newFakeArtifacts() *fakeArtifacts {
 			"damage.json":  `{"3373582085": {"displayProperties": {"name": "Kinetic"}, "enumValue": 1}}`,
 			"classes.json": `{"671679327": {"displayProperties": {"name": "Hunter"}, "classType": 1}}`,
 			"stats.json":   `{"1240592695": {"displayProperties": {"name": "Range"}}}`,
-			// The service build projects each activity to a record with a
-			// top-level name.
+			// The service build projects each activity to a SlimActivity
+			// record. A field that the definition lacks stays out of the
+			// record.
 			"activities.json": `{
 				"3022541210": {"hash": 3022541210, "name": "Vault of Glass: Master", "description": "Raid.",
-				 "activityTypeHash": 2043403989, "modeTypes": [4], "isPlaylist": false},
+				 "activityTypeHash": 2043403989, "destinationHash": 1993421442, "placeHash": 3747705955,
+				 "modeType": 4, "modeTypes": [4], "isPlaylist": false, "leaderRequirements": [""]},
 				"2693136600": {"hash": 2693136600, "name": "Deep Stone Crypt", "modeTypes": [4]}
 			}`,
+			// The service build projects activity types, destinations, and
+			// places to records with a top-level name.
+			"activity-types.json": `{
+				"2043403989": {"hash": 2043403989, "name": "Raid", "icon": "/r.png"},
+				"1686739444": {"hash": 1686739444, "name": ""}
+			}`,
+			"destinations.json": `{"1993421442": {"hash": 1993421442, "name": "Venus"}}`,
+			"places.json":       `{"3747705955": {"hash": 3747705955, "name": "Venus"}, "1": {"hash": 1, "name": ""}}`,
+			// The service build splits the ActivityReward array across files.
+			"activity-rewards-0.json": `[
+				{"hash": 600, "name": "Raid Gear", "icon": "/g.png", "gearTier": {"low": 4, "high": 5}},
+				{"hash": 602, "name": ""}
+			]`,
+			"activity-rewards-1.json": `[
+				{"hash": 601, "name": "Deepsight Weapon"}
+			]`,
 			// The service build projects each vendor to a SlimVendor record.
 			"vendors.json": `{
 				"672118013": {"hash": 672118013,
@@ -165,9 +187,19 @@ func TestDefsLoader(t *testing.T) {
 		},
 		Stats: map[uint32]string{1240592695: "Range"},
 		Activities: map[uint32]ActivityDef{
-			3022541210: {Name: "Vault of Glass: Master"},
+			3022541210: {
+				Name:        "Vault of Glass: Master",
+				Mode:        4,
+				Type:        2043403989,
+				Destination: 1993421442,
+				Place:       3747705955,
+			},
 			2693136600: {Name: "Deep Stone Crypt"},
 		},
+		ActivityTypes:   map[uint32]string{2043403989: "Raid", 1686739444: ""},
+		Destinations:    map[uint32]string{1993421442: "Venus"},
+		Places:          map[uint32]string{3747705955: "Venus", 1: ""},
+		ActivityRewards: map[uint32]string{600: "Raid Gear", 601: "Deepsight Weapon"},
 		Vendors: map[uint32]VendorDef{
 			672118013: {
 				Name:           "Banshee-44",
@@ -185,7 +217,7 @@ func TestDefsLoader(t *testing.T) {
 		DamageTypes: map[int]string{1: "Kinetic"},
 		Classes:     map[int]string{1: "Hunter"},
 	}, got)
-	assert.Len(t, source.fetched, 10)
+	assert.Len(t, source.fetched, 15)
 
 	// Writing the cache removes the file of the older layout.
 	files, err := filepath.Glob(filepath.Join(dir, "*"))
@@ -213,7 +245,7 @@ func TestDefsLoader(t *testing.T) {
 	rebuilt, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "245200.1", rebuilt.Version)
-	assert.Len(t, source.fetched, 10)
+	assert.Len(t, source.fetched, 15)
 
 	files, err = filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
@@ -232,6 +264,26 @@ func TestDefsLoaderWithoutOptionalArtifacts(t *testing.T) {
 			artifact: artifactActivities,
 			files:    []string{"activities.json"},
 			field:    func(d *Defs) any { return d.Activities },
+		},
+		"activity types": {
+			artifact: artifactActivityTypes,
+			files:    []string{"activity-types.json"},
+			field:    func(d *Defs) any { return d.ActivityTypes },
+		},
+		"destinations": {
+			artifact: artifactDestinations,
+			files:    []string{"destinations.json"},
+			field:    func(d *Defs) any { return d.Destinations },
+		},
+		"places": {
+			artifact: artifactPlaces,
+			files:    []string{"places.json"},
+			field:    func(d *Defs) any { return d.Places },
+		},
+		"activity rewards": {
+			artifact: artifactActivityRewards,
+			files:    []string{"activity-rewards-0.json", "activity-rewards-1.json"},
+			field:    func(d *Defs) any { return d.ActivityRewards },
 		},
 		"vendors": {
 			artifact: artifactVendors,
@@ -282,6 +334,26 @@ func TestDefsLoaderErrors(t *testing.T) {
 		"activity table is not an object": {
 			break_: func(f *fakeArtifacts) { f.files["activities.json"] = `[]` },
 			err:    ErrDefs,
+		},
+		"activity type table is not an object": {
+			break_: func(f *fakeArtifacts) { f.files["activity-types.json"] = `[]` },
+			err:    ErrDefs,
+		},
+		"destination table is not an object": {
+			break_: func(f *fakeArtifacts) { f.files["destinations.json"] = `[]` },
+			err:    ErrDefs,
+		},
+		"place table is not an object": {
+			break_: func(f *fakeArtifacts) { f.files["places.json"] = `[]` },
+			err:    ErrDefs,
+		},
+		"second activity reward file is not an array": {
+			break_: func(f *fakeArtifacts) { f.files["activity-rewards-1.json"] = `{"hash": 601}` },
+			err:    ErrDefs,
+		},
+		"activity reward fetch fails": {
+			break_: func(f *fakeArtifacts) { delete(f.files, "activity-rewards-1.json") },
+			err:    ErrService,
 		},
 		"vendor table is not an object": {
 			break_: func(f *fakeArtifacts) { f.files["vendors.json"] = `[]` },

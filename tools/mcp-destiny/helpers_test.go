@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -56,6 +57,21 @@ const (
 // vault hand cannon, the helmet, and an item that left the inventory. The
 // Titan saved one loadout, which holds the hand cannon that the Hunter has
 // equipped.
+//
+// The activities of the Hunter come out of rank order. Vault of Glass
+// offers the most bonus drops across two reward mappings. Its first
+// focused reward has no reward record, and two of its bonus loot items
+// share a name. It also lists bonus loot with a quantity of zero and bonus
+// loot without a reward record. Control offers only a focused reward
+// without a reward record. Warlord's Ruin recommends a power of zero, and
+// The Coil recommends a null power. Vanguard Ops and Battleground: Oracle
+// leave out isVisible.
+//
+// The Hunter can also play activities that the tool leaves out. The game
+// hides Pantheon, and 4005 has no definition. The definition of 3334 has
+// no name. The Witness has the Story mode, Excision: Grandmaster has a
+// Story type, and The Tower has the Social mode. The Titan can play
+// Control.
 const fixtureProfile = `{
 	"profileInventory": {"data": {"items": [
 		{"itemHash": 100, "itemInstanceId": "1001", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802, "state": 5},
@@ -106,6 +122,53 @@ const fixtureProfile = `{
 			{"nameHash": 7, "iconHash": 8, "colorHash": 9, "items": [
 				{"itemInstanceId": "1006", "plugItemHashes": [2166136261]}
 			]}
+		]}
+	}},
+	"characterActivities": {"data": {
+		"c1": {"dateActivityStarted": "2026-11-10T11:00:00Z", "availableActivities": [
+			{"activityHash": 4444, "isVisible": true, "isFocusedActivity": false, "canLead": true, "visibleRewards": [
+				{"displayBehavior": 0, "rewardItems": [
+					{"uiStyle": "daily_grind_guaranteed", "itemQuantity": {"itemHash": 698, "quantity": 1}}
+				]}
+			]},
+			{"activityHash": 3022541210, "isVisible": true, "recommendedLight": 2010, "visibleRewards": [
+				{"rewardItems": [
+					{"uiStyle": "extra_engram", "itemQuantity": {"itemHash": 3956025454, "quantity": 2}},
+					{"uiStyle": "daily_grind_guaranteed", "itemQuantity": {"itemHash": 698, "quantity": 1}},
+					{"uiStyle": "daily_grind_guaranteed", "itemQuantity": {"itemHash": 601, "quantity": 1}},
+					{"itemQuantity": {"itemHash": 600, "quantity": 1}}
+				]},
+				{"rewardItems": [
+					{"uiStyle": "extra_engram", "itemQuantity": {"itemHash": 3956025454, "quantity": 1}},
+					{"uiStyle": "", "itemQuantity": {"itemHash": 605, "quantity": 1}},
+					{"itemQuantity": {"itemHash": 603, "quantity": 0}},
+					{"itemQuantity": {"itemHash": 699, "quantity": 1}}
+				]}
+			]},
+			{"activityHash": 4009, "recommendedLight": 1980},
+			{"activityHash": 2222, "visibleRewards": [{"rewardItems": [
+				{"itemQuantity": {"itemHash": 604, "quantity": 2}}
+			]}]},
+			{"activityHash": 4002, "isVisible": true, "isFocusedActivity": true, "recommendedLight": null},
+			{"activityHash": 4004, "isVisible": false, "visibleRewards": [{"rewardItems": [
+				{"uiStyle": "extra_engram", "itemQuantity": {"itemHash": 3956025454, "quantity": 5}}
+			]}]},
+			{"activityHash": 4005, "isVisible": true, "visibleRewards": [{"rewardItems": [
+				{"uiStyle": "extra_engram", "itemQuantity": {"itemHash": 3956025454, "quantity": 4}}
+			]}]},
+			{"activityHash": 3334, "isVisible": true},
+			{"activityHash": 4006, "isVisible": true},
+			{"activityHash": 4007, "isVisible": true},
+			{"activityHash": 4008, "isVisible": true},
+			{"activityHash": 4003, "isVisible": true, "recommendedLight": 2020, "visibleRewards": [{"rewardItems": [
+				{"uiStyle": "daily_grind_guaranteed", "itemQuantity": {"itemHash": 606, "quantity": 1}}
+			]}]},
+			{"activityHash": 4001, "isVisible": true, "recommendedLight": 0, "visibleRewards": [{"rewardItems": [
+				{"uiStyle": "extra_engram", "itemQuantity": {"itemHash": 3956025454, "quantity": 1}}
+			]}]}
+		]},
+		"c2": {"availableActivities": [
+			{"activityHash": 4444, "isVisible": true, "recommendedLight": 1990}
 		]}
 	}},
 	"itemComponents": {
@@ -368,11 +431,37 @@ func fixtureDefs() *Defs {
 		},
 		Stats: map[uint32]string{1: "Range", 2: "Health", 3: "Grenade"},
 		Activities: map[uint32]ActivityDef{
-			3022541210: {Name: "Vault of Glass: Master"},
-			2222:       {Name: "Vanguard Ops"},
+			3022541210: {Name: "Vault of Glass: Master", Mode: 4, Type: 100, Destination: 700, Place: 800},
+			2222:       {Name: "Vanguard Ops", Mode: 18, Type: 103},
 			3334:       {},
-			4444:       {Name: "Control"},
+			4444:       {Name: "Control", Mode: 10, Type: 101, Destination: 702, Place: 800},
 			5555:       {Name: "Crucible"},
+			4001:       {Name: "Warlord's Ruin", Mode: 82, Type: 102, Destination: 701, Place: 800},
+			4002:       {Name: "The Coil", Mode: 6, Type: 104, Destination: 703},
+			4003:       {Name: "Nightfall: Grandmaster", Mode: 46, Type: 103},
+			4004:       {Name: "Pantheon", Mode: 4, Type: 100},
+			4006:       {Name: "The Witness", Mode: 2, Type: 104},
+			4007:       {Name: "Excision: Grandmaster", Type: 1686739444},
+			4008:       {Name: "The Tower", Mode: 40},
+			4009:       {Name: "Battleground: Oracle", Mode: 18, Type: 103},
+		},
+		ActivityTypes: map[uint32]string{
+			100:        "Raid",
+			101:        "The Crucible",
+			102:        "Dungeon",
+			103:        "Strike",
+			104:        "Exotic Mission",
+			1686739444: "Story",
+		},
+		Destinations: map[uint32]string{700: "Venus", 702: "The Crucible", 703: "Neptune"},
+		Places:       map[uint32]string{800: "Earth"},
+		ActivityRewards: map[uint32]string{
+			600: "Raid Gear",
+			601: "Deepsight Weapon",
+			603: "Powerful Gear",
+			604: "Enhancement Prism",
+			605: "Raid Gear",
+			606: "Adept Weapon",
 		},
 		Vendors: map[uint32]VendorDef{
 			vendorBanshee: {
@@ -499,6 +588,10 @@ type fakes struct {
 	serviceData map[string]string
 	// bungieData holds the GET response body of each Bungie path.
 	bungieData map[string]string
+	// activitiesBody is the response body of the profile request that
+	// asks only for the activities. When it is empty, that request gets
+	// fixtureProfile, the same body as the snapshot request.
+	activitiesBody string
 	// staleSession and staleAccess are tokens that the fakes reject.
 	staleSession string
 	staleAccess  string
@@ -579,6 +672,9 @@ func newFakes(t *testing.T) *fakes {
 			writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": {"primaryMembershipId": "4611",
 				"destinyMemberships": [{"membershipType": 2, "membershipId": "1"}, {"membershipType": 3, "membershipId": "4611"}]}}`)
 
+		case req.Path == "/Destiny2/3/Profile/4611/" && f.activitiesBody != "" &&
+			strings.HasPrefix(req.Query, "components=204&"):
+			writeJSON(t, w, http.StatusOK, f.activitiesBody)
 		case req.Path == "/Destiny2/3/Profile/4611/":
 			writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+fixtureProfile+`}`)
 		case req.Method == http.MethodGet && f.bungieData[req.Path] != "":

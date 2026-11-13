@@ -638,6 +638,112 @@ func TestBungieVendors(t *testing.T) {
 	}, vendors.Sales.Data)
 }
 
+func TestBungieActivities(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(t, r)
+		assert.Equal(t, "key", r.Header.Get("X-Api-Key"))
+
+		writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": {"characterActivities": {"data": {
+			"c1": {"dateActivityStarted": "2026-11-10T11:00:00Z", "currentActivityHash": 0, "availableActivities": [
+				{"activityHash": 10, "isVisible": false, "isNew": true, "recommendedLight": 2010,
+				 "isFocusedActivity": true, "challenges": [], "visibleRewards": [
+					{"displayBehavior": 1, "rewardItems": [
+						{"uiStyle": "extra_engram", "itemQuantity": {"itemHash": 3956025454, "quantity": 2,
+						 "hasConditionalVisibility": false}},
+						{"itemQuantity": {"itemHash": 600, "quantity": 1}}
+					]},
+					{"rewardItems": [{"uiStyle": "daily_grind_guaranteed", "itemQuantity": {"itemHash": 601, "quantity": 1}}]}
+				]},
+				{"activityHash": 11, "recommendedLight": null},
+				{"activityHash": 12, "isVisible": true}
+			]}
+		}}}}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	b := NewBungie(WithBungieURL(srv.URL))
+	b.now = func() time.Time { return fixtureNow }
+
+	got, err := b.Activities(
+		t.Context(),
+		Credentials{APIKey: "key", AccessToken: "access"},
+		Membership{ID: "4611", Type: 3},
+	)
+	require.NoError(t, err)
+
+	calls := rec.calls(http.MethodGet, "/Destiny2/3/Profile/4611/")
+	require.Len(t, calls, 1)
+	assert.Equal(t, "components=204&_="+strconv.FormatInt(fixtureNow.UnixMilli(), 10), calls[0].Query)
+	assert.Equal(t, "Bearer access", calls[0].Auth)
+
+	reward := func(style string, hash uint32, quantity int) ActivityRewardItem {
+		item := ActivityRewardItem{UIStyle: style}
+		item.ItemQuantity.ItemHash = hash
+		item.ItemQuantity.Quantity = quantity
+
+		return item
+	}
+
+	require.Len(t, got, 1)
+
+	// A missing isVisible decodes as visible.
+	activities := got[hunterID].Available
+	assert.Equal(t, []AvailableActivity{
+		{
+			Hash:             10,
+			RecommendedLight: 2010,
+			Focused:          true,
+			VisibleRewards: []ActivityRewardMapping{
+				{RewardItems: []ActivityRewardItem{reward(rewardBonusDrop, 3956025454, 2), reward("", 600, 1)}},
+				{RewardItems: []ActivityRewardItem{reward(rewardFocus, 601, 1)}},
+			},
+		},
+		{Hash: 11, Visible: true},
+		{Hash: 12, Visible: true},
+	}, activities)
+
+	assert.Equal(t, []ActivityRewardItem{
+		reward(rewardBonusDrop, 3956025454, 2),
+		reward("", 600, 1),
+		reward(rewardFocus, 601, 1),
+	}, activities[0].RewardItems())
+	assert.Empty(t, activities[1].RewardItems())
+}
+
+func TestBungieActivitiesErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		body string
+		err  error
+	}{
+		"Bungie refuses": {
+			body: `{"ErrorCode": 1665, "ErrorStatus": "DestinyPrivacyRestriction", "Message": "Private."}`,
+			err:  ErrBungie,
+		},
+		"activity is not an object": {
+			body: `{"ErrorCode": 1, "Response": {"characterActivities": {"data": {"c1": {"availableActivities": [1]}}}}}`,
+			err:  ErrBungie,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			u, _ := serve(t, http.StatusOK, tc.body)
+
+			_, err := NewBungie(WithBungieURL(u)).
+				Activities(t.Context(), Credentials{APIKey: "key", AccessToken: "access"}, Membership{ID: "4611", Type: 3})
+			require.ErrorIs(t, err, tc.err)
+		})
+	}
+}
+
 func TestBungieActivityHistory(t *testing.T) {
 	t.Parallel()
 

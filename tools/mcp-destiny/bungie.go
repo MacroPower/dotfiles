@@ -59,6 +59,11 @@ var (
 	// vendor sales.
 	vendorComponents = []int{400, 401, 402}
 
+	// activityComponents lists the GetProfile components that
+	// [*Bungie.Activities] requests. They cover the activities of each
+	// character.
+	activityComponents = []int{204}
+
 	// ErrBungie marks failures that originate from the Bungie platform API.
 	// A [*BungieError] carries the platform error code.
 	ErrBungie = errors.New("bungie")
@@ -320,6 +325,77 @@ type VendorsResponse struct {
 	} `json:"sales"`
 }
 
+// CharacterActivities is the subset of a Bungie
+// DestinyCharacterActivitiesComponent that the server reads. Available
+// lists the activities that the character can play.
+type CharacterActivities struct {
+	Available []AvailableActivity `json:"availableActivities"`
+}
+
+// AvailableActivity is the subset of a Bungie DestinyActivity that the
+// server reads. Hash is the hash of the activity definition. Visible is
+// false when the game hides the activity, and the decoder sets it to true
+// when Bungie leaves the field out. RecommendedLight is zero when the
+// activity has no recommended power. Focused marks an activity in the
+// featured carousel of the Portal.
+type AvailableActivity struct {
+	VisibleRewards   []ActivityRewardMapping `json:"visibleRewards"`
+	RecommendedLight int                     `json:"recommendedLight"`
+	Hash             uint32                  `json:"activityHash"`
+	Visible          bool                    `json:"isVisible"`
+	Focused          bool                    `json:"isFocusedActivity"`
+}
+
+// UnmarshalJSON decodes a Bungie DestinyActivity. The web client skips an
+// activity only when isVisible is false, so a missing isVisible decodes as
+// true.
+func (a *AvailableActivity) UnmarshalJSON(raw []byte) error {
+	type plain AvailableActivity
+
+	out := plain{Visible: true}
+
+	err := json.Unmarshal(raw, &out)
+	if err != nil {
+		return fmt.Errorf("decoding activity: %w", err)
+	}
+
+	*a = AvailableActivity(out)
+
+	return nil
+}
+
+// RewardItems returns the reward items of every reward mapping of the
+// activity, in order.
+func (a AvailableActivity) RewardItems() []ActivityRewardItem {
+	var items []ActivityRewardItem
+
+	for _, mapping := range a.VisibleRewards {
+		items = append(items, mapping.RewardItems...)
+	}
+
+	return items
+}
+
+// ActivityRewardMapping is the subset of a Bungie
+// DestinyActivityRewardMapping that the server reads.
+type ActivityRewardMapping struct {
+	RewardItems []ActivityRewardItem `json:"rewardItems"`
+}
+
+// ActivityRewardItem is one Bungie DestinyActivityRewardItem, a reward that
+// an activity still offers this week. UIStyle names how the game shows the
+// reward, such as "extra_engram" for a bonus drop, and it is empty for
+// ordinary loot. Bungie drops a reward from the list after the character
+// claims it, and a Quantity of zero also marks a reward that Bungie
+// omits.
+type ActivityRewardItem struct {
+	UIStyle      string `json:"uiStyle"`
+	ItemQuantity struct {
+		ItemHash uint32 `json:"itemHash"`
+		Quantity int    `json:"quantity"`
+	} `json:"itemQuantity"`
+}
+
 // ItemAction identifies one item for a transfer, an equip, a Postmaster
 // pull, a lock change, or a plug insert. CharacterID names the character
 // that receives the item on a transfer from the vault, an equip, or a
@@ -443,6 +519,30 @@ func (b *Bungie) Vendors(
 	}
 
 	return &out, nil
+}
+
+// Activities fetches the activities that each character can play, keyed
+// by character id, with the rewards that each activity still offers this
+// week.
+func (b *Bungie) Activities(
+	ctx context.Context,
+	creds Credentials,
+	m Membership,
+) (map[string]CharacterActivities, error) {
+	path := fmt.Sprintf("/Destiny2/%d/Profile/%s/?%s", m.Type, m.ID, b.componentsQuery(activityComponents))
+
+	var out struct {
+		CharacterActivities struct {
+			Data map[string]CharacterActivities `json:"data"`
+		} `json:"characterActivities"`
+	}
+
+	err := b.call(ctx, creds, http.MethodGet, path, nil, &out)
+	if err != nil {
+		return nil, err
+	}
+
+	return out.CharacterActivities.Data, nil
 }
 
 // componentsQuery returns the query string that requests components from

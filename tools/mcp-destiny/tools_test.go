@@ -8,6 +8,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -68,12 +69,12 @@ func TestServerListsTools(t *testing.T) {
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolRemoveAutotagRule,
 		toolMoveStack, toolSetLock, toolSetPerk, toolSetAutotagEnabled, toolListActivityHistory,
-		toolListLoadouts, toolEquipLoadout, toolGetStats, toolListVendors,
+		toolListLoadouts, toolEquipLoadout, toolGetStats, toolListVendors, toolListActivities,
 	}, names)
 
 	for _, tool := range tools.Tools {
 		switch tool.Name {
-		case toolListVendors:
+		case toolListVendors, toolListActivities:
 			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
 		case toolGetStats:
 			require.NotNil(t, tool.Annotations)
@@ -965,6 +966,215 @@ func TestListVendorsRefetches(t *testing.T) {
 
 	assert.Len(t, f.bungie.calls(http.MethodGet, pathHunterVendors), 2)
 	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+}
+
+func TestListActivities(t *testing.T) {
+	t.Parallel()
+
+	const (
+		header = "activity | type | location | power | bonus drops | focus | bonus loot | flags | hash"
+		vog    = "Vault of Glass: Master | Raid | Venus | 2010 | 3 | Deepsight Weapon | Raid Gear x2 |  | 3022541210"
+		ruin   = "Warlord's Ruin | Dungeon | Earth |  | 1 |  |  |  | 4001"
+		gm     = "Nightfall: Grandmaster | Strike |  | 2020 |  | Adept Weapon |  |  | 4003"
+		ops    = "Vanguard Ops | Strike |  |  |  |  | Enhancement Prism x2 |  | 2222"
+		coil   = "The Coil | Exotic Mission | Neptune |  |  |  |  | featured | 4002"
+		oracle = "Battleground: Oracle | Strike |  | 1980 |  |  |  |  | 4009"
+		ctrl   = "Control | The Crucible |  |  |  |  |  |  | 4444"
+	)
+
+	intro := func(first, last, total int, owner string) string {
+		return fmt.Sprintf("Activities %d-%d of %d for %s, with the rewards that each one still offers this week.",
+			first, last, total, owner)
+	}
+
+	hunter := strings.Join([]string{intro(1, 7, 7, "Hunter"), "", header, vog, ruin, gm, ops, coil, oracle, ctrl}, "\n")
+
+	// The Hunter gets one named activity more than a page holds at most.
+	manyEntries := make([]string, 0, maxItemLimit+1)
+	manyPage := []string{intro(1, 200, 201, "Hunter") + " Pass offset=200 for the next page.", "", header}
+
+	for i := range uint32(maxItemLimit + 1) {
+		manyEntries = append(manyEntries, fmt.Sprintf(`{"activityHash": %d, "isVisible": true}`, 5000+i))
+
+		if i < maxItemLimit {
+			manyPage = append(manyPage, fmt.Sprintf("Activity %03d |  |  |  |  |  |  |  | %d", i, 5000+i))
+		}
+	}
+
+	manyDefs := func(d *Defs) {
+		for i := range uint32(maxItemLimit + 1) {
+			d.Activities[5000+i] = ActivityDef{Name: fmt.Sprintf("Activity %03d", i)}
+		}
+	}
+
+	tests := map[string]struct {
+		in         ListActivitiesInput
+		defs       func(*Defs)
+		activities string
+		want       string
+		fetches    int
+		isError    bool
+	}{
+		"most recently played character": {
+			fetches: 1,
+			want:    hunter,
+		},
+		"character id": {
+			in:      ListActivitiesInput{Character: hunterID},
+			fetches: 1,
+			want:    hunter,
+		},
+		"class name": {
+			in:      ListActivitiesInput{Character: "TITAN"},
+			fetches: 1,
+			want: strings.Join([]string{
+				intro(1, 1, 1, "Titan"),
+				"",
+				header,
+				"Control | The Crucible |  | 1990 |  |  |  |  | 4444",
+			}, "\n"),
+		},
+		"rewards": {
+			in:      ListActivitiesInput{Rewards: true},
+			fetches: 1,
+			want:    strings.Join([]string{intro(1, 4, 4, "Hunter"), "", header, vog, ruin, gm, ops}, "\n"),
+		},
+		"query matches a bonus loot name": {
+			in:      ListActivitiesInput{Query: " RAID gear "},
+			fetches: 1,
+			want:    strings.Join([]string{intro(1, 1, 1, "Hunter"), "", header, vog}, "\n"),
+		},
+		"query matches a focused reward": {
+			in:      ListActivitiesInput{Query: "adept"},
+			fetches: 1,
+			want:    strings.Join([]string{intro(1, 1, 1, "Hunter"), "", header, gm}, "\n"),
+		},
+		"query matches a location": {
+			in:      ListActivitiesInput{Query: "earth"},
+			fetches: 1,
+			want:    strings.Join([]string{intro(1, 1, 1, "Hunter"), "", header, ruin}, "\n"),
+		},
+		"query matches a type": {
+			in:      ListActivitiesInput{Query: "strike"},
+			fetches: 1,
+			want:    strings.Join([]string{intro(1, 3, 3, "Hunter"), "", header, gm, ops, oracle}, "\n"),
+		},
+		"query matches a name": {
+			in:      ListActivitiesInput{Query: "coil"},
+			fetches: 1,
+			want:    strings.Join([]string{intro(1, 1, 1, "Hunter"), "", header, coil}, "\n"),
+		},
+		"query and rewards": {
+			in:      ListActivitiesInput{Query: "strike", Rewards: true},
+			fetches: 1,
+			want:    strings.Join([]string{intro(1, 2, 2, "Hunter"), "", header, gm, ops}, "\n"),
+		},
+		"query matches nothing": {
+			in:      ListActivitiesInput{Query: "gambit"},
+			fetches: 1,
+			want:    "No activities of Hunter match.",
+		},
+		"limit and offset": {
+			in:      ListActivitiesInput{Limit: 2, Offset: 1},
+			fetches: 1,
+			want: strings.Join([]string{
+				intro(2, 3, 7, "Hunter") + " Pass offset=3 for the next page.",
+				"",
+				header,
+				ruin,
+				gm,
+			}, "\n"),
+		},
+		"last page": {
+			in:      ListActivitiesInput{Limit: 1000, Offset: 5},
+			fetches: 1,
+			want:    strings.Join([]string{intro(6, 7, 7, "Hunter"), "", header, oracle, ctrl}, "\n"),
+		},
+		"limit above the maximum": {
+			in:   ListActivitiesInput{Limit: 1000},
+			defs: manyDefs,
+			activities: `{"ErrorCode": 1, "Response": {"characterActivities": {"data": {"` + hunterID +
+				`": {"availableActivities": [` + strings.Join(manyEntries, ", ") + `]}}}}}`,
+			fetches: 1,
+			want:    strings.Join(manyPage, "\n"),
+		},
+		"offset past the last activity": {
+			in:      ListActivitiesInput{Offset: 7},
+			fetches: 1,
+			want:    "Offset 7 is past the last of 7 matching activities.",
+		},
+		"no activities": {
+			activities: `{"ErrorCode": 1, "Response": {}}`,
+			fetches:    1,
+			want:       "Bungie lists no activities that Hunter can play.",
+		},
+		"definitions without activities": {
+			defs:    func(d *Defs) { d.Activities = map[uint32]ActivityDef{} },
+			fetches: 1,
+			want: "The list leaves out all 13 activities that Bungie lists for Hunter, because the game hides " +
+				"them, the definitions do not name them, or they are Story or Social activities.",
+		},
+		"Bungie refuses": {
+			activities: `{"ErrorCode": 1665, "ErrorStatus": "DestinyPrivacyRestriction", "Message": "Private."}`,
+			fetches:    1,
+			want:       "fetching the activities: bungie: DestinyPrivacyRestriction: Private.",
+			isError:    true,
+		},
+		"vault": {
+			in:      ListActivitiesInput{Character: "vault"},
+			want:    "unknown location: the vault is not a character, so pass a character id or a class name",
+			isError: true,
+		},
+		"unknown character": {
+			in:      ListActivitiesInput{Character: "tower"},
+			want:    `unknown location: "tower" is not a character id or a class name`,
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.activitiesBody = tc.activities
+
+			if tc.defs != nil {
+				tc.defs(f.h.defs.defs)
+			}
+
+			got, isError := call(t, f.h.handleListActivities, tc.in)
+			assert.Equal(t, tc.isError, isError)
+			assert.Equal(t, tc.want, got)
+
+			// The first request fetches the inventory snapshot, and every
+			// later one fetches only the activities.
+			calls := f.bungie.calls(http.MethodGet, pathProfile)
+			require.Len(t, calls, 1+tc.fetches)
+
+			query, err := url.ParseQuery(calls[0].Query)
+			require.NoError(t, err)
+			assert.NotContains(t, strings.Split(query.Get("components"), ","), "204")
+
+			for _, req := range calls[1:] {
+				assert.Regexp(t, `^components=204&_=\d+$`, req.Query)
+			}
+		})
+	}
+}
+
+func TestListActivitiesRefetches(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	for range 2 {
+		got, isError := call(t, f.h.handleListActivities, ListActivitiesInput{})
+		require.False(t, isError, got)
+	}
+
+	// The snapshot serves both calls, and each call fetches the activities.
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 3)
 }
 
 func TestRefreshOnUnauthorized(t *testing.T) {

@@ -3475,6 +3475,7 @@ in
           "mcp__destiny__list_perk_preferences"
           "mcp__destiny__list_autotag_rules"
           "mcp__destiny__list_activity_history"
+          "mcp__destiny__list_activities"
           "mcp__destiny__list_vendors"
           "mcp__destiny__get_stats"
         ];
