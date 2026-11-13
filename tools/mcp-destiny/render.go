@@ -156,7 +156,22 @@ func slotsLabel(used, capacity int) string {
 // is empty for every item without a stat total, such as a weapon. A nonempty
 // stat adds a column with the value of that stat, and perks adds a column
 // with the equipped perks.
-func renderItems(s *Snapshot, items []*Item, offset, total int, stat string, perks bool) string {
+//
+// Sources holds the [RatingSource] of each game mode, and nil leaves the
+// roll ratings out. With sources, the table gains one rating column for
+// each game mode, between the flags and the perks. The cell of a weapon
+// holds the text of [ratingLabel], and the cell of every other item is
+// empty. One line for each game mode without ratings gives the reason,
+// between the first line and the table. A result without a table has no
+// such line.
+func renderItems(
+	s *Snapshot,
+	items []*Item,
+	offset, total int,
+	stat string,
+	perks bool,
+	sources map[string]RatingSource,
+) string {
 	if total == 0 {
 		return "No items match."
 	}
@@ -173,6 +188,12 @@ func renderItems(s *Snapshot, items []*Item, offset, total int, stat string, per
 		fmt.Fprintf(&b, " Pass offset=%d for the next page.", offset+len(items))
 	}
 
+	if sources != nil {
+		for _, reason := range ratingReasons(sources) {
+			b.WriteString("\n" + reason)
+		}
+	}
+
 	b.WriteString("\n\ninstance id | name | type | tier | power | stat total")
 
 	if stat != "" {
@@ -180,6 +201,12 @@ func renderItems(s *Snapshot, items []*Item, offset, total int, stat string, per
 	}
 
 	b.WriteString(" | location | tag | flags")
+
+	if sources != nil {
+		for _, mode := range perkModes {
+			b.WriteString(" | " + mode + " rating")
+		}
+	}
 
 	if perks {
 		b.WriteString(" | perks")
@@ -200,6 +227,12 @@ func renderItems(s *Snapshot, items []*Item, offset, total int, stat string, per
 		}
 
 		fields = append(fields, s.LocationLabel(item), item.Tag, strings.Join(flagsOf(item), ", "))
+
+		if sources != nil {
+			for _, mode := range perkModes {
+				fields = append(fields, ratingCell(sources[mode], item))
+			}
+		}
 
 		if perks {
 			names := make([]string, 0, len(item.Perks))
@@ -458,13 +491,13 @@ func perkLabel(perk Perk) string {
 // order. The line of a column that hit names each perk that earns the
 // column, and it marks each perk that the user likes.
 func writeRating(b *strings.Builder, mode string, rating Rating) {
-	fmt.Fprintf(b, "- %s: ", modeLabels[mode])
-
 	if rating.Err != nil {
-		fmt.Fprintf(b, "%s\n", rating.Err)
+		fmt.Fprintf(b, "- %s\n", ratingReason(mode, rating.Err))
 
 		return
 	}
+
+	fmt.Fprintf(b, "- %s: ", modeLabels[mode])
 
 	label := sheetLabels[mode]
 
@@ -523,6 +556,74 @@ func writeRating(b *strings.Builder, mode string, rating Rating) {
 		}
 
 		fmt.Fprintf(b, "  Column %d: hit with %s\n", i+1, strings.Join(names, ", "))
+	}
+}
+
+// ratingReason returns the text that says why one game mode has no
+// ratings. The text is the label of the mode and the text of err, such
+// as "PvP: rating unavailable: the service publishes no PvP sheet".
+// Every output that reports the reason of a mode prints this text.
+func ratingReason(mode string, err error) string {
+	return modeLabels[mode] + ": " + err.Error()
+}
+
+// ratingReasons returns the [ratingReason] of each game mode whose
+// source holds an Err, in the order of [perkModes]. It returns no line
+// when every mode has ratings.
+func ratingReasons(sources map[string]RatingSource) []string {
+	var reasons []string
+
+	for _, mode := range perkModes {
+		err := sources[mode].Err
+		if err != nil {
+			reasons = append(reasons, ratingReason(mode, err))
+		}
+	}
+
+	return reasons
+}
+
+// ratingCell returns the rating cell that the source of one game mode
+// gives item in a table. The cell of a weapon holds the [ratingLabel] of
+// its [Rating]. Only weapons have roll ratings, so the cell of every
+// other item is empty, also when the mode has no ratings.
+func ratingCell(source RatingSource, item *Item) string {
+	if item.Kind != kindWeapon {
+		return ""
+	}
+
+	return ratingLabel(rate(source, item))
+}
+
+// ratingLabel returns the text of a rating cell for one [Rating]. The
+// text names the first of these states that holds:
+//
+//   - "unavailable": the game mode has no ratings.
+//   - "not listed": the sheet does not list the weapon.
+//   - "no tier": the row of the weapon has no tier.
+//   - "roll unknown (sheet S)": the profile lists no perks for the copy,
+//     on a row with the tier S and perk columns.
+//   - "S": the roll keeps the tier S of the row.
+//   - "A (sheet S)": the roll moved down from the tier S of the row.
+//
+// A row without a tier reads "no tier" for every copy, because each
+// later text names the tier of the row.
+func ratingLabel(rating Rating) string {
+	roll := rating.Roll
+
+	switch {
+	case rating.Err != nil:
+		return "unavailable"
+	case roll == nil:
+		return "not listed"
+	case roll.Row.Tier == "":
+		return "no tier"
+	case roll.Unknown:
+		return fmt.Sprintf("roll unknown (sheet %s)", roll.Row.Tier)
+	case roll.Overall == roll.Row.Tier:
+		return roll.Overall
+	default:
+		return fmt.Sprintf("%s (sheet %s)", roll.Overall, roll.Row.Tier)
 	}
 }
 

@@ -110,26 +110,27 @@ type CompleteLoginInput struct {
 
 // ListItemsInput is the input schema of the list_items tool.
 type ListItemsInput struct {
-	Query        string `json:"query,omitzero"         jsonschema:"Case-insensitive substring of the item name or type, such as 'fatebringer' or 'hand cannon'"`
-	Kind         string `json:"kind,omitzero"          jsonschema:"weapon, armor, gear (weapons and armor, the default), other, or all"`
-	Slot         string `json:"slot,omitzero"          jsonschema:"Substring of the slot name, such as 'kinetic', 'energy', 'power', 'helmet', or 'class armor'"`
-	Tier         string `json:"tier,omitzero"          jsonschema:"Rarity, such as 'exotic' or 'legendary'"`
-	Class        string `json:"class,omitzero"         jsonschema:"Class that armor belongs to: hunter, titan, or warlock"`
-	Damage       string `json:"damage,omitzero"        jsonschema:"Damage type, such as 'kinetic', 'arc', 'solar', 'void', 'stasis', or 'strand'"`
-	Location     string `json:"location,omitzero"      jsonschema:"vault, postmaster, equipped, characters (any character), a character id, or a class name"`
-	Tag          string `json:"tag,omitzero"           jsonschema:"Tag id from list_tags, 'none' for untagged items, or 'any' for tagged items"`
-	Perk         string `json:"perk,omitzero"          jsonschema:"Case-insensitive substring of a perk the item has equipped, such as 'kill clip'"`
-	Stat         string `json:"stat,omitzero"          jsonschema:"Case-insensitive full name of one stat, such as 'health' for armor or 'range' for weapons. Adds a column with its value, and min_stat and sort=stat read it"`
-	Sort         string `json:"sort,omitzero"          jsonschema:"name (default), power (highest first), newest (most recently acquired first), total (highest armor stat total first), or stat (highest value of the stat that stat names first)"`
-	MinPower     int    `json:"min_power,omitzero"     jsonschema:"Lowest power level to include"`
-	MaxPower     int    `json:"max_power,omitzero"     jsonschema:"Highest power level to include"`
-	MinTotal     int    `json:"min_total,omitzero"     jsonschema:"Lowest armor stat total to include. Only armor has a stat total, so a positive value returns only armor"`
-	MinStat      int    `json:"min_stat,omitzero"      jsonschema:"Lowest value of the stat that stat names. Items that lack the stat do not match"`
-	Limit        int    `json:"limit,omitzero"         jsonschema:"Maximum number of items to return (default 50, maximum 200)"`
-	Offset       int    `json:"offset,omitzero"        jsonschema:"Number of matching items to skip (default 0)"`
-	Favorite     bool   `json:"favorite,omitzero"      jsonschema:"Return only favorites"`
-	IncludePerks bool   `json:"include_perks,omitzero" jsonschema:"Add a column with the equipped perks of each item"`
-	Refresh      bool   `json:"refresh,omitzero"       jsonschema:"Fetch the inventory from Bungie again instead of reusing a copy up to 30 seconds old"`
+	Query          string `json:"query,omitzero"           jsonschema:"Case-insensitive substring of the item name or type, such as 'fatebringer' or 'hand cannon'"`
+	Kind           string `json:"kind,omitzero"            jsonschema:"weapon, armor, gear (weapons and armor, the default), other, or all"`
+	Slot           string `json:"slot,omitzero"            jsonschema:"Substring of the slot name, such as 'kinetic', 'energy', 'power', 'helmet', or 'class armor'"`
+	Tier           string `json:"tier,omitzero"            jsonschema:"Rarity, such as 'exotic' or 'legendary'"`
+	Class          string `json:"class,omitzero"           jsonschema:"Class that armor belongs to: hunter, titan, or warlock"`
+	Damage         string `json:"damage,omitzero"          jsonschema:"Damage type, such as 'kinetic', 'arc', 'solar', 'void', 'stasis', or 'strand'"`
+	Location       string `json:"location,omitzero"        jsonschema:"vault, postmaster, equipped, characters (any character), a character id, or a class name"`
+	Tag            string `json:"tag,omitzero"             jsonschema:"Tag id from list_tags, 'none' for untagged items, or 'any' for tagged items"`
+	Perk           string `json:"perk,omitzero"            jsonschema:"Case-insensitive substring of a perk the item has equipped, such as 'kill clip'"`
+	Stat           string `json:"stat,omitzero"            jsonschema:"Case-insensitive full name of one stat, such as 'health' for armor or 'range' for weapons. Adds a column with its value, and min_stat and sort=stat read it"`
+	Sort           string `json:"sort,omitzero"            jsonschema:"name (default), power (highest first), newest (most recently acquired first), total (highest armor stat total first), or stat (highest value of the stat that stat names first)"`
+	MinPower       int    `json:"min_power,omitzero"       jsonschema:"Lowest power level to include"`
+	MaxPower       int    `json:"max_power,omitzero"       jsonschema:"Highest power level to include"`
+	MinTotal       int    `json:"min_total,omitzero"       jsonschema:"Lowest armor stat total to include. Only armor has a stat total, so a positive value returns only armor"`
+	MinStat        int    `json:"min_stat,omitzero"        jsonschema:"Lowest value of the stat that stat names. Items that lack the stat do not match"`
+	Limit          int    `json:"limit,omitzero"           jsonschema:"Maximum number of items to return (default 50, maximum 200)"`
+	Offset         int    `json:"offset,omitzero"          jsonschema:"Number of matching items to skip (default 0)"`
+	Favorite       bool   `json:"favorite,omitzero"        jsonschema:"Return only favorites"`
+	IncludePerks   bool   `json:"include_perks,omitzero"   jsonschema:"Add a column with the equipped perks of each item"`
+	IncludeRatings bool   `json:"include_ratings,omitzero" jsonschema:"Add the columns 'pve rating' and 'pvp rating' with the roll rating of each weapon copy on the Aegis sheet and on the PvP sheet"`
+	Refresh        bool   `json:"refresh,omitzero"         jsonschema:"Fetch the inventory from Bungie again instead of reusing a copy up to 30 seconds old"`
 }
 
 // GetItemInput is the input schema of the get_item tool.
@@ -396,6 +397,16 @@ func (h *handler) handleListItems(
 		return h.toolError(ctx, toolListItems, err)
 	}
 
+	// The input alone decides the rating requests. A call without it
+	// sends none, and a call with it sends them for every valid filter,
+	// also when no item matches. A rating input that the server cannot
+	// read costs only the rating cells. The renderer rates each weapon
+	// row from the sources, and the snapshot keeps no rating.
+	var sources map[string]RatingSource
+	if in.IncludeRatings {
+		sources = h.ratingSources(ctx)
+	}
+
 	limit := in.Limit
 	if limit <= 0 {
 		limit = defaultItemLimit
@@ -405,7 +416,7 @@ func (h *handler) handleListItems(
 	offset := min(max(in.Offset, 0), len(items))
 	page := items[offset:min(offset+limit, len(items))]
 
-	return textResult(renderItems(s, page, offset, len(items), in.Stat, in.IncludePerks)), nil, nil
+	return textResult(renderItems(s, page, offset, len(items), in.Stat, in.IncludePerks, sources)), nil, nil
 }
 
 func (h *handler) handleGetItem(

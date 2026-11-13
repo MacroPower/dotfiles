@@ -47,6 +47,12 @@
 // misses, and it stops at F. Two copies of one weapon can therefore
 // differ by several tiers.
 //
+// The list_items tool shows the same rating of each weapon copy for each
+// game mode when the caller sets include_ratings. The rating cell of a
+// copy that has a tier gives that tier. It adds the tier of the weapon on
+// the sheet when the two tiers differ. The get_item tool explains a
+// rating column by column.
+//
 // A copy hits a perk column with each pick of the column that it has.
 // The rating also counts the perk preferences, which the user sets for
 // each game mode in the web client or with the set_perk_preferences
@@ -81,6 +87,8 @@
 // no perks for a copy, the server did not see the roll. Such a copy reads
 // "roll unknown" on a sheet row with perk columns. A row without perk
 // columns, such as the row of an exotic, shows its tier for every copy.
+// In the list_items table, a weapon on a row without a tier reads
+// "no tier" for every copy, also for a copy without perks.
 //
 // The server reads the artifact index of the service on every call that
 // needs a sheet. It identifies a loaded sheet by its file name, because
@@ -89,19 +97,24 @@
 // that differs from the name of the loaded sheet. It keeps a sheet only in
 // memory, so each server process downloads each sheet.
 //
-// When a sheet does not load, the tool reports the reason on the line of
-// that game mode and still shows the rest of its output. The server does
-// not remember the load, so the next call that needs the sheet downloads
-// the file again.
+// When a sheet does not load, the get_item tool reports the reason on
+// the line of that game mode and still shows the rest of its output. The
+// server does not remember the load, so the next call that needs the
+// sheet downloads the file again.
 //
 // The server reads the perk preferences on every call that rates a roll,
 // and it keeps no copy of them. A preference that the user changes in the
 // web client therefore counts in the next call. When the server cannot
 // read the preferences, each game mode whose sheet loaded reports that
 // reason in place of its rating, for every weapon. A game mode whose
-// sheet did not load keeps the reason of the sheet. The tool still shows
-// the rest of its output, because the item, its perks, and its stats are
-// correct without a rating.
+// sheet did not load keeps the reason of the sheet. The get_item tool
+// still shows the rest of its output, because the item, its perks, and
+// its stats are correct without a rating.
+//
+// A game mode without ratings does not fail the list_items tool either.
+// The rating cells of the mode read "unavailable" for every weapon, and
+// one line before the table gives the reason. The line holds the text
+// that the get_item tool prints for the mode.
 //
 // # Sign-in
 //

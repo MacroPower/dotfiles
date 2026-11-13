@@ -196,7 +196,68 @@ func TestRenderCharactersWithoutDefinitions(t *testing.T) {
 func TestListItems(t *testing.T) {
 	t.Parallel()
 
+	const (
+		// The Aegis sheet lists Fatebringer (100) with the tier S and
+		// two perk columns. It lists Gjallarhorn (101) with the tier A
+		// and Midnight Coup (102) without a tier, both without columns.
+		// The PvP sheet lists only Fatebringer, with the tier C and one
+		// column.
+		//
+		// Instance 1001 holds Explosive Payload (900) with Rampage (903)
+		// beside it in one socket, so it hits the first column of the
+		// Aegis sheet. No socket of the copy holds Kill Clip (904), so
+		// it misses the second. The fake perk preferences dislike
+		// Rampage for PvP, so the copy misses the column of the PvP
+		// sheet. The profile lists perks for no other weapon.
+		aegisSheet = `{"rolls": [` +
+			`{"tier": "S", "hashes": [100], "slots": [[900], [904]]}, ` +
+			`{"tier": "A", "hashes": [101], "slots": []}, ` +
+			`{"hashes": [102], "slots": []}]}`
+		pvpSheet = `{"rolls": [{"tier": "C", "hashes": [100], "slots": [[903]]}]}`
+
+		noAegis = "PvE: rating unavailable: the service publishes no Aegis sheet"
+		noPvP   = "PvP: rating unavailable: the service publishes no PvP sheet"
+
+		ratedHeader = "instance id | name | type | tier | power | stat total | location | tag | flags | " +
+			"pve rating | pvp rating"
+		noRating = "unavailable | unavailable"
+	)
+
+	// aegisOnly makes the service publish only the Aegis sheet.
+	aegisOnly := func(f *fakes) {
+		f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+		f.serviceData["/artifacts/rolls.a.json"] = aegisSheet
+	}
+
+	// bothSheets makes the service publish the Aegis sheet and the PvP
+	// sheet.
+	bothSheets := func(f *fakes) {
+		aegisOnly(f)
+
+		f.artifactFiles["pvprolls"] = []string{"pvprolls.a.json"}
+		f.serviceData["/artifacts/pvprolls.a.json"] = pvpSheet
+	}
+
+	// rated returns the rows of the unfiltered listing with the rating
+	// columns. Cells holds the two rating cells of each weapon row, in
+	// row order. The rating cells of the helmet are empty.
+	rated := func(cells ...string) []string {
+		return []string{
+			"1004 | Celestial Nighthawk | Helmet | Exotic | 2000 | 55 | Hunter (equipped) |  |  |  | ",
+			"1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Vault | keep | " +
+				"favorite, locked, masterwork, note | " + cells[0],
+			"1005 | Fatebringer | Kinetic Hand Cannon | Legendary | 1970 |  | Hunter (postmaster) |  |  | " + cells[1],
+			"1006 | Fatebringer | Kinetic Hand Cannon | Legendary | 1980 |  | Hunter (equipped) |  |  | " + cells[2],
+			"1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 |  | Vault |  |  | " + cells[3],
+			"1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 |  | Hunter |  |  | " + cells[4],
+		}
+	}
+
 	tests := map[string]struct {
+		// prepare changes the fakes before the call.
+		prepare func(*fakes)
+		// want is the output. "{service}" stands for the base URL of the
+		// service.
 		want    string
 		in      ListItemsInput
 		isError bool
@@ -273,6 +334,144 @@ func TestListItems(t *testing.T) {
 			want:    `invalid filter: kind "ghost" is not weapon, armor, gear, other, or all`,
 			isError: true,
 		},
+		"ratings of both sheets": {
+			prepare: bothSheets,
+			in:      ListItemsInput{IncludeRatings: true},
+			want: strings.Join(slices.Concat([]string{
+				"Items 1-6 of 6.",
+				"",
+				ratedHeader,
+			}, rated(
+				"A (sheet S) | D (sheet C)",
+				"roll unknown (sheet S) | roll unknown (sheet C)",
+				"roll unknown (sheet S) | roll unknown (sheet C)",
+				"A | not listed",
+				"no tier | not listed",
+			)), "\n"),
+		},
+		"ratings between the flags and the perks": {
+			prepare: bothSheets,
+			in:      ListItemsInput{Stat: "health", IncludePerks: true, IncludeRatings: true},
+			want: strings.Join([]string{
+				"Items 1-6 of 6.",
+				"",
+				"instance id | name | type | tier | power | stat total | health | location | tag | flags | " +
+					"pve rating | pvp rating | perks",
+				"1004 | Celestial Nighthawk | Helmet | Exotic | 2000 | 55 | 30 | Hunter (equipped) |  |  |  |  | ",
+				"1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  |  | Vault | keep | " +
+					"favorite, locked, masterwork, note | A (sheet S) | D (sheet C) | Explosive Payload, Firefly",
+				"1005 | Fatebringer | Kinetic Hand Cannon | Legendary | 1970 |  |  | Hunter (postmaster) |  |  | " +
+					"roll unknown (sheet S) | roll unknown (sheet C) | ",
+				"1006 | Fatebringer | Kinetic Hand Cannon | Legendary | 1980 |  |  | Hunter (equipped) |  |  | " +
+					"roll unknown (sheet S) | roll unknown (sheet C) | ",
+				"1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 |  |  | Vault |  |  | A | not listed | ",
+				"1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 |  |  | Hunter |  |  | " +
+					"no tier | not listed | ",
+			}, "\n"),
+		},
+		"ratings of the one sheet that the service publishes": {
+			prepare: aegisOnly,
+			in:      ListItemsInput{IncludeRatings: true},
+			want: strings.Join(slices.Concat([]string{
+				"Items 1-6 of 6.",
+				noPvP,
+				"",
+				ratedHeader,
+			}, rated(
+				"A (sheet S) | unavailable",
+				"roll unknown (sheet S) | unavailable",
+				"roll unknown (sheet S) | unavailable",
+				"A | unavailable",
+				"no tier | unavailable",
+			)), "\n"),
+		},
+		"ratings without a sheet": {
+			in: ListItemsInput{IncludeRatings: true},
+			want: strings.Join(slices.Concat([]string{
+				"Items 1-6 of 6.",
+				noAegis,
+				noPvP,
+				"",
+				ratedHeader,
+			}, rated(noRating, noRating, noRating, noRating, noRating)), "\n"),
+		},
+		"rating reasons follow the paging hint": {
+			in: ListItemsInput{Limit: 2, IncludeRatings: true},
+			want: strings.Join(slices.Concat([]string{
+				"Items 1-2 of 6. Pass offset=2 for the next page.",
+				noAegis,
+				noPvP,
+				"",
+				ratedHeader,
+			}, rated(noRating, noRating, noRating, noRating, noRating)[:2]), "\n"),
+		},
+		"stack has empty rating cells": {
+			prepare: bothSheets,
+			in:      ListItemsInput{Kind: kindOther, IncludeRatings: true},
+			want: strings.Join([]string{
+				"Items 1-1 of 1.",
+				"",
+				ratedHeader,
+				"stack of 42 (item hash 300) | Enhancement Core | Material | Legendary |  |  | Account |  |  |  | ",
+			}, "\n"),
+		},
+		"armor has empty rating cells also without a sheet": {
+			in: ListItemsInput{Kind: kindArmor, IncludeRatings: true},
+			want: strings.Join([]string{
+				"Items 1-1 of 1.",
+				noAegis,
+				noPvP,
+				"",
+				ratedHeader,
+				"1004 | Celestial Nighthawk | Helmet | Exotic | 2000 | 55 | Hunter (equipped) |  |  |  | ",
+			}, "\n"),
+		},
+		// The index lists a file that the service does not serve. A mode
+		// whose sheet did not load never reads "not listed".
+		"ratings of a sheet that does not load": {
+			prepare: func(f *fakes) {
+				f.artifactFiles = map[string][]string{"rolls": {"rolls.x.json"}}
+			},
+			in: ListItemsInput{IncludeRatings: true},
+			want: strings.Join(slices.Concat([]string{
+				"Items 1-6 of 6.",
+				"PvE: rating unavailable: fetching artifact rolls.x.json: " +
+					"service: {service}/artifacts/rolls.x.json returned status 404",
+				noPvP,
+				"",
+				ratedHeader,
+			}, rated(noRating, noRating, noRating, noRating, noRating)), "\n"),
+		},
+		// The mode with a sheet reports the perk preferences, and the
+		// mode without a sheet keeps the reason of the sheet.
+		"ratings without the perk preferences": {
+			prepare: func(f *fakes) {
+				aegisOnly(f)
+				delete(f.serviceData, pathPrefs)
+			},
+			in: ListItemsInput{IncludeRatings: true},
+			want: strings.Join(slices.Concat([]string{
+				"Items 1-6 of 6.",
+				"PvE: rating unavailable: reading perk preferences: " +
+					"service: GET /api/perk-preferences?since=0 returned status 404: Not found",
+				noPvP,
+				"",
+				ratedHeader,
+			}, rated(noRating, noRating, noRating, noRating, noRating)), "\n"),
+		},
+		"no match with ratings": {
+			in:   ListItemsInput{Query: "thorn", IncludeRatings: true},
+			want: "No items match.",
+		},
+		"offset past the end with ratings": {
+			in:   ListItemsInput{Offset: 50, IncludeRatings: true},
+			want: "Offset 6 is past the last of 6 matching items.",
+		},
+		"invalid filter with ratings": {
+			in:      ListItemsInput{Kind: "ghost", IncludeRatings: true},
+			want:    `invalid filter: kind "ghost" is not weapon, armor, gear, other, or all`,
+			isError: true,
+		},
 	}
 
 	for name, tc := range tests {
@@ -281,9 +480,89 @@ func TestListItems(t *testing.T) {
 
 			f := newFakes(t)
 
+			if tc.prepare != nil {
+				tc.prepare(f)
+			}
+
 			got, isError := call(t, f.h.handleListItems, tc.in)
 			assert.Equal(t, tc.isError, isError)
-			assert.Equal(t, tc.want, got)
+			assert.Equal(t, strings.ReplaceAll(tc.want, "{service}", f.h.service.BaseURL()), got)
+		})
+	}
+}
+
+// TestListItemsRatingRequests pins the requests that the rating columns
+// of list_items cost. The include_ratings input alone decides them. A
+// call without it sends none, and a call with it sends them also for an
+// empty result. The filter runs first, so an invalid filter sends none.
+func TestListItemsRatingRequests(t *testing.T) {
+	t.Parallel()
+
+	const sheet = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900]]}]}`
+
+	sheets := []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"}
+
+	// step is one call on the fakes of a case. The counts and the paths
+	// cover every request since the start of the case.
+	type step struct {
+		// fetched lists the artifact paths that the service received.
+		fetched []string
+		in      ListItemsInput
+		// configs counts the requests for /api/config. The first tool
+		// call reads the Bungie API key from it, and each sheet load
+		// reads the artifact index from it.
+		configs int
+		// prefs counts the requests for the perk preferences.
+		prefs   int
+		isError bool
+	}
+
+	tests := map[string]struct {
+		steps []step
+	}{
+		"only a call with ratings reads the rating inputs": {
+			steps: []step{
+				{in: ListItemsInput{}, configs: 1},
+				{in: ListItemsInput{IncludeRatings: true}, configs: 2, prefs: 1, fetched: sheets},
+			},
+		},
+		"invalid filter reads no rating input": {
+			steps: []step{
+				{in: ListItemsInput{Kind: "ghost", IncludeRatings: true}, configs: 1, isError: true},
+			},
+		},
+		"empty result reads the rating inputs": {
+			steps: []step{
+				{in: ListItemsInput{Query: "thorn", IncludeRatings: true}, configs: 2, prefs: 1, fetched: sheets},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}}
+			f.serviceData["/artifacts/rolls.a.json"] = sheet
+			f.serviceData["/artifacts/pvprolls.a.json"] = sheet
+
+			for i, step := range tc.steps {
+				_, isError := call(t, f.h.handleListItems, step.in)
+				assert.Equalf(t, step.isError, isError, "call %d", i+1)
+
+				var fetched []string
+
+				for _, req := range f.service.all() {
+					if strings.HasPrefix(req.Path, "/artifacts/") {
+						fetched = append(fetched, req.Path)
+					}
+				}
+
+				assert.Equalf(t, step.fetched, fetched, "call %d", i+1)
+				assert.Lenf(t, f.service.calls(http.MethodGet, "/api/config"), step.configs, "call %d", i+1)
+				assert.Lenf(t, f.service.calls(http.MethodGet, pathPrefs), step.prefs, "call %d", i+1)
+			}
 		})
 	}
 }
@@ -321,7 +600,7 @@ func TestRenderItemsStatTotal(t *testing.T) {
 			tc.item.Owner = ownerVault
 			tc.item.Transferable = true
 
-			got := renderItems(&Snapshot{}, []*Item{tc.item}, 0, 1, "", false)
+			got := renderItems(&Snapshot{}, []*Item{tc.item}, 0, 1, "", false, nil)
 			assert.Equal(t, strings.Join([]string{
 				"Items 1-1 of 1.",
 				"",
@@ -1065,6 +1344,173 @@ func TestWriteRating(t *testing.T) {
 			writeRating(&b, tc.mode, tc.rating)
 
 			assert.Equal(t, strings.Join(tc.want, "\n")+"\n", b.String())
+		})
+	}
+}
+
+func TestRatingLabel(t *testing.T) {
+	t.Parallel()
+
+	hit := ColumnVerdict{Hits: []Hit{{Name: "Firefly"}}}
+
+	tests := map[string]struct {
+		want   string
+		rating Rating
+	}{
+		"game mode without ratings": {
+			rating: Rating{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", ErrNoRating)},
+			want:   "unavailable",
+		},
+		"weapon that the sheet does not list": {
+			want: "not listed",
+		},
+		"roll with a missed column on a row without a tier": {
+			rating: Rating{Roll: &Roll{Columns: []ColumnVerdict{hit, {}}}},
+			want:   "no tier",
+		},
+		"unknown roll on a row without a tier": {
+			rating: Rating{Roll: &Roll{Unknown: true}},
+			want:   "no tier",
+		},
+		"unknown roll on a row with a tier": {
+			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "S"}, Unknown: true}},
+			want:   "roll unknown (sheet S)",
+		},
+		"roll that keeps the tier of the row": {
+			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "S"}, Overall: "S", Columns: []ColumnVerdict{hit}}},
+			want:   "S",
+		},
+		"roll that lost a tier": {
+			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "S"}, Overall: "A", Columns: []ColumnVerdict{hit, {}}}},
+			want:   "A (sheet S)",
+		},
+		"roll that lost the last tier": {
+			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "E"}, Overall: "F", Columns: []ColumnVerdict{{}, {}}}},
+			want:   "F (sheet E)",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, ratingLabel(tc.rating))
+		})
+	}
+}
+
+func TestRatingCell(t *testing.T) {
+	t.Parallel()
+
+	// The sheet lists item 7 with the tier A and without perk columns.
+	listed := RatingSource{Sheet: &Sheet{
+		Rows:    map[uint32]SheetRow{7: {Tier: "A"}},
+		Columns: map[uint32][][]uint32{},
+	}}
+	noSheet := RatingSource{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", ErrNoRating)}
+
+	tests := map[string]struct {
+		item   *Item
+		want   string
+		source RatingSource
+	}{
+		"armor that the sheet lists with a tier": {
+			source: listed,
+			item:   &Item{Hash: 7, Kind: kindArmor},
+			want:   "",
+		},
+		"armor in a game mode without ratings": {
+			source: noSheet,
+			item:   &Item{Hash: 7, Kind: kindArmor},
+			want:   "",
+		},
+		"weapon that the sheet lists with a tier": {
+			source: listed,
+			item:   &Item{Hash: 7, Kind: kindWeapon},
+			want:   "A",
+		},
+		"weapon in a game mode without ratings": {
+			source: noSheet,
+			item:   &Item{Hash: 7, Kind: kindWeapon},
+			want:   "unavailable",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, ratingCell(tc.source, tc.item))
+		})
+	}
+}
+
+func TestRatingReasons(t *testing.T) {
+	t.Parallel()
+
+	var (
+		loaded  = RatingSource{Sheet: &Sheet{}}
+		noAegis = RatingSource{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", ErrNoRating)}
+		noPvP   = RatingSource{Err: fmt.Errorf("%w: the service publishes no PvP sheet", ErrNoRating)}
+		noPrefs = RatingSource{Err: fmt.Errorf("%w: reading perk preferences: %w", ErrNoRating, ErrService)}
+	)
+
+	tests := map[string]struct {
+		sources map[string]RatingSource
+		want    []string
+	}{
+		"every game mode has ratings": {
+			sources: map[string]RatingSource{modePvE: loaded, modePvP: loaded},
+		},
+		"only PvE has no ratings": {
+			sources: map[string]RatingSource{modePvE: noAegis, modePvP: loaded},
+			want:    []string{"PvE: rating unavailable: the service publishes no Aegis sheet"},
+		},
+		"only PvP has no ratings": {
+			sources: map[string]RatingSource{modePvE: loaded, modePvP: noPvP},
+			want:    []string{"PvP: rating unavailable: the service publishes no PvP sheet"},
+		},
+		"PvE line comes first": {
+			sources: map[string]RatingSource{modePvP: noPvP, modePvE: noAegis},
+			want: []string{
+				"PvE: rating unavailable: the service publishes no Aegis sheet",
+				"PvP: rating unavailable: the service publishes no PvP sheet",
+			},
+		},
+		// The loop compares each line of every case with the line of
+		// get_item. This case adds a reason that wraps a cause.
+		"line of a mode is the get_item line without the list marker": {
+			sources: map[string]RatingSource{modePvE: noPrefs, modePvP: noPvP},
+			want: []string{
+				"PvE: rating unavailable: reading perk preferences: service",
+				"PvP: rating unavailable: the service publishes no PvP sheet",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := ratingReasons(tc.sources)
+			assert.Equal(t, tc.want, got)
+
+			// get_item prints the reason of each mode as a list item.
+			var b strings.Builder
+
+			for _, mode := range perkModes {
+				err := tc.sources[mode].Err
+				if err != nil {
+					writeRating(&b, mode, Rating{Err: err})
+				}
+			}
+
+			var lines strings.Builder
+			for _, line := range got {
+				lines.WriteString("- " + line + "\n")
+			}
+
+			assert.Equal(t, b.String(), lines.String())
 		})
 	}
 }

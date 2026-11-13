@@ -329,7 +329,18 @@ func newServer(h *handler) *mcp.Server {
 			"and each armor row carries the sum of its stats. The min_total filter selects armor with at least that stat total, " +
 			"and sort=total puts the highest total first, for example to find the helmets with the highest stat total. " +
 			"The stat input names one stat of armor or weapons, such as Health or Range, and adds a column with its value. " +
-			"The min_stat filter selects items with at least that value of the stat, and sort=stat puts the highest value first.",
+			"The min_stat filter selects items with at least that value of the stat, and sort=stat puts the highest value first. " +
+			"The include_ratings input adds the roll rating of each weapon copy for PvE, from the Aegis sheet, " +
+			"and for PvP, from the PvP sheet. " +
+			"Each rating cell gives the tier of the roll, from S (best) to F. " +
+			"When the roll lost tiers, the cell also gives the tier of the weapon on the sheet in parentheses, such as 'A (sheet S)'. " +
+			"A cell reads 'no tier' for a weapon that the sheet lists without a tier, " +
+			"and 'roll unknown' with the sheet tier for a copy whose perks the profile does not list. " +
+			"It reads 'not listed' for a weapon that the sheet does not list, " +
+			"and 'unavailable' when the server has no sheet for the game mode or cannot read the perk preferences. " +
+			"A line before the table gives the reason for each unavailable game mode. " +
+			"The rating cells of every item that is not a weapon are empty. " +
+			"get_item explains a rating column by column.",
 		Annotations: readOnly,
 	}, h.handleListItems)
 
