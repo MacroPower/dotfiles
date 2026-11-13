@@ -2293,9 +2293,12 @@ func (h *handler) handleSetAutotagEnabled(
 // before it claims anything. It claims the new items through the service
 // only when it can apply every enabled rule the way the web client does.
 // After an applied claim, it writes the tag of each rule with the rule id.
-// Every result other than that success is an error result. A claim
-// happens at most once, so the handler retries neither the claim nor the
-// tag write.
+// It then moves each item of a rule with the vault flag that the web
+// client moves to the vault, as [vaultBlock] decides, also after a failed
+// tag write. Every result is an error result except the result of an
+// applied claim whose tag write and moves succeeded. A claim happens at
+// most once, so the handler retries neither the claim, the tag write, nor
+// a move.
 func (h *handler) handleRunAutotagRules(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -2357,13 +2360,38 @@ func (h *handler) handleRunAutotagRules(
 
 	tags := ruleTags(evals, m)
 
+	// The handler reads the membership and the definitions before the
+	// claim. A failed read then leaves the items of the vault rules to the
+	// next claim, and never strands claimed items that no move reached.
+	var (
+		mover   bungieMover
+		vaulted []vaultItem
+	)
+
+	if slices.ContainsFunc(evals, func(e ruleEval) bool { return e.rule.Enabled && e.rule.Vault }) {
+		membership, err := h.membership(ctx)
+		if err != nil {
+			return refuse("run_autotag_rules claimed nothing, because the server could not read the inventory: " +
+				errorText(err))
+		}
+
+		defs, err := h.defs.Get(ctx)
+		if err != nil {
+			return refuse("run_autotag_rules claimed nothing, because the server could not read the inventory: " +
+				errorText(fmt.Errorf("loading definitions: %w", err)))
+		}
+
+		mover = bungieMover{h: h, membership: membership}
+		vaulted = vaultItems(evals, m, defs)
+	}
+
 	// The service checks the session before it reads the claim, so the
 	// repeat of withSession after a rejected session claims at most once.
 	applied, err := sessionValue(ctx, h, func(session string) (bool, error) {
 		return h.service.ClaimAutotag(ctx, session, stored, newest)
 	})
 	if err != nil {
-		return refuse(h.claimFailure(ctx, stored, err, tags))
+		return refuse(h.claimFailure(ctx, stored, err, tags, vaulted))
 	}
 
 	if !applied {
@@ -2377,18 +2405,110 @@ func (h *handler) handleRunAutotagRules(
 		changes = append(changes, tagChanges(rows, t.item.InstanceID, t.item.Hash, t.rule.TagID, t.rule.ID)...)
 	}
 
-	err = h.writeTags(ctx, changes)
-	if err != nil {
-		return refuse(renderTagFailure(stored, newest, err, tags))
+	tagErr := h.writeTags(ctx, changes)
+	if tagErr == nil {
+		// The cached snapshot holds the tags that the rules set.
+		for _, t := range tags {
+			t.item.Tag = t.rule.TagID
+			t.item.TagRule = t.rule.ID
+		}
 	}
 
-	// The cached snapshot holds the tags that the rules set.
-	for _, t := range tags {
-		t.item.Tag = t.rule.TagID
-		t.item.TagRule = t.rule.ID
+	// The web client queues its tag write and moves the items of the
+	// vault rules whatever the write gives.
+	h.moveToVault(ctx, s, mover, vaulted)
+
+	if tagErr != nil {
+		return refuse(renderTagFailure(s, stored, newest, tagErr, tags, vaulted))
 	}
 
-	return textResult(renderRun(s, stored, newest, evals, m, vault)), nil, nil
+	text := renderRun(s, stored, newest, evals, m, vault, vaulted)
+
+	// The user moves the item of a failed move by hand.
+	if slices.ContainsFunc(vaulted, func(v vaultItem) bool { return v.err != nil }) {
+		return refuse(text)
+	}
+
+	return textResult(text), nil, nil
+}
+
+// vaultItem is one new item that an enabled rule with the vault flag
+// takes. Rule is the rule that takes the item. Reason keeps the item in
+// place, as [vaultBlock] gives it, and is empty for an item that
+// run_autotag_rules moves to the vault. Err is the error of a move that
+// failed. It is nil after a move that succeeded and for an item with a
+// reason.
+type vaultItem struct {
+	item   *Item
+	err    error
+	reason string
+	rule   AutotagRule
+}
+
+// vaultItems returns the new items of m that the rules of evals with the
+// vault flag take, in the order of [compareIDs], each with its rule and
+// the reason of [vaultBlock]. Defs holds the definition of each item.
+func vaultItems(evals []ruleEval, m newMatches, defs *Defs) []vaultItem {
+	var vaulted []vaultItem
+
+	for i, e := range evals {
+		if !e.rule.Vault {
+			continue
+		}
+
+		for _, item := range m.taken[i] {
+			vaulted = append(vaulted, vaultItem{
+				item:   item,
+				reason: vaultBlock(item, defs.Items[item.Hash]),
+				rule:   e.rule,
+			})
+		}
+	}
+
+	slices.SortStableFunc(vaulted, func(a, b vaultItem) int {
+		return compareIDs(a.item.InstanceID, b.item.InstanceID)
+	})
+
+	return vaulted
+}
+
+// moveToVault moves each item of items without a reason to the vault, one
+// item at a time. It records the error of each move that fails, and a
+// failed move does not stop the next one. A move that changed an item
+// resets the fetch time of s, as move_items does.
+func (h *handler) moveToVault(ctx context.Context, s *Snapshot, mover ItemMover, items []vaultItem) {
+	changed := false
+
+	for i := range items {
+		v := &items[i]
+		if v.reason != "" {
+			continue
+		}
+
+		owner, postmaster := v.item.Owner, v.item.Postmaster
+
+		// vaultBlock keeps an equipped item in place, so no move equips a
+		// replacement.
+		_, err := s.Move(ctx, mover, v.item, ownerVault, false)
+
+		// A move that fails can still pull the item from the Postmaster.
+		if v.item.Owner != owner || v.item.Postmaster != postmaster {
+			changed = true
+		}
+
+		if err != nil {
+			v.err = err
+
+			h.log.WarnContext(ctx, "move failed",
+				slog.String("instance_id", v.item.InstanceID),
+				slog.Any("error", err),
+			)
+		}
+	}
+
+	if changed {
+		s.Fetched = h.now()
+	}
 }
 
 // ruleTag is one new item that an enabled rule with a tag takes.
@@ -2420,8 +2540,15 @@ func ruleTags(evals []ruleEval, m newMatches) []ruleTag {
 // request might still have run the claim in the service, so claimFailure
 // reads the autotag state again and compares its mark with stored. When
 // the mark moved or the read does not succeed, the text names each item
-// of tags with the tag of its rule and ends with [claimOnce].
-func (h *handler) claimFailure(ctx context.Context, stored string, err error, tags []ruleTag) string {
+// of tags with the tag of its rule. It also names each item of vaulted
+// that the web client moves to the vault, and it ends with [claimOnce].
+func (h *handler) claimFailure(
+	ctx context.Context,
+	stored string,
+	err error,
+	tags []ruleTag,
+	vaulted []vaultItem,
+) string {
 	again, againErr := h.autotag(ctx)
 	if againErr == nil && again.State == nil {
 		againErr = errNoAutotagState
@@ -2431,7 +2558,7 @@ func (h *handler) claimFailure(ctx context.Context, stored string, err error, ta
 	case againErr != nil:
 		return renderUnsureClaim(fmt.Sprintf("The claim request failed: %v. "+
 			"The server could not read the autotag state again: %v. The claim might have applied. "+
-			"run_autotag_rules tagged nothing.", err, againErr), tags)
+			"run_autotag_rules tagged nothing.", err, againErr), tags, vaulted)
 
 	case again.State.Mark == stored:
 		return fmt.Sprintf("The claim request failed: %v. The stored mark is still %s, "+
@@ -2440,7 +2567,7 @@ func (h *handler) claimFailure(ctx context.Context, stored string, err error, ta
 	default:
 		return renderUnsureClaim(fmt.Sprintf("The claim request failed: %v. The stored mark moved from %s to %s, "+
 			"so the claim might have applied, for this call or for another runner. "+
-			"run_autotag_rules tagged nothing.", err, stored, again.State.Mark), tags)
+			"run_autotag_rules tagged nothing.", err, stored, again.State.Mark), tags, vaulted)
 	}
 }
 

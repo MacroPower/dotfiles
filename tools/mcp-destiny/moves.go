@@ -128,6 +128,42 @@ func (s *Snapshot) Move(
 	return replacement, nil
 }
 
+// vaultBlock returns the reason that keeps item in place when an autotag
+// rule with the vault flag takes it. It returns an empty string for an
+// item that run_autotag_rules moves to the vault. Def is the definition of
+// the item.
+//
+// The web client leaves the item of such a rule in place when a character
+// has the item equipped, or when Bungie gives it the transfer status
+// NotTransferrable alone. It also leaves an item in place when the
+// definition bucket of the item is the bucket of the distorted engrams or
+// a bucket of the Postmaster category of DIM. The web client moves every
+// other item, and it pulls an item from the Postmaster first, as
+// [Snapshot.Move] does.
+//
+// [Item.Transferable] also reads the definition and every transfer status
+// with the NotTransferrable bit, and [Snapshot.Move] refuses an item that
+// it does not mark. vaultBlock leaves such an item in place with a reason
+// of its own, which says that the web client tries the transfer.
+func vaultBlock(item *Item, def ItemDef) string {
+	switch {
+	case item.Equipped:
+		return "it is equipped"
+
+	case item.TransferStatus == transferNotTransferable:
+		return "Bungie reports it as not transferable"
+
+	case def.Bucket == bucketForbidden, def.Bucket == bucketPostmaster, slices.Contains(postmasterBuckets, def.Bucket):
+		return "the web client never moves an item of its bucket"
+
+	case !item.Transferable:
+		return "the server treats it as not transferable, but the web client tries the transfer"
+
+	default:
+		return ""
+	}
+}
+
 func (s *Snapshot) checkMove(item *Item, target string, equip bool) error {
 	if item.InstanceID == "" {
 		return fmt.Errorf("%w: %s is a stack, which the move_stack tool moves", ErrMove, item.Name)

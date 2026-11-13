@@ -294,6 +294,155 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 	}
 }
 
+func TestVaultBlock(t *testing.T) {
+	t.Parallel()
+
+	const (
+		equipped    = "it is equipped"
+		bungie      = "Bungie reports it as not transferable"
+		bucket      = "the web client never moves an item of its bucket"
+		server      = "the server treats it as not transferable, but the web client tries the transfer"
+		instanceID  = "1"
+		hash        = 1
+		onCharacter = 1
+	)
+
+	weapon := ItemDef{
+		Name:       "Thorn",
+		Bucket:     bucketKinetic,
+		ItemType:   itemTypeWeapon,
+		ClassType:  classAny,
+		Equippable: true,
+	}
+
+	// in returns the definition of weapon in the definition bucket b.
+	in := func(b uint32) ItemDef {
+		def := weapon
+		def.Bucket = b
+
+		return def
+	}
+
+	held := func(b uint32, status int) ProfileItem {
+		return ProfileItem{
+			InstanceID: instanceID, Hash: hash, Quantity: 1,
+			Location: onCharacter, BucketHash: b, TransferStatus: status,
+		}
+	}
+
+	lost := func(status int) ProfileItem {
+		return ProfileItem{
+			InstanceID: instanceID, Hash: hash, Quantity: 1,
+			Location: itemLocationPostmaster, BucketHash: bucketPostmaster, TransferStatus: status,
+		}
+	}
+
+	nonTransferable := weapon
+	nonTransferable.NonTransferable = true
+
+	nonTransferableEngram := in(bucketEngrams)
+	nonTransferableEngram.NonTransferable = true
+
+	tests := map[string]struct {
+		def      ItemDef
+		item     ProfileItem
+		want     string
+		equipped bool
+	}{
+		"an equipped weapon": {
+			def:      weapon,
+			item:     held(bucketKinetic, 1),
+			equipped: true,
+			want:     equipped,
+		},
+		"an equipped weapon with the status 2": {
+			def:      weapon,
+			item:     held(bucketKinetic, 2),
+			equipped: true,
+			want:     equipped,
+		},
+		"the status 2": {
+			def:  weapon,
+			item: held(bucketKinetic, 2),
+			want: bungie,
+		},
+		"the status 2 at the Postmaster": {
+			def:  weapon,
+			item: lost(2),
+			want: bungie,
+		},
+		"an engram with the status 2": {
+			def:  in(bucketEngrams),
+			item: held(bucketEngrams, 2),
+			want: bungie,
+		},
+		"the forbidden bucket": {
+			def:  in(bucketForbidden),
+			item: held(bucketForbidden, 0),
+			want: bucket,
+		},
+		"an engram": {
+			def:  in(bucketEngrams),
+			item: held(bucketEngrams, 0),
+			want: bucket,
+		},
+		"a Lost Items definition": {
+			def:  in(bucketPostmaster),
+			item: lost(0),
+			want: bucket,
+		},
+		"a message": {
+			def:  in(bucketMessages),
+			item: lost(0),
+			want: bucket,
+		},
+		"a special order": {
+			def:  in(bucketSpecialOrders),
+			item: lost(0),
+			want: bucket,
+		},
+		"a non-transferable engram": {
+			def:  nonTransferableEngram,
+			item: held(bucketEngrams, 0),
+			want: bucket,
+		},
+		"an engram definition in another profile bucket": {
+			def:  in(bucketEngrams),
+			item: held(bucketKinetic, 0),
+			want: bucket,
+		},
+		"a non-transferable definition": {
+			def:  nonTransferable,
+			item: held(bucketKinetic, 0),
+			want: server,
+		},
+		"the status 6 outside the Postmaster": {
+			def:  weapon,
+			item: held(bucketKinetic, 6),
+			want: server,
+		},
+		"a weapon at the Postmaster": {
+			def:  weapon,
+			item: lost(0),
+		},
+		"a weapon on a character": {
+			def:  weapon,
+			item: held(bucketKinetic, 0),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			defs := &Defs{Items: map[uint32]ItemDef{hash: tc.def}}
+			item := newItem(&Profile{}, defs, tc.item, hunterID, tc.equipped)
+
+			assert.Equal(t, tc.want, vaultBlock(item, tc.def))
+		})
+	}
+}
+
 func TestReplacementFor(t *testing.T) {
 	t.Parallel()
 

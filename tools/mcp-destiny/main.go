@@ -701,9 +701,11 @@ func newServer(h *handler) *mcp.Server {
 			"The tool first claims those items through the service, " +
 			"so no other runner, such as the web client, applies the rules to them again. " +
 			"A claim happens at most once. " +
+			"For each rule with vault=true, the tool then moves each item that the web client moves to the vault. " +
+			"It names each item that it leaves in place with the reason. " +
 			"The tool claims nothing when autotagging is off " +
 			"or when the server cannot decide which rule takes a new item. " +
-			"It also claims nothing when an enabled rule moves items to the vault, is invalid, " +
+			"It also claims nothing when an enabled rule is invalid, " +
 			"uses a term that the server does not evaluate, or reads a game mode without ratings. " +
 			"list_autotag_rules with matches=new shows what the tool would do.",
 		Annotations: &mcp.ToolAnnotations{},

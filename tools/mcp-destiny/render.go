@@ -1633,10 +1633,9 @@ const claimOnce = "A claim happens at most once. No runner offers the claimed it
 // rule order, and m holds what [firstMatch] gave the new items outside the
 // vault.
 //
-// Each enabled rule gets at most one line. A skipped rule names its skip
-// reason, and a blocked rule names its block reason. An evaluated rule
-// that moves items to the vault says so. Each undecided item gets one line
-// after the rule lines.
+// Each enabled rule that the web client skips or that blocks gets one
+// line. A skipped rule names its skip reason, and a blocked rule names its
+// block reason. Each undecided item gets one line after the rule lines.
 func renderRunRefusal(evals []ruleEval, m newMatches) string {
 	var causes []string
 
@@ -1647,13 +1646,12 @@ func renderRunRefusal(evals []ruleEval, m newMatches) string {
 
 		line := renderRule(e.rule)
 
-		switch {
-		case e.class == ruleSkipped:
+		switch e.class {
+		case ruleSkipped:
 			causes = append(causes, fmt.Sprintf("%s. The web client skips this rule: %s.", line, e.reason))
-		case e.class == ruleBlocked:
+		case ruleBlocked:
 			causes = append(causes, fmt.Sprintf("%s. The server cannot evaluate this rule: %s.", line, e.reason))
-		case e.rule.Vault:
-			causes = append(causes, line+". The rule moves items to the vault, which run_autotag_rules does not do.")
+		case ruleEvaluated:
 		}
 	}
 
@@ -1677,8 +1675,16 @@ func renderRunRefusal(evals []ruleEval, m newMatches) string {
 // is the mark after it. Evals holds the [ruleEval] of each live rule in
 // rule order, and m holds what [firstMatch] gave the new items outside the
 // vault. Vault holds the new items in the vault, which the output only
-// counts.
-func renderRun(s *Snapshot, stored, newest string, evals []ruleEval, m newMatches, vault []*Item) string {
+// counts. Vaulted holds the items of the rules with the vault flag after
+// the moves, which [writeVaultMoves] reports.
+func renderRun(
+	s *Snapshot,
+	stored, newest string,
+	evals []ruleEval,
+	m newMatches,
+	vault []*Item,
+	vaulted []vaultItem,
+) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Claimed the new items. The stored mark moved from %s to %s.\n", stored, newest)
@@ -1700,6 +1706,7 @@ func renderRun(s *Snapshot, stored, newest string, evals []ruleEval, m newMatche
 	writeNewItems(&b, s, m.untaken)
 
 	fmt.Fprintf(&b, "\nNew items already in the vault, which no rule takes: %d\n", len(vault))
+	writeVaultMoves(&b, s, vaulted)
 	b.WriteString("\n" + claimOnce)
 
 	return b.String()
@@ -1709,26 +1716,75 @@ func renderRun(s *Snapshot, stored, newest string, evals []ruleEval, m newMatche
 // claim applied and whose tag write returned err. Stored and newest are
 // the marks of the claim. The output names each item of tags with the tag
 // that its rule gives, so that the user can set the tags with set_tag.
-func renderTagFailure(stored, newest string, err error, tags []ruleTag) string {
+// Vaulted holds the items of the rules with the vault flag after the
+// moves, which [writeVaultMoves] reports.
+func renderTagFailure(s *Snapshot, stored, newest string, err error, tags []ruleTag, vaulted []vaultItem) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Claimed the new items. The stored mark moved from %s to %s.\n\n", stored, newest)
-	fmt.Fprintf(&b, "The tag write failed: %v. Tag these items with set_tag:", err)
+	fmt.Fprintf(&b, "The tag write failed: %v. Tag these items with set_tag:\n", err)
 
 	for _, t := range tags {
-		fmt.Fprintf(&b, "\n- %s (%s): tag %s", t.item.Name, t.item.InstanceID, t.rule.TagID)
+		fmt.Fprintf(&b, "- %s (%s): tag %s\n", t.item.Name, t.item.InstanceID, t.rule.TagID)
 	}
 
-	b.WriteString("\n\n" + claimOnce)
+	writeVaultMoves(&b, s, vaulted)
+	b.WriteString("\n" + claimOnce)
 
 	return b.String()
+}
+
+// writeVaultMoves writes the parts of a run_autotag_rules result that
+// report the items of the rules with the vault flag. Items holds those
+// items after the moves, in the order of [compareIDs]. The first part
+// lists the moved items. The second lists the items that stayed in place,
+// each with its reason. The third lists the failed moves, each with the
+// error and the location of the item. Each part opens with a blank line
+// and a count, and writeVaultMoves leaves out a part without an item.
+func writeVaultMoves(b *strings.Builder, s *Snapshot, items []vaultItem) {
+	var moved, left, failed []string
+
+	for _, v := range items {
+		switch {
+		case v.reason != "":
+			left = append(left, fmt.Sprintf("  - %s (%s) at %s: %s",
+				v.item.Name, v.item.InstanceID, s.LocationLabel(v.item), v.reason))
+
+		case v.err != nil:
+			failed = append(failed, fmt.Sprintf("  - %s (%s) did not move: %v. It is at %s.",
+				v.item.Name, v.item.InstanceID, v.err, s.LocationLabel(v.item)))
+
+		default:
+			moved = append(moved, fmt.Sprintf("  - %s (%s)", v.item.Name, v.item.InstanceID))
+		}
+	}
+
+	for _, part := range []struct {
+		head  string
+		lines []string
+	}{
+		{head: "Moved to the vault", lines: moved},
+		{head: "Left in place", lines: left},
+		{head: "Moves that failed", lines: failed},
+	} {
+		if len(part.lines) == 0 {
+			continue
+		}
+
+		fmt.Fprintf(b, "\n%s: %d\n%s\n", part.head, len(part.lines), strings.Join(part.lines, "\n"))
+	}
 }
 
 // renderUnsureClaim renders the result of a run_autotag_rules call whose
 // claim request might have applied. Head opens the output. When tags holds
 // an item, the output names each item with its rule and the tag of the
-// rule. The user can then set the tags with set_tag.
-func renderUnsureClaim(head string, tags []ruleTag) string {
+// rule. The user can then set the tags with set_tag. Vaulted holds the
+// items of the rules with the vault flag, before any move. The output
+// names each item of vaulted without a reason with its rule, so that the
+// user can move the items with move_items. It leaves out each item with a
+// reason, because the tool leaves such an item in place after an applied
+// claim too.
+func renderUnsureClaim(head string, tags []ruleTag, vaulted []vaultItem) string {
 	var b strings.Builder
 
 	b.WriteString(head)
@@ -1739,6 +1795,18 @@ func renderUnsureClaim(head string, tags []ruleTag) string {
 		for _, t := range tags {
 			fmt.Fprintf(&b, "\n- %s (%s): tag %s (rule %d %q)",
 				t.item.Name, t.item.InstanceID, t.rule.TagID, t.rule.Position, t.rule.Query)
+		}
+	}
+
+	if slices.ContainsFunc(vaulted, func(v vaultItem) bool { return v.reason == "" }) {
+		b.WriteString("\n\nUnless the web client moved them already, move these items to the vault with move_items:")
+
+		for _, v := range vaulted {
+			if v.reason != "" {
+				continue
+			}
+
+			fmt.Fprintf(&b, "\n- %s (%s) (rule %d %q)", v.item.Name, v.item.InstanceID, v.rule.Position, v.rule.Query)
 		}
 	}
 

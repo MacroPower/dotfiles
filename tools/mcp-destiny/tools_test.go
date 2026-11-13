@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -138,6 +139,9 @@ func TestServerListsTools(t *testing.T) {
 			assert.Equal(t, &mcp.ToolAnnotations{}, tool.Annotations)
 			assert.Contains(t, tool.Description, "A claim happens at most once.")
 			assert.Contains(t, tool.Description, "list_autotag_rules with matches=new shows what the tool would do.")
+			assert.Contains(t, tool.Description,
+				"For each rule with vault=true, the tool then moves each item that the web client moves to the vault.")
+			assert.NotContains(t, tool.Description, "an enabled rule moves items to the vault")
 
 		case toolSetAutotagEnabled:
 			assert.Contains(t, tool.Description, "run_autotag_rules runs the rules when a caller invokes it.")
@@ -3887,6 +3891,20 @@ func bungiePosts(f *fakes) []request {
 	return slices.DeleteFunc(f.bungie.all(), func(req request) bool { return req.Method != http.MethodPost })
 }
 
+// serviceWrites returns the path of each POST that the fake service
+// received, in the order of arrival.
+func serviceWrites(f *fakes) []string {
+	var paths []string
+
+	for _, req := range f.service.all() {
+		if req.Method == http.MethodPost {
+			paths = append(paths, req.Path)
+		}
+	}
+
+	return paths
+}
+
 func TestStageJunk(t *testing.T) {
 	t.Parallel()
 
@@ -5694,6 +5712,12 @@ const (
 		`"location": 2, "bucketHash": 138197802}`
 )
 
+// boundFatebringer is a new copy of Fatebringer on the Hunter that Bungie
+// reports as not transferable. Its instance id is the id of newHelmet, so
+// a profile holds at most one of the two.
+const boundFatebringer = `{"itemHash": 100, "itemInstanceId": "1009", "lockable": true, "quantity": 1, ` +
+	`"location": 1, "bucketHash": 1498876634, "transferStatus": 2}`
+
 // newItemsProfile returns a Bungie profile response body that adds items
 // to fixtureProfile. Held holds the JSON items that the inventory of the
 // Hunter gains, and vault holds the JSON items that the vault gains.
@@ -5714,6 +5738,29 @@ func newItemsProfile(t *testing.T, held, vault []string) string {
 	}
 
 	return `{"ErrorCode": 1, "Response": ` + body + `}`
+}
+
+// addNewItemDefs adds to d the definitions of Thorn and Wormhusk Crown,
+// which the profile of newItemsProfile can hold.
+func addNewItemDefs(d *Defs) {
+	d.Items[103] = ItemDef{
+		Name:       "Thorn",
+		TypeName:   "Hand Cannon",
+		Tier:       "Exotic",
+		Bucket:     bucketKinetic,
+		ItemType:   itemTypeWeapon,
+		ClassType:  classAny,
+		Equippable: true,
+	}
+	d.Items[201] = ItemDef{
+		Name:       "Wormhusk Crown",
+		TypeName:   "Helmet",
+		Tier:       "Exotic",
+		Bucket:     bucketHelmet,
+		ItemType:   itemTypeArmor,
+		ClassType:  1,
+		Equippable: true,
+	}
 }
 
 // autotagBody returns an /api/autotag response body with rules, the
@@ -6020,25 +6067,11 @@ func TestListAutotagRulesNew(t *testing.T) {
 
 			f := newFakes(t)
 			f.serviceData[pathAutotag] = tc.autotag
-			f.h.defs.defs.Items[103] = ItemDef{
-				Name:       "Thorn",
-				TypeName:   "Hand Cannon",
-				Tier:       "Exotic",
-				Bucket:     bucketKinetic,
-				ItemType:   itemTypeWeapon,
-				ClassType:  classAny,
-				Equippable: true,
-			}
-			f.h.defs.defs.Items[201] = ItemDef{
-				Name:       "Wormhusk Crown",
-				TypeName:   "Helmet",
-				Tier:       "Exotic",
-				Bucket:     bucketHelmet,
-				ItemType:   itemTypeArmor,
-				ClassType:  1,
-				Equippable: true,
-				SetHash:    tc.helmetSet,
-			}
+			addNewItemDefs(f.h.defs.defs)
+
+			helmet := f.h.defs.defs.Items[201]
+			helmet.SetHash = tc.helmetSet
+			f.h.defs.defs.Items[201] = helmet
 
 			if tc.sheet {
 				withAegisSheet(f)
@@ -6363,18 +6396,6 @@ func TestRunAutotagRules(t *testing.T) {
 			},
 			isError: true,
 		},
-		"a vault rule": {
-			autotag: autotagBody(`{"id": "r1", "query": "is:armor", "vault": true, "enabled": true, ` +
-				`"position": 0, "removed": false, "updatedAt": 5}`),
-			held: thorn,
-			want: []string{
-				refusal,
-				`- 0. [enabled] "is:armor": move to vault (id r1). ` +
-					`The rule moves items to the vault, which run_autotag_rules does not do.`,
-				stillClaims,
-			},
-			isError: true,
-		},
 		"an undecided item": {
 			autotag: autotagBody(
 				storedRule("r1", "rate:>=a", "junk", 0, true),
@@ -6418,6 +6439,18 @@ func TestRunAutotagRules(t *testing.T) {
 			},
 			isError: true,
 		},
+		"the claim does not apply with a vault rule": {
+			autotag: autotagBody(vaultRule("r1", "is:weapon", "junk", 0)),
+			held:    thorn,
+			setup:   func(f *fakes) { f.claim = answer{status: http.StatusOK, body: `{"applied": false}`} },
+			newest:  "00000000000000001008",
+			want: []string{
+				"The service did not apply the claim, so run_autotag_rules tagged nothing. " +
+					"Another runner, such as the open web client, claimed these items first, " +
+					"or autotagging was turned off.",
+			},
+			isError: true,
+		},
 		"the claim fails and the mark stays": {
 			reread:  true,
 			autotag: autotagBody(weapon),
@@ -6425,6 +6458,24 @@ func TestRunAutotagRules(t *testing.T) {
 			setup: func(f *fakes) {
 				f.claim = internal
 				f.claimedAutotag = answer{status: http.StatusOK, body: autotagBody(weapon)}
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimFailed + " The stored mark is still 00000000000000001006, " +
+					"so run_autotag_rules claimed nothing and tagged nothing.",
+			},
+			isError: true,
+		},
+		"the claim fails and the mark stays with a vault rule": {
+			reread:  true,
+			autotag: autotagBody(vaultRule("r1", "is:weapon", "junk", 0)),
+			held:    thorn,
+			setup: func(f *fakes) {
+				f.claim = internal
+				f.claimedAutotag = answer{
+					status: http.StatusOK,
+					body:   autotagBody(vaultRule("r1", "is:weapon", "junk", 0)),
+				}
 			},
 			newest: "00000000000000001008",
 			want: []string{
@@ -6450,6 +6501,32 @@ func TestRunAutotagRules(t *testing.T) {
 				"",
 				unless,
 				`- Thorn (1008): tag keep (rule 0 "is:weapon")`,
+				"",
+				once,
+			},
+			isError: true,
+		},
+		"the claim fails and the mark moved with a vault rule": {
+			reread:  true,
+			autotag: autotagBody(vaultRule("r1", "is:weapon", "junk", 0)),
+			held:    []string{newThorn, boundFatebringer},
+			setup: func(f *fakes) {
+				f.claim = internal
+				f.claimedAutotag = answer{status: http.StatusOK, body: `{"rules": [], ` +
+					`"state": {"enabled": true, "mark": "00000000000000001009", "updatedAt": 6}}`}
+			},
+			newest: "00000000000000001009",
+			want: []string{
+				claimFailed + " The stored mark moved from 00000000000000001006 to 00000000000000001009, " +
+					"so the claim might have applied, for this call or for another runner. " +
+					"run_autotag_rules tagged nothing.",
+				"",
+				unless,
+				`- Thorn (1008): tag junk (rule 0 "is:weapon")`,
+				`- Fatebringer (1009): tag junk (rule 0 "is:weapon")`,
+				"",
+				"Unless the web client moved them already, move these items to the vault with move_items:",
+				`- Thorn (1008) (rule 0 "is:weapon")`,
 				"",
 				once,
 			},
@@ -6490,6 +6567,27 @@ func TestRunAutotagRules(t *testing.T) {
 				"",
 				unless,
 				`- Thorn (1008): tag keep (rule 0 "is:weapon")`,
+				"",
+				once,
+			},
+			isError: true,
+		},
+		"the claim fails and the state is unreadable with a vault rule": {
+			reread:  true,
+			autotag: autotagBody(vaultRule("r1", "is:weapon", "", 0)),
+			held:    thorn,
+			setup: func(f *fakes) {
+				f.claim = internal
+				f.claimedAutotag = internal
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimFailed + " The server could not read the autotag state again: " +
+					"service: GET /api/autotag?since=0 returned status 500: Internal error. " +
+					"The claim might have applied. run_autotag_rules tagged nothing.",
+				"",
+				"Unless the web client moved them already, move these items to the vault with move_items:",
+				`- Thorn (1008) (rule 0 "is:weapon")`,
 				"",
 				once,
 			},
@@ -6542,24 +6640,7 @@ func TestRunAutotagRules(t *testing.T) {
 
 			f := newFakes(t)
 			f.serviceData[pathAutotag] = tc.autotag
-			f.h.defs.defs.Items[103] = ItemDef{
-				Name:       "Thorn",
-				TypeName:   "Hand Cannon",
-				Tier:       "Exotic",
-				Bucket:     bucketKinetic,
-				ItemType:   itemTypeWeapon,
-				ClassType:  classAny,
-				Equippable: true,
-			}
-			f.h.defs.defs.Items[201] = ItemDef{
-				Name:       "Wormhusk Crown",
-				TypeName:   "Helmet",
-				Tier:       "Exotic",
-				Bucket:     bucketHelmet,
-				ItemType:   itemTypeArmor,
-				ClassType:  1,
-				Equippable: true,
-			}
+			addNewItemDefs(f.h.defs.defs)
 
 			if tc.sheet {
 				withAegisSheet(f)
@@ -6618,6 +6699,476 @@ func TestRunAutotagRules(t *testing.T) {
 			for _, req := range f.bungie.all() {
 				assert.Equal(t, http.MethodGet, req.Method, "nothing moves: %s", req.Path)
 			}
+		})
+	}
+}
+
+// vaultRule returns the JSON of an enabled autotag rule that the service
+// stores with the vault flag. An empty tagID gives a rule without a tag.
+// Query and tagID hold ASCII characters only, which the %q verb quotes as
+// JSON does.
+func vaultRule(id, query, tagID string, position int) string {
+	return fmt.Sprintf(`{"id": %q, "query": %q, "tagId": %q, "vault": true, "enabled": true, `+
+		`"position": %d, "removed": false, "updatedAt": 5}`, id, query, tagID, position)
+}
+
+func TestRunAutotagRulesVault(t *testing.T) {
+	t.Parallel()
+
+	const (
+		pathPull = "/Destiny2/Actions/Items/PullFromPostmaster/"
+		once     = "A claim happens at most once. No runner offers the claimed items to an autotag rule again, " +
+			"also when a step after the claim failed."
+		claimed = "Claimed the new items. The stored mark moved from 00000000000000001006 " +
+			"to 00000000000000001008."
+		noVault     = "New items already in the vault, which no rule takes: 0"
+		noneLeft    = "New items that no rule took: 0"
+		ruleLine    = `- 0. [enabled] "is:weapon": tag junk, move to vault (id r1)`
+		thornOut    = "  - Thorn (1008)"
+		thornFailed = "  - Thorn (1008) did not move: transferring to the vault: " +
+			"bungie: DestinyItemNotFound: gone. It is at Hunter."
+		fatebringerFailed = "  - Fatebringer (1007) did not move: transferring to the vault: " +
+			"bungie: DestinyItemNotFound: gone. It is at Hunter."
+		toVault = "1008 to the vault from c1"
+		// postmasterThorn is the new Thorn 1008 at the Postmaster of the
+		// Hunter, in the bucket of the lost items.
+		postmasterThorn = `{"itemHash": 103, "itemInstanceId": "1008", "lockable": true, "quantity": 1, ` +
+			`"location": 4, "bucketHash": 215593132, "transferStatus": 0}`
+		// equipmentMarker opens the equipment of the Hunter in
+		// fixtureProfile.
+		equipmentMarker = "\"characterEquipment\": {\"data\": {\n\t\t\"c1\": {\"items\": ["
+	)
+
+	// heldThorn returns the JSON of the new Thorn 1008 in the kinetic
+	// bucket of the Hunter. Status is the transfer status of the item.
+	heldThorn := func(status int) string {
+		return fmt.Sprintf(`{"itemHash": 103, "itemInstanceId": "1008", "lockable": true, "quantity": 1, `+
+			`"location": 1, "bucketHash": 1498876634, "transferStatus": %d}`, status)
+	}
+
+	junkRow := func(id string, hash float64) map[string]any {
+		return map[string]any{"instanceId": id, "itemHash": hash, "tagId": "junk", "ruleId": "r1", "removed": false}
+	}
+
+	weaponJunk := autotagBody(vaultRule("r1", "is:weapon", "junk", 0))
+
+	tests := map[string]struct {
+		setup func(f *fakes)
+		// held holds the JSON items that the inventory of the Hunter
+		// gains, and equipped holds those that its equipment gains.
+		held     []string
+		equipped []string
+		autotag  string
+		newest   string
+		want     []string
+		// wantTags holds the rows of the one tag write. A nil wantTags
+		// expects no tag write.
+		wantTags []any
+		// steps describes each Bungie action of the call in order.
+		steps []string
+		// locations holds the location that the cached snapshot gives
+		// each instance id after the call.
+		locations map[string]string
+		isError   bool
+		// moved marks a call whose moves changed an item, which resets
+		// the fetch time of the cached snapshot.
+		moved bool
+	}{
+		"moves a vault rule item": {
+			autotag: weaponJunk,
+			held:    []string{newThorn},
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed, "",
+				ruleLine + ". New items it took: 1", "  - Thorn (1008), Vault", "",
+				noneLeft, "",
+				noVault, "",
+				"Moved to the vault: 1", thornOut, "",
+				once,
+			},
+			wantTags:  []any{junkRow("1008", 103)},
+			steps:     []string{toVault},
+			locations: map[string]string{"1008": "Vault"},
+			moved:     true,
+		},
+		"leaves an equipped item in place": {
+			autotag: weaponJunk,
+			equipped: []string{`{"itemHash": 101, "itemInstanceId": "1008", "lockable": true, "quantity": 1, ` +
+				`"location": 1, "bucketHash": 953998645, "transferStatus": 1}`},
+			newest: "00000000000000001008",
+			want: []string{
+				claimed, "",
+				ruleLine + ". New items it took: 1", "  - Gjallarhorn (1008), Hunter (equipped)", "",
+				noneLeft, "",
+				noVault, "",
+				"Left in place: 1", "  - Gjallarhorn (1008) at Hunter (equipped): it is equipped", "",
+				once,
+			},
+			wantTags:  []any{junkRow("1008", 101)},
+			locations: map[string]string{"1008": "Hunter (equipped)"},
+		},
+		"leaves a status 2 item in place": {
+			autotag: weaponJunk,
+			held:    []string{heldThorn(2)},
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed, "",
+				ruleLine + ". New items it took: 1", "  - Thorn (1008), Hunter", "",
+				noneLeft, "",
+				noVault, "",
+				"Left in place: 1", "  - Thorn (1008) at Hunter: Bungie reports it as not transferable", "",
+				once,
+			},
+			wantTags:  []any{junkRow("1008", 103)},
+			locations: map[string]string{"1008": "Hunter"},
+		},
+		"pulls from the Postmaster": {
+			autotag: weaponJunk,
+			held:    []string{postmasterThorn},
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed, "",
+				ruleLine + ". New items it took: 1", "  - Thorn (1008), Vault", "",
+				noneLeft, "",
+				noVault, "",
+				"Moved to the vault: 1", thornOut, "",
+				once,
+			},
+			wantTags:  []any{junkRow("1008", 103)},
+			steps:     []string{"pull 1008 to c1", toVault},
+			locations: map[string]string{"1008": "Vault"},
+			moved:     true,
+		},
+		"leaves a non-transferable definition in place": {
+			autotag: weaponJunk,
+			held:    []string{heldThorn(0)},
+			setup: func(f *fakes) {
+				thorn := f.h.defs.defs.Items[103]
+				thorn.NonTransferable = true
+				f.h.defs.defs.Items[103] = thorn
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimed, "",
+				ruleLine + ". New items it took: 1", "  - Thorn (1008), Hunter", "",
+				noneLeft, "",
+				noVault, "",
+				"Left in place: 1",
+				"  - Thorn (1008) at Hunter: " +
+					"the server treats it as not transferable, but the web client tries the transfer",
+				"",
+				once,
+			},
+			wantTags:  []any{junkRow("1008", 103)},
+			locations: map[string]string{"1008": "Hunter"},
+		},
+		"a failed transfer": {
+			autotag: weaponJunk,
+			held:    []string{newFatebringer, newThorn},
+			setup: func(f *fakes) {
+				f.bungieError = goneError
+				f.bungieErrorIf = func(body map[string]any) bool { return body["itemId"] == "1007" }
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimed, "",
+				ruleLine + ". New items it took: 2", "  - Fatebringer (1007), Hunter", "  - Thorn (1008), Vault", "",
+				noneLeft, "",
+				noVault, "",
+				"Moved to the vault: 1", thornOut, "",
+				"Moves that failed: 1", fatebringerFailed, "",
+				once,
+			},
+			wantTags:  []any{junkRow("1007", 100), junkRow("1008", 103)},
+			steps:     []string{"1007 to the vault from c1", toVault},
+			locations: map[string]string{"1007": "Hunter", "1008": "Vault"},
+			isError:   true,
+			moved:     true,
+		},
+		"moves, leaves in place, and fails in one call": {
+			autotag: weaponJunk,
+			held:    []string{newFatebringer, newThorn, boundFatebringer},
+			setup: func(f *fakes) {
+				f.bungieError = goneError
+				f.bungieErrorIf = func(body map[string]any) bool { return body["itemId"] == "1007" }
+			},
+			newest: "00000000000000001009",
+			want: []string{
+				"Claimed the new items. The stored mark moved from 00000000000000001006 to 00000000000000001009.",
+				"",
+				ruleLine + ". New items it took: 3",
+				"  - Fatebringer (1007), Hunter", "  - Thorn (1008), Vault", "  - Fatebringer (1009), Hunter", "",
+				noneLeft, "",
+				noVault, "",
+				"Moved to the vault: 1", thornOut, "",
+				"Left in place: 1", "  - Fatebringer (1009) at Hunter: Bungie reports it as not transferable", "",
+				"Moves that failed: 1", fatebringerFailed, "",
+				once,
+			},
+			wantTags:  []any{junkRow("1007", 100), junkRow("1008", 103), junkRow("1009", 100)},
+			steps:     []string{"1007 to the vault from c1", toVault},
+			locations: map[string]string{"1007": "Hunter", "1008": "Vault", "1009": "Hunter"},
+			isError:   true,
+			moved:     true,
+		},
+		"a failed transfer alone": {
+			autotag: weaponJunk,
+			held:    []string{newThorn},
+			setup:   func(f *fakes) { f.bungieError = goneError },
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed, "",
+				ruleLine + ". New items it took: 1", "  - Thorn (1008), Hunter", "",
+				noneLeft, "",
+				noVault, "",
+				"Moves that failed: 1", thornFailed, "",
+				once,
+			},
+			wantTags:  []any{junkRow("1008", 103)},
+			steps:     []string{toVault},
+			locations: map[string]string{"1008": "Hunter"},
+			isError:   true,
+		},
+		"a failed transfer after a Postmaster pull": {
+			autotag: weaponJunk,
+			held:    []string{postmasterThorn},
+			setup: func(f *fakes) {
+				f.bungieError = goneError
+				f.bungieErrorIf = func(body map[string]any) bool {
+					_, ok := body["transferToVault"]
+
+					return ok
+				}
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimed, "",
+				ruleLine + ". New items it took: 1", "  - Thorn (1008), Hunter", "",
+				noneLeft, "",
+				noVault, "",
+				"Moves that failed: 1", thornFailed, "",
+				once,
+			},
+			wantTags:  []any{junkRow("1008", 103)},
+			steps:     []string{"pull 1008 to c1", toVault},
+			locations: map[string]string{"1008": "Hunter"},
+			isError:   true,
+			// The pull changed the item, although the transfer failed.
+			moved: true,
+		},
+		"moves in instance id order": {
+			autotag: autotagBody(vaultRule("r1", "is:armor", "", 0), vaultRule("r2", "is:weapon", "", 1)),
+			held:    []string{newHelmet, newThorn},
+			newest:  "00000000000000001009",
+			want: []string{
+				"Claimed the new items. The stored mark moved from 00000000000000001006 to 00000000000000001009.",
+				"",
+				`- 0. [enabled] "is:armor": move to vault (id r1). New items it took: 1`,
+				"  - Wormhusk Crown (1009), Vault",
+				`- 1. [enabled] "is:weapon": move to vault (id r2). New items it took: 1`,
+				"  - Thorn (1008), Vault",
+				"",
+				noneLeft, "",
+				noVault, "",
+				"Moved to the vault: 2", thornOut, "  - Wormhusk Crown (1009)", "",
+				once,
+			},
+			steps:     []string{toVault, "1009 to the vault from c1"},
+			locations: map[string]string{"1008": "Vault", "1009": "Vault"},
+			moved:     true,
+		},
+		"the item of another rule stays": {
+			autotag: autotagBody(
+				storedRule("r2", "is:armor", "keep", 0, true),
+				vaultRule("r1", "is:weapon", "junk", 1),
+			),
+			held:   []string{newThorn, newHelmet},
+			newest: "00000000000000001009",
+			want: []string{
+				"Claimed the new items. The stored mark moved from 00000000000000001006 to 00000000000000001009.",
+				"",
+				`- 0. [enabled] "is:armor": tag keep (id r2). New items it took: 1`,
+				"  - Wormhusk Crown (1009), Hunter",
+				`- 1. [enabled] "is:weapon": tag junk, move to vault (id r1). New items it took: 1`,
+				"  - Thorn (1008), Vault",
+				"",
+				noneLeft, "",
+				noVault, "",
+				"Moved to the vault: 1", thornOut, "",
+				once,
+			},
+			wantTags: []any{
+				map[string]any{
+					"instanceId": "1009", "itemHash": float64(201), "tagId": "keep", "ruleId": "r2", "removed": false,
+				},
+				junkRow("1008", 103),
+			},
+			steps:     []string{toVault},
+			locations: map[string]string{"1008": "Vault", "1009": "Hunter"},
+			moved:     true,
+		},
+		"the tag write fails": {
+			autotag: weaponJunk,
+			held:    []string{newThorn},
+			setup:   func(f *fakes) { f.tagWriteStatus = http.StatusInternalServerError },
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed,
+				"",
+				"The tag write failed: writing tags: service: POST /api/tags returned status 500: " +
+					"Tag store unavailable. Tag these items with set_tag:",
+				"- Thorn (1008): tag junk",
+				"",
+				"Moved to the vault: 1", thornOut, "",
+				once,
+			},
+			wantTags:  []any{junkRow("1008", 103)},
+			steps:     []string{toVault},
+			locations: map[string]string{"1008": "Vault"},
+			isError:   true,
+			moved:     true,
+		},
+		"a vault rule without a tag": {
+			autotag: autotagBody(vaultRule("r1", "is:weapon", "", 0)),
+			held:    []string{newThorn},
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed,
+				"",
+				`- 0. [enabled] "is:weapon": move to vault (id r1). New items it took: 1`,
+				"  - Thorn (1008), Vault",
+				"",
+				noneLeft,
+				"",
+				noVault,
+				"",
+				"Moved to the vault: 1",
+				thornOut,
+				"",
+				once,
+			},
+			steps:     []string{toVault},
+			locations: map[string]string{"1008": "Vault"},
+			moved:     true,
+		},
+		"no refusal for a vault rule": {
+			autotag: autotagBody(vaultRule("r1", "is:armor", "", 0)),
+			held:    []string{newThorn},
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed, "",
+				`- 0. [enabled] "is:armor": move to vault (id r1). New items it took: 0`, "",
+				"New items that no rule took: 1", "  - Thorn (1008), Hunter", "",
+				noVault, "",
+				once,
+			},
+			locations: map[string]string{"1008": "Hunter"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.serviceData[pathAutotag] = tc.autotag
+			addNewItemDefs(f.h.defs.defs)
+
+			if tc.setup != nil {
+				tc.setup(f)
+			}
+
+			// The handler caches the fixture profile, which holds no new
+			// item, so only a fresh profile finds the new items.
+			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+			require.False(t, isError)
+
+			f.profileBody = newItemsProfile(t, tc.held, nil)
+			if len(tc.equipped) > 0 {
+				require.Equal(t, 1, strings.Count(f.profileBody, equipmentMarker))
+
+				f.profileBody = strings.Replace(f.profileBody, equipmentMarker,
+					equipmentMarker+"\n"+strings.Join(tc.equipped, ",\n")+",", 1)
+			}
+
+			// The clock moves 10 seconds with each Bungie action, so the
+			// fetch time tells a snapshot that a move changed from a
+			// fresh one.
+			f.h.now = func() time.Time { return fixtureNow.Add(time.Duration(len(bungiePosts(f))) * 10 * time.Second) }
+
+			// writesAtMove holds the service writes that the fake service
+			// had received when each Bungie action arrived.
+			var (
+				mu           sync.Mutex
+				writesAtMove [][]string
+			)
+
+			f.bungiePost = func() {
+				writes := serviceWrites(f)
+
+				mu.Lock()
+				defer mu.Unlock()
+
+				writesAtMove = append(writesAtMove, writes)
+			}
+
+			got, isError := call(t, f.h.handleRunAutotagRules, EmptyInput{})
+			assert.Equal(t, tc.isError, isError, got)
+			assert.Equal(t, strings.Join(tc.want, "\n"), got)
+
+			// The claim and the tag write, also a failed one, precede every
+			// Bungie action, as in the web client.
+			mu.Lock()
+			atMoves := slices.Clone(writesAtMove)
+			mu.Unlock()
+
+			require.Len(t, atMoves, len(tc.steps))
+
+			for i, at := range atMoves {
+				assert.Equal(t, serviceWrites(f), at, "service writes before Bungie action %d", i)
+			}
+
+			claims := f.claims()
+			require.Len(t, claims, 1)
+			assert.Equal(t, map[string]any{
+				"kind": "claim", "from": "00000000000000001006", "to": tc.newest,
+			}, claims[0].Body)
+
+			writes := f.service.calls(http.MethodPost, pathTags)
+			if tc.wantTags == nil {
+				assert.Empty(t, writes, "nothing is tagged")
+			} else {
+				require.Len(t, writes, 1)
+				assert.Equal(t, map[string]any{"defs": []any{}, "items": tc.wantTags}, writes[0].Body)
+			}
+
+			var steps []string
+
+			for _, req := range bungiePosts(f) {
+				switch req.Path {
+				case pathPull:
+					steps = append(steps, fmt.Sprintf("pull %v to %v", req.Body["itemId"], req.Body["characterId"]))
+				case pathTransfer:
+					steps = append(steps, transferSteps([]request{req})...)
+				default:
+					steps = append(steps, req.Path)
+				}
+			}
+
+			assert.Equal(t, tc.steps, steps)
+
+			for id, want := range tc.locations {
+				items, err := findItems(f.h.snapshot, []string{id})
+				require.NoError(t, err)
+				assert.Equal(t, want, f.h.snapshot.LocationLabel(items[0]), id)
+			}
+
+			fetched := fixtureNow
+			if tc.moved {
+				fetched = f.h.now()
+			}
+
+			assert.Equal(t, fetched, f.h.snapshot.Fetched)
 		})
 	}
 }

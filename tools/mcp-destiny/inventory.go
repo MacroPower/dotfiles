@@ -186,6 +186,12 @@ type Character struct {
 // the value that DIM counts as power, and 0 for a primary stat that DIM
 // does not count, as [lightPower] decides.
 //
+// TransferStatus is the Bungie TransferStatuses value that the profile
+// gives the item. Transferable marks an item that the server transfers.
+// It reads the transfer status and the definition. It ignores the
+// transfer status of an item at the Postmaster, because a move pulls such
+// an item first.
+//
 // TagRule is the id of the autotag rule that set Tag. It is empty when a
 // person set the tag, and when Tag is outside the tags that the web
 // client defines.
@@ -195,43 +201,44 @@ type Character struct {
 // definitions hold, and SetPerks then holds the sandbox perk hashes of the
 // set bonuses of the set.
 type Item struct {
-	Categories   []int64
-	InstanceID   string
-	Name         string
-	TypeName     string
-	Tier         string
-	Slot         string
-	Class        string
-	Damage       string
-	Owner        string
-	Kind         string
-	Tag          string
-	TagRule      string
-	Note         string
-	Perks        []Perk
-	Stats        []Stat
-	SetPerks     []uint32
-	ClassType    int
-	AmmoType     int
-	TierType     int
-	Element      int
-	Power        int
-	LightPower   int
-	Quantity     int
-	Hash         uint32
-	Bucket       uint32
-	SetHash      uint32
-	Equipped     bool
-	Postmaster   bool
-	Lost         bool
-	Locked       bool
-	Masterwork   bool
-	Crafted      bool
-	Transferable bool
-	Equippable   bool
-	Lockable     bool
-	Favorite     bool
-	SetKnown     bool
+	Categories     []int64
+	InstanceID     string
+	Name           string
+	TypeName       string
+	Tier           string
+	Slot           string
+	Class          string
+	Damage         string
+	Owner          string
+	Kind           string
+	Tag            string
+	TagRule        string
+	Note           string
+	Perks          []Perk
+	Stats          []Stat
+	SetPerks       []uint32
+	ClassType      int
+	AmmoType       int
+	TierType       int
+	TransferStatus int
+	Element        int
+	Power          int
+	LightPower     int
+	Quantity       int
+	Hash           uint32
+	Bucket         uint32
+	SetHash        uint32
+	Equipped       bool
+	Postmaster     bool
+	Lost           bool
+	Locked         bool
+	Masterwork     bool
+	Crafted        bool
+	Transferable   bool
+	Equippable     bool
+	Lockable       bool
+	Favorite       bool
+	SetKnown       bool
 }
 
 // StatTotal returns the sum of the stat values of an armor piece. It reports
@@ -467,30 +474,31 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 	}
 
 	item := &Item{
-		InstanceID:   pi.InstanceID,
-		Hash:         pi.Hash,
-		Name:         def.Name,
-		TypeName:     def.TypeName,
-		Tier:         def.Tier,
-		TierType:     def.TierType,
-		Slot:         defs.Buckets[slot].Name,
-		Bucket:       slot,
-		Kind:         kindOf(def),
-		Categories:   itemCategories(def.Categories),
-		ClassType:    def.ClassType,
-		AmmoType:     def.AmmoType,
-		SetHash:      def.SetHash,
-		Owner:        owner,
-		Quantity:     pi.Quantity,
-		Equipped:     equipped,
-		Postmaster:   postmaster,
-		Lost:         pi.BucketHash == bucketPostmaster,
-		Locked:       pi.State&stateLocked != 0,
-		Masterwork:   pi.State&stateMasterwork != 0,
-		Crafted:      pi.State&stateCrafted != 0,
-		Transferable: transferable,
-		Equippable:   def.Equippable,
-		Lockable:     pi.Lockable,
+		InstanceID:     pi.InstanceID,
+		Hash:           pi.Hash,
+		Name:           def.Name,
+		TypeName:       def.TypeName,
+		Tier:           def.Tier,
+		TierType:       def.TierType,
+		Slot:           defs.Buckets[slot].Name,
+		Bucket:         slot,
+		Kind:           kindOf(def),
+		Categories:     itemCategories(def.Categories),
+		ClassType:      def.ClassType,
+		AmmoType:       def.AmmoType,
+		SetHash:        def.SetHash,
+		Owner:          owner,
+		Quantity:       pi.Quantity,
+		Equipped:       equipped,
+		Postmaster:     postmaster,
+		Lost:           pi.BucketHash == bucketPostmaster,
+		Locked:         pi.State&stateLocked != 0,
+		Masterwork:     pi.State&stateMasterwork != 0,
+		Crafted:        pi.State&stateCrafted != 0,
+		Transferable:   transferable,
+		TransferStatus: pi.TransferStatus,
+		Equippable:     def.Equippable,
+		Lockable:       pi.Lockable,
 	}
 
 	if def.ClassType != classAny {

@@ -655,6 +655,9 @@ type fakes struct {
 	// it selects, such as the transfers of one item. A nil bungieErrorIf
 	// selects every action.
 	bungieErrorIf func(body map[string]any) bool
+	// bungiePost runs for each Bungie action after the fake records it and
+	// before the fake answers it. A nil bungiePost does nothing.
+	bungiePost func()
 	// activitiesBody is the response body of the profile request that
 	// asks only for the activities. When it is empty, that request gets
 	// the body of the snapshot request: profileBody when it is set, and
@@ -774,6 +777,10 @@ func newFakes(t *testing.T) *fakes {
 
 	bungie := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := f.bungie.record(t, r)
+
+		if req.Method == http.MethodPost && f.bungiePost != nil {
+			f.bungiePost()
+		}
 
 		switch {
 		case f.staleAccess != "" && req.Auth == "Bearer "+f.staleAccess:

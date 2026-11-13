@@ -594,8 +594,6 @@
 //     can change which rule takes each item after it.
 //   - A new item that an enabled rule leaves undecided before any rule
 //     matches it.
-//   - An enabled rule with the vault flag. The tool does not move items,
-//     and the rule never sees a claimed item again.
 //
 // The tool also claims nothing while autotagging is off. It claims
 // nothing when no owned item has an instance id higher than the stored
@@ -617,17 +615,51 @@
 // therefore gives way to the tag of the rule. A rule without a tag takes
 // its items and tags none of them.
 //
+// After the tag write, the tool moves the items of each enabled rule with
+// the vault flag to the vault, as the web client does. The moves also run
+// after a failed tag write, because the web client moves the items whatever
+// its tag write gives. A rule with the vault flag and without a tag moves
+// its items and tags none of them. The tool moves one item at a time, in
+// the order of the instance ids. It pulls an item from the Postmaster
+// before the transfer. The result lists the moved items.
+//
+// The tool leaves an item in place, and the result names the item with one
+// of these reasons:
+//
+//   - A character has the item equipped.
+//   - Bungie reports the item as not transferable. The web client reads
+//     the transfer status of the item and compares it with the
+//     NotTransferrable value alone.
+//   - The definition puts the item in a bucket that the web client never
+//     moves an item from. Those are the bucket of the distorted engrams
+//     and the Engrams, Lost Items, Messages, and Special Orders buckets of
+//     the Postmaster.
+//   - The server treats the item as not transferable, but the web client
+//     tries the transfer. The server also reads the definition and every
+//     transfer status with the NotTransferrable bit, and it refuses to
+//     transfer such an item.
+//
+// A failed move does not stop the next one. The result names the item with
+// the error and the location of the item. It is an error result, so that
+// the user moves the item by hand. The web client runs the move code of
+// Destiny Item Manager, which moves another item out of a full vault to
+// make room. The tool moves only the items that the rules take, so Bungie
+// refuses a transfer to a full vault. The result then lists a failed move.
+//
 // A claim happens at most once. No runner offers the claimed items to a
 // rule again, also when a step after the claim fails. The tool retries
-// neither the claim nor the tag write. When the tag write fails, the
-// result names each item with its tag, so that the user can set the tags
-// with set_tag.
+// neither the claim, the tag write, nor a move. When the tag write fails,
+// the result names each item with its tag, so that the user can set the
+// tags with set_tag.
 //
 // A claim request that fails might still have moved the mark in the
-// service. The tool then reads the autotag state again and tags nothing.
-// When the mark is still the stored mark, the tool claimed nothing. When
-// the mark moved or the read fails, the claim might have applied. The
-// result then names each item with its rule and the tag of the rule.
+// service. The tool then reads the autotag state again, and it tags
+// nothing and moves nothing. When the mark is still the stored mark, the
+// tool claimed nothing. When the mark moved or the read fails, the claim
+// might have applied. The result then lists the items that the rules tag,
+// each with its rule and its tag, for set_tag. It also lists the items
+// that the tool moves to the vault after an applied claim, each with its
+// rule, for move_items.
 //
 // # Sign-in
 //

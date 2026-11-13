@@ -97,6 +97,29 @@ func TestNewSnapshot(t *testing.T) {
 	assert.True(t, lost.Transferable, "the transfer status of a Postmaster item does not block a move")
 }
 
+func TestNewItemTransferStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		instanceID string
+		want       int
+	}{
+		"the equipped hand cannon": {instanceID: "1006", want: 1},
+		"the lost hand cannon":     {instanceID: "1005", want: 2},
+		"the vault hand cannon":    {instanceID: "1001", want: 0},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			item, ok := fixtureSnapshot(t).Find(tc.instanceID)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, item.TransferStatus)
+		})
+	}
+}
+
 func TestSlotBuckets(t *testing.T) {
 	t.Parallel()
 
