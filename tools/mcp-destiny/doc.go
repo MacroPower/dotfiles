@@ -519,6 +519,38 @@
 // the rule and the reasons. The output names the reason of each skipped or
 // blocked rule.
 //
+// # Owned Rule Counts
+//
+// The list_autotag_rules tool with matches=owned counts the owned items
+// that each rule matches, as the rule editor of the web client counts them
+// beside each rule. A model can therefore check an order of the rules
+// before the next claim. The tool counts the items that the Autotag
+// Preview section describes, the vault included. It reads an inventory up
+// to 30 seconds old, so the counts describe the owned items and can miss
+// the newest drops. The counts do not depend on the autotag state. The
+// tool counts the stored rules. The editor counts the rules on screen,
+// which might differ from the stored rules until the user saves them. An
+// account without a character gets no counts, because the web client
+// matches every item when it has no current character.
+//
+// The tool puts each rule in the classes that the New Item Matches section
+// describes. It walks the rules in order and counts each evaluated rule
+// over the items that no earlier enabled rule took. An enabled rule then
+// takes the items that it counts, and a disabled rule takes nothing. A
+// rule without a tag and without the vault flag still counts and takes
+// items. The editor shows the missing action of such a rule in place of
+// its count. The output names each skipped rule with its skip reason, and
+// the rule takes nothing.
+//
+// The line of a blocked rule reads "Cannot count" and gives the reason.
+// The server cannot tell which items an enabled rule takes when the rule
+// blocks. Each later evaluated or blocked rule therefore reads "Not
+// counted". An enabled rule that leaves an item undecided has the same
+// effect, after its own count and the number of its undecided items. A
+// later skipped rule keeps its skip line, because the web client counts
+// nothing for it whatever the rules before it take. A disabled rule takes
+// nothing, so the rules after it still count.
+//
 // # Sign-in
 //
 // Bungie redirects a sign-in to the one URL registered for the deployment,

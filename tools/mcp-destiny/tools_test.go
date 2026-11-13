@@ -5982,7 +5982,7 @@ func TestListAutotagRulesNew(t *testing.T) {
 		"another matches value": {
 			autotag: autotagBody(weapon),
 			matches: "all",
-			want:    []string{`invalid input: matches "all" is not new`},
+			want:    []string{`invalid input: matches "all" is not new or owned`},
 			isError: true,
 		},
 	}
@@ -6052,7 +6052,7 @@ func TestListAutotagRulesNew(t *testing.T) {
 	}
 }
 
-func TestListAutotagRulesNewReadErrors(t *testing.T) {
+func TestListAutotagRulesReadErrors(t *testing.T) {
 	t.Parallel()
 
 	listItems := func(t *testing.T, f *fakes) (string, bool) {
@@ -6090,20 +6090,332 @@ func TestListAutotagRulesNewReadErrors(t *testing.T) {
 	}
 
 	for name, tc := range tests {
+		for _, matches := range []string{matchesNew, matchesOwned} {
+			t.Run(name+" with matches="+matches, func(t *testing.T) {
+				t.Parallel()
+
+				f := newFakes(t)
+				tc.setup(f)
+
+				want, isError := tc.baseline(t, f)
+				require.True(t, isError)
+
+				got, isError := call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{Matches: matches})
+				assert.True(t, isError)
+				assert.Equal(t, want, got)
+			})
+		}
+	}
+}
+
+func TestListAutotagRulesOwned(t *testing.T) {
+	t.Parallel()
+
+	const (
+		header = "Owned items that each rule matches after the enabled rules before it took theirs, " +
+			"as the rule editor of the web client counts them:"
+		notCounted = ". Not counted, because the server cannot tell which items the rules before it take."
+		skips      = ". The web client skips this rule and counts nothing for it: "
+		parseSkip  = `the query ends after "-", which needs a search term after it.`
+		masterwork = ". Cannot count: the server does not evaluate is:masterwork."
+		// weaponLine is the rule line of weapon. The fixture profile
+		// holds five weapons, two of them in the vault.
+		weaponLine = `- 9. [enabled] "is:weapon": tag keep (id r9)`
+		// undecidedCount is the count of the query is:weapon rate:>=a
+		// with the Aegis sheet. The two copies of Fatebringer without
+		// perks are undecided.
+		undecidedCount = ". Owned items it matches: 2. Owned items that the server cannot decide for it: 2 (" +
+			reasonNoPerks + ")"
+	)
+
+	weapon := storedRule("r9", "is:weapon", "keep", 9, true)
+
+	tests := map[string]struct {
+		autotag string
+		profile string
+		matches string
+		// sameAsSave is the query whose save_autotag_rule count equals
+		// the count of the first rule.
+		sameAsSave string
+		want       []string
+		// sheet makes the service publish previewAegisSheet as the only
+		// roll sheet.
+		sheet bool
+		// noProfile marks a case that reads no profile.
+		noProfile bool
+		isError   bool
+	}{
+		"a later rule counts what is left": {
+			autotag: autotagBody(
+				storedRule("r1", "is:weapon", "junk", 0, true),
+				storedRule("r2", "is:weapon is:invault", "keep", 1, true),
+			),
+			want: []string{
+				header,
+				`- 0. [enabled] "is:weapon": tag junk (id r1). Owned items it matches: 5`,
+				`- 1. [enabled] "is:weapon is:invault": tag keep (id r2). Owned items it matches: 0`,
+			},
+		},
+		"the matches value in upper case with spaces": {
+			autotag: autotagBody(weapon),
+			matches: " OWNED ",
+			want:    []string{header, weaponLine + ". Owned items it matches: 5"},
+		},
+		"a disabled rule takes nothing": {
+			autotag: autotagBody(
+				storedRule("r1", "is:weapon", "junk", 0, false),
+				storedRule("r2", "is:weapon is:invault", "keep", 1, true),
+			),
+			want: []string{
+				header,
+				`- 0. [disabled] "is:weapon": tag junk (id r1). Owned items it matches: 5`,
+				`- 1. [enabled] "is:weapon is:invault": tag keep (id r2). Owned items it matches: 2`,
+			},
+		},
+		"an unsupported enabled rule": {
+			autotag: autotagBody(
+				storedRule("r1", "is:masterwork", "junk", 0, true),
+				storedRule("r2", "is:masterwork", "junk", 1, false),
+				weapon,
+			),
+			want: []string{
+				header,
+				`- 0. [enabled] "is:masterwork": tag junk (id r1)` + masterwork,
+				`- 1. [disabled] "is:masterwork": tag junk (id r2)` + notCounted,
+				weaponLine + notCounted,
+			},
+		},
+		"an unsupported disabled rule": {
+			autotag: autotagBody(storedRule("r1", "is:masterwork", "junk", 0, false), weapon),
+			want: []string{
+				header,
+				`- 0. [disabled] "is:masterwork": tag junk (id r1)` + masterwork,
+				weaponLine + ". Owned items it matches: 5",
+			},
+		},
+		"a server-only refusal blocks": {
+			autotag: autotagBody(storedRule("r1", "is:weapon ) is:armor", "junk", 0, true), weapon),
+			want: []string{
+				header,
+				`- 0. [enabled] "is:weapon ) is:armor": tag junk (id r1). Cannot count: ` +
+					`the web client runs this rule, and the server cannot evaluate it: ` +
+					`the query has a ")" that closes no "(", and the web client ignores ") is:armor".`,
+				weaponLine + notCounted,
+			},
+		},
+		"a DIM parse error skips": {
+			autotag: autotagBody(
+				storedRule("r1", "is:weapon -", "junk", 0, true),
+				storedRule("r2", "is:weapon -", "junk", 1, false),
+				weapon,
+			),
+			want: []string{
+				header,
+				`- 0. [enabled] "is:weapon -": tag junk (id r1)` + skips + parseSkip,
+				`- 1. [disabled] "is:weapon -": tag junk (id r2)` + skips + parseSkip,
+				weaponLine + ". Owned items it matches: 5",
+			},
+		},
+		"an invalid value skips": {
+			autotag: autotagBody(storedRule("r1", "count:=<2", "junk", 0, true), weapon),
+			want: []string{
+				header,
+				`- 0. [enabled] "count:=<2": tag junk (id r1)` + skips + "the web client rejects count:=<2.",
+				weaponLine + ". Owned items it matches: 5",
+			},
+		},
+		"a skip after a block": {
+			autotag: autotagBody(
+				storedRule("r1", "is:masterwork", "junk", 0, true),
+				storedRule("r2", "is:weapon -", "junk", 1, true),
+				weapon,
+			),
+			want: []string{
+				header,
+				`- 0. [enabled] "is:masterwork": tag junk (id r1)` + masterwork,
+				`- 1. [enabled] "is:weapon -": tag junk (id r2)` + skips + parseSkip,
+				weaponLine + notCounted,
+			},
+		},
+		"an undecided item": {
+			autotag: autotagBody(storedRule("r1", "is:weapon rate:>=a", "junk", 0, true), weapon),
+			sheet:   true,
+			want: []string{
+				header,
+				`- 0. [enabled] "is:weapon rate:>=a": tag junk (id r1)` + undecidedCount,
+				weaponLine + notCounted,
+			},
+		},
+		"an earlier rule takes the undecided items": {
+			autotag: autotagBody(
+				storedRule("r1", "is:weapon", "junk", 0, true),
+				storedRule("r2", "is:weapon rate:>=a", "junk", 1, true),
+				weapon,
+			),
+			sheet: true,
+			want: []string{
+				header,
+				`- 0. [enabled] "is:weapon": tag junk (id r1). Owned items it matches: 5`,
+				`- 1. [enabled] "is:weapon rate:>=a": tag junk (id r2). Owned items it matches: 0`,
+				weaponLine + ". Owned items it matches: 0",
+			},
+		},
+		"an undecided disabled rule": {
+			autotag: autotagBody(storedRule("r1", "is:weapon rate:>=a", "junk", 0, false), weapon),
+			sheet:   true,
+			want: []string{
+				header,
+				`- 0. [disabled] "is:weapon rate:>=a": tag junk (id r1)` + undecidedCount,
+				weaponLine + ". Owned items it matches: 5",
+			},
+		},
+		"a game mode without ratings": {
+			autotag: autotagBody(storedRule("r1", "pvprate:>=a", "junk", 0, true), weapon),
+			sheet:   true,
+			want: []string{
+				header,
+				`- 0. [enabled] "pvprate:>=a": tag junk (id r1). Cannot count: ` + noPvPSheet + ".",
+				weaponLine + notCounted,
+			},
+		},
+		"a rule without action": {
+			autotag: autotagBody(storedRule("r1", "is:weapon", "", 0, true), weapon),
+			want: []string{
+				header,
+				`- 0. [enabled] "is:weapon": no action (id r1). Owned items it matches: 5`,
+				weaponLine + ". Owned items it matches: 0",
+			},
+		},
+		"the first count matches the save count": {
+			autotag:    autotagBody(storedRule("r1", "is:weapon is:dupe", "junk", 0, true), weapon),
+			sameAsSave: "is:weapon is:dupe",
+			want: []string{
+				header,
+				`- 0. [enabled] "is:weapon is:dupe": tag junk (id r1). Owned items it matches: 3`,
+				weaponLine + ". Owned items it matches: 2",
+			},
+		},
+		"autotagging off": {
+			autotag: `{"rules": [` + weapon + `], ` +
+				`"state": {"enabled": false, "mark": "00000000000000001006", "updatedAt": 5}, "now": 10}`,
+			want: []string{header, weaponLine + ". Owned items it matches: 5"},
+		},
+		"no rules": {
+			autotag:   autotagBody(),
+			want:      []string{"No rules, so nothing is counted."},
+			noProfile: true,
+		},
+		"only removed rules": {
+			autotag: autotagBody(`{"id": "r0", "query": "is:weapon", "vault": false, "enabled": true, ` +
+				`"position": 0, "removed": true, "updatedAt": 5}`),
+			want:      []string{"No rules, so nothing is counted."},
+			noProfile: true,
+		},
+		"no character": {
+			autotag: autotagBody(weapon),
+			profile: `{"ErrorCode": 1, "Response": {
+				"profileInventory": {"data": {"items": []}},
+				"characters": {"data": {}}
+			}}`,
+			want: []string{
+				"The account has no character, so the server cannot count the items that the rules match.",
+			},
+		},
+		"an unknown matches value": {
+			autotag:   autotagBody(weapon),
+			matches:   "all",
+			want:      []string{`invalid input: matches "all" is not new or owned`},
+			noProfile: true,
+			isError:   true,
+		},
+	}
+
+	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			tc.setup(f)
+			f.serviceData[pathAutotag] = tc.autotag
+			f.profileBody = tc.profile
 
-			want, isError := tc.baseline(t, f)
-			require.True(t, isError)
+			if tc.sheet {
+				withAegisSheet(f)
+			}
 
-			got, isError := call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{Matches: matchesNew})
-			assert.True(t, isError)
-			assert.Equal(t, want, got)
+			matches := tc.matches
+			if matches == "" {
+				matches = matchesOwned
+			}
+
+			got, isError := call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{Matches: matches})
+			assert.Equal(t, tc.isError, isError, got)
+			assert.Equal(t, strings.Join(tc.want, "\n"), got)
+
+			profiles := f.bungie.calls(http.MethodGet, "/Destiny2/3/Profile/4611/")
+			assert.Equal(t, tc.noProfile, len(profiles) == 0, "profile reads: %d", len(profiles))
+
+			for _, req := range f.service.all() {
+				assert.Equal(t, http.MethodGet, req.Method, "nothing is written: %s", req.Path)
+			}
+
+			for _, req := range f.bungie.all() {
+				assert.Equal(t, http.MethodGet, req.Method, "nothing moves: %s", req.Path)
+			}
+
+			if tc.sameAsSave != "" {
+				_, after, ok := strings.Cut(got, "Owned items it matches: ")
+				require.True(t, ok)
+
+				count, _, _ := strings.Cut(after, "\n")
+
+				saved, isError := saveJunkRule(t, newFakes(t), tc.sameAsSave)
+				require.False(t, isError)
+				assert.Contains(t, saved, "The query matches "+count+" owned items now.")
+			}
 		})
 	}
+}
+
+func TestListAutotagRulesOwnedCachedProfile(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.serviceData[pathAutotag] = autotagBody(storedRule("r9", "is:weapon", "keep", 9, true))
+
+	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+	require.False(t, isError)
+
+	got, isError := call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{Matches: matchesOwned})
+	require.False(t, isError, got)
+
+	assert.Len(t, f.bungie.calls(http.MethodGet, "/Destiny2/3/Profile/4611/"), 1,
+		"the counts reuse the snapshot of list_characters")
+}
+
+func TestOwnedCounts(t *testing.T) {
+	t.Parallel()
+
+	items := []*Item{{InstanceID: "1"}, {InstanceID: "2"}, {InstanceID: "3"}}
+
+	// test gives item 1 the reason b, item 2 the reasons a and b, and
+	// matches item 3.
+	test := func(item *Item) outcome {
+		switch item.InstanceID {
+		case "1":
+			return outcome{reasons: []string{"b"}, state: undecided}
+		case "2":
+			return outcome{reasons: []string{"a", "b"}, state: undecided}
+		default:
+			return outcome{state: match}
+		}
+	}
+
+	got := ownedCounts([]ruleEval{{test: test, rule: AutotagRule{Enabled: false}}}, items)
+	require.Len(t, got, 1)
+	assert.Equal(t, 1, got[0].matches)
+	assert.Equal(t, 2, got[0].undecided)
+	assert.Equal(t, []string{"b", "a"}, got[0].reasons, "each reason once, in the order of the items")
+	assert.False(t, got[0].unknown)
 }
 
 func TestSaveAutotagRule(t *testing.T) {

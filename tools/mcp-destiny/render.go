@@ -1636,6 +1636,52 @@ func newItemLabel(s *Snapshot, item *Item) string {
 	return fmt.Sprintf("%s (%s), %s", item.Name, item.InstanceID, s.LocationLabel(item))
 }
 
+// renderOwnedCounts renders the result of list_autotag_rules with
+// matches=owned. Counts holds what [ownedCounts] gave each live rule, in
+// rule order. The output opens with a header line and gives one line for
+// each rule. The line of a skipped rule names the skip reason, and the
+// line of a blocked rule names the block reason. The line of an unknown
+// rule says that the server counts nothing for it. Every other line gives
+// the count of the rule and the undecided items with their reasons.
+func renderOwnedCounts(counts []ruleCount) string {
+	var b strings.Builder
+
+	b.WriteString("Owned items that each rule matches after the enabled rules before it took theirs, " +
+		"as the rule editor of the web client counts them:")
+
+	for i := range counts {
+		c := &counts[i]
+		line := renderRule(c.eval.rule)
+
+		switch {
+		case c.eval.class == ruleSkipped:
+			fmt.Fprintf(&b, "\n%s. The web client skips this rule and counts nothing for it: %s.", line, c.eval.reason)
+
+		case c.unknown:
+			fmt.Fprintf(&b, "\n%s. Not counted, because the server cannot tell which items the rules before it take.",
+				line)
+
+		case c.eval.class == ruleBlocked:
+			fmt.Fprintf(&b, "\n%s. Cannot count: %s.", line, c.eval.reason)
+
+		case c.undecided > 0:
+			fmt.Fprintf(
+				&b,
+				"\n%s. Owned items it matches: %d. Owned items that the server cannot decide for it: %d (%s)",
+				line,
+				c.matches,
+				c.undecided,
+				strings.Join(c.reasons, ", "),
+			)
+
+		default:
+			fmt.Fprintf(&b, "\n%s. Owned items it matches: %d", line, c.matches)
+		}
+	}
+
+	return b.String()
+}
+
 // renderStats renders the summary of one period. Item names come from
 // defs, so a weapon that the user dismantled keeps its name.
 func renderStats(defs *Defs, period statPeriod, s statSummary) string {

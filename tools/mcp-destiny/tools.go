@@ -97,6 +97,11 @@ const (
 	// the rule that takes each item that the next claim offers to the
 	// rules.
 	matchesNew = "new"
+
+	// matchesOwned is the matches value of list_autotag_rules that counts
+	// the owned items that each rule matches after the enabled rules
+	// before it took theirs.
+	matchesOwned = "owned"
 )
 
 var (
@@ -250,7 +255,7 @@ type ClearLoadoutInput struct {
 // ListAutotagRulesInput is the input schema of the list_autotag_rules
 // tool.
 type ListAutotagRulesInput struct {
-	Matches string `json:"matches,omitzero" jsonschema:"new to show which rule would take each item that the next claim offers to the rules, without claiming"`
+	Matches string `json:"matches,omitzero" jsonschema:"new to show which rule would take each item that the next claim offers to the rules, without claiming, or owned to count the owned items that each rule matches after the rules before it"`
 }
 
 // SetAutotagEnabledInput is the input schema of the set_autotag_enabled
@@ -1624,8 +1629,10 @@ func (h *handler) handleSetPerkPreferences(
 
 // handleListAutotagRules lists the autotag rules and the autotag state.
 // With matches=new, it shows the rule that takes each item that the next
-// claim of the web client offers to the rules. It claims nothing. It
-// refuses any other matches value before it sends a request.
+// claim of the web client offers to the rules. It claims nothing. With
+// matches=owned, it counts the owned items that each rule matches, as the
+// rule editor of the web client counts them. It refuses any other matches
+// value before it sends a request.
 func (h *handler) handleListAutotagRules(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -1635,9 +1642,9 @@ func (h *handler) handleListAutotagRules(
 	defer h.mu.Unlock()
 
 	matches := strings.ToLower(strings.TrimSpace(in.Matches))
-	if matches != "" && matches != matchesNew {
+	if matches != "" && matches != matchesNew && matches != matchesOwned {
 		return h.toolError(ctx, toolListAutotagRules,
-			fmt.Errorf("%w: matches %q is not %s", ErrInvalidInput, in.Matches, matchesNew))
+			fmt.Errorf("%w: matches %q is not %s or %s", ErrInvalidInput, in.Matches, matchesNew, matchesOwned))
 	}
 
 	snapshot, err := h.autotag(ctx)
@@ -1645,11 +1652,17 @@ func (h *handler) handleListAutotagRules(
 		return h.toolError(ctx, toolListAutotagRules, err)
 	}
 
-	if matches == "" {
+	var text string
+
+	switch matches {
+	case matchesNew:
+		text, err = h.newItemMatches(ctx, snapshot)
+	case matchesOwned:
+		text, err = h.ownedMatches(ctx, snapshot)
+	default:
 		return textResult(renderAutotag(snapshot)), nil, nil
 	}
 
-	text, err := h.newItemMatches(ctx, snapshot)
 	if err != nil {
 		return h.toolError(ctx, toolListAutotagRules, err)
 	}
@@ -1884,6 +1897,125 @@ items:
 	}
 
 	return m
+}
+
+// ownedMatches returns the text of list_autotag_rules with
+// matches=owned. It reads the profile only when a live rule exists, and
+// it reuses a snapshot up to 30 seconds old. The counts do not depend on
+// the autotag state, because the rule editor of the web client shows them
+// whether autotagging is on or off. It returns the error of the profile,
+// tag, or note read.
+func (h *handler) ownedMatches(ctx context.Context, snapshot AutotagSnapshot) (string, error) {
+	rules := liveRules(snapshot.Rules)
+	if len(rules) == 0 {
+		return "No rules, so nothing is counted.", nil
+	}
+
+	s, _, err := h.loadAnnotated(ctx, false)
+	if err != nil {
+		return "", err
+	}
+
+	if _, ok := s.lastPlayed(); !ok {
+		return "The account has no character, so the server cannot count the items that the rules match.", nil
+	}
+
+	// The reasons of each count follow the order of the items, so the
+	// sort keeps the text the same from one call to the next.
+	items := ownedItems(s)
+	slices.SortStableFunc(items, byNameAndID)
+
+	return renderOwnedCounts(ownedCounts(h.evalRules(ctx, s, rules), items)), nil
+}
+
+// ruleCount is what [ownedCounts] gives one live rule.
+type ruleCount struct {
+	// reasons holds each distinct reason of the undecided items, in the
+	// order of the items.
+	reasons []string
+	eval    ruleEval
+	// matches is the number of items that the rule matches among the
+	// items that no earlier enabled rule took.
+	matches int
+	// undecided is the number of those items whose outcome the server
+	// cannot decide.
+	undecided int
+	// unknown marks an evaluated or blocked rule after an enabled rule
+	// that blocks or that leaves an item undecided. The server then
+	// cannot tell which items reach the rule, so it counts nothing for
+	// the rule.
+	unknown bool
+}
+
+// ownedCounts counts the items of items that each rule of evals matches,
+// as the rule editor of the web client counts them. It walks the rules in
+// order and counts each evaluated rule over the items that no earlier
+// enabled rule took. An enabled rule then takes the items that it
+// matches, and a disabled rule takes nothing. A skipped rule counts
+// nothing and takes nothing, wherever it stands.
+//
+// The server cannot tell which items an enabled rule takes when the rule
+// blocks or leaves an item undecided. ownedCounts therefore marks each
+// later rule of the evaluated or the blocked class as unknown.
+func ownedCounts(evals []ruleEval, items []*Item) []ruleCount {
+	counts := make([]ruleCount, len(evals))
+	taken := map[string]bool{}
+	unknown := false
+
+	for i, e := range evals {
+		c := &counts[i]
+		c.eval = e
+
+		switch {
+		case e.class == ruleSkipped:
+			continue
+
+		case unknown:
+			c.unknown = true
+
+			continue
+
+		case e.class == ruleBlocked:
+			unknown = e.rule.Enabled
+
+			continue
+		}
+
+		var matched []string
+
+		for _, item := range items {
+			if taken[item.InstanceID] {
+				continue
+			}
+
+			got := e.test(item)
+
+			switch got.state {
+			case match:
+				matched = append(matched, item.InstanceID)
+			case undecided:
+				c.undecided++
+
+				for _, reason := range got.reasons {
+					c.reasons = appendNew(c.reasons, reason)
+				}
+
+			case noMatch:
+			}
+		}
+
+		c.matches = len(matched)
+
+		if e.rule.Enabled {
+			for _, id := range matched {
+				taken[id] = true
+			}
+
+			unknown = c.undecided > 0
+		}
+	}
+
+	return counts
 }
 
 // handleSaveAutotagRule writes the rule that [mergeRule] builds. When the
