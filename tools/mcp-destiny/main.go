@@ -616,7 +616,10 @@ func newServer(h *handler) *mcp.Server {
 			"for the filters that preview_autotag_rule evaluates. " +
 			"It saves a query with other filters and names them, because the web client might accept them. " +
 			"When the call passes a query, the result counts the owned items that the query matches " +
-			"at the moment of the call, as if no other rule existed.",
+			"at the moment of the call, as if no other rule existed. " +
+			"It counts apart from the matches the items whose outcome the server cannot decide. " +
+			"For a query that reads a game mode without ratings, the result gives the reason of that mode " +
+			"in place of the counts.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool)},
 	}, h.handleSaveAutotagRule)
 
@@ -635,6 +638,17 @@ func newServer(h *handler) *mcp.Server {
 			"Both ignore letter case and accents. " +
 			"power:<range> and light:<range> compare the power that the web client counts with a number, " +
 			"such as power:>=1900. The tool refuses a season word in the range, such as pinnaclecap. " +
+			"rate:<range> tests the tier of the roll of a copy on the Aegis sheet, " +
+			"and rate:>=b means B or better. " +
+			"ratebase:<range> tests the tier of the row of the item on the sheet, whatever the copy rolled, " +
+			"and misses:<range> tests the number of perk columns that the roll missed. " +
+			"rating: and ratingbase: are other names of rate: and ratebase:, " +
+			"and the forms with the prefix pvp read the PvP sheet. " +
+			"The tool lists in a section of its own each item whose outcome the server cannot decide, " +
+			"with the reason, and never counts such an item as a match. " +
+			"For example, the server does not read set bonuses, " +
+			"so it leaves items other than weapons undecided at rate: and ratebase:. " +
+			"A query that reads a game mode without ratings returns an error with the reason of that mode. " +
 			"The tool refuses a query with any other term, such as a bare word or is:masterwork, " +
 			"and the refusal names each such term together with the filters that the tool evaluates. " +
 			"A term whose value the web client rejects, such as count:=<2, returns an error that names the term " +

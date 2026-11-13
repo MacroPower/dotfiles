@@ -6519,8 +6519,9 @@ func TestPreviewUnsupported(t *testing.T) {
 		"is:energy, is:power, is:helmet, is:gauntlets, is:chest, is:leg, is:classitem, is:subclass, "+
 		"is:seasonalartifacts, is:ghost, is:emblems, is:ships, is:vehicle, is:emotes, is:finishers, "+
 		"is:accessories, is:consumables, is:modifications, is:haspower, is:haslight, is:autotagged, tag:, "+
-		"dupe:item, count:, id:, hash:, name:, exactname:, power:, and light:. Each is: word also works as "+
-		"not:<word>.", got)
+		"dupe:item, count:, id:, hash:, name:, exactname:, power:, light:, rate:, rating:, ratebase:, "+
+		"ratingbase:, misses:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, and pvpmisses:. "+
+		"Each is: word also works as not:<word>.", got)
 	assert.Empty(t, f.service.all())
 	assert.Empty(t, f.bungie.all())
 }
@@ -6865,6 +6866,288 @@ func TestPreviewProfileError(t *testing.T) {
 	assert.True(t, isError)
 	assert.Equal(t, want, got)
 	assert.True(t, strings.HasPrefix(got, "fetching the profile:"), got)
+}
+
+// The texts of the rating filters of preview_autotag_rule and
+// save_autotag_rule.
+const (
+	// previewAegisSheet rates Fatebringer (100) S with two perk columns,
+	// Gjallarhorn (101) A without columns, and Midnight Coup (102)
+	// without a tier or columns. Instance 1001 hits one column and rates
+	// A. The fixture profile lists no perks for the other two copies of
+	// Fatebringer, so their rolls are unknown.
+	previewAegisSheet = `{"rolls": [` +
+		`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900], [904]]}, ` +
+		`{"category": "Exotic Weapons", "tier": "A", "hashes": [101], "slots": []}, ` +
+		`{"category": "HCs", "hashes": [102], "slots": []}]}`
+
+	undecidedHeading = "The server cannot decide these items:"
+	undecidedHeader  = "instance id | name | location | reason"
+	undecidedHelmet  = "1004 | Celestial Nighthawk | Hunter (equipped) | " + reasonSetBonus
+	undecided1005    = "1005 | Fatebringer | Hunter (postmaster) | " + reasonNoPerks
+	undecided1006    = "1006 | Fatebringer | Hunter (equipped) | " + reasonNoPerks
+
+	noPvPSheet  = "PvP: rating unavailable: the service publishes no PvP sheet"
+	unratedText = "the query reads a game mode without ratings. "
+)
+
+// withAegisSheet makes the service of f publish previewAegisSheet as the
+// only roll sheet.
+func withAegisSheet(f *fakes) {
+	f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+	f.serviceData["/artifacts/rolls.a.json"] = previewAegisSheet
+}
+
+// ratingRequests returns the paths of the requests of f for a roll sheet
+// or for the perk preferences.
+func ratingRequests(f *fakes) []string {
+	var paths []string
+
+	for _, req := range f.service.all() {
+		if strings.HasPrefix(req.Path, "/artifacts/") || req.Path == pathPrefs {
+			paths = append(paths, req.Path)
+		}
+	}
+
+	return paths
+}
+
+func TestPreviewUndecided(t *testing.T) {
+	t.Parallel()
+
+	const (
+		first   = "2 of 6 owned items match, and the server cannot decide 3 more."
+		row1001 = "1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Vault | keep | " +
+			"favorite, locked, masterwork, note"
+		row1002 = "1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 |  | Vault |  | "
+	)
+
+	tests := map[string]struct {
+		in   PreviewAutotagRuleInput
+		want []string
+	}{
+		"every item": {
+			in: PreviewAutotagRuleInput{Query: "rate:>=a"},
+			want: []string{
+				first, "Items 1-2 of 2.", "", previewHeader, row1001, row1002, "",
+				undecidedHeading, undecidedHeader, undecidedHelmet, undecided1005, undecided1006,
+			},
+		},
+		"one row of each": {
+			in: PreviewAutotagRuleInput{Query: "rate:>=a", Limit: 1},
+			want: []string{
+				first, "Items 1-1 of 2. Pass offset=1 for the next page.", "", previewHeader, row1001, "",
+				undecidedHeading, undecidedHeader, undecidedHelmet, "2 more undecided items are not shown.",
+			},
+		},
+		"the offset pages only the matches": {
+			in: PreviewAutotagRuleInput{Query: "rate:>=a", Limit: 1, Offset: 1},
+			want: []string{
+				first, "Items 2-2 of 2.", "", previewHeader, row1002, "",
+				undecidedHeading, undecidedHeader, undecidedHelmet, "2 more undecided items are not shown.",
+			},
+		},
+		"an offset past the last match": {
+			in: PreviewAutotagRuleInput{Query: "rate:>=a", Offset: 5},
+			want: []string{
+				first, "Offset 2 is past the last of 2 matching items.", "",
+				undecidedHeading, undecidedHeader, undecidedHelmet, undecided1005, undecided1006,
+			},
+		},
+		"a decided query keeps its text": {
+			in:   PreviewAutotagRuleInput{Query: "is:weapon ratebase:a"},
+			want: []string{"1 of 6 owned items match.", "Items 1-1 of 1.", "", previewHeader, row1002},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			withAegisSheet(f)
+
+			got, isError := call(t, f.h.handlePreviewAutotagRule, tc.in)
+			assert.False(t, isError)
+			assert.Equal(t, strings.Join(tc.want, "\n"), got)
+		})
+	}
+}
+
+func TestPreviewUndecidedNoMatch(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	withAegisSheet(f)
+
+	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:armor rate:>=a"})
+	assert.False(t, isError)
+	assert.Equal(t, strings.Join([]string{
+		"No owned item matches the query, and the server cannot decide 1 more.", "",
+		undecidedHeading, undecidedHeader, undecidedHelmet,
+	}, "\n"), got)
+
+	got, isError = call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon rate:f"})
+	assert.False(t, isError)
+	assert.Equal(t, strings.Join([]string{
+		"No owned item matches the query, and the server cannot decide 2 more.", "",
+		undecidedHeading, undecidedHeader, undecided1005, undecided1006,
+	}, "\n"), got)
+
+	_, _, rows := preview(t, f, "is:weapon ratebase:f")
+	assert.Empty(t, rows, "a decided query without a match keeps the no-match text")
+}
+
+func TestPreviewRatingModeMissing(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		// files holds the artifact index of the service.
+		files   map[string][]string
+		profile string
+		query   string
+		// want is the text of an error result. An empty want marks a
+		// call that succeeds.
+		want string
+		// requests lists the paths of the requests for a roll sheet or
+		// for the perk preferences.
+		requests []string
+	}{
+		"a query that reads the mode": {
+			files:    map[string][]string{"rolls": {"rolls.a.json"}},
+			query:    "pvprate:>=a",
+			want:     unratedText + noPvPSheet,
+			requests: []string{"/artifacts/rolls.a.json", pathPrefs},
+		},
+		"a query that reads another mode": {
+			files:    map[string][]string{"rolls": {"rolls.a.json"}},
+			query:    "rate:>=a",
+			requests: []string{"/artifacts/rolls.a.json", pathPrefs},
+		},
+		"a query without a rating filter": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}},
+			query: "is:weapon",
+		},
+		"the first mode in the order of the game modes": {
+			files:    map[string][]string{},
+			query:    "pvpmisses:>=1 or ratebase:a",
+			want:     unratedText + "PvE: rating unavailable: the service publishes no Aegis sheet",
+			requests: []string{pathPrefs},
+		},
+		"an account without a character": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}},
+			profile: `{"ErrorCode": 1, "Response": {
+				"profileInventory": {"data": {"items": []}},
+				"characters": {"data": {}}
+			}}`,
+			query: "pvprate:>=a",
+			want: "the account has no character, so the server previews nothing. " +
+				"The web client matches every item when it has no current character.",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.artifactFiles = tc.files
+			f.serviceData["/artifacts/rolls.a.json"] = previewAegisSheet
+			f.profileBody = tc.profile
+
+			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
+			assert.Equal(t, tc.want != "", isError, got)
+
+			if tc.want != "" {
+				assert.Equal(t, tc.want, got)
+			}
+
+			assert.Equal(t, tc.requests, ratingRequests(f))
+		})
+	}
+}
+
+// saveJunkRule saves a new rule with query and the tag junk on f. It
+// returns the text of the result, with "new" in place of the random id of
+// the rule, and whether the result is an error.
+func saveJunkRule(t *testing.T, f *fakes, query string) (string, bool) {
+	t.Helper()
+
+	junk := tagJunk
+
+	got, isError := call(t, f.h.handleSaveAutotagRule, SaveAutotagRuleInput{Query: &query, TagID: &junk})
+
+	for _, write := range f.service.calls(http.MethodPost, pathAutotag) {
+		rules, ok := write.Body["rules"].([]any)
+		require.True(t, ok)
+		require.Len(t, rules, 1)
+
+		rule, ok := rules[0].(map[string]any)
+		require.True(t, ok)
+
+		id, ok := rule["id"].(string)
+		require.True(t, ok)
+
+		got = strings.Replace(got, "(id "+id+")", "(id new)", 1)
+	}
+
+	return got, isError
+}
+
+func TestSaveAutotagRuleUndecided(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	withAegisSheet(f)
+
+	got, isError := saveJunkRule(t, f, "rate:>=a")
+	assert.False(t, isError)
+	assert.Equal(t, "Saved the rule:\n- 2. [enabled] \"rate:>=a\": tag junk (id new)\n"+
+		"The query matches 2 owned items now, and the server cannot decide 3 more. "+
+		"The count ignores the other rules, so an earlier rule can take some of these items first.", got)
+	assert.Len(t, f.service.calls(http.MethodPost, pathAutotag), 1)
+}
+
+func TestSaveAutotagRuleRatingModeMissing(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	withAegisSheet(f)
+
+	got, isError := saveJunkRule(t, f, "pvprate:>=a")
+	assert.False(t, isError)
+	assert.Equal(t, "Saved the rule:\n- 2. [enabled] \"pvprate:>=a\": tag junk (id new)\n"+
+		"The rule is saved, but the query reads a game mode without ratings, "+
+		"so the server did not count the items that the query matches. "+noPvPSheet, got)
+	assert.Len(t, f.service.calls(http.MethodPost, pathAutotag), 1)
+}
+
+func TestSaveAutotagRuleInvalidRating(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query string
+	}{
+		"a rate: value that is no tier":  {query: "rate:>=z"},
+		"a misses: value that is a tier": {query: "misses:a"},
+		"a pvpratebase: operator":        {query: "pvpratebase:=>a"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			withAegisSheet(f)
+
+			got, isError := saveJunkRule(t, f, tc.query)
+			assert.True(t, isError)
+			assert.Equal(t, "invalid input: the web client rejects "+tc.query+
+				", so it skips an autotag rule with this query", got)
+			assert.Empty(t, f.service.calls(http.MethodPost, pathAutotag))
+			assert.Empty(t, f.bungie.all())
+		})
+	}
 }
 
 func TestCompleteLoginTool(t *testing.T) {

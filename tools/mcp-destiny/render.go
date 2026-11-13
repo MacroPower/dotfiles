@@ -254,26 +254,81 @@ func renderItems(
 // matches. Total counts the matches, and owned counts the items that the
 // preview evaluated. A first line gives both counts before the output of
 // [renderItems].
-func renderPreview(s *Snapshot, page []*Item, offset, total, owned int) string {
-	if total == 0 {
+//
+// Undecided holds the items whose outcome the server cannot decide. When
+// it holds an item, the first line also counts those items, and the
+// section of [writeUndecided] follows after a blank line. The section
+// shows at most limit items, and the offset pages only the matches.
+func renderPreview(s *Snapshot, page []*Item, offset, total, owned int, undecided []undecidedItem, limit int) string {
+	if total == 0 && len(undecided) == 0 {
 		return "No owned item matches the query."
 	}
 
-	return fmt.Sprintf("%d of %d owned items match.\n", total, owned) +
-		renderItems(s, page, offset, total, "", false, nil)
+	var b strings.Builder
+
+	if total == 0 {
+		b.WriteString("No owned item matches the query")
+	} else {
+		fmt.Fprintf(&b, "%d of %d owned items match", total, owned)
+	}
+
+	if len(undecided) > 0 {
+		fmt.Fprintf(&b, ", and the server cannot decide %d more", len(undecided))
+	}
+
+	b.WriteString(".")
+
+	if total > 0 {
+		b.WriteString("\n" + renderItems(s, page, offset, total, "", false, nil))
+	}
+
+	if len(undecided) > 0 {
+		b.WriteString("\n\n")
+		writeUndecided(&b, s, undecided, limit)
+	}
+
+	return b.String()
+}
+
+// writeUndecided writes the section of a preview that lists the items
+// whose outcome the server cannot decide. A heading line and a header line
+// open the section. Each row gives the instance id, the name, the
+// location, and the reasons of one item. The section shows the first
+// limit items of undecided. A last line counts the items that it leaves
+// out.
+func writeUndecided(b *strings.Builder, s *Snapshot, undecided []undecidedItem, limit int) {
+	b.WriteString("The server cannot decide these items:\ninstance id | name | location | reason")
+
+	shown := undecided[:min(limit, len(undecided))]
+	for _, u := range shown {
+		fields := []string{u.item.InstanceID, u.item.Name, s.LocationLabel(u.item), strings.Join(u.reasons, ". ")}
+		b.WriteString("\n" + strings.Join(fields, " | "))
+	}
+
+	rest := len(undecided) - len(shown)
+	if rest > 0 {
+		fmt.Fprintf(b, "\n%d more undecided items are not shown.", rest)
+	}
 }
 
 // saveCount is the outcome of counting the owned items that the query of a
 // saved autotag rule matches. It holds at most one of unsupported, err,
-// and noCharacter. When it holds none of them, matches is the count.
+// noCharacter, and unrated. When it holds none of them, matches and
+// undecided are the counts.
 type saveCount struct {
 	// err is the error of the inventory read.
 	err error
+	// unrated is the [ratingReason] of a game mode without ratings that
+	// the query reads.
+	unrated string
 	// unsupported holds the terms of the query that the preview does not
 	// evaluate, in the order that [compiledQuery] gives them.
 	unsupported []string
 	// matches is the number of owned items that the query matches.
 	matches int
+	// undecided is the number of owned items whose outcome the server
+	// cannot decide.
+	undecided int
 	// noCharacter reports an account without a character.
 	noCharacter bool
 }
@@ -300,14 +355,24 @@ func renderSaveCount(count saveCount) string {
 		return "The rule is saved, but the account has no character, " +
 			"so the server did not count the items that the query matches."
 
-	default:
+	case count.unrated != "":
+		return "The rule is saved, but the query reads a game mode without ratings, " +
+			"so the server did not count the items that the query matches. " + count.unrated
+
+	case count.undecided > 0:
 		return fmt.Sprintf(
-			"The query matches %d owned items now. "+
-				"The count ignores the other rules, so an earlier rule can take some of these items first.",
-			count.matches,
+			"The query matches %d owned items now, and the server cannot decide %d more. %s",
+			count.matches, count.undecided, saveCountCaveat,
 		)
+
+	default:
+		return fmt.Sprintf("The query matches %d owned items now. %s", count.matches, saveCountCaveat)
 	}
 }
+
+// saveCountCaveat is the sentence that ends the count line of a
+// save_autotag_rule result.
+const saveCountCaveat = "The count ignores the other rules, so an earlier rule can take some of these items first."
 
 // renderItem renders one item in full. For a weapon, ratings holds the
 // [Rating] of each game mode, and the output gains the roll ratings

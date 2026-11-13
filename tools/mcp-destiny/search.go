@@ -107,6 +107,42 @@ const (
 	filterExactName = "exactname"
 	filterPower     = "power"
 	filterLight     = "light"
+
+	// The rating filters read the Aegis sheet. Each of them also has a
+	// form whose name starts with pvpPrefix, such as pvprate:, which reads
+	// the PvP sheet.
+	filterRate       = "rate"
+	filterRating     = "rating"
+	filterRateBase   = "ratebase"
+	filterRatingBase = "ratingbase"
+	filterMisses     = "misses"
+
+	// pvpPrefix starts the name of each rating filter that reads the PvP
+	// sheet.
+	pvpPrefix = "pvp"
+)
+
+// The reasons that the server cannot decide a rating filter for an item.
+const (
+	// reasonSetBonus applies to an item outside the weapon buckets.
+	reasonSetBonus = "the server does not read the set bonuses of this item, which rate: and ratebase: also count"
+	// reasonNoPerks applies to a copy without perks on a sheet row with
+	// perk columns.
+	reasonNoPerks = "the profile lists no perks for this copy"
+)
+
+// outcomeState tells whether a test matches one item, does not match it,
+// or cannot decide it.
+type outcomeState uint8
+
+// The states of an [outcome].
+const (
+	// noMatch marks an item that the test does not match.
+	noMatch outcomeState = iota
+	// match marks an item that the test matches.
+	match
+	// undecided marks an item whose outcome the server cannot decide.
+	undecided
 )
 
 // jsDot is a character class that matches what a dot matches in a
@@ -135,6 +171,10 @@ var (
 	// errOverloadValue reports a word of a range value that DIM reads as
 	// a number that the preview lacks, such as pinnaclecap.
 	errOverloadValue = errors.New("the preview lacks the number of the word")
+
+	// errUnratedMode reports a query with a rating filter of a game mode
+	// without ratings.
+	errUnratedMode = errors.New("the query reads a game mode without ratings")
 
 	// errNoCharacter reports an account without a character. The web
 	// client then has no current character, and its search matches every
@@ -300,15 +340,32 @@ var (
 		{name: filterExactName, value: itemValue(exactNameMatch)},
 		{name: filterPower, value: powerValue},
 		{name: filterLight, value: powerValue},
+		ratingFilter(filterRate, modePvE, tierRange, rollValues),
+		ratingFilter(filterRating, modePvE, tierRange, rollValues),
+		ratingFilter(filterRateBase, modePvE, tierRange, baseValues),
+		ratingFilter(filterRatingBase, modePvE, tierRange, baseValues),
+		ratingFilter(filterMisses, modePvE, rangeFormat{}, missValues),
+		ratingFilter(pvpPrefix+filterRate, modePvP, tierRange, rollValues),
+		ratingFilter(pvpPrefix+filterRating, modePvP, tierRange, rollValues),
+		ratingFilter(pvpPrefix+filterRateBase, modePvP, tierRange, baseValues),
+		ratingFilter(pvpPrefix+filterRatingBase, modePvP, tierRange, baseValues),
+		ratingFilter(pvpPrefix+filterMisses, modePvP, rangeFormat{}, missValues),
 	}
 
 	// isFilters maps each is: word of searchFilters to the builder of its
-	// predicate.
+	// test.
 	isFilters = isTable(searchFilters)
 
 	// valueFilters maps the name of each filter of searchFilters that
-	// takes a value to the function that reads the value.
+	// takes a value to the filter.
 	valueFilters = valueTable(searchFilters)
+
+	// tierRange is the range format of rate:, ratebase:, and their other
+	// names. Its overloads map each tier of the roll sheets, in lowercase,
+	// to a number. S maps to 6 and F maps to 0, so rate:>=b means B or
+	// better. DIM tries an overload before a number, so rate:>=5 means
+	// rate:>=a.
+	tierRange = rangeFormat{overloads: tierOverloads()}
 
 	// wordStart matches a text that starts with a character of \w. The \w
 	// of Go and the \w of a JavaScript regular expression without the u
@@ -316,15 +373,106 @@ var (
 	wordStart = regexp.MustCompile(`^\w`)
 )
 
-// queryTest builds the predicate of a query, or of one term of a query,
-// for a search context. A filter that reads other items, such as is:dupe,
-// groups the items of the context when it builds the predicate, as DIM
-// does when it builds the filter.
-type queryTest func(ctx searchContext) func(*Item) bool
+// outcome is what a query, or one term of a query, gives one item. The
+// zero outcome is a no match. Only an undecided outcome holds reasons. It
+// gives each reason that keeps the server from deciding the item, one
+// time each.
+type outcome struct {
+	reasons []string
+	state   outcomeState
+}
+
+// decided returns the match outcome when matched holds, and the no match
+// outcome otherwise.
+func decided(matched bool) outcome {
+	if matched {
+		return outcome{state: match}
+	}
+
+	return outcome{}
+}
+
+// and returns the outcome of an and of o and other in Kleene logic. A no
+// match of either operand gives a no match. Otherwise an undecided operand
+// gives an undecided outcome, and two matches give a match.
+func (o outcome) and(other outcome) outcome {
+	switch {
+	case o.state == noMatch || other.state == noMatch:
+		return outcome{}
+	case o.state == undecided || other.state == undecided:
+		return o.undecidedWith(other)
+	default:
+		return outcome{state: match}
+	}
+}
+
+// or returns the outcome of an or of o and other in Kleene logic. A match
+// of either operand gives a match. Otherwise an undecided operand gives an
+// undecided outcome, and two no matches give a no match.
+func (o outcome) or(other outcome) outcome {
+	switch {
+	case o.state == match || other.state == match:
+		return outcome{state: match}
+	case o.state == undecided || other.state == undecided:
+		return o.undecidedWith(other)
+	default:
+		return outcome{}
+	}
+}
+
+// not returns the outcome of a not of o in Kleene logic. It swaps a match
+// and a no match, and it keeps an undecided outcome with its reasons.
+func (o outcome) not() outcome {
+	switch o.state {
+	case match:
+		return outcome{}
+	case noMatch:
+		return outcome{state: match}
+	default:
+		return o
+	}
+}
+
+// undecidedWith returns the undecided outcome with the reasons of o and
+// then each reason of other that o does not hold. Only an undecided
+// outcome holds reasons, so the result names the reasons of the undecided
+// operands.
+func (o outcome) undecidedWith(other outcome) outcome {
+	reasons := slices.Clone(o.reasons)
+	for _, reason := range other.reasons {
+		reasons = appendNew(reasons, reason)
+	}
+
+	return outcome{reasons: reasons, state: undecided}
+}
+
+// queryTest builds the test of a query, or of one term of a query, for a
+// search context. A filter that reads other items, such as is:dupe,
+// groups the items of the context when it builds the test, as DIM does
+// when it builds the filter.
+type queryTest func(ctx searchContext) func(*Item) outcome
+
+// decidedTest builds the predicate of a term that the server decides for
+// every item, such as is:dupe.
+type decidedTest func(ctx searchContext) func(*Item) bool
+
+// fromDecided adapts the predicate builder of a term that the server
+// decides for every item to a [queryTest].
+func fromDecided(build decidedTest) queryTest {
+	return func(ctx searchContext) func(*Item) outcome {
+		predicate := build(ctx)
+
+		return func(item *Item) outcome { return decided(predicate(item)) }
+	}
+}
 
 // searchContext holds what the filters read besides the tested item, as
 // the filter context of DIM does.
 type searchContext struct {
+	// sources holds the [RatingSource] of each game mode, keyed by the
+	// mode. Only the rating filters read it, so a query without one can
+	// run with no sources.
+	sources map[string]RatingSource
 	// items holds every item that DIM builds, in every location, the vault
 	// included. The web client passes these items to DIM as allItems.
 	items []*Item
@@ -341,12 +489,12 @@ type searchFilter struct {
 	match func(*Item) bool
 	// build builds the predicate of an is: word that reads the search
 	// context.
-	build queryTest
+	build decidedTest
 	// value reads the value of a filter that takes one, such as tag:keep,
-	// and returns the builder of its predicate. It returns an error that
-	// wraps errInvalidValue for a value that the web client rejects. It
-	// returns an error that wraps errUnsupportedTerm for a value that the
-	// preview does not evaluate.
+	// and returns the builder of its test. It returns an error that wraps
+	// errInvalidValue for a value that the web client rejects. It returns
+	// an error that wraps errUnsupportedTerm for a value that the preview
+	// does not evaluate.
 	value func(args string) (queryTest, error)
 	// name is the filter name, such as "is" or "tag".
 	name string
@@ -354,6 +502,9 @@ type searchFilter struct {
 	// sets word only when the preview evaluates one value alone, such as
 	// item for dupe:item.
 	word string
+	// mode is the game mode whose ratings a rating filter reads, such as
+	// modePvP for pvprate:. It is empty for every other filter.
+	mode string
 }
 
 // keyword returns the text that names the filter, such as "is:weapon" or
@@ -363,11 +514,11 @@ func (f searchFilter) keyword() string {
 }
 
 // compiledQuery is a search query in the form that the preview evaluates.
-// It has one of three outcomes. test is set, unsupported holds a term, or
-// invalid holds a term.
+// Exactly one of three cases holds for it. Test is set, unsupported holds
+// a term, or invalid holds a term.
 type compiledQuery struct {
-	// test builds the predicate of the query for a search context. It is
-	// nil when unsupported or invalid holds a term.
+	// test builds the test of the query for a search context. It is nil
+	// when unsupported or invalid holds a term.
 	test queryTest
 	// unsupported holds the Text of each term that the preview does not
 	// evaluate, one time each, in the order of the query. It is empty when
@@ -376,25 +527,30 @@ type compiledQuery struct {
 	// invalid holds the Text of each term whose value the web client
 	// rejects, one time each, in the order of the query.
 	invalid []string
+	// modes holds the game modes whose ratings the rating filters of the
+	// query read, in the order of [perkModes]. It is empty when the test
+	// is nil.
+	modes []string
 }
 
-// queryCompiler collects the terms that the preview does not evaluate and
-// the terms whose value the web client rejects while [compileQuery] walks
-// a parse tree.
+// queryCompiler holds what [compileQuery] collects while it walks a parse
+// tree. It collects the unsupported terms, the terms whose value the web
+// client rejects, and the game modes of the rating filters.
 type queryCompiler struct {
 	unsupported []string
 	invalid     []string
+	modes       []string
 }
 
-// compileQuery builds the predicate of the parse tree that [parseQuery]
+// compileQuery builds the test of the parse tree that [parseQuery]
 // returns. It evaluates only the filters of searchFilters. The web client
-// voids a whole query when one term is invalid. A predicate of the other
-// terms can therefore match items that the web client does not match. A
-// query with a term whose value the web client rejects has no predicate,
-// and the result names each such term. The web client skips that query
-// whatever its other terms mean, so the result names no unsupported term.
-// Any other query with a term outside searchFilters has no predicate
-// either, and the result names each such term.
+// voids a whole query when one term is invalid. A test of the other terms
+// can therefore match items that the web client does not match. A query
+// with a term whose value the web client rejects has no test, and the
+// result names each such term. The web client skips that query whatever
+// its other terms mean, so the result names no unsupported term. Any other
+// query with a term outside searchFilters has no test either, and the
+// result names each such term.
 func compileQuery(root *QueryNode) compiledQuery {
 	var c queryCompiler
 
@@ -406,12 +562,22 @@ func compileQuery(root *QueryNode) compiledQuery {
 	case len(c.unsupported) > 0:
 		return compiledQuery{unsupported: c.unsupported}
 	default:
-		return compiledQuery{test: test}
+		var modes []string
+
+		for _, mode := range perkModes {
+			if slices.Contains(c.modes, mode) {
+				modes = append(modes, mode)
+			}
+		}
+
+		return compiledQuery{test: test, modes: modes}
 	}
 }
 
-// node returns the predicate builder of n, or nil for a filter that the
-// preview does not evaluate or whose value the web client rejects.
+// node returns the test builder of n, or nil for a filter that the preview
+// does not evaluate or whose value the web client rejects. The and node,
+// the or node, and the not node combine the outcomes of their operands in
+// Kleene logic.
 func (c *queryCompiler) node(n *QueryNode) queryTest {
 	switch n.Op {
 	case OpAnd, OpOr:
@@ -420,44 +586,53 @@ func (c *queryCompiler) node(n *QueryNode) queryTest {
 			builds = append(builds, c.node(operand))
 		}
 
-		// An and node matches when no operand fails, and an or node
-		// matches when one operand passes.
-		want := n.Op == OpOr
+		// The walk starts from the outcome that leaves each operand in
+		// place. It stops at the outcome that no later operand changes:
+		// a no match of an and node, or a match of an or node.
+		combine, start, final := outcome.and, match, noMatch
+		if n.Op == OpOr {
+			combine, start, final = outcome.or, noMatch, match
+		}
 
-		return func(ctx searchContext) func(*Item) bool {
-			tests := make([]func(*Item) bool, 0, len(builds))
+		return func(ctx searchContext) func(*Item) outcome {
+			tests := make([]func(*Item) outcome, 0, len(builds))
 			for _, build := range builds {
 				tests = append(tests, build(ctx))
 			}
 
-			return func(item *Item) bool {
+			return func(item *Item) outcome {
+				result := outcome{state: start}
+
 				for _, test := range tests {
-					if test(item) == want {
-						return want
+					result = combine(result, test(item))
+					if result.state == final {
+						break
 					}
 				}
 
-				return !want
+				return result
 			}
 		}
 
 	case OpNot:
 		build := c.node(n.Operand)
 
-		return func(ctx searchContext) func(*Item) bool {
+		return func(ctx searchContext) func(*Item) outcome {
 			test := build(ctx)
 
-			return func(item *Item) bool { return !test(item) }
+			return func(item *Item) outcome { return test(item).not() }
 		}
 
 	default:
-		build, err := filterTest(n)
+		build, mode, err := filterTest(n)
 
 		switch {
 		case errors.Is(err, errInvalidValue):
 			c.invalid = appendNew(c.invalid, n.Text)
 		case err != nil:
 			c.unsupported = appendNew(c.unsupported, n.Text)
+		case mode != "":
+			c.modes = appendNew(c.modes, mode)
 		}
 
 		return build
@@ -473,49 +648,98 @@ func appendNew(terms []string, term string) []string {
 	return append(terms, term)
 }
 
-// filterTest returns the predicate builder of the filter node n. It
-// returns an error that wraps errUnsupportedTerm when the preview does
-// not evaluate the filter or its value. It returns an error that wraps
-// errInvalidValue when the web client rejects the value. Only the table
-// decides which is: words the preview evaluates, so is:constructor and
-// is:__proto__ stay unsupported. DIM finds both words on the prototype
-// of its filter table and matches nothing.
-func filterTest(n *QueryNode) (queryTest, error) {
+// filterTest returns the test builder of the filter node n and the game
+// mode whose ratings the filter reads. The mode is empty for a filter
+// that reads no ratings. filterTest returns an error that wraps
+// errUnsupportedTerm when the preview does not evaluate the filter or its
+// value. It returns an error that wraps errInvalidValue when the web
+// client rejects the value. Only the table decides which is: words the
+// preview evaluates, so is:constructor and is:__proto__ stay unsupported.
+// DIM finds both words on the prototype of its filter table and matches
+// nothing.
+func filterTest(n *QueryNode) (queryTest, string, error) {
 	if n.Type == filterIs {
 		build, ok := isFilters[n.Args]
 		if !ok {
-			return nil, errUnsupportedTerm
+			return nil, "", errUnsupportedTerm
 		}
 
-		return build, nil
+		return build, "", nil
 	}
 
-	value, ok := valueFilters[n.Type]
+	f, ok := valueFilters[n.Type]
 	if !ok {
-		return nil, errUnsupportedTerm
+		return nil, "", errUnsupportedTerm
 	}
 
-	return value(n.Args)
+	build, err := f.value(n.Args)
+
+	return build, f.mode, err
 }
 
-// matches returns the items of items that q matches in ctx, ordered by
-// name and then by instance id, as the default sort of list_items orders
-// them.
-func (q compiledQuery) matches(ctx searchContext, items []*Item) []*Item {
-	var out []*Item
+// queryResult is what a query gives a list of items. Matches holds the
+// items that the query matches. Undecided holds the items whose outcome
+// the server cannot decide. Both lists follow the order of [byNameAndID].
+type queryResult struct {
+	matches   []*Item
+	undecided []undecidedItem
+}
+
+// undecidedItem is an item whose outcome the server cannot decide, with
+// the reasons of the outcome.
+type undecidedItem struct {
+	item    *Item
+	reasons []string
+}
+
+// evaluate returns what q gives each item of items in ctx. It leaves out
+// each item that q does not match.
+func (q compiledQuery) evaluate(ctx searchContext, items []*Item) queryResult {
+	var result queryResult
 
 	test := q.test(ctx)
 	for _, item := range items {
-		if test(item) {
-			out = append(out, item)
+		got := test(item)
+
+		if got.state == match {
+			result.matches = append(result.matches, item)
+		}
+
+		if got.state == undecided {
+			result.undecided = append(result.undecided, undecidedItem{item: item, reasons: got.reasons})
 		}
 	}
 
-	slices.SortStableFunc(out, func(a, b *Item) int {
-		return cmp.Or(cmp.Compare(a.Name, b.Name), compareIDs(a.InstanceID, b.InstanceID))
-	})
+	slices.SortStableFunc(result.matches, byNameAndID)
+	slices.SortStableFunc(result.undecided, func(a, b undecidedItem) int { return byNameAndID(a.item, b.item) })
 
-	return out
+	return result
+}
+
+// byNameAndID orders items by name and then by instance id, as the default
+// sort of list_items orders them.
+func byNameAndID(a, b *Item) int {
+	return cmp.Or(cmp.Compare(a.Name, b.Name), compareIDs(a.InstanceID, b.InstanceID))
+}
+
+// unratedReason returns the [ratingReason] of the first game mode of
+// q.modes whose source in sources holds an Err. It returns "" when every
+// such mode has ratings.
+func (q compiledQuery) unratedReason(sources map[string]RatingSource) string {
+	for _, mode := range q.modes {
+		err := sources[mode].Err
+		if err != nil {
+			return ratingReason(mode, err)
+		}
+	}
+
+	return ""
+}
+
+// unratedQuery returns the errUnratedMode error that gives reason, the
+// [ratingReason] of the game mode without ratings.
+func unratedQuery(reason string) error {
+	return fmt.Errorf("%w. %s", errUnratedMode, reason)
 }
 
 // invalidQuery returns the [ErrInvalidInput] error that names terms, the
@@ -697,7 +921,7 @@ func powerValue(value string) (queryTest, error) {
 
 	test := func(item *Item) bool { return item.LightPower != 0 && compare(float64(item.LightPower)) }
 
-	return func(searchContext) func(*Item) bool { return test }, nil
+	return fromDecided(func(searchContext) func(*Item) bool { return test }), nil
 }
 
 // tagMatch returns the predicate of the filter tag:value, as the web
@@ -835,7 +1059,7 @@ func isDupe(ctx searchContext) func(*Item) bool {
 // the check, so the completion never reaches an autotag rule.
 func dupeValue(value string) (queryTest, error) {
 	if value == "item" {
-		return isDupe, nil
+		return fromDecided(isDupe), nil
 	}
 
 	for part := range strings.SplitSeq(value, "+") {
@@ -859,11 +1083,11 @@ func countValue(value string) (queryTest, error) {
 		return nil, err
 	}
 
-	return func(ctx searchContext) func(*Item) bool {
+	return fromDecided(func(ctx searchContext) func(*Item) bool {
 		counts := dupeCounts(ctx.items, isComparable)
 
 		return func(item *Item) bool { return compare(float64(counts[itemDupeID(item)])) }
-	}, nil
+	}), nil
 }
 
 // dupeCounts returns the number of items of items that keep accepts for
@@ -1036,25 +1260,25 @@ func (f rangeFormat) operand(value string) (string, float64, bool) {
 // itemValue adapts the predicate function of a filter that reads only the
 // tested item and accepts every value to the value field of a
 // [searchFilter].
-func itemValue(match func(value string) func(*Item) bool) func(string) (queryTest, error) {
+func itemValue(predicate func(value string) func(*Item) bool) func(string) (queryTest, error) {
 	return func(value string) (queryTest, error) {
-		test := match(value)
+		test := predicate(value)
 
-		return func(searchContext) func(*Item) bool { return test }, nil
+		return fromDecided(func(searchContext) func(*Item) bool { return test }), nil
 	}
 }
 
-// isTable maps each is: word of filters to the builder of its predicate.
+// isTable maps each is: word of filters to the builder of its test.
 func isTable(filters []searchFilter) map[string]queryTest {
 	table := map[string]queryTest{}
 
 	for _, f := range filters {
 		switch {
 		case f.build != nil:
-			table[f.word] = f.build
+			table[f.word] = fromDecided(f.build)
 		case f.match != nil:
-			match := f.match
-			table[f.word] = func(searchContext) func(*Item) bool { return match }
+			predicate := f.match
+			table[f.word] = fromDecided(func(searchContext) func(*Item) bool { return predicate })
 		}
 	}
 
@@ -1062,15 +1286,172 @@ func isTable(filters []searchFilter) map[string]queryTest {
 }
 
 // valueTable maps the name of each filter of filters that takes a value
-// to the function that reads the value.
-func valueTable(filters []searchFilter) map[string]func(string) (queryTest, error) {
-	table := map[string]func(string) (queryTest, error){}
+// to the filter.
+func valueTable(filters []searchFilter) map[string]searchFilter {
+	table := map[string]searchFilter{}
 
 	for _, f := range filters {
 		if f.value != nil {
-			table[f.name] = f.value
+			table[f.name] = f
 		}
 	}
 
 	return table
+}
+
+// ratingValues holds the numbers that a rating filter tests for one item.
+// The filter matches the item when one of numbers passes the range of the
+// filter. Reasons names each number that the server cannot read.
+type ratingValues struct {
+	numbers []float64
+	reasons []string
+}
+
+// ratingFilter returns the rating filter of the name name, which reads
+// the ratings of mode. Format reads the range value of the filter. Values
+// returns the numbers that the range tests for an item, as the rating
+// filters of the web client define them. The filter rejects a value that
+// format rejects, as the web client does.
+//
+// The filter matches an item when one of its numbers passes the range,
+// also when the server cannot read another number. Otherwise an item with
+// a number that the server cannot read is undecided, and every other item
+// is a no match. An item without numbers is therefore a no match.
+func ratingFilter(
+	name, mode string,
+	format rangeFormat,
+	values func(source RatingSource, item *Item) ratingValues,
+) searchFilter {
+	read := func(value string) (queryTest, error) {
+		compare, err := format.valueComparator(value)
+		if err != nil {
+			return nil, err
+		}
+
+		return func(ctx searchContext) func(*Item) outcome {
+			source := ctx.sources[mode]
+
+			return func(item *Item) outcome {
+				v := values(source, item)
+
+				switch {
+				case slices.ContainsFunc(v.numbers, compare):
+					return outcome{state: match}
+				case len(v.reasons) > 0:
+					return outcome{reasons: v.reasons, state: undecided}
+				default:
+					return outcome{}
+				}
+			}
+		}, nil
+	}
+
+	return searchFilter{name: name, mode: mode, value: read}
+}
+
+// rollValues returns the numbers of rate: and rating: for item. The first
+// number is the tier of the roll that [rate] gives the copy. The web
+// client also tests the tier of each set bonus of the item, which
+// [setBonusValues] describes.
+//
+// A copy without perks on a row with perk columns has a tier that the
+// server cannot read. The web client rates such a copy from the socket
+// list of DIM, which can come from the definitions. A row without a tier
+// gives no copy a tier, so the server decides a copy without perks on such
+// a row.
+func rollValues(source RatingSource, item *Item) ratingValues {
+	v := setBonusValues(item)
+
+	roll := rate(source, item).Roll
+	if roll == nil {
+		return v
+	}
+
+	if roll.Unknown && roll.Row.Tier != "" {
+		v.reasons = append(v.reasons, reasonNoPerks)
+
+		return v
+	}
+
+	v.numbers = appendTier(v.numbers, roll.Overall)
+
+	return v
+}
+
+// baseValues returns the numbers of ratebase: and ratingbase: for item.
+// The first number is the tier of the sheet row of the item hash,
+// whatever the copy rolled. The web client also tests the tier of each
+// set bonus of the item, which [setBonusValues] describes.
+func baseValues(source RatingSource, item *Item) ratingValues {
+	v := setBonusValues(item)
+
+	roll := rate(source, item).Roll
+	if roll != nil {
+		v.numbers = appendTier(v.numbers, roll.Row.Tier)
+	}
+
+	return v
+}
+
+// missValues returns the number of misses: for item, which is the number
+// of perk columns that the roll of the copy missed. Only a roll with perk
+// columns has the number. The server cannot read the number for a copy
+// without perks on a row with perk columns.
+func missValues(source RatingSource, item *Item) ratingValues {
+	roll := rate(source, item).Roll
+
+	switch {
+	case roll == nil:
+		return ratingValues{}
+	case roll.Unknown:
+		return ratingValues{reasons: []string{reasonNoPerks}}
+	case len(roll.Columns) == 0:
+		return ratingValues{}
+	}
+
+	missed := 0
+
+	for _, column := range roll.Columns {
+		if column.Missed() {
+			missed++
+		}
+	}
+
+	return ratingValues{numbers: []float64{float64(missed)}}
+}
+
+// setBonusValues returns the numbers of the set bonuses of item, which
+// rate: and ratebase: also test in the web client. The server does not
+// read set bonuses. The web client describes set bonuses as bonuses of
+// armor sets, so a weapon has no such number. Every other item gets
+// reasonSetBonus in place of its numbers.
+func setBonusValues(item *Item) ratingValues {
+	if slices.Contains(weaponBuckets, item.Bucket) {
+		return ratingValues{}
+	}
+
+	return ratingValues{reasons: []string{reasonSetBonus}}
+}
+
+// appendTier appends the number that tierRange gives tier to numbers. A
+// row or roll without a tier adds no number.
+func appendTier(numbers []float64, tier string) []float64 {
+	n, ok := tierRange.overloads[strings.ToLower(tier)]
+	if !ok {
+		return numbers
+	}
+
+	return append(numbers, n)
+}
+
+// tierOverloads returns the overloads of tierRange. Each tier of [tiers],
+// in lowercase, maps to the number of tiers after it, as TIER_VALUES of
+// the web client maps it.
+func tierOverloads() map[string]float64 {
+	overloads := make(map[string]float64, len(tiers))
+	for i, tier := range tiers {
+		overloads[strings.ToLower(tier)] = float64(len(tiers) - 1 - i)
+	}
+
+	return overloads
 }

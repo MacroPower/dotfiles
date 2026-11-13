@@ -295,7 +295,7 @@ type SaveAutotagRuleInput struct {
 // tool.
 type PreviewAutotagRuleInput struct {
 	Query   string `json:"query"            jsonschema:"Item search in the search syntax of Agg's Destiny Vault Manager, such as 'is:weapon is:unlocked -tag:keep'. The tool evaluates only the filters that its description names"`
-	Limit   int    `json:"limit,omitzero"   jsonschema:"Maximum number of items to return (default 50, maximum 200)"`
+	Limit   int    `json:"limit,omitzero"   jsonschema:"Maximum number of matching items to return, and separately of undecided items to list in their own section (default 50, maximum 200)"`
 	Offset  int    `json:"offset,omitzero"  jsonschema:"Number of matching items to skip (default 0)"`
 	Refresh bool   `json:"refresh,omitzero" jsonschema:"Fetch the inventory from Bungie again instead of reusing a copy up to 30 seconds old"`
 }
@@ -1693,9 +1693,12 @@ func compileRuleQuery(query string) (compiledQuery, error) {
 }
 
 // countRuleMatches counts the owned items that query matches over the
-// items that preview_autotag_rule evaluates. It reads the inventory only
-// when the preview evaluates every term of query, and it reuses a snapshot
-// up to 30 seconds old.
+// items that preview_autotag_rule evaluates. It also counts the items
+// whose outcome the server cannot decide. It reads the inventory only when
+// the preview evaluates every term of query, and it reuses a snapshot up
+// to 30 seconds old. It reads the rating sources only for a query with a
+// rating filter. A game mode without ratings that the query reads gives
+// the reason of the mode in place of the counts.
 func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) saveCount {
 	if len(query.unsupported) > 0 {
 		return saveCount{unsupported: query.unsupported}
@@ -1711,15 +1714,39 @@ func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) sav
 		return saveCount{noCharacter: true}
 	}
 
-	matches := query.matches(searchContext{current: current, items: builtItems(s)}, ownedItems(s))
+	sources, reason := h.querySources(ctx, query)
+	if reason != "" {
+		return saveCount{unrated: reason}
+	}
 
-	return saveCount{matches: len(matches)}
+	result := query.evaluate(searchContext{current: current, items: builtItems(s), sources: sources}, ownedItems(s))
+
+	return saveCount{matches: len(result.matches), undecided: len(result.undecided)}
+}
+
+// querySources returns the [RatingSource] of each game mode for a query
+// with a rating filter. It also returns the [ratingReason] of the first
+// game mode without ratings that the query reads, or "" when each such
+// mode has ratings. A query without a rating filter gets no sources, and
+// querySources then sends no request.
+func (h *handler) querySources(ctx context.Context, query compiledQuery) (map[string]RatingSource, string) {
+	if len(query.modes) == 0 {
+		return nil, ""
+	}
+
+	sources := h.ratingSources(ctx)
+
+	return sources, query.unratedReason(sources)
 }
 
 // handlePreviewAutotagRule lists the owned items that a rule query
 // matches. It refuses a query that does not parse, that holds a value that
 // the web client rejects, or that holds a term outside the filter table
-// before it sends any request.
+// before it sends any request. It reads the rating sources only for a
+// query with a rating filter, after the inventory. A game mode without
+// ratings that the query reads fails the call with the reason of the
+// mode. The result lists the items whose outcome the server cannot decide
+// in a section of their own.
 func (h *handler) handlePreviewAutotagRule(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -1747,8 +1774,14 @@ func (h *handler) handlePreviewAutotagRule(
 		return h.toolError(ctx, toolPreviewAutotagRule, errNoCharacter)
 	}
 
+	sources, reason := h.querySources(ctx, query)
+	if reason != "" {
+		return h.toolError(ctx, toolPreviewAutotagRule, unratedQuery(reason))
+	}
+
 	owned := ownedItems(s)
-	matches := query.matches(searchContext{current: current, items: builtItems(s)}, owned)
+	result := query.evaluate(searchContext{current: current, items: builtItems(s), sources: sources}, owned)
+	matches := result.matches
 
 	limit := in.Limit
 	if limit <= 0 {
@@ -1759,7 +1792,7 @@ func (h *handler) handlePreviewAutotagRule(
 	offset := min(max(in.Offset, 0), len(matches))
 	page := matches[offset:min(offset+limit, len(matches))]
 
-	return textResult(renderPreview(s, page, offset, len(matches), len(owned))), nil, nil
+	return textResult(renderPreview(s, page, offset, len(matches), len(owned), result.undecided, limit)), nil, nil
 }
 
 func (h *handler) handleRemoveAutotagRule(

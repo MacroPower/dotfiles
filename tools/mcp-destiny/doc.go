@@ -62,10 +62,16 @@
 // The tool also refuses a filter value that the web client rejects, such
 // as count:=<2, for the filters that preview_autotag_rule evaluates. It
 // saves a query with other terms, because the web client might accept
-// them, and its result names those terms. When a call passes a query that
-// holds only the filters of the preview, the result counts the owned items
-// that the query matches. The count covers that query alone, as if no
-// other rule existed, so an earlier rule can take some of those items.
+// them, and its result names those terms.
+//
+// When a call passes a query that holds only the filters of the preview,
+// the save_autotag_rule result counts the owned items that the query
+// matches. The count covers that query alone, as if no other rule existed,
+// so an earlier rule can take some of those items. The result also counts
+// the items whose outcome the server cannot decide, which the Autotag
+// Preview section describes. The tool saves a query that reads a game mode
+// without ratings. Its result then gives the reason of the mode in place
+// of the counts.
 //
 // The web client records profile changes only while it is open in a
 // browser. It diffs each Bungie profile that it fetches against the one
@@ -360,6 +366,19 @@
 //     powerfulcap, and pinnaclecap as the power levels of the season. The
 //     tool lacks those levels, so a range with such a word is a term
 //     outside the set.
+//   - rate:<range> and rating:<range>: a copy whose roll has a tier in the
+//     range on the Aegis sheet. The tier of the roll is the tier that the
+//     get_item tool gives the copy. The web client also tests the tier of
+//     each set bonus of the item.
+//   - ratebase:<range> and ratingbase:<range>: an item whose row on the
+//     Aegis sheet has a tier in the range, whatever the copy rolled. The
+//     web client also tests the tier of each set bonus of the item.
+//   - misses:<range>: a copy whose count of missed perk columns is in the
+//     range, such as misses:>=1. Only a copy on a row with perk columns
+//     has the count.
+//   - pvprate:, pvprating:, pvpratebase:, pvpratingbase:, and pvpmisses:
+//     each match what the filter without the prefix pvp matches, but they
+//     read the PvP sheet.
 //
 // The rarity filters read the tier type of the definition, as DIM does,
 // and not the tier name that list_items shows. DIM reads a definition
@@ -369,6 +388,46 @@
 // an item as its power when the stat is Attack, Defense, or Power. It
 // does not count the primary stat of a subclass, of an artifact, or of an
 // item whose definition hides the primary stat.
+//
+// The range of rate:, ratebase:, and their other names takes a tier
+// letter or a number. Each tier stands for a number, from 6 for S to 0 for
+// F, so rate:>=b matches B or better and rate:>=5 matches A or better. The
+// range of misses: takes only a number. A weapon that the sheet does not
+// list and a weapon on a row without a tier match no range of rate: or
+// ratebase:. The rating filters rate each roll as the Roll Ratings section
+// describes. A rating can therefore differ from the rating of the web
+// client in the ways that the section lists.
+//
+// Each rating filter reads the sheet, the perk preferences, and the
+// definitions of its game mode. A query that reads a game mode without
+// ratings voids the whole preview. The tool then returns an error result
+// that gives the reason of the mode, as a minimum rating of list_items
+// does. A query reads only the game modes of its rating filters, so the
+// other mode can lack ratings. The tool reads no sheet for a query without
+// a rating filter.
+//
+// The server cannot decide the outcome of some items. The preview lists
+// such items after the matches, in a section of their own, with the reason
+// of each. It never counts them as matches. The section shows at most
+// limit items, and the offset pages only the matches. The server leaves an
+// item undecided for these reasons:
+//
+//   - The server does not read set bonuses, which rate: and ratebase: also
+//     test. It treats a weapon as an item without set bonuses. Every other
+//     item is undecided at those filters, unless the tier of its roll or
+//     its row passes the range.
+//   - The profile lists no perks for a copy on a row with perk columns.
+//     The web client can still rate the copy from the definitions, so the
+//     copy is undecided at rate: and misses:. The server decides such a
+//     copy at ratebase:, and at rate: on a row without a tier.
+//
+// The operators combine an undecided term with the other terms. An and
+// does not match when one of its terms does not match, and an or matches
+// when one of its terms matches. Otherwise an undecided term makes the and
+// or the or undecided. A negated undecided term stays undecided. The query
+// is:weapon rate:>=a therefore decides every item outside the weapon
+// buckets. Among the weapons, it leaves undecided only a copy without perks
+// on a row with a tier and perk columns.
 //
 // The name filters fold the item name and the text before they compare
 // them, as the web client does. The fold removes letter case and
