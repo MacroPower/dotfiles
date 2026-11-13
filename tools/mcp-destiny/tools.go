@@ -1744,12 +1744,18 @@ func unknownTrait(perk string, traits map[string]string) error {
 
 // mergeRule builds the rule that a save_autotag_rule call writes. With an
 // id it overlays the given fields on the stored rule. Without an id it
-// creates a rule that evaluates last. It rejects a built rule that has no
-// action, which is a rule with an empty tag id and a false vault flag. An
-// enabled rule without an action takes the items that it matches from the
-// rules after it and neither tags nor vaults them. A stored rule without an
-// action also disables the Save button of the rule editor of the web client
-// until the user gives the rule an action or removes it.
+// creates a rule that evaluates last. When the call passes a query,
+// mergeRule reads the query with [checkQuery] and rejects a query that the
+// search lexer of the web client rejects or that has no search term. It
+// leaves a stored query unchecked, so a call can still disable, move, or
+// retag a stored rule whose query does not lex.
+//
+// mergeRule also rejects a built rule that has no action, which is a rule
+// with an empty tag id and a false vault flag. An enabled rule without an
+// action takes the items that it matches from the rules after it and
+// neither tags nor vaults them. A stored rule without an action also
+// disables the Save button of the rule editor of the web client until the
+// user gives the rule an action or removes it.
 func mergeRule(rules []AutotagRule, in SaveAutotagRuleInput) (AutotagRule, error) {
 	var rule AutotagRule
 
@@ -1802,6 +1808,13 @@ func mergeRule(rules []AutotagRule, in SaveAutotagRuleInput) (AutotagRule, error
 		return AutotagRule{}, fmt.Errorf(
 			"%w: a rule query has between 1 and %d characters", ErrInvalidInput, maxQueryLength,
 		)
+	}
+
+	if in.Query != nil {
+		err := checkQuery(rule.Query)
+		if err != nil {
+			return AutotagRule{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+		}
 	}
 
 	if rule.TagID != "" && !slices.Contains(tagOrder, rule.TagID) {

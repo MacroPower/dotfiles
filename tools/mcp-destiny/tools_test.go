@@ -91,6 +91,8 @@ func TestServerListsTools(t *testing.T) {
 
 		case toolSaveAutotagRule:
 			assert.Contains(t, tool.Description, "A rule needs a tag_id or vault=true")
+			assert.Contains(t, tool.Description, "This tool refuses a query with a quote that never closes")
+			assert.Contains(t, tool.Description, "It does not check filter names or filter values.")
 
 		case toolGetItem:
 			assert.Contains(t, tool.Description, "a pick can be a perk that this version cannot roll")
@@ -4924,6 +4926,12 @@ const fixtureRuleWithoutAction = `{"rules": [
 	{"id": "r3", "query": "is:armor", "vault": false, "enabled": true, "position": 0, "removed": false, "updatedAt": 5}
 ], "state": {"enabled": true, "mark": "00000000000000001006", "updatedAt": 5}, "now": 10}`
 
+// fixtureRuleWithOpenQuote is an autotag body whose one rule has a query
+// with a quote that never closes.
+const fixtureRuleWithOpenQuote = `{"rules": [
+	{"id": "r3", "query": "name:\"abc", "tagId": "junk", "vault": false, "enabled": true, "position": 0, "removed": false, "updatedAt": 5}
+], "state": {"enabled": true, "mark": "00000000000000001006", "updatedAt": 5}, "now": 10}`
+
 func TestListAutotagRules(t *testing.T) {
 	t.Parallel()
 
@@ -4970,9 +4978,16 @@ func TestSaveAutotagRule(t *testing.T) {
 		noAction = "invalid input: a rule needs a tag_id or vault=true, " +
 			"so add one or remove the rule with remove_autotag_rule"
 		badQuery = "invalid input: a rule query has between 1 and 1000 characters"
+		unclosed = `invalid input: the quote in "name:\"abc" never closes`
 	)
 
 	query := "is:weapon misses:2"
+	openQuote := `name:"abc`
+	badEscape := `name:"a\b"`
+	noValue := "is:"
+	noValueInside := "is:weapon name: x"
+	quoteAfterParen := `is:weapon ) "abc`
+	byteOrderMark := "\ufeff"
 	empty := ""
 	spaces := "  "
 	junk := "junk"
@@ -5133,6 +5148,50 @@ func TestSaveAutotagRule(t *testing.T) {
 			in:      SaveAutotagRuleInput{ID: "r1", Query: &long},
 			want:    badQuery,
 			isError: true,
+		},
+		"quote that never closes": {
+			in:      SaveAutotagRuleInput{Query: &openQuote, TagID: &junk},
+			want:    unclosed,
+			isError: true,
+		},
+		"unknown escape inside quotes": {
+			in: SaveAutotagRuleInput{Query: &badEscape, TagID: &junk},
+			want: `invalid input: the query puts a backslash before "b" inside quotes, ` +
+				"and inside quotes a backslash escapes only a double quote, a single quote, or a backslash",
+			isError: true,
+		},
+		"filter name without a value": {
+			in:      SaveAutotagRuleInput{Query: &noValue, TagID: &junk},
+			want:    `invalid input: the filter "is:" has no value`,
+			isError: true,
+		},
+		"filter name without a value inside the query": {
+			in:      SaveAutotagRuleInput{Query: &noValueInside, TagID: &junk},
+			want:    `invalid input: the filter "name:" has no value`,
+			isError: true,
+		},
+		"quote after an unmatched paren": {
+			in:      SaveAutotagRuleInput{Query: &quoteAfterParen, TagID: &junk},
+			want:    `invalid input: the quote in "\"abc" never closes`,
+			isError: true,
+		},
+		"query without a search term": {
+			in:      SaveAutotagRuleInput{Query: &byteOrderMark, TagID: &junk},
+			want:    "invalid input: the query has no search term",
+			isError: true,
+		},
+		"query check wins over the missing action": {
+			in:      SaveAutotagRuleInput{Query: &openQuote},
+			want:    unclosed,
+			isError: true,
+		},
+		"update keeps a stored query that does not lex": {
+			autotag: fixtureRuleWithOpenQuote,
+			in:      SaveAutotagRuleInput{ID: "r3", Enabled: &no},
+			wantRule: map[string]any{
+				"id": "r3", "query": `name:"abc`, "tagId": "junk", "vault": false,
+				"enabled": false, "position": float64(0), "removed": false,
+			},
 		},
 	}
 

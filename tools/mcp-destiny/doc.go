@@ -24,9 +24,13 @@
 // the name, the type, the location, and the names of the rewards.
 //
 // Tags follow the web client. An item carries at most one of the tags that
-// the web client defines, and the favorite mark is a separate flag. The web
-// client evaluates autotag rules, so the server stores a rule query without
-// checking its syntax.
+// the web client defines, and the favorite mark is a separate flag.
+//
+// The web client evaluates autotag rules. The save_autotag_rule tool reads
+// each query that a call passes with a port of the search lexer of the web
+// client. It refuses a query that the lexer rejects, such as a query with
+// a quote that never closes. It does not check filter names or filter
+// values.
 //
 // The web client records profile changes only while it is open in a
 // browser. It diffs each Bungie profile that it fetches against the one
