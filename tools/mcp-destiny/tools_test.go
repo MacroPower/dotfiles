@@ -103,7 +103,8 @@ func TestServerListsTools(t *testing.T) {
 				tool.Description,
 				"This tool refuses a query that the search parser of the web client rejects",
 			)
-			assert.Contains(t, tool.Description, "It does not check filter names or filter values.")
+			assert.Contains(t, tool.Description, "It also refuses a filter value that the web client rejects")
+			assert.NotContains(t, tool.Description, "It does not check filter names or filter values")
 
 		case toolGetItem:
 			assert.Contains(t, tool.Description, "a pick can be a perk that this version cannot roll")
@@ -5412,6 +5413,166 @@ func TestSaveAutotagRule(t *testing.T) {
 			}
 
 			assert.Equal(t, tc.wantRule, rule)
+		})
+	}
+}
+
+func TestSaveAutotagRuleReport(t *testing.T) {
+	t.Parallel()
+
+	const (
+		bungieDown   = `{"ErrorCode": 5, "ErrorStatus": "SystemDisabled", "Message": "down"}`
+		noCharacters = `{"ErrorCode": 1, "Response": {
+			"profileInventory": {"data": {"items": [
+				{"itemHash": 100, "itemInstanceId": "1001", "quantity": 1, "location": 2, "bucketHash": 138197802}
+			]}},
+			"characters": {"data": {}}
+		}}`
+		countLine = "The query matches %d owned items now. " +
+			"The count ignores the other rules, so an earlier rule can take some of these items first."
+		unsupportedLine = "The server does not evaluate %s, so it did not count the items that the query matches. " +
+			"The web client might still accept those terms and run the rule."
+		readFailedLine = "The rule is saved, but the server could not read the inventory " +
+			"to count the items that the query matches: %s"
+		noCharacterLine = "The rule is saved, but the account has no character, " +
+			"so the server did not count the items that the query matches."
+		invalidText = "invalid input: the web client rejects %s, so it skips an autotag rule with this query"
+	)
+
+	// created returns the text of a result that saved a new rule with query
+	// and the tag junk. The test writes "new" in place of the random id.
+	created := func(query, line string) string {
+		return fmt.Sprintf("Saved the rule:\n- 2. [enabled] %q: tag junk (id new)\n%s", query, line)
+	}
+
+	dupes, _, _ := preview(t, newFakes(t), "is:weapon is:dupe")
+	require.Positive(t, dupes)
+
+	weapons, _, _ := preview(t, newFakes(t), "is:weapon")
+	require.Positive(t, weapons)
+
+	down := newFakes(t)
+	down.profileBody = bungieDown
+
+	readErr, isError := call(t, down.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon"})
+	require.True(t, isError)
+	require.True(t, strings.HasPrefix(readErr, "fetching the profile:"), readErr)
+
+	dupeQuery := "is:weapon is:dupe"
+	weaponQuery := "is:weapon"
+	masterwork := "is:masterwork"
+	badCount := "count:=<2"
+	badDupe := "dupe:foo"
+	mixed := "is:masterwork count:=<2"
+	emptyVault := "is:armor is:invault"
+	junk := "junk"
+	no := false
+
+	tests := map[string]struct {
+		// profile replaces the profile of the fake Bungie platform when it
+		// is set.
+		profile string
+		want    string
+		in      SaveAutotagRuleInput
+		isError bool
+		// fetches reports whether the call reads the profile.
+		fetches bool
+	}{
+		"counts the matches of a query": {
+			in:      SaveAutotagRuleInput{Query: &dupeQuery, TagID: &junk},
+			want:    created(dupeQuery, fmt.Sprintf(countLine, dupes)),
+			fetches: true,
+		},
+		"counts the matches of the query of an updated rule": {
+			in: SaveAutotagRuleInput{ID: "r1", Query: &weaponQuery},
+			want: "Saved the rule:\n- 0. [enabled] \"is:weapon\": tag pve (id r1)\n" +
+				fmt.Sprintf(countLine, weapons),
+			fetches: true,
+		},
+		"names an unsupported term": {
+			in:   SaveAutotagRuleInput{Query: &masterwork, TagID: &junk},
+			want: created(masterwork, fmt.Sprintf(unsupportedLine, "is:masterwork")),
+		},
+		"refuses an invalid count value": {
+			in:      SaveAutotagRuleInput{Query: &badCount, TagID: &junk},
+			want:    fmt.Sprintf(invalidText, "count:=<2"),
+			isError: true,
+		},
+		"refuses an invalid dupe value": {
+			in:      SaveAutotagRuleInput{Query: &badDupe, TagID: &junk},
+			want:    fmt.Sprintf(invalidText, "dupe:foo"),
+			isError: true,
+		},
+		"refuses an invalid value beside an unsupported term": {
+			in:      SaveAutotagRuleInput{Query: &mixed, TagID: &junk},
+			want:    fmt.Sprintf(invalidText, "count:=<2"),
+			isError: true,
+		},
+		"keeps the rule when the inventory read fails": {
+			profile: bungieDown,
+			in:      SaveAutotagRuleInput{Query: &weaponQuery, TagID: &junk},
+			want:    created(weaponQuery, fmt.Sprintf(readFailedLine, readErr)),
+			fetches: true,
+		},
+		"reports an account without a character": {
+			profile: noCharacters,
+			in:      SaveAutotagRuleInput{Query: &weaponQuery, TagID: &junk},
+			want:    created(weaponQuery, noCharacterLine),
+			fetches: true,
+		},
+		"a call that changes only the enabled flag": {
+			in:   SaveAutotagRuleInput{ID: "r1", Enabled: &no},
+			want: "Saved the rule:\n- 0. [disabled] \"rate:>=a\": tag pve (id r1)",
+		},
+		"the empty count reads as a number": {
+			in:      SaveAutotagRuleInput{Query: &emptyVault, TagID: &junk},
+			want:    created(emptyVault, fmt.Sprintf(countLine, 0)),
+			fetches: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.profileBody = tc.profile
+
+			got, isError := call(t, f.h.handleSaveAutotagRule, tc.in)
+			assert.Equal(t, tc.isError, isError)
+
+			profiles := f.bungie.calls(http.MethodGet, pathProfile)
+			if tc.fetches {
+				assert.NotEmpty(t, profiles)
+			} else {
+				assert.Empty(t, profiles)
+			}
+
+			writes := f.service.calls(http.MethodPost, pathAutotag)
+			if tc.isError {
+				assert.Equal(t, tc.want, got)
+				assert.Empty(t, writes)
+
+				return
+			}
+
+			require.Len(t, writes, 1)
+
+			if tc.in.ID == "" {
+				rules, ok := writes[0].Body["rules"].([]any)
+				require.True(t, ok)
+				require.Len(t, rules, 1)
+
+				rule, ok := rules[0].(map[string]any)
+				require.True(t, ok)
+
+				id, ok := rule["id"].(string)
+				require.True(t, ok)
+
+				got = strings.Replace(got, "(id "+id+")", "(id new)", 1)
+			}
+
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }

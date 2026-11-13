@@ -1480,6 +1480,10 @@ func (h *handler) handleListAutotagRules(
 	return textResult(renderAutotag(snapshot)), nil, nil
 }
 
+// handleSaveAutotagRule writes the rule that [mergeRule] builds. When the
+// call passes a query, it refuses a query that holds a value that the web
+// client rejects before it writes the rule. After the write, the result
+// counts the owned items that the query matches.
 func (h *handler) handleSaveAutotagRule(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -1498,6 +1502,15 @@ func (h *handler) handleSaveAutotagRule(
 		return h.toolError(ctx, toolSaveAutotagRule, err)
 	}
 
+	var query compiledQuery
+
+	if in.Query != nil {
+		query, err = compileRuleQuery(rule.Query)
+		if err != nil {
+			return h.toolError(ctx, toolSaveAutotagRule, err)
+		}
+	}
+
 	err = h.withSession(ctx, func(session string) error {
 		return h.service.WriteAutotagRules(ctx, session, []AutotagRule{rule})
 	})
@@ -1505,7 +1518,55 @@ func (h *handler) handleSaveAutotagRule(
 		return h.toolError(ctx, toolSaveAutotagRule, err)
 	}
 
-	return textResult("Saved the rule:\n" + renderRule(rule)), nil, nil
+	text := "Saved the rule:\n" + renderRule(rule)
+	if in.Query != nil {
+		text += "\n" + renderSaveCount(h.countRuleMatches(ctx, query))
+	}
+
+	return textResult(text), nil, nil
+}
+
+// compileRuleQuery parses and compiles query after it trims the query, as
+// save_autotag_rule trims the query that it stores. It returns an error
+// that wraps [ErrInvalidInput] for a query that does not parse or that
+// holds a value that the web client rejects. The compiled query can still
+// hold terms that the preview does not evaluate.
+func compileRuleQuery(query string) (compiledQuery, error) {
+	root, err := parseQuery(strings.TrimSpace(query))
+	if err != nil {
+		return compiledQuery{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+
+	compiled := compileQuery(root)
+	if len(compiled.invalid) > 0 {
+		return compiledQuery{}, invalidQuery(compiled.invalid)
+	}
+
+	return compiled, nil
+}
+
+// countRuleMatches counts the owned items that query matches over the
+// items that preview_autotag_rule evaluates. It reads the inventory only
+// when the preview evaluates every term of query, and it reuses a snapshot
+// up to 30 seconds old.
+func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) saveCount {
+	if len(query.unsupported) > 0 {
+		return saveCount{unsupported: query.unsupported}
+	}
+
+	s, _, err := h.loadAnnotated(ctx, false)
+	if err != nil {
+		return saveCount{err: err}
+	}
+
+	current, ok := s.lastPlayed()
+	if !ok {
+		return saveCount{noCharacter: true}
+	}
+
+	matches := query.matches(searchContext{current: current, items: builtItems(s)}, ownedItems(s))
+
+	return saveCount{matches: len(matches)}
 }
 
 // handlePreviewAutotagRule lists the owned items that a rule query
@@ -1520,15 +1581,9 @@ func (h *handler) handlePreviewAutotagRule(
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// The trim matches the query that save_autotag_rule stores.
-	root, err := parseQuery(strings.TrimSpace(in.Query))
+	query, err := compileRuleQuery(in.Query)
 	if err != nil {
-		return h.toolError(ctx, toolPreviewAutotagRule, fmt.Errorf("%w: %w", ErrInvalidInput, err))
-	}
-
-	query := compileQuery(root)
-	if len(query.invalid) > 0 {
-		return h.toolError(ctx, toolPreviewAutotagRule, invalidQuery(query.invalid))
+		return h.toolError(ctx, toolPreviewAutotagRule, err)
 	}
 
 	if len(query.unsupported) > 0 {

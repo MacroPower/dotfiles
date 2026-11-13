@@ -46,7 +46,13 @@
 // query with a quote that never closes. It also refuses a query that the
 // web client runs differently from its text. For example, the web client
 // reads the unquoted word "or" in "is:weapon or" as a search for the word.
-// The tool does not check filter names or filter values.
+// The tool also refuses a filter value that the web client rejects, such
+// as count:=<2, for the filters that preview_autotag_rule evaluates. It
+// saves a query with other terms, because the web client might accept
+// them, and its result names those terms. When a call passes a query that
+// holds only the filters of the preview, the result counts the owned items
+// that the query matches. The count covers that query alone, as if no
+// other rule existed, so an earlier rule can take some of those items.
 //
 // The web client records profile changes only while it is open in a
 // browser. It diffs each Bungie profile that it fetches against the one

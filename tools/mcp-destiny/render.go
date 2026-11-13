@@ -263,6 +263,52 @@ func renderPreview(s *Snapshot, page []*Item, offset, total, owned int) string {
 		renderItems(s, page, offset, total, "", false, nil)
 }
 
+// saveCount is the outcome of counting the owned items that the query of a
+// saved autotag rule matches. It holds at most one of unsupported, err,
+// and noCharacter. When it holds none of them, matches is the count.
+type saveCount struct {
+	// err is the error of the inventory read.
+	err error
+	// unsupported holds the terms of the query that the preview does not
+	// evaluate, in the order that [compiledQuery] gives them.
+	unsupported []string
+	// matches is the number of owned items that the query matches.
+	matches int
+	// noCharacter reports an account without a character.
+	noCharacter bool
+}
+
+// renderSaveCount renders the line of a save_autotag_rule result that
+// follows the rule line when the call passes a query.
+func renderSaveCount(count saveCount) string {
+	switch {
+	case len(count.unsupported) > 0:
+		return fmt.Sprintf(
+			"The server does not evaluate %s, so it did not count the items that the query matches. "+
+				"The web client might still accept those terms and run the rule.",
+			strings.Join(count.unsupported, ", "),
+		)
+
+	case count.err != nil:
+		return fmt.Sprintf(
+			"The rule is saved, but the server could not read the inventory "+
+				"to count the items that the query matches: %v",
+			count.err,
+		)
+
+	case count.noCharacter:
+		return "The rule is saved, but the account has no character, " +
+			"so the server did not count the items that the query matches."
+
+	default:
+		return fmt.Sprintf(
+			"The query matches %d owned items now. "+
+				"The count ignores the other rules, so an earlier rule can take some of these items first.",
+			count.matches,
+		)
+	}
+}
+
 // renderItem renders one item in full. For a weapon, ratings holds the
 // [Rating] of each game mode, and the output gains the roll ratings
 // block. Ratings is nil for every other item.

@@ -577,7 +577,11 @@ func newServer(h *handler) *mcp.Server {
 			"This tool refuses a query that the search parser of the web client rejects. " +
 			"It also refuses a query that the web client runs differently from its text, " +
 			"such as one with a ')' that closes no '(' or with an unquoted or, and, or not. " +
-			"It does not check filter names or filter values.",
+			"It also refuses a filter value that the web client rejects, such as count:=<2, " +
+			"for the filters that preview_autotag_rule evaluates. " +
+			"It saves a query with other filters and names them, because the web client might accept them. " +
+			"When the call passes a query, the result counts the owned items that the query matches " +
+			"at the moment of the call, as if no other rule existed.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool)},
 	}, h.handleSaveAutotagRule)
 
