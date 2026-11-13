@@ -2,14 +2,17 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -24,6 +27,20 @@ const (
 
 	// maxArtifactBytes caps one definition artifact.
 	maxArtifactBytes = 128 << 20
+
+	// statPage is the most chunks that one page of /api/stats holds, the
+	// STAT_PAGE of the service.
+	statPage = 100
+
+	// maxStatChunkLength is the longest chunk body that the service
+	// accepts, in UTF-16 code units. It is the MAX_CHUNK_LENGTH of the
+	// service.
+	maxStatChunkLength = 1_000_000
+
+	// maxStatPageBytes caps one page of /api/stats. Each UTF-16 code unit
+	// of a chunk body takes at most 3 bytes of the JSON string that holds
+	// it. The other fields of a chunk take less than 1 KiB.
+	maxStatPageBytes = statPage * (3*maxStatChunkLength + 1<<10)
 
 	// grantRefusal opens the message that the service returns when the
 	// Bungie token endpoint answers with a 4xx status.
@@ -130,6 +147,54 @@ type AutotagSnapshot struct {
 	Rules []AutotagRule `json:"rules"`
 }
 
+// StatChange is one profile change that the web client recorded. The web
+// client diffs each Bungie profile that it fetches against the one before,
+// and each change sits between the two profiles. From and At are the mint
+// times of those profiles, in Unix milliseconds.
+//
+// Kind selects the fields that a change sets. A currency or stack change
+// sets ItemHash, Before, and After. A currency change reads the account
+// balance that the profile currencies hold. A stack change sums the
+// quantity across the vault and every character, so a transfer between
+// them records no change. An objective change also sets InstanceID and
+// ObjectiveHash, and its Before and After are the progress of that
+// objective on that item. The web client records more kinds, and
+// [StatChange] decodes only the fields that the get_stats tool reads.
+type StatChange struct {
+	Kind          string `json:"kind"`
+	InstanceID    string `json:"instanceId"`
+	From          int64  `json:"from"`
+	At            int64  `json:"at"`
+	Before        int64  `json:"before"`
+	After         int64  `json:"after"`
+	ItemHash      uint32 `json:"itemHash"`
+	ObjectiveHash uint32 `json:"objectiveHash"`
+}
+
+// StatChunk holds the changes of one 5-minute bucket. StartsAt, EndsAt,
+// and UpdatedAt are Unix milliseconds. UpdatedAt is the service time of
+// the write that stored the chunk.
+type StatChunk struct {
+	Changes   []StatChange
+	StartsAt  int64
+	EndsAt    int64
+	UpdatedAt int64
+}
+
+// StatCursor marks a position in the order of /api/stats, which sorts the
+// chunks by UpdatedAt and then by StartsAt. A read returns the chunks that
+// follow the cursor.
+type StatCursor struct {
+	UpdatedAt int64
+	StartsAt  int64
+}
+
+// statPageBody is one page of /api/stats.
+type statPageBody struct {
+	Chunks []StatChunk
+	More   bool
+}
+
 // ServiceOption configures a [*Service]. See [WithServiceURL].
 type ServiceOption func(*Service)
 
@@ -140,8 +205,9 @@ func WithServiceURL(u string) ServiceOption {
 }
 
 // Service is the HTTP client for Agg's Destiny Vault Manager. The deployment
-// stores tags, notes, perk preferences, and autotag rules per Bungie account,
-// brokers the Bungie OAuth exchange, and serves the definition artifacts.
+// stores tags, notes, perk preferences, autotag rules, and the profile
+// changes that the web client records, all per Bungie account. It also
+// brokers the Bungie OAuth exchange and serves the definition artifacts.
 type Service struct {
 	http      *http.Client
 	baseURL   string
@@ -343,9 +409,228 @@ func (s *Service) SetAutotagEnabled(ctx context.Context, session string, enabled
 	return out.Applied, nil
 }
 
+// Stats reads the chunks of recorded profile changes that follow cursor. It
+// reads the pages of /api/stats in order and stops after a page that
+// reports no more chunks. A recorder that replaces a stored bucket moves it
+// to a later page, so Stats keeps the last copy of each bucket that it
+// reads. It returns the chunks in the order of StartsAt.
+func (s *Service) Stats(ctx context.Context, session string, cursor StatCursor) ([]StatChunk, error) {
+	byStart := map[int64]StatChunk{}
+
+	for {
+		page, err := s.statPage(ctx, session, cursor)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, chunk := range page.Chunks {
+			byStart[chunk.StartsAt] = chunk
+		}
+
+		if !page.More || len(page.Chunks) == 0 {
+			break
+		}
+
+		last := page.Chunks[len(page.Chunks)-1]
+		next := StatCursor{UpdatedAt: last.UpdatedAt, StartsAt: last.StartsAt}
+
+		// A page that ends at or before its cursor repeats forever.
+		if !cursor.before(next) {
+			return nil, fmt.Errorf(
+				"%w: /api/stats returned a page that ends at %d/%d, which does not follow the cursor %d/%d",
+				ErrService, next.UpdatedAt, next.StartsAt, cursor.UpdatedAt, cursor.StartsAt,
+			)
+		}
+
+		cursor = next
+	}
+
+	chunks := slices.Collect(maps.Values(byStart))
+	slices.SortFunc(chunks, func(a, b StatChunk) int { return cmp.Compare(a.StartsAt, b.StartsAt) })
+
+	return chunks, nil
+}
+
+// before reports whether c comes before other in the order of /api/stats.
+func (c StatCursor) before(other StatCursor) bool {
+	return c.UpdatedAt < other.UpdatedAt || (c.UpdatedAt == other.UpdatedAt && c.StartsAt < other.StartsAt)
+}
+
+// statPage reads the page of /api/stats that follows cursor.
+func (s *Service) statPage(ctx context.Context, session string, cursor StatCursor) (statPageBody, error) {
+	path := fmt.Sprintf("/api/stats?since=%d&after=%d", cursor.UpdatedAt, cursor.StartsAt)
+
+	var page statPageBody
+
+	err := s.stream(ctx, http.MethodGet, path, session, nil, func(r io.Reader) error {
+		var err error
+
+		page, err = decodeStatPage(io.LimitReader(r, maxStatPageBytes))
+		if err != nil {
+			return fmt.Errorf("%w: decoding %s: %w", ErrService, path, err)
+		}
+
+		return nil
+	})
+
+	return page, err
+}
+
+// decodeStatPage decodes one page of /api/stats a chunk at a time, so it
+// holds one chunk body in memory at once.
+func decodeStatPage(r io.Reader) (statPageBody, error) {
+	dec := json.NewDecoder(r)
+
+	err := expectDelim(dec, '{')
+	if err != nil {
+		return statPageBody{}, err
+	}
+
+	var page statPageBody
+
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return statPageBody{}, fmt.Errorf("reading a key: %w", err)
+		}
+
+		switch key {
+		case "chunks":
+			page.Chunks, err = decodeStatChunks(dec)
+		case "more":
+			err = dec.Decode(&page.More)
+		default:
+			var skip json.RawMessage
+
+			err = dec.Decode(&skip)
+		}
+
+		if err != nil {
+			return statPageBody{}, fmt.Errorf("decoding %v: %w", key, err)
+		}
+	}
+
+	err = expectDelim(dec, '}')
+	if err != nil {
+		return statPageBody{}, err
+	}
+
+	return page, nil
+}
+
+// decodeStatChunks decodes the array of chunks that dec reads next.
+func decodeStatChunks(dec *json.Decoder) ([]StatChunk, error) {
+	err := expectDelim(dec, '[')
+	if err != nil {
+		return nil, err
+	}
+
+	var chunks []StatChunk
+
+	for dec.More() {
+		var raw struct {
+			Body      string `json:"body"`
+			StartsAt  int64  `json:"startsAt"`
+			EndsAt    int64  `json:"endsAt"`
+			UpdatedAt int64  `json:"updatedAt"`
+		}
+
+		err := dec.Decode(&raw)
+		if err != nil {
+			return nil, fmt.Errorf("decoding a chunk: %w", err)
+		}
+
+		changes, err := decodeStatChanges(raw.Body)
+		if err != nil {
+			return nil, fmt.Errorf("decoding the body of the chunk at %d: %w", raw.StartsAt, err)
+		}
+
+		chunks = append(chunks, StatChunk{
+			Changes:   changes,
+			StartsAt:  raw.StartsAt,
+			EndsAt:    raw.EndsAt,
+			UpdatedAt: raw.UpdatedAt,
+		})
+	}
+
+	err = expectDelim(dec, ']')
+	if err != nil {
+		return nil, err
+	}
+
+	return chunks, nil
+}
+
+// decodeStatChanges decodes a chunk body, which holds a JSON array of
+// change records.
+func decodeStatChanges(body string) ([]StatChange, error) {
+	var changes []StatChange
+
+	err := json.Unmarshal([]byte(body), &changes)
+	if err != nil {
+		return nil, fmt.Errorf("decoding the changes: %w", err)
+	}
+
+	// A JSON null decodes to a nil slice, and an empty array does not.
+	if changes == nil {
+		return nil, fmt.Errorf("the body %q is not a JSON array", body)
+	}
+
+	for i, change := range changes {
+		if change.Kind == "" {
+			return nil, fmt.Errorf("change %d of the body has no kind", i)
+		}
+	}
+
+	return changes, nil
+}
+
+// expectDelim reads the next token of dec and returns an error when the
+// token differs from want.
+func expectDelim(dec *json.Decoder, want json.Delim) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", want, err)
+	}
+
+	if tok != want {
+		return fmt.Errorf("found %v where %s belongs", tok, want)
+	}
+
+	return nil
+}
+
 // call performs one JSON request. It sends a non-empty session as a bearer
 // token. A nil dst discards the response body.
 func (s *Service) call(ctx context.Context, method, path, session string, body, dst any) error {
+	return s.stream(ctx, method, path, session, body, func(r io.Reader) error {
+		raw, err := io.ReadAll(io.LimitReader(r, maxResponseBytes))
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", s.baseURL+path, err)
+		}
+
+		if dst == nil {
+			return nil
+		}
+
+		err = json.Unmarshal(raw, dst)
+		if err != nil {
+			return fmt.Errorf("%w: decoding %s: %w", ErrService, path, err)
+		}
+
+		return nil
+	})
+}
+
+// stream performs one request and passes the body of a 2xx response to
+// read. It sends a non-empty session as a bearer token and a non-nil body
+// as JSON.
+func (s *Service) stream(
+	ctx context.Context,
+	method, path, session string,
+	body any,
+	read func(io.Reader) error,
+) error {
 	u := s.baseURL + path
 
 	var reader io.Reader = http.NoBody
@@ -382,6 +667,10 @@ func (s *Service) call(ctx context.Context, method, path, session string, body, 
 
 	defer closeBody(ctx, resp.Body, u)
 
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return read(resp.Body)
+	}
+
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", u, err)
@@ -391,23 +680,10 @@ func (s *Service) call(ctx context.Context, method, path, session string, body, 
 		return fmt.Errorf("%w: %s %s: %s", ErrUnauthorized, method, path, serviceMessage(raw))
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf(
-			"%w: %s %s returned status %d: %s",
-			ErrService, method, path, resp.StatusCode, serviceMessage(raw),
-		)
-	}
-
-	if dst == nil {
-		return nil
-	}
-
-	err = json.Unmarshal(raw, dst)
-	if err != nil {
-		return fmt.Errorf("%w: decoding %s: %w", ErrService, path, err)
-	}
-
-	return nil
+	return fmt.Errorf(
+		"%w: %s %s returned status %d: %s",
+		ErrService, method, path, resp.StatusCode, serviceMessage(raw),
+	)
 }
 
 // serviceMessage extracts the "error" field of a service error body and

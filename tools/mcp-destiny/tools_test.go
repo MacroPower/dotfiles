@@ -22,6 +22,7 @@ import (
 )
 
 const (
+	pathStats    = "/api/stats"
 	pathTags     = "/api/tags"
 	pathNotes    = "/api/notes"
 	pathPrefs    = "/api/perk-preferences"
@@ -67,8 +68,15 @@ func TestServerListsTools(t *testing.T) {
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolRemoveAutotagRule,
 		toolMoveStack, toolSetLock, toolSetPerk, toolSetAutotagEnabled, toolListActivityHistory,
-		toolListLoadouts, toolEquipLoadout,
+		toolListLoadouts, toolEquipLoadout, toolGetStats,
 	}, names)
+
+	for _, tool := range tools.Tools {
+		if tool.Name == toolGetStats {
+			require.NotNil(t, tool.Annotations)
+			assert.True(t, tool.Annotations.ReadOnlyHint)
+		}
+	}
 
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      toolGetItem,
@@ -1949,4 +1957,228 @@ func TestDispatch(t *testing.T) {
 	err = dispatch(t.Context(), []string{subLogout, "--state-dir", dir}, strings.NewReader(""), &out)
 	require.NoError(t, err)
 	assert.Equal(t, "Signed out.\n", out.String())
+}
+
+// statsGapNote is the line of the get_stats output that names the changes
+// that the web client has not posted.
+const statsGapNote = "The web client records changes only while it is open in a browser. " +
+	"It posts the changes of each 5-minute bucket after the bucket closes, " +
+	"so the current bucket and every bucket that it has not posted yet are missing."
+
+// statsFixture returns an /api/stats page of changes from the day before
+// fixtureNow.
+func statsFixture(t *testing.T) string {
+	t.Helper()
+
+	ago := func(hours float64) int64 {
+		return fixtureNow.Add(-time.Duration(hours * float64(time.Hour))).UnixMilli()
+	}
+
+	change := func(kind string, hash uint32, hours float64, before, after int) map[string]any {
+		at := ago(hours)
+
+		return map[string]any{
+			"kind":     kind,
+			"itemHash": hash,
+			"from":     at - 15_000,
+			"at":       at,
+			"before":   before,
+			"after":    after,
+		}
+	}
+
+	kills := func(instanceID string, itemHash, objectiveHash uint32, hours float64, before, after int) map[string]any {
+		out := change("objective", itemHash, hours, before, after)
+		out["instanceId"] = instanceID
+		out["objectiveHash"] = objectiveHash
+
+		return out
+	}
+
+	return statPageJSON(t, false,
+		testChunk{startsAt: 0, updatedAt: 1, changes: []map[string]any{
+			// Before the lookback of the period.
+			change("currency", itemGlimmer, 30, 0, 1_000),
+			change("currency", itemGlimmer, 23, 1_000, 2_000),
+			change("currency", itemGlimmer, 22, 2_000, 1_500),
+			kills("9999", 102, trackerGambit, 6, 0, 20),
+			kills("1001", 100, trackerPvE, 5, 100, 110),
+		}},
+		testChunk{startsAt: 300_000, updatedAt: 2, changes: []map[string]any{
+			// A stale recorder logged the gain from 1000.
+			change("currency", itemGlimmer, 21, 1_000, 1_700),
+			change("stack", 300, 4, 40, 52),
+			kills("1001", 100, trackerPvP, 4, 7, 9),
+			change("currency", 77, 3, 3, 5),
+			change("currency", itemBrightDust, 2, 1_500, 1_400),
+			{
+				"kind":       "item",
+				"instanceId": "1007",
+				"itemHash":   101,
+				"added":      true,
+				"from":       ago(1) - 15_000,
+				"at":         ago(1),
+			},
+		}},
+	)
+}
+
+func TestGetStats(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.serviceData[pathStats] = statsFixture(t)
+
+	got, isError := call(t, f.h.handleGetStats, GetStatsInput{})
+	require.False(t, isError, got)
+	assert.Equal(t, strings.Join([]string{
+		"Period: Last 24 hours, 2026-11-11 12:00 UTC to 2026-11-12 12:00 UTC.",
+		"Newest recorded change: 2026-11-12 11:00 UTC.",
+		statsGapNote,
+		"",
+		"Currencies and materials, currencies first:",
+		"name | kind | item hash | net | gained | spent",
+		"Glimmer | currency | 3159615086 | +700 | 1200 | 500",
+		"Bright Dust | currency | 2817410917 | -100 | 0 | 100",
+		"Unknown item 77 | currency | 77 | +2 | 2 | 0",
+		"Enhancement Core | stack | 300 | +12 | 12 | 0",
+		"",
+		"Weapon kills, most first:",
+		"instance id | name | total | PvE | PvP",
+		"9999 | Midnight Coup | 20 | 20 | 0",
+		"1001 | Fatebringer | 12 | 10 | 2",
+	}, "\n"), got)
+
+	reads := f.service.calls(http.MethodGet, pathStats)
+	require.Len(t, reads, 1)
+	assert.Equal(t, "Bearer session-1", reads[0].Auth)
+	assert.Equal(t, fmt.Sprintf("since=%d&after=0", fixtureNow.Add(-27*time.Hour).UnixMilli()), reads[0].Query)
+	assert.Empty(t, f.bungie.all())
+}
+
+func TestGetStatsPeriods(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		period    string
+		wantQuery string
+		want      []string
+	}{
+		"all": {
+			period:    "all",
+			wantQuery: "since=0&after=0",
+			want: []string{
+				"Period: All time, up to 2026-11-12 12:00 UTC.",
+				"Glimmer | currency | 3159615086 | +1700 | 2200 | 500",
+			},
+		},
+		"7d": {
+			period:    "7d",
+			wantQuery: fmt.Sprintf("since=%d&after=0", fixtureNow.Add(-7*24*time.Hour-3*time.Hour).UnixMilli()),
+			want: []string{
+				"Period: Last 7 days, 2026-11-05 12:00 UTC to 2026-11-12 12:00 UTC.",
+				"Glimmer | currency | 3159615086 | +1700 | 2200 | 500",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.serviceData[pathStats] = statsFixture(t)
+
+			got, isError := call(t, f.h.handleGetStats, GetStatsInput{Period: tc.period})
+			require.False(t, isError, got)
+
+			for _, want := range tc.want {
+				assert.Contains(t, got, want)
+			}
+
+			reads := f.service.calls(http.MethodGet, pathStats)
+			require.Len(t, reads, 1)
+			assert.Equal(t, tc.wantQuery, reads[0].Query)
+		})
+	}
+}
+
+func TestGetStatsEmpty(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		period string
+		want   []string
+	}{
+		"a read from 3 hours before the period start": {
+			period: "30d",
+			want: []string{
+				"Period: Last 30 days, 2026-10-13 12:00 UTC to 2026-11-12 12:00 UTC.",
+				"Newest recorded change since 2026-10-13 09:00 UTC: none.",
+			},
+		},
+		"a read of the whole history": {
+			period: "all",
+			want: []string{
+				"Period: All time, up to 2026-11-12 12:00 UTC.",
+				"Newest recorded change: none.",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.serviceData[pathStats] = statPageJSON(t, false)
+
+			got, isError := call(t, f.h.handleGetStats, GetStatsInput{Period: tc.period})
+			require.False(t, isError, got)
+			assert.Equal(t, strings.Join(append(tc.want,
+				statsGapNote,
+				"",
+				"The web client recorded no currency, material, or weapon kill change in this period.",
+			), "\n"), got)
+		})
+	}
+}
+
+func TestGetStatsRefreshesSession(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.serviceData[pathStats] = statsFixture(t)
+	f.staleSession = "session-1"
+
+	got, isError := call(t, f.h.handleGetStats, GetStatsInput{})
+	require.False(t, isError, got)
+	assert.Contains(t, got, "Glimmer | currency | 3159615086 | +700 | 1200 | 500")
+
+	assert.Len(t, f.service.calls(http.MethodPost, "/api/auth/refresh"), 1)
+
+	reads := f.service.calls(http.MethodGet, pathStats)
+	require.Len(t, reads, 2)
+	assert.Equal(t, "Bearer session-1", reads[0].Auth)
+	assert.Equal(t, "Bearer session-2", reads[1].Auth)
+	assert.Empty(t, f.bungie.all())
+}
+
+func TestGetStatsErrors(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	got, isError := call(t, f.h.handleGetStats, GetStatsInput{Period: "1y"})
+	assert.True(t, isError)
+	assert.Contains(t, got, ErrInvalidInput.Error())
+	assert.Contains(t, got, "24h, 7d, 30d, all")
+	assert.Empty(t, f.service.all())
+	assert.Empty(t, f.bungie.all())
+
+	f.serviceData[pathStats] = `{"chunks": [{"startsAt": 0, "endsAt": 300000, "updatedAt": 1, "body": "{}"}], "more": false}`
+
+	got, isError = call(t, f.h.handleGetStats, GetStatsInput{})
+	assert.True(t, isError)
+	assert.Contains(t, got, ErrService.Error())
 }

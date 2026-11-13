@@ -484,6 +484,18 @@ func newServer(h *handler) *mcp.Server {
 		Annotations: additive,
 	}, h.handleSetAutotagEnabled)
 
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolGetStats,
+		Description: "Report how much of each currency and material the user gained and spent over a period, " +
+			"and the kills of each weapon, split into player versus environment (PvE) and player versus player (PvP). " +
+			"Gambit kills count as PvE. The numbers come from the profile changes that the web client of " +
+			"Agg's Destiny Vault Manager records only while it is open in a browser. The web client posts the changes " +
+			"of each 5-minute bucket after the bucket closes, so the latest minutes are missing. " +
+			"list_characters reports the current currency balances, " +
+			"and list_items with kind=other shows the current material stacks.",
+		Annotations: readOnly,
+	}, h.handleGetStats)
+
 	return srv
 }
 

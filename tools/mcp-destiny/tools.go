@@ -43,6 +43,7 @@ const (
 	toolRemoveAutotagRule   = "remove_autotag_rule"
 	toolSetAutotagEnabled   = "set_autotag_enabled"
 	toolListActivityHistory = "list_activity_history"
+	toolGetStats            = "get_stats"
 )
 
 // Note kinds that the service stores.
@@ -240,6 +241,11 @@ type SaveAutotagRuleInput struct {
 // tool.
 type RemoveAutotagRuleInput struct {
 	ID string `json:"id" jsonschema:"Rule id from list_autotag_rules"`
+}
+
+// GetStatsInput is the input schema of the get_stats tool.
+type GetStatsInput struct {
+	Period string `json:"period,omitzero" jsonschema:"24h (the last 24 hours, the default), 7d, 30d, or all (every recorded change)"`
 }
 
 // handler holds the shared state of the tool handlers. The mutex serializes
@@ -1268,6 +1274,42 @@ func (h *handler) handleSetAutotagEnabled(
 	default:
 		return textResult("Autotagging is off."), nil, nil
 	}
+}
+
+func (h *handler) handleGetStats(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in GetStatsInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	period, err := statPeriodOf(in.Period)
+	if err != nil {
+		return h.toolError(ctx, toolGetStats, err)
+	}
+
+	to := h.now()
+	from := period.start(to)
+
+	defs, err := h.defs.Get(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolGetStats, fmt.Errorf("loading definitions: %w", err))
+	}
+
+	cursor := statCursorFor(from)
+
+	chunks, err := sessionValue(ctx, h, func(session string) ([]StatChunk, error) {
+		return h.service.Stats(ctx, session, cursor)
+	})
+	if err != nil {
+		return h.toolError(ctx, toolGetStats, fmt.Errorf("reading recorded changes: %w", err))
+	}
+
+	summary := summarizeStats(chunks, from, to)
+	summary.readFrom = time.UnixMilli(cursor.UpdatedAt).In(to.Location())
+
+	return textResult(renderStats(defs, period, summary)), nil, nil
 }
 
 // perkChange validates one preference and converts it to a service row.

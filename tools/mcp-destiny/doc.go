@@ -8,18 +8,25 @@
 // # Data Sources
 //
 // The server talks to two APIs. Agg's Destiny Vault Manager stores tags,
-// notes, perk preferences, and autotag rules, serves the Destiny definition
-// artifacts, and brokers the Bungie OAuth exchange. The Bungie platform API
-// serves the inventory, the saved loadouts, and the activity history. It
-// also performs transfers, equips, lock changes, perk changes, and loadout
-// equips. The server joins a Bungie profile with the definitions to give
-// every item a name, a type, perks, and stats. The definitions also name
-// each activity of the history.
+// notes, perk preferences, autotag rules, and the profile changes that the
+// web client records. It also serves the Destiny definition artifacts and
+// brokers the Bungie OAuth exchange. The Bungie platform API serves the
+// inventory, the saved loadouts, and the activity history. It also performs
+// transfers, equips, lock changes, perk changes, and loadout equips. The
+// server joins a Bungie profile with the definitions to give every item a
+// name, a type, perks, and stats. The definitions also name each activity
+// of the history.
 //
 // Tags follow the web client. An item carries at most one of the tags that
 // the web client defines, and the favorite mark is a separate flag. The web
 // client evaluates autotag rules, so the server stores a rule query without
 // checking its syntax.
+//
+// The web client records profile changes only while it is open in a
+// browser. It diffs each Bungie profile that it fetches against the one
+// before, and it posts the changes of each 5-minute bucket after the bucket
+// closes. The get_stats tool reads those buckets back from the service. It
+// therefore reports only the changes that a browser recorded and posted.
 //
 // # Sign-in
 //

@@ -740,3 +740,89 @@ func liveRules(rules []AutotagRule) []AutotagRule {
 
 	return live
 }
+
+// renderStats renders the summary of one period. Item names come from
+// defs, so a weapon that the user dismantled keeps its name.
+func renderStats(defs *Defs, period statPeriod, s statSummary) string {
+	var b strings.Builder
+
+	if period.length == 0 {
+		fmt.Fprintf(&b, "Period: %s, up to %s.\n", period.label, s.to.Format(timeLayout))
+	} else {
+		fmt.Fprintf(&b, "Period: %s, %s to %s.\n", period.label, s.from.Format(timeLayout), s.to.Format(timeLayout))
+	}
+
+	// A read that starts after the epoch skips older chunks. For a read
+	// that found no change, the line names the start of the read.
+	switch {
+	case !s.newest.IsZero():
+		fmt.Fprintf(&b, "Newest recorded change: %s.\n", s.newest.Format(timeLayout))
+	case s.readFrom.After(time.UnixMilli(0)):
+		fmt.Fprintf(&b, "Newest recorded change since %s: none.\n", s.readFrom.Format(timeLayout))
+	default:
+		b.WriteString("Newest recorded change: none.\n")
+	}
+
+	b.WriteString("The web client records changes only while it is open in a browser. " +
+		"It posts the changes of each 5-minute bucket after the bucket closes, " +
+		"so the current bucket and every bucket that it has not posted yet are missing.\n")
+
+	if len(s.flows) == 0 && len(s.weapons) == 0 {
+		b.WriteString("\nThe web client recorded no currency, material, or weapon kill change in this period.")
+
+		return b.String()
+	}
+
+	if len(s.flows) == 0 {
+		b.WriteString("\nCurrencies and materials: no change.\n")
+	} else {
+		b.WriteString("\nCurrencies and materials, currencies first:\n")
+		b.WriteString("name | kind | item hash | net | gained | spent\n")
+
+		for _, flow := range s.flows {
+			kind := changeStack
+			if flow.currency {
+				kind = changeCurrency
+			}
+
+			fmt.Fprintf(&b, "%s | %s | %d | %s | %d | %d\n",
+				itemName(defs, flow.itemHash), kind, flow.itemHash, signed(flow.net), flow.gained, flow.spent)
+		}
+	}
+
+	if len(s.weapons) == 0 {
+		b.WriteString("\nWeapon kills: none.")
+
+		return b.String()
+	}
+
+	b.WriteString("\nWeapon kills, most first:\n")
+	b.WriteString("instance id | name | total | PvE | PvP\n")
+
+	for _, weapon := range s.weapons {
+		fmt.Fprintf(&b, "%s | %s | %d | %d | %d\n",
+			weapon.instanceID, itemName(defs, weapon.itemHash), weapon.pve+weapon.pvp, weapon.pve, weapon.pvp)
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// itemName returns the name of an item hash, or a placeholder that names
+// the hash when the definitions lack it.
+func itemName(defs *Defs, hash uint32) string {
+	name := defs.Items[hash].Name
+	if name == "" {
+		return fmt.Sprintf("Unknown item %d", hash)
+	}
+
+	return name
+}
+
+// signed writes n with a plus sign when it is positive.
+func signed(n int64) string {
+	if n > 0 {
+		return "+" + strconv.FormatInt(n, 10)
+	}
+
+	return strconv.FormatInt(n, 10)
+}

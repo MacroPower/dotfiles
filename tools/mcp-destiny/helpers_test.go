@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -330,6 +331,14 @@ func (r *recorder) record(t *testing.T, req *http.Request) request {
 	r.requests = append(r.requests, out)
 
 	return out
+}
+
+// all returns every recorded request.
+func (r *recorder) all() []request {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return slices.Clone(r.requests)
 }
 
 // calls returns the recorded requests for a method and path.

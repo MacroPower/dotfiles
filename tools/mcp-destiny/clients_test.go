@@ -1,9 +1,13 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -242,6 +246,254 @@ func TestServiceArtifact(t *testing.T) {
 
 	_, err = NewService(WithServiceURL(missing)).Artifact(t.Context(), "core-0.json")
 	require.ErrorIs(t, err, ErrService)
+}
+
+func TestServiceStats(t *testing.T) {
+	t.Parallel()
+
+	glimmer := func(at, before, after int64) map[string]any {
+		return map[string]any{
+			"kind":     "currency",
+			"itemHash": itemGlimmer,
+			"from":     at - 15_000,
+			"at":       at,
+			"before":   before,
+			"after":    after,
+		}
+	}
+
+	// The item record carries a snapshot that the client does not decode.
+	drop := map[string]any{
+		"kind": "item", "instanceId": "1001", "itemHash": 100, "characterId": hunterID, "bucketHash": bucketKinetic,
+		"added": true, "from": 285_000, "at": 300_000,
+		"snapshot": map[string]any{"item": map[string]any{"itemHash": 100}, "components": map[string]any{}},
+	}
+
+	first := testChunk{startsAt: 300_000, updatedAt: 900_000, changes: []map[string]any{glimmer(310_000, 1_000, 2_000)}}
+	second := testChunk{
+		startsAt:  600_000,
+		updatedAt: 950_000,
+		changes:   []map[string]any{glimmer(610_000, 2_000, 1_500)},
+	}
+	// A second recorder replaced the first bucket with a longer copy.
+	replaced := testChunk{
+		startsAt:  300_000,
+		updatedAt: 1_200_000,
+		changes:   []map[string]any{glimmer(310_000, 1_000, 2_000), drop},
+	}
+
+	// reordered encodes a page whose more key comes before its chunks and
+	// whose other keys the client skips.
+	reordered := func(chunks ...testChunk) string {
+		var page struct {
+			Chunks json.RawMessage `json:"chunks"`
+		}
+
+		require.NoError(t, json.Unmarshal([]byte(statPageJSON(t, false, chunks...)), &page))
+
+		return `{"now": 5, "more": false, "extra": {"chunks": [], "more": true}, "chunks": ` +
+			string(page.Chunks) + `, "later": [1, 2]}`
+	}
+
+	tests := map[string]struct {
+		pages       map[string]string
+		wantQueries []string
+		want        []StatChunk
+	}{
+		"one page": {
+			pages: map[string]string{
+				"since=0&after=0": statPageJSON(t, false, first, second),
+			},
+			wantQueries: []string{"since=0&after=0"},
+			want: []StatChunk{
+				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []StatChange{
+					{Kind: "currency", ItemHash: itemGlimmer, From: 295_000, At: 310_000, Before: 1_000, After: 2_000},
+				}},
+				{StartsAt: 600_000, EndsAt: 900_000, UpdatedAt: 950_000, Changes: []StatChange{
+					{Kind: "currency", ItemHash: itemGlimmer, From: 595_000, At: 610_000, Before: 2_000, After: 1_500},
+				}},
+			},
+		},
+		"keys in another order and unknown keys": {
+			pages:       map[string]string{"since=0&after=0": reordered(first)},
+			wantQueries: []string{"since=0&after=0"},
+			want: []StatChunk{
+				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []StatChange{
+					{Kind: "currency", ItemHash: itemGlimmer, From: 295_000, At: 310_000, Before: 1_000, After: 2_000},
+				}},
+			},
+		},
+		"the later copy of a bucket replaces the earlier one": {
+			pages: map[string]string{
+				"since=0&after=0":           statPageJSON(t, true, first, second),
+				"since=950000&after=600000": statPageJSON(t, false, replaced),
+			},
+			wantQueries: []string{"since=0&after=0", "since=950000&after=600000"},
+			want: []StatChunk{
+				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 1_200_000, Changes: []StatChange{
+					{Kind: "currency", ItemHash: itemGlimmer, From: 295_000, At: 310_000, Before: 1_000, After: 2_000},
+					{Kind: "item", InstanceID: "1001", ItemHash: 100, From: 285_000, At: 300_000},
+				}},
+				{StartsAt: 600_000, EndsAt: 900_000, UpdatedAt: 950_000, Changes: []StatChange{
+					{Kind: "currency", ItemHash: itemGlimmer, From: 595_000, At: 610_000, Before: 2_000, After: 1_500},
+				}},
+			},
+		},
+		"an empty page ends the read": {
+			pages: map[string]string{
+				"since=0&after=0":           statPageJSON(t, true, first),
+				"since=900000&after=300000": statPageJSON(t, true),
+			},
+			wantQueries: []string{"since=0&after=0", "since=900000&after=300000"},
+			want: []StatChunk{
+				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []StatChange{
+					{Kind: "currency", ItemHash: itemGlimmer, From: 295_000, At: 310_000, Before: 1_000, After: 2_000},
+				}},
+			},
+		},
+		"no chunks": {
+			pages:       map[string]string{"since=0&after=0": statPageJSON(t, false)},
+			wantQueries: []string{"since=0&after=0"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := &recorder{}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				req := rec.record(t, r)
+				assert.Equal(t, http.MethodGet, req.Method)
+				assert.Equal(t, "/api/stats", req.Path)
+				assert.Equal(t, "Bearer session", req.Auth)
+
+				query := r.URL.Query()
+
+				page, ok := tc.pages["since="+query.Get("since")+"&after="+query.Get("after")]
+				if !ok {
+					writeJSON(t, w, http.StatusNotFound, `{"error": "unexpected cursor"}`)
+
+					return
+				}
+
+				writeJSON(t, w, http.StatusOK, page)
+			}))
+			t.Cleanup(srv.Close)
+
+			got, err := NewService(WithServiceURL(srv.URL)).Stats(t.Context(), "session", StatCursor{})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+
+			var queries []string
+			for _, req := range rec.all() {
+				queries = append(queries, req.Query)
+			}
+
+			assert.Equal(t, tc.wantQueries, queries)
+		})
+	}
+}
+
+func TestServiceStatsLargePage(t *testing.T) {
+	t.Parallel()
+
+	// Each body is the longest that the service accepts. The page holds one
+	// chunk more than fits in maxResponseBytes, the cap of the other service
+	// routes.
+	body := strconv.Quote("[" + strings.Repeat(" ", maxStatChunkLength-2) + "]")
+	count := maxResponseBytes/maxStatChunkLength + 1
+
+	chunks := make([]string, 0, count)
+
+	for i := range int64(count) {
+		startsAt := i * 300_000
+		chunks = append(chunks, fmt.Sprintf(
+			`{"startsAt": %d, "endsAt": %d, "updatedAt": %d, "body": %s}`,
+			startsAt, startsAt+300_000, i+1, body,
+		))
+	}
+
+	page := `{"chunks": [` + strings.Join(chunks, ", ") + `], "more": false}`
+	require.Greater(t, len(page), maxResponseBytes)
+
+	u, _ := serve(t, http.StatusOK, page)
+
+	got, err := NewService(WithServiceURL(u)).Stats(t.Context(), "session", StatCursor{})
+	require.NoError(t, err)
+	require.Len(t, got, count)
+	assert.Equal(t, int64(count-1)*300_000, got[count-1].StartsAt)
+}
+
+func TestServiceStatsErrors(t *testing.T) {
+	t.Parallel()
+
+	chunk := func(body string) string {
+		return `{"chunks": [{"startsAt": 300000, "endsAt": 600000, "updatedAt": 5, "body": ` +
+			strconv.Quote(body) + `}], "more": false}`
+	}
+
+	tests := map[string]struct {
+		body   string
+		status int
+	}{
+		"body is an object": {
+			status: http.StatusOK,
+			body:   chunk(`{"kind": "currency"}`),
+		},
+		"body is null": {
+			status: http.StatusOK,
+			body:   chunk(`null`),
+		},
+		"body holds a number": {
+			status: http.StatusOK,
+			body:   chunk(`[1]`),
+		},
+		"body holds a record without a kind": {
+			status: http.StatusOK,
+			body:   chunk(`[{"itemHash": 1}]`),
+		},
+		"body is not JSON": {
+			status: http.StatusOK,
+			body:   chunk(`[{"kind": `),
+		},
+		"page is not JSON": {
+			status: http.StatusOK,
+			body:   `<html>`,
+		},
+		"page ends early": {
+			status: http.StatusOK,
+			body:   `{"chunks": [`,
+		},
+		"page is an array": {
+			status: http.StatusOK,
+			body:   `[]`,
+		},
+		"chunks is an object": {
+			status: http.StatusOK,
+			body:   `{"chunks": {}, "more": false}`,
+		},
+		"page does not advance the cursor": {
+			status: http.StatusOK,
+			body:   `{"chunks": [{"startsAt": 300000, "endsAt": 600000, "updatedAt": 5, "body": "[]"}], "more": true}`,
+		},
+		"server error": {
+			status: http.StatusInternalServerError,
+			body:   `{"error": "boom"}`,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			u, _ := serve(t, tc.status, tc.body)
+
+			_, err := NewService(WithServiceURL(u)).Stats(t.Context(), "session", StatCursor{})
+			require.ErrorIs(t, err, ErrService)
+		})
+	}
 }
 
 func TestBungiePrimaryMembership(t *testing.T) {
