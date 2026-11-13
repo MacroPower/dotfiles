@@ -18,43 +18,109 @@ func TestDecodeSheet(t *testing.T) {
 		want *Sheet
 		body string
 	}{
-		"better tier wins when the better row comes first": {
+		"row carries the category, the rank, the category size, and the note": {
 			body: `{"rolls": [
-				{"tier": "A", "hashes": [1]},
-				{"tier": "C", "hashes": [1]}
+				{"category": "HCs", "tier": "S", "rank": 3, "ranked": 62, "hashes": [1],
+				 "notes": "Add clear.\n\nPairs with Firefly."}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "A"}},
+				Rows: map[uint32]SheetRow{
+					1: {Tier: "S", Category: "HCs", Notes: "Add clear.\n\nPairs with Firefly.", Rank: 3, Ranked: 62},
+				},
 				Columns: map[uint32][][]uint32{},
 			},
 		},
-		"better tier wins when the better row comes second": {
+		"row without a rank has the rank 0": {
 			body: `{"rolls": [
-				{"tier": "C", "hashes": [1]},
-				{"tier": "A", "hashes": [1]}
+				{"category": "Exotic Weapons", "tier": "A", "ranked": 40, "hashes": [1], "notes": "Boss damage."}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "A"}},
+				Rows: map[uint32]SheetRow{
+					1: {Tier: "A", Category: "Exotic Weapons", Notes: "Boss damage.", Ranked: 40},
+				},
 				Columns: map[uint32][][]uint32{},
 			},
 		},
-		"row with a tier replaces a row without one": {
-			body: `{"rolls": [
-				{"hashes": [1]},
-				{"tier": "F", "hashes": [1]}
-			]}`,
+		"row without a note has an empty note": {
+			body: `{"rolls": [{"category": "HCs", "tier": "S", "rank": 3, "ranked": 62, "hashes": [1]}]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "F"}},
+				Rows:    map[uint32]SheetRow{1: {Tier: "S", Category: "HCs", Rank: 3, Ranked: 62}},
 				Columns: map[uint32][][]uint32{},
 			},
 		},
-		"row without a tier does not replace a row with one": {
+		"earlier row with the better tier keeps every field": {
 			body: `{"rolls": [
-				{"tier": "F", "hashes": [1]},
-				{"hashes": [1]}
+				{"category": "HCs", "tier": "A", "rank": 3, "ranked": 62, "hashes": [1], "notes": "first"},
+				{"category": "Reissues", "tier": "C", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
 			]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "F"}},
+				Rows:    map[uint32]SheetRow{1: {Tier: "A", Category: "HCs", Notes: "first", Rank: 3, Ranked: 62}},
+				Columns: map[uint32][][]uint32{},
+			},
+		},
+		"later row with the better tier gives every field": {
+			body: `{"rolls": [
+				{"category": "HCs", "tier": "C", "rank": 3, "ranked": 62, "hashes": [1], "notes": "first"},
+				{"category": "Reissues", "tier": "A", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
+			]}`,
+			want: &Sheet{
+				Rows: map[uint32]SheetRow{
+					1: {Tier: "A", Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9},
+				},
+				Columns: map[uint32][][]uint32{},
+			},
+		},
+		"later of two rows with equal tiers gives every field": {
+			body: `{"rolls": [
+				{"category": "HCs", "tier": "B", "rank": 3, "ranked": 62, "hashes": [1], "notes": "first"},
+				{"category": "Reissues", "tier": "B", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
+			]}`,
+			want: &Sheet{
+				Rows: map[uint32]SheetRow{
+					1: {Tier: "B", Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9},
+				},
+				Columns: map[uint32][][]uint32{},
+			},
+		},
+		"later of two rows without a tier gives every field": {
+			body: `{"rolls": [
+				{"category": "HCs", "rank": 3, "ranked": 62, "hashes": [1], "notes": "first"},
+				{"category": "Reissues", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
+			]}`,
+			want: &Sheet{
+				Rows:    map[uint32]SheetRow{1: {Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9}},
+				Columns: map[uint32][][]uint32{},
+			},
+		},
+		"row without a tier replaces a row with a tier outside S to F": {
+			body: `{"rolls": [
+				{"category": "HCs", "tier": "SS", "rank": 3, "ranked": 62, "hashes": [1], "notes": "first"},
+				{"category": "Reissues", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
+			]}`,
+			want: &Sheet{
+				Rows:    map[uint32]SheetRow{1: {Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9}},
+				Columns: map[uint32][][]uint32{},
+			},
+		},
+		// The row that wins has no rank and no note. The hash does not
+		// keep the rank or the note of the row that loses.
+		"row with a tier replaces every field of a row without one": {
+			body: `{"rolls": [
+				{"category": "HCs", "rank": 3, "ranked": 62, "hashes": [1], "notes": "first"},
+				{"category": "Reissues", "tier": "F", "ranked": 9, "hashes": [1]}
+			]}`,
+			want: &Sheet{
+				Rows:    map[uint32]SheetRow{1: {Tier: "F", Category: "Reissues", Ranked: 9}},
+				Columns: map[uint32][][]uint32{},
+			},
+		},
+		"row without a tier replaces no field of a row with one": {
+			body: `{"rolls": [
+				{"category": "HCs", "tier": "F", "ranked": 62, "hashes": [1]},
+				{"category": "Reissues", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
+			]}`,
+			want: &Sheet{
+				Rows:    map[uint32]SheetRow{1: {Tier: "F", Category: "HCs", Ranked: 62}},
 				Columns: map[uint32][][]uint32{},
 			},
 		},
@@ -117,16 +183,32 @@ func TestDecodeSheet(t *testing.T) {
 				Columns: map[uint32][][]uint32{1: {{10}, {11}}},
 			},
 		},
+		"fields and columns of one hash come from different rows": {
+			body: `{"rolls": [
+				{"category": "HCs", "tier": "D", "rank": 3, "ranked": 62, "hashes": [1],
+				 "slots": [[10], [11]], "notes": "first"},
+				{"category": "Reissues", "tier": "S", "rank": 7, "ranked": 9, "hashes": [1], "notes": "second"}
+			]}`,
+			want: &Sheet{
+				Rows: map[uint32]SheetRow{
+					1: {Tier: "S", Category: "Reissues", Notes: "second", Rank: 7, Ranked: 9},
+				},
+				Columns: map[uint32][][]uint32{1: {{10}, {11}}},
+			},
+		},
 		// The sheet file has more fields than the decode reads.
-		"one row with two hashes lists both hashes": {
+		"one row with two hashes gives both hashes the same fields": {
 			body: `{"source": "aegis", "captured": "2026-08-22", "setBonuses": [],
 				"rolls": [
 					{"name": "Reissued", "category": "Pulses", "tier": "B", "rank": 2, "ranked": 59,
-					 "hashes": [1, 2], "slots": [[10], [11]], "notes": "both"}
+					 "hashes": [1, 2], "slots": [[10], [11]], "notes": "both", "season": "Echoes"}
 				],
 				"perks": [{"name": "Slice", "hashes": [10], "kind": "perk", "rank": 9}]}`,
 			want: &Sheet{
-				Rows:    map[uint32]SheetRow{1: {Tier: "B"}, 2: {Tier: "B"}},
+				Rows: map[uint32]SheetRow{
+					1: {Tier: "B", Category: "Pulses", Notes: "both", Rank: 2, Ranked: 59},
+					2: {Tier: "B", Category: "Pulses", Notes: "both", Rank: 2, Ranked: 59},
+				},
 				Columns: map[uint32][][]uint32{1: {{10}, {11}}, 2: {{10}, {11}}},
 			},
 		},
@@ -161,6 +243,22 @@ func TestDecodeSheetErrors(t *testing.T) {
 		"body ends early": {
 			body: `{"rolls": [{"tier": "S", "hashes": [1]`,
 			err:  io.ErrUnexpectedEOF,
+			want: "reading roll sheet: ",
+		},
+		"category is a number": {
+			body: `{"rolls": [{"category": 7, "tier": "S", "hashes": [1]}]}`,
+			want: "reading roll sheet: ",
+		},
+		"notes is a list": {
+			body: `{"rolls": [{"tier": "S", "hashes": [1], "notes": ["Add clear."]}]}`,
+			want: "reading roll sheet: ",
+		},
+		"rank is a string": {
+			body: `{"rolls": [{"tier": "S", "rank": "3", "ranked": 62, "hashes": [1]}]}`,
+			want: "reading roll sheet: ",
+		},
+		"ranked is a string": {
+			body: `{"rolls": [{"tier": "S", "rank": 3, "ranked": "62", "hashes": [1]}]}`,
 			want: "reading roll sheet: ",
 		},
 		"body is an empty object": {

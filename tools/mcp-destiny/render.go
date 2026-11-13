@@ -538,11 +538,13 @@ func perkLabel(perk Perk) string {
 
 // writeRating writes the roll rating of one game mode. The first line
 // gives the tier of the weapon on the sheet of the mode, or the reason
-// that the mode has no rating. For a copy whose perk columns the rating
-// judged, the line also gives the tier of the copy and counts the columns
-// that hit. One line for each column follows, numbered from 1 in sheet
-// order. The line of a column that hit names each perk that earns the
-// column, and it marks each perk that the user likes.
+// that the mode has no rating. The [sheetPlace] of the row follows the
+// tier. For a copy whose perk columns the rating judged, the line also
+// gives the tier of the copy and counts the columns that hit. One line
+// for each column follows, numbered from 1 in sheet order. The line of a
+// column that hit names each perk that earns the column, and it marks
+// each perk that the user likes. The note of the row comes last, for
+// every copy of the weapon, because the note describes the weapon.
 func writeRating(b *strings.Builder, mode string, rating Rating) {
 	if rating.Err != nil {
 		fmt.Fprintf(b, "- %s\n", ratingReason(mode, rating.Err))
@@ -572,7 +574,7 @@ func writeRating(b *strings.Builder, mode string, rating Rating) {
 		tier = "no tier"
 	}
 
-	fmt.Fprintf(b, "%s on the %s", tier, label)
+	fmt.Fprintf(b, "%s on the %s %s", tier, label, sheetPlace(roll.Row))
 
 	hits := 0
 
@@ -609,6 +611,41 @@ func writeRating(b *strings.Builder, mode string, rating Rating) {
 		}
 
 		fmt.Fprintf(b, "  Column %d: hit with %s\n", i+1, strings.Join(names, ", "))
+	}
+
+	writeSheetNote(b, roll.Row.Notes)
+}
+
+// sheetPlace returns the parenthesis that places a row on its sheet. It
+// reads "(rank 3 of 62 in HCs)" for the third of the 62 rows in the
+// category HCs, and "(in HCs)" for a row without a rank. The category
+// prints in the text of the sheet file.
+func sheetPlace(row SheetRow) string {
+	if row.Rank > 0 {
+		return fmt.Sprintf("(rank %d of %d in %s)", row.Rank, row.Ranked, row.Category)
+	}
+
+	return fmt.Sprintf("(in %s)", row.Category)
+}
+
+// writeSheetNote writes the note of a sheet row, indented under the
+// rating line of its game mode. Each nonblank line of the note becomes
+// one output line, and the first carries the label "Sheet note: ". The
+// function drops the blank lines, because a blank line reads as the end
+// of the roll ratings block. A note without a nonblank line writes
+// nothing.
+func writeSheetNote(b *strings.Builder, notes string) {
+	label := "Sheet note: "
+
+	for line := range strings.Lines(notes) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		fmt.Fprintf(b, "  %s%s\n", label, line)
+
+		label = ""
 	}
 }
 

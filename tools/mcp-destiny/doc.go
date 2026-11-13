@@ -39,13 +39,25 @@
 // artifact. The PvP sheet rates weapons for PvP, and the service publishes
 // it as the pvprolls artifact. Each sheet gives a weapon a tier from S,
 // the best tier, to F. It also picks the perks that it wants in each perk
-// column of the weapon.
+// column of the weapon. A sheet lists each weapon in a category, such as
+// the hand cannons. It can rank the weapon in that category, and it can
+// give the weapon a note.
 //
 // The get_item tool rates the roll of the weapon copy that it shows
 // against each sheet. The tier of a copy starts at the tier of the weapon
 // on the sheet. It moves down one step for each perk column that the copy
 // misses, and it stops at F. Two copies of one weapon can therefore
 // differ by several tiers.
+//
+// The rating line of each game mode in the get_item output also places
+// the weapon on the sheet. The line names the category in the text of the
+// sheet file, such as "HCs" for the hand cannons of the Aegis sheet. When
+// the sheet ranks the weapon, the line gives the rank and the number of
+// weapons in the category, such as "rank 3 of 62 in HCs". The note of
+// the weapon follows the lines of the perk columns, after the label
+// "Sheet note". The note describes the weapon, so every copy of the
+// weapon shows it, also a copy that reads "roll unknown". Only the
+// get_item tool shows the category, the rank, and the note.
 //
 // The list_items tool shows the same rating of each weapon copy for each
 // game mode when the caller sets include_ratings. The rating cell of a

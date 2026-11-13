@@ -358,6 +358,9 @@ func newServer(h *handler) *mcp.Server {
 			"stats, tag, note, and location. " +
 			"A weapon also shows how the Aegis sheet (PvE) and the PvP sheet rate the roll of this copy. " +
 			"Each sheet gives a weapon a tier from S (best) to F and picks the perks that it wants in each perk column. " +
+			"The line of each sheet names the category that lists the weapon on the sheet, such as 'in HCs'. " +
+			"When the sheet ranks the weapon, the line also gives the rank in that category, " +
+			"such as 'rank 3 of 62 in HCs' for the third of 62 weapons. " +
 			"The tier of the copy starts at the tier of the weapon on the sheet. " +
 			"It moves down one step for each perk column that the copy misses, and it stops at F. " +
 			"The copy hits a column with each pick of the column that it has. " +
@@ -367,6 +370,7 @@ func newServer(h *handler) *mcp.Server {
 			"The web client also counts a liked perk in a column in which the copy rolled no pick. " +
 			"One line for each column names the perks that count, with '(liked)' after each liked perk, " +
 			"or says that the column missed. " +
+			"The note that the sheet gives the weapon follows the column lines, after the label 'Sheet note'. " +
 			"The rating reads the perks that this tool lists, " +
 			"and a pick that sits beside the active perk in a socket counts. " +
 			"The web client reads another socket list, so its rating of a copy can differ. " +

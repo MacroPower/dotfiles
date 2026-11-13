@@ -39,9 +39,18 @@ var (
 )
 
 // SheetRow is the row of one weapon on a roll sheet. Tier is empty on a
-// row without a tier.
+// row without a tier. Category names the list of the sheet that holds
+// the weapon, in the text of the sheet file. Rank is the position of the
+// weapon in that category, best first, and a zero Rank marks a row
+// without a rank. Ranked counts the rows of the category, with and
+// without a rank. Notes is the note that the sheet gives the weapon. It
+// can hold several lines, and it is empty on a row without a note.
 type SheetRow struct {
-	Tier string
+	Tier     string
+	Category string
+	Notes    string
+	Rank     int
+	Ranked   int
 }
 
 // Sheet is one roll sheet. The item hash of a weapon keys both maps.
@@ -62,19 +71,25 @@ type SheetState struct {
 // rawSheet is the subset of a roll sheet file that [decodeSheet] reads.
 type rawSheet struct {
 	Rolls []struct {
-		Tier   string     `json:"tier"`
-		Hashes []uint32   `json:"hashes"`
-		Slots  [][]uint32 `json:"slots"`
+		Category string     `json:"category"`
+		Tier     string     `json:"tier"`
+		Notes    string     `json:"notes"`
+		Hashes   []uint32   `json:"hashes"`
+		Slots    [][]uint32 `json:"slots"`
+		Rank     int        `json:"rank"`
+		Ranked   int        `json:"ranked"`
 	} `json:"rolls"`
 }
 
 // decodeSheet reads the body of one roll sheet file.
 //
 // A reissue shares a row with the original weapon, so two rows can list
-// one hash. The row with the better tier gives the hash its tier, and
-// the later of two rows with equal tiers replaces the earlier one. The
-// first row with perk columns gives the hash its columns. The tier and
-// the columns of one hash can therefore come from different rows.
+// one hash. The row with the better tier gives the hash its [SheetRow],
+// and the later of two rows with equal tiers replaces the earlier one.
+// Every field of the SheetRow of one hash therefore comes from one row
+// of the file. The first row with perk columns gives the hash its
+// columns. The SheetRow and the columns of one hash can therefore come
+// from different rows.
 func decodeSheet(r io.Reader) (*Sheet, error) {
 	var raw rawSheet
 
@@ -89,7 +104,13 @@ func decodeSheet(r io.Reader) (*Sheet, error) {
 	}
 
 	for _, roll := range raw.Rolls {
-		row := SheetRow{Tier: roll.Tier}
+		row := SheetRow{
+			Tier:     roll.Tier,
+			Category: roll.Category,
+			Notes:    roll.Notes,
+			Rank:     roll.Rank,
+			Ranked:   roll.Ranked,
+		}
 
 		// The service build writes only the listed tiers. Any other
 		// text counts as no tier, so a row never shows a tier that the

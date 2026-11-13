@@ -210,10 +210,10 @@ func TestListItems(t *testing.T) {
 		// Rampage for PvP, so the copy misses the column of the PvP
 		// sheet. The profile lists perks for no other weapon.
 		aegisSheet = `{"rolls": [` +
-			`{"tier": "S", "hashes": [100], "slots": [[900], [904]]}, ` +
-			`{"tier": "A", "hashes": [101], "slots": []}, ` +
-			`{"hashes": [102], "slots": []}]}`
-		pvpSheet = `{"rolls": [{"tier": "C", "hashes": [100], "slots": [[903]]}]}`
+			`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900], [904]]}, ` +
+			`{"category": "Exotic Weapons", "tier": "A", "hashes": [101], "slots": []}, ` +
+			`{"category": "HCs", "hashes": [102], "slots": []}]}`
+		pvpSheet = `{"rolls": [{"category": "Hand Cannon", "tier": "C", "hashes": [100], "slots": [[903]]}]}`
 
 		noAegis = "PvE: rating unavailable: the service publishes no Aegis sheet"
 		noPvP   = "PvP: rating unavailable: the service publishes no PvP sheet"
@@ -577,10 +577,10 @@ func TestListItems(t *testing.T) {
 				bothSheets(f)
 
 				f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [` +
-					`{"tier": "S", "hashes": [100], "slots": [[900], [904]]}, ` +
-					`{"tier": "A", "hashes": [101], "slots": []}, ` +
-					`{"hashes": [102], "slots": []}, ` +
-					`{"tier": "S", "hashes": [200], "slots": []}]}`
+					`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900], [904]]}, ` +
+					`{"category": "Exotic Weapons", "tier": "A", "hashes": [101], "slots": []}, ` +
+					`{"category": "HCs", "hashes": [102], "slots": []}, ` +
+					`{"category": "Exotic Weapons", "tier": "S", "hashes": [200], "slots": []}]}`
 			},
 			in:   ListItemsInput{MinPvERating: "S"},
 			want: "No items match.",
@@ -707,7 +707,7 @@ func TestListItems(t *testing.T) {
 func TestListItemsRatingRequests(t *testing.T) {
 	t.Parallel()
 
-	const sheet = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900]]}]}`
+	const sheet = `{"rolls": [{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900]]}]}`
 
 	sheets := []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"}
 
@@ -784,7 +784,7 @@ func TestListItemsRatingRequests(t *testing.T) {
 func TestListItemsMinimumRequests(t *testing.T) {
 	t.Parallel()
 
-	const sheet = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900]]}]}`
+	const sheet = `{"rolls": [{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900]]}]}`
 
 	tests := map[string]struct {
 		in ListItemsInput
@@ -957,13 +957,19 @@ func TestGetItem(t *testing.T) {
 		// column of its game mode lists its perk. The cases use allHit
 		// as a PvE sheet and rampageOnly as a PvP sheet to show the
 		// change.
-		tiered      = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900, 903], [904]]}]}`
-		allHit      = `{"rolls": [{"tier": "B", "hashes": [100], "slots": [[900], [901]]}]}`
-		rampageOnly = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[903]]}]}`
-		untiered    = `{"rolls": [{"hashes": [100], "slots": [[904], [900]]}]}`
-		shaderOnly  = `{"rolls": [{"tier": "E", "hashes": [100], "slots": [[902], [902]]}]}`
-		columnless  = `{"rolls": [{"tier": "A", "hashes": [100], "slots": []}]}`
-		elsewhere   = `{"rolls": [{"tier": "B", "hashes": [101], "slots": []}]}`
+		tiered      = `{"rolls": [{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900, 903], [904]]}]}`
+		allHit      = `{"rolls": [{"category": "HCs", "tier": "B", "hashes": [100], "slots": [[900], [901]]}]}`
+		rampageOnly = `{"rolls": [{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[903]]}]}`
+		untiered    = `{"rolls": [{"category": "HCs", "hashes": [100], "slots": [[904], [900]]}]}`
+		shaderOnly  = `{"rolls": [{"category": "HCs", "tier": "E", "hashes": [100], "slots": [[902], [902]]}]}`
+		columnless  = `{"rolls": [{"category": "HCs", "tier": "A", "hashes": [100], "slots": []}]}`
+		elsewhere   = `{"rolls": [{"category": "Exotic Weapons", "tier": "B", "hashes": [101], "slots": []}]}`
+
+		// The row of ranked has a rank and a note. A blank line parts
+		// the two lines of the note. The row of unranked has neither.
+		ranked = `{"rolls": [{"category": "HCs", "tier": "S", "rank": 3, "ranked": 62, "hashes": [100], ` +
+			`"slots": [[900], [904]], "notes": "Add clear and boss damage.\n\nPairs with Firefly."}]}`
+		unranked = `{"rolls": [{"category": "Hand Cannon", "tier": "C", "hashes": [100], "slots": [[900], [904]]}]}`
 	)
 
 	tests := map[string]struct {
@@ -1006,10 +1012,10 @@ func TestGetItem(t *testing.T) {
 			},
 			id: "1001",
 			want: fatebringer(
-				"- PvE: B for this roll, B on the Aegis sheet, 2 of 2 perk columns hit",
+				"- PvE: B for this roll, B on the Aegis sheet (in HCs), 2 of 2 perk columns hit",
 				"  Column 1: hit with Explosive Payload",
 				"  Column 2: hit with Firefly (liked)",
-				"- PvP: B for this roll, B on the PvP sheet, 2 of 2 perk columns hit",
+				"- PvP: B for this roll, B on the PvP sheet (in HCs), 2 of 2 perk columns hit",
 				"  Column 1: hit with Explosive Payload",
 				"  Column 2: hit with Firefly",
 			),
@@ -1025,9 +1031,9 @@ func TestGetItem(t *testing.T) {
 			},
 			id: "1001",
 			want: fatebringer(
-				"- PvE: S for this roll, S on the Aegis sheet, 1 of 1 perk columns hit",
+				"- PvE: S for this roll, S on the Aegis sheet (in HCs), 1 of 1 perk columns hit",
 				"  Column 1: hit with Rampage",
-				"- PvP: A for this roll, S on the PvP sheet, 0 of 1 perk columns hit",
+				"- PvP: A for this roll, S on the PvP sheet (in HCs), 0 of 1 perk columns hit",
 				"  Column 1: miss",
 			),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
@@ -1078,7 +1084,7 @@ func TestGetItem(t *testing.T) {
 			},
 			id: "1001",
 			want: fatebringer(
-				"- PvE: A for this roll, S on the Aegis sheet, 1 of 2 perk columns hit",
+				"- PvE: A for this roll, S on the Aegis sheet (in HCs), 1 of 2 perk columns hit",
 				"  Column 1: hit with Explosive Payload, Rampage",
 				"  Column 2: miss",
 				"- PvP: not on the PvP sheet",
@@ -1095,10 +1101,10 @@ func TestGetItem(t *testing.T) {
 			},
 			id: "1001",
 			want: fatebringer(
-				"- PvE: no tier on the Aegis sheet, 1 of 2 perk columns hit",
+				"- PvE: no tier on the Aegis sheet (in HCs), 1 of 2 perk columns hit",
 				"  Column 1: miss",
 				"  Column 2: hit with Explosive Payload",
-				"- PvP: B for this roll, B on the PvP sheet, 2 of 2 perk columns hit",
+				"- PvP: B for this roll, B on the PvP sheet (in HCs), 2 of 2 perk columns hit",
 				"  Column 1: hit with Explosive Payload",
 				"  Column 2: hit with Firefly",
 			),
@@ -1113,7 +1119,7 @@ func TestGetItem(t *testing.T) {
 			bodies: map[string]string{"rolls.a.json": shaderOnly},
 			id:     "1001",
 			want: fatebringer(
-				"- PvE: F for this roll, E on the Aegis sheet, 0 of 2 perk columns hit",
+				"- PvE: F for this roll, E on the Aegis sheet (in HCs), 0 of 2 perk columns hit",
 				"  Column 1: miss",
 				"  Column 2: miss",
 				noPvP,
@@ -1130,7 +1136,7 @@ func TestGetItem(t *testing.T) {
 			},
 			id: "1001",
 			want: fatebringer(
-				"- PvE: A on the Aegis sheet, which judges no perk columns",
+				"- PvE: A on the Aegis sheet (in HCs), which judges no perk columns",
 				"- PvP: not on the PvP sheet",
 			),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
@@ -1153,7 +1159,7 @@ func TestGetItem(t *testing.T) {
 			want: fatebringer(
 				"- PvE: rating unavailable: fetching artifact rolls.x.json: "+
 					"service: {service}/artifacts/rolls.x.json returned status 404",
-				"- PvP: B for this roll, B on the PvP sheet, 2 of 2 perk columns hit",
+				"- PvP: B for this roll, B on the PvP sheet (in HCs), 2 of 2 perk columns hit",
 				"  Column 1: hit with Explosive Payload",
 				"  Column 2: hit with Firefly",
 			),
@@ -1169,7 +1175,7 @@ func TestGetItem(t *testing.T) {
 			},
 			id: "1001",
 			want: fatebringer(
-				"- PvE: A for this roll, S on the Aegis sheet, 1 of 2 perk columns hit",
+				"- PvE: A for this roll, S on the Aegis sheet (in HCs), 1 of 2 perk columns hit",
 				"  Column 1: hit with Explosive Payload, Rampage",
 				"  Column 2: miss",
 				"- PvP: rating unavailable: decoding artifact pvprolls.x.json: the roll sheet lists no weapon",
@@ -1196,8 +1202,58 @@ func TestGetItem(t *testing.T) {
 				"Location: Hunter (postmaster)",
 				"",
 				"Roll ratings:",
-				"- PvE: S on the Aegis sheet, roll unknown: the profile lists no perks for this copy",
-				"- PvP: no tier on the PvP sheet, roll unknown: the profile lists no perks for this copy",
+				"- PvE: S on the Aegis sheet (in HCs), roll unknown: the profile lists no perks for this copy",
+				"- PvP: no tier on the PvP sheet (in HCs), roll unknown: the profile lists no perks for this copy",
+			}, "\n"),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+			prefs:   1,
+		},
+		// The note of the PvE row comes before the PvP line.
+		"row with a rank and a note, and row with neither": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    ranked,
+				"pvprolls.a.json": unranked,
+			},
+			id: "1001",
+			want: fatebringer(
+				"- PvE: A for this roll, S on the Aegis sheet (rank 3 of 62 in HCs), 1 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload",
+				"  Column 2: miss",
+				"  Sheet note: Add clear and boss damage.",
+				"  Pairs with Firefly.",
+				"- PvP: D for this roll, C on the PvP sheet (in Hand Cannon), 1 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload",
+				"  Column 2: miss",
+			),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+			prefs:   1,
+		},
+		"copy without perks shows the rank and the note of its row": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    ranked,
+				"pvprolls.a.json": unranked,
+			},
+			id: "1005",
+			want: strings.Join([]string{
+				"Fatebringer",
+				"Instance id: 1005",
+				"Item hash: 100",
+				"Type: Kinetic Hand Cannon",
+				"Tier: Legendary",
+				"Slot: Kinetic Weapons",
+				"Power: 1970",
+				"Location: Hunter (postmaster)",
+				"",
+				"Roll ratings:",
+				"- PvE: S on the Aegis sheet (rank 3 of 62 in HCs), " +
+					"roll unknown: the profile lists no perks for this copy",
+				"  Sheet note: Add clear and boss damage.",
+				"  Pairs with Firefly.",
+				"- PvP: C on the PvP sheet (in Hand Cannon), roll unknown: the profile lists no perks for this copy",
 			}, "\n"),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
@@ -1221,7 +1277,7 @@ func TestGetItem(t *testing.T) {
 				"Location: Vault",
 				"",
 				"Roll ratings:",
-				"- PvE: B on the Aegis sheet, which judges no perk columns",
+				"- PvE: B on the Aegis sheet (in Exotic Weapons), which judges no perk columns",
 				"- PvP: not on the PvP sheet",
 			}, "\n"),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
@@ -1324,11 +1380,12 @@ func TestGetItemRatesOnEachCall(t *testing.T) {
 
 	f := newFakes(t)
 	f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
-	f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[903, 900]]}]}`
+	f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [` +
+		`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[903, 900]]}]}`
 
 	got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
 	require.False(t, isError)
-	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet, 1 of 1 perk columns hit\n"+
+	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet (in HCs), 1 of 1 perk columns hit\n"+
 		"  Column 1: hit with Explosive Payload, Rampage\n")
 
 	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Rampage"})
@@ -1336,7 +1393,7 @@ func TestGetItemRatesOnEachCall(t *testing.T) {
 
 	got, isError = call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
 	require.False(t, isError)
-	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet, 1 of 1 perk columns hit\n"+
+	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet (in HCs), 1 of 1 perk columns hit\n"+
 		"  Column 1: hit with Rampage, Explosive Payload\n")
 	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1, "both ratings read one profile")
 }
@@ -1349,11 +1406,12 @@ func TestGetItemReadsPerkPreferencesOnEachCall(t *testing.T) {
 
 	f := newFakes(t)
 	f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
-	f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[901]]}]}`
+	f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [` +
+		`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[901]]}]}`
 
 	got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
 	require.False(t, isError)
-	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet, 1 of 1 perk columns hit\n"+
+	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet (in HCs), 1 of 1 perk columns hit\n"+
 		"  Column 1: hit with Firefly (liked)\n")
 
 	f.serviceData[pathPrefs] = `{"preferences": [
@@ -1362,7 +1420,7 @@ func TestGetItemReadsPerkPreferencesOnEachCall(t *testing.T) {
 
 	got, isError = call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
 	require.False(t, isError)
-	assert.Contains(t, got, "- PvE: A for this roll, S on the Aegis sheet, 0 of 1 perk columns hit\n"+
+	assert.Contains(t, got, "- PvE: A for this roll, S on the Aegis sheet (in HCs), 0 of 1 perk columns hit\n"+
 		"  Column 1: miss\n")
 	assert.Len(t, f.service.calls(http.MethodGet, pathPrefs), 2)
 }
@@ -1371,7 +1429,7 @@ func TestRatingSources(t *testing.T) {
 	t.Parallel()
 
 	const (
-		sheet = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900]]}]}`
+		sheet = `{"rolls": [{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900]]}]}`
 
 		noPvP      = "rating unavailable: the service publishes no PvP sheet"
 		unreadable = "rating unavailable: reading perk preferences: " +
@@ -1473,6 +1531,10 @@ func TestWriteRating(t *testing.T) {
 		return verdict
 	}
 
+	// The note holds a blank line at its start and between its two
+	// lines, and spaces around its second line.
+	const note = "\nAdd clear and boss damage.\n\n  Pairs with Firefly.  \n"
+
 	tests := map[string]struct {
 		mode   string
 		rating Rating
@@ -1493,35 +1555,41 @@ func TestWriteRating(t *testing.T) {
 		},
 		"row with a tier and no columns": {
 			mode:   modePvE,
-			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "A"}, Overall: "A"}},
-			want:   []string{"- PvE: A on the Aegis sheet, which judges no perk columns"},
+			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "A", Category: "Exotic Weapons"}, Overall: "A"}},
+			want:   []string{"- PvE: A on the Aegis sheet (in Exotic Weapons), which judges no perk columns"},
 		},
 		"row without a tier and without columns": {
 			mode:   modePvE,
-			rating: Rating{Roll: &Roll{}},
-			want:   []string{"- PvE: no tier on the Aegis sheet, which judges no perk columns"},
+			rating: Rating{Roll: &Roll{Row: SheetRow{Category: "Exotic Weapons"}}},
+			want:   []string{"- PvE: no tier on the Aegis sheet (in Exotic Weapons), which judges no perk columns"},
 		},
 		"unknown roll on a row with a tier": {
-			mode:   modePvE,
-			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "S"}, Unknown: true}},
-			want:   []string{"- PvE: S on the Aegis sheet, roll unknown: the profile lists no perks for this copy"},
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "S", Category: "HCs", Rank: 3, Ranked: 62},
+				Unknown: true,
+			}},
+			want: []string{
+				"- PvE: S on the Aegis sheet (rank 3 of 62 in HCs), " +
+					"roll unknown: the profile lists no perks for this copy",
+			},
 		},
 		"unknown roll on a row without a tier": {
 			mode:   modePvE,
-			rating: Rating{Roll: &Roll{Unknown: true}},
+			rating: Rating{Roll: &Roll{Row: SheetRow{Category: "HCs"}, Unknown: true}},
 			want: []string{
-				"- PvE: no tier on the Aegis sheet, roll unknown: the profile lists no perks for this copy",
+				"- PvE: no tier on the Aegis sheet (in HCs), roll unknown: the profile lists no perks for this copy",
 			},
 		},
 		"roll with a tier and no miss prints the tier twice": {
 			mode: modePvE,
 			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "S"},
+				Row:     SheetRow{Tier: "S", Category: "HCs"},
 				Overall: "S",
 				Columns: []ColumnVerdict{hit("Explosive Payload"), hit("Firefly")},
 			}},
 			want: []string{
-				"- PvE: S for this roll, S on the Aegis sheet, 2 of 2 perk columns hit",
+				"- PvE: S for this roll, S on the Aegis sheet (in HCs), 2 of 2 perk columns hit",
 				"  Column 1: hit with Explosive Payload",
 				"  Column 2: hit with Firefly",
 			},
@@ -1529,12 +1597,12 @@ func TestWriteRating(t *testing.T) {
 		"roll with a tier and one miss": {
 			mode: modePvP,
 			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "S"},
+				Row:     SheetRow{Tier: "S", Category: "Hand Cannon"},
 				Overall: "A",
 				Columns: []ColumnVerdict{{}, hit("Firefly")},
 			}},
 			want: []string{
-				"- PvP: A for this roll, S on the PvP sheet, 1 of 2 perk columns hit",
+				"- PvP: A for this roll, S on the PvP sheet (in Hand Cannon), 1 of 2 perk columns hit",
 				"  Column 1: miss",
 				"  Column 2: hit with Firefly",
 			},
@@ -1542,10 +1610,11 @@ func TestWriteRating(t *testing.T) {
 		"roll without a tier has no tier for the roll": {
 			mode: modePvE,
 			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Category: "HCs", Rank: 3, Ranked: 62},
 				Columns: []ColumnVerdict{hit("Explosive Payload"), {}},
 			}},
 			want: []string{
-				"- PvE: no tier on the Aegis sheet, 1 of 2 perk columns hit",
+				"- PvE: no tier on the Aegis sheet (rank 3 of 62 in HCs), 1 of 2 perk columns hit",
 				"  Column 1: hit with Explosive Payload",
 				"  Column 2: miss",
 			},
@@ -1553,24 +1622,24 @@ func TestWriteRating(t *testing.T) {
 		"row with one column keeps the plural": {
 			mode: modePvE,
 			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C"},
+				Row:     SheetRow{Tier: "C", Category: "HCs"},
 				Overall: "C",
 				Columns: []ColumnVerdict{hit("Firefly")},
 			}},
 			want: []string{
-				"- PvE: C for this roll, C on the Aegis sheet, 1 of 1 perk columns hit",
+				"- PvE: C for this roll, C on the Aegis sheet (in HCs), 1 of 1 perk columns hit",
 				"  Column 1: hit with Firefly",
 			},
 		},
 		"hit with two names": {
 			mode: modePvE,
 			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "D"},
+				Row:     SheetRow{Tier: "D", Category: "HCs"},
 				Overall: "E",
 				Columns: []ColumnVerdict{hit("Explosive Payload", "Rampage"), {}},
 			}},
 			want: []string{
-				"- PvE: E for this roll, D on the Aegis sheet, 1 of 2 perk columns hit",
+				"- PvE: E for this roll, D on the Aegis sheet (in HCs), 1 of 2 perk columns hit",
 				"  Column 1: hit with Explosive Payload, Rampage",
 				"  Column 2: miss",
 			},
@@ -1578,27 +1647,141 @@ func TestWriteRating(t *testing.T) {
 		"hit with one liked name": {
 			mode: modePvE,
 			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C"},
+				Row:     SheetRow{Tier: "C", Category: "HCs"},
 				Overall: "C",
 				Columns: []ColumnVerdict{{Hits: []Hit{{Name: "Firefly", Liked: true}}}},
 			}},
 			want: []string{
-				"- PvE: C for this roll, C on the Aegis sheet, 1 of 1 perk columns hit",
+				"- PvE: C for this roll, C on the Aegis sheet (in HCs), 1 of 1 perk columns hit",
 				"  Column 1: hit with Firefly (liked)",
 			},
 		},
 		"hit with one liked name and one name without the mark": {
 			mode: modePvP,
 			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C"},
+				Row:     SheetRow{Tier: "C", Category: "Hand Cannon"},
 				Overall: "C",
 				Columns: []ColumnVerdict{
 					{Hits: []Hit{{Name: "Explosive Payload"}, {Name: "Firefly", Liked: true}}},
 				},
 			}},
 			want: []string{
-				"- PvP: C for this roll, C on the PvP sheet, 1 of 1 perk columns hit",
+				"- PvP: C for this roll, C on the PvP sheet (in Hand Cannon), 1 of 1 perk columns hit",
 				"  Column 1: hit with Explosive Payload, Firefly (liked)",
+			},
+		},
+		// Rank 1 is the lowest rank that prints.
+		"rated roll on a row with the rank 1": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "S", Category: "HCs", Rank: 1, Ranked: 62},
+				Overall: "S",
+				Columns: []ColumnVerdict{hit("Firefly")},
+			}},
+			want: []string{
+				"- PvE: S for this roll, S on the Aegis sheet (rank 1 of 62 in HCs), 1 of 1 perk columns hit",
+				"  Column 1: hit with Firefly",
+			},
+		},
+		// The category size prints only beside a rank.
+		"rated roll on a row without a rank": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "S", Category: "HCs", Ranked: 62},
+				Overall: "S",
+				Columns: []ColumnVerdict{hit("Firefly")},
+			}},
+			want: []string{
+				"- PvE: S for this roll, S on the Aegis sheet (in HCs), 1 of 1 perk columns hit",
+				"  Column 1: hit with Firefly",
+			},
+		},
+		"note follows the last column line": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "S", Category: "HCs", Notes: "Add clear and boss damage."},
+				Overall: "A",
+				Columns: []ColumnVerdict{hit("Explosive Payload"), {}},
+			}},
+			want: []string{
+				"- PvE: A for this roll, S on the Aegis sheet (in HCs), 1 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload",
+				"  Column 2: miss",
+				"  Sheet note: Add clear and boss damage.",
+			},
+		},
+		"note with blank lines and spaces around a line prints its two lines": {
+			mode: modePvP,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "C", Category: "Hand Cannon", Notes: note},
+				Overall: "C",
+				Columns: []ColumnVerdict{hit("Firefly")},
+			}},
+			want: []string{
+				"- PvP: C for this roll, C on the PvP sheet (in Hand Cannon), 1 of 1 perk columns hit",
+				"  Column 1: hit with Firefly",
+				"  Sheet note: Add clear and boss damage.",
+				"  Pairs with Firefly.",
+			},
+		},
+		"note follows a line that judges no perk columns": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "A", Category: "Exotic Weapons", Notes: "Boss damage."},
+				Overall: "A",
+			}},
+			want: []string{
+				"- PvE: A on the Aegis sheet (in Exotic Weapons), which judges no perk columns",
+				"  Sheet note: Boss damage.",
+			},
+		},
+		"note follows a roll unknown line": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "S", Category: "HCs", Notes: note},
+				Unknown: true,
+			}},
+			want: []string{
+				"- PvE: S on the Aegis sheet (in HCs), roll unknown: the profile lists no perks for this copy",
+				"  Sheet note: Add clear and boss damage.",
+				"  Pairs with Firefly.",
+			},
+		},
+		"note follows the column lines of a row without a tier": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Category: "HCs", Notes: "Add clear and boss damage."},
+				Columns: []ColumnVerdict{{}},
+			}},
+			want: []string{
+				"- PvE: no tier on the Aegis sheet (in HCs), 0 of 1 perk columns hit",
+				"  Column 1: miss",
+				"  Sheet note: Add clear and boss damage.",
+			},
+		},
+		"row without a note prints no note line": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "B", Category: "HCs", Rank: 3, Ranked: 62},
+				Overall: "C",
+				Columns: []ColumnVerdict{hit("Firefly"), {}},
+			}},
+			want: []string{
+				"- PvE: C for this roll, B on the Aegis sheet (rank 3 of 62 in HCs), 1 of 2 perk columns hit",
+				"  Column 1: hit with Firefly",
+				"  Column 2: miss",
+			},
+		},
+		"note of blank lines and spaces prints no line": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "C", Category: "HCs", Notes: "\n  \n\t\n\n"},
+				Overall: "C",
+				Columns: []ColumnVerdict{hit("Firefly")},
+			}},
+			want: []string{
+				"- PvE: C for this roll, C on the Aegis sheet (in HCs), 1 of 1 perk columns hit",
+				"  Column 1: hit with Firefly",
 			},
 		},
 	}
@@ -1796,8 +1979,8 @@ func TestCompareDuplicates(t *testing.T) {
 		// sheet. The fake perk preferences dislike Rampage for PvP, so
 		// the copy misses the column of the PvP sheet. The profile lists
 		// no perks for instances 1005 and 1006.
-		aegisSheet = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900]]}]}`
-		pvpSheet   = `{"rolls": [{"tier": "C", "hashes": [100], "slots": [[903]]}]}`
+		aegisSheet = `{"rolls": [{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900]]}]}`
+		pvpSheet   = `{"rolls": [{"category": "Hand Cannon", "tier": "C", "hashes": [100], "slots": [[903]]}]}`
 
 		noAegis = "PvE: rating unavailable: the service publishes no Aegis sheet"
 		noPvP   = "PvP: rating unavailable: the service publishes no PvP sheet"

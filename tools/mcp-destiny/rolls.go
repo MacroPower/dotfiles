@@ -34,8 +34,8 @@ func (v ColumnVerdict) Missed() bool {
 // copy without perks on a row that has columns.
 type Roll struct {
 	Overall string
-	Row     SheetRow
 	Columns []ColumnVerdict
+	Row     SheetRow
 	Unknown bool
 }
 
