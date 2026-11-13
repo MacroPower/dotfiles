@@ -192,19 +192,24 @@ const fixtureProfile = `{
 	}
 }`
 
-// Paths of the fixture manifest and of its English loadout name table.
+// Paths of the fixture manifest and of its English loadout tables.
 const (
-	pathManifest     = "/Destiny2/Manifest/"
-	pathLoadoutNames = "/common/destiny2_content/json/en/DestinyLoadoutNameDefinition-a1.json"
+	pathManifest      = "/Destiny2/Manifest/"
+	pathLoadoutNames  = "/common/destiny2_content/json/en/DestinyLoadoutNameDefinition-a1.json"
+	pathLoadoutIcons  = "/common/destiny2_content/json/en/DestinyLoadoutIconDefinition-a1.json"
+	pathLoadoutColors = "/common/destiny2_content/json/en/DestinyLoadoutColorDefinition-a1.json"
 )
 
 // fixtureManifest is the Bungie GetDestinyManifest response body. Its
-// English tables include the loadout name table at pathLoadoutNames. The
-// French tables name another file.
+// English tables include the loadout name table at pathLoadoutNames, the
+// loadout icon table at pathLoadoutIcons, and the loadout color table at
+// pathLoadoutColors. The French tables name other files.
 const fixtureManifest = `{"ErrorCode": 1, "Response": {"version": "v1", "jsonWorldComponentContentPaths": {
 	"en": {
 		"DestinyInventoryItemDefinition": "/common/destiny2_content/json/en/DestinyInventoryItemDefinition-a1.json",
-		"DestinyLoadoutNameDefinition": "` + pathLoadoutNames + `"
+		"DestinyLoadoutNameDefinition": "` + pathLoadoutNames + `",
+		"DestinyLoadoutIconDefinition": "` + pathLoadoutIcons + `",
+		"DestinyLoadoutColorDefinition": "` + pathLoadoutColors + `"
 	},
 	"fr": {
 		"DestinyLoadoutNameDefinition": "/common/destiny2_content/json/fr/DestinyLoadoutNameDefinition-a1.json"
@@ -219,6 +224,23 @@ const fixtureLoadoutNames = `{
 	"4": {"hash": 4, "index": 1, "name": "Trials", "redacted": false},
 	"7": {"hash": 7, "index": 2, "name": "Crucible", "redacted": false},
 	"10": {"hash": 10, "index": 3, "name": "", "redacted": true}
+}`
+
+// fixtureLoadoutIcons is the content file of the loadout icon table. Its
+// first entry is 20, because the entry with the lowest index is redacted.
+const fixtureLoadoutIcons = `{
+	"21": {"hash": 21, "index": 0, "iconImagePath": "/img/21.png", "redacted": true},
+	"20": {"hash": 20, "index": 1, "iconImagePath": "/img/20.png", "redacted": false},
+	"22": {"hash": 22, "index": 2, "iconImagePath": "/img/22.png", "redacted": false}
+}`
+
+// fixtureLoadoutColors is the content file of the loadout color table.
+// Its first entry is 31, which has the lowest index but not the lowest
+// hash.
+const fixtureLoadoutColors = `{
+	"30": {"hash": 30, "index": 2, "colorImagePath": "/img/30.png", "redacted": false},
+	"31": {"hash": 31, "index": 0, "colorImagePath": "/img/31.png", "redacted": false},
+	"32": {"hash": 32, "index": 1, "colorImagePath": "/img/32.png", "redacted": false}
 }`
 
 // Activity history paths of the fixture characters.
@@ -660,6 +682,8 @@ func newFakes(t *testing.T) *fakes {
 		bungieData: map[string]string{
 			pathManifest:      fixtureManifest,
 			pathLoadoutNames:  fixtureLoadoutNames,
+			pathLoadoutIcons:  fixtureLoadoutIcons,
+			pathLoadoutColors: fixtureLoadoutColors,
 			pathHunterHistory: fixtureHunterHistory,
 			pathTitanHistory:  fixtureTitanHistory,
 			pathHunterVendors: fixtureHunterVendors,
@@ -776,7 +800,7 @@ func newFakes(t *testing.T) *fakes {
 		log:     slog.New(slog.DiscardHandler),
 		now:     now,
 	}
-	f.h.loadoutNames = NewLoadoutNameStore(bungieManifest{h: f.h})
+	f.h.loadoutTables = NewLoadoutTableStore(bungieManifest{h: f.h})
 
 	return f
 }

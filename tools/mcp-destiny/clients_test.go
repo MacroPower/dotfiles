@@ -590,7 +590,9 @@ func TestBungieManifest(t *testing.T) {
 			body: fixtureManifest,
 			want: map[string]string{
 				"DestinyInventoryItemDefinition": "/common/destiny2_content/json/en/DestinyInventoryItemDefinition-a1.json",
-				loadoutNameTable:                 pathLoadoutNames,
+				string(loadoutNameTable):         pathLoadoutNames,
+				string(loadoutIconTable):         pathLoadoutIcons,
+				string(loadoutColorTable):        pathLoadoutColors,
 			},
 		},
 		"no English tables": {
@@ -979,6 +981,16 @@ func TestBungieActions(t *testing.T) {
 		Membership:  action.Membership,
 		Index:       2,
 	}))
+	require.NoError(t, b.SnapshotLoadout(t.Context(), creds, LoadoutAction{
+		CharacterID: hunterID,
+		Membership:  action.Membership,
+		Index:       1,
+	}, LoadoutIdentifiers{NameHash: 4, IconHash: 20, ColorHash: 31}))
+	require.NoError(t, b.ClearLoadout(t.Context(), creds, LoadoutAction{
+		CharacterID: titanID,
+		Membership:  action.Membership,
+		Index:       0,
+	}))
 
 	transfer := rec.calls(http.MethodPost, "/Destiny2/Actions/Items/TransferItem/")
 	require.Len(t, transfer, 1)
@@ -1039,4 +1051,23 @@ func TestBungieActions(t *testing.T) {
 		"characterId":    hunterID,
 		"membershipType": float64(3),
 	}, loadouts[0].Body)
+
+	snapshots := rec.calls(http.MethodPost, "/Destiny2/Actions/Loadouts/SnapshotLoadout/")
+	require.Len(t, snapshots, 1)
+	assert.Equal(t, map[string]any{
+		"loadoutIndex":   float64(1),
+		"characterId":    hunterID,
+		"membershipType": float64(3),
+		"nameHash":       float64(4),
+		"iconHash":       float64(20),
+		"colorHash":      float64(31),
+	}, snapshots[0].Body)
+
+	clears := rec.calls(http.MethodPost, "/Destiny2/Actions/Loadouts/ClearLoadout/")
+	require.Len(t, clears, 1)
+	assert.Equal(t, map[string]any{
+		"loadoutIndex":   float64(0),
+		"characterId":    titanID,
+		"membershipType": float64(3),
+	}, clears[0].Body)
 }

@@ -270,7 +270,7 @@ func runServe(ctx context.Context, args []string) error {
 		log:     logger,
 		now:     time.Now,
 	}
-	h.loadoutNames = NewLoadoutNameStore(bungieManifest{h: h})
+	h.loadoutTables = NewLoadoutTableStore(bungieManifest{h: h})
 
 	err = newServer(h).Run(ctx, &mcp.StdioTransport{})
 	if err != nil {
@@ -294,6 +294,11 @@ func newServer(h *handler) *mcp.Server {
 
 	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
 	additive := &mcp.ToolAnnotations{DestructiveHint: new(bool), IdempotentHint: true}
+
+	// A loadout save replaces the loadout in its slot, and a clear deletes
+	// it.
+	destroys := true
+	replacing := &mcp.ToolAnnotations{DestructiveHint: &destroys, IdempotentHint: true}
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolStatus,
@@ -518,6 +523,36 @@ func newServer(h *handler) *mcp.Server {
 			"Bungie allows equipping only while the character is offline, in orbit, or in a social space.",
 		Annotations: additive,
 	}, h.handleEquipLoadout)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolSaveLoadout,
+		Description: "Save the gear that a character has equipped into one of its loadout slots in the game, " +
+			"by its character and the slot number, counted from 1 as in list_loadouts. " +
+			"The Bungie API has no request that builds a loadout from a list of items, so creating a loadout " +
+			"takes two steps. First equip the gear with move_items and equip=true, then call this tool. " +
+			"The game saves the mods and the perks of the equipped gear with it. " +
+			"A save into a slot that holds a loadout replaces that loadout. " +
+			"name picks a name from the list that the game offers, in any letter case. " +
+			"Without name, a saved loadout keeps its name, and an empty slot takes the first name of the list. " +
+			"A saved loadout also keeps its icon and its color, and an empty slot takes the first icon and " +
+			"the first color. The tool cannot pick an icon or a color, because the game defines both only as images. " +
+			"The result lists the equipped items that the loadout holds and the name that it carries. " +
+			"A slot number outside the slots of the character fails with the number of slots, and a name " +
+			"that the game does not offer fails with the list of names. " +
+			"Bungie can refuse the save, such as for a character in an activity, and the result then gives " +
+			"the Bungie message.",
+		Annotations: replacing,
+	}, h.handleSaveLoadout)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolClearLoadout,
+		Description: "Delete a loadout that a character saved in the game, by its character and its number " +
+			"from list_loadouts. The slot of the loadout becomes empty, and save_loadout can fill it again. " +
+			"The tool refuses a slot that holds no loadout. " +
+			"Bungie can refuse the change, such as for a character in an activity, and the result then gives " +
+			"the Bungie message.",
+		Annotations: replacing,
+	}, h.handleClearLoadout)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolListTags,

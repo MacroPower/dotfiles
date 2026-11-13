@@ -34,6 +34,8 @@ const (
 	pathLock     = "/Destiny2/Actions/Items/SetLockState/"
 	pathInsert   = "/Destiny2/Actions/Items/InsertSocketPlugFree/"
 	pathLoadout  = "/Destiny2/Actions/Loadouts/EquipLoadout/"
+	pathSnapshot = "/Destiny2/Actions/Loadouts/SnapshotLoadout/"
+	pathClear    = "/Destiny2/Actions/Loadouts/ClearLoadout/"
 )
 
 const loadoutsIntro = "Loadouts saved in the game. A loadout number is the position of the loadout " +
@@ -80,8 +82,11 @@ func TestServerListsTools(t *testing.T) {
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolPreviewAutotagRule,
 		toolRemoveAutotagRule,
 		toolMoveStack, toolStageJunk, toolSetLock, toolSetPerk, toolSetAutotagEnabled, toolListActivityHistory,
-		toolListLoadouts, toolEquipLoadout, toolGetStats, toolListVendors, toolListActivities,
+		toolListLoadouts, toolEquipLoadout, toolSaveLoadout, toolClearLoadout, toolGetStats, toolListVendors,
+		toolListActivities,
 	}, names)
+
+	destructive := true
 
 	for _, tool := range tools.Tools {
 		switch tool.Name {
@@ -108,6 +113,24 @@ func TestServerListsTools(t *testing.T) {
 
 		case toolGetItem:
 			assert.Contains(t, tool.Description, "a pick can be a perk that this version cannot roll")
+
+		case toolSaveLoadout:
+			assert.Equal(t, &mcp.ToolAnnotations{DestructiveHint: &destructive, IdempotentHint: true}, tool.Annotations)
+			assert.Contains(
+				t,
+				tool.Description,
+				"The Bungie API has no request that builds a loadout from a list of items",
+			)
+			assert.Contains(
+				t,
+				tool.Description,
+				"First equip the gear with move_items and equip=true, then call this tool.",
+			)
+			assert.Contains(t, tool.Description, "Without name, a saved loadout keeps its name")
+
+		case toolClearLoadout:
+			assert.Equal(t, &mcp.ToolAnnotations{DestructiveHint: &destructive, IdempotentHint: true}, tool.Annotations)
+			assert.Contains(t, tool.Description, "The tool refuses a slot that holds no loadout.")
 
 		case toolStageJunk:
 			assert.Equal(t, &mcp.ToolAnnotations{DestructiveHint: new(bool)}, tool.Annotations)
@@ -4511,7 +4534,7 @@ func TestListLoadouts(t *testing.T) {
 				f.bungieData[pathManifest] = `{"ErrorCode": 1, "Response": {"jsonWorldComponentContentPaths": {
 					"fr": {"DestinyLoadoutNameDefinition": "/fr.json"}}}}`
 			},
-			want: unavailable + "the Bungie manifest lists no loadout name table\n\n" + numbered,
+			want: unavailable + "the Bungie manifest lists no table of loadout names\n\n" + numbered,
 		},
 		"name table does not download": {
 			edit: func(f *fakes) { delete(f.bungieData, pathLoadoutNames) },
@@ -4551,6 +4574,11 @@ func TestListLoadouts(t *testing.T) {
 			got, isError := call(t, f.h.handleListLoadouts, tc.in)
 			assert.Equal(t, tc.isError, isError)
 			assert.Equal(t, tc.want, got)
+
+			// The list shows only names, so it downloads neither the icon
+			// table nor the color table.
+			assert.Empty(t, f.bungie.calls(http.MethodGet, pathLoadoutIcons))
+			assert.Empty(t, f.bungie.calls(http.MethodGet, pathLoadoutColors))
 		})
 	}
 }
@@ -4724,6 +4752,540 @@ func TestEquipLoadoutToolSnapshotAge(t *testing.T) {
 	_, isError = call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: "hunter", Loadout: 2})
 	require.False(t, isError)
 	assert.Equal(t, later, f.h.snapshot.Fetched, "an equip restarts the age of the snapshot")
+}
+
+// snapshotBody returns the body of a SnapshotLoadout request of the fake
+// account.
+func snapshotBody(index int, characterID string, name, icon, color uint32) map[string]any {
+	return map[string]any{
+		"loadoutIndex":   float64(index),
+		"characterId":    characterID,
+		"membershipType": float64(3),
+		"nameHash":       float64(name),
+		"iconHash":       float64(icon),
+		"colorHash":      float64(color),
+	}
+}
+
+// posts returns the POST requests that the fake Bungie platform recorded.
+func posts(f *fakes) []request {
+	var out []request
+
+	for _, req := range f.bungie.all() {
+		if req.Method == http.MethodPost {
+			out = append(out, req)
+		}
+	}
+
+	return out
+}
+
+// hunterLoadoutRows returns the list_loadouts rows of loadout number of the
+// fake Hunter. With equipped, the loadout holds the gear that the Hunter
+// has equipped. Without it, the loadout holds the items that the fake
+// profile saved in slot 3.
+func hunterLoadoutRows(number int, equipped bool) string {
+	if equipped {
+		return fmt.Sprintf("%d | 1006 | Fatebringer | Kinetic Weapons | Hunter (equipped)\n"+
+			"%d | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)", number, number)
+	}
+
+	return fmt.Sprintf("%d | 1001 | Fatebringer | Kinetic Weapons | Vault\n"+
+		"%d | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)\n"+
+		"%d | 9999 | not in the inventory |  | ", number, number, number)
+}
+
+func TestSaveLoadoutTool(t *testing.T) {
+	t.Parallel()
+
+	hunterGear := " It holds the gear that Hunter has equipped: Fatebringer (1006), Celestial Nighthawk (1004)."
+	hunterList := loadoutsIntro + "\n\nHunter (id c1):\nloadout | instance id | name | slot | location\n"
+	titanList := loadoutsIntro + "\n\nTitan (id c2): no saved loadouts"
+
+	tests := map[string]struct {
+		edit     func(f *fakes)
+		wantBody map[string]any
+		want     string
+		// wantList is the list_loadouts result for the character of the
+		// save, right after the save.
+		wantList string
+		in       SaveLoadoutInput
+		// emptySlot marks a save into an empty slot, the only save that
+		// downloads the icon and the color tables.
+		emptySlot bool
+	}{
+		"empty slot takes the first entries": {
+			in:       SaveLoadoutInput{Character: "hunter", Number: 1},
+			wantBody: snapshotBody(0, hunterID, 1, 20, 31),
+			want:     "Saved loadout 1 on Hunter with the name Raid Night." + hunterGear,
+			wantList: hunterList + "Loadout 1: Raid Night\n" + hunterLoadoutRows(1, true) +
+				"\nLoadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
+				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, false),
+			emptySlot: true,
+		},
+		"empty slot with a name": {
+			in:       SaveLoadoutInput{Character: "hunter", Number: 1, Name: "Trials"},
+			wantBody: snapshotBody(0, hunterID, 4, 20, 31),
+			want:     "Saved loadout 1 on Hunter with the name Trials." + hunterGear,
+			wantList: hunterList + "Loadout 1: Trials\n" + hunterLoadoutRows(1, true) +
+				"\nLoadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
+				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, false),
+			emptySlot: true,
+		},
+		"saved loadout keeps its identifiers": {
+			in:       SaveLoadoutInput{Character: hunterID, Number: 2},
+			wantBody: snapshotBody(1, hunterID, 1, 2, 3),
+			want:     "Saved loadout 2 on Hunter with the name Raid Night." + hunterGear,
+			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
+				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, false),
+		},
+		"saved loadout with a name": {
+			in:       SaveLoadoutInput{Character: "hunter", Number: 3, Name: "Crucible"},
+			wantBody: snapshotBody(2, hunterID, 7, 5, 6),
+			want:     "Saved loadout 3 on Hunter with the name Crucible." + hunterGear,
+			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
+				"\nLoadout 3: Crucible\n" + hunterLoadoutRows(3, true),
+		},
+		"name in another letter case": {
+			in:       SaveLoadoutInput{Character: "hunter", Number: 2, Name: "tRIALS"},
+			wantBody: snapshotBody(1, hunterID, 4, 2, 3),
+			want:     "Saved loadout 2 on Hunter with the name Trials." + hunterGear,
+			wantList: hunterList + "Loadout 2: Trials\n" + hunterLoadoutRows(2, true) +
+				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, false),
+		},
+		"character without equipped gear": {
+			// A save of no gear leaves the slot empty.
+			in:       SaveLoadoutInput{Character: "titan", Number: 1},
+			wantBody: snapshotBody(0, titanID, 7, 8, 9),
+			want:     "Saved loadout 1 on Titan with the name Crucible. The inventory shows no gear that Titan has equipped.",
+			wantList: titanList,
+		},
+		"saved loadout whose name the table lacks": {
+			edit: func(f *fakes) {
+				f.bungieData[pathLoadoutNames] = `{"1": {"hash": 1, "index": 0, "name": "Raid Night"}}`
+			},
+			in:       SaveLoadoutInput{Character: "titan", Number: 1},
+			wantBody: snapshotBody(0, titanID, 7, 8, 9),
+			want:     "Saved loadout 1 on Titan without a name. The inventory shows no gear that Titan has equipped.",
+			wantList: titanList,
+		},
+		"saved loadout without the name table": {
+			edit:     func(f *fakes) { delete(f.bungieData, pathLoadoutNames) },
+			in:       SaveLoadoutInput{Character: "hunter", Number: 2},
+			wantBody: snapshotBody(1, hunterID, 1, 2, 3),
+			want: "Saved loadout 2 on Hunter, which keeps its name." + hunterGear +
+				"\nLoadout names unavailable: fetching " + pathLoadoutNames +
+				": bungie: content file returned status 404",
+			wantList: loadoutsIntro + "\nLoadout names unavailable: fetching " + pathLoadoutNames +
+				": bungie: content file returned status 404\n\n" +
+				"Hunter (id c1):\nloadout | instance id | name | slot | location\n" +
+				"Loadout 2\n" + hunterLoadoutRows(2, true) + "\nLoadout 3\n" + hunterLoadoutRows(3, false),
+		},
+		"saved loadout without the icon and color tables": {
+			edit: func(f *fakes) {
+				delete(f.bungieData, pathLoadoutIcons)
+				delete(f.bungieData, pathLoadoutColors)
+			},
+			in:       SaveLoadoutInput{Character: "hunter", Number: 3, Name: "trials"},
+			wantBody: snapshotBody(2, hunterID, 4, 5, 6),
+			want:     "Saved loadout 3 on Hunter with the name Trials." + hunterGear,
+			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
+				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, true),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			if tc.edit != nil {
+				tc.edit(f)
+			}
+
+			got, isError := call(t, f.h.handleSaveLoadout, tc.in)
+			assert.False(t, isError)
+			assert.Equal(t, tc.want, got)
+
+			requests := posts(f)
+			require.Len(t, requests, 1)
+			assert.Equal(t, pathSnapshot, requests[0].Path)
+			assert.Equal(t, tc.wantBody, requests[0].Body)
+
+			// Every save downloads the name table, and only a save into an
+			// empty slot downloads the icon and the color tables.
+			tableGets := 0
+			if tc.emptySlot {
+				tableGets = 1
+			}
+
+			assert.Len(t, f.bungie.calls(http.MethodGet, pathLoadoutNames), 1)
+			assert.Len(t, f.bungie.calls(http.MethodGet, pathLoadoutIcons), tableGets)
+			assert.Len(t, f.bungie.calls(http.MethodGet, pathLoadoutColors), tableGets)
+
+			// The fake profile keeps the loadouts from before the save, so
+			// the list shows the saved loadout from the snapshot that the
+			// save updated.
+			got, isError = call(t, f.h.handleListLoadouts, ListLoadoutsInput{Character: tc.in.Character})
+			require.False(t, isError)
+			assert.Equal(t, tc.wantList, got)
+			assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+		})
+	}
+}
+
+func TestSaveLoadoutToolAfterEquip(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+
+	_, isError := call(t, f.h.handleMoveItems, MoveItemsInput{
+		InstanceIDs: []string{"1001"},
+		Target:      "hunter",
+		Equip:       true,
+	})
+	require.False(t, isError)
+
+	got, isError := call(t, f.h.handleSaveLoadout, SaveLoadoutInput{Character: "hunter", Number: 1})
+	assert.False(t, isError)
+	assert.Equal(t, "Saved loadout 1 on Hunter with the name Raid Night. It holds the gear that Hunter "+
+		"has equipped: Fatebringer (1001), Celestial Nighthawk (1004).", got)
+
+	// The fake profile keeps the state from before both writes, so the
+	// list reads the equip and the save from the snapshot.
+	got, isError = call(t, f.h.handleListLoadouts, ListLoadoutsInput{Character: "hunter"})
+	require.False(t, isError)
+	assert.Equal(t, loadoutsIntro+"\n\nHunter (id c1):\nloadout | instance id | name | slot | location\n"+
+		"Loadout 1: Raid Night\n"+
+		"1 | 1001 | Fatebringer | Kinetic Weapons | Hunter (equipped)\n"+
+		"1 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)\n"+
+		"Loadout 2: Raid Night\n"+
+		"2 | 1006 | Fatebringer | Kinetic Weapons | Hunter\n"+
+		"2 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)\n"+
+		"Loadout 3: Trials\n"+
+		"3 | 1001 | Fatebringer | Kinetic Weapons | Hunter (equipped)\n"+
+		"3 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)\n"+
+		"3 | 9999 | not in the inventory |  | ", got)
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+}
+
+func TestLoadoutWriteSnapshotAge(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		write func(t *testing.T, f *fakes) bool
+	}{
+		"save": {
+			write: func(t *testing.T, f *fakes) bool {
+				t.Helper()
+
+				_, isError := call(t, f.h.handleSaveLoadout, SaveLoadoutInput{Character: "hunter", Number: 1})
+
+				return isError
+			},
+		},
+		"clear": {
+			write: func(t *testing.T, f *fakes) bool {
+				t.Helper()
+
+				_, isError := call(t, f.h.handleClearLoadout, ClearLoadoutInput{Character: "hunter", Number: 2})
+
+				return isError
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+			require.False(t, isError)
+
+			later := fixtureNow.Add(10 * time.Second)
+			f.h.now = func() time.Time { return later }
+
+			require.False(t, tc.write(t, f))
+			require.NotNil(t, f.h.snapshot, "a loadout write keeps the snapshot")
+			assert.Equal(t, later, f.h.snapshot.Fetched, "a loadout write restarts the age of the snapshot")
+		})
+	}
+}
+
+func TestSaveLoadoutToolRefusals(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		edit func(f *fakes)
+		want string
+		in   SaveLoadoutInput
+	}{
+		"no character": {
+			in:   SaveLoadoutInput{Number: 1},
+			want: "unknown location: pass the character of the loadout as a character id or a class name",
+		},
+		"vault": {
+			in:   SaveLoadoutInput{Character: "vault", Number: 1},
+			want: "unknown location: the vault is not a character, so pass a character id or a class name",
+		},
+		"number after the last slot": {
+			in: SaveLoadoutInput{Character: "hunter", Number: 4},
+			want: "no loadout slot: Hunter has no loadout slot with the number 4. " +
+				"Its 3 loadout slots have the numbers 1 to 3",
+		},
+		"number zero": {
+			in: SaveLoadoutInput{Character: "hunter"},
+			want: "no loadout slot: Hunter has no loadout slot with the number 0. " +
+				"Its 3 loadout slots have the numbers 1 to 3",
+		},
+		"character with fewer slots": {
+			in: SaveLoadoutInput{Character: "titan", Number: 2},
+			want: "no loadout slot: Titan has no loadout slot with the number 2. " +
+				"Its only loadout slot has the number 1",
+		},
+		"unknown name": {
+			in: SaveLoadoutInput{Character: "hunter", Number: 2, Name: "Gambit"},
+			want: `unknown loadout name: "Gambit". ` +
+				"Pass one of these names in any letter case: Raid Night, Trials, Crucible",
+		},
+		"part of a name": {
+			in: SaveLoadoutInput{Character: "hunter", Number: 1, Name: "Raid"},
+			want: `unknown loadout name: "Raid". ` +
+				"Pass one of these names in any letter case: Raid Night, Trials, Crucible",
+		},
+		"name table without names that the game shows": {
+			edit: func(f *fakes) {
+				f.bungieData[pathLoadoutNames] = `{"10": {"hash": 10, "index": 0, "name": "", "redacted": true}}`
+			},
+			in:   SaveLoadoutInput{Character: "hunter", Number: 2, Name: "Trials"},
+			want: `unknown loadout name: "Trials". The name table holds no name that the game shows`,
+		},
+		"name without the name table": {
+			edit: func(f *fakes) { delete(f.bungieData, pathLoadoutNames) },
+			in:   SaveLoadoutInput{Character: "hunter", Number: 2, Name: "Trials"},
+			want: "loadout names unavailable: fetching " + pathLoadoutNames +
+				": bungie: content file returned status 404",
+		},
+		"empty slot without the name table": {
+			edit: func(f *fakes) {
+				f.bungieData[pathManifest] = `{"ErrorCode": 1, "Response": {"jsonWorldComponentContentPaths": {
+					"en": {"DestinyLoadoutIconDefinition": "` + pathLoadoutIcons + `",
+						"DestinyLoadoutColorDefinition": "` + pathLoadoutColors + `"}}}}`
+			},
+			in:   SaveLoadoutInput{Character: "hunter", Number: 1},
+			want: "loadout names unavailable: the Bungie manifest lists no table of loadout names",
+		},
+		"empty slot without the icon table": {
+			edit: func(f *fakes) { delete(f.bungieData, pathLoadoutIcons) },
+			in:   SaveLoadoutInput{Character: "hunter", Number: 1, Name: "Trials"},
+			want: "loadout icons unavailable: fetching " + pathLoadoutIcons +
+				": bungie: content file returned status 404",
+		},
+		"empty slot without the color table": {
+			edit: func(f *fakes) { f.bungieData[pathLoadoutColors] = `{"31": {"hash": 31,` },
+			in:   SaveLoadoutInput{Character: "hunter", Number: 1},
+			want: "loadout colors unavailable: decoding " + pathLoadoutColors +
+				": reading the loadout color table: unexpected EOF",
+		},
+		"empty slot with only redacted icons": {
+			edit: func(f *fakes) {
+				f.bungieData[pathLoadoutIcons] = `{"21": {"hash": 21, "index": 0, "redacted": true}}`
+			},
+			in:   SaveLoadoutInput{Character: "hunter", Number: 1},
+			want: "loadout icons unavailable: the table holds no entry that the game shows",
+		},
+		"manifest does not load": {
+			edit: func(f *fakes) { delete(f.bungieData, pathManifest) },
+			in:   SaveLoadoutInput{Character: "hunter", Number: 1},
+			want: "loadout names unavailable: reading the Bungie manifest: bungie: ParameterParseFailure: no route",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			if tc.edit != nil {
+				tc.edit(f)
+			}
+
+			got, isError := call(t, f.h.handleSaveLoadout, tc.in)
+			assert.True(t, isError)
+			assert.Equal(t, tc.want, got)
+			assert.Empty(t, posts(f), "a refusal sends no request")
+		})
+	}
+}
+
+func TestSaveLoadoutToolBungieError(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.bungieError = `{"ErrorCode": 1671, "ErrorStatus": "DestinyCannotPerformActionAtThisLocation", ` +
+		`"Message": "Not here."}`
+
+	got, isError := call(t, f.h.handleSaveLoadout, SaveLoadoutInput{Character: "hunter", Number: 2, Name: "Trials"})
+	assert.True(t, isError)
+	assert.Equal(t,
+		"saving loadout 2 on Hunter: bungie: DestinyCannotPerformActionAtThisLocation: Not here.", got)
+
+	requests := posts(f)
+	require.Len(t, requests, 1)
+	assert.Equal(t, pathSnapshot, requests[0].Path)
+	assert.Equal(t, snapshotBody(1, hunterID, 4, 2, 3), requests[0].Body)
+	assert.NotNil(t, f.h.snapshot, "a save that Bungie refused keeps the snapshot")
+}
+
+func TestClearLoadoutTool(t *testing.T) {
+	t.Parallel()
+
+	hunterList := loadoutsIntro + "\n\nHunter (id c1):\nloadout | instance id | name | slot | location\n"
+
+	tests := map[string]struct {
+		wantBody map[string]any
+		profile  string
+		want     string
+		// wantList is the list_loadouts result for the character of the
+		// clear, right after the clear.
+		wantList string
+		in       ClearLoadoutInput
+	}{
+		"held and missing items": {
+			in: ClearLoadoutInput{Character: "hunter", Number: 3},
+			want: "Cleared loadout 3 on Hunter, which held Fatebringer (1001), Celestial Nighthawk (1004). " +
+				"The inventory does not hold these loadout items: 9999.",
+			wantBody: map[string]any{
+				"loadoutIndex":   float64(2),
+				"characterId":    hunterID,
+				"membershipType": float64(3),
+			},
+			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true),
+		},
+		"only held items": {
+			in:   ClearLoadoutInput{Character: "hunter", Number: 2},
+			want: "Cleared loadout 2 on Hunter, which held Fatebringer (1006), Celestial Nighthawk (1004).",
+			wantBody: map[string]any{
+				"loadoutIndex":   float64(1),
+				"characterId":    hunterID,
+				"membershipType": float64(3),
+			},
+			wantList: hunterList + "Loadout 3: Trials\n" + hunterLoadoutRows(3, false),
+		},
+		"only missing items": {
+			// The Titan saved a loadout whose items all left the
+			// inventory.
+			profile: `{"ErrorCode": 1, "Response": {
+				"characters": {"data": {
+					"c2": {"characterId": "c2", "classType": 0, "light": 1990, "dateLastPlayed": "2026-11-01T12:00:00Z"}
+				}},
+				"characterLoadouts": {"data": {"c2": {"loadouts": [
+					{"nameHash": 7, "iconHash": 8, "colorHash": 9, "items": [
+						{"itemInstanceId": "8001", "plugItemHashes": [2166136261]},
+						{"itemInstanceId": "8002", "plugItemHashes": [2166136261]}
+					]}
+				]}}}
+			}}`,
+			in:   ClearLoadoutInput{Character: "titan", Number: 1},
+			want: "Cleared loadout 1 on Titan. The inventory does not hold these loadout items: 8001, 8002.",
+			wantBody: map[string]any{
+				"loadoutIndex":   float64(0),
+				"characterId":    titanID,
+				"membershipType": float64(3),
+			},
+			wantList: loadoutsIntro + "\n\nTitan (id c2): no saved loadouts",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.profileBody = tc.profile
+
+			got, isError := call(t, f.h.handleClearLoadout, tc.in)
+			assert.False(t, isError)
+			assert.Equal(t, tc.want, got)
+
+			requests := posts(f)
+			require.Len(t, requests, 1)
+			assert.Equal(t, pathClear, requests[0].Path)
+			assert.Equal(t, tc.wantBody, requests[0].Body)
+
+			// The fake profile keeps the loadouts from before the clear, so
+			// the list leaves out the loadout because the clear updated the
+			// snapshot.
+			got, isError = call(t, f.h.handleListLoadouts, ListLoadoutsInput{Character: tc.in.Character})
+			require.False(t, isError)
+			assert.Equal(t, tc.wantList, got)
+			assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+		})
+	}
+}
+
+func TestClearLoadoutToolErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		wantBody    map[string]any
+		bungieError string
+		want        string
+		in          ClearLoadoutInput
+		wantPosts   int
+	}{
+		"no character": {
+			in:   ClearLoadoutInput{Number: 2},
+			want: "unknown location: pass the character of the loadout as a character id or a class name",
+		},
+		"empty slot": {
+			in:   ClearLoadoutInput{Character: "hunter", Number: 1},
+			want: "empty loadout slot: Hunter has no saved loadout in slot 1, so there is nothing to clear",
+		},
+		"number after the last slot": {
+			in: ClearLoadoutInput{Character: "titan", Number: 2},
+			want: "no loadout slot: Titan has no loadout slot with the number 2. " +
+				"Its only loadout slot has the number 1",
+		},
+		"bungie refuses the clear": {
+			in: ClearLoadoutInput{Character: "hunter", Number: 2},
+			bungieError: `{"ErrorCode": 1671, "ErrorStatus": "DestinyCannotPerformActionAtThisLocation", ` +
+				`"Message": "Not here."}`,
+			want:      "clearing loadout 2 on Hunter: bungie: DestinyCannotPerformActionAtThisLocation: Not here.",
+			wantPosts: 1,
+			wantBody: map[string]any{
+				"loadoutIndex":   float64(1),
+				"characterId":    hunterID,
+				"membershipType": float64(3),
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.bungieError = tc.bungieError
+
+			got, isError := call(t, f.h.handleClearLoadout, tc.in)
+			assert.True(t, isError)
+			assert.Equal(t, tc.want, got)
+
+			requests := posts(f)
+			require.Len(t, requests, tc.wantPosts)
+
+			if tc.wantPosts > 0 {
+				assert.Equal(t, pathClear, requests[0].Path)
+				assert.Equal(t, tc.wantBody, requests[0].Body)
+				assert.NotNil(t, f.h.snapshot, "a clear that Bungie refused keeps the snapshot")
+			}
+		})
+	}
 }
 
 func TestSetTag(t *testing.T) {

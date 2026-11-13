@@ -274,21 +274,27 @@ type Currency struct {
 }
 
 // Snapshot is the inventory of every character and the vault at one moment,
-// with the loadouts that the characters saved in the game. Moves, lock
-// changes, perk changes, and loadout equips update it in place, because
-// Bungie can serve stale state for some seconds after a change.
+// with the loadouts that the characters saved in the game. Bungie can
+// serve stale state for some seconds after a change. Moves, lock changes,
+// perk changes, and the equips, saves, and clears of loadouts therefore
+// update the snapshot in place.
 //
 // Buckets lists the vault, the buckets that hold the equipment and the items
 // that a player manages, and the Postmaster. Each character has its own copy
 // of every bucket that is not an account bucket.
+//
+// LoadoutSlots holds the number of loadout slots of each character, keyed
+// by character id. The count includes the empty slots, which Loadouts
+// leaves out.
 type Snapshot struct {
-	Fetched    time.Time
-	byID       map[string]*Item
-	Characters []Character
-	Items      []*Item
-	Buckets    []Bucket
-	Currencies []Currency
-	Loadouts   []Loadout
+	Fetched      time.Time
+	byID         map[string]*Item
+	LoadoutSlots map[string]int
+	Characters   []Character
+	Items        []*Item
+	Buckets      []Bucket
+	Currencies   []Currency
+	Loadouts     []Loadout
 }
 
 // NewSnapshot resolves a Bungie profile against the definitions.
@@ -347,6 +353,7 @@ func NewSnapshot(profile *Profile, defs *Defs, fetched time.Time) *Snapshot {
 	}
 
 	s.Loadouts = loadoutsOf(profile)
+	s.LoadoutSlots = loadoutSlotsOf(profile)
 
 	return s
 }

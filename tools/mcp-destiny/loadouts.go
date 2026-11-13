@@ -14,9 +14,39 @@ import (
 // nothing.
 const emptyLoadoutItem = "0"
 
-// ErrUnknownLoadout reports a loadout number that names no saved loadout
-// of the character.
-var ErrUnknownLoadout = errors.New("unknown loadout")
+var (
+	// loadoutBuckets lists the buckets whose equipped item a saved loadout
+	// holds, in the order of the in-game loadout. Destiny Item Manager
+	// saves the same buckets.
+	loadoutBuckets = []uint32{
+		bucketSubclass,
+		bucketArtifacts,
+		bucketKinetic,
+		bucketEnergy,
+		bucketPower,
+		bucketHelmet,
+		bucketGauntlets,
+		bucketChestArmor,
+		bucketLegArmor,
+		bucketClassArmor,
+	}
+
+	// ErrUnknownLoadout reports a loadout number that names no saved
+	// loadout of the character.
+	ErrUnknownLoadout = errors.New("unknown loadout")
+
+	// ErrNoLoadoutSlot reports a loadout number outside the loadout slots
+	// of the character.
+	ErrNoLoadoutSlot = errors.New("no loadout slot")
+
+	// ErrEmptyLoadoutSlot reports a loadout slot that holds no saved
+	// loadout.
+	ErrEmptyLoadoutSlot = errors.New("empty loadout slot")
+
+	// ErrUnknownLoadoutName reports a name that no entry of the loadout
+	// name table carries.
+	ErrUnknownLoadoutName = errors.New("unknown loadout name")
+)
 
 // Loadout is one loadout that a character saved in the game. Number is the
 // position of the loadout on the in-game loadout screen, counted from 1.
@@ -27,7 +57,7 @@ var ErrUnknownLoadout = errors.New("unknown loadout")
 // NameHash, IconHash, and ColorHash identify the name, the icon, and the
 // color that the game shows for the loadout. The definition artifacts of
 // the service leave out the tables that these hashes key, and a
-// [*LoadoutNameStore] reads the name table from the Destiny manifest.
+// [*LoadoutTableStore] reads them from the Destiny manifest.
 // Several loadouts can share a name, so the character and the number
 // identify a loadout.
 type Loadout struct {
@@ -73,9 +103,23 @@ type LoadoutEquip struct {
 	Equipped bool
 }
 
+// loadoutSlotsOf returns the number of loadout slots of each character of
+// a profile, keyed by character id. Bungie lists every slot that the
+// character unlocked, the empty slots included.
+func loadoutSlotsOf(profile *Profile) map[string]int {
+	out := make(map[string]int, len(profile.CharacterLoadouts.Data))
+
+	for id, set := range profile.CharacterLoadouts.Data {
+		out[id] = len(set.Loadouts)
+	}
+
+	return out
+}
+
 // loadoutsOf returns the saved loadouts of a profile, ordered by character
 // id, then number. It drops each loadout that holds nothing and keeps the
-// number of every other loadout.
+// number of every other loadout. A loadout holds nothing when every item
+// has the instance id "0" or no instance id.
 func loadoutsOf(profile *Profile) []Loadout {
 	var out []Loadout
 
@@ -150,6 +194,190 @@ func (s *Snapshot) FindLoadout(characterID string, number int) (Loadout, error) 
 		"%w: %s has no saved loadout with the number %d. Its saved loadouts have the numbers %s",
 		ErrUnknownLoadout, label, number, strings.Join(numbers, ", "),
 	)
+}
+
+// LoadoutSlot returns the loadout in slot number of the character,
+// counted from 1. The bool reports whether the slot holds a saved
+// loadout. For an empty slot, the loadout carries only the character and
+// the number. A number outside the slots of the character returns an
+// error that wraps [ErrNoLoadoutSlot].
+func (s *Snapshot) LoadoutSlot(characterID string, number int) (Loadout, bool, error) {
+	slots := s.LoadoutSlots[characterID]
+
+	if number < 1 || number > slots {
+		return Loadout{}, false, s.noLoadoutSlot(characterID, number, slots)
+	}
+
+	for _, l := range s.LoadoutsOf(characterID) {
+		if l.Number == number {
+			return l, true, nil
+		}
+	}
+
+	return Loadout{CharacterID: characterID, Number: number}, false, nil
+}
+
+// noLoadoutSlot returns the error of a loadout number outside the slots
+// of the character. The character has the given number of slots.
+func (s *Snapshot) noLoadoutSlot(characterID string, number, slots int) error {
+	label := s.OwnerLabel(characterID)
+
+	switch slots {
+	case 0:
+		return fmt.Errorf("%w: %s has no loadout slots", ErrNoLoadoutSlot, label)
+
+	case 1:
+		return fmt.Errorf(
+			"%w: %s has no loadout slot with the number %d. Its only loadout slot has the number 1",
+			ErrNoLoadoutSlot, label, number,
+		)
+	}
+
+	return fmt.Errorf(
+		"%w: %s has no loadout slot with the number %d. Its %d loadout slots have the numbers 1 to %d",
+		ErrNoLoadoutSlot, label, number, slots, slots,
+	)
+}
+
+// LoadoutGear returns the items that the character has equipped in the
+// buckets that a saved loadout holds, in the order of the in-game
+// loadout.
+func (s *Snapshot) LoadoutGear(characterID string) []*Item {
+	var out []*Item
+
+	for _, bucket := range loadoutBuckets {
+		for _, item := range s.Items {
+			if item.Owner == characterID && item.Equipped && item.Bucket == bucket {
+				out = append(out, item)
+			}
+		}
+	}
+
+	return out
+}
+
+// recordLoadoutSave records a save of the equipped gear of the character
+// into slot number, with the identifiers ids. The loadout in the slot then
+// holds the instance ids of [*Snapshot.LoadoutGear] and replaces any
+// loadout that the slot held. Without equipped gear, the slot holds
+// nothing, so the snapshot drops its loadout as [loadoutsOf] does.
+func (s *Snapshot) recordLoadoutSave(characterID string, number int, ids LoadoutIdentifiers) {
+	s.recordLoadoutClear(characterID, number)
+
+	l := Loadout{
+		CharacterID: characterID,
+		Number:      number,
+		NameHash:    ids.NameHash,
+		IconHash:    ids.IconHash,
+		ColorHash:   ids.ColorHash,
+	}
+
+	for _, item := range s.LoadoutGear(characterID) {
+		l.InstanceIDs = append(l.InstanceIDs, item.InstanceID)
+	}
+
+	if len(l.InstanceIDs) == 0 {
+		return
+	}
+
+	// Loadouts stays ordered by character id, then number.
+	i, _ := slices.BinarySearchFunc(s.Loadouts, l, func(a, b Loadout) int {
+		return cmp.Or(cmp.Compare(a.CharacterID, b.CharacterID), cmp.Compare(a.Number, b.Number))
+	})
+
+	s.Loadouts = slices.Insert(s.Loadouts, i, l)
+}
+
+// recordLoadoutClear records that slot number of the character holds no
+// saved loadout.
+func (s *Snapshot) recordLoadoutClear(characterID string, number int) {
+	s.Loadouts = slices.DeleteFunc(s.Loadouts, func(l Loadout) bool {
+		return l.CharacterID == characterID && l.Number == number
+	})
+}
+
+// loadoutIdentifiers returns the identifiers that save_loadout gives the
+// loadout in slot. The bool saved reports whether the slot holds a saved
+// loadout. A non-empty name picks the entry of the name table with that
+// name in any letter case. Without a name, a saved loadout keeps its name
+// and an empty slot takes the first name of the table. The icon and the
+// color follow the same rule without a choice. A saved loadout keeps its
+// own, and an empty slot takes the first entry of each table.
+//
+// States holds the state of each table that the rules read. A table that
+// the rules read and that did not load returns an error with the reason.
+// A name that the table lacks also returns an error.
+func loadoutIdentifiers(
+	slot Loadout,
+	saved bool,
+	name string,
+	states map[loadoutTable]LoadoutTableState,
+) (LoadoutIdentifiers, error) {
+	ids := LoadoutIdentifiers{NameHash: slot.NameHash, IconHash: slot.IconHash, ColorHash: slot.ColorHash}
+
+	switch {
+	case name != "":
+		names := states[loadoutNameTable]
+		if names.Err != nil {
+			return ids, fmt.Errorf("loadout names unavailable: %w", names.Err)
+		}
+
+		hash, ok := findLoadoutName(names.Table, name)
+		if !ok {
+			choices := loadoutNameChoices(names.Table)
+			if len(choices) == 0 {
+				return ids, fmt.Errorf("%w: %q. The name table holds no name that the game shows",
+					ErrUnknownLoadoutName, name)
+			}
+
+			return ids, fmt.Errorf("%w: %q. Pass one of these names in any letter case: %s",
+				ErrUnknownLoadoutName, name, strings.Join(choices, ", "))
+		}
+
+		ids.NameHash = hash
+
+	case !saved:
+		hash, err := firstOf(states, loadoutNameTable)
+		if err != nil {
+			return ids, err
+		}
+
+		ids.NameHash = hash
+	}
+
+	if saved {
+		return ids, nil
+	}
+
+	icon, err := firstOf(states, loadoutIconTable)
+	if err != nil {
+		return ids, err
+	}
+
+	color, err := firstOf(states, loadoutColorTable)
+	if err != nil {
+		return ids, err
+	}
+
+	ids.IconHash, ids.ColorHash = icon, color
+
+	return ids, nil
+}
+
+// firstOf returns the hash of the first entry of table t in states, or the
+// reason that the table gives no first entry.
+func firstOf(states map[loadoutTable]LoadoutTableState, t loadoutTable) (uint32, error) {
+	state := states[t]
+	if state.Err != nil {
+		return 0, fmt.Errorf("loadout %ss unavailable: %w", t.kind(), state.Err)
+	}
+
+	hash, err := firstLoadoutEntry(state.Table)
+	if err != nil {
+		return 0, fmt.Errorf("loadout %ss unavailable: %w", t.kind(), err)
+	}
+
+	return hash, nil
 }
 
 // EquipLoadout equips a saved loadout on its character.

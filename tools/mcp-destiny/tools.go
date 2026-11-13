@@ -33,6 +33,8 @@ const (
 	toolSetPerk             = "set_perk"
 	toolListLoadouts        = "list_loadouts"
 	toolEquipLoadout        = "equip_loadout"
+	toolSaveLoadout         = "save_loadout"
+	toolClearLoadout        = "clear_loadout"
 	toolListTags            = "list_tags"
 	toolSetTag              = "set_tag"
 	toolSetFavorite         = "set_favorite"
@@ -101,6 +103,13 @@ var (
 	// ErrInvalidInput reports a tool argument that the handler rejects
 	// before any request.
 	ErrInvalidInput = errors.New("invalid input")
+
+	// errNoLoadoutCharacter reports a loadout tool call without a
+	// character. Each character numbers its own loadouts, so the tools do
+	// not fall back to the most recently played character.
+	errNoLoadoutCharacter = fmt.Errorf(
+		"%w: pass the character of the loadout as a character id or a class name", ErrUnknownTarget,
+	)
 )
 
 // EmptyInput is the input schema of the tools that take no arguments.
@@ -220,6 +229,19 @@ type EquipLoadoutInput struct {
 	Loadout   int    `json:"loadout"   jsonschema:"Loadout number from list_loadouts, which counts the in-game loadout screen from 1"`
 }
 
+// SaveLoadoutInput is the input schema of the save_loadout tool.
+type SaveLoadoutInput struct {
+	Character string `json:"character"     jsonschema:"Character id, or a class name that exactly one character has"`
+	Name      string `json:"name,omitzero" jsonschema:"Loadout name from the list that the game offers, in any letter case, such as 'Crucible' or 'raid'. Omit to keep the name of a saved loadout. An empty slot then takes the first name of the list"`
+	Number    int    `json:"number"        jsonschema:"Loadout slot to save into, counted from 1 on the in-game loadout screen as in list_loadouts"`
+}
+
+// ClearLoadoutInput is the input schema of the clear_loadout tool.
+type ClearLoadoutInput struct {
+	Character string `json:"character" jsonschema:"Character id, or a class name that exactly one character has"`
+	Number    int    `json:"number"    jsonschema:"Loadout number from list_loadouts, which counts the in-game loadout screen from 1"`
+}
+
 // SetAutotagEnabledInput is the input schema of the set_autotag_enabled
 // tool.
 type SetAutotagEnabledInput struct {
@@ -290,23 +312,23 @@ type GetStatsInput struct {
 }
 
 // handler holds the shared state of the tool handlers. The mutex serializes
-// tool calls, because moves, lock changes, perk changes, and loadout
-// equips update the cached snapshot in place. The sheet store and the
-// loadout name store have no lock of their own, so the same mutex guards
-// them.
+// tool calls, because moves, lock changes, perk changes, and the equips,
+// saves, and clears of loadouts update the cached snapshot in place. The
+// sheet store and the loadout table store have no lock of their own, so
+// the same mutex guards them.
 type handler struct {
-	service      *Service
-	bungie       *Bungie
-	auth         *Auth
-	defs         *DefsLoader
-	sheets       *SheetStore
-	loadoutNames *LoadoutNameStore
-	log          *slog.Logger
-	now          func() time.Time
-	snapshot     *Snapshot
-	apiKeyAt     time.Time
-	apiKey       string
-	mu           sync.Mutex
+	service       *Service
+	bungie        *Bungie
+	auth          *Auth
+	defs          *DefsLoader
+	sheets        *SheetStore
+	loadoutTables *LoadoutTableStore
+	log           *slog.Logger
+	now           func() time.Time
+	snapshot      *Snapshot
+	apiKeyAt      time.Time
+	apiKey        string
+	mu            sync.Mutex
 }
 
 func (h *handler) handleStatus(
@@ -1128,7 +1150,7 @@ func (h *handler) handleListLoadouts(
 
 	// The loadouts do not depend on the names, so a table that does not
 	// load leaves the loadouts in the result.
-	names := h.loadoutNames.Load(ctx)
+	names := h.loadoutTables.Load(ctx, loadoutNameTable)[loadoutNameTable]
 
 	return textResult(renderLoadouts(s, characters, names)), nil, nil
 }
@@ -1144,9 +1166,7 @@ func (h *handler) handleEquipLoadout(
 	// Each character numbers its own loadouts, so an empty name returns an
 	// error instead of selecting the most recently played character.
 	if in.Character == "" {
-		return h.toolError(ctx, toolEquipLoadout, fmt.Errorf(
-			"%w: pass the character of the loadout as a character id or a class name", ErrUnknownTarget,
-		))
+		return h.toolError(ctx, toolEquipLoadout, errNoLoadoutCharacter)
 	}
 
 	s, err := h.loadSnapshot(ctx, false)
@@ -1189,6 +1209,131 @@ func (h *handler) handleEquipLoadout(
 	out.IsError = err != nil
 
 	return out, nil, nil
+}
+
+func (h *handler) handleSaveLoadout(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in SaveLoadoutInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if in.Character == "" {
+		return h.toolError(ctx, toolSaveLoadout, errNoLoadoutCharacter)
+	}
+
+	s, err := h.loadSnapshot(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolSaveLoadout, err)
+	}
+
+	c, err := s.ResolveCharacter(in.Character)
+	if err != nil {
+		return h.toolError(ctx, toolSaveLoadout, err)
+	}
+
+	slot, saved, err := s.LoadoutSlot(c.ID, in.Number)
+	if err != nil {
+		return h.toolError(ctx, toolSaveLoadout, err)
+	}
+
+	// The name table also names the loadout in the result, so every save
+	// loads it. Only an empty slot reads the icon and the color tables.
+	tables := []loadoutTable{loadoutNameTable}
+	if !saved {
+		tables = append(tables, loadoutIconTable, loadoutColorTable)
+	}
+
+	states := h.loadoutTables.Load(ctx, tables...)
+
+	ids, err := loadoutIdentifiers(slot, saved, in.Name, states)
+	if err != nil {
+		return h.toolError(ctx, toolSaveLoadout, err)
+	}
+
+	membership, err := h.membership(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolSaveLoadout, err)
+	}
+
+	action := LoadoutAction{CharacterID: c.ID, Membership: membership, Index: in.Number - 1}
+
+	err = h.withBungie(ctx, func(creds Credentials) error {
+		return h.bungie.SnapshotLoadout(ctx, creds, action, ids)
+	})
+	if err != nil {
+		return h.toolError(ctx, toolSaveLoadout, fmt.Errorf(
+			"saving loadout %d on %s: %w", in.Number, s.OwnerLabel(c.ID), err,
+		))
+	}
+
+	// Bungie can serve the loadouts from before a save for some seconds. A
+	// snapshot that a save updated therefore stays in use for a full TTL.
+	s.recordLoadoutSave(c.ID, in.Number, ids)
+
+	s.Fetched = h.now()
+
+	return textResult(renderLoadoutSave(s, c.ID, in.Number, ids.NameHash, states[loadoutNameTable])), nil, nil
+}
+
+func (h *handler) handleClearLoadout(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in ClearLoadoutInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if in.Character == "" {
+		return h.toolError(ctx, toolClearLoadout, errNoLoadoutCharacter)
+	}
+
+	s, err := h.loadSnapshot(ctx, false)
+	if err != nil {
+		return h.toolError(ctx, toolClearLoadout, err)
+	}
+
+	c, err := s.ResolveCharacter(in.Character)
+	if err != nil {
+		return h.toolError(ctx, toolClearLoadout, err)
+	}
+
+	slot, saved, err := s.LoadoutSlot(c.ID, in.Number)
+	if err != nil {
+		return h.toolError(ctx, toolClearLoadout, err)
+	}
+
+	if !saved {
+		return h.toolError(ctx, toolClearLoadout, fmt.Errorf(
+			"%w: %s has no saved loadout in slot %d, so there is nothing to clear",
+			ErrEmptyLoadoutSlot, s.OwnerLabel(c.ID), in.Number,
+		))
+	}
+
+	membership, err := h.membership(ctx)
+	if err != nil {
+		return h.toolError(ctx, toolClearLoadout, err)
+	}
+
+	action := LoadoutAction{CharacterID: c.ID, Membership: membership, Index: in.Number - 1}
+
+	err = h.withBungie(ctx, func(creds Credentials) error {
+		return h.bungie.ClearLoadout(ctx, creds, action)
+	})
+	if err != nil {
+		return h.toolError(ctx, toolClearLoadout, fmt.Errorf(
+			"clearing loadout %d on %s: %w", in.Number, s.OwnerLabel(c.ID), err,
+		))
+	}
+
+	// Bungie can serve the loadouts from before a clear for some seconds. A
+	// snapshot that a clear updated therefore stays in use for a full TTL.
+	s.recordLoadoutClear(c.ID, in.Number)
+
+	s.Fetched = h.now()
+
+	return textResult(renderLoadoutClear(s, slot)), nil, nil
 }
 
 func (h *handler) handleListTags(

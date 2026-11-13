@@ -425,13 +425,22 @@ type ItemAction struct {
 	ItemHash    uint32
 }
 
-// LoadoutAction identifies one loadout that a character saved in the game.
-// Index is the position of the loadout among the loadouts of the
-// character, counted from zero.
+// LoadoutAction identifies one loadout slot of a character in the game.
+// The slot can hold a saved loadout or be empty. Index is the position of
+// the slot on the in-game loadout screen, counted from zero.
 type LoadoutAction struct {
 	CharacterID string
 	Membership  Membership
 	Index       int
+}
+
+// LoadoutIdentifiers holds the hashes of the name, the icon, and the
+// color that the game shows for a saved loadout. Each hash keys its own
+// definition table of the Destiny manifest.
+type LoadoutIdentifiers struct {
+	NameHash  uint32
+	IconHash  uint32
+	ColorHash uint32
 }
 
 // BungieOption configures a [*Bungie]. See [WithBungieURL] and
@@ -746,6 +755,39 @@ func (b *Bungie) EquipLoadout(ctx context.Context, creds Credentials, action Loa
 	}
 
 	return b.call(ctx, creds, http.MethodPost, "/Destiny2/Actions/Loadouts/EquipLoadout/", body, nil)
+}
+
+// SnapshotLoadout saves the gear that the character has equipped, with
+// the plugs of that gear, into one loadout slot of the character. The
+// saved loadout carries the name, the icon, and the color that ids
+// gives.
+func (b *Bungie) SnapshotLoadout(
+	ctx context.Context,
+	creds Credentials,
+	action LoadoutAction,
+	ids LoadoutIdentifiers,
+) error {
+	body := map[string]any{
+		"loadoutIndex":   action.Index,
+		"characterId":    action.CharacterID,
+		"membershipType": action.Membership.Type,
+		"nameHash":       ids.NameHash,
+		"iconHash":       ids.IconHash,
+		"colorHash":      ids.ColorHash,
+	}
+
+	return b.call(ctx, creds, http.MethodPost, "/Destiny2/Actions/Loadouts/SnapshotLoadout/", body, nil)
+}
+
+// ClearLoadout empties one loadout slot of the character.
+func (b *Bungie) ClearLoadout(ctx context.Context, creds Credentials, action LoadoutAction) error {
+	body := map[string]any{
+		"loadoutIndex":   action.Index,
+		"characterId":    action.CharacterID,
+		"membershipType": action.Membership.Type,
+	}
+
+	return b.call(ctx, creds, http.MethodPost, "/Destiny2/Actions/Loadouts/ClearLoadout/", body, nil)
 }
 
 // call performs one platform request and unwraps the Bungie response

@@ -14,8 +14,9 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// Bucket hashes that the search filters and the preview population read.
-// Each value is a BucketHashes value of Destiny Item Manager (DIM).
+// Bucket hashes that the search filters, the preview population, and the
+// saved loadouts read. Each value is a BucketHashes value of Destiny Item
+// Manager (DIM).
 const (
 	bucketKinetic       uint32 = 1498876634
 	bucketEnergy        uint32 = 2465295065

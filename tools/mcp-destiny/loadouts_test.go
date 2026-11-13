@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -450,12 +451,163 @@ func TestLoadoutsOfDropsEmptyItems(t *testing.T) {
 		hunterID: {Loadouts: []ProfileLoadout{
 			{Items: []ProfileLoadoutItem{{}}},
 			{Items: []ProfileLoadoutItem{{InstanceID: "1001"}, {}}},
+			{Items: []ProfileLoadoutItem{{InstanceID: emptyLoadoutItem}, {InstanceID: emptyLoadoutItem}}},
+			{},
+		}},
+		titanID: {Loadouts: []ProfileLoadout{
+			{Items: []ProfileLoadoutItem{{InstanceID: emptyLoadoutItem}, {InstanceID: "1006"}}},
 		}},
 	}
 
 	assert.Equal(t, []Loadout{
 		{CharacterID: hunterID, Number: 2, InstanceIDs: []string{"1001"}},
-	}, loadoutsOf(&profile), "an item without an instance id holds nothing")
+		{CharacterID: titanID, Number: 1, InstanceIDs: []string{"1006"}},
+	}, loadoutsOf(&profile), "an item without an instance id or with the id 0 holds nothing")
+
+	assert.Equal(t, map[string]int{hunterID: 4, titanID: 1}, loadoutSlotsOf(&profile),
+		"the slot count includes the empty slots")
+}
+
+func TestLoadoutSlot(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		err         error
+		characterID string
+		want        string
+		wantLoadout Loadout
+		number      int
+		wantSaved   bool
+	}{
+		"saved loadout": {
+			characterID: hunterID,
+			number:      2,
+			wantSaved:   true,
+			wantLoadout: Loadout{
+				CharacterID: hunterID,
+				Number:      2,
+				InstanceIDs: []string{"1006", "1004"},
+				NameHash:    1,
+				IconHash:    2,
+				ColorHash:   3,
+			},
+		},
+		"empty slot": {
+			characterID: hunterID,
+			number:      1,
+			wantLoadout: Loadout{CharacterID: hunterID, Number: 1},
+		},
+		"last slot": {
+			characterID: hunterID,
+			number:      3,
+			wantSaved:   true,
+			wantLoadout: Loadout{
+				CharacterID: hunterID,
+				Number:      3,
+				InstanceIDs: []string{"1001", "1004", "9999"},
+				NameHash:    4,
+				IconHash:    5,
+				ColorHash:   6,
+			},
+		},
+		"number after the last slot": {
+			characterID: hunterID,
+			number:      4,
+			err:         ErrNoLoadoutSlot,
+			want: "no loadout slot: Hunter has no loadout slot with the number 4. " +
+				"Its 3 loadout slots have the numbers 1 to 3",
+		},
+		"number zero": {
+			characterID: hunterID,
+			number:      0,
+			err:         ErrNoLoadoutSlot,
+			want: "no loadout slot: Hunter has no loadout slot with the number 0. " +
+				"Its 3 loadout slots have the numbers 1 to 3",
+		},
+		"character with fewer slots": {
+			characterID: titanID,
+			number:      2,
+			err:         ErrNoLoadoutSlot,
+			want: "no loadout slot: Titan has no loadout slot with the number 2. " +
+				"Its only loadout slot has the number 1",
+		},
+		"character without slots": {
+			characterID: "c3",
+			number:      1,
+			err:         ErrNoLoadoutSlot,
+			want:        "no loadout slot: Warlock has no loadout slots",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := fixtureSnapshot(t)
+			s.Characters = append(s.Characters, Character{ID: "c3", Class: "Warlock"})
+
+			assert.Equal(t, map[string]int{hunterID: 3, titanID: 1}, s.LoadoutSlots)
+
+			got, saved, err := s.LoadoutSlot(tc.characterID, tc.number)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				assert.EqualError(t, err, tc.want)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantSaved, saved)
+			assert.Equal(t, tc.wantLoadout, got)
+		})
+	}
+}
+
+func TestLoadoutGear(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		change      func(s *Snapshot)
+		characterID string
+		want        []string
+	}{
+		"weapons and armor": {
+			characterID: hunterID,
+			want:        []string{"1006", "1004"},
+		},
+		"subclass comes first": {
+			change:      func(s *Snapshot) { s.byID["1004"].Bucket = bucketSubclass },
+			characterID: hunterID,
+			want:        []string{"1004", "1006"},
+		},
+		"item in a bucket that a loadout does not hold": {
+			change:      func(s *Snapshot) { s.byID["1004"].Bucket = bucketConsumables },
+			characterID: hunterID,
+			want:        []string{"1006"},
+		},
+		"character without equipped gear": {
+			characterID: titanID,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := fixtureSnapshot(t)
+			if tc.change != nil {
+				tc.change(s)
+			}
+
+			var got []string
+
+			for _, item := range s.LoadoutGear(tc.characterID) {
+				got = append(got, item.InstanceID)
+			}
+
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestEquipLoadoutWithoutItems(t *testing.T) {
@@ -476,4 +628,121 @@ func TestEquipLoadoutWithoutItems(t *testing.T) {
 	assert.Equal(t,
 		"Equipped loadout 4 on Hunter. The inventory does not hold these loadout items: 9999.",
 		renderLoadoutEquip(s, l, got, nil))
+}
+
+// loadoutKeys returns one line per loadout, with the character, the number,
+// the identifiers, and the instance ids, in the order of loadouts.
+func loadoutKeys(loadouts []Loadout) []string {
+	out := make([]string, 0, len(loadouts))
+	for _, l := range loadouts {
+		out = append(out, fmt.Sprintf("%s %d %d/%d/%d %s",
+			l.CharacterID, l.Number, l.NameHash, l.IconHash, l.ColorHash, strings.Join(l.InstanceIDs, ",")))
+	}
+
+	return out
+}
+
+func TestRecordLoadoutSave(t *testing.T) {
+	t.Parallel()
+
+	ids := LoadoutIdentifiers{NameHash: 10, IconHash: 20, ColorHash: 30}
+
+	tests := map[string]struct {
+		change      func(s *Snapshot)
+		characterID string
+		want        []string
+		number      int
+	}{
+		"empty slot before the saved loadouts": {
+			characterID: hunterID,
+			number:      1,
+			want: []string{
+				"c1 1 10/20/30 1006,1004",
+				"c1 2 1/2/3 1006,1004",
+				"c1 3 4/5/6 1001,1004,9999",
+				"c2 1 7/8/9 1006",
+			},
+		},
+		"empty slot between the loadouts of two characters": {
+			change:      func(s *Snapshot) { s.recordLoadoutClear(hunterID, 3) },
+			characterID: hunterID,
+			number:      3,
+			want: []string{
+				"c1 2 1/2/3 1006,1004",
+				"c1 3 10/20/30 1006,1004",
+				"c2 1 7/8/9 1006",
+			},
+		},
+		"saved loadout": {
+			characterID: hunterID,
+			number:      3,
+			want: []string{
+				"c1 2 1/2/3 1006,1004",
+				"c1 3 10/20/30 1006,1004",
+				"c2 1 7/8/9 1006",
+			},
+		},
+		"character without equipped gear": {
+			characterID: titanID,
+			number:      1,
+			want: []string{
+				"c1 2 1/2/3 1006,1004",
+				"c1 3 4/5/6 1001,1004,9999",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := fixtureSnapshot(t)
+			if tc.change != nil {
+				tc.change(s)
+			}
+
+			s.recordLoadoutSave(tc.characterID, tc.number, ids)
+
+			assert.Equal(t, tc.want, loadoutKeys(s.Loadouts))
+		})
+	}
+}
+
+func TestRecordLoadoutClear(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		characterID string
+		want        []string
+		number      int
+	}{
+		"saved loadout": {
+			characterID: hunterID,
+			number:      2,
+			want: []string{
+				"c1 3 4/5/6 1001,1004,9999",
+				"c2 1 7/8/9 1006",
+			},
+		},
+		"empty slot": {
+			characterID: hunterID,
+			number:      1,
+			want: []string{
+				"c1 2 1/2/3 1006,1004",
+				"c1 3 4/5/6 1001,1004,9999",
+				"c2 1 7/8/9 1006",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := fixtureSnapshot(t)
+			s.recordLoadoutClear(tc.characterID, tc.number)
+
+			assert.Equal(t, tc.want, loadoutKeys(s.Loadouts))
+		})
+	}
 }

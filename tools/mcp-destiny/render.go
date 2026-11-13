@@ -485,7 +485,7 @@ func renderWeaponGroup(s *Snapshot, group WeaponGroup, sources map[string]Rating
 // character, with a row per loadout item. The [loadoutHeading] of each
 // loadout sits above its rows. When names holds no table, one line after
 // the opening paragraph gives the reason.
-func renderLoadouts(s *Snapshot, characters []Character, names LoadoutNameState) string {
+func renderLoadouts(s *Snapshot, characters []Character, names LoadoutTableState) string {
 	var b strings.Builder
 
 	b.WriteString("Loadouts saved in the game. A loadout number is the position of the loadout " +
@@ -534,7 +534,7 @@ func renderLoadouts(s *Snapshot, characters []Character, names LoadoutNameState)
 // "Loadout 2: Raid Night". A name hash that the table lacks, or an entry
 // without text, reads "unnamed". When names holds no table, the line
 // gives only the number.
-func loadoutHeading(l Loadout, names LoadoutNameState) string {
+func loadoutHeading(l Loadout, names LoadoutTableState) string {
 	if names.Table == nil {
 		return fmt.Sprintf("Loadout %d", l.Number)
 	}
@@ -592,15 +592,10 @@ func renderLoadoutEquip(s *Snapshot, l Loadout, result LoadoutEquip, err error) 
 		return b.String()
 	}
 
-	names := make([]string, 0, len(result.Items))
-	for _, item := range result.Items {
-		names = append(names, fmt.Sprintf("%s (%s)", item.Name, item.InstanceID))
-	}
-
 	fmt.Fprintf(&b, "Equipped loadout %d on %s", l.Number, target)
 
-	if len(names) > 0 {
-		fmt.Fprintf(&b, ": %s", strings.Join(names, ", "))
+	if len(result.Items) > 0 {
+		fmt.Fprintf(&b, ": %s", itemNames(result.Items))
 	}
 
 	b.WriteString(".")
@@ -610,6 +605,86 @@ func renderLoadoutEquip(s *Snapshot, l Loadout, result LoadoutEquip, err error) 
 	}
 
 	return b.String()
+}
+
+// renderLoadoutSave describes a save_loadout call that saved the gear of
+// a character into the loadout slot number. Names is the state of the
+// name table, which names the loadout by nameHash. When names holds no
+// table, the call kept the name of a saved loadout, and the result gives
+// the reason that the name is unknown.
+func renderLoadoutSave(s *Snapshot, characterID string, number int, nameHash uint32, names LoadoutTableState) string {
+	var b strings.Builder
+
+	target := s.OwnerLabel(characterID)
+
+	switch name := names.Table[nameHash].Name; {
+	case names.Table == nil:
+		fmt.Fprintf(&b, "Saved loadout %d on %s, which keeps its name.", number, target)
+	case name == "":
+		fmt.Fprintf(&b, "Saved loadout %d on %s without a name.", number, target)
+	default:
+		fmt.Fprintf(&b, "Saved loadout %d on %s with the name %s.", number, target, name)
+	}
+
+	gear := s.LoadoutGear(characterID)
+	if len(gear) == 0 {
+		fmt.Fprintf(&b, " The inventory shows no gear that %s has equipped.", target)
+	} else {
+		fmt.Fprintf(&b, " It holds the gear that %s has equipped: %s.", target, itemNames(gear))
+	}
+
+	if names.Err != nil {
+		b.WriteString("\nLoadout names unavailable: " + names.Err.Error())
+	}
+
+	return b.String()
+}
+
+// renderLoadoutClear describes a clear_loadout call that emptied the slot
+// of the saved loadout l.
+func renderLoadoutClear(s *Snapshot, l Loadout) string {
+	var (
+		held    []*Item
+		missing []string
+	)
+
+	for _, id := range l.InstanceIDs {
+		item, ok := s.Find(id)
+		if !ok {
+			missing = append(missing, id)
+
+			continue
+		}
+
+		held = append(held, item)
+	}
+
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Cleared loadout %d on %s", l.Number, s.OwnerLabel(l.CharacterID))
+
+	if len(held) > 0 {
+		b.WriteString(", which held " + itemNames(held))
+	}
+
+	b.WriteString(".")
+
+	if len(missing) > 0 {
+		fmt.Fprintf(&b, " The inventory does not hold these loadout items: %s.", strings.Join(missing, ", "))
+	}
+
+	return b.String()
+}
+
+// itemNames lists items by name and instance id, such as
+// "Fatebringer (1006), Celestial Nighthawk (1004)".
+func itemNames(items []*Item) string {
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		names = append(names, fmt.Sprintf("%s (%s)", item.Name, item.InstanceID))
+	}
+
+	return strings.Join(names, ", ")
 }
 
 // renderNoJunk reports that no junk sits in bucket on character c and
