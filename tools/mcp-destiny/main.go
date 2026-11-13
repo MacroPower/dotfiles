@@ -569,8 +569,9 @@ func newServer(h *handler) *mcp.Server {
 		Description: "Create an autotag rule, or update one by id. " +
 			"A rule needs a tag_id or vault=true, and the tool refuses a rule that has neither. " +
 			"The web client runs the rules, and it skips a rule whose query does not parse. " +
-			"This tool refuses a query with a quote that never closes, an unknown escape inside quotes, " +
-			"a filter name without a value, or no search term. " +
+			"This tool refuses a query that the search parser of the web client rejects. " +
+			"It also refuses a query that the web client runs differently from its text, " +
+			"such as one with a ')' that closes no '(' or with an unquoted or, and, or not. " +
 			"It does not check filter names or filter values.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool)},
 	}, h.handleSaveAutotagRule)

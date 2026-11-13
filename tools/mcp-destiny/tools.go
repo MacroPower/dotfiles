@@ -1745,10 +1745,11 @@ func unknownTrait(perk string, traits map[string]string) error {
 // mergeRule builds the rule that a save_autotag_rule call writes. With an
 // id it overlays the given fields on the stored rule. Without an id it
 // creates a rule that evaluates last. When the call passes a query,
-// mergeRule reads the query with [checkQuery] and rejects a query that the
-// search lexer of the web client rejects or that has no search term. It
-// leaves a stored query unchecked, so a call can still disable, move, or
-// retag a stored rule whose query does not lex.
+// mergeRule parses the query with [parseQuery]. It rejects a query that
+// the search parser of the web client rejects and a query that the web
+// client runs differently from its text. It leaves a stored query
+// unchecked, so a call can still disable, move, or retag a stored rule
+// whose query does not parse.
 //
 // mergeRule also rejects a built rule that has no action, which is a rule
 // with an empty tag id and a false vault flag. An enabled rule without an
@@ -1811,7 +1812,7 @@ func mergeRule(rules []AutotagRule, in SaveAutotagRuleInput) (AutotagRule, error
 	}
 
 	if in.Query != nil {
-		err := checkQuery(rule.Query)
+		_, err := parseQuery(rule.Query)
 		if err != nil {
 			return AutotagRule{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 		}

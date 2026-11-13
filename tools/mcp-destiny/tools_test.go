@@ -91,7 +91,11 @@ func TestServerListsTools(t *testing.T) {
 
 		case toolSaveAutotagRule:
 			assert.Contains(t, tool.Description, "A rule needs a tag_id or vault=true")
-			assert.Contains(t, tool.Description, "This tool refuses a query with a quote that never closes")
+			assert.Contains(
+				t,
+				tool.Description,
+				"This tool refuses a query that the search parser of the web client rejects",
+			)
 			assert.Contains(t, tool.Description, "It does not check filter names or filter values.")
 
 		case toolGetItem:
@@ -4979,6 +4983,12 @@ func TestSaveAutotagRule(t *testing.T) {
 			"so add one or remove the rule with remove_autotag_rule"
 		badQuery = "invalid input: a rule query has between 1 and 1000 characters"
 		unclosed = `invalid input: the quote in "name:\"abc" never closes`
+		bareWord = `invalid input: the web client reads the unquoted word %q as a search for that word, ` +
+			`not as an operator. Quote the word to search for it`
+		endsAfter  = `invalid input: the query ends after %q, which needs a search term after it`
+		misplaced  = `invalid input: the query has ")" where a search term belongs`
+		noOperator = `invalid input: the query has no space or operator before %q`
+		strayParen = `invalid input: the query has a ")" that closes no "(", and the web client ignores %q`
 	)
 
 	query := "is:weapon misses:2"
@@ -4987,6 +4997,24 @@ func TestSaveAutotagRule(t *testing.T) {
 	noValue := "is:"
 	noValueInside := "is:weapon name: x"
 	quoteAfterParen := `is:weapon ) "abc`
+	endsAfterNegation := `is:weapon -`
+	endsAfterParen := `is:weapon (`
+	emptyGroup := `()`
+	parenAfterOr := `is:weapon or )`
+	adjacentQuotes := `"a""b"`
+	parenAfterFilter := `is:weapon(`
+	closeParen := `is:weapon )`
+	termsAfterParen := `is:weapon ) is:armor`
+	commentOnly := `/* note */`
+	trailingOr := `is:weapon or`
+	trailingAnd := `cluster and`
+	droppedQuote := `is:weapon (is:arc is:void)"abc`
+	openGroup := `is:blue (is:rocketlauncher`
+	notWord := `not forgotten`
+	quotedOr := `"or"`
+	// The query is the comment case of the parser tests of DIM.
+	comments := `/* My cool search */ (/* armor */ is:armor and is:blue) or ` +
+		`(/*weapons*/ is:weapon and perkname:"Kill Clip")`
 	byteOrderMark := "\ufeff"
 	empty := ""
 	spaces := "  "
@@ -5172,8 +5200,97 @@ func TestSaveAutotagRule(t *testing.T) {
 		},
 		"quote after an unmatched paren": {
 			in:      SaveAutotagRuleInput{Query: &quoteAfterParen, TagID: &junk},
-			want:    `invalid input: the quote in "\"abc" never closes`,
+			want:    fmt.Sprintf(strayParen, `) "abc`),
 			isError: true,
+		},
+		"query ends after a negation": {
+			in:      SaveAutotagRuleInput{Query: &endsAfterNegation, TagID: &junk},
+			want:    fmt.Sprintf(endsAfter, "-"),
+			isError: true,
+		},
+		"query ends after an open paren": {
+			in:      SaveAutotagRuleInput{Query: &endsAfterParen, TagID: &junk},
+			want:    fmt.Sprintf(endsAfter, "("),
+			isError: true,
+		},
+		"query ends after a comment": {
+			in:      SaveAutotagRuleInput{Query: &commentOnly, TagID: &junk},
+			want:    fmt.Sprintf(endsAfter, "/* note */"),
+			isError: true,
+		},
+		"empty group": {
+			in:      SaveAutotagRuleInput{Query: &emptyGroup, TagID: &junk},
+			want:    misplaced,
+			isError: true,
+		},
+		"close paren after or": {
+			in:      SaveAutotagRuleInput{Query: &parenAfterOr, TagID: &junk},
+			want:    misplaced,
+			isError: true,
+		},
+		"quoted strings without a space": {
+			in:      SaveAutotagRuleInput{Query: &adjacentQuotes, TagID: &junk},
+			want:    fmt.Sprintf(noOperator, `"b"`),
+			isError: true,
+		},
+		"open paren right after a filter": {
+			in:      SaveAutotagRuleInput{Query: &parenAfterFilter, TagID: &junk},
+			want:    fmt.Sprintf(noOperator, "("),
+			isError: true,
+		},
+		"close paren that closes no open paren": {
+			in:      SaveAutotagRuleInput{Query: &closeParen, TagID: &junk},
+			want:    fmt.Sprintf(strayParen, ")"),
+			isError: true,
+		},
+		"terms after a close paren": {
+			in:      SaveAutotagRuleInput{Query: &termsAfterParen, TagID: &junk},
+			want:    fmt.Sprintf(strayParen, ") is:armor"),
+			isError: true,
+		},
+		"unquoted or": {
+			in:      SaveAutotagRuleInput{Query: &trailingOr, TagID: &junk},
+			want:    fmt.Sprintf(bareWord, "or"),
+			isError: true,
+		},
+		"unquoted and": {
+			in:      SaveAutotagRuleInput{Query: &trailingAnd, TagID: &junk},
+			want:    fmt.Sprintf(bareWord, "and"),
+			isError: true,
+		},
+		"lexer error that the web client drops": {
+			in: SaveAutotagRuleInput{Query: &droppedQuote, TagID: &junk},
+			want: `invalid input: the quote in "\"abc" never closes. ` +
+				`The web client drops this error and ignores "\"abc"`,
+			isError: true,
+		},
+		"group that never closes": {
+			in: SaveAutotagRuleInput{Query: &openGroup, TagID: &junk},
+			wantRule: map[string]any{
+				"query": openGroup, "tagId": "junk", "vault": false,
+				"enabled": true, "position": float64(2), "removed": false,
+			},
+		},
+		"not before a bare word": {
+			in: SaveAutotagRuleInput{Query: &notWord, TagID: &junk},
+			wantRule: map[string]any{
+				"query": notWord, "tagId": "junk", "vault": false,
+				"enabled": true, "position": float64(2), "removed": false,
+			},
+		},
+		"quoted operator word": {
+			in: SaveAutotagRuleInput{Query: &quotedOr, TagID: &junk},
+			wantRule: map[string]any{
+				"query": quotedOr, "tagId": "junk", "vault": false,
+				"enabled": true, "position": float64(2), "removed": false,
+			},
+		},
+		"comments and groups": {
+			in: SaveAutotagRuleInput{Query: &comments, TagID: &junk},
+			wantRule: map[string]any{
+				"query": comments, "tagId": "junk", "vault": false,
+				"enabled": true, "position": float64(2), "removed": false,
+			},
 		},
 		"query without a search term": {
 			in:      SaveAutotagRuleInput{Query: &byteOrderMark, TagID: &junk},
