@@ -5511,6 +5511,31 @@ func TestPreviewFavorite(t *testing.T) {
 	assert.Empty(t, rows)
 }
 
+func TestPreviewName(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"start of a word":        {query: "name:coup", want: []string{"1003"}},
+		"inside a word":          {query: "name:oup", want: []string{}},
+		"quoted words":           {query: `name:"Midnight Coup"`, want: []string{"1003"}},
+		"exact name":             {query: `exactname:"MIDNIGHT COUP"`, want: []string{"1003"}},
+		"exact name of one word": {query: "exactname:midnight", want: []string{}},
+		"with another filter":    {query: "name:celestial is:armor", want: []string{"1004"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			_, _, rows := preview(t, newFakes(t), tc.query)
+			assert.Equal(t, tc.want, rows)
+		})
+	}
+}
+
 func TestPreviewNoMatch(t *testing.T) {
 	t.Parallel()
 
@@ -5661,8 +5686,8 @@ func TestPreviewUnsupported(t *testing.T) {
 		"is:sniperrifle, is:shotgun, is:machinegun, is:lmg, is:rocketlauncher, is:sidearm, is:sword, "+
 		"is:grenadelauncher, is:heavygrenadelauncher, is:specialgrenadelauncher, is:tracerifle, "+
 		"is:linearfusionrifle, is:lfr, is:submachine, is:smg, is:bow, is:glaive, is:transmat, "+
-		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, and tag:. "+
-		"Each is: word also works as not:<word>.", got)
+		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, tag:, name:, "+
+		"and exactname:. Each is: word also works as not:<word>.", got)
 	assert.Empty(t, f.service.all())
 	assert.Empty(t, f.bungie.all())
 }

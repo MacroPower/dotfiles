@@ -4,8 +4,12 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Bucket hashes that the search filters and the preview population read.
@@ -64,8 +68,10 @@ const (
 
 // Filter names of the search syntax that the preview evaluates.
 const (
-	filterIs  = "is"
-	filterTag = "tag"
+	filterIs        = "is"
+	filterTag       = "tag"
+	filterName      = "name"
+	filterExactName = "exactname"
 )
 
 var (
@@ -139,6 +145,8 @@ var (
 		{name: filterIs, word: "special", match: ofAmmo(ammoSpecial)},
 		{name: filterIs, word: "heavy", match: ofAmmo(ammoHeavy)},
 		{name: filterTag, value: tagMatch},
+		{name: filterName, value: nameMatch},
+		{name: filterExactName, value: exactNameMatch},
 	}
 
 	// isFilters maps each is: word of searchFilters to its predicate.
@@ -147,6 +155,11 @@ var (
 	// valueFilters maps the name of each filter of searchFilters that
 	// takes a value to the function that builds its predicate.
 	valueFilters = valueTable(searchFilters)
+
+	// wordStart matches a text that starts with a character of \w. The \w
+	// of Go and the \w of a JavaScript regular expression without the u
+	// flag both match an ASCII letter, an ASCII digit, or an underscore.
+	wordStart = regexp.MustCompile(`^\w`)
 )
 
 // searchFilter is one filter that the preview evaluates. An is: word sets
@@ -390,6 +403,67 @@ func tagMatch(value string) func(*Item) bool {
 	}
 
 	return func(item *Item) bool { return item.Tag == value && slices.Contains(tagOrder, item.Tag) }
+}
+
+// nameMatch returns the predicate of the filter name:value, as DIM defines
+// it. The filter matches an item when a word of its name starts with the
+// value, and it compares both texts after [plainString] folds them. DIM
+// puts a word boundary before the value only when the folded value starts
+// with an ASCII letter, an ASCII digit, or an underscore. A value such as
+// -x can therefore match in the middle of a word.
+func nameMatch(value string) func(*Item) bool {
+	folded := plainString(value)
+
+	pattern := "(?i)"
+	if wordStart.MatchString(folded) {
+		pattern += `\b`
+	}
+
+	re, err := regexp.Compile(pattern + regexp.QuoteMeta(folded))
+	if err != nil {
+		// Compile refuses only a value of millions of characters. Each
+		// character of the pattern matches one character of a name, so
+		// such a value matches no name.
+		return func(*Item) bool { return false }
+	}
+
+	return func(item *Item) bool { return re.MatchString(plainName(item)) }
+}
+
+// exactNameMatch returns the predicate of the filter exactname:value, as
+// DIM defines it. The filter matches an item whose whole name equals the
+// value after [plainString] folds both texts.
+func exactNameMatch(value string) func(*Item) bool {
+	folded := plainString(value)
+
+	return func(item *Item) bool { return plainName(item) == folded }
+}
+
+// plainName returns the name of item in the form that the name filters
+// compare. The lexer turned the typographic quotes of the value into ASCII
+// quotes. plainName therefore applies [normalizeQuotes] to the name, as
+// DIM does, and then [plainString] folds it.
+func plainName(item *Item) string {
+	return plainString(normalizeQuotes(item.Name))
+}
+
+// plainString folds s for a text filter, as plainString of DIM folds the
+// text of a Latin-based language. The web client always searches in
+// English, which DIM marks as Latin-based. The fold decomposes s to
+// Unicode Normalization Form D, removes each character with the Unicode
+// property Diacritic, and lowercases the rest. The tables of Go and of
+// the browser each follow their own Unicode version. A character that
+// only one of the two versions lists can therefore fold differently.
+func plainString(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Diacritic, r) {
+			return -1
+		}
+
+		return r
+	}, norm.NFD.String(s))
+
+	return strings.ToLower(s)
 }
 
 // isTable maps each is: word of filters to its predicate.

@@ -586,6 +586,9 @@ func newServer(h *handler) *mcp.Server {
 			"except emotes and finishers. Each row has the columns of list_items. " +
 			"The tool evaluates a closed set of filters, which are " + listWithAnd(supportedKeywords()) + ". " +
 			"Each is: word also works as not:<word>. " +
+			"name:<text> matches an item with a word in its name that starts with the text, " +
+			"and exactname:<text> matches an item whose whole name is the text. " +
+			"Both ignore letter case and accents. " +
 			"The tool refuses a query with any other term, such as a bare word or is:masterwork, " +
 			"and the refusal names each such term together with the filters that the tool evaluates. " +
 			"The query can combine the filters with and, or, -, and parentheses. " +

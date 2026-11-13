@@ -702,13 +702,17 @@ func (l *queryLexer) rest(start int) string {
 }
 
 // normalizeQuery returns query in the form that the lexer of DIM reads. It
-// lowercases the query and turns the typographic quotes U+2018 through
-// U+201A and U+201C through U+201E into ASCII quotes. It lowercases U+0130
-// to "i" and U+0307, as String.prototype.toLowerCase does.
+// lowercases the query and then applies [normalizeQuotes]. It lowercases
+// U+0130 to "i" and U+0307, as String.prototype.toLowerCase does.
 // [strings.ToLower] lowercases U+0130 to "i" alone.
 func normalizeQuery(query string) string {
-	query = strings.ToLower(strings.ReplaceAll(query, "\u0130", "i\u0307"))
+	return normalizeQuotes(strings.ToLower(strings.ReplaceAll(query, "\u0130", "i\u0307")))
+}
 
+// normalizeQuotes turns the typographic quotes U+2018 through U+201A into
+// an ASCII apostrophe and U+201C through U+201E into an ASCII double
+// quote, as normalizeQuotes of DIM does.
+func normalizeQuotes(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
 		case r >= '\u2018' && r <= '\u201a':
@@ -718,7 +722,7 @@ func normalizeQuery(query string) string {
 		default:
 			return r
 		}
-	}, query)
+	}, s)
 }
 
 // jsPattern compiles a pattern of the lexer of DIM for a match at the start

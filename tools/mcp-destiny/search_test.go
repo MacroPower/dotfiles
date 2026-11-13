@@ -444,7 +444,7 @@ func TestSupportedKeywords(t *testing.T) {
 		"is:sidearm", "is:sword", "is:grenadelauncher", "is:heavygrenadelauncher",
 		"is:specialgrenadelauncher", "is:tracerifle", "is:linearfusionrifle", "is:lfr", "is:submachine",
 		"is:smg", "is:bow", "is:glaive", "is:transmat", "is:weaponmod", "is:armormod", "is:reptoken",
-		"is:primary", "is:special", "is:heavy", "tag:",
+		"is:primary", "is:special", "is:heavy", "tag:", "name:", "exactname:",
 	}
 	assert.Equal(t, want, supportedKeywords())
 
@@ -458,8 +458,8 @@ func TestSupportedKeywords(t *testing.T) {
 		"is:sniperrifle, is:shotgun, is:machinegun, is:lmg, is:rocketlauncher, is:sidearm, is:sword, "+
 		"is:grenadelauncher, is:heavygrenadelauncher, is:specialgrenadelauncher, is:tracerifle, "+
 		"is:linearfusionrifle, is:lfr, is:submachine, is:smg, is:bow, is:glaive, is:transmat, "+
-		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, and tag:. "+
-		"Each is: word also works as not:<word>.", err.Error())
+		"is:weaponmod, is:armormod, is:reptoken, is:primary, is:special, is:heavy, tag:, name:, "+
+		"and exactname:. Each is: word also works as not:<word>.", err.Error())
 }
 
 func TestListWithAnd(t *testing.T) {
@@ -495,6 +495,246 @@ func TestCompiledQueryMatches(t *testing.T) {
 	}
 
 	assert.Equal(t, []string{"9", "100", "20"}, ids(compiled(t, "is:weapon").matches(items)))
+}
+
+// namedItems returns one item for each of names, with the name as its
+// instance id too.
+func namedItems(names ...string) []*Item {
+	items := make([]*Item, 0, len(names))
+	for _, name := range names {
+		items = append(items, &Item{InstanceID: name, Name: name})
+	}
+
+	return items
+}
+
+// nameItems returns the items of the name filter tests, which port the
+// name tests of the web client.
+func nameItems() []*Item {
+	return namedItems("Gnawing Hunger", "Hunger of Crota", "Hard Light", "D\u00e9j\u00e0 Vu", "Fatebringer")
+}
+
+func TestNameStartOfWord(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"start of a later word": {query: "name:hunger", want: []string{"Gnawing Hunger", "Hunger of Crota"}},
+		"inside a word":         {query: "name:unger", want: []string{}},
+		"last word":             {query: "name:crota", want: []string{"Hunger of Crota"}},
+		"start of a word only":  {query: "name:fate", want: []string{"Fatebringer"}},
+		"uppercase value":       {query: "name:HUNGER", want: []string{"Gnawing Hunger", "Hunger of Crota"}},
+		"negated": {
+			query: "-name:hunger",
+			want:  []string{"Hard Light", "D\u00e9j\u00e0 Vu", "Fatebringer"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, tc.query, nameItems()))
+		})
+	}
+}
+
+func TestNameQuoted(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"two words":          {query: `name:"hard light"`, want: []string{"Hard Light"}},
+		"second word":        {query: `name:"light"`, want: []string{"Hard Light"}},
+		"single quotes":      {query: `name:'hard light'`, want: []string{"Hard Light"}},
+		"words out of order": {query: `name:"light hard"`, want: []string{}},
+		"empty value": {
+			query: `name:""`,
+			want:  []string{"Gnawing Hunger", "Hunger of Crota", "Hard Light", "D\u00e9j\u00e0 Vu", "Fatebringer"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, tc.query, nameItems()))
+		})
+	}
+}
+
+func TestNameDiacritics(t *testing.T) {
+	t.Parallel()
+
+	items := append(nameItems(), &Item{InstanceID: "decomposed", Name: "De\u0301ja\u0300 Vu"})
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"plain value": {query: "name:deja", want: []string{"D\u00e9j\u00e0 Vu", "decomposed"}},
+		"value with accents": {
+			query: "name:d\u00e9j\u00e0",
+			want:  []string{"D\u00e9j\u00e0 Vu", "decomposed"},
+		},
+		"uppercase accents": {
+			query: "name:D\u00c9J\u00c0",
+			want:  []string{"D\u00e9j\u00e0 Vu", "decomposed"},
+		},
+		"decomposed value": {
+			query: "name:de\u0301ja\u0300",
+			want:  []string{"D\u00e9j\u00e0 Vu", "decomposed"},
+		},
+		"boundary after folding":       {query: "name:\u00fcnger", want: []string{}},
+		"accented start inside a word": {query: "name:\u00e9ja", want: []string{}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, tc.query, items))
+		})
+	}
+}
+
+func TestNameEscapes(t *testing.T) {
+	t.Parallel()
+
+	items := namedItems("a.b test", "axb test", "Gnawing Hunger (Adept)", "Gnawing Hunger")
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"dot":         {query: "name:a.b", want: []string{"a.b test"}},
+		"parentheses": {query: `name:"(adept)"`, want: []string{"Gnawing Hunger (Adept)"}},
+		"star":        {query: "name:a*", want: []string{}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, tc.query, items))
+		})
+	}
+}
+
+func TestNameNoBoundary(t *testing.T) {
+	t.Parallel()
+
+	items := namedItems("a-x", "-x", "ax", "a x", "\u00b5Tool")
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"value without a word start": {query: "name:-x", want: []string{"a-x", "-x"}},
+		"value with a word start":    {query: "name:x", want: []string{"a-x", "-x", "a x"}},
+		"case fold":                  {query: "name:\u03bctool", want: []string{"\u00b5Tool"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, tc.query, items))
+		})
+	}
+}
+
+func TestNameQuotes(t *testing.T) {
+	t.Parallel()
+
+	items := namedItems("Gjallarhorn\u2019s Wrath", "Gjallarhorn's Echo", "Gjallarhorn\u201bs Ghost")
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"straight apostrophe": {
+			query: `name:"gjallarhorn's"`,
+			want:  []string{"Gjallarhorn\u2019s Wrath", "Gjallarhorn's Echo"},
+		},
+		"typographic apostrophe": {
+			query: "name:gjallarhorn\u2018s",
+			want:  []string{"Gjallarhorn\u2019s Wrath", "Gjallarhorn's Echo"},
+		},
+		"exact name": {
+			query: `exactname:"gjallarhorn's wrath"`,
+			want:  []string{"Gjallarhorn\u2019s Wrath"},
+		},
+		"reversed quote stays": {
+			query: "name:gjallarhorn\u201bs",
+			want:  []string{"Gjallarhorn\u201bs Ghost"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, tc.query, items))
+		})
+	}
+}
+
+func TestExactName(t *testing.T) {
+	t.Parallel()
+
+	items := append(nameItems(), &Item{InstanceID: "adept", Name: "Gnawing Hunger (Adept)"})
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"whole name":         {query: `exactname:"gnawing hunger"`, want: []string{"Gnawing Hunger"}},
+		"uppercase value":    {query: `exactname:"GNAWING HUNGER"`, want: []string{"Gnawing Hunger"}},
+		"name with a suffix": {query: `exactname:"gnawing hunger (adept)"`, want: []string{"adept"}},
+		"diacritics":         {query: `exactname:"deja vu"`, want: []string{"D\u00e9j\u00e0 Vu"}},
+		"value with accents": {query: "exactname:\"d\u00e9j\u00e0 vu\"", want: []string{"D\u00e9j\u00e0 Vu"}},
+		"one word":           {query: "exactname:hunger", want: []string{}},
+		"bare word":          {query: "exactname:fatebringer", want: []string{"Fatebringer"}},
+		"empty value":        {query: `exactname:""`, want: []string{}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, tc.query, items))
+		})
+	}
+}
+
+func TestPlainString(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		text string
+		want string
+	}{
+		"plain":                   {text: "Fatebringer", want: "fatebringer"},
+		"precomposed diacritics":  {text: "D\u00e9j\u00e0 Vu", want: "deja vu"},
+		"combining diacritics":    {text: "De\u0301ja\u0300 Vu", want: "deja vu"},
+		"capital I with dot":      {text: "\u0130stanbul", want: "istanbul"},
+		"letter without a decomp": {text: "\u00d8rsted", want: "\u00f8rsted"},
+		"typographic quote stays": {text: "It\u2019s", want: "it\u2019s"},
+		"spacing diacritics":      {text: "x^y`z", want: "xyz"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, plainString(tc.text))
+		})
+	}
 }
 
 // weaponTypeItems returns the owned items of a vault that holds ten weapons

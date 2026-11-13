@@ -261,6 +261,21 @@
 //   - tag:<value>: an item whose tag is the value. Only the tags that the
 //     web client defines count, so tag:none matches nothing. The value
 //     favorite matches an item with the favorite mark.
+//   - name:<text>: an item with a word in its name that starts with the
+//     text, so name:hunger matches Gnawing Hunger and name:unger does not.
+//     When the folded text starts with a character other than an ASCII
+//     letter, an ASCII digit, or an underscore, the match can start
+//     anywhere in the name.
+//   - exactname:<text>: an item whose whole name is the text, so
+//     exactname:"gnawing hunger" does not match Gnawing Hunger (Adept).
+//
+// The name filters fold the item name and the text before they compare
+// them, as the web client does. The fold removes letter case and
+// diacritics, so name:deja matches a name that writes deja with accents.
+// The filters also read the curly quotes U+2018 through U+201A and U+201C
+// through U+201E in the name as ASCII quotes, as the parser reads them in
+// the query. A straight apostrophe in the text therefore matches a curly
+// one in the name.
 //
 // # Sign-in
 //
