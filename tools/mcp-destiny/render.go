@@ -1615,9 +1615,134 @@ func renderNewMatches(s *Snapshot, stored, newest string, evals []ruleEval, m ne
 	}
 
 	fmt.Fprintf(&b, "\nNew items already in the vault, which the next claim covers and no rule takes: %d\n", len(vault))
-	b.WriteString(
-		"\nThe web client claims these items and applies the rules the next time it runs with autotagging on.",
-	)
+	b.WriteString("\nThe web client or run_autotag_rules claims these items and applies the rules, " +
+		"whichever runs first with autotagging on.")
+
+	return b.String()
+}
+
+// claimOnce is the sentence that ends each result of run_autotag_rules
+// after a claim. It also ends each result after a claim request whose
+// outcome the tool cannot tell.
+const claimOnce = "A claim happens at most once. No runner offers the claimed items to an autotag rule again, " +
+	"also when a step after the claim failed."
+
+// renderRunRefusal returns the text of a run_autotag_rules call that the
+// causes in evals and m stop before the claim, or an empty string when no
+// cause stops the claim. Evals holds the [ruleEval] of each live rule in
+// rule order, and m holds what [firstMatch] gave the new items outside the
+// vault.
+//
+// Each enabled rule gets at most one line. A skipped rule names its skip
+// reason, and a blocked rule names its block reason. An evaluated rule
+// that moves items to the vault says so. Each undecided item gets one line
+// after the rule lines.
+func renderRunRefusal(evals []ruleEval, m newMatches) string {
+	var causes []string
+
+	for _, e := range evals {
+		if !e.rule.Enabled {
+			continue
+		}
+
+		line := renderRule(e.rule)
+
+		switch {
+		case e.class == ruleSkipped:
+			causes = append(causes, fmt.Sprintf("%s. The web client skips this rule: %s.", line, e.reason))
+		case e.class == ruleBlocked:
+			causes = append(causes, fmt.Sprintf("%s. The server cannot evaluate this rule: %s.", line, e.reason))
+		case e.rule.Vault:
+			causes = append(causes, line+". The rule moves items to the vault, which run_autotag_rules does not do.")
+		}
+	}
+
+	for _, u := range m.undecided {
+		rule := evals[u.rule].rule
+		causes = append(causes, fmt.Sprintf("- %s (%s): the server cannot decide whether rule %d %q takes it: %s.",
+			u.item.Name, u.item.InstanceID, rule.Position, rule.Query, strings.Join(u.reasons, ". ")))
+	}
+
+	if len(causes) == 0 {
+		return ""
+	}
+
+	return "run_autotag_rules claimed nothing, because the server cannot apply every enabled rule " +
+		"the way the web client does:\n" + strings.Join(causes, "\n") +
+		"\nThe web client still claims these items when it runs with autotagging on."
+}
+
+// renderRun renders the result of a run_autotag_rules call whose claim
+// and tag write succeeded. Stored is the mark before the claim, and newest
+// is the mark after it. Evals holds the [ruleEval] of each live rule in
+// rule order, and m holds what [firstMatch] gave the new items outside the
+// vault. Vault holds the new items in the vault, which the output only
+// counts.
+func renderRun(s *Snapshot, stored, newest string, evals []ruleEval, m newMatches, vault []*Item) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Claimed the new items. The stored mark moved from %s to %s.\n", stored, newest)
+
+	if slices.ContainsFunc(evals, func(e ruleEval) bool { return e.rule.Enabled }) {
+		b.WriteString("\n")
+	}
+
+	for i, e := range evals {
+		if !e.rule.Enabled {
+			continue
+		}
+
+		fmt.Fprintf(&b, "%s. New items it took: %d\n", renderRule(e.rule), len(m.taken[i]))
+		writeNewItems(&b, s, m.taken[i])
+	}
+
+	fmt.Fprintf(&b, "\nNew items that no rule took: %d\n", len(m.untaken))
+	writeNewItems(&b, s, m.untaken)
+
+	fmt.Fprintf(&b, "\nNew items already in the vault, which no rule takes: %d\n", len(vault))
+	b.WriteString("\n" + claimOnce)
+
+	return b.String()
+}
+
+// renderTagFailure renders the result of a run_autotag_rules call whose
+// claim applied and whose tag write returned err. Stored and newest are
+// the marks of the claim. The output names each item of tags with the tag
+// that its rule gives, so that the user can set the tags with set_tag.
+func renderTagFailure(stored, newest string, err error, tags []ruleTag) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Claimed the new items. The stored mark moved from %s to %s.\n\n", stored, newest)
+	fmt.Fprintf(&b, "The tag write failed: %v. Tag these items with set_tag:", err)
+
+	for _, t := range tags {
+		fmt.Fprintf(&b, "\n- %s (%s): tag %s", t.item.Name, t.item.InstanceID, t.rule.TagID)
+	}
+
+	b.WriteString("\n\n" + claimOnce)
+
+	return b.String()
+}
+
+// renderUnsureClaim renders the result of a run_autotag_rules call whose
+// claim request might have applied. Head opens the output. When tags holds
+// an item, the output names each item with its rule and the tag of the
+// rule. The user can then set the tags with set_tag.
+func renderUnsureClaim(head string, tags []ruleTag) string {
+	var b strings.Builder
+
+	b.WriteString(head)
+
+	if len(tags) > 0 {
+		b.WriteString("\n\nUnless the web client tagged them already, tag these items with set_tag:")
+
+		for _, t := range tags {
+			fmt.Fprintf(&b, "\n- %s (%s): tag %s (rule %d %q)",
+				t.item.Name, t.item.InstanceID, t.rule.TagID, t.rule.Position, t.rule.Query)
+		}
+	}
+
+	b.WriteString("\n\n" + claimOnce)
 
 	return b.String()
 }

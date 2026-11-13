@@ -687,9 +687,27 @@ func newServer(h *handler) *mcp.Server {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolSetAutotagEnabled,
 		Description: "Turn autotagging on or off. Turning it on skips every item held at that moment, " +
-			"so the rules apply only to items acquired afterward.",
+			"so the rules apply only to items acquired afterward. " +
+			"run_autotag_rules runs the rules when a caller invokes it.",
 		Annotations: additive,
 	}, h.handleSetAutotagEnabled)
+
+	// A claim cannot be undone, so DestructiveHint keeps its default of
+	// true.
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: toolRunAutotagRules,
+		Description: "Run the autotag rules on the items acquired since the last claim, " +
+			"as the web client does while it is open. " +
+			"The tool first claims those items through the service, " +
+			"so no other runner, such as the web client, applies the rules to them again. " +
+			"A claim happens at most once. " +
+			"The tool claims nothing when autotagging is off " +
+			"or when the server cannot decide which rule takes a new item. " +
+			"It also claims nothing when an enabled rule moves items to the vault, is invalid, " +
+			"uses a term that the server does not evaluate, or reads a game mode without ratings. " +
+			"list_autotag_rules with matches=new shows what the tool would do.",
+		Annotations: &mcp.ToolAnnotations{},
+	}, h.handleRunAutotagRules)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolGetStats,

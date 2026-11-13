@@ -53,16 +53,19 @@
 // Tags follow the web client. An item carries at most one of the tags that
 // the web client defines, and the favorite mark is a separate flag.
 //
-// The web client evaluates autotag rules. The save_autotag_rule tool
-// parses each query that a call passes with a port of the search parser of
-// the web client. It refuses a query that the parser rejects, such as a
-// query with a quote that never closes. It also refuses a query that the
-// web client runs differently from its text. For example, the web client
-// reads the unquoted word "or" in "is:weapon or" as a search for the word.
-// The tool also refuses a filter value that the web client rejects, such
-// as count:=<2, for the filters that preview_autotag_rule evaluates. It
-// saves a query with other terms, because the web client might accept
-// them, and its result names those terms.
+// The web client evaluates autotag rules while it is open, and the
+// run_autotag_rules tool evaluates them when a caller invokes it.
+//
+// The save_autotag_rule tool parses each query that a call passes with a
+// port of the search parser of the web client. It refuses a query that the
+// parser rejects, such as a query with a quote that never closes. It also
+// refuses a query that the web client runs differently from its text. For
+// example, the web client reads the unquoted word "or" in "is:weapon or" as
+// a search for the word. The tool also refuses a filter value that the web
+// client rejects, such as count:=<2, for the filters that
+// preview_autotag_rule evaluates. It saves a query with other terms,
+// because the web client might accept them, and its result names those
+// terms.
 //
 // When a call passes a query that holds only the filters of the preview,
 // the save_autotag_rule result counts the owned items that the query
@@ -487,13 +490,13 @@
 // # New Item Matches
 //
 // The list_autotag_rules tool with matches=new shows the rule that takes
-// each item that the next claim of the web client offers to the rules. It
-// never claims, tags, or moves an item, so the web client claims the same
-// items the next time it runs with autotagging on. The tool reads a fresh
-// inventory, because a cached one can miss the newest drops. Its answer
-// describes the rules and the inventory at the moment of the call. While
-// autotagging is off, the tool says so and reads no inventory, because the
-// web client runs the rules only while autotagging is on.
+// each item that the next claim offers to the rules. It never claims, tags,
+// or moves an item. The web client or the run_autotag_rules tool therefore
+// claims the same items, whichever runs first with autotagging on. The tool
+// reads a fresh inventory, because a cached one can miss the newest drops.
+// Its answer describes the rules and the inventory at the moment of the
+// call. While autotagging is off, the tool says so and reads no inventory,
+// because the web client runs the rules only while autotagging is on.
 //
 // The claim covers the items whose instance id is higher than the mark
 // that the service stores. The web client pads each id with zeros to 20
@@ -570,6 +573,61 @@
 // later skipped rule keeps its skip line, because the web client counts
 // nothing for it whatever the rules before it take. A disabled rule takes
 // nothing, so the rules after it still count.
+//
+// # Autotag Runner
+//
+// The run_autotag_rules tool runs the autotag rules when a caller invokes
+// it, so a user can tag the newest drops without the web client. The
+// server never runs the rules on its own. The tool reads the autotag state
+// and a fresh inventory, and it selects the new items that the New Item
+// Matches section describes. It evaluates every enabled rule over those
+// items before it claims anything.
+//
+// The tool claims nothing when the server cannot apply every enabled rule
+// the way the web client does. It then returns an error result that lists
+// every cause, so the user can fix every rule in one pass. These causes
+// stop a claim:
+//
+//   - An enabled rule that the web client skips. A claim takes the new
+//     items from every runner, and the user saved the rule to act on them.
+//   - An enabled rule that blocks. Such a rule might take an item, so it
+//     can change which rule takes each item after it.
+//   - A new item that an enabled rule leaves undecided before any rule
+//     matches it.
+//   - An enabled rule with the vault flag. The tool does not move items,
+//     and the rule never sees a claimed item again.
+//
+// The tool also claims nothing while autotagging is off. It claims
+// nothing when no owned item has an instance id higher than the stored
+// mark, and when the account has no character. The web client claims the
+// new vault items of an account without a character. A claim by the tool
+// takes those items and tags none of them.
+//
+// When no cause stops it, the tool claims the new items through the
+// service. The service applies the claim only while autotagging is on and
+// the stored mark still equals the mark that the tool read. An applied
+// claim therefore covers the items that the tool evaluated. When the
+// service does not apply the claim, another runner claimed the items
+// first or a client turned autotagging off. The tool then tags nothing.
+//
+// After an applied claim, the tool tags each item that a rule with a tag
+// takes. The tag row carries the id of the rule, as in the web client, so
+// is:autotagged matches the item. The tool clears the other tag of the
+// item and keeps the favorite mark. A tag that a person set on a new item
+// therefore gives way to the tag of the rule. A rule without a tag takes
+// its items and tags none of them.
+//
+// A claim happens at most once. No runner offers the claimed items to a
+// rule again, also when a step after the claim fails. The tool retries
+// neither the claim nor the tag write. When the tag write fails, the
+// result names each item with its tag, so that the user can set the tags
+// with set_tag.
+//
+// A claim request that fails might still have moved the mark in the
+// service. The tool then reads the autotag state again and tags nothing.
+// When the mark is still the stored mark, the tool claimed nothing. When
+// the mark moved or the read fails, the claim might have applied. The
+// result then names each item with its rule and the tag of the rule.
 //
 // # Sign-in
 //

@@ -80,7 +80,7 @@ func TestServerListsTools(t *testing.T) {
 		toolCompareDuplicates, toolMoveItems,
 		toolListTags, toolSetTag, toolSetFavorite, toolListNotes, toolSetNote, toolListPerkPreferences,
 		toolSetPerkPreferences, toolListAutotagRules, toolSaveAutotagRule, toolPreviewAutotagRule,
-		toolRemoveAutotagRule,
+		toolRemoveAutotagRule, toolRunAutotagRules,
 		toolMoveStack, toolStageJunk, toolSetLock, toolSetPerk, toolSetAutotagEnabled, toolListActivityHistory,
 		toolListLoadouts, toolEquipLoadout, toolSaveLoadout, toolClearLoadout, toolGetStats, toolListVendors,
 		toolListActivities,
@@ -131,6 +131,16 @@ func TestServerListsTools(t *testing.T) {
 		case toolClearLoadout:
 			assert.Equal(t, &mcp.ToolAnnotations{DestructiveHint: &destructive, IdempotentHint: true}, tool.Annotations)
 			assert.Contains(t, tool.Description, "The tool refuses a slot that holds no loadout.")
+
+		case toolRunAutotagRules:
+			// A claim cannot be undone, so DestructiveHint keeps its
+			// default of true.
+			assert.Equal(t, &mcp.ToolAnnotations{}, tool.Annotations)
+			assert.Contains(t, tool.Description, "A claim happens at most once.")
+			assert.Contains(t, tool.Description, "list_autotag_rules with matches=new shows what the tool would do.")
+
+		case toolSetAutotagEnabled:
+			assert.Contains(t, tool.Description, "run_autotag_rules runs the rules when a caller invokes it.")
 
 		case toolStageJunk:
 			assert.Equal(t, &mcp.ToolAnnotations{DestructiveHint: new(bool)}, tool.Annotations)
@@ -3656,8 +3666,8 @@ func TestMoveStackTool(t *testing.T) {
 func TestSetAutotagEnabled(t *testing.T) {
 	t.Parallel()
 
-	const on = "Autotagging is on. The rules apply to items acquired from now on, " +
-		"and the web client runs them while it is open."
+	const on = "Autotagging is on. The rules apply to items acquired from now on. " +
+		"The web client runs them while it is open, and run_autotag_rules runs them when a caller invokes it."
 
 	tests := map[string]struct {
 		wantBody map[string]any
@@ -5731,8 +5741,8 @@ func TestListAutotagRulesNew(t *testing.T) {
 		thorn       = "  - Thorn (1008), Hunter"
 		helmet      = "  - Wormhusk Crown (1009), Hunter"
 		noVault     = "New items already in the vault, which the next claim covers and no rule takes: 0"
-		footer      = "The web client claims these items and applies the rules the next time it runs " +
-			"with autotagging on."
+		footer      = "The web client or run_autotag_rules claims these items and applies the rules, " +
+			"whichever runs first with autotagging on."
 		after = "The server does not evaluate the rules after it."
 	)
 
@@ -6061,6 +6071,548 @@ func TestListAutotagRulesNew(t *testing.T) {
 
 			assert.Empty(t, f.service.calls(http.MethodPost, "/api/autotag/state"), "nothing is claimed")
 			assert.Empty(t, f.service.calls(http.MethodPost, pathTags), "nothing is tagged")
+			assert.Empty(t, f.service.calls(http.MethodPost, pathAutotag), "no rule changes")
+
+			for _, req := range f.bungie.all() {
+				assert.Equal(t, http.MethodGet, req.Method, "nothing moves: %s", req.Path)
+			}
+		})
+	}
+}
+
+func TestRunAutotagRules(t *testing.T) {
+	t.Parallel()
+
+	const (
+		stored = "00000000000000001006"
+		once   = "A claim happens at most once. No runner offers the claimed items to an autotag rule again, " +
+			"also when a step after the claim failed."
+		claimed = "Claimed the new items. The stored mark moved from 00000000000000001006 " +
+			"to 00000000000000001008."
+		refusal = "run_autotag_rules claimed nothing, because the server cannot apply every enabled rule " +
+			"the way the web client does:"
+		stillClaims = "The web client still claims these items when it runs with autotagging on."
+		claimFailed = "The claim request failed: service: POST /api/autotag/state returned status 500: " +
+			"Internal error."
+		unless   = "Unless the web client tagged them already, tag these items with set_tag:"
+		noVault  = "New items already in the vault, which no rule takes: 0"
+		noneLeft = "New items that no rule took: 0"
+		turnOn   = "Turn it on with set_autotag_enabled first."
+	)
+
+	weapon := storedRule("r1", "is:weapon", "keep", 0, true)
+	weaponLine := `- 0. [enabled] "is:weapon": tag keep (id r1)`
+	thorn := []string{newThorn}
+	internal := answer{status: http.StatusInternalServerError, body: `{"error": "Internal error"}`}
+	keepRow := map[string]any{
+		"instanceId": "1008", "itemHash": float64(103), "tagId": "keep", "ruleId": "r1", "removed": false,
+	}
+
+	tests := map[string]struct {
+		setup func(f *fakes)
+		// held holds the JSON items that the inventory of the Hunter
+		// gains. Profile replaces the whole profile when it is set.
+		held    []string
+		profile string
+		autotag string
+		want    []string
+		// newest is the mark that the claim stores. A case with an empty
+		// newest sends no claim.
+		newest string
+		// wantTags holds the rows of the one tag write. A nil wantTags
+		// expects no tag write.
+		wantTags []any
+		// tagged holds the tag and the rule id that the cached snapshot
+		// gives each instance id after the call.
+		tagged map[string][2]string
+		// sheet makes the service publish previewAegisSheet as the only
+		// roll sheet.
+		sheet bool
+		// reread marks a failed claim request, after which the handler
+		// reads the autotag state again.
+		reread  bool
+		isError bool
+	}{
+		"claims and tags": {
+			autotag: autotagBody(weapon),
+			held:    thorn,
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed, "",
+				weaponLine + ". New items it took: 1", "  - Thorn (1008), Hunter", "",
+				noneLeft, "",
+				noVault, "",
+				once,
+			},
+			wantTags: []any{keepRow},
+			tagged:   map[string][2]string{"1008": {"keep", "r1"}},
+		},
+		"no enabled rule": {
+			autotag: autotagBody(storedRule("r1", "is:weapon", "keep", 0, false)),
+			held:    thorn,
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed, "",
+				"New items that no rule took: 1", "  - Thorn (1008), Hunter", "",
+				noVault, "",
+				once,
+			},
+			tagged: map[string][2]string{"1008": {"", ""}},
+		},
+		"no rule": {
+			autotag: autotagBody(),
+			held:    thorn,
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed, "",
+				"New items that no rule took: 1", "  - Thorn (1008), Hunter", "",
+				noVault, "",
+				once,
+			},
+			tagged: map[string][2]string{"1008": {"", ""}},
+		},
+		"replaces a hand tag and keeps the favorite": {
+			autotag: autotagBody(weapon),
+			held:    thorn,
+			setup: func(f *fakes) {
+				f.serviceData[pathTags] = tagRows(t,
+					ItemTag{InstanceID: "1008", ItemHash: 103, TagID: tagJunk, UpdatedAt: 5},
+					ItemTag{InstanceID: "1008", ItemHash: 103, TagID: tagFavorite, UpdatedAt: 5},
+				)
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimed, "",
+				weaponLine + ". New items it took: 1", "  - Thorn (1008), Hunter", "",
+				noneLeft, "",
+				noVault, "",
+				once,
+			},
+			wantTags: []any{
+				map[string]any{"instanceId": "1008", "itemHash": float64(103), "tagId": "junk", "removed": true},
+				keepRow,
+			},
+			tagged: map[string][2]string{"1008": {"keep", "r1"}},
+		},
+		"each item goes to its first rule": {
+			autotag: autotagBody(
+				storedRule("r1", "is:dupe", "junk", 0, true),
+				storedRule("r2", "is:masterwork", "junk", 1, false),
+				storedRule("r3", "is:weapon", "keep", 2, true),
+			),
+			held:   []string{newFatebringer, newThorn, newHelmet},
+			newest: "00000000000000001009",
+			want: []string{
+				"Claimed the new items. The stored mark moved from 00000000000000001006 to 00000000000000001009.",
+				"",
+				`- 0. [enabled] "is:dupe": tag junk (id r1). New items it took: 1`, "  - Fatebringer (1007), Hunter",
+				`- 2. [enabled] "is:weapon": tag keep (id r3). New items it took: 1`, "  - Thorn (1008), Hunter",
+				"",
+				"New items that no rule took: 1", "  - Wormhusk Crown (1009), Hunter", "",
+				noVault, "",
+				once,
+			},
+			wantTags: []any{
+				map[string]any{
+					"instanceId": "1007", "itemHash": float64(100), "tagId": "junk", "ruleId": "r1", "removed": false,
+				},
+				map[string]any{
+					"instanceId": "1008", "itemHash": float64(103), "tagId": "keep", "ruleId": "r3", "removed": false,
+				},
+			},
+			tagged: map[string][2]string{"1007": {"junk", "r1"}, "1008": {"keep", "r3"}, "1009": {"", ""}},
+		},
+		"a rule without action": {
+			autotag: autotagBody(storedRule("r3", "is:weapon", "", 0, true)),
+			held:    thorn,
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed, "",
+				`- 0. [enabled] "is:weapon": no action (id r3). New items it took: 1`, "  - Thorn (1008), Hunter", "",
+				noneLeft, "",
+				noVault, "",
+				once,
+			},
+			tagged: map[string][2]string{"1008": {"", ""}},
+		},
+		"only vault items are new": {
+			autotag: autotagBody(weapon),
+			profile: newItemsProfile(t, nil, []string{newVaultGjallarhorn}),
+			newest:  "00000000000000001010",
+			want: []string{
+				"Claimed the new items. The stored mark moved from 00000000000000001006 to 00000000000000001010.",
+				"",
+				weaponLine + ". New items it took: 0", "",
+				noneLeft, "",
+				"New items already in the vault, which no rule takes: 1", "",
+				once,
+			},
+		},
+		"the autotag state is unreadable": {
+			setup: func(f *fakes) { delete(f.serviceData, pathAutotag) },
+			want: []string{
+				"run_autotag_rules claimed nothing, because the server could not read the autotag state: " +
+					"service: GET /api/autotag?since=0 returned status 404: Not found",
+			},
+			isError: true,
+		},
+		"autotagging never on": {
+			autotag: `{"rules": [], "state": null, "now": 10}`,
+			want:    []string{"Autotagging has never been turned on, so run_autotag_rules claimed nothing. " + turnOn},
+			isError: true,
+		},
+		"autotagging off": {
+			autotag: `{"rules": [], "state": {"enabled": false, "mark": "00000000000000001006", "updatedAt": 5}}`,
+			want:    []string{"Autotagging is off, so run_autotag_rules claimed nothing. " + turnOn},
+			isError: true,
+		},
+		"the inventory is unreadable": {
+			autotag: autotagBody(weapon),
+			profile: `{"ErrorCode": 5, "ErrorStatus": "SystemDisabled", "Message": "down"}`,
+			want: []string{
+				"run_autotag_rules claimed nothing, because the server could not read the inventory: " +
+					"fetching the profile: bungie: SystemDisabled: down",
+			},
+			isError: true,
+		},
+		"no character": {
+			autotag: autotagBody(weapon),
+			profile: `{"ErrorCode": 1, "Response": {
+				"profileInventory": {"data": {"items": [` + newVaultGjallarhorn + `]}},
+				"characters": {"data": {}}
+			}}`,
+			want:    []string{"The account has no character, so run_autotag_rules claimed nothing."},
+			isError: true,
+		},
+		"no new item": {
+			autotag: autotagBody(weapon),
+			profile: newItemsProfile(t, nil, nil),
+			want: []string{
+				"No owned item has an instance id above the stored mark 00000000000000001006, " +
+					"so run_autotag_rules claimed nothing.",
+			},
+			isError: true,
+		},
+		"an empty query": {
+			autotag: autotagBody(
+				storedRule("r1", " ", "junk", 0, true),
+				storedRule("r2", "is:weapon", "keep", 1, true),
+			),
+			held: thorn,
+			want: []string{
+				refusal,
+				`- 0. [enabled] " ": tag junk (id r1). The web client skips this rule: the query has no search term.`,
+				stillClaims,
+			},
+			isError: true,
+		},
+		"a DIM parse error": {
+			autotag: autotagBody(storedRule("r1", "is:weapon -", "junk", 0, true)),
+			held:    thorn,
+			want: []string{
+				refusal,
+				`- 0. [enabled] "is:weapon -": tag junk (id r1). The web client skips this rule: ` +
+					`the query ends after "-", which needs a search term after it.`,
+				stillClaims,
+			},
+			isError: true,
+		},
+		"an invalid value": {
+			autotag: autotagBody(storedRule("r1", "count:=<2", "junk", 0, true)),
+			held:    thorn,
+			want: []string{
+				refusal,
+				`- 0. [enabled] "count:=<2": tag junk (id r1). The web client skips this rule: ` +
+					`the web client rejects count:=<2.`,
+				stillClaims,
+			},
+			isError: true,
+		},
+		"an unsupported term": {
+			autotag: autotagBody(storedRule("r1", "is:masterwork", "junk", 0, true)),
+			held:    thorn,
+			want: []string{
+				refusal,
+				`- 0. [enabled] "is:masterwork": tag junk (id r1). The server cannot evaluate this rule: ` +
+					`the server does not evaluate is:masterwork.`,
+				stillClaims,
+			},
+			isError: true,
+		},
+		"a server-only refusal": {
+			autotag: autotagBody(storedRule("r1", "is:weapon ) is:armor", "junk", 0, true)),
+			held:    thorn,
+			want: []string{
+				refusal,
+				`- 0. [enabled] "is:weapon ) is:armor": tag junk (id r1). The server cannot evaluate this rule: ` +
+					`the web client runs this rule, and the server cannot evaluate it: ` +
+					`the query has a ")" that closes no "(", and the web client ignores ") is:armor".`,
+				stillClaims,
+			},
+			isError: true,
+		},
+		"a PvP rating without the PvP sheet": {
+			autotag: autotagBody(storedRule("r1", "pvprate:>=a", "junk", 0, true)),
+			held:    thorn,
+			sheet:   true,
+			want: []string{
+				refusal,
+				`- 0. [enabled] "pvprate:>=a": tag junk (id r1). The server cannot evaluate this rule: ` +
+					noPvPSheet + ".",
+				stillClaims,
+			},
+			isError: true,
+		},
+		"a vault rule": {
+			autotag: autotagBody(`{"id": "r1", "query": "is:armor", "vault": true, "enabled": true, ` +
+				`"position": 0, "removed": false, "updatedAt": 5}`),
+			held: thorn,
+			want: []string{
+				refusal,
+				`- 0. [enabled] "is:armor": move to vault (id r1). ` +
+					`The rule moves items to the vault, which run_autotag_rules does not do.`,
+				stillClaims,
+			},
+			isError: true,
+		},
+		"an undecided item": {
+			autotag: autotagBody(
+				storedRule("r1", "rate:>=a", "junk", 0, true),
+				storedRule("r2", "is:weapon", "keep", 1, true),
+			),
+			held:  []string{newFatebringer},
+			sheet: true,
+			want: []string{
+				refusal,
+				`- Fatebringer (1007): the server cannot decide whether rule 0 "rate:>=a" takes it: ` +
+					reasonNoPerks + ".",
+				stillClaims,
+			},
+			isError: true,
+		},
+		"every cause is listed": {
+			autotag: autotagBody(
+				storedRule("r1", "is:masterwork", "junk", 0, true),
+				storedRule("r2", "count:=<2", "junk", 1, true),
+			),
+			held: thorn,
+			want: []string{
+				refusal,
+				`- 0. [enabled] "is:masterwork": tag junk (id r1). The server cannot evaluate this rule: ` +
+					`the server does not evaluate is:masterwork.`,
+				`- 1. [enabled] "count:=<2": tag junk (id r2). The web client skips this rule: ` +
+					`the web client rejects count:=<2.`,
+				stillClaims,
+			},
+			isError: true,
+		},
+		"the claim does not apply": {
+			autotag: autotagBody(weapon),
+			held:    thorn,
+			setup:   func(f *fakes) { f.claim = answer{status: http.StatusOK, body: `{"applied": false}`} },
+			newest:  "00000000000000001008",
+			want: []string{
+				"The service did not apply the claim, so run_autotag_rules tagged nothing. " +
+					"Another runner, such as the open web client, claimed these items first, " +
+					"or autotagging was turned off.",
+			},
+			isError: true,
+		},
+		"the claim fails and the mark stays": {
+			reread:  true,
+			autotag: autotagBody(weapon),
+			held:    thorn,
+			setup: func(f *fakes) {
+				f.claim = internal
+				f.claimedAutotag = answer{status: http.StatusOK, body: autotagBody(weapon)}
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimFailed + " The stored mark is still 00000000000000001006, " +
+					"so run_autotag_rules claimed nothing and tagged nothing.",
+			},
+			isError: true,
+		},
+		"the claim fails and the mark moved": {
+			reread:  true,
+			autotag: autotagBody(weapon),
+			held:    thorn,
+			setup: func(f *fakes) {
+				f.claim = internal
+				f.claimedAutotag = answer{status: http.StatusOK, body: `{"rules": [` + weapon + `], ` +
+					`"state": {"enabled": true, "mark": "00000000000000001008", "updatedAt": 6}}`}
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimFailed + " The stored mark moved from 00000000000000001006 to 00000000000000001008, " +
+					"so the claim might have applied, for this call or for another runner. " +
+					"run_autotag_rules tagged nothing.",
+				"",
+				unless,
+				`- Thorn (1008): tag keep (rule 0 "is:weapon")`,
+				"",
+				once,
+			},
+			isError: true,
+		},
+		"the claim fails and the mark moved without a rule tag": {
+			reread:  true,
+			autotag: autotagBody(storedRule("r3", "is:weapon", "", 0, true)),
+			held:    thorn,
+			setup: func(f *fakes) {
+				f.claim = internal
+				f.claimedAutotag = answer{status: http.StatusOK, body: `{"rules": [], ` +
+					`"state": {"enabled": true, "mark": "00000000000000001008", "updatedAt": 6}}`}
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimFailed + " The stored mark moved from 00000000000000001006 to 00000000000000001008, " +
+					"so the claim might have applied, for this call or for another runner. " +
+					"run_autotag_rules tagged nothing.",
+				"",
+				once,
+			},
+			isError: true,
+		},
+		"the claim fails and the state is unreadable": {
+			reread:  true,
+			autotag: autotagBody(weapon),
+			held:    thorn,
+			setup: func(f *fakes) {
+				f.claim = internal
+				f.claimedAutotag = internal
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimFailed + " The server could not read the autotag state again: " +
+					"service: GET /api/autotag?since=0 returned status 500: Internal error. " +
+					"The claim might have applied. run_autotag_rules tagged nothing.",
+				"",
+				unless,
+				`- Thorn (1008): tag keep (rule 0 "is:weapon")`,
+				"",
+				once,
+			},
+			isError: true,
+		},
+		"the claim fails and the state is gone": {
+			reread:  true,
+			autotag: autotagBody(weapon),
+			held:    thorn,
+			setup: func(f *fakes) {
+				f.claim = internal
+				f.claimedAutotag = answer{status: http.StatusOK, body: `{"rules": [], "state": null, "now": 10}`}
+			},
+			newest: "00000000000000001008",
+			want: []string{
+				claimFailed + " The server could not read the autotag state again: " +
+					"service: the service returned no autotag state. " +
+					"The claim might have applied. run_autotag_rules tagged nothing.",
+				"",
+				unless,
+				`- Thorn (1008): tag keep (rule 0 "is:weapon")`,
+				"",
+				once,
+			},
+			isError: true,
+		},
+		"the tag write fails": {
+			autotag: autotagBody(weapon),
+			held:    thorn,
+			setup:   func(f *fakes) { f.tagWriteStatus = http.StatusInternalServerError },
+			newest:  "00000000000000001008",
+			want: []string{
+				claimed,
+				"",
+				"The tag write failed: writing tags: service: POST /api/tags returned status 500: " +
+					"Tag store unavailable. Tag these items with set_tag:",
+				"- Thorn (1008): tag keep",
+				"",
+				once,
+			},
+			wantTags: []any{keepRow},
+			tagged:   map[string][2]string{"1008": {"", ""}},
+			isError:  true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.serviceData[pathAutotag] = tc.autotag
+			f.h.defs.defs.Items[103] = ItemDef{
+				Name:       "Thorn",
+				TypeName:   "Hand Cannon",
+				Tier:       "Exotic",
+				Bucket:     bucketKinetic,
+				ItemType:   itemTypeWeapon,
+				ClassType:  classAny,
+				Equippable: true,
+			}
+			f.h.defs.defs.Items[201] = ItemDef{
+				Name:       "Wormhusk Crown",
+				TypeName:   "Helmet",
+				Tier:       "Exotic",
+				Bucket:     bucketHelmet,
+				ItemType:   itemTypeArmor,
+				ClassType:  1,
+				Equippable: true,
+			}
+
+			if tc.sheet {
+				withAegisSheet(f)
+			}
+
+			if tc.setup != nil {
+				tc.setup(f)
+			}
+
+			// The handler caches the fixture profile, which holds no new
+			// item, so only a fresh profile finds the new items.
+			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+			require.False(t, isError)
+
+			f.profileBody = tc.profile
+			if f.profileBody == "" {
+				f.profileBody = newItemsProfile(t, tc.held, nil)
+			}
+
+			got, isError := call(t, f.h.handleRunAutotagRules, EmptyInput{})
+			assert.Equal(t, tc.isError, isError, got)
+			assert.Equal(t, strings.Join(tc.want, "\n"), got)
+
+			claims := f.claims()
+			if tc.newest == "" {
+				assert.Empty(t, claims, "nothing is claimed")
+			} else {
+				require.Len(t, claims, 1)
+				assert.Equal(t, "Bearer session-1", claims[0].Auth)
+				assert.Equal(t, map[string]any{"kind": "claim", "from": stored, "to": tc.newest}, claims[0].Body)
+			}
+
+			writes := f.service.calls(http.MethodPost, pathTags)
+			if tc.wantTags == nil {
+				assert.Empty(t, writes, "nothing is tagged")
+			} else {
+				require.Len(t, writes, 1)
+				assert.Equal(t, map[string]any{"defs": []any{}, "items": tc.wantTags}, writes[0].Body)
+			}
+
+			// The cached snapshot holds the tags that the call wrote.
+			for id, want := range tc.tagged {
+				items, err := findItems(f.h.snapshot, []string{id})
+				require.NoError(t, err)
+				assert.Equal(t, want, [2]string{items[0].Tag, items[0].TagRule}, id)
+			}
+
+			reads := 1
+			if tc.reread {
+				reads = 2
+			}
+
+			assert.Len(t, f.service.calls(http.MethodGet, pathAutotag), reads)
 			assert.Empty(t, f.service.calls(http.MethodPost, pathAutotag), "no rule changes")
 
 			for _, req := range f.bungie.all() {

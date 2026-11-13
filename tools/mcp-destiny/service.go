@@ -397,6 +397,22 @@ func (s *Service) SetAutotagEnabled(ctx context.Context, session string, enabled
 		body = map[string]any{"kind": "enable", "mark": mark}
 	}
 
+	return s.changeAutotagState(ctx, session, body)
+}
+
+// ClaimAutotag moves the stored autotag mark to the value of the to
+// parameter and reports whether the service applied the claim. The
+// service applies a claim only while autotagging is on and the stored mark
+// equals the value of the from parameter. At most one runner therefore
+// claims the items between the two marks. The service refuses a claim
+// whose to mark is not higher than its from mark.
+func (s *Service) ClaimAutotag(ctx context.Context, session, from, to string) (bool, error) {
+	return s.changeAutotagState(ctx, session, map[string]any{"kind": "claim", "from": from, "to": to})
+}
+
+// changeAutotagState posts one change of the autotag state and returns the
+// applied field of the answer.
+func (s *Service) changeAutotagState(ctx context.Context, session string, body map[string]any) (bool, error) {
 	var out struct {
 		Applied bool `json:"applied"`
 	}

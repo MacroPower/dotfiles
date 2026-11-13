@@ -670,6 +670,34 @@ type fakes struct {
 	// bungieErrorPath limits it to the action at that path.
 	bungieError     string
 	bungieErrorPath string
+	// claim answers each claim POST to /api/autotag/state. A zero claim
+	// answers with {"applied": true}.
+	claim answer
+	// claimedAutotag answers each GET of /api/autotag after a claim
+	// POST. A zero claimedAutotag keeps the body of serviceData.
+	claimedAutotag answer
+	// tagWriteStatus is the status of the answer to each POST to
+	// /api/tags. Zero answers with 200.
+	tagWriteStatus int
+}
+
+// answer is the status and the body of one answer of a fake server.
+type answer struct {
+	body   string
+	status int
+}
+
+// claims returns the claim POSTs that the fake service received.
+func (f *fakes) claims() []request {
+	var out []request
+
+	for _, req := range f.service.calls(http.MethodPost, "/api/autotag/state") {
+		if req.Body["kind"] == "claim" {
+			out = append(out, req)
+		}
+	}
+
+	return out
 }
 
 func newFakes(t *testing.T) *fakes {
@@ -725,6 +753,13 @@ func newFakes(t *testing.T) *fakes {
 
 		case f.staleSession != "" && req.Auth == "Bearer "+f.staleSession:
 			writeJSON(t, w, http.StatusUnauthorized, `{"error": "Sign in required"}`)
+		case req.Path == "/api/autotag/state" && req.Body["kind"] == "claim" && f.claim.status != 0:
+			writeJSON(t, w, f.claim.status, f.claim.body)
+		case req.Method == http.MethodGet && req.Path == "/api/autotag" && f.claimedAutotag.status != 0 &&
+			len(f.claims()) > 0:
+			writeJSON(t, w, f.claimedAutotag.status, f.claimedAutotag.body)
+		case req.Method == http.MethodPost && req.Path == "/api/tags" && f.tagWriteStatus != 0:
+			writeJSON(t, w, f.tagWriteStatus, `{"error": "Tag store unavailable"}`)
 		case req.Method == http.MethodGet && f.serviceData[req.Path] != "":
 			writeJSON(t, w, http.StatusOK, f.serviceData[req.Path])
 		case req.Path == "/api/autotag/state":

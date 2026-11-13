@@ -451,10 +451,10 @@ func (s *Snapshot) NewestMark() string {
 }
 
 // NewItems returns the items of [ownedItems] whose [markOf] is higher than
-// mark, which the next claim of the web client covers. The first list
-// holds the items outside the vault, which the web client offers to the
-// autotag rules. The second list holds the items in the vault. Both lists
-// follow the order of [compareIDs].
+// mark, which the next claim covers. The first list holds the items
+// outside the vault, which the claim offers to the autotag rules. The
+// second list holds the items in the vault. Both lists follow the order of
+// [compareIDs].
 func (s *Snapshot) NewItems(mark string) ([]*Item, []*Item) {
 	var held, vault []*Item
 
@@ -478,8 +478,10 @@ func (s *Snapshot) NewItems(mark string) ([]*Item, []*Item) {
 
 // tagChanges returns the rows that leave an item with tagID as its one
 // ordinary tag. An empty tagID leaves the item untagged. The favorite tag
-// is independent of the ordinary tag, so tagChanges keeps it.
-func tagChanges(rows []ItemTag, instanceID string, itemHash uint32, tagID string) []ItemTag {
+// is independent of the ordinary tag, so tagChanges keeps it. The row that
+// adds tagID carries ruleID, the id of the autotag rule that sets the tag.
+// A tag that a person sets has an empty ruleID.
+func tagChanges(rows []ItemTag, instanceID string, itemHash uint32, tagID, ruleID string) []ItemTag {
 	var changes []ItemTag
 
 	for _, row := range rows {
@@ -496,7 +498,7 @@ func tagChanges(rows []ItemTag, instanceID string, itemHash uint32, tagID string
 	}
 
 	if tagID != "" {
-		changes = append(changes, ItemTag{InstanceID: instanceID, ItemHash: itemHash, TagID: tagID})
+		changes = append(changes, ItemTag{InstanceID: instanceID, ItemHash: itemHash, TagID: tagID, RuleID: ruleID})
 	}
 
 	return changes

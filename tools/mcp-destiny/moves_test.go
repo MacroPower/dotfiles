@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -682,10 +683,16 @@ func TestTagChanges(t *testing.T) {
 		{InstanceID: "1001", ItemHash: 100, TagID: tagFavorite},
 		{InstanceID: "1001", ItemHash: 100, TagID: "pvp", Removed: true},
 		{InstanceID: "1002", ItemHash: 101, TagID: "junk"},
+		{InstanceID: "1003", ItemHash: 100, TagID: "junk", RuleID: "rule-1"},
 	}
 
 	tests := map[string]struct {
-		tag  string
+		// instance is the instance id of the item. It defaults to 1001.
+		instance string
+		tag      string
+		// rule is the id of the autotag rule that sets the tag. It is
+		// empty for a tag that a person sets.
+		rule string
 		want []ItemTag
 	}{
 		"replace the tag": {
@@ -707,13 +714,37 @@ func TestTagChanges(t *testing.T) {
 				{InstanceID: "1001", ItemHash: 100, TagID: "keep"},
 			},
 		},
+		// Only the added row carries the rule id, as in the web client.
+		"a rule replaces the tag": {
+			tag:  "junk",
+			rule: "rule-1",
+			want: []ItemTag{
+				{InstanceID: "1001", ItemHash: 100, TagID: "keep", Removed: true},
+				{InstanceID: "1001", ItemHash: 100, TagID: "junk", RuleID: "rule-1"},
+			},
+		},
+		"a rule sets the tag that a person set": {
+			tag:  "keep",
+			rule: "rule-1",
+			want: []ItemTag{
+				{InstanceID: "1001", ItemHash: 100, TagID: "keep", RuleID: "rule-1"},
+			},
+		},
+		"a person sets the tag that a rule set": {
+			instance: "1003",
+			tag:      "junk",
+			want: []ItemTag{
+				{InstanceID: "1003", ItemHash: 100, TagID: "junk"},
+			},
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.want, tagChanges(rows, "1001", 100, tc.tag))
+			instance := cmp.Or(tc.instance, "1001")
+			assert.Equal(t, tc.want, tagChanges(rows, instance, 100, tc.tag, tc.rule))
 		})
 	}
 }

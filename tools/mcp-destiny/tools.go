@@ -47,6 +47,7 @@ const (
 	toolPreviewAutotagRule  = "preview_autotag_rule"
 	toolRemoveAutotagRule   = "remove_autotag_rule"
 	toolSetAutotagEnabled   = "set_autotag_enabled"
+	toolRunAutotagRules     = "run_autotag_rules"
 	toolListActivityHistory = "list_activity_history"
 	toolListVendors         = "list_vendors"
 	toolListActivities      = "list_activities"
@@ -120,6 +121,11 @@ var (
 	errNoLoadoutCharacter = fmt.Errorf(
 		"%w: pass the character of the loadout as a character id or a class name", ErrUnknownTarget,
 	)
+
+	// errNoAutotagState reports an autotag read that returns no state.
+	// The service keeps the state after the first time a client turns
+	// autotagging on, so the read after a claim request expects one.
+	errNoAutotagState = fmt.Errorf("%w: the service returned no autotag state", ErrService)
 )
 
 // EmptyInput is the input schema of the tools that take no arguments.
@@ -1401,7 +1407,7 @@ func (h *handler) handleSetTag(
 	var changes []ItemTag
 
 	for _, item := range items {
-		changes = append(changes, tagChanges(rows, item.InstanceID, item.Hash, tag)...)
+		changes = append(changes, tagChanges(rows, item.InstanceID, item.Hash, tag, "")...)
 	}
 
 	err = h.writeTags(ctx, changes)
@@ -1629,10 +1635,10 @@ func (h *handler) handleSetPerkPreferences(
 
 // handleListAutotagRules lists the autotag rules and the autotag state.
 // With matches=new, it shows the rule that takes each item that the next
-// claim of the web client offers to the rules. It claims nothing. With
-// matches=owned, it counts the owned items that each rule matches, as the
-// rule editor of the web client counts them. It refuses any other matches
-// value before it sends a request.
+// claim offers to the rules. It claims nothing. With matches=owned, it
+// counts the owned items that each rule matches, as the rule editor of the
+// web client counts them. It refuses any other matches value before it
+// sends a request.
 func (h *handler) handleListAutotagRules(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -2272,11 +2278,169 @@ func (h *handler) handleSetAutotagEnabled(
 			fmt.Errorf("%w: the service did not apply the change", ErrService))
 
 	case in.Enabled:
-		return textResult("Autotagging is on. The rules apply to items acquired from now on, " +
-			"and the web client runs them while it is open."), nil, nil
+		return textResult("Autotagging is on. The rules apply to items acquired from now on. " +
+			"The web client runs them while it is open, " +
+			"and run_autotag_rules runs them when a caller invokes it."), nil, nil
 
 	default:
 		return textResult("Autotagging is off."), nil, nil
+	}
+}
+
+// handleRunAutotagRules runs the autotag rules on the new items, as the
+// web client does while it is open. It reads the autotag state and a
+// fresh profile, and it evaluates every enabled rule over the new items
+// before it claims anything. It claims the new items through the service
+// only when it can apply every enabled rule the way the web client does.
+// After an applied claim, it writes the tag of each rule with the rule id.
+// Every result other than that success is an error result. A claim
+// happens at most once, so the handler retries neither the claim nor the
+// tag write.
+func (h *handler) handleRunAutotagRules(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	_ EmptyInput,
+) (*mcp.CallToolResult, any, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	refuse := func(text string) (*mcp.CallToolResult, any, error) {
+		return h.toolRefusal(ctx, toolRunAutotagRules, text)
+	}
+
+	snapshot, err := h.autotag(ctx)
+	if err != nil {
+		return refuse("run_autotag_rules claimed nothing, because the server could not read the autotag state: " +
+			errorText(err))
+	}
+
+	switch {
+	case snapshot.State == nil:
+		return refuse("Autotagging has never been turned on, so run_autotag_rules claimed nothing. " +
+			"Turn it on with set_autotag_enabled first.")
+
+	case !snapshot.State.Enabled:
+		return refuse("Autotagging is off, so run_autotag_rules claimed nothing. " +
+			"Turn it on with set_autotag_enabled first.")
+	}
+
+	// A cached profile can miss the newest drops and claim up to a lower
+	// mark.
+	s, rows, err := h.loadAnnotated(ctx, true)
+	if err != nil {
+		return refuse("run_autotag_rules claimed nothing, because the server could not read the inventory: " +
+			errorText(err))
+	}
+
+	if _, ok := s.lastPlayed(); !ok {
+		return refuse("The account has no character, so run_autotag_rules claimed nothing.")
+	}
+
+	stored := snapshot.State.Mark
+
+	// The service refuses a claim whose new mark is not higher than the
+	// stored mark.
+	newest := s.NewestMark()
+	if newest <= stored {
+		return refuse(fmt.Sprintf("No owned item has an instance id above the stored mark %s, "+
+			"so run_autotag_rules claimed nothing.", stored))
+	}
+
+	held, vault := s.NewItems(stored)
+	evals := h.evalRules(ctx, s, liveRules(snapshot.Rules))
+	m := firstMatch(evals, held)
+
+	refusal := renderRunRefusal(evals, m)
+	if refusal != "" {
+		return refuse(refusal)
+	}
+
+	tags := ruleTags(evals, m)
+
+	// The service checks the session before it reads the claim, so the
+	// repeat of withSession after a rejected session claims at most once.
+	applied, err := sessionValue(ctx, h, func(session string) (bool, error) {
+		return h.service.ClaimAutotag(ctx, session, stored, newest)
+	})
+	if err != nil {
+		return refuse(h.claimFailure(ctx, stored, err, tags))
+	}
+
+	if !applied {
+		return refuse("The service did not apply the claim, so run_autotag_rules tagged nothing. " +
+			"Another runner, such as the open web client, claimed these items first, or autotagging was turned off.")
+	}
+
+	var changes []ItemTag
+
+	for _, t := range tags {
+		changes = append(changes, tagChanges(rows, t.item.InstanceID, t.item.Hash, t.rule.TagID, t.rule.ID)...)
+	}
+
+	err = h.writeTags(ctx, changes)
+	if err != nil {
+		return refuse(renderTagFailure(stored, newest, err, tags))
+	}
+
+	// The cached snapshot holds the tags that the rules set.
+	for _, t := range tags {
+		t.item.Tag = t.rule.TagID
+		t.item.TagRule = t.rule.ID
+	}
+
+	return textResult(renderRun(s, stored, newest, evals, m, vault)), nil, nil
+}
+
+// ruleTag is one new item that an enabled rule with a tag takes.
+type ruleTag struct {
+	item *Item
+	rule AutotagRule
+}
+
+// ruleTags returns each new item of m that a rule with a tag takes, in
+// rule order and then in the order of the items. A rule without a tag
+// takes its items and tags none of them.
+func ruleTags(evals []ruleEval, m newMatches) []ruleTag {
+	var tags []ruleTag
+
+	for i, e := range evals {
+		if e.rule.TagID == "" {
+			continue
+		}
+
+		for _, item := range m.taken[i] {
+			tags = append(tags, ruleTag{item: item, rule: e.rule})
+		}
+	}
+
+	return tags
+}
+
+// claimFailure returns the text of a claim request that returned err. The
+// request might still have run the claim in the service, so claimFailure
+// reads the autotag state again and compares its mark with stored. When
+// the mark moved or the read does not succeed, the text names each item
+// of tags with the tag of its rule and ends with [claimOnce].
+func (h *handler) claimFailure(ctx context.Context, stored string, err error, tags []ruleTag) string {
+	again, againErr := h.autotag(ctx)
+	if againErr == nil && again.State == nil {
+		againErr = errNoAutotagState
+	}
+
+	switch {
+	case againErr != nil:
+		return renderUnsureClaim(fmt.Sprintf("The claim request failed: %v. "+
+			"The server could not read the autotag state again: %v. The claim might have applied. "+
+			"run_autotag_rules tagged nothing.", err, againErr), tags)
+
+	case again.State.Mark == stored:
+		return fmt.Sprintf("The claim request failed: %v. The stored mark is still %s, "+
+			"so run_autotag_rules claimed nothing and tagged nothing.", err, stored)
+
+	default:
+		return renderUnsureClaim(fmt.Sprintf("The claim request failed: %v. The stored mark moved from %s to %s, "+
+			"so the claim might have applied, for this call or for another runner. "+
+			"run_autotag_rules tagged nothing.", err, stored, again.State.Mark), tags)
 	}
 }
 
@@ -3013,15 +3177,37 @@ func (h *handler) toolError(ctx context.Context, tool string, err error) (*mcp.C
 		slog.Any("error", err),
 	)
 
+	return errorResult(errorText(err)), nil, nil
+}
+
+// toolRefusal logs text and returns it as a tool result with
+// [*mcp.CallToolResult.IsError] set. A handler calls it for an error
+// result whose text it writes in full.
+func (h *handler) toolRefusal(ctx context.Context, tool, text string) (*mcp.CallToolResult, any, error) {
+	h.log.WarnContext(ctx, "tool error",
+		slog.String("tool", tool),
+		slog.String("error", text),
+	)
+
+	return errorResult(text), nil, nil
+}
+
+// errorText returns the text of err for a tool result. When nobody is
+// signed in, the text tells the model to call the login tool.
+func errorText(err error) string {
 	text := err.Error()
 	if errors.Is(err, ErrNotSignedIn) {
 		text += ". Call the login tool to sign in."
 	}
 
+	return text
+}
+
+func errorResult(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: text}},
 		IsError: true,
-	}, nil, nil
+	}
 }
 
 func textResult(text string) *mcp.CallToolResult {

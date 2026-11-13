@@ -3498,6 +3498,7 @@ in
           "mcp__destiny__save_autotag_rule"
           "mcp__destiny__remove_autotag_rule"
           "mcp__destiny__set_autotag_enabled"
+          "mcp__destiny__run_autotag_rules"
         ];
         instructions.items = [
           "Use `mcp__destiny__*` tools for Destiny 2 account data in Agg's Destiny Vault Manager, such as the inventory, tags, notes, and activity history."

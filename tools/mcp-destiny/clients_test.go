@@ -184,6 +184,59 @@ func TestServiceWrites(t *testing.T) {
 	}}, rules[0].Body)
 }
 
+func TestServiceClaimAutotag(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		err    error
+		body   string
+		status int
+		want   bool
+	}{
+		"the service applies the claim": {
+			status: http.StatusOK,
+			body:   `{"applied": true}`,
+			want:   true,
+		},
+		"another runner claimed first": {
+			status: http.StatusOK,
+			body:   `{"applied": false}`,
+		},
+		"the service refuses the change": {
+			status: http.StatusBadRequest,
+			body:   `{"error": "Bad autotag state"}`,
+			err:    ErrService,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			u, rec := serve(t, tc.status, tc.body)
+
+			got, err := NewService(WithServiceURL(u)).ClaimAutotag(
+				t.Context(), "session", "00000000000000001006", "00000000000000001009",
+			)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				assert.Contains(t, err.Error(), "Bad autotag state")
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, tc.want, got)
+
+			claims := rec.calls(http.MethodPost, "/api/autotag/state")
+			require.Len(t, claims, 1)
+			assert.Equal(t, "Bearer session", claims[0].Auth)
+			assert.Equal(t, map[string]any{
+				"kind": "claim", "from": "00000000000000001006", "to": "00000000000000001009",
+			}, claims[0].Body)
+		})
+	}
+}
+
 func TestServiceGrantRejected(t *testing.T) {
 	t.Parallel()
 
