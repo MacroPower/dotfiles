@@ -92,6 +92,11 @@ const (
 	// targetInventory is the move_stack target that names the side of a
 	// stack outside the vault.
 	targetInventory = "inventory"
+
+	// matchesNew is the matches value of list_autotag_rules that shows
+	// the rule that takes each item that the next claim offers to the
+	// rules.
+	matchesNew = "new"
 )
 
 var (
@@ -240,6 +245,12 @@ type SaveLoadoutInput struct {
 type ClearLoadoutInput struct {
 	Character string `json:"character" jsonschema:"Character id, or a class name that exactly one character has"`
 	Number    int    `json:"number"    jsonschema:"Loadout number from list_loadouts, which counts the in-game loadout screen from 1"`
+}
+
+// ListAutotagRulesInput is the input schema of the list_autotag_rules
+// tool.
+type ListAutotagRulesInput struct {
+	Matches string `json:"matches,omitzero" jsonschema:"new to show which rule would take each item that the next claim offers to the rules, without claiming"`
 }
 
 // SetAutotagEnabledInput is the input schema of the set_autotag_enabled
@@ -1611,20 +1622,268 @@ func (h *handler) handleSetPerkPreferences(
 	return textResult("Saved. Preferences are:\n\n" + renderPerkPreferences(prefs)), nil, nil
 }
 
+// handleListAutotagRules lists the autotag rules and the autotag state.
+// With matches=new, it shows the rule that takes each item that the next
+// claim of the web client offers to the rules. It claims nothing. It
+// refuses any other matches value before it sends a request.
 func (h *handler) handleListAutotagRules(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
-	_ EmptyInput,
+	in ListAutotagRulesInput,
 ) (*mcp.CallToolResult, any, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	matches := strings.ToLower(strings.TrimSpace(in.Matches))
+	if matches != "" && matches != matchesNew {
+		return h.toolError(ctx, toolListAutotagRules,
+			fmt.Errorf("%w: matches %q is not %s", ErrInvalidInput, in.Matches, matchesNew))
+	}
 
 	snapshot, err := h.autotag(ctx)
 	if err != nil {
 		return h.toolError(ctx, toolListAutotagRules, err)
 	}
 
-	return textResult(renderAutotag(snapshot)), nil, nil
+	if matches == "" {
+		return textResult(renderAutotag(snapshot)), nil, nil
+	}
+
+	text, err := h.newItemMatches(ctx, snapshot)
+	if err != nil {
+		return h.toolError(ctx, toolListAutotagRules, err)
+	}
+
+	return textResult(text), nil, nil
+}
+
+// newItemMatches returns the text of list_autotag_rules with matches=new.
+// It reads a fresh profile, because a cached profile can miss the newest
+// drops. It reads the profile only while autotagging is on, because the
+// web client runs the rules only then. It returns the error of the
+// profile, tag, or note read.
+func (h *handler) newItemMatches(ctx context.Context, snapshot AutotagSnapshot) (string, error) {
+	switch {
+	case snapshot.State == nil:
+		return "Autotagging has never been turned on, so no item waits for the rules.", nil
+	case !snapshot.State.Enabled:
+		return "Autotagging is off, so no item waits for the rules.", nil
+	}
+
+	s, _, err := h.loadAnnotated(ctx, true)
+	if err != nil {
+		return "", err
+	}
+
+	if _, ok := s.lastPlayed(); !ok {
+		return "The account has no character, so the server cannot tell which items the rules would take.", nil
+	}
+
+	stored := snapshot.State.Mark
+
+	newest := s.NewestMark()
+	if newest <= stored {
+		return fmt.Sprintf("No owned item has an instance id above the stored mark %s, "+
+			"so the next claim offers no item to the rules.", stored), nil
+	}
+
+	held, vault := s.NewItems(stored)
+	evals := h.evalRules(ctx, s, liveRules(snapshot.Rules))
+
+	return renderNewMatches(s, stored, newest, evals, firstMatch(evals, held), vault), nil
+}
+
+// ruleClass tells what the server knows about one autotag rule before it
+// reads any item.
+type ruleClass uint8
+
+// The classes of a [ruleEval].
+const (
+	// ruleEvaluated marks a rule whose query the server evaluates.
+	ruleEvaluated ruleClass = iota
+	// ruleSkipped marks a rule that the web client skips, so the rule
+	// takes no item.
+	ruleSkipped
+	// ruleBlocked marks a rule that the web client runs, or might run,
+	// and that the server cannot evaluate. The server then cannot tell
+	// which items the rule takes, and so which items reach the later
+	// rules.
+	ruleBlocked
+)
+
+// ruleEval is the class of one live autotag rule before any item. A
+// skipped rule and a blocked rule carry the reason of the class, and an
+// evaluated rule carries the test of its query. The class ignores whether
+// the rule is enabled.
+type ruleEval struct {
+	// test is the test of the compiled query of an evaluated rule. It is
+	// nil for the other classes.
+	test func(*Item) outcome
+	// reason is the skip reason of a skipped rule or the block reason of
+	// a blocked rule. It is empty for an evaluated rule.
+	reason string
+	rule   AutotagRule
+	class  ruleClass
+}
+
+// evalRules returns the [ruleEval] of each rule of rules, in the same
+// order. It classifies a rule by the first problem of its query. The
+// problems come in this order: a parse error, a value that the web client
+// rejects, a term that the server does not evaluate, and a game mode
+// without ratings. A parse error that the web client runs blocks the rule,
+// and any other parse error skips it, as an invalid value does. A rule
+// without a problem gets the evaluated class.
+//
+// The tests of the evaluated rules share one search context over every
+// built item, the vault included, as the web client passes every item to
+// its filters. evalRules reads the rating sources one time, and only when
+// some rule of rules reads a game mode.
+func (h *handler) evalRules(ctx context.Context, s *Snapshot, rules []AutotagRule) []ruleEval {
+	evals := make([]ruleEval, len(rules))
+	queries := make([]compiledQuery, len(rules))
+	rated := false
+
+	for i, rule := range rules {
+		evals[i].rule = rule
+
+		root, err := parseQuery(rule.Query)
+		if err != nil {
+			var queryErr *QueryError
+			if errors.As(err, &queryErr) && queryErr.WebClientRuns() {
+				evals[i].class = ruleBlocked
+				evals[i].reason = "the web client runs this rule, and the server cannot evaluate it: " + err.Error()
+			} else {
+				evals[i].class = ruleSkipped
+				evals[i].reason = err.Error()
+			}
+
+			continue
+		}
+
+		query := compileQuery(root)
+
+		switch {
+		case len(query.invalid) > 0:
+			evals[i].class = ruleSkipped
+			evals[i].reason = "the web client rejects " + strings.Join(query.invalid, ", ")
+
+		case len(query.unsupported) > 0:
+			evals[i].class = ruleBlocked
+			evals[i].reason = "the server does not evaluate " + strings.Join(query.unsupported, ", ")
+
+		default:
+			queries[i] = query
+			rated = rated || len(query.modes) > 0
+		}
+	}
+
+	var sources map[string]RatingSource
+	if rated {
+		sources = h.ratingSources(ctx)
+	}
+
+	current, _ := s.lastPlayed()
+	search := searchContext{current: current, items: builtItems(s), sources: sources}
+
+	for i := range evals {
+		if evals[i].class != ruleEvaluated {
+			continue
+		}
+
+		reason := queries[i].unratedReason(sources)
+		if reason != "" {
+			evals[i].class = ruleBlocked
+			evals[i].reason = reason
+
+			continue
+		}
+
+		evals[i].test = queries[i].test(search)
+	}
+
+	return evals
+}
+
+// newMatches is what [firstMatch] gives the new items. Each list follows
+// the order of the items that firstMatch reads.
+type newMatches struct {
+	// taken holds the items that each rule takes, at the index of its
+	// [ruleEval].
+	taken [][]*Item
+	// undecided holds the items that an enabled rule leaves undecided
+	// before any rule matches them.
+	undecided []undecidedAt
+	// reaching holds the items that reach the first enabled rule that
+	// blocks.
+	reaching []*Item
+	// untaken holds the items that no rule takes. It is empty when an
+	// enabled rule blocks.
+	untaken []*Item
+	// blocked is the index of the [ruleEval] of the first enabled rule
+	// that blocks, or -1 when no enabled rule blocks.
+	blocked int
+	// offered is the number of items that firstMatch reads.
+	offered int
+}
+
+// undecidedAt is a new item that an enabled rule leaves undecided, with
+// the index of the [ruleEval] of the rule and the reasons of the outcome.
+type undecidedAt struct {
+	item    *Item
+	reasons []string
+	rule    int
+}
+
+// firstMatch gives each item of items to the first enabled rule of evals,
+// in order, whose query matches the item, as the web client does. For
+// each item, it walks the enabled rules. It passes a skipped rule, and it
+// stops at a blocked rule, because that rule might take the item. It
+// stops at a rule that leaves the item undecided, because that rule might
+// take the item too.
+func firstMatch(evals []ruleEval, items []*Item) newMatches {
+	m := newMatches{
+		taken:   make([][]*Item, len(evals)),
+		blocked: slices.IndexFunc(evals, func(e ruleEval) bool { return e.rule.Enabled && e.class == ruleBlocked }),
+		offered: len(items),
+	}
+
+	walked := evals
+	if m.blocked >= 0 {
+		walked = evals[:m.blocked]
+	}
+
+items:
+	for _, item := range items {
+		for i, e := range walked {
+			if !e.rule.Enabled || e.class != ruleEvaluated {
+				continue
+			}
+
+			got := e.test(item)
+
+			switch got.state {
+			case match:
+				m.taken[i] = append(m.taken[i], item)
+
+				continue items
+
+			case undecided:
+				m.undecided = append(m.undecided, undecidedAt{item: item, reasons: got.reasons, rule: i})
+
+				continue items
+
+			case noMatch:
+			}
+		}
+
+		if m.blocked >= 0 {
+			m.reaching = append(m.reaching, item)
+		} else {
+			m.untaken = append(m.untaken, item)
+		}
+	}
+
+	return m
 }
 
 // handleSaveAutotagRule writes the rule that [mergeRule] builds. When the

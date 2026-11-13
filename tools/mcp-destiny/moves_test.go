@@ -573,15 +573,105 @@ func TestSetLock(t *testing.T) {
 func TestNewestMark(t *testing.T) {
 	t.Parallel()
 
-	s := fixtureSnapshot(t)
-	assert.Equal(t, "00000000000000001006", s.NewestMark())
+	tests := map[string]struct {
+		add  []*Item
+		want string
+	}{
+		"the fixture, whose stack has no instance id": {
+			want: "00000000000000001006",
+		},
+		"a longer id is a higher number, whatever its leading digit": {
+			add: []*Item{
+				{InstanceID: "6917529999999999999", Equippable: true},
+				{InstanceID: "9999999999999999999999", Equippable: false},
+			},
+			want: "06917529999999999999",
+		},
+		"an emote with the highest id": {
+			add: []*Item{
+				{InstanceID: "1010", Equippable: true, Bucket: bucketEmotes, Owner: hunterID},
+				{InstanceID: "1009", Equippable: true, Bucket: bucketFinishers, Owner: hunterID},
+				{InstanceID: "1008", Equippable: true, Bucket: bucketKinetic, Owner: ownerVault},
+			},
+			want: "00000000000000001008",
+		},
+	}
 
-	// A longer id is a higher number, whatever its leading digit.
-	s.add(&Item{InstanceID: "6917529999999999999", Equippable: true})
-	s.add(&Item{InstanceID: "9999999999999999999999", Equippable: false})
-	assert.Equal(t, "06917529999999999999", s.NewestMark())
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := fixtureSnapshot(t)
+			for _, item := range tc.add {
+				s.add(item)
+			}
+
+			assert.Equal(t, tc.want, s.NewestMark())
+		})
+	}
 
 	assert.Equal(t, "00000000000000000000", (&Snapshot{}).NewestMark())
+}
+
+func TestNewItems(t *testing.T) {
+	t.Parallel()
+
+	item := func(id, owner string, bucket uint32) *Item {
+		return &Item{InstanceID: id, Owner: owner, Bucket: bucket, Equippable: true}
+	}
+
+	s := &Snapshot{Items: []*Item{
+		item("10000", hunterID, bucketKinetic),
+		item("1008", ownerAccount, bucketKinetic),
+		item("1011", ownerVault, bucketPower),
+		item("1007", titanID, bucketHelmet),
+		item("1006", hunterID, bucketKinetic),
+		item("1009", ownerVault, bucketKinetic),
+		item("1005", hunterID, bucketKinetic),
+		item("1012", hunterID, bucketEmotes),
+		{InstanceID: "1013", Owner: hunterID, Bucket: bucketConsumables},
+		{Owner: ownerAccount, Bucket: bucketConsumables},
+	}}
+
+	tests := map[string]struct {
+		mark      string
+		wantHeld  []string
+		wantVault []string
+	}{
+		"the stored mark": {
+			mark:      "00000000000000001006",
+			wantHeld:  []string{"1007", "1008", "10000"},
+			wantVault: []string{"1009", "1011"},
+		},
+		"a mark of zeros": {
+			mark:      "00000000000000000000",
+			wantHeld:  []string{"1005", "1006", "1007", "1008", "10000"},
+			wantVault: []string{"1009", "1011"},
+		},
+		"a mark at the highest id": {
+			mark: "00000000000000010000",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			held, vault := s.NewItems(tc.mark)
+
+			ids := func(items []*Item) []string {
+				var out []string
+				for _, item := range items {
+					out = append(out, item.InstanceID)
+				}
+
+				return out
+			}
+
+			assert.Equal(t, tc.wantHeld, ids(held))
+			assert.Equal(t, tc.wantVault, ids(vault))
+		})
+	}
 }
 
 func TestTagChanges(t *testing.T) {

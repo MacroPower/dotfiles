@@ -425,19 +425,55 @@ func (s *Snapshot) requestCharacter(item *Item) (string, bool) {
 	return c.ID, ok
 }
 
-// NewestMark returns the highest instance id among the equippable items, in
-// the zero-padded form of an autotag mark. The web client treats every item
-// with a higher instance id as newly acquired.
-func (s *Snapshot) NewestMark() string {
-	newest := ""
+// markOf returns instanceID in the form of an autotag mark, padded with
+// zeros on the left to [markDigits] digits. The web client and the service
+// compare marks as text, and the padding lets that comparison order ids of
+// different lengths.
+func markOf(instanceID string) string {
+	return strings.Repeat("0", max(markDigits-len(instanceID), 0)) + instanceID
+}
 
-	for _, item := range s.Items {
-		if item.InstanceID != "" && item.Equippable && compareIDs(item.InstanceID, newest) > 0 {
-			newest = item.InstanceID
+// NewestMark returns the highest [markOf] among the items that the web
+// client treats as acquired drops, which are the items of [ownedItems].
+// The web client treats every such item with a higher mark as newly
+// acquired. An inventory without such an item gives the mark of zeros.
+func (s *Snapshot) NewestMark() string {
+	newest := markOf("")
+
+	for _, item := range ownedItems(s) {
+		mark := markOf(item.InstanceID)
+		if mark > newest {
+			newest = mark
 		}
 	}
 
-	return strings.Repeat("0", max(markDigits-len(newest), 0)) + newest
+	return newest
+}
+
+// NewItems returns the items of [ownedItems] whose [markOf] is higher than
+// mark, which the next claim of the web client covers. The first list
+// holds the items outside the vault, which the web client offers to the
+// autotag rules. The second list holds the items in the vault. Both lists
+// follow the order of [compareIDs].
+func (s *Snapshot) NewItems(mark string) ([]*Item, []*Item) {
+	var held, vault []*Item
+
+	for _, item := range ownedItems(s) {
+		switch {
+		case markOf(item.InstanceID) <= mark:
+		case item.Owner == ownerVault:
+			vault = append(vault, item)
+		default:
+			held = append(held, item)
+		}
+	}
+
+	byID := func(a, b *Item) int { return compareIDs(a.InstanceID, b.InstanceID) }
+
+	slices.SortStableFunc(held, byID)
+	slices.SortStableFunc(vault, byID)
+
+	return held, vault
 }
 
 // tagChanges returns the rows that leave an item with tagID as its one

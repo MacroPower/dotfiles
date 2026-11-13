@@ -599,8 +599,12 @@ func newServer(h *handler) *mcp.Server {
 	}, h.handleSetPerkPreferences)
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        toolListAutotagRules,
-		Description: "List the autotag rules, which tag or vault newly acquired items that match a search, and whether autotagging is on.",
+		Name: toolListAutotagRules,
+		Description: "List the autotag rules, which tag or vault newly acquired items that match a search, " +
+			"and whether autotagging is on. " +
+			"With matches=new, it reads a fresh inventory and shows which rule would take each item " +
+			"that the next claim offers to the rules, without claiming. " +
+			"It names each rule whose answer the server cannot know.",
 		Annotations: readOnly,
 	}, h.handleListAutotagRules)
 

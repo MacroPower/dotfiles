@@ -1547,6 +1547,95 @@ func liveRules(rules []AutotagRule) []AutotagRule {
 	return live
 }
 
+// renderNewMatches renders the result of list_autotag_rules with
+// matches=new. Stored is the mark that the service stores, and newest is
+// the mark that the next claim stores. Evals holds the [ruleEval] of each
+// live rule in rule order, and m holds what [firstMatch] gave the new
+// items outside the vault. Vault holds the new items in the vault, which
+// the output only counts.
+//
+// The output opens with the marks and says that the call claimed nothing. A
+// line for each rule follows, with the items that the rule takes. The
+// lines stop at the first enabled rule that blocks, which lists the items
+// that reach it. The undecided items, the items that no rule takes, and
+// the count of the vault items follow in sections of their own.
+func renderNewMatches(s *Snapshot, stored, newest string, evals []ruleEval, m newMatches, vault []*Item) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Autotagging is on. The next claim moves the stored mark from %s to %s "+
+		"and offers %d new items to the rules. Nothing was claimed.\n", stored, newest, m.offered)
+
+	if len(evals) > 0 {
+		b.WriteString("\n")
+	}
+
+	for i, e := range evals {
+		line := renderRule(e.rule)
+
+		switch {
+		case !e.rule.Enabled:
+			fmt.Fprintf(&b, "%s. It is disabled and takes nothing.\n", line)
+
+		case e.class == ruleSkipped:
+			fmt.Fprintf(&b, "%s. The web client skips this rule, so it takes nothing: %s.\n", line, e.reason)
+
+		case e.class == ruleBlocked:
+			fmt.Fprintf(&b, "%s. The server cannot evaluate this rule: %s. "+
+				"It cannot tell which rule takes the %d new items that reach this rule:\n",
+				line, e.reason, len(m.reaching))
+			writeNewItems(&b, s, m.reaching)
+
+			if i < len(evals)-1 {
+				b.WriteString("The server does not evaluate the rules after it.\n")
+			}
+
+		default:
+			fmt.Fprintf(&b, "%s. New items it takes: %d\n", line, len(m.taken[i]))
+			writeNewItems(&b, s, m.taken[i])
+		}
+
+		if i == m.blocked {
+			break
+		}
+	}
+
+	if len(m.undecided) > 0 {
+		fmt.Fprintf(&b, "\nNew items that the server cannot place: %d\n", len(m.undecided))
+
+		for _, u := range m.undecided {
+			rule := evals[u.rule].rule
+			fmt.Fprintf(&b, "  - %s: undecided at rule %d %q: %s\n",
+				newItemLabel(s, u.item), rule.Position, rule.Query, strings.Join(u.reasons, ". "))
+		}
+	}
+
+	if m.blocked < 0 {
+		fmt.Fprintf(&b, "\nNew items that no rule takes: %d\n", len(m.untaken))
+		writeNewItems(&b, s, m.untaken)
+	}
+
+	fmt.Fprintf(&b, "\nNew items already in the vault, which the next claim covers and no rule takes: %d\n", len(vault))
+	b.WriteString(
+		"\nThe web client claims these items and applies the rules the next time it runs with autotagging on.",
+	)
+
+	return b.String()
+}
+
+// writeNewItems writes one line for each item of items, as
+// [newItemLabel] names it.
+func writeNewItems(b *strings.Builder, s *Snapshot, items []*Item) {
+	for _, item := range items {
+		fmt.Fprintf(b, "  - %s\n", newItemLabel(s, item))
+	}
+}
+
+// newItemLabel names one new item by its name, its instance id, and its
+// location, such as "Fatebringer (1007), Hunter".
+func newItemLabel(s *Snapshot, item *Item) string {
+	return fmt.Sprintf("%s (%s), %s", item.Name, item.InstanceID, s.LocationLabel(item))
+}
+
 // renderStats renders the summary of one period. Item names come from
 // defs, so a weapon that the user dismantled keeps its name.
 func renderStats(defs *Defs, period statPeriod, s statSummary) string {

@@ -465,6 +465,60 @@
 // the query. A straight apostrophe in the text therefore matches a curly
 // one in the name.
 //
+// # New Item Matches
+//
+// The list_autotag_rules tool with matches=new shows the rule that takes
+// each item that the next claim of the web client offers to the rules. It
+// never claims, tags, or moves an item, so the web client claims the same
+// items the next time it runs with autotagging on. The tool reads a fresh
+// inventory, because a cached one can miss the newest drops. Its answer
+// describes the rules and the inventory at the moment of the call. While
+// autotagging is off, the tool says so and reads no inventory, because the
+// web client runs the rules only while autotagging is on.
+//
+// The claim covers the items whose instance id is higher than the mark
+// that the service stores. The web client pads each id with zeros to 20
+// digits and compares the padded ids as text, and so does the tool. It
+// counts the items that the rule editor previews, which the Autotag
+// Preview section describes, so emotes and finishers never count. The
+// claim moves the mark to the highest such id, the vault included. The web
+// client offers the rules only the new items outside the vault. The tool
+// therefore counts the new items in the vault and gives them to no rule.
+// It counts an equipment item in an account bucket as an item outside the
+// vault. DIM files such an item under the vault when its bucket has no
+// vault bucket. The web client then does not offer the item to the rules.
+//
+// Each new item goes to the first enabled rule, in rule order, whose query
+// matches it. A rule without a tag and without the vault flag still takes
+// its items. The filters of each rule read every item, the vault included,
+// so is:dupe counts the copies in the vault. Before it reads any item, the
+// tool puts each rule in one of three classes:
+//
+//   - Skipped: the web client skips the rule, so the rule takes nothing.
+//     The web client skips a rule whose query has no term or holds a value
+//     that the web client rejects. It also skips a rule whose query its
+//     search parser rejects.
+//   - Blocked: the web client runs the rule, or might run it, but the
+//     server cannot evaluate it. The server cannot evaluate a query that
+//     the web client runs differently from its text. It also cannot
+//     evaluate a query with a term outside the filters of the preview, or
+//     a query that reads a game mode without ratings.
+//   - Evaluated: the server evaluates the query of the rule.
+//
+// The tool classifies a rule by the first problem of its query. The
+// problems come in this order: a parse error, a value that the web client
+// rejects, a term outside the filters of the preview, and a game mode
+// without ratings. The tool cannot read the values of a query that the
+// web client runs differently from its text. Such a rule therefore blocks
+// even when the web client rejects one of its values and skips the rule.
+//
+// A blocked rule might take any item that reaches it. The tool therefore
+// lists those items under the first enabled rule that blocks, and it
+// evaluates no later rule. An item that an enabled rule leaves undecided
+// stops at that rule for the same reason. The tool lists such an item with
+// the rule and the reasons. The output names the reason of each skipped or
+// blocked rule.
+//
 // # Sign-in
 //
 // Bungie redirects a sign-in to the one URL registered for the deployment,

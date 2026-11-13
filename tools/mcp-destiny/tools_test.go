@@ -3656,16 +3656,29 @@ func TestMoveStackTool(t *testing.T) {
 func TestSetAutotagEnabled(t *testing.T) {
 	t.Parallel()
 
+	const on = "Autotagging is on. The rules apply to items acquired from now on, " +
+		"and the web client runs them while it is open."
+
 	tests := map[string]struct {
 		wantBody map[string]any
-		want     string
-		enabled  bool
+		// profile is the body of the profile requests. When it is empty,
+		// the requests get fixtureProfile.
+		profile string
+		want    string
+		enabled bool
 	}{
 		"on stores the newest instance id as the mark": {
 			enabled:  true,
 			wantBody: map[string]any{"kind": "enable", "mark": "00000000000000001006"},
-			want: "Autotagging is on. The rules apply to items acquired from now on, " +
-				"and the web client runs them while it is open.",
+			want:     on,
+		},
+		"an emote with the highest id": {
+			enabled: true,
+			profile: newItemsProfile(t, []string{
+				`{"itemHash": 400, "itemInstanceId": "1010", "quantity": 1, "location": 1, "bucketHash": 1107761855}`,
+			}, nil),
+			wantBody: map[string]any{"kind": "enable", "mark": "00000000000000001006"},
+			want:     on,
 		},
 		"off": {
 			wantBody: map[string]any{"kind": "disable"},
@@ -3678,6 +3691,14 @@ func TestSetAutotagEnabled(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
+			f.profileBody = tc.profile
+			f.h.defs.defs.Items[400] = ItemDef{
+				Name:       "Victory Dance",
+				TypeName:   "Emote",
+				Bucket:     bucketEmotes,
+				ClassType:  classAny,
+				Equippable: true,
+			}
 
 			// A cached profile must not decide the mark.
 			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
@@ -5636,13 +5657,451 @@ func TestListAutotagRules(t *testing.T) {
 				f.serviceData[pathAutotag] = tc.autotag
 			}
 
-			got, isError := call(t, f.h.handleListAutotagRules, EmptyInput{})
+			got, isError := call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{})
 			assert.False(t, isError)
 			assert.Equal(t, strings.Join(append([]string{
 				"Autotagging is on.",
 				"",
 				"Rules in evaluation order. The first enabled rule that matches a new item wins.",
 			}, tc.want...), "\n"), got)
+		})
+	}
+}
+
+// The items that the profile of newItemsProfile adds to fixtureProfile.
+// Each has an instance id above the stored mark of the fixture autotag
+// body. The Hunter gains a copy of Fatebringer, Thorn, and Wormhusk Crown.
+// No other item shares the name of Thorn or Wormhusk Crown. The vault
+// gains a copy of Gjallarhorn.
+const (
+	newFatebringer = `{"itemHash": 100, "itemInstanceId": "1007", "lockable": true, "quantity": 1, ` +
+		`"location": 1, "bucketHash": 1498876634}`
+	newThorn = `{"itemHash": 103, "itemInstanceId": "1008", "lockable": true, "quantity": 1, ` +
+		`"location": 1, "bucketHash": 1498876634}`
+	newHelmet = `{"itemHash": 201, "itemInstanceId": "1009", "lockable": true, "quantity": 1, ` +
+		`"location": 1, "bucketHash": 3448274439}`
+	newVaultGjallarhorn = `{"itemHash": 101, "itemInstanceId": "1010", "lockable": true, "quantity": 1, ` +
+		`"location": 2, "bucketHash": 138197802}`
+)
+
+// newItemsProfile returns a Bungie profile response body that adds items
+// to fixtureProfile. Held holds the JSON items that the inventory of the
+// Hunter gains, and vault holds the JSON items that the vault gains.
+func newItemsProfile(t *testing.T, held, vault []string) string {
+	t.Helper()
+
+	body := fixtureProfile
+
+	for marker, items := range map[string][]string{
+		"\"characterInventories\": {\"data\": {\n\t\t\"c1\": {\"items\": [": held,
+		`"profileInventory": {"data": {"items": [`:                          vault,
+	} {
+		require.Equal(t, 1, strings.Count(body, marker))
+
+		if len(items) > 0 {
+			body = strings.Replace(body, marker, marker+"\n"+strings.Join(items, ",\n")+",", 1)
+		}
+	}
+
+	return `{"ErrorCode": 1, "Response": ` + body + `}`
+}
+
+// autotagBody returns an /api/autotag response body with rules, the
+// JSON rules, and the state of the fixture.
+func autotagBody(rules ...string) string {
+	return `{"rules": [` + strings.Join(rules, ", ") +
+		`], "state": {"enabled": true, "mark": "00000000000000001006", "updatedAt": 5}, "now": 10}`
+}
+
+// storedRule returns the JSON of an autotag rule that the service stores.
+// The rule does not move items to the vault. Query and tagID hold ASCII
+// characters only, which the %q verb quotes as JSON does.
+func storedRule(id, query, tagID string, position int, enabled bool) string {
+	return fmt.Sprintf(`{"id": %q, "query": %q, "tagId": %q, "vault": false, "enabled": %t, `+
+		`"position": %d, "removed": false, "updatedAt": 5}`, id, query, tagID, enabled, position)
+}
+
+func TestListAutotagRulesNew(t *testing.T) {
+	t.Parallel()
+
+	const (
+		header = "Autotagging is on. The next claim moves the stored mark from 00000000000000001006 " +
+			"to 00000000000000001009 and offers 3 new items to the rules. Nothing was claimed."
+		fatebringer = "  - Fatebringer (1007), Hunter"
+		thorn       = "  - Thorn (1008), Hunter"
+		helmet      = "  - Wormhusk Crown (1009), Hunter"
+		noVault     = "New items already in the vault, which the next claim covers and no rule takes: 0"
+		footer      = "The web client claims these items and applies the rules the next time it runs " +
+			"with autotagging on."
+		after = "The server does not evaluate the rules after it."
+	)
+
+	held := []string{newFatebringer, newThorn, newHelmet}
+	weapon := storedRule("r2", "is:weapon", "keep", 1, true)
+
+	tests := map[string]struct {
+		autotag string
+		profile string
+		matches string
+		want    []string
+		// sheet makes the service publish previewAegisSheet as the only
+		// roll sheet.
+		sheet bool
+		// rated marks a case that reads the roll sheets and the perk
+		// preferences.
+		rated   bool
+		isError bool
+	}{
+		"first match": {
+			autotag: autotagBody(storedRule("r1", "is:dupe", "junk", 0, true), weapon),
+			want: []string{
+				header, "",
+				`- 0. [enabled] "is:dupe": tag junk (id r1). New items it takes: 1`, fatebringer,
+				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 1`, thorn, "",
+				"New items that no rule takes: 1", helmet, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"the matches value in upper case with spaces": {
+			autotag: autotagBody(storedRule("r1", "is:dupe", "junk", 0, true), weapon),
+			matches: " NEW ",
+			want: []string{
+				header, "",
+				`- 0. [enabled] "is:dupe": tag junk (id r1). New items it takes: 1`, fatebringer,
+				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 1`, thorn, "",
+				"New items that no rule takes: 1", helmet, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"a rule without action": {
+			autotag: autotagBody(storedRule("r3", "is:weapon", "", 0, true)),
+			want: []string{
+				header, "",
+				`- 0. [enabled] "is:weapon": no action (id r3). New items it takes: 2`, fatebringer, thorn, "",
+				"New items that no rule takes: 1", helmet, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"an unsupported rule blocks": {
+			autotag: autotagBody(
+				storedRule("r1", "is:masterwork", "junk", 0, true),
+				storedRule("r3", "is:dupe", "junk", 2, true),
+				weapon,
+			),
+			want: []string{
+				header, "",
+				`- 0. [enabled] "is:masterwork": tag junk (id r1). The server cannot evaluate this rule: ` +
+					`the server does not evaluate is:masterwork. ` +
+					`It cannot tell which rule takes the 3 new items that reach this rule:`,
+				fatebringer, thorn, helmet,
+				after, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"a server-only refusal blocks": {
+			autotag: autotagBody(storedRule("r1", "is:weapon ) is:armor", "junk", 0, true), weapon),
+			want: []string{
+				header, "",
+				`- 0. [enabled] "is:weapon ) is:armor": tag junk (id r1). The server cannot evaluate this rule: ` +
+					`the web client runs this rule, and the server cannot evaluate it: ` +
+					`the query has a ")" that closes no "(", and the web client ignores ") is:armor". ` +
+					`It cannot tell which rule takes the 3 new items that reach this rule:`,
+				fatebringer, thorn, helmet,
+				after, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"a server-only refusal blocks before an invalid value": {
+			autotag: autotagBody(storedRule("r1", "count:=<2 )", "junk", 0, true), weapon),
+			want: []string{
+				header, "",
+				`- 0. [enabled] "count:=<2 )": tag junk (id r1). The server cannot evaluate this rule: ` +
+					`the web client runs this rule, and the server cannot evaluate it: ` +
+					`the query has a ")" that closes no "(", and the web client ignores ")". ` +
+					`It cannot tell which rule takes the 3 new items that reach this rule:`,
+				fatebringer, thorn, helmet,
+				after, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"a DIM parse error skips": {
+			autotag: autotagBody(storedRule("r1", "is:weapon -", "junk", 0, true), weapon),
+			want: []string{
+				header,
+				"",
+				`- 0. [enabled] "is:weapon -": tag junk (id r1). The web client skips this rule, so it takes nothing: ` +
+					`the query ends after "-", which needs a search term after it.`,
+				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 2`,
+				fatebringer,
+				thorn,
+				"",
+				"New items that no rule takes: 1",
+				helmet,
+				"",
+				noVault,
+				"",
+				footer,
+			},
+		},
+		"an empty query skips": {
+			autotag: autotagBody(storedRule("r1", " ", "junk", 0, true)),
+			want: []string{
+				header, "",
+				`- 0. [enabled] " ": tag junk (id r1). The web client skips this rule, so it takes nothing: ` +
+					`the query has no search term.`,
+				"",
+				"New items that no rule takes: 3", fatebringer, thorn, helmet, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"an invalid value skips": {
+			autotag: autotagBody(storedRule("r1", "count:=<2", "junk", 0, true), weapon),
+			want: []string{
+				header, "",
+				`- 0. [enabled] "count:=<2": tag junk (id r1). The web client skips this rule, so it takes nothing: ` +
+					`the web client rejects count:=<2.`,
+				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 2`, fatebringer, thorn, "",
+				"New items that no rule takes: 1", helmet, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"an undecided item stops": {
+			autotag: autotagBody(storedRule("r1", "rate:>=a", "junk", 0, true), weapon),
+			sheet:   true,
+			rated:   true,
+			want: []string{
+				header, "",
+				`- 0. [enabled] "rate:>=a": tag junk (id r1). New items it takes: 0`,
+				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 1`, thorn, "",
+				"New items that the server cannot place: 2",
+				`  - Fatebringer (1007), Hunter: undecided at rule 0 "rate:>=a": ` + reasonNoPerks,
+				`  - Wormhusk Crown (1009), Hunter: undecided at rule 0 "rate:>=a": ` + reasonSetBonus, "",
+				"New items that no rule takes: 0", "",
+				noVault, "",
+				footer,
+			},
+		},
+		"a game mode without ratings blocks": {
+			autotag: autotagBody(storedRule("r1", "pvprate:>=a", "junk", 0, true)),
+			sheet:   true,
+			rated:   true,
+			want: []string{
+				header, "",
+				`- 0. [enabled] "pvprate:>=a": tag junk (id r1). The server cannot evaluate this rule: ` +
+					noPvPSheet + `. It cannot tell which rule takes the 3 new items that reach this rule:`,
+				fatebringer, thorn, helmet, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"a disabled rule takes nothing": {
+			autotag: autotagBody(storedRule("r1", "is:weapon", "junk", 0, false), weapon),
+			want: []string{
+				header, "",
+				`- 0. [disabled] "is:weapon": tag junk (id r1). It is disabled and takes nothing.`,
+				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 2`, fatebringer, thorn, "",
+				"New items that no rule takes: 1", helmet, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"a disabled rule that would block": {
+			autotag: autotagBody(storedRule("r1", "is:masterwork", "junk", 0, false), weapon),
+			want: []string{
+				header, "",
+				`- 0. [disabled] "is:masterwork": tag junk (id r1). It is disabled and takes nothing.`,
+				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 2`, fatebringer, thorn, "",
+				"New items that no rule takes: 1", helmet, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"no rule": {
+			autotag: autotagBody(),
+			want: []string{
+				header, "",
+				"New items that no rule takes: 3", fatebringer, thorn, helmet, "",
+				noVault, "",
+				footer,
+			},
+		},
+		"a new vault item": {
+			autotag: autotagBody(weapon),
+			profile: newItemsProfile(t, held, []string{newVaultGjallarhorn}),
+			want: []string{
+				"Autotagging is on. The next claim moves the stored mark from 00000000000000001006 " +
+					"to 00000000000000001010 and offers 3 new items to the rules. Nothing was claimed.",
+				"",
+				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 2`, fatebringer, thorn, "",
+				"New items that no rule takes: 1", helmet, "",
+				"New items already in the vault, which the next claim covers and no rule takes: 1", "",
+				footer,
+			},
+		},
+		"no new item": {
+			autotag: autotagBody(weapon),
+			profile: newItemsProfile(t, nil, nil),
+			want: []string{
+				"No owned item has an instance id above the stored mark 00000000000000001006, " +
+					"so the next claim offers no item to the rules.",
+			},
+		},
+		"autotagging off": {
+			autotag: `{"rules": [], "state": {"enabled": false, "mark": "00000000000000001006", "updatedAt": 5}, "now": 10}`,
+			want:    []string{"Autotagging is off, so no item waits for the rules."},
+		},
+		"autotagging never on": {
+			autotag: `{"rules": [], "state": null, "now": 10}`,
+			want:    []string{"Autotagging has never been turned on, so no item waits for the rules."},
+		},
+		"no character": {
+			autotag: autotagBody(weapon),
+			profile: `{"ErrorCode": 1, "Response": {
+				"profileInventory": {"data": {"items": [` + newVaultGjallarhorn + `]}},
+				"characters": {"data": {}}
+			}}`,
+			want: []string{"The account has no character, so the server cannot tell which items the rules would take."},
+		},
+		"a matches value of spaces lists the rules": {
+			autotag: autotagBody(weapon),
+			matches: "  ",
+			want: []string{
+				"Autotagging is on.", "",
+				"Rules in evaluation order. The first enabled rule that matches a new item wins.",
+				`- 1. [enabled] "is:weapon": tag keep (id r2)`,
+			},
+		},
+		"another matches value": {
+			autotag: autotagBody(weapon),
+			matches: "all",
+			want:    []string{`invalid input: matches "all" is not new`},
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.serviceData[pathAutotag] = tc.autotag
+			f.h.defs.defs.Items[103] = ItemDef{
+				Name:       "Thorn",
+				TypeName:   "Hand Cannon",
+				Tier:       "Exotic",
+				Bucket:     bucketKinetic,
+				ItemType:   itemTypeWeapon,
+				ClassType:  classAny,
+				Equippable: true,
+			}
+			f.h.defs.defs.Items[201] = ItemDef{
+				Name:       "Wormhusk Crown",
+				TypeName:   "Helmet",
+				Tier:       "Exotic",
+				Bucket:     bucketHelmet,
+				ItemType:   itemTypeArmor,
+				ClassType:  1,
+				Equippable: true,
+			}
+
+			if tc.sheet {
+				withAegisSheet(f)
+			}
+
+			// The handler caches the fixture profile, which holds no new
+			// item, so only a fresh profile finds the new items.
+			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+			require.False(t, isError)
+
+			f.profileBody = tc.profile
+			if f.profileBody == "" {
+				f.profileBody = newItemsProfile(t, held, nil)
+			}
+
+			matches := tc.matches
+			if matches == "" {
+				matches = matchesNew
+			}
+
+			got, isError := call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{Matches: matches})
+			assert.Equal(t, tc.isError, isError, got)
+			assert.Equal(t, strings.Join(tc.want, "\n"), got)
+
+			if tc.rated {
+				assert.NotEmpty(t, ratingRequests(f))
+			} else {
+				assert.Empty(t, ratingRequests(f))
+			}
+
+			assert.Empty(t, f.service.calls(http.MethodPost, "/api/autotag/state"), "nothing is claimed")
+			assert.Empty(t, f.service.calls(http.MethodPost, pathTags), "nothing is tagged")
+			assert.Empty(t, f.service.calls(http.MethodPost, pathAutotag), "no rule changes")
+
+			for _, req := range f.bungie.all() {
+				assert.Equal(t, http.MethodGet, req.Method, "nothing moves: %s", req.Path)
+			}
+		})
+	}
+}
+
+func TestListAutotagRulesNewReadErrors(t *testing.T) {
+	t.Parallel()
+
+	listItems := func(t *testing.T, f *fakes) (string, bool) {
+		t.Helper()
+
+		return call(t, f.h.handleListItems, ListItemsInput{})
+	}
+
+	listRules := func(t *testing.T, f *fakes) (string, bool) {
+		t.Helper()
+
+		return call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{})
+	}
+
+	tests := map[string]struct {
+		setup func(f *fakes)
+		// baseline returns the error result of another call that makes
+		// the same read.
+		baseline func(t *testing.T, f *fakes) (string, bool)
+	}{
+		"the autotag state": {
+			setup:    func(f *fakes) { delete(f.serviceData, pathAutotag) },
+			baseline: listRules,
+		},
+		"the profile": {
+			setup: func(f *fakes) {
+				f.profileBody = `{"ErrorCode": 5, "ErrorStatus": "SystemDisabled", "Message": "down"}`
+			},
+			baseline: listItems,
+		},
+		"the tags": {
+			setup:    func(f *fakes) { delete(f.serviceData, pathTags) },
+			baseline: listItems,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			tc.setup(f)
+
+			want, isError := tc.baseline(t, f)
+			require.True(t, isError)
+
+			got, isError := call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{Matches: matchesNew})
+			assert.True(t, isError)
+			assert.Equal(t, want, got)
 		})
 	}
 }
