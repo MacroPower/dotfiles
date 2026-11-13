@@ -93,7 +93,7 @@ var (
 	// perkModes lists the game modes in display order. The perk
 	// preferences and the roll sheets share the list.
 	perkModes   = []string{modePvE, modePvP}
-	perkStances = []string{"up", "down"}
+	perkStances = []string{stanceUp, stanceDown}
 
 	// ErrInvalidInput reports a tool argument that the handler rejects
 	// before any request.
@@ -426,18 +426,19 @@ func (h *handler) handleGetItem(
 		return h.toolError(ctx, toolGetItem, unknownInstances([]string{in.InstanceID}))
 	}
 
-	// Only weapons have roll ratings, so every other item costs no sheet
-	// request. A sheet that does not load costs only its rating line.
-	// The server rates the copy on every call and keeps no rating. A
-	// perk change edits the cached snapshot in place, so a kept rating
-	// does not follow the change.
+	// Only weapons have roll ratings, so every other item costs no
+	// request for a sheet or for the perk preferences. A rating input
+	// that the server cannot read costs only the rating lines. The
+	// server rates the copy on every call and keeps no rating. A perk
+	// change edits the cached snapshot in place, so a kept rating does
+	// not follow the change.
 	var ratings map[string]Rating
 	if item.Kind == kindWeapon {
-		states := h.sheets.Load(ctx)
+		sources := h.ratingSources(ctx)
 		ratings = make(map[string]Rating, len(perkModes))
 
 		for _, mode := range perkModes {
-			ratings[mode] = rate(states[mode], item)
+			ratings[mode] = rate(sources[mode], item)
 		}
 	}
 
@@ -1785,6 +1786,47 @@ func (h *handler) perkPreferences(ctx context.Context) ([]PerkPreference, error)
 	return sessionValue(ctx, h, func(session string) ([]PerkPreference, error) {
 		return h.service.PerkPreferences(ctx, session)
 	})
+}
+
+// ratingSources returns the [RatingSource] of each game mode, keyed by
+// the mode. It does not read the item, so one result rates every item
+// of a call.
+//
+// It reads the roll sheets through the sheet store and the perk
+// preferences from the service. The read of the preferences runs on
+// every call, also when no mode has a sheet, and the handler keeps no
+// copy of them. A preference that the user changes in the web client
+// therefore counts in the next call.
+//
+// A mode without a sheet carries the reason of the sheet. When the
+// server cannot read the preferences, every other mode carries that
+// reason, which wraps [ErrNoRating] and the error of the read. A tool
+// therefore never fails because of a rating input.
+func (h *handler) ratingSources(ctx context.Context) map[string]RatingSource {
+	states := h.sheets.Load(ctx)
+
+	prefs, err := h.perkPreferences(ctx)
+	if err != nil {
+		err = fmt.Errorf("%w: reading perk preferences: %w", ErrNoRating, err)
+	}
+
+	stances := stancesByMode(prefs)
+	sources := make(map[string]RatingSource, len(perkModes))
+
+	for _, mode := range perkModes {
+		state := states[mode]
+
+		switch {
+		case state.Err != nil:
+			sources[mode] = RatingSource{Err: state.Err}
+		case err != nil:
+			sources[mode] = RatingSource{Err: err}
+		default:
+			sources[mode] = RatingSource{Sheet: state.Sheet, Stances: stances[mode]}
+		}
+	}
+
+	return sources
 }
 
 func (h *handler) autotag(ctx context.Context) (AutotagSnapshot, error) {

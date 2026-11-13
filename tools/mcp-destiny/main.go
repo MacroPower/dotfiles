@@ -340,14 +340,20 @@ func newServer(h *handler) *mcp.Server {
 			"A weapon also shows how the Aegis sheet (PvE) and the PvP sheet rate the roll of this copy. " +
 			"Each sheet gives a weapon a tier from S (best) to F and picks the perks that it wants in each perk column. " +
 			"The tier of the copy starts at the tier of the weapon on the sheet. " +
-			"It moves down one step for each perk column in which the copy has none of the picks, and it stops at F. " +
-			"One line for each column names the picks that the copy has, or says that the column missed. " +
+			"It moves down one step for each perk column that the copy misses, and it stops at F. " +
+			"The copy hits a column with each pick of the column that it has. " +
+			"The rating counts the perk preferences of the user for the game mode of the sheet. " +
+			"A disliked perk never counts, also when the sheet picks it. " +
+			"A liked perk counts as a pick, but only in the socket in which the copy rolled a pick of the column. " +
+			"The web client also counts a liked perk in a column in which the copy rolled no pick. " +
+			"One line for each column names the perks that count, with '(liked)' after each liked perk, " +
+			"or says that the column missed. " +
 			"The rating reads the perks that this tool lists, " +
 			"and a pick that sits beside the active perk in a socket counts. " +
 			"The web client reads another socket list, so its rating of a copy can differ. " +
 			"A copy for which the profile lists no perks reads 'roll unknown'. " +
-			"The rating does not count the perk preferences. " +
-			"When the server has no sheet for a game mode, the line of that mode names the reason.",
+			"When the server has no sheet for a game mode or cannot read the perk preferences, " +
+			"the line of that mode names the reason.",
 		Annotations: readOnly,
 	}, h.handleGetItem)
 
@@ -497,7 +503,10 @@ func newServer(h *handler) *mcp.Server {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolSetPerkPreferences,
 		Description: "Mark weapon traits as liked or disliked for PvE or PvP, or clear a preference. " +
-			"The roll ratings of the web client count a liked trait as wanted and drop a disliked one.",
+			"The roll ratings of the web client and of get_item count a liked trait as a pick of the roll sheet, " +
+			"and they never count a disliked one. " +
+			"get_item counts a liked trait only in the socket in which the copy rolled a pick of the perk column. " +
+			"The web client also counts a liked trait in a column in which the copy rolled no pick.",
 		Annotations: additive,
 	}, h.handleSetPerkPreferences)
 

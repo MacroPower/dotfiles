@@ -392,6 +392,11 @@ func TestGetItem(t *testing.T) {
 		noAegis = "- PvE: rating unavailable: the service publishes no Aegis sheet"
 		noPvP   = "- PvP: rating unavailable: the service publishes no PvP sheet"
 
+		// noPrefsPvE is the PvE line of a call that cannot read the perk
+		// preferences.
+		noPrefsPvE = "- PvE: rating unavailable: reading perk preferences: " +
+			"service: GET /api/perk-preferences?since=0 returned status 404: Not found"
+
 		// Fatebringer is item 100, Gjallarhorn is item 101, and Midnight
 		// Coup is item 102. The row of an exotic has no perk columns.
 		//
@@ -401,15 +406,17 @@ func TestGetItem(t *testing.T) {
 		// socket of the copy holds Kill Clip (904).
 		//
 		// The fake perk preferences like Firefly for PvE and dislike
-		// Rampage for PvP. No PvE column lists Firefly, and no PvP
-		// column lists Rampage, so the preferences cannot change a
-		// line of these cases.
-		tiered     = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900, 903], [904]]}]}`
-		allHit     = `{"rolls": [{"tier": "B", "hashes": [100], "slots": [[900], [901]]}]}`
-		untiered   = `{"rolls": [{"hashes": [100], "slots": [[904], [900]]}]}`
-		shaderOnly = `{"rolls": [{"tier": "E", "hashes": [100], "slots": [[902], [902]]}]}`
-		columnless = `{"rolls": [{"tier": "A", "hashes": [100], "slots": []}]}`
-		elsewhere  = `{"rolls": [{"tier": "B", "hashes": [101], "slots": []}]}`
+		// Rampage for PvP. Each preference changes a line only when a
+		// column of its game mode lists its perk. The cases use allHit
+		// as a PvE sheet and rampageOnly as a PvP sheet to show the
+		// change.
+		tiered      = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900, 903], [904]]}]}`
+		allHit      = `{"rolls": [{"tier": "B", "hashes": [100], "slots": [[900], [901]]}]}`
+		rampageOnly = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[903]]}]}`
+		untiered    = `{"rolls": [{"hashes": [100], "slots": [[904], [900]]}]}`
+		shaderOnly  = `{"rolls": [{"tier": "E", "hashes": [100], "slots": [[902], [902]]}]}`
+		columnless  = `{"rolls": [{"tier": "A", "hashes": [100], "slots": []}]}`
+		elsewhere   = `{"rolls": [{"tier": "B", "hashes": [101], "slots": []}]}`
 	)
 
 	tests := map[string]struct {
@@ -429,12 +436,92 @@ func TestGetItem(t *testing.T) {
 		// call reads the Bungie API key from it, and each sheet load
 		// reads the artifact index from it.
 		configs int
+		// prefs counts the requests for the perk preferences.
+		prefs int
+		// noPrefs makes the service answer the request for the perk
+		// preferences with the status 404.
+		noPrefs bool
 		isError bool
 	}{
+		// The call reads the perk preferences also when no mode has a
+		// sheet.
 		"service publishes neither sheet": {
 			id:      "1001",
 			want:    fatebringer(noAegis, noPvP),
 			configs: 2,
+			prefs:   1,
+		},
+		"liked perk carries the mark in its game mode only": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    allHit,
+				"pvprolls.a.json": allHit,
+			},
+			id: "1001",
+			want: fatebringer(
+				"- PvE: B for this roll, B on the Aegis sheet, 2 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload",
+				"  Column 2: hit with Firefly (liked)",
+				"- PvP: B for this roll, B on the PvP sheet, 2 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload",
+				"  Column 2: hit with Firefly",
+			),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+			prefs:   1,
+		},
+		"disliked only pick misses in its game mode only": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    rampageOnly,
+				"pvprolls.a.json": rampageOnly,
+			},
+			id: "1001",
+			want: fatebringer(
+				"- PvE: S for this roll, S on the Aegis sheet, 1 of 1 perk columns hit",
+				"  Column 1: hit with Rampage",
+				"- PvP: A for this roll, S on the PvP sheet, 0 of 1 perk columns hit",
+				"  Column 1: miss",
+			),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+			prefs:   1,
+		},
+		// The mode without a sheet keeps the reason of the sheet.
+		"unreadable perk preferences replace the rating of the loaded sheet": {
+			files:   map[string][]string{"rolls": {"rolls.a.json"}},
+			bodies:  map[string]string{"rolls.a.json": tiered},
+			id:      "1001",
+			want:    fatebringer(noPrefsPvE, noPvP),
+			fetched: []string{"/artifacts/rolls.a.json"},
+			configs: 2,
+			prefs:   1,
+			noPrefs: true,
+		},
+		// The reason does not depend on the item, so the line does not
+		// say that the sheet leaves out the weapon.
+		"unreadable perk preferences give a weapon that the sheet does not list the same reason": {
+			files:  map[string][]string{"rolls": {"rolls.a.json"}},
+			bodies: map[string]string{"rolls.a.json": tiered},
+			id:     "1003",
+			want: strings.Join([]string{
+				"Midnight Coup",
+				"Instance id: 1003",
+				"Item hash: 102",
+				"Type: Kinetic Hand Cannon",
+				"Tier: Legendary",
+				"Slot: Kinetic Weapons",
+				"Power: 2005",
+				"Location: Hunter",
+				"",
+				"Roll ratings:",
+				noPrefsPvE,
+				noPvP,
+			}, "\n"),
+			fetched: []string{"/artifacts/rolls.a.json"},
+			configs: 2,
+			prefs:   1,
+			noPrefs: true,
 		},
 		"roll with a hit and a miss, and sheet that does not list the weapon": {
 			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
@@ -451,6 +538,7 @@ func TestGetItem(t *testing.T) {
 			),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
+			prefs:   1,
 		},
 		"roll that hits every column and row without a tier": {
 			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
@@ -469,6 +557,7 @@ func TestGetItem(t *testing.T) {
 			),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
+			prefs:   1,
 		},
 		// The copy holds plug 902 only in a socket that the perk list
 		// leaves out, so the rating does not read that socket.
@@ -484,6 +573,7 @@ func TestGetItem(t *testing.T) {
 			),
 			fetched: []string{"/artifacts/rolls.a.json"},
 			configs: 2,
+			prefs:   1,
 		},
 		"row without columns and sheet that does not list the weapon": {
 			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
@@ -498,6 +588,7 @@ func TestGetItem(t *testing.T) {
 			),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
+			prefs:   1,
 		},
 		"sheet that does not list the weapon and sheet that the index does not list": {
 			files:   map[string][]string{"rolls": {"rolls.a.json"}},
@@ -506,6 +597,7 @@ func TestGetItem(t *testing.T) {
 			want:    fatebringer("- PvE: not on the Aegis sheet", noPvP),
 			fetched: []string{"/artifacts/rolls.a.json"},
 			configs: 2,
+			prefs:   1,
 		},
 		"listed sheet file returns 404": {
 			files:  map[string][]string{"rolls": {"rolls.x.json"}, "pvprolls": {"pvprolls.a.json"}},
@@ -520,6 +612,7 @@ func TestGetItem(t *testing.T) {
 			),
 			fetched: []string{"/artifacts/rolls.x.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
+			prefs:   1,
 		},
 		"sheet file does not decode": {
 			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.x.json"}},
@@ -536,6 +629,7 @@ func TestGetItem(t *testing.T) {
 			),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.x.json"},
 			configs: 2,
+			prefs:   1,
 		},
 		"copy without perks has an unknown roll and ends with the ratings": {
 			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
@@ -560,6 +654,7 @@ func TestGetItem(t *testing.T) {
 			}, "\n"),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
+			prefs:   1,
 		},
 		"exotic without perks keeps the tier of a row without columns": {
 			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
@@ -584,6 +679,7 @@ func TestGetItem(t *testing.T) {
 			}, "\n"),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
+			prefs:   1,
 		},
 		"weapon that neither sheet lists": {
 			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
@@ -608,8 +704,9 @@ func TestGetItem(t *testing.T) {
 			}, "\n"),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
+			prefs:   1,
 		},
-		"armor has no ratings and reads no sheet": {
+		"armor has no ratings and reads no sheet and no perk preferences": {
 			files:  map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
 			bodies: map[string]string{"rolls.a.json": tiered, "pvprolls.a.json": allHit},
 			id:     "1004",
@@ -649,6 +746,10 @@ func TestGetItem(t *testing.T) {
 				f.serviceData["/artifacts/"+file] = body
 			}
 
+			if tc.noPrefs {
+				delete(f.serviceData, pathPrefs)
+			}
+
 			got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: tc.id})
 			assert.Equal(t, tc.isError, isError)
 			assert.Equal(t, strings.ReplaceAll(tc.want, "{service}", f.h.service.BaseURL()), got)
@@ -663,6 +764,7 @@ func TestGetItem(t *testing.T) {
 
 			assert.Equal(t, tc.fetched, fetched)
 			assert.Len(t, f.service.calls(http.MethodGet, "/api/config"), tc.configs)
+			assert.Len(t, f.service.calls(http.MethodGet, pathPrefs), tc.prefs)
 		})
 	}
 }
@@ -692,9 +794,128 @@ func TestGetItemRatesOnEachCall(t *testing.T) {
 	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1, "both ratings read one profile")
 }
 
+// TestGetItemReadsPerkPreferencesOnEachCall pins that the server keeps
+// no copy of the perk preferences. A preference that the user changes in
+// the web client counts in the next call.
+func TestGetItemReadsPerkPreferencesOnEachCall(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+	f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[901]]}]}`
+
+	got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
+	require.False(t, isError)
+	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet, 1 of 1 perk columns hit\n"+
+		"  Column 1: hit with Firefly (liked)\n")
+
+	f.serviceData[pathPrefs] = `{"preferences": [
+		{"mode": "pve", "perk": "Firefly", "stance": "down", "removed": false, "updatedAt": 6}
+	], "now": 11}`
+
+	got, isError = call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
+	require.False(t, isError)
+	assert.Contains(t, got, "- PvE: A for this roll, S on the Aegis sheet, 0 of 1 perk columns hit\n"+
+		"  Column 1: miss\n")
+	assert.Len(t, f.service.calls(http.MethodGet, pathPrefs), 2)
+}
+
+func TestRatingSources(t *testing.T) {
+	t.Parallel()
+
+	const (
+		sheet = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900]]}]}`
+
+		noPvP      = "rating unavailable: the service publishes no PvP sheet"
+		unreadable = "rating unavailable: reading perk preferences: " +
+			"service: GET /api/perk-preferences?since=0 returned status 404: Not found"
+	)
+
+	tests := map[string]struct {
+		// files holds the file list of each artifact in the service
+		// index.
+		files map[string][]string
+		// stances holds the stance map of each mode whose source has a
+		// sheet.
+		stances map[string]map[string]string
+		// reasons holds the reason of each mode whose source has no
+		// sheet.
+		reasons map[string]string
+		// causes holds the error that the reason of a mode wraps beside
+		// [ErrNoRating].
+		causes map[string]error
+		// noPrefs makes the service answer the request for the perk
+		// preferences with the status 404.
+		noPrefs bool
+	}{
+		// Both artifacts list one file, so each mode loads the same
+		// sheet.
+		"each mode with a sheet carries the stances of the mode": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"rolls.a.json"}},
+			stances: map[string]map[string]string{
+				modePvE: {"Firefly": stanceUp},
+				modePvP: {"Rampage": stanceDown},
+			},
+		},
+		"mode without a sheet carries the reason of the sheet": {
+			files:   map[string][]string{"rolls": {"rolls.a.json"}},
+			stances: map[string]map[string]string{modePvE: {"Firefly": stanceUp}},
+			reasons: map[string]string{modePvP: noPvP},
+		},
+		"unreadable perk preferences are the reason of each mode with a sheet": {
+			files:   map[string][]string{"rolls": {"rolls.a.json"}},
+			reasons: map[string]string{modePvE: unreadable, modePvP: noPvP},
+			causes:  map[string]error{modePvE: ErrService},
+			noPrefs: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.artifactFiles = tc.files
+			f.serviceData["/artifacts/rolls.a.json"] = sheet
+
+			if tc.noPrefs {
+				delete(f.serviceData, pathPrefs)
+			}
+
+			got := f.h.ratingSources(t.Context())
+			require.Len(t, got, len(perkModes))
+
+			for _, mode := range perkModes {
+				source := got[mode]
+
+				reason, ok := tc.reasons[mode]
+				if !ok {
+					require.NoErrorf(t, source.Err, "mode %s", mode)
+					assert.NotNilf(t, source.Sheet, "mode %s", mode)
+					assert.Equalf(t, tc.stances[mode], source.Stances, "mode %s", mode)
+
+					continue
+				}
+
+				require.ErrorIsf(t, source.Err, ErrNoRating, "mode %s", mode)
+				require.EqualErrorf(t, source.Err, reason, "mode %s", mode)
+				assert.Nilf(t, source.Sheet, "mode %s", mode)
+				assert.Nilf(t, source.Stances, "mode %s", mode)
+
+				cause := tc.causes[mode]
+				if cause != nil {
+					require.ErrorIsf(t, source.Err, cause, "mode %s", mode)
+				}
+			}
+		})
+	}
+}
+
 func TestWriteRating(t *testing.T) {
 	t.Parallel()
 
+	// hit returns the verdict of a column that hit with the named
+	// perks, none of which the user likes.
 	hit := func(names ...string) ColumnVerdict {
 		var verdict ColumnVerdict
 
@@ -805,6 +1026,32 @@ func TestWriteRating(t *testing.T) {
 				"- PvE: E for this roll, D on the Aegis sheet, 1 of 2 perk columns hit",
 				"  Column 1: hit with Explosive Payload, Rampage",
 				"  Column 2: miss",
+			},
+		},
+		"hit with one liked name": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "C"},
+				Overall: "C",
+				Columns: []ColumnVerdict{{Hits: []Hit{{Name: "Firefly", Liked: true}}}},
+			}},
+			want: []string{
+				"- PvE: C for this roll, C on the Aegis sheet, 1 of 1 perk columns hit",
+				"  Column 1: hit with Firefly (liked)",
+			},
+		},
+		"hit with one liked name and one name without the mark": {
+			mode: modePvP,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "C"},
+				Overall: "C",
+				Columns: []ColumnVerdict{
+					{Hits: []Hit{{Name: "Explosive Payload"}, {Name: "Firefly", Liked: true}}},
+				},
+			}},
+			want: []string{
+				"- PvP: C for this roll, C on the PvP sheet, 1 of 1 perk columns hit",
+				"  Column 1: hit with Explosive Payload, Firefly (liked)",
 			},
 		},
 	}

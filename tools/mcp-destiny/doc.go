@@ -43,10 +43,19 @@
 //
 // The get_item tool rates the roll of the weapon copy that it shows
 // against each sheet. The tier of a copy starts at the tier of the weapon
-// on the sheet. It moves down one step for each perk column in which the
-// copy has none of the picks, and it stops at F. Two copies of one weapon
-// can therefore differ by several tiers. The rating does not count the
-// perk preferences.
+// on the sheet. It moves down one step for each perk column that the copy
+// misses, and it stops at F. Two copies of one weapon can therefore
+// differ by several tiers.
+//
+// A copy hits a perk column with each pick of the column that it has.
+// The rating also counts the perk preferences, which the user sets for
+// each game mode in the web client or with the set_perk_preferences
+// tool. A disliked perk never counts in its game mode, also when the
+// sheet picks it. A liked perk counts as a pick, and the line of its
+// column marks it with "(liked)". A liked perk counts only in the socket
+// in which the copy rolled a pick of the column. The web client also
+// counts a liked perk in a column in which the copy rolled no pick. It
+// can therefore rate such a copy higher.
 //
 // The web client rates the socket list that Destiny Item Manager (DIM)
 // builds. The server rates the perks that get_item lists, so the user can
@@ -84,6 +93,15 @@
 // that game mode and still shows the rest of its output. The server does
 // not remember the load, so the next call that needs the sheet downloads
 // the file again.
+//
+// The server reads the perk preferences on every call that rates a roll,
+// and it keeps no copy of them. A preference that the user changes in the
+// web client therefore counts in the next call. When the server cannot
+// read the preferences, each game mode whose sheet loaded reports that
+// reason in place of its rating, for every weapon. A game mode whose
+// sheet did not load keeps the reason of the sheet. The tool still shows
+// the rest of its output, because the item, its perks, and its stats are
+// correct without a rating.
 //
 // # Sign-in
 //

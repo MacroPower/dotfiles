@@ -25,10 +25,11 @@ func rolledPerks() []Perk {
 	}
 }
 
-// listed returns the state of a loaded sheet that gives item 100 a row
+// listed returns the source of a loaded sheet that gives item 100 a row
 // with the given tier and perk columns. As in a decoded sheet, a row
-// without columns has no entry in the column map.
-func listed(tier string, columns ...[]uint32) SheetState {
+// without columns has no entry in the column map. The source has no
+// stance map.
+func listed(tier string, columns ...[]uint32) RatingSource {
 	sheet := &Sheet{
 		Rows:    map[uint32]SheetRow{100: {Tier: tier}},
 		Columns: map[uint32][][]uint32{},
@@ -38,10 +39,11 @@ func listed(tier string, columns ...[]uint32) SheetState {
 		sheet.Columns[100] = columns
 	}
 
-	return SheetState{Sheet: sheet}
+	return RatingSource{Sheet: sheet}
 }
 
-// hits returns the verdict of a column that hit with the named perks.
+// hits returns the verdict of a column that hit with the named perks,
+// none of which the user likes.
 func hits(names ...string) ColumnVerdict {
 	var verdict ColumnVerdict
 
@@ -59,48 +61,48 @@ func TestRate(t *testing.T) {
 
 	tests := map[string]struct {
 		// err is the reason that the rating carries.
-		err   error
-		want  *Roll
-		state SheetState
-		perks []Perk
+		err    error
+		want   *Roll
+		source RatingSource
+		perks  []Perk
 	}{
-		"state with a reason and no sheet returns the reason": {
-			state: SheetState{Err: errNoSheet},
-			perks: rolledPerks(),
-			err:   errNoSheet,
+		"source with a reason and no sheet returns the reason": {
+			source: RatingSource{Err: errNoSheet},
+			perks:  rolledPerks(),
+			err:    errNoSheet,
 		},
 		"weapon that the sheet does not list has no roll": {
-			state: SheetState{Sheet: &Sheet{
+			source: RatingSource{Sheet: &Sheet{
 				Rows:    map[uint32]SheetRow{101: {Tier: "B"}},
 				Columns: map[uint32][][]uint32{101: {{900}}},
 			}},
 			perks: rolledPerks(),
 		},
 		"row without columns keeps its tier": {
-			state: listed("A"),
-			perks: rolledPerks(),
-			want:  &Roll{Row: SheetRow{Tier: "A"}, Overall: "A"},
+			source: listed("A"),
+			perks:  rolledPerks(),
+			want:   &Roll{Row: SheetRow{Tier: "A"}, Overall: "A"},
 		},
 		"row without columns on a copy without perks keeps its tier": {
-			state: listed("A"),
-			want:  &Roll{Row: SheetRow{Tier: "A"}, Overall: "A"},
+			source: listed("A"),
+			want:   &Roll{Row: SheetRow{Tier: "A"}, Overall: "A"},
 		},
 		"row without a tier and without columns has no tier": {
-			state: listed(""),
-			perks: rolledPerks(),
-			want:  &Roll{},
+			source: listed(""),
+			perks:  rolledPerks(),
+			want:   &Roll{},
 		},
 		"copy without perks is unknown": {
-			state: listed("S", []uint32{900}, []uint32{901}),
-			want:  &Roll{Row: SheetRow{Tier: "S"}, Unknown: true},
+			source: listed("S", []uint32{900}, []uint32{901}),
+			want:   &Roll{Row: SheetRow{Tier: "S"}, Unknown: true},
 		},
 		"row without a tier on a copy without perks is unknown": {
-			state: listed("", []uint32{900}),
-			want:  &Roll{Unknown: true},
+			source: listed("", []uint32{900}),
+			want:   &Roll{Unknown: true},
 		},
 		"no miss keeps the tier": {
-			state: listed("S", []uint32{900}, []uint32{901}),
-			perks: rolledPerks(),
+			source: listed("S", []uint32{900}, []uint32{901}),
+			perks:  rolledPerks(),
 			want: &Roll{
 				Row:     SheetRow{Tier: "S"},
 				Overall: "S",
@@ -108,8 +110,8 @@ func TestRate(t *testing.T) {
 			},
 		},
 		"one miss moves the tier down one step": {
-			state: listed("S", []uint32{900}, []uint32{904}),
-			perks: rolledPerks(),
+			source: listed("S", []uint32{900}, []uint32{904}),
+			perks:  rolledPerks(),
 			want: &Roll{
 				Row:     SheetRow{Tier: "S"},
 				Overall: "A",
@@ -117,8 +119,8 @@ func TestRate(t *testing.T) {
 			},
 		},
 		"two misses move the tier down two steps": {
-			state: listed("S", []uint32{904}, []uint32{905}),
-			perks: rolledPerks(),
+			source: listed("S", []uint32{904}, []uint32{905}),
+			perks:  rolledPerks(),
 			want: &Roll{
 				Row:     SheetRow{Tier: "S"},
 				Overall: "B",
@@ -126,8 +128,8 @@ func TestRate(t *testing.T) {
 			},
 		},
 		"two misses from E stop at F": {
-			state: listed("E", []uint32{904}, []uint32{905}),
-			perks: rolledPerks(),
+			source: listed("E", []uint32{904}, []uint32{905}),
+			perks:  rolledPerks(),
 			want: &Roll{
 				Row:     SheetRow{Tier: "E"},
 				Overall: "F",
@@ -135,8 +137,8 @@ func TestRate(t *testing.T) {
 			},
 		},
 		"two misses from F stay at F": {
-			state: listed("F", []uint32{904}, []uint32{905}),
-			perks: rolledPerks(),
+			source: listed("F", []uint32{904}, []uint32{905}),
+			perks:  rolledPerks(),
 			want: &Roll{
 				Row:     SheetRow{Tier: "F"},
 				Overall: "F",
@@ -144,9 +146,9 @@ func TestRate(t *testing.T) {
 			},
 		},
 		"row without a tier that has columns keeps its verdicts": {
-			state: listed("", []uint32{900}, []uint32{904}),
-			perks: rolledPerks(),
-			want:  &Roll{Columns: []ColumnVerdict{hits("Explosive Payload"), {}}},
+			source: listed("", []uint32{900}, []uint32{904}),
+			perks:  rolledPerks(),
+			want:   &Roll{Columns: []ColumnVerdict{hits("Explosive Payload"), {}}},
 		},
 	}
 
@@ -154,7 +156,7 @@ func TestRate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := rate(tc.state, &Item{Hash: 100, Perks: tc.perks})
+			got := rate(tc.source, &Item{Hash: 100, Perks: tc.perks})
 
 			if tc.err != nil {
 				require.ErrorIs(t, got.Err, tc.err)
@@ -257,7 +259,7 @@ func TestRateModes(t *testing.T) {
 
 	item := &Item{Hash: 100, Perks: rolledPerks()}
 
-	states := map[string]SheetState{
+	sources := map[string]RatingSource{
 		modePvE: listed("S", []uint32{900}, []uint32{901}),
 		modePvP: listed("C", []uint32{900}, []uint32{904}),
 	}
@@ -265,9 +267,204 @@ func TestRateModes(t *testing.T) {
 	want := map[string]string{modePvE: "S", modePvP: "D"}
 
 	for _, mode := range perkModes {
-		got := rate(states[mode], item)
+		got := rate(sources[mode], item)
 
 		require.NotNilf(t, got.Roll, "mode %s", mode)
 		assert.Equalf(t, want[mode], got.Roll.Overall, "mode %s", mode)
+	}
+}
+
+func TestStancesByMode(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		want  map[string]map[string]string
+		prefs []PerkPreference
+	}{
+		"no preference gives each mode an empty map": {
+			want: map[string]map[string]string{modePvE: {}, modePvP: {}},
+		},
+		// The set_perk_preferences tool writes a removal as a removed
+		// row with the stance up.
+		"removed row has no stance": {
+			prefs: []PerkPreference{{Mode: modePvE, Perk: "Firefly", Stance: stanceUp, Removed: true}},
+			want:  map[string]map[string]string{modePvE: {}, modePvP: {}},
+		},
+		"each row lands only in the map of its mode": {
+			prefs: []PerkPreference{
+				{Mode: modePvE, Perk: "Firefly", Stance: stanceUp},
+				{Mode: modePvE, Perk: "Kill Clip", Stance: stanceDown},
+				{Mode: modePvP, Perk: "Rampage", Stance: stanceDown},
+				{Mode: modePvP, Perk: "Kill Clip", Stance: stanceUp},
+			},
+			want: map[string]map[string]string{
+				modePvE: {"Firefly": stanceUp, "Kill Clip": stanceDown},
+				modePvP: {"Rampage": stanceDown, "Kill Clip": stanceUp},
+			},
+		},
+		"row of another mode lands in neither map": {
+			prefs: []PerkPreference{
+				{Mode: "gambit", Perk: "Firefly", Stance: stanceUp},
+				{Perk: "Rampage", Stance: stanceDown},
+			},
+			want: map[string]map[string]string{modePvE: {}, modePvP: {}},
+		},
+		"perk name is the key as the row has it": {
+			prefs: []PerkPreference{{Mode: modePvE, Perk: " rampage Enhanced", Stance: stanceUp}},
+			want:  map[string]map[string]string{modePvE: {" rampage Enhanced": stanceUp}, modePvP: {}},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, stancesByMode(tc.prefs))
+		})
+	}
+}
+
+// TestRateStances rates a copy against one sheet row with the tier S and
+// the given columns. The source carries the given stances.
+func TestRateStances(t *testing.T) {
+	t.Parallel()
+
+	liked := func(name string) Hit { return Hit{Name: name, Liked: true} }
+
+	tests := map[string]struct {
+		stances map[string]string
+		// overall is the tier of the copy.
+		overall string
+		perks   []Perk
+		columns [][]uint32
+		want    []ColumnVerdict
+	}{
+		"disliked only pick misses and moves the tier down one step": {
+			stances: map[string]string{"Explosive Payload": stanceDown},
+			perks:   rolledPerks(),
+			columns: [][]uint32{{900}, {901}},
+			want:    []ColumnVerdict{{}, hits("Firefly")},
+			overall: "A",
+		},
+		"disliked pick leaves the other pick of its socket": {
+			stances: map[string]string{"Rampage": stanceDown},
+			perks:   rolledPerks(),
+			columns: [][]uint32{{900, 903}},
+			want:    []ColumnVerdict{hits("Explosive Payload")},
+			overall: "S",
+		},
+		"liked perk earns the column beside a disliked only pick": {
+			stances: map[string]string{"Explosive Payload": stanceDown, "Rampage": stanceUp},
+			perks:   rolledPerks(),
+			columns: [][]uint32{{900}},
+			want:    []ColumnVerdict{{Hits: []Hit{liked("Rampage")}}},
+			overall: "S",
+		},
+		"liked perk in a socket without a pick of the column misses": {
+			stances: map[string]string{"Firefly": stanceUp},
+			perks:   rolledPerks(),
+			columns: [][]uint32{{900}, {904}},
+			want:    []ColumnVerdict{hits("Explosive Payload"), {}},
+			overall: "A",
+		},
+		"disliked only pick of the first socket misses before a later socket with a pick": {
+			stances: map[string]string{"Explosive Payload": stanceDown},
+			perks: []Perk{
+				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}},
+				{Plug: plugFirefly, plugs: []Plug{plugFirefly, plugKillClip}, Socket: 1},
+			},
+			columns: [][]uint32{{900, 904}},
+			want:    []ColumnVerdict{{}},
+			overall: "A",
+		},
+		"liked pick carries the mark beside another pick": {
+			stances: map[string]string{"Rampage": stanceUp},
+			perks:   rolledPerks(),
+			columns: [][]uint32{{900, 903}},
+			want:    []ColumnVerdict{{Hits: []Hit{{Name: "Explosive Payload"}, liked("Rampage")}}},
+			overall: "S",
+		},
+		"liked perk that is not a pick comes before a later pick": {
+			stances: map[string]string{"Explosive Payload": stanceUp},
+			perks:   rolledPerks(),
+			columns: [][]uint32{{903}},
+			want:    []ColumnVerdict{{Hits: []Hit{liked("Explosive Payload"), {Name: "Rampage"}}}},
+			overall: "S",
+		},
+		"liked base name counts a plug with the Enhanced suffix": {
+			stances: map[string]string{"Rampage": stanceUp},
+			perks: []Perk{
+				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampageEnhanced}},
+			},
+			columns: [][]uint32{{900}},
+			want:    []ColumnVerdict{{Hits: []Hit{{Name: "Explosive Payload"}, liked("Rampage Enhanced")}}},
+			overall: "S",
+		},
+		"disliked base name drops a pick with the Enhanced suffix": {
+			stances: map[string]string{"Rampage": stanceDown},
+			perks:   []Perk{{Plug: plugRampageEnhanced, plugs: []Plug{plugRampageEnhanced}}},
+			columns: [][]uint32{{909}},
+			want:    []ColumnVerdict{{}},
+			overall: "A",
+		},
+		"liked base plug and enhanced plug of one name hit one time": {
+			stances: map[string]string{"Kill Clip": stanceUp},
+			perks: []Perk{
+				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugKillClip, plugKillClipEnhanced}},
+			},
+			columns: [][]uint32{{900}},
+			want:    []ColumnVerdict{{Hits: []Hit{{Name: "Explosive Payload"}, liked("Kill Clip")}}},
+			overall: "S",
+		},
+		"stance that is neither up nor down changes nothing": {
+			stances: map[string]string{"Explosive Payload": "sideways", "Rampage": ""},
+			perks:   rolledPerks(),
+			columns: [][]uint32{{900}},
+			want:    []ColumnVerdict{hits("Explosive Payload")},
+			overall: "S",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			source := listed("S", tc.columns...)
+			source.Stances = tc.stances
+
+			got := rate(source, &Item{Hash: 100, Perks: tc.perks})
+
+			require.NoError(t, got.Err)
+			require.NotNil(t, got.Roll)
+			assert.Equal(t, tc.want, got.Roll.Columns)
+			assert.Equal(t, tc.overall, got.Roll.Overall)
+		})
+	}
+}
+
+// TestRateStancesOfOneMode pins that a preference counts only in its own
+// game mode. The user dislikes the only pick of the column for PvP.
+func TestRateStancesOfOneMode(t *testing.T) {
+	t.Parallel()
+
+	item := &Item{Hash: 100, Perks: rolledPerks()}
+
+	stances := stancesByMode([]PerkPreference{
+		{Mode: modePvP, Perk: "Explosive Payload", Stance: stanceDown},
+	})
+
+	want := map[string][]ColumnVerdict{
+		modePvE: {hits("Explosive Payload")},
+		modePvP: {{}},
+	}
+
+	for _, mode := range perkModes {
+		source := listed("S", []uint32{900})
+		source.Stances = stances[mode]
+
+		got := rate(source, item)
+
+		require.NotNilf(t, got.Roll, "mode %s", mode)
+		assert.Equalf(t, want[mode], got.Roll.Columns, "mode %s", mode)
 	}
 }

@@ -452,10 +452,11 @@ func perkLabel(perk Perk) string {
 
 // writeRating writes the roll rating of one game mode. The first line
 // gives the tier of the weapon on the sheet of the mode, or the reason
-// that the server has no sheet. For a copy whose perk columns the rating
+// that the mode has no rating. For a copy whose perk columns the rating
 // judged, the line also gives the tier of the copy and counts the columns
 // that hit. One line for each column follows, numbered from 1 in sheet
-// order.
+// order. The line of a column that hit names each perk that earns the
+// column, and it marks each perk that the user likes.
 func writeRating(b *strings.Builder, mode string, rating Rating) {
 	fmt.Fprintf(b, "- %s: ", modeLabels[mode])
 
@@ -513,7 +514,12 @@ func writeRating(b *strings.Builder, mode string, rating Rating) {
 
 		names := make([]string, 0, len(column.Hits))
 		for _, hit := range column.Hits {
-			names = append(names, hit.Name)
+			name := hit.Name
+			if hit.Liked {
+				name += " (liked)"
+			}
+
+			names = append(names, name)
 		}
 
 		fmt.Fprintf(b, "  Column %d: hit with %s\n", i+1, strings.Join(names, ", "))
