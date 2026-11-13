@@ -428,12 +428,20 @@ func (h *handler) handleGetItem(
 
 	// Only weapons have roll ratings, so every other item costs no sheet
 	// request. A sheet that does not load costs only its rating line.
-	var sheets map[string]SheetState
+	// The server rates the copy on every call and keeps no rating. A
+	// perk change edits the cached snapshot in place, so a kept rating
+	// does not follow the change.
+	var ratings map[string]Rating
 	if item.Kind == kindWeapon {
-		sheets = h.sheets.Load(ctx)
+		states := h.sheets.Load(ctx)
+		ratings = make(map[string]Rating, len(perkModes))
+
+		for _, mode := range perkModes {
+			ratings[mode] = rate(states[mode], item)
+		}
 	}
 
-	return textResult(renderItem(s, item, sheets)), nil, nil
+	return textResult(renderItem(s, item, ratings)), nil, nil
 }
 
 func (h *handler) handleCompareDuplicates(

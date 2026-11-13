@@ -38,8 +38,40 @@
 // rates weapons for PvE, and the service publishes it as the rolls
 // artifact. The PvP sheet rates weapons for PvP, and the service publishes
 // it as the pvprolls artifact. Each sheet gives a weapon a tier from S,
-// the best tier, to F. The get_item tool shows the tier that each sheet
-// gives a weapon.
+// the best tier, to F. It also picks the perks that it wants in each perk
+// column of the weapon.
+//
+// The get_item tool rates the roll of the weapon copy that it shows
+// against each sheet. The tier of a copy starts at the tier of the weapon
+// on the sheet. It moves down one step for each perk column in which the
+// copy has none of the picks, and it stops at F. Two copies of one weapon
+// can therefore differ by several tiers. The rating does not count the
+// perk preferences.
+//
+// The web client rates the socket list that Destiny Item Manager (DIM)
+// builds. The server rates the perks that get_item lists, so the user can
+// check a rating against the perks in the same result. The two ratings of
+// one copy can differ, because the server follows these rules:
+//
+//   - The rating reads the sockets that the perk list of the copy keeps.
+//     The list leaves out each socket that the profile hides and each
+//     socket whose active plug is not a perk, such as an empty socket or a
+//     shader. It also leaves out each plug that the copy cannot insert.
+//     DIM keeps those sockets and those plugs.
+//   - The rating reads every plug that a kept socket can hold, so a pick
+//     that sits beside the active perk in a socket counts. DIM reads
+//     those plugs only for the sockets that it classes as perk sockets,
+//     and it drops each socket that it cannot class.
+//   - The rating counts every plug that the copy can insert. DIM drops a
+//     masterwork plug and a ghost projection that are not active.
+//   - A socket for which the profile lists no plugs counts only its
+//     active plug. DIM takes the plugs of such a socket from the
+//     definitions.
+//
+// The active plug of a kept socket always counts. When the profile lists
+// no perks for a copy, the server did not see the roll. Such a copy reads
+// "roll unknown" on a sheet row with perk columns. A row without perk
+// columns, such as the row of an exotic, shows its tier for every copy.
 //
 // The server reads the artifact index of the service on every call that
 // needs a sheet. It identifies a loaded sheet by its file name, because

@@ -359,9 +359,9 @@ func TestGetItem(t *testing.T) {
 	t.Parallel()
 
 	// fatebringer returns the output for instance 1001 with the given
-	// rating lines.
-	fatebringer := func(pve, pvp string) string {
-		return strings.Join([]string{
+	// lines of the roll ratings block.
+	fatebringer := func(ratings ...string) string {
+		return strings.Join(slices.Concat([]string{
 			"Fatebringer",
 			"Instance id: 1001",
 			"Item hash: 100",
@@ -381,22 +381,33 @@ func TestGetItem(t *testing.T) {
 			"  Explosions deal Solar damage.",
 			"",
 			"Roll ratings:",
-			pve,
-			pvp,
+		}, ratings, []string{
 			"",
 			"Stats:",
 			"- Range: 55",
-		}, "\n")
+		}), "\n")
 	}
 
 	const (
 		noAegis = "- PvE: rating unavailable: the service publishes no Aegis sheet"
 		noPvP   = "- PvP: rating unavailable: the service publishes no PvP sheet"
 
-		// Fatebringer is item 100 and Gjallarhorn is item 101. The row
-		// of an exotic has no perk columns.
-		tiered     = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900, 903], [901]]}]}`
-		untiered   = `{"rolls": [{"hashes": [100], "slots": [[900]]}]}`
+		// Fatebringer is item 100, Gjallarhorn is item 101, and Midnight
+		// Coup is item 102. The row of an exotic has no perk columns.
+		//
+		// Instance 1001 holds Explosive Payload (900) with Rampage (903)
+		// beside it in one socket, and Firefly (901) in another. Its
+		// socket with the shader (902) is not a perk socket, and no
+		// socket of the copy holds Kill Clip (904).
+		//
+		// The fake perk preferences like Firefly for PvE and dislike
+		// Rampage for PvP. No PvE column lists Firefly, and no PvP
+		// column lists Rampage, so the preferences cannot change a
+		// line of these cases.
+		tiered     = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900, 903], [904]]}]}`
+		allHit     = `{"rolls": [{"tier": "B", "hashes": [100], "slots": [[900], [901]]}]}`
+		untiered   = `{"rolls": [{"hashes": [100], "slots": [[904], [900]]}]}`
+		shaderOnly = `{"rolls": [{"tier": "E", "hashes": [100], "slots": [[902], [902]]}]}`
 		columnless = `{"rolls": [{"tier": "A", "hashes": [100], "slots": []}]}`
 		elsewhere  = `{"rolls": [{"tier": "B", "hashes": [101], "slots": []}]}`
 	)
@@ -425,18 +436,53 @@ func TestGetItem(t *testing.T) {
 			want:    fatebringer(noAegis, noPvP),
 			configs: 2,
 		},
-		"row with a tier and row without a tier": {
+		"roll with a hit and a miss, and sheet that does not list the weapon": {
 			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
 			bodies: map[string]string{
 				"rolls.a.json":    tiered,
-				"pvprolls.a.json": untiered,
+				"pvprolls.a.json": elsewhere,
 			},
 			id: "1001",
 			want: fatebringer(
-				"- PvE: S on the Aegis sheet, perk columns: 2",
-				"- PvP: no tier on the PvP sheet, perk columns: 1",
+				"- PvE: A for this roll, S on the Aegis sheet, 1 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload, Rampage",
+				"  Column 2: miss",
+				"- PvP: not on the PvP sheet",
 			),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+		},
+		"roll that hits every column and row without a tier": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    untiered,
+				"pvprolls.a.json": allHit,
+			},
+			id: "1001",
+			want: fatebringer(
+				"- PvE: no tier on the Aegis sheet, 1 of 2 perk columns hit",
+				"  Column 1: miss",
+				"  Column 2: hit with Explosive Payload",
+				"- PvP: B for this roll, B on the PvP sheet, 2 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload",
+				"  Column 2: hit with Firefly",
+			),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+		},
+		// The copy holds plug 902 only in a socket that the perk list
+		// leaves out, so the rating does not read that socket.
+		"column that lists only a plug outside the perk list misses": {
+			files:  map[string][]string{"rolls": {"rolls.a.json"}},
+			bodies: map[string]string{"rolls.a.json": shaderOnly},
+			id:     "1001",
+			want: fatebringer(
+				"- PvE: F for this roll, E on the Aegis sheet, 0 of 2 perk columns hit",
+				"  Column 1: miss",
+				"  Column 2: miss",
+				noPvP,
+			),
+			fetched: []string{"/artifacts/rolls.a.json"},
 			configs: 2,
 		},
 		"row without columns and sheet that does not list the weapon": {
@@ -447,7 +493,7 @@ func TestGetItem(t *testing.T) {
 			},
 			id: "1001",
 			want: fatebringer(
-				"- PvE: A on the Aegis sheet, perk columns: 0",
+				"- PvE: A on the Aegis sheet, which judges no perk columns",
 				"- PvP: not on the PvP sheet",
 			),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
@@ -463,12 +509,14 @@ func TestGetItem(t *testing.T) {
 		},
 		"listed sheet file returns 404": {
 			files:  map[string][]string{"rolls": {"rolls.x.json"}, "pvprolls": {"pvprolls.a.json"}},
-			bodies: map[string]string{"pvprolls.a.json": tiered},
+			bodies: map[string]string{"pvprolls.a.json": allHit},
 			id:     "1001",
 			want: fatebringer(
 				"- PvE: rating unavailable: fetching artifact rolls.x.json: "+
 					"service: {service}/artifacts/rolls.x.json returned status 404",
-				"- PvP: S on the PvP sheet, perk columns: 2",
+				"- PvP: B for this roll, B on the PvP sheet, 2 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload",
+				"  Column 2: hit with Firefly",
 			),
 			fetched: []string{"/artifacts/rolls.x.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
@@ -481,16 +529,21 @@ func TestGetItem(t *testing.T) {
 			},
 			id: "1001",
 			want: fatebringer(
-				"- PvE: S on the Aegis sheet, perk columns: 2",
+				"- PvE: A for this roll, S on the Aegis sheet, 1 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload, Rampage",
+				"  Column 2: miss",
 				"- PvP: rating unavailable: decoding artifact pvprolls.x.json: the roll sheet lists no weapon",
 			),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.x.json"},
 			configs: 2,
 		},
-		"weapon without perks and stats ends with the ratings": {
-			files:  map[string][]string{"rolls": {"rolls.a.json"}},
-			bodies: map[string]string{"rolls.a.json": tiered},
-			id:     "1005",
+		"copy without perks has an unknown roll and ends with the ratings": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    tiered,
+				"pvprolls.a.json": untiered,
+			},
+			id: "1005",
 			want: strings.Join([]string{
 				"Fatebringer",
 				"Instance id: 1005",
@@ -502,15 +555,63 @@ func TestGetItem(t *testing.T) {
 				"Location: Hunter (postmaster)",
 				"",
 				"Roll ratings:",
-				"- PvE: S on the Aegis sheet, perk columns: 2",
-				noPvP,
+				"- PvE: S on the Aegis sheet, roll unknown: the profile lists no perks for this copy",
+				"- PvP: no tier on the PvP sheet, roll unknown: the profile lists no perks for this copy",
 			}, "\n"),
-			fetched: []string{"/artifacts/rolls.a.json"},
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+		},
+		"exotic without perks keeps the tier of a row without columns": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    elsewhere,
+				"pvprolls.a.json": allHit,
+			},
+			id: "1002",
+			want: strings.Join([]string{
+				"Gjallarhorn",
+				"Instance id: 1002",
+				"Item hash: 101",
+				"Type: Solar Rocket Launcher",
+				"Tier: Exotic",
+				"Slot: Power Weapons",
+				"Power: 1990",
+				"Location: Vault",
+				"",
+				"Roll ratings:",
+				"- PvE: B on the Aegis sheet, which judges no perk columns",
+				"- PvP: not on the PvP sheet",
+			}, "\n"),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
+			configs: 2,
+		},
+		"weapon that neither sheet lists": {
+			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
+			bodies: map[string]string{
+				"rolls.a.json":    tiered,
+				"pvprolls.a.json": elsewhere,
+			},
+			id: "1003",
+			want: strings.Join([]string{
+				"Midnight Coup",
+				"Instance id: 1003",
+				"Item hash: 102",
+				"Type: Kinetic Hand Cannon",
+				"Tier: Legendary",
+				"Slot: Kinetic Weapons",
+				"Power: 2005",
+				"Location: Hunter",
+				"",
+				"Roll ratings:",
+				"- PvE: not on the Aegis sheet",
+				"- PvP: not on the PvP sheet",
+			}, "\n"),
+			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
 		},
 		"armor has no ratings and reads no sheet": {
 			files:  map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
-			bodies: map[string]string{"rolls.a.json": tiered, "pvprolls.a.json": tiered},
+			bodies: map[string]string{"rolls.a.json": tiered, "pvprolls.a.json": allHit},
 			id:     "1004",
 			want: strings.Join([]string{
 				"Celestial Nighthawk",
@@ -562,6 +663,161 @@ func TestGetItem(t *testing.T) {
 
 			assert.Equal(t, tc.fetched, fetched)
 			assert.Len(t, f.service.calls(http.MethodGet, "/api/config"), tc.configs)
+		})
+	}
+}
+
+// TestGetItemRatesOnEachCall pins that get_item rates the copy from the
+// cached snapshot on every call. A rating that the server kept from the
+// first call names Explosive Payload first after the perk change.
+func TestGetItemRatesOnEachCall(t *testing.T) {
+	t.Parallel()
+
+	f := newFakes(t)
+	f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+	f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[903, 900]]}]}`
+
+	got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
+	require.False(t, isError)
+	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet, 1 of 1 perk columns hit\n"+
+		"  Column 1: hit with Explosive Payload, Rampage\n")
+
+	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Rampage"})
+	require.False(t, isError)
+
+	got, isError = call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
+	require.False(t, isError)
+	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet, 1 of 1 perk columns hit\n"+
+		"  Column 1: hit with Rampage, Explosive Payload\n")
+	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1, "both ratings read one profile")
+}
+
+func TestWriteRating(t *testing.T) {
+	t.Parallel()
+
+	hit := func(names ...string) ColumnVerdict {
+		var verdict ColumnVerdict
+
+		for _, name := range names {
+			verdict.Hits = append(verdict.Hits, Hit{Name: name})
+		}
+
+		return verdict
+	}
+
+	tests := map[string]struct {
+		mode   string
+		rating Rating
+		want   []string
+	}{
+		"reason": {
+			mode:   modePvE,
+			rating: Rating{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", ErrNoRating)},
+			want:   []string{"- PvE: rating unavailable: the service publishes no Aegis sheet"},
+		},
+		"weapon that the sheet does not list": {
+			mode: modePvE,
+			want: []string{"- PvE: not on the Aegis sheet"},
+		},
+		"weapon that the PvP sheet does not list": {
+			mode: modePvP,
+			want: []string{"- PvP: not on the PvP sheet"},
+		},
+		"row with a tier and no columns": {
+			mode:   modePvE,
+			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "A"}, Overall: "A"}},
+			want:   []string{"- PvE: A on the Aegis sheet, which judges no perk columns"},
+		},
+		"row without a tier and without columns": {
+			mode:   modePvE,
+			rating: Rating{Roll: &Roll{}},
+			want:   []string{"- PvE: no tier on the Aegis sheet, which judges no perk columns"},
+		},
+		"unknown roll on a row with a tier": {
+			mode:   modePvE,
+			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "S"}, Unknown: true}},
+			want:   []string{"- PvE: S on the Aegis sheet, roll unknown: the profile lists no perks for this copy"},
+		},
+		"unknown roll on a row without a tier": {
+			mode:   modePvE,
+			rating: Rating{Roll: &Roll{Unknown: true}},
+			want: []string{
+				"- PvE: no tier on the Aegis sheet, roll unknown: the profile lists no perks for this copy",
+			},
+		},
+		"roll with a tier and no miss prints the tier twice": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "S"},
+				Overall: "S",
+				Columns: []ColumnVerdict{hit("Explosive Payload"), hit("Firefly")},
+			}},
+			want: []string{
+				"- PvE: S for this roll, S on the Aegis sheet, 2 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload",
+				"  Column 2: hit with Firefly",
+			},
+		},
+		"roll with a tier and one miss": {
+			mode: modePvP,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "S"},
+				Overall: "A",
+				Columns: []ColumnVerdict{{}, hit("Firefly")},
+			}},
+			want: []string{
+				"- PvP: A for this roll, S on the PvP sheet, 1 of 2 perk columns hit",
+				"  Column 1: miss",
+				"  Column 2: hit with Firefly",
+			},
+		},
+		"roll without a tier has no tier for the roll": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Columns: []ColumnVerdict{hit("Explosive Payload"), {}},
+			}},
+			want: []string{
+				"- PvE: no tier on the Aegis sheet, 1 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload",
+				"  Column 2: miss",
+			},
+		},
+		"row with one column keeps the plural": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "C"},
+				Overall: "C",
+				Columns: []ColumnVerdict{hit("Firefly")},
+			}},
+			want: []string{
+				"- PvE: C for this roll, C on the Aegis sheet, 1 of 1 perk columns hit",
+				"  Column 1: hit with Firefly",
+			},
+		},
+		"hit with two names": {
+			mode: modePvE,
+			rating: Rating{Roll: &Roll{
+				Row:     SheetRow{Tier: "D"},
+				Overall: "E",
+				Columns: []ColumnVerdict{hit("Explosive Payload", "Rampage"), {}},
+			}},
+			want: []string{
+				"- PvE: E for this roll, D on the Aegis sheet, 1 of 2 perk columns hit",
+				"  Column 1: hit with Explosive Payload, Rampage",
+				"  Column 2: miss",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var b strings.Builder
+
+			writeRating(&b, tc.mode, tc.rating)
+
+			assert.Equal(t, strings.Join(tc.want, "\n")+"\n", b.String())
 		})
 	}
 }

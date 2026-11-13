@@ -337,9 +337,17 @@ func newServer(h *handler) *mcp.Server {
 		Name: toolGetItem,
 		Description: "Show one item instance in full: perks with their descriptions and the alternatives each socket can swap to, " +
 			"stats, tag, note, and location. " +
-			"A weapon also shows the tier, from S (best) to F, that the Aegis sheet (PvE) and the PvP sheet give it, " +
-			"with one line for each sheet. When the server has no sheet for a game mode, " +
-			"the line of that mode names the reason.",
+			"A weapon also shows how the Aegis sheet (PvE) and the PvP sheet rate the roll of this copy. " +
+			"Each sheet gives a weapon a tier from S (best) to F and picks the perks that it wants in each perk column. " +
+			"The tier of the copy starts at the tier of the weapon on the sheet. " +
+			"It moves down one step for each perk column in which the copy has none of the picks, and it stops at F. " +
+			"One line for each column names the picks that the copy has, or says that the column missed. " +
+			"The rating reads the perks that this tool lists, " +
+			"and a pick that sits beside the active perk in a socket counts. " +
+			"The web client reads another socket list, so its rating of a copy can differ. " +
+			"A copy for which the profile lists no perks reads 'roll unknown'. " +
+			"The rating does not count the perk preferences. " +
+			"When the server has no sheet for a game mode, the line of that mode names the reason.",
 		Annotations: readOnly,
 	}, h.handleGetItem)
 

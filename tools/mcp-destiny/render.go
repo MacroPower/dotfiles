@@ -217,10 +217,10 @@ func renderItems(s *Snapshot, items []*Item, offset, total int, stat string, per
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// renderItem renders one item in full. For a weapon, sheets holds the
-// sheet state of each game mode, and the output gains the roll ratings
-// block. Sheets is nil for every other item.
-func renderItem(s *Snapshot, item *Item, sheets map[string]SheetState) string {
+// renderItem renders one item in full. For a weapon, ratings holds the
+// [Rating] of each game mode, and the output gains the roll ratings
+// block. Ratings is nil for every other item.
+func renderItem(s *Snapshot, item *Item, ratings map[string]Rating) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s\n", item.Name)
@@ -254,11 +254,11 @@ func renderItem(s *Snapshot, item *Item, sheets map[string]SheetState) string {
 		}
 	}
 
-	if sheets != nil {
+	if ratings != nil {
 		b.WriteString("\nRoll ratings:\n")
 
 		for _, mode := range perkModes {
-			writeRating(&b, mode, item.Hash, sheets[mode])
+			writeRating(&b, mode, ratings[mode])
 		}
 	}
 
@@ -450,33 +450,74 @@ func perkLabel(perk Perk) string {
 	return perk.Name + " (can swap to " + strings.Join(perk.OptionNames(), ", ") + ")"
 }
 
-// writeRating writes the roll rating line of one game mode for the weapon
-// with the given item hash. The line gives the tier of the weapon on the
-// sheet of the mode, or the reason that the server has no sheet.
-func writeRating(b *strings.Builder, mode string, hash uint32, state SheetState) {
+// writeRating writes the roll rating of one game mode. The first line
+// gives the tier of the weapon on the sheet of the mode, or the reason
+// that the server has no sheet. For a copy whose perk columns the rating
+// judged, the line also gives the tier of the copy and counts the columns
+// that hit. One line for each column follows, numbered from 1 in sheet
+// order.
+func writeRating(b *strings.Builder, mode string, rating Rating) {
 	fmt.Fprintf(b, "- %s: ", modeLabels[mode])
 
-	if state.Err != nil {
-		fmt.Fprintf(b, "%s\n", state.Err)
+	if rating.Err != nil {
+		fmt.Fprintf(b, "%s\n", rating.Err)
 
 		return
 	}
 
 	label := sheetLabels[mode]
 
-	row, ok := state.Sheet.Rows[hash]
-	if !ok {
+	roll := rating.Roll
+	if roll == nil {
 		fmt.Fprintf(b, "not on the %s\n", label)
 
 		return
 	}
 
-	tier := row.Tier
+	// The tier of the copy can differ from the tier of the row only
+	// when the rating judged a column.
+	if roll.Overall != "" && len(roll.Columns) > 0 {
+		fmt.Fprintf(b, "%s for this roll, ", roll.Overall)
+	}
+
+	tier := roll.Row.Tier
 	if tier == "" {
 		tier = "no tier"
 	}
 
-	fmt.Fprintf(b, "%s on the %s, perk columns: %d\n", tier, label, len(state.Sheet.Columns[hash]))
+	fmt.Fprintf(b, "%s on the %s", tier, label)
+
+	hits := 0
+
+	for _, column := range roll.Columns {
+		if !column.Missed() {
+			hits++
+		}
+	}
+
+	switch {
+	case roll.Unknown:
+		b.WriteString(", roll unknown: the profile lists no perks for this copy\n")
+	case len(roll.Columns) == 0:
+		b.WriteString(", which judges no perk columns\n")
+	default:
+		fmt.Fprintf(b, ", %d of %d perk columns hit\n", hits, len(roll.Columns))
+	}
+
+	for i, column := range roll.Columns {
+		if column.Missed() {
+			fmt.Fprintf(b, "  Column %d: miss\n", i+1)
+
+			continue
+		}
+
+		names := make([]string, 0, len(column.Hits))
+		for _, hit := range column.Hits {
+			names = append(names, hit.Name)
+		}
+
+		fmt.Fprintf(b, "  Column %d: hit with %s\n", i+1, strings.Join(names, ", "))
+	}
 }
 
 // writeDescription writes each line of a perk description indented under
