@@ -121,6 +121,8 @@ type ListItemsInput struct {
 	Perk           string `json:"perk,omitzero"            jsonschema:"Case-insensitive substring of a perk the item has equipped, such as 'kill clip'"`
 	Stat           string `json:"stat,omitzero"            jsonschema:"Case-insensitive full name of one stat, such as 'health' for armor or 'range' for weapons. Adds a column with its value, and min_stat and sort=stat read it"`
 	Sort           string `json:"sort,omitzero"            jsonschema:"name (default), power (highest first), newest (most recently acquired first), total (highest armor stat total first), or stat (highest value of the stat that stat names first)"`
+	MinPvERating   string `json:"min_pve_rating,omitzero"  jsonschema:"Lowest roll rating on the Aegis sheet (PvE) to include, a tier from S (best) to F. Only weapon copies whose roll has a tier on that sheet match"`
+	MinPvPRating   string `json:"min_pvp_rating,omitzero"  jsonschema:"Lowest roll rating on the PvP sheet to include, a tier from S (best) to F. Only weapon copies whose roll has a tier on that sheet match"`
 	MinPower       int    `json:"min_power,omitzero"       jsonschema:"Lowest power level to include"`
 	MaxPower       int    `json:"max_power,omitzero"       jsonschema:"Highest power level to include"`
 	MinTotal       int    `json:"min_total,omitzero"       jsonschema:"Lowest armor stat total to include. Only armor has a stat total, so a positive value returns only armor"`
@@ -370,6 +372,13 @@ func (h *handler) handleListItems(
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	// A value that is not a tier letter fails the call before the first
+	// request.
+	minimums, err := ratingMinimums(in)
+	if err != nil {
+		return h.toolError(ctx, toolListItems, err)
+	}
+
 	s, _, err := h.loadAnnotated(ctx, in.Refresh)
 	if err != nil {
 		return h.toolError(ctx, toolListItems, err)
@@ -397,14 +406,30 @@ func (h *handler) handleListItems(
 		return h.toolError(ctx, toolListItems, err)
 	}
 
-	// The input alone decides the rating requests. A call without it
-	// sends none, and a call with it sends them for every valid filter,
-	// also when no item matches. A rating input that the server cannot
-	// read costs only the rating cells. The renderer rates each weapon
-	// row from the sources, and the snapshot keeps no rating.
+	// The inputs alone decide the rating requests. A call without
+	// include_ratings and without a minimum sends none. Every other call
+	// sends them for every valid filter, also when no item matches. A
+	// minimum on a game mode without ratings therefore always returns
+	// the reason. The snapshot keeps no rating, so the minimums and the
+	// renderer each rate a weapon from the sources.
 	var sources map[string]RatingSource
-	if in.IncludeRatings {
+	if in.IncludeRatings || len(minimums) > 0 {
 		sources = h.ratingSources(ctx)
+	}
+
+	// The minimums apply before the paging, so the totals and the
+	// offsets count the items that pass them. A game mode without
+	// ratings fails the call only when the call sets its minimum.
+	items, err = keepRated(items, minimums, sources)
+	if err != nil {
+		return h.toolError(ctx, toolListItems, err)
+	}
+
+	// A minimum adds no column, so the renderer gets the sources only
+	// with include_ratings. In the table, a game mode without ratings
+	// costs only its rating cells.
+	if !in.IncludeRatings {
+		sources = nil
 	}
 
 	limit := in.Limit
@@ -1476,6 +1501,75 @@ func (h *handler) handleGetStats(
 	return textResult(renderStats(defs, period, summary)), nil, nil
 }
 
+// ratingMinimum is one minimum roll rating of a list_items call. Input
+// names the tool input that sets it. Tier is the lowest tier of the
+// game mode that passes, and it is one of [tiers].
+type ratingMinimum struct {
+	input string
+	mode  string
+	tier  string
+}
+
+// ratingMinimums returns the minimum roll ratings that in sets, in the
+// order of [perkModes]. An empty value sets no minimum. It reads a
+// tier letter without regard to case and without trimming. A value that
+// is not a tier letter returns an error that wraps [ErrInvalidInput] and
+// names the first such input.
+func ratingMinimums(in ListItemsInput) ([]ratingMinimum, error) {
+	var minimums []ratingMinimum
+
+	for _, m := range []struct{ input, mode, value string }{
+		{input: "min_pve_rating", mode: modePvE, value: in.MinPvERating},
+		{input: "min_pvp_rating", mode: modePvP, value: in.MinPvPRating},
+	} {
+		if m.value == "" {
+			continue
+		}
+
+		tier := strings.ToUpper(m.value)
+		if !slices.Contains(tiers, tier) {
+			return nil, fmt.Errorf("%w: %s %q is not S, A, B, C, D, E, or F", ErrInvalidInput, m.input, m.value)
+		}
+
+		minimums = append(minimums, ratingMinimum{input: m.input, mode: m.mode, tier: tier})
+	}
+
+	return minimums, nil
+}
+
+// keepRated removes the items that do not pass every minimum from
+// items, in place, and returns the rest. Sources holds the
+// [RatingSource] of each game mode.
+//
+// An item passes a minimum when it is a weapon and [ratedAtLeast]
+// accepts the [Rating] that [rate] gives it for the game mode. Only
+// weapons have roll ratings, so every other item passes no minimum,
+// also when a sheet lists its hash.
+//
+// A game mode without ratings cannot tell which copies pass. When a
+// minimum names such a mode, keepRated removes no item. It returns an
+// error that gives the name of the input and then the reason of the
+// mode, for the first such minimum. A mode without ratings therefore
+// never reads as a result without items.
+func keepRated(items []*Item, minimums []ratingMinimum, sources map[string]RatingSource) ([]*Item, error) {
+	for _, m := range minimums {
+		err := sources[m.mode].Err
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", m.input, err)
+		}
+	}
+
+	for _, m := range minimums {
+		source := sources[m.mode]
+
+		items = slices.DeleteFunc(items, func(item *Item) bool {
+			return item.Kind != kindWeapon || !ratedAtLeast(rate(source, item), m.tier)
+		})
+	}
+
+	return items, nil
+}
+
 // perkChange validates one preference and converts it to a service row.
 //
 // The web client matches a stored preference to a perk by exact display
@@ -1811,8 +1905,9 @@ func (h *handler) perkPreferences(ctx context.Context) ([]PerkPreference, error)
 //
 // A mode without a sheet carries the reason of the sheet. When the
 // server cannot read the preferences, every other mode carries that
-// reason, which wraps [ErrNoRating] and the error of the read. A tool
-// therefore never fails because of a rating input.
+// reason, which wraps [ErrNoRating] and the error of the read. The
+// method therefore returns no error, and each caller decides what a mode
+// without ratings costs.
 func (h *handler) ratingSources(ctx context.Context) map[string]RatingSource {
 	states := h.sheets.Load(ctx)
 

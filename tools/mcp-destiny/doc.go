@@ -53,6 +53,13 @@
 // the sheet when the two tiers differ. The get_item tool explains a
 // rating column by column.
 //
+// The list_items tool also filters by the same rating. The inputs
+// min_pve_rating and min_pvp_rating each take the lowest tier to include
+// for one game mode. A copy must reach each minimum that the caller
+// sets. Only a weapon copy whose roll has a tier reaches a minimum. A
+// weapon that the sheet does not list, a weapon on a row without a
+// tier, and a copy that reads "roll unknown" never match.
+//
 // A copy hits a perk column with each pick of the column that it has.
 // The rating also counts the perk preferences, which the user sets for
 // each game mode in the web client or with the set_perk_preferences
@@ -111,10 +118,19 @@
 // still shows the rest of its output, because the item, its perks, and
 // its stats are correct without a rating.
 //
-// A game mode without ratings does not fail the list_items tool either.
-// The rating cells of the mode read "unavailable" for every weapon, and
-// one line before the table gives the reason. The line holds the text
-// that the get_item tool prints for the mode.
+// A game mode without ratings does not fail a list_items call that
+// only shows the ratings. The rating cells of the mode read
+// "unavailable" for every weapon, and one line before the table gives
+// the reason. The line holds the text that the get_item tool prints for
+// the mode.
+//
+// A game mode without ratings fails a list_items call that sets the
+// minimum of that mode. The server cannot tell which copies pass, so
+// the tool returns an error result that names the input and gives the
+// reason. A result without items therefore always means that no copy
+// reaches the minimum. The minimum of one game mode does not read the
+// ratings of the other mode, so it works when only its own mode has
+// ratings.
 //
 // # Sign-in
 //

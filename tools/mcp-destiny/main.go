@@ -340,6 +340,14 @@ func newServer(h *handler) *mcp.Server {
 			"and 'unavailable' when the server has no sheet for the game mode or cannot read the perk preferences. " +
 			"A line before the table gives the reason for each unavailable game mode. " +
 			"The rating cells of every item that is not a weapon are empty. " +
+			"The min_pve_rating input takes a tier from S to F and keeps only the weapon copies " +
+			"whose roll rates that tier or better for PvE, such as min_pve_rating=A for every roll at S or A. " +
+			"The min_pvp_rating input does the same for PvP. " +
+			"A copy must pass each minimum that the call sets, and a minimum adds no column. " +
+			"A weapon that the sheet does not list, a weapon that the sheet lists without a tier, " +
+			"and a copy whose rating reads 'roll unknown' never match a minimum. " +
+			"Each minimum needs the ratings of its game mode. " +
+			"When the mode has none, the call returns the reason as an error result, never an empty list. " +
 			"get_item explains a rating column by column.",
 		Annotations: readOnly,
 	}, h.handleListItems)

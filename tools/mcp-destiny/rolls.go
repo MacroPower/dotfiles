@@ -201,3 +201,14 @@ func stepTier(tier string, steps int) string {
 
 	return tiers[min(i+steps, len(tiers)-1)]
 }
+
+// ratedAtLeast reports whether rating holds a roll whose tier is lowest
+// or a better tier. Lowest is one of [tiers].
+//
+// Ratings without a roll never pass, so a game mode without ratings and
+// a weapon that the sheet does not list pass no minimum. A roll without
+// a tier ranks after F, so a row without a tier and an unknown roll
+// pass no minimum either.
+func ratedAtLeast(rating Rating, lowest string) bool {
+	return rating.Roll != nil && tierRank(rating.Roll.Overall) <= tierRank(lowest)
+}

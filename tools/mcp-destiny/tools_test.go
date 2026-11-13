@@ -221,6 +221,18 @@ func TestListItems(t *testing.T) {
 		ratedHeader = "instance id | name | type | tier | power | stat total | location | tag | flags | " +
 			"pve rating | pvp rating"
 		noRating = "unavailable | unavailable"
+
+		// The rows of the two copies that reach a PvE minimum, in a
+		// table without rating columns. Instance 1001 has the PvE roll
+		// tier A and the PvP roll tier D. Instance 1002 has the PvE roll
+		// tier A, and the PvP sheet does not list it.
+		plainHeader = "instance id | name | type | tier | power | stat total | location | tag | flags"
+		row1001     = "1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Vault | keep | " +
+			"favorite, locked, masterwork, note"
+		row1002 = "1002 | Gjallarhorn | Solar Rocket Launcher | Exotic | 1990 |  | Vault |  | "
+
+		noAegisMinimum = "min_pve_rating: rating unavailable: the service publishes no Aegis sheet"
+		noPvPMinimum   = "min_pvp_rating: rating unavailable: the service publishes no PvP sheet"
 	)
 
 	// aegisOnly makes the service publish only the Aegis sheet.
@@ -252,6 +264,14 @@ func TestListItems(t *testing.T) {
 			"1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 |  | Hunter |  |  | " + cells[4],
 		}
 	}
+
+	// pveA is the output of a call that keeps exactly the copies with a
+	// PvE roll tier of A or better, without rating columns.
+	pveA := strings.Join([]string{"Items 1-2 of 2.", "", plainHeader, row1001, row1002}, "\n")
+
+	// pvpD is the output of a call that keeps only instance 1001,
+	// without rating columns.
+	pvpD := strings.Join([]string{"Items 1-1 of 1.", "", plainHeader, row1001}, "\n")
 
 	tests := map[string]struct {
 		// prepare changes the fakes before the call.
@@ -472,6 +492,194 @@ func TestListItems(t *testing.T) {
 			want:    `invalid filter: kind "ghost" is not weapon, armor, gear, other, or all`,
 			isError: true,
 		},
+		"minimum pve rating": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvERating: "A"},
+			want:    pveA,
+		},
+		"minimum pve rating in lower case": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvERating: "a"},
+			want:    pveA,
+		},
+		"minimum pve rating that no roll reaches": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvERating: "S"},
+			want:    "No items match.",
+		},
+		// Instance 1003 sits on a row without a tier, the profile lists
+		// no perks for 1005 and 1006, and the helmet is not a weapon.
+		"lowest minimum keeps only the rolls with a tier": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvERating: "F"},
+			want:    pveA,
+		},
+		"minimum pvp rating": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvPRating: "D"},
+			want:    pvpD,
+		},
+		// The disliked Rampage costs instance 1001 the one PvP column.
+		"minimum pvp rating above a roll with a disliked pick": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvPRating: "C"},
+			want:    "No items match.",
+		},
+		"minimum pvp rating without a perk preference": {
+			prepare: func(f *fakes) {
+				bothSheets(f)
+
+				f.serviceData[pathPrefs] = `{"preferences": [], "now": 10}`
+			},
+			in:   ListItemsInput{MinPvPRating: "C"},
+			want: pvpD,
+		},
+		"minimums of both modes": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvERating: "A", MinPvPRating: "D"},
+			want:    pvpD,
+		},
+		"minimum with rating columns": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvERating: "A", IncludeRatings: true},
+			want: strings.Join([]string{
+				"Items 1-2 of 2.",
+				"",
+				ratedHeader,
+				row1001 + " | A (sheet S) | D (sheet C)",
+				row1002 + " | A | not listed",
+			}, "\n"),
+		},
+		"minimum on the first page": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvERating: "A", Limit: 1},
+			want: strings.Join([]string{
+				"Items 1-1 of 2. Pass offset=1 for the next page.",
+				"",
+				plainHeader,
+				row1001,
+			}, "\n"),
+		},
+		"minimum on the second page": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvERating: "A", Limit: 1, Offset: 1},
+			want:    strings.Join([]string{"Items 2-2 of 2.", "", plainHeader, row1002}, "\n"),
+		},
+		"minimum with an offset past the end": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvERating: "A", Offset: 5},
+			want:    "Offset 2 is past the last of 2 matching items.",
+		},
+		// The Aegis sheet also lists the hash of the helmet, with the
+		// tier S and without columns.
+		"minimum never keeps armor that the sheet lists": {
+			prepare: func(f *fakes) {
+				bothSheets(f)
+
+				f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [` +
+					`{"tier": "S", "hashes": [100], "slots": [[900], [904]]}, ` +
+					`{"tier": "A", "hashes": [101], "slots": []}, ` +
+					`{"hashes": [102], "slots": []}, ` +
+					`{"tier": "S", "hashes": [200], "slots": []}]}`
+			},
+			in:   ListItemsInput{MinPvERating: "S"},
+			want: "No items match.",
+		},
+		"minimum of the one mode with a sheet": {
+			prepare: aegisOnly,
+			in:      ListItemsInput{MinPvERating: "A"},
+			want:    pveA,
+		},
+		"minimum of the one mode with a sheet, with rating columns": {
+			prepare: aegisOnly,
+			in:      ListItemsInput{MinPvERating: "A", IncludeRatings: true},
+			want: strings.Join([]string{
+				"Items 1-2 of 2.",
+				noPvP,
+				"",
+				ratedHeader,
+				row1001 + " | A (sheet S) | unavailable",
+				row1002 + " | A | unavailable",
+			}, "\n"),
+		},
+		"invalid minimum pve rating": {
+			in:      ListItemsInput{MinPvERating: "z"},
+			want:    `invalid input: min_pve_rating "z" is not S, A, B, C, D, E, or F`,
+			isError: true,
+		},
+		"invalid minimum pvp rating": {
+			in:      ListItemsInput{MinPvPRating: "z"},
+			want:    `invalid input: min_pvp_rating "z" is not S, A, B, C, D, E, or F`,
+			isError: true,
+		},
+		"minimum that starts with a tier letter": {
+			prepare: bothSheets,
+			in:      ListItemsInput{MinPvERating: "ab"},
+			want:    `invalid input: min_pve_rating "ab" is not S, A, B, C, D, E, or F`,
+			isError: true,
+		},
+		"two invalid minimums name the pve input": {
+			in:      ListItemsInput{MinPvERating: "z", MinPvPRating: "z"},
+			want:    `invalid input: min_pve_rating "z" is not S, A, B, C, D, E, or F`,
+			isError: true,
+		},
+		"invalid minimum wins against a mode without ratings": {
+			in:      ListItemsInput{MinPvERating: "A", MinPvPRating: "z"},
+			want:    `invalid input: min_pvp_rating "z" is not S, A, B, C, D, E, or F`,
+			isError: true,
+		},
+		"minimum pve rating without a sheet": {
+			in:      ListItemsInput{MinPvERating: "A"},
+			want:    noAegisMinimum,
+			isError: true,
+		},
+		"minimum pvp rating without a sheet": {
+			in:      ListItemsInput{MinPvPRating: "A"},
+			want:    noPvPMinimum,
+			isError: true,
+		},
+		"two minimums without a sheet name the pve input": {
+			in:      ListItemsInput{MinPvERating: "A", MinPvPRating: "A"},
+			want:    noAegisMinimum,
+			isError: true,
+		},
+		"two minimums with only the Aegis sheet name the pvp input": {
+			prepare: aegisOnly,
+			in:      ListItemsInput{MinPvERating: "A", MinPvPRating: "A"},
+			want:    noPvPMinimum,
+			isError: true,
+		},
+		// The index lists a file that the service does not serve.
+		"minimum of a sheet that does not load": {
+			prepare: func(f *fakes) {
+				f.artifactFiles = map[string][]string{"rolls": {"rolls.x.json"}}
+			},
+			in: ListItemsInput{MinPvERating: "A"},
+			want: "min_pve_rating: rating unavailable: fetching artifact rolls.x.json: " +
+				"service: {service}/artifacts/rolls.x.json returned status 404",
+			isError: true,
+		},
+		"minimum without the perk preferences": {
+			prepare: func(f *fakes) {
+				aegisOnly(f)
+				delete(f.serviceData, pathPrefs)
+			},
+			in: ListItemsInput{MinPvERating: "A"},
+			want: "min_pve_rating: rating unavailable: reading perk preferences: " +
+				"service: GET /api/perk-preferences?since=0 returned status 404: Not found",
+			isError: true,
+		},
+		// A mode without ratings never reads as an empty result.
+		"minimum without a sheet and without a match": {
+			in:      ListItemsInput{Query: "thorn", MinPvERating: "A"},
+			want:    noAegisMinimum,
+			isError: true,
+		},
+		"invalid filter with a minimum": {
+			in:      ListItemsInput{Kind: "ghost", MinPvERating: "A"},
+			want:    `invalid filter: kind "ghost" is not weapon, armor, gear, other, or all`,
+			isError: true,
+		},
 	}
 
 	for name, tc := range tests {
@@ -492,9 +700,10 @@ func TestListItems(t *testing.T) {
 }
 
 // TestListItemsRatingRequests pins the requests that the rating columns
-// of list_items cost. The include_ratings input alone decides them. A
-// call without it sends none, and a call with it sends them also for an
-// empty result. The filter runs first, so an invalid filter sends none.
+// of list_items cost. In a call without a minimum roll rating, the
+// include_ratings input alone decides them. A call without it sends
+// none, and a call with it sends them also for an empty result. The
+// filter runs first, so an invalid filter sends none.
 func TestListItemsRatingRequests(t *testing.T) {
 	t.Parallel()
 
@@ -562,6 +771,65 @@ func TestListItemsRatingRequests(t *testing.T) {
 				assert.Equalf(t, step.fetched, fetched, "call %d", i+1)
 				assert.Lenf(t, f.service.calls(http.MethodGet, "/api/config"), step.configs, "call %d", i+1)
 				assert.Lenf(t, f.service.calls(http.MethodGet, pathPrefs), step.prefs, "call %d", i+1)
+			}
+		})
+	}
+}
+
+// TestListItemsMinimumRequests pins the requests that a minimum roll
+// rating of list_items costs. A value that is not a tier letter fails
+// the call before the first request. A call with valid minimums reads
+// the perk preferences one time, with and without the rating columns.
+// The filter runs first, so an invalid filter does not read them.
+func TestListItemsMinimumRequests(t *testing.T) {
+	t.Parallel()
+
+	const sheet = `{"rolls": [{"tier": "S", "hashes": [100], "slots": [[900]]}]}`
+
+	tests := map[string]struct {
+		in ListItemsInput
+		// prefs counts the requests for the perk preferences.
+		prefs int
+		// quiet marks a call that reaches neither the fake service nor
+		// the fake Bungie platform.
+		quiet   bool
+		isError bool
+	}{
+		"invalid minimum sends no request": {
+			in:      ListItemsInput{MinPvERating: "z"},
+			quiet:   true,
+			isError: true,
+		},
+		"two minimums read the perk preferences one time": {
+			in:    ListItemsInput{MinPvERating: "A", MinPvPRating: "D"},
+			prefs: 1,
+		},
+		"minimum with rating columns reads the perk preferences one time": {
+			in:    ListItemsInput{MinPvERating: "A", IncludeRatings: true},
+			prefs: 1,
+		},
+		"invalid filter does not read the perk preferences": {
+			in:      ListItemsInput{Kind: "ghost", MinPvERating: "A"},
+			isError: true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}}
+			f.serviceData["/artifacts/rolls.a.json"] = sheet
+			f.serviceData["/artifacts/pvprolls.a.json"] = sheet
+
+			_, isError := call(t, f.h.handleListItems, tc.in)
+			assert.Equal(t, tc.isError, isError)
+			assert.Len(t, f.service.calls(http.MethodGet, pathPrefs), tc.prefs)
+
+			if tc.quiet {
+				assert.Empty(t, f.service.all())
+				assert.Empty(t, f.bungie.all())
 			}
 		})
 	}

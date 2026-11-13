@@ -468,3 +468,71 @@ func TestRateStancesOfOneMode(t *testing.T) {
 		assert.Equalf(t, want[mode], got.Roll.Columns, "mode %s", mode)
 	}
 }
+
+func TestRatedAtLeast(t *testing.T) {
+	t.Parallel()
+
+	// rolled returns the rating of a roll with the given tier.
+	rolled := func(tier string) Rating {
+		return Rating{Roll: &Roll{Row: SheetRow{Tier: "S"}, Overall: tier}}
+	}
+
+	tests := map[string]struct {
+		rating Rating
+		lowest string
+		want   bool
+	}{
+		"tier S passes the minimum A": {
+			rating: rolled("S"),
+			lowest: "A",
+			want:   true,
+		},
+		"tier A passes the minimum A": {
+			rating: rolled("A"),
+			lowest: "A",
+			want:   true,
+		},
+		"tier B does not pass the minimum A": {
+			rating: rolled("B"),
+			lowest: "A",
+		},
+		"tier S passes the minimum F": {
+			rating: rolled("S"),
+			lowest: "F",
+			want:   true,
+		},
+		"tier F passes the minimum F": {
+			rating: rolled("F"),
+			lowest: "F",
+			want:   true,
+		},
+		"tier F does not pass the minimum E": {
+			rating: rolled("F"),
+			lowest: "E",
+		},
+		"row without a tier does not pass the minimum F": {
+			rating: Rating{Roll: &Roll{}},
+			lowest: "F",
+		},
+		"unknown roll does not pass the minimum F": {
+			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "S"}, Unknown: true}},
+			lowest: "F",
+		},
+		"weapon off the sheet does not pass the minimum F": {
+			rating: Rating{},
+			lowest: "F",
+		},
+		"mode without ratings does not pass the minimum F": {
+			rating: Rating{Err: ErrNoRating},
+			lowest: "F",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, ratedAtLeast(tc.rating, tc.lowest))
+		})
+	}
+}
