@@ -1693,10 +1693,6 @@ in
                 bg = "#${colors.base01}";
                 fg = "#${colors.base0C}";
               };
-              block = {
-                bg = "#${colors.base02}";
-                fg = "#${colors.base0D}";
-              };
               today = {
                 bg = "#${colors.base00}";
                 fg = "#${colors.base0B}";
@@ -1736,9 +1732,9 @@ in
             };
             description = ''
               Per-segment colors keyed by claude-powerline segment name
-              (directory, git, model, session, block, today, tmux,
-              context, contextWarning, contextCritical, metrics, version,
-              env, weekly), not theme name — the outer theme wrapping is
+              (directory, git, model, session, today, tmux, context,
+              contextWarning, contextCritical, metrics, version, env,
+              weekly), not theme name — the outer theme wrapping is
               applied at emit time. Overriding a segment requires setting
               both `bg` and `fg`; partial overrides fail module
               evaluation. Unknown segment names pass type-checking and
@@ -1802,11 +1798,11 @@ in
                         };
                       };
                     }
+                    # The `block` segment, which shows the 5-hour rate
+                    # limit window, is absent because Anthropic removed
+                    # that limit.
                     {
                       segments = {
-                        block = {
-                          enabled = true;
-                        };
                         weekly = {
                           enabled = true;
                         };
