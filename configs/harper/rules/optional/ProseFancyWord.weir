@@ -1,27 +1,50 @@
-# The Required and Recommended rules of the same name hold every other
-# fancy word. Each word here also appears in plain human-written docs,
-# so a finding suggests a change rather than asking for one.
+# Overview
 #
-# `enhance` hit 40 lines of the measure.py corpus, and the opener
-# `Additionally,` hit 63. `enhanced` stays out, because it opens
-# feature names (`Enhanced Networking`, `Security Enhanced Linux`).
-# `additionally` counts only with a glued comma, because mid-sentence
-# it modifies a verb (`the flag additionally checks the signature`).
+# A fancy word stands in for a plainer one (`enhance` for `improve`, `as
+# per` for `according to`). The fancy word adds length and no meaning,
+# and a reader who does not know it must look it up. The fix writes the
+# plain word, and the message names the fix for each word. Each word
+# here also appears in plain human-written docs. The rule therefore sits
+# at Optional, where a finding suggests a change rather than asking for
+# one.
 #
-# `Moreover` and `furthermore` join `Additionally,` here, because the
-# two hit 24 lines of the same corpus. Neither modifies a verb, so both
-# count without the comma. `facilitate` sits here too, because it hit 20
-# lines (`to facilitate testing`).
+# Expression
 #
-# `as per` and `per` before `the`, `its`, `your`, or `their` stand in
-# for `according to` (`per the setting`), and hit 19 lines. `per` alone
-# stays out, because it also names a rate (`requests per user`). `As
-# such,` stands in for `so` and hit 25 lines. It counts only with its
-# comma, because without one it names a role (`the value is treated as
-# such`).
+# `additionally` counts only with a glued comma, and `moreover` and
+# `furthermore` count without the comma. `as per` and `per` before
+# `the`, `its`, `your`, or `their` stand in for `according to` (`per the
+# setting`). `As such,` stands in for `so`, and it counts only with its
+# comma.
 #
-# It hit 191 lines in the measure.py corpus, and 20 of 20 sampled hits
-# stood in for a plainer word.
+# False Positives
+#
+# `enhanced` stays out, because it opens feature names (`Enhanced
+# Networking`, `Security Enhanced Linux`). `additionally` needs its
+# comma, because mid-sentence it modifies a verb (`the flag additionally
+# checks the signature`). Neither `moreover` nor `furthermore` modifies
+# a verb, so both count without the comma.
+#
+# `per` alone stays out, because it also names a rate (`requests per
+# user`). `as such` needs its comma, because without one it names a role
+# (`the value is treated as such`).
+#
+# Related Rules
+#
+# The Required ProseFancyWord holds `utilize` and `leverage`, whose
+# plain word is always `use`. The Recommended ProseFancyWord holds the
+# words that turn up far more in generated text than in docs a person
+# wrote. Their plain word differs from word to word. The Optional
+# ProseFancyWord holds the words that human-written docs also use.
+#
+# Measurement
+#
+# The rule hit 191 lines in the measure.py corpus, and 20 of 20 sampled
+# hits stood in for a plainer word. `enhance` hit 40 lines of the
+# corpus, and the opener `Additionally,` hit 63. `Moreover` and
+# `furthermore` join `Additionally,` here, because the two hit 24 lines
+# of the same corpus. `facilitate` sits here too, because it hit 20
+# lines (`to facilitate testing`). `as per` and `per` before `the`,
+# `its`, `your`, or `their` hit 19 lines, and `As such,` hit 25.
 expr main [enhance, enhances, enhancing, (additionally,), moreover, furthermore, facilitate, facilitates, facilitated, facilitating, (as per), (per [the, its, your, their]), (as such,)]
 let message "Fancy word. Write `improve` or `extend` for `enhance`, `according to` for `as per` or `per the`, and `so` for `as such`. State what the subject does instead of `facilitate`. Delete `additionally`, `moreover`, or `furthermore`, or write `also`."
 let description "Flags `enhance`, `facilitate`, `as per`, `per the`, and the openers `additionally`, `moreover`, `furthermore`, and `as such`, which stand in for plainer words."

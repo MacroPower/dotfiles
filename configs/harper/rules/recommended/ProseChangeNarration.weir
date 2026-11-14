@@ -1,49 +1,95 @@
+# Overview
+#
+# Change narration describes the system as a change from an earlier
+# version (`The parser now supports tables`, `Before this change, the
+# walker visited aliases twice`). A reader of the code as it stands
+# never saw the earlier version, so the comparison tells that reader
+# nothing. The fix describes the system as it is and moves the change to
+# the commit message. The rule sits at Recommended, because a tutorial
+# narrates the progress of its reader with the same words.
+#
+# Expression
+#
 # Each branch matches only the change sense, because Go doc prose uses
-# the same words for runtime sequence far more often.
+# the same words for a sequence at run time far more often.
 #
-# `now VERB` requires a subject word before `now`, so `time.Now returns`,
-# a sentence-initial `Now returns`, and `deadline after now uses` pass
-# while `The parser now supports tables` fires.
+# The `now` branch matches `now` before a verb from a fixed list, such
+# as `supports` or `returns`, and it needs a subject word before `now`.
+# Harper's part-of-speech tagger marks each word with a tag for its word
+# class. The branch takes a word with the tag `NOUN` (a noun), `PROPN`
+# (a proper noun), `PRON` (a pronoun), `DET` (a determiner), `ADJ` (an
+# adjective), or `NUM` (a number word, such as `three`). A proper noun
+# is a name that takes a capital letter, such as `Kubernetes`. A
+# determiner is a word that introduces a noun, such as `the`, `a`, or
+# `this`. `The parser now supports tables` therefore counts.
 #
-# `can now` and `now also` count anywhere (`the client can now retry`,
-# `the parser now also reads tables`). `is now` and `now has` stay
-# out, because a test comment narrates runtime state with them (`the
-# row is now consumed`, `the store now has two rows`).
+# `can now`, `does now`, and `now also` count anywhere (`the client can
+# now retry`, `the parser now also reads tables`).
 #
-# `previously` fires only as `had previously`, as the sentence opener
-# `Previously,`, or before the subject of a clause (`Previously the
-# walker visited aliases twice`). In `the previously cached value`, the
-# word orders events at runtime. `was previously` and `were previously`
-# count only before a word that names or ranks a feature, such as
-# `named`, `hidden`, or `deprecated` (`the field was previously named
-# port`). Before any other word they describe runtime state (`the
-# connections that were previously connected`).
+# `previously` counts only as `had previously`, as the sentence opener
+# `Previously,`, or before a subject (`Previously the walker visited
+# aliases twice`). The pattern takes a word with the tag `DET`, `PRON`,
+# or `PROPN` as the start of a subject. `was previously` and `were
+# previously` count only before a word from `named`. Each of those words
+# names or ranks a feature, such as `named`, `hidden`, or `deprecated`
+# (`the field was previously named port`).
 #
-# Code comments that narrate the edit that produced them (`Before this
-# change, the walker visited aliases twice`, `Updated to use the
-# cached index`) belong in the commit message. A passive form
-# (`was refactored to`) also draws the passive rule's finding.
+# Code comments that narrate the edit that produced them belong in the
+# commit message (`Before this change, the walker visited aliases
+# twice`, `Updated to use the cached index`). The pattern matches `this
+# change` after `before`, `after`, or `with`, and it matches `updated to
+# use`, `changed to use`, and `refactored to`.
 #
 # `than before` compares the system with an earlier version of itself.
+# `the old` and `the previous` count after `than` or `unlike` only
+# before a word from `versions`, such as `release` or `implementation`
+# (`unlike the previous release`). `the new` counts only before a noun
+# from `surfaces`. Each of those nouns names a part of the interface
+# that a change adds, such as `flag` or `endpoint`.
+#
+# False Positives
+#
+# `time.Now returns`, a sentence that opens with `Now returns`, and
+# `deadline after now uses` pass, because no subject word comes before
+# `now`. `is now` and `now has` stay out, because a test comment
+# narrates runtime state with them (`the row is now consumed`, `the
+# store now has two rows`).
+#
+# In `the previously cached value`, `previously` orders events at run
+# time, so the phrase passes. Before a word outside `named`, `was
+# previously` and `were previously` describe runtime state (`the
+# connections that were previously connected`).
+#
 # `than previously` stays out, because a Go doc uses it for a value set
 # earlier at run time (`larger than previously set with
-# SetMaxReadFrameSize`). `the old` and `the previous` count after
-# `than` or `unlike` only before a word that names a version, because
-# Go doc prose uses them for runtime order (`unlike the previous call`,
-# `greater than the old value`).
+# SetMaxReadFrameSize`). Go doc prose uses `the old` and `the previous`
+# for runtime order (`unlike the previous call`, `greater than the old
+# value`), so both pass before a word outside `versions`. `returns the
+# new count` and `validate the new config` are ordinary runtime prose,
+# so `the new` passes before a noun outside `surfaces`.
 #
-# `the new` is limited to nouns that name a change surface, because
-# `returns the new count` and `validate the new config` are ordinary
-# runtime prose. `no longer`, `used to be`, and `has been updated` are
-# left out: docs use them for state changes in time (`is no longer
+# `no longer`, `used to be`, and `has been updated` are left out,
+# because docs use them for a state that changes in time (`is no longer
 # valid after Close`, `records what the limit used to be`, `wait until
-# the row has been updated`), and the change sense of `has been updated`
-# is a passive the passive rule already catches.
+# the row has been updated`).
 #
-# It hit 66 lines in the measure.py corpus, and 13 of 20 sampled hits
-# narrated a change. Most misses were a tutorial's progress (`You can
-# now conquer the world with Nix`) or a back-reference (`As described
-# previously,`), which the back-reference rule also reports.
+# Related Rules
+#
+# Passive voice makes the thing acted on the subject of the sentence
+# (`the flag was hidden`). A passive form (`was refactored to`) also
+# draws a finding from the Optional ProsePassive. `was updated to use`
+# and `was changed to use` each draw a finding from that rule, and so
+# does `was previously` before `hidden` or `renamed` (`the flag was
+# previously hidden`). No guard separates the two rules. The change
+# sense of `has been updated` is a passive, and the Optional
+# ProsePassive already reports it.
+#
+# Measurement
+#
+# The rule hit 66 lines in the measure.py corpus, and 13 of 20 sampled
+# hits narrated a change. Most misfires were the progress of a tutorial
+# (`You can now conquer the world with Nix`) or a back-reference (`As
+# described previously,`), which ProseBackReference also reports.
 expr versions [version, versions, release, releases, behavior, behaviour, implementation, API, default, defaults, format]
 expr surfaces [flag, option, field, argument, parameter, subcommand, endpoint, syntax, format, default, behavior, behaviour, setting, mode]
 expr named [named, called, known, renamed, hidden, deprecated, experimental, required, optional]

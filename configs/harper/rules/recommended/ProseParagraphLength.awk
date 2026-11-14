@@ -1,24 +1,38 @@
+# Overview
+#
 # Reports a paragraph of more than six sentences in markdown prose. The
 # technical-writing skill keeps a paragraph to one topic and six
-# sentences or fewer, and a longer one usually carries a second topic.
+# sentences or fewer, and a longer one usually carries a second topic. A
+# long paragraph makes the reader find where one topic ends and the next
+# one starts. The fix splits the paragraph, so each paragraph carries
+# one topic. The rule sits at Recommended, because a paragraph of more
+# than six sentences can also keep to one topic.
 #
+# Expression
+#
+# The check includes lib/markdown.awk and reads one paragraph at a time.
 # The paragraph boundaries follow ProseSentenceLength. A paragraph ends
-# at a skipped line or at a line the reader passes as blank. It also
-# ends where a list item, heading, table row, or HTML line starts, so
-# each list item counts as its own paragraph. Sentences end at a `.`,
-# `?`, or `!` before whitespace or the line end, after any closing
-# quote, paren, bracket, or emphasis. `e.g.`, `i.e.`, `vs.`, and `cf.`
-# do not end a sentence, and neither does a three-period ellipsis
-# (`an implicit "About..." in front`). Words after the last sentence
-# end count as one more sentence. A run-in label in bold that ends in a
-# period or a colon names the paragraph's topic (`**Tutorial.** The
-# learner's success`). Such a label counts as no sentence when it opens
-# the paragraph. Each finding names the line and column where the
-# paragraph starts.
+# at a line that lib/markdown.awk skips or passes as blank. It also ends
+# where a list item, heading, table row, or HTML line starts, so each
+# list item counts as its own paragraph.
 #
-# It hit 48 lines in the measure.py docs corpus, and 15 of 20 sampled
-# hits carried a second topic or a hidden list. Four misses kept to one
-# topic, and one counted the `etc.` inside a sentence as a sentence end.
+# Sentences end at a `.`, `?`, or `!` before whitespace or the line end,
+# after any closing quote, paren, bracket, or emphasis. `e.g.`, `i.e.`,
+# `vs.`, and `cf.` do not end a sentence, and neither does a
+# three-period ellipsis (`an implicit "About..." in front`). Words after
+# the last sentence end count as one more sentence.
+#
+# A run-in label in bold that ends in a period or a colon names the
+# paragraph's topic (`**Tutorial.** The learner's success`). Such a
+# label counts as no sentence when it opens the paragraph. Each finding
+# names the line and column where the paragraph starts.
+#
+# Measurement
+#
+# The rule hit 48 lines in the measure.py docs corpus, and 15 of 20
+# sampled hits carried a second topic or a hidden list. Four misfires
+# kept to one topic, and one counted the `etc.` inside a sentence as a
+# sentence end.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseParagraphLength: <message>

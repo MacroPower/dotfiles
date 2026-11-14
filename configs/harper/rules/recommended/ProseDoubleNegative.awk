@@ -1,18 +1,24 @@
-# A double negative puts two negative words in one clause, a subject
-# and its verb such as `the tests pass`. The reader has to cancel the
-# two to find the claim (`the hook does not run unless the caller holds
-# the lock`). `unless` means `if not`, so it counts as the second
-# negative. The positive form states the claim directly (`the hook runs
-# only when the caller holds the lock`).
+# Overview
 #
-# The check reads each sentence of markdown prose. The negative words
-# are `not`, `never`, `no`, `cannot`, `none`, `nothing`, `neither`,
-# `nor`, `nobody`, and every word that ends in `n't`. `no matter` opens
-# no negation, and the not-only rule reports `not only` and `not just`,
-# so all three stay out. The check reports three forms:
+# A double negative puts two negative words in one clause, a subject and
+# its verb, such as `the tests pass`. The reader must cancel the two to
+# find the claim (`the hook does not run unless the caller holds the
+# lock`). `unless` means `if not`, so it counts as the second negative.
+# The fix writes the positive form, which states the claim directly
+# (`the hook runs only when the caller holds the lock`). The rule sits
+# at Recommended, because a `without` that describes the noun before it
+# also matches.
 #
-# - `unless` with a negative word in the eight words before it. The
-#   scan stops at `and`, `but`, `so`, `or`, and `yet`, which open a new
+# Expression
+#
+# The check includes lib/sentences.awk, which finds the sentence
+# boundaries, and reads each sentence of markdown prose. The negative
+# words are `not`, `never`, `no`, `cannot`, `none`, `nothing`,
+# `neither`, `nor`, `nobody`, and every word that ends in `n't`. The
+# check reports three forms:
+#
+# - `unless` with a negative word in the eight words before it. The scan
+#   stops at `and`, `but`, `so`, `or`, and `yet`, which open a new
 #   clause, and it skips the words inside parentheses, whose negation
 #   stays inside them. A sentence that opens with `Do not`, `Don't`, or
 #   `Never` negates every step in it, so any `unless` outside
@@ -23,21 +29,31 @@
 #   word that ends in a comma, a colon, a semicolon, a period, or `)`.
 # - `not` before a word with a negative prefix from a list (`not
 #   unlike`, `not unsafe`). Here the positive form also makes the claim
-#   stronger (`not unsafe` becomes `safe`), so the writer has to settle
-#   which claim they meant. The built-in LitotesDirectPositive reports
-#   `not` before `unusual`, `unreasonable`, `unlikely`, `unimportant`,
-#   `infrequent`, `inaccurate`, `irrelevant`, `unclear`, `uncommon`,
-#   `insignificant`, and `impossible`, so the list leaves those out. It
-#   also leaves out `unknown`, which names a value (`means zero, not
-#   unknown`).
+#   stronger (`not unsafe` becomes `safe`), so the writer must settle
+#   which claim they meant.
+#
+# False Positives
+#
+# `no matter` opens no negation, so it stays out. The prefix list leaves
+# out `unknown`, which names a value (`means zero, not unknown`).
 #
 # A `without` that names a property of the noun before it (`nodes
 # without swap`) still fires, because a word list cannot tell it from
-# `cannot start without a certificate`. lib/sentences.awk finds the
-# sentence boundaries.
+# `cannot start without a certificate`.
 #
-# It hit 50 lines in the measure.py corpus, and 20 of 20 sampled hits
-# stacked two negatives.
+# Related Rules
+#
+# ProseNotOnly reports `not only` and `not just`, so neither `not`
+# counts as a negative word. The built-in LitotesDirectPositive reports
+# `not` before `unusual`, `unreasonable`, `unlikely`, `unimportant`,
+# `infrequent`, `inaccurate`, `irrelevant`, `unclear`, `uncommon`,
+# `insignificant`, and `impossible`, so the prefix list leaves those
+# out.
+#
+# Measurement
+#
+# The rule hit 50 lines in the measure.py corpus, and 20 of 20 sampled
+# hits stacked two negatives.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseDoubleNegative: <message>

@@ -1,11 +1,22 @@
-# `biweekly` means both twice a week and every two weeks, and
-# `bimonthly`, `biannual`, and `biyearly` split the same way, so the
-# reader has to guess the interval. The fix states it (`every two
-# weeks`). A space in a pattern matches only whitespace, so the
-# `bi-` branch matches the hyphenated spelling.
+# Overview
 #
-# It hit 3 lines in the measure.py corpus, and all 3 left the interval
-# to the reader (`the bi-weekly SIG meetings`).
+# `biweekly` means both twice a week and every two weeks (`a biweekly
+# release`), and `bimonthly`, `biannual`, and `biyearly` split the same
+# way. The reader must guess the interval. The fix states the interval
+# (`every two weeks`). The rule sits at Required, because it matches
+# exact words, and each word names two intervals wherever it appears.
+#
+# Expression
+#
+# `main` lists each word in its one-word spelling. A space in a pattern
+# is a whitespace token, so `bi weekly` in a pattern does not match
+# `bi-weekly`. The `bi-` branch names the hyphen, so it matches the
+# hyphenated spelling.
+#
+# Measurement
+#
+# The rule hit 3 lines in the measure.py corpus, and all 3 left the
+# interval to the reader (`the bi-weekly SIG meetings`).
 expr main [biweekly, bimonthly, biannual, biannually, biyearly, (bi-[weekly, monthly, annual, annually, yearly])]
 let message "Ambiguous frequency. Write the interval, such as `twice a week` or `every two weeks`."
 let description "Flags `biweekly`, `bimonthly`, `biannual`, and `biyearly`, which each name two intervals."

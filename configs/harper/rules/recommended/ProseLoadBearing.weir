@@ -1,13 +1,34 @@
-# `load-bearing` says that something depends on a part without naming
-# what. When nothing does, the word goes. When something does, the
-# sentence names it (`The nil-receiver guard is load-bearing` becomes
-# `The nil-receiver guard lets a caller with no compactor call Run`).
+# Overview
 #
-# A space in a pattern matches only whitespace, so `[-, ( )]` takes the
-# hyphenated and the spaced spelling alike. The literal sense before
-# `wall`, `beam`, or `column` passes. The guard sits glued to `bearing`
-# so it reads the token right after it, which also lets a phrase at the
-# end of a line count.
+# `load-bearing` says that something depends on a part without naming
+# what (`The nil-receiver guard is load-bearing`). The reader cannot
+# tell what breaks without the part. When nothing depends on the part,
+# the fix deletes the word. When something does, the fix names it (`The
+# nil-receiver guard lets a caller with no compactor call Run`). The
+# rule sits at Recommended, because the literal sense before a noun
+# outside the guard also matches.
+#
+# Expression
+#
+# A space in a pattern is a whitespace token, so `[-, ( )]` takes the
+# hyphenated and the spaced spelling alike. `literal` lists `wall`,
+# `beam`, and `column`, and the `$` before each one expands it to every
+# form, such as `beams`.
+#
+# The guard skips a word from `literal` after `bearing`. It sits glued
+# to `bearing` and reads the token right after it, so a phrase at the
+# end of a line also counts.
+#
+# False Positives
+#
+# The literal sense before `wall`, `beam`, or `column` passes (`Remove
+# the load-bearing wall last`). The literal sense before any other noun
+# still matches (`a load-bearing truss`).
+#
+# Measurement
+#
+# The rule hit no lines in the measure.py corpus, so no sample measures
+# its precision.
 expr literal [$wall, $beam, $column]
 expr main load[-, ( )]bearing!(( )@literal)
 let message "`load-bearing`. Name what breaks without it, or delete the word."

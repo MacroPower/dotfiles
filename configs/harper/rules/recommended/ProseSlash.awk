@@ -1,13 +1,26 @@
+# Overview
+#
 # Reports two lowercase words joined by a slash in markdown prose
 # (`read/write`, `client/server`). The slash can mean `and`, `or`, or
-# `per`, so the reader picks one, and the technical-writing skill bans
-# it. The Required ProseAndOr rule reports `and/or`, so this check
-# skips it.
+# `per`, so the reader must pick one, and the technical-writing skill
+# bans it. The fix joins the words with `and` or `or`, or sets a path or
+# a name in a code span. The rule sits at Recommended, because a pair
+# that names one thing also matches.
 #
-# Paths and URLs pass: a slash before or after the pair (`/etc/hosts`,
-# `a/b/c`), a `.`, `~`, `:`, or `@` before it, or a file extension
-# after it. A capitalized pair passes too (`I/O`, `CI/CD`, `TCP/IP`).
-# The reader blanks code spans first, so a match inside one passes.
+# Expression
+#
+# The check includes lib/markdown.awk and reads one prose line at a
+# time. lib/markdown.awk blanks code spans first, so a match inside one
+# passes. `pair` matches two runs of lowercase letters joined by a
+# slash. It also reads the characters on each side of the pair, so the
+# check can skip a path, a URL, or a name.
+#
+# False Positives
+#
+# Paths and URLs pass. A slash before or after the pair marks one
+# (`/etc/hosts`, `a/b/c`), and so does a `.`, `~`, `:`, or `@` before
+# the pair or a file extension after it. A capitalized pair passes too
+# (`I/O`, `CI/CD`, `TCP/IP`).
 #
 # Names pass as well. A quote, a `[`, or an `=` before the pair marks a
 # quoted value, a link, or an attribute (`"text/plain"`,
@@ -19,10 +32,17 @@
 # still report (`audio/video`, `text/binary`), because they join two
 # words.
 #
-# It hit 162 lines in the measure.py corpus, and 17 of 20 sampled hits
-# joined two words that `and` or `or` can join. The misses named a
-# thing: a Hugo edition (`extended/deploy`), the shorthand `k/k` for
-# the kubernetes repository, and a namespace and name in a table.
+# Related Rules
+#
+# ProseAndOr reports `and/or`, so this check skips the phrase.
+#
+# Measurement
+#
+# The rule hit 162 lines in the measure.py corpus, and 17 of 20 sampled
+# hits joined two words that `and` or `or` can join. Each of the three
+# misfires named one thing. They were a Hugo edition
+# (`extended/deploy`), the shorthand `k/k` for the kubernetes
+# repository, and a namespace and name in a table.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseSlash: <message>

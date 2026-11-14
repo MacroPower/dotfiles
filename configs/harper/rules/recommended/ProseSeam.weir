@@ -1,15 +1,33 @@
+# Overview
+#
 # `seam` borrows the legacy-code term for a place where a test can swap
-# in other behavior without an edit, and it rarely says which place.
-# When the sentence means one, it names the function, interface, or
-# hook (`the injection seam` becomes
-# `the Now field that tests replace`). When it means none, the word
-# goes.
+# in other behavior without an edit (`the injection seam`). The word
+# rarely says which place it means, so the reader must guess. When the
+# sentence means one place, the fix names the function, interface, or
+# hook (`the injection seam` becomes `the Now field that tests
+# replace`). When the sentence means none, the fix deletes the word. The
+# rule sits at Recommended, because the literal sense of `seam` also
+# matches before a word that the rule does not list.
+#
+# Expression
+#
+# `literal` lists the construction words, such as `tape`, `roof`, and
+# `weld`. `main` matches `seam` or `seams` unless a word in `literal` or
+# a slash follows it. A space in a pattern is a whitespace token, so the
+# guard sits glued to `seam` and reads the token right after it. A
+# `seam` at the end of a line therefore still counts.
+#
+# False Positives
 #
 # The literal sense passes before a construction word (`seam tape`, `a
-# standing seam roof`) and before a slash (`seam/flashing checks`), the
-# form a roofing scope list takes. The guard sits glued to the word so
-# it reads the token right after it, which also lets a word at the end
-# of a line count.
+# standing seam roof`). It also passes before a slash (`seam/flashing
+# checks`), the form that a roofing scope list takes. The literal sense
+# before any other word still matches (`press the seam flat`).
+#
+# Measurement
+#
+# The rule hit no lines in the measure.py corpus, so no sample measures
+# its precision.
 expr literal [flashing, tape, tapes, sealer, sealant, roof, roofs, roofing, weld, welds, welded, metal, allowance, ripper]
 expr main [seam, seams]![(( )@literal), /]
 let message "`seam`. Name the function, interface, or hook it means, or delete the word."

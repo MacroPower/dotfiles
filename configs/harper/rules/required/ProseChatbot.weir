@@ -1,32 +1,65 @@
-# Each phrase is a chat reply's framing, which says nothing about the
-# subject. The Recommended rule of the same name holds the phrases that
-# human-written READMEs also use. `of course` sits in the filler rule,
-# so it draws one finding.
+# Overview
+#
+# A chatbot phrase frames text as a chat reply and says nothing about
+# the subject (`Certainly! Here is the fix`, `hope this helps`). The
+# reader gains nothing from it. The fix deletes the phrase and states
+# the point. The rule sits at Required, because it matches exact phrases
+# and the fix is mechanical.
+#
+# Expression
+#
+# `main` lists the phrases. `here's the updated` and the other `here is
+# the` phrases return a reply to the asker. `apologies for`, `I
+# apologize`, and `sorry for the confusion` answer a complaint, and
+# `excellent question` and `glad you asked` praise the asker.
 #
 # Weir reads `!` as negation, so a pattern cannot name a literal
 # exclamation mark. `certainly` and `absolutely` count instead when no
-# space or other punctuation follows them, which leaves the `!` of a
-# chat opener (`Certainly! Here is the fix`). The guard sits glued to
-# the word so it reads the token right after it. A closing paren cannot
-# sit in the list, because it ends the list. `(absolutely)` therefore
-# still fires, and so does the word at the end of a line.
+# space or other punctuation follows them. The `!` of a chat opener is
+# the mark that remains (`Certainly! Here is the fix`). A space in a
+# pattern is a whitespace token, so the guard sits glued to the word and
+# reads the token right after it. A closing paren cannot sit in the list
+# of the guard, because it ends the list.
 #
-# `you're right` counts only with punctuation glued after it (`You're
-# right, the cache was stale`), which leaves `you're right-clicking`
-# and `you're right next to the limit`. `good catch` and `great catch`
-# skip a following code word (`a good catch block`). The phrase
-# `here's the updated` and its kin return a reply to the asker.
+# `you're right`, `that's a good point`, and `you're welcome` count only
+# with punctuation glued after them (`You're right, the cache was
+# stale`). `good catch` and `great catch` skip a following code word
+# from `code`.
 #
-# `apologies for`, `I apologize`, and `sorry for the confusion` answer
-# a complaint, and `excellent question` and `glad you asked` praise the
-# asker. `that's a good point` and `you're welcome` count only with
-# punctuation glued after them, the way `you're right` does. That
-# guard passes `a good point to set a breakpoint` and `you are welcome
-# to open an issue`.
+# False Positives
 #
-# It hit 1 line in the measure.py corpus, and 0 of 1 sampled hits was a
-# chat reply. The miss asked the reader to test a guess (`check to see
-# if you're right!`). The phrases for apologies and praise hit none.
+# The guard on `you're right` passes `you're right-clicking` and `you're
+# right next to the limit`. The same guard on the other two phrases
+# passes `a good point to set a breakpoint` and `you are welcome to open
+# an issue`. `a good catch block` passes, because `catch` there names a
+# part of the code.
+#
+# `(absolutely)` still draws a finding, because the guard cannot list a
+# closing paren. `certainly` or `absolutely` at the end of a line draws
+# one too.
+#
+# Related Rules
+#
+# The Recommended ProseChatbot holds the phrases that human-written
+# READMEs also use, such as `feel free to`. This tier holds every other
+# chatbot phrase. `I would be happy to help` draws a finding from each
+# tier, because this tier reports `I would be happy to` and the
+# Recommended tier reports `happy to help`.
+#
+# `of course` sits in the Required ProseFiller, so it draws one finding.
+# ProseBroadReference leaves `helps` out of its verb list, so only this
+# rule reports `hope this helps`. ProseModal skips `would` before `be
+# happy`, so it leaves `I would be happy to` to this rule.
+# ProseExclamation reports the `!` after a phrase of this rule, so
+# `Certainly! Here is the fix` draws a finding from each rule, and no
+# guard separates the two.
+#
+# Measurement
+#
+# The rule hit 1 line in the measure.py corpus, and 0 of 1 sampled hits
+# was a chat reply. The misfire asked the reader to test a guess (`check
+# to see if you're right!`). The phrases for apologies and praise hit
+# none.
 expr code [block, blocks, clause, clauses, statement, statements, handler, handlers, arm, arms]
 expr main [(hope this helps), (hope that helps), (hope [this, that] [clarifies, clears]), (great question), (good question), ([great, good] catch!(( )@code)), ([you're, (you are)] right!([( ), -, /])), ([here's, (here is), (here are)] the [updated, revised, corrected, fixed]), (you're absolutely right), (you are absolutely right), (I'd be happy to), (I would be happy to), ([certainly, absolutely]![( ), ,, ., ?, ;, :, -, /]), (apologies for), (I apologize), (sorry for the confusion), ([(that's), (that is)] a [great, good, fair, valid, excellent] point![( ), -, /]), ([excellent, fantastic] question), ([(you're), (you are)] welcome![( ), -, /]), (glad you asked)]
 let message "Chatbot phrase. Delete it and respond directly."

@@ -1,7 +1,26 @@
-# The Required rule of the same name holds every other redundant
-# pair. `still remain` sits here, because `still` can stress that a
-# state outlasted an event (`three entries still remain after the
-# sweep`), a contrast `remain` alone does not carry.
+# Overview
+#
+# One word in a redundant pair already carries the other, so the reader
+# reads a word that adds nothing. This tier reports `still remain`,
+# where `remain` alone usually carries the meaning. The fix deletes
+# `still`. The rule sits at Recommended, because `still` can stress that
+# a state outlasted an event.
+#
+# Expression
+#
+# `$remain` expands to remain, remains, remained, and remaining through
+# Harper's dictionary.
+#
+# Related Rules
+#
+# The Required ProseRedundantPair holds every other redundant pair.
+#
+# Measurement
+#
+# The rule hit 1 line in the measure.py corpus, and 0 of 1 sampled hits
+# needed the fix. In the one misfire, `still` stressed that a default
+# outlasts a release (`will still remain Disabled, for backwards
+# compatibility`), a contrast that `remain` alone does not carry.
 expr main still $remain
 let message "Redundant pair. Delete the word the other one includes."
 let description "Flags `still remain`, where `remain` alone usually carries the meaning."

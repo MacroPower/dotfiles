@@ -1,18 +1,43 @@
-# Each phrase leaves the reader to supply a criterion the writer knows
-# (`set the timeout as needed`), so the fix names it (`set the timeout
-# longer than the slowest request`) or drops the phrase when every
-# case applies. The Optional rule of the same name holds the adjectives
-# and adverbs (`appropriate`, `properly`).
+# Overview
 #
-# `as required` counts only without `by` after it, because `as required
-# by the spec` names the criterion. The guard sits glued to `required`
-# so it reads the token right after it, which also lets the phrase at
-# the end of a line count.
+# A vague criterion is a phrase that leaves the reader to supply a
+# criterion the writer knows (`set the timeout as needed`). The fix
+# names the criterion (`set the timeout longer than the slowest
+# request`), or drops the phrase when every case applies. The rule sits
+# at Recommended, because a listed phrase can also name the criterion
+# itself.
 #
-# It hit 35 lines in the kubernetes and nix.dev docs, and 14 of 15
-# sampled hits left the criterion unstated. The miss described lazy
-# evaluation (`computes values when needed`), where the phrase names
-# the criterion.
+# Expression
+#
+# `main` lists each phrase. `as required` counts only without `by` after
+# it. A space in a pattern is a whitespace token, so the guard sits
+# glued to `required` and reads the token right after it. The phrase at
+# the end of a line therefore still counts.
+#
+# False Positives
+#
+# `as required by the spec` names the criterion, so `as required` passes
+# before `by`.
+#
+# A description of lazy evaluation still draws a finding (`computes
+# values when needed`), because there the phrase names the criterion.
+#
+# Related Rules
+#
+# The Recommended ProseVagueCriterion holds the phrases (`as needed`,
+# `where applicable`), and the Optional ProseVagueCriterion holds the
+# single words (`appropriate`, `properly`).
+#
+# ProseTrailingCondition skips `if needed`, `if necessary`,
+# `if applicable`, and `if appropriate`, so only this rule reports them.
+#
+# Measurement
+#
+# The rule hit 157 lines in the measure.py corpus. In 19 of 20 sampled
+# hits, the phrase left the criterion unstated, or the sentence read the
+# same without the phrase. In the one misfire, `if necessary` pointed at
+# a check that the same sentence named (`Check whether we need to escape
+# the string and if necessary copy it`).
 expr main [(as needed), (as necessary), (as appropriate), (as applicable), (as required!(( )by)), (where needed), (where necessary), (where appropriate), (where applicable), (when needed), (when necessary), (when appropriate), (when applicable), (if needed), (if necessary), (if appropriate), (if applicable)]
 let message "Vague criterion. Name the condition the reader should check, or drop the phrase."
 let description "Flags `as needed`, `where applicable`, `if necessary`, and similar phrases that leave the reader to supply a criterion."

@@ -1,3 +1,20 @@
+# Overview
+#
+# `due to the fact that` spends five words on what `because` says in one
+# (`It failed due to the fact that the disk was full`). The fix writes
+# `because`. The rule sits at Required, because it matches one exact
+# phrase and the fix is mechanical.
+#
+# Related Rules
+#
+# The Required ProseWordy reports the other stock phrases that have a
+# one-word form, such as `owing to the fact that`. It leaves `due to the
+# fact that` to this rule, which carries the rewrite to `because`.
+#
+# Measurement
+#
+# The rule hit no lines in the measure.py corpus, so no sample measures
+# its precision.
 expr main due to the fact that
 let message "`due to the fact that`. Write `because`."
 let description "Shortens `due to the fact that`."

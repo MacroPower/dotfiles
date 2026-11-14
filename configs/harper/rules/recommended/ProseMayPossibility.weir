@@ -1,25 +1,49 @@
-# `may` reads two ways, as permission (`the caller may pass nil`) or as
-# a possibility (`the cache may be stale`). The technical-writing skill
-# keeps `may` for an option a person is free to take and writes
-# `might` for a possibility. The rule counts `may` before a verb or an
-# adverb after any word but `you`. The fix writes `might` for a
-# possibility and `can` for an ability or a permission.
+# Overview
 #
-# The guard on the next word skips the phrases other rules report:
-# `may not` and `may or may not` (the may-not rule), `may want to`
-# (the obligation rule), and `may possibly` and `may potentially` (the
-# double-hedge rule). The verb or adverb after `may` keeps out the
+# Reports `may` where it mostly states a possibility (`the cache may be
+# stale`). `may` reads two ways, as a permission (`the caller may pass
+# nil`) or as a possibility, so the reader has to pick. The
+# technical-writing skill keeps `may` for an option a person is free to
+# take and writes `might` for a possibility. The fix writes `might` for
+# a possibility and `can` for an ability or a permission. The rule sits
+# at Recommended, because some hits state an ability or a permission,
+# where `might` is the wrong fix.
+#
+# Expression
+#
+# The rule counts `may` after any word but `you` and before a verb or an
+# adverb. An adverb is a word that describes a verb, an adjective, or a
+# whole sentence, such as `safely` or `also`. A guard on the word after
+# `may` skips `not`, `want`, `possibly`, and `potentially`.
+#
+# Weir has no lookbehind, so the filter consumes the word before `may`
+# and narrows the finding back to `may`. A sentence that opens with
+# `May` is a question or a date, so it passes.
+#
+# False Positives
+#
+# `you may` passes, because there `may` gives a person an option (`You
+# may skip the tag`). The verb or adverb after `may` keeps out the
 # month, which a number, a comma, or a noun follows (`in May 2026`, `the
-# May release`). Weir has no lookbehind, so the filter consumes the
-# word before `may` and narrows the finding back to it. A sentence that
-# opens with `May` is a question or a date, so it passes.
-# ProseCapsEmphasis also reports an uppercase `MAY`, which takes a
-# second fix.
+# May release`).
 #
-# It hit 367 lines in the kubernetes and nix.dev docs, and 17 of 20
-# sampled hits stated a possibility. The other three stated an ability
-# or a permission (`an implementation may represent the backend`),
-# where `can` reads the same.
+# Related Rules
+#
+# The guard on the word after `may` skips the phrases that other rules
+# report. ProseMayNot reports `may not` and `may or may not`. The
+# Recommended ProseObligation reports `may want to`. ProseDoubleHedge
+# reports `may possibly` and `may potentially`.
+#
+# ProseCapsEmphasis also reports an uppercase `MAY`, and that finding
+# takes a second fix.
+#
+# Measurement
+#
+# The rule hit 976 lines in the measure.py corpus, and 14 of 20 sampled
+# hits stated a possibility. Five stated a permission (`the
+# administrator may specify a default StorageClass`), where `can` reads
+# the same. The one misfire was `MAY` in a quoted sentence of an RFC,
+# which the writer cannot reword.
 expr skip [not, want, possibly, potentially]
 expr main <(!you may <[VERB, AUX, ADV], !@skip>), may>
 let message "`may` for a possibility. Write `might`, or `can` for an ability."

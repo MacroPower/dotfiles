@@ -1,35 +1,39 @@
-# Reports a sentence that opens with `a` or `an` and makes a claim
-# about a whole class in markdown prose (`A reader opens one rule file at
-# a time`). Grammar calls `a` and `an` the indefinite article, because
-# each introduces a noun without pointing at a particular one, and calls
-# `the` the definite article. The singular `a reader` reads two ways, as
-# one particular reader or as any reader. The plural reads one way
-# (`Readers open one rule file at a time`). The prose skill writes a
-# claim about a whole class with a plural subject or with `every`. It
-# keeps `a` and `an` for one instance that the sentence introduces.
+# Overview
+#
+# Grammar calls `a` and `an` the indefinite article, because each
+# introduces a noun without pointing at a particular one. It calls `the`
+# the definite article. The rule reports a sentence in markdown prose
+# that opens with `a` or `an` and makes a claim about a whole class (`A
+# reader opens one rule file at a time`).
+#
+# The singular `a reader` reads two ways, as one particular reader or as
+# any reader. The plural reads one way (`Readers open one rule file at a
+# time`). The prose skill writes a claim about a whole class with a
+# plural subject or with `every`, and the fix does the same. The prose
+# skill keeps `a` and `an` for one instance that the sentence
+# introduces. The rule sits at Optional, because the check guesses the
+# verb from its spelling, and a sentence that names no class also
+# matches.
+#
+# Expression
+#
+# The check includes lib/markdown.awk and reads one paragraph at a time.
+# The paragraph and sentence boundaries follow ProseParagraphLength,
+# run-in labels and ellipses included. Sentences that open with a code
+# span open with the first word after it, because lib/markdown.awk
+# blanks the span. Each finding names the line and column of the
+# sentence's first word.
 #
 # The check reports two forms. The first is an opening `a` or `an` with
 # a present-tense verb in the next four words (`A task is`, `A failed
 # task can retry`). Awk has no part-of-speech tagger, so a lowercase
 # word that ends in `s` counts as the verb. `is`, `has`, `can`, and the
-# other helping verbs in `helpers` count too. The scan stops at a
-# comma and at a preposition or conjunction such as `of`, `with`, or
-# `and`, so `A list of tasks` passes. Past-tense verbs do not end in
-# `s`, so `A user reported the bug` passes, and so does a quantity after
-# the article (`A few seconds later`).
+# other helping verbs in `helpers` count too. The scan stops at a comma
+# and at a word in `stops` that ties the subject to more words, such as
+# `of`, `with`, or `and`, so `A list of tasks` passes.
 #
-# Definitions pass (`A task is a unit of work`). When the verb is `is`
-# and `a`, `an`, `the`, or `one` follows it, the sentence names a term,
-# and no reader takes the subject for one particular task. Glossaries
-# open each entry this way, and the plural reads worse there (`Tasks are
-# units of work`). The skip drops 154 of 580 hits in the measure.py
-# docs, and 20 of 20 sampled drops were definitions.
-#
-# A sentence that introduces one instance takes the same form (`A cache
-# sits in front of the store`), and a later sentence names it with `the`
-# (`The cache holds the last hundred reads`). The check holds each
-# finding until the paragraph ends and drops it when the text after it
-# names the noun with `the`.
+# The check holds each finding of the first form until the paragraph
+# ends, and drops it when the text after it names the noun with `the`.
 #
 # The second form is the second of two sentences in a row that open with
 # `a` or `an` in one paragraph (`A task is a unit of work. A task runs
@@ -37,16 +41,36 @@
 # run reports once however long it grows, and its later sentences skip
 # the verb test.
 #
-# The paragraph and sentence boundaries follow ProseParagraphLength,
-# run-in labels and ellipses included. Sentences that open with a code
-# span open with the first word after it, because the reader blanks
-# the span. Each finding names the line and column of the sentence's
-# first word.
+# False Positives
 #
-# It hit 424 lines in the measure.py docs, and 18 of 20 sampled hits
-# made a claim about a whole class. The misses were a list label (`(a)`)
-# and a sentence that named no class (`A simple case is to create one
-# object`).
+# Definitions pass (`A task is a unit of work`). When the verb is `is`
+# and `a`, `an`, `the`, or `one` follows it, the sentence names a term,
+# and no reader takes the subject for one particular task. Glossaries
+# open each entry this way, and the plural reads worse there (`Tasks are
+# units of work`). The skip drops 154 of 580 hits in the measure.py docs
+# corpus, and 20 of 20 sampled drops were definitions.
+#
+# A sentence that introduces one instance takes the same form as a claim
+# about a class (`A cache sits in front of the store`), and a later
+# sentence names the instance with `the` (`The cache holds the last
+# hundred reads`). Such a sentence passes.
+#
+# Past-tense verbs do not end in `s`, so `A user reported the bug`
+# passes, and so does a quantity after the article (`A few seconds
+# later`).
+#
+# Related Rules
+#
+# ProseHiddenList reports three sentences in a row that open with the
+# same two words. It skips openings with `a` or `an`, so only this rule
+# reports those sentences.
+#
+# Measurement
+#
+# The rule hit 424 lines in the measure.py docs corpus, and 18 of 20
+# sampled hits made a claim about a whole class. The misfires were a
+# list label (`(a)`) and a sentence that named no class (`A simple case
+# is to create one object`).
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseIndefiniteOpener: <message>

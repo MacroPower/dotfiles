@@ -1,16 +1,35 @@
-# The Required rule of the same name holds every other wordy phrase.
-# These sit here, because each also has a literal sense the short form
-# does not carry. `a number of` counts something (`Read returns a
-# number of bytes`), `in terms of` names a unit (`the cost is
-# expressed in terms of bytes`), and `with respect to` names a variable
-# (`the derivative with respect to x`). `on the order of` stays out,
-# because it also names a sequence (`depend on the order of the
-# members`).
+# Overview
 #
-# It hit 124 lines in the measure.py corpus, and 17 of 20 sampled hits
-# read better in the short form. The 3 misses counted something (`a
-# number of seconds`, `a number of rows`), and the message tells the
-# writer to keep those.
+# A wordy phrase is a stock phrase that has a shorter form (`a number of
+# flags` for `several flags`, `with respect to` for `relative to`). The
+# reader reads several words for the meaning of one or two. The fix
+# writes the short form. The rule sits at Recommended, because each
+# phrase here also has a literal sense that the short form does not
+# carry. The message tells the writer to keep the phrase in that sense.
+#
+# False Positives
+#
+# The rule still reports the literal sense of each phrase. `in terms of`
+# names a unit (`the cost is expressed in terms of bytes`), and `with
+# respect to` names a variable (`the derivative with respect to x`).
+#
+# `on the order of` stays out, because it also names a sequence (`depend
+# on the order of the members`).
+#
+# Related Rules
+#
+# The Recommended ProseWordy holds `a number of`, `in terms of`, and the
+# other phrases that also have a literal sense, which the short form
+# does not carry. The Required ProseWordy holds every other wordy
+# phrase.
+#
+# Measurement
+#
+# The rule hit 124 lines in the measure.py corpus, and 17 of 20 sampled
+# hits read better in the short form. In the 3 misfires, `a number of`
+# counted something (`a number of seconds`, `a number of rows`), as it
+# does in `Read returns a number of bytes`. The message tells the writer
+# to keep those.
 expr main [(a number of), (in terms of), (with respect to), (in relation to), (in light of), (by means of), (in such a way that), (in a manner that)]
 let message "Wordy. Write the short form, such as `several` for `a number of` or `relative to` for `with respect to`. Keep the phrase when it names an exact count or a unit, as in `a number of seconds`."
 let description "Flags `a number of`, `in terms of`, `with respect to`, and similar phrases that most sentences can replace with one word."

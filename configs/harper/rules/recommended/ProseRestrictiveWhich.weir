@@ -1,19 +1,34 @@
-# A restrictive clause picks out which thing the sentence means (`the
-# file that holds the key`), and a nonrestrictive clause adds a fact
-# about a thing the sentence already named (`the config file, which
-# holds the key`). The technical-writing skill writes `that` for the
-# first and `, which` for the second, so a `which` with no comma before
-# it leaves the reader to pick between them.
+# Overview
+#
+# A clause is a subject and its verb, such as `the tests pass`. A
+# restrictive clause picks out which thing the sentence means (`the file
+# that holds the key`), and a nonrestrictive clause adds a fact about a
+# thing that the sentence already named (`the config file, which holds
+# the key`). The technical-writing skill writes `that` for a restrictive
+# clause and `, which` for a nonrestrictive one. A `which` with no comma
+# before it leaves the reader to pick between the two (`the file which
+# holds the key`). The fix writes `that` for a restrictive clause, or
+# puts a comma before `which`. The rule sits at Recommended, because the
+# pattern can also match a `which` that needs neither fix.
+#
+# Expression
 #
 # The rule counts `which` after a noun that is not a pronoun and before
-# a verb or an auxiliary (a helping verb such as `is`, `has`, or
-# `can`). A form of `be` or `there's` right before the noun skips the
-# match, because the expletive rule reports `there are files which hold
-# the key`. Weir has no lookbehind, so the filter consumes the word
-# before the noun and narrows the finding back to `which`.
+# a verb or an auxiliary (a helping verb such as `is`, `has`, or `can`).
+# Harper's part-of-speech tagger marks those word classes. A form of
+# `be` or `there's` right before the noun skips the match. Weir has no
+# lookbehind, so the filter consumes the noun and the word before it and
+# narrows the finding back to `which`.
 #
-# It hit 175 lines in the measure.py corpus, and in 19 of 20 sampled
-# hits the clause either picked out a thing or needed its comma.
+# Related Rules
+#
+# ProseExpletive reports `there are files which hold the key`, so the
+# filter skips a form of `be` or `there's` right before the noun.
+#
+# Measurement
+#
+# The rule hit 175 lines in the measure.py corpus, and in 19 of 20
+# sampled hits the clause either picked out a thing or needed its comma.
 expr verb [AUX, VERB]
 expr main <(![is, are, was, were, there's] <NOUN, !PRON> which @verb), which>
 let message "Restrictive `which`. Write `that` for a restrictive clause, or put a comma before `which`."

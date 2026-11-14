@@ -1,3 +1,20 @@
+# Overview
+#
+# `in order to` says in three words what `to` says in one (`Run make in
+# order to build it`). The two extra words tell the reader nothing. The
+# fix writes `to` (`Run make to build it`), and the rule offers that
+# rewrite. The rule sits at Required, because it matches one exact
+# phrase and the fix is mechanical.
+#
+# Related Rules
+#
+# ProseWordy reports other phrases that have a one-word form and leaves
+# out `in order to`, so only this rule reports the phrase.
+#
+# Measurement
+#
+# The rule hit 88 lines in the measure.py corpus, and in 20 of 20
+# sampled hits `to` said the same.
 expr main in order to
 let message "`in order to`. Write `to`."
 let description "Shortens `in order to`."

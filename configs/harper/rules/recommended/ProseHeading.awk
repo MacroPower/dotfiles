@@ -1,14 +1,23 @@
+# Overview
+#
 # Reports markdown headings below the title that narrate instead of
 # naming a topic (`How matching works`, `Is it safe?`), or that run past
-# six words. The prose skill asks for a short noun phrase, a noun and
-# the words attached to it (`Matching`). The Required rule of the same
-# name reports wrap-ups (`Conclusion`) and trailing colons, so this
-# check skips a wrap-up. prose-lint and check.py both run this file, so
-# the hook and the build-time fixture check agree on every heading.
+# six words. A reader scans the headings to find a section. A heading
+# that narrates makes the reader pick the topic out of a sentence or a
+# question. The fix names the topic as a short noun phrase, a noun and
+# the words attached to it (`Matching`), as the prose skill asks. The
+# rule sits at Recommended, because a FAQ page keeps its questions as
+# headings. A heading of seven or eight words also gains less from a
+# shorter name.
 #
-# The check skips a level-one heading, because it is the document
-# title. It also skips a heading that is one code span, because a
-# command reference names the exact command.
+# Expression
+#
+# The check reads the file line by line and includes no lib/ file.
+# prose-lint and check.py both run this file, so the hook and the
+# build-time fixture check agree on every heading. The check skips YAML
+# front matter, fenced code blocks, and indented code blocks. It does
+# not examine Setext headings (text underlined with = or -), because the
+# formatter rewrites them to # headings.
 #
 # At any level from two down, the check reports a heading that ends with
 # a question mark or starts with a question word. It also reports one
@@ -16,36 +25,53 @@
 # `can`. At level two, it reports a heading that holds a pronoun, an
 # auxiliary, or a joining word such as `because`, `until`, or `if`
 # anywhere. It also reports a level-two heading that runs past six
-# words. Deeper headings skip those two checks, because they often label
-# a single case (`Retries after a lease error`) and can run longer than
-# a section name.
+# words.
 #
-# A possessive (`your`, `our`) that opens a level-two heading passes,
-# because it starts a noun phrase (`Your Task`), but one after a verb
-# still counts (`Setting up your editor`). The word lists hold only
-# small fixed word classes, such as pronouns and helping verbs, so a
-# noun phrase such as `Printing YAML with Lipgloss Styles` passes.
-#
-# The word count drops a trailing attribute list (`{#linux-security}`)
-# and counts a code span as one word. It skips a token with no letter or
-# digit, such as a lone `-`. A heading that holds a code span prints in
-# a double-backtick span, so its own backticks stay inside the quote.
+# A trailing attribute list (`{#linux-security}`) is markup, so the
+# check drops it first. The word count treats a code span as one word
+# and skips a token with no letter or digit, such as a lone `-`. A
+# heading that holds a code span prints in a double-backtick span, so
+# its own backticks stay inside the quote.
 #
 # The check does not use Harper's part-of-speech tagger, because a
 # heading has no sentence around it and the tagger reads `works` and
-# `ships` as nouns. The rule misses a short sentence whose words all
-# fall outside the lists, such as `The scheduler retries jobs`.
+# `ships` as nouns. It matches word lists instead, so the rule misses a
+# short sentence whose words all fall outside the lists, such as `The
+# scheduler retries jobs`.
 #
-# It hit 289 lines in the measure.py docs, and 12 of 20 sampled headings
-# read better as a noun phrase (`What do you need?` becomes
-# `Prerequisites`). Six more ran to seven or eight words, where a
-# shorter name helps less. The other 2 were questions on FAQ pages,
-# which readers search for by the question. Such a heading passes on
-# the second try of a commit, so a writer can keep a FAQ question.
+# False Positives
 #
-# The check skips YAML front matter, fenced code blocks, and indented
-# code blocks. It does not examine Setext headings (text underlined
-# with = or -), because the formatter rewrites them to # headings.
+# The check skips a level-one heading, because it is the document title.
+# It also skips a heading that is one code span, because a command
+# reference names the exact command.
+#
+# Headings below level two skip the two level-two checks, because they
+# often label a single case (`Retries after a lease error`) and can run
+# longer than a section name.
+#
+# `your` or `our` at the start of a level-two heading passes, because it
+# starts a noun phrase (`Your Task`), but one after a verb still counts
+# (`Setting up your editor`). The word lists hold only small fixed word
+# classes, such as pronouns and helping verbs, so a noun phrase such as
+# `Printing YAML with Lipgloss Styles` passes.
+#
+# Related Rules
+#
+# The Required ProseHeading reports wrap-ups (`Conclusion`) and headings
+# that end in a colon (`Setup:`). The Recommended ProseHeading reports
+# headings that narrate (`How matching works`) or run long. The
+# Recommended triggers misread a heading more often, so a commit that
+# draws them passes on its second try. This check skips a wrap-up,
+# because the Required ProseHeading reports it.
+#
+# Measurement
+#
+# The rule hit 289 lines in the measure.py docs corpus, and 12 of 20
+# sampled headings read better as a noun phrase (`What do you need?`
+# becomes `Prerequisites`). Six more ran to seven or eight words, where
+# a shorter name helps less. The other 2 were questions on FAQ pages,
+# which readers search for by the question. A writer can keep such a
+# heading on the second try of a commit.
 #
 # Output format, one line per finding:
 #   <file>:<line>:1: Style::ProseHeading: <message>
@@ -67,8 +93,8 @@ BEGIN {
   # Words from the list above that pass as the heading's first word.
   possessive["your"] = 1
   possessive["our"] = 1
-  # Whole headings that announce a wrap-up, which the Required rule
-  # reports.
+  # Whole headings that announce a wrap-up, which the Required
+  # ProseHeading reports.
   n = split("conclusion|conclusions|final thoughts|closing thoughts|concluding thoughts|key takeaways|takeaways|wrapping up|wrap-up|in summary|in closing|tl;dr|tldr", list, "|")
   for (i = 1; i <= n; i++) {
     closer[list[i]] = 1

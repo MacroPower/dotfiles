@@ -1,6 +1,20 @@
+# Overview
+#
 # `and/or` leaves the reader to work out which combinations the
-# sentence allows. Writing them out (`the host, the port, or both`)
-# names each one.
+# sentence allows (`Pass the host and/or the port`). The fix writes
+# out each combination (`the host, the port, or both`). The rule sits
+# at Required, because it matches one exact phrase and the fix is
+# mechanical.
+#
+# Related Rules
+#
+# ProseSlash reports two lowercase words joined by a slash and skips
+# `and/or`, so only this rule reports the phrase.
+#
+# Measurement
+#
+# The rule hit 61 lines in the measure.py corpus, and in 20 of 20
+# sampled hits `and/or` joined alternatives in a sentence.
 expr main and/or
 let message "`and/or`. Write `a, b, or both`."
 let description "Flags `and/or`, which leaves the reader to work out which combinations the sentence allows."

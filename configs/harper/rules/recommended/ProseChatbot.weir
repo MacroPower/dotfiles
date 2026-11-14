@@ -1,11 +1,29 @@
-# The Required rule of the same name holds every other chatbot phrase.
-# These four sit here, because human-written READMEs and contributing
-# guides use them to invite a reader (`feel free to open an issue`,
-# `don't hesitate to ask`). The fix gives the instruction (`open an
-# issue`) or states the option (`you can open an issue`).
+# Overview
 #
-# It hit 15 lines in the measure.py corpus, and 15 of 15 sampled hits
-# invited the reader.
+# A chatbot phrase frames text as a chat reply and says nothing about
+# the subject (`feel free to open an issue`, `don't hesitate to ask`).
+# The reader gains nothing from it. The fix gives the instruction (`open
+# an issue`) or states the option (`you can open an issue`). The rule
+# sits at Recommended, because human-written READMEs and contributing
+# guides use these phrases to invite a reader.
+#
+# Related Rules
+#
+# The Required ProseChatbot holds every other chatbot phrase. This tier
+# holds the phrases that human-written READMEs also use. `I would be
+# happy to help` draws a finding from each tier, because the Required
+# tier reports `I would be happy to` and this tier reports `happy to
+# help`.
+#
+# ProseIfWhether leaves `know` out of its verb list, so only this rule
+# reports `let me know if`. ProseNegativeContraction reports the `don't`
+# of `don't hesitate to`, so that phrase draws a finding from each rule,
+# and no guard separates the two.
+#
+# Measurement
+#
+# The rule hit 15 lines in the measure.py corpus, and 15 of 15 sampled
+# hits invited the reader.
 expr main [(feel free to), (happy to help), (let me know if), ([don't, (do not)] hesitate to)]
 let message "Chatbot phrase. Delete it, and give the instruction or the option directly."
 let description "Flags `feel free to`, `happy to help`, `let me know if`, and `don't hesitate to`, which frame text as a chat reply."

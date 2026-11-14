@@ -1,32 +1,52 @@
+# Overview
+#
 # Reports markdown headings below the title that name no topic: a
 # wrap-up (`Conclusion`, `Final Thoughts`, `Key Takeaways`, `TL;DR`), or
-# a heading that ends in a colon (`Setup:`). prose-lint and check.py
-# both run this file, so the hook and the build-time fixture check agree
-# on every heading.
+# a heading that ends in a colon (`Setup:`). A wrap-up announces where
+# the document ends, not what the section holds, so a reader who scans
+# the headings learns nothing from it. The fix names the topic as a
+# short noun phrase, a noun and the words attached to it. A heading
+# already sets its section apart from the text, so a colon at its end
+# adds nothing, and the fix deletes it. The rule sits at Required,
+# because it matches a fixed list of headings and one trailing
+# character.
 #
-# A wrap-up announces where the document ends, not what the section
-# holds. `Summary`, `Overview`, and `Next Steps` pass, because
-# human-written docs and PR descriptions use them as section names. A
-# heading already sets its section apart from the text, so a colon at
-# its end adds nothing, and the fix deletes it.
+# Expression
 #
-# The Recommended rule of the same name reports headings that narrate
-# (`How matching works`) or run long. Those triggers misread a heading
-# more often, so a commit that draws them passes on its second try.
+# The check reads the file line by line and includes no lib/ file.
+# prose-lint and check.py both run this file, so the hook and the
+# build-time fixture check agree on every heading. The check skips YAML
+# front matter, fenced code blocks, and indented code blocks. It does
+# not examine Setext headings (text underlined with = or -), because the
+# formatter rewrites them to # headings.
 #
-# The check skips a level-one heading, because it is the document
-# title. It also skips a heading that is one code span, because a
-# command reference names the exact command. A trailing attribute list
-# (`{#linux-security}`) is markup, so the check drops it first. A heading
-# that holds a code span prints in a double-backtick span, so its own
-# backticks stay inside the quote.
+# The check compares the whole heading with a list of wrap-ups, in any
+# letter case. A trailing attribute list (`{#linux-security}`) is
+# markup, so the check drops it first. A heading that holds a code span
+# prints in a double-backtick span, so its own backticks stay inside the
+# quote.
 #
-# The check skips YAML front matter, fenced code blocks, and indented
-# code blocks. It does not examine Setext headings (text underlined
-# with = or -), because the formatter rewrites them to # headings.
+# False Positives
 #
-# It hit 15 lines in the measure.py docs, and 15 of 15 were wrap-ups or
-# trailing colons (`Conclusion`, `Linux:`).
+# `Summary`, `Overview`, and `Next Steps` pass, because human-written
+# docs and PR descriptions use them as section names.
+#
+# The check skips a level-one heading, because it is the document title.
+# It also skips a heading that is one code span, because a command
+# reference names the exact command.
+#
+# Related Rules
+#
+# The Required ProseHeading reports wrap-ups (`Conclusion`) and headings
+# that end in a colon (`Setup:`). The Recommended ProseHeading reports
+# headings that narrate (`How matching works`) or run long. The
+# Recommended triggers misread a heading more often, so a commit that
+# draws them passes on its second try.
+#
+# Measurement
+#
+# The rule hit 15 lines in the measure.py docs corpus, and 15 of 15 were
+# wrap-ups or trailing colons (`Conclusion`, `Linux:`).
 #
 # Output format, one line per finding:
 #   <file>:<line>:1: Style::ProseHeading: <message>

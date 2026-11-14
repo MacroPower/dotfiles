@@ -1,14 +1,33 @@
-# `needs no npm` negates the verb through its object, the noun the verb
-# acts on, so the reader meets the noun before learning the sentence is
-# negative. Moving the negation onto the verb (`does not need npm`) puts
-# it first. Linguists call the first form no-negation, after its `no`,
-# and the second not-negation. Only `need` and `require` count, because
-# `has no header` and `takes no arguments` read as plain idiom. A
-# comparison word after `no` (`requires no more than 2 GB`, `need no
-# longer wait`) states a bound or a time instead, so the guard skips
-# `more`, `less`, `fewer`, and `longer`. The rule flags instead of
-# replacing, because the fix depends on tense and person (`does not
-# need`, `do not need`, `did not need`).
+# Overview
+#
+# Linguists call a negation that sits on the object of a verb
+# no-negation, after its `no` (`needs no npm`). The object is the noun
+# that the verb acts on. A negation on the verb is not-negation (`does
+# not need npm`). `needs no npm` negates the verb through its object, so
+# the reader meets the noun before learning that the sentence is
+# negative. The fix moves the negation onto the verb, so the negation
+# comes first. The rule sits at Required, because it matches an exact
+# phrase and every fix moves the negation the same way.
+#
+# Expression
+#
+# `main` matches a form of `need` or `require` before `no`, and a guard
+# skips `more`, `less`, `fewer`, and `longer` after `no`. The rule flags
+# the phrase instead of replacing it, because the fix depends on tense
+# and person (`does not need`, `do not need`, `did not need`).
+#
+# False Positives
+#
+# Only `need` and `require` count, because `has no header` and `takes no
+# arguments` read as plain idiom. A comparison word after `no` states a
+# bound or a time instead (`requires no more than 2 GB`, `need no longer
+# wait`), so the guard skips `more`, `less`, `fewer`, and `longer`.
+#
+# Measurement
+#
+# The rule hit 5 lines in the measure.py corpus, and 5 of 5 sampled hits
+# negated `need` or `require` through its object (`requires no special
+# escapes`).
 expr main ([needs, need, needed, requires, require, required] no ![more, less, fewer, longer])
 let message "No-negation. Negate the verb, so `needs no npm` becomes `does not need npm`."
 let description "Flags `need` and `require` negated through their object."

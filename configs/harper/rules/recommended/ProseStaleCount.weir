@@ -1,23 +1,36 @@
-# A count of a set that the system can grow (`supports two modes`) goes
-# stale when someone adds a third, and nothing points the editor at the
-# sentence. The fix drops the number (`supports these modes`), names
-# each item (`supports the single and all modes`), or gives the command
-# that lists them (`kubectl api-resources lists the kinds`).
+# Overview
 #
-# The rule counts a verb that states the count (`there are`,
-# `supports`, `provides`, `offers`, `has`, `ships with`, `includes`,
-# `defines`, `accepts`, or `comes with`), a number word from two to
-# ten, at most one more word, and a noun for a set that can grow
-# (`modes`, `backends`, `options`, `ways`). The noun list leaves out
-# sets fixed by their nature (`ends`, `halves`, `parameters`). Weir
-# cannot read a digit, so `supports 3 modes` passes. `the three modes`
-# and `both backends` stay out, because in 12 of 14 sampled hits they
-# pointed back at items the paragraph had just listed.
+# A stale count is a count of a set that the system can grow (`supports
+# two modes`). The count goes stale when someone adds a third item, and
+# nothing points the editor at the sentence, so the reader gets a wrong
+# number. The fix drops the number (`supports these modes`), names each
+# item (`supports the single and all modes`), or gives the command that
+# lists them (`kubectl api-resources lists the kinds`). The rule sits at
+# Recommended, because a count that splits a set in two also matches.
 #
-# It hit 62 lines in the measure.py corpus, and 19 of 20 sampled hits
-# counted a set that can grow. The miss split a set in two (`two types
-# of system components: those that typically run in a container`, and
-# those that do not).
+# Expression
+#
+# `main` matches four parts in a row. The first is a verb in `verbs`
+# that states the count (`there are`, `supports`, `provides`, `offers`,
+# `has`, `ships with`, `includes`, `defines`, `accepts`, or
+# `comes with`). The second is a number word in `count`, from `two` to
+# `ten`, inclusive. The third is at most one more word. The last is a
+# noun in `set` for a set that can grow (`modes`, `backends`, `options`,
+# `ways`). Weir cannot read a digit, so `supports 3 modes` passes.
+#
+# False Positives
+#
+# `set` leaves out the sets whose nature fixes their size (`ends`,
+# `halves`, `parameters`). `the three modes` and `both backends` stay
+# out, because in 12 of 14 sampled hits they pointed back at items that
+# the same paragraph had listed.
+#
+# Measurement
+#
+# The rule hit 62 lines in the measure.py corpus, and 19 of 20 sampled
+# hits counted a set that can grow. The one misfire split a set in two
+# (`two types of system components: those that typically run in a
+# container`, and those that do not).
 expr verbs [(there are), supports, provides, offers, has, (ships with), includes, defines, accepts, (comes with)]
 expr count [two, three, four, five, six, seven, eight, nine, ten]
 expr set [modes, backends, providers, drivers, plugins, formats, platforms, implementations, strategies, policies, profiles, levels, kinds, types, options, flags, subcommands, commands, endpoints, protocols, runtimes, engines, tiers, methods, algorithms, categories, versions, integrations, adapters, targets, architectures, ways]

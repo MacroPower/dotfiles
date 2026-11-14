@@ -1,17 +1,45 @@
-# Reports an emoji in markdown prose. Emoji include the pictographs,
-# flags, and skin tones in U+1F000 to U+1FAFF, and the symbols whose
-# default presentation is emoji. Those symbols include a check mark
-# button, a sparkle, and a star. Any symbol followed by the U+FE0F
-# emoji selector counts too, and so do keycaps and `:shortcode:` names.
-# Every prose line counts, because emoji turn up in link text, table
-# cells, and summaries as often as in headings and list items. The
-# U+2600 to U+27BF block stays out as a range, because a plain check
-# mark in a table cell or a prompt glyph is text, not decoration.
+# Overview
 #
-# A range needs a UTF-8 locale. BEGIN_CHECK reads `utf8`, which the
-# reader sets when gawk reads a two-byte character as one. Under the C
-# locale it spells the same block as its UTF-8 bytes, so the output
-# matches in both.
+# Reports an emoji in markdown prose (`:rocket: Deployed the fix`). An
+# emoji decorates the text and states nothing, so the reader must guess
+# the point that it stands for. The fix deletes the emoji or says the
+# point in words (`Deployed the fix`). The rule sits at Required,
+# because the check matches the characters themselves and deleting one
+# is a mechanical fix.
+#
+# Expression
+#
+# The check includes lib/markdown.awk and reads each prose line. Emoji
+# include the pictographs, flags, and skin tones in U+1F000 to U+1FAFF,
+# and the symbols whose default presentation is emoji. Those symbols
+# include a check mark button, a sparkle, and a star. Any symbol
+# followed by the U+FE0F emoji selector counts too, and so do keycaps
+# and `:shortcode:` names. Every prose line counts, because emoji turn
+# up in link text, table cells, and summaries as often as in headings
+# and list items.
+#
+# A range needs a UTF-8 locale. BEGIN_CHECK reads `utf8`, which
+# lib/markdown.awk sets when gawk reads a two-byte character as one.
+# Under the C locale the check spells the same block as its UTF-8 bytes,
+# so the output matches in both.
+#
+# False Positives
+#
+# The U+2600 to U+27BF block stays out as a range, because a plain check
+# mark in a table cell or a prompt glyph is text, not decoration.
+# lib/markdown.awk skips the `:name: value` option lines of a MyST
+# directive, so an option such as `:class: tip` does not count as a
+# shortcode.
+#
+# Measurement
+#
+# The rule hit 15 lines in the measure.py corpus, and 12 of 15 sampled
+# hits decorated the text or stood in for a word. Eight of the 12 were
+# the `:heavy_check_mark:` in the cells of one table, where the fix
+# writes `yes`. Two misfires named an emoji as the subject of the text,
+# in a glossary entry on code points and in the sample output of an
+# emoji function. The third misfire quoted the label of a link on
+# another site.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseEmoji: <message>

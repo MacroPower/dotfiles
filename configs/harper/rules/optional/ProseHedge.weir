@@ -1,36 +1,75 @@
-# The Recommended rule of the same name holds every other hedge.
-# `relatively` sits here, because it sometimes states a real
-# comparison (`relatively few nodes run the agent, compared with the
-# fleet`). Most hits give no baseline (`a relatively small number of
-# objects`), so the fix gives the number or the baseline. `potentially`
-# stays out, because the double-hedge rule reports `could potentially`.
+# Overview
+#
+# A hedge is a word or phrase that keeps the writer from committing to a
+# claim (`a relatively small number of objects`, `the test should
+# pass`). The hedge softens the claim without adding information, so the
+# reader cannot tell how far the claim holds. The fix states the claim
+# or drops the hedge. A writer with real doubt can name the condition
+# that the claim depends on, so the message offers that fix beside
+# stating the claim. The rule sits at Optional, because each word here
+# sometimes carries meaning, and `should` before a result also states a
+# requirement.
+#
+# Expression
+#
+# `main` lists `relatively`, `virtually`, and `practically`, and one
+# branch for `should`. That branch counts `should` after a noun and
+# before a verb in `result`, which lists the verbs that name a visible
+# result (`the test should pass`, `the output should look like this`).
+# There `should` hedges the result of a step, so the fix states it (`the
+# test passes`). Weir has no lookbehind, so the filter consumes the word
+# before `should` and narrows the finding back to `should`.
+#
+# Harper's part-of-speech tagger marks each word with a tag for its word
+# class. The word before `should` must carry `NOUN`, the tag for a noun,
+# and must not carry `PRON`, the tag for a pronoun. It must also stay
+# out of `person`, which lists the words for a person, such as `caller`.
+#
+# False Positives
+#
+# `relatively` sometimes states a real comparison (`relatively few nodes
+# run the agent, compared with the fleet`). Most hits give no baseline
+# (`a relatively small number of objects`), so the fix gives the number
+# or the baseline.
 #
 # `virtually` and `practically` each read two ways. `virtually` means
 # `almost` or names a virtual copy (`virtually hoisted`), and
-# `practically` means `almost` or `in practice`. The two sit here,
-# because the plain sense is sometimes the one meant. `effectively`
-# stays out. In 29 of its 39 hits in the measure.py corpus it meant `in
-# effect` (`higher values are effectively ignored`), where dropping it
-# makes the claim false, and in the other 10 it named a manner (`use
-# labels effectively`).
+# `practically` means `almost` or `in practice`. The plain sense is
+# sometimes the one meant.
+#
+# `effectively` stays out. In 29 of its 39 hits in the measure.py corpus
+# it meant `in effect` (`higher values are effectively ignored`), where
+# dropping it makes the claim false, and in the other 10 it named a
+# manner (`use labels effectively`).
+#
+# After a person such as `caller`, `should` gives advice (`the caller
+# should pass a listener`), so the `should` branch skips the words in
+# `person`. `return`, `contain`, and `include` stay out of `result`,
+# because API docs state a requirement with them (`implementations
+# should return a copy`).
+#
+# Related Rules
+#
+# The Optional ProseHedge holds `relatively`, `virtually`,
+# `practically`, and `should` before a visible result, because each
+# sometimes carries meaning. The Recommended ProseHedge holds every
+# other hedge. It reports `it should work`, so the `should` branch here
+# skips a pronoun.
+#
+# `potentially` stays out, because ProseDoubleHedge reports `could
+# potentially`.
+#
+# Measurement
 #
 # The rule hit 46 lines in the measure.py corpus, and 18 of 20 sampled
-# hits softened a claim or a result. The misses stated a requirement
+# hits softened a claim or a result. The misfires stated a requirement
 # (`all tests should pass regardless`) or a design (`what the pool
-# should look like`). The message offers to name the condition that the
-# claim depends on, which fits a writer with real doubt.
+# should look like`).
 #
-# `should` after a noun and before a verb that names a visible result
-# (`the test should pass`, `the output should look like this`) hedges
-# the result of a step, so the fix states it (`the test passes`). The
-# noun must not be a pronoun, because the Recommended rule reports `it
-# should work`, or a person such as `caller`, where `should` gives
-# advice. `return`, `contain`, and `include` stay out, because API docs
-# state a requirement with them (`implementations should return a
-# copy`). The filter narrows the finding to `should`. It hit 19 lines in
-# the measure.py corpus, and 15 of 19 hedged a result. The misses
-# stated a requirement, a condition, or a design (`if any of those
-# instances should fail`), so the branch is a suggestion.
+# The `should` branch hit 19 lines in the measure.py corpus, and 15 of
+# 19 hedged a result. The misfires stated a requirement, a condition, or
+# a design (`if any of those instances should fail`), so the branch is a
+# suggestion.
 expr person [caller, callers, consumer, consumers, user, users, reader, readers, developer, developers, operator, operators, administrator, administrators]
 expr result [pass, fail, print, display, show, look, appear, succeed, output, produce, compile]
 expr main [relatively, virtually, practically, <(<NOUN, !PRON, !@person> should @result), should>]

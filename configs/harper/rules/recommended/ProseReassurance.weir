@@ -1,42 +1,74 @@
-# Each phrase vouches for a fact the sentence already stated. The
-# deliberate rule holds the phrases that vouch for a choice instead.
+# Overview
 #
-# Each phrase is pinned to its reassuring sense, because docs reuse
-# the same words with a plain meaning. `no magic` skips a following
-# noun (`no magic number`, `no magic bytes`). `no surprises` counts
-# only at the end of a clause (`reported no surprises after the
-# migration` is a report). `the whole point` needs `of`, `is`, `was`,
-# or `that` after it, or `is` before it (`rounds to the whole point`
-# and `the whole point cloud` are measurements). `no more and no less`
-# skips a following `than`, which turns it into a bound, and so does
-# its comma form (`no more, no less`). `nothing more, nothing less`
-# never takes `than`, so it counts as written.
+# Each phrase vouches for a fact that the sentence already stated (`It
+# does exactly that`, `returns the number, and nothing else`). The
+# phrase names nothing that the reader can observe. The fix deletes it.
+# The rule sits at Recommended, because docs reuse the same words with a
+# plain meaning.
 #
-# `without changing it` stays unconditional. A contrast that matters
-# (`Fsck checks the filesystem without changing it when invoked with
-# -n`) reads better with the contrast named (`With -n, fsck only
-# reports`), and the skill lists the phrase as the writer weighing a
-# fact on the reader's behalf. `and nothing else` counts only at the
-# end of a clause, because before a verb `nothing else` is the subject
-# of a new clause (`touches the file and nothing else references it`).
-# Its guard `else!( )` takes any token but whitespace right after the
-# phrase, so it also counts at the end of a list item with no period.
-# A line break inside a paragraph reads as whitespace, so the guard
-# fails there. Weir has no escape for a literal paren, so a twin branch
-# names the open paren of a citation another way
-# (`and nothing else (see the keyword table)`). It takes a space and
-# then a token outside every part-of-speech tag with no space after it.
-# The glued token keeps out a verb the tagger left untagged
-# (`and nothing else deletes it`), because a space follows a word.
+# Expression
 #
-# Each clause-end list sits glued to the word before it
-# (`surprises[., ;, :, (,)]`), because a space in a pattern is a
-# whitespace token and clause punctuation follows the word directly.
-# Each branch spells the list out, because `surprises@end` tokenizes as
-# one word. A bare comma cannot sit in a list, because the comma
-# separates list items, so the pattern wraps it as a one-token sequence.
-# Negated words after a space (`less !than`) need a word to consume, so
-# each of those branches has a clause-end twin.
+# The pattern pins each phrase to its reassuring sense. `no magic` skips
+# a following noun in `magic` (`no magic number`, `no magic bytes`). `no
+# surprises` counts only at the end of a clause. A clause is a subject
+# and its verb, such as `the tests pass`. `the whole point` and `the
+# entire point` need `of`, `is`, `was`, or `that` after them, or `is` or
+# `was` before them. `no more and no less` skips a following `than`, and
+# so does its comma form (`no more, no less`).
+#
+# `nothing more, nothing less` never takes `than`, so it counts as
+# written. `without changing it` stays unconditional. By default, a Weir
+# match stops at a comma, so `let scope "Sentence"` lets the comma forms
+# cross one.
+#
+# A negated word after a space needs a word to consume (`less !than`),
+# so each branch with `!than` or `!@magic` has a twin for the end of a
+# clause. `no surprises` and each of those twins carry a list of clause
+# punctuation. A space in a pattern is a whitespace token, so each list
+# sits glued to its word (`surprises[., ;, :, (,)]`) and reads the token
+# right after it. Each branch spells the list out, because
+# `surprises@end` tokenizes as one word. A comma separates list items,
+# so a bare comma cannot sit in a list. The pattern wraps it as a
+# one-token sequence.
+#
+# `and nothing else` counts only at the end of a clause. Its guard
+# `else!( )` takes any token but whitespace right after the phrase, so
+# it also counts at the end of a list item with no period. A line break
+# inside a paragraph reads as whitespace, so the guard fails there.
+#
+# Weir has no escape for a literal paren, so a twin branch names the
+# open paren of a citation another way (`and nothing else (see the
+# keyword table)`). The twin takes a space and then a token outside
+# every part-of-speech tag with no space after it. `tagged` lists the
+# tags that Harper's part-of-speech tagger gives a word. The glued token
+# keeps out a verb that the tagger left untagged (`and nothing else
+# deletes it`), because a space follows a word.
+#
+# False Positives
+#
+# Docs reuse the same words with a plain meaning, and the guards keep
+# those senses out. `reported no surprises after the migration` is a
+# report. `rounds to the whole point` and `the whole point cloud` are
+# measurements. `than` turns `no more and no less` into a bound. Before
+# a verb, `nothing else` is the subject of a new clause (`touches the
+# file and nothing else references it`).
+#
+# `without changing it` also marks a contrast that matters (`Fsck checks
+# the filesystem without changing it when invoked with -n`). The rule
+# reports it anyway. The sentence reads better with the contrast named
+# (`With -n, fsck only reports`), and the prose skill lists the phrase
+# as the writer weighing a fact on the reader's behalf.
+#
+# Related Rules
+#
+# ProseDeliberate holds the phrases that vouch for a choice instead.
+#
+# Measurement
+#
+# The rule hit 5 lines in the measure.py corpus, and in 5 of 5 sampled
+# hits the sentence stated the same fact without the phrase. Two were
+# `as the name implies`, two were `the whole point of`, and one was `and
+# nothing else`.
 expr tagged [ADJ, ADP, ADV, AUX, CCONJ, DET, INTJ, NOUN, NUM, PART, PRON, PROPN, SCONJ, SYM, VERB, X]
 expr magic [number, numbers, byte, bytes, prefix, string, strings, value, values, constant, constants]
 expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (no more, no less !than), (no more, no less[., ;, :, (,)]), (nothing more, nothing less), (nothing more and nothing less), (and nothing else!( )), (and nothing else !@tagged!( )), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]

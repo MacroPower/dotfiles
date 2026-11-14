@@ -1,23 +1,49 @@
-# Each phrase points back at an earlier passage without naming it, so
-# the fix links the section it means or drops the phrase. `as` and a
-# verb of saying, such as `as mentioned` or `as explained`, count before
-# `above`, `earlier`, `before`, or `previously`, after `previously` or
-# `already` (`as already noted`), and after `we` (`as we saw earlier`).
+# Overview
+#
+# A back-reference points back at an earlier passage without naming it
+# (`as mentioned above`), so the reader must search for the passage. The
+# fix links the section that the phrase means or drops the phrase. The
+# rule sits at Required, because it matches exact phrases and the fix is
+# mechanical.
+#
+# Expression
+#
+# `verbs` lists the verbs of saying, such as `mentioned` and
+# `explained`. `as` and one of those verbs count before `above`,
+# `earlier`, `before`, or `previously`, and after `previously` or
+# `already` (`as already noted`). `as we` and a verb such as `saw` or
+# `discussed` count before one of the same words (`as we saw earlier`).
 # `as mentioned`, `as noted`, `as stated`, and `as discussed` also count
-# with a glued comma. Before a source the phrase cites it (`as stated in
-# RFC 9110`), so it passes, but `as previously described in RFC 9110`
-# still counts, a rare miss the rule accepts.
+# with a glued comma.
 #
 # `aforementioned`, `above-mentioned`, and `previously mentioned` point
-# back the same way, and a space in a pattern matches only whitespace,
-# so the `above` branch matches the hyphenated and the spaced spelling.
-# The positional-reference rule reports the same verbs without `as`
-# (`described earlier`, `outlined below`), so each phrase draws one
-# finding.
+# back the same way. A space in a pattern is a whitespace token, so the
+# `above` branch names a hyphen and a space between its two words. It
+# then matches the hyphenated and the spaced spelling.
 #
-# It hit 41 lines in the measure.py corpus, and 18 of 20 sampled hits
-# pointed back without naming the passage. The 2 misses linked the
-# section in the same sentence (`As described above in Container
+# False Positives
+#
+# Before a source, the phrase cites the source (`as stated in RFC
+# 9110`), so it passes. `as previously described in RFC 9110` still
+# counts, and the rule accepts that rare misfire.
+#
+# Related Rules
+#
+# ProsePositionalReference reports the same verbs without `as`
+# (`described earlier`, `outlined below`). Its guard skips a verb that
+# sits right after `as`, so `as described earlier` draws one finding
+# from the two rules. The guard reads only the word before the verb, so
+# `as we discussed earlier` draws a finding from each rule.
+#
+# ProseChangeNarration reports `previously` before a comma, so `As
+# described previously,` draws a finding from that rule too, and no
+# guard separates the two.
+#
+# Measurement
+#
+# The rule hit 41 lines in the measure.py corpus, and 18 of 20 sampled
+# hits pointed back without naming the passage. The 2 misfires linked
+# the section in the same sentence (`As described above in Container
 # restart policy`).
 expr verbs [mentioned, noted, stated, discussed, described, explained, outlined, covered]
 expr earlier [above, earlier, before, previously]

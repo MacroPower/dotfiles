@@ -1,23 +1,49 @@
-# Each word is a buzzword that reads as technical but names nothing a
-# plainer word does not (`the bedrock of the design` becomes `what the
-# design depends on`).
+# Overview
 #
-# Several words count only inside their metaphor phrase, because a
-# product or a field uses the bare word. Weir ignores case and the
-# tagger never marks `Bedrock` or `Nexus` as a proper noun, so the
-# phrase is the only guard against AWS Bedrock (`hand the response to
-# Amazon Bedrock for processing`, the reason `bedrock for` needs
-# `the`) and Sonatype Nexus. `paradigm` counts only as `paradigm shift`
-# or `new paradigm`, because `programming paradigm` is a term of art, and
-# `north star` passes before `metric`, which names a product metric.
+# A buzzword reads as technical but names nothing that a plainer word
+# does not (`the bedrock of the design`). The reader must translate it
+# back into the plain word. The fix writes the concrete word (`what the
+# design depends on`). The rule sits at Recommended, because the writer
+# must find the concrete word, so the fix is not mechanical.
+#
+# Expression
+#
+# `main` lists each buzzword. Several words count only inside their
+# metaphor phrase, such as `bedrock of`, `nexus between`, and `paradigm
+# shift`. `north star`, `gold plating`, and `gold plated` each match the
+# hyphenated and the spaced spelling. A space in a pattern is a
+# whitespace token, so the guard on `north star` sits glued to `star`
+# and reads the token right after it. That guard skips `metric` and
+# `metrics`.
+#
+# False Positives
+#
+# A word counts only inside its metaphor phrase when a product or a
+# field uses the bare word. Weir ignores case, and Harper's
+# part-of-speech tagger never marks `Bedrock` or `Nexus` as a proper
+# noun, a name that takes a capital letter, such as `Kubernetes`. The
+# phrase is therefore the only guard against AWS Bedrock and Sonatype
+# Nexus. `bedrock for` needs `the`, because a sentence can pass
+# something to the product (`hand the response to Amazon Bedrock for
+# processing`).
+#
+# `paradigm` counts only as `paradigm shift` or `new paradigm`, because
+# `programming paradigm` is a term of art. `north star` passes before
+# `metric`, because `north star metric` names a product metric.
 #
 # `modality` is left out, because machine-learning docs use it for an
-# input type (`an image modality`), and so are `vantage` (a cost tool)
-# and `locus` (genetics and math). `vector`, `primitive`, `surface`,
-# `harness`, `scaffolding`, `ratchet`, and `evacuate` stay out too.
-# Each names something in code or operations (a math type, a
-# language built-in, an attack surface, a test harness, a code
-# generator, a lint baseline that only tightens, a node drain).
+# input type (`an image modality`). `vantage` names a cost tool, and
+# `locus` is a term in genetics and in math, so both stay out too. Other
+# words stay out because each names something in code or operations.
+# `vector` names a math type, `primitive` names a language built-in, and
+# `surface` names an attack surface. `harness` names a test harness, and
+# `scaffolding` names a code generator. `ratchet` names a lint baseline
+# that only tightens, and `evacuate` names a node drain.
+#
+# Measurement
+#
+# The rule hit no lines in the measure.py corpus, so no sample measures
+# its precision.
 expr main [substrate, substrates, endgame, flywheel, flywheels, (bedrock of), (the bedrock for), (nexus [of, between]), (paradigm shift), (new paradigm), (north[-, ( )]star!(( )[metric, metrics])), (gold[-, ( )]plating), (gold[-, ( )]plated), (wedge in)]
 let message "Buzzword. Use the concrete word."
 let description "Flags buzzwords that stand in for a concrete term."

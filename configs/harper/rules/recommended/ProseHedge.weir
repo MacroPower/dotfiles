@@ -1,54 +1,100 @@
+# Overview
+#
 # A hedge is a word or phrase that keeps the writer from committing to a
-# claim (`this should fix the race`, `probably`, `to some extent`). A
-# writer with real doubt can name the condition that the claim depends
-# on, so the message offers that fix beside stating the claim. The rule
-# hit 291 lines in the measure.py corpus, and 19 of 20 sampled hits
-# softened a claim that the writer can state or tie to a condition.
-# The miss sat in a quotation.
+# claim (`this should fix the race`, `probably`, `to some extent`). The
+# hedge softens the claim without adding information, so the reader
+# cannot tell how far the claim holds. The fix states the claim or drops
+# the hedge. A writer with real doubt can name the condition that the
+# claim depends on, so the message offers that fix beside stating the
+# claim. The rule sits at Recommended, because a hedge in a quotation
+# and a `likely` that states a probability also match.
+#
+# Expression
+#
+# `main` lists each hedge as a word or a fixed phrase, and some entries
+# carry a guard.
+#
+# `should work` and its kin count only after `it`, `this`, or `that`,
+# where they hedge a claim about the code (`this should fix the race`).
+# `you should see` counts too, because it hedges the result of a step
+# (`run the build, and you should see the prompt`).
+#
+# `likely` skips `more likely`, `less likely`, and `how likely`, and it
+# skips `likely to` and `likely that`. The `likely to` guard also passes
+# the hedge `the fix is likely to resolve the race`. A space in a
+# pattern is a whitespace token, so the guard after `likely` sits glued
+# to `likely` and reads the token right after it. `likely` before a
+# period or a comma then still counts (`the outage is likely.`).
+#
+# Weir has no lookbehind, so the filter consumes the word before
+# `likely` and narrows the finding back to `likely`. The filter needs
+# that word, so a sentence that opens with `Likely` passes.
+#
+# Harper's part-of-speech tagger marks each word with a tag for its word
+# class, and some guards name a tag. `ADJ` is the tag for an adjective,
+# `VERB` for a verb, and `PRON` for a pronoun. `ADV` is the tag for an
+# adverb, a word that describes a verb, an adjective, or a whole
+# sentence, such as `safely` or `also`. `DET` is the tag for a
+# determiner, a word that introduces a noun, such as `the`, `a`, or
+# `this`. `PROPN` is the tag for a proper noun, a name that takes a
+# capital letter, such as `Kubernetes`.
+#
+# `kind of` and `sort of` count only before `ADJ`, `ADV`, or `VERB`, and
+# never after `DET`. `appears to` skips `DET`, `PRON`, or `PROPN` after
+# it. `fairly` counts only before `ADJ` or `ADV`, and `quite` counts
+# only before `ADJ`, `ADV`, or `DET`.
+#
+# False Positives
+#
+# After `you`, `should work` and its kin give advice, which the
+# technical-writing skill writes with `should`.
+#
+# Docs use `kind of` and `sort of` as nouns (`the kind of diff`, `a sort
+# of index`), so both pass before a noun and after a determiner.
+#
+# `in a way` stays out, because it also names a manner (`in a way that
+# keeps the order`). `a bit` is left out, because a mask sets a bit, and
+# `a little bit` stays. `possibly` is left out, because it gives the
+# range of a value (`a non-nil, possibly empty map`). `rather` is left
+# out, because `rather than` is a contrast and a `!than` guard misses it
+# when a comment line breaks between the two words.
+#
+# `more likely` and `less likely` state a comparison (`cold caches are
+# more likely to miss`), and `how likely` asks for a degree (`without
+# saying how likely it is`). `likely to` names a probability (`pods
+# likely to need more memory`).
+#
+# `appears to` before a determiner, a pronoun, or a proper noun means
+# `becomes visible to` (`the prompt appears to the user`).
+#
+# `fairly` and `quite` count only as degree words, which say how much
+# (`fairly standard`, `quite a large scope`). Before a verb, `fairly`
+# means justly (`a normalizer that ignores whitespace can fairly ignore
+# line breaks`).
+#
+# Related Rules
+#
+# The Optional ProseHedge holds `relatively`, `virtually`,
+# `practically`, and `should` before a visible result, because each
+# sometimes carries meaning. The Recommended ProseHedge holds every
+# other hedge.
 #
 # Harper's Hedging rule matches three phrases, so this list carries the
-# rest. `should work` and its kin count only after `it`, `this`, or
-# `that`, where they hedge a claim about the code (`this should fix the
-# race`). After `you` they give advice, which the technical-writing
-# skill writes with `should`. `you should see` is the exception, because
-# it hedges the result of a step (`run the build, and you should see the
-# prompt`). It hit 12 lines in the measure.py corpus, and 12 of 12
-# hedged a result. `should help` stays out, because the
-# ability rule reports `help you`. `in a way` stays out too, because it
-# also names a manner (`in a way that keeps the order`). The Optional
-# rule of the same name holds `relatively`, `virtually`, `practically`,
-# and `should` before a visible result. The opinion rule holds the
-# phrases that frame a claim as someone's view. `kind of` and `sort of`
-# count only before an adjective, adverb, or verb, because docs use them
-# as nouns (`the kind of diff`). They also pass after a determiner (a
-# word that introduces a noun, such as `the`, `a`, or `this`), as in `a
-# sort of index`. `a bit` is left out, because a mask sets a bit. `a
-# little bit` stays. `possibly` is left out too, because it gives the
-# range of a value (`a non-nil, possibly empty map`). `rather` is left
-# out as well, because `rather than` is a contrast and a `!than` guard
-# misses it when a comment line breaks between the two words.
+# rest. ProseOpinion holds the phrases that frame a claim as someone's
+# view. `should help` stays out, because ProseAbility reports `help
+# you`. ProseExpletive reports `it is likely that`, so `likely that`
+# passes here.
 #
-# `likely` skips `more likely` and `less likely`, which state a
-# comparison (`cold caches are more likely to miss`), and `how likely`,
-# which asks for a degree (`without saying how likely it is`). It also
-# skips `likely to`, which names a probability (`pods likely to need
-# more memory`), although that also passes the hedge `the fix is likely
-# to resolve the race`. The expletive rule reports `it is likely that`,
-# so `likely that` passes too. The filter reads the word before `likely`
-# and narrows the finding back to it, so a sentence that opens with
-# `Likely` passes. The word hit 43 lines in the measure.py corpus, and
-# 42 of 43 hedged a claim. The miss was `the most likely pod eviction
+# Measurement
+#
+# The rule hit 291 lines in the measure.py corpus, and 19 of 20 sampled
+# hits softened a claim that the writer can state or tie to a condition.
+# The misfire sat in a quotation.
+#
+# `you should see` hit 12 lines in the measure.py corpus, and 12 of 12
+# hedged a result. `likely` hit 43 lines in the measure.py corpus, and
+# 42 of 43 hedged a claim. The misfire was `the most likely pod eviction
 # order`, where the probability is the point.
-#
-# `appears to` skips a determiner, pronoun, or proper noun after it,
-# where it means `becomes visible to` (`the prompt appears to the
-# user`).
-#
-# `fairly` and `quite` count only as degree words, before an
-# adjective, an adverb, or (for `quite`) a determiner (`fairly
-# standard`, `quite a large scope`). Before a verb, `fairly` means
-# justly (`a normalizer that ignores whitespace can fairly ignore line
-# breaks`).
 expr main [<(![more, less, how] likely!(( )[to, that])), likely>, somewhat, arguably, perhaps, probably, maybe, (in essence), (!DET [kind, sort] of [ADJ, ADV, VERB]), essentially, basically, (a little bit), (to some extent), (to a certain extent), (more or less), (generally speaking), (for the most part), (in most cases), (it seems), (it seemed), (seems to), (seem to), ([appears, appear] to ![DET, PRON, PROPN]), (tends to), (tend to), presumably, (fairly [ADJ, ADV]), (quite [ADJ, ADV, DET]), apparently, seemingly, supposedly, ostensibly, (in theory), (in principle), (in a sense), ([it, this, that] should [work, fix, resolve, suffice]), ([it, this, that] should be [fine, enough, safe, ok, okay]), (you should see)]
 let message "Hedge. State the claim, name the condition it depends on, or drop it."
 let description "Flags words that soften a claim without adding information."

@@ -1,13 +1,35 @@
-# Each word rates a part as important without saying what depends on
-# it (`the retry is crucial` becomes `without the retry, a lease error
-# fails the job`). `critical` counts only before `to` or `for` (`the
-# lock is critical to the sweep`), because alone it names a critical
-# section. `essential` skips a hyphen before it, because `non-essential`
-# names a class of request rather than rating one part.
+# Overview
 #
-# It hit 65 lines in the measure.py corpus, and 18 of 20 sampled hits
-# rated a part without saying what depends on it. Both misses used
-# `essential` for a class (`any essential settings`), the way
+# Each word rates a part as important without saying what depends on it
+# (`the retry is crucial`). The reader learns that the part matters, but
+# not what breaks without it. The fix says what depends on the part
+# (`without the retry, a lease error fails the job`), or deletes the
+# word. The rule sits at Recommended, because `essential` also names a
+# class of things.
+#
+# Expression
+#
+# `critical` counts only before `to` or `for` (`the lock is critical to
+# the sweep`). `essential` skips a hyphen before it. Weir has no
+# lookbehind, so the filter consumes the token before `essential` and
+# narrows the finding back to `essential`.
+#
+# Two branches match a longer phrase. `plays a ... role` counts with
+# `vital`, `crucial`, `key`, `critical`, or `important` in the gap, and
+# `underscore` or `highlight`, with or without a final `s`, counts
+# before `the importance` or `the need`.
+#
+# False Positives
+#
+# `critical` alone names a critical section, so it passes.
+# `non-essential` names a class of request rather than rating one part,
+# so it passes too.
+#
+# Measurement
+#
+# The rule hit 65 lines in the measure.py corpus, and 18 of 20 sampled
+# hits rated a part without saying what depends on it. Both misfires
+# used `essential` for a class (`any essential settings`), the way
 # `non-essential` does.
 expr main [crucial, <(!-essential), essential>, (critical [to, for]), cornerstone, linchpin, vital, pivotal, paramount, invaluable, indispensable, (plays a [vital, crucial, key, critical, important] role), ([underscore, underscores, highlight, highlights] the [importance, need])]
 let message "Importance claim. Say what depends on it, or delete the word."

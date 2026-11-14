@@ -1,26 +1,52 @@
-# Semicolons join two clauses that can each stand as a sentence, and
-# the reader has to find where the first clause ends. A clause is a
-# subject and its verb, such as `the tests pass`. A period puts that
-# boundary where the reader expects one. When the second clause states
-# a cause, a result, or a contrast, `because`, `so`, or `but` names the
-# link that the semicolon left to the reader. The rule flags a word with
-# a semicolon glued to it.
+# Overview
 #
-# A closing paren before the mark passes, so a call in a comment
-# (`foo();`) stays quiet. Loop headers in source comments
-# (`for (i = 0; i < n; i++)`) still fire, so the rule sits at
-# Recommended. Harper does not tag a digit glued to a semicolon as a
-# number, so `5;` passes either way and NUM stays out of the class.
+# The rule flags a semicolon glued to a word (`The cache is cold; the
+# first read is slow`). Semicolons join two clauses that can each stand
+# as a sentence, and the reader must find where the first clause ends. A
+# clause is a subject and its verb, such as `the tests pass`. The fix
+# ends the first sentence with a period, and the period puts that
+# boundary where the reader expects one. When the second clause states a
+# cause, a result, or a contrast, the fix joins the clauses with
+# `because`, `so`, or `but` instead. That word names the link that the
+# semicolon left to the reader. The rule sits at Recommended, because
+# loop headers in source comments also match.
 #
-# Splitting a contrastive negation
-# (`This isn't a cache; it's a ledger`) at the semicolon silences
-# ProseContrastiveNegation, which reads one sentence at a time, but the
-# denied framing remains. Drop the first clause instead of splitting it.
+# Expression
 #
-# It hit 742 lines in the measure.py corpus, and 16 of 20 sampled hits
-# joined two clauses. The misses were a phrase with no verb after the
-# semicolon (`; for testing`), a list item that ends in a semicolon, and
-# a media type (`text/html; charset=utf-8`).
+# Harper's part-of-speech tagger marks each word with a tag for its word
+# class, and a pattern names a tag in capitals. `main` matches a
+# semicolon glued to a word that carries the tag for a noun (`NOUN`), a
+# verb (`VERB`), an adjective (`ADJ`), an adverb (`ADV`), a pronoun
+# (`PRON`), a proper noun (`PROPN`), or a determiner (`DET`). An adverb
+# is a word that describes a verb, an adjective, or a whole sentence,
+# such as `safely` or `also`. A proper noun is a name that takes a
+# capital letter, such as `Kubernetes`. A determiner is a word that
+# introduces a noun, such as `the`, `a`, or `this`.
+#
+# The tagger does not tag a digit glued to a semicolon as a number, so
+# `5;` passes either way. `NUM`, the tag for a number word such as
+# `three`, therefore stays out of the list.
+#
+# False Positives
+#
+# A closing paren before the semicolon passes, so a call in a comment
+# (`foo();`) draws no finding. Loop headers in source comments still
+# match (`for (i = 0; i < n; i++)`).
+#
+# Related Rules
+#
+# A contrastive negation denies one framing and asserts another (`This
+# isn't a cache; it's a ledger`). ProseContrastiveNegation reads one
+# sentence at a time. Splitting a contrastive negation at the semicolon
+# therefore silences ProseContrastiveNegation, but the denied framing
+# remains. Drop the first clause instead of splitting it.
+#
+# Measurement
+#
+# The rule hit 742 lines in the measure.py corpus, and 16 of 20 sampled
+# hits joined two clauses. The misfires were a phrase with no verb after
+# the semicolon (`; for testing`), a list item that ends in a semicolon,
+# and a media type (`text/html; charset=utf-8`).
 expr main [([NOUN, VERB, ADJ, ADV, PRON, PROPN, DET];)]
 let message "Semicolon. End the sentence with a period, or join the clauses with `because`, `so`, or `but`."
 let description "Flags a semicolon after a word, where it joins two clauses that could each stand as a sentence."

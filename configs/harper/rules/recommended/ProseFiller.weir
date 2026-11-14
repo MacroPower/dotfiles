@@ -1,28 +1,58 @@
-# The Required rule of the same name holds every other announcement.
-# `note that` sits here, because a commit subject uses `note` as a verb
-# (`docs: note that the flag is sticky`), and no pattern tells that
-# verb from the filler that opens `Note that the cache is cold`.
-# `notice that` and `remember that` sit here too, because a sentence
-# can describe a reader or a program doing either (`you might notice
-# that the pods restart`, `the cache must remember that the key
-# expired`).
+# Overview
 #
-# After a determiner (a word that introduces a noun, such as `the`,
-# `a`, or `this`), an adjective, or a noun, `note` and `notice` are
+# A filler phrase announces a point instead of making it (`Note that the
+# cache is cold`). The reader reads the announcement and learns nothing
+# until the point arrives. The fix deletes the phrase and states the
+# point (`The cache is cold`). The rule sits at Recommended, because
+# each phrase here also has a plain sense that no pattern tells from the
+# filler.
+#
+# Expression
+#
+# `note that`, `notice that`, and `remember that` count anywhere, except
+# where `note` or `notice` is a noun. `before` lists the words that mark
+# the noun. It holds the determiners (a determiner is a word that
+# introduces a noun, such as `the`, `a`, or `this`). It also holds the
+# tags `ADJ` (an adjective) and `NOUN` (a noun) from Harper's
+# part-of-speech tagger. The list names the determiners instead of the
+# `DET` tag (a determiner), because the tagger tags `all` in `First of
+# all note that` as one.
+#
+# Weir has no lookbehind. A guard that reads the word before `note`
+# fails when no word comes before it, so it misses `Note that` at the
+# start of a sentence. The first branch therefore matches the whole noun
+# phrase, a noun and the words attached to it. It then narrows the match
+# to the empty point before `that`.
+#
+# Harper reports nothing for an empty match, but it skips every later
+# match that starts before that point, so the `note that` inside the
+# noun phrase passes.
+#
+# False Positives
+#
+# After a determiner, an adjective, or a noun, `note` and `notice` are
 # nouns. The `that` after them opens a description (`add a note that
-# explains the flag`, `a copyright notice that is included`). The list
-# names the determiners instead of the `DET` tag, because Harper tags
-# `all` in `First of all note that` as one. Weir has no lookbehind. A
-# guard that reads the word before `note` fails when no word comes
-# before it, so it misses `Note that` at the start of a sentence. The
-# first branch therefore matches the whole noun phrase, a noun and the
-# words attached to it. It then narrows the match to the empty point
-# before `that`. Harper reports nothing for an empty match, but it skips
-# every later match that starts before that point, so the `note that`
-# inside the noun phrase passes.
+# explains the flag`, `a copyright notice that is included`), so the
+# phrase passes.
 #
-# It hit 356 lines in the measure.py corpus, and 20 of 20 sampled hits
-# announced a point.
+# A commit subject uses `note` as a verb (`docs: note that the flag is
+# sticky`), and no pattern tells that verb from the filler that opens
+# `Note that the cache is cold`. A sentence can also describe a reader
+# or a program that notices or remembers (`you might notice that the
+# pods restart`, `the cache must remember that the key expired`). Each
+# of those sentences still fires.
+#
+# Related Rules
+#
+# The Recommended ProseFiller holds `note that`, `notice that`, and
+# `remember that`, and the Required ProseFiller holds every other
+# announcement. Both tiers match `please note that`, and prose-lint
+# prints only the Required finding.
+#
+# Measurement
+#
+# The rule hit 356 lines in the measure.py corpus, and 20 of 20 sampled
+# hits announced a point.
 expr before [a, an, the, this, each, every, another, your, our, their, its, ADJ, NOUN]
 expr noun [note, notice]
 expr main [<(@before @noun that), (that), ()>, (note that), (notice that), (remember that)]

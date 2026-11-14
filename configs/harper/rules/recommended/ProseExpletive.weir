@@ -1,24 +1,53 @@
+# Overview
+#
 # In grammar an expletive is a word that fills a slot in a sentence
 # without adding meaning. The term is unrelated to the everyday sense of
 # a swear word. An expletive opener fills the subject slot with `there`
 # or `it` and moves the real subject later (`There is a flag that
-# disables the cache` becomes `The --no-cache flag disables the cache`,
-# and `it is possible that the cache is stale` becomes `the cache might
-# be stale`). Sentences built as `What X does is Y`, which grammar calls
+# disables the cache`, `it is possible that the cache is stale`). The
+# reader must read past the opener to learn what the sentence is about.
+#
+# The fix makes the real subject the subject of the sentence (`The
+# --no-cache flag disables the cache`, `the cache might be stale`).
+# Sentences built as `What X does is Y`, which grammar calls
 # pseudo-clefts (`What the hook does is skip the file`), and `the reason
-# is that` do the same.
+# is that` delay the real subject the same way, so the rule reports them
+# too. The rule sits at Recommended, because the `there is` branches
+# cannot tell a `that` that opens a description from a `that` that
+# introduces a noun.
 #
-# `there is` counts only with a relative pronoun (`that`, `which`, or
-# `who` opening a description of the noun before it) one to three words
-# later. Without one, `there is a lock` states that a thing exists. Each
-# gap length is its own alternative, the way the not-only rule writes
-# its `but` tail. `it is advisable that` stays out, because the
-# obligation rule reports `it is advisable`.
+# Expression
 #
-# It hit 121 lines in the measure.py corpus, and 19 of 20 sampled hits
-# rewrote with the real subject first. The miss took `that` as a
-# determiner, a word that introduces a noun (`there's no value for that
-# key`).
+# `there` lists `there is` with its forms for tense and number, such as
+# `there were` and `there's`. `there is` counts only with a relative
+# pronoun (`that`, `which`, or `who` opening a description of the noun
+# before it) one to three words later. A list picks its longest match
+# and never backtracks, so each gap length is its own alternative.
+# ProseNotOnly writes its `but` tail the same way. `what` counts when
+# `does`, `do`, or `did` and then `is` follow one to three words later
+# (`What the hook does is`), and each gap length is again its own
+# alternative.
+#
+# `it is`, `it was`, and `it's` count before `that` when one word sits
+# between them and Harper's part-of-speech tagger marks that word `ADJ`
+# (an adjective), as in `it is possible that`.
+#
+# False Positives
+#
+# Without a relative pronoun, `there is a lock` states that a thing
+# exists, so it passes.
+#
+# Related Rules
+#
+# `it is advisable that` stays out, because the Recommended
+# ProseObligation reports `it is advisable`.
+#
+# Measurement
+#
+# The rule hit 121 lines in the measure.py corpus, and 19 of 20 sampled
+# hits rewrote with the real subject first. In the one misfire, `that`
+# was a determiner, a word that introduces a noun, such as `the`, `a`,
+# or `this` (`there's no value for that key`).
 expr there [(there is), (there are), (there was), (there were), there's]
 expr rel [that, which, who]
 expr does [does, do, did]

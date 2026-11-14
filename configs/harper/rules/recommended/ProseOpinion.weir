@@ -1,11 +1,37 @@
-# Each phrase frames a claim as someone's view, the writer's own (`I
-# think`) or an unnamed arguer's (`it could be argued`), so the fix
-# states the claim or gives the evidence for it.
+# Overview
 #
-# `I would argue` stays out, because Harper's Hedging rule reports it.
-# `honestly`, `frankly`, and `personally` count only with a glued
-# comma, the sentence-adverb form, since mid-sentence they modify a
-# verb (`the tool reports the error honestly`).
+# Each phrase frames a claim as someone's view, the writer's own (`I
+# think`) or an unnamed arguer's (`it could be argued`). The frame tells
+# the reader that the claim might not hold and gives no way to check it.
+# The fix states the claim or gives the evidence for it. The rule sits
+# at Recommended, because the writer has to choose between the two
+# fixes.
+#
+# Expression
+#
+# `main` lists each phrase. `honestly`, `frankly`, and `personally`
+# count only with a glued comma (`Frankly, the flag is redundant`).
+#
+# False Positives
+#
+# With a glued comma, `honestly`, `frankly`, and `personally` take the
+# sentence-adverb form, where the adverb comments on the whole sentence
+# after it. An adverb is a word that describes a verb, an adjective, or
+# a whole sentence, such as `safely` or `also`. Without the comma, each
+# of the three describes a verb in the middle of a sentence (`the tool
+# reports the error honestly`), so it passes.
+#
+# Related Rules
+#
+# `I would argue` stays out, because Harper's built-in Hedging rule
+# reports it.
+#
+# Measurement
+#
+# The rule hit 19 lines in the measure.py corpus, and 6 of 19 sampled
+# hits framed a claim that the writer can state outright. The 13
+# misfires sat in the answers of published interviews (`**MJ**: I think
+# one of the key things`), where the speaker gives a view on purpose.
 expr main [(in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said), (I'd argue), (I'd say), (I would say), (in my experience), (to be honest), (if you ask me), (honestly,), (frankly,), (personally,)]
 let message "Opinion marker. State the claim, or give the evidence for it."
 let description "Flags phrases that frame a claim as someone's view instead of stating it."

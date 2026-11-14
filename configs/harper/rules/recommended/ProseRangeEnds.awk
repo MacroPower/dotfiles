@@ -1,29 +1,41 @@
+# Overview
+#
 # Reports a range that does not say whether it includes its ends in
 # markdown prose (`a weight between 1 and 100`). The reader cannot tell
 # whether 1 and 100 are themselves valid. The fix adds `inclusive` or
-# `exclusive`, or names each end (`from 1 up to but not including
-# 100`).
+# `exclusive`, or names each end (`from 1 up to but not including 100`).
+# The rule sits at Recommended, because the ends matter less for a
+# ratio.
 #
-# The check reports two forms, where each number opens with a digit.
-# The first is `between`, a number, `and`, and a number. It skips
-# `difference between` and `distinction between`, which compare two
-# values (`the distinction between 1 and 2`). The second is `range`
-# with a number pair in the next four words, joined by `to`, `through`,
-# or a hyphen (`the range 0-65535`, `values range from 0.0 to 1.0`).
-# A sentence that holds `inclusive` or `exclusive` passes, and so does a
-# range of dates (`between 2022-11 and 2024-05`). `from N to M` without
-# `range` stays out, because it often describes a change (`the replicas
-# drop from 3 to 1`). lib/sentences.awk finds the sentence boundaries.
+# Expression
 #
-# A range that an estimate word opens passes (`typically between 0.5
-# and 1.5`), because an estimate has no exact ends. The estimate words
-# are `typically`, `usually`, `roughly`, `approximately`, and
-# `generally` in the three words before `between`. `about` and `around`
-# stay out, because they also open phrases such as `learn about values
-# between 1 and 100`.
+# The check includes lib/sentences.awk, which finds the sentence
+# boundaries, and reads one sentence at a time. It reports two forms,
+# where each number opens with a digit. The first is `between`, a
+# number, `and`, and a number. The second is `range` with a number pair
+# in the next four words, joined by `to`, `through`, or a hyphen (`the
+# range 0-65535`, `values range from 0.0 to 1.0`). A sentence that holds
+# `inclusive` or `exclusive` passes.
 #
-# It hit 29 lines in the measure.py docs, and 27 of 29 hits left the
-# ends of a limit open (`a weight between 1 and 100`, `the range
+# False Positives
+#
+# `difference between` and `distinction between` pass, because they
+# compare two values (`the distinction between 1 and 2`). A range of
+# dates passes too (`between 2022-11 and 2024-05`). `from N to M`
+# without `range` stays out, because it often describes a change (`the
+# replicas drop from 3 to 1`).
+#
+# A range that an estimate word opens passes (`typically between 0.5 and
+# 1.5`), because an estimate has no exact ends. The estimate words are
+# `typically`, `usually`, `roughly`, `approximately`, and `generally` in
+# the three words before `between`. `about` and `around` stay out,
+# because they also open phrases such as `learn about values between 1
+# and 100`.
+#
+# Measurement
+#
+# The rule hit 29 lines in the measure.py docs, and 27 of 29 hits left
+# the ends of a limit open (`a weight between 1 and 100`, `the range
 # 0-65535`). The other 2 were ratios between 0 and 1, where the ends
 # matter less.
 #

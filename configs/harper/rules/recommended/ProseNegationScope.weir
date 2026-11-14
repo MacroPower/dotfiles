@@ -1,24 +1,41 @@
-# The scope of a negation is the part of the sentence that `not`
-# denies. In `all nodes do not run the agent`, `not` can deny `all`, so
-# that some nodes run it, or it can deny `run` for each node, so that
-# none do. `Not all nodes run the agent` and `no node runs the agent`
-# each read one way.
+# Overview
+#
+# The scope of a negation is the part of the sentence that `not` denies.
+# In `all nodes do not run the agent`, `not` can deny `all`, so that
+# some nodes run it, or it can deny `run` for each node, so that none
+# do. The reader cannot tell which of the two the writer means. The fix
+# moves `not` before `all` or `every`, or writes `none`. `Not all nodes
+# run the agent` and `no node runs the agent` each read one way. The
+# rule sits at Recommended, because a `not` that belongs to `not only`
+# also matches.
+#
+# Expression
 #
 # The rule counts `all` or `both` before a negated plural verb, such as
 # `are not`, `do not`, or `cannot`. Between them sits a noun, an
 # adjective or a noun before a noun, or `of them`, `of these`, or `of
 # those`. `all the`, `all of the`, `all these`, and their kin count
-# before a noun of one or two words. Only plural verbs count, because a
-# singular verb means that `all` sits in a phrase of its own (`a check
-# across all claims does not run`).
+# before a noun of one or two words.
 #
 # `every` and its noun count before a singular verb and `not` (`every
-# node does not run the agent`), and so do `everything`, `everyone`,
-# and `everybody`. `each` stays out, because `each node does not run
-# the agent` reads only as none.
+# node does not run the agent`), and so do `everything`, `everyone`, and
+# `everybody`.
 #
-# It hit 3 lines in the measure.py corpus, and all 3 meant none. The
-# `every` and `all the` forms hit none.
+# False Positives
+#
+# Only plural verbs count after `all` and `both`, because a singular
+# verb means that `all` sits in a phrase of its own (`a check across all
+# claims does not run`). `each` stays out, because `each node does not
+# run the agent` reads only as none.
+#
+# A `not` that belongs to `not only` denies neither `all` nor the verb
+# (`all nodes can not only read but also write`), and the rule still
+# matches it. The rule accepts that misfire.
+#
+# Measurement
+#
+# The rule hit 3 lines in the measure.py corpus, and all 3 meant none.
+# The `every` and `all the` forms hit none.
 expr verbs [are, do, were, have, can, will, should, must, did, would, could, may, might]
 expr np [NOUN, (ADJ NOUN), (NOUN NOUN)]
 expr main [([all, both] [<NOUN, !PRON>, (<[NOUN, ADJ, PROPN], !PRON> NOUN), (of [them, these, those])] [are, do, were, have, can, will, should, must] not), ([all, both] [the, these, those, (of the), (of these), (of those), (of our), (of your)] @np @verbs not), ([all, both] [<NOUN, !PRON>, (<[NOUN, ADJ, PROPN], !PRON> NOUN), (of [them, these, those])] cannot), (every @np [is, does, can, will, has, was, should, must, would] not), ([everything, everyone, everybody] [is, does, can, will, has, was] not)]

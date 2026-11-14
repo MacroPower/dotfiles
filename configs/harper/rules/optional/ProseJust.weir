@@ -1,31 +1,55 @@
+# Overview
+#
 # `just` carries four meanings in technical prose: `only` (`reads just
 # the header`), `simply` (`the hook just skips the file`), `exactly`
 # (`just before the write`), and `a moment ago` (`the file was just
 # created`). The reader picks one from context, and the word adds
 # nothing in the `simply` sense. The fix writes `only` where the word
 # limits, `immediately` where it times an event, and deletes it
-# everywhere else. The rule reports every sense, including the two that
-# the minimizer rule passes (`just one entry`, `the file was just
-# created`). The second also reads as `was only created`, so deleting
-# the word or naming the event it follows makes the sentence read one
-# way.
+# everywhere else. The rule sits at Optional, because the gain for each
+# hit is small.
 #
-# The minimizer rule reports `just` before an imperative verb, a verb
-# that gives a command (`just run make`), so the guard after the word
-# skips those verbs. That guard also skips `just as`, `just like`, and
-# `just in case`, fixed phrases that no fix suits (`skips aliases, just
-# as the parser does`). After a negation or `than`, the word carries a
-# contrast (`you cannot just delete the lock`, `more than just a
-# cache`), so the guard before it skips those words. The not-only rule
-# reports `not just` and `more than just`. Weir has no lookbehind, so
-# the filter consumes the word before `just` and narrows the finding
-# back to it. The second branch catches `just` before punctuation, where
-# the first branch finds no space after the word. A sentence that opens
-# with `Just` passes.
+# Expression
 #
-# It hit 280 lines in the measure.py corpus, and in 20 of 20 sampled
-# hits, `only`, `immediately`, or deleting the word read as clearly or
-# better. The gain for each hit is small, so the rule is a suggestion.
+# `neg` lists the negations and `than`, and the guard before `just`
+# skips those words. Weir has no lookbehind, so the filter consumes the
+# word before `just` and narrows the finding back to `just`. The filter
+# needs that word, so a sentence that opens with `Just` passes.
+#
+# `verbs` lists verbs in the imperative, the verb form that gives a
+# command, such as `run` in `run make`. The guard after `just` skips
+# those verbs, and it also skips `as`, `like`, and `in case`.
+#
+# A negated word after a space needs a word to consume, so the first
+# branch has a twin. The twin catches `just` before punctuation, where
+# no space follows the word. By default, a Weir match stops at a comma,
+# so `let scope "Sentence"` lets the filter read a comma before `just`
+# (`skips aliases, just before the write`).
+#
+# False Positives
+#
+# `just as`, `just like`, and `just in case` are fixed phrases that no
+# fix suits (`skips aliases, just as the parser does`). After a negation
+# or `than`, the word carries a contrast (`you cannot just delete the
+# lock`, `more than just a cache`).
+#
+# Related Rules
+#
+# ProseMinimizer reports `just` before an imperative verb (`just run
+# make`), so the guard after `just` skips those verbs. ProseNotOnly
+# reports `not just` and `more than just`, and the guard before `just`
+# skips both.
+#
+# This rule reports every other sense, including the two that
+# ProseMinimizer passes (`just one entry`, `the file was just created`).
+# The second also reads as `was only created`, so deleting the word or
+# naming the event it follows makes the sentence read one way.
+#
+# Measurement
+#
+# The rule hit 280 lines in the measure.py corpus, and in 20 of 20
+# sampled hits, `only`, `immediately`, or deleting the word read as
+# clearly or better.
 expr neg [not, never, isn't, aren't, wasn't, weren't, can't, cannot, couldn't, won't, doesn't, don't, didn't, shouldn't, than]
 expr verbs [run, use, add, call, set, pass, type, install, copy, edit, change, create, delete, remove, update, point, drop, put, write, open, click]
 expr main [<(!@neg just ![@verbs, as, like, (in case)]), just>, <(!@neg just!( )), just>]

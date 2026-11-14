@@ -1,14 +1,39 @@
-# Each phrase vouches that a choice was deliberate without giving the
-# reason, so the fix gives the reason (`the pin is unused by design`
-# becomes `the pin is unused, because the board pulls it high`) or drops
-# the phrase.
+# Overview
 #
-# `by design` counts only at the end of a clause or after a form of
-# `is`, because before a noun it names a team or a field (`grouped by
-# design system`, `triaged by design leads`). `reviewed by design,
-# engineering, and product` still fires, because the comma is a clause
-# end. The clause-end list sits glued to `design`, the way the
-# reassurance rule writes it.
+# Reports a phrase that vouches that a choice was deliberate without
+# giving the reason (`the pin is unused by design`). The reader learns
+# that someone chose the behavior and still does not know why. The fix
+# gives the reason (`the pin is unused, because the board pulls it
+# high`) or drops the phrase. The rule sits at Recommended, because `by
+# design` before a comma also names a team in a list.
+#
+# Expression
+#
+# `this is deliberate` and `this is intentional` are exact phrases. A
+# clause is a subject and its verb, such as `the tests pass`. `by
+# design` counts only at the end of a clause or after `is` or `was`. The
+# clause-end list holds a period, a semicolon, a colon, and a comma. A
+# space in a pattern is a whitespace token, so the clause-end list sits
+# glued to `design` and reads the token right after it. ProseReassurance
+# writes its clause-end lists the same way.
+#
+# False Positives
+#
+# Before a noun, `by design` names a team or a field (`grouped by design
+# system`, `triaged by design leads`), so it passes. `reviewed by
+# design, engineering, and product` still fires, because the comma is a
+# clause end.
+#
+# Related Rules
+#
+# ProseReassurance reports the phrases that vouch for a fact that the
+# sentence already stated. This rule reports the phrases that vouch for
+# a choice.
+#
+# Measurement
+#
+# The rule hit 7 lines in the measure.py corpus, and 7 of 7 sampled hits
+# vouched for a choice and gave no reason. Each one was `by design`.
 expr main [(this is deliberate), (this is intentional), (by design[., ;, :, (,)]), ([is, was] by design)]
 let message "Deliberate choice. Give the reason for the choice, or delete the phrase."
 let description "Flags phrases that vouch a choice was deliberate without giving the reason."

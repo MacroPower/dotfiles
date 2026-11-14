@@ -1,13 +1,30 @@
-# A negative contraction hides the negation in a two-letter suffix
-# (`isn't`, `don't`), and a reader who skims past the `n't` reads the
-# opposite claim. The full form gives `not` a word of its own.
+# Overview
+#
+# A negative contraction joins a verb and `not` into one word (`isn't`,
+# `don't`). It hides the negation in a two-letter suffix, and a reader
+# who skims past the `n't` reads the opposite claim. The fix writes the
+# full form, so `not` gets a word of its own (`is not`, `do not`). The
+# rule sits at Required, because it matches a fixed list of words and
+# the fix is mechanical.
+#
+# Expression
+#
+# `main` lists the contractions. prose-lint straightens a curly
+# apostrophe between two letters before Harper reads the text, so the
+# list also matches a contraction with a curly apostrophe.
+#
+# Related Rules
 #
 # ProsePassive, ProseContrastiveNegation, ProseMinimizer,
-# ProseDatedClaim, and ProseNotOnly keep their contracted forms, so
-# `the value isn't written` draws a passive finding beside this one on
-# the first pass. prose-lint straightens a curly apostrophe between two
-# letters before Harper reads the text. A contraction with a curly
-# apostrophe therefore draws this rule beside ProseTypography.
+# ProseDatedClaim, and ProseNotOnly keep their contracted forms, so `the
+# value isn't written` draws a passive finding beside this one on the
+# first pass. A contraction with a curly apostrophe draws this rule
+# beside ProseTypography.
+#
+# Measurement
+#
+# The rule hit 1980 lines in the measure.py corpus, and 20 of 20 sampled
+# hits were negative contractions in a sentence.
 expr main [don't, doesn't, didn't, isn't, aren't, wasn't, weren't, can't, couldn't, won't, wouldn't, shouldn't, mustn't, hasn't, haven't, hadn't, needn't]
 let message "Negative contraction. Write the full form, such as `does not` or `cannot`."
 let description "Flags `don't`, `isn't`, `can't`, and the other negative contractions, which hide a negation in a suffix."

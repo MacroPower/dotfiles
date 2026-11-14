@@ -1,58 +1,100 @@
-# Passive voice makes the thing acted on the subject of the sentence. It
-# names the actor, which grammar calls the agent, after `by` or not at
-# all (`the lock must be held by the caller`, `the timeout can be
-# configured`). A modal verb is a helping verb that marks possibility,
-# ability, or obligation, such as `can`, `might`, and `must`. This tier
-# reports a passive after a modal verb. The actor that such a passive
-# hides is usually the reader or the caller, the person the sentence
-# instructs (`you can configure the timeout`, `the caller must hold the
-# lock`). The Optional tier reports every other passive, where naming
-# the actor helps less often.
+# Overview
 #
-# The rule matches a modal verb, `be`, and a participle, the `-ing` or
-# `-ed` form of a verb (`retried`, `written`). An adverb or `not` can
-# sit after the modal verb or after `be` (`must not be copied`, `can be
-# safely removed`).
+# Passive voice makes the thing acted on the subject of the sentence
+# (`the timeout can be configured`). The sentence names the actor after
+# `by` or not at all (`the lock must be held by the caller`). Grammar
+# calls the actor that a passive sentence names after `by` the agent.
 #
-# `will be` plus a participle stays out, because the future-tense rule
-# reports the `will` in it. Its message asks for the present tense with
-# the actor as the subject (`the kubelet uses the default handler`), so
-# one fix clears the sentence. The future-tense rule skips `will not`
-# and `will also`, so this rule reports those (`the file will not be
-# read`). The roadmap words (`will be removed`) belong to the roadmap
-# rule.
+# This tier reports a passive after a modal verb. A modal verb is a
+# helping verb that marks possibility, ability, or obligation, such as
+# `can`, `might`, or `must`. Such a passive hides who can or must act.
+# The hidden actor is usually the reader or the caller, the person the
+# sentence instructs. The fix names that actor (`you can configure the
+# timeout`, `the caller must hold the lock`). The rule sits at
+# Recommended, because a passive after a modal verb can also name a
+# state or have no actor to name.
 #
-# The filter `<VERB, !@stative>` requires one token to be a verb and not
-# one of the stative words. Stative words name a state rather than an
-# action, and the tagger also marks them as verbs. The stative list holds
-# a progressive, a form of `be` plus an `-ing` verb (`must be running`
-# names a state). It also holds the participles that docs use as
-# adjectives (`must be set`, `can be enabled`) and the naming idioms
-# (`can be called name`).
+# Expression
+#
+# The rule matches a modal verb, `be`, and a participle (`retried`,
+# `written`). A participle is the `-ing` or `-ed` form of a verb, such
+# as `returning` or `cached`. An adverb or `not` can sit after the modal
+# verb or after `be` (`must not be copied`, `can be safely removed`). An
+# adverb is a word that describes a verb, an adjective, or a whole
+# sentence, such as `safely` or `also`.
+#
+# `main` lists three forms after `be`: a verb form (`pp`), a `by` form,
+# and an agent form (`ag`). Each form has two branches. One branch takes
+# a modal verb right before `be` and leaves out `will`. The other branch
+# takes a modal verb, then `not` or an adverb, then `be`, and it keeps
+# `will`.
+#
+# The verb form is a verb, with or without an adverb or `not` before it.
+# Harper's part-of-speech tagger marks each word with a tag for its word
+# class. The filter `<VERB, !@stative>` requires one token to carry the
+# tag `VERB` (a verb) and not to be one of the stative words. Stative
+# words name a state instead of an action, and the tagger also marks
+# them as verbs.
 #
 # The tagger marks many participles as adjectives (`cached`, `retried`,
-# `flushed`), so `missed` lists the common ones by hand. The `by` branch
-# exists because the tagger misses others (`must be guarded by a lock`).
-# It accepts any word the tagger does not mark as an adjective, adverb,
-# noun, or preposition. Weir has no token class for a number, so the
-# object of `by` must be a pronoun, a proper noun, or a determiner. A
-# determiner is a word that introduces a noun, such as `the`, `a`, or
-# `this`. That skips a dimension (`64 by 64`) and the phrases where `by`
-# names no actor (`by default`, `by hand`).
+# `flushed`), so `missed` lists the common ones by hand. The `!-` glued
+# after the verb skips a hyphenated compound whose first half the tagger
+# marks as a verb (`must be read-only`). The guard takes a punctuation
+# mark too, so `the file can be skipped.` still counts.
 #
-# Stative words still read as a passive when an agent follows them (`the
-# flag can be set by the caller`), so `agentive` lists the stative words
-# that take one. The agent must start with a determiner, pronoun, or
-# proper noun, and the determiner must not open `by the time` or `by the
-# way`. The `!-` glued after the verb skips a hyphenated compound whose
-# first half the tagger marks as a verb (`must be read-only`). It
-# matches at the end of a clause too, so `the file can be skipped.`
-# still counts.
+# The `by` form is three words in a row: a word that the rule reads as
+# the participle, `by`, and the word that opens the agent. It exists
+# because the tagger misses many participles (`must be guarded by a
+# lock`). The filter on the first word, `byform`, rejects every stative
+# word. It also rejects every word that the tagger marks as an
+# adjective, an adverb, a noun, a preposition, a determiner, a pronoun,
+# or an exclamation. A preposition is a word that ties a noun to the
+# rest of the sentence, such as `of`, `with`, or `by`. A determiner is a
+# word that introduces a noun, such as `the`, `a`, or `this`.
 #
-# It hit 1840 lines in the measure.py corpus, and 18 of 20 sampled hits
-# read clearer with the actor named (`you can pass values of this type`).
-# The two misses named a state (`might be uninitialized`) or had no
-# actor to name (`the environment in which the command would be run`).
+# Weir has no token class for a number, so the word after `by` must be a
+# pronoun, a proper noun, or a determiner instead. A proper noun is a
+# name that takes a capital letter, such as `Kubernetes`.
+#
+# The agent form is a stative word, `by`, and an agent. Stative words
+# still read as a passive when an agent follows them (`the flag can be
+# set by the caller`), so `agentive` lists the stative words that take
+# one. The agent must start with a determiner, a pronoun, or a proper
+# noun, as in the `by` form, and the determiner must not open `by the
+# time` or `by the way`.
+#
+# False Positives
+#
+# The stative list holds a progressive, a form of `be` plus an `-ing`
+# verb (`must be running` names a state). It also holds the participles
+# that docs use as adjectives (`must be set`, `can be enabled`) and the
+# naming idioms (`can be called name`).
+#
+# A `by` that names no actor passes. The limit on the word after `by`
+# skips a dimension (`64 by 64`) and the phrases `by default` and `by
+# hand`.
+#
+# Related Rules
+#
+# The Optional ProsePassive reports every other passive, where naming
+# the actor helps less often. It skips the word `be` after a modal verb,
+# `not`, or an adverb, so the two tiers never report the same span.
+#
+# `will be` plus a participle stays out, because ProseFutureTense
+# reports the `will` in it. The message of ProseFutureTense asks for the
+# present tense with the actor as the subject (`the kubelet uses the
+# default handler`), so one fix clears the sentence. ProseFutureTense
+# skips `will not` and `will also`, so this rule reports those (`the
+# file will not be read`). The roadmap words (`will be removed`) belong
+# to ProseRoadmap.
+#
+# Measurement
+#
+# The rule hit 1840 lines in the measure.py corpus, and 18 of 20 sampled
+# hits read clearer with the actor named (`you can pass values of this
+# type`). The two misfires named a state (`might be uninitialized`) or
+# had no actor to name (`the environment in which the command would be
+# run`).
 expr stative [PROG, missing, done, set, unset, enabled, disabled, required, needed, expected, allowed, supported, available, stuck, broken, gone, finished, lost, left, known, frozen, wedged, based, tied, built, made, fixed, live, called, named, meant, supposed, recommended, designed, intended, bound, referred, prepared, advised, assured, reminded, warned]
 expr missed [cached, compiled, computed, configured, decoded, discarded, encoded, evicted, fetched, flushed, hashed, linted, normalized, parsed, patched, persisted, propagated, queued, redirected, reset, restarted, retried, revoked, rotated, sanitized, serialized, stripped, synced, tagged, truncated, validated]
 expr verb [<VERB, !@stative>, @missed]

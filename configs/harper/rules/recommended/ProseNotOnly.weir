@@ -1,26 +1,65 @@
-# The skill bans the paired form (`not only X but Y`), so a `not just`
-# or `not only` after a comma or an open paren passes. That form is a
-# trailing correction (`Name the log events, not just the sentinel`,
-# `(not just the prune)`), which names a contrast the reader needs.
+# Overview
 #
-# Weir has no lookbehind, so the first branch consumes the token before
-# the space ahead of `not` and the filter narrows the finding back to
-# the phrase. A comma fails that token, and an open paren leaves no
-# space before `not`. The branch also needs a token before `not`. A
-# sentence that opens with `Not only` counts through the second branch,
-# which needs the helping verb that this form moves ahead of the subject
-# (`Not only does the cache hold rules`), or through the third. That
-# branch finds the paired form anywhere, after a comma too, by matching
-# `but` up to eight words after `not only` or `not just`. Each gap
-# length is its own alternative ending in `but`, because a list picks
-# its longest match and never backtracks, so a gap list followed by
-# `but` swallows the `but`. The last word before `but` can carry a comma
-# (`Not only the cache, but the log grows`).
+# Reports `not only` and `not just`, mostly in the paired form `not only
+# X but Y` (`the cache holds not only rules but results`). The paired
+# form presents two facts as a contrast, so the reader has to work out
+# that both hold. The fix makes the direct claim (`the cache holds rules
+# and results`) and gives a needed contrast its own sentence. The prose
+# skill bans the paired form. The rule sits at Recommended, because an
+# unpaired `not just` also states a correction that the reader needs.
+# The rule passes that form only after a comma or an open paren.
+#
+# Expression
+#
+# `which` holds `only` and `just`. The first branch reports `not only`
+# or `not just` unless a comma or an open paren comes before it. Weir
+# has no lookbehind, so the branch consumes the token before the space
+# ahead of `not`, and the filter narrows the finding back to the phrase.
+# A comma fails that token, and an open paren leaves no space before
+# `not`.
+#
+# The first branch needs a token before `not`, so a sentence that opens
+# with `Not only` counts through the second branch or the third. The
+# second branch needs the helping verb that this form moves ahead of the
+# subject (`Not only does the cache hold rules`).
+#
+# The third branch finds the paired form anywhere, after a comma too, by
+# matching `but` up to eight words after `not only` or `not just`. A
+# list picks its longest match and never backtracks, so a gap list
+# followed by `but` swallows the `but`. Each gap length is therefore its
+# own alternative that ends in `but`. The last word before `but` can
+# carry a comma (`Not only the cache, but the log grows`).
+#
+# `isn't just` and `more than just` make the same move (`it isn't just a
+# cache`, `it is more than just a cache`), so the last two branches
+# report them.
+#
+# False Positives
+#
+# A `not just` or a `not only` after a comma or an open paren passes.
+# That form is a trailing correction (`Name the log events, not just the
+# sentinel`, `(not just the prune)`), and it names a contrast the reader
+# needs.
+#
+# Without the comma or the paren, the same correction still matches
+# (`Name the log events and not just the sentinel`). The rule accepts
+# that misfire.
 #
 # `not just !any` skips the idiom `not just any file`. The glued hyphen
 # in `not just-in-time` already fails the whitespace match.
-# `isn't just` and `more than just` make the same move (`it isn't just
-# a cache`, `it is more than just a cache`).
+#
+# Related Rules
+#
+# ProseJust skips `just` after a negation and after `than`, so only this
+# rule reports `not just` and `more than just`. ProseNegativeContraction
+# also reports the contraction in `isn't just`.
+#
+# Measurement
+#
+# The rule hit 31 lines in the measure.py corpus, and in 20 of 20
+# sampled hits the direct claim said the same. Of the 20, 13 were `not
+# only` or `not just`, 5 were `more than just`, and 2 were `isn't just`
+# or `aren't just`.
 expr aux [does, do, did, is, are, was, were, can, could, will, would, has, have, should, must]
 expr which [only, (just !any)]
 expr last [*, (*,)]

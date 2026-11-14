@@ -1,24 +1,40 @@
-# Each phrase announces a point instead of making it (`keep in mind
-# that the walk never revisits a node` becomes `the walk never
-# revisits a node`). Four rules hold the narrower phrases: the
-# back-reference rule (`as mentioned above`), the sentence-adverb rule
-# (`Clearly,`), the restatement rule (`in other words,`), and the
-# concessive rule (`that said,`).
+# Overview
 #
-# `as we can see` and `as you might expect` point at what the reader
-# already sees or expects, the way `as you can see` does. `worth
-# pointing out`, `worth remembering`, `bears mentioning`, `bears
-# repeating`, `it should be mentioned`, and `it should be stressed`
-# announce a point the way `worth noting` does.
+# A filler phrase announces a point instead of making it (`keep in mind
+# that the walk never revisits a node`). The reader reads the
+# announcement and learns nothing until the point arrives. The fix
+# deletes the phrase and states the point (`the walk never revisits a
+# node`). The rule sits at Required, because it matches exact phrases
+# and the fix is mechanical.
 #
-# `note that` sits in the Recommended rule of the same name, because a
+# Expression
+#
+# Every branch is an exact phrase. `as we can see` and `as you might
+# expect` point at what the reader already sees or expects, the way `as
+# you can see` does. `worth pointing out`, `worth remembering`, `bears
+# mentioning`, `bears repeating`, `it should be mentioned`, and `it
+# should be stressed` announce a point the way `worth noting` does.
+#
+# Related Rules
+#
+# The Recommended ProseFiller holds `note that`, `notice that`, and
+# `remember that`, and the Required ProseFiller holds every other
+# announcement. `note that` sits in the Recommended tier, because a
 # commit subject uses `note` as a verb (`docs: note that the flag is
-# sticky`).
+# sticky`). Both tiers match `please note that`, and prose-lint prints
+# only the Required finding.
 #
-# It hit 96 lines in the measure.py corpus, and 18 of 20 sampled hits
-# announced a point. The misses were an interview answer (`Of course.`)
-# and a claim of importance (`the underlying dynamic is important to
-# keep in mind`).
+# Four rules hold the narrower phrases: ProseBackReference (`as
+# mentioned above`), ProseSentenceAdverb (`Clearly,`), the Required
+# ProseRestatement (`in other words,`), and ProseConcessive (`that
+# said,`).
+#
+# Measurement
+#
+# The rule hit 96 lines in the measure.py corpus, and 18 of 20 sampled
+# hits announced a point. The misfires were an interview answer (`Of
+# course.`) and a claim of importance (`the underlying dynamic is
+# important to keep in mind`).
 expr main [(worth noting), (it should be noted), (it must be noted), (please note), (keep in mind), (bear in mind), (it is important to [note, remember, understand, mention, realize, recognize]), (it's important to [note, remember, understand, mention, realize, recognize]), (needless to say), (as you can see), (as we can see), (as we have seen), (as we've seen), (as you might expect), (as you would expect), (as you'd expect), (of course), (make no mistake), (it goes without saying), (at the end of the day), (as a matter of fact), (worth mentioning), (worth pointing out), (bears mentioning), (bears repeating), (it should be mentioned), (it should be stressed), (worth remembering)]
 let message "Filler phrase. Delete the phrase and state the point."
 let description "Flags phrases that announce a point instead of making it."

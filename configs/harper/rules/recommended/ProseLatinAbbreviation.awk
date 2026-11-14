@@ -1,21 +1,42 @@
+# Overview
+#
 # Reports a Latin abbreviation in markdown prose and in source comments:
 # `e.g.`, `i.e.`, `cf.`, `viz.`, `et al.`, and `n.b.`. Many readers mix
 # up `e.g.` (for example) and `i.e.` (that is), and the two readings
-# disagree on whether the list after it is complete. The English
-# phrase has one reading, so each finding names its replacement. Harper
-# reads `e.g.` as one abbreviation token that no Weir pattern names, so
-# the check is awk.
+# disagree on whether the list after it is complete. The English phrase
+# has one reading, so the fix writes it, and each finding names its
+# replacement. The rule sits at Recommended, because a sentence that
+# ends on a variable named `cf` also matches.
+#
+# Expression
+#
+# The check includes lib/markdown.awk and matches one regular expression
+# against each prose line. Harper reads `e.g.` as one abbreviation token
+# that no Weir pattern names, so the check is awk.
 #
 # The abbreviation needs a character before it that is not a letter, a
-# digit, `.`, `/`, `_`, or `-`, so a path (`/etc/i.e./x`) or a name
-# (`foo_e.g.`) passes. A letter, a digit, `/`, `_`, or `-` after it
-# also makes it pass (`cf.go`, `cf.Name`). The reader blanks code spans
-# and link destinations first, so a match inside one passes. `vs.`
-# stays out, because it has one reading, and Go code often names a
-# variable `vs`. `etc.` belongs to the open-list rule.
+# digit, `.`, `/`, `_`, or `-`. A letter, a digit, `/`, `_`, or `-`
+# after it also makes it pass. lib/markdown.awk blanks code spans and
+# link destinations first, so a match inside one passes.
 #
-# It hit 279 lines in the measure.py corpus, and 20 of 20 sampled hits
-# were Latin abbreviations.
+# False Positives
+#
+# The character before the abbreviation lets a path (`/etc/i.e./x`) or a
+# name (`foo_e.g.`) pass, and the character after it lets a file name or
+# a field pass (`cf.go`, `cf.Name`). `vs.` stays out, because it has one
+# reading, and Go code often names a variable `vs`.
+#
+# A sentence that ends on a variable named `cf` still matches (`then
+# closes cf.`).
+#
+# Related Rules
+#
+# `etc.` belongs to ProseOpenList.
+#
+# Measurement
+#
+# The rule hit 279 lines in the measure.py corpus, and 20 of 20 sampled
+# hits were Latin abbreviations.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseLatinAbbreviation: <message>

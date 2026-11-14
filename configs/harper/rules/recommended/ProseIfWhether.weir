@@ -1,22 +1,47 @@
+# Overview
+#
 # After a verb of checking, `if` reads as `whether` or as a condition
-# (`check if the file exists`), and `whether` reads one way.
+# (`check if the file exists`). The reader picks one of the two readings
+# from context, and `whether` reads one way. The fix writes `whether`
+# (`check whether the file exists`). The rule sits at Recommended,
+# because the noun `check` before a condition also matches.
 #
-# The plurals `checks` and `tests` are also nouns, which take a
-# conditional `if` (`skips these checks if the file is generated`, `run
-# the tests if you changed the parser`). So the first branch skips them
-# after a determiner (a word that introduces a noun, such as `the`, `a`,
-# or `this`), an adjective, or a number. Weir has no lookbehind, so the
-# filter consumes the word before and narrows the finding back to the
-# phrase. The singular `check if` and `test if` count without that
-# guard, because a sentence often opens with them (`Check if the file
-# exists`) and a filter needs a word before the match. `know` is left
-# out, because the chatbot rule reports `let me know if`, and `report`
-# is left out, because `a bug report if` is a noun. `find out` is left
-# out, because the phrasal-verb rule reports it.
+# Expression
 #
-# It hit 115 lines in the measure.py corpus, and 19 of 20 sampled hits
-# meant whether. The miss was the noun `check` before a condition (`the
-# duration to the next check if a quicker check is required`).
+# `verb` lists the verbs of checking, such as `determine`, `verify`, and
+# `see`, and each one counts before `if`. `noun` lists the plurals
+# `checks` and `tests`, which are also nouns.
+#
+# Harper's part-of-speech tagger marks each word with a tag for its word
+# class. The first branch skips `checks` and `tests` after a word that
+# carries `DET`, `ADJ`, or `NUM`. `DET` is the tag for a determiner, a
+# word that introduces a noun, such as `the`, `a`, or `this`. `ADJ` is
+# the tag for an adjective, and `NUM` is the tag for a number word, such
+# as `three`. Weir has no lookbehind, so the filter consumes the word
+# before `checks` or `tests` and narrows the finding back to the phrase.
+#
+# The singular `check if` and `test if` count without that guard,
+# because a sentence often opens with them (`Check if the file exists`)
+# and a filter needs a word before the match.
+#
+# False Positives
+#
+# As nouns, `checks` and `tests` take a conditional `if` (`skips these
+# checks if the file is generated`, `run the tests if you changed the
+# parser`). `report` is left out, because `a bug report if` is a noun.
+#
+# Related Rules
+#
+# `know` is left out, because the Recommended ProseChatbot reports `let
+# me know if`. `find out` is left out, because the Recommended
+# ProsePhrasalVerb reports it.
+#
+# Measurement
+#
+# The rule hit 115 lines in the measure.py corpus, and 19 of 20 sampled
+# hits meant `whether`. The misfire was the noun `check` before a
+# condition (`the duration to the next check if a quicker check is
+# required`).
 expr noun [checks, tests]
 expr verb [check, test, checked, checking, tested, testing, determine, determines, determined, determining, verify, verifies, verified, verifying, see, sees, seeing, decide, decides, decided, deciding, ask, asks, asked, asking, detect, detects, detected, detecting, tell, tells, telling, confirm, confirms, confirming, validate, validates, validating]
 expr main [<(![DET, ADJ, NUM] @noun if), (@noun if)>, (@verb if)]

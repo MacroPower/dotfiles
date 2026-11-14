@@ -1,32 +1,64 @@
+# Overview
+#
 # The future tense puts `will` before a verb (`running make will build
-# the binary`). The reader cannot tell whether the sentence describes
-# a later event or the system's normal behavior. The technical-writing
+# the binary`). The reader cannot tell whether the sentence describes a
+# later event or the system's normal behavior. The technical-writing
 # skill writes the present tense for what the system does and keeps
-# `will` for a later event. A word rule cannot tell the two apart, but
-# most hits describe normal behavior.
+# `will` for a later event. The fix writes the present tense (`running
+# make builds the binary`). The rule sits at Recommended, because a word
+# rule cannot tell the two apart, but most hits describe normal
+# behavior.
 #
-# The rule also reports `will be` plus a participle, the `-ing` or `-ed`
-# form of a verb (`the default handler will be used`), which the passive
-# rule leaves to it. The example in the message rewrites such a sentence
-# in the present tense with the actor as the subject (`the kubelet uses
-# the default handler`), so one fix clears it.
+# Expression
 #
-# The filter narrows the finding to `will`, so a rule that reports the
-# words after it keeps its own finding (`will give up`). A sentence that
-# opens with `Will` is a question, and the filter needs a word before
-# `will`, so it passes. The guard skips `we will`, which the signpost
-# rule reports (`we will explore`), and `time will tell`, which the
-# closing-cliche rule reports. It also skips `will want` and `will need
-# to`, which the obligation rule reports. `will need` before a noun
-# still counts (`you will need Docker`). The roadmap rule reports `will
-# be added`, `will be supported`, `will be removed`, and `will be
-# deprecated`, and the wordy rule reports `will be able to`, so the
-# guard skips those too. prose-lint turns the rule off for a commit
-# message, because a commit message describes what the system does
-# after the change lands.
+# `will` counts before a word that Harper's part-of-speech tagger marks
+# `VERB` (a verb). The rule also reports `will be` plus a participle,
+# the `-ing` or `-ed` form of a verb, such as `returning` or `cached`
+# (`the default handler will be used`). The example in the message
+# rewrites such a sentence in the present tense with the actor as the
+# subject (`the kubelet uses the default handler`), so one fix clears
+# it.
 #
-# It hit 2169 lines in the measure.py corpus, and 20 of 20 sampled hits
-# described the system's normal behavior.
+# Weir has no lookbehind, so the filter consumes the word before `will`
+# and narrows the finding back to `will`. A rule that reports the words
+# after `will` therefore keeps its own finding, as the Recommended
+# ProsePhrasalVerb does on `will give up`. A sentence that opens with
+# `Will` is a question, and the filter needs a word before `will`, so it
+# passes.
+#
+# The guards skip the words that another rule reports. `skip` lists the
+# words before `will`, and `roadmap` lists the participles after `will
+# be`. `will not` and `will also` pass, because the word after `will` is
+# not a verb there.
+#
+# False Positives
+#
+# A `will` that marks a later event still fires (`the flag will change
+# in the next release`). The rule accepts that misfire.
+#
+# prose-lint turns the rule off for a commit message, because a commit
+# message describes what the system does after the change lands.
+#
+# Related Rules
+#
+# The guard skips `we will`, which ProseSignpost reports (`we will
+# explore`), and `time will tell`, which ProseClosingCliche reports. It
+# also skips `will want` and `will need to`, which the Recommended
+# ProseObligation reports. `will need` before a noun still counts (`you
+# will need Docker`). ProseRoadmap reports `will be added`, `will be
+# supported`, `will be removed`, and `will be deprecated`, and the
+# Required ProseWordy reports `will be able to`, so the guard skips
+# those too.
+#
+# ProsePassive leaves `will be` plus a participle to this rule, so only
+# this rule reports `the default handler will be used`. The Recommended
+# ProsePassive reports `will not be` and `will also be` plus a
+# participle (`the file will not be read`).
+#
+# Measurement
+#
+# The rule hit 2169 lines in the measure.py corpus, and 20 of 20 sampled
+# hits described the system's normal behavior.
 expr skip [we, time]
 expr roadmap [added, supported, removed, deprecated]
 expr main <(!@skip will [<VERB, ![want, need]>, (need !to), (be ![@roadmap, able])]), will>

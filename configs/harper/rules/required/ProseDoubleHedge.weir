@@ -1,14 +1,32 @@
-# A hedge is a word that marks a claim as a possibility, such as `might`
-# or `possibly`. Each pair here stacks two hedges on one claim (`could
-# potentially fail`). The prose rules keep `might` for a possibility,
-# so the fix writes `might` in place of both words. The redundant-pair
-# rule leaves these pairs out, because its fix deletes one word, and
-# `may` or `could` alone then draws the may-possibility or modal rule.
+# Overview
 #
-# It hit 17 lines in the measure.py corpus, and in 15 of 17 sampled hits
-# `might` fit. In the other two, `can potentially` named an ability
-# (`can potentially meet its scheduling policy criteria`), where `can`
-# fits.
+# A hedge is a word that marks a claim as a possibility, such as `might`
+# or `possibly`. A double hedge stacks two hedges on one claim (`could
+# potentially fail`). The second hedge repeats the first and tells the
+# reader nothing more. The prose skill keeps `might` for a possibility,
+# so the fix writes `might` in place of both words. The rule sits at
+# Required, because it matches exact pairs of words and the fix is
+# mechanical.
+#
+# Expression
+#
+# The pattern pairs `may`, `might`, `could`, or `can` with `possibly` or
+# `potentially`. `let becomes` rewrites the pair to `might`.
+#
+# Related Rules
+#
+# The Required ProseRedundantPair leaves these pairs out, because its
+# fix deletes one word, and `may` or `could` alone then draws a finding
+# from ProseMayPossibility or ProseModal. Both of those rules skip a
+# following `possibly` or `potentially`, so only this rule reports the
+# pair.
+#
+# Measurement
+#
+# The rule hit 17 lines in the measure.py corpus, and in 15 of 17
+# sampled hits `might` fit. In the other two, `can potentially` named an
+# ability (`can potentially meet its scheduling policy criteria`), where
+# `can` fits.
 expr main ([may, might, could, can] [possibly, potentially])
 let message "Double hedge. Write `might`, or `can` for an ability."
 let description "Flags `could potentially` and similar pairs that mark one possibility twice."

@@ -1,44 +1,61 @@
-# Reports a paragraph of markdown prose that opens with a pronoun
-# (`This is similar to recursive attribute sets`). A pronoun is a word
-# that stands in for a noun named earlier, such as `it`, `they`, or
-# `this`. The noun sits in the paragraph before. Readers who jump to
-# the paragraph from a link or a search read back to find it. A
-# paragraph that someone moves, or a paragraph added between the two,
-# changes what the pronoun names. Naming the noun lets the paragraph
-# stand on its own (`A submodule is similar to a recursive attribute
-# set`).
+# Overview
 #
-# The check reads the first words of each paragraph. It reports `It`,
-# `They`, `This`, `These`, `That`, or `Those` before a verb or a helping
-# verb from a list (`is`, `can`, `requires`). `This cache` names its
-# noun, so a noun after the pronoun passes. A plural pronoun takes a
-# verb without an `-s`, so a word that ends in `s` after `These`,
-# `Those`, or `They` counts as a noun (`These changes simplify`).
+# Reports a paragraph of markdown prose that opens with a pronoun (`This
+# is similar to recursive attribute sets`). A pronoun is a word that
+# stands in for a noun named earlier, such as `it`, `they`, or `this`.
+# The noun sits in the paragraph before. Readers who jump to the
+# paragraph from a link or a search read back to find it. A paragraph
+# that someone moves, or a paragraph added between the two, changes what
+# the pronoun names.
 #
-# Some openings use `it` as a placeholder subject that points at no
-# earlier noun (`It is possible to`, `It is vital that`). `It` before
-# `is` or `was` and an adjective such as `recommended` or `possible`
-# passes. So does `It` when its first sentence holds `to` or `that`
-# (`It may help to restart the pod`). ProseExpletive, ProseImportance,
-# and ProseObligation report those openings. ProseBroadReference
-# reports `This means`, `This leads`, and the other verbs of
-# consequence, with or without `also` or `then` between them, and
-# `This is because`, `why`, or `how`. Those openings pass here too.
+# The fix names the noun, so the paragraph stands on its own (`A
+# submodule is similar to a recursive attribute set`). The rule sits at
+# Optional, because an opening pronoun also points at the section that
+# holds the paragraph, where the reader can see the topic.
+#
+# Expression
+#
+# The check includes lib/markdown.awk and reads the first words of each
+# paragraph. It reports `It`, `They`, `This`, `These`, `That`, or
+# `Those` before a verb or a helping verb from a list (`is`, `can`,
+# `requires`).
+#
+# False Positives
+#
+# `This cache` names its noun, so a noun after the pronoun passes. A
+# plural pronoun takes a verb without an `-s`, so a word that ends in
+# `s` after `These`, `Those`, or `They` counts as a noun (`These changes
+# simplify`).
 #
 # A paragraph whose first line ends in a colon passes, because its
-# pronoun points forward at the block below (`These are the tiers:`).
-# A paragraph directly under a heading passes, because there the
-# pronoun points at the heading's topic, which the reader can see. The
-# first paragraph of a file passes when front matter or any other line
-# sits above it, because there the pronoun points at the page.
+# pronoun points forward at the block below (`These are the tiers:`). A
+# paragraph directly under a heading passes, because there the pronoun
+# points at the heading's topic, which the reader can see. The first
+# paragraph of a file passes when front matter or any other line sits
+# above it, because there the pronoun points at the page.
 #
 # The check reads markdown only. Go doc comments open later paragraphs
 # with `It` by convention, and there the first paragraph names the
 # function.
 #
-# It hit 107 lines in the measure.py docs corpus, and 18 of 20 sampled
-# hits pointed back across the paragraph break. The two misses pointed
-# at the section that held them.
+# Related Rules
+#
+# Some openings use `it` as a placeholder subject that points at no
+# earlier noun (`It is possible to`, `It is vital that`). `It` before
+# `is` or `was` and an adjective such as `recommended` or `possible`
+# passes. So does `It` when its first sentence holds `to` or `that` (`It
+# may help to restart the pod`). ProseExpletive, ProseImportance, and
+# both tiers of ProseObligation report those openings.
+#
+# ProseBroadReference reports `This means`, `This leads`, and the other
+# verbs of consequence, with or without `also` or `then` between them,
+# and `This is because`, `why`, or `how`. Those openings pass here too.
+#
+# Measurement
+#
+# The rule hit 107 lines in the measure.py docs corpus, and 18 of 20
+# sampled hits pointed back across the paragraph break. The two misfires
+# pointed at the section that held them.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseOpeningPronoun: <message>
@@ -101,7 +118,8 @@ function prose(text,   start, rest, t1, t2, t3, w1, first, shown) {
     return
   }
   paras++
-  # The first paragraph under a title or front matter points at the page.
+  # The first paragraph under a title or front matter points at the
+  # page.
   if (paras == 1 && FNR > 1) {
     return
   }
@@ -125,7 +143,8 @@ function prose(text,   start, rest, t1, t2, t3, w1, first, shown) {
   if (w1 == "it" && word(t2) ~ /^(is|was)$/ && word(t3) ~ expletive) {
     return
   }
-  # A plural pronoun takes no `-s` verb, so `These changes` names a noun.
+  # A plural pronoun takes no `-s` verb, so `These changes` names a
+  # noun.
   if (w1 ~ /^(these|those|they)$/ && word(t2) ~ /s$/) {
     return
   }
@@ -136,8 +155,8 @@ function prose(text,   start, rest, t1, t2, t3, w1, first, shown) {
   if (w1 == "this" && (word(t2) ~ consequence || (word(t2) ~ /^(also|then)$/ && word(t3) ~ consequence))) {
     return
   }
-  # An `it` with `to` or `that` later in its sentence stands in for the
-  # clause after it (`It may help to play`).
+  # An `it` with `to` or `that` later in its sentence is a placeholder
+  # subject that points at no earlier noun (`It may help to play`).
   first = text
   sub(/[.?!]([ \t].*)?$/, "", first)
   if (w1 == "it" && first ~ /[ \t](to|that)[ \t]/) {

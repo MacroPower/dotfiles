@@ -1,18 +1,40 @@
-# One word in each pair already carries the other. `refer back` is
-# left out, because recursion prose needs it (`a value that refers
-# back to itself`), and so are `write down` and `empty space`, which
-# name a physical act and a layout region. `continue on` counts only
-# before `to` (`continues on to the next entry`), because a CI step
-# continues on error.
+# Overview
+#
+# One word in each pair already carries the other (`merge together`,
+# `end result`), so the reader reads a word that adds nothing. The fix
+# deletes the word that the other one includes. The rule sits at
+# Required, because each pair is an exact phrase and the fix is
+# mechanical.
+#
+# Expression
 #
 # Each verb carries its forms for tense and person. `$merge` expands to
 # merge, merges, merged, and merging through Harper's dictionary.
 # `return`, `reply`, and `plan` list their forms by hand, because the
-# dictionary gives no past tense for them.
+# dictionary gives no past tense for them. `continue on` counts only
+# before `to` (`continues on to the next entry`).
 #
-# `still remain` sits in the Recommended rule of the same name. Pairs
-# of hedges such as `could potentially` sit in the double-hedge rule,
-# whose fix writes `might` in place of both words.
+# False Positives
+#
+# The list leaves out `refer back`, because recursion prose needs it (`a
+# value that refers back to itself`). It leaves out `write down` and
+# `empty space` too, because they name a physical act and a layout
+# region. `continue on` without `to` passes, because a CI step continues
+# on error.
+#
+# Related Rules
+#
+# `still remain` sits in the Recommended ProseRedundantPair, because
+# `still` can stress that a state outlasted an event. Pairs of hedges
+# such as `could potentially` sit in ProseDoubleHedge, whose fix writes
+# `might` in place of both words.
+#
+# Measurement
+#
+# The rule hit 42 lines in the measure.py corpus, and in 19 of 20
+# sampled hits one word of the pair carried the other. Ten of the 19
+# were `exact same`. The one misfire was `any and all` in the quoted
+# text of a software license.
 expr main [(each and every), (first and foremost), (any and all), (various different), (end result), (final outcome), (advance planning), (past history), (free gift), (added bonus), (basic fundamentals), (close proximity), (exact same), (future plans), (new innovation), (past experience), (period of time), (sum total), (true fact), (unexpected surprise), (absolutely essential), (brief summary), (mutual cooperation), (unintentional mistake), (general consensus), (final end), (actual fact), (the reason is because), (reason why), (completely finished), (fully complete), (fully completed), (totally complete), (entirely complete), (absolutely necessary), (necessary requirement), (required prerequisite), (prerequisite requirement), (advance warning), (advance notice), (personal opinion), (own personal), (small in size), (large in size), (few in number), (many in number), (twelve noon), (twelve midnight), (temporary reprieve), (time period), (unfilled vacancy), (usual custom), ([$merge, $combine, $collaborate, $link, $join] together), ([return, returns, returned, returning, reply, replies, replied, replying, $revert] back), ($repeat again), (completely $eliminate), ($continue on to), ($ask the question), ([plan, plans, planned, planning] ahead), ($protest against), ($postpone until later)]
 let message "Redundant pair. Delete the word the other one includes."
 let description "Flags word pairs where one word already includes the other."

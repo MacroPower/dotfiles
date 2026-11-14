@@ -1,10 +1,34 @@
-# The Recommended rule of the same name holds the idioms. Docs use
-# these four often, and each mostly reads one way, so they sit here as
-# suggestions. `set up` covers install, configure, and create, and the
-# one-word verb says which (`configure the remote`). `clean up`
-# becomes delete or remove, `show up` becomes appear, and `turn into`
-# becomes become. The nouns `setup` and `cleanup` are one word and
-# pass.
+# Overview
+#
+# A phrasal verb is a verb plus a short word such as `up`, `out`, or
+# `off` that together act as one verb (`set up`, `look up`). This tier
+# reports `set up`, `clean up`, `show up`, and `turn into`. `set up`
+# covers install, configure, and create, so the reader cannot tell which
+# one the sentence means. The fix writes one verb that says which
+# (`configure the remote`). `clean up` becomes delete or remove, `show
+# up` becomes appear, and `turn into` becomes become. The rule sits at
+# Optional, because docs use these four often, and each mostly reads one
+# way.
+#
+# Expression
+#
+# Each verb lists its forms by hand.
+#
+# False Positives
+#
+# The nouns `setup` and `cleanup` are one word and pass.
+#
+# Related Rules
+#
+# The Recommended ProsePhrasalVerb holds the idioms.
+#
+# Measurement
+#
+# The rule hit 224 lines in the measure.py corpus, and 16 of 20 sampled
+# hits were a verb that one plain verb replaces. Two misfires were the
+# noun `cleanup` written as two words (`the clean up of resources`). The
+# other two quoted a name, the title of a linked article and the label
+# of a heading in a web console.
 expr main [([set, sets, setting] up), ([clean, cleans, cleaned, cleaning] up), ([show, shows, showed, shown, showing] up), ([turn, turns, turned, turning] into)]
 let message "Phrasal verb. Use one verb, such as `configure`, `delete`, `appear`, or `become`."
 let description "Flags `set up`, `clean up`, `show up`, and `turn into`, which one plain verb often replaces."

@@ -1,41 +1,57 @@
-# Reports a long parenthetical in the middle of a sentence in markdown
-# prose. A parenthetical is an aside that interrupts a sentence. It sits
-# in parentheses (`the pool (which the scheduler sizes once at startup
-# from the node count) holds the workers`), or in commas after the
-# subject (`The hook, which runs after every Write and Edit of a
-# markdown file, tags each finding`). The reader has to hold the
-# sentence open across the aside. A long aside reads better as a
-# sentence of its own after this one. An aside between a subject and its
-# verb costs the most, because the reader holds the subject until the
-# verb comes.
+# Overview
 #
-# The check reports an aside of 10 or more words. It counts the words
-# after the reader blanks code spans. Each part of a hyphenated word
-# counts, the way the sentence-length check counts it. A Hugo shortcode
-# (`{{< param "version" >}}`) counts as no words, so a link destination
-# that holds one does not read as a long aside.
-# lib/sentences.awk finds the sentence boundaries. Each finding names
-# the line and column where the aside opens.
+# A parenthetical is an aside that interrupts a sentence. It sits in
+# parentheses (`the pool (which the scheduler sizes once at startup from
+# the node count) holds the workers`), or in commas after the subject
+# (`The hook, which runs after every Write and Edit of a markdown file,
+# tags each finding`). The rule reports a long parenthetical in the
+# middle of a sentence in markdown prose.
+#
+# The reader holds the sentence open across the aside. An aside between
+# a subject and its verb costs the most, because the reader holds the
+# subject until the verb comes. A long aside reads better as a sentence
+# of its own after this one, so the fix moves it there. The rule sits at
+# Recommended, because the comma form finds the subject and the end of
+# the aside from word lists. A stray comma also matches.
+#
+# Expression
+#
+# The check includes lib/sentences.awk, which finds the sentence
+# boundaries and pulls in lib/markdown.awk. The check reports an aside
+# of 10 or more words. It counts the words after lib/markdown.awk blanks
+# code spans. Each part of a hyphenated word counts, the way
+# ProseSentenceLength counts it. A Hugo shortcode (`{{< param "version"
+# >}}`) counts as no words, so a link destination that holds one does
+# not read as a long aside. Each finding names the line and column where
+# the aside opens.
 #
 # A parenthesized aside counts when a lowercase word follows it, a sign
-# that the sentence goes on. An aside at the end of a sentence passes.
+# that the sentence goes on.
 #
 # A comma aside needs a short subject at the start of the sentence, with
-# its comma within five words. The subject opens with a determiner, a
-# word that introduces a noun such as `The`, `Each`, or `Any`. It can
-# also be a code span or a capitalized name, which needs `which` or
-# `who` after the comma. The aside ends at the next comma, and a
-# lowercase word after it must carry on the sentence. A joining word
-# (`and`, `because`, `until`), a pronoun such as `it`, a determiner, or
-# an `-ing` word there starts a list item or a new clause instead. The
-# check skips such an aside. A clause is a subject and its verb, such as
-# `the tests pass`. The check also skips an opener with a verb before
-# the first comma (`The results were alarming,`) and a time or manner
-# phrase (`This time,`).
+# its comma within five words. The subject opens with a capitalized
+# determiner, a word that introduces a noun, such as `the`, `a`, or
+# `this`. `Each` and `Any` are determiners too. The subject can also be
+# a code span or a capitalized name, which needs `which` or `who` after
+# the comma. The aside ends at the next comma, and a lowercase word
+# after it must carry on the sentence.
 #
-# It hit 90 lines in the measure.py corpus, and 20 of 20 sampled hits
-# held the sentence open across an aside of a clause or a list. Seven
-# hits were comma asides. One of them was a stray comma between a
+# False Positives
+#
+# A parenthesized aside at the end of a sentence passes.
+#
+# After a comma aside, a joining word (`and`, `because`, `until`), a
+# pronoun such as `it`, a determiner, or an `-ing` word does not carry
+# on the sentence. It starts a list item or a new clause, a subject and
+# its verb, such as `the tests pass`. The check skips such an aside. The
+# check also skips an opener with a verb before the first comma (`The
+# results were alarming,`) and a time or manner phrase (`This time,`).
+#
+# Measurement
+#
+# The rule hit 90 lines in the measure.py corpus, and 20 of 20 sampled
+# hits held the sentence open across an aside of a clause or a list.
+# Seven hits were comma asides. One of them was a stray comma between a
 # subject and its verb (`This application written in Go, simplifies`).
 #
 # Output format, one line per finding:
@@ -146,7 +162,8 @@ function commas(n,   i, first, open, j, words) {
   }
   open = 0
   if (tok[1] ~ /^[^A-Za-z]*,$/ || (first == 1 && tok[1] ~ /^[^A-Za-z]*[A-Z][A-Za-z0-9]*,$/)) {
-    # A code span, which the reader blanks to a bare comma, or a name.
+    # A code span, which lib/markdown.awk blanks to a bare comma, or a
+    # name.
     if (word(2) ~ /^(which|who|whose)$/) {
       open = 1
     }

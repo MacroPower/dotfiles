@@ -1,17 +1,35 @@
+# Overview
+#
 # `respectively`, `the former`, and `the latter` make the reader map
-# each item back to an earlier list, and the mapping breaks when the
-# list is reordered. The fix repeats the noun or pairs each item with
-# its value in one clause.
+# each item back to an earlier list (`The two flags set the host and the
+# port respectively`), and the mapping breaks when someone reorders the
+# list. The fix repeats the noun, or it pairs each item with its value
+# in one clause (`The host flag sets the host, and the port flag sets
+# the port`). A clause is a subject and its verb, such as `the tests
+# pass`. The rule sits at Recommended, because `former` and `latter` are
+# also plain adjectives, and the rule skips only the nouns in its list.
+#
+# Expression
+#
+# `sense` lists the nouns that the adjectives `former` and `latter`
+# take, and the filter skips `the former` and `the latter` before one of
+# them. Harper's part-of-speech tagger marks a verb after `the former`
+# as a noun (`The former drops writes`), so a part-of-speech guard
+# cannot replace the list. A negated word after a space needs a word to
+# consume, so the branch has a twin for the end of a clause. The twin
+# takes `the latter.` and `the former,`.
+#
+# False Positives
 #
 # `former` and `latter` are also plain adjectives (`the former
-# maintainer`, `the latter half`), so the filter skips the nouns those
-# take. The tagger marks a verb after `the former` as a noun (`The
-# former drops writes`), so a part-of-speech guard cannot do this. A
-# negated word after a space needs a word to consume, so a clause-end
-# twin takes `the latter.` and `the former,`.
+# maintainer`, `the latter half`), so the phrase passes before a noun in
+# `sense`.
 #
-# It hit 28 lines in the kubernetes and nix.dev docs, and 10 of 10
-# sampled hits were back-references.
+# Measurement
+#
+# The rule hit 69 lines in the measure.py corpus, and 19 of 20 sampled
+# hits pointed back at an earlier list. The one misfire was the plain
+# adjective before a noun outside `sense` (`the former User-Agent`).
 expr sense [maintainer, maintainers, owner, owners, employee, employees, member, members, colleague, colleagues, partner, partners, president, head, half, part, parts, stage, stages, years, days, decades]
 expr main [respectively, <(the [former, latter] !@sense), (the [former, latter])>, (the [former, latter][., ;, :, (,)])]
 let message "`former`, `latter`, or `respectively`. Repeat the noun, or pair each item with its value."

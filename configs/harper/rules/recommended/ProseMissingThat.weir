@@ -1,36 +1,56 @@
+# Overview
+#
 # A verb such as `ensure` or `means` takes either a noun (`ensure the
 # order`) or a clause, a subject and its verb (`ensure the order
 # holds`). Without `that`, the reader takes the noun as the verb's
-# object and has to reread when the clause's own verb arrives. `that`
-# marks the clause from its first word (`ensure that the order holds`).
+# object and has to reread when the clause's own verb arrives. The fix
+# writes `that` after the verb, and `that` marks the clause from its
+# first word (`ensure that the order holds`). The rule sits at
+# Recommended, because the pattern also matches a noun that is the
+# verb's object when another verb follows the noun.
 #
-# The rule counts the verb when a determiner follows it, a word that
-# introduces a noun, such as `the`, `a`, or `this`. One to three more
-# words come next, and then an auxiliary (a helping verb such as `is`,
-# `has`, or `can`). A verb from a list such as `exists`, `holds`,
-# `succeeded`, or `expires` counts in place of the auxiliary. The list
-# leaves out `points`, `changes`, `starts`, and `returns`, because each
-# also reads as a noun (`check the data points before the merge`). It
-# also leaves out `changed` and `finished`, because after a noun they
-# describe the noun (`check the files changed in the PR`).
+# Expression
+#
+# `imper` and `third` list the verbs. The rule counts the verb when a
+# determiner follows it, a word that introduces a noun, such as `the`,
+# `a`, or `this`. One to three more words come next, and then an
+# auxiliary (a helping verb such as `is`, `has`, or `can`). A verb from
+# a list such as `exists`, `holds`, `succeeded`, or `expires` counts in
+# place of the auxiliary. The filter narrows the finding to the verb.
 #
 # The words in between exclude `that`, `which`, `who`, `to`, pronouns,
 # conjunctions, and commas, because each one ends the noun or opens a
-# clause of its own (`check your docs to be sure`). The filter narrows
-# the finding to the verb. `specify`, `see`, `states`, and `find` stay
-# out, because a noun and a description of it follow them more often
-# than a clause does.
+# clause of its own (`check your docs to be sure`). A conjunction is a
+# word that joins two words or two clauses, such as `and`, `but`, or
+# `because`.
 #
 # `this`, `that`, or `which` before a verb that ends in `s` skips the
-# match, and so does `this also` or `this then`, because the
-# broad-reference rule reports `this means`, `this also means`, `that
-# means`, and `, which means`. The `that` guard also skips a `that` that
-# points at the noun before it (`a type that guarantees the value stays
-# put`), a miss the rule accepts.
+# match, and so does `this also` or `this then`. The `that` guard also
+# skips a `that` that points at the noun before it (`a type that
+# guarantees the value stays put`), a miss the rule accepts.
 #
-# It hit 91 lines in the measure.py corpus, and 19 of 20 sampled hits
-# dropped the `that` before a clause. The miss was a noun object before
-# the main verb (`whether an error indicates a timeout can be
+# False Positives
+#
+# The list of verbs that count in place of the auxiliary leaves out
+# `points`, `changes`, `starts`, and `returns`, because each also reads
+# as a noun (`check the data points before the merge`). It also leaves
+# out `changed` and `finished`, because after a noun they describe the
+# noun (`check the files changed in the PR`).
+#
+# `specify`, `see`, `states`, and `find` stay out, because a noun and a
+# description of it follow them more often than a clause does.
+#
+# Related Rules
+#
+# ProseBroadReference reports `this means`, `this also means`, `that
+# means`, and `, which means`, so the guard on the word before the verb
+# skips those phrases.
+#
+# Measurement
+#
+# The rule hit 91 lines in the measure.py corpus, and 19 of 20 sampled
+# hits dropped the `that` before a clause. The misfire was a noun object
+# before the main verb (`whether an error indicates a timeout can be
 # ambiguous`).
 expr imper [ensure, verify, confirm, (make sure), assume, check, remember, notice]
 expr third [ensures, means, says, knows, shows, indicates, guarantees, expects, tells, assumes, implies, suggests, verifies, confirms]

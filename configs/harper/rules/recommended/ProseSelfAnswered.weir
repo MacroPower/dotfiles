@@ -1,14 +1,34 @@
-# A short phrase built on a noun, posed as a question and answered in
-# the next sentence (`The result? A build that finishes in half the
-# time.`), holds back the point instead of stating it. Rhetoric calls
-# this device hypophora. The fix states the point (`The build finishes
-# in half the time`).
+# Overview
 #
-# The list holds the nouns that introduce an answer. Nouns that end a
-# real question stay out (`What's the difference?`, `What is the fix?`,
-# `What was the outcome?`). A real question that ends on a listed noun
-# still fires (`What was the result?`), because a rule cannot see the
-# start of the sentence, but technical prose rarely asks one.
+# A self-answered question is a short phrase built on a noun that the
+# writer poses as a question and answers in the next sentence (`The
+# result? A build that finishes in half the time.`). Rhetoric calls this
+# device hypophora. The question holds back the point instead of stating
+# it, so the reader waits one more sentence for it. The fix states the
+# point (`The build finishes in half the time`). The rule sits at
+# Recommended, because a real question that ends on a listed noun also
+# matches.
+#
+# Expression
+#
+# `setup` lists the nouns that introduce an answer, such as `result`,
+# `catch`, and `upshot`. `main` matches `the`, a noun in `setup`, and a
+# question mark glued to the noun. It also matches `the best part?`,
+# `the worst part?`, `the good news?`, `the bad news?`, and `the short
+# answer?`.
+#
+# False Positives
+#
+# Nouns that end a real question stay out of `setup` (`What's the
+# difference?`, `What is the fix?`, `What was the outcome?`). A real
+# question that ends on a listed noun still matches (`What was the
+# result?`), because a rule cannot see the start of the sentence.
+# Technical prose rarely asks such a question.
+#
+# Measurement
+#
+# The rule hit no lines in the measure.py corpus, so no sample measures
+# its precision.
 expr setup [result, catch, upshot, kicker, verdict, takeaway, twist, payoff, culprit, trick, secret, downside, upside]
 expr main [(the @setup?), (the [best, worst] part?), (the [good, bad] news?), (the short answer?)]
 let message "Self-answered question. State the point as a sentence instead of asking for it."

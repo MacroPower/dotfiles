@@ -1,15 +1,39 @@
+# Overview
+#
 # Reports a curly quote (U+2018 to U+201F), the ellipsis character
 # (U+2026), and the dash variants U+2010 to U+2012, U+2015, and the
-# minus sign U+2212. The em and en dash belong to ProseDash. A Weir rule
-# cannot do this check: Harper normalizes punctuation before Weir sees
-# it, so a pattern for a curly quote also matches a plain ASCII quote.
+# minus sign U+2212. A curly quote and a straight one look alike in a
+# terminal, so the reader cannot see which one a line holds. A search
+# for the straight one also misses the curly one. The fix writes a
+# straight quote, three periods, or a hyphen. The rule sits at Required,
+# because it matches exact characters and the fix is mechanical.
 #
-# prose-lint runs the check on a markdown file as prose and on every
-# other file it lints with RAW=1 set, which checks each line whole. Each
-# finding names the character and its code point, because a curly quote
-# and a straight one look alike in a terminal. In RAW mode the message
-# also covers a string literal, where the character might be deliberate
-# and its escape keeps the string the same.
+# Expression
+#
+# The check includes lib/markdown.awk. `code` maps each character to its
+# code point, and the check reports the first of those characters on a
+# line. A Weir rule cannot do this check. Harper normalizes punctuation
+# before Weir sees it, so a pattern for a curly quote also matches a
+# plain ASCII quote.
+#
+# prose-lint runs the check on a markdown file as prose. On every other
+# file that it lints, prose-lint sets RAW=1, and the check then reads
+# each line whole. Each finding names the character and its code point,
+# because a curly quote and a straight one look alike in a terminal.
+# With RAW=1, the message also covers a string literal, where the
+# character might be deliberate and its escape keeps the string the
+# same.
+#
+# Related Rules
+#
+# ProseDash reports the em dash and the en dash, so this check leaves
+# them out.
+#
+# Measurement
+#
+# The rule hit 3627 lines in the measure.py corpus, and 20 of 20 sampled
+# hits were typographic characters in prose, 19 curly apostrophes and
+# one curly double quote. The Rust book holds 3410 of the 3627 lines.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Punctuation::ProseTypography: <message>

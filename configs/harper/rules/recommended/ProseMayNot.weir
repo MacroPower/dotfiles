@@ -1,11 +1,28 @@
+# Overview
+#
 # `may not` reads two ways, as a prohibition (`the name may not be a
 # dot`) or as a possibility (`the cache may not be warm`), and the
-# kubernetes docs use both. The fix writes `must not` for a prohibition
-# and `might not` for a possibility. `may or may not` counts too,
-# because it ends in the same words and hedges the claim as well.
+# kubernetes docs use both. The reader has to pick the reading from the
+# words around the phrase. The fix writes `must not` for a prohibition
+# and `might not` for a possibility. The rule sits at Recommended,
+# because the fix depends on the reading that the writer means.
 #
-# It hit 55 lines in the kubernetes and nix.dev docs, and all 10
-# sampled hits allowed either reading.
+# Expression
+#
+# `main` matches the two words. `may or may not` counts too, because it
+# ends in the same words and hedges the claim as well.
+#
+# Related Rules
+#
+# ProseMayPossibility reports `may` in other phrases and skips a
+# following `not`, so only this rule reports `may not`.
+#
+# Measurement
+#
+# The rule hit 121 lines in the measure.py corpus, and 20 of 20 sampled
+# hits took one of the two fixes. Of the 20, 15 stated a possibility and
+# 5 stated a prohibition (`you may not change or remove an ephemeral
+# container`).
 expr main may not
 let message "`may not`. Write `must not` for a prohibition, or `might not` for a possibility."
 let description "Flags `may not`, which reads as a prohibition or as a possibility."

@@ -1,16 +1,22 @@
-# Reports a sentence of more than 32 words in markdown prose and in
-# source comments. The technical-writing skill splits a sentence past
-# about 25 words, and 3.8% of the sentences in the measure.py docs run
-# past 32. The Optional rule of the same name reports a sentence of 26
-# to 32 words that joins two clauses, so one sentence never draws both
-# findings. A clause is a subject and its verb, such as `the tests
-# pass`.
+# Overview
 #
-# lib/sentences.awk finds the sentence boundaries and counts the words.
-# Each part of a hyphenated word counts (`read-only` is two words), and
-# a token with no letter (`42`, `|`) counts as none. The reader blanks
-# code spans, so a span counts as none either. Each finding names the
-# line and column where the sentence starts.
+# Reports a sentence of more than 32 words in markdown prose and in
+# source comments. A sentence that long makes the reader hold its
+# opening in mind until its end. The technical-writing skill splits a
+# sentence past about 25 words, and 3.8% of the sentences in the
+# measure.py docs run past 32. The fix splits the sentence between two
+# clauses, and the message names where. A clause is a subject and its
+# verb, such as `the tests pass`. The rule sits at Recommended, because
+# a few sentences of that length do not read better as two.
+#
+# Expression
+#
+# The check includes lib/sentences.awk, which finds the sentence
+# boundaries and counts the words. Each part of a hyphenated word counts
+# (`read-only` is two words), and a token with no letter (`42`, `|`)
+# counts as none. lib/markdown.awk blanks code spans, so a span counts
+# as none either. Each finding names the line and column where the
+# sentence starts.
 #
 # The message names where to split, from the first of these steps that
 # fits the sentence:
@@ -20,24 +26,34 @@
 #    split point. It says to drop an `and`, and to open the next
 #    sentence with a `but`, `so`, or `yet`. A comma among the four
 #    tokens before the comma marks a serial list (`futures, streams, and
-#    the syntax`), and `, so that` states a purpose, so neither counts. The step skips a
-#    sentence that opens with a condition or a cause (`If`, `When`,
-#    `Because`), also after `However,` or `For example,`. Its first
-#    comma usually closes the condition, not a thought.
+#    the syntax`), and `, so that` states a purpose, so neither counts.
+#    The step skips a sentence that opens with a condition or a cause
+#    (`If`, `When`, `Because`), also after `However,` or `For example,`.
+#    Its first comma usually closes the condition, not a thought.
 # 2. A comma, then `which`, `who`, or `where`. The message asks for a
 #    sentence that opens with the noun that the word stands for. A
-#    sentence that opens with `This` instead draws the broad-reference
-#    rule.
+#    sentence that opens with `This` instead draws a ProseBroadReference
+#    finding.
 # 3. Neither. The message asks for a split between two thoughts, in the
 #    words of the technical-writing skill.
 #
-# It hit 1,890 lines in the measure.py corpus, and 18 of 20 sampled hits
-# read better as two sentences. The first step named a split point on
-# 140 lines, and 15 of 20 sampled points were the right place to split.
-# Its misses were serial lists with long items, a `so` that states a
-# purpose, and splitter errors at Hugo shortcodes and curly quotes. The
-# second step named a clause on 157 lines, and 19 of 20 sampled clauses
-# read well as a sentence of their own.
+# Related Rules
+#
+# The Recommended ProseSentenceLength reports every sentence of more
+# than 32 words. The Optional ProseSentenceLength reports a sentence of
+# 26 to 32 words that joins two clauses, so one sentence never draws
+# both findings.
+#
+# Measurement
+#
+# The rule hit 1,890 lines in the measure.py corpus, and 18 of 20
+# sampled hits read better as two sentences. The first step named a
+# split point on 140 lines, and 15 of 20 sampled points were the right
+# place to split. Its misfires were serial lists with long items, a `so`
+# that states a purpose, and errors of lib/sentences.awk at Hugo
+# shortcodes and curly quotes. The second step named a clause on 157
+# lines, and 19 of 20 sampled clauses read well as a sentence of their
+# own.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseSentenceLength: <message>

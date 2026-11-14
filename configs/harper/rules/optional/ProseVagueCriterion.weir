@@ -1,26 +1,61 @@
-# The Recommended rule of the same name holds the phrases (`as needed`,
-# `where applicable`). These words sit here, because human-written docs
-# use them about three times as often as the phrases, and a word rule
-# cannot see a criterion named a few words later (`an appropriate label
-# matching topologyKey`). Each word counts only without `for` or `to`
-# after it, the two words that most often introduce the criterion
-# (`suitable for bootstrapping`). The fix names the criterion (`choose
-# an appropriate timeout` becomes `choose a timeout longer than the
-# slowest request`).
+# Overview
 #
-# `proper` is left out, because it names a math term (`a proper
-# subset`), and `relevant` is left out, because it usually points at a
-# named thing (`the relevant API reference`). `reasonably` counts only
-# before an adjective or an adverb (`reasonably fast`), because before a
-# verb it means plausibly (`you might reasonably expect`). Only
-# `appropriate` passes after `as`, `where`, `when`, or `if`, because the
-# Recommended rule reports those phrases (`where appropriate`), and one
-# word should draw one finding. Weir has no lookbehind, so the filter
-# consumes the word before and narrows the finding back to
-# `appropriate`.
+# A vague criterion is a word that leaves the reader to supply a
+# criterion the writer knows (`choose an appropriate timeout`). The fix
+# names the criterion (`choose a timeout longer than the slowest
+# request`) or drops the word. The rule sits at Optional, because a word
+# rule cannot see a criterion that the sentence names a few words later.
+# Human-written docs also use these words about three times as often as
+# the phrases of the Recommended ProseVagueCriterion.
 #
-# It hit 224 lines in the measure.py corpus, and about 15 of 25 sampled
-# hits left the criterion unstated.
+# Expression
+#
+# `fit` holds `appropriate`, and `word` holds the other words, such as
+# `properly`, `suitable`, and `reasonable`. Each word counts only
+# without `for` or `to` after it. A space in a pattern is a whitespace
+# token, so each guard sits glued to its word and reads the token right
+# after it.
+#
+# `reasonably` counts only before an adjective or an adverb (`reasonably
+# fast`). An adverb is a word that describes a verb, an adjective, or a
+# whole sentence, such as `safely` or `also`. Harper's part-of-speech
+# tagger marks each word with a tag for its word class. The pattern
+# names the tag for an adjective (`ADJ`) and the tag for an adverb
+# (`ADV`).
+#
+# `appropriate` does not count after `as`, `where`, `when`, or `if`.
+# Weir has no lookbehind, so the filter consumes the word before
+# `appropriate` and narrows the finding back to `appropriate`. A
+# sentence that opens with `Appropriate` therefore passes.
+#
+# False Positives
+#
+# `for` and `to` are the two words that most often introduce the
+# criterion, so a word passes before either one (`suitable for
+# bootstrapping`). `proper` is left out, because it names a math term
+# (`a proper subset`). `relevant` is left out, because it usually points
+# at a named thing (`the relevant API reference`). Before a verb,
+# `reasonably` means plausibly (`you might reasonably expect`), so it
+# passes there.
+#
+# The rule still reports a word whose criterion the sentence names a few
+# words later (`an appropriate label matching topologyKey`).
+#
+# Related Rules
+#
+# The Recommended ProseVagueCriterion holds the phrases (`as needed`,
+# `where applicable`), and the Optional ProseVagueCriterion holds the
+# single words (`appropriate`, `properly`).
+#
+# The Recommended ProseVagueCriterion reports `as appropriate`, `where
+# appropriate`, `when appropriate`, and `if appropriate`. One word
+# should draw one finding, so `appropriate` passes here after `as`,
+# `where`, `when`, or `if`. No other word in this rule has that guard.
+#
+# Measurement
+#
+# The rule hit 224 lines in the measure.py corpus, and about 15 of 25
+# sampled hits left the criterion unstated.
 expr word [appropriately, properly, suitable, suitably, reasonable, sensible, sane]
 expr fit [appropriate]
 expr main [<(![as, where, when, if] @fit!(( )[for, to])), @fit>, (@word!(( )[for, to])), (reasonably [ADJ, ADV])]

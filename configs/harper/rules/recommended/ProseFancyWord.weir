@@ -1,29 +1,47 @@
-# Each word or phrase stands in for a plainer one (`delve into` for
-# `read`, `showcase` for `show`, `tapestry` for `mix`). Each turns up
-# far more in generated text than in docs a person wrote. The Required
-# rule of the same name holds `utilize` and `leverage`, whose plain word
-# is always `use`. The Optional rule holds the words that human-written
-# docs also use. The idiom rule holds `under the hood`,
-# `at its core`, and `strike a balance`, whose fix writes the literal
-# meaning.
+# Overview
 #
-# `unlock`, `harness`, `landscape`, `realm`, and `underscore` are left
-# out, because each names something in code (a mutex, a test harness,
-# a page orientation, a Kerberos realm, the character). The stock
-# phrases built on them count instead (`harness the power`, `unlock the
-# full potential`, `the landscape of`, `the realm of`), and the
-# importance rule holds `underscores the importance`. `elevate
-# privileges` names a security operation, so `elevate` skips a
-# following `privileges` or `permissions`.
+# A fancy word stands in for a plainer one (`delve into` for `read`,
+# `showcase` for `show`, `tapestry` for `mix`). The fancy word adds
+# length and no meaning, and a reader who does not know it must look it
+# up. Each word or phrase here turns up far more in generated text than
+# in docs a person wrote. The fix writes the plain word. The rule sits
+# at Recommended, because the plain word differs from word to word, and
+# a name can hold one of the words.
+#
+# Expression
 #
 # `$foster`, `$showcase`, `$garner`, and `$boast` expand to every form
-# of the word through Harper's dictionary. A space in a pattern matches
-# only whitespace, so `deep[-, ( )]dive` matches the spaced and the
-# hyphenated spelling alike.
+# of the word through Harper's dictionary. A space in a pattern is a
+# whitespace token, so `deep[-, ( )]dive` lists a hyphen and a space.
+# The pattern matches the spaced and the hyphenated spelling alike.
 #
-# It hit 60 lines in the measure.py corpus, and 19 of 20 sampled hits
-# stood in for a plainer word. The miss was the name `Learning Journey
-# Working Group`.
+# False Positives
+#
+# `unlock`, `harness`, `landscape`, `realm`, and `underscore` are left
+# out, because each names something in code (a mutex, a test harness, a
+# page orientation, a Kerberos realm, the character). The stock phrases
+# built on them count instead (`harness the power`, `unlock the full
+# potential`, `the landscape of`, `the realm of`). `elevate privileges`
+# names a security operation, so `elevate` skips a following
+# `privileges` or `permissions`.
+#
+# Related Rules
+#
+# The Required ProseFancyWord holds `utilize` and `leverage`, whose
+# plain word is always `use`. The Recommended ProseFancyWord holds the
+# words that turn up far more in generated text than in docs a person
+# wrote. Their plain word differs from word to word. The Optional
+# ProseFancyWord holds the words that human-written docs also use.
+#
+# ProseIdiom holds `under the hood`, `at its core`, and `strike a
+# balance`, whose fix writes the literal meaning. ProseImportance holds
+# `underscores the importance`.
+#
+# Measurement
+#
+# The rule hit 60 lines in the measure.py corpus, and 19 of 20 sampled
+# hits stood in for a plainer word. The misfire was the name `Learning
+# Journey Working Group`.
 expr main [delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates] ![privilege, privileges, permissions]), tapestry, journey, ([navigate, navigates, navigating] the [complexities, complexity, landscape, world, challenges]), testament, $foster, $showcase, $garner, $boast, interplay, intricacies, synergy, nuanced, multifaceted, meticulous, meticulously, bolster, bolsters, bolstered, bolstering, spearhead, spearheads, spearheaded, spearheading, supercharge, supercharges, supercharged, supercharging, revolutionize, revolutionizes, revolutionized, revolutionizing, embark, embarks, embarked, embarking, ([harness, harnesses, harnessing] the power), ([unlock, unlocks, unlocking] the potential), ([unlock, unlocks, unlocking] the [full, true] potential), (the realm of), (landscape of), (key takeaway), (key takeaways)]
 let message "Fancy word. Use the plain word it stands for."
 let description "Flags fancy words and phrases, such as `delve`, `showcase`, and `tapestry`, that stand in for a plainer word."

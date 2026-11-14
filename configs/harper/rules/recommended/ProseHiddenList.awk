@@ -1,30 +1,51 @@
+# Overview
+#
 # Reports a paragraph of markdown prose that hides a list. The
 # technical-writing skill names two signs. Sentences that walk through
 # steps with `first`, `then`, and `finally` hide a numbered list.
 # Consecutive sentences that open the same way hide a bulleted list or
-# a table.
+# a table. Such a paragraph makes the reader pick the steps or the
+# items out of its sentences. The fix moves the steps into a numbered
+# list, and the items into a bulleted list or a table. The rule sits at
+# Recommended, because a plan of two steps and a list that continues
+# from an earlier paragraph also match.
+#
+# Expression
+#
+# The check includes lib/markdown.awk and reads one paragraph at a
+# time. The paragraph and sentence boundaries follow
+# ProseParagraphLength.
 #
 # The first form is two sentences in one paragraph that open with
 # different sequence words, where at least one of them counts (`first`,
-# `second`, `next`, `finally`). `then` alone narrates (`Then the pod
-# restarts`), so two `then` sentences pass. `now` stays out, because it
-# marks a turn in an argument (`Now say you have ten pods`).
+# `second`, `next`, `finally`).
 #
 # The second form is three sentences in a row that open with the same
-# two words (`The node controller`). The reader blanks code spans, so
-# `The --force flag skips` and `The --dry-run flag prints` both open
-# with `The flag`. Openings with `a` or `an` (`A pod`) pass, because
+# two words (`The node controller`). lib/markdown.awk blanks code
+# spans, so `The --force flag skips` and `The --dry-run flag prints`
+# both open with `The flag`.
+#
+# Each finding names the line and column where the paragraph starts.
+#
+# False Positives
+#
+# `then` alone narrates (`Then the pod restarts`), so two `then`
+# sentences pass. `now` stays out, because it marks a turn in an
+# argument (`Now say you have ten pods`).
+#
+# Related Rules
+#
+# Openings with `a` or `an` (`A pod`) pass, because
 # ProseIndefiniteOpener reports those sentences and asks for a plural
 # subject instead of a list.
 #
-# The paragraph and sentence boundaries follow ProseParagraphLength.
-# Each finding names the line and column where the paragraph starts.
+# Measurement
 #
-# It hit 20 lines in the measure.py docs corpus, and 15 of 20 sampled
-# hits hid steps, parallel points, or cases. Three misses were plans of
-# two steps (`First, we'll... Then, we'll...`). One `Finally` continued
-# a list from earlier paragraphs, and one run matched only after the
-# reader blanked its code spans.
+# The rule hit 20 lines in the measure.py docs corpus, and 15 of 20
+# sampled hits hid steps, parallel points, or cases. Three misfires
+# were plans of two steps (`First, we'll... Then, we'll...`). One
+# `Finally` continued a list from earlier paragraphs, and one run
+# matched only after lib/markdown.awk blanked its code spans.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseHiddenList: <message>

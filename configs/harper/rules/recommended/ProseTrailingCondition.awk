@@ -1,33 +1,56 @@
-# Reports a step whose condition trails it in markdown prose (`Use the
-# flag if the port is taken`). The reader pictures the step before the
-# condition says whether it applies, so the technical-writing skill
-# puts the condition first (`If the port is taken, use the flag`).
+# Overview
 #
-# The check reads each sentence that opens with an imperative, the verb
-# form that gives a command, from a list (`use`, `set`, `run`). It
+# A trailing condition is a condition that follows the step it governs
+# (`Use the flag if the port is taken`). The rule reports one in
+# markdown prose. The reader pictures the step before the condition says
+# whether the step applies, so the technical-writing skill puts the
+# condition first. The fix moves the condition to the start of the
+# sentence (`If the port is taken, use the flag`). The rule sits at
+# Recommended, because an `if` after a command does not always state the
+# condition of that command.
+#
+# Expression
+#
+# The check includes lib/sentences.awk, which finds the sentence
+# boundaries. It reads each sentence that opens with an imperative from
+# the `imperative` list (`use`, `set`, `run`). An imperative is the verb
+# form that gives a command, such as `run` in `run make`. The check
 # reports the first `if` after the verb that sits outside parentheses.
-# It skips `if needed`, `if necessary`, `if applicable`, `if
-# appropriate`, and `if possible`, which the vague-criterion rule
-# reports, and `if any` and `if so`, which read worse at the front. It
-# skips `if` after a verb of checking (`check if`, `notice if`), which
-# the if-whether rule reports, and after `as` and `even`, where `if`
-# opens no condition. It skips `if it exists`, `if they exist`, and `if
-# there is one`, which read the same at either end.
+#
+# False Positives
+#
+# The check skips `if any` and `if so`, because both read worse at the
+# front. It skips `if` after `as` and `even`, where `if` opens no
+# condition. It skips `if it exists`, `if they exist`, and `if there is
+# one`, because each reads the same at either end.
 #
 # An `if` after `only` passes, because the front position drops the
 # restriction (`Use this option only if the file sits in a
 # subdirectory`). So does an `if` after `;`, `and`, `or`, or `but`,
-# which opens the next clause (`Keep the file short; if it grows, split
-# it`). A clause is a subject and its verb, such as `the tests pass`.
+# because that `if` opens the next clause (`Keep the file short; if it
+# grows, split it`). A clause is a subject and its verb, such as
+# `the tests pass`.
 #
-# `unless` passes. After an imperative it names the exception to a
+# `unless` passes. After an imperative, it names the exception to a
 # default (`Use the standard edition unless you need extra features`),
 # and the technical-writing skill puts the exception after the common
-# case. The double-negative rule reports `Do not ... unless`.
-# lib/sentences.awk finds the sentence boundaries.
+# case.
 #
-# It hit 21 lines in the measure.py corpus, and 19 of 21 sampled hits
-# put a condition after its step.
+# The check still reports an `if` that states the condition of a later
+# verb (`Set the timeout so that the job fails if the server hangs`).
+#
+# Related Rules
+#
+# The Recommended ProseVagueCriterion reports `if needed`,
+# `if necessary`, `if applicable`, `if appropriate`, and `if possible`,
+# so the check skips them. ProseIfWhether reports `if` after a verb of
+# checking (`check if`, `notice if`), so the check skips that `if` too.
+# ProseDoubleNegative reports `Do not ... unless`.
+#
+# Measurement
+#
+# The rule hit 21 lines in the measure.py corpus, and 19 of 21 sampled
+# hits put a condition after its step.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseTrailingCondition: <message>

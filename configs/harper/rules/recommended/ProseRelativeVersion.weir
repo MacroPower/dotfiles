@@ -1,19 +1,34 @@
-# A version named relative to the writer's present (`in older
-# versions`, `newer kernels`, `a recent version of client-go`) leaves
-# the reader to guess where the line falls, and the line moves with
-# every release. The fix names the version (`before v1.24`, `kernels
-# 5.8 and later`). The dated-claim rule catches a claim dated to the
-# present, and the roadmap rule catches `in a future release`.
+# Overview
 #
-# `older versions` and its kin count only after `in` or before `of`,
-# and `recent` and `newer` count only after `a` or `the`, because a
-# bare `older versions` often means any earlier version. `modern`,
-# `newer`, `older`, and `recent` count before a noun for hardware or
-# platforms (`modern CPUs`, `older kernels`).
+# A version named relative to the writer's present (`in older versions`,
+# `newer kernels`, `a recent version of client-go`) leaves the reader to
+# guess where the line falls, and the line moves with every release. The
+# fix names the version (`before v1.24`, `kernels 5.8 and later`). The
+# rule sits at Recommended, because a phrase can also mean any earlier
+# version or have no version to name.
 #
-# It hit 16 lines in the measure.py corpus, and 13 of 16 left the
-# version to the reader. The misses were a generic `earlier versions of
-# an API`, `older versions of Kubernetes` with a clause that defines
+# Expression
+#
+# `older versions` and its kin count only after `in` or before `of`.
+# `recent` and `newer` before `version` or `release` count only after
+# `a` or `the`. `modern`, `newer`, `older`, and `recent` count before a
+# noun for hardware or platforms (`modern CPUs`, `older kernels`).
+#
+# False Positives
+#
+# A bare `older versions` often means any earlier version, so it stays
+# out.
+#
+# Related Rules
+#
+# ProseDatedClaim reports a claim dated to the present, and ProseRoadmap
+# reports `in a future release`.
+#
+# Measurement
+#
+# The rule hit 16 lines in the measure.py corpus, and 13 of 16 left the
+# version to the reader. The misfires were a generic `earlier versions
+# of an API`, `older versions of Kubernetes` beside words that define
 # them, and `modern CPUs`, which has no version to name.
 expr when [older, earlier, newer, recent, prior, previous]
 expr main [(in @when [versions, releases]), ([a, the] [recent, newer] [version, release]), ([newer, older, recent, modern] [kernels, browsers, CPUs, processors, distributions, compilers]), ([older, newer, earlier, recent] versions of)]

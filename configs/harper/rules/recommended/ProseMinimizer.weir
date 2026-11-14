@@ -1,58 +1,85 @@
-# Each word tells the reader that a step is easy or a behavior is small
-# (`simply`, `merely`, `easily`, `straightforward`, `just run`), which
-# the reader judges for themselves. Technical writers call these
-# minimizing words, because each makes a step sound smaller. None needs
-# a guard for a product name or a mention of the word. Both are rare in
-# technical prose, and the skill wants the words gone from a sentence
-# about behavior. `simply` and `merely` often mean `only` (`requests
-# that merely read objects`), so the message offers `only` where the
-# word limits the claim.
+# Overview
 #
-# The rule hit 127 lines in the measure.py corpus, and 16 of 20 sampled
-# hits told the reader that a step was easy or a behavior small. The
-# misses were `easily` in a warning of a risk (`can easily cause
-# errors`), license text, and `quickly` where speed was the point.
+# Technical writers call a word that makes a step sound smaller a
+# minimizing word, or a minimizer (`simply`, `merely`, `easily`,
+# `straightforward`, `just run`). Each one tells the reader that a step
+# is easy or a behavior is small. Readers judge the size of a step for
+# themselves, so the word adds no fact. The fix deletes the word.
+# `simply` and `merely` often mean `only` (`requests that merely read
+# objects`), so the message offers `only` where the word limits the
+# claim. The rule sits at Recommended, because some hits make a risk or
+# a speed the point of the sentence.
 #
-# `simply` skips a following ` put`, because the restatement rule
-# reports `Simply put`. The guard sits glued to the word so it reads
-# the token right after it. `Put simply` and `To put it simply` count
-# here instead, because no pattern can look back from `simply` to the
-# `put` before it.
+# Expression
 #
-# After a negation the word carries a contrast (`it is not simply an
-# offset`), and deleting it flips the claim, so the not-only rule
-# applies instead. After `more`, `less`, `most`, or `least` it states a
-# real comparison (`reads finish more easily when the cache is warm`).
-# Weir has no lookbehind, so the first branch consumes the token before
-# the word and checks it against the negations and those four words. The
-# filter then narrows the finding back to the word. The comparison guard
-# dropped 13 hits in the measure.py corpus, and 13 of 13 compared two
-# things.
+# `word` lists the minimizers, and `neg` lists the negations. The first
+# branch of `main` reports a minimizer unless a negation or `more`,
+# `less`, `most`, or `least` comes before it. Weir has no lookbehind, so
+# the branch consumes the token before the minimizer and checks it
+# against the negations and those four words. The filter then narrows
+# the finding back to the minimizer. A space in a pattern is a
+# whitespace token, so the branch reads a word, a space, and the
+# minimizer.
 #
-# A space in a pattern is itself a whitespace token, so the first branch
-# reads a word, a space, and the minimizer. It needs a token before the
-# word, so the other two branches catch a sentence that opens with
-# `simply` or `merely`. They need a verb or a glued comma after it
-# (`Simply run make`, `Simply, the cache is a map`). Those two also fire
-# after a negation when a verb follows (`is not simply copied`), a case
-# rare enough to leave.
+# The first branch needs a token before the minimizer, so two more
+# branches catch a sentence that opens with `simply` or `merely`. Each
+# needs a verb or a glued comma after the word (`Simply run make`,
+# `Simply, the cache is a map`). The other words have no opener branch,
+# so a sentence that opens with one passes (`Just run make`). For
+# `just`, such a branch also fires after a negation (`you can't just use
+# a container`), where the word carries the contrast.
 #
-# The other words have no opener branch, so a sentence that opens with
-# one passes (`Just run make`). For `just`, such a branch also fires
-# after a negation (`you can't just use a container`), where the word
-# carries the contrast. `just` counts only before an imperative verb, a
-# verb that gives a command (`just run make`). Its other senses, such as
-# `only` and `a moment ago` (`just one entry`, `the file was just
-# created`), belong to the Optional `just` rule, which offers a fix for
-# each sense. `is easy to` and `it's easy to` do not need a guard,
-# because a negation splits them (`is not easy to`).
+# `simply` skips a following `put`. The guard sits glued to `simply`, so
+# it reads the token right after the word. `Put simply` and `To put it
+# simply` count here, because no pattern can look back from `simply` to
+# the `put` before it.
+#
+# `just` counts only before a verb from `verbs`, a list of imperatives.
+# An imperative is the verb form that gives a command, such as `run` in
+# `run make` (`just run make`). `is easy to` and `it's easy to` do not
+# need a guard, because a negation splits them (`is not easy to`).
 #
 # `quickly` counts only after `to`, `you`, or `you can`, and in `quickly
 # and easily` (`to quickly set up the project`), where it tells the
-# reader that a step is fast. Elsewhere it mostly describes how fast the
-# code runs (`the cache fills quickly`). These branches hit 11 lines in
-# the measure.py corpus, and 9 of 11 were minimizers. The misses made
-# speed the point (`to quickly pinpoint where code is`).
+# reader that a step is fast.
+#
+# False Positives
+#
+# After a negation, the minimizer carries a contrast (`it is not simply
+# an offset`), and deleting it flips the claim. After `more`, `less`,
+# `most`, or `least`, it states a real comparison (`reads finish more
+# easily when the cache is warm`). Outside its four branches, `quickly`
+# mostly describes how fast the code runs (`the cache fills quickly`).
+#
+# None of the words needs a guard for a product name or a mention of the
+# word. Both are rare in technical prose, and the technical-writing
+# skill wants the words gone from a sentence about behavior.
+#
+# The two opener branches also fire after a negation when a verb follows
+# (`is not simply copied`), a case rare enough to leave.
+#
+# Related Rules
+#
+# The Required ProseRestatement reports `Simply put`, so `simply` skips
+# `put`. After a negation, ProseNotOnly applies instead of this rule.
+#
+# `just` has other senses, such as `only` and `a moment ago` (`just one
+# entry`, `the file was just created`). Those senses belong to
+# ProseJust, which offers a fix for each sense.
+#
+# Measurement
+#
+# The rule hit 127 lines in the measure.py corpus, and 16 of 20 sampled
+# hits told the reader that a step was easy or a behavior small. The
+# misfires were `easily` in a warning of a risk (`can easily cause
+# errors`), license text, and `quickly` where speed was the point.
+#
+# The comparison guard dropped 13 hits in the measure.py corpus, and 13
+# of 13 compared two things.
+#
+# The `quickly` branches hit 11 lines in the measure.py corpus, and 9 of
+# 11 were minimizers. The misfires made speed the point (`to quickly
+# pinpoint where code is`).
 expr neg [not, never, isn't, aren't, wasn't, weren't, can't, cannot, couldn't, won't, doesn't, don't, didn't, shouldn't]
 expr verbs [run, use, add, call, set, pass, type, install, copy, edit, change, create, delete, remove, update, point, drop, put, write, open, click]
 expr word [(simply!(( )put)), merely, easily, trivially, straightforward, (easy to use), (just @verbs)]

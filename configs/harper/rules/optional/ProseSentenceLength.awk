@@ -1,24 +1,27 @@
+# Overview
+#
 # Reports a sentence of 26 to 32 words that joins two clauses, in
 # markdown prose and in source comments. A clause is a subject and its
-# verb, such as `the tests pass`. The technical-writing skill splits a
-# sentence past about 25 words. It keeps a long one that carries a
-# single fact with its condition or consequence. The Recommended rule of
-# the same name reports any sentence past 32 words, so this check covers
-# the band below it as a suggestion.
+# verb, such as `the tests pass`. A sentence that long makes the reader
+# hold its opening in mind until its end. The technical-writing skill
+# splits a sentence past about 25 words. It keeps a long one that
+# carries a single fact with its condition or consequence. The fix
+# splits the sentence between the two clauses, and the message names
+# where. The rule sits at Optional, because a sentence in this band that
+# carries a single fact also matches, so the finding is a suggestion.
+#
+# Expression
+#
+# The check includes lib/sentences.awk, which finds the sentence
+# boundaries and counts the words. Each part of a hyphenated word counts
+# (`read-only` is two words), and a token with no letter (`42`, `|`)
+# counts as none. lib/markdown.awk blanks code spans, so a span counts
+# as none either. Each finding names the line and column where the
+# sentence starts.
 #
 # A sentence joins two clauses when it holds a semicolon, a colon after
 # its third word, or a comma before a word in `joiners` (`, and`,
-# `, which`, `, because`). A colon closer to the start ends a label
-# (`**Note**:`, `Step 3:`). `, or` stays out, because
-# it mostly ends a serial list (`AVIF, PNG, or WebP`). `, then` after a
-# sentence that opens with `If` or `When` stays out too, because it
-# closes the condition.
-#
-# lib/sentences.awk finds the sentence boundaries and counts the words.
-# Each part of a hyphenated word counts (`read-only` is two words), and
-# a token with no letter (`42`, `|`) counts as none. The reader blanks
-# code spans, so a span counts as none either. Each finding names the
-# line and column where the sentence starts.
+# `, which`, `, because`).
 #
 # The message names where to split, from the first of these steps that
 # fits the sentence:
@@ -28,24 +31,41 @@
 #    split point. It says to drop an `and`, and to open the next
 #    sentence with a `but`, `so`, or `yet`. A comma among the four
 #    tokens before the comma marks a serial list (`futures, streams, and
-#    the syntax`), and `, so that` states a purpose, so neither counts. The step skips a
-#    sentence that opens with a condition or a cause (`If`, `When`,
-#    `Because`), also after `However,` or `For example,`. Its first
-#    comma usually closes the condition, not a thought.
+#    the syntax`), and `, so that` states a purpose, so neither counts.
+#    The step skips a sentence that opens with a condition or a cause
+#    (`If`, `When`, `Because`), also after `However,` or `For example,`.
+#    Its first comma usually closes the condition, not a thought.
 # 2. A comma, then `which`, `who`, or `where`. The message asks for a
 #    sentence that opens with the noun that the word stands for. A
-#    sentence that opens with `This` instead draws the broad-reference
-#    rule.
+#    sentence that opens with `This` instead draws a ProseBroadReference
+#    finding.
 # 3. Neither. The message asks for a split between two thoughts, in the
 #    words of the technical-writing skill.
 #
-# It hit 1,572 lines in the measure.py corpus, and 14 of 20 sampled hits
-# read better as two sentences. The misses were serial lists, a single
-# fact with its condition or reason, and a colon inside parentheses
-# (`(for example: ...)`). The first step named a split point on 218
-# lines, and 19 of 20 sampled points were the right place to split. The
-# second step named a clause on 255 lines, and 19 of 20 sampled clauses
-# read well as a sentence of their own.
+# False Positives
+#
+# A colon closer to the start of the sentence ends a label (`**Note**:`,
+# `Step 3:`), so it does not count as a join. `, or` stays out of
+# `joiners`, because it mostly ends a serial list (`AVIF, PNG, or
+# WebP`). `, then` after a sentence that opens with `If` or `When` stays
+# out too, because it closes the condition.
+#
+# Related Rules
+#
+# The Recommended ProseSentenceLength reports every sentence of more
+# than 32 words. The Optional ProseSentenceLength reports a sentence of
+# 26 to 32 words that joins two clauses, so one sentence never draws
+# both findings.
+#
+# Measurement
+#
+# The rule hit 1,572 lines in the measure.py corpus, and 14 of 20
+# sampled hits read better as two sentences. The misfires were serial
+# lists, a single fact with its condition or reason, and a colon inside
+# parentheses (`(for example: ...)`). The first step named a split point
+# on 218 lines, and 19 of 20 sampled points were the right place to
+# split. The second step named a clause on 255 lines, and 19 of 20
+# sampled clauses read well as a sentence of their own.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseSentenceLength: <message>

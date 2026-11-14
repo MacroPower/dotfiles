@@ -1,30 +1,62 @@
-# A causal conjunction joins a cause to the claim it explains (`the job
-# fails because the disk is full`). `since` also marks time and `as`
-# also marks manner or comparison, so a reader has to pick the reading.
-# `because` marks only a cause.
+# Overview
 #
-# After a comma, `since` before a determiner (a word that introduces a
-# noun, such as `the`, `a`, or `this`), pronoun, or proper noun marked a
-# cause in 13 of 14 sampled hits (`, since the lock is held`). A
-# temporal `since` after a comma (`, since the upgrade landed`) still
-# fires.
+# A conjunction is a word that joins two words or two clauses, such as
+# `and`, `but`, or `because`. A clause is a subject and its verb, such
+# as `the tests pass`. A causal conjunction joins a cause to the claim
+# that it explains (`the job fails because the disk is full`).
+#
+# The rule reports `since` and `as` where they mark a cause (`the job
+# fails since the disk is full`). `since` also marks time, and `as` also
+# marks manner or comparison, so the reader must pick the reading.
+# `because` marks only a cause, so the fix writes `because`. The rule
+# sits at Recommended, because a `since` that marks time still matches
+# after a comma.
+#
+# Expression
+#
+# After a comma, `since` counts before a determiner, a pronoun, or a
+# proper noun (`, since the lock is held`). A determiner is a word that
+# introduces a noun, such as `the`, `a`, or `this`. A proper noun is a
+# name that takes a capital letter, such as `Kubernetes`. Harper's
+# part-of-speech tagger marks each word with a tag for its word class.
+# The pattern names the three classes as `DET` (a determiner), `PRON` (a
+# pronoun), and `PROPN` (a proper noun).
 #
 # Without a comma, `since` counts when a present-tense auxiliary, a
 # helping verb such as `is`, `has`, or `can`, follows its subject,
 # directly or after one word (`since the lock is held`, `Since this is
-# rarely needed`). A temporal `since` names a past event (`since the
-# upgrade landed`) or a version (`Since v2.3, the flag ...`), so it has
-# no such auxiliary and passes. All 24 hits of this form in the
-# kubernetes and nix.dev docs marked a cause. The filter narrows the
-# finding to `since`. `needs` and `will` stay out of the auxiliary list,
-# because the obligation, no-negation, and future-tense rules report the
-# words after them.
+# rarely needed`). `aux` lists those verbs. The filter narrows the
+# finding to `since`.
 #
-# `as` counts only before a subject pronoun (`I`, `you`, `he`, `she`,
-# `it`, `we`, or `they`) and a verb that carries a tense (`, as it is
-# deprecated`). `you` and `we` stay out, because `as you can see` and
-# `as we have seen` are the filler ProseFiller reports. `do` and `does`
-# stay out, because `, as it does for any key` compares.
+# After a comma, `as` counts only before a subject pronoun (`I`, `you`,
+# `he`, `she`, `it`, `we`, or `they`) and a verb that carries a tense
+# (`, as it is deprecated`). `subject` and `verb` list the words that
+# count.
+#
+# By default, a Weir match stops at a comma, so `let scope "Sentence"`
+# lets the comma branches cross one.
+#
+# False Positives
+#
+# Without a comma, a `since` that marks time passes. It names a past
+# event (`since the upgrade landed`) or a version (`Since v2.3, the flag
+# ...`), so it has no present-tense auxiliary.
+#
+# `do` and `does` stay out of `verb`, because `, as it does for any key`
+# compares.
+#
+# Related Rules
+#
+# `needs` and `will` stay out of `aux`, because ProseNoNegation,
+# ProseFutureTense, and the Recommended ProseObligation report the words
+# after them. `you` and `we` stay out of `subject`, because the Required
+# ProseFiller reports the filler `as you can see` and `as we have seen`.
+#
+# Measurement
+#
+# The rule hit 128 lines in the measure.py corpus, and 19 of 20 sampled
+# hits marked a cause. In the one misfire, a `since` after a comma
+# marked time (`Speaking of history, since its launch`).
 expr subject [it, they, this, these, there]
 expr verb [is, are, was, were, has, have, can, will]
 expr aux [is, are, has, have, can, cannot, does, do]

@@ -1,31 +1,63 @@
+# Overview
+#
 # Reports two misuses of a callout in markdown prose. A callout is a
 # boxed aside such as a note, a tip, or a warning. Readers skip
 # callouts, and a page that stacks them trains readers to skip all of
 # them.
 #
-# The first form is an instruction inside a note. The technical-writing
-# skill says a reader who skips every note still completes the
-# procedure, so a note gives information and never a step. The check
-# reads the sentences of each note, info, or important callout. It
-# reports a sentence that opens with a command verb (`Run`, `Ensure`,
-# `Do not`) or holds `you must`, `you should`, `must not`, `should not`,
-# `make sure`, or `be sure`. A purpose clause such as `to make sure`
-# passes, and so does `keep in mind`, which ProseFiller reports.
-# Warnings and cautions pass, because they open with the step they
-# guard.
+# The first misuse is an instruction inside a note (`Note: Run the
+# migration first`). The technical-writing skill says a reader who skips
+# every note still completes the procedure, so a note gives information
+# and never a step. The fix moves the instruction into the text, or into
+# a warning when skipping it causes harm. The second misuse is a callout
+# that follows another with no prose between them. The fix merges the
+# two callouts or moves one into the text.
 #
-# The second form is a callout that follows another with no prose
-# between them.
+# The rule sits at Recommended, because the check tells an instruction
+# by its first word or by a phrase such as `you must`. That test can
+# misread a sentence.
 #
-# The check knows four callout forms: a GitHub alert (`> [!NOTE]`), a
-# Hugo shortcode (`{{< note >}}`), a MyST directive (`:::{note}`), and a
-# label that opens a paragraph (`**Note:**`, `Note:`). A label matches
-# only with a leading capital, so an all-caps label (`IMPORTANT:`)
-# passes on purpose. Prompt files for an agent use it for emphasis, and
-# ProseCapsEmphasis reports it in other files.
+# Expression
 #
-# It hit 155 lines in the measure.py docs corpus, and 20 of 20 sampled
-# hits put an instruction in a note or stacked two callouts.
+# The check includes lib/markdown.awk. It knows these callout forms: a
+# GitHub alert (`> [!NOTE]`), a Hugo shortcode (`{{< note >}}`), a MyST
+# directive (`:::{note}`), and a label that opens a paragraph
+# (`**Note:**`, `Note:`). lib/markdown.awk skips the opening line of a
+# MyST directive, so the block before the `@include` line reads that
+# line.
+#
+# For the first misuse, the check reads the sentences of each note,
+# info, or important callout. It reports a sentence that opens with a
+# command verb (`Run`, `Ensure`, `Do not`) or holds `you must`, `you
+# should`, `must not`, `should not`, `make sure`, or `be sure`.
+#
+# For the second misuse, the check reports a callout when no prose line
+# sits between it and the callout before it. A line that
+# lib/markdown.awk skips, such as code, also separates two callouts.
+# Each finding names the line where its callout starts.
+#
+# False Positives
+#
+# Warnings and cautions can hold an instruction, because they open with
+# the step they guard. `to make sure` and `to be sure` pass, because
+# each states a purpose and not a step.
+#
+# The check tells a command verb by its spelling, so a note that opens
+# with the same word as a noun still draws a finding (`Note: Check boxes
+# appear only in the admin view`).
+#
+# Related Rules
+#
+# A sentence that opens with `keep in mind` passes, because the Required
+# ProseFiller reports the phrase. A label matches only with a leading
+# capital, so an all-caps label (`IMPORTANT:`) passes on purpose. Prompt
+# files for an agent use it for emphasis, and ProseCapsEmphasis reports
+# it in other files.
+#
+# Measurement
+#
+# The rule hit 155 lines in the measure.py docs corpus, and 20 of 20
+# sampled hits put an instruction in a note or stacked two callouts.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseCallout: <message>
@@ -38,8 +70,9 @@
   if ($0 !~ /^[ \t]*$/) {
     nonblank++
   }
-  # The reader skips a MyST opener line, so read it here. A fence or an
-  # HTML comment open on the line before hides the line from the reader.
+  # lib/markdown.awk skips the opening line of a MyST directive, so this
+  # block reads it. The line does not count inside a fence or an HTML
+  # comment that an earlier line opened.
   if (fence_char == "" && !in_comment && match(tolower($0), /^[ \t>]*:::+[ \t]*\{(note|tip|important|warning|caution|attention|danger|hint|seealso)\}/)) {
     myst_kind = tolower($0)
     sub(/^[^{]*\{/, "", myst_kind)
@@ -106,7 +139,8 @@ function prose(text,   lower, k) {
     new_file()
     last_nb = 0
   }
-  # A line the reader skipped, such as code, separates two callouts.
+  # A line that lib/markdown.awk skipped, such as code, separates two
+  # callouts.
   if (nonblank != last_nb + 1 && in_block !~ /^(short|myst)$/) {
     if (kind != "") {
       end_callout()

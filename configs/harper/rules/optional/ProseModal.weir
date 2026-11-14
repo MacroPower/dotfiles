@@ -1,29 +1,50 @@
-# Modal verbs are the helping verbs that mark possibility, ability, or
-# obligation, such as `can`, `might`, and `must`. `would` and `could`
-# state a possibility or a consequence without saying how likely it is,
-# and `could` also means ability. The technical-writing skill writes
-# `might` for a possibility, `can` for an ability, and the present tense
-# for a consequence (`the write would fail` becomes `the write fails`).
+# Overview
+#
+# A modal verb is a helping verb that marks possibility, ability, or
+# obligation, such as `can`, `might`, or `must`. The rule reports the
+# modal verbs `would` and `could`. Each states a possibility or a
+# consequence without saying how likely it is, and `could` also means
+# ability, so the reader has to pick the sense. The technical-writing
+# skill writes `might` for a possibility, `can` for an ability, and the
+# present tense for a consequence (`the write would fail` becomes `the
+# write fails`), and the fix does the same. The rule sits at Optional as
+# a suggestion, because both words also narrate a hypothetical, where
+# the condition is the point.
+#
+# Expression
+#
+# `main` lists the two words and the guards on each. A space in a
+# pattern is a whitespace token, so each guard sits glued to its word
+# and reads the token right after it.
+#
+# False Positives
+#
 # `could not` passes, because it is the past of `cannot` (`the parser
 # could not read the file`).
 #
-# Guards glued to each word skip the phrases other rules report: `would
-# say` and `could argue` (the opinion rule), `would expect` (the filler
-# and reassurance rules), `would be happy` (the chatbot rule), and
-# `could possibly` and `could potentially` (the double-hedge rule).
+# The guards also skip phrases that none of the three fixes fits. `would
+# like`, `would love`, and `would rather` state a wish, which `want` or
+# `prefer` states plainly (`we would like to thank the reviewers`).
+# `would otherwise` states what happens when a condition does not hold
+# (`fields that would otherwise conflict`). `would you` and `could you`
+# ask a question.
 #
-# The guards also skip phrases that none of the three fixes fits.
-# `would like`, `would love`, and `would rather` state a wish, which
-# `want` or `prefer` states plainly (`we would like to thank the
-# reviewers`). `would otherwise` states what happens when a condition
-# does not hold (`fields that would otherwise conflict`). `would you`
-# and `could you` ask a question. These guards dropped 70 hits in the
-# measure.py corpus.
+# Related Rules
 #
-# The two words hit 960 lines in the measure.py corpus, and 16 of 20
-# sampled hits stated a possibility, an ability, or a consequence. The
-# misses narrated a hypothetical, where the condition is the point
-# (`it would be less work if`), so the rule is a suggestion.
+# The guards skip the phrases that other rules report. ProseOpinion
+# reports `would say` and `could argue`. ProseReassurance and the
+# Required ProseFiller report `would expect`. The Required ProseChatbot
+# reports `would be happy`. ProseDoubleHedge reports `could possibly`
+# and `could potentially`.
+#
+# Measurement
+#
+# The rule hit 960 lines in the measure.py corpus, and 16 of 20 sampled
+# hits stated a possibility, an ability, or a consequence. The misfires
+# narrated a hypothetical (`it would be less work if`).
+#
+# The guards for a wish, for `would otherwise`, and for a question
+# dropped 70 hits in the measure.py corpus.
 expr main [(would![(( )[say, argue, expect, like, love, rather, otherwise, you]), (( )be( )happy)]), (could![(( )[not, argue, possibly, potentially, you]), (( )be( )argued)])]
 let message "Modal verb. Write `might` for a possibility, `can` for an ability, or the present tense for a consequence."
 let description "Flags `would` and `could`, which hide whether a sentence states a possibility, an ability, or a consequence."

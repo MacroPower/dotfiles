@@ -37,6 +37,31 @@ fixture's own tier reports that line with the same message. prose-lint
 keeps only the higher tier of two such findings, so that case shows
 one finding.
 
+The comment that opens each .weir and .awk file must follow the layout
+in the Comments section of CLAUDE.md. SECTIONS lists the section names
+in order, and REQUIRED_SECTIONS lists the sections that every comment
+carries.
+
+A heading is a comment line that holds only a section name. A comment
+line that is a paragraph of its own, is not indented past the one space
+after `#`, and does not end in a period counts as a heading too, so a
+misspelled or invented section name fails. A line is a paragraph of its
+own when a blank comment line or an end of the comment sits on each
+side of it. The first line of the comment and the line directly above
+the code can therefore count. In an .awk file, the `Output format`
+lines are the paragraph that opens with those words. Each of these
+breaches fails with a line of its own:
+
+- The file does not open with a comment.
+- The comment does not open with the first section.
+- A heading is not in SECTIONS, repeats, or comes after a section that
+  SECTIONS puts later.
+- A heading lacks a blank comment line before it or after it.
+- A section holds no text.
+- The comment lacks a required section.
+- An awk file has no `Output format` lines, or the lines do not end
+  the comment.
+
 A rule without a fixture pair fails, so a typo in a built-in name
 cannot pass silently. A fixture pair without a rule fails too, so a
 rule moved between tiers takes its fixtures along. A built-in listed
@@ -64,6 +89,13 @@ TAGS = frozenset(
     "ADJ ADP ADV AUX CCONJ DET INTJ NOUN NUM PART PRON PROPN PUNCT SCONJ SYM VERB X PROG".split()
 )
 EXPR_LINE = re.compile(r"expr (\w+) (.*)")
+
+# The sections of a rule comment, in the order that the Comments section
+# of CLAUDE.md gives them. Change that section and these names together.
+SECTIONS = ("Overview", "Expression", "False Positives", "Related Rules", "Measurement")
+REQUIRED_SECTIONS = frozenset({"Overview"})
+# The words that open the last lines of an awk rule's comment.
+OUTPUT_FORMAT = "Output format"
 
 
 @dataclass(frozen=True)
@@ -339,6 +371,86 @@ def check_entries(rule: Rule, pack: Path) -> list[str]:
     return failures
 
 
+def check_comment(path: Path) -> list[str]:
+    """Check the comment that opens a rule file against the section layout."""
+    comment: list[str] = []
+    for line in path.read_text().splitlines():
+        if not line.startswith("#"):
+            break
+        comment.append(line[1:].rstrip())
+    if not any(comment):
+        return [f"{path}: the file does not open with a comment"]
+
+    awk = path.suffix == ".awk"
+
+    def opens_output_format(i: int) -> bool:
+        """Say whether line `i` opens the `Output format` lines of an awk rule.
+
+        The lines are a paragraph of their own, so a wrapped line of
+        prose that starts with the same words does not count.
+        """
+        return (
+            awk
+            and comment[i].strip().startswith(OUTPUT_FORMAT)
+            and (i == 0 or not comment[i - 1])
+        )
+
+    failures: list[str] = []
+    if comment[0].strip() != SECTIONS[0]:
+        failures.append(f"{path}:1: the comment does not open with the {SECTIONS[0]} heading")
+    seen: list[str] = []
+    output_format = False
+    for i, text in enumerate(comment):
+        where = f"{path}:{i + 1}"
+        name = text.strip()
+        first = i == 0
+        last = i == len(comment) - 1
+        blank_before = not first and not comment[i - 1]
+        blank_after = not last and not comment[i + 1]
+        if opens_output_format(i):
+            output_format = True
+            # A heading after the lines gets a failure of its own below.
+            rest = comment[i + 1 :]
+            if "" in rest and not any(t.strip() in SECTIONS for t in rest):
+                failures.append(f"{where}: the `{OUTPUT_FORMAT}` lines do not end the comment")
+        elif name in SECTIONS:
+            if output_format:
+                failures.append(
+                    f"{where}: the {name} heading comes after the `{OUTPUT_FORMAT}` lines"
+                )
+            later = [s for s in seen if SECTIONS.index(s) > SECTIONS.index(name)]
+            if name in seen:
+                failures.append(f"{where}: the {name} heading repeats")
+            elif later:
+                failures.append(
+                    f"{where}: the {name} heading must come before {max(later, key=SECTIONS.index)}"
+                )
+            seen.append(name)
+            if not first and not blank_before:
+                failures.append(f"{where}: the {name} heading needs a blank comment line before it")
+            if not blank_after:
+                failures.append(f"{where}: the {name} heading needs a blank comment line after it")
+            body = next((j for j in range(i + 1, len(comment)) if comment[j]), None)
+            if body is None or comment[body].strip() in SECTIONS or opens_output_format(body):
+                failures.append(f"{where}: the {name} section holds no text")
+        elif (
+            name
+            and not text.startswith(("  ", "\t"))
+            and not name.endswith(".")
+            and (first or blank_before)
+            and (last or blank_after)
+        ):
+            failures.append(f"{where}: `{name}` is not a section heading that CLAUDE.md names")
+    for name in SECTIONS:
+        if name in REQUIRED_SECTIONS and name not in seen:
+            failures.append(f"{path}: the comment lacks the {name} section")
+    if awk and not output_format:
+        failures.append(
+            f"{path}: the comment has no `{OUTPUT_FORMAT}` lines after a blank comment line"
+        )
+    return failures
+
+
 def orphan_fixtures(fixtures: Path, rules: list[Rule]) -> list[str]:
     """Return a failure per fixture file whose rule is not in its tier."""
     known = {(r.tier, r.name) for r in rules}
@@ -374,6 +486,8 @@ def main(argv: list[str]) -> int:
     failures += orphan_fixtures(fixtures, rules)
     failures += check_tiers(rules, pack, fixtures, lib)
     for rule in rules:
+        if rule.path is not None:
+            failures += check_comment(rule.path)
         failures += check_rule(rule, pack, fixtures, lib)
         if rule.kind == "weir":
             failures += check_entries(rule, pack)
@@ -381,9 +495,9 @@ def main(argv: list[str]) -> int:
     for f in failures:
         print(f)
     if failures:
-        print(f"{len(failures)} fixture failure(s) across {len(rules)} rules")
+        print(f"{len(failures)} failure(s) across {len(rules)} rules")
         return 1
-    print(f"{len(rules)} rules pass their fixtures")
+    print(f"{len(rules)} rules pass their fixtures and the comment layout")
     return 0
 
 

@@ -1,24 +1,38 @@
-# Each phrase inflates a count without giving it, so the fix names the
-# items or writes `many` or `several` (`a wide range of styles` becomes
-# `the serif, sans, and mono styles`). The fix does not give the count,
-# because a count of a set that can grow goes stale.
+# Overview
+#
+# Each phrase inflates a count without giving it (`a wide range of
+# styles`), so the reader learns neither the items nor their number. The
+# fix names the items or writes `many` or `several` (`the serif, sans,
+# and mono styles`). The fix does not give the count, because a count of
+# a set that can grow goes stale. The rule sits at Recommended, because
+# `a variety of` also names a kind or means `different`.
+#
+# Expression
 #
 # `a host of` skips a following determiner (a word that introduces a
-# noun, such as `the`, `a`, or `this`), where `host` names a machine (`a
-# host of the cluster`).
+# noun, such as `the`, `a`, or `this`). `a significant number of` and
+# its kin with `huge`, `substantial`, `considerable`, or `good` report
+# here.
 #
-# `a significant number of` and its kin with `huge`, `substantial`,
-# `considerable`, or `good` report here. `a large number of` stays out,
-# because the Required ProseWordy rule reports it. `a certain number of`
-# and `a limited number of` stay out, because `many` changes or reverses
-# their meaning. `a large amount of` stays out, because `many` does not
-# fit a noun with no plural (`memory`).
+# False Positives
 #
-# The Optional rule of the same name holds `various`.
+# `a host of` before a determiner names a machine (`a host of the
+# cluster`). `a certain number of` and `a limited number of` stay out,
+# because `many` changes or reverses their meaning. `a large amount of`
+# stays out, because `many` does not fit a noun with no plural
+# (`memory`).
 #
-# It hit 46 lines in the measure.py corpus, and 18 of 20 sampled hits
-# stood for a count that the sentence did not give. The misses used
-# `variety` for a kind (`lifetimes: a variety of generics`) or for
+# Related Rules
+#
+# `a large number of` stays out, because the Required ProseWordy reports
+# it. The Optional ProseQuantity holds `various`, which also means
+# `different`.
+#
+# Measurement
+#
+# The rule hit 46 lines in the measure.py corpus, and 18 of 20 sampled
+# hits stood for a count that the sentence did not give. The misfires
+# used `variety` for a kind (`lifetimes: a variety of generics`) or for
 # `different` (`values with a variety of types`).
 expr main [(rich set), (wide range), (wide variety), (plethora of), (myriad of), (a myriad), (wide array), (vast array), (broad range), (diverse range), (a host of ![the, this, that, a, an, each, every, its, their]), (a whole host), (a slew of), countless, numerous, (a variety of), (a [huge, significant, substantial, considerable, good] number of)]
 let message "Vague quantity. Name the items, or write `many` or `several`."
