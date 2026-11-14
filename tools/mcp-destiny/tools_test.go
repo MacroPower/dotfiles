@@ -5749,7 +5749,7 @@ func TestListTagsAndNotes(t *testing.T) {
 	assert.False(t, isError)
 	assert.Contains(t, got, "keep | Keep | 1\n")
 	assert.Contains(t, got, "junk | Junk | 0\n")
-	assert.Contains(t, got, "Favorites: 1 items")
+	assert.True(t, strings.HasSuffix(got, "\nFavorites: 1 item"), got)
 
 	got, isError = call(t, f.h.handleListNotes, EmptyInput{})
 	assert.False(t, isError)

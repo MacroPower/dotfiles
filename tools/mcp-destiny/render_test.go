@@ -315,6 +315,33 @@ func TestRenderActivitiesEmpty(t *testing.T) {
 	}
 }
 
+func TestRenderTagsFavorites(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		want      string
+		favorites int
+	}{
+		"no favorites":  {want: "Favorites: 0 items"},
+		"one favorite":  {favorites: 1, want: "Favorites: 1 item"},
+		"two favorites": {favorites: 2, want: "Favorites: 2 items"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := &inventory.Snapshot{Items: []*inventory.Item{{Tag: "keep"}}}
+			for range tc.favorites {
+				s.Items = append(s.Items, &inventory.Item{Favorite: true})
+			}
+
+			got := renderTags(s)
+			assert.Equal(t, tc.want, got[strings.LastIndex(got, "\n")+1:])
+		})
+	}
+}
+
 func TestRenderStats(t *testing.T) {
 	t.Parallel()
 

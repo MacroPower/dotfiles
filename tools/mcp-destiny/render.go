@@ -1505,7 +1505,7 @@ func renderTags(s *inventory.Snapshot) string {
 		fmt.Fprintf(&b, "%s | %s | %d\n", id, tagLabels[id], counts[id])
 	}
 
-	fmt.Fprintf(&b, "\nFavorites: %d items", favorites)
+	fmt.Fprintf(&b, "\nFavorites: %s", itemCount(favorites))
 
 	return b.String()
 }
