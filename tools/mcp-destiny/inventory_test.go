@@ -196,7 +196,7 @@ func TestSlotsUsed(t *testing.T) {
 		move   string
 		target string
 		owner  string
-		extra  []ProfileItem
+		extra  []bungie.ProfileItem
 		bucket uint32
 		want   int
 	}{
@@ -215,7 +215,7 @@ func TestSlotsUsed(t *testing.T) {
 			want:   1,
 		},
 		"messages take no Postmaster slot": {
-			extra: []ProfileItem{
+			extra: []bungie.ProfileItem{
 				{Hash: 300, Quantity: 1, Location: bungie.ItemLocationPostmaster, BucketHash: bungie.BucketMessages},
 				{Hash: 300, Quantity: 2, Location: bungie.ItemLocationPostmaster, BucketHash: bungie.BucketMessages},
 			},
@@ -265,7 +265,7 @@ func TestSlotsUsed(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			var profile Profile
+			var profile bungie.Profile
 
 			require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
 
@@ -650,7 +650,7 @@ func TestResolveCharacter(t *testing.T) {
 	// The fixture Hunter has the lowest character id and the latest play
 	// time. The Titan in titanLast has the latest play time instead, so the
 	// empty name must follow the play time and not the id.
-	var profile Profile
+	var profile bungie.Profile
 
 	require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
 
@@ -980,7 +980,7 @@ func instanceItem(t *testing.T, defs *Defs, hash, bucket uint32, instance string
 		"itemComponents": {"instances": {"data": {"1": %s}}}
 	}`, hash, bucket, instance)
 
-	var p Profile
+	var p bungie.Profile
 
 	require.NoError(t, json.Unmarshal([]byte(body), &p))
 

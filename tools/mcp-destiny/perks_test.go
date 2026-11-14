@@ -9,10 +9,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
-func (m *stepMover) InsertSocketPlugFree(_ context.Context, action ItemAction, socket int, plugHash uint32) error {
+func (m *stepMover) InsertSocketPlugFree(
+	_ context.Context,
+	action bungie.ItemAction,
+	socket int,
+	plugHash uint32,
+) error {
 	return m.step(
 		fmt.Sprintf("insert %d into socket %d of %s on %s", plugHash, socket, action.InstanceID, action.CharacterID),
 	)
@@ -87,7 +93,7 @@ func TestPerksOf(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			var profile Profile
+			var profile bungie.Profile
 
 			require.NoError(t, json.Unmarshal(fmt.Appendf(nil, `{"itemComponents": {
 				"sockets": {"data": {"7": {"sockets": [

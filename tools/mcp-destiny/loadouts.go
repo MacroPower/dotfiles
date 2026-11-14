@@ -76,7 +76,7 @@ type Loadout struct {
 // character first.
 type LoadoutEquipper interface {
 	ItemMover
-	EquipLoadout(ctx context.Context, action LoadoutAction) error
+	EquipLoadout(ctx context.Context, action bungie.LoadoutAction) error
 }
 
 // LoadoutMove is one item that [*Snapshot.EquipLoadout] moved to the
@@ -108,7 +108,7 @@ type LoadoutEquip struct {
 // loadoutSlotsOf returns the number of loadout slots of each character of
 // a profile, keyed by character id. Bungie lists every slot that the
 // character unlocked, the empty slots included.
-func loadoutSlotsOf(profile *Profile) map[string]int {
+func loadoutSlotsOf(profile *bungie.Profile) map[string]int {
 	out := make(map[string]int, len(profile.CharacterLoadouts.Data))
 
 	for id, set := range profile.CharacterLoadouts.Data {
@@ -122,7 +122,7 @@ func loadoutSlotsOf(profile *Profile) map[string]int {
 // id, then number. It drops each loadout that holds nothing and keeps the
 // number of every other loadout. A loadout holds nothing when every item
 // has the instance id "0" or no instance id.
-func loadoutsOf(profile *Profile) []Loadout {
+func loadoutsOf(profile *bungie.Profile) []Loadout {
 	var out []Loadout
 
 	for id, set := range profile.CharacterLoadouts.Data {
@@ -263,7 +263,7 @@ func (s *Snapshot) LoadoutGear(characterID string) []*Item {
 // holds the instance ids of [*Snapshot.LoadoutGear] and replaces any
 // loadout that the slot held. Without equipped gear, the slot holds
 // nothing, so the snapshot drops its loadout as [loadoutsOf] does.
-func (s *Snapshot) recordLoadoutSave(characterID string, number int, ids LoadoutIdentifiers) {
+func (s *Snapshot) recordLoadoutSave(characterID string, number int, ids bungie.LoadoutIdentifiers) {
 	s.recordLoadoutClear(characterID, number)
 
 	l := Loadout{
@@ -314,8 +314,8 @@ func loadoutIdentifiers(
 	saved bool,
 	name string,
 	states map[loadoutTable]LoadoutTableState,
-) (LoadoutIdentifiers, error) {
-	ids := LoadoutIdentifiers{NameHash: slot.NameHash, IconHash: slot.IconHash, ColorHash: slot.ColorHash}
+) (bungie.LoadoutIdentifiers, error) {
+	ids := bungie.LoadoutIdentifiers{NameHash: slot.NameHash, IconHash: slot.IconHash, ColorHash: slot.ColorHash}
 
 	switch {
 	case name != "":
@@ -451,7 +451,7 @@ func (s *Snapshot) EquipLoadout(ctx context.Context, equipper LoadoutEquipper, l
 		out.Moves = append(out.Moves, LoadoutMove{Item: item, Replacement: replacement, From: from})
 	}
 
-	err := equipper.EquipLoadout(ctx, LoadoutAction{CharacterID: l.CharacterID, Index: l.Number - 1})
+	err := equipper.EquipLoadout(ctx, bungie.LoadoutAction{CharacterID: l.CharacterID, Index: l.Number - 1})
 	if err != nil {
 		return out, fmt.Errorf("equipping the loadout: %w", err)
 	}

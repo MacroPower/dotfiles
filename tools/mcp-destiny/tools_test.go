@@ -242,7 +242,7 @@ func TestListCharacters(t *testing.T) {
 func TestRenderCharactersWithoutDefinitions(t *testing.T) {
 	t.Parallel()
 
-	var profile Profile
+	var profile bungie.Profile
 
 	require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
 
@@ -1051,7 +1051,7 @@ func TestSnapshotCache(t *testing.T) {
 
 	saved, err := f.h.auth.Saved()
 	require.NoError(t, err)
-	assert.Equal(t, Membership{ID: "4611", Type: 3}, saved.Membership)
+	assert.Equal(t, bungie.Membership{ID: "4611", Type: 3}, saved.Membership)
 	assert.Len(t, f.bungie.Calls(http.MethodGet, "/User/GetMembershipsForCurrentUser/"), 1)
 }
 
@@ -3060,27 +3060,27 @@ func TestActivityName(t *testing.T) {
 	defs := fixtureDefs()
 
 	tests := map[string]struct {
-		activity HistoryActivity
+		activity bungie.HistoryActivity
 		want     string
 	}{
 		"reference id": {
-			activity: HistoryActivity{ReferenceID: 3022541210},
+			activity: bungie.HistoryActivity{ReferenceID: 3022541210},
 			want:     "Vault of Glass: Master",
 		},
 		"reference id first": {
-			activity: HistoryActivity{ReferenceID: 4444, DirectorActivityHash: 5555},
+			activity: bungie.HistoryActivity{ReferenceID: 4444, DirectorActivityHash: 5555},
 			want:     "Control",
 		},
 		"director hash": {
-			activity: HistoryActivity{ReferenceID: 1111, DirectorActivityHash: 2222},
+			activity: bungie.HistoryActivity{ReferenceID: 1111, DirectorActivityHash: 2222},
 			want:     "Vanguard Ops",
 		},
 		"definition without a name": {
-			activity: HistoryActivity{ReferenceID: 3334, DirectorActivityHash: 2222},
+			activity: bungie.HistoryActivity{ReferenceID: 3334, DirectorActivityHash: 2222},
 			want:     "Vanguard Ops",
 		},
 		"no definition": {
-			activity: HistoryActivity{ReferenceID: 3333, DirectorActivityHash: 3334},
+			activity: bungie.HistoryActivity{ReferenceID: 3333, DirectorActivityHash: 3334},
 			want:     "Activity 3333",
 		},
 	}

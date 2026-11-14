@@ -181,7 +181,7 @@ func fixtureDefs() *Defs {
 func fixtureSnapshot(t *testing.T) *Snapshot {
 	t.Helper()
 
-	var profile Profile
+	var profile bungie.Profile
 
 	require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
 
@@ -327,7 +327,7 @@ func newFakes(t *testing.T) *fakes {
 
 	f.h = &handler{
 		service: client,
-		bungie:  NewBungie(WithBungieURL(f.bungie.URL), WithBungieContentURL(f.bungie.URL)),
+		bungie:  bungie.New(bungie.WithURL(f.bungie.URL), bungie.WithContentURL(f.bungie.URL)),
 		auth:    NewAuth(store, client, WithAuthClock(now)),
 		defs:    defs,
 		sheets:  NewSheetStore(client),

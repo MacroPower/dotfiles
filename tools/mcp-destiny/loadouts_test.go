@@ -14,7 +14,7 @@ import (
 )
 
 // EquipLoadout records a loadout equip as a step of the [stepMover].
-func (m *stepMover) EquipLoadout(_ context.Context, action LoadoutAction) error {
+func (m *stepMover) EquipLoadout(_ context.Context, action bungie.LoadoutAction) error {
 	return m.step(fmt.Sprintf("equip loadout %d on %s", action.Index, action.CharacterID))
 }
 
@@ -227,17 +227,17 @@ func TestEquipLoadoutChecksMovesFirst(t *testing.T) {
 func TestLoadoutsOfDropsEmptyItems(t *testing.T) {
 	t.Parallel()
 
-	var profile Profile
+	var profile bungie.Profile
 
-	profile.CharacterLoadouts.Data = map[string]ProfileLoadouts{
-		bungietest.HunterID: {Loadouts: []ProfileLoadout{
-			{Items: []ProfileLoadoutItem{{}}},
-			{Items: []ProfileLoadoutItem{{InstanceID: "1001"}, {}}},
-			{Items: []ProfileLoadoutItem{{InstanceID: emptyLoadoutItem}, {InstanceID: emptyLoadoutItem}}},
+	profile.CharacterLoadouts.Data = map[string]bungie.ProfileLoadouts{
+		bungietest.HunterID: {Loadouts: []bungie.ProfileLoadout{
+			{Items: []bungie.ProfileLoadoutItem{{}}},
+			{Items: []bungie.ProfileLoadoutItem{{InstanceID: "1001"}, {}}},
+			{Items: []bungie.ProfileLoadoutItem{{InstanceID: emptyLoadoutItem}, {InstanceID: emptyLoadoutItem}}},
 			{},
 		}},
-		bungietest.TitanID: {Loadouts: []ProfileLoadout{
-			{Items: []ProfileLoadoutItem{{InstanceID: emptyLoadoutItem}, {InstanceID: "1006"}}},
+		bungietest.TitanID: {Loadouts: []bungie.ProfileLoadout{
+			{Items: []bungie.ProfileLoadoutItem{{InstanceID: emptyLoadoutItem}, {InstanceID: "1006"}}},
 		}},
 	}
 
@@ -407,7 +407,7 @@ func loadoutKeys(loadouts []Loadout) []string {
 func TestRecordLoadoutSave(t *testing.T) {
 	t.Parallel()
 
-	ids := LoadoutIdentifiers{NameHash: 10, IconHash: 20, ColorHash: 30}
+	ids := bungie.LoadoutIdentifiers{NameHash: 10, IconHash: 20, ColorHash: 30}
 
 	tests := map[string]struct {
 		change      func(s *Snapshot)

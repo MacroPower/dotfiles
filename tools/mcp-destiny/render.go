@@ -1128,7 +1128,7 @@ func flagsOf(item *Item) []string {
 type historyRun struct {
 	Character string
 
-	HistoryPeriod
+	bungie.HistoryPeriod
 }
 
 // renderActivityHistory renders runs in their order. Scope names the owner
@@ -1181,7 +1181,7 @@ func renderActivityHistory(defs *Defs, runs []historyRun, scope string, limit in
 // first and the director activity hash second, in the order of the web
 // client. It skips a definition without a name, and it names a run that
 // neither hash names "Activity <reference id>".
-func activityName(defs *Defs, activity HistoryActivity) string {
+func activityName(defs *Defs, activity bungie.HistoryActivity) string {
 	for _, hash := range []uint32{activity.ReferenceID, activity.DirectorActivityHash} {
 		def := defs.Activities[hash]
 		if def.Name != "" {

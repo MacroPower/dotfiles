@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // ErrPerk reports a perk change that the item forbids before any Bungie
@@ -14,7 +16,7 @@ var ErrPerk = errors.New("cannot change the perk")
 // PlugInserter performs the Bungie request that inserts a plug into a
 // socket of an item.
 type PlugInserter interface {
-	InsertSocketPlugFree(ctx context.Context, action ItemAction, socket int, plugHash uint32) error
+	InsertSocketPlugFree(ctx context.Context, action bungie.ItemAction, socket int, plugHash uint32) error
 }
 
 // SetPerk makes the plug named name the active perk of one socket of item
@@ -101,7 +103,7 @@ func (s *Snapshot) SetPerk(
 
 	perk := &item.Perks[matches[0].perk]
 	option := perk.Options[matches[0].option]
-	action := ItemAction{InstanceID: item.InstanceID, ItemHash: item.Hash, CharacterID: character}
+	action := bungie.ItemAction{InstanceID: item.InstanceID, ItemHash: item.Hash, CharacterID: character}
 
 	err := inserter.InsertSocketPlugFree(ctx, action, perk.Socket, option.Hash)
 	if err != nil {

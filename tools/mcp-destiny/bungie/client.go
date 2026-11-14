@@ -1,4 +1,4 @@
-package main
+package bungie
 
 import (
 	"bytes"
@@ -16,8 +16,16 @@ import (
 )
 
 const (
-	defaultBungieURL        = "https://www.bungie.net/Platform"
-	defaultBungieContentURL = "https://www.bungie.net"
+	defaultURL        = "https://www.bungie.net/Platform"
+	defaultContentURL = "https://www.bungie.net"
+	defaultUserAgent  = "MCP-Destiny"
+	defaultTimeout    = 60 * time.Second
+
+	// maxResponseBytes caps a JSON API response body.
+	maxResponseBytes = 32 << 20
+
+	// maxContentBytes caps one content file of the manifest.
+	maxContentBytes = 128 << 20
 )
 
 // Bungie platform error codes that mean the access token is unusable.
@@ -34,48 +42,52 @@ const socketArrayDefault = 0
 
 var (
 	// profileComponents lists the GetProfile components that
-	// [*Bungie.Profile] requests. They cover profiles, profile inventories,
+	// [*Client.Profile] requests. They cover profiles, profile inventories,
 	// profile currencies, characters, character inventories, character
 	// equipment, and character loadouts. The item components cover
 	// instances, stats, sockets, and reusable plugs.
 	profileComponents = []int{100, 102, 103, 200, 201, 205, 206, 300, 304, 305, 310}
 
 	// vendorComponents lists the GetVendors components that
-	// [*Bungie.Vendors] requests. They cover vendors, vendor categories, and
+	// [*Client.Vendors] requests. They cover vendors, vendor categories, and
 	// vendor sales.
 	vendorComponents = []int{400, 401, 402}
 
 	// activityComponents lists the GetProfile components that
-	// [*Bungie.Activities] requests. They cover the activities of each
+	// [*Client.Activities] requests. They cover the activities of each
 	// character.
 	activityComponents = []int{204}
 
-	// ErrBungie marks failures that originate from the Bungie platform API.
-	// A [*BungieError] carries the platform error code.
-	ErrBungie = errors.New("bungie")
+	// ErrPlatform marks failures that originate from the Bungie platform
+	// API. A [*PlatformError] carries the platform error code.
+	ErrPlatform = errors.New("bungie")
+
+	// ErrUnauthorized reports that Bungie rejected the access token.
+	// Callers refresh the tokens and retry.
+	ErrUnauthorized = errors.New("unauthorized")
 )
 
-// BungieError is a Bungie platform error response. It unwraps to
-// [ErrBungie], and to [ErrUnauthorized] when the code reports an unusable
-// access token.
-type BungieError struct {
+// PlatformError is a Bungie platform error response. It unwraps to
+// [ErrPlatform], and to [ErrUnauthorized] when the code reports an
+// unusable access token.
+type PlatformError struct {
 	Status  string
 	Message string
 	Code    int
 }
 
 // Error implements the error interface.
-func (e *BungieError) Error() string {
+func (e *PlatformError) Error() string {
 	return fmt.Sprintf("bungie: %s: %s", e.Status, e.Message)
 }
 
 // Unwrap returns the sentinel errors that this error matches.
-func (e *BungieError) Unwrap() []error {
+func (e *PlatformError) Unwrap() []error {
 	if e.Code == bungieWebAuthRequired || e.Code == bungieAccessTokenStale {
-		return []error{ErrBungie, ErrUnauthorized}
+		return []error{ErrPlatform, ErrUnauthorized}
 	}
 
-	return []error{ErrBungie}
+	return []error{ErrPlatform}
 }
 
 // Credentials authenticate one Bungie platform request.
@@ -426,27 +438,45 @@ type LoadoutIdentifiers struct {
 	ColorHash uint32
 }
 
-// BungieOption configures a [*Bungie]. See [WithBungieURL] and
-// [WithBungieContentURL].
-type BungieOption func(*Bungie)
+// Option configures a [*Client] via [New].
+//
+// Functions of this type:
+//   - [WithURL]
+//   - [WithContentURL]
+//   - [WithUserAgent]
+//   - [WithClock]
+type Option func(*Client)
 
-// WithBungieURL overrides the platform base URL. It is a [BungieOption].
-func WithBungieURL(u string) BungieOption {
-	return func(b *Bungie) { b.baseURL = strings.TrimRight(u, "/") }
+// WithURL overrides the platform base URL. It is an [Option].
+func WithURL(u string) Option {
+	return func(b *Client) { b.baseURL = strings.TrimRight(u, "/") }
 }
 
-// WithBungieContentURL overrides the base URL of the content files that
-// the Destiny manifest names. It is a [BungieOption].
-func WithBungieContentURL(u string) BungieOption {
-	return func(b *Bungie) { b.contentURL = strings.TrimRight(u, "/") }
+// WithContentURL overrides the base URL of the content files that the
+// Destiny manifest names. It is an [Option].
+func WithContentURL(u string) Option {
+	return func(b *Client) { b.contentURL = strings.TrimRight(u, "/") }
 }
 
-// Bungie is the HTTP client for the Bungie platform API. Every platform
+// WithUserAgent sets the User-Agent header of every request. The header
+// defaults to MCP-Destiny. It is an [Option].
+func WithUserAgent(ua string) Option {
+	return func(b *Client) { b.userAgent = ua }
+}
+
+// WithClock sets the clock that the client reads for the changing query
+// parameter of a component request. The clock defaults to [time.Now]. It
+// is an [Option].
+func WithClock(now func() time.Time) Option {
+	return func(b *Client) { b.now = now }
+}
+
+// Client is the HTTP client for the Bungie platform API. Every platform
 // request carries the API key of Agg's Destiny Vault Manager and the
 // access token of the signed-in account. The client also downloads the
 // content files that the Destiny manifest names, and those requests carry
 // no credentials.
-type Bungie struct {
+type Client struct {
 	http       *http.Client
 	now        func() time.Time
 	baseURL    string
@@ -454,13 +484,13 @@ type Bungie struct {
 	userAgent  string
 }
 
-// NewBungie returns a [*Bungie] configured with the given options.
-func NewBungie(opts ...BungieOption) *Bungie {
-	b := &Bungie{
+// New returns a [*Client] configured with the given options.
+func New(opts ...Option) *Client {
+	b := &Client{
 		http:       &http.Client{Timeout: defaultTimeout},
 		now:        time.Now,
-		baseURL:    defaultBungieURL,
-		contentURL: defaultBungieContentURL,
+		baseURL:    defaultURL,
+		contentURL: defaultContentURL,
 		userAgent:  defaultUserAgent,
 	}
 	for _, opt := range opts {
@@ -473,7 +503,7 @@ func NewBungie(opts ...BungieOption) *Bungie {
 // PrimaryMembership returns the Destiny membership that the signed-in
 // account plays on. It prefers the cross save primary and falls back to the
 // first membership.
-func (b *Bungie) PrimaryMembership(ctx context.Context, creds Credentials) (Membership, error) {
+func (b *Client) PrimaryMembership(ctx context.Context, creds Credentials) (Membership, error) {
 	var out struct {
 		PrimaryMembershipID string       `json:"primaryMembershipId"`
 		DestinyMemberships  []Membership `json:"destinyMemberships"`
@@ -485,7 +515,7 @@ func (b *Bungie) PrimaryMembership(ctx context.Context, creds Credentials) (Memb
 	}
 
 	if len(out.DestinyMemberships) == 0 {
-		return Membership{}, fmt.Errorf("%w: account has no Destiny memberships", ErrBungie)
+		return Membership{}, fmt.Errorf("%w: account has no Destiny memberships", ErrPlatform)
 	}
 
 	for _, m := range out.DestinyMemberships {
@@ -499,7 +529,7 @@ func (b *Bungie) PrimaryMembership(ctx context.Context, creds Credentials) (Memb
 
 // Profile fetches the inventory of every character and the vault, and the
 // currency balances of the account.
-func (b *Bungie) Profile(ctx context.Context, creds Credentials, m Membership) (*Profile, error) {
+func (b *Client) Profile(ctx context.Context, creds Credentials, m Membership) (*Profile, error) {
 	path := fmt.Sprintf("/Destiny2/%d/Profile/%s/?%s", m.Type, m.ID, b.componentsQuery(profileComponents))
 
 	var out Profile
@@ -516,7 +546,7 @@ func (b *Bungie) Profile(ctx context.Context, creds Credentials, m Membership) (
 // at the moment of the call. Bungie lists the vendors whose stock can
 // rotate, so the response leaves out preview vendors and kiosks. The stock
 // and the sale status differ per character.
-func (b *Bungie) Vendors(
+func (b *Client) Vendors(
 	ctx context.Context,
 	creds Credentials,
 	m Membership,
@@ -540,7 +570,7 @@ func (b *Bungie) Vendors(
 // Activities fetches the activities that each character can play, keyed
 // by character id, with the rewards that each activity still offers this
 // week.
-func (b *Bungie) Activities(
+func (b *Client) Activities(
 	ctx context.Context,
 	creds Credentials,
 	m Membership,
@@ -563,9 +593,9 @@ func (b *Bungie) Activities(
 
 // Manifest returns the path of the English content file of each
 // definition table of the Destiny manifest, keyed by the name of the
-// table, such as DestinyLoadoutNameDefinition. [*Bungie.Content] opens a
+// table, such as DestinyLoadoutNameDefinition. [*Client.Content] opens a
 // path. The map is empty when the manifest lists no English tables.
-func (b *Bungie) Manifest(ctx context.Context, creds Credentials) (map[string]string, error) {
+func (b *Client) Manifest(ctx context.Context, creds Credentials) (map[string]string, error) {
 	var out struct {
 		Paths map[string]map[string]string `json:"jsonWorldComponentContentPaths"`
 	}
@@ -579,10 +609,10 @@ func (b *Bungie) Manifest(ctx context.Context, creds Credentials) (map[string]st
 }
 
 // Content opens one content file that the Destiny manifest names, such as
-// a definition table. Path is a path that [*Bungie.Manifest] returns. The
+// a definition table. Path is a path that [*Client.Manifest] returns. The
 // file lives under the content base URL, not under the platform base URL.
 // The caller closes the returned reader.
-func (b *Bungie) Content(ctx context.Context, path string) (io.ReadCloser, error) {
+func (b *Client) Content(ctx context.Context, path string) (io.ReadCloser, error) {
 	u := b.contentURL + path
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
@@ -601,20 +631,20 @@ func (b *Bungie) Content(ctx context.Context, path string) (io.ReadCloser, error
 	if resp.StatusCode != http.StatusOK {
 		httpbody.Close(ctx, resp.Body, u)
 
-		return nil, fmt.Errorf("%w: content file returned status %d", ErrBungie, resp.StatusCode)
+		return nil, fmt.Errorf("%w: content file returned status %d", ErrPlatform, resp.StatusCode)
 	}
 
 	return struct {
 		io.Reader
 		io.Closer
-	}{io.LimitReader(resp.Body, maxArtifactBytes), resp.Body}, nil
+	}{io.LimitReader(resp.Body, maxContentBytes), resp.Body}, nil
 }
 
 // componentsQuery returns the query string that requests components from
 // a Destiny endpoint. Bungie serves a cached snapshot for a repeated URL,
 // so the query also carries a changing parameter that requests the latest
 // state.
-func (b *Bungie) componentsQuery(components []int) string {
+func (b *Client) componentsQuery(components []int) string {
 	parts := make([]string, 0, len(components))
 	for _, c := range components {
 		parts = append(parts, strconv.Itoa(c))
@@ -629,10 +659,10 @@ func (b *Bungie) componentsQuery(components []int) string {
 // response.
 //
 // The web client requests this page without the changing query parameter
-// of [*Bungie.Profile], and so does ActivityHistory. A page that Bungie
+// of [*Client.Profile], and so does ActivityHistory. A page that Bungie
 // serves from its cache might therefore miss a run that ended in the last
 // minute.
-func (b *Bungie) ActivityHistory(
+func (b *Client) ActivityHistory(
 	ctx context.Context,
 	creds Credentials,
 	m Membership,
@@ -657,7 +687,7 @@ func (b *Bungie) ActivityHistory(
 }
 
 // Transfer moves an item between the vault and a character.
-func (b *Bungie) Transfer(ctx context.Context, creds Credentials, action ItemAction, toVault bool) error {
+func (b *Client) Transfer(ctx context.Context, creds Credentials, action ItemAction, toVault bool) error {
 	body := map[string]any{
 		"itemReferenceHash": action.ItemHash,
 		"stackSize":         max(action.StackSize, 1),
@@ -671,7 +701,7 @@ func (b *Bungie) Transfer(ctx context.Context, creds Credentials, action ItemAct
 }
 
 // Equip equips an item that the character already holds.
-func (b *Bungie) Equip(ctx context.Context, creds Credentials, action ItemAction) error {
+func (b *Client) Equip(ctx context.Context, creds Credentials, action ItemAction) error {
 	body := map[string]any{
 		"itemId":         action.InstanceID,
 		"characterId":    action.CharacterID,
@@ -683,7 +713,7 @@ func (b *Bungie) Equip(ctx context.Context, creds Credentials, action ItemAction
 
 // PullFromPostmaster moves an item from the Postmaster into the inventory
 // of the character that owns it.
-func (b *Bungie) PullFromPostmaster(ctx context.Context, creds Credentials, action ItemAction) error {
+func (b *Client) PullFromPostmaster(ctx context.Context, creds Credentials, action ItemAction) error {
 	body := map[string]any{
 		"itemReferenceHash": action.ItemHash,
 		"stackSize":         1,
@@ -696,7 +726,7 @@ func (b *Bungie) PullFromPostmaster(ctx context.Context, creds Credentials, acti
 }
 
 // SetLockState locks or unlocks an instanced item.
-func (b *Bungie) SetLockState(ctx context.Context, creds Credentials, action ItemAction, locked bool) error {
+func (b *Client) SetLockState(ctx context.Context, creds Credentials, action ItemAction, locked bool) error {
 	body := map[string]any{
 		"state":          locked,
 		"itemId":         action.InstanceID,
@@ -711,7 +741,7 @@ func (b *Bungie) SetLockState(ctx context.Context, creds Credentials, action Ite
 // the socket at index socket of an instanced item. Bungie inserts only a
 // plug that costs nothing and that a later insert can reverse, such as a
 // weapon perk.
-func (b *Bungie) InsertSocketPlugFree(
+func (b *Client) InsertSocketPlugFree(
 	ctx context.Context,
 	creds Credentials,
 	action ItemAction,
@@ -733,7 +763,7 @@ func (b *Bungie) InsertSocketPlugFree(
 }
 
 // EquipLoadout equips a loadout that the character saved in the game.
-func (b *Bungie) EquipLoadout(ctx context.Context, creds Credentials, action LoadoutAction) error {
+func (b *Client) EquipLoadout(ctx context.Context, creds Credentials, action LoadoutAction) error {
 	body := map[string]any{
 		"loadoutIndex":   action.Index,
 		"characterId":    action.CharacterID,
@@ -747,7 +777,7 @@ func (b *Bungie) EquipLoadout(ctx context.Context, creds Credentials, action Loa
 // the plugs of that gear, into one loadout slot of the character. The
 // saved loadout carries the name, the icon, and the color that ids
 // gives.
-func (b *Bungie) SnapshotLoadout(
+func (b *Client) SnapshotLoadout(
 	ctx context.Context,
 	creds Credentials,
 	action LoadoutAction,
@@ -766,7 +796,7 @@ func (b *Bungie) SnapshotLoadout(
 }
 
 // ClearLoadout empties one loadout slot of the character.
-func (b *Bungie) ClearLoadout(ctx context.Context, creds Credentials, action LoadoutAction) error {
+func (b *Client) ClearLoadout(ctx context.Context, creds Credentials, action LoadoutAction) error {
 	body := map[string]any{
 		"loadoutIndex":   action.Index,
 		"characterId":    action.CharacterID,
@@ -778,7 +808,7 @@ func (b *Bungie) ClearLoadout(ctx context.Context, creds Credentials, action Loa
 
 // call performs one platform request and unwraps the Bungie response
 // envelope into dst. A nil dst discards the response.
-func (b *Bungie) call(ctx context.Context, creds Credentials, method, path string, body, dst any) error {
+func (b *Client) call(ctx context.Context, creds Credentials, method, path string, body, dst any) error {
 	u := b.baseURL + path
 
 	var reader io.Reader = http.NoBody
@@ -831,11 +861,11 @@ func (b *Bungie) call(ctx context.Context, creds Credentials, method, path strin
 			return fmt.Errorf("%w: bungie returned status %d", ErrUnauthorized, resp.StatusCode)
 		}
 
-		return fmt.Errorf("%w: %s returned status %d without a platform response", ErrBungie, path, resp.StatusCode)
+		return fmt.Errorf("%w: %s returned status %d without a platform response", ErrPlatform, path, resp.StatusCode)
 	}
 
 	if envelope.ErrorCode != bungieSuccess {
-		return &BungieError{Code: envelope.ErrorCode, Status: envelope.ErrorStatus, Message: envelope.Message}
+		return &PlatformError{Code: envelope.ErrorCode, Status: envelope.ErrorStatus, Message: envelope.Message}
 	}
 
 	if dst == nil {
@@ -844,7 +874,7 @@ func (b *Bungie) call(ctx context.Context, creds Credentials, method, path strin
 
 	err = json.Unmarshal(envelope.Response, dst)
 	if err != nil {
-		return fmt.Errorf("%w: decoding %s: %w", ErrBungie, path, err)
+		return fmt.Errorf("%w: decoding %s: %w", ErrPlatform, path, err)
 	}
 
 	return nil

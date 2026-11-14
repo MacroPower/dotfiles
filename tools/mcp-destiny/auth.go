@@ -14,6 +14,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 const (
@@ -41,13 +43,13 @@ var (
 // platform requests, and Session authenticates requests to Agg's Destiny
 // Vault Manager.
 type Tokens struct {
-	AccessExpires  time.Time  `json:"accessExpires"`
-	RefreshExpires time.Time  `json:"refreshExpires,omitzero"`
-	AccessToken    string     `json:"accessToken"`
-	RefreshToken   string     `json:"refreshToken,omitempty"`
-	Session        string     `json:"session,omitempty"`
-	BungieID       string     `json:"bungieMembershipId"`
-	Membership     Membership `json:"membership,omitzero"`
+	AccessExpires  time.Time         `json:"accessExpires"`
+	RefreshExpires time.Time         `json:"refreshExpires,omitzero"`
+	AccessToken    string            `json:"accessToken"`
+	RefreshToken   string            `json:"refreshToken,omitempty"`
+	Session        string            `json:"session,omitempty"`
+	BungieID       string            `json:"bungieMembershipId"`
+	Membership     bungie.Membership `json:"membership,omitzero"`
 }
 
 // TokenStore reads and writes the token file. Every server process and the
@@ -336,7 +338,7 @@ func (a *Auth) Refresh(ctx context.Context, stale string) (Tokens, error) {
 // bungieID in the token file. It leaves the file unchanged when the file
 // holds the tokens of a different account. The accounts differ when another
 // process signs in between the membership lookup and this call.
-func (a *Auth) SetMembership(bungieID string, m Membership) error {
+func (a *Auth) SetMembership(bungieID string, m bungie.Membership) error {
 	unlock, err := a.store.lock()
 	if err != nil {
 		return err

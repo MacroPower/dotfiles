@@ -14,6 +14,8 @@ import (
 	"unicode/utf16"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // MCP tool names. The registration in main.go, the handlers, and the log
@@ -340,7 +342,7 @@ type GetStatsInput struct {
 // the same mutex guards them.
 type handler struct {
 	service       *Service
-	bungie        *Bungie
+	bungie        *bungie.Client
 	auth          *Auth
 	defs          *DefsLoader
 	sheets        *SheetStore
@@ -658,9 +660,9 @@ func (h *handler) handleListActivityHistory(
 		return h.toolError(ctx, toolListActivityHistory, fmt.Errorf("loading definitions: %w", err))
 	}
 
-	pages := make([][]HistoryPeriod, len(characters))
+	pages := make([][]bungie.HistoryPeriod, len(characters))
 
-	err = h.withBungie(ctx, func(creds Credentials) error {
+	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
 		var wg sync.WaitGroup
 
 		errs := make([]error, len(characters))
@@ -728,14 +730,14 @@ func (h *handler) handleListVendors(
 		return h.toolError(ctx, toolListVendors, fmt.Errorf("loading definitions: %w", err))
 	}
 
-	var resp *VendorsResponse
+	var resp *bungie.VendorsResponse
 
-	err = h.withBungie(ctx, func(creds Credentials) error {
+	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
 		var err error
 
 		resp, err = h.bungie.Vendors(ctx, creds, membership, c.ID)
 
-		return err
+		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
 	})
 	if err != nil {
 		return h.toolError(ctx, toolListVendors, fmt.Errorf("fetching the vendors: %w", err))
@@ -784,16 +786,16 @@ func (h *handler) handleListActivities(
 		return h.toolError(ctx, toolListActivities, fmt.Errorf("loading definitions: %w", err))
 	}
 
-	var activities map[string]CharacterActivities
+	var activities map[string]bungie.CharacterActivities
 
 	// The rewards change when the character claims one, so every call
 	// fetches the activities again instead of reusing the snapshot.
-	err = h.withBungie(ctx, func(creds Credentials) error {
+	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
 		var err error
 
 		activities, err = h.bungie.Activities(ctx, creds, membership)
 
-		return err
+		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
 	})
 	if err != nil {
 		return h.toolError(ctx, toolListActivities, fmt.Errorf("fetching the activities: %w", err))
@@ -1279,9 +1281,9 @@ func (h *handler) handleSaveLoadout(
 		return h.toolError(ctx, toolSaveLoadout, err)
 	}
 
-	action := LoadoutAction{CharacterID: c.ID, Membership: membership, Index: in.Number - 1}
+	action := bungie.LoadoutAction{CharacterID: c.ID, Membership: membership, Index: in.Number - 1}
 
-	err = h.withBungie(ctx, func(creds Credentials) error {
+	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
 		return h.bungie.SnapshotLoadout(ctx, creds, action, ids)
 	})
 	if err != nil {
@@ -1338,9 +1340,9 @@ func (h *handler) handleClearLoadout(
 		return h.toolError(ctx, toolClearLoadout, err)
 	}
 
-	action := LoadoutAction{CharacterID: c.ID, Membership: membership, Index: in.Number - 1}
+	action := bungie.LoadoutAction{CharacterID: c.ID, Membership: membership, Index: in.Number - 1}
 
-	err = h.withBungie(ctx, func(creds Credentials) error {
+	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
 		return h.bungie.ClearLoadout(ctx, creds, action)
 	})
 	if err != nil {
@@ -2566,14 +2568,14 @@ func (h *handler) loadSnapshot(ctx context.Context, refresh bool) (*Snapshot, er
 		return nil, fmt.Errorf("loading definitions: %w", err)
 	}
 
-	var profile *Profile
+	var profile *bungie.Profile
 
-	err = h.withBungie(ctx, func(creds Credentials) error {
+	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
 		var err error
 
 		profile, err = h.bungie.Profile(ctx, creds, membership)
 
-		return err
+		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
 	})
 	if err != nil {
 		return nil, fmt.Errorf("fetching the profile: %w", err)
@@ -2739,27 +2741,27 @@ func (h *handler) autotag(ctx context.Context) (AutotagSnapshot, error) {
 // membership returns the Destiny membership of the signed-in account. The
 // first call after a sign-in asks Bungie and records the answer in the
 // token file.
-func (h *handler) membership(ctx context.Context) (Membership, error) {
+func (h *handler) membership(ctx context.Context) (bungie.Membership, error) {
 	t, err := h.auth.Tokens(ctx)
 	if err != nil {
-		return Membership{}, err
+		return bungie.Membership{}, err
 	}
 
 	if !t.Membership.IsZero() {
 		return t.Membership, nil
 	}
 
-	var m Membership
+	var m bungie.Membership
 
-	err = h.withBungie(ctx, func(creds Credentials) error {
+	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
 		var err error
 
 		m, err = h.bungie.PrimaryMembership(ctx, creds)
 
-		return err
+		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
 	})
 	if err != nil {
-		return Membership{}, fmt.Errorf("resolving the Destiny membership: %w", err)
+		return bungie.Membership{}, fmt.Errorf("resolving the Destiny membership: %w", err)
 	}
 
 	err = h.auth.SetMembership(t.BungieID, m)
@@ -2772,7 +2774,7 @@ func (h *handler) membership(ctx context.Context) (Membership, error) {
 
 // withBungie runs fn with Bungie credentials. When Bungie rejects the
 // access token, it refreshes the tokens and runs fn a second time.
-func (h *handler) withBungie(ctx context.Context, fn func(Credentials) error) error {
+func (h *handler) withBungie(ctx context.Context, fn func(bungie.Credentials) error) error {
 	t, err := h.auth.Tokens(ctx)
 	if err != nil {
 		return err
@@ -2783,8 +2785,8 @@ func (h *handler) withBungie(ctx context.Context, fn func(Credentials) error) er
 		return err
 	}
 
-	err = fn(Credentials{APIKey: key, AccessToken: t.AccessToken})
-	if !errors.Is(err, ErrUnauthorized) {
+	err = fn(bungie.Credentials{APIKey: key, AccessToken: t.AccessToken})
+	if !errors.Is(err, bungie.ErrUnauthorized) {
 		return err
 	}
 
@@ -2793,7 +2795,7 @@ func (h *handler) withBungie(ctx context.Context, fn func(Credentials) error) er
 		return err
 	}
 
-	return fn(Credentials{APIKey: key, AccessToken: t.AccessToken})
+	return fn(bungie.Credentials{APIKey: key, AccessToken: t.AccessToken})
 }
 
 // withSession runs fn with the service session token. When the service
@@ -2867,59 +2869,64 @@ func (h *handler) bungieKey(ctx context.Context) (string, error) {
 // credentials to each action.
 type bungieMover struct {
 	h          *handler
-	membership Membership
+	membership bungie.Membership
 }
 
 // Transfer implements [ItemMover].
-func (m bungieMover) Transfer(ctx context.Context, action ItemAction, toVault bool) error {
+func (m bungieMover) Transfer(ctx context.Context, action bungie.ItemAction, toVault bool) error {
 	action.Membership = m.membership
 
-	return m.h.withBungie(ctx, func(creds Credentials) error {
+	return m.h.withBungie(ctx, func(creds bungie.Credentials) error {
 		return m.h.bungie.Transfer(ctx, creds, action, toVault)
 	})
 }
 
 // Equip implements [ItemMover].
-func (m bungieMover) Equip(ctx context.Context, action ItemAction) error {
+func (m bungieMover) Equip(ctx context.Context, action bungie.ItemAction) error {
 	action.Membership = m.membership
 
-	return m.h.withBungie(ctx, func(creds Credentials) error {
+	return m.h.withBungie(ctx, func(creds bungie.Credentials) error {
 		return m.h.bungie.Equip(ctx, creds, action)
 	})
 }
 
 // PullFromPostmaster implements [ItemMover].
-func (m bungieMover) PullFromPostmaster(ctx context.Context, action ItemAction) error {
+func (m bungieMover) PullFromPostmaster(ctx context.Context, action bungie.ItemAction) error {
 	action.Membership = m.membership
 
-	return m.h.withBungie(ctx, func(creds Credentials) error {
+	return m.h.withBungie(ctx, func(creds bungie.Credentials) error {
 		return m.h.bungie.PullFromPostmaster(ctx, creds, action)
 	})
 }
 
 // SetLockState implements [ItemLocker].
-func (m bungieMover) SetLockState(ctx context.Context, action ItemAction, locked bool) error {
+func (m bungieMover) SetLockState(ctx context.Context, action bungie.ItemAction, locked bool) error {
 	action.Membership = m.membership
 
-	return m.h.withBungie(ctx, func(creds Credentials) error {
+	return m.h.withBungie(ctx, func(creds bungie.Credentials) error {
 		return m.h.bungie.SetLockState(ctx, creds, action, locked)
 	})
 }
 
 // InsertSocketPlugFree implements [PlugInserter].
-func (m bungieMover) InsertSocketPlugFree(ctx context.Context, action ItemAction, socket int, plugHash uint32) error {
+func (m bungieMover) InsertSocketPlugFree(
+	ctx context.Context,
+	action bungie.ItemAction,
+	socket int,
+	plugHash uint32,
+) error {
 	action.Membership = m.membership
 
-	return m.h.withBungie(ctx, func(creds Credentials) error {
+	return m.h.withBungie(ctx, func(creds bungie.Credentials) error {
 		return m.h.bungie.InsertSocketPlugFree(ctx, creds, action, socket, plugHash)
 	})
 }
 
 // EquipLoadout implements [LoadoutEquipper].
-func (m bungieMover) EquipLoadout(ctx context.Context, action LoadoutAction) error {
+func (m bungieMover) EquipLoadout(ctx context.Context, action bungie.LoadoutAction) error {
 	action.Membership = m.membership
 
-	return m.h.withBungie(ctx, func(creds Credentials) error {
+	return m.h.withBungie(ctx, func(creds bungie.Credentials) error {
 		return m.h.bungie.EquipLoadout(ctx, creds, action)
 	})
 }
@@ -2934,12 +2941,12 @@ type bungieManifest struct {
 func (m bungieManifest) Manifest(ctx context.Context) (map[string]string, error) {
 	var paths map[string]string
 
-	err := m.h.withBungie(ctx, func(creds Credentials) error {
+	err := m.h.withBungie(ctx, func(creds bungie.Credentials) error {
 		var err error
 
 		paths, err = m.h.bungie.Manifest(ctx, creds)
 
-		return err
+		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
 	})
 
 	return paths, err
@@ -2947,7 +2954,7 @@ func (m bungieManifest) Manifest(ctx context.Context) (map[string]string, error)
 
 // Content implements [ManifestSource].
 func (m bungieManifest) Content(ctx context.Context, path string) (io.ReadCloser, error) {
-	return m.h.bungie.Content(ctx, path)
+	return m.h.bungie.Content(ctx, path) //nolint:wrapcheck // The client error reaches the tool text unchanged.
 }
 
 // toolError logs err and returns it as a tool result with

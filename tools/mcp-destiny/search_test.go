@@ -107,7 +107,7 @@ func TestOwnedItems(t *testing.T) {
 		Equippable: true,
 	}
 
-	var p Profile
+	var p bungie.Profile
 
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 
@@ -1414,7 +1414,7 @@ func weaponTypeItems(t *testing.T) []*Item {
 		"profileInventory": {"data": {"items": [` + strings.Join(vault, ",") + `]}}
 	}`
 
-	var p Profile
+	var p bungie.Profile
 
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 
@@ -3005,7 +3005,7 @@ func setSnapshot(t *testing.T, listed bool, sets map[uint32][]uint32) *Snapshot 
 	defs.ItemSets = sets
 	defs.ItemSetsListed = listed
 
-	var p Profile
+	var p bungie.Profile
 
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 

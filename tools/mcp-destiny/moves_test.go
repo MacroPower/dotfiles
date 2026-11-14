@@ -34,7 +34,7 @@ func (m *stepMover) step(name string) error {
 	return nil
 }
 
-func (m *stepMover) Transfer(_ context.Context, action ItemAction, toVault bool) error {
+func (m *stepMover) Transfer(_ context.Context, action bungie.ItemAction, toVault bool) error {
 	name := "from vault to " + action.CharacterID
 	if toVault {
 		name = "to vault from " + action.CharacterID
@@ -47,15 +47,15 @@ func (m *stepMover) Transfer(_ context.Context, action ItemAction, toVault bool)
 	return m.step(name)
 }
 
-func (m *stepMover) Equip(_ context.Context, action ItemAction) error {
+func (m *stepMover) Equip(_ context.Context, action bungie.ItemAction) error {
 	return m.step("equip " + action.InstanceID + " on " + action.CharacterID)
 }
 
-func (m *stepMover) PullFromPostmaster(_ context.Context, action ItemAction) error {
+func (m *stepMover) PullFromPostmaster(_ context.Context, action bungie.ItemAction) error {
 	return m.step("pull to " + action.CharacterID)
 }
 
-func (m *stepMover) SetLockState(_ context.Context, action ItemAction, locked bool) error {
+func (m *stepMover) SetLockState(_ context.Context, action bungie.ItemAction, locked bool) error {
 	name := "unlock "
 	if locked {
 		name = "lock "
@@ -262,12 +262,12 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			var profile Profile
+			var profile bungie.Profile
 
 			require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
 
 			// Bungie places some instanced items in account-wide buckets.
-			profile.ProfileInventory.Data.Items = append(profile.ProfileInventory.Data.Items, ProfileItem{
+			profile.ProfileInventory.Data.Items = append(profile.ProfileInventory.Data.Items, bungie.ProfileItem{
 				InstanceID:     "2001",
 				Quantity:       1,
 				Location:       2,

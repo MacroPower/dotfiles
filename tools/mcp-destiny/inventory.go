@@ -319,7 +319,7 @@ type Snapshot struct {
 }
 
 // NewSnapshot resolves a Bungie profile against the definitions.
-func NewSnapshot(profile *Profile, defs *Defs, fetched time.Time) *Snapshot {
+func NewSnapshot(profile *bungie.Profile, defs *Defs, fetched time.Time) *Snapshot {
 	s := &Snapshot{
 		Fetched:        fetched,
 		byID:           map[string]*Item{},
@@ -458,7 +458,7 @@ func (s *Snapshot) add(item *Item) {
 	}
 }
 
-func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equipped bool) *Item {
+func newItem(profile *bungie.Profile, defs *Defs, pi bungie.ProfileItem, owner string, equipped bool) *Item {
 	def, ok := defs.Items[pi.Hash]
 	if !ok {
 		def = ItemDef{Name: fmt.Sprintf("Unknown item %d", pi.Hash), ClassType: bungie.ClassAny}
@@ -549,7 +549,7 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 // when the definition shows it and its bucket is neither Subclass nor
 // Artifacts. It then counts the value when the stat is one of lightStats.
 // Every other primary stat counts as 0.
-func lightPower(def ItemDef, stat ProfileStat) int {
+func lightPower(def ItemDef, stat bungie.ProfileStat) int {
 	shown := def.Bucket != bungie.BucketSubclass && def.Bucket != bungie.BucketArtifacts &&
 		!def.DisablePrimaryStatDisplay
 	if !shown || !slices.Contains(lightStats, stat.Hash) {
@@ -622,7 +622,7 @@ func kindOf(def ItemDef) string {
 	}
 }
 
-func perksOf(profile *Profile, defs *Defs, instanceID string) []Perk {
+func perksOf(profile *bungie.Profile, defs *Defs, instanceID string) []Perk {
 	var perks []Perk
 
 	options := profile.ItemComponents.ReusablePlugs.Data[instanceID].Plugs
@@ -697,7 +697,7 @@ func isPerk(plug ItemDef) bool {
 	return !strings.Contains(plug.TypeName, "Ornament")
 }
 
-func statsOf(profile *Profile, defs *Defs, instanceID string) []Stat {
+func statsOf(profile *bungie.Profile, defs *Defs, instanceID string) []Stat {
 	var stats []Stat
 
 	for _, stat := range profile.ItemComponents.Stats.Data[instanceID].Stats {

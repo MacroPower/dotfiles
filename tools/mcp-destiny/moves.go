@@ -26,14 +26,14 @@ var (
 
 // ItemMover performs the Bungie item actions that a move consists of.
 type ItemMover interface {
-	Transfer(ctx context.Context, action ItemAction, toVault bool) error
-	Equip(ctx context.Context, action ItemAction) error
-	PullFromPostmaster(ctx context.Context, action ItemAction) error
+	Transfer(ctx context.Context, action bungie.ItemAction, toVault bool) error
+	Equip(ctx context.Context, action bungie.ItemAction) error
+	PullFromPostmaster(ctx context.Context, action bungie.ItemAction) error
 }
 
 // ItemLocker performs the Bungie request that locks or unlocks an item.
 type ItemLocker interface {
-	SetLockState(ctx context.Context, action ItemAction, locked bool) error
+	SetLockState(ctx context.Context, action bungie.ItemAction, locked bool) error
 }
 
 // Move brings item to target, which is "vault" or a character id, and
@@ -58,7 +58,7 @@ func (s *Snapshot) Move(
 		return nil, err
 	}
 
-	action := ItemAction{InstanceID: item.InstanceID, ItemHash: item.Hash}
+	action := bungie.ItemAction{InstanceID: item.InstanceID, ItemHash: item.Hash}
 
 	if item.Postmaster {
 		action.CharacterID = item.Owner
@@ -163,7 +163,7 @@ func (s *Snapshot) unequip(ctx context.Context, mover ItemMover, item *Item) (*I
 		return nil, err
 	}
 
-	err = mover.Equip(ctx, ItemAction{
+	err = mover.Equip(ctx, bungie.ItemAction{
 		InstanceID:  replacement.InstanceID,
 		ItemHash:    replacement.Hash,
 		CharacterID: item.Owner,
@@ -331,7 +331,7 @@ func (s *Snapshot) MoveStack(
 
 		units := min(amount-moved, source.Quantity)
 
-		action := ItemAction{
+		action := bungie.ItemAction{
 			InstanceID:  bungie.StackInstanceID,
 			ItemHash:    hash,
 			CharacterID: s.Characters[0].ID,
@@ -389,7 +389,7 @@ func (s *Snapshot) SetLock(ctx context.Context, locker ItemLocker, item *Item, l
 		return fmt.Errorf("%w: the account has no character to name in the request", ErrLock)
 	}
 
-	action := ItemAction{InstanceID: item.InstanceID, ItemHash: item.Hash, CharacterID: character}
+	action := bungie.ItemAction{InstanceID: item.InstanceID, ItemHash: item.Hash, CharacterID: character}
 
 	err := locker.SetLockState(ctx, action, locked)
 	if err != nil {

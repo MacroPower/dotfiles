@@ -53,8 +53,8 @@ var (
 	// which are non-2xx responses and bodies that do not decode.
 	ErrService = errors.New("service")
 
-	// ErrUnauthorized reports that Agg's Destiny Vault Manager or Bungie
-	// rejected the presented token. Callers refresh the tokens and retry.
+	// ErrUnauthorized reports that Agg's Destiny Vault Manager rejected the
+	// presented token. Callers refresh the tokens and retry.
 	ErrUnauthorized = errors.New("unauthorized")
 
 	// ErrGrantRejected reports that Bungie refused an authorization code or

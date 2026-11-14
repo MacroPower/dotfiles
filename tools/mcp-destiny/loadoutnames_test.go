@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // fakeManifest is a [ManifestSource] for the store tests. Paths is the
@@ -59,7 +61,7 @@ func (f *fakeManifest) Content(_ context.Context, path string) (io.ReadCloser, e
 
 	body, ok := f.files[path]
 	if !ok {
-		return nil, fmt.Errorf("%w: content file returned status 404", ErrBungie)
+		return nil, fmt.Errorf("%w: content file returned status 404", bungie.ErrPlatform)
 	}
 
 	return io.NopCloser(strings.NewReader(body)), nil
@@ -89,10 +91,10 @@ func TestLoadoutTableStoreLoad(t *testing.T) {
 	// unreachable makes the manifest read return an error.
 	unreachable := nameStep{
 		edit: func(f *fakeManifest) {
-			f.manifestErr = fmt.Errorf("%w: SystemDisabled: Maintenance.", ErrBungie)
+			f.manifestErr = fmt.Errorf("%w: SystemDisabled: Maintenance.", bungie.ErrPlatform)
 		},
 		err:       "reading the Bungie manifest: bungie: SystemDisabled: Maintenance.",
-		sentinels: []error{ErrBungie},
+		sentinels: []error{bungie.ErrPlatform},
 	}
 
 	// moved lists a path that the source does not serve.
@@ -100,7 +102,7 @@ func TestLoadoutTableStoreLoad(t *testing.T) {
 		edit:      func(f *fakeManifest) { f.paths[string(loadoutNameTable)] = "/names-x.json" },
 		fetched:   []string{"/names-x.json"},
 		err:       "fetching /names-x.json: bungie: content file returned status 404",
-		sentinels: []error{ErrBungie},
+		sentinels: []error{bungie.ErrPlatform},
 	}
 
 	tests := map[string]struct {
@@ -251,7 +253,9 @@ func TestLoadoutTableStoreLoadsSeveralTables(t *testing.T) {
 			},
 		},
 		"manifest read does not succeed": {
-			edit: func(f *fakeManifest) { f.manifestErr = fmt.Errorf("%w: SystemDisabled: Maintenance.", ErrBungie) },
+			edit: func(f *fakeManifest) {
+				f.manifestErr = fmt.Errorf("%w: SystemDisabled: Maintenance.", bungie.ErrPlatform)
+			},
 			wantErrs: map[loadoutTable]string{
 				loadoutNameTable:  "reading the Bungie manifest: bungie: SystemDisabled: Maintenance.",
 				loadoutIconTable:  "reading the Bungie manifest: bungie: SystemDisabled: Maintenance.",

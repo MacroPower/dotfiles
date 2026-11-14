@@ -52,7 +52,7 @@ var (
 )
 
 // ManifestSource serves the Destiny manifest and its content files. The
-// handler adapts [*Bungie] to it.
+// handler adapts [*bungie.Client] to it.
 type ManifestSource interface {
 	Manifest(ctx context.Context) (map[string]string, error)
 	Content(ctx context.Context, path string) (io.ReadCloser, error)

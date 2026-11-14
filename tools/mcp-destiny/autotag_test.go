@@ -215,15 +215,15 @@ func TestVaultBlock(t *testing.T) {
 		return def
 	}
 
-	held := func(b uint32, status int) ProfileItem {
-		return ProfileItem{
+	held := func(b uint32, status int) bungie.ProfileItem {
+		return bungie.ProfileItem{
 			InstanceID: instanceID, Hash: hash, Quantity: 1,
 			Location: onCharacter, BucketHash: b, TransferStatus: status,
 		}
 	}
 
-	lost := func(status int) ProfileItem {
-		return ProfileItem{
+	lost := func(status int) bungie.ProfileItem {
+		return bungie.ProfileItem{
 			InstanceID: instanceID, Hash: hash, Quantity: 1,
 			Location: bungie.ItemLocationPostmaster, BucketHash: bungie.BucketPostmaster, TransferStatus: status,
 		}
@@ -237,7 +237,7 @@ func TestVaultBlock(t *testing.T) {
 
 	tests := map[string]struct {
 		def      ItemDef
-		item     ProfileItem
+		item     bungie.ProfileItem
 		want     string
 		equipped bool
 	}{
@@ -328,7 +328,7 @@ func TestVaultBlock(t *testing.T) {
 			t.Parallel()
 
 			defs := &Defs{Items: map[uint32]ItemDef{hash: tc.def}}
-			item := newItem(&Profile{}, defs, tc.item, bungietest.HunterID, tc.equipped)
+			item := newItem(&bungie.Profile{}, defs, tc.item, bungietest.HunterID, tc.equipped)
 
 			assert.Equal(t, tc.want, vaultBlock(item, tc.def))
 		})

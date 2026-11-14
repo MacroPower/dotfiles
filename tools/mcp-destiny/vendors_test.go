@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 func TestReadVendors(t *testing.T) {
@@ -42,11 +44,11 @@ func TestReadVendors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			resp := &VendorsResponse{}
-			resp.Vendors.Data = make(map[uint32]VendorComponent, len(tc.vendors))
+			resp := &bungie.VendorsResponse{}
+			resp.Vendors.Data = make(map[uint32]bungie.VendorComponent, len(tc.vendors))
 
 			for hash := range tc.vendors {
-				resp.Vendors.Data[hash] = VendorComponent{Hash: hash, Enabled: true}
+				resp.Vendors.Data[hash] = bungie.VendorComponent{Hash: hash, Enabled: true}
 			}
 
 			got := readVendors(resp, &Defs{Vendors: tc.vendors})

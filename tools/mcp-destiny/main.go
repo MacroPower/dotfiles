@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 const version = "0.1.0"
@@ -263,7 +265,7 @@ func runServe(ctx context.Context, args []string) error {
 
 	h := &handler{
 		service: service,
-		bungie:  NewBungie(),
+		bungie:  bungie.New(bungie.WithUserAgent(defaultUserAgent)),
 		auth:    o.auth(service),
 		defs:    NewDefsLoader(service, o.cacheDir, WithDefsLogger(logger)),
 		sheets:  NewSheetStore(service),

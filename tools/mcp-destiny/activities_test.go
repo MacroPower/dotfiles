@@ -11,30 +11,30 @@ import (
 func TestReadActivities(t *testing.T) {
 	t.Parallel()
 
-	reward := func(style string, hash uint32, quantity int) ActivityRewardItem {
-		item := ActivityRewardItem{UIStyle: style}
+	reward := func(style string, hash uint32, quantity int) bungie.ActivityRewardItem {
+		item := bungie.ActivityRewardItem{UIStyle: style}
 		item.ItemQuantity.ItemHash = hash
 		item.ItemQuantity.Quantity = quantity
 
 		return item
 	}
 
-	entry := func(hash uint32, items ...ActivityRewardItem) AvailableActivity {
-		return AvailableActivity{
+	entry := func(hash uint32, items ...bungie.ActivityRewardItem) bungie.AvailableActivity {
+		return bungie.AvailableActivity{
 			Hash:           hash,
 			Visible:        true,
-			VisibleRewards: []ActivityRewardMapping{{RewardItems: items}},
+			VisibleRewards: []bungie.ActivityRewardMapping{{RewardItems: items}},
 		}
 	}
 
 	tests := map[string]struct {
 		defs    func(*Defs)
-		entries []AvailableActivity
+		entries []bungie.AvailableActivity
 		want    []ActivityRow
 	}{
 		"definitions without activities": {
 			defs:    func(d *Defs) { d.Activities = map[uint32]ActivityDef{} },
-			entries: []AvailableActivity{entry(3022541210, reward(bungie.RewardBonusDrop, 1, 2))},
+			entries: []bungie.AvailableActivity{entry(3022541210, reward(bungie.RewardBonusDrop, 1, 2))},
 		},
 		"definitions without types, locations, or rewards": {
 			defs: func(d *Defs) {
@@ -43,7 +43,7 @@ func TestReadActivities(t *testing.T) {
 				d.Places = map[uint32]string{}
 				d.ActivityRewards = map[uint32]string{}
 			},
-			entries: []AvailableActivity{
+			entries: []bungie.AvailableActivity{
 				entry(
 					3022541210,
 					reward(bungie.RewardBonusDrop, 1, 2),
@@ -54,7 +54,7 @@ func TestReadActivities(t *testing.T) {
 			want: []ActivityRow{{Hash: 3022541210, Name: "Vault of Glass: Master", BonusDrops: 2}},
 		},
 		"first named focused reward wins": {
-			entries: []AvailableActivity{
+			entries: []bungie.AvailableActivity{
 				entry(
 					4003,
 					reward(bungie.RewardFocus, 698, 1),
@@ -70,7 +70,7 @@ func TestReadActivities(t *testing.T) {
 			}},
 		},
 		"focused reward with a quantity of zero": {
-			entries: []AvailableActivity{entry(4003, reward(bungie.RewardFocus, 606, 0))},
+			entries: []bungie.AvailableActivity{entry(4003, reward(bungie.RewardFocus, 606, 0))},
 			want: []ActivityRow{{
 				Hash:  4003,
 				Name:  "Nightfall: Grandmaster",
@@ -79,7 +79,7 @@ func TestReadActivities(t *testing.T) {
 			}},
 		},
 		"bonus loot keeps the order and the hash of the first item of a name": {
-			entries: []AvailableActivity{
+			entries: []bungie.AvailableActivity{
 				entry(2222, reward("", 605, 1), reward("", 604, 1), reward("", 600, 3)),
 			},
 			want: []ActivityRow{{
@@ -98,7 +98,7 @@ func TestReadActivities(t *testing.T) {
 				// The lowest hash sorts last by name.
 				d.Activities[3999] = ActivityDef{Name: "Duality"}
 			},
-			entries: []AvailableActivity{
+			entries: []bungie.AvailableActivity{
 				entry(4444),
 				entry(3999),
 				entry(4010),
