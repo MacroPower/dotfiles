@@ -21,6 +21,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 )
 
 const (
@@ -655,7 +656,7 @@ func newServer(h *handler) *mcp.Server {
 			"The tool also leaves out each item whose item set the EquipableItemSet definitions lack, " +
 			"because the web client builds no such item, and the last line of the result counts those items. " +
 			"Each row has the columns of list_items. " +
-			"The tool evaluates a closed set of filters, which are " + listWithAnd(supportedKeywords()) + ". " +
+			"The tool evaluates a closed set of filters, which are " + listWithAnd(search.SupportedKeywords()) + ". " +
 			"Each is: word also works as not:<word>. " +
 			"name:<text> matches an item with a word in its name that starts with the text, " +
 			"and exactname:<text> matches an item whose whole name is the text. " +

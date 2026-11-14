@@ -1742,7 +1742,7 @@ func (h *handler) ownedMatches(ctx context.Context, snapshot dvm.AutotagSnapshot
 
 	// The reasons of each count follow the order of the items, so the
 	// sort keeps the text the same from one call to the next.
-	items := ownedItems(s)
+	items := search.OwnedItems(s)
 	slices.SortStableFunc(items, inventory.ByNameAndID)
 
 	evals := evalRules(s, rules, func() map[string]rolls.RatingSource { return h.ratingSources(ctx) })
@@ -1753,9 +1753,9 @@ func (h *handler) ownedMatches(ctx context.Context, snapshot dvm.AutotagSnapshot
 // handleSaveAutotagRule writes the rule that [mergeRule] builds. When the
 // call passes a query, it refuses a query that holds a value that the web
 // client rejects before it writes the rule. After the write, the result
-// counts the owned items that the query matches. The line of [unbuiltLine]
-// follows the count when the count leaves out items that the web client
-// does not build.
+// counts the owned items that the query matches. The line of
+// [search.UnbuiltLine] follows the count when the count leaves out items
+// that the web client does not build.
 func (h *handler) handleSaveAutotagRule(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -1774,7 +1774,7 @@ func (h *handler) handleSaveAutotagRule(
 		return h.toolError(ctx, toolSaveAutotagRule, err)
 	}
 
-	var query compiledQuery
+	var query search.CompiledQuery
 
 	if in.Query != nil {
 		query, err = compileRuleQuery(rule.Query)
@@ -1808,15 +1808,15 @@ func (h *handler) handleSaveAutotagRule(
 // that wraps [ErrInvalidInput] for a query that does not parse or that
 // holds a value that the web client rejects. The compiled query can still
 // hold terms that the preview does not evaluate.
-func compileRuleQuery(query string) (compiledQuery, error) {
+func compileRuleQuery(query string) (search.CompiledQuery, error) {
 	root, err := search.ParseQuery(strings.TrimSpace(query))
 	if err != nil {
-		return compiledQuery{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+		return search.CompiledQuery{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
-	compiled := compileQuery(root)
-	if len(compiled.invalid) > 0 {
-		return compiledQuery{}, invalidQuery(compiled.invalid)
+	compiled := search.CompileQuery(root)
+	if len(compiled.Invalid) > 0 {
+		return search.CompiledQuery{}, invalidQuery(compiled.Invalid)
 	}
 
 	return compiled, nil
@@ -1839,11 +1839,11 @@ func invalidQuery(terms []string) error {
 // rating filter. A game mode without ratings that the query reads gives
 // the reason of the mode in place of the counts.
 //
-// The second result is the line of [unbuiltLine] for the counts. It is
-// "" when the result holds no counts.
-func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) (saveCount, string) {
-	if len(query.unsupported) > 0 {
-		return saveCount{unsupported: query.unsupported}, ""
+// The second result is the line of [search.UnbuiltLine] for the counts.
+// It is "" when the result holds no counts.
+func (h *handler) countRuleMatches(ctx context.Context, query search.CompiledQuery) (saveCount, string) {
+	if len(query.Unsupported) > 0 {
+		return saveCount{unsupported: query.Unsupported}, ""
 	}
 
 	s, _, err := h.loadAnnotated(ctx, false)
@@ -1861,9 +1861,9 @@ func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) (sa
 		return saveCount{unrated: reason}, ""
 	}
 
-	result := query.evaluate(newSearchContext(s, current, sources), ownedItems(s))
+	result := query.Evaluate(search.NewContext(s, current, sources), search.OwnedItems(s))
 
-	return saveCount{matches: len(result.matches), undecided: len(result.undecided)}, unbuiltLine(s)
+	return saveCount{matches: len(result.Matches), undecided: len(result.Undecided)}, search.UnbuiltLine(s)
 }
 
 // querySources returns the [rolls.RatingSource] of each game mode for a query
@@ -1871,14 +1871,17 @@ func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) (sa
 // game mode without ratings that the query reads, or "" when each such
 // mode has ratings. A query without a rating filter gets no sources, and
 // querySources then sends no request.
-func (h *handler) querySources(ctx context.Context, query compiledQuery) (map[string]rolls.RatingSource, string) {
-	if len(query.modes) == 0 {
+func (h *handler) querySources(
+	ctx context.Context,
+	query search.CompiledQuery,
+) (map[string]rolls.RatingSource, string) {
+	if len(query.Modes) == 0 {
 		return nil, ""
 	}
 
 	sources := h.ratingSources(ctx)
 
-	return sources, query.unratedReason(sources)
+	return sources, query.UnratedReason(sources)
 }
 
 // handlePreviewAutotagRule lists the owned items that a rule query
@@ -1888,9 +1891,9 @@ func (h *handler) querySources(ctx context.Context, query compiledQuery) (map[st
 // query with a rating filter, after the inventory. A game mode without
 // ratings that the query reads fails the call with the reason of the
 // mode. The result lists the items whose outcome the server cannot decide
-// in a section of their own. The line of [unbuiltLine] ends the result,
-// after a blank line, when the preview leaves out items that the web
-// client does not build.
+// in a section of their own. The line of [search.UnbuiltLine] ends the
+// result, after a blank line, when the preview leaves out items that the
+// web client does not build.
 func (h *handler) handlePreviewAutotagRule(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
@@ -1904,8 +1907,8 @@ func (h *handler) handlePreviewAutotagRule(
 		return h.toolError(ctx, toolPreviewAutotagRule, err)
 	}
 
-	if len(query.unsupported) > 0 {
-		return h.toolRefusal(ctx, toolPreviewAutotagRule, unsupportedRefusal(query.unsupported))
+	if len(query.Unsupported) > 0 {
+		return h.toolRefusal(ctx, toolPreviewAutotagRule, unsupportedRefusal(query.Unsupported))
 	}
 
 	s, _, err := h.loadAnnotated(ctx, in.Refresh)
@@ -1923,9 +1926,9 @@ func (h *handler) handlePreviewAutotagRule(
 		return h.toolRefusal(ctx, toolPreviewAutotagRule, unratedRefusal(reason))
 	}
 
-	owned := ownedItems(s)
-	result := query.evaluate(newSearchContext(s, current, sources), owned)
-	matches := result.matches
+	owned := search.OwnedItems(s)
+	result := query.Evaluate(search.NewContext(s, current, sources), owned)
+	matches := result.Matches
 
 	limit := in.Limit
 	if limit <= 0 {
@@ -1936,8 +1939,8 @@ func (h *handler) handlePreviewAutotagRule(
 	offset := min(max(in.Offset, 0), len(matches))
 	page := matches[offset:min(offset+limit, len(matches))]
 
-	text := renderPreview(s, page, offset, len(matches), len(owned), result.undecided, limit)
-	if unbuilt := unbuiltLine(s); unbuilt != "" {
+	text := renderPreview(s, page, offset, len(matches), len(owned), result.Undecided, limit)
+	if unbuilt := search.UnbuiltLine(s); unbuilt != "" {
 		text += "\n\n" + unbuilt
 	}
 

@@ -1,4 +1,4 @@
-package main
+package search
 
 import (
 	"encoding/json"
@@ -20,17 +20,16 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
-	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 )
 
 // compiled parses and compiles query, which must parse.
-func compiled(t *testing.T, query string) compiledQuery {
+func compiled(t *testing.T, query string) CompiledQuery {
 	t.Helper()
 
-	root, err := search.ParseQuery(query)
+	root, err := ParseQuery(query)
 	require.NoError(t, err)
 
-	return compileQuery(root)
+	return CompileQuery(root)
 }
 
 // matchIDs returns the instance id of each item that query matches in a
@@ -39,25 +38,25 @@ func compiled(t *testing.T, query string) compiledQuery {
 func matchIDs(t *testing.T, query string, items []*inventory.Item) []string {
 	t.Helper()
 
-	return contextMatchIDs(t, query, searchContext{items: items})
+	return contextMatchIDs(t, query, Context{items: items})
 }
 
 // contextMatchIDs returns the instance id of each item of ctx that query
 // matches in ctx, in the order of the items. Every term of query must be
 // supported.
-func contextMatchIDs(t *testing.T, query string, ctx searchContext) []string {
+func contextMatchIDs(t *testing.T, query string, ctx Context) []string {
 	t.Helper()
 
 	q := compiled(t, query)
-	require.Empty(t, q.unsupported)
-	require.Empty(t, q.invalid)
-	require.NotNil(t, q.test)
+	require.Empty(t, q.Unsupported)
+	require.Empty(t, q.Invalid)
+	require.NotNil(t, q.Test)
 
-	test := q.test(ctx)
+	test := q.Test(ctx)
 	out := []string{}
 
 	for _, item := range ctx.items {
-		if test(item).state == match {
+		if test(item).State == Match {
 			out = append(out, item.InstanceID)
 		}
 	}
@@ -129,7 +128,7 @@ func TestOwnedItems(t *testing.T) {
 
 	s := inventory.NewSnapshot(&p, defs, bungietest.Now)
 	built := builtItems(s)
-	owned := ownedItems(s)
+	owned := OwnedItems(s)
 
 	tests := map[string]struct {
 		id    string
@@ -467,9 +466,9 @@ func TestCompileQueryUnsupported(t *testing.T) {
 			t.Parallel()
 
 			q := compiled(t, tc.query)
-			assert.Equal(t, tc.want, q.unsupported)
-			assert.Empty(t, q.invalid)
-			assert.Nil(t, q.test)
+			assert.Equal(t, tc.want, q.Unsupported)
+			assert.Empty(t, q.Invalid)
+			assert.Nil(t, q.Test)
 		})
 	}
 }
@@ -496,7 +495,7 @@ func TestSupportedKeywords(t *testing.T) {
 		"verdict:", "pvprate:", "pvprating:", "pvpratebase:", "pvpratingbase:", "pvpmisses:", "pvpsetbonus:",
 		"pvpverdict:",
 	}
-	assert.Equal(t, want, supportedKeywords())
+	assert.Equal(t, want, SupportedKeywords())
 }
 
 func TestCompiledQueryMatches(t *testing.T) {
@@ -509,7 +508,7 @@ func TestCompiledQueryMatches(t *testing.T) {
 		{InstanceID: "5", Name: "Celestial Nighthawk", Bucket: bungie.BucketHelmet},
 	}
 
-	got := compiled(t, "is:weapon").evaluate(searchContext{items: items}, items).matches
+	got := compiled(t, "is:weapon").Evaluate(Context{items: items}, items).Matches
 	assert.Equal(t, []string{"9", "100", "20"}, inventorytest.IDs(got))
 }
 
@@ -939,9 +938,9 @@ func TestDupeValues(t *testing.T) {
 			t.Parallel()
 
 			q := compiled(t, tc.query)
-			assert.Equal(t, tc.unsupported, q.unsupported)
-			assert.Equal(t, tc.invalid, q.invalid)
-			assert.Nil(t, q.test)
+			assert.Equal(t, tc.unsupported, q.Unsupported)
+			assert.Equal(t, tc.invalid, q.Invalid)
+			assert.Nil(t, q.Test)
 		})
 	}
 }
@@ -991,7 +990,7 @@ func TestHashAndID(t *testing.T) {
 func TestCurrentCharacter(t *testing.T) {
 	t.Parallel()
 
-	ctx := searchContext{
+	ctx := Context{
 		current: inventory.Character{ID: bungietest.HunterID, ClassType: bungie.ClassHunter},
 		items: []*inventory.Item{
 			{InstanceID: "hunter armor", Owner: bungietest.HunterID, ClassType: bungie.ClassHunter},
@@ -1053,9 +1052,9 @@ func TestCompileQueryInvalidFirst(t *testing.T) {
 			t.Parallel()
 
 			q := compiled(t, tc.query)
-			assert.Equal(t, tc.want, q.invalid)
-			assert.Empty(t, q.unsupported)
-			assert.Nil(t, q.test)
+			assert.Equal(t, tc.want, q.Invalid)
+			assert.Empty(t, q.Unsupported)
+			assert.Nil(t, q.Test)
 		})
 	}
 }
@@ -1389,22 +1388,22 @@ func weaponTypeItems(t *testing.T) []*inventory.Item {
 
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 
-	owned := ownedItems(inventory.NewSnapshot(&p, defs, bungietest.Now))
+	owned := OwnedItems(inventory.NewSnapshot(&p, defs, bungietest.Now))
 	require.Len(t, owned, 11)
 
 	return owned
 }
 
 // matchNames returns the name of each item of items that query matches,
-// in the order of [compiledQuery.evaluate].
+// in the order of [CompiledQuery.Evaluate].
 func matchNames(t *testing.T, query string, items []*inventory.Item) []string {
 	t.Helper()
 
 	q := compiled(t, query)
-	require.Empty(t, q.unsupported)
+	require.Empty(t, q.Unsupported)
 
 	names := []string{}
-	for _, item := range q.evaluate(searchContext{items: items}, items).matches {
+	for _, item := range q.Evaluate(Context{items: items}, items).Matches {
 		names = append(names, item.Name)
 	}
 
@@ -1418,7 +1417,7 @@ func TestWeaponTypeWords(t *testing.T) {
 
 	assert.Equal(t, []string{"Ace of Spades", "Fatebringer"}, matchNames(t, "is:handcannon", items))
 
-	for _, item := range compiled(t, "is:handcannon").evaluate(searchContext{items: items}, items).matches {
+	for _, item := range compiled(t, "is:handcannon").Evaluate(Context{items: items}, items).Matches {
 		assert.Equal(t, "Hand Cannon", item.TypeName)
 	}
 }
@@ -1568,16 +1567,16 @@ func TestKleene(t *testing.T) {
 	t.Parallel()
 
 	var (
-		yes     = outcome{state: match}
-		no      = outcome{}
-		other   = outcome{reasons: []string{"another reason"}, state: undecided}
-		noPerks = outcome{reasons: []string{reasonNoPerks}, state: undecided}
-		both    = outcome{reasons: []string{"another reason", reasonNoPerks}, state: undecided}
+		yes     = Outcome{State: Match}
+		no      = Outcome{}
+		other   = Outcome{Reasons: []string{"another reason"}, State: Undecided}
+		noPerks = Outcome{Reasons: []string{ReasonNoPerks}, State: Undecided}
+		both    = Outcome{Reasons: []string{"another reason", ReasonNoPerks}, State: Undecided}
 	)
 
 	tests := map[string]struct {
-		got  outcome
-		want outcome
+		got  Outcome
+		want Outcome
 	}{
 		"match and match":                {got: yes.and(yes), want: yes},
 		"match and no match":             {got: yes.and(no), want: no},
@@ -1634,7 +1633,7 @@ func TestKleene(t *testing.T) {
 //
 // The PvP sheet rates weapon 100 C with one column, which every copy of
 // the weapon misses. The rolls of s, a, and b therefore rate D for PvP.
-func ratingContext() searchContext {
+func ratingContext() Context {
 	pve := &rolls.Sheet{
 		Rows: map[uint32]rolls.SheetRow{100: {Tier: "S"}, 101: {Tier: "A"}, 102: {}, 103: {Tier: "A"}, 104: {}},
 		Columns: map[uint32][][]uint32{
@@ -1656,7 +1655,7 @@ func ratingContext() searchContext {
 		return &inventory.Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketHelmet}
 	}
 
-	return searchContext{
+	return Context{
 		items: []*inventory.Item{
 			weapon(
 				"s",
@@ -1686,28 +1685,28 @@ func ratingContext() searchContext {
 // in the order of the items. It also returns the reasons of each item
 // whose outcome is undecided, keyed by instance id. Every term of query
 // must be supported.
-func judge(t *testing.T, query string, ctx searchContext) ([]string, map[string][]string) {
+func judge(t *testing.T, query string, ctx Context) ([]string, map[string][]string) {
 	t.Helper()
 
 	q := compiled(t, query)
-	require.Empty(t, q.unsupported)
-	require.Empty(t, q.invalid)
-	require.NotNil(t, q.test)
+	require.Empty(t, q.Unsupported)
+	require.Empty(t, q.Invalid)
+	require.NotNil(t, q.Test)
 
-	test := q.test(ctx)
+	test := q.Test(ctx)
 	matched := []string{}
 	open := map[string][]string{}
 
 	for _, item := range ctx.items {
 		got := test(item)
 
-		switch got.state {
-		case match:
+		switch got.State {
+		case Match:
 			matched = append(matched, item.InstanceID)
-		case undecided:
-			open[item.InstanceID] = got.reasons
-		case noMatch:
-			assert.Empty(t, got.reasons, item.InstanceID)
+		case Undecided:
+			open[item.InstanceID] = got.Reasons
+		case NoMatch:
+			assert.Empty(t, got.Reasons, item.InstanceID)
 		}
 	}
 
@@ -1723,7 +1722,7 @@ type judgeTests map[string]struct {
 }
 
 // run runs each case of tests against ctx.
-func (tests judgeTests) run(t *testing.T, ctx searchContext) {
+func (tests judgeTests) run(t *testing.T, ctx Context) {
 	t.Helper()
 
 	for name, tc := range tests {
@@ -1745,7 +1744,7 @@ func (tests judgeTests) run(t *testing.T, ctx searchContext) {
 
 // noPerksOnly holds the reason of a copy without perks on a sheet row
 // with perk columns.
-var noPerksOnly = []string{reasonNoPerks}
+var noPerksOnly = []string{ReasonNoPerks}
 
 func TestRateRange(t *testing.T) {
 	t.Parallel()
@@ -1801,7 +1800,7 @@ func TestRateRange(t *testing.T) {
 	}
 
 	for _, query := range []string{"rate:>=z", "rating:a+", "rate:>>a", "rate:=<a", "rate:1.", "rate:-1"} {
-		assert.Equal(t, []string{query}, compiled(t, query).invalid, query)
+		assert.Equal(t, []string{query}, compiled(t, query).Invalid, query)
 	}
 }
 
@@ -1825,7 +1824,7 @@ func TestRateBase(t *testing.T) {
 		},
 	}.run(t, ratingContext())
 
-	assert.Equal(t, []string{"ratebase:>=z"}, compiled(t, "ratebase:>=z").invalid)
+	assert.Equal(t, []string{"ratebase:>=z"}, compiled(t, "ratebase:>=z").Invalid)
 }
 
 func TestMisses(t *testing.T) {
@@ -1852,7 +1851,7 @@ func TestMisses(t *testing.T) {
 	}.run(t, ratingContext())
 
 	for _, query := range []string{"misses:a", "misses:constructor", "misses:__proto__", "pvpmisses:s"} {
-		assert.Equal(t, []string{query}, compiled(t, query).invalid, query)
+		assert.Equal(t, []string{query}, compiled(t, query).Invalid, query)
 	}
 }
 
@@ -1877,57 +1876,57 @@ func TestRateUnknownRoll(t *testing.T) {
 	tests := map[string]struct {
 		query string
 		id    string
-		want  outcome
+		want  Outcome
 	}{
 		"rate: cannot decide a copy without perks": {
 			query: "rate:>=a",
 			id:    "unknown",
-			want:  outcome{reasons: noPerksOnly, state: undecided},
+			want:  Outcome{Reasons: noPerksOnly, State: Undecided},
 		},
 		"ratebase: decides a copy without perks": {
 			query: "ratebase:>=a",
 			id:    "unknown",
-			want:  outcome{state: match},
+			want:  Outcome{State: Match},
 		},
 		"a row without a tier gives no tier": {
 			query: "rate:>=a",
 			id:    "unknown no tier",
-			want:  outcome{},
+			want:  Outcome{},
 		},
 		"armor without perks on a row with columns has the perk reason": {
 			query: "rate:>=a",
 			id:    "unknown helmet",
-			want:  outcome{reasons: noPerksOnly, state: undecided},
+			want:  Outcome{Reasons: noPerksOnly, State: Undecided},
 		},
 		"two terms give each reason one time": {
 			query: "rate:>=a misses:>=0",
 			id:    "unknown",
-			want:  outcome{reasons: noPerksOnly, state: undecided},
+			want:  Outcome{Reasons: noPerksOnly, State: Undecided},
 		},
 		"is:weapon keeps a weapon without perks undecided": {
 			query: "is:weapon rate:>=a",
 			id:    "unknown",
-			want:  outcome{reasons: noPerksOnly, state: undecided},
+			want:  Outcome{Reasons: noPerksOnly, State: Undecided},
 		},
 		"is:weapon decides armor without perks": {
 			query: "is:weapon rate:>=a",
 			id:    "unknown helmet",
-			want:  outcome{},
+			want:  Outcome{},
 		},
 		"a set bonus that passes decides a copy without perks": {
 			query: "rate:s",
 			id:    "set helmet",
-			want:  outcome{state: match},
+			want:  Outcome{State: Match},
 		},
 		"a set bonus that passes beside the tier of the row": {
 			query: "rate:>=a",
 			id:    "set helmet",
-			want:  outcome{state: match},
+			want:  Outcome{State: Match},
 		},
 		"a copy without perks stays undecided when no set bonus passes": {
 			query: "rate:f",
 			id:    "set helmet",
-			want:  outcome{reasons: noPerksOnly, state: undecided},
+			want:  Outcome{Reasons: noPerksOnly, State: Undecided},
 		},
 	}
 
@@ -1938,7 +1937,7 @@ func TestRateUnknownRoll(t *testing.T) {
 			i := slices.IndexFunc(ctx.items, func(item *inventory.Item) bool { return item.InstanceID == tc.id })
 			require.GreaterOrEqual(t, i, 0)
 
-			assert.Equal(t, tc.want, compiled(t, tc.query).test(ctx)(ctx.items[i]))
+			assert.Equal(t, tc.want, compiled(t, tc.query).Test(ctx)(ctx.items[i]))
 		})
 	}
 }
@@ -1981,7 +1980,7 @@ func TestPvPKeywords(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.modes, compiled(t, tc.query).modes)
+			assert.Equal(t, tc.modes, compiled(t, tc.query).Modes)
 			assert.Equal(t, tc.want, contextMatchIDs(t, tc.query, ctx))
 		})
 	}
@@ -1998,13 +1997,13 @@ func TestEvaluate(t *testing.T) {
 		{InstanceID: "3", Name: "b", Hash: 103, Bucket: bungie.BucketKinetic},
 	})
 
-	result := compiled(t, "rate:b").evaluate(ctx, ctx.items)
-	assert.Equal(t, []string{"b"}, inventorytest.IDs(result.matches))
+	result := compiled(t, "rate:b").Evaluate(ctx, ctx.items)
+	assert.Equal(t, []string{"b"}, inventorytest.IDs(result.Matches))
 
-	got := make([]string, 0, len(result.undecided))
-	for _, u := range result.undecided {
-		got = append(got, u.item.InstanceID)
-		assert.NotEmpty(t, u.reasons, u.item.InstanceID)
+	got := make([]string, 0, len(result.Undecided))
+	for _, u := range result.Undecided {
+		got = append(got, u.Item.InstanceID)
+		assert.NotEmpty(t, u.Reasons, u.Item.InstanceID)
 	}
 
 	assert.Equal(t, []string{"3", "20", "unknown", "unknown helmet"}, got)
@@ -2046,7 +2045,7 @@ func TestUnratedReason(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.want, compiled(t, tc.query).unratedReason(tc.sources))
+			assert.Equal(t, tc.want, compiled(t, tc.query).UnratedReason(tc.sources))
 		})
 	}
 }
@@ -2149,7 +2148,7 @@ func verdictColumns() [][]uint32 {
 //
 // The PvP sheet lists only weapon 120, with one column that picks Kill
 // Clip. Copy mixed b hits it, and mixed a misses it.
-func verdictContext() searchContext {
+func verdictContext() Context {
 	pve := &rolls.Sheet{
 		Rows: map[uint32]rolls.SheetRow{
 			100: {Tier: "S"}, 101: {Tier: "S"}, 110: {Tier: "A"}, 120: {Tier: "B"}, 130: {Tier: "C"},
@@ -2183,7 +2182,7 @@ func verdictContext() searchContext {
 	best := weapon("best", 100, hitting(true, true))
 	best.Owner = inventory.OwnerVault
 
-	return searchContext{
+	return Context{
 		items: []*inventory.Item{
 			best,
 			weapon("worse", 101, hitting(true, false)),
@@ -2208,8 +2207,8 @@ func verdictContext() searchContext {
 // verdictContext the server cannot decide, with their reasons.
 func verdictOpen() map[string][]string {
 	return map[string][]string{
-		"no perks":        {reasonVerdictNoPerks},
-		"beside no perks": {reasonVerdictNoPerks},
+		"no perks":        {ReasonVerdictNoPerks},
+		"beside no perks": {ReasonVerdictNoPerks},
 	}
 }
 
@@ -2244,7 +2243,7 @@ func TestVerdictRivals(t *testing.T) {
 	}
 
 	stack := weapon("", 300, bungietest.HunterID, hitting(true, true))
-	ctx := searchContext{
+	ctx := Context{
 		items: []*inventory.Item{
 			weapon("original", 300, bungietest.HunterID, hitting(true, false)),
 			weapon("reissue", 301, inventory.OwnerVault, hitting(true, true)),
@@ -2314,10 +2313,10 @@ func TestVerdictValues(t *testing.T) {
 		"verdict:equal", "verdict:bett", "verdict:constructor", "verdict:__proto__", "pvpverdict:equal",
 		"verdict:better+worse",
 	} {
-		assert.Equal(t, []string{query}, compiled(t, query).invalid, query)
+		assert.Equal(t, []string{query}, compiled(t, query).Invalid, query)
 	}
 
-	assert.Equal(t, []string{rolls.ModePvE}, compiled(t, "verdict:Better").modes)
+	assert.Equal(t, []string{rolls.ModePvE}, compiled(t, "verdict:Better").Modes)
 }
 
 func TestVerdictNoColumns(t *testing.T) {
@@ -2345,37 +2344,37 @@ func TestVerdictUndecided(t *testing.T) {
 	tests := map[string]struct {
 		query string
 		id    string
-		want  outcome
+		want  Outcome
 	}{
 		"a copy without perks": {
 			query: "verdict:only",
 			id:    "no perks",
-			want:  outcome{reasons: []string{reasonVerdictNoPerks}, state: undecided},
+			want:  Outcome{Reasons: []string{ReasonVerdictNoPerks}, State: Undecided},
 		},
 		"a copy whose only rival has no perks": {
 			query: "verdict:only",
 			id:    "beside no perks",
-			want:  outcome{reasons: []string{reasonVerdictNoPerks}, state: undecided},
+			want:  Outcome{Reasons: []string{ReasonVerdictNoPerks}, State: Undecided},
 		},
 		"verdict:better is undecided too": {
 			query: "verdict:better",
 			id:    "beside no perks",
-			want:  outcome{reasons: []string{reasonVerdictNoPerks}, state: undecided},
+			want:  Outcome{Reasons: []string{ReasonVerdictNoPerks}, State: Undecided},
 		},
 		"misses: adds its own reason": {
 			query: "verdict:worse or misses:>=0",
 			id:    "no perks",
-			want:  outcome{reasons: []string{reasonVerdictNoPerks, reasonNoPerks}, state: undecided},
+			want:  Outcome{Reasons: []string{ReasonVerdictNoPerks, ReasonNoPerks}, State: Undecided},
 		},
 		"another term decides the copy": {
 			query: "verdict:worse is:invault",
 			id:    "no perks",
-			want:  outcome{},
+			want:  Outcome{},
 		},
 		"a sheet that does not list the weapon decides it": {
 			query: "pvpverdict:only",
 			id:    "no perks",
-			want:  outcome{},
+			want:  Outcome{},
 		},
 	}
 
@@ -2386,7 +2385,7 @@ func TestVerdictUndecided(t *testing.T) {
 			i := slices.IndexFunc(ctx.items, func(item *inventory.Item) bool { return item.InstanceID == tc.id })
 			require.GreaterOrEqual(t, i, 0)
 
-			assert.Equal(t, tc.want, compiled(t, tc.query).test(ctx)(ctx.items[i]))
+			assert.Equal(t, tc.want, compiled(t, tc.query).Test(ctx)(ctx.items[i]))
 		})
 	}
 }
@@ -2418,7 +2417,7 @@ func TestPvPVerdict(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.modes, compiled(t, tc.query).modes)
+			assert.Equal(t, tc.modes, compiled(t, tc.query).Modes)
 			assert.Equal(t, tc.want, contextMatchIDs(t, tc.query, ctx))
 		})
 	}
@@ -2632,9 +2631,9 @@ func TestPowerRangeValues(t *testing.T) {
 			t.Parallel()
 
 			q := compiled(t, tc.query)
-			assert.Equal(t, tc.unsupported, q.unsupported)
-			assert.Equal(t, tc.invalid, q.invalid)
-			assert.Nil(t, q.test)
+			assert.Equal(t, tc.unsupported, q.Unsupported)
+			assert.Equal(t, tc.invalid, q.Invalid)
+			assert.Nil(t, q.Test)
 		})
 	}
 }
@@ -2698,11 +2697,11 @@ func TestAutotagged(t *testing.T) {
 	t.Parallel()
 
 	s := inventorytest.Snapshot(t)
-	owned := ownedItems(s)
+	owned := OwnedItems(s)
 	target := owned[0]
 
 	matches := func(query string) []string {
-		return inventorytest.IDs(compiled(t, query).evaluate(searchContext{items: builtItems(s)}, owned).matches)
+		return inventorytest.IDs(compiled(t, query).Evaluate(Context{items: builtItems(s)}, owned).Matches)
 	}
 
 	s.Annotate([]dvm.ItemTag{{InstanceID: target.InstanceID, TagID: dvm.TagJunk, RuleID: "rule-1"}}, nil)
@@ -2752,7 +2751,7 @@ const (
 //
 // No sheet lists a weapon row for the armor, so only the set bonuses
 // rate it.
-func setBonusContext() searchContext {
+func setBonusContext() Context {
 	pve := &rolls.Sheet{
 		Rows: map[uint32]rolls.SheetRow{100: {Tier: "S"}},
 		SetBonuses: map[uint32]rolls.SetBonus{
@@ -2778,7 +2777,7 @@ func setBonusContext() searchContext {
 		}
 	}
 
-	return searchContext{
+	return Context{
 		items: []*inventory.Item{
 			armor("set", perkTwoPiece, perkFourPiece),
 			armor("untiered", perkNoTier),
@@ -2822,21 +2821,21 @@ func TestSetBonusValues(t *testing.T) {
 			t.Parallel()
 
 			q := compiled(t, tc.query)
-			assert.Empty(t, q.unsupported)
+			assert.Empty(t, q.Unsupported)
 
 			if tc.valid {
-				assert.Empty(t, q.invalid)
-				assert.NotNil(t, q.test)
+				assert.Empty(t, q.Invalid)
+				assert.NotNil(t, q.Test)
 
 				return
 			}
 
-			assert.Equal(t, []string{tc.query}, q.invalid)
+			assert.Equal(t, []string{tc.query}, q.Invalid)
 		})
 	}
 
 	for _, value := range setBonusQueries {
-		assert.Empty(t, compiled(t, "setbonus:"+value).invalid, value)
+		assert.Empty(t, compiled(t, "setbonus:"+value).Invalid, value)
 	}
 }
 
@@ -2880,27 +2879,27 @@ func TestSetBonusNone(t *testing.T) {
 
 	tests := map[string]struct {
 		query string
-		want  outcome
+		want  Outcome
 	}{
-		"rate: decides armor without a set":     {query: "rate:>=a", want: outcome{}},
-		"ratebase: decides armor without a set": {query: "ratebase:>=a", want: outcome{}},
-		"setbonus: decides armor without a set": {query: "setbonus:s", want: outcome{}},
-		"a negated rate: matches":               {query: "-rate:>=a", want: outcome{state: match}},
-		"is:armor or rate: matches":             {query: "rate:>=a or is:armor", want: outcome{state: match}},
-		"is:weapon decides armor":               {query: "is:weapon rate:>=a", want: outcome{}},
+		"rate: decides armor without a set":     {query: "rate:>=a", want: Outcome{}},
+		"ratebase: decides armor without a set": {query: "ratebase:>=a", want: Outcome{}},
+		"setbonus: decides armor without a set": {query: "setbonus:s", want: Outcome{}},
+		"a negated rate: matches":               {query: "-rate:>=a", want: Outcome{State: Match}},
+		"is:armor or rate: matches":             {query: "rate:>=a or is:armor", want: Outcome{State: Match}},
+		"is:weapon decides armor":               {query: "is:weapon rate:>=a", want: Outcome{}},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.want, compiled(t, tc.query).test(ctx)(armor))
+			assert.Equal(t, tc.want, compiled(t, tc.query).Test(ctx)(armor))
 		})
 	}
 
-	result := compiled(t, "rate:>=a").evaluate(ctx, []*inventory.Item{armor})
-	assert.Empty(t, result.matches)
-	assert.Empty(t, result.undecided)
+	result := compiled(t, "rate:>=a").Evaluate(ctx, []*inventory.Item{armor})
+	assert.Empty(t, result.Matches)
+	assert.Empty(t, result.Undecided)
 }
 
 func TestPvPSetBonus(t *testing.T) {
@@ -2947,7 +2946,7 @@ func TestPvPSetBonus(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.modes, compiled(t, tc.query).modes)
+			assert.Equal(t, tc.modes, compiled(t, tc.query).Modes)
 			assert.Equal(t, tc.want, contextMatchIDs(t, tc.query, ctx))
 		})
 	}
@@ -3009,19 +3008,19 @@ func TestBuiltItemsWithoutArtifact(t *testing.T) {
 	assert.False(t, s.ItemSetsListed)
 
 	assert.Equal(t, []string{"1004"}, inventorytest.IDs(builtItems(s)))
-	assert.Equal(t, []string{"1004"}, inventorytest.IDs(ownedItems(s)))
+	assert.Equal(t, []string{"1004"}, inventorytest.IDs(OwnedItems(s)))
 
-	ctx := searchContext{items: builtItems(s)}
+	ctx := Context{items: builtItems(s)}
 	assert.Equal(t, []string{"1004"}, contextMatchIDs(t, "is:armor", ctx))
 
 	assert.Equal(t, "The server leaves out 2 owned items that belong to an item set, "+
 		"because the service publishes no EquipableItemSet artifact "+
-		"and the web client builds no such item without it.", unbuiltLine(s))
+		"and the web client builds no such item without it.", UnbuiltLine(s))
 
 	// The index decides alone, so a set that the definitions hold does not
 	// keep its item when the index lists no artifact.
 	held := setSnapshot(t, false, map[uint32][]uint32{7: {perkTwoPiece}})
-	assert.Equal(t, []string{"1004"}, inventorytest.IDs(ownedItems(held)))
+	assert.Equal(t, []string{"1004"}, inventorytest.IDs(OwnedItems(held)))
 }
 
 func TestBuiltItemsMissingSet(t *testing.T) {
@@ -3043,14 +3042,14 @@ func TestBuiltItemsMissingSet(t *testing.T) {
 	assert.Nil(t, missing.SetPerks)
 
 	assert.Equal(t, []string{"2001", "1004"}, inventorytest.IDs(builtItems(s)))
-	assert.Equal(t, []string{"2001", "1004"}, inventorytest.IDs(ownedItems(s)))
+	assert.Equal(t, []string{"2001", "1004"}, inventorytest.IDs(OwnedItems(s)))
 	assert.Equal(t, "The server leaves out 1 owned items whose item set the EquipableItemSet definitions lack, "+
-		"because the web client builds no such item.", unbuiltLine(s))
+		"because the web client builds no such item.", UnbuiltLine(s))
 
 	every := setSnapshot(t, true, map[uint32][]uint32{7: {perkTwoPiece}, 8: {}})
-	assert.Equal(t, []string{"2001", "2002", "1004"}, inventorytest.IDs(ownedItems(every)))
-	assert.Empty(t, unbuiltLine(every))
-	assert.Empty(t, unbuiltLine(inventorytest.Snapshot(t)))
+	assert.Equal(t, []string{"2001", "2002", "1004"}, inventorytest.IDs(OwnedItems(every)))
+	assert.Empty(t, UnbuiltLine(every))
+	assert.Empty(t, UnbuiltLine(inventorytest.Snapshot(t)))
 }
 
 func TestUnbuiltLineSkipsDummyBuckets(t *testing.T) {
@@ -3081,9 +3080,9 @@ func TestUnbuiltLineSkipsDummyBuckets(t *testing.T) {
 		},
 	}
 
-	assert.Empty(t, ownedItems(s))
+	assert.Empty(t, OwnedItems(s))
 	assert.Equal(t, "The server leaves out 2 owned items whose item set the EquipableItemSet definitions lack, "+
-		"because the web client builds no such item.", unbuiltLine(s))
+		"because the web client builds no such item.", UnbuiltLine(s))
 }
 
 func TestDupeSkipsUnbuilt(t *testing.T) {
@@ -3119,7 +3118,7 @@ func TestDupeSkipsUnbuilt(t *testing.T) {
 
 	matches := func(query string) []string {
 		return inventorytest.IDs(
-			compiled(t, query).evaluate(searchContext{items: builtItems(s)}, ownedItems(s)).matches,
+			compiled(t, query).Evaluate(Context{items: builtItems(s)}, OwnedItems(s)).Matches,
 		)
 	}
 

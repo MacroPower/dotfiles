@@ -15,6 +15,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/vendors"
 )
@@ -277,7 +278,7 @@ func unsupportedRefusal(terms []string) string {
 		"unsupported query: the server does not evaluate %s, so it previews nothing. "+
 			"The web client might still accept these terms. The server evaluates %s. "+
 			"Each is: word also works as not:<word>.",
-		strings.Join(terms, ", "), listWithAnd(supportedKeywords()),
+		strings.Join(terms, ", "), listWithAnd(search.SupportedKeywords()),
 	)
 }
 
@@ -315,7 +316,7 @@ func renderPreview(
 	s *inventory.Snapshot,
 	page []*inventory.Item,
 	offset, total, owned int,
-	undecided []undecidedItem,
+	undecided []search.UndecidedItem,
 	limit int,
 ) string {
 	if total == 0 && len(undecided) == 0 {
@@ -354,12 +355,12 @@ func renderPreview(
 // location, and the reasons of one item. The section shows the first
 // limit items of undecided. A last line counts the items that it leaves
 // out.
-func writeUndecided(b *strings.Builder, s *inventory.Snapshot, undecided []undecidedItem, limit int) {
+func writeUndecided(b *strings.Builder, s *inventory.Snapshot, undecided []search.UndecidedItem, limit int) {
 	b.WriteString("The server cannot decide these items:\ninstance id | name | location | reason")
 
 	shown := undecided[:min(limit, len(undecided))]
 	for _, u := range shown {
-		fields := []string{u.item.InstanceID, u.item.Name, s.LocationLabel(u.item), strings.Join(u.reasons, ". ")}
+		fields := []string{u.Item.InstanceID, u.Item.Name, s.LocationLabel(u.Item), strings.Join(u.Reasons, ". ")}
 		b.WriteString("\n" + strings.Join(fields, " | "))
 	}
 
@@ -380,7 +381,7 @@ type saveCount struct {
 	// the query reads.
 	unrated string
 	// unsupported holds the terms of the query that the preview does not
-	// evaluate, in the order that [compiledQuery] gives them.
+	// evaluate, in the order that [search.CompiledQuery] gives them.
 	unsupported []string
 	// matches is the number of owned items that the query matches.
 	matches int

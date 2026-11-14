@@ -13,6 +13,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 )
 
 func TestNewestMark(t *testing.T) {
@@ -172,14 +173,14 @@ func TestOwnedCounts(t *testing.T) {
 
 	// test gives item 1 the reason b, item 2 the reasons a and b, and
 	// matches item 3.
-	test := func(item *inventory.Item) outcome {
+	test := func(item *inventory.Item) search.Outcome {
 		switch item.InstanceID {
 		case "1":
-			return outcome{reasons: []string{"b"}, state: undecided}
+			return search.Outcome{Reasons: []string{"b"}, State: search.Undecided}
 		case "2":
-			return outcome{reasons: []string{"a", "b"}, state: undecided}
+			return search.Outcome{Reasons: []string{"a", "b"}, State: search.Undecided}
 		default:
-			return outcome{state: match}
+			return search.Outcome{State: search.Match}
 		}
 	}
 

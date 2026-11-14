@@ -31,6 +31,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 )
 
@@ -5974,7 +5975,7 @@ func TestListAutotagRulesNew(t *testing.T) {
 				`- 0. [enabled] "rate:>=a": tag junk (id r1). New items it takes: 0`,
 				`- 1. [enabled] "is:weapon": tag keep (id r2). New items it takes: 1`, thorn, "",
 				"New items that the server cannot place: 1",
-				`  - Fatebringer (1007), Hunter: undecided at rule 0 "rate:>=a": ` + reasonNoPerks, "",
+				`  - Fatebringer (1007), Hunter: undecided at rule 0 "rate:>=a": ` + search.ReasonNoPerks, "",
 				"New items that no rule takes: 1", helmet, "",
 				noVault, "",
 				footer,
@@ -6438,7 +6439,7 @@ func TestRunAutotagRules(t *testing.T) {
 			want: []string{
 				refusal,
 				`- Fatebringer (1007): the server cannot decide whether rule 0 "rate:>=a" takes it: ` +
-					reasonNoPerks + ".",
+					search.ReasonNoPerks + ".",
 				stillClaims,
 			},
 			isError: true,
@@ -7281,7 +7282,7 @@ func TestListAutotagRulesOwned(t *testing.T) {
 		// with the Aegis sheet. The two copies of Fatebringer without
 		// perks are undecided.
 		undecidedCount = ". Owned items it matches: 2. Owned items that the server cannot decide for it: 2 (" +
-			reasonNoPerks + ")"
+			search.ReasonNoPerks + ")"
 	)
 
 	weapon := storedRule("r9", "is:weapon", "keep", 9, true)
@@ -8138,7 +8139,7 @@ func preview(t *testing.T, f *fakes, query string) (int, int, []string) {
 	require.False(t, isError, got)
 
 	if got == previewNoMatch {
-		return 0, len(ownedItems(f.h.snapshot)), []string{}
+		return 0, len(search.OwnedItems(f.h.snapshot)), []string{}
 	}
 
 	var matched, owned int
@@ -8826,8 +8827,8 @@ const (
 
 	undecidedHeading = "The server cannot decide these items:"
 	undecidedHeader  = "instance id | name | location | reason"
-	undecided1005    = "1005 | Fatebringer | Hunter (postmaster) | " + reasonNoPerks
-	undecided1006    = "1006 | Fatebringer | Hunter (equipped) | " + reasonNoPerks
+	undecided1005    = "1005 | Fatebringer | Hunter (postmaster) | " + search.ReasonNoPerks
+	undecided1006    = "1006 | Fatebringer | Hunter (equipped) | " + search.ReasonNoPerks
 
 	noPvPSheet  = "PvP: rating unavailable: the service publishes no PvP sheet"
 	unratedText = "the query reads a game mode without ratings. "
@@ -9259,9 +9260,9 @@ func TestSaveAutotagRuleInvalidRating(t *testing.T) {
 func TestPreviewExampleRules(t *testing.T) {
 	t.Parallel()
 
-	const verdictRows = "1001 | Fatebringer | Vault | " + reasonVerdictNoPerks + "\n" +
-		"1005 | Fatebringer | Hunter (postmaster) | " + reasonVerdictNoPerks + "\n" +
-		"1006 | Fatebringer | Hunter (equipped) | " + reasonVerdictNoPerks
+	const verdictRows = "1001 | Fatebringer | Vault | " + search.ReasonVerdictNoPerks + "\n" +
+		"1005 | Fatebringer | Hunter (postmaster) | " + search.ReasonVerdictNoPerks + "\n" +
+		"1006 | Fatebringer | Hunter (equipped) | " + search.ReasonVerdictNoPerks
 
 	// Each query is the query of an example rule of the rule editor of
 	// the web client. The profile lists no perks for two of the three

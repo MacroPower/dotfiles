@@ -28,13 +28,13 @@ func markOf(instanceID string) string {
 
 // newestMark returns the highest [markOf] among the items of s that the
 // web client treats as acquired drops, which are the items of
-// [ownedItems]. The web client treats every such item with a higher mark
-// as newly acquired. An inventory without such an item gives the mark of
-// zeros.
+// [search.OwnedItems]. The web client treats every such item with a higher
+// mark as newly acquired. An inventory without such an item gives the mark
+// of zeros.
 func newestMark(s *inventory.Snapshot) string {
 	newest := markOf("")
 
-	for _, item := range ownedItems(s) {
+	for _, item := range search.OwnedItems(s) {
 		mark := markOf(item.InstanceID)
 		if mark > newest {
 			newest = mark
@@ -44,7 +44,7 @@ func newestMark(s *inventory.Snapshot) string {
 	return newest
 }
 
-// newItems returns the items of s in [ownedItems] whose [markOf] is
+// newItems returns the items of s in [search.OwnedItems] whose [markOf] is
 // higher than mark, which the next claim covers. The first list holds the
 // items outside the vault, which the claim offers to the autotag rules.
 // The second list holds the items in the vault. Both lists follow the
@@ -52,7 +52,7 @@ func newestMark(s *inventory.Snapshot) string {
 func newItems(s *inventory.Snapshot, mark string) ([]*inventory.Item, []*inventory.Item) {
 	var held, vault []*inventory.Item
 
-	for _, item := range ownedItems(s) {
+	for _, item := range search.OwnedItems(s) {
 		switch {
 		case markOf(item.InstanceID) <= mark:
 		case item.Owner == inventory.OwnerVault:
@@ -105,7 +105,7 @@ const (
 type ruleEval struct {
 	// test is the test of the compiled query of an evaluated rule. It is
 	// nil for the other classes.
-	test func(*inventory.Item) outcome
+	test func(*inventory.Item) search.Outcome
 	// reason is the skip reason of a skipped rule or the block reason of
 	// a blocked rule. It is empty for an evaluated rule.
 	reason string
@@ -132,7 +132,7 @@ func evalRules(
 	sources func() map[string]rolls.RatingSource,
 ) []ruleEval {
 	evals := make([]ruleEval, len(rules))
-	queries := make([]compiledQuery, len(rules))
+	queries := make([]search.CompiledQuery, len(rules))
 	rated := false
 
 	for i, rule := range rules {
@@ -152,20 +152,20 @@ func evalRules(
 			continue
 		}
 
-		query := compileQuery(root)
+		query := search.CompileQuery(root)
 
 		switch {
-		case len(query.invalid) > 0:
+		case len(query.Invalid) > 0:
 			evals[i].class = ruleSkipped
-			evals[i].reason = "the web client rejects " + strings.Join(query.invalid, ", ")
+			evals[i].reason = "the web client rejects " + strings.Join(query.Invalid, ", ")
 
-		case len(query.unsupported) > 0:
+		case len(query.Unsupported) > 0:
 			evals[i].class = ruleBlocked
-			evals[i].reason = "the server does not evaluate " + strings.Join(query.unsupported, ", ")
+			evals[i].reason = "the server does not evaluate " + strings.Join(query.Unsupported, ", ")
 
 		default:
 			queries[i] = query
-			rated = rated || len(query.modes) > 0
+			rated = rated || len(query.Modes) > 0
 		}
 	}
 
@@ -175,14 +175,14 @@ func evalRules(
 	}
 
 	current, _ := s.LastPlayed()
-	sctx := newSearchContext(s, current, ratings)
+	sctx := search.NewContext(s, current, ratings)
 
 	for i := range evals {
 		if evals[i].class != ruleEvaluated {
 			continue
 		}
 
-		reason := queries[i].unratedReason(ratings)
+		reason := queries[i].UnratedReason(ratings)
 		if reason != "" {
 			evals[i].class = ruleBlocked
 			evals[i].reason = reason
@@ -190,7 +190,7 @@ func evalRules(
 			continue
 		}
 
-		evals[i].test = queries[i].test(sctx)
+		evals[i].test = queries[i].Test(sctx)
 	}
 
 	return evals
@@ -253,18 +253,18 @@ items:
 
 			got := e.test(item)
 
-			switch got.state {
-			case match:
+			switch got.State {
+			case search.Match:
 				m.taken[i] = append(m.taken[i], item)
 
 				continue items
 
-			case undecided:
-				m.undecided = append(m.undecided, undecidedAt{item: item, reasons: got.reasons, rule: i})
+			case search.Undecided:
+				m.undecided = append(m.undecided, undecidedAt{item: item, reasons: got.Reasons, rule: i})
 
 				continue items
 
-			case noMatch:
+			case search.NoMatch:
 			}
 		}
 
@@ -340,17 +340,17 @@ func ownedCounts(evals []ruleEval, items []*inventory.Item) []ruleCount {
 
 			got := e.test(item)
 
-			switch got.state {
-			case match:
+			switch got.State {
+			case search.Match:
 				matched = append(matched, item.InstanceID)
-			case undecided:
+			case search.Undecided:
 				c.undecided++
 
-				for _, reason := range got.reasons {
+				for _, reason := range got.Reasons {
 					c.reasons = appendNew(c.reasons, reason)
 				}
 
-			case noMatch:
+			case search.NoMatch:
 			}
 		}
 
@@ -366,6 +366,15 @@ func ownedCounts(evals []ruleEval, items []*inventory.Item) []ruleCount {
 	}
 
 	return counts
+}
+
+// appendNew appends term to terms when terms does not hold it yet.
+func appendNew(terms []string, term string) []string {
+	if slices.Contains(terms, term) {
+		return terms
+	}
+
+	return append(terms, term)
 }
 
 // ruleTag is one new item that an enabled rule with a tag takes.
@@ -462,7 +471,7 @@ func vaultBlock(item *inventory.Item, def definitions.ItemDef) string {
 
 	case def.Bucket == bungie.BucketForbidden,
 		def.Bucket == bungie.BucketPostmaster,
-		slices.Contains(postmasterBuckets, def.Bucket):
+		slices.Contains(search.PostmasterBuckets, def.Bucket):
 		return "the web client never moves an item of its bucket"
 
 	case !item.Transferable:

@@ -1,4 +1,4 @@
-package main
+package search
 
 import (
 	"errors"
@@ -17,7 +17,6 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
-	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 )
 
 // hashDefaultShader is the item hash of the default shader, which DIM
@@ -56,13 +55,13 @@ const (
 
 // The reasons that the server cannot decide a rating filter for an item.
 const (
-	// reasonNoPerks applies to a copy without perks on a sheet row with
+	// ReasonNoPerks applies to a copy without perks on a sheet row with
 	// perk columns.
-	reasonNoPerks = "the profile lists no perks for this copy"
-	// reasonVerdictNoPerks applies at a verdict filter to a copy without
+	ReasonNoPerks = "the profile lists no perks for this copy"
+	// ReasonVerdictNoPerks applies at a verdict filter to a copy without
 	// perks on a sheet row with perk columns. It also applies to each
 	// rival of such a copy.
-	reasonVerdictNoPerks = "the profile lists no perks for this copy or for another copy on its sheet row"
+	ReasonVerdictNoPerks = "the profile lists no perks for this copy or for another copy on its sheet row"
 )
 
 // The kinds of verdict that [verdictOf] gives a copy against its rivals,
@@ -83,18 +82,18 @@ const (
 	verdictMixed = "mixed"
 )
 
-// outcomeState tells whether a test matches one item, does not match it,
+// OutcomeState tells whether a test matches one item, does not match it,
 // or cannot decide it.
-type outcomeState uint8
+type OutcomeState uint8
 
-// The states of an [outcome].
+// The states of an [Outcome].
 const (
-	// noMatch marks an item that the test does not match.
-	noMatch outcomeState = iota
-	// match marks an item that the test matches.
-	match
-	// undecided marks an item whose outcome the server cannot decide.
-	undecided
+	// NoMatch marks an item that the test does not match.
+	NoMatch OutcomeState = iota
+	// Match marks an item that the test matches.
+	Match
+	// Undecided marks an item whose outcome the server cannot decide.
+	Undecided
 )
 
 // jsDot is a character class that matches what a dot matches in a
@@ -121,7 +120,6 @@ var (
 	errOverloadValue = errors.New("the preview lacks the number of the word")
 
 	// The buckets of the categories of DIM that the search filters read.
-	// The Lost Items bucket of the Postmaster is [bungie.BucketPostmaster].
 	weaponBuckets = []uint32{bungie.BucketKinetic, bungie.BucketEnergy, bungie.BucketPower}
 	armorBuckets  = []uint32{
 		bungie.BucketHelmet,
@@ -130,7 +128,10 @@ var (
 		bungie.BucketLegArmor,
 		bungie.BucketClassArmor,
 	}
-	postmasterBuckets = []uint32{bungie.BucketEngrams, bungie.BucketMessages, bungie.BucketSpecialOrders}
+
+	// PostmasterBuckets lists the buckets of the Postmaster category of DIM
+	// other than the Lost Items bucket, which is [bungie.BucketPostmaster].
+	PostmasterBuckets = []uint32{bungie.BucketEngrams, bungie.BucketMessages, bungie.BucketSpecialOrders}
 
 	// dupeTypes lists the values of the dupe: filter that DIM knows, which
 	// are the keys of its table dupeTypeLookupRaw.
@@ -351,61 +352,61 @@ var (
 	wordStart = regexp.MustCompile(`^\w`)
 )
 
-// outcome is what a query, or one term of a query, gives one item. The
+// Outcome is what a query, or one term of a query, gives one item. The
 // zero outcome is a no match. Only an undecided outcome holds reasons. It
 // gives each reason that keeps the server from deciding the item, one
 // time each.
-type outcome struct {
-	reasons []string
-	state   outcomeState
+type Outcome struct {
+	Reasons []string
+	State   OutcomeState
 }
 
 // decided returns the match outcome when matched holds, and the no match
 // outcome otherwise.
-func decided(matched bool) outcome {
+func decided(matched bool) Outcome {
 	if matched {
-		return outcome{state: match}
+		return Outcome{State: Match}
 	}
 
-	return outcome{}
+	return Outcome{}
 }
 
 // and returns the outcome of an and of o and other in Kleene logic. A no
 // match of either operand gives a no match. Otherwise an undecided operand
 // gives an undecided outcome, and two matches give a match.
-func (o outcome) and(other outcome) outcome {
+func (o Outcome) and(other Outcome) Outcome {
 	switch {
-	case o.state == noMatch || other.state == noMatch:
-		return outcome{}
-	case o.state == undecided || other.state == undecided:
+	case o.State == NoMatch || other.State == NoMatch:
+		return Outcome{}
+	case o.State == Undecided || other.State == Undecided:
 		return o.undecidedWith(other)
 	default:
-		return outcome{state: match}
+		return Outcome{State: Match}
 	}
 }
 
 // or returns the outcome of an or of o and other in Kleene logic. A match
 // of either operand gives a match. Otherwise an undecided operand gives an
 // undecided outcome, and two no matches give a no match.
-func (o outcome) or(other outcome) outcome {
+func (o Outcome) or(other Outcome) Outcome {
 	switch {
-	case o.state == match || other.state == match:
-		return outcome{state: match}
-	case o.state == undecided || other.state == undecided:
+	case o.State == Match || other.State == Match:
+		return Outcome{State: Match}
+	case o.State == Undecided || other.State == Undecided:
 		return o.undecidedWith(other)
 	default:
-		return outcome{}
+		return Outcome{}
 	}
 }
 
 // not returns the outcome of a not of o in Kleene logic. It swaps a match
 // and a no match, and it keeps an undecided outcome with its reasons.
-func (o outcome) not() outcome {
-	switch o.state {
-	case match:
-		return outcome{}
-	case noMatch:
-		return outcome{state: match}
+func (o Outcome) not() Outcome {
+	switch o.State {
+	case Match:
+		return Outcome{}
+	case NoMatch:
+		return Outcome{State: Match}
 	default:
 		return o
 	}
@@ -415,38 +416,38 @@ func (o outcome) not() outcome {
 // then each reason of other that o does not hold. Only an undecided
 // outcome holds reasons, so the result names the reasons of the undecided
 // operands.
-func (o outcome) undecidedWith(other outcome) outcome {
-	reasons := slices.Clone(o.reasons)
-	for _, reason := range other.reasons {
+func (o Outcome) undecidedWith(other Outcome) Outcome {
+	reasons := slices.Clone(o.Reasons)
+	for _, reason := range other.Reasons {
 		reasons = appendNew(reasons, reason)
 	}
 
-	return outcome{reasons: reasons, state: undecided}
+	return Outcome{Reasons: reasons, State: Undecided}
 }
 
-// queryTest builds the test of a query, or of one term of a query, for a
+// QueryTest builds the test of a query, or of one term of a query, for a
 // search context. A filter that reads other items, such as is:dupe,
 // groups the items of the context when it builds the test, as DIM does
 // when it builds the filter.
-type queryTest func(ctx searchContext) func(*inventory.Item) outcome
+type QueryTest func(ctx Context) func(*inventory.Item) Outcome
 
 // decidedTest builds the predicate of a term that the server decides for
 // every item, such as is:dupe.
-type decidedTest func(ctx searchContext) func(*inventory.Item) bool
+type decidedTest func(ctx Context) func(*inventory.Item) bool
 
 // fromDecided adapts the predicate builder of a term that the server
-// decides for every item to a [queryTest].
-func fromDecided(build decidedTest) queryTest {
-	return func(ctx searchContext) func(*inventory.Item) outcome {
+// decides for every item to a [QueryTest].
+func fromDecided(build decidedTest) QueryTest {
+	return func(ctx Context) func(*inventory.Item) Outcome {
 		predicate := build(ctx)
 
-		return func(item *inventory.Item) outcome { return decided(predicate(item)) }
+		return func(item *inventory.Item) Outcome { return decided(predicate(item)) }
 	}
 }
 
-// searchContext holds what the filters read besides the tested item, as
+// Context holds what the filters read besides the tested item, as
 // the filter context of DIM does.
-type searchContext struct {
+type Context struct {
 	// sources holds the [rolls.RatingSource] of each game mode, keyed by the
 	// mode. Only the rating filters read it, so a query without one can
 	// run with no sources.
@@ -459,16 +460,16 @@ type searchContext struct {
 	current inventory.Character
 }
 
-// newSearchContext returns the context of a query on the items of s. The
+// NewContext returns the context of a query on the items of s. The
 // context holds every item of s that [builtItems] keeps, in every
 // location, the vault included. It holds current as the current character
 // and sources as the [rolls.RatingSource] of each game mode.
-func newSearchContext(
+func NewContext(
 	s *inventory.Snapshot,
 	current inventory.Character,
 	sources map[string]rolls.RatingSource,
-) searchContext {
-	return searchContext{current: current, items: builtItems(s), sources: sources}
+) Context {
+	return Context{current: current, items: builtItems(s), sources: sources}
 }
 
 // searchFilter is one filter that the preview evaluates. An is: word sets
@@ -485,7 +486,7 @@ type searchFilter struct {
 	// errInvalidValue for a value that the web client rejects. It returns
 	// an error that wraps errUnsupportedTerm for a value that the preview
 	// does not evaluate.
-	value func(args string) (queryTest, error)
+	value func(args string) (QueryTest, error)
 	// name is the filter name, such as "is" or "tag".
 	name string
 	// word is the is: word, such as "weapon". A filter that takes a value
@@ -503,27 +504,27 @@ func (f searchFilter) keyword() string {
 	return f.name + ":" + f.word
 }
 
-// compiledQuery is a search query in the form that the preview evaluates.
-// Exactly one of three cases holds for it. Test is set, unsupported holds
-// a term, or invalid holds a term.
-type compiledQuery struct {
-	// test builds the test of the query for a search context. It is nil
-	// when unsupported or invalid holds a term.
-	test queryTest
-	// unsupported holds the Text of each term that the preview does not
+// CompiledQuery is a search query in the form that the preview evaluates.
+// Exactly one of three cases holds for it. Test is set, Unsupported holds
+// a term, or Invalid holds a term.
+type CompiledQuery struct {
+	// Test builds the test of the query for a search context. It is nil
+	// when Unsupported or Invalid holds a term.
+	Test QueryTest
+	// Unsupported holds the Text of each term that the preview does not
 	// evaluate, one time each, in the order of the query. It is empty when
-	// invalid holds a term.
-	unsupported []string
-	// invalid holds the Text of each term whose value the web client
+	// Invalid holds a term.
+	Unsupported []string
+	// Invalid holds the Text of each term whose value the web client
 	// rejects, one time each, in the order of the query.
-	invalid []string
-	// modes holds the game modes whose ratings the rating filters of the
-	// query read, in the order of [rolls.Modes]. It is empty when the test
-	// is nil.
-	modes []string
+	Invalid []string
+	// Modes holds the game modes whose ratings the rating filters of the
+	// query read, in the order of [rolls.Modes]. It is empty when Test is
+	// nil.
+	Modes []string
 }
 
-// queryCompiler holds what [compileQuery] collects while it walks a parse
+// queryCompiler holds what [CompileQuery] collects while it walks a parse
 // tree. It collects the unsupported terms, the terms whose value the web
 // client rejects, and the game modes of the rating filters.
 type queryCompiler struct {
@@ -532,7 +533,7 @@ type queryCompiler struct {
 	modes       []string
 }
 
-// compileQuery builds the test of the parse tree that [search.ParseQuery]
+// CompileQuery builds the test of the parse tree that [ParseQuery]
 // returns. It evaluates only the filters of searchFilters. The web client
 // voids a whole query when one term is invalid. A test of the other terms
 // can therefore match items that the web client does not match. A query
@@ -541,16 +542,16 @@ type queryCompiler struct {
 // its other terms mean, so the result names no unsupported term. Any other
 // query with a term outside searchFilters has no test either, and the
 // result names each such term.
-func compileQuery(root *search.QueryNode) compiledQuery {
+func CompileQuery(root *QueryNode) CompiledQuery {
 	var c queryCompiler
 
 	test := c.node(root)
 
 	switch {
 	case len(c.invalid) > 0:
-		return compiledQuery{invalid: c.invalid}
+		return CompiledQuery{Invalid: c.invalid}
 	case len(c.unsupported) > 0:
-		return compiledQuery{unsupported: c.unsupported}
+		return CompiledQuery{Unsupported: c.unsupported}
 	default:
 		var modes []string
 
@@ -560,7 +561,7 @@ func compileQuery(root *search.QueryNode) compiledQuery {
 			}
 		}
 
-		return compiledQuery{test: test, modes: modes}
+		return CompiledQuery{Test: test, Modes: modes}
 	}
 }
 
@@ -568,10 +569,10 @@ func compileQuery(root *search.QueryNode) compiledQuery {
 // does not evaluate or whose value the web client rejects. The and node,
 // the or node, and the not node combine the outcomes of their operands in
 // Kleene logic.
-func (c *queryCompiler) node(n *search.QueryNode) queryTest {
+func (c *queryCompiler) node(n *QueryNode) QueryTest {
 	switch n.Op {
-	case search.OpAnd, search.OpOr:
-		builds := make([]queryTest, 0, len(n.Operands))
+	case OpAnd, OpOr:
+		builds := make([]QueryTest, 0, len(n.Operands))
 		for _, operand := range n.Operands {
 			builds = append(builds, c.node(operand))
 		}
@@ -579,23 +580,23 @@ func (c *queryCompiler) node(n *search.QueryNode) queryTest {
 		// The walk starts from the outcome that leaves each operand in
 		// place. It stops at the outcome that no later operand changes:
 		// a no match of an and node, or a match of an or node.
-		combine, start, final := outcome.and, match, noMatch
-		if n.Op == search.OpOr {
-			combine, start, final = outcome.or, noMatch, match
+		combine, start, final := Outcome.and, Match, NoMatch
+		if n.Op == OpOr {
+			combine, start, final = Outcome.or, NoMatch, Match
 		}
 
-		return func(ctx searchContext) func(*inventory.Item) outcome {
-			tests := make([]func(*inventory.Item) outcome, 0, len(builds))
+		return func(ctx Context) func(*inventory.Item) Outcome {
+			tests := make([]func(*inventory.Item) Outcome, 0, len(builds))
 			for _, build := range builds {
 				tests = append(tests, build(ctx))
 			}
 
-			return func(item *inventory.Item) outcome {
-				result := outcome{state: start}
+			return func(item *inventory.Item) Outcome {
+				result := Outcome{State: start}
 
 				for _, test := range tests {
 					result = combine(result, test(item))
-					if result.state == final {
+					if result.State == final {
 						break
 					}
 				}
@@ -604,13 +605,13 @@ func (c *queryCompiler) node(n *search.QueryNode) queryTest {
 			}
 		}
 
-	case search.OpNot:
+	case OpNot:
 		build := c.node(n.Operand)
 
-		return func(ctx searchContext) func(*inventory.Item) outcome {
+		return func(ctx Context) func(*inventory.Item) Outcome {
 			test := build(ctx)
 
-			return func(item *inventory.Item) outcome { return test(item).not() }
+			return func(item *inventory.Item) Outcome { return test(item).not() }
 		}
 
 	default:
@@ -647,7 +648,7 @@ func appendNew(terms []string, term string) []string {
 // preview evaluates, so is:constructor and is:__proto__ stay unsupported.
 // DIM finds both words on the prototype of its filter table and matches
 // nothing.
-func filterTest(n *search.QueryNode) (queryTest, string, error) {
+func filterTest(n *QueryNode) (QueryTest, string, error) {
 	if n.Type == filterIs {
 		build, ok := isFilters[n.Args]
 		if !ok {
@@ -667,54 +668,54 @@ func filterTest(n *search.QueryNode) (queryTest, string, error) {
 	return build, f.mode, err
 }
 
-// queryResult is what a query gives a list of items. Matches holds the
+// QueryResult is what a query gives a list of items. Matches holds the
 // items that the query matches. Undecided holds the items whose outcome
 // the server cannot decide. Both lists follow the order of
 // [inventory.ByNameAndID].
-type queryResult struct {
-	matches   []*inventory.Item
-	undecided []undecidedItem
+type QueryResult struct {
+	Matches   []*inventory.Item
+	Undecided []UndecidedItem
 }
 
-// undecidedItem is an item whose outcome the server cannot decide, with
+// UndecidedItem is an item whose outcome the server cannot decide, with
 // the reasons of the outcome.
-type undecidedItem struct {
-	item    *inventory.Item
-	reasons []string
+type UndecidedItem struct {
+	Item    *inventory.Item
+	Reasons []string
 }
 
-// evaluate returns what q gives each item of items in ctx. It leaves out
+// Evaluate returns what q gives each item of items in ctx. It leaves out
 // each item that q does not match.
-func (q compiledQuery) evaluate(ctx searchContext, items []*inventory.Item) queryResult {
-	var result queryResult
+func (q CompiledQuery) Evaluate(ctx Context, items []*inventory.Item) QueryResult {
+	var result QueryResult
 
-	test := q.test(ctx)
+	test := q.Test(ctx)
 	for _, item := range items {
 		got := test(item)
 
-		if got.state == match {
-			result.matches = append(result.matches, item)
+		if got.State == Match {
+			result.Matches = append(result.Matches, item)
 		}
 
-		if got.state == undecided {
-			result.undecided = append(result.undecided, undecidedItem{item: item, reasons: got.reasons})
+		if got.State == Undecided {
+			result.Undecided = append(result.Undecided, UndecidedItem{Item: item, Reasons: got.Reasons})
 		}
 	}
 
-	slices.SortStableFunc(result.matches, inventory.ByNameAndID)
+	slices.SortStableFunc(result.Matches, inventory.ByNameAndID)
 	slices.SortStableFunc(
-		result.undecided,
-		func(a, b undecidedItem) int { return inventory.ByNameAndID(a.item, b.item) },
+		result.Undecided,
+		func(a, b UndecidedItem) int { return inventory.ByNameAndID(a.Item, b.Item) },
 	)
 
 	return result
 }
 
-// unratedReason returns the [rolls.RatingReason] of the first game mode of
-// q.modes whose source in sources holds an Err. It returns "" when every
+// UnratedReason returns the [rolls.RatingReason] of the first game mode of
+// q.Modes whose source in sources holds an Err. It returns "" when every
 // such mode has ratings.
-func (q compiledQuery) unratedReason(sources map[string]rolls.RatingSource) string {
-	for _, mode := range q.modes {
+func (q CompiledQuery) UnratedReason(sources map[string]rolls.RatingSource) string {
+	for _, mode := range q.Modes {
 		err := sources[mode].Err
 		if err != nil {
 			return rolls.RatingReason(mode, err)
@@ -724,9 +725,9 @@ func (q compiledQuery) unratedReason(sources map[string]rolls.RatingSource) stri
 	return ""
 }
 
-// supportedKeywords returns the keyword of each filter that the preview
+// SupportedKeywords returns the keyword of each filter that the preview
 // evaluates, in the order of searchFilters.
-func supportedKeywords() []string {
+func SupportedKeywords() []string {
 	keywords := make([]string, 0, len(searchFilters))
 	for _, f := range searchFilters {
 		keywords = append(keywords, f.keyword())
@@ -775,10 +776,10 @@ func setBuilt(s *inventory.Snapshot, item *inventory.Item) bool {
 	return item.SetHash == 0 || (s.ItemSetsListed && item.SetKnown)
 }
 
-// ownedItems returns the items that the rule editor of the web client
+// OwnedItems returns the items that the rule editor of the web client
 // previews a rule against. The editor keeps each item of [builtItems]
 // that [previewable] accepts, in every location.
-func ownedItems(s *inventory.Snapshot) []*inventory.Item {
+func OwnedItems(s *inventory.Snapshot) []*inventory.Item {
 	var owned []*inventory.Item
 
 	for _, item := range builtItems(s) {
@@ -798,12 +799,12 @@ func previewable(item *inventory.Item) bool {
 	return item.InstanceID != "" && isEquipment(item)
 }
 
-// unbuiltLine returns the line that counts the owned items that
-// [ownedItems] leaves out because the web client cannot build their item
-// set, as [setBuilt] decides. It returns "" when ownedItems leaves out no
+// UnbuiltLine returns the line that counts the owned items that
+// [OwnedItems] leaves out because the web client cannot build their item
+// set, as [setBuilt] decides. It returns "" when OwnedItems leaves out no
 // such item. The line gives one reason, because the service index either
 // lists the EquipableItemSet artifact or does not.
-func unbuiltLine(s *inventory.Snapshot) string {
+func UnbuiltLine(s *inventory.Snapshot) string {
 	left := 0
 
 	for _, item := range s.Items {
@@ -861,7 +862,7 @@ func inBuckets(buckets ...uint32) func(*inventory.Item) bool {
 // bucket. Item.Postmaster also marks an item at the Postmaster in a bucket
 // outside that category, which DIM does not count.
 func inPostmaster(item *inventory.Item) bool {
-	return item.Lost || slices.Contains(postmasterBuckets, item.Bucket)
+	return item.Lost || slices.Contains(PostmasterBuckets, item.Bucket)
 }
 
 // ofClass returns the predicate of an item for the Bungie DestinyClass
@@ -917,7 +918,7 @@ func isAutotagged(item *inventory.Item) bool {
 // DIM counts, so an item without power matches no value, also power:<10.
 // A word of DIM such as pinnaclecap after a valid operator is a term that
 // the preview does not evaluate.
-func powerValue(value string) (queryTest, error) {
+func powerValue(value string) (QueryTest, error) {
 	compare, err := powerRange.valueComparator(value)
 	if err != nil {
 		return nil, err
@@ -925,7 +926,7 @@ func powerValue(value string) (queryTest, error) {
 
 	test := func(item *inventory.Item) bool { return item.LightPower != 0 && compare(float64(item.LightPower)) }
 
-	return fromDecided(func(searchContext) func(*inventory.Item) bool { return test }), nil
+	return fromDecided(func(Context) func(*inventory.Item) bool { return test }), nil
 }
 
 // tagMatch returns the predicate of the filter tag:value, as the web
@@ -976,10 +977,10 @@ func exactNameMatch(value string) func(*inventory.Item) bool {
 
 // plainName returns the name of item in the form that the name filters
 // compare. The lexer turned the typographic quotes of the value into ASCII
-// quotes. plainName therefore applies [search.NormalizeQuotes] to the
-// name, as DIM does, and then [plainString] folds it.
+// quotes. plainName therefore applies [normalizeQuotes] to the name, as
+// DIM does, and then [plainString] folds it.
 func plainName(item *inventory.Item) string {
-	return plainString(search.NormalizeQuotes(item.Name))
+	return plainString(normalizeQuotes(item.Name))
 }
 
 // plainString folds s for a text filter, as plainString of DIM folds the
@@ -1015,7 +1016,7 @@ func idMatch(value string) func(*inventory.Item) bool {
 // because no item hash equals them. JavaScript compares -0 as equal to 0,
 // so hash:-0 is hash:0.
 func hashMatch(value string) func(*inventory.Item) bool {
-	value = strings.TrimLeftFunc(value, search.IsJSSpace)
+	value = strings.TrimLeftFunc(value, isJSSpace)
 
 	negative := strings.HasPrefix(value, "-")
 	if negative || strings.HasPrefix(value, "+") {
@@ -1040,7 +1041,7 @@ func hashMatch(value string) func(*inventory.Item) bool {
 // [itemDupeID]. It matches a comparable item whose group holds more than
 // one item, except the default shader and an item of the Artifacts
 // bucket.
-func isDupe(ctx searchContext) func(*inventory.Item) bool {
+func isDupe(ctx Context) func(*inventory.Item) bool {
 	counts := dupeCounts(ctx.items, func(*inventory.Item) bool { return true })
 
 	return func(item *inventory.Item) bool {
@@ -1061,7 +1062,7 @@ func isDupe(ctx searchContext) func(*inventory.Item) bool {
 // the query. The autotagger and the rule editor of the web client first
 // check the query with the validator of DIM. They skip a query that fails
 // the check, so the completion never reaches an autotag rule.
-func dupeValue(value string) (queryTest, error) {
+func dupeValue(value string) (QueryTest, error) {
 	if value == "item" {
 		return fromDecided(isDupe), nil
 	}
@@ -1081,13 +1082,13 @@ func dupeValue(value string) (queryTest, error) {
 // tested item counts only when it is comparable itself. DIM groups only
 // comparable items for count:, so its groups differ from those of
 // is:dupe.
-func countValue(value string) (queryTest, error) {
+func countValue(value string) (QueryTest, error) {
 	compare, err := rangeFormat{}.valueComparator(value)
 	if err != nil {
 		return nil, err
 	}
 
-	return fromDecided(func(ctx searchContext) func(*inventory.Item) bool {
+	return fromDecided(func(ctx Context) func(*inventory.Item) bool {
 		counts := dupeCounts(ctx.items, isComparable)
 
 		return func(item *inventory.Item) bool { return compare(float64(counts[itemDupeID(item)])) }
@@ -1133,7 +1134,7 @@ func stripAdept(name string) string {
 		name = pattern.ReplaceAllLiteralString(name, "")
 	}
 
-	return search.JSTrim(name)
+	return jsTrim(name)
 }
 
 // inCurrentChar builds the predicate of is:incurrentchar. It matches an
@@ -1142,7 +1143,7 @@ func stripAdept(name string) string {
 // the vault accepts its bucket or the bucket is Special Orders. DIM files
 // an item of any other bucket under the vault, which the predicate
 // ignores.
-func inCurrentChar(ctx searchContext) func(*inventory.Item) bool {
+func inCurrentChar(ctx Context) func(*inventory.Item) bool {
 	return func(item *inventory.Item) bool {
 		return item.Owner == ctx.current.ID || item.Owner == inventory.OwnerAccount
 	}
@@ -1150,7 +1151,7 @@ func inCurrentChar(ctx searchContext) func(*inventory.Item) bool {
 
 // currentClass builds the predicate of is:currentclass. It matches an item
 // of the class of the current character.
-func currentClass(ctx searchContext) func(*inventory.Item) bool {
+func currentClass(ctx Context) func(*inventory.Item) bool {
 	return ofClass(ctx.current.ClassType)
 }
 
@@ -1266,17 +1267,17 @@ func (f rangeFormat) operand(value string) (string, float64, bool) {
 // itemValue adapts the predicate function of a filter that reads only the
 // tested item and accepts every value to the value field of a
 // [searchFilter].
-func itemValue(predicate func(value string) func(*inventory.Item) bool) func(string) (queryTest, error) {
-	return func(value string) (queryTest, error) {
+func itemValue(predicate func(value string) func(*inventory.Item) bool) func(string) (QueryTest, error) {
+	return func(value string) (QueryTest, error) {
 		test := predicate(value)
 
-		return fromDecided(func(searchContext) func(*inventory.Item) bool { return test }), nil
+		return fromDecided(func(Context) func(*inventory.Item) bool { return test }), nil
 	}
 }
 
 // isTable maps each is: word of filters to the builder of its test.
-func isTable(filters []searchFilter) map[string]queryTest {
-	table := map[string]queryTest{}
+func isTable(filters []searchFilter) map[string]QueryTest {
+	table := map[string]QueryTest{}
 
 	for _, f := range filters {
 		switch {
@@ -1284,7 +1285,7 @@ func isTable(filters []searchFilter) map[string]queryTest {
 			table[f.word] = fromDecided(f.build)
 		case f.match != nil:
 			predicate := f.match
-			table[f.word] = fromDecided(func(searchContext) func(*inventory.Item) bool { return predicate })
+			table[f.word] = fromDecided(func(Context) func(*inventory.Item) bool { return predicate })
 		}
 	}
 
@@ -1328,25 +1329,25 @@ func ratingFilter(
 	format rangeFormat,
 	values func(source rolls.RatingSource, item *inventory.Item) ratingValues,
 ) searchFilter {
-	read := func(value string) (queryTest, error) {
+	read := func(value string) (QueryTest, error) {
 		compare, err := format.valueComparator(value)
 		if err != nil {
 			return nil, err
 		}
 
-		return func(ctx searchContext) func(*inventory.Item) outcome {
+		return func(ctx Context) func(*inventory.Item) Outcome {
 			source := ctx.sources[mode]
 
-			return func(item *inventory.Item) outcome {
+			return func(item *inventory.Item) Outcome {
 				v := values(source, item)
 
 				switch {
 				case slices.ContainsFunc(v.numbers, compare):
-					return outcome{state: match}
+					return Outcome{State: Match}
 				case len(v.reasons) > 0:
-					return outcome{reasons: v.reasons, state: undecided}
+					return Outcome{Reasons: v.reasons, State: Undecided}
 				default:
-					return outcome{}
+					return Outcome{}
 				}
 			}
 		}, nil
@@ -1373,7 +1374,7 @@ func rollValues(source rolls.RatingSource, item *inventory.Item) ratingValues {
 	}
 
 	if roll.Unknown && roll.Row.Tier != "" {
-		v.reasons = append(v.reasons, reasonNoPerks)
+		v.reasons = append(v.reasons, ReasonNoPerks)
 
 		return v
 	}
@@ -1409,7 +1410,7 @@ func missValues(source rolls.RatingSource, item *inventory.Item) ratingValues {
 	case roll == nil:
 		return ratingValues{}
 	case roll.Unknown:
-		return ratingValues{reasons: []string{reasonNoPerks}}
+		return ratingValues{reasons: []string{ReasonNoPerks}}
 	case len(roll.Columns) == 0:
 		return ratingValues{}
 	}
@@ -1467,7 +1468,7 @@ func setRatings(item *inventory.Item, sheet *rolls.Sheet) []rolls.SetBonus {
 // requires that the bonus need that number of pieces. The filter rejects
 // every value outside setBonusQueries, as DIM does.
 func setBonusFilter(name, mode string) searchFilter {
-	read := func(value string) (queryTest, error) {
+	read := func(value string) (QueryTest, error) {
 		if !slices.Contains(setBonusQueries, value) {
 			return nil, fmt.Errorf("%w: %s:%s", errInvalidValue, name, value)
 		}
@@ -1480,7 +1481,7 @@ func setBonusFilter(name, mode string) searchFilter {
 		pieces := setBonusPieces[size]
 		want := rolls.LowerTiers[tier]
 
-		return fromDecided(func(ctx searchContext) func(*inventory.Item) bool {
+		return fromDecided(func(ctx Context) func(*inventory.Item) bool {
 			sheet := ctx.sources[mode].Sheet
 
 			return func(item *inventory.Item) bool {
@@ -1542,20 +1543,20 @@ func tierOverloads() map[string]float64 {
 // without a verdict is a no match. A copy whose verdict the server cannot
 // decide is undecided, whatever the value.
 func verdictFilter(name, mode string) searchFilter {
-	read := func(value string) (queryTest, error) {
+	read := func(value string) (QueryTest, error) {
 		kind, ok := verdictKinds[value]
 		if !ok {
 			return nil, fmt.Errorf("%w: %s:%s", errInvalidValue, name, value)
 		}
 
-		return func(ctx searchContext) func(*inventory.Item) outcome {
+		return func(ctx Context) func(*inventory.Item) Outcome {
 			source := ctx.sources[mode]
 			copies := copiesByHash(ctx.items)
 
-			return func(item *inventory.Item) outcome {
+			return func(item *inventory.Item) Outcome {
 				got, known := verdictIn(source, copies, item)
 				if !known {
-					return outcome{reasons: []string{reasonVerdictNoPerks}, state: undecided}
+					return Outcome{Reasons: []string{ReasonVerdictNoPerks}, State: Undecided}
 				}
 
 				return decided(got == kind)

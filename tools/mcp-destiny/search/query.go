@@ -66,10 +66,6 @@ const (
 	// string or a bare word. The web client matches such a token against
 	// the text of an item.
 	keywordFilter = "keyword"
-
-	// filterIs is the name of the is: filters. The parser reads a filter
-	// named not, such as not:x, as the negation of the filter is:x.
-	filterIs = "is"
 )
 
 var (
@@ -562,7 +558,7 @@ func (l *queryLexer) next() (queryToken, bool, error) {
 		}
 
 		if ok {
-			token.Text = JSTrim(l.query[start:l.pos])
+			token.Text = jsTrim(l.query[start:l.pos])
 			token.Start = start
 
 			return token, true, nil
@@ -579,7 +575,7 @@ func (l *queryLexer) scan() (queryToken, bool, error) {
 	start := l.pos
 
 	if m, ok := l.match(queryParens); ok {
-		return queryToken{Kind: tokenKind(JSTrim(m))}, true, nil
+		return queryToken{Kind: tokenKind(jsTrim(m))}, true, nil
 	}
 
 	if isQuote(l.query[start]) {
@@ -596,11 +592,11 @@ func (l *queryLexer) scan() (queryToken, bool, error) {
 	}
 
 	if m, ok := l.match(queryBoolean); ok {
-		return queryToken{Kind: tokenKind(JSTrim(m))}, true, nil
+		return queryToken{Kind: tokenKind(jsTrim(m))}, true, nil
 	}
 
 	if m, ok := l.match(queryComment); ok {
-		return queryToken{Kind: tokenComment, Content: JSTrim(m)}, true, nil
+		return queryToken{Kind: tokenComment, Content: jsTrim(m)}, true, nil
 	}
 
 	if m, ok := l.match(queryFilterName); ok {
@@ -702,21 +698,21 @@ func (l *queryLexer) match(re *regexp.Regexp) (string, bool) {
 // rest returns the query from the byte offset start to its end, without
 // the characters of jsSpace at its ends.
 func (l *queryLexer) rest(start int) string {
-	return JSTrim(l.query[start:])
+	return jsTrim(l.query[start:])
 }
 
 // normalizeQuery returns query in the form that the lexer of DIM reads. It
-// lowercases the query and then applies [NormalizeQuotes]. It lowercases
+// lowercases the query and then applies [normalizeQuotes]. It lowercases
 // U+0130 to "i" and U+0307, as String.prototype.toLowerCase does.
 // [strings.ToLower] lowercases U+0130 to "i" alone.
 func normalizeQuery(query string) string {
-	return NormalizeQuotes(strings.ToLower(strings.ReplaceAll(query, "\u0130", "i\u0307")))
+	return normalizeQuotes(strings.ToLower(strings.ReplaceAll(query, "\u0130", "i\u0307")))
 }
 
-// NormalizeQuotes turns the typographic quotes U+2018 through U+201A into
+// normalizeQuotes turns the typographic quotes U+2018 through U+201A into
 // an ASCII apostrophe and U+201C through U+201E into an ASCII double
 // quote, as normalizeQuotes of DIM does.
-func NormalizeQuotes(s string) string {
+func normalizeQuotes(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
 		case r >= '\u2018' && r <= '\u201a':
@@ -739,15 +735,15 @@ func jsPattern(pattern string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + pattern)
 }
 
-// IsJSSpace reports whether r is a character of jsSpace.
-func IsJSSpace(r rune) bool {
+// isJSSpace reports whether r is a character of jsSpace.
+func isJSSpace(r rune) bool {
 	return jsSpaceChar.MatchString(string(r))
 }
 
-// JSTrim removes the characters of jsSpace from both ends of s, as
+// jsTrim removes the characters of jsSpace from both ends of s, as
 // String.prototype.trim does.
-func JSTrim(s string) string {
-	return strings.TrimFunc(s, IsJSSpace)
+func jsTrim(s string) string {
+	return strings.TrimFunc(s, isJSSpace)
 }
 
 // isQuote reports whether c opens a quoted string.
