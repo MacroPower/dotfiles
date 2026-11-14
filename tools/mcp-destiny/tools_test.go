@@ -5582,9 +5582,23 @@ func TestSetTag(t *testing.T) {
 				map[string]any{"instanceId": "1002", "itemHash": float64(101), "tagId": "junk", "removed": false},
 			},
 		},
+		"tag one item": {
+			in:   SetTagInput{InstanceIDs: []string{"1002"}, Tag: "keep"},
+			want: "Tagged 1 item as keep.",
+			wantRows: []any{
+				map[string]any{"instanceId": "1002", "itemHash": float64(101), "tagId": "keep", "removed": false},
+			},
+		},
 		"clear keeps the favorite": {
 			in:   SetTagInput{InstanceIDs: []string{"1001"}, Tag: "none"},
-			want: "Cleared the tag of 1 items.",
+			want: "Cleared the tag of 1 item.",
+			wantRows: []any{
+				map[string]any{"instanceId": "1001", "itemHash": float64(100), "tagId": "keep", "removed": true},
+			},
+		},
+		"clear two items": {
+			in:   SetTagInput{InstanceIDs: []string{"1001", "1002"}, Tag: "none"},
+			want: "Cleared the tag of 2 items.",
 			wantRows: []any{
 				map[string]any{"instanceId": "1001", "itemHash": float64(100), "tagId": "keep", "removed": true},
 			},
@@ -5672,20 +5686,52 @@ func TestSetTagClearsRule(t *testing.T) {
 func TestSetFavorite(t *testing.T) {
 	t.Parallel()
 
-	f := newFakes(t)
+	favorite := func(id string, hash float64, removed bool) map[string]any {
+		return map[string]any{"instanceId": id, "itemHash": hash, "tagId": "favorite", "removed": removed}
+	}
 
-	got, isError := call(t, f.h.handleSetFavorite, SetFavoriteInput{
-		InstanceIDs: []string{"1001", "1001"},
-		Favorite:    false,
-	})
-	assert.False(t, isError)
-	assert.Equal(t, "Cleared the favorite mark of 1 items.", got)
+	tests := map[string]struct {
+		want     string
+		wantRows []any
+		in       SetFavoriteInput
+	}{
+		"mark one item": {
+			in:       SetFavoriteInput{InstanceIDs: []string{"1002"}, Favorite: true},
+			want:     "Marked 1 item as a favorite.",
+			wantRows: []any{favorite("1002", 101, false)},
+		},
+		"mark two items": {
+			in:       SetFavoriteInput{InstanceIDs: []string{"1001", "1002"}, Favorite: true},
+			want:     "Marked 2 items as favorites.",
+			wantRows: []any{favorite("1001", 100, false), favorite("1002", 101, false)},
+		},
+		"clear a repeated id once": {
+			in:       SetFavoriteInput{InstanceIDs: []string{"1001", "1001"}, Favorite: false},
+			want:     "Cleared the favorite mark of 1 item.",
+			wantRows: []any{favorite("1001", 100, true)},
+		},
+		"clear two items": {
+			in:       SetFavoriteInput{InstanceIDs: []string{"1001", "1002"}, Favorite: false},
+			want:     "Cleared the favorite mark of 2 items.",
+			wantRows: []any{favorite("1001", 100, true), favorite("1002", 101, true)},
+		},
+	}
 
-	writes := f.service.Calls(http.MethodPost, pathTags)
-	require.Len(t, writes, 1)
-	assert.Equal(t, []any{
-		map[string]any{"instanceId": "1001", "itemHash": float64(100), "tagId": "favorite", "removed": true},
-	}, writes[0].Body["items"])
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			got, isError := call(t, f.h.handleSetFavorite, tc.in)
+			assert.False(t, isError)
+			assert.Equal(t, tc.want, got)
+
+			writes := f.service.Calls(http.MethodPost, pathTags)
+			require.Len(t, writes, 1)
+			assert.Equal(t, tc.wantRows, writes[0].Body["items"])
+		})
+	}
 }
 
 func TestListTagsAndNotes(t *testing.T) {

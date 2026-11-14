@@ -1384,10 +1384,10 @@ func (h *handler) handleSetTag(
 	}
 
 	if tag == "" {
-		return textResult(fmt.Sprintf("Cleared the tag of %d items.", len(items))), nil, nil
+		return textResult(fmt.Sprintf("Cleared the tag of %s.", itemCount(len(items)))), nil, nil
 	}
 
-	return textResult(fmt.Sprintf("Tagged %d items as %s.", len(items), tag)), nil, nil
+	return textResult(fmt.Sprintf("Tagged %s as %s.", itemCount(len(items)), tag)), nil, nil
 }
 
 func (h *handler) handleSetFavorite(
@@ -1427,11 +1427,15 @@ func (h *handler) handleSetFavorite(
 		item.Favorite = in.Favorite
 	}
 
-	if in.Favorite {
-		return textResult(fmt.Sprintf("Marked %d items as favorites.", len(items))), nil, nil
+	if !in.Favorite {
+		return textResult(fmt.Sprintf("Cleared the favorite mark of %s.", itemCount(len(items)))), nil, nil
 	}
 
-	return textResult(fmt.Sprintf("Cleared the favorite mark of %d items.", len(items))), nil, nil
+	if len(items) == 1 {
+		return textResult("Marked 1 item as a favorite."), nil, nil
+	}
+
+	return textResult(fmt.Sprintf("Marked %d items as favorites.", len(items))), nil, nil
 }
 
 func (h *handler) handleListNotes(
@@ -3014,4 +3018,13 @@ func textResult(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: text}},
 	}
+}
+
+// itemCount writes n with the noun "item", such as "1 item" or "3 items".
+func itemCount(n int) string {
+	if n == 1 {
+		return "1 item"
+	}
+
+	return fmt.Sprintf("%d items", n)
 }
