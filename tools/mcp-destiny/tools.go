@@ -19,6 +19,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 )
 
 // MCP tool names. The registration in main.go, the handlers, and the log
@@ -2233,20 +2234,20 @@ func (h *handler) handleGetStats(
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	period, err := statPeriodOf(in.Period)
+	period, err := stats.PeriodOf(in.Period)
 	if err != nil {
 		return h.toolError(ctx, toolGetStats, err)
 	}
 
 	to := h.now()
-	from := period.start(to)
+	from := period.Start(to)
 
 	defs, err := h.defs.Get(ctx)
 	if err != nil {
 		return h.toolError(ctx, toolGetStats, fmt.Errorf("loading definitions: %w", err))
 	}
 
-	cursor := statCursorFor(from)
+	cursor := stats.CursorFor(from)
 
 	chunks, err := sessionValue(ctx, h, func(session string) ([]dvm.StatChunk, error) {
 		return h.service.Stats(ctx, session, cursor)
@@ -2255,8 +2256,8 @@ func (h *handler) handleGetStats(
 		return h.toolError(ctx, toolGetStats, fmt.Errorf("reading recorded changes: %w", err))
 	}
 
-	summary := summarizeStats(chunks, from, to)
-	summary.readFrom = time.UnixMilli(cursor.UpdatedAt).In(to.Location())
+	summary := stats.Summarize(chunks, from, to)
+	summary.ReadFrom = time.UnixMilli(cursor.UpdatedAt).In(to.Location())
 
 	return textResult(renderStats(defs, period, summary)), nil, nil
 }

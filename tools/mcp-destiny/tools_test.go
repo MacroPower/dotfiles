@@ -29,6 +29,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 )
 
 const (
@@ -9530,7 +9531,7 @@ func TestGetStatsErrors(t *testing.T) {
 
 	got, isError := call(t, f.h.handleGetStats, GetStatsInput{Period: "1y"})
 	assert.True(t, isError)
-	assert.Contains(t, got, ErrInvalidInput.Error())
+	assert.Contains(t, got, stats.ErrInvalidInput.Error())
 	assert.Contains(t, got, "24h, 7d, 30d, all")
 	assert.Empty(t, f.service.All())
 	assert.Empty(t, f.bungie.All())

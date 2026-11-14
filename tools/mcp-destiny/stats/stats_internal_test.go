@@ -1,4 +1,4 @@
-package main
+package stats
 
 import (
 	"testing"
@@ -20,16 +20,16 @@ func minutes(n int) int64 {
 }
 
 func currency(hash uint32, at, before, after int64) dvm.StatChange {
-	return dvm.StatChange{Kind: changeCurrency, ItemHash: hash, From: at - 15_000, At: at, Before: before, After: after}
+	return dvm.StatChange{Kind: ChangeCurrency, ItemHash: hash, From: at - 15_000, At: at, Before: before, After: after}
 }
 
 func stack(hash uint32, at, before, after int64) dvm.StatChange {
-	return dvm.StatChange{Kind: changeStack, ItemHash: hash, From: at - 15_000, At: at, Before: before, After: after}
+	return dvm.StatChange{Kind: ChangeStack, ItemHash: hash, From: at - 15_000, At: at, Before: before, After: after}
 }
 
 func objective(instanceID string, itemHash, objectiveHash uint32, at, before, after int64) dvm.StatChange {
 	return dvm.StatChange{
-		Kind:          changeObjective,
+		Kind:          ChangeObjective,
 		InstanceID:    instanceID,
 		ItemHash:      itemHash,
 		ObjectiveHash: objectiveHash,
@@ -115,7 +115,7 @@ func TestFlowsOf(t *testing.T) {
 
 	tests := map[string]struct {
 		changes []dvm.StatChange
-		want    []statFlow
+		want    []Flow
 	}{
 		"stale recorder": {
 			changes: []dvm.StatChange{
@@ -123,8 +123,8 @@ func TestFlowsOf(t *testing.T) {
 				currency(bungietest.ItemGlimmer, minutes(20), 2_000, 1_500),
 				currency(bungietest.ItemGlimmer, minutes(40), 1_000, 1_700),
 			},
-			want: []statFlow{
-				{itemHash: bungietest.ItemGlimmer, currency: true, net: 700, gained: 1_200, spent: 500},
+			want: []Flow{
+				{ItemHash: bungietest.ItemGlimmer, Currency: true, Net: 700, Gained: 1_200, Spent: 500},
 			},
 		},
 		"currencies first, then by absolute net change": {
@@ -134,11 +134,11 @@ func TestFlowsOf(t *testing.T) {
 				currency(bungietest.ItemGlimmer, minutes(30), 2_000, 1_000),
 				stack(301, minutes(40), 10, 5),
 			},
-			want: []statFlow{
-				{itemHash: bungietest.ItemGlimmer, currency: true, net: -1_000, spent: 1_000},
-				{itemHash: bungietest.ItemBrightDust, currency: true, net: -10, spent: 10},
-				{itemHash: 300, net: 100, gained: 100},
-				{itemHash: 301, net: -5, spent: 5},
+			want: []Flow{
+				{ItemHash: bungietest.ItemGlimmer, Currency: true, Net: -1_000, Spent: 1_000},
+				{ItemHash: bungietest.ItemBrightDust, Currency: true, Net: -10, Spent: 10},
+				{ItemHash: 300, Net: 100, Gained: 100},
+				{ItemHash: 301, Net: -5, Spent: 5},
 			},
 		},
 		"before the start": {
@@ -163,28 +163,28 @@ func TestWeaponKillsOf(t *testing.T) {
 
 	tests := map[string]struct {
 		changes []dvm.StatChange
-		want    []weaponKills
+		want    []WeaponKills
 	}{
 		"PvP trackers count as PvP": {
 			changes: []dvm.StatChange{
 				objective("1001", 100, bungietest.TrackerPvP, minutes(10), 7, 9),
 				objective("1001", 100, bungietest.TrackerPvE, minutes(20), 100, 110),
 			},
-			want: []weaponKills{{instanceID: "1001", itemHash: 100, pvp: 2, pve: 10}},
+			want: []WeaponKills{{InstanceID: "1001", ItemHash: 100, PvP: 2, PvE: 10}},
 		},
 		"Gambit and Nightfall trackers count as PvE": {
 			changes: []dvm.StatChange{
 				objective("1001", 100, bungietest.TrackerGambit, minutes(10), 0, 3),
 				objective("1001", 100, bungietest.TrackerNightfall, minutes(20), 4, 8),
 			},
-			want: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 7}},
+			want: []WeaponKills{{InstanceID: "1001", ItemHash: 100, PvE: 7}},
 		},
 		"decreases add no kills": {
 			changes: []dvm.StatChange{
 				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 100, 0),
 				objective("1001", 100, bungietest.TrackerPvE, minutes(20), 0, 4),
 			},
-			want: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 4}},
+			want: []WeaponKills{{InstanceID: "1001", ItemHash: 100, PvE: 4}},
 		},
 		"objectives that track no kills": {
 			changes: []dvm.StatChange{
@@ -199,10 +199,10 @@ func TestWeaponKillsOf(t *testing.T) {
 				objective("1003", 102, bungietest.TrackerPvE, minutes(30), 0, 3),
 				objective("1001", 100, bungietest.TrackerPvP, minutes(40), 0, 2),
 			},
-			want: []weaponKills{
-				{instanceID: "1002", itemHash: 101, pvp: 9},
-				{instanceID: "1001", itemHash: 100, pve: 5, pvp: 2},
-				{instanceID: "1003", itemHash: 102, pve: 3},
+			want: []WeaponKills{
+				{InstanceID: "1002", ItemHash: 101, PvP: 9},
+				{InstanceID: "1001", ItemHash: 100, PvE: 5, PvP: 2},
+				{InstanceID: "1003", ItemHash: 102, PvE: 3},
 			},
 		},
 		"before the start": {
@@ -213,7 +213,7 @@ func TestWeaponKillsOf(t *testing.T) {
 				objective("1001", 100, bungietest.TrackerPvE, minutes(-10), 0, 5),
 				objective("1001", 100, bungietest.TrackerPvE, minutes(0), 5, 8),
 			},
-			want: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 3}},
+			want: []WeaponKills{{InstanceID: "1001", ItemHash: 100, PvE: 3}},
 		},
 	}
 
@@ -226,7 +226,7 @@ func TestWeaponKillsOf(t *testing.T) {
 	}
 }
 
-func TestSummarizeStats(t *testing.T) {
+func TestSummarize(t *testing.T) {
 	t.Parallel()
 
 	to := statStart.Add(time.Hour)
@@ -234,9 +234,9 @@ func TestSummarizeStats(t *testing.T) {
 	tests := map[string]struct {
 		chunks  []dvm.StatChunk
 		from    time.Time
-		want    []statFlow
+		want    []Flow
 		newest  int64
-		weapons []weaponKills
+		weapons []WeaponKills
 	}{
 		"changes outside the period": {
 			chunks: []dvm.StatChunk{
@@ -252,7 +252,7 @@ func TestSummarizeStats(t *testing.T) {
 				}},
 			},
 			from:   statStart,
-			want:   []statFlow{{itemHash: bungietest.ItemGlimmer, currency: true, net: 300, gained: 300}},
+			want:   []Flow{{ItemHash: bungietest.ItemGlimmer, Currency: true, Net: 300, Gained: 300}},
 			newest: minutes(61),
 		},
 		"all keeps every change": {
@@ -267,8 +267,8 @@ func TestSummarizeStats(t *testing.T) {
 				}},
 			},
 			from:    time.UnixMilli(0),
-			want:    []statFlow{{itemHash: bungietest.ItemGlimmer, currency: true, net: 1_300, gained: 1_300}},
-			weapons: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 4}},
+			want:    []Flow{{ItemHash: bungietest.ItemGlimmer, Currency: true, Net: 1_300, Gained: 1_300}},
+			weapons: []WeaponKills{{InstanceID: "1001", ItemHash: 100, PvE: 4}},
 			newest:  minutes(60),
 		},
 		"the first change takes its before from a reading before the start": {
@@ -283,8 +283,8 @@ func TestSummarizeStats(t *testing.T) {
 				}},
 			},
 			from:    statStart,
-			want:    []statFlow{{itemHash: bungietest.ItemGlimmer, currency: true, net: 1_100, gained: 1_100}},
-			weapons: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 3}},
+			want:    []Flow{{ItemHash: bungietest.ItemGlimmer, Currency: true, Net: 1_100, Gained: 1_100}},
+			weapons: []WeaponKills{{InstanceID: "1001", ItemHash: 100, PvE: 3}},
 			newest:  minutes(10),
 		},
 		"readings before the lookback are not restated": {
@@ -297,7 +297,7 @@ func TestSummarizeStats(t *testing.T) {
 				}},
 			},
 			from:   statStart,
-			want:   []statFlow{{itemHash: bungietest.ItemGlimmer, currency: true, net: 1_000, gained: 1_000}},
+			want:   []Flow{{ItemHash: bungietest.ItemGlimmer, Currency: true, Net: 1_000, Gained: 1_000}},
 			newest: minutes(10),
 		},
 		"no change": {
@@ -309,23 +309,23 @@ func TestSummarizeStats(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := summarizeStats(tc.chunks, tc.from, to)
+			got := Summarize(tc.chunks, tc.from, to)
 
-			assert.Equal(t, tc.want, got.flows)
-			assert.Equal(t, tc.weapons, got.weapons)
-			assert.Equal(t, tc.from, got.from)
-			assert.Equal(t, to, got.to)
+			assert.Equal(t, tc.want, got.Flows)
+			assert.Equal(t, tc.weapons, got.Weapons)
+			assert.Equal(t, tc.from, got.From)
+			assert.Equal(t, to, got.To)
 
 			if tc.newest == 0 {
-				assert.True(t, got.newest.IsZero())
+				assert.True(t, got.Newest.IsZero())
 			} else {
-				assert.Equal(t, time.UnixMilli(tc.newest).UTC(), got.newest)
+				assert.Equal(t, time.UnixMilli(tc.newest).UTC(), got.Newest)
 			}
 		})
 	}
 }
 
-func TestStatPeriodOf(t *testing.T) {
+func TestPeriodOf(t *testing.T) {
 	t.Parallel()
 
 	end := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
@@ -365,7 +365,7 @@ func TestStatPeriodOf(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := statPeriodOf(tc.id)
+			got, err := PeriodOf(tc.id)
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
 
@@ -374,14 +374,14 @@ func TestStatPeriodOf(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantID, got.id)
-			assert.Equal(t, tc.wantStart, got.start(end))
+			assert.Equal(t, tc.wantStart, got.Start(end))
 		})
 	}
 }
 
-func TestStatCursorFor(t *testing.T) {
+func TestCursorFor(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, dvm.StatCursor{UpdatedAt: statStart.Add(-3 * time.Hour).UnixMilli()}, statCursorFor(statStart))
-	assert.Equal(t, dvm.StatCursor{}, statCursorFor(time.UnixMilli(0)))
+	assert.Equal(t, dvm.StatCursor{UpdatedAt: statStart.Add(-3 * time.Hour).UnixMilli()}, CursorFor(statStart))
+	assert.Equal(t, dvm.StatCursor{}, CursorFor(time.UnixMilli(0)))
 }

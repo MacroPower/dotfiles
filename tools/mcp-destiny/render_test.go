@@ -10,6 +10,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 )
 
 func TestEquipLoadout(t *testing.T) {
@@ -307,18 +308,18 @@ func TestRenderActivitiesEmpty(t *testing.T) {
 func TestRenderStats(t *testing.T) {
 	t.Parallel()
 
-	period, err := statPeriodOf("24h")
+	period, err := stats.PeriodOf("24h")
 	require.NoError(t, err)
 
 	to := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
 
 	tests := map[string]struct {
-		summary statSummary
+		summary stats.Summary
 		want    []string
 	}{
 		"only currencies": {
-			summary: statSummary{
-				flows: []statFlow{{itemHash: bungietest.ItemGlimmer, currency: true, spent: 5, net: -5}},
+			summary: stats.Summary{
+				Flows: []stats.Flow{{ItemHash: bungietest.ItemGlimmer, Currency: true, Spent: 5, Net: -5}},
 			},
 			want: []string{
 				"Currencies and materials, currencies first:",
@@ -329,7 +330,7 @@ func TestRenderStats(t *testing.T) {
 			},
 		},
 		"only weapon kills": {
-			summary: statSummary{weapons: []weaponKills{{instanceID: "1001", itemHash: 100, pvp: 3}}},
+			summary: stats.Summary{Weapons: []stats.WeaponKills{{InstanceID: "1001", ItemHash: 100, PvP: 3}}},
 			want: []string{
 				"Currencies and materials: no change.",
 				"",
@@ -339,7 +340,7 @@ func TestRenderStats(t *testing.T) {
 			},
 		},
 		"a net change of zero": {
-			summary: statSummary{flows: []statFlow{{itemHash: 300, gained: 4, spent: 4}}},
+			summary: stats.Summary{Flows: []stats.Flow{{ItemHash: 300, Gained: 4, Spent: 4}}},
 			want: []string{
 				"Enhancement Core | stack | 300 | 0 | 4 | 4",
 			},
@@ -350,8 +351,8 @@ func TestRenderStats(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			tc.summary.from = period.start(to)
-			tc.summary.to = to
+			tc.summary.From = period.Start(to)
+			tc.summary.To = to
 
 			got := renderStats(definitionstest.Defs(), period, tc.summary)
 			assert.Contains(t, got, "Period: Last 24 hours, 2026-11-11 12:00 UTC to 2026-11-12 12:00 UTC.\n")

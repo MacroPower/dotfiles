@@ -1,7 +1,8 @@
-package main
+package stats
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -12,9 +13,9 @@ import (
 
 // Change kinds that the stats tool reads. The web client records more.
 const (
-	changeCurrency  = "currency"
-	changeStack     = "stack"
-	changeObjective = "objective"
+	ChangeCurrency  = "currency"
+	ChangeStack     = "stack"
+	ChangeObjective = "objective"
 )
 
 // Game modes of the kill trackers. Gambit kills count with PvE.
@@ -42,13 +43,17 @@ const (
 )
 
 var (
+	// ErrInvalidInput reports a period id that names no period of the stats
+	// tool.
+	ErrInvalidInput = errors.New("invalid input")
+
 	// statPeriods lists the periods of the Stats page of the web client. A
 	// zero length covers the whole recorded history.
-	statPeriods = []statPeriod{
-		{id: defaultStatPeriod, label: "Last 24 hours", length: 24 * time.Hour},
-		{id: "7d", label: "Last 7 days", length: 7 * 24 * time.Hour},
-		{id: "30d", label: "Last 30 days", length: 30 * 24 * time.Hour},
-		{id: "all", label: "All time"},
+	statPeriods = []Period{
+		{id: defaultStatPeriod, Label: "Last 24 hours", Length: 24 * time.Hour},
+		{id: "7d", Label: "Last 7 days", Length: 7 * 24 * time.Hour},
+		{id: "30d", Label: "Last 30 days", Length: 30 * 24 * time.Hour},
+		{id: "all", Label: "All time"},
 	}
 
 	// killTrackers maps the objective hash of each kill tracker to the game
@@ -68,16 +73,16 @@ var (
 	}
 )
 
-// statPeriod is one period that the stats tool reports.
-type statPeriod struct {
+// Period is one period that the stats tool reports.
+type Period struct {
 	id     string
-	label  string
-	length time.Duration
+	Label  string
+	Length time.Duration
 }
 
-// statPeriodOf returns the period with the given id. An empty id selects
+// PeriodOf returns the period with the given id. An empty id selects
 // [defaultStatPeriod].
-func statPeriodOf(id string) (statPeriod, error) {
+func PeriodOf(id string) (Period, error) {
 	id = strings.ToLower(strings.TrimSpace(id))
 	if id == "" {
 		id = defaultStatPeriod
@@ -93,20 +98,20 @@ func statPeriodOf(id string) (statPeriod, error) {
 		ids = append(ids, period.id)
 	}
 
-	return statPeriod{}, fmt.Errorf("%w: period %q is not one of %s", ErrInvalidInput, id, strings.Join(ids, ", "))
+	return Period{}, fmt.Errorf("%w: period %q is not one of %s", ErrInvalidInput, id, strings.Join(ids, ", "))
 }
 
-// start returns the start of the period that ends at end. The whole
+// Start returns the start of the period that ends at end. The whole
 // recorded history starts at the Unix epoch.
-func (p statPeriod) start(end time.Time) time.Time {
-	if p.length == 0 {
+func (p Period) Start(end time.Time) time.Time {
+	if p.Length == 0 {
 		return time.UnixMilli(0).In(end.Location())
 	}
 
-	return end.Add(-p.length)
+	return end.Add(-p.Length)
 }
 
-// statCursorFor returns the cursor of the first chunk that can hold a
+// CursorFor returns the cursor of the first chunk that can hold a
 // change of a period that starts at from.
 //
 // The web client records every change of a chunk before it posts the
@@ -114,46 +119,46 @@ func (p statPeriod) start(end time.Time) time.Time {
 // chunk that the service stamped before a time therefore holds only
 // changes from before that time, when the Bungie clock and the service
 // clock agree within [statClockMargin].
-func statCursorFor(from time.Time) dvm.StatCursor {
+func CursorFor(from time.Time) dvm.StatCursor {
 	return dvm.StatCursor{UpdatedAt: max(0, from.Add(-statLookback-statClockMargin).UnixMilli())}
 }
 
-// statFlow is the change of one currency or stack over a period.
-type statFlow struct {
-	net      int64
-	gained   int64
-	spent    int64
-	itemHash uint32
-	currency bool
+// Flow is the change of one currency or stack over a period.
+type Flow struct {
+	Net      int64
+	Gained   int64
+	Spent    int64
+	ItemHash uint32
+	Currency bool
 }
 
-// weaponKills counts the kills of one weapon instance over a period.
-type weaponKills struct {
-	instanceID string
-	pve        int64
-	pvp        int64
-	itemHash   uint32
+// WeaponKills counts the kills of one weapon instance over a period.
+type WeaponKills struct {
+	InstanceID string
+	PvE        int64
+	PvP        int64
+	ItemHash   uint32
 }
 
-// statSummary holds what the stats tool reports for one period. The
-// readFrom field holds the service time from which the stats tool read
+// Summary holds what the stats tool reports for one period. The
+// ReadFrom field holds the service time from which the stats tool read
 // chunks. It is the Unix epoch or the zero time when the tool read the
 // whole recorded history.
-type statSummary struct {
-	from     time.Time
-	to       time.Time
-	newest   time.Time
-	readFrom time.Time
-	flows    []statFlow
-	weapons  []weaponKills
+type Summary struct {
+	From     time.Time
+	To       time.Time
+	Newest   time.Time
+	ReadFrom time.Time
+	Flows    []Flow
+	Weapons  []WeaponKills
 }
 
-// summarizeStats counts the changes of chunks whose At falls between from
+// Summarize counts the changes of chunks whose At falls between from
 // and to, inclusive. It restates the changes from [statLookback] before
 // from. The first change of the period thus takes its before value from
-// the last reading before the period. The newest field holds the At of the
+// the last reading before the period. The Newest field holds the At of the
 // newest change of chunks, and it is zero when chunks hold no change.
-func summarizeStats(chunks []dvm.StatChunk, from, to time.Time) statSummary {
+func Summarize(chunks []dvm.StatChunk, from, to time.Time) Summary {
 	lo := from.Add(-statLookback).UnixMilli()
 	hi := to.UnixMilli()
 
@@ -179,15 +184,15 @@ func summarizeStats(chunks []dvm.StatChunk, from, to time.Time) statSummary {
 	changes = restateReadings(changes)
 	start := from.UnixMilli()
 
-	summary := statSummary{
-		from:    from,
-		to:      to,
-		flows:   flowsOf(changes, start),
-		weapons: weaponKillsOf(changes, start),
+	summary := Summary{
+		From:    from,
+		To:      to,
+		Flows:   flowsOf(changes, start),
+		Weapons: weaponKillsOf(changes, start),
 	}
 
 	if found {
-		summary.newest = time.UnixMilli(newest).In(to.Location())
+		summary.Newest = time.UnixMilli(newest).In(to.Location())
 	}
 
 	return summary
@@ -199,9 +204,9 @@ func summarizeStats(chunks []dvm.StatChunk, from, to time.Time) statSummary {
 // instance id and objective hash.
 func readingKey(change dvm.StatChange) (string, bool) {
 	switch change.Kind {
-	case changeCurrency, changeStack:
+	case ChangeCurrency, ChangeStack:
 		return fmt.Sprintf("%s/%d", change.Kind, change.ItemHash), true
-	case changeObjective:
+	case ChangeObjective:
 		return fmt.Sprintf("%s/%s/%d", change.Kind, change.InstanceID, change.ObjectiveHash), true
 	default:
 		return "", false
@@ -238,13 +243,13 @@ func restateReadings(changes []dvm.StatChange) []dvm.StatChange {
 // hash. It returns the currencies first and then sorts by the absolute net
 // change, largest first. It ports balancesOf from statData.ts of the web
 // client.
-func flowsOf(changes []dvm.StatChange, from int64) []statFlow {
-	var flows []statFlow
+func flowsOf(changes []dvm.StatChange, from int64) []Flow {
+	var flows []Flow
 
 	index := map[uint32]int{}
 
 	for _, change := range changes {
-		if (change.Kind != changeCurrency && change.Kind != changeStack) || change.At < from {
+		if (change.Kind != ChangeCurrency && change.Kind != ChangeStack) || change.At < from {
 			continue
 		}
 
@@ -252,29 +257,29 @@ func flowsOf(changes []dvm.StatChange, from int64) []statFlow {
 		if !ok {
 			i = len(flows)
 			index[change.ItemHash] = i
-			flows = append(flows, statFlow{itemHash: change.ItemHash, currency: change.Kind == changeCurrency})
+			flows = append(flows, Flow{ItemHash: change.ItemHash, Currency: change.Kind == ChangeCurrency})
 		}
 
 		delta := change.After - change.Before
-		flows[i].net += delta
+		flows[i].Net += delta
 
 		if delta > 0 {
-			flows[i].gained += delta
+			flows[i].Gained += delta
 		} else {
-			flows[i].spent -= delta
+			flows[i].Spent -= delta
 		}
 	}
 
-	slices.SortStableFunc(flows, func(a, b statFlow) int {
-		if a.currency != b.currency {
-			if a.currency {
+	slices.SortStableFunc(flows, func(a, b Flow) int {
+		if a.Currency != b.Currency {
+			if a.Currency {
 				return -1
 			}
 
 			return 1
 		}
 
-		return cmp.Compare(abs(b.net), abs(a.net))
+		return cmp.Compare(abs(b.Net), abs(a.Net))
 	})
 
 	return flows
@@ -284,14 +289,14 @@ func flowsOf(changes []dvm.StatChange, from int64) []statFlow {
 func killChange(change dvm.StatChange) bool {
 	_, tracker := killTrackers[change.ObjectiveHash]
 
-	return change.Kind == changeObjective && tracker && change.After > change.Before
+	return change.Kind == ChangeObjective && tracker && change.After > change.Before
 }
 
 // weaponKillsOf sums the kills at or after from per weapon instance. It
 // sorts the weapons by total kills, most first. It ports weaponKillsOf from
 // statData.ts of the web client.
-func weaponKillsOf(changes []dvm.StatChange, from int64) []weaponKills {
-	var weapons []weaponKills
+func weaponKillsOf(changes []dvm.StatChange, from int64) []WeaponKills {
+	var weapons []WeaponKills
 
 	index := map[string]int{}
 
@@ -304,20 +309,20 @@ func weaponKillsOf(changes []dvm.StatChange, from int64) []weaponKills {
 		if !ok {
 			i = len(weapons)
 			index[change.InstanceID] = i
-			weapons = append(weapons, weaponKills{instanceID: change.InstanceID, itemHash: change.ItemHash})
+			weapons = append(weapons, WeaponKills{InstanceID: change.InstanceID, ItemHash: change.ItemHash})
 		}
 
 		kills := change.After - change.Before
 
 		if killTrackers[change.ObjectiveHash] == killPvP {
-			weapons[i].pvp += kills
+			weapons[i].PvP += kills
 		} else {
-			weapons[i].pve += kills
+			weapons[i].PvE += kills
 		}
 	}
 
-	slices.SortStableFunc(weapons, func(a, b weaponKills) int {
-		return cmp.Compare(b.pve+b.pvp, a.pve+a.pvp)
+	slices.SortStableFunc(weapons, func(a, b WeaponKills) int {
+		return cmp.Compare(b.PvE+b.PvP, a.PvE+a.PvP)
 	})
 
 	return weapons

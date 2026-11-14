@@ -12,6 +12,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 )
 
 const timeLayout = "2006-01-02 15:04 MST"
@@ -1877,22 +1878,22 @@ func renderOwnedCounts(counts []ruleCount) string {
 
 // renderStats renders the summary of one period. Item names come from
 // defs, so a weapon that the user dismantled keeps its name.
-func renderStats(defs *definitions.Defs, period statPeriod, s statSummary) string {
+func renderStats(defs *definitions.Defs, period stats.Period, s stats.Summary) string {
 	var b strings.Builder
 
-	if period.length == 0 {
-		fmt.Fprintf(&b, "Period: %s, up to %s.\n", period.label, s.to.Format(timeLayout))
+	if period.Length == 0 {
+		fmt.Fprintf(&b, "Period: %s, up to %s.\n", period.Label, s.To.Format(timeLayout))
 	} else {
-		fmt.Fprintf(&b, "Period: %s, %s to %s.\n", period.label, s.from.Format(timeLayout), s.to.Format(timeLayout))
+		fmt.Fprintf(&b, "Period: %s, %s to %s.\n", period.Label, s.From.Format(timeLayout), s.To.Format(timeLayout))
 	}
 
 	// A read that starts after the epoch skips older chunks. For a read
 	// that found no change, the line names the start of the read.
 	switch {
-	case !s.newest.IsZero():
-		fmt.Fprintf(&b, "Newest recorded change: %s.\n", s.newest.Format(timeLayout))
-	case s.readFrom.After(time.UnixMilli(0)):
-		fmt.Fprintf(&b, "Newest recorded change since %s: none.\n", s.readFrom.Format(timeLayout))
+	case !s.Newest.IsZero():
+		fmt.Fprintf(&b, "Newest recorded change: %s.\n", s.Newest.Format(timeLayout))
+	case s.ReadFrom.After(time.UnixMilli(0)):
+		fmt.Fprintf(&b, "Newest recorded change since %s: none.\n", s.ReadFrom.Format(timeLayout))
 	default:
 		b.WriteString("Newest recorded change: none.\n")
 	}
@@ -1901,30 +1902,30 @@ func renderStats(defs *definitions.Defs, period statPeriod, s statSummary) strin
 		"It posts the changes of each 5-minute bucket after the bucket closes, " +
 		"so the current bucket and every bucket that it has not posted yet are missing.\n")
 
-	if len(s.flows) == 0 && len(s.weapons) == 0 {
+	if len(s.Flows) == 0 && len(s.Weapons) == 0 {
 		b.WriteString("\nThe web client recorded no currency, material, or weapon kill change in this period.")
 
 		return b.String()
 	}
 
-	if len(s.flows) == 0 {
+	if len(s.Flows) == 0 {
 		b.WriteString("\nCurrencies and materials: no change.\n")
 	} else {
 		b.WriteString("\nCurrencies and materials, currencies first:\n")
 		b.WriteString("name | kind | item hash | net | gained | spent\n")
 
-		for _, flow := range s.flows {
-			kind := changeStack
-			if flow.currency {
-				kind = changeCurrency
+		for _, flow := range s.Flows {
+			kind := stats.ChangeStack
+			if flow.Currency {
+				kind = stats.ChangeCurrency
 			}
 
 			fmt.Fprintf(&b, "%s | %s | %d | %s | %d | %d\n",
-				itemName(defs, flow.itemHash), kind, flow.itemHash, signed(flow.net), flow.gained, flow.spent)
+				itemName(defs, flow.ItemHash), kind, flow.ItemHash, signed(flow.Net), flow.Gained, flow.Spent)
 		}
 	}
 
-	if len(s.weapons) == 0 {
+	if len(s.Weapons) == 0 {
 		b.WriteString("\nWeapon kills: none.")
 
 		return b.String()
@@ -1933,9 +1934,9 @@ func renderStats(defs *definitions.Defs, period statPeriod, s statSummary) strin
 	b.WriteString("\nWeapon kills, most first:\n")
 	b.WriteString("instance id | name | total | PvE | PvP\n")
 
-	for _, weapon := range s.weapons {
+	for _, weapon := range s.Weapons {
 		fmt.Fprintf(&b, "%s | %s | %d | %d | %d\n",
-			weapon.instanceID, itemName(defs, weapon.itemHash), weapon.pve+weapon.pvp, weapon.pve, weapon.pvp)
+			weapon.InstanceID, itemName(defs, weapon.ItemHash), weapon.PvE+weapon.PvP, weapon.PvE, weapon.PvP)
 	}
 
 	return strings.TrimRight(b.String(), "\n")
