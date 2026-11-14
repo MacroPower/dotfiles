@@ -14,24 +14,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
-
-// serve starts a fake server that answers every request with one status
-// and body, and records the requests.
-func serve(t *testing.T, status int, body string) (string, *recorder) {
-	t.Helper()
-
-	rec := &recorder{}
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rec.record(t, r)
-		assert.Equal(t, defaultUserAgent, r.Header.Get("User-Agent"))
-		writeJSON(t, w, status, body)
-	}))
-	t.Cleanup(srv.Close)
-
-	return srv.URL, rec
-}
 
 func TestServiceConfig(t *testing.T) {
 	t.Parallel()
@@ -77,7 +62,7 @@ func TestServiceConfig(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, _ := serve(t, tc.status, tc.body)
+			u, _ := httpfake.Serve(t, defaultUserAgent, tc.status, tc.body)
 
 			got, err := NewService(WithServiceURL(u)).Config(t.Context())
 			if tc.err != nil {
@@ -95,8 +80,13 @@ func TestServiceConfig(t *testing.T) {
 func TestServiceTokens(t *testing.T) {
 	t.Parallel()
 
-	u, rec := serve(t, http.StatusOK, `{"access_token": "a", "expires_in": 3600, "refresh_token": "r",
-		"refresh_expires_in": 7776000, "membership_id": "42", "session": "s"}`)
+	u, rec := httpfake.Serve(
+		t,
+		defaultUserAgent,
+		http.StatusOK,
+		`{"access_token": "a", "expires_in": 3600, "refresh_token": "r",
+		"refresh_expires_in": 7776000, "membership_id": "42", "session": "s"}`,
+	)
 	s := NewService(WithServiceURL(u))
 
 	want := TokenResponse{
@@ -116,12 +106,12 @@ func TestServiceTokens(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
 
-	exchange := rec.calls(http.MethodPost, "/api/auth/token")
+	exchange := rec.Calls(http.MethodPost, "/api/auth/token")
 	require.Len(t, exchange, 1)
 	assert.Equal(t, map[string]any{"code": "abc"}, exchange[0].Body)
 	assert.Empty(t, exchange[0].Auth)
 
-	refresh := rec.calls(http.MethodPost, "/api/auth/refresh")
+	refresh := rec.Calls(http.MethodPost, "/api/auth/refresh")
 	require.Len(t, refresh, 1)
 	assert.Equal(t, map[string]any{"refreshToken": "r0"}, refresh[0].Body)
 }
@@ -129,7 +119,7 @@ func TestServiceTokens(t *testing.T) {
 func TestServiceWrites(t *testing.T) {
 	t.Parallel()
 
-	u, rec := serve(t, http.StatusOK, `{"now": 11}`)
+	u, rec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, `{"now": 11}`)
 	s := NewService(WithServiceURL(u))
 	hash := uint32(100)
 
@@ -150,7 +140,7 @@ func TestServiceWrites(t *testing.T) {
 
 	// The service rejects a row with a field it does not expect to be
 	// empty, so the bodies must match its parsers field for field.
-	tags := rec.calls(http.MethodPost, "/api/tags")
+	tags := rec.Calls(http.MethodPost, "/api/tags")
 	require.Len(t, tags, 1)
 	assert.Equal(t, "Bearer session", tags[0].Auth)
 	assert.Equal(t, map[string]any{
@@ -163,20 +153,20 @@ func TestServiceWrites(t *testing.T) {
 		},
 	}, tags[0].Body)
 
-	notes := rec.calls(http.MethodPost, "/api/notes")
+	notes := rec.Calls(http.MethodPost, "/api/notes")
 	require.Len(t, notes, 2)
 	assert.Equal(t, map[string]any{
 		"kind": "instance", "targetId": "1001", "itemHash": float64(100), "body": "god roll", "removed": false,
 	}, notes[0].Body)
 	assert.Equal(t, map[string]any{"kind": "set", "targetId": "set-key", "body": "", "removed": true}, notes[1].Body)
 
-	prefs := rec.calls(http.MethodPost, "/api/perk-preferences")
+	prefs := rec.Calls(http.MethodPost, "/api/perk-preferences")
 	require.Len(t, prefs, 1)
 	assert.Equal(t, map[string]any{"preferences": []any{
 		map[string]any{"mode": "pve", "perk": "Firefly", "stance": "up", "removed": false},
 	}}, prefs[0].Body)
 
-	rules := rec.calls(http.MethodPost, "/api/autotag")
+	rules := rec.Calls(http.MethodPost, "/api/autotag")
 	require.Len(t, rules, 1)
 	assert.Equal(t, map[string]any{"rules": []any{
 		map[string]any{
@@ -214,7 +204,7 @@ func TestServiceClaimAutotag(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, rec := serve(t, tc.status, tc.body)
+			u, rec := httpfake.Serve(t, defaultUserAgent, tc.status, tc.body)
 
 			got, err := NewService(WithServiceURL(u)).ClaimAutotag(
 				t.Context(), "session", "00000000000000001006", "00000000000000001009",
@@ -228,7 +218,7 @@ func TestServiceClaimAutotag(t *testing.T) {
 
 			assert.Equal(t, tc.want, got)
 
-			claims := rec.calls(http.MethodPost, "/api/autotag/state")
+			claims := rec.Calls(http.MethodPost, "/api/autotag/state")
 			require.Len(t, claims, 1)
 			assert.Equal(t, "Bearer session", claims[0].Auth)
 			assert.Equal(t, map[string]any{
@@ -258,7 +248,7 @@ func TestServiceGrantRejected(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, _ := serve(t, http.StatusInternalServerError, tc.body)
+			u, _ := httpfake.Serve(t, defaultUserAgent, http.StatusInternalServerError, tc.body)
 
 			_, err := NewService(WithServiceURL(u)).RefreshTokens(t.Context(), "revoked")
 			require.ErrorIs(t, err, ErrService)
@@ -275,7 +265,7 @@ func TestServiceGrantRejected(t *testing.T) {
 func TestServiceUnauthorized(t *testing.T) {
 	t.Parallel()
 
-	u, _ := serve(t, http.StatusUnauthorized, `{"error": "Sign in required"}`)
+	u, _ := httpfake.Serve(t, defaultUserAgent, http.StatusUnauthorized, `{"error": "Sign in required"}`)
 
 	_, err := NewService(WithServiceURL(u)).Tags(t.Context(), "expired")
 	require.ErrorIs(t, err, ErrUnauthorized)
@@ -285,7 +275,7 @@ func TestServiceUnauthorized(t *testing.T) {
 func TestServiceArtifact(t *testing.T) {
 	t.Parallel()
 
-	u, rec := serve(t, http.StatusOK, `[1, 2]`)
+	u, rec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, `[1, 2]`)
 
 	body, err := NewService(WithServiceURL(u)).Artifact(t.Context(), "core-0.json")
 	require.NoError(t, err)
@@ -294,9 +284,9 @@ func TestServiceArtifact(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, body.Close())
 	assert.JSONEq(t, `[1, 2]`, string(raw))
-	assert.Len(t, rec.calls(http.MethodGet, "/artifacts/core-0.json"), 1)
+	assert.Len(t, rec.Calls(http.MethodGet, "/artifacts/core-0.json"), 1)
 
-	missing, _ := serve(t, http.StatusNotFound, `{}`)
+	missing, _ := httpfake.Serve(t, defaultUserAgent, http.StatusNotFound, `{}`)
 
 	_, err = NewService(WithServiceURL(missing)).Artifact(t.Context(), "core-0.json")
 	require.ErrorIs(t, err, ErrService)
@@ -415,10 +405,10 @@ func TestServiceStats(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			rec := &recorder{}
+			rec := &httpfake.Recorder{}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				req := rec.record(t, r)
+				req := rec.Record(t, r)
 				assert.Equal(t, http.MethodGet, req.Method)
 				assert.Equal(t, "/api/stats", req.Path)
 				assert.Equal(t, "Bearer session", req.Auth)
@@ -427,12 +417,12 @@ func TestServiceStats(t *testing.T) {
 
 				page, ok := tc.pages["since="+query.Get("since")+"&after="+query.Get("after")]
 				if !ok {
-					writeJSON(t, w, http.StatusNotFound, `{"error": "unexpected cursor"}`)
+					httpfake.WriteJSON(t, w, http.StatusNotFound, `{"error": "unexpected cursor"}`)
 
 					return
 				}
 
-				writeJSON(t, w, http.StatusOK, page)
+				httpfake.WriteJSON(t, w, http.StatusOK, page)
 			}))
 			t.Cleanup(srv.Close)
 
@@ -441,7 +431,7 @@ func TestServiceStats(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 
 			var queries []string
-			for _, req := range rec.all() {
+			for _, req := range rec.All() {
 				queries = append(queries, req.Query)
 			}
 
@@ -472,7 +462,7 @@ func TestServiceStatsLargePage(t *testing.T) {
 	page := `{"chunks": [` + strings.Join(chunks, ", ") + `], "more": false}`
 	require.Greater(t, len(page), maxResponseBytes)
 
-	u, _ := serve(t, http.StatusOK, page)
+	u, _ := httpfake.Serve(t, defaultUserAgent, http.StatusOK, page)
 
 	got, err := NewService(WithServiceURL(u)).Stats(t.Context(), "session", StatCursor{})
 	require.NoError(t, err)
@@ -542,7 +532,7 @@ func TestServiceStatsErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, _ := serve(t, tc.status, tc.body)
+			u, _ := httpfake.Serve(t, defaultUserAgent, tc.status, tc.body)
 
 			_, err := NewService(WithServiceURL(u)).Stats(t.Context(), "session", StatCursor{})
 			require.ErrorIs(t, err, ErrService)
@@ -578,7 +568,7 @@ func TestBungiePrimaryMembership(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, rec := serve(t, http.StatusOK, tc.body)
+			u, rec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, tc.body)
 
 			got, err := NewBungie(WithBungieURL(u)).
 				PrimaryMembership(t.Context(), Credentials{APIKey: "key", AccessToken: "access"})
@@ -591,7 +581,7 @@ func TestBungiePrimaryMembership(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 
-			calls := rec.calls(http.MethodGet, "/User/GetMembershipsForCurrentUser/")
+			calls := rec.Calls(http.MethodGet, "/User/GetMembershipsForCurrentUser/")
 			require.Len(t, calls, 1)
 			assert.Equal(t, "Bearer access", calls[0].Auth)
 		})
@@ -608,7 +598,7 @@ func TestBungieProfile(t *testing.T) {
 
 		components = r.URL.Query().Get("components")
 
-		writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+fixtureProfile+`}`)
+		httpfake.WriteJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+fixtureProfile+`}`)
 	}))
 	t.Cleanup(srv.Close)
 
@@ -658,14 +648,14 @@ func TestBungieManifest(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, rec := serve(t, http.StatusOK, tc.body)
+			u, rec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, tc.body)
 
 			got, err := NewBungie(WithBungieURL(u)).
 				Manifest(t.Context(), Credentials{APIKey: "key", AccessToken: "access"})
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 
-			calls := rec.calls(http.MethodGet, pathManifest)
+			calls := rec.Calls(http.MethodGet, pathManifest)
 			require.Len(t, calls, 1)
 			assert.Equal(t, "Bearer access", calls[0].Auth)
 		})
@@ -675,8 +665,8 @@ func TestBungieManifest(t *testing.T) {
 func TestBungieContent(t *testing.T) {
 	t.Parallel()
 
-	platform, platformRec := serve(t, http.StatusOK, `{"ErrorCode": 1, "Response": {}}`)
-	content, contentRec := serve(t, http.StatusOK, fixtureLoadoutNames)
+	platform, platformRec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, `{"ErrorCode": 1, "Response": {}}`)
+	content, contentRec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, fixtureLoadoutNames)
 
 	b := NewBungie(WithBungieURL(platform), WithBungieContentURL(content+"/"))
 
@@ -688,12 +678,12 @@ func TestBungieContent(t *testing.T) {
 	require.NoError(t, body.Close())
 	assert.JSONEq(t, fixtureLoadoutNames, string(raw))
 
-	calls := contentRec.calls(http.MethodGet, pathLoadoutNames)
+	calls := contentRec.Calls(http.MethodGet, pathLoadoutNames)
 	require.Len(t, calls, 1)
 	assert.Empty(t, calls[0].Auth, "a content request carries no access token")
-	assert.Empty(t, platformRec.all(), "a content request does not reach the platform base URL")
+	assert.Empty(t, platformRec.All(), "a content request does not reach the platform base URL")
 
-	missing, _ := serve(t, http.StatusNotFound, `{}`)
+	missing, _ := httpfake.Serve(t, defaultUserAgent, http.StatusNotFound, `{}`)
 
 	_, err = NewBungie(WithBungieContentURL(missing)).Content(t.Context(), pathLoadoutNames)
 	require.ErrorIs(t, err, ErrBungie)
@@ -785,13 +775,13 @@ func TestCappedBody(t *testing.T) {
 func TestBungieVendors(t *testing.T) {
 	t.Parallel()
 
-	rec := &recorder{}
+	rec := &httpfake.Recorder{}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rec.record(t, r)
+		rec.Record(t, r)
 		assert.Equal(t, "key", r.Header.Get("X-Api-Key"))
 
-		writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": {
+		httpfake.WriteJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": {
 			"vendors": {"data": {
 				"672118013": {"vendorHash": 672118013, "enabled": true, "canPurchase": true,
 				 "nextRefreshDate": "2026-11-13T17:00:00Z", "vendorLocationIndex": 0}
@@ -821,7 +811,7 @@ func TestBungieVendors(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	calls := rec.calls(http.MethodGet, "/Destiny2/3/Profile/4611/Character/c1/Vendors/")
+	calls := rec.Calls(http.MethodGet, "/Destiny2/3/Profile/4611/Character/c1/Vendors/")
 	require.Len(t, calls, 1)
 	assert.Equal(t, "components=400,401,402&_="+strconv.FormatInt(fixtureNow.UnixMilli(), 10), calls[0].Query)
 	assert.Equal(t, "Bearer access", calls[0].Auth)
@@ -849,13 +839,13 @@ func TestBungieVendors(t *testing.T) {
 func TestBungieActivities(t *testing.T) {
 	t.Parallel()
 
-	rec := &recorder{}
+	rec := &httpfake.Recorder{}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rec.record(t, r)
+		rec.Record(t, r)
 		assert.Equal(t, "key", r.Header.Get("X-Api-Key"))
 
-		writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": {"characterActivities": {"data": {
+		httpfake.WriteJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": {"characterActivities": {"data": {
 			"c1": {"dateActivityStarted": "2026-11-10T11:00:00Z", "currentActivityHash": 0, "availableActivities": [
 				{"activityHash": 10, "isVisible": false, "isNew": true, "recommendedLight": 2010,
 				 "isFocusedActivity": true, "challenges": [], "visibleRewards": [
@@ -883,7 +873,7 @@ func TestBungieActivities(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	calls := rec.calls(http.MethodGet, "/Destiny2/3/Profile/4611/")
+	calls := rec.Calls(http.MethodGet, "/Destiny2/3/Profile/4611/")
 	require.Len(t, calls, 1)
 	assert.Equal(t, "components=204&_="+strconv.FormatInt(fixtureNow.UnixMilli(), 10), calls[0].Query)
 	assert.Equal(t, "Bearer access", calls[0].Auth)
@@ -943,7 +933,7 @@ func TestBungieActivitiesErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, _ := serve(t, http.StatusOK, tc.body)
+			u, _ := httpfake.Serve(t, defaultUserAgent, http.StatusOK, tc.body)
 
 			_, err := NewBungie(WithBungieURL(u)).
 				Activities(t.Context(), Credentials{APIKey: "key", AccessToken: "access"}, Membership{ID: "4611", Type: 3})
@@ -991,7 +981,7 @@ func TestBungieActivityHistory(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, rec := serve(t, http.StatusOK, tc.body)
+			u, rec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, tc.body)
 
 			got, err := NewBungie(WithBungieURL(u)).ActivityHistory(
 				t.Context(),
@@ -1004,7 +994,7 @@ func TestBungieActivityHistory(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 
-			calls := rec.calls(http.MethodGet, "/Destiny2/3/Account/4611/Character/c1/Stats/Activities/")
+			calls := rec.Calls(http.MethodGet, "/Destiny2/3/Account/4611/Character/c1/Stats/Activities/")
 			require.Len(t, calls, 1)
 			assert.Equal(t, "count=25&page=2", calls[0].Query)
 			assert.Equal(t, "Bearer access", calls[0].Auth)
@@ -1071,7 +1061,7 @@ func TestBungieErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, _ := serve(t, tc.status, tc.body)
+			u, _ := httpfake.Serve(t, defaultUserAgent, tc.status, tc.body)
 
 			err := NewBungie(WithBungieURL(u)).Equip(t.Context(), Credentials{}, ItemAction{})
 			require.Error(t, err)
@@ -1096,7 +1086,7 @@ func TestBungieErrors(t *testing.T) {
 func TestBungieActions(t *testing.T) {
 	t.Parallel()
 
-	u, rec := serve(t, http.StatusOK, `{"ErrorCode": 1, "Response": 0}`)
+	u, rec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, `{"ErrorCode": 1, "Response": 0}`)
 	b := NewBungie(WithBungieURL(u))
 	creds := Credentials{APIKey: "key", AccessToken: "access"}
 	action := ItemAction{
@@ -1128,7 +1118,7 @@ func TestBungieActions(t *testing.T) {
 		Index:       0,
 	}))
 
-	transfer := rec.calls(http.MethodPost, "/Destiny2/Actions/Items/TransferItem/")
+	transfer := rec.Calls(http.MethodPost, "/Destiny2/Actions/Items/TransferItem/")
 	require.Len(t, transfer, 1)
 	assert.Equal(t, map[string]any{
 		"itemReferenceHash": float64(100),
@@ -1139,7 +1129,7 @@ func TestBungieActions(t *testing.T) {
 		"membershipType":    float64(3),
 	}, transfer[0].Body)
 
-	equip := rec.calls(http.MethodPost, "/Destiny2/Actions/Items/EquipItem/")
+	equip := rec.Calls(http.MethodPost, "/Destiny2/Actions/Items/EquipItem/")
 	require.Len(t, equip, 1)
 	assert.Equal(t, map[string]any{
 		"itemId":         "1001",
@@ -1147,7 +1137,7 @@ func TestBungieActions(t *testing.T) {
 		"membershipType": float64(3),
 	}, equip[0].Body)
 
-	pull := rec.calls(http.MethodPost, "/Destiny2/Actions/Items/PullFromPostmaster/")
+	pull := rec.Calls(http.MethodPost, "/Destiny2/Actions/Items/PullFromPostmaster/")
 	require.Len(t, pull, 1)
 	assert.Equal(t, map[string]any{
 		"itemReferenceHash": float64(100),
@@ -1157,7 +1147,7 @@ func TestBungieActions(t *testing.T) {
 		"membershipType":    float64(3),
 	}, pull[0].Body)
 
-	locks := rec.calls(http.MethodPost, "/Destiny2/Actions/Items/SetLockState/")
+	locks := rec.Calls(http.MethodPost, "/Destiny2/Actions/Items/SetLockState/")
 	require.Len(t, locks, 2)
 	assert.Equal(t, map[string]any{
 		"state":          true,
@@ -1167,7 +1157,7 @@ func TestBungieActions(t *testing.T) {
 	}, locks[0].Body)
 	assert.Equal(t, false, locks[1].Body["state"])
 
-	inserts := rec.calls(http.MethodPost, "/Destiny2/Actions/Items/InsertSocketPlugFree/")
+	inserts := rec.Calls(http.MethodPost, "/Destiny2/Actions/Items/InsertSocketPlugFree/")
 	require.Len(t, inserts, 1)
 	assert.Equal(t, map[string]any{
 		"plug": map[string]any{
@@ -1180,7 +1170,7 @@ func TestBungieActions(t *testing.T) {
 		"membershipType": float64(3),
 	}, inserts[0].Body)
 
-	loadouts := rec.calls(http.MethodPost, "/Destiny2/Actions/Loadouts/EquipLoadout/")
+	loadouts := rec.Calls(http.MethodPost, "/Destiny2/Actions/Loadouts/EquipLoadout/")
 	require.Len(t, loadouts, 1)
 	assert.Equal(t, map[string]any{
 		"loadoutIndex":   float64(2),
@@ -1188,7 +1178,7 @@ func TestBungieActions(t *testing.T) {
 		"membershipType": float64(3),
 	}, loadouts[0].Body)
 
-	snapshots := rec.calls(http.MethodPost, "/Destiny2/Actions/Loadouts/SnapshotLoadout/")
+	snapshots := rec.Calls(http.MethodPost, "/Destiny2/Actions/Loadouts/SnapshotLoadout/")
 	require.Len(t, snapshots, 1)
 	assert.Equal(t, map[string]any{
 		"loadoutIndex":   float64(1),
@@ -1199,7 +1189,7 @@ func TestBungieActions(t *testing.T) {
 		"colorHash":      float64(31),
 	}, snapshots[0].Body)
 
-	clears := rec.calls(http.MethodPost, "/Destiny2/Actions/Loadouts/ClearLoadout/")
+	clears := rec.Calls(http.MethodPost, "/Destiny2/Actions/Loadouts/ClearLoadout/")
 	require.Len(t, clears, 1)
 	assert.Equal(t, map[string]any{
 		"loadoutIndex":   float64(0),

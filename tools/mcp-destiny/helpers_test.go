@@ -3,19 +3,18 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
 
 // Bucket hashes of the fixture slots that no production code reads.
@@ -547,81 +546,6 @@ func fixtureSnapshot(t *testing.T) *Snapshot {
 
 var fixtureNow = time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
 
-// request is one request that a fake server received. Query is the raw
-// query string of the URL.
-type request struct {
-	Body   map[string]any
-	Method string
-	Path   string
-	Query  string
-	Auth   string
-}
-
-// recorder collects the requests of a fake server.
-type recorder struct {
-	requests []request
-	mu       sync.Mutex
-}
-
-func (r *recorder) record(t *testing.T, req *http.Request) request {
-	t.Helper()
-
-	raw, err := io.ReadAll(req.Body)
-	require.NoError(t, err)
-
-	out := request{
-		Method: req.Method,
-		Path:   req.URL.Path,
-		Query:  req.URL.RawQuery,
-		Auth:   req.Header.Get("Authorization"),
-	}
-
-	if len(raw) > 0 {
-		require.NoError(t, json.Unmarshal(raw, &out.Body))
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.requests = append(r.requests, out)
-
-	return out
-}
-
-// all returns every recorded request.
-func (r *recorder) all() []request {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	return slices.Clone(r.requests)
-}
-
-// calls returns the recorded requests for a method and path.
-func (r *recorder) calls(method, path string) []request {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	var out []request
-
-	for _, req := range r.requests {
-		if req.Method == method && req.Path == path {
-			out = append(out, req)
-		}
-	}
-
-	return out
-}
-
-func writeJSON(t *testing.T, w http.ResponseWriter, status int, body string) {
-	t.Helper()
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	_, err := io.WriteString(w, body)
-	require.NoError(t, err)
-}
-
 // configBody returns the /api/config response body whose artifact index
 // lists files.
 func configBody(t *testing.T, files map[string][]string) string {
@@ -638,8 +562,8 @@ func configBody(t *testing.T, files map[string][]string) string {
 // and a fake Bungie platform.
 type fakes struct {
 	h       *handler
-	service *recorder
-	bungie  *recorder
+	service *httpfake.Recorder
+	bungie  *httpfake.Recorder
 
 	// serviceData holds the GET response body of each service path.
 	serviceData map[string]string
@@ -691,10 +615,10 @@ type answer struct {
 }
 
 // claims returns the claim POSTs that the fake service received.
-func (f *fakes) claims() []request {
-	var out []request
+func (f *fakes) claims() []httpfake.Request {
+	var out []httpfake.Request
 
-	for _, req := range f.service.calls(http.MethodPost, "/api/autotag/state") {
+	for _, req := range f.service.Calls(http.MethodPost, "/api/autotag/state") {
 		if req.Body["kind"] == "claim" {
 			out = append(out, req)
 		}
@@ -707,8 +631,8 @@ func newFakes(t *testing.T) *fakes {
 	t.Helper()
 
 	f := &fakes{
-		service:       &recorder{},
-		bungie:        &recorder{},
+		service:       &httpfake.Recorder{},
+		bungie:        &httpfake.Recorder{},
 		artifactFiles: map[string][]string{},
 		bungieData: map[string]string{
 			pathManifest:      fixtureManifest,
@@ -744,39 +668,39 @@ func newFakes(t *testing.T) *fakes {
 	}
 
 	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req := f.service.record(t, r)
+		req := f.service.Record(t, r)
 
 		switch {
 		case req.Path == "/api/config":
-			writeJSON(t, w, http.StatusOK, configBody(t, f.artifactFiles))
+			httpfake.WriteJSON(t, w, http.StatusOK, configBody(t, f.artifactFiles))
 
 		case req.Path == "/api/auth/refresh":
-			writeJSON(t, w, http.StatusOK, `{"access_token": "access-2", "expires_in": 3600,
+			httpfake.WriteJSON(t, w, http.StatusOK, `{"access_token": "access-2", "expires_in": 3600,
 				"refresh_token": "refresh-2", "refresh_expires_in": 7776000, "membership_id": "42", "session": "session-2"}`)
 
 		case f.staleSession != "" && req.Auth == "Bearer "+f.staleSession:
-			writeJSON(t, w, http.StatusUnauthorized, `{"error": "Sign in required"}`)
+			httpfake.WriteJSON(t, w, http.StatusUnauthorized, `{"error": "Sign in required"}`)
 		case req.Path == "/api/autotag/state" && req.Body["kind"] == "claim" && f.claim.status != 0:
-			writeJSON(t, w, f.claim.status, f.claim.body)
+			httpfake.WriteJSON(t, w, f.claim.status, f.claim.body)
 		case req.Method == http.MethodGet && req.Path == "/api/autotag" && f.claimedAutotag.status != 0 &&
 			len(f.claims()) > 0:
-			writeJSON(t, w, f.claimedAutotag.status, f.claimedAutotag.body)
+			httpfake.WriteJSON(t, w, f.claimedAutotag.status, f.claimedAutotag.body)
 		case req.Method == http.MethodPost && req.Path == "/api/tags" && f.tagWriteStatus != 0:
-			writeJSON(t, w, f.tagWriteStatus, `{"error": "Tag store unavailable"}`)
+			httpfake.WriteJSON(t, w, f.tagWriteStatus, `{"error": "Tag store unavailable"}`)
 		case req.Method == http.MethodGet && f.serviceData[req.Path] != "":
-			writeJSON(t, w, http.StatusOK, f.serviceData[req.Path])
+			httpfake.WriteJSON(t, w, http.StatusOK, f.serviceData[req.Path])
 		case req.Path == "/api/autotag/state":
-			writeJSON(t, w, http.StatusOK, `{"applied": true}`)
+			httpfake.WriteJSON(t, w, http.StatusOK, `{"applied": true}`)
 		case req.Method == http.MethodPost:
-			writeJSON(t, w, http.StatusOK, `{"now": 11}`)
+			httpfake.WriteJSON(t, w, http.StatusOK, `{"now": 11}`)
 		default:
-			writeJSON(t, w, http.StatusNotFound, `{"error": "Not found"}`)
+			httpfake.WriteJSON(t, w, http.StatusNotFound, `{"error": "Not found"}`)
 		}
 	}))
 	t.Cleanup(service.Close)
 
 	bungie := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req := f.bungie.record(t, r)
+		req := f.bungie.Record(t, r)
 
 		if req.Method == http.MethodPost && f.bungiePost != nil {
 			f.bungiePost()
@@ -784,28 +708,28 @@ func newFakes(t *testing.T) *fakes {
 
 		switch {
 		case f.staleAccess != "" && req.Auth == "Bearer "+f.staleAccess:
-			writeJSON(t, w, http.StatusUnauthorized, "")
+			httpfake.WriteJSON(t, w, http.StatusUnauthorized, "")
 		case req.Path == "/User/GetMembershipsForCurrentUser/":
-			writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": {"primaryMembershipId": "4611",
+			httpfake.WriteJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": {"primaryMembershipId": "4611",
 				"destinyMemberships": [{"membershipType": 2, "membershipId": "1"}, {"membershipType": 3, "membershipId": "4611"}]}}`)
 
 		case req.Path == "/Destiny2/3/Profile/4611/" && f.activitiesBody != "" &&
 			strings.HasPrefix(req.Query, "components=204&"):
-			writeJSON(t, w, http.StatusOK, f.activitiesBody)
+			httpfake.WriteJSON(t, w, http.StatusOK, f.activitiesBody)
 		case req.Path == "/Destiny2/3/Profile/4611/" && f.profileBody != "":
-			writeJSON(t, w, http.StatusOK, f.profileBody)
+			httpfake.WriteJSON(t, w, http.StatusOK, f.profileBody)
 		case req.Path == "/Destiny2/3/Profile/4611/":
-			writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+fixtureProfile+`}`)
+			httpfake.WriteJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+fixtureProfile+`}`)
 		case req.Method == http.MethodGet && f.bungieData[req.Path] != "":
-			writeJSON(t, w, http.StatusOK, f.bungieData[req.Path])
+			httpfake.WriteJSON(t, w, http.StatusOK, f.bungieData[req.Path])
 		case req.Method == http.MethodPost && f.bungieError != "" &&
 			(f.bungieErrorPath == "" || req.Path == f.bungieErrorPath) &&
 			(f.bungieErrorIf == nil || f.bungieErrorIf(req.Body)):
-			writeJSON(t, w, http.StatusOK, f.bungieError)
+			httpfake.WriteJSON(t, w, http.StatusOK, f.bungieError)
 		case req.Method == http.MethodPost:
-			writeJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": 0}`)
+			httpfake.WriteJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": 0}`)
 		default:
-			writeJSON(
+			httpfake.WriteJSON(
 				t,
 				w,
 				http.StatusNotFound,

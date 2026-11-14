@@ -21,6 +21,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
 
 const (
@@ -911,15 +913,15 @@ func TestListItemsRatingRequests(t *testing.T) {
 
 				var fetched []string
 
-				for _, req := range f.service.all() {
+				for _, req := range f.service.All() {
 					if strings.HasPrefix(req.Path, "/artifacts/") {
 						fetched = append(fetched, req.Path)
 					}
 				}
 
 				assert.Equalf(t, step.fetched, fetched, "call %d", i+1)
-				assert.Lenf(t, f.service.calls(http.MethodGet, "/api/config"), step.configs, "call %d", i+1)
-				assert.Lenf(t, f.service.calls(http.MethodGet, pathPrefs), step.prefs, "call %d", i+1)
+				assert.Lenf(t, f.service.Calls(http.MethodGet, "/api/config"), step.configs, "call %d", i+1)
+				assert.Lenf(t, f.service.Calls(http.MethodGet, pathPrefs), step.prefs, "call %d", i+1)
 			}
 		})
 	}
@@ -974,11 +976,11 @@ func TestListItemsMinimumRequests(t *testing.T) {
 
 			_, isError := call(t, f.h.handleListItems, tc.in)
 			assert.Equal(t, tc.isError, isError)
-			assert.Len(t, f.service.calls(http.MethodGet, pathPrefs), tc.prefs)
+			assert.Len(t, f.service.Calls(http.MethodGet, pathPrefs), tc.prefs)
 
 			if tc.quiet {
-				assert.Empty(t, f.service.all())
-				assert.Empty(t, f.bungie.all())
+				assert.Empty(t, f.service.All())
+				assert.Empty(t, f.bungie.All())
 			}
 		})
 	}
@@ -1038,17 +1040,17 @@ func TestSnapshotCache(t *testing.T) {
 		require.False(t, isError)
 	}
 
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
-	assert.Len(t, f.service.calls(http.MethodGet, pathTags), 2, "every call reads the tags")
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
+	assert.Len(t, f.service.Calls(http.MethodGet, pathTags), 2, "every call reads the tags")
 
 	_, isError := call(t, f.h.handleListItems, ListItemsInput{Refresh: true})
 	require.False(t, isError)
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 2)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 2)
 
 	saved, err := f.h.auth.Saved()
 	require.NoError(t, err)
 	assert.Equal(t, Membership{ID: "4611", Type: 3}, saved.Membership)
-	assert.Len(t, f.bungie.calls(http.MethodGet, "/User/GetMembershipsForCurrentUser/"), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, "/User/GetMembershipsForCurrentUser/"), 1)
 }
 
 func TestGetItem(t *testing.T) {
@@ -1708,15 +1710,15 @@ func TestGetItem(t *testing.T) {
 
 			var fetched []string
 
-			for _, req := range f.service.all() {
+			for _, req := range f.service.All() {
 				if strings.HasPrefix(req.Path, "/artifacts/") {
 					fetched = append(fetched, req.Path)
 				}
 			}
 
 			assert.Equal(t, tc.fetched, fetched)
-			assert.Len(t, f.service.calls(http.MethodGet, "/api/config"), tc.configs)
-			assert.Len(t, f.service.calls(http.MethodGet, pathPrefs), tc.prefs)
+			assert.Len(t, f.service.Calls(http.MethodGet, "/api/config"), tc.configs)
+			assert.Len(t, f.service.Calls(http.MethodGet, pathPrefs), tc.prefs)
 		})
 	}
 }
@@ -1744,7 +1746,7 @@ func TestGetItemRatesOnEachCall(t *testing.T) {
 	require.False(t, isError)
 	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet (in HCs), 1 of 1 perk columns hit\n"+
 		"  Column 1: hit with Rampage, Explosive Payload. The sheet picks Rampage, Explosive Payload\n")
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1, "both ratings read one profile")
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1, "both ratings read one profile")
 }
 
 // TestGetItemReadsPerkPreferencesOnEachCall pins that the server keeps
@@ -1771,7 +1773,7 @@ func TestGetItemReadsPerkPreferencesOnEachCall(t *testing.T) {
 	require.False(t, isError)
 	assert.Contains(t, got, "- PvE: A for this roll, S on the Aegis sheet (in HCs), 0 of 1 perk columns hit\n"+
 		"  Column 1: miss\n")
-	assert.Len(t, f.service.calls(http.MethodGet, pathPrefs), 2)
+	assert.Len(t, f.service.Calls(http.MethodGet, pathPrefs), 2)
 }
 
 // TestRatingToolsReadDefinitionsBeforeProfile pins the definition read
@@ -1821,8 +1823,8 @@ func TestRatingToolsReadDefinitionsBeforeProfile(t *testing.T) {
 			got, isError := tc.run(t, f.h)
 			assert.True(t, isError)
 			assert.Equal(t, "loading definitions: definitions: the service index lists no core artifact", got)
-			assert.Empty(t, f.bungie.calls(http.MethodGet, pathProfile), "the call fetches no profile")
-			assert.Empty(t, f.service.calls(http.MethodGet, pathPrefs), "the call rates no roll")
+			assert.Empty(t, f.bungie.Calls(http.MethodGet, pathProfile), "the call fetches no profile")
+			assert.Empty(t, f.service.Calls(http.MethodGet, pathPrefs), "the call rates no roll")
 		})
 	}
 }
@@ -2876,7 +2878,7 @@ func TestCompareDuplicatesPageRatings(t *testing.T) {
 
 	assert.Equal(t, 1, strings.Count(got, "PvE: rating unavailable"))
 	assert.Equal(t, 1, strings.Count(got, "PvP: rating unavailable"))
-	assert.Len(t, f.service.calls(http.MethodGet, pathPrefs), 1)
+	assert.Len(t, f.service.Calls(http.MethodGet, pathPrefs), 1)
 }
 
 func TestCompareDuplicatesLimit(t *testing.T) {
@@ -3040,7 +3042,7 @@ func TestListActivityHistory(t *testing.T) {
 
 			for _, path := range []string{pathHunterHistory, pathTitanHistory} {
 				var queries []string
-				for _, req := range f.bungie.calls(http.MethodGet, path) {
+				for _, req := range f.bungie.Calls(http.MethodGet, path) {
 					queries = append(queries, req.Query)
 				}
 
@@ -3282,7 +3284,7 @@ func TestListVendors(t *testing.T) {
 			var paths []string
 
 			for _, path := range []string{pathHunterVendors, pathTitanVendors} {
-				for _, req := range f.bungie.calls(http.MethodGet, path) {
+				for _, req := range f.bungie.Calls(http.MethodGet, path) {
 					paths = append(paths, req.Path)
 					assert.Regexp(t, `^components=400,401,402&_=\d+$`, req.Query)
 				}
@@ -3303,8 +3305,8 @@ func TestListVendorsRefetches(t *testing.T) {
 		require.False(t, isError, got)
 	}
 
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathHunterVendors), 2)
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathHunterVendors), 2)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
 }
 
 func TestListActivities(t *testing.T) {
@@ -3488,7 +3490,7 @@ func TestListActivities(t *testing.T) {
 
 			// The first request fetches the inventory snapshot, and every
 			// later one fetches only the activities.
-			calls := f.bungie.calls(http.MethodGet, pathProfile)
+			calls := f.bungie.Calls(http.MethodGet, pathProfile)
 			require.Len(t, calls, 1+tc.fetches)
 
 			query, err := url.ParseQuery(calls[0].Query)
@@ -3513,7 +3515,7 @@ func TestListActivitiesRefetches(t *testing.T) {
 	}
 
 	// The snapshot serves both calls, and each call fetches the activities.
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 3)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 3)
 }
 
 func TestRefreshOnUnauthorized(t *testing.T) {
@@ -3527,7 +3529,7 @@ func TestRefreshOnUnauthorized(t *testing.T) {
 	require.False(t, isError, got)
 	assert.Contains(t, got, "Fatebringer")
 
-	refreshes := f.service.calls(http.MethodPost, "/api/auth/refresh")
+	refreshes := f.service.Calls(http.MethodPost, "/api/auth/refresh")
 	require.Len(t, refreshes, 1, "one refresh serves Bungie and the service")
 	assert.Equal(t, map[string]any{"refreshToken": "refresh-1"}, refreshes[0].Body)
 
@@ -3551,7 +3553,7 @@ func TestMoveItems(t *testing.T) {
 		"- Fatebringer (1006) did not move: cannot move: Fatebringer is equipped on Hunter, "+
 		"which holds no other item to equip in that slot. It is at Hunter (equipped).", got)
 
-	transfers := f.bungie.calls(http.MethodPost, pathTransfer)
+	transfers := f.bungie.Calls(http.MethodPost, pathTransfer)
 	require.Len(t, transfers, 2)
 	assert.Equal(t, map[string]any{
 		"itemReferenceHash": float64(102),
@@ -3569,7 +3571,7 @@ func TestMoveItems(t *testing.T) {
 	got, isError = call(t, f.h.handleListItems, ListItemsInput{Location: "titan"})
 	assert.False(t, isError)
 	assert.Contains(t, got, "1003 | Midnight Coup")
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
 }
 
 func TestMoveItemsEquip(t *testing.T) {
@@ -3584,8 +3586,8 @@ func TestMoveItemsEquip(t *testing.T) {
 	})
 	assert.False(t, isError)
 	assert.Equal(t, "- Equipped Fatebringer (1001). It is at Hunter (equipped).", got)
-	assert.Len(t, f.bungie.calls(http.MethodPost, pathTransfer), 1)
-	assert.Len(t, f.bungie.calls(http.MethodPost, pathEquip), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodPost, pathTransfer), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodPost, pathEquip), 1)
 }
 
 func TestMoveItemsReplacesEquipped(t *testing.T) {
@@ -3601,14 +3603,14 @@ func TestMoveItemsReplacesEquipped(t *testing.T) {
 	assert.Equal(t,
 		"- Moved Fatebringer (1006). It is at Vault. Equipped Midnight Coup (1003) in its place.", got)
 
-	equips := f.bungie.calls(http.MethodPost, pathEquip)
+	equips := f.bungie.Calls(http.MethodPost, pathEquip)
 	require.Len(t, equips, 1)
 	assert.Equal(t, map[string]any{
 		"itemId":         "1003",
 		"characterId":    hunterID,
 		"membershipType": float64(3),
 	}, equips[0].Body)
-	assert.Len(t, f.bungie.calls(http.MethodPost, pathTransfer), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodPost, pathTransfer), 1)
 }
 
 func TestMoveStackTool(t *testing.T) {
@@ -3620,7 +3622,7 @@ func TestMoveStackTool(t *testing.T) {
 	assert.False(t, isError)
 	assert.Equal(t, "Moved 12 of Enhancement Core to the vault.", got)
 
-	transfers := f.bungie.calls(http.MethodPost, pathTransfer)
+	transfers := f.bungie.Calls(http.MethodPost, pathTransfer)
 	require.Len(t, transfers, 1)
 	assert.Equal(t, map[string]any{
 		"itemReferenceHash": float64(300),
@@ -3662,7 +3664,7 @@ func TestMoveStackTool(t *testing.T) {
 			got, isError := call(t, f.h.handleMoveStack, tc.in)
 			assert.True(t, isError)
 			assert.Equal(t, tc.want, got)
-			assert.Empty(t, f.bungie.calls(http.MethodPost, pathTransfer))
+			assert.Empty(t, f.bungie.Calls(http.MethodPost, pathTransfer))
 		})
 	}
 }
@@ -3722,7 +3724,7 @@ func TestSetAutotagEnabled(t *testing.T) {
 			assert.False(t, isError)
 			assert.Equal(t, tc.want, got)
 
-			writes := f.service.calls(http.MethodPost, "/api/autotag/state")
+			writes := f.service.Calls(http.MethodPost, "/api/autotag/state")
 			require.Len(t, writes, 1)
 			assert.Equal(t, tc.wantBody, writes[0].Body)
 
@@ -3731,7 +3733,7 @@ func TestSetAutotagEnabled(t *testing.T) {
 				wantProfiles = 2
 			}
 
-			assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), wantProfiles)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), wantProfiles)
 		})
 	}
 }
@@ -3871,7 +3873,7 @@ func kineticWeapon(id, name, owner string) *Item {
 
 // transferSteps describes each transfer request as the instance id and
 // the direction, such as "1001 to c1" or "1007 to the vault from c2".
-func transferSteps(reqs []request) []string {
+func transferSteps(reqs []httpfake.Request) []string {
 	var steps []string
 
 	for _, req := range reqs {
@@ -3887,8 +3889,8 @@ func transferSteps(reqs []request) []string {
 }
 
 // bungiePosts returns the Bungie actions that a fake received.
-func bungiePosts(f *fakes) []request {
-	return slices.DeleteFunc(f.bungie.all(), func(req request) bool { return req.Method != http.MethodPost })
+func bungiePosts(f *fakes) []httpfake.Request {
+	return slices.DeleteFunc(f.bungie.All(), func(req httpfake.Request) bool { return req.Method != http.MethodPost })
 }
 
 // serviceWrites returns the path of each POST that the fake service
@@ -3896,7 +3898,7 @@ func bungiePosts(f *fakes) []request {
 func serviceWrites(f *fakes) []string {
 	var paths []string
 
-	for _, req := range f.service.all() {
+	for _, req := range f.service.All() {
 		if req.Method == http.MethodPost {
 			paths = append(paths, req.Path)
 		}
@@ -4151,7 +4153,7 @@ func TestStageJunk(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 			assert.Equal(t, tc.isError, isError)
 
-			transfers := f.bungie.calls(http.MethodPost, pathTransfer)
+			transfers := f.bungie.Calls(http.MethodPost, pathTransfer)
 			assert.Equal(t, tc.transfers, transferSteps(transfers))
 			assert.Len(t, bungiePosts(f), len(transfers), "the call sends no equip and no Postmaster request")
 
@@ -4250,8 +4252,8 @@ func TestStageJunkReadsTags(t *testing.T) {
 	assert.False(t, isError)
 	assert.True(t, strings.HasPrefix(got, "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n"), got)
 
-	assert.Len(t, f.service.calls(http.MethodGet, pathTags), 2, "every call reads the tags")
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
+	assert.Len(t, f.service.Calls(http.MethodGet, pathTags), 2, "every call reads the tags")
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
 }
 
 func TestStageJunkLoadError(t *testing.T) {
@@ -4278,7 +4280,7 @@ func TestSetLockTool(t *testing.T) {
 	assert.False(t, isError)
 	assert.Equal(t, "- Locked Gjallarhorn (1002).\n- Locked Midnight Coup (1003).", got)
 
-	locks := f.bungie.calls(http.MethodPost, pathLock)
+	locks := f.bungie.Calls(http.MethodPost, pathLock)
 	require.Len(t, locks, 2)
 	assert.Equal(t, map[string]any{
 		"state":          true,
@@ -4292,7 +4294,7 @@ func TestSetLockTool(t *testing.T) {
 	assert.False(t, isError)
 	assert.Equal(t, "- Unlocked Fatebringer (1001).", got)
 
-	locks = f.bungie.calls(http.MethodPost, pathLock)
+	locks = f.bungie.Calls(http.MethodPost, pathLock)
 	require.Len(t, locks, 3)
 	assert.Equal(t, false, locks[2].Body["state"])
 
@@ -4304,7 +4306,7 @@ func TestSetLockTool(t *testing.T) {
 	assert.Contains(t, got, "1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 |  | Hunter |  | locked")
 	assert.Contains(t, got, "1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Vault | keep | "+
 		"favorite, masterwork, note\n")
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
 }
 
 func TestSetLockToolErrors(t *testing.T) {
@@ -4369,7 +4371,7 @@ func TestSetLockToolSnapshotAge(t *testing.T) {
 	got, isError := call(t, f.h.handleSetLock, SetLockInput{InstanceIDs: []string{"1003"}, Locked: true})
 	assert.True(t, isError)
 	assert.Equal(t, refusal, got)
-	assert.Empty(t, f.bungie.calls(http.MethodPost, pathLock))
+	assert.Empty(t, f.bungie.Calls(http.MethodPost, pathLock))
 	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a call that changed nothing keeps the age of the snapshot")
 
 	got, isError = call(t, f.h.handleSetLock, SetLockInput{InstanceIDs: []string{"1003", "1002"}, Locked: true})
@@ -4391,7 +4393,7 @@ func TestSetPerkTool(t *testing.T) {
 	assert.Equal(t, "Replaced Explosive Payload with Rampage on Fatebringer (1001). "+
 		"Its stats keep their old values until the next inventory fetch.", got)
 
-	inserts := f.bungie.calls(http.MethodPost, pathInsert)
+	inserts := f.bungie.Calls(http.MethodPost, pathInsert)
 	require.Len(t, inserts, 1)
 	assert.Equal(t, map[string]any{
 		"plug": map[string]any{
@@ -4409,12 +4411,12 @@ func TestSetPerkTool(t *testing.T) {
 	got, isError = call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
 	assert.False(t, isError)
 	assert.Contains(t, got, "Perks:\n- Rampage (Trait), can swap to Explosive Payload\n- Firefly (Trait)\n")
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
 
 	got, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Rampage"})
 	assert.False(t, isError)
 	assert.Equal(t, "Rampage is already active on Fatebringer (1001).", got)
-	assert.Len(t, f.bungie.calls(http.MethodPost, pathInsert), 1, "an active perk sends no request")
+	assert.Len(t, f.bungie.Calls(http.MethodPost, pathInsert), 1, "an active perk sends no request")
 }
 
 func TestSetPerkToolSnapshotAge(t *testing.T) {
@@ -4435,14 +4437,14 @@ func TestSetPerkToolSnapshotAge(t *testing.T) {
 	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Kill Clip"})
 	require.True(t, isError)
 	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a perk that no socket offers keeps the age of the snapshot")
-	assert.Empty(t, f.bungie.calls(http.MethodPost, pathInsert))
+	assert.Empty(t, f.bungie.Calls(http.MethodPost, pathInsert))
 
 	f.bungieError = `{"ErrorCode": 1634, "ErrorStatus": "DestinyCharacterNotInTower", "Message": "not in a social space"}`
 
 	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Rampage"})
 	require.True(t, isError)
 	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a swap that Bungie refuses keeps the age of the snapshot")
-	assert.Len(t, f.bungie.calls(http.MethodPost, pathInsert), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodPost, pathInsert), 1)
 
 	f.bungieError = ""
 
@@ -4626,8 +4628,8 @@ func TestListLoadouts(t *testing.T) {
 
 			// The list shows only names, so it downloads neither the icon
 			// table nor the color table.
-			assert.Empty(t, f.bungie.calls(http.MethodGet, pathLoadoutIcons))
-			assert.Empty(t, f.bungie.calls(http.MethodGet, pathLoadoutColors))
+			assert.Empty(t, f.bungie.Calls(http.MethodGet, pathLoadoutIcons))
+			assert.Empty(t, f.bungie.Calls(http.MethodGet, pathLoadoutColors))
 		})
 	}
 }
@@ -4643,12 +4645,12 @@ func TestEquipLoadoutTool(t *testing.T) {
 		"Equipped Midnight Coup (1003) in its place on Hunter.\n"+
 		"Equipped loadout 1 on Titan: Fatebringer (1006).", got)
 
-	equips := f.bungie.calls(http.MethodPost, pathEquip)
+	equips := f.bungie.Calls(http.MethodPost, pathEquip)
 	require.Len(t, equips, 1)
 	assert.Equal(t, "1003", equips[0].Body["itemId"])
-	assert.Len(t, f.bungie.calls(http.MethodPost, pathTransfer), 2)
+	assert.Len(t, f.bungie.Calls(http.MethodPost, pathTransfer), 2)
 
-	loadouts := f.bungie.calls(http.MethodPost, pathLoadout)
+	loadouts := f.bungie.Calls(http.MethodPost, pathLoadout)
 	require.Len(t, loadouts, 1)
 	assert.Equal(t, map[string]any{
 		"loadoutIndex":   float64(0),
@@ -4662,7 +4664,7 @@ func TestEquipLoadoutTool(t *testing.T) {
 		"Equipped loadout 3 on Hunter: Fatebringer (1001), Celestial Nighthawk (1004). "+
 		"The inventory does not hold these loadout items: 9999.", got)
 
-	loadouts = f.bungie.calls(http.MethodPost, pathLoadout)
+	loadouts = f.bungie.Calls(http.MethodPost, pathLoadout)
 	require.Len(t, loadouts, 2)
 	assert.Equal(t, map[string]any{
 		"loadoutIndex":   float64(2),
@@ -4681,7 +4683,7 @@ func TestEquipLoadoutTool(t *testing.T) {
 		"1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Hunter (equipped) | keep | ",
 	)
 	assert.Contains(t, got, "1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 |  | Hunter |  | ")
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
 }
 
 func TestEquipLoadoutToolErrors(t *testing.T) {
@@ -4817,10 +4819,10 @@ func snapshotBody(index int, characterID string, name, icon, color uint32) map[s
 }
 
 // posts returns the POST requests that the fake Bungie platform recorded.
-func posts(f *fakes) []request {
-	var out []request
+func posts(f *fakes) []httpfake.Request {
+	var out []httpfake.Request
 
-	for _, req := range f.bungie.all() {
+	for _, req := range f.bungie.All() {
 		if req.Method == http.MethodPost {
 			out = append(out, req)
 		}
@@ -4969,9 +4971,9 @@ func TestSaveLoadoutTool(t *testing.T) {
 				tableGets = 1
 			}
 
-			assert.Len(t, f.bungie.calls(http.MethodGet, pathLoadoutNames), 1)
-			assert.Len(t, f.bungie.calls(http.MethodGet, pathLoadoutIcons), tableGets)
-			assert.Len(t, f.bungie.calls(http.MethodGet, pathLoadoutColors), tableGets)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, pathLoadoutNames), 1)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, pathLoadoutIcons), tableGets)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, pathLoadoutColors), tableGets)
 
 			// The fake profile keeps the loadouts from before the save, so
 			// the list shows the saved loadout from the snapshot that the
@@ -4979,7 +4981,7 @@ func TestSaveLoadoutTool(t *testing.T) {
 			got, isError = call(t, f.h.handleListLoadouts, ListLoadoutsInput{Character: tc.in.Character})
 			require.False(t, isError)
 			assert.Equal(t, tc.wantList, got)
-			assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
 		})
 	}
 }
@@ -5016,7 +5018,7 @@ func TestSaveLoadoutToolAfterEquip(t *testing.T) {
 		"3 | 1001 | Fatebringer | Kinetic Weapons | Hunter (equipped)\n"+
 		"3 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)\n"+
 		"3 | 9999 | not in the inventory |  | ", got)
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
 }
 
 func TestLoadoutWriteSnapshotAge(t *testing.T) {
@@ -5272,7 +5274,7 @@ func TestClearLoadoutTool(t *testing.T) {
 			got, isError = call(t, f.h.handleListLoadouts, ListLoadoutsInput{Character: tc.in.Character})
 			require.False(t, isError)
 			assert.Equal(t, tc.wantList, got)
-			assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
 		})
 	}
 }
@@ -5384,7 +5386,7 @@ func TestSetTag(t *testing.T) {
 			assert.Equal(t, tc.isError, isError)
 			assert.Equal(t, tc.want, got)
 
-			writes := f.service.calls(http.MethodPost, pathTags)
+			writes := f.service.Calls(http.MethodPost, pathTags)
 			if tc.wantRows == nil {
 				assert.Empty(t, writes)
 
@@ -5454,7 +5456,7 @@ func TestSetFavorite(t *testing.T) {
 	assert.False(t, isError)
 	assert.Equal(t, "Cleared the favorite mark of 1 items.", got)
 
-	writes := f.service.calls(http.MethodPost, pathTags)
+	writes := f.service.Calls(http.MethodPost, pathTags)
 	require.Len(t, writes, 1)
 	assert.Equal(t, []any{
 		map[string]any{"instanceId": "1001", "itemHash": float64(100), "tagId": "favorite", "removed": true},
@@ -5553,7 +5555,7 @@ func TestSetNote(t *testing.T) {
 			assert.Equal(t, tc.isError, isError)
 			assert.Equal(t, tc.want, got)
 
-			writes := f.service.calls(http.MethodPost, pathNotes)
+			writes := f.service.Calls(http.MethodPost, pathNotes)
 			if tc.wantBody == nil {
 				assert.Empty(t, writes)
 
@@ -5585,7 +5587,7 @@ func TestPerkPreferences(t *testing.T) {
 	})
 	assert.False(t, isError)
 
-	writes := f.service.calls(http.MethodPost, pathPrefs)
+	writes := f.service.Calls(http.MethodPost, pathPrefs)
 	require.Len(t, writes, 1)
 	assert.Equal(t, map[string]any{"preferences": []any{
 		map[string]any{"mode": "pvp", "perk": "Kill Clip", "stance": "up", "removed": false},
@@ -5639,7 +5641,7 @@ func TestPerkPreferences(t *testing.T) {
 			got, isError := call(t, f.h.handleSetPerkPreferences, SetPerkPreferencesInput{Preferences: tc.in})
 			assert.True(t, isError)
 			assert.Equal(t, tc.want, got)
-			assert.Empty(t, f.service.calls(http.MethodPost, pathPrefs))
+			assert.Empty(t, f.service.Calls(http.MethodPost, pathPrefs))
 		})
 	}
 }
@@ -6102,11 +6104,11 @@ func TestListAutotagRulesNew(t *testing.T) {
 				assert.Empty(t, ratingRequests(f))
 			}
 
-			assert.Empty(t, f.service.calls(http.MethodPost, "/api/autotag/state"), "nothing is claimed")
-			assert.Empty(t, f.service.calls(http.MethodPost, pathTags), "nothing is tagged")
-			assert.Empty(t, f.service.calls(http.MethodPost, pathAutotag), "no rule changes")
+			assert.Empty(t, f.service.Calls(http.MethodPost, "/api/autotag/state"), "nothing is claimed")
+			assert.Empty(t, f.service.Calls(http.MethodPost, pathTags), "nothing is tagged")
+			assert.Empty(t, f.service.Calls(http.MethodPost, pathAutotag), "no rule changes")
 
-			for _, req := range f.bungie.all() {
+			for _, req := range f.bungie.All() {
 				assert.Equal(t, http.MethodGet, req.Method, "nothing moves: %s", req.Path)
 			}
 		})
@@ -6673,7 +6675,7 @@ func TestRunAutotagRules(t *testing.T) {
 				assert.Equal(t, map[string]any{"kind": "claim", "from": stored, "to": tc.newest}, claims[0].Body)
 			}
 
-			writes := f.service.calls(http.MethodPost, pathTags)
+			writes := f.service.Calls(http.MethodPost, pathTags)
 			if tc.wantTags == nil {
 				assert.Empty(t, writes, "nothing is tagged")
 			} else {
@@ -6693,10 +6695,10 @@ func TestRunAutotagRules(t *testing.T) {
 				reads = 2
 			}
 
-			assert.Len(t, f.service.calls(http.MethodGet, pathAutotag), reads)
-			assert.Empty(t, f.service.calls(http.MethodPost, pathAutotag), "no rule changes")
+			assert.Len(t, f.service.Calls(http.MethodGet, pathAutotag), reads)
+			assert.Empty(t, f.service.Calls(http.MethodPost, pathAutotag), "no rule changes")
 
-			for _, req := range f.bungie.all() {
+			for _, req := range f.bungie.All() {
 				assert.Equal(t, http.MethodGet, req.Method, "nothing moves: %s", req.Path)
 			}
 		})
@@ -7134,7 +7136,7 @@ func TestRunAutotagRulesVault(t *testing.T) {
 				"kind": "claim", "from": "00000000000000001006", "to": tc.newest,
 			}, claims[0].Body)
 
-			writes := f.service.calls(http.MethodPost, pathTags)
+			writes := f.service.Calls(http.MethodPost, pathTags)
 			if tc.wantTags == nil {
 				assert.Empty(t, writes, "nothing is tagged")
 			} else {
@@ -7149,7 +7151,7 @@ func TestRunAutotagRulesVault(t *testing.T) {
 				case pathPull:
 					steps = append(steps, fmt.Sprintf("pull %v to %v", req.Body["itemId"], req.Body["characterId"]))
 				case pathTransfer:
-					steps = append(steps, transferSteps([]request{req})...)
+					steps = append(steps, transferSteps([]httpfake.Request{req})...)
 				default:
 					steps = append(steps, req.Path)
 				}
@@ -7472,14 +7474,14 @@ func TestListAutotagRulesOwned(t *testing.T) {
 			assert.Equal(t, tc.isError, isError, got)
 			assert.Equal(t, strings.Join(tc.want, "\n"), got)
 
-			profiles := f.bungie.calls(http.MethodGet, "/Destiny2/3/Profile/4611/")
+			profiles := f.bungie.Calls(http.MethodGet, "/Destiny2/3/Profile/4611/")
 			assert.Equal(t, tc.noProfile, len(profiles) == 0, "profile reads: %d", len(profiles))
 
-			for _, req := range f.service.all() {
+			for _, req := range f.service.All() {
 				assert.Equal(t, http.MethodGet, req.Method, "nothing is written: %s", req.Path)
 			}
 
-			for _, req := range f.bungie.all() {
+			for _, req := range f.bungie.All() {
 				assert.Equal(t, http.MethodGet, req.Method, "nothing moves: %s", req.Path)
 			}
 
@@ -7509,7 +7511,7 @@ func TestListAutotagRulesOwnedCachedProfile(t *testing.T) {
 	got, isError := call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{Matches: matchesOwned})
 	require.False(t, isError, got)
 
-	assert.Len(t, f.bungie.calls(http.MethodGet, "/Destiny2/3/Profile/4611/"), 1,
+	assert.Len(t, f.bungie.Calls(http.MethodGet, "/Destiny2/3/Profile/4611/"), 1,
 		"the counts reuse the snapshot of list_characters")
 }
 
@@ -7862,7 +7864,7 @@ func TestSaveAutotagRule(t *testing.T) {
 			got, isError := call(t, f.h.handleSaveAutotagRule, tc.in)
 			assert.Equal(t, tc.isError, isError)
 
-			writes := f.service.calls(http.MethodPost, pathAutotag)
+			writes := f.service.Calls(http.MethodPost, pathAutotag)
 			if tc.wantRule == nil {
 				assert.Equal(t, tc.want, got)
 				assert.Empty(t, writes)
@@ -8013,14 +8015,14 @@ func TestSaveAutotagRuleReport(t *testing.T) {
 			got, isError := call(t, f.h.handleSaveAutotagRule, tc.in)
 			assert.Equal(t, tc.isError, isError)
 
-			profiles := f.bungie.calls(http.MethodGet, pathProfile)
+			profiles := f.bungie.Calls(http.MethodGet, pathProfile)
 			if tc.fetches {
 				assert.NotEmpty(t, profiles)
 			} else {
 				assert.Empty(t, profiles)
 			}
 
-			writes := f.service.calls(http.MethodPost, pathAutotag)
+			writes := f.service.Calls(http.MethodPost, pathAutotag)
 			if tc.isError {
 				assert.Equal(t, tc.want, got)
 				assert.Empty(t, writes)
@@ -8058,7 +8060,7 @@ func TestRemoveAutotagRule(t *testing.T) {
 	assert.False(t, isError)
 	assert.Equal(t, `Removed the rule "rate:>=a".`, got)
 
-	writes := f.service.calls(http.MethodPost, pathAutotag)
+	writes := f.service.Calls(http.MethodPost, pathAutotag)
 	require.Len(t, writes, 1)
 	assert.Equal(t, map[string]any{"rules": []any{
 		map[string]any{
@@ -8352,11 +8354,11 @@ func TestPreviewRefresh(t *testing.T) {
 		require.False(t, isError)
 	}
 
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
 
 	_, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon", Refresh: true})
 	require.False(t, isError)
-	assert.Len(t, f.bungie.calls(http.MethodGet, pathProfile), 2, "refresh fetches the profile again")
+	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 2, "refresh fetches the profile again")
 }
 
 func TestPreviewUnsupported(t *testing.T) {
@@ -8389,8 +8391,8 @@ func TestPreviewUnsupported(t *testing.T) {
 		"ratingbase:, misses:, setbonus:, verdict:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, "+
 		"pvpmisses:, pvpsetbonus:, and pvpverdict:. "+
 		"Each is: word also works as not:<word>.", got)
-	assert.Empty(t, f.service.all())
-	assert.Empty(t, f.bungie.all())
+	assert.Empty(t, f.service.All())
+	assert.Empty(t, f.bungie.All())
 }
 
 func TestPreviewInvalidValue(t *testing.T) {
@@ -8425,8 +8427,8 @@ func TestPreviewInvalidValue(t *testing.T) {
 			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
 			assert.True(t, isError)
 			assert.Equal(t, tc.want, got)
-			assert.Empty(t, f.service.all())
-			assert.Empty(t, f.bungie.all())
+			assert.Empty(t, f.service.All())
+			assert.Empty(t, f.bungie.All())
 		})
 	}
 }
@@ -8439,8 +8441,8 @@ func TestPreviewUnsupportedDupeValue(t *testing.T) {
 	got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon dupe:stats"})
 	assert.True(t, isError)
 	assert.True(t, strings.HasPrefix(got, "unsupported query: the server does not evaluate dupe:stats, "), got)
-	assert.Empty(t, f.service.all())
-	assert.Empty(t, f.bungie.all())
+	assert.Empty(t, f.service.All())
+	assert.Empty(t, f.bungie.All())
 }
 
 func TestPreviewDupe(t *testing.T) {
@@ -8593,8 +8595,8 @@ func TestPreviewUnsupportedPowerWord(t *testing.T) {
 	assert.True(t, isError)
 	assert.Equal(t, "invalid input: the web client rejects power:=<pinnaclecap, "+
 		"so it skips an autotag rule with this query", got)
-	assert.Empty(t, f.service.all())
-	assert.Empty(t, f.bungie.all())
+	assert.Empty(t, f.service.All())
+	assert.Empty(t, f.bungie.All())
 }
 
 func TestPreviewAutotagged(t *testing.T) {
@@ -8665,8 +8667,8 @@ func TestPreviewParseError(t *testing.T) {
 			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
 			assert.True(t, isError)
 			assert.Equal(t, tc.want, got)
-			assert.Empty(t, f.service.all())
-			assert.Empty(t, f.bungie.all())
+			assert.Empty(t, f.service.All())
+			assert.Empty(t, f.bungie.All())
 
 			query := tc.query
 			tag := tagJunk
@@ -8697,8 +8699,8 @@ func TestPreviewEmpty(t *testing.T) {
 			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
 			assert.True(t, isError)
 			assert.Equal(t, "invalid input: the query has no search term", got)
-			assert.Empty(t, f.service.all())
-			assert.Empty(t, f.bungie.all())
+			assert.Empty(t, f.service.All())
+			assert.Empty(t, f.bungie.All())
 		})
 	}
 }
@@ -8783,7 +8785,7 @@ func withBothSheets(f *fakes) {
 func ratingRequests(f *fakes) []string {
 	var paths []string
 
-	for _, req := range f.service.all() {
+	for _, req := range f.service.All() {
 		if strings.HasPrefix(req.Path, "/artifacts/") || req.Path == pathPrefs {
 			paths = append(paths, req.Path)
 		}
@@ -9047,7 +9049,7 @@ func saveJunkRule(t *testing.T, f *fakes, query string) (string, bool) {
 
 	got, isError := call(t, f.h.handleSaveAutotagRule, SaveAutotagRuleInput{Query: &query, TagID: &junk})
 
-	for _, write := range f.service.calls(http.MethodPost, pathAutotag) {
+	for _, write := range f.service.Calls(http.MethodPost, pathAutotag) {
 		rules, ok := write.Body["rules"].([]any)
 		require.True(t, ok)
 		require.Len(t, rules, 1)
@@ -9075,7 +9077,7 @@ func TestSaveAutotagRuleUndecided(t *testing.T) {
 	assert.Equal(t, "Saved the rule:\n- 2. [enabled] \"rate:>=a\": tag junk (id new)\n"+
 		"The query matches 2 owned items now, and the server cannot decide 2 more. "+
 		"The count ignores the other rules, so an earlier rule can take some of these items first.", got)
-	assert.Len(t, f.service.calls(http.MethodPost, pathAutotag), 1)
+	assert.Len(t, f.service.Calls(http.MethodPost, pathAutotag), 1)
 }
 
 func TestSaveAutotagRuleLeavesOutUnbuilt(t *testing.T) {
@@ -9154,7 +9156,7 @@ func TestSaveAutotagRuleRatingModeMissing(t *testing.T) {
 	assert.Equal(t, "Saved the rule:\n- 2. [enabled] \"pvprate:>=a\": tag junk (id new)\n"+
 		"The rule is saved, but the query reads a game mode without ratings, "+
 		"so the server did not count the items that the query matches. "+noPvPSheet, got)
-	assert.Len(t, f.service.calls(http.MethodPost, pathAutotag), 1)
+	assert.Len(t, f.service.Calls(http.MethodPost, pathAutotag), 1)
 }
 
 func TestSaveAutotagRuleInvalidRating(t *testing.T) {
@@ -9179,8 +9181,8 @@ func TestSaveAutotagRuleInvalidRating(t *testing.T) {
 			assert.True(t, isError)
 			assert.Equal(t, "invalid input: the web client rejects "+tc.query+
 				", so it skips an autotag rule with this query", got)
-			assert.Empty(t, f.service.calls(http.MethodPost, pathAutotag))
-			assert.Empty(t, f.bungie.all())
+			assert.Empty(t, f.service.Calls(http.MethodPost, pathAutotag))
+			assert.Empty(t, f.bungie.All())
 		})
 	}
 }
@@ -9390,11 +9392,11 @@ func TestGetStats(t *testing.T) {
 		"1001 | Fatebringer | 12 | 10 | 2",
 	}, "\n"), got)
 
-	reads := f.service.calls(http.MethodGet, pathStats)
+	reads := f.service.Calls(http.MethodGet, pathStats)
 	require.Len(t, reads, 1)
 	assert.Equal(t, "Bearer session-1", reads[0].Auth)
 	assert.Equal(t, fmt.Sprintf("since=%d&after=0", fixtureNow.Add(-27*time.Hour).UnixMilli()), reads[0].Query)
-	assert.Empty(t, f.bungie.all())
+	assert.Empty(t, f.bungie.All())
 }
 
 func TestGetStatsPeriods(t *testing.T) {
@@ -9437,7 +9439,7 @@ func TestGetStatsPeriods(t *testing.T) {
 				assert.Contains(t, got, want)
 			}
 
-			reads := f.service.calls(http.MethodGet, pathStats)
+			reads := f.service.Calls(http.MethodGet, pathStats)
 			require.Len(t, reads, 1)
 			assert.Equal(t, tc.wantQuery, reads[0].Query)
 		})
@@ -9496,13 +9498,13 @@ func TestGetStatsRefreshesSession(t *testing.T) {
 	require.False(t, isError, got)
 	assert.Contains(t, got, "Glimmer | currency | 3159615086 | +700 | 1200 | 500")
 
-	assert.Len(t, f.service.calls(http.MethodPost, "/api/auth/refresh"), 1)
+	assert.Len(t, f.service.Calls(http.MethodPost, "/api/auth/refresh"), 1)
 
-	reads := f.service.calls(http.MethodGet, pathStats)
+	reads := f.service.Calls(http.MethodGet, pathStats)
 	require.Len(t, reads, 2)
 	assert.Equal(t, "Bearer session-1", reads[0].Auth)
 	assert.Equal(t, "Bearer session-2", reads[1].Auth)
-	assert.Empty(t, f.bungie.all())
+	assert.Empty(t, f.bungie.All())
 }
 
 func TestGetStatsErrors(t *testing.T) {
@@ -9514,8 +9516,8 @@ func TestGetStatsErrors(t *testing.T) {
 	assert.True(t, isError)
 	assert.Contains(t, got, ErrInvalidInput.Error())
 	assert.Contains(t, got, "24h, 7d, 30d, all")
-	assert.Empty(t, f.service.all())
-	assert.Empty(t, f.bungie.all())
+	assert.Empty(t, f.service.All())
+	assert.Empty(t, f.bungie.All())
 
 	f.serviceData[pathStats] = `{"chunks": [{"startsAt": 0, "endsAt": 300000, "updatedAt": 1, "body": "{}"}], "more": false}`
 
