@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 // fakeArtifacts is an [ArtifactSource] that serves artifacts from memory
@@ -218,7 +219,7 @@ func TestDefsLoader(t *testing.T) {
 
 	source := newFakeArtifacts()
 	dir := t.TempDir()
-	now := fixtureNow
+	now := bungietest.Now
 	clock := WithDefsClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade. The
@@ -363,9 +364,9 @@ func TestDefsLoader(t *testing.T) {
 			2168194999: {},
 		},
 		VendorItems: map[uint32]string{
-			500:         "Ammo Synthesis",
-			itemGlimmer: "Glimmer",
-			501:         "Legendary Shards",
+			500:                    "Ammo Synthesis",
+			bungietest.ItemGlimmer: "Glimmer",
+			501:                    "Legendary Shards",
 		},
 		DamageEnums:    map[uint32]int{3373582085: 1, 2303181850: 2},
 		DamageTypes:    map[int]string{1: "Kinetic", 2: "Arc"},

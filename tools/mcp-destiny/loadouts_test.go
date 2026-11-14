@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 // EquipLoadout records a loadout equip as a step of the [stepMover].
@@ -24,7 +25,7 @@ func TestSnapshotLoadouts(t *testing.T) {
 
 	assert.Equal(t, []Loadout{
 		{
-			CharacterID: hunterID,
+			CharacterID: bungietest.HunterID,
 			Number:      2,
 			InstanceIDs: []string{"1006", "1004"},
 			NameHash:    1,
@@ -32,7 +33,7 @@ func TestSnapshotLoadouts(t *testing.T) {
 			ColorHash:   3,
 		},
 		{
-			CharacterID: hunterID,
+			CharacterID: bungietest.HunterID,
 			Number:      3,
 			InstanceIDs: []string{"1001", "1004", "9999"},
 			NameHash:    4,
@@ -40,7 +41,7 @@ func TestSnapshotLoadouts(t *testing.T) {
 			ColorHash:   6,
 		},
 		{
-			CharacterID: titanID,
+			CharacterID: bungietest.TitanID,
 			Number:      1,
 			InstanceIDs: []string{"1006"},
 			NameHash:    7,
@@ -61,10 +62,10 @@ func TestFindLoadout(t *testing.T) {
 		number      int
 	}{
 		"saved loadout": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      3,
 			wantLoadout: Loadout{
-				CharacterID: hunterID,
+				CharacterID: bungietest.HunterID,
 				Number:      3,
 				InstanceIDs: []string{"1001", "1004", "9999"},
 				NameHash:    4,
@@ -73,7 +74,7 @@ func TestFindLoadout(t *testing.T) {
 			},
 		},
 		"loadout that holds nothing": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      1,
 			err:         ErrUnknownLoadout,
 			want: "unknown loadout: Hunter has no saved loadout with the number 1. " +
@@ -118,7 +119,11 @@ func TestEquipLoadoutMarksSlots(t *testing.T) {
 		loadout       Loadout
 	}{
 		"item from the vault": {
-			loadout:   Loadout{CharacterID: hunterID, Number: 3, InstanceIDs: []string{"1001", "1004", "9999"}},
+			loadout: Loadout{
+				CharacterID: bungietest.HunterID,
+				Number:      3,
+				InstanceIDs: []string{"1001", "1004", "9999"},
+			},
 			wantSteps: []string{"from vault to c1", "equip loadout 2 on c1"},
 			wantMoves: []string{"1001"},
 			wantLocations: map[string]string{
@@ -127,7 +132,7 @@ func TestEquipLoadoutMarksSlots(t *testing.T) {
 			},
 		},
 		"item that the character holds": {
-			loadout:   Loadout{CharacterID: hunterID, Number: 4, InstanceIDs: []string{"1003", "1004"}},
+			loadout:   Loadout{CharacterID: bungietest.HunterID, Number: 4, InstanceIDs: []string{"1003", "1004"}},
 			wantSteps: []string{"equip loadout 3 on c1"},
 			wantLocations: map[string]string{
 				"1003": "Hunter (equipped)",
@@ -201,7 +206,7 @@ func TestEquipLoadoutChecksMovesFirst(t *testing.T) {
 			tc.change(s)
 
 			mover := &stepMover{}
-			l := Loadout{CharacterID: titanID, Number: 2, InstanceIDs: tc.ids}
+			l := Loadout{CharacterID: bungietest.TitanID, Number: 2, InstanceIDs: tc.ids}
 
 			got, err := s.EquipLoadout(t.Context(), mover, l)
 			require.ErrorIs(t, err, ErrMove)
@@ -225,23 +230,23 @@ func TestLoadoutsOfDropsEmptyItems(t *testing.T) {
 	var profile Profile
 
 	profile.CharacterLoadouts.Data = map[string]ProfileLoadouts{
-		hunterID: {Loadouts: []ProfileLoadout{
+		bungietest.HunterID: {Loadouts: []ProfileLoadout{
 			{Items: []ProfileLoadoutItem{{}}},
 			{Items: []ProfileLoadoutItem{{InstanceID: "1001"}, {}}},
 			{Items: []ProfileLoadoutItem{{InstanceID: emptyLoadoutItem}, {InstanceID: emptyLoadoutItem}}},
 			{},
 		}},
-		titanID: {Loadouts: []ProfileLoadout{
+		bungietest.TitanID: {Loadouts: []ProfileLoadout{
 			{Items: []ProfileLoadoutItem{{InstanceID: emptyLoadoutItem}, {InstanceID: "1006"}}},
 		}},
 	}
 
 	assert.Equal(t, []Loadout{
-		{CharacterID: hunterID, Number: 2, InstanceIDs: []string{"1001"}},
-		{CharacterID: titanID, Number: 1, InstanceIDs: []string{"1006"}},
+		{CharacterID: bungietest.HunterID, Number: 2, InstanceIDs: []string{"1001"}},
+		{CharacterID: bungietest.TitanID, Number: 1, InstanceIDs: []string{"1006"}},
 	}, loadoutsOf(&profile), "an item without an instance id or with the id 0 holds nothing")
 
-	assert.Equal(t, map[string]int{hunterID: 4, titanID: 1}, loadoutSlotsOf(&profile),
+	assert.Equal(t, map[string]int{bungietest.HunterID: 4, bungietest.TitanID: 1}, loadoutSlotsOf(&profile),
 		"the slot count includes the empty slots")
 }
 
@@ -257,11 +262,11 @@ func TestLoadoutSlot(t *testing.T) {
 		wantSaved   bool
 	}{
 		"saved loadout": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      2,
 			wantSaved:   true,
 			wantLoadout: Loadout{
-				CharacterID: hunterID,
+				CharacterID: bungietest.HunterID,
 				Number:      2,
 				InstanceIDs: []string{"1006", "1004"},
 				NameHash:    1,
@@ -270,16 +275,16 @@ func TestLoadoutSlot(t *testing.T) {
 			},
 		},
 		"empty slot": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      1,
-			wantLoadout: Loadout{CharacterID: hunterID, Number: 1},
+			wantLoadout: Loadout{CharacterID: bungietest.HunterID, Number: 1},
 		},
 		"last slot": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      3,
 			wantSaved:   true,
 			wantLoadout: Loadout{
-				CharacterID: hunterID,
+				CharacterID: bungietest.HunterID,
 				Number:      3,
 				InstanceIDs: []string{"1001", "1004", "9999"},
 				NameHash:    4,
@@ -288,21 +293,21 @@ func TestLoadoutSlot(t *testing.T) {
 			},
 		},
 		"number after the last slot": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      4,
 			err:         ErrNoLoadoutSlot,
 			want: "no loadout slot: Hunter has no loadout slot with the number 4. " +
 				"Its 3 loadout slots have the numbers 1 to 3",
 		},
 		"number zero": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      0,
 			err:         ErrNoLoadoutSlot,
 			want: "no loadout slot: Hunter has no loadout slot with the number 0. " +
 				"Its 3 loadout slots have the numbers 1 to 3",
 		},
 		"character with fewer slots": {
-			characterID: titanID,
+			characterID: bungietest.TitanID,
 			number:      2,
 			err:         ErrNoLoadoutSlot,
 			want: "no loadout slot: Titan has no loadout slot with the number 2. " +
@@ -323,7 +328,7 @@ func TestLoadoutSlot(t *testing.T) {
 			s := fixtureSnapshot(t)
 			s.Characters = append(s.Characters, Character{ID: "c3", Class: "Warlock"})
 
-			assert.Equal(t, map[string]int{hunterID: 3, titanID: 1}, s.LoadoutSlots)
+			assert.Equal(t, map[string]int{bungietest.HunterID: 3, bungietest.TitanID: 1}, s.LoadoutSlots)
 
 			got, saved, err := s.LoadoutSlot(tc.characterID, tc.number)
 			if tc.err != nil {
@@ -349,21 +354,21 @@ func TestLoadoutGear(t *testing.T) {
 		want        []string
 	}{
 		"weapons and armor": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			want:        []string{"1006", "1004"},
 		},
 		"subclass comes first": {
 			change:      func(s *Snapshot) { s.byID["1004"].Bucket = bungie.BucketSubclass },
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			want:        []string{"1004", "1006"},
 		},
 		"item in a bucket that a loadout does not hold": {
 			change:      func(s *Snapshot) { s.byID["1004"].Bucket = bungie.BucketConsumables },
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			want:        []string{"1006"},
 		},
 		"character without equipped gear": {
-			characterID: titanID,
+			characterID: bungietest.TitanID,
 		},
 	}
 
@@ -411,7 +416,7 @@ func TestRecordLoadoutSave(t *testing.T) {
 		number      int
 	}{
 		"empty slot before the saved loadouts": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      1,
 			want: []string{
 				"c1 1 10/20/30 1006,1004",
@@ -421,8 +426,8 @@ func TestRecordLoadoutSave(t *testing.T) {
 			},
 		},
 		"empty slot between the loadouts of two characters": {
-			change:      func(s *Snapshot) { s.recordLoadoutClear(hunterID, 3) },
-			characterID: hunterID,
+			change:      func(s *Snapshot) { s.recordLoadoutClear(bungietest.HunterID, 3) },
+			characterID: bungietest.HunterID,
 			number:      3,
 			want: []string{
 				"c1 2 1/2/3 1006,1004",
@@ -431,7 +436,7 @@ func TestRecordLoadoutSave(t *testing.T) {
 			},
 		},
 		"saved loadout": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      3,
 			want: []string{
 				"c1 2 1/2/3 1006,1004",
@@ -440,7 +445,7 @@ func TestRecordLoadoutSave(t *testing.T) {
 			},
 		},
 		"character without equipped gear": {
-			characterID: titanID,
+			characterID: bungietest.TitanID,
 			number:      1,
 			want: []string{
 				"c1 2 1/2/3 1006,1004",
@@ -474,7 +479,7 @@ func TestRecordLoadoutClear(t *testing.T) {
 		number      int
 	}{
 		"saved loadout": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      2,
 			want: []string{
 				"c1 3 4/5/6 1001,1004,9999",
@@ -482,7 +487,7 @@ func TestRecordLoadoutClear(t *testing.T) {
 			},
 		},
 		"empty slot": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      1,
 			want: []string{
 				"c1 2 1/2/3 1006,1004",

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 func TestNewestMark(t *testing.T) {
@@ -28,8 +29,8 @@ func TestNewestMark(t *testing.T) {
 		},
 		"an emote with the highest id": {
 			add: []*Item{
-				{InstanceID: "1010", Equippable: true, Bucket: bungie.BucketEmotes, Owner: hunterID},
-				{InstanceID: "1009", Equippable: true, Bucket: bungie.BucketFinishers, Owner: hunterID},
+				{InstanceID: "1010", Equippable: true, Bucket: bungie.BucketEmotes, Owner: bungietest.HunterID},
+				{InstanceID: "1009", Equippable: true, Bucket: bungie.BucketFinishers, Owner: bungietest.HunterID},
 				{InstanceID: "1008", Equippable: true, Bucket: bungie.BucketKinetic, Owner: ownerVault},
 			},
 			want: "00000000000000001008",
@@ -60,15 +61,15 @@ func TestNewItems(t *testing.T) {
 	}
 
 	s := &Snapshot{Items: []*Item{
-		item("10000", hunterID, bungie.BucketKinetic),
+		item("10000", bungietest.HunterID, bungie.BucketKinetic),
 		item("1008", ownerAccount, bungie.BucketKinetic),
 		item("1011", ownerVault, bungie.BucketPower),
-		item("1007", titanID, bungie.BucketHelmet),
-		item("1006", hunterID, bungie.BucketKinetic),
+		item("1007", bungietest.TitanID, bungie.BucketHelmet),
+		item("1006", bungietest.HunterID, bungie.BucketKinetic),
 		item("1009", ownerVault, bungie.BucketKinetic),
-		item("1005", hunterID, bungie.BucketKinetic),
-		item("1012", hunterID, bungie.BucketEmotes),
-		{InstanceID: "1013", Owner: hunterID, Bucket: bungie.BucketConsumables},
+		item("1005", bungietest.HunterID, bungie.BucketKinetic),
+		item("1012", bungietest.HunterID, bungie.BucketEmotes),
+		{InstanceID: "1013", Owner: bungietest.HunterID, Bucket: bungie.BucketConsumables},
 		{Owner: ownerAccount, Bucket: bungie.BucketConsumables},
 	}}
 
@@ -327,7 +328,7 @@ func TestVaultBlock(t *testing.T) {
 			t.Parallel()
 
 			defs := &Defs{Items: map[uint32]ItemDef{hash: tc.def}}
-			item := newItem(&Profile{}, defs, tc.item, hunterID, tc.equipped)
+			item := newItem(&Profile{}, defs, tc.item, bungietest.HunterID, tc.equipped)
 
 			assert.Equal(t, tc.want, vaultBlock(item, tc.def))
 		})

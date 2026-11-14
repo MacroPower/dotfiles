@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 // fakeBroker is a [TokenBroker] that counts its exchanges.
@@ -59,7 +61,7 @@ func newTestAuth(t *testing.T, saved *Tokens) (*Auth, *fakeBroker, *TokenStore) 
 	}
 
 	broker := &fakeBroker{}
-	auth := NewAuth(store, broker, WithAuthClock(func() time.Time { return fixtureNow }))
+	auth := NewAuth(store, broker, WithAuthClock(func() time.Time { return bungietest.Now }))
 
 	return auth, broker, store
 }
@@ -149,9 +151,9 @@ func TestLogin(t *testing.T) {
 
 	want := Tokens{
 		AccessToken:    "access-new",
-		AccessExpires:  fixtureNow.Add(time.Hour),
+		AccessExpires:  bungietest.Now.Add(time.Hour),
 		RefreshToken:   "refresh-new",
-		RefreshExpires: fixtureNow.Add(90 * 24 * time.Hour),
+		RefreshExpires: bungietest.Now.Add(90 * 24 * time.Hour),
 		Session:        "session-new",
 		BungieID:       "42",
 	}
@@ -185,9 +187,9 @@ func TestTokens(t *testing.T) {
 		"fresh tokens need no refresh": {
 			saved: Tokens{
 				AccessToken:    "access-1",
-				AccessExpires:  fixtureNow.Add(time.Hour),
+				AccessExpires:  bungietest.Now.Add(time.Hour),
 				RefreshToken:   "refresh-1",
-				RefreshExpires: fixtureNow.Add(24 * time.Hour),
+				RefreshExpires: bungietest.Now.Add(24 * time.Hour),
 				Session:        "session-1",
 			},
 			wantAccess: "access-1",
@@ -195,9 +197,9 @@ func TestTokens(t *testing.T) {
 		"access token inside the skew refreshes": {
 			saved: Tokens{
 				AccessToken:    "access-1",
-				AccessExpires:  fixtureNow.Add(30 * time.Second),
+				AccessExpires:  bungietest.Now.Add(30 * time.Second),
 				RefreshToken:   "refresh-1",
-				RefreshExpires: fixtureNow.Add(24 * time.Hour),
+				RefreshExpires: bungietest.Now.Add(24 * time.Hour),
 				Session:        "session-1",
 				Membership:     membership,
 			},
@@ -207,9 +209,9 @@ func TestTokens(t *testing.T) {
 		"missing session refreshes": {
 			saved: Tokens{
 				AccessToken:    "access-1",
-				AccessExpires:  fixtureNow.Add(time.Hour),
+				AccessExpires:  bungietest.Now.Add(time.Hour),
 				RefreshToken:   "refresh-1",
-				RefreshExpires: fixtureNow.Add(24 * time.Hour),
+				RefreshExpires: bungietest.Now.Add(24 * time.Hour),
 				Membership:     membership,
 			},
 			wantAccess:  "access-refreshed",
@@ -218,9 +220,9 @@ func TestTokens(t *testing.T) {
 		"expired refresh token": {
 			saved: Tokens{
 				AccessToken:    "access-1",
-				AccessExpires:  fixtureNow.Add(-time.Hour),
+				AccessExpires:  bungietest.Now.Add(-time.Hour),
 				RefreshToken:   "refresh-1",
-				RefreshExpires: fixtureNow.Add(-time.Minute),
+				RefreshExpires: bungietest.Now.Add(-time.Minute),
 				Session:        "session-1",
 			},
 			err: ErrNotSignedIn,
@@ -228,7 +230,7 @@ func TestTokens(t *testing.T) {
 		"no refresh token": {
 			saved: Tokens{
 				AccessToken:   "access-1",
-				AccessExpires: fixtureNow.Add(-time.Hour),
+				AccessExpires: bungietest.Now.Add(-time.Hour),
 				Session:       "session-1",
 			},
 			err: ErrNotSignedIn,
@@ -265,9 +267,9 @@ func TestRefresh(t *testing.T) {
 
 	saved := Tokens{
 		AccessToken:    "access-2",
-		AccessExpires:  fixtureNow.Add(time.Hour),
+		AccessExpires:  bungietest.Now.Add(time.Hour),
 		RefreshToken:   "refresh-2",
-		RefreshExpires: fixtureNow.Add(24 * time.Hour),
+		RefreshExpires: bungietest.Now.Add(24 * time.Hour),
 		Session:        "session-2",
 	}
 
@@ -306,9 +308,9 @@ func TestRefreshErrors(t *testing.T) {
 
 	saved := Tokens{
 		AccessToken:    "access-1",
-		AccessExpires:  fixtureNow.Add(-time.Hour),
+		AccessExpires:  bungietest.Now.Add(-time.Hour),
 		RefreshToken:   "refresh-1",
-		RefreshExpires: fixtureNow.Add(24 * time.Hour),
+		RefreshExpires: bungietest.Now.Add(24 * time.Hour),
 		Session:        "session-1",
 	}
 

@@ -7,14 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
 
-// Objective hashes of kill trackers, from the DIM table.
-const (
-	trackerPvE       uint32 = 90275515
-	trackerPvP       uint32 = 1501870536
-	trackerGambit    uint32 = 345540971
-	trackerNightfall uint32 = 3387796140
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 // statStart is the period start of the stats unit tests.
@@ -89,24 +83,24 @@ func TestRestateReadings(t *testing.T) {
 	}{
 		"stale recorder": {
 			changes: []StatChange{
-				currency(itemGlimmer, minutes(10), 1_000, 2_000),
-				currency(itemGlimmer, minutes(20), 2_000, 1_500),
-				currency(itemGlimmer, minutes(40), 1_000, 1_700),
+				currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
+				currency(bungietest.ItemGlimmer, minutes(20), 2_000, 1_500),
+				currency(bungietest.ItemGlimmer, minutes(40), 1_000, 1_700),
 			},
 			want: []StatChange{
-				currency(itemGlimmer, minutes(10), 1_000, 2_000),
-				currency(itemGlimmer, minutes(20), 2_000, 1_500),
-				currency(itemGlimmer, minutes(40), 1_500, 1_700),
+				currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
+				currency(bungietest.ItemGlimmer, minutes(20), 2_000, 1_500),
+				currency(bungietest.ItemGlimmer, minutes(40), 1_500, 1_700),
 			},
 		},
 		"sorted by at": {
 			changes: []StatChange{
-				currency(itemGlimmer, minutes(40), 1_000, 1_700),
-				currency(itemGlimmer, minutes(10), 1_000, 2_000),
+				currency(bungietest.ItemGlimmer, minutes(40), 1_000, 1_700),
+				currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
 			},
 			want: []StatChange{
-				currency(itemGlimmer, minutes(10), 1_000, 2_000),
-				currency(itemGlimmer, minutes(40), 2_000, 1_700),
+				currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
+				currency(bungietest.ItemGlimmer, minutes(40), 2_000, 1_700),
 			},
 		},
 		"currency and stack of one hash are separate values": {
@@ -121,16 +115,16 @@ func TestRestateReadings(t *testing.T) {
 		},
 		"objectives are keyed by instance and objective": {
 			changes: []StatChange{
-				objective("1001", 100, trackerPvE, minutes(10), 0, 5),
-				objective("1002", 100, trackerPvE, minutes(20), 50, 60),
-				objective("1001", 100, trackerPvP, minutes(30), 7, 9),
-				objective("1001", 100, trackerPvE, minutes(40), 0, 8),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 0, 5),
+				objective("1002", 100, bungietest.TrackerPvE, minutes(20), 50, 60),
+				objective("1001", 100, bungietest.TrackerPvP, minutes(30), 7, 9),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(40), 0, 8),
 			},
 			want: []StatChange{
-				objective("1001", 100, trackerPvE, minutes(10), 0, 5),
-				objective("1002", 100, trackerPvE, minutes(20), 50, 60),
-				objective("1001", 100, trackerPvP, minutes(30), 7, 9),
-				objective("1001", 100, trackerPvE, minutes(40), 5, 8),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 0, 5),
+				objective("1002", 100, bungietest.TrackerPvE, minutes(20), 50, 60),
+				objective("1001", 100, bungietest.TrackerPvP, minutes(30), 7, 9),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(40), 5, 8),
 			},
 		},
 		"other kinds pass through": {
@@ -157,32 +151,32 @@ func TestFlowsOf(t *testing.T) {
 	}{
 		"stale recorder": {
 			changes: []StatChange{
-				currency(itemGlimmer, minutes(10), 1_000, 2_000),
-				currency(itemGlimmer, minutes(20), 2_000, 1_500),
-				currency(itemGlimmer, minutes(40), 1_000, 1_700),
+				currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
+				currency(bungietest.ItemGlimmer, minutes(20), 2_000, 1_500),
+				currency(bungietest.ItemGlimmer, minutes(40), 1_000, 1_700),
 			},
 			want: []statFlow{
-				{itemHash: itemGlimmer, currency: true, net: 700, gained: 1_200, spent: 500},
+				{itemHash: bungietest.ItemGlimmer, currency: true, net: 700, gained: 1_200, spent: 500},
 			},
 		},
 		"currencies first, then by absolute net change": {
 			changes: []StatChange{
 				stack(300, minutes(10), 40, 140),
-				currency(itemBrightDust, minutes(20), 1_500, 1_490),
-				currency(itemGlimmer, minutes(30), 2_000, 1_000),
+				currency(bungietest.ItemBrightDust, minutes(20), 1_500, 1_490),
+				currency(bungietest.ItemGlimmer, minutes(30), 2_000, 1_000),
 				stack(301, minutes(40), 10, 5),
 			},
 			want: []statFlow{
-				{itemHash: itemGlimmer, currency: true, net: -1_000, spent: 1_000},
-				{itemHash: itemBrightDust, currency: true, net: -10, spent: 10},
+				{itemHash: bungietest.ItemGlimmer, currency: true, net: -1_000, spent: 1_000},
+				{itemHash: bungietest.ItemBrightDust, currency: true, net: -10, spent: 10},
 				{itemHash: 300, net: 100, gained: 100},
 				{itemHash: 301, net: -5, spent: 5},
 			},
 		},
 		"before the start": {
 			changes: []StatChange{
-				currency(itemGlimmer, minutes(-10), 1_000, 2_000),
-				objective("1001", 100, trackerPvE, minutes(10), 0, 5),
+				currency(bungietest.ItemGlimmer, minutes(-10), 1_000, 2_000),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 0, 5),
 			},
 		},
 	}
@@ -205,37 +199,37 @@ func TestWeaponKillsOf(t *testing.T) {
 	}{
 		"PvP trackers count as PvP": {
 			changes: []StatChange{
-				objective("1001", 100, trackerPvP, minutes(10), 7, 9),
-				objective("1001", 100, trackerPvE, minutes(20), 100, 110),
+				objective("1001", 100, bungietest.TrackerPvP, minutes(10), 7, 9),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(20), 100, 110),
 			},
 			want: []weaponKills{{instanceID: "1001", itemHash: 100, pvp: 2, pve: 10}},
 		},
 		"Gambit and Nightfall trackers count as PvE": {
 			changes: []StatChange{
-				objective("1001", 100, trackerGambit, minutes(10), 0, 3),
-				objective("1001", 100, trackerNightfall, minutes(20), 4, 8),
+				objective("1001", 100, bungietest.TrackerGambit, minutes(10), 0, 3),
+				objective("1001", 100, bungietest.TrackerNightfall, minutes(20), 4, 8),
 			},
 			want: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 7}},
 		},
 		"decreases add no kills": {
 			changes: []StatChange{
-				objective("1001", 100, trackerPvE, minutes(10), 100, 0),
-				objective("1001", 100, trackerPvE, minutes(20), 0, 4),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 100, 0),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(20), 0, 4),
 			},
 			want: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 4}},
 		},
 		"objectives that track no kills": {
 			changes: []StatChange{
 				objective("1001", 100, 12345, minutes(10), 0, 50),
-				currency(itemGlimmer, minutes(20), 0, 50),
+				currency(bungietest.ItemGlimmer, minutes(20), 0, 50),
 			},
 		},
 		"sorted by total kills": {
 			changes: []StatChange{
-				objective("1001", 100, trackerPvE, minutes(10), 0, 5),
-				objective("1002", 101, trackerPvP, minutes(20), 0, 9),
-				objective("1003", 102, trackerPvE, minutes(30), 0, 3),
-				objective("1001", 100, trackerPvP, minutes(40), 0, 2),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 0, 5),
+				objective("1002", 101, bungietest.TrackerPvP, minutes(20), 0, 9),
+				objective("1003", 102, bungietest.TrackerPvE, minutes(30), 0, 3),
+				objective("1001", 100, bungietest.TrackerPvP, minutes(40), 0, 2),
 			},
 			want: []weaponKills{
 				{instanceID: "1002", itemHash: 101, pvp: 9},
@@ -244,12 +238,12 @@ func TestWeaponKillsOf(t *testing.T) {
 			},
 		},
 		"before the start": {
-			changes: []StatChange{objective("1001", 100, trackerPvE, minutes(-10), 0, 5)},
+			changes: []StatChange{objective("1001", 100, bungietest.TrackerPvE, minutes(-10), 0, 5)},
 		},
 		"a kill at the start counts": {
 			changes: []StatChange{
-				objective("1001", 100, trackerPvE, minutes(-10), 0, 5),
-				objective("1001", 100, trackerPvE, minutes(0), 5, 8),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(-10), 0, 5),
+				objective("1001", 100, bungietest.TrackerPvE, minutes(0), 5, 8),
 			},
 			want: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 3}},
 		},
@@ -279,63 +273,63 @@ func TestSummarizeStats(t *testing.T) {
 		"changes outside the period": {
 			chunks: []StatChunk{
 				{StartsAt: 0, Changes: []StatChange{
-					currency(itemGlimmer, minutes(-1), 1_000, 1_100),
-					currency(itemGlimmer, minutes(0), 1_100, 1_300),
-					objective("1001", 100, trackerPvE, minutes(-1), 0, 4),
+					currency(bungietest.ItemGlimmer, minutes(-1), 1_000, 1_100),
+					currency(bungietest.ItemGlimmer, minutes(0), 1_100, 1_300),
+					objective("1001", 100, bungietest.TrackerPvE, minutes(-1), 0, 4),
 				}},
 				{StartsAt: 300_000, Changes: []StatChange{
-					currency(itemGlimmer, minutes(60), 1_300, 1_400),
-					currency(itemGlimmer, minutes(61), 1_400, 2_000),
-					objective("1001", 100, trackerPvE, minutes(61), 4, 9),
+					currency(bungietest.ItemGlimmer, minutes(60), 1_300, 1_400),
+					currency(bungietest.ItemGlimmer, minutes(61), 1_400, 2_000),
+					objective("1001", 100, bungietest.TrackerPvE, minutes(61), 4, 9),
 				}},
 			},
 			from:   statStart,
-			want:   []statFlow{{itemHash: itemGlimmer, currency: true, net: 300, gained: 300}},
+			want:   []statFlow{{itemHash: bungietest.ItemGlimmer, currency: true, net: 300, gained: 300}},
 			newest: minutes(61),
 		},
 		"all keeps every change": {
 			chunks: []StatChunk{
 				{StartsAt: 0, Changes: []StatChange{
-					currency(itemGlimmer, 1, 0, 100),
-					currency(itemGlimmer, minutes(-10_000), 100, 1_000),
-					objective("1001", 100, trackerPvE, minutes(-10_000), 0, 4),
+					currency(bungietest.ItemGlimmer, 1, 0, 100),
+					currency(bungietest.ItemGlimmer, minutes(-10_000), 100, 1_000),
+					objective("1001", 100, bungietest.TrackerPvE, minutes(-10_000), 0, 4),
 				}},
 				{StartsAt: 300_000, Changes: []StatChange{
-					currency(itemGlimmer, minutes(60), 1_000, 1_300),
+					currency(bungietest.ItemGlimmer, minutes(60), 1_000, 1_300),
 				}},
 			},
 			from:    time.UnixMilli(0),
-			want:    []statFlow{{itemHash: itemGlimmer, currency: true, net: 1_300, gained: 1_300}},
+			want:    []statFlow{{itemHash: bungietest.ItemGlimmer, currency: true, net: 1_300, gained: 1_300}},
 			weapons: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 4}},
 			newest:  minutes(60),
 		},
 		"the first change takes its before from a reading before the start": {
 			chunks: []StatChunk{
 				{StartsAt: 0, Changes: []StatChange{
-					currency(itemGlimmer, minutes(-90), 500, 900),
-					objective("1001", 100, trackerPvE, minutes(-90), 10, 12),
+					currency(bungietest.ItemGlimmer, minutes(-90), 500, 900),
+					objective("1001", 100, bungietest.TrackerPvE, minutes(-90), 10, 12),
 				}},
 				{StartsAt: 300_000, Changes: []StatChange{
-					currency(itemGlimmer, minutes(10), 1_000, 2_000),
-					objective("1001", 100, trackerPvE, minutes(10), 10, 15),
+					currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
+					objective("1001", 100, bungietest.TrackerPvE, minutes(10), 10, 15),
 				}},
 			},
 			from:    statStart,
-			want:    []statFlow{{itemHash: itemGlimmer, currency: true, net: 1_100, gained: 1_100}},
+			want:    []statFlow{{itemHash: bungietest.ItemGlimmer, currency: true, net: 1_100, gained: 1_100}},
 			weapons: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 3}},
 			newest:  minutes(10),
 		},
 		"readings before the lookback are not restated": {
 			chunks: []StatChunk{
 				{StartsAt: 0, Changes: []StatChange{
-					currency(itemGlimmer, minutes(-150), 500, 900),
+					currency(bungietest.ItemGlimmer, minutes(-150), 500, 900),
 				}},
 				{StartsAt: 300_000, Changes: []StatChange{
-					currency(itemGlimmer, minutes(10), 1_000, 2_000),
+					currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
 				}},
 			},
 			from:   statStart,
-			want:   []statFlow{{itemHash: itemGlimmer, currency: true, net: 1_000, gained: 1_000}},
+			want:   []statFlow{{itemHash: bungietest.ItemGlimmer, currency: true, net: 1_000, gained: 1_000}},
 			newest: minutes(10),
 		},
 		"no change": {

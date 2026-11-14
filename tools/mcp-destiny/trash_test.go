@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 func TestResolveSlot(t *testing.T) {
@@ -24,7 +25,7 @@ func TestResolveSlot(t *testing.T) {
 				InstanceID: "1",
 				Name:       "Legendary Engram",
 				Kind:       kindOther,
-				Owner:      hunterID,
+				Owner:      bungietest.HunterID,
 				Bucket:     bungie.BucketEngrams,
 			},
 		)
@@ -174,8 +175,8 @@ func junkSnapshot(items []Item) *Snapshot {
 	s := &Snapshot{
 		byID: map[string]*Item{},
 		Characters: []Character{
-			{ID: hunterID, Class: "Hunter", ClassType: bungie.ClassHunter},
-			{ID: titanID, Class: "Titan", ClassType: bungie.ClassTitan},
+			{ID: bungietest.HunterID, Class: "Hunter", ClassType: bungie.ClassHunter},
+			{ID: bungietest.TitanID, Class: "Titan", ClassType: bungie.ClassTitan},
 		},
 		Buckets: []Bucket{
 			{Name: "Kinetic Weapons", Hash: bungie.BucketKinetic, Capacity: 10},
@@ -211,17 +212,29 @@ func TestJunkPlan(t *testing.T) {
 	}{
 		"junk in the slot": {
 			items: []Item{
-				{InstanceID: "1", Owner: hunterID, Tag: tagJunk, ClassType: bungie.ClassAny, Transferable: true},
+				{
+					InstanceID:   "1",
+					Owner:        bungietest.HunterID,
+					Tag:          tagJunk,
+					ClassType:    bungie.ClassAny,
+					Transferable: true,
+				},
 			},
 			want: junkIDs{Staged: []string{"1"}},
 		},
 		"junk in the slot that is not transferable": {
-			items: []Item{{InstanceID: "1", Owner: hunterID, Tag: tagJunk, ClassType: bungie.ClassAny}},
+			items: []Item{{InstanceID: "1", Owner: bungietest.HunterID, Tag: tagJunk, ClassType: bungie.ClassAny}},
 			want:  junkIDs{Staged: []string{"1"}},
 		},
 		"junk in the slot of another class": {
 			items: []Item{
-				{InstanceID: "1", Owner: hunterID, Tag: tagJunk, ClassType: bungie.ClassTitan, Transferable: true},
+				{
+					InstanceID:   "1",
+					Owner:        bungietest.HunterID,
+					Tag:          tagJunk,
+					ClassType:    bungie.ClassTitan,
+					Transferable: true,
+				},
 			},
 			want: junkIDs{Staged: []string{"1"}},
 		},
@@ -233,7 +246,13 @@ func TestJunkPlan(t *testing.T) {
 		},
 		"junk on another character": {
 			items: []Item{
-				{InstanceID: "1", Owner: titanID, Tag: tagJunk, ClassType: bungie.ClassAny, Transferable: true},
+				{
+					InstanceID:   "1",
+					Owner:        bungietest.TitanID,
+					Tag:          tagJunk,
+					ClassType:    bungie.ClassAny,
+					Transferable: true,
+				},
 			},
 			want: junkIDs{Waiting: []string{"1"}},
 		},
@@ -257,7 +276,7 @@ func TestJunkPlan(t *testing.T) {
 			items: []Item{
 				{
 					InstanceID:   "1",
-					Owner:        titanID,
+					Owner:        bungietest.TitanID,
 					Tag:          tagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
@@ -270,7 +289,7 @@ func TestJunkPlan(t *testing.T) {
 			items: []Item{
 				{
 					InstanceID:   "1",
-					Owner:        hunterID,
+					Owner:        bungietest.HunterID,
 					Tag:          tagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
@@ -283,7 +302,7 @@ func TestJunkPlan(t *testing.T) {
 			items: []Item{
 				{
 					InstanceID:   "1",
-					Owner:        titanID,
+					Owner:        bungietest.TitanID,
 					Tag:          tagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
@@ -296,7 +315,7 @@ func TestJunkPlan(t *testing.T) {
 			items: []Item{
 				{
 					InstanceID:   "1",
-					Owner:        hunterID,
+					Owner:        bungietest.HunterID,
 					Tag:          tagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
@@ -307,35 +326,55 @@ func TestJunkPlan(t *testing.T) {
 		},
 		"item with the tag keep in the slot": {
 			items: []Item{
-				{InstanceID: "1", Owner: hunterID, Tag: "keep", ClassType: bungie.ClassAny, Transferable: true},
+				{
+					InstanceID:   "1",
+					Owner:        bungietest.HunterID,
+					Tag:          "keep",
+					ClassType:    bungie.ClassAny,
+					Transferable: true,
+				},
 			},
 			want: junkIDs{Keepers: []string{"1"}},
 		},
 		"item without a tag in the slot": {
-			items: []Item{{InstanceID: "1", Owner: hunterID, ClassType: bungie.ClassAny, Transferable: true}},
-			want:  junkIDs{Keepers: []string{"1"}},
+			items: []Item{
+				{InstanceID: "1", Owner: bungietest.HunterID, ClassType: bungie.ClassAny, Transferable: true},
+			},
+			want: junkIDs{Keepers: []string{"1"}},
 		},
 		"item without a tag that the character has equipped": {
 			items: []Item{
-				{InstanceID: "1", Owner: hunterID, ClassType: bungie.ClassAny, Transferable: true, Equipped: true},
+				{
+					InstanceID:   "1",
+					Owner:        bungietest.HunterID,
+					ClassType:    bungie.ClassAny,
+					Transferable: true,
+					Equipped:     true,
+				},
 			},
 		},
 		"item without a tag at the Postmaster of the character": {
 			items: []Item{
-				{InstanceID: "1", Owner: hunterID, ClassType: bungie.ClassAny, Transferable: true, Postmaster: true},
+				{
+					InstanceID:   "1",
+					Owner:        bungietest.HunterID,
+					ClassType:    bungie.ClassAny,
+					Transferable: true,
+					Postmaster:   true,
+				},
 			},
 		},
 		"item without a tag in the vault or on another character": {
 			items: []Item{
 				{InstanceID: "1", Owner: ownerVault, ClassType: bungie.ClassAny, Transferable: true},
-				{InstanceID: "2", Owner: titanID, ClassType: bungie.ClassAny, Transferable: true},
+				{InstanceID: "2", Owner: bungietest.TitanID, ClassType: bungie.ClassAny, Transferable: true},
 			},
 		},
 		"item with the tag keep that another character has equipped": {
 			items: []Item{
 				{
 					InstanceID:   "1",
-					Owner:        titanID,
+					Owner:        bungietest.TitanID,
 					Tag:          "keep",
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
@@ -347,7 +386,7 @@ func TestJunkPlan(t *testing.T) {
 			items: []Item{
 				{
 					InstanceID:   "1",
-					Owner:        hunterID,
+					Owner:        bungietest.HunterID,
 					Tag:          "keep",
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
@@ -360,7 +399,7 @@ func TestJunkPlan(t *testing.T) {
 			items: []Item{
 				{
 					InstanceID:   "1",
-					Owner:        hunterID,
+					Owner:        bungietest.HunterID,
 					Tag:          tagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
@@ -373,7 +412,7 @@ func TestJunkPlan(t *testing.T) {
 			items: []Item{
 				{
 					InstanceID: "1",
-					Owner:      hunterID,
+					Owner:      bungietest.HunterID,
 					Tag:        tagJunk,
 					Bucket:     bungie.BucketPower,
 					ClassType:  bungie.ClassAny,
@@ -388,13 +427,21 @@ func TestJunkPlan(t *testing.T) {
 			},
 		},
 		"item without a tag of another bucket": {
-			items: []Item{{InstanceID: "1", Owner: hunterID, Bucket: bungie.BucketPower, ClassType: bungie.ClassAny}},
+			items: []Item{
+				{InstanceID: "1", Owner: bungietest.HunterID, Bucket: bungie.BucketPower, ClassType: bungie.ClassAny},
+			},
 		},
 		"order": {
 			items: []Item{
-				{InstanceID: "5", Name: "Midnight Coup", Owner: hunterID, Tag: tagJunk, ClassType: bungie.ClassAny},
-				{InstanceID: "1000", Owner: hunterID, Tag: tagJunk, ClassType: bungie.ClassAny},
-				{InstanceID: "999", Owner: hunterID, Tag: tagJunk, ClassType: bungie.ClassAny},
+				{
+					InstanceID: "5",
+					Name:       "Midnight Coup",
+					Owner:      bungietest.HunterID,
+					Tag:        tagJunk,
+					ClassType:  bungie.ClassAny,
+				},
+				{InstanceID: "1000", Owner: bungietest.HunterID, Tag: tagJunk, ClassType: bungie.ClassAny},
+				{InstanceID: "999", Owner: bungietest.HunterID, Tag: tagJunk, ClassType: bungie.ClassAny},
 				{
 					InstanceID:   "6",
 					Name:         "Midnight Coup",
@@ -404,10 +451,16 @@ func TestJunkPlan(t *testing.T) {
 					Transferable: true,
 				},
 				{InstanceID: "1001", Owner: ownerVault, Tag: tagJunk, ClassType: bungie.ClassAny, Transferable: true},
-				{InstanceID: "998", Owner: titanID, Tag: tagJunk, ClassType: bungie.ClassAny, Transferable: true},
-				{InstanceID: "7", Name: "Midnight Coup", Owner: hunterID, ClassType: bungie.ClassAny},
-				{InstanceID: "1002", Owner: hunterID, ClassType: bungie.ClassAny},
-				{InstanceID: "997", Owner: hunterID, ClassType: bungie.ClassAny},
+				{
+					InstanceID:   "998",
+					Owner:        bungietest.TitanID,
+					Tag:          tagJunk,
+					ClassType:    bungie.ClassAny,
+					Transferable: true,
+				},
+				{InstanceID: "7", Name: "Midnight Coup", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
+				{InstanceID: "1002", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
+				{InstanceID: "997", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
 			},
 			want: junkIDs{
 				Staged:  []string{"999", "1000", "5"},
@@ -422,7 +475,7 @@ func TestJunkPlan(t *testing.T) {
 			t.Parallel()
 
 			s := junkSnapshot(tc.items)
-			hunter, ok := s.Character(hunterID)
+			hunter, ok := s.Character(bungietest.HunterID)
 			require.True(t, ok)
 
 			assert.Equal(t, tc.want, junkIDsOf(s.JunkPlan(hunter, s.Buckets[0])))
@@ -454,7 +507,7 @@ func TestJunkPlanRoom(t *testing.T) {
 
 			add := func(item Item) {
 				item.InstanceID = strconv.Itoa(len(items) + 1)
-				item.Owner = hunterID
+				item.Owner = bungietest.HunterID
 				item.ClassType = bungie.ClassAny
 				items = append(items, item)
 			}
@@ -473,12 +526,12 @@ func TestJunkPlanRoom(t *testing.T) {
 
 			// Items of another character and of the vault take no room.
 			items = append(items,
-				Item{InstanceID: "100", Owner: titanID, ClassType: bungie.ClassAny},
+				Item{InstanceID: "100", Owner: bungietest.TitanID, ClassType: bungie.ClassAny},
 				Item{InstanceID: "101", Owner: ownerVault, ClassType: bungie.ClassAny},
 			)
 
 			s := junkSnapshot(items)
-			hunter, ok := s.Character(hunterID)
+			hunter, ok := s.Character(bungietest.HunterID)
 			require.True(t, ok)
 
 			assert.Equal(t, tc.want, s.JunkPlan(hunter, s.Buckets[0]).Room)

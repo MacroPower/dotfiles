@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
 
@@ -184,7 +185,7 @@ func TestStatusAndLogin(t *testing.T) {
 	saved, err := f.h.auth.Saved()
 	require.NoError(t, err)
 
-	saved.RefreshExpires = fixtureNow.Add(-time.Hour)
+	saved.RefreshExpires = bungietest.Now.Add(-time.Hour)
 	require.NoError(t, f.h.auth.store.Save(saved))
 
 	got, isError = call(t, f.h.handleStatus, EmptyInput{})
@@ -243,7 +244,7 @@ func TestRenderCharactersWithoutDefinitions(t *testing.T) {
 
 	var profile Profile
 
-	require.NoError(t, json.Unmarshal([]byte(fixtureProfile), &profile))
+	require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
 
 	profile.ProfileCurrencies.Data.Items = nil
 	defs := fixtureDefs()
@@ -261,7 +262,7 @@ func TestRenderCharactersWithoutDefinitions(t *testing.T) {
 		"Vault: 2 slots used",
 		"",
 		"Currencies: none",
-	}, "\n"), renderCharacters(NewSnapshot(&profile, defs, fixtureNow)))
+	}, "\n"), renderCharacters(NewSnapshot(&profile, defs, bungietest.Now)))
 }
 
 func TestListItems(t *testing.T) {
@@ -2943,8 +2944,8 @@ func TestListActivityHistory(t *testing.T) {
 	}{
 		"every character": {
 			queries: map[string][]string{
-				pathHunterHistory: {"count=25&page=0"},
-				pathTitanHistory:  {"count=25&page=0"},
+				bungietest.PathHunterHistory: {"count=25&page=0"},
+				bungietest.PathTitanHistory:  {"count=25&page=0"},
 			},
 			want: strings.Join([]string{
 				"The 5 newest runs of the account.",
@@ -2960,8 +2961,8 @@ func TestListActivityHistory(t *testing.T) {
 		"limit": {
 			in: ListActivityHistoryInput{Limit: 2},
 			queries: map[string][]string{
-				pathHunterHistory: {"count=2&page=0"},
-				pathTitanHistory:  {"count=2&page=0"},
+				bungietest.PathHunterHistory: {"count=2&page=0"},
+				bungietest.PathTitanHistory:  {"count=2&page=0"},
 			},
 			want: strings.Join([]string{
 				"The 2 newest runs of the account. Pass a larger limit, up to 250, for older runs.",
@@ -2974,7 +2975,7 @@ func TestListActivityHistory(t *testing.T) {
 		"class name": {
 			in: ListActivityHistoryInput{Character: "TITAN", Limit: 1000},
 			queries: map[string][]string{
-				pathTitanHistory: {"count=250&page=0"},
+				bungietest.PathTitanHistory: {"count=250&page=0"},
 			},
 			want: strings.Join([]string{
 				"The 2 newest runs of Titan.",
@@ -2985,9 +2986,9 @@ func TestListActivityHistory(t *testing.T) {
 			}, "\n"),
 		},
 		"one run": {
-			in: ListActivityHistoryInput{Character: hunterID, Limit: 1},
+			in: ListActivityHistoryInput{Character: bungietest.HunterID, Limit: 1},
 			queries: map[string][]string{
-				pathHunterHistory: {"count=1&page=0"},
+				bungietest.PathHunterHistory: {"count=1&page=0"},
 			},
 			want: strings.Join([]string{
 				"The newest run of Hunter. Pass a larger limit, up to 250, for older runs.",
@@ -2998,12 +2999,12 @@ func TestListActivityHistory(t *testing.T) {
 		},
 		"no runs": {
 			data: map[string]string{
-				pathHunterHistory: `{"ErrorCode": 1, "Response": {}}`,
-				pathTitanHistory:  `{"ErrorCode": 1, "Response": {}}`,
+				bungietest.PathHunterHistory: `{"ErrorCode": 1, "Response": {}}`,
+				bungietest.PathTitanHistory:  `{"ErrorCode": 1, "Response": {}}`,
 			},
 			queries: map[string][]string{
-				pathHunterHistory: {"count=25&page=0"},
-				pathTitanHistory:  {"count=25&page=0"},
+				bungietest.PathHunterHistory: {"count=25&page=0"},
+				bungietest.PathTitanHistory:  {"count=25&page=0"},
 			},
 			want: "The activity history of the account holds no runs.",
 		},
@@ -3019,11 +3020,11 @@ func TestListActivityHistory(t *testing.T) {
 		},
 		"Bungie refuses one character": {
 			data: map[string]string{
-				pathTitanHistory: `{"ErrorCode": 1665, "ErrorStatus": "DestinyPrivacyRestriction", "Message": "Private."}`,
+				bungietest.PathTitanHistory: `{"ErrorCode": 1665, "ErrorStatus": "DestinyPrivacyRestriction", "Message": "Private."}`,
 			},
 			queries: map[string][]string{
-				pathHunterHistory: {"count=25&page=0"},
-				pathTitanHistory:  {"count=25&page=0"},
+				bungietest.PathHunterHistory: {"count=25&page=0"},
+				bungietest.PathTitanHistory:  {"count=25&page=0"},
 			},
 			want:    "fetching the activity history: character c2: bungie: DestinyPrivacyRestriction: Private.",
 			isError: true,
@@ -3035,13 +3036,13 @@ func TestListActivityHistory(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			maps.Copy(f.bungieData, tc.data)
+			maps.Copy(f.bungie.Data, tc.data)
 
 			got, isError := call(t, f.h.handleListActivityHistory, tc.in)
 			assert.Equal(t, tc.isError, isError)
 			assert.Equal(t, tc.want, got)
 
-			for _, path := range []string{pathHunterHistory, pathTitanHistory} {
+			for _, path := range []string{bungietest.PathHunterHistory, bungietest.PathTitanHistory} {
 				var queries []string
 				for _, req := range f.bungie.Calls(http.MethodGet, path) {
 					queries = append(queries, req.Query)
@@ -3141,27 +3142,27 @@ func TestListVendors(t *testing.T) {
 		isError bool
 	}{
 		"vendor list": {
-			paths: []string{pathHunterVendors},
+			paths: []string{bungietest.PathHunterVendors},
 			want:  list,
 		},
 		"blank vendor": {
 			in:    ListVendorsInput{Vendor: "  "},
-			paths: []string{pathHunterVendors},
+			paths: []string{bungietest.PathHunterVendors},
 			want:  list,
 		},
 		"vendor by exact name": {
 			in:    ListVendorsInput{Vendor: "Banshee-44"},
-			paths: []string{pathHunterVendors},
+			paths: []string{bungietest.PathHunterVendors},
 			want:  banshee,
 		},
 		"vendor by part of its name": {
 			in:    ListVendorsInput{Vendor: " banshee "},
-			paths: []string{pathHunterVendors},
+			paths: []string{bungietest.PathHunterVendors},
 			want:  banshee,
 		},
 		"vendor by hash": {
 			in:    ListVendorsInput{Vendor: "3361454721"},
-			paths: []string{pathHunterVendors},
+			paths: []string{bungietest.PathHunterVendors},
 			want: strings.Join([]string{
 				"Tess Everis",
 				"Subtitle: Eververse Trading Company",
@@ -3176,7 +3177,7 @@ func TestListVendors(t *testing.T) {
 		},
 		"vendor without a definition": {
 			in:    ListVendorsInput{Vendor: "2168194999"},
-			paths: []string{pathHunterVendors},
+			paths: []string{bungietest.PathHunterVendors},
 			want: strings.Join([]string{
 				"Vendor 2168194999",
 				"Vendor hash: 2168194999",
@@ -3190,7 +3191,7 @@ func TestListVendors(t *testing.T) {
 		},
 		"disabled vendor": {
 			in:    ListVendorsInput{Vendor: "2190858386"},
-			paths: []string{pathHunterVendors},
+			paths: []string{bungietest.PathHunterVendors},
 			want: strings.Join([]string{
 				"Xûr",
 				"Subtitle: Agent of the Nine",
@@ -3203,32 +3204,32 @@ func TestListVendors(t *testing.T) {
 		},
 		"vendors that share a name": {
 			in:      ListVendorsInput{Vendor: "Xûr"},
-			paths:   []string{pathHunterVendors},
+			paths:   []string{bungietest.PathHunterVendors},
 			want:    `unknown vendor: "Xûr" matches 2 vendors, so pass a vendor hash, such as Xûr (2190858386), Xûr (3751514131)`,
 			isError: true,
 		},
 		"ambiguous part of a name": {
 			in:    ListVendorsInput{Vendor: "vendor"},
-			paths: []string{pathHunterVendors},
+			paths: []string{bungietest.PathHunterVendors},
 			want: `unknown vendor: "vendor" matches 2 vendors, so pass a vendor hash, ` +
 				`such as Vendor 1111 (1111), Vendor 2168194999 (2168194999)`,
 			isError: true,
 		},
 		"unknown vendor name": {
 			in:      ListVendorsInput{Vendor: "Zavala"},
-			paths:   []string{pathHunterVendors},
+			paths:   []string{bungietest.PathHunterVendors},
 			want:    `unknown vendor: no vendor of Hunter has a name that contains "Zavala"`,
 			isError: true,
 		},
 		"unknown vendor hash": {
 			in:      ListVendorsInput{Vendor: "42"},
-			paths:   []string{pathHunterVendors},
+			paths:   []string{bungietest.PathHunterVendors},
 			want:    "unknown vendor: no vendor of Hunter has the hash 42",
 			isError: true,
 		},
 		"character by class name": {
 			in:    ListVendorsInput{Character: "TITAN"},
-			paths: []string{pathTitanVendors},
+			paths: []string{bungietest.PathTitanVendors},
 			want: strings.Join([]string{
 				"The vendor of Titan. Pass vendor with a hash or a name to list the sales of one vendor.",
 				"",
@@ -3237,8 +3238,8 @@ func TestListVendors(t *testing.T) {
 			}, "\n"),
 		},
 		"vendor of a character by id": {
-			in:    ListVendorsInput{Character: titanID, Vendor: "banshee-44"},
-			paths: []string{pathTitanVendors},
+			in:    ListVendorsInput{Character: bungietest.TitanID, Vendor: "banshee-44"},
+			paths: []string{bungietest.PathTitanVendors},
 			want: strings.Join([]string{
 				"Banshee-44",
 				"Subtitle: Gunsmith",
@@ -3252,8 +3253,8 @@ func TestListVendors(t *testing.T) {
 			}, "\n"),
 		},
 		"no vendors": {
-			data:  map[string]string{pathHunterVendors: `{"ErrorCode": 1, "Response": {}}`},
-			paths: []string{pathHunterVendors},
+			data:  map[string]string{bungietest.PathHunterVendors: `{"ErrorCode": 1, "Response": {}}`},
+			paths: []string{bungietest.PathHunterVendors},
 			want:  "Bungie lists no vendors for Hunter.",
 		},
 		"vault": {
@@ -3263,9 +3264,9 @@ func TestListVendors(t *testing.T) {
 		},
 		"Bungie refuses": {
 			data: map[string]string{
-				pathHunterVendors: `{"ErrorCode": 1627, "ErrorStatus": "DestinyVendorNotFound", "Message": "Not found."}`,
+				bungietest.PathHunterVendors: `{"ErrorCode": 1627, "ErrorStatus": "DestinyVendorNotFound", "Message": "Not found."}`,
 			},
-			paths:   []string{pathHunterVendors},
+			paths:   []string{bungietest.PathHunterVendors},
 			want:    "fetching the vendors: bungie: DestinyVendorNotFound: Not found.",
 			isError: true,
 		},
@@ -3276,7 +3277,7 @@ func TestListVendors(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			maps.Copy(f.bungieData, tc.data)
+			maps.Copy(f.bungie.Data, tc.data)
 
 			got, isError := call(t, f.h.handleListVendors, tc.in)
 			assert.Equal(t, tc.isError, isError)
@@ -3284,7 +3285,7 @@ func TestListVendors(t *testing.T) {
 
 			var paths []string
 
-			for _, path := range []string{pathHunterVendors, pathTitanVendors} {
+			for _, path := range []string{bungietest.PathHunterVendors, bungietest.PathTitanVendors} {
 				for _, req := range f.bungie.Calls(http.MethodGet, path) {
 					paths = append(paths, req.Path)
 					assert.Regexp(t, `^components=400,401,402&_=\d+$`, req.Query)
@@ -3306,7 +3307,7 @@ func TestListVendorsRefetches(t *testing.T) {
 		require.False(t, isError, got)
 	}
 
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathHunterVendors), 2)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathHunterVendors), 2)
 	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
 }
 
@@ -3362,7 +3363,7 @@ func TestListActivities(t *testing.T) {
 			want:    hunter,
 		},
 		"character id": {
-			in:      ListActivitiesInput{Character: hunterID},
+			in:      ListActivitiesInput{Character: bungietest.HunterID},
 			fetches: 1,
 			want:    hunter,
 		},
@@ -3435,7 +3436,7 @@ func TestListActivities(t *testing.T) {
 		"limit above the maximum": {
 			in:   ListActivitiesInput{Limit: 1000},
 			defs: manyDefs,
-			activities: `{"ErrorCode": 1, "Response": {"characterActivities": {"data": {"` + hunterID +
+			activities: `{"ErrorCode": 1, "Response": {"characterActivities": {"data": {"` + bungietest.HunterID +
 				`": {"availableActivities": [` + strings.Join(manyEntries, ", ") + `]}}}}}`,
 			fetches: 1,
 			want:    strings.Join(manyPage, "\n"),
@@ -3479,7 +3480,7 @@ func TestListActivities(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.activitiesBody = tc.activities
+			f.bungie.ActivitiesBody = tc.activities
 
 			if tc.defs != nil {
 				tc.defs(f.h.defs.defs)
@@ -3523,7 +3524,7 @@ func TestRefreshOnUnauthorized(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.staleAccess = "access-1"
+	f.bungie.StaleAccess = "access-1"
 	f.staleSession = "session-1"
 
 	got, isError := call(t, f.h.handleListItems, ListItemsInput{Location: "vault"})
@@ -3561,11 +3562,11 @@ func TestMoveItems(t *testing.T) {
 		"stackSize":         float64(1),
 		"transferToVault":   true,
 		"itemId":            "1003",
-		"characterId":       hunterID,
+		"characterId":       bungietest.HunterID,
 		"membershipType":    float64(3),
 	}, transfers[0].Body)
 	assert.Equal(t, false, transfers[1].Body["transferToVault"])
-	assert.Equal(t, titanID, transfers[1].Body["characterId"])
+	assert.Equal(t, bungietest.TitanID, transfers[1].Body["characterId"])
 
 	// The snapshot carries the move, so the next read does not ask Bungie
 	// for a profile that might predate it.
@@ -3582,7 +3583,7 @@ func TestMoveItemsEquip(t *testing.T) {
 
 	got, isError := call(t, f.h.handleMoveItems, MoveItemsInput{
 		InstanceIDs: []string{"1001"},
-		Target:      hunterID,
+		Target:      bungietest.HunterID,
 		Equip:       true,
 	})
 	assert.False(t, isError)
@@ -3608,7 +3609,7 @@ func TestMoveItemsReplacesEquipped(t *testing.T) {
 	require.Len(t, equips, 1)
 	assert.Equal(t, map[string]any{
 		"itemId":         "1003",
-		"characterId":    hunterID,
+		"characterId":    bungietest.HunterID,
 		"membershipType": float64(3),
 	}, equips[0].Body)
 	assert.Len(t, f.bungie.Calls(http.MethodPost, pathTransfer), 1)
@@ -3630,7 +3631,7 @@ func TestMoveStackTool(t *testing.T) {
 		"stackSize":         float64(12),
 		"transferToVault":   true,
 		"itemId":            "0",
-		"characterId":       hunterID,
+		"characterId":       bungietest.HunterID,
 		"membershipType":    float64(3),
 	}, transfers[0].Body)
 
@@ -3679,7 +3680,7 @@ func TestSetAutotagEnabled(t *testing.T) {
 	tests := map[string]struct {
 		wantBody map[string]any
 		// profile is the body of the profile requests. When it is empty,
-		// the requests get fixtureProfile.
+		// the requests get bungietest.ProfileJSON.
 		profile string
 		want    string
 		enabled bool
@@ -3708,7 +3709,7 @@ func TestSetAutotagEnabled(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.profileBody = tc.profile
+			f.bungie.ProfileBody = tc.profile
 			f.h.defs.defs.Items[400] = ItemDef{
 				Name:       "Victory Dance",
 				TypeName:   "Emote",
@@ -3773,7 +3774,7 @@ func TestMoveItemsErrors(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.bungieError = tc.bungieError
+			f.bungie.ActionError = tc.bungieError
 
 			got, isError := call(t, f.h.handleMoveItems, tc.in)
 			assert.True(t, isError)
@@ -3790,15 +3791,15 @@ func TestMoveItemsSnapshotAge(t *testing.T) {
 	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 	require.False(t, isError)
 
-	later := fixtureNow.Add(10 * time.Second)
+	later := bungietest.Now.Add(10 * time.Second)
 	f.h.now = func() time.Time { return later }
-	f.bungieError = `{"ErrorCode": 1623, "ErrorStatus": "DestinyItemNotFound", "Message": "gone"}`
+	f.bungie.ActionError = `{"ErrorCode": 1623, "ErrorStatus": "DestinyItemNotFound", "Message": "gone"}`
 
 	_, isError = call(t, f.h.handleMoveItems, MoveItemsInput{InstanceIDs: []string{"1001"}, Target: "hunter"})
 	require.True(t, isError)
-	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a call that moved nothing keeps the age of the snapshot")
+	assert.Equal(t, bungietest.Now, f.h.snapshot.Fetched, "a call that moved nothing keeps the age of the snapshot")
 
-	f.bungieError = ""
+	f.bungie.ActionError = ""
 
 	_, isError = call(t, f.h.handleMoveItems, MoveItemsInput{InstanceIDs: []string{"1001"}, Target: "hunter"})
 	require.False(t, isError)
@@ -3947,14 +3948,14 @@ func TestStageJunk(t *testing.T) {
 		"refusal with junk in the slot": {
 			in:      kinetic,
 			junk:    []string{"1007"},
-			add:     []*Item{kineticWeapon("1007", "Fatebringer", hunterID)},
+			add:     []*Item{kineticWeapon("1007", "Fatebringer", bungietest.HunterID)},
 			want:    fixtureRefusal,
 			isError: true,
 		},
 		"refusal lists every keeper": {
 			in:   kinetic,
 			junk: []string{"1001"},
-			add:  []*Item{kineticWeapon("1007", "Fatebringer", hunterID)},
+			add:  []*Item{kineticWeapon("1007", "Fatebringer", bungietest.HunterID)},
 			want: "cannot move: Kinetic Weapons on Hunter holds unequipped gear that is not tagged junk: " +
 				"Fatebringer (1007), Midnight Coup (1003). stage_junk moved nothing. Move that gear to the vault " +
 				"with move_items, with target vault and instance_ids 1007, 1003. Then call stage_junk again. " +
@@ -3980,7 +3981,7 @@ func TestStageJunk(t *testing.T) {
 		"stage from another character": {
 			in:   kinetic,
 			junk: []string{"1003", "1007"},
-			add:  []*Item{kineticWeapon("1007", "Fatebringer", titanID)},
+			add:  []*Item{kineticWeapon("1007", "Fatebringer", bungietest.TitanID)},
 			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n" +
 				"- Fatebringer (1007)\n" +
 				"- Midnight Coup (1003)\n" +
@@ -4041,7 +4042,7 @@ func TestStageJunk(t *testing.T) {
 		"second transfer does not succeed": {
 			in:     kinetic,
 			junk:   []string{"1003", "1007"},
-			add:    []*Item{kineticWeapon("1007", "Fatebringer", titanID)},
+			add:    []*Item{kineticWeapon("1007", "Fatebringer", bungietest.TitanID)},
 			refuse: func(body map[string]any) bool { return body["transferToVault"] == false },
 			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 1\n" +
 				"- Midnight Coup (1003)\n" +
@@ -4143,11 +4144,11 @@ func TestStageJunk(t *testing.T) {
 			}
 
 			if tc.refuse != nil {
-				f.bungieError = goneError
-				f.bungieErrorIf = tc.refuse
+				f.bungie.ActionError = goneError
+				f.bungie.ActionErrorIf = tc.refuse
 			}
 
-			later := fixtureNow.Add(10 * time.Second)
+			later := bungietest.Now.Add(10 * time.Second)
 			f.h.now = func() time.Time { return later }
 
 			got, isError := call(t, f.h.handleStageJunk, tc.in)
@@ -4158,7 +4159,7 @@ func TestStageJunk(t *testing.T) {
 			assert.Equal(t, tc.transfers, transferSteps(transfers))
 			assert.Len(t, bungiePosts(f), len(transfers), "the call sends no equip and no Postmaster request")
 
-			wantFetched := fixtureNow
+			wantFetched := bungietest.Now
 			if tc.moved {
 				wantFetched = later
 			}
@@ -4209,28 +4210,28 @@ func TestStageJunkSnapshotAge(t *testing.T) {
 	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 	require.False(t, isError)
 
-	later := fixtureNow.Add(10 * time.Second)
+	later := bungietest.Now.Add(10 * time.Second)
 	f.h.now = func() time.Time { return later }
 	kinetic := StageJunkInput{Slot: "kinetic"}
 
 	_, isError = call(t, f.h.handleStageJunk, kinetic)
 	require.False(t, isError)
-	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a call without junk keeps the age of the snapshot")
+	assert.Equal(t, bungietest.Now, f.h.snapshot.Fetched, "a call without junk keeps the age of the snapshot")
 
 	f.serviceData[pathTags] = junkTags(t, "1001")
 
 	_, isError = call(t, f.h.handleStageJunk, kinetic)
 	require.True(t, isError)
-	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a refusal keeps the age of the snapshot")
+	assert.Equal(t, bungietest.Now, f.h.snapshot.Fetched, "a refusal keeps the age of the snapshot")
 
 	f.serviceData[pathTags] = junkTags(t, "1001", "1003")
-	f.bungieError = goneError
+	f.bungie.ActionError = goneError
 
 	_, isError = call(t, f.h.handleStageJunk, kinetic)
 	require.True(t, isError)
-	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a call that moved nothing keeps the age of the snapshot")
+	assert.Equal(t, bungietest.Now, f.h.snapshot.Fetched, "a call that moved nothing keeps the age of the snapshot")
 
-	f.bungieError = ""
+	f.bungie.ActionError = ""
 
 	_, isError = call(t, f.h.handleStageJunk, kinetic)
 	require.False(t, isError)
@@ -4286,7 +4287,7 @@ func TestSetLockTool(t *testing.T) {
 	assert.Equal(t, map[string]any{
 		"state":          true,
 		"itemId":         "1002",
-		"characterId":    hunterID,
+		"characterId":    bungietest.HunterID,
 		"membershipType": float64(3),
 	}, locks[0].Body)
 	assert.Equal(t, "1003", locks[1].Body["itemId"])
@@ -4339,7 +4340,7 @@ func TestSetLockToolErrors(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.bungieError = tc.bungieError
+			f.bungie.ActionError = tc.bungieError
 
 			got, isError := call(t, f.h.handleSetLock, tc.in)
 			assert.True(t, isError)
@@ -4360,7 +4361,7 @@ func TestSetLockToolSnapshotAge(t *testing.T) {
 	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 	require.False(t, isError)
 
-	later := fixtureNow.Add(10 * time.Second)
+	later := bungietest.Now.Add(10 * time.Second)
 	f.h.now = func() time.Time { return later }
 
 	stuck, ok := f.h.snapshot.Find("1003")
@@ -4373,7 +4374,7 @@ func TestSetLockToolSnapshotAge(t *testing.T) {
 	assert.True(t, isError)
 	assert.Equal(t, refusal, got)
 	assert.Empty(t, f.bungie.Calls(http.MethodPost, pathLock))
-	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a call that changed nothing keeps the age of the snapshot")
+	assert.Equal(t, bungietest.Now, f.h.snapshot.Fetched, "a call that changed nothing keeps the age of the snapshot")
 
 	got, isError = call(t, f.h.handleSetLock, SetLockInput{InstanceIDs: []string{"1003", "1002"}, Locked: true})
 	assert.False(t, isError, "one item locked")
@@ -4403,7 +4404,7 @@ func TestSetPerkTool(t *testing.T) {
 			"plugItemHash":    float64(903),
 		},
 		"itemId":         "1001",
-		"characterId":    hunterID,
+		"characterId":    bungietest.HunterID,
 		"membershipType": float64(3),
 	}, inserts[0].Body)
 
@@ -4428,26 +4429,26 @@ func TestSetPerkToolSnapshotAge(t *testing.T) {
 	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 	require.False(t, isError)
 
-	later := fixtureNow.Add(10 * time.Second)
+	later := bungietest.Now.Add(10 * time.Second)
 	f.h.now = func() time.Time { return later }
 
 	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Explosive Payload"})
 	require.False(t, isError)
-	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a perk that is already active keeps the age of the snapshot")
+	assert.Equal(t, bungietest.Now, f.h.snapshot.Fetched, "a perk that is already active keeps the age of the snapshot")
 
 	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Kill Clip"})
 	require.True(t, isError)
-	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a perk that no socket offers keeps the age of the snapshot")
+	assert.Equal(t, bungietest.Now, f.h.snapshot.Fetched, "a perk that no socket offers keeps the age of the snapshot")
 	assert.Empty(t, f.bungie.Calls(http.MethodPost, pathInsert))
 
-	f.bungieError = `{"ErrorCode": 1634, "ErrorStatus": "DestinyCharacterNotInTower", "Message": "not in a social space"}`
+	f.bungie.ActionError = `{"ErrorCode": 1634, "ErrorStatus": "DestinyCharacterNotInTower", "Message": "not in a social space"}`
 
 	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Rampage"})
 	require.True(t, isError)
-	assert.Equal(t, fixtureNow, f.h.snapshot.Fetched, "a swap that Bungie refuses keeps the age of the snapshot")
+	assert.Equal(t, bungietest.Now, f.h.snapshot.Fetched, "a swap that Bungie refuses keeps the age of the snapshot")
 	assert.Len(t, f.bungie.Calls(http.MethodPost, pathInsert), 1)
 
-	f.bungieError = ""
+	f.bungie.ActionError = ""
 
 	_, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Rampage"})
 	require.False(t, isError)
@@ -4492,7 +4493,7 @@ func TestSetPerkToolErrors(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.bungieError = tc.bungieError
+			f.bungie.ActionError = tc.bungieError
 
 			got, isError := call(t, f.h.handleSetPerk, tc.in)
 			assert.True(t, isError)
@@ -4558,45 +4559,45 @@ func TestListLoadouts(t *testing.T) {
 			want: loadoutsIntro + "\n\n" + titan("Loadout 1: Crucible"),
 		},
 		"character without loadouts": {
-			in:       ListLoadoutsInput{Character: titanID},
+			in:       ListLoadoutsInput{Character: bungietest.TitanID},
 			hunterOn: true,
 			want:     loadoutsIntro + "\n\nTitan (id c2): no saved loadouts",
 		},
 		"name hash that the table lacks": {
 			edit: func(f *fakes) {
-				f.bungieData[pathLoadoutNames] = `{"1": {"hash": 1, "name": "Raid Night"}}`
+				f.bungie.Data[bungietest.PathLoadoutNames] = `{"1": {"hash": 1, "name": "Raid Night"}}`
 			},
 			want: loadoutsIntro + "\n\n" + hunter("Loadout 2: Raid Night", "Loadout 3: unnamed") +
 				"\n\n" + titan("Loadout 1: unnamed"),
 		},
 		"redacted name without text": {
 			edit: func(f *fakes) {
-				f.bungieData[pathLoadoutNames] = `{"7": {"hash": 7, "name": "", "redacted": true}}`
+				f.bungie.Data[bungietest.PathLoadoutNames] = `{"7": {"hash": 7, "name": "", "redacted": true}}`
 			},
 			in:   ListLoadoutsInput{Character: "titan"},
 			want: loadoutsIntro + "\n\n" + titan("Loadout 1: unnamed"),
 		},
 		"manifest does not load": {
-			edit: func(f *fakes) { delete(f.bungieData, pathManifest) },
+			edit: func(f *fakes) { delete(f.bungie.Data, bungietest.PathManifest) },
 			want: unavailable + "reading the Bungie manifest: bungie: ParameterParseFailure: no route\n\n" +
 				numbered,
 		},
 		"manifest lists no name table": {
 			edit: func(f *fakes) {
-				f.bungieData[pathManifest] = `{"ErrorCode": 1, "Response": {"jsonWorldComponentContentPaths": {
+				f.bungie.Data[bungietest.PathManifest] = `{"ErrorCode": 1, "Response": {"jsonWorldComponentContentPaths": {
 					"fr": {"DestinyLoadoutNameDefinition": "/fr.json"}}}}`
 			},
 			want: unavailable + "the Bungie manifest lists no table of loadout names\n\n" + numbered,
 		},
 		"name table does not download": {
-			edit: func(f *fakes) { delete(f.bungieData, pathLoadoutNames) },
-			want: unavailable + "fetching " + pathLoadoutNames + ": bungie: content file returned status 404\n\n" +
+			edit: func(f *fakes) { delete(f.bungie.Data, bungietest.PathLoadoutNames) },
+			want: unavailable + "fetching " + bungietest.PathLoadoutNames + ": bungie: content file returned status 404\n\n" +
 				numbered,
 		},
 		"name table does not decode": {
-			edit: func(f *fakes) { f.bungieData[pathLoadoutNames] = `{"1": {"hash": 1,` },
+			edit: func(f *fakes) { f.bungie.Data[bungietest.PathLoadoutNames] = `{"1": {"hash": 1,` },
 			in:   ListLoadoutsInput{Character: "titan"},
-			want: unavailable + "decoding " + pathLoadoutNames +
+			want: unavailable + "decoding " + bungietest.PathLoadoutNames +
 				": reading the loadout name table: unexpected EOF\n\n" + titan("Loadout 1"),
 		},
 		"vault": {
@@ -4620,7 +4621,7 @@ func TestListLoadouts(t *testing.T) {
 				_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 				require.False(t, isError)
 
-				f.h.snapshot.Loadouts = f.h.snapshot.LoadoutsOf(hunterID)
+				f.h.snapshot.Loadouts = f.h.snapshot.LoadoutsOf(bungietest.HunterID)
 			}
 
 			got, isError := call(t, f.h.handleListLoadouts, tc.in)
@@ -4629,8 +4630,8 @@ func TestListLoadouts(t *testing.T) {
 
 			// The list shows only names, so it downloads neither the icon
 			// table nor the color table.
-			assert.Empty(t, f.bungie.Calls(http.MethodGet, pathLoadoutIcons))
-			assert.Empty(t, f.bungie.Calls(http.MethodGet, pathLoadoutColors))
+			assert.Empty(t, f.bungie.Calls(http.MethodGet, bungietest.PathLoadoutIcons))
+			assert.Empty(t, f.bungie.Calls(http.MethodGet, bungietest.PathLoadoutColors))
 		})
 	}
 }
@@ -4655,11 +4656,11 @@ func TestEquipLoadoutTool(t *testing.T) {
 	require.Len(t, loadouts, 1)
 	assert.Equal(t, map[string]any{
 		"loadoutIndex":   float64(0),
-		"characterId":    titanID,
+		"characterId":    bungietest.TitanID,
 		"membershipType": float64(3),
 	}, loadouts[0].Body)
 
-	got, isError = call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: hunterID, Loadout: 3})
+	got, isError = call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: bungietest.HunterID, Loadout: 3})
 	assert.False(t, isError)
 	assert.Equal(t, "- Moved Fatebringer (1001) from Vault to Hunter.\n"+
 		"Equipped loadout 3 on Hunter: Fatebringer (1001), Celestial Nighthawk (1004). "+
@@ -4669,7 +4670,7 @@ func TestEquipLoadoutTool(t *testing.T) {
 	require.Len(t, loadouts, 2)
 	assert.Equal(t, map[string]any{
 		"loadoutIndex":   float64(2),
-		"characterId":    hunterID,
+		"characterId":    bungietest.HunterID,
 		"membershipType": float64(3),
 	}, loadouts[1].Body)
 
@@ -4753,10 +4754,10 @@ func TestEquipLoadoutToolErrors(t *testing.T) {
 			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 			require.False(t, isError)
 
-			later := fixtureNow.Add(10 * time.Second)
+			later := bungietest.Now.Add(10 * time.Second)
 			f.h.now = func() time.Time { return later }
-			f.bungieError = tc.bungieError
-			f.bungieErrorPath = tc.bungieErrorPath
+			f.bungie.ActionError = tc.bungieError
+			f.bungie.ActionErrorPath = tc.bungieErrorPath
 
 			got, isError := call(t, f.h.handleEquipLoadout, tc.in)
 			assert.True(t, isError)
@@ -4772,7 +4773,7 @@ func TestEquipLoadoutToolErrors(t *testing.T) {
 			} else {
 				assert.Equal(
 					t,
-					fixtureNow,
+					bungietest.Now,
 					f.h.snapshot.Fetched,
 					"a call that changed nothing keeps the age of the snapshot",
 				)
@@ -4784,7 +4785,7 @@ func TestEquipLoadoutToolErrors(t *testing.T) {
 
 			item, ok := f.h.snapshot.Find("1006")
 			require.True(t, ok)
-			assert.Equal(t, hunterID, item.Owner)
+			assert.Equal(t, bungietest.HunterID, item.Owner)
 			assert.True(t, item.Equipped)
 		})
 	}
@@ -4798,7 +4799,7 @@ func TestEquipLoadoutToolSnapshotAge(t *testing.T) {
 	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 	require.False(t, isError)
 
-	later := fixtureNow.Add(10 * time.Second)
+	later := bungietest.Now.Add(10 * time.Second)
 	f.h.now = func() time.Time { return later }
 
 	_, isError = call(t, f.h.handleEquipLoadout, EquipLoadoutInput{Character: "hunter", Loadout: 2})
@@ -4868,7 +4869,7 @@ func TestSaveLoadoutTool(t *testing.T) {
 	}{
 		"empty slot takes the first entries": {
 			in:       SaveLoadoutInput{Character: "hunter", Number: 1},
-			wantBody: snapshotBody(0, hunterID, 1, 20, 31),
+			wantBody: snapshotBody(0, bungietest.HunterID, 1, 20, 31),
 			want:     "Saved loadout 1 on Hunter with the name Raid Night." + hunterGear,
 			wantList: hunterList + "Loadout 1: Raid Night\n" + hunterLoadoutRows(1, true) +
 				"\nLoadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
@@ -4877,7 +4878,7 @@ func TestSaveLoadoutTool(t *testing.T) {
 		},
 		"empty slot with a name": {
 			in:       SaveLoadoutInput{Character: "hunter", Number: 1, Name: "Trials"},
-			wantBody: snapshotBody(0, hunterID, 4, 20, 31),
+			wantBody: snapshotBody(0, bungietest.HunterID, 4, 20, 31),
 			want:     "Saved loadout 1 on Hunter with the name Trials." + hunterGear,
 			wantList: hunterList + "Loadout 1: Trials\n" + hunterLoadoutRows(1, true) +
 				"\nLoadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
@@ -4885,22 +4886,22 @@ func TestSaveLoadoutTool(t *testing.T) {
 			emptySlot: true,
 		},
 		"saved loadout keeps its identifiers": {
-			in:       SaveLoadoutInput{Character: hunterID, Number: 2},
-			wantBody: snapshotBody(1, hunterID, 1, 2, 3),
+			in:       SaveLoadoutInput{Character: bungietest.HunterID, Number: 2},
+			wantBody: snapshotBody(1, bungietest.HunterID, 1, 2, 3),
 			want:     "Saved loadout 2 on Hunter with the name Raid Night." + hunterGear,
 			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
 				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, false),
 		},
 		"saved loadout with a name": {
 			in:       SaveLoadoutInput{Character: "hunter", Number: 3, Name: "Crucible"},
-			wantBody: snapshotBody(2, hunterID, 7, 5, 6),
+			wantBody: snapshotBody(2, bungietest.HunterID, 7, 5, 6),
 			want:     "Saved loadout 3 on Hunter with the name Crucible." + hunterGear,
 			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
 				"\nLoadout 3: Crucible\n" + hunterLoadoutRows(3, true),
 		},
 		"name in another letter case": {
 			in:       SaveLoadoutInput{Character: "hunter", Number: 2, Name: "tRIALS"},
-			wantBody: snapshotBody(1, hunterID, 4, 2, 3),
+			wantBody: snapshotBody(1, bungietest.HunterID, 4, 2, 3),
 			want:     "Saved loadout 2 on Hunter with the name Trials." + hunterGear,
 			wantList: hunterList + "Loadout 2: Trials\n" + hunterLoadoutRows(2, true) +
 				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, false),
@@ -4908,38 +4909,38 @@ func TestSaveLoadoutTool(t *testing.T) {
 		"character without equipped gear": {
 			// A save of no gear leaves the slot empty.
 			in:       SaveLoadoutInput{Character: "titan", Number: 1},
-			wantBody: snapshotBody(0, titanID, 7, 8, 9),
+			wantBody: snapshotBody(0, bungietest.TitanID, 7, 8, 9),
 			want:     "Saved loadout 1 on Titan with the name Crucible. The inventory shows no gear that Titan has equipped.",
 			wantList: titanList,
 		},
 		"saved loadout whose name the table lacks": {
 			edit: func(f *fakes) {
-				f.bungieData[pathLoadoutNames] = `{"1": {"hash": 1, "index": 0, "name": "Raid Night"}}`
+				f.bungie.Data[bungietest.PathLoadoutNames] = `{"1": {"hash": 1, "index": 0, "name": "Raid Night"}}`
 			},
 			in:       SaveLoadoutInput{Character: "titan", Number: 1},
-			wantBody: snapshotBody(0, titanID, 7, 8, 9),
+			wantBody: snapshotBody(0, bungietest.TitanID, 7, 8, 9),
 			want:     "Saved loadout 1 on Titan without a name. The inventory shows no gear that Titan has equipped.",
 			wantList: titanList,
 		},
 		"saved loadout without the name table": {
-			edit:     func(f *fakes) { delete(f.bungieData, pathLoadoutNames) },
+			edit:     func(f *fakes) { delete(f.bungie.Data, bungietest.PathLoadoutNames) },
 			in:       SaveLoadoutInput{Character: "hunter", Number: 2},
-			wantBody: snapshotBody(1, hunterID, 1, 2, 3),
+			wantBody: snapshotBody(1, bungietest.HunterID, 1, 2, 3),
 			want: "Saved loadout 2 on Hunter, which keeps its name." + hunterGear +
-				"\nLoadout names unavailable: fetching " + pathLoadoutNames +
+				"\nLoadout names unavailable: fetching " + bungietest.PathLoadoutNames +
 				": bungie: content file returned status 404",
-			wantList: loadoutsIntro + "\nLoadout names unavailable: fetching " + pathLoadoutNames +
+			wantList: loadoutsIntro + "\nLoadout names unavailable: fetching " + bungietest.PathLoadoutNames +
 				": bungie: content file returned status 404\n\n" +
 				"Hunter (id c1):\nloadout | instance id | name | slot | location\n" +
 				"Loadout 2\n" + hunterLoadoutRows(2, true) + "\nLoadout 3\n" + hunterLoadoutRows(3, false),
 		},
 		"saved loadout without the icon and color tables": {
 			edit: func(f *fakes) {
-				delete(f.bungieData, pathLoadoutIcons)
-				delete(f.bungieData, pathLoadoutColors)
+				delete(f.bungie.Data, bungietest.PathLoadoutIcons)
+				delete(f.bungie.Data, bungietest.PathLoadoutColors)
 			},
 			in:       SaveLoadoutInput{Character: "hunter", Number: 3, Name: "trials"},
-			wantBody: snapshotBody(2, hunterID, 4, 5, 6),
+			wantBody: snapshotBody(2, bungietest.HunterID, 4, 5, 6),
 			want:     "Saved loadout 3 on Hunter with the name Trials." + hunterGear,
 			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true) +
 				"\nLoadout 3: Trials\n" + hunterLoadoutRows(3, true),
@@ -4972,9 +4973,9 @@ func TestSaveLoadoutTool(t *testing.T) {
 				tableGets = 1
 			}
 
-			assert.Len(t, f.bungie.Calls(http.MethodGet, pathLoadoutNames), 1)
-			assert.Len(t, f.bungie.Calls(http.MethodGet, pathLoadoutIcons), tableGets)
-			assert.Len(t, f.bungie.Calls(http.MethodGet, pathLoadoutColors), tableGets)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathLoadoutNames), 1)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathLoadoutIcons), tableGets)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathLoadoutColors), tableGets)
 
 			// The fake profile keeps the loadouts from before the save, so
 			// the list shows the saved loadout from the snapshot that the
@@ -5057,7 +5058,7 @@ func TestLoadoutWriteSnapshotAge(t *testing.T) {
 			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 			require.False(t, isError)
 
-			later := fixtureNow.Add(10 * time.Second)
+			later := bungietest.Now.Add(10 * time.Second)
 			f.h.now = func() time.Time { return later }
 
 			require.False(t, tc.write(t, f))
@@ -5110,47 +5111,47 @@ func TestSaveLoadoutToolRefusals(t *testing.T) {
 		},
 		"name table without names that the game shows": {
 			edit: func(f *fakes) {
-				f.bungieData[pathLoadoutNames] = `{"10": {"hash": 10, "index": 0, "name": "", "redacted": true}}`
+				f.bungie.Data[bungietest.PathLoadoutNames] = `{"10": {"hash": 10, "index": 0, "name": "", "redacted": true}}`
 			},
 			in:   SaveLoadoutInput{Character: "hunter", Number: 2, Name: "Trials"},
 			want: `unknown loadout name: "Trials". The name table holds no name that the game shows`,
 		},
 		"name without the name table": {
-			edit: func(f *fakes) { delete(f.bungieData, pathLoadoutNames) },
+			edit: func(f *fakes) { delete(f.bungie.Data, bungietest.PathLoadoutNames) },
 			in:   SaveLoadoutInput{Character: "hunter", Number: 2, Name: "Trials"},
-			want: "loadout names unavailable: fetching " + pathLoadoutNames +
+			want: "loadout names unavailable: fetching " + bungietest.PathLoadoutNames +
 				": bungie: content file returned status 404",
 		},
 		"empty slot without the name table": {
 			edit: func(f *fakes) {
-				f.bungieData[pathManifest] = `{"ErrorCode": 1, "Response": {"jsonWorldComponentContentPaths": {
-					"en": {"DestinyLoadoutIconDefinition": "` + pathLoadoutIcons + `",
-						"DestinyLoadoutColorDefinition": "` + pathLoadoutColors + `"}}}}`
+				f.bungie.Data[bungietest.PathManifest] = `{"ErrorCode": 1, "Response": {"jsonWorldComponentContentPaths": {
+					"en": {"DestinyLoadoutIconDefinition": "` + bungietest.PathLoadoutIcons + `",
+						"DestinyLoadoutColorDefinition": "` + bungietest.PathLoadoutColors + `"}}}}`
 			},
 			in:   SaveLoadoutInput{Character: "hunter", Number: 1},
 			want: "loadout names unavailable: the Bungie manifest lists no table of loadout names",
 		},
 		"empty slot without the icon table": {
-			edit: func(f *fakes) { delete(f.bungieData, pathLoadoutIcons) },
+			edit: func(f *fakes) { delete(f.bungie.Data, bungietest.PathLoadoutIcons) },
 			in:   SaveLoadoutInput{Character: "hunter", Number: 1, Name: "Trials"},
-			want: "loadout icons unavailable: fetching " + pathLoadoutIcons +
+			want: "loadout icons unavailable: fetching " + bungietest.PathLoadoutIcons +
 				": bungie: content file returned status 404",
 		},
 		"empty slot without the color table": {
-			edit: func(f *fakes) { f.bungieData[pathLoadoutColors] = `{"31": {"hash": 31,` },
+			edit: func(f *fakes) { f.bungie.Data[bungietest.PathLoadoutColors] = `{"31": {"hash": 31,` },
 			in:   SaveLoadoutInput{Character: "hunter", Number: 1},
-			want: "loadout colors unavailable: decoding " + pathLoadoutColors +
+			want: "loadout colors unavailable: decoding " + bungietest.PathLoadoutColors +
 				": reading the loadout color table: unexpected EOF",
 		},
 		"empty slot with only redacted icons": {
 			edit: func(f *fakes) {
-				f.bungieData[pathLoadoutIcons] = `{"21": {"hash": 21, "index": 0, "redacted": true}}`
+				f.bungie.Data[bungietest.PathLoadoutIcons] = `{"21": {"hash": 21, "index": 0, "redacted": true}}`
 			},
 			in:   SaveLoadoutInput{Character: "hunter", Number: 1},
 			want: "loadout icons unavailable: the table holds no entry that the game shows",
 		},
 		"manifest does not load": {
-			edit: func(f *fakes) { delete(f.bungieData, pathManifest) },
+			edit: func(f *fakes) { delete(f.bungie.Data, bungietest.PathManifest) },
 			in:   SaveLoadoutInput{Character: "hunter", Number: 1},
 			want: "loadout names unavailable: reading the Bungie manifest: bungie: ParameterParseFailure: no route",
 		},
@@ -5178,7 +5179,7 @@ func TestSaveLoadoutToolBungieError(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.bungieError = `{"ErrorCode": 1671, "ErrorStatus": "DestinyCannotPerformActionAtThisLocation", ` +
+	f.bungie.ActionError = `{"ErrorCode": 1671, "ErrorStatus": "DestinyCannotPerformActionAtThisLocation", ` +
 		`"Message": "Not here."}`
 
 	got, isError := call(t, f.h.handleSaveLoadout, SaveLoadoutInput{Character: "hunter", Number: 2, Name: "Trials"})
@@ -5189,7 +5190,7 @@ func TestSaveLoadoutToolBungieError(t *testing.T) {
 	requests := posts(f)
 	require.Len(t, requests, 1)
 	assert.Equal(t, pathSnapshot, requests[0].Path)
-	assert.Equal(t, snapshotBody(1, hunterID, 4, 2, 3), requests[0].Body)
+	assert.Equal(t, snapshotBody(1, bungietest.HunterID, 4, 2, 3), requests[0].Body)
 	assert.NotNil(t, f.h.snapshot, "a save that Bungie refused keeps the snapshot")
 }
 
@@ -5213,7 +5214,7 @@ func TestClearLoadoutTool(t *testing.T) {
 				"The inventory does not hold these loadout items: 9999.",
 			wantBody: map[string]any{
 				"loadoutIndex":   float64(2),
-				"characterId":    hunterID,
+				"characterId":    bungietest.HunterID,
 				"membershipType": float64(3),
 			},
 			wantList: hunterList + "Loadout 2: Raid Night\n" + hunterLoadoutRows(2, true),
@@ -5223,7 +5224,7 @@ func TestClearLoadoutTool(t *testing.T) {
 			want: "Cleared loadout 2 on Hunter, which held Fatebringer (1006), Celestial Nighthawk (1004).",
 			wantBody: map[string]any{
 				"loadoutIndex":   float64(1),
-				"characterId":    hunterID,
+				"characterId":    bungietest.HunterID,
 				"membershipType": float64(3),
 			},
 			wantList: hunterList + "Loadout 3: Trials\n" + hunterLoadoutRows(3, false),
@@ -5246,7 +5247,7 @@ func TestClearLoadoutTool(t *testing.T) {
 			want: "Cleared loadout 1 on Titan. The inventory does not hold these loadout items: 8001, 8002.",
 			wantBody: map[string]any{
 				"loadoutIndex":   float64(0),
-				"characterId":    titanID,
+				"characterId":    bungietest.TitanID,
 				"membershipType": float64(3),
 			},
 			wantList: loadoutsIntro + "\n\nTitan (id c2): no saved loadouts",
@@ -5258,7 +5259,7 @@ func TestClearLoadoutTool(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.profileBody = tc.profile
+			f.bungie.ProfileBody = tc.profile
 
 			got, isError := call(t, f.h.handleClearLoadout, tc.in)
 			assert.False(t, isError)
@@ -5311,7 +5312,7 @@ func TestClearLoadoutToolErrors(t *testing.T) {
 			wantPosts: 1,
 			wantBody: map[string]any{
 				"loadoutIndex":   float64(1),
-				"characterId":    hunterID,
+				"characterId":    bungietest.HunterID,
 				"membershipType": float64(3),
 			},
 		},
@@ -5322,7 +5323,7 @@ func TestClearLoadoutToolErrors(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.bungieError = tc.bungieError
+			f.bungie.ActionError = tc.bungieError
 
 			got, isError := call(t, f.h.handleClearLoadout, tc.in)
 			assert.True(t, isError)
@@ -5699,7 +5700,7 @@ func TestListAutotagRules(t *testing.T) {
 	}
 }
 
-// The items that the profile of newItemsProfile adds to fixtureProfile.
+// The items that the profile of newItemsProfile adds to bungietest.ProfileJSON.
 // Each has an instance id above the stored mark of the fixture autotag
 // body. The Hunter gains a copy of Fatebringer, Thorn, and Wormhusk Crown.
 // No other item shares the name of Thorn or Wormhusk Crown. The vault
@@ -5722,12 +5723,12 @@ const boundFatebringer = `{"itemHash": 100, "itemInstanceId": "1009", "lockable"
 	`"location": 1, "bucketHash": 1498876634, "transferStatus": 2}`
 
 // newItemsProfile returns a Bungie profile response body that adds items
-// to fixtureProfile. Held holds the JSON items that the inventory of the
-// Hunter gains, and vault holds the JSON items that the vault gains.
+// to bungietest.ProfileJSON. Held holds the JSON items that the inventory of
+// the Hunter gains, and vault holds the JSON items that the vault gains.
 func newItemsProfile(t *testing.T, held, vault []string) string {
 	t.Helper()
 
-	body := fixtureProfile
+	body := bungietest.ProfileJSON
 
 	for marker, items := range map[string][]string{
 		"\"characterInventories\": {\"data\": {\n\t\t\"c1\": {\"items\": [": held,
@@ -6085,9 +6086,9 @@ func TestListAutotagRulesNew(t *testing.T) {
 			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 			require.False(t, isError)
 
-			f.profileBody = tc.profile
-			if f.profileBody == "" {
-				f.profileBody = newItemsProfile(t, held, nil)
+			f.bungie.ProfileBody = tc.profile
+			if f.bungie.ProfileBody == "" {
+				f.bungie.ProfileBody = newItemsProfile(t, held, nil)
 			}
 
 			matches := tc.matches
@@ -6658,9 +6659,9 @@ func TestRunAutotagRules(t *testing.T) {
 			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 			require.False(t, isError)
 
-			f.profileBody = tc.profile
-			if f.profileBody == "" {
-				f.profileBody = newItemsProfile(t, tc.held, nil)
+			f.bungie.ProfileBody = tc.profile
+			if f.bungie.ProfileBody == "" {
+				f.bungie.ProfileBody = newItemsProfile(t, tc.held, nil)
 			}
 
 			got, isError := call(t, f.h.handleRunAutotagRules, EmptyInput{})
@@ -6738,7 +6739,7 @@ func TestRunAutotagRulesVault(t *testing.T) {
 		postmasterThorn = `{"itemHash": 103, "itemInstanceId": "1008", "lockable": true, "quantity": 1, ` +
 			`"location": 4, "bucketHash": 215593132, "transferStatus": 0}`
 		// equipmentMarker opens the equipment of the Hunter in
-		// fixtureProfile.
+		// bungietest.ProfileJSON.
 		equipmentMarker = "\"characterEquipment\": {\"data\": {\n\t\t\"c1\": {\"items\": ["
 	)
 
@@ -6869,8 +6870,8 @@ func TestRunAutotagRulesVault(t *testing.T) {
 			autotag: weaponJunk,
 			held:    []string{newFatebringer, newThorn},
 			setup: func(f *fakes) {
-				f.bungieError = goneError
-				f.bungieErrorIf = func(body map[string]any) bool { return body["itemId"] == "1007" }
+				f.bungie.ActionError = goneError
+				f.bungie.ActionErrorIf = func(body map[string]any) bool { return body["itemId"] == "1007" }
 			},
 			newest: "00000000000000001008",
 			want: []string{
@@ -6892,8 +6893,8 @@ func TestRunAutotagRulesVault(t *testing.T) {
 			autotag: weaponJunk,
 			held:    []string{newFatebringer, newThorn, boundFatebringer},
 			setup: func(f *fakes) {
-				f.bungieError = goneError
-				f.bungieErrorIf = func(body map[string]any) bool { return body["itemId"] == "1007" }
+				f.bungie.ActionError = goneError
+				f.bungie.ActionErrorIf = func(body map[string]any) bool { return body["itemId"] == "1007" }
 			},
 			newest: "00000000000000001009",
 			want: []string{
@@ -6917,7 +6918,7 @@ func TestRunAutotagRulesVault(t *testing.T) {
 		"a failed transfer alone": {
 			autotag: weaponJunk,
 			held:    []string{newThorn},
-			setup:   func(f *fakes) { f.bungieError = goneError },
+			setup:   func(f *fakes) { f.bungie.ActionError = goneError },
 			newest:  "00000000000000001008",
 			want: []string{
 				claimed, "",
@@ -6936,8 +6937,8 @@ func TestRunAutotagRulesVault(t *testing.T) {
 			autotag: weaponJunk,
 			held:    []string{postmasterThorn},
 			setup: func(f *fakes) {
-				f.bungieError = goneError
-				f.bungieErrorIf = func(body map[string]any) bool {
+				f.bungie.ActionError = goneError
+				f.bungie.ActionErrorIf = func(body map[string]any) bool {
 					_, ok := body["transferToVault"]
 
 					return ok
@@ -7086,18 +7087,18 @@ func TestRunAutotagRulesVault(t *testing.T) {
 			_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 			require.False(t, isError)
 
-			f.profileBody = newItemsProfile(t, tc.held, nil)
+			f.bungie.ProfileBody = newItemsProfile(t, tc.held, nil)
 			if len(tc.equipped) > 0 {
-				require.Equal(t, 1, strings.Count(f.profileBody, equipmentMarker))
+				require.Equal(t, 1, strings.Count(f.bungie.ProfileBody, equipmentMarker))
 
-				f.profileBody = strings.Replace(f.profileBody, equipmentMarker,
+				f.bungie.ProfileBody = strings.Replace(f.bungie.ProfileBody, equipmentMarker,
 					equipmentMarker+"\n"+strings.Join(tc.equipped, ",\n")+",", 1)
 			}
 
 			// The clock moves 10 seconds with each Bungie action, so the
 			// fetch time tells a snapshot that a move changed from a
 			// fresh one.
-			f.h.now = func() time.Time { return fixtureNow.Add(time.Duration(len(bungiePosts(f))) * 10 * time.Second) }
+			f.h.now = func() time.Time { return bungietest.Now.Add(time.Duration(len(bungiePosts(f))) * 10 * time.Second) }
 
 			// writesAtMove holds the service writes that the fake service
 			// had received when each Bungie action arrived.
@@ -7106,7 +7107,7 @@ func TestRunAutotagRulesVault(t *testing.T) {
 				writesAtMove [][]string
 			)
 
-			f.bungiePost = func() {
+			f.bungie.OnAction = func() {
 				writes := serviceWrites(f)
 
 				mu.Lock()
@@ -7166,7 +7167,7 @@ func TestRunAutotagRulesVault(t *testing.T) {
 				assert.Equal(t, want, f.h.snapshot.LocationLabel(items[0]), id)
 			}
 
-			fetched := fixtureNow
+			fetched := bungietest.Now
 			if tc.moved {
 				fetched = f.h.now()
 			}
@@ -7203,7 +7204,7 @@ func TestListAutotagRulesReadErrors(t *testing.T) {
 		},
 		"the profile": {
 			setup: func(f *fakes) {
-				f.profileBody = `{"ErrorCode": 5, "ErrorStatus": "SystemDisabled", "Message": "down"}`
+				f.bungie.ProfileBody = `{"ErrorCode": 5, "ErrorStatus": "SystemDisabled", "Message": "down"}`
 			},
 			baseline: listItems,
 		},
@@ -7460,7 +7461,7 @@ func TestListAutotagRulesOwned(t *testing.T) {
 
 			f := newFakes(t)
 			f.serviceData[pathAutotag] = tc.autotag
-			f.profileBody = tc.profile
+			f.bungie.ProfileBody = tc.profile
 
 			if tc.sheet {
 				withAegisSheet(f)
@@ -7927,7 +7928,7 @@ func TestSaveAutotagRuleReport(t *testing.T) {
 	require.Positive(t, weapons)
 
 	down := newFakes(t)
-	down.profileBody = bungieDown
+	down.bungie.ProfileBody = bungieDown
 
 	readErr, isError := call(t, down.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon"})
 	require.True(t, isError)
@@ -8011,7 +8012,7 @@ func TestSaveAutotagRuleReport(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.profileBody = tc.profile
+			f.bungie.ProfileBody = tc.profile
 
 			got, isError := call(t, f.h.handleSaveAutotagRule, tc.in)
 			assert.Equal(t, tc.isError, isError)
@@ -8336,7 +8337,7 @@ func TestPreviewPaging(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.profileBody = tc.profile
+			f.bungie.ProfileBody = tc.profile
 
 			got, isError := call(t, f.h.handlePreviewAutotagRule, tc.in)
 			assert.False(t, isError)
@@ -8453,7 +8454,7 @@ func TestPreviewDupe(t *testing.T) {
 	// holds the other copy. Midnight Coup has one copy. The helmets are a
 	// pair of armor pieces, so is:weapon leaves them out.
 	f := newFakes(t)
-	f.profileBody = `{"ErrorCode": 1, "Response": {
+	f.bungie.ProfileBody = `{"ErrorCode": 1, "Response": {
 		"characters": {"data": {
 			"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
 		}},
@@ -8493,7 +8494,7 @@ func TestPreviewDupeGroupsBuiltItems(t *testing.T) {
 		ClassType:  bungie.ClassAny,
 		Equippable: true,
 	}
-	f.profileBody = `{"ErrorCode": 1, "Response": {
+	f.bungie.ProfileBody = `{"ErrorCode": 1, "Response": {
 		"characters": {"data": {
 			"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
 		}},
@@ -8541,7 +8542,7 @@ func inventoryFieldFakes(t *testing.T) *fakes {
 		defs.Items[hash] = def
 	}
 
-	f.profileBody = `{"ErrorCode": 1, "Response": {
+	f.bungie.ProfileBody = `{"ErrorCode": 1, "Response": {
 		"characters": {"data": {
 			"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
 		}},
@@ -8714,7 +8715,7 @@ func TestPreviewNoCharacter(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.profileBody = `{"ErrorCode": 1, "Response": {
+	f.bungie.ProfileBody = `{"ErrorCode": 1, "Response": {
 		"profileInventory": {"data": {"items": [
 			{"itemHash": 100, "itemInstanceId": "1001", "quantity": 1, "location": 2, "bucketHash": 138197802}
 		]}},
@@ -8731,7 +8732,7 @@ func TestPreviewProfileError(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.profileBody = `{"ErrorCode": 5, "ErrorStatus": "SystemDisabled", "Message": "down"}`
+	f.bungie.ProfileBody = `{"ErrorCode": 5, "ErrorStatus": "SystemDisabled", "Message": "down"}`
 
 	want, isError := call(t, f.h.handleListItems, ListItemsInput{})
 	require.True(t, isError)
@@ -8917,8 +8918,8 @@ func withUnbuiltHelmet(f *fakes, listed bool) {
 
 	held := `{"itemHash": 201, "itemInstanceId": "1007", "lockable": true, "quantity": 1, ` +
 		`"location": 1, "bucketHash": 3448274439}, `
-	f.profileBody = `{"ErrorCode": 1, "Response": ` +
-		strings.Replace(fixtureProfile, `"c1": {"items": [`, `"c1": {"items": [`+held, 1) + `}`
+	f.bungie.ProfileBody = `{"ErrorCode": 1, "Response": ` +
+		strings.Replace(bungietest.ProfileJSON, `"c1": {"items": [`, `"c1": {"items": [`+held, 1) + `}`
 }
 
 func TestPreviewLeavesOutUnbuilt(t *testing.T) {
@@ -9030,7 +9031,7 @@ func TestPreviewRatingModeMissing(t *testing.T) {
 			f := newFakes(t)
 			f.artifactFiles = tc.files
 			f.serviceData["/artifacts/rolls.a.json"] = previewAegisSheet
-			f.profileBody = tc.profile
+			f.bungie.ProfileBody = tc.profile
 
 			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
 			assert.Equal(t, tc.want != "", isError, got)
@@ -9140,7 +9141,7 @@ func TestSaveAutotagRuleLeavesOutUnbuilt(t *testing.T) {
 			withUnbuiltHelmet(f, false)
 
 			if tc.profile != "" {
-				f.profileBody = tc.profile
+				f.bungie.ProfileBody = tc.profile
 			}
 
 			got, isError := saveJunkRule(t, f, tc.query)
@@ -9314,12 +9315,12 @@ const statsGapNote = "The web client records changes only while it is open in a 
 	"so the current bucket and every bucket that it has not posted yet are missing."
 
 // statsFixture returns an /api/stats page of changes from the day before
-// fixtureNow.
+// bungietest.Now.
 func statsFixture(t *testing.T) string {
 	t.Helper()
 
 	ago := func(hours float64) int64 {
-		return fixtureNow.Add(-time.Duration(hours * float64(time.Hour))).UnixMilli()
+		return bungietest.Now.Add(-time.Duration(hours * float64(time.Hour))).UnixMilli()
 	}
 
 	change := func(kind string, hash uint32, hours float64, before, after int) map[string]any {
@@ -9346,19 +9347,19 @@ func statsFixture(t *testing.T) string {
 	return statPageJSON(t, false,
 		testChunk{startsAt: 0, updatedAt: 1, changes: []map[string]any{
 			// Before the lookback of the period.
-			change("currency", itemGlimmer, 30, 0, 1_000),
-			change("currency", itemGlimmer, 23, 1_000, 2_000),
-			change("currency", itemGlimmer, 22, 2_000, 1_500),
-			kills("9999", 102, trackerGambit, 6, 0, 20),
-			kills("1001", 100, trackerPvE, 5, 100, 110),
+			change("currency", bungietest.ItemGlimmer, 30, 0, 1_000),
+			change("currency", bungietest.ItemGlimmer, 23, 1_000, 2_000),
+			change("currency", bungietest.ItemGlimmer, 22, 2_000, 1_500),
+			kills("9999", 102, bungietest.TrackerGambit, 6, 0, 20),
+			kills("1001", 100, bungietest.TrackerPvE, 5, 100, 110),
 		}},
 		testChunk{startsAt: 300_000, updatedAt: 2, changes: []map[string]any{
 			// A stale recorder logged the gain from 1000.
-			change("currency", itemGlimmer, 21, 1_000, 1_700),
+			change("currency", bungietest.ItemGlimmer, 21, 1_000, 1_700),
 			change("stack", 300, 4, 40, 52),
-			kills("1001", 100, trackerPvP, 4, 7, 9),
+			kills("1001", 100, bungietest.TrackerPvP, 4, 7, 9),
 			change("currency", 77, 3, 3, 5),
-			change("currency", itemBrightDust, 2, 1_500, 1_400),
+			change("currency", bungietest.ItemBrightDust, 2, 1_500, 1_400),
 			{
 				"kind":       "item",
 				"instanceId": "1007",
@@ -9400,7 +9401,7 @@ func TestGetStats(t *testing.T) {
 	reads := f.service.Calls(http.MethodGet, pathStats)
 	require.Len(t, reads, 1)
 	assert.Equal(t, "Bearer session-1", reads[0].Auth)
-	assert.Equal(t, fmt.Sprintf("since=%d&after=0", fixtureNow.Add(-27*time.Hour).UnixMilli()), reads[0].Query)
+	assert.Equal(t, fmt.Sprintf("since=%d&after=0", bungietest.Now.Add(-27*time.Hour).UnixMilli()), reads[0].Query)
 	assert.Empty(t, f.bungie.All())
 }
 
@@ -9422,7 +9423,7 @@ func TestGetStatsPeriods(t *testing.T) {
 		},
 		"7d": {
 			period:    "7d",
-			wantQuery: fmt.Sprintf("since=%d&after=0", fixtureNow.Add(-7*24*time.Hour-3*time.Hour).UnixMilli()),
+			wantQuery: fmt.Sprintf("since=%d&after=0", bungietest.Now.Add(-7*24*time.Hour-3*time.Hour).UnixMilli()),
 			want: []string{
 				"Period: Last 7 days, 2026-11-05 12:00 UTC to 2026-11-12 12:00 UTC.",
 				"Glimmer | currency | 3159615086 | +1700 | 2200 | 500",

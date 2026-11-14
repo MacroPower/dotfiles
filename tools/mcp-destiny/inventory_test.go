@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 func ids(items []*Item) []string {
@@ -29,7 +30,7 @@ func TestNewSnapshot(t *testing.T) {
 	s := fixtureSnapshot(t)
 
 	require.Len(t, s.Characters, 2)
-	assert.Equal(t, hunterID, s.Characters[0].ID, "most recently played character comes first")
+	assert.Equal(t, bungietest.HunterID, s.Characters[0].ID, "most recently played character comes first")
 	assert.Equal(t, "Hunter", s.Characters[0].Class)
 	assert.Equal(t, "Titan", s.Characters[1].Class)
 
@@ -201,16 +202,16 @@ func TestSlotsUsed(t *testing.T) {
 	}{
 		"equipped items take slots": {
 			bucket: bungie.BucketKinetic,
-			owner:  hunterID,
+			owner:  bungietest.HunterID,
 			want:   2,
 		},
 		"another character": {
 			bucket: bungie.BucketKinetic,
-			owner:  titanID,
+			owner:  bungietest.TitanID,
 		},
 		"postmaster": {
 			bucket: bungie.BucketPostmaster,
-			owner:  hunterID,
+			owner:  bungietest.HunterID,
 			want:   1,
 		},
 		"messages take no Postmaster slot": {
@@ -219,24 +220,24 @@ func TestSlotsUsed(t *testing.T) {
 				{Hash: 300, Quantity: 2, Location: bungie.ItemLocationPostmaster, BucketHash: bungie.BucketMessages},
 			},
 			bucket: bungie.BucketPostmaster,
-			owner:  hunterID,
+			owner:  bungietest.HunterID,
 			want:   1,
 		},
 		"vault ignores the owner": {
 			bucket: bungie.BucketVault,
-			owner:  hunterID,
+			owner:  bungietest.HunterID,
 			want:   2,
 		},
 		"account bucket counts stacks": {
 			bucket: bungie.BucketConsumables,
-			owner:  hunterID,
+			owner:  bungietest.HunterID,
 			want:   1,
 		},
 		"move to the vault frees the slot": {
 			move:   "1003",
 			target: ownerVault,
 			bucket: bungie.BucketKinetic,
-			owner:  hunterID,
+			owner:  bungietest.HunterID,
 			want:   1,
 		},
 		"move to the vault takes a vault slot": {
@@ -247,15 +248,15 @@ func TestSlotsUsed(t *testing.T) {
 		},
 		"pull frees the Postmaster slot": {
 			move:   "1005",
-			target: hunterID,
+			target: bungietest.HunterID,
 			bucket: bungie.BucketPostmaster,
-			owner:  hunterID,
+			owner:  bungietest.HunterID,
 		},
 		"pulled item takes a slot of its bucket": {
 			move:   "1005",
-			target: hunterID,
+			target: bungietest.HunterID,
 			bucket: bungie.BucketKinetic,
-			owner:  hunterID,
+			owner:  bungietest.HunterID,
 			want:   3,
 		},
 	}
@@ -266,13 +267,13 @@ func TestSlotsUsed(t *testing.T) {
 
 			var profile Profile
 
-			require.NoError(t, json.Unmarshal([]byte(fixtureProfile), &profile))
+			require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
 
-			hunter := profile.CharacterInventories.Data[hunterID]
+			hunter := profile.CharacterInventories.Data[bungietest.HunterID]
 			hunter.Items = append(hunter.Items, tc.extra...)
-			profile.CharacterInventories.Data[hunterID] = hunter
+			profile.CharacterInventories.Data[bungietest.HunterID] = hunter
 
-			s := NewSnapshot(&profile, fixtureDefs(), fixtureNow)
+			s := NewSnapshot(&profile, fixtureDefs(), bungietest.Now)
 
 			if tc.move != "" {
 				item, ok := s.Find(tc.move)
@@ -616,7 +617,7 @@ func TestResolveOwner(t *testing.T) {
 	}{
 		"vault":            {name: "VAULT", want: ownerVault},
 		"character id":     {name: "c2", want: "c2"},
-		"unique class":     {name: "Hunter", want: hunterID},
+		"unique class":     {name: "Hunter", want: bungietest.HunterID},
 		"ambiguous class":  {name: "titan", err: ErrUnknownTarget},
 		"unknown location": {name: "tower", err: ErrUnknownTarget},
 	}
@@ -651,13 +652,13 @@ func TestResolveCharacter(t *testing.T) {
 	// empty name must follow the play time and not the id.
 	var profile Profile
 
-	require.NoError(t, json.Unmarshal([]byte(fixtureProfile), &profile))
+	require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
 
-	titan := profile.Characters.Data[titanID]
-	titan.LastPlayed = fixtureNow
-	profile.Characters.Data[titanID] = titan
+	titan := profile.Characters.Data[bungietest.TitanID]
+	titan.LastPlayed = bungietest.Now
+	profile.Characters.Data[bungietest.TitanID] = titan
 
-	titanLast := NewSnapshot(&profile, fixtureDefs(), fixtureNow)
+	titanLast := NewSnapshot(&profile, fixtureDefs(), bungietest.Now)
 
 	tests := map[string]struct {
 		err      error
@@ -665,10 +666,10 @@ func TestResolveCharacter(t *testing.T) {
 		name     string
 		want     string
 	}{
-		"character id":                {snapshot: s, name: "c2", want: titanID},
-		"unique class":                {snapshot: s, name: "HUNTER", want: hunterID},
-		"most recently played hunter": {snapshot: s, name: "", want: hunterID},
-		"most recently played titan":  {snapshot: titanLast, name: "", want: titanID},
+		"character id":                {snapshot: s, name: "c2", want: bungietest.TitanID},
+		"unique class":                {snapshot: s, name: "HUNTER", want: bungietest.HunterID},
+		"most recently played hunter": {snapshot: s, name: "", want: bungietest.HunterID},
+		"most recently played titan":  {snapshot: titanLast, name: "", want: bungietest.TitanID},
 		"vault":                       {snapshot: s, name: "Vault", err: ErrUnknownTarget},
 		"unknown name":                {snapshot: s, name: "tower", err: ErrUnknownTarget},
 		"shared class":                {snapshot: shared, name: "titan", err: ErrUnknownTarget},
@@ -983,7 +984,7 @@ func instanceItem(t *testing.T, defs *Defs, hash, bucket uint32, instance string
 
 	require.NoError(t, json.Unmarshal([]byte(body), &p))
 
-	item, ok := NewSnapshot(&p, defs, fixtureNow).Find("1")
+	item, ok := NewSnapshot(&p, defs, bungietest.Now).Find("1")
 	require.True(t, ok)
 
 	return item

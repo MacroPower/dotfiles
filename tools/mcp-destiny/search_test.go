@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 // compiled parses and compiles query, which must parse.
@@ -110,7 +111,7 @@ func TestOwnedItems(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 
-	s := NewSnapshot(&p, defs, fixtureNow)
+	s := NewSnapshot(&p, defs, bungietest.Now)
 	built := builtItems(s)
 	owned := ownedItems(s)
 
@@ -215,7 +216,7 @@ func TestCompileQueryTableA(t *testing.T) {
 			items: []*Item{
 				{InstanceID: "vault", Owner: ownerVault},
 				{InstanceID: "account", Owner: ownerAccount},
-				{InstanceID: "character", Owner: hunterID},
+				{InstanceID: "character", Owner: bungietest.HunterID},
 			},
 			want: []string{"vault"},
 		},
@@ -1016,15 +1017,15 @@ func TestCurrentCharacter(t *testing.T) {
 	t.Parallel()
 
 	ctx := searchContext{
-		current: Character{ID: hunterID, ClassType: bungie.ClassHunter},
+		current: Character{ID: bungietest.HunterID, ClassType: bungie.ClassHunter},
 		items: []*Item{
-			{InstanceID: "hunter armor", Owner: hunterID, ClassType: bungie.ClassHunter},
-			{InstanceID: "hunter weapon", Owner: hunterID, ClassType: bungie.ClassAny},
+			{InstanceID: "hunter armor", Owner: bungietest.HunterID, ClassType: bungie.ClassHunter},
+			{InstanceID: "hunter weapon", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
 			{InstanceID: "account", Owner: ownerAccount, ClassType: bungie.ClassAny},
 			{InstanceID: "vault armor", Owner: ownerVault, ClassType: bungie.ClassHunter},
 			{InstanceID: "vault weapon", Owner: ownerVault, ClassType: bungie.ClassAny},
-			{InstanceID: "titan armor", Owner: titanID, ClassType: bungie.ClassTitan},
-			{InstanceID: "titan holds hunter armor", Owner: titanID, ClassType: bungie.ClassHunter},
+			{InstanceID: "titan armor", Owner: bungietest.TitanID, ClassType: bungie.ClassTitan},
+			{InstanceID: "titan holds hunter armor", Owner: bungietest.TitanID, ClassType: bungie.ClassHunter},
 		},
 	}
 
@@ -1417,7 +1418,7 @@ func weaponTypeItems(t *testing.T) []*Item {
 
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 
-	owned := ownedItems(NewSnapshot(&p, defs, fixtureNow))
+	owned := ownedItems(NewSnapshot(&p, defs, bungietest.Now))
 	require.Len(t, owned, 11)
 
 	return owned
@@ -2198,7 +2199,14 @@ func verdictContext() searchContext {
 	}
 
 	weapon := func(id string, hash uint32, perks []Perk) *Item {
-		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketKinetic, Owner: hunterID, Perks: perks}
+		return &Item{
+			InstanceID: id,
+			Name:       id,
+			Hash:       hash,
+			Bucket:     bungie.BucketKinetic,
+			Owner:      bungietest.HunterID,
+			Perks:      perks,
+		}
 	}
 
 	best := weapon("best", 100, hitting(true, true))
@@ -2257,14 +2265,14 @@ func TestVerdictRivals(t *testing.T) {
 		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketKinetic, Owner: owner, Perks: perks}
 	}
 
-	stack := weapon("", 300, hunterID, hitting(true, true))
+	stack := weapon("", 300, bungietest.HunterID, hitting(true, true))
 	ctx := searchContext{
 		items: []*Item{
-			weapon("original", 300, hunterID, hitting(true, false)),
+			weapon("original", 300, bungietest.HunterID, hitting(true, false)),
 			weapon("reissue", 301, ownerVault, hitting(true, true)),
-			weapon("unrelated", 302, hunterID, hitting(true, true)),
-			weapon("listed", 310, hunterID, hitting(true, false)),
-			weapon("unrated", 311, hunterID, hitting(true, true)),
+			weapon("unrelated", 302, bungietest.HunterID, hitting(true, true)),
+			weapon("listed", 310, bungietest.HunterID, hitting(true, false)),
+			weapon("unrated", 311, bungietest.HunterID, hitting(true, true)),
 			stack,
 		},
 		sources: map[string]RatingSource{modePvE: {Sheet: sheet, Defs: &Defs{}}},
@@ -3001,7 +3009,7 @@ func setSnapshot(t *testing.T, listed bool, sets map[uint32][]uint32) *Snapshot 
 
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 
-	return NewSnapshot(&p, defs, fixtureNow)
+	return NewSnapshot(&p, defs, bungietest.Now)
 }
 
 func TestBuiltItemsWithoutArtifact(t *testing.T) {

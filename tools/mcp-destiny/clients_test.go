@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
 
@@ -299,7 +300,7 @@ func TestServiceStats(t *testing.T) {
 	glimmer := func(at, before, after int64) map[string]any {
 		return map[string]any{
 			"kind":     "currency",
-			"itemHash": itemGlimmer,
+			"itemHash": bungietest.ItemGlimmer,
 			"from":     at - 15_000,
 			"at":       at,
 			"before":   before,
@@ -312,7 +313,7 @@ func TestServiceStats(t *testing.T) {
 		"kind":        "item",
 		"instanceId":  "1001",
 		"itemHash":    100,
-		"characterId": hunterID,
+		"characterId": bungietest.HunterID,
 		"bucketHash":  bungie.BucketKinetic,
 		"added":       true,
 		"from":        285_000,
@@ -358,10 +359,24 @@ func TestServiceStats(t *testing.T) {
 			wantQueries: []string{"since=0&after=0"},
 			want: []StatChunk{
 				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []StatChange{
-					{Kind: "currency", ItemHash: itemGlimmer, From: 295_000, At: 310_000, Before: 1_000, After: 2_000},
+					{
+						Kind:     "currency",
+						ItemHash: bungietest.ItemGlimmer,
+						From:     295_000,
+						At:       310_000,
+						Before:   1_000,
+						After:    2_000,
+					},
 				}},
 				{StartsAt: 600_000, EndsAt: 900_000, UpdatedAt: 950_000, Changes: []StatChange{
-					{Kind: "currency", ItemHash: itemGlimmer, From: 595_000, At: 610_000, Before: 2_000, After: 1_500},
+					{
+						Kind:     "currency",
+						ItemHash: bungietest.ItemGlimmer,
+						From:     595_000,
+						At:       610_000,
+						Before:   2_000,
+						After:    1_500,
+					},
 				}},
 			},
 		},
@@ -370,7 +385,14 @@ func TestServiceStats(t *testing.T) {
 			wantQueries: []string{"since=0&after=0"},
 			want: []StatChunk{
 				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []StatChange{
-					{Kind: "currency", ItemHash: itemGlimmer, From: 295_000, At: 310_000, Before: 1_000, After: 2_000},
+					{
+						Kind:     "currency",
+						ItemHash: bungietest.ItemGlimmer,
+						From:     295_000,
+						At:       310_000,
+						Before:   1_000,
+						After:    2_000,
+					},
 				}},
 			},
 		},
@@ -382,11 +404,25 @@ func TestServiceStats(t *testing.T) {
 			wantQueries: []string{"since=0&after=0", "since=950000&after=600000"},
 			want: []StatChunk{
 				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 1_200_000, Changes: []StatChange{
-					{Kind: "currency", ItemHash: itemGlimmer, From: 295_000, At: 310_000, Before: 1_000, After: 2_000},
+					{
+						Kind:     "currency",
+						ItemHash: bungietest.ItemGlimmer,
+						From:     295_000,
+						At:       310_000,
+						Before:   1_000,
+						After:    2_000,
+					},
 					{Kind: "item", InstanceID: "1001", ItemHash: 100, From: 285_000, At: 300_000},
 				}},
 				{StartsAt: 600_000, EndsAt: 900_000, UpdatedAt: 950_000, Changes: []StatChange{
-					{Kind: "currency", ItemHash: itemGlimmer, From: 595_000, At: 610_000, Before: 2_000, After: 1_500},
+					{
+						Kind:     "currency",
+						ItemHash: bungietest.ItemGlimmer,
+						From:     595_000,
+						At:       610_000,
+						Before:   2_000,
+						After:    1_500,
+					},
 				}},
 			},
 		},
@@ -398,7 +434,14 @@ func TestServiceStats(t *testing.T) {
 			wantQueries: []string{"since=0&after=0", "since=900000&after=300000"},
 			want: []StatChunk{
 				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []StatChange{
-					{Kind: "currency", ItemHash: itemGlimmer, From: 295_000, At: 310_000, Before: 1_000, After: 2_000},
+					{
+						Kind:     "currency",
+						ItemHash: bungietest.ItemGlimmer,
+						From:     295_000,
+						At:       310_000,
+						Before:   1_000,
+						After:    2_000,
+					},
 				}},
 			},
 		},
@@ -605,7 +648,7 @@ func TestBungieProfile(t *testing.T) {
 
 		components = r.URL.Query().Get("components")
 
-		httpfake.WriteJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+fixtureProfile+`}`)
+		httpfake.WriteJSON(t, w, http.StatusOK, `{"ErrorCode": 1, "Response": `+bungietest.ProfileJSON+`}`)
 	}))
 	t.Cleanup(srv.Close)
 
@@ -615,12 +658,12 @@ func TestBungieProfile(t *testing.T) {
 
 	assert.Equal(t, "100,102,103,200,201,205,206,300,304,305,310", components)
 	assert.Equal(t, []ProfileItem{
-		{Hash: itemGlimmer, Quantity: 250000, Location: 1, BucketHash: 2689798308},
-		{Hash: itemBrightDust, Quantity: 1500, Location: 1, BucketHash: 2689798311},
+		{Hash: bungietest.ItemGlimmer, Quantity: 250000, Location: 1, BucketHash: 2689798308},
+		{Hash: bungietest.ItemBrightDust, Quantity: 1500, Location: 1, BucketHash: 2689798311},
 		{Hash: 77, Quantity: 3, Location: 1, BucketHash: 2689798305},
 	}, got.ProfileCurrencies.Data.Items)
 
-	loadouts := got.CharacterLoadouts.Data[titanID].Loadouts
+	loadouts := got.CharacterLoadouts.Data[bungietest.TitanID].Loadouts
 	require.Len(t, loadouts, 1)
 	assert.Equal(t, ProfileLoadout{
 		Items:     []ProfileLoadoutItem{{InstanceID: "1006"}},
@@ -638,12 +681,12 @@ func TestBungieManifest(t *testing.T) {
 		want map[string]string
 	}{
 		"English tables": {
-			body: fixtureManifest,
+			body: bungietest.ManifestJSON,
 			want: map[string]string{
 				"DestinyInventoryItemDefinition": "/common/destiny2_content/json/en/DestinyInventoryItemDefinition-a1.json",
-				string(loadoutNameTable):         pathLoadoutNames,
-				string(loadoutIconTable):         pathLoadoutIcons,
-				string(loadoutColorTable):        pathLoadoutColors,
+				string(loadoutNameTable):         bungietest.PathLoadoutNames,
+				string(loadoutIconTable):         bungietest.PathLoadoutIcons,
+				string(loadoutColorTable):        bungietest.PathLoadoutColors,
 			},
 		},
 		"no English tables": {
@@ -662,7 +705,7 @@ func TestBungieManifest(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 
-			calls := rec.Calls(http.MethodGet, pathManifest)
+			calls := rec.Calls(http.MethodGet, bungietest.PathManifest)
 			require.Len(t, calls, 1)
 			assert.Equal(t, "Bearer access", calls[0].Auth)
 		})
@@ -673,26 +716,26 @@ func TestBungieContent(t *testing.T) {
 	t.Parallel()
 
 	platform, platformRec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, `{"ErrorCode": 1, "Response": {}}`)
-	content, contentRec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, fixtureLoadoutNames)
+	content, contentRec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, bungietest.LoadoutNamesJSON)
 
 	b := NewBungie(WithBungieURL(platform), WithBungieContentURL(content+"/"))
 
-	body, err := b.Content(t.Context(), pathLoadoutNames)
+	body, err := b.Content(t.Context(), bungietest.PathLoadoutNames)
 	require.NoError(t, err)
 
 	raw, err := io.ReadAll(body)
 	require.NoError(t, err)
 	require.NoError(t, body.Close())
-	assert.JSONEq(t, fixtureLoadoutNames, string(raw))
+	assert.JSONEq(t, bungietest.LoadoutNamesJSON, string(raw))
 
-	calls := contentRec.Calls(http.MethodGet, pathLoadoutNames)
+	calls := contentRec.Calls(http.MethodGet, bungietest.PathLoadoutNames)
 	require.Len(t, calls, 1)
 	assert.Empty(t, calls[0].Auth, "a content request carries no access token")
 	assert.Empty(t, platformRec.All(), "a content request does not reach the platform base URL")
 
 	missing, _ := httpfake.Serve(t, defaultUserAgent, http.StatusNotFound, `{}`)
 
-	_, err = NewBungie(WithBungieContentURL(missing)).Content(t.Context(), pathLoadoutNames)
+	_, err = NewBungie(WithBungieContentURL(missing)).Content(t.Context(), bungietest.PathLoadoutNames)
 	require.ErrorIs(t, err, ErrBungie)
 	require.EqualError(t, err, "bungie: content file returned status 404")
 }
@@ -754,7 +797,7 @@ func TestCappedBody(t *testing.T) {
 				b := NewBungie(WithBungieContentURL("http://content.invalid"))
 				b.http = client
 
-				return b.Content(t.Context(), pathLoadoutNames)
+				return b.Content(t.Context(), bungietest.PathLoadoutNames)
 			},
 		},
 	}
@@ -808,19 +851,19 @@ func TestBungieVendors(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	b := NewBungie(WithBungieURL(srv.URL))
-	b.now = func() time.Time { return fixtureNow }
+	b.now = func() time.Time { return bungietest.Now }
 
 	vendors, err := b.Vendors(
 		t.Context(),
 		Credentials{APIKey: "key", AccessToken: "access"},
 		Membership{ID: "4611", Type: 3},
-		hunterID,
+		bungietest.HunterID,
 	)
 	require.NoError(t, err)
 
 	calls := rec.Calls(http.MethodGet, "/Destiny2/3/Profile/4611/Character/c1/Vendors/")
 	require.Len(t, calls, 1)
-	assert.Equal(t, "components=400,401,402&_="+strconv.FormatInt(fixtureNow.UnixMilli(), 10), calls[0].Query)
+	assert.Equal(t, "components=400,401,402&_="+strconv.FormatInt(bungietest.Now.UnixMilli(), 10), calls[0].Query)
 	assert.Equal(t, "Bearer access", calls[0].Auth)
 
 	assert.Equal(t, map[uint32]VendorComponent{
@@ -837,7 +880,7 @@ func TestBungieVendors(t *testing.T) {
 				Quantity:        1,
 				SaleStatus:      8,
 				FailureIndexes:  []int{1},
-				Costs:           []VendorCost{{ItemHash: itemGlimmer, Quantity: 50000}},
+				Costs:           []VendorCost{{ItemHash: bungietest.ItemGlimmer, Quantity: 50000}},
 			},
 		}},
 	}, vendors.Sales.Data)
@@ -871,7 +914,7 @@ func TestBungieActivities(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	b := NewBungie(WithBungieURL(srv.URL))
-	b.now = func() time.Time { return fixtureNow }
+	b.now = func() time.Time { return bungietest.Now }
 
 	got, err := b.Activities(
 		t.Context(),
@@ -882,7 +925,7 @@ func TestBungieActivities(t *testing.T) {
 
 	calls := rec.Calls(http.MethodGet, "/Destiny2/3/Profile/4611/")
 	require.Len(t, calls, 1)
-	assert.Equal(t, "components=204&_="+strconv.FormatInt(fixtureNow.UnixMilli(), 10), calls[0].Query)
+	assert.Equal(t, "components=204&_="+strconv.FormatInt(bungietest.Now.UnixMilli(), 10), calls[0].Query)
 	assert.Equal(t, "Bearer access", calls[0].Auth)
 
 	reward := func(style string, hash uint32, quantity int) ActivityRewardItem {
@@ -896,7 +939,7 @@ func TestBungieActivities(t *testing.T) {
 	require.Len(t, got, 1)
 
 	// A missing isVisible decodes as visible.
-	activities := got[hunterID].Available
+	activities := got[bungietest.HunterID].Available
 	assert.Equal(t, []AvailableActivity{
 		{
 			Hash:             10,
@@ -994,7 +1037,7 @@ func TestBungieActivityHistory(t *testing.T) {
 				t.Context(),
 				Credentials{APIKey: "key", AccessToken: "access"},
 				Membership{ID: "4611", Type: 3},
-				hunterID,
+				bungietest.HunterID,
 				25,
 				2,
 			)
@@ -1099,7 +1142,7 @@ func TestBungieActions(t *testing.T) {
 	action := ItemAction{
 		InstanceID:  "1001",
 		ItemHash:    100,
-		CharacterID: hunterID,
+		CharacterID: bungietest.HunterID,
 		Membership:  Membership{ID: "4611", Type: 3},
 	}
 
@@ -1110,17 +1153,17 @@ func TestBungieActions(t *testing.T) {
 	require.NoError(t, b.SetLockState(t.Context(), creds, action, false))
 	require.NoError(t, b.InsertSocketPlugFree(t.Context(), creds, action, 3, 903))
 	require.NoError(t, b.EquipLoadout(t.Context(), creds, LoadoutAction{
-		CharacterID: hunterID,
+		CharacterID: bungietest.HunterID,
 		Membership:  action.Membership,
 		Index:       2,
 	}))
 	require.NoError(t, b.SnapshotLoadout(t.Context(), creds, LoadoutAction{
-		CharacterID: hunterID,
+		CharacterID: bungietest.HunterID,
 		Membership:  action.Membership,
 		Index:       1,
 	}, LoadoutIdentifiers{NameHash: 4, IconHash: 20, ColorHash: 31}))
 	require.NoError(t, b.ClearLoadout(t.Context(), creds, LoadoutAction{
-		CharacterID: titanID,
+		CharacterID: bungietest.TitanID,
 		Membership:  action.Membership,
 		Index:       0,
 	}))
@@ -1132,7 +1175,7 @@ func TestBungieActions(t *testing.T) {
 		"stackSize":         float64(1),
 		"transferToVault":   true,
 		"itemId":            "1001",
-		"characterId":       hunterID,
+		"characterId":       bungietest.HunterID,
 		"membershipType":    float64(3),
 	}, transfer[0].Body)
 
@@ -1140,7 +1183,7 @@ func TestBungieActions(t *testing.T) {
 	require.Len(t, equip, 1)
 	assert.Equal(t, map[string]any{
 		"itemId":         "1001",
-		"characterId":    hunterID,
+		"characterId":    bungietest.HunterID,
 		"membershipType": float64(3),
 	}, equip[0].Body)
 
@@ -1150,7 +1193,7 @@ func TestBungieActions(t *testing.T) {
 		"itemReferenceHash": float64(100),
 		"stackSize":         float64(1),
 		"itemId":            "1001",
-		"characterId":       hunterID,
+		"characterId":       bungietest.HunterID,
 		"membershipType":    float64(3),
 	}, pull[0].Body)
 
@@ -1159,7 +1202,7 @@ func TestBungieActions(t *testing.T) {
 	assert.Equal(t, map[string]any{
 		"state":          true,
 		"itemId":         "1001",
-		"characterId":    hunterID,
+		"characterId":    bungietest.HunterID,
 		"membershipType": float64(3),
 	}, locks[0].Body)
 	assert.Equal(t, false, locks[1].Body["state"])
@@ -1173,7 +1216,7 @@ func TestBungieActions(t *testing.T) {
 			"plugItemHash":    float64(903),
 		},
 		"itemId":         "1001",
-		"characterId":    hunterID,
+		"characterId":    bungietest.HunterID,
 		"membershipType": float64(3),
 	}, inserts[0].Body)
 
@@ -1181,7 +1224,7 @@ func TestBungieActions(t *testing.T) {
 	require.Len(t, loadouts, 1)
 	assert.Equal(t, map[string]any{
 		"loadoutIndex":   float64(2),
-		"characterId":    hunterID,
+		"characterId":    bungietest.HunterID,
 		"membershipType": float64(3),
 	}, loadouts[0].Body)
 
@@ -1189,7 +1232,7 @@ func TestBungieActions(t *testing.T) {
 	require.Len(t, snapshots, 1)
 	assert.Equal(t, map[string]any{
 		"loadoutIndex":   float64(1),
-		"characterId":    hunterID,
+		"characterId":    bungietest.HunterID,
 		"membershipType": float64(3),
 		"nameHash":       float64(4),
 		"iconHash":       float64(20),
@@ -1200,7 +1243,7 @@ func TestBungieActions(t *testing.T) {
 	require.Len(t, clears, 1)
 	assert.Equal(t, map[string]any{
 		"loadoutIndex":   float64(0),
-		"characterId":    titanID,
+		"characterId":    bungietest.TitanID,
 		"membershipType": float64(3),
 	}, clears[0].Body)
 }

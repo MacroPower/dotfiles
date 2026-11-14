@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 var errStep = errors.New("step refused")
@@ -79,9 +80,9 @@ func TestMove(t *testing.T) {
 	}{
 		"vault to character": {
 			id:        "1001",
-			target:    titanID,
+			target:    bungietest.TitanID,
 			want:      []string{"from vault to c2"},
-			wantOwner: titanID,
+			wantOwner: bungietest.TitanID,
 		},
 		"character to vault": {
 			id:        "1003",
@@ -91,9 +92,9 @@ func TestMove(t *testing.T) {
 		},
 		"character to character passes through the vault": {
 			id:        "1003",
-			target:    titanID,
+			target:    bungietest.TitanID,
 			want:      []string{"to vault from c1", "from vault to c2"},
-			wantOwner: titanID,
+			wantOwner: bungietest.TitanID,
 		},
 		"already at the target": {
 			id:        "1001",
@@ -108,22 +109,22 @@ func TestMove(t *testing.T) {
 		},
 		"equip from the vault": {
 			id:        "1001",
-			target:    hunterID,
+			target:    bungietest.HunterID,
 			equip:     true,
 			want:      []string{"from vault to c1", "equip 1001 on c1"},
-			wantOwner: hunterID,
+			wantOwner: bungietest.HunterID,
 			wantEquip: true,
 		},
 		"equip an item already equipped": {
 			id:        "1006",
-			target:    hunterID,
+			target:    bungietest.HunterID,
 			equip:     true,
-			wantOwner: hunterID,
+			wantOwner: bungietest.HunterID,
 			wantEquip: true,
 		},
 		"second transfer fails": {
 			id:        "1003",
-			target:    titanID,
+			target:    bungietest.TitanID,
 			fail:      "from vault to c2",
 			err:       errStep,
 			want:      []string{"to vault from c1"},
@@ -140,7 +141,7 @@ func TestMove(t *testing.T) {
 			id:        "1004",
 			target:    ownerVault,
 			err:       ErrMove,
-			wantOwner: hunterID,
+			wantOwner: bungietest.HunterID,
 			wantEquip: true,
 		},
 		"replacement equip fails": {
@@ -148,7 +149,7 @@ func TestMove(t *testing.T) {
 			target:    ownerVault,
 			fail:      "equip 1003 on c1",
 			err:       errStep,
-			wantOwner: hunterID,
+			wantOwner: bungietest.HunterID,
 			wantEquip: true,
 		},
 		"transfer fails after the replacement": {
@@ -157,7 +158,7 @@ func TestMove(t *testing.T) {
 			fail:            "to vault from c1",
 			err:             errStep,
 			want:            []string{"equip 1003 on c1"},
-			wantOwner:       hunterID,
+			wantOwner:       bungietest.HunterID,
 			wantReplacement: "1003",
 		},
 		"vault cannot equip": {
@@ -169,10 +170,10 @@ func TestMove(t *testing.T) {
 		},
 		"wrong class cannot equip": {
 			id:        "1004",
-			target:    titanID,
+			target:    bungietest.TitanID,
 			equip:     true,
 			err:       ErrMove,
-			wantOwner: hunterID,
+			wantOwner: bungietest.HunterID,
 			wantEquip: true,
 		},
 	}
@@ -220,7 +221,7 @@ func TestMoveEquipReplacesTheSlot(t *testing.T) {
 	item, ok := s.Find("1003")
 	require.True(t, ok)
 
-	_, err := s.Move(t.Context(), &stepMover{}, item, hunterID, true)
+	_, err := s.Move(t.Context(), &stepMover{}, item, bungietest.HunterID, true)
 	require.NoError(t, err)
 
 	previous, ok := s.Find("1006")
@@ -253,7 +254,7 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 	tests := map[string]struct {
 		target string
 	}{
-		"to a character": {target: hunterID},
+		"to a character": {target: bungietest.HunterID},
 		"to the vault":   {target: ownerVault},
 	}
 
@@ -263,7 +264,7 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 
 			var profile Profile
 
-			require.NoError(t, json.Unmarshal([]byte(fixtureProfile), &profile))
+			require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
 
 			// Bungie places some instanced items in account-wide buckets.
 			profile.ProfileInventory.Data.Items = append(profile.ProfileInventory.Data.Items, ProfileItem{
@@ -275,7 +276,7 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 				BucketHash:     bungie.BucketConsumables,
 			})
 
-			s := NewSnapshot(&profile, fixtureDefs(), fixtureNow)
+			s := NewSnapshot(&profile, fixtureDefs(), bungietest.Now)
 
 			item, ok := s.Find("2001")
 			require.True(t, ok)
@@ -339,7 +340,7 @@ func TestReplacementFor(t *testing.T) {
 				Name:       "Hawkmoon",
 				Tier:       tierExotic,
 				Slot:       departing.Slot,
-				Owner:      hunterID,
+				Owner:      bungietest.HunterID,
 				ClassType:  bungie.ClassAny,
 				Power:      2100,
 				Equippable: true,
@@ -351,7 +352,7 @@ func TestReplacementFor(t *testing.T) {
 				&Item{
 					InstanceID: "2001",
 					Slot:       "Energy Weapons",
-					Owner:      hunterID,
+					Owner:      bungietest.HunterID,
 					ClassType:  bungie.ClassAny,
 					Equippable: true,
 				},
@@ -360,12 +361,20 @@ func TestReplacementFor(t *testing.T) {
 				&Item{
 					InstanceID: "2002",
 					Slot:       departing.Slot,
-					Owner:      titanID,
+					Owner:      bungietest.TitanID,
 					ClassType:  bungie.ClassAny,
 					Equippable: true,
 				},
 			)
-			s.add(&Item{InstanceID: "2003", Slot: departing.Slot, Owner: hunterID, ClassType: 0, Equippable: true})
+			s.add(
+				&Item{
+					InstanceID: "2003",
+					Slot:       departing.Slot,
+					Owner:      bungietest.HunterID,
+					ClassType:  0,
+					Equippable: true,
+				},
+			)
 
 			if tc.spareGone {
 				spare, ok := s.Find("1003")
@@ -513,7 +522,7 @@ func TestSetLock(t *testing.T) {
 		},
 		"character item names the character that holds it": {
 			id:         "1003",
-			owner:      titanID,
+			owner:      bungietest.TitanID,
 			locked:     true,
 			want:       []string{"lock 1003 on c2"},
 			wantLocked: true,

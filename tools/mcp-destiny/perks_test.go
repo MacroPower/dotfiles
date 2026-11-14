@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 func (m *stepMover) InsertSocketPlugFree(_ context.Context, action ItemAction, socket int, plugHash uint32) error {
@@ -140,7 +142,7 @@ func TestSetPerk(t *testing.T) {
 		},
 		"character item names the character that holds it": {
 			id:         "1001",
-			owner:      titanID,
+			owner:      bungietest.TitanID,
 			perk:       "Rampage",
 			want:       []string{"insert 903 into socket 0 of 1001 on c2"},
 			wantFrom:   "Explosive Payload",

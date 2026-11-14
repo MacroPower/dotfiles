@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 func TestEquipLoadout(t *testing.T) {
@@ -27,7 +29,7 @@ func TestEquipLoadout(t *testing.T) {
 		wantChanged  bool
 	}{
 		"items that the character holds": {
-			characterID:  hunterID,
+			characterID:  bungietest.HunterID,
 			number:       2,
 			wantSteps:    []string{"equip loadout 1 on c1"},
 			wantChanged:  true,
@@ -35,7 +37,7 @@ func TestEquipLoadout(t *testing.T) {
 			want:         "Equipped loadout 2 on Hunter: Fatebringer (1006), Celestial Nighthawk (1004).",
 		},
 		"item in the vault": {
-			characterID:  hunterID,
+			characterID:  bungietest.HunterID,
 			number:       3,
 			wantSteps:    []string{"from vault to c1", "equip loadout 2 on c1"},
 			wantMoves:    []string{"1001 from vault"},
@@ -50,7 +52,7 @@ func TestEquipLoadout(t *testing.T) {
 			change: func(s *Snapshot) {
 				s.byID["1004"].Transferable = false
 			},
-			characterID:  hunterID,
+			characterID:  bungietest.HunterID,
 			number:       3,
 			wantSteps:    []string{"from vault to c1", "equip loadout 2 on c1"},
 			wantMoves:    []string{"1001 from vault"},
@@ -62,7 +64,7 @@ func TestEquipLoadout(t *testing.T) {
 				"The inventory does not hold these loadout items: 9999.",
 		},
 		"item equipped on another character": {
-			characterID: titanID,
+			characterID: bungietest.TitanID,
 			number:      1,
 			wantSteps: []string{
 				"equip 1003 on c1", "to vault from c1", "from vault to c2", "equip loadout 0 on c2",
@@ -75,7 +77,7 @@ func TestEquipLoadout(t *testing.T) {
 				"Equipped loadout 1 on Titan: Fatebringer (1006).",
 		},
 		"move fails": {
-			characterID: titanID,
+			characterID: bungietest.TitanID,
 			number:      1,
 			fail:        "from vault to c2",
 			err:         errStep,
@@ -88,7 +90,7 @@ func TestEquipLoadout(t *testing.T) {
 				"transferring to Titan: step refused.",
 		},
 		"transfer to the vault fails": {
-			characterID: titanID,
+			characterID: bungietest.TitanID,
 			number:      1,
 			fail:        "to vault from c1",
 			err:         errStep,
@@ -101,7 +103,7 @@ func TestEquipLoadout(t *testing.T) {
 				"transferring to the vault: step refused.",
 		},
 		"move fails before a step": {
-			characterID: titanID,
+			characterID: bungietest.TitanID,
 			number:      1,
 			fail:        "equip 1003 on c1",
 			err:         errStep,
@@ -111,7 +113,7 @@ func TestEquipLoadout(t *testing.T) {
 				"equipping Midnight Coup in its place: step refused.",
 		},
 		"equip fails": {
-			characterID: hunterID,
+			characterID: bungietest.HunterID,
 			number:      2,
 			fail:        "equip loadout 1 on c1",
 			err:         errStep,
@@ -211,7 +213,7 @@ func TestEquipLoadoutFromPostmaster(t *testing.T) {
 
 			s := fixtureSnapshot(t)
 			mover := &stepMover{fail: tc.fail}
-			l := Loadout{CharacterID: hunterID, Number: 4, InstanceIDs: []string{"1005"}}
+			l := Loadout{CharacterID: bungietest.HunterID, Number: 4, InstanceIDs: []string{"1005"}}
 
 			got, err := s.EquipLoadout(t.Context(), mover, l)
 			if tc.err != nil {
@@ -228,7 +230,7 @@ func TestEquipLoadoutFromPostmaster(t *testing.T) {
 			item, ok := s.Find("1005")
 			require.True(t, ok)
 			assert.False(t, item.Postmaster)
-			assert.Equal(t, hunterID, item.Owner)
+			assert.Equal(t, bungietest.HunterID, item.Owner)
 			assert.Equal(t, tc.wantEquipped, item.Equipped)
 		})
 	}
@@ -239,7 +241,7 @@ func TestEquipLoadoutWithoutItems(t *testing.T) {
 
 	s := fixtureSnapshot(t)
 	mover := &stepMover{}
-	l := Loadout{CharacterID: hunterID, Number: 4, InstanceIDs: []string{"9999"}}
+	l := Loadout{CharacterID: bungietest.HunterID, Number: 4, InstanceIDs: []string{"9999"}}
 
 	got, err := s.EquipLoadout(t.Context(), mover, l)
 	require.NoError(t, err)
@@ -314,7 +316,9 @@ func TestRenderStats(t *testing.T) {
 		want    []string
 	}{
 		"only currencies": {
-			summary: statSummary{flows: []statFlow{{itemHash: itemGlimmer, currency: true, spent: 5, net: -5}}},
+			summary: statSummary{
+				flows: []statFlow{{itemHash: bungietest.ItemGlimmer, currency: true, spent: 5, net: -5}},
+			},
 			want: []string{
 				"Currencies and materials, currencies first:",
 				"name | kind | item hash | net | gained | spent",
