@@ -20,6 +20,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/vendors"
 )
@@ -120,7 +121,7 @@ var (
 	// character. Each character numbers its own loadouts, so the tools do
 	// not fall back to the most recently played character.
 	errNoLoadoutCharacter = fmt.Errorf(
-		"%w: pass the character of the loadout as a character id or a class name", ErrUnknownTarget,
+		"%w: pass the character of the loadout as a character id or a class name", inventory.ErrUnknownTarget,
 	)
 
 	// errNoAutotagState reports an autotag read that returns no state.
@@ -348,7 +349,7 @@ type handler struct {
 	loadoutTables *bungie.LoadoutTableStore
 	log           *slog.Logger
 	now           func() time.Time
-	snapshot      *Snapshot
+	snapshot      *inventory.Snapshot
 	apiKeyAt      time.Time
 	apiKey        string
 	mu            sync.Mutex
@@ -449,7 +450,7 @@ func (h *handler) handleListItems(
 		return h.toolError(ctx, toolListItems, err)
 	}
 
-	items, err := s.Filter(ItemFilter{
+	items, err := s.Filter(inventory.ItemFilter{
 		Query:    in.Query,
 		Kind:     in.Kind,
 		Slot:     in.Slot,
@@ -534,7 +535,7 @@ func (h *handler) handleGetItem(
 	// change edits the cached snapshot in place, so a kept rating does
 	// not follow the change.
 	var ratings map[string]Rating
-	if item.Kind == KindWeapon {
+	if item.Kind == inventory.KindWeapon {
 		sources := h.ratingSources(ctx)
 		ratings = make(map[string]Rating, len(perkModes))
 
@@ -579,7 +580,7 @@ func (h *handler) handleCompareDuplicates(
 			return h.toolError(ctx, toolCompareDuplicates, unknownInstances([]string{in.InstanceID}))
 		}
 
-		if item.Kind != KindWeapon {
+		if item.Kind != inventory.KindWeapon {
 			return h.toolError(ctx, toolCompareDuplicates,
 				fmt.Errorf("%w: %s (%s) is not a weapon", ErrInvalidInput, item.InstanceID, item.Name))
 		}
@@ -596,7 +597,7 @@ func (h *handler) handleCompareDuplicates(
 		return textResult(renderSingleGroup(s, group, sources)), nil, nil
 	}
 
-	var dupes []WeaponGroup
+	var dupes []inventory.WeaponGroup
 
 	for _, group := range s.WeaponGroups() {
 		if len(group.Copies) > 1 {
@@ -645,7 +646,7 @@ func (h *handler) handleListActivityHistory(
 			return h.toolError(ctx, toolListActivityHistory, err)
 		}
 
-		characters = []Character{c}
+		characters = []inventory.Character{c}
 		scope = s.OwnerLabel(c.ID)
 	}
 
@@ -909,7 +910,7 @@ func (h *handler) handleMoveStack(
 	defer h.mu.Unlock()
 
 	target := strings.ToLower(strings.TrimSpace(in.Target))
-	if target != OwnerVault && target != targetInventory {
+	if target != inventory.OwnerVault && target != targetInventory {
 		return h.toolError(ctx, toolMoveStack,
 			fmt.Errorf("%w: target %q is not vault or inventory", ErrInvalidInput, in.Target))
 	}
@@ -926,7 +927,7 @@ func (h *handler) handleMoveStack(
 
 	mover := bungieMover{h: h, membership: membership}
 
-	name, moved, err := s.MoveStack(ctx, mover, in.ItemHash, in.Amount, target == OwnerVault)
+	name, moved, err := s.MoveStack(ctx, mover, in.ItemHash, in.Amount, target == inventory.OwnerVault)
 
 	if moved > 0 {
 		s.Fetched = h.now()
@@ -1168,7 +1169,7 @@ func (h *handler) handleListLoadouts(
 			return h.toolError(ctx, toolListLoadouts, err)
 		}
 
-		characters = []Character{c}
+		characters = []inventory.Character{c}
 	}
 
 	// The loadouts do not depend on the names, so a table that does not
@@ -1332,7 +1333,7 @@ func (h *handler) handleClearLoadout(
 	if !saved {
 		return h.toolError(ctx, toolClearLoadout, fmt.Errorf(
 			"%w: %s has no saved loadout in slot %d, so there is nothing to clear",
-			ErrEmptyLoadoutSlot, s.OwnerLabel(c.ID), in.Number,
+			inventory.ErrEmptyLoadoutSlot, s.OwnerLabel(c.ID), in.Number,
 		))
 	}
 
@@ -1386,7 +1387,7 @@ func (h *handler) handleSetTag(
 	defer h.mu.Unlock()
 
 	tag := strings.ToLower(strings.TrimSpace(in.Tag))
-	if tag == TagNone {
+	if tag == inventory.TagNone {
 		tag = ""
 	}
 
@@ -1528,7 +1529,7 @@ func (h *handler) handleSetNote(
 
 	change := dvm.Note{Kind: kind, TargetID: in.TargetID, Body: body, Removed: body == ""}
 
-	var item *Item
+	var item *inventory.Item
 
 	if kind == dvm.NoteInstance {
 		s, err := h.loadSnapshot(ctx, false)
@@ -1739,7 +1740,7 @@ func (h *handler) ownedMatches(ctx context.Context, snapshot dvm.AutotagSnapshot
 	// The reasons of each count follow the order of the items, so the
 	// sort keeps the text the same from one call to the next.
 	items := ownedItems(s)
-	slices.SortStableFunc(items, ByNameAndID)
+	slices.SortStableFunc(items, inventory.ByNameAndID)
 
 	evals := evalRules(s, rules, func() map[string]RatingSource { return h.ratingSources(ctx) })
 
@@ -2158,7 +2159,12 @@ func (h *handler) handleRunAutotagRules(
 // item at a time. It records the error of each move that fails, and a
 // failed move does not stop the next one. A move that changed an item
 // resets the fetch time of s, as move_items does.
-func (h *handler) moveToVault(ctx context.Context, s *Snapshot, mover ItemMover, items []vaultItem) {
+func (h *handler) moveToVault(
+	ctx context.Context,
+	s *inventory.Snapshot,
+	mover inventory.ItemMover,
+	items []vaultItem,
+) {
 	changed := false
 
 	for i := range items {
@@ -2171,7 +2177,7 @@ func (h *handler) moveToVault(ctx context.Context, s *Snapshot, mover ItemMover,
 
 		// vaultBlock keeps an equipped item in place, so no move equips a
 		// replacement.
-		_, err := s.Move(ctx, mover, v.item, OwnerVault, false)
+		_, err := s.Move(ctx, mover, v.item, inventory.OwnerVault, false)
 
 		// A move that fails can still pull the item from the Postmaster.
 		if v.item.Owner != owner || v.item.Postmaster != postmaster {
@@ -2314,7 +2320,11 @@ func ratingMinimums(in ListItemsInput) ([]ratingMinimum, error) {
 // error that gives the name of the input and then the reason of the
 // mode, for the first such minimum. A mode without ratings therefore
 // never reads as a result without items.
-func keepRated(items []*Item, minimums []ratingMinimum, sources map[string]RatingSource) ([]*Item, error) {
+func keepRated(
+	items []*inventory.Item,
+	minimums []ratingMinimum,
+	sources map[string]RatingSource,
+) ([]*inventory.Item, error) {
 	for _, m := range minimums {
 		err := sources[m.mode].Err
 		if err != nil {
@@ -2325,8 +2335,8 @@ func keepRated(items []*Item, minimums []ratingMinimum, sources map[string]Ratin
 	for _, m := range minimums {
 		source := sources[m.mode]
 
-		items = slices.DeleteFunc(items, func(item *Item) bool {
-			return item.Kind != KindWeapon || !ratedAtLeast(rate(source, item), m.tier)
+		items = slices.DeleteFunc(items, func(item *inventory.Item) bool {
+			return item.Kind != inventory.KindWeapon || !ratedAtLeast(rate(source, item), m.tier)
 		})
 	}
 
@@ -2514,12 +2524,12 @@ func newRuleID() (string, error) {
 // findItems resolves instance ids against the snapshot. It rejects the
 // whole batch when an id is unknown, so a write never covers part of a
 // request.
-func findItems(s *Snapshot, ids []string) ([]*Item, error) {
+func findItems(s *inventory.Snapshot, ids []string) ([]*inventory.Item, error) {
 	if len(ids) == 0 || len(ids) > maxBatch {
 		return nil, fmt.Errorf("%w: pass between 1 and %d instance ids", ErrInvalidInput, maxBatch)
 	}
 
-	items := make([]*Item, 0, len(ids))
+	items := make([]*inventory.Item, 0, len(ids))
 
 	var unknown []string
 
@@ -2553,7 +2563,7 @@ func unknownInstances(ids []string) error {
 // loadSnapshot returns the cached snapshot, and fetches the profile from
 // Bungie when the cache is empty, older than [snapshotTTL], or refresh is
 // set.
-func (h *handler) loadSnapshot(ctx context.Context, refresh bool) (*Snapshot, error) {
+func (h *handler) loadSnapshot(ctx context.Context, refresh bool) (*inventory.Snapshot, error) {
 	now := h.now()
 	if h.snapshot != nil && !refresh && now.Sub(h.snapshot.Fetched) < snapshotTTL {
 		return h.snapshot, nil
@@ -2582,14 +2592,14 @@ func (h *handler) loadSnapshot(ctx context.Context, refresh bool) (*Snapshot, er
 		return nil, fmt.Errorf("fetching the profile: %w", err)
 	}
 
-	h.snapshot = NewSnapshot(profile, defs, now)
+	h.snapshot = inventory.NewSnapshot(profile, defs, now)
 
 	return h.snapshot, nil
 }
 
 // loadAnnotated returns the snapshot with the tags and notes that the
 // service stores at the time of the call. It also returns the tag rows.
-func (h *handler) loadAnnotated(ctx context.Context, refresh bool) (*Snapshot, []dvm.ItemTag, error) {
+func (h *handler) loadAnnotated(ctx context.Context, refresh bool) (*inventory.Snapshot, []dvm.ItemTag, error) {
 	s, err := h.loadSnapshot(ctx, refresh)
 	if err != nil {
 		return nil, nil, err
@@ -2865,15 +2875,16 @@ func (h *handler) bungieKey(ctx context.Context) (string, error) {
 	return h.apiKey, nil
 }
 
-// bungieMover adapts the handler to [ItemMover], [ItemLocker],
-// [PlugInserter], and [LoadoutEquipper]. It adds the membership and the
-// credentials to each action.
+// bungieMover adapts the handler to [inventory.ItemMover],
+// [inventory.ItemLocker], [inventory.PlugInserter], and
+// [inventory.LoadoutEquipper]. It adds the membership and the credentials
+// to each action.
 type bungieMover struct {
 	h          *handler
 	membership bungie.Membership
 }
 
-// Transfer implements [ItemMover].
+// Transfer implements [inventory.ItemMover].
 func (m bungieMover) Transfer(ctx context.Context, action bungie.ItemAction, toVault bool) error {
 	action.Membership = m.membership
 
@@ -2882,7 +2893,7 @@ func (m bungieMover) Transfer(ctx context.Context, action bungie.ItemAction, toV
 	})
 }
 
-// Equip implements [ItemMover].
+// Equip implements [inventory.ItemMover].
 func (m bungieMover) Equip(ctx context.Context, action bungie.ItemAction) error {
 	action.Membership = m.membership
 
@@ -2891,7 +2902,7 @@ func (m bungieMover) Equip(ctx context.Context, action bungie.ItemAction) error 
 	})
 }
 
-// PullFromPostmaster implements [ItemMover].
+// PullFromPostmaster implements [inventory.ItemMover].
 func (m bungieMover) PullFromPostmaster(ctx context.Context, action bungie.ItemAction) error {
 	action.Membership = m.membership
 
@@ -2900,7 +2911,7 @@ func (m bungieMover) PullFromPostmaster(ctx context.Context, action bungie.ItemA
 	})
 }
 
-// SetLockState implements [ItemLocker].
+// SetLockState implements [inventory.ItemLocker].
 func (m bungieMover) SetLockState(ctx context.Context, action bungie.ItemAction, locked bool) error {
 	action.Membership = m.membership
 
@@ -2909,7 +2920,7 @@ func (m bungieMover) SetLockState(ctx context.Context, action bungie.ItemAction,
 	})
 }
 
-// InsertSocketPlugFree implements [PlugInserter].
+// InsertSocketPlugFree implements [inventory.PlugInserter].
 func (m bungieMover) InsertSocketPlugFree(
 	ctx context.Context,
 	action bungie.ItemAction,
@@ -2923,7 +2934,7 @@ func (m bungieMover) InsertSocketPlugFree(
 	})
 }
 
-// EquipLoadout implements [LoadoutEquipper].
+// EquipLoadout implements [inventory.LoadoutEquipper].
 func (m bungieMover) EquipLoadout(ctx context.Context, action bungie.LoadoutAction) error {
 	action.Membership = m.membership
 

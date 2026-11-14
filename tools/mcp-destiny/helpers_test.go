@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"maps"
 	"path/filepath"
@@ -20,16 +19,6 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 )
-
-func fixtureSnapshot(t *testing.T) *Snapshot {
-	t.Helper()
-
-	var profile bungie.Profile
-
-	require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
-
-	return NewSnapshot(&profile, definitionstest.Defs(), bungietest.Now)
-}
 
 // fakes is a handler wired to a fake Agg's Destiny Vault Manager service
 // and a fake Bungie platform. The definition loader of the handler serves

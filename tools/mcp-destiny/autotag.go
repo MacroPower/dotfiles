@@ -9,6 +9,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 )
 
 // markDigits is the width of an autotag mark. The service compares marks
@@ -28,7 +29,7 @@ func markOf(instanceID string) string {
 // [ownedItems]. The web client treats every such item with a higher mark
 // as newly acquired. An inventory without such an item gives the mark of
 // zeros.
-func newestMark(s *Snapshot) string {
+func newestMark(s *inventory.Snapshot) string {
 	newest := markOf("")
 
 	for _, item := range ownedItems(s) {
@@ -45,21 +46,21 @@ func newestMark(s *Snapshot) string {
 // higher than mark, which the next claim covers. The first list holds the
 // items outside the vault, which the claim offers to the autotag rules.
 // The second list holds the items in the vault. Both lists follow the
-// order of [CompareIDs].
-func newItems(s *Snapshot, mark string) ([]*Item, []*Item) {
-	var held, vault []*Item
+// order of [inventory.CompareIDs].
+func newItems(s *inventory.Snapshot, mark string) ([]*inventory.Item, []*inventory.Item) {
+	var held, vault []*inventory.Item
 
 	for _, item := range ownedItems(s) {
 		switch {
 		case markOf(item.InstanceID) <= mark:
-		case item.Owner == OwnerVault:
+		case item.Owner == inventory.OwnerVault:
 			vault = append(vault, item)
 		default:
 			held = append(held, item)
 		}
 	}
 
-	byID := func(a, b *Item) int { return CompareIDs(a.InstanceID, b.InstanceID) }
+	byID := func(a, b *inventory.Item) int { return inventory.CompareIDs(a.InstanceID, b.InstanceID) }
 
 	slices.SortStableFunc(held, byID)
 	slices.SortStableFunc(vault, byID)
@@ -102,7 +103,7 @@ const (
 type ruleEval struct {
 	// test is the test of the compiled query of an evaluated rule. It is
 	// nil for the other classes.
-	test func(*Item) outcome
+	test func(*inventory.Item) outcome
 	// reason is the skip reason of a skipped rule or the block reason of
 	// a blocked rule. It is empty for an evaluated rule.
 	reason string
@@ -123,7 +124,7 @@ type ruleEval struct {
 // to its filters. Sources returns the [RatingSource] of each game mode.
 // evalRules calls sources one time, and only when a rule of rules without
 // an earlier problem reads a game mode.
-func evalRules(s *Snapshot, rules []dvm.AutotagRule, sources func() map[string]RatingSource) []ruleEval {
+func evalRules(s *inventory.Snapshot, rules []dvm.AutotagRule, sources func() map[string]RatingSource) []ruleEval {
 	evals := make([]ruleEval, len(rules))
 	queries := make([]compiledQuery, len(rules))
 	rated := false
@@ -194,16 +195,16 @@ func evalRules(s *Snapshot, rules []dvm.AutotagRule, sources func() map[string]R
 type newMatches struct {
 	// taken holds the items that each rule takes, at the index of its
 	// [ruleEval].
-	taken [][]*Item
+	taken [][]*inventory.Item
 	// undecided holds the items that an enabled rule leaves undecided
 	// before any rule matches them.
 	undecided []undecidedAt
 	// reaching holds the items that reach the first enabled rule that
 	// blocks.
-	reaching []*Item
+	reaching []*inventory.Item
 	// untaken holds the items that no rule takes. It is empty when an
 	// enabled rule blocks.
-	untaken []*Item
+	untaken []*inventory.Item
 	// blocked is the index of the [ruleEval] of the first enabled rule
 	// that blocks, or -1 when no enabled rule blocks.
 	blocked int
@@ -214,7 +215,7 @@ type newMatches struct {
 // undecidedAt is a new item that an enabled rule leaves undecided, with
 // the index of the [ruleEval] of the rule and the reasons of the outcome.
 type undecidedAt struct {
-	item    *Item
+	item    *inventory.Item
 	reasons []string
 	rule    int
 }
@@ -225,9 +226,9 @@ type undecidedAt struct {
 // stops at a blocked rule, because that rule might take the item. It
 // stops at a rule that leaves the item undecided, because that rule might
 // take the item too.
-func firstMatch(evals []ruleEval, items []*Item) newMatches {
+func firstMatch(evals []ruleEval, items []*inventory.Item) newMatches {
 	m := newMatches{
-		taken:   make([][]*Item, len(evals)),
+		taken:   make([][]*inventory.Item, len(evals)),
 		blocked: slices.IndexFunc(evals, func(e ruleEval) bool { return e.rule.Enabled && e.class == ruleBlocked }),
 		offered: len(items),
 	}
@@ -300,7 +301,7 @@ type ruleCount struct {
 // The server cannot tell which items an enabled rule takes when the rule
 // blocks or leaves an item undecided. ownedCounts therefore marks each
 // later rule of the evaluated or the blocked class as unknown.
-func ownedCounts(evals []ruleEval, items []*Item) []ruleCount {
+func ownedCounts(evals []ruleEval, items []*inventory.Item) []ruleCount {
 	counts := make([]ruleCount, len(evals))
 	taken := map[string]bool{}
 	unknown := false
@@ -363,7 +364,7 @@ func ownedCounts(evals []ruleEval, items []*Item) []ruleCount {
 
 // ruleTag is one new item that an enabled rule with a tag takes.
 type ruleTag struct {
-	item *Item
+	item *inventory.Item
 	rule dvm.AutotagRule
 }
 
@@ -393,15 +394,16 @@ func ruleTags(evals []ruleEval, m newMatches) []ruleTag {
 // failed. It is nil after a move that succeeded and for an item with a
 // reason.
 type vaultItem struct {
-	item   *Item
+	item   *inventory.Item
 	err    error
 	reason string
 	rule   dvm.AutotagRule
 }
 
 // vaultItems returns the new items of m that the rules of evals with the
-// vault flag take, in the order of [CompareIDs], each with its rule and
-// the reason of [vaultBlock]. Defs holds the definition of each item.
+// vault flag take, in the order of [inventory.CompareIDs], each with its
+// rule and the reason of [vaultBlock]. Defs holds the definition of each
+// item.
 func vaultItems(evals []ruleEval, m newMatches, defs *definitions.Defs) []vaultItem {
 	var vaulted []vaultItem
 
@@ -420,7 +422,7 @@ func vaultItems(evals []ruleEval, m newMatches, defs *definitions.Defs) []vaultI
 	}
 
 	slices.SortStableFunc(vaulted, func(a, b vaultItem) int {
-		return CompareIDs(a.item.InstanceID, b.item.InstanceID)
+		return inventory.CompareIDs(a.item.InstanceID, b.item.InstanceID)
 	})
 
 	return vaulted
@@ -437,13 +439,14 @@ func vaultItems(evals []ruleEval, m newMatches, defs *definitions.Defs) []vaultI
 // definition bucket of the item is the bucket of the distorted engrams or
 // a bucket of the Postmaster category of DIM. The web client moves every
 // other item, and it pulls an item from the Postmaster first, as
-// [Snapshot.Move] does.
+// [inventory.Snapshot.Move] does.
 //
-// [Item.Transferable] also reads the definition and every transfer status
-// with the NotTransferrable bit, and [Snapshot.Move] refuses an item that
-// it does not mark. vaultBlock leaves such an item in place with a reason
-// of its own, which says that the web client tries the transfer.
-func vaultBlock(item *Item, def definitions.ItemDef) string {
+// [inventory.Item.Transferable] also reads the definition and every
+// transfer status with the NotTransferrable bit, and
+// [inventory.Snapshot.Move] refuses an item that it does not mark.
+// vaultBlock leaves such an item in place with a reason of its own, which
+// says that the web client tries the transfer.
+func vaultBlock(item *inventory.Item, def definitions.ItemDef) string {
 	switch {
 	case item.Equipped:
 		return "it is equipped"

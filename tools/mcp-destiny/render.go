@@ -13,6 +13,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/vendors"
 )
@@ -76,7 +77,7 @@ func renderStatus(t auth.Tokens, signedIn bool, serviceURL, tokenPath string, no
 	return b.String()
 }
 
-func renderCharacters(s *Snapshot) string {
+func renderCharacters(s *inventory.Snapshot) string {
 	var b strings.Builder
 
 	b.WriteString("Characters, most recently played first:\n")
@@ -100,10 +101,14 @@ func renderCharacters(s *Snapshot) string {
 			"- %s | id %s | power %d | last played %s | %d equipped, %d in inventory, %d at the Postmaster\n",
 			c.Class, c.ID, c.Power, c.LastPlayed.Format(timeLayout), equipped, held, postmaster,
 		)
-		fmt.Fprintf(&b, "  Slots used: %s\n", slotsList(s, c.ID, func(bucket Bucket) bool { return !bucket.Account }))
+		fmt.Fprintf(
+			&b,
+			"  Slots used: %s\n",
+			slotsList(s, c.ID, func(bucket inventory.Bucket) bool { return !bucket.Account }),
+		)
 	}
 
-	vault := Bucket{Hash: bungie.BucketVault, Account: true}
+	vault := inventory.Bucket{Hash: bungie.BucketVault, Account: true}
 
 	for _, bucket := range s.Buckets {
 		if bucket.Hash == bungie.BucketVault {
@@ -111,9 +116,9 @@ func renderCharacters(s *Snapshot) string {
 		}
 	}
 
-	fmt.Fprintf(&b, "\nVault: %s slots used\n", slotsLabel(s.SlotsUsed(vault, OwnerVault), vault.Capacity))
+	fmt.Fprintf(&b, "\nVault: %s slots used\n", slotsLabel(s.SlotsUsed(vault, inventory.OwnerVault), vault.Capacity))
 
-	account := slotsList(s, OwnerAccount, func(bucket Bucket) bool {
+	account := slotsList(s, inventory.OwnerAccount, func(bucket inventory.Bucket) bool {
 		return bucket.Account && bucket.Hash != bungie.BucketVault
 	})
 	if account != "" {
@@ -137,7 +142,7 @@ func renderCharacters(s *Snapshot) string {
 
 // slotsList names each bucket that keep selects with the slots that the
 // items of owner take there, such as "Kinetic Weapons 7/10".
-func slotsList(s *Snapshot, owner string, keep func(Bucket) bool) string {
+func slotsList(s *inventory.Snapshot, owner string, keep func(inventory.Bucket) bool) string {
 	var parts []string
 
 	for _, bucket := range s.Buckets {
@@ -172,8 +177,8 @@ func slotsLabel(used, capacity int) string {
 // between the first line and the table. A result without a table has no
 // such line.
 func renderItems(
-	s *Snapshot,
-	items []*Item,
+	s *inventory.Snapshot,
+	items []*inventory.Item,
 	offset, total int,
 	stat string,
 	perks bool,
@@ -266,7 +271,13 @@ func renderItems(
 // it holds an item, the first line also counts those items, and the
 // section of [writeUndecided] follows after a blank line. The section
 // shows at most limit items, and the offset pages only the matches.
-func renderPreview(s *Snapshot, page []*Item, offset, total, owned int, undecided []undecidedItem, limit int) string {
+func renderPreview(
+	s *inventory.Snapshot,
+	page []*inventory.Item,
+	offset, total, owned int,
+	undecided []undecidedItem,
+	limit int,
+) string {
 	if total == 0 && len(undecided) == 0 {
 		return "No owned item matches the query."
 	}
@@ -303,7 +314,7 @@ func renderPreview(s *Snapshot, page []*Item, offset, total, owned int, undecide
 // location, and the reasons of one item. The section shows the first
 // limit items of undecided. A last line counts the items that it leaves
 // out.
-func writeUndecided(b *strings.Builder, s *Snapshot, undecided []undecidedItem, limit int) {
+func writeUndecided(b *strings.Builder, s *inventory.Snapshot, undecided []undecidedItem, limit int) {
 	b.WriteString("The server cannot decide these items:\ninstance id | name | location | reason")
 
 	shown := undecided[:min(limit, len(undecided))]
@@ -384,7 +395,7 @@ const saveCountCaveat = "The count ignores the other rules, so an earlier rule c
 // renderItem renders one item in full. For a weapon, ratings holds the
 // [Rating] of each game mode, and the output gains the roll ratings
 // block. Ratings is nil for every other item.
-func renderItem(s *Snapshot, item *Item, ratings map[string]Rating) string {
+func renderItem(s *inventory.Snapshot, item *inventory.Item, ratings map[string]Rating) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s\n", item.Name)
@@ -447,8 +458,8 @@ func renderItem(s *Snapshot, item *Item, ratings map[string]Rating) string {
 // page, also when the page holds several tables. A result without a
 // table has no such line.
 func renderDuplicates(
-	s *Snapshot,
-	groups []WeaponGroup,
+	s *inventory.Snapshot,
+	groups []inventory.WeaponGroup,
 	offset, total int,
 	sources map[string]RatingSource,
 ) string {
@@ -485,7 +496,7 @@ func renderDuplicates(
 // line for each game mode without ratings gives the reason, and a blank
 // line follows those lines. When every game mode has ratings, the
 // output starts with the title of the table.
-func renderSingleGroup(s *Snapshot, group WeaponGroup, sources map[string]RatingSource) string {
+func renderSingleGroup(s *inventory.Snapshot, group inventory.WeaponGroup, sources map[string]RatingSource) string {
 	table := renderWeaponGroup(s, group, sources)
 
 	reasons := ratingReasons(sources)
@@ -507,7 +518,7 @@ func renderSingleGroup(s *Snapshot, group WeaponGroup, sources map[string]Rating
 // gets the rating of its own item hash, not the rating of the base
 // weapon. One result can hold several tables, so the caller writes the
 // reason of each game mode without ratings.
-func renderWeaponGroup(s *Snapshot, group WeaponGroup, sources map[string]RatingSource) string {
+func renderWeaponGroup(s *inventory.Snapshot, group inventory.WeaponGroup, sources map[string]RatingSource) string {
 	var b strings.Builder
 
 	noun := "copies"
@@ -541,7 +552,7 @@ func renderWeaponGroup(s *Snapshot, group WeaponGroup, sources map[string]Rating
 
 		perks := make([]string, 0, len(item.Perks))
 		for _, perk := range item.Perks {
-			perks = append(perks, PerkLabel(perk))
+			perks = append(perks, inventory.PerkLabel(perk))
 		}
 
 		fields = append(fields, strings.Join(perks, "; "))
@@ -557,7 +568,7 @@ func renderWeaponGroup(s *Snapshot, group WeaponGroup, sources map[string]Rating
 // character, with a row per loadout item. The [loadoutHeading] of each
 // loadout sits above its rows. When names holds no table, one line after
 // the opening paragraph gives the reason.
-func renderLoadouts(s *Snapshot, characters []Character, names bungie.LoadoutTableState) string {
+func renderLoadouts(s *inventory.Snapshot, characters []inventory.Character, names bungie.LoadoutTableState) string {
 	var b strings.Builder
 
 	b.WriteString("Loadouts saved in the game. A loadout number is the position of the loadout " +
@@ -606,7 +617,7 @@ func renderLoadouts(s *Snapshot, characters []Character, names bungie.LoadoutTab
 // "Loadout 2: Raid Night". A name hash that the table lacks, or an entry
 // without text, reads "unnamed". When names holds no table, the line
 // gives only the number.
-func loadoutHeading(l Loadout, names bungie.LoadoutTableState) string {
+func loadoutHeading(l inventory.Loadout, names bungie.LoadoutTableState) string {
 	if names.Table == nil {
 		return fmt.Sprintf("Loadout %d", l.Number)
 	}
@@ -621,7 +632,7 @@ func loadoutHeading(l Loadout, names bungie.LoadoutTableState) string {
 
 // renderLoadoutEquip describes what an equip_loadout call did. A non-nil
 // err says why the call stopped.
-func renderLoadoutEquip(s *Snapshot, l Loadout, result LoadoutEquip, err error) string {
+func renderLoadoutEquip(s *inventory.Snapshot, l inventory.Loadout, result inventory.LoadoutEquip, err error) string {
 	var b strings.Builder
 
 	target := s.OwnerLabel(l.CharacterID)
@@ -685,7 +696,7 @@ func renderLoadoutEquip(s *Snapshot, l Loadout, result LoadoutEquip, err error) 
 // table, the call kept the name of a saved loadout, and the result gives
 // the reason that the name is unknown.
 func renderLoadoutSave(
-	s *Snapshot,
+	s *inventory.Snapshot,
 	characterID string,
 	number int,
 	nameHash uint32,
@@ -720,9 +731,9 @@ func renderLoadoutSave(
 
 // renderLoadoutClear describes a clear_loadout call that emptied the slot
 // of the saved loadout l.
-func renderLoadoutClear(s *Snapshot, l Loadout) string {
+func renderLoadoutClear(s *inventory.Snapshot, l inventory.Loadout) string {
 	var (
-		held    []*Item
+		held    []*inventory.Item
 		missing []string
 	)
 
@@ -756,7 +767,7 @@ func renderLoadoutClear(s *Snapshot, l Loadout) string {
 
 // itemNames lists items by name and instance id, such as
 // "Fatebringer (1006), Celestial Nighthawk (1004)".
-func itemNames(items []*Item) string {
+func itemNames(items []*inventory.Item) string {
 	names := make([]string, 0, len(items))
 	for _, item := range items {
 		names = append(names, fmt.Sprintf("%s (%s)", item.Name, item.InstanceID))
@@ -767,7 +778,12 @@ func itemNames(items []*Item) string {
 
 // renderNoJunk reports that no junk sits in bucket on character c and
 // that none waits.
-func renderNoJunk(s *Snapshot, c Character, bucket Bucket, plan JunkPlan) string {
+func renderNoJunk(
+	s *inventory.Snapshot,
+	c inventory.Character,
+	bucket inventory.Bucket,
+	plan inventory.JunkPlan,
+) string {
 	lines := []string{fmt.Sprintf("No junk is left for %s on %s.", bucket.Name, s.OwnerLabel(c.ID))}
 	lines = appendSkippedJunk(lines, plan.Skipped)
 	lines = append(lines, "If you moved other items out of the slot for this run, move them back with move_items.")
@@ -778,7 +794,13 @@ func renderNoJunk(s *Snapshot, c Character, bucket Bucket, plan JunkPlan) string
 // renderStagedJunk lists the junk that bucket on character c holds after
 // a stage_junk call. Plan is the plan after the moves, and failures holds
 // one line for each move that did not succeed.
-func renderStagedJunk(s *Snapshot, c Character, bucket Bucket, plan JunkPlan, failures []string) string {
+func renderStagedJunk(
+	s *inventory.Snapshot,
+	c inventory.Character,
+	bucket inventory.Bucket,
+	plan inventory.JunkPlan,
+	failures []string,
+) string {
 	staged := len(plan.Staged)
 	lines := []string{fmt.Sprintf(
 		"Unequipped items in %s on %s after this call: %d", bucket.Name, s.OwnerLabel(c.ID), staged,
@@ -834,10 +856,15 @@ func appendSkippedJunk(lines []string, skipped int) []string {
 		"Each one is equipped, at the Postmaster, not transferable, or for another class.", skipped))
 }
 
-// keeperRefusal returns the [ErrMove] error of a stage_junk call that
+// keeperRefusal returns the [inventory.ErrMove] error of a stage_junk call that
 // finds keepers in bucket on character c. The error names each keeper
 // and tells the model how to move the keepers out and back.
-func keeperRefusal(s *Snapshot, c Character, bucket Bucket, keepers []*Item) error {
+func keeperRefusal(
+	s *inventory.Snapshot,
+	c inventory.Character,
+	bucket inventory.Bucket,
+	keepers []*inventory.Item,
+) error {
 	names := make([]string, 0, len(keepers))
 	ids := make([]string, 0, len(keepers))
 
@@ -852,7 +879,7 @@ func keeperRefusal(s *Snapshot, c Character, bucket Bucket, keepers []*Item) err
 			"Move that gear to the vault with move_items, with target vault and instance_ids %s. "+
 			"Then call stage_junk again. After stage_junk reports that no junk is left, "+
 			"move that gear back with move_items and target %s.",
-		ErrMove, bucket.Name, s.OwnerLabel(c.ID), strings.Join(names, ", "), strings.Join(ids, ", "), c.ID,
+		inventory.ErrMove, bucket.Name, s.OwnerLabel(c.ID), strings.Join(names, ", "), strings.Join(ids, ", "), c.ID,
 	)
 }
 
@@ -1004,8 +1031,8 @@ func ratingReasons(sources map[string]RatingSource) []string {
 // gives item in a table. The cell of a weapon holds the [ratingLabel] of
 // its [Rating]. Only weapons have roll ratings, so the cell of every
 // other item is empty, also when the mode has no ratings.
-func ratingCell(source RatingSource, item *Item) string {
-	if item.Kind != KindWeapon {
+func ratingCell(source RatingSource, item *inventory.Item) string {
+	if item.Kind != inventory.KindWeapon {
 		return ""
 	}
 
@@ -1062,7 +1089,7 @@ func writeField(b *strings.Builder, label, value string) {
 	}
 }
 
-func typeLabel(item *Item) string {
+func typeLabel(item *inventory.Item) string {
 	if item.Damage == "" {
 		return item.TypeName
 	}
@@ -1070,7 +1097,7 @@ func typeLabel(item *Item) string {
 	return item.Damage + " " + item.TypeName
 }
 
-func powerLabel(item *Item) string {
+func powerLabel(item *inventory.Item) string {
 	if item.Power == 0 {
 		return ""
 	}
@@ -1078,7 +1105,7 @@ func powerLabel(item *Item) string {
 	return strconv.Itoa(item.Power)
 }
 
-func totalLabel(item *Item) string {
+func totalLabel(item *inventory.Item) string {
 	total, ok := item.StatTotal()
 	if !ok {
 		return ""
@@ -1087,7 +1114,7 @@ func totalLabel(item *Item) string {
 	return strconv.Itoa(total)
 }
 
-func statLabel(item *Item, name string) string {
+func statLabel(item *inventory.Item, name string) string {
 	value, ok := item.StatValue(name)
 	if !ok {
 		return ""
@@ -1096,7 +1123,7 @@ func statLabel(item *Item, name string) string {
 	return strconv.Itoa(value)
 }
 
-func flagsOf(item *Item) []string {
+func flagsOf(item *inventory.Item) []string {
 	var flags []string
 
 	if item.Favorite {
@@ -1400,7 +1427,7 @@ func lootLabel(loot activities.Loot) string {
 	return loot.Name
 }
 
-func renderTags(s *Snapshot) string {
+func renderTags(s *inventory.Snapshot) string {
 	counts := map[string]int{}
 	favorites := 0
 
@@ -1428,7 +1455,7 @@ func renderTags(s *Snapshot) string {
 	return b.String()
 }
 
-func renderNotes(s *Snapshot, notes []dvm.Note) string {
+func renderNotes(s *inventory.Snapshot, notes []dvm.Note) string {
 	var b strings.Builder
 
 	for _, note := range notes {
@@ -1553,7 +1580,13 @@ func renderRule(rule dvm.AutotagRule) string {
 // lines stop at the first enabled rule that blocks, which lists the items
 // that reach it. The undecided items, the items that no rule takes, and
 // the count of the vault items follow in sections of their own.
-func renderNewMatches(s *Snapshot, stored, newest string, evals []ruleEval, m newMatches, vault []*Item) string {
+func renderNewMatches(
+	s *inventory.Snapshot,
+	stored, newest string,
+	evals []ruleEval,
+	m newMatches,
+	vault []*inventory.Item,
+) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Autotagging is on. The next claim moves the stored mark from %s to %s "+
@@ -1672,11 +1705,11 @@ func renderRunRefusal(evals []ruleEval, m newMatches) string {
 // counts. Vaulted holds the items of the rules with the vault flag after
 // the moves, which [writeVaultMoves] reports.
 func renderRun(
-	s *Snapshot,
+	s *inventory.Snapshot,
 	stored, newest string,
 	evals []ruleEval,
 	m newMatches,
-	vault []*Item,
+	vault []*inventory.Item,
 	vaulted []vaultItem,
 ) string {
 	var b strings.Builder
@@ -1712,7 +1745,13 @@ func renderRun(
 // that its rule gives, so that the user can set the tags with set_tag.
 // Vaulted holds the items of the rules with the vault flag after the
 // moves, which [writeVaultMoves] reports.
-func renderTagFailure(s *Snapshot, stored, newest string, err error, tags []ruleTag, vaulted []vaultItem) string {
+func renderTagFailure(
+	s *inventory.Snapshot,
+	stored, newest string,
+	err error,
+	tags []ruleTag,
+	vaulted []vaultItem,
+) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Claimed the new items. The stored mark moved from %s to %s.\n\n", stored, newest)
@@ -1730,12 +1769,12 @@ func renderTagFailure(s *Snapshot, stored, newest string, err error, tags []rule
 
 // writeVaultMoves writes the parts of a run_autotag_rules result that
 // report the items of the rules with the vault flag. Items holds those
-// items after the moves, in the order of [CompareIDs]. The first part
+// items after the moves, in the order of [inventory.CompareIDs]. The first part
 // lists the moved items. The second lists the items that stayed in place,
 // each with its reason. The third lists the failed moves, each with the
 // error and the location of the item. Each part opens with a blank line
 // and a count, and writeVaultMoves leaves out a part without an item.
-func writeVaultMoves(b *strings.Builder, s *Snapshot, items []vaultItem) {
+func writeVaultMoves(b *strings.Builder, s *inventory.Snapshot, items []vaultItem) {
 	var moved, left, failed []string
 
 	for _, v := range items {
@@ -1811,7 +1850,7 @@ func renderUnsureClaim(head string, tags []ruleTag, vaulted []vaultItem) string 
 
 // writeNewItems writes one line for each item of items, as
 // [newItemLabel] names it.
-func writeNewItems(b *strings.Builder, s *Snapshot, items []*Item) {
+func writeNewItems(b *strings.Builder, s *inventory.Snapshot, items []*inventory.Item) {
 	for _, item := range items {
 		fmt.Fprintf(b, "  - %s\n", newItemLabel(s, item))
 	}
@@ -1819,7 +1858,7 @@ func writeNewItems(b *strings.Builder, s *Snapshot, items []*Item) {
 
 // newItemLabel names one new item by its name, its instance id, and its
 // location, such as "Fatebringer (1007), Hunter".
-func newItemLabel(s *Snapshot, item *Item) string {
+func newItemLabel(s *inventory.Snapshot, item *inventory.Item) string {
 	return fmt.Sprintf("%s (%s), %s", item.Name, item.InstanceID, s.LocationLabel(item))
 }
 

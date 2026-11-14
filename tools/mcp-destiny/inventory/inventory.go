@@ -1,4 +1,4 @@
-package main
+package inventory
 
 import (
 	"cmp"
@@ -84,6 +84,10 @@ var (
 	// such as a Stat that no item has. It also reports a positive MinStat
 	// or a Sort of "stat" in a filter without a Stat.
 	ErrInvalidFilter = errors.New("invalid filter")
+
+	// ErrInvalidInput reports an argument that [*Snapshot.ResolveSlot]
+	// rejects, such as a slot name that selects no bucket.
+	ErrInvalidInput = errors.New("invalid input")
 
 	// ErrUnknownTarget reports a location or character name that the caller
 	// does not accept, such as a class name that several characters share.

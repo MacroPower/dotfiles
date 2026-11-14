@@ -17,6 +17,8 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
 )
 
 // compiled parses and compiles query, which must parse.
@@ -32,7 +34,7 @@ func compiled(t *testing.T, query string) compiledQuery {
 // matchIDs returns the instance id of each item that query matches in a
 // search context whose items are items, in the order of items. Every term
 // of query must be supported.
-func matchIDs(t *testing.T, query string, items []*Item) []string {
+func matchIDs(t *testing.T, query string, items []*inventory.Item) []string {
 	t.Helper()
 
 	return contextMatchIDs(t, query, searchContext{items: items})
@@ -123,7 +125,7 @@ func TestOwnedItems(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 
-	s := NewSnapshot(&p, defs, bungietest.Now)
+	s := inventory.NewSnapshot(&p, defs, bungietest.Now)
 	built := builtItems(s)
 	owned := ownedItems(s)
 
@@ -153,7 +155,7 @@ func TestOwnedItems(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			i := slices.IndexFunc(s.Items, func(item *Item) bool {
+			i := slices.IndexFunc(s.Items, func(item *inventory.Item) bool {
 				return item.Hash == tc.hash && item.InstanceID == tc.id
 			})
 			require.GreaterOrEqual(t, i, 0)
@@ -169,36 +171,36 @@ func TestCompileQueryTableA(t *testing.T) {
 
 	tests := map[string]struct {
 		query string
-		items []*Item
+		items []*inventory.Item
 		want  []string
 	}{
 		"is:weapon": {
 			query: "is:weapon",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "kinetic", Bucket: bungie.BucketKinetic},
 				{InstanceID: "energy", Bucket: bungie.BucketEnergy},
 				{InstanceID: "power", Bucket: bungie.BucketPower},
 				{InstanceID: "helmet", Bucket: bungie.BucketHelmet},
-				{InstanceID: "weapon kind", Bucket: bungie.BucketEngrams, Kind: KindWeapon},
+				{InstanceID: "weapon kind", Bucket: bungie.BucketEngrams, Kind: inventory.KindWeapon},
 			},
 			want: []string{"kinetic", "energy", "power"},
 		},
 		"is:armor": {
 			query: "is:armor",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "helmet", Bucket: bungie.BucketHelmet},
 				{InstanceID: "gauntlets", Bucket: bungie.BucketGauntlets},
 				{InstanceID: "chest", Bucket: bungie.BucketChestArmor},
 				{InstanceID: "legs", Bucket: bungie.BucketLegArmor},
 				{InstanceID: "class", Bucket: bungie.BucketClassArmor},
 				{InstanceID: "kinetic", Bucket: bungie.BucketKinetic},
-				{InstanceID: "armor kind", Bucket: bungie.BucketEngrams, Kind: KindArmor},
+				{InstanceID: "armor kind", Bucket: bungie.BucketEngrams, Kind: inventory.KindArmor},
 			},
 			want: []string{"helmet", "gauntlets", "chest", "legs", "class"},
 		},
 		"is:equipment": {
 			query: "is:equipment",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "equippable", Bucket: bungie.BucketKinetic, Equippable: true},
 				{InstanceID: "not equippable", Bucket: bungie.BucketKinetic},
 				{InstanceID: "emote", Bucket: bungie.BucketEmotes, Equippable: true},
@@ -208,7 +210,7 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"is:equippable": {
 			query: "is:equippable",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "equippable", Bucket: bungie.BucketKinetic, Equippable: true},
 				{InstanceID: "not equippable", Bucket: bungie.BucketKinetic},
 				{InstanceID: "emote", Bucket: bungie.BucketEmotes, Equippable: true},
@@ -217,7 +219,7 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"is:equipped": {
 			query: "is:equipped",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "equipped", Equipped: true},
 				{InstanceID: "held"},
 			},
@@ -225,16 +227,16 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"is:invault": {
 			query: "is:invault",
-			items: []*Item{
-				{InstanceID: "vault", Owner: OwnerVault},
-				{InstanceID: "account", Owner: OwnerAccount},
+			items: []*inventory.Item{
+				{InstanceID: "vault", Owner: inventory.OwnerVault},
+				{InstanceID: "account", Owner: inventory.OwnerAccount},
 				{InstanceID: "character", Owner: bungietest.HunterID},
 			},
 			want: []string{"vault"},
 		},
 		"is:postmaster": {
 			query: "is:postmaster",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "lost", Bucket: bungie.BucketKinetic, Lost: true, Postmaster: true},
 				{InstanceID: "engram", Bucket: bungie.BucketEngrams},
 				{InstanceID: "message", Bucket: bungie.BucketMessages, Postmaster: true},
@@ -246,7 +248,7 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"is:inpostmaster": {
 			query: "is:inpostmaster",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "lost", Bucket: bungie.BucketKinetic, Lost: true, Postmaster: true},
 				{InstanceID: "engram", Bucket: bungie.BucketEngrams},
 				{InstanceID: "held", Bucket: bungie.BucketKinetic},
@@ -255,7 +257,7 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"is:locked": {
 			query: "is:locked",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "locked", Lockable: true, Locked: true},
 				{InstanceID: "unlocked", Lockable: true},
 				{InstanceID: "locked without lock", Locked: true},
@@ -265,7 +267,7 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"is:unlocked": {
 			query: "is:unlocked",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "locked", Lockable: true, Locked: true},
 				{InstanceID: "unlocked", Lockable: true},
 				{InstanceID: "locked without lock", Locked: true},
@@ -275,7 +277,7 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"is:titan": {
 			query: "is:titan",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "titan", ClassType: bungie.ClassTitan},
 				{InstanceID: "hunter", ClassType: bungie.ClassHunter},
 				{InstanceID: "warlock", ClassType: bungie.ClassWarlock},
@@ -285,7 +287,7 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"is:hunter": {
 			query: "is:hunter",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "titan", ClassType: bungie.ClassTitan},
 				{InstanceID: "hunter", ClassType: bungie.ClassHunter},
 				{InstanceID: "any", ClassType: bungie.ClassAny},
@@ -294,7 +296,7 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"is:warlock": {
 			query: "is:warlock",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "hunter", ClassType: bungie.ClassHunter},
 				{InstanceID: "warlock", ClassType: bungie.ClassWarlock},
 				{InstanceID: "any", ClassType: bungie.ClassAny},
@@ -303,7 +305,7 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"is:favorite": {
 			query: "is:favorite",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "favorite", Favorite: true},
 				{InstanceID: "plain"},
 			},
@@ -311,7 +313,7 @@ func TestCompileQueryTableA(t *testing.T) {
 		},
 		"tag:keep": {
 			query: "tag:keep",
-			items: []*Item{
+			items: []*inventory.Item{
 				{InstanceID: "keep", Tag: "keep"},
 				{InstanceID: "junk", Tag: dvm.TagJunk},
 				{InstanceID: "untagged"},
@@ -335,7 +337,7 @@ func TestCompileQueryTag(t *testing.T) {
 	custom := dvm.PrimaryTag([]string{"custom"})
 	require.Equal(t, "custom", custom)
 
-	items := []*Item{
+	items := []*inventory.Item{
 		{InstanceID: "keep", Tag: "keep"},
 		{InstanceID: "junk", Tag: dvm.TagJunk},
 		{InstanceID: "untagged"},
@@ -369,7 +371,7 @@ func TestCompileQueryTag(t *testing.T) {
 func TestCompileQueryNot(t *testing.T) {
 	t.Parallel()
 
-	items := []*Item{
+	items := []*inventory.Item{
 		{InstanceID: "equipped", Equipped: true},
 		{InstanceID: "held"},
 	}
@@ -396,7 +398,7 @@ func TestCompileQueryNot(t *testing.T) {
 func TestCompileQueryOperators(t *testing.T) {
 	t.Parallel()
 
-	items := []*Item{
+	items := []*inventory.Item{
 		{InstanceID: "locked weapon", Bucket: bungie.BucketKinetic, Lockable: true, Locked: true},
 		{InstanceID: "weapon", Bucket: bungie.BucketKinetic, Lockable: true},
 		{InstanceID: "locked helmet", Bucket: bungie.BucketHelmet, Lockable: true, Locked: true},
@@ -542,7 +544,7 @@ func TestListWithAnd(t *testing.T) {
 func TestCompiledQueryMatches(t *testing.T) {
 	t.Parallel()
 
-	items := []*Item{
+	items := []*inventory.Item{
 		{InstanceID: "20", Name: "Gjallarhorn", Bucket: bungie.BucketPower},
 		{InstanceID: "100", Name: "Fatebringer", Bucket: bungie.BucketKinetic},
 		{InstanceID: "9", Name: "Fatebringer", Bucket: bungie.BucketKinetic},
@@ -550,7 +552,7 @@ func TestCompiledQueryMatches(t *testing.T) {
 	}
 
 	got := compiled(t, "is:weapon").evaluate(searchContext{items: items}, items).matches
-	assert.Equal(t, []string{"9", "100", "20"}, ids(got))
+	assert.Equal(t, []string{"9", "100", "20"}, inventorytest.IDs(got))
 }
 
 func TestRangeComparator(t *testing.T) {
@@ -727,8 +729,8 @@ func TestRangeComparatorUnsupported(t *testing.T) {
 
 // comparableWeapon returns a legendary kinetic weapon of every class that
 // DIM marks as comparable.
-func comparableWeapon(id, name string) *Item {
-	return &Item{
+func comparableWeapon(id, name string) *inventory.Item {
+	return &inventory.Item{
 		InstanceID: id,
 		Name:       name,
 		Tier:       "Legendary",
@@ -744,7 +746,7 @@ func TestItemDupeID(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		item *Item
+		item *inventory.Item
 		want string
 	}{
 		"weapon": {
@@ -784,7 +786,7 @@ func TestItemDupeID(t *testing.T) {
 			want: "Fatebringer3Legendary1498876634",
 		},
 		"armor keeps its spaces": {
-			item: &Item{
+			item: &inventory.Item{
 				Name:      "Helm ",
 				TierType:  bungie.TierTypeExotic,
 				ClassType: bungie.ClassHunter,
@@ -793,7 +795,7 @@ func TestItemDupeID(t *testing.T) {
 			want: "Helm 1Exotic3448274439",
 		},
 		"armor keeps a translation key": {
-			item: &Item{
+			item: &inventory.Item{
 				Name:      "Filter.Adept Helm",
 				TierType:  bungie.TierTypeExotic,
 				ClassType: bungie.ClassTitan,
@@ -824,8 +826,8 @@ func TestIsDupe(t *testing.T) {
 
 	// pair returns two comparable copies of a weapon, after edit changes
 	// each copy.
-	pair := func(name string, edit func(*Item)) []*Item {
-		items := []*Item{comparableWeapon(name+" 1", name), comparableWeapon(name+" 2", name)}
+	pair := func(name string, edit func(*inventory.Item)) []*inventory.Item {
+		items := []*inventory.Item{comparableWeapon(name+" 1", name), comparableWeapon(name+" 2", name)}
 		for _, item := range items {
 			edit(item)
 		}
@@ -834,43 +836,46 @@ func TestIsDupe(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		items []*Item
+		items []*inventory.Item
 		want  []string
 	}{
 		"pair": {
-			items: pair("Fatebringer", func(*Item) {}),
+			items: pair("Fatebringer", func(*inventory.Item) {}),
 			want:  []string{"Fatebringer 1", "Fatebringer 2"},
 		},
 		"adept copy and base weapon": {
-			items: []*Item{comparableWeapon("adept", "Fatebringer (Adept)"), comparableWeapon("base", "Fatebringer")},
-			want:  []string{},
+			items: []*inventory.Item{
+				comparableWeapon("adept", "Fatebringer (Adept)"),
+				comparableWeapon("base", "Fatebringer"),
+			},
+			want: []string{},
 		},
 		"single copy": {
-			items: []*Item{comparableWeapon("single", "Fatebringer")},
+			items: []*inventory.Item{comparableWeapon("single", "Fatebringer")},
 			want:  []string{},
 		},
 		"pair of emblems": {
-			items: pair("Emblem", func(item *Item) { item.Bucket = bungie.BucketEmblems }),
+			items: pair("Emblem", func(item *inventory.Item) { item.Bucket = bungie.BucketEmblems }),
 			want:  []string{},
 		},
 		"pair in the Artifacts bucket": {
-			items: pair("Artifact", func(item *Item) { item.Bucket = bungie.BucketArtifacts }),
+			items: pair("Artifact", func(item *inventory.Item) { item.Bucket = bungie.BucketArtifacts }),
 			want:  []string{},
 		},
 		"pair of default shaders": {
-			items: pair("Default Shader", func(item *Item) { item.Hash = hashDefaultShader }),
+			items: pair("Default Shader", func(item *inventory.Item) { item.Hash = hashDefaultShader }),
 			want:  []string{},
 		},
 		"pair without a lock": {
-			items: pair("Fatebringer", func(item *Item) { item.Lockable = false }),
+			items: pair("Fatebringer", func(item *inventory.Item) { item.Lockable = false }),
 			want:  []string{},
 		},
 		"pair of emotes": {
-			items: pair("Wave", func(item *Item) { item.Bucket = bungie.BucketEmotes }),
+			items: pair("Wave", func(item *inventory.Item) { item.Bucket = bungie.BucketEmotes }),
 			want:  []string{},
 		},
 		"same name in two classes": {
-			items: []*Item{comparableWeapon("titan", "Helm"), {
+			items: []*inventory.Item{comparableWeapon("titan", "Helm"), {
 				InstanceID: "hunter", Name: "Helm", Tier: "Legendary", TierType: bungie.TierTypeLegendary,
 				ClassType: bungie.ClassHunter, Bucket: bungie.BucketKinetic, Equippable: true, Lockable: true,
 			}},
@@ -893,7 +898,7 @@ func TestIsDupeGroupsEveryItem(t *testing.T) {
 	unlockable := comparableWeapon("unlockable", "Fatebringer")
 	unlockable.Lockable = false
 
-	items := []*Item{comparableWeapon("comparable", "Fatebringer"), unlockable}
+	items := []*inventory.Item{comparableWeapon("comparable", "Fatebringer"), unlockable}
 
 	assert.Equal(t, []string{"comparable"}, matchIDs(t, "is:dupe", items))
 	assert.Equal(t, []string{"unlockable"}, matchIDs(t, "not:dupe", items))
@@ -908,7 +913,7 @@ func TestCount(t *testing.T) {
 	emblem := comparableWeapon("emblem", "Emblem")
 	emblem.Bucket = bungie.BucketEmblems
 
-	items := []*Item{
+	items := []*inventory.Item{
 		comparableWeapon("copy 1", "Midnight Coup"),
 		comparableWeapon("copy 2", "Midnight Coup"),
 		unlockable,
@@ -944,7 +949,7 @@ func TestCount(t *testing.T) {
 func TestDupeValues(t *testing.T) {
 	t.Parallel()
 
-	items := []*Item{
+	items := []*inventory.Item{
 		comparableWeapon("copy 1", "Midnight Coup"),
 		comparableWeapon("copy 2", "Midnight Coup"),
 		comparableWeapon("single", "Fatebringer"),
@@ -986,7 +991,7 @@ func TestDupeValues(t *testing.T) {
 func TestHashAndID(t *testing.T) {
 	t.Parallel()
 
-	items := []*Item{
+	items := []*inventory.Item{
 		{InstanceID: "1001", Hash: 1234},
 		{InstanceID: "1002", Hash: 1234},
 		{InstanceID: "1003", Hash: 99},
@@ -1029,13 +1034,13 @@ func TestCurrentCharacter(t *testing.T) {
 	t.Parallel()
 
 	ctx := searchContext{
-		current: Character{ID: bungietest.HunterID, ClassType: bungie.ClassHunter},
-		items: []*Item{
+		current: inventory.Character{ID: bungietest.HunterID, ClassType: bungie.ClassHunter},
+		items: []*inventory.Item{
 			{InstanceID: "hunter armor", Owner: bungietest.HunterID, ClassType: bungie.ClassHunter},
 			{InstanceID: "hunter weapon", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
-			{InstanceID: "account", Owner: OwnerAccount, ClassType: bungie.ClassAny},
-			{InstanceID: "vault armor", Owner: OwnerVault, ClassType: bungie.ClassHunter},
-			{InstanceID: "vault weapon", Owner: OwnerVault, ClassType: bungie.ClassAny},
+			{InstanceID: "account", Owner: inventory.OwnerAccount, ClassType: bungie.ClassAny},
+			{InstanceID: "vault armor", Owner: inventory.OwnerVault, ClassType: bungie.ClassHunter},
+			{InstanceID: "vault weapon", Owner: inventory.OwnerVault, ClassType: bungie.ClassAny},
 			{InstanceID: "titan armor", Owner: bungietest.TitanID, ClassType: bungie.ClassTitan},
 			{InstanceID: "titan holds hunter armor", Owner: bungietest.TitanID, ClassType: bungie.ClassHunter},
 		},
@@ -1104,10 +1109,10 @@ func TestCompileQueryInvalidFirst(t *testing.T) {
 
 // namedItems returns one item for each of names, with the name as its
 // instance id too.
-func namedItems(names ...string) []*Item {
-	items := make([]*Item, 0, len(names))
+func namedItems(names ...string) []*inventory.Item {
+	items := make([]*inventory.Item, 0, len(names))
 	for _, name := range names {
-		items = append(items, &Item{InstanceID: name, Name: name})
+		items = append(items, &inventory.Item{InstanceID: name, Name: name})
 	}
 
 	return items
@@ -1115,7 +1120,7 @@ func namedItems(names ...string) []*Item {
 
 // nameItems returns the items of the name filter tests, which port the
 // name tests of the web client.
-func nameItems() []*Item {
+func nameItems() []*inventory.Item {
 	return namedItems("Gnawing Hunger", "Hunger of Crota", "Hard Light", "D\u00e9j\u00e0 Vu", "Fatebringer")
 }
 
@@ -1175,7 +1180,7 @@ func TestNameQuoted(t *testing.T) {
 func TestNameDiacritics(t *testing.T) {
 	t.Parallel()
 
-	items := append(nameItems(), &Item{InstanceID: "decomposed", Name: "De\u0301ja\u0300 Vu"})
+	items := append(nameItems(), &inventory.Item{InstanceID: "decomposed", Name: "De\u0301ja\u0300 Vu"})
 
 	tests := map[string]struct {
 		query string
@@ -1292,7 +1297,7 @@ func TestNameQuotes(t *testing.T) {
 func TestExactName(t *testing.T) {
 	t.Parallel()
 
-	items := append(nameItems(), &Item{InstanceID: "adept", Name: "Gnawing Hunger (Adept)"})
+	items := append(nameItems(), &inventory.Item{InstanceID: "adept", Name: "Gnawing Hunger (Adept)"})
 
 	tests := map[string]struct {
 		query string
@@ -1343,9 +1348,10 @@ func TestPlainString(t *testing.T) {
 }
 
 // weaponTypeItems returns the owned items of a vault that holds ten weapons
-// and a helmet. The items pass through [NewSnapshot], so their item
-// categories carry the changes of [itemCategories].
-func weaponTypeItems(t *testing.T) []*Item {
+// and a helmet. The items pass through [inventory.NewSnapshot], so their
+// item categories carry the changes that the snapshot makes to the item
+// categories of the definitions.
+func weaponTypeItems(t *testing.T) []*inventory.Item {
 	t.Helper()
 
 	defs := definitionstest.Defs()
@@ -1430,7 +1436,7 @@ func weaponTypeItems(t *testing.T) []*Item {
 
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 
-	owned := ownedItems(NewSnapshot(&p, defs, bungietest.Now))
+	owned := ownedItems(inventory.NewSnapshot(&p, defs, bungietest.Now))
 	require.Len(t, owned, 11)
 
 	return owned
@@ -1438,7 +1444,7 @@ func weaponTypeItems(t *testing.T) []*Item {
 
 // matchNames returns the name of each item of items that query matches,
 // in the order of [compiledQuery.evaluate].
-func matchNames(t *testing.T, query string, items []*Item) []string {
+func matchNames(t *testing.T, query string, items []*inventory.Item) []string {
 	t.Helper()
 
 	q := compiled(t, query)
@@ -1588,11 +1594,11 @@ func TestCategoryWords(t *testing.T) {
 
 	// The items hold one category each, so a word matches only the item of
 	// its own category.
-	var items []*Item
+	var items []*inventory.Item
 	for _, tc := range tests {
 		id := strconv.FormatInt(tc.category, 10)
-		if !slices.ContainsFunc(items, func(item *Item) bool { return item.InstanceID == id }) {
-			items = append(items, &Item{InstanceID: id, Categories: []int64{tc.category}})
+		if !slices.ContainsFunc(items, func(item *inventory.Item) bool { return item.InstanceID == id }) {
+			items = append(items, &inventory.Item{InstanceID: id, Categories: []int64{tc.category}})
 		}
 	}
 
@@ -1679,9 +1685,9 @@ func ratingContext() searchContext {
 	pve := &Sheet{
 		Rows: map[uint32]SheetRow{100: {Tier: "S"}, 101: {Tier: "A"}, 102: {}, 103: {Tier: "A"}, 104: {}},
 		Columns: map[uint32][][]uint32{
-			100: {{plugExplosivePayload.Hash}, {plugKillClip.Hash}},
-			103: {{plugExplosivePayload.Hash}},
-			104: {{plugExplosivePayload.Hash}},
+			100: {{inventorytest.PlugExplosivePayload.Hash}, {inventorytest.PlugKillClip.Hash}},
+			103: {{inventorytest.PlugExplosivePayload.Hash}},
+			104: {{inventorytest.PlugExplosivePayload.Hash}},
 		},
 	}
 	pvp := &Sheet{
@@ -1689,19 +1695,24 @@ func ratingContext() searchContext {
 		Columns: map[uint32][][]uint32{100: {{906}}},
 	}
 
-	weapon := func(id string, hash uint32, perks ...Perk) *Item {
-		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketKinetic, Perks: perks}
+	weapon := func(id string, hash uint32, perks ...inventory.Perk) *inventory.Item {
+		return &inventory.Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketKinetic, Perks: perks}
 	}
 
-	armor := func(id string, hash uint32) *Item {
-		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketHelmet}
+	armor := func(id string, hash uint32) *inventory.Item {
+		return &inventory.Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketHelmet}
 	}
 
 	return searchContext{
-		items: []*Item{
-			weapon("s", 100, Perk{Plug: plugExplosivePayload}, Perk{Plug: plugKillClip, Socket: 1}),
+		items: []*inventory.Item{
+			weapon(
+				"s",
+				100,
+				inventory.Perk{Plug: inventorytest.PlugExplosivePayload},
+				inventory.Perk{Plug: inventorytest.PlugKillClip, Socket: 1},
+			),
 			weapon("a", 100, rolledPerks()...),
-			weapon("b", 100, Perk{Plug: plugFirefly}),
+			weapon("b", 100, inventory.Perk{Plug: plugFirefly}),
 			weapon("exotic", 101),
 			weapon("no tier", 102),
 			weapon("unknown", 103),
@@ -1900,7 +1911,7 @@ func TestRateUnknownRoll(t *testing.T) {
 	// rates S.
 	ctx := ratingContext()
 	ctx.sources[modePvE].Sheet.SetBonuses = map[uint32]SetBonus{perkFourPiece: {Tier: "S", Pieces: 4}}
-	ctx.items = append(ctx.items, &Item{
+	ctx.items = append(ctx.items, &inventory.Item{
 		InstanceID: "set helmet",
 		Name:       "set helmet",
 		Hash:       103,
@@ -1971,7 +1982,7 @@ func TestRateUnknownRoll(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			i := slices.IndexFunc(ctx.items, func(item *Item) bool { return item.InstanceID == tc.id })
+			i := slices.IndexFunc(ctx.items, func(item *inventory.Item) bool { return item.InstanceID == tc.id })
 			require.GreaterOrEqual(t, i, 0)
 
 			assert.Equal(t, tc.want, compiled(t, tc.query).test(ctx)(ctx.items[i]))
@@ -2029,13 +2040,13 @@ func TestEvaluate(t *testing.T) {
 	// Two copies of weapon 103 without perks share the name b, so rate:b
 	// leaves both undecided.
 	ctx := ratingContext()
-	ctx.items = slices.Concat(ctx.items, []*Item{
+	ctx.items = slices.Concat(ctx.items, []*inventory.Item{
 		{InstanceID: "20", Name: "b", Hash: 103, Bucket: bungie.BucketKinetic},
 		{InstanceID: "3", Name: "b", Hash: 103, Bucket: bungie.BucketKinetic},
 	})
 
 	result := compiled(t, "rate:b").evaluate(ctx, ctx.items)
-	assert.Equal(t, []string{"b"}, ids(result.matches))
+	assert.Equal(t, []string{"b"}, inventorytest.IDs(result.matches))
 
 	got := make([]string, 0, len(result.undecided))
 	for _, u := range result.undecided {
@@ -2148,15 +2159,15 @@ func TestVerdictOf(t *testing.T) {
 // verdictColumns returns. The copy hits the first column when first holds and the second column when
 // second holds. It holds a perk in each socket, so the profile lists
 // perks for it.
-func hitting(first, second bool) []Perk {
-	perks := []Perk{{Plug: plugFirefly}, {Plug: plugRampage, Socket: 1}}
+func hitting(first, second bool) []inventory.Perk {
+	perks := []inventory.Perk{{Plug: plugFirefly}, {Plug: inventorytest.PlugRampage, Socket: 1}}
 
 	if first {
-		perks[0].Plug = plugExplosivePayload
+		perks[0].Plug = inventorytest.PlugExplosivePayload
 	}
 
 	if second {
-		perks[1].Plug = plugKillClip
+		perks[1].Plug = inventorytest.PlugKillClip
 	}
 
 	return perks
@@ -2166,7 +2177,7 @@ func hitting(first, second bool) []Perk {
 // verdictContext. The first column picks Explosive Payload, and the
 // second picks Kill Clip.
 func verdictColumns() [][]uint32 {
-	return [][]uint32{{plugExplosivePayload.Hash}, {plugKillClip.Hash}}
+	return [][]uint32{{inventorytest.PlugExplosivePayload.Hash}, {inventorytest.PlugKillClip.Hash}}
 }
 
 // verdictContext returns a search context whose items cover the verdict
@@ -2206,12 +2217,12 @@ func verdictContext() searchContext {
 	}
 	pvp := &Sheet{
 		Rows:     map[uint32]SheetRow{120: {Tier: "A"}},
-		Columns:  map[uint32][][]uint32{120: {{plugKillClip.Hash}}},
+		Columns:  map[uint32][][]uint32{120: {{inventorytest.PlugKillClip.Hash}}},
 		Versions: map[uint32][]uint32{120: {120}},
 	}
 
-	weapon := func(id string, hash uint32, perks []Perk) *Item {
-		return &Item{
+	weapon := func(id string, hash uint32, perks []inventory.Perk) *inventory.Item {
+		return &inventory.Item{
 			InstanceID: id,
 			Name:       id,
 			Hash:       hash,
@@ -2222,10 +2233,10 @@ func verdictContext() searchContext {
 	}
 
 	best := weapon("best", 100, hitting(true, true))
-	best.Owner = OwnerVault
+	best.Owner = inventory.OwnerVault
 
 	return searchContext{
-		items: []*Item{
+		items: []*inventory.Item{
 			best,
 			weapon("worse", 101, hitting(true, false)),
 			weapon("same a", 110, hitting(true, false)),
@@ -2273,15 +2284,22 @@ func TestVerdictRivals(t *testing.T) {
 		},
 	}
 
-	weapon := func(id string, hash uint32, owner string, perks []Perk) *Item {
-		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketKinetic, Owner: owner, Perks: perks}
+	weapon := func(id string, hash uint32, owner string, perks []inventory.Perk) *inventory.Item {
+		return &inventory.Item{
+			InstanceID: id,
+			Name:       id,
+			Hash:       hash,
+			Bucket:     bungie.BucketKinetic,
+			Owner:      owner,
+			Perks:      perks,
+		}
 	}
 
 	stack := weapon("", 300, bungietest.HunterID, hitting(true, true))
 	ctx := searchContext{
-		items: []*Item{
+		items: []*inventory.Item{
 			weapon("original", 300, bungietest.HunterID, hitting(true, false)),
-			weapon("reissue", 301, OwnerVault, hitting(true, true)),
+			weapon("reissue", 301, inventory.OwnerVault, hitting(true, true)),
 			weapon("unrelated", 302, bungietest.HunterID, hitting(true, true)),
 			weapon("listed", 310, bungietest.HunterID, hitting(true, false)),
 			weapon("unrated", 311, bungietest.HunterID, hitting(true, true)),
@@ -2294,7 +2312,7 @@ func TestVerdictRivals(t *testing.T) {
 
 	rivals := map[string][]string{}
 	for _, item := range ctx.items[:5] {
-		rivals[item.InstanceID] = ids(rivalsOf(sheet, copies, item))
+		rivals[item.InstanceID] = inventorytest.IDs(rivalsOf(sheet, copies, item))
 	}
 
 	assert.Equal(t, map[string][]string{
@@ -2307,7 +2325,7 @@ func TestVerdictRivals(t *testing.T) {
 
 	// The copy without an instance id is not a rival of another copy.
 	// Every copy of 300 and 301 is a rival of it.
-	assert.Equal(t, []string{"original", "reissue"}, ids(rivalsOf(sheet, copies, stack)))
+	assert.Equal(t, []string{"original", "reissue"}, inventorytest.IDs(rivalsOf(sheet, copies, stack)))
 
 	// The reissue in the vault beats the original. The rival of listed
 	// has no sheet row, so it drops out.
@@ -2417,7 +2435,7 @@ func TestVerdictUndecided(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			i := slices.IndexFunc(ctx.items, func(item *Item) bool { return item.InstanceID == tc.id })
+			i := slices.IndexFunc(ctx.items, func(item *inventory.Item) bool { return item.InstanceID == tc.id })
 			require.GreaterOrEqual(t, i, 0)
 
 			assert.Equal(t, tc.want, compiled(t, tc.query).test(ctx)(ctx.items[i]))
@@ -2463,7 +2481,7 @@ func TestRarityWords(t *testing.T) {
 
 	// The uncommon item displays the tier name Common, which DIM does not
 	// read.
-	items := []*Item{
+	items := []*inventory.Item{
 		{InstanceID: "exotic helmet", Tier: "Exotic", TierType: bungie.TierTypeExotic, Bucket: bungie.BucketHelmet},
 		{
 			InstanceID: "legendary helmet",
@@ -2511,9 +2529,9 @@ func TestRarityWords(t *testing.T) {
 func TestElementWords(t *testing.T) {
 	t.Parallel()
 
-	var items []*Item
+	var items []*inventory.Item
 	for element := range 8 {
-		items = append(items, &Item{InstanceID: strconv.Itoa(element), Element: element})
+		items = append(items, &inventory.Item{InstanceID: strconv.Itoa(element), Element: element})
 	}
 
 	tests := map[string]struct {
@@ -2576,9 +2594,9 @@ func TestSlotWords(t *testing.T) {
 	// The lost weapon sits in the Lost Items bucket, and its definition
 	// names the kinetic bucket. Each other item sits in the bucket of one
 	// word and takes the word as its instance id.
-	items := []*Item{{InstanceID: "lost weapon", Bucket: bungie.BucketKinetic, Lost: true, Postmaster: true}}
+	items := []*inventory.Item{{InstanceID: "lost weapon", Bucket: bungie.BucketKinetic, Lost: true, Postmaster: true}}
 	for word, tc := range tests {
-		items = append(items, &Item{InstanceID: word, Bucket: tc.bucket})
+		items = append(items, &inventory.Item{InstanceID: word, Bucket: tc.bucket})
 	}
 
 	for word := range tests {
@@ -2599,7 +2617,7 @@ func TestPowerRange(t *testing.T) {
 	t.Parallel()
 
 	// The item without power has a primary stat that DIM does not count.
-	items := []*Item{
+	items := []*inventory.Item{
 		{InstanceID: "1900", Power: 1900, LightPower: 1900},
 		{InstanceID: "5", Power: 5, LightPower: 5},
 		{InstanceID: "no power", Power: 2000},
@@ -2717,7 +2735,7 @@ func TestPowerValueErrors(t *testing.T) {
 func TestHasPower(t *testing.T) {
 	t.Parallel()
 
-	items := []*Item{
+	items := []*inventory.Item{
 		{InstanceID: "counted", Power: 1900, LightPower: 1900},
 		{InstanceID: "not counted", Power: 2010},
 		{InstanceID: "no primary stat"},
@@ -2731,12 +2749,12 @@ func TestHasPower(t *testing.T) {
 func TestAutotagged(t *testing.T) {
 	t.Parallel()
 
-	s := fixtureSnapshot(t)
+	s := inventorytest.Snapshot(t)
 	owned := ownedItems(s)
 	target := owned[0]
 
 	matches := func(query string) []string {
-		return ids(compiled(t, query).evaluate(searchContext{items: builtItems(s)}, owned).matches)
+		return inventorytest.IDs(compiled(t, query).evaluate(searchContext{items: builtItems(s)}, owned).matches)
 	}
 
 	s.Annotate([]dvm.ItemTag{{InstanceID: target.InstanceID, TagID: dvm.TagJunk, RuleID: "rule-1"}}, nil)
@@ -2754,12 +2772,16 @@ func TestDupeKeyRarity(t *testing.T) {
 	rare := comparableWeapon("rare", "Fatebringer")
 	rare.TierType = bungie.TierTypeRare
 
-	assert.Equal(t, []string{}, matchIDs(t, "is:dupe", []*Item{rare, comparableWeapon("legendary", "Fatebringer")}))
+	assert.Equal(
+		t,
+		[]string{},
+		matchIDs(t, "is:dupe", []*inventory.Item{rare, comparableWeapon("legendary", "Fatebringer")}),
+	)
 
 	renamed := comparableWeapon("renamed", "Fatebringer")
 	renamed.Tier = "Superior"
 
-	got := matchIDs(t, "is:dupe", []*Item{renamed, comparableWeapon("legendary", "Fatebringer")})
+	got := matchIDs(t, "is:dupe", []*inventory.Item{renamed, comparableWeapon("legendary", "Fatebringer")})
 	assert.Equal(t, []string{"renamed", "legendary"}, got)
 }
 
@@ -2796,8 +2818,8 @@ func setBonusContext() searchContext {
 		SetBonuses: map[uint32]SetBonus{perkTwoPiece: {Tier: "A", Pieces: 2}},
 	}
 
-	armor := func(id string, perks ...uint32) *Item {
-		return &Item{
+	armor := func(id string, perks ...uint32) *inventory.Item {
+		return &inventory.Item{
 			InstanceID: id,
 			Name:       id,
 			Hash:       200,
@@ -2809,7 +2831,7 @@ func setBonusContext() searchContext {
 	}
 
 	return searchContext{
-		items: []*Item{
+		items: []*inventory.Item{
 			armor("set", perkTwoPiece, perkFourPiece),
 			armor("untiered", perkNoTier),
 			armor("unrated", perkUnrated),
@@ -2902,7 +2924,7 @@ func TestSetBonusNone(t *testing.T) {
 	// The armor named helmet has no item set, and no sheet lists its hash.
 	ctx := ratingContext()
 
-	i := slices.IndexFunc(ctx.items, func(item *Item) bool { return item.InstanceID == "helmet" })
+	i := slices.IndexFunc(ctx.items, func(item *inventory.Item) bool { return item.InstanceID == "helmet" })
 	require.GreaterOrEqual(t, i, 0)
 
 	armor := ctx.items[i]
@@ -2928,7 +2950,7 @@ func TestSetBonusNone(t *testing.T) {
 		})
 	}
 
-	result := compiled(t, "rate:>=a").evaluate(ctx, []*Item{armor})
+	result := compiled(t, "rate:>=a").evaluate(ctx, []*inventory.Item{armor})
 	assert.Empty(t, result.matches)
 	assert.Empty(t, result.undecided)
 }
@@ -2981,7 +3003,7 @@ func TestPvPSetBonus(t *testing.T) {
 // definition with the item set 8, which is not an owned item. Sets holds
 // the item sets of the definitions, and listed records whether the
 // service index lists the EquipableItemSet artifact.
-func setSnapshot(t *testing.T, listed bool, sets map[uint32][]uint32) *Snapshot {
+func setSnapshot(t *testing.T, listed bool, sets map[uint32][]uint32) *inventory.Snapshot {
 	t.Helper()
 
 	const profile = `{
@@ -3021,7 +3043,7 @@ func setSnapshot(t *testing.T, listed bool, sets map[uint32][]uint32) *Snapshot 
 
 	require.NoError(t, json.Unmarshal([]byte(profile), &p))
 
-	return NewSnapshot(&p, defs, bungietest.Now)
+	return inventory.NewSnapshot(&p, defs, bungietest.Now)
 }
 
 func TestBuiltItemsWithoutArtifact(t *testing.T) {
@@ -3030,8 +3052,8 @@ func TestBuiltItemsWithoutArtifact(t *testing.T) {
 	s := setSnapshot(t, false, map[uint32][]uint32{})
 	assert.False(t, s.ItemSetsListed)
 
-	assert.Equal(t, []string{"1004"}, ids(builtItems(s)))
-	assert.Equal(t, []string{"1004"}, ids(ownedItems(s)))
+	assert.Equal(t, []string{"1004"}, inventorytest.IDs(builtItems(s)))
+	assert.Equal(t, []string{"1004"}, inventorytest.IDs(ownedItems(s)))
 
 	ctx := searchContext{items: builtItems(s)}
 	assert.Equal(t, []string{"1004"}, contextMatchIDs(t, "is:armor", ctx))
@@ -3043,7 +3065,7 @@ func TestBuiltItemsWithoutArtifact(t *testing.T) {
 	// The index decides alone, so a set that the definitions hold does not
 	// keep its item when the index lists no artifact.
 	held := setSnapshot(t, false, map[uint32][]uint32{7: {perkTwoPiece}})
-	assert.Equal(t, []string{"1004"}, ids(ownedItems(held)))
+	assert.Equal(t, []string{"1004"}, inventorytest.IDs(ownedItems(held)))
 }
 
 func TestBuiltItemsMissingSet(t *testing.T) {
@@ -3064,22 +3086,22 @@ func TestBuiltItemsMissingSet(t *testing.T) {
 	assert.False(t, missing.SetKnown)
 	assert.Nil(t, missing.SetPerks)
 
-	assert.Equal(t, []string{"2001", "1004"}, ids(builtItems(s)))
-	assert.Equal(t, []string{"2001", "1004"}, ids(ownedItems(s)))
+	assert.Equal(t, []string{"2001", "1004"}, inventorytest.IDs(builtItems(s)))
+	assert.Equal(t, []string{"2001", "1004"}, inventorytest.IDs(ownedItems(s)))
 	assert.Equal(t, "The server leaves out 1 owned items whose item set the EquipableItemSet definitions lack, "+
 		"because the web client builds no such item.", unbuiltLine(s))
 
 	every := setSnapshot(t, true, map[uint32][]uint32{7: {perkTwoPiece}, 8: {}})
-	assert.Equal(t, []string{"2001", "2002", "1004"}, ids(ownedItems(every)))
+	assert.Equal(t, []string{"2001", "2002", "1004"}, inventorytest.IDs(ownedItems(every)))
 	assert.Empty(t, unbuiltLine(every))
-	assert.Empty(t, unbuiltLine(fixtureSnapshot(t)))
+	assert.Empty(t, unbuiltLine(inventorytest.Snapshot(t)))
 }
 
 func TestUnbuiltLineSkipsDummyBuckets(t *testing.T) {
 	t.Parallel()
 
-	helmet := func(id string, bucket uint32, lost bool) *Item {
-		return &Item{
+	helmet := func(id string, bucket uint32, lost bool) *inventory.Item {
+		return &inventory.Item{
 			InstanceID: id,
 			Name:       id,
 			Bucket:     bucket,
@@ -3093,9 +3115,9 @@ func TestUnbuiltLineSkipsDummyBuckets(t *testing.T) {
 	// bucket rule already leaves out the helmets in the two dummy buckets,
 	// so the line does not count them. The current bucket of the lost
 	// helmet is the Lost Items bucket, so the line counts it.
-	s := &Snapshot{
+	s := &inventory.Snapshot{
 		ItemSetsListed: true,
-		Items: []*Item{
+		Items: []*inventory.Item{
 			helmet("helmet", bungie.BucketHelmet, false),
 			helmet("dummy", bungie.BucketDummy, false),
 			helmet("forbidden", bungie.BucketForbidden, false),
@@ -3111,8 +3133,8 @@ func TestUnbuiltLineSkipsDummyBuckets(t *testing.T) {
 func TestDupeSkipsUnbuilt(t *testing.T) {
 	t.Parallel()
 
-	helmet := func(id, name string, set uint32, known bool) *Item {
-		return &Item{
+	helmet := func(id, name string, set uint32, known bool) *inventory.Item {
+		return &inventory.Item{
 			InstanceID: id,
 			Name:       name,
 			TierType:   bungie.TierTypeLegendary,
@@ -3128,9 +3150,9 @@ func TestDupeSkipsUnbuilt(t *testing.T) {
 	// Helmets 1 and 2 belong to a set that the definitions lack. Helmet 5
 	// shares their name but belongs to no set. Helmets 3 and 4 belong to a
 	// set that the definitions hold.
-	s := &Snapshot{
+	s := &inventory.Snapshot{
 		ItemSetsListed: true,
-		Items: []*Item{
+		Items: []*inventory.Item{
 			helmet("1", "Wild Hunt Mask", 8, false),
 			helmet("2", "Wild Hunt Mask", 8, false),
 			helmet("5", "Wild Hunt Mask", 0, false),
@@ -3140,7 +3162,9 @@ func TestDupeSkipsUnbuilt(t *testing.T) {
 	}
 
 	matches := func(query string) []string {
-		return ids(compiled(t, query).evaluate(searchContext{items: builtItems(s)}, ownedItems(s)).matches)
+		return inventorytest.IDs(
+			compiled(t, query).evaluate(searchContext{items: builtItems(s)}, ownedItems(s)).matches,
+		)
 	}
 
 	assert.Equal(t, []string{"3", "4"}, matches("is:dupe"))

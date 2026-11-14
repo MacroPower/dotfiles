@@ -15,6 +15,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 )
 
 // hashDefaultShader is the item hash of the default shader, which DIM
@@ -206,16 +207,28 @@ var (
 		{name: filterIs, word: "armor", match: inBuckets(armorBuckets...)},
 		{name: filterIs, word: "equipment", match: isEquipment},
 		{name: filterIs, word: "equippable", match: isEquipment},
-		{name: filterIs, word: "equipped", match: func(item *Item) bool { return item.Equipped }},
-		{name: filterIs, word: "invault", match: func(item *Item) bool { return item.Owner == OwnerVault }},
+		{name: filterIs, word: "equipped", match: func(item *inventory.Item) bool { return item.Equipped }},
+		{
+			name:  filterIs,
+			word:  "invault",
+			match: func(item *inventory.Item) bool { return item.Owner == inventory.OwnerVault },
+		},
 		{name: filterIs, word: "postmaster", match: inPostmaster},
 		{name: filterIs, word: "inpostmaster", match: inPostmaster},
-		{name: filterIs, word: "locked", match: func(item *Item) bool { return item.Lockable && item.Locked }},
-		{name: filterIs, word: "unlocked", match: func(item *Item) bool { return item.Lockable && !item.Locked }},
+		{
+			name:  filterIs,
+			word:  "locked",
+			match: func(item *inventory.Item) bool { return item.Lockable && item.Locked },
+		},
+		{
+			name:  filterIs,
+			word:  "unlocked",
+			match: func(item *inventory.Item) bool { return item.Lockable && !item.Locked },
+		},
 		{name: filterIs, word: "titan", match: ofClass(bungie.ClassTitan)},
 		{name: filterIs, word: "hunter", match: ofClass(bungie.ClassHunter)},
 		{name: filterIs, word: "warlock", match: ofClass(bungie.ClassWarlock)},
-		{name: filterIs, word: "favorite", match: func(item *Item) bool { return item.Favorite }},
+		{name: filterIs, word: "favorite", match: func(item *inventory.Item) bool { return item.Favorite }},
 		{name: filterIs, word: "autorifle", match: inCategory(bungie.CategoryAutoRifle)},
 		{name: filterIs, word: "handcannon", match: inCategory(bungie.CategoryHandCannon)},
 		{name: filterIs, word: "pulserifle", match: inCategory(bungie.CategoryPulseRifle)},
@@ -252,16 +265,16 @@ var (
 		{name: filterIs, word: "dupe", build: isDupe},
 		{name: filterIs, word: "incurrentchar", build: inCurrentChar},
 		{name: filterIs, word: "currentclass", build: currentClass},
-		{name: filterIs, word: "common", match: ofRarity(RarityCommon)},
-		{name: filterIs, word: "uncommon", match: ofRarity(RarityUncommon)},
-		{name: filterIs, word: "rare", match: ofRarity(RarityRare)},
-		{name: filterIs, word: "legendary", match: ofRarity(RarityLegendary)},
-		{name: filterIs, word: "exotic", match: ofRarity(RarityExotic)},
-		{name: filterIs, word: "white", match: ofRarity(RarityCommon)},
-		{name: filterIs, word: "green", match: ofRarity(RarityUncommon)},
-		{name: filterIs, word: "blue", match: ofRarity(RarityRare)},
-		{name: filterIs, word: "purple", match: ofRarity(RarityLegendary)},
-		{name: filterIs, word: "yellow", match: ofRarity(RarityExotic)},
+		{name: filterIs, word: "common", match: ofRarity(inventory.RarityCommon)},
+		{name: filterIs, word: "uncommon", match: ofRarity(inventory.RarityUncommon)},
+		{name: filterIs, word: "rare", match: ofRarity(inventory.RarityRare)},
+		{name: filterIs, word: "legendary", match: ofRarity(inventory.RarityLegendary)},
+		{name: filterIs, word: "exotic", match: ofRarity(inventory.RarityExotic)},
+		{name: filterIs, word: "white", match: ofRarity(inventory.RarityCommon)},
+		{name: filterIs, word: "green", match: ofRarity(inventory.RarityUncommon)},
+		{name: filterIs, word: "blue", match: ofRarity(inventory.RarityRare)},
+		{name: filterIs, word: "purple", match: ofRarity(inventory.RarityLegendary)},
+		{name: filterIs, word: "yellow", match: ofRarity(inventory.RarityExotic)},
 		{name: filterIs, word: "kinetic", match: ofElement(bungie.DamageKinetic)},
 		{name: filterIs, word: "arc", match: ofElement(bungie.DamageArc)},
 		{name: filterIs, word: "solar", match: ofElement(bungie.DamageThermal)},
@@ -430,19 +443,19 @@ func (o outcome) undecidedWith(other outcome) outcome {
 // search context. A filter that reads other items, such as is:dupe,
 // groups the items of the context when it builds the test, as DIM does
 // when it builds the filter.
-type queryTest func(ctx searchContext) func(*Item) outcome
+type queryTest func(ctx searchContext) func(*inventory.Item) outcome
 
 // decidedTest builds the predicate of a term that the server decides for
 // every item, such as is:dupe.
-type decidedTest func(ctx searchContext) func(*Item) bool
+type decidedTest func(ctx searchContext) func(*inventory.Item) bool
 
 // fromDecided adapts the predicate builder of a term that the server
 // decides for every item to a [queryTest].
 func fromDecided(build decidedTest) queryTest {
-	return func(ctx searchContext) func(*Item) outcome {
+	return func(ctx searchContext) func(*inventory.Item) outcome {
 		predicate := build(ctx)
 
-		return func(item *Item) outcome { return decided(predicate(item)) }
+		return func(item *inventory.Item) outcome { return decided(predicate(item)) }
 	}
 }
 
@@ -455,10 +468,10 @@ type searchContext struct {
 	sources map[string]RatingSource
 	// items holds every item that DIM builds, in every location, the vault
 	// included. The web client passes these items to DIM as allItems.
-	items []*Item
+	items []*inventory.Item
 	// current is the current character, the one that the player played
 	// last.
-	current Character
+	current inventory.Character
 }
 
 // searchFilter is one filter that the preview evaluates. An is: word sets
@@ -466,7 +479,7 @@ type searchContext struct {
 type searchFilter struct {
 	// match is the predicate of an is: word that reads only the tested
 	// item.
-	match func(*Item) bool
+	match func(*inventory.Item) bool
 	// build builds the predicate of an is: word that reads the search
 	// context.
 	build decidedTest
@@ -574,13 +587,13 @@ func (c *queryCompiler) node(n *QueryNode) queryTest {
 			combine, start, final = outcome.or, noMatch, match
 		}
 
-		return func(ctx searchContext) func(*Item) outcome {
-			tests := make([]func(*Item) outcome, 0, len(builds))
+		return func(ctx searchContext) func(*inventory.Item) outcome {
+			tests := make([]func(*inventory.Item) outcome, 0, len(builds))
 			for _, build := range builds {
 				tests = append(tests, build(ctx))
 			}
 
-			return func(item *Item) outcome {
+			return func(item *inventory.Item) outcome {
 				result := outcome{state: start}
 
 				for _, test := range tests {
@@ -597,10 +610,10 @@ func (c *queryCompiler) node(n *QueryNode) queryTest {
 	case OpNot:
 		build := c.node(n.Operand)
 
-		return func(ctx searchContext) func(*Item) outcome {
+		return func(ctx searchContext) func(*inventory.Item) outcome {
 			test := build(ctx)
 
-			return func(item *Item) outcome { return test(item).not() }
+			return func(item *inventory.Item) outcome { return test(item).not() }
 		}
 
 	default:
@@ -659,22 +672,23 @@ func filterTest(n *QueryNode) (queryTest, string, error) {
 
 // queryResult is what a query gives a list of items. Matches holds the
 // items that the query matches. Undecided holds the items whose outcome
-// the server cannot decide. Both lists follow the order of [ByNameAndID].
+// the server cannot decide. Both lists follow the order of
+// [inventory.ByNameAndID].
 type queryResult struct {
-	matches   []*Item
+	matches   []*inventory.Item
 	undecided []undecidedItem
 }
 
 // undecidedItem is an item whose outcome the server cannot decide, with
 // the reasons of the outcome.
 type undecidedItem struct {
-	item    *Item
+	item    *inventory.Item
 	reasons []string
 }
 
 // evaluate returns what q gives each item of items in ctx. It leaves out
 // each item that q does not match.
-func (q compiledQuery) evaluate(ctx searchContext, items []*Item) queryResult {
+func (q compiledQuery) evaluate(ctx searchContext, items []*inventory.Item) queryResult {
 	var result queryResult
 
 	test := q.test(ctx)
@@ -690,8 +704,11 @@ func (q compiledQuery) evaluate(ctx searchContext, items []*Item) queryResult {
 		}
 	}
 
-	slices.SortStableFunc(result.matches, ByNameAndID)
-	slices.SortStableFunc(result.undecided, func(a, b undecidedItem) int { return ByNameAndID(a.item, b.item) })
+	slices.SortStableFunc(result.matches, inventory.ByNameAndID)
+	slices.SortStableFunc(
+		result.undecided,
+		func(a, b undecidedItem) int { return inventory.ByNameAndID(a.item, b.item) },
+	)
 
 	return result
 }
@@ -768,8 +785,8 @@ func listWithAnd(words []string) string {
 // [setBuilt] decides. DIM also builds no item without a definition, but
 // the snapshot keeps such an item under the name "Unknown item N", and so
 // does builtItems.
-func builtItems(s *Snapshot) []*Item {
-	var built []*Item
+func builtItems(s *inventory.Snapshot) []*inventory.Item {
+	var built []*inventory.Item
 
 	for _, item := range s.Items {
 		if !inDummyBucket(item) && setBuilt(s, item) {
@@ -784,7 +801,7 @@ func builtItems(s *Snapshot) []*Item {
 // items. The current bucket of a lost item is the Lost Items bucket of
 // the Postmaster, and the current bucket of every other item is
 // Item.Bucket.
-func inDummyBucket(item *Item) bool {
+func inDummyBucket(item *inventory.Item) bool {
 	current := item.Bucket
 	if item.Lost {
 		current = bungie.BucketPostmaster
@@ -798,15 +815,15 @@ func inDummyBucket(item *Item) bool {
 // lookup of the web client throws for a set that the EquipableItemSet
 // definitions lack, and for every set when the service index lists no
 // EquipableItemSet artifact. DIM then adds no item.
-func setBuilt(s *Snapshot, item *Item) bool {
+func setBuilt(s *inventory.Snapshot, item *inventory.Item) bool {
 	return item.SetHash == 0 || (s.ItemSetsListed && item.SetKnown)
 }
 
 // ownedItems returns the items that the rule editor of the web client
 // previews a rule against. The editor keeps each item of [builtItems]
 // that [previewable] accepts, in every location.
-func ownedItems(s *Snapshot) []*Item {
-	var owned []*Item
+func ownedItems(s *inventory.Snapshot) []*inventory.Item {
+	var owned []*inventory.Item
 
 	for _, item := range builtItems(s) {
 		if previewable(item) {
@@ -821,7 +838,7 @@ func ownedItems(s *Snapshot) []*Item {
 // a rule against item when DIM builds it. The editor keeps an instanced
 // item that DIM marks as equipment. DIM marks an item whose definition has
 // an equipping block, except an emote or a finisher.
-func previewable(item *Item) bool {
+func previewable(item *inventory.Item) bool {
 	return item.InstanceID != "" && isEquipment(item)
 }
 
@@ -830,7 +847,7 @@ func previewable(item *Item) bool {
 // set, as [setBuilt] decides. It returns "" when ownedItems leaves out no
 // such item. The line gives one reason, because the service index either
 // lists the EquipableItemSet artifact or does not.
-func unbuiltLine(s *Snapshot) string {
+func unbuiltLine(s *inventory.Snapshot) string {
 	left := 0
 
 	for _, item := range s.Items {
@@ -862,14 +879,14 @@ func unbuiltLine(s *Snapshot) string {
 // isEquipment reports whether DIM marks item as equipment. The web client
 // marks no item as classified, so the equipping block of the definition
 // decides alone.
-func isEquipment(item *Item) bool {
+func isEquipment(item *inventory.Item) bool {
 	return item.Equippable && item.Bucket != bungie.BucketEmotes && item.Bucket != bungie.BucketFinishers
 }
 
 // isComparable reports whether DIM marks item as comparable, which the
 // dupe filters read. DIM marks equipment that the game can lock, except an
 // emblem.
-func isComparable(item *Item) bool {
+func isComparable(item *inventory.Item) bool {
 	return isEquipment(item) && item.Lockable && item.Bucket != bungie.BucketEmblems
 }
 
@@ -879,63 +896,63 @@ func isComparable(item *Item) bool {
 // profile bucket for every other item. An item at the Postmaster
 // therefore matches the bucket of its definition, and not the Lost Items
 // bucket.
-func inBuckets(buckets ...uint32) func(*Item) bool {
-	return func(item *Item) bool { return slices.Contains(buckets, item.Bucket) }
+func inBuckets(buckets ...uint32) func(*inventory.Item) bool {
+	return func(item *inventory.Item) bool { return slices.Contains(buckets, item.Bucket) }
 }
 
 // inPostmaster reports whether DIM puts the current bucket of item in its
 // Postmaster category. The current bucket of a lost item is the Lost Items
 // bucket. Item.Postmaster also marks an item at the Postmaster in a bucket
 // outside that category, which DIM does not count.
-func inPostmaster(item *Item) bool {
+func inPostmaster(item *inventory.Item) bool {
 	return item.Lost || slices.Contains(postmasterBuckets, item.Bucket)
 }
 
 // ofClass returns the predicate of an item for the Bungie DestinyClass
 // value classType.
-func ofClass(classType int) func(*Item) bool {
-	return func(item *Item) bool { return item.ClassType == classType }
+func ofClass(classType int) func(*inventory.Item) bool {
+	return func(item *inventory.Item) bool { return item.ClassType == classType }
 }
 
 // inCategory returns the predicate of an item whose item categories hold
 // one of categories.
-func inCategory(categories ...int64) func(*Item) bool {
-	return func(item *Item) bool {
+func inCategory(categories ...int64) func(*inventory.Item) bool {
+	return func(item *inventory.Item) bool {
 		return slices.ContainsFunc(item.Categories, func(c int64) bool { return slices.Contains(categories, c) })
 	}
 }
 
 // ofAmmo returns the predicate of an item for the Bungie
 // DestinyAmmunitionType value ammoType.
-func ofAmmo(ammoType int) func(*Item) bool {
-	return func(item *Item) bool { return item.AmmoType == ammoType }
+func ofAmmo(ammoType int) func(*inventory.Item) bool {
+	return func(item *inventory.Item) bool { return item.AmmoType == ammoType }
 }
 
 // ofRarity returns the predicate of an item whose rarity is the DIM rarity
 // name rarity. DIM reads the rarity from the tier type of the definition,
-// as [RarityName] maps it, and not from the tier name that the definition
-// displays.
-func ofRarity(rarity string) func(*Item) bool {
-	return func(item *Item) bool { return RarityName(item.TierType) == rarity }
+// as [inventory.RarityName] maps it, and not from the tier name that the
+// definition displays.
+func ofRarity(rarity string) func(*inventory.Item) bool {
+	return func(item *inventory.Item) bool { return inventory.RarityName(item.TierType) == rarity }
 }
 
 // ofElement returns the predicate of an item whose instance has one of
 // the Bungie DamageType values elements. An item without an element
 // matches none.
-func ofElement(elements ...int) func(*Item) bool {
-	return func(item *Item) bool { return slices.Contains(elements, item.Element) }
+func ofElement(elements ...int) func(*inventory.Item) bool {
+	return func(item *inventory.Item) bool { return slices.Contains(elements, item.Element) }
 }
 
 // hasPower reports whether DIM counts a power for item. It is the
 // predicate of is:haspower and is:haslight.
-func hasPower(item *Item) bool {
+func hasPower(item *inventory.Item) bool {
 	return item.LightPower > 0
 }
 
 // isAutotagged reports whether an autotag rule set the tag of item, as
 // is:autotagged of the web client reads it. A tag that a person set
 // clears the mark.
-func isAutotagged(item *Item) bool {
+func isAutotagged(item *inventory.Item) bool {
 	return item.TagRule != ""
 }
 
@@ -950,21 +967,21 @@ func powerValue(value string) (queryTest, error) {
 		return nil, err
 	}
 
-	test := func(item *Item) bool { return item.LightPower != 0 && compare(float64(item.LightPower)) }
+	test := func(item *inventory.Item) bool { return item.LightPower != 0 && compare(float64(item.LightPower)) }
 
-	return fromDecided(func(searchContext) func(*Item) bool { return test }), nil
+	return fromDecided(func(searchContext) func(*inventory.Item) bool { return test }), nil
 }
 
 // tagMatch returns the predicate of the filter tag:value, as the web
 // client defines it. The value favorite reads the favorite mark. Every
 // other value matches an item whose tag is that value, and the web client
 // knows only the tags of [dvm.TagOrder]. An untagged item matches no value.
-func tagMatch(value string) func(*Item) bool {
+func tagMatch(value string) func(*inventory.Item) bool {
 	if value == dvm.TagFavorite {
-		return func(item *Item) bool { return item.Favorite }
+		return func(item *inventory.Item) bool { return item.Favorite }
 	}
 
-	return func(item *Item) bool { return item.Tag == value && slices.Contains(dvm.TagOrder, item.Tag) }
+	return func(item *inventory.Item) bool { return item.Tag == value && slices.Contains(dvm.TagOrder, item.Tag) }
 }
 
 // nameMatch returns the predicate of the filter name:value, as DIM defines
@@ -973,7 +990,7 @@ func tagMatch(value string) func(*Item) bool {
 // puts a word boundary before the value only when the folded value starts
 // with an ASCII letter, an ASCII digit, or an underscore. A value such as
 // -x can therefore match in the middle of a word.
-func nameMatch(value string) func(*Item) bool {
+func nameMatch(value string) func(*inventory.Item) bool {
 	folded := plainString(value)
 
 	pattern := "(?i)"
@@ -986,26 +1003,26 @@ func nameMatch(value string) func(*Item) bool {
 		// Compile refuses only a value of millions of characters. Each
 		// character of the pattern matches one character of a name, so
 		// such a value matches no name.
-		return func(*Item) bool { return false }
+		return func(*inventory.Item) bool { return false }
 	}
 
-	return func(item *Item) bool { return re.MatchString(plainName(item)) }
+	return func(item *inventory.Item) bool { return re.MatchString(plainName(item)) }
 }
 
 // exactNameMatch returns the predicate of the filter exactname:value, as
 // DIM defines it. The filter matches an item whose whole name equals the
 // value after [plainString] folds both texts.
-func exactNameMatch(value string) func(*Item) bool {
+func exactNameMatch(value string) func(*inventory.Item) bool {
 	folded := plainString(value)
 
-	return func(item *Item) bool { return plainName(item) == folded }
+	return func(item *inventory.Item) bool { return plainName(item) == folded }
 }
 
 // plainName returns the name of item in the form that the name filters
 // compare. The lexer turned the typographic quotes of the value into ASCII
 // quotes. plainName therefore applies [normalizeQuotes] to the name, as
 // DIM does, and then [plainString] folds it.
-func plainName(item *Item) string {
+func plainName(item *inventory.Item) string {
 	return plainString(normalizeQuotes(item.Name))
 }
 
@@ -1030,8 +1047,8 @@ func plainString(s string) string {
 
 // idMatch returns the predicate of the filter id:value, which matches the
 // item whose instance id is the value.
-func idMatch(value string) func(*Item) bool {
-	return func(item *Item) bool { return item.InstanceID == value }
+func idMatch(value string) func(*inventory.Item) bool {
+	return func(item *inventory.Item) bool { return item.InstanceID == value }
 }
 
 // hashMatch returns the predicate of the filter hash:value. DIM reads the
@@ -1041,7 +1058,7 @@ func idMatch(value string) func(*Item) bool {
 // So do a negative value and a value that does not fit in a uint32,
 // because no item hash equals them. JavaScript compares -0 as equal to 0,
 // so hash:-0 is hash:0.
-func hashMatch(value string) func(*Item) bool {
+func hashMatch(value string) func(*inventory.Item) bool {
 	value = strings.TrimLeftFunc(value, isJSSpace)
 
 	negative := strings.HasPrefix(value, "-")
@@ -1056,10 +1073,10 @@ func hashMatch(value string) func(*Item) bool {
 
 	hash, err := strconv.ParseUint(value[:end], 10, 32)
 	if err != nil || (negative && hash != 0) {
-		return func(*Item) bool { return false }
+		return func(*inventory.Item) bool { return false }
 	}
 
-	return func(item *Item) bool { return uint64(item.Hash) == hash }
+	return func(item *inventory.Item) bool { return uint64(item.Hash) == hash }
 }
 
 // isDupe builds the predicate of is:dupe and dupe:item, as DIM builds it
@@ -1067,10 +1084,10 @@ func hashMatch(value string) func(*Item) bool {
 // [itemDupeID]. It matches a comparable item whose group holds more than
 // one item, except the default shader and an item of the Artifacts
 // bucket.
-func isDupe(ctx searchContext) func(*Item) bool {
-	counts := dupeCounts(ctx.items, func(*Item) bool { return true })
+func isDupe(ctx searchContext) func(*inventory.Item) bool {
+	counts := dupeCounts(ctx.items, func(*inventory.Item) bool { return true })
 
-	return func(item *Item) bool {
+	return func(item *inventory.Item) bool {
 		return item.Hash != hashDefaultShader &&
 			item.Bucket != bungie.BucketArtifacts &&
 			isComparable(item) &&
@@ -1114,16 +1131,16 @@ func countValue(value string) (queryTest, error) {
 		return nil, err
 	}
 
-	return fromDecided(func(ctx searchContext) func(*Item) bool {
+	return fromDecided(func(ctx searchContext) func(*inventory.Item) bool {
 		counts := dupeCounts(ctx.items, isComparable)
 
-		return func(item *Item) bool { return compare(float64(counts[itemDupeID(item)])) }
+		return func(item *inventory.Item) bool { return compare(float64(counts[itemDupeID(item)])) }
 	}), nil
 }
 
 // dupeCounts returns the number of items of items that keep accepts for
 // each [itemDupeID].
-func dupeCounts(items []*Item, keep func(*Item) bool) map[string]int {
+func dupeCounts(items []*inventory.Item, keep func(*inventory.Item) bool) map[string]int {
 	counts := map[string]int{}
 
 	for _, item := range items {
@@ -1137,17 +1154,17 @@ func dupeCounts(items []*Item, keep func(*Item) bool) map[string]int {
 
 // itemDupeID returns the key that groups the copies of item, as itemDupeID
 // of DIM builds it. The key joins the name, the decimal class type, the
-// rarity name of [RarityName], and the decimal bucket hash without
+// rarity name of [inventory.RarityName], and the decimal bucket hash without
 // separators. A weapon name goes through [stripAdept] first. The web
 // client classifies no item, so the key never falls back to the item
 // hash.
-func itemDupeID(item *Item) string {
+func itemDupeID(item *inventory.Item) string {
 	name := item.Name
 	if slices.Contains(weaponBuckets, item.Bucket) {
 		name = stripAdept(name)
 	}
 
-	return name + strconv.Itoa(item.ClassType) + RarityName(item.TierType) +
+	return name + strconv.Itoa(item.ClassType) + inventory.RarityName(item.TierType) +
 		strconv.FormatUint(uint64(item.Bucket), 10)
 }
 
@@ -1169,13 +1186,15 @@ func stripAdept(name string) string {
 // the vault accepts its bucket or the bucket is Special Orders. DIM files
 // an item of any other bucket under the vault, which the predicate
 // ignores.
-func inCurrentChar(ctx searchContext) func(*Item) bool {
-	return func(item *Item) bool { return item.Owner == ctx.current.ID || item.Owner == OwnerAccount }
+func inCurrentChar(ctx searchContext) func(*inventory.Item) bool {
+	return func(item *inventory.Item) bool {
+		return item.Owner == ctx.current.ID || item.Owner == inventory.OwnerAccount
+	}
 }
 
 // currentClass builds the predicate of is:currentclass. It matches an item
 // of the class of the current character.
-func currentClass(ctx searchContext) func(*Item) bool {
+func currentClass(ctx searchContext) func(*inventory.Item) bool {
 	return ofClass(ctx.current.ClassType)
 }
 
@@ -1291,11 +1310,11 @@ func (f rangeFormat) operand(value string) (string, float64, bool) {
 // itemValue adapts the predicate function of a filter that reads only the
 // tested item and accepts every value to the value field of a
 // [searchFilter].
-func itemValue(predicate func(value string) func(*Item) bool) func(string) (queryTest, error) {
+func itemValue(predicate func(value string) func(*inventory.Item) bool) func(string) (queryTest, error) {
 	return func(value string) (queryTest, error) {
 		test := predicate(value)
 
-		return fromDecided(func(searchContext) func(*Item) bool { return test }), nil
+		return fromDecided(func(searchContext) func(*inventory.Item) bool { return test }), nil
 	}
 }
 
@@ -1309,7 +1328,7 @@ func isTable(filters []searchFilter) map[string]queryTest {
 			table[f.word] = fromDecided(f.build)
 		case f.match != nil:
 			predicate := f.match
-			table[f.word] = fromDecided(func(searchContext) func(*Item) bool { return predicate })
+			table[f.word] = fromDecided(func(searchContext) func(*inventory.Item) bool { return predicate })
 		}
 	}
 
@@ -1351,7 +1370,7 @@ type ratingValues struct {
 func ratingFilter(
 	name, mode string,
 	format rangeFormat,
-	values func(source RatingSource, item *Item) ratingValues,
+	values func(source RatingSource, item *inventory.Item) ratingValues,
 ) searchFilter {
 	read := func(value string) (queryTest, error) {
 		compare, err := format.valueComparator(value)
@@ -1359,10 +1378,10 @@ func ratingFilter(
 			return nil, err
 		}
 
-		return func(ctx searchContext) func(*Item) outcome {
+		return func(ctx searchContext) func(*inventory.Item) outcome {
 			source := ctx.sources[mode]
 
-			return func(item *Item) outcome {
+			return func(item *inventory.Item) outcome {
 				v := values(source, item)
 
 				switch {
@@ -1389,7 +1408,7 @@ func ratingFilter(
 // list of DIM, which can come from the definitions. A row without a tier
 // gives no copy a tier, so the server decides a copy without perks on such
 // a row.
-func rollValues(source RatingSource, item *Item) ratingValues {
+func rollValues(source RatingSource, item *inventory.Item) ratingValues {
 	v := setValues(source, item)
 
 	roll := rate(source, item).Roll
@@ -1412,7 +1431,7 @@ func rollValues(source RatingSource, item *Item) ratingValues {
 // The numbers are the tier of each set bonus of the item, which
 // [setValues] gives, and the tier of the sheet row of the item hash,
 // whatever the copy rolled.
-func baseValues(source RatingSource, item *Item) ratingValues {
+func baseValues(source RatingSource, item *inventory.Item) ratingValues {
 	v := setValues(source, item)
 
 	roll := rate(source, item).Roll
@@ -1427,7 +1446,7 @@ func baseValues(source RatingSource, item *Item) ratingValues {
 // of perk columns that the roll of the copy missed. Only a roll with perk
 // columns has the number. The server cannot read the number for a copy
 // without perks on a row with perk columns.
-func missValues(source RatingSource, item *Item) ratingValues {
+func missValues(source RatingSource, item *inventory.Item) ratingValues {
 	roll := rate(source, item).Roll
 
 	switch {
@@ -1454,7 +1473,7 @@ func missValues(source RatingSource, item *Item) ratingValues {
 // the sheet of source rates, as rate: and ratebase: test them in the web
 // client. A bonus without a tier adds no number. An item without a set
 // has no number.
-func setValues(source RatingSource, item *Item) ratingValues {
+func setValues(source RatingSource, item *inventory.Item) ratingValues {
 	var v ratingValues
 
 	for _, bonus := range setRatings(item, source.Sheet) {
@@ -1468,7 +1487,7 @@ func setValues(source RatingSource, item *Item) ratingValues {
 // of item that sheet rates, in the order of the set. setRatings of the web
 // client also sorts the bonuses by their pieces, but no filter reads that
 // order. A nil sheet rates no bonus.
-func setRatings(item *Item, sheet *Sheet) []SetBonus {
+func setRatings(item *inventory.Item, sheet *Sheet) []SetBonus {
 	if sheet == nil {
 		return nil
 	}
@@ -1505,10 +1524,10 @@ func setBonusFilter(name, mode string) searchFilter {
 		pieces := setBonusPieces[size]
 		want := lowerTiers[tier]
 
-		return fromDecided(func(ctx searchContext) func(*Item) bool {
+		return fromDecided(func(ctx searchContext) func(*inventory.Item) bool {
 			sheet := ctx.sources[mode].Sheet
 
-			return func(item *Item) bool {
+			return func(item *inventory.Item) bool {
 				return slices.ContainsFunc(setRatings(item, sheet), func(bonus SetBonus) bool {
 					return bonus.Tier == want && (!sized || bonus.Pieces == pieces)
 				})
@@ -1573,11 +1592,11 @@ func verdictFilter(name, mode string) searchFilter {
 			return nil, fmt.Errorf("%w: %s:%s", errInvalidValue, name, value)
 		}
 
-		return func(ctx searchContext) func(*Item) outcome {
+		return func(ctx searchContext) func(*inventory.Item) outcome {
 			source := ctx.sources[mode]
 			copies := copiesByHash(ctx.items)
 
-			return func(item *Item) outcome {
+			return func(item *inventory.Item) outcome {
 				got, known := verdictIn(source, copies, item)
 				if !known {
 					return outcome{reasons: []string{reasonVerdictNoPerks}, state: undecided}
@@ -1608,7 +1627,7 @@ func verdictFilter(name, mode string) searchFilter {
 // tell such a copy from one whose perks the web client reads. A rival
 // without perks leaves the verdict undecided also when another rival
 // already makes the copy worse.
-func verdictIn(source RatingSource, copies map[uint32][]*Item, item *Item) (string, bool) {
+func verdictIn(source RatingSource, copies map[uint32][]*inventory.Item, item *inventory.Item) (string, bool) {
 	roll := rate(source, item).Roll
 
 	switch {
@@ -1642,8 +1661,8 @@ func verdictIn(source RatingSource, copies map[uint32][]*Item, item *Item) (stri
 // by item hash. The web client finds the rivals of a copy among every
 // item of the account, the vault included. It leaves out each item
 // without an instance id.
-func copiesByHash(items []*Item) map[uint32][]*Item {
-	copies := map[uint32][]*Item{}
+func copiesByHash(items []*inventory.Item) map[uint32][]*inventory.Item {
+	copies := map[uint32][]*inventory.Item{}
 
 	for _, item := range items {
 		if item.InstanceID != "" {
@@ -1659,7 +1678,7 @@ func copiesByHash(items []*Item) map[uint32][]*Item {
 // candidates, keyed by item hash. The versions of a hash are its entry in
 // Sheet.Versions, and a hash without an entry has only itself as a
 // version. A hash that the entry lists twice adds its copies one time.
-func rivalsOf(sheet *Sheet, copies map[uint32][]*Item, item *Item) []*Item {
+func rivalsOf(sheet *Sheet, copies map[uint32][]*inventory.Item, item *inventory.Item) []*inventory.Item {
 	versions, ok := sheet.Versions[item.Hash]
 	if !ok {
 		versions = []uint32{item.Hash}
@@ -1667,7 +1686,7 @@ func rivalsOf(sheet *Sheet, copies map[uint32][]*Item, item *Item) []*Item {
 
 	var (
 		seen   []uint32
-		rivals []*Item
+		rivals []*inventory.Item
 	)
 
 	for _, hash := range versions {

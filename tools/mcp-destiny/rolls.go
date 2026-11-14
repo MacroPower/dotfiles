@@ -5,6 +5,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 )
 
 // Stances of a perk preference.
@@ -103,9 +104,9 @@ func stancesByMode(prefs []dvm.PerkPreference) map[string]map[string]string {
 // with columns has no verdict for such a copy, because the profile does
 // not say which perks the copy rolled.
 //
-// The rating reads [Item.Perks], so it sees the sockets and the plugs
-// that the snapshot keeps. Destiny Item Manager builds another socket
-// list, and the package documentation lists where the two differ.
+// The rating reads [inventory.Item.Perks], so it sees the sockets and the
+// plugs that the snapshot keeps. Destiny Item Manager builds another
+// socket list, and the package documentation lists where the two differ.
 //
 // The definitions of the source hold the plug sets of the weapon. The
 // plug sets name the socket of a column in which the copy rolled no
@@ -116,7 +117,7 @@ func stancesByMode(prefs []dvm.PerkPreference) map[string]map[string]string {
 // come from the definitions of the source and not from the copy. A
 // column that no socket of the copy matches therefore still names its
 // picks.
-func rate(source RatingSource, item *Item) Rating {
+func rate(source RatingSource, item *inventory.Item) Rating {
 	// The reason comes first, so only a loaded sheet can report a weapon
 	// as missing from it.
 	if source.Err != nil {
@@ -170,7 +171,12 @@ func rate(source RatingSource, item *Item) Rating {
 // plugs, one time for each name. The active plug of the socket comes
 // first when it is one of them. The column is a miss when the socket
 // holds no such plug.
-func judgeColumn(defs *definitions.Defs, item *Item, column []uint32, stances map[string]string) ColumnVerdict {
+func judgeColumn(
+	defs *definitions.Defs,
+	item *inventory.Item,
+	column []uint32,
+	stances map[string]string,
+) ColumnVerdict {
 	socket, ok := columnSocket(defs, item, column)
 	if !ok {
 		return ColumnVerdict{}
@@ -214,12 +220,13 @@ func judgeColumn(defs *definitions.Defs, item *Item, column []uint32, stances ma
 // the same two steps.
 //
 // The sockets of a copy have the indexes of the sockets of its
-// definition. The column has no socket when [Item.Perks] leaves out the
-// socket that the plug sets name, such as a socket that the profile
-// hides. The function then tries no later socket of the definition.
-func columnSocket(defs *definitions.Defs, item *Item, column []uint32) (Perk, bool) {
+// definition. The column has no socket when [inventory.Item.Perks] leaves
+// out the socket that the plug sets name, such as a socket that the
+// profile hides. The function then tries no later socket of the
+// definition.
+func columnSocket(defs *definitions.Defs, item *inventory.Item, column []uint32) (inventory.Perk, bool) {
 	for _, perk := range item.Perks {
-		picked := slices.ContainsFunc(socketPlugs(perk), func(plug Plug) bool {
+		picked := slices.ContainsFunc(socketPlugs(perk), func(plug inventory.Plug) bool {
 			return slices.Contains(column, plug.Hash)
 		})
 		if picked {
@@ -229,12 +236,12 @@ func columnSocket(defs *definitions.Defs, item *Item, column []uint32) (Perk, bo
 
 	index, ok := defs.PlugSetSocket(item.Hash, column)
 	if !ok {
-		return Perk{}, false
+		return inventory.Perk{}, false
 	}
 
-	i := slices.IndexFunc(item.Perks, func(perk Perk) bool { return perk.Socket == index })
+	i := slices.IndexFunc(item.Perks, func(perk inventory.Perk) bool { return perk.Socket == index })
 	if i < 0 {
-		return Perk{}, false
+		return inventory.Perk{}, false
 	}
 
 	return item.Perks[i], true
@@ -271,8 +278,8 @@ func picksOf(defs *definitions.Defs, column []uint32, stances map[string]string)
 // socketPlugs returns each plug that the socket of perk holds, with the
 // active plug first. The active plug always counts, also when the
 // profile leaves it out of the plugs that the socket can hold.
-func socketPlugs(perk Perk) []Plug {
-	return append([]Plug{perk.Plug}, perk.Plugs...)
+func socketPlugs(perk inventory.Perk) []inventory.Plug {
+	return append([]inventory.Plug{perk.Plug}, perk.Plugs...)
 }
 
 // stepTier returns the tier that lies the given count of steps down from

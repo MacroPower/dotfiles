@@ -11,6 +11,8 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/activities"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 )
 
@@ -18,7 +20,7 @@ func TestEquipLoadout(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		change       func(t *testing.T, s *Snapshot)
+		change       func(t *testing.T, s *inventory.Snapshot)
 		err          error
 		fail         string
 		characterID  string
@@ -52,7 +54,7 @@ func TestEquipLoadout(t *testing.T) {
 				"The inventory does not hold these loadout items: 9999.",
 		},
 		"item on the character that is not transferable": {
-			change: func(t *testing.T, s *Snapshot) {
+			change: func(t *testing.T, s *inventory.Snapshot) {
 				t.Helper()
 
 				item, ok := s.Find("1004")
@@ -129,7 +131,7 @@ func TestEquipLoadout(t *testing.T) {
 		},
 	}
 
-	describe := func(move LoadoutMove) string {
+	describe := func(move inventory.LoadoutMove) string {
 		desc := move.Item.InstanceID + " from " + move.From
 		if move.Replacement != nil {
 			desc += ", replaced by " + move.Replacement.InstanceID
@@ -142,7 +144,7 @@ func TestEquipLoadout(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			s := fixtureSnapshot(t)
+			s := inventorytest.Snapshot(t)
 			if tc.change != nil {
 				tc.change(t, s)
 			}
@@ -219,9 +221,9 @@ func TestEquipLoadoutFromPostmaster(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			s := fixtureSnapshot(t)
+			s := inventorytest.Snapshot(t)
 			mover := &bungietest.StepMover{Fail: tc.fail}
-			l := Loadout{CharacterID: bungietest.HunterID, Number: 4, InstanceIDs: []string{"1005"}}
+			l := inventory.Loadout{CharacterID: bungietest.HunterID, Number: 4, InstanceIDs: []string{"1005"}}
 
 			got, err := s.EquipLoadout(t.Context(), mover, l)
 			if tc.err != nil {
@@ -247,9 +249,9 @@ func TestEquipLoadoutFromPostmaster(t *testing.T) {
 func TestEquipLoadoutWithoutItems(t *testing.T) {
 	t.Parallel()
 
-	s := fixtureSnapshot(t)
+	s := inventorytest.Snapshot(t)
 	mover := &bungietest.StepMover{}
-	l := Loadout{CharacterID: bungietest.HunterID, Number: 4, InstanceIDs: []string{"9999"}}
+	l := inventory.Loadout{CharacterID: bungietest.HunterID, Number: 4, InstanceIDs: []string{"9999"}}
 
 	got, err := s.EquipLoadout(t.Context(), mover, l)
 	require.NoError(t, err)

@@ -10,30 +10,32 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
 )
 
 func TestNewestMark(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		add  []*Item
+		add  []*inventory.Item
 		want string
 	}{
 		"the fixture, whose stack has no instance id": {
 			want: "00000000000000001006",
 		},
 		"a longer id is a higher number, whatever its leading digit": {
-			add: []*Item{
+			add: []*inventory.Item{
 				{InstanceID: "6917529999999999999", Equippable: true},
 				{InstanceID: "9999999999999999999999", Equippable: false},
 			},
 			want: "06917529999999999999",
 		},
 		"an emote with the highest id": {
-			add: []*Item{
+			add: []*inventory.Item{
 				{InstanceID: "1010", Equippable: true, Bucket: bungie.BucketEmotes, Owner: bungietest.HunterID},
 				{InstanceID: "1009", Equippable: true, Bucket: bungie.BucketFinishers, Owner: bungietest.HunterID},
-				{InstanceID: "1008", Equippable: true, Bucket: bungie.BucketKinetic, Owner: OwnerVault},
+				{InstanceID: "1008", Equippable: true, Bucket: bungie.BucketKinetic, Owner: inventory.OwnerVault},
 			},
 			want: "00000000000000001008",
 		},
@@ -43,7 +45,7 @@ func TestNewestMark(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			s := fixtureSnapshot(t)
+			s := inventorytest.Snapshot(t)
 			for _, item := range tc.add {
 				s.Add(item)
 			}
@@ -52,27 +54,27 @@ func TestNewestMark(t *testing.T) {
 		})
 	}
 
-	assert.Equal(t, "00000000000000000000", newestMark(&Snapshot{}))
+	assert.Equal(t, "00000000000000000000", newestMark(&inventory.Snapshot{}))
 }
 
 func TestNewItems(t *testing.T) {
 	t.Parallel()
 
-	item := func(id, owner string, bucket uint32) *Item {
-		return &Item{InstanceID: id, Owner: owner, Bucket: bucket, Equippable: true}
+	item := func(id, owner string, bucket uint32) *inventory.Item {
+		return &inventory.Item{InstanceID: id, Owner: owner, Bucket: bucket, Equippable: true}
 	}
 
-	s := &Snapshot{Items: []*Item{
+	s := &inventory.Snapshot{Items: []*inventory.Item{
 		item("10000", bungietest.HunterID, bungie.BucketKinetic),
-		item("1008", OwnerAccount, bungie.BucketKinetic),
-		item("1011", OwnerVault, bungie.BucketPower),
+		item("1008", inventory.OwnerAccount, bungie.BucketKinetic),
+		item("1011", inventory.OwnerVault, bungie.BucketPower),
 		item("1007", bungietest.TitanID, bungie.BucketHelmet),
 		item("1006", bungietest.HunterID, bungie.BucketKinetic),
-		item("1009", OwnerVault, bungie.BucketKinetic),
+		item("1009", inventory.OwnerVault, bungie.BucketKinetic),
 		item("1005", bungietest.HunterID, bungie.BucketKinetic),
 		item("1012", bungietest.HunterID, bungie.BucketEmotes),
 		{InstanceID: "1013", Owner: bungietest.HunterID, Bucket: bungie.BucketConsumables},
-		{Owner: OwnerAccount, Bucket: bungie.BucketConsumables},
+		{Owner: inventory.OwnerAccount, Bucket: bungie.BucketConsumables},
 	}}
 
 	tests := map[string]struct {
@@ -101,7 +103,7 @@ func TestNewItems(t *testing.T) {
 
 			held, vault := newItems(s, tc.mark)
 
-			ids := func(items []*Item) []string {
+			ids := func(items []*inventory.Item) []string {
 				var out []string
 				for _, item := range items {
 					out = append(out, item.InstanceID)
@@ -155,7 +157,7 @@ func TestEvalRulesSources(t *testing.T) {
 				return nil
 			}
 
-			evals := evalRules(fixtureSnapshot(t), rules, sources)
+			evals := evalRules(inventorytest.Snapshot(t), rules, sources)
 			require.Len(t, evals, len(rules))
 			assert.Equal(t, tc.want, calls)
 		})
@@ -165,11 +167,11 @@ func TestEvalRulesSources(t *testing.T) {
 func TestOwnedCounts(t *testing.T) {
 	t.Parallel()
 
-	items := []*Item{{InstanceID: "1"}, {InstanceID: "2"}, {InstanceID: "3"}}
+	items := []*inventory.Item{{InstanceID: "1"}, {InstanceID: "2"}, {InstanceID: "3"}}
 
 	// test gives item 1 the reason b, item 2 the reasons a and b, and
 	// matches item 3.
-	test := func(item *Item) outcome {
+	test := func(item *inventory.Item) outcome {
 		switch item.InstanceID {
 		case "1":
 			return outcome{reasons: []string{"b"}, state: undecided}
@@ -330,7 +332,7 @@ func TestVaultBlock(t *testing.T) {
 			t.Parallel()
 
 			defs := &definitions.Defs{Items: map[uint32]definitions.ItemDef{hash: tc.def}}
-			item := NewItem(&bungie.Profile{}, defs, tc.item, bungietest.HunterID, tc.equipped)
+			item := inventory.NewItem(&bungie.Profile{}, defs, tc.item, bungietest.HunterID, tc.equipped)
 
 			assert.Equal(t, tc.want, vaultBlock(item, tc.def))
 		})
