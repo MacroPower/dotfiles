@@ -1,4 +1,4 @@
-package main
+package dvm
 
 import (
 	"bytes"
@@ -18,10 +18,13 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
+// DefaultURL is the base URL of the deployment of Agg's Destiny Vault
+// Manager that a [*Client] calls when no option sets one.
+const DefaultURL = "https://destiny-vault-manager.penumbraos.workers.dev"
+
 const (
-	defaultServiceURL = "https://destiny-vault-manager.penumbraos.workers.dev"
-	defaultUserAgent  = "MCP-Destiny/" + version
-	defaultTimeout    = 60 * time.Second
+	defaultUserAgent = "MCP-Destiny"
+	defaultTimeout   = 60 * time.Second
 
 	// maxResponseBytes caps a JSON API response body.
 	maxResponseBytes = 32 << 20
@@ -49,8 +52,10 @@ const (
 )
 
 var (
-	// ErrService marks failures that originate from Agg's Destiny Vault Manager,
-	// which are non-2xx responses and bodies that do not decode.
+	// ErrService marks failures that originate from Agg's Destiny Vault
+	// Manager, such as a failure status or a body that does not decode. A
+	// status 401 of a call other than [*Client.Artifact] matches
+	// [ErrUnauthorized] and not ErrService.
 	ErrService = errors.New("service")
 
 	// ErrUnauthorized reports that Agg's Destiny Vault Manager rejected the
@@ -69,9 +74,9 @@ type ArtifactIndex struct {
 	ManifestVersion string              `json:"manifestVersion"`
 }
 
-// ServiceConfig is the response body of /api/config. The Bungie API key and
+// Config is the response body of /api/config. The Bungie API key and
 // OAuth client id are public values that the web client also reads.
-type ServiceConfig struct {
+type Config struct {
 	APIKey     string        `json:"apiKey"`
 	ClientID   string        `json:"clientId"`
 	AuthOrigin string        `json:"authOrigin"`
@@ -111,6 +116,17 @@ type Note struct {
 	UpdatedAt int64   `json:"updatedAt,omitzero"`
 	Removed   bool    `json:"removed"`
 }
+
+// Note kinds that the service stores. Each kind names what the TargetID of
+// a [Note] identifies.
+const (
+	// NoteInstance is the kind of a note on one item instance.
+	NoteInstance = "instance"
+	// NoteItem is the kind of a note on a Collections entry.
+	NoteItem = "item"
+	// NoteSet is the kind of a note on a Collections armor set.
+	NoteSet = "set"
+)
 
 // PerkPreference records a liked or disliked perk for one game mode.
 type PerkPreference struct {
@@ -196,30 +212,40 @@ type statPageBody struct {
 	More   bool
 }
 
-// ServiceOption configures a [*Service]. See [WithServiceURL].
-type ServiceOption func(*Service)
+// Option configures a [*Client] via [New].
+//
+// Functions of this type:
+//   - [WithURL]
+//   - [WithUserAgent]
+type Option func(*Client)
 
-// WithServiceURL overrides the base URL of Agg's Destiny Vault Manager. It
-// is a [ServiceOption].
-func WithServiceURL(u string) ServiceOption {
-	return func(s *Service) { s.baseURL = strings.TrimRight(u, "/") }
+// WithURL overrides the base URL of Agg's Destiny Vault Manager. It is an
+// [Option].
+func WithURL(u string) Option {
+	return func(s *Client) { s.baseURL = strings.TrimRight(u, "/") }
 }
 
-// Service is the HTTP client for Agg's Destiny Vault Manager. The deployment
+// WithUserAgent sets the User-Agent header of every request. The header
+// defaults to MCP-Destiny. It is an [Option].
+func WithUserAgent(ua string) Option {
+	return func(s *Client) { s.userAgent = ua }
+}
+
+// Client is the HTTP client for Agg's Destiny Vault Manager. The deployment
 // stores tags, notes, perk preferences, autotag rules, and the profile
 // changes that the web client records, all per Bungie account. It also
 // brokers the Bungie OAuth exchange and serves the definition artifacts.
-type Service struct {
+type Client struct {
 	http      *http.Client
 	baseURL   string
 	userAgent string
 }
 
-// NewService returns a [*Service] configured with the given options.
-func NewService(opts ...ServiceOption) *Service {
-	s := &Service{
+// New returns a [*Client] configured with the given options.
+func New(opts ...Option) *Client {
+	s := &Client{
 		http:      &http.Client{Timeout: defaultTimeout},
-		baseURL:   defaultServiceURL,
+		baseURL:   DefaultURL,
 		userAgent: defaultUserAgent,
 	}
 	for _, opt := range opts {
@@ -230,37 +256,37 @@ func NewService(opts ...ServiceOption) *Service {
 }
 
 // BaseURL returns the base URL of the deployment.
-func (s *Service) BaseURL() string {
+func (s *Client) BaseURL() string {
 	return s.baseURL
 }
 
 // Config calls /api/config.
-func (s *Service) Config(ctx context.Context) (ServiceConfig, error) {
-	var out ServiceConfig
+func (s *Client) Config(ctx context.Context) (Config, error) {
+	var out Config
 
 	err := s.call(ctx, http.MethodGet, "/api/config", "", nil, &out)
 	if err != nil {
-		return ServiceConfig{}, err
+		return Config{}, err
 	}
 
 	if out.APIKey == "" || out.ClientID == "" {
-		return ServiceConfig{}, fmt.Errorf("%w: /api/config carries no Bungie credentials", ErrService)
+		return Config{}, fmt.Errorf("%w: /api/config carries no Bungie credentials", ErrService)
 	}
 
 	return out, nil
 }
 
 // ExchangeCode trades a Bungie OAuth authorization code for tokens.
-func (s *Service) ExchangeCode(ctx context.Context, code string) (TokenResponse, error) {
+func (s *Client) ExchangeCode(ctx context.Context, code string) (TokenResponse, error) {
 	return s.tokens(ctx, "/api/auth/token", map[string]string{"code": code})
 }
 
 // RefreshTokens trades a Bungie refresh token for a fresh set of tokens.
-func (s *Service) RefreshTokens(ctx context.Context, refreshToken string) (TokenResponse, error) {
+func (s *Client) RefreshTokens(ctx context.Context, refreshToken string) (TokenResponse, error) {
 	return s.tokens(ctx, "/api/auth/refresh", map[string]string{"refreshToken": refreshToken})
 }
 
-func (s *Service) tokens(ctx context.Context, path string, body any) (TokenResponse, error) {
+func (s *Client) tokens(ctx context.Context, path string, body any) (TokenResponse, error) {
 	var out TokenResponse
 
 	err := s.call(ctx, http.MethodPost, path, "", body, &out)
@@ -281,7 +307,7 @@ func (s *Service) tokens(ctx context.Context, path string, body any) (TokenRespo
 
 // Artifact opens one definition artifact file. The caller closes the
 // returned reader.
-func (s *Service) Artifact(ctx context.Context, file string) (io.ReadCloser, error) {
+func (s *Client) Artifact(ctx context.Context, file string) (io.ReadCloser, error) {
 	u := s.baseURL + "/artifacts/" + url.PathEscape(file)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
@@ -311,7 +337,7 @@ func (s *Service) Artifact(ctx context.Context, file string) (io.ReadCloser, err
 
 // Tags returns every item tag row of the signed-in account, removed rows
 // included.
-func (s *Service) Tags(ctx context.Context, session string) ([]ItemTag, error) {
+func (s *Client) Tags(ctx context.Context, session string) ([]ItemTag, error) {
 	var out struct {
 		Items []ItemTag `json:"items"`
 	}
@@ -325,14 +351,14 @@ func (s *Service) Tags(ctx context.Context, session string) ([]ItemTag, error) {
 }
 
 // WriteTags upserts item tag rows.
-func (s *Service) WriteTags(ctx context.Context, session string, changes []ItemTag) error {
+func (s *Client) WriteTags(ctx context.Context, session string, changes []ItemTag) error {
 	body := map[string]any{"defs": []any{}, "items": changes}
 
 	return s.call(ctx, http.MethodPost, "/api/tags", session, body, nil)
 }
 
 // Notes returns every note of the signed-in account, removed notes included.
-func (s *Service) Notes(ctx context.Context, session string) ([]Note, error) {
+func (s *Client) Notes(ctx context.Context, session string) ([]Note, error) {
 	var out struct {
 		Notes []Note `json:"notes"`
 	}
@@ -346,13 +372,13 @@ func (s *Service) Notes(ctx context.Context, session string) ([]Note, error) {
 }
 
 // WriteNote upserts one note. An empty Body removes the note.
-func (s *Service) WriteNote(ctx context.Context, session string, change Note) error {
+func (s *Client) WriteNote(ctx context.Context, session string, change Note) error {
 	return s.call(ctx, http.MethodPost, "/api/notes", session, change, nil)
 }
 
 // PerkPreferences returns every perk preference of the signed-in account,
 // removed preferences included.
-func (s *Service) PerkPreferences(ctx context.Context, session string) ([]PerkPreference, error) {
+func (s *Client) PerkPreferences(ctx context.Context, session string) ([]PerkPreference, error) {
 	var out struct {
 		Preferences []PerkPreference `json:"preferences"`
 	}
@@ -366,7 +392,7 @@ func (s *Service) PerkPreferences(ctx context.Context, session string) ([]PerkPr
 }
 
 // WritePerkPreferences upserts perk preferences.
-func (s *Service) WritePerkPreferences(ctx context.Context, session string, changes []PerkPreference) error {
+func (s *Client) WritePerkPreferences(ctx context.Context, session string, changes []PerkPreference) error {
 	body := map[string]any{"preferences": changes}
 
 	return s.call(ctx, http.MethodPost, "/api/perk-preferences", session, body, nil)
@@ -374,7 +400,7 @@ func (s *Service) WritePerkPreferences(ctx context.Context, session string, chan
 
 // Autotag returns every autotag rule of the signed-in account, removed rules
 // included, and the autotag state.
-func (s *Service) Autotag(ctx context.Context, session string) (AutotagSnapshot, error) {
+func (s *Client) Autotag(ctx context.Context, session string) (AutotagSnapshot, error) {
 	var out AutotagSnapshot
 
 	err := s.call(ctx, http.MethodGet, "/api/autotag?since=0", session, nil, &out)
@@ -386,7 +412,7 @@ func (s *Service) Autotag(ctx context.Context, session string) (AutotagSnapshot,
 }
 
 // WriteAutotagRules upserts autotag rules.
-func (s *Service) WriteAutotagRules(ctx context.Context, session string, changes []AutotagRule) error {
+func (s *Client) WriteAutotagRules(ctx context.Context, session string, changes []AutotagRule) error {
 	body := map[string]any{"rules": changes}
 
 	return s.call(ctx, http.MethodPost, "/api/autotag", session, body, nil)
@@ -395,7 +421,7 @@ func (s *Service) WriteAutotagRules(ctx context.Context, session string, changes
 // SetAutotagEnabled turns autotagging on or off and reports whether the
 // service applied the change. Turning it on stores mark as the highest
 // instance id that the rules skip, unless autotagging is already on.
-func (s *Service) SetAutotagEnabled(ctx context.Context, session string, enabled bool, mark string) (bool, error) {
+func (s *Client) SetAutotagEnabled(ctx context.Context, session string, enabled bool, mark string) (bool, error) {
 	body := map[string]any{"kind": "disable"}
 	if enabled {
 		body = map[string]any{"kind": "enable", "mark": mark}
@@ -410,13 +436,13 @@ func (s *Service) SetAutotagEnabled(ctx context.Context, session string, enabled
 // equals the value of the from parameter. At most one runner therefore
 // claims the items between the two marks. The service refuses a claim
 // whose to mark is not higher than its from mark.
-func (s *Service) ClaimAutotag(ctx context.Context, session, from, to string) (bool, error) {
+func (s *Client) ClaimAutotag(ctx context.Context, session, from, to string) (bool, error) {
 	return s.changeAutotagState(ctx, session, map[string]any{"kind": "claim", "from": from, "to": to})
 }
 
 // changeAutotagState posts one change of the autotag state and returns the
 // applied field of the answer.
-func (s *Service) changeAutotagState(ctx context.Context, session string, body map[string]any) (bool, error) {
+func (s *Client) changeAutotagState(ctx context.Context, session string, body map[string]any) (bool, error) {
 	var out struct {
 		Applied bool `json:"applied"`
 	}
@@ -434,7 +460,7 @@ func (s *Service) changeAutotagState(ctx context.Context, session string, body m
 // reports no more chunks. A recorder that replaces a stored bucket moves it
 // to a later page, so Stats keeps the last copy of each bucket that it
 // reads. It returns the chunks in the order of StartsAt.
-func (s *Service) Stats(ctx context.Context, session string, cursor StatCursor) ([]StatChunk, error) {
+func (s *Client) Stats(ctx context.Context, session string, cursor StatCursor) ([]StatChunk, error) {
 	byStart := map[int64]StatChunk{}
 
 	for {
@@ -477,7 +503,7 @@ func (c StatCursor) before(other StatCursor) bool {
 }
 
 // statPage reads the page of /api/stats that follows cursor.
-func (s *Service) statPage(ctx context.Context, session string, cursor StatCursor) (statPageBody, error) {
+func (s *Client) statPage(ctx context.Context, session string, cursor StatCursor) (statPageBody, error) {
 	path := fmt.Sprintf("/api/stats?since=%d&after=%d", cursor.UpdatedAt, cursor.StartsAt)
 
 	var page statPageBody
@@ -622,7 +648,7 @@ func expectDelim(dec *json.Decoder, want json.Delim) error {
 
 // call performs one JSON request. It sends a non-empty session as a bearer
 // token. A nil dst discards the response body.
-func (s *Service) call(ctx context.Context, method, path, session string, body, dst any) error {
+func (s *Client) call(ctx context.Context, method, path, session string, body, dst any) error {
 	return s.stream(ctx, method, path, session, body, func(r io.Reader) error {
 		raw, err := io.ReadAll(io.LimitReader(r, maxResponseBytes))
 		if err != nil {
@@ -645,7 +671,7 @@ func (s *Service) call(ctx context.Context, method, path, session string, body, 
 // stream performs one request and passes the body of a 2xx response to
 // read. It sends a non-empty session as a bearer token and a non-nil body
 // as JSON.
-func (s *Service) stream(
+func (s *Client) stream(
 	ctx context.Context,
 	method, path, session string,
 	body any,

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 const timeLayout = "2006-01-02 15:04 MST"
@@ -1431,7 +1432,7 @@ func renderTags(s *Snapshot) string {
 	return b.String()
 }
 
-func renderNotes(s *Snapshot, notes []Note) string {
+func renderNotes(s *Snapshot, notes []dvm.Note) string {
 	var b strings.Builder
 
 	for _, note := range notes {
@@ -1442,7 +1443,7 @@ func renderNotes(s *Snapshot, notes []Note) string {
 		target := note.TargetID
 
 		item, ok := s.Find(note.TargetID)
-		if note.Kind == noteInstance && ok {
+		if note.Kind == dvm.NoteInstance && ok {
 			target = fmt.Sprintf("%s (%s)", note.TargetID, item.Name)
 		}
 
@@ -1456,7 +1457,7 @@ func renderNotes(s *Snapshot, notes []Note) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func renderPerkPreferences(prefs []PerkPreference) string {
+func renderPerkPreferences(prefs []dvm.PerkPreference) string {
 	var b strings.Builder
 
 	for _, mode := range perkModes {
@@ -1485,7 +1486,7 @@ func renderPerkPreferences(prefs []PerkPreference) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func renderAutotag(snapshot AutotagSnapshot) string {
+func renderAutotag(snapshot dvm.AutotagSnapshot) string {
 	var b strings.Builder
 
 	switch {
@@ -1514,7 +1515,7 @@ func renderAutotag(snapshot AutotagSnapshot) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func renderRule(rule AutotagRule) string {
+func renderRule(rule dvm.AutotagRule) string {
 	actions := []string{}
 
 	if rule.TagID != "" {

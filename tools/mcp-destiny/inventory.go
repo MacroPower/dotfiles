@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 // Owner values of items that no character holds.
@@ -719,7 +720,7 @@ func statsOf(profile *bungie.Profile, defs *Defs, instanceID string) []Stat {
 // stores. The rule is the rule id of the row that holds the tag, as the
 // web client reads it. The web client reads a rule only for a tag that it
 // defines. A row without a rule id marks a tag that a person set.
-func (s *Snapshot) Annotate(tags []ItemTag, notes []Note) {
+func (s *Snapshot) Annotate(tags []dvm.ItemTag, notes []dvm.Note) {
 	held := map[string][]string{}
 
 	// rules maps the instance id and the tag id of each row to the rule id
@@ -741,7 +742,7 @@ func (s *Snapshot) Annotate(tags []ItemTag, notes []Note) {
 	bodies := map[string]string{}
 
 	for _, note := range notes {
-		if note.Kind == noteInstance && !note.Removed {
+		if note.Kind == dvm.NoteInstance && !note.Removed {
 			bodies[note.TargetID] = note.Body
 		}
 	}

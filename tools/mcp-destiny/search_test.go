@@ -14,6 +14,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 // compiled parses and compiles query, which must parse.
@@ -2727,11 +2728,11 @@ func TestAutotagged(t *testing.T) {
 		return ids(compiled(t, query).evaluate(searchContext{items: builtItems(s)}, owned).matches)
 	}
 
-	s.Annotate([]ItemTag{{InstanceID: target.InstanceID, TagID: tagJunk, RuleID: "rule-1"}}, nil)
+	s.Annotate([]dvm.ItemTag{{InstanceID: target.InstanceID, TagID: tagJunk, RuleID: "rule-1"}}, nil)
 	assert.Equal(t, []string{target.InstanceID}, matches("is:autotagged"))
 
 	// A tag that a person sets carries no rule id.
-	s.Annotate([]ItemTag{{InstanceID: target.InstanceID, TagID: tagJunk}}, nil)
+	s.Annotate([]dvm.ItemTag{{InstanceID: target.InstanceID, TagID: tagJunk}}, nil)
 	assert.Empty(t, matches("is:autotagged"))
 	assert.Equal(t, []string{target.InstanceID}, matches("tag:junk"))
 }

@@ -14,6 +14,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 // fakeArtifacts is an [ArtifactSource] that serves artifacts from memory
@@ -199,8 +200,8 @@ func fixtureSockets() map[uint32][]uint32 {
 	return map[uint32][]uint32{100: {40, 41, 0}, 402: {45}}
 }
 
-func (f *fakeArtifacts) Config(context.Context) (ServiceConfig, error) {
-	return ServiceConfig{Artifacts: ArtifactIndex{ManifestVersion: f.version, Files: f.index}}, nil
+func (f *fakeArtifacts) Config(context.Context) (dvm.Config, error) {
+	return dvm.Config{Artifacts: dvm.ArtifactIndex{ManifestVersion: f.version, Files: f.index}}, nil
 }
 
 func (f *fakeArtifacts) Artifact(_ context.Context, file string) (io.ReadCloser, error) {
@@ -208,7 +209,7 @@ func (f *fakeArtifacts) Artifact(_ context.Context, file string) (io.ReadCloser,
 
 	body, ok := f.files[file]
 	if !ok {
-		return nil, ErrService
+		return nil, dvm.ErrService
 	}
 
 	return io.NopCloser(strings.NewReader(body)), nil
@@ -551,7 +552,7 @@ func TestDefsLoaderErrors(t *testing.T) {
 		},
 		"activity reward fetch fails": {
 			break_: func(f *fakeArtifacts) { delete(f.files, "activity-rewards-1.json") },
-			err:    ErrService,
+			err:    dvm.ErrService,
 		},
 		"item set table is not an object": {
 			break_: func(f *fakeArtifacts) { f.files["item-sets.json"] = `[]` },
@@ -567,7 +568,7 @@ func TestDefsLoaderErrors(t *testing.T) {
 		},
 		"vendor item fetch fails": {
 			break_: func(f *fakeArtifacts) { delete(f.files, "vendor-items-1.json") },
-			err:    ErrService,
+			err:    dvm.ErrService,
 		},
 		"second detail file is not an array": {
 			break_: func(f *fakeArtifacts) { f.files["detail-1.json"] = `{"hash": 402}` },
@@ -575,7 +576,7 @@ func TestDefsLoaderErrors(t *testing.T) {
 		},
 		"detail fetch fails": {
 			break_: func(f *fakeArtifacts) { delete(f.files, "detail-1.json") },
-			err:    ErrService,
+			err:    dvm.ErrService,
 		},
 		"second plug set file is not an array": {
 			break_: func(f *fakeArtifacts) { f.files["plugsets-1.json"] = `{"hash": 45}` },
@@ -583,7 +584,7 @@ func TestDefsLoaderErrors(t *testing.T) {
 		},
 		"plug set fetch fails": {
 			break_: func(f *fakeArtifacts) { delete(f.files, "plugsets-1.json") },
-			err:    ErrService,
+			err:    dvm.ErrService,
 		},
 		"table artifact is missing from the index": {
 			break_: func(f *fakeArtifacts) { delete(f.index, artifactStats) },
@@ -591,7 +592,7 @@ func TestDefsLoaderErrors(t *testing.T) {
 		},
 		"artifact fetch fails": {
 			break_: func(f *fakeArtifacts) { delete(f.files, "core-1.json") },
-			err:    ErrService,
+			err:    dvm.ErrService,
 		},
 	}
 

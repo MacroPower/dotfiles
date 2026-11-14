@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 // Change kinds that the stats tool reads. The web client records more.
@@ -112,8 +114,8 @@ func (p statPeriod) start(end time.Time) time.Time {
 // chunk that the service stamped before a time therefore holds only
 // changes from before that time, when the Bungie clock and the service
 // clock agree within [statClockMargin].
-func statCursorFor(from time.Time) StatCursor {
-	return StatCursor{UpdatedAt: max(0, from.Add(-statLookback-statClockMargin).UnixMilli())}
+func statCursorFor(from time.Time) dvm.StatCursor {
+	return dvm.StatCursor{UpdatedAt: max(0, from.Add(-statLookback-statClockMargin).UnixMilli())}
 }
 
 // statFlow is the change of one currency or stack over a period.
@@ -151,12 +153,12 @@ type statSummary struct {
 // from. The first change of the period thus takes its before value from
 // the last reading before the period. The newest field holds the At of the
 // newest change of chunks, and it is zero when chunks hold no change.
-func summarizeStats(chunks []StatChunk, from, to time.Time) statSummary {
+func summarizeStats(chunks []dvm.StatChunk, from, to time.Time) statSummary {
 	lo := from.Add(-statLookback).UnixMilli()
 	hi := to.UnixMilli()
 
 	var (
-		changes []StatChange
+		changes []dvm.StatChange
 		newest  int64
 		found   bool
 	)
@@ -195,7 +197,7 @@ func summarizeStats(chunks []StatChunk, from, to time.Time) statSummary {
 // a kind that the stats tool does not restate. The key of a currency or
 // stack names its kind and item hash. The key of an objective names its
 // instance id and objective hash.
-func readingKey(change StatChange) (string, bool) {
+func readingKey(change dvm.StatChange) (string, bool) {
 	switch change.Kind {
 	case changeCurrency, changeStack:
 		return fmt.Sprintf("%s/%d", change.Kind, change.ItemHash), true
@@ -210,9 +212,9 @@ func readingKey(change StatChange) (string, bool) {
 // by the previous After of the same value. Two recorders whose baselines
 // differ log the same gain twice, and the restatement counts it once. It
 // ports restateReadings from statData.ts of the web client.
-func restateReadings(changes []StatChange) []StatChange {
+func restateReadings(changes []dvm.StatChange) []dvm.StatChange {
 	out := slices.Clone(changes)
-	slices.SortStableFunc(out, func(a, b StatChange) int { return cmp.Compare(a.At, b.At) })
+	slices.SortStableFunc(out, func(a, b dvm.StatChange) int { return cmp.Compare(a.At, b.At) })
 
 	last := map[string]int64{}
 
@@ -236,7 +238,7 @@ func restateReadings(changes []StatChange) []StatChange {
 // hash. It returns the currencies first and then sorts by the absolute net
 // change, largest first. It ports balancesOf from statData.ts of the web
 // client.
-func flowsOf(changes []StatChange, from int64) []statFlow {
+func flowsOf(changes []dvm.StatChange, from int64) []statFlow {
 	var flows []statFlow
 
 	index := map[uint32]int{}
@@ -279,7 +281,7 @@ func flowsOf(changes []StatChange, from int64) []statFlow {
 }
 
 // killChange reports whether change raised the count of a kill tracker.
-func killChange(change StatChange) bool {
+func killChange(change dvm.StatChange) bool {
 	_, tracker := killTrackers[change.ObjectiveHash]
 
 	return change.Kind == changeObjective && tracker && change.After > change.Before
@@ -288,7 +290,7 @@ func killChange(change StatChange) bool {
 // weaponKillsOf sums the kills at or after from per weapon instance. It
 // sorts the weapons by total kills, most first. It ports weaponKillsOf from
 // statData.ts of the web client.
-func weaponKillsOf(changes []StatChange, from int64) []weaponKills {
+func weaponKillsOf(changes []dvm.StatChange, from int64) []weaponKills {
 	var weapons []weaponKills
 
 	index := map[string]int{}

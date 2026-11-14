@@ -13,6 +13,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 func ids(items []*Item) []string {
@@ -296,17 +297,17 @@ func TestAnnotate(t *testing.T) {
 	s := fixtureSnapshot(t)
 
 	s.Annotate(
-		[]ItemTag{
+		[]dvm.ItemTag{
 			{InstanceID: "1001", TagID: "junk"},
 			{InstanceID: "1001", TagID: "keep"},
 			{InstanceID: "1001", TagID: tagFavorite},
 			{InstanceID: "1002", TagID: "pvp", Removed: true},
 			{InstanceID: "1003", TagID: tagFavorite},
 		},
-		[]Note{
-			{Kind: noteInstance, TargetID: "1001", Body: "god roll"},
-			{Kind: noteInstance, TargetID: "1002", Body: "gone", Removed: true},
-			{Kind: noteSet, TargetID: "1003", Body: "not an instance note"},
+		[]dvm.Note{
+			{Kind: dvm.NoteInstance, TargetID: "1001", Body: "god roll"},
+			{Kind: dvm.NoteInstance, TargetID: "1002", Body: "gone", Removed: true},
+			{Kind: dvm.NoteSet, TargetID: "1003", Body: "not an instance note"},
 		},
 	)
 
@@ -337,7 +338,7 @@ func TestFilter(t *testing.T) {
 	t.Parallel()
 
 	s := fixtureSnapshot(t)
-	s.Annotate([]ItemTag{
+	s.Annotate([]dvm.ItemTag{
 		{InstanceID: "1001", TagID: "keep"},
 		{InstanceID: "1002", TagID: tagFavorite},
 	}, nil)
@@ -1160,42 +1161,42 @@ func TestAnnotateTagRule(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		rows    []ItemTag
+		rows    []dvm.ItemTag
 		wantTag string
 		want    string
 	}{
 		"keep row with a rule id": {
-			rows:    []ItemTag{{InstanceID: "1001", TagID: "keep", RuleID: "rule-1"}},
+			rows:    []dvm.ItemTag{{InstanceID: "1001", TagID: "keep", RuleID: "rule-1"}},
 			wantTag: "keep",
 			want:    "rule-1",
 		},
 		"keep row without a rule id": {
-			rows:    []ItemTag{{InstanceID: "1001", TagID: "keep"}},
+			rows:    []dvm.ItemTag{{InstanceID: "1001", TagID: "keep"}},
 			wantTag: "keep",
 		},
 		"removed row with a rule id": {
-			rows: []ItemTag{{InstanceID: "1001", TagID: "keep", RuleID: "rule-1", Removed: true}},
+			rows: []dvm.ItemTag{{InstanceID: "1001", TagID: "keep", RuleID: "rule-1", Removed: true}},
 		},
 		"tag outside the tags of the web client": {
-			rows:    []ItemTag{{InstanceID: "1001", TagID: "wishlist", RuleID: "rule-1"}},
+			rows:    []dvm.ItemTag{{InstanceID: "1001", TagID: "wishlist", RuleID: "rule-1"}},
 			wantTag: "wishlist",
 		},
 		"rule of a tag that the item does not show": {
-			rows: []ItemTag{
+			rows: []dvm.ItemTag{
 				{InstanceID: "1001", TagID: "junk", RuleID: "rule-1"},
 				{InstanceID: "1001", TagID: "keep"},
 			},
 			wantTag: "keep",
 		},
 		"rule of the favorite mark": {
-			rows: []ItemTag{
+			rows: []dvm.ItemTag{
 				{InstanceID: "1001", TagID: tagFavorite, RuleID: "rule-1"},
 				{InstanceID: "1001", TagID: "keep"},
 			},
 			wantTag: "keep",
 		},
 		"rule of another item": {
-			rows: []ItemTag{
+			rows: []dvm.ItemTag{
 				{InstanceID: "1002", TagID: "keep", RuleID: "rule-1"},
 				{InstanceID: "1001", TagID: "keep"},
 			},
@@ -1211,7 +1212,7 @@ func TestAnnotateTagRule(t *testing.T) {
 
 			// An earlier annotation sets a rule, which the next one
 			// replaces.
-			s.Annotate([]ItemTag{{InstanceID: "1001", TagID: "keep", RuleID: "rule-0"}}, nil)
+			s.Annotate([]dvm.ItemTag{{InstanceID: "1001", TagID: "keep", RuleID: "rule-0"}}, nil)
 			s.Annotate(tc.rows, nil)
 
 			item, ok := s.Find("1001")

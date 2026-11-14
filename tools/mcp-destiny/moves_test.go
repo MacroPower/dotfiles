@@ -10,6 +10,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 func TestMove(t *testing.T) {
@@ -545,7 +546,7 @@ func TestSetLock(t *testing.T) {
 func TestTagChanges(t *testing.T) {
 	t.Parallel()
 
-	rows := []ItemTag{
+	rows := []dvm.ItemTag{
 		{InstanceID: "1001", ItemHash: 100, TagID: "keep"},
 		{InstanceID: "1001", ItemHash: 100, TagID: tagFavorite},
 		{InstanceID: "1001", ItemHash: 100, TagID: "pvp", Removed: true},
@@ -560,24 +561,24 @@ func TestTagChanges(t *testing.T) {
 		// rule is the id of the autotag rule that sets the tag. It is
 		// empty for a tag that a person sets.
 		rule string
-		want []ItemTag
+		want []dvm.ItemTag
 	}{
 		"replace the tag": {
 			tag: "junk",
-			want: []ItemTag{
+			want: []dvm.ItemTag{
 				{InstanceID: "1001", ItemHash: 100, TagID: "keep", Removed: true},
 				{InstanceID: "1001", ItemHash: 100, TagID: "junk"},
 			},
 		},
 		"clear the tag": {
 			tag: "",
-			want: []ItemTag{
+			want: []dvm.ItemTag{
 				{InstanceID: "1001", ItemHash: 100, TagID: "keep", Removed: true},
 			},
 		},
 		"same tag writes the row again": {
 			tag: "keep",
-			want: []ItemTag{
+			want: []dvm.ItemTag{
 				{InstanceID: "1001", ItemHash: 100, TagID: "keep"},
 			},
 		},
@@ -585,7 +586,7 @@ func TestTagChanges(t *testing.T) {
 		"a rule replaces the tag": {
 			tag:  "junk",
 			rule: "rule-1",
-			want: []ItemTag{
+			want: []dvm.ItemTag{
 				{InstanceID: "1001", ItemHash: 100, TagID: "keep", Removed: true},
 				{InstanceID: "1001", ItemHash: 100, TagID: "junk", RuleID: "rule-1"},
 			},
@@ -593,14 +594,14 @@ func TestTagChanges(t *testing.T) {
 		"a rule sets the tag that a person set": {
 			tag:  "keep",
 			rule: "rule-1",
-			want: []ItemTag{
+			want: []dvm.ItemTag{
 				{InstanceID: "1001", ItemHash: 100, TagID: "keep", RuleID: "rule-1"},
 			},
 		},
 		"a person sets the tag that a rule set": {
 			instance: "1003",
 			tag:      "junk",
-			want: []ItemTag{
+			want: []dvm.ItemTag{
 				{InstanceID: "1003", ItemHash: 100, TagID: "junk"},
 			},
 		},

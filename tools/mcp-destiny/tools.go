@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 // MCP tool names. The registration in main.go, the handlers, and the log
@@ -54,13 +55,6 @@ const (
 	toolListVendors         = "list_vendors"
 	toolListActivities      = "list_activities"
 	toolGetStats            = "get_stats"
-)
-
-// Note kinds that the service stores.
-const (
-	noteInstance = "instance"
-	noteItem     = "item"
-	noteSet      = "set"
 )
 
 const (
@@ -127,7 +121,7 @@ var (
 	// errNoAutotagState reports an autotag read that returns no state.
 	// The service keeps the state after the first time a client turns
 	// autotagging on, so the read after a claim request expects one.
-	errNoAutotagState = fmt.Errorf("%w: the service returned no autotag state", ErrService)
+	errNoAutotagState = fmt.Errorf("%w: the service returned no autotag state", dvm.ErrService)
 )
 
 // EmptyInput is the input schema of the tools that take no arguments.
@@ -341,7 +335,7 @@ type GetStatsInput struct {
 // sheet store and the loadout table store have no lock of their own, so
 // the same mutex guards them.
 type handler struct {
-	service       *Service
+	service       *dvm.Client
 	bungie        *bungie.Client
 	auth          *Auth
 	defs          *DefsLoader
@@ -1408,7 +1402,7 @@ func (h *handler) handleSetTag(
 		return h.toolError(ctx, toolSetTag, err)
 	}
 
-	var changes []ItemTag
+	var changes []dvm.ItemTag
 
 	for _, item := range items {
 		changes = append(changes, tagChanges(rows, item.InstanceID, item.Hash, tag, "")...)
@@ -1450,9 +1444,9 @@ func (h *handler) handleSetFavorite(
 		return h.toolError(ctx, toolSetFavorite, err)
 	}
 
-	changes := make([]ItemTag, 0, len(items))
+	changes := make([]dvm.ItemTag, 0, len(items))
 	for _, item := range items {
-		changes = append(changes, ItemTag{
+		changes = append(changes, dvm.ItemTag{
 			InstanceID: item.InstanceID,
 			ItemHash:   item.Hash,
 			TagID:      tagFavorite,
@@ -1507,10 +1501,10 @@ func (h *handler) handleSetNote(
 
 	kind := strings.ToLower(in.Kind)
 	if kind == "" {
-		kind = noteInstance
+		kind = dvm.NoteInstance
 	}
 
-	if !slices.Contains([]string{noteInstance, noteItem, noteSet}, kind) {
+	if !slices.Contains([]string{dvm.NoteInstance, dvm.NoteItem, dvm.NoteSet}, kind) {
 		return h.toolError(ctx, toolSetNote,
 			fmt.Errorf("%w: kind %q is not instance, item, or set", ErrInvalidInput, in.Kind))
 	}
@@ -1527,11 +1521,11 @@ func (h *handler) handleSetNote(
 		body = ""
 	}
 
-	change := Note{Kind: kind, TargetID: in.TargetID, Body: body, Removed: body == ""}
+	change := dvm.Note{Kind: kind, TargetID: in.TargetID, Body: body, Removed: body == ""}
 
 	var item *Item
 
-	if kind == noteInstance {
+	if kind == dvm.NoteInstance {
 		s, err := h.loadSnapshot(ctx, false)
 		if err != nil {
 			return h.toolError(ctx, toolSetNote, err)
@@ -1611,7 +1605,7 @@ func (h *handler) handleSetPerkPreferences(
 	}
 
 	traits := defs.TraitNames()
-	changes := make([]PerkPreference, 0, len(in.Preferences))
+	changes := make([]dvm.PerkPreference, 0, len(in.Preferences))
 
 	for _, pref := range in.Preferences {
 		change, err := perkChange(pref, traits)
@@ -1685,7 +1679,7 @@ func (h *handler) handleListAutotagRules(
 // drops. It reads the profile only while autotagging is on, because the
 // web client runs the rules only then. It returns the error of the
 // profile, tag, or note read.
-func (h *handler) newItemMatches(ctx context.Context, snapshot AutotagSnapshot) (string, error) {
+func (h *handler) newItemMatches(ctx context.Context, snapshot dvm.AutotagSnapshot) (string, error) {
 	switch {
 	case snapshot.State == nil:
 		return "Autotagging has never been turned on, so no item waits for the rules.", nil
@@ -1722,7 +1716,7 @@ func (h *handler) newItemMatches(ctx context.Context, snapshot AutotagSnapshot) 
 // the autotag state, because the rule editor of the web client shows them
 // whether autotagging is on or off. It returns the error of the profile,
 // tag, or note read.
-func (h *handler) ownedMatches(ctx context.Context, snapshot AutotagSnapshot) (string, error) {
+func (h *handler) ownedMatches(ctx context.Context, snapshot dvm.AutotagSnapshot) (string, error) {
 	rules := liveRules(snapshot.Rules)
 	if len(rules) == 0 {
 		return "No rules, so nothing is counted.", nil
@@ -1781,7 +1775,7 @@ func (h *handler) handleSaveAutotagRule(
 	}
 
 	err = h.withSession(ctx, func(session string) error {
-		return h.service.WriteAutotagRules(ctx, session, []AutotagRule{rule})
+		return h.service.WriteAutotagRules(ctx, session, []dvm.AutotagRule{rule})
 	})
 	if err != nil {
 		return h.toolError(ctx, toolSaveAutotagRule, err)
@@ -1947,7 +1941,7 @@ func (h *handler) handleRemoveAutotagRule(
 
 	rules := liveRules(snapshot.Rules)
 
-	i := slices.IndexFunc(rules, func(rule AutotagRule) bool { return rule.ID == in.ID })
+	i := slices.IndexFunc(rules, func(rule dvm.AutotagRule) bool { return rule.ID == in.ID })
 	if i < 0 {
 		return h.toolError(ctx, toolRemoveAutotagRule,
 			fmt.Errorf("%w: no autotag rule has the id %q", ErrInvalidInput, in.ID))
@@ -1958,7 +1952,7 @@ func (h *handler) handleRemoveAutotagRule(
 	rule.UpdatedAt = 0
 
 	err = h.withSession(ctx, func(session string) error {
-		return h.service.WriteAutotagRules(ctx, session, []AutotagRule{rule})
+		return h.service.WriteAutotagRules(ctx, session, []dvm.AutotagRule{rule})
 	})
 	if err != nil {
 		return h.toolError(ctx, toolRemoveAutotagRule, err)
@@ -1998,7 +1992,7 @@ func (h *handler) handleSetAutotagEnabled(
 	switch {
 	case !applied:
 		return h.toolError(ctx, toolSetAutotagEnabled,
-			fmt.Errorf("%w: the service did not apply the change", ErrService))
+			fmt.Errorf("%w: the service did not apply the change", dvm.ErrService))
 
 	case in.Enabled:
 		return textResult("Autotagging is on. The rules apply to items acquired from now on. " +
@@ -2122,7 +2116,7 @@ func (h *handler) handleRunAutotagRules(
 			"Another runner, such as the open web client, claimed these items first, or autotagging was turned off.")
 	}
 
-	var changes []ItemTag
+	var changes []dvm.ItemTag
 
 	for _, t := range tags {
 		changes = append(changes, tagChanges(rows, t.item.InstanceID, t.item.Hash, t.rule.TagID, t.rule.ID)...)
@@ -2252,7 +2246,7 @@ func (h *handler) handleGetStats(
 
 	cursor := statCursorFor(from)
 
-	chunks, err := sessionValue(ctx, h, func(session string) ([]StatChunk, error) {
+	chunks, err := sessionValue(ctx, h, func(session string) ([]dvm.StatChunk, error) {
 		return h.service.Stats(ctx, session, cursor)
 	})
 	if err != nil {
@@ -2342,21 +2336,21 @@ func keepRated(items []*Item, minimums []ratingMinimum, sources map[string]Ratin
 // because the web client never matches such a row. A removal passes an
 // unknown name through, so the tool can clear a row that an earlier write
 // left behind.
-func perkChange(in PerkPreferenceInput, traits map[string]string) (PerkPreference, error) {
+func perkChange(in PerkPreferenceInput, traits map[string]string) (dvm.PerkPreference, error) {
 	mode := strings.ToLower(in.Mode)
 	stance := strings.ToLower(in.Stance)
 	perk := basePerkName(in.Perk)
 
 	if !slices.Contains(perkModes, mode) {
-		return PerkPreference{}, fmt.Errorf("%w: mode %q is not pve or pvp", ErrInvalidInput, in.Mode)
+		return dvm.PerkPreference{}, fmt.Errorf("%w: mode %q is not pve or pvp", ErrInvalidInput, in.Mode)
 	}
 
 	if perk == "" {
-		return PerkPreference{}, fmt.Errorf("%w: a preference needs a perk name", ErrInvalidInput)
+		return dvm.PerkPreference{}, fmt.Errorf("%w: a preference needs a perk name", ErrInvalidInput)
 	}
 
 	if stance != stanceNone && !slices.Contains(perkStances, stance) {
-		return PerkPreference{}, fmt.Errorf("%w: stance %q is not up, down, or none", ErrInvalidInput, in.Stance)
+		return dvm.PerkPreference{}, fmt.Errorf("%w: stance %q is not up, down, or none", ErrInvalidInput, in.Stance)
 	}
 
 	name, known := traits[strings.ToLower(perk)]
@@ -2366,14 +2360,14 @@ func perkChange(in PerkPreferenceInput, traits map[string]string) (PerkPreferenc
 
 	if stance == stanceNone {
 		// The service validates the stance of a removed row too.
-		return PerkPreference{Mode: mode, Perk: perk, Stance: perkStances[0], Removed: true}, nil
+		return dvm.PerkPreference{Mode: mode, Perk: perk, Stance: perkStances[0], Removed: true}, nil
 	}
 
 	if !known {
-		return PerkPreference{}, unknownTrait(perk, traits)
+		return dvm.PerkPreference{}, unknownTrait(perk, traits)
 	}
 
-	return PerkPreference{Mode: mode, Perk: perk, Stance: stance}, nil
+	return dvm.PerkPreference{Mode: mode, Perk: perk, Stance: stance}, nil
 }
 
 // unknownTrait reports a perk name that is no weapon trait, with the traits
@@ -2418,28 +2412,28 @@ func unknownTrait(perk string, traits map[string]string) error {
 // neither tags nor vaults them. A stored rule without an action also
 // disables the Save button of the rule editor of the web client until the
 // user gives the rule an action or removes it.
-func mergeRule(rules []AutotagRule, in SaveAutotagRuleInput) (AutotagRule, error) {
-	var rule AutotagRule
+func mergeRule(rules []dvm.AutotagRule, in SaveAutotagRuleInput) (dvm.AutotagRule, error) {
+	var rule dvm.AutotagRule
 
 	if in.ID == "" {
 		if in.Query == nil {
-			return AutotagRule{}, fmt.Errorf("%w: a new rule needs a query", ErrInvalidInput)
+			return dvm.AutotagRule{}, fmt.Errorf("%w: a new rule needs a query", ErrInvalidInput)
 		}
 
 		id, err := newRuleID()
 		if err != nil {
-			return AutotagRule{}, err
+			return dvm.AutotagRule{}, err
 		}
 
-		rule = AutotagRule{ID: id, Enabled: true}
+		rule = dvm.AutotagRule{ID: id, Enabled: true}
 
 		for _, other := range rules {
 			rule.Position = max(rule.Position, other.Position+1)
 		}
 	} else {
-		i := slices.IndexFunc(rules, func(rule AutotagRule) bool { return rule.ID == in.ID })
+		i := slices.IndexFunc(rules, func(rule dvm.AutotagRule) bool { return rule.ID == in.ID })
 		if i < 0 {
-			return AutotagRule{}, fmt.Errorf("%w: no autotag rule has the id %q", ErrInvalidInput, in.ID)
+			return dvm.AutotagRule{}, fmt.Errorf("%w: no autotag rule has the id %q", ErrInvalidInput, in.ID)
 		}
 
 		rule = rules[i]
@@ -2467,7 +2461,7 @@ func mergeRule(rules []AutotagRule, in SaveAutotagRuleInput) (AutotagRule, error
 	}
 
 	if rule.Query == "" || utf16Len(rule.Query) > maxQueryLength {
-		return AutotagRule{}, fmt.Errorf(
+		return dvm.AutotagRule{}, fmt.Errorf(
 			"%w: a rule query has between 1 and %d characters", ErrInvalidInput, maxQueryLength,
 		)
 	}
@@ -2475,19 +2469,19 @@ func mergeRule(rules []AutotagRule, in SaveAutotagRuleInput) (AutotagRule, error
 	if in.Query != nil {
 		_, err := parseQuery(rule.Query)
 		if err != nil {
-			return AutotagRule{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+			return dvm.AutotagRule{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 		}
 	}
 
 	if rule.TagID != "" && !slices.Contains(tagOrder, rule.TagID) {
-		return AutotagRule{}, fmt.Errorf(
+		return dvm.AutotagRule{}, fmt.Errorf(
 			"%w: tag_id %q is not one of %s",
 			ErrInvalidInput, rule.TagID, strings.Join(tagOrder, ", "),
 		)
 	}
 
 	if rule.TagID == "" && !rule.Vault {
-		return AutotagRule{}, fmt.Errorf(
+		return dvm.AutotagRule{}, fmt.Errorf(
 			"%w: a rule needs a tag_id or vault=true, so add one or remove the rule with %s",
 			ErrInvalidInput, toolRemoveAutotagRule,
 		)
@@ -2590,15 +2584,15 @@ func (h *handler) loadSnapshot(ctx context.Context, refresh bool) (*Snapshot, er
 
 // loadAnnotated returns the snapshot with the tags and notes that the
 // service stores at the time of the call. It also returns the tag rows.
-func (h *handler) loadAnnotated(ctx context.Context, refresh bool) (*Snapshot, []ItemTag, error) {
+func (h *handler) loadAnnotated(ctx context.Context, refresh bool) (*Snapshot, []dvm.ItemTag, error) {
 	s, err := h.loadSnapshot(ctx, refresh)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var (
-		tags  []ItemTag
-		notes []Note
+		tags  []dvm.ItemTag
+		notes []dvm.Note
 	)
 
 	err = h.withSession(ctx, func(session string) error {
@@ -2624,7 +2618,7 @@ func (h *handler) loadAnnotated(ctx context.Context, refresh bool) (*Snapshot, [
 	return s, tags, nil
 }
 
-func (h *handler) writeTags(ctx context.Context, changes []ItemTag) error {
+func (h *handler) writeTags(ctx context.Context, changes []dvm.ItemTag) error {
 	const chunk = 1000
 
 	for part := range slices.Chunk(changes, chunk) {
@@ -2648,7 +2642,7 @@ func (h *handler) noteItemHash(ctx context.Context, instanceID string) (*uint32,
 	}
 
 	for _, note := range notes {
-		if note.Kind == noteInstance && note.TargetID == instanceID && !note.Removed && note.ItemHash != nil {
+		if note.Kind == dvm.NoteInstance && note.TargetID == instanceID && !note.Removed && note.ItemHash != nil {
 			return note.ItemHash, nil
 		}
 	}
@@ -2659,14 +2653,14 @@ func (h *handler) noteItemHash(ctx context.Context, instanceID string) (*uint32,
 	)
 }
 
-func (h *handler) notes(ctx context.Context) ([]Note, error) {
-	return sessionValue(ctx, h, func(session string) ([]Note, error) {
+func (h *handler) notes(ctx context.Context) ([]dvm.Note, error) {
+	return sessionValue(ctx, h, func(session string) ([]dvm.Note, error) {
 		return h.service.Notes(ctx, session)
 	})
 }
 
-func (h *handler) perkPreferences(ctx context.Context) ([]PerkPreference, error) {
-	return sessionValue(ctx, h, func(session string) ([]PerkPreference, error) {
+func (h *handler) perkPreferences(ctx context.Context) ([]dvm.PerkPreference, error) {
+	return sessionValue(ctx, h, func(session string) ([]dvm.PerkPreference, error) {
 		return h.service.PerkPreferences(ctx, session)
 	})
 }
@@ -2734,8 +2728,8 @@ func (h *handler) ratingSources(ctx context.Context) map[string]RatingSource {
 	return sources
 }
 
-func (h *handler) autotag(ctx context.Context) (AutotagSnapshot, error) {
-	return sessionValue(ctx, h, func(session string) (AutotagSnapshot, error) {
+func (h *handler) autotag(ctx context.Context) (dvm.AutotagSnapshot, error) {
+	return sessionValue(ctx, h, func(session string) (dvm.AutotagSnapshot, error) {
 		return h.service.Autotag(ctx, session)
 	})
 }
@@ -2809,7 +2803,7 @@ func (h *handler) withSession(ctx context.Context, fn func(session string) error
 	}
 
 	err = fn(t.Session)
-	if !errors.Is(err, ErrUnauthorized) {
+	if !errors.Is(err, dvm.ErrUnauthorized) {
 		return err
 	}
 

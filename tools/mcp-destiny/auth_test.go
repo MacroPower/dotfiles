@@ -14,6 +14,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 // fakeBroker is a [TokenBroker] that counts its exchanges.
@@ -23,14 +24,14 @@ type fakeBroker struct {
 	refreshes []string
 }
 
-func (b *fakeBroker) Config(context.Context) (ServiceConfig, error) {
-	return ServiceConfig{APIKey: "key", ClientID: "54520"}, nil
+func (b *fakeBroker) Config(context.Context) (dvm.Config, error) {
+	return dvm.Config{APIKey: "key", ClientID: "54520"}, nil
 }
 
-func (b *fakeBroker) ExchangeCode(_ context.Context, code string) (TokenResponse, error) {
+func (b *fakeBroker) ExchangeCode(_ context.Context, code string) (dvm.TokenResponse, error) {
 	b.codes = append(b.codes, code)
 
-	return TokenResponse{
+	return dvm.TokenResponse{
 		AccessToken:      "access-new",
 		ExpiresIn:        3600,
 		RefreshToken:     "refresh-new",
@@ -40,10 +41,10 @@ func (b *fakeBroker) ExchangeCode(_ context.Context, code string) (TokenResponse
 	}, b.err
 }
 
-func (b *fakeBroker) RefreshTokens(_ context.Context, refreshToken string) (TokenResponse, error) {
+func (b *fakeBroker) RefreshTokens(_ context.Context, refreshToken string) (dvm.TokenResponse, error) {
 	b.refreshes = append(b.refreshes, refreshToken)
 
-	return TokenResponse{
+	return dvm.TokenResponse{
 		AccessToken:      "access-refreshed",
 		ExpiresIn:        3600,
 		RefreshToken:     "refresh-rotated",
@@ -321,13 +322,13 @@ func TestRefreshErrors(t *testing.T) {
 		wantSignIn bool
 	}{
 		"Bungie rejected the refresh token": {
-			broker:     fmt.Errorf("%w: %w", ErrGrantRejected, ErrService),
-			err:        ErrGrantRejected,
+			broker:     fmt.Errorf("%w: %w", dvm.ErrGrantRejected, dvm.ErrService),
+			err:        dvm.ErrGrantRejected,
 			wantSignIn: true,
 		},
 		"the service is unavailable": {
-			broker: ErrService,
-			err:    ErrService,
+			broker: dvm.ErrService,
+			err:    dvm.ErrService,
 		},
 	}
 

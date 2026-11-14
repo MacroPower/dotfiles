@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 // Plugs of the roll tests that the fixture definitions do not hold. The
@@ -298,7 +300,7 @@ func TestStancesByMode(t *testing.T) {
 
 	tests := map[string]struct {
 		want  map[string]map[string]string
-		prefs []PerkPreference
+		prefs []dvm.PerkPreference
 	}{
 		"no preference gives each mode an empty map": {
 			want: map[string]map[string]string{modePvE: {}, modePvP: {}},
@@ -306,11 +308,11 @@ func TestStancesByMode(t *testing.T) {
 		// The set_perk_preferences tool writes a removal as a removed
 		// row with the stance up.
 		"removed row has no stance": {
-			prefs: []PerkPreference{{Mode: modePvE, Perk: "Firefly", Stance: stanceUp, Removed: true}},
+			prefs: []dvm.PerkPreference{{Mode: modePvE, Perk: "Firefly", Stance: stanceUp, Removed: true}},
 			want:  map[string]map[string]string{modePvE: {}, modePvP: {}},
 		},
 		"each row lands only in the map of its mode": {
-			prefs: []PerkPreference{
+			prefs: []dvm.PerkPreference{
 				{Mode: modePvE, Perk: "Firefly", Stance: stanceUp},
 				{Mode: modePvE, Perk: "Kill Clip", Stance: stanceDown},
 				{Mode: modePvP, Perk: "Rampage", Stance: stanceDown},
@@ -322,14 +324,14 @@ func TestStancesByMode(t *testing.T) {
 			},
 		},
 		"row of another mode lands in neither map": {
-			prefs: []PerkPreference{
+			prefs: []dvm.PerkPreference{
 				{Mode: "gambit", Perk: "Firefly", Stance: stanceUp},
 				{Perk: "Rampage", Stance: stanceDown},
 			},
 			want: map[string]map[string]string{modePvE: {}, modePvP: {}},
 		},
 		"perk name is the key as the row has it": {
-			prefs: []PerkPreference{{Mode: modePvE, Perk: " rampage Enhanced", Stance: stanceUp}},
+			prefs: []dvm.PerkPreference{{Mode: modePvE, Perk: " rampage Enhanced", Stance: stanceUp}},
 			want:  map[string]map[string]string{modePvE: {" rampage Enhanced": stanceUp}, modePvP: {}},
 		},
 	}
@@ -470,7 +472,7 @@ func TestRateStancesOfOneMode(t *testing.T) {
 
 	item := &Item{Hash: 100, Perks: rolledPerks()}
 
-	stances := stancesByMode([]PerkPreference{
+	stances := stancesByMode([]dvm.PerkPreference{
 		{Mode: modePvP, Perk: "Explosive Payload", Stance: stanceDown},
 	})
 
@@ -663,7 +665,7 @@ func TestRatePlugSetsOfOneMode(t *testing.T) {
 
 	item := &Item{Hash: 100, Perks: rolledPerks()}
 
-	stances := stancesByMode([]PerkPreference{
+	stances := stancesByMode([]dvm.PerkPreference{
 		{Mode: modePvE, Perk: "Firefly", Stance: stanceUp},
 	})
 
@@ -760,7 +762,7 @@ func TestPicksOf(t *testing.T) {
 func TestPicksOfOneMode(t *testing.T) {
 	t.Parallel()
 
-	stances := stancesByMode([]PerkPreference{
+	stances := stancesByMode([]dvm.PerkPreference{
 		{Mode: modePvP, Perk: "Rampage", Stance: stanceDown},
 	})
 

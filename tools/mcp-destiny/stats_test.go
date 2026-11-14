@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 // statStart is the period start of the stats unit tests.
@@ -18,16 +19,16 @@ func minutes(n int) int64 {
 	return statStart.Add(time.Duration(n) * time.Minute).UnixMilli()
 }
 
-func currency(hash uint32, at, before, after int64) StatChange {
-	return StatChange{Kind: changeCurrency, ItemHash: hash, From: at - 15_000, At: at, Before: before, After: after}
+func currency(hash uint32, at, before, after int64) dvm.StatChange {
+	return dvm.StatChange{Kind: changeCurrency, ItemHash: hash, From: at - 15_000, At: at, Before: before, After: after}
 }
 
-func stack(hash uint32, at, before, after int64) StatChange {
-	return StatChange{Kind: changeStack, ItemHash: hash, From: at - 15_000, At: at, Before: before, After: after}
+func stack(hash uint32, at, before, after int64) dvm.StatChange {
+	return dvm.StatChange{Kind: changeStack, ItemHash: hash, From: at - 15_000, At: at, Before: before, After: after}
 }
 
-func objective(instanceID string, itemHash, objectiveHash uint32, at, before, after int64) StatChange {
-	return StatChange{
+func objective(instanceID string, itemHash, objectiveHash uint32, at, before, after int64) dvm.StatChange {
+	return dvm.StatChange{
 		Kind:          changeObjective,
 		InstanceID:    instanceID,
 		ItemHash:      itemHash,
@@ -42,52 +43,52 @@ func objective(instanceID string, itemHash, objectiveHash uint32, at, before, af
 func TestRestateReadings(t *testing.T) {
 	t.Parallel()
 
-	progression := StatChange{Kind: "progression", At: minutes(5), Before: 10, After: 20}
+	progression := dvm.StatChange{Kind: "progression", At: minutes(5), Before: 10, After: 20}
 
 	tests := map[string]struct {
-		changes []StatChange
-		want    []StatChange
+		changes []dvm.StatChange
+		want    []dvm.StatChange
 	}{
 		"stale recorder": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
 				currency(bungietest.ItemGlimmer, minutes(20), 2_000, 1_500),
 				currency(bungietest.ItemGlimmer, minutes(40), 1_000, 1_700),
 			},
-			want: []StatChange{
+			want: []dvm.StatChange{
 				currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
 				currency(bungietest.ItemGlimmer, minutes(20), 2_000, 1_500),
 				currency(bungietest.ItemGlimmer, minutes(40), 1_500, 1_700),
 			},
 		},
 		"sorted by at": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				currency(bungietest.ItemGlimmer, minutes(40), 1_000, 1_700),
 				currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
 			},
-			want: []StatChange{
+			want: []dvm.StatChange{
 				currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
 				currency(bungietest.ItemGlimmer, minutes(40), 2_000, 1_700),
 			},
 		},
 		"currency and stack of one hash are separate values": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				currency(300, minutes(10), 1, 5),
 				stack(300, minutes(20), 40, 42),
 			},
-			want: []StatChange{
+			want: []dvm.StatChange{
 				currency(300, minutes(10), 1, 5),
 				stack(300, minutes(20), 40, 42),
 			},
 		},
 		"objectives are keyed by instance and objective": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 0, 5),
 				objective("1002", 100, bungietest.TrackerPvE, minutes(20), 50, 60),
 				objective("1001", 100, bungietest.TrackerPvP, minutes(30), 7, 9),
 				objective("1001", 100, bungietest.TrackerPvE, minutes(40), 0, 8),
 			},
-			want: []StatChange{
+			want: []dvm.StatChange{
 				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 0, 5),
 				objective("1002", 100, bungietest.TrackerPvE, minutes(20), 50, 60),
 				objective("1001", 100, bungietest.TrackerPvP, minutes(30), 7, 9),
@@ -95,8 +96,8 @@ func TestRestateReadings(t *testing.T) {
 			},
 		},
 		"other kinds pass through": {
-			changes: []StatChange{progression, progression},
-			want:    []StatChange{progression, progression},
+			changes: []dvm.StatChange{progression, progression},
+			want:    []dvm.StatChange{progression, progression},
 		},
 	}
 
@@ -113,11 +114,11 @@ func TestFlowsOf(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		changes []StatChange
+		changes []dvm.StatChange
 		want    []statFlow
 	}{
 		"stale recorder": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
 				currency(bungietest.ItemGlimmer, minutes(20), 2_000, 1_500),
 				currency(bungietest.ItemGlimmer, minutes(40), 1_000, 1_700),
@@ -127,7 +128,7 @@ func TestFlowsOf(t *testing.T) {
 			},
 		},
 		"currencies first, then by absolute net change": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				stack(300, minutes(10), 40, 140),
 				currency(bungietest.ItemBrightDust, minutes(20), 1_500, 1_490),
 				currency(bungietest.ItemGlimmer, minutes(30), 2_000, 1_000),
@@ -141,7 +142,7 @@ func TestFlowsOf(t *testing.T) {
 			},
 		},
 		"before the start": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				currency(bungietest.ItemGlimmer, minutes(-10), 1_000, 2_000),
 				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 0, 5),
 			},
@@ -161,38 +162,38 @@ func TestWeaponKillsOf(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		changes []StatChange
+		changes []dvm.StatChange
 		want    []weaponKills
 	}{
 		"PvP trackers count as PvP": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				objective("1001", 100, bungietest.TrackerPvP, minutes(10), 7, 9),
 				objective("1001", 100, bungietest.TrackerPvE, minutes(20), 100, 110),
 			},
 			want: []weaponKills{{instanceID: "1001", itemHash: 100, pvp: 2, pve: 10}},
 		},
 		"Gambit and Nightfall trackers count as PvE": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				objective("1001", 100, bungietest.TrackerGambit, minutes(10), 0, 3),
 				objective("1001", 100, bungietest.TrackerNightfall, minutes(20), 4, 8),
 			},
 			want: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 7}},
 		},
 		"decreases add no kills": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 100, 0),
 				objective("1001", 100, bungietest.TrackerPvE, minutes(20), 0, 4),
 			},
 			want: []weaponKills{{instanceID: "1001", itemHash: 100, pve: 4}},
 		},
 		"objectives that track no kills": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				objective("1001", 100, 12345, minutes(10), 0, 50),
 				currency(bungietest.ItemGlimmer, minutes(20), 0, 50),
 			},
 		},
 		"sorted by total kills": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				objective("1001", 100, bungietest.TrackerPvE, minutes(10), 0, 5),
 				objective("1002", 101, bungietest.TrackerPvP, minutes(20), 0, 9),
 				objective("1003", 102, bungietest.TrackerPvE, minutes(30), 0, 3),
@@ -205,10 +206,10 @@ func TestWeaponKillsOf(t *testing.T) {
 			},
 		},
 		"before the start": {
-			changes: []StatChange{objective("1001", 100, bungietest.TrackerPvE, minutes(-10), 0, 5)},
+			changes: []dvm.StatChange{objective("1001", 100, bungietest.TrackerPvE, minutes(-10), 0, 5)},
 		},
 		"a kill at the start counts": {
-			changes: []StatChange{
+			changes: []dvm.StatChange{
 				objective("1001", 100, bungietest.TrackerPvE, minutes(-10), 0, 5),
 				objective("1001", 100, bungietest.TrackerPvE, minutes(0), 5, 8),
 			},
@@ -231,20 +232,20 @@ func TestSummarizeStats(t *testing.T) {
 	to := statStart.Add(time.Hour)
 
 	tests := map[string]struct {
-		chunks  []StatChunk
+		chunks  []dvm.StatChunk
 		from    time.Time
 		want    []statFlow
 		newest  int64
 		weapons []weaponKills
 	}{
 		"changes outside the period": {
-			chunks: []StatChunk{
-				{StartsAt: 0, Changes: []StatChange{
+			chunks: []dvm.StatChunk{
+				{StartsAt: 0, Changes: []dvm.StatChange{
 					currency(bungietest.ItemGlimmer, minutes(-1), 1_000, 1_100),
 					currency(bungietest.ItemGlimmer, minutes(0), 1_100, 1_300),
 					objective("1001", 100, bungietest.TrackerPvE, minutes(-1), 0, 4),
 				}},
-				{StartsAt: 300_000, Changes: []StatChange{
+				{StartsAt: 300_000, Changes: []dvm.StatChange{
 					currency(bungietest.ItemGlimmer, minutes(60), 1_300, 1_400),
 					currency(bungietest.ItemGlimmer, minutes(61), 1_400, 2_000),
 					objective("1001", 100, bungietest.TrackerPvE, minutes(61), 4, 9),
@@ -255,13 +256,13 @@ func TestSummarizeStats(t *testing.T) {
 			newest: minutes(61),
 		},
 		"all keeps every change": {
-			chunks: []StatChunk{
-				{StartsAt: 0, Changes: []StatChange{
+			chunks: []dvm.StatChunk{
+				{StartsAt: 0, Changes: []dvm.StatChange{
 					currency(bungietest.ItemGlimmer, 1, 0, 100),
 					currency(bungietest.ItemGlimmer, minutes(-10_000), 100, 1_000),
 					objective("1001", 100, bungietest.TrackerPvE, minutes(-10_000), 0, 4),
 				}},
-				{StartsAt: 300_000, Changes: []StatChange{
+				{StartsAt: 300_000, Changes: []dvm.StatChange{
 					currency(bungietest.ItemGlimmer, minutes(60), 1_000, 1_300),
 				}},
 			},
@@ -271,12 +272,12 @@ func TestSummarizeStats(t *testing.T) {
 			newest:  minutes(60),
 		},
 		"the first change takes its before from a reading before the start": {
-			chunks: []StatChunk{
-				{StartsAt: 0, Changes: []StatChange{
+			chunks: []dvm.StatChunk{
+				{StartsAt: 0, Changes: []dvm.StatChange{
 					currency(bungietest.ItemGlimmer, minutes(-90), 500, 900),
 					objective("1001", 100, bungietest.TrackerPvE, minutes(-90), 10, 12),
 				}},
-				{StartsAt: 300_000, Changes: []StatChange{
+				{StartsAt: 300_000, Changes: []dvm.StatChange{
 					currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
 					objective("1001", 100, bungietest.TrackerPvE, minutes(10), 10, 15),
 				}},
@@ -287,11 +288,11 @@ func TestSummarizeStats(t *testing.T) {
 			newest:  minutes(10),
 		},
 		"readings before the lookback are not restated": {
-			chunks: []StatChunk{
-				{StartsAt: 0, Changes: []StatChange{
+			chunks: []dvm.StatChunk{
+				{StartsAt: 0, Changes: []dvm.StatChange{
 					currency(bungietest.ItemGlimmer, minutes(-150), 500, 900),
 				}},
-				{StartsAt: 300_000, Changes: []StatChange{
+				{StartsAt: 300_000, Changes: []dvm.StatChange{
 					currency(bungietest.ItemGlimmer, minutes(10), 1_000, 2_000),
 				}},
 			},
@@ -381,6 +382,6 @@ func TestStatPeriodOf(t *testing.T) {
 func TestStatCursorFor(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, StatCursor{UpdatedAt: statStart.Add(-3 * time.Hour).UnixMilli()}, statCursorFor(statStart))
-	assert.Equal(t, StatCursor{}, statCursorFor(time.UnixMilli(0)))
+	assert.Equal(t, dvm.StatCursor{UpdatedAt: statStart.Add(-3 * time.Hour).UnixMilli()}, statCursorFor(statStart))
+	assert.Equal(t, dvm.StatCursor{}, statCursorFor(time.UnixMilli(0)))
 }

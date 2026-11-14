@@ -8,6 +8,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 func TestNewestMark(t *testing.T) {
@@ -141,9 +142,9 @@ func TestEvalRulesSources(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			var rules []AutotagRule
+			var rules []dvm.AutotagRule
 			for _, query := range tc.queries {
-				rules = append(rules, AutotagRule{Query: query, Enabled: true})
+				rules = append(rules, dvm.AutotagRule{Query: query, Enabled: true})
 			}
 
 			calls := 0
@@ -178,7 +179,7 @@ func TestOwnedCounts(t *testing.T) {
 		}
 	}
 
-	got := ownedCounts([]ruleEval{{test: test, rule: AutotagRule{Enabled: false}}}, items)
+	got := ownedCounts([]ruleEval{{test: test, rule: dvm.AutotagRule{Enabled: false}}}, items)
 	require.Len(t, got, 1)
 	assert.Equal(t, 1, got[0].matches)
 	assert.Equal(t, 2, got[0].undecided)

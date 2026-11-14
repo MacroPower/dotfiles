@@ -17,9 +17,16 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
-const version = "0.1.0"
+const (
+	version = "0.1.0"
+
+	// userAgent is the User-Agent header of every request that the server
+	// sends.
+	userAgent = "MCP-Destiny/" + version
+)
 
 // Subcommand names.
 const (
@@ -100,7 +107,7 @@ func parseFlags(name string, args []string) (options, error) {
 	var o options
 
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.StringVar(&o.serviceURL, "service-url", defaultServiceURL, "base URL of Agg's Destiny Vault Manager")
+	fs.StringVar(&o.serviceURL, "service-url", dvm.DefaultURL, "base URL of Agg's Destiny Vault Manager")
 	fs.StringVar(&o.stateDir, "state-dir", "", "directory of the token file (default $XDG_STATE_HOME/mcp-destiny)")
 	fs.StringVar(
 		&o.cacheDir,
@@ -151,7 +158,7 @@ func xdgDir(env, fallback string) (string, error) {
 	return filepath.Join(dir, "mcp-destiny"), nil
 }
 
-func (o options) auth(service *Service) *Auth {
+func (o options) auth(service *dvm.Client) *Auth {
 	return NewAuth(NewTokenStore(filepath.Join(o.stateDir, "tokens.json")), service)
 }
 
@@ -163,7 +170,7 @@ func runLogin(ctx context.Context, args []string, stdin io.Reader, stdout io.Wri
 		return err
 	}
 
-	service := NewService(WithServiceURL(o.serviceURL))
+	service := dvm.New(dvm.WithURL(o.serviceURL), dvm.WithUserAgent(userAgent))
 	auth := o.auth(service)
 
 	u, err := auth.LoginURL(ctx)
@@ -235,7 +242,7 @@ func runLogout(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	err = o.auth(NewService()).Logout()
+	err = o.auth(dvm.New(dvm.WithUserAgent(userAgent))).Logout()
 	if err != nil {
 		return err
 	}
@@ -261,11 +268,11 @@ func runServe(ctx context.Context, args []string) error {
 	}
 	defer closeLog()
 
-	service := NewService(WithServiceURL(o.serviceURL))
+	service := dvm.New(dvm.WithURL(o.serviceURL), dvm.WithUserAgent(userAgent))
 
 	h := &handler{
 		service: service,
-		bungie:  bungie.New(bungie.WithUserAgent(defaultUserAgent)),
+		bungie:  bungie.New(bungie.WithUserAgent(userAgent)),
 		auth:    o.auth(service),
 		defs:    NewDefsLoader(service, o.cacheDir, WithDefsLogger(logger)),
 		sheets:  NewSheetStore(service),

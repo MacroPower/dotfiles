@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 func TestDecodeSheet(t *testing.T) {
@@ -474,11 +476,11 @@ func newFakeSheets() *fakeSheets {
 	return f
 }
 
-func (f *fakeSheets) Config(ctx context.Context) (ServiceConfig, error) {
+func (f *fakeSheets) Config(ctx context.Context) (dvm.Config, error) {
 	f.configs++
 
 	if f.configErr != nil {
-		return ServiceConfig{}, f.configErr
+		return dvm.Config{}, f.configErr
 	}
 
 	return f.fakeArtifacts.Config(ctx)
@@ -548,7 +550,7 @@ func TestSheetStoreLoad(t *testing.T) {
 		},
 		fetched: []string{"rolls.x.json", "pvprolls.a.json"},
 		want: map[string]wantState{
-			modePvE: {err: noDownload, sentinels: []error{ErrService}},
+			modePvE: {err: noDownload, sentinels: []error{dvm.ErrService}},
 			modePvP: {tier: "A"},
 		},
 	}
@@ -559,7 +561,7 @@ func TestSheetStoreLoad(t *testing.T) {
 		edit:    func(f *fakeSheets) { f.index["rolls"] = []string{"rolls.x.json"} },
 		fetched: []string{"rolls.x.json"},
 		want: map[string]wantState{
-			modePvE: {err: noDownload, sentinels: []error{ErrService}},
+			modePvE: {err: noDownload, sentinels: []error{dvm.ErrService}},
 			modePvP: {tier: "A", kept: true},
 		},
 	}
@@ -651,11 +653,11 @@ func TestSheetStoreLoad(t *testing.T) {
 				both,
 				{
 					edit: func(f *fakeSheets) {
-						f.configErr = fmt.Errorf("%w: /api/config returned status 503", ErrService)
+						f.configErr = fmt.Errorf("%w: /api/config returned status 503", dvm.ErrService)
 					},
 					want: map[string]wantState{
-						modePvE: {err: noConfig, sentinels: []error{ErrService}},
-						modePvP: {err: noConfig, sentinels: []error{ErrService}},
+						modePvE: {err: noConfig, sentinels: []error{dvm.ErrService}},
+						modePvP: {err: noConfig, sentinels: []error{dvm.ErrService}},
 					},
 				},
 				{

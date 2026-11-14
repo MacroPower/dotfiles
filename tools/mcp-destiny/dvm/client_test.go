@@ -1,8 +1,7 @@
-package main
+package dvm_test
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,8 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
-	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
@@ -26,18 +24,18 @@ func TestServiceConfig(t *testing.T) {
 	tests := map[string]struct {
 		err    error
 		body   string
-		want   ServiceConfig
+		want   dvm.Config
 		status int
 	}{
 		"config": {
 			status: http.StatusOK,
 			body: `{"apiKey": "key", "clientId": "54520", "authOrigin": "https://example.test",
 				"artifacts": {"manifestVersion": "v1", "files": {"core": ["core-0.json"]}}}`,
-			want: ServiceConfig{
+			want: dvm.Config{
 				APIKey:     "key",
 				ClientID:   "54520",
 				AuthOrigin: "https://example.test",
-				Artifacts: ArtifactIndex{
+				Artifacts: dvm.ArtifactIndex{
 					ManifestVersion: "v1",
 					Files:           map[string][]string{"core": {"core-0.json"}},
 				},
@@ -46,17 +44,17 @@ func TestServiceConfig(t *testing.T) {
 		"missing credentials": {
 			status: http.StatusOK,
 			body:   `{"apiKey": "", "clientId": ""}`,
-			err:    ErrService,
+			err:    dvm.ErrService,
 		},
 		"server error": {
 			status: http.StatusInternalServerError,
 			body:   `{"error": "boom"}`,
-			err:    ErrService,
+			err:    dvm.ErrService,
 		},
 		"not JSON": {
 			status: http.StatusOK,
 			body:   `<html>`,
-			err:    ErrService,
+			err:    dvm.ErrService,
 		},
 	}
 
@@ -64,9 +62,9 @@ func TestServiceConfig(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, _ := httpfake.Serve(t, defaultUserAgent, tc.status, tc.body)
+			u, _ := httpfake.Serve(t, dvm.DefaultUserAgent, tc.status, tc.body)
 
-			got, err := NewService(WithServiceURL(u)).Config(t.Context())
+			got, err := dvm.New(dvm.WithURL(u)).Config(t.Context())
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
 
@@ -84,14 +82,14 @@ func TestServiceTokens(t *testing.T) {
 
 	u, rec := httpfake.Serve(
 		t,
-		defaultUserAgent,
+		dvm.DefaultUserAgent,
 		http.StatusOK,
 		`{"access_token": "a", "expires_in": 3600, "refresh_token": "r",
 		"refresh_expires_in": 7776000, "membership_id": "42", "session": "s"}`,
 	)
-	s := NewService(WithServiceURL(u))
+	s := dvm.New(dvm.WithURL(u))
 
-	want := TokenResponse{
+	want := dvm.TokenResponse{
 		AccessToken:      "a",
 		ExpiresIn:        3600,
 		RefreshToken:     "r",
@@ -121,22 +119,25 @@ func TestServiceTokens(t *testing.T) {
 func TestServiceWrites(t *testing.T) {
 	t.Parallel()
 
-	u, rec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, `{"now": 11}`)
-	s := NewService(WithServiceURL(u))
+	u, rec := httpfake.Serve(t, dvm.DefaultUserAgent, http.StatusOK, `{"now": 11}`)
+	s := dvm.New(dvm.WithURL(u))
 	hash := uint32(100)
 
-	require.NoError(t, s.WriteTags(t.Context(), "session", []ItemTag{
+	require.NoError(t, s.WriteTags(t.Context(), "session", []dvm.ItemTag{
 		{InstanceID: "1001", ItemHash: 100, TagID: "keep"},
 		{InstanceID: "1001", ItemHash: 100, TagID: "junk", RuleID: "r1", Removed: true},
 	}))
-	require.NoError(t, s.WriteNote(t.Context(), "session", Note{
-		Kind: noteInstance, TargetID: "1001", ItemHash: &hash, Body: "god roll",
+	require.NoError(t, s.WriteNote(t.Context(), "session", dvm.Note{
+		Kind: dvm.NoteInstance, TargetID: "1001", ItemHash: &hash, Body: "god roll",
 	}))
-	require.NoError(t, s.WriteNote(t.Context(), "session", Note{Kind: noteSet, TargetID: "set-key", Removed: true}))
-	require.NoError(t, s.WritePerkPreferences(t.Context(), "session", []PerkPreference{
+	require.NoError(
+		t,
+		s.WriteNote(t.Context(), "session", dvm.Note{Kind: dvm.NoteSet, TargetID: "set-key", Removed: true}),
+	)
+	require.NoError(t, s.WritePerkPreferences(t.Context(), "session", []dvm.PerkPreference{
 		{Mode: "pve", Perk: "Firefly", Stance: "up"},
 	}))
-	require.NoError(t, s.WriteAutotagRules(t.Context(), "session", []AutotagRule{
+	require.NoError(t, s.WriteAutotagRules(t.Context(), "session", []dvm.AutotagRule{
 		{ID: "r1", Query: "is:dupe", Vault: true, Enabled: true, Position: 2},
 	}))
 
@@ -198,7 +199,7 @@ func TestServiceClaimAutotag(t *testing.T) {
 		"the service refuses the change": {
 			status: http.StatusBadRequest,
 			body:   `{"error": "Bad autotag state"}`,
-			err:    ErrService,
+			err:    dvm.ErrService,
 		},
 	}
 
@@ -206,9 +207,9 @@ func TestServiceClaimAutotag(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, rec := httpfake.Serve(t, defaultUserAgent, tc.status, tc.body)
+			u, rec := httpfake.Serve(t, dvm.DefaultUserAgent, tc.status, tc.body)
 
-			got, err := NewService(WithServiceURL(u)).ClaimAutotag(
+			got, err := dvm.New(dvm.WithURL(u)).ClaimAutotag(
 				t.Context(), "session", "00000000000000001006", "00000000000000001009",
 			)
 			if tc.err != nil {
@@ -250,15 +251,15 @@ func TestServiceGrantRejected(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, _ := httpfake.Serve(t, defaultUserAgent, http.StatusInternalServerError, tc.body)
+			u, _ := httpfake.Serve(t, dvm.DefaultUserAgent, http.StatusInternalServerError, tc.body)
 
-			_, err := NewService(WithServiceURL(u)).RefreshTokens(t.Context(), "revoked")
-			require.ErrorIs(t, err, ErrService)
+			_, err := dvm.New(dvm.WithURL(u)).RefreshTokens(t.Context(), "revoked")
+			require.ErrorIs(t, err, dvm.ErrService)
 
 			if tc.rejected {
-				require.ErrorIs(t, err, ErrGrantRejected)
+				require.ErrorIs(t, err, dvm.ErrGrantRejected)
 			} else {
-				require.NotErrorIs(t, err, ErrGrantRejected)
+				require.NotErrorIs(t, err, dvm.ErrGrantRejected)
 			}
 		})
 	}
@@ -267,19 +268,20 @@ func TestServiceGrantRejected(t *testing.T) {
 func TestServiceUnauthorized(t *testing.T) {
 	t.Parallel()
 
-	u, _ := httpfake.Serve(t, defaultUserAgent, http.StatusUnauthorized, `{"error": "Sign in required"}`)
+	u, _ := httpfake.Serve(t, dvm.DefaultUserAgent, http.StatusUnauthorized, `{"error": "Sign in required"}`)
 
-	_, err := NewService(WithServiceURL(u)).Tags(t.Context(), "expired")
-	require.ErrorIs(t, err, ErrUnauthorized)
+	_, err := dvm.New(dvm.WithURL(u)).Tags(t.Context(), "expired")
+	require.ErrorIs(t, err, dvm.ErrUnauthorized)
+	require.NotErrorIs(t, err, dvm.ErrService)
 	assert.Contains(t, err.Error(), "Sign in required")
 }
 
 func TestServiceArtifact(t *testing.T) {
 	t.Parallel()
 
-	u, rec := httpfake.Serve(t, defaultUserAgent, http.StatusOK, `[1, 2]`)
+	u, rec := httpfake.Serve(t, dvm.DefaultUserAgent, http.StatusOK, `[1, 2]`)
 
-	body, err := NewService(WithServiceURL(u)).Artifact(t.Context(), "core-0.json")
+	body, err := dvm.New(dvm.WithURL(u)).Artifact(t.Context(), "core-0.json")
 	require.NoError(t, err)
 
 	raw, err := io.ReadAll(body)
@@ -288,19 +290,33 @@ func TestServiceArtifact(t *testing.T) {
 	assert.JSONEq(t, `[1, 2]`, string(raw))
 	assert.Len(t, rec.Calls(http.MethodGet, "/artifacts/core-0.json"), 1)
 
-	missing, _ := httpfake.Serve(t, defaultUserAgent, http.StatusNotFound, `{}`)
+	missing, _ := httpfake.Serve(t, dvm.DefaultUserAgent, http.StatusNotFound, `{}`)
 
-	_, err = NewService(WithServiceURL(missing)).Artifact(t.Context(), "core-0.json")
-	require.ErrorIs(t, err, ErrService)
+	_, err = dvm.New(dvm.WithURL(missing)).Artifact(t.Context(), "core-0.json")
+	require.ErrorIs(t, err, dvm.ErrService)
+
+	rejected, _ := httpfake.Serve(t, dvm.DefaultUserAgent, http.StatusUnauthorized, `{}`)
+
+	_, err = dvm.New(dvm.WithURL(rejected)).Artifact(t.Context(), "core-0.json")
+	require.ErrorIs(t, err, dvm.ErrService)
+	require.NotErrorIs(t, err, dvm.ErrUnauthorized)
 }
 
 func TestServiceStats(t *testing.T) {
 	t.Parallel()
 
+	// The values match bungietest.HunterID, bungietest.ItemGlimmer, and
+	// bungie.BucketKinetic. The tests of package dvm import neither package.
+	const (
+		hunterID             = "c1"
+		itemGlimmer   uint32 = 3159615086
+		bucketKinetic uint32 = 1498876634
+	)
+
 	glimmer := func(at, before, after int64) map[string]any {
 		return map[string]any{
 			"kind":     "currency",
-			"itemHash": bungietest.ItemGlimmer,
+			"itemHash": itemGlimmer,
 			"from":     at - 15_000,
 			"at":       at,
 			"before":   before,
@@ -313,8 +329,8 @@ func TestServiceStats(t *testing.T) {
 		"kind":        "item",
 		"instanceId":  "1001",
 		"itemHash":    100,
-		"characterId": bungietest.HunterID,
-		"bucketHash":  bungie.BucketKinetic,
+		"characterId": hunterID,
+		"bucketHash":  bucketKinetic,
 		"added":       true,
 		"from":        285_000,
 		"at":          300_000,
@@ -354,28 +370,28 @@ func TestServiceStats(t *testing.T) {
 	tests := map[string]struct {
 		pages       map[string]string
 		wantQueries []string
-		want        []StatChunk
+		want        []dvm.StatChunk
 	}{
 		"one page": {
 			pages: map[string]string{
 				"since=0&after=0": dvmtest.StatPage(t, false, first, second),
 			},
 			wantQueries: []string{"since=0&after=0"},
-			want: []StatChunk{
-				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []StatChange{
+			want: []dvm.StatChunk{
+				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []dvm.StatChange{
 					{
 						Kind:     "currency",
-						ItemHash: bungietest.ItemGlimmer,
+						ItemHash: itemGlimmer,
 						From:     295_000,
 						At:       310_000,
 						Before:   1_000,
 						After:    2_000,
 					},
 				}},
-				{StartsAt: 600_000, EndsAt: 900_000, UpdatedAt: 950_000, Changes: []StatChange{
+				{StartsAt: 600_000, EndsAt: 900_000, UpdatedAt: 950_000, Changes: []dvm.StatChange{
 					{
 						Kind:     "currency",
-						ItemHash: bungietest.ItemGlimmer,
+						ItemHash: itemGlimmer,
 						From:     595_000,
 						At:       610_000,
 						Before:   2_000,
@@ -387,11 +403,11 @@ func TestServiceStats(t *testing.T) {
 		"keys in another order and unknown keys": {
 			pages:       map[string]string{"since=0&after=0": reordered(first)},
 			wantQueries: []string{"since=0&after=0"},
-			want: []StatChunk{
-				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []StatChange{
+			want: []dvm.StatChunk{
+				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []dvm.StatChange{
 					{
 						Kind:     "currency",
-						ItemHash: bungietest.ItemGlimmer,
+						ItemHash: itemGlimmer,
 						From:     295_000,
 						At:       310_000,
 						Before:   1_000,
@@ -406,11 +422,11 @@ func TestServiceStats(t *testing.T) {
 				"since=950000&after=600000": dvmtest.StatPage(t, false, replaced),
 			},
 			wantQueries: []string{"since=0&after=0", "since=950000&after=600000"},
-			want: []StatChunk{
-				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 1_200_000, Changes: []StatChange{
+			want: []dvm.StatChunk{
+				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 1_200_000, Changes: []dvm.StatChange{
 					{
 						Kind:     "currency",
-						ItemHash: bungietest.ItemGlimmer,
+						ItemHash: itemGlimmer,
 						From:     295_000,
 						At:       310_000,
 						Before:   1_000,
@@ -418,10 +434,10 @@ func TestServiceStats(t *testing.T) {
 					},
 					{Kind: "item", InstanceID: "1001", ItemHash: 100, From: 285_000, At: 300_000},
 				}},
-				{StartsAt: 600_000, EndsAt: 900_000, UpdatedAt: 950_000, Changes: []StatChange{
+				{StartsAt: 600_000, EndsAt: 900_000, UpdatedAt: 950_000, Changes: []dvm.StatChange{
 					{
 						Kind:     "currency",
-						ItemHash: bungietest.ItemGlimmer,
+						ItemHash: itemGlimmer,
 						From:     595_000,
 						At:       610_000,
 						Before:   2_000,
@@ -436,11 +452,11 @@ func TestServiceStats(t *testing.T) {
 				"since=900000&after=300000": dvmtest.StatPage(t, true),
 			},
 			wantQueries: []string{"since=0&after=0", "since=900000&after=300000"},
-			want: []StatChunk{
-				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []StatChange{
+			want: []dvm.StatChunk{
+				{StartsAt: 300_000, EndsAt: 600_000, UpdatedAt: 900_000, Changes: []dvm.StatChange{
 					{
 						Kind:     "currency",
-						ItemHash: bungietest.ItemGlimmer,
+						ItemHash: itemGlimmer,
 						From:     295_000,
 						At:       310_000,
 						Before:   1_000,
@@ -480,7 +496,7 @@ func TestServiceStats(t *testing.T) {
 			}))
 			t.Cleanup(srv.Close)
 
-			got, err := NewService(WithServiceURL(srv.URL)).Stats(t.Context(), "session", StatCursor{})
+			got, err := dvm.New(dvm.WithURL(srv.URL)).Stats(t.Context(), "session", dvm.StatCursor{})
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 
@@ -500,8 +516,8 @@ func TestServiceStatsLargePage(t *testing.T) {
 	// Each body is the longest that the service accepts. The page holds one
 	// chunk more than fits in maxResponseBytes, the cap of the other service
 	// routes.
-	body := strconv.Quote("[" + strings.Repeat(" ", maxStatChunkLength-2) + "]")
-	count := maxResponseBytes/maxStatChunkLength + 1
+	body := strconv.Quote("[" + strings.Repeat(" ", dvm.MaxStatChunkLength-2) + "]")
+	count := dvm.MaxResponseBytes/dvm.MaxStatChunkLength + 1
 
 	chunks := make([]string, 0, count)
 
@@ -514,11 +530,11 @@ func TestServiceStatsLargePage(t *testing.T) {
 	}
 
 	page := `{"chunks": [` + strings.Join(chunks, ", ") + `], "more": false}`
-	require.Greater(t, len(page), maxResponseBytes)
+	require.Greater(t, len(page), dvm.MaxResponseBytes)
 
-	u, _ := httpfake.Serve(t, defaultUserAgent, http.StatusOK, page)
+	u, _ := httpfake.Serve(t, dvm.DefaultUserAgent, http.StatusOK, page)
 
-	got, err := NewService(WithServiceURL(u)).Stats(t.Context(), "session", StatCursor{})
+	got, err := dvm.New(dvm.WithURL(u)).Stats(t.Context(), "session", dvm.StatCursor{})
 	require.NoError(t, err)
 	require.Len(t, got, count)
 	assert.Equal(t, int64(count-1)*300_000, got[count-1].StartsAt)
@@ -586,82 +602,45 @@ func TestServiceStatsErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			u, _ := httpfake.Serve(t, defaultUserAgent, tc.status, tc.body)
+			u, _ := httpfake.Serve(t, dvm.DefaultUserAgent, tc.status, tc.body)
 
-			_, err := NewService(WithServiceURL(u)).Stats(t.Context(), "session", StatCursor{})
-			require.ErrorIs(t, err, ErrService)
+			_, err := dvm.New(dvm.WithURL(u)).Stats(t.Context(), "session", dvm.StatCursor{})
+			require.ErrorIs(t, err, dvm.ErrService)
 		})
 	}
 }
 
-// endlessBody is a response body that never ends and reads as zero-valued
-// bytes. Its Close records the call and returns errBodyClose.
-type endlessBody struct {
-	closed bool
-}
-
-var errBodyClose = errors.New("body close refused")
-
-func (b *endlessBody) Read(p []byte) (int, error) {
-	clear(p)
-
-	return len(p), nil
-}
-
-func (b *endlessBody) Close() error {
-	b.closed = true
-
-	return errBodyClose
-}
-
-// bodyTransport answers every request with status 200 and one body.
-type bodyTransport struct {
-	body io.ReadCloser
-}
-
-func (rt bodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	return &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{},
-		Body:       rt.body,
-		Request:    req,
-	}, nil
-}
-
-func TestCappedBody(t *testing.T) {
+func TestUserAgent(t *testing.T) {
 	t.Parallel()
 
-	tcs := map[string]struct {
-		open func(t *testing.T, client *http.Client) (io.ReadCloser, error)
+	tests := map[string]struct {
+		want string
+		opts []dvm.Option
 	}{
-		"service artifact": {
-			open: func(t *testing.T, client *http.Client) (io.ReadCloser, error) {
-				t.Helper()
-
-				s := NewService(WithServiceURL("http://service.invalid"))
-				s.http = client
-
-				return s.Artifact(t.Context(), "core-0.json")
-			},
+		"default": {
+			want: dvm.DefaultUserAgent,
+		},
+		"option": {
+			opts: []dvm.Option{dvm.WithUserAgent("MCP-Destiny/9.9.9")},
+			want: "MCP-Destiny/9.9.9",
 		},
 	}
 
-	for name, tc := range tcs {
+	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			raw := &endlessBody{}
+			u, rec := httpfake.Serve(t, tc.want, http.StatusOK, `{"items": []}`)
+			s := dvm.New(append([]dvm.Option{dvm.WithURL(u)}, tc.opts...)...)
 
-			body, err := tc.open(t, &http.Client{Transport: bodyTransport{body: raw}})
+			_, err := s.Tags(t.Context(), "session")
 			require.NoError(t, err)
 
-			n, err := io.CopyN(io.Discard, body, maxArtifactBytes+1)
-			assert.Equal(t, int64(maxArtifactBytes), n, "the reader stops at the cap")
-			require.ErrorIs(t, err, io.EOF, "the reader ends at the cap")
+			body, err := s.Artifact(t.Context(), "core-0.json")
+			require.NoError(t, err)
+			require.NoError(t, body.Close())
 
-			require.EqualError(t, body.Close(), errBodyClose.Error(),
-				"the reader returns the close error of the body unchanged")
-			assert.True(t, raw.closed)
+			assert.Len(t, rec.All(), 2)
 		})
 	}
 }

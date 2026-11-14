@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 const (
@@ -159,12 +160,12 @@ func (s *TokenStore) lock() (func(), error) {
 }
 
 // TokenBroker exchanges Bungie OAuth codes and refresh tokens. The vault
-// manager service holds the OAuth client secret, so [*Service] implements
-// it.
+// manager service holds the OAuth client secret, so [*dvm.Client]
+// implements it.
 type TokenBroker interface {
-	Config(ctx context.Context) (ServiceConfig, error)
-	ExchangeCode(ctx context.Context, code string) (TokenResponse, error)
-	RefreshTokens(ctx context.Context, refreshToken string) (TokenResponse, error)
+	Config(ctx context.Context) (dvm.Config, error)
+	ExchangeCode(ctx context.Context, code string) (dvm.TokenResponse, error)
+	RefreshTokens(ctx context.Context, refreshToken string) (dvm.TokenResponse, error)
 }
 
 // AuthOption configures an [*Auth]. See [WithAuthClock].
@@ -315,7 +316,7 @@ func (a *Auth) Refresh(ctx context.Context, stale string) (Tokens, error) {
 	}
 
 	resp, err := a.broker.RefreshTokens(ctx, t.RefreshToken)
-	if errors.Is(err, ErrGrantRejected) {
+	if errors.Is(err, dvm.ErrGrantRejected) {
 		return Tokens{}, fmt.Errorf("%w: Bungie rejected the saved sign-in: %w", ErrNotSignedIn, err)
 	}
 
@@ -379,7 +380,7 @@ func (a *Auth) fresh(t Tokens) bool {
 	return t.AccessToken != "" && t.Session != "" && a.now().Add(tokenSkew).Before(t.AccessExpires)
 }
 
-func (a *Auth) fromResponse(resp TokenResponse) Tokens {
+func (a *Auth) fromResponse(resp dvm.TokenResponse) Tokens {
 	now := a.now()
 
 	t := Tokens{

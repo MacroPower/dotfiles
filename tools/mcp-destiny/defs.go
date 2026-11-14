@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
@@ -221,9 +222,10 @@ func basePerkName(name string) string {
 	return strings.TrimSuffix(strings.TrimSpace(name), " Enhanced")
 }
 
-// ArtifactSource serves the definition artifacts. [*Service] implements it.
+// ArtifactSource serves the definition artifacts. [*dvm.Client] implements
+// it.
 type ArtifactSource interface {
-	Config(ctx context.Context) (ServiceConfig, error)
+	Config(ctx context.Context) (dvm.Config, error)
 	Artifact(ctx context.Context, file string) (io.ReadCloser, error)
 }
 
@@ -314,7 +316,7 @@ func (l *DefsLoader) Get(ctx context.Context) (*Defs, error) {
 	return defs, nil
 }
 
-func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, error) {
+func (l *DefsLoader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, error) {
 	defs := &Defs{
 		Version:         index.ManifestVersion,
 		Items:           map[uint32]ItemDef{},

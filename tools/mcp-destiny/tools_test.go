@@ -24,6 +24,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
@@ -1882,7 +1883,7 @@ func TestRatingSources(t *testing.T) {
 		"unreadable perk preferences are the reason of each mode with a sheet": {
 			files:   map[string][]string{"rolls": {"rolls.a.json"}},
 			reasons: map[string]string{modePvE: unreadable, modePvP: noPvP},
-			causes:  map[string]error{modePvE: ErrService},
+			causes:  map[string]error{modePvE: dvm.ErrService},
 			noPrefs: true,
 		},
 		"unreadable definitions are the reason of each mode with a sheet": {
@@ -1894,7 +1895,7 @@ func TestRatingSources(t *testing.T) {
 		"unreadable perk preferences win against unreadable definitions": {
 			files:   map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"rolls.a.json"}},
 			reasons: map[string]string{modePvE: unreadable, modePvP: unreadable},
-			causes:  map[string]error{modePvE: ErrService, modePvP: ErrService},
+			causes:  map[string]error{modePvE: dvm.ErrService, modePvP: dvm.ErrService},
 			noPrefs: true,
 			noDefs:  true,
 		},
@@ -2431,7 +2432,7 @@ func TestRatingReasons(t *testing.T) {
 		loaded  = RatingSource{Sheet: &Sheet{}}
 		noAegis = RatingSource{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", ErrNoRating)}
 		noPvP   = RatingSource{Err: fmt.Errorf("%w: the service publishes no PvP sheet", ErrNoRating)}
-		noPrefs = RatingSource{Err: fmt.Errorf("%w: reading perk preferences: %w", ErrNoRating, ErrService)}
+		noPrefs = RatingSource{Err: fmt.Errorf("%w: reading perk preferences: %w", ErrNoRating, dvm.ErrService)}
 	)
 
 	tests := map[string]struct {
@@ -3838,9 +3839,9 @@ func skippedLine(skipped int) string {
 func junkTags(t *testing.T, ids ...string) string {
 	t.Helper()
 
-	rows := []ItemTag{}
+	rows := []dvm.ItemTag{}
 	for _, id := range ids {
-		rows = append(rows, ItemTag{InstanceID: id, TagID: tagJunk, UpdatedAt: 5})
+		rows = append(rows, dvm.ItemTag{InstanceID: id, TagID: tagJunk, UpdatedAt: 5})
 	}
 
 	raw, err := json.Marshal(map[string]any{"defs": []any{}, "items": rows, "now": 10})
@@ -5420,7 +5421,7 @@ func TestSetTagClearsRule(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.service.Data[pathTags] = tagRows(t, ItemTag{
+			f.service.Data[pathTags] = tagRows(t, dvm.ItemTag{
 				InstanceID: "1001",
 				ItemHash:   100,
 				TagID:      "keep",
@@ -6214,8 +6215,8 @@ func TestRunAutotagRules(t *testing.T) {
 			held:    thorn,
 			setup: func(f *fakes) {
 				f.service.Data[pathTags] = tagRows(t,
-					ItemTag{InstanceID: "1008", ItemHash: 103, TagID: tagJunk, UpdatedAt: 5},
-					ItemTag{InstanceID: "1008", ItemHash: 103, TagID: tagFavorite, UpdatedAt: 5},
+					dvm.ItemTag{InstanceID: "1008", ItemHash: 103, TagID: tagJunk, UpdatedAt: 5},
+					dvm.ItemTag{InstanceID: "1008", ItemHash: 103, TagID: tagFavorite, UpdatedAt: 5},
 				)
 			},
 			newest: "00000000000000001008",
@@ -8088,11 +8089,11 @@ const (
 
 // tagRows returns a tags response body of the fake service that holds
 // rows.
-func tagRows(t *testing.T, rows ...ItemTag) string {
+func tagRows(t *testing.T, rows ...dvm.ItemTag) string {
 	t.Helper()
 
 	if rows == nil {
-		rows = []ItemTag{}
+		rows = []dvm.ItemTag{}
 	}
 
 	raw, err := json.Marshal(map[string]any{"defs": []any{}, "items": rows, "now": 10})
@@ -8170,14 +8171,14 @@ func TestPreviewTagKeep(t *testing.T) {
 	_, _, rows := preview(t, f, "tag:keep")
 	assert.Empty(t, rows)
 
-	f.service.Data[pathTags] = tagRows(t, ItemTag{InstanceID: "1003", ItemHash: 102, TagID: "keep", UpdatedAt: 5})
+	f.service.Data[pathTags] = tagRows(t, dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: "keep", UpdatedAt: 5})
 
 	_, _, rows = preview(t, f, "tag:keep")
 	assert.Equal(t, []string{"1003"}, rows)
 
 	f.service.Data[pathTags] = tagRows(
 		t,
-		ItemTag{InstanceID: "1003", ItemHash: 102, TagID: "keep", UpdatedAt: 6, Removed: true},
+		dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: "keep", UpdatedAt: 6, Removed: true},
 	)
 
 	_, _, rows = preview(t, f, "tag:keep")
@@ -8189,8 +8190,8 @@ func TestPreviewFavorite(t *testing.T) {
 
 	f := newFakes(t)
 
-	favorite := ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagFavorite, UpdatedAt: 5}
-	junk := ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 5}
+	favorite := dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagFavorite, UpdatedAt: 5}
+	junk := dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 5}
 	f.service.Data[pathTags] = tagRows(t, favorite, junk)
 
 	for _, query := range []string{"is:favorite", "tag:favorite", "tag:junk"} {
@@ -8613,7 +8614,7 @@ func TestPreviewAutotagged(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.service.Data[pathTags] = tagRows(t, ItemTag{
+	f.service.Data[pathTags] = tagRows(t, dvm.ItemTag{
 		InstanceID: "1003",
 		ItemHash:   102,
 		TagID:      tagJunk,
@@ -8625,7 +8626,7 @@ func TestPreviewAutotagged(t *testing.T) {
 	assert.Equal(t, []string{"1003"}, rows)
 
 	// A tag that a person sets carries no rule id.
-	f.service.Data[pathTags] = tagRows(t, ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 6})
+	f.service.Data[pathTags] = tagRows(t, dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 6})
 
 	_, _, rows = preview(t, f, "is:autotagged")
 	assert.Empty(t, rows)
@@ -9533,5 +9534,5 @@ func TestGetStatsErrors(t *testing.T) {
 
 	got, isError = call(t, f.h.handleGetStats, GetStatsInput{})
 	assert.True(t, isError)
-	assert.Contains(t, got, ErrService.Error())
+	assert.Contains(t, got, dvm.ErrService.Error())
 }

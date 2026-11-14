@@ -1,6 +1,10 @@
 package main
 
-import "slices"
+import (
+	"slices"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+)
 
 // Stances of a perk preference.
 const (
@@ -70,7 +74,7 @@ type RatingSource struct {
 // A removed preference has no stance. A preference whose mode is not in
 // [perkModes] lands in no map. The service rejects such a mode in a
 // write, and no rating reads it.
-func stancesByMode(prefs []PerkPreference) map[string]map[string]string {
+func stancesByMode(prefs []dvm.PerkPreference) map[string]map[string]string {
 	stances := make(map[string]map[string]string, len(perkModes))
 	for _, mode := range perkModes {
 		stances[mode] = map[string]string{}

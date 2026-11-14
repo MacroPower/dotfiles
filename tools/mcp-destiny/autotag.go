@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 // markDigits is the width of an autotag mark. The service compares marks
@@ -67,10 +68,10 @@ func newItems(s *Snapshot, mark string) ([]*Item, []*Item) {
 
 // liveRules drops the removed rules and returns the rest in evaluation
 // order.
-func liveRules(rules []AutotagRule) []AutotagRule {
-	live := slices.DeleteFunc(slices.Clone(rules), func(rule AutotagRule) bool { return rule.Removed })
+func liveRules(rules []dvm.AutotagRule) []dvm.AutotagRule {
+	live := slices.DeleteFunc(slices.Clone(rules), func(rule dvm.AutotagRule) bool { return rule.Removed })
 
-	slices.SortStableFunc(live, func(a, b AutotagRule) int { return cmp.Compare(a.Position, b.Position) })
+	slices.SortStableFunc(live, func(a, b dvm.AutotagRule) int { return cmp.Compare(a.Position, b.Position) })
 
 	return live
 }
@@ -104,7 +105,7 @@ type ruleEval struct {
 	// reason is the skip reason of a skipped rule or the block reason of
 	// a blocked rule. It is empty for an evaluated rule.
 	reason string
-	rule   AutotagRule
+	rule   dvm.AutotagRule
 	class  ruleClass
 }
 
@@ -121,7 +122,7 @@ type ruleEval struct {
 // to its filters. Sources returns the [RatingSource] of each game mode.
 // evalRules calls sources one time, and only when a rule of rules without
 // an earlier problem reads a game mode.
-func evalRules(s *Snapshot, rules []AutotagRule, sources func() map[string]RatingSource) []ruleEval {
+func evalRules(s *Snapshot, rules []dvm.AutotagRule, sources func() map[string]RatingSource) []ruleEval {
 	evals := make([]ruleEval, len(rules))
 	queries := make([]compiledQuery, len(rules))
 	rated := false
@@ -362,7 +363,7 @@ func ownedCounts(evals []ruleEval, items []*Item) []ruleCount {
 // ruleTag is one new item that an enabled rule with a tag takes.
 type ruleTag struct {
 	item *Item
-	rule AutotagRule
+	rule dvm.AutotagRule
 }
 
 // ruleTags returns each new item of m that a rule with a tag takes, in
@@ -394,7 +395,7 @@ type vaultItem struct {
 	item   *Item
 	err    error
 	reason string
-	rule   AutotagRule
+	rule   dvm.AutotagRule
 }
 
 // vaultItems returns the new items of m that the rules of evals with the

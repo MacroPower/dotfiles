@@ -14,6 +14,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 )
 
@@ -239,7 +240,7 @@ func newFakes(t *testing.T) *fakes {
 		BungieID:       "42",
 	}))
 
-	client := NewService(WithServiceURL(f.service.URL))
+	client := dvm.New(dvm.WithURL(f.service.URL))
 
 	defs := NewDefsLoader(client, "", WithDefsClock(now))
 	defs.defs = fixtureDefs()
