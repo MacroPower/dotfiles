@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -797,22 +796,17 @@ func (row itemSetRow) perks() []uint32 {
 
 // decodeTable reads a JSON object that maps definition hashes to records.
 // The caller picks the record type Row, such as [tableRow], [namedRow], or
-// [activityRow].
+// [activityRow]. The decode fails on a key that is not a decimal hash.
 func decodeTable[Row any](r io.Reader, add func(hash uint32, row Row)) error {
-	var table map[string]Row
+	var table map[uint32]Row
 
 	err := json.NewDecoder(r).Decode(&table)
 	if err != nil {
 		return fmt.Errorf("reading table: %w", err)
 	}
 
-	for key, row := range table {
-		hash, err := strconv.ParseUint(key, 10, 32)
-		if err != nil {
-			return fmt.Errorf("parsing table key %q: %w", key, err)
-		}
-
-		add(uint32(hash), row)
+	for hash, row := range table {
+		add(hash, row)
 	}
 
 	return nil
