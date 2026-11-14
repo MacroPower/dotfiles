@@ -2,21 +2,23 @@
 name: flake-upgrade
 description: >-
   Upgrade this repo's Nix flake inputs the right way -- bump the lock, then fan out
-  parallel agents to read each input's upstream changelog and adapt the config (migrate
-  off deprecated options, adopt worthwhile new features) before verifying the flake
-  still evaluates. Use whenever the user asks to update, upgrade, or bump flake inputs
-  or flake.lock (all inputs or a specific one), asks what changed upstream in an input
-  like home-manager or stylix, or asks to bring the dotfiles up to date. Do not just
-  run `nix flake update` on its own for these requests -- that is exactly the blind bump
-  this skill exists to avoid.
+  parallel agents to read each input's upstream changelog, apply the fixes the bump
+  requires (migrate off deprecated, renamed, and removed options), and file worthwhile
+  new features as aven tasks before verifying the flake still evaluates. Use whenever
+  the user asks to update, upgrade, or bump flake inputs or flake.lock (all inputs or a
+  specific one), asks what changed upstream in an input like home-manager or stylix, or
+  asks to bring the dotfiles up to date. Do not just run `nix flake update` on its own
+  for these requests -- that is exactly the blind bump this skill exists to avoid.
 ---
 
 # Flake Upgrade
 
-Running `nix flake update` on its own moves the lock but leaves the config behind: deprecated
-options keep evaluating with warnings until they break, renamed options fail at the
-worst time, and new upstream features go unnoticed. This workflow bumps the lock,
-then actually reads what changed upstream and adapts the config to it.
+Running `nix flake update` on its own moves the lock but leaves the config
+behind. Deprecated options keep evaluating with warnings until they break,
+renamed options fail at the worst time, and new upstream features go unnoticed.
+This workflow bumps the lock, then reads what changed upstream. It applies the
+fixes that the bump requires, and it files each new feature worth adopting as
+an aven task.
 
 The expensive middle step (changelog reading) is fanned out to parallel read-only
 agents, one per changed input and one per installed package that a
@@ -161,8 +163,10 @@ Report exactly four sections:
   this repo's actual usage. For each: the upstream change, the affected
   file:line here, and the concrete fix.
 - OPPORTUNITIES: new options/features/packages in the range that fit how this
-  repo already uses the input, each with a suggested snippet. Only genuinely
-  relevant ones -- an empty section beats a padded one.
+  repo already uses the input. For each: the upstream change, the version or
+  commit that introduced it, the file:line here that would adopt it, and a
+  suggested snippet. Only genuinely relevant ones -- an empty section beats a
+  padded one.
 - NOTED: one line each for upstream changes you checked and ruled out, so the
   main agent knows what was covered.
 - CARRIED: one line per package this repo installs whose version this input
@@ -183,21 +187,89 @@ notes for that range.
 While agents run, do not busy-wait -- end the turn and act on completion
 notifications as they arrive.
 
-## Step 6: Apply changes
+## Step 6: Act on the reports
 
-Read all reports, then edit as the main agent:
+Read all reports before you act on any of them. A CARRIED section that names a
+package no agent has researched yet means Step 5 is not finished. Spawn the
+missing wave 2 agents and wait for their reports before editing anything.
 
-- A CARRIED section that names a package no agent has researched yet means
-  Step 5 is not finished. Spawn the missing wave 2 agents and wait for their
-  reports before editing anything.
-- Apply every REQUIRED fix. Verify each claim before editing -- grep the cited
-  file:line yourself; research agents can hallucinate option names.
-- For OPPORTUNITIES, use judgment: adopt clear wins that match how this repo
-  already configures things (explicit imports, spelled-out lists -- see repo
-  CLAUDE.md). Anything speculative or taste-dependent goes in the final summary
-  as a suggestion instead of an edit.
-- Keep unrelated refactors out; this change should read as "upgrade inputs and
-  adapt".
+The upgrade change holds only what the bump requires, so it reads as "upgrade
+inputs and adapt". Each REQUIRED item becomes an edit, and each OPPORTUNITIES
+item becomes an aven task.
+
+### Required fixes
+
+Edit as the main agent:
+
+- Apply every REQUIRED fix. Verify each claim before editing. Grep the cited
+  file:line yourself, because research agents can hallucinate option names.
+- Keep unrelated refactors out.
+
+### Opportunities
+
+Do not adopt an opportunity in the upgrade change, however small the edit.
+Each adopted opportunity grows the change with work that the bump does not
+require. A suggestion that lives only in the final summary is lost when the
+session ends. File each OPPORTUNITIES item as an aven task in the `dotfiles`
+project instead, so a later session can adopt it on its own.
+
+Load the `aven` skill before you run an `aven` command. Pass
+`--project dotfiles` to `aven search` and `aven add`. `aven note` does not
+take `--project`. Its ref already names the task. File the tasks without
+asking the user first. The `aven` skill creates a task only on an
+instruction, and this step is that instruction.
+
+Before you file an item, grep the file:line that its report cites, as for a
+REQUIRED fix. Leave out an item whose cited usage does not exist, and name it
+in the Step 8 report. When two reports name the same opportunity, file it one
+time with the detail of both.
+
+Then search for a task that already covers the item, because a repeated
+upgrade reports the same opportunity again. Search on the option or feature
+name alone. The search returns only the tasks that hold every term of the
+query.
+
+```bash
+aven search --project dotfiles "<option or feature name>"
+```
+
+The results include done and canceled tasks, and each result prints its
+`status`. A task covers the item when it names the same upstream change. The
+status of that task decides what you do:
+
+- **Open** (`inbox`, `backlog`, `todo`, or `active`): do not file the item.
+  Add what this run found with `aven note <ref> --stdin`. The note gives the
+  range of this upgrade and each detail of the report that the task lacks.
+- **Done or canceled**: the user adopted or declined the opportunity, so do
+  not file the item again.
+- **No task covers the item**: file it.
+
+File an item with this command:
+
+```bash
+aven add --project dotfiles "Adopt <option or feature> from <input or package>" --description-stdin <<'EOF'
+## Upstream change
+<what upstream added and why it fits this repo, with a link to the commit,
+pull request, or release note>
+
+## Introduced in
+<the version or commit that introduced the change, then the range of this
+upgrade: the old and the new rev of the input, or the old and the new version
+of the package>
+
+## Affected file
+<the file:line here that would change>
+
+## Suggested change
+<the snippet from the research report>
+EOF
+```
+
+Fill every section, so the task stands alone after the session ends. Spell
+the option or feature name in the title as upstream spells it, so the search
+of a later upgrade finds the task. Leave the status and the priority at their
+defaults for the user to triage. Keep the ref that `aven add` prints for the
+Step 8 report.
 
 ## Step 7: Verify
 
@@ -266,10 +338,21 @@ ships X") against the new nixpkgs, whether or not they drifted.
 
 ## Step 8: Report
 
-Summarize per input: what changed upstream, what was migrated (with file
-references), which opportunities were adopted, and which were deliberately left
-as suggestions. List each new cache miss and each overlay drift entry from
-the build plan with the decision taken on it. Each wave 2 package gets its own entry under the input that
-carried it, with the same detail as an input. Note inputs and packages that
-were pure maintenance in one line each. Offer
-to commit (the repo's commit skill applies); do not commit unasked.
+Summarize the upgrade for the user:
+
+- **Each input**: what changed upstream and what you migrated, with file
+  references.
+- **Each wave 2 package**: its own entry under the input that carried it, with
+  the same detail as an input.
+- **Each opportunity**, under its input or package: the ref and the title of
+  the task that you filed. For an opportunity that an existing task covers,
+  give the ref of that task and say whether you added a note to it. For an item
+  that you left out, say what its report cited and what you found.
+- **The build plan**: each new cache miss and each overlay drift entry, with
+  the decision taken on it.
+- **Pure maintenance**: one line for each input and each package whose range
+  held only maintenance.
+
+Offer to commit (the repo's commit skill applies), and do not commit unasked.
+Keep task refs out of the commit message and out of the files that you edit,
+because they name the user's local tasks.
