@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -3659,6 +3660,66 @@ func TestRefreshOnUnauthorized(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "access-2", saved.AccessToken)
 	assert.Equal(t, "session-2", saved.Session)
+}
+
+func TestBungieValue(t *testing.T) {
+	t.Parallel()
+
+	errRead := errors.New("read broke")
+
+	tests := map[string]struct {
+		// fail maps the access token of a run to the error of that run.
+		fail     map[string]error
+		err      error
+		want     string
+		wantRuns []string
+	}{
+		"first run returns its value": {
+			want:     "access-1",
+			wantRuns: []string{"access-1"},
+		},
+		"rejected token runs again with the refreshed token": {
+			fail:     map[string]error{"access-1": bungie.ErrUnauthorized},
+			want:     "access-2",
+			wantRuns: []string{"access-1", "access-2"},
+		},
+		"other error ends the read": {
+			fail:     map[string]error{"access-1": errRead},
+			err:      errRead,
+			wantRuns: []string{"access-1"},
+		},
+		"second rejection ends the read": {
+			fail:     map[string]error{"access-1": bungie.ErrUnauthorized, "access-2": bungie.ErrUnauthorized},
+			err:      bungie.ErrUnauthorized,
+			wantRuns: []string{"access-1", "access-2"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+
+			var runs []string
+
+			got, err := bungieValue(t.Context(), f.h, func(creds bungie.Credentials) (string, error) {
+				runs = append(runs, creds.AccessToken)
+
+				return creds.AccessToken, tc.fail[creds.AccessToken]
+			})
+			assert.Equal(t, tc.wantRuns, runs)
+
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestMoveItems(t *testing.T) {

@@ -716,14 +716,8 @@ func (h *handler) handleListVendors(
 		return h.toolError(ctx, toolListVendors, fmt.Errorf("loading definitions: %w", err))
 	}
 
-	var resp *bungie.VendorsResponse
-
-	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
-		var err error
-
-		resp, err = h.bungie.Vendors(ctx, creds, membership, c.ID)
-
-		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
+	resp, err := bungieValue(ctx, h, func(creds bungie.Credentials) (*bungie.VendorsResponse, error) {
+		return h.bungie.Vendors(ctx, creds, membership, c.ID)
 	})
 	if err != nil {
 		return h.toolError(ctx, toolListVendors, fmt.Errorf("fetching the vendors: %w", err))
@@ -772,17 +766,15 @@ func (h *handler) handleListActivities(
 		return h.toolError(ctx, toolListActivities, fmt.Errorf("loading definitions: %w", err))
 	}
 
-	var byCharacter map[string]bungie.CharacterActivities
-
 	// The rewards change when the character claims one, so every call
 	// fetches the activities again instead of reusing the snapshot.
-	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
-		var err error
-
-		byCharacter, err = h.bungie.Activities(ctx, creds, membership)
-
-		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
-	})
+	byCharacter, err := bungieValue(
+		ctx,
+		h,
+		func(creds bungie.Credentials) (map[string]bungie.CharacterActivities, error) {
+			return h.bungie.Activities(ctx, creds, membership)
+		},
+	)
 	if err != nil {
 		return h.toolError(ctx, toolListActivities, fmt.Errorf("fetching the activities: %w", err))
 	}
@@ -2571,14 +2563,8 @@ func (h *handler) loadSnapshot(ctx context.Context, refresh bool) (*inventory.Sn
 		return nil, fmt.Errorf("loading definitions: %w", err)
 	}
 
-	var profile *bungie.Profile
-
-	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
-		var err error
-
-		profile, err = h.bungie.Profile(ctx, creds, membership)
-
-		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
+	profile, err := bungieValue(ctx, h, func(creds bungie.Credentials) (*bungie.Profile, error) {
+		return h.bungie.Profile(ctx, creds, membership)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("fetching the profile: %w", err)
@@ -2754,14 +2740,8 @@ func (h *handler) membership(ctx context.Context) (bungie.Membership, error) {
 		return t.Membership, nil
 	}
 
-	var m bungie.Membership
-
-	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
-		var err error
-
-		m, err = h.bungie.PrimaryMembership(ctx, creds)
-
-		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
+	m, err := bungieValue(ctx, h, func(creds bungie.Credentials) (bungie.Membership, error) {
+		return h.bungie.PrimaryMembership(ctx, creds)
 	})
 	if err != nil {
 		return bungie.Membership{}, fmt.Errorf("resolving the Destiny membership: %w", err)
@@ -2820,6 +2800,22 @@ func (h *handler) withSession(ctx context.Context, fn func(session string) error
 	}
 
 	return fn(t.Session)
+}
+
+// bungieValue runs fn through [*handler.withBungie] and returns the value of
+// the last run.
+func bungieValue[T any](ctx context.Context, h *handler, fn func(bungie.Credentials) (T, error)) (T, error) {
+	var out T
+
+	err := h.withBungie(ctx, func(creds bungie.Credentials) error {
+		var err error
+
+		out, err = fn(creds)
+
+		return err
+	})
+
+	return out, err
 }
 
 // sessionValue runs fn through [*handler.withSession] and returns the value
@@ -2959,17 +2955,9 @@ type bungieManifest struct {
 
 // Manifest implements [bungie.ManifestSource].
 func (m bungieManifest) Manifest(ctx context.Context) (map[string]string, error) {
-	var paths map[string]string
-
-	err := m.h.withBungie(ctx, func(creds bungie.Credentials) error {
-		var err error
-
-		paths, err = m.h.bungie.Manifest(ctx, creds)
-
-		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
+	return bungieValue(ctx, m.h, func(creds bungie.Credentials) (map[string]string, error) {
+		return m.h.bungie.Manifest(ctx, creds)
 	})
-
-	return paths, err
 }
 
 // Content implements [bungie.ManifestSource].
