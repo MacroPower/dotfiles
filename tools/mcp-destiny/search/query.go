@@ -1,4 +1,4 @@
-package main
+package search
 
 import (
 	"fmt"
@@ -66,6 +66,10 @@ const (
 	// string or a bare word. The web client matches such a token against
 	// the text of an item.
 	keywordFilter = "keyword"
+
+	// filterIs is the name of the is: filters. The parser reads a filter
+	// named not, such as not:x, as the negation of the filter is:x.
+	filterIs = "is"
 )
 
 var (
@@ -236,7 +240,7 @@ func (e *QueryError) WebClientRuns() bool {
 	}
 }
 
-// parseQuery parses query with a port of the search parser of DIM, which
+// ParseQuery parses query with a port of the search parser of DIM, which
 // the web client runs. It returns the parse tree, or nil and a
 // [*QueryError] for a query that the web client skips or reads differently
 // from its text. It does not check filter names or filter values.
@@ -248,7 +252,7 @@ func (e *QueryError) WebClientRuns() bool {
 // that point. It also runs a query with an unquoted or, and, or not that
 // the lexer reads as a bare word. It then searches for the word. The error
 // names the first problem in that order.
-func parseQuery(query string) (*QueryNode, error) {
+func ParseQuery(query string) (*QueryNode, error) {
 	lexer := newQueryLexer(query)
 	tokens := &queryTokens{lexer: lexer}
 
@@ -558,7 +562,7 @@ func (l *queryLexer) next() (queryToken, bool, error) {
 		}
 
 		if ok {
-			token.Text = jsTrim(l.query[start:l.pos])
+			token.Text = JSTrim(l.query[start:l.pos])
 			token.Start = start
 
 			return token, true, nil
@@ -575,7 +579,7 @@ func (l *queryLexer) scan() (queryToken, bool, error) {
 	start := l.pos
 
 	if m, ok := l.match(queryParens); ok {
-		return queryToken{Kind: tokenKind(jsTrim(m))}, true, nil
+		return queryToken{Kind: tokenKind(JSTrim(m))}, true, nil
 	}
 
 	if isQuote(l.query[start]) {
@@ -592,11 +596,11 @@ func (l *queryLexer) scan() (queryToken, bool, error) {
 	}
 
 	if m, ok := l.match(queryBoolean); ok {
-		return queryToken{Kind: tokenKind(jsTrim(m))}, true, nil
+		return queryToken{Kind: tokenKind(JSTrim(m))}, true, nil
 	}
 
 	if m, ok := l.match(queryComment); ok {
-		return queryToken{Kind: tokenComment, Content: jsTrim(m)}, true, nil
+		return queryToken{Kind: tokenComment, Content: JSTrim(m)}, true, nil
 	}
 
 	if m, ok := l.match(queryFilterName); ok {
@@ -698,21 +702,21 @@ func (l *queryLexer) match(re *regexp.Regexp) (string, bool) {
 // rest returns the query from the byte offset start to its end, without
 // the characters of jsSpace at its ends.
 func (l *queryLexer) rest(start int) string {
-	return jsTrim(l.query[start:])
+	return JSTrim(l.query[start:])
 }
 
 // normalizeQuery returns query in the form that the lexer of DIM reads. It
-// lowercases the query and then applies [normalizeQuotes]. It lowercases
+// lowercases the query and then applies [NormalizeQuotes]. It lowercases
 // U+0130 to "i" and U+0307, as String.prototype.toLowerCase does.
 // [strings.ToLower] lowercases U+0130 to "i" alone.
 func normalizeQuery(query string) string {
-	return normalizeQuotes(strings.ToLower(strings.ReplaceAll(query, "\u0130", "i\u0307")))
+	return NormalizeQuotes(strings.ToLower(strings.ReplaceAll(query, "\u0130", "i\u0307")))
 }
 
-// normalizeQuotes turns the typographic quotes U+2018 through U+201A into
+// NormalizeQuotes turns the typographic quotes U+2018 through U+201A into
 // an ASCII apostrophe and U+201C through U+201E into an ASCII double
 // quote, as normalizeQuotes of DIM does.
-func normalizeQuotes(s string) string {
+func NormalizeQuotes(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
 		case r >= '\u2018' && r <= '\u201a':
@@ -735,15 +739,15 @@ func jsPattern(pattern string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + pattern)
 }
 
-// isJSSpace reports whether r is a character of jsSpace.
-func isJSSpace(r rune) bool {
+// IsJSSpace reports whether r is a character of jsSpace.
+func IsJSSpace(r rune) bool {
 	return jsSpaceChar.MatchString(string(r))
 }
 
-// jsTrim removes the characters of jsSpace from both ends of s, as
+// JSTrim removes the characters of jsSpace from both ends of s, as
 // String.prototype.trim does.
-func jsTrim(s string) string {
-	return strings.TrimFunc(s, isJSSpace)
+func JSTrim(s string) string {
+	return strings.TrimFunc(s, IsJSSpace)
 }
 
 // isQuote reports whether c opens a quoted string.

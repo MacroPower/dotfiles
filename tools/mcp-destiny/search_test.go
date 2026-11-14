@@ -20,13 +20,14 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 )
 
 // compiled parses and compiles query, which must parse.
 func compiled(t *testing.T, query string) compiledQuery {
 	t.Helper()
 
-	root, err := parseQuery(query)
+	root, err := search.ParseQuery(query)
 	require.NoError(t, err)
 
 	return compileQuery(root)

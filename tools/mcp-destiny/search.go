@@ -17,6 +17,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 )
 
 // hashDefaultShader is the item hash of the default shader, which DIM
@@ -536,7 +537,7 @@ type queryCompiler struct {
 	modes       []string
 }
 
-// compileQuery builds the test of the parse tree that [parseQuery]
+// compileQuery builds the test of the parse tree that [search.ParseQuery]
 // returns. It evaluates only the filters of searchFilters. The web client
 // voids a whole query when one term is invalid. A test of the other terms
 // can therefore match items that the web client does not match. A query
@@ -545,7 +546,7 @@ type queryCompiler struct {
 // its other terms mean, so the result names no unsupported term. Any other
 // query with a term outside searchFilters has no test either, and the
 // result names each such term.
-func compileQuery(root *QueryNode) compiledQuery {
+func compileQuery(root *search.QueryNode) compiledQuery {
 	var c queryCompiler
 
 	test := c.node(root)
@@ -572,9 +573,9 @@ func compileQuery(root *QueryNode) compiledQuery {
 // does not evaluate or whose value the web client rejects. The and node,
 // the or node, and the not node combine the outcomes of their operands in
 // Kleene logic.
-func (c *queryCompiler) node(n *QueryNode) queryTest {
+func (c *queryCompiler) node(n *search.QueryNode) queryTest {
 	switch n.Op {
-	case OpAnd, OpOr:
+	case search.OpAnd, search.OpOr:
 		builds := make([]queryTest, 0, len(n.Operands))
 		for _, operand := range n.Operands {
 			builds = append(builds, c.node(operand))
@@ -584,7 +585,7 @@ func (c *queryCompiler) node(n *QueryNode) queryTest {
 		// place. It stops at the outcome that no later operand changes:
 		// a no match of an and node, or a match of an or node.
 		combine, start, final := outcome.and, match, noMatch
-		if n.Op == OpOr {
+		if n.Op == search.OpOr {
 			combine, start, final = outcome.or, noMatch, match
 		}
 
@@ -608,7 +609,7 @@ func (c *queryCompiler) node(n *QueryNode) queryTest {
 			}
 		}
 
-	case OpNot:
+	case search.OpNot:
 		build := c.node(n.Operand)
 
 		return func(ctx searchContext) func(*inventory.Item) outcome {
@@ -651,7 +652,7 @@ func appendNew(terms []string, term string) []string {
 // preview evaluates, so is:constructor and is:__proto__ stay unsupported.
 // DIM finds both words on the prototype of its filter table and matches
 // nothing.
-func filterTest(n *QueryNode) (queryTest, string, error) {
+func filterTest(n *search.QueryNode) (queryTest, string, error) {
 	if n.Type == filterIs {
 		build, ok := isFilters[n.Args]
 		if !ok {
@@ -1021,10 +1022,10 @@ func exactNameMatch(value string) func(*inventory.Item) bool {
 
 // plainName returns the name of item in the form that the name filters
 // compare. The lexer turned the typographic quotes of the value into ASCII
-// quotes. plainName therefore applies [normalizeQuotes] to the name, as
-// DIM does, and then [plainString] folds it.
+// quotes. plainName therefore applies [search.NormalizeQuotes] to the
+// name, as DIM does, and then [plainString] folds it.
 func plainName(item *inventory.Item) string {
-	return plainString(normalizeQuotes(item.Name))
+	return plainString(search.NormalizeQuotes(item.Name))
 }
 
 // plainString folds s for a text filter, as plainString of DIM folds the
@@ -1060,7 +1061,7 @@ func idMatch(value string) func(*inventory.Item) bool {
 // because no item hash equals them. JavaScript compares -0 as equal to 0,
 // so hash:-0 is hash:0.
 func hashMatch(value string) func(*inventory.Item) bool {
-	value = strings.TrimLeftFunc(value, isJSSpace)
+	value = strings.TrimLeftFunc(value, search.IsJSSpace)
 
 	negative := strings.HasPrefix(value, "-")
 	if negative || strings.HasPrefix(value, "+") {
@@ -1178,7 +1179,7 @@ func stripAdept(name string) string {
 		name = pattern.ReplaceAllLiteralString(name, "")
 	}
 
-	return jsTrim(name)
+	return search.JSTrim(name)
 }
 
 // inCurrentChar builds the predicate of is:incurrentchar. It matches an

@@ -1,4 +1,4 @@
-package main
+package search
 
 import (
 	"encoding/json"
@@ -184,9 +184,9 @@ func TestLexQueryErrors(t *testing.T) {
 				`and inside quotes a backslash escapes only a double quote, a single quote, or a backslash`,
 		},
 		"unknown escape of a multibyte character": {
-			query:    `name:"a\é"`,
+			query:    "name:\"a\\\u00e9\"",
 			kind:     queryBadEscape,
-			fragment: `é`,
+			fragment: "\u00e9",
 		},
 		"filter name at the end": {
 			query:    `is:`,
@@ -230,8 +230,8 @@ func TestLexQueryErrors(t *testing.T) {
 			want:  []queryToken{filterToken(keywordFilter, `is_x:`)},
 		},
 		"accented letter before a colon": {
-			query: `é:`,
-			want:  []queryToken{filterToken(keywordFilter, `é:`)},
+			query: "\u00e9:",
+			want:  []queryToken{filterToken(keywordFilter, "\u00e9:")},
 		},
 		"open paren inside a bare word": {
 			query: `a(is:`,
@@ -669,7 +669,7 @@ func TestParseQuerySnapshot(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			t.Parallel()
 
-			node, err := parseQuery(tc.Query)
+			node, err := ParseQuery(tc.Query)
 
 			// DIM parses a query without a token to a noop node.
 			if tc.AST["op"] == string(opNoop) {
@@ -737,10 +737,10 @@ func TestParseQueryEquivalent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			node, err := parseQuery(tc.query)
+			node, err := ParseQuery(tc.query)
 			require.NoError(t, err)
 
-			equivalent, err := parseQuery(tc.equivalent)
+			equivalent, err := ParseQuery(tc.equivalent)
 			require.NoError(t, err)
 
 			assert.Equal(t, snapshotNode(equivalent), snapshotNode(node))
@@ -786,7 +786,7 @@ func TestParseQueryComments(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			node, err := parseQuery(tc.query)
+			node, err := ParseQuery(tc.query)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, snapshotNode(node))
 		})
@@ -1048,7 +1048,7 @@ func TestParseQueryErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			node, err := parseQuery(tc.query)
+			node, err := ParseQuery(tc.query)
 			assert.Nil(t, node)
 
 			var queryErr *QueryError
@@ -1096,7 +1096,7 @@ func TestParseQueryAccepts(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			node, err := parseQuery(tc.query)
+			node, err := ParseQuery(tc.query)
 			require.NoError(t, err)
 			assert.NotNil(t, node)
 		})
@@ -1141,7 +1141,7 @@ func TestParseQueryFilterSource(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			node, err := parseQuery(tc.query)
+			node, err := ParseQuery(tc.query)
 			require.NoError(t, err)
 
 			// A not filter reads as the negation of an is filter.

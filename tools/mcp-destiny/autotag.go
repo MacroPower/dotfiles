@@ -11,6 +11,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 )
 
 // markDigits is the width of an autotag mark. The service compares marks
@@ -137,9 +138,9 @@ func evalRules(
 	for i, rule := range rules {
 		evals[i].rule = rule
 
-		root, err := parseQuery(rule.Query)
+		root, err := search.ParseQuery(rule.Query)
 		if err != nil {
-			var queryErr *QueryError
+			var queryErr *search.QueryError
 			if errors.As(err, &queryErr) && queryErr.WebClientRuns() {
 				evals[i].class = ruleBlocked
 				evals[i].reason = "the web client runs this rule, and the server cannot evaluate it: " + err.Error()
@@ -174,7 +175,7 @@ func evalRules(
 	}
 
 	current, _ := s.LastPlayed()
-	search := searchContext{current: current, items: builtItems(s), sources: ratings}
+	sctx := searchContext{current: current, items: builtItems(s), sources: ratings}
 
 	for i := range evals {
 		if evals[i].class != ruleEvaluated {
@@ -189,7 +190,7 @@ func evalRules(
 			continue
 		}
 
-		evals[i].test = queries[i].test(search)
+		evals[i].test = queries[i].test(sctx)
 	}
 
 	return evals

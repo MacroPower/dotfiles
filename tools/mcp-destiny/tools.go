@@ -22,6 +22,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/search"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/vendors"
 )
@@ -1808,7 +1809,7 @@ func (h *handler) handleSaveAutotagRule(
 // holds a value that the web client rejects. The compiled query can still
 // hold terms that the preview does not evaluate.
 func compileRuleQuery(query string) (compiledQuery, error) {
-	root, err := parseQuery(strings.TrimSpace(query))
+	root, err := search.ParseQuery(strings.TrimSpace(query))
 	if err != nil {
 		return compiledQuery{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
@@ -2421,9 +2422,9 @@ func unknownTrait(perk string, traits map[string]string) error {
 // mergeRule builds the rule that a save_autotag_rule call writes. With an
 // id it overlays the given fields on the stored rule. Without an id it
 // creates a rule that evaluates last. When the call passes a query,
-// mergeRule parses the query with [parseQuery]. It rejects a query that
-// the search parser of the web client rejects and a query that the web
-// client runs differently from its text. It leaves a stored query
+// mergeRule parses the query with [search.ParseQuery]. It rejects a query
+// that the search parser of the web client rejects and a query that the
+// web client runs differently from its text. It leaves a stored query
 // unchecked, so a call can still disable, move, or retag a stored rule
 // whose query does not parse.
 //
@@ -2488,7 +2489,7 @@ func mergeRule(rules []dvm.AutotagRule, in SaveAutotagRuleInput) (dvm.AutotagRul
 	}
 
 	if in.Query != nil {
-		_, err := parseQuery(rule.Query)
+		_, err := search.ParseQuery(rule.Query)
 		if err != nil {
 			return dvm.AutotagRule{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 		}
