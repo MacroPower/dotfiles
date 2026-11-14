@@ -40,7 +40,8 @@ var ErrUnknownVendor = errors.New("unknown vendor")
 // or "Vendor <hash>" when the definitions do not name the vendor.
 // NextRefresh is the time when the stock rotates next, and it is zero when
 // Bungie reports no time. Disabled marks a vendor that Bungie reports as
-// not accessible in the game.
+// not accessible in the game. InGroup marks a vendor that a vendor group
+// of the response lists.
 type Vendor struct {
 	NextRefresh time.Time
 	Name        string
@@ -48,6 +49,7 @@ type Vendor struct {
 	Groups      []SaleGroup
 	Hash        uint32
 	Disabled    bool
+	InGroup     bool
 }
 
 // SaleCount returns the number of sales in the groups of the vendor.
@@ -105,9 +107,19 @@ func Read(resp *bungie.VendorsResponse, defs *definitions.Defs) []Vendor {
 		hashes[hash] = true
 	}
 
+	grouped := map[uint32]bool{}
+
+	for _, group := range resp.VendorGroups.Data.Groups {
+		for _, hash := range group.VendorHashes {
+			grouped[hash] = true
+		}
+	}
+
 	vendors := make([]Vendor, 0, len(hashes))
 	for hash := range hashes {
-		vendors = append(vendors, newVendor(resp, defs, hash))
+		v := newVendor(resp, defs, hash)
+		v.InGroup = grouped[hash]
+		vendors = append(vendors, v)
 	}
 
 	slices.SortFunc(vendors, func(a, b Vendor) int {
@@ -115,6 +127,21 @@ func Read(resp *bungie.VendorsResponse, defs *definitions.Defs) []Vendor {
 	})
 
 	return vendors
+}
+
+// Grouped returns the vendors that a vendor group lists and that have a
+// sale, in the order of vendors. Destiny Item Manager (DIM) picks the
+// vendors of its vendor page by the same two tests.
+func Grouped(vendors []Vendor) []Vendor {
+	var kept []Vendor
+
+	for _, v := range vendors {
+		if v.InGroup && v.SaleCount() > 0 {
+			kept = append(kept, v)
+		}
+	}
+
+	return kept
 }
 
 // newVendor joins the response entries of one vendor with its definition.

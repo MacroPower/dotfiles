@@ -185,6 +185,9 @@ func TestBungieVendors(t *testing.T) {
 				"672118013": {"vendorHash": 672118013, "enabled": true, "canPurchase": true,
 				 "nextRefreshDate": "2026-11-13T17:00:00Z", "vendorLocationIndex": 0}
 			}},
+			"vendorGroups": {"data": {"groups": [
+				{"vendorGroupHash": 3, "vendorHashes": [672118013, 3361454721]}
+			]}},
 			"categories": {"data": {
 				"672118013": {"categories": [{"displayCategoryIndex": 2, "itemIndexes": [7, 4]}]}
 			}},
@@ -217,6 +220,9 @@ func TestBungieVendors(t *testing.T) {
 	assert.Equal(t, map[uint32]bungie.VendorComponent{
 		672118013: {Hash: 672118013, Enabled: true, NextRefreshDate: time.Date(2026, 11, 13, 17, 0, 0, 0, time.UTC)},
 	}, vendors.Vendors.Data)
+	assert.Equal(t, []bungie.VendorGroup{
+		{VendorHashes: []uint32{bungietest.VendorBanshee, bungietest.VendorTess}},
+	}, vendors.VendorGroups.Data.Groups)
 	assert.Equal(t, map[uint32]bungie.VendorCategories{
 		672118013: {Categories: []bungie.VendorCategory{{DisplayCategoryIndex: 2, ItemIndexes: []int{7, 4}}}},
 	}, vendors.Categories.Data)

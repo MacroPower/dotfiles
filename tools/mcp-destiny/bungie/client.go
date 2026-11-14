@@ -49,7 +49,7 @@ const (
 
 	// vendorComponents lists the GetVendors components that
 	// [*Client.Vendors] requests. They cover vendors, vendor categories, and
-	// vendor sales.
+	// vendor sales. The vendors component also returns the vendor groups.
 	vendorComponents = "400,401,402"
 
 	// activityComponents lists the GetProfile components that
@@ -320,8 +320,17 @@ type VendorSales struct {
 	SaleItems map[int]VendorSale `json:"saleItems"`
 }
 
+// VendorGroup is the subset of a Bungie DestinyVendorGroup that the server
+// reads. VendorHashes lists the vendors of the group in the order that
+// Bungie recommends.
+type VendorGroup struct {
+	VendorHashes []uint32 `json:"vendorHashes"`
+}
+
 // VendorsResponse is the subset of a Bungie DestinyVendorsResponse that the
-// server reads. The vendor hash keys each map.
+// server reads. The vendor hash keys each map. VendorGroups groups and
+// orders the vendors as the Bungie Companion app does, and many vendors of
+// the response belong to no group.
 type VendorsResponse struct {
 	Vendors struct {
 		Data map[uint32]VendorComponent `json:"data"`
@@ -332,6 +341,11 @@ type VendorsResponse struct {
 	Sales struct {
 		Data map[uint32]VendorSales `json:"data"`
 	} `json:"sales"`
+	VendorGroups struct {
+		Data struct {
+			Groups []VendorGroup `json:"groups"`
+		} `json:"data"`
+	} `json:"vendorGroups"`
 }
 
 // CharacterActivities is the subset of a Bungie
@@ -544,9 +558,9 @@ func (b *Client) Profile(ctx context.Context, creds Credentials, m Membership) (
 }
 
 // Vendors fetches the vendors of one character and the stock of each one
-// at the moment of the call. Bungie lists the vendors whose stock can
-// rotate, so the response leaves out preview vendors and kiosks. The stock
-// and the sale status differ per character.
+// at the moment of the call. Besides the vendors that a player visits, the
+// response lists screens and kiosks, such as the subclass screens and the
+// Exotic Archive. The stock and the sale status differ per character.
 func (b *Client) Vendors(
 	ctx context.Context,
 	creds Credentials,

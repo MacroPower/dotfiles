@@ -19,6 +19,19 @@
 // stock of Eververse appear only in the sales component. A vendor that the
 // definitions do not name reads "Vendor <hash>".
 //
+// # Vendor Groups
+//
+// The vendors component also returns vendor groups, which group and order
+// the vendors as the Bungie Companion app does. Many vendors of the
+// response belong to no group, such as the sub-vendors of Eververse.
+//
+// A caller that lists the vendors for a player keeps each vendor that a
+// group lists and that has a sale, as Destiny Item Manager (DIM) does on
+// its vendor page. DIM also folds the sub-vendors of Eververse into Tess
+// Everis. The definitions that the read joins do not mark those
+// sub-vendors, so such a list leaves them out. The selection still finds
+// every vendor of the response.
+//
 // # Sales
 //
 // A sale joins one entry of the sales component with the definitions. The
@@ -43,9 +56,12 @@
 // # Selection
 //
 // A caller reads the vendors of a character, ordered by name and then by
-// hash. It lists them, or it selects one vendor by an argument that the
-// user passes and lists the sales of that vendor. A decimal argument
-// selects the vendor with that hash. Any other argument selects by name.
+// hash. It lists every vendor or the vendors that [Grouped] keeps. It can
+// also select one vendor by an argument that the user passes and list the
+// sales of that vendor.
+//
+// A decimal argument selects the vendor with that hash. Any other argument
+// selects by name.
 // An exact name ranks first. The other ranks fold the name and the
 // argument before they compare them. The fold removes letter case and
 // accents, so the argument xur matches the name Xûr. A name that equals

@@ -1277,7 +1277,7 @@ func activityName(defs *definitions.Defs, activity bungie.HistoryActivity) strin
 	return fmt.Sprintf("Activity %d", activity.ReferenceID)
 }
 
-// renderVendors renders the listed vendors as a table with one row per
+// renderVendors renders every listed vendor as a table with one row per
 // vendor. Owner names the character that sees the vendors, such as "Hunter".
 func renderVendors(listed []vendors.Vendor, owner string) string {
 	if len(listed) == 0 {
@@ -1292,7 +1292,55 @@ func renderVendors(listed []vendors.Vendor, owner string) string {
 		fmt.Fprintf(&b, "The %d vendors of %s.", len(listed), owner)
 	}
 
-	b.WriteString(" Pass vendor with a hash or a name to list the sales of one vendor.")
+	b.WriteString(vendorHint)
+	writeVendorTable(&b, listed)
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// renderGroupedVendors renders the vendors that [vendors.Grouped] keeps as
+// a table with one row per vendor. Total counts every vendor that Bungie
+// returns, and the intro points at the all input when the table leaves out
+// some of them. Owner names the character that sees the vendors.
+func renderGroupedVendors(grouped []vendors.Vendor, total int, owner string) string {
+	if total == 0 {
+		return "Bungie lists no vendors for " + owner + "."
+	}
+
+	var b strings.Builder
+
+	switch len(grouped) {
+	case 0:
+		fmt.Fprintf(&b, "No vendor of %s that Bungie groups for its Companion app has a sale.", owner)
+	case 1:
+		fmt.Fprintf(&b, "The vendor of %s that Bungie groups for its Companion app and that has a sale.", owner)
+	default:
+		fmt.Fprintf(&b, "The %d vendors of %s that Bungie groups for its Companion app and that have a sale.",
+			len(grouped), owner)
+	}
+
+	switch {
+	case total == len(grouped):
+	case total == 1:
+		b.WriteString(" Pass all=true to list the one vendor that Bungie returns.")
+	default:
+		fmt.Fprintf(&b, " Pass all=true to list all %d vendors that Bungie returns.", total)
+	}
+
+	b.WriteString(vendorHint)
+
+	if len(grouped) > 0 {
+		writeVendorTable(&b, grouped)
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// vendorHint follows the intro of a vendor list.
+const vendorHint = " Pass vendor with a hash or a name to list the sales of one vendor."
+
+// writeVendorTable writes a blank line and a table with one row per vendor.
+func writeVendorTable(b *strings.Builder, listed []vendors.Vendor) {
 	b.WriteString("\n\nname | subtitle | hash | sales | next refresh | flags\n")
 
 	for _, v := range listed {
@@ -1306,8 +1354,6 @@ func renderVendors(listed []vendors.Vendor, owner string) string {
 		}, " | "))
 		b.WriteString("\n")
 	}
-
-	return strings.TrimRight(b.String(), "\n")
 }
 
 // renderVendor renders the sales of one vendor under the names of their

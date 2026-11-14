@@ -310,7 +310,9 @@ const (
 // Hunter cannot buy include a negative index and an index past the last
 // failure string of Banshee-44. The sales list the sub-vendor of
 // Eververse, and the vendors do not. Xûr is disabled, and the stock of the
-// other Xûr never rotates.
+// other Xûr never rotates. The vendor groups list Banshee-44, Tess Everis,
+// and the disabled Xûr, which has no sale. They leave out the other
+// vendors, such as the sub-vendor of Eververse, which has a sale.
 const HunterVendorsJSON = `{"ErrorCode": 1, "Response": {
 	"vendors": {"data": {
 		"672118013": {"vendorHash": 672118013, "enabled": true, "nextRefreshDate": "2026-11-13T17:00:00Z"},
@@ -319,6 +321,10 @@ const HunterVendorsJSON = `{"ErrorCode": 1, "Response": {
 		"3751514131": {"vendorHash": 3751514131, "enabled": true, "nextRefreshDate": "9999-12-31T23:59:59.999Z"},
 		"1111": {"vendorHash": 1111, "enabled": true, "nextRefreshDate": "2026-11-13T17:00:00Z"}
 	}},
+	"vendorGroups": {"data": {"groups": [
+		{"vendorGroupHash": 3, "vendorHashes": [2190858386, 672118013]},
+		{"vendorGroupHash": 4, "vendorHashes": [3361454721]}
+	]}},
 	"categories": {"data": {
 		"672118013": {"categories": [
 			{"displayCategoryIndex": 1, "itemIndexes": [5, 6]},
@@ -366,11 +372,15 @@ const HunterVendorsJSON = `{"ErrorCode": 1, "Response": {
 }}`
 
 // TitanVendorsJSON is the Bungie GetVendors response body of the Titan.
-// Banshee-44 sells the Titan a weapon that the Hunter cannot buy yet.
+// Banshee-44 sells the Titan a weapon that the Hunter cannot buy yet. The
+// vendor groups list Banshee-44.
 const TitanVendorsJSON = `{"ErrorCode": 1, "Response": {
 	"vendors": {"data": {
 		"672118013": {"vendorHash": 672118013, "enabled": true, "nextRefreshDate": "2026-11-13T17:00:00Z"}
 	}},
+	"vendorGroups": {"data": {"groups": [
+		{"vendorGroupHash": 3, "vendorHashes": [672118013]}
+	]}},
 	"categories": {"data": {
 		"672118013": {"categories": [{"displayCategoryIndex": 0, "itemIndexes": [2]}]}
 	}},

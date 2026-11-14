@@ -104,8 +104,15 @@ func TestServerListsTools(t *testing.T) {
 
 	for _, tool := range tools.Tools {
 		switch tool.Name {
-		case toolListVendors, toolListActivities:
+		case toolListActivities:
 			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
+		case toolListVendors:
+			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
+			assert.Contains(t, tool.Description, "No group lists the sub-vendors without a name that hold part "+
+				"of the Eververse stock, so the list leaves them out")
+			assert.Contains(t, tool.Description, "the Eververse sub-vendors among them")
+			assert.NotContains(t, tool.Description, "Destiny Item Manager")
+
 		case toolPreviewAutotagRule:
 			assert.Equal(t, &mcp.ToolAnnotations{ReadOnlyHint: true}, tool.Annotations)
 			assert.Contains(t, tool.Description, "is:weapon, is:armor")
@@ -3243,12 +3250,28 @@ func TestListVendors(t *testing.T) {
 		"- Legendary Shards x2 | 100 Glimmer | available",
 	}, "\n")
 
-	list := strings.Join([]string{
-		"The 6 vendors of Hunter. Pass vendor with a hash or a name to list the sales of one vendor.",
+	const (
+		header     = "name | subtitle | hash | sales | next refresh | flags"
+		bansheeRow = "Banshee-44 | Gunsmith | 672118013 | 8 | 2026-11-13 17:00 UTC | "
+		tessRow    = "Tess Everis | Eververse Trading Company | 3361454721 | 1 | 2026-11-17 17:00 UTC | "
+		hint       = " Pass vendor with a hash or a name to list the sales of one vendor."
+	)
+
+	grouped := strings.Join([]string{
+		"The 2 vendors of Hunter that Bungie groups for its Companion app and that have a sale. " +
+			"Pass all=true to list all 6 vendors that Bungie returns." + hint,
 		"",
-		"name | subtitle | hash | sales | next refresh | flags",
-		"Banshee-44 | Gunsmith | 672118013 | 8 | 2026-11-13 17:00 UTC | ",
-		"Tess Everis | Eververse Trading Company | 3361454721 | 1 | 2026-11-17 17:00 UTC | ",
+		header,
+		bansheeRow,
+		tessRow,
+	}, "\n")
+
+	all := strings.Join([]string{
+		"The 6 vendors of Hunter." + hint,
+		"",
+		header,
+		bansheeRow,
+		tessRow,
 		"Vendor 1111 |  | 1111 | 0 | 2026-11-13 17:00 UTC | ",
 		"Vendor 2168194999 |  | 2168194999 | 1 | unknown | ",
 		"Xûr | Agent of the Nine | 2190858386 | 0 | 2026-11-14 17:00 UTC | disabled",
@@ -3264,12 +3287,44 @@ func TestListVendors(t *testing.T) {
 	}{
 		"vendor list": {
 			paths: []string{bungietest.PathHunterVendors},
-			want:  list,
+			want:  grouped,
 		},
 		"blank vendor": {
 			in:    ListVendorsInput{Vendor: "  "},
 			paths: []string{bungietest.PathHunterVendors},
-			want:  list,
+			want:  grouped,
+		},
+		"every vendor": {
+			in:    ListVendorsInput{All: true},
+			paths: []string{bungietest.PathHunterVendors},
+			want:  all,
+		},
+		"every vendor with a vendor": {
+			in:    ListVendorsInput{Vendor: "Banshee-44", All: true},
+			paths: []string{bungietest.PathHunterVendors},
+			want:  banshee,
+		},
+		"no grouped vendor with a sale": {
+			data: map[string]string{bungietest.PathHunterVendors: `{"ErrorCode": 1, "Response": {
+				"vendors": {"data": {
+					"1111": {"vendorHash": 1111, "enabled": true, "nextRefreshDate": "2026-11-13T17:00:00Z"},
+					"672118013": {"vendorHash": 672118013, "enabled": true, "nextRefreshDate": "2026-11-13T17:00:00Z"}
+				}},
+				"vendorGroups": {"data": {"groups": [{"vendorGroupHash": 3, "vendorHashes": [1111]}]}}
+			}}`},
+			paths: []string{bungietest.PathHunterVendors},
+			want: "No vendor of Hunter that Bungie groups for its Companion app has a sale. " +
+				"Pass all=true to list all 2 vendors that Bungie returns." + hint,
+		},
+		"one vendor outside the groups": {
+			data: map[string]string{bungietest.PathHunterVendors: `{"ErrorCode": 1, "Response": {
+				"vendors": {"data": {
+					"1111": {"vendorHash": 1111, "enabled": true, "nextRefreshDate": "2026-11-13T17:00:00Z"}
+				}}
+			}}`},
+			paths: []string{bungietest.PathHunterVendors},
+			want: "No vendor of Hunter that Bungie groups for its Companion app has a sale. " +
+				"Pass all=true to list the one vendor that Bungie returns." + hint,
 		},
 		"vendor by exact name": {
 			in:    ListVendorsInput{Vendor: "Banshee-44"},
@@ -3358,9 +3413,19 @@ func TestListVendors(t *testing.T) {
 			in:    ListVendorsInput{Character: "TITAN"},
 			paths: []string{bungietest.PathTitanVendors},
 			want: strings.Join([]string{
-				"The vendor of Titan. Pass vendor with a hash or a name to list the sales of one vendor.",
+				"The vendor of Titan that Bungie groups for its Companion app and that has a sale." + hint,
 				"",
-				"name | subtitle | hash | sales | next refresh | flags",
+				header,
+				"Banshee-44 | Gunsmith | 672118013 | 1 | 2026-11-13 17:00 UTC | ",
+			}, "\n"),
+		},
+		"every vendor of a character": {
+			in:    ListVendorsInput{Character: "titan", All: true},
+			paths: []string{bungietest.PathTitanVendors},
+			want: strings.Join([]string{
+				"The vendor of Titan." + hint,
+				"",
+				header,
 				"Banshee-44 | Gunsmith | 672118013 | 1 | 2026-11-13 17:00 UTC | ",
 			}, "\n"),
 		},
@@ -3380,6 +3445,12 @@ func TestListVendors(t *testing.T) {
 			}, "\n"),
 		},
 		"no vendors": {
+			data:  map[string]string{bungietest.PathHunterVendors: `{"ErrorCode": 1, "Response": {}}`},
+			paths: []string{bungietest.PathHunterVendors},
+			want:  "Bungie lists no vendors for Hunter.",
+		},
+		"every vendor without vendors": {
+			in:    ListVendorsInput{All: true},
 			data:  map[string]string{bungietest.PathHunterVendors: `{"ErrorCode": 1, "Response": {}}`},
 			paths: []string{bungietest.PathHunterVendors},
 			want:  "Bungie lists no vendors for Hunter.",

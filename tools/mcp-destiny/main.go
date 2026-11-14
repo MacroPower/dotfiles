@@ -431,12 +431,17 @@ func newServer(h *handler) *mcp.Server {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolListVendors,
 		Description: "List the vendors of one character, such as Banshee-44 or X\u00fbr, and what each one sells " +
-			"at the moment of the call. Bungie lists the vendors whose stock rotates and leaves out preview vendors " +
-			"and kiosks. The stock and whether the character can buy each item differ per character. " +
+			"at the moment of the call. The stock and whether the character can buy each item differ per character. " +
 			"Without character, it reads the most recently played character. " +
 			"Without vendor, it lists one row per vendor with its name, subtitle, hash, number of sales, " +
-			"and next refresh time. A disabled flag marks a vendor that Bungie reports as not accessible. " +
-			"With vendor, it lists the sales of that vendor under their category names. " +
+			"and next refresh time. The list holds the vendors that Bungie groups for its Companion app and " +
+			"that have a sale. No group lists the sub-vendors without a name that hold part of the Eververse " +
+			"stock, so the list leaves them out, and the sales of Tess Everis do not include their stock. " +
+			"With all, the list holds every vendor that Bungie returns, such as subclass screens, archives, " +
+			"and vendors without a name, the Eververse sub-vendors among them. " +
+			"A disabled flag marks a vendor that Bungie reports as not accessible. " +
+			"With vendor, it lists the sales of that vendor under their category names, " +
+			"and every vendor that Bungie returns can match. " +
 			"Each sale gives the item, the quantity when it is more than one, and the costs. " +
 			"It also says whether the character can buy the item, with the reasons from the game when it cannot. " +
 			"A sale that shows no cost is often a rank reward or a screen that the vendor opens, not a free item.",

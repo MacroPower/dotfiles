@@ -188,10 +188,12 @@ type ListActivityHistoryInput struct {
 }
 
 // ListVendorsInput is the input schema of the list_vendors tool. Without
-// a vendor, the tool lists the vendors of the character.
+// a vendor, the tool lists the vendors of the character that a vendor
+// group lists and that have a sale, or every vendor when All is set.
 type ListVendorsInput struct {
 	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to read the most recently played character"`
-	Vendor    string `json:"vendor,omitzero"    jsonschema:"Vendor hash, or a vendor name in any letter case and with or without accents, such as 'Banshee-44' or 'Xur'. A name that no vendor has selects the one vendor whose name contains it. Omit to list the vendors"`
+	Vendor    string `json:"vendor,omitzero"    jsonschema:"Vendor hash, or a vendor name in any letter case and with or without accents, such as 'Banshee-44' or 'Xur'. A name that no vendor has selects the one vendor whose name contains it. Every vendor that Bungie returns can match. Omit to list the vendors"`
+	All       bool   `json:"all,omitzero"       jsonschema:"Without vendor: list every vendor that Bungie returns, such as subclass screens, archives, and vendors without a name. Omit to list only the vendors that Bungie groups for its Companion app and that have a sale"`
 }
 
 // ListActivitiesInput is the input schema of the list_activities tool.
@@ -722,7 +724,11 @@ func (h *handler) handleListVendors(
 	owner := s.OwnerLabel(c.ID)
 
 	if strings.TrimSpace(in.Vendor) == "" {
-		return textResult(renderVendors(listed, owner)), nil, nil
+		if in.All {
+			return textResult(renderVendors(listed, owner)), nil, nil
+		}
+
+		return textResult(renderGroupedVendors(vendors.Grouped(listed), len(listed), owner)), nil, nil
 	}
 
 	v, err := vendors.Select(listed, in.Vendor, owner)

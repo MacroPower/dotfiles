@@ -64,6 +64,96 @@ func TestRead(t *testing.T) {
 	}
 }
 
+func TestReadGroups(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		groups []bungie.VendorGroup
+		want   map[uint32]bool
+	}{
+		"no groups": {
+			want: map[uint32]bool{1: false, 2: false, 3: false},
+		},
+		"vendors of several groups": {
+			groups: []bungie.VendorGroup{
+				{VendorHashes: []uint32{3}},
+				{VendorHashes: []uint32{1, 4}},
+			},
+			want: map[uint32]bool{1: true, 2: false, 3: true},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := &bungie.VendorsResponse{}
+			resp.VendorGroups.Data.Groups = tc.groups
+			resp.Vendors.Data = map[uint32]bungie.VendorComponent{
+				1: {Hash: 1, Enabled: true},
+				2: {Hash: 2, Enabled: true},
+			}
+			resp.Sales.Data = map[uint32]bungie.VendorSales{3: {}}
+
+			got := map[uint32]bool{}
+			for _, v := range Read(resp, &definitions.Defs{}) {
+				got[v.Hash] = v.InGroup
+			}
+
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestGrouped(t *testing.T) {
+	t.Parallel()
+
+	sale := []SaleGroup{{Name: "Weapons", Sales: []Sale{{Name: "Fatebringer"}}}}
+	empty := []SaleGroup{{Name: "Weapons"}}
+
+	tests := map[string]struct {
+		vendors []Vendor
+		want    []uint32
+	}{
+		"no vendors": {},
+		"grouped vendors with a sale in order": {
+			vendors: []Vendor{
+				{Hash: 2, InGroup: true, Groups: sale},
+				{Hash: 1, InGroup: true, Groups: sale},
+			},
+			want: []uint32{2, 1},
+		},
+		"vendor outside the groups": {
+			vendors: []Vendor{
+				{Hash: 1, InGroup: true, Groups: sale},
+				{Hash: 2, Groups: sale},
+			},
+			want: []uint32{1},
+		},
+		"grouped vendor without a sale": {
+			vendors: []Vendor{
+				{Hash: 1, InGroup: true},
+				{Hash: 2, InGroup: true, Groups: empty},
+				{Hash: 3, InGroup: true, Groups: sale, Disabled: true},
+			},
+			want: []uint32{3},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var got []uint32
+			for _, v := range Grouped(tc.vendors) {
+				got = append(got, v.Hash)
+			}
+
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestSelect(t *testing.T) {
 	t.Parallel()
 
