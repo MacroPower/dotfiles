@@ -84,6 +84,14 @@
 // closes. The get_stats tool reads those buckets back from the service. It
 // therefore reports only the changes that a browser recorded and posted.
 //
+// The web client records every stack of the profile, also the dummy items
+// whose definitions the service withholds. The get_stats tool names such a
+// stack when a vendor sells it or an activity rewards it, because the
+// service names those dummy items. A row whose item hash no definition
+// names reads "Unknown item <hash>". A line after the tables then gives
+// the reason, such as a definition that the service withholds or an item
+// that the manifest version of the service lacks.
+//
 // # Roll Ratings
 //
 // The service publishes a roll sheet for each game mode. The Aegis sheet

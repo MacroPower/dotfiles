@@ -6,6 +6,10 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 )
 
+// ItemWithheld is the hash of a stack whose definition the service
+// withholds and whose name no table holds.
+const ItemWithheld uint32 = 78
+
 // Bucket hashes of the fixture slots that no production code reads.
 const (
 	bucketQuests    uint32 = 1345459588
@@ -171,5 +175,9 @@ func Defs() *definitions.Defs {
 		},
 		DamageTypes: map[int]string{1: "Kinetic", 3: "Solar"},
 		Classes:     map[int]string{0: "Titan", 1: "Hunter", 2: "Warlock"},
+		// The service withholds the dummy items that the vendors sell and
+		// the dummy rewards of the activities.
+		Withheld:       []uint32{ItemWithheld, 500, 501, 502, 503, 600, 601, 603, 604, 605, 606, 999},
+		WithheldListed: true,
 	}
 }

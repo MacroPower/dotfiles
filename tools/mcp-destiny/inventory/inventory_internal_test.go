@@ -1224,3 +1224,57 @@ func TestAnnotateTagRule(t *testing.T) {
 		})
 	}
 }
+
+func TestNewSnapshotNames(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		want string
+		hash uint32
+	}{
+		"item definition": {
+			hash: 300,
+			want: "Enhancement Core",
+		},
+		"withheld item that a vendor sells": {
+			hash: 501,
+			want: "Legendary Shards",
+		},
+		"withheld reward of an activity": {
+			hash: 600,
+			want: "Raid Gear",
+		},
+		"withheld item that no table names": {
+			hash: definitionstest.ItemWithheld,
+			want: "Unknown item 78",
+		},
+		"item that the manifest version lacks": {
+			hash: 77,
+			want: "Unknown item 77",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			body := fmt.Sprintf(`{
+				"profileCurrencies": {"data": {"items": [{"itemHash": %[1]d, "quantity": 3}]}},
+				"characterInventories": {"data": {"c1": {"items": [
+					{"itemHash": %[1]d, "quantity": 2, "location": 1, "bucketHash": %[2]d}
+				]}}}
+			}`, tc.hash, bungie.BucketPower)
+
+			var p bungie.Profile
+
+			require.NoError(t, json.Unmarshal([]byte(body), &p))
+
+			s := NewSnapshot(&p, definitionstest.Defs(), bungietest.Now)
+
+			require.Len(t, s.Items, 1)
+			assert.Equal(t, tc.want, s.Items[0].Name)
+			assert.Equal(t, []Currency{{Name: tc.want, Quantity: 3}}, s.Currencies)
+			assert.Equal(t, tc.want, ItemName(definitionstest.Defs(), tc.hash))
+		})
+	}
+}

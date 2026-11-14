@@ -1998,7 +1998,9 @@ func renderOwnedCounts(counts []autotag.RuleCount) string {
 }
 
 // renderStats renders the summary of one period. Item names come from
-// defs, so a weapon that the user dismantled keeps its name.
+// defs, so a weapon that the user dismantled keeps its name. A row whose
+// item hash defs do not name shows a placeholder with the hash, and the
+// sentences of [unnamedNote] follow the tables.
 func renderStats(defs *definitions.Defs, period stats.Period, s stats.Summary) string {
 	var b strings.Builder
 
@@ -2029,6 +2031,18 @@ func renderStats(defs *definitions.Defs, period stats.Period, s stats.Summary) s
 		return b.String()
 	}
 
+	// Unnamed holds each hash that the definitions do not name one time, in
+	// the order of its first row.
+	var unnamed []uint32
+
+	name := func(hash uint32) string {
+		if defs.ItemName(hash) == "" && !slices.Contains(unnamed, hash) {
+			unnamed = append(unnamed, hash)
+		}
+
+		return inventory.ItemName(defs, hash)
+	}
+
 	if len(s.Flows) == 0 {
 		b.WriteString("\nCurrencies and materials: no change.\n")
 	} else {
@@ -2042,36 +2056,96 @@ func renderStats(defs *definitions.Defs, period stats.Period, s stats.Summary) s
 			}
 
 			fmt.Fprintf(&b, "%s | %s | %d | %s | %d | %d\n",
-				itemName(defs, flow.ItemHash), kind, flow.ItemHash, signed(flow.Net), flow.Gained, flow.Spent)
+				name(flow.ItemHash), kind, flow.ItemHash, signed(flow.Net), flow.Gained, flow.Spent)
 		}
 	}
 
 	if len(s.Weapons) == 0 {
-		b.WriteString("\nWeapon kills: none.")
+		b.WriteString("\nWeapon kills: none.\n")
+	} else {
+		b.WriteString("\nWeapon kills, most first:\n")
+		b.WriteString("instance id | name | total | PvE | PvP\n")
 
-		return b.String()
+		for _, weapon := range s.Weapons {
+			fmt.Fprintf(&b, "%s | %s | %d | %d | %d\n",
+				weapon.InstanceID, name(weapon.ItemHash), weapon.PvE+weapon.PvP, weapon.PvE, weapon.PvP)
+		}
 	}
 
-	b.WriteString("\nWeapon kills, most first:\n")
-	b.WriteString("instance id | name | total | PvE | PvP\n")
-
-	for _, weapon := range s.Weapons {
-		fmt.Fprintf(&b, "%s | %s | %d | %d | %d\n",
-			weapon.InstanceID, itemName(defs, weapon.ItemHash), weapon.PvE+weapon.PvP, weapon.PvE, weapon.PvP)
+	if len(unnamed) > 0 {
+		b.WriteString("\n" + unnamedNote(defs, unnamed))
 	}
 
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// itemName returns the name of an item hash, or a placeholder that names
-// the hash when the definitions lack it.
-func itemName(defs *definitions.Defs, hash uint32) string {
-	name := defs.Items[hash].Name
-	if name == "" {
-		return fmt.Sprintf("Unknown item %d", hash)
+// unnamedNote returns the sentences that say why the definitions name none
+// of the item hashes in unnamed. The service index lists the item hashes
+// whose definitions the service withholds. A hash that neither the item
+// definitions nor that list holds is missing from the manifest version of
+// the definitions. Without that list, the note gives both causes.
+func unnamedNote(defs *definitions.Defs, unnamed []uint32) string {
+	if !defs.WithheldListed {
+		return fmt.Sprintf("The definitions of manifest version %s lack %s, so the server cannot name %s. "+
+			"The service withholds the definitions of dummy items, classified items, and items without a name, "+
+			"and the game can hold an item that Bungie added in a later manifest version. "+
+			"The service publishes no list of the hashes that it withholds, "+
+			"so the server cannot tell which cause applies.",
+			defs.Version, hashPhrase(unnamed), pronounOf(unnamed))
 	}
 
-	return name
+	var withheld, missing []uint32
+
+	for _, hash := range unnamed {
+		if defs.Withholds(hash) {
+			withheld = append(withheld, hash)
+		} else {
+			missing = append(missing, hash)
+		}
+	}
+
+	var sentences []string
+
+	if len(withheld) > 0 {
+		sentences = append(sentences, fmt.Sprintf(
+			"The service withholds the definitions of dummy items, classified items, and items without a name, "+
+				"so the server cannot name %s.",
+			hashPhrase(withheld)))
+	}
+
+	if len(missing) > 0 {
+		sentences = append(sentences, fmt.Sprintf(
+			"The definitions of manifest version %s lack %s, so the server cannot name %s. "+
+				"The game can hold an item that Bungie added in a later manifest version.",
+			defs.Version, hashPhrase(missing), pronounOf(missing)))
+	}
+
+	return strings.Join(sentences, " ")
+}
+
+// hashPhrase names the items with the hashes in hashes, such as "the
+// items with the hashes 1, 2, and 3".
+func hashPhrase(hashes []uint32) string {
+	if len(hashes) == 1 {
+		return fmt.Sprintf("the item with the hash %d", hashes[0])
+	}
+
+	words := make([]string, 0, len(hashes))
+	for _, hash := range hashes {
+		words = append(words, strconv.FormatUint(uint64(hash), 10))
+	}
+
+	return "the items with the hashes " + listWithAnd(words)
+}
+
+// pronounOf returns the pronoun that stands for the items of
+// [hashPhrase].
+func pronounOf(hashes []uint32) string {
+	if len(hashes) == 1 {
+		return "it"
+	}
+
+	return "them"
 }
 
 // signed writes n with a plus sign when it is positive.

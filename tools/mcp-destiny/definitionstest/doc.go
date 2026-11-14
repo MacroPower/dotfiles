@@ -12,9 +12,13 @@
 // legendary hand cannons Fatebringer and Midnight Coup and the exotic
 // rocket launcher Gjallarhorn. They also name the Hunter helmet Celestial
 // Nighthawk, the consumable Enhancement Core, Glimmer, and Bright Dust.
-// The currency with hash 77 has no definition. The stat names cover the
-// stats of the vault hand cannon and the helmet, except the stat with hash
-// 7.
+// The stat names cover the stats of the vault hand cannon and the helmet,
+// except the stat with hash 7.
+//
+// The currency with hash 77 has no definition, and the service does not
+// withhold it, so the manifest version of the definitions lacks it. The
+// service withholds the definition of the stack [ItemWithheld], and no
+// table names that stack.
 //
 // The plugs of the vault hand cannon are Explosive Payload, Firefly with
 // its description, the Default Shader, and Rampage. The other plugs are
@@ -46,5 +50,7 @@
 // The vendor with hash 1111 has a definition without a name, and the
 // sub-vendor of Eververse has no definition. The vendor item names cover
 // the stock that the item definitions leave out, such as Legendary Shards.
-// Neither table names the item with hash 999 that Banshee-44 sells.
+// Neither table names the item with hash 999 that Banshee-44 sells. The
+// service withholds the definitions of the items that the vendor item
+// names and the reward names cover, and of item 999.
 package definitionstest

@@ -37,6 +37,7 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 			artifactVendors:         {"vendors.json"},
 			artifactVendorItems:     {"vendor-items-0.json", "vendor-items-1.json"},
 			artifactItemSets:        {"item-sets.json"},
+			artifactWithheld:        {"withheld-0.json", "withheld-1.json"},
 		},
 		Files: map[string]string{
 			"core-0.json": `[
@@ -182,6 +183,10 @@ func newFakeArtifacts() *dvmtest.Artifacts {
 				 ], "index": 0, "redacted": false},
 				"12": {"hash": 12, "setItems": [], "setPerks": [], "index": 1, "redacted": false}
 			}`,
+			// The service build splits the array of withheld hashes across
+			// files. The loader sorts the hashes and keeps each one once.
+			"withheld-0.json": `[3708253562, 502, 373750294]`,
+			"withheld-1.json": `[502, 600]`,
 		},
 	}
 }
@@ -201,10 +206,10 @@ func TestLoader(t *testing.T) {
 	clock := WithClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade. The
-	// layout without the item sets has the prefix defs-v9-. Its file holds
-	// the manifest version of the service, and the loader does not read
-	// it.
-	stale := filepath.Join(dir, "defs-v9-245114.26_1.json")
+	// layout without the withheld hashes has the prefix defs-v10-. Its
+	// file holds the manifest version of the service, and the loader does
+	// not read it.
+	stale := filepath.Join(dir, "defs-v10-245114.26_1.json")
 	require.NoError(t, os.WriteFile(stale, []byte(`{"version": "245114.26/1"}`), 0o644))
 
 	loader := NewLoader(source, dir, clock)
@@ -349,9 +354,11 @@ func TestLoader(t *testing.T) {
 		DamageEnums:    map[uint32]int{3373582085: 1, 2303181850: 2},
 		DamageTypes:    map[int]string{1: "Kinetic", 2: "Arc"},
 		Classes:        map[int]string{1: "Hunter"},
+		Withheld:       []uint32{502, 600, 373750294, 3708253562},
 		ItemSetsListed: true,
+		WithheldListed: true,
 	}, got)
-	assert.Len(t, source.Fetched, 20)
+	assert.Len(t, source.Fetched, 22)
 
 	// Writing the cache removes the file of the older layout.
 	files, err := filepath.Glob(filepath.Join(dir, "*"))
@@ -379,7 +386,7 @@ func TestLoader(t *testing.T) {
 	rebuilt, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "245200.1", rebuilt.Version)
-	assert.Len(t, source.Fetched, 20)
+	assert.Len(t, source.Fetched, 22)
 
 	files, err = filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
@@ -455,6 +462,18 @@ func TestLoaderWithoutOptionalArtifacts(t *testing.T) {
 
 				assert.False(t, got.ItemSetsListed)
 				assert.Equal(t, uint32(3727270518), got.Items[405].SetHash)
+			},
+		},
+		// The build records that the index lists no withheld hashes.
+		"withheld hashes": {
+			artifact: artifactWithheld,
+			files:    []string{"withheld-0.json", "withheld-1.json"},
+			field:    func(d *Defs) any { return d.Withheld },
+			check: func(t *testing.T, got *Defs, _ []string) {
+				t.Helper()
+
+				assert.False(t, got.WithheldListed)
+				assert.False(t, got.Withholds(502))
 			},
 		},
 		"plug sets": {
@@ -555,6 +574,18 @@ func TestLoaderErrors(t *testing.T) {
 			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "detail-1.json") },
 			err:    dvm.ErrService,
 		},
+		"second withheld file is not an array": {
+			break_: func(f *dvmtest.Artifacts) { f.Files["withheld-1.json"] = `{"hash": 502}` },
+			err:    ErrDefs,
+		},
+		"withheld hash is not a number": {
+			break_: func(f *dvmtest.Artifacts) { f.Files["withheld-0.json"] = `["502"]` },
+			err:    ErrDefs,
+		},
+		"withheld fetch fails": {
+			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "withheld-1.json") },
+			err:    dvm.ErrService,
+		},
 		"second plug set file is not an array": {
 			break_: func(f *dvmtest.Artifacts) { f.Files["plugsets-1.json"] = `{"hash": 45}` },
 			err:    ErrDefs,
@@ -627,7 +658,7 @@ func TestWithLoaded(t *testing.T) {
 		"after the recheck window the loader replaces a seed of another version": {
 			version:     "245000.1",
 			elapsed:     defsRecheck,
-			wantFetched: 20,
+			wantFetched: 22,
 		},
 	}
 
@@ -727,6 +758,89 @@ func TestPlugSetSocket(t *testing.T) {
 
 			assert.Equal(t, tc.ok, ok)
 			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestItemName(t *testing.T) {
+	t.Parallel()
+
+	defs := &Defs{
+		Items: map[uint32]ItemDef{
+			100: {Name: "Fatebringer"},
+			101: {},
+		},
+		VendorItems:     map[uint32]string{100: "Fatebringer", 101: "Nameless Stock", 500: "Rohan's Passkey"},
+		ActivityRewards: map[uint32]string{500: "Raid Gear", 600: "Enduring Snare Refit"},
+	}
+
+	tests := map[string]struct {
+		want string
+		hash uint32
+	}{
+		"item definition": {
+			hash: 100,
+			want: "Fatebringer",
+		},
+		"item definition without a name falls back to the vendor item name": {
+			hash: 101,
+			want: "Nameless Stock",
+		},
+		"vendor item name comes before the reward name": {
+			hash: 500,
+			want: "Rohan's Passkey",
+		},
+		"reward name": {
+			hash: 600,
+			want: "Enduring Snare Refit",
+		},
+		"no table names the hash": {
+			hash: 700,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, defs.ItemName(tc.hash))
+		})
+	}
+}
+
+func TestWithholds(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		defs *Defs
+		hash uint32
+		want bool
+	}{
+		"first withheld hash": {
+			defs: &Defs{Withheld: []uint32{5, 12, 700}, WithheldListed: true},
+			hash: 5,
+			want: true,
+		},
+		"last withheld hash": {
+			defs: &Defs{Withheld: []uint32{5, 12, 700}, WithheldListed: true},
+			hash: 700,
+			want: true,
+		},
+		"hash between two withheld hashes": {
+			defs: &Defs{Withheld: []uint32{5, 12, 700}, WithheldListed: true},
+			hash: 13,
+		},
+		"index without withheld hashes": {
+			defs: &Defs{},
+			hash: 5,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, tc.defs.Withholds(tc.hash))
 		})
 	}
 }

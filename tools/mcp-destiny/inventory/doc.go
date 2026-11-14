@@ -11,10 +11,13 @@
 // definitions. The profile gives each item a hash, a location, and the
 // instance, the sockets, and the stats of the copy. The definitions give
 // the hash a name, a type, a tier, a slot, and a class. They also name the
-// perks, the stats, and the damage type of the copy. An item whose hash
-// the definitions lack reads "Unknown item <hash>". The snapshot lists
-// the characters with the most recently played first. It lists the vault
-// first and the Postmaster last among the buckets.
+// perks, the stats, and the damage type of the copy. The service withholds
+// the definitions of dummy items, but it names the dummy items that the
+// vendors sell and the dummy rewards of the activities. The snapshot gives
+// such an item that name. An item that no table names reads "Unknown item
+// <hash>". The snapshot lists the characters with the most recently played
+// first. It lists the vault first and the Postmaster last among the
+// buckets.
 //
 // Some values of an item follow Destiny Item Manager (DIM), whose search
 // filters the web client of Agg's Destiny Vault Manager runs. A filter

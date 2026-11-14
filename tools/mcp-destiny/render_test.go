@@ -13,6 +13,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/activities"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
@@ -351,9 +352,16 @@ func TestRenderStats(t *testing.T) {
 
 	to := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
 
+	withheld := "The service withholds the definitions of dummy items, classified items, and items without a name, " +
+		"so the server cannot name "
+	later := "The game can hold an item that Bungie added in a later manifest version."
+
 	tests := map[string]struct {
+		// edit changes the fixture definitions before the render.
+		edit    func(defs *definitions.Defs)
 		summary stats.Summary
-		want    []string
+		// want holds the last lines of the output.
+		want []string
 	}{
 		"only currencies": {
 			summary: stats.Summary{
@@ -381,6 +389,77 @@ func TestRenderStats(t *testing.T) {
 			summary: stats.Summary{Flows: []stats.Flow{{ItemHash: 300, Gained: 4, Spent: 4}}},
 			want: []string{
 				"Enhancement Core | stack | 300 | 0 | 4 | 4",
+				"",
+				"Weapon kills: none.",
+			},
+		},
+		"withheld stacks that the vendor items and the rewards name": {
+			summary: stats.Summary{Flows: []stats.Flow{
+				{ItemHash: 501, Gained: 2, Net: 2},
+				{ItemHash: 600, Spent: 1, Net: -1},
+			}},
+			want: []string{
+				"Legendary Shards | stack | 501 | +2 | 2 | 0",
+				"Raid Gear | stack | 600 | -1 | 0 | 1",
+				"",
+				"Weapon kills: none.",
+			},
+		},
+		"withheld stack that no table names": {
+			summary: stats.Summary{Flows: []stats.Flow{{ItemHash: definitionstest.ItemWithheld, Gained: 1, Net: 1}}},
+			want: []string{
+				"Unknown item 78 | stack | 78 | +1 | 1 | 0",
+				"",
+				"Weapon kills: none.",
+				"",
+				withheld + "the item with the hash 78.",
+			},
+		},
+		"withheld items and items that the manifest version lacks": {
+			summary: stats.Summary{
+				Flows: []stats.Flow{
+					{ItemHash: 77, Currency: true, Gained: 2, Net: 2},
+					{ItemHash: definitionstest.ItemWithheld, Gained: 1, Net: 1},
+					{ItemHash: 999, Spent: 1, Net: -1},
+					{ItemHash: 12345, Spent: 3, Net: -3},
+				},
+				Weapons: []stats.WeaponKills{
+					{InstanceID: "1008", ItemHash: 103, PvE: 4},
+					{InstanceID: "1009", ItemHash: 103, PvE: 2},
+				},
+			},
+			want: []string{
+				"Unknown item 77 | currency | 77 | +2 | 2 | 0",
+				"Unknown item 78 | stack | 78 | +1 | 1 | 0",
+				"Unknown item 999 | stack | 999 | -1 | 0 | 1",
+				"Unknown item 12345 | stack | 12345 | -3 | 0 | 3",
+				"",
+				"Weapon kills, most first:",
+				"instance id | name | total | PvE | PvP",
+				"1008 | Unknown item 103 | 4 | 4 | 0",
+				"1009 | Unknown item 103 | 2 | 2 | 0",
+				"",
+				withheld + "the items with the hashes 78 and 999. " +
+					"The definitions of manifest version v1 lack the items with the hashes 77, 12345, and 103, " +
+					"so the server cannot name them. " + later,
+			},
+		},
+		"index without withheld hashes": {
+			edit: func(defs *definitions.Defs) {
+				defs.Withheld = nil
+				defs.WithheldListed = false
+			},
+			summary: stats.Summary{Flows: []stats.Flow{{ItemHash: definitionstest.ItemWithheld, Gained: 1, Net: 1}}},
+			want: []string{
+				"Unknown item 78 | stack | 78 | +1 | 1 | 0",
+				"",
+				"Weapon kills: none.",
+				"",
+				"The definitions of manifest version v1 lack the item with the hash 78, so the server cannot name it. " +
+					"The service withholds the definitions of dummy items, classified items, and items without a name, " +
+					"and the game can hold an item that Bungie added in a later manifest version. " +
+					"The service publishes no list of the hashes that it withholds, " +
+					"so the server cannot tell which cause applies.",
 			},
 		},
 	}
@@ -389,12 +468,17 @@ func TestRenderStats(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			defs := definitionstest.Defs()
+			if tc.edit != nil {
+				tc.edit(defs)
+			}
+
 			tc.summary.From = period.Start(to)
 			tc.summary.To = to
 
-			got := renderStats(definitionstest.Defs(), period, tc.summary)
+			got := renderStats(defs, period, tc.summary)
 			assert.Contains(t, got, "Period: Last 24 hours, 2026-11-11 12:00 UTC to 2026-11-12 12:00 UTC.\n")
-			assert.Contains(t, got, strings.Join(tc.want, "\n"))
+			assert.True(t, strings.HasSuffix(got, "\n"+strings.Join(tc.want, "\n")), got)
 		})
 	}
 }

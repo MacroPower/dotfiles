@@ -729,6 +729,8 @@ func newServer(h *handler) *mcp.Server {
 			"Gambit kills count as PvE. The numbers come from the profile changes that the web client of " +
 			"Agg's Destiny Vault Manager records only while it is open in a browser. The web client posts the changes " +
 			"of each 5-minute bucket after the bucket closes, so the latest minutes are missing. " +
+			"A row whose item the definitions do not name shows the item hash, " +
+			"and a line after the tables gives the reason. " +
 			"list_characters reports the current currency balances, " +
 			"and list_items with kind=other shows the current material stacks.",
 		Annotations: readOnly,

@@ -9669,6 +9669,10 @@ func statsFixture(t *testing.T) string {
 			change("stack", 300, 4, 40, 52),
 			kills("1001", 100, bungietest.TrackerPvP, 4, 7, 9),
 			change("currency", 77, 3, 3, 5),
+			// The service withholds the definitions of both stacks, and
+			// only the vendor item names name the second one.
+			change("stack", definitionstest.ItemWithheld, 3, 0, 1),
+			change("stack", 501, 3, 10, 5),
 			change("currency", bungietest.ItemBrightDust, 2, 1_500, 1_400),
 			{
 				"kind":       "item",
@@ -9701,11 +9705,18 @@ func TestGetStats(t *testing.T) {
 		"Bright Dust | currency | 2817410917 | -100 | 0 | 100",
 		"Unknown item 77 | currency | 77 | +2 | 2 | 0",
 		"Enhancement Core | stack | 300 | +12 | 12 | 0",
+		"Legendary Shards | stack | 501 | -5 | 0 | 5",
+		"Unknown item 78 | stack | 78 | +1 | 1 | 0",
 		"",
 		"Weapon kills, most first:",
 		"instance id | name | total | PvE | PvP",
 		"9999 | Midnight Coup | 20 | 20 | 0",
 		"1001 | Fatebringer | 12 | 10 | 2",
+		"",
+		"The service withholds the definitions of dummy items, classified items, and items without a name, " +
+			"so the server cannot name the item with the hash 78. " +
+			"The definitions of manifest version v1 lack the item with the hash 77, so the server cannot name it. " +
+			"The game can hold an item that Bungie added in a later manifest version.",
 	}, "\n"), got)
 
 	reads := f.service.Calls(http.MethodGet, pathStats)

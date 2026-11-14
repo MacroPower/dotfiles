@@ -363,12 +363,7 @@ func NewSnapshot(profile *bungie.Profile, defs *definitions.Defs, fetched time.T
 	}
 
 	for _, pi := range profile.ProfileCurrencies.Data.Items {
-		name := defs.Items[pi.Hash].Name
-		if name == "" {
-			name = fmt.Sprintf("Unknown item %d", pi.Hash)
-		}
-
-		s.Currencies = append(s.Currencies, Currency{Name: name, Quantity: pi.Quantity})
+		s.Currencies = append(s.Currencies, Currency{Name: ItemName(defs, pi.Hash), Quantity: pi.Quantity})
 	}
 
 	s.Loadouts = loadoutsOf(profile)
@@ -457,6 +452,18 @@ func (s *Snapshot) Add(item *Item) {
 	}
 }
 
+// ItemName returns the name that [*definitions.Defs.ItemName] gives an
+// item hash. It returns "Unknown item <hash>" when the definitions do not
+// name the hash.
+func ItemName(defs *definitions.Defs, hash uint32) string {
+	name := defs.ItemName(hash)
+	if name == "" {
+		return fmt.Sprintf("Unknown item %d", hash)
+	}
+
+	return name
+}
+
 // NewItem resolves the profile item pi against defs. It reads the
 // instance, the perks, and the stats of pi from the item components of
 // profile. The item belongs to owner, which is a character id,
@@ -471,8 +478,10 @@ func NewItem(
 ) *Item {
 	def, ok := defs.Items[pi.Hash]
 	if !ok {
-		def = definitions.ItemDef{Name: fmt.Sprintf("Unknown item %d", pi.Hash), ClassType: bungie.ClassAny}
+		def = definitions.ItemDef{ClassType: bungie.ClassAny}
 	}
+
+	def.Name = ItemName(defs, pi.Hash)
 
 	postmaster := pi.BucketHash == bungie.BucketPostmaster || pi.Location == bungie.ItemLocationPostmaster
 

@@ -13,6 +13,17 @@
 // the activities, the vendors, and the plug sets, are optional. The
 // definitions leave the matching maps empty when the index lacks them.
 //
+// # Item Names
+//
+// The item artifact leaves out dummy items, classified items, and items
+// without a name. The service names the dummy items that the vendors sell
+// and the dummy rewards of the activities in artifacts of their own. The
+// definitions name such an item from those artifacts. The service also
+// lists the hashes of the items that it withholds. A caller can therefore
+// tell an item that the service withholds from an item that the manifest
+// version lacks. The game can hold an item that the manifest version
+// lacks when Bungie added the item in a later version.
+//
 // # Loading
 //
 // A caller makes one loader for the process and asks it for the definitions

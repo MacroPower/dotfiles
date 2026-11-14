@@ -27,7 +27,7 @@ const (
 
 	// defsCachePrefix names cache files. The digit changes when the fields
 	// of [Defs] change, so a process never decodes a stale layout.
-	defsCachePrefix = "defs-v10-"
+	defsCachePrefix = "defs-v11-"
 
 	artifactCore            = "core"
 	artifactDetail          = "detail"
@@ -44,6 +44,7 @@ const (
 	artifactVendors         = "Vendor"
 	artifactVendorItems     = "VendorItem"
 	artifactItemSets        = "EquipableItemSet"
+	artifactWithheld        = "hidden"
 )
 
 // ErrDefs reports definition artifacts that are missing from the service
@@ -147,10 +148,17 @@ type VendorDef struct {
 // EquipableItemSet artifact. The web client builds no item whose set the
 // artifact lacks, so the preview reads both fields.
 //
+// Withheld lists in ascending order the item hashes whose definitions the
+// service withholds. The service withholds dummy items, classified items,
+// and items without a name, so Items lacks them. Items and Withheld
+// together hold every item of the manifest version. WithheldListed
+// records whether the service index lists the artifact of the withheld
+// hashes.
+//
 // Activities, ActivityTypes, Destinations, Places, ActivityRewards,
-// Vendors, VendorItems, Sockets, PlugSets, and ItemSets are empty when the
-// service index lists no artifact for them. PlugSets is also empty when
-// the index lists no artifact for Sockets.
+// Vendors, VendorItems, Sockets, PlugSets, ItemSets, and Withheld are
+// empty when the service index lists no artifact for them. PlugSets is
+// also empty when the index lists no artifact for Sockets.
 type Defs struct {
 	Items           map[uint32]ItemDef     `json:"items"`
 	Buckets         map[uint32]BucketDef   `json:"buckets"`
@@ -169,7 +177,28 @@ type Defs struct {
 	DamageTypes     map[int]string         `json:"damageTypes"`
 	Classes         map[int]string         `json:"classes"`
 	Version         string                 `json:"version"`
+	Withheld        []uint32               `json:"withheld"`
 	ItemSetsListed  bool                   `json:"itemSetsListed"`
+	WithheldListed  bool                   `json:"withheldListed"`
+}
+
+// ItemName returns the name of an item hash. It reads the item definitions
+// first. The service withholds the definitions of dummy items, but it
+// names the dummy items that the vendors sell and the dummy rewards of the
+// activities. ItemName therefore reads the vendor item names second and
+// the activity reward names third. It returns an empty string when none
+// of them names the hash.
+func (d *Defs) ItemName(hash uint32) string {
+	return cmp.Or(d.Items[hash].Name, d.VendorItems[hash], d.ActivityRewards[hash])
+}
+
+// Withholds reports whether the service withholds the definition of the
+// item hash. It reports false for every hash when the service index lists
+// no artifact of the withheld hashes, as WithheldListed records.
+func (d *Defs) Withholds(hash uint32) bool {
+	_, found := slices.BinarySearch(d.Withheld, hash)
+
+	return found
 }
 
 // TraitNames maps the lowercase name of every weapon trait to its display
@@ -482,6 +511,22 @@ func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, err
 	if err != nil {
 		return nil, err
 	}
+
+	// The artifact of the withheld hashes tells a hash that the service
+	// withholds from a hash that its manifest version lacks. The other
+	// tools name an item without it, so it is optional too.
+	defs.WithheldListed = len(index.Files[artifactWithheld]) > 0
+
+	err = readRecords(ctx, l, index.Files[artifactWithheld], func(hash uint32) {
+		defs.Withheld = append(defs.Withheld, hash)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	slices.Sort(defs.Withheld)
+
+	defs.Withheld = slices.Compact(defs.Withheld)
 
 	return defs, nil
 }

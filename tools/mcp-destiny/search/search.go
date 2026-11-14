@@ -746,8 +746,7 @@ func SupportedKeywords() []string {
 // whose current bucket holds dummy items, as [inDummyBucket] decides. The
 // web client also builds no item whose item set its definitions lack, as
 // [setBuilt] decides. DIM also builds no item without a definition, but
-// the snapshot keeps such an item under the name "Unknown item N", and so
-// does builtItems.
+// the snapshot keeps such an item, and so does builtItems.
 func builtItems(s *inventory.Snapshot) []*inventory.Item {
 	var built []*inventory.Item
 
