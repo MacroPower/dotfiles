@@ -80,6 +80,19 @@ func renderStatus(t auth.Tokens, signedIn bool, serviceURL, tokenPath string, no
 	return b.String()
 }
 
+// signedInSentences returns the sentences that report a completed sign-in
+// of the Bungie.net membership in t. A second sentence names the end of
+// the sign-in when t holds the expiry of its refresh token. Each caller
+// joins the sentences with its own separator.
+func signedInSentences(t auth.Tokens) []string {
+	sentences := []string{"Signed in as Bungie.net membership " + t.BungieID + "."}
+	if !t.RefreshExpires.IsZero() {
+		sentences = append(sentences, "The sign-in lasts until "+t.RefreshExpires.Format(timeLayout)+".")
+	}
+
+	return sentences
+}
+
 func renderCharacters(s *inventory.Snapshot) string {
 	var b strings.Builder
 

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/activities"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
@@ -497,6 +498,35 @@ func TestMoveFailure(t *testing.T) {
 			require.True(t, ok)
 
 			assert.Equal(t, tc.want, moveFailure(s, item, tc.moveErr))
+		})
+	}
+}
+
+func TestSignedInSentences(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		want   []string
+		tokens auth.Tokens
+	}{
+		"sign-in with a refresh expiry": {
+			tokens: auth.Tokens{BungieID: "42", RefreshExpires: bungietest.Now.Add(24 * time.Hour)},
+			want: []string{
+				"Signed in as Bungie.net membership 42.",
+				"The sign-in lasts until 2026-11-13 12:00 UTC.",
+			},
+		},
+		"sign-in without a refresh expiry": {
+			tokens: auth.Tokens{BungieID: "42"},
+			want:   []string{"Signed in as Bungie.net membership 42."},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, signedInSentences(tc.tokens))
 		})
 	}
 }

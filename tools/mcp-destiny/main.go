@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -197,10 +198,7 @@ func runLogin(ctx context.Context, args []string, stdin io.Reader, stdout io.Wri
 		return err //nolint:wrapcheck // The sign-in error reaches the terminal unchanged.
 	}
 
-	done := "\nSigned in as Bungie.net membership " + t.BungieID + ".\n"
-	if !t.RefreshExpires.IsZero() {
-		done += "The sign-in lasts until " + t.RefreshExpires.Format(timeLayout) + ".\n"
-	}
+	done := "\n" + strings.Join(signedInSentences(t), "\n") + "\n"
 
 	_, err = io.WriteString(stdout, done)
 	if err != nil {

@@ -406,12 +406,7 @@ func (h *handler) handleCompleteLogin(
 	// The cached snapshot might belong to a different account.
 	h.snapshot = nil
 
-	text := "Signed in as Bungie.net membership " + t.BungieID + "."
-	if !t.RefreshExpires.IsZero() {
-		text += " The sign-in lasts until " + t.RefreshExpires.Format(timeLayout) + "."
-	}
-
-	return textResult(text), nil, nil
+	return textResult(strings.Join(signedInSentences(t), " ")), nil, nil
 }
 
 func (h *handler) handleListCharacters(
