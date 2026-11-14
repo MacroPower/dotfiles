@@ -1614,6 +1614,41 @@ func TestKleene(t *testing.T) {
 	}
 }
 
+func TestItemTest(t *testing.T) {
+	t.Parallel()
+
+	powered := &inventory.Item{InstanceID: "powered", LightPower: 1900}
+	unpowered := &inventory.Item{InstanceID: "unpowered"}
+	test := itemTest(func(item *inventory.Item) bool { return item.LightPower != 0 })
+
+	tests := map[string]struct {
+		ctx  Context
+		item *inventory.Item
+		want Outcome
+	}{
+		"empty context match":    {ctx: Context{}, item: powered, want: decided(true)},
+		"empty context no match": {ctx: Context{}, item: unpowered, want: decided(false)},
+		"items match": {
+			ctx:  Context{items: []*inventory.Item{unpowered}},
+			item: powered,
+			want: decided(true),
+		},
+		"items no match": {
+			ctx:  Context{items: []*inventory.Item{powered}},
+			item: unpowered,
+			want: decided(false),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, test(tc.ctx)(tc.item))
+		})
+	}
+}
+
 // ratingContext returns a search context whose items cover the rating
 // filters, keyed by instance id, in this order:
 //

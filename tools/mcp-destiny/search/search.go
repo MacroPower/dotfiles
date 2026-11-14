@@ -445,6 +445,12 @@ func fromDecided(build decidedTest) QueryTest {
 	}
 }
 
+// itemTest adapts a predicate that reads only the tested item to a
+// [QueryTest] that decides every item and ignores the search context.
+func itemTest(p func(*inventory.Item) bool) QueryTest {
+	return fromDecided(func(Context) func(*inventory.Item) bool { return p })
+}
+
 // Context holds what the filters read besides the tested item, as
 // the filter context of DIM does.
 type Context struct {
@@ -924,9 +930,9 @@ func powerValue(value string) (QueryTest, error) {
 		return nil, err
 	}
 
-	test := func(item *inventory.Item) bool { return item.LightPower != 0 && compare(float64(item.LightPower)) }
-
-	return fromDecided(func(Context) func(*inventory.Item) bool { return test }), nil
+	return itemTest(func(item *inventory.Item) bool {
+		return item.LightPower != 0 && compare(float64(item.LightPower))
+	}), nil
 }
 
 // tagMatch returns the predicate of the filter tag:value, as the web
@@ -1269,9 +1275,7 @@ func (f rangeFormat) operand(value string) (string, float64, bool) {
 // [searchFilter].
 func itemValue(predicate func(value string) func(*inventory.Item) bool) func(string) (QueryTest, error) {
 	return func(value string) (QueryTest, error) {
-		test := predicate(value)
-
-		return fromDecided(func(Context) func(*inventory.Item) bool { return test }), nil
+		return itemTest(predicate(value)), nil
 	}
 }
 
@@ -1284,8 +1288,7 @@ func isTable(filters []searchFilter) map[string]QueryTest {
 		case f.build != nil:
 			table[f.word] = fromDecided(f.build)
 		case f.match != nil:
-			predicate := f.match
-			table[f.word] = fromDecided(func(Context) func(*inventory.Item) bool { return predicate })
+			table[f.word] = itemTest(f.match)
 		}
 	}
 
