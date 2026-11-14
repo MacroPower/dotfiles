@@ -3329,6 +3329,12 @@ func TestListVendors(t *testing.T) {
 			want:    `unknown vendor: "Xûr" matches 2 vendors, so pass a vendor hash, such as Xûr (2190858386), Xûr (3751514131)`,
 			isError: true,
 		},
+		"vendors that share a name without its accent": {
+			in:      ListVendorsInput{Vendor: "xur"},
+			paths:   []string{bungietest.PathHunterVendors},
+			want:    `unknown vendor: "xur" matches 2 vendors, so pass a vendor hash, such as Xûr (2190858386), Xûr (3751514131)`,
+			isError: true,
+		},
 		"ambiguous part of a name": {
 			in:    ListVendorsInput{Vendor: "vendor"},
 			paths: []string{bungietest.PathHunterVendors},

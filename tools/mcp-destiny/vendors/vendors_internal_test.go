@@ -82,6 +82,15 @@ func TestSelect(t *testing.T) {
 		many = append(many, Vendor{Name: fmt.Sprintf("Ada-%d", i), Hash: uint32(i + 1)})
 	}
 
+	// The accented names write the u with a circumflex as the one precomposed
+	// character U+00FB.
+	accented := []Vendor{
+		{Name: "X\u00fbr", Hash: 1},
+		{Name: "X\u00fbr", Hash: 2},
+		{Name: "Xurla", Hash: 3},
+		{Name: "X\u00fbr Prime", Hash: 4},
+	}
+
 	tests := map[string]struct {
 		arg     string
 		err     string
@@ -100,6 +109,22 @@ func TestSelect(t *testing.T) {
 		"part of a name": {
 			arg:  "prime",
 			want: 4,
+		},
+		"name without its accents before a part of a name": {
+			arg:     "xur",
+			vendors: accented,
+			err: "unknown vendor: \"xur\" matches 2 vendors, so pass a vendor hash, " +
+				"such as X\u00fbr (1), X\u00fbr (2)",
+		},
+		"name with combining accents": {
+			arg:     "Xu\u0302r Prime",
+			vendors: accented,
+			want:    4,
+		},
+		"part of a name without its accents": {
+			arg:     "xur p",
+			vendors: accented,
+			want:    4,
 		},
 		"hash": {
 			arg:  "5",

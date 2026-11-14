@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
@@ -253,10 +256,11 @@ func vendorItemName(defs *definitions.Defs, hash uint32) string {
 
 // Select returns the vendor that arg selects among vendors. A decimal arg
 // selects the vendor with that hash. Any other arg selects by name. An exact
-// name comes first, then a name that matches in any letter case, then a name
-// that contains arg in any letter case. Several vendors that match at the first
-// rank with a match return an error that names some of them with their hashes.
-// Owner names the character for the error that an unknown vendor returns.
+// name comes first. A name that equals arg after [foldName] folds both comes
+// second, and a name that contains arg after the same fold comes third.
+// Several vendors that match at the first rank with a match return an error
+// that names some of them with their hashes. Owner names the character for
+// the error that an unknown vendor returns.
 func Select(vendors []Vendor, arg, owner string) (Vendor, error) {
 	arg = strings.TrimSpace(arg)
 
@@ -271,17 +275,19 @@ func Select(vendors []Vendor, arg, owner string) (Vendor, error) {
 		return Vendor{}, fmt.Errorf("%w: no vendor of %s has the hash %d", ErrUnknownVendor, owner, hash)
 	}
 
-	lower := strings.ToLower(arg)
+	plain := foldName(arg)
 
 	var exact, folded, similar []Vendor
 
 	for _, v := range vendors {
+		name := foldName(v.Name)
+
 		switch {
 		case v.Name == arg:
 			exact = append(exact, v)
-		case strings.EqualFold(v.Name, arg):
+		case name == plain:
 			folded = append(folded, v)
-		case containsFold(v.Name, lower):
+		case strings.Contains(name, plain):
 			similar = append(similar, v)
 		}
 	}
@@ -308,8 +314,19 @@ func Select(vendors []Vendor, arg, owner string) (Vendor, error) {
 	return Vendor{}, fmt.Errorf("%w: no vendor of %s has a name that contains %q", ErrUnknownVendor, owner, arg)
 }
 
-// containsFold reports whether s contains the lowercase string lower,
-// without regard to the case of s.
-func containsFold(s, lower string) bool {
-	return strings.Contains(strings.ToLower(s), lower)
+// foldName folds a vendor name for the name ranks of [Select], so a name
+// that the user types without accents, such as xur, matches Xûr. The fold
+// decomposes s to Unicode Normalization Form D, removes each character
+// with the Unicode property Diacritic, and lowercases the rest. The name
+// filters of the autotag rule queries fold a name the same way.
+func foldName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Diacritic, r) {
+			return -1
+		}
+
+		return r
+	}, norm.NFD.String(s))
+
+	return strings.ToLower(s)
 }

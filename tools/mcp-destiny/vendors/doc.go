@@ -46,8 +46,11 @@
 // hash. It lists them, or it selects one vendor by an argument that the
 // user passes and lists the sales of that vendor. A decimal argument
 // selects the vendor with that hash. Any other argument selects by name.
-// An exact name ranks first, then a name that matches in any letter case,
-// then a name that contains the argument in any letter case.
+// An exact name ranks first. The other ranks fold the name and the
+// argument before they compare them. The fold removes letter case and
+// accents, so the argument xur matches the name Xûr. A name that equals
+// the argument after the fold ranks second, and a name that contains the
+// argument after the fold ranks third.
 //
 // The selection takes the first rank with a match. When that rank holds
 // more than one vendor, the selection returns an error that names some of

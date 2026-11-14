@@ -191,7 +191,7 @@ type ListActivityHistoryInput struct {
 // a vendor, the tool lists the vendors of the character.
 type ListVendorsInput struct {
 	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to read the most recently played character"`
-	Vendor    string `json:"vendor,omitzero"    jsonschema:"Vendor hash, or a vendor name in any letter case, such as 'Banshee-44'. A name that no vendor has selects the one vendor whose name contains it. Omit to list the vendors"`
+	Vendor    string `json:"vendor,omitzero"    jsonschema:"Vendor hash, or a vendor name in any letter case and with or without accents, such as 'Banshee-44' or 'Xur'. A name that no vendor has selects the one vendor whose name contains it. Omit to list the vendors"`
 }
 
 // ListActivitiesInput is the input schema of the list_activities tool.
