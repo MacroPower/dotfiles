@@ -59,6 +59,27 @@ func snapshotTokens(tokens []queryToken) [][]string {
 	return out
 }
 
+// lexQuery returns the tokens of query, or the [*QueryError] of the first
+// token that does not lex.
+func lexQuery(query string) ([]queryToken, error) {
+	lexer := newQueryLexer(query)
+
+	var tokens []queryToken
+
+	for {
+		token, ok, err := lexer.next()
+		if err != nil {
+			return nil, err
+		}
+
+		if !ok {
+			return tokens, nil
+		}
+
+		tokens = append(tokens, token)
+	}
+}
+
 func TestLexQuerySnapshot(t *testing.T) {
 	t.Parallel()
 
