@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // emptyLoadoutItem is the instance id of a loadout item that holds
@@ -19,16 +21,16 @@ var (
 	// holds, in the order of the in-game loadout. Destiny Item Manager
 	// saves the same buckets.
 	loadoutBuckets = []uint32{
-		bucketSubclass,
-		bucketArtifacts,
-		bucketKinetic,
-		bucketEnergy,
-		bucketPower,
-		bucketHelmet,
-		bucketGauntlets,
-		bucketChestArmor,
-		bucketLegArmor,
-		bucketClassArmor,
+		bungie.BucketSubclass,
+		bungie.BucketArtifacts,
+		bungie.BucketKinetic,
+		bungie.BucketEnergy,
+		bungie.BucketPower,
+		bungie.BucketHelmet,
+		bungie.BucketGauntlets,
+		bungie.BucketChestArmor,
+		bungie.BucketLegArmor,
+		bungie.BucketClassArmor,
 	}
 
 	// ErrUnknownLoadout reports a loadout number that names no saved

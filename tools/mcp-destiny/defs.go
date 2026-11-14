@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
@@ -45,47 +46,6 @@ const (
 	artifactItemSets        = "EquipableItemSet"
 )
 
-// Bungie DestinyItemType values that classify gear and plugs. Bungie
-// names the plug type Mod, and weapon perks carry it too.
-const (
-	itemTypeArmor  = 2
-	itemTypeWeapon = 3
-	itemTypePlug   = 19
-)
-
-// Bungie DestinyClass values. classAny is the value of an item that every
-// class can use.
-const (
-	classTitan   = 0
-	classHunter  = 1
-	classWarlock = 2
-	classAny     = 3
-)
-
-// Bungie BucketCategory values of the buckets that hold items that a player
-// sees and manages.
-const (
-	bucketCategoryItem       = 1
-	bucketCategoryEquippable = 3
-)
-
-// Bungie DestinyAmmunitionType values. An item without an equipping block
-// has the ammo type zero.
-const (
-	ammoPrimary = 1
-	ammoSpecial = 2
-	ammoHeavy   = 3
-)
-
-// bucketScopeAccount is the Bungie BucketScope value of a bucket that every
-// character shares.
-const bucketScopeAccount = 1
-
-// tierTypeBasic is the Bungie TierType value that the loader stores for a
-// definition without a tier type. Destiny Item Manager (DIM) names the
-// value Common, and it also reads a missing tier type as Common.
-const tierTypeBasic = 2
-
 // ErrDefs reports definition artifacts that are missing from the service
 // index or that do not decode.
 var ErrDefs = errors.New("definitions")
@@ -101,7 +61,7 @@ var ErrDefs = errors.New("definitions")
 //
 // Tier is the tier name that the definition displays, and TierType is the
 // Bungie TierType value that DIM reads for the rarity. TierType is
-// [tierTypeBasic] when the definition gives no tier type.
+// [bungie.TierTypeBasic] when the definition gives no tier type.
 // DisablePrimaryStatDisplay marks a definition whose primary stat the game
 // hides.
 type ItemDef struct {
@@ -395,7 +355,7 @@ func (l *DefsLoader) build(ctx context.Context, index ArtifactIndex) (*Defs, err
 	// follows the detail read.
 	err = readRecords(ctx, l, index.Files[artifactDetail], func(raw rawDetail) {
 		sets := raw.plugSets()
-		if len(sets) > 0 && defs.Items[raw.Hash].ItemType == itemTypeWeapon {
+		if len(sets) > 0 && defs.Items[raw.Hash].ItemType == bungie.ItemTypeWeapon {
 			defs.Sockets[raw.Hash] = sets
 		}
 	})
@@ -561,7 +521,7 @@ func (raw rawItem) item() ItemDef {
 		Name:                      raw.DisplayProperties.Name,
 		TypeName:                  raw.ItemTypeDisplayName,
 		Tier:                      raw.Inventory.TierTypeName,
-		TierType:                  tierTypeBasic,
+		TierType:                  bungie.TierTypeBasic,
 		Bucket:                    raw.Inventory.BucketTypeHash,
 		ItemType:                  raw.ItemType,
 		ClassType:                 raw.ClassType,
@@ -586,7 +546,7 @@ func (raw rawItem) item() ItemDef {
 		def.SetHash = raw.EquippingBlock.EquipableItemSetHash
 	}
 
-	if raw.ItemType == itemTypePlug {
+	if raw.ItemType == bungie.ItemTypePlug {
 		def.Description = raw.DisplayProperties.Description
 	}
 
@@ -712,7 +672,7 @@ func (row tableRow) bucket() BucketDef {
 		Capacity: row.ItemCount,
 		Category: row.Category,
 		Order:    row.BucketOrder,
-		Account:  row.Scope == bucketScopeAccount,
+		Account:  row.Scope == bungie.BucketScopeAccount,
 	}
 }
 

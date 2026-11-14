@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // EquipLoadout records a loadout equip as a step of the [stepMover].
@@ -351,12 +353,12 @@ func TestLoadoutGear(t *testing.T) {
 			want:        []string{"1006", "1004"},
 		},
 		"subclass comes first": {
-			change:      func(s *Snapshot) { s.byID["1004"].Bucket = bucketSubclass },
+			change:      func(s *Snapshot) { s.byID["1004"].Bucket = bungie.BucketSubclass },
 			characterID: hunterID,
 			want:        []string{"1004", "1006"},
 		},
 		"item in a bucket that a loadout does not hold": {
-			change:      func(s *Snapshot) { s.byID["1004"].Bucket = bucketConsumables },
+			change:      func(s *Snapshot) { s.byID["1004"].Bucket = bungie.BucketConsumables },
 			characterID: hunterID,
 			want:        []string{"1006"},
 		},

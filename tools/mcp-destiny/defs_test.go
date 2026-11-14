@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // fakeArtifacts is an [ArtifactSource] that serves artifacts from memory
@@ -238,11 +240,11 @@ func TestDefsLoader(t *testing.T) {
 				TypeName:   "Hand Cannon",
 				Tier:       "Legendary",
 				TierType:   5,
-				Bucket:     bucketKinetic,
-				ItemType:   itemTypeWeapon,
-				ClassType:  classAny,
+				Bucket:     bungie.BucketKinetic,
+				ItemType:   bungie.ItemTypeWeapon,
+				ClassType:  bungie.ClassAny,
 				DamageType: 1,
-				AmmoType:   ammoPrimary,
+				AmmoType:   bungie.AmmoPrimary,
 				Equippable: true,
 			},
 			400: {
@@ -250,9 +252,9 @@ func TestDefsLoader(t *testing.T) {
 				TypeName:        "Hand Cannon",
 				Tier:            "Exotic",
 				TierType:        6,
-				Bucket:          bucketKinetic,
-				ItemType:        itemTypeWeapon,
-				ClassType:       classAny,
+				Bucket:          bungie.BucketKinetic,
+				ItemType:        bungie.ItemTypeWeapon,
+				ClassType:       bungie.ClassAny,
 				NonTransferable: true,
 			},
 			// A record without a tier type gets the tier type that DIM
@@ -260,16 +262,16 @@ func TestDefsLoader(t *testing.T) {
 			401: {
 				Name:      "Midnight Coup",
 				TypeName:  "Hand Cannon",
-				TierType:  tierTypeBasic,
-				ItemType:  itemTypeWeapon,
-				ClassType: classAny,
+				TierType:  bungie.TierTypeBasic,
+				ItemType:  bungie.ItemTypeWeapon,
+				ClassType: bungie.ClassAny,
 			},
 			402: {
 				Name:      "Austringer",
 				TypeName:  "Hand Cannon",
-				TierType:  tierTypeBasic,
-				ItemType:  itemTypeWeapon,
-				ClassType: classAny,
+				TierType:  bungie.TierTypeBasic,
+				ItemType:  bungie.ItemTypeWeapon,
+				ClassType: bungie.ClassAny,
 			},
 			// The loader keeps the categories of the definition. The
 			// snapshot drops the fusion rifle category of a linear fusion
@@ -278,12 +280,12 @@ func TestDefsLoader(t *testing.T) {
 				Name:       "Sleeper Simulant",
 				TypeName:   "Linear Fusion Rifle",
 				Tier:       "Exotic",
-				Bucket:     bucketPower,
-				ItemType:   itemTypeWeapon,
-				ClassType:  classAny,
+				Bucket:     bungie.BucketPower,
+				ItemType:   bungie.ItemTypeWeapon,
+				ClassType:  bungie.ClassAny,
 				Categories: []uint32{1, 4, 9, 1504945536},
 				TierType:   6,
-				AmmoType:   ammoHeavy,
+				AmmoType:   bungie.AmmoHeavy,
 				Equippable: true,
 			},
 			404: {
@@ -291,9 +293,9 @@ func TestDefsLoader(t *testing.T) {
 				TypeName:                  "Ghost Shell",
 				Tier:                      "Uncommon",
 				TierType:                  3,
-				Bucket:                    bucketGhost,
+				Bucket:                    bungie.BucketGhost,
 				ItemType:                  24,
-				ClassType:                 classAny,
+				ClassType:                 bungie.ClassAny,
 				DisablePrimaryStatDisplay: true,
 			},
 			// The loader keeps the item set of the equipping block.
@@ -302,9 +304,9 @@ func TestDefsLoader(t *testing.T) {
 				TypeName:   "Helmet",
 				Tier:       "Legendary",
 				TierType:   5,
-				Bucket:     bucketHelmet,
-				ItemType:   itemTypeArmor,
-				ClassType:  classHunter,
+				Bucket:     bungie.BucketHelmet,
+				ItemType:   bungie.ItemTypeArmor,
+				ClassType:  bungie.ClassHunter,
 				Equippable: true,
 				SetHash:    3727270518,
 			},
@@ -313,17 +315,22 @@ func TestDefsLoader(t *testing.T) {
 				Description: "Precision final blows explode.",
 				TypeName:    "Trait",
 				Tier:        "Common",
-				TierType:    tierTypeBasic,
-				ItemType:    itemTypePlug,
-				ClassType:   classAny,
+				TierType:    bungie.TierTypeBasic,
+				ItemType:    bungie.ItemTypePlug,
+				ClassType:   bungie.ClassAny,
 			},
 		},
 		Buckets: map[uint32]BucketDef{
-			bucketKinetic: {Name: "Kinetic Weapons", Capacity: 10, Category: bucketCategoryEquippable, Order: 20},
-			bucketVault: {
+			bungie.BucketKinetic: {
+				Name:     "Kinetic Weapons",
+				Capacity: 10,
+				Category: bungie.BucketCategoryEquippable,
+				Order:    20,
+			},
+			bungie.BucketVault: {
 				Name:     "General",
 				Capacity: 700,
-				Category: bucketCategoryItem,
+				Category: bungie.BucketCategoryItem,
 				Order:    30,
 				Account:  true,
 			},

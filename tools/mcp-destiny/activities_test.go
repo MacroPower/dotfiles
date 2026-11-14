@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 func TestReadActivities(t *testing.T) {
@@ -32,7 +34,7 @@ func TestReadActivities(t *testing.T) {
 	}{
 		"definitions without activities": {
 			defs:    func(d *Defs) { d.Activities = map[uint32]ActivityDef{} },
-			entries: []AvailableActivity{entry(3022541210, reward(rewardBonusDrop, 1, 2))},
+			entries: []AvailableActivity{entry(3022541210, reward(bungie.RewardBonusDrop, 1, 2))},
 		},
 		"definitions without types, locations, or rewards": {
 			defs: func(d *Defs) {
@@ -42,13 +44,23 @@ func TestReadActivities(t *testing.T) {
 				d.ActivityRewards = map[uint32]string{}
 			},
 			entries: []AvailableActivity{
-				entry(3022541210, reward(rewardBonusDrop, 1, 2), reward(rewardFocus, 601, 1), reward("", 600, 1)),
+				entry(
+					3022541210,
+					reward(bungie.RewardBonusDrop, 1, 2),
+					reward(bungie.RewardFocus, 601, 1),
+					reward("", 600, 1),
+				),
 			},
 			want: []ActivityRow{{Hash: 3022541210, Name: "Vault of Glass: Master", BonusDrops: 2}},
 		},
 		"first named focused reward wins": {
 			entries: []AvailableActivity{
-				entry(4003, reward(rewardFocus, 698, 1), reward(rewardFocus, 606, 1), reward(rewardFocus, 601, 1)),
+				entry(
+					4003,
+					reward(bungie.RewardFocus, 698, 1),
+					reward(bungie.RewardFocus, 606, 1),
+					reward(bungie.RewardFocus, 601, 1),
+				),
 			},
 			want: []ActivityRow{{
 				Hash:  4003,
@@ -58,7 +70,7 @@ func TestReadActivities(t *testing.T) {
 			}},
 		},
 		"focused reward with a quantity of zero": {
-			entries: []AvailableActivity{entry(4003, reward(rewardFocus, 606, 0))},
+			entries: []AvailableActivity{entry(4003, reward(bungie.RewardFocus, 606, 0))},
 			want: []ActivityRow{{
 				Hash:  4003,
 				Name:  "Nightfall: Grandmaster",

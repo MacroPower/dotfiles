@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
 
@@ -408,15 +409,15 @@ func fixtureDefs() *Defs {
 			TypeName:   typeName,
 			Tier:       tier,
 			Bucket:     bucket,
-			ItemType:   itemTypeWeapon,
-			ClassType:  classAny,
+			ItemType:   bungie.ItemTypeWeapon,
+			ClassType:  bungie.ClassAny,
 			DamageType: damage,
 			Equippable: true,
 		}
 	}
 
 	plug := func(name, typeName string) ItemDef {
-		return ItemDef{Name: name, TypeName: typeName, ItemType: itemTypePlug, ClassType: classAny}
+		return ItemDef{Name: name, TypeName: typeName, ItemType: bungie.ItemTypePlug, ClassType: bungie.ClassAny}
 	}
 
 	firefly := plug("Firefly", "Trait")
@@ -425,15 +426,15 @@ func fixtureDefs() *Defs {
 	return &Defs{
 		Version: "v1",
 		Items: map[uint32]ItemDef{
-			100: weapon("Fatebringer", "Hand Cannon", "Legendary", bucketKinetic, 1),
-			101: weapon("Gjallarhorn", "Rocket Launcher", "Exotic", bucketPower, 3),
-			102: weapon("Midnight Coup", "Hand Cannon", "Legendary", bucketKinetic, 1),
+			100: weapon("Fatebringer", "Hand Cannon", "Legendary", bungie.BucketKinetic, 1),
+			101: weapon("Gjallarhorn", "Rocket Launcher", "Exotic", bungie.BucketPower, 3),
+			102: weapon("Midnight Coup", "Hand Cannon", "Legendary", bungie.BucketKinetic, 1),
 			200: {
 				Name:       "Celestial Nighthawk",
 				TypeName:   "Helmet",
 				Tier:       "Exotic",
-				Bucket:     bucketHelmet,
-				ItemType:   itemTypeArmor,
+				Bucket:     bungie.BucketHelmet,
+				ItemType:   bungie.ItemTypeArmor,
 				ClassType:  1,
 				Equippable: true,
 			},
@@ -441,8 +442,8 @@ func fixtureDefs() *Defs {
 				Name:      "Enhancement Core",
 				TypeName:  "Material",
 				Tier:      "Legendary",
-				Bucket:    bucketConsumables,
-				ClassType: classAny,
+				Bucket:    bungie.BucketConsumables,
+				ClassType: bungie.ClassAny,
 			},
 			900:            plug("Explosive Payload", "Trait"),
 			901:            firefly,
@@ -453,22 +454,43 @@ func fixtureDefs() *Defs {
 			906:            plug("Chill Clip", "Trait"),
 			907:            plug("Arrowhead Brake", "Barrel"),
 			908:            plug("Chill Clip", "Enhanced Trait"),
-			itemGlimmer:    {Name: "Glimmer", TypeName: "Currency", ClassType: classAny},
-			itemBrightDust: {Name: "Bright Dust", TypeName: "Currency", ClassType: classAny},
+			itemGlimmer:    {Name: "Glimmer", TypeName: "Currency", ClassType: bungie.ClassAny},
+			itemBrightDust: {Name: "Bright Dust", TypeName: "Currency", ClassType: bungie.ClassAny},
 		},
 		Buckets: map[uint32]BucketDef{
-			bucketVault:      {Name: "General", Capacity: 700, Category: bucketCategoryItem, Order: 30, Account: true},
-			bucketPostmaster: {Name: "Lost Items", Capacity: 21},
-			bucketKinetic:    {Name: "Kinetic Weapons", Capacity: 10, Category: bucketCategoryEquippable, Order: 20},
-			bucketPower:      {Name: "Power Weapons", Capacity: 10, Category: bucketCategoryEquippable, Order: 40},
-			bucketHelmet:     {Name: "Helmet", Capacity: 10, Category: bucketCategoryEquippable, Order: 50},
-			bucketEngrams:    {Name: "Engrams", Capacity: 10, Category: bucketCategoryItem, Order: 40},
-			bucketMaterials:  {Name: "Materials", Category: bucketCategoryItem, Order: 10},
-			bucketQuests:     {Name: "Quests", Capacity: 63},
-			bucketConsumables: {
+			bungie.BucketVault: {
+				Name:     "General",
+				Capacity: 700,
+				Category: bungie.BucketCategoryItem,
+				Order:    30,
+				Account:  true,
+			},
+			bungie.BucketPostmaster: {Name: "Lost Items", Capacity: 21},
+			bungie.BucketKinetic: {
+				Name:     "Kinetic Weapons",
+				Capacity: 10,
+				Category: bungie.BucketCategoryEquippable,
+				Order:    20,
+			},
+			bungie.BucketPower: {
+				Name:     "Power Weapons",
+				Capacity: 10,
+				Category: bungie.BucketCategoryEquippable,
+				Order:    40,
+			},
+			bungie.BucketHelmet: {
+				Name:     "Helmet",
+				Capacity: 10,
+				Category: bungie.BucketCategoryEquippable,
+				Order:    50,
+			},
+			bungie.BucketEngrams: {Name: "Engrams", Capacity: 10, Category: bungie.BucketCategoryItem, Order: 40},
+			bucketMaterials:      {Name: "Materials", Category: bungie.BucketCategoryItem, Order: 10},
+			bucketQuests:         {Name: "Quests", Capacity: 63},
+			bungie.BucketConsumables: {
 				Name:     "Consumables",
 				Capacity: 50,
-				Category: bucketCategoryItem,
+				Category: bungie.BucketCategoryItem,
 				Order:    30,
 				Account:  true,
 			},
@@ -699,7 +721,7 @@ func newFakes(t *testing.T) *fakes {
 	}))
 	t.Cleanup(service.Close)
 
-	bungie := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	platform := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := f.bungie.Record(t, r)
 
 		if req.Method == http.MethodPost && f.bungiePost != nil {
@@ -737,7 +759,7 @@ func newFakes(t *testing.T) *fakes {
 			)
 		}
 	}))
-	t.Cleanup(bungie.Close)
+	t.Cleanup(platform.Close)
 
 	now := func() time.Time { return fixtureNow }
 
@@ -759,7 +781,7 @@ func newFakes(t *testing.T) *fakes {
 
 	f.h = &handler{
 		service: client,
-		bungie:  NewBungie(WithBungieURL(bungie.URL), WithBungieContentURL(bungie.URL)),
+		bungie:  NewBungie(WithBungieURL(platform.URL), WithBungieContentURL(platform.URL)),
 		auth:    NewAuth(store, client, WithAuthClock(now)),
 		defs:    defs,
 		sheets:  NewSheetStore(client),

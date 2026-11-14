@@ -4,14 +4,8 @@ import (
 	"cmp"
 	"slices"
 	"strings"
-)
 
-// Values of the uiStyle of a Bungie DestinyActivityRewardItem that the
-// activity rows read. The game shows an extra engram as a bonus drop, and
-// a daily grind reward as the focused reward of the activity.
-const (
-	rewardBonusDrop = "extra_engram"
-	rewardFocus     = "daily_grind_guaranteed"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 var (
@@ -119,7 +113,7 @@ func newActivityRow(entry AvailableActivity, def ActivityDef, defs *Defs) Activi
 	}
 
 	for _, item := range items {
-		if item.UIStyle == rewardBonusDrop {
+		if item.UIStyle == bungie.RewardBonusDrop {
 			row.BonusDrops += item.ItemQuantity.Quantity
 		}
 	}
@@ -142,7 +136,7 @@ func newActivityRow(entry AvailableActivity, def ActivityDef, defs *Defs) Activi
 func focusOf(items []ActivityRewardItem, defs *Defs) *Loot {
 	for _, item := range items {
 		name := defs.ActivityRewards[item.ItemQuantity.ItemHash]
-		if item.UIStyle == rewardFocus && name != "" {
+		if item.UIStyle == bungie.RewardFocus && name != "" {
 			return &Loot{Name: name, Quantity: item.ItemQuantity.Quantity, Hash: item.ItemQuantity.ItemHash}
 		}
 	}

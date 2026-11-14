@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 func TestNewestMark(t *testing.T) {
@@ -26,9 +28,9 @@ func TestNewestMark(t *testing.T) {
 		},
 		"an emote with the highest id": {
 			add: []*Item{
-				{InstanceID: "1010", Equippable: true, Bucket: bucketEmotes, Owner: hunterID},
-				{InstanceID: "1009", Equippable: true, Bucket: bucketFinishers, Owner: hunterID},
-				{InstanceID: "1008", Equippable: true, Bucket: bucketKinetic, Owner: ownerVault},
+				{InstanceID: "1010", Equippable: true, Bucket: bungie.BucketEmotes, Owner: hunterID},
+				{InstanceID: "1009", Equippable: true, Bucket: bungie.BucketFinishers, Owner: hunterID},
+				{InstanceID: "1008", Equippable: true, Bucket: bungie.BucketKinetic, Owner: ownerVault},
 			},
 			want: "00000000000000001008",
 		},
@@ -58,16 +60,16 @@ func TestNewItems(t *testing.T) {
 	}
 
 	s := &Snapshot{Items: []*Item{
-		item("10000", hunterID, bucketKinetic),
-		item("1008", ownerAccount, bucketKinetic),
-		item("1011", ownerVault, bucketPower),
-		item("1007", titanID, bucketHelmet),
-		item("1006", hunterID, bucketKinetic),
-		item("1009", ownerVault, bucketKinetic),
-		item("1005", hunterID, bucketKinetic),
-		item("1012", hunterID, bucketEmotes),
-		{InstanceID: "1013", Owner: hunterID, Bucket: bucketConsumables},
-		{Owner: ownerAccount, Bucket: bucketConsumables},
+		item("10000", hunterID, bungie.BucketKinetic),
+		item("1008", ownerAccount, bungie.BucketKinetic),
+		item("1011", ownerVault, bungie.BucketPower),
+		item("1007", titanID, bungie.BucketHelmet),
+		item("1006", hunterID, bungie.BucketKinetic),
+		item("1009", ownerVault, bungie.BucketKinetic),
+		item("1005", hunterID, bungie.BucketKinetic),
+		item("1012", hunterID, bungie.BucketEmotes),
+		{InstanceID: "1013", Owner: hunterID, Bucket: bungie.BucketConsumables},
+		{Owner: ownerAccount, Bucket: bungie.BucketConsumables},
 	}}
 
 	tests := map[string]struct {
@@ -187,20 +189,20 @@ func TestVaultBlock(t *testing.T) {
 	t.Parallel()
 
 	const (
-		equipped    = "it is equipped"
-		bungie      = "Bungie reports it as not transferable"
-		bucket      = "the web client never moves an item of its bucket"
-		server      = "the server treats it as not transferable, but the web client tries the transfer"
-		instanceID  = "1"
-		hash        = 1
-		onCharacter = 1
+		equipped        = "it is equipped"
+		notTransferable = "Bungie reports it as not transferable"
+		bucket          = "the web client never moves an item of its bucket"
+		server          = "the server treats it as not transferable, but the web client tries the transfer"
+		instanceID      = "1"
+		hash            = 1
+		onCharacter     = 1
 	)
 
 	weapon := ItemDef{
 		Name:       "Thorn",
-		Bucket:     bucketKinetic,
-		ItemType:   itemTypeWeapon,
-		ClassType:  classAny,
+		Bucket:     bungie.BucketKinetic,
+		ItemType:   bungie.ItemTypeWeapon,
+		ClassType:  bungie.ClassAny,
 		Equippable: true,
 	}
 
@@ -222,14 +224,14 @@ func TestVaultBlock(t *testing.T) {
 	lost := func(status int) ProfileItem {
 		return ProfileItem{
 			InstanceID: instanceID, Hash: hash, Quantity: 1,
-			Location: itemLocationPostmaster, BucketHash: bucketPostmaster, TransferStatus: status,
+			Location: bungie.ItemLocationPostmaster, BucketHash: bungie.BucketPostmaster, TransferStatus: status,
 		}
 	}
 
 	nonTransferable := weapon
 	nonTransferable.NonTransferable = true
 
-	nonTransferableEngram := in(bucketEngrams)
+	nonTransferableEngram := in(bungie.BucketEngrams)
 	nonTransferableEngram.NonTransferable = true
 
 	tests := map[string]struct {
@@ -240,74 +242,74 @@ func TestVaultBlock(t *testing.T) {
 	}{
 		"an equipped weapon": {
 			def:      weapon,
-			item:     held(bucketKinetic, 1),
+			item:     held(bungie.BucketKinetic, 1),
 			equipped: true,
 			want:     equipped,
 		},
 		"an equipped weapon with the status 2": {
 			def:      weapon,
-			item:     held(bucketKinetic, 2),
+			item:     held(bungie.BucketKinetic, 2),
 			equipped: true,
 			want:     equipped,
 		},
 		"the status 2": {
 			def:  weapon,
-			item: held(bucketKinetic, 2),
-			want: bungie,
+			item: held(bungie.BucketKinetic, 2),
+			want: notTransferable,
 		},
 		"the status 2 at the Postmaster": {
 			def:  weapon,
 			item: lost(2),
-			want: bungie,
+			want: notTransferable,
 		},
 		"an engram with the status 2": {
-			def:  in(bucketEngrams),
-			item: held(bucketEngrams, 2),
-			want: bungie,
+			def:  in(bungie.BucketEngrams),
+			item: held(bungie.BucketEngrams, 2),
+			want: notTransferable,
 		},
 		"the forbidden bucket": {
-			def:  in(bucketForbidden),
-			item: held(bucketForbidden, 0),
+			def:  in(bungie.BucketForbidden),
+			item: held(bungie.BucketForbidden, 0),
 			want: bucket,
 		},
 		"an engram": {
-			def:  in(bucketEngrams),
-			item: held(bucketEngrams, 0),
+			def:  in(bungie.BucketEngrams),
+			item: held(bungie.BucketEngrams, 0),
 			want: bucket,
 		},
 		"a Lost Items definition": {
-			def:  in(bucketPostmaster),
+			def:  in(bungie.BucketPostmaster),
 			item: lost(0),
 			want: bucket,
 		},
 		"a message": {
-			def:  in(bucketMessages),
+			def:  in(bungie.BucketMessages),
 			item: lost(0),
 			want: bucket,
 		},
 		"a special order": {
-			def:  in(bucketSpecialOrders),
+			def:  in(bungie.BucketSpecialOrders),
 			item: lost(0),
 			want: bucket,
 		},
 		"a non-transferable engram": {
 			def:  nonTransferableEngram,
-			item: held(bucketEngrams, 0),
+			item: held(bungie.BucketEngrams, 0),
 			want: bucket,
 		},
 		"an engram definition in another profile bucket": {
-			def:  in(bucketEngrams),
-			item: held(bucketKinetic, 0),
+			def:  in(bungie.BucketEngrams),
+			item: held(bungie.BucketKinetic, 0),
 			want: bucket,
 		},
 		"a non-transferable definition": {
 			def:  nonTransferable,
-			item: held(bucketKinetic, 0),
+			item: held(bungie.BucketKinetic, 0),
 			want: server,
 		},
 		"the status 6 outside the Postmaster": {
 			def:  weapon,
-			item: held(bucketKinetic, 6),
+			item: held(bungie.BucketKinetic, 6),
 			want: server,
 		},
 		"a weapon at the Postmaster": {
@@ -316,7 +318,7 @@ func TestVaultBlock(t *testing.T) {
 		},
 		"a weapon on a character": {
 			def:  weapon,
-			item: held(bucketKinetic, 0),
+			item: held(bungie.BucketKinetic, 0),
 		},
 	}
 

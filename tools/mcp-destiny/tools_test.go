@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
 
@@ -3711,8 +3712,8 @@ func TestSetAutotagEnabled(t *testing.T) {
 			f.h.defs.defs.Items[400] = ItemDef{
 				Name:       "Victory Dance",
 				TypeName:   "Emote",
-				Bucket:     bucketEmotes,
-				ClassType:  classAny,
+				Bucket:     bungie.BucketEmotes,
+				ClassType:  bungie.ClassAny,
 				Equippable: true,
 			}
 
@@ -3861,10 +3862,10 @@ func kineticWeapon(id, name, owner string) *Item {
 		Slot:         "Kinetic Weapons",
 		Owner:        owner,
 		Kind:         kindWeapon,
-		ClassType:    classAny,
+		ClassType:    bungie.ClassAny,
 		Quantity:     1,
 		Hash:         hash,
-		Bucket:       bucketKinetic,
+		Bucket:       bungie.BucketKinetic,
 		Transferable: true,
 		Equippable:   true,
 		Lockable:     true,
@@ -4135,7 +4136,7 @@ func TestStageJunk(t *testing.T) {
 			}
 
 			if tc.capacity > 0 {
-				i := slices.IndexFunc(s.Buckets, func(b Bucket) bool { return b.Hash == bucketKinetic })
+				i := slices.IndexFunc(s.Buckets, func(b Bucket) bool { return b.Hash == bungie.BucketKinetic })
 				require.GreaterOrEqual(t, i, 0)
 
 				s.Buckets[i].Capacity = tc.capacity
@@ -5749,17 +5750,17 @@ func addNewItemDefs(d *Defs) {
 		Name:       "Thorn",
 		TypeName:   "Hand Cannon",
 		Tier:       "Exotic",
-		Bucket:     bucketKinetic,
-		ItemType:   itemTypeWeapon,
-		ClassType:  classAny,
+		Bucket:     bungie.BucketKinetic,
+		ItemType:   bungie.ItemTypeWeapon,
+		ClassType:  bungie.ClassAny,
 		Equippable: true,
 	}
 	d.Items[201] = ItemDef{
 		Name:       "Wormhusk Crown",
 		TypeName:   "Helmet",
 		Tier:       "Exotic",
-		Bucket:     bucketHelmet,
-		ItemType:   itemTypeArmor,
+		Bucket:     bungie.BucketHelmet,
+		ItemType:   bungie.ItemTypeArmor,
 		ClassType:  1,
 		Equippable: true,
 	}
@@ -8487,9 +8488,9 @@ func TestPreviewDupeGroupsBuiltItems(t *testing.T) {
 	f := newFakes(t)
 	f.h.defs.defs.Items[403] = ItemDef{
 		Name:       "Dummy",
-		Bucket:     bucketForbidden,
-		ItemType:   itemTypeWeapon,
-		ClassType:  classAny,
+		Bucket:     bungie.BucketForbidden,
+		ItemType:   bungie.ItemTypeWeapon,
+		ClassType:  bungie.ClassAny,
 		Equippable: true,
 	}
 	f.profileBody = `{"ErrorCode": 1, "Response": {
@@ -8528,9 +8529,13 @@ func inventoryFieldFakes(t *testing.T) *fakes {
 
 	f := newFakes(t)
 	defs := f.h.defs.defs
-	defs.DamageEnums = map[uint32]int{3373582085: damageKinetic, 2303181850: damageArc, 1847026933: damageThermal}
+	defs.DamageEnums = map[uint32]int{
+		3373582085: bungie.DamageKinetic,
+		2303181850: bungie.DamageArc,
+		1847026933: bungie.DamageThermal,
+	}
 
-	for hash, tierType := range map[uint32]int{100: tierTypeLegendary, 101: tierTypeExotic} {
+	for hash, tierType := range map[uint32]int{100: bungie.TierTypeLegendary, 101: bungie.TierTypeExotic} {
 		def := defs.Items[hash]
 		def.TierType = tierType
 		defs.Items[hash] = def
@@ -8901,10 +8906,10 @@ func withUnbuiltHelmet(f *fakes, listed bool) {
 		Name:       "Iron Truage Helm",
 		TypeName:   "Helmet",
 		Tier:       "Legendary",
-		TierType:   tierTypeLegendary,
-		Bucket:     bucketHelmet,
-		ItemType:   itemTypeArmor,
-		ClassType:  classHunter,
+		TierType:   bungie.TierTypeLegendary,
+		Bucket:     bungie.BucketHelmet,
+		ItemType:   bungie.ItemTypeArmor,
+		ClassType:  bungie.ClassHunter,
 		Equippable: true,
 		SetHash:    7,
 	}

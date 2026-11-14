@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
 
@@ -308,9 +309,15 @@ func TestServiceStats(t *testing.T) {
 
 	// The item record carries a snapshot that the client does not decode.
 	drop := map[string]any{
-		"kind": "item", "instanceId": "1001", "itemHash": 100, "characterId": hunterID, "bucketHash": bucketKinetic,
-		"added": true, "from": 285_000, "at": 300_000,
-		"snapshot": map[string]any{"item": map[string]any{"itemHash": 100}, "components": map[string]any{}},
+		"kind":        "item",
+		"instanceId":  "1001",
+		"itemHash":    100,
+		"characterId": hunterID,
+		"bucketHash":  bungie.BucketKinetic,
+		"added":       true,
+		"from":        285_000,
+		"at":          300_000,
+		"snapshot":    map[string]any{"item": map[string]any{"itemHash": 100}, "components": map[string]any{}},
 	}
 
 	first := testChunk{startsAt: 300_000, updatedAt: 900_000, changes: []map[string]any{glimmer(310_000, 1_000, 2_000)}}
@@ -896,8 +903,8 @@ func TestBungieActivities(t *testing.T) {
 			RecommendedLight: 2010,
 			Focused:          true,
 			VisibleRewards: []ActivityRewardMapping{
-				{RewardItems: []ActivityRewardItem{reward(rewardBonusDrop, 3956025454, 2), reward("", 600, 1)}},
-				{RewardItems: []ActivityRewardItem{reward(rewardFocus, 601, 1)}},
+				{RewardItems: []ActivityRewardItem{reward(bungie.RewardBonusDrop, 3956025454, 2), reward("", 600, 1)}},
+				{RewardItems: []ActivityRewardItem{reward(bungie.RewardFocus, 601, 1)}},
 			},
 		},
 		{Hash: 11, Visible: true},
@@ -905,9 +912,9 @@ func TestBungieActivities(t *testing.T) {
 	}, activities)
 
 	assert.Equal(t, []ActivityRewardItem{
-		reward(rewardBonusDrop, 3956025454, 2),
+		reward(bungie.RewardBonusDrop, 3956025454, 2),
 		reward("", 600, 1),
-		reward(rewardFocus, 601, 1),
+		reward(bungie.RewardFocus, 601, 1),
 	}, activities[0].RewardItems())
 	assert.Empty(t, activities[1].RewardItems())
 }

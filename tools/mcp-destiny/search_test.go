@@ -11,17 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
 
-// Bungie TierType values of the test items, named after the rarity that
-// DIM gives each value. The value of Common is tierTypeBasic.
-const (
-	tierTypeUnknown   = 0
-	tierTypeCurrency  = 1
-	tierTypeUncommon  = 3
-	tierTypeRare      = 4
-	tierTypeLegendary = 5
-	tierTypeExotic    = 6
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // compiled parses and compiles query, which must parse.
@@ -99,14 +90,19 @@ func TestOwnedItems(t *testing.T) {
 	}`
 
 	defs := fixtureDefs()
-	defs.Items[400] = ItemDef{Name: "Exotic Engram", Bucket: bucketEngrams, ClassType: classAny}
-	defs.Items[401] = ItemDef{Name: "Wave", Bucket: bucketEmotes, ClassType: classAny, Equippable: true}
-	defs.Items[402] = ItemDef{Name: "Takedown", Bucket: bucketFinishers, ClassType: classAny, Equippable: true}
+	defs.Items[400] = ItemDef{Name: "Exotic Engram", Bucket: bungie.BucketEngrams, ClassType: bungie.ClassAny}
+	defs.Items[401] = ItemDef{Name: "Wave", Bucket: bungie.BucketEmotes, ClassType: bungie.ClassAny, Equippable: true}
+	defs.Items[402] = ItemDef{
+		Name:       "Takedown",
+		Bucket:     bungie.BucketFinishers,
+		ClassType:  bungie.ClassAny,
+		Equippable: true,
+	}
 	defs.Items[403] = ItemDef{
 		Name:       "Dummy",
-		Bucket:     bucketForbidden,
-		ItemType:   itemTypeWeapon,
-		ClassType:  classAny,
+		Bucket:     bungie.BucketForbidden,
+		ItemType:   bungie.ItemTypeWeapon,
+		ClassType:  bungie.ClassAny,
 		Equippable: true,
 	}
 
@@ -166,43 +162,43 @@ func TestCompileQueryTableA(t *testing.T) {
 		"is:weapon": {
 			query: "is:weapon",
 			items: []*Item{
-				{InstanceID: "kinetic", Bucket: bucketKinetic},
-				{InstanceID: "energy", Bucket: bucketEnergy},
-				{InstanceID: "power", Bucket: bucketPower},
-				{InstanceID: "helmet", Bucket: bucketHelmet},
-				{InstanceID: "weapon kind", Bucket: bucketEngrams, Kind: kindWeapon},
+				{InstanceID: "kinetic", Bucket: bungie.BucketKinetic},
+				{InstanceID: "energy", Bucket: bungie.BucketEnergy},
+				{InstanceID: "power", Bucket: bungie.BucketPower},
+				{InstanceID: "helmet", Bucket: bungie.BucketHelmet},
+				{InstanceID: "weapon kind", Bucket: bungie.BucketEngrams, Kind: kindWeapon},
 			},
 			want: []string{"kinetic", "energy", "power"},
 		},
 		"is:armor": {
 			query: "is:armor",
 			items: []*Item{
-				{InstanceID: "helmet", Bucket: bucketHelmet},
-				{InstanceID: "gauntlets", Bucket: bucketGauntlets},
-				{InstanceID: "chest", Bucket: bucketChestArmor},
-				{InstanceID: "legs", Bucket: bucketLegArmor},
-				{InstanceID: "class", Bucket: bucketClassArmor},
-				{InstanceID: "kinetic", Bucket: bucketKinetic},
-				{InstanceID: "armor kind", Bucket: bucketEngrams, Kind: kindArmor},
+				{InstanceID: "helmet", Bucket: bungie.BucketHelmet},
+				{InstanceID: "gauntlets", Bucket: bungie.BucketGauntlets},
+				{InstanceID: "chest", Bucket: bungie.BucketChestArmor},
+				{InstanceID: "legs", Bucket: bungie.BucketLegArmor},
+				{InstanceID: "class", Bucket: bungie.BucketClassArmor},
+				{InstanceID: "kinetic", Bucket: bungie.BucketKinetic},
+				{InstanceID: "armor kind", Bucket: bungie.BucketEngrams, Kind: kindArmor},
 			},
 			want: []string{"helmet", "gauntlets", "chest", "legs", "class"},
 		},
 		"is:equipment": {
 			query: "is:equipment",
 			items: []*Item{
-				{InstanceID: "equippable", Bucket: bucketKinetic, Equippable: true},
-				{InstanceID: "not equippable", Bucket: bucketKinetic},
-				{InstanceID: "emote", Bucket: bucketEmotes, Equippable: true},
-				{InstanceID: "finisher", Bucket: bucketFinishers, Equippable: true},
+				{InstanceID: "equippable", Bucket: bungie.BucketKinetic, Equippable: true},
+				{InstanceID: "not equippable", Bucket: bungie.BucketKinetic},
+				{InstanceID: "emote", Bucket: bungie.BucketEmotes, Equippable: true},
+				{InstanceID: "finisher", Bucket: bungie.BucketFinishers, Equippable: true},
 			},
 			want: []string{"equippable"},
 		},
 		"is:equippable": {
 			query: "is:equippable",
 			items: []*Item{
-				{InstanceID: "equippable", Bucket: bucketKinetic, Equippable: true},
-				{InstanceID: "not equippable", Bucket: bucketKinetic},
-				{InstanceID: "emote", Bucket: bucketEmotes, Equippable: true},
+				{InstanceID: "equippable", Bucket: bungie.BucketKinetic, Equippable: true},
+				{InstanceID: "not equippable", Bucket: bungie.BucketKinetic},
+				{InstanceID: "emote", Bucket: bungie.BucketEmotes, Equippable: true},
 			},
 			want: []string{"equippable"},
 		},
@@ -226,21 +222,21 @@ func TestCompileQueryTableA(t *testing.T) {
 		"is:postmaster": {
 			query: "is:postmaster",
 			items: []*Item{
-				{InstanceID: "lost", Bucket: bucketKinetic, Lost: true, Postmaster: true},
-				{InstanceID: "engram", Bucket: bucketEngrams},
-				{InstanceID: "message", Bucket: bucketMessages, Postmaster: true},
-				{InstanceID: "special order", Bucket: bucketSpecialOrders},
-				{InstanceID: "postmaster flag", Bucket: bucketKinetic, Postmaster: true},
-				{InstanceID: "held", Bucket: bucketKinetic},
+				{InstanceID: "lost", Bucket: bungie.BucketKinetic, Lost: true, Postmaster: true},
+				{InstanceID: "engram", Bucket: bungie.BucketEngrams},
+				{InstanceID: "message", Bucket: bungie.BucketMessages, Postmaster: true},
+				{InstanceID: "special order", Bucket: bungie.BucketSpecialOrders},
+				{InstanceID: "postmaster flag", Bucket: bungie.BucketKinetic, Postmaster: true},
+				{InstanceID: "held", Bucket: bungie.BucketKinetic},
 			},
 			want: []string{"lost", "engram", "message", "special order"},
 		},
 		"is:inpostmaster": {
 			query: "is:inpostmaster",
 			items: []*Item{
-				{InstanceID: "lost", Bucket: bucketKinetic, Lost: true, Postmaster: true},
-				{InstanceID: "engram", Bucket: bucketEngrams},
-				{InstanceID: "held", Bucket: bucketKinetic},
+				{InstanceID: "lost", Bucket: bungie.BucketKinetic, Lost: true, Postmaster: true},
+				{InstanceID: "engram", Bucket: bungie.BucketEngrams},
+				{InstanceID: "held", Bucket: bungie.BucketKinetic},
 			},
 			want: []string{"lost", "engram"},
 		},
@@ -267,28 +263,28 @@ func TestCompileQueryTableA(t *testing.T) {
 		"is:titan": {
 			query: "is:titan",
 			items: []*Item{
-				{InstanceID: "titan", ClassType: classTitan},
-				{InstanceID: "hunter", ClassType: classHunter},
-				{InstanceID: "warlock", ClassType: classWarlock},
-				{InstanceID: "any", ClassType: classAny},
+				{InstanceID: "titan", ClassType: bungie.ClassTitan},
+				{InstanceID: "hunter", ClassType: bungie.ClassHunter},
+				{InstanceID: "warlock", ClassType: bungie.ClassWarlock},
+				{InstanceID: "any", ClassType: bungie.ClassAny},
 			},
 			want: []string{"titan"},
 		},
 		"is:hunter": {
 			query: "is:hunter",
 			items: []*Item{
-				{InstanceID: "titan", ClassType: classTitan},
-				{InstanceID: "hunter", ClassType: classHunter},
-				{InstanceID: "any", ClassType: classAny},
+				{InstanceID: "titan", ClassType: bungie.ClassTitan},
+				{InstanceID: "hunter", ClassType: bungie.ClassHunter},
+				{InstanceID: "any", ClassType: bungie.ClassAny},
 			},
 			want: []string{"hunter"},
 		},
 		"is:warlock": {
 			query: "is:warlock",
 			items: []*Item{
-				{InstanceID: "hunter", ClassType: classHunter},
-				{InstanceID: "warlock", ClassType: classWarlock},
-				{InstanceID: "any", ClassType: classAny},
+				{InstanceID: "hunter", ClassType: bungie.ClassHunter},
+				{InstanceID: "warlock", ClassType: bungie.ClassWarlock},
+				{InstanceID: "any", ClassType: bungie.ClassAny},
 			},
 			want: []string{"warlock"},
 		},
@@ -388,10 +384,10 @@ func TestCompileQueryOperators(t *testing.T) {
 	t.Parallel()
 
 	items := []*Item{
-		{InstanceID: "locked weapon", Bucket: bucketKinetic, Lockable: true, Locked: true},
-		{InstanceID: "weapon", Bucket: bucketKinetic, Lockable: true},
-		{InstanceID: "locked helmet", Bucket: bucketHelmet, Lockable: true, Locked: true},
-		{InstanceID: "engram", Bucket: bucketEngrams},
+		{InstanceID: "locked weapon", Bucket: bungie.BucketKinetic, Lockable: true, Locked: true},
+		{InstanceID: "weapon", Bucket: bungie.BucketKinetic, Lockable: true},
+		{InstanceID: "locked helmet", Bucket: bungie.BucketHelmet, Lockable: true, Locked: true},
+		{InstanceID: "engram", Bucket: bungie.BucketEngrams},
 	}
 
 	tests := map[string]struct {
@@ -534,10 +530,10 @@ func TestCompiledQueryMatches(t *testing.T) {
 	t.Parallel()
 
 	items := []*Item{
-		{InstanceID: "20", Name: "Gjallarhorn", Bucket: bucketPower},
-		{InstanceID: "100", Name: "Fatebringer", Bucket: bucketKinetic},
-		{InstanceID: "9", Name: "Fatebringer", Bucket: bucketKinetic},
-		{InstanceID: "5", Name: "Celestial Nighthawk", Bucket: bucketHelmet},
+		{InstanceID: "20", Name: "Gjallarhorn", Bucket: bungie.BucketPower},
+		{InstanceID: "100", Name: "Fatebringer", Bucket: bungie.BucketKinetic},
+		{InstanceID: "9", Name: "Fatebringer", Bucket: bungie.BucketKinetic},
+		{InstanceID: "5", Name: "Celestial Nighthawk", Bucket: bungie.BucketHelmet},
 	}
 
 	got := compiled(t, "is:weapon").evaluate(searchContext{items: items}, items).matches
@@ -723,9 +719,9 @@ func comparableWeapon(id, name string) *Item {
 		InstanceID: id,
 		Name:       name,
 		Tier:       "Legendary",
-		TierType:   tierTypeLegendary,
-		ClassType:  classAny,
-		Bucket:     bucketKinetic,
+		TierType:   bungie.TierTypeLegendary,
+		ClassType:  bungie.ClassAny,
+		Bucket:     bungie.BucketKinetic,
 		Equippable: true,
 		Lockable:   true,
 	}
@@ -775,15 +771,20 @@ func TestItemDupeID(t *testing.T) {
 			want: "Fatebringer3Legendary1498876634",
 		},
 		"armor keeps its spaces": {
-			item: &Item{Name: "Helm ", TierType: tierTypeExotic, ClassType: classHunter, Bucket: bucketHelmet},
+			item: &Item{
+				Name:      "Helm ",
+				TierType:  bungie.TierTypeExotic,
+				ClassType: bungie.ClassHunter,
+				Bucket:    bungie.BucketHelmet,
+			},
 			want: "Helm 1Exotic3448274439",
 		},
 		"armor keeps a translation key": {
 			item: &Item{
 				Name:      "Filter.Adept Helm",
-				TierType:  tierTypeExotic,
-				ClassType: classTitan,
-				Bucket:    bucketHelmet,
+				TierType:  bungie.TierTypeExotic,
+				ClassType: bungie.ClassTitan,
+				Bucket:    bungie.BucketHelmet,
 			},
 			want: "Filter.Adept Helm0Exotic3448274439",
 		},
@@ -836,11 +837,11 @@ func TestIsDupe(t *testing.T) {
 			want:  []string{},
 		},
 		"pair of emblems": {
-			items: pair("Emblem", func(item *Item) { item.Bucket = bucketEmblems }),
+			items: pair("Emblem", func(item *Item) { item.Bucket = bungie.BucketEmblems }),
 			want:  []string{},
 		},
 		"pair in the Artifacts bucket": {
-			items: pair("Artifact", func(item *Item) { item.Bucket = bucketArtifacts }),
+			items: pair("Artifact", func(item *Item) { item.Bucket = bungie.BucketArtifacts }),
 			want:  []string{},
 		},
 		"pair of default shaders": {
@@ -852,13 +853,13 @@ func TestIsDupe(t *testing.T) {
 			want:  []string{},
 		},
 		"pair of emotes": {
-			items: pair("Wave", func(item *Item) { item.Bucket = bucketEmotes }),
+			items: pair("Wave", func(item *Item) { item.Bucket = bungie.BucketEmotes }),
 			want:  []string{},
 		},
 		"same name in two classes": {
 			items: []*Item{comparableWeapon("titan", "Helm"), {
-				InstanceID: "hunter", Name: "Helm", Tier: "Legendary", TierType: tierTypeLegendary,
-				ClassType: classHunter, Bucket: bucketKinetic, Equippable: true, Lockable: true,
+				InstanceID: "hunter", Name: "Helm", Tier: "Legendary", TierType: bungie.TierTypeLegendary,
+				ClassType: bungie.ClassHunter, Bucket: bungie.BucketKinetic, Equippable: true, Lockable: true,
 			}},
 			want: []string{},
 		},
@@ -892,7 +893,7 @@ func TestCount(t *testing.T) {
 	unlockable.Lockable = false
 
 	emblem := comparableWeapon("emblem", "Emblem")
-	emblem.Bucket = bucketEmblems
+	emblem.Bucket = bungie.BucketEmblems
 
 	items := []*Item{
 		comparableWeapon("copy 1", "Midnight Coup"),
@@ -1015,15 +1016,15 @@ func TestCurrentCharacter(t *testing.T) {
 	t.Parallel()
 
 	ctx := searchContext{
-		current: Character{ID: hunterID, ClassType: classHunter},
+		current: Character{ID: hunterID, ClassType: bungie.ClassHunter},
 		items: []*Item{
-			{InstanceID: "hunter armor", Owner: hunterID, ClassType: classHunter},
-			{InstanceID: "hunter weapon", Owner: hunterID, ClassType: classAny},
-			{InstanceID: "account", Owner: ownerAccount, ClassType: classAny},
-			{InstanceID: "vault armor", Owner: ownerVault, ClassType: classHunter},
-			{InstanceID: "vault weapon", Owner: ownerVault, ClassType: classAny},
-			{InstanceID: "titan armor", Owner: titanID, ClassType: classTitan},
-			{InstanceID: "titan holds hunter armor", Owner: titanID, ClassType: classHunter},
+			{InstanceID: "hunter armor", Owner: hunterID, ClassType: bungie.ClassHunter},
+			{InstanceID: "hunter weapon", Owner: hunterID, ClassType: bungie.ClassAny},
+			{InstanceID: "account", Owner: ownerAccount, ClassType: bungie.ClassAny},
+			{InstanceID: "vault armor", Owner: ownerVault, ClassType: bungie.ClassHunter},
+			{InstanceID: "vault weapon", Owner: ownerVault, ClassType: bungie.ClassAny},
+			{InstanceID: "titan armor", Owner: titanID, ClassType: bungie.ClassTitan},
+			{InstanceID: "titan holds hunter armor", Owner: titanID, ClassType: bungie.ClassHunter},
 		},
 	}
 
@@ -1342,8 +1343,8 @@ func weaponTypeItems(t *testing.T) []*Item {
 			TypeName:   typeName,
 			Tier:       "Legendary",
 			Bucket:     bucket,
-			ItemType:   itemTypeWeapon,
-			ClassType:  classAny,
+			ItemType:   bungie.ItemTypeWeapon,
+			ClassType:  bungie.ClassAny,
 			AmmoType:   ammoType,
 			Equippable: true,
 		}
@@ -1358,33 +1359,41 @@ func weaponTypeItems(t *testing.T) []*Item {
 	// Each literal category is a hash of DIM that no search filter reads.
 	// KineticWeapon is 2, EnergyWeapon is 3, Armor is 20, and Helmets is
 	// 45.
-	defs.Items[500] = item("Fatebringer", "Hand Cannon", bucketKinetic, ammoPrimary,
-		categoryWeapon, 2, categoryHandCannon)
-	defs.Items[501] = item("Ace of Spades", "Hand Cannon", bucketKinetic, ammoPrimary,
-		categoryWeapon, 2, categoryHandCannon)
-	defs.Items[502] = item("Beloved", "Sniper Rifle", bucketEnergy, ammoSpecial,
-		categoryWeapon, 3, categorySniperRifle)
-	defs.Items[503] = item("Matador 64", "Shotgun", bucketKinetic, ammoSpecial,
-		categoryWeapon, 2, categoryShotgun)
-	defs.Items[504] = item("Plug One.1", "Fusion Rifle", bucketEnergy, ammoSpecial,
-		categoryWeapon, 3, categoryFusionRifle)
-	defs.Items[505] = item("Sleeper Simulant", "Linear Fusion Rifle", bucketPower, ammoHeavy,
-		categoryWeapon, categoryPowerWeapon, categoryFusionRifle, categoryLinearFusionRifles)
-	defs.Items[506] = item("Thunderlord", "Machine Gun", bucketPower, ammoHeavy,
-		categoryWeapon, categoryPowerWeapon, categoryMachineGun)
-	defs.Items[507] = item("Riskrunner", "Submachine Gun", bucketEnergy, ammoPrimary,
-		categoryWeapon, 3, categorySubmachineGuns)
-	defs.Items[508] = item("Wendigo GL3", "Grenade Launcher", bucketPower, ammoHeavy,
-		categoryWeapon, categoryPowerWeapon, categoryGrenadeLaunchers)
-	defs.Items[509] = item("Forbearance", "Grenade Launcher", bucketEnergy, ammoSpecial,
-		categoryWeapon, 3, categoryGrenadeLaunchers)
+	defs.Items[500] = item("Fatebringer", "Hand Cannon", bungie.BucketKinetic, bungie.AmmoPrimary,
+		bungie.CategoryWeapon, 2, bungie.CategoryHandCannon)
+	defs.Items[501] = item("Ace of Spades", "Hand Cannon", bungie.BucketKinetic, bungie.AmmoPrimary,
+		bungie.CategoryWeapon, 2, bungie.CategoryHandCannon)
+	defs.Items[502] = item("Beloved", "Sniper Rifle", bungie.BucketEnergy, bungie.AmmoSpecial,
+		bungie.CategoryWeapon, 3, bungie.CategorySniperRifle)
+	defs.Items[503] = item("Matador 64", "Shotgun", bungie.BucketKinetic, bungie.AmmoSpecial,
+		bungie.CategoryWeapon, 2, bungie.CategoryShotgun)
+	defs.Items[504] = item("Plug One.1", "Fusion Rifle", bungie.BucketEnergy, bungie.AmmoSpecial,
+		bungie.CategoryWeapon, 3, bungie.CategoryFusionRifle)
+	defs.Items[505] = item(
+		"Sleeper Simulant",
+		"Linear Fusion Rifle",
+		bungie.BucketPower,
+		bungie.AmmoHeavy,
+		bungie.CategoryWeapon,
+		bungie.CategoryPowerWeapon,
+		bungie.CategoryFusionRifle,
+		bungie.CategoryLinearFusionRifles,
+	)
+	defs.Items[506] = item("Thunderlord", "Machine Gun", bungie.BucketPower, bungie.AmmoHeavy,
+		bungie.CategoryWeapon, bungie.CategoryPowerWeapon, bungie.CategoryMachineGun)
+	defs.Items[507] = item("Riskrunner", "Submachine Gun", bungie.BucketEnergy, bungie.AmmoPrimary,
+		bungie.CategoryWeapon, 3, bungie.CategorySubmachineGuns)
+	defs.Items[508] = item("Wendigo GL3", "Grenade Launcher", bungie.BucketPower, bungie.AmmoHeavy,
+		bungie.CategoryWeapon, bungie.CategoryPowerWeapon, bungie.CategoryGrenadeLaunchers)
+	defs.Items[509] = item("Forbearance", "Grenade Launcher", bungie.BucketEnergy, bungie.AmmoSpecial,
+		bungie.CategoryWeapon, 3, bungie.CategoryGrenadeLaunchers)
 	defs.Items[510] = ItemDef{
 		Name:       "Celestial Nighthawk",
 		TypeName:   "Helmet",
 		Tier:       "Exotic",
-		Bucket:     bucketHelmet,
-		ItemType:   itemTypeArmor,
-		ClassType:  classHunter,
+		Bucket:     bungie.BucketHelmet,
+		ItemType:   bungie.ItemTypeArmor,
+		ClassType:  bungie.ClassHunter,
 		Categories: []uint32{20, 45},
 		Equippable: true,
 	}
@@ -1393,7 +1402,7 @@ func weaponTypeItems(t *testing.T) []*Item {
 	for hash := 500; hash <= 510; hash++ {
 		vault = append(vault, fmt.Sprintf(
 			`{"itemHash": %d, "itemInstanceId": "%d", "quantity": 1, "location": 2, "bucketHash": %d}`,
-			hash, hash*10, bucketVault,
+			hash, hash*10, bungie.BucketVault,
 		))
 	}
 
@@ -1668,11 +1677,11 @@ func ratingContext() searchContext {
 	}
 
 	weapon := func(id string, hash uint32, perks ...Perk) *Item {
-		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bucketKinetic, Perks: perks}
+		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketKinetic, Perks: perks}
 	}
 
 	armor := func(id string, hash uint32) *Item {
-		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bucketHelmet}
+		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketHelmet}
 	}
 
 	return searchContext{
@@ -1882,7 +1891,7 @@ func TestRateUnknownRoll(t *testing.T) {
 		InstanceID: "set helmet",
 		Name:       "set helmet",
 		Hash:       103,
-		Bucket:     bucketHelmet,
+		Bucket:     bungie.BucketHelmet,
 		SetHash:    7,
 		SetKnown:   true,
 		SetPerks:   []uint32{perkFourPiece},
@@ -2008,8 +2017,8 @@ func TestEvaluate(t *testing.T) {
 	// leaves both undecided.
 	ctx := ratingContext()
 	ctx.items = slices.Concat(ctx.items, []*Item{
-		{InstanceID: "20", Name: "b", Hash: 103, Bucket: bucketKinetic},
-		{InstanceID: "3", Name: "b", Hash: 103, Bucket: bucketKinetic},
+		{InstanceID: "20", Name: "b", Hash: 103, Bucket: bungie.BucketKinetic},
+		{InstanceID: "3", Name: "b", Hash: 103, Bucket: bungie.BucketKinetic},
 	})
 
 	result := compiled(t, "rate:b").evaluate(ctx, ctx.items)
@@ -2189,7 +2198,7 @@ func verdictContext() searchContext {
 	}
 
 	weapon := func(id string, hash uint32, perks []Perk) *Item {
-		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bucketKinetic, Owner: hunterID, Perks: perks}
+		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketKinetic, Owner: hunterID, Perks: perks}
 	}
 
 	best := weapon("best", 100, hitting(true, true))
@@ -2245,7 +2254,7 @@ func TestVerdictRivals(t *testing.T) {
 	}
 
 	weapon := func(id string, hash uint32, owner string, perks []Perk) *Item {
-		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bucketKinetic, Owner: owner, Perks: perks}
+		return &Item{InstanceID: id, Name: id, Hash: hash, Bucket: bungie.BucketKinetic, Owner: owner, Perks: perks}
 	}
 
 	stack := weapon("", 300, hunterID, hitting(true, true))
@@ -2435,14 +2444,19 @@ func TestRarityWords(t *testing.T) {
 	// The uncommon item displays the tier name Common, which DIM does not
 	// read.
 	items := []*Item{
-		{InstanceID: "exotic helmet", Tier: "Exotic", TierType: tierTypeExotic, Bucket: bucketHelmet},
-		{InstanceID: "legendary helmet", Tier: "Legendary", TierType: tierTypeLegendary, Bucket: bucketHelmet},
-		{InstanceID: "exotic weapon", Tier: "Exotic", TierType: tierTypeExotic, Bucket: bucketKinetic},
-		{InstanceID: "rare", Tier: "Rare", TierType: tierTypeRare},
-		{InstanceID: "uncommon", Tier: "Common", TierType: tierTypeUncommon},
-		{InstanceID: "common", Tier: "Basic", TierType: tierTypeBasic},
-		{InstanceID: "unknown", TierType: tierTypeUnknown},
-		{InstanceID: "currency", TierType: tierTypeCurrency},
+		{InstanceID: "exotic helmet", Tier: "Exotic", TierType: bungie.TierTypeExotic, Bucket: bungie.BucketHelmet},
+		{
+			InstanceID: "legendary helmet",
+			Tier:       "Legendary",
+			TierType:   bungie.TierTypeLegendary,
+			Bucket:     bungie.BucketHelmet,
+		},
+		{InstanceID: "exotic weapon", Tier: "Exotic", TierType: bungie.TierTypeExotic, Bucket: bungie.BucketKinetic},
+		{InstanceID: "rare", Tier: "Rare", TierType: bungie.TierTypeRare},
+		{InstanceID: "uncommon", Tier: "Common", TierType: bungie.TierTypeUncommon},
+		{InstanceID: "common", Tier: "Basic", TierType: bungie.TierTypeBasic},
+		{InstanceID: "unknown", TierType: bungie.TierTypeUnknown},
+		{InstanceID: "currency", TierType: bungie.TierTypeCurrency},
 		{InstanceID: "past the table", TierType: 9},
 		{InstanceID: "negative", TierType: -1},
 	}
@@ -2542,7 +2556,7 @@ func TestSlotWords(t *testing.T) {
 	// The lost weapon sits in the Lost Items bucket, and its definition
 	// names the kinetic bucket. Each other item sits in the bucket of one
 	// word and takes the word as its instance id.
-	items := []*Item{{InstanceID: "lost weapon", Bucket: bucketKinetic, Lost: true, Postmaster: true}}
+	items := []*Item{{InstanceID: "lost weapon", Bucket: bungie.BucketKinetic, Lost: true, Postmaster: true}}
 	for word, tc := range tests {
 		items = append(items, &Item{InstanceID: word, Bucket: tc.bucket})
 	}
@@ -2718,7 +2732,7 @@ func TestDupeKeyRarity(t *testing.T) {
 	t.Parallel()
 
 	rare := comparableWeapon("rare", "Fatebringer")
-	rare.TierType = tierTypeRare
+	rare.TierType = bungie.TierTypeRare
 
 	assert.Equal(t, []string{}, matchIDs(t, "is:dupe", []*Item{rare, comparableWeapon("legendary", "Fatebringer")}))
 
@@ -2767,7 +2781,7 @@ func setBonusContext() searchContext {
 			InstanceID: id,
 			Name:       id,
 			Hash:       200,
-			Bucket:     bucketHelmet,
+			Bucket:     bungie.BucketHelmet,
 			SetHash:    3727270518,
 			SetKnown:   true,
 			SetPerks:   perks,
@@ -2779,7 +2793,7 @@ func setBonusContext() searchContext {
 			armor("set", perkTwoPiece, perkFourPiece),
 			armor("untiered", perkNoTier),
 			armor("unrated", perkUnrated),
-			{InstanceID: "no set", Name: "no set", Hash: 200, Bucket: bucketHelmet},
+			{InstanceID: "no set", Name: "no set", Hash: 200, Bucket: bungie.BucketHelmet},
 		},
 		sources: map[string]RatingSource{
 			modePvE: {Sheet: pve, Defs: &Defs{}},
@@ -2968,9 +2982,9 @@ func setSnapshot(t *testing.T, listed bool, sets map[uint32][]uint32) *Snapshot 
 		return ItemDef{
 			Name:       name,
 			TypeName:   "Helmet",
-			Bucket:     bucketHelmet,
-			ItemType:   itemTypeArmor,
-			ClassType:  classHunter,
+			Bucket:     bungie.BucketHelmet,
+			ItemType:   bungie.ItemTypeArmor,
+			ClassType:  bungie.ClassHunter,
 			Equippable: true,
 			SetHash:    set,
 		}
@@ -3062,10 +3076,10 @@ func TestUnbuiltLineSkipsDummyBuckets(t *testing.T) {
 	s := &Snapshot{
 		ItemSetsListed: true,
 		Items: []*Item{
-			helmet("helmet", bucketHelmet, false),
-			helmet("dummy", bucketDummy, false),
-			helmet("forbidden", bucketForbidden, false),
-			helmet("lost", bucketDummy, true),
+			helmet("helmet", bungie.BucketHelmet, false),
+			helmet("dummy", bungie.BucketDummy, false),
+			helmet("forbidden", bungie.BucketForbidden, false),
+			helmet("lost", bungie.BucketDummy, true),
 		},
 	}
 
@@ -3081,9 +3095,9 @@ func TestDupeSkipsUnbuilt(t *testing.T) {
 		return &Item{
 			InstanceID: id,
 			Name:       name,
-			TierType:   tierTypeLegendary,
-			ClassType:  classHunter,
-			Bucket:     bucketHelmet,
+			TierType:   bungie.TierTypeLegendary,
+			ClassType:  bungie.ClassHunter,
+			Bucket:     bungie.BucketHelmet,
 			Equippable: true,
 			Lockable:   true,
 			SetHash:    set,

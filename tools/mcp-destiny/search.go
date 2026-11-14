@@ -13,82 +13,8 @@ import (
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
-)
 
-// Bucket hashes that the search filters, the preview population, and the
-// saved loadouts read. Each value is a BucketHashes value of Destiny Item
-// Manager (DIM).
-const (
-	bucketKinetic       uint32 = 1498876634
-	bucketEnergy        uint32 = 2465295065
-	bucketPower         uint32 = 953998645
-	bucketHelmet        uint32 = 3448274439
-	bucketGauntlets     uint32 = 3551918588
-	bucketChestArmor    uint32 = 14239492
-	bucketLegArmor      uint32 = 20886954
-	bucketClassArmor    uint32 = 1585787867
-	bucketEngrams       uint32 = 375726501
-	bucketMessages      uint32 = 3161908920
-	bucketSpecialOrders uint32 = 1367666825
-	bucketEmotes        uint32 = 1107761855
-	bucketFinishers     uint32 = 3683254069
-	bucketEmblems       uint32 = 4274335291
-	bucketArtifacts     uint32 = 1506418338
-	bucketSubclass      uint32 = 3284755031
-	bucketGhost         uint32 = 4023194814
-	bucketShips         uint32 = 284967655
-	bucketVehicle       uint32 = 2025709351
-	bucketAccessories   uint32 = 687325600
-	bucketConsumables   uint32 = 1469714392
-	bucketModifications uint32 = 3313201758
-
-	// bucketForbidden and bucketDummy hold the dummy items that DIM
-	// leaves out of every store. DIM names them THE_FORBIDDEN_BUCKET
-	// and SOME_OTHER_DUMMY_BUCKET.
-	bucketForbidden uint32 = 2422292810
-	bucketDummy     uint32 = 3621873013
-)
-
-// Item category hashes that the search filters and [itemCategories] read.
-// Each value is an ItemCategoryHashes value of DIM. A special grenade
-// launcher holds the negative of categoryGrenadeLaunchers.
-const (
-	categoryWeapon                  int64 = 1
-	categoryPowerWeapon             int64 = 4
-	categoryAutoRifle               int64 = 5
-	categoryHandCannon              int64 = 6
-	categoryPulseRifle              int64 = 7
-	categoryScoutRifle              int64 = 8
-	categoryFusionRifle             int64 = 9
-	categorySniperRifle             int64 = 10
-	categoryShotgun                 int64 = 11
-	categoryMachineGun              int64 = 12
-	categoryRocketLauncher          int64 = 13
-	categorySidearm                 int64 = 14
-	categorySword                   int64 = 54
-	categoryGrenadeLaunchers        int64 = 153950757
-	categoryShipModsTransmatEffects int64 = 208981632
-	categoryWeaponMods              int64 = 610365472
-	categoryLinearFusionRifles      int64 = 1504945536
-	categoryReputationTokens        int64 = 2088636411
-	categoryTraceRifles             int64 = 2489664120
-	categoryDummies                 int64 = 3109687656
-	categoryBows                    int64 = 3317538576
-	categoryGlaives                 int64 = 3871742104
-	categorySubmachineGuns          int64 = 3954685534
-	categoryArmorMods               int64 = 4104513227
-)
-
-// Bungie DamageType values that the element filters read. DIM names the
-// value damageThermal solar. The value 5, which Bungie names Raid, has no
-// filter.
-const (
-	damageKinetic = 1
-	damageArc     = 2
-	damageThermal = 3
-	damageVoid    = 4
-	damageStasis  = 6
-	damageStrand  = 7
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // hashDefaultShader is the item hash of the default shader, which DIM
@@ -210,10 +136,16 @@ var (
 	)
 
 	// The buckets of the categories of DIM that the search filters read.
-	// The Lost Items bucket of the Postmaster is bucketPostmaster.
-	weaponBuckets     = []uint32{bucketKinetic, bucketEnergy, bucketPower}
-	armorBuckets      = []uint32{bucketHelmet, bucketGauntlets, bucketChestArmor, bucketLegArmor, bucketClassArmor}
-	postmasterBuckets = []uint32{bucketEngrams, bucketMessages, bucketSpecialOrders}
+	// The Lost Items bucket of the Postmaster is [bungie.BucketPostmaster].
+	weaponBuckets = []uint32{bungie.BucketKinetic, bungie.BucketEnergy, bungie.BucketPower}
+	armorBuckets  = []uint32{
+		bungie.BucketHelmet,
+		bungie.BucketGauntlets,
+		bungie.BucketChestArmor,
+		bungie.BucketLegArmor,
+		bungie.BucketClassArmor,
+	}
+	postmasterBuckets = []uint32{bungie.BucketEngrams, bungie.BucketMessages, bungie.BucketSpecialOrders}
 
 	// dupeTypes lists the values of the dupe: filter that DIM knows, which
 	// are the keys of its table dupeTypeLookupRaw.
@@ -280,43 +212,43 @@ var (
 		{name: filterIs, word: "inpostmaster", match: inPostmaster},
 		{name: filterIs, word: "locked", match: func(item *Item) bool { return item.Lockable && item.Locked }},
 		{name: filterIs, word: "unlocked", match: func(item *Item) bool { return item.Lockable && !item.Locked }},
-		{name: filterIs, word: "titan", match: ofClass(classTitan)},
-		{name: filterIs, word: "hunter", match: ofClass(classHunter)},
-		{name: filterIs, word: "warlock", match: ofClass(classWarlock)},
+		{name: filterIs, word: "titan", match: ofClass(bungie.ClassTitan)},
+		{name: filterIs, word: "hunter", match: ofClass(bungie.ClassHunter)},
+		{name: filterIs, word: "warlock", match: ofClass(bungie.ClassWarlock)},
 		{name: filterIs, word: "favorite", match: func(item *Item) bool { return item.Favorite }},
-		{name: filterIs, word: "autorifle", match: inCategory(categoryAutoRifle)},
-		{name: filterIs, word: "handcannon", match: inCategory(categoryHandCannon)},
-		{name: filterIs, word: "pulserifle", match: inCategory(categoryPulseRifle)},
-		{name: filterIs, word: "scoutrifle", match: inCategory(categoryScoutRifle)},
-		{name: filterIs, word: "fusionrifle", match: inCategory(categoryFusionRifle)},
-		{name: filterIs, word: "sniperrifle", match: inCategory(categorySniperRifle)},
-		{name: filterIs, word: "shotgun", match: inCategory(categoryShotgun)},
-		{name: filterIs, word: "machinegun", match: inCategory(categoryMachineGun)},
-		{name: filterIs, word: "lmg", match: inCategory(categoryMachineGun)},
-		{name: filterIs, word: "rocketlauncher", match: inCategory(categoryRocketLauncher)},
-		{name: filterIs, word: "sidearm", match: inCategory(categorySidearm)},
-		{name: filterIs, word: "sword", match: inCategory(categorySword)},
+		{name: filterIs, word: "autorifle", match: inCategory(bungie.CategoryAutoRifle)},
+		{name: filterIs, word: "handcannon", match: inCategory(bungie.CategoryHandCannon)},
+		{name: filterIs, word: "pulserifle", match: inCategory(bungie.CategoryPulseRifle)},
+		{name: filterIs, word: "scoutrifle", match: inCategory(bungie.CategoryScoutRifle)},
+		{name: filterIs, word: "fusionrifle", match: inCategory(bungie.CategoryFusionRifle)},
+		{name: filterIs, word: "sniperrifle", match: inCategory(bungie.CategorySniperRifle)},
+		{name: filterIs, word: "shotgun", match: inCategory(bungie.CategoryShotgun)},
+		{name: filterIs, word: "machinegun", match: inCategory(bungie.CategoryMachineGun)},
+		{name: filterIs, word: "lmg", match: inCategory(bungie.CategoryMachineGun)},
+		{name: filterIs, word: "rocketlauncher", match: inCategory(bungie.CategoryRocketLauncher)},
+		{name: filterIs, word: "sidearm", match: inCategory(bungie.CategorySidearm)},
+		{name: filterIs, word: "sword", match: inCategory(bungie.CategorySword)},
 		{
 			name:  filterIs,
 			word:  "grenadelauncher",
-			match: inCategory(categoryGrenadeLaunchers, -categoryGrenadeLaunchers),
+			match: inCategory(bungie.CategoryGrenadeLaunchers, -bungie.CategoryGrenadeLaunchers),
 		},
-		{name: filterIs, word: "heavygrenadelauncher", match: inCategory(categoryGrenadeLaunchers)},
-		{name: filterIs, word: "specialgrenadelauncher", match: inCategory(-categoryGrenadeLaunchers)},
-		{name: filterIs, word: "tracerifle", match: inCategory(categoryTraceRifles)},
-		{name: filterIs, word: "linearfusionrifle", match: inCategory(categoryLinearFusionRifles)},
-		{name: filterIs, word: "lfr", match: inCategory(categoryLinearFusionRifles)},
-		{name: filterIs, word: "submachine", match: inCategory(categorySubmachineGuns)},
-		{name: filterIs, word: "smg", match: inCategory(categorySubmachineGuns)},
-		{name: filterIs, word: "bow", match: inCategory(categoryBows)},
-		{name: filterIs, word: "glaive", match: inCategory(categoryGlaives)},
-		{name: filterIs, word: "transmat", match: inCategory(categoryShipModsTransmatEffects)},
-		{name: filterIs, word: "weaponmod", match: inCategory(categoryWeaponMods)},
-		{name: filterIs, word: "armormod", match: inCategory(categoryArmorMods)},
-		{name: filterIs, word: "reptoken", match: inCategory(categoryReputationTokens)},
-		{name: filterIs, word: "primary", match: ofAmmo(ammoPrimary)},
-		{name: filterIs, word: "special", match: ofAmmo(ammoSpecial)},
-		{name: filterIs, word: "heavy", match: ofAmmo(ammoHeavy)},
+		{name: filterIs, word: "heavygrenadelauncher", match: inCategory(bungie.CategoryGrenadeLaunchers)},
+		{name: filterIs, word: "specialgrenadelauncher", match: inCategory(-bungie.CategoryGrenadeLaunchers)},
+		{name: filterIs, word: "tracerifle", match: inCategory(bungie.CategoryTraceRifles)},
+		{name: filterIs, word: "linearfusionrifle", match: inCategory(bungie.CategoryLinearFusionRifles)},
+		{name: filterIs, word: "lfr", match: inCategory(bungie.CategoryLinearFusionRifles)},
+		{name: filterIs, word: "submachine", match: inCategory(bungie.CategorySubmachineGuns)},
+		{name: filterIs, word: "smg", match: inCategory(bungie.CategorySubmachineGuns)},
+		{name: filterIs, word: "bow", match: inCategory(bungie.CategoryBows)},
+		{name: filterIs, word: "glaive", match: inCategory(bungie.CategoryGlaives)},
+		{name: filterIs, word: "transmat", match: inCategory(bungie.CategoryShipModsTransmatEffects)},
+		{name: filterIs, word: "weaponmod", match: inCategory(bungie.CategoryWeaponMods)},
+		{name: filterIs, word: "armormod", match: inCategory(bungie.CategoryArmorMods)},
+		{name: filterIs, word: "reptoken", match: inCategory(bungie.CategoryReputationTokens)},
+		{name: filterIs, word: "primary", match: ofAmmo(bungie.AmmoPrimary)},
+		{name: filterIs, word: "special", match: ofAmmo(bungie.AmmoSpecial)},
+		{name: filterIs, word: "heavy", match: ofAmmo(bungie.AmmoHeavy)},
 		{name: filterIs, word: "dupe", build: isDupe},
 		{name: filterIs, word: "incurrentchar", build: inCurrentChar},
 		{name: filterIs, word: "currentclass", build: currentClass},
@@ -330,37 +262,37 @@ var (
 		{name: filterIs, word: "blue", match: ofRarity(rarityRare)},
 		{name: filterIs, word: "purple", match: ofRarity(rarityLegendary)},
 		{name: filterIs, word: "yellow", match: ofRarity(rarityExotic)},
-		{name: filterIs, word: "kinetic", match: ofElement(damageKinetic)},
-		{name: filterIs, word: "arc", match: ofElement(damageArc)},
-		{name: filterIs, word: "solar", match: ofElement(damageThermal)},
-		{name: filterIs, word: "void", match: ofElement(damageVoid)},
-		{name: filterIs, word: "stasis", match: ofElement(damageStasis)},
-		{name: filterIs, word: "strand", match: ofElement(damageStrand)},
-		{name: filterIs, word: "light", match: ofElement(damageArc, damageThermal, damageVoid)},
-		{name: filterIs, word: "dark", match: ofElement(damageStasis, damageStrand)},
-		{name: filterIs, word: "engrams", match: inBuckets(bucketEngrams)},
-		{name: filterIs, word: "lostitems", match: inBuckets(bucketPostmaster)},
-		{name: filterIs, word: "messages", match: inBuckets(bucketMessages)},
-		{name: filterIs, word: "specialorders", match: inBuckets(bucketSpecialOrders)},
-		{name: filterIs, word: "kineticslot", match: inBuckets(bucketKinetic)},
-		{name: filterIs, word: "energy", match: inBuckets(bucketEnergy)},
-		{name: filterIs, word: "power", match: inBuckets(bucketPower)},
-		{name: filterIs, word: "helmet", match: inBuckets(bucketHelmet)},
-		{name: filterIs, word: "gauntlets", match: inBuckets(bucketGauntlets)},
-		{name: filterIs, word: "chest", match: inBuckets(bucketChestArmor)},
-		{name: filterIs, word: "leg", match: inBuckets(bucketLegArmor)},
-		{name: filterIs, word: "classitem", match: inBuckets(bucketClassArmor)},
-		{name: filterIs, word: "subclass", match: inBuckets(bucketSubclass)},
-		{name: filterIs, word: "seasonalartifacts", match: inBuckets(bucketArtifacts)},
-		{name: filterIs, word: "ghost", match: inBuckets(bucketGhost)},
-		{name: filterIs, word: "emblems", match: inBuckets(bucketEmblems)},
-		{name: filterIs, word: "ships", match: inBuckets(bucketShips)},
-		{name: filterIs, word: "vehicle", match: inBuckets(bucketVehicle)},
-		{name: filterIs, word: "emotes", match: inBuckets(bucketEmotes)},
-		{name: filterIs, word: "finishers", match: inBuckets(bucketFinishers)},
-		{name: filterIs, word: "accessories", match: inBuckets(bucketAccessories)},
-		{name: filterIs, word: "consumables", match: inBuckets(bucketConsumables)},
-		{name: filterIs, word: "modifications", match: inBuckets(bucketModifications)},
+		{name: filterIs, word: "kinetic", match: ofElement(bungie.DamageKinetic)},
+		{name: filterIs, word: "arc", match: ofElement(bungie.DamageArc)},
+		{name: filterIs, word: "solar", match: ofElement(bungie.DamageThermal)},
+		{name: filterIs, word: "void", match: ofElement(bungie.DamageVoid)},
+		{name: filterIs, word: "stasis", match: ofElement(bungie.DamageStasis)},
+		{name: filterIs, word: "strand", match: ofElement(bungie.DamageStrand)},
+		{name: filterIs, word: "light", match: ofElement(bungie.DamageArc, bungie.DamageThermal, bungie.DamageVoid)},
+		{name: filterIs, word: "dark", match: ofElement(bungie.DamageStasis, bungie.DamageStrand)},
+		{name: filterIs, word: "engrams", match: inBuckets(bungie.BucketEngrams)},
+		{name: filterIs, word: "lostitems", match: inBuckets(bungie.BucketPostmaster)},
+		{name: filterIs, word: "messages", match: inBuckets(bungie.BucketMessages)},
+		{name: filterIs, word: "specialorders", match: inBuckets(bungie.BucketSpecialOrders)},
+		{name: filterIs, word: "kineticslot", match: inBuckets(bungie.BucketKinetic)},
+		{name: filterIs, word: "energy", match: inBuckets(bungie.BucketEnergy)},
+		{name: filterIs, word: "power", match: inBuckets(bungie.BucketPower)},
+		{name: filterIs, word: "helmet", match: inBuckets(bungie.BucketHelmet)},
+		{name: filterIs, word: "gauntlets", match: inBuckets(bungie.BucketGauntlets)},
+		{name: filterIs, word: "chest", match: inBuckets(bungie.BucketChestArmor)},
+		{name: filterIs, word: "leg", match: inBuckets(bungie.BucketLegArmor)},
+		{name: filterIs, word: "classitem", match: inBuckets(bungie.BucketClassArmor)},
+		{name: filterIs, word: "subclass", match: inBuckets(bungie.BucketSubclass)},
+		{name: filterIs, word: "seasonalartifacts", match: inBuckets(bungie.BucketArtifacts)},
+		{name: filterIs, word: "ghost", match: inBuckets(bungie.BucketGhost)},
+		{name: filterIs, word: "emblems", match: inBuckets(bungie.BucketEmblems)},
+		{name: filterIs, word: "ships", match: inBuckets(bungie.BucketShips)},
+		{name: filterIs, word: "vehicle", match: inBuckets(bungie.BucketVehicle)},
+		{name: filterIs, word: "emotes", match: inBuckets(bungie.BucketEmotes)},
+		{name: filterIs, word: "finishers", match: inBuckets(bungie.BucketFinishers)},
+		{name: filterIs, word: "accessories", match: inBuckets(bungie.BucketAccessories)},
+		{name: filterIs, word: "consumables", match: inBuckets(bungie.BucketConsumables)},
+		{name: filterIs, word: "modifications", match: inBuckets(bungie.BucketModifications)},
 		{name: filterIs, word: "haspower", match: hasPower},
 		{name: filterIs, word: "haslight", match: hasPower},
 		{name: filterIs, word: "autotagged", match: isAutotagged},
@@ -861,10 +793,10 @@ func builtItems(s *Snapshot) []*Item {
 func inDummyBucket(item *Item) bool {
 	current := item.Bucket
 	if item.Lost {
-		current = bucketPostmaster
+		current = bungie.BucketPostmaster
 	}
 
-	return current == bucketForbidden || current == bucketDummy
+	return current == bungie.BucketForbidden || current == bungie.BucketDummy
 }
 
 // setBuilt reports whether the web client can build the item set of item.
@@ -937,14 +869,14 @@ func unbuiltLine(s *Snapshot) string {
 // marks no item as classified, so the equipping block of the definition
 // decides alone.
 func isEquipment(item *Item) bool {
-	return item.Equippable && item.Bucket != bucketEmotes && item.Bucket != bucketFinishers
+	return item.Equippable && item.Bucket != bungie.BucketEmotes && item.Bucket != bungie.BucketFinishers
 }
 
 // isComparable reports whether DIM marks item as comparable, which the
 // dupe filters read. DIM marks equipment that the game can lock, except an
 // emblem.
 func isComparable(item *Item) bool {
-	return isEquipment(item) && item.Lockable && item.Bucket != bucketEmblems
+	return isEquipment(item) && item.Lockable && item.Bucket != bungie.BucketEmblems
 }
 
 // inBuckets returns the predicate of an item whose bucket is one of
@@ -1146,7 +1078,7 @@ func isDupe(ctx searchContext) func(*Item) bool {
 
 	return func(item *Item) bool {
 		return item.Hash != hashDefaultShader &&
-			item.Bucket != bucketArtifacts &&
+			item.Bucket != bungie.BucketArtifacts &&
 			isComparable(item) &&
 			counts[itemDupeID(item)] > 1
 	}

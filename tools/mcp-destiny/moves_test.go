@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 var errStep = errors.New("step refused")
@@ -37,7 +39,7 @@ func (m *stepMover) Transfer(_ context.Context, action ItemAction, toVault bool)
 		name = "to vault from " + action.CharacterID
 	}
 
-	if action.InstanceID == stackInstanceID {
+	if action.InstanceID == bungie.StackInstanceID {
 		name += fmt.Sprintf(" x%d", action.StackSize)
 	}
 
@@ -270,7 +272,7 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 				Location:       2,
 				TransferStatus: 2,
 				Hash:           300,
-				BucketHash:     bucketConsumables,
+				BucketHash:     bungie.BucketConsumables,
 			})
 
 			s := NewSnapshot(&profile, fixtureDefs(), fixtureNow)
@@ -338,7 +340,7 @@ func TestReplacementFor(t *testing.T) {
 				Tier:       tierExotic,
 				Slot:       departing.Slot,
 				Owner:      hunterID,
-				ClassType:  classAny,
+				ClassType:  bungie.ClassAny,
 				Power:      2100,
 				Equippable: true,
 			})
@@ -350,12 +352,18 @@ func TestReplacementFor(t *testing.T) {
 					InstanceID: "2001",
 					Slot:       "Energy Weapons",
 					Owner:      hunterID,
-					ClassType:  classAny,
+					ClassType:  bungie.ClassAny,
 					Equippable: true,
 				},
 			)
 			s.add(
-				&Item{InstanceID: "2002", Slot: departing.Slot, Owner: titanID, ClassType: classAny, Equippable: true},
+				&Item{
+					InstanceID: "2002",
+					Slot:       departing.Slot,
+					Owner:      titanID,
+					ClassType:  bungie.ClassAny,
+					Equippable: true,
+				},
 			)
 			s.add(&Item{InstanceID: "2003", Slot: departing.Slot, Owner: hunterID, ClassType: 0, Equippable: true})
 

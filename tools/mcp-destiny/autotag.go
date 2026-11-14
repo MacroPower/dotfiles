@@ -5,6 +5,8 @@ import (
 	"errors"
 	"slices"
 	"strings"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // markDigits is the width of an autotag mark. The service compares marks
@@ -444,10 +446,12 @@ func vaultBlock(item *Item, def ItemDef) string {
 	case item.Equipped:
 		return "it is equipped"
 
-	case item.TransferStatus == transferNotTransferable:
+	case item.TransferStatus == bungie.TransferNotTransferable:
 		return "Bungie reports it as not transferable"
 
-	case def.Bucket == bucketForbidden, def.Bucket == bucketPostmaster, slices.Contains(postmasterBuckets, def.Bucket):
+	case def.Bucket == bungie.BucketForbidden,
+		def.Bucket == bungie.BucketPostmaster,
+		slices.Contains(postmasterBuckets, def.Bucket):
 		return "the web client never moves an item of its bucket"
 
 	case !item.Transferable:

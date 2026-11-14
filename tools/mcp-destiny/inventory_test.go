@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 func ids(items []*Item) []string {
@@ -43,10 +45,10 @@ func TestNewSnapshot(t *testing.T) {
 		Damage:     "Kinetic",
 		Owner:      ownerVault,
 		Kind:       kindWeapon,
-		ClassType:  classAny,
+		ClassType:  bungie.ClassAny,
 		Power:      2010,
 		Quantity:   1,
-		Bucket:     bucketKinetic,
+		Bucket:     bungie.BucketKinetic,
 		Perks: []Perk{
 			{
 				Plug:    Plug{Name: "Explosive Payload", Type: "Trait", Hash: 900},
@@ -130,44 +132,49 @@ func TestSlotBuckets(t *testing.T) {
 		"equipment before items": {
 			defs: fixtureDefs(),
 			want: []Bucket{
-				{Name: "Vault", Hash: bucketVault, Capacity: 700, Account: true},
-				{Name: "Kinetic Weapons", Hash: bucketKinetic, Capacity: 10},
-				{Name: "Power Weapons", Hash: bucketPower, Capacity: 10},
-				{Name: "Helmet", Hash: bucketHelmet, Capacity: 10},
-				{Name: "Consumables", Hash: bucketConsumables, Capacity: 50, Account: true},
-				{Name: "Engrams", Hash: bucketEngrams, Capacity: 10},
-				{Name: "Postmaster", Hash: bucketPostmaster, Capacity: 21},
+				{Name: "Vault", Hash: bungie.BucketVault, Capacity: 700, Account: true},
+				{Name: "Kinetic Weapons", Hash: bungie.BucketKinetic, Capacity: 10},
+				{Name: "Power Weapons", Hash: bungie.BucketPower, Capacity: 10},
+				{Name: "Helmet", Hash: bungie.BucketHelmet, Capacity: 10},
+				{Name: "Consumables", Hash: bungie.BucketConsumables, Capacity: 50, Account: true},
+				{Name: "Engrams", Hash: bungie.BucketEngrams, Capacity: 10},
+				{Name: "Postmaster", Hash: bungie.BucketPostmaster, Capacity: 21},
 			},
 		},
 		"unnamed buckets and the Postmaster stay out of the middle": {
 			defs: &Defs{Buckets: map[uint32]BucketDef{
-				bucketVault: {
+				bungie.BucketVault: {
 					Name:     "General",
 					Capacity: 700,
-					Category: bucketCategoryItem,
+					Category: bungie.BucketCategoryItem,
 					Order:    30,
 					Account:  true,
 				},
-				bucketPostmaster: {Name: "Lost Items", Capacity: 21, Category: bucketCategoryItem, Order: 10},
-				bucketKinetic: {
+				bungie.BucketPostmaster: {
+					Name:     "Lost Items",
+					Capacity: 21,
+					Category: bungie.BucketCategoryItem,
+					Order:    10,
+				},
+				bungie.BucketKinetic: {
 					Name:     "Kinetic Weapons",
 					Capacity: 10,
-					Category: bucketCategoryEquippable,
+					Category: bungie.BucketCategoryEquippable,
 					Order:    20,
 				},
-				3796357825: {Capacity: 10, Category: bucketCategoryEquippable, Order: 120},
+				3796357825: {Capacity: 10, Category: bungie.BucketCategoryEquippable, Order: 120},
 			}},
 			want: []Bucket{
-				{Name: "Vault", Hash: bucketVault, Capacity: 700, Account: true},
-				{Name: "Kinetic Weapons", Hash: bucketKinetic, Capacity: 10},
-				{Name: "Postmaster", Hash: bucketPostmaster, Capacity: 21},
+				{Name: "Vault", Hash: bungie.BucketVault, Capacity: 700, Account: true},
+				{Name: "Kinetic Weapons", Hash: bungie.BucketKinetic, Capacity: 10},
+				{Name: "Postmaster", Hash: bungie.BucketPostmaster, Capacity: 21},
 			},
 		},
 		"definitions without buckets": {
 			defs: &Defs{},
 			want: []Bucket{
-				{Name: "Vault", Hash: bucketVault, Account: true},
-				{Name: "Postmaster", Hash: bucketPostmaster},
+				{Name: "Vault", Hash: bungie.BucketVault, Account: true},
+				{Name: "Postmaster", Hash: bungie.BucketPostmaster},
 			},
 		},
 	}
@@ -193,61 +200,61 @@ func TestSlotsUsed(t *testing.T) {
 		want   int
 	}{
 		"equipped items take slots": {
-			bucket: bucketKinetic,
+			bucket: bungie.BucketKinetic,
 			owner:  hunterID,
 			want:   2,
 		},
 		"another character": {
-			bucket: bucketKinetic,
+			bucket: bungie.BucketKinetic,
 			owner:  titanID,
 		},
 		"postmaster": {
-			bucket: bucketPostmaster,
+			bucket: bungie.BucketPostmaster,
 			owner:  hunterID,
 			want:   1,
 		},
 		"messages take no Postmaster slot": {
 			extra: []ProfileItem{
-				{Hash: 300, Quantity: 1, Location: itemLocationPostmaster, BucketHash: bucketMessages},
-				{Hash: 300, Quantity: 2, Location: itemLocationPostmaster, BucketHash: bucketMessages},
+				{Hash: 300, Quantity: 1, Location: bungie.ItemLocationPostmaster, BucketHash: bungie.BucketMessages},
+				{Hash: 300, Quantity: 2, Location: bungie.ItemLocationPostmaster, BucketHash: bungie.BucketMessages},
 			},
-			bucket: bucketPostmaster,
+			bucket: bungie.BucketPostmaster,
 			owner:  hunterID,
 			want:   1,
 		},
 		"vault ignores the owner": {
-			bucket: bucketVault,
+			bucket: bungie.BucketVault,
 			owner:  hunterID,
 			want:   2,
 		},
 		"account bucket counts stacks": {
-			bucket: bucketConsumables,
+			bucket: bungie.BucketConsumables,
 			owner:  hunterID,
 			want:   1,
 		},
 		"move to the vault frees the slot": {
 			move:   "1003",
 			target: ownerVault,
-			bucket: bucketKinetic,
+			bucket: bungie.BucketKinetic,
 			owner:  hunterID,
 			want:   1,
 		},
 		"move to the vault takes a vault slot": {
 			move:   "1003",
 			target: ownerVault,
-			bucket: bucketVault,
+			bucket: bungie.BucketVault,
 			want:   3,
 		},
 		"pull frees the Postmaster slot": {
 			move:   "1005",
 			target: hunterID,
-			bucket: bucketPostmaster,
+			bucket: bungie.BucketPostmaster,
 			owner:  hunterID,
 		},
 		"pulled item takes a slot of its bucket": {
 			move:   "1005",
 			target: hunterID,
-			bucket: bucketKinetic,
+			bucket: bungie.BucketKinetic,
 			owner:  hunterID,
 			want:   3,
 		},
@@ -988,16 +995,16 @@ func TestNewItemElement(t *testing.T) {
 	// The definitions name the damage types of Kinetic and Arc, and they
 	// lack the hash 999. Riskrunner has the default damage type Arc.
 	defs := fixtureDefs()
-	defs.DamageEnums = map[uint32]int{3373582085: damageKinetic, 2303181850: damageArc}
-	defs.DamageTypes[damageArc] = "Arc"
-	defs.DamageTypes[damageVoid] = "Void"
+	defs.DamageEnums = map[uint32]int{3373582085: bungie.DamageKinetic, 2303181850: bungie.DamageArc}
+	defs.DamageTypes[bungie.DamageArc] = "Arc"
+	defs.DamageTypes[bungie.DamageVoid] = "Void"
 	defs.Items[110] = ItemDef{
 		Name:       "Riskrunner",
 		TypeName:   "Submachine Gun",
-		Bucket:     bucketEnergy,
-		ItemType:   itemTypeWeapon,
-		ClassType:  classAny,
-		DamageType: damageArc,
+		Bucket:     bungie.BucketEnergy,
+		ItemType:   bungie.ItemTypeWeapon,
+		ClassType:  bungie.ClassAny,
+		DamageType: bungie.DamageArc,
 		Equippable: true,
 	}
 
@@ -1008,12 +1015,12 @@ func TestNewItemElement(t *testing.T) {
 	}{
 		"damage type hash of Arc": {
 			instance:   `{"damageType": 2, "damageTypeHash": 2303181850}`,
-			want:       damageArc,
+			want:       bungie.DamageArc,
 			wantDamage: "Arc",
 		},
 		"damage type hash of Kinetic": {
 			instance:   `{"damageType": 1, "damageTypeHash": 3373582085}`,
-			want:       damageKinetic,
+			want:       bungie.DamageKinetic,
 			wantDamage: "Kinetic",
 		},
 		"no damage type hash": {
@@ -1034,7 +1041,7 @@ func TestNewItemElement(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			item := instanceItem(t, defs, 110, bucketEnergy, tc.instance)
+			item := instanceItem(t, defs, 110, bungie.BucketEnergy, tc.instance)
 			assert.Equal(t, tc.want, item.Element)
 			assert.Equal(t, tc.wantDamage, item.Damage)
 		})
@@ -1047,15 +1054,20 @@ func TestNewItemLightPower(t *testing.T) {
 	defs := fixtureDefs()
 	defs.Items[120] = ItemDef{
 		Name:       "Iron Banner Artifact",
-		Bucket:     bucketArtifacts,
-		ClassType:  classAny,
+		Bucket:     bungie.BucketArtifacts,
+		ClassType:  bungie.ClassAny,
 		Equippable: true,
 	}
-	defs.Items[121] = ItemDef{Name: "Voidwalker", Bucket: bucketSubclass, ClassType: classWarlock, Equippable: true}
+	defs.Items[121] = ItemDef{
+		Name:       "Voidwalker",
+		Bucket:     bungie.BucketSubclass,
+		ClassType:  bungie.ClassWarlock,
+		Equippable: true,
+	}
 	defs.Items[122] = ItemDef{
 		Name:                      "Lightkeeper Shell",
-		Bucket:                    bucketGhost,
-		ClassType:                 classAny,
+		Bucket:                    bungie.BucketGhost,
+		ClassType:                 bungie.ClassAny,
 		Equippable:                true,
 		DisablePrimaryStatDisplay: true,
 	}
@@ -1070,64 +1082,64 @@ func TestNewItemLightPower(t *testing.T) {
 		"Power": {
 			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
 			hash:      100,
-			bucket:    bucketKinetic,
+			bucket:    bungie.BucketKinetic,
 			want:      1900,
 			wantPower: 1900,
 		},
 		"Attack": {
 			instance:  `{"primaryStat": {"statHash": 1480404414, "value": 1890}}`,
 			hash:      100,
-			bucket:    bucketKinetic,
+			bucket:    bungie.BucketKinetic,
 			want:      1890,
 			wantPower: 1890,
 		},
 		"Defense": {
 			instance:  `{"primaryStat": {"statHash": 3897883278, "value": 1880}}`,
 			hash:      200,
-			bucket:    bucketHelmet,
+			bucket:    bungie.BucketHelmet,
 			want:      1880,
 			wantPower: 1880,
 		},
 		"Attack of Destiny 1": {
 			instance:  `{"primaryStat": {"statHash": 368428387, "value": 400}}`,
 			hash:      100,
-			bucket:    bucketKinetic,
+			bucket:    bungie.BucketKinetic,
 			want:      400,
 			wantPower: 400,
 		},
 		"another stat": {
 			instance:  `{"primaryStat": {"statHash": 9, "value": 2010}}`,
 			hash:      100,
-			bucket:    bucketKinetic,
+			bucket:    bungie.BucketKinetic,
 			wantPower: 2010,
 		},
 		"no primary stat": {
 			instance: `{"damageType": 1}`,
 			hash:     100,
-			bucket:   bucketKinetic,
+			bucket:   bungie.BucketKinetic,
 		},
 		"Artifacts bucket": {
 			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 50}}`,
 			hash:      120,
-			bucket:    bucketArtifacts,
+			bucket:    bungie.BucketArtifacts,
 			wantPower: 50,
 		},
 		"Subclass bucket": {
 			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
 			hash:      121,
-			bucket:    bucketSubclass,
+			bucket:    bungie.BucketSubclass,
 			wantPower: 1900,
 		},
 		"hidden primary stat": {
 			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
 			hash:      122,
-			bucket:    bucketGhost,
+			bucket:    bungie.BucketGhost,
 			wantPower: 1900,
 		},
 		"Subclass definition in another profile bucket": {
 			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
 			hash:      121,
-			bucket:    bucketKinetic,
+			bucket:    bungie.BucketKinetic,
 			wantPower: 1900,
 		},
 	}

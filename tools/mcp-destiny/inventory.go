@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // Owner values of items that no character holds.
@@ -344,7 +346,7 @@ func NewSnapshot(profile *Profile, defs *Defs, fetched time.Time) *Snapshot {
 	// marks a vault item.
 	for _, pi := range profile.ProfileInventory.Data.Items {
 		owner := ownerAccount
-		if pi.BucketHash == bucketVault {
+		if pi.BucketHash == bungie.BucketVault {
 			owner = ownerVault
 		}
 
@@ -387,8 +389,8 @@ func slotBuckets(defs *Defs) []Bucket {
 
 	for hash, def := range defs.Buckets {
 		switch {
-		case hash == bucketVault, hash == bucketPostmaster, def.Name == "", def.Capacity <= 0:
-		case def.Category == bucketCategoryEquippable, def.Category == bucketCategoryItem:
+		case hash == bungie.BucketVault, hash == bungie.BucketPostmaster, def.Name == "", def.Capacity <= 0:
+		case def.Category == bungie.BucketCategoryEquippable, def.Category == bungie.BucketCategoryItem:
 			managed = append(managed, Bucket{Name: def.Name, Hash: hash, Capacity: def.Capacity, Account: def.Account})
 		}
 	}
@@ -404,13 +406,15 @@ func slotBuckets(defs *Defs) []Bucket {
 		)
 	})
 
-	out := []Bucket{{Name: "Vault", Hash: bucketVault, Capacity: defs.Buckets[bucketVault].Capacity, Account: true}}
+	out := []Bucket{
+		{Name: "Vault", Hash: bungie.BucketVault, Capacity: defs.Buckets[bungie.BucketVault].Capacity, Account: true},
+	}
 	out = append(out, managed...)
 
 	return append(out, Bucket{
 		Name:     "Postmaster",
-		Hash:     bucketPostmaster,
-		Capacity: defs.Buckets[bucketPostmaster].Capacity,
+		Hash:     bungie.BucketPostmaster,
+		Capacity: defs.Buckets[bungie.BucketPostmaster].Capacity,
 	})
 }
 
@@ -435,9 +439,9 @@ func (s *Snapshot) SlotsUsed(bucket Bucket, owner string) int {
 // bucket that [Snapshot.Buckets] lists.
 func occupies(item *Item, bucket Bucket, owner string) bool {
 	switch {
-	case bucket.Hash == bucketVault:
+	case bucket.Hash == bungie.BucketVault:
 		return item.Owner == ownerVault
-	case bucket.Hash == bucketPostmaster:
+	case bucket.Hash == bungie.BucketPostmaster:
 		return item.Owner == owner && item.Lost
 	case bucket.Account:
 		owner = ownerAccount
@@ -457,19 +461,19 @@ func (s *Snapshot) add(item *Item) {
 func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equipped bool) *Item {
 	def, ok := defs.Items[pi.Hash]
 	if !ok {
-		def = ItemDef{Name: fmt.Sprintf("Unknown item %d", pi.Hash), ClassType: classAny}
+		def = ItemDef{Name: fmt.Sprintf("Unknown item %d", pi.Hash), ClassType: bungie.ClassAny}
 	}
 
-	postmaster := pi.BucketHash == bucketPostmaster || pi.Location == itemLocationPostmaster
+	postmaster := pi.BucketHash == bungie.BucketPostmaster || pi.Location == bungie.ItemLocationPostmaster
 
 	// Bungie can report an item as not transferable for as long as it sits
 	// in the Postmaster. A move pulls the item first, so the definition
 	// alone decides whether a Postmaster item transfers.
 	transferable := !def.NonTransferable &&
-		(postmaster || pi.TransferStatus&transferNotTransferable == 0)
+		(postmaster || pi.TransferStatus&bungie.TransferNotTransferable == 0)
 
 	slot := pi.BucketHash
-	if slot == bucketVault || slot == bucketPostmaster {
+	if slot == bungie.BucketVault || slot == bungie.BucketPostmaster {
 		slot = def.Bucket
 	}
 
@@ -491,17 +495,17 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 		Quantity:       pi.Quantity,
 		Equipped:       equipped,
 		Postmaster:     postmaster,
-		Lost:           pi.BucketHash == bucketPostmaster,
-		Locked:         pi.State&stateLocked != 0,
-		Masterwork:     pi.State&stateMasterwork != 0,
-		Crafted:        pi.State&stateCrafted != 0,
+		Lost:           pi.BucketHash == bungie.BucketPostmaster,
+		Locked:         pi.State&bungie.StateLocked != 0,
+		Masterwork:     pi.State&bungie.StateMasterwork != 0,
+		Crafted:        pi.State&bungie.StateCrafted != 0,
 		Transferable:   transferable,
 		TransferStatus: pi.TransferStatus,
 		Equippable:     def.Equippable,
 		Lockable:       pi.Lockable,
 	}
 
-	if def.ClassType != classAny {
+	if def.ClassType != bungie.ClassAny {
 		item.Class = defs.Classes[def.ClassType]
 	}
 
@@ -546,7 +550,8 @@ func newItem(profile *Profile, defs *Defs, pi ProfileItem, owner string, equippe
 // Artifacts. It then counts the value when the stat is one of lightStats.
 // Every other primary stat counts as 0.
 func lightPower(def ItemDef, stat ProfileStat) int {
-	shown := def.Bucket != bucketSubclass && def.Bucket != bucketArtifacts && !def.DisablePrimaryStatDisplay
+	shown := def.Bucket != bungie.BucketSubclass && def.Bucket != bungie.BucketArtifacts &&
+		!def.DisablePrimaryStatDisplay
 	if !shown || !slices.Contains(lightStats, stat.Hash) {
 		return 0
 	}
@@ -571,12 +576,12 @@ func rarityName(tierType int) string {
 // order that DIM makes them.
 //
 // First, a special grenade launcher gets the negative of
-// [categoryGrenadeLaunchers] in place of that hash. DIM marks an item as a
-// special grenade launcher when its categories hold [categoryWeapon] and
-// [categoryGrenadeLaunchers] and lack [categoryDummies] and
-// [categoryPowerWeapon]. Second, a linear fusion rifle loses the first
-// [categoryFusionRifle], so a search for fusion rifles leaves out linear
-// fusion rifles.
+// [bungie.CategoryGrenadeLaunchers] in place of that hash. DIM marks an
+// item as a special grenade launcher when its categories hold
+// [bungie.CategoryWeapon] and [bungie.CategoryGrenadeLaunchers] and lack
+// [bungie.CategoryDummies] and [bungie.CategoryPowerWeapon]. Second, a
+// linear fusion rifle loses the first [bungie.CategoryFusionRifle], so a
+// search for fusion rifles leaves out linear fusion rifles.
 //
 // DIM also adds categories to a few item hashes from a table of its own.
 // No search filter of the preview reads those categories, so
@@ -587,17 +592,17 @@ func itemCategories(categories []uint32) []int64 {
 		out = append(out, int64(category))
 	}
 
-	special := slices.Contains(out, categoryWeapon) &&
-		!slices.Contains(out, categoryDummies) &&
-		slices.Contains(out, categoryGrenadeLaunchers) &&
-		!slices.Contains(out, categoryPowerWeapon)
+	special := slices.Contains(out, bungie.CategoryWeapon) &&
+		!slices.Contains(out, bungie.CategoryDummies) &&
+		slices.Contains(out, bungie.CategoryGrenadeLaunchers) &&
+		!slices.Contains(out, bungie.CategoryPowerWeapon)
 	if special {
-		out = slices.DeleteFunc(out, func(category int64) bool { return category == categoryGrenadeLaunchers })
-		out = append(out, -categoryGrenadeLaunchers)
+		out = slices.DeleteFunc(out, func(category int64) bool { return category == bungie.CategoryGrenadeLaunchers })
+		out = append(out, -bungie.CategoryGrenadeLaunchers)
 	}
 
-	if slices.Contains(out, categoryLinearFusionRifles) {
-		i := slices.Index(out, categoryFusionRifle)
+	if slices.Contains(out, bungie.CategoryLinearFusionRifles) {
+		i := slices.Index(out, bungie.CategoryFusionRifle)
 		if i >= 0 {
 			out = slices.Delete(out, i, i+1)
 		}
@@ -608,9 +613,9 @@ func itemCategories(categories []uint32) []int64 {
 
 func kindOf(def ItemDef) string {
 	switch def.ItemType {
-	case itemTypeWeapon:
+	case bungie.ItemTypeWeapon:
 		return kindWeapon
-	case itemTypeArmor:
+	case bungie.ItemTypeArmor:
 		return kindArmor
 	default:
 		return kindOther

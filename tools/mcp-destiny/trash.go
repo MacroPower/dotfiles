@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // tagJunk is the tag id that marks an item for dismantling.
@@ -65,7 +67,7 @@ func (s *Snapshot) gearBuckets() []Bucket {
 	var out []Bucket
 
 	for _, b := range s.Buckets {
-		if b.Account || b.Hash == bucketVault || b.Hash == bucketPostmaster {
+		if b.Account || b.Hash == bungie.BucketVault || b.Hash == bungie.BucketPostmaster {
 			continue
 		}
 
@@ -135,7 +137,7 @@ func (s *Snapshot) JunkPlan(c Character, b Bucket) JunkPlan {
 		case !junk:
 			// An item without the junk tag counts only in the slot.
 		case item.Owner != c.ID && !item.Equipped && !item.Postmaster && item.Transferable &&
-			(item.ClassType == classAny || item.ClassType == c.ClassType):
+			(item.ClassType == bungie.ClassAny || item.ClassType == c.ClassType):
 			plan.Waiting = append(plan.Waiting, item)
 		default:
 			plan.Skipped++

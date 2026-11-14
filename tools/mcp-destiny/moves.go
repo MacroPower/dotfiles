@@ -6,15 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
-const (
-	tierExotic = "Exotic"
-
-	// stackInstanceID is the item id that Bungie expects for an item
-	// without an instance.
-	stackInstanceID = "0"
-)
+const tierExotic = "Exotic"
 
 var (
 	// ErrMove reports a move that the inventory state forbids before any
@@ -152,7 +148,7 @@ func (s *Snapshot) checkMove(item *Item, target string, equip bool) error {
 		return fmt.Errorf("%w: %s is not equippable", ErrMove, item.Name)
 	}
 
-	if item.ClassType != classAny && item.ClassType != c.ClassType {
+	if item.ClassType != bungie.ClassAny && item.ClassType != c.ClassType {
 		return fmt.Errorf("%w: %s is %s gear, and the target is a %s", ErrMove, item.Name, item.Class, c.Class)
 	}
 
@@ -214,7 +210,7 @@ func (s *Snapshot) replacementFor(item *Item) *Item {
 		case other.Owner != item.Owner, other.Slot != item.Slot,
 			other.Equipped, other.Postmaster,
 			other.InstanceID == "", !other.Equippable,
-			other.ClassType != classAny && other.ClassType != c.ClassType,
+			other.ClassType != bungie.ClassAny && other.ClassType != c.ClassType,
 			other.Tier == tierExotic && item.Tier != tierExotic:
 			continue
 		}
@@ -336,7 +332,7 @@ func (s *Snapshot) MoveStack(
 		units := min(amount-moved, source.Quantity)
 
 		action := ItemAction{
-			InstanceID:  stackInstanceID,
+			InstanceID:  bungie.StackInstanceID,
 			ItemHash:    hash,
 			CharacterID: s.Characters[0].ID,
 			StackSize:   units,

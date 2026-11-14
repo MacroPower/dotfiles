@@ -27,25 +27,6 @@ const (
 	bungieAccessTokenStale = 2111
 )
 
-// Inventory bucket hashes that the inventory logic treats specially.
-const (
-	bucketVault      uint32 = 138197802
-	bucketPostmaster uint32 = 215593132
-)
-
-// itemLocationPostmaster is the Postmaster value of the Bungie ItemLocation
-// enum.
-const itemLocationPostmaster = 4
-
-// Bit flags of the Bungie TransferStatuses and ItemState enums.
-const (
-	transferNotTransferable = 2
-
-	stateLocked     = 1
-	stateMasterwork = 4
-	stateCrafted    = 8
-)
-
 // socketArrayDefault is the Bungie DestinySocketArrayType value that
 // selects the socket list of an item, which the sockets component of a
 // profile reports.

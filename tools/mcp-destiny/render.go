@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 const timeLayout = "2006-01-02 15:04 MST"
@@ -95,10 +97,10 @@ func renderCharacters(s *Snapshot) string {
 		fmt.Fprintf(&b, "  Slots used: %s\n", slotsList(s, c.ID, func(bucket Bucket) bool { return !bucket.Account }))
 	}
 
-	vault := Bucket{Hash: bucketVault, Account: true}
+	vault := Bucket{Hash: bungie.BucketVault, Account: true}
 
 	for _, bucket := range s.Buckets {
-		if bucket.Hash == bucketVault {
+		if bucket.Hash == bungie.BucketVault {
 			vault = bucket
 		}
 	}
@@ -106,7 +108,7 @@ func renderCharacters(s *Snapshot) string {
 	fmt.Fprintf(&b, "\nVault: %s slots used\n", slotsLabel(s.SlotsUsed(vault, ownerVault), vault.Capacity))
 
 	account := slotsList(s, ownerAccount, func(bucket Bucket) bool {
-		return bucket.Account && bucket.Hash != bucketVault
+		return bucket.Account && bucket.Hash != bungie.BucketVault
 	})
 	if account != "" {
 		fmt.Fprintf(&b, "Account-wide slots used: %s\n", account)
