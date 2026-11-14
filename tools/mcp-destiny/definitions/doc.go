@@ -24,6 +24,15 @@
 // version lacks. The game can hold an item that the manifest version
 // lacks when Bungie added the item in a later version.
 //
+// A name store names the other items. It looks each such item up in the
+// live manifest of Bungie, one request for each item. A caller passes the
+// definitions and the item hashes of one call to the store. The store
+// returns a copy of the definitions that also names the items that Bungie
+// names. The copy records the outcome of each lookup, so a caller can say
+// why an item still has no name. A call sends a bounded number of lookups
+// and waits a bounded time for them, so a caller that renders many items
+// stays fast.
+//
 // # Loading
 //
 // A caller makes one loader for the process and asks it for the definitions
@@ -42,4 +51,18 @@
 // cache file removes the files of every other version and every other
 // layout. The files of an older layout therefore leave the directory with
 // the first write after an upgrade.
+//
+// The name store keeps its own cache file for each manifest version in the
+// same directory, with the answers of Bungie to its lookups. It writes the
+// file after each call that got a new answer, and the write removes the
+// name files of the other versions and layouts. The store keeps no failed
+// lookup, so the next call looks the item up again.
+//
+// Several processes can share the cache directory, such as the servers of
+// two sessions. Before a name store looks an item up, it reads the answers
+// that the other processes saved to its file. A write adds the answers of
+// the store to those that the file holds. A lock serializes the writes, so
+// no process drops the answers of another. Each write of a cache file goes
+// to a temporary file of its own, and that file then replaces the cache
+// file. A reader therefore never sees half a file.
 package definitions

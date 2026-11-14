@@ -1423,8 +1423,9 @@ func TestNewSnapshotNames(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		want string
-		hash uint32
+		lookups map[uint32]definitions.Lookup
+		want    string
+		hash    uint32
 	}{
 		"item definition": {
 			hash: 300,
@@ -1446,11 +1447,29 @@ func TestNewSnapshotNames(t *testing.T) {
 			hash: 77,
 			want: "Unknown item 77",
 		},
+		"withheld item that a lookup at Bungie names": {
+			hash:    definitionstest.ItemWithheld,
+			lookups: map[uint32]definitions.Lookup{78: {Name: "Wish-Keeper Snare Refit", Defined: true}},
+			want:    "Wish-Keeper Snare Refit",
+		},
+		"item of a later manifest version that a lookup at Bungie names": {
+			hash:    77,
+			lookups: map[uint32]definitions.Lookup{77: {Name: "Strange Coin", Defined: true}},
+			want:    "Strange Coin",
+		},
+		"item that Bungie classifies": {
+			hash:    77,
+			lookups: map[uint32]definitions.Lookup{77: {Defined: true, Redacted: true}},
+			want:    "Unknown item 77",
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
+			defs := definitionstest.Defs()
+			defs.Lookups = tc.lookups
 
 			body := fmt.Sprintf(`{
 				"profileCurrencies": {"data": {"items": [{"itemHash": %[1]d, "quantity": 3}]}},
@@ -1463,12 +1482,12 @@ func TestNewSnapshotNames(t *testing.T) {
 
 			require.NoError(t, json.Unmarshal([]byte(body), &p))
 
-			s := NewSnapshot(&p, definitionstest.Defs(), bungietest.Now)
+			s := NewSnapshot(&p, defs, bungietest.Now)
 
 			require.Len(t, s.Items, 1)
 			assert.Equal(t, tc.want, s.Items[0].Name)
 			assert.Equal(t, []Currency{{Name: tc.want, Quantity: 3}}, s.Currencies)
-			assert.Equal(t, tc.want, ItemName(definitionstest.Defs(), tc.hash))
+			assert.Equal(t, tc.want, ItemName(defs, tc.hash))
 		})
 	}
 }

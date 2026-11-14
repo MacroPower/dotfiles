@@ -1,6 +1,8 @@
 package bungie_test
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -169,6 +171,105 @@ func TestBungieContent(t *testing.T) {
 	_, err = bungie.New(bungie.WithContentURL(missing)).Content(t.Context(), bungietest.PathLoadoutNames)
 	require.ErrorIs(t, err, bungie.ErrPlatform)
 	require.EqualError(t, err, "bungie: content file returned status 404")
+}
+
+func TestBungieItemDefinition(t *testing.T) {
+	t.Parallel()
+
+	named := &bungie.ItemDefinition{Redacted: false}
+	named.DisplayProperties.Name = "Guided Game Ticket"
+
+	redacted := &bungie.ItemDefinition{Redacted: true}
+
+	tests := map[string]struct {
+		err  error
+		want *bungie.ItemDefinition
+		body string
+	}{
+		"definition with a name": {
+			body: bungietest.ItemDefinitionJSON(2576899547, "Guided Game Ticket", false),
+			want: named,
+		},
+		"classified definition": {
+			body: bungietest.ItemDefinitionJSON(2576899547, "", true),
+			want: redacted,
+		},
+		"null response": {
+			body: bungietest.NoItemDefinitionJSON,
+		},
+		"envelope without a response": {
+			body: `{"ErrorCode": 1, "ErrorStatus": "Success"}`,
+		},
+		"response that is not a definition": {
+			body: `{"ErrorCode": 1, "Response": [1]}`,
+			err:  bungie.ErrPlatform,
+		},
+		"platform error": {
+			body: `{"ErrorCode": 5, "ErrorStatus": "SystemDisabled", "Message": "down"}`,
+			err:  bungie.ErrPlatform,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			u, rec := httpfake.Serve(t, bungie.DefaultUserAgent, http.StatusOK, tc.body)
+
+			got, err := bungie.New(bungie.WithURL(u)).
+				ItemDefinition(t.Context(), bungie.Credentials{APIKey: "key", AccessToken: "access"}, 2576899547)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.want, got)
+			}
+
+			calls := rec.Calls(http.MethodGet, bungietest.PathItemDefinition(2576899547))
+			require.Len(t, calls, 1)
+			assert.Equal(t, "Bearer access", calls[0].Auth)
+		})
+	}
+}
+
+// TestBungieMissingResponse pins that an endpoint other than the item
+// definition still rejects a success envelope without a response.
+func TestBungieMissingResponse(t *testing.T) {
+	t.Parallel()
+
+	u, _ := httpfake.Serve(t, bungie.DefaultUserAgent, http.StatusOK, `{"ErrorCode": 1, "ErrorStatus": "Success"}`)
+
+	_, err := bungie.New(bungie.WithURL(u)).
+		Profile(t.Context(), bungie.Credentials{}, bungie.Membership{ID: "4611", Type: 3})
+	require.ErrorIs(t, err, bungie.ErrPlatform)
+}
+
+func TestProfileItemHashes(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		body string
+		want []uint32
+	}{
+		"fixture profile": {
+			body: bungietest.ProfileJSON,
+			want: []uint32{77, 100, 101, 102, 200, 300, bungietest.ItemBrightDust, bungietest.ItemGlimmer},
+		},
+		"empty profile": {
+			body: `{}`,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var p bungie.Profile
+
+			require.NoError(t, json.Unmarshal([]byte(tc.body), &p))
+			assert.Equal(t, tc.want, p.ItemHashes())
+		})
+	}
 }
 
 func TestBungieVendors(t *testing.T) {
@@ -432,9 +533,12 @@ func TestBungieErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		body         string
-		wantMessage  string
-		status       int
+		body        string
+		wantMessage string
+		status      int
+		// statusError marks a response without a platform response,
+		// which the client reports as a [*bungie.StatusError].
+		statusError  bool
 		unauthorized bool
 	}{
 		"platform error": {
@@ -460,8 +564,14 @@ func TestBungieErrors(t *testing.T) {
 			unauthorized: true,
 		},
 		"bare 503": {
-			status: http.StatusServiceUnavailable,
-			body:   `<html>maintenance</html>`,
+			status:      http.StatusServiceUnavailable,
+			body:        `<html>maintenance</html>`,
+			statusError: true,
+		},
+		"envelope without an error code": {
+			status:      http.StatusOK,
+			body:        `{"Response": 0}`,
+			statusError: true,
 		},
 	}
 
@@ -486,6 +596,21 @@ func TestBungieErrors(t *testing.T) {
 
 				require.ErrorAs(t, err, &platform)
 				assert.Equal(t, tc.wantMessage, platform.Error())
+			}
+
+			if tc.statusError {
+				var status *bungie.StatusError
+
+				require.ErrorAs(t, err, &status)
+				assert.Equal(
+					t,
+					&bungie.StatusError{Path: "/Destiny2/Actions/Items/EquipItem/", Status: tc.status},
+					status,
+				)
+				assert.Equal(t, fmt.Sprintf(
+					"bungie: /Destiny2/Actions/Items/EquipItem/ returned status %d without a platform response",
+					tc.status,
+				), err.Error())
 			}
 		})
 	}

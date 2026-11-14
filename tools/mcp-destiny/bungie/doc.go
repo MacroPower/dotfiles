@@ -13,7 +13,8 @@
 // # Client
 //
 // The client reads the profile, the vendors, the activities, the activity
-// history, and the manifest of a Destiny account. It also performs the
+// history, and the manifest of a Destiny account. It also reads the
+// definition of one item from the live manifest. It also performs the
 // item actions and the loadout actions in the live game. The caller passes
 // credentials with each platform request. Every platform request carries
 // the API key of Agg's Destiny Vault Manager and the access token of the
@@ -24,7 +25,9 @@
 // A [*PlatformError] carries the error code of a platform response. It
 // unwraps to [ErrPlatform]. When the code reports an unusable access
 // token, it unwraps to [ErrUnauthorized] as well. The caller refreshes the
-// tokens and retries a request that fails with [ErrUnauthorized].
+// tokens and retries a request that fails with [ErrUnauthorized]. A
+// [*StatusError] reports a response without a platform response, such as
+// the HTML page of a gateway error. It unwraps to [ErrPlatform] too.
 //
 // # Loadout Tables
 //

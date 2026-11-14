@@ -19,6 +19,11 @@
 // server that pick the answers before the call under test. It reads the
 // recorded requests after the call.
 //
+// The live manifest of Bungie defines each item, also the items that the
+// definitions of the service lack. The fake server answers the lookup of
+// such a definition only for the item hashes that a test adds to the
+// answers of the server. It answers every other lookup with an error.
+//
 // The step mover is a recording fake of the item actions and the loadout
 // actions of the Bungie client, for code that takes those actions through
 // an interface. It records each action as a short string and sends no

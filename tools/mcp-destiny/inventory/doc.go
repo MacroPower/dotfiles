@@ -14,7 +14,9 @@
 // perks, the stats, and the damage type of the copy. The service withholds
 // the definitions of dummy items, but it names the dummy items that the
 // vendors sell and the dummy rewards of the activities. The snapshot gives
-// such an item that name. An item that no table names reads "Unknown item
+// such an item that name. The caller can also pass definitions that carry
+// the names of lookups in the live manifest of Bungie, and the snapshot
+// reads those names last. An item that nothing names reads "Unknown item
 // <hash>". The snapshot lists the characters with the most recently played
 // first. It lists the vault first and the Postmaster last among the
 // buckets.

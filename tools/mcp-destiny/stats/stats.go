@@ -153,6 +153,29 @@ type Summary struct {
 	Weapons  []WeaponKills
 }
 
+// ItemHashes returns the item hash of each row of the summary, the flows
+// first and the weapons second, in the order of the rows. A hash of
+// several rows comes one time, at its first row.
+func (s Summary) ItemHashes() []uint32 {
+	var hashes []uint32
+
+	add := func(hash uint32) {
+		if !slices.Contains(hashes, hash) {
+			hashes = append(hashes, hash)
+		}
+	}
+
+	for _, flow := range s.Flows {
+		add(flow.ItemHash)
+	}
+
+	for _, weapon := range s.Weapons {
+		add(weapon.ItemHash)
+	}
+
+	return hashes
+}
+
 // Summarize counts the changes of chunks whose At falls between from
 // and to, inclusive. It restates the changes from [statLookback] before
 // from. The first change of the period thus takes its before value from

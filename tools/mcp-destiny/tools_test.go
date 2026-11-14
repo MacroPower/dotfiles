@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -10182,6 +10183,10 @@ func TestGetStats(t *testing.T) {
 
 	f := newFakes(t)
 	f.service.Data[pathStats] = statsFixture(t)
+	f.bungie.Data[bungietest.PathItemDefinition(77)] = bungietest.NoItemDefinitionJSON
+	f.bungie.Data[bungietest.PathItemDefinition(definitionstest.ItemWithheld)] = bungietest.ItemDefinitionJSON(
+		definitionstest.ItemWithheld, "Wish-Keeper Snare Refit", false,
+	)
 
 	got, isError := call(t, f.h.handleGetStats, GetStatsInput{})
 	require.False(t, isError, got)
@@ -10197,24 +10202,268 @@ func TestGetStats(t *testing.T) {
 		"Unknown item 77 | currency | 77 | +2 | 2 | 0",
 		"Enhancement Core | stack | 300 | +12 | 12 | 0",
 		"Legendary Shards | stack | 501 | -5 | 0 | 5",
-		"Unknown item 78 | stack | 78 | +1 | 1 | 0",
+		"Wish-Keeper Snare Refit | stack | 78 | +1 | 1 | 0",
 		"",
 		"Weapon kills, most first:",
 		"instance id | name | total | PvE | PvP",
 		"9999 | Midnight Coup | 20 | 20 | 0",
 		"1001 | Fatebringer | 12 | 10 | 2",
 		"",
-		"The service withholds the definitions of dummy items, classified items, and items without a name, " +
-			"so the server cannot name the item with the hash 78. " +
-			"The definitions of manifest version v1 lack the item with the hash 77, so the server cannot name it. " +
-			"The game can hold an item that Bungie added in a later manifest version.",
+		"The definitions of manifest version v1 and the live manifest of Bungie both lack " +
+			"the item with the hash 77, so the server cannot name it.",
 	}, "\n"), got)
 
 	reads := f.service.Calls(http.MethodGet, pathStats)
 	require.Len(t, reads, 1)
 	assert.Equal(t, "Bearer session-1", reads[0].Auth)
 	assert.Equal(t, fmt.Sprintf("since=%d&after=0", bungietest.Now.Add(-27*time.Hour).UnixMilli()), reads[0].Query)
-	assert.Empty(t, f.bungie.All())
+
+	// The tool reads no profile. It looks up only the hashes that the
+	// definitions do not name, and it keeps each answer.
+	_, isError = call(t, f.h.handleGetStats, GetStatsInput{})
+	require.False(t, isError)
+	assert.ElementsMatch(t, []string{
+		bungietest.PathItemDefinition(77),
+		bungietest.PathItemDefinition(definitionstest.ItemWithheld),
+	}, bungiePaths(f))
+}
+
+// bungiePaths returns the path of each request that the fake Bungie server
+// received, in the order of arrival.
+func bungiePaths(f *fakes) []string {
+	var paths []string
+
+	for _, req := range f.bungie.All() {
+		paths = append(paths, req.Path)
+	}
+
+	return paths
+}
+
+// TestItemNamesFromBungie pins that the tools that render items name an
+// item that the definitions do not name with the name that the live
+// manifest of Bungie gives it. The fixture profile holds the currency 77,
+// which the definitions lack. The test adds a stack of the withheld item
+// 78 to the kinetic slot of the Hunter.
+func TestItemNamesFromBungie(t *testing.T) {
+	t.Parallel()
+
+	stack := `{"itemHash": 78, "quantity": 34, "location": 1, "bucketHash": 1498876634}, `
+	profile := `{"ErrorCode": 1, "Response": ` +
+		strings.Replace(bungietest.ProfileJSON, `"c1": {"items": [`, `"c1": {"items": [`+stack, 1) + `}`
+
+	tests := map[string]struct {
+		run  func(t *testing.T, f *fakes) string
+		want []string
+	}{
+		"list_characters": {
+			run: func(t *testing.T, f *fakes) string {
+				t.Helper()
+
+				got, isError := call(t, f.h.handleListCharacters, EmptyInput{})
+				require.False(t, isError, got)
+
+				return got
+			},
+			want: []string{"- Strange Coin: 3"},
+		},
+		"list_items": {
+			run: func(t *testing.T, f *fakes) string {
+				t.Helper()
+
+				got, isError := call(
+					t,
+					f.h.handleListItems,
+					ListItemsInput{Kind: inventory.KindOther, Location: "hunter"},
+				)
+				require.False(t, isError, got)
+
+				return got
+			},
+			want: []string{"stack of 34 (item hash 78) | Wish-Keeper Snare Refit | "},
+		},
+		"stage_junk": {
+			run: func(t *testing.T, f *fakes) string {
+				t.Helper()
+
+				f.service.Data[pathTags] = junkTags(t, "1003")
+
+				got, isError := call(t, f.h.handleStageJunk, StageJunkInput{Slot: "kinetic"})
+				require.False(t, isError, got)
+
+				return got
+			},
+			want: []string{"so stage_junk leaves it in place: Wish-Keeper Snare Refit (stack of 34, item hash 78)."},
+		},
+		"get_stats": {
+			run: func(t *testing.T, f *fakes) string {
+				t.Helper()
+
+				f.service.Data[pathStats] = statsFixture(t)
+
+				got, isError := call(t, f.h.handleGetStats, GetStatsInput{})
+				require.False(t, isError, got)
+				assert.True(
+					t,
+					strings.HasSuffix(got, "1001 | Fatebringer | 12 | 10 | 2"),
+					"no reason follows the tables",
+				)
+
+				return got
+			},
+			want: []string{
+				"Strange Coin | currency | 77 | +2 | 2 | 0",
+				"Wish-Keeper Snare Refit | stack | 78 | +1 | 1 | 0",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.bungie.ProfileBody = profile
+			f.bungie.Data[bungietest.PathItemDefinition(77)] = bungietest.ItemDefinitionJSON(77, "Strange Coin", false)
+			f.bungie.Data[bungietest.PathItemDefinition(78)] = bungietest.ItemDefinitionJSON(
+				78, "Wish-Keeper Snare Refit", false,
+			)
+
+			got := tc.run(t, f)
+			for _, want := range tc.want {
+				assert.Contains(t, got, want)
+			}
+
+			assert.NotContains(t, got, "Unknown item")
+
+			// A later profile keeps the answers, so each hash costs one
+			// lookup.
+			_, err := f.h.loadSnapshot(t.Context(), true)
+			require.NoError(t, err)
+
+			lookups := slices.DeleteFunc(bungiePaths(f), func(path string) bool {
+				return !strings.HasPrefix(path, "/Destiny2/Manifest/")
+			})
+			assert.ElementsMatch(t, []string{
+				bungietest.PathItemDefinition(77),
+				bungietest.PathItemDefinition(78),
+			}, lookups)
+		})
+	}
+}
+
+// TestGetStatsFailedLookups pins that the lookups at Bungie that fail for
+// one cause share a sentence after the tables. The error of each request
+// names the path of its own item hash, so the sentence must not quote it.
+func TestGetStatsFailedLookups(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		// answer answers each request of the fake Bungie platform. The
+		// tool sends only the lookups to Bungie.
+		answer func(t *testing.T, done <-chan struct{}) http.HandlerFunc
+		reason string
+	}{
+		"gateway error": {
+			answer: func(*testing.T, <-chan struct{}) http.HandlerFunc {
+				return func(w http.ResponseWriter, _ *http.Request) {
+					http.Error(w, "<html>Bad Gateway</html>", http.StatusBadGateway)
+				}
+			},
+			reason: "Bungie answered with the HTTP status 502 and no platform response",
+		},
+		"maintenance": {
+			answer: func(t *testing.T, _ <-chan struct{}) http.HandlerFunc {
+				t.Helper()
+
+				return func(w http.ResponseWriter, _ *http.Request) {
+					// The message of Bungie ends with its own period.
+					httpfake.WriteJSON(
+						t,
+						w,
+						http.StatusServiceUnavailable,
+						`{"ErrorCode": 5, "ErrorStatus": "SystemDisabled", `+
+							`"Message": "This system is temporarily disabled for maintenance."}`,
+					)
+				}
+			},
+			reason: "bungie: SystemDisabled: This system is temporarily disabled for maintenance",
+		},
+		"body cut short": {
+			answer: func(t *testing.T, _ <-chan struct{}) http.HandlerFunc {
+				t.Helper()
+
+				return func(w http.ResponseWriter, _ *http.Request) {
+					// The server closes the connection after a body
+					// shorter than its declared length.
+					w.Header().Set("Content-Length", "100")
+					httpfake.WriteJSON(t, w, http.StatusOK, `{"ErrorCode": 1`)
+				}
+			},
+			reason: "reading the item definition: unexpected EOF",
+		},
+		"response that does not decode": {
+			answer: func(t *testing.T, _ <-chan struct{}) http.HandlerFunc {
+				t.Helper()
+
+				return func(w http.ResponseWriter, _ *http.Request) {
+					httpfake.WriteJSON(
+						t,
+						w,
+						http.StatusOK,
+						`{"ErrorCode": 1, "ErrorStatus": "Success", "Response": [1]}`,
+					)
+				}
+			},
+			reason: "bungie: decoding the item definition: " +
+				"json: cannot unmarshal array into Go value of type bungie.ItemDefinition",
+		},
+		"stalled lookups": {
+			answer: func(_ *testing.T, done <-chan struct{}) http.HandlerFunc {
+				return func(_ http.ResponseWriter, r *http.Request) {
+					select {
+					case <-r.Context().Done():
+					case <-done:
+					}
+				}
+			},
+			reason: "the lookups ran out of time",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.service.Data[pathStats] = statsFixture(t)
+
+			// The cleanups run in reverse order, so the stalled handlers
+			// return before the server closes.
+			done := make(chan struct{})
+			platform := httptest.NewServer(tc.answer(t, done))
+			t.Cleanup(platform.Close)
+			t.Cleanup(func() { close(done) })
+
+			f.h.bungie = bungie.New(bungie.WithURL(platform.URL))
+			f.h.names = definitions.NewNameStore(
+				bungieItems{h: f.h},
+				"",
+				definitions.WithLookupTimeout(200*time.Millisecond),
+			)
+
+			got, isError := call(t, f.h.handleGetStats, GetStatsInput{})
+			require.False(t, isError, got)
+
+			want := "The service withholds the definitions of dummy items, classified items, " +
+				"and items without a name, so the server cannot name the item with the hash 78. " +
+				"The definitions of manifest version v1 lack the item with the hash 77, so the server cannot name it. " +
+				"The game can hold an item that Bungie added in a later manifest version. " +
+				"The lookup of the items with the hashes 77 and 78 at Bungie failed: " + tc.reason + ". " +
+				"A later call looks them up again."
+			assert.Equal(t, want, got[strings.LastIndex(got, "\n")+1:])
+		})
+	}
 }
 
 func TestGetStatsPeriods(t *testing.T) {
@@ -10322,7 +10571,14 @@ func TestGetStatsRefreshesSession(t *testing.T) {
 	require.Len(t, reads, 2)
 	assert.Equal(t, "Bearer session-1", reads[0].Auth)
 	assert.Equal(t, "Bearer session-2", reads[1].Auth)
-	assert.Empty(t, f.bungie.All())
+
+	// The lookups of the unnamed hashes carry the refreshed access token.
+	lookups := f.bungie.All()
+	assert.Len(t, lookups, 2)
+
+	for _, req := range lookups {
+		assert.Equal(t, "Bearer access-2", req.Auth, req.Path)
+	}
 }
 
 func TestGetStatsErrors(t *testing.T) {

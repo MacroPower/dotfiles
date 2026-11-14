@@ -342,13 +342,15 @@ type GetStatsInput struct {
 // tool calls, because moves, lock changes, perk changes, and the equips,
 // saves, and clears of loadouts update the cached snapshot in place. The
 // sheet store and the loadout table store have no lock of their own, so
-// the same mutex guards them. Every time that a tool prints is in the
-// zone of the handler.
+// the same mutex guards them. The name store runs several Bungie requests
+// at a time, so keyMu guards the cached API key. Every time that a tool
+// prints is in the zone of the handler.
 type handler struct {
 	service       *dvm.Client
 	bungie        *bungie.Client
 	auth          *auth.Auth
 	defs          *definitions.Loader
+	names         *definitions.NameStore
 	sheets        *rolls.SheetStore
 	loadoutTables *bungie.LoadoutTableStore
 	log           *slog.Logger
@@ -358,6 +360,7 @@ type handler struct {
 	apiKeyAt      time.Time
 	apiKey        string
 	mu            sync.Mutex
+	keyMu         sync.Mutex
 }
 
 func (h *handler) handleStatus(
@@ -2268,6 +2271,8 @@ func (h *handler) handleGetStats(
 	summary := stats.Summarize(chunks, from, to)
 	summary.ReadFrom = time.UnixMilli(cursor.UpdatedAt).In(to.Location())
 
+	defs = h.names.Name(ctx, defs, summary.ItemHashes())
+
 	return textResult(renderStats(defs, period, summary, h.zone)), nil, nil
 }
 
@@ -2598,6 +2603,10 @@ func (h *handler) loadSnapshot(ctx context.Context, refresh bool) (*inventory.Sn
 		return nil, fmt.Errorf("fetching the profile: %w", err)
 	}
 
+	// The names that Bungie gives the withheld items and the items of a
+	// later manifest version reach every tool that reads the snapshot.
+	defs = h.names.Name(ctx, defs, profile.ItemHashes())
+
 	h.snapshot = inventory.NewSnapshot(profile, defs, now)
 
 	return h.snapshot, nil
@@ -2902,6 +2911,9 @@ func utf16Len(s string) int {
 }
 
 func (h *handler) bungieKey(ctx context.Context) (string, error) {
+	h.keyMu.Lock()
+	defer h.keyMu.Unlock()
+
 	now := h.now()
 	if h.apiKey != "" && now.Sub(h.apiKeyAt) < configTTL {
 		return h.apiKey, nil
@@ -2983,6 +2995,19 @@ func (m bungieMover) EquipLoadout(ctx context.Context, action bungie.LoadoutActi
 
 	return m.h.withBungie(ctx, func(creds bungie.Credentials) error {
 		return m.h.bungie.EquipLoadout(ctx, creds, action)
+	})
+}
+
+// bungieItems adapts the handler to [definitions.ItemSource]. It adds the
+// credentials to each lookup.
+type bungieItems struct {
+	h *handler
+}
+
+// ItemDefinition implements [definitions.ItemSource].
+func (s bungieItems) ItemDefinition(ctx context.Context, hash uint32) (*bungie.ItemDefinition, error) {
+	return bungieValue(ctx, s.h, func(creds bungie.Credentials) (*bungie.ItemDefinition, error) {
+		return s.h.bungie.ItemDefinition(ctx, creds, hash)
 	})
 }
 

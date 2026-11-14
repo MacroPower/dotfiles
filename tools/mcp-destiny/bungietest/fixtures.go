@@ -1,6 +1,9 @@
 package bungietest
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Item hashes of the fixture currencies.
 const (
@@ -407,3 +410,24 @@ const (
 // play date and the newest run of each character, and before the next
 // refresh of each vendor.
 var Now = time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+
+// PathItemDefinition returns the path of the definition of the item hash
+// in the live manifest. The fake server answers the path only when Data
+// holds a body for it, such as a body of [ItemDefinitionJSON].
+func PathItemDefinition(hash uint32) string {
+	return fmt.Sprintf("/Destiny2/Manifest/DestinyInventoryItemDefinition/%d/", hash)
+}
+
+// ItemDefinitionJSON returns the Bungie response body of the definition
+// of the item hash in the live manifest. The definition carries name, and
+// an empty name gives a definition without a name. Redacted marks a
+// definition that Bungie does not show yet.
+func ItemDefinitionJSON(hash uint32, name string, redacted bool) string {
+	return fmt.Sprintf(`{"ErrorCode": 1, "ErrorStatus": "Success", "Response": {
+		"hash": %d, "displayProperties": {"name": %q, "description": ""}, "redacted": %t
+	}}`, hash, name, redacted)
+}
+
+// NoItemDefinitionJSON is the Bungie response body of a definition lookup
+// for a hash that the live manifest does not define.
+const NoItemDefinitionJSON = `{"ErrorCode": 1, "ErrorStatus": "Success", "Response": null}`

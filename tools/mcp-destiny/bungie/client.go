@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -52,6 +53,10 @@ const (
 	// vendor sales. The vendors component also returns the vendor groups.
 	vendorComponents = "400,401,402"
 
+	// itemDefinitionTable is the definition table of the Destiny manifest
+	// that [ItemDefinitionPath] names.
+	itemDefinitionTable = "DestinyInventoryItemDefinition"
+
 	// activityComponents lists the GetProfile components that
 	// [*Client.Activities] requests. They cover the activities of each
 	// character.
@@ -89,6 +94,25 @@ func (e *PlatformError) Unwrap() []error {
 	}
 
 	return []error{ErrPlatform}
+}
+
+// StatusError is a response of the platform API that carries no platform
+// response, such as the HTML page of a gateway error. Path is the path of
+// the request, and Status is the HTTP status of the response. It unwraps
+// to [ErrPlatform].
+type StatusError struct {
+	Path   string
+	Status int
+}
+
+// Error implements the error interface.
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("%s: %s returned status %d without a platform response", ErrPlatform, e.Path, e.Status)
+}
+
+// Unwrap returns [ErrPlatform].
+func (e *StatusError) Unwrap() error {
+	return ErrPlatform
 }
 
 // Credentials authenticate one Bungie platform request.
@@ -231,6 +255,35 @@ type Profile struct {
 	ProfileCurrencies struct {
 		Data ProfileItems `json:"data"`
 	} `json:"profileCurrencies"`
+}
+
+// ItemHashes returns the item hash of every item and currency of the
+// profile in ascending order, each hash one time. The items are those of
+// the profile inventory, the inventories of the characters, and the
+// equipment of the characters.
+func (p *Profile) ItemHashes() []uint32 {
+	var hashes []uint32
+
+	add := func(items ProfileItems) {
+		for _, item := range items.Items {
+			hashes = append(hashes, item.Hash)
+		}
+	}
+
+	add(p.ProfileInventory.Data)
+	add(p.ProfileCurrencies.Data)
+
+	for _, items := range p.CharacterInventories.Data {
+		add(items)
+	}
+
+	for _, items := range p.CharacterEquipment.Data {
+		add(items)
+	}
+
+	slices.Sort(hashes)
+
+	return slices.Compact(hashes)
 }
 
 // HistoryActivity is the subset of a Bungie DestinyHistoricalStatsActivity
@@ -453,6 +506,17 @@ type LoadoutIdentifiers struct {
 	ColorHash uint32
 }
 
+// ItemDefinition is the subset of a Bungie DestinyInventoryItemDefinition
+// that the server reads from the live manifest. Name is empty for a
+// definition without a name. Redacted marks a definition that Bungie does
+// not show yet, which the game shows as a classified item.
+type ItemDefinition struct {
+	DisplayProperties struct {
+		Name string `json:"name"`
+	} `json:"displayProperties"`
+	Redacted bool `json:"redacted"`
+}
+
 // Option configures a [*Client] via [New].
 //
 // Functions of this type:
@@ -655,6 +719,41 @@ func (b *Client) Content(ctx context.Context, path string) (io.ReadCloser, error
 	}{io.LimitReader(resp.Body, maxContentBytes), resp.Body}, nil
 }
 
+// ItemDefinitionPath returns the path of the platform request that
+// [*Client.ItemDefinition] sends for the item hash. The errors of the
+// request quote the path.
+func ItemDefinitionPath(hash uint32) string {
+	return fmt.Sprintf("/Destiny2/Manifest/%s/%d/", itemDefinitionTable, hash)
+}
+
+// ItemDefinition fetches the definition of one item from the live Destiny
+// manifest of Bungie. Hash is the item hash. It returns nil when Bungie
+// answers without a definition. Such an answer means that the live
+// manifest defines no item with the hash.
+func (b *Client) ItemDefinition(ctx context.Context, creds Credentials, hash uint32) (*ItemDefinition, error) {
+	path := ItemDefinitionPath(hash)
+
+	raw, err := b.request(ctx, creds, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// A JSON null decodes to a nil pointer, so only an envelope without
+	// the field needs its own check.
+	if len(raw) == 0 {
+		return nil, nil //nolint:nilnil // A nil definition means that Bungie defines no such item.
+	}
+
+	var out *ItemDefinition
+
+	err = json.Unmarshal(raw, &out)
+	if err != nil {
+		return nil, fmt.Errorf("%w: decoding %s: %w", ErrPlatform, path, err)
+	}
+
+	return out, nil
+}
+
 // componentsQuery returns the query string that requests components from
 // a Destiny endpoint. The components argument holds the component numbers,
 // separated by commas. Bungie serves a cached snapshot for a repeated URL,
@@ -820,6 +919,28 @@ func (b *Client) ClearLoadout(ctx context.Context, creds Credentials, action Loa
 // call performs one platform request and unwraps the Bungie response
 // envelope into dst. A nil dst discards the response.
 func (b *Client) call(ctx context.Context, creds Credentials, method, path string, body, dst any) error {
+	raw, err := b.request(ctx, creds, method, path, body)
+	if err != nil || dst == nil {
+		return err
+	}
+
+	err = json.Unmarshal(raw, dst)
+	if err != nil {
+		return fmt.Errorf("%w: decoding %s: %w", ErrPlatform, path, err)
+	}
+
+	return nil
+}
+
+// request performs one platform request and returns the Response field of
+// the Bungie response envelope. The field is empty when the envelope lacks
+// it.
+func (b *Client) request(
+	ctx context.Context,
+	creds Credentials,
+	method, path string,
+	body any,
+) (json.RawMessage, error) {
 	u := b.baseURL + path
 
 	var reader io.Reader = http.NoBody
@@ -827,7 +948,7 @@ func (b *Client) call(ctx context.Context, creds Credentials, method, path strin
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("encoding request body: %w", err)
+			return nil, fmt.Errorf("encoding request body: %w", err)
 		}
 
 		reader = bytes.NewReader(raw)
@@ -835,7 +956,7 @@ func (b *Client) call(ctx context.Context, creds Credentials, method, path strin
 
 	req, err := http.NewRequestWithContext(ctx, method, u, reader)
 	if err != nil {
-		return fmt.Errorf("building request: %w", err)
+		return nil, fmt.Errorf("building request: %w", err)
 	}
 
 	req.Header.Set("User-Agent", b.userAgent)
@@ -849,14 +970,14 @@ func (b *Client) call(ctx context.Context, creds Credentials, method, path strin
 	//nolint:bodyclose // The deferred httpbody.Close closes the body.
 	resp, err := b.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("performing request: %w", err)
+		return nil, fmt.Errorf("performing request: %w", err)
 	}
 
 	defer httpbody.Close(ctx, resp.Body, u)
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", path, err)
+		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 
 	var envelope struct {
@@ -869,24 +990,15 @@ func (b *Client) call(ctx context.Context, creds Credentials, method, path strin
 	err = json.Unmarshal(raw, &envelope)
 	if err != nil || envelope.ErrorCode == 0 {
 		if resp.StatusCode == http.StatusUnauthorized {
-			return fmt.Errorf("%w: bungie returned status %d", ErrUnauthorized, resp.StatusCode)
+			return nil, fmt.Errorf("%w: bungie returned status %d", ErrUnauthorized, resp.StatusCode)
 		}
 
-		return fmt.Errorf("%w: %s returned status %d without a platform response", ErrPlatform, path, resp.StatusCode)
+		return nil, &StatusError{Path: path, Status: resp.StatusCode}
 	}
 
 	if envelope.ErrorCode != bungieSuccess {
-		return &PlatformError{Code: envelope.ErrorCode, Status: envelope.ErrorStatus, Message: envelope.Message}
+		return nil, &PlatformError{Code: envelope.ErrorCode, Status: envelope.ErrorStatus, Message: envelope.Message}
 	}
 
-	if dst == nil {
-		return nil
-	}
-
-	err = json.Unmarshal(envelope.Response, dst)
-	if err != nil {
-		return fmt.Errorf("%w: decoding %s: %w", ErrPlatform, path, err)
-	}
-
-	return nil
+	return envelope.Response, nil
 }

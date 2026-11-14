@@ -160,6 +160,11 @@ type VendorDef struct {
 // Vendors, VendorItems, Sockets, PlugSets, ItemSets, and Withheld are
 // empty when the service index lists no artifact for them. PlugSets is
 // also empty when the index lists no artifact for Sockets.
+//
+// Lookups holds the outcome of each lookup in the live manifest of Bungie
+// that a [*NameStore] made for one call, keyed by the item hash. Only the
+// copy of the definitions that [*NameStore.Name] returns holds lookups,
+// and the cache file of the definitions leaves them out.
 type Defs struct {
 	Items           map[uint32]ItemDef     `json:"items"`
 	Buckets         map[uint32]BucketDef   `json:"buckets"`
@@ -178,6 +183,7 @@ type Defs struct {
 	DamageTypes     map[int]string         `json:"damageTypes"`
 	Classes         map[int]string         `json:"classes"`
 	Version         string                 `json:"version"`
+	Lookups         map[uint32]Lookup      `json:"-"`
 	Withheld        []uint32               `json:"withheld"`
 	ItemSetsListed  bool                   `json:"itemSetsListed"`
 	WithheldListed  bool                   `json:"withheldListed"`
@@ -187,10 +193,11 @@ type Defs struct {
 // first. The service withholds the definitions of dummy items, but it
 // names the dummy items that the vendors sell and the dummy rewards of the
 // activities. ItemName therefore reads the vendor item names second and
-// the activity reward names third. It returns an empty string when none
-// of them names the hash.
+// the activity reward names third. It reads the names of the lookups at
+// Bungie last. It returns an empty string when none of them names the
+// hash.
 func (d *Defs) ItemName(hash uint32) string {
-	return cmp.Or(d.Items[hash].Name, d.VendorItems[hash], d.ActivityRewards[hash])
+	return cmp.Or(d.Items[hash].Name, d.VendorItems[hash], d.ActivityRewards[hash], d.Lookups[hash].Name)
 }
 
 // Withholds reports whether the service withholds the definition of the
@@ -860,16 +867,7 @@ func decodeTable[Row any](r io.Reader, add func(hash uint32, row Row)) error {
 }
 
 func (l *Loader) cachePath(version string) string {
-	safe := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-':
-			return r
-		default:
-			return '_'
-		}
-	}, version)
-
-	return filepath.Join(l.cacheDir, defsCachePrefix+safe+".json")
+	return cachePath(l.cacheDir, defsCachePrefix, version)
 }
 
 func (l *Loader) readCache(ctx context.Context, version string) (*Defs, bool) {
@@ -910,7 +908,7 @@ func (l *Loader) writeCache(ctx context.Context, defs *Defs) {
 
 	path := l.cachePath(defs.Version)
 
-	err := l.saveCache(path, defs)
+	err := saveCache(l.cacheDir, path, defs)
 	if err != nil {
 		l.log.WarnContext(ctx, "writing definition cache",
 			slog.String("path", path),
@@ -922,48 +920,83 @@ func (l *Loader) writeCache(ctx context.Context, defs *Defs) {
 
 	// The pattern matches the cache files of every layout, so a bump of
 	// defsCachePrefix also removes the files of the old layout.
-	old, err := filepath.Glob(filepath.Join(l.cacheDir, "defs-v*.json"))
+	removeCaches(ctx, l.log, filepath.Join(l.cacheDir, "defs-v*.json"), path)
+}
+
+// cachePath returns the path of the cache file in dir for the manifest
+// version. Prefix names the content and the layout of the file, such as
+// [defsCachePrefix].
+func cachePath(dir, prefix, version string) string {
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-':
+			return r
+		default:
+			return '_'
+		}
+	}, version)
+
+	return filepath.Join(dir, prefix+safe+".json")
+}
+
+// saveCache writes v as JSON to the cache file path in dir. It writes a
+// temporary file of its own and renames it, so a reader never sees half a
+// file. Several processes can share dir, and the writes of two processes
+// never mix in one temporary file.
+func saveCache(dir, path string, v any) error {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("encoding cache: %w", err)
+	}
+
+	err = os.MkdirAll(dir, 0o755)
+	if err != nil {
+		return fmt.Errorf("creating cache directory: %w", err)
+	}
+
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating cache file: %w", err)
+	}
+
+	tmp := f.Name()
+
+	_, err = f.Write(raw)
+
+	err = cmp.Or(err, f.Close())
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+
+	if err != nil {
+		_ = os.Remove(tmp) //nolint:errcheck // The write error is the one to report.
+
+		return fmt.Errorf("writing cache file: %w", err)
+	}
+
+	return nil
+}
+
+// removeCaches deletes every file that matches the glob pattern, except
+// the file keep. A file that stays costs only disk space, so removeCaches
+// logs a failure and continues.
+func removeCaches(ctx context.Context, log *slog.Logger, pattern, keep string) {
+	old, err := filepath.Glob(pattern)
 	if err != nil {
 		return
 	}
 
 	for _, file := range old {
-		if file == path {
+		if file == keep {
 			continue
 		}
 
 		err := os.Remove(file)
 		if err != nil {
-			l.log.WarnContext(ctx, "removing old definition cache",
+			log.WarnContext(ctx, "removing old cache file",
 				slog.String("path", file),
 				slog.Any("error", err),
 			)
 		}
 	}
-}
-
-func (l *Loader) saveCache(path string, defs *Defs) error {
-	raw, err := json.Marshal(defs)
-	if err != nil {
-		return fmt.Errorf("encoding definitions: %w", err)
-	}
-
-	err = os.MkdirAll(l.cacheDir, 0o755)
-	if err != nil {
-		return fmt.Errorf("creating cache directory: %w", err)
-	}
-
-	tmp := path + ".tmp"
-
-	err = os.WriteFile(tmp, raw, 0o644)
-	if err != nil {
-		return fmt.Errorf("writing cache file: %w", err)
-	}
-
-	err = os.Rename(tmp, path)
-	if err != nil {
-		return fmt.Errorf("replacing cache file: %w", err)
-	}
-
-	return nil
 }

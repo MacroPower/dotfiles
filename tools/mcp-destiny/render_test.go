@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +16,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/activities"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
@@ -444,6 +449,95 @@ func TestRenderStats(t *testing.T) {
 					"so the server cannot name them. " + later,
 			},
 		},
+		"stack that a lookup at Bungie names": {
+			edit: func(defs *definitions.Defs) {
+				defs.Lookups = map[uint32]definitions.Lookup{
+					definitionstest.ItemWithheld: {Name: "Wish-Keeper Snare Refit", Defined: true},
+				}
+			},
+			summary: stats.Summary{Flows: []stats.Flow{{ItemHash: definitionstest.ItemWithheld, Gained: 1, Net: 1}}},
+			want: []string{
+				"Wish-Keeper Snare Refit | stack | 78 | +1 | 1 | 0",
+				"",
+				"Weapon kills: none.",
+			},
+		},
+		"answers of Bungie without a name": {
+			edit: func(defs *definitions.Defs) {
+				defs.Lookups = map[uint32]definitions.Lookup{
+					definitionstest.ItemWithheld: {Defined: true, Redacted: true},
+					999:                          {Defined: true},
+					12345:                        {},
+				}
+			},
+			summary: stats.Summary{Flows: []stats.Flow{
+				{ItemHash: definitionstest.ItemWithheld, Gained: 1, Net: 1},
+				{ItemHash: 999, Spent: 1, Net: -1},
+				{ItemHash: 12345, Spent: 3, Net: -3},
+			}},
+			want: []string{
+				"Unknown item 78 | stack | 78 | +1 | 1 | 0",
+				"Unknown item 999 | stack | 999 | -1 | 0 | 1",
+				"Unknown item 12345 | stack | 12345 | -3 | 0 | 3",
+				"",
+				"Weapon kills: none.",
+				"",
+				"The definitions of manifest version v1 and the live manifest of Bungie both lack " +
+					"the item with the hash 12345, so the server cannot name it. " +
+					"Bungie classifies the item with the hash 78 and does not show a name yet, " +
+					"so the server cannot name it. " +
+					"Bungie defines the item with the hash 999 without a name.",
+			},
+		},
+		"lookups at Bungie without an answer": {
+			edit: func(defs *definitions.Defs) {
+				down := &bungie.PlatformError{Code: 5, Status: "SystemDisabled", Message: "down"}
+
+				// The error of a request names its URL, which differs for
+				// each hash.
+				timeout := func(hash uint32) error {
+					return fmt.Errorf("performing request: %w", &url.Error{
+						Op:  http.MethodGet,
+						URL: "https://www.bungie.net/Platform" + bungietest.PathItemDefinition(hash),
+						Err: context.DeadlineExceeded,
+					})
+				}
+
+				defs.Lookups = map[uint32]definitions.Lookup{
+					77:                           {Err: down},
+					definitionstest.ItemWithheld: {Err: down},
+					998:                          {Err: timeout(998)},
+					999:                          {Err: timeout(999)},
+					12345:                        {Skipped: true},
+				}
+			},
+			summary: stats.Summary{Flows: []stats.Flow{
+				{ItemHash: 77, Currency: true, Gained: 2, Net: 2},
+				{ItemHash: definitionstest.ItemWithheld, Gained: 1, Net: 1},
+				{ItemHash: 998, Spent: 2, Net: -2},
+				{ItemHash: 999, Spent: 1, Net: -1},
+				{ItemHash: 12345, Spent: 3, Net: -3},
+			}},
+			want: []string{
+				"Unknown item 77 | currency | 77 | +2 | 2 | 0",
+				"Unknown item 78 | stack | 78 | +1 | 1 | 0",
+				"Unknown item 998 | stack | 998 | -2 | 0 | 2",
+				"Unknown item 999 | stack | 999 | -1 | 0 | 1",
+				"Unknown item 12345 | stack | 12345 | -3 | 0 | 3",
+				"",
+				"Weapon kills: none.",
+				"",
+				withheld + "the items with the hashes 78 and 999. " +
+					"The definitions of manifest version v1 lack the items with the hashes 77, 998, and 12345, " +
+					"so the server cannot name them. " + later + " " +
+					"The lookup of the items with the hashes 77 and 78 at Bungie failed: bungie: SystemDisabled: down. " +
+					"A later call looks them up again. " +
+					"The lookup of the items with the hashes 998 and 999 at Bungie failed: " +
+					"the lookups ran out of time. A later call looks them up again. " +
+					"This call reached the limit of its lookups at Bungie before the item with the hash 12345, " +
+					"so it did not look it up. A later call looks it up.",
+			},
+		},
 		"index without withheld hashes": {
 			edit: func(defs *definitions.Defs) {
 				defs.Withheld = nil
@@ -479,6 +573,102 @@ func TestRenderStats(t *testing.T) {
 			got := renderStats(defs, period, tc.summary, time.UTC)
 			assert.Contains(t, got, "Period: Last 24 hours, 2026-11-11 12:00 UTC to 2026-11-12 12:00 UTC.\n")
 			assert.True(t, strings.HasSuffix(got, "\n"+strings.Join(tc.want, "\n")), got)
+		})
+	}
+}
+
+// TestLookupReason pins that the lookups of two item hashes that failed
+// for one cause get one reason. The error of each request names the path
+// of its own hash, and the reason leaves that path out.
+func TestLookupReason(t *testing.T) {
+	t.Parallel()
+
+	itemURL := func(hash uint32) string {
+		return "https://www.bungie.net/Platform" + bungietest.PathItemDefinition(hash)
+	}
+
+	tests := map[string]struct {
+		// err returns the error of the lookup of hash.
+		err  func(hash uint32) error
+		want string
+	}{
+		"platform error": {
+			err: func(uint32) error {
+				return &bungie.PlatformError{Code: 5, Status: "SystemDisabled", Message: "down"}
+			},
+			want: "bungie: SystemDisabled: down",
+		},
+		"platform message with a period": {
+			err: func(uint32) error {
+				return &bungie.PlatformError{
+					Code:    5,
+					Status:  "SystemDisabled",
+					Message: "This system is temporarily disabled for maintenance.",
+				}
+			},
+			want: "bungie: SystemDisabled: This system is temporarily disabled for maintenance",
+		},
+		"request out of time": {
+			err: func(hash uint32) error {
+				return fmt.Errorf("performing request: %w", &url.Error{
+					Op:  http.MethodGet,
+					URL: itemURL(hash),
+					Err: context.DeadlineExceeded,
+				})
+			},
+			want: "the lookups ran out of time",
+		},
+		"body out of time": {
+			err: func(hash uint32) error {
+				return fmt.Errorf("reading %s: %w", bungietest.PathItemDefinition(hash), context.DeadlineExceeded)
+			},
+			want: "the lookups ran out of time",
+		},
+		"body read failed": {
+			err: func(hash uint32) error {
+				return fmt.Errorf("reading %s: %w", bungietest.PathItemDefinition(hash), io.ErrUnexpectedEOF)
+			},
+			want: "reading the item definition: unexpected EOF",
+		},
+		"response that does not decode": {
+			err: func(hash uint32) error {
+				return fmt.Errorf(
+					"%w: decoding %s: %w",
+					bungie.ErrPlatform, bungietest.PathItemDefinition(hash), io.ErrUnexpectedEOF,
+				)
+			},
+			want: "bungie: decoding the item definition: unexpected EOF",
+		},
+		"refused connection": {
+			err: func(hash uint32) error {
+				return fmt.Errorf("performing request: %w", &url.Error{
+					Op:  http.MethodGet,
+					URL: itemURL(hash),
+					Err: errors.New("dial tcp 127.0.0.1:443: connect: connection refused"),
+				})
+			},
+			want: "dial tcp 127.0.0.1:443: connect: connection refused",
+		},
+		"no platform response": {
+			err: func(hash uint32) error {
+				return &bungie.StatusError{Path: bungietest.PathItemDefinition(hash), Status: http.StatusBadGateway}
+			},
+			want: "Bungie answered with the HTTP status 502 and no platform response",
+		},
+		"sign-in error": {
+			err: func(uint32) error {
+				return auth.ErrNotSignedIn
+			},
+			want: auth.ErrNotSignedIn.Error(),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, lookupReason(4148227246, tc.err(4148227246)))
+			assert.Equal(t, tc.want, lookupReason(4148227247, tc.err(4148227247)))
 		})
 	}
 }

@@ -118,7 +118,7 @@ func parseFlags(name string, args []string) (options, error) {
 		&o.cacheDir,
 		"cache-dir",
 		"",
-		"directory of the definition cache (default $XDG_CACHE_HOME/mcp-destiny)",
+		"directory of the definition cache and the item name cache (default $XDG_CACHE_HOME/mcp-destiny)",
 	)
 	fs.StringVar(&o.logFile, "log-file", "", "path to JSON log file (append)")
 
@@ -284,6 +284,7 @@ func runServe(ctx context.Context, args []string) error {
 		zone:    time.Local, //nolint:gosmopolitan // The tools print times in the local time zone.
 	}
 	h.loadoutTables = bungie.NewLoadoutTableStore(bungieManifest{h: h})
+	h.names = definitions.NewNameStore(bungieItems{h: h}, o.cacheDir, definitions.WithNameLogger(logger))
 
 	err = newServer(h).Run(ctx, &mcp.StdioTransport{})
 	if err != nil {
@@ -741,8 +742,9 @@ func newServer(h *handler) *mcp.Server {
 			"Gambit kills count as PvE. The numbers come from the profile changes that the web client of " +
 			"Agg's Destiny Vault Manager records only while it is open in a browser. The web client posts the changes " +
 			"of each 5-minute bucket after the bucket closes, so the latest minutes are missing. " +
-			"A row whose item the definitions do not name shows the item hash, " +
-			"and a line after the tables gives the reason. " +
+			"A row whose item the server cannot name, from the definitions or from a lookup " +
+			"in the live manifest of Bungie, shows the item hash, and a line after the tables gives the reason, " +
+			"such as an item that Bungie classifies or a lookup that failed. " +
 			"list_characters reports the current currency balances, " +
 			"and list_items with kind=other shows the current material stacks.",
 		Annotations: readOnly,

@@ -325,6 +325,36 @@ func TestSummarize(t *testing.T) {
 	}
 }
 
+func TestSummaryItemHashes(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		summary Summary
+		want    []uint32
+	}{
+		"flows first, each hash one time": {
+			summary: Summary{
+				Flows: []Flow{{ItemHash: bungietest.ItemGlimmer}, {ItemHash: 78}, {ItemHash: 300}},
+				Weapons: []WeaponKills{
+					{InstanceID: "1001", ItemHash: 100},
+					{InstanceID: "1002", ItemHash: 78},
+					{InstanceID: "1003", ItemHash: 100},
+				},
+			},
+			want: []uint32{bungietest.ItemGlimmer, 78, 300, 100},
+		},
+		"empty summary": {},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, tc.summary.ItemHashes())
+		})
+	}
+}
+
 func TestPeriodOf(t *testing.T) {
 	t.Parallel()
 

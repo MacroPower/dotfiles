@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -2129,9 +2132,10 @@ func renderOwnedCounts(counts []autotag.RuleCount) string {
 }
 
 // renderStats renders the summary of one period. Item names come from
-// defs, so a weapon that the user dismantled keeps its name. A row whose
-// item hash defs do not name shows a placeholder with the hash, and the
-// sentences of [unnamedNote] follow the tables.
+// defs, so a weapon that the user dismantled keeps its name. Defs also
+// carry the names of the lookups at Bungie. A row whose item hash defs do
+// not name shows a placeholder with the hash, and the sentences of
+// [unnamedNote] follow the tables.
 func renderStats(defs *definitions.Defs, period stats.Period, s stats.Summary, zone *time.Location) string {
 	var b strings.Builder
 
@@ -2210,24 +2214,75 @@ func renderStats(defs *definitions.Defs, period stats.Period, s stats.Summary, z
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// unnamedNote returns the sentences that say why the definitions name none
-// of the item hashes in unnamed. The service index lists the item hashes
-// whose definitions the service withholds. A hash that neither the item
-// definitions nor that list holds is missing from the manifest version of
-// the definitions. Without that list, the note gives both causes.
+// unnamedNote returns the sentences that say why neither the definitions
+// nor Bungie name the item hashes in unnamed. An answer of Bungie gives the
+// reason of its hash. For a hash without an answer, the note gives the
+// reason of the definitions of the service and then the reason that the
+// lookup at Bungie did not answer.
 func unnamedNote(defs *definitions.Defs, unnamed []uint32) string {
+	var unanswered, undefined, classified, nameless []uint32
+
+	for _, hash := range unnamed {
+		lookup, ok := defs.Lookups[hash]
+
+		switch {
+		case !ok || !lookup.Answered():
+			unanswered = append(unanswered, hash)
+		case !lookup.Defined:
+			undefined = append(undefined, hash)
+		case lookup.Redacted:
+			classified = append(classified, hash)
+		default:
+			nameless = append(nameless, hash)
+		}
+	}
+
+	sentences := serviceSentences(defs, unanswered)
+	sentences = append(sentences, lookupSentences(defs, unanswered)...)
+
+	if len(undefined) > 0 {
+		sentences = append(sentences, fmt.Sprintf(
+			"The definitions of manifest version %s and the live manifest of Bungie both lack %s, "+
+				"so the server cannot name %s.",
+			defs.Version, hashPhrase(undefined), pronounOf(undefined)))
+	}
+
+	if len(classified) > 0 {
+		sentences = append(sentences, fmt.Sprintf(
+			"Bungie classifies %s and does not show a name yet, so the server cannot name %s.",
+			hashPhrase(classified), pronounOf(classified)))
+	}
+
+	if len(nameless) > 0 {
+		sentences = append(sentences, fmt.Sprintf("Bungie defines %s without a name.", hashPhrase(nameless)))
+	}
+
+	return strings.Join(sentences, " ")
+}
+
+// serviceSentences returns the sentences that say why the definitions of
+// the service name none of the item hashes in hashes. The service index
+// lists the item hashes whose definitions the service withholds. A hash
+// that neither the item definitions nor that list holds is missing from
+// the manifest version of the definitions. Without that list, the
+// sentences give both causes.
+func serviceSentences(defs *definitions.Defs, hashes []uint32) []string {
+	if len(hashes) == 0 {
+		return nil
+	}
+
 	if !defs.WithheldListed {
-		return fmt.Sprintf("The definitions of manifest version %s lack %s, so the server cannot name %s. "+
+		return []string{fmt.Sprintf("The definitions of manifest version %s lack %s, so the server cannot name %s. "+
 			"The service withholds the definitions of dummy items, classified items, and items without a name, "+
 			"and the game can hold an item that Bungie added in a later manifest version. "+
 			"The service publishes no list of the hashes that it withholds, "+
 			"so the server cannot tell which cause applies.",
-			defs.Version, hashPhrase(unnamed), pronounOf(unnamed))
+			defs.Version, hashPhrase(hashes), pronounOf(hashes))}
 	}
 
 	var withheld, missing []uint32
 
-	for _, hash := range unnamed {
+	for _, hash := range hashes {
 		if defs.Withholds(hash) {
 			withheld = append(withheld, hash)
 		} else {
@@ -2251,7 +2306,82 @@ func unnamedNote(defs *definitions.Defs, unnamed []uint32) string {
 			defs.Version, hashPhrase(missing), pronounOf(missing)))
 	}
 
-	return strings.Join(sentences, " ")
+	return sentences
+}
+
+// lookupSentences returns the sentences that say why the lookups of the
+// item hashes in hashes at Bungie did not answer. The lookups that failed
+// for one reason of [lookupReason] share a sentence. A hash without a
+// lookup gets no sentence.
+func lookupSentences(defs *definitions.Defs, hashes []uint32) []string {
+	var (
+		reasons []string
+		failed  = map[string][]uint32{}
+		skipped []uint32
+	)
+
+	for _, hash := range hashes {
+		lookup, ok := defs.Lookups[hash]
+
+		switch {
+		case !ok:
+		case lookup.Skipped:
+			skipped = append(skipped, hash)
+		case lookup.Err != nil:
+			reason := lookupReason(hash, lookup.Err)
+			if failed[reason] == nil {
+				reasons = append(reasons, reason)
+			}
+
+			failed[reason] = append(failed[reason], hash)
+		}
+	}
+
+	var sentences []string
+
+	for _, reason := range reasons {
+		sentences = append(
+			sentences,
+			fmt.Sprintf("The lookup of %s at Bungie failed: %s. A later call looks %s up again.",
+				hashPhrase(failed[reason]), reason, pronounOf(failed[reason])),
+		)
+	}
+
+	if len(skipped) > 0 {
+		sentences = append(sentences, fmt.Sprintf(
+			"This call reached the limit of its lookups at Bungie before %s, so it did not look %s up. "+
+				"A later call looks %s up.",
+			hashPhrase(skipped), pronounOf(skipped), pronounOf(skipped)))
+	}
+
+	return sentences
+}
+
+// lookupReason returns the reason of the lookup of the item hash at Bungie
+// that failed with err. The error of a request names its URL or its path,
+// and each item hash has its own path. The reason leaves both out, so the
+// lookups that failed for one cause get one reason.
+func lookupReason(hash uint32, err error) string {
+	var (
+		status *bungie.StatusError
+		uerr   *url.Error
+	)
+
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "the lookups ran out of time"
+	case errors.As(err, &status):
+		return fmt.Sprintf("Bungie answered with the HTTP status %d and no platform response", status.Status)
+	case errors.As(err, &uerr):
+		return uerr.Err.Error()
+	default:
+		// A body that the client cannot read or decode gives an error
+		// that quotes the path of the request. A Bungie message ends with
+		// its own period.
+		reason := strings.ReplaceAll(err.Error(), bungie.ItemDefinitionPath(hash), "the item definition")
+
+		return strings.TrimRight(reason, ".")
+	}
 }
 
 // hashPhrase names the items with the hashes in hashes, such as "the

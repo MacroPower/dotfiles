@@ -1,8 +1,11 @@
 package definitions
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -631,6 +634,63 @@ func TestLoaderIgnoresCorruptCache(t *testing.T) {
 	assert.Len(t, got.Items, 8)
 }
 
+// TestSaveCacheConcurrentWrites pins that each write of several processes
+// to one cache file replaces the whole file and leaves no temporary file.
+func TestSaveCacheConcurrentWrites(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := cachePath(dir, namesCachePrefix, "v1")
+
+	// Each write has its own length, so a file that mixes two writes does
+	// not decode as either of them.
+	var writes []string
+	for i := range 8 {
+		writes = append(writes, strings.Repeat("x", 4096*(i+1)))
+	}
+
+	var wg sync.WaitGroup
+
+	for _, write := range writes {
+		wg.Go(func() {
+			assert.NoError(t, saveCache(dir, path, write))
+		})
+	}
+
+	wg.Wait()
+
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var got string
+
+	require.NoError(t, json.Unmarshal(raw, &got))
+	assert.Contains(t, writes, got)
+
+	files, err := filepath.Glob(filepath.Join(dir, "*"))
+	require.NoError(t, err)
+	assert.Equal(t, []string{path}, files)
+}
+
+// TestSaveCacheFailedWrite pins that a write that fails removes its
+// temporary file.
+func TestSaveCacheFailedWrite(t *testing.T) {
+	t.Parallel()
+
+	// A directory that holds a file stands at the path of the cache file,
+	// so the rename of the temporary file fails.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "target.json")
+	require.NoError(t, os.Mkdir(path, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(path, "keep"), nil, 0o644))
+
+	require.Error(t, saveCache(dir, path, "v"))
+
+	files, err := filepath.Glob(filepath.Join(dir, "*"))
+	require.NoError(t, err)
+	assert.Equal(t, []string{path}, files)
+}
+
 func TestWithLoaded(t *testing.T) {
 	t.Parallel()
 
@@ -772,6 +832,11 @@ func TestItemName(t *testing.T) {
 		},
 		VendorItems:     map[uint32]string{100: "Fatebringer", 101: "Nameless Stock", 500: "Rohan's Passkey"},
 		ActivityRewards: map[uint32]string{500: "Raid Gear", 600: "Enduring Snare Refit"},
+		Lookups: map[uint32]Lookup{
+			600: {Name: "Wish-Keeper Snare Refit", Defined: true},
+			800: {Name: "Guided Game Ticket", Defined: true},
+			801: {Defined: true, Redacted: true},
+		},
 	}
 
 	tests := map[string]struct {
@@ -790,9 +855,16 @@ func TestItemName(t *testing.T) {
 			hash: 500,
 			want: "Rohan's Passkey",
 		},
-		"reward name": {
+		"reward name comes before the name of a lookup": {
 			hash: 600,
 			want: "Enduring Snare Refit",
+		},
+		"name of a lookup at Bungie": {
+			hash: 800,
+			want: "Guided Game Ticket",
+		},
+		"lookup without a name": {
+			hash: 801,
 		},
 		"no table names the hash": {
 			hash: 700,

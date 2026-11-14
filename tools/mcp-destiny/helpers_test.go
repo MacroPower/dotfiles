@@ -98,6 +98,7 @@ func newFakes(t *testing.T) *fakes {
 		zone:    time.UTC,
 	}
 	f.h.loadoutTables = bungie.NewLoadoutTableStore(bungieManifest{h: f.h})
+	f.h.names = definitions.NewNameStore(bungieItems{h: f.h}, "")
 
 	return f
 }

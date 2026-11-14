@@ -92,10 +92,36 @@
 // The web client records every stack of the profile, also the dummy items
 // whose definitions the service withholds. The get_stats tool names such a
 // stack when a vendor sells it or an activity rewards it, because the
-// service names those dummy items. A row whose item hash no definition
-// names reads "Unknown item <hash>". A line after the tables then gives
-// the reason, such as a definition that the service withholds or an item
-// that the manifest version of the service lacks.
+// service names those dummy items. It names every other such stack as the
+// Item Lookups section describes. A row whose item hash still lacks a name
+// reads "Unknown item <hash>". A line after the tables then gives the
+// reason, such as an item that Bungie classifies or a lookup that failed.
+//
+// # Item Lookups
+//
+// The definitions of the service leave out the dummy items, the classified
+// items, and the items without a name. They also lack each item that
+// Bungie added after their manifest version. The server looks such an item
+// up in the live manifest of Bungie, which gives the name that the game
+// shows. The lookups name the items of every tool that reads the
+// inventory, such as list_items, list_characters, and stage_junk. They
+// also name the rows of get_stats.
+//
+// The server keeps each answer of Bungie for the manifest version of the
+// definitions. It keeps the answers in memory and in a cache file beside
+// the cache file of the definitions. The servers of several sessions that
+// share the cache directory share the answers. An item that Bungie answers
+// therefore costs one request for each manifest version, unless two
+// servers look it up at the same time. A call sends at most 20 lookups,
+// and it waits at most 10 seconds for them. The item of a lookup that the
+// call skips or that fails reads "Unknown item <hash>".
+//
+// The tools that read the inventory reuse a copy of the profile for up to
+// 30 seconds, and the copy keeps the outcome of each lookup. Such a tool
+// looks up the item of a skipped or failed lookup again only when it
+// fetches the profile from Bungie again. It fetches the profile again in
+// cases such as a copy older than 30 seconds or a call that sets refresh.
+// Every get_stats call looks up each such item again.
 //
 // # Roll Ratings
 //
@@ -718,9 +744,9 @@
 //   - --service-url: base URL of Agg's Destiny Vault Manager
 //   - --state-dir: directory of the token file (default:
 //     $XDG_STATE_HOME/mcp-destiny)
-//   - --cache-dir: directory of the definition cache (default:
-//     $XDG_CACHE_HOME/mcp-destiny)
+//   - --cache-dir: directory of the definition cache and the item name
+//     cache (default: $XDG_CACHE_HOME/mcp-destiny)
 //   - --log-file: path to JSON log file (append), which records tool
-//     errors, failed moves, failed lock changes, and failed loadout
-//     equips
+//     errors, failed moves, failed lock changes, failed loadout equips,
+//     and failed item lookups
 package main
