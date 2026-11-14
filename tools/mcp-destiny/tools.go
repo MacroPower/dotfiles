@@ -641,9 +641,9 @@ func (h *handler) handleListActivityHistory(
 		return h.toolError(ctx, toolListActivityHistory, err)
 	}
 
-	defs, err := h.defs.Get(ctx)
+	defs, err := h.loadDefs(ctx)
 	if err != nil {
-		return h.toolError(ctx, toolListActivityHistory, fmt.Errorf("loading definitions: %w", err))
+		return h.toolError(ctx, toolListActivityHistory, err)
 	}
 
 	pages := make([][]bungie.HistoryPeriod, len(characters))
@@ -711,9 +711,9 @@ func (h *handler) handleListVendors(
 		return h.toolError(ctx, toolListVendors, err)
 	}
 
-	defs, err := h.defs.Get(ctx)
+	defs, err := h.loadDefs(ctx)
 	if err != nil {
-		return h.toolError(ctx, toolListVendors, fmt.Errorf("loading definitions: %w", err))
+		return h.toolError(ctx, toolListVendors, err)
 	}
 
 	resp, err := bungieValue(ctx, h, func(creds bungie.Credentials) (*bungie.VendorsResponse, error) {
@@ -761,9 +761,9 @@ func (h *handler) handleListActivities(
 		return h.toolError(ctx, toolListActivities, err)
 	}
 
-	defs, err := h.defs.Get(ctx)
+	defs, err := h.loadDefs(ctx)
 	if err != nil {
-		return h.toolError(ctx, toolListActivities, fmt.Errorf("loading definitions: %w", err))
+		return h.toolError(ctx, toolListActivities, err)
 	}
 
 	// The rewards change when the character claims one, so every call
@@ -1576,9 +1576,9 @@ func (h *handler) handleSetPerkPreferences(
 		))
 	}
 
-	defs, err := h.defs.Get(ctx)
+	defs, err := h.loadDefs(ctx)
 	if err != nil {
-		return h.toolError(ctx, toolSetPerkPreferences, fmt.Errorf("loading definitions: %w", err))
+		return h.toolError(ctx, toolSetPerkPreferences, err)
 	}
 
 	traits := defs.TraitNames()
@@ -2082,10 +2082,10 @@ func (h *handler) handleRunAutotagRules(
 				errorText(err))
 		}
 
-		defs, err := h.defs.Get(ctx)
+		defs, err := h.loadDefs(ctx)
 		if err != nil {
 			return refuse("run_autotag_rules claimed nothing, because the server could not read the inventory: " +
-				errorText(fmt.Errorf("loading definitions: %w", err)))
+				errorText(err))
 		}
 
 		mover = bungieMover{h: h, membership: membership}
@@ -2234,9 +2234,9 @@ func (h *handler) handleGetStats(
 	to := h.now()
 	from := period.Start(to)
 
-	defs, err := h.defs.Get(ctx)
+	defs, err := h.loadDefs(ctx)
 	if err != nil {
-		return h.toolError(ctx, toolGetStats, fmt.Errorf("loading definitions: %w", err))
+		return h.toolError(ctx, toolGetStats, err)
 	}
 
 	cursor := stats.CursorFor(from)
@@ -2558,9 +2558,9 @@ func (h *handler) loadSnapshot(ctx context.Context, refresh bool) (*inventory.Sn
 		return nil, err
 	}
 
-	defs, err := h.defs.Get(ctx)
+	defs, err := h.loadDefs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("loading definitions: %w", err)
+		return nil, err
 	}
 
 	profile, err := bungieValue(ctx, h, func(creds bungie.Credentials) (*bungie.Profile, error) {
@@ -2693,9 +2693,9 @@ func (h *handler) ratingSources(ctx context.Context) map[string]rolls.RatingSour
 		prefsErr = fmt.Errorf("%w: reading perk preferences: %w", rolls.ErrNoRating, prefsErr)
 	}
 
-	defs, defsErr := h.defs.Get(ctx)
+	defs, defsErr := h.loadDefs(ctx)
 	if defsErr != nil {
-		defsErr = fmt.Errorf("%w: loading definitions: %w", rolls.ErrNoRating, defsErr)
+		defsErr = fmt.Errorf("%w: %w", rolls.ErrNoRating, defsErr)
 	}
 
 	stances := rolls.StancesByMode(prefs)
@@ -2725,6 +2725,17 @@ func (h *handler) autotag(ctx context.Context) (dvm.AutotagSnapshot, error) {
 	return sessionValue(ctx, h, func(session string) (dvm.AutotagSnapshot, error) {
 		return h.service.Autotag(ctx, session)
 	})
+}
+
+// loadDefs returns the definitions for the manifest version that the service
+// publishes. It wraps an error of the loader as "loading definitions".
+func (h *handler) loadDefs(ctx context.Context) (*definitions.Defs, error) {
+	defs, err := h.defs.Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading definitions: %w", err)
+	}
+
+	return defs, nil
 }
 
 // membership returns the Destiny membership of the signed-in account. The
