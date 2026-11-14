@@ -450,6 +450,60 @@ func TestMoveStackStopsHalfway(t *testing.T) {
 	assert.Len(t, stacks, 2, "the emptied stack leaves the snapshot")
 }
 
+func TestMoveStackCharacter(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		err          error
+		owner        string
+		want         []string
+		noCharacters bool
+	}{
+		"account-wide stack names the most recently played character": {
+			owner: OwnerAccount,
+			want:  []string{"to vault from c1 x42"},
+		},
+		"character stack names the character that holds it": {
+			owner: bungietest.TitanID,
+			want:  []string{"to vault from c2 x42"},
+		},
+		"account without a character": {
+			owner:        OwnerAccount,
+			noCharacters: true,
+			err:          ErrMove,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := fixtureSnapshot(t)
+			mover := &bungietest.StepMover{}
+
+			for _, item := range s.Items {
+				if item.Hash == 300 {
+					item.Owner = tc.owner
+				}
+			}
+
+			if tc.noCharacters {
+				s.Characters = nil
+			}
+
+			_, _, err := s.MoveStack(t.Context(), mover, 300, 0, true)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				assert.Equal(t, 42, stackUnits(s, tc.owner))
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, tc.want, mover.Steps)
+		})
+	}
+}
+
 func TestSetLock(t *testing.T) {
 	t.Parallel()
 

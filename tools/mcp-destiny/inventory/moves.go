@@ -310,7 +310,7 @@ func (s *Snapshot) MoveStack(
 		return name, 0, fmt.Errorf("%w: %s holds only %d of %s", ErrMove, from, total, name)
 	}
 
-	if len(s.Characters) == 0 {
+	if _, ok := s.LastPlayed(); !ok {
 		return name, 0, fmt.Errorf("%w: the account has no character to name in the transfer", ErrMove)
 	}
 
@@ -330,17 +330,13 @@ func (s *Snapshot) MoveStack(
 		}
 
 		units := min(amount-moved, source.Quantity)
+		character, _ := s.requestCharacter(source)
 
 		action := bungie.ItemAction{
 			InstanceID:  bungie.StackInstanceID,
 			ItemHash:    hash,
-			CharacterID: s.Characters[0].ID,
+			CharacterID: character,
 			StackSize:   units,
-		}
-
-		_, owned := s.Character(source.Owner)
-		if owned {
-			action.CharacterID = source.Owner
 		}
 
 		err := mover.Transfer(ctx, action, toVault)
