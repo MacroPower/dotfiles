@@ -1,7 +1,6 @@
 package inventory
 
 import (
-	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -143,9 +142,7 @@ func (s *Snapshot) JunkPlan(c Character, b Bucket) JunkPlan {
 	}
 
 	for _, items := range [][]*Item{plan.Staged, plan.Waiting, plan.Keepers} {
-		slices.SortStableFunc(items, func(x, y *Item) int {
-			return cmp.Or(cmp.Compare(x.Name, y.Name), CompareIDs(x.InstanceID, y.InstanceID))
-		})
+		slices.SortStableFunc(items, ByNameAndID)
 	}
 
 	return plan

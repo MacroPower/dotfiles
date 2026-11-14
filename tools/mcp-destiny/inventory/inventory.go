@@ -964,9 +964,7 @@ func (s *Snapshot) Filter(f ItemFilter) ([]*Item, error) {
 
 	switch strings.ToLower(f.Sort) {
 	case "", SortName:
-		slices.SortStableFunc(out, func(a, b *Item) int {
-			return cmp.Or(cmp.Compare(a.Name, b.Name), CompareIDs(a.InstanceID, b.InstanceID))
-		})
+		slices.SortStableFunc(out, ByNameAndID)
 
 	case SortPower:
 		slices.SortStableFunc(out, func(a, b *Item) int {
@@ -1190,9 +1188,7 @@ func (s *Snapshot) WeaponGroups() []WeaponGroup {
 	slices.SortFunc(groups, func(a, b WeaponGroup) int { return cmp.Compare(a.Name, b.Name) })
 
 	for _, g := range groups {
-		slices.SortFunc(g.Copies, func(a, b *Item) int {
-			return cmp.Or(cmp.Compare(a.Name, b.Name), CompareIDs(a.InstanceID, b.InstanceID))
-		})
+		slices.SortFunc(g.Copies, ByNameAndID)
 	}
 
 	return groups
