@@ -868,6 +868,117 @@ func TestListItems(t *testing.T) {
 	}
 }
 
+// withoutPowerFakes returns fakes whose Hunter holds the Sparrow
+// Cryptomnesia and has the subclass Arcstrider equipped. The primary stat
+// of the Sparrow is its Speed of 190, and the primary stat of the subclass
+// reads -10. Neither item has a power. The vault holds Fatebringer, whose
+// primary stat is an Attack of 1950.
+func withoutPowerFakes(t *testing.T) *fakes {
+	t.Helper()
+
+	f := newFakes(t)
+	f.defs.Items[400] = definitions.ItemDef{
+		Name:       "Cryptomnesia",
+		TypeName:   "Vehicle",
+		Tier:       "Exotic",
+		Bucket:     bungie.BucketVehicle,
+		ClassType:  bungie.ClassAny,
+		Equippable: true,
+	}
+	f.defs.Items[401] = definitions.ItemDef{
+		Name:            "Arcstrider",
+		TypeName:        "Hunter Subclass",
+		Tier:            "Common",
+		Bucket:          bungie.BucketSubclass,
+		ClassType:       1,
+		Equippable:      true,
+		NonTransferable: true,
+	}
+
+	f.bungie.ProfileBody = `{"ErrorCode": 1, "Response": {
+		"characters": {"data": {
+			"c1": {"characterId": "c1", "classType": 1, "light": 2000, "dateLastPlayed": "2026-11-10T12:00:00Z"}
+		}},
+		"profileInventory": {"data": {"items": [
+			{"itemHash": 100, "itemInstanceId": "2001", "lockable": true, "quantity": 1, "location": 2, "bucketHash": 138197802}
+		]}},
+		"characterInventories": {"data": {"c1": {"items": [
+			{"itemHash": 400, "itemInstanceId": "2003", "lockable": true, "quantity": 1, "location": 1, "bucketHash": 2025709351}
+		]}}},
+		"characterEquipment": {"data": {"c1": {"items": [
+			{"itemHash": 401, "itemInstanceId": "2002", "quantity": 1, "location": 1, "bucketHash": 3284755031, "transferStatus": 1}
+		]}}},
+		"itemComponents": {"instances": {"data": {
+			"2001": {"primaryStat": {"statHash": 1480404414, "value": 1950}},
+			"2002": {"primaryStat": {"statHash": 1935470627, "value": -10}, "isEquipped": true},
+			"2003": {"primaryStat": {"statHash": 1501155019, "value": 190}}
+		}}}
+	}}`
+
+	return f
+}
+
+// TestListItemsWithoutPower pins the power of the items that have none.
+// Their power cell is empty, the power sort puts them after the items
+// with power, and they pass no power bound.
+func TestListItemsWithoutPower(t *testing.T) {
+	t.Parallel()
+
+	const (
+		header   = "instance id | name | type | tier | power | stat total | location | tag | flags"
+		weapon   = "2001 | Fatebringer | Kinetic Hand Cannon | Legendary | 1950 |  | Vault |  | "
+		subclass = "2002 | Arcstrider | Hunter Subclass | Common |  |  | Hunter (equipped) |  | not transferable"
+		vehicle  = "2003 | Cryptomnesia | Vehicle | Exotic |  |  | Hunter |  | "
+	)
+
+	tests := map[string]struct {
+		in   ListItemsInput
+		want []string
+	}{
+		"other items of the Hunter": {
+			in:   ListItemsInput{Kind: inventory.KindOther, Location: "hunter"},
+			want: []string{"Items 1-2 of 2.", "", header, subclass, vehicle},
+		},
+		"other items by power": {
+			in:   ListItemsInput{Kind: inventory.KindOther, Sort: inventory.SortPower},
+			want: []string{"Items 1-2 of 2.", "", header, subclass, vehicle},
+		},
+		"every item by power": {
+			in:   ListItemsInput{Kind: inventory.KindAll, Sort: inventory.SortPower},
+			want: []string{"Items 1-3 of 3.", "", header, weapon, subclass, vehicle},
+		},
+		"maximum power": {
+			in:   ListItemsInput{Kind: inventory.KindAll, MaxPower: 2000},
+			want: []string{"Items 1-1 of 1.", "", header, weapon},
+		},
+		"minimum power": {
+			in:   ListItemsInput{Kind: inventory.KindAll, MinPower: 1},
+			want: []string{"Items 1-1 of 1.", "", header, weapon},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, isError := call(t, withoutPowerFakes(t).h.handleListItems, tc.in)
+			assert.False(t, isError)
+			assert.Equal(t, strings.Join(tc.want, "\n"), got)
+		})
+	}
+}
+
+// TestGetItemWithoutPower pins that get_item leaves out the power line of
+// an item that has no power.
+func TestGetItemWithoutPower(t *testing.T) {
+	t.Parallel()
+
+	got, isError := call(t, withoutPowerFakes(t).h.handleGetItem, GetItemInput{InstanceID: "2003"})
+	assert.False(t, isError)
+	assert.Contains(t, got, "Cryptomnesia\nInstance id: 2003\n")
+	assert.NotContains(t, got, "Power:")
+}
+
 // TestListItemsRatingRequests pins the requests that the rating columns
 // of list_items cost. In a call without a minimum roll rating, the
 // include_ratings input alone decides them. A call without it sends

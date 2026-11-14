@@ -425,6 +425,11 @@ func TestFilter(t *testing.T) {
 			filter: ItemFilter{MinPower: 1990, MaxPower: 2005, Sort: SortPower},
 			want:   []string{"1003", "1004", "1002"},
 		},
+		// The consumables stack has no power, so it passes no bound.
+		"maximum power without power": {
+			filter: ItemFilter{Kind: KindAll, MaxPower: 1995},
+			want:   []string{"1005", "1006", "1002"},
+		},
 		"unknown kind": {
 			filter: ItemFilter{Kind: "ghost"},
 			err:    ErrInvalidFilter,
@@ -1052,7 +1057,7 @@ func TestNewItemElement(t *testing.T) {
 	}
 }
 
-func TestNewItemLightPower(t *testing.T) {
+func TestNewItemPower(t *testing.T) {
 	t.Parallel()
 
 	defs := definitionstest.Defs()
@@ -1075,47 +1080,53 @@ func TestNewItemLightPower(t *testing.T) {
 		Equippable:                true,
 		DisablePrimaryStatDisplay: true,
 	}
+	defs.Items[123] = definitions.ItemDef{
+		Name:       "Cryptomnesia",
+		TypeName:   "Vehicle",
+		Bucket:     bungie.BucketVehicle,
+		ClassType:  bungie.ClassAny,
+		Equippable: true,
+	}
 
 	tests := map[string]struct {
-		instance  string
-		hash      uint32
-		bucket    uint32
-		want      int
-		wantPower int
+		instance string
+		hash     uint32
+		bucket   uint32
+		want     int
 	}{
 		"Power": {
-			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
-			hash:      100,
-			bucket:    bungie.BucketKinetic,
-			want:      1900,
-			wantPower: 1900,
+			instance: `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
+			hash:     100,
+			bucket:   bungie.BucketKinetic,
+			want:     1900,
 		},
 		"Attack": {
-			instance:  `{"primaryStat": {"statHash": 1480404414, "value": 1890}}`,
-			hash:      100,
-			bucket:    bungie.BucketKinetic,
-			want:      1890,
-			wantPower: 1890,
+			instance: `{"primaryStat": {"statHash": 1480404414, "value": 1890}}`,
+			hash:     100,
+			bucket:   bungie.BucketKinetic,
+			want:     1890,
 		},
 		"Defense": {
-			instance:  `{"primaryStat": {"statHash": 3897883278, "value": 1880}}`,
-			hash:      200,
-			bucket:    bungie.BucketHelmet,
-			want:      1880,
-			wantPower: 1880,
+			instance: `{"primaryStat": {"statHash": 3897883278, "value": 1880}}`,
+			hash:     200,
+			bucket:   bungie.BucketHelmet,
+			want:     1880,
 		},
 		"Attack of Destiny 1": {
-			instance:  `{"primaryStat": {"statHash": 368428387, "value": 400}}`,
-			hash:      100,
-			bucket:    bungie.BucketKinetic,
-			want:      400,
-			wantPower: 400,
+			instance: `{"primaryStat": {"statHash": 368428387, "value": 400}}`,
+			hash:     100,
+			bucket:   bungie.BucketKinetic,
+			want:     400,
 		},
 		"another stat": {
-			instance:  `{"primaryStat": {"statHash": 9, "value": 2010}}`,
-			hash:      100,
-			bucket:    bungie.BucketKinetic,
-			wantPower: 2010,
+			instance: `{"primaryStat": {"statHash": 9, "value": 2010}}`,
+			hash:     100,
+			bucket:   bungie.BucketKinetic,
+		},
+		"speed of a vehicle": {
+			instance: `{"primaryStat": {"statHash": 1501155019, "value": 190}}`,
+			hash:     123,
+			bucket:   bungie.BucketVehicle,
 		},
 		"no primary stat": {
 			instance: `{"damageType": 1}`,
@@ -1123,28 +1134,29 @@ func TestNewItemLightPower(t *testing.T) {
 			bucket:   bungie.BucketKinetic,
 		},
 		"Artifacts bucket": {
-			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 50}}`,
-			hash:      120,
-			bucket:    bungie.BucketArtifacts,
-			wantPower: 50,
+			instance: `{"primaryStat": {"statHash": 1935470627, "value": 50}}`,
+			hash:     120,
+			bucket:   bungie.BucketArtifacts,
 		},
 		"Subclass bucket": {
-			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
-			hash:      121,
-			bucket:    bungie.BucketSubclass,
-			wantPower: 1900,
+			instance: `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
+			hash:     121,
+			bucket:   bungie.BucketSubclass,
+		},
+		"negative primary stat of a subclass": {
+			instance: `{"primaryStat": {"statHash": 1935470627, "value": -10}}`,
+			hash:     121,
+			bucket:   bungie.BucketSubclass,
 		},
 		"hidden primary stat": {
-			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
-			hash:      122,
-			bucket:    bungie.BucketGhost,
-			wantPower: 1900,
+			instance: `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
+			hash:     122,
+			bucket:   bungie.BucketGhost,
 		},
 		"Subclass definition in another profile bucket": {
-			instance:  `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
-			hash:      121,
-			bucket:    bungie.BucketKinetic,
-			wantPower: 1900,
+			instance: `{"primaryStat": {"statHash": 1935470627, "value": 1900}}`,
+			hash:     121,
+			bucket:   bungie.BucketKinetic,
 		},
 	}
 
@@ -1153,8 +1165,7 @@ func TestNewItemLightPower(t *testing.T) {
 			t.Parallel()
 
 			item := instanceItem(t, defs, tc.hash, tc.bucket, tc.instance)
-			assert.Equal(t, tc.want, item.LightPower)
-			assert.Equal(t, tc.wantPower, item.Power)
+			assert.Equal(t, tc.want, item.Power)
 		})
 	}
 }

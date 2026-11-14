@@ -181,9 +181,9 @@ type Character struct {
 // Bungie DamageType value of the damage type of the instance alone, and 0
 // when the instance has none or the definitions lack it.
 //
-// Power is the value of the primary stat of the instance. LightPower is
-// the value that DIM counts as power, and 0 for a primary stat that DIM
-// does not count, as [lightPower] decides.
+// Power is the value that DIM counts as the power of the instance, as
+// [lightPower] decides. It is 0 for an item without power, such as a
+// vehicle, whose primary stat is its speed, or a subclass.
 //
 // TransferStatus is the Bungie TransferStatuses value that the profile
 // gives the item. Transferable marks an item that the server transfers.
@@ -222,7 +222,6 @@ type Item struct {
 	TransferStatus int
 	Element        int
 	Power          int
-	LightPower     int
 	Quantity       int
 	Hash           uint32
 	Bucket         uint32
@@ -539,8 +538,7 @@ func NewItem(
 	inst, ok := profile.ItemComponents.Instances.Data[pi.InstanceID]
 	if ok {
 		if inst.PrimaryStat != nil {
-			item.Power = inst.PrimaryStat.Value
-			item.LightPower = lightPower(def, *inst.PrimaryStat)
+			item.Power = lightPower(def, *inst.PrimaryStat)
 		}
 
 		if inst.DamageType != 0 {
@@ -938,11 +936,13 @@ type ItemFilter struct {
 	// "health". It matches the full name of a stat that an item in the
 	// snapshot has.
 	Stat string
-	// Sort is "name", "power", "newest", "total" for the highest stat total
-	// first, or "stat" for the highest value of Stat first.
+	// Sort is "name", "power" for the highest power first, "newest",
+	// "total" for the highest stat total first, or "stat" for the highest
+	// value of Stat first. The "power" sort puts the items without power
+	// last.
 	Sort string
-	// MinPower and MaxPower bound the power level, inclusive. Zero turns a
-	// bound off.
+	// MinPower and MaxPower bound the power level, inclusive. An item
+	// without power passes neither bound. Zero turns a bound off.
 	MinPower int
 	MaxPower int
 	// MinTotal is the lowest stat total to include. Only armor has a stat
@@ -1144,7 +1144,7 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 			f.Class != "" && !strings.EqualFold(item.Class, f.Class),
 			f.Damage != "" && !strings.EqualFold(item.Damage, f.Damage),
 			f.MinPower > 0 && item.Power < f.MinPower,
-			f.MaxPower > 0 && item.Power > f.MaxPower,
+			f.MaxPower > 0 && (item.Power == 0 || item.Power > f.MaxPower),
 			f.MinTotal > 0 && totalRank(item) < f.MinTotal,
 			f.MinStat > 0 && statRank(item, f.Stat) < f.MinStat,
 			f.Favorite && !item.Favorite,

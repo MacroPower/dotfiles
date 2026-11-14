@@ -343,7 +343,9 @@ func newServer(h *handler) *mcp.Server {
 		Name: toolListItems,
 		Description: "List inventory items across the vault and every character, with filters and paging. " +
 			"Returns weapons and armor unless kind says otherwise. Each row carries the instance id that the other tools take, " +
-			"and each armor row carries the sum of its stats. The min_total filter selects armor with at least that stat total, " +
+			"and each armor row carries the sum of its stats. " +
+			"The power column is empty for an item without power, such as a vehicle or a subclass. " +
+			"The min_total filter selects armor with at least that stat total, " +
 			"and sort=total puts the highest total first, for example to find the helmets with the highest stat total. " +
 			"The stat input names one stat of armor or weapons, such as Health or Range, and adds a column with its value. " +
 			"The min_stat filter selects items with at least that value of the stat, and sort=stat puts the highest value first. " +

@@ -908,7 +908,7 @@ func ofElement(elements ...int) func(*inventory.Item) bool {
 // hasPower reports whether DIM counts a power for item. It is the
 // predicate of is:haspower and is:haslight.
 func hasPower(item *inventory.Item) bool {
-	return item.LightPower > 0
+	return item.Power > 0
 }
 
 // isAutotagged reports whether an autotag rule set the tag of item, as
@@ -930,7 +930,7 @@ func powerValue(value string) (QueryTest, error) {
 	}
 
 	return itemTest(func(item *inventory.Item) bool {
-		return item.LightPower != 0 && compare(float64(item.LightPower))
+		return item.Power != 0 && compare(float64(item.Power))
 	}), nil
 }
 

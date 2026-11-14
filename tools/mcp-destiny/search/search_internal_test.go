@@ -1617,9 +1617,9 @@ func TestKleene(t *testing.T) {
 func TestItemTest(t *testing.T) {
 	t.Parallel()
 
-	powered := &inventory.Item{InstanceID: "powered", LightPower: 1900}
+	powered := &inventory.Item{InstanceID: "powered", Power: 1900}
 	unpowered := &inventory.Item{InstanceID: "unpowered"}
-	test := itemTest(func(item *inventory.Item) bool { return item.LightPower != 0 })
+	test := itemTest(func(item *inventory.Item) bool { return item.Power != 0 })
 
 	tests := map[string]struct {
 		ctx  Context
@@ -2598,11 +2598,10 @@ func TestSlotWords(t *testing.T) {
 func TestPowerRange(t *testing.T) {
 	t.Parallel()
 
-	// The item without power has a primary stat that DIM does not count.
 	items := []*inventory.Item{
-		{InstanceID: "1900", Power: 1900, LightPower: 1900},
-		{InstanceID: "5", Power: 5, LightPower: 5},
-		{InstanceID: "no power", Power: 2000},
+		{InstanceID: "1900", Power: 1900},
+		{InstanceID: "5", Power: 5},
+		{InstanceID: "no power"},
 	}
 
 	tests := map[string]struct {
@@ -2718,13 +2717,12 @@ func TestHasPower(t *testing.T) {
 	t.Parallel()
 
 	items := []*inventory.Item{
-		{InstanceID: "counted", Power: 1900, LightPower: 1900},
-		{InstanceID: "not counted", Power: 2010},
-		{InstanceID: "no primary stat"},
+		{InstanceID: "power", Power: 1900},
+		{InstanceID: "no power"},
 	}
 
 	for _, query := range []string{"is:haspower", "is:haslight"} {
-		assert.Equal(t, []string{"counted"}, matchIDs(t, query, items), query)
+		assert.Equal(t, []string{"power"}, matchIDs(t, query, items), query)
 	}
 }
 

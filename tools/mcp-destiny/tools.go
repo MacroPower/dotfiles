@@ -150,11 +150,11 @@ type ListItemsInput struct {
 	Tag            string `json:"tag,omitzero"             jsonschema:"Tag id from list_tags, 'none' for untagged items, or 'any' for tagged items"`
 	Perk           string `json:"perk,omitzero"            jsonschema:"Case-insensitive substring of a perk the item has equipped, such as 'kill clip'"`
 	Stat           string `json:"stat,omitzero"            jsonschema:"Case-insensitive full name of one stat, such as 'health' for armor or 'range' for weapons. Adds a column with its value, and min_stat and sort=stat read it"`
-	Sort           string `json:"sort,omitzero"            jsonschema:"name (default), power (highest first), newest (most recently acquired first), total (highest armor stat total first), or stat (highest value of the stat that stat names first)"`
+	Sort           string `json:"sort,omitzero"            jsonschema:"name (default), power (highest first, and the items without power last), newest (most recently acquired first), total (highest armor stat total first), or stat (highest value of the stat that stat names first)"`
 	MinPvERating   string `json:"min_pve_rating,omitzero"  jsonschema:"Lowest roll rating on the Aegis sheet (PvE) to include, a tier from S (best) to F. Only weapon copies whose roll has a tier on that sheet match"`
 	MinPvPRating   string `json:"min_pvp_rating,omitzero"  jsonschema:"Lowest roll rating on the PvP sheet to include, a tier from S (best) to F. Only weapon copies whose roll has a tier on that sheet match"`
-	MinPower       int    `json:"min_power,omitzero"       jsonschema:"Lowest power level to include"`
-	MaxPower       int    `json:"max_power,omitzero"       jsonschema:"Highest power level to include"`
+	MinPower       int    `json:"min_power,omitzero"       jsonschema:"Lowest power level to include. Items without power, such as vehicles and subclasses, do not match"`
+	MaxPower       int    `json:"max_power,omitzero"       jsonschema:"Highest power level to include. Items without power, such as vehicles and subclasses, do not match"`
 	MinTotal       int    `json:"min_total,omitzero"       jsonschema:"Lowest armor stat total to include. Only armor has a stat total, so a positive value returns only armor"`
 	MinStat        int    `json:"min_stat,omitzero"        jsonschema:"Lowest value of the stat that stat names. Items that lack the stat do not match"`
 	Limit          int    `json:"limit,omitzero"           jsonschema:"Maximum number of items to return (default 50, maximum 200)"`

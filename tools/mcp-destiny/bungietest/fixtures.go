@@ -21,11 +21,13 @@ const PathProfile = "/Destiny2/3/Profile/4611/"
 // latest play date. It has a hand cannon and a helmet equipped, a second
 // hand cannon in its inventory, and a third at the Postmaster. The vault
 // holds a hand cannon with sockets and stats and a rocket launcher. The
-// helmet has a stat total of 55. Every instanced item is lockable, and the
-// vault hand cannon is locked. The account holds a stack of consumables,
-// glimmer, bright dust, and a currency that the definitions lack. The
-// consumables stack carries the vault location, because Bungie gives that
-// location to every profile item.
+// helmet has a stat total of 55. The primary stat of each weapon is Attack,
+// and the primary stat of the helmet is Defense, so each of them has a
+// power. Every instanced item is lockable, and the vault hand cannon is
+// locked. The account holds a stack of consumables, glimmer, bright dust,
+// and a currency that the definitions lack. The consumables stack carries
+// the vault location, because Bungie gives that location to every profile
+// item.
 //
 // The Hunter saved three loadouts in the game. The first holds nothing.
 // The second holds the equipped hand cannon and helmet. The third holds the
@@ -148,12 +150,12 @@ const ProfileJSON = `{
 	}},
 	"itemComponents": {
 		"instances": {"data": {
-			"1001": {"damageType": 1, "primaryStat": {"statHash": 9, "value": 2010}},
-			"1002": {"damageType": 3, "primaryStat": {"statHash": 9, "value": 1990}},
-			"1003": {"damageType": 1, "primaryStat": {"statHash": 9, "value": 2005}},
-			"1004": {"damageType": 0, "primaryStat": {"statHash": 8, "value": 2000}, "isEquipped": true},
-			"1005": {"damageType": 1, "primaryStat": {"statHash": 9, "value": 1970}},
-			"1006": {"damageType": 1, "primaryStat": {"statHash": 9, "value": 1980}, "isEquipped": true}
+			"1001": {"damageType": 1, "primaryStat": {"statHash": 1480404414, "value": 2010}},
+			"1002": {"damageType": 3, "primaryStat": {"statHash": 1480404414, "value": 1990}},
+			"1003": {"damageType": 1, "primaryStat": {"statHash": 1480404414, "value": 2005}},
+			"1004": {"damageType": 0, "primaryStat": {"statHash": 3897883278, "value": 2000}, "isEquipped": true},
+			"1005": {"damageType": 1, "primaryStat": {"statHash": 1480404414, "value": 1970}},
+			"1006": {"damageType": 1, "primaryStat": {"statHash": 1480404414, "value": 1980}, "isEquipped": true}
 		}},
 		"stats": {"data": {
 			"1001": {"stats": {"1": {"statHash": 1, "value": 55}, "7": {"statHash": 7, "value": 3}}},
