@@ -8,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 	"time"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
 const (
@@ -297,7 +298,7 @@ func (s *Service) Artifact(ctx context.Context, file string) (io.ReadCloser, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		closeBody(ctx, resp.Body, u)
+		httpbody.Close(ctx, resp.Body, u)
 
 		return nil, fmt.Errorf("%w: %s returned status %d", ErrService, u, resp.StatusCode)
 	}
@@ -679,12 +680,13 @@ func (s *Service) stream(
 		req.Header.Set("Authorization", "Bearer "+session)
 	}
 
+	//nolint:bodyclose // The deferred httpbody.Close closes the body.
 	resp, err := s.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("performing request: %w", err)
 	}
 
-	defer closeBody(ctx, resp.Body, u)
+	defer httpbody.Close(ctx, resp.Body, u)
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return read(resp.Body)
@@ -725,14 +727,4 @@ func serviceMessage(raw []byte) string {
 	}
 
 	return text
-}
-
-func closeBody(ctx context.Context, body io.Closer, u string) {
-	err := body.Close()
-	if err != nil {
-		slog.DebugContext(ctx, "closing response body",
-			slog.String("url", u),
-			slog.Any("error", err),
-		)
-	}
 }

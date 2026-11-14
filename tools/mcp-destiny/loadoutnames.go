@@ -9,6 +9,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
 // loadoutTable is the name of a definition table of the Destiny manifest
@@ -230,7 +232,7 @@ func (s *LoadoutTableStore) loadTable(ctx context.Context, t loadoutTable, path 
 		return LoadoutTableState{Err: fmt.Errorf("fetching %s: %w", path, err)}
 	}
 
-	defer closeBody(ctx, body, path)
+	defer httpbody.Close(ctx, body, path)
 
 	table, err := decodeLoadoutTable(body, t)
 	if err != nil {

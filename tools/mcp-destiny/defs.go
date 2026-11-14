@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
 const (
@@ -514,7 +516,7 @@ func (l *DefsLoader) read(ctx context.Context, file string, decode func(io.Reade
 		return fmt.Errorf("fetching artifact %s: %w", file, err)
 	}
 
-	defer closeBody(ctx, body, file)
+	defer httpbody.Close(ctx, body, file)
 
 	err = decode(body)
 	if err != nil {

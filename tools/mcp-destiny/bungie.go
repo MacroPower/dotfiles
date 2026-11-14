@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
 const (
@@ -616,7 +618,7 @@ func (b *Bungie) Content(ctx context.Context, path string) (io.ReadCloser, error
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		closeBody(ctx, resp.Body, u)
+		httpbody.Close(ctx, resp.Body, u)
 
 		return nil, fmt.Errorf("%w: content file returned status %d", ErrBungie, resp.StatusCode)
 	}
@@ -822,12 +824,13 @@ func (b *Bungie) call(ctx context.Context, creds Credentials, method, path strin
 		req.Header.Set("Content-Type", "application/json")
 	}
 
+	//nolint:bodyclose // The deferred httpbody.Close closes the body.
 	resp, err := b.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("performing request: %w", err)
 	}
 
-	defer closeBody(ctx, resp.Body, u)
+	defer httpbody.Close(ctx, resp.Body, u)
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {

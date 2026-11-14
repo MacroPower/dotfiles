@@ -8,6 +8,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
 // Game modes of the roll sheets and the perk preferences.
@@ -291,7 +293,7 @@ func (s *SheetStore) load(ctx context.Context, mode string, files []string) (*Sh
 		return nil, fmt.Errorf("fetching artifact %s: %w", file, err)
 	}
 
-	defer closeBody(ctx, body, file)
+	defer httpbody.Close(ctx, body, file)
 
 	sheet, err := decodeSheet(body)
 	if err != nil {
