@@ -17,6 +17,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/fold"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
@@ -201,10 +202,11 @@ func (d *Defs) Withholds(hash uint32) bool {
 	return found
 }
 
-// TraitNames maps the lowercase name of every weapon trait to its display
-// name. The web client stores a perk preference under the display name and
-// reads it back with an exact match. An enhanced trait counts under the
-// name of its base trait.
+// TraitNames maps the name of every weapon trait, after [fold.Name] folds
+// it, to its display name. A caller folds the name that the user passes
+// in the same way and looks up the display name. The web client stores a
+// perk preference under the display name and reads it back with an exact
+// match. An enhanced trait counts under the name of its base trait.
 func (d *Defs) TraitNames() map[string]string {
 	names := map[string]string{}
 
@@ -216,7 +218,7 @@ func (d *Defs) TraitNames() map[string]string {
 
 		name := BasePerkName(item.Name)
 		if name != "" {
-			names[strings.ToLower(name)] = name
+			names[fold.Name(name)] = name
 		}
 	}
 

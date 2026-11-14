@@ -13,6 +13,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/fold"
 )
 
 // Owner values of items that no character holds.
@@ -255,12 +256,19 @@ func (i *Item) StatTotal() (int, bool) {
 	return total, true
 }
 
-// StatValue returns the value of the stat with the given name, which it
-// matches without regard to case. It reports false when the item lacks the
-// stat.
+// StatValue returns the value of the stat with the given name. It compares
+// the names after [fold.Name] folds both. It reports false when the item
+// lacks the stat.
 func (i *Item) StatValue(name string) (int, bool) {
+	return i.foldedStatValue(fold.Name(name))
+}
+
+// foldedStatValue returns the value of the stat whose name equals folded
+// after [fold.Name] folds the stat name. The caller folds the name that it
+// looks up, so a loop over many items folds that name only one time.
+func (i *Item) foldedStatValue(folded string) (int, bool) {
 	for _, stat := range i.Stats {
-		if strings.EqualFold(stat.Name, name) {
+		if fold.Name(stat.Name) == folded {
 			return stat.Value, true
 		}
 	}
@@ -911,7 +919,9 @@ func (s *Snapshot) LocationLabel(item *Item) string {
 
 // ItemFilter selects and orders items. The zero value selects every weapon
 // and armor piece, ordered by name. String fields match without regard to
-// case.
+// case. Query, Slot, Perk, and Stat match names. Each compares a name with
+// the field after [fold.Name] folds both, so it also matches without
+// regard to accents.
 type ItemFilter struct {
 	// Query matches a substring of the item name or type name.
 	Query string
@@ -999,9 +1009,16 @@ func (s *Snapshot) Filter(f ItemFilter) ([]*Item, error) {
 			return nil, fmt.Errorf("%w: sort %q needs a stat name", ErrInvalidFilter, f.Sort)
 		}
 
+		stat := fold.Name(f.Stat)
+
+		ranks := make(map[*Item]int, len(out))
+		for _, item := range out {
+			ranks[item] = statRank(item, stat)
+		}
+
 		slices.SortStableFunc(out, func(a, b *Item) int {
 			return cmp.Or(
-				cmp.Compare(statRank(b, f.Stat), statRank(a, f.Stat)),
+				cmp.Compare(ranks[b], ranks[a]),
 				cmp.Compare(a.Name, b.Name),
 				CompareIDs(a.InstanceID, b.InstanceID),
 			)
@@ -1027,10 +1044,11 @@ func totalRank(item *Item) int {
 	return total
 }
 
-// statRank returns the value of the named stat of item. An item that lacks
-// the stat ranks below every item that has it.
-func statRank(item *Item, name string) int {
-	value, ok := item.StatValue(name)
+// statRank returns the value of the stat of item whose name equals folded
+// after [fold.Name] folds the stat name. An item that lacks the stat ranks
+// below every item that has it.
+func statRank(item *Item, folded string) int {
+	value, ok := item.foldedStatValue(folded)
 	if !ok {
 		return math.MinInt
 	}
@@ -1066,7 +1084,7 @@ func (s *Snapshot) checkStat(name string) error {
 	names := s.statNames()
 
 	switch {
-	case slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(n, name) }):
+	case slices.ContainsFunc(names, func(n string) bool { return fold.Equal(n, name) }):
 		return nil
 	case len(names) == 0:
 		return fmt.Errorf("%w: no item in the inventory has stats", ErrInvalidFilter)
@@ -1125,9 +1143,10 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 		return nil, err
 	}
 
-	query := strings.ToLower(f.Query)
-	slot := strings.ToLower(f.Slot)
-	perk := strings.ToLower(f.Perk)
+	query := fold.Name(f.Query)
+	slot := fold.Name(f.Slot)
+	perk := fold.Name(f.Perk)
+	stat := fold.Name(f.Stat)
 	tag := strings.ToLower(f.Tag)
 
 	return func(item *Item) bool {
@@ -1138,15 +1157,15 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 			location == LocationEquipped && !item.Equipped,
 			location == LocationPostmaster && !item.Postmaster,
 			location == LocationCharacters && (item.Owner == OwnerVault || item.Owner == OwnerAccount),
-			query != "" && !containsFold(item.Name, query) && !containsFold(item.TypeName, query),
-			slot != "" && !containsFold(item.Slot, slot),
+			query != "" && !containsFolded(item.Name, query) && !containsFolded(item.TypeName, query),
+			slot != "" && !containsFolded(item.Slot, slot),
 			f.Tier != "" && !strings.EqualFold(item.Tier, f.Tier),
 			f.Class != "" && !strings.EqualFold(item.Class, f.Class),
 			f.Damage != "" && !strings.EqualFold(item.Damage, f.Damage),
 			f.MinPower > 0 && item.Power < f.MinPower,
 			f.MaxPower > 0 && (item.Power == 0 || item.Power > f.MaxPower),
 			f.MinTotal > 0 && totalRank(item) < f.MinTotal,
-			f.MinStat > 0 && statRank(item, f.Stat) < f.MinStat,
+			f.MinStat > 0 && statRank(item, stat) < f.MinStat,
 			f.Favorite && !item.Favorite,
 			tag == TagNone && item.Tag != "",
 			tag == TagAny && item.Tag == "",
@@ -1155,9 +1174,16 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 		}
 
 		return perk == "" || slices.ContainsFunc(item.Perks, func(p Perk) bool {
-			return containsFold(p.Name, perk)
+			return containsFolded(p.Name, perk)
 		})
 	}, nil
+}
+
+// containsFolded reports whether s contains folded after [fold.Name] folds
+// s. The caller folds the text that it looks for, so a filter over many
+// items folds that text only one time.
+func containsFolded(s, folded string) bool {
+	return strings.Contains(fold.Name(s), folded)
 }
 
 // WeaponGroup holds every copy of one weapon. Name is the weapon name
@@ -1203,17 +1229,22 @@ func (s *Snapshot) WeaponGroups() []WeaponGroup {
 	return groups
 }
 
-// CopiesOf returns the [WeaponGroup] that name selects. It compares name
-// with each group name without regard to case or to a version suffix such
-// as "(Adept)". It prefers a group whose name matches in case to one whose
-// name differs only in case. When no group has the name, CopiesOf
+// CopiesOf returns the [WeaponGroup] that name selects. It removes a
+// version suffix such as "(Adept)" from name in any letter case and with
+// or without accents. It compares the rest with each group name. A group
+// whose name equals the rest comes first. A group whose name equals the
+// rest after [fold.Name] folds both comes second, so name can differ in
+// letter case and in accents. When no group has the name, CopiesOf
 // selects the one group whose name contains name without its suffix, or
-// that holds a copy whose full name contains name. A bare suffix such as
-// "(Adept)" thus selects only a group that holds a copy of that version.
+// that holds a copy whose full name contains name. Both tests compare the
+// texts after the same fold. A bare suffix such as "(Adept)" thus selects
+// only a group that holds a copy of that version. Neither test takes a
+// text that folds to the empty text, such as "^".
 func (s *Snapshot) CopiesOf(name string) (WeaponGroup, error) {
 	base := baseName(name)
-	lower := strings.ToLower(base)
-	query := strings.ToLower(strings.TrimSpace(name))
+	query := strings.TrimSpace(name)
+	foldedBase := fold.Name(base)
+	foldedQuery := fold.Name(query)
 
 	var folded, similar []WeaponGroup
 
@@ -1221,10 +1252,10 @@ func (s *Snapshot) CopiesOf(name string) (WeaponGroup, error) {
 		switch {
 		case g.Name == base:
 			return g, nil
-		case strings.EqualFold(g.Name, base):
+		case fold.Equal(g.Name, base):
 			folded = append(folded, g)
-		case base != "" && containsFold(g.Name, lower),
-			query != "" && slices.ContainsFunc(g.Copies, func(c *Item) bool { return containsFold(c.Name, query) }):
+		case foldedBase != "" && fold.Contains(g.Name, base),
+			foldedQuery != "" && slices.ContainsFunc(g.Copies, func(c *Item) bool { return fold.Contains(c.Name, query) }):
 			similar = append(similar, g)
 		}
 	}
@@ -1266,22 +1297,22 @@ func (s *Snapshot) GroupOf(item *Item) WeaponGroup {
 	return WeaponGroup{Name: baseName(item.Name), Copies: []*Item{item}}
 }
 
-// baseName removes a version suffix from a weapon name. It matches the
-// suffix without regard to case.
+// baseName removes a version suffix from a weapon name. The suffix starts
+// at the last opening parenthesis of the name, and baseName compares it
+// with each version suffix after [fold.Name] folds both. The suffix can
+// therefore differ in letter case and in accents.
 func baseName(name string) string {
 	name = strings.TrimSpace(name)
 
-	for _, suffix := range versionSuffixes {
-		if len(name) >= len(suffix) && strings.EqualFold(name[len(name)-len(suffix):], suffix) {
-			return strings.TrimSpace(name[:len(name)-len(suffix)])
-		}
+	i := strings.LastIndexByte(name, '(')
+	if i < 0 {
+		return name
+	}
+
+	suffix := fold.Name(name[i:])
+	if slices.ContainsFunc(versionSuffixes, func(v string) bool { return fold.Name(v) == suffix }) {
+		return strings.TrimSpace(name[:i])
 	}
 
 	return name
-}
-
-// containsFold reports whether s contains the lowercase string lower,
-// without regard to the case of s.
-func containsFold(s, lower string) bool {
-	return strings.Contains(strings.ToLower(s), lower)
 }

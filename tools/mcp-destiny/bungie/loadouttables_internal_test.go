@@ -388,6 +388,7 @@ func TestFindLoadoutName(t *testing.T) {
 		3: {Name: "Hidden", Index: 2, Redacted: true},
 		4: {Name: "raid night", Index: 3},
 		5: {Index: 4},
+		6: {Name: "Crépuscule", Index: 5},
 	}
 
 	tests := map[string]struct {
@@ -398,9 +399,13 @@ func TestFindLoadoutName(t *testing.T) {
 		"exact name":                 {name: "Trials", want: 2, wantOK: true},
 		"another letter case":        {name: "tRIALS", want: 2, wantOK: true},
 		"two matches":                {name: "RAID NIGHT", want: 1, wantOK: true},
+		"name without its accents":   {name: "crepuscule", want: 6, wantOK: true},
+		"name with accents":          {name: "TRIÁLS", want: 2, wantOK: true},
 		"redacted name":              {name: "Hidden"},
 		"part of a name":             {name: "Raid"},
 		"name with surrounding text": {name: " Trials"},
+		"name of only accent marks":  {name: "^"},
+		"acute accent alone":         {name: "\u00b4"},
 	}
 
 	for name, tc := range tests {
@@ -413,7 +418,7 @@ func TestFindLoadoutName(t *testing.T) {
 		})
 	}
 
-	assert.Equal(t, []string{"Trials", "Raid Night", "raid night"}, loadoutNameChoices(table),
+	assert.Equal(t, []string{"Trials", "Raid Night", "raid night", "Crépuscule"}, loadoutNameChoices(table),
 		"the choices follow the index and leave out redacted entries and entries without a name")
 }
 

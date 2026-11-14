@@ -495,6 +495,8 @@
 // The name filters fold the item name and the text before they compare
 // them, as the web client does. The fold removes letter case and
 // diacritics, so name:deja matches a name that writes deja with accents.
+// Each other tool that looks up a name folds the name in the same way,
+// such as list_items with a query and list_vendors with a vendor.
 // The filters also read the curly quotes U+2018 through U+201A and U+201C
 // through U+201E in the name as ASCII quotes, as the parser reads them in
 // the query. A straight apostrophe in the text therefore matches a curly

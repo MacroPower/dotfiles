@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/fold"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
@@ -136,11 +137,13 @@ func firstLoadoutEntry(table map[uint32]LoadoutDefinition) (uint32, error) {
 }
 
 // findLoadoutName returns the hash of the entry of the name table whose
-// name is name in any letter case. Only the entries that are not redacted
-// count, and the first match in index order wins.
+// name equals name after [fold.Name] folds both. Only the entries that
+// [loadoutNameChoices] lists count. Those entries are not redacted and
+// have a name. A name made only of accents, such as "^", folds to the
+// empty text, so it matches no entry. The first match in index order wins.
 func findLoadoutName(table map[uint32]LoadoutDefinition, name string) (uint32, bool) {
 	for _, hash := range shownLoadoutEntries(table) {
-		if strings.EqualFold(table[hash].Name, name) {
+		if entry := table[hash]; entry.Name != "" && fold.Equal(entry.Name, name) {
 			return hash, true
 		}
 	}
@@ -253,10 +256,11 @@ func (s *LoadoutTableStore) loadTable(ctx context.Context, t LoadoutTable, path 
 // slot sends with [*Client.SnapshotLoadout]. Kept holds the identifiers of
 // the loadout in the slot. The bool saved reports whether the slot holds a
 // saved loadout. A non-empty name picks the entry of the name table with
-// that name in any letter case. Without a name, a saved loadout keeps its
-// name and an empty slot takes the first name of the table. The icon and
-// the color follow the same rule without a choice. A saved loadout keeps
-// its own, and an empty slot takes the first entry of each table.
+// that name in any letter case and with or without accents. Without a
+// name, a saved loadout keeps its name and an empty slot takes the first
+// name of the table. The icon and the color follow the same rule without a
+// choice. A saved loadout keeps its own, and an empty slot takes the first
+// entry of each table.
 //
 // States holds the state of each table that the rules read. A table that
 // the rules read and that did not load returns an error with the reason.

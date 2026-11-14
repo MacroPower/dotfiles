@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/fold"
 )
 
 // ErrPerk reports a perk change that the item forbids before any Bungie
@@ -20,10 +21,11 @@ type PlugInserter interface {
 }
 
 // SetPerk makes the plug named name the active perk of one socket of item
-// in the live game. It compares name with the names in [Perk.Options]
-// without regard to case. A non-empty replace names the active perk of the
-// socket to change, which settles a name that more than one socket can
-// hold.
+// in the live game. It compares name with the names in [Perk.Options], and
+// replace with the active perk names, after [fold.Name] folds both. Each
+// of the two can therefore differ in letter case and in accents. A
+// non-empty replace names the active perk of the socket to change, which
+// settles a name that more than one socket can hold.
 //
 // SetPerk returns the plug that the socket held before the change and the
 // plug that it holds after. An empty replace selects every socket, and a
@@ -50,7 +52,7 @@ func (s *Snapshot) SetPerk(
 	var sockets []int
 
 	for i, perk := range item.Perks {
-		if replace == "" || strings.EqualFold(perk.Name, replace) {
+		if replace == "" || fold.Equal(perk.Name, replace) {
 			sockets = append(sockets, i)
 		}
 	}
@@ -68,12 +70,12 @@ func (s *Snapshot) SetPerk(
 
 	for _, i := range sockets {
 		perk := item.Perks[i]
-		if strings.EqualFold(perk.Name, name) {
+		if fold.Equal(perk.Name, name) {
 			return perk.Plug, perk.Plug, nil
 		}
 
 		for j, option := range perk.Options {
-			if strings.EqualFold(option.Name, name) {
+			if fold.Equal(option.Name, name) {
 				matches = append(matches, match{perk: i, option: j})
 			}
 		}

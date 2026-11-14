@@ -844,3 +844,20 @@ func TestWithholds(t *testing.T) {
 		})
 	}
 }
+
+func TestTraitNames(t *testing.T) {
+	t.Parallel()
+
+	defs := &Defs{Items: map[uint32]ItemDef{
+		1: {Name: "Kill Clip", TypeName: "Trait"},
+		2: {Name: "Kill Clip Enhanced", TypeName: "Enhanced Trait"},
+		3: {Name: "Déjà Vu", TypeName: "Trait"},
+		4: {Name: "Arrowhead Brake", TypeName: "Barrel"},
+		5: {TypeName: "Trait"},
+	}}
+
+	assert.Equal(t, map[string]string{
+		"kill clip": "Kill Clip",
+		"deja vu":   "Déjà Vu",
+	}, defs.TraitNames())
+}

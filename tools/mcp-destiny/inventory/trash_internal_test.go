@@ -47,6 +47,22 @@ func TestResolveSlot(t *testing.T) {
 		"substring":                        {name: "helm", want: "Helmet"},
 		"substring in another letter case": {name: "HELM", want: "Helmet"},
 		"spaces around the name":           {name: " helmet ", want: "Helmet"},
+		"full name with accents":           {name: "KÍNETIC WEAPONS", want: "Kinetic Weapons"},
+		"substring with an accent":         {name: "hélm", want: "Helmet"},
+		"full name without its accents wins over a longer name": {
+			edit: func(s *Snapshot) {
+				s.Buckets = []Bucket{
+					{Name: "Pöwer Weapons", Hash: bungie.BucketPower, Capacity: 10},
+					{Name: "Pöwer", Hash: bungie.BucketHelmet, Capacity: 10},
+				}
+				s.Items = []*Item{
+					{InstanceID: "1", Kind: KindWeapon, Bucket: bungie.BucketPower},
+					{InstanceID: "2", Kind: KindArmor, Bucket: bungie.BucketHelmet},
+				}
+			},
+			name: "power",
+			want: "Pöwer",
+		},
 		"full name wins over a longer name": {
 			edit: func(s *Snapshot) {
 				s.Buckets = []Bucket{
@@ -76,6 +92,20 @@ func TestResolveSlot(t *testing.T) {
 		"spaces only": {
 			name: "   ",
 			err:  "invalid input: pass a slot, one of " + candidates,
+		},
+		"accent marks only": {
+			name: " ^\u00b4 ",
+			err:  "invalid input: pass a slot, one of " + candidates,
+		},
+		"accent marks only with one candidate": {
+			edit: func(s *Snapshot) {
+				s.Items = slices.DeleteFunc(
+					s.Items,
+					func(item *Item) bool { return item.Bucket != bungie.BucketHelmet },
+				)
+			},
+			name: "^",
+			err:  "invalid input: pass a slot, one of Helmet",
 		},
 		"bucket without weapons or armor": {
 			edit: withEngram,

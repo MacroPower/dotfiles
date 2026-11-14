@@ -555,7 +555,7 @@ func newServer(h *handler) *mcp.Server {
 			"takes two steps. First equip the gear with move_items and equip=true, then call this tool. " +
 			"The game saves the mods and the perks of the equipped gear with it. " +
 			"A save into a slot that holds a loadout replaces that loadout. " +
-			"name picks a name from the list that the game offers, in any letter case. " +
+			"name picks a name from the list that the game offers, in any letter case and with or without accents. " +
 			"Without name, a saved loadout keeps its name, and an empty slot takes the first name of the list. " +
 			"A saved loadout also keeps its icon and its color, and an empty slot takes the first icon and " +
 			"the first color. The tool cannot pick an icon or a color, because the game defines both only as images. " +

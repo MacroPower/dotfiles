@@ -7,15 +7,18 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/fold"
 )
 
 // ResolveSlot returns the bucket that a slot name selects. The candidates
 // are the buckets of [Snapshot.Buckets] that each character has and that
 // hold at least one weapon or armor piece. ResolveSlot trims the spaces
-// around name and compares without regard to letter case. A candidate
-// whose full name equals name wins. Otherwise the one candidate whose name
-// contains name wins. Every other outcome returns an [ErrInvalidInput]
-// error, which names the candidates or the matches when there are any.
+// around name, and it compares each bucket name with name after
+// [fold.Name] folds both. A name that folds to the empty text, such as
+// "^", selects no slot. A candidate whose full name equals name wins.
+// Otherwise the one candidate whose name contains name wins. Every other
+// outcome returns an [ErrInvalidInput] error, which names the candidates
+// or the matches when there are any.
 func (s *Snapshot) ResolveSlot(name string) (Bucket, error) {
 	candidates := s.gearBuckets()
 	if len(candidates) == 0 {
@@ -23,20 +26,18 @@ func (s *Snapshot) ResolveSlot(name string) (Bucket, error) {
 	}
 
 	name = strings.TrimSpace(name)
-	if name == "" {
+	if fold.Name(name) == "" {
 		return Bucket{}, fmt.Errorf("%w: pass a slot, one of %s", ErrInvalidInput, bucketNames(candidates))
 	}
-
-	lower := strings.ToLower(name)
 
 	var matches []Bucket
 
 	for _, b := range candidates {
-		if strings.EqualFold(b.Name, name) {
+		if fold.Equal(b.Name, name) {
 			return b, nil
 		}
 
-		if containsFold(b.Name, lower) {
+		if fold.Contains(b.Name, name) {
 			matches = append(matches, b)
 		}
 	}

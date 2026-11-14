@@ -8,12 +8,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
-
-	"golang.org/x/text/unicode/norm"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/fold"
 )
 
 // Values of the Bungie VendorItemStatus flags. A status of zero means that
@@ -283,11 +281,11 @@ func vendorItemName(defs *definitions.Defs, hash uint32) string {
 
 // Select returns the vendor that arg selects among vendors. A decimal arg
 // selects the vendor with that hash. Any other arg selects by name. An exact
-// name comes first. A name that equals arg after [foldName] folds both comes
-// second, and a name that contains arg after the same fold comes third.
-// Several vendors that match at the first rank with a match return an error
-// that names some of them with their hashes. Owner names the character for
-// the error that an unknown vendor returns.
+// name comes first. A name that equals arg after [fold.Name] folds both
+// comes second, and a name that contains arg after the same fold comes
+// third. Several vendors that match at the first rank with a match return
+// an error that names some of them with their hashes. Owner names the
+// character for the error that an unknown vendor returns.
 func Select(vendors []Vendor, arg, owner string) (Vendor, error) {
 	arg = strings.TrimSpace(arg)
 
@@ -302,12 +300,12 @@ func Select(vendors []Vendor, arg, owner string) (Vendor, error) {
 		return Vendor{}, fmt.Errorf("%w: no vendor of %s has the hash %d", ErrUnknownVendor, owner, hash)
 	}
 
-	plain := foldName(arg)
+	plain := fold.Name(arg)
 
 	var exact, folded, similar []Vendor
 
 	for _, v := range vendors {
-		name := foldName(v.Name)
+		name := fold.Name(v.Name)
 
 		switch {
 		case v.Name == arg:
@@ -339,21 +337,4 @@ func Select(vendors []Vendor, arg, owner string) (Vendor, error) {
 	}
 
 	return Vendor{}, fmt.Errorf("%w: no vendor of %s has a name that contains %q", ErrUnknownVendor, owner, arg)
-}
-
-// foldName folds a vendor name for the name ranks of [Select], so a name
-// that the user types without accents, such as xur, matches Xûr. The fold
-// decomposes s to Unicode Normalization Form D, removes each character
-// with the Unicode property Diacritic, and lowercases the rest. The name
-// filters of the autotag rule queries fold a name the same way.
-func foldName(s string) string {
-	s = strings.Map(func(r rune) rune {
-		if unicode.Is(unicode.Diacritic, r) {
-			return -1
-		}
-
-		return r
-	}, norm.NFD.String(s))
-
-	return strings.ToLower(s)
 }

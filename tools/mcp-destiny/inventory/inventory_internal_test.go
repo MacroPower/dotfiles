@@ -561,6 +561,10 @@ func TestFilterStats(t *testing.T) {
 			filter: ItemFilter{Stat: "HEALTH", MinStat: 20},
 			want:   []string{"11", "13"},
 		},
+		"minimum stat with an accent": {
+			filter: ItemFilter{Stat: "Héalth", MinStat: 20},
+			want:   []string{"11", "13"},
+		},
 		"minimum stat of a weapon": {
 			filter: ItemFilter{Stat: "range", MinStat: 50},
 			want:   []string{"14"},
@@ -608,6 +612,95 @@ func TestFilterStats(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, ids(got))
+		})
+	}
+}
+
+func TestFilterNames(t *testing.T) {
+	t.Parallel()
+
+	s := &Snapshot{Items: []*Item{
+		{InstanceID: "1", Name: "Mataiodoxía", TypeName: "Chest Armor", Kind: KindArmor, Slot: "Chest Armor"},
+		{
+			InstanceID: "2",
+			Name:       "Fatebringer",
+			TypeName:   "Hand Cannon",
+			Kind:       KindWeapon,
+			Slot:       "Kinétic Weapons",
+			Perks:      []Perk{{Plug: Plug{Name: "Explósive Payload"}}},
+			Stats:      []Stat{{Name: "Stábility", Value: 40}},
+		},
+		{
+			InstanceID: "3",
+			Name:       "Gjallarhorn",
+			TypeName:   "Röcket Launcher",
+			Kind:       KindWeapon,
+			Slot:       "Power Weapons",
+			Stats:      []Stat{{Name: "Stábility", Value: 50}},
+		},
+	}}
+
+	// The stat names and the filters carry accents on different letters,
+	// so a stat matches only when the filter folds both texts. Gjallarhorn
+	// has the higher stat value but comes after Fatebringer in name order.
+	tests := map[string]struct {
+		filter ItemFilter
+		want   []string
+	}{
+		"name without its accents":      {filter: ItemFilter{Query: "mataiodoxia"}, want: []string{"1"}},
+		"name with accents":             {filter: ItemFilter{Query: "FÁTE"}, want: []string{"2"}},
+		"type name without its accents": {filter: ItemFilter{Query: "rocket"}, want: []string{"3"}},
+		"slot without its accents":      {filter: ItemFilter{Slot: "kinetic"}, want: []string{"2"}},
+		"slot with other accents":       {filter: ItemFilter{Slot: "KINETÍC"}, want: []string{"2"}},
+		"perk without its accents":      {filter: ItemFilter{Perk: "explosive"}, want: []string{"2"}},
+		"perk with other accents":       {filter: ItemFilter{Perk: "EXPLOSÍVE"}, want: []string{"2"}},
+		"query that matches nothing":    {filter: ItemFilter{Query: "mataiodoxie"}, want: []string{}},
+		"minimum stat with other accents": {
+			filter: ItemFilter{Stat: "STABILÍTY", MinStat: 45},
+			want:   []string{"3"},
+		},
+		"stat sort with other accents": {
+			filter: ItemFilter{Stat: "stabílity", Sort: SortStat},
+			want:   []string{"3", "2", "1"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := s.Filter(tc.filter)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, ids(got))
+		})
+	}
+}
+
+func TestStatValue(t *testing.T) {
+	t.Parallel()
+
+	item := &Item{Stats: []Stat{{Name: "Grenade", Value: 10}, {Name: "Stábility", Value: 40}}}
+
+	// The stat name and the first case carry accents on different
+	// letters, so the case matches only when StatValue folds both texts.
+	tests := map[string]struct {
+		name  string
+		want  int
+		found bool
+	}{
+		"name with other accents":   {name: "STABILÍTY", want: 40, found: true},
+		"name without its accents":  {name: "stability", want: 40, found: true},
+		"name that differs in case": {name: "grenade", want: 10, found: true},
+		"missing stat":              {name: "range"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := item.StatValue(tc.name)
+			assert.Equal(t, tc.found, ok)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -748,13 +841,56 @@ func TestWeaponGroups(t *testing.T) {
 func TestCopiesOf(t *testing.T) {
 	t.Parallel()
 
-	s := groupSnapshot()
+	accented := &Snapshot{Items: []*Item{
+		{InstanceID: "21", Name: "Déjà Vu", Kind: KindWeapon},
+		{InstanceID: "22", Name: "Déjà Vu Prime", Kind: KindWeapon},
+		{InstanceID: "23", Name: "Crépuscule (Adept)", Kind: KindWeapon},
+	}}
+	single := &Snapshot{Items: []*Item{
+		{InstanceID: "31", Name: "Fatebringer", Kind: KindWeapon},
+	}}
 
 	tests := map[string]struct {
-		err  error
-		name string
-		want []string
+		err      error
+		snapshot *Snapshot
+		name     string
+		want     []string
 	}{
+		"exact name with accents": {
+			snapshot: accented,
+			name:     "Déjà Vu",
+			want:     []string{"21"},
+		},
+		"name without its accents beats a longer match": {
+			snapshot: accented,
+			name:     "deja vu",
+			want:     []string{"21"},
+		},
+		"part of a name without its accents": {
+			snapshot: accented,
+			name:     "deja vu p",
+			want:     []string{"22"},
+		},
+		"name and version suffix without accents": {
+			snapshot: accented,
+			name:     "crepuscule (adept)",
+			want:     []string{"23"},
+		},
+		"group name part without accents and a missing version": {
+			snapshot: accented,
+			name:     "deja vu p (adept)",
+			want:     []string{"22"},
+		},
+		"copy name part without accents": {
+			snapshot: accented,
+			name:     "crepuscule (ad",
+			want:     []string{"23"},
+		},
+		"version suffix with an accent": {
+			snapshot: accented,
+			name:     "Déjà Vu (Ádept)",
+			want:     []string{"21"},
+		},
 		"exact name in any case": {
 			name: "FATEBRINGER",
 			want: []string{"9", "12", "4"},
@@ -807,13 +943,18 @@ func TestCopiesOf(t *testing.T) {
 			name: "thorn",
 			err:  ErrUnknownWeapon,
 		},
+		"accent marks only": {
+			snapshot: single,
+			name:     "^",
+			err:      ErrUnknownWeapon,
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := s.CopiesOf(tc.name)
+			got, err := cmp.Or(tc.snapshot, groupSnapshot()).CopiesOf(tc.name)
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
 
@@ -920,6 +1061,48 @@ func TestGroupOf(t *testing.T) {
 			got := s.GroupOf(item)
 			assert.Equal(t, tc.wantName, got.Name)
 			assert.Equal(t, tc.want, ids(got.Copies))
+		})
+	}
+}
+
+func TestBaseName(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		name string
+		want string
+	}{
+		"version suffix": {
+			name: "Fatebringer (Timelost)",
+			want: "Fatebringer",
+		},
+		"suffix in another letter case and with an accent": {
+			name: "fatebringer (ÁDEPT)",
+			want: "fatebringer",
+		},
+		"suffix without a space and spaces around": {
+			name: " Fatebringer(adept) ",
+			want: "Fatebringer",
+		},
+		"parenthesis that is not a version suffix": {
+			name: "Midnight Coup (Replica)",
+			want: "Midnight Coup (Replica)",
+		},
+		"parenthesis before a version suffix": {
+			name: "Midnight Coup (Replica) (Adept)",
+			want: "Midnight Coup (Replica)",
+		},
+		"no parenthesis": {
+			name: "Fatebringer",
+			want: "Fatebringer",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, baseName(tc.name))
 		})
 	}
 }

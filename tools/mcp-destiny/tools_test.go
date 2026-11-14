@@ -6353,6 +6353,67 @@ func TestPerkPreferences(t *testing.T) {
 	}
 }
 
+func TestPerkChangeFoldsNames(t *testing.T) {
+	t.Parallel()
+
+	defs := &definitions.Defs{Items: map[uint32]definitions.ItemDef{
+		1: {Name: "Déjà Vu", TypeName: "Trait"},
+		2: {Name: "Kill Clip", TypeName: "Trait"},
+		3: {Name: "Kill Clip Enhanced", TypeName: "Enhanced Trait"},
+	}}
+	traits := defs.TraitNames()
+
+	tests := map[string]struct {
+		perk string
+		want string
+		err  string
+	}{
+		"name without its accents": {perk: "deja vu", want: "Déjà Vu"},
+		"name with accents":        {perk: "KÍLL CLIP", want: "Kill Clip"},
+		"enhanced name in another letter case": {
+			perk: "kill clip enhanced",
+			want: "Kill Clip",
+		},
+		"enhanced name with accents": {
+			perk: "KILL CLÍP ÉNHANCED",
+			want: "Kill Clip",
+		},
+		"part of a name without its accents": {
+			perk: "deja",
+			err:  "invalid input: perk \"deja\" is not a weapon trait. Similar traits: Déjà Vu",
+		},
+		"part of a name with accents": {
+			perk: "DÉJÀ",
+			err:  "invalid input: perk \"DÉJÀ\" is not a weapon trait. Similar traits: Déjà Vu",
+		},
+		"part of an enhanced name in another letter case": {
+			perk: "KILL CL ENHANCED",
+			err:  "invalid input: perk \"KILL CL ENHANCED\" is not a weapon trait. Similar traits: Kill Clip",
+		},
+		"accent marks only": {
+			perk: "^",
+			err:  "invalid input: perk \"^\" is not a weapon trait",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := perkChange(PerkPreferenceInput{Mode: "pve", Perk: tc.perk, Stance: "up"}, traits)
+			if tc.err != "" {
+				require.ErrorIs(t, err, ErrInvalidInput)
+				require.EqualError(t, err, tc.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, dvm.PerkPreference{Mode: "pve", Perk: tc.want, Stance: "up"}, got)
+		})
+	}
+}
+
 // fixtureRuleWithoutAction is an autotag body whose one rule has neither a
 // tag nor the vault flag. The service accepts such a rule, so a client other
 // than the web client can store one.

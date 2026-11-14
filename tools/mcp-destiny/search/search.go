@@ -9,12 +9,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
-
-	"golang.org/x/text/unicode/norm"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/fold"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 )
@@ -948,12 +946,12 @@ func tagMatch(value string) func(*inventory.Item) bool {
 
 // nameMatch returns the predicate of the filter name:value, as DIM defines
 // it. The filter matches an item when a word of its name starts with the
-// value, and it compares both texts after [plainString] folds them. DIM
+// value, and it compares both texts after [fold.Name] folds them. DIM
 // puts a word boundary before the value only when the folded value starts
 // with an ASCII letter, an ASCII digit, or an underscore. A value such as
 // -x can therefore match in the middle of a word.
 func nameMatch(value string) func(*inventory.Item) bool {
-	folded := plainString(value)
+	folded := fold.Name(value)
 
 	pattern := "(?i)"
 	if wordStart.MatchString(folded) {
@@ -973,9 +971,9 @@ func nameMatch(value string) func(*inventory.Item) bool {
 
 // exactNameMatch returns the predicate of the filter exactname:value, as
 // DIM defines it. The filter matches an item whose whole name equals the
-// value after [plainString] folds both texts.
+// value after [fold.Name] folds both texts.
 func exactNameMatch(value string) func(*inventory.Item) bool {
-	folded := plainString(value)
+	folded := fold.Name(value)
 
 	return func(item *inventory.Item) bool { return plainName(item) == folded }
 }
@@ -983,28 +981,9 @@ func exactNameMatch(value string) func(*inventory.Item) bool {
 // plainName returns the name of item in the form that the name filters
 // compare. The lexer turned the typographic quotes of the value into ASCII
 // quotes. plainName therefore applies [normalizeQuotes] to the name, as
-// DIM does, and then [plainString] folds it.
+// DIM does, and then [fold.Name] folds it.
 func plainName(item *inventory.Item) string {
-	return plainString(normalizeQuotes(item.Name))
-}
-
-// plainString folds s for a text filter, as plainString of DIM folds the
-// text of a Latin-based language. The web client always searches in
-// English, which DIM marks as Latin-based. The fold decomposes s to
-// Unicode Normalization Form D, removes each character with the Unicode
-// property Diacritic, and lowercases the rest. The tables of Go and of
-// the browser each follow their own Unicode version. A character that
-// only one of the two versions lists can therefore fold differently.
-func plainString(s string) string {
-	s = strings.Map(func(r rune) rune {
-		if unicode.Is(unicode.Diacritic, r) {
-			return -1
-		}
-
-		return r
-	}, norm.NFD.String(s))
-
-	return strings.ToLower(s)
+	return fold.Name(normalizeQuotes(item.Name))
 }
 
 // idMatch returns the predicate of the filter id:value, which matches the

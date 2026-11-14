@@ -62,12 +62,16 @@
 // # Filters
 //
 // A filter selects items and orders them. The zero filter selects every
-// weapon and armor piece, ordered by name. The text fields match without
-// regard to letter case. The query, the slot, and the perk match a part of
-// the text. A location names the vault, the Postmaster, the equipped
-// items, the items on the characters, a character id, or a class name that
-// exactly one character has. A filter that names a stat must name a stat
-// that an item of the snapshot has.
+// weapon and armor piece, ordered by name. A location names the vault, the
+// Postmaster, the equipped items, the items on the characters, a character
+// id, or a class name that exactly one character has.
+//
+// The text fields match without regard to letter case. The query, the
+// slot, the perk, and the stat match names, and they fold each name and
+// the text with [fold.Name] before they compare them. They therefore also
+// match without regard to accents. The query, the slot, and the perk match
+// a part of the name. A filter that names a stat must name a stat that an
+// item of the snapshot has.
 //
 // The default order is by name and then by instance id. Bungie issues
 // ascending instance ids, so the id order is also the order in which the
@@ -82,9 +86,10 @@
 // because the names match.
 //
 // A caller selects a group by a name that the user passes. An exact group
-// name wins, and a name in another letter case comes next. Otherwise a
-// group matches when its name contains the text or when the full name of
-// one of its copies contains the text. The one such group wins. A name
-// that selects no group or more than one returns an error that wraps
-// [ErrUnknownWeapon].
+// name wins. A group name that equals the text after [fold.Name] folds
+// both comes next, so the text can differ in letter case and in accents.
+// Otherwise a group matches when its name contains the text after the same
+// fold, or when the full name of one of its copies contains the text. The
+// one such group wins. A name that selects no group or more than one
+// returns an error that wraps [ErrUnknownWeapon].
 package inventory

@@ -7,6 +7,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/fold"
 )
 
 var (
@@ -53,19 +54,19 @@ func (a Row) Offers() bool {
 	return a.BonusDrops > 0 || a.Focus != nil || len(a.Loot) > 0
 }
 
-// matches reports whether the lowercase string lower occurs in the name,
-// the type, the location, the focused reward, or a bonus loot name of the
-// activity, without regard to case.
-func (a Row) matches(lower string) bool {
-	if containsFold(a.Name, lower) || containsFold(a.Type, lower) || containsFold(a.Location, lower) {
+// matches reports whether query occurs in the name, the type, the
+// location, the focused reward, or a bonus loot name of the activity
+// after [fold.Name] folds both texts.
+func (a Row) matches(query string) bool {
+	if fold.Contains(a.Name, query) || fold.Contains(a.Type, query) || fold.Contains(a.Location, query) {
 		return true
 	}
 
-	if a.Focus != nil && containsFold(a.Focus.Name, lower) {
+	if a.Focus != nil && fold.Contains(a.Focus.Name, query) {
 		return true
 	}
 
-	return slices.ContainsFunc(a.Loot, func(loot Loot) bool { return containsFold(loot.Name, lower) })
+	return slices.ContainsFunc(a.Loot, func(loot Loot) bool { return fold.Contains(loot.Name, query) })
 }
 
 // Loot is one reward item of an activity. Name is the name of its
@@ -202,12 +203,13 @@ func compareFlags(a, b bool) int {
 	}
 }
 
-// Filter returns the activities that match query and rewards,
-// in their order. A query keeps each activity that [Row.matches],
-// and an empty or blank query keeps every activity. A true rewards keeps
-// only the activities that [Row.Offers] reports.
+// Filter returns the activities that match query and rewards, in their
+// order. A query keeps each activity whose name, type, location, focused
+// reward, or bonus loot name contains the query after [fold.Name] folds
+// both texts. An empty or blank query keeps every activity. A true rewards
+// keeps only the activities that [Row.Offers] reports.
 func Filter(rows []Row, query string, rewards bool) []Row {
-	lower := strings.ToLower(strings.TrimSpace(query))
+	query = strings.TrimSpace(query)
 
 	var out []Row
 
@@ -216,7 +218,7 @@ func Filter(rows []Row, query string, rewards bool) []Row {
 			continue
 		}
 
-		if lower != "" && !row.matches(lower) {
+		if query != "" && !row.matches(query) {
 			continue
 		}
 
@@ -224,10 +226,4 @@ func Filter(rows []Row, query string, rewards bool) []Row {
 	}
 
 	return out
-}
-
-// containsFold reports whether s contains the lowercase string lower,
-// without regard to the case of s.
-func containsFold(s, lower string) bool {
-	return strings.Contains(strings.ToLower(s), lower)
 }

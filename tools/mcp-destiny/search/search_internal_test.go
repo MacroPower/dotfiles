@@ -1274,31 +1274,6 @@ func TestExactName(t *testing.T) {
 	}
 }
 
-func TestPlainString(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		text string
-		want string
-	}{
-		"plain":                   {text: "Fatebringer", want: "fatebringer"},
-		"precomposed diacritics":  {text: "D\u00e9j\u00e0 Vu", want: "deja vu"},
-		"combining diacritics":    {text: "De\u0301ja\u0300 Vu", want: "deja vu"},
-		"capital I with dot":      {text: "\u0130stanbul", want: "istanbul"},
-		"letter without a decomp": {text: "\u00d8rsted", want: "\u00f8rsted"},
-		"typographic quote stays": {text: "It\u2019s", want: "it\u2019s"},
-		"spacing diacritics":      {text: "x^y`z", want: "xyz"},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, tc.want, plainString(tc.text))
-		})
-	}
-}
-
 // weaponTypeItems returns the owned items of a vault that holds ten weapons
 // and a helmet. The items pass through [inventory.NewSnapshot], so their
 // item categories carry the changes that the snapshot makes to the item

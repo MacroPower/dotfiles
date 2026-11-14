@@ -128,3 +128,45 @@ func TestRead(t *testing.T) {
 		})
 	}
 }
+
+func TestFilter(t *testing.T) {
+	t.Parallel()
+
+	rows := []Row{
+		{Hash: 1, Name: "Déjà Vu", Type: "Raid", Location: "Neomuna"},
+		{Hash: 2, Name: "Pit", Type: "Strike", Location: "Côte", Focus: &Loot{Name: "Mataiodoxía"}},
+		{Hash: 3, Name: "Control", Type: "The Crucible", Loot: []Loot{{Name: "Xûr Engram"}}},
+		{Hash: 4, Name: "Deja Vu", Type: "Dúngeon"},
+	}
+
+	tests := map[string]struct {
+		query   string
+		want    []uint32
+		rewards bool
+	}{
+		"name without its accents":           {query: "deja", want: []uint32{1, 4}},
+		"name with accents":                  {query: " DÉJÀ ", want: []uint32{1, 4}},
+		"type in another letter case":        {query: "RAID", want: []uint32{1}},
+		"type without its accents":           {query: "dungeon", want: []uint32{4}},
+		"location without its accents":       {query: "cote", want: []uint32{2}},
+		"focused reward without its accents": {query: "doxia", want: []uint32{2}},
+		"bonus loot without its accents":     {query: "xur", want: []uint32{3}},
+		"blank query":                        {query: "  ", want: []uint32{1, 2, 3, 4}},
+		"query that matches nothing":         {query: "gambit"},
+		"rewards":                            {rewards: true, want: []uint32{2, 3}},
+		"query and rewards":                  {query: "vu", rewards: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var got []uint32
+			for _, row := range Filter(rows, tc.query, tc.rewards) {
+				got = append(got, row.Hash)
+			}
+
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
