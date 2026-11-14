@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -40,24 +39,26 @@ const (
 // profile reports.
 const socketArrayDefault = 0
 
-var (
+const (
 	// profileComponents lists the GetProfile components that
 	// [*Client.Profile] requests. They cover profiles, profile inventories,
 	// profile currencies, characters, character inventories, character
 	// equipment, and character loadouts. The item components cover
 	// instances, stats, sockets, and reusable plugs.
-	profileComponents = []int{100, 102, 103, 200, 201, 205, 206, 300, 304, 305, 310}
+	profileComponents = "100,102,103,200,201,205,206,300,304,305,310"
 
 	// vendorComponents lists the GetVendors components that
 	// [*Client.Vendors] requests. They cover vendors, vendor categories, and
 	// vendor sales.
-	vendorComponents = []int{400, 401, 402}
+	vendorComponents = "400,401,402"
 
 	// activityComponents lists the GetProfile components that
 	// [*Client.Activities] requests. They cover the activities of each
 	// character.
-	activityComponents = []int{204}
+	activityComponents = "204"
+)
 
+var (
 	// ErrPlatform marks failures that originate from the Bungie platform
 	// API. A [*PlatformError] carries the platform error code.
 	ErrPlatform = errors.New("bungie")
@@ -641,16 +642,12 @@ func (b *Client) Content(ctx context.Context, path string) (io.ReadCloser, error
 }
 
 // componentsQuery returns the query string that requests components from
-// a Destiny endpoint. Bungie serves a cached snapshot for a repeated URL,
+// a Destiny endpoint. The components argument holds the component numbers,
+// separated by commas. Bungie serves a cached snapshot for a repeated URL,
 // so the query also carries a changing parameter that requests the latest
 // state.
-func (b *Client) componentsQuery(components []int) string {
-	parts := make([]string, 0, len(components))
-	for _, c := range components {
-		parts = append(parts, strconv.Itoa(c))
-	}
-
-	return fmt.Sprintf("components=%s&_=%d", strings.Join(parts, ","), b.now().UnixMilli())
+func (b *Client) componentsQuery(components string) string {
+	return fmt.Sprintf("components=%s&_=%d", components, b.now().UnixMilli())
 }
 
 // ActivityHistory fetches one page of the runs of a character, newest
