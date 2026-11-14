@@ -1,4 +1,4 @@
-package main
+package vendors
 
 import (
 	"cmp"
@@ -24,6 +24,9 @@ const (
 // uncategorized heads the group of the sales that no category of a vendor
 // lists.
 const uncategorized = "Uncategorized"
+
+// maxSuggestions caps the names that an [ErrUnknownVendor] error suggests.
+const maxSuggestions = 10
 
 // ErrUnknownVendor reports a vendor argument that selects no vendor of the
 // character, or that selects more than one.
@@ -84,9 +87,9 @@ type Cost struct {
 	ItemHash uint32
 }
 
-// readVendors joins a GetVendors response with the definitions. It returns
-// every vendor that the response lists, ordered by name and then by hash.
-func readVendors(resp *bungie.VendorsResponse, defs *definitions.Defs) []Vendor {
+// Read joins a GetVendors response with the definitions. It returns every
+// vendor that the response lists, ordered by name and then by hash.
+func Read(resp *bungie.VendorsResponse, defs *definitions.Defs) []Vendor {
 	hashes := map[uint32]bool{}
 
 	for hash := range resp.Vendors.Data {
@@ -248,14 +251,13 @@ func vendorItemName(defs *definitions.Defs, hash uint32) string {
 	return defs.Items[hash].Name
 }
 
-// selectVendor returns the vendor that arg selects among vendors. A
-// decimal arg selects the vendor with that hash. Any other arg selects by
-// name. An exact name comes first, then a name that matches in any letter
-// case, then a name that contains arg in any letter case. Several vendors
-// that match at the first rank with a match return an error that names
-// some of them with their hashes. Owner names the character for the
-// error that an unknown vendor returns.
-func selectVendor(vendors []Vendor, arg, owner string) (Vendor, error) {
+// Select returns the vendor that arg selects among vendors. A decimal arg
+// selects the vendor with that hash. Any other arg selects by name. An exact
+// name comes first, then a name that matches in any letter case, then a name
+// that contains arg in any letter case. Several vendors that match at the first
+// rank with a match return an error that names some of them with their hashes.
+// Owner names the character for the error that an unknown vendor returns.
+func Select(vendors []Vendor, arg, owner string) (Vendor, error) {
 	arg = strings.TrimSpace(arg)
 
 	hash, err := strconv.ParseUint(arg, 10, 32)
@@ -304,4 +306,10 @@ func selectVendor(vendors []Vendor, arg, owner string) (Vendor, error) {
 	}
 
 	return Vendor{}, fmt.Errorf("%w: no vendor of %s has a name that contains %q", ErrUnknownVendor, owner, arg)
+}
+
+// containsFold reports whether s contains the lowercase string lower,
+// without regard to the case of s.
+func containsFold(s, lower string) bool {
+	return strings.Contains(strings.ToLower(s), lower)
 }

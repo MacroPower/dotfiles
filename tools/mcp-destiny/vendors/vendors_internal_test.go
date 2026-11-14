@@ -1,4 +1,4 @@
-package main
+package vendors
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 )
 
-func TestReadVendors(t *testing.T) {
+func TestRead(t *testing.T) {
 	t.Parallel()
 
 	// Twelve vendors share a name. A walk over a map of twelve hashes
@@ -52,7 +52,7 @@ func TestReadVendors(t *testing.T) {
 				resp.Vendors.Data[hash] = bungie.VendorComponent{Hash: hash, Enabled: true}
 			}
 
-			got := readVendors(resp, &definitions.Defs{Vendors: tc.vendors})
+			got := Read(resp, &definitions.Defs{Vendors: tc.vendors})
 
 			hashes := make([]uint32, 0, len(got))
 			for _, v := range got {
@@ -64,7 +64,7 @@ func TestReadVendors(t *testing.T) {
 	}
 }
 
-func TestSelectVendor(t *testing.T) {
+func TestSelect(t *testing.T) {
 	t.Parallel()
 
 	vendors := []Vendor{
@@ -131,7 +131,7 @@ func TestSelectVendor(t *testing.T) {
 				in = tc.vendors
 			}
 
-			got, err := selectVendor(in, tc.arg, "Hunter")
+			got, err := Select(in, tc.arg, "Hunter")
 			if tc.err != "" {
 				require.ErrorIs(t, err, ErrUnknownVendor)
 				assert.EqualError(t, err, tc.err)

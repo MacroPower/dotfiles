@@ -14,6 +14,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/vendors"
 )
 
 const timeLayout = "2006-01-02 15:04 MST"
@@ -1203,25 +1204,25 @@ func activityName(defs *definitions.Defs, activity bungie.HistoryActivity) strin
 	return fmt.Sprintf("Activity %d", activity.ReferenceID)
 }
 
-// renderVendors renders vendors as a table with one row per vendor. Owner
-// names the character that sees the vendors, such as "Hunter".
-func renderVendors(vendors []Vendor, owner string) string {
-	if len(vendors) == 0 {
+// renderVendors renders the listed vendors as a table with one row per
+// vendor. Owner names the character that sees the vendors, such as "Hunter".
+func renderVendors(listed []vendors.Vendor, owner string) string {
+	if len(listed) == 0 {
 		return "Bungie lists no vendors for " + owner + "."
 	}
 
 	var b strings.Builder
 
-	if len(vendors) == 1 {
+	if len(listed) == 1 {
 		fmt.Fprintf(&b, "The vendor of %s.", owner)
 	} else {
-		fmt.Fprintf(&b, "The %d vendors of %s.", len(vendors), owner)
+		fmt.Fprintf(&b, "The %d vendors of %s.", len(listed), owner)
 	}
 
 	b.WriteString(" Pass vendor with a hash or a name to list the sales of one vendor.")
 	b.WriteString("\n\nname | subtitle | hash | sales | next refresh | flags\n")
 
-	for _, v := range vendors {
+	for _, v := range listed {
 		b.WriteString(strings.Join([]string{
 			v.Name,
 			v.Subtitle,
@@ -1238,7 +1239,7 @@ func renderVendors(vendors []Vendor, owner string) string {
 
 // renderVendor renders the sales of one vendor under the names of their
 // categories. Owner names the character that sees the stock.
-func renderVendor(v Vendor, owner string) string {
+func renderVendor(v vendors.Vendor, owner string) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s\n", v.Name)
@@ -1274,7 +1275,7 @@ func refreshLabel(t time.Time) string {
 	}
 }
 
-func vendorFlags(v Vendor) []string {
+func vendorFlags(v vendors.Vendor) []string {
 	if v.Disabled {
 		return []string{"disabled"}
 	}
@@ -1284,7 +1285,7 @@ func vendorFlags(v Vendor) []string {
 
 // saleLabel names the item of a sale, with the quantity when the sale
 // gives more than one.
-func saleLabel(sale Sale) string {
+func saleLabel(sale vendors.Sale) string {
 	if sale.Quantity > 1 {
 		return fmt.Sprintf("%s x%d", sale.Name, sale.Quantity)
 	}
@@ -1294,7 +1295,7 @@ func saleLabel(sale Sale) string {
 
 // costLabel lists the costs of a sale, such as "50000 Glimmer, 10
 // Legendary Shards". The label of a sale without a cost is "no cost".
-func costLabel(costs []Cost) string {
+func costLabel(costs []vendors.Cost) string {
 	if len(costs) == 0 {
 		return "no cost"
 	}
@@ -1309,7 +1310,7 @@ func costLabel(costs []Cost) string {
 
 // statusLabel says whether the character can buy the item of a sale. The
 // label of an unavailable sale carries its failure strings.
-func statusLabel(sale Sale) string {
+func statusLabel(sale vendors.Sale) string {
 	if sale.Available {
 		return "available"
 	}

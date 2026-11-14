@@ -21,6 +21,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/vendors"
 )
 
 // MCP tool names. The registration in main.go, the handlers, and the log
@@ -741,14 +742,14 @@ func (h *handler) handleListVendors(
 		return h.toolError(ctx, toolListVendors, fmt.Errorf("fetching the vendors: %w", err))
 	}
 
-	vendors := readVendors(resp, defs)
+	listed := vendors.Read(resp, defs)
 	owner := s.OwnerLabel(c.ID)
 
 	if strings.TrimSpace(in.Vendor) == "" {
-		return textResult(renderVendors(vendors, owner)), nil, nil
+		return textResult(renderVendors(listed, owner)), nil, nil
 	}
 
-	v, err := selectVendor(vendors, in.Vendor, owner)
+	v, err := vendors.Select(listed, in.Vendor, owner)
 	if err != nil {
 		return h.toolError(ctx, toolListVendors, err)
 	}
