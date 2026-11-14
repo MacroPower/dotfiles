@@ -35,9 +35,8 @@
 # `That is,` stays out, because ProseLatinAbbreviation offers it as the
 # fix for `i.e.`.
 #
-# The Recommended ProseRestatement holds `In short,` and `Ultimately,`,
-# because each opener also leads a point that the paragraph has not made
-# yet.
+# The Recommended ProseRestatement holds `In short,`, because the opener
+# also leads a point that the text has not made yet.
 #
 # `put simply` and `to put it simply` sit in ProseMinimizer, which
 # reports every `simply` but the one before `put`, so each set of words
