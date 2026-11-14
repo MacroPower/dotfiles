@@ -310,7 +310,6 @@ const (
 	vendorTess      uint32 = 3361454721
 	vendorXur       uint32 = 2190858386
 	vendorXurOffers uint32 = 3751514131
-	vendorTessRow   uint32 = 2168194999
 	vendorNameless  uint32 = 1111
 )
 
