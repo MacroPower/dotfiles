@@ -80,7 +80,7 @@ func TestEquipLoadout(t *testing.T) {
 			characterID: bungietest.TitanID,
 			number:      1,
 			fail:        "from vault to c2",
-			err:         errStep,
+			err:         bungietest.ErrStep,
 			wantSteps:   []string{"equip 1003 on c1", "to vault from c1"},
 			wantStopped: "1006 from c1, replaced by 1003",
 			wantChanged: true,
@@ -93,7 +93,7 @@ func TestEquipLoadout(t *testing.T) {
 			characterID: bungietest.TitanID,
 			number:      1,
 			fail:        "to vault from c1",
-			err:         errStep,
+			err:         bungietest.ErrStep,
 			wantSteps:   []string{"equip 1003 on c1"},
 			wantStopped: "1006 from c1, replaced by 1003",
 			wantChanged: true,
@@ -106,7 +106,7 @@ func TestEquipLoadout(t *testing.T) {
 			characterID: bungietest.TitanID,
 			number:      1,
 			fail:        "equip 1003 on c1",
-			err:         errStep,
+			err:         bungietest.ErrStep,
 			wantStopped: "1006 from c1",
 			want: "- Fatebringer (1006) did not reach Titan. It is at Hunter (equipped).\n" +
 				"Loadout 1 is not equipped on Titan: moving Fatebringer (1006) to Titan: " +
@@ -116,7 +116,7 @@ func TestEquipLoadout(t *testing.T) {
 			characterID: bungietest.HunterID,
 			number:      2,
 			fail:        "equip loadout 1 on c1",
-			err:         errStep,
+			err:         bungietest.ErrStep,
 			want:        "Loadout 2 is not equipped on Hunter: equipping the loadout: step refused.",
 		},
 	}
@@ -139,7 +139,7 @@ func TestEquipLoadout(t *testing.T) {
 				tc.change(s)
 			}
 
-			mover := &stepMover{fail: tc.fail}
+			mover := &bungietest.StepMover{Fail: tc.fail}
 
 			l, err := s.FindLoadout(tc.characterID, tc.number)
 			require.NoError(t, err)
@@ -151,7 +151,7 @@ func TestEquipLoadout(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			assert.Equal(t, tc.wantSteps, mover.steps)
+			assert.Equal(t, tc.wantSteps, mover.Steps)
 			assert.Equal(t, tc.wantMissing, got.Missing)
 			assert.Equal(t, tc.wantChanged, got.Changed)
 			assert.Equal(t, tc.err == nil, got.Equipped)
@@ -200,7 +200,7 @@ func TestEquipLoadoutFromPostmaster(t *testing.T) {
 		},
 		"equip fails after the pull": {
 			fail:      "equip loadout 3 on c1",
-			err:       errStep,
+			err:       bungietest.ErrStep,
 			wantSteps: []string{"pull to c1"},
 			want: "- Moved Fatebringer (1005) from the Postmaster to Hunter.\n" +
 				"Loadout 4 is not equipped on Hunter: equipping the loadout: step refused.",
@@ -212,7 +212,7 @@ func TestEquipLoadoutFromPostmaster(t *testing.T) {
 			t.Parallel()
 
 			s := fixtureSnapshot(t)
-			mover := &stepMover{fail: tc.fail}
+			mover := &bungietest.StepMover{Fail: tc.fail}
 			l := Loadout{CharacterID: bungietest.HunterID, Number: 4, InstanceIDs: []string{"1005"}}
 
 			got, err := s.EquipLoadout(t.Context(), mover, l)
@@ -222,7 +222,7 @@ func TestEquipLoadoutFromPostmaster(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			assert.Equal(t, tc.wantSteps, mover.steps)
+			assert.Equal(t, tc.wantSteps, mover.Steps)
 			assert.True(t, got.Changed, "the pull from the Postmaster changed the game")
 			assert.Equal(t, tc.wantEquipped, got.Equipped)
 			assert.Equal(t, tc.want, renderLoadoutEquip(s, l, got, err))
@@ -240,13 +240,13 @@ func TestEquipLoadoutWithoutItems(t *testing.T) {
 	t.Parallel()
 
 	s := fixtureSnapshot(t)
-	mover := &stepMover{}
+	mover := &bungietest.StepMover{}
 	l := Loadout{CharacterID: bungietest.HunterID, Number: 4, InstanceIDs: []string{"9999"}}
 
 	got, err := s.EquipLoadout(t.Context(), mover, l)
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"equip loadout 3 on c1"}, mover.steps)
+	assert.Equal(t, []string{"equip loadout 3 on c1"}, mover.Steps)
 	assert.Equal(t, []string{"9999"}, got.Missing)
 	assert.Empty(t, got.Items)
 	assert.True(t, got.Changed)

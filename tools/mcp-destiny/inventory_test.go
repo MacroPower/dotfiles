@@ -279,7 +279,7 @@ func TestSlotsUsed(t *testing.T) {
 				item, ok := s.Find(tc.move)
 				require.True(t, ok)
 
-				_, err := s.Move(t.Context(), &stepMover{}, item, tc.target, false)
+				_, err := s.Move(t.Context(), &bungietest.StepMover{}, item, tc.target, false)
 				require.NoError(t, err)
 			}
 

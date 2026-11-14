@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -12,17 +11,6 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
-
-func (m *stepMover) InsertSocketPlugFree(
-	_ context.Context,
-	action bungie.ItemAction,
-	socket int,
-	plugHash uint32,
-) error {
-	return m.step(
-		fmt.Sprintf("insert %d into socket %d of %s on %s", plugHash, socket, action.InstanceID, action.CharacterID),
-	)
-}
 
 // Plugs of the fixture definitions.
 var (
@@ -242,7 +230,7 @@ func TestSetPerk(t *testing.T) {
 			id:         "1001",
 			perk:       "Rampage",
 			fail:       "insert 903 into socket 0 of 1001 on c1",
-			err:        errStep,
+			err:        bungietest.ErrStep,
 			wantErr:    "inserting Rampage: step refused",
 			wantActive: []string{"Explosive Payload", "Firefly"},
 		},
@@ -253,7 +241,7 @@ func TestSetPerk(t *testing.T) {
 			t.Parallel()
 
 			s := fixtureSnapshot(t)
-			mover := &stepMover{fail: tc.fail}
+			mover := &bungietest.StepMover{Fail: tc.fail}
 
 			item, ok := s.Find(tc.id)
 			require.True(t, ok)
@@ -280,7 +268,7 @@ func TestSetPerk(t *testing.T) {
 
 			assert.Equal(t, tc.wantFrom, from.Name)
 			assert.Equal(t, tc.wantTo, to.Name)
-			assert.Equal(t, tc.want, mover.steps)
+			assert.Equal(t, tc.want, mover.Steps)
 
 			var active []string
 			for _, perk := range item.Perks {
@@ -349,7 +337,7 @@ func TestSetPerkRecordsTheSwap(t *testing.T) {
 			t.Parallel()
 
 			s := fixtureSnapshot(t)
-			mover := &stepMover{}
+			mover := &bungietest.StepMover{}
 
 			item, ok := s.Find("1001")
 			require.True(t, ok)
@@ -376,7 +364,7 @@ func TestSetPerkRecordsTheSwap(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantTo, before)
 			assert.Equal(t, tc.wantBack, to)
-			assert.Equal(t, tc.wantSteps, mover.steps)
+			assert.Equal(t, tc.wantSteps, mover.Steps)
 		})
 	}
 }

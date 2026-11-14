@@ -1,6 +1,7 @@
-// Package bungietest holds the fixtures and the fake server of the Bungie
-// platform API that tests share. The fixtures describe one account with a
-// Hunter and a Titan. They give the ids of the two characters and the
+// Package bungietest holds the fixtures, the fake server of the Bungie
+// platform API, and the recording fake of the Bungie item actions and
+// loadout actions that tests share. The fixtures describe one account with
+// a Hunter and a Titan. They give the ids of the two characters and the
 // hashes of the items and the vendors that the account sees. They also
 // give the response bodies that Bungie returns for the account. A test
 // builds the result that it expects from the same fixtures that the fake
@@ -18,4 +19,10 @@
 // records each request that it receives. A test sets the fields of the
 // server that pick the answers before the call under test. It reads the
 // recorded requests after the call.
+//
+// The step mover is a recording fake of the item actions and the loadout
+// actions of the Bungie client, for code that takes those actions through
+// an interface. It records each action as a short string and sends no
+// request. A test compares the recorded steps with the actions that it
+// expects, and it can make the mover refuse one action.
 package bungietest

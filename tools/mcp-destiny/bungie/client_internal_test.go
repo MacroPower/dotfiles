@@ -8,8 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
 
 // endlessBody is a response body that never ends and reads as zero-valued
@@ -54,7 +52,7 @@ func TestCappedBody(t *testing.T) {
 	b := New(WithContentURL("http://content.invalid"))
 	b.http = &http.Client{Transport: bodyTransport{body: raw}}
 
-	body, err := b.Content(t.Context(), bungietest.PathLoadoutNames)
+	body, err := b.Content(t.Context(), "/table.json")
 	require.NoError(t, err)
 
 	n, err := io.CopyN(io.Discard, body, maxContentBytes+1)

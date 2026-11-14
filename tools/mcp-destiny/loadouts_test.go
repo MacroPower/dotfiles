@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,11 +11,6 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
-
-// EquipLoadout records a loadout equip as a step of the [stepMover].
-func (m *stepMover) EquipLoadout(_ context.Context, action bungie.LoadoutAction) error {
-	return m.step(fmt.Sprintf("equip loadout %d on %s", action.Index, action.CharacterID))
-}
 
 func TestSnapshotLoadouts(t *testing.T) {
 	t.Parallel()
@@ -146,12 +140,12 @@ func TestEquipLoadoutMarksSlots(t *testing.T) {
 			t.Parallel()
 
 			s := fixtureSnapshot(t)
-			mover := &stepMover{}
+			mover := &bungietest.StepMover{}
 
 			got, err := s.EquipLoadout(t.Context(), mover, tc.loadout)
 			require.NoError(t, err)
 
-			assert.Equal(t, tc.wantSteps, mover.steps)
+			assert.Equal(t, tc.wantSteps, mover.Steps)
 
 			var moves []string
 
@@ -205,13 +199,13 @@ func TestEquipLoadoutChecksMovesFirst(t *testing.T) {
 			s := fixtureSnapshot(t)
 			tc.change(s)
 
-			mover := &stepMover{}
+			mover := &bungietest.StepMover{}
 			l := Loadout{CharacterID: bungietest.TitanID, Number: 2, InstanceIDs: tc.ids}
 
 			got, err := s.EquipLoadout(t.Context(), mover, l)
 			require.ErrorIs(t, err, ErrMove)
 			require.EqualError(t, err, tc.want)
-			assert.Empty(t, mover.steps)
+			assert.Empty(t, mover.Steps)
 			assert.False(t, got.Changed)
 			assert.Nil(t, got.Stopped)
 

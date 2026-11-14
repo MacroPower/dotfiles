@@ -2,10 +2,7 @@ package main
 
 import (
 	"cmp"
-	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,55 +11,6 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 )
-
-var errStep = errors.New("step refused")
-
-// stepMover records the Bungie actions of a move as short strings. It
-// refuses the action named by fail.
-type stepMover struct {
-	fail  string
-	steps []string
-}
-
-func (m *stepMover) step(name string) error {
-	if name == m.fail {
-		return errStep
-	}
-
-	m.steps = append(m.steps, name)
-
-	return nil
-}
-
-func (m *stepMover) Transfer(_ context.Context, action bungie.ItemAction, toVault bool) error {
-	name := "from vault to " + action.CharacterID
-	if toVault {
-		name = "to vault from " + action.CharacterID
-	}
-
-	if action.InstanceID == bungie.StackInstanceID {
-		name += fmt.Sprintf(" x%d", action.StackSize)
-	}
-
-	return m.step(name)
-}
-
-func (m *stepMover) Equip(_ context.Context, action bungie.ItemAction) error {
-	return m.step("equip " + action.InstanceID + " on " + action.CharacterID)
-}
-
-func (m *stepMover) PullFromPostmaster(_ context.Context, action bungie.ItemAction) error {
-	return m.step("pull to " + action.CharacterID)
-}
-
-func (m *stepMover) SetLockState(_ context.Context, action bungie.ItemAction, locked bool) error {
-	name := "unlock "
-	if locked {
-		name = "lock "
-	}
-
-	return m.step(name + action.InstanceID + " on " + action.CharacterID)
-}
 
 func TestMove(t *testing.T) {
 	t.Parallel()
@@ -126,7 +74,7 @@ func TestMove(t *testing.T) {
 			id:        "1003",
 			target:    bungietest.TitanID,
 			fail:      "from vault to c2",
-			err:       errStep,
+			err:       bungietest.ErrStep,
 			want:      []string{"to vault from c1"},
 			wantOwner: ownerVault,
 		},
@@ -148,7 +96,7 @@ func TestMove(t *testing.T) {
 			id:        "1006",
 			target:    ownerVault,
 			fail:      "equip 1003 on c1",
-			err:       errStep,
+			err:       bungietest.ErrStep,
 			wantOwner: bungietest.HunterID,
 			wantEquip: true,
 		},
@@ -156,7 +104,7 @@ func TestMove(t *testing.T) {
 			id:              "1006",
 			target:          ownerVault,
 			fail:            "to vault from c1",
-			err:             errStep,
+			err:             bungietest.ErrStep,
 			want:            []string{"equip 1003 on c1"},
 			wantOwner:       bungietest.HunterID,
 			wantReplacement: "1003",
@@ -183,7 +131,7 @@ func TestMove(t *testing.T) {
 			t.Parallel()
 
 			s := fixtureSnapshot(t)
-			mover := &stepMover{fail: tc.fail}
+			mover := &bungietest.StepMover{Fail: tc.fail}
 
 			item, ok := s.Find(tc.id)
 			require.True(t, ok)
@@ -195,7 +143,7 @@ func TestMove(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			assert.Equal(t, tc.want, mover.steps)
+			assert.Equal(t, tc.want, mover.Steps)
 			assert.Equal(t, tc.wantOwner, item.Owner)
 			assert.Equal(t, tc.wantEquip, item.Equipped)
 			assert.False(t, item.Postmaster && err == nil)
@@ -221,7 +169,7 @@ func TestMoveEquipReplacesTheSlot(t *testing.T) {
 	item, ok := s.Find("1003")
 	require.True(t, ok)
 
-	_, err := s.Move(t.Context(), &stepMover{}, item, bungietest.HunterID, true)
+	_, err := s.Move(t.Context(), &bungietest.StepMover{}, item, bungietest.HunterID, true)
 	require.NoError(t, err)
 
 	previous, ok := s.Find("1006")
@@ -243,7 +191,7 @@ func TestMoveRejectsStacks(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, stacks, 1)
 
-	_, err = s.Move(t.Context(), &stepMover{}, stacks[0], ownerVault, false)
+	_, err = s.Move(t.Context(), &bungietest.StepMover{}, stacks[0], ownerVault, false)
 	require.ErrorIs(t, err, ErrMove)
 	require.EqualError(t, err, "cannot move: Enhancement Core is a stack, which the move_stack tool moves")
 }
@@ -282,7 +230,7 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 			require.True(t, ok)
 			require.Equal(t, ownerAccount, item.Owner)
 
-			mover := &stepMover{}
+			mover := &bungietest.StepMover{}
 
 			_, err := s.Move(t.Context(), mover, item, tc.target, false)
 			require.ErrorIs(t, err, ErrMove)
@@ -291,7 +239,7 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 				err,
 				"cannot move: Enhancement Core sits in an account-wide bucket, and move_items moves only character and vault items",
 			)
-			assert.Empty(t, mover.steps)
+			assert.Empty(t, mover.Steps)
 			assert.Equal(t, ownerAccount, item.Owner)
 		})
 	}
@@ -413,7 +361,7 @@ func TestMoveStack(t *testing.T) {
 	t.Parallel()
 
 	s := fixtureSnapshot(t)
-	mover := &stepMover{}
+	mover := &bungietest.StepMover{}
 
 	name, moved, err := s.MoveStack(t.Context(), mover, 300, 10, true)
 	require.NoError(t, err)
@@ -437,7 +385,7 @@ func TestMoveStack(t *testing.T) {
 	assert.Equal(t, 5, stackUnits(s, ownerAccount))
 	assert.Equal(t, 37, stackUnits(s, ownerVault))
 
-	assert.Equal(t, []string{"to vault from c1 x10", "to vault from c1 x32", "from vault to c1 x5"}, mover.steps)
+	assert.Equal(t, []string{"to vault from c1 x10", "to vault from c1 x32", "from vault to c1 x5"}, mover.Steps)
 }
 
 func TestMoveStackErrors(t *testing.T) {
@@ -454,7 +402,7 @@ func TestMoveStackErrors(t *testing.T) {
 		"nothing in the vault":      {hash: 300, err: ErrMove},
 		"unknown hash":              {hash: 7, toVault: true, err: ErrMove},
 		"instanced item":            {hash: 100, toVault: true, err: ErrMove},
-		"bungie refuses":            {hash: 300, toVault: true, fail: "to vault from c1 x42", err: errStep},
+		"bungie refuses":            {hash: 300, toVault: true, fail: "to vault from c1 x42", err: bungietest.ErrStep},
 	}
 
 	for name, tc := range tests {
@@ -463,7 +411,13 @@ func TestMoveStackErrors(t *testing.T) {
 
 			s := fixtureSnapshot(t)
 
-			_, moved, err := s.MoveStack(t.Context(), &stepMover{fail: tc.fail}, tc.hash, tc.amount, tc.toVault)
+			_, moved, err := s.MoveStack(
+				t.Context(),
+				&bungietest.StepMover{Fail: tc.fail},
+				tc.hash,
+				tc.amount,
+				tc.toVault,
+			)
 			require.ErrorIs(t, err, tc.err)
 			assert.Zero(t, moved)
 			assert.Equal(t, 42, stackUnits(s, ownerAccount))
@@ -485,8 +439,8 @@ func TestMoveStackStopsHalfway(t *testing.T) {
 		Transferable: true,
 	})
 
-	_, moved, err := s.MoveStack(t.Context(), &stepMover{fail: "to vault from c1 x8"}, 300, 0, true)
-	require.ErrorIs(t, err, errStep)
+	_, moved, err := s.MoveStack(t.Context(), &bungietest.StepMover{Fail: "to vault from c1 x8"}, 300, 0, true)
+	require.ErrorIs(t, err, bungietest.ErrStep)
 	assert.Equal(t, 42, moved)
 	assert.Equal(t, 42, stackUnits(s, ownerVault))
 	assert.Equal(t, 8, stackUnits(s, ownerAccount))
@@ -543,12 +497,12 @@ func TestSetLock(t *testing.T) {
 			id:     "1002",
 			locked: true,
 			fail:   "lock 1002 on c1",
-			err:    errStep,
+			err:    bungietest.ErrStep,
 		},
 		"bungie refuses an unlock": {
 			id:         "1001",
 			fail:       "unlock 1001 on c1",
-			err:        errStep,
+			err:        bungietest.ErrStep,
 			wantLocked: true,
 		},
 	}
@@ -558,7 +512,7 @@ func TestSetLock(t *testing.T) {
 			t.Parallel()
 
 			s := fixtureSnapshot(t)
-			mover := &stepMover{fail: tc.fail}
+			mover := &bungietest.StepMover{Fail: tc.fail}
 
 			item, ok := s.Find(tc.id)
 			require.True(t, ok)
@@ -582,7 +536,7 @@ func TestSetLock(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			assert.Equal(t, tc.want, mover.steps)
+			assert.Equal(t, tc.want, mover.Steps)
 			assert.Equal(t, tc.wantLocked, item.Locked)
 		})
 	}
