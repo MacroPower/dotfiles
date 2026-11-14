@@ -198,7 +198,8 @@ func runLogin(ctx context.Context, args []string, stdin io.Reader, stdout io.Wri
 		return err //nolint:wrapcheck // The sign-in error reaches the terminal unchanged.
 	}
 
-	done := "\n" + strings.Join(signedInSentences(t), "\n") + "\n"
+	//nolint:gosmopolitan // The sign-in end is in the local time zone, as in the tools.
+	done := "\n" + strings.Join(signedInSentences(t, time.Local), "\n") + "\n"
 
 	_, err = io.WriteString(stdout, done)
 	if err != nil {
@@ -280,6 +281,7 @@ func runServe(ctx context.Context, args []string) error {
 		sheets:  rolls.NewSheetStore(service),
 		log:     logger,
 		now:     time.Now,
+		zone:    time.Local, //nolint:gosmopolitan // The tools print times in the local time zone.
 	}
 	h.loadoutTables = bungie.NewLoadoutTableStore(bungieManifest{h: h})
 

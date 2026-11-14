@@ -21,7 +21,16 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/vendors"
 )
 
+// timeLayout is the layout of every time that a tool prints. It ends with
+// the abbreviation of the time zone.
 const timeLayout = "2006-01-02 15:04 MST"
+
+// formatTime formats t in zone with [timeLayout]. Every time that a tool
+// prints goes through it. The times of one result therefore share one
+// zone, whatever zone each source gave its time in.
+func formatTime(t time.Time, zone *time.Location) string {
+	return t.In(zone).Format(timeLayout)
+}
 
 // tagLabels maps the tag ids of the web client to its display labels.
 var tagLabels = map[string]string{
@@ -34,7 +43,13 @@ var tagLabels = map[string]string{
 	dvm.TagFavorite: "Favorite",
 }
 
-func renderStatus(t auth.Tokens, signedIn bool, serviceURL, tokenPath string, now time.Time) string {
+func renderStatus(
+	t auth.Tokens,
+	signedIn bool,
+	serviceURL, tokenPath string,
+	now time.Time,
+	zone *time.Location,
+) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Service: %s\n", serviceURL)
@@ -57,7 +72,7 @@ func renderStatus(t auth.Tokens, signedIn bool, serviceURL, tokenPath string, no
 
 	if !now.Before(expires) {
 		fmt.Fprintf(&b, "Signed in: no\n\nThe sign-in of Bungie.net membership %s expired on %s. "+
-			"Call the login tool to sign in again.", t.BungieID, expires.Format(timeLayout))
+			"Call the login tool to sign in again.", t.BungieID, formatTime(expires, zone))
 
 		return b.String()
 	}
@@ -69,10 +84,10 @@ func renderStatus(t auth.Tokens, signedIn bool, serviceURL, tokenPath string, no
 		fmt.Fprintf(&b, "Destiny membership: %d/%s\n", t.Membership.Type, t.Membership.ID)
 	}
 
-	fmt.Fprintf(&b, "Access token expires: %s\n", t.AccessExpires.Format(timeLayout))
+	fmt.Fprintf(&b, "Access token expires: %s\n", formatTime(t.AccessExpires, zone))
 
 	if refreshes {
-		fmt.Fprintf(&b, "Sign-in expires: %s", t.RefreshExpires.Format(timeLayout))
+		fmt.Fprintf(&b, "Sign-in expires: %s", formatTime(t.RefreshExpires, zone))
 	} else {
 		b.WriteString("Sign-in expires with the access token, because Bungie issued no refresh token.")
 	}
@@ -83,17 +98,18 @@ func renderStatus(t auth.Tokens, signedIn bool, serviceURL, tokenPath string, no
 // signedInSentences returns the sentences that report a completed sign-in
 // of the Bungie.net membership in t. A second sentence names the end of
 // the sign-in when t holds the expiry of its refresh token. Each caller
-// joins the sentences with its own separator.
-func signedInSentences(t auth.Tokens) []string {
+// joins the sentences with its own separator. The second sentence gives
+// the time in zone.
+func signedInSentences(t auth.Tokens, zone *time.Location) []string {
 	sentences := []string{"Signed in as Bungie.net membership " + t.BungieID + "."}
 	if !t.RefreshExpires.IsZero() {
-		sentences = append(sentences, "The sign-in lasts until "+t.RefreshExpires.Format(timeLayout)+".")
+		sentences = append(sentences, "The sign-in lasts until "+formatTime(t.RefreshExpires, zone)+".")
 	}
 
 	return sentences
 }
 
-func renderCharacters(s *inventory.Snapshot) string {
+func renderCharacters(s *inventory.Snapshot, zone *time.Location) string {
 	var b strings.Builder
 
 	b.WriteString("Characters, most recently played first:\n")
@@ -115,7 +131,7 @@ func renderCharacters(s *inventory.Snapshot) string {
 
 		fmt.Fprintf(&b,
 			"- %s | id %s | power %d | last played %s | %d equipped, %d in inventory, %d at the Postmaster\n",
-			c.Class, c.ID, c.Power, c.LastPlayed.Format(timeLayout), equipped, held, postmaster,
+			c.Class, c.ID, c.Power, formatTime(c.LastPlayed, zone), equipped, held, postmaster,
 		)
 		fmt.Fprintf(
 			&b,
@@ -1280,7 +1296,13 @@ type historyRun struct {
 // renderActivityHistory renders runs in their order. Scope names the owner
 // of the runs, such as "Hunter" or "the account". Limit is the number of
 // runs that the caller asked for.
-func renderActivityHistory(defs *definitions.Defs, runs []historyRun, scope string, limit int) string {
+func renderActivityHistory(
+	defs *definitions.Defs,
+	runs []historyRun,
+	scope string,
+	limit int,
+	zone *time.Location,
+) string {
 	if len(runs) == 0 {
 		return "The activity history of " + scope + " holds no runs."
 	}
@@ -1308,7 +1330,7 @@ func renderActivityHistory(defs *definitions.Defs, runs []historyRun, scope stri
 		seconds := math.Round(run.Value("activityDurationSeconds"))
 
 		b.WriteString(strings.Join([]string{
-			run.Period.UTC().Format(timeLayout),
+			formatTime(run.Period, zone),
 			run.Character,
 			activityName(defs, run.Activity),
 			(time.Duration(seconds) * time.Second).String(),
@@ -1340,7 +1362,7 @@ func activityName(defs *definitions.Defs, activity bungie.HistoryActivity) strin
 
 // renderVendors renders every listed vendor as a table with one row per
 // vendor. Owner names the character that sees the vendors, such as "Hunter".
-func renderVendors(listed []vendors.Vendor, owner string) string {
+func renderVendors(listed []vendors.Vendor, owner string, zone *time.Location) string {
 	if len(listed) == 0 {
 		return "Bungie lists no vendors for " + owner + "."
 	}
@@ -1354,7 +1376,7 @@ func renderVendors(listed []vendors.Vendor, owner string) string {
 	}
 
 	b.WriteString(vendorHint)
-	writeVendorTable(&b, listed)
+	writeVendorTable(&b, listed, zone)
 
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -1363,7 +1385,7 @@ func renderVendors(listed []vendors.Vendor, owner string) string {
 // a table with one row per vendor. Total counts every vendor that Bungie
 // returns, and the intro points at the all input when the table leaves out
 // some of them. Owner names the character that sees the vendors.
-func renderGroupedVendors(grouped []vendors.Vendor, total int, owner string) string {
+func renderGroupedVendors(grouped []vendors.Vendor, total int, owner string, zone *time.Location) string {
 	if total == 0 {
 		return "Bungie lists no vendors for " + owner + "."
 	}
@@ -1391,7 +1413,7 @@ func renderGroupedVendors(grouped []vendors.Vendor, total int, owner string) str
 	b.WriteString(vendorHint)
 
 	if len(grouped) > 0 {
-		writeVendorTable(&b, grouped)
+		writeVendorTable(&b, grouped, zone)
 	}
 
 	return strings.TrimRight(b.String(), "\n")
@@ -1401,7 +1423,8 @@ func renderGroupedVendors(grouped []vendors.Vendor, total int, owner string) str
 const vendorHint = " Pass vendor with a hash or a name to list the sales of one vendor."
 
 // writeVendorTable writes a blank line and a table with one row per vendor.
-func writeVendorTable(b *strings.Builder, listed []vendors.Vendor) {
+// The refresh times are in zone.
+func writeVendorTable(b *strings.Builder, listed []vendors.Vendor, zone *time.Location) {
 	b.WriteString("\n\nname | subtitle | hash | sales | next refresh | flags\n")
 
 	for _, v := range listed {
@@ -1410,7 +1433,7 @@ func writeVendorTable(b *strings.Builder, listed []vendors.Vendor) {
 			v.Subtitle,
 			strconv.FormatUint(uint64(v.Hash), 10),
 			strconv.Itoa(v.SaleCount()),
-			refreshLabel(v.NextRefresh),
+			refreshLabel(v.NextRefresh, zone),
 			strings.Join(vendorFlags(v), ", "),
 		}, " | "))
 		b.WriteString("\n")
@@ -1419,14 +1442,14 @@ func writeVendorTable(b *strings.Builder, listed []vendors.Vendor) {
 
 // renderVendor renders the sales of one vendor under the names of their
 // categories. Owner names the character that sees the stock.
-func renderVendor(v vendors.Vendor, owner string) string {
+func renderVendor(v vendors.Vendor, owner string, zone *time.Location) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s\n", v.Name)
 	writeField(&b, "Subtitle", v.Subtitle)
 	fmt.Fprintf(&b, "Vendor hash: %d\n", v.Hash)
 	fmt.Fprintf(&b, "Character: %s\n", owner)
-	fmt.Fprintf(&b, "Next refresh: %s\n", refreshLabel(v.NextRefresh))
+	fmt.Fprintf(&b, "Next refresh: %s\n", refreshLabel(v.NextRefresh, zone))
 	writeField(&b, "Flags", strings.Join(vendorFlags(v), ", "))
 	fmt.Fprintf(&b, "Sales: %d\n", v.SaleCount())
 
@@ -1443,15 +1466,16 @@ func renderVendor(v vendors.Vendor, owner string) string {
 
 // refreshLabel formats the next refresh time of a vendor. Bungie reports
 // the year 9999 for a vendor whose stock never rotates, and the label of
-// that time is "never". The label of the zero time is "unknown".
-func refreshLabel(t time.Time) string {
+// that time is "never". The label of the zero time is "unknown". Every
+// other label gives the time in zone.
+func refreshLabel(t time.Time, zone *time.Location) string {
 	switch {
 	case t.IsZero():
 		return "unknown"
 	case t.Year() >= 9999:
 		return "never"
 	default:
-		return t.UTC().Format(timeLayout)
+		return formatTime(t, zone)
 	}
 }
 
@@ -2108,22 +2132,22 @@ func renderOwnedCounts(counts []autotag.RuleCount) string {
 // defs, so a weapon that the user dismantled keeps its name. A row whose
 // item hash defs do not name shows a placeholder with the hash, and the
 // sentences of [unnamedNote] follow the tables.
-func renderStats(defs *definitions.Defs, period stats.Period, s stats.Summary) string {
+func renderStats(defs *definitions.Defs, period stats.Period, s stats.Summary, zone *time.Location) string {
 	var b strings.Builder
 
 	if period.Length == 0 {
-		fmt.Fprintf(&b, "Period: %s, up to %s.\n", period.Label, s.To.Format(timeLayout))
+		fmt.Fprintf(&b, "Period: %s, up to %s.\n", period.Label, formatTime(s.To, zone))
 	} else {
-		fmt.Fprintf(&b, "Period: %s, %s to %s.\n", period.Label, s.From.Format(timeLayout), s.To.Format(timeLayout))
+		fmt.Fprintf(&b, "Period: %s, %s to %s.\n", period.Label, formatTime(s.From, zone), formatTime(s.To, zone))
 	}
 
 	// A read that starts after the epoch skips older chunks. For a read
 	// that found no change, the line names the start of the read.
 	switch {
 	case !s.Newest.IsZero():
-		fmt.Fprintf(&b, "Newest recorded change: %s.\n", s.Newest.Format(timeLayout))
+		fmt.Fprintf(&b, "Newest recorded change: %s.\n", formatTime(s.Newest, zone))
 	case s.ReadFrom.After(time.UnixMilli(0)):
-		fmt.Fprintf(&b, "Newest recorded change since %s: none.\n", s.ReadFrom.Format(timeLayout))
+		fmt.Fprintf(&b, "Newest recorded change since %s: none.\n", formatTime(s.ReadFrom, zone))
 	default:
 		b.WriteString("Newest recorded change: none.\n")
 	}

@@ -229,6 +229,156 @@ func TestStatusAndLogin(t *testing.T) {
 	assert.Equal(t, "not signed in. Call the login tool to sign in.", got)
 }
 
+// TestTimesInZone checks that each tool prints its times in the zone of
+// the handler. The token file and the Bungie fixtures give every time in
+// UTC. The handler zone has the offset of EST but an abbreviation that no
+// zone of the tz database uses. When a tool prints in the zone of the host
+// instead, the test fails on every host, including one that runs in EST.
+func TestTimesInZone(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		call func(t *testing.T, f *fakes) (string, bool)
+		want []string
+	}{
+		"status": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				return call(t, f.h.handleStatus, EmptyInput{})
+			},
+			want: []string{
+				"Access token expires: 2026-11-12 08:00 XST\n",
+				"Sign-in expires: 2026-11-13 07:00 XST",
+			},
+		},
+		"expired sign-in": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				saved, err := f.h.auth.Saved()
+				require.NoError(t, err)
+
+				saved.RefreshExpires = bungietest.Now.Add(-time.Hour)
+				require.NoError(t, f.h.auth.Store().Save(saved))
+
+				return call(t, f.h.handleStatus, EmptyInput{})
+			},
+			want: []string{"expired on 2026-11-12 06:00 XST"},
+		},
+		"complete login": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				return call(t, f.h.handleCompleteLogin,
+					CompleteLoginInput{RedirectURL: "https://example.test/auth/callback?code=abc"})
+			},
+			want: []string{"The sign-in lasts until 2027-02-10 07:00 XST."},
+		},
+		"characters": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				return call(t, f.h.handleListCharacters, EmptyInput{})
+			},
+			want: []string{
+				"- Hunter | id c1 | power 2000 | last played 2026-11-10 07:00 XST | ",
+				"- Titan | id c2 | power 1990 | last played 2026-11-01 07:00 XST | ",
+			},
+		},
+		"activity history": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				return call(t, f.h.handleListActivityHistory, ListActivityHistoryInput{})
+			},
+			want: []string{
+				"\n2026-11-11 16:00 XST | Hunter | Vault of Glass: Master | ",
+				"\n2026-11-09 03:00 XST | Hunter | Activity 3333 | ",
+			},
+		},
+		"vendor list": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				return call(t, f.h.handleListVendors, ListVendorsInput{})
+			},
+			want: []string{
+				"\nBanshee-44 | Gunsmith | 672118013 | 8 | 2026-11-13 12:00 XST | \n",
+				"\nTess Everis | Eververse Trading Company | 3361454721 | 1 | 2026-11-17 12:00 XST | ",
+			},
+		},
+		"one vendor": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				return call(t, f.h.handleListVendors, ListVendorsInput{Vendor: "Banshee-44"})
+			},
+			want: []string{"\nNext refresh: 2026-11-13 12:00 XST\n"},
+		},
+		"every vendor": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				return call(t, f.h.handleListVendors, ListVendorsInput{All: true})
+			},
+			want: []string{" | 2026-11-13 12:00 XST | "},
+		},
+		"stats": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				f.service.Data[pathStats] = statsFixture(t)
+
+				return call(t, f.h.handleGetStats, GetStatsInput{})
+			},
+			want: []string{
+				"Period: Last 24 hours, 2026-11-11 07:00 XST to 2026-11-12 07:00 XST.\n",
+				"\nNewest recorded change: 2026-11-12 06:00 XST.\n",
+			},
+		},
+		"stats of all time": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				f.service.Data[pathStats] = statsFixture(t)
+
+				return call(t, f.h.handleGetStats, GetStatsInput{Period: "all"})
+			},
+			want: []string{"Period: All time, up to 2026-11-12 07:00 XST.\n"},
+		},
+		"stats without changes": {
+			call: func(t *testing.T, f *fakes) (string, bool) {
+				t.Helper()
+
+				f.service.Data[pathStats] = dvmtest.StatPage(t, false)
+
+				return call(t, f.h.handleGetStats, GetStatsInput{Period: "30d"})
+			},
+			want: []string{"\nNewest recorded change since 2026-10-13 04:00 XST: none.\n"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFakes(t)
+			f.h.zone = time.FixedZone("XST", -5*60*60)
+
+			got, isError := tc.call(t, f)
+			require.False(t, isError, got)
+
+			for _, want := range tc.want {
+				assert.Contains(t, got, want)
+			}
+
+			assert.NotContains(t, got, "UTC")
+			assert.NotContains(t, got, "EST")
+		})
+	}
+}
+
 func TestListCharacters(t *testing.T) {
 	t.Parallel()
 
@@ -278,7 +428,7 @@ func TestRenderCharactersWithoutDefinitions(t *testing.T) {
 		"Vault: 2 slots used",
 		"",
 		"Currencies: none",
-	}, "\n"), renderCharacters(inventory.NewSnapshot(&profile, defs, bungietest.Now)))
+	}, "\n"), renderCharacters(inventory.NewSnapshot(&profile, defs, bungietest.Now), time.UTC))
 }
 
 func TestListItems(t *testing.T) {

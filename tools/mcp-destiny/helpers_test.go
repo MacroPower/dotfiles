@@ -95,6 +95,7 @@ func newFakes(t *testing.T) *fakes {
 		sheets:  rolls.NewSheetStore(client),
 		log:     slog.New(slog.DiscardHandler),
 		now:     now,
+		zone:    time.UTC,
 	}
 	f.h.loadoutTables = bungie.NewLoadoutTableStore(bungieManifest{h: f.h})
 

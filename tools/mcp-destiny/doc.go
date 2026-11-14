@@ -10,6 +10,11 @@
 // gear that a character has equipped into a loadout slot, and
 // clear_loadout empties a slot.
 //
+// The tools and the login subcommand print every time in the local time
+// zone of the host that runs them. Each time ends with the abbreviation of
+// the zone, such as EST, also when Bungie or the service sent the time in
+// UTC.
+//
 // # Data Sources
 //
 // The server talks to two APIs. Agg's Destiny Vault Manager stores tags,

@@ -341,7 +341,8 @@ type GetStatsInput struct {
 // tool calls, because moves, lock changes, perk changes, and the equips,
 // saves, and clears of loadouts update the cached snapshot in place. The
 // sheet store and the loadout table store have no lock of their own, so
-// the same mutex guards them.
+// the same mutex guards them. Every time that a tool prints is in the
+// zone of the handler.
 type handler struct {
 	service       *dvm.Client
 	bungie        *bungie.Client
@@ -351,6 +352,7 @@ type handler struct {
 	loadoutTables *bungie.LoadoutTableStore
 	log           *slog.Logger
 	now           func() time.Time
+	zone          *time.Location
 	snapshot      *inventory.Snapshot
 	apiKeyAt      time.Time
 	apiKey        string
@@ -367,7 +369,7 @@ func (h *handler) handleStatus(
 		return h.toolError(ctx, toolStatus, err)
 	}
 
-	text := renderStatus(t, err == nil, h.service.BaseURL(), h.auth.Store().Path(), h.now())
+	text := renderStatus(t, err == nil, h.service.BaseURL(), h.auth.Store().Path(), h.now(), h.zone)
 
 	return textResult(text), nil, nil
 }
@@ -408,7 +410,7 @@ func (h *handler) handleCompleteLogin(
 	// The cached snapshot might belong to a different account.
 	h.snapshot = nil
 
-	return textResult(strings.Join(signedInSentences(t), " ")), nil, nil
+	return textResult(strings.Join(signedInSentences(t, h.zone), " ")), nil, nil
 }
 
 func (h *handler) handleListCharacters(
@@ -424,7 +426,7 @@ func (h *handler) handleListCharacters(
 		return h.toolError(ctx, toolListCharacters, err)
 	}
 
-	return textResult(renderCharacters(s)), nil, nil
+	return textResult(renderCharacters(s, h.zone)), nil, nil
 }
 
 func (h *handler) handleListItems(
@@ -682,7 +684,7 @@ func (h *handler) handleListActivityHistory(
 
 	runs = runs[:min(limit, len(runs))]
 
-	return textResult(renderActivityHistory(defs, runs, scope, limit)), nil, nil
+	return textResult(renderActivityHistory(defs, runs, scope, limit, h.zone)), nil, nil
 }
 
 func (h *handler) handleListVendors(
@@ -725,10 +727,10 @@ func (h *handler) handleListVendors(
 
 	if strings.TrimSpace(in.Vendor) == "" {
 		if in.All {
-			return textResult(renderVendors(listed, owner)), nil, nil
+			return textResult(renderVendors(listed, owner, h.zone)), nil, nil
 		}
 
-		return textResult(renderGroupedVendors(vendors.Grouped(listed), len(listed), owner)), nil, nil
+		return textResult(renderGroupedVendors(vendors.Grouped(listed), len(listed), owner, h.zone)), nil, nil
 	}
 
 	v, err := vendors.Select(listed, in.Vendor, owner)
@@ -736,7 +738,7 @@ func (h *handler) handleListVendors(
 		return h.toolError(ctx, toolListVendors, err)
 	}
 
-	return textResult(renderVendor(v, owner)), nil, nil
+	return textResult(renderVendor(v, owner, h.zone)), nil, nil
 }
 
 func (h *handler) handleListActivities(
@@ -2265,7 +2267,7 @@ func (h *handler) handleGetStats(
 	summary := stats.Summarize(chunks, from, to)
 	summary.ReadFrom = time.UnixMilli(cursor.UpdatedAt).In(to.Location())
 
-	return textResult(renderStats(defs, period, summary)), nil, nil
+	return textResult(renderStats(defs, period, summary, h.zone)), nil, nil
 }
 
 // ratingMinimum is one minimum roll rating of a list_items call. Input

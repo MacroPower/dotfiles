@@ -70,7 +70,7 @@ func NewServer(t *testing.T) *Server {
 		case req.Path == "/api/config":
 			httpfake.WriteJSON(t, w, http.StatusOK, configBody(t, s.ArtifactFiles))
 
-		case req.Path == "/api/auth/refresh":
+		case req.Path == "/api/auth/refresh" || req.Path == "/api/auth/token":
 			httpfake.WriteJSON(t, w, http.StatusOK, `{"access_token": "access-2", "expires_in": 3600,
 				"refresh_token": "refresh-2", "refresh_expires_in": 7776000, "membership_id": "42", "session": "session-2"}`)
 

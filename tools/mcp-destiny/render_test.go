@@ -476,7 +476,7 @@ func TestRenderStats(t *testing.T) {
 			tc.summary.From = period.Start(to)
 			tc.summary.To = to
 
-			got := renderStats(defs, period, tc.summary)
+			got := renderStats(defs, period, tc.summary, time.UTC)
 			assert.Contains(t, got, "Period: Last 24 hours, 2026-11-11 12:00 UTC to 2026-11-12 12:00 UTC.\n")
 			assert.True(t, strings.HasSuffix(got, "\n"+strings.Join(tc.want, "\n")), got)
 		})
@@ -665,18 +665,29 @@ func TestSignedInSentences(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
+		zone   *time.Location
 		want   []string
 		tokens auth.Tokens
 	}{
 		"sign-in with a refresh expiry": {
 			tokens: auth.Tokens{BungieID: "42", RefreshExpires: bungietest.Now.Add(24 * time.Hour)},
+			zone:   time.UTC,
 			want: []string{
 				"Signed in as Bungie.net membership 42.",
 				"The sign-in lasts until 2026-11-13 12:00 UTC.",
 			},
 		},
+		"refresh expiry in another zone": {
+			tokens: auth.Tokens{BungieID: "42", RefreshExpires: bungietest.Now.Add(24 * time.Hour)},
+			zone:   time.FixedZone("XST", -5*60*60),
+			want: []string{
+				"Signed in as Bungie.net membership 42.",
+				"The sign-in lasts until 2026-11-13 07:00 XST.",
+			},
+		},
 		"sign-in without a refresh expiry": {
 			tokens: auth.Tokens{BungieID: "42"},
+			zone:   time.UTC,
 			want:   []string{"Signed in as Bungie.net membership 42."},
 		},
 	}
@@ -685,7 +696,7 @@ func TestSignedInSentences(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.want, signedInSentences(tc.tokens))
+			assert.Equal(t, tc.want, signedInSentences(tc.tokens, tc.zone))
 		})
 	}
 }
