@@ -263,6 +263,45 @@ func renderItems(
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// noCharacterRefusal is the text of a preview_autotag_rule call on an
+// account without a character. The web client then has no current
+// character, and its search matches every item.
+const noCharacterRefusal = "the account has no character, so the server previews nothing. " +
+	"The web client matches every item when it has no current character."
+
+// unsupportedRefusal returns the text of a preview_autotag_rule call whose
+// query holds terms that the preview does not evaluate. The text names
+// terms and every filter that the preview evaluates.
+func unsupportedRefusal(terms []string) string {
+	return fmt.Sprintf(
+		"unsupported query: the server does not evaluate %s, so it previews nothing. "+
+			"The web client might still accept these terms. The server evaluates %s. "+
+			"Each is: word also works as not:<word>.",
+		strings.Join(terms, ", "), listWithAnd(supportedKeywords()),
+	)
+}
+
+// unratedRefusal returns the text of a preview_autotag_rule call whose
+// query reads a game mode without ratings. Reason is the
+// [rolls.RatingReason] of that mode.
+func unratedRefusal(reason string) string {
+	return "the query reads a game mode without ratings. " + reason
+}
+
+// listWithAnd joins words with commas and puts "and" before the last word.
+func listWithAnd(words []string) string {
+	switch len(words) {
+	case 0:
+		return ""
+	case 1:
+		return words[0]
+	case 2:
+		return words[0] + " and " + words[1]
+	default:
+		return strings.Join(words[:len(words)-1], ", ") + ", and " + words[len(words)-1]
+	}
+}
+
 // renderPreview renders one page of the items that an autotag rule query
 // matches. Total counts the matches, and owned counts the items that the
 // preview evaluated. A first line gives both counts before the output of
@@ -865,15 +904,16 @@ func appendSkippedJunk(lines []string, skipped int) []string {
 		"Each one is equipped, at the Postmaster, not transferable, or for another class.", skipped))
 }
 
-// keeperRefusal returns the [inventory.ErrMove] error of a stage_junk call that
-// finds keepers in bucket on character c. The error names each keeper
-// and tells the model how to move the keepers out and back.
+// keeperRefusal returns the text of a stage_junk call that finds keepers
+// in bucket on character c. The text opens with the text of
+// [inventory.ErrMove], names each keeper, and tells the model how to move
+// the keepers out and back.
 func keeperRefusal(
 	s *inventory.Snapshot,
 	c inventory.Character,
 	bucket inventory.Bucket,
 	keepers []*inventory.Item,
-) error {
+) string {
 	names := make([]string, 0, len(keepers))
 	ids := make([]string, 0, len(keepers))
 
@@ -882,9 +922,8 @@ func keeperRefusal(
 		ids = append(ids, item.InstanceID)
 	}
 
-	//nolint:staticcheck // ST1005: The model reads the text as the tool result, which ends in a sentence.
-	return fmt.Errorf(
-		"%w: %s on %s holds unequipped gear that is not tagged junk: %s. stage_junk moved nothing. "+
+	return fmt.Sprintf(
+		"%s: %s on %s holds unequipped gear that is not tagged junk: %s. stage_junk moved nothing. "+
 			"Move that gear to the vault with move_items, with target vault and instance_ids %s. "+
 			"Then call stage_junk again. After stage_junk reports that no junk is left, "+
 			"move that gear back with move_items and target %s.",

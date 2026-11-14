@@ -977,7 +977,7 @@ func (h *handler) handleStageJunk(
 	// The game cannot undo a dismantle, so the tool adds no junk to a slot
 	// that holds an item that the user did not tag junk.
 	if len(plan.Keepers) > 0 {
-		return h.toolError(ctx, toolStageJunk, keeperRefusal(s, c, bucket, plan.Keepers))
+		return h.toolRefusal(ctx, toolStageJunk, keeperRefusal(s, c, bucket, plan.Keepers))
 	}
 
 	membership, err := h.membership(ctx)
@@ -1822,6 +1822,15 @@ func compileRuleQuery(query string) (compiledQuery, error) {
 	return compiled, nil
 }
 
+// invalidQuery returns the [ErrInvalidInput] error that names terms, the
+// terms whose value the web client rejects.
+func invalidQuery(terms []string) error {
+	return fmt.Errorf(
+		"%w: the web client rejects %s, so it skips an autotag rule with this query",
+		ErrInvalidInput, strings.Join(terms, ", "),
+	)
+}
+
 // countRuleMatches counts the owned items that query matches over the
 // items that preview_autotag_rule evaluates. It also counts the items
 // whose outcome the server cannot decide. It reads the inventory only when
@@ -1896,7 +1905,7 @@ func (h *handler) handlePreviewAutotagRule(
 	}
 
 	if len(query.unsupported) > 0 {
-		return h.toolError(ctx, toolPreviewAutotagRule, unsupportedQuery(query.unsupported))
+		return h.toolRefusal(ctx, toolPreviewAutotagRule, unsupportedRefusal(query.unsupported))
 	}
 
 	s, _, err := h.loadAnnotated(ctx, in.Refresh)
@@ -1906,12 +1915,12 @@ func (h *handler) handlePreviewAutotagRule(
 
 	current, ok := s.LastPlayed()
 	if !ok {
-		return h.toolError(ctx, toolPreviewAutotagRule, errNoCharacter)
+		return h.toolRefusal(ctx, toolPreviewAutotagRule, noCharacterRefusal)
 	}
 
 	sources, reason := h.querySources(ctx, query)
 	if reason != "" {
-		return h.toolError(ctx, toolPreviewAutotagRule, unratedQuery(reason))
+		return h.toolRefusal(ctx, toolPreviewAutotagRule, unratedRefusal(reason))
 	}
 
 	owned := ownedItems(s)

@@ -106,10 +106,6 @@ const (
 const jsDot = `[^\n\r\x{2028}\x{2029}\x{10000}-\x{10ffff}]`
 
 var (
-	// ErrUnsupportedQuery reports a search query with a term that the
-	// preview does not evaluate.
-	ErrUnsupportedQuery = errors.New("unsupported query")
-
 	// errUnsupportedTerm reports a filter or a filter value that the
 	// preview does not evaluate.
 	errUnsupportedTerm = errors.New("the preview does not evaluate the term")
@@ -123,20 +119,6 @@ var (
 	// errOverloadValue reports a word of a range value that DIM reads as
 	// a number that the preview lacks, such as pinnaclecap.
 	errOverloadValue = errors.New("the preview lacks the number of the word")
-
-	// errUnratedMode reports a query with a rating filter of a game mode
-	// without ratings.
-	errUnratedMode = errors.New("the query reads a game mode without ratings")
-
-	// errNoCharacter reports an account without a character. The web
-	// client then has no current character, and its search matches every
-	// item.
-	//
-	//nolint:staticcheck // ST1005: the tool result is this text, which ends a sentence.
-	errNoCharacter = errors.New(
-		"the account has no character, so the server previews nothing. " +
-			"The web client matches every item when it has no current character.",
-	)
 
 	// The buckets of the categories of DIM that the search filters read.
 	// The Lost Items bucket of the Postmaster is [bungie.BucketPostmaster].
@@ -203,7 +185,8 @@ var (
 	}
 
 	// searchFilters lists the filters that the preview evaluates, in the
-	// order that the text of [ErrUnsupportedQuery] names them.
+	// order that the refusal of a query with an unsupported term names
+	// them.
 	searchFilters = []searchFilter{
 		{name: filterIs, word: "weapon", match: inBuckets(weaponBuckets...)},
 		{name: filterIs, word: "armor", match: inBuckets(armorBuckets...)},
@@ -729,33 +712,6 @@ func (q compiledQuery) unratedReason(sources map[string]rolls.RatingSource) stri
 	return ""
 }
 
-// unratedQuery returns the errUnratedMode error that gives reason, the
-// [rolls.RatingReason] of the game mode without ratings.
-func unratedQuery(reason string) error {
-	return fmt.Errorf("%w. %s", errUnratedMode, reason)
-}
-
-// invalidQuery returns the [ErrInvalidInput] error that names terms, the
-// terms whose value the web client rejects.
-func invalidQuery(terms []string) error {
-	return fmt.Errorf(
-		"%w: the web client rejects %s, so it skips an autotag rule with this query",
-		ErrInvalidInput, strings.Join(terms, ", "),
-	)
-}
-
-// unsupportedQuery returns the [ErrUnsupportedQuery] error that names
-// terms and every filter that the preview evaluates.
-func unsupportedQuery(terms []string) error {
-	//nolint:staticcheck // ST1005: the tool result is this text, which ends a sentence.
-	return fmt.Errorf(
-		"%w: the server does not evaluate %s, so it previews nothing. "+
-			"The web client might still accept these terms. The server evaluates %s. "+
-			"Each is: word also works as not:<word>.",
-		ErrUnsupportedQuery, strings.Join(terms, ", "), listWithAnd(supportedKeywords()),
-	)
-}
-
 // supportedKeywords returns the keyword of each filter that the preview
 // evaluates, in the order of searchFilters.
 func supportedKeywords() []string {
@@ -765,20 +721,6 @@ func supportedKeywords() []string {
 	}
 
 	return keywords
-}
-
-// listWithAnd joins words with commas and puts "and" before the last word.
-func listWithAnd(words []string) string {
-	switch len(words) {
-	case 0:
-		return ""
-	case 1:
-		return words[0]
-	case 2:
-		return words[0] + " and " + words[1]
-	default:
-		return strings.Join(words[:len(words)-1], ", ") + ", and " + words[len(words)-1]
-	}
 }
 
 // builtItems returns the items of s that DIM builds. DIM builds no item

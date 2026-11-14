@@ -8428,6 +8428,35 @@ func TestPreviewUnsupported(t *testing.T) {
 	assert.Empty(t, f.bungie.All())
 }
 
+func TestInvalidQuery(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		want  string
+		terms []string
+	}{
+		"one term": {
+			terms: []string{"dupe:foo"},
+			want:  "invalid input: the web client rejects dupe:foo, so it skips an autotag rule with this query",
+		},
+		"two terms": {
+			terms: []string{"count:=<2", "dupe:foo"},
+			want: "invalid input: the web client rejects count:=<2, dupe:foo, " +
+				"so it skips an autotag rule with this query",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			err := invalidQuery(tc.terms)
+			require.ErrorIs(t, err, ErrInvalidInput)
+			assert.Equal(t, tc.want, err.Error())
+		})
+	}
+}
+
 func TestPreviewInvalidValue(t *testing.T) {
 	t.Parallel()
 

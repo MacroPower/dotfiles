@@ -368,3 +368,99 @@ func TestRenderStats(t *testing.T) {
 		})
 	}
 }
+
+func TestUnsupportedRefusal(t *testing.T) {
+	t.Parallel()
+
+	evaluates := "The server evaluates is:weapon, is:armor, is:equipment, is:equippable, is:equipped, " +
+		"is:invault, is:postmaster, is:inpostmaster, is:locked, is:unlocked, is:titan, is:hunter, is:warlock, " +
+		"is:favorite, is:autorifle, is:handcannon, is:pulserifle, is:scoutrifle, is:fusionrifle, " +
+		"is:sniperrifle, is:shotgun, is:machinegun, is:lmg, is:rocketlauncher, is:sidearm, is:sword, " +
+		"is:grenadelauncher, is:heavygrenadelauncher, is:specialgrenadelauncher, is:tracerifle, " +
+		"is:linearfusionrifle, is:lfr, is:submachine, is:smg, is:bow, is:glaive, is:transmat, is:weaponmod, " +
+		"is:armormod, is:reptoken, is:primary, is:special, is:heavy, is:dupe, is:incurrentchar, " +
+		"is:currentclass, is:common, is:uncommon, is:rare, is:legendary, is:exotic, is:white, is:green, " +
+		"is:blue, is:purple, is:yellow, is:kinetic, is:arc, is:solar, is:void, is:stasis, is:strand, " +
+		"is:light, is:dark, is:engrams, is:lostitems, is:messages, is:specialorders, is:kineticslot, " +
+		"is:energy, is:power, is:helmet, is:gauntlets, is:chest, is:leg, is:classitem, is:subclass, " +
+		"is:seasonalartifacts, is:ghost, is:emblems, is:ships, is:vehicle, is:emotes, is:finishers, " +
+		"is:accessories, is:consumables, is:modifications, is:haspower, is:haslight, is:autotagged, tag:, " +
+		"dupe:item, count:, id:, hash:, name:, exactname:, power:, light:, rate:, rating:, ratebase:, " +
+		"ratingbase:, misses:, setbonus:, verdict:, pvprate:, pvprating:, pvpratebase:, pvpratingbase:, " +
+		"pvpmisses:, pvpsetbonus:, and pvpverdict:. " +
+		"Each is: word also works as not:<word>."
+
+	tests := map[string]struct {
+		terms []string
+		want  string
+	}{
+		"one term": {
+			terms: []string{"perk:outlaw"},
+			want: "unsupported query: the server does not evaluate perk:outlaw, " +
+				"so it previews nothing. The web client might still accept these terms. " + evaluates,
+		},
+		"two terms": {
+			terms: []string{"is:masterwork", "perk:outlaw"},
+			want: "unsupported query: the server does not evaluate is:masterwork, perk:outlaw, " +
+				"so it previews nothing. The web client might still accept these terms. " + evaluates,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, unsupportedRefusal(tc.terms))
+		})
+	}
+}
+
+func TestUnratedRefusal(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		reason string
+		want   string
+	}{
+		"PvP": {
+			reason: "PvP: rating unavailable: the service publishes no PvP sheet",
+			want: "the query reads a game mode without ratings. " +
+				"PvP: rating unavailable: the service publishes no PvP sheet",
+		},
+		"PvE": {
+			reason: "PvE: rating unavailable: the service publishes no Aegis sheet",
+			want: "the query reads a game mode without ratings. " +
+				"PvE: rating unavailable: the service publishes no Aegis sheet",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, unratedRefusal(tc.reason))
+		})
+	}
+}
+
+func TestListWithAnd(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		words []string
+		want  string
+	}{
+		"none":  {want: ""},
+		"one":   {words: []string{"a"}, want: "a"},
+		"two":   {words: []string{"a", "b"}, want: "a and b"},
+		"three": {words: []string{"a", "b", "c"}, want: "a, b, and c"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, listWithAnd(tc.words))
+		})
+	}
+}
