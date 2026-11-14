@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 )
 
 func TestEquipLoadout(t *testing.T) {
@@ -352,7 +353,7 @@ func TestRenderStats(t *testing.T) {
 			tc.summary.from = period.start(to)
 			tc.summary.to = to
 
-			got := renderStats(fixtureDefs(), period, tc.summary)
+			got := renderStats(definitionstest.Defs(), period, tc.summary)
 			assert.Contains(t, got, "Period: Last 24 hours, 2026-11-11 12:00 UTC to 2026-11-12 12:00 UTC.\n")
 			assert.Contains(t, got, strings.Join(tc.want, "\n"))
 		})

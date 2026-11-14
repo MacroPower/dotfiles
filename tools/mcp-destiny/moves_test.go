@@ -9,6 +9,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 )
 
 func TestMove(t *testing.T) {
@@ -223,7 +224,7 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 				BucketHash:     bungie.BucketConsumables,
 			})
 
-			s := NewSnapshot(&profile, fixtureDefs(), bungietest.Now)
+			s := NewSnapshot(&profile, definitionstest.Defs(), bungietest.Now)
 
 			item, ok := s.Find("2001")
 			require.True(t, ok)

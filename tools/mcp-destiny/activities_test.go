@@ -7,6 +7,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 )
 
 func TestReadActivities(t *testing.T) {
@@ -118,7 +119,7 @@ func TestReadActivities(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			defs := fixtureDefs()
+			defs := definitionstest.Defs()
 			if tc.defs != nil {
 				tc.defs(defs)
 			}

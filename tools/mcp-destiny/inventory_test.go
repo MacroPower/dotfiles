@@ -14,6 +14,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -133,7 +134,7 @@ func TestSlotBuckets(t *testing.T) {
 		want []Bucket
 	}{
 		"equipment before items": {
-			defs: fixtureDefs(),
+			defs: definitionstest.Defs(),
 			want: []Bucket{
 				{Name: "Vault", Hash: bungie.BucketVault, Capacity: 700, Account: true},
 				{Name: "Kinetic Weapons", Hash: bungie.BucketKinetic, Capacity: 10},
@@ -275,7 +276,7 @@ func TestSlotsUsed(t *testing.T) {
 			hunter.Items = append(hunter.Items, tc.extra...)
 			profile.CharacterInventories.Data[bungietest.HunterID] = hunter
 
-			s := NewSnapshot(&profile, fixtureDefs(), bungietest.Now)
+			s := NewSnapshot(&profile, definitionstest.Defs(), bungietest.Now)
 
 			if tc.move != "" {
 				item, ok := s.Find(tc.move)
@@ -660,7 +661,7 @@ func TestResolveCharacter(t *testing.T) {
 	titan.LastPlayed = bungietest.Now
 	profile.Characters.Data[bungietest.TitanID] = titan
 
-	titanLast := NewSnapshot(&profile, fixtureDefs(), bungietest.Now)
+	titanLast := NewSnapshot(&profile, definitionstest.Defs(), bungietest.Now)
 
 	tests := map[string]struct {
 		err      error
@@ -997,7 +998,7 @@ func TestNewItemElement(t *testing.T) {
 
 	// The definitions name the damage types of Kinetic and Arc, and they
 	// lack the hash 999. Riskrunner has the default damage type Arc.
-	defs := fixtureDefs()
+	defs := definitionstest.Defs()
 	defs.DamageEnums = map[uint32]int{3373582085: bungie.DamageKinetic, 2303181850: bungie.DamageArc}
 	defs.DamageTypes[bungie.DamageArc] = "Arc"
 	defs.DamageTypes[bungie.DamageVoid] = "Void"
@@ -1054,7 +1055,7 @@ func TestNewItemElement(t *testing.T) {
 func TestNewItemLightPower(t *testing.T) {
 	t.Parallel()
 
-	defs := fixtureDefs()
+	defs := definitionstest.Defs()
 	defs.Items[120] = definitions.ItemDef{
 		Name:       "Iron Banner Artifact",
 		Bucket:     bungie.BucketArtifacts,

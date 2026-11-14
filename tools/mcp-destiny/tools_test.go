@@ -25,6 +25,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
@@ -250,7 +251,7 @@ func TestRenderCharactersWithoutDefinitions(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(bungietest.ProfileJSON), &profile))
 
 	profile.ProfileCurrencies.Data.Items = nil
-	defs := fixtureDefs()
+	defs := definitionstest.Defs()
 	defs.Buckets = nil
 
 	assert.Equal(t, strings.Join([]string{
@@ -3060,7 +3061,7 @@ func TestListActivityHistory(t *testing.T) {
 func TestActivityName(t *testing.T) {
 	t.Parallel()
 
-	defs := fixtureDefs()
+	defs := definitionstest.Defs()
 
 	tests := map[string]struct {
 		activity bungie.HistoryActivity

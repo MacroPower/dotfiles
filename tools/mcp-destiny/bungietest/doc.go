@@ -10,8 +10,7 @@
 // The fixtures hold hashes but do not hold the definitions of the items,
 // the activities, and the vendors. Their comments name what each hash
 // stands for and say which hashes lack a definition. The comments mean the
-// definitions that the tests of the mcp-destiny server build for the same
-// account.
+// definitions of package definitionstest, which describe the same account.
 //
 // The fake server serves the platform API and the content files of the
 // manifest on one URL. A test therefore passes that URL to the client

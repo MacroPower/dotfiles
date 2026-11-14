@@ -15,6 +15,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -92,7 +93,7 @@ func TestOwnedItems(t *testing.T) {
 		]}}}
 	}`
 
-	defs := fixtureDefs()
+	defs := definitionstest.Defs()
 	defs.Items[400] = definitions.ItemDef{
 		Name:      "Exotic Engram",
 		Bucket:    bungie.BucketEngrams,
@@ -1347,7 +1348,7 @@ func TestPlainString(t *testing.T) {
 func weaponTypeItems(t *testing.T) []*Item {
 	t.Helper()
 
-	defs := fixtureDefs()
+	defs := definitionstest.Defs()
 
 	item := func(name, typeName string, bucket uint32, ammoType int, categories ...int64) definitions.ItemDef {
 		def := definitions.ItemDef{
@@ -3009,7 +3010,7 @@ func setSnapshot(t *testing.T, listed bool, sets map[uint32][]uint32) *Snapshot 
 		}
 	}
 
-	defs := fixtureDefs()
+	defs := definitionstest.Defs()
 	defs.Items[210] = helmet("Iron Truage Helm", 7)
 	defs.Items[211] = helmet("Wild Hunt Mask", 8)
 	defs.Items[212] = helmet("Wild Hunt Stack", 8)

@@ -10,6 +10,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 )
 
 // Plugs of the fixture definitions.
@@ -103,7 +104,7 @@ func TestPerksOf(t *testing.T) {
 					Socket:  1,
 				},
 				{Plug: tc.active, Options: tc.want, plugs: tc.wantInsert, Socket: 2},
-			}, perksOf(&profile, fixtureDefs(), "7"))
+			}, perksOf(&profile, definitionstest.Defs(), "7"))
 		})
 	}
 }
