@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -96,7 +97,7 @@ func TestEquipLoadout(t *testing.T) {
 			wantSteps:   []string{"equip 1003 on c1", "to vault from c1"},
 			wantStopped: "1006 from c1, replaced by 1003",
 			wantChanged: true,
-			want: "- Fatebringer (1006) did not reach Titan. It is at Vault. " +
+			want: "- Fatebringer (1006) did not reach Titan. It is in the vault. " +
 				"Equipped Midnight Coup (1003) in its place on Hunter.\n" +
 				"Loadout 1 is not equipped on Titan: moving Fatebringer (1006) to Titan: " +
 				"transferring to Titan: step refused.",
@@ -109,7 +110,7 @@ func TestEquipLoadout(t *testing.T) {
 			wantSteps:   []string{"equip 1003 on c1"},
 			wantStopped: "1006 from c1, replaced by 1003",
 			wantChanged: true,
-			want: "- Fatebringer (1006) did not reach Titan. It is at Hunter. " +
+			want: "- Fatebringer (1006) did not reach Titan. It is on Hunter. " +
 				"Equipped Midnight Coup (1003) in its place on Hunter.\n" +
 				"Loadout 1 is not equipped on Titan: moving Fatebringer (1006) to Titan: " +
 				"transferring to the vault: step refused.",
@@ -120,7 +121,7 @@ func TestEquipLoadout(t *testing.T) {
 			fail:        "equip 1003 on c1",
 			err:         bungietest.ErrStep,
 			wantStopped: "1006 from c1",
-			want: "- Fatebringer (1006) did not reach Titan. It is at Hunter (equipped).\n" +
+			want: "- Fatebringer (1006) did not reach Titan. It is equipped on Hunter.\n" +
 				"Loadout 1 is not equipped on Titan: moving Fatebringer (1006) to Titan: " +
 				"equipping Midnight Coup in its place: step refused.",
 		},
@@ -505,13 +506,18 @@ func TestMoveFailure(t *testing.T) {
 		"item in the vault": {
 			instanceID: "1001",
 			moveErr:    fmt.Errorf("transferring to Hunter: %w", bungietest.ErrStep),
-			want:       "Fatebringer (1001) did not move: transferring to Hunter: step refused. It is at Vault.",
+			want:       "Fatebringer (1001) did not move: transferring to Hunter: step refused. It is in the vault.",
 		},
 		"item equipped on a character": {
 			instanceID: "1006",
 			moveErr:    fmt.Errorf("transferring to the vault: %w", bungietest.ErrStep),
 			want: "Fatebringer (1006) did not move: transferring to the vault: step refused. " +
-				"It is at Hunter (equipped).",
+				"It is equipped on Hunter.",
+		},
+		"error that ends with a period": {
+			instanceID: "1001",
+			moveErr:    errors.New("transferring to Hunter: bungie: DestinyItemNotFound: gone."),
+			want:       "Fatebringer (1001) did not move: transferring to Hunter: bungie: DestinyItemNotFound: gone. It is in the vault.",
 		},
 	}
 
@@ -525,6 +531,48 @@ func TestMoveFailure(t *testing.T) {
 			require.True(t, ok)
 
 			assert.Equal(t, tc.want, moveFailure(s, item, tc.moveErr))
+		})
+	}
+}
+
+func TestLocationSentence(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		want string
+		item inventory.Item
+	}{
+		"vault": {
+			item: inventory.Item{Owner: inventory.OwnerVault},
+			want: "It is in the vault.",
+		},
+		"account-wide bucket": {
+			item: inventory.Item{Owner: inventory.OwnerAccount},
+			want: "It is in an account-wide bucket.",
+		},
+		"character inventory": {
+			item: inventory.Item{Owner: bungietest.HunterID},
+			want: "It is on Hunter.",
+		},
+		"equipped": {
+			item: inventory.Item{Owner: bungietest.TitanID, Equipped: true},
+			want: "It is equipped on Titan.",
+		},
+		"postmaster": {
+			item: inventory.Item{Owner: bungietest.HunterID, Postmaster: true},
+			want: "It is at the Postmaster for Hunter.",
+		},
+		"unknown character": {
+			item: inventory.Item{Owner: "c9"},
+			want: "It is on Character c9.",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, locationSentence(inventorytest.Snapshot(t), &tc.item))
 		})
 	}
 }

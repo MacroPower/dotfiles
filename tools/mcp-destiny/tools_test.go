@@ -3738,9 +3738,9 @@ func TestMoveItems(t *testing.T) {
 		Target:      "titan",
 	})
 	assert.False(t, isError, "one item moved")
-	assert.Equal(t, "- Moved Midnight Coup (1003). It is at Titan.\n"+
+	assert.Equal(t, "- Moved Midnight Coup (1003). It is on Titan.\n"+
 		"- Fatebringer (1006) did not move: cannot move: Fatebringer is equipped on Hunter, "+
-		"which holds no other item to equip in that slot. It is at Hunter (equipped).", got)
+		"which holds no other item to equip in that slot. It is equipped on Hunter.", got)
 
 	transfers := f.bungie.Calls(http.MethodPost, pathTransfer)
 	require.Len(t, transfers, 2)
@@ -3774,7 +3774,7 @@ func TestMoveItemsEquip(t *testing.T) {
 		Equip:       true,
 	})
 	assert.False(t, isError)
-	assert.Equal(t, "- Equipped Fatebringer (1001). It is at Hunter (equipped).", got)
+	assert.Equal(t, "- Equipped Fatebringer (1001). It is equipped on Hunter.", got)
 	assert.Len(t, f.bungie.Calls(http.MethodPost, pathTransfer), 1)
 	assert.Len(t, f.bungie.Calls(http.MethodPost, pathEquip), 1)
 }
@@ -3790,7 +3790,7 @@ func TestMoveItemsReplacesEquipped(t *testing.T) {
 	})
 	assert.False(t, isError)
 	assert.Equal(t,
-		"- Moved Fatebringer (1006). It is at Vault. Equipped Midnight Coup (1003) in its place.", got)
+		"- Moved Fatebringer (1006). It is in the vault. Equipped Midnight Coup (1003) in its place.", got)
 
 	equips := f.bungie.Calls(http.MethodPost, pathEquip)
 	require.Len(t, equips, 1)
@@ -3940,7 +3940,7 @@ func TestMoveItemsErrors(t *testing.T) {
 			bungieError: `{"ErrorCode": 1642, "ErrorStatus": "DestinyNoRoomInDestination",
 				"Message": "There are no item slots available to transfer this item."}`,
 			want: "- Fatebringer (1001) did not move: transferring to Hunter: bungie: DestinyNoRoomInDestination: " +
-				"There are no item slots available to transfer this item.. It is at Vault.",
+				"There are no item slots available to transfer this item. It is in the vault.",
 		},
 		"unknown instance rejects the batch": {
 			in:   MoveItemsInput{InstanceIDs: []string{"1001", "9"}, Target: "vault"},
@@ -4154,7 +4154,7 @@ func TestStageJunk(t *testing.T) {
 	refuseEvery := func(map[string]any) bool { return true }
 	moveFailure := func(name, id, target string) string {
 		return fmt.Sprintf("- %s (%s) did not move: transferring to %s: bungie: DestinyItemNotFound: gone. "+
-			"It is at Vault.", name, id, target)
+			"It is in the vault.", name, id, target)
 	}
 	kinetic := StageJunkInput{Slot: "kinetic"}
 
@@ -4980,7 +4980,7 @@ func TestEquipLoadoutToolErrors(t *testing.T) {
 		"bungie refuses a move": {
 			in:          EquipLoadoutInput{Character: "titan", Loadout: 1},
 			bungieError: `{"ErrorCode": 1623, "ErrorStatus": "DestinyItemNotFound", "Message": "gone"}`,
-			want: "- Fatebringer (1006) did not reach Titan. It is at Hunter (equipped).\n" +
+			want: "- Fatebringer (1006) did not reach Titan. It is equipped on Hunter.\n" +
 				"Loadout 1 is not equipped on Titan: moving Fatebringer (1006) to Titan: " +
 				"equipping Midnight Coup in its place: bungie: DestinyItemNotFound: gone.",
 			wantVaultCannon: "Vault",
@@ -7008,9 +7008,9 @@ func TestRunAutotagRulesVault(t *testing.T) {
 		ruleLine    = `- 0. [enabled] "is:weapon": tag junk, move to vault (id r1)`
 		thornOut    = "  - Thorn (1008)"
 		thornFailed = "  - Thorn (1008) did not move: transferring to the vault: " +
-			"bungie: DestinyItemNotFound: gone. It is at Hunter."
+			"bungie: DestinyItemNotFound: gone. It is on Hunter."
 		fatebringerFailed = "  - Fatebringer (1007) did not move: transferring to the vault: " +
-			"bungie: DestinyItemNotFound: gone. It is at Hunter."
+			"bungie: DestinyItemNotFound: gone. It is on Hunter."
 		toVault = "1008 to the vault from c1"
 		// postmasterThorn is the new Thorn 1008 at the Postmaster of the
 		// Hunter, in the bucket of the lost items.

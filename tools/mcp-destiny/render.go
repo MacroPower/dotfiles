@@ -719,8 +719,8 @@ func renderLoadoutEquip(s *inventory.Snapshot, l inventory.Loadout, result inven
 	}
 
 	if stopped := result.Stopped; stopped != nil {
-		fmt.Fprintf(&b, "- %s (%s) did not reach %s. It is at %s.",
-			stopped.Item.Name, stopped.Item.InstanceID, target, s.LocationLabel(stopped.Item))
+		fmt.Fprintf(&b, "- %s (%s) did not reach %s. %s",
+			stopped.Item.Name, stopped.Item.InstanceID, target, locationSentence(s, stopped.Item))
 
 		if stopped.Replacement != nil {
 			fmt.Fprintf(&b, " Equipped %s (%s) in its place on %s.",
@@ -1867,8 +1867,34 @@ func writeVaultMoves(b *strings.Builder, s *inventory.Snapshot, items []autotag.
 // of the item in s after the move. It has no list prefix, so each caller
 // adds the prefix of its own list.
 func moveFailure(s *inventory.Snapshot, item *inventory.Item, err error) string {
-	return fmt.Sprintf("%s (%s) did not move: %v. It is at %s.",
-		item.Name, item.InstanceID, err, s.LocationLabel(item))
+	// A Bungie message ends with its own period.
+	reason := strings.TrimRight(err.Error(), ".")
+
+	return fmt.Sprintf("%s (%s) did not move: %s. %s",
+		item.Name, item.InstanceID, reason, locationSentence(s, item))
+}
+
+// locationSentence returns the sentence that says where item is in s. It
+// reads "It is in the vault." for an item in the vault and "It is on
+// Hunter." for an item in the inventory of the Hunter.
+func locationSentence(s *inventory.Snapshot, item *inventory.Item) string {
+	switch item.Owner {
+	case inventory.OwnerVault:
+		return "It is in the vault."
+	case inventory.OwnerAccount:
+		return "It is in an account-wide bucket."
+	}
+
+	character := s.OwnerLabel(item.Owner)
+
+	switch {
+	case item.Postmaster:
+		return "It is at the Postmaster for " + character + "."
+	case item.Equipped:
+		return "It is equipped on " + character + "."
+	default:
+		return "It is on " + character + "."
+	}
 }
 
 // renderUnsureClaim renders the result of a run_autotag_rules call whose

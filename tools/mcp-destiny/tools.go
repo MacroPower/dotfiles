@@ -839,7 +839,7 @@ func (h *handler) handleMoveItems(
 			h.logMoveFailure(ctx, item, err)
 			b.WriteString("- " + moveFailure(s, item, err))
 		} else {
-			fmt.Fprintf(&b, "- %s %s (%s). It is at %s.", verb, item.Name, item.InstanceID, s.LocationLabel(item))
+			fmt.Fprintf(&b, "- %s %s (%s). %s", verb, item.Name, item.InstanceID, locationSentence(s, item))
 		}
 
 		if replacement != nil {
