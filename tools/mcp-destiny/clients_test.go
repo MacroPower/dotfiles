@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -697,6 +698,88 @@ func TestBungieContent(t *testing.T) {
 	_, err = NewBungie(WithBungieContentURL(missing)).Content(t.Context(), pathLoadoutNames)
 	require.ErrorIs(t, err, ErrBungie)
 	require.EqualError(t, err, "bungie: content file returned status 404")
+}
+
+// endlessBody is a response body that never ends and reads as zero-valued
+// bytes. Its Close records the call and returns errBodyClose.
+type endlessBody struct {
+	closed bool
+}
+
+var errBodyClose = errors.New("body close refused")
+
+func (b *endlessBody) Read(p []byte) (int, error) {
+	clear(p)
+
+	return len(p), nil
+}
+
+func (b *endlessBody) Close() error {
+	b.closed = true
+
+	return errBodyClose
+}
+
+// bodyTransport answers every request with status 200 and one body.
+type bodyTransport struct {
+	body io.ReadCloser
+}
+
+func (rt bodyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{},
+		Body:       rt.body,
+		Request:    req,
+	}, nil
+}
+
+func TestCappedBody(t *testing.T) {
+	t.Parallel()
+
+	tcs := map[string]struct {
+		open func(t *testing.T, client *http.Client) (io.ReadCloser, error)
+	}{
+		"service artifact": {
+			open: func(t *testing.T, client *http.Client) (io.ReadCloser, error) {
+				t.Helper()
+
+				s := NewService(WithServiceURL("http://service.invalid"))
+				s.http = client
+
+				return s.Artifact(t.Context(), "core-0.json")
+			},
+		},
+		"bungie content": {
+			open: func(t *testing.T, client *http.Client) (io.ReadCloser, error) {
+				t.Helper()
+
+				b := NewBungie(WithBungieContentURL("http://content.invalid"))
+				b.http = client
+
+				return b.Content(t.Context(), pathLoadoutNames)
+			},
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			raw := &endlessBody{}
+
+			body, err := tc.open(t, &http.Client{Transport: bodyTransport{body: raw}})
+			require.NoError(t, err)
+
+			n, err := io.CopyN(io.Discard, body, maxArtifactBytes+1)
+			assert.Equal(t, int64(maxArtifactBytes), n, "the reader stops at the cap")
+			require.ErrorIs(t, err, io.EOF, "the reader ends at the cap")
+
+			require.EqualError(t, body.Close(), errBodyClose.Error(),
+				"the reader returns the close error of the body unchanged")
+			assert.True(t, raw.closed)
+		})
+	}
 }
 
 func TestBungieVendors(t *testing.T) {

@@ -621,7 +621,10 @@ func (b *Bungie) Content(ctx context.Context, path string) (io.ReadCloser, error
 		return nil, fmt.Errorf("%w: content file returned status %d", ErrBungie, resp.StatusCode)
 	}
 
-	return &limitedBody{Reader: io.LimitReader(resp.Body, maxArtifactBytes), body: resp.Body}, nil
+	return struct {
+		io.Reader
+		io.Closer
+	}{io.LimitReader(resp.Body, maxArtifactBytes), resp.Body}, nil
 }
 
 // componentsQuery returns the query string that requests components from

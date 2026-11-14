@@ -302,7 +302,10 @@ func (s *Service) Artifact(ctx context.Context, file string) (io.ReadCloser, err
 		return nil, fmt.Errorf("%w: %s returned status %d", ErrService, u, resp.StatusCode)
 	}
 
-	return &limitedBody{Reader: io.LimitReader(resp.Body, maxArtifactBytes), body: resp.Body}, nil
+	return struct {
+		io.Reader
+		io.Closer
+	}{io.LimitReader(resp.Body, maxArtifactBytes), resp.Body}, nil
 }
 
 // Tags returns every item tag row of the signed-in account, removed rows
@@ -722,23 +725,6 @@ func serviceMessage(raw []byte) string {
 	}
 
 	return text
-}
-
-// limitedBody reads through a size cap and closes the underlying body.
-type limitedBody struct {
-	io.Reader
-
-	body io.Closer
-}
-
-// Close closes the underlying response body.
-func (b *limitedBody) Close() error {
-	err := b.body.Close()
-	if err != nil {
-		return fmt.Errorf("closing response body: %w", err)
-	}
-
-	return nil
 }
 
 func closeBody(ctx context.Context, body io.Closer, u string) {
