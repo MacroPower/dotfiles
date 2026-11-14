@@ -100,10 +100,10 @@ func TestPerksOf(t *testing.T) {
 				{
 					Plug:    plugExplosivePayload,
 					Options: []Plug{plugRampage},
-					plugs:   []Plug{plugExplosivePayload, plugRampage},
+					Plugs:   []Plug{plugExplosivePayload, plugRampage},
 					Socket:  1,
 				},
-				{Plug: tc.active, Options: tc.want, plugs: tc.wantInsert, Socket: 2},
+				{Plug: tc.active, Options: tc.want, Plugs: tc.wantInsert, Socket: 2},
 			}, perksOf(&profile, definitionstest.Defs(), "7"))
 		})
 	}
@@ -309,7 +309,7 @@ func TestSetPerkRecordsTheSwap(t *testing.T) {
 			perk: &Perk{
 				Plug:    plugKillClip,
 				Options: []Plug{plugChillClipEnhanced},
-				plugs:   []Plug{plugKillClip, plugKillClipEnhanced, plugChillClip, plugChillClipEnhanced},
+				Plugs:   []Plug{plugKillClip, plugKillClipEnhanced, plugChillClip, plugChillClipEnhanced},
 			},
 			to:        "Chill Clip",
 			back:      "Kill Clip",
@@ -322,7 +322,7 @@ func TestSetPerkRecordsTheSwap(t *testing.T) {
 			perk: &Perk{
 				Plug:    plugKillClip,
 				Options: []Plug{plugChillClip, plugRampage},
-				plugs:   []Plug{plugChillClip, plugRampage},
+				Plugs:   []Plug{plugChillClip, plugRampage},
 			},
 			to:        "Chill Clip",
 			back:      "Rampage",

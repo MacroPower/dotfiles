@@ -534,7 +534,7 @@ func (h *handler) handleGetItem(
 	// change edits the cached snapshot in place, so a kept rating does
 	// not follow the change.
 	var ratings map[string]Rating
-	if item.Kind == kindWeapon {
+	if item.Kind == KindWeapon {
 		sources := h.ratingSources(ctx)
 		ratings = make(map[string]Rating, len(perkModes))
 
@@ -579,7 +579,7 @@ func (h *handler) handleCompareDuplicates(
 			return h.toolError(ctx, toolCompareDuplicates, unknownInstances([]string{in.InstanceID}))
 		}
 
-		if item.Kind != kindWeapon {
+		if item.Kind != KindWeapon {
 			return h.toolError(ctx, toolCompareDuplicates,
 				fmt.Errorf("%w: %s (%s) is not a weapon", ErrInvalidInput, item.InstanceID, item.Name))
 		}
@@ -909,7 +909,7 @@ func (h *handler) handleMoveStack(
 	defer h.mu.Unlock()
 
 	target := strings.ToLower(strings.TrimSpace(in.Target))
-	if target != ownerVault && target != targetInventory {
+	if target != OwnerVault && target != targetInventory {
 		return h.toolError(ctx, toolMoveStack,
 			fmt.Errorf("%w: target %q is not vault or inventory", ErrInvalidInput, in.Target))
 	}
@@ -926,7 +926,7 @@ func (h *handler) handleMoveStack(
 
 	mover := bungieMover{h: h, membership: membership}
 
-	name, moved, err := s.MoveStack(ctx, mover, in.ItemHash, in.Amount, target == ownerVault)
+	name, moved, err := s.MoveStack(ctx, mover, in.ItemHash, in.Amount, target == OwnerVault)
 
 	if moved > 0 {
 		s.Fetched = h.now()
@@ -1295,7 +1295,7 @@ func (h *handler) handleSaveLoadout(
 
 	// Bungie can serve the loadouts from before a save for some seconds. A
 	// snapshot that a save updated therefore stays in use for a full TTL.
-	s.recordLoadoutSave(c.ID, in.Number, ids)
+	s.RecordLoadoutSave(c.ID, in.Number, ids)
 
 	s.Fetched = h.now()
 
@@ -1354,7 +1354,7 @@ func (h *handler) handleClearLoadout(
 
 	// Bungie can serve the loadouts from before a clear for some seconds. A
 	// snapshot that a clear updated therefore stays in use for a full TTL.
-	s.recordLoadoutClear(c.ID, in.Number)
+	s.RecordLoadoutClear(c.ID, in.Number)
 
 	s.Fetched = h.now()
 
@@ -1386,7 +1386,7 @@ func (h *handler) handleSetTag(
 	defer h.mu.Unlock()
 
 	tag := strings.ToLower(strings.TrimSpace(in.Tag))
-	if tag == tagNone {
+	if tag == TagNone {
 		tag = ""
 	}
 
@@ -1697,7 +1697,7 @@ func (h *handler) newItemMatches(ctx context.Context, snapshot dvm.AutotagSnapsh
 		return "", err
 	}
 
-	if _, ok := s.lastPlayed(); !ok {
+	if _, ok := s.LastPlayed(); !ok {
 		return "The account has no character, so the server cannot tell which items the rules would take.", nil
 	}
 
@@ -1732,14 +1732,14 @@ func (h *handler) ownedMatches(ctx context.Context, snapshot dvm.AutotagSnapshot
 		return "", err
 	}
 
-	if _, ok := s.lastPlayed(); !ok {
+	if _, ok := s.LastPlayed(); !ok {
 		return "The account has no character, so the server cannot count the items that the rules match.", nil
 	}
 
 	// The reasons of each count follow the order of the items, so the
 	// sort keeps the text the same from one call to the next.
 	items := ownedItems(s)
-	slices.SortStableFunc(items, byNameAndID)
+	slices.SortStableFunc(items, ByNameAndID)
 
 	evals := evalRules(s, rules, func() map[string]RatingSource { return h.ratingSources(ctx) })
 
@@ -1838,7 +1838,7 @@ func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) (sa
 		return saveCount{err: err}, ""
 	}
 
-	current, ok := s.lastPlayed()
+	current, ok := s.LastPlayed()
 	if !ok {
 		return saveCount{noCharacter: true}, ""
 	}
@@ -1900,7 +1900,7 @@ func (h *handler) handlePreviewAutotagRule(
 		return h.toolError(ctx, toolPreviewAutotagRule, err)
 	}
 
-	current, ok := s.lastPlayed()
+	current, ok := s.LastPlayed()
 	if !ok {
 		return h.toolError(ctx, toolPreviewAutotagRule, errNoCharacter)
 	}
@@ -2057,7 +2057,7 @@ func (h *handler) handleRunAutotagRules(
 			errorText(err))
 	}
 
-	if _, ok := s.lastPlayed(); !ok {
+	if _, ok := s.LastPlayed(); !ok {
 		return refuse("The account has no character, so run_autotag_rules claimed nothing.")
 	}
 
@@ -2171,7 +2171,7 @@ func (h *handler) moveToVault(ctx context.Context, s *Snapshot, mover ItemMover,
 
 		// vaultBlock keeps an equipped item in place, so no move equips a
 		// replacement.
-		_, err := s.Move(ctx, mover, v.item, ownerVault, false)
+		_, err := s.Move(ctx, mover, v.item, OwnerVault, false)
 
 		// A move that fails can still pull the item from the Postmaster.
 		if v.item.Owner != owner || v.item.Postmaster != postmaster {
@@ -2326,7 +2326,7 @@ func keepRated(items []*Item, minimums []ratingMinimum, sources map[string]Ratin
 		source := sources[m.mode]
 
 		items = slices.DeleteFunc(items, func(item *Item) bool {
-			return item.Kind != kindWeapon || !ratedAtLeast(rate(source, item), m.tier)
+			return item.Kind != KindWeapon || !ratedAtLeast(rate(source, item), m.tier)
 		})
 	}
 

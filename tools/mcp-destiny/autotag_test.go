@@ -33,7 +33,7 @@ func TestNewestMark(t *testing.T) {
 			add: []*Item{
 				{InstanceID: "1010", Equippable: true, Bucket: bungie.BucketEmotes, Owner: bungietest.HunterID},
 				{InstanceID: "1009", Equippable: true, Bucket: bungie.BucketFinishers, Owner: bungietest.HunterID},
-				{InstanceID: "1008", Equippable: true, Bucket: bungie.BucketKinetic, Owner: ownerVault},
+				{InstanceID: "1008", Equippable: true, Bucket: bungie.BucketKinetic, Owner: OwnerVault},
 			},
 			want: "00000000000000001008",
 		},
@@ -45,7 +45,7 @@ func TestNewestMark(t *testing.T) {
 
 			s := fixtureSnapshot(t)
 			for _, item := range tc.add {
-				s.add(item)
+				s.Add(item)
 			}
 
 			assert.Equal(t, tc.want, newestMark(s))
@@ -64,15 +64,15 @@ func TestNewItems(t *testing.T) {
 
 	s := &Snapshot{Items: []*Item{
 		item("10000", bungietest.HunterID, bungie.BucketKinetic),
-		item("1008", ownerAccount, bungie.BucketKinetic),
-		item("1011", ownerVault, bungie.BucketPower),
+		item("1008", OwnerAccount, bungie.BucketKinetic),
+		item("1011", OwnerVault, bungie.BucketPower),
 		item("1007", bungietest.TitanID, bungie.BucketHelmet),
 		item("1006", bungietest.HunterID, bungie.BucketKinetic),
-		item("1009", ownerVault, bungie.BucketKinetic),
+		item("1009", OwnerVault, bungie.BucketKinetic),
 		item("1005", bungietest.HunterID, bungie.BucketKinetic),
 		item("1012", bungietest.HunterID, bungie.BucketEmotes),
 		{InstanceID: "1013", Owner: bungietest.HunterID, Bucket: bungie.BucketConsumables},
-		{Owner: ownerAccount, Bucket: bungie.BucketConsumables},
+		{Owner: OwnerAccount, Bucket: bungie.BucketConsumables},
 	}}
 
 	tests := map[string]struct {
@@ -330,7 +330,7 @@ func TestVaultBlock(t *testing.T) {
 			t.Parallel()
 
 			defs := &definitions.Defs{Items: map[uint32]definitions.ItemDef{hash: tc.def}}
-			item := newItem(&bungie.Profile{}, defs, tc.item, bungietest.HunterID, tc.equipped)
+			item := NewItem(&bungie.Profile{}, defs, tc.item, bungietest.HunterID, tc.equipped)
 
 			assert.Equal(t, tc.want, vaultBlock(item, tc.def))
 		})

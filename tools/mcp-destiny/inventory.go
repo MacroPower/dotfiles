@@ -17,46 +17,46 @@ import (
 
 // Owner values of items that no character holds.
 const (
-	ownerVault   = "vault"
-	ownerAccount = "account"
+	OwnerVault   = "vault"
+	OwnerAccount = "account"
 )
 
 // Kind values that classify an [Item].
 const (
-	kindWeapon = "weapon"
-	kindArmor  = "armor"
-	kindOther  = "other"
+	KindWeapon = "weapon"
+	KindArmor  = "armor"
+	KindOther  = "other"
 )
 
 // Filter keywords that [ItemFilter] accepts beside literal values.
 const (
-	kindGear = "gear"
-	kindAll  = "all"
+	KindGear = "gear"
+	KindAll  = "all"
 
-	locationEquipped   = "equipped"
-	locationCharacters = "characters"
-	locationPostmaster = "postmaster"
+	LocationEquipped   = "equipped"
+	LocationCharacters = "characters"
+	LocationPostmaster = "postmaster"
 
-	tagNone = "none"
-	tagAny  = "any"
+	TagNone = "none"
+	TagAny  = "any"
 
-	sortName   = "name"
-	sortPower  = "power"
-	sortNewest = "newest"
-	sortTotal  = "total"
-	sortStat   = "stat"
+	SortName   = "name"
+	SortPower  = "power"
+	SortNewest = "newest"
+	SortTotal  = "total"
+	SortStat   = "stat"
 )
 
 // Rarity names that Destiny Item Manager (DIM) gives a Bungie TierType
-// value. [rarityName] maps each value to its name.
+// value. [RarityName] maps each value to its name.
 const (
-	rarityUnknown   = "Unknown"
-	rarityCurrency  = "Currency"
-	rarityCommon    = "Common"
-	rarityUncommon  = "Uncommon"
-	rarityRare      = "Rare"
-	rarityLegendary = "Legendary"
-	rarityExotic    = "Exotic"
+	RarityUnknown   = "Unknown"
+	RarityCurrency  = "Currency"
+	RarityCommon    = "Common"
+	RarityUncommon  = "Uncommon"
+	RarityRare      = "Rare"
+	RarityLegendary = "Legendary"
+	RarityExotic    = "Exotic"
 )
 
 // Stat hashes of the primary stats that DIM counts as power. DIM names
@@ -72,7 +72,7 @@ var (
 	// rarityNames holds the rarity name of DIM for each Bungie TierType
 	// value, by value.
 	rarityNames = []string{
-		rarityUnknown, rarityCurrency, rarityCommon, rarityUncommon, rarityRare, rarityLegendary, rarityExotic,
+		RarityUnknown, RarityCurrency, RarityCommon, RarityUncommon, RarityRare, RarityLegendary, RarityExotic,
 	}
 
 	// lightStats lists the hashes of the primary stats that DIM counts as
@@ -124,10 +124,10 @@ type Perk struct {
 
 	Options []Plug
 
-	// plugs lists each plug that Bungie allows the socket to hold, and
+	// Plugs lists each plug that Bungie allows the socket to hold, and
 	// [optionsOf] picks Options from them. A perk change picks Options
 	// again, so they match the Options of the next profile fetch.
-	plugs []Plug
+	Plugs []Plug
 
 	Socket int
 }
@@ -169,7 +169,7 @@ type Character struct {
 // is the Bungie DestinyAmmunitionType value of the definition.
 //
 // Tier is the tier name that the definition displays. TierType is the
-// Bungie TierType value of the definition, which [rarityName] maps to the
+// Bungie TierType value of the definition, which [RarityName] maps to the
 // rarity of Destiny Item Manager (DIM).
 //
 // Damage names the damage type of the instance, or the default damage
@@ -240,7 +240,7 @@ type Item struct {
 // false for an item without a stat total. Items other than armor have no
 // stat total, and neither does armor whose stats the profile omits.
 func (i *Item) StatTotal() (int, bool) {
-	if i.Kind != kindArmor || len(i.Stats) == 0 {
+	if i.Kind != KindArmor || len(i.Stats) == 0 {
 		return 0, false
 	}
 
@@ -338,23 +338,23 @@ func NewSnapshot(profile *bungie.Profile, defs *definitions.Defs, fetched time.T
 	// stacks in account-wide buckets such as Consumables. Only the bucket
 	// marks a vault item.
 	for _, pi := range profile.ProfileInventory.Data.Items {
-		owner := ownerAccount
+		owner := OwnerAccount
 		if pi.BucketHash == bungie.BucketVault {
-			owner = ownerVault
+			owner = OwnerVault
 		}
 
-		s.add(newItem(profile, defs, pi, owner, false))
+		s.Add(NewItem(profile, defs, pi, owner, false))
 	}
 
 	for id, inv := range profile.CharacterInventories.Data {
 		for _, pi := range inv.Items {
-			s.add(newItem(profile, defs, pi, id, false))
+			s.Add(NewItem(profile, defs, pi, id, false))
 		}
 	}
 
 	for id, inv := range profile.CharacterEquipment.Data {
 		for _, pi := range inv.Items {
-			s.add(newItem(profile, defs, pi, id, true))
+			s.Add(NewItem(profile, defs, pi, id, true))
 		}
 	}
 
@@ -433,17 +433,19 @@ func (s *Snapshot) SlotsUsed(bucket Bucket, owner string) int {
 func occupies(item *Item, bucket Bucket, owner string) bool {
 	switch {
 	case bucket.Hash == bungie.BucketVault:
-		return item.Owner == ownerVault
+		return item.Owner == OwnerVault
 	case bucket.Hash == bungie.BucketPostmaster:
 		return item.Owner == owner && item.Lost
 	case bucket.Account:
-		owner = ownerAccount
+		owner = OwnerAccount
 	}
 
 	return item.Owner == owner && !item.Postmaster && item.Bucket == bucket.Hash
 }
 
-func (s *Snapshot) add(item *Item) {
+// Add appends item to Items. When item has an instance id,
+// [*Snapshot.Find] then finds it by that id.
+func (s *Snapshot) Add(item *Item) {
 	s.Items = append(s.Items, item)
 
 	if item.InstanceID != "" {
@@ -451,7 +453,12 @@ func (s *Snapshot) add(item *Item) {
 	}
 }
 
-func newItem(
+// NewItem resolves the profile item pi against defs. It reads the
+// instance, the perks, and the stats of pi from the item components of
+// profile. The item belongs to owner, which is a character id,
+// [OwnerVault], or [OwnerAccount]. The equipped flag marks an item that
+// its character has equipped.
+func NewItem(
 	profile *bungie.Profile,
 	defs *definitions.Defs,
 	pi bungie.ProfileItem,
@@ -558,13 +565,13 @@ func lightPower(def definitions.ItemDef, stat bungie.ProfileStat) int {
 	return stat.Value
 }
 
-// rarityName returns the rarity name that DIM gives the Bungie TierType
+// RarityName returns the rarity name that DIM gives the Bungie TierType
 // value tierType. DIM names each value after the rarity that the game
 // shows, so the Bungie value Basic is Common and Superior is Legendary.
 // DIM names a value outside 0 to 6, inclusive, Common.
-func rarityName(tierType int) string {
+func RarityName(tierType int) string {
 	if tierType < 0 || tierType >= len(rarityNames) {
-		return rarityCommon
+		return RarityCommon
 	}
 
 	return rarityNames[tierType]
@@ -613,11 +620,11 @@ func itemCategories(categories []uint32) []int64 {
 func kindOf(def definitions.ItemDef) string {
 	switch def.ItemType {
 	case bungie.ItemTypeWeapon:
-		return kindWeapon
+		return KindWeapon
 	case bungie.ItemTypeArmor:
-		return kindArmor
+		return KindArmor
 	default:
-		return kindOther
+		return KindOther
 	}
 }
 
@@ -637,11 +644,11 @@ func perksOf(profile *bungie.Profile, defs *definitions.Defs, instanceID string)
 		for _, option := range options[strconv.Itoa(i)] {
 			def, ok := defs.Items[option.Hash]
 			if ok && option.CanInsert {
-				perk.plugs = append(perk.plugs, plugOf(def, option.Hash))
+				perk.Plugs = append(perk.Plugs, plugOf(def, option.Hash))
 			}
 		}
 
-		perk.Options = optionsOf(perk.plugs, perk.Plug)
+		perk.Options = optionsOf(perk.Plugs, perk.Plug)
 		perks = append(perks, perk)
 	}
 
@@ -777,10 +784,10 @@ func (s *Snapshot) Character(id string) (Character, bool) {
 	return Character{}, false
 }
 
-// lastPlayed returns the most recently played character, which
+// LastPlayed returns the most recently played character, which
 // [NewSnapshot] puts first in Characters. It returns false when the account
 // has no character.
-func (s *Snapshot) lastPlayed() (Character, bool) {
+func (s *Snapshot) LastPlayed() (Character, bool) {
 	if len(s.Characters) == 0 {
 		return Character{}, false
 	}
@@ -791,8 +798,8 @@ func (s *Snapshot) lastPlayed() (Character, bool) {
 // ResolveOwner turns a location name into an owner value. A name is
 // "vault", a character id, or a class name that exactly one character has.
 func (s *Snapshot) ResolveOwner(name string) (string, error) {
-	if strings.EqualFold(name, ownerVault) {
-		return ownerVault, nil
+	if strings.EqualFold(name, OwnerVault) {
+		return OwnerVault, nil
 	}
 
 	c, err := s.matchCharacter(name, `"vault", a character id, or a class name`)
@@ -808,7 +815,7 @@ func (s *Snapshot) ResolveOwner(name string) (string, error) {
 // letter case. An empty name selects the most recently played character.
 func (s *Snapshot) ResolveCharacter(name string) (Character, error) {
 	if name == "" {
-		c, ok := s.lastPlayed()
+		c, ok := s.LastPlayed()
 		if !ok {
 			return Character{}, fmt.Errorf("%w: the account has no characters", ErrUnknownTarget)
 		}
@@ -816,7 +823,7 @@ func (s *Snapshot) ResolveCharacter(name string) (Character, error) {
 		return c, nil
 	}
 
-	if strings.EqualFold(name, ownerVault) {
+	if strings.EqualFold(name, OwnerVault) {
 		return Character{}, fmt.Errorf(
 			"%w: the vault is not a character, so pass a character id or a class name", ErrUnknownTarget,
 		)
@@ -862,9 +869,9 @@ func (s *Snapshot) matchCharacter(name, accepted string) (Character, error) {
 // OwnerLabel names an owner value for display.
 func (s *Snapshot) OwnerLabel(owner string) string {
 	switch owner {
-	case ownerVault:
+	case OwnerVault:
 		return "Vault"
-	case ownerAccount:
+	case OwnerAccount:
 		return "Account"
 	}
 
@@ -952,31 +959,31 @@ func (s *Snapshot) Filter(f ItemFilter) ([]*Item, error) {
 	}
 
 	switch strings.ToLower(f.Sort) {
-	case "", sortName:
+	case "", SortName:
 		slices.SortStableFunc(out, func(a, b *Item) int {
-			return cmp.Or(cmp.Compare(a.Name, b.Name), compareIDs(a.InstanceID, b.InstanceID))
+			return cmp.Or(cmp.Compare(a.Name, b.Name), CompareIDs(a.InstanceID, b.InstanceID))
 		})
 
-	case sortPower:
+	case SortPower:
 		slices.SortStableFunc(out, func(a, b *Item) int {
 			return cmp.Or(cmp.Compare(b.Power, a.Power), cmp.Compare(a.Name, b.Name))
 		})
 
-	case sortNewest:
+	case SortNewest:
 		slices.SortStableFunc(out, func(a, b *Item) int {
-			return compareIDs(b.InstanceID, a.InstanceID)
+			return CompareIDs(b.InstanceID, a.InstanceID)
 		})
 
-	case sortTotal:
+	case SortTotal:
 		slices.SortStableFunc(out, func(a, b *Item) int {
 			return cmp.Or(
 				cmp.Compare(totalRank(b), totalRank(a)),
 				cmp.Compare(a.Name, b.Name),
-				compareIDs(a.InstanceID, b.InstanceID),
+				CompareIDs(a.InstanceID, b.InstanceID),
 			)
 		})
 
-	case sortStat:
+	case SortStat:
 		if f.Stat == "" {
 			return nil, fmt.Errorf("%w: sort %q needs a stat name", ErrInvalidFilter, f.Sort)
 		}
@@ -985,7 +992,7 @@ func (s *Snapshot) Filter(f ItemFilter) ([]*Item, error) {
 			return cmp.Or(
 				cmp.Compare(statRank(b, f.Stat), statRank(a, f.Stat)),
 				cmp.Compare(a.Name, b.Name),
-				compareIDs(a.InstanceID, b.InstanceID),
+				CompareIDs(a.InstanceID, b.InstanceID),
 			)
 		})
 
@@ -1060,10 +1067,16 @@ func (s *Snapshot) checkStat(name string) error {
 	}
 }
 
-// compareIDs orders instance ids by numeric value. Bungie issues ascending
+// CompareIDs orders instance ids by numeric value. Bungie issues ascending
 // ids, so the order is also the acquisition order.
-func compareIDs(a, b string) int {
+func CompareIDs(a, b string) int {
 	return cmp.Or(cmp.Compare(len(a), len(b)), cmp.Compare(a, b))
+}
+
+// ByNameAndID orders items by name and then by instance id, as the default
+// sort of list_items orders them.
+func ByNameAndID(a, b *Item) int {
+	return cmp.Or(cmp.Compare(a.Name, b.Name), CompareIDs(a.InstanceID, b.InstanceID))
 }
 
 func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
@@ -1071,8 +1084,8 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 
 	switch kind {
 	case "":
-		kind = kindGear
-	case kindWeapon, kindArmor, kindGear, kindOther, kindAll:
+		kind = KindGear
+	case KindWeapon, KindArmor, KindGear, KindOther, KindAll:
 	default:
 		return nil, fmt.Errorf("%w: kind %q is not weapon, armor, gear, other, or all", ErrInvalidFilter, f.Kind)
 	}
@@ -1082,7 +1095,7 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 	owner := ""
 
 	switch location {
-	case "", locationEquipped, locationCharacters, locationPostmaster:
+	case "", LocationEquipped, LocationCharacters, LocationPostmaster:
 	default:
 		resolved, err := s.ResolveOwner(f.Location)
 		if err != nil {
@@ -1108,12 +1121,12 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 
 	return func(item *Item) bool {
 		switch {
-		case kind == kindGear && item.Kind == kindOther,
-			kind != kindGear && kind != kindAll && item.Kind != kind,
+		case kind == KindGear && item.Kind == KindOther,
+			kind != KindGear && kind != KindAll && item.Kind != kind,
 			owner != "" && item.Owner != owner,
-			location == locationEquipped && !item.Equipped,
-			location == locationPostmaster && !item.Postmaster,
-			location == locationCharacters && (item.Owner == ownerVault || item.Owner == ownerAccount),
+			location == LocationEquipped && !item.Equipped,
+			location == LocationPostmaster && !item.Postmaster,
+			location == LocationCharacters && (item.Owner == OwnerVault || item.Owner == OwnerAccount),
 			query != "" && !containsFold(item.Name, query) && !containsFold(item.TypeName, query),
 			slot != "" && !containsFold(item.Slot, slot),
 			f.Tier != "" && !strings.EqualFold(item.Tier, f.Tier),
@@ -1124,9 +1137,9 @@ func (s *Snapshot) matcher(f ItemFilter) (func(*Item) bool, error) {
 			f.MinTotal > 0 && totalRank(item) < f.MinTotal,
 			f.MinStat > 0 && statRank(item, f.Stat) < f.MinStat,
 			f.Favorite && !item.Favorite,
-			tag == tagNone && item.Tag != "",
-			tag == tagAny && item.Tag == "",
-			tag != "" && tag != tagNone && tag != tagAny && item.Tag != tag:
+			tag == TagNone && item.Tag != "",
+			tag == TagAny && item.Tag == "",
+			tag != "" && tag != TagNone && tag != TagAny && item.Tag != tag:
 			return false
 		}
 
@@ -1154,7 +1167,7 @@ func (s *Snapshot) WeaponGroups() []WeaponGroup {
 	index := map[string]int{}
 
 	for _, item := range s.Items {
-		if item.Kind != kindWeapon {
+		if item.Kind != KindWeapon {
 			continue
 		}
 
@@ -1174,7 +1187,7 @@ func (s *Snapshot) WeaponGroups() []WeaponGroup {
 
 	for _, g := range groups {
 		slices.SortFunc(g.Copies, func(a, b *Item) int {
-			return cmp.Or(cmp.Compare(a.Name, b.Name), compareIDs(a.InstanceID, b.InstanceID))
+			return cmp.Or(cmp.Compare(a.Name, b.Name), CompareIDs(a.InstanceID, b.InstanceID))
 		})
 	}
 

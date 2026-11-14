@@ -34,9 +34,9 @@ func TestMove(t *testing.T) {
 		},
 		"character to vault": {
 			id:        "1003",
-			target:    ownerVault,
+			target:    OwnerVault,
 			want:      []string{"to vault from c1"},
-			wantOwner: ownerVault,
+			wantOwner: OwnerVault,
 		},
 		"character to character passes through the vault": {
 			id:        "1003",
@@ -46,14 +46,14 @@ func TestMove(t *testing.T) {
 		},
 		"already at the target": {
 			id:        "1001",
-			target:    ownerVault,
-			wantOwner: ownerVault,
+			target:    OwnerVault,
+			wantOwner: OwnerVault,
 		},
 		"postmaster to vault pulls first": {
 			id:        "1005",
-			target:    ownerVault,
+			target:    OwnerVault,
 			want:      []string{"pull to c1", "to vault from c1"},
-			wantOwner: ownerVault,
+			wantOwner: OwnerVault,
 		},
 		"equip from the vault": {
 			id:        "1001",
@@ -76,25 +76,25 @@ func TestMove(t *testing.T) {
 			fail:      "from vault to c2",
 			err:       bungietest.ErrStep,
 			want:      []string{"to vault from c1"},
-			wantOwner: ownerVault,
+			wantOwner: OwnerVault,
 		},
 		"equipped item transfers after a replacement takes its slot": {
 			id:              "1006",
-			target:          ownerVault,
+			target:          OwnerVault,
 			want:            []string{"equip 1003 on c1", "to vault from c1"},
-			wantOwner:       ownerVault,
+			wantOwner:       OwnerVault,
 			wantReplacement: "1003",
 		},
 		"equipped item without a replacement stays": {
 			id:        "1004",
-			target:    ownerVault,
+			target:    OwnerVault,
 			err:       ErrMove,
 			wantOwner: bungietest.HunterID,
 			wantEquip: true,
 		},
 		"replacement equip fails": {
 			id:        "1006",
-			target:    ownerVault,
+			target:    OwnerVault,
 			fail:      "equip 1003 on c1",
 			err:       bungietest.ErrStep,
 			wantOwner: bungietest.HunterID,
@@ -102,7 +102,7 @@ func TestMove(t *testing.T) {
 		},
 		"transfer fails after the replacement": {
 			id:              "1006",
-			target:          ownerVault,
+			target:          OwnerVault,
 			fail:            "to vault from c1",
 			err:             bungietest.ErrStep,
 			want:            []string{"equip 1003 on c1"},
@@ -111,10 +111,10 @@ func TestMove(t *testing.T) {
 		},
 		"vault cannot equip": {
 			id:        "1001",
-			target:    ownerVault,
+			target:    OwnerVault,
 			equip:     true,
 			err:       ErrMove,
-			wantOwner: ownerVault,
+			wantOwner: OwnerVault,
 		},
 		"wrong class cannot equip": {
 			id:        "1004",
@@ -187,11 +187,11 @@ func TestMoveRejectsStacks(t *testing.T) {
 
 	s := fixtureSnapshot(t)
 
-	stacks, err := s.Filter(ItemFilter{Kind: kindOther})
+	stacks, err := s.Filter(ItemFilter{Kind: KindOther})
 	require.NoError(t, err)
 	require.Len(t, stacks, 1)
 
-	_, err = s.Move(t.Context(), &bungietest.StepMover{}, stacks[0], ownerVault, false)
+	_, err = s.Move(t.Context(), &bungietest.StepMover{}, stacks[0], OwnerVault, false)
 	require.ErrorIs(t, err, ErrMove)
 	require.EqualError(t, err, "cannot move: Enhancement Core is a stack, which the move_stack tool moves")
 }
@@ -203,7 +203,7 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 		target string
 	}{
 		"to a character": {target: bungietest.HunterID},
-		"to the vault":   {target: ownerVault},
+		"to the vault":   {target: OwnerVault},
 	}
 
 	for name, tc := range tests {
@@ -228,7 +228,7 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 
 			item, ok := s.Find("2001")
 			require.True(t, ok)
-			require.Equal(t, ownerAccount, item.Owner)
+			require.Equal(t, OwnerAccount, item.Owner)
 
 			mover := &bungietest.StepMover{}
 
@@ -240,7 +240,7 @@ func TestMoveRejectsAccountItems(t *testing.T) {
 				"cannot move: Enhancement Core sits in an account-wide bucket, and move_items moves only character and vault items",
 			)
 			assert.Empty(t, mover.Steps)
-			assert.Equal(t, ownerAccount, item.Owner)
+			assert.Equal(t, OwnerAccount, item.Owner)
 		})
 	}
 }
@@ -283,7 +283,7 @@ func TestReplacementFor(t *testing.T) {
 
 			departing.Tier = tc.departingTier
 
-			s.add(&Item{
+			s.Add(&Item{
 				InstanceID: "2000",
 				Name:       "Hawkmoon",
 				Tier:       tierExotic,
@@ -296,7 +296,7 @@ func TestReplacementFor(t *testing.T) {
 
 			// These items never qualify: another slot, another character,
 			// and the wrong class.
-			s.add(
+			s.Add(
 				&Item{
 					InstanceID: "2001",
 					Slot:       "Energy Weapons",
@@ -305,7 +305,7 @@ func TestReplacementFor(t *testing.T) {
 					Equippable: true,
 				},
 			)
-			s.add(
+			s.Add(
 				&Item{
 					InstanceID: "2002",
 					Slot:       departing.Slot,
@@ -314,7 +314,7 @@ func TestReplacementFor(t *testing.T) {
 					Equippable: true,
 				},
 			)
-			s.add(
+			s.Add(
 				&Item{
 					InstanceID: "2003",
 					Slot:       departing.Slot,
@@ -328,7 +328,7 @@ func TestReplacementFor(t *testing.T) {
 				spare, ok := s.Find("1003")
 				require.True(t, ok)
 
-				spare.Owner = ownerVault
+				spare.Owner = OwnerVault
 			}
 
 			got := s.replacementFor(departing)
@@ -367,23 +367,23 @@ func TestMoveStack(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Enhancement Core", name)
 	assert.Equal(t, 10, moved)
-	assert.Equal(t, 32, stackUnits(s, ownerAccount))
-	assert.Equal(t, 10, stackUnits(s, ownerVault))
+	assert.Equal(t, 32, stackUnits(s, OwnerAccount))
+	assert.Equal(t, 10, stackUnits(s, OwnerVault))
 
 	_, moved, err = s.MoveStack(t.Context(), mover, 300, 0, true)
 	require.NoError(t, err)
 	assert.Equal(t, 32, moved, "an amount of zero moves every unit")
-	assert.Equal(t, 42, stackUnits(s, ownerVault))
+	assert.Equal(t, 42, stackUnits(s, OwnerVault))
 
-	stacks, err := s.Filter(ItemFilter{Kind: kindOther})
+	stacks, err := s.Filter(ItemFilter{Kind: KindOther})
 	require.NoError(t, err)
 	require.Len(t, stacks, 1, "the emptied stack leaves the snapshot")
 
 	_, moved, err = s.MoveStack(t.Context(), mover, 300, 5, false)
 	require.NoError(t, err)
 	assert.Equal(t, 5, moved)
-	assert.Equal(t, 5, stackUnits(s, ownerAccount))
-	assert.Equal(t, 37, stackUnits(s, ownerVault))
+	assert.Equal(t, 5, stackUnits(s, OwnerAccount))
+	assert.Equal(t, 37, stackUnits(s, OwnerVault))
 
 	assert.Equal(t, []string{"to vault from c1 x10", "to vault from c1 x32", "from vault to c1 x5"}, mover.Steps)
 }
@@ -420,7 +420,7 @@ func TestMoveStackErrors(t *testing.T) {
 			)
 			require.ErrorIs(t, err, tc.err)
 			assert.Zero(t, moved)
-			assert.Equal(t, 42, stackUnits(s, ownerAccount))
+			assert.Equal(t, 42, stackUnits(s, OwnerAccount))
 		})
 	}
 }
@@ -433,8 +433,8 @@ func TestMoveStackStopsHalfway(t *testing.T) {
 	s.Items = append(s.Items, &Item{
 		Hash:         300,
 		Name:         "Enhancement Core",
-		Kind:         kindOther,
-		Owner:        ownerAccount,
+		Kind:         KindOther,
+		Owner:        OwnerAccount,
 		Quantity:     8,
 		Transferable: true,
 	})
@@ -442,10 +442,10 @@ func TestMoveStackStopsHalfway(t *testing.T) {
 	_, moved, err := s.MoveStack(t.Context(), &bungietest.StepMover{Fail: "to vault from c1 x8"}, 300, 0, true)
 	require.ErrorIs(t, err, bungietest.ErrStep)
 	assert.Equal(t, 42, moved)
-	assert.Equal(t, 42, stackUnits(s, ownerVault))
-	assert.Equal(t, 8, stackUnits(s, ownerAccount))
+	assert.Equal(t, 42, stackUnits(s, OwnerVault))
+	assert.Equal(t, 8, stackUnits(s, OwnerAccount))
 
-	stacks, err := s.Filter(ItemFilter{Kind: kindOther})
+	stacks, err := s.Filter(ItemFilter{Kind: KindOther})
 	require.NoError(t, err)
 	assert.Len(t, stacks, 2, "the emptied stack leaves the snapshot")
 }

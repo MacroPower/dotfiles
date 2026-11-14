@@ -111,9 +111,9 @@ func renderCharacters(s *Snapshot) string {
 		}
 	}
 
-	fmt.Fprintf(&b, "\nVault: %s slots used\n", slotsLabel(s.SlotsUsed(vault, ownerVault), vault.Capacity))
+	fmt.Fprintf(&b, "\nVault: %s slots used\n", slotsLabel(s.SlotsUsed(vault, OwnerVault), vault.Capacity))
 
-	account := slotsList(s, ownerAccount, func(bucket Bucket) bool {
+	account := slotsList(s, OwnerAccount, func(bucket Bucket) bool {
 		return bucket.Account && bucket.Hash != bungie.BucketVault
 	})
 	if account != "" {
@@ -541,7 +541,7 @@ func renderWeaponGroup(s *Snapshot, group WeaponGroup, sources map[string]Rating
 
 		perks := make([]string, 0, len(item.Perks))
 		for _, perk := range item.Perks {
-			perks = append(perks, perkLabel(perk))
+			perks = append(perks, PerkLabel(perk))
 		}
 
 		fields = append(fields, strings.Join(perks, "; "))
@@ -856,15 +856,6 @@ func keeperRefusal(s *Snapshot, c Character, bucket Bucket, keepers []*Item) err
 	)
 }
 
-// perkLabel names a perk and the other plugs that its socket can hold.
-func perkLabel(perk Perk) string {
-	if len(perk.Options) == 0 {
-		return perk.Name
-	}
-
-	return perk.Name + " (can swap to " + strings.Join(perk.OptionNames(), ", ") + ")"
-}
-
 // writeRating writes the roll rating of one game mode. The first line
 // gives the tier of the weapon on the sheet of the mode, or the reason
 // that the mode has no rating. The [sheetPlace] of the row follows the
@@ -1014,7 +1005,7 @@ func ratingReasons(sources map[string]RatingSource) []string {
 // its [Rating]. Only weapons have roll ratings, so the cell of every
 // other item is empty, also when the mode has no ratings.
 func ratingCell(source RatingSource, item *Item) string {
-	if item.Kind != kindWeapon {
+	if item.Kind != KindWeapon {
 		return ""
 	}
 
@@ -1739,7 +1730,7 @@ func renderTagFailure(s *Snapshot, stored, newest string, err error, tags []rule
 
 // writeVaultMoves writes the parts of a run_autotag_rules result that
 // report the items of the rules with the vault flag. Items holds those
-// items after the moves, in the order of [compareIDs]. The first part
+// items after the moves, in the order of [CompareIDs]. The first part
 // lists the moved items. The second lists the items that stayed in place,
 // each with its reason. The third lists the failed moves, each with the
 // error and the location of the item. Each part opens with a blank line

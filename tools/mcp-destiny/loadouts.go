@@ -254,13 +254,13 @@ func (s *Snapshot) LoadoutGear(characterID string) []*Item {
 	return out
 }
 
-// recordLoadoutSave records a save of the equipped gear of the character
+// RecordLoadoutSave records a save of the equipped gear of the character
 // into slot number, with the identifiers ids. The loadout in the slot then
 // holds the instance ids of [*Snapshot.LoadoutGear] and replaces any
 // loadout that the slot held. Without equipped gear, the slot holds
 // nothing, so the snapshot drops its loadout as [loadoutsOf] does.
-func (s *Snapshot) recordLoadoutSave(characterID string, number int, ids bungie.LoadoutIdentifiers) {
-	s.recordLoadoutClear(characterID, number)
+func (s *Snapshot) RecordLoadoutSave(characterID string, number int, ids bungie.LoadoutIdentifiers) {
+	s.RecordLoadoutClear(characterID, number)
 
 	l := Loadout{
 		CharacterID: characterID,
@@ -286,9 +286,9 @@ func (s *Snapshot) recordLoadoutSave(characterID string, number int, ids bungie.
 	s.Loadouts = slices.Insert(s.Loadouts, i, l)
 }
 
-// recordLoadoutClear records that slot number of the character holds no
+// RecordLoadoutClear records that slot number of the character holds no
 // saved loadout.
-func (s *Snapshot) recordLoadoutClear(characterID string, number int) {
+func (s *Snapshot) RecordLoadoutClear(characterID string, number int) {
 	s.Loadouts = slices.DeleteFunc(s.Loadouts, func(l Loadout) bool {
 		return l.CharacterID == characterID && l.Number == number
 	})

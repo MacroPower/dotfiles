@@ -272,7 +272,7 @@ func picksOf(defs *definitions.Defs, column []uint32, stances map[string]string)
 // active plug first. The active plug always counts, also when the
 // profile leaves it out of the plugs that the socket can hold.
 func socketPlugs(perk Perk) []Plug {
-	return append([]Plug{perk.Plug}, perk.plugs...)
+	return append([]Plug{perk.Plug}, perk.Plugs...)
 }
 
 // stepTier returns the tier that lies the given count of steps down from

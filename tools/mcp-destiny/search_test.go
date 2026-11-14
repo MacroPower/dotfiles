@@ -179,7 +179,7 @@ func TestCompileQueryTableA(t *testing.T) {
 				{InstanceID: "energy", Bucket: bungie.BucketEnergy},
 				{InstanceID: "power", Bucket: bungie.BucketPower},
 				{InstanceID: "helmet", Bucket: bungie.BucketHelmet},
-				{InstanceID: "weapon kind", Bucket: bungie.BucketEngrams, Kind: kindWeapon},
+				{InstanceID: "weapon kind", Bucket: bungie.BucketEngrams, Kind: KindWeapon},
 			},
 			want: []string{"kinetic", "energy", "power"},
 		},
@@ -192,7 +192,7 @@ func TestCompileQueryTableA(t *testing.T) {
 				{InstanceID: "legs", Bucket: bungie.BucketLegArmor},
 				{InstanceID: "class", Bucket: bungie.BucketClassArmor},
 				{InstanceID: "kinetic", Bucket: bungie.BucketKinetic},
-				{InstanceID: "armor kind", Bucket: bungie.BucketEngrams, Kind: kindArmor},
+				{InstanceID: "armor kind", Bucket: bungie.BucketEngrams, Kind: KindArmor},
 			},
 			want: []string{"helmet", "gauntlets", "chest", "legs", "class"},
 		},
@@ -226,8 +226,8 @@ func TestCompileQueryTableA(t *testing.T) {
 		"is:invault": {
 			query: "is:invault",
 			items: []*Item{
-				{InstanceID: "vault", Owner: ownerVault},
-				{InstanceID: "account", Owner: ownerAccount},
+				{InstanceID: "vault", Owner: OwnerVault},
+				{InstanceID: "account", Owner: OwnerAccount},
 				{InstanceID: "character", Owner: bungietest.HunterID},
 			},
 			want: []string{"vault"},
@@ -1033,9 +1033,9 @@ func TestCurrentCharacter(t *testing.T) {
 		items: []*Item{
 			{InstanceID: "hunter armor", Owner: bungietest.HunterID, ClassType: bungie.ClassHunter},
 			{InstanceID: "hunter weapon", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
-			{InstanceID: "account", Owner: ownerAccount, ClassType: bungie.ClassAny},
-			{InstanceID: "vault armor", Owner: ownerVault, ClassType: bungie.ClassHunter},
-			{InstanceID: "vault weapon", Owner: ownerVault, ClassType: bungie.ClassAny},
+			{InstanceID: "account", Owner: OwnerAccount, ClassType: bungie.ClassAny},
+			{InstanceID: "vault armor", Owner: OwnerVault, ClassType: bungie.ClassHunter},
+			{InstanceID: "vault weapon", Owner: OwnerVault, ClassType: bungie.ClassAny},
 			{InstanceID: "titan armor", Owner: bungietest.TitanID, ClassType: bungie.ClassTitan},
 			{InstanceID: "titan holds hunter armor", Owner: bungietest.TitanID, ClassType: bungie.ClassHunter},
 		},
@@ -2222,7 +2222,7 @@ func verdictContext() searchContext {
 	}
 
 	best := weapon("best", 100, hitting(true, true))
-	best.Owner = ownerVault
+	best.Owner = OwnerVault
 
 	return searchContext{
 		items: []*Item{
@@ -2281,7 +2281,7 @@ func TestVerdictRivals(t *testing.T) {
 	ctx := searchContext{
 		items: []*Item{
 			weapon("original", 300, bungietest.HunterID, hitting(true, false)),
-			weapon("reissue", 301, ownerVault, hitting(true, true)),
+			weapon("reissue", 301, OwnerVault, hitting(true, true)),
 			weapon("unrelated", 302, bungietest.HunterID, hitting(true, true)),
 			weapon("listed", 310, bungietest.HunterID, hitting(true, false)),
 			weapon("unrated", 311, bungietest.HunterID, hitting(true, true)),

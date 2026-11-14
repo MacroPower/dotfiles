@@ -21,11 +21,11 @@ func TestResolveSlot(t *testing.T) {
 	// withEngram adds an item that is neither a weapon nor an armor piece
 	// to a bucket that each character has.
 	withEngram := func(s *Snapshot) {
-		s.add(
+		s.Add(
 			&Item{
 				InstanceID: "1",
 				Name:       "Legendary Engram",
-				Kind:       kindOther,
+				Kind:       KindOther,
 				Owner:      bungietest.HunterID,
 				Bucket:     bungie.BucketEngrams,
 			},
@@ -33,7 +33,7 @@ func TestResolveSlot(t *testing.T) {
 	}
 
 	withoutGear := func(s *Snapshot) {
-		s.Items = slices.DeleteFunc(s.Items, func(item *Item) bool { return item.Kind != kindOther })
+		s.Items = slices.DeleteFunc(s.Items, func(item *Item) bool { return item.Kind != KindOther })
 		withEngram(s)
 	}
 
@@ -54,8 +54,8 @@ func TestResolveSlot(t *testing.T) {
 					{Name: "Power", Hash: bungie.BucketHelmet, Capacity: 10},
 				}
 				s.Items = []*Item{
-					{InstanceID: "1", Kind: kindWeapon, Bucket: bungie.BucketPower},
-					{InstanceID: "2", Kind: kindArmor, Bucket: bungie.BucketHelmet},
+					{InstanceID: "1", Kind: KindWeapon, Bucket: bungie.BucketPower},
+					{InstanceID: "2", Kind: KindArmor, Bucket: bungie.BucketHelmet},
 				}
 			},
 			name: "power",
@@ -85,7 +85,7 @@ func TestResolveSlot(t *testing.T) {
 		},
 		"account bucket": {
 			edit: func(s *Snapshot) {
-				s.add(&Item{InstanceID: "1", Kind: kindWeapon, Bucket: bungie.BucketConsumables})
+				s.Add(&Item{InstanceID: "1", Kind: KindWeapon, Bucket: bungie.BucketConsumables})
 			},
 			name: "consumables",
 			err: `invalid input: slot "consumables" matches no weapon or armor slot, ` +
@@ -93,8 +93,8 @@ func TestResolveSlot(t *testing.T) {
 		},
 		"vault": {
 			edit: func(s *Snapshot) {
-				s.add(&Item{InstanceID: "1", Kind: kindWeapon, Bucket: bungie.BucketVault})
-				s.add(&Item{InstanceID: "2", Kind: kindWeapon, Bucket: bungie.BucketPostmaster})
+				s.Add(&Item{InstanceID: "1", Kind: KindWeapon, Bucket: bungie.BucketVault})
+				s.Add(&Item{InstanceID: "2", Kind: KindWeapon, Bucket: bungie.BucketPostmaster})
 			},
 			name: "vault",
 			err: `invalid input: slot "vault" matches no weapon or armor slot, ` +
@@ -102,8 +102,8 @@ func TestResolveSlot(t *testing.T) {
 		},
 		"Postmaster": {
 			edit: func(s *Snapshot) {
-				s.add(&Item{InstanceID: "1", Kind: kindWeapon, Bucket: bungie.BucketVault})
-				s.add(&Item{InstanceID: "2", Kind: kindWeapon, Bucket: bungie.BucketPostmaster})
+				s.Add(&Item{InstanceID: "1", Kind: KindWeapon, Bucket: bungie.BucketVault})
+				s.Add(&Item{InstanceID: "2", Kind: KindWeapon, Bucket: bungie.BucketPostmaster})
 			},
 			name: "postmaster",
 			err: `invalid input: slot "postmaster" matches no weapon or armor slot, ` +
@@ -197,8 +197,8 @@ func junkSnapshot(items []Item) *Snapshot {
 			item.Name = "Fatebringer"
 		}
 
-		item.Kind = kindWeapon
-		s.add(item)
+		item.Kind = KindWeapon
+		s.Add(item)
 	}
 
 	return s
@@ -241,7 +241,7 @@ func TestJunkPlan(t *testing.T) {
 		},
 		"junk in the vault": {
 			items: []Item{
-				{InstanceID: "1", Owner: ownerVault, Tag: dvm.TagJunk, ClassType: bungie.ClassAny, Transferable: true},
+				{InstanceID: "1", Owner: OwnerVault, Tag: dvm.TagJunk, ClassType: bungie.ClassAny, Transferable: true},
 			},
 			want: junkIDs{Waiting: []string{"1"}},
 		},
@@ -261,7 +261,7 @@ func TestJunkPlan(t *testing.T) {
 			items: []Item{
 				{
 					InstanceID:   "1",
-					Owner:        ownerVault,
+					Owner:        OwnerVault,
 					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassHunter,
 					Transferable: true,
@@ -273,7 +273,7 @@ func TestJunkPlan(t *testing.T) {
 			items: []Item{
 				{
 					InstanceID:   "1",
-					Owner:        ownerVault,
+					Owner:        OwnerVault,
 					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassTitan,
 					Transferable: true,
@@ -282,7 +282,7 @@ func TestJunkPlan(t *testing.T) {
 			want: junkIDs{Skipped: 1},
 		},
 		"junk in the vault that is not transferable": {
-			items: []Item{{InstanceID: "1", Owner: ownerVault, Tag: dvm.TagJunk, ClassType: bungie.ClassAny}},
+			items: []Item{{InstanceID: "1", Owner: OwnerVault, Tag: dvm.TagJunk, ClassType: bungie.ClassAny}},
 			want:  junkIDs{Skipped: 1},
 		},
 		"junk equipped on another character": {
@@ -379,7 +379,7 @@ func TestJunkPlan(t *testing.T) {
 		},
 		"item without a tag in the vault or on another character": {
 			items: []Item{
-				{InstanceID: "1", Owner: ownerVault, ClassType: bungie.ClassAny, Transferable: true},
+				{InstanceID: "1", Owner: OwnerVault, ClassType: bungie.ClassAny, Transferable: true},
 				{InstanceID: "2", Owner: bungietest.TitanID, ClassType: bungie.ClassAny, Transferable: true},
 			},
 		},
@@ -432,7 +432,7 @@ func TestJunkPlan(t *testing.T) {
 				},
 				{
 					InstanceID: "2",
-					Owner:      ownerVault,
+					Owner:      OwnerVault,
 					Tag:        dvm.TagJunk,
 					Bucket:     bungie.BucketPower,
 					ClassType:  bungie.ClassAny,
@@ -458,14 +458,14 @@ func TestJunkPlan(t *testing.T) {
 				{
 					InstanceID:   "6",
 					Name:         "Midnight Coup",
-					Owner:        ownerVault,
+					Owner:        OwnerVault,
 					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 				},
 				{
 					InstanceID:   "1001",
-					Owner:        ownerVault,
+					Owner:        OwnerVault,
 					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
@@ -546,7 +546,7 @@ func TestJunkPlanRoom(t *testing.T) {
 			// Items of another character and of the vault take no room.
 			items = append(items,
 				Item{InstanceID: "100", Owner: bungietest.TitanID, ClassType: bungie.ClassAny},
-				Item{InstanceID: "101", Owner: ownerVault, ClassType: bungie.ClassAny},
+				Item{InstanceID: "101", Owner: OwnerVault, ClassType: bungie.ClassAny},
 			)
 
 			s := junkSnapshot(items)

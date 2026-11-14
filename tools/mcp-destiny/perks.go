@@ -112,7 +112,7 @@ func (s *Snapshot) SetPerk(
 
 	from := perk.Plug
 	perk.Plug = option
-	perk.Options = optionsOf(perk.plugs, option)
+	perk.Options = optionsOf(perk.Plugs, option)
 
 	return from, option, nil
 }
@@ -129,7 +129,7 @@ func noSwap(item *Item, sockets []int, name, replace string) error {
 
 	for _, i := range sockets {
 		if len(item.Perks[i].Options) > 0 {
-			labels = append(labels, perkLabel(item.Perks[i]))
+			labels = append(labels, PerkLabel(item.Perks[i]))
 		}
 	}
 
@@ -141,6 +141,15 @@ func noSwap(item *Item, sockets []int, name, replace string) error {
 		"%w: no socket of %s can swap to %q. Sockets that can swap: %s",
 		ErrPerk, subject, name, strings.Join(labels, "; "),
 	)
+}
+
+// PerkLabel names a perk and the other plugs that its socket can hold.
+func PerkLabel(perk Perk) string {
+	if len(perk.Options) == 0 {
+		return perk.Name
+	}
+
+	return perk.Name + " (can swap to " + strings.Join(perk.OptionNames(), ", ") + ")"
 }
 
 func perkNames(perks []Perk) []string {

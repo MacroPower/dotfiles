@@ -183,7 +183,7 @@ func TestEquipLoadoutChecksMovesFirst(t *testing.T) {
 		},
 		"equipped item without a replacement": {
 			change: func(s *Snapshot) {
-				s.byID["1003"].Owner = ownerVault
+				s.byID["1003"].Owner = OwnerVault
 			},
 			ids: []string{"1002", "1006"},
 			want: "cannot move: Fatebringer is equipped on Hunter, " +
@@ -420,7 +420,7 @@ func TestRecordLoadoutSave(t *testing.T) {
 			},
 		},
 		"empty slot between the loadouts of two characters": {
-			change:      func(s *Snapshot) { s.recordLoadoutClear(bungietest.HunterID, 3) },
+			change:      func(s *Snapshot) { s.RecordLoadoutClear(bungietest.HunterID, 3) },
 			characterID: bungietest.HunterID,
 			number:      3,
 			want: []string{
@@ -457,7 +457,7 @@ func TestRecordLoadoutSave(t *testing.T) {
 				tc.change(s)
 			}
 
-			s.recordLoadoutSave(tc.characterID, tc.number, ids)
+			s.RecordLoadoutSave(tc.characterID, tc.number, ids)
 
 			assert.Equal(t, tc.want, loadoutKeys(s.Loadouts))
 		})
@@ -496,7 +496,7 @@ func TestRecordLoadoutClear(t *testing.T) {
 			t.Parallel()
 
 			s := fixtureSnapshot(t)
-			s.recordLoadoutClear(tc.characterID, tc.number)
+			s.RecordLoadoutClear(tc.characterID, tc.number)
 
 			assert.Equal(t, tc.want, loadoutKeys(s.Loadouts))
 		})

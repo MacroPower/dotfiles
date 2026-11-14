@@ -18,7 +18,7 @@ func TestEquipLoadout(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		change       func(s *Snapshot)
+		change       func(t *testing.T, s *Snapshot)
 		err          error
 		fail         string
 		characterID  string
@@ -52,8 +52,13 @@ func TestEquipLoadout(t *testing.T) {
 				"The inventory does not hold these loadout items: 9999.",
 		},
 		"item on the character that is not transferable": {
-			change: func(s *Snapshot) {
-				s.byID["1004"].Transferable = false
+			change: func(t *testing.T, s *Snapshot) {
+				t.Helper()
+
+				item, ok := s.Find("1004")
+				require.True(t, ok)
+
+				item.Transferable = false
 			},
 			characterID:  bungietest.HunterID,
 			number:       3,
@@ -139,7 +144,7 @@ func TestEquipLoadout(t *testing.T) {
 
 			s := fixtureSnapshot(t)
 			if tc.change != nil {
-				tc.change(s)
+				tc.change(t, s)
 			}
 
 			mover := &bungietest.StepMover{Fail: tc.fail}

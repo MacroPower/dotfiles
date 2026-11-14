@@ -81,7 +81,7 @@ func (s *Snapshot) Move(
 		}
 	}
 
-	if item.Owner != target && item.Owner != ownerVault {
+	if item.Owner != target && item.Owner != OwnerVault {
 		action.CharacterID = item.Owner
 
 		err := mover.Transfer(ctx, action, true)
@@ -89,7 +89,7 @@ func (s *Snapshot) Move(
 			return replacement, fmt.Errorf("transferring to the vault: %w", err)
 		}
 
-		item.Owner = ownerVault
+		item.Owner = OwnerVault
 	}
 
 	if item.Owner != target {
@@ -124,7 +124,7 @@ func (s *Snapshot) checkMove(item *Item, target string, equip bool) error {
 		return fmt.Errorf("%w: %s is a stack, which the move_stack tool moves", ErrMove, item.Name)
 	}
 
-	if item.Owner == ownerAccount {
+	if item.Owner == OwnerAccount {
 		return fmt.Errorf(
 			"%w: %s sits in an account-wide bucket, and move_items moves only character and vault items",
 			ErrMove, item.Name,
@@ -226,7 +226,7 @@ func (s *Snapshot) replacementFor(item *Item) *Item {
 		return cmp.Or(
 			cmp.Compare(btoi(a.Tier == tierExotic), btoi(b.Tier == tierExotic)),
 			cmp.Compare(b.Power, a.Power),
-			compareIDs(a.InstanceID, b.InstanceID),
+			CompareIDs(a.InstanceID, b.InstanceID),
 		)
 	})
 }
@@ -277,7 +277,7 @@ func (s *Snapshot) MoveStack(
 			continue
 		}
 
-		if (item.Owner == ownerVault) == toVault {
+		if (item.Owner == OwnerVault) == toVault {
 			dest = item
 
 			continue
@@ -356,10 +356,10 @@ func (s *Snapshot) MoveStack(
 			// placed the units on a character.
 			clone := *source
 			clone.Quantity = 0
-			clone.Owner = ownerAccount
+			clone.Owner = OwnerAccount
 
 			if toVault {
-				clone.Owner = ownerVault
+				clone.Owner = OwnerVault
 			}
 
 			dest = &clone
@@ -411,7 +411,7 @@ func (s *Snapshot) requestCharacter(item *Item) (string, bool) {
 		return item.Owner, true
 	}
 
-	c, ok := s.lastPlayed()
+	c, ok := s.LastPlayed()
 
 	return c.ID, ok
 }

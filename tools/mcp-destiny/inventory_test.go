@@ -47,8 +47,8 @@ func TestNewSnapshot(t *testing.T) {
 		Tier:       "Legendary",
 		Slot:       "Kinetic Weapons",
 		Damage:     "Kinetic",
-		Owner:      ownerVault,
-		Kind:       kindWeapon,
+		Owner:      OwnerVault,
+		Kind:       KindWeapon,
 		ClassType:  bungie.ClassAny,
 		Power:      2010,
 		Quantity:   1,
@@ -57,7 +57,7 @@ func TestNewSnapshot(t *testing.T) {
 			{
 				Plug:    Plug{Name: "Explosive Payload", Type: "Trait", Hash: 900},
 				Options: []Plug{{Name: "Rampage", Type: "Trait", Hash: 903}},
-				plugs: []Plug{
+				Plugs: []Plug{
 					{Name: "Explosive Payload", Type: "Trait", Hash: 900},
 					{Name: "Rampage", Type: "Trait", Hash: 903},
 				},
@@ -80,15 +80,15 @@ func TestNewSnapshot(t *testing.T) {
 		Lockable:     true,
 	}, vaulted)
 
-	stacks, err := s.Filter(ItemFilter{Kind: kindOther})
+	stacks, err := s.Filter(ItemFilter{Kind: KindOther})
 	require.NoError(t, err)
 	require.Len(t, stacks, 1)
 	assert.False(t, stacks[0].Lockable, "a stack is not lockable")
-	assert.Equal(t, ownerAccount, stacks[0].Owner, "a Consumables stack at the vault location belongs to the account")
+	assert.Equal(t, OwnerAccount, stacks[0].Owner, "a Consumables stack at the vault location belongs to the account")
 
 	helmet, ok := s.Find("1004")
 	require.True(t, ok)
-	assert.Equal(t, kindArmor, helmet.Kind)
+	assert.Equal(t, KindArmor, helmet.Kind)
 	assert.Equal(t, "Hunter", helmet.Class)
 	assert.Empty(t, helmet.Damage)
 	assert.True(t, helmet.Equipped)
@@ -238,14 +238,14 @@ func TestSlotsUsed(t *testing.T) {
 		},
 		"move to the vault frees the slot": {
 			move:   "1003",
-			target: ownerVault,
+			target: OwnerVault,
 			bucket: bungie.BucketKinetic,
 			owner:  bungietest.HunterID,
 			want:   1,
 		},
 		"move to the vault takes a vault slot": {
 			move:   "1003",
-			target: ownerVault,
+			target: OwnerVault,
 			bucket: bungie.BucketVault,
 			want:   3,
 		},
@@ -354,11 +354,11 @@ func TestFilter(t *testing.T) {
 			want: []string{"1004", "1001", "1005", "1006", "1002", "1003"},
 		},
 		"all kinds include stacks": {
-			filter: ItemFilter{Kind: kindAll, Query: "enhancement"},
+			filter: ItemFilter{Kind: KindAll, Query: "enhancement"},
 			want:   []string{""},
 		},
 		"armor": {
-			filter: ItemFilter{Kind: kindArmor},
+			filter: ItemFilter{Kind: KindArmor},
 			want:   []string{"1004"},
 		},
 		"query matches the type name": {
@@ -386,19 +386,19 @@ func TestFilter(t *testing.T) {
 			want:   []string{"1001", "1002"},
 		},
 		"class name as location": {
-			filter: ItemFilter{Location: "hunter", Sort: sortNewest},
+			filter: ItemFilter{Location: "hunter", Sort: SortNewest},
 			want:   []string{"1006", "1005", "1004", "1003"},
 		},
 		"equipped": {
-			filter: ItemFilter{Location: locationEquipped},
+			filter: ItemFilter{Location: LocationEquipped},
 			want:   []string{"1004", "1006"},
 		},
 		"postmaster": {
-			filter: ItemFilter{Location: locationPostmaster},
+			filter: ItemFilter{Location: LocationPostmaster},
 			want:   []string{"1005"},
 		},
 		"any character": {
-			filter: ItemFilter{Location: locationCharacters, Kind: kindWeapon},
+			filter: ItemFilter{Location: LocationCharacters, Kind: KindWeapon},
 			want:   []string{"1005", "1006", "1003"},
 		},
 		"tag": {
@@ -406,11 +406,11 @@ func TestFilter(t *testing.T) {
 			want:   []string{"1001"},
 		},
 		"untagged weapons": {
-			filter: ItemFilter{Tag: tagNone, Kind: kindWeapon, Location: "vault"},
+			filter: ItemFilter{Tag: TagNone, Kind: KindWeapon, Location: "vault"},
 			want:   []string{"1002"},
 		},
 		"tagged": {
-			filter: ItemFilter{Tag: tagAny},
+			filter: ItemFilter{Tag: TagAny},
 			want:   []string{"1001"},
 		},
 		"favorite": {
@@ -422,7 +422,7 @@ func TestFilter(t *testing.T) {
 			want:   []string{"1001"},
 		},
 		"power bounds are inclusive": {
-			filter: ItemFilter{MinPower: 1990, MaxPower: 2005, Sort: sortPower},
+			filter: ItemFilter{MinPower: 1990, MaxPower: 2005, Sort: SortPower},
 			want:   []string{"1003", "1004", "1002"},
 		},
 		"unknown kind": {
@@ -463,7 +463,7 @@ func TestFilterStats(t *testing.T) {
 		return &Item{
 			InstanceID: id,
 			Name:       "Helmet " + id,
-			Kind:       kindArmor,
+			Kind:       KindArmor,
 			Stats:      []Stat{{Name: "Grenade", Value: grenade}, {Name: "Health", Value: health}},
 		}
 	}
@@ -474,21 +474,21 @@ func TestFilterStats(t *testing.T) {
 		helmet("13", 20, 20),
 		helmet("12", 10, 40),
 		helmet("11", 30, 10),
-		{InstanceID: "15", Name: "Bare Helmet", Kind: kindArmor},
-		{InstanceID: "14", Name: "Ace of Spades", Kind: kindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
+		{InstanceID: "15", Name: "Bare Helmet", Kind: KindArmor},
+		{InstanceID: "14", Name: "Ace of Spades", Kind: KindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
 	}}
 
 	// The copies of one name are out of instance id order.
 	twins := &Snapshot{Items: []*Item{
-		{InstanceID: "31", Name: "Twin Helmet", Kind: kindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
-		{InstanceID: "30", Name: "Twin Helmet", Kind: kindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
+		{InstanceID: "31", Name: "Twin Helmet", Kind: KindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
+		{InstanceID: "30", Name: "Twin Helmet", Kind: KindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
 	}}
 
 	// The name order of the tied items is the reverse of their instance id
 	// order, so a tie-break on the instance id alone fails.
 	rivals := &Snapshot{Items: []*Item{
-		{InstanceID: "40", Name: "Beta Helmet", Kind: kindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
-		{InstanceID: "41", Name: "Alpha Helmet", Kind: kindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
+		{InstanceID: "40", Name: "Beta Helmet", Kind: KindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
+		{InstanceID: "41", Name: "Alpha Helmet", Kind: KindArmor, Stats: []Stat{{Name: "Health", Value: 10}}},
 	}}
 
 	tests := map[string]struct {
@@ -499,31 +499,31 @@ func TestFilterStats(t *testing.T) {
 		want     []string
 	}{
 		"total sort puts items without a total last": {
-			filter: ItemFilter{Sort: sortTotal},
+			filter: ItemFilter{Sort: SortTotal},
 			want:   []string{"12", "11", "13", "14", "15"},
 		},
 		"total sort puts a zero total ahead of items without a total": {
 			snapshot: &Snapshot{Items: []*Item{
-				{InstanceID: "19", Name: "Ace of Spades", Kind: kindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
-				{InstanceID: "20", Name: "Bare Helmet", Kind: kindArmor},
+				{InstanceID: "19", Name: "Ace of Spades", Kind: KindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
+				{InstanceID: "20", Name: "Bare Helmet", Kind: KindArmor},
 				{
 					InstanceID: "21",
 					Name:       "Zero Helmet",
-					Kind:       kindArmor,
+					Kind:       KindArmor,
 					Stats:      []Stat{{Name: "Grenade", Value: 0}, {Name: "Health", Value: 0}},
 				},
 			}},
-			filter: ItemFilter{Sort: sortTotal},
+			filter: ItemFilter{Sort: SortTotal},
 			want:   []string{"21", "19", "20"},
 		},
 		"total sort orders copies of one name by instance id": {
 			snapshot: twins,
-			filter:   ItemFilter{Sort: sortTotal},
+			filter:   ItemFilter{Sort: SortTotal},
 			want:     []string{"30", "31"},
 		},
 		"total sort orders a tie by name ahead of instance id": {
 			snapshot: rivals,
-			filter:   ItemFilter{Sort: sortTotal},
+			filter:   ItemFilter{Sort: SortTotal},
 			want:     []string{"41", "40"},
 		},
 		"minimum total is inclusive and selects only armor": {
@@ -531,25 +531,25 @@ func TestFilterStats(t *testing.T) {
 			want:   []string{"11", "12", "13"},
 		},
 		"stat sort puts items without the stat last": {
-			filter: ItemFilter{Stat: "health", Sort: sortStat},
+			filter: ItemFilter{Stat: "health", Sort: SortStat},
 			want:   []string{"11", "13", "12", "14", "15"},
 		},
 		"stat sort puts a zero value ahead of items without the stat": {
 			snapshot: &Snapshot{Items: []*Item{
-				{InstanceID: "17", Name: "Ace of Spades", Kind: kindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
-				{InstanceID: "18", Name: "Zero Helmet", Kind: kindArmor, Stats: []Stat{{Name: "Health", Value: 0}}},
+				{InstanceID: "17", Name: "Ace of Spades", Kind: KindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
+				{InstanceID: "18", Name: "Zero Helmet", Kind: KindArmor, Stats: []Stat{{Name: "Health", Value: 0}}},
 			}},
-			filter: ItemFilter{Stat: "health", Sort: sortStat},
+			filter: ItemFilter{Stat: "health", Sort: SortStat},
 			want:   []string{"18", "17"},
 		},
 		"stat sort orders copies of one name by instance id": {
 			snapshot: twins,
-			filter:   ItemFilter{Stat: "health", Sort: sortStat},
+			filter:   ItemFilter{Stat: "health", Sort: SortStat},
 			want:     []string{"30", "31"},
 		},
 		"stat sort orders a tie by name ahead of instance id": {
 			snapshot: rivals,
-			filter:   ItemFilter{Stat: "health", Sort: sortStat},
+			filter:   ItemFilter{Stat: "health", Sort: SortStat},
 			want:     []string{"41", "40"},
 		},
 		"minimum stat is inclusive": {
@@ -570,7 +570,7 @@ func TestFilterStats(t *testing.T) {
 			msg:    `invalid filter: no item in the inventory has a stat named "mobility", so pass one of Grenade, Health, Range`,
 		},
 		"stat in an inventory without stats": {
-			snapshot: &Snapshot{Items: []*Item{{InstanceID: "16", Kind: kindArmor}}},
+			snapshot: &Snapshot{Items: []*Item{{InstanceID: "16", Kind: KindArmor}}},
 			filter:   ItemFilter{Stat: "health"},
 			err:      ErrInvalidFilter,
 			msg:      "invalid filter: no item in the inventory has stats",
@@ -581,7 +581,7 @@ func TestFilterStats(t *testing.T) {
 			msg:    "invalid filter: a minimum stat value needs a stat name",
 		},
 		"stat sort without a stat": {
-			filter: ItemFilter{Sort: sortStat},
+			filter: ItemFilter{Sort: SortStat},
 			err:    ErrInvalidFilter,
 			msg:    `invalid filter: sort "stat" needs a stat name`,
 		},
@@ -618,7 +618,7 @@ func TestResolveOwner(t *testing.T) {
 		name string
 		want string
 	}{
-		"vault":            {name: "VAULT", want: ownerVault},
+		"vault":            {name: "VAULT", want: OwnerVault},
 		"character id":     {name: "c2", want: "c2"},
 		"unique class":     {name: "Hunter", want: bungietest.HunterID},
 		"ambiguous class":  {name: "titan", err: ErrUnknownTarget},
@@ -702,16 +702,16 @@ func TestResolveCharacter(t *testing.T) {
 // items that are not weapons.
 func groupSnapshot() *Snapshot {
 	return &Snapshot{Items: []*Item{
-		{InstanceID: "12", Hash: 110, Name: "Fatebringer", Kind: kindWeapon},
-		{InstanceID: "3", Hash: 102, Name: "Midnight Coup", Kind: kindWeapon},
-		{InstanceID: "9", Hash: 100, Name: "Fatebringer", Kind: kindWeapon},
-		{InstanceID: "4", Hash: 120, Name: "Fatebringer (Timelost)", Kind: kindWeapon},
-		{InstanceID: "5", Hash: 200, Name: "Fatebringer Helm", Kind: kindArmor},
-		{Hash: 300, Name: "Enhancement Core", Kind: kindOther},
-		{InstanceID: "6", Hash: 130, Name: "Austringer", Kind: kindWeapon},
-		{InstanceID: "7", Hash: 140, Name: "Midnight Coup Replica", Kind: kindWeapon},
-		{InstanceID: "8", Hash: 150, Name: "Ace of Spades", Kind: kindWeapon},
-		{InstanceID: "10", Hash: 160, Name: "ACE OF SPADES", Kind: kindWeapon},
+		{InstanceID: "12", Hash: 110, Name: "Fatebringer", Kind: KindWeapon},
+		{InstanceID: "3", Hash: 102, Name: "Midnight Coup", Kind: KindWeapon},
+		{InstanceID: "9", Hash: 100, Name: "Fatebringer", Kind: KindWeapon},
+		{InstanceID: "4", Hash: 120, Name: "Fatebringer (Timelost)", Kind: KindWeapon},
+		{InstanceID: "5", Hash: 200, Name: "Fatebringer Helm", Kind: KindArmor},
+		{Hash: 300, Name: "Enhancement Core", Kind: KindOther},
+		{InstanceID: "6", Hash: 130, Name: "Austringer", Kind: KindWeapon},
+		{InstanceID: "7", Hash: 140, Name: "Midnight Coup Replica", Kind: KindWeapon},
+		{InstanceID: "8", Hash: 150, Name: "Ace of Spades", Kind: KindWeapon},
+		{InstanceID: "10", Hash: 160, Name: "ACE OF SPADES", Kind: KindWeapon},
 	}}
 }
 
@@ -830,7 +830,7 @@ func TestCopiesOfSuggestions(t *testing.T) {
 		many.Items = append(many.Items, &Item{
 			InstanceID: strconv.Itoa(i + 1),
 			Name:       fmt.Sprintf("Ringer %02d", i+1),
-			Kind:       kindWeapon,
+			Kind:       KindWeapon,
 		})
 	}
 

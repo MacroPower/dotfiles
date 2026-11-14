@@ -23,8 +23,8 @@ var (
 // with Rampage beside it in one socket, and Firefly alone in another.
 func rolledPerks() []Perk {
 	return []Perk{
-		{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}},
-		{Plug: plugFirefly, plugs: []Plug{plugFirefly}, Socket: 1},
+		{Plug: plugExplosivePayload, Plugs: []Plug{plugExplosivePayload, plugRampage}},
+		{Plug: plugFirefly, Plugs: []Plug{plugFirefly}, Socket: 1},
 	}
 }
 
@@ -210,7 +210,7 @@ func TestRateColumns(t *testing.T) {
 			want:    []ColumnVerdict{hits("Rampage")},
 		},
 		"active plug is a pick that the plug list leaves out": {
-			perks:   []Perk{{Plug: plugExplosivePayload, plugs: []Plug{plugRampage}}},
+			perks:   []Perk{{Plug: plugExplosivePayload, Plugs: []Plug{plugRampage}}},
 			columns: [][]uint32{{900}},
 			want:    []ColumnVerdict{hits("Explosive Payload")},
 		},
@@ -226,8 +226,8 @@ func TestRateColumns(t *testing.T) {
 		},
 		"two sockets hold picks and the first one names its picks": {
 			perks: []Perk{
-				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}},
-				{Plug: plugFirefly, plugs: []Plug{plugFirefly, plugKillClip}, Socket: 1},
+				{Plug: plugExplosivePayload, Plugs: []Plug{plugExplosivePayload, plugRampage}},
+				{Plug: plugFirefly, Plugs: []Plug{plugFirefly, plugKillClip}, Socket: 1},
 			},
 			columns: [][]uint32{{901, 904, 903}},
 			want:    []ColumnVerdict{hits("Rampage")},
@@ -239,23 +239,23 @@ func TestRateColumns(t *testing.T) {
 		},
 		"base plug and enhanced plug of one name are both picks": {
 			perks: []Perk{
-				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugKillClip, plugKillClipEnhanced}},
+				{Plug: plugExplosivePayload, Plugs: []Plug{plugExplosivePayload, plugKillClip, plugKillClipEnhanced}},
 			},
 			columns: [][]uint32{{904, 905}},
 			want:    []ColumnVerdict{hits("Kill Clip")},
 		},
 		"enhanced plug is a pick and its base plug is not": {
-			perks:   []Perk{{Plug: plugKillClip, plugs: []Plug{plugKillClip, plugKillClipEnhanced}}},
+			perks:   []Perk{{Plug: plugKillClip, Plugs: []Plug{plugKillClip, plugKillClipEnhanced}}},
 			columns: [][]uint32{{905}},
 			want:    []ColumnVerdict{hits("Kill Clip")},
 		},
 		"active plug comes first when the plug list has it after another pick": {
-			perks:   []Perk{{Plug: plugRampage, plugs: []Plug{plugExplosivePayload, plugRampage}}},
+			perks:   []Perk{{Plug: plugRampage, Plugs: []Plug{plugExplosivePayload, plugRampage}}},
 			columns: [][]uint32{{900, 903}},
 			want:    []ColumnVerdict{hits("Rampage", "Explosive Payload")},
 		},
 		"plugs whose names differ stay apart": {
-			perks:   []Perk{{Plug: plugRampage, plugs: []Plug{plugRampage, plugRampageEnhanced}}},
+			perks:   []Perk{{Plug: plugRampage, Plugs: []Plug{plugRampage, plugRampageEnhanced}}},
 			columns: [][]uint32{{903, 909}},
 			want:    []ColumnVerdict{hits("Rampage", "Rampage Enhanced")},
 		},
@@ -394,8 +394,8 @@ func TestRateStances(t *testing.T) {
 		"disliked only pick of the first socket misses before a later socket with a pick": {
 			stances: map[string]string{"Explosive Payload": stanceDown},
 			perks: []Perk{
-				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}},
-				{Plug: plugFirefly, plugs: []Plug{plugFirefly, plugKillClip}, Socket: 1},
+				{Plug: plugExplosivePayload, Plugs: []Plug{plugExplosivePayload, plugRampage}},
+				{Plug: plugFirefly, Plugs: []Plug{plugFirefly, plugKillClip}, Socket: 1},
 			},
 			columns: [][]uint32{{900, 904}},
 			want:    []ColumnVerdict{{}},
@@ -418,7 +418,7 @@ func TestRateStances(t *testing.T) {
 		"liked base name counts a plug with the Enhanced suffix": {
 			stances: map[string]string{"Rampage": stanceUp},
 			perks: []Perk{
-				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampageEnhanced}},
+				{Plug: plugExplosivePayload, Plugs: []Plug{plugExplosivePayload, plugRampageEnhanced}},
 			},
 			columns: [][]uint32{{900}},
 			want:    []ColumnVerdict{{Hits: []Hit{{Name: "Explosive Payload"}, liked("Rampage Enhanced")}}},
@@ -426,7 +426,7 @@ func TestRateStances(t *testing.T) {
 		},
 		"disliked base name drops a pick with the Enhanced suffix": {
 			stances: map[string]string{"Rampage": stanceDown},
-			perks:   []Perk{{Plug: plugRampageEnhanced, plugs: []Plug{plugRampageEnhanced}}},
+			perks:   []Perk{{Plug: plugRampageEnhanced, Plugs: []Plug{plugRampageEnhanced}}},
 			columns: [][]uint32{{909}},
 			want:    []ColumnVerdict{{}},
 			overall: "A",
@@ -434,7 +434,7 @@ func TestRateStances(t *testing.T) {
 		"liked base plug and enhanced plug of one name hit one time": {
 			stances: map[string]string{"Kill Clip": stanceUp},
 			perks: []Perk{
-				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugKillClip, plugKillClipEnhanced}},
+				{Plug: plugExplosivePayload, Plugs: []Plug{plugExplosivePayload, plugKillClip, plugKillClipEnhanced}},
 			},
 			columns: [][]uint32{{900}},
 			want:    []ColumnVerdict{{Hits: []Hit{{Name: "Explosive Payload"}, liked("Kill Clip")}}},
@@ -533,8 +533,8 @@ func TestRatePlugSets(t *testing.T) {
 		"liked perk that is not active earns the column": {
 			stances: likesFirefly,
 			perks: []Perk{
-				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}},
-				{Plug: plugKillClip, plugs: []Plug{plugKillClip, plugFirefly}, Socket: 1},
+				{Plug: plugExplosivePayload, Plugs: []Plug{plugExplosivePayload, plugRampage}},
+				{Plug: plugKillClip, Plugs: []Plug{plugKillClip, plugFirefly}, Socket: 1},
 			},
 			sockets:  []uint32{0, 40},
 			plugSets: map[uint32][]uint32{40: {906}},
@@ -545,8 +545,8 @@ func TestRatePlugSets(t *testing.T) {
 		"perk without a stance beside the liked perk is no hit": {
 			stances: likesFirefly,
 			perks: []Perk{
-				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}},
-				{Plug: plugFirefly, plugs: []Plug{plugFirefly, plugKillClip}, Socket: 1},
+				{Plug: plugExplosivePayload, Plugs: []Plug{plugExplosivePayload, plugRampage}},
+				{Plug: plugFirefly, Plugs: []Plug{plugFirefly, plugKillClip}, Socket: 1},
 			},
 			sockets:  []uint32{0, 40},
 			plugSets: map[uint32][]uint32{40: {906}},
@@ -613,8 +613,8 @@ func TestRatePlugSets(t *testing.T) {
 		"later plug set socket does not stand in for one that the perk list leaves out": {
 			stances: likesFirefly,
 			perks: []Perk{
-				{Plug: plugFirefly, plugs: []Plug{plugFirefly}, Socket: 1},
-				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}, Socket: 2},
+				{Plug: plugFirefly, Plugs: []Plug{plugFirefly}, Socket: 1},
+				{Plug: plugExplosivePayload, Plugs: []Plug{plugExplosivePayload, plugRampage}, Socket: 2},
 			},
 			sockets:  []uint32{40, 41},
 			plugSets: map[uint32][]uint32{40: {904}, 41: {904}},
@@ -627,8 +627,8 @@ func TestRatePlugSets(t *testing.T) {
 		"plug set socket is the perk with its socket index": {
 			stances: likesFirefly,
 			perks: []Perk{
-				{Plug: plugFirefly, plugs: []Plug{plugFirefly}, Socket: 1},
-				{Plug: plugExplosivePayload, plugs: []Plug{plugExplosivePayload, plugRampage}, Socket: 2},
+				{Plug: plugFirefly, Plugs: []Plug{plugFirefly}, Socket: 1},
+				{Plug: plugExplosivePayload, Plugs: []Plug{plugExplosivePayload, plugRampage}, Socket: 2},
 			},
 			sockets:  []uint32{0, 40},
 			plugSets: map[uint32][]uint32{40: {904}},
@@ -854,7 +854,7 @@ func TestRatePicks(t *testing.T) {
 		},
 		"disliked base name drops a pick with the Enhanced suffix": {
 			stances: map[string]string{"Rampage": stanceDown},
-			perks:   []Perk{{Plug: plugRampageEnhanced, plugs: []Plug{plugRampageEnhanced}}},
+			perks:   []Perk{{Plug: plugRampageEnhanced, Plugs: []Plug{plugRampageEnhanced}}},
 			columns: [][]uint32{{909}},
 			want:    []ColumnVerdict{{}},
 		},

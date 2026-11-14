@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"maps"
@@ -208,7 +207,7 @@ var (
 		{name: filterIs, word: "equipment", match: isEquipment},
 		{name: filterIs, word: "equippable", match: isEquipment},
 		{name: filterIs, word: "equipped", match: func(item *Item) bool { return item.Equipped }},
-		{name: filterIs, word: "invault", match: func(item *Item) bool { return item.Owner == ownerVault }},
+		{name: filterIs, word: "invault", match: func(item *Item) bool { return item.Owner == OwnerVault }},
 		{name: filterIs, word: "postmaster", match: inPostmaster},
 		{name: filterIs, word: "inpostmaster", match: inPostmaster},
 		{name: filterIs, word: "locked", match: func(item *Item) bool { return item.Lockable && item.Locked }},
@@ -253,16 +252,16 @@ var (
 		{name: filterIs, word: "dupe", build: isDupe},
 		{name: filterIs, word: "incurrentchar", build: inCurrentChar},
 		{name: filterIs, word: "currentclass", build: currentClass},
-		{name: filterIs, word: "common", match: ofRarity(rarityCommon)},
-		{name: filterIs, word: "uncommon", match: ofRarity(rarityUncommon)},
-		{name: filterIs, word: "rare", match: ofRarity(rarityRare)},
-		{name: filterIs, word: "legendary", match: ofRarity(rarityLegendary)},
-		{name: filterIs, word: "exotic", match: ofRarity(rarityExotic)},
-		{name: filterIs, word: "white", match: ofRarity(rarityCommon)},
-		{name: filterIs, word: "green", match: ofRarity(rarityUncommon)},
-		{name: filterIs, word: "blue", match: ofRarity(rarityRare)},
-		{name: filterIs, word: "purple", match: ofRarity(rarityLegendary)},
-		{name: filterIs, word: "yellow", match: ofRarity(rarityExotic)},
+		{name: filterIs, word: "common", match: ofRarity(RarityCommon)},
+		{name: filterIs, word: "uncommon", match: ofRarity(RarityUncommon)},
+		{name: filterIs, word: "rare", match: ofRarity(RarityRare)},
+		{name: filterIs, word: "legendary", match: ofRarity(RarityLegendary)},
+		{name: filterIs, word: "exotic", match: ofRarity(RarityExotic)},
+		{name: filterIs, word: "white", match: ofRarity(RarityCommon)},
+		{name: filterIs, word: "green", match: ofRarity(RarityUncommon)},
+		{name: filterIs, word: "blue", match: ofRarity(RarityRare)},
+		{name: filterIs, word: "purple", match: ofRarity(RarityLegendary)},
+		{name: filterIs, word: "yellow", match: ofRarity(RarityExotic)},
 		{name: filterIs, word: "kinetic", match: ofElement(bungie.DamageKinetic)},
 		{name: filterIs, word: "arc", match: ofElement(bungie.DamageArc)},
 		{name: filterIs, word: "solar", match: ofElement(bungie.DamageThermal)},
@@ -660,7 +659,7 @@ func filterTest(n *QueryNode) (queryTest, string, error) {
 
 // queryResult is what a query gives a list of items. Matches holds the
 // items that the query matches. Undecided holds the items whose outcome
-// the server cannot decide. Both lists follow the order of [byNameAndID].
+// the server cannot decide. Both lists follow the order of [ByNameAndID].
 type queryResult struct {
 	matches   []*Item
 	undecided []undecidedItem
@@ -691,16 +690,10 @@ func (q compiledQuery) evaluate(ctx searchContext, items []*Item) queryResult {
 		}
 	}
 
-	slices.SortStableFunc(result.matches, byNameAndID)
-	slices.SortStableFunc(result.undecided, func(a, b undecidedItem) int { return byNameAndID(a.item, b.item) })
+	slices.SortStableFunc(result.matches, ByNameAndID)
+	slices.SortStableFunc(result.undecided, func(a, b undecidedItem) int { return ByNameAndID(a.item, b.item) })
 
 	return result
-}
-
-// byNameAndID orders items by name and then by instance id, as the default
-// sort of list_items orders them.
-func byNameAndID(a, b *Item) int {
-	return cmp.Or(cmp.Compare(a.Name, b.Name), compareIDs(a.InstanceID, b.InstanceID))
 }
 
 // unratedReason returns the [ratingReason] of the first game mode of
@@ -920,10 +913,10 @@ func ofAmmo(ammoType int) func(*Item) bool {
 
 // ofRarity returns the predicate of an item whose rarity is the DIM rarity
 // name rarity. DIM reads the rarity from the tier type of the definition,
-// as [rarityName] maps it, and not from the tier name that the definition
+// as [RarityName] maps it, and not from the tier name that the definition
 // displays.
 func ofRarity(rarity string) func(*Item) bool {
-	return func(item *Item) bool { return rarityName(item.TierType) == rarity }
+	return func(item *Item) bool { return RarityName(item.TierType) == rarity }
 }
 
 // ofElement returns the predicate of an item whose instance has one of
@@ -1144,7 +1137,7 @@ func dupeCounts(items []*Item, keep func(*Item) bool) map[string]int {
 
 // itemDupeID returns the key that groups the copies of item, as itemDupeID
 // of DIM builds it. The key joins the name, the decimal class type, the
-// rarity name of [rarityName], and the decimal bucket hash without
+// rarity name of [RarityName], and the decimal bucket hash without
 // separators. A weapon name goes through [stripAdept] first. The web
 // client classifies no item, so the key never falls back to the item
 // hash.
@@ -1154,7 +1147,7 @@ func itemDupeID(item *Item) string {
 		name = stripAdept(name)
 	}
 
-	return name + strconv.Itoa(item.ClassType) + rarityName(item.TierType) +
+	return name + strconv.Itoa(item.ClassType) + RarityName(item.TierType) +
 		strconv.FormatUint(uint64(item.Bucket), 10)
 }
 
@@ -1177,7 +1170,7 @@ func stripAdept(name string) string {
 // an item of any other bucket under the vault, which the predicate
 // ignores.
 func inCurrentChar(ctx searchContext) func(*Item) bool {
-	return func(item *Item) bool { return item.Owner == ctx.current.ID || item.Owner == ownerAccount }
+	return func(item *Item) bool { return item.Owner == ctx.current.ID || item.Owner == OwnerAccount }
 }
 
 // currentClass builds the predicate of is:currentclass. It matches an item

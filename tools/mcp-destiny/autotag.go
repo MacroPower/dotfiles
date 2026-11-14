@@ -45,21 +45,21 @@ func newestMark(s *Snapshot) string {
 // higher than mark, which the next claim covers. The first list holds the
 // items outside the vault, which the claim offers to the autotag rules.
 // The second list holds the items in the vault. Both lists follow the
-// order of [compareIDs].
+// order of [CompareIDs].
 func newItems(s *Snapshot, mark string) ([]*Item, []*Item) {
 	var held, vault []*Item
 
 	for _, item := range ownedItems(s) {
 		switch {
 		case markOf(item.InstanceID) <= mark:
-		case item.Owner == ownerVault:
+		case item.Owner == OwnerVault:
 			vault = append(vault, item)
 		default:
 			held = append(held, item)
 		}
 	}
 
-	byID := func(a, b *Item) int { return compareIDs(a.InstanceID, b.InstanceID) }
+	byID := func(a, b *Item) int { return CompareIDs(a.InstanceID, b.InstanceID) }
 
 	slices.SortStableFunc(held, byID)
 	slices.SortStableFunc(vault, byID)
@@ -167,7 +167,7 @@ func evalRules(s *Snapshot, rules []dvm.AutotagRule, sources func() map[string]R
 		ratings = sources()
 	}
 
-	current, _ := s.lastPlayed()
+	current, _ := s.LastPlayed()
 	search := searchContext{current: current, items: builtItems(s), sources: ratings}
 
 	for i := range evals {
@@ -400,7 +400,7 @@ type vaultItem struct {
 }
 
 // vaultItems returns the new items of m that the rules of evals with the
-// vault flag take, in the order of [compareIDs], each with its rule and
+// vault flag take, in the order of [CompareIDs], each with its rule and
 // the reason of [vaultBlock]. Defs holds the definition of each item.
 func vaultItems(evals []ruleEval, m newMatches, defs *definitions.Defs) []vaultItem {
 	var vaulted []vaultItem
@@ -420,7 +420,7 @@ func vaultItems(evals []ruleEval, m newMatches, defs *definitions.Defs) []vaultI
 	}
 
 	slices.SortStableFunc(vaulted, func(a, b vaultItem) int {
-		return compareIDs(a.item.InstanceID, b.item.InstanceID)
+		return CompareIDs(a.item.InstanceID, b.item.InstanceID)
 	})
 
 	return vaulted

@@ -380,7 +380,7 @@ func TestListItems(t *testing.T) {
 			}, "\n"),
 		},
 		"paging": {
-			in: ListItemsInput{Sort: sortPower, Limit: 2, Offset: 2},
+			in: ListItemsInput{Sort: SortPower, Limit: 2, Offset: 2},
 			want: strings.Join([]string{
 				"Items 3-4 of 6. Pass offset=4 for the next page.",
 				"",
@@ -390,7 +390,7 @@ func TestListItems(t *testing.T) {
 			}, "\n"),
 		},
 		"stack": {
-			in: ListItemsInput{Kind: kindOther},
+			in: ListItemsInput{Kind: KindOther},
 			want: strings.Join([]string{
 				"Items 1-1 of 1.",
 				"",
@@ -408,7 +408,7 @@ func TestListItems(t *testing.T) {
 			}, "\n"),
 		},
 		"sort by a named stat": {
-			in: ListItemsInput{Stat: "HEALTH", Sort: sortStat, Limit: 2},
+			in: ListItemsInput{Stat: "HEALTH", Sort: SortStat, Limit: 2},
 			want: strings.Join([]string{
 				"Items 1-2 of 6. Pass offset=2 for the next page.",
 				"",
@@ -513,7 +513,7 @@ func TestListItems(t *testing.T) {
 		},
 		"stack has empty rating cells": {
 			prepare: bothSheets,
-			in:      ListItemsInput{Kind: kindOther, IncludeRatings: true},
+			in:      ListItemsInput{Kind: KindOther, IncludeRatings: true},
 			want: strings.Join([]string{
 				"Items 1-1 of 1.",
 				"",
@@ -522,7 +522,7 @@ func TestListItems(t *testing.T) {
 			}, "\n"),
 		},
 		"armor has empty rating cells also without a sheet": {
-			in: ListItemsInput{Kind: kindArmor, IncludeRatings: true},
+			in: ListItemsInput{Kind: KindArmor, IncludeRatings: true},
 			want: strings.Join([]string{
 				"Items 1-1 of 1.",
 				noAegis,
@@ -1003,17 +1003,17 @@ func TestRenderItemsStatTotal(t *testing.T) {
 		"armor with a total of 0": {
 			item: &Item{
 				Name:  "Zero Helmet",
-				Kind:  kindArmor,
+				Kind:  KindArmor,
 				Stats: []Stat{{Name: "Grenade", Value: 0}, {Name: "Health", Value: 0}},
 			},
 			want: "0",
 		},
 		"armor without stats": {
-			item: &Item{Name: "Bare Helmet", Kind: kindArmor},
+			item: &Item{Name: "Bare Helmet", Kind: KindArmor},
 			want: "",
 		},
 		"weapon with stats": {
-			item: &Item{Name: "Ace of Spades", Kind: kindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
+			item: &Item{Name: "Ace of Spades", Kind: KindWeapon, Stats: []Stat{{Name: "Range", Value: 60}}},
 			want: "",
 		},
 	}
@@ -1023,7 +1023,7 @@ func TestRenderItemsStatTotal(t *testing.T) {
 			t.Parallel()
 
 			tc.item.InstanceID = "21"
-			tc.item.Owner = ownerVault
+			tc.item.Owner = OwnerVault
 			tc.item.Transferable = true
 
 			got := renderItems(&Snapshot{}, []*Item{tc.item}, 0, 1, "", false, nil)
@@ -2399,22 +2399,22 @@ func TestRatingCell(t *testing.T) {
 	}{
 		"armor that the sheet lists with a tier": {
 			source: listed,
-			item:   &Item{Hash: 7, Kind: kindArmor},
+			item:   &Item{Hash: 7, Kind: KindArmor},
 			want:   "",
 		},
 		"armor in a game mode without ratings": {
 			source: noSheet,
-			item:   &Item{Hash: 7, Kind: kindArmor},
+			item:   &Item{Hash: 7, Kind: KindArmor},
 			want:   "",
 		},
 		"weapon that the sheet lists with a tier": {
 			source: listed,
-			item:   &Item{Hash: 7, Kind: kindWeapon},
+			item:   &Item{Hash: 7, Kind: KindWeapon},
 			want:   "A",
 		},
 		"weapon in a game mode without ratings": {
 			source: noSheet,
-			item:   &Item{Hash: 7, Kind: kindWeapon},
+			item:   &Item{Hash: 7, Kind: KindWeapon},
 			want:   "unavailable",
 		},
 	}
@@ -2621,7 +2621,7 @@ func TestCompareDuplicates(t *testing.T) {
 				twin := *coup
 				twin.InstanceID = "1007"
 				twin.Name = "MIDNIGHT COUP"
-				s.add(&twin)
+				s.Add(&twin)
 			},
 			in:   CompareDuplicatesInput{InstanceID: "1003"},
 			want: oneCopy,
@@ -2709,7 +2709,7 @@ func TestCompareDuplicates(t *testing.T) {
 				adept.InstanceID = "1007"
 				adept.Name = "Fatebringer (Adept)"
 				adept.Hash = 110
-				s.add(&adept)
+				s.Add(&adept)
 			},
 			in: CompareDuplicatesInput{Name: "fatebringer"},
 			want: strings.Join(slices.Concat(
@@ -2830,8 +2830,8 @@ func twoDuplicates(t *testing.T) *fakes {
 
 	twin := *coup
 	twin.InstanceID = "1007"
-	twin.Owner = ownerVault
-	s.add(&twin)
+	twin.Owner = OwnerVault
+	s.Add(&twin)
 
 	return f
 }
@@ -2922,7 +2922,7 @@ func TestCompareDuplicatesLimit(t *testing.T) {
 					twin := *coup
 					twin.InstanceID = strconv.Itoa(2000 + 2*i + j)
 					twin.Name = fmt.Sprintf("Replica %02d", i)
-					s.add(&twin)
+					s.Add(&twin)
 				}
 			}
 
@@ -3640,7 +3640,7 @@ func TestMoveStackTool(t *testing.T) {
 		"membershipType":    float64(3),
 	}, transfers[0].Body)
 
-	got, isError = call(t, f.h.handleListItems, ListItemsInput{Kind: kindOther, Location: "vault"})
+	got, isError = call(t, f.h.handleListItems, ListItemsInput{Kind: KindOther, Location: "vault"})
 	assert.False(t, isError)
 	assert.Contains(t, got, "stack of 12 (item hash 300) | Enhancement Core | Material | Legendary |  |  | Vault")
 
@@ -3867,7 +3867,7 @@ func kineticWeapon(id, name, owner string) *Item {
 		TypeName:     "Hand Cannon",
 		Slot:         "Kinetic Weapons",
 		Owner:        owner,
-		Kind:         kindWeapon,
+		Kind:         KindWeapon,
 		ClassType:    bungie.ClassAny,
 		Quantity:     1,
 		Hash:         hash,
@@ -3999,8 +3999,8 @@ func TestStageJunk(t *testing.T) {
 			in:   kinetic,
 			junk: []string{"1001", "1003", "1007", "1008"},
 			add: []*Item{
-				kineticWeapon("1007", "Midnight Coup", ownerVault),
-				kineticWeapon("1008", "Fatebringer", ownerVault),
+				kineticWeapon("1007", "Midnight Coup", OwnerVault),
+				kineticWeapon("1008", "Fatebringer", OwnerVault),
 			},
 			capacity: 4,
 			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 3\n" +
@@ -4033,7 +4033,7 @@ func TestStageJunk(t *testing.T) {
 		"one move does not succeed": {
 			in:     kinetic,
 			junk:   []string{"1001", "1003", "1007"},
-			add:    []*Item{kineticWeapon("1007", "Midnight Coup", ownerVault)},
+			add:    []*Item{kineticWeapon("1007", "Midnight Coup", OwnerVault)},
 			refuse: func(body map[string]any) bool { return body["itemId"] == "1001" },
 			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n" +
 				"- Midnight Coup (1003)\n" +
@@ -4084,7 +4084,7 @@ func TestStageJunk(t *testing.T) {
 		"item count": {
 			in:   kinetic,
 			junk: []string{"1001", "1003", "1007"},
-			add:  []*Item{kineticWeapon("1007", "Midnight Coup", ownerVault)},
+			add:  []*Item{kineticWeapon("1007", "Midnight Coup", OwnerVault)},
 			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 3\n" +
 				"- Fatebringer (1001), locked\n" +
 				"- Midnight Coup (1003)\n" +
@@ -4138,7 +4138,7 @@ func TestStageJunk(t *testing.T) {
 			require.NoError(t, err)
 
 			for _, item := range tc.add {
-				s.add(item)
+				s.Add(item)
 			}
 
 			if tc.capacity > 0 {
@@ -4681,7 +4681,7 @@ func TestEquipLoadoutTool(t *testing.T) {
 
 	// The snapshot carries the equips, so the next read does not ask Bungie
 	// for a profile that might predate them.
-	got, isError = call(t, f.h.handleListItems, ListItemsInput{Kind: kindWeapon})
+	got, isError = call(t, f.h.handleListItems, ListItemsInput{Kind: KindWeapon})
 	assert.False(t, isError)
 	assert.Contains(t, got, "1006 | Fatebringer | Kinetic Hand Cannon | Legendary | 1980 |  | Titan (equipped) |  | \n")
 	assert.Contains(
@@ -5416,7 +5416,7 @@ func TestSetTagClearsRule(t *testing.T) {
 	}{
 		"the same tag":  {tag: "keep", want: "keep"},
 		"another tag":   {tag: dvm.TagJunk, want: dvm.TagJunk},
-		"no tag at all": {tag: tagNone},
+		"no tag at all": {tag: TagNone},
 	}
 
 	for name, tc := range tests {
@@ -8161,7 +8161,7 @@ func TestPreviewInVault(t *testing.T) {
 	for _, id := range rows {
 		item, ok := f.h.snapshot.Find(id)
 		require.True(t, ok)
-		assert.Equal(t, ownerVault, item.Owner)
+		assert.Equal(t, OwnerVault, item.Owner)
 	}
 }
 
