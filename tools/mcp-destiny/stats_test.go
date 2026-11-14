@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -13,38 +12,6 @@ import (
 
 // statStart is the period start of the stats unit tests.
 var statStart = time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC)
-
-// testChunk is one chunk of an /api/stats page that a test serves.
-type testChunk struct {
-	changes   []map[string]any
-	startsAt  int64
-	updatedAt int64
-}
-
-// statPageJSON encodes an /api/stats page. Each chunk body is a JSON
-// string that holds the JSON array of its changes.
-func statPageJSON(t *testing.T, more bool, chunks ...testChunk) string {
-	t.Helper()
-
-	out := []map[string]any{}
-
-	for _, chunk := range chunks {
-		body, err := json.Marshal(chunk.changes)
-		require.NoError(t, err)
-
-		out = append(out, map[string]any{
-			"startsAt":  chunk.startsAt,
-			"endsAt":    chunk.startsAt + 300_000,
-			"body":      string(body),
-			"updatedAt": chunk.updatedAt,
-		})
-	}
-
-	raw, err := json.Marshal(map[string]any{"chunks": out, "more": more})
-	require.NoError(t, err)
-
-	return string(raw)
-}
 
 // minutes returns the Unix milliseconds of statStart plus n minutes.
 func minutes(n int) int64 {

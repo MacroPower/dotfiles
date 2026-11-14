@@ -4,8 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
+	"maps"
 	"path/filepath"
 	"testing"
 	"time"
@@ -15,7 +14,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
-	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 )
 
 // Bucket hashes of the fixture slots that no production code reads.
@@ -188,124 +187,45 @@ func fixtureSnapshot(t *testing.T) *Snapshot {
 	return NewSnapshot(&profile, fixtureDefs(), bungietest.Now)
 }
 
-// configBody returns the /api/config response body whose artifact index
-// lists files.
-func configBody(t *testing.T, files map[string][]string) string {
-	t.Helper()
-
-	raw, err := json.Marshal(files)
-	require.NoError(t, err)
-
-	return `{"apiKey": "key", "clientId": "54520", "artifacts": {"manifestVersion": "v1", "files": ` +
-		string(raw) + `}}`
-}
-
 // fakes is a handler wired to a fake Agg's Destiny Vault Manager service
 // and a fake Bungie platform.
 type fakes struct {
 	h       *handler
-	service *httpfake.Recorder
+	service *dvmtest.Server
 	bungie  *bungietest.Server
-
-	// serviceData holds the GET response body of each service path.
-	serviceData map[string]string
-	// artifactFiles holds the file list of each artifact that the index
-	// of the service lists. The service serves a listed file only when
-	// serviceData holds a body for its path under /artifacts/.
-	artifactFiles map[string][]string
-	// staleSession is a token that the fake service rejects.
-	staleSession string
-	// claim answers each claim POST to /api/autotag/state. A zero claim
-	// answers with {"applied": true}.
-	claim answer
-	// claimedAutotag answers each GET of /api/autotag after a claim
-	// POST. A zero claimedAutotag keeps the body of serviceData.
-	claimedAutotag answer
-	// tagWriteStatus is the status of the answer to each POST to
-	// /api/tags. Zero answers with 200.
-	tagWriteStatus int
-}
-
-// answer is the status and the body of one answer of a fake server.
-type answer struct {
-	body   string
-	status int
-}
-
-// claims returns the claim POSTs that the fake service received.
-func (f *fakes) claims() []httpfake.Request {
-	var out []httpfake.Request
-
-	for _, req := range f.service.Calls(http.MethodPost, "/api/autotag/state") {
-		if req.Body["kind"] == "claim" {
-			out = append(out, req)
-		}
-	}
-
-	return out
 }
 
 func newFakes(t *testing.T) *fakes {
 	t.Helper()
 
 	f := &fakes{
-		service:       &httpfake.Recorder{},
-		bungie:        bungietest.NewServer(t),
-		artifactFiles: map[string][]string{},
-		serviceData: map[string]string{
-			"/api/tags": `{"defs": [], "items": [
-				{"instanceId": "1001", "itemHash": 100, "tagId": "keep", "removed": false, "updatedAt": 5},
-				{"instanceId": "1001", "itemHash": 100, "tagId": "favorite", "removed": false, "updatedAt": 5},
-				{"instanceId": "1002", "itemHash": 101, "tagId": "junk", "removed": true, "updatedAt": 5}
-			], "now": 10}`,
-			"/api/notes": `{"notes": [
-				{"kind": "instance", "targetId": "1001", "itemHash": 100, "body": "god roll", "removed": false, "updatedAt": 5},
-				{"kind": "set", "targetId": "set-key", "body": "farm this", "removed": false, "updatedAt": 5}
-			], "now": 10}`,
-			"/api/perk-preferences": `{"preferences": [
-				{"mode": "pve", "perk": "Firefly", "stance": "up", "removed": false, "updatedAt": 5},
-				{"mode": "pvp", "perk": "Rampage", "stance": "down", "removed": false, "updatedAt": 5},
-				{"mode": "pvp", "perk": "Kill Clip", "stance": "up", "removed": true, "updatedAt": 5}
-			], "now": 10}`,
-			"/api/autotag": `{"rules": [
-				{"id": "r2", "query": "is:dupe", "vault": true, "enabled": false, "position": 1, "removed": false, "updatedAt": 5},
-				{"id": "r1", "query": "rate:>=a", "tagId": "pve", "vault": false, "enabled": true, "position": 0, "removed": false, "updatedAt": 5},
-				{"id": "r0", "query": "old", "vault": false, "enabled": true, "position": 2, "removed": true, "updatedAt": 5}
-			], "state": {"enabled": true, "mark": "00000000000000001006", "updatedAt": 5}, "now": 10}`,
-		},
+		service: dvmtest.NewServer(t),
+		bungie:  bungietest.NewServer(t),
 	}
 
-	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req := f.service.Record(t, r)
-
-		switch {
-		case req.Path == "/api/config":
-			httpfake.WriteJSON(t, w, http.StatusOK, configBody(t, f.artifactFiles))
-
-		case req.Path == "/api/auth/refresh":
-			httpfake.WriteJSON(t, w, http.StatusOK, `{"access_token": "access-2", "expires_in": 3600,
-				"refresh_token": "refresh-2", "refresh_expires_in": 7776000, "membership_id": "42", "session": "session-2"}`)
-
-		case f.staleSession != "" && req.Auth == "Bearer "+f.staleSession:
-			httpfake.WriteJSON(t, w, http.StatusUnauthorized, `{"error": "Sign in required"}`)
-		case req.Path == "/api/autotag/state" && req.Body["kind"] == "claim" && f.claim.status != 0:
-			httpfake.WriteJSON(t, w, f.claim.status, f.claim.body)
-		case req.Method == http.MethodGet && req.Path == "/api/autotag" && f.claimedAutotag.status != 0 &&
-			len(f.claims()) > 0:
-			httpfake.WriteJSON(t, w, f.claimedAutotag.status, f.claimedAutotag.body)
-		case req.Method == http.MethodPost && req.Path == "/api/tags" && f.tagWriteStatus != 0:
-			httpfake.WriteJSON(t, w, f.tagWriteStatus, `{"error": "Tag store unavailable"}`)
-		case req.Method == http.MethodGet && f.serviceData[req.Path] != "":
-			httpfake.WriteJSON(t, w, http.StatusOK, f.serviceData[req.Path])
-		case req.Path == "/api/autotag/state":
-			httpfake.WriteJSON(t, w, http.StatusOK, `{"applied": true}`)
-		case req.Method == http.MethodPost:
-			httpfake.WriteJSON(t, w, http.StatusOK, `{"now": 11}`)
-		default:
-			httpfake.WriteJSON(t, w, http.StatusNotFound, `{"error": "Not found"}`)
-		}
-	}))
-	t.Cleanup(service.Close)
+	// The bodies name items of the Bungie fixture profile, which the fake
+	// service does not know.
+	maps.Copy(f.service.Data, map[string]string{
+		"/api/tags": `{"defs": [], "items": [
+			{"instanceId": "1001", "itemHash": 100, "tagId": "keep", "removed": false, "updatedAt": 5},
+			{"instanceId": "1001", "itemHash": 100, "tagId": "favorite", "removed": false, "updatedAt": 5},
+			{"instanceId": "1002", "itemHash": 101, "tagId": "junk", "removed": true, "updatedAt": 5}
+		], "now": 10}`,
+		"/api/notes": `{"notes": [
+			{"kind": "instance", "targetId": "1001", "itemHash": 100, "body": "god roll", "removed": false, "updatedAt": 5},
+			{"kind": "set", "targetId": "set-key", "body": "farm this", "removed": false, "updatedAt": 5}
+		], "now": 10}`,
+		"/api/perk-preferences": `{"preferences": [
+			{"mode": "pve", "perk": "Firefly", "stance": "up", "removed": false, "updatedAt": 5},
+			{"mode": "pvp", "perk": "Rampage", "stance": "down", "removed": false, "updatedAt": 5},
+			{"mode": "pvp", "perk": "Kill Clip", "stance": "up", "removed": true, "updatedAt": 5}
+		], "now": 10}`,
+		"/api/autotag": `{"rules": [
+			{"id": "r2", "query": "is:dupe", "vault": true, "enabled": false, "position": 1, "removed": false, "updatedAt": 5},
+			{"id": "r1", "query": "rate:>=a", "tagId": "pve", "vault": false, "enabled": true, "position": 0, "removed": false, "updatedAt": 5},
+			{"id": "r0", "query": "old", "vault": false, "enabled": true, "position": 2, "removed": true, "updatedAt": 5}
+		], "state": {"enabled": true, "mark": "00000000000000001006", "updatedAt": 5}, "now": 10}`,
+	})
 
 	now := func() time.Time { return bungietest.Now }
 
@@ -319,7 +239,7 @@ func newFakes(t *testing.T) *fakes {
 		BungieID:       "42",
 	}))
 
-	client := NewService(WithServiceURL(service.URL))
+	client := NewService(WithServiceURL(f.service.URL))
 
 	defs := NewDefsLoader(client, "", WithDefsClock(now))
 	defs.defs = fixtureDefs()

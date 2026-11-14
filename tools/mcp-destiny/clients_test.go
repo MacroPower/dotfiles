@@ -16,6 +16,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
 
@@ -320,27 +321,31 @@ func TestServiceStats(t *testing.T) {
 		"snapshot":    map[string]any{"item": map[string]any{"itemHash": 100}, "components": map[string]any{}},
 	}
 
-	first := testChunk{startsAt: 300_000, updatedAt: 900_000, changes: []map[string]any{glimmer(310_000, 1_000, 2_000)}}
-	second := testChunk{
-		startsAt:  600_000,
-		updatedAt: 950_000,
-		changes:   []map[string]any{glimmer(610_000, 2_000, 1_500)},
+	first := dvmtest.Chunk{
+		StartsAt:  300_000,
+		UpdatedAt: 900_000,
+		Changes:   []map[string]any{glimmer(310_000, 1_000, 2_000)},
+	}
+	second := dvmtest.Chunk{
+		StartsAt:  600_000,
+		UpdatedAt: 950_000,
+		Changes:   []map[string]any{glimmer(610_000, 2_000, 1_500)},
 	}
 	// A second recorder replaced the first bucket with a longer copy.
-	replaced := testChunk{
-		startsAt:  300_000,
-		updatedAt: 1_200_000,
-		changes:   []map[string]any{glimmer(310_000, 1_000, 2_000), drop},
+	replaced := dvmtest.Chunk{
+		StartsAt:  300_000,
+		UpdatedAt: 1_200_000,
+		Changes:   []map[string]any{glimmer(310_000, 1_000, 2_000), drop},
 	}
 
 	// reordered encodes a page whose more key comes before its chunks and
 	// whose other keys the client skips.
-	reordered := func(chunks ...testChunk) string {
+	reordered := func(chunks ...dvmtest.Chunk) string {
 		var page struct {
 			Chunks json.RawMessage `json:"chunks"`
 		}
 
-		require.NoError(t, json.Unmarshal([]byte(statPageJSON(t, false, chunks...)), &page))
+		require.NoError(t, json.Unmarshal([]byte(dvmtest.StatPage(t, false, chunks...)), &page))
 
 		return `{"now": 5, "more": false, "extra": {"chunks": [], "more": true}, "chunks": ` +
 			string(page.Chunks) + `, "later": [1, 2]}`
@@ -353,7 +358,7 @@ func TestServiceStats(t *testing.T) {
 	}{
 		"one page": {
 			pages: map[string]string{
-				"since=0&after=0": statPageJSON(t, false, first, second),
+				"since=0&after=0": dvmtest.StatPage(t, false, first, second),
 			},
 			wantQueries: []string{"since=0&after=0"},
 			want: []StatChunk{
@@ -397,8 +402,8 @@ func TestServiceStats(t *testing.T) {
 		},
 		"the later copy of a bucket replaces the earlier one": {
 			pages: map[string]string{
-				"since=0&after=0":           statPageJSON(t, true, first, second),
-				"since=950000&after=600000": statPageJSON(t, false, replaced),
+				"since=0&after=0":           dvmtest.StatPage(t, true, first, second),
+				"since=950000&after=600000": dvmtest.StatPage(t, false, replaced),
 			},
 			wantQueries: []string{"since=0&after=0", "since=950000&after=600000"},
 			want: []StatChunk{
@@ -427,8 +432,8 @@ func TestServiceStats(t *testing.T) {
 		},
 		"an empty page ends the read": {
 			pages: map[string]string{
-				"since=0&after=0":           statPageJSON(t, true, first),
-				"since=900000&after=300000": statPageJSON(t, true),
+				"since=0&after=0":           dvmtest.StatPage(t, true, first),
+				"since=900000&after=300000": dvmtest.StatPage(t, true),
 			},
 			wantQueries: []string{"since=0&after=0", "since=900000&after=300000"},
 			want: []StatChunk{
@@ -445,7 +450,7 @@ func TestServiceStats(t *testing.T) {
 			},
 		},
 		"no chunks": {
-			pages:       map[string]string{"since=0&after=0": statPageJSON(t, false)},
+			pages:       map[string]string{"since=0&after=0": dvmtest.StatPage(t, false)},
 			wantQueries: []string{"since=0&after=0"},
 		},
 	}

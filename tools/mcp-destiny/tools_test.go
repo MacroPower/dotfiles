@@ -24,6 +24,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 )
 
@@ -312,8 +313,8 @@ func TestListItems(t *testing.T) {
 
 	// aegisOnly makes the service publish only the Aegis sheet.
 	aegisOnly := func(f *fakes) {
-		f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
-		f.serviceData["/artifacts/rolls.a.json"] = aegisSheet
+		f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+		f.service.Data["/artifacts/rolls.a.json"] = aegisSheet
 	}
 
 	// bothSheets makes the service publish the Aegis sheet and the PvP
@@ -321,8 +322,8 @@ func TestListItems(t *testing.T) {
 	bothSheets := func(f *fakes) {
 		aegisOnly(f)
 
-		f.artifactFiles["pvprolls"] = []string{"pvprolls.a.json"}
-		f.serviceData["/artifacts/pvprolls.a.json"] = pvpSheet
+		f.service.ArtifactFiles["pvprolls"] = []string{"pvprolls.a.json"}
+		f.service.Data["/artifacts/pvprolls.a.json"] = pvpSheet
 	}
 
 	// rated returns the rows of the unfiltered listing with the rating
@@ -531,7 +532,7 @@ func TestListItems(t *testing.T) {
 		// whose sheet did not load never reads "not listed".
 		"ratings of a sheet that does not load": {
 			prepare: func(f *fakes) {
-				f.artifactFiles = map[string][]string{"rolls": {"rolls.x.json"}}
+				f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.x.json"}}
 			},
 			in: ListItemsInput{IncludeRatings: true},
 			want: strings.Join(slices.Concat([]string{
@@ -548,7 +549,7 @@ func TestListItems(t *testing.T) {
 		"ratings without the perk preferences": {
 			prepare: func(f *fakes) {
 				aegisOnly(f)
-				delete(f.serviceData, pathPrefs)
+				delete(f.service.Data, pathPrefs)
 			},
 			in: ListItemsInput{IncludeRatings: true},
 			want: strings.Join(slices.Concat([]string{
@@ -637,7 +638,7 @@ func TestListItems(t *testing.T) {
 			prepare: func(f *fakes) {
 				bothSheets(f)
 
-				f.serviceData[pathPrefs] = `{"preferences": [], "now": 10}`
+				f.service.Data[pathPrefs] = `{"preferences": [], "now": 10}`
 			},
 			in:   ListItemsInput{MinPvPRating: "C"},
 			want: pvpD,
@@ -715,7 +716,7 @@ func TestListItems(t *testing.T) {
 			prepare: func(f *fakes) {
 				bothSheets(f)
 
-				f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [` +
+				f.service.Data["/artifacts/rolls.a.json"] = `{"rolls": [` +
 					`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900], [904]]}, ` +
 					`{"category": "Exotic Weapons", "tier": "A", "hashes": [101], "slots": []}, ` +
 					`{"category": "HCs", "hashes": [102], "slots": []}, ` +
@@ -791,7 +792,7 @@ func TestListItems(t *testing.T) {
 		// The index lists a file that the service does not serve.
 		"minimum of a sheet that does not load": {
 			prepare: func(f *fakes) {
-				f.artifactFiles = map[string][]string{"rolls": {"rolls.x.json"}}
+				f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.x.json"}}
 			},
 			in: ListItemsInput{MinPvERating: "A"},
 			want: "min_pve_rating: rating unavailable: fetching artifact rolls.x.json: " +
@@ -801,7 +802,7 @@ func TestListItems(t *testing.T) {
 		"minimum without the perk preferences": {
 			prepare: func(f *fakes) {
 				aegisOnly(f)
-				delete(f.serviceData, pathPrefs)
+				delete(f.service.Data, pathPrefs)
 			},
 			in: ListItemsInput{MinPvERating: "A"},
 			want: "min_pve_rating: rating unavailable: reading perk preferences: " +
@@ -905,9 +906,9 @@ func TestListItemsRatingRequests(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}}
-			f.serviceData["/artifacts/rolls.a.json"] = sheet
-			f.serviceData["/artifacts/pvprolls.a.json"] = sheet
+			f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}}
+			f.service.Data["/artifacts/rolls.a.json"] = sheet
+			f.service.Data["/artifacts/pvprolls.a.json"] = sheet
 
 			for i, step := range tc.steps {
 				_, isError := call(t, f.h.handleListItems, step.in)
@@ -972,9 +973,9 @@ func TestListItemsMinimumRequests(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}}
-			f.serviceData["/artifacts/rolls.a.json"] = sheet
-			f.serviceData["/artifacts/pvprolls.a.json"] = sheet
+			f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}}
+			f.service.Data["/artifacts/rolls.a.json"] = sheet
+			f.service.Data["/artifacts/pvprolls.a.json"] = sheet
 
 			_, isError := call(t, f.h.handleListItems, tc.in)
 			assert.Equal(t, tc.isError, isError)
@@ -1681,18 +1682,18 @@ func TestGetItem(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.artifactFiles = tc.files
+			f.service.ArtifactFiles = tc.files
 
 			for file, body := range tc.bodies {
-				f.serviceData["/artifacts/"+file] = body
+				f.service.Data["/artifacts/"+file] = body
 			}
 
 			if tc.prefsBody != "" {
-				f.serviceData[pathPrefs] = tc.prefsBody
+				f.service.Data[pathPrefs] = tc.prefsBody
 			}
 
 			if tc.noPrefs {
-				delete(f.serviceData, pathPrefs)
+				delete(f.service.Data, pathPrefs)
 			}
 
 			if tc.defs != nil {
@@ -1732,8 +1733,8 @@ func TestGetItemRatesOnEachCall(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
-	f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [` +
+	f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+	f.service.Data["/artifacts/rolls.a.json"] = `{"rolls": [` +
 		`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[903, 900]]}]}`
 
 	got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
@@ -1758,8 +1759,8 @@ func TestGetItemReadsPerkPreferencesOnEachCall(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
-	f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [` +
+	f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+	f.service.Data["/artifacts/rolls.a.json"] = `{"rolls": [` +
 		`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[901]]}]}`
 
 	got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
@@ -1767,7 +1768,7 @@ func TestGetItemReadsPerkPreferencesOnEachCall(t *testing.T) {
 	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet (in HCs), 1 of 1 perk columns hit\n"+
 		"  Column 1: hit with Firefly (liked). The sheet picks Firefly\n")
 
-	f.serviceData[pathPrefs] = `{"preferences": [
+	f.service.Data[pathPrefs] = `{"preferences": [
 		{"mode": "pve", "perk": "Firefly", "stance": "down", "removed": false, "updatedAt": 6}
 	], "now": 11}`
 
@@ -1817,8 +1818,8 @@ func TestRatingToolsReadDefinitionsBeforeProfile(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
-			f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [` +
+			f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+			f.service.Data["/artifacts/rolls.a.json"] = `{"rolls": [` +
 				`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900]]}]}`
 			f.h.defs.defs = nil
 
@@ -1904,11 +1905,11 @@ func TestRatingSources(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.artifactFiles = tc.files
-			f.serviceData["/artifacts/rolls.a.json"] = sheet
+			f.service.ArtifactFiles = tc.files
+			f.service.Data["/artifacts/rolls.a.json"] = sheet
 
 			if tc.noPrefs {
-				delete(f.serviceData, pathPrefs)
+				delete(f.service.Data, pathPrefs)
 			}
 
 			defs := f.h.defs.defs
@@ -2522,8 +2523,8 @@ func TestCompareDuplicates(t *testing.T) {
 
 	// aegisOnly makes the service publish only the Aegis sheet.
 	aegisOnly := func(f *fakes) {
-		f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
-		f.serviceData["/artifacts/rolls.a.json"] = aegisSheet
+		f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+		f.service.Data["/artifacts/rolls.a.json"] = aegisSheet
 	}
 
 	// bothSheets makes the service publish the Aegis sheet and the PvP
@@ -2531,8 +2532,8 @@ func TestCompareDuplicates(t *testing.T) {
 	bothSheets := func(f *fakes) {
 		aegisOnly(f)
 
-		f.artifactFiles["pvprolls"] = []string{"pvprolls.a.json"}
-		f.serviceData["/artifacts/pvprolls.a.json"] = pvpSheet
+		f.service.ArtifactFiles["pvprolls"] = []string{"pvprolls.a.json"}
+		f.service.Data["/artifacts/pvprolls.a.json"] = pvpSheet
 	}
 
 	// fatebringer returns the table of the Fatebringer copies in the
@@ -2727,7 +2728,7 @@ func TestCompareDuplicates(t *testing.T) {
 				bothSheets(f)
 				killClipPlugSet(f.h.defs.defs)
 
-				f.serviceData["/artifacts/rolls.a.json"] = `{"rolls": [` +
+				f.service.Data["/artifacts/rolls.a.json"] = `{"rolls": [` +
 					`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900], [904]]}]}`
 			},
 			in:   CompareDuplicatesInput{Name: "fatebringer"},
@@ -2737,7 +2738,7 @@ func TestCompareDuplicates(t *testing.T) {
 		// whose sheet did not load never reads "not listed".
 		"name with a sheet that does not load": {
 			prepare: func(f *fakes) {
-				f.artifactFiles = map[string][]string{"rolls": {"rolls.x.json"}}
+				f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.x.json"}}
 			},
 			in: CompareDuplicatesInput{Name: "fatebringer"},
 			want: strings.Join(slices.Concat([]string{
@@ -2753,7 +2754,7 @@ func TestCompareDuplicates(t *testing.T) {
 		"name without the perk preferences": {
 			prepare: func(f *fakes) {
 				aegisOnly(f)
-				delete(f.serviceData, pathPrefs)
+				delete(f.service.Data, pathPrefs)
 			},
 			in: CompareDuplicatesInput{Name: "fatebringer"},
 			want: strings.Join(slices.Concat([]string{
@@ -3525,7 +3526,7 @@ func TestRefreshOnUnauthorized(t *testing.T) {
 
 	f := newFakes(t)
 	f.bungie.StaleAccess = "access-1"
-	f.staleSession = "session-1"
+	f.service.StaleSession = "session-1"
 
 	got, isError := call(t, f.h.handleListItems, ListItemsInput{Location: "vault"})
 	require.False(t, isError, got)
@@ -4127,7 +4128,7 @@ func TestStageJunk(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.serviceData[pathTags] = junkTags(t, tc.junk...)
+			f.service.Data[pathTags] = junkTags(t, tc.junk...)
 
 			s, err := f.h.loadSnapshot(t.Context(), false)
 			require.NoError(t, err)
@@ -4188,7 +4189,7 @@ func TestStageJunkLines(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.serviceData[pathTags] = junkTags(t, tc.junk...)
+			f.service.Data[pathTags] = junkTags(t, tc.junk...)
 
 			got, isError := call(t, f.h.handleStageJunk, StageJunkInput{Slot: "kinetic"})
 			assert.False(t, isError)
@@ -4218,13 +4219,13 @@ func TestStageJunkSnapshotAge(t *testing.T) {
 	require.False(t, isError)
 	assert.Equal(t, bungietest.Now, f.h.snapshot.Fetched, "a call without junk keeps the age of the snapshot")
 
-	f.serviceData[pathTags] = junkTags(t, "1001")
+	f.service.Data[pathTags] = junkTags(t, "1001")
 
 	_, isError = call(t, f.h.handleStageJunk, kinetic)
 	require.True(t, isError)
 	assert.Equal(t, bungietest.Now, f.h.snapshot.Fetched, "a refusal keeps the age of the snapshot")
 
-	f.serviceData[pathTags] = junkTags(t, "1001", "1003")
+	f.service.Data[pathTags] = junkTags(t, "1001", "1003")
 	f.bungie.ActionError = goneError
 
 	_, isError = call(t, f.h.handleStageJunk, kinetic)
@@ -4242,13 +4243,13 @@ func TestStageJunkReadsTags(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.serviceData[pathTags] = junkTags(t, "1001")
+	f.service.Data[pathTags] = junkTags(t, "1001")
 
 	got, isError := call(t, f.h.handleStageJunk, StageJunkInput{Slot: "kinetic"})
 	assert.True(t, isError)
 	assert.Equal(t, fixtureRefusal, got)
 
-	f.serviceData[pathTags] = junkTags(t, "1001", "1003")
+	f.service.Data[pathTags] = junkTags(t, "1001", "1003")
 
 	got, isError = call(t, f.h.handleStageJunk, StageJunkInput{Slot: "kinetic"})
 	assert.False(t, isError)
@@ -4262,7 +4263,7 @@ func TestStageJunkLoadError(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.serviceData[pathTags] = ""
+	f.service.Data[pathTags] = ""
 
 	got, isError := call(t, f.h.handleStageJunk, StageJunkInput{Slot: "kinetic"})
 	assert.True(t, isError)
@@ -5419,7 +5420,7 @@ func TestSetTagClearsRule(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.serviceData[pathTags] = tagRows(t, ItemTag{
+			f.service.Data[pathTags] = tagRows(t, ItemTag{
 				InstanceID: "1001",
 				ItemHash:   100,
 				TagID:      "keep",
@@ -5550,7 +5551,7 @@ func TestSetNote(t *testing.T) {
 
 			f := newFakes(t)
 			if tc.notes != "" {
-				f.serviceData[pathNotes] = tc.notes
+				f.service.Data[pathNotes] = tc.notes
 			}
 
 			got, isError := call(t, f.h.handleSetNote, tc.in)
@@ -5686,7 +5687,7 @@ func TestListAutotagRules(t *testing.T) {
 
 			f := newFakes(t)
 			if tc.autotag != "" {
-				f.serviceData[pathAutotag] = tc.autotag
+				f.service.Data[pathAutotag] = tc.autotag
 			}
 
 			got, isError := call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{})
@@ -6070,7 +6071,7 @@ func TestListAutotagRulesNew(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.serviceData[pathAutotag] = tc.autotag
+			f.service.Data[pathAutotag] = tc.autotag
 			addNewItemDefs(f.h.defs.defs)
 
 			helmet := f.h.defs.defs.Items[201]
@@ -6140,7 +6141,7 @@ func TestRunAutotagRules(t *testing.T) {
 	weapon := storedRule("r1", "is:weapon", "keep", 0, true)
 	weaponLine := `- 0. [enabled] "is:weapon": tag keep (id r1)`
 	thorn := []string{newThorn}
-	internal := answer{status: http.StatusInternalServerError, body: `{"error": "Internal error"}`}
+	internal := dvmtest.Answer{Status: http.StatusInternalServerError, Body: `{"error": "Internal error"}`}
 	keepRow := map[string]any{
 		"instanceId": "1008", "itemHash": float64(103), "tagId": "keep", "ruleId": "r1", "removed": false,
 	}
@@ -6212,7 +6213,7 @@ func TestRunAutotagRules(t *testing.T) {
 			autotag: autotagBody(weapon),
 			held:    thorn,
 			setup: func(f *fakes) {
-				f.serviceData[pathTags] = tagRows(t,
+				f.service.Data[pathTags] = tagRows(t,
 					ItemTag{InstanceID: "1008", ItemHash: 103, TagID: tagJunk, UpdatedAt: 5},
 					ItemTag{InstanceID: "1008", ItemHash: 103, TagID: tagFavorite, UpdatedAt: 5},
 				)
@@ -6286,7 +6287,7 @@ func TestRunAutotagRules(t *testing.T) {
 			},
 		},
 		"the autotag state is unreadable": {
-			setup: func(f *fakes) { delete(f.serviceData, pathAutotag) },
+			setup: func(f *fakes) { delete(f.service.Data, pathAutotag) },
 			want: []string{
 				"run_autotag_rules claimed nothing, because the server could not read the autotag state: " +
 					"service: GET /api/autotag?since=0 returned status 404: Not found",
@@ -6434,7 +6435,7 @@ func TestRunAutotagRules(t *testing.T) {
 		"the claim does not apply": {
 			autotag: autotagBody(weapon),
 			held:    thorn,
-			setup:   func(f *fakes) { f.claim = answer{status: http.StatusOK, body: `{"applied": false}`} },
+			setup:   func(f *fakes) { f.service.Claim = dvmtest.Answer{Status: http.StatusOK, Body: `{"applied": false}`} },
 			newest:  "00000000000000001008",
 			want: []string{
 				"The service did not apply the claim, so run_autotag_rules tagged nothing. " +
@@ -6446,7 +6447,7 @@ func TestRunAutotagRules(t *testing.T) {
 		"the claim does not apply with a vault rule": {
 			autotag: autotagBody(vaultRule("r1", "is:weapon", "junk", 0)),
 			held:    thorn,
-			setup:   func(f *fakes) { f.claim = answer{status: http.StatusOK, body: `{"applied": false}`} },
+			setup:   func(f *fakes) { f.service.Claim = dvmtest.Answer{Status: http.StatusOK, Body: `{"applied": false}`} },
 			newest:  "00000000000000001008",
 			want: []string{
 				"The service did not apply the claim, so run_autotag_rules tagged nothing. " +
@@ -6460,8 +6461,8 @@ func TestRunAutotagRules(t *testing.T) {
 			autotag: autotagBody(weapon),
 			held:    thorn,
 			setup: func(f *fakes) {
-				f.claim = internal
-				f.claimedAutotag = answer{status: http.StatusOK, body: autotagBody(weapon)}
+				f.service.Claim = internal
+				f.service.ClaimedAutotag = dvmtest.Answer{Status: http.StatusOK, Body: autotagBody(weapon)}
 			},
 			newest: "00000000000000001008",
 			want: []string{
@@ -6475,10 +6476,10 @@ func TestRunAutotagRules(t *testing.T) {
 			autotag: autotagBody(vaultRule("r1", "is:weapon", "junk", 0)),
 			held:    thorn,
 			setup: func(f *fakes) {
-				f.claim = internal
-				f.claimedAutotag = answer{
-					status: http.StatusOK,
-					body:   autotagBody(vaultRule("r1", "is:weapon", "junk", 0)),
+				f.service.Claim = internal
+				f.service.ClaimedAutotag = dvmtest.Answer{
+					Status: http.StatusOK,
+					Body:   autotagBody(vaultRule("r1", "is:weapon", "junk", 0)),
 				}
 			},
 			newest: "00000000000000001008",
@@ -6493,8 +6494,8 @@ func TestRunAutotagRules(t *testing.T) {
 			autotag: autotagBody(weapon),
 			held:    thorn,
 			setup: func(f *fakes) {
-				f.claim = internal
-				f.claimedAutotag = answer{status: http.StatusOK, body: `{"rules": [` + weapon + `], ` +
+				f.service.Claim = internal
+				f.service.ClaimedAutotag = dvmtest.Answer{Status: http.StatusOK, Body: `{"rules": [` + weapon + `], ` +
 					`"state": {"enabled": true, "mark": "00000000000000001008", "updatedAt": 6}}`}
 			},
 			newest: "00000000000000001008",
@@ -6515,8 +6516,8 @@ func TestRunAutotagRules(t *testing.T) {
 			autotag: autotagBody(vaultRule("r1", "is:weapon", "junk", 0)),
 			held:    []string{newThorn, boundFatebringer},
 			setup: func(f *fakes) {
-				f.claim = internal
-				f.claimedAutotag = answer{status: http.StatusOK, body: `{"rules": [], ` +
+				f.service.Claim = internal
+				f.service.ClaimedAutotag = dvmtest.Answer{Status: http.StatusOK, Body: `{"rules": [], ` +
 					`"state": {"enabled": true, "mark": "00000000000000001009", "updatedAt": 6}}`}
 			},
 			newest: "00000000000000001009",
@@ -6541,8 +6542,8 @@ func TestRunAutotagRules(t *testing.T) {
 			autotag: autotagBody(storedRule("r3", "is:weapon", "", 0, true)),
 			held:    thorn,
 			setup: func(f *fakes) {
-				f.claim = internal
-				f.claimedAutotag = answer{status: http.StatusOK, body: `{"rules": [], ` +
+				f.service.Claim = internal
+				f.service.ClaimedAutotag = dvmtest.Answer{Status: http.StatusOK, Body: `{"rules": [], ` +
 					`"state": {"enabled": true, "mark": "00000000000000001008", "updatedAt": 6}}`}
 			},
 			newest: "00000000000000001008",
@@ -6560,8 +6561,8 @@ func TestRunAutotagRules(t *testing.T) {
 			autotag: autotagBody(weapon),
 			held:    thorn,
 			setup: func(f *fakes) {
-				f.claim = internal
-				f.claimedAutotag = internal
+				f.service.Claim = internal
+				f.service.ClaimedAutotag = internal
 			},
 			newest: "00000000000000001008",
 			want: []string{
@@ -6581,8 +6582,8 @@ func TestRunAutotagRules(t *testing.T) {
 			autotag: autotagBody(vaultRule("r1", "is:weapon", "", 0)),
 			held:    thorn,
 			setup: func(f *fakes) {
-				f.claim = internal
-				f.claimedAutotag = internal
+				f.service.Claim = internal
+				f.service.ClaimedAutotag = internal
 			},
 			newest: "00000000000000001008",
 			want: []string{
@@ -6602,8 +6603,11 @@ func TestRunAutotagRules(t *testing.T) {
 			autotag: autotagBody(weapon),
 			held:    thorn,
 			setup: func(f *fakes) {
-				f.claim = internal
-				f.claimedAutotag = answer{status: http.StatusOK, body: `{"rules": [], "state": null, "now": 10}`}
+				f.service.Claim = internal
+				f.service.ClaimedAutotag = dvmtest.Answer{
+					Status: http.StatusOK,
+					Body:   `{"rules": [], "state": null, "now": 10}`,
+				}
 			},
 			newest: "00000000000000001008",
 			want: []string{
@@ -6621,7 +6625,7 @@ func TestRunAutotagRules(t *testing.T) {
 		"the tag write fails": {
 			autotag: autotagBody(weapon),
 			held:    thorn,
-			setup:   func(f *fakes) { f.tagWriteStatus = http.StatusInternalServerError },
+			setup:   func(f *fakes) { f.service.TagWriteStatus = http.StatusInternalServerError },
 			newest:  "00000000000000001008",
 			want: []string{
 				claimed,
@@ -6643,7 +6647,7 @@ func TestRunAutotagRules(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.serviceData[pathAutotag] = tc.autotag
+			f.service.Data[pathAutotag] = tc.autotag
 			addNewItemDefs(f.h.defs.defs)
 
 			if tc.sheet {
@@ -6668,7 +6672,7 @@ func TestRunAutotagRules(t *testing.T) {
 			assert.Equal(t, tc.isError, isError, got)
 			assert.Equal(t, strings.Join(tc.want, "\n"), got)
 
-			claims := f.claims()
+			claims := f.service.Claims()
 			if tc.newest == "" {
 				assert.Empty(t, claims, "nothing is claimed")
 			} else {
@@ -7014,7 +7018,7 @@ func TestRunAutotagRulesVault(t *testing.T) {
 		"the tag write fails": {
 			autotag: weaponJunk,
 			held:    []string{newThorn},
-			setup:   func(f *fakes) { f.tagWriteStatus = http.StatusInternalServerError },
+			setup:   func(f *fakes) { f.service.TagWriteStatus = http.StatusInternalServerError },
 			newest:  "00000000000000001008",
 			want: []string{
 				claimed,
@@ -7075,7 +7079,7 @@ func TestRunAutotagRulesVault(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.serviceData[pathAutotag] = tc.autotag
+			f.service.Data[pathAutotag] = tc.autotag
 			addNewItemDefs(f.h.defs.defs)
 
 			if tc.setup != nil {
@@ -7132,7 +7136,7 @@ func TestRunAutotagRulesVault(t *testing.T) {
 				assert.Equal(t, serviceWrites(f), at, "service writes before Bungie action %d", i)
 			}
 
-			claims := f.claims()
+			claims := f.service.Claims()
 			require.Len(t, claims, 1)
 			assert.Equal(t, map[string]any{
 				"kind": "claim", "from": "00000000000000001006", "to": tc.newest,
@@ -7199,7 +7203,7 @@ func TestListAutotagRulesReadErrors(t *testing.T) {
 		baseline func(t *testing.T, f *fakes) (string, bool)
 	}{
 		"the autotag state": {
-			setup:    func(f *fakes) { delete(f.serviceData, pathAutotag) },
+			setup:    func(f *fakes) { delete(f.service.Data, pathAutotag) },
 			baseline: listRules,
 		},
 		"the profile": {
@@ -7209,7 +7213,7 @@ func TestListAutotagRulesReadErrors(t *testing.T) {
 			baseline: listItems,
 		},
 		"the tags": {
-			setup:    func(f *fakes) { delete(f.serviceData, pathTags) },
+			setup:    func(f *fakes) { delete(f.service.Data, pathTags) },
 			baseline: listItems,
 		},
 	}
@@ -7460,7 +7464,7 @@ func TestListAutotagRulesOwned(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.serviceData[pathAutotag] = tc.autotag
+			f.service.Data[pathAutotag] = tc.autotag
 			f.bungie.ProfileBody = tc.profile
 
 			if tc.sheet {
@@ -7505,7 +7509,7 @@ func TestListAutotagRulesOwnedCachedProfile(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.serviceData[pathAutotag] = autotagBody(storedRule("r9", "is:weapon", "keep", 9, true))
+	f.service.Data[pathAutotag] = autotagBody(storedRule("r9", "is:weapon", "keep", 9, true))
 
 	_, isError := call(t, f.h.handleListCharacters, EmptyInput{})
 	require.False(t, isError)
@@ -7860,7 +7864,7 @@ func TestSaveAutotagRule(t *testing.T) {
 
 			f := newFakes(t)
 			if tc.autotag != "" {
-				f.serviceData[pathAutotag] = tc.autotag
+				f.service.Data[pathAutotag] = tc.autotag
 			}
 
 			got, isError := call(t, f.h.handleSaveAutotagRule, tc.in)
@@ -8161,17 +8165,17 @@ func TestPreviewTagKeep(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.serviceData[pathTags] = tagRows(t)
+	f.service.Data[pathTags] = tagRows(t)
 
 	_, _, rows := preview(t, f, "tag:keep")
 	assert.Empty(t, rows)
 
-	f.serviceData[pathTags] = tagRows(t, ItemTag{InstanceID: "1003", ItemHash: 102, TagID: "keep", UpdatedAt: 5})
+	f.service.Data[pathTags] = tagRows(t, ItemTag{InstanceID: "1003", ItemHash: 102, TagID: "keep", UpdatedAt: 5})
 
 	_, _, rows = preview(t, f, "tag:keep")
 	assert.Equal(t, []string{"1003"}, rows)
 
-	f.serviceData[pathTags] = tagRows(
+	f.service.Data[pathTags] = tagRows(
 		t,
 		ItemTag{InstanceID: "1003", ItemHash: 102, TagID: "keep", UpdatedAt: 6, Removed: true},
 	)
@@ -8187,7 +8191,7 @@ func TestPreviewFavorite(t *testing.T) {
 
 	favorite := ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagFavorite, UpdatedAt: 5}
 	junk := ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 5}
-	f.serviceData[pathTags] = tagRows(t, favorite, junk)
+	f.service.Data[pathTags] = tagRows(t, favorite, junk)
 
 	for _, query := range []string{"is:favorite", "tag:favorite", "tag:junk"} {
 		_, _, rows := preview(t, f, query)
@@ -8195,13 +8199,13 @@ func TestPreviewFavorite(t *testing.T) {
 	}
 
 	junk.Removed = true
-	f.serviceData[pathTags] = tagRows(t, favorite, junk)
+	f.service.Data[pathTags] = tagRows(t, favorite, junk)
 
 	_, _, rows := preview(t, f, "is:favorite")
 	assert.Equal(t, []string{"1003"}, rows)
 
 	favorite.Removed = true
-	f.serviceData[pathTags] = tagRows(t, favorite, junk)
+	f.service.Data[pathTags] = tagRows(t, favorite, junk)
 
 	_, _, rows = preview(t, f, "is:favorite")
 	assert.Empty(t, rows)
@@ -8609,7 +8613,7 @@ func TestPreviewAutotagged(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.serviceData[pathTags] = tagRows(t, ItemTag{
+	f.service.Data[pathTags] = tagRows(t, ItemTag{
 		InstanceID: "1003",
 		ItemHash:   102,
 		TagID:      tagJunk,
@@ -8621,7 +8625,7 @@ func TestPreviewAutotagged(t *testing.T) {
 	assert.Equal(t, []string{"1003"}, rows)
 
 	// A tag that a person sets carries no rule id.
-	f.serviceData[pathTags] = tagRows(t, ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 6})
+	f.service.Data[pathTags] = tagRows(t, ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 6})
 
 	_, _, rows = preview(t, f, "is:autotagged")
 	assert.Empty(t, rows)
@@ -8773,8 +8777,8 @@ const (
 // withAegisSheet makes the service of f publish previewAegisSheet as the
 // only roll sheet.
 func withAegisSheet(f *fakes) {
-	f.artifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
-	f.serviceData["/artifacts/rolls.a.json"] = previewAegisSheet
+	f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
+	f.service.Data["/artifacts/rolls.a.json"] = previewAegisSheet
 }
 
 // withBothSheets makes the service of f publish previewAegisSheet and
@@ -8782,8 +8786,8 @@ func withAegisSheet(f *fakes) {
 func withBothSheets(f *fakes) {
 	withAegisSheet(f)
 
-	f.artifactFiles["pvprolls"] = []string{"pvprolls.a.json"}
-	f.serviceData["/artifacts/pvprolls.a.json"] = previewPvPSheet
+	f.service.ArtifactFiles["pvprolls"] = []string{"pvprolls.a.json"}
+	f.service.Data["/artifacts/pvprolls.a.json"] = previewPvPSheet
 }
 
 // ratingRequests returns the paths of the requests of f for a roll sheet
@@ -9029,8 +9033,8 @@ func TestPreviewRatingModeMissing(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.artifactFiles = tc.files
-			f.serviceData["/artifacts/rolls.a.json"] = previewAegisSheet
+			f.service.ArtifactFiles = tc.files
+			f.service.Data["/artifacts/rolls.a.json"] = previewAegisSheet
 			f.bungie.ProfileBody = tc.profile
 
 			got, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: tc.query})
@@ -9344,8 +9348,8 @@ func statsFixture(t *testing.T) string {
 		return out
 	}
 
-	return statPageJSON(t, false,
-		testChunk{startsAt: 0, updatedAt: 1, changes: []map[string]any{
+	return dvmtest.StatPage(t, false,
+		dvmtest.Chunk{StartsAt: 0, UpdatedAt: 1, Changes: []map[string]any{
 			// Before the lookback of the period.
 			change("currency", bungietest.ItemGlimmer, 30, 0, 1_000),
 			change("currency", bungietest.ItemGlimmer, 23, 1_000, 2_000),
@@ -9353,7 +9357,7 @@ func statsFixture(t *testing.T) string {
 			kills("9999", 102, bungietest.TrackerGambit, 6, 0, 20),
 			kills("1001", 100, bungietest.TrackerPvE, 5, 100, 110),
 		}},
-		testChunk{startsAt: 300_000, updatedAt: 2, changes: []map[string]any{
+		dvmtest.Chunk{StartsAt: 300_000, UpdatedAt: 2, Changes: []map[string]any{
 			// A stale recorder logged the gain from 1000.
 			change("currency", bungietest.ItemGlimmer, 21, 1_000, 1_700),
 			change("stack", 300, 4, 40, 52),
@@ -9376,7 +9380,7 @@ func TestGetStats(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.serviceData[pathStats] = statsFixture(t)
+	f.service.Data[pathStats] = statsFixture(t)
 
 	got, isError := call(t, f.h.handleGetStats, GetStatsInput{})
 	require.False(t, isError, got)
@@ -9436,7 +9440,7 @@ func TestGetStatsPeriods(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.serviceData[pathStats] = statsFixture(t)
+			f.service.Data[pathStats] = statsFixture(t)
 
 			got, isError := call(t, f.h.handleGetStats, GetStatsInput{Period: tc.period})
 			require.False(t, isError, got)
@@ -9480,7 +9484,7 @@ func TestGetStatsEmpty(t *testing.T) {
 			t.Parallel()
 
 			f := newFakes(t)
-			f.serviceData[pathStats] = statPageJSON(t, false)
+			f.service.Data[pathStats] = dvmtest.StatPage(t, false)
 
 			got, isError := call(t, f.h.handleGetStats, GetStatsInput{Period: tc.period})
 			require.False(t, isError, got)
@@ -9497,8 +9501,8 @@ func TestGetStatsRefreshesSession(t *testing.T) {
 	t.Parallel()
 
 	f := newFakes(t)
-	f.serviceData[pathStats] = statsFixture(t)
-	f.staleSession = "session-1"
+	f.service.Data[pathStats] = statsFixture(t)
+	f.service.StaleSession = "session-1"
 
 	got, isError := call(t, f.h.handleGetStats, GetStatsInput{})
 	require.False(t, isError, got)
@@ -9525,7 +9529,7 @@ func TestGetStatsErrors(t *testing.T) {
 	assert.Empty(t, f.service.All())
 	assert.Empty(t, f.bungie.All())
 
-	f.serviceData[pathStats] = `{"chunks": [{"startsAt": 0, "endsAt": 300000, "updatedAt": 1, "body": "{}"}], "more": false}`
+	f.service.Data[pathStats] = `{"chunks": [{"startsAt": 0, "endsAt": 300000, "updatedAt": 1, "body": "{}"}], "more": false}`
 
 	got, isError = call(t, f.h.handleGetStats, GetStatsInput{})
 	assert.True(t, isError)
