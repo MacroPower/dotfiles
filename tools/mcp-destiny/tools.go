@@ -841,12 +841,8 @@ func (h *handler) handleMoveItems(
 		if err != nil {
 			failed++
 
-			h.log.WarnContext(ctx, "move failed",
-				slog.String("instance_id", item.InstanceID),
-				slog.Any("error", err),
-			)
-			fmt.Fprintf(&b, "- %s (%s) did not move: %v. It is at %s.",
-				item.Name, item.InstanceID, err, s.LocationLabel(item))
+			h.logMoveFailure(ctx, item, err)
+			b.WriteString("- " + moveFailure(s, item, err))
 		} else {
 			fmt.Fprintf(&b, "- %s %s (%s). It is at %s.", verb, item.Name, item.InstanceID, s.LocationLabel(item))
 		}
@@ -977,13 +973,9 @@ func (h *handler) handleStageJunk(
 		}
 
 		if err != nil {
-			h.log.WarnContext(ctx, "move failed",
-				slog.String("instance_id", item.InstanceID),
-				slog.Any("error", err),
-			)
+			h.logMoveFailure(ctx, item, err)
 
-			failures = append(failures, fmt.Sprintf("- %s (%s) did not move: %v. It is at %s.",
-				item.Name, item.InstanceID, err, s.LocationLabel(item)))
+			failures = append(failures, "- "+moveFailure(s, item, err))
 		}
 	}
 
@@ -2171,16 +2163,22 @@ func (h *handler) moveToVault(
 		if err != nil {
 			v.Err = err
 
-			h.log.WarnContext(ctx, "move failed",
-				slog.String("instance_id", v.Item.InstanceID),
-				slog.Any("error", err),
-			)
+			h.logMoveFailure(ctx, v.Item, err)
 		}
 	}
 
 	if changed {
 		s.Fetched = h.now()
 	}
+}
+
+// logMoveFailure logs a warning for a move of item that returned err. The
+// entry holds the instance id of item and err.
+func (h *handler) logMoveFailure(ctx context.Context, item *inventory.Item, err error) {
+	h.log.WarnContext(ctx, "move failed",
+		slog.String("instance_id", item.InstanceID),
+		slog.Any("error", err),
+	)
 }
 
 // claimFailure returns the text of a claim request that returned err. The

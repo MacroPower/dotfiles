@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -3959,6 +3960,61 @@ func TestMoveItemsErrors(t *testing.T) {
 
 			got, isError := call(t, f.h.handleMoveItems, tc.in)
 			assert.True(t, isError)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestLogMoveFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		moveErr error
+		item    *inventory.Item
+		want    map[string]any
+	}{
+		"transfer refused": {
+			item:    &inventory.Item{Name: "Fatebringer", InstanceID: "1001"},
+			moveErr: fmt.Errorf("transferring to Hunter: %w", bungietest.ErrStep),
+			want: map[string]any{
+				"level":       "WARN",
+				"msg":         "move failed",
+				"instance_id": "1001",
+				"error":       "transferring to Hunter: step refused",
+			},
+		},
+		"pull refused": {
+			item:    &inventory.Item{Name: "Thorn", InstanceID: "1008"},
+			moveErr: fmt.Errorf("pulling from the Postmaster: %w", bungietest.ErrStep),
+			want: map[string]any{
+				"level":       "WARN",
+				"msg":         "move failed",
+				"instance_id": "1008",
+				"error":       "pulling from the Postmaster: step refused",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+
+			h := &handler{log: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{
+				ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+					if len(groups) == 0 && a.Key == slog.TimeKey {
+						return slog.Attr{}
+					}
+
+					return a
+				},
+			}))}
+
+			h.logMoveFailure(t.Context(), tc.item, tc.moveErr)
+
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
 			assert.Equal(t, tc.want, got)
 		})
 	}

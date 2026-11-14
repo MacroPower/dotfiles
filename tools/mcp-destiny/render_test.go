@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -461,6 +462,41 @@ func TestListWithAnd(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, tc.want, listWithAnd(tc.words))
+		})
+	}
+}
+
+func TestMoveFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		moveErr    error
+		instanceID string
+		want       string
+	}{
+		"item in the vault": {
+			instanceID: "1001",
+			moveErr:    fmt.Errorf("transferring to Hunter: %w", bungietest.ErrStep),
+			want:       "Fatebringer (1001) did not move: transferring to Hunter: step refused. It is at Vault.",
+		},
+		"item equipped on a character": {
+			instanceID: "1006",
+			moveErr:    fmt.Errorf("transferring to the vault: %w", bungietest.ErrStep),
+			want: "Fatebringer (1006) did not move: transferring to the vault: step refused. " +
+				"It is at Hunter (equipped).",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := inventorytest.Snapshot(t)
+
+			item, ok := s.Find(tc.instanceID)
+			require.True(t, ok)
+
+			assert.Equal(t, tc.want, moveFailure(s, item, tc.moveErr))
 		})
 	}
 }

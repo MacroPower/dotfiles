@@ -1826,8 +1826,7 @@ func writeVaultMoves(b *strings.Builder, s *inventory.Snapshot, items []autotag.
 				v.Item.Name, v.Item.InstanceID, s.LocationLabel(v.Item), v.Reason))
 
 		case v.Err != nil:
-			failed = append(failed, fmt.Sprintf("  - %s (%s) did not move: %v. It is at %s.",
-				v.Item.Name, v.Item.InstanceID, v.Err, s.LocationLabel(v.Item)))
+			failed = append(failed, "  - "+moveFailure(s, v.Item, v.Err))
 
 		default:
 			moved = append(moved, fmt.Sprintf("  - %s (%s)", v.Item.Name, v.Item.InstanceID))
@@ -1848,6 +1847,15 @@ func writeVaultMoves(b *strings.Builder, s *inventory.Snapshot, items []autotag.
 
 		fmt.Fprintf(b, "\n%s: %d\n%s\n", part.head, len(part.lines), strings.Join(part.lines, "\n"))
 	}
+}
+
+// moveFailure returns the sentence that reports a move of item that
+// returned err. The sentence names the item, the error, and the location
+// of the item in s after the move. It has no list prefix, so each caller
+// adds the prefix of its own list.
+func moveFailure(s *inventory.Snapshot, item *inventory.Item, err error) string {
+	return fmt.Sprintf("%s (%s) did not move: %v. It is at %s.",
+		item.Name, item.InstanceID, err, s.LocationLabel(item))
 }
 
 // renderUnsureClaim renders the result of a run_autotag_rules call whose
