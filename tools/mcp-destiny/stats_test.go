@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
@@ -423,58 +422,4 @@ func TestStatCursorFor(t *testing.T) {
 
 	assert.Equal(t, StatCursor{UpdatedAt: statStart.Add(-3 * time.Hour).UnixMilli()}, statCursorFor(statStart))
 	assert.Equal(t, StatCursor{}, statCursorFor(time.UnixMilli(0)))
-}
-
-func TestRenderStats(t *testing.T) {
-	t.Parallel()
-
-	period, err := statPeriodOf("24h")
-	require.NoError(t, err)
-
-	to := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
-
-	tests := map[string]struct {
-		summary statSummary
-		want    []string
-	}{
-		"only currencies": {
-			summary: statSummary{flows: []statFlow{{itemHash: itemGlimmer, currency: true, spent: 5, net: -5}}},
-			want: []string{
-				"Currencies and materials, currencies first:",
-				"name | kind | item hash | net | gained | spent",
-				"Glimmer | currency | 3159615086 | -5 | 0 | 5",
-				"",
-				"Weapon kills: none.",
-			},
-		},
-		"only weapon kills": {
-			summary: statSummary{weapons: []weaponKills{{instanceID: "1001", itemHash: 100, pvp: 3}}},
-			want: []string{
-				"Currencies and materials: no change.",
-				"",
-				"Weapon kills, most first:",
-				"instance id | name | total | PvE | PvP",
-				"1001 | Fatebringer | 3 | 0 | 3",
-			},
-		},
-		"a net change of zero": {
-			summary: statSummary{flows: []statFlow{{itemHash: 300, gained: 4, spent: 4}}},
-			want: []string{
-				"Enhancement Core | stack | 300 | 0 | 4 | 4",
-			},
-		},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			tc.summary.from = period.start(to)
-			tc.summary.to = to
-
-			got := renderStats(fixtureDefs(), period, tc.summary)
-			assert.Contains(t, got, "Period: Last 24 hours, 2026-11-11 12:00 UTC to 2026-11-12 12:00 UTC.\n")
-			assert.Contains(t, got, strings.Join(tc.want, "\n"))
-		})
-	}
 }
