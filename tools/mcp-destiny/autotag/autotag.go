@@ -1,4 +1,4 @@
-package main
+package autotag
 
 import (
 	"cmp"
@@ -26,12 +26,12 @@ func markOf(instanceID string) string {
 	return strings.Repeat("0", max(markDigits-len(instanceID), 0)) + instanceID
 }
 
-// newestMark returns the highest [markOf] among the items of s that the
+// NewestMark returns the highest [markOf] among the items of s that the
 // web client treats as acquired drops, which are the items of
 // [search.OwnedItems]. The web client treats every such item with a higher
 // mark as newly acquired. An inventory without such an item gives the mark
 // of zeros.
-func newestMark(s *inventory.Snapshot) string {
+func NewestMark(s *inventory.Snapshot) string {
 	newest := markOf("")
 
 	for _, item := range search.OwnedItems(s) {
@@ -44,12 +44,12 @@ func newestMark(s *inventory.Snapshot) string {
 	return newest
 }
 
-// newItems returns the items of s in [search.OwnedItems] whose [markOf] is
+// NewItems returns the items of s in [search.OwnedItems] whose [markOf] is
 // higher than mark, which the next claim covers. The first list holds the
 // items outside the vault, which the claim offers to the autotag rules.
 // The second list holds the items in the vault. Both lists follow the
 // order of [inventory.CompareIDs].
-func newItems(s *inventory.Snapshot, mark string) ([]*inventory.Item, []*inventory.Item) {
+func NewItems(s *inventory.Snapshot, mark string) ([]*inventory.Item, []*inventory.Item) {
 	var held, vault []*inventory.Item
 
 	for _, item := range search.OwnedItems(s) {
@@ -70,9 +70,9 @@ func newItems(s *inventory.Snapshot, mark string) ([]*inventory.Item, []*invento
 	return held, vault
 }
 
-// liveRules drops the removed rules and returns the rest in evaluation
+// LiveRules drops the removed rules and returns the rest in evaluation
 // order.
-func liveRules(rules []dvm.AutotagRule) []dvm.AutotagRule {
+func LiveRules(rules []dvm.AutotagRule) []dvm.AutotagRule {
 	live := slices.DeleteFunc(slices.Clone(rules), func(rule dvm.AutotagRule) bool { return rule.Removed })
 
 	slices.SortStableFunc(live, func(a, b dvm.AutotagRule) int { return cmp.Compare(a.Position, b.Position) })
@@ -80,40 +80,40 @@ func liveRules(rules []dvm.AutotagRule) []dvm.AutotagRule {
 	return live
 }
 
-// ruleClass tells what the server knows about one autotag rule before it
+// RuleClass tells what the server knows about one autotag rule before it
 // reads any item.
-type ruleClass uint8
+type RuleClass uint8
 
-// The classes of a [ruleEval].
+// The classes of a [RuleEval].
 const (
-	// ruleEvaluated marks a rule whose query the server evaluates.
-	ruleEvaluated ruleClass = iota
-	// ruleSkipped marks a rule that the web client skips, so the rule
+	// RuleEvaluated marks a rule whose query the server evaluates.
+	RuleEvaluated RuleClass = iota
+	// RuleSkipped marks a rule that the web client skips, so the rule
 	// takes no item.
-	ruleSkipped
-	// ruleBlocked marks a rule that the web client runs, or might run,
+	RuleSkipped
+	// RuleBlocked marks a rule that the web client runs, or might run,
 	// and that the server cannot evaluate. The server then cannot tell
 	// which items the rule takes, and so which items reach the later
 	// rules.
-	ruleBlocked
+	RuleBlocked
 )
 
-// ruleEval is the class of one live autotag rule before any item. A
+// RuleEval is the class of one live autotag rule before any item. A
 // skipped rule and a blocked rule carry the reason of the class, and an
 // evaluated rule carries the test of its query. The class ignores whether
 // the rule is enabled.
-type ruleEval struct {
-	// test is the test of the compiled query of an evaluated rule. It is
+type RuleEval struct {
+	// Test is the test of the compiled query of an evaluated rule. It is
 	// nil for the other classes.
-	test func(*inventory.Item) search.Outcome
-	// reason is the skip reason of a skipped rule or the block reason of
+	Test func(*inventory.Item) search.Outcome
+	// Reason is the skip reason of a skipped rule or the block reason of
 	// a blocked rule. It is empty for an evaluated rule.
-	reason string
-	rule   dvm.AutotagRule
-	class  ruleClass
+	Reason string
+	Rule   dvm.AutotagRule
+	Class  RuleClass
 }
 
-// evalRules returns the [ruleEval] of each rule of rules, in the same
+// EvalRules returns the [RuleEval] of each rule of rules, in the same
 // order. It classifies a rule by the first problem of its query. The
 // problems come in this order: a parse error, a value that the web client
 // rejects, a term that the server does not evaluate, and a game mode
@@ -124,29 +124,29 @@ type ruleEval struct {
 // The tests of the evaluated rules share one search context over every
 // built item of s, the vault included, as the web client passes every item
 // to its filters. Sources returns the [rolls.RatingSource] of each game mode.
-// evalRules calls sources one time, and only when a rule of rules without
+// EvalRules calls sources one time, and only when a rule of rules without
 // an earlier problem reads a game mode.
-func evalRules(
+func EvalRules(
 	s *inventory.Snapshot,
 	rules []dvm.AutotagRule,
 	sources func() map[string]rolls.RatingSource,
-) []ruleEval {
-	evals := make([]ruleEval, len(rules))
+) []RuleEval {
+	evals := make([]RuleEval, len(rules))
 	queries := make([]search.CompiledQuery, len(rules))
 	rated := false
 
 	for i, rule := range rules {
-		evals[i].rule = rule
+		evals[i].Rule = rule
 
 		root, err := search.ParseQuery(rule.Query)
 		if err != nil {
 			var queryErr *search.QueryError
 			if errors.As(err, &queryErr) && queryErr.WebClientRuns() {
-				evals[i].class = ruleBlocked
-				evals[i].reason = "the web client runs this rule, and the server cannot evaluate it: " + err.Error()
+				evals[i].Class = RuleBlocked
+				evals[i].Reason = "the web client runs this rule, and the server cannot evaluate it: " + err.Error()
 			} else {
-				evals[i].class = ruleSkipped
-				evals[i].reason = err.Error()
+				evals[i].Class = RuleSkipped
+				evals[i].Reason = err.Error()
 			}
 
 			continue
@@ -156,12 +156,12 @@ func evalRules(
 
 		switch {
 		case len(query.Invalid) > 0:
-			evals[i].class = ruleSkipped
-			evals[i].reason = "the web client rejects " + strings.Join(query.Invalid, ", ")
+			evals[i].Class = RuleSkipped
+			evals[i].Reason = "the web client rejects " + strings.Join(query.Invalid, ", ")
 
 		case len(query.Unsupported) > 0:
-			evals[i].class = ruleBlocked
-			evals[i].reason = "the server does not evaluate " + strings.Join(query.Unsupported, ", ")
+			evals[i].Class = RuleBlocked
+			evals[i].Reason = "the server does not evaluate " + strings.Join(query.Unsupported, ", ")
 
 		default:
 			queries[i] = query
@@ -178,89 +178,89 @@ func evalRules(
 	sctx := search.NewContext(s, current, ratings)
 
 	for i := range evals {
-		if evals[i].class != ruleEvaluated {
+		if evals[i].Class != RuleEvaluated {
 			continue
 		}
 
 		reason := queries[i].UnratedReason(ratings)
 		if reason != "" {
-			evals[i].class = ruleBlocked
-			evals[i].reason = reason
+			evals[i].Class = RuleBlocked
+			evals[i].Reason = reason
 
 			continue
 		}
 
-		evals[i].test = queries[i].Test(sctx)
+		evals[i].Test = queries[i].Test(sctx)
 	}
 
 	return evals
 }
 
-// newMatches is what [firstMatch] gives the new items. Each list follows
-// the order of the items that firstMatch reads.
-type newMatches struct {
-	// taken holds the items that each rule takes, at the index of its
-	// [ruleEval].
-	taken [][]*inventory.Item
-	// undecided holds the items that an enabled rule leaves undecided
+// NewMatches is what [FirstMatch] gives the new items. Each list follows
+// the order of the items that FirstMatch reads.
+type NewMatches struct {
+	// Taken holds the items that each rule takes, at the index of its
+	// [RuleEval].
+	Taken [][]*inventory.Item
+	// Undecided holds the items that an enabled rule leaves undecided
 	// before any rule matches them.
-	undecided []undecidedAt
-	// reaching holds the items that reach the first enabled rule that
+	Undecided []UndecidedAt
+	// Reaching holds the items that reach the first enabled rule that
 	// blocks.
-	reaching []*inventory.Item
-	// untaken holds the items that no rule takes. It is empty when an
+	Reaching []*inventory.Item
+	// Untaken holds the items that no rule takes. It is empty when an
 	// enabled rule blocks.
-	untaken []*inventory.Item
-	// blocked is the index of the [ruleEval] of the first enabled rule
+	Untaken []*inventory.Item
+	// Blocked is the index of the [RuleEval] of the first enabled rule
 	// that blocks, or -1 when no enabled rule blocks.
-	blocked int
-	// offered is the number of items that firstMatch reads.
-	offered int
+	Blocked int
+	// Offered is the number of items that FirstMatch reads.
+	Offered int
 }
 
-// undecidedAt is a new item that an enabled rule leaves undecided, with
-// the index of the [ruleEval] of the rule and the reasons of the outcome.
-type undecidedAt struct {
-	item    *inventory.Item
-	reasons []string
-	rule    int
+// UndecidedAt is a new item that an enabled rule leaves undecided, with
+// the index of the [RuleEval] of the rule and the reasons of the outcome.
+type UndecidedAt struct {
+	Item    *inventory.Item
+	Reasons []string
+	Rule    int
 }
 
-// firstMatch gives each item of items to the first enabled rule of evals,
+// FirstMatch gives each item of items to the first enabled rule of evals,
 // in order, whose query matches the item, as the web client does. For
 // each item, it walks the enabled rules. It passes a skipped rule, and it
 // stops at a blocked rule, because that rule might take the item. It
 // stops at a rule that leaves the item undecided, because that rule might
 // take the item too.
-func firstMatch(evals []ruleEval, items []*inventory.Item) newMatches {
-	m := newMatches{
-		taken:   make([][]*inventory.Item, len(evals)),
-		blocked: slices.IndexFunc(evals, func(e ruleEval) bool { return e.rule.Enabled && e.class == ruleBlocked }),
-		offered: len(items),
+func FirstMatch(evals []RuleEval, items []*inventory.Item) NewMatches {
+	m := NewMatches{
+		Taken:   make([][]*inventory.Item, len(evals)),
+		Blocked: slices.IndexFunc(evals, func(e RuleEval) bool { return e.Rule.Enabled && e.Class == RuleBlocked }),
+		Offered: len(items),
 	}
 
 	walked := evals
-	if m.blocked >= 0 {
-		walked = evals[:m.blocked]
+	if m.Blocked >= 0 {
+		walked = evals[:m.Blocked]
 	}
 
 items:
 	for _, item := range items {
 		for i, e := range walked {
-			if !e.rule.Enabled || e.class != ruleEvaluated {
+			if !e.Rule.Enabled || e.Class != RuleEvaluated {
 				continue
 			}
 
-			got := e.test(item)
+			got := e.Test(item)
 
 			switch got.State {
 			case search.Match:
-				m.taken[i] = append(m.taken[i], item)
+				m.Taken[i] = append(m.Taken[i], item)
 
 				continue items
 
 			case search.Undecided:
-				m.undecided = append(m.undecided, undecidedAt{item: item, reasons: got.Reasons, rule: i})
+				m.Undecided = append(m.Undecided, UndecidedAt{Item: item, Reasons: got.Reasons, Rule: i})
 
 				continue items
 
@@ -268,36 +268,36 @@ items:
 			}
 		}
 
-		if m.blocked >= 0 {
-			m.reaching = append(m.reaching, item)
+		if m.Blocked >= 0 {
+			m.Reaching = append(m.Reaching, item)
 		} else {
-			m.untaken = append(m.untaken, item)
+			m.Untaken = append(m.Untaken, item)
 		}
 	}
 
 	return m
 }
 
-// ruleCount is what [ownedCounts] gives one live rule.
-type ruleCount struct {
-	// reasons holds each distinct reason of the undecided items, in the
+// RuleCount is what [OwnedCounts] gives one live rule.
+type RuleCount struct {
+	// Reasons holds each distinct reason of the undecided items, in the
 	// order of the items.
-	reasons []string
-	eval    ruleEval
-	// matches is the number of items that the rule matches among the
+	Reasons []string
+	Eval    RuleEval
+	// Matches is the number of items that the rule matches among the
 	// items that no earlier enabled rule took.
-	matches int
-	// undecided is the number of those items whose outcome the server
+	Matches int
+	// Undecided is the number of those items whose outcome the server
 	// cannot decide.
-	undecided int
-	// unknown marks an evaluated or blocked rule after an enabled rule
+	Undecided int
+	// Unknown marks an evaluated or blocked rule after an enabled rule
 	// that blocks or that leaves an item undecided. The server then
 	// cannot tell which items reach the rule, so it counts nothing for
 	// the rule.
-	unknown bool
+	Unknown bool
 }
 
-// ownedCounts counts the items of items that each rule of evals matches,
+// OwnedCounts counts the items of items that each rule of evals matches,
 // as the rule editor of the web client counts them. It walks the rules in
 // order and counts each evaluated rule over the items that no earlier
 // enabled rule took. An enabled rule then takes the items that it
@@ -305,28 +305,28 @@ type ruleCount struct {
 // nothing and takes nothing, wherever it stands.
 //
 // The server cannot tell which items an enabled rule takes when the rule
-// blocks or leaves an item undecided. ownedCounts therefore marks each
+// blocks or leaves an item undecided. OwnedCounts therefore marks each
 // later rule of the evaluated or the blocked class as unknown.
-func ownedCounts(evals []ruleEval, items []*inventory.Item) []ruleCount {
-	counts := make([]ruleCount, len(evals))
+func OwnedCounts(evals []RuleEval, items []*inventory.Item) []RuleCount {
+	counts := make([]RuleCount, len(evals))
 	taken := map[string]bool{}
 	unknown := false
 
 	for i, e := range evals {
 		c := &counts[i]
-		c.eval = e
+		c.Eval = e
 
 		switch {
-		case e.class == ruleSkipped:
+		case e.Class == RuleSkipped:
 			continue
 
 		case unknown:
-			c.unknown = true
+			c.Unknown = true
 
 			continue
 
-		case e.class == ruleBlocked:
-			unknown = e.rule.Enabled
+		case e.Class == RuleBlocked:
+			unknown = e.Rule.Enabled
 
 			continue
 		}
@@ -338,30 +338,30 @@ func ownedCounts(evals []ruleEval, items []*inventory.Item) []ruleCount {
 				continue
 			}
 
-			got := e.test(item)
+			got := e.Test(item)
 
 			switch got.State {
 			case search.Match:
 				matched = append(matched, item.InstanceID)
 			case search.Undecided:
-				c.undecided++
+				c.Undecided++
 
 				for _, reason := range got.Reasons {
-					c.reasons = appendNew(c.reasons, reason)
+					c.Reasons = appendNew(c.Reasons, reason)
 				}
 
 			case search.NoMatch:
 			}
 		}
 
-		c.matches = len(matched)
+		c.Matches = len(matched)
 
-		if e.rule.Enabled {
+		if e.Rule.Enabled {
 			for _, id := range matched {
 				taken[id] = true
 			}
 
-			unknown = c.undecided > 0
+			unknown = c.Undecided > 0
 		}
 	}
 
@@ -377,73 +377,73 @@ func appendNew(terms []string, term string) []string {
 	return append(terms, term)
 }
 
-// ruleTag is one new item that an enabled rule with a tag takes.
-type ruleTag struct {
-	item *inventory.Item
-	rule dvm.AutotagRule
+// RuleTag is one new item that an enabled rule with a tag takes.
+type RuleTag struct {
+	Item *inventory.Item
+	Rule dvm.AutotagRule
 }
 
-// ruleTags returns each new item of m that a rule with a tag takes, in
+// RuleTags returns each new item of m that a rule with a tag takes, in
 // rule order and then in the order of the items. A rule without a tag
 // takes its items and tags none of them.
-func ruleTags(evals []ruleEval, m newMatches) []ruleTag {
-	var tags []ruleTag
+func RuleTags(evals []RuleEval, m NewMatches) []RuleTag {
+	var tags []RuleTag
 
 	for i, e := range evals {
-		if e.rule.TagID == "" {
+		if e.Rule.TagID == "" {
 			continue
 		}
 
-		for _, item := range m.taken[i] {
-			tags = append(tags, ruleTag{item: item, rule: e.rule})
+		for _, item := range m.Taken[i] {
+			tags = append(tags, RuleTag{Item: item, Rule: e.Rule})
 		}
 	}
 
 	return tags
 }
 
-// vaultItem is one new item that an enabled rule with the vault flag
+// VaultItem is one new item that an enabled rule with the vault flag
 // takes. Rule is the rule that takes the item. Reason keeps the item in
-// place, as [vaultBlock] gives it, and is empty for an item that
+// place, as [VaultBlock] gives it, and is empty for an item that
 // run_autotag_rules moves to the vault. Err is the error of a move that
 // failed. It is nil after a move that succeeded and for an item with a
 // reason.
-type vaultItem struct {
-	item   *inventory.Item
-	err    error
-	reason string
-	rule   dvm.AutotagRule
+type VaultItem struct {
+	Item   *inventory.Item
+	Err    error
+	Reason string
+	Rule   dvm.AutotagRule
 }
 
-// vaultItems returns the new items of m that the rules of evals with the
+// VaultItems returns the new items of m that the rules of evals with the
 // vault flag take, in the order of [inventory.CompareIDs], each with its
-// rule and the reason of [vaultBlock]. Defs holds the definition of each
+// rule and the reason of [VaultBlock]. Defs holds the definition of each
 // item.
-func vaultItems(evals []ruleEval, m newMatches, defs *definitions.Defs) []vaultItem {
-	var vaulted []vaultItem
+func VaultItems(evals []RuleEval, m NewMatches, defs *definitions.Defs) []VaultItem {
+	var vaulted []VaultItem
 
 	for i, e := range evals {
-		if !e.rule.Vault {
+		if !e.Rule.Vault {
 			continue
 		}
 
-		for _, item := range m.taken[i] {
-			vaulted = append(vaulted, vaultItem{
-				item:   item,
-				reason: vaultBlock(item, defs.Items[item.Hash]),
-				rule:   e.rule,
+		for _, item := range m.Taken[i] {
+			vaulted = append(vaulted, VaultItem{
+				Item:   item,
+				Reason: VaultBlock(item, defs.Items[item.Hash]),
+				Rule:   e.Rule,
 			})
 		}
 	}
 
-	slices.SortStableFunc(vaulted, func(a, b vaultItem) int {
-		return inventory.CompareIDs(a.item.InstanceID, b.item.InstanceID)
+	slices.SortStableFunc(vaulted, func(a, b VaultItem) int {
+		return inventory.CompareIDs(a.Item.InstanceID, b.Item.InstanceID)
 	})
 
 	return vaulted
 }
 
-// vaultBlock returns the reason that keeps item in place when an autotag
+// VaultBlock returns the reason that keeps item in place when an autotag
 // rule with the vault flag takes it. It returns an empty string for an
 // item that run_autotag_rules moves to the vault. Def is the definition of
 // the item.
@@ -459,9 +459,9 @@ func vaultItems(evals []ruleEval, m newMatches, defs *definitions.Defs) []vaultI
 // [inventory.Item.Transferable] also reads the definition and every
 // transfer status with the NotTransferrable bit, and
 // [inventory.Snapshot.Move] refuses an item that it does not mark.
-// vaultBlock leaves such an item in place with a reason of its own, which
+// VaultBlock leaves such an item in place with a reason of its own, which
 // says that the web client tries the transfer.
-func vaultBlock(item *inventory.Item, def definitions.ItemDef) string {
+func VaultBlock(item *inventory.Item, def definitions.ItemDef) string {
 	switch {
 	case item.Equipped:
 		return "it is equipped"

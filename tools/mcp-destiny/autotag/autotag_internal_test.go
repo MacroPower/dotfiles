@@ -1,4 +1,4 @@
-package main
+package autotag
 
 import (
 	"testing"
@@ -52,11 +52,11 @@ func TestNewestMark(t *testing.T) {
 				s.Add(item)
 			}
 
-			assert.Equal(t, tc.want, newestMark(s))
+			assert.Equal(t, tc.want, NewestMark(s))
 		})
 	}
 
-	assert.Equal(t, "00000000000000000000", newestMark(&inventory.Snapshot{}))
+	assert.Equal(t, "00000000000000000000", NewestMark(&inventory.Snapshot{}))
 }
 
 func TestNewItems(t *testing.T) {
@@ -103,7 +103,7 @@ func TestNewItems(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			held, vault := newItems(s, tc.mark)
+			held, vault := NewItems(s, tc.mark)
 
 			ids := func(items []*inventory.Item) []string {
 				var out []string
@@ -159,7 +159,7 @@ func TestEvalRulesSources(t *testing.T) {
 				return nil
 			}
 
-			evals := evalRules(inventorytest.Snapshot(t), rules, sources)
+			evals := EvalRules(inventorytest.Snapshot(t), rules, sources)
 			require.Len(t, evals, len(rules))
 			assert.Equal(t, tc.want, calls)
 		})
@@ -184,12 +184,12 @@ func TestOwnedCounts(t *testing.T) {
 		}
 	}
 
-	got := ownedCounts([]ruleEval{{test: test, rule: dvm.AutotagRule{Enabled: false}}}, items)
+	got := OwnedCounts([]RuleEval{{Test: test, Rule: dvm.AutotagRule{Enabled: false}}}, items)
 	require.Len(t, got, 1)
-	assert.Equal(t, 1, got[0].matches)
-	assert.Equal(t, 2, got[0].undecided)
-	assert.Equal(t, []string{"b", "a"}, got[0].reasons, "each reason once, in the order of the items")
-	assert.False(t, got[0].unknown)
+	assert.Equal(t, 1, got[0].Matches)
+	assert.Equal(t, 2, got[0].Undecided)
+	assert.Equal(t, []string{"b", "a"}, got[0].Reasons, "each reason once, in the order of the items")
+	assert.False(t, got[0].Unknown)
 }
 
 func TestVaultBlock(t *testing.T) {
@@ -336,7 +336,7 @@ func TestVaultBlock(t *testing.T) {
 			defs := &definitions.Defs{Items: map[uint32]definitions.ItemDef{hash: tc.def}}
 			item := inventory.NewItem(&bungie.Profile{}, defs, tc.item, bungietest.HunterID, tc.equipped)
 
-			assert.Equal(t, tc.want, vaultBlock(item, tc.def))
+			assert.Equal(t, tc.want, VaultBlock(item, tc.def))
 		})
 	}
 }

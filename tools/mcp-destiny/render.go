@@ -10,6 +10,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/activities"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/autotag"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
@@ -1562,7 +1563,7 @@ func renderAutotag(snapshot dvm.AutotagSnapshot) string {
 		b.WriteString("Autotagging is off.\n")
 	}
 
-	rules := liveRules(snapshot.Rules)
+	rules := autotag.LiveRules(snapshot.Rules)
 	if len(rules) == 0 {
 		b.WriteString("No rules.")
 
@@ -1611,9 +1612,9 @@ func renderRule(rule dvm.AutotagRule) string {
 
 // renderNewMatches renders the result of list_autotag_rules with
 // matches=new. Stored is the mark that the service stores, and newest is
-// the mark that the next claim stores. Evals holds the [ruleEval] of each
-// live rule in rule order, and m holds what [firstMatch] gave the new
-// items outside the vault. Vault holds the new items in the vault, which
+// the mark that the next claim stores. Evals holds the [autotag.RuleEval] of
+// each live rule in rule order, and m holds what [autotag.FirstMatch] gave the
+// new items outside the vault. Vault holds the new items in the vault, which
 // the output only counts.
 //
 // The output opens with the marks and says that the call claimed nothing. A
@@ -1624,62 +1625,62 @@ func renderRule(rule dvm.AutotagRule) string {
 func renderNewMatches(
 	s *inventory.Snapshot,
 	stored, newest string,
-	evals []ruleEval,
-	m newMatches,
+	evals []autotag.RuleEval,
+	m autotag.NewMatches,
 	vault []*inventory.Item,
 ) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Autotagging is on. The next claim moves the stored mark from %s to %s "+
-		"and offers %d new items to the rules. Nothing was claimed.\n", stored, newest, m.offered)
+		"and offers %d new items to the rules. Nothing was claimed.\n", stored, newest, m.Offered)
 
 	if len(evals) > 0 {
 		b.WriteString("\n")
 	}
 
 	for i, e := range evals {
-		line := renderRule(e.rule)
+		line := renderRule(e.Rule)
 
 		switch {
-		case !e.rule.Enabled:
+		case !e.Rule.Enabled:
 			fmt.Fprintf(&b, "%s. It is disabled and takes nothing.\n", line)
 
-		case e.class == ruleSkipped:
-			fmt.Fprintf(&b, "%s. The web client skips this rule, so it takes nothing: %s.\n", line, e.reason)
+		case e.Class == autotag.RuleSkipped:
+			fmt.Fprintf(&b, "%s. The web client skips this rule, so it takes nothing: %s.\n", line, e.Reason)
 
-		case e.class == ruleBlocked:
+		case e.Class == autotag.RuleBlocked:
 			fmt.Fprintf(&b, "%s. The server cannot evaluate this rule: %s. "+
 				"It cannot tell which rule takes the %d new items that reach this rule:\n",
-				line, e.reason, len(m.reaching))
-			writeNewItems(&b, s, m.reaching)
+				line, e.Reason, len(m.Reaching))
+			writeNewItems(&b, s, m.Reaching)
 
 			if i < len(evals)-1 {
 				b.WriteString("The server does not evaluate the rules after it.\n")
 			}
 
 		default:
-			fmt.Fprintf(&b, "%s. New items it takes: %d\n", line, len(m.taken[i]))
-			writeNewItems(&b, s, m.taken[i])
+			fmt.Fprintf(&b, "%s. New items it takes: %d\n", line, len(m.Taken[i]))
+			writeNewItems(&b, s, m.Taken[i])
 		}
 
-		if i == m.blocked {
+		if i == m.Blocked {
 			break
 		}
 	}
 
-	if len(m.undecided) > 0 {
-		fmt.Fprintf(&b, "\nNew items that the server cannot place: %d\n", len(m.undecided))
+	if len(m.Undecided) > 0 {
+		fmt.Fprintf(&b, "\nNew items that the server cannot place: %d\n", len(m.Undecided))
 
-		for _, u := range m.undecided {
-			rule := evals[u.rule].rule
+		for _, u := range m.Undecided {
+			rule := evals[u.Rule].Rule
 			fmt.Fprintf(&b, "  - %s: undecided at rule %d %q: %s\n",
-				newItemLabel(s, u.item), rule.Position, rule.Query, strings.Join(u.reasons, ". "))
+				newItemLabel(s, u.Item), rule.Position, rule.Query, strings.Join(u.Reasons, ". "))
 		}
 	}
 
-	if m.blocked < 0 {
-		fmt.Fprintf(&b, "\nNew items that no rule takes: %d\n", len(m.untaken))
-		writeNewItems(&b, s, m.untaken)
+	if m.Blocked < 0 {
+		fmt.Fprintf(&b, "\nNew items that no rule takes: %d\n", len(m.Untaken))
+		writeNewItems(&b, s, m.Untaken)
 	}
 
 	fmt.Fprintf(&b, "\nNew items already in the vault, which the next claim covers and no rule takes: %d\n", len(vault))
@@ -1697,36 +1698,36 @@ const claimOnce = "A claim happens at most once. No runner offers the claimed it
 
 // renderRunRefusal returns the text of a run_autotag_rules call that the
 // causes in evals and m stop before the claim, or an empty string when no
-// cause stops the claim. Evals holds the [ruleEval] of each live rule in
-// rule order, and m holds what [firstMatch] gave the new items outside the
-// vault.
+// cause stops the claim. Evals holds the [autotag.RuleEval] of each live rule
+// in rule order, and m holds what [autotag.FirstMatch] gave the new items
+// outside the vault.
 //
 // Each enabled rule that the web client skips or that blocks gets one
 // line. A skipped rule names its skip reason, and a blocked rule names its
 // block reason. Each undecided item gets one line after the rule lines.
-func renderRunRefusal(evals []ruleEval, m newMatches) string {
+func renderRunRefusal(evals []autotag.RuleEval, m autotag.NewMatches) string {
 	var causes []string
 
 	for _, e := range evals {
-		if !e.rule.Enabled {
+		if !e.Rule.Enabled {
 			continue
 		}
 
-		line := renderRule(e.rule)
+		line := renderRule(e.Rule)
 
-		switch e.class {
-		case ruleSkipped:
-			causes = append(causes, fmt.Sprintf("%s. The web client skips this rule: %s.", line, e.reason))
-		case ruleBlocked:
-			causes = append(causes, fmt.Sprintf("%s. The server cannot evaluate this rule: %s.", line, e.reason))
-		case ruleEvaluated:
+		switch e.Class {
+		case autotag.RuleSkipped:
+			causes = append(causes, fmt.Sprintf("%s. The web client skips this rule: %s.", line, e.Reason))
+		case autotag.RuleBlocked:
+			causes = append(causes, fmt.Sprintf("%s. The server cannot evaluate this rule: %s.", line, e.Reason))
+		case autotag.RuleEvaluated:
 		}
 	}
 
-	for _, u := range m.undecided {
-		rule := evals[u.rule].rule
+	for _, u := range m.Undecided {
+		rule := evals[u.Rule].Rule
 		causes = append(causes, fmt.Sprintf("- %s (%s): the server cannot decide whether rule %d %q takes it: %s.",
-			u.item.Name, u.item.InstanceID, rule.Position, rule.Query, strings.Join(u.reasons, ". ")))
+			u.Item.Name, u.Item.InstanceID, rule.Position, rule.Query, strings.Join(u.Reasons, ". ")))
 	}
 
 	if len(causes) == 0 {
@@ -1740,38 +1741,38 @@ func renderRunRefusal(evals []ruleEval, m newMatches) string {
 
 // renderRun renders the result of a run_autotag_rules call whose claim
 // and tag write succeeded. Stored is the mark before the claim, and newest
-// is the mark after it. Evals holds the [ruleEval] of each live rule in
-// rule order, and m holds what [firstMatch] gave the new items outside the
-// vault. Vault holds the new items in the vault, which the output only
+// is the mark after it. Evals holds the [autotag.RuleEval] of each live rule in
+// rule order, and m holds what [autotag.FirstMatch] gave the new items outside
+// the vault. Vault holds the new items in the vault, which the output only
 // counts. Vaulted holds the items of the rules with the vault flag after
 // the moves, which [writeVaultMoves] reports.
 func renderRun(
 	s *inventory.Snapshot,
 	stored, newest string,
-	evals []ruleEval,
-	m newMatches,
+	evals []autotag.RuleEval,
+	m autotag.NewMatches,
 	vault []*inventory.Item,
-	vaulted []vaultItem,
+	vaulted []autotag.VaultItem,
 ) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Claimed the new items. The stored mark moved from %s to %s.\n", stored, newest)
 
-	if slices.ContainsFunc(evals, func(e ruleEval) bool { return e.rule.Enabled }) {
+	if slices.ContainsFunc(evals, func(e autotag.RuleEval) bool { return e.Rule.Enabled }) {
 		b.WriteString("\n")
 	}
 
 	for i, e := range evals {
-		if !e.rule.Enabled {
+		if !e.Rule.Enabled {
 			continue
 		}
 
-		fmt.Fprintf(&b, "%s. New items it took: %d\n", renderRule(e.rule), len(m.taken[i]))
-		writeNewItems(&b, s, m.taken[i])
+		fmt.Fprintf(&b, "%s. New items it took: %d\n", renderRule(e.Rule), len(m.Taken[i]))
+		writeNewItems(&b, s, m.Taken[i])
 	}
 
-	fmt.Fprintf(&b, "\nNew items that no rule took: %d\n", len(m.untaken))
-	writeNewItems(&b, s, m.untaken)
+	fmt.Fprintf(&b, "\nNew items that no rule took: %d\n", len(m.Untaken))
+	writeNewItems(&b, s, m.Untaken)
 
 	fmt.Fprintf(&b, "\nNew items already in the vault, which no rule takes: %d\n", len(vault))
 	writeVaultMoves(&b, s, vaulted)
@@ -1790,8 +1791,8 @@ func renderTagFailure(
 	s *inventory.Snapshot,
 	stored, newest string,
 	err error,
-	tags []ruleTag,
-	vaulted []vaultItem,
+	tags []autotag.RuleTag,
+	vaulted []autotag.VaultItem,
 ) string {
 	var b strings.Builder
 
@@ -1799,7 +1800,7 @@ func renderTagFailure(
 	fmt.Fprintf(&b, "The tag write failed: %v. Tag these items with set_tag:\n", err)
 
 	for _, t := range tags {
-		fmt.Fprintf(&b, "- %s (%s): tag %s\n", t.item.Name, t.item.InstanceID, t.rule.TagID)
+		fmt.Fprintf(&b, "- %s (%s): tag %s\n", t.Item.Name, t.Item.InstanceID, t.Rule.TagID)
 	}
 
 	writeVaultMoves(&b, s, vaulted)
@@ -1815,21 +1816,21 @@ func renderTagFailure(
 // each with its reason. The third lists the failed moves, each with the
 // error and the location of the item. Each part opens with a blank line
 // and a count, and writeVaultMoves leaves out a part without an item.
-func writeVaultMoves(b *strings.Builder, s *inventory.Snapshot, items []vaultItem) {
+func writeVaultMoves(b *strings.Builder, s *inventory.Snapshot, items []autotag.VaultItem) {
 	var moved, left, failed []string
 
 	for _, v := range items {
 		switch {
-		case v.reason != "":
+		case v.Reason != "":
 			left = append(left, fmt.Sprintf("  - %s (%s) at %s: %s",
-				v.item.Name, v.item.InstanceID, s.LocationLabel(v.item), v.reason))
+				v.Item.Name, v.Item.InstanceID, s.LocationLabel(v.Item), v.Reason))
 
-		case v.err != nil:
+		case v.Err != nil:
 			failed = append(failed, fmt.Sprintf("  - %s (%s) did not move: %v. It is at %s.",
-				v.item.Name, v.item.InstanceID, v.err, s.LocationLabel(v.item)))
+				v.Item.Name, v.Item.InstanceID, v.Err, s.LocationLabel(v.Item)))
 
 		default:
-			moved = append(moved, fmt.Sprintf("  - %s (%s)", v.item.Name, v.item.InstanceID))
+			moved = append(moved, fmt.Sprintf("  - %s (%s)", v.Item.Name, v.Item.InstanceID))
 		}
 	}
 
@@ -1858,7 +1859,7 @@ func writeVaultMoves(b *strings.Builder, s *inventory.Snapshot, items []vaultIte
 // user can move the items with move_items. It leaves out each item with a
 // reason, because the tool leaves such an item in place after an applied
 // claim too.
-func renderUnsureClaim(head string, tags []ruleTag, vaulted []vaultItem) string {
+func renderUnsureClaim(head string, tags []autotag.RuleTag, vaulted []autotag.VaultItem) string {
 	var b strings.Builder
 
 	b.WriteString(head)
@@ -1868,19 +1869,19 @@ func renderUnsureClaim(head string, tags []ruleTag, vaulted []vaultItem) string 
 
 		for _, t := range tags {
 			fmt.Fprintf(&b, "\n- %s (%s): tag %s (rule %d %q)",
-				t.item.Name, t.item.InstanceID, t.rule.TagID, t.rule.Position, t.rule.Query)
+				t.Item.Name, t.Item.InstanceID, t.Rule.TagID, t.Rule.Position, t.Rule.Query)
 		}
 	}
 
-	if slices.ContainsFunc(vaulted, func(v vaultItem) bool { return v.reason == "" }) {
+	if slices.ContainsFunc(vaulted, func(v autotag.VaultItem) bool { return v.Reason == "" }) {
 		b.WriteString("\n\nUnless the web client moved them already, move these items to the vault with move_items:")
 
 		for _, v := range vaulted {
-			if v.reason != "" {
+			if v.Reason != "" {
 				continue
 			}
 
-			fmt.Fprintf(&b, "\n- %s (%s) (rule %d %q)", v.item.Name, v.item.InstanceID, v.rule.Position, v.rule.Query)
+			fmt.Fprintf(&b, "\n- %s (%s) (rule %d %q)", v.Item.Name, v.Item.InstanceID, v.Rule.Position, v.Rule.Query)
 		}
 	}
 
@@ -1904,13 +1905,13 @@ func newItemLabel(s *inventory.Snapshot, item *inventory.Item) string {
 }
 
 // renderOwnedCounts renders the result of list_autotag_rules with
-// matches=owned. Counts holds what [ownedCounts] gave each live rule, in
-// rule order. The output opens with a header line and gives one line for
+// matches=owned. Counts holds what [autotag.OwnedCounts] gave each live rule,
+// in rule order. The output opens with a header line and gives one line for
 // each rule. The line of a skipped rule names the skip reason, and the
 // line of a blocked rule names the block reason. The line of an unknown
 // rule says that the server counts nothing for it. Every other line gives
 // the count of the rule and the undecided items with their reasons.
-func renderOwnedCounts(counts []ruleCount) string {
+func renderOwnedCounts(counts []autotag.RuleCount) string {
 	var b strings.Builder
 
 	b.WriteString("Owned items that each rule matches after the enabled rules before it took theirs, " +
@@ -1918,31 +1919,31 @@ func renderOwnedCounts(counts []ruleCount) string {
 
 	for i := range counts {
 		c := &counts[i]
-		line := renderRule(c.eval.rule)
+		line := renderRule(c.Eval.Rule)
 
 		switch {
-		case c.eval.class == ruleSkipped:
-			fmt.Fprintf(&b, "\n%s. The web client skips this rule and counts nothing for it: %s.", line, c.eval.reason)
+		case c.Eval.Class == autotag.RuleSkipped:
+			fmt.Fprintf(&b, "\n%s. The web client skips this rule and counts nothing for it: %s.", line, c.Eval.Reason)
 
-		case c.unknown:
+		case c.Unknown:
 			fmt.Fprintf(&b, "\n%s. Not counted, because the server cannot tell which items the rules before it take.",
 				line)
 
-		case c.eval.class == ruleBlocked:
-			fmt.Fprintf(&b, "\n%s. Cannot count: %s.", line, c.eval.reason)
+		case c.Eval.Class == autotag.RuleBlocked:
+			fmt.Fprintf(&b, "\n%s. Cannot count: %s.", line, c.Eval.Reason)
 
-		case c.undecided > 0:
+		case c.Undecided > 0:
 			fmt.Fprintf(
 				&b,
 				"\n%s. Owned items it matches: %d. Owned items that the server cannot decide for it: %d (%s)",
 				line,
-				c.matches,
-				c.undecided,
-				strings.Join(c.reasons, ", "),
+				c.Matches,
+				c.Undecided,
+				strings.Join(c.Reasons, ", "),
 			)
 
 		default:
-			fmt.Fprintf(&b, "\n%s. Owned items it matches: %d", line, c.matches)
+			fmt.Fprintf(&b, "\n%s. Owned items it matches: %d", line, c.Matches)
 		}
 	}
 

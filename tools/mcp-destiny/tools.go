@@ -17,6 +17,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/activities"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/autotag"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
@@ -1703,20 +1704,20 @@ func (h *handler) newItemMatches(ctx context.Context, snapshot dvm.AutotagSnapsh
 
 	stored := snapshot.State.Mark
 
-	newest := newestMark(s)
+	newest := autotag.NewestMark(s)
 	if newest <= stored {
 		return fmt.Sprintf("No owned item has an instance id above the stored mark %s, "+
 			"so the next claim offers no item to the rules.", stored), nil
 	}
 
-	held, vault := newItems(s, stored)
-	evals := evalRules(
+	held, vault := autotag.NewItems(s, stored)
+	evals := autotag.EvalRules(
 		s,
-		liveRules(snapshot.Rules),
+		autotag.LiveRules(snapshot.Rules),
 		func() map[string]rolls.RatingSource { return h.ratingSources(ctx) },
 	)
 
-	return renderNewMatches(s, stored, newest, evals, firstMatch(evals, held), vault), nil
+	return renderNewMatches(s, stored, newest, evals, autotag.FirstMatch(evals, held), vault), nil
 }
 
 // ownedMatches returns the text of list_autotag_rules with
@@ -1726,7 +1727,7 @@ func (h *handler) newItemMatches(ctx context.Context, snapshot dvm.AutotagSnapsh
 // whether autotagging is on or off. It returns the error of the profile,
 // tag, or note read.
 func (h *handler) ownedMatches(ctx context.Context, snapshot dvm.AutotagSnapshot) (string, error) {
-	rules := liveRules(snapshot.Rules)
+	rules := autotag.LiveRules(snapshot.Rules)
 	if len(rules) == 0 {
 		return "No rules, so nothing is counted.", nil
 	}
@@ -1745,9 +1746,9 @@ func (h *handler) ownedMatches(ctx context.Context, snapshot dvm.AutotagSnapshot
 	items := search.OwnedItems(s)
 	slices.SortStableFunc(items, inventory.ByNameAndID)
 
-	evals := evalRules(s, rules, func() map[string]rolls.RatingSource { return h.ratingSources(ctx) })
+	evals := autotag.EvalRules(s, rules, func() map[string]rolls.RatingSource { return h.ratingSources(ctx) })
 
-	return renderOwnedCounts(ownedCounts(evals, items)), nil
+	return renderOwnedCounts(autotag.OwnedCounts(evals, items)), nil
 }
 
 // handleSaveAutotagRule writes the rule that [mergeRule] builds. When the
@@ -1769,7 +1770,7 @@ func (h *handler) handleSaveAutotagRule(
 		return h.toolError(ctx, toolSaveAutotagRule, err)
 	}
 
-	rule, err := mergeRule(liveRules(snapshot.Rules), in)
+	rule, err := mergeRule(autotag.LiveRules(snapshot.Rules), in)
 	if err != nil {
 		return h.toolError(ctx, toolSaveAutotagRule, err)
 	}
@@ -1960,7 +1961,7 @@ func (h *handler) handleRemoveAutotagRule(
 		return h.toolError(ctx, toolRemoveAutotagRule, err)
 	}
 
-	rules := liveRules(snapshot.Rules)
+	rules := autotag.LiveRules(snapshot.Rules)
 
 	i := slices.IndexFunc(rules, func(rule dvm.AutotagRule) bool { return rule.ID == in.ID })
 	if i < 0 {
@@ -2000,7 +2001,7 @@ func (h *handler) handleSetAutotagEnabled(
 			return h.toolError(ctx, toolSetAutotagEnabled, err)
 		}
 
-		mark = newestMark(s)
+		mark = autotag.NewestMark(s)
 	}
 
 	applied, err := sessionValue(ctx, h, func(session string) (bool, error) {
@@ -2032,8 +2033,8 @@ func (h *handler) handleSetAutotagEnabled(
 // only when it can apply every enabled rule the way the web client does.
 // After an applied claim, it writes the tag of each rule with the rule id.
 // It then moves each item of a rule with the vault flag that the web
-// client moves to the vault, as [vaultBlock] decides, also after a failed
-// tag write. Every result is an error result except the result of an
+// client moves to the vault, as [autotag.VaultBlock] decides, also after a
+// failed tag write. Every result is an error result except the result of an
 // applied claim whose tag write and moves succeeded. A claim happens at
 // most once, so the handler retries neither the claim, the tag write, nor
 // a move.
@@ -2081,36 +2082,36 @@ func (h *handler) handleRunAutotagRules(
 
 	// The service refuses a claim whose new mark is not higher than the
 	// stored mark.
-	newest := newestMark(s)
+	newest := autotag.NewestMark(s)
 	if newest <= stored {
 		return refuse(fmt.Sprintf("No owned item has an instance id above the stored mark %s, "+
 			"so run_autotag_rules claimed nothing.", stored))
 	}
 
-	held, vault := newItems(s, stored)
-	evals := evalRules(
+	held, vault := autotag.NewItems(s, stored)
+	evals := autotag.EvalRules(
 		s,
-		liveRules(snapshot.Rules),
+		autotag.LiveRules(snapshot.Rules),
 		func() map[string]rolls.RatingSource { return h.ratingSources(ctx) },
 	)
-	m := firstMatch(evals, held)
+	m := autotag.FirstMatch(evals, held)
 
 	refusal := renderRunRefusal(evals, m)
 	if refusal != "" {
 		return refuse(refusal)
 	}
 
-	tags := ruleTags(evals, m)
+	tags := autotag.RuleTags(evals, m)
 
 	// The handler reads the membership and the definitions before the
 	// claim. A failed read then leaves the items of the vault rules to the
 	// next claim, and never strands claimed items that no move reached.
 	var (
 		mover   bungieMover
-		vaulted []vaultItem
+		vaulted []autotag.VaultItem
 	)
 
-	if slices.ContainsFunc(evals, func(e ruleEval) bool { return e.rule.Enabled && e.rule.Vault }) {
+	if slices.ContainsFunc(evals, func(e autotag.RuleEval) bool { return e.Rule.Enabled && e.Rule.Vault }) {
 		membership, err := h.membership(ctx)
 		if err != nil {
 			return refuse("run_autotag_rules claimed nothing, because the server could not read the inventory: " +
@@ -2124,7 +2125,7 @@ func (h *handler) handleRunAutotagRules(
 		}
 
 		mover = bungieMover{h: h, membership: membership}
-		vaulted = vaultItems(evals, m, defs)
+		vaulted = autotag.VaultItems(evals, m, defs)
 	}
 
 	// The service checks the session before it reads the claim, so the
@@ -2144,15 +2145,15 @@ func (h *handler) handleRunAutotagRules(
 	var changes []dvm.ItemTag
 
 	for _, t := range tags {
-		changes = append(changes, dvm.TagChanges(rows, t.item.InstanceID, t.item.Hash, t.rule.TagID, t.rule.ID)...)
+		changes = append(changes, dvm.TagChanges(rows, t.Item.InstanceID, t.Item.Hash, t.Rule.TagID, t.Rule.ID)...)
 	}
 
 	tagErr := h.writeTags(ctx, changes)
 	if tagErr == nil {
 		// The cached snapshot holds the tags that the rules set.
 		for _, t := range tags {
-			t.item.Tag = t.rule.TagID
-			t.item.TagRule = t.rule.ID
+			t.Item.Tag = t.Rule.TagID
+			t.Item.TagRule = t.Rule.ID
 		}
 	}
 
@@ -2167,7 +2168,7 @@ func (h *handler) handleRunAutotagRules(
 	text := renderRun(s, stored, newest, evals, m, vault, vaulted)
 
 	// The user moves the item of a failed move by hand.
-	if slices.ContainsFunc(vaulted, func(v vaultItem) bool { return v.err != nil }) {
+	if slices.ContainsFunc(vaulted, func(v autotag.VaultItem) bool { return v.Err != nil }) {
 		return refuse(text)
 	}
 
@@ -2182,32 +2183,32 @@ func (h *handler) moveToVault(
 	ctx context.Context,
 	s *inventory.Snapshot,
 	mover inventory.ItemMover,
-	items []vaultItem,
+	items []autotag.VaultItem,
 ) {
 	changed := false
 
 	for i := range items {
 		v := &items[i]
-		if v.reason != "" {
+		if v.Reason != "" {
 			continue
 		}
 
-		owner, postmaster := v.item.Owner, v.item.Postmaster
+		owner, postmaster := v.Item.Owner, v.Item.Postmaster
 
-		// vaultBlock keeps an equipped item in place, so no move equips a
-		// replacement.
-		_, err := s.Move(ctx, mover, v.item, inventory.OwnerVault, false)
+		// autotag.VaultBlock keeps an equipped item in place, so no move
+		// equips a replacement.
+		_, err := s.Move(ctx, mover, v.Item, inventory.OwnerVault, false)
 
 		// A move that fails can still pull the item from the Postmaster.
-		if v.item.Owner != owner || v.item.Postmaster != postmaster {
+		if v.Item.Owner != owner || v.Item.Postmaster != postmaster {
 			changed = true
 		}
 
 		if err != nil {
-			v.err = err
+			v.Err = err
 
 			h.log.WarnContext(ctx, "move failed",
-				slog.String("instance_id", v.item.InstanceID),
+				slog.String("instance_id", v.Item.InstanceID),
 				slog.Any("error", err),
 			)
 		}
@@ -2228,8 +2229,8 @@ func (h *handler) claimFailure(
 	ctx context.Context,
 	stored string,
 	err error,
-	tags []ruleTag,
-	vaulted []vaultItem,
+	tags []autotag.RuleTag,
+	vaulted []autotag.VaultItem,
 ) string {
 	again, againErr := h.autotag(ctx)
 	if againErr == nil && again.State == nil {
