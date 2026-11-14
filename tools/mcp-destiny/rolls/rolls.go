@@ -1,4 +1,4 @@
-package main
+package rolls
 
 import (
 	"slices"
@@ -10,8 +10,8 @@ import (
 
 // Stances of a perk preference.
 const (
-	stanceUp   = "up"
-	stanceDown = "down"
+	StanceUp   = "up"
+	StanceDown = "down"
 )
 
 // Hit names one perk that earns a perk column. Liked marks a perk that
@@ -58,7 +58,7 @@ type Rating struct {
 // RatingSource holds what the rating of one game mode reads. Exactly
 // one of Sheet and Err is set, and Err is the reason that the mode has
 // no rating. Stances maps the name of each perk that the user likes or
-// dislikes for the mode to its stance. [stancesByMode] builds the map.
+// dislikes for the mode to its stance. [StancesByMode] builds the map.
 // A source without Stances rates a copy from the sheet picks alone.
 // Defs names the picks of each perk column and holds the plug sets of
 // each weapon, and every source with a Sheet holds it.
@@ -69,16 +69,16 @@ type RatingSource struct {
 	Err     error
 }
 
-// stancesByMode returns the stance map of each game mode, keyed by the
+// StancesByMode returns the stance map of each game mode, keyed by the
 // mode. Each map gives the stance of a perk under the perk name of its
 // preference, unchanged.
 //
 // A removed preference has no stance. A preference whose mode is not in
-// [perkModes] lands in no map. The service rejects such a mode in a
+// [Modes] lands in no map. The service rejects such a mode in a
 // write, and no rating reads it.
-func stancesByMode(prefs []dvm.PerkPreference) map[string]map[string]string {
-	stances := make(map[string]map[string]string, len(perkModes))
-	for _, mode := range perkModes {
+func StancesByMode(prefs []dvm.PerkPreference) map[string]map[string]string {
+	stances := make(map[string]map[string]string, len(Modes))
+	for _, mode := range Modes {
 		stances[mode] = map[string]string{}
 	}
 
@@ -96,7 +96,7 @@ func stancesByMode(prefs []dvm.PerkPreference) map[string]map[string]string {
 	return stances
 }
 
-// rate returns the [Rating] that the source of one game mode gives item.
+// Rate returns the [Rating] that the source of one game mode gives item.
 //
 // The tier of a copy starts at the tier of its row and moves down one
 // step for each column that missed. A row without perk columns, such as
@@ -106,7 +106,8 @@ func stancesByMode(prefs []dvm.PerkPreference) map[string]map[string]string {
 //
 // The rating reads [inventory.Item.Perks], so it sees the sockets and the
 // plugs that the snapshot keeps. Destiny Item Manager builds another
-// socket list, and the package documentation lists where the two differ.
+// socket list, and the documentation of the mcp-destiny command lists
+// where the two differ.
 //
 // The definitions of the source hold the plug sets of the weapon. The
 // plug sets name the socket of a column in which the copy rolled no
@@ -117,7 +118,7 @@ func stancesByMode(prefs []dvm.PerkPreference) map[string]map[string]string {
 // come from the definitions of the source and not from the copy. A
 // column that no socket of the copy matches therefore still names its
 // picks.
-func rate(source RatingSource, item *inventory.Item) Rating {
+func Rate(source RatingSource, item *inventory.Item) Rating {
 	// The reason comes first, so only a loaded sheet can report a weapon
 	// as missing from it.
 	if source.Err != nil {
@@ -187,7 +188,7 @@ func judgeColumn(
 	for _, plug := range socketPlugs(socket) {
 		stance := stances[definitions.BasePerkName(plug.Name)]
 
-		wanted := stance == stanceUp || (stance != stanceDown && slices.Contains(column, plug.Hash))
+		wanted := stance == StanceUp || (stance != StanceDown && slices.Contains(column, plug.Hash))
 		if !wanted {
 			continue
 		}
@@ -196,7 +197,7 @@ func judgeColumn(
 		// active plug is also one of the reusable plugs.
 		named := slices.ContainsFunc(hits, func(hit Hit) bool { return hit.Name == plug.Name })
 		if !named {
-			hits = append(hits, Hit{Name: plug.Name, Liked: stance == stanceUp})
+			hits = append(hits, Hit{Name: plug.Name, Liked: stance == StanceUp})
 		}
 	}
 
@@ -265,7 +266,7 @@ func picksOf(defs *definitions.Defs, column []uint32, stances map[string]string)
 
 	for _, hash := range column {
 		def, ok := defs.Items[hash]
-		if !ok || slices.Contains(picks, def.Name) || stances[definitions.BasePerkName(def.Name)] == stanceDown {
+		if !ok || slices.Contains(picks, def.Name) || stances[definitions.BasePerkName(def.Name)] == StanceDown {
 			continue
 		}
 
@@ -283,24 +284,32 @@ func socketPlugs(perk inventory.Perk) []inventory.Plug {
 }
 
 // stepTier returns the tier that lies the given count of steps down from
-// tier in [tiers], and F when the steps pass the last tier. A row
+// tier in [Tiers], and F when the steps pass the last tier. A row
 // without a tier stays without one.
 func stepTier(tier string, steps int) string {
-	i := slices.Index(tiers, tier)
+	i := slices.Index(Tiers, tier)
 	if i < 0 {
 		return ""
 	}
 
-	return tiers[min(i+steps, len(tiers)-1)]
+	return Tiers[min(i+steps, len(Tiers)-1)]
 }
 
-// ratedAtLeast reports whether rating holds a roll whose tier is lowest
-// or a better tier. Lowest is one of [tiers].
+// RatedAtLeast reports whether rating holds a roll whose tier is lowest
+// or a better tier. Lowest is one of [Tiers].
 //
 // Ratings without a roll never pass, so a game mode without ratings and
 // a weapon that the sheet does not list pass no minimum. A roll without
 // a tier ranks after F, so a row without a tier and an unknown roll
 // pass no minimum either.
-func ratedAtLeast(rating Rating, lowest string) bool {
+func RatedAtLeast(rating Rating, lowest string) bool {
 	return rating.Roll != nil && tierRank(rating.Roll.Overall) <= tierRank(lowest)
+}
+
+// RatingReason returns the text that says why one game mode has no
+// ratings. The text is the label of the mode and the text of err, such
+// as "PvP: rating unavailable: the service publishes no PvP sheet".
+// Every output that reports the reason of a mode prints this text.
+func RatingReason(mode string, err error) string {
+	return ModeLabels[mode] + ": " + err.Error()
 }

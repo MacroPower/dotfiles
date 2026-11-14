@@ -10,6 +10,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 )
 
 // markDigits is the width of an autotag mark. The service compares marks
@@ -121,10 +122,14 @@ type ruleEval struct {
 //
 // The tests of the evaluated rules share one search context over every
 // built item of s, the vault included, as the web client passes every item
-// to its filters. Sources returns the [RatingSource] of each game mode.
+// to its filters. Sources returns the [rolls.RatingSource] of each game mode.
 // evalRules calls sources one time, and only when a rule of rules without
 // an earlier problem reads a game mode.
-func evalRules(s *inventory.Snapshot, rules []dvm.AutotagRule, sources func() map[string]RatingSource) []ruleEval {
+func evalRules(
+	s *inventory.Snapshot,
+	rules []dvm.AutotagRule,
+	sources func() map[string]rolls.RatingSource,
+) []ruleEval {
 	evals := make([]ruleEval, len(rules))
 	queries := make([]compiledQuery, len(rules))
 	rated := false
@@ -163,7 +168,7 @@ func evalRules(s *inventory.Snapshot, rules []dvm.AutotagRule, sources func() ma
 		}
 	}
 
-	var ratings map[string]RatingSource
+	var ratings map[string]rolls.RatingSource
 	if rated {
 		ratings = sources()
 	}

@@ -1,4 +1,4 @@
-package main
+package rolls
 
 import (
 	"context"
@@ -9,33 +9,37 @@ import (
 	"slices"
 	"strings"
 
-	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
 // Game modes of the roll sheets and the perk preferences.
 const (
-	modePvE = "pve"
-	modePvP = "pvp"
+	ModePvE = "pve"
+	ModePvP = "pvp"
 )
 
 var (
-	// tiers lists the tiers of the roll sheets, best first.
-	tiers = []string{"S", "A", "B", "C", "D", "E", "F"}
+	// Modes lists the game modes in display order. The perk preferences
+	// and the roll sheets share the list.
+	Modes = []string{ModePvE, ModePvP}
 
-	// lowerTiers maps the lowercase form of each tier of tiers to the
+	// Tiers lists the tiers of the roll sheets, best first.
+	Tiers = []string{"S", "A", "B", "C", "D", "E", "F"}
+
+	// LowerTiers maps the lowercase form of each tier of [Tiers] to the
 	// tier.
-	lowerTiers = lowercaseTiers()
+	LowerTiers = lowercaseTiers()
 
 	// sheetArtifacts names the artifact that holds the roll sheet of each
 	// game mode.
-	sheetArtifacts = map[string]string{modePvE: "rolls", modePvP: "pvprolls"}
+	sheetArtifacts = map[string]string{ModePvE: "rolls", ModePvP: "pvprolls"}
 
-	// modeLabels names each game mode for display.
-	modeLabels = map[string]string{modePvE: "PvE", modePvP: "PvP"}
+	// ModeLabels names each game mode for display.
+	ModeLabels = map[string]string{ModePvE: "PvE", ModePvP: "PvP"}
 
-	// sheetLabels names the roll sheet of each game mode for display.
-	sheetLabels = map[string]string{modePvE: "Aegis sheet", modePvP: "PvP sheet"}
+	// SheetLabels names the roll sheet of each game mode for display.
+	SheetLabels = map[string]string{ModePvE: "Aegis sheet", ModePvP: "PvP sheet"}
 
 	// ErrNoRating marks the reason that a game mode has no roll ratings.
 	// The rating line of the mode prints the text of the error that wraps
@@ -62,7 +66,7 @@ type SheetRow struct {
 }
 
 // SetBonus is the rating that a roll sheet gives one armor set bonus.
-// Tier is a tier of [tiers], or empty for a bonus without a tier. Pieces
+// Tier is a tier of [Tiers], or empty for a bonus without a tier. Pieces
 // is the number of pieces of the set that the bonus needs, such as 2 or
 // 4.
 type SetBonus struct {
@@ -122,7 +126,7 @@ type rawSheet struct {
 // A later set bonus with the hash of an earlier one replaces it, as the
 // web client does. The web client lowercases the tier of a set bonus
 // before it compares the tier. The decode therefore keeps the tier of
-// [tiers] whose lowercase form equals the lowercase form of the text,
+// [Tiers] whose lowercase form equals the lowercase form of the text,
 // and an empty tier for any other text.
 func decodeSheet(r io.Reader) (*Sheet, error) {
 	var raw rawSheet
@@ -151,7 +155,7 @@ func decodeSheet(r io.Reader) (*Sheet, error) {
 		// The service build writes only the listed tiers. Any other
 		// text counts as no tier, so a row never shows a tier that the
 		// ranking does not know.
-		if !slices.Contains(tiers, row.Tier) {
+		if !slices.Contains(Tiers, row.Tier) {
 			row.Tier = ""
 		}
 
@@ -177,7 +181,7 @@ func decodeSheet(r io.Reader) (*Sheet, error) {
 	}
 
 	for _, bonus := range raw.SetBonuses {
-		sheet.SetBonuses[bonus.Hash] = SetBonus{Tier: lowerTiers[strings.ToLower(bonus.Tier)], Pieces: bonus.Pieces}
+		sheet.SetBonuses[bonus.Hash] = SetBonus{Tier: LowerTiers[strings.ToLower(bonus.Tier)], Pieces: bonus.Pieces}
 	}
 
 	// A loaded sheet without rows reports every weapon as missing from
@@ -190,27 +194,34 @@ func decodeSheet(r io.Reader) (*Sheet, error) {
 	return sheet, nil
 }
 
-// lowercaseTiers returns the map of lowerTiers. A lookup of a lowercase
+// lowercaseTiers returns the map of [LowerTiers]. A lookup of a lowercase
 // text in the map matches what the web client matches. Folding the case
 // of the text matches more, because it also reads U+017F as s.
 func lowercaseTiers() map[string]string {
-	lower := make(map[string]string, len(tiers))
-	for _, tier := range tiers {
+	lower := make(map[string]string, len(Tiers))
+	for _, tier := range Tiers {
 		lower[strings.ToLower(tier)] = tier
 	}
 
 	return lower
 }
 
-// tierRank returns the position of tier in [tiers], best first. A missing
+// tierRank returns the position of tier in [Tiers], best first. A missing
 // tier ranks after F.
 func tierRank(tier string) int {
-	i := slices.Index(tiers, tier)
+	i := slices.Index(Tiers, tier)
 	if i < 0 {
-		return len(tiers)
+		return len(Tiers)
 	}
 
 	return i
+}
+
+// ArtifactSource serves the artifacts of the service that hold the roll
+// sheets. [*dvm.Client] implements it.
+type ArtifactSource interface {
+	Config(ctx context.Context) (dvm.Config, error)
+	Artifact(ctx context.Context, file string) (io.ReadCloser, error)
 }
 
 // SheetStore loads the roll sheets from the artifacts of the service.
@@ -222,7 +233,7 @@ func tierRank(tier string) int {
 //
 // The store has no lock, so the caller serializes the calls to Load.
 type SheetStore struct {
-	source definitions.ArtifactSource
+	source ArtifactSource
 	loaded map[string]loadedSheet
 }
 
@@ -235,7 +246,7 @@ type loadedSheet struct {
 
 // NewSheetStore returns a [*SheetStore] that reads the roll sheets from
 // source.
-func NewSheetStore(source definitions.ArtifactSource) *SheetStore {
+func NewSheetStore(source ArtifactSource) *SheetStore {
 	return &SheetStore{source: source, loaded: map[string]loadedSheet{}}
 }
 
@@ -247,20 +258,20 @@ func NewSheetStore(source definitions.ArtifactSource) *SheetStore {
 // call fetches the file again. It also never returns the sheet of one
 // file name while the index lists another.
 func (s *SheetStore) Load(ctx context.Context) map[string]SheetState {
-	states := make(map[string]SheetState, len(perkModes))
+	states := make(map[string]SheetState, len(Modes))
 
 	cfg, err := s.source.Config(ctx)
 	if err != nil {
 		err = fmt.Errorf("%w: reading service config: %w", ErrNoRating, err)
 
-		for _, mode := range perkModes {
+		for _, mode := range Modes {
 			states[mode] = SheetState{Err: err}
 		}
 
 		return states
 	}
 
-	for _, mode := range perkModes {
+	for _, mode := range Modes {
 		sheet, err := s.load(ctx, mode, cfg.Artifacts.Files[sheetArtifacts[mode]])
 		if err != nil {
 			states[mode] = SheetState{Err: fmt.Errorf("%w: %w", ErrNoRating, err)}
@@ -279,7 +290,7 @@ func (s *SheetStore) Load(ctx context.Context) map[string]SheetState {
 // one file, so load reads only the first.
 func (s *SheetStore) load(ctx context.Context, mode string, files []string) (*Sheet, error) {
 	if len(files) == 0 {
-		return nil, fmt.Errorf("the service publishes no %s", sheetLabels[mode])
+		return nil, fmt.Errorf("the service publishes no %s", SheetLabels[mode])
 	}
 
 	file := files[0]

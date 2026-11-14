@@ -18,6 +18,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 )
 
 // fakes is a handler wired to a fake Agg's Destiny Vault Manager service
@@ -91,7 +92,7 @@ func newFakes(t *testing.T) *fakes {
 		bungie:  bungie.New(bungie.WithURL(f.bungie.URL), bungie.WithContentURL(f.bungie.URL)),
 		auth:    auth.New(store, client, auth.WithClock(now)),
 		defs:    defs,
-		sheets:  NewSheetStore(client),
+		sheets:  rolls.NewSheetStore(client),
 		log:     slog.New(slog.DiscardHandler),
 		now:     now,
 	}

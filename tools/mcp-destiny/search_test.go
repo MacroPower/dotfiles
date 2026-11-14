@@ -19,6 +19,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 )
 
 // compiled parses and compiles query, which must parse.
@@ -1682,16 +1683,16 @@ func TestKleene(t *testing.T) {
 // The PvP sheet rates weapon 100 C with one column, which every copy of
 // the weapon misses. The rolls of s, a, and b therefore rate D for PvP.
 func ratingContext() searchContext {
-	pve := &Sheet{
-		Rows: map[uint32]SheetRow{100: {Tier: "S"}, 101: {Tier: "A"}, 102: {}, 103: {Tier: "A"}, 104: {}},
+	pve := &rolls.Sheet{
+		Rows: map[uint32]rolls.SheetRow{100: {Tier: "S"}, 101: {Tier: "A"}, 102: {}, 103: {Tier: "A"}, 104: {}},
 		Columns: map[uint32][][]uint32{
 			100: {{inventorytest.PlugExplosivePayload.Hash}, {inventorytest.PlugKillClip.Hash}},
 			103: {{inventorytest.PlugExplosivePayload.Hash}},
 			104: {{inventorytest.PlugExplosivePayload.Hash}},
 		},
 	}
-	pvp := &Sheet{
-		Rows:    map[uint32]SheetRow{100: {Tier: "C"}},
+	pvp := &rolls.Sheet{
+		Rows:    map[uint32]rolls.SheetRow{100: {Tier: "C"}},
 		Columns: map[uint32][][]uint32{100: {{906}}},
 	}
 
@@ -1711,20 +1712,20 @@ func ratingContext() searchContext {
 				inventory.Perk{Plug: inventorytest.PlugExplosivePayload},
 				inventory.Perk{Plug: inventorytest.PlugKillClip, Socket: 1},
 			),
-			weapon("a", 100, rolledPerks()...),
-			weapon("b", 100, inventory.Perk{Plug: plugFirefly}),
+			weapon("a", 100, inventorytest.RolledPerks()...),
+			weapon("b", 100, inventory.Perk{Plug: inventorytest.PlugFirefly}),
 			weapon("exotic", 101),
 			weapon("no tier", 102),
 			weapon("unknown", 103),
 			weapon("unknown no tier", 104),
-			weapon("unlisted", 999, rolledPerks()...),
+			weapon("unlisted", 999, inventorytest.RolledPerks()...),
 			armor("helmet", 200),
 			armor("rated helmet", 101),
 			armor("unknown helmet", 103),
 		},
-		sources: map[string]RatingSource{
-			modePvE: {Sheet: pve, Defs: &definitions.Defs{}},
-			modePvP: {Sheet: pvp, Defs: &definitions.Defs{}},
+		sources: map[string]rolls.RatingSource{
+			rolls.ModePvE: {Sheet: pve, Defs: &definitions.Defs{}},
+			rolls.ModePvP: {Sheet: pvp, Defs: &definitions.Defs{}},
 		},
 	}
 }
@@ -1910,7 +1911,7 @@ func TestRateUnknownRoll(t *testing.T) {
 	// helmet is. Its item set has a 4-piece bonus that the Aegis sheet
 	// rates S.
 	ctx := ratingContext()
-	ctx.sources[modePvE].Sheet.SetBonuses = map[uint32]SetBonus{perkFourPiece: {Tier: "S", Pieces: 4}}
+	ctx.sources[rolls.ModePvE].Sheet.SetBonuses = map[uint32]rolls.SetBonus{perkFourPiece: {Tier: "S", Pieces: 4}}
 	ctx.items = append(ctx.items, &inventory.Item{
 		InstanceID: "set helmet",
 		Name:       "set helmet",
@@ -2000,23 +2001,23 @@ func TestPvPKeywords(t *testing.T) {
 		want  []string
 		modes []string
 	}{
-		"pvprate:":         {query: "pvprate:d", want: []string{"s", "a", "b"}, modes: []string{modePvP}},
-		"pvprating:":       {query: "pvprating:d", want: []string{"s", "a", "b"}, modes: []string{modePvP}},
-		"pvpratebase:":     {query: "pvpratebase:c", want: []string{"s", "a", "b"}, modes: []string{modePvP}},
-		"pvpratingbase:":   {query: "pvpratingbase:c", want: []string{"s", "a", "b"}, modes: []string{modePvP}},
-		"pvpmisses:":       {query: "pvpmisses:1", want: []string{"s", "a", "b"}, modes: []string{modePvP}},
-		"rate: reads PvE":  {query: "rate:d", want: []string{}, modes: []string{modePvE}},
-		"ratebase: of PvE": {query: "ratebase:c", want: []string{}, modes: []string{modePvE}},
-		"misses: of PvE":   {query: "misses:1", want: []string{"a"}, modes: []string{modePvE}},
+		"pvprate:":         {query: "pvprate:d", want: []string{"s", "a", "b"}, modes: []string{rolls.ModePvP}},
+		"pvprating:":       {query: "pvprating:d", want: []string{"s", "a", "b"}, modes: []string{rolls.ModePvP}},
+		"pvpratebase:":     {query: "pvpratebase:c", want: []string{"s", "a", "b"}, modes: []string{rolls.ModePvP}},
+		"pvpratingbase:":   {query: "pvpratingbase:c", want: []string{"s", "a", "b"}, modes: []string{rolls.ModePvP}},
+		"pvpmisses:":       {query: "pvpmisses:1", want: []string{"s", "a", "b"}, modes: []string{rolls.ModePvP}},
+		"rate: reads PvE":  {query: "rate:d", want: []string{}, modes: []string{rolls.ModePvE}},
+		"ratebase: of PvE": {query: "ratebase:c", want: []string{}, modes: []string{rolls.ModePvE}},
+		"misses: of PvE":   {query: "misses:1", want: []string{"a"}, modes: []string{rolls.ModePvE}},
 		"both modes in the order of the game modes": {
 			query: "pvprate:d or rate:d",
 			want:  []string{"s", "a", "b"},
-			modes: []string{modePvE, modePvP},
+			modes: []string{rolls.ModePvE, rolls.ModePvP},
 		},
 		"a negated term reads its mode": {
 			query: "is:weapon -pvpmisses:1",
 			want:  []string{"exotic", "no tier", "unknown", "unknown no tier", "unlisted"},
-			modes: []string{modePvP},
+			modes: []string{rolls.ModePvP},
 		},
 		"no rating filter": {
 			query: "is:weapon",
@@ -2060,32 +2061,32 @@ func TestEvaluate(t *testing.T) {
 func TestUnratedReason(t *testing.T) {
 	t.Parallel()
 
-	noPvP := fmt.Errorf("%w: the service publishes no PvP sheet", ErrNoRating)
-	noAegis := fmt.Errorf("%w: the service publishes no Aegis sheet", ErrNoRating)
-	sheet := &Sheet{Rows: map[uint32]SheetRow{100: {Tier: "S"}}}
+	noPvP := fmt.Errorf("%w: the service publishes no PvP sheet", rolls.ErrNoRating)
+	noAegis := fmt.Errorf("%w: the service publishes no Aegis sheet", rolls.ErrNoRating)
+	sheet := &rolls.Sheet{Rows: map[uint32]rolls.SheetRow{100: {Tier: "S"}}}
 
 	tests := map[string]struct {
-		sources map[string]RatingSource
+		sources map[string]rolls.RatingSource
 		query   string
 		want    string
 	}{
 		"the mode of the query has ratings": {
 			query:   "rate:>=a",
-			sources: map[string]RatingSource{modePvE: {Sheet: sheet}, modePvP: {Err: noPvP}},
+			sources: map[string]rolls.RatingSource{rolls.ModePvE: {Sheet: sheet}, rolls.ModePvP: {Err: noPvP}},
 		},
 		"the mode of the query has no ratings": {
 			query:   "pvprate:>=a",
-			sources: map[string]RatingSource{modePvE: {Sheet: sheet}, modePvP: {Err: noPvP}},
+			sources: map[string]rolls.RatingSource{rolls.ModePvE: {Sheet: sheet}, rolls.ModePvP: {Err: noPvP}},
 			want:    "PvP: rating unavailable: the service publishes no PvP sheet",
 		},
 		"the first mode in the order of the game modes": {
 			query:   "pvprate:>=a rate:>=a",
-			sources: map[string]RatingSource{modePvE: {Err: noAegis}, modePvP: {Err: noPvP}},
+			sources: map[string]rolls.RatingSource{rolls.ModePvE: {Err: noAegis}, rolls.ModePvP: {Err: noPvP}},
 			want:    "PvE: rating unavailable: the service publishes no Aegis sheet",
 		},
 		"a query without a rating filter": {
 			query:   "is:weapon",
-			sources: map[string]RatingSource{modePvE: {Err: noAegis}, modePvP: {Err: noPvP}},
+			sources: map[string]rolls.RatingSource{rolls.ModePvE: {Err: noAegis}, rolls.ModePvP: {Err: noPvP}},
 		},
 	}
 
@@ -2160,7 +2161,7 @@ func TestVerdictOf(t *testing.T) {
 // second holds. It holds a perk in each socket, so the profile lists
 // perks for it.
 func hitting(first, second bool) []inventory.Perk {
-	perks := []inventory.Perk{{Plug: plugFirefly}, {Plug: inventorytest.PlugRampage, Socket: 1}}
+	perks := []inventory.Perk{{Plug: inventorytest.PlugFirefly}, {Plug: inventorytest.PlugRampage, Socket: 1}}
 
 	if first {
 		perks[0].Plug = inventorytest.PlugExplosivePayload
@@ -2202,8 +2203,8 @@ func verdictColumns() [][]uint32 {
 // The PvP sheet lists only weapon 120, with one column that picks Kill
 // Clip. Copy mixed b hits it, and mixed a misses it.
 func verdictContext() searchContext {
-	pve := &Sheet{
-		Rows: map[uint32]SheetRow{
+	pve := &rolls.Sheet{
+		Rows: map[uint32]rolls.SheetRow{
 			100: {Tier: "S"}, 101: {Tier: "S"}, 110: {Tier: "A"}, 120: {Tier: "B"}, 130: {Tier: "C"},
 			140: {Tier: "A"}, 150: {Tier: "D"},
 		},
@@ -2215,8 +2216,8 @@ func verdictContext() searchContext {
 			100: {100, 101}, 101: {100, 101}, 110: {110}, 120: {120}, 130: {130}, 150: {150},
 		},
 	}
-	pvp := &Sheet{
-		Rows:     map[uint32]SheetRow{120: {Tier: "A"}},
+	pvp := &rolls.Sheet{
+		Rows:     map[uint32]rolls.SheetRow{120: {Tier: "A"}},
 		Columns:  map[uint32][][]uint32{120: {{inventorytest.PlugKillClip.Hash}}},
 		Versions: map[uint32][]uint32{120: {120}},
 	}
@@ -2249,9 +2250,9 @@ func verdictContext() searchContext {
 			weapon("no perks", 150, nil),
 			weapon("beside no perks", 150, hitting(true, false)),
 		},
-		sources: map[string]RatingSource{
-			modePvE: {Sheet: pve, Defs: &definitions.Defs{}},
-			modePvP: {Sheet: pvp, Defs: &definitions.Defs{}},
+		sources: map[string]rolls.RatingSource{
+			rolls.ModePvE: {Sheet: pve, Defs: &definitions.Defs{}},
+			rolls.ModePvP: {Sheet: pvp, Defs: &definitions.Defs{}},
 		},
 	}
 }
@@ -2271,8 +2272,8 @@ func TestVerdictRivals(t *testing.T) {
 	// The versions of 300 and 301 list 300 twice. The sheet gives 311,
 	// a version of 310, no row of its own, which a decoded sheet never
 	// does.
-	sheet := &Sheet{
-		Rows: map[uint32]SheetRow{300: {Tier: "A"}, 301: {Tier: "A"}, 302: {Tier: "A"}, 310: {Tier: "A"}},
+	sheet := &rolls.Sheet{
+		Rows: map[uint32]rolls.SheetRow{300: {Tier: "A"}, 301: {Tier: "A"}, 302: {Tier: "A"}, 310: {Tier: "A"}},
 		Columns: map[uint32][][]uint32{
 			300: verdictColumns(),
 			301: verdictColumns(),
@@ -2305,7 +2306,7 @@ func TestVerdictRivals(t *testing.T) {
 			weapon("unrated", 311, bungietest.HunterID, hitting(true, true)),
 			stack,
 		},
-		sources: map[string]RatingSource{modePvE: {Sheet: sheet, Defs: &definitions.Defs{}}},
+		sources: map[string]rolls.RatingSource{rolls.ModePvE: {Sheet: sheet, Defs: &definitions.Defs{}}},
 	}
 
 	copies := copiesByHash(ctx.items)
@@ -2369,7 +2370,7 @@ func TestVerdictValues(t *testing.T) {
 		assert.Equal(t, []string{query}, compiled(t, query).invalid, query)
 	}
 
-	assert.Equal(t, []string{modePvE}, compiled(t, "verdict:Better").modes)
+	assert.Equal(t, []string{rolls.ModePvE}, compiled(t, "verdict:Better").modes)
 }
 
 func TestVerdictNoColumns(t *testing.T) {
@@ -2453,16 +2454,16 @@ func TestPvPVerdict(t *testing.T) {
 		want  []string
 		modes []string
 	}{
-		"better":  {query: "pvpverdict:better", want: []string{"mixed b"}, modes: []string{modePvP}},
-		"worse":   {query: "pvpverdict:worse", want: []string{"mixed a"}, modes: []string{modePvP}},
-		"only":    {query: "pvpverdict:only", want: []string{}, modes: []string{modePvP}},
-		"same":    {query: "pvpverdict:same", want: []string{}, modes: []string{modePvP}},
-		"mixed":   {query: "pvpverdict:mixed", want: []string{}, modes: []string{modePvP}},
-		"verdict": {query: "verdict:mixed", want: []string{"mixed a", "mixed b"}, modes: []string{modePvE}},
+		"better":  {query: "pvpverdict:better", want: []string{"mixed b"}, modes: []string{rolls.ModePvP}},
+		"worse":   {query: "pvpverdict:worse", want: []string{"mixed a"}, modes: []string{rolls.ModePvP}},
+		"only":    {query: "pvpverdict:only", want: []string{}, modes: []string{rolls.ModePvP}},
+		"same":    {query: "pvpverdict:same", want: []string{}, modes: []string{rolls.ModePvP}},
+		"mixed":   {query: "pvpverdict:mixed", want: []string{}, modes: []string{rolls.ModePvP}},
+		"verdict": {query: "verdict:mixed", want: []string{"mixed a", "mixed b"}, modes: []string{rolls.ModePvE}},
 		"each keyword reads its own sheet": {
 			query: "verdict:mixed pvpverdict:better",
 			want:  []string{"mixed b"},
-			modes: []string{modePvE, modePvP},
+			modes: []string{rolls.ModePvE, rolls.ModePvP},
 		},
 	}
 
@@ -2805,17 +2806,17 @@ const (
 // No sheet lists a weapon row for the armor, so only the set bonuses
 // rate it.
 func setBonusContext() searchContext {
-	pve := &Sheet{
-		Rows: map[uint32]SheetRow{100: {Tier: "S"}},
-		SetBonuses: map[uint32]SetBonus{
+	pve := &rolls.Sheet{
+		Rows: map[uint32]rolls.SheetRow{100: {Tier: "S"}},
+		SetBonuses: map[uint32]rolls.SetBonus{
 			perkTwoPiece:  {Tier: "C", Pieces: 2},
 			perkFourPiece: {Tier: "S", Pieces: 4},
 			perkNoTier:    {Pieces: 4},
 		},
 	}
-	pvp := &Sheet{
-		Rows:       map[uint32]SheetRow{100: {Tier: "C"}},
-		SetBonuses: map[uint32]SetBonus{perkTwoPiece: {Tier: "A", Pieces: 2}},
+	pvp := &rolls.Sheet{
+		Rows:       map[uint32]rolls.SheetRow{100: {Tier: "C"}},
+		SetBonuses: map[uint32]rolls.SetBonus{perkTwoPiece: {Tier: "A", Pieces: 2}},
 	}
 
 	armor := func(id string, perks ...uint32) *inventory.Item {
@@ -2837,9 +2838,9 @@ func setBonusContext() searchContext {
 			armor("unrated", perkUnrated),
 			{InstanceID: "no set", Name: "no set", Hash: 200, Bucket: bungie.BucketHelmet},
 		},
-		sources: map[string]RatingSource{
-			modePvE: {Sheet: pve, Defs: &definitions.Defs{}},
-			modePvP: {Sheet: pvp, Defs: &definitions.Defs{}},
+		sources: map[string]rolls.RatingSource{
+			rolls.ModePvE: {Sheet: pve, Defs: &definitions.Defs{}},
+			rolls.ModePvP: {Sheet: pvp, Defs: &definitions.Defs{}},
 		},
 	}
 }
@@ -2965,25 +2966,33 @@ func TestPvPSetBonus(t *testing.T) {
 		want  []string
 		modes []string
 	}{
-		"pvpsetbonus: reads the PvP sheet": {query: "pvpsetbonus:a", want: []string{"set"}, modes: []string{modePvP}},
+		"pvpsetbonus: reads the PvP sheet": {
+			query: "pvpsetbonus:a",
+			want:  []string{"set"},
+			modes: []string{rolls.ModePvP},
+		},
 		"pvpsetbonus: takes a size": {
 			query: "pvpsetbonus:2pc:a",
 			want:  []string{"set"},
-			modes: []string{modePvP},
+			modes: []string{rolls.ModePvP},
 		},
 		"the PvP sheet rates no 4-piece bonus": {
 			query: "pvpsetbonus:4pc:s",
 			want:  []string{},
-			modes: []string{modePvP},
+			modes: []string{rolls.ModePvP},
 		},
-		"setbonus: reads the Aegis sheet":  {query: "setbonus:a", want: []string{}, modes: []string{modePvE}},
-		"pvprate: tests the PvP set bonus": {query: "pvprate:a", want: []string{"set"}, modes: []string{modePvP}},
-		"pvpratebase: tests the PvP bonus": {query: "pvpratebase:a", want: []string{"set"}, modes: []string{modePvP}},
-		"pvprate: below the PvP set bonus": {query: "pvprate:<a", want: []string{}, modes: []string{modePvP}},
+		"setbonus: reads the Aegis sheet":  {query: "setbonus:a", want: []string{}, modes: []string{rolls.ModePvE}},
+		"pvprate: tests the PvP set bonus": {query: "pvprate:a", want: []string{"set"}, modes: []string{rolls.ModePvP}},
+		"pvpratebase: tests the PvP bonus": {
+			query: "pvpratebase:a",
+			want:  []string{"set"},
+			modes: []string{rolls.ModePvP},
+		},
+		"pvprate: below the PvP set bonus": {query: "pvprate:<a", want: []string{}, modes: []string{rolls.ModePvP}},
 		"both modes in the order of modes": {
 			query: "pvpsetbonus:a setbonus:s",
 			want:  []string{"set"},
-			modes: []string{modePvE, modePvP},
+			modes: []string{rolls.ModePvE, rolls.ModePvP},
 		},
 	}
 

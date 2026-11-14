@@ -10,6 +10,11 @@
 // perks that it expects from the same plugs. A test of the items that a
 // call selects compares their instance ids, in order.
 //
+// For the tests of the roll ratings, the package holds the trait Firefly
+// without the description that the snapshot gives it. A test that compares
+// the perks of the snapshot therefore cannot use that Firefly plug. For the
+// same tests, the package builds the perks of one rolled weapon copy.
+//
 // The internal tests of package inventory cannot import this package,
 // because it imports package inventory. They keep their own copies of the
 // snapshot, the plugs, and the list of instance ids.

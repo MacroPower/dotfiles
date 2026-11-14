@@ -26,7 +26,22 @@ var (
 	PlugKillClip = inventory.Plug{Name: "Kill Clip", Type: typeTrait, Hash: 904}
 	// PlugKillClipEnhanced is the enhanced trait of Kill Clip.
 	PlugKillClipEnhanced = inventory.Plug{Name: "Kill Clip", Type: "Enhanced Trait", Hash: 905}
+	// PlugFirefly is the trait Firefly. It leaves out the description that
+	// the fixture definitions give the trait.
+	PlugFirefly = inventory.Plug{Name: "Firefly", Type: typeTrait, Hash: 901}
 )
+
+// RolledPerks returns the perks of a copy that holds Explosive Payload
+// with Rampage beside it in one socket, and Firefly alone in another.
+func RolledPerks() []inventory.Perk {
+	return []inventory.Perk{
+		{
+			Plug:  PlugExplosivePayload,
+			Plugs: []inventory.Plug{PlugExplosivePayload, PlugRampage},
+		},
+		{Plug: PlugFirefly, Plugs: []inventory.Plug{PlugFirefly}, Socket: 1},
+	}
+}
 
 // Snapshot returns the inventory of the Bungie fixture profile at
 // [bungietest.Now], resolved against the definitions of package

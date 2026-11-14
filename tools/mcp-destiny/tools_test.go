@@ -30,6 +30,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 )
 
@@ -1865,7 +1866,7 @@ func TestRatingSources(t *testing.T) {
 		// sheet.
 		reasons map[string]string
 		// causes holds the error that the reason of a mode wraps beside
-		// [ErrNoRating].
+		// [rolls.ErrNoRating].
 		causes map[string]error
 		// noPrefs makes the service answer the request for the perk
 		// preferences with the status 404.
@@ -1879,31 +1880,31 @@ func TestRatingSources(t *testing.T) {
 		"each mode with a sheet carries the stances of the mode": {
 			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"rolls.a.json"}},
 			stances: map[string]map[string]string{
-				modePvE: {"Firefly": stanceUp},
-				modePvP: {"Rampage": stanceDown},
+				rolls.ModePvE: {"Firefly": rolls.StanceUp},
+				rolls.ModePvP: {"Rampage": rolls.StanceDown},
 			},
 		},
 		"mode without a sheet carries the reason of the sheet": {
 			files:   map[string][]string{"rolls": {"rolls.a.json"}},
-			stances: map[string]map[string]string{modePvE: {"Firefly": stanceUp}},
-			reasons: map[string]string{modePvP: noPvP},
+			stances: map[string]map[string]string{rolls.ModePvE: {"Firefly": rolls.StanceUp}},
+			reasons: map[string]string{rolls.ModePvP: noPvP},
 		},
 		"unreadable perk preferences are the reason of each mode with a sheet": {
 			files:   map[string][]string{"rolls": {"rolls.a.json"}},
-			reasons: map[string]string{modePvE: unreadable, modePvP: noPvP},
-			causes:  map[string]error{modePvE: dvm.ErrService},
+			reasons: map[string]string{rolls.ModePvE: unreadable, rolls.ModePvP: noPvP},
+			causes:  map[string]error{rolls.ModePvE: dvm.ErrService},
 			noPrefs: true,
 		},
 		"unreadable definitions are the reason of each mode with a sheet": {
 			files:   map[string][]string{"rolls": {"rolls.a.json"}},
-			reasons: map[string]string{modePvE: undefined, modePvP: noPvP},
-			causes:  map[string]error{modePvE: definitions.ErrDefs},
+			reasons: map[string]string{rolls.ModePvE: undefined, rolls.ModePvP: noPvP},
+			causes:  map[string]error{rolls.ModePvE: definitions.ErrDefs},
 			noDefs:  true,
 		},
 		"unreadable perk preferences win against unreadable definitions": {
 			files:   map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"rolls.a.json"}},
-			reasons: map[string]string{modePvE: unreadable, modePvP: unreadable},
-			causes:  map[string]error{modePvE: dvm.ErrService, modePvP: dvm.ErrService},
+			reasons: map[string]string{rolls.ModePvE: unreadable, rolls.ModePvP: unreadable},
+			causes:  map[string]error{rolls.ModePvE: dvm.ErrService, rolls.ModePvP: dvm.ErrService},
 			noPrefs: true,
 			noDefs:  true,
 		},
@@ -1928,9 +1929,9 @@ func TestRatingSources(t *testing.T) {
 			}
 
 			got := f.h.ratingSources(t.Context())
-			require.Len(t, got, len(perkModes))
+			require.Len(t, got, len(rolls.Modes))
 
-			for _, mode := range perkModes {
+			for _, mode := range rolls.Modes {
 				source := got[mode]
 
 				reason, ok := tc.reasons[mode]
@@ -1943,7 +1944,7 @@ func TestRatingSources(t *testing.T) {
 					continue
 				}
 
-				require.ErrorIsf(t, source.Err, ErrNoRating, "mode %s", mode)
+				require.ErrorIsf(t, source.Err, rolls.ErrNoRating, "mode %s", mode)
 				require.EqualErrorf(t, source.Err, reason, "mode %s", mode)
 				assert.Nilf(t, source.Sheet, "mode %s", mode)
 				assert.Nilf(t, source.Stances, "mode %s", mode)
@@ -1963,11 +1964,11 @@ func TestWriteRating(t *testing.T) {
 
 	// hit returns the verdict of a column that hit with the named
 	// perks, none of which the user likes.
-	hit := func(names ...string) ColumnVerdict {
-		var verdict ColumnVerdict
+	hit := func(names ...string) rolls.ColumnVerdict {
+		var verdict rolls.ColumnVerdict
 
 		for _, name := range names {
-			verdict.Hits = append(verdict.Hits, Hit{Name: name})
+			verdict.Hits = append(verdict.Hits, rolls.Hit{Name: name})
 		}
 
 		return verdict
@@ -1979,36 +1980,38 @@ func TestWriteRating(t *testing.T) {
 
 	tests := map[string]struct {
 		mode   string
-		rating Rating
+		rating rolls.Rating
 		want   []string
 	}{
 		"reason": {
-			mode:   modePvE,
-			rating: Rating{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", ErrNoRating)},
+			mode:   rolls.ModePvE,
+			rating: rolls.Rating{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", rolls.ErrNoRating)},
 			want:   []string{"- PvE: rating unavailable: the service publishes no Aegis sheet"},
 		},
 		"weapon that the sheet does not list": {
-			mode: modePvE,
+			mode: rolls.ModePvE,
 			want: []string{"- PvE: not on the Aegis sheet"},
 		},
 		"weapon that the PvP sheet does not list": {
-			mode: modePvP,
+			mode: rolls.ModePvP,
 			want: []string{"- PvP: not on the PvP sheet"},
 		},
 		"row with a tier and no columns": {
-			mode:   modePvE,
-			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "A", Category: "Exotic Weapons"}, Overall: "A"}},
-			want:   []string{"- PvE: A on the Aegis sheet (in Exotic Weapons), which judges no perk columns"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{
+				Roll: &rolls.Roll{Row: rolls.SheetRow{Tier: "A", Category: "Exotic Weapons"}, Overall: "A"},
+			},
+			want: []string{"- PvE: A on the Aegis sheet (in Exotic Weapons), which judges no perk columns"},
 		},
 		"row without a tier and without columns": {
-			mode:   modePvE,
-			rating: Rating{Roll: &Roll{Row: SheetRow{Category: "Exotic Weapons"}}},
+			mode:   rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{Row: rolls.SheetRow{Category: "Exotic Weapons"}}},
 			want:   []string{"- PvE: no tier on the Aegis sheet (in Exotic Weapons), which judges no perk columns"},
 		},
 		"unknown roll on a row with a tier": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "S", Category: "HCs", Rank: 3, Ranked: 62},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "S", Category: "HCs", Rank: 3, Ranked: 62},
 				Unknown: true,
 			}},
 			want: []string{
@@ -2017,18 +2020,18 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"unknown roll on a row without a tier": {
-			mode:   modePvE,
-			rating: Rating{Roll: &Roll{Row: SheetRow{Category: "HCs"}, Unknown: true}},
+			mode:   rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{Row: rolls.SheetRow{Category: "HCs"}, Unknown: true}},
 			want: []string{
 				"- PvE: no tier on the Aegis sheet (in HCs), roll unknown: the profile lists no perks for this copy",
 			},
 		},
 		"roll with a tier and no miss prints the tier twice": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "S", Category: "HCs"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "S", Category: "HCs"},
 				Overall: "S",
-				Columns: []ColumnVerdict{hit("Explosive Payload"), hit("Firefly")},
+				Columns: []rolls.ColumnVerdict{hit("Explosive Payload"), hit("Firefly")},
 			}},
 			want: []string{
 				"- PvE: S for this roll, S on the Aegis sheet (in HCs), 2 of 2 perk columns hit",
@@ -2037,11 +2040,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"roll with a tier and one miss": {
-			mode: modePvP,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "S", Category: "Hand Cannon"},
+			mode: rolls.ModePvP,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "S", Category: "Hand Cannon"},
 				Overall: "A",
-				Columns: []ColumnVerdict{{}, hit("Firefly")},
+				Columns: []rolls.ColumnVerdict{{}, hit("Firefly")},
 			}},
 			want: []string{
 				"- PvP: A for this roll, S on the PvP sheet (in Hand Cannon), 1 of 2 perk columns hit",
@@ -2050,10 +2053,10 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"roll without a tier has no tier for the roll": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Category: "HCs", Rank: 3, Ranked: 62},
-				Columns: []ColumnVerdict{hit("Explosive Payload"), {}},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Category: "HCs", Rank: 3, Ranked: 62},
+				Columns: []rolls.ColumnVerdict{hit("Explosive Payload"), {}},
 			}},
 			want: []string{
 				"- PvE: no tier on the Aegis sheet (rank 3 of 62 in HCs), 1 of 2 perk columns hit",
@@ -2062,11 +2065,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"row with one column keeps the plural": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "HCs"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "HCs"},
 				Overall: "C",
-				Columns: []ColumnVerdict{hit("Firefly")},
+				Columns: []rolls.ColumnVerdict{hit("Firefly")},
 			}},
 			want: []string{
 				"- PvE: C for this roll, C on the Aegis sheet (in HCs), 1 of 1 perk columns hit",
@@ -2074,11 +2077,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"hit with two names": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "D", Category: "HCs"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "D", Category: "HCs"},
 				Overall: "E",
-				Columns: []ColumnVerdict{hit("Explosive Payload", "Rampage"), {}},
+				Columns: []rolls.ColumnVerdict{hit("Explosive Payload", "Rampage"), {}},
 			}},
 			want: []string{
 				"- PvE: E for this roll, D on the Aegis sheet (in HCs), 1 of 2 perk columns hit",
@@ -2087,11 +2090,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"hit with one liked name": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "HCs"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "HCs"},
 				Overall: "C",
-				Columns: []ColumnVerdict{{Hits: []Hit{{Name: "Firefly", Liked: true}}}},
+				Columns: []rolls.ColumnVerdict{{Hits: []rolls.Hit{{Name: "Firefly", Liked: true}}}},
 			}},
 			want: []string{
 				"- PvE: C for this roll, C on the Aegis sheet (in HCs), 1 of 1 perk columns hit",
@@ -2099,12 +2102,12 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"hit with one liked name and one name without the mark": {
-			mode: modePvP,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "Hand Cannon"},
+			mode: rolls.ModePvP,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "Hand Cannon"},
 				Overall: "C",
-				Columns: []ColumnVerdict{
-					{Hits: []Hit{{Name: "Explosive Payload"}, {Name: "Firefly", Liked: true}}},
+				Columns: []rolls.ColumnVerdict{
+					{Hits: []rolls.Hit{{Name: "Explosive Payload"}, {Name: "Firefly", Liked: true}}},
 				},
 			}},
 			want: []string{
@@ -2113,12 +2116,12 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"hit with picks names the picks": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "HCs"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "HCs"},
 				Overall: "C",
-				Columns: []ColumnVerdict{
-					{Hits: []Hit{{Name: "Explosive Payload"}}, Picks: []string{"Explosive Payload"}},
+				Columns: []rolls.ColumnVerdict{
+					{Hits: []rolls.Hit{{Name: "Explosive Payload"}}, Picks: []string{"Explosive Payload"}},
 				},
 			}},
 			want: []string{
@@ -2127,11 +2130,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"miss with picks names the picks": {
-			mode: modePvP,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "Hand Cannon"},
+			mode: rolls.ModePvP,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "Hand Cannon"},
 				Overall: "D",
-				Columns: []ColumnVerdict{{Picks: []string{"Kill Clip"}}},
+				Columns: []rolls.ColumnVerdict{{Picks: []string{"Kill Clip"}}},
 			}},
 			want: []string{
 				"- PvP: D for this roll, C on the PvP sheet (in Hand Cannon), 0 of 1 perk columns hit",
@@ -2139,12 +2142,12 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"liked hit carries the mark before the picks": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "HCs"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "HCs"},
 				Overall: "C",
-				Columns: []ColumnVerdict{{
-					Hits:  []Hit{{Name: "Explosive Payload"}, {Name: "Firefly", Liked: true}},
+				Columns: []rolls.ColumnVerdict{{
+					Hits:  []rolls.Hit{{Name: "Explosive Payload"}, {Name: "Firefly", Liked: true}},
 					Picks: []string{"Explosive Payload", "Rampage"},
 				}},
 			}},
@@ -2154,13 +2157,13 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"hit without picks beside a hit with picks has no second sentence": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "HCs"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "HCs"},
 				Overall: "C",
-				Columns: []ColumnVerdict{
-					{Hits: []Hit{{Name: "Firefly", Liked: true}}},
-					{Hits: []Hit{{Name: "Rampage"}}, Picks: []string{"Rampage"}},
+				Columns: []rolls.ColumnVerdict{
+					{Hits: []rolls.Hit{{Name: "Firefly", Liked: true}}},
+					{Hits: []rolls.Hit{{Name: "Rampage"}}, Picks: []string{"Rampage"}},
 				},
 			}},
 			want: []string{
@@ -2170,11 +2173,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"miss without picks beside a miss with picks has no second sentence": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "HCs"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "HCs"},
 				Overall: "E",
-				Columns: []ColumnVerdict{{}, {Picks: []string{"Kill Clip"}}},
+				Columns: []rolls.ColumnVerdict{{}, {Picks: []string{"Kill Clip"}}},
 			}},
 			want: []string{
 				"- PvE: E for this roll, C on the Aegis sheet (in HCs), 0 of 2 perk columns hit",
@@ -2183,11 +2186,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"two picks print with a comma and a space between them": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "HCs"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "HCs"},
 				Overall: "D",
-				Columns: []ColumnVerdict{{Picks: []string{"Explosive Payload", "Rampage"}}},
+				Columns: []rolls.ColumnVerdict{{Picks: []string{"Explosive Payload", "Rampage"}}},
 			}},
 			want: []string{
 				"- PvE: D for this roll, C on the Aegis sheet (in HCs), 0 of 1 perk columns hit",
@@ -2195,11 +2198,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"note follows a column line with picks": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "S", Category: "HCs", Notes: "Add clear and boss damage."},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "S", Category: "HCs", Notes: "Add clear and boss damage."},
 				Overall: "A",
-				Columns: []ColumnVerdict{{Picks: []string{"Kill Clip"}}},
+				Columns: []rolls.ColumnVerdict{{Picks: []string{"Kill Clip"}}},
 			}},
 			want: []string{
 				"- PvE: A for this roll, S on the Aegis sheet (in HCs), 0 of 1 perk columns hit",
@@ -2209,11 +2212,11 @@ func TestWriteRating(t *testing.T) {
 		},
 		// Rank 1 is the lowest rank that prints.
 		"rated roll on a row with the rank 1": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "S", Category: "HCs", Rank: 1, Ranked: 62},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "S", Category: "HCs", Rank: 1, Ranked: 62},
 				Overall: "S",
-				Columns: []ColumnVerdict{hit("Firefly")},
+				Columns: []rolls.ColumnVerdict{hit("Firefly")},
 			}},
 			want: []string{
 				"- PvE: S for this roll, S on the Aegis sheet (rank 1 of 62 in HCs), 1 of 1 perk columns hit",
@@ -2222,11 +2225,11 @@ func TestWriteRating(t *testing.T) {
 		},
 		// The category size prints only beside a rank.
 		"rated roll on a row without a rank": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "S", Category: "HCs", Ranked: 62},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "S", Category: "HCs", Ranked: 62},
 				Overall: "S",
-				Columns: []ColumnVerdict{hit("Firefly")},
+				Columns: []rolls.ColumnVerdict{hit("Firefly")},
 			}},
 			want: []string{
 				"- PvE: S for this roll, S on the Aegis sheet (in HCs), 1 of 1 perk columns hit",
@@ -2234,11 +2237,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"note follows the last column line": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "S", Category: "HCs", Notes: "Add clear and boss damage."},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "S", Category: "HCs", Notes: "Add clear and boss damage."},
 				Overall: "A",
-				Columns: []ColumnVerdict{hit("Explosive Payload"), {}},
+				Columns: []rolls.ColumnVerdict{hit("Explosive Payload"), {}},
 			}},
 			want: []string{
 				"- PvE: A for this roll, S on the Aegis sheet (in HCs), 1 of 2 perk columns hit",
@@ -2248,11 +2251,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"note with blank lines and spaces around a line prints its two lines": {
-			mode: modePvP,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "Hand Cannon", Notes: note},
+			mode: rolls.ModePvP,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "Hand Cannon", Notes: note},
 				Overall: "C",
-				Columns: []ColumnVerdict{hit("Firefly")},
+				Columns: []rolls.ColumnVerdict{hit("Firefly")},
 			}},
 			want: []string{
 				"- PvP: C for this roll, C on the PvP sheet (in Hand Cannon), 1 of 1 perk columns hit",
@@ -2262,9 +2265,9 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"note follows a line that judges no perk columns": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "A", Category: "Exotic Weapons", Notes: "Boss damage."},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "A", Category: "Exotic Weapons", Notes: "Boss damage."},
 				Overall: "A",
 			}},
 			want: []string{
@@ -2273,9 +2276,9 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"note follows a roll unknown line": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "S", Category: "HCs", Notes: note},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "S", Category: "HCs", Notes: note},
 				Unknown: true,
 			}},
 			want: []string{
@@ -2285,10 +2288,10 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"note follows the column lines of a row without a tier": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Category: "HCs", Notes: "Add clear and boss damage."},
-				Columns: []ColumnVerdict{{}},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Category: "HCs", Notes: "Add clear and boss damage."},
+				Columns: []rolls.ColumnVerdict{{}},
 			}},
 			want: []string{
 				"- PvE: no tier on the Aegis sheet (in HCs), 0 of 1 perk columns hit",
@@ -2297,11 +2300,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"row without a note prints no note line": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "B", Category: "HCs", Rank: 3, Ranked: 62},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "B", Category: "HCs", Rank: 3, Ranked: 62},
 				Overall: "C",
-				Columns: []ColumnVerdict{hit("Firefly"), {}},
+				Columns: []rolls.ColumnVerdict{hit("Firefly"), {}},
 			}},
 			want: []string{
 				"- PvE: C for this roll, B on the Aegis sheet (rank 3 of 62 in HCs), 1 of 2 perk columns hit",
@@ -2310,11 +2313,11 @@ func TestWriteRating(t *testing.T) {
 			},
 		},
 		"note of blank lines and spaces prints no line": {
-			mode: modePvE,
-			rating: Rating{Roll: &Roll{
-				Row:     SheetRow{Tier: "C", Category: "HCs", Notes: "\n  \n\t\n\n"},
+			mode: rolls.ModePvE,
+			rating: rolls.Rating{Roll: &rolls.Roll{
+				Row:     rolls.SheetRow{Tier: "C", Category: "HCs", Notes: "\n  \n\t\n\n"},
 				Overall: "C",
-				Columns: []ColumnVerdict{hit("Firefly")},
+				Columns: []rolls.ColumnVerdict{hit("Firefly")},
 			}},
 			want: []string{
 				"- PvE: C for this roll, C on the Aegis sheet (in HCs), 1 of 1 perk columns hit",
@@ -2339,42 +2342,52 @@ func TestWriteRating(t *testing.T) {
 func TestRatingLabel(t *testing.T) {
 	t.Parallel()
 
-	hit := ColumnVerdict{Hits: []Hit{{Name: "Firefly"}}}
+	hit := rolls.ColumnVerdict{Hits: []rolls.Hit{{Name: "Firefly"}}}
 
 	tests := map[string]struct {
 		want   string
-		rating Rating
+		rating rolls.Rating
 	}{
 		"game mode without ratings": {
-			rating: Rating{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", ErrNoRating)},
+			rating: rolls.Rating{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", rolls.ErrNoRating)},
 			want:   "unavailable",
 		},
 		"weapon that the sheet does not list": {
 			want: "not listed",
 		},
 		"roll with a missed column on a row without a tier": {
-			rating: Rating{Roll: &Roll{Columns: []ColumnVerdict{hit, {}}}},
+			rating: rolls.Rating{Roll: &rolls.Roll{Columns: []rolls.ColumnVerdict{hit, {}}}},
 			want:   "no tier",
 		},
 		"unknown roll on a row without a tier": {
-			rating: Rating{Roll: &Roll{Unknown: true}},
+			rating: rolls.Rating{Roll: &rolls.Roll{Unknown: true}},
 			want:   "no tier",
 		},
 		"unknown roll on a row with a tier": {
-			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "S"}, Unknown: true}},
+			rating: rolls.Rating{Roll: &rolls.Roll{Row: rolls.SheetRow{Tier: "S"}, Unknown: true}},
 			want:   "roll unknown (sheet S)",
 		},
 		"roll that keeps the tier of the row": {
-			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "S"}, Overall: "S", Columns: []ColumnVerdict{hit}}},
-			want:   "S",
+			rating: rolls.Rating{
+				Roll: &rolls.Roll{Row: rolls.SheetRow{Tier: "S"}, Overall: "S", Columns: []rolls.ColumnVerdict{hit}},
+			},
+			want: "S",
 		},
 		"roll that lost a tier": {
-			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "S"}, Overall: "A", Columns: []ColumnVerdict{hit, {}}}},
-			want:   "A (sheet S)",
+			rating: rolls.Rating{
+				Roll: &rolls.Roll{
+					Row:     rolls.SheetRow{Tier: "S"},
+					Overall: "A",
+					Columns: []rolls.ColumnVerdict{hit, {}},
+				},
+			},
+			want: "A (sheet S)",
 		},
 		"roll that lost the last tier": {
-			rating: Rating{Roll: &Roll{Row: SheetRow{Tier: "E"}, Overall: "F", Columns: []ColumnVerdict{{}, {}}}},
-			want:   "F (sheet E)",
+			rating: rolls.Rating{
+				Roll: &rolls.Roll{Row: rolls.SheetRow{Tier: "E"}, Overall: "F", Columns: []rolls.ColumnVerdict{{}, {}}},
+			},
+			want: "F (sheet E)",
 		},
 	}
 
@@ -2391,16 +2404,16 @@ func TestRatingCell(t *testing.T) {
 	t.Parallel()
 
 	// The sheet lists item 7 with the tier A and without perk columns.
-	listed := RatingSource{Sheet: &Sheet{
-		Rows:    map[uint32]SheetRow{7: {Tier: "A"}},
+	listed := rolls.RatingSource{Sheet: &rolls.Sheet{
+		Rows:    map[uint32]rolls.SheetRow{7: {Tier: "A"}},
 		Columns: map[uint32][][]uint32{},
 	}}
-	noSheet := RatingSource{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", ErrNoRating)}
+	noSheet := rolls.RatingSource{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", rolls.ErrNoRating)}
 
 	tests := map[string]struct {
 		item   *inventory.Item
 		want   string
-		source RatingSource
+		source rolls.RatingSource
 	}{
 		"armor that the sheet lists with a tier": {
 			source: listed,
@@ -2437,29 +2450,31 @@ func TestRatingReasons(t *testing.T) {
 	t.Parallel()
 
 	var (
-		loaded  = RatingSource{Sheet: &Sheet{}}
-		noAegis = RatingSource{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", ErrNoRating)}
-		noPvP   = RatingSource{Err: fmt.Errorf("%w: the service publishes no PvP sheet", ErrNoRating)}
-		noPrefs = RatingSource{Err: fmt.Errorf("%w: reading perk preferences: %w", ErrNoRating, dvm.ErrService)}
+		loaded  = rolls.RatingSource{Sheet: &rolls.Sheet{}}
+		noAegis = rolls.RatingSource{Err: fmt.Errorf("%w: the service publishes no Aegis sheet", rolls.ErrNoRating)}
+		noPvP   = rolls.RatingSource{Err: fmt.Errorf("%w: the service publishes no PvP sheet", rolls.ErrNoRating)}
+		noPrefs = rolls.RatingSource{
+			Err: fmt.Errorf("%w: reading perk preferences: %w", rolls.ErrNoRating, dvm.ErrService),
+		}
 	)
 
 	tests := map[string]struct {
-		sources map[string]RatingSource
+		sources map[string]rolls.RatingSource
 		want    []string
 	}{
 		"every game mode has ratings": {
-			sources: map[string]RatingSource{modePvE: loaded, modePvP: loaded},
+			sources: map[string]rolls.RatingSource{rolls.ModePvE: loaded, rolls.ModePvP: loaded},
 		},
 		"only PvE has no ratings": {
-			sources: map[string]RatingSource{modePvE: noAegis, modePvP: loaded},
+			sources: map[string]rolls.RatingSource{rolls.ModePvE: noAegis, rolls.ModePvP: loaded},
 			want:    []string{"PvE: rating unavailable: the service publishes no Aegis sheet"},
 		},
 		"only PvP has no ratings": {
-			sources: map[string]RatingSource{modePvE: loaded, modePvP: noPvP},
+			sources: map[string]rolls.RatingSource{rolls.ModePvE: loaded, rolls.ModePvP: noPvP},
 			want:    []string{"PvP: rating unavailable: the service publishes no PvP sheet"},
 		},
 		"PvE line comes first": {
-			sources: map[string]RatingSource{modePvP: noPvP, modePvE: noAegis},
+			sources: map[string]rolls.RatingSource{rolls.ModePvP: noPvP, rolls.ModePvE: noAegis},
 			want: []string{
 				"PvE: rating unavailable: the service publishes no Aegis sheet",
 				"PvP: rating unavailable: the service publishes no PvP sheet",
@@ -2468,7 +2483,7 @@ func TestRatingReasons(t *testing.T) {
 		// The loop compares each line of every case with the line of
 		// get_item. This case adds a reason that wraps a cause.
 		"line of a mode is the get_item line without the list marker": {
-			sources: map[string]RatingSource{modePvE: noPrefs, modePvP: noPvP},
+			sources: map[string]rolls.RatingSource{rolls.ModePvE: noPrefs, rolls.ModePvP: noPvP},
 			want: []string{
 				"PvE: rating unavailable: reading perk preferences: service",
 				"PvP: rating unavailable: the service publishes no PvP sheet",
@@ -2486,10 +2501,10 @@ func TestRatingReasons(t *testing.T) {
 			// get_item prints the reason of each mode as a list item.
 			var b strings.Builder
 
-			for _, mode := range perkModes {
+			for _, mode := range rolls.Modes {
 				err := tc.sources[mode].Err
 				if err != nil {
-					writeRating(&b, mode, Rating{Err: err})
+					writeRating(&b, mode, rolls.Rating{Err: err})
 				}
 			}
 

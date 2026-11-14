@@ -1,4 +1,4 @@
-package main
+package rolls
 
 import (
 	"fmt"
@@ -13,25 +13,11 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
 )
 
-// Plugs of the roll tests that the fixture definitions do not hold. The
-// enhanced Rampage has a name of its own. The enhanced Kill Clip of the
-// fixture plugs shares the name of its base trait.
-var (
-	plugFirefly         = inventory.Plug{Name: "Firefly", Type: "Trait", Hash: 901}
-	plugRampageEnhanced = inventory.Plug{Name: "Rampage Enhanced", Type: "Enhanced Trait", Hash: 909}
-)
-
-// rolledPerks returns the perks of a copy that holds Explosive Payload
-// with Rampage beside it in one socket, and Firefly alone in another.
-func rolledPerks() []inventory.Perk {
-	return []inventory.Perk{
-		{
-			Plug:  inventorytest.PlugExplosivePayload,
-			Plugs: []inventory.Plug{inventorytest.PlugExplosivePayload, inventorytest.PlugRampage},
-		},
-		{Plug: plugFirefly, Plugs: []inventory.Plug{plugFirefly}, Socket: 1},
-	}
-}
+// plugRampageEnhanced is a plug of the roll tests that the fixture
+// definitions do not hold. The enhanced Rampage has a name of its own.
+// The enhanced Kill Clip of the fixture plugs shares the name of its base
+// trait.
+var plugRampageEnhanced = inventory.Plug{Name: "Rampage Enhanced", Type: "Enhanced Trait", Hash: 909}
 
 // rollDefs returns definitions that name the plugs of the pick cases.
 // Plugs 904 and 905 are the base trait and the enhanced trait of one
@@ -92,7 +78,7 @@ func TestRate(t *testing.T) {
 	}{
 		"source with a reason and no sheet returns the reason": {
 			source: RatingSource{Err: errNoSheet},
-			perks:  rolledPerks(),
+			perks:  inventorytest.RolledPerks(),
 			err:    errNoSheet,
 		},
 		"weapon that the sheet does not list has no roll": {
@@ -103,11 +89,11 @@ func TestRate(t *testing.T) {
 				},
 				Defs: &definitions.Defs{},
 			},
-			perks: rolledPerks(),
+			perks: inventorytest.RolledPerks(),
 		},
 		"row without columns keeps its tier": {
 			source: listed("A"),
-			perks:  rolledPerks(),
+			perks:  inventorytest.RolledPerks(),
 			want:   &Roll{Row: SheetRow{Tier: "A"}, Overall: "A"},
 		},
 		"row without columns on a copy without perks keeps its tier": {
@@ -116,7 +102,7 @@ func TestRate(t *testing.T) {
 		},
 		"row without a tier and without columns has no tier": {
 			source: listed(""),
-			perks:  rolledPerks(),
+			perks:  inventorytest.RolledPerks(),
 			want:   &Roll{},
 		},
 		"copy without perks is unknown": {
@@ -129,7 +115,7 @@ func TestRate(t *testing.T) {
 		},
 		"no miss keeps the tier": {
 			source: listed("S", []uint32{900}, []uint32{901}),
-			perks:  rolledPerks(),
+			perks:  inventorytest.RolledPerks(),
 			want: &Roll{
 				Row:     SheetRow{Tier: "S"},
 				Overall: "S",
@@ -138,7 +124,7 @@ func TestRate(t *testing.T) {
 		},
 		"one miss moves the tier down one step": {
 			source: listed("S", []uint32{900}, []uint32{904}),
-			perks:  rolledPerks(),
+			perks:  inventorytest.RolledPerks(),
 			want: &Roll{
 				Row:     SheetRow{Tier: "S"},
 				Overall: "A",
@@ -147,7 +133,7 @@ func TestRate(t *testing.T) {
 		},
 		"two misses move the tier down two steps": {
 			source: listed("S", []uint32{904}, []uint32{905}),
-			perks:  rolledPerks(),
+			perks:  inventorytest.RolledPerks(),
 			want: &Roll{
 				Row:     SheetRow{Tier: "S"},
 				Overall: "B",
@@ -156,7 +142,7 @@ func TestRate(t *testing.T) {
 		},
 		"two misses from E stop at F": {
 			source: listed("E", []uint32{904}, []uint32{905}),
-			perks:  rolledPerks(),
+			perks:  inventorytest.RolledPerks(),
 			want: &Roll{
 				Row:     SheetRow{Tier: "E"},
 				Overall: "F",
@@ -165,7 +151,7 @@ func TestRate(t *testing.T) {
 		},
 		"two misses from F stay at F": {
 			source: listed("F", []uint32{904}, []uint32{905}),
-			perks:  rolledPerks(),
+			perks:  inventorytest.RolledPerks(),
 			want: &Roll{
 				Row:     SheetRow{Tier: "F"},
 				Overall: "F",
@@ -174,7 +160,7 @@ func TestRate(t *testing.T) {
 		},
 		"row without a tier that has columns keeps its verdicts": {
 			source: listed("", []uint32{900}, []uint32{904}),
-			perks:  rolledPerks(),
+			perks:  inventorytest.RolledPerks(),
 			want:   &Roll{Columns: []ColumnVerdict{hits("Explosive Payload"), {}}},
 		},
 	}
@@ -183,7 +169,7 @@ func TestRate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := rate(tc.source, &inventory.Item{Hash: 100, Perks: tc.perks})
+			got := Rate(tc.source, &inventory.Item{Hash: 100, Perks: tc.perks})
 
 			if tc.err != nil {
 				require.ErrorIs(t, got.Err, tc.err)
@@ -205,12 +191,12 @@ func TestRateColumns(t *testing.T) {
 		want    []ColumnVerdict
 	}{
 		"active plug is a pick": {
-			perks:   rolledPerks(),
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900}},
 			want:    []ColumnVerdict{hits("Explosive Payload")},
 		},
 		"plug that is not active is the only pick": {
-			perks:   rolledPerks(),
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{903}},
 			want:    []ColumnVerdict{hits("Rampage")},
 		},
@@ -222,12 +208,12 @@ func TestRateColumns(t *testing.T) {
 			want:    []ColumnVerdict{hits("Explosive Payload")},
 		},
 		"socket without a plug list counts its active plug": {
-			perks:   []inventory.Perk{{Plug: plugFirefly}},
+			perks:   []inventory.Perk{{Plug: inventorytest.PlugFirefly}},
 			columns: [][]uint32{{901}},
 			want:    []ColumnVerdict{hits("Firefly")},
 		},
 		"no socket holds a pick": {
-			perks:   rolledPerks(),
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{904, 905}},
 			want:    []ColumnVerdict{{}},
 		},
@@ -237,13 +223,17 @@ func TestRateColumns(t *testing.T) {
 					Plug:  inventorytest.PlugExplosivePayload,
 					Plugs: []inventory.Plug{inventorytest.PlugExplosivePayload, inventorytest.PlugRampage},
 				},
-				{Plug: plugFirefly, Plugs: []inventory.Plug{plugFirefly, inventorytest.PlugKillClip}, Socket: 1},
+				{
+					Plug:   inventorytest.PlugFirefly,
+					Plugs:  []inventory.Plug{inventorytest.PlugFirefly, inventorytest.PlugKillClip},
+					Socket: 1,
+				},
 			},
 			columns: [][]uint32{{901, 904, 903}},
 			want:    []ColumnVerdict{hits("Rampage")},
 		},
 		"two columns resolve to one socket": {
-			perks:   rolledPerks(),
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900}, {903}},
 			want:    []ColumnVerdict{hits("Explosive Payload"), hits("Rampage")},
 		},
@@ -297,7 +287,7 @@ func TestRateColumns(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := rate(listed("S", tc.columns...), &inventory.Item{Hash: 100, Perks: tc.perks})
+			got := Rate(listed("S", tc.columns...), &inventory.Item{Hash: 100, Perks: tc.perks})
 
 			require.NoError(t, got.Err)
 			require.NotNil(t, got.Roll)
@@ -311,17 +301,17 @@ func TestRateColumns(t *testing.T) {
 func TestRateModes(t *testing.T) {
 	t.Parallel()
 
-	item := &inventory.Item{Hash: 100, Perks: rolledPerks()}
+	item := &inventory.Item{Hash: 100, Perks: inventorytest.RolledPerks()}
 
 	sources := map[string]RatingSource{
-		modePvE: listed("S", []uint32{900}, []uint32{901}),
-		modePvP: listed("C", []uint32{900}, []uint32{904}),
+		ModePvE: listed("S", []uint32{900}, []uint32{901}),
+		ModePvP: listed("C", []uint32{900}, []uint32{904}),
 	}
 
-	want := map[string]string{modePvE: "S", modePvP: "D"}
+	want := map[string]string{ModePvE: "S", ModePvP: "D"}
 
-	for _, mode := range perkModes {
-		got := rate(sources[mode], item)
+	for _, mode := range Modes {
+		got := Rate(sources[mode], item)
 
 		require.NotNilf(t, got.Roll, "mode %s", mode)
 		assert.Equalf(t, want[mode], got.Roll.Overall, "mode %s", mode)
@@ -336,36 +326,36 @@ func TestStancesByMode(t *testing.T) {
 		prefs []dvm.PerkPreference
 	}{
 		"no preference gives each mode an empty map": {
-			want: map[string]map[string]string{modePvE: {}, modePvP: {}},
+			want: map[string]map[string]string{ModePvE: {}, ModePvP: {}},
 		},
 		// The set_perk_preferences tool writes a removal as a removed
 		// row with the stance up.
 		"removed row has no stance": {
-			prefs: []dvm.PerkPreference{{Mode: modePvE, Perk: "Firefly", Stance: stanceUp, Removed: true}},
-			want:  map[string]map[string]string{modePvE: {}, modePvP: {}},
+			prefs: []dvm.PerkPreference{{Mode: ModePvE, Perk: "Firefly", Stance: StanceUp, Removed: true}},
+			want:  map[string]map[string]string{ModePvE: {}, ModePvP: {}},
 		},
 		"each row lands only in the map of its mode": {
 			prefs: []dvm.PerkPreference{
-				{Mode: modePvE, Perk: "Firefly", Stance: stanceUp},
-				{Mode: modePvE, Perk: "Kill Clip", Stance: stanceDown},
-				{Mode: modePvP, Perk: "Rampage", Stance: stanceDown},
-				{Mode: modePvP, Perk: "Kill Clip", Stance: stanceUp},
+				{Mode: ModePvE, Perk: "Firefly", Stance: StanceUp},
+				{Mode: ModePvE, Perk: "Kill Clip", Stance: StanceDown},
+				{Mode: ModePvP, Perk: "Rampage", Stance: StanceDown},
+				{Mode: ModePvP, Perk: "Kill Clip", Stance: StanceUp},
 			},
 			want: map[string]map[string]string{
-				modePvE: {"Firefly": stanceUp, "Kill Clip": stanceDown},
-				modePvP: {"Rampage": stanceDown, "Kill Clip": stanceUp},
+				ModePvE: {"Firefly": StanceUp, "Kill Clip": StanceDown},
+				ModePvP: {"Rampage": StanceDown, "Kill Clip": StanceUp},
 			},
 		},
 		"row of another mode lands in neither map": {
 			prefs: []dvm.PerkPreference{
-				{Mode: "gambit", Perk: "Firefly", Stance: stanceUp},
-				{Perk: "Rampage", Stance: stanceDown},
+				{Mode: "gambit", Perk: "Firefly", Stance: StanceUp},
+				{Perk: "Rampage", Stance: StanceDown},
 			},
-			want: map[string]map[string]string{modePvE: {}, modePvP: {}},
+			want: map[string]map[string]string{ModePvE: {}, ModePvP: {}},
 		},
 		"perk name is the key as the row has it": {
-			prefs: []dvm.PerkPreference{{Mode: modePvE, Perk: " rampage Enhanced", Stance: stanceUp}},
-			want:  map[string]map[string]string{modePvE: {" rampage Enhanced": stanceUp}, modePvP: {}},
+			prefs: []dvm.PerkPreference{{Mode: ModePvE, Perk: " rampage Enhanced", Stance: StanceUp}},
+			want:  map[string]map[string]string{ModePvE: {" rampage Enhanced": StanceUp}, ModePvP: {}},
 		},
 	}
 
@@ -373,7 +363,7 @@ func TestStancesByMode(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.want, stancesByMode(tc.prefs))
+			assert.Equal(t, tc.want, StancesByMode(tc.prefs))
 		})
 	}
 }
@@ -394,22 +384,22 @@ func TestRateStances(t *testing.T) {
 		want    []ColumnVerdict
 	}{
 		"disliked only pick misses and moves the tier down one step": {
-			stances: map[string]string{"Explosive Payload": stanceDown},
-			perks:   rolledPerks(),
+			stances: map[string]string{"Explosive Payload": StanceDown},
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900}, {901}},
 			want:    []ColumnVerdict{{}, hits("Firefly")},
 			overall: "A",
 		},
 		"disliked pick leaves the other pick of its socket": {
-			stances: map[string]string{"Rampage": stanceDown},
-			perks:   rolledPerks(),
+			stances: map[string]string{"Rampage": StanceDown},
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900, 903}},
 			want:    []ColumnVerdict{hits("Explosive Payload")},
 			overall: "S",
 		},
 		"liked perk earns the column beside a disliked only pick": {
-			stances: map[string]string{"Explosive Payload": stanceDown, "Rampage": stanceUp},
-			perks:   rolledPerks(),
+			stances: map[string]string{"Explosive Payload": StanceDown, "Rampage": StanceUp},
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900}},
 			want:    []ColumnVerdict{{Hits: []Hit{liked("Rampage")}}},
 			overall: "S",
@@ -417,41 +407,45 @@ func TestRateStances(t *testing.T) {
 		// The copy rolled no pick of the second column, and no plug set
 		// names the socket of the column.
 		"liked perk misses a column that rolled no pick when the definitions hold no plug sets": {
-			stances: map[string]string{"Firefly": stanceUp},
-			perks:   rolledPerks(),
+			stances: map[string]string{"Firefly": StanceUp},
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900}, {904}},
 			want:    []ColumnVerdict{hits("Explosive Payload"), {}},
 			overall: "A",
 		},
 		"disliked only pick of the first socket misses before a later socket with a pick": {
-			stances: map[string]string{"Explosive Payload": stanceDown},
+			stances: map[string]string{"Explosive Payload": StanceDown},
 			perks: []inventory.Perk{
 				{
 					Plug:  inventorytest.PlugExplosivePayload,
 					Plugs: []inventory.Plug{inventorytest.PlugExplosivePayload, inventorytest.PlugRampage},
 				},
-				{Plug: plugFirefly, Plugs: []inventory.Plug{plugFirefly, inventorytest.PlugKillClip}, Socket: 1},
+				{
+					Plug:   inventorytest.PlugFirefly,
+					Plugs:  []inventory.Plug{inventorytest.PlugFirefly, inventorytest.PlugKillClip},
+					Socket: 1,
+				},
 			},
 			columns: [][]uint32{{900, 904}},
 			want:    []ColumnVerdict{{}},
 			overall: "A",
 		},
 		"liked pick carries the mark beside another pick": {
-			stances: map[string]string{"Rampage": stanceUp},
-			perks:   rolledPerks(),
+			stances: map[string]string{"Rampage": StanceUp},
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900, 903}},
 			want:    []ColumnVerdict{{Hits: []Hit{{Name: "Explosive Payload"}, liked("Rampage")}}},
 			overall: "S",
 		},
 		"liked perk that is not a pick comes before a later pick": {
-			stances: map[string]string{"Explosive Payload": stanceUp},
-			perks:   rolledPerks(),
+			stances: map[string]string{"Explosive Payload": StanceUp},
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{903}},
 			want:    []ColumnVerdict{{Hits: []Hit{liked("Explosive Payload"), {Name: "Rampage"}}}},
 			overall: "S",
 		},
 		"liked base name counts a plug with the Enhanced suffix": {
-			stances: map[string]string{"Rampage": stanceUp},
+			stances: map[string]string{"Rampage": StanceUp},
 			perks: []inventory.Perk{
 				{
 					Plug:  inventorytest.PlugExplosivePayload,
@@ -463,14 +457,14 @@ func TestRateStances(t *testing.T) {
 			overall: "S",
 		},
 		"disliked base name drops a pick with the Enhanced suffix": {
-			stances: map[string]string{"Rampage": stanceDown},
+			stances: map[string]string{"Rampage": StanceDown},
 			perks:   []inventory.Perk{{Plug: plugRampageEnhanced, Plugs: []inventory.Plug{plugRampageEnhanced}}},
 			columns: [][]uint32{{909}},
 			want:    []ColumnVerdict{{}},
 			overall: "A",
 		},
 		"liked base plug and enhanced plug of one name hit one time": {
-			stances: map[string]string{"Kill Clip": stanceUp},
+			stances: map[string]string{"Kill Clip": StanceUp},
 			perks: []inventory.Perk{
 				{
 					Plug: inventorytest.PlugExplosivePayload,
@@ -487,7 +481,7 @@ func TestRateStances(t *testing.T) {
 		},
 		"stance that is neither up nor down changes nothing": {
 			stances: map[string]string{"Explosive Payload": "sideways", "Rampage": ""},
-			perks:   rolledPerks(),
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900}},
 			want:    []ColumnVerdict{hits("Explosive Payload")},
 			overall: "S",
@@ -501,7 +495,7 @@ func TestRateStances(t *testing.T) {
 			source := listed("S", tc.columns...)
 			source.Stances = tc.stances
 
-			got := rate(source, &inventory.Item{Hash: 100, Perks: tc.perks})
+			got := Rate(source, &inventory.Item{Hash: 100, Perks: tc.perks})
 
 			require.NoError(t, got.Err)
 			require.NotNil(t, got.Roll)
@@ -516,22 +510,22 @@ func TestRateStances(t *testing.T) {
 func TestRateStancesOfOneMode(t *testing.T) {
 	t.Parallel()
 
-	item := &inventory.Item{Hash: 100, Perks: rolledPerks()}
+	item := &inventory.Item{Hash: 100, Perks: inventorytest.RolledPerks()}
 
-	stances := stancesByMode([]dvm.PerkPreference{
-		{Mode: modePvP, Perk: "Explosive Payload", Stance: stanceDown},
+	stances := StancesByMode([]dvm.PerkPreference{
+		{Mode: ModePvP, Perk: "Explosive Payload", Stance: StanceDown},
 	})
 
 	want := map[string][]ColumnVerdict{
-		modePvE: {hits("Explosive Payload")},
-		modePvP: {{}},
+		ModePvE: {hits("Explosive Payload")},
+		ModePvP: {{}},
 	}
 
-	for _, mode := range perkModes {
+	for _, mode := range Modes {
 		source := listed("S", []uint32{900})
 		source.Stances = stances[mode]
 
-		got := rate(source, item)
+		got := Rate(source, item)
 
 		require.NotNilf(t, got.Roll, "mode %s", mode)
 		assert.Equalf(t, want[mode], got.Roll.Columns, "mode %s", mode)
@@ -545,7 +539,7 @@ func TestRateStancesOfOneMode(t *testing.T) {
 func TestRatePlugSets(t *testing.T) {
 	t.Parallel()
 
-	likesFirefly := map[string]string{"Firefly": stanceUp}
+	likesFirefly := map[string]string{"Firefly": StanceUp}
 	liked := ColumnVerdict{Hits: []Hit{{Name: "Firefly", Liked: true}}}
 
 	tests := map[string]struct {
@@ -560,7 +554,7 @@ func TestRatePlugSets(t *testing.T) {
 	}{
 		"liked perk in the plug set socket earns the column and keeps the tier": {
 			stances:  likesFirefly,
-			perks:    rolledPerks(),
+			perks:    inventorytest.RolledPerks(),
 			sockets:  []uint32{0, 40},
 			plugSets: map[uint32][]uint32{40: {901, 904, 905}},
 			columns:  [][]uint32{{900}, {904, 905}},
@@ -568,7 +562,7 @@ func TestRatePlugSets(t *testing.T) {
 			overall:  "S",
 		},
 		"column without a like stays a miss and moves the tier down one step": {
-			perks:    rolledPerks(),
+			perks:    inventorytest.RolledPerks(),
 			sockets:  []uint32{0, 40},
 			plugSets: map[uint32][]uint32{40: {901, 904, 905}},
 			columns:  [][]uint32{{900}, {904, 905}},
@@ -584,7 +578,7 @@ func TestRatePlugSets(t *testing.T) {
 				},
 				{
 					Plug:   inventorytest.PlugKillClip,
-					Plugs:  []inventory.Plug{inventorytest.PlugKillClip, plugFirefly},
+					Plugs:  []inventory.Plug{inventorytest.PlugKillClip, inventorytest.PlugFirefly},
 					Socket: 1,
 				},
 			},
@@ -601,7 +595,11 @@ func TestRatePlugSets(t *testing.T) {
 					Plug:  inventorytest.PlugExplosivePayload,
 					Plugs: []inventory.Plug{inventorytest.PlugExplosivePayload, inventorytest.PlugRampage},
 				},
-				{Plug: plugFirefly, Plugs: []inventory.Plug{plugFirefly, inventorytest.PlugKillClip}, Socket: 1},
+				{
+					Plug:   inventorytest.PlugFirefly,
+					Plugs:  []inventory.Plug{inventorytest.PlugFirefly, inventorytest.PlugKillClip},
+					Socket: 1,
+				},
 			},
 			sockets:  []uint32{0, 40},
 			plugSets: map[uint32][]uint32{40: {906}},
@@ -613,8 +611,8 @@ func TestRatePlugSets(t *testing.T) {
 		// column. The plug set of the second socket also lists the
 		// pick, and the rating does not read it.
 		"socket that rolled a disliked pick keeps the column from the plug set socket": {
-			stances:  map[string]string{"Explosive Payload": stanceDown, "Firefly": stanceUp},
-			perks:    rolledPerks(),
+			stances:  map[string]string{"Explosive Payload": StanceDown, "Firefly": StanceUp},
+			perks:    inventorytest.RolledPerks(),
 			sockets:  []uint32{0, 40},
 			plugSets: map[uint32][]uint32{40: {900}},
 			columns:  [][]uint32{{900}},
@@ -624,7 +622,7 @@ func TestRatePlugSets(t *testing.T) {
 		// The liked Firefly sits in the second socket.
 		"first socket whose plug set lists the pick is the socket of the column": {
 			stances:  likesFirefly,
-			perks:    rolledPerks(),
+			perks:    inventorytest.RolledPerks(),
 			sockets:  []uint32{40, 41},
 			plugSets: map[uint32][]uint32{40: {904}, 41: {904}},
 			columns:  [][]uint32{{904}},
@@ -633,7 +631,7 @@ func TestRatePlugSets(t *testing.T) {
 		},
 		"one liked perk earns two columns that resolve to one plug set socket": {
 			stances:  likesFirefly,
-			perks:    rolledPerks(),
+			perks:    inventorytest.RolledPerks(),
 			sockets:  []uint32{0, 40},
 			plugSets: map[uint32][]uint32{40: {904, 906}},
 			columns:  [][]uint32{{904}, {906}},
@@ -644,7 +642,7 @@ func TestRatePlugSets(t *testing.T) {
 		// when the pick is nowhere on the weapon".
 		"pick that no plug set lists stays a miss": {
 			stances:  likesFirefly,
-			perks:    rolledPerks(),
+			perks:    inventorytest.RolledPerks(),
 			sockets:  []uint32{40, 41},
 			plugSets: map[uint32][]uint32{40: {900, 903}, 41: {901, 906}},
 			columns:  [][]uint32{{904}},
@@ -655,7 +653,7 @@ func TestRatePlugSets(t *testing.T) {
 		// socket 2 lists the pick.
 		"plug set socket that the perk list leaves out is a miss": {
 			stances:  likesFirefly,
-			perks:    rolledPerks(),
+			perks:    inventorytest.RolledPerks(),
 			sockets:  []uint32{0, 0, 40},
 			plugSets: map[uint32][]uint32{40: {904}},
 			columns:  [][]uint32{{904}},
@@ -668,7 +666,7 @@ func TestRatePlugSets(t *testing.T) {
 		"later plug set socket does not stand in for one that the perk list leaves out": {
 			stances: likesFirefly,
 			perks: []inventory.Perk{
-				{Plug: plugFirefly, Plugs: []inventory.Plug{plugFirefly}, Socket: 1},
+				{Plug: inventorytest.PlugFirefly, Plugs: []inventory.Plug{inventorytest.PlugFirefly}, Socket: 1},
 				{
 					Plug:   inventorytest.PlugExplosivePayload,
 					Plugs:  []inventory.Plug{inventorytest.PlugExplosivePayload, inventorytest.PlugRampage},
@@ -686,7 +684,7 @@ func TestRatePlugSets(t *testing.T) {
 		"plug set socket is the perk with its socket index": {
 			stances: likesFirefly,
 			perks: []inventory.Perk{
-				{Plug: plugFirefly, Plugs: []inventory.Plug{plugFirefly}, Socket: 1},
+				{Plug: inventorytest.PlugFirefly, Plugs: []inventory.Plug{inventorytest.PlugFirefly}, Socket: 1},
 				{
 					Plug:   inventorytest.PlugExplosivePayload,
 					Plugs:  []inventory.Plug{inventorytest.PlugExplosivePayload, inventorytest.PlugRampage},
@@ -709,7 +707,7 @@ func TestRatePlugSets(t *testing.T) {
 			source.Stances = tc.stances
 			source.Defs = &definitions.Defs{Sockets: map[uint32][]uint32{100: tc.sockets}, PlugSets: tc.plugSets}
 
-			got := rate(source, &inventory.Item{Hash: 100, Perks: tc.perks})
+			got := Rate(source, &inventory.Item{Hash: 100, Perks: tc.perks})
 
 			require.NoError(t, got.Err)
 			require.NotNil(t, got.Roll)
@@ -727,18 +725,18 @@ func TestRatePlugSets(t *testing.T) {
 func TestRatePlugSetsOfOneMode(t *testing.T) {
 	t.Parallel()
 
-	item := &inventory.Item{Hash: 100, Perks: rolledPerks()}
+	item := &inventory.Item{Hash: 100, Perks: inventorytest.RolledPerks()}
 
-	stances := stancesByMode([]dvm.PerkPreference{
-		{Mode: modePvE, Perk: "Firefly", Stance: stanceUp},
+	stances := StancesByMode([]dvm.PerkPreference{
+		{Mode: ModePvE, Perk: "Firefly", Stance: StanceUp},
 	})
 
 	want := map[string][]ColumnVerdict{
-		modePvE: {hits("Explosive Payload"), {Hits: []Hit{{Name: "Firefly", Liked: true}}}},
-		modePvP: {hits("Explosive Payload"), {}},
+		ModePvE: {hits("Explosive Payload"), {Hits: []Hit{{Name: "Firefly", Liked: true}}}},
+		ModePvP: {hits("Explosive Payload"), {}},
 	}
 
-	for _, mode := range perkModes {
+	for _, mode := range Modes {
 		source := listed("S", []uint32{900}, []uint32{904})
 		source.Stances = stances[mode]
 		source.Defs = &definitions.Defs{
@@ -746,7 +744,7 @@ func TestRatePlugSetsOfOneMode(t *testing.T) {
 			PlugSets: map[uint32][]uint32{40: {904}},
 		}
 
-		got := rate(source, item)
+		got := Rate(source, item)
 
 		require.NotNilf(t, got.Roll, "mode %s", mode)
 		assert.Equalf(t, want[mode], got.Roll.Columns, "mode %s", mode)
@@ -778,22 +776,22 @@ func TestPicksOf(t *testing.T) {
 			want:   []string{"Explosive Payload", "Rampage"},
 		},
 		"disliked pick drops out": {
-			stances: map[string]string{"Rampage": stanceDown},
+			stances: map[string]string{"Rampage": StanceDown},
 			column:  []uint32{900, 903, 904},
 			want:    []string{"Explosive Payload", "Kill Clip"},
 		},
 		"disliked base name drops a pick with the Enhanced suffix": {
-			stances: map[string]string{"Rampage": stanceDown},
+			stances: map[string]string{"Rampage": StanceDown},
 			column:  []uint32{909, 900},
 			want:    []string{"Explosive Payload"},
 		},
 		"liked pick stays in the list one time": {
-			stances: map[string]string{"Kill Clip": stanceUp},
+			stances: map[string]string{"Kill Clip": StanceUp},
 			column:  []uint32{904, 905, 900},
 			want:    []string{"Kill Clip", "Explosive Payload"},
 		},
 		"liked perk that the column does not pick stays out": {
-			stances: map[string]string{"Firefly": stanceUp},
+			stances: map[string]string{"Firefly": StanceUp},
 			column:  []uint32{900},
 			want:    []string{"Explosive Payload"},
 		},
@@ -803,7 +801,7 @@ func TestPicksOf(t *testing.T) {
 			want:    []string{"Rampage"},
 		},
 		"column whose picks are all disliked gives no pick": {
-			stances: map[string]string{"Rampage": stanceDown, "Kill Clip": stanceDown},
+			stances: map[string]string{"Rampage": StanceDown, "Kill Clip": StanceDown},
 			column:  []uint32{903, 904, 905, 909},
 		},
 		"column whose hashes all lack a definition gives no pick": {
@@ -826,16 +824,16 @@ func TestPicksOf(t *testing.T) {
 func TestPicksOfOneMode(t *testing.T) {
 	t.Parallel()
 
-	stances := stancesByMode([]dvm.PerkPreference{
-		{Mode: modePvP, Perk: "Rampage", Stance: stanceDown},
+	stances := StancesByMode([]dvm.PerkPreference{
+		{Mode: ModePvP, Perk: "Rampage", Stance: StanceDown},
 	})
 
 	want := map[string][]string{
-		modePvE: {"Explosive Payload", "Rampage"},
-		modePvP: {"Explosive Payload"},
+		ModePvE: {"Explosive Payload", "Rampage"},
+		ModePvP: {"Explosive Payload"},
 	}
 
-	for _, mode := range perkModes {
+	for _, mode := range Modes {
 		got := picksOf(rollDefs(), []uint32{900, 903}, stances[mode])
 
 		assert.Equalf(t, want[mode], got, "mode %s", mode)
@@ -855,7 +853,7 @@ func TestRatePicks(t *testing.T) {
 		want    []ColumnVerdict
 	}{
 		"hit column carries its picks": {
-			perks:   rolledPerks(),
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900, 903}},
 			want: []ColumnVerdict{{
 				Hits:  []Hit{{Name: "Explosive Payload"}, {Name: "Rampage"}},
@@ -863,14 +861,14 @@ func TestRatePicks(t *testing.T) {
 			}},
 		},
 		"missed column carries its picks when no socket holds one": {
-			perks:   rolledPerks(),
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{904, 905, 906}},
 			want:    []ColumnVerdict{{Picks: []string{"Kill Clip", "Chill Clip"}}},
 		},
 		// The plug list of the socket holds Firefly alone, so the copy
 		// cannot hold Chill Clip in the column.
 		"pick that no socket can hold is named beside a pick that rolled": {
-			perks:   rolledPerks(),
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{901, 906}},
 			want: []ColumnVerdict{{
 				Hits:  []Hit{{Name: "Firefly"}},
@@ -878,7 +876,7 @@ func TestRatePicks(t *testing.T) {
 			}},
 		},
 		"each column carries its own picks": {
-			perks:   rolledPerks(),
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900}, {904}},
 			want: []ColumnVerdict{
 				{Hits: []Hit{{Name: "Explosive Payload"}}, Picks: []string{"Explosive Payload"}},
@@ -889,8 +887,8 @@ func TestRatePicks(t *testing.T) {
 		// second column, and the definitions hold no plug sets. Firefly
 		// therefore neither earns the column nor joins its picks.
 		"liked perk outside the column does not join the picks": {
-			stances: map[string]string{"Firefly": stanceUp},
-			perks:   rolledPerks(),
+			stances: map[string]string{"Firefly": StanceUp},
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900}, {904}},
 			want: []ColumnVerdict{
 				{Hits: []Hit{{Name: "Explosive Payload"}}, Picks: []string{"Explosive Payload"}},
@@ -898,8 +896,8 @@ func TestRatePicks(t *testing.T) {
 			},
 		},
 		"liked perk that earns the column beside a pick does not join the picks": {
-			stances: map[string]string{"Explosive Payload": stanceUp},
-			perks:   rolledPerks(),
+			stances: map[string]string{"Explosive Payload": StanceUp},
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{903}},
 			want: []ColumnVerdict{{
 				Hits:  []Hit{{Name: "Explosive Payload", Liked: true}, {Name: "Rampage"}},
@@ -907,8 +905,8 @@ func TestRatePicks(t *testing.T) {
 			}},
 		},
 		"disliked only pick is neither a hit nor a pick": {
-			stances: map[string]string{"Explosive Payload": stanceDown},
-			perks:   rolledPerks(),
+			stances: map[string]string{"Explosive Payload": StanceDown},
+			perks:   inventorytest.RolledPerks(),
 			columns: [][]uint32{{900}, {901}},
 			want: []ColumnVerdict{
 				{},
@@ -916,13 +914,13 @@ func TestRatePicks(t *testing.T) {
 			},
 		},
 		"disliked base name drops a pick with the Enhanced suffix": {
-			stances: map[string]string{"Rampage": stanceDown},
+			stances: map[string]string{"Rampage": StanceDown},
 			perks:   []inventory.Perk{{Plug: plugRampageEnhanced, Plugs: []inventory.Plug{plugRampageEnhanced}}},
 			columns: [][]uint32{{909}},
 			want:    []ColumnVerdict{{}},
 		},
 		"row without columns has no column verdict": {
-			perks: rolledPerks(),
+			perks: inventorytest.RolledPerks(),
 		},
 		"copy without perks has no column verdict": {
 			columns: [][]uint32{{900, 903}},
@@ -937,7 +935,7 @@ func TestRatePicks(t *testing.T) {
 			source.Stances = tc.stances
 			source.Defs = rollDefs()
 
-			got := rate(source, &inventory.Item{Hash: 100, Perks: tc.perks})
+			got := Rate(source, &inventory.Item{Hash: 100, Perks: tc.perks})
 
 			require.NoError(t, got.Err)
 			require.NotNil(t, got.Roll)
@@ -1009,7 +1007,7 @@ func TestRatedAtLeast(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tc.want, ratedAtLeast(tc.rating, tc.lowest))
+			assert.Equal(t, tc.want, RatedAtLeast(tc.rating, tc.lowest))
 		})
 	}
 }

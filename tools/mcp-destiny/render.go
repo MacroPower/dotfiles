@@ -14,6 +14,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/vendors"
 )
@@ -169,7 +170,7 @@ func slotsLabel(used, capacity int) string {
 // stat adds a column with the value of that stat, and perks adds a column
 // with the equipped perks.
 //
-// Sources holds the [RatingSource] of each game mode, and nil leaves the
+// Sources holds the [rolls.RatingSource] of each game mode, and nil leaves the
 // roll ratings out. With sources, the table gains one rating column for
 // each game mode, between the flags and the perks. The cell of a weapon
 // holds the text of [ratingLabel], and the cell of every other item is
@@ -182,7 +183,7 @@ func renderItems(
 	offset, total int,
 	stat string,
 	perks bool,
-	sources map[string]RatingSource,
+	sources map[string]rolls.RatingSource,
 ) string {
 	if total == 0 {
 		return "No items match."
@@ -215,7 +216,7 @@ func renderItems(
 	b.WriteString(" | location | tag | flags")
 
 	if sources != nil {
-		for _, mode := range perkModes {
+		for _, mode := range rolls.Modes {
 			b.WriteString(" | " + mode + " rating")
 		}
 	}
@@ -241,7 +242,7 @@ func renderItems(
 		fields = append(fields, s.LocationLabel(item), item.Tag, strings.Join(flagsOf(item), ", "))
 
 		if sources != nil {
-			for _, mode := range perkModes {
+			for _, mode := range rolls.Modes {
 				fields = append(fields, ratingCell(sources[mode], item))
 			}
 		}
@@ -336,7 +337,7 @@ func writeUndecided(b *strings.Builder, s *inventory.Snapshot, undecided []undec
 type saveCount struct {
 	// err is the error of the inventory read.
 	err error
-	// unrated is the [ratingReason] of a game mode without ratings that
+	// unrated is the [rolls.RatingReason] of a game mode without ratings that
 	// the query reads.
 	unrated string
 	// unsupported holds the terms of the query that the preview does not
@@ -393,9 +394,9 @@ func renderSaveCount(count saveCount) string {
 const saveCountCaveat = "The count ignores the other rules, so an earlier rule can take some of these items first."
 
 // renderItem renders one item in full. For a weapon, ratings holds the
-// [Rating] of each game mode, and the output gains the roll ratings
+// [rolls.Rating] of each game mode, and the output gains the roll ratings
 // block. Ratings is nil for every other item.
-func renderItem(s *inventory.Snapshot, item *inventory.Item, ratings map[string]Rating) string {
+func renderItem(s *inventory.Snapshot, item *inventory.Item, ratings map[string]rolls.Rating) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s\n", item.Name)
@@ -432,7 +433,7 @@ func renderItem(s *inventory.Snapshot, item *inventory.Item, ratings map[string]
 	if ratings != nil {
 		b.WriteString("\nRoll ratings:\n")
 
-		for _, mode := range perkModes {
+		for _, mode := range rolls.Modes {
 			writeRating(&b, mode, ratings[mode])
 		}
 	}
@@ -451,7 +452,7 @@ func renderItem(s *inventory.Snapshot, item *inventory.Item, ratings map[string]
 // renderDuplicates renders one page of the weapons that have more than one
 // copy. Offset and total count weapons, not copies.
 //
-// Sources holds the [RatingSource] of each game mode. Every table of
+// Sources holds the [rolls.RatingSource] of each game mode. Every table of
 // the page shows the rating columns of [renderWeaponGroup]. One line
 // for each game mode without ratings gives the reason, between the
 // first line and the first table. The lines print one time for the
@@ -461,7 +462,7 @@ func renderDuplicates(
 	s *inventory.Snapshot,
 	groups []inventory.WeaponGroup,
 	offset, total int,
-	sources map[string]RatingSource,
+	sources map[string]rolls.RatingSource,
 ) string {
 	if total == 0 {
 		return "No weapon has more than one copy."
@@ -496,7 +497,11 @@ func renderDuplicates(
 // line for each game mode without ratings gives the reason, and a blank
 // line follows those lines. When every game mode has ratings, the
 // output starts with the title of the table.
-func renderSingleGroup(s *inventory.Snapshot, group inventory.WeaponGroup, sources map[string]RatingSource) string {
+func renderSingleGroup(
+	s *inventory.Snapshot,
+	group inventory.WeaponGroup,
+	sources map[string]rolls.RatingSource,
+) string {
 	table := renderWeaponGroup(s, group, sources)
 
 	reasons := ratingReasons(sources)
@@ -511,14 +516,18 @@ func renderSingleGroup(s *inventory.Snapshot, group inventory.WeaponGroup, sourc
 // row per copy. The name column tells a version such as "(Adept)" from the
 // base weapon.
 //
-// Sources holds the [RatingSource] of each game mode, with an entry for
-// every mode in [perkModes]. The table has one rating column for each
+// Sources holds the [rolls.RatingSource] of each game mode, with an entry for
+// every mode in [rolls.Modes]. The table has one rating column for each
 // game mode, between the flags and the perks. Each rating cell holds
 // the [ratingCell] of its copy. A version such as "(Adept)" therefore
 // gets the rating of its own item hash, not the rating of the base
 // weapon. One result can hold several tables, so the caller writes the
 // reason of each game mode without ratings.
-func renderWeaponGroup(s *inventory.Snapshot, group inventory.WeaponGroup, sources map[string]RatingSource) string {
+func renderWeaponGroup(
+	s *inventory.Snapshot,
+	group inventory.WeaponGroup,
+	sources map[string]rolls.RatingSource,
+) string {
 	var b strings.Builder
 
 	noun := "copies"
@@ -529,7 +538,7 @@ func renderWeaponGroup(s *inventory.Snapshot, group inventory.WeaponGroup, sourc
 	fmt.Fprintf(&b, "%s: %d %s\n\n", group.Name, len(group.Copies), noun)
 	b.WriteString("instance id | name | type | power | location | tag | flags")
 
-	for _, mode := range perkModes {
+	for _, mode := range rolls.Modes {
 		b.WriteString(" | " + mode + " rating")
 	}
 
@@ -546,7 +555,7 @@ func renderWeaponGroup(s *inventory.Snapshot, group inventory.WeaponGroup, sourc
 			strings.Join(flagsOf(item), ", "),
 		}
 
-		for _, mode := range perkModes {
+		for _, mode := range rolls.Modes {
 			fields = append(fields, ratingCell(sources[mode], item))
 		}
 
@@ -895,16 +904,16 @@ func keeperRefusal(
 // without a pick to name has no such sentence. The note of the row
 // comes last, for every copy of the weapon, because the note describes
 // the weapon.
-func writeRating(b *strings.Builder, mode string, rating Rating) {
+func writeRating(b *strings.Builder, mode string, rating rolls.Rating) {
 	if rating.Err != nil {
-		fmt.Fprintf(b, "- %s\n", ratingReason(mode, rating.Err))
+		fmt.Fprintf(b, "- %s\n", rolls.RatingReason(mode, rating.Err))
 
 		return
 	}
 
-	fmt.Fprintf(b, "- %s: ", modeLabels[mode])
+	fmt.Fprintf(b, "- %s: ", rolls.ModeLabels[mode])
 
-	label := sheetLabels[mode]
+	label := rolls.SheetLabels[mode]
 
 	roll := rating.Roll
 	if roll == nil {
@@ -974,7 +983,7 @@ func writeRating(b *strings.Builder, mode string, rating Rating) {
 // reads "(rank 3 of 62 in HCs)" for the third of the 62 rows in the
 // category HCs, and "(in HCs)" for a row without a rank. The category
 // prints in the text of the sheet file.
-func sheetPlace(row SheetRow) string {
+func sheetPlace(row rolls.SheetRow) string {
 	if row.Rank > 0 {
 		return fmt.Sprintf("(rank %d of %d in %s)", row.Rank, row.Ranked, row.Category)
 	}
@@ -1003,24 +1012,16 @@ func writeSheetNote(b *strings.Builder, notes string) {
 	}
 }
 
-// ratingReason returns the text that says why one game mode has no
-// ratings. The text is the label of the mode and the text of err, such
-// as "PvP: rating unavailable: the service publishes no PvP sheet".
-// Every output that reports the reason of a mode prints this text.
-func ratingReason(mode string, err error) string {
-	return modeLabels[mode] + ": " + err.Error()
-}
-
-// ratingReasons returns the [ratingReason] of each game mode whose
-// source holds an Err, in the order of [perkModes]. It returns no line
+// ratingReasons returns the [rolls.RatingReason] of each game mode whose
+// source holds an Err, in the order of [rolls.Modes]. It returns no line
 // when every mode has ratings.
-func ratingReasons(sources map[string]RatingSource) []string {
+func ratingReasons(sources map[string]rolls.RatingSource) []string {
 	var reasons []string
 
-	for _, mode := range perkModes {
+	for _, mode := range rolls.Modes {
 		err := sources[mode].Err
 		if err != nil {
-			reasons = append(reasons, ratingReason(mode, err))
+			reasons = append(reasons, rolls.RatingReason(mode, err))
 		}
 	}
 
@@ -1029,17 +1030,17 @@ func ratingReasons(sources map[string]RatingSource) []string {
 
 // ratingCell returns the rating cell that the source of one game mode
 // gives item in a table. The cell of a weapon holds the [ratingLabel] of
-// its [Rating]. Only weapons have roll ratings, so the cell of every
+// its [rolls.Rating]. Only weapons have roll ratings, so the cell of every
 // other item is empty, also when the mode has no ratings.
-func ratingCell(source RatingSource, item *inventory.Item) string {
+func ratingCell(source rolls.RatingSource, item *inventory.Item) string {
 	if item.Kind != inventory.KindWeapon {
 		return ""
 	}
 
-	return ratingLabel(rate(source, item))
+	return ratingLabel(rolls.Rate(source, item))
 }
 
-// ratingLabel returns the text of a rating cell for one [Rating]. The
+// ratingLabel returns the text of a rating cell for one [rolls.Rating]. The
 // text names the first of these states that holds:
 //
 //   - "unavailable": the game mode has no ratings.
@@ -1052,7 +1053,7 @@ func ratingCell(source RatingSource, item *inventory.Item) string {
 //
 // A row without a tier reads "no tier" for every copy, because each
 // later text names the tier of the row.
-func ratingLabel(rating Rating) string {
+func ratingLabel(rating rolls.Rating) string {
 	roll := rating.Roll
 
 	switch {
@@ -1483,7 +1484,7 @@ func renderNotes(s *inventory.Snapshot, notes []dvm.Note) string {
 func renderPerkPreferences(prefs []dvm.PerkPreference) string {
 	var b strings.Builder
 
-	for _, mode := range perkModes {
+	for _, mode := range rolls.Modes {
 		for _, stance := range perkStances {
 			var perks []string
 

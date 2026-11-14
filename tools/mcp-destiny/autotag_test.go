@@ -12,6 +12,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventorytest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 )
 
 func TestNewestMark(t *testing.T) {
@@ -151,7 +152,7 @@ func TestEvalRulesSources(t *testing.T) {
 			}
 
 			calls := 0
-			sources := func() map[string]RatingSource {
+			sources := func() map[string]rolls.RatingSource {
 				calls++
 
 				return nil

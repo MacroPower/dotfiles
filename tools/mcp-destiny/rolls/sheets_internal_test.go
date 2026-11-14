@@ -1,4 +1,4 @@
-package main
+package rolls
 
 import (
 	"context"
@@ -531,16 +531,16 @@ func TestSheetStoreLoad(t *testing.T) {
 			f.Index["pvprolls"] = []string{"pvprolls.a.json"}
 		},
 		fetched: []string{"rolls.a.json", "pvprolls.a.json"},
-		want:    map[string]wantState{modePvE: {tier: "S"}, modePvP: {tier: "A"}},
+		want:    map[string]wantState{ModePvE: {tier: "S"}, ModePvP: {tier: "A"}},
 	}
 
 	// kept expects the two sheets of both again, without a fetch.
-	kept := map[string]wantState{modePvE: {tier: "S", kept: true}, modePvP: {tier: "A", kept: true}}
+	kept := map[string]wantState{ModePvE: {tier: "S", kept: true}, ModePvP: {tier: "A", kept: true}}
 
 	// dropped removes the Aegis sheet from the index.
 	dropped := loadStep{
 		edit: func(f *fakeSheets) { delete(f.Index, "rolls") },
-		want: map[string]wantState{modePvE: {err: noAegis}, modePvP: {tier: "A", kept: true}},
+		want: map[string]wantState{ModePvE: {err: noAegis}, ModePvP: {tier: "A", kept: true}},
 	}
 
 	// missing lists an Aegis file that the source does not serve.
@@ -551,8 +551,8 @@ func TestSheetStoreLoad(t *testing.T) {
 		},
 		fetched: []string{"rolls.x.json", "pvprolls.a.json"},
 		want: map[string]wantState{
-			modePvE: {err: noDownload, sentinels: []error{dvm.ErrService}},
-			modePvP: {tier: "A"},
+			ModePvE: {err: noDownload, sentinels: []error{dvm.ErrService}},
+			ModePvP: {tier: "A"},
 		},
 	}
 
@@ -562,8 +562,8 @@ func TestSheetStoreLoad(t *testing.T) {
 		edit:    func(f *fakeSheets) { f.Index["rolls"] = []string{"rolls.x.json"} },
 		fetched: []string{"rolls.x.json"},
 		want: map[string]wantState{
-			modePvE: {err: noDownload, sentinels: []error{dvm.ErrService}},
-			modePvP: {tier: "A", kept: true},
+			ModePvE: {err: noDownload, sentinels: []error{dvm.ErrService}},
+			ModePvP: {tier: "A", kept: true},
 		},
 	}
 
@@ -572,7 +572,7 @@ func TestSheetStoreLoad(t *testing.T) {
 	}{
 		"index lists neither sheet": {
 			steps: []loadStep{{
-				want: map[string]wantState{modePvE: {err: noAegis}, modePvP: {err: noPvP}},
+				want: map[string]wantState{ModePvE: {err: noAegis}, ModePvP: {err: noPvP}},
 			}},
 		},
 		"both sheets load": {
@@ -585,7 +585,7 @@ func TestSheetStoreLoad(t *testing.T) {
 			steps: []loadStep{both, {
 				edit:    func(f *fakeSheets) { f.Index["pvprolls"] = []string{"pvprolls.b.json"} },
 				fetched: []string{"pvprolls.b.json"},
-				want:    map[string]wantState{modePvE: {tier: "S", kept: true}, modePvP: {tier: "C"}},
+				want:    map[string]wantState{ModePvE: {tier: "S", kept: true}, ModePvP: {tier: "C"}},
 			}},
 		},
 		"index lists two files for one sheet": {
@@ -595,7 +595,7 @@ func TestSheetStoreLoad(t *testing.T) {
 					f.Index["pvprolls"] = []string{"pvprolls.a.json"}
 				},
 				fetched: []string{"rolls.a.json", "pvprolls.a.json"},
-				want:    map[string]wantState{modePvE: {tier: "S"}, modePvP: {tier: "A"}},
+				want:    map[string]wantState{ModePvE: {tier: "S"}, ModePvP: {tier: "A"}},
 			}},
 		},
 		"index drops a listed sheet": {
@@ -614,7 +614,7 @@ func TestSheetStoreLoad(t *testing.T) {
 			steps: []loadStep{missing, {
 				edit:    func(f *fakeSheets) { f.Files["rolls.x.json"] = sheetBody("D") },
 				fetched: []string{"rolls.x.json"},
-				want:    map[string]wantState{modePvE: {tier: "D"}, modePvP: {tier: "A", kept: true}},
+				want:    map[string]wantState{ModePvE: {tier: "D"}, ModePvP: {tier: "A", kept: true}},
 			}},
 		},
 		"body of one sheet does not decode": {
@@ -627,15 +627,15 @@ func TestSheetStoreLoad(t *testing.T) {
 					},
 					fetched: []string{"rolls.x.json", "pvprolls.a.json"},
 					want: map[string]wantState{
-						modePvE: {err: noDecode, sentinels: []error{io.ErrUnexpectedEOF}},
-						modePvP: {tier: "A"},
+						ModePvE: {err: noDecode, sentinels: []error{io.ErrUnexpectedEOF}},
+						ModePvP: {tier: "A"},
 					},
 				},
 				{
 					fetched: []string{"rolls.x.json"},
 					want: map[string]wantState{
-						modePvE: {err: noDecode, sentinels: []error{io.ErrUnexpectedEOF}},
-						modePvP: {tier: "A", kept: true},
+						ModePvE: {err: noDecode, sentinels: []error{io.ErrUnexpectedEOF}},
+						ModePvP: {tier: "A", kept: true},
 					},
 				},
 			},
@@ -657,8 +657,8 @@ func TestSheetStoreLoad(t *testing.T) {
 						f.configErr = fmt.Errorf("%w: /api/config returned status 503", dvm.ErrService)
 					},
 					want: map[string]wantState{
-						modePvE: {err: noConfig, sentinels: []error{dvm.ErrService}},
-						modePvP: {err: noConfig, sentinels: []error{dvm.ErrService}},
+						ModePvE: {err: noConfig, sentinels: []error{dvm.ErrService}},
+						ModePvP: {err: noConfig, sentinels: []error{dvm.ErrService}},
 					},
 				},
 				{
@@ -687,9 +687,9 @@ func TestSheetStoreLoad(t *testing.T) {
 				got := store.Load(t.Context())
 				assert.Equalf(t, step.fetched, source.Fetched, "fetches of load %d", i)
 				assert.Equalf(t, i+1, source.configs, "every load reads the index, load %d", i)
-				require.Lenf(t, got, len(perkModes), "load %d", i)
+				require.Lenf(t, got, len(Modes), "load %d", i)
 
-				for _, mode := range perkModes {
+				for _, mode := range Modes {
 					state := got[mode]
 					want := step.want[mode]
 

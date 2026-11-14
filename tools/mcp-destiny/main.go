@@ -20,6 +20,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 )
 
 const (
@@ -277,7 +278,7 @@ func runServe(ctx context.Context, args []string) error {
 		bungie:  bungie.New(bungie.WithUserAgent(userAgent)),
 		auth:    o.auth(service),
 		defs:    definitions.NewLoader(service, o.cacheDir, definitions.WithLogger(logger)),
-		sheets:  NewSheetStore(service),
+		sheets:  rolls.NewSheetStore(service),
 		log:     logger,
 		now:     time.Now,
 	}

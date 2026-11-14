@@ -21,6 +21,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/vendors"
 )
@@ -108,10 +109,7 @@ const (
 )
 
 var (
-	// perkModes lists the game modes in display order. The perk
-	// preferences and the roll sheets share the list.
-	perkModes   = []string{modePvE, modePvP}
-	perkStances = []string{stanceUp, stanceDown}
+	perkStances = []string{rolls.StanceUp, rolls.StanceDown}
 
 	// ErrInvalidInput reports a tool argument that the handler rejects
 	// before any request.
@@ -345,7 +343,7 @@ type handler struct {
 	bungie        *bungie.Client
 	auth          *auth.Auth
 	defs          *definitions.Loader
-	sheets        *SheetStore
+	sheets        *rolls.SheetStore
 	loadoutTables *bungie.LoadoutTableStore
 	log           *slog.Logger
 	now           func() time.Time
@@ -478,7 +476,7 @@ func (h *handler) handleListItems(
 	// minimum on a game mode without ratings therefore always returns
 	// the reason. The snapshot keeps no rating, so the minimums and the
 	// renderer each rate a weapon from the sources.
-	var sources map[string]RatingSource
+	var sources map[string]rolls.RatingSource
 	if in.IncludeRatings || len(minimums) > 0 {
 		sources = h.ratingSources(ctx)
 	}
@@ -534,13 +532,13 @@ func (h *handler) handleGetItem(
 	// server rates the copy on every call and keeps no rating. A perk
 	// change edits the cached snapshot in place, so a kept rating does
 	// not follow the change.
-	var ratings map[string]Rating
+	var ratings map[string]rolls.Rating
 	if item.Kind == inventory.KindWeapon {
 		sources := h.ratingSources(ctx)
-		ratings = make(map[string]Rating, len(perkModes))
+		ratings = make(map[string]rolls.Rating, len(rolls.Modes))
 
-		for _, mode := range perkModes {
-			ratings[mode] = rate(sources[mode], item)
+		for _, mode := range rolls.Modes {
+			ratings[mode] = rolls.Rate(sources[mode], item)
 		}
 	}
 
@@ -1711,7 +1709,11 @@ func (h *handler) newItemMatches(ctx context.Context, snapshot dvm.AutotagSnapsh
 	}
 
 	held, vault := newItems(s, stored)
-	evals := evalRules(s, liveRules(snapshot.Rules), func() map[string]RatingSource { return h.ratingSources(ctx) })
+	evals := evalRules(
+		s,
+		liveRules(snapshot.Rules),
+		func() map[string]rolls.RatingSource { return h.ratingSources(ctx) },
+	)
 
 	return renderNewMatches(s, stored, newest, evals, firstMatch(evals, held), vault), nil
 }
@@ -1742,7 +1744,7 @@ func (h *handler) ownedMatches(ctx context.Context, snapshot dvm.AutotagSnapshot
 	items := ownedItems(s)
 	slices.SortStableFunc(items, inventory.ByNameAndID)
 
-	evals := evalRules(s, rules, func() map[string]RatingSource { return h.ratingSources(ctx) })
+	evals := evalRules(s, rules, func() map[string]rolls.RatingSource { return h.ratingSources(ctx) })
 
 	return renderOwnedCounts(ownedCounts(evals, items)), nil
 }
@@ -1854,12 +1856,12 @@ func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) (sa
 	return saveCount{matches: len(result.matches), undecided: len(result.undecided)}, unbuiltLine(s)
 }
 
-// querySources returns the [RatingSource] of each game mode for a query
-// with a rating filter. It also returns the [ratingReason] of the first
+// querySources returns the [rolls.RatingSource] of each game mode for a query
+// with a rating filter. It also returns the [rolls.RatingReason] of the first
 // game mode without ratings that the query reads, or "" when each such
 // mode has ratings. A query without a rating filter gets no sources, and
 // querySources then sends no request.
-func (h *handler) querySources(ctx context.Context, query compiledQuery) (map[string]RatingSource, string) {
+func (h *handler) querySources(ctx context.Context, query compiledQuery) (map[string]rolls.RatingSource, string) {
 	if len(query.modes) == 0 {
 		return nil, ""
 	}
@@ -2073,7 +2075,11 @@ func (h *handler) handleRunAutotagRules(
 	}
 
 	held, vault := newItems(s, stored)
-	evals := evalRules(s, liveRules(snapshot.Rules), func() map[string]RatingSource { return h.ratingSources(ctx) })
+	evals := evalRules(
+		s,
+		liveRules(snapshot.Rules),
+		func() map[string]rolls.RatingSource { return h.ratingSources(ctx) },
+	)
 	m := firstMatch(evals, held)
 
 	refusal := renderRunRefusal(evals, m)
@@ -2272,7 +2278,7 @@ func (h *handler) handleGetStats(
 
 // ratingMinimum is one minimum roll rating of a list_items call. Input
 // names the tool input that sets it. Tier is the lowest tier of the
-// game mode that passes, and it is one of [tiers].
+// game mode that passes, and it is one of [rolls.Tiers].
 type ratingMinimum struct {
 	input string
 	mode  string
@@ -2280,7 +2286,7 @@ type ratingMinimum struct {
 }
 
 // ratingMinimums returns the minimum roll ratings that in sets, in the
-// order of [perkModes]. An empty value sets no minimum. It reads a
+// order of [rolls.Modes]. An empty value sets no minimum. It reads a
 // tier letter without regard to case and without trimming. A value that
 // is not a tier letter returns an error that wraps [ErrInvalidInput] and
 // names the first such input.
@@ -2288,15 +2294,15 @@ func ratingMinimums(in ListItemsInput) ([]ratingMinimum, error) {
 	var minimums []ratingMinimum
 
 	for _, m := range []struct{ input, mode, value string }{
-		{input: "min_pve_rating", mode: modePvE, value: in.MinPvERating},
-		{input: "min_pvp_rating", mode: modePvP, value: in.MinPvPRating},
+		{input: "min_pve_rating", mode: rolls.ModePvE, value: in.MinPvERating},
+		{input: "min_pvp_rating", mode: rolls.ModePvP, value: in.MinPvPRating},
 	} {
 		if m.value == "" {
 			continue
 		}
 
 		tier := strings.ToUpper(m.value)
-		if !slices.Contains(tiers, tier) {
+		if !slices.Contains(rolls.Tiers, tier) {
 			return nil, fmt.Errorf("%w: %s %q is not S, A, B, C, D, E, or F", ErrInvalidInput, m.input, m.value)
 		}
 
@@ -2308,10 +2314,10 @@ func ratingMinimums(in ListItemsInput) ([]ratingMinimum, error) {
 
 // keepRated removes the items that do not pass every minimum from
 // items, in place, and returns the rest. Sources holds the
-// [RatingSource] of each game mode.
+// [rolls.RatingSource] of each game mode.
 //
-// An item passes a minimum when it is a weapon and [ratedAtLeast]
-// accepts the [Rating] that [rate] gives it for the game mode. Only
+// An item passes a minimum when it is a weapon and [rolls.RatedAtLeast]
+// accepts the [rolls.Rating] that [rolls.Rate] gives it for the game mode. Only
 // weapons have roll ratings, so every other item passes no minimum,
 // also when a sheet lists its hash.
 //
@@ -2323,7 +2329,7 @@ func ratingMinimums(in ListItemsInput) ([]ratingMinimum, error) {
 func keepRated(
 	items []*inventory.Item,
 	minimums []ratingMinimum,
-	sources map[string]RatingSource,
+	sources map[string]rolls.RatingSource,
 ) ([]*inventory.Item, error) {
 	for _, m := range minimums {
 		err := sources[m.mode].Err
@@ -2336,7 +2342,7 @@ func keepRated(
 		source := sources[m.mode]
 
 		items = slices.DeleteFunc(items, func(item *inventory.Item) bool {
-			return item.Kind != inventory.KindWeapon || !ratedAtLeast(rate(source, item), m.tier)
+			return item.Kind != inventory.KindWeapon || !rolls.RatedAtLeast(rolls.Rate(source, item), m.tier)
 		})
 	}
 
@@ -2356,7 +2362,7 @@ func perkChange(in PerkPreferenceInput, traits map[string]string) (dvm.PerkPrefe
 	stance := strings.ToLower(in.Stance)
 	perk := definitions.BasePerkName(in.Perk)
 
-	if !slices.Contains(perkModes, mode) {
+	if !slices.Contains(rolls.Modes, mode) {
 		return dvm.PerkPreference{}, fmt.Errorf("%w: mode %q is not pve or pvp", ErrInvalidInput, in.Mode)
 	}
 
@@ -2680,7 +2686,7 @@ func (h *handler) perkPreferences(ctx context.Context) ([]dvm.PerkPreference, er
 	})
 }
 
-// ratingSources returns the [RatingSource] of each game mode, keyed by
+// ratingSources returns the [rolls.RatingSource] of each game mode, keyed by
 // the mode. It does not read the item, so one result rates every item
 // of a call.
 //
@@ -2697,7 +2703,7 @@ func (h *handler) perkPreferences(ctx context.Context) ([]dvm.PerkPreference, er
 // server cannot read the preferences, every other mode carries that
 // reason. When the server reads the preferences but cannot read the
 // definitions, every other mode carries the reason of the definitions.
-// Both reasons wrap [ErrNoRating] and the error of the read. The method
+// Both reasons wrap [rolls.ErrNoRating] and the error of the read. The method
 // therefore returns no error, and each caller decides what a mode
 // without ratings costs.
 //
@@ -2707,36 +2713,36 @@ func (h *handler) perkPreferences(ctx context.Context) ([]dvm.PerkPreference, er
 // version therefore changes only those names and the socket of a column
 // in which the copy rolled no pick. The next profile fetch builds the
 // snapshot from the later version.
-func (h *handler) ratingSources(ctx context.Context) map[string]RatingSource {
+func (h *handler) ratingSources(ctx context.Context) map[string]rolls.RatingSource {
 	states := h.sheets.Load(ctx)
 
 	prefs, prefsErr := h.perkPreferences(ctx)
 	if prefsErr != nil {
-		prefsErr = fmt.Errorf("%w: reading perk preferences: %w", ErrNoRating, prefsErr)
+		prefsErr = fmt.Errorf("%w: reading perk preferences: %w", rolls.ErrNoRating, prefsErr)
 	}
 
 	defs, defsErr := h.defs.Get(ctx)
 	if defsErr != nil {
-		defsErr = fmt.Errorf("%w: loading definitions: %w", ErrNoRating, defsErr)
+		defsErr = fmt.Errorf("%w: loading definitions: %w", rolls.ErrNoRating, defsErr)
 	}
 
-	stances := stancesByMode(prefs)
-	sources := make(map[string]RatingSource, len(perkModes))
+	stances := rolls.StancesByMode(prefs)
+	sources := make(map[string]rolls.RatingSource, len(rolls.Modes))
 
 	// The cases follow the order of the reads, so the reason of an
 	// earlier read stays in place of the reason of a later read.
-	for _, mode := range perkModes {
+	for _, mode := range rolls.Modes {
 		state := states[mode]
 
 		switch {
 		case state.Err != nil:
-			sources[mode] = RatingSource{Err: state.Err}
+			sources[mode] = rolls.RatingSource{Err: state.Err}
 		case prefsErr != nil:
-			sources[mode] = RatingSource{Err: prefsErr}
+			sources[mode] = rolls.RatingSource{Err: prefsErr}
 		case defsErr != nil:
-			sources[mode] = RatingSource{Err: defsErr}
+			sources[mode] = rolls.RatingSource{Err: defsErr}
 		default:
-			sources[mode] = RatingSource{Sheet: state.Sheet, Stances: stances[mode], Defs: defs}
+			sources[mode] = rolls.RatingSource{Sheet: state.Sheet, Stances: stances[mode], Defs: defs}
 		}
 	}
 

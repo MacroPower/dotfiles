@@ -16,6 +16,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 )
 
 // hashDefaultShader is the item hash of the default shader, which DIM
@@ -318,20 +319,20 @@ var (
 		{name: filterExactName, value: itemValue(exactNameMatch)},
 		{name: filterPower, value: powerValue},
 		{name: filterLight, value: powerValue},
-		ratingFilter(filterRate, modePvE, tierRange, rollValues),
-		ratingFilter(filterRating, modePvE, tierRange, rollValues),
-		ratingFilter(filterRateBase, modePvE, tierRange, baseValues),
-		ratingFilter(filterRatingBase, modePvE, tierRange, baseValues),
-		ratingFilter(filterMisses, modePvE, rangeFormat{}, missValues),
-		setBonusFilter(filterSetBonus, modePvE),
-		verdictFilter(filterVerdict, modePvE),
-		ratingFilter(pvpPrefix+filterRate, modePvP, tierRange, rollValues),
-		ratingFilter(pvpPrefix+filterRating, modePvP, tierRange, rollValues),
-		ratingFilter(pvpPrefix+filterRateBase, modePvP, tierRange, baseValues),
-		ratingFilter(pvpPrefix+filterRatingBase, modePvP, tierRange, baseValues),
-		ratingFilter(pvpPrefix+filterMisses, modePvP, rangeFormat{}, missValues),
-		setBonusFilter(pvpPrefix+filterSetBonus, modePvP),
-		verdictFilter(pvpPrefix+filterVerdict, modePvP),
+		ratingFilter(filterRate, rolls.ModePvE, tierRange, rollValues),
+		ratingFilter(filterRating, rolls.ModePvE, tierRange, rollValues),
+		ratingFilter(filterRateBase, rolls.ModePvE, tierRange, baseValues),
+		ratingFilter(filterRatingBase, rolls.ModePvE, tierRange, baseValues),
+		ratingFilter(filterMisses, rolls.ModePvE, rangeFormat{}, missValues),
+		setBonusFilter(filterSetBonus, rolls.ModePvE),
+		verdictFilter(filterVerdict, rolls.ModePvE),
+		ratingFilter(pvpPrefix+filterRate, rolls.ModePvP, tierRange, rollValues),
+		ratingFilter(pvpPrefix+filterRating, rolls.ModePvP, tierRange, rollValues),
+		ratingFilter(pvpPrefix+filterRateBase, rolls.ModePvP, tierRange, baseValues),
+		ratingFilter(pvpPrefix+filterRatingBase, rolls.ModePvP, tierRange, baseValues),
+		ratingFilter(pvpPrefix+filterMisses, rolls.ModePvP, rangeFormat{}, missValues),
+		setBonusFilter(pvpPrefix+filterSetBonus, rolls.ModePvP),
+		verdictFilter(pvpPrefix+filterVerdict, rolls.ModePvP),
 	}
 
 	// isFilters maps each is: word of searchFilters to the builder of its
@@ -462,10 +463,10 @@ func fromDecided(build decidedTest) queryTest {
 // searchContext holds what the filters read besides the tested item, as
 // the filter context of DIM does.
 type searchContext struct {
-	// sources holds the [RatingSource] of each game mode, keyed by the
+	// sources holds the [rolls.RatingSource] of each game mode, keyed by the
 	// mode. Only the rating filters read it, so a query without one can
 	// run with no sources.
-	sources map[string]RatingSource
+	sources map[string]rolls.RatingSource
 	// items holds every item that DIM builds, in every location, the vault
 	// included. The web client passes these items to DIM as allItems.
 	items []*inventory.Item
@@ -496,7 +497,7 @@ type searchFilter struct {
 	// item for dupe:item.
 	word string
 	// mode is the game mode whose ratings a rating filter reads, such as
-	// modePvP for pvprate:. It is empty for every other filter.
+	// [rolls.ModePvP] for pvprate:. It is empty for every other filter.
 	mode string
 }
 
@@ -521,7 +522,7 @@ type compiledQuery struct {
 	// rejects, one time each, in the order of the query.
 	invalid []string
 	// modes holds the game modes whose ratings the rating filters of the
-	// query read, in the order of [perkModes]. It is empty when the test
+	// query read, in the order of [rolls.Modes]. It is empty when the test
 	// is nil.
 	modes []string
 }
@@ -557,7 +558,7 @@ func compileQuery(root *QueryNode) compiledQuery {
 	default:
 		var modes []string
 
-		for _, mode := range perkModes {
+		for _, mode := range rolls.Modes {
 			if slices.Contains(c.modes, mode) {
 				modes = append(modes, mode)
 			}
@@ -713,14 +714,14 @@ func (q compiledQuery) evaluate(ctx searchContext, items []*inventory.Item) quer
 	return result
 }
 
-// unratedReason returns the [ratingReason] of the first game mode of
+// unratedReason returns the [rolls.RatingReason] of the first game mode of
 // q.modes whose source in sources holds an Err. It returns "" when every
 // such mode has ratings.
-func (q compiledQuery) unratedReason(sources map[string]RatingSource) string {
+func (q compiledQuery) unratedReason(sources map[string]rolls.RatingSource) string {
 	for _, mode := range q.modes {
 		err := sources[mode].Err
 		if err != nil {
-			return ratingReason(mode, err)
+			return rolls.RatingReason(mode, err)
 		}
 	}
 
@@ -728,7 +729,7 @@ func (q compiledQuery) unratedReason(sources map[string]RatingSource) string {
 }
 
 // unratedQuery returns the errUnratedMode error that gives reason, the
-// [ratingReason] of the game mode without ratings.
+// [rolls.RatingReason] of the game mode without ratings.
 func unratedQuery(reason string) error {
 	return fmt.Errorf("%w. %s", errUnratedMode, reason)
 }
@@ -1370,7 +1371,7 @@ type ratingValues struct {
 func ratingFilter(
 	name, mode string,
 	format rangeFormat,
-	values func(source RatingSource, item *inventory.Item) ratingValues,
+	values func(source rolls.RatingSource, item *inventory.Item) ratingValues,
 ) searchFilter {
 	read := func(value string) (queryTest, error) {
 		compare, err := format.valueComparator(value)
@@ -1401,17 +1402,17 @@ func ratingFilter(
 
 // rollValues returns the numbers of rate: and rating: for item. The
 // numbers are the tier of each set bonus of the item, which [setValues]
-// gives, and the tier of the roll that [rate] gives the copy.
+// gives, and the tier of the roll that [rolls.Rate] gives the copy.
 //
 // A copy without perks on a row with perk columns has a tier that the
 // server cannot read. The web client rates such a copy from the socket
 // list of DIM, which can come from the definitions. A row without a tier
 // gives no copy a tier, so the server decides a copy without perks on such
 // a row.
-func rollValues(source RatingSource, item *inventory.Item) ratingValues {
+func rollValues(source rolls.RatingSource, item *inventory.Item) ratingValues {
 	v := setValues(source, item)
 
-	roll := rate(source, item).Roll
+	roll := rolls.Rate(source, item).Roll
 	if roll == nil {
 		return v
 	}
@@ -1431,10 +1432,10 @@ func rollValues(source RatingSource, item *inventory.Item) ratingValues {
 // The numbers are the tier of each set bonus of the item, which
 // [setValues] gives, and the tier of the sheet row of the item hash,
 // whatever the copy rolled.
-func baseValues(source RatingSource, item *inventory.Item) ratingValues {
+func baseValues(source rolls.RatingSource, item *inventory.Item) ratingValues {
 	v := setValues(source, item)
 
-	roll := rate(source, item).Roll
+	roll := rolls.Rate(source, item).Roll
 	if roll != nil {
 		v.numbers = appendTier(v.numbers, roll.Row.Tier)
 	}
@@ -1446,8 +1447,8 @@ func baseValues(source RatingSource, item *inventory.Item) ratingValues {
 // of perk columns that the roll of the copy missed. Only a roll with perk
 // columns has the number. The server cannot read the number for a copy
 // without perks on a row with perk columns.
-func missValues(source RatingSource, item *inventory.Item) ratingValues {
-	roll := rate(source, item).Roll
+func missValues(source rolls.RatingSource, item *inventory.Item) ratingValues {
+	roll := rolls.Rate(source, item).Roll
 
 	switch {
 	case roll == nil:
@@ -1473,7 +1474,7 @@ func missValues(source RatingSource, item *inventory.Item) ratingValues {
 // the sheet of source rates, as rate: and ratebase: test them in the web
 // client. A bonus without a tier adds no number. An item without a set
 // has no number.
-func setValues(source RatingSource, item *inventory.Item) ratingValues {
+func setValues(source rolls.RatingSource, item *inventory.Item) ratingValues {
 	var v ratingValues
 
 	for _, bonus := range setRatings(item, source.Sheet) {
@@ -1483,16 +1484,16 @@ func setValues(source RatingSource, item *inventory.Item) ratingValues {
 	return v
 }
 
-// setRatings returns the [SetBonus] of each sandbox perk of the item set
+// setRatings returns the [rolls.SetBonus] of each sandbox perk of the item set
 // of item that sheet rates, in the order of the set. setRatings of the web
 // client also sorts the bonuses by their pieces, but no filter reads that
 // order. A nil sheet rates no bonus.
-func setRatings(item *inventory.Item, sheet *Sheet) []SetBonus {
+func setRatings(item *inventory.Item, sheet *rolls.Sheet) []rolls.SetBonus {
 	if sheet == nil {
 		return nil
 	}
 
-	var bonuses []SetBonus
+	var bonuses []rolls.SetBonus
 
 	for _, perk := range item.SetPerks {
 		bonus, ok := sheet.SetBonuses[perk]
@@ -1522,13 +1523,13 @@ func setBonusFilter(name, mode string) searchFilter {
 		}
 
 		pieces := setBonusPieces[size]
-		want := lowerTiers[tier]
+		want := rolls.LowerTiers[tier]
 
 		return fromDecided(func(ctx searchContext) func(*inventory.Item) bool {
 			sheet := ctx.sources[mode].Sheet
 
 			return func(item *inventory.Item) bool {
-				return slices.ContainsFunc(setRatings(item, sheet), func(bonus SetBonus) bool {
+				return slices.ContainsFunc(setRatings(item, sheet), func(bonus rolls.SetBonus) bool {
 					return bonus.Tier == want && (!sized || bonus.Pieces == pieces)
 				})
 			}
@@ -1542,13 +1543,13 @@ func setBonusFilter(name, mode string) searchFilter {
 // client builds its suggestions of setbonus:. They are each tier in
 // lowercase, and then each size prefix of setBonusPieces with each tier.
 func setBonusSuggestions() []string {
-	values := make([]string, 0, len(tiers)*(len(setBonusPieces)+1))
-	for _, tier := range tiers {
+	values := make([]string, 0, len(rolls.Tiers)*(len(setBonusPieces)+1))
+	for _, tier := range rolls.Tiers {
 		values = append(values, strings.ToLower(tier))
 	}
 
 	for _, size := range slices.Sorted(maps.Keys(setBonusPieces)) {
-		for _, tier := range tiers {
+		for _, tier := range rolls.Tiers {
 			values = append(values, size+":"+strings.ToLower(tier))
 		}
 	}
@@ -1567,13 +1568,13 @@ func appendTier(numbers []float64, tier string) []float64 {
 	return append(numbers, n)
 }
 
-// tierOverloads returns the overloads of tierRange. Each tier of [tiers],
+// tierOverloads returns the overloads of tierRange. Each tier of [rolls.Tiers],
 // in lowercase, maps to the number of tiers after it, as TIER_VALUES of
 // the web client maps it.
 func tierOverloads() map[string]float64 {
-	overloads := make(map[string]float64, len(tiers))
-	for i, tier := range tiers {
-		overloads[strings.ToLower(tier)] = float64(len(tiers) - 1 - i)
+	overloads := make(map[string]float64, len(rolls.Tiers))
+	for i, tier := range rolls.Tiers {
+		overloads[strings.ToLower(tier)] = float64(len(rolls.Tiers) - 1 - i)
 	}
 
 	return overloads
@@ -1614,7 +1615,7 @@ func verdictFilter(name, mode string) searchFilter {
 // gives item against its rivals, as verdictIn of the web client does.
 // Copies holds the items with an instance id, keyed by item hash, as
 // [copiesByHash] builds it. [rivalsOf] picks the rivals. Each rival that
-// [rate] gives no roll drops out.
+// [rolls.Rate] gives no roll drops out.
 //
 // The kind is empty for a copy without a verdict. A weapon that the sheet
 // does not list has none, and so has a copy on a row without perk
@@ -1627,8 +1628,8 @@ func verdictFilter(name, mode string) searchFilter {
 // tell such a copy from one whose perks the web client reads. A rival
 // without perks leaves the verdict undecided also when another rival
 // already makes the copy worse.
-func verdictIn(source RatingSource, copies map[uint32][]*inventory.Item, item *inventory.Item) (string, bool) {
-	roll := rate(source, item).Roll
+func verdictIn(source rolls.RatingSource, copies map[uint32][]*inventory.Item, item *inventory.Item) (string, bool) {
+	roll := rolls.Rate(source, item).Roll
 
 	switch {
 	case roll == nil:
@@ -1642,7 +1643,7 @@ func verdictIn(source RatingSource, copies map[uint32][]*inventory.Item, item *i
 	var rivals [][]int
 
 	for _, other := range rivalsOf(source.Sheet, copies, item) {
-		rival := rate(source, other).Roll
+		rival := rolls.Rate(source, other).Roll
 
 		switch {
 		case rival == nil:
@@ -1678,7 +1679,7 @@ func copiesByHash(items []*inventory.Item) map[uint32][]*inventory.Item {
 // candidates, keyed by item hash. The versions of a hash are its entry in
 // Sheet.Versions, and a hash without an entry has only itself as a
 // version. A hash that the entry lists twice adds its copies one time.
-func rivalsOf(sheet *Sheet, copies map[uint32][]*inventory.Item, item *inventory.Item) []*inventory.Item {
+func rivalsOf(sheet *rolls.Sheet, copies map[uint32][]*inventory.Item, item *inventory.Item) []*inventory.Item {
 	versions, ok := sheet.Versions[item.Hash]
 	if !ok {
 		versions = []uint32{item.Hash}
@@ -1708,7 +1709,7 @@ func rivalsOf(sheet *Sheet, copies map[uint32][]*inventory.Item, item *inventory
 
 // hitSet returns the index of each perk column of roll that the copy
 // hits, in order.
-func hitSet(roll *Roll) []int {
+func hitSet(roll *rolls.Roll) []int {
 	var hits []int
 
 	for i, column := range roll.Columns {
