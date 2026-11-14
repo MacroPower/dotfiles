@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"fmt"
 	"math"
 	"slices"
@@ -1535,16 +1534,6 @@ func renderRule(rule AutotagRule) string {
 		strings.Join(actions, ", "),
 		rule.ID,
 	)
-}
-
-// liveRules drops the removed rules and returns the rest in evaluation
-// order.
-func liveRules(rules []AutotagRule) []AutotagRule {
-	live := slices.DeleteFunc(slices.Clone(rules), func(rule AutotagRule) bool { return rule.Removed })
-
-	slices.SortStableFunc(live, func(a, b AutotagRule) int { return cmp.Compare(a.Position, b.Position) })
-
-	return live
 }
 
 // renderNewMatches renders the result of list_autotag_rules with

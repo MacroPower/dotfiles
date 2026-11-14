@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 )
 
 const (
@@ -15,10 +14,6 @@ const (
 	// stackInstanceID is the item id that Bungie expects for an item
 	// without an instance.
 	stackInstanceID = "0"
-
-	// markDigits is the width of an autotag mark. The service compares
-	// marks as text, so every mark has this many digits.
-	markDigits = 20
 )
 
 var (
@@ -126,42 +121,6 @@ func (s *Snapshot) Move(
 	s.markEquipped(item)
 
 	return replacement, nil
-}
-
-// vaultBlock returns the reason that keeps item in place when an autotag
-// rule with the vault flag takes it. It returns an empty string for an
-// item that run_autotag_rules moves to the vault. Def is the definition of
-// the item.
-//
-// The web client leaves the item of such a rule in place when a character
-// has the item equipped, or when Bungie gives it the transfer status
-// NotTransferrable alone. It also leaves an item in place when the
-// definition bucket of the item is the bucket of the distorted engrams or
-// a bucket of the Postmaster category of DIM. The web client moves every
-// other item, and it pulls an item from the Postmaster first, as
-// [Snapshot.Move] does.
-//
-// [Item.Transferable] also reads the definition and every transfer status
-// with the NotTransferrable bit, and [Snapshot.Move] refuses an item that
-// it does not mark. vaultBlock leaves such an item in place with a reason
-// of its own, which says that the web client tries the transfer.
-func vaultBlock(item *Item, def ItemDef) string {
-	switch {
-	case item.Equipped:
-		return "it is equipped"
-
-	case item.TransferStatus == transferNotTransferable:
-		return "Bungie reports it as not transferable"
-
-	case def.Bucket == bucketForbidden, def.Bucket == bucketPostmaster, slices.Contains(postmasterBuckets, def.Bucket):
-		return "the web client never moves an item of its bucket"
-
-	case !item.Transferable:
-		return "the server treats it as not transferable, but the web client tries the transfer"
-
-	default:
-		return ""
-	}
 }
 
 func (s *Snapshot) checkMove(item *Item, target string, equip bool) error {
@@ -459,57 +418,6 @@ func (s *Snapshot) requestCharacter(item *Item) (string, bool) {
 	c, ok := s.lastPlayed()
 
 	return c.ID, ok
-}
-
-// markOf returns instanceID in the form of an autotag mark, padded with
-// zeros on the left to [markDigits] digits. The web client and the service
-// compare marks as text, and the padding lets that comparison order ids of
-// different lengths.
-func markOf(instanceID string) string {
-	return strings.Repeat("0", max(markDigits-len(instanceID), 0)) + instanceID
-}
-
-// NewestMark returns the highest [markOf] among the items that the web
-// client treats as acquired drops, which are the items of [ownedItems].
-// The web client treats every such item with a higher mark as newly
-// acquired. An inventory without such an item gives the mark of zeros.
-func (s *Snapshot) NewestMark() string {
-	newest := markOf("")
-
-	for _, item := range ownedItems(s) {
-		mark := markOf(item.InstanceID)
-		if mark > newest {
-			newest = mark
-		}
-	}
-
-	return newest
-}
-
-// NewItems returns the items of [ownedItems] whose [markOf] is higher than
-// mark, which the next claim covers. The first list holds the items
-// outside the vault, which the claim offers to the autotag rules. The
-// second list holds the items in the vault. Both lists follow the order of
-// [compareIDs].
-func (s *Snapshot) NewItems(mark string) ([]*Item, []*Item) {
-	var held, vault []*Item
-
-	for _, item := range ownedItems(s) {
-		switch {
-		case markOf(item.InstanceID) <= mark:
-		case item.Owner == ownerVault:
-			vault = append(vault, item)
-		default:
-			held = append(held, item)
-		}
-	}
-
-	byID := func(a, b *Item) int { return compareIDs(a.InstanceID, b.InstanceID) }
-
-	slices.SortStableFunc(held, byID)
-	slices.SortStableFunc(vault, byID)
-
-	return held, vault
 }
 
 // tagChanges returns the rows that leave an item with tagID as its one

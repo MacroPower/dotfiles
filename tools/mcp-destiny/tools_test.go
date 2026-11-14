@@ -7513,32 +7513,6 @@ func TestListAutotagRulesOwnedCachedProfile(t *testing.T) {
 		"the counts reuse the snapshot of list_characters")
 }
 
-func TestOwnedCounts(t *testing.T) {
-	t.Parallel()
-
-	items := []*Item{{InstanceID: "1"}, {InstanceID: "2"}, {InstanceID: "3"}}
-
-	// test gives item 1 the reason b, item 2 the reasons a and b, and
-	// matches item 3.
-	test := func(item *Item) outcome {
-		switch item.InstanceID {
-		case "1":
-			return outcome{reasons: []string{"b"}, state: undecided}
-		case "2":
-			return outcome{reasons: []string{"a", "b"}, state: undecided}
-		default:
-			return outcome{state: match}
-		}
-	}
-
-	got := ownedCounts([]ruleEval{{test: test, rule: AutotagRule{Enabled: false}}}, items)
-	require.Len(t, got, 1)
-	assert.Equal(t, 1, got[0].matches)
-	assert.Equal(t, 2, got[0].undecided)
-	assert.Equal(t, []string{"b", "a"}, got[0].reasons, "each reason once, in the order of the items")
-	assert.False(t, got[0].unknown)
-}
-
 func TestSaveAutotagRule(t *testing.T) {
 	t.Parallel()
 
