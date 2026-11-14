@@ -90,29 +90,34 @@ func bucketNames(buckets []Bucket) string {
 
 // JunkPlan is what one call of the stage_junk tool knows about one slot
 // of one character. Staged holds the unequipped junk that the character
-// holds in the slot. Keepers holds the other unequipped items there.
-// Waiting holds the junk that can come to the slot from the vault or from
-// another character. Skipped counts the junk of the slot that the tool
-// leaves in place. Each such item is equipped, at the Postmaster, not
-// transferable, or for another class. Room is the number of free places
-// of the slot.
+// holds in the slot. Keepers holds the other unequipped items there that
+// [*Snapshot.Move] can move to the vault. Unmovable holds the rest of the
+// unequipped items there, such as a stack without an instance id or an
+// item that is not transferable. Waiting holds the junk that can come to
+// the slot from the vault or from another character. Skipped counts the
+// junk of the slot that the tool leaves in place. Each such item is
+// equipped, at the Postmaster, not transferable, or for another class.
+// Room is the number of free places of the slot.
 type JunkPlan struct {
-	Staged  []*Item
-	Waiting []*Item
-	Keepers []*Item
-	Skipped int
-	Room    int
+	Staged    []*Item
+	Waiting   []*Item
+	Keepers   []*Item
+	Unmovable []*Item
+	Skipped   int
+	Room      int
 }
 
 // JunkPlan sorts the items of bucket b into a [JunkPlan] for character c.
 // An item that c holds unequipped outside the Postmaster sits in the slot,
-// whatever its class and its transfer state. Junk that another owner
-// holds waits when it is unequipped, outside the Postmaster, transferable,
-// and of a class that c can use. Every other junk item of the bucket
-// counts as skipped. The lists follow the default order of
-// [*Snapshot.Filter]. Room is the capacity of b minus the items that
-// [*Snapshot.SlotsUsed] counts for c, the equipped item included. It is
-// never less than 0.
+// whatever its class and its transfer state. Such an item without the junk
+// tag is a keeper when [*Snapshot.Move] can move it to the vault, and it
+// is unmovable otherwise. Junk that another owner holds waits when it is
+// unequipped, outside the Postmaster, transferable, and of a class that c
+// can use. Every other junk item of the bucket counts as skipped. The
+// lists follow the default order of [*Snapshot.Filter]. Room is the
+// capacity of b minus the items that [*Snapshot.SlotsUsed] counts for c,
+// the equipped item and the unmovable items included. It is never less
+// than 0.
 func (s *Snapshot) JunkPlan(c Character, b Bucket) JunkPlan {
 	plan := JunkPlan{Room: max(b.Capacity-s.SlotsUsed(b, c.ID), 0)}
 
@@ -125,9 +130,14 @@ func (s *Snapshot) JunkPlan(c Character, b Bucket) JunkPlan {
 
 		switch {
 		case item.Owner == c.ID && !item.Equipped && !item.Postmaster:
-			if junk {
+			// The stage_junk tool tells the user to move each keeper to the
+			// vault with move_items, which runs the checks of Move.
+			switch {
+			case junk:
 				plan.Staged = append(plan.Staged, item)
-			} else {
+			case s.checkMove(item, OwnerVault, false) != nil:
+				plan.Unmovable = append(plan.Unmovable, item)
+			default:
 				plan.Keepers = append(plan.Keepers, item)
 			}
 
@@ -141,7 +151,7 @@ func (s *Snapshot) JunkPlan(c Character, b Bucket) JunkPlan {
 		}
 	}
 
-	for _, items := range [][]*Item{plan.Staged, plan.Waiting, plan.Keepers} {
+	for _, items := range [][]*Item{plan.Staged, plan.Waiting, plan.Keepers, plan.Unmovable} {
 		slices.SortStableFunc(items, ByNameAndID)
 	}
 

@@ -4132,12 +4132,18 @@ const (
 	goneError = `{"ErrorCode": 1623, "ErrorStatus": "DestinyItemNotFound", "Message": "gone"}`
 )
 
-func dismantleLine(staged int) string {
-	return fmt.Sprintf("Each listed item is tagged junk, and the user dismantles them in the game. "+
+// dismantleLine returns the last line of a stage_junk call that staged
+// junk. Shown is the number of unequipped items that the game shows in
+// the slot. It counts the staged junk and the items that move_items
+// cannot move.
+func dismantleLine(shown int) string {
+	return fmt.Sprintf("The items in the list under the first line are tagged junk, "+
+		"and the user dismantles them in the game. "+
+		"The user keeps every other unequipped item of the slot. "+
 		"Do not dismantle when the number of unequipped items that the game shows in the slot is higher than %d, "+
 		"because stage_junk did not check an item that reached the slot after the last inventory fetch. "+
 		"Call stage_junk again after the user dismantled them. "+
-		"A call in the next 30 seconds might reuse this inventory copy and list the same items.", staged)
+		"A call in the next 30 seconds might reuse this inventory copy and list the same items.", shown)
 }
 
 func skippedLine(skipped int) string {
@@ -4229,6 +4235,30 @@ func TestStageJunk(t *testing.T) {
 	}
 	kinetic := StageJunkInput{Slot: "kinetic"}
 
+	// unknownStack returns a stack without an instance id in the kinetic
+	// slot of owner, which move_items cannot move.
+	unknownStack := func(owner string) *inventory.Item {
+		return &inventory.Item{
+			Name:         "Unknown item 373750294",
+			Owner:        owner,
+			Kind:         inventory.KindOther,
+			ClassType:    bungie.ClassAny,
+			Quantity:     1,
+			Hash:         373750294,
+			Bucket:       bungie.BucketKinetic,
+			Transferable: true,
+		}
+	}
+
+	// pinnedWeapon returns a hand cannon of owner that is not
+	// transferable, which move_items cannot move.
+	pinnedWeapon := func(owner string) *inventory.Item {
+		item := kineticWeapon("1007", "Fatebringer", owner)
+		item.Transferable = false
+
+		return item
+	}
+
 	tests := map[string]struct {
 		refuse    func(body map[string]any) bool
 		in        StageJunkInput
@@ -4272,15 +4302,83 @@ func TestStageJunk(t *testing.T) {
 				"After stage_junk reports that no junk is left, move that gear back with move_items and target c1.",
 			isError: true,
 		},
+		"refusal leaves out a stack without an instance id": {
+			in:      kinetic,
+			junk:    []string{"1001"},
+			add:     []*inventory.Item{unknownStack(bungietest.HunterID)},
+			want:    fixtureRefusal,
+			isError: true,
+		},
+		"refusal leaves out an item that is not transferable": {
+			in:      kinetic,
+			junk:    []string{"1001"},
+			add:     []*inventory.Item{pinnedWeapon(bungietest.HunterID)},
+			want:    fixtureRefusal,
+			isError: true,
+		},
+		"refusal when items that move_items cannot move fill the slot": {
+			in:   StageJunkInput{Slot: "kinetic", Character: "titan"},
+			junk: []string{"1001"},
+			add: []*inventory.Item{
+				unknownStack(bungietest.TitanID),
+				pinnedWeapon(bungietest.TitanID),
+			},
+			capacity: 2,
+			want: "cannot move: Kinetic Weapons on Titan has no free place for junk. " +
+				"Unequipped items that are not tagged junk and that move_items cannot move fill the slot: " +
+				"Fatebringer (1007), Unknown item 373750294 (stack of 1, item hash 373750294). " +
+				"The user keeps them, so stage_junk cannot stage the junk that waits. stage_junk moved nothing.",
+			isError: true,
+		},
+		"refusal when one item that move_items cannot move fills the slot": {
+			in:       StageJunkInput{Slot: "kinetic", Character: "titan"},
+			junk:     []string{"1001"},
+			add:      []*inventory.Item{unknownStack(bungietest.TitanID)},
+			capacity: 1,
+			want: "cannot move: Kinetic Weapons on Titan has no free place for junk. " +
+				"An unequipped item that is not tagged junk and that move_items cannot move fills the slot: " +
+				"Unknown item 373750294 (stack of 1, item hash 373750294). " +
+				"The user keeps it, so stage_junk cannot stage the junk that waits. stage_junk moved nothing.",
+			isError: true,
+		},
+		"stage beside a stack without an instance id": {
+			in:   kinetic,
+			junk: []string{"1003"},
+			add:  []*inventory.Item{unknownStack(bungietest.HunterID)},
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 1\n" +
+				"- Midnight Coup (1003)\n" +
+				"The slot also holds an unequipped item that is not tagged junk and that move_items cannot move, " +
+				"so stage_junk leaves it in place: Unknown item 373750294 (stack of 1, item hash 373750294). " +
+				"The user keeps it.\n" +
+				"Junk that waits for the next call: 0\n" +
+				dismantleLine(2),
+		},
+		"stage beside items that move_items cannot move": {
+			in:   kinetic,
+			junk: []string{"1001", "1003"},
+			add:  []*inventory.Item{unknownStack(bungietest.HunterID), pinnedWeapon(bungietest.HunterID)},
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 2\n" +
+				"- Fatebringer (1001), locked\n" +
+				"- Midnight Coup (1003)\n" +
+				lockLine + "\n" +
+				"The slot also holds unequipped items that are not tagged junk and that move_items cannot move, " +
+				"so stage_junk leaves them in place: Fatebringer (1007), " +
+				"Unknown item 373750294 (stack of 1, item hash 373750294). The user keeps them.\n" +
+				"Junk that waits for the next call: 0\n" +
+				dismantleLine(4),
+			transfers: []string{"1001 to c1"},
+			moved:     true,
+		},
 		"stage from the vault": {
 			in:   kinetic,
 			junk: []string{"1001", "1003"},
-			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n" +
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 2\n" +
 				"- Fatebringer (1001), locked\n" +
 				"- Midnight Coup (1003)\n" +
 				"The game does not let the player dismantle a locked item. set_lock unlocks it.\n" +
 				"Junk that waits for the next call: 0\n" +
-				"Each listed item is tagged junk, and the user dismantles them in the game. Do not dismantle " +
+				"The items in the list under the first line are tagged junk, and the user dismantles them in " +
+				"the game. The user keeps every other unequipped item of the slot. Do not dismantle " +
 				"when the number of unequipped items that the game shows in the slot is higher than 2, because " +
 				"stage_junk did not check an item that reached the slot after the last inventory fetch. Call " +
 				"stage_junk again after the user dismantled them. A call in the next 30 seconds might reuse " +
@@ -4292,7 +4390,7 @@ func TestStageJunk(t *testing.T) {
 			in:   kinetic,
 			junk: []string{"1003", "1007"},
 			add:  []*inventory.Item{kineticWeapon("1007", "Fatebringer", bungietest.TitanID)},
-			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n" +
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 2\n" +
 				"- Fatebringer (1007)\n" +
 				"- Midnight Coup (1003)\n" +
 				"Junk that waits for the next call: 0\n" +
@@ -4308,7 +4406,7 @@ func TestStageJunk(t *testing.T) {
 				kineticWeapon("1008", "Fatebringer", inventory.OwnerVault),
 			},
 			capacity: 4,
-			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 3\n" +
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 3\n" +
 				"- Fatebringer (1001), locked\n" +
 				"- Fatebringer (1008)\n" +
 				"- Midnight Coup (1003)\n" +
@@ -4322,7 +4420,7 @@ func TestStageJunk(t *testing.T) {
 			in:       kinetic,
 			junk:     []string{"1001", "1003"},
 			capacity: 2,
-			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 1\n" +
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 1\n" +
 				"- Midnight Coup (1003)\n" +
 				"Junk that waits for the next call: 1\n" +
 				dismantleLine(1),
@@ -4330,7 +4428,7 @@ func TestStageJunk(t *testing.T) {
 		"nothing waits": {
 			in:   kinetic,
 			junk: []string{"1003"},
-			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 1\n" +
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 1\n" +
 				"- Midnight Coup (1003)\n" +
 				"Junk that waits for the next call: 0\n" +
 				dismantleLine(1),
@@ -4340,7 +4438,7 @@ func TestStageJunk(t *testing.T) {
 			junk:   []string{"1001", "1003", "1007"},
 			add:    []*inventory.Item{kineticWeapon("1007", "Midnight Coup", inventory.OwnerVault)},
 			refuse: func(body map[string]any) bool { return body["itemId"] == "1001" },
-			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n" +
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 2\n" +
 				"- Midnight Coup (1003)\n" +
 				"- Midnight Coup (1007)\n" +
 				moveFailure("Fatebringer", "1001", "Hunter") + "\n" +
@@ -4354,7 +4452,7 @@ func TestStageJunk(t *testing.T) {
 			junk:   []string{"1003", "1007"},
 			add:    []*inventory.Item{kineticWeapon("1007", "Fatebringer", bungietest.TitanID)},
 			refuse: func(body map[string]any) bool { return body["transferToVault"] == false },
-			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 1\n" +
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 1\n" +
 				"- Midnight Coup (1003)\n" +
 				moveFailure("Fatebringer", "1007", "Hunter") + "\n" +
 				"Junk that waits for the next call: 1\n" +
@@ -4367,7 +4465,7 @@ func TestStageJunk(t *testing.T) {
 			in:     kinetic,
 			junk:   []string{"1001", "1003"},
 			refuse: refuseEvery,
-			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 1\n" +
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 1\n" +
 				"- Midnight Coup (1003)\n" +
 				moveFailure("Fatebringer", "1001", "Hunter") + "\n" +
 				"Junk that waits for the next call: 1\n" +
@@ -4379,7 +4477,7 @@ func TestStageJunk(t *testing.T) {
 			in:     StageJunkInput{Slot: "kinetic", Character: "titan"},
 			junk:   []string{"1001"},
 			refuse: refuseEvery,
-			want: "Unequipped items in Kinetic Weapons on Titan after this call: 0\n" +
+			want: "Unequipped junk in Kinetic Weapons on Titan after this call: 0\n" +
 				moveFailure("Fatebringer", "1001", "Titan") + "\n" +
 				"Junk that waits for the next call: 1\n" +
 				nothingStaged,
@@ -4390,7 +4488,7 @@ func TestStageJunk(t *testing.T) {
 			in:   kinetic,
 			junk: []string{"1001", "1003", "1007"},
 			add:  []*inventory.Item{kineticWeapon("1007", "Midnight Coup", inventory.OwnerVault)},
-			want: "Unequipped items in Kinetic Weapons on Hunter after this call: 3\n" +
+			want: "Unequipped junk in Kinetic Weapons on Hunter after this call: 3\n" +
 				"- Fatebringer (1001), locked\n" +
 				"- Midnight Coup (1003)\n" +
 				"- Midnight Coup (1007)\n" +
@@ -4403,7 +4501,7 @@ func TestStageJunk(t *testing.T) {
 		"character input": {
 			in:   StageJunkInput{Slot: "kinetic", Character: "titan"},
 			junk: []string{"1001"},
-			want: "Unequipped items in Kinetic Weapons on Titan after this call: 1\n" +
+			want: "Unequipped junk in Kinetic Weapons on Titan after this call: 1\n" +
 				"- Fatebringer (1001), locked\n" +
 				lockLine + "\n" +
 				"Junk that waits for the next call: 0\n" +
@@ -4565,7 +4663,7 @@ func TestStageJunkReadsTags(t *testing.T) {
 
 	got, isError = call(t, f.h.handleStageJunk, StageJunkInput{Slot: "kinetic"})
 	assert.False(t, isError)
-	assert.True(t, strings.HasPrefix(got, "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n"), got)
+	assert.True(t, strings.HasPrefix(got, "Unequipped junk in Kinetic Weapons on Hunter after this call: 2\n"), got)
 
 	assert.Len(t, f.service.Calls(http.MethodGet, pathTags), 2, "every call reads the tags")
 	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1, "the second call reuses the profile")

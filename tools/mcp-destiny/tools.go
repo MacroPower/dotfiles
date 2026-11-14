@@ -944,9 +944,20 @@ func (h *handler) handleStageJunk(
 	}
 
 	// The game cannot undo a dismantle, so the tool adds no junk to a slot
-	// that holds an item that the user did not tag junk.
+	// that holds an item that the user did not tag junk. An item that
+	// move_items cannot move out does not stop the call, because the
+	// move_items advice of the refusal cannot clear it from the slot. The
+	// output names such an item as one that the user keeps.
 	if len(plan.Keepers) > 0 {
 		return h.toolRefusal(ctx, toolStageJunk, keeperRefusal(s, c, bucket, plan.Keepers))
+	}
+
+	// Without junk to dismantle, the slot gets a free place only when the
+	// user clears an item that the tool leaves in place. A call to a full
+	// slot therefore moves nothing, and every later call finds the same
+	// slot.
+	if len(plan.Staged) == 0 && plan.Room == 0 {
+		return h.toolRefusal(ctx, toolStageJunk, fullSlotRefusal(s, c, bucket, plan.Unmovable))
 	}
 
 	membership, err := h.membership(ctx)

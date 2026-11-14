@@ -485,12 +485,15 @@ func newServer(h *handler) *mcp.Server {
 		Description: "Stage items tagged junk in one weapon or armor slot of a character, so that the user " +
 			"can dismantle them in the game. The Bungie API has no request that dismantles an item. " +
 			"The tool fills the free places of the slot with junk from the vault and the other characters " +
-			"in the live game, and it lists every unequipped item that the slot then holds. " +
+			"in the live game, and it lists the unequipped junk that the slot then holds. " +
 			"Call it again after the user dismantled them, until it reports that no junk is left. " +
-			"It moves nothing when the slot holds an unequipped item that is not tagged junk, and it names " +
-			"those items so that move_items can move them to the vault first. It skips junk that is equipped, " +
-			"at the Postmaster, not transferable, or for another class. Without character, it stages on " +
-			"the most recently played character.",
+			"It moves nothing when the slot holds an unequipped item that is not tagged junk and that " +
+			"move_items can move, and it names those items so that move_items can move them to the vault first. " +
+			"It stages junk beside an item that move_items cannot move, such as a stack without an instance id " +
+			"or an item that is not transferable, and it names such items as items that the user keeps. " +
+			"It moves nothing when such items leave no free place in a slot that holds no junk. " +
+			"It skips junk that is equipped, at the Postmaster, not transferable, or for another class. " +
+			"Without character, it stages on the most recently played character.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool)},
 	}, h.handleStageJunk)
 

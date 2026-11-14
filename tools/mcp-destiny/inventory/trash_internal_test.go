@@ -144,12 +144,14 @@ func TestResolveSlot(t *testing.T) {
 }
 
 // junkIDs is a [JunkPlan] without its Room, with the instance id of each
-// item in place of the item.
+// item in place of the item. Unmovable holds the name of each item,
+// because a stack has no instance id.
 type junkIDs struct {
-	Staged  []string
-	Waiting []string
-	Keepers []string
-	Skipped int
+	Staged    []string
+	Waiting   []string
+	Keepers   []string
+	Unmovable []string
+	Skipped   int
 }
 
 func junkIDsOf(plan JunkPlan) junkIDs {
@@ -161,11 +163,17 @@ func junkIDsOf(plan JunkPlan) junkIDs {
 		return ids(items)
 	}
 
+	var unmovable []string
+	for _, item := range plan.Unmovable {
+		unmovable = append(unmovable, item.Name)
+	}
+
 	return junkIDs{
-		Staged:  idsOf(plan.Staged),
-		Waiting: idsOf(plan.Waiting),
-		Keepers: idsOf(plan.Keepers),
-		Skipped: plan.Skipped,
+		Staged:    idsOf(plan.Staged),
+		Waiting:   idsOf(plan.Waiting),
+		Keepers:   idsOf(plan.Keepers),
+		Unmovable: unmovable,
+		Skipped:   plan.Skipped,
 	}
 }
 
@@ -355,6 +363,31 @@ func TestJunkPlan(t *testing.T) {
 			},
 			want: junkIDs{Keepers: []string{"1"}},
 		},
+		"stack without an instance id in the slot": {
+			items: []Item{
+				{
+					Name:         "Unknown item 373750294",
+					Owner:        bungietest.HunterID,
+					ClassType:    bungie.ClassAny,
+					Transferable: true,
+					Quantity:     1,
+				},
+			},
+			want: junkIDs{Unmovable: []string{"Unknown item 373750294"}},
+		},
+		"item without a tag in the slot that is not transferable": {
+			items: []Item{
+				{InstanceID: "1", Name: "Fatebringer", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
+			},
+			want: junkIDs{Unmovable: []string{"Fatebringer"}},
+		},
+		"keeper beside an item that move_items cannot move": {
+			items: []Item{
+				{InstanceID: "1", Owner: bungietest.HunterID, ClassType: bungie.ClassAny, Transferable: true},
+				{Name: "Unknown item 373750294", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
+			},
+			want: junkIDs{Keepers: []string{"1"}, Unmovable: []string{"Unknown item 373750294"}},
+		},
 		"item without a tag that the character has equipped": {
 			items: []Item{
 				{
@@ -477,14 +510,23 @@ func TestJunkPlan(t *testing.T) {
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 				},
-				{InstanceID: "7", Name: "Midnight Coup", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
-				{InstanceID: "1002", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
-				{InstanceID: "997", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
+				{
+					InstanceID:   "7",
+					Name:         "Midnight Coup",
+					Owner:        bungietest.HunterID,
+					ClassType:    bungie.ClassAny,
+					Transferable: true,
+				},
+				{InstanceID: "1002", Owner: bungietest.HunterID, ClassType: bungie.ClassAny, Transferable: true},
+				{InstanceID: "997", Owner: bungietest.HunterID, ClassType: bungie.ClassAny, Transferable: true},
+				{Name: "Unknown item 2", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
+				{Name: "Unknown item 1", Owner: bungietest.HunterID, ClassType: bungie.ClassAny},
 			},
 			want: junkIDs{
-				Staged:  []string{"999", "1000", "5"},
-				Waiting: []string{"998", "1001", "6"},
-				Keepers: []string{"997", "1002", "7"},
+				Staged:    []string{"999", "1000", "5"},
+				Waiting:   []string{"998", "1001", "6"},
+				Keepers:   []string{"997", "1002", "7"},
+				Unmovable: []string{"Unknown item 1", "Unknown item 2"},
 			},
 		},
 	}
@@ -508,6 +550,7 @@ func TestJunkPlanRoom(t *testing.T) {
 	tests := map[string]struct {
 		unequipped int
 		postmaster int
+		stacks     int
 		want       int
 		equipped   bool
 	}{
@@ -516,6 +559,7 @@ func TestJunkPlanRoom(t *testing.T) {
 		"Postmaster items take no room":               {unequipped: 3, postmaster: 2, want: 7},
 		"full slot":                                   {equipped: true, unequipped: 9},
 		"full slot with more items than its capacity": {equipped: true, unequipped: 10},
+		"stacks without an instance id take room":     {unequipped: 3, stacks: 2, want: 5},
 	}
 
 	for name, tc := range tests {
@@ -541,6 +585,10 @@ func TestJunkPlanRoom(t *testing.T) {
 
 			for range tc.postmaster {
 				add(Item{Postmaster: true})
+			}
+
+			for range tc.stacks {
+				items = append(items, Item{Owner: bungietest.HunterID, ClassType: bungie.ClassAny, Quantity: 1})
 			}
 
 			// Items of another character and of the vault take no room.

@@ -856,7 +856,9 @@ func renderNoJunk(
 
 // renderStagedJunk lists the junk that bucket on character c holds after
 // a stage_junk call. Plan is the plan after the moves, and failures holds
-// one line for each move that did not succeed.
+// one line for each move that did not succeed. The output names the
+// unmovable items of the plan as items that the user keeps, and the count
+// that guards the dismantle includes them.
 func renderStagedJunk(
 	s *inventory.Snapshot,
 	c inventory.Character,
@@ -866,7 +868,7 @@ func renderStagedJunk(
 ) string {
 	staged := len(plan.Staged)
 	lines := []string{fmt.Sprintf(
-		"Unequipped items in %s on %s after this call: %d", bucket.Name, s.OwnerLabel(c.ID), staged,
+		"Unequipped junk in %s on %s after this call: %d", bucket.Name, s.OwnerLabel(c.ID), staged,
 	)}
 
 	locked := false
@@ -885,6 +887,22 @@ func renderStagedJunk(
 		lines = append(lines, "The game does not let the player dismantle a locked item. set_lock unlocks it.")
 	}
 
+	switch {
+	case len(plan.Unmovable) == 1:
+		lines = append(lines, fmt.Sprintf(
+			"The slot also holds an unequipped item that is not tagged junk and that move_items cannot move, "+
+				"so stage_junk leaves it in place: %s. The user keeps it.",
+			unmovableLabels(plan.Unmovable),
+		))
+
+	case len(plan.Unmovable) > 1:
+		lines = append(lines, fmt.Sprintf(
+			"The slot also holds unequipped items that are not tagged junk and that move_items cannot move, "+
+				"so stage_junk leaves them in place: %s. The user keeps them.",
+			unmovableLabels(plan.Unmovable),
+		))
+	}
+
 	lines = append(lines, failures...)
 	lines = append(lines, fmt.Sprintf("Junk that waits for the next call: %d", len(plan.Waiting)))
 	lines = appendSkippedJunk(lines, plan.Skipped)
@@ -897,15 +915,58 @@ func renderStagedJunk(
 	}
 
 	lines = append(lines, fmt.Sprintf(
-		"Each listed item is tagged junk, and the user dismantles them in the game. "+
+		"The items in the list under the first line are tagged junk, and the user dismantles them in the game. "+
+			"The user keeps every other unequipped item of the slot. "+
 			"Do not dismantle when the number of unequipped items that the game shows in the slot is higher than %d, "+
 			"because stage_junk did not check an item that reached the slot after the last inventory fetch. "+
 			"Call stage_junk again after the user dismantled them. "+
 			"A call in the next %d seconds might reuse this inventory copy and list the same items.",
-		staged, int(snapshotTTL/time.Second),
+		staged+len(plan.Unmovable), int(snapshotTTL/time.Second),
 	))
 
 	return strings.Join(lines, "\n")
+}
+
+// unmovableLabels names the items that stage_junk leaves in a slot, such
+// as "Fatebringer (1007), Unknown item 373750294 (stack of 1, item hash
+// 373750294)". Each name adds the instance id, or the size and the item
+// hash of a stack without an instance id.
+func unmovableLabels(items []*inventory.Item) string {
+	labels := make([]string, 0, len(items))
+
+	for _, item := range items {
+		if item.InstanceID == "" {
+			labels = append(labels, fmt.Sprintf("%s (stack of %d, item hash %d)", item.Name, item.Quantity, item.Hash))
+
+			continue
+		}
+
+		labels = append(labels, fmt.Sprintf("%s (%s)", item.Name, item.InstanceID))
+	}
+
+	return strings.Join(labels, ", ")
+}
+
+// fullSlotRefusal returns the text of a stage_junk call that finds no
+// junk and no free place in bucket on character c. The text opens with
+// the text of [inventory.ErrMove] and names the unmovable items, which
+// the user keeps.
+func fullSlotRefusal(
+	s *inventory.Snapshot,
+	c inventory.Character,
+	bucket inventory.Bucket,
+	unmovable []*inventory.Item,
+) string {
+	format := "%s: %s on %s has no free place for junk. " +
+		"Unequipped items that are not tagged junk and that move_items cannot move fill the slot: %s. " +
+		"The user keeps them, so stage_junk cannot stage the junk that waits. stage_junk moved nothing."
+	if len(unmovable) == 1 {
+		format = "%s: %s on %s has no free place for junk. " +
+			"An unequipped item that is not tagged junk and that move_items cannot move fills the slot: %s. " +
+			"The user keeps it, so stage_junk cannot stage the junk that waits. stage_junk moved nothing."
+	}
+
+	return fmt.Sprintf(format, inventory.ErrMove, bucket.Name, s.OwnerLabel(c.ID), unmovableLabels(unmovable))
 }
 
 // appendSkippedJunk adds the line that counts the skipped junk of a slot
