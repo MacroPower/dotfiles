@@ -44,10 +44,6 @@ var (
 	// ErrEmptyLoadoutSlot reports a loadout slot that holds no saved
 	// loadout.
 	ErrEmptyLoadoutSlot = errors.New("empty loadout slot")
-
-	// ErrUnknownLoadoutName reports a name that no entry of the loadout
-	// name table carries.
-	ErrUnknownLoadoutName = errors.New("unknown loadout name")
 )
 
 // Loadout is one loadout that a character saved in the game. Number is the
@@ -59,7 +55,7 @@ var (
 // NameHash, IconHash, and ColorHash identify the name, the icon, and the
 // color that the game shows for the loadout. The definition artifacts of
 // the service leave out the tables that these hashes key, and a
-// [*LoadoutTableStore] reads them from the Destiny manifest.
+// [*bungie.LoadoutTableStore] reads them from the Destiny manifest.
 // Several loadouts can share a name, so the character and the number
 // identify a loadout.
 type Loadout struct {
@@ -296,90 +292,6 @@ func (s *Snapshot) recordLoadoutClear(characterID string, number int) {
 	s.Loadouts = slices.DeleteFunc(s.Loadouts, func(l Loadout) bool {
 		return l.CharacterID == characterID && l.Number == number
 	})
-}
-
-// loadoutIdentifiers returns the identifiers that save_loadout gives the
-// loadout in slot. The bool saved reports whether the slot holds a saved
-// loadout. A non-empty name picks the entry of the name table with that
-// name in any letter case. Without a name, a saved loadout keeps its name
-// and an empty slot takes the first name of the table. The icon and the
-// color follow the same rule without a choice. A saved loadout keeps its
-// own, and an empty slot takes the first entry of each table.
-//
-// States holds the state of each table that the rules read. A table that
-// the rules read and that did not load returns an error with the reason.
-// A name that the table lacks also returns an error.
-func loadoutIdentifiers(
-	slot Loadout,
-	saved bool,
-	name string,
-	states map[loadoutTable]LoadoutTableState,
-) (bungie.LoadoutIdentifiers, error) {
-	ids := bungie.LoadoutIdentifiers{NameHash: slot.NameHash, IconHash: slot.IconHash, ColorHash: slot.ColorHash}
-
-	switch {
-	case name != "":
-		names := states[loadoutNameTable]
-		if names.Err != nil {
-			return ids, fmt.Errorf("loadout names unavailable: %w", names.Err)
-		}
-
-		hash, ok := findLoadoutName(names.Table, name)
-		if !ok {
-			choices := loadoutNameChoices(names.Table)
-			if len(choices) == 0 {
-				return ids, fmt.Errorf("%w: %q. The name table holds no name that the game shows",
-					ErrUnknownLoadoutName, name)
-			}
-
-			return ids, fmt.Errorf("%w: %q. Pass one of these names in any letter case: %s",
-				ErrUnknownLoadoutName, name, strings.Join(choices, ", "))
-		}
-
-		ids.NameHash = hash
-
-	case !saved:
-		hash, err := firstOf(states, loadoutNameTable)
-		if err != nil {
-			return ids, err
-		}
-
-		ids.NameHash = hash
-	}
-
-	if saved {
-		return ids, nil
-	}
-
-	icon, err := firstOf(states, loadoutIconTable)
-	if err != nil {
-		return ids, err
-	}
-
-	color, err := firstOf(states, loadoutColorTable)
-	if err != nil {
-		return ids, err
-	}
-
-	ids.IconHash, ids.ColorHash = icon, color
-
-	return ids, nil
-}
-
-// firstOf returns the hash of the first entry of table t in states, or the
-// reason that the table gives no first entry.
-func firstOf(states map[loadoutTable]LoadoutTableState, t loadoutTable) (uint32, error) {
-	state := states[t]
-	if state.Err != nil {
-		return 0, fmt.Errorf("loadout %ss unavailable: %w", t.kind(), state.Err)
-	}
-
-	hash, err := firstLoadoutEntry(state.Table)
-	if err != nil {
-		return 0, fmt.Errorf("loadout %ss unavailable: %w", t.kind(), err)
-	}
-
-	return hash, nil
 }
 
 // EquipLoadout equips a saved loadout on its character.

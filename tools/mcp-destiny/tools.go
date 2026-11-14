@@ -346,7 +346,7 @@ type handler struct {
 	auth          *Auth
 	defs          *DefsLoader
 	sheets        *SheetStore
-	loadoutTables *LoadoutTableStore
+	loadoutTables *bungie.LoadoutTableStore
 	log           *slog.Logger
 	now           func() time.Time
 	snapshot      *Snapshot
@@ -1174,7 +1174,7 @@ func (h *handler) handleListLoadouts(
 
 	// The loadouts do not depend on the names, so a table that does not
 	// load leaves the loadouts in the result.
-	names := h.loadoutTables.Load(ctx, loadoutNameTable)[loadoutNameTable]
+	names := h.loadoutTables.Load(ctx, bungie.LoadoutNameTable)[bungie.LoadoutNameTable]
 
 	return textResult(renderLoadouts(s, characters, names)), nil, nil
 }
@@ -1264,14 +1264,16 @@ func (h *handler) handleSaveLoadout(
 
 	// The name table also names the loadout in the result, so every save
 	// loads it. Only an empty slot reads the icon and the color tables.
-	tables := []loadoutTable{loadoutNameTable}
+	tables := []bungie.LoadoutTable{bungie.LoadoutNameTable}
 	if !saved {
-		tables = append(tables, loadoutIconTable, loadoutColorTable)
+		tables = append(tables, bungie.LoadoutIconTable, bungie.LoadoutColorTable)
 	}
 
 	states := h.loadoutTables.Load(ctx, tables...)
 
-	ids, err := loadoutIdentifiers(slot, saved, in.Name, states)
+	kept := bungie.LoadoutIdentifiers{NameHash: slot.NameHash, IconHash: slot.IconHash, ColorHash: slot.ColorHash}
+
+	ids, err := bungie.ChooseLoadoutIdentifiers(kept, saved, in.Name, states)
 	if err != nil {
 		return h.toolError(ctx, toolSaveLoadout, err)
 	}
@@ -1298,7 +1300,7 @@ func (h *handler) handleSaveLoadout(
 
 	s.Fetched = h.now()
 
-	return textResult(renderLoadoutSave(s, c.ID, in.Number, ids.NameHash, states[loadoutNameTable])), nil, nil
+	return textResult(renderLoadoutSave(s, c.ID, in.Number, ids.NameHash, states[bungie.LoadoutNameTable])), nil, nil
 }
 
 func (h *handler) handleClearLoadout(
@@ -2931,13 +2933,13 @@ func (m bungieMover) EquipLoadout(ctx context.Context, action bungie.LoadoutActi
 	})
 }
 
-// bungieManifest adapts the handler to [ManifestSource]. It adds the
+// bungieManifest adapts the handler to [bungie.ManifestSource]. It adds the
 // credentials to each manifest read.
 type bungieManifest struct {
 	h *handler
 }
 
-// Manifest implements [ManifestSource].
+// Manifest implements [bungie.ManifestSource].
 func (m bungieManifest) Manifest(ctx context.Context) (map[string]string, error) {
 	var paths map[string]string
 
@@ -2952,7 +2954,7 @@ func (m bungieManifest) Manifest(ctx context.Context) (map[string]string, error)
 	return paths, err
 }
 
-// Content implements [ManifestSource].
+// Content implements [bungie.ManifestSource].
 func (m bungieManifest) Content(ctx context.Context, path string) (io.ReadCloser, error) {
 	return m.h.bungie.Content(ctx, path) //nolint:wrapcheck // The client error reaches the tool text unchanged.
 }

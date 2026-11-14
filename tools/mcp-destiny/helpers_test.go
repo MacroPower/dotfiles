@@ -334,7 +334,7 @@ func newFakes(t *testing.T) *fakes {
 		log:     slog.New(slog.DiscardHandler),
 		now:     now,
 	}
-	f.h.loadoutTables = NewLoadoutTableStore(bungieManifest{h: f.h})
+	f.h.loadoutTables = bungie.NewLoadoutTableStore(bungieManifest{h: f.h})
 
 	return f
 }

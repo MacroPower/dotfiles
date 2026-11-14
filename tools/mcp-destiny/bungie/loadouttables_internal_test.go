@@ -1,16 +1,15 @@
-package main
+package bungie
 
 import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 )
 
 // fakeManifest is a [ManifestSource] for the store tests. Paths is the
@@ -33,9 +32,9 @@ type fakeManifest struct {
 func newFakeManifest() *fakeManifest {
 	return &fakeManifest{
 		paths: map[string]string{
-			string(loadoutNameTable):  "/names-a.json",
-			string(loadoutIconTable):  "/icons.json",
-			string(loadoutColorTable): "/colors.json",
+			string(LoadoutNameTable):  "/names-a.json",
+			string(LoadoutIconTable):  "/icons.json",
+			string(LoadoutColorTable): "/colors.json",
 		},
 		files: map[string]string{
 			"/names-a.json": `{"1": {"hash": 1, "name": "Raid Night"}, "2": {"hash": 2, "redacted": true}}`,
@@ -61,7 +60,7 @@ func (f *fakeManifest) Content(_ context.Context, path string) (io.ReadCloser, e
 
 	body, ok := f.files[path]
 	if !ok {
-		return nil, fmt.Errorf("%w: content file returned status 404", bungie.ErrPlatform)
+		return nil, fmt.Errorf("%w: content file returned status 404", ErrPlatform)
 	}
 
 	return io.NopCloser(strings.NewReader(body)), nil
@@ -91,18 +90,18 @@ func TestLoadoutTableStoreLoad(t *testing.T) {
 	// unreachable makes the manifest read return an error.
 	unreachable := nameStep{
 		edit: func(f *fakeManifest) {
-			f.manifestErr = fmt.Errorf("%w: SystemDisabled: Maintenance.", bungie.ErrPlatform)
+			f.manifestErr = fmt.Errorf("%w: SystemDisabled: Maintenance.", ErrPlatform)
 		},
 		err:       "reading the Bungie manifest: bungie: SystemDisabled: Maintenance.",
-		sentinels: []error{bungie.ErrPlatform},
+		sentinels: []error{ErrPlatform},
 	}
 
 	// moved lists a path that the source does not serve.
 	moved := nameStep{
-		edit:      func(f *fakeManifest) { f.paths[string(loadoutNameTable)] = "/names-x.json" },
+		edit:      func(f *fakeManifest) { f.paths[string(LoadoutNameTable)] = "/names-x.json" },
 		fetched:   []string{"/names-x.json"},
 		err:       "fetching /names-x.json: bungie: content file returned status 404",
-		sentinels: []error{bungie.ErrPlatform},
+		sentinels: []error{ErrPlatform},
 	}
 
 	tests := map[string]struct {
@@ -116,7 +115,7 @@ func TestLoadoutTableStoreLoad(t *testing.T) {
 		},
 		"another path fetches the other table": {
 			steps: []nameStep{loaded, {
-				edit:    func(f *fakeManifest) { f.paths[string(loadoutNameTable)] = "/names-b.json" },
+				edit:    func(f *fakeManifest) { f.paths[string(LoadoutNameTable)] = "/names-b.json" },
 				fetched: []string{"/names-b.json"},
 				name:    "Trials",
 			}},
@@ -129,7 +128,7 @@ func TestLoadoutTableStoreLoad(t *testing.T) {
 		},
 		"manifest lists no name table": {
 			steps: []nameStep{{
-				edit:      func(f *fakeManifest) { delete(f.paths, string(loadoutNameTable)) },
+				edit:      func(f *fakeManifest) { delete(f.paths, string(LoadoutNameTable)) },
 				err:       "the Bungie manifest lists no table of loadout names",
 				sentinels: []error{errNoTable},
 			}},
@@ -152,7 +151,7 @@ func TestLoadoutTableStoreLoad(t *testing.T) {
 		},
 		"manifest lists the kept path again after a download that did not succeed": {
 			steps: []nameStep{loaded, moved, {
-				edit: func(f *fakeManifest) { f.paths[string(loadoutNameTable)] = "/names-a.json" },
+				edit: func(f *fakeManifest) { f.paths[string(LoadoutNameTable)] = "/names-a.json" },
 				name: "Raid Night",
 			}},
 		},
@@ -195,10 +194,10 @@ func TestLoadoutTableStoreLoad(t *testing.T) {
 
 				source.fetched = nil
 
-				states := store.Load(t.Context(), loadoutNameTable)
+				states := store.Load(t.Context(), LoadoutNameTable)
 				require.Lenf(t, states, 1, "load %d", i)
 
-				got := states[loadoutNameTable]
+				got := states[LoadoutNameTable]
 
 				assert.Equalf(t, step.fetched, source.fetched, "fetches of load %d", i)
 				assert.Equalf(t, i+1, source.manifests, "every load reads the manifest, load %d", i)
@@ -230,7 +229,7 @@ func TestLoadoutTableStoreLoadsSeveralTables(t *testing.T) {
 	// second load fetches again.
 	tests := map[string]struct {
 		edit          func(f *fakeManifest)
-		wantErrs      map[loadoutTable]string
+		wantErrs      map[LoadoutTable]string
 		wantFetched   []string
 		wantRefetched []string
 	}{
@@ -241,33 +240,33 @@ func TestLoadoutTableStoreLoadsSeveralTables(t *testing.T) {
 			edit:          func(f *fakeManifest) { delete(f.files, "/icons.json") },
 			wantFetched:   []string{"/names-a.json", "/icons.json", "/colors.json"},
 			wantRefetched: []string{"/icons.json"},
-			wantErrs: map[loadoutTable]string{
-				loadoutIconTable: "fetching /icons.json: bungie: content file returned status 404",
+			wantErrs: map[LoadoutTable]string{
+				LoadoutIconTable: "fetching /icons.json: bungie: content file returned status 404",
 			},
 		},
 		"manifest lists no color table": {
-			edit:        func(f *fakeManifest) { delete(f.paths, string(loadoutColorTable)) },
+			edit:        func(f *fakeManifest) { delete(f.paths, string(LoadoutColorTable)) },
 			wantFetched: []string{"/names-a.json", "/icons.json"},
-			wantErrs: map[loadoutTable]string{
-				loadoutColorTable: "the Bungie manifest lists no table of loadout colors",
+			wantErrs: map[LoadoutTable]string{
+				LoadoutColorTable: "the Bungie manifest lists no table of loadout colors",
 			},
 		},
 		"manifest read does not succeed": {
 			edit: func(f *fakeManifest) {
-				f.manifestErr = fmt.Errorf("%w: SystemDisabled: Maintenance.", bungie.ErrPlatform)
+				f.manifestErr = fmt.Errorf("%w: SystemDisabled: Maintenance.", ErrPlatform)
 			},
-			wantErrs: map[loadoutTable]string{
-				loadoutNameTable:  "reading the Bungie manifest: bungie: SystemDisabled: Maintenance.",
-				loadoutIconTable:  "reading the Bungie manifest: bungie: SystemDisabled: Maintenance.",
-				loadoutColorTable: "reading the Bungie manifest: bungie: SystemDisabled: Maintenance.",
+			wantErrs: map[LoadoutTable]string{
+				LoadoutNameTable:  "reading the Bungie manifest: bungie: SystemDisabled: Maintenance.",
+				LoadoutIconTable:  "reading the Bungie manifest: bungie: SystemDisabled: Maintenance.",
+				LoadoutColorTable: "reading the Bungie manifest: bungie: SystemDisabled: Maintenance.",
 			},
 		},
 		"icon table does not decode": {
 			edit:          func(f *fakeManifest) { f.files["/icons.json"] = `[` },
 			wantFetched:   []string{"/names-a.json", "/icons.json", "/colors.json"},
 			wantRefetched: []string{"/icons.json"},
-			wantErrs: map[loadoutTable]string{
-				loadoutIconTable: "decoding /icons.json: reading the loadout icon table: unexpected EOF",
+			wantErrs: map[LoadoutTable]string{
+				LoadoutIconTable: "decoding /icons.json: reading the loadout icon table: unexpected EOF",
 			},
 		},
 	}
@@ -283,12 +282,12 @@ func TestLoadoutTableStoreLoadsSeveralTables(t *testing.T) {
 
 			store := NewLoadoutTableStore(source)
 
-			got := store.Load(t.Context(), loadoutNameTable, loadoutIconTable, loadoutColorTable)
+			got := store.Load(t.Context(), LoadoutNameTable, LoadoutIconTable, LoadoutColorTable)
 			assert.Equal(t, 1, source.manifests, "one load reads the manifest once")
 			assert.Equal(t, tc.wantFetched, source.fetched)
 			require.Len(t, got, 3)
 
-			wantHashes := map[loadoutTable]uint32{loadoutNameTable: 1, loadoutIconTable: 20, loadoutColorTable: 30}
+			wantHashes := map[LoadoutTable]uint32{LoadoutNameTable: 1, LoadoutIconTable: 20, LoadoutColorTable: 30}
 
 			for table, hash := range wantHashes {
 				state := got[table]
@@ -307,7 +306,7 @@ func TestLoadoutTableStoreLoadsSeveralTables(t *testing.T) {
 
 			source.fetched = nil
 
-			store.Load(t.Context(), loadoutNameTable, loadoutIconTable, loadoutColorTable)
+			store.Load(t.Context(), LoadoutNameTable, LoadoutIconTable, LoadoutColorTable)
 			assert.Equal(t, tc.wantRefetched, source.fetched,
 				"the store keeps each table that loaded and fetches each other table again")
 		})
@@ -320,7 +319,7 @@ func TestDecodeLoadoutTable(t *testing.T) {
 	got, err := decodeLoadoutTable(strings.NewReader(`{
 		"1": {"hash": 1, "index": 0, "name": "Raid Night", "redacted": false},
 		"2": {"hash": 2, "index": 1, "name": "", "redacted": true}
-	}`), loadoutNameTable)
+	}`), LoadoutNameTable)
 	require.NoError(t, err)
 	assert.Equal(t, map[uint32]LoadoutDefinition{
 		1: {Name: "Raid Night", Index: 0},
@@ -329,7 +328,7 @@ func TestDecodeLoadoutTable(t *testing.T) {
 
 	got, err = decodeLoadoutTable(strings.NewReader(`{
 		"5": {"hash": 5, "index": 2, "iconImagePath": "/a.png", "redacted": false}
-	}`), loadoutIconTable)
+	}`), LoadoutIconTable)
 	require.NoError(t, err)
 	assert.Equal(t, map[uint32]LoadoutDefinition{5: {Index: 2}}, got, "an icon entry has no name")
 }
@@ -416,4 +415,127 @@ func TestFindLoadoutName(t *testing.T) {
 
 	assert.Equal(t, []string{"Trials", "Raid Night", "raid night"}, loadoutNameChoices(table),
 		"the choices follow the index and leave out redacted entries and entries without a name")
+}
+
+func TestChooseLoadoutIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	loaded := map[LoadoutTable]LoadoutTableState{
+		LoadoutNameTable: {Table: map[uint32]LoadoutDefinition{
+			1: {Name: "Raid Night", Index: 1},
+			2: {Name: "Trials", Index: 0},
+			3: {Name: "Hidden", Index: 2, Redacted: true},
+		}},
+		LoadoutIconTable: {Table: map[uint32]LoadoutDefinition{
+			20: {Index: 1},
+			21: {Index: 0},
+		}},
+		LoadoutColorTable: {Table: map[uint32]LoadoutDefinition{
+			30: {Index: 0},
+			31: {Index: 1},
+		}},
+	}
+
+	// withState returns loaded with the state of table t replaced.
+	withState := func(t LoadoutTable, state LoadoutTableState) map[LoadoutTable]LoadoutTableState {
+		out := maps.Clone(loaded)
+		out[t] = state
+
+		return out
+	}
+
+	kept := LoadoutIdentifiers{NameHash: 7, IconHash: 8, ColorHash: 9}
+	maintenance := fmt.Errorf("%w: SystemDisabled: Maintenance.", ErrPlatform)
+
+	tests := map[string]struct {
+		states   map[LoadoutTable]LoadoutTableState
+		sentinel error
+		name     string
+		err      string
+		kept     LoadoutIdentifiers
+		want     LoadoutIdentifiers
+		saved    bool
+	}{
+		"saved slot keeps its identifiers": {
+			states: loaded,
+			kept:   kept,
+			saved:  true,
+			want:   kept,
+		},
+		"saved slot without a name reads no table": {
+			kept:  kept,
+			saved: true,
+			want:  kept,
+		},
+		"saved slot takes the name in any letter case": {
+			states: loaded,
+			kept:   kept,
+			saved:  true,
+			name:   "raid NIGHT",
+			want:   LoadoutIdentifiers{NameHash: 1, IconHash: 8, ColorHash: 9},
+		},
+		"empty slot takes the first entry of each table": {
+			states: loaded,
+			want:   LoadoutIdentifiers{NameHash: 2, IconHash: 21, ColorHash: 30},
+		},
+		"empty slot takes the name": {
+			states: loaded,
+			name:   "Raid Night",
+			want:   LoadoutIdentifiers{NameHash: 1, IconHash: 21, ColorHash: 30},
+		},
+		"unknown name": {
+			states:   loaded,
+			kept:     kept,
+			saved:    true,
+			name:     "Hidden",
+			err:      `unknown loadout name: "Hidden". Pass one of these names in any letter case: Trials, Raid Night`,
+			sentinel: ErrUnknownLoadoutName,
+		},
+		"unknown name without a shown name": {
+			states: withState(LoadoutNameTable, LoadoutTableState{Table: map[uint32]LoadoutDefinition{
+				3: {Name: "Hidden", Redacted: true},
+			}}),
+			saved:    true,
+			name:     "Trials",
+			err:      `unknown loadout name: "Trials". The name table holds no name that the game shows`,
+			sentinel: ErrUnknownLoadoutName,
+		},
+		"name table did not load": {
+			states:   withState(LoadoutNameTable, LoadoutTableState{Err: maintenance}),
+			saved:    true,
+			name:     "Trials",
+			err:      "loadout names unavailable: bungie: SystemDisabled: Maintenance.",
+			sentinel: ErrPlatform,
+		},
+		"icon table did not load": {
+			states:   withState(LoadoutIconTable, LoadoutTableState{Err: maintenance}),
+			name:     "Trials",
+			err:      "loadout icons unavailable: bungie: SystemDisabled: Maintenance.",
+			sentinel: ErrPlatform,
+		},
+		"color table holds no shown entry": {
+			states: withState(LoadoutColorTable, LoadoutTableState{Table: map[uint32]LoadoutDefinition{
+				30: {Redacted: true},
+			}}),
+			err:      "loadout colors unavailable: the table holds no entry that the game shows",
+			sentinel: errNoShownEntry,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := ChooseLoadoutIdentifiers(tc.kept, tc.saved, tc.name, tc.states)
+			if tc.err != "" {
+				require.EqualError(t, err, tc.err)
+				require.ErrorIs(t, err, tc.sentinel)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }

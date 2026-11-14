@@ -272,7 +272,7 @@ func runServe(ctx context.Context, args []string) error {
 		log:     logger,
 		now:     time.Now,
 	}
-	h.loadoutTables = NewLoadoutTableStore(bungieManifest{h: h})
+	h.loadoutTables = bungie.NewLoadoutTableStore(bungieManifest{h: h})
 
 	err = newServer(h).Run(ctx, &mcp.StdioTransport{})
 	if err != nil {

@@ -25,4 +25,21 @@
 // unwraps to [ErrPlatform]. When the code reports an unusable access
 // token, it unwraps to [ErrUnauthorized] as well. The caller refreshes the
 // tokens and retries a request that fails with [ErrUnauthorized].
+//
+// # Loadout Tables
+//
+// The loadout tables of the Destiny manifest give the name, the icon, and
+// the color that the game shows for each saved loadout. A
+// [*LoadoutTableStore] reads them through a [ManifestSource]. A caller
+// adapts a [*Client] to that interface and adds the credentials to each
+// manifest read. From the loaded tables, [ChooseLoadoutIdentifiers] picks
+// the identifiers that a save of a loadout slot sends.
+//
+// The store reads the manifest on every call to [*LoadoutTableStore.Load],
+// so each table follows the manifest that Bungie publishes. Each content
+// path carries an identifier that Bungie changes with every manifest
+// release. The store therefore downloads a table only when the manifest
+// names a content path that differs from the path of the kept table. It
+// keeps each table only in memory. The store has no lock, so its caller
+// serializes the calls to Load.
 package bungie

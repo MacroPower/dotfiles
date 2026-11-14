@@ -551,7 +551,7 @@ func renderWeaponGroup(s *Snapshot, group WeaponGroup, sources map[string]Rating
 // character, with a row per loadout item. The [loadoutHeading] of each
 // loadout sits above its rows. When names holds no table, one line after
 // the opening paragraph gives the reason.
-func renderLoadouts(s *Snapshot, characters []Character, names LoadoutTableState) string {
+func renderLoadouts(s *Snapshot, characters []Character, names bungie.LoadoutTableState) string {
 	var b strings.Builder
 
 	b.WriteString("Loadouts saved in the game. A loadout number is the position of the loadout " +
@@ -600,7 +600,7 @@ func renderLoadouts(s *Snapshot, characters []Character, names LoadoutTableState
 // "Loadout 2: Raid Night". A name hash that the table lacks, or an entry
 // without text, reads "unnamed". When names holds no table, the line
 // gives only the number.
-func loadoutHeading(l Loadout, names LoadoutTableState) string {
+func loadoutHeading(l Loadout, names bungie.LoadoutTableState) string {
 	if names.Table == nil {
 		return fmt.Sprintf("Loadout %d", l.Number)
 	}
@@ -678,7 +678,13 @@ func renderLoadoutEquip(s *Snapshot, l Loadout, result LoadoutEquip, err error) 
 // name table, which names the loadout by nameHash. When names holds no
 // table, the call kept the name of a saved loadout, and the result gives
 // the reason that the name is unknown.
-func renderLoadoutSave(s *Snapshot, characterID string, number int, nameHash uint32, names LoadoutTableState) string {
+func renderLoadoutSave(
+	s *Snapshot,
+	characterID string,
+	number int,
+	nameHash uint32,
+	names bungie.LoadoutTableState,
+) string {
 	var b strings.Builder
 
 	target := s.OwnerLabel(characterID)
