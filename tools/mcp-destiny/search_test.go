@@ -302,7 +302,7 @@ func TestCompileQueryTableA(t *testing.T) {
 			query: "tag:keep",
 			items: []*Item{
 				{InstanceID: "keep", Tag: "keep"},
-				{InstanceID: "junk", Tag: tagJunk},
+				{InstanceID: "junk", Tag: dvm.TagJunk},
 				{InstanceID: "untagged"},
 			},
 			want: []string{"keep"},
@@ -321,12 +321,12 @@ func TestCompileQueryTableA(t *testing.T) {
 func TestCompileQueryTag(t *testing.T) {
 	t.Parallel()
 
-	custom := primaryTag([]string{"custom"})
+	custom := dvm.PrimaryTag([]string{"custom"})
 	require.Equal(t, "custom", custom)
 
 	items := []*Item{
 		{InstanceID: "keep", Tag: "keep"},
-		{InstanceID: "junk", Tag: tagJunk},
+		{InstanceID: "junk", Tag: dvm.TagJunk},
 		{InstanceID: "untagged"},
 		{InstanceID: "favorite", Favorite: true},
 		{InstanceID: "custom", Tag: custom},
@@ -2728,11 +2728,11 @@ func TestAutotagged(t *testing.T) {
 		return ids(compiled(t, query).evaluate(searchContext{items: builtItems(s)}, owned).matches)
 	}
 
-	s.Annotate([]dvm.ItemTag{{InstanceID: target.InstanceID, TagID: tagJunk, RuleID: "rule-1"}}, nil)
+	s.Annotate([]dvm.ItemTag{{InstanceID: target.InstanceID, TagID: dvm.TagJunk, RuleID: "rule-1"}}, nil)
 	assert.Equal(t, []string{target.InstanceID}, matches("is:autotagged"))
 
 	// A tag that a person sets carries no rule id.
-	s.Annotate([]dvm.ItemTag{{InstanceID: target.InstanceID, TagID: tagJunk}}, nil)
+	s.Annotate([]dvm.ItemTag{{InstanceID: target.InstanceID, TagID: dvm.TagJunk}}, nil)
 	assert.Empty(t, matches("is:autotagged"))
 	assert.Equal(t, []string{target.InstanceID}, matches("tag:junk"))
 }

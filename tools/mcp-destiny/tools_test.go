@@ -3841,7 +3841,7 @@ func junkTags(t *testing.T, ids ...string) string {
 
 	rows := []dvm.ItemTag{}
 	for _, id := range ids {
-		rows = append(rows, dvm.ItemTag{InstanceID: id, TagID: tagJunk, UpdatedAt: 5})
+		rows = append(rows, dvm.ItemTag{InstanceID: id, TagID: dvm.TagJunk, UpdatedAt: 5})
 	}
 
 	raw, err := json.Marshal(map[string]any{"defs": []any{}, "items": rows, "now": 10})
@@ -5412,7 +5412,7 @@ func TestSetTagClearsRule(t *testing.T) {
 		want string
 	}{
 		"the same tag":  {tag: "keep", want: "keep"},
-		"another tag":   {tag: tagJunk, want: tagJunk},
+		"another tag":   {tag: dvm.TagJunk, want: dvm.TagJunk},
 		"no tag at all": {tag: tagNone},
 	}
 
@@ -6215,8 +6215,8 @@ func TestRunAutotagRules(t *testing.T) {
 			held:    thorn,
 			setup: func(f *fakes) {
 				f.service.Data[pathTags] = tagRows(t,
-					dvm.ItemTag{InstanceID: "1008", ItemHash: 103, TagID: tagJunk, UpdatedAt: 5},
-					dvm.ItemTag{InstanceID: "1008", ItemHash: 103, TagID: tagFavorite, UpdatedAt: 5},
+					dvm.ItemTag{InstanceID: "1008", ItemHash: 103, TagID: dvm.TagJunk, UpdatedAt: 5},
+					dvm.ItemTag{InstanceID: "1008", ItemHash: 103, TagID: dvm.TagFavorite, UpdatedAt: 5},
 				)
 			},
 			newest: "00000000000000001008",
@@ -8190,8 +8190,8 @@ func TestPreviewFavorite(t *testing.T) {
 
 	f := newFakes(t)
 
-	favorite := dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagFavorite, UpdatedAt: 5}
-	junk := dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 5}
+	favorite := dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: dvm.TagFavorite, UpdatedAt: 5}
+	junk := dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: dvm.TagJunk, UpdatedAt: 5}
 	f.service.Data[pathTags] = tagRows(t, favorite, junk)
 
 	for _, query := range []string{"is:favorite", "tag:favorite", "tag:junk"} {
@@ -8617,7 +8617,7 @@ func TestPreviewAutotagged(t *testing.T) {
 	f.service.Data[pathTags] = tagRows(t, dvm.ItemTag{
 		InstanceID: "1003",
 		ItemHash:   102,
-		TagID:      tagJunk,
+		TagID:      dvm.TagJunk,
 		RuleID:     "rule-1",
 		UpdatedAt:  5,
 	})
@@ -8626,7 +8626,10 @@ func TestPreviewAutotagged(t *testing.T) {
 	assert.Equal(t, []string{"1003"}, rows)
 
 	// A tag that a person sets carries no rule id.
-	f.service.Data[pathTags] = tagRows(t, dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: tagJunk, UpdatedAt: 6})
+	f.service.Data[pathTags] = tagRows(
+		t,
+		dvm.ItemTag{InstanceID: "1003", ItemHash: 102, TagID: dvm.TagJunk, UpdatedAt: 6},
+	)
 
 	_, _, rows = preview(t, f, "is:autotagged")
 	assert.Empty(t, rows)
@@ -8682,7 +8685,7 @@ func TestPreviewParseError(t *testing.T) {
 			assert.Empty(t, f.bungie.All())
 
 			query := tc.query
-			tag := tagJunk
+			tag := dvm.TagJunk
 
 			saved, isError := call(t, f.h.handleSaveAutotagRule, SaveAutotagRuleInput{Query: &query, TagID: &tag})
 			assert.True(t, isError)
@@ -9056,7 +9059,7 @@ func TestPreviewRatingModeMissing(t *testing.T) {
 func saveJunkRule(t *testing.T, f *fakes, query string) (string, bool) {
 	t.Helper()
 
-	junk := tagJunk
+	junk := dvm.TagJunk
 
 	got, isError := call(t, f.h.handleSaveAutotagRule, SaveAutotagRuleInput{Query: &query, TagID: &junk})
 

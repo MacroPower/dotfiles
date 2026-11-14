@@ -15,6 +15,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 // hashDefaultShader is the item hash of the default shader, which DIM
@@ -964,13 +965,13 @@ func powerValue(value string) (queryTest, error) {
 // tagMatch returns the predicate of the filter tag:value, as the web
 // client defines it. The value favorite reads the favorite mark. Every
 // other value matches an item whose tag is that value, and the web client
-// knows only the tags of tagOrder. An untagged item matches no value.
+// knows only the tags of [dvm.TagOrder]. An untagged item matches no value.
 func tagMatch(value string) func(*Item) bool {
-	if value == tagFavorite {
+	if value == dvm.TagFavorite {
 		return func(item *Item) bool { return item.Favorite }
 	}
 
-	return func(item *Item) bool { return item.Tag == value && slices.Contains(tagOrder, item.Tag) }
+	return func(item *Item) bool { return item.Tag == value && slices.Contains(dvm.TagOrder, item.Tag) }
 }
 
 // nameMatch returns the predicate of the filter name:value, as DIM defines

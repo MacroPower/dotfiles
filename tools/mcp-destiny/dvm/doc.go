@@ -15,6 +15,13 @@
 // removes a row by writing it with the field set, and it skips the removed
 // rows that a read returns.
 //
+// An item carries at most one ordinary tag of the web client, and the
+// favorite mark is a separate tag row beside it. The service accepts
+// several ordinary tag rows for one item, and the web client then shows the
+// first of them in its display order. A write that sets the ordinary tag of
+// an item therefore removes each other ordinary row and keeps the favorite
+// row.
+//
 // # Sessions
 //
 // A code exchange and a token refresh each return a session token beside

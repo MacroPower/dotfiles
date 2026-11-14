@@ -10,6 +10,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 func TestResolveSlot(t *testing.T) {
@@ -215,7 +216,7 @@ func TestJunkPlan(t *testing.T) {
 				{
 					InstanceID:   "1",
 					Owner:        bungietest.HunterID,
-					Tag:          tagJunk,
+					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 				},
@@ -223,7 +224,7 @@ func TestJunkPlan(t *testing.T) {
 			want: junkIDs{Staged: []string{"1"}},
 		},
 		"junk in the slot that is not transferable": {
-			items: []Item{{InstanceID: "1", Owner: bungietest.HunterID, Tag: tagJunk, ClassType: bungie.ClassAny}},
+			items: []Item{{InstanceID: "1", Owner: bungietest.HunterID, Tag: dvm.TagJunk, ClassType: bungie.ClassAny}},
 			want:  junkIDs{Staged: []string{"1"}},
 		},
 		"junk in the slot of another class": {
@@ -231,7 +232,7 @@ func TestJunkPlan(t *testing.T) {
 				{
 					InstanceID:   "1",
 					Owner:        bungietest.HunterID,
-					Tag:          tagJunk,
+					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassTitan,
 					Transferable: true,
 				},
@@ -240,7 +241,7 @@ func TestJunkPlan(t *testing.T) {
 		},
 		"junk in the vault": {
 			items: []Item{
-				{InstanceID: "1", Owner: ownerVault, Tag: tagJunk, ClassType: bungie.ClassAny, Transferable: true},
+				{InstanceID: "1", Owner: ownerVault, Tag: dvm.TagJunk, ClassType: bungie.ClassAny, Transferable: true},
 			},
 			want: junkIDs{Waiting: []string{"1"}},
 		},
@@ -249,7 +250,7 @@ func TestJunkPlan(t *testing.T) {
 				{
 					InstanceID:   "1",
 					Owner:        bungietest.TitanID,
-					Tag:          tagJunk,
+					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 				},
@@ -258,18 +259,30 @@ func TestJunkPlan(t *testing.T) {
 		},
 		"junk in the vault of the class of the character": {
 			items: []Item{
-				{InstanceID: "1", Owner: ownerVault, Tag: tagJunk, ClassType: bungie.ClassHunter, Transferable: true},
+				{
+					InstanceID:   "1",
+					Owner:        ownerVault,
+					Tag:          dvm.TagJunk,
+					ClassType:    bungie.ClassHunter,
+					Transferable: true,
+				},
 			},
 			want: junkIDs{Waiting: []string{"1"}},
 		},
 		"junk in the vault of another class": {
 			items: []Item{
-				{InstanceID: "1", Owner: ownerVault, Tag: tagJunk, ClassType: bungie.ClassTitan, Transferable: true},
+				{
+					InstanceID:   "1",
+					Owner:        ownerVault,
+					Tag:          dvm.TagJunk,
+					ClassType:    bungie.ClassTitan,
+					Transferable: true,
+				},
 			},
 			want: junkIDs{Skipped: 1},
 		},
 		"junk in the vault that is not transferable": {
-			items: []Item{{InstanceID: "1", Owner: ownerVault, Tag: tagJunk, ClassType: bungie.ClassAny}},
+			items: []Item{{InstanceID: "1", Owner: ownerVault, Tag: dvm.TagJunk, ClassType: bungie.ClassAny}},
 			want:  junkIDs{Skipped: 1},
 		},
 		"junk equipped on another character": {
@@ -277,7 +290,7 @@ func TestJunkPlan(t *testing.T) {
 				{
 					InstanceID:   "1",
 					Owner:        bungietest.TitanID,
-					Tag:          tagJunk,
+					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 					Equipped:     true,
@@ -290,7 +303,7 @@ func TestJunkPlan(t *testing.T) {
 				{
 					InstanceID:   "1",
 					Owner:        bungietest.HunterID,
-					Tag:          tagJunk,
+					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 					Equipped:     true,
@@ -303,7 +316,7 @@ func TestJunkPlan(t *testing.T) {
 				{
 					InstanceID:   "1",
 					Owner:        bungietest.TitanID,
-					Tag:          tagJunk,
+					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 					Postmaster:   true,
@@ -316,7 +329,7 @@ func TestJunkPlan(t *testing.T) {
 				{
 					InstanceID:   "1",
 					Owner:        bungietest.HunterID,
-					Tag:          tagJunk,
+					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 					Postmaster:   true,
@@ -400,7 +413,7 @@ func TestJunkPlan(t *testing.T) {
 				{
 					InstanceID:   "1",
 					Owner:        bungietest.HunterID,
-					Tag:          tagJunk,
+					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 					Favorite:     true,
@@ -413,14 +426,14 @@ func TestJunkPlan(t *testing.T) {
 				{
 					InstanceID: "1",
 					Owner:      bungietest.HunterID,
-					Tag:        tagJunk,
+					Tag:        dvm.TagJunk,
 					Bucket:     bungie.BucketPower,
 					ClassType:  bungie.ClassAny,
 				},
 				{
 					InstanceID: "2",
 					Owner:      ownerVault,
-					Tag:        tagJunk,
+					Tag:        dvm.TagJunk,
 					Bucket:     bungie.BucketPower,
 					ClassType:  bungie.ClassAny,
 				},
@@ -437,24 +450,30 @@ func TestJunkPlan(t *testing.T) {
 					InstanceID: "5",
 					Name:       "Midnight Coup",
 					Owner:      bungietest.HunterID,
-					Tag:        tagJunk,
+					Tag:        dvm.TagJunk,
 					ClassType:  bungie.ClassAny,
 				},
-				{InstanceID: "1000", Owner: bungietest.HunterID, Tag: tagJunk, ClassType: bungie.ClassAny},
-				{InstanceID: "999", Owner: bungietest.HunterID, Tag: tagJunk, ClassType: bungie.ClassAny},
+				{InstanceID: "1000", Owner: bungietest.HunterID, Tag: dvm.TagJunk, ClassType: bungie.ClassAny},
+				{InstanceID: "999", Owner: bungietest.HunterID, Tag: dvm.TagJunk, ClassType: bungie.ClassAny},
 				{
 					InstanceID:   "6",
 					Name:         "Midnight Coup",
 					Owner:        ownerVault,
-					Tag:          tagJunk,
+					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 				},
-				{InstanceID: "1001", Owner: ownerVault, Tag: tagJunk, ClassType: bungie.ClassAny, Transferable: true},
+				{
+					InstanceID:   "1001",
+					Owner:        ownerVault,
+					Tag:          dvm.TagJunk,
+					ClassType:    bungie.ClassAny,
+					Transferable: true,
+				},
 				{
 					InstanceID:   "998",
 					Owner:        bungietest.TitanID,
-					Tag:          tagJunk,
+					Tag:          dvm.TagJunk,
 					ClassType:    bungie.ClassAny,
 					Transferable: true,
 				},

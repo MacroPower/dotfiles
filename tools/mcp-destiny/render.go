@@ -16,13 +16,13 @@ const timeLayout = "2006-01-02 15:04 MST"
 
 // tagLabels maps the tag ids of the web client to its display labels.
 var tagLabels = map[string]string{
-	"keep":      "Keep",
-	"pvp":       "PvP",
-	"pve":       "PvE",
-	"junk":      "Junk",
-	"infuse":    "Infuse",
-	"archive":   "Archive",
-	tagFavorite: "Favorite",
+	"keep":          "Keep",
+	"pvp":           "PvP",
+	"pve":           "PvE",
+	"junk":          "Junk",
+	"infuse":        "Infuse",
+	"archive":       "Archive",
+	dvm.TagFavorite: "Favorite",
 }
 
 func renderStatus(t Tokens, signedIn bool, serviceURL, tokenPath string, now time.Time) string {
@@ -1423,7 +1423,7 @@ func renderTags(s *Snapshot) string {
 	b.WriteString("An item carries at most one tag. Favorite is a separate flag.\n\n")
 	b.WriteString("tag id | label | items held\n")
 
-	for _, id := range tagOrder {
+	for _, id := range dvm.TagOrder {
 		fmt.Fprintf(&b, "%s | %s | %d\n", id, tagLabels[id], counts[id])
 	}
 

@@ -46,10 +46,6 @@ const (
 	sortStat   = "stat"
 )
 
-// tagFavorite is the tag id that marks a favorite. An item carries it
-// beside its one ordinary tag.
-const tagFavorite = "favorite"
-
 // Rarity names that Destiny Item Manager (DIM) gives a Bungie TierType
 // value. [rarityName] maps each value to its name.
 const (
@@ -72,10 +68,6 @@ const (
 )
 
 var (
-	// tagOrder lists the tag ids that the web client defines, in its
-	// display order. The web client ignores stored tag definitions.
-	tagOrder = []string{"keep", "pvp", "pve", "junk", "infuse", "archive"}
-
 	// rarityNames holds the rarity name of DIM for each Bungie TierType
 	// value, by value.
 	rarityNames = []string{
@@ -750,32 +742,15 @@ func (s *Snapshot) Annotate(tags []dvm.ItemTag, notes []dvm.Note) {
 	for _, item := range s.Items {
 		ids := held[item.InstanceID]
 
-		item.Favorite = slices.Contains(ids, tagFavorite)
-		item.Tag = primaryTag(ids)
+		item.Favorite = slices.Contains(ids, dvm.TagFavorite)
+		item.Tag = dvm.PrimaryTag(ids)
 		item.TagRule = ""
 		item.Note = bodies[item.InstanceID]
 
-		if slices.Contains(tagOrder, item.Tag) {
+		if slices.Contains(dvm.TagOrder, item.Tag) {
 			item.TagRule = rules[[2]string{item.InstanceID, item.Tag}]
 		}
 	}
-}
-
-// primaryTag returns the one ordinary tag that the web client shows for an
-// item. Storage allows several, so the web client display order decides.
-func primaryTag(ids []string) string {
-	for _, id := range tagOrder {
-		if slices.Contains(ids, id) {
-			return id
-		}
-	}
-
-	rest := slices.DeleteFunc(slices.Clone(ids), func(id string) bool { return id == tagFavorite })
-	if len(rest) == 0 {
-		return ""
-	}
-
-	return slices.Min(rest)
 }
 
 // Find returns the item instance with the given id.

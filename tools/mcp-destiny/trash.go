@@ -7,10 +7,8 @@ import (
 	"strings"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
-
-// tagJunk is the tag id that marks an item for dismantling.
-const tagJunk = "junk"
 
 // ResolveSlot returns the bucket that a slot name selects. The candidates
 // are the buckets of [Snapshot.Buckets] that each character has and that
@@ -124,7 +122,7 @@ func (s *Snapshot) JunkPlan(c Character, b Bucket) JunkPlan {
 			continue
 		}
 
-		junk := item.Tag == tagJunk
+		junk := item.Tag == dvm.TagJunk
 
 		switch {
 		case item.Owner == c.ID && !item.Equipped && !item.Postmaster:

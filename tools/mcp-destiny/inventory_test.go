@@ -300,9 +300,9 @@ func TestAnnotate(t *testing.T) {
 		[]dvm.ItemTag{
 			{InstanceID: "1001", TagID: "junk"},
 			{InstanceID: "1001", TagID: "keep"},
-			{InstanceID: "1001", TagID: tagFavorite},
+			{InstanceID: "1001", TagID: dvm.TagFavorite},
 			{InstanceID: "1002", TagID: "pvp", Removed: true},
-			{InstanceID: "1003", TagID: tagFavorite},
+			{InstanceID: "1003", TagID: dvm.TagFavorite},
 		},
 		[]dvm.Note{
 			{Kind: dvm.NoteInstance, TargetID: "1001", Body: "god roll"},
@@ -340,7 +340,7 @@ func TestFilter(t *testing.T) {
 	s := fixtureSnapshot(t)
 	s.Annotate([]dvm.ItemTag{
 		{InstanceID: "1001", TagID: "keep"},
-		{InstanceID: "1002", TagID: tagFavorite},
+		{InstanceID: "1002", TagID: dvm.TagFavorite},
 	}, nil)
 
 	tests := map[string]struct {
@@ -1190,7 +1190,7 @@ func TestAnnotateTagRule(t *testing.T) {
 		},
 		"rule of the favorite mark": {
 			rows: []dvm.ItemTag{
-				{InstanceID: "1001", TagID: tagFavorite, RuleID: "rule-1"},
+				{InstanceID: "1001", TagID: dvm.TagFavorite, RuleID: "rule-1"},
 				{InstanceID: "1001", TagID: "keep"},
 			},
 			wantTag: "keep",

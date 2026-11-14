@@ -8,7 +8,6 @@ import (
 	"slices"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
-	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
 const tierExotic = "Exotic"
@@ -415,32 +414,4 @@ func (s *Snapshot) requestCharacter(item *Item) (string, bool) {
 	c, ok := s.lastPlayed()
 
 	return c.ID, ok
-}
-
-// tagChanges returns the rows that leave an item with tagID as its one
-// ordinary tag. An empty tagID leaves the item untagged. The favorite tag
-// is independent of the ordinary tag, so tagChanges keeps it. The row that
-// adds tagID carries ruleID, the id of the autotag rule that sets the tag.
-// A tag that a person sets has an empty ruleID.
-func tagChanges(rows []dvm.ItemTag, instanceID string, itemHash uint32, tagID, ruleID string) []dvm.ItemTag {
-	var changes []dvm.ItemTag
-
-	for _, row := range rows {
-		if row.InstanceID != instanceID || row.Removed || row.TagID == tagID || row.TagID == tagFavorite {
-			continue
-		}
-
-		changes = append(changes, dvm.ItemTag{
-			InstanceID: instanceID,
-			ItemHash:   itemHash,
-			TagID:      row.TagID,
-			Removed:    true,
-		})
-	}
-
-	if tagID != "" {
-		changes = append(changes, dvm.ItemTag{InstanceID: instanceID, ItemHash: itemHash, TagID: tagID, RuleID: ruleID})
-	}
-
-	return changes
 }

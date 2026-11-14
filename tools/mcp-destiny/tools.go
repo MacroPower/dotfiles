@@ -1385,10 +1385,10 @@ func (h *handler) handleSetTag(
 		tag = ""
 	}
 
-	if tag != "" && !slices.Contains(tagOrder, tag) {
+	if tag != "" && !slices.Contains(dvm.TagOrder, tag) {
 		return h.toolError(ctx, toolSetTag, fmt.Errorf(
 			"%w: tag %q is not none or one of %s",
-			ErrInvalidInput, in.Tag, strings.Join(tagOrder, ", "),
+			ErrInvalidInput, in.Tag, strings.Join(dvm.TagOrder, ", "),
 		))
 	}
 
@@ -1405,7 +1405,7 @@ func (h *handler) handleSetTag(
 	var changes []dvm.ItemTag
 
 	for _, item := range items {
-		changes = append(changes, tagChanges(rows, item.InstanceID, item.Hash, tag, "")...)
+		changes = append(changes, dvm.TagChanges(rows, item.InstanceID, item.Hash, tag, "")...)
 	}
 
 	err = h.writeTags(ctx, changes)
@@ -1449,7 +1449,7 @@ func (h *handler) handleSetFavorite(
 		changes = append(changes, dvm.ItemTag{
 			InstanceID: item.InstanceID,
 			ItemHash:   item.Hash,
-			TagID:      tagFavorite,
+			TagID:      dvm.TagFavorite,
 			Removed:    !in.Favorite,
 		})
 	}
@@ -2119,7 +2119,7 @@ func (h *handler) handleRunAutotagRules(
 	var changes []dvm.ItemTag
 
 	for _, t := range tags {
-		changes = append(changes, tagChanges(rows, t.item.InstanceID, t.item.Hash, t.rule.TagID, t.rule.ID)...)
+		changes = append(changes, dvm.TagChanges(rows, t.item.InstanceID, t.item.Hash, t.rule.TagID, t.rule.ID)...)
 	}
 
 	tagErr := h.writeTags(ctx, changes)
@@ -2473,10 +2473,10 @@ func mergeRule(rules []dvm.AutotagRule, in SaveAutotagRuleInput) (dvm.AutotagRul
 		}
 	}
 
-	if rule.TagID != "" && !slices.Contains(tagOrder, rule.TagID) {
+	if rule.TagID != "" && !slices.Contains(dvm.TagOrder, rule.TagID) {
 		return dvm.AutotagRule{}, fmt.Errorf(
 			"%w: tag_id %q is not one of %s",
-			ErrInvalidInput, rule.TagID, strings.Join(tagOrder, ", "),
+			ErrInvalidInput, rule.TagID, strings.Join(dvm.TagOrder, ", "),
 		)
 	}
 
