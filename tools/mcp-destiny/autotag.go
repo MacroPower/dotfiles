@@ -175,7 +175,7 @@ func evalRules(
 	}
 
 	current, _ := s.LastPlayed()
-	sctx := searchContext{current: current, items: builtItems(s), sources: ratings}
+	sctx := newSearchContext(s, current, ratings)
 
 	for i := range evals {
 		if evals[i].class != ruleEvaluated {

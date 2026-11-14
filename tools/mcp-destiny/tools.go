@@ -1861,7 +1861,7 @@ func (h *handler) countRuleMatches(ctx context.Context, query compiledQuery) (sa
 		return saveCount{unrated: reason}, ""
 	}
 
-	result := query.evaluate(searchContext{current: current, items: builtItems(s), sources: sources}, ownedItems(s))
+	result := query.evaluate(newSearchContext(s, current, sources), ownedItems(s))
 
 	return saveCount{matches: len(result.matches), undecided: len(result.undecided)}, unbuiltLine(s)
 }
@@ -1924,7 +1924,7 @@ func (h *handler) handlePreviewAutotagRule(
 	}
 
 	owned := ownedItems(s)
-	result := query.evaluate(searchContext{current: current, items: builtItems(s), sources: sources}, owned)
+	result := query.evaluate(newSearchContext(s, current, sources), owned)
 	matches := result.matches
 
 	limit := in.Limit

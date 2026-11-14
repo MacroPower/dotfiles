@@ -459,6 +459,18 @@ type searchContext struct {
 	current inventory.Character
 }
 
+// newSearchContext returns the context of a query on the items of s. The
+// context holds every item of s that [builtItems] keeps, in every
+// location, the vault included. It holds current as the current character
+// and sources as the [rolls.RatingSource] of each game mode.
+func newSearchContext(
+	s *inventory.Snapshot,
+	current inventory.Character,
+	sources map[string]rolls.RatingSource,
+) searchContext {
+	return searchContext{current: current, items: builtItems(s), sources: sources}
+}
+
 // searchFilter is one filter that the preview evaluates. An is: word sets
 // match or build, and a filter that takes a value sets value.
 type searchFilter struct {
