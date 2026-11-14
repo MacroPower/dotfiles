@@ -337,6 +337,60 @@ in
   # to different Dagger versions each keep their own engine.
   home.sessionVariables.DAGGER_LEAVE_OLD_ENGINE = "1";
 
+  # The Dagger CLI mounts $XDG_CONFIG_HOME/dagger/engine.json over the
+  # engine image's /etc/dagger/engine.json when it creates the engine
+  # container. The file replaces the image's config, so it repeats the
+  # image's docker.io mirror. The xdg.configFile block in this module sets
+  # the whole attribute set, so this entry names the same path through
+  # home.file. The CLI on macOS reads the same path, so only the terrarium
+  # VM gets the file. The engines on the macOS hosts keep their default
+  # policies.
+  #
+  # The engine's default garbage collection prunes every unused result,
+  # cache volumes included, until 20% of the disk is free. On a nearly full
+  # disk, it empties the cache volumes after every session. The defaults also
+  # drop each cache volume that no session used for 48 hours, so setting
+  # gc.maxUsedSpace alone does not keep them. The one policy here sets no
+  # free-space floor and bounds only the engine's own use, as its garbage
+  # collector measures it. The engine resolves maxUsedSpace against the size
+  # of the disk that holds its state, and sweepSize against maxUsedSpace. It
+  # counts each share in whole GiB, adds one, and returns that many decimal
+  # gigabytes. The bound of "20%" therefore comes to a little less than a
+  # fifth of the disk.
+  #
+  # After each session ends, the engine compares its use with the bound.
+  # When its use is more than the bound, the engine removes the least
+  # recently used results until its use falls to about 80% of the bound. It
+  # keeps every result that a running session holds. One sweep of a fifth of
+  # the bound makes room for many sessions. The engine therefore does not
+  # prune a little after each one.
+  #
+  # The bound applies to each engine container. DAGGER_LEAVE_OLD_ENGINE
+  # keeps one engine per Dagger version, and each engine has its own state
+  # volume and its own bound. No policy in this file watches free space, so
+  # the engine of an old version keeps its cache however full the disk gets.
+  # The engines of a few Dagger versions can together fill the disk. Remove
+  # an old engine with `docker rm -fv dagger-engine-<version>` when no
+  # project uses that version.
+  #
+  # The Lima config of each macOS host sets the size of the VM disk, and the
+  # bound scales with it. A 120 GiB disk gives a bound of about 22 GiB, which
+  # holds the Nix and Go cache volumes of the toolchains several times over.
+  home.file."${config.xdg.configHome}/dagger/engine.json" =
+    lib.mkIf (config.dotfiles.hostname == "terrarium")
+      {
+        source = (pkgs.formats.json { }).generate "dagger-engine.json" {
+          registries."docker.io".mirrors = [ "mirror.gcr.io" ];
+          gc.policies = [
+            {
+              all = true;
+              maxUsedSpace = "20%";
+              sweepSize = "20%";
+            }
+          ];
+        };
+      };
+
   home.packages =
     with pkgs;
     [
