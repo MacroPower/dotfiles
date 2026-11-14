@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
@@ -230,8 +231,8 @@ func newFakes(t *testing.T) *fakes {
 
 	now := func() time.Time { return bungietest.Now }
 
-	store := NewTokenStore(filepath.Join(t.TempDir(), "tokens.json"))
-	require.NoError(t, store.Save(Tokens{
+	store := auth.NewTokenStore(filepath.Join(t.TempDir(), "tokens.json"))
+	require.NoError(t, store.Save(auth.Tokens{
 		AccessToken:    "access-1",
 		AccessExpires:  bungietest.Now.Add(time.Hour),
 		RefreshToken:   "refresh-1",
@@ -249,7 +250,7 @@ func newFakes(t *testing.T) *fakes {
 	f.h = &handler{
 		service: client,
 		bungie:  bungie.New(bungie.WithURL(f.bungie.URL), bungie.WithContentURL(f.bungie.URL)),
-		auth:    NewAuth(store, client, WithAuthClock(now)),
+		auth:    auth.New(store, client, auth.WithClock(now)),
 		defs:    defs,
 		sheets:  NewSheetStore(client),
 		log:     slog.New(slog.DiscardHandler),

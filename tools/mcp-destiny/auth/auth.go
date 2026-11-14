@@ -1,4 +1,4 @@
-package main
+package auth
 
 import (
 	"context"
@@ -168,12 +168,15 @@ type TokenBroker interface {
 	RefreshTokens(ctx context.Context, refreshToken string) (dvm.TokenResponse, error)
 }
 
-// AuthOption configures an [*Auth]. See [WithAuthClock].
-type AuthOption func(*Auth)
+// Option configures an [*Auth] via [New].
+//
+// Functions of this type:
+//   - [WithClock]
+type Option func(*Auth)
 
-// WithAuthClock overrides the clock that decides token expiry. It is an
-// [AuthOption].
-func WithAuthClock(now func() time.Time) AuthOption {
+// WithClock overrides the clock that decides token expiry. It is an
+// [Option].
+func WithClock(now func() time.Time) Option {
 	return func(a *Auth) { a.now = now }
 }
 
@@ -193,9 +196,9 @@ type Auth struct {
 	mu     sync.Mutex
 }
 
-// NewAuth returns an [*Auth] that persists tokens in store and exchanges
-// them through broker.
-func NewAuth(store *TokenStore, broker TokenBroker, opts ...AuthOption) *Auth {
+// New returns an [*Auth] that persists tokens in store and exchanges them
+// through broker.
+func New(store *TokenStore, broker TokenBroker, opts ...Option) *Auth {
 	a := &Auth{
 		broker: broker,
 		store:  store,
@@ -206,6 +209,11 @@ func NewAuth(store *TokenStore, broker TokenBroker, opts ...AuthOption) *Auth {
 	}
 
 	return a
+}
+
+// Store returns the [*TokenStore] that [New] received.
+func (a *Auth) Store() *TokenStore {
+	return a.store
 }
 
 // LoginURL returns the Bungie authorization URL for the user to open.

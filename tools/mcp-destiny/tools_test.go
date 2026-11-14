@@ -188,7 +188,7 @@ func TestStatusAndLogin(t *testing.T) {
 	require.NoError(t, err)
 
 	saved.RefreshExpires = bungietest.Now.Add(-time.Hour)
-	require.NoError(t, f.h.auth.store.Save(saved))
+	require.NoError(t, f.h.auth.Store().Save(saved))
 
 	got, isError = call(t, f.h.handleStatus, EmptyInput{})
 	assert.False(t, isError)
@@ -197,7 +197,7 @@ func TestStatusAndLogin(t *testing.T) {
 
 	saved.RefreshToken = ""
 	saved.RefreshExpires = time.Time{}
-	require.NoError(t, f.h.auth.store.Save(saved))
+	require.NoError(t, f.h.auth.Store().Save(saved))
 
 	got, isError = call(t, f.h.handleStatus, EmptyInput{})
 	assert.False(t, isError)

@@ -1,4 +1,4 @@
-package main
+package auth
 
 import (
 	"context"
@@ -63,7 +63,7 @@ func newTestAuth(t *testing.T, saved *Tokens) (*Auth, *fakeBroker, *TokenStore) 
 	}
 
 	broker := &fakeBroker{}
-	auth := NewAuth(store, broker, WithAuthClock(func() time.Time { return bungietest.Now }))
+	auth := New(store, broker, WithClock(func() time.Time { return bungietest.Now }))
 
 	return auth, broker, store
 }
@@ -127,6 +127,7 @@ func TestLogin(t *testing.T) {
 	t.Parallel()
 
 	auth, broker, store := newTestAuth(t, nil)
+	assert.Same(t, store, auth.Store())
 
 	_, err := auth.Tokens(t.Context())
 	require.ErrorIs(t, err, ErrNotSignedIn)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
@@ -158,8 +159,8 @@ func xdgDir(env, fallback string) (string, error) {
 	return filepath.Join(dir, "mcp-destiny"), nil
 }
 
-func (o options) auth(service *dvm.Client) *Auth {
-	return NewAuth(NewTokenStore(filepath.Join(o.stateDir, "tokens.json")), service)
+func (o options) auth(service *dvm.Client) *auth.Auth {
+	return auth.New(auth.NewTokenStore(filepath.Join(o.stateDir, "tokens.json")), service)
 }
 
 // runLogin signs the user in from a terminal. It prints the Bungie
@@ -171,11 +172,11 @@ func runLogin(ctx context.Context, args []string, stdin io.Reader, stdout io.Wri
 	}
 
 	service := dvm.New(dvm.WithURL(o.serviceURL), dvm.WithUserAgent(userAgent))
-	auth := o.auth(service)
+	signin := o.auth(service)
 
-	u, err := auth.LoginURL(ctx)
+	u, err := signin.LoginURL(ctx)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // The sign-in error reaches the terminal unchanged.
 	}
 
 	_, err = fmt.Fprintf(stdout, loginPrompt, u)
@@ -188,9 +189,9 @@ func runLogin(ctx context.Context, args []string, stdin io.Reader, stdout io.Wri
 		return fmt.Errorf("reading the redirected URL: %w", err)
 	}
 
-	t, err := auth.CompleteLogin(ctx, line)
+	t, err := signin.CompleteLogin(ctx, line)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // The sign-in error reaches the terminal unchanged.
 	}
 
 	done := "\nSigned in as Bungie.net membership " + t.BungieID + ".\n"
@@ -244,7 +245,7 @@ func runLogout(args []string, stdout io.Writer) error {
 
 	err = o.auth(dvm.New(dvm.WithUserAgent(userAgent))).Logout()
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // The sign-out error reaches the terminal unchanged.
 	}
 
 	_, err = io.WriteString(stdout, "Signed out.\n")

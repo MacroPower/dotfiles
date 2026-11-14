@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
@@ -337,7 +338,7 @@ type GetStatsInput struct {
 type handler struct {
 	service       *dvm.Client
 	bungie        *bungie.Client
-	auth          *Auth
+	auth          *auth.Auth
 	defs          *DefsLoader
 	sheets        *SheetStore
 	loadoutTables *bungie.LoadoutTableStore
@@ -355,11 +356,11 @@ func (h *handler) handleStatus(
 	_ EmptyInput,
 ) (*mcp.CallToolResult, any, error) {
 	t, err := h.auth.Saved()
-	if err != nil && !errors.Is(err, ErrNotSignedIn) {
+	if err != nil && !errors.Is(err, auth.ErrNotSignedIn) {
 		return h.toolError(ctx, toolStatus, err)
 	}
 
-	text := renderStatus(t, err == nil, h.service.BaseURL(), h.auth.store.Path(), h.now())
+	text := renderStatus(t, err == nil, h.service.BaseURL(), h.auth.Store().Path(), h.now())
 
 	return textResult(text), nil, nil
 }
@@ -2740,7 +2741,7 @@ func (h *handler) autotag(ctx context.Context) (dvm.AutotagSnapshot, error) {
 func (h *handler) membership(ctx context.Context) (bungie.Membership, error) {
 	t, err := h.auth.Tokens(ctx)
 	if err != nil {
-		return bungie.Membership{}, err
+		return bungie.Membership{}, err //nolint:wrapcheck // The sign-in error reaches the tool text unchanged.
 	}
 
 	if !t.Membership.IsZero() {
@@ -2773,7 +2774,7 @@ func (h *handler) membership(ctx context.Context) (bungie.Membership, error) {
 func (h *handler) withBungie(ctx context.Context, fn func(bungie.Credentials) error) error {
 	t, err := h.auth.Tokens(ctx)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // The sign-in error reaches the tool text unchanged.
 	}
 
 	key, err := h.bungieKey(ctx)
@@ -2788,7 +2789,7 @@ func (h *handler) withBungie(ctx context.Context, fn func(bungie.Credentials) er
 
 	t, err = h.auth.Refresh(ctx, t.AccessToken)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // The sign-in error reaches the tool text unchanged.
 	}
 
 	return fn(bungie.Credentials{APIKey: key, AccessToken: t.AccessToken})
@@ -2799,7 +2800,7 @@ func (h *handler) withBungie(ctx context.Context, fn func(bungie.Credentials) er
 func (h *handler) withSession(ctx context.Context, fn func(session string) error) error {
 	t, err := h.auth.Tokens(ctx)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // The sign-in error reaches the tool text unchanged.
 	}
 
 	err = fn(t.Session)
@@ -2809,7 +2810,7 @@ func (h *handler) withSession(ctx context.Context, fn func(session string) error
 
 	t, err = h.auth.Refresh(ctx, t.AccessToken)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // The sign-in error reaches the tool text unchanged.
 	}
 
 	return fn(t.Session)
@@ -2980,7 +2981,7 @@ func (h *handler) toolRefusal(ctx context.Context, tool, text string) (*mcp.Call
 // signed in, the text tells the model to call the login tool.
 func errorText(err error) string {
 	text := err.Error()
-	if errors.Is(err, ErrNotSignedIn) {
+	if errors.Is(err, auth.ErrNotSignedIn) {
 		text += ". Call the login tool to sign in."
 	}
 

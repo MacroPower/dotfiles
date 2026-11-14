@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
@@ -25,7 +26,7 @@ var tagLabels = map[string]string{
 	dvm.TagFavorite: "Favorite",
 }
 
-func renderStatus(t Tokens, signedIn bool, serviceURL, tokenPath string, now time.Time) string {
+func renderStatus(t auth.Tokens, signedIn bool, serviceURL, tokenPath string, now time.Time) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Service: %s\n", serviceURL)
