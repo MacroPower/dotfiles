@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 )
 
 var (
@@ -80,7 +81,7 @@ type Loot struct {
 // the definitions, in the order of [compareActivities]. It leaves out each
 // activity that the game hides, that the definitions do not name, or that
 // has a Story or Social mode or a Story type.
-func readActivities(entries []bungie.AvailableActivity, defs *Defs) []ActivityRow {
+func readActivities(entries []bungie.AvailableActivity, defs *definitions.Defs) []ActivityRow {
 	var rows []ActivityRow
 
 	for _, entry := range entries {
@@ -99,7 +100,7 @@ func readActivities(entries []bungie.AvailableActivity, defs *Defs) []ActivityRo
 
 // newActivityRow joins one activity with its definition and with the
 // definitions of its type, its location, and its rewards.
-func newActivityRow(entry bungie.AvailableActivity, def ActivityDef, defs *Defs) ActivityRow {
+func newActivityRow(entry bungie.AvailableActivity, def definitions.ActivityDef, defs *definitions.Defs) ActivityRow {
 	items := entry.RewardItems()
 
 	row := ActivityRow{
@@ -133,7 +134,7 @@ func newActivityRow(entry bungie.AvailableActivity, def ActivityDef, defs *Defs)
 
 // focusOf returns the first focused reward among items that an
 // ActivityReward record names. It returns nil when no item qualifies.
-func focusOf(items []bungie.ActivityRewardItem, defs *Defs) *Loot {
+func focusOf(items []bungie.ActivityRewardItem, defs *definitions.Defs) *Loot {
 	for _, item := range items {
 		name := defs.ActivityRewards[item.ItemQuantity.ItemHash]
 		if item.UIStyle == bungie.RewardFocus && name != "" {
@@ -148,7 +149,7 @@ func focusOf(items []bungie.ActivityRewardItem, defs *Defs) *Loot {
 // without a uiStyle, with a quantity of 1 or more, and with a name in an
 // ActivityReward record. Items that share a name merge into the entry of
 // the first one, which sums their quantities.
-func lootOf(items []bungie.ActivityRewardItem, defs *Defs) []Loot {
+func lootOf(items []bungie.ActivityRewardItem, defs *definitions.Defs) []Loot {
 	var loot []Loot
 
 	at := map[string]int{}

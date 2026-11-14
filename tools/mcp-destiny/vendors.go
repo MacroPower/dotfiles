@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 )
 
 // Values of the Bungie VendorItemStatus flags. A status of zero means that
@@ -85,7 +86,7 @@ type Cost struct {
 
 // readVendors joins a GetVendors response with the definitions. It returns
 // every vendor that the response lists, ordered by name and then by hash.
-func readVendors(resp *bungie.VendorsResponse, defs *Defs) []Vendor {
+func readVendors(resp *bungie.VendorsResponse, defs *definitions.Defs) []Vendor {
 	hashes := map[uint32]bool{}
 
 	for hash := range resp.Vendors.Data {
@@ -114,7 +115,7 @@ func readVendors(resp *bungie.VendorsResponse, defs *Defs) []Vendor {
 // It groups the sales by the categories of the response, ordered by their
 // display category index. The sales that no category lists follow in a
 // group of their own, ordered by vendor item index.
-func newVendor(resp *bungie.VendorsResponse, defs *Defs, hash uint32) Vendor {
+func newVendor(resp *bungie.VendorsResponse, defs *definitions.Defs, hash uint32) Vendor {
 	def := defs.Vendors[hash]
 
 	v := Vendor{Hash: hash, Name: def.Name, Subtitle: def.Subtitle}
@@ -191,7 +192,7 @@ func newVendor(resp *bungie.VendorsResponse, defs *Defs, hash uint32) Vendor {
 // sale that the vendor displays without selling the item. It also reports
 // false for an item that the definitions do not name. The web client
 // leaves out both sales.
-func newSale(defs *Defs, vendor VendorDef, raw bungie.VendorSale) (Sale, bool) {
+func newSale(defs *definitions.Defs, vendor definitions.VendorDef, raw bungie.VendorSale) (Sale, bool) {
 	if raw.SaleStatus&saleDisplayOnly != 0 {
 		return Sale{}, false
 	}
@@ -239,7 +240,7 @@ func newSale(defs *Defs, vendor VendorDef, raw bungie.VendorSale) (Sale, bool) {
 // order of the web client. Many vendors sell dummy items, and the item
 // definitions leave them out. It returns an empty string when neither
 // names the item.
-func vendorItemName(defs *Defs, hash uint32) string {
+func vendorItemName(defs *definitions.Defs, hash uint32) string {
 	if name := defs.VendorItems[hash]; name != "" {
 		return name
 	}

@@ -24,6 +24,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpfake"
@@ -54,7 +55,7 @@ const loadoutsIntro = "Loadouts saved in the game. A loadout number is the posit
 // lists Firefly and the two Kill Clip plugs. Fatebringer has no plug set
 // for socket 0. Socket 1 of instance 1001 holds Firefly, which the fake
 // perk preferences like for PvE.
-func killClipPlugSet(d *Defs) {
+func killClipPlugSet(d *definitions.Defs) {
 	d.Sockets = map[uint32][]uint32{100: {0, 40}}
 	d.PlugSets = map[uint32][]uint32{40: {901, 904, 905}}
 }
@@ -656,7 +657,7 @@ func TestListItems(t *testing.T) {
 		"liked perk raises the rating of a copy that rolled no pick of a column": {
 			prepare: func(f *fakes) {
 				bothSheets(f)
-				killClipPlugSet(f.h.defs.defs)
+				killClipPlugSet(f.defs)
 			},
 			in: ListItemsInput{IncludeRatings: true},
 			want: strings.Join(slices.Concat([]string{
@@ -675,7 +676,7 @@ func TestListItems(t *testing.T) {
 		"minimum keeps a copy whose rating a liked perk raises": {
 			prepare: func(f *fakes) {
 				bothSheets(f)
-				killClipPlugSet(f.h.defs.defs)
+				killClipPlugSet(f.defs)
 			},
 			in:   ListItemsInput{MinPvERating: "S"},
 			want: pvpD,
@@ -844,7 +845,7 @@ func TestListItems(t *testing.T) {
 				_, isError := call(t, f.h.handleListItems, ListItemsInput{})
 				require.False(t, isError)
 
-				f.h.defs.defs = nil
+				f.dropDefs()
 			}
 
 			got, isError := call(t, f.h.handleListItems, tc.in)
@@ -1185,7 +1186,7 @@ func TestGetItem(t *testing.T) {
 		// serves.
 		bodies map[string]string
 		// defs changes the fixture definitions before the call.
-		defs func(*Defs)
+		defs func(*definitions.Defs)
 		// prefsBody replaces the perk preferences that the service
 		// serves.
 		prefsBody string
@@ -1698,14 +1699,14 @@ func TestGetItem(t *testing.T) {
 			}
 
 			if tc.defs != nil {
-				tc.defs(f.h.defs.defs)
+				tc.defs(f.defs)
 			}
 
 			if tc.noDefs {
 				_, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: tc.id})
 				require.False(t, isError)
 
-				f.h.defs.defs = nil
+				f.dropDefs()
 			}
 
 			got, isError := call(t, f.h.handleGetItem, GetItemInput{InstanceID: tc.id})
@@ -1822,7 +1823,7 @@ func TestRatingToolsReadDefinitionsBeforeProfile(t *testing.T) {
 			f.service.ArtifactFiles = map[string][]string{"rolls": {"rolls.a.json"}}
 			f.service.Data["/artifacts/rolls.a.json"] = `{"rolls": [` +
 				`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900]]}]}`
-			f.h.defs.defs = nil
+			f.dropDefs()
 
 			got, isError := tc.run(t, f.h)
 			assert.True(t, isError)
@@ -1889,7 +1890,7 @@ func TestRatingSources(t *testing.T) {
 		"unreadable definitions are the reason of each mode with a sheet": {
 			files:   map[string][]string{"rolls": {"rolls.a.json"}},
 			reasons: map[string]string{modePvE: undefined, modePvP: noPvP},
-			causes:  map[string]error{modePvE: ErrDefs},
+			causes:  map[string]error{modePvE: definitions.ErrDefs},
 			noDefs:  true,
 		},
 		"unreadable perk preferences win against unreadable definitions": {
@@ -1913,10 +1914,10 @@ func TestRatingSources(t *testing.T) {
 				delete(f.service.Data, pathPrefs)
 			}
 
-			defs := f.h.defs.defs
+			defs := f.defs
 
 			if tc.noDefs {
-				f.h.defs.defs = nil
+				f.dropDefs()
 			}
 
 			got := f.h.ratingSources(t.Context())
@@ -2727,7 +2728,7 @@ func TestCompareDuplicates(t *testing.T) {
 		"liked perk raises the rating of a copy that rolled no pick of a column": {
 			prepare: func(f *fakes) {
 				bothSheets(f)
-				killClipPlugSet(f.h.defs.defs)
+				killClipPlugSet(f.defs)
 
 				f.service.Data["/artifacts/rolls.a.json"] = `{"rolls": [` +
 					`{"category": "HCs", "tier": "S", "hashes": [100], "slots": [[900], [904]]}]}`
@@ -2801,7 +2802,7 @@ func TestCompareDuplicates(t *testing.T) {
 				_, isError := call(t, f.h.handleCompareDuplicates, CompareDuplicatesInput{})
 				require.False(t, isError)
 
-				f.h.defs.defs = nil
+				f.dropDefs()
 			}
 
 			got, isError := call(t, f.h.handleCompareDuplicates, tc.in)
@@ -3346,15 +3347,15 @@ func TestListActivities(t *testing.T) {
 		}
 	}
 
-	manyDefs := func(d *Defs) {
+	manyDefs := func(d *definitions.Defs) {
 		for i := range uint32(maxItemLimit + 1) {
-			d.Activities[5000+i] = ActivityDef{Name: fmt.Sprintf("Activity %03d", i)}
+			d.Activities[5000+i] = definitions.ActivityDef{Name: fmt.Sprintf("Activity %03d", i)}
 		}
 	}
 
 	tests := map[string]struct {
 		in         ListActivitiesInput
-		defs       func(*Defs)
+		defs       func(*definitions.Defs)
 		activities string
 		want       string
 		fetches    int
@@ -3454,7 +3455,7 @@ func TestListActivities(t *testing.T) {
 			want:       "Bungie lists no activities that Hunter can play.",
 		},
 		"definitions without activities": {
-			defs:    func(d *Defs) { d.Activities = map[uint32]ActivityDef{} },
+			defs:    func(d *definitions.Defs) { d.Activities = map[uint32]definitions.ActivityDef{} },
 			fetches: 1,
 			want: "The list leaves out all 13 activities that Bungie lists for Hunter, because the game hides " +
 				"them, the definitions do not name them, or they are Story or Social activities.",
@@ -3485,7 +3486,7 @@ func TestListActivities(t *testing.T) {
 			f.bungie.ActivitiesBody = tc.activities
 
 			if tc.defs != nil {
-				tc.defs(f.h.defs.defs)
+				tc.defs(f.defs)
 			}
 
 			got, isError := call(t, f.h.handleListActivities, tc.in)
@@ -3712,7 +3713,7 @@ func TestSetAutotagEnabled(t *testing.T) {
 
 			f := newFakes(t)
 			f.bungie.ProfileBody = tc.profile
-			f.h.defs.defs.Items[400] = ItemDef{
+			f.defs.Items[400] = definitions.ItemDef{
 				Name:       "Victory Dance",
 				TypeName:   "Emote",
 				Bucket:     bungie.BucketEmotes,
@@ -5748,8 +5749,8 @@ func newItemsProfile(t *testing.T, held, vault []string) string {
 
 // addNewItemDefs adds to d the definitions of Thorn and Wormhusk Crown,
 // which the profile of newItemsProfile can hold.
-func addNewItemDefs(d *Defs) {
-	d.Items[103] = ItemDef{
+func addNewItemDefs(d *definitions.Defs) {
+	d.Items[103] = definitions.ItemDef{
 		Name:       "Thorn",
 		TypeName:   "Hand Cannon",
 		Tier:       "Exotic",
@@ -5758,7 +5759,7 @@ func addNewItemDefs(d *Defs) {
 		ClassType:  bungie.ClassAny,
 		Equippable: true,
 	}
-	d.Items[201] = ItemDef{
+	d.Items[201] = definitions.ItemDef{
 		Name:       "Wormhusk Crown",
 		TypeName:   "Helmet",
 		Tier:       "Exotic",
@@ -6073,11 +6074,11 @@ func TestListAutotagRulesNew(t *testing.T) {
 
 			f := newFakes(t)
 			f.service.Data[pathAutotag] = tc.autotag
-			addNewItemDefs(f.h.defs.defs)
+			addNewItemDefs(f.defs)
 
-			helmet := f.h.defs.defs.Items[201]
+			helmet := f.defs.Items[201]
 			helmet.SetHash = tc.helmetSet
-			f.h.defs.defs.Items[201] = helmet
+			f.defs.Items[201] = helmet
 
 			if tc.sheet {
 				withAegisSheet(f)
@@ -6649,7 +6650,7 @@ func TestRunAutotagRules(t *testing.T) {
 
 			f := newFakes(t)
 			f.service.Data[pathAutotag] = tc.autotag
-			addNewItemDefs(f.h.defs.defs)
+			addNewItemDefs(f.defs)
 
 			if tc.sheet {
 				withAegisSheet(f)
@@ -6852,9 +6853,9 @@ func TestRunAutotagRulesVault(t *testing.T) {
 			autotag: weaponJunk,
 			held:    []string{heldThorn(0)},
 			setup: func(f *fakes) {
-				thorn := f.h.defs.defs.Items[103]
+				thorn := f.defs.Items[103]
 				thorn.NonTransferable = true
-				f.h.defs.defs.Items[103] = thorn
+				f.defs.Items[103] = thorn
 			},
 			newest: "00000000000000001008",
 			want: []string{
@@ -7081,7 +7082,7 @@ func TestRunAutotagRulesVault(t *testing.T) {
 
 			f := newFakes(t)
 			f.service.Data[pathAutotag] = tc.autotag
-			addNewItemDefs(f.h.defs.defs)
+			addNewItemDefs(f.defs)
 
 			if tc.setup != nil {
 				tc.setup(f)
@@ -8492,7 +8493,7 @@ func TestPreviewDupeGroupsBuiltItems(t *testing.T) {
 	// lost copy at the Postmaster, but not its vault copy, so the lost
 	// copy has no other copy to match.
 	f := newFakes(t)
-	f.h.defs.defs.Items[403] = ItemDef{
+	f.defs.Items[403] = definitions.ItemDef{
 		Name:       "Dummy",
 		Bucket:     bungie.BucketForbidden,
 		ItemType:   bungie.ItemTypeWeapon,
@@ -8534,7 +8535,7 @@ func inventoryFieldFakes(t *testing.T) *fakes {
 	t.Helper()
 
 	f := newFakes(t)
-	defs := f.h.defs.defs
+	defs := f.defs
 	defs.DamageEnums = map[uint32]int{
 		3373582085: bungie.DamageKinetic,
 		2303181850: bungie.DamageArc,
@@ -8910,8 +8911,8 @@ const (
 // set, so the web client never builds the helmet. Listed records whether
 // the service index lists the EquipableItemSet artifact.
 func withUnbuiltHelmet(f *fakes, listed bool) {
-	defs := f.h.defs.defs
-	defs.Items[201] = ItemDef{
+	defs := f.defs
+	defs.Items[201] = definitions.ItemDef{
 		Name:       "Iron Truage Helm",
 		TypeName:   "Helmet",
 		Tier:       "Legendary",

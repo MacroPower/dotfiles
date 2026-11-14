@@ -14,6 +14,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -92,15 +93,24 @@ func TestOwnedItems(t *testing.T) {
 	}`
 
 	defs := fixtureDefs()
-	defs.Items[400] = ItemDef{Name: "Exotic Engram", Bucket: bungie.BucketEngrams, ClassType: bungie.ClassAny}
-	defs.Items[401] = ItemDef{Name: "Wave", Bucket: bungie.BucketEmotes, ClassType: bungie.ClassAny, Equippable: true}
-	defs.Items[402] = ItemDef{
+	defs.Items[400] = definitions.ItemDef{
+		Name:      "Exotic Engram",
+		Bucket:    bungie.BucketEngrams,
+		ClassType: bungie.ClassAny,
+	}
+	defs.Items[401] = definitions.ItemDef{
+		Name:       "Wave",
+		Bucket:     bungie.BucketEmotes,
+		ClassType:  bungie.ClassAny,
+		Equippable: true,
+	}
+	defs.Items[402] = definitions.ItemDef{
 		Name:       "Takedown",
 		Bucket:     bungie.BucketFinishers,
 		ClassType:  bungie.ClassAny,
 		Equippable: true,
 	}
-	defs.Items[403] = ItemDef{
+	defs.Items[403] = definitions.ItemDef{
 		Name:       "Dummy",
 		Bucket:     bungie.BucketForbidden,
 		ItemType:   bungie.ItemTypeWeapon,
@@ -1339,8 +1349,8 @@ func weaponTypeItems(t *testing.T) []*Item {
 
 	defs := fixtureDefs()
 
-	item := func(name, typeName string, bucket uint32, ammoType int, categories ...int64) ItemDef {
-		def := ItemDef{
+	item := func(name, typeName string, bucket uint32, ammoType int, categories ...int64) definitions.ItemDef {
+		def := definitions.ItemDef{
 			Name:       name,
 			TypeName:   typeName,
 			Tier:       "Legendary",
@@ -1389,7 +1399,7 @@ func weaponTypeItems(t *testing.T) []*Item {
 		bungie.CategoryWeapon, bungie.CategoryPowerWeapon, bungie.CategoryGrenadeLaunchers)
 	defs.Items[509] = item("Forbearance", "Grenade Launcher", bungie.BucketEnergy, bungie.AmmoSpecial,
 		bungie.CategoryWeapon, 3, bungie.CategoryGrenadeLaunchers)
-	defs.Items[510] = ItemDef{
+	defs.Items[510] = definitions.ItemDef{
 		Name:       "Celestial Nighthawk",
 		TypeName:   "Helmet",
 		Tier:       "Exotic",
@@ -1701,8 +1711,8 @@ func ratingContext() searchContext {
 			armor("unknown helmet", 103),
 		},
 		sources: map[string]RatingSource{
-			modePvE: {Sheet: pve, Defs: &Defs{}},
-			modePvP: {Sheet: pvp, Defs: &Defs{}},
+			modePvE: {Sheet: pve, Defs: &definitions.Defs{}},
+			modePvP: {Sheet: pvp, Defs: &definitions.Defs{}},
 		},
 	}
 }
@@ -2228,8 +2238,8 @@ func verdictContext() searchContext {
 			weapon("beside no perks", 150, hitting(true, false)),
 		},
 		sources: map[string]RatingSource{
-			modePvE: {Sheet: pve, Defs: &Defs{}},
-			modePvP: {Sheet: pvp, Defs: &Defs{}},
+			modePvE: {Sheet: pve, Defs: &definitions.Defs{}},
+			modePvP: {Sheet: pvp, Defs: &definitions.Defs{}},
 		},
 	}
 }
@@ -2276,7 +2286,7 @@ func TestVerdictRivals(t *testing.T) {
 			weapon("unrated", 311, bungietest.HunterID, hitting(true, true)),
 			stack,
 		},
-		sources: map[string]RatingSource{modePvE: {Sheet: sheet, Defs: &Defs{}}},
+		sources: map[string]RatingSource{modePvE: {Sheet: sheet, Defs: &definitions.Defs{}}},
 	}
 
 	copies := copiesByHash(ctx.items)
@@ -2805,8 +2815,8 @@ func setBonusContext() searchContext {
 			{InstanceID: "no set", Name: "no set", Hash: 200, Bucket: bungie.BucketHelmet},
 		},
 		sources: map[string]RatingSource{
-			modePvE: {Sheet: pve, Defs: &Defs{}},
-			modePvP: {Sheet: pvp, Defs: &Defs{}},
+			modePvE: {Sheet: pve, Defs: &definitions.Defs{}},
+			modePvP: {Sheet: pvp, Defs: &definitions.Defs{}},
 		},
 	}
 }
@@ -2987,8 +2997,8 @@ func setSnapshot(t *testing.T, listed bool, sets map[uint32][]uint32) *Snapshot 
 		]}}}
 	}`
 
-	helmet := func(name string, set uint32) ItemDef {
-		return ItemDef{
+	helmet := func(name string, set uint32) definitions.ItemDef {
+		return definitions.ItemDef{
 			Name:       name,
 			TypeName:   "Helmet",
 			Bucket:     bungie.BucketHelmet,

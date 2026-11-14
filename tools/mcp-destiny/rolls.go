@@ -3,6 +3,7 @@ package main
 import (
 	"slices"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -63,7 +64,7 @@ type Rating struct {
 type RatingSource struct {
 	Sheet   *Sheet
 	Stances map[string]string
-	Defs    *Defs
+	Defs    *definitions.Defs
 	Err     error
 }
 
@@ -169,7 +170,7 @@ func rate(source RatingSource, item *Item) Rating {
 // plugs, one time for each name. The active plug of the socket comes
 // first when it is one of them. The column is a miss when the socket
 // holds no such plug.
-func judgeColumn(defs *Defs, item *Item, column []uint32, stances map[string]string) ColumnVerdict {
+func judgeColumn(defs *definitions.Defs, item *Item, column []uint32, stances map[string]string) ColumnVerdict {
 	socket, ok := columnSocket(defs, item, column)
 	if !ok {
 		return ColumnVerdict{}
@@ -178,7 +179,7 @@ func judgeColumn(defs *Defs, item *Item, column []uint32, stances map[string]str
 	var hits []Hit
 
 	for _, plug := range socketPlugs(socket) {
-		stance := stances[basePerkName(plug.Name)]
+		stance := stances[definitions.BasePerkName(plug.Name)]
 
 		wanted := stance == stanceUp || (stance != stanceDown && slices.Contains(column, plug.Hash))
 		if !wanted {
@@ -216,7 +217,7 @@ func judgeColumn(defs *Defs, item *Item, column []uint32, stances map[string]str
 // definition. The column has no socket when [Item.Perks] leaves out the
 // socket that the plug sets name, such as a socket that the profile
 // hides. The function then tries no later socket of the definition.
-func columnSocket(defs *Defs, item *Item, column []uint32) (Perk, bool) {
+func columnSocket(defs *definitions.Defs, item *Item, column []uint32) (Perk, bool) {
 	for _, perk := range item.Perks {
 		picked := slices.ContainsFunc(socketPlugs(perk), func(plug Plug) bool {
 			return slices.Contains(column, plug.Hash)
@@ -226,7 +227,7 @@ func columnSocket(defs *Defs, item *Item, column []uint32) (Perk, bool) {
 		}
 	}
 
-	index, ok := defs.plugSetSocket(item.Hash, column)
+	index, ok := defs.PlugSetSocket(item.Hash, column)
 	if !ok {
 		return Perk{}, false
 	}
@@ -252,12 +253,12 @@ func columnSocket(defs *Defs, item *Item, column []uint32) (Perk, bool) {
 //
 // The sheet fills a column from every version of the weapon. A pick can
 // therefore be a perk that the rated version cannot roll.
-func picksOf(defs *Defs, column []uint32, stances map[string]string) []string {
+func picksOf(defs *definitions.Defs, column []uint32, stances map[string]string) []string {
 	var picks []string
 
 	for _, hash := range column {
 		def, ok := defs.Items[hash]
-		if !ok || slices.Contains(picks, def.Name) || stances[basePerkName(def.Name)] == stanceDown {
+		if !ok || slices.Contains(picks, def.Name) || stances[definitions.BasePerkName(def.Name)] == stanceDown {
 			continue
 		}
 

@@ -18,6 +18,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -275,7 +276,7 @@ func runServe(ctx context.Context, args []string) error {
 		service: service,
 		bungie:  bungie.New(bungie.WithUserAgent(userAgent)),
 		auth:    o.auth(service),
-		defs:    NewDefsLoader(service, o.cacheDir, WithDefsLogger(logger)),
+		defs:    definitions.NewLoader(service, o.cacheDir, definitions.WithLogger(logger)),
 		sheets:  NewSheetStore(service),
 		log:     logger,
 		now:     time.Now,
@@ -429,7 +430,7 @@ func newServer(h *handler) *mcp.Server {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: toolListVendors,
-		Description: "List the vendors of one character, such as Banshee-44 or Xûr, and what each one sells " +
+		Description: "List the vendors of one character, such as Banshee-44 or X\u00fbr, and what each one sells " +
 			"at the moment of the call. Bungie lists the vendors whose stock rotates and leaves out preview vendors " +
 			"and kiosks. The stock and whether the character can buy each item differ per character. " +
 			"Without character, it reads the most recently played character. " +

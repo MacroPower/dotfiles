@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -31,8 +32,8 @@ func rolledPerks() []Perk {
 // Plugs 904 and 905 are the base trait and the enhanced trait of one
 // name. The enhanced Rampage, plug 909, has a name of its own. The
 // definitions do not hold plug 999.
-func rollDefs() *Defs {
-	return &Defs{Items: map[uint32]ItemDef{
+func rollDefs() *definitions.Defs {
+	return &definitions.Defs{Items: map[uint32]definitions.ItemDef{
 		900: {Name: "Explosive Payload"},
 		901: {Name: "Firefly"},
 		903: {Name: "Rampage"},
@@ -57,7 +58,7 @@ func listed(tier string, columns ...[]uint32) RatingSource {
 		sheet.Columns[100] = columns
 	}
 
-	return RatingSource{Sheet: sheet, Defs: &Defs{}}
+	return RatingSource{Sheet: sheet, Defs: &definitions.Defs{}}
 }
 
 // hits returns the verdict of a column that hit with the named perks,
@@ -95,7 +96,7 @@ func TestRate(t *testing.T) {
 					Rows:    map[uint32]SheetRow{101: {Tier: "B"}},
 					Columns: map[uint32][][]uint32{101: {{900}}},
 				},
-				Defs: &Defs{},
+				Defs: &definitions.Defs{},
 			},
 			perks: rolledPerks(),
 		},
@@ -643,7 +644,7 @@ func TestRatePlugSets(t *testing.T) {
 
 			source := listed("S", tc.columns...)
 			source.Stances = tc.stances
-			source.Defs = &Defs{Sockets: map[uint32][]uint32{100: tc.sockets}, PlugSets: tc.plugSets}
+			source.Defs = &definitions.Defs{Sockets: map[uint32][]uint32{100: tc.sockets}, PlugSets: tc.plugSets}
 
 			got := rate(source, &Item{Hash: 100, Perks: tc.perks})
 
@@ -677,7 +678,7 @@ func TestRatePlugSetsOfOneMode(t *testing.T) {
 	for _, mode := range perkModes {
 		source := listed("S", []uint32{900}, []uint32{904})
 		source.Stances = stances[mode]
-		source.Defs = &Defs{
+		source.Defs = &definitions.Defs{
 			Sockets:  map[uint32][]uint32{100: {0, 40}},
 			PlugSets: map[uint32][]uint32{40: {904}},
 		}

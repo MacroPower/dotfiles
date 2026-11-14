@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/httpbody"
 )
 
@@ -221,7 +222,7 @@ func tierRank(tier string) int {
 //
 // The store has no lock, so the caller serializes the calls to Load.
 type SheetStore struct {
-	source ArtifactSource
+	source definitions.ArtifactSource
 	loaded map[string]loadedSheet
 }
 
@@ -234,7 +235,7 @@ type loadedSheet struct {
 
 // NewSheetStore returns a [*SheetStore] that reads the roll sheets from
 // source.
-func NewSheetStore(source ArtifactSource) *SheetStore {
+func NewSheetStore(source definitions.ArtifactSource) *SheetStore {
 	return &SheetStore{source: source, loaded: map[string]loadedSheet{}}
 }
 

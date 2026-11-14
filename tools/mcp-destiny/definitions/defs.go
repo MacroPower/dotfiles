@@ -1,4 +1,4 @@
-package main
+package definitions
 
 import (
 	"cmp"
@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	// defsRecheck is how long [*DefsLoader.Get] serves loaded definitions
+	// defsRecheck is how long [*Loader.Get] serves loaded definitions
 	// before it asks the service for the manifest version again.
 	defsRecheck = time.Hour
 
@@ -186,7 +186,7 @@ func (d *Defs) TraitNames() map[string]string {
 			continue
 		}
 
-		name := basePerkName(item.Name)
+		name := BasePerkName(item.Name)
 		if name != "" {
 			names[strings.ToLower(name)] = name
 		}
@@ -195,13 +195,13 @@ func (d *Defs) TraitNames() map[string]string {
 	return names
 }
 
-// plugSetSocket returns the lowest index of a socket of a weapon whose
+// PlugSetSocket returns the lowest index of a socket of a weapon whose
 // plug set lists a pick of a perk column. Hash is the item hash of the
 // weapon, and column lists the plug hashes of the picks. It reports
 // false when no plug set of the weapon lists a pick. A socket without a
 // plug set never matches, also when PlugSets has an entry for the hash
 // zero.
-func (d *Defs) plugSetSocket(hash uint32, column []uint32) (int, bool) {
+func (d *Defs) PlugSetSocket(hash uint32, column []uint32) (int, bool) {
 	for i, set := range d.Sockets[hash] {
 		if set == 0 {
 			continue
@@ -216,9 +216,9 @@ func (d *Defs) plugSetSocket(hash uint32, column []uint32) (int, bool) {
 	return 0, false
 }
 
-// basePerkName returns the name that an enhanced perk shares with its base
+// BasePerkName returns the name that an enhanced perk shares with its base
 // perk. Bungie names some enhanced perks "X Enhanced".
-func basePerkName(name string) string {
+func BasePerkName(name string) string {
 	return strings.TrimSuffix(strings.TrimSpace(name), " Enhanced")
 }
 
@@ -229,28 +229,44 @@ type ArtifactSource interface {
 	Artifact(ctx context.Context, file string) (io.ReadCloser, error)
 }
 
-// DefsOption configures a [*DefsLoader]. See [WithDefsClock] and
-// [WithDefsLogger].
-type DefsOption func(*DefsLoader)
+// Option configures a [*Loader] via [NewLoader].
+//
+// Functions of this type:
+//   - [WithClock]
+//   - [WithLogger]
+//   - [WithLoaded]
+type Option func(*Loader)
 
-// WithDefsClock overrides the clock that schedules manifest version checks.
-// It is a [DefsOption].
-func WithDefsClock(now func() time.Time) DefsOption {
-	return func(l *DefsLoader) { l.now = now }
+// WithClock overrides the clock that schedules manifest version checks.
+// It is an [Option].
+func WithClock(now func() time.Time) Option {
+	return func(l *Loader) { l.now = now }
 }
 
-// WithDefsLogger sets the logger for cache failures. It is a [DefsOption].
-func WithDefsLogger(log *slog.Logger) DefsOption {
-	return func(l *DefsLoader) { l.log = log }
+// WithLogger sets the logger for cache failures. It is an [Option].
+func WithLogger(log *slog.Logger) Option {
+	return func(l *Loader) { l.log = log }
 }
 
-// DefsLoader builds [Defs] from the definition artifacts of the service.
+// WithLoaded seeds the loader with the definitions d and with checked as
+// the time of their last check against the service. [*Loader.Get] serves d
+// until the recheck interval passes after checked. It then checks the
+// manifest version, as it does for the definitions that it loads itself.
+// It is an [Option].
+func WithLoaded(d *Defs, checked time.Time) Option {
+	return func(l *Loader) {
+		l.defs = d
+		l.checked = checked
+	}
+}
+
+// Loader builds [Defs] from the definition artifacts of the service.
 //
 // The item artifact is tens of megabytes of JSON, so the loader keeps the
 // decoded subset in a cache file named after the manifest version. A
 // process reads that file on its first call and downloads the artifacts
 // only after the service publishes another manifest version.
-type DefsLoader struct {
+type Loader struct {
 	source   ArtifactSource
 	now      func() time.Time
 	log      *slog.Logger
@@ -260,11 +276,10 @@ type DefsLoader struct {
 	mu       sync.Mutex
 }
 
-// NewDefsLoader returns a [*DefsLoader] that reads artifacts from source
-// and keeps its cache file in cacheDir. An empty cacheDir turns the cache
-// file off.
-func NewDefsLoader(source ArtifactSource, cacheDir string, opts ...DefsOption) *DefsLoader {
-	l := &DefsLoader{
+// NewLoader returns a [*Loader] that reads artifacts from source and keeps
+// its cache file in cacheDir. An empty cacheDir turns the cache file off.
+func NewLoader(source ArtifactSource, cacheDir string, opts ...Option) *Loader {
+	l := &Loader{
 		source:   source,
 		cacheDir: cacheDir,
 		now:      time.Now,
@@ -279,7 +294,7 @@ func NewDefsLoader(source ArtifactSource, cacheDir string, opts ...DefsOption) *
 
 // Get returns the definitions for the manifest version that the service
 // publishes.
-func (l *DefsLoader) Get(ctx context.Context) (*Defs, error) {
+func (l *Loader) Get(ctx context.Context) (*Defs, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -316,7 +331,7 @@ func (l *DefsLoader) Get(ctx context.Context) (*Defs, error) {
 	return defs, nil
 }
 
-func (l *DefsLoader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, error) {
+func (l *Loader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs, error) {
 	defs := &Defs{
 		Version:         index.ManifestVersion,
 		Items:           map[uint32]ItemDef{},
@@ -472,7 +487,7 @@ func (l *DefsLoader) build(ctx context.Context, index dvm.ArtifactIndex) (*Defs,
 	return defs, nil
 }
 
-func (l *DefsLoader) read(ctx context.Context, file string, decode func(io.Reader) error) error {
+func (l *Loader) read(ctx context.Context, file string, decode func(io.Reader) error) error {
 	body, err := l.source.Artifact(ctx, file)
 	if err != nil {
 		return fmt.Errorf("fetching artifact %s: %w", file, err)
@@ -611,7 +626,7 @@ func (raw rawPlugSet) plugs() []uint32 {
 // into several files, and the index lists each one. The caller picks the
 // record type Row, such as [rawItem] or [hashedRow]. It reads nothing when
 // files is empty.
-func readRecords[Row any](ctx context.Context, l *DefsLoader, files []string, add func(row Row)) error {
+func readRecords[Row any](ctx context.Context, l *Loader, files []string, add func(row Row)) error {
 	for _, file := range files {
 		err := l.read(ctx, file, func(r io.Reader) error {
 			return decodeRecords(r, add)
@@ -803,7 +818,7 @@ func decodeTable[Row any](r io.Reader, add func(hash uint32, row Row)) error {
 	return nil
 }
 
-func (l *DefsLoader) cachePath(version string) string {
+func (l *Loader) cachePath(version string) string {
 	safe := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-':
@@ -816,7 +831,7 @@ func (l *DefsLoader) cachePath(version string) string {
 	return filepath.Join(l.cacheDir, defsCachePrefix+safe+".json")
 }
 
-func (l *DefsLoader) readCache(ctx context.Context, version string) (*Defs, bool) {
+func (l *Loader) readCache(ctx context.Context, version string) (*Defs, bool) {
 	if l.cacheDir == "" {
 		return nil, false
 	}
@@ -847,7 +862,7 @@ func (l *DefsLoader) readCache(ctx context.Context, version string) (*Defs, bool
 // other manifest versions and those of other layouts. A cache failure
 // costs only the next process a download, so writeCache logs it and
 // continues.
-func (l *DefsLoader) writeCache(ctx context.Context, defs *Defs) {
+func (l *Loader) writeCache(ctx context.Context, defs *Defs) {
 	if l.cacheDir == "" {
 		return
 	}
@@ -886,7 +901,7 @@ func (l *DefsLoader) writeCache(ctx context.Context, defs *Defs) {
 	}
 }
 
-func (l *DefsLoader) saveCache(path string, defs *Defs) error {
+func (l *Loader) saveCache(path string, defs *Defs) error {
 	raw, err := json.Marshal(defs)
 	if err != nil {
 		return fmt.Errorf("encoding definitions: %w", err)

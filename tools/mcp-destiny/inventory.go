@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -312,7 +313,7 @@ type Snapshot struct {
 }
 
 // NewSnapshot resolves a Bungie profile against the definitions.
-func NewSnapshot(profile *bungie.Profile, defs *Defs, fetched time.Time) *Snapshot {
+func NewSnapshot(profile *bungie.Profile, defs *definitions.Defs, fetched time.Time) *Snapshot {
 	s := &Snapshot{
 		Fetched:        fetched,
 		byID:           map[string]*Item{},
@@ -377,7 +378,7 @@ func NewSnapshot(profile *bungie.Profile, defs *Defs, fetched time.Time) *Snapsh
 // first and the Postmaster last, and both take the names that the location
 // labels use. Between them come the named buckets with a capacity whose
 // category holds equipment or items, the equipment buckets first.
-func slotBuckets(defs *Defs) []Bucket {
+func slotBuckets(defs *definitions.Defs) []Bucket {
 	var managed []Bucket
 
 	for hash, def := range defs.Buckets {
@@ -451,10 +452,16 @@ func (s *Snapshot) add(item *Item) {
 	}
 }
 
-func newItem(profile *bungie.Profile, defs *Defs, pi bungie.ProfileItem, owner string, equipped bool) *Item {
+func newItem(
+	profile *bungie.Profile,
+	defs *definitions.Defs,
+	pi bungie.ProfileItem,
+	owner string,
+	equipped bool,
+) *Item {
 	def, ok := defs.Items[pi.Hash]
 	if !ok {
-		def = ItemDef{Name: fmt.Sprintf("Unknown item %d", pi.Hash), ClassType: bungie.ClassAny}
+		def = definitions.ItemDef{Name: fmt.Sprintf("Unknown item %d", pi.Hash), ClassType: bungie.ClassAny}
 	}
 
 	postmaster := pi.BucketHash == bungie.BucketPostmaster || pi.Location == bungie.ItemLocationPostmaster
@@ -542,7 +549,7 @@ func newItem(profile *bungie.Profile, defs *Defs, pi bungie.ProfileItem, owner s
 // when the definition shows it and its bucket is neither Subclass nor
 // Artifacts. It then counts the value when the stat is one of lightStats.
 // Every other primary stat counts as 0.
-func lightPower(def ItemDef, stat bungie.ProfileStat) int {
+func lightPower(def definitions.ItemDef, stat bungie.ProfileStat) int {
 	shown := def.Bucket != bungie.BucketSubclass && def.Bucket != bungie.BucketArtifacts &&
 		!def.DisablePrimaryStatDisplay
 	if !shown || !slices.Contains(lightStats, stat.Hash) {
@@ -604,7 +611,7 @@ func itemCategories(categories []uint32) []int64 {
 	return out
 }
 
-func kindOf(def ItemDef) string {
+func kindOf(def definitions.ItemDef) string {
 	switch def.ItemType {
 	case bungie.ItemTypeWeapon:
 		return kindWeapon
@@ -615,7 +622,7 @@ func kindOf(def ItemDef) string {
 	}
 }
 
-func perksOf(profile *bungie.Profile, defs *Defs, instanceID string) []Perk {
+func perksOf(profile *bungie.Profile, defs *definitions.Defs, instanceID string) []Perk {
 	var perks []Perk
 
 	options := profile.ItemComponents.ReusablePlugs.Data[instanceID].Plugs
@@ -642,7 +649,7 @@ func perksOf(profile *bungie.Profile, defs *Defs, instanceID string) []Perk {
 	return perks
 }
 
-func plugOf(def ItemDef, hash uint32) Plug {
+func plugOf(def definitions.ItemDef, hash uint32) Plug {
 	return Plug{Name: def.Name, Type: def.TypeName, Description: def.Description, Hash: hash}
 }
 
@@ -677,7 +684,7 @@ func isEnhanced(plug Plug) bool {
 
 // isPerk reports whether a plug changes how an item plays. It rejects
 // cosmetic plugs and the placeholders of empty sockets.
-func isPerk(plug ItemDef) bool {
+func isPerk(plug definitions.ItemDef) bool {
 	if plug.Name == "" || plug.TypeName == "" || strings.HasPrefix(plug.Name, "Empty ") {
 		return false
 	}
@@ -690,7 +697,7 @@ func isPerk(plug ItemDef) bool {
 	return !strings.Contains(plug.TypeName, "Ornament")
 }
 
-func statsOf(profile *bungie.Profile, defs *Defs, instanceID string) []Stat {
+func statsOf(profile *bungie.Profile, defs *definitions.Defs, instanceID string) []Stat {
 	var stats []Stat
 
 	for _, stat := range profile.ItemComponents.Stats.Data[instanceID].Stats {

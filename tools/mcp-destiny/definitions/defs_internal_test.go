@@ -1,11 +1,8 @@
-package main
+package definitions
 
 import (
-	"context"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -15,21 +12,16 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 )
 
-// fakeArtifacts is an [ArtifactSource] that serves artifacts from memory
-// and counts the fetches. Index lists the files of each artifact.
-type fakeArtifacts struct {
-	files   map[string]string
-	index   map[string][]string
-	version string
-	fetched []string
-}
-
-func newFakeArtifacts() *fakeArtifacts {
-	return &fakeArtifacts{
-		version: "245114.26/1",
-		index: map[string][]string{
+// newFakeArtifacts returns a [*dvmtest.Artifacts] that serves the
+// definition artifacts of the loader tests and counts the fetches. Index
+// lists the files of each artifact.
+func newFakeArtifacts() *dvmtest.Artifacts {
+	return &dvmtest.Artifacts{
+		Version: "245114.26/1",
+		Index: map[string][]string{
 			artifactCore:            {"core-0.json", "core-1.json"},
 			artifactDetail:          {"detail-0.json", "detail-1.json"},
 			artifactPlugSets:        {"plugsets-0.json", "plugsets-1.json"},
@@ -46,7 +38,7 @@ func newFakeArtifacts() *fakeArtifacts {
 			artifactVendorItems:     {"vendor-items-0.json", "vendor-items-1.json"},
 			artifactItemSets:        {"item-sets.json"},
 		},
-		files: map[string]string{
+		Files: map[string]string{
 			"core-0.json": `[
 				{"hash": 100, "displayProperties": {"name": "Fatebringer", "description": "Fortune favors.", "icon": "/a.png"},
 				 "itemTypeDisplayName": "Hand Cannon", "itemType": 3, "classType": 3, "defaultDamageType": 1,
@@ -200,28 +192,13 @@ func fixtureSockets() map[uint32][]uint32 {
 	return map[uint32][]uint32{100: {40, 41, 0}, 402: {45}}
 }
 
-func (f *fakeArtifacts) Config(context.Context) (dvm.Config, error) {
-	return dvm.Config{Artifacts: dvm.ArtifactIndex{ManifestVersion: f.version, Files: f.index}}, nil
-}
-
-func (f *fakeArtifacts) Artifact(_ context.Context, file string) (io.ReadCloser, error) {
-	f.fetched = append(f.fetched, file)
-
-	body, ok := f.files[file]
-	if !ok {
-		return nil, dvm.ErrService
-	}
-
-	return io.NopCloser(strings.NewReader(body)), nil
-}
-
-func TestDefsLoader(t *testing.T) {
+func TestLoader(t *testing.T) {
 	t.Parallel()
 
 	source := newFakeArtifacts()
 	dir := t.TempDir()
 	now := bungietest.Now
-	clock := WithDefsClock(func() time.Time { return now })
+	clock := WithClock(func() time.Time { return now })
 
 	// A cache file of an older layout stays behind after an upgrade. The
 	// layout without the item sets has the prefix defs-v9-. Its file holds
@@ -230,7 +207,7 @@ func TestDefsLoader(t *testing.T) {
 	stale := filepath.Join(dir, "defs-v9-245114.26_1.json")
 	require.NoError(t, os.WriteFile(stale, []byte(`{"version": "245114.26/1"}`), 0o644))
 
-	loader := NewDefsLoader(source, dir, clock)
+	loader := NewLoader(source, dir, clock)
 
 	got, err := loader.Get(t.Context())
 	require.NoError(t, err)
@@ -374,7 +351,7 @@ func TestDefsLoader(t *testing.T) {
 		Classes:        map[int]string{1: "Hunter"},
 		ItemSetsListed: true,
 	}, got)
-	assert.Len(t, source.fetched, 20)
+	assert.Len(t, source.Fetched, 20)
 
 	// Writing the cache removes the file of the older layout.
 	files, err := filepath.Glob(filepath.Join(dir, "*"))
@@ -382,34 +359,34 @@ func TestDefsLoader(t *testing.T) {
 	assert.Equal(t, []string{filepath.Join(dir, defsCachePrefix+"245114.26_1.json")}, files)
 
 	// A second call inside the recheck window asks the service nothing.
-	source.fetched = nil
+	source.Fetched = nil
 
 	again, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Same(t, got, again)
-	assert.Empty(t, source.fetched)
+	assert.Empty(t, source.Fetched)
 
 	// Another process reads the cache file instead of the artifacts.
-	cached, err := NewDefsLoader(source, dir, clock).Get(t.Context())
+	cached, err := NewLoader(source, dir, clock).Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, got, cached)
-	assert.Empty(t, source.fetched)
+	assert.Empty(t, source.Fetched)
 
 	// A manifest version change rebuilds and replaces the cache file.
-	source.version = "245200.1"
+	source.Version = "245200.1"
 	now = now.Add(2 * defsRecheck)
 
 	rebuilt, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "245200.1", rebuilt.Version)
-	assert.Len(t, source.fetched, 20)
+	assert.Len(t, source.Fetched, 20)
 
 	files, err = filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
 	assert.Equal(t, []string{filepath.Join(dir, defsCachePrefix+"245200.1.json")}, files)
 }
 
-func TestDefsLoaderWithoutOptionalArtifacts(t *testing.T) {
+func TestLoaderWithoutOptionalArtifacts(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
@@ -497,101 +474,101 @@ func TestDefsLoaderWithoutOptionalArtifacts(t *testing.T) {
 			t.Parallel()
 
 			source := newFakeArtifacts()
-			delete(source.index, tc.artifact)
+			delete(source.Index, tc.artifact)
 
-			got, err := NewDefsLoader(source, "").Get(t.Context())
+			got, err := NewLoader(source, "").Get(t.Context())
 			require.NoError(t, err)
 			assert.Empty(t, tc.field(got))
 			assert.Len(t, got.Items, 8)
 
 			for _, file := range tc.files {
-				assert.NotContains(t, source.fetched, file)
+				assert.NotContains(t, source.Fetched, file)
 			}
 
 			if tc.check != nil {
-				tc.check(t, got, source.fetched)
+				tc.check(t, got, source.Fetched)
 			}
 		})
 	}
 }
 
-func TestDefsLoaderErrors(t *testing.T) {
+func TestLoaderErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		break_ func(*fakeArtifacts)
+		break_ func(*dvmtest.Artifacts)
 		err    error
 	}{
 		"artifact is not an array": {
-			break_: func(f *fakeArtifacts) { f.files["core-0.json"] = `{"hash": 1}` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["core-0.json"] = `{"hash": 1}` },
 			err:    ErrDefs,
 		},
 		"table key is not a hash": {
-			break_: func(f *fakeArtifacts) { f.files["stats.json"] = `{"range": {}}` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["stats.json"] = `{"range": {}}` },
 			err:    ErrDefs,
 		},
 		"activity table is not an object": {
-			break_: func(f *fakeArtifacts) { f.files["activities.json"] = `[]` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["activities.json"] = `[]` },
 			err:    ErrDefs,
 		},
 		"activity type table is not an object": {
-			break_: func(f *fakeArtifacts) { f.files["activity-types.json"] = `[]` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["activity-types.json"] = `[]` },
 			err:    ErrDefs,
 		},
 		"destination table is not an object": {
-			break_: func(f *fakeArtifacts) { f.files["destinations.json"] = `[]` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["destinations.json"] = `[]` },
 			err:    ErrDefs,
 		},
 		"place table is not an object": {
-			break_: func(f *fakeArtifacts) { f.files["places.json"] = `[]` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["places.json"] = `[]` },
 			err:    ErrDefs,
 		},
 		"second activity reward file is not an array": {
-			break_: func(f *fakeArtifacts) { f.files["activity-rewards-1.json"] = `{"hash": 601}` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["activity-rewards-1.json"] = `{"hash": 601}` },
 			err:    ErrDefs,
 		},
 		"activity reward fetch fails": {
-			break_: func(f *fakeArtifacts) { delete(f.files, "activity-rewards-1.json") },
+			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "activity-rewards-1.json") },
 			err:    dvm.ErrService,
 		},
 		"item set table is not an object": {
-			break_: func(f *fakeArtifacts) { f.files["item-sets.json"] = `[]` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["item-sets.json"] = `[]` },
 			err:    ErrDefs,
 		},
 		"vendor table is not an object": {
-			break_: func(f *fakeArtifacts) { f.files["vendors.json"] = `[]` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["vendors.json"] = `[]` },
 			err:    ErrDefs,
 		},
 		"second vendor item file is not an array": {
-			break_: func(f *fakeArtifacts) { f.files["vendor-items-1.json"] = `{"hash": 501}` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["vendor-items-1.json"] = `{"hash": 501}` },
 			err:    ErrDefs,
 		},
 		"vendor item fetch fails": {
-			break_: func(f *fakeArtifacts) { delete(f.files, "vendor-items-1.json") },
+			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "vendor-items-1.json") },
 			err:    dvm.ErrService,
 		},
 		"second detail file is not an array": {
-			break_: func(f *fakeArtifacts) { f.files["detail-1.json"] = `{"hash": 402}` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["detail-1.json"] = `{"hash": 402}` },
 			err:    ErrDefs,
 		},
 		"detail fetch fails": {
-			break_: func(f *fakeArtifacts) { delete(f.files, "detail-1.json") },
+			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "detail-1.json") },
 			err:    dvm.ErrService,
 		},
 		"second plug set file is not an array": {
-			break_: func(f *fakeArtifacts) { f.files["plugsets-1.json"] = `{"hash": 45}` },
+			break_: func(f *dvmtest.Artifacts) { f.Files["plugsets-1.json"] = `{"hash": 45}` },
 			err:    ErrDefs,
 		},
 		"plug set fetch fails": {
-			break_: func(f *fakeArtifacts) { delete(f.files, "plugsets-1.json") },
+			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "plugsets-1.json") },
 			err:    dvm.ErrService,
 		},
 		"table artifact is missing from the index": {
-			break_: func(f *fakeArtifacts) { delete(f.index, artifactStats) },
+			break_: func(f *dvmtest.Artifacts) { delete(f.Index, artifactStats) },
 			err:    ErrDefs,
 		},
 		"artifact fetch fails": {
-			break_: func(f *fakeArtifacts) { delete(f.files, "core-1.json") },
+			break_: func(f *dvmtest.Artifacts) { delete(f.Files, "core-1.json") },
 			err:    dvm.ErrService,
 		},
 	}
@@ -603,24 +580,77 @@ func TestDefsLoaderErrors(t *testing.T) {
 			source := newFakeArtifacts()
 			tc.break_(source)
 
-			_, err := NewDefsLoader(source, "").Get(t.Context())
+			_, err := NewLoader(source, "").Get(t.Context())
 			require.ErrorIs(t, err, tc.err)
 		})
 	}
 }
 
-func TestDefsLoaderIgnoresCorruptCache(t *testing.T) {
+func TestLoaderIgnoresCorruptCache(t *testing.T) {
 	t.Parallel()
 
 	source := newFakeArtifacts()
 	dir := t.TempDir()
-	loader := NewDefsLoader(source, dir)
+	loader := NewLoader(source, dir)
 
-	require.NoError(t, os.WriteFile(loader.cachePath(source.version), []byte("{"), 0o644))
+	require.NoError(t, os.WriteFile(loader.cachePath(source.Version), []byte("{"), 0o644))
 
 	got, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Len(t, got.Items, 8)
+}
+
+func TestWithLoaded(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		// version is the manifest version of the seeded definitions. The
+		// service publishes 245114.26/1.
+		version string
+		// elapsed is the time between the seeded check and the call.
+		elapsed time.Duration
+		// wantFetched is the number of files that the call fetches, and
+		// wantSeed reports whether the call returns the seed.
+		wantFetched int
+		wantSeed    bool
+	}{
+		"inside the recheck window the loader serves the seed without a check": {
+			version:  "245000.1",
+			elapsed:  defsRecheck - time.Minute,
+			wantSeed: true,
+		},
+		"after the recheck window the loader keeps a seed of the current version": {
+			version:  "245114.26/1",
+			elapsed:  defsRecheck,
+			wantSeed: true,
+		},
+		"after the recheck window the loader replaces a seed of another version": {
+			version:     "245000.1",
+			elapsed:     defsRecheck,
+			wantFetched: 20,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			source := newFakeArtifacts()
+			seed := &Defs{Version: tc.version}
+			clock := WithClock(func() time.Time { return bungietest.Now.Add(tc.elapsed) })
+
+			got, err := NewLoader(source, "", clock, WithLoaded(seed, bungietest.Now)).Get(t.Context())
+			require.NoError(t, err)
+			assert.Len(t, source.Fetched, tc.wantFetched)
+
+			if tc.wantSeed {
+				assert.Same(t, seed, got)
+			} else {
+				assert.Equal(t, "245114.26/1", got.Version)
+				assert.Len(t, got.Items, 8)
+			}
+		})
+	}
 }
 
 func TestPlugSetSocket(t *testing.T) {
@@ -693,7 +723,7 @@ func TestPlugSetSocket(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got, ok := tc.defs.plugSetSocket(100, tc.column)
+			got, ok := tc.defs.PlugSetSocket(100, tc.column)
 
 			assert.Equal(t, tc.ok, ok)
 			assert.Equal(t, tc.want, got)

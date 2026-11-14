@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 )
 
 func TestReadVendors(t *testing.T) {
@@ -15,16 +16,16 @@ func TestReadVendors(t *testing.T) {
 
 	// Twelve vendors share a name. A walk over a map of twelve hashes
 	// almost never yields them in hash order.
-	shared := make(map[uint32]VendorDef, 12)
+	shared := make(map[uint32]definitions.VendorDef, 12)
 	order := make([]uint32, 0, 12)
 
 	for hash := uint32(1); hash <= 12; hash++ {
-		shared[hash] = VendorDef{Name: "Xûr"}
+		shared[hash] = definitions.VendorDef{Name: "X\u00fbr"}
 		order = append(order, hash)
 	}
 
 	tests := map[string]struct {
-		vendors map[uint32]VendorDef
+		vendors map[uint32]definitions.VendorDef
 		want    []uint32
 	}{
 		"vendors that share a name follow hash order": {
@@ -32,7 +33,7 @@ func TestReadVendors(t *testing.T) {
 			want:    order,
 		},
 		"name order before hash order": {
-			vendors: map[uint32]VendorDef{
+			vendors: map[uint32]definitions.VendorDef{
 				1: {Name: "Zavala"},
 				2: {Name: "Ada-1"},
 			},
@@ -51,7 +52,7 @@ func TestReadVendors(t *testing.T) {
 				resp.Vendors.Data[hash] = bungie.VendorComponent{Hash: hash, Enabled: true}
 			}
 
-			got := readVendors(resp, &Defs{Vendors: tc.vendors})
+			got := readVendors(resp, &definitions.Defs{Vendors: tc.vendors})
 
 			hashes := make([]uint32, 0, len(got))
 			for _, v := range got {
@@ -147,8 +148,8 @@ func TestSelectVendor(t *testing.T) {
 func TestVendorItemName(t *testing.T) {
 	t.Parallel()
 
-	defs := &Defs{
-		Items: map[uint32]ItemDef{
+	defs := &definitions.Defs{
+		Items: map[uint32]definitions.ItemDef{
 			1: {Name: "Glimmer"},
 			2: {Name: "Ammo Synthesis (core)"},
 		},

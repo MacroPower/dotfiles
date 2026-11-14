@@ -13,6 +13,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -128,7 +129,7 @@ func TestSlotBuckets(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		defs *Defs
+		defs *definitions.Defs
 		want []Bucket
 	}{
 		"equipment before items": {
@@ -144,7 +145,7 @@ func TestSlotBuckets(t *testing.T) {
 			},
 		},
 		"unnamed buckets and the Postmaster stay out of the middle": {
-			defs: &Defs{Buckets: map[uint32]BucketDef{
+			defs: &definitions.Defs{Buckets: map[uint32]definitions.BucketDef{
 				bungie.BucketVault: {
 					Name:     "General",
 					Capacity: 700,
@@ -173,7 +174,7 @@ func TestSlotBuckets(t *testing.T) {
 			},
 		},
 		"definitions without buckets": {
-			defs: &Defs{},
+			defs: &definitions.Defs{},
 			want: []Bucket{
 				{Name: "Vault", Hash: bungie.BucketVault, Account: true},
 				{Name: "Postmaster", Hash: bungie.BucketPostmaster},
@@ -971,7 +972,7 @@ func TestItemCategories(t *testing.T) {
 // instanceItem returns the item that [NewSnapshot] builds from defs for a
 // held item of the definition hash in the profile bucket bucket. Instance
 // is the JSON object of the instance component of the item.
-func instanceItem(t *testing.T, defs *Defs, hash, bucket uint32, instance string) *Item {
+func instanceItem(t *testing.T, defs *definitions.Defs, hash, bucket uint32, instance string) *Item {
 	t.Helper()
 
 	body := fmt.Sprintf(`{
@@ -1000,7 +1001,7 @@ func TestNewItemElement(t *testing.T) {
 	defs.DamageEnums = map[uint32]int{3373582085: bungie.DamageKinetic, 2303181850: bungie.DamageArc}
 	defs.DamageTypes[bungie.DamageArc] = "Arc"
 	defs.DamageTypes[bungie.DamageVoid] = "Void"
-	defs.Items[110] = ItemDef{
+	defs.Items[110] = definitions.ItemDef{
 		Name:       "Riskrunner",
 		TypeName:   "Submachine Gun",
 		Bucket:     bungie.BucketEnergy,
@@ -1054,19 +1055,19 @@ func TestNewItemLightPower(t *testing.T) {
 	t.Parallel()
 
 	defs := fixtureDefs()
-	defs.Items[120] = ItemDef{
+	defs.Items[120] = definitions.ItemDef{
 		Name:       "Iron Banner Artifact",
 		Bucket:     bungie.BucketArtifacts,
 		ClassType:  bungie.ClassAny,
 		Equippable: true,
 	}
-	defs.Items[121] = ItemDef{
+	defs.Items[121] = definitions.ItemDef{
 		Name:       "Voidwalker",
 		Bucket:     bungie.BucketSubclass,
 		ClassType:  bungie.ClassWarlock,
 		Equippable: true,
 	}
-	defs.Items[122] = ItemDef{
+	defs.Items[122] = definitions.ItemDef{
 		Name:                      "Lightkeeper Shell",
 		Bucket:                    bungie.BucketGhost,
 		ClassType:                 bungie.ClassAny,

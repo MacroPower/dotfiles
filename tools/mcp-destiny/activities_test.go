@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 )
 
 func TestReadActivities(t *testing.T) {
@@ -28,16 +29,16 @@ func TestReadActivities(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		defs    func(*Defs)
+		defs    func(*definitions.Defs)
 		entries []bungie.AvailableActivity
 		want    []ActivityRow
 	}{
 		"definitions without activities": {
-			defs:    func(d *Defs) { d.Activities = map[uint32]ActivityDef{} },
+			defs:    func(d *definitions.Defs) { d.Activities = map[uint32]definitions.ActivityDef{} },
 			entries: []bungie.AvailableActivity{entry(3022541210, reward(bungie.RewardBonusDrop, 1, 2))},
 		},
 		"definitions without types, locations, or rewards": {
-			defs: func(d *Defs) {
+			defs: func(d *definitions.Defs) {
 				d.ActivityTypes = map[uint32]string{}
 				d.Destinations = map[uint32]string{}
 				d.Places = map[uint32]string{}
@@ -93,10 +94,10 @@ func TestReadActivities(t *testing.T) {
 			}},
 		},
 		"equal rewards order by name and then by hash": {
-			defs: func(d *Defs) {
-				d.Activities[4010] = ActivityDef{Name: "Control"}
+			defs: func(d *definitions.Defs) {
+				d.Activities[4010] = definitions.ActivityDef{Name: "Control"}
 				// The lowest hash sorts last by name.
-				d.Activities[3999] = ActivityDef{Name: "Duality"}
+				d.Activities[3999] = definitions.ActivityDef{Name: "Duality"}
 			},
 			entries: []bungie.AvailableActivity{
 				entry(4444),

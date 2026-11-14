@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -401,7 +402,7 @@ type vaultItem struct {
 // vaultItems returns the new items of m that the rules of evals with the
 // vault flag take, in the order of [compareIDs], each with its rule and
 // the reason of [vaultBlock]. Defs holds the definition of each item.
-func vaultItems(evals []ruleEval, m newMatches, defs *Defs) []vaultItem {
+func vaultItems(evals []ruleEval, m newMatches, defs *definitions.Defs) []vaultItem {
 	var vaulted []vaultItem
 
 	for i, e := range evals {
@@ -442,7 +443,7 @@ func vaultItems(evals []ruleEval, m newMatches, defs *Defs) []vaultItem {
 // with the NotTransferrable bit, and [Snapshot.Move] refuses an item that
 // it does not mark. vaultBlock leaves such an item in place with a reason
 // of its own, which says that the web client tries the transfer.
-func vaultBlock(item *Item, def ItemDef) string {
+func vaultBlock(item *Item, def definitions.ItemDef) string {
 	switch {
 	case item.Equipped:
 		return "it is equipped"

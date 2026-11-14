@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 )
 
 func TestDecodeSheet(t *testing.T) {
@@ -452,11 +453,11 @@ func TestTierRank(t *testing.T) {
 	}
 }
 
-// fakeSheets is an [ArtifactSource] for the store tests. It wraps
-// [fakeArtifacts] and counts the Config calls. A set configErr makes
+// fakeSheets is the artifact source of the store tests. It wraps
+// [dvmtest.Artifacts] and counts the Config calls. A set configErr makes
 // Config return that error.
 type fakeSheets struct {
-	*fakeArtifacts
+	*dvmtest.Artifacts
 
 	configErr error
 	configs   int
@@ -466,12 +467,12 @@ type fakeSheets struct {
 // index lists none of them. Each file gives weapon 100 its own tier, so a
 // test can tell the loaded files apart.
 func newFakeSheets() *fakeSheets {
-	f := &fakeSheets{fakeArtifacts: newFakeArtifacts()}
+	f := &fakeSheets{Artifacts: dvmtest.NewArtifacts("245114.26/1")}
 
-	f.files["rolls.a.json"] = sheetBody("S")
-	f.files["rolls.b.json"] = sheetBody("B")
-	f.files["pvprolls.a.json"] = sheetBody("A")
-	f.files["pvprolls.b.json"] = sheetBody("C")
+	f.Files["rolls.a.json"] = sheetBody("S")
+	f.Files["rolls.b.json"] = sheetBody("B")
+	f.Files["pvprolls.a.json"] = sheetBody("A")
+	f.Files["pvprolls.b.json"] = sheetBody("C")
 
 	return f
 }
@@ -483,7 +484,7 @@ func (f *fakeSheets) Config(ctx context.Context) (dvm.Config, error) {
 		return dvm.Config{}, f.configErr
 	}
 
-	return f.fakeArtifacts.Config(ctx)
+	return f.Artifacts.Config(ctx) //nolint:wrapcheck // The store tests read the answer of the artifact fake unchanged.
 }
 
 // sheetBody returns a sheet file body that gives weapon 100 the tier.
@@ -526,8 +527,8 @@ func TestSheetStoreLoad(t *testing.T) {
 	// both lists one file for each sheet and loads the two files.
 	both := loadStep{
 		edit: func(f *fakeSheets) {
-			f.index["rolls"] = []string{"rolls.a.json"}
-			f.index["pvprolls"] = []string{"pvprolls.a.json"}
+			f.Index["rolls"] = []string{"rolls.a.json"}
+			f.Index["pvprolls"] = []string{"pvprolls.a.json"}
 		},
 		fetched: []string{"rolls.a.json", "pvprolls.a.json"},
 		want:    map[string]wantState{modePvE: {tier: "S"}, modePvP: {tier: "A"}},
@@ -538,15 +539,15 @@ func TestSheetStoreLoad(t *testing.T) {
 
 	// dropped removes the Aegis sheet from the index.
 	dropped := loadStep{
-		edit: func(f *fakeSheets) { delete(f.index, "rolls") },
+		edit: func(f *fakeSheets) { delete(f.Index, "rolls") },
 		want: map[string]wantState{modePvE: {err: noAegis}, modePvP: {tier: "A", kept: true}},
 	}
 
 	// missing lists an Aegis file that the source does not serve.
 	missing := loadStep{
 		edit: func(f *fakeSheets) {
-			f.index["rolls"] = []string{"rolls.x.json"}
-			f.index["pvprolls"] = []string{"pvprolls.a.json"}
+			f.Index["rolls"] = []string{"rolls.x.json"}
+			f.Index["pvprolls"] = []string{"pvprolls.a.json"}
 		},
 		fetched: []string{"rolls.x.json", "pvprolls.a.json"},
 		want: map[string]wantState{
@@ -558,7 +559,7 @@ func TestSheetStoreLoad(t *testing.T) {
 	// replaced moves the loaded Aegis sheet to a file that the source does
 	// not serve.
 	replaced := loadStep{
-		edit:    func(f *fakeSheets) { f.index["rolls"] = []string{"rolls.x.json"} },
+		edit:    func(f *fakeSheets) { f.Index["rolls"] = []string{"rolls.x.json"} },
 		fetched: []string{"rolls.x.json"},
 		want: map[string]wantState{
 			modePvE: {err: noDownload, sentinels: []error{dvm.ErrService}},
@@ -582,7 +583,7 @@ func TestSheetStoreLoad(t *testing.T) {
 		},
 		"another file name for one mode fetches only that file": {
 			steps: []loadStep{both, {
-				edit:    func(f *fakeSheets) { f.index["pvprolls"] = []string{"pvprolls.b.json"} },
+				edit:    func(f *fakeSheets) { f.Index["pvprolls"] = []string{"pvprolls.b.json"} },
 				fetched: []string{"pvprolls.b.json"},
 				want:    map[string]wantState{modePvE: {tier: "S", kept: true}, modePvP: {tier: "C"}},
 			}},
@@ -590,8 +591,8 @@ func TestSheetStoreLoad(t *testing.T) {
 		"index lists two files for one sheet": {
 			steps: []loadStep{{
 				edit: func(f *fakeSheets) {
-					f.index["rolls"] = []string{"rolls.a.json", "rolls.b.json"}
-					f.index["pvprolls"] = []string{"pvprolls.a.json"}
+					f.Index["rolls"] = []string{"rolls.a.json", "rolls.b.json"}
+					f.Index["pvprolls"] = []string{"pvprolls.a.json"}
 				},
 				fetched: []string{"rolls.a.json", "pvprolls.a.json"},
 				want:    map[string]wantState{modePvE: {tier: "S"}, modePvP: {tier: "A"}},
@@ -602,7 +603,7 @@ func TestSheetStoreLoad(t *testing.T) {
 		},
 		"index lists the kept file again after it dropped the sheet": {
 			steps: []loadStep{both, dropped, {
-				edit: func(f *fakeSheets) { f.index["rolls"] = []string{"rolls.a.json"} },
+				edit: func(f *fakeSheets) { f.Index["rolls"] = []string{"rolls.a.json"} },
 				want: kept,
 			}},
 		},
@@ -611,7 +612,7 @@ func TestSheetStoreLoad(t *testing.T) {
 		},
 		"load after that download fetches the file again": {
 			steps: []loadStep{missing, {
-				edit:    func(f *fakeSheets) { f.files["rolls.x.json"] = sheetBody("D") },
+				edit:    func(f *fakeSheets) { f.Files["rolls.x.json"] = sheetBody("D") },
 				fetched: []string{"rolls.x.json"},
 				want:    map[string]wantState{modePvE: {tier: "D"}, modePvP: {tier: "A", kept: true}},
 			}},
@@ -620,9 +621,9 @@ func TestSheetStoreLoad(t *testing.T) {
 			steps: []loadStep{
 				{
 					edit: func(f *fakeSheets) {
-						f.index["rolls"] = []string{"rolls.x.json"}
-						f.index["pvprolls"] = []string{"pvprolls.a.json"}
-						f.files["rolls.x.json"] = `{"rolls": [`
+						f.Index["rolls"] = []string{"rolls.x.json"}
+						f.Index["pvprolls"] = []string{"pvprolls.a.json"}
+						f.Files["rolls.x.json"] = `{"rolls": [`
 					},
 					fetched: []string{"rolls.x.json", "pvprolls.a.json"},
 					want: map[string]wantState{
@@ -644,7 +645,7 @@ func TestSheetStoreLoad(t *testing.T) {
 		},
 		"index names the older file again after that replacement": {
 			steps: []loadStep{both, replaced, {
-				edit: func(f *fakeSheets) { f.index["rolls"] = []string{"rolls.a.json"} },
+				edit: func(f *fakeSheets) { f.Index["rolls"] = []string{"rolls.a.json"} },
 				want: kept,
 			}},
 		},
@@ -681,10 +682,10 @@ func TestSheetStoreLoad(t *testing.T) {
 					step.edit(source)
 				}
 
-				source.fetched = nil
+				source.Fetched = nil
 
 				got := store.Load(t.Context())
-				assert.Equalf(t, step.fetched, source.fetched, "fetches of load %d", i)
+				assert.Equalf(t, step.fetched, source.Fetched, "fetches of load %d", i)
 				assert.Equalf(t, i+1, source.configs, "every load reads the index, load %d", i)
 				require.Lenf(t, got, len(perkModes), "load %d", i)
 

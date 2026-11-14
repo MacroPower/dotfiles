@@ -15,6 +15,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvmtest"
 )
@@ -25,9 +26,9 @@ const (
 	bucketMaterials uint32 = 3865314626
 )
 
-func fixtureDefs() *Defs {
-	weapon := func(name, typeName, tier string, bucket uint32, damage int) ItemDef {
-		return ItemDef{
+func fixtureDefs() *definitions.Defs {
+	weapon := func(name, typeName, tier string, bucket uint32, damage int) definitions.ItemDef {
+		return definitions.ItemDef{
 			Name:       name,
 			TypeName:   typeName,
 			Tier:       tier,
@@ -39,16 +40,21 @@ func fixtureDefs() *Defs {
 		}
 	}
 
-	plug := func(name, typeName string) ItemDef {
-		return ItemDef{Name: name, TypeName: typeName, ItemType: bungie.ItemTypePlug, ClassType: bungie.ClassAny}
+	plug := func(name, typeName string) definitions.ItemDef {
+		return definitions.ItemDef{
+			Name:      name,
+			TypeName:  typeName,
+			ItemType:  bungie.ItemTypePlug,
+			ClassType: bungie.ClassAny,
+		}
 	}
 
 	firefly := plug("Firefly", "Trait")
 	firefly.Description = "Precision final blows cause targets to explode.\n\n Explosions deal Solar damage. "
 
-	return &Defs{
+	return &definitions.Defs{
 		Version: "v1",
-		Items: map[uint32]ItemDef{
+		Items: map[uint32]definitions.ItemDef{
 			100: weapon("Fatebringer", "Hand Cannon", "Legendary", bungie.BucketKinetic, 1),
 			101: weapon("Gjallarhorn", "Rocket Launcher", "Exotic", bungie.BucketPower, 3),
 			102: weapon("Midnight Coup", "Hand Cannon", "Legendary", bungie.BucketKinetic, 1),
@@ -80,7 +86,7 @@ func fixtureDefs() *Defs {
 			bungietest.ItemGlimmer:    {Name: "Glimmer", TypeName: "Currency", ClassType: bungie.ClassAny},
 			bungietest.ItemBrightDust: {Name: "Bright Dust", TypeName: "Currency", ClassType: bungie.ClassAny},
 		},
-		Buckets: map[uint32]BucketDef{
+		Buckets: map[uint32]definitions.BucketDef{
 			bungie.BucketVault: {
 				Name:     "General",
 				Capacity: 700,
@@ -119,7 +125,7 @@ func fixtureDefs() *Defs {
 			},
 		},
 		Stats: map[uint32]string{1: "Range", 2: "Health", 3: "Grenade"},
-		Activities: map[uint32]ActivityDef{
+		Activities: map[uint32]definitions.ActivityDef{
 			3022541210: {Name: "Vault of Glass: Master", Mode: 4, Type: 100, Destination: 700, Place: 800},
 			2222:       {Name: "Vanguard Ops", Mode: 18, Type: 103},
 			3334:       {},
@@ -152,7 +158,7 @@ func fixtureDefs() *Defs {
 			605: "Raid Gear",
 			606: "Adept Weapon",
 		},
-		Vendors: map[uint32]VendorDef{
+		Vendors: map[uint32]definitions.VendorDef{
 			bungietest.VendorBanshee: {
 				Name:           "Banshee-44",
 				Subtitle:       "Gunsmith",
@@ -164,8 +170,8 @@ func fixtureDefs() *Defs {
 				Subtitle:   "Eververse Trading Company",
 				Categories: map[int]string{0: "Featured"},
 			},
-			bungietest.VendorXur:       {Name: "Xûr", Subtitle: "Agent of the Nine"},
-			bungietest.VendorXurOffers: {Name: "Xûr", Subtitle: "Strange Gear Offers"},
+			bungietest.VendorXur:       {Name: "X\u00fbr", Subtitle: "Agent of the Nine"},
+			bungietest.VendorXurOffers: {Name: "X\u00fbr", Subtitle: "Strange Gear Offers"},
 			bungietest.VendorNameless:  {},
 		},
 		VendorItems: map[uint32]string{
@@ -190,11 +196,15 @@ func fixtureSnapshot(t *testing.T) *Snapshot {
 }
 
 // fakes is a handler wired to a fake Agg's Destiny Vault Manager service
-// and a fake Bungie platform.
+// and a fake Bungie platform. The definition loader of the handler serves
+// defs, which holds [fixtureDefs], until a test calls [fakes.dropDefs]. A
+// test edits defs before its first call to change the definitions that the
+// handler reads.
 type fakes struct {
 	h       *handler
 	service *dvmtest.Server
 	bungie  *bungietest.Server
+	defs    *definitions.Defs
 }
 
 func newFakes(t *testing.T) *fakes {
@@ -203,6 +213,7 @@ func newFakes(t *testing.T) *fakes {
 	f := &fakes{
 		service: dvmtest.NewServer(t),
 		bungie:  bungietest.NewServer(t),
+		defs:    fixtureDefs(),
 	}
 
 	// The bodies name items of the Bungie fixture profile, which the fake
@@ -243,9 +254,12 @@ func newFakes(t *testing.T) *fakes {
 
 	client := dvm.New(dvm.WithURL(f.service.URL))
 
-	defs := NewDefsLoader(client, "", WithDefsClock(now))
-	defs.defs = fixtureDefs()
-	defs.checked = bungietest.Now
+	defs := definitions.NewLoader(
+		client,
+		"",
+		definitions.WithClock(now),
+		definitions.WithLoaded(f.defs, bungietest.Now),
+	)
 
 	f.h = &handler{
 		service: client,
@@ -259,6 +273,14 @@ func newFakes(t *testing.T) *fakes {
 	f.h.loadoutTables = bungie.NewLoadoutTableStore(bungieManifest{h: f.h})
 
 	return f
+}
+
+// dropDefs gives the handler a definition loader that holds no definitions.
+// The next read of the definitions therefore builds them from the artifacts
+// of the fake service. The read fails when the artifact index of the fake
+// service lacks the item artifact.
+func (f *fakes) dropDefs() {
+	f.h.defs = definitions.NewLoader(f.h.service, "", definitions.WithClock(f.h.now))
 }
 
 // text returns the text of a tool result and whether it is an error.

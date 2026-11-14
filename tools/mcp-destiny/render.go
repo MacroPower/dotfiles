@@ -10,6 +10,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -1142,7 +1143,7 @@ type historyRun struct {
 // renderActivityHistory renders runs in their order. Scope names the owner
 // of the runs, such as "Hunter" or "the account". Limit is the number of
 // runs that the caller asked for.
-func renderActivityHistory(defs *Defs, runs []historyRun, scope string, limit int) string {
+func renderActivityHistory(defs *definitions.Defs, runs []historyRun, scope string, limit int) string {
 	if len(runs) == 0 {
 		return "The activity history of " + scope + " holds no runs."
 	}
@@ -1189,7 +1190,7 @@ func renderActivityHistory(defs *Defs, runs []historyRun, scope string, limit in
 // first and the director activity hash second, in the order of the web
 // client. It skips a definition without a name, and it names a run that
 // neither hash names "Activity <reference id>".
-func activityName(defs *Defs, activity bungie.HistoryActivity) string {
+func activityName(defs *definitions.Defs, activity bungie.HistoryActivity) string {
 	for _, hash := range []uint32{activity.ReferenceID, activity.DirectorActivityHash} {
 		def := defs.Activities[hash]
 		if def.Name != "" {
@@ -1876,7 +1877,7 @@ func renderOwnedCounts(counts []ruleCount) string {
 
 // renderStats renders the summary of one period. Item names come from
 // defs, so a weapon that the user dismantled keeps its name.
-func renderStats(defs *Defs, period statPeriod, s statSummary) string {
+func renderStats(defs *definitions.Defs, period statPeriod, s statSummary) string {
 	var b strings.Builder
 
 	if period.length == 0 {
@@ -1942,7 +1943,7 @@ func renderStats(defs *Defs, period statPeriod, s statSummary) string {
 
 // itemName returns the name of an item hash, or a placeholder that names
 // the hash when the definitions lack it.
-func itemName(defs *Defs, hash uint32) string {
+func itemName(defs *definitions.Defs, hash uint32) string {
 	name := defs.Items[hash].Name
 	if name == "" {
 		return fmt.Sprintf("Unknown item %d", hash)

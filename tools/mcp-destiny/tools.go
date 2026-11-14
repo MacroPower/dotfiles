@@ -17,6 +17,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -339,7 +340,7 @@ type handler struct {
 	service       *dvm.Client
 	bungie        *bungie.Client
 	auth          *auth.Auth
-	defs          *DefsLoader
+	defs          *definitions.Loader
 	sheets        *SheetStore
 	loadoutTables *bungie.LoadoutTableStore
 	log           *slog.Logger
@@ -2340,7 +2341,7 @@ func keepRated(items []*Item, minimums []ratingMinimum, sources map[string]Ratin
 func perkChange(in PerkPreferenceInput, traits map[string]string) (dvm.PerkPreference, error) {
 	mode := strings.ToLower(in.Mode)
 	stance := strings.ToLower(in.Stance)
-	perk := basePerkName(in.Perk)
+	perk := definitions.BasePerkName(in.Perk)
 
 	if !slices.Contains(perkModes, mode) {
 		return dvm.PerkPreference{}, fmt.Errorf("%w: mode %q is not pve or pvp", ErrInvalidInput, in.Mode)
@@ -2676,8 +2677,8 @@ func (h *handler) perkPreferences(ctx context.Context) ([]dvm.PerkPreference, er
 // also when no mode has a sheet, and the handler keeps no copy of them.
 // A preference that the user changes in the web client therefore counts
 // in the next call. The read of the definitions also runs on every
-// call. The loader serves the loaded definitions from memory for
-// [defsRecheck], so most calls send no request for them.
+// call. The loader serves the loaded definitions from memory between two
+// checks of the manifest version, so most calls send no request for them.
 //
 // A mode without a sheet carries the reason of the sheet. When the
 // server cannot read the preferences, every other mode carries that

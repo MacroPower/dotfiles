@@ -8,6 +8,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 )
 
@@ -200,7 +201,7 @@ func TestVaultBlock(t *testing.T) {
 		onCharacter     = 1
 	)
 
-	weapon := ItemDef{
+	weapon := definitions.ItemDef{
 		Name:       "Thorn",
 		Bucket:     bungie.BucketKinetic,
 		ItemType:   bungie.ItemTypeWeapon,
@@ -209,7 +210,7 @@ func TestVaultBlock(t *testing.T) {
 	}
 
 	// in returns the definition of weapon in the definition bucket b.
-	in := func(b uint32) ItemDef {
+	in := func(b uint32) definitions.ItemDef {
 		def := weapon
 		def.Bucket = b
 
@@ -237,7 +238,7 @@ func TestVaultBlock(t *testing.T) {
 	nonTransferableEngram.NonTransferable = true
 
 	tests := map[string]struct {
-		def      ItemDef
+		def      definitions.ItemDef
 		item     bungie.ProfileItem
 		want     string
 		equipped bool
@@ -328,7 +329,7 @@ func TestVaultBlock(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			defs := &Defs{Items: map[uint32]ItemDef{hash: tc.def}}
+			defs := &definitions.Defs{Items: map[uint32]definitions.ItemDef{hash: tc.def}}
 			item := newItem(&bungie.Profile{}, defs, tc.item, bungietest.HunterID, tc.equipped)
 
 			assert.Equal(t, tc.want, vaultBlock(item, tc.def))
