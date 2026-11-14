@@ -43,7 +43,6 @@ const (
 	pathNotes    = "/api/notes"
 	pathPrefs    = "/api/perk-preferences"
 	pathAutotag  = "/api/autotag"
-	pathProfile  = "/Destiny2/3/Profile/4611/"
 	pathTransfer = "/Destiny2/Actions/Items/TransferItem/"
 	pathEquip    = "/Destiny2/Actions/Items/EquipItem/"
 	pathLock     = "/Destiny2/Actions/Items/SetLockState/"
@@ -1056,12 +1055,12 @@ func TestSnapshotCache(t *testing.T) {
 		require.False(t, isError)
 	}
 
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1, "the second call reuses the profile")
 	assert.Len(t, f.service.Calls(http.MethodGet, pathTags), 2, "every call reads the tags")
 
 	_, isError := call(t, f.h.handleListItems, ListItemsInput{Refresh: true})
 	require.False(t, isError)
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 2)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 2)
 
 	saved, err := f.h.auth.Saved()
 	require.NoError(t, err)
@@ -1762,7 +1761,7 @@ func TestGetItemRatesOnEachCall(t *testing.T) {
 	require.False(t, isError)
 	assert.Contains(t, got, "- PvE: S for this roll, S on the Aegis sheet (in HCs), 1 of 1 perk columns hit\n"+
 		"  Column 1: hit with Rampage, Explosive Payload. The sheet picks Rampage, Explosive Payload\n")
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1, "both ratings read one profile")
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1, "both ratings read one profile")
 }
 
 // TestGetItemReadsPerkPreferencesOnEachCall pins that the server keeps
@@ -1839,7 +1838,7 @@ func TestRatingToolsReadDefinitionsBeforeProfile(t *testing.T) {
 			got, isError := tc.run(t, f.h)
 			assert.True(t, isError)
 			assert.Equal(t, "loading definitions: definitions: the service index lists no core artifact", got)
-			assert.Empty(t, f.bungie.Calls(http.MethodGet, pathProfile), "the call fetches no profile")
+			assert.Empty(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), "the call fetches no profile")
 			assert.Empty(t, f.service.Calls(http.MethodGet, pathPrefs), "the call rates no roll")
 		})
 	}
@@ -3430,7 +3429,7 @@ func TestListVendorsRefetches(t *testing.T) {
 	}
 
 	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathHunterVendors), 2)
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 }
 
 func TestListActivities(t *testing.T) {
@@ -3614,7 +3613,7 @@ func TestListActivities(t *testing.T) {
 
 			// The first request fetches the inventory snapshot, and every
 			// later one fetches only the activities.
-			calls := f.bungie.Calls(http.MethodGet, pathProfile)
+			calls := f.bungie.Calls(http.MethodGet, bungietest.PathProfile)
 			require.Len(t, calls, 1+tc.fetches)
 
 			query, err := url.ParseQuery(calls[0].Query)
@@ -3639,7 +3638,7 @@ func TestListActivitiesRefetches(t *testing.T) {
 	}
 
 	// The snapshot serves both calls, and each call fetches the activities.
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 3)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 3)
 }
 
 func TestRefreshOnUnauthorized(t *testing.T) {
@@ -3755,7 +3754,7 @@ func TestMoveItems(t *testing.T) {
 	got, isError = call(t, f.h.handleListItems, ListItemsInput{Location: "titan"})
 	assert.False(t, isError)
 	assert.Contains(t, got, "1003 | Midnight Coup")
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 }
 
 func TestMoveItemsEquip(t *testing.T) {
@@ -3917,7 +3916,7 @@ func TestSetAutotagEnabled(t *testing.T) {
 				wantProfiles = 2
 			}
 
-			assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), wantProfiles)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), wantProfiles)
 		})
 	}
 }
@@ -4074,15 +4073,12 @@ func skippedLine(skipped int) string {
 func junkTags(t *testing.T, ids ...string) string {
 	t.Helper()
 
-	rows := []dvm.ItemTag{}
+	rows := make([]dvm.ItemTag, 0, len(ids))
 	for _, id := range ids {
 		rows = append(rows, dvm.ItemTag{InstanceID: id, TagID: dvm.TagJunk, UpdatedAt: 5})
 	}
 
-	raw, err := json.Marshal(map[string]any{"defs": []any{}, "items": rows, "now": 10})
-	require.NoError(t, err)
-
-	return string(raw)
+	return tagRows(t, rows...)
 }
 
 // kineticWeapon returns a weapon of the kinetic slot that every class can
@@ -4495,7 +4491,7 @@ func TestStageJunkReadsTags(t *testing.T) {
 	assert.True(t, strings.HasPrefix(got, "Unequipped items in Kinetic Weapons on Hunter after this call: 2\n"), got)
 
 	assert.Len(t, f.service.Calls(http.MethodGet, pathTags), 2, "every call reads the tags")
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1, "the second call reuses the profile")
 }
 
 func TestStageJunkLoadError(t *testing.T) {
@@ -4548,7 +4544,7 @@ func TestSetLockTool(t *testing.T) {
 	assert.Contains(t, got, "1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 |  | Hunter |  | locked")
 	assert.Contains(t, got, "1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Vault | keep | "+
 		"favorite, masterwork, note\n")
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 }
 
 func TestSetLockToolErrors(t *testing.T) {
@@ -4653,7 +4649,7 @@ func TestSetPerkTool(t *testing.T) {
 	got, isError = call(t, f.h.handleGetItem, GetItemInput{InstanceID: "1001"})
 	assert.False(t, isError)
 	assert.Contains(t, got, "Perks:\n- Rampage (Trait), can swap to Explosive Payload\n- Firefly (Trait)\n")
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 
 	got, isError = call(t, f.h.handleSetPerk, SetPerkInput{InstanceID: "1001", Perk: "Rampage"})
 	assert.False(t, isError)
@@ -4925,7 +4921,7 @@ func TestEquipLoadoutTool(t *testing.T) {
 		"1001 | Fatebringer | Kinetic Hand Cannon | Legendary | 2010 |  | Hunter (equipped) | keep | ",
 	)
 	assert.Contains(t, got, "1003 | Midnight Coup | Kinetic Hand Cannon | Legendary | 2005 |  | Hunter |  | ")
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 }
 
 func TestEquipLoadoutToolErrors(t *testing.T) {
@@ -5060,19 +5056,6 @@ func snapshotBody(index int, characterID string, name, icon, color uint32) map[s
 	}
 }
 
-// posts returns the POST requests that the fake Bungie platform recorded.
-func posts(f *fakes) []httpfake.Request {
-	var out []httpfake.Request
-
-	for _, req := range f.bungie.All() {
-		if req.Method == http.MethodPost {
-			out = append(out, req)
-		}
-	}
-
-	return out
-}
-
 // hunterLoadoutRows returns the list_loadouts rows of loadout number of the
 // fake Hunter. With equipped, the loadout holds the gear that the Hunter
 // has equipped. Without it, the loadout holds the items that the fake
@@ -5201,7 +5184,7 @@ func TestSaveLoadoutTool(t *testing.T) {
 			assert.False(t, isError)
 			assert.Equal(t, tc.want, got)
 
-			requests := posts(f)
+			requests := bungiePosts(f)
 			require.Len(t, requests, 1)
 			assert.Equal(t, pathSnapshot, requests[0].Path)
 			assert.Equal(t, tc.wantBody, requests[0].Body)
@@ -5223,7 +5206,7 @@ func TestSaveLoadoutTool(t *testing.T) {
 			got, isError = call(t, f.h.handleListLoadouts, ListLoadoutsInput{Character: tc.in.Character})
 			require.False(t, isError)
 			assert.Equal(t, tc.wantList, got)
-			assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 		})
 	}
 }
@@ -5260,7 +5243,7 @@ func TestSaveLoadoutToolAfterEquip(t *testing.T) {
 		"3 | 1001 | Fatebringer | Kinetic Weapons | Hunter (equipped)\n"+
 		"3 | 1004 | Celestial Nighthawk | Helmet | Hunter (equipped)\n"+
 		"3 | 9999 | not in the inventory |  | ", got)
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 }
 
 func TestLoadoutWriteSnapshotAge(t *testing.T) {
@@ -5410,7 +5393,7 @@ func TestSaveLoadoutToolRefusals(t *testing.T) {
 			got, isError := call(t, f.h.handleSaveLoadout, tc.in)
 			assert.True(t, isError)
 			assert.Equal(t, tc.want, got)
-			assert.Empty(t, posts(f), "a refusal sends no request")
+			assert.Empty(t, bungiePosts(f), "a refusal sends no request")
 		})
 	}
 }
@@ -5427,7 +5410,7 @@ func TestSaveLoadoutToolBungieError(t *testing.T) {
 	assert.Equal(t,
 		"saving loadout 2 on Hunter: bungie: DestinyCannotPerformActionAtThisLocation: Not here.", got)
 
-	requests := posts(f)
+	requests := bungiePosts(f)
 	require.Len(t, requests, 1)
 	assert.Equal(t, pathSnapshot, requests[0].Path)
 	assert.Equal(t, snapshotBody(1, bungietest.HunterID, 4, 2, 3), requests[0].Body)
@@ -5505,7 +5488,7 @@ func TestClearLoadoutTool(t *testing.T) {
 			assert.False(t, isError)
 			assert.Equal(t, tc.want, got)
 
-			requests := posts(f)
+			requests := bungiePosts(f)
 			require.Len(t, requests, 1)
 			assert.Equal(t, pathClear, requests[0].Path)
 			assert.Equal(t, tc.wantBody, requests[0].Body)
@@ -5516,7 +5499,7 @@ func TestClearLoadoutTool(t *testing.T) {
 			got, isError = call(t, f.h.handleListLoadouts, ListLoadoutsInput{Character: tc.in.Character})
 			require.False(t, isError)
 			assert.Equal(t, tc.wantList, got)
-			assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1)
+			assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1)
 		})
 	}
 }
@@ -5569,7 +5552,7 @@ func TestClearLoadoutToolErrors(t *testing.T) {
 			assert.True(t, isError)
 			assert.Equal(t, tc.want, got)
 
-			requests := posts(f)
+			requests := bungiePosts(f)
 			require.Len(t, requests, tc.wantPosts)
 
 			if tc.wantPosts > 0 {
@@ -7719,7 +7702,7 @@ func TestListAutotagRulesOwned(t *testing.T) {
 			assert.Equal(t, tc.isError, isError, got)
 			assert.Equal(t, strings.Join(tc.want, "\n"), got)
 
-			profiles := f.bungie.Calls(http.MethodGet, "/Destiny2/3/Profile/4611/")
+			profiles := f.bungie.Calls(http.MethodGet, bungietest.PathProfile)
 			assert.Equal(t, tc.noProfile, len(profiles) == 0, "profile reads: %d", len(profiles))
 
 			for _, req := range f.service.All() {
@@ -7756,7 +7739,7 @@ func TestListAutotagRulesOwnedCachedProfile(t *testing.T) {
 	got, isError := call(t, f.h.handleListAutotagRules, ListAutotagRulesInput{Matches: matchesOwned})
 	require.False(t, isError, got)
 
-	assert.Len(t, f.bungie.Calls(http.MethodGet, "/Destiny2/3/Profile/4611/"), 1,
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1,
 		"the counts reuse the snapshot of list_characters")
 }
 
@@ -8260,7 +8243,7 @@ func TestSaveAutotagRuleReport(t *testing.T) {
 			got, isError := call(t, f.h.handleSaveAutotagRule, tc.in)
 			assert.Equal(t, tc.isError, isError)
 
-			profiles := f.bungie.Calls(http.MethodGet, pathProfile)
+			profiles := f.bungie.Calls(http.MethodGet, bungietest.PathProfile)
 			if tc.fetches {
 				assert.NotEmpty(t, profiles)
 			} else {
@@ -8599,11 +8582,11 @@ func TestPreviewRefresh(t *testing.T) {
 		require.False(t, isError)
 	}
 
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 1, "the second call reuses the profile")
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 1, "the second call reuses the profile")
 
 	_, isError := call(t, f.h.handlePreviewAutotagRule, PreviewAutotagRuleInput{Query: "is:weapon", Refresh: true})
 	require.False(t, isError)
-	assert.Len(t, f.bungie.Calls(http.MethodGet, pathProfile), 2, "refresh fetches the profile again")
+	assert.Len(t, f.bungie.Calls(http.MethodGet, bungietest.PathProfile), 2, "refresh fetches the profile again")
 }
 
 func TestPreviewUnsupported(t *testing.T) {
