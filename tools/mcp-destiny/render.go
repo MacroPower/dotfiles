@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/activities"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
@@ -1322,11 +1323,11 @@ func statusLabel(sale Sale) string {
 
 // renderActivities renders one page of the activities of a character as a
 // table. Listed counts the activities that Bungie lists for the character,
-// and kept counts the ones that [readActivities] keeps from them. Offset
+// and kept counts the ones that [activities.Read] keeps from them. Offset
 // and total count the kept activities that match the query and the
 // rewards flag. Owner names the character, such as "Hunter". The power and
 // bonus drops columns are empty for an activity without them.
-func renderActivities(rows []ActivityRow, offset, total, kept, listed int, owner string) string {
+func renderActivities(rows []activities.Row, offset, total, kept, listed int, owner string) string {
 	switch {
 	case listed == 0:
 		return "Bungie lists no activities that " + owner + " can play."
@@ -1399,7 +1400,7 @@ func renderActivities(rows []ActivityRow, offset, total, kept, listed int, owner
 
 // lootLabel names a reward item, with the quantity when Bungie reports
 // more than one.
-func lootLabel(loot Loot) string {
+func lootLabel(loot activities.Loot) string {
 	if loot.Quantity > 1 {
 		return fmt.Sprintf("%s x%d", loot.Name, loot.Quantity)
 	}

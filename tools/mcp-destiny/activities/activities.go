@@ -1,4 +1,4 @@
-package main
+package activities
 
 import (
 	"cmp"
@@ -12,17 +12,17 @@ import (
 var (
 	// droppedModes holds the Bungie DestinyActivityModeType values of Story
 	// (2) and Social (40). Activities of these modes carry no loot, so the
-	// web client leaves them out, and [readActivities] does the same.
+	// web client leaves them out, and [Read] does the same.
 	droppedModes = map[int]bool{2: true, 40: true}
 
 	// droppedTypes holds the hashes of the activity types that Bungie files
 	// as Story. Bungie gives some activities of these types no mode, such
 	// as "Excision: Grandmaster". The web client therefore leaves them out
-	// by type, and [readActivities] does the same.
+	// by type, and [Read] does the same.
 	droppedTypes = map[uint32]bool{1838596016: true, 1686739444: true, 1299744814: true, 2694988718: true}
 )
 
-// ActivityRow is one activity that a character can play, joined with the
+// Row is one activity that a character can play, joined with the
 // definitions. Name is the name of the activity definition, and Type is
 // the name of its activity type. Location names the destination of the
 // activity, or its place when the destination has no name, and it is
@@ -35,7 +35,7 @@ var (
 // claims it. BonusDrops counts the bonus drops. Focus is the focused
 // reward, and it is nil when the activity has none. Loot lists the bonus
 // loot, one entry for each name.
-type ActivityRow struct {
+type Row struct {
 	Focus      *Loot
 	Name       string
 	Type       string
@@ -49,14 +49,14 @@ type ActivityRow struct {
 
 // Offers reports whether the activity still offers a bonus drop, a focused
 // reward, or bonus loot this week.
-func (a ActivityRow) Offers() bool {
+func (a Row) Offers() bool {
 	return a.BonusDrops > 0 || a.Focus != nil || len(a.Loot) > 0
 }
 
 // matches reports whether the lowercase string lower occurs in the name,
 // the type, the location, the focused reward, or a bonus loot name of the
 // activity, without regard to case.
-func (a ActivityRow) matches(lower string) bool {
+func (a Row) matches(lower string) bool {
 	if containsFold(a.Name, lower) || containsFold(a.Type, lower) || containsFold(a.Location, lower) {
 		return true
 	}
@@ -77,12 +77,12 @@ type Loot struct {
 	Hash     uint32
 }
 
-// readActivities joins the activities that one character can play with
+// Read joins the activities that one character can play with
 // the definitions, in the order of [compareActivities]. It leaves out each
 // activity that the game hides, that the definitions do not name, or that
 // has a Story or Social mode or a Story type.
-func readActivities(entries []bungie.AvailableActivity, defs *definitions.Defs) []ActivityRow {
-	var rows []ActivityRow
+func Read(entries []bungie.AvailableActivity, defs *definitions.Defs) []Row {
+	var rows []Row
 
 	for _, entry := range entries {
 		def, ok := defs.Activities[entry.Hash]
@@ -100,10 +100,10 @@ func readActivities(entries []bungie.AvailableActivity, defs *definitions.Defs) 
 
 // newActivityRow joins one activity with its definition and with the
 // definitions of its type, its location, and its rewards.
-func newActivityRow(entry bungie.AvailableActivity, def definitions.ActivityDef, defs *definitions.Defs) ActivityRow {
+func newActivityRow(entry bungie.AvailableActivity, def definitions.ActivityDef, defs *definitions.Defs) Row {
 	items := entry.RewardItems()
 
-	row := ActivityRow{
+	row := Row{
 		Hash:     entry.Hash,
 		Name:     def.Name,
 		Type:     defs.ActivityTypes[def.Type],
@@ -179,7 +179,7 @@ func lootOf(items []bungie.ActivityRewardItem, defs *definitions.Defs) []Loot {
 // activities with equal bonus drops, those with a focused reward come
 // first, then those with bonus loot, then the featured ones. Name and hash
 // break the remaining ties.
-func compareActivities(a, b ActivityRow) int {
+func compareActivities(a, b Row) int {
 	return cmp.Or(
 		cmp.Compare(b.BonusDrops, a.BonusDrops),
 		compareFlags(a.Focus != nil, b.Focus != nil),
@@ -202,14 +202,14 @@ func compareFlags(a, b bool) int {
 	}
 }
 
-// filterActivities returns the activities that match query and rewards,
-// in their order. A query keeps each activity that [ActivityRow.matches],
+// Filter returns the activities that match query and rewards,
+// in their order. A query keeps each activity that [Row.matches],
 // and an empty or blank query keeps every activity. A true rewards keeps
-// only the activities that [ActivityRow.Offers] reports.
-func filterActivities(rows []ActivityRow, query string, rewards bool) []ActivityRow {
+// only the activities that [Row.Offers] reports.
+func Filter(rows []Row, query string, rewards bool) []Row {
 	lower := strings.ToLower(strings.TrimSpace(query))
 
-	var out []ActivityRow
+	var out []Row
 
 	for _, row := range rows {
 		if rewards && !row.Offers() {
@@ -224,4 +224,10 @@ func filterActivities(rows []ActivityRow, query string, rewards bool) []Activity
 	}
 
 	return out
+}
+
+// containsFold reports whether s contains the lowercase string lower,
+// without regard to the case of s.
+func containsFold(s, lower string) bool {
+	return strings.Contains(strings.ToLower(s), lower)
 }

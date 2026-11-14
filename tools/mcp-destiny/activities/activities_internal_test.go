@@ -1,4 +1,4 @@
-package main
+package activities
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 )
 
-func TestReadActivities(t *testing.T) {
+func TestRead(t *testing.T) {
 	t.Parallel()
 
 	reward := func(style string, hash uint32, quantity int) bungie.ActivityRewardItem {
@@ -32,7 +32,7 @@ func TestReadActivities(t *testing.T) {
 	tests := map[string]struct {
 		defs    func(*definitions.Defs)
 		entries []bungie.AvailableActivity
-		want    []ActivityRow
+		want    []Row
 	}{
 		"definitions without activities": {
 			defs:    func(d *definitions.Defs) { d.Activities = map[uint32]definitions.ActivityDef{} },
@@ -53,7 +53,7 @@ func TestReadActivities(t *testing.T) {
 					reward("", 600, 1),
 				),
 			},
-			want: []ActivityRow{{Hash: 3022541210, Name: "Vault of Glass: Master", BonusDrops: 2}},
+			want: []Row{{Hash: 3022541210, Name: "Vault of Glass: Master", BonusDrops: 2}},
 		},
 		"first named focused reward wins": {
 			entries: []bungie.AvailableActivity{
@@ -64,7 +64,7 @@ func TestReadActivities(t *testing.T) {
 					reward(bungie.RewardFocus, 601, 1),
 				),
 			},
-			want: []ActivityRow{{
+			want: []Row{{
 				Hash:  4003,
 				Name:  "Nightfall: Grandmaster",
 				Type:  "Strike",
@@ -73,7 +73,7 @@ func TestReadActivities(t *testing.T) {
 		},
 		"focused reward with a quantity of zero": {
 			entries: []bungie.AvailableActivity{entry(4003, reward(bungie.RewardFocus, 606, 0))},
-			want: []ActivityRow{{
+			want: []Row{{
 				Hash:  4003,
 				Name:  "Nightfall: Grandmaster",
 				Type:  "Strike",
@@ -84,7 +84,7 @@ func TestReadActivities(t *testing.T) {
 			entries: []bungie.AvailableActivity{
 				entry(2222, reward("", 605, 1), reward("", 604, 1), reward("", 600, 3)),
 			},
-			want: []ActivityRow{{
+			want: []Row{{
 				Hash: 2222,
 				Name: "Vanguard Ops",
 				Type: "Strike",
@@ -106,7 +106,7 @@ func TestReadActivities(t *testing.T) {
 				entry(4010),
 				entry(4009),
 			},
-			want: []ActivityRow{
+			want: []Row{
 				{Hash: 4009, Name: "Battleground: Oracle", Type: "Strike"},
 				{Hash: 4010, Name: "Control"},
 				{Hash: 4444, Name: "Control", Type: "The Crucible"},
@@ -124,7 +124,7 @@ func TestReadActivities(t *testing.T) {
 				tc.defs(defs)
 			}
 
-			assert.Equal(t, tc.want, readActivities(tc.entries, defs))
+			assert.Equal(t, tc.want, Read(tc.entries, defs))
 		})
 	}
 }

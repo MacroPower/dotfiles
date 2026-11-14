@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/activities"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/stats"
@@ -262,7 +263,7 @@ func TestRenderActivitiesEmpty(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		rows   []ActivityRow
+		rows   []activities.Row
 		offset int
 		total  int
 		kept   int

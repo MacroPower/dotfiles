@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/activities"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
@@ -783,14 +784,14 @@ func (h *handler) handleListActivities(
 		return h.toolError(ctx, toolListActivities, fmt.Errorf("loading definitions: %w", err))
 	}
 
-	var activities map[string]bungie.CharacterActivities
+	var byCharacter map[string]bungie.CharacterActivities
 
 	// The rewards change when the character claims one, so every call
 	// fetches the activities again instead of reusing the snapshot.
 	err = h.withBungie(ctx, func(creds bungie.Credentials) error {
 		var err error
 
-		activities, err = h.bungie.Activities(ctx, creds, membership)
+		byCharacter, err = h.bungie.Activities(ctx, creds, membership)
 
 		return err //nolint:wrapcheck // The client error reaches the tool text unchanged.
 	})
@@ -798,9 +799,9 @@ func (h *handler) handleListActivities(
 		return h.toolError(ctx, toolListActivities, fmt.Errorf("fetching the activities: %w", err))
 	}
 
-	listed := activities[c.ID].Available
-	all := readActivities(listed, defs)
-	rows := filterActivities(all, in.Query, in.Rewards)
+	listed := byCharacter[c.ID].Available
+	all := activities.Read(listed, defs)
+	rows := activities.Filter(all, in.Query, in.Rewards)
 
 	limit := in.Limit
 	if limit <= 0 {
