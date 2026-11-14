@@ -498,14 +498,7 @@ func (h *handler) handleListItems(
 		sources = nil
 	}
 
-	limit := in.Limit
-	if limit <= 0 {
-		limit = defaultItemLimit
-	}
-
-	limit = min(limit, maxItemLimit)
-	offset := min(max(in.Offset, 0), len(items))
-	page := items[offset:min(offset+limit, len(items))]
+	page, offset, _ := paginate(items, in.Limit, in.Offset, defaultItemLimit, maxItemLimit)
 
 	return textResult(renderItems(s, page, offset, len(items), in.Stat, in.IncludePerks, sources)), nil, nil
 }
@@ -605,14 +598,7 @@ func (h *handler) handleCompareDuplicates(
 		}
 	}
 
-	limit := in.Limit
-	if limit <= 0 {
-		limit = defaultWeaponLimit
-	}
-
-	limit = min(limit, maxWeaponLimit)
-	offset := min(max(in.Offset, 0), len(dupes))
-	page := dupes[offset:min(offset+limit, len(dupes))]
+	page, offset, _ := paginate(dupes, in.Limit, in.Offset, defaultWeaponLimit, maxWeaponLimit)
 
 	return textResult(renderDuplicates(s, page, offset, len(dupes), sources)), nil, nil
 }
@@ -805,14 +791,7 @@ func (h *handler) handleListActivities(
 	all := activities.Read(listed, defs)
 	rows := activities.Filter(all, in.Query, in.Rewards)
 
-	limit := in.Limit
-	if limit <= 0 {
-		limit = defaultItemLimit
-	}
-
-	limit = min(limit, maxItemLimit)
-	offset := min(max(in.Offset, 0), len(rows))
-	page := rows[offset:min(offset+limit, len(rows))]
+	page, offset, _ := paginate(rows, in.Limit, in.Offset, defaultItemLimit, maxItemLimit)
 
 	return textResult(renderActivities(page, offset, len(rows), len(all), len(listed), s.OwnerLabel(c.ID))), nil, nil
 }
@@ -1931,14 +1910,7 @@ func (h *handler) handlePreviewAutotagRule(
 	result := query.Evaluate(search.NewContext(s, current, sources), owned)
 	matches := result.Matches
 
-	limit := in.Limit
-	if limit <= 0 {
-		limit = defaultItemLimit
-	}
-
-	limit = min(limit, maxItemLimit)
-	offset := min(max(in.Offset, 0), len(matches))
-	page := matches[offset:min(offset+limit, len(matches))]
+	page, offset, limit := paginate(matches, in.Limit, in.Offset, defaultItemLimit, maxItemLimit)
 
 	text := renderPreview(s, page, offset, len(matches), len(owned), result.Undecided, limit)
 	if unbuilt := search.UnbuiltLine(s); unbuilt != "" {
@@ -2864,6 +2836,22 @@ func sessionValue[T any](ctx context.Context, h *handler, fn func(session string
 	})
 
 	return out, err
+}
+
+// paginate returns the page of items that starts at offset and holds at most
+// limit items, followed by the offset and the limit that it applied. A limit
+// of zero or less takes fallback, and ceiling caps the limit. paginate clamps
+// the offset to the range from 0 to len(items), inclusive, so an offset past
+// the end returns an empty page.
+func paginate[T any](items []T, limit, offset, fallback, ceiling int) ([]T, int, int) {
+	if limit <= 0 {
+		limit = fallback
+	}
+
+	limit = min(limit, ceiling)
+	offset = min(max(offset, 0), len(items))
+
+	return items[offset:min(offset+limit, len(items))], offset, limit
 }
 
 // utf16Len returns the length of s in UTF-16 code units. The service

@@ -2956,6 +2956,100 @@ func TestCompareDuplicatesLimit(t *testing.T) {
 	}
 }
 
+func TestPaginate(t *testing.T) {
+	t.Parallel()
+
+	ten := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+
+	tests := map[string]struct {
+		items      []int
+		want       []int
+		limit      int
+		offset     int
+		wantOffset int
+		wantLimit  int
+	}{
+		"zero limit takes the fallback": {
+			items:     ten,
+			want:      []int{0, 1, 2},
+			wantLimit: 3,
+		},
+		"negative limit takes the fallback": {
+			items:     ten,
+			limit:     -1,
+			want:      []int{0, 1, 2},
+			wantLimit: 3,
+		},
+		"limit below the ceiling": {
+			items:     ten,
+			limit:     4,
+			want:      []int{0, 1, 2, 3},
+			wantLimit: 4,
+		},
+		"ceiling caps the limit": {
+			items:     ten,
+			limit:     1000,
+			want:      []int{0, 1, 2, 3, 4},
+			wantLimit: 5,
+		},
+		"offset inside the items": {
+			items:      ten,
+			limit:      2,
+			offset:     4,
+			want:       []int{4, 5},
+			wantOffset: 4,
+			wantLimit:  2,
+		},
+		"last page holds fewer items than the limit": {
+			items:      ten,
+			limit:      4,
+			offset:     8,
+			want:       []int{8, 9},
+			wantOffset: 8,
+			wantLimit:  4,
+		},
+		"negative offset starts at the first item": {
+			items:     ten,
+			limit:     2,
+			offset:    -3,
+			want:      []int{0, 1},
+			wantLimit: 2,
+		},
+		"offset at the end": {
+			items:      ten,
+			limit:      2,
+			offset:     10,
+			want:       []int{},
+			wantOffset: 10,
+			wantLimit:  2,
+		},
+		"offset past the end": {
+			items:      ten,
+			limit:      2,
+			offset:     25,
+			want:       []int{},
+			wantOffset: 10,
+			wantLimit:  2,
+		},
+		"no items": {
+			items:     []int{},
+			want:      []int{},
+			wantLimit: 3,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, offset, limit := paginate(tc.items, tc.limit, tc.offset, 3, 5)
+			assert.Equal(t, tc.want, got)
+			assert.Equal(t, tc.wantOffset, offset)
+			assert.Equal(t, tc.wantLimit, limit)
+		})
+	}
+}
+
 func TestListActivityHistory(t *testing.T) {
 	t.Parallel()
 
