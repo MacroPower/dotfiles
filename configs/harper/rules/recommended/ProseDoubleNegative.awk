@@ -43,12 +43,17 @@
 #
 # Related Rules
 #
-# ProseNotOnly reports `not only` and `not just`, so neither `not`
-# counts as a negative word. The built-in LitotesDirectPositive reports
-# `not` before `unusual`, `unreasonable`, `unlikely`, `unimportant`,
-# `infrequent`, `inaccurate`, `irrelevant`, `unclear`, `uncommon`,
-# `insignificant`, and `impossible`, so the prefix list leaves those
-# out.
+# ProseNotOnly reports `not only` and `not just` and their contracted
+# forms (`doesn't just`), so neither `not` nor such a contraction counts
+# as a negative word before `only` or `just`. The `short` pattern holds
+# the contractions of the `short` list in ProseNotOnly. `can't` stays
+# out of both, because ProseNotOnly passes `can't just`, so `can't just
+# run make without the docs` still counts.
+#
+# The built-in LitotesDirectPositive reports `not` before `unusual`,
+# `unreasonable`, `unlikely`, `unimportant`, `infrequent`, `inaccurate`,
+# `irrelevant`, `unclear`, `uncommon`, `insignificant`, and
+# `impossible`, so the prefix list leaves those out.
 #
 # Measurement
 #
@@ -63,6 +68,7 @@
 function BEGIN_CHECK() {
   neg = "^(not|never|no|cannot|none|nothing|neither|nor|nobody)$"
   boundary = "^(unless|without|except|but|and|or|nor|yet|so|because|if|when|while|since|although|though|whereas|until|which|that)$"
+  short = "^(don't|doesn't|didn't|isn't|aren't|wasn't|weren't|couldn't|won't|wouldn't|shouldn't|mustn't|hasn't|haven't|hadn't|needn't)$"
   un = "^(unlike|unexpected|unnecessary|unsafe|invalid|incorrect|inconsistent|insecure|improbable|unaware|uncommonly|unreasonably|unusually|infrequently)$"
   msg = "Double negative. State the positive case, so `does not run unless the caller holds the lock` becomes `runs only when the caller holds the lock`."
 }
@@ -80,7 +86,7 @@ function negation(i,   w) {
   if (w == "no" && word(i + 1) == "matter") {
     return 0
   }
-  if (w == "not" && (word(i + 1) == "only" || word(i + 1) == "just")) {
+  if ((w == "not" || w ~ short) && (word(i + 1) == "only" || word(i + 1) == "just")) {
     return 0
   }
   return w ~ neg || w ~ /n't$/

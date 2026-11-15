@@ -9,3 +9,5 @@ No pod schedules onto the node unless it tolerates the taint.
 The result is not incorrect.
 
 Do not run the migration script against the production database unless the backup finishes.
+
+You can't just run make without reading the docs.

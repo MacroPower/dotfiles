@@ -1,13 +1,15 @@
 # Overview
 #
 # Reports `not only` and `not just`, mostly in the paired form `not only
-# X but Y` (`the cache holds not only rules but results`). The paired
-# form presents two facts as a contrast, so the reader has to work out
-# that both hold. The fix makes the direct claim (`the cache holds rules
-# and results`) and gives a needed contrast its own sentence. The prose
-# skill bans the paired form. The rule sits at Recommended, because an
-# unpaired `not just` also states a correction that the reader needs.
-# The rule passes that form only after a comma or an open paren.
+# X but Y` (`the cache holds not only rules but results`). The rule
+# reports the contracted spellings too (`isn't just`, `doesn't only`).
+# The paired form presents two facts as a contrast, so the reader must
+# work out that both hold. The fix makes the direct claim (`the cache
+# holds rules and results`) and gives a needed contrast its own
+# sentence. The prose skill bans the paired form. The rule sits at
+# Recommended, because an unpaired `not just` also states a correction
+# that the reader needs. The rule passes that form only after a comma or
+# an open paren.
 #
 # Expression
 #
@@ -18,21 +20,45 @@
 # A comma fails that token, and an open paren leaves no space before
 # `not`.
 #
+# The `just` in `which` carries a guard that skips `any`. A negated word
+# after a space needs a word to consume, so `just` right before a comma
+# or a period passes (`the hook is not just, as some say, a linter`).
+#
 # The first branch needs a token before `not`, so a sentence that opens
 # with `Not only` counts through the second branch or the third. The
 # second branch needs the helping verb that this form moves ahead of the
 # subject (`Not only does the cache hold rules`).
 #
 # The third branch finds the paired form anywhere, after a comma too, by
-# matching `but` up to eight words after `not only` or `not just`. A
-# list picks its longest match and never backtracks, so a gap list
-# followed by `but` swallows the `but`. Each gap length is therefore its
-# own alternative that ends in `but`. The last word before `but` can
-# carry a comma (`Not only the cache, but the log grows`).
+# matching `but` up to eight words after `only` or `just`. A list picks
+# its longest match and never backtracks, so a gap list followed by
+# `but` swallows the `but`. Each gap length is therefore its own
+# alternative that ends in `but`. The last word before `but` can carry a
+# comma (`Not only the cache, but the log grows`).
 #
-# `isn't just` and `more than just` make the same move (`it isn't just a
-# cache`, `it is more than just a cache`), so the last two branches
-# report them.
+# `short` holds the contractions that ProseNegativeContraction reports
+# other than `can't`, such as `isn't` and `don't`. A contraction before
+# `only` or `just` makes the same move as its full form (`it isn't just
+# a cache`, `don't just run make`), so the fourth branch reports it. The
+# branch has no guard for a comma, because the verb of a contraction
+# sits between a comma and the negation (`Read the docs, don't just run
+# make`). The first branch reports the full form of that sentence for
+# the same reason.
+#
+# `can't` stays out of `short`, because its full form `cannot` holds no
+# separate `not`, and the rule passes `cannot just`. Rarer contractions
+# such as `mightn't` and `shan't` stay out too, so `mightn't just`
+# passes but `might not just` counts. The fourth branch needs `only` or
+# `just` right after the contraction, so the question `isn't it just a
+# cache` passes but `is it not just a cache` counts.
+#
+# The third branch takes a contraction from `short` in place of `not`
+# too, so the paired form draws the same finding in both spellings. Only
+# the first and fourth branches read `which`, so the paired form counts
+# even with `any` (`this isn't just any file but the root config`).
+#
+# `more than just` makes the same move too (`it is more than just a
+# cache`), so the last branch reports it.
 #
 # False Positives
 #
@@ -45,34 +71,57 @@
 # (`Name the log events and not just the sentinel`). The rule accepts
 # that misfire.
 #
-# `not just !any` skips the idiom `not just any file`. The glued hyphen
-# in `not just-in-time` already fails the whitespace match.
+# `just !any` skips the idiom `not just any file`, and it skips the same
+# idiom after a contraction (`this isn't just any file`). The glued
+# hyphen in `not just-in-time` already fails the whitespace match.
 #
 # Related Rules
 #
 # ProseJust and ProseMinimizer skip `just` after a negation and after
-# `than`, so neither reports the `just` of `not just` or `more than
-# just` (`do not just run make`, `does more than just run the tests`).
-# ProseNegativeContraction also reports the contraction in `isn't just`.
+# `than`, so neither reports a `just` that this rule reports (`do not
+# just run make`, `don't just run make`, `does more than just run the
+# tests`).
+#
+# ProseNegativeContraction reports each contraction in `short`, and its
+# fix writes the full form. When `only` or `just` follows the
+# contraction, this rule reports both spellings, so `don't just run
+# make` shows its finding beside the contraction finding on the first
+# pass.
+#
+# ProseDoubleNegative skips `not` and each contraction in `short` before
+# `only` or `just`, so it passes `don't just run make without reading
+# the docs`, which this rule reports. Its `short` pattern copies the
+# `short` list here, so change the two together.
 #
 # ProseContrastiveNegation reports a clause that denies one framing
 # before it asserts another (`the hook isn't just a linter, it's a
-# gate`). When the denial holds `not just` or `isn't just`, the sentence
-# draws a finding from both rules, and no guard separates the two.
+# gate`). When the denial holds `just` or `only`, the sentence draws a
+# finding from both rules, and no guard separates the two.
 #
 # Measurement
 #
-# The rule hit 31 lines in the measure.py corpus, and in 20 of 20
-# sampled hits the direct claim said the same. Of the 20, 13 were `not
-# only` or `not just`, 5 were `more than just`, and 2 were `isn't just`
-# or `aren't just`.
+# The rule hit 33 lines in the measure.py corpus, and in 18 of 20
+# sampled hits the direct claim said the same. Of the 20, 15 were `not
+# only` or `not just`, 3 were `more than just`, and 2 were a contraction
+# before `just`. In both misfires, `just` meant `simply` before a verb
+# (`why not just define the trait`, `you won't just know what to bring
+# into scope`).
+#
+# On 5 of the lines that the rule hits in the measure.py corpus, `just`
+# sits between `not` or a contraction and a verb. Of those 5, 3 are the
+# paired form (`doesn't just cut the load on the scheduler, it can also
+# save money`), and the other 2 are the misfires of the sample. A guard
+# for a verb after `just` drops those 2 lines and 2 of the 3 paired
+# lines. The rule therefore has no such guard, and it reports both
+# spellings before a verb.
 expr aux [does, do, did, is, are, was, were, can, could, will, would, has, have, should, must]
 expr which [only, (just !any)]
+expr short [don't, doesn't, didn't, isn't, aren't, wasn't, weren't, couldn't, won't, wouldn't, shouldn't, mustn't, hasn't, haven't, hadn't, needn't]
 expr last [*, (*,)]
 expr tail [(@last but), (* @last but), (* * @last but), (* * * @last but), (* * * * @last but), (* * * * * @last but), (* * * * * * @last but), (* * * * * * * @last but)]
-expr main [<(!(,)( )not @which), (not @which)>, (not only @aux), (not [only, just] @tail), ([isn't, aren't, wasn't, weren't] just), (more than just)]
+expr main [<(!(,)( )not @which), (not @which)>, (not only @aux), ([not, @short] [only, just] @tail), (@short @which), (more than just)]
 let message "`not only` or `not just`. Make the direct claim, and give a needed contrast its own sentence."
-let description "Flags `not only` and `not just` constructions, except an unpaired correction after a comma or an open paren."
+let description "Flags `not only`, `not just`, and their contracted forms such as `isn't just`, except an unpaired correction after a comma or an open paren."
 let becomes ""
 let kind "Style"
 let scope "Sentence"
@@ -81,3 +130,5 @@ allows "Not just any file can be opened this way."
 allows "The runtime uses ahead-of-time compilation, not just-in-time."
 allows "Name the log events, not just the sentinel."
 allows "Refusing the run (not just the prune) also prevents the race."
+allows "This isn't just any file."
+allows "You can't just use a container for this."

@@ -53,11 +53,10 @@
 # guard separates them.
 #
 # ProseNotOnly reports `not just` and `not only`, and it reports `just`
-# after `isn't`, `aren't`, `wasn't`, or `weren't`. A match of the comma
-# branch with one of those forms (`The hook isn't just a linter, it's a
-# gate`) therefore draws a finding from that rule too, and no guard
-# separates the two. `only` after one of those four contractions draws
-# no ProseNotOnly finding (`The hook isn't only a linter, it's a gate`).
+# and `only` after `isn't`, `aren't`, `wasn't`, or `weren't`. A match of
+# the comma branch with one of those forms (`The hook isn't just a
+# linter, it's a gate`) therefore draws a finding from that rule too,
+# and no guard separates the two.
 #
 # Measurement
 #

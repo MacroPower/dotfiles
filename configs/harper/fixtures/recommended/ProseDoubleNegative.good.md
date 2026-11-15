@@ -11,3 +11,35 @@ The parser does not stop, and unless you set a limit it reads forever.
 The pool closes the file (when the file is not in use), unless the caller holds it.
 
 The values are any object (objects with no group) except for claims.
+
+You don't just run make without reading the docs.
+
+The hook doesn't only run without a lock.
+
+The parser didn't just skip the header without a warning.
+
+The keys aren't just strings without a type.
+
+The hook isn't only a linter except in CI.
+
+The entry wasn't just a pointer without a size.
+
+The keys weren't just strings without a type.
+
+The client couldn't just retry the call without a token.
+
+The job won't just retry the write without a lock.
+
+A caller wouldn't just drop the lock without a reason.
+
+You shouldn't just delete the lock without a backup.
+
+You mustn't just copy the key without a check.
+
+The store hasn't just cached the rules without a hash.
+
+The workers haven't just read the queue without a lock.
+
+The job hadn't just failed without a log.
+
+You needn't just wait for the lock without a timeout.

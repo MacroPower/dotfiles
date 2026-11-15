@@ -37,8 +37,9 @@
 #
 # ProseMinimizer reports `just` before an imperative verb (`just run
 # make`), so the guard after `just` skips those verbs. ProseNotOnly
-# reports `not just` and `more than just`, and the guard before `just`
-# skips both.
+# reports `just` after `not`, after each contraction that
+# ProseNegativeContraction reports other than `can't` (`don't just`),
+# and after `more than`, and the guard before `just` skips each of them.
 #
 # This rule reports every other sense, including the two that
 # ProseMinimizer passes (`just one entry`, `the file was just created`).
@@ -50,7 +51,7 @@
 # The rule hit 280 lines in the measure.py corpus, and in 20 of 20
 # sampled hits, `only`, `immediately`, or deleting the word read as
 # clearly or better.
-expr neg [not, never, isn't, aren't, wasn't, weren't, can't, cannot, couldn't, won't, doesn't, don't, didn't, shouldn't, than]
+expr neg [not, never, isn't, aren't, wasn't, weren't, can't, cannot, couldn't, won't, wouldn't, doesn't, don't, didn't, shouldn't, mustn't, hasn't, haven't, hadn't, needn't, than]
 expr verbs [run, use, add, call, set, pass, type, install, copy, edit, change, create, delete, remove, update, point, drop, put, write, open, click]
 expr main [<(!@neg just ![@verbs, as, like, (in case)]), just>, <(!@neg just!( )), just>]
 let message "`just`. Write `only` where it limits, `immediately` where it times, or delete it."
