@@ -4,9 +4,10 @@ import "time"
 
 // CycloneDX-to-GitHub dependency snapshot conversion.
 //
-// The types and conversion function in this file are intentionally
-// free of Dagger imports so they can be unit tested without the
-// Dagger runtime. See snapshot_test.go.
+// [Nix.DependencySnapshot] converts the CycloneDX SBOM with the types
+// and the function in this file. TestDependencySnapshot in the test
+// module at toolchains/nix/tests checks the snapshot that the
+// conversion returns.
 
 // cdxBOM is the subset of CycloneDX BOM fields we need.
 type cdxBOM struct {
