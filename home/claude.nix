@@ -303,6 +303,72 @@ let
   # tools/hook-router/msglint/msglint.go ToolField for matching semantics.
   proseToolFieldsType = types.attrsOf (types.listOf types.nonEmptyStr);
 
+  # Conditional allow rule for one MCP tool, evaluated by hook-router on
+  # PreToolUse. See the Test constants and Condition in
+  # tools/hook-router/mcprules/rule.go for the matching semantics. The
+  # JSON tags of Condition there, and the tool and conditions tags in
+  # Parse in tools/hook-router/mcprules/mcprules.go, must stay aligned
+  # with these option names.
+  conditionalRuleType = types.submodule {
+    options = {
+      tool = mkOption {
+        type = types.strMatching "mcp__[^*]+__[^*]+";
+        description = ''
+          Exact name of the MCP tool that the rule covers, such as
+          `mcp__git__git_push`. The type rejects a bare server name and
+          a glob.
+        '';
+      };
+      conditions = mkOption {
+        type = types.nonEmptyListOf (
+          types.submodule {
+            options = {
+              field = mkOption {
+                type = types.nonEmptyStr;
+                description = "Top-level `tool_input` key that the condition reads.";
+              };
+              test = mkOption {
+                type = types.enum [
+                  "matches"
+                  "true"
+                  "absentOrTrue"
+                  "absentOrZero"
+                ];
+                description = ''
+                  Test that the field must pass. A field set to null
+                  counts as absent.
+
+                  - `matches`: the field is a string that `pattern`
+                    matches from start to end.
+                  - `true`: the field is the boolean true.
+                  - `absentOrTrue`: the field is absent or the boolean
+                    true.
+                  - `absentOrZero`: the field is absent, false, an empty
+                    string, or an empty list.
+                '';
+              };
+              pattern = mkOption {
+                type = types.str;
+                default = "";
+                description = ''
+                  Regular expression of the `matches` test, in Go
+                  syntax. The test holds only when the expression
+                  matches the whole value. hook-router exits with an
+                  error on every hook event when the expression does
+                  not compile. Every other test takes no pattern.
+                '';
+              };
+            };
+          }
+        );
+        description = ''
+          Conditions on the arguments of a call. The call runs without a
+          prompt when every condition holds.
+        '';
+      };
+    };
+  };
+
   toPermGlob =
     path:
     let
@@ -802,12 +868,16 @@ let
           # subagent-originated MCP calls
           # (anthropics/claude-code#73633). Filtering by the mcp__
           # prefix keeps hook and settings in lockstep as bundles
-          # change.
+          # change. The conditional rules have no settings counterpart,
+          # because a settings rule cannot read the arguments of an MCP
+          # call. hook-router alone decides the tools that they name
+          # (see the conditionalRules bundle option).
           lib.escapeShellArg (
             builtins.toJSON {
               allow = lib.filter (lib.hasPrefix "mcp__") (enabledRules cfg.permissions.allow);
               ask = lib.filter (lib.hasPrefix "mcp__") (enabledRules cfg.permissions.ask);
               deny = lib.filter (lib.hasPrefix "mcp__") (enabledRules cfg.permissions.deny);
+              conditional = bundledConditionalRules;
             }
           )
         } \
@@ -1107,6 +1177,7 @@ let
   bundledAllow = lib.concatMap (b: b.permissions.allow) bundleValues;
   bundledDeny = lib.concatMap (b: b.permissions.deny) bundleValues;
   bundledAsk = lib.concatMap (b: b.permissions.ask) bundleValues;
+  bundledConditionalRules = lib.concatMap (b: b.conditionalRules) bundleValues;
   bundledDomains = lib.concatMap (b: b.sandbox.allowedDomains) bundleValues;
   bundledSockets = lib.concatMap (b: b.sandbox.allowUnixSockets) bundleValues;
   bundledReadPaths = lib.concatMap (b: b.sandbox.allowRead) bundleValues;
@@ -1513,6 +1584,40 @@ let
 
   defaultRules = entries: lib.genAttrs entries (_: lib.mkDefault true);
   enabledRules = rules: lib.attrNames (lib.filterAttrs (_: enabled: enabled) rules);
+
+  # Whether a settings permission entry covers an MCP tool: the exact
+  # tool name, a bare server name, or a name with `*` globs.
+  permissionEntryCovers =
+    entry: tool:
+    builtins.match (lib.replaceStrings [ "\\*" ] [ ".*" ] (lib.escapeRegex entry)) tool != null
+    || (!(lib.hasInfix "__" (lib.removePrefix "mcp__" entry)) && lib.hasPrefix "${entry}__" tool);
+
+  # Settings ask and allow entries that cover a tool with a conditional
+  # rule. Claude Code prompts on a settings ask rule even when a hook
+  # allows the call, so an ask entry cancels the rule. An allow entry
+  # runs every call that reaches the settings without a hook decision.
+  # The assertion in `config` fails evaluation on each entry here.
+  conditionalRuleTools = lib.unique (map (rule: rule.tool) bundledConditionalRules);
+  conditionalRuleConflictsIn =
+    list:
+    lib.concatMap (
+      tool:
+      map (entry: "${tool} is covered by the permissions.${list} entry ${entry}") (
+        lib.filter (entry: permissionEntryCovers entry tool) (enabledRules cfg.permissions.${list})
+      )
+    ) conditionalRuleTools;
+  conditionalRuleConflicts = conditionalRuleConflictsIn "ask" ++ conditionalRuleConflictsIn "allow";
+
+  # Conditions that pair a pattern with the wrong test. hook-router
+  # rejects them on every hook event, so the assertion in `config`
+  # reports them at evaluation instead.
+  conditionalRulePatternFaults = lib.concatMap (
+    rule:
+    map (c: "${rule.tool} field ${c.field} with test ${c.test}") (
+      lib.filter (c: (c.test == "matches") != (c.pattern != "")) rule.conditions
+    )
+  ) bundledConditionalRules;
+
   sandboxFilesystem = lib.mapAttrs (_: enabledRules) cfg.sandbox.filesystem;
   sandboxNetwork = lib.mapAttrs (_: enabledRules) cfg.sandbox.network;
 
@@ -2491,6 +2596,52 @@ in
                 description = "Tool patterns appended to the permissions ask list.";
               };
             };
+            conditionalRules = mkOption {
+              type = types.listOf conditionalRuleType;
+              default = [ ];
+              example = lib.literalExpression ''
+                [
+                  {
+                    tool = "mcp__git__git_push";
+                    conditions = [
+                      {
+                        field = "ref";
+                        test = "matches";
+                        pattern = "(feat|fix)/.+";
+                      }
+                      {
+                        field = "tags";
+                        test = "absentOrZero";
+                      }
+                    ];
+                  }
+                ]
+              '';
+              description = ''
+                Conditional allow rules for this bundle's MCP tools.
+                hook-router reads the arguments of each call on
+                PreToolUse. A call that meets every condition of one
+                rule runs without a prompt, and every other call of the
+                tool prompts. Two rules that name one tool are
+                alternatives. A `permissions.deny` entry that covers the
+                tool still denies every call, and prose-lint still
+                checks the `proseLint.toolFields` of a call before the
+                rule allows it.
+
+                A tool with a rule must have no `permissions.ask` or
+                `permissions.allow` entry, and evaluation fails when it
+                has one. Claude Code prompts on a settings ask rule even
+                when a hook allows the call, so hook-router has to be
+                the only source of the tool's decision. When hook-router
+                emits no decision, for example because it exits with an
+                error, the permission mode decides the call. The call
+                then prompts in `default` and `acceptEdits` mode, and
+                runs in `bypassPermissions` mode.
+
+                Aggregated at `enable` granularity, so the bundle's
+                rules turn off with the bundle.
+              '';
+            };
             sandbox = {
               allowedDomains = mkOption {
                 type = types.listOf types.str;
@@ -2605,6 +2756,27 @@ in
   };
 
   config = {
+    assertions = [
+      {
+        assertion = conditionalRuleConflicts == [ ];
+        message = ''
+          dotfiles.claude: a tool with a toolBundles.<name>.conditionalRules
+          rule must have no permissions.ask or permissions.allow entry.
+          Claude Code prompts on a settings ask rule even when hook-router
+          allows the call, and a settings allow rule runs a call that
+          hook-router did not decide. Remove the entry, or the rule:
+          ${lib.concatMapStrings (conflict: "  - ${conflict}\n") conditionalRuleConflicts}'';
+      }
+      {
+        assertion = conditionalRulePatternFaults == [ ];
+        message = ''
+          dotfiles.claude: in toolBundles.<name>.conditionalRules, a
+          condition must set `pattern` when its test is `matches`, and
+          must leave it empty for every other test:
+          ${lib.concatMapStrings (fault: "  - ${fault}\n") conditionalRulePatternFaults}'';
+      }
+    ];
+
     dotfiles.claude.skills = {
       aven.source = "${pkgs.aven}/share/aven/skills/claude";
       aven-ultraclose.source = ../configs/claude/skills/aven-ultraclose;

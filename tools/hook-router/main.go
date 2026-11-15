@@ -220,7 +220,7 @@ func main() {
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
 	commandRules := flag.String("command-rules", "", "JSON array of command deny/ask rules ({command, args, except, action, reason})")
-	mcpRules := flag.String("mcp-rules", "", "JSON object of MCP tool allow/ask/deny pattern lists ({allow, ask, deny}); patterns are exact names, bare server names, or trailing-* globs")
+	mcpRules := flag.String("mcp-rules", "", "JSON object of MCP tool allow/ask/deny pattern lists and conditional allow rules ({allow, ask, deny, conditional}); patterns are exact names, bare server names, or trailing-* globs, and each conditional rule ({tool, conditions}) allows a call of one tool whose arguments meet every condition ({field, test, pattern})")
 	formatterRules := flag.String("formatter-rules", "", "JSON array of file-formatter routing rules ({pathGlob, command, timeout})")
 	linterRules := flag.String("linter-rules", "", "JSON array of file-linter routing rules ({pathGlob, command, timeout}); findings block PostToolUse:Write/Edit/MultiEdit through exit code 2")
 	compactionConfig := flag.String("compaction-config", "", "JSON object configuring PostToolUse:Bash output compaction ({enable, stripAnsi, minRunLength, minBytes, streams})")

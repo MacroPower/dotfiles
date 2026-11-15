@@ -321,6 +321,213 @@ func TestHandleMCPProseLint(t *testing.T) {
 	}
 }
 
+// TestHandleMCPConditional exercises the conditional rules in
+// [handleMCP]. The ruleset comes from the --mcp-rules JSON, so the test
+// covers the format that home/claude.nix serializes.
+func TestHandleMCPConditional(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.DiscardHandler)
+
+	rules, err := mcprules.Parse(`{
+		"allow": ["mcp__git__git_clone", "mcp__github__push_files"],
+		"ask": ["mcp__github__merge_pull_request"],
+		"deny": ["mcp__github__push_files"],
+		"conditional": [
+			{
+				"tool": "mcp__git__git_push",
+				"conditions": [
+					{"field": "ref", "test": "matches", "pattern": "^(feat|fix)/.+$"},
+					{"field": "tags", "test": "absentOrZero", "pattern": ""}
+				]
+			},
+			{
+				"tool": "mcp__github__create_pull_request",
+				"conditions": [
+					{"field": "draft", "test": "true"},
+					{"field": "reviewers", "test": "absentOrZero"}
+				]
+			},
+			{
+				"tool": "mcp__github__update_pull_request",
+				"conditions": [{"field": "draft", "test": "absentOrTrue"}]
+			},
+			{
+				"tool": "mcp__github__push_files",
+				"conditions": [{"field": "branch", "test": "matches", "pattern": "feat/.+"}]
+			}
+		]
+	}`)
+	require.NoError(t, err)
+
+	toolFields := []msglint.ToolField{
+		{Tool: "mcp__github__create_pull_request", Fields: []string{"title", "body"}},
+	}
+
+	flagDeliberate := []string{
+		"sh",
+		"-c",
+		`grep -q deliberate && { echo '<stdin>:1:1: Style::ProseReassurance: reassurance'; exit 1; }; exit 0`,
+	}
+
+	const (
+		pushConditions   = "`ref` matches `^(feat|fix)/.+$` and `tags` is absent, false, or empty"
+		createConditions = "`draft` is true and `reviewers` is absent, false, or empty"
+	)
+
+	cases := map[string]struct {
+		input  map[string]any
+		tool   string
+		want   string
+		reason string
+	}{
+		"string field matches the pattern: allow": {
+			tool:   "mcp__git__git_push",
+			input:  map[string]any{"repo": "/r", "ref": "feat/x", "force_with_lease": true},
+			want:   "allow",
+			reason: "mcp conditional rule (" + pushConditions + ")",
+		},
+		"string field does not match the pattern: ask": {
+			tool:   "mcp__git__git_push",
+			input:  map[string]any{"repo": "/r", "ref": "main"},
+			want:   "ask",
+			reason: "This call needs confirmation. mcp__git__git_push runs without a prompt when " + pushConditions + ".",
+		},
+		"string field is absent: ask": {
+			tool:  "mcp__git__git_push",
+			input: map[string]any{"repo": "/r"},
+			want:  "ask",
+		},
+		"field that must be zero is true: ask": {
+			tool:  "mcp__git__git_push",
+			input: map[string]any{"repo": "/r", "ref": "feat/x", "tags": true},
+			want:  "ask",
+		},
+		"field that must be zero is false: allow": {
+			tool:  "mcp__git__git_push",
+			input: map[string]any{"repo": "/r", "ref": "fix/y", "tags": false},
+			want:  "allow",
+		},
+		"boolean field is true: allow": {
+			tool:   "mcp__github__create_pull_request",
+			input:  map[string]any{"title": "Add a flag", "draft": true, "reviewers": []any{}},
+			want:   "allow",
+			reason: "mcp conditional rule (" + createConditions + ")",
+		},
+		"boolean field is absent: ask": {
+			tool:   "mcp__github__create_pull_request",
+			input:  map[string]any{"title": "Add a flag"},
+			want:   "ask",
+			reason: "mcp__github__create_pull_request runs without a prompt when " + createConditions + ".",
+		},
+		"boolean field is false: ask": {
+			tool:  "mcp__github__create_pull_request",
+			input: map[string]any{"title": "Add a flag", "draft": false},
+			want:  "ask",
+		},
+		"list field holds an item: ask": {
+			tool:  "mcp__github__create_pull_request",
+			input: map[string]any{"title": "Add a flag", "draft": true, "reviewers": []any{"octocat"}},
+			want:  "ask",
+		},
+		"boolean field that may be absent is absent: allow": {
+			tool:  "mcp__github__update_pull_request",
+			input: map[string]any{"title": "Add a flag"},
+			want:  "allow",
+		},
+		"boolean field that may be absent is true: allow": {
+			tool:  "mcp__github__update_pull_request",
+			input: map[string]any{"draft": true},
+			want:  "allow",
+		},
+		"boolean field that may be absent is false: ask": {
+			tool:   "mcp__github__update_pull_request",
+			input:  map[string]any{"draft": false},
+			want:   "ask",
+			reason: "mcp__github__update_pull_request runs without a prompt when `draft` is absent or true.",
+		},
+		"missing tool_input: ask": {
+			tool: "mcp__git__git_push",
+			want: "ask",
+		},
+		"deny pattern wins over a rule that holds": {
+			tool:   "mcp__github__push_files",
+			input:  map[string]any{"branch": "feat/x"},
+			want:   "deny",
+			reason: "This MCP tool is denied (mcp__github__push_files).",
+		},
+		"lint denies a call that a rule allows": {
+			tool:   "mcp__github__create_pull_request",
+			input:  map[string]any{"title": "Add a flag", "body": "This is deliberate.", "draft": true},
+			want:   "deny",
+			reason: "prose-lint: 1 finding in the `body` field of mcp__github__create_pull_request.",
+		},
+		"lint denies a call that no rule allows": {
+			tool:   "mcp__github__create_pull_request",
+			input:  map[string]any{"title": "Add a flag", "body": "This is deliberate."},
+			want:   "deny",
+			reason: "prose-lint: 1 finding in the `body` field of mcp__github__create_pull_request.",
+		},
+		"clean text keeps the allow of a rule": {
+			tool:  "mcp__github__create_pull_request",
+			input: map[string]any{"title": "Add a flag", "body": "Adds a flag.", "draft": true},
+			want:  "allow",
+		},
+		"tool with no rule keeps its allow-list decision": {
+			tool:   "mcp__git__git_clone",
+			input:  map[string]any{"url": "https://example.com/r.git", "ref": "main"},
+			want:   "allow",
+			reason: "mcp allow-list (mcp__git__git_clone)",
+		},
+		"tool with no rule keeps its ask-list decision": {
+			tool:   "mcp__github__merge_pull_request",
+			input:  map[string]any{"draft": true},
+			want:   "ask",
+			reason: "This MCP tool is on the ask list (mcp__github__merge_pull_request). Confirm before running.",
+		},
+		"tool with no rule and no pattern gets no decision": {
+			tool:  "mcp__git__git_fetch",
+			input: map[string]any{"ref": "feat/x"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := config{
+				mcpRules:    rules,
+				messageLint: msglint.Config{Command: flagDeliberate, ToolFields: toolFields},
+			}
+
+			payload := map[string]any{"session_id": "s1", "tool_name": tc.tool}
+			if tc.input != nil {
+				payload["tool_input"] = tc.input
+			}
+
+			input, err := json.Marshal(payload)
+			require.NoError(t, err)
+
+			var stdout bytes.Buffer
+
+			require.NoError(t, handleMCP(t.Context(), input, &stdout, cfg, logger))
+
+			if tc.want == "" {
+				assert.Empty(t, stdout.Bytes())
+
+				return
+			}
+
+			hso := preToolDecision(t, &stdout)
+			assert.Equal(t, tc.want, hso["permissionDecision"])
+
+			if tc.reason != "" {
+				assert.Contains(t, hso["permissionDecisionReason"], tc.reason)
+			}
+		})
+	}
+}
+
 // TestHandleMCPProseLintWaiver runs the same Recommended-only tool call
 // three times against one store. The first run gets the deny and
 // claims the waiver, the identical rerun gets the ask decision, and a
