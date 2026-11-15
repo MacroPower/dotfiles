@@ -43,16 +43,18 @@ the path of the run directory, so every command finds it.
 
 The run directory also holds a copy of `close-task.js`. The `init`, `next`,
 and `args` commands of `ultraclose.py` each refresh that copy from the skill
-directory. Pass only the copy to Workflow. Workflow refuses a script file
-that has more than one hard link. The skill directory holds symlinks into
-the Nix store. Store optimisation can add a hard link to a store file in
-the middle of a run.
+directory, and so does a landing that runs `next`. Pass only the copy to
+Workflow. Workflow refuses a script file that has more than one hard link.
+The skill directory holds symlinks into the Nix store. Store optimisation
+can add a hard link to a store file in the middle of a run.
 
 ## Scope
 
 The queue is every open task that is not an epic, including each task that
-anyone files during the run. Triage the new tasks each time `next` returns
-nothing.
+anyone files during the run. Triage the new tasks each time `next` prints an
+empty list, whether you run `next` or a landing runs it. After a triage that
+adds tasks, run `ultraclose.py next`, so that the new tasks take the free
+slots.
 
 `ultraclose.py untriaged --project <key>` prints each task of the queue
 that the run does not hold. `<key>` names the aven project of the
@@ -154,9 +156,12 @@ and prints the result. It takes the `--limit`, `--rounds`, `--check`,
 `--health`, `--shared`, and `--disk-floor-gb` flags of `init`, and its
 `--unshared <glob>` flag removes a shared glob. `config` prints the warning
 of `triage` for each glob that its `--shared` flag adds and that matches no
-file of any task. Every change applies to the commands that start after it,
-so a running Workflow and a queued landing keep the values that they
-started with.
+file of any task.
+
+Every config change applies to the commands that start after it. So a
+running Workflow and a queued landing keep the values that they started
+with. The `next` that a landing runs reads the config when it runs, after
+the landing.
 
 A run that you continue carries the config and the `rules.md` of the tasks
 that it started with. When you continue the run, fit both to the arguments
@@ -183,6 +188,15 @@ Repeat until the run ends:
    running tasks share a file outside the shared globs. It prints one input
    object per started task. After a user message about other work, the
    User messages section says in which turn to run it.
+
+   A landing with the result `OK` runs `next`, as the Landing section says.
+   In a turn that acts on such a landing, run this step only after an
+   action that can let a task start. These actions are a triage that adds
+   tasks, a `set <ref> noted`, a `set <ref> closed`, a landing that you
+   start, and a config change. The `next` of the landing ran before those
+   actions, so it missed each task that they add and each slot that they
+   free. Skip this step in a turn that takes none of those actions, even
+   after a triage that adds no task.
 2. Launch one Workflow per object:
    `Workflow({scriptPath: "<run>/close-task.js", args: <object>})`. The
    `run` field of the object holds the path of the run directory. One task
@@ -312,22 +326,29 @@ round.
 
 ## Landing
 
-Run `ultraclose.py land <ref>` in a background Bash call. Landings queue on
-a lock, so start one as soon as a task is ready. The command merges the base
-branch into the worktree and runs the check. Then it squashes the branch
-into one commit on the base branch with `msg.txt` as the message, removes
-the worktree, and sets the task to `done`. Each landing of a run with a
-health command runs that command before the merge, and again after a failed
-check or a failed commit.
+Run `ultraclose.py land <ref> --next` in a background Bash call. Landings
+queue on a lock, so start one as soon as a task is ready. The command merges
+the base branch into the worktree and runs the check. Then it squashes the
+branch into one commit on the base branch with `msg.txt` as the message,
+removes the worktree, and sets the task to `done`. Each landing of a run
+with a health command runs that command before the merge, and again after a
+failed check or a failed commit.
 
-When a landing fails, the command prints the last lines of the failing
-output. The run directory holds the full output of each step in
-`logs/<ref>.<step>.log`. The last line that the command prints is the
-`RESULT` line:
+The command prints a `RESULT` line. After an `OK` result, the `--next` flag
+runs `next`, so one background call lands the task and starts the next
+tasks. The list of input objects that `next` prints follows the `RESULT`
+line, and the list is empty when no task starts. After a failed landing,
+the flag does not run `next`.
+
+When a landing fails, the `RESULT` line is the last line that the command
+prints. The last lines of the failing output come before it. The run
+directory holds the full output of each step in `logs/<ref>.<step>.log`.
+
+Act on the result as this table says:
 
 | Result | Action |
 | --- | --- |
-| `OK` | Run `next`. |
+| `OK` | Launch one Workflow per object of the list that follows the `RESULT` line, as the Loop section says. Skip each object whose task you relaunched after the landing started. When an error follows the line instead of the list, the task landed and `next` failed. Repair the cause of the error, and run `ultraclose.py next`. |
 | `CONFLICT` | The base branch moved under the task. Sync the task. |
 | `CHECKFAIL`, `COMMITFAIL` | The check or a commit hook failed. Find the cause in the failing output, and act on that cause. |
 | `HEALTHFAIL` | The service that the check or a commit hook requires is down. Repair the service and land again. Do not sync the task. When the same task ends in `HEALTHFAIL` after the check or the commit a second time, read the log that the output names above the `RESULT` line, and do not land the task again. |
@@ -383,10 +404,16 @@ prompts tell every agent that you handle those messages. A Workflow that
 you launch in a turn without a user message relays nothing.
 
 When the user sends a message about other work, do not launch a
-`close-task.js` Workflow in the turn that receives it. Run
-`ultraclose.py next` and each relaunch in the turn that the next
-notification starts. Launch them in the same turn only when no Workflow
-and no landing is running, because no notification comes then. Launch a
+`close-task.js` Workflow in the turn that receives it. Take each of these
+actions in the turn that the next notification starts:
+
+- Run `ultraclose.py next`, and launch each object that it prints.
+- Run each relaunch.
+- Launch each object that a landing printed and that you have not launched,
+  except the objects that the Landing section skips.
+
+Take them in the turn that receives the message only when no Workflow and
+no landing is running, because no notification comes then. Launch a
 Workflow that the user asks for in the turn of the request, because the
 relayed message is the request of that Workflow.
 
@@ -406,9 +433,14 @@ the Loop table says.
   landing and no check runs, then start `watch` again. A cache clean races
   running builds, so land again any task that failed during the clean.
 - **Interrupted run:** after a usage limit, a model switch, or a new
-  session, run `ultraclose.py status` and relaunch each inflight task with
-  `ultraclose.py args <ref>`. The agents find the unfinished work in the
-  worktree.
+  session, run `ultraclose.py status`. A landing that ran `next` during
+  the interruption set each task of its list to inflight, but no Workflow
+  runs those tasks. Launch the objects of such a list when you act on the
+  result of the landing, and do not relaunch their tasks. Relaunch each
+  other inflight task with `ultraclose.py args <ref>`. The agents find the
+  unfinished work in the worktree. A list that arrives after the relaunch
+  can name a task that you relaunched, and the Landing section says to
+  skip its object.
 
 ## Notes
 

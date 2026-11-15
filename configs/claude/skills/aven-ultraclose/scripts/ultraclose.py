@@ -7,9 +7,10 @@ of close-task.js. The repository's git config records its path as
 ultraclose.run, so a later session finds the run without arguments.
 
 The init, next, and args commands each copy close-task.js from the
-directory of this script into the run directory. Pass that copy to the
-Workflow tool as scriptPath. The tool refuses the script in the skill
-directory after Nix store optimisation hard-links it.
+directory of this script into the run directory, and so does a landing
+that runs next. Pass that copy to the Workflow tool as scriptPath. The
+tool refuses the script in the skill directory after Nix store
+optimisation hard-links it.
 
 The directory of a task holds its task file, its commit message, its
 review history, and the summary and the notes of its change. The agents of
@@ -36,7 +37,7 @@ directory that holds an earlier run.
   args REF [--round N] [--final] [--sync REASON]
                          print the Workflow input that relaunches REF
   set REF STATE [--flag TEXT]
-  land REF               land REF on the base branch, one landing at a time
+  land REF [--next]      land REF on the base branch, one landing at a time
   status
   watch                  exit when free disk space runs low
 
@@ -56,7 +57,13 @@ tasks of every project. With --limit N, untriaged prints at most N rows,
 and the tasks that the run holds do not count toward N.
 
 The land command prints the failing output of a failed landing. The last
-line that it prints is the RESULT line.
+line that a failed landing prints is the RESULT line. With --next, a
+landing with the result OK runs the next command after it prints the
+RESULT line. The list of Workflow inputs that next prints follows the
+RESULT line, and the list is empty when no task starts. After a failed
+landing, --next does not run next. When next fails after the landing, its
+error follows the RESULT line, and the command exits with a failure
+status.
 
 The health command of init --health and config --health is a fast
 command that fails when a service that the check or a commit hook
@@ -332,8 +339,9 @@ def install_workflow(run):
     and its content matches the script beside this file.
 
     The tool also refuses a script file that a rename replaces during
-    the load. A copy that the tool can load stays in place, so a next or
-    args command can run at the same time as a Workflow launch.
+    the load. A copy that the tool can load stays in place, so a next
+    command, an args command, or a landing that runs next can run at the
+    same time as a Workflow launch.
     """
     script = Path(__file__).with_name(WORKFLOW).read_bytes()
     copy = run / WORKFLOW
@@ -560,9 +568,8 @@ def start(st, run, ref):
     t["startedAt"] = time.time()
 
 
-def cmd_next(a):
-    repo = main_checkout()
-    run = run_dir(repo)
+def fill_slots(run):
+    """Start one task per free slot, and print the list of their Workflow inputs."""
     with state(run) as st:
         install_workflow(run)
         launched = []
@@ -572,6 +579,12 @@ def cmd_next(a):
             unstore(run, ref)
             launched.append(workflow_args(st, run, ref))
     print(json.dumps(launched, indent=1))
+
+
+def cmd_next(a):
+    repo = main_checkout()
+    run = run_dir(repo)
+    fill_slots(run)
 
 
 def cmd_args(a):
@@ -815,7 +828,17 @@ def cmd_land(a):
         sh("aven", "edit", ref, "--status", "done", cwd=repo)
         with state(run) as st:
             st["tasks"][ref]["state"] = "landed"
-        print(f"RESULT {ref} OK {out('git', 'log', '-1', '--format=%h %s', cwd=repo)}")
+        # Python buffers the standard output of a background call. The
+        # flush writes the result to the output before next runs, so the
+        # result stays there when the caller stops the command during next.
+        print(
+            f"RESULT {ref} OK {out('git', 'log', '-1', '--format=%h %s', cwd=repo)}",
+            flush=True,
+        )
+    # Each failed landing exits before this line. The landing lock is free
+    # here, so a queued landing does not wait for the tasks that start.
+    if a.next:
+        fill_slots(run)
 
 
 def main():
@@ -908,6 +931,11 @@ def main():
 
     s = sub.add_parser("land")
     s.add_argument("ref")
+    s.add_argument(
+        "--next",
+        action="store_true",
+        help="after the result OK, run next and print its list of Workflow inputs",
+    )
     s.set_defaults(fn=cmd_land)
 
     sub.add_parser("status").set_defaults(fn=cmd_status)

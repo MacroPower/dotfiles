@@ -10,7 +10,8 @@ export const meta = {
   ],
 }
 
-// Input: one object that `ultraclose.py next` or `ultraclose.py args` prints.
+// Input: one object that `ultraclose.py next`, `ultraclose.py land --next`,
+// or `ultraclose.py args` prints.
 const { run, repo, base } = args
 const T = args.task
 const ROUNDS = args.rounds || 6

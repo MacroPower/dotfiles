@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -1209,9 +1210,17 @@ class StoredTextTest(unittest.TestCase):
 
 
 class LandTest(unittest.TestCase):
-    """A landing prints its result last and tells a down service from a fault."""
+    """What a landing prints, and how it tells a down service from a fault.
+
+    A failed landing prints its result last. A landing with --next and the
+    result OK then starts the next tasks.
+    """
 
     SUBJECT = "feat: add a file"
+    # The file that the task of start_task changes.
+    FILE = "a.txt"
+    # A second task, which is pending when the landing starts.
+    OTHER = "APP-0002"
     # The engine file stands in for a service that the check and the
     # commit hook require. The environment of the test names the file.
     HEALTH = 'test -e "$ENGINE" || { echo no engine; exit 1; }'
@@ -1248,7 +1257,7 @@ class LandTest(unittest.TestCase):
         ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
         triage(tmp, repo, env, {"ref": REF})
         task = json.loads(ultraclose("next", cwd=repo, env=env))[0]["task"]
-        Path(task["wt"], "a.txt").write_text("a\n")
+        Path(task["wt"], self.FILE).write_text("a\n")
         self.git("add", "-A", cwd=task["wt"], env=env)
         self.git("commit", "-q", "--no-verify", "-m", "wip", cwd=task["wt"], env=env)
         Path(task["dir"], "msg.txt").write_text(self.SUBJECT + "\n")
@@ -1265,17 +1274,47 @@ class LandTest(unittest.TestCase):
         )
         return p.stdout.strip()
 
-    def land(self, repo, env):
-        """Land the task. Return the exit status and the printed lines."""
+    def land(self, repo, env, *flags, stderr=subprocess.PIPE):
+        """Land the task. Return the exit status and the printed lines.
+
+        The flags go to the land command. The lines come from the standard
+        output. Pass subprocess.STDOUT as stderr to add the lines of the
+        standard error in the order that the command writes both.
+        """
         p = subprocess.run(
-            [sys.executable, str(SCRIPT), "land", REF],
+            [sys.executable, str(SCRIPT), "land", REF, *flags],
             cwd=repo,
             env=env,
             check=False,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=stderr,
             text=True,
         )
         return p.returncode, p.stdout.splitlines()
+
+    def add_other(self, tmp, repo, env, **row):
+        """Add the second task to the run, with the fields of the row.
+
+        The task of start_task takes the file that it changes, so the
+        second task can wait for that file.
+        """
+        triage(
+            tmp,
+            repo,
+            env,
+            {"ref": REF, "files": [self.FILE]},
+            {"ref": self.OTHER, **row},
+        )
+
+    def task_states(self, tmp):
+        """The state of each task of the run, by ref."""
+        tasks = state_of(Path(tmp, "run"))["tasks"]
+        return {ref: t["state"] for ref, t in tasks.items()}
+
+    def next_refs(self, repo, env):
+        """Run the next command, and return the refs of the tasks that start."""
+        started = json.loads(ultraclose("next", cwd=repo, env=env))
+        return [t["task"]["ref"] for t in started]
 
     def assert_failed(self, repo, env, landing, result):
         """The landing printed the result last and left the base branch alone."""
@@ -1315,6 +1354,136 @@ class LandTest(unittest.TestCase):
                 landing = self.land(repo, env)
                 self.assert_failed(repo, env, landing, result)
                 self.assertIn(output, landing[1][:-1])
+
+    def test_next_starts_tasks_after_landing(self):
+        # The second task cannot start while the first task runs.
+        # name: (the init flags, the fields of the second task, or None
+        # for a run without a second task)
+        cases = {
+            "a task that waits for the slot": (["--limit", "1"], {}),
+            "a task that waits for a file of the landed task": (
+                [],
+                {"files": [self.FILE]},
+            ),
+            "a task that waits for the landed task": ([], {"after": [REF]}),
+            "no pending task": ([], None),
+        }
+        for name, (flags, row) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp, *flags)
+                others = []
+                if row is not None:
+                    self.add_other(tmp, repo, env, **row)
+                    others = [self.OTHER]
+                self.assertEqual(self.next_refs(repo, env), [])
+                copy = Path(tmp, "run", "close-task.js")
+                copy.unlink()
+                status, lines = self.land(repo, env, "--next")
+                self.assertEqual(status, 0, lines)
+                self.assertTrue(lines[0].startswith(f"RESULT {REF} OK "), lines)
+                self.assertEqual(
+                    self.git("log", "-1", "--format=%s", cwd=repo, env=env),
+                    self.SUBJECT,
+                )
+                # The list of Workflow inputs follows the RESULT line.
+                started = json.loads("\n".join(lines[1:]))
+                self.assertEqual([t["task"]["ref"] for t in started], others)
+                self.assertEqual(
+                    self.task_states(tmp),
+                    {REF: "landed", **dict.fromkeys(others, "inflight")},
+                )
+                # Each input names a task that is ready for its Workflow,
+                # as an input of the next command does.
+                for t in started:
+                    self.assertTrue(Path(t["task"]["wt"], ".git").exists())
+                    self.assertTrue(Path(t["task"]["dir"], "task.md").exists())
+                    self.assertEqual(Path(t["run"]), copy.parent.resolve())
+                # The landing refreshes the copy that the Workflows load.
+                self.assertEqual(copy.read_bytes(), WORKFLOW.read_bytes())
+
+    def test_landing_starts_no_task(self):
+        # A next command can start the second task after each landing.
+        # name: (the check, the land flags, the result)
+        cases = {
+            "a landing without --next": ("exit 0", [], "OK"),
+            "a failed landing with --next": ("exit 1", ["--next"], "CHECKFAIL"),
+        }
+        for name, (check, flags, result) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp, "--check", check)
+                self.add_other(tmp, repo, env)
+                landing = self.land(repo, env, *flags)
+                if result == "OK":
+                    self.assert_landed(repo, env, landing)
+                else:
+                    self.assert_failed(repo, env, landing, result)
+                self.assertEqual(self.task_states(tmp)[self.OTHER], "pending")
+                self.assertEqual(self.next_refs(repo, env), [self.OTHER])
+
+    def test_failed_next_keeps_result_of_landing(self):
+        # The landing passes. Then the second task cannot start, because
+        # aven does not print its task file.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            self.add_other(tmp, repo, env)
+            Path(tmp, "bin", "aven").write_text('#!/bin/sh\ntest "$1" != context\n')
+            status, lines = self.land(repo, env, "--next", stderr=subprocess.STDOUT)
+            self.assertEqual(status, 1, lines)
+            # The RESULT line comes first, and the error of next follows it.
+            self.assertTrue(lines[0].startswith(f"RESULT {REF} OK "), lines)
+            self.assertIn(f"ultraclose: aven context {self.OTHER} failed", lines[1])
+            self.assertEqual(
+                self.git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
+            )
+            self.assertEqual(
+                self.task_states(tmp), {REF: "landed", self.OTHER: "pending"}
+            )
+
+    def test_result_reaches_output_before_next(self):
+        # The aven stub holds the start of the second task until the test
+        # creates the release file. The output goes to a file, so Python
+        # buffers it unless the landing flushes the RESULT line.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            self.add_other(tmp, repo, env)
+            waiting, release = Path(tmp, "waiting"), Path(tmp, "release")
+            env = {k: v for k, v in env.items() if k != "PYTHONUNBUFFERED"}
+            env.update(WAITING=str(waiting), RELEASE=str(release))
+            Path(tmp, "bin", "aven").write_text(
+                "#!/bin/sh\n"
+                'if test "$1" = context; then\n'
+                '  touch "$WAITING"\n'
+                '  until test -e "$RELEASE"; do sleep 0.05; done\n'
+                "fi\n"
+                "echo stub\n"
+            )
+            output = Path(tmp, "output")
+            with output.open("w") as f:
+                p = subprocess.Popen(
+                    [sys.executable, str(SCRIPT), "land", REF, "--next"],
+                    cwd=repo,
+                    env=env,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                )
+            try:
+                deadline = time.monotonic() + 60
+                while not waiting.exists():
+                    self.assertIsNone(p.poll(), output.read_text())
+                    self.assertLess(time.monotonic(), deadline, "next did not start")
+                    time.sleep(0.05)
+                # The next command is running, and the landing is done.
+                self.assertTrue(
+                    output.read_text().startswith(f"RESULT {REF} OK "),
+                    repr(output.read_text()),
+                )
+            finally:
+                release.touch()
+                p.wait(timeout=60)
+            self.assertEqual(p.returncode, 0, output.read_text())
+            lines = output.read_text().splitlines()
+            started = json.loads("\n".join(lines[1:]))
+            self.assertEqual([t["task"]["ref"] for t in started], [self.OTHER])
 
     def test_health(self):
         # name: (the service runs at the start, the check, the hook, the
