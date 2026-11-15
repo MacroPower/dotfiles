@@ -254,6 +254,73 @@ in
       '
     }
 
+    # Drops a ProseOpinion finding inside a speaker's turn of a
+    # transcript (`**MJ**: I think the split helps`). The speaker gives
+    # a view on purpose, and the writer keeps the words as spoken.
+    # Harper's markdown parser drops the emphasis, and a label opens
+    # only the first paragraph of a turn. The rule therefore cannot tell
+    # a turn from the writer's own prose.
+    #
+    # A speaker label opens a paragraph and takes one of two forms. The
+    # first is a name of one to three words in `**` marks, and its colon
+    # sits on either side of the closing marks (`**MJ**:` or
+    # `**Michael:**`). The second is a name of two or three words in
+    # capitals with a colon after it, and `**` or `<b>` can open it
+    # (`CRAIG BOX:` or `<b>ADAM GLICK: How did`). One word in capitals
+    # often names a field (`NOTE:`), so the second form asks for two.
+    #
+    # A file is a transcript when one name opens two or more of its
+    # paragraphs, in either form. A speaker talks more than once, and a
+    # label such as `**Note:**` rarely repeats. Each turn of a
+    # transcript runs from a label to the next heading, because an
+    # answer often takes several paragraphs. A line inside a fenced code
+    # block is neither a label nor a heading. speech_lines in measure.py
+    # finds the same lines.
+    drop_transcript_opinions() {
+      SRC="$1" awk '
+        BEGIN {
+          blank = 1
+          while ((getline src < ENVIRON["SRC"]) > 0) {
+            n++
+            if (src ~ /^[ \t>]*(```|~~~)/) {
+              fenced = !fenced
+            } else if (!fenced && src ~ /^ {0,3}#+([ \t]|$)/) {
+              heading[n] = 1
+            } else if (!fenced && blank && (match(src, /^ {0,3}[*][*][^* :]+( [^* :]+)?( [^* :]+)?([*][*]:|:[*][*])/) ||
+              match(src, /^ {0,3}([*][*]|<b>)?[A-Z][A-Z\047.-]+( [A-Z][A-Z\047.-]+)( [A-Z][A-Z\047.-]+)?:/))) {
+              name = substr(src, RSTART, RLENGTH)
+              sub(/^ *([*][*]|<b>)?/, "", name)
+              sub(/([*][*]:|:[*][*]|:)$/, "", name)
+              label[n] = 1
+              if (++seen[name] == 2) {
+                transcript = 1
+              }
+            }
+            blank = src ~ /^[ \t\r]*$/
+          }
+          for (i = 1; transcript && i <= n; i++) {
+            if (i in heading) {
+              turn = 0
+            } else if (i in label) {
+              turn = 1
+            }
+            if (turn) {
+              speech[i] = 1
+            }
+          }
+        }
+        {
+          if (match($0, /:[0-9]+:[0-9]+: [A-Za-z]+::ProseOpinion_/)) {
+            split(substr($0, RSTART + 1), pos, ":")
+            if (pos[1] in speech) {
+              next
+            }
+          }
+          print
+        }
+      '
+    }
+
     # Prints the file's full-line comments at their lines and columns
     # and an `x` on every other line. The `x` keeps two comments that
     # code separates from merging into one run, which a blank line
@@ -672,7 +739,8 @@ in
       straighten <"$message" >"$norm_dir/message.md"
       markdown_checks "$message" "$change_skips" >"$tmp_dir/checks" &
       checks_pid=$!
-      found=$(lint "$change_rules" "$norm_dir/message.md" | drop_label_colons "$message")
+      found=$(lint "$change_rules" "$norm_dir/message.md" | drop_label_colons "$message" |
+        drop_transcript_opinions "$message")
       wait "$checks_pid"
       checks=$(cat "$tmp_dir/checks")
       out=$(printf '%s\n%s\n' "$found" "$checks" | sed '/^$/d' |
@@ -863,6 +931,12 @@ in
     if [ -n "$comment_kind" ]; then
       out=$(printf '%s\n' "$out" | license_drop "$file")
     fi
+
+    # The guard reads markdown paragraphs, headings, and fences, so it
+    # runs only on markdown files.
+    case "$ext" in
+      md | markdown) out=$(printf '%s\n' "$out" | drop_transcript_opinions "$file") ;;
+    esac
 
     # harper-cli prints the basename; restore the path it was given so
     # a finding names the file the way the caller does. ENVIRON avoids
@@ -1074,6 +1148,79 @@ in
               exit 1
             fi
           done
+          touch "$out"
+        '';
+
+        # Lints two transcripts and expects a ProseOpinion finding only
+        # on the lines outside the turns of their speakers. The command
+        # in configs/harper/CLAUDE.md builds this test too.
+        #
+        # In interview.md, the colon of `**Raj Kumar Patel**:` sits after
+        # the closing marks, and the colon of `**Ana:**` sits before
+        # them. Raj's name has three words, and Ana's name has one. Each
+        # label also opens a turn of its own after a heading, and that
+        # turn holds an opinion marker. The turn therefore passes only
+        # when its own colon placement and word count read as a label.
+        # The first turn holds a paragraph with no label and a fenced
+        # block with a `#` line, and neither ends the turn. It also holds
+        # an `and/or`, and the ProseAndOr finding there still prints,
+        # because the guard drops only the findings of ProseOpinion. A
+        # commit message with the same text draws the same findings, and
+        # so does a copy of the file named interview.markdown.
+        #
+        # podcast.md names each speaker in capitals. Only the host's
+        # name repeats, once after `<b>` and once after `**`, so the
+        # file is a transcript only when both forms give one name. The
+        # host's name has two words. The guest's name has three words
+        # and an apostrophe. A heading ends the host's turn before hers,
+        # so her turn passes only when her name of three words reads as
+        # a label. The host's second turn holds a fence with a `#` line.
+        # Prettier writes every fence with backticks, so the test
+        # rewrites that fence to `~~~`. The opinion marker after the
+        # fence passes only when the guard reads `~~~` as a fence. The
+        # `NOTE:` paragraphs draw findings, because one word in capitals
+        # is not a label.
+        #
+        # In labels.md, no label repeats, so each opinion marker draws a
+        # finding. Its second `**Note:**` follows a line of prose in the
+        # same paragraph, so it is not a label.
+        tests.transcripts = runCommand "prose-lint-transcripts" { } ''
+          cp ${../configs/harper/fixtures/transcript}/* .
+          cp interview.md interview.markdown
+          sed -i 's/^```/~~~/' podcast.md
+
+          # Runs the prose-lint command in the arguments after the first
+          # and prints the lines of its findings of the rule that the
+          # first argument names.
+          findings() {
+            local rule=$1 out rc=0
+            shift
+            out=$("$@") || rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "$*: prose-lint exited $rc" >&2
+              exit 1
+            fi
+            printf '%s\n' "$out" |
+              sed -n "s/^[^:]*:\([0-9]*\):.*::$rule:.*/\1/p" | sort -nu | paste -sd ' ' -
+          }
+
+          # Fails when the lines in the second argument differ from the
+          # lines in the third.
+          expect() {
+            if [ "$2" != "$3" ]; then
+              echo "$1: reported lines '$2', expected '$3'" >&2
+              exit 1
+            fi
+          }
+
+          lint=${lib.getExe finalAttrs.finalPackage}
+          expect interview.md "$(findings ProseOpinion "$lint" "$PWD/interview.md")" "3 31"
+          expect "interview.md as a message" "$(findings ProseOpinion "$lint" --commit <interview.md)" "3 31"
+          expect "interview.md and/or" "$(findings ProseAndOr "$lint" "$PWD/interview.md")" "19"
+          expect "interview.md and/or as a message" "$(findings ProseAndOr "$lint" --commit <interview.md)" "19"
+          expect interview.markdown "$(findings ProseOpinion "$lint" "$PWD/interview.markdown")" "3 31"
+          expect podcast.md "$(findings ProseOpinion "$lint" "$PWD/podcast.md")" "3 25 27"
+          expect labels.md "$(findings ProseOpinion "$lint" "$PWD/labels.md")" "3 5 7 10"
           touch "$out"
         '';
       };

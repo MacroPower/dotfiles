@@ -273,9 +273,12 @@ To rename a rule:
 2. In an awk rule, update the name in the output-format comment and in
    every `printf`.
 3. Update the label at the start of the message.
-4. Update the name in `configs/harper/comment-checks.txt` and in
-   `pkgs/prose-lint.nix`, which names some rules for commit messages
-   and for agent prompt files.
+4. Update the name in `configs/harper/comment-checks.txt`, in
+   `pkgs/prose-lint.nix`, and in `configs/harper/measure.py`.
+   `prose-lint.nix` names some rules for commit messages, for agent
+   prompt files, and for the findings that it drops after Harper
+   reports them. `measure.py` names the rules whose handling it copies
+   from `prose-lint.nix`.
 5. Search `configs/harper/rules` and `configs/claude` for the old rule
    name, and update each reference. Rule comments name a rule only by
    its rule name. Messages and skills can state the old term in words
@@ -387,6 +390,15 @@ on a set of files.
   character column of each finding under the C locale and under a
   UTF-8 locale. `check.py` compares only the line of each finding, so
   only this test reads the columns.
+- `transcripts` lints two transcripts. One marks each speaker with a
+  bold label, and the test lints it as a `.md` file, as a `.markdown`
+  file, and as a commit message. The other names each speaker in
+  capitals, and the test rewrites the fence inside one of its turns to
+  `~~~`. The test expects the ProseOpinion finding only outside the
+  turns of the speakers. It
+  expects the ProseAndOr finding inside a turn, because the guard
+  drops only ProseOpinion findings. It also lints a file in which no
+  label repeats, and it expects every ProseOpinion finding there.
 
 This command builds every test.
 

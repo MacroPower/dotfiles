@@ -4,13 +4,39 @@
 # think`) or an unnamed arguer's (`it could be argued`). The frame tells
 # the reader that the claim might not hold and gives no way to check it.
 # The fix states the claim or gives the evidence for it. The rule sits
-# at Recommended, because the writer has to choose between the two
-# fixes.
+# at Recommended, because the writer chooses between the two fixes, and
+# because quoted speech with no speaker label also matches.
 #
 # Expression
 #
 # `main` lists each phrase. `honestly`, `frankly`, and `personally`
 # count only with a glued comma (`Frankly, the flag is redundant`).
+#
+# A transcript marks each speaker with a label. Harper's markdown
+# parser drops the emphasis, and a Weir match stays inside one sentence,
+# so the pattern cannot find the label. prose-lint reads the markdown
+# file itself and drops each finding inside a speaker's turn, and
+# measure.py drops the same hits.
+#
+# A speaker label opens a paragraph and takes one of two forms. The
+# first is a name of one to three words in `**` marks, and its colon
+# sits on either side of the closing marks (`**MJ**:` or
+# `**Michael:**`). The second is a name of two or three words in
+# capitals with a colon after it, and `**` or `<b>` can open it
+# (`CRAIG BOX:`). One word in capitals often names a field (`NOTE:`),
+# so the second form asks for two.
+#
+# A file is a transcript when one name opens two or more of its
+# paragraphs, in either form. Each turn of a transcript runs from a
+# label to the next heading, because an answer often takes several
+# paragraphs.
+#
+# In a transcript, every label opens a turn, so a label that names a
+# field (`**Note:**`) opens one too. A field label that repeats
+# (`**Problem:**` or `BUG FIXES:`) makes a file a transcript by itself.
+# An opinion marker between such a label and the next heading then
+# passes. The writer's own text between a speaker's answer and the next
+# heading passes too.
 #
 # False Positives
 #
@@ -21,6 +47,19 @@
 # of the three describes a verb in the middle of a sentence (`the tool
 # reports the error honestly`), so it passes.
 #
+# In a transcript, each speaker gives a view on purpose (`**MJ**: I
+# think one of the key things`), and the writer keeps the words as
+# spoken. A speaker's turn therefore passes.
+#
+# Other quoted speech still draws a finding. Initials in capitals
+# (`MS: Honestly,`) form one word, so they make no label. In a short
+# exchange, no label repeats. A quotation in a blockquote or in
+# quotation marks carries no label.
+#
+# Two senses that frame no claim also draw a finding. `think about`
+# means `consider` (`the way we think about network policies`), and
+# `feel` before an adjective names a feeling (`I feel fortunate`).
+#
 # Related Rules
 #
 # `I would argue` stays out, because Harper's built-in Hedging rule
@@ -28,10 +67,11 @@
 #
 # Measurement
 #
-# The rule hit 19 lines in the measure.py corpus, and 6 of 19 sampled
-# hits framed a claim that the writer can state outright. The 13
-# misfires sat in the answers of published interviews (`**MJ**: I think
-# one of the key things`), where the speaker gives a view on purpose.
+# The rule hit 8 lines in the measure.py corpus, and 6 of 8 sampled
+# hits framed a claim that the writer can state outright. The 2
+# misfires sat in one published interview that prints each question in
+# bold and names no speaker (`It's a neverending mission, however, we
+# think`).
 expr main [(in my opinion), (in my view), (I think), (I believe), (I feel), (we think), (we believe), (we feel), (it could be argued), (one could argue), (it might be said), (it may be said), (I'd argue), (I'd say), (I would say), (in my experience), (to be honest), (if you ask me), (honestly,), (frankly,), (personally,)]
 let message "Opinion marker. State the claim, or give the evidence for it."
 let description "Flags phrases that frame a claim as someone's view instead of stating it."

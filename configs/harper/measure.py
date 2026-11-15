@@ -36,6 +36,11 @@ stem. ProseTypography reads the raw Go file with RAW=1, string
 literals included, as the hook does. Harper reads each file with a
 curly apostrophe between two letters straightened, as the hook does.
 
+prose-lint drops each ProseOpinion finding inside a speaker's turn of a
+markdown transcript, and run drops the same hits. A scratch rule loses
+those hits only when its stem is ProseOpinion. The docstring of
+speech_lines says how both programs find a turn.
+
 run prints the harper version, a hash of corpus.json, and a table of
 the files, hits, and lines with a hit for each source. The `top` column
 gives the share of the source's hits that its busiest file holds. Then
@@ -404,6 +409,77 @@ def agent_file(name: str) -> bool:
     )
 
 
+# The rules whose findings prose-lint drops inside a speaker's turn of
+# a transcript, where the speaker gives a view on purpose.
+TRANSCRIPT_SKIPS = frozenset({"ProseOpinion"})
+
+SPEAKER = re.compile(
+    r"^ {0,3}(?:\*\*([^* :]+(?: [^* :]+){0,2})(?:\*\*:|:\*\*)"
+    r"|(?:\*\*|<b>)?([A-Z][A-Z'.-]+(?: [A-Z][A-Z'.-]+){1,2}):)"
+)
+HEADING = re.compile(r"^ {0,3}#+([ \t]|$)")
+FENCE = re.compile(r"^[ \t>]*(```|~~~)")
+
+
+def speech_lines(path: Path) -> set[int]:
+    """Return the lines of a markdown transcript that sit in a speaker's turn.
+
+    drop_transcript_opinions in prose-lint finds the same lines. A
+    speaker label opens a paragraph and takes one of two forms. The
+    first is a name of one to three words in `**` marks, and its colon
+    sits on either side of the closing marks (`**MJ**:` or
+    `**Michael:**`). The second is a name of two or three words in
+    capitals with a colon after it, and `**` or `<b>` can open it
+    (`CRAIG BOX:`). A file is a transcript when one name opens two or
+    more of its paragraphs, in either form. Each turn of a transcript
+    runs from a label to the next heading. A line inside a fenced code
+    block is neither a label nor a heading.
+    """
+    # awk splits lines at a newline only, so this split does the same.
+    lines = path.read_bytes().decode(errors="replace").split("\n")
+    labels: set[int] = set()
+    headings: set[int] = set()
+    seen: dict[str, int] = {}
+    blank, fenced = True, False
+    for i, line in enumerate(lines, start=1):
+        if FENCE.match(line):
+            fenced = not fenced
+        elif not fenced and HEADING.match(line):
+            headings.add(i)
+        elif not fenced and blank and (m := SPEAKER.match(line)):
+            labels.add(i)
+            name = m[1] or m[2]
+            seen[name] = seen.get(name, 0) + 1
+        blank = not line.strip(" \t\r")
+    if max(seen.values(), default=0) < 2:
+        return set()
+    speech: set[int] = set()
+    turn = False
+    for i in range(1, len(lines) + 1):
+        if i in headings:
+            turn = False
+        elif i in labels:
+            turn = True
+        if turn:
+            speech.add(i)
+    return speech
+
+
+def drop_transcript_opinions(hits: list[Hit], root: Path) -> list[Hit]:
+    """Drop each hit that prose-lint drops inside a speaker's turn of a transcript."""
+    turns: dict[tuple[str, str], set[int]] = {}
+    kept = []
+    for h in hits:
+        if h.rule.rsplit("_", 1)[0] in TRANSCRIPT_SKIPS and h.name.endswith(EXTENSIONS["docs"]):
+            key = (h.source, h.name)
+            if key not in turns:
+                turns[key] = speech_lines(root / h.source / h.name)
+            if h.line in turns[key]:
+                continue
+        kept.append(h)
+    return kept
+
+
 def lint_awk(docs: list[Doc], checks: list[tuple[str, Path]], mode: str = "") -> list[Hit]:
     """Run each check on each doc, with mode SHADOW or RAW set to 1."""
     env = {**os.environ, "AWKPATH": str(LIB)}
@@ -509,7 +585,9 @@ def run(args: argparse.Namespace, sources: list[Source], exclude: list[str], dig
             # prose-lint --shadow straightens the shadows already.
             straight = straightened(md_docs + raw_go, tmp)
             straight_md, straight_go = straight[: len(md_docs)], straight[len(md_docs) :]
-            hits += lint_weir(straight_md + go_docs, pack, weir_only, env)
+            hits += drop_transcript_opinions(
+                lint_weir(straight_md + go_docs, pack, weir_only, env), root
+            )
             # The hook also lints the Go file itself and keeps the hits
             # on lines that hold no full-line comment.
             code = code_lines(go_docs)
