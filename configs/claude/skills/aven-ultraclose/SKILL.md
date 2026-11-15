@@ -129,6 +129,18 @@ Note those tasks too.
 When `boundedReview` is true on a result, the last review covered only the
 final fixes. Record the task in `notes.md`.
 
+On an `approved` or `landable` result, `summary` and `notes` describe the
+change that lands. The implementer writes them, and each fixer revises
+them, so a fix that overturns an earlier statement also corrects it. On a
+`landable` result, the agent that narrows the claims of the change revises
+them last.
+
+A relaunched task that resumes at a review round starts without the
+`summary` and `notes` of its earlier launch. Until a fixer runs, its
+`summary` stays empty, and its `notes` hold only what a sync agent
+reported. When the `summary` of such a result is empty, read `msg.txt` for
+what the change does.
+
 ## Caps
 
 The Workflow caps each task at 6 review rounds, and `init --rounds` changes

@@ -73,9 +73,10 @@ const FIX_SCHEMA = {
       },
     },
     gave_up: { type: 'boolean', description: 'true when the findings show that the task cannot land without massive scope creep or significant regressions' },
-    notes: { type: 'string' },
+    summary: { type: 'string', description: 'What the whole change does as you leave it, in a few sentences' },
+    notes: { type: 'string', description: 'For gave_up: why the task cannot land, and what a later attempt must know. Otherwise the caveats of the whole change as you leave it, or empty.' },
   },
-  required: ['responses', 'gave_up', 'notes'],
+  required: ['responses', 'gave_up', 'summary', 'notes'],
 }
 
 const SYNC_SCHEMA = {
@@ -103,9 +104,10 @@ const NARROW_SCHEMA = {
         required: ['title', 'description'],
       },
     },
-    notes: { type: 'string', description: 'Each claim you removed or reworded' },
+    summary: { type: 'string', description: 'What the whole change does as it lands, in a few sentences' },
+    notes: { type: 'string', description: 'Each claim that you removed or reworded, and each earlier caveat that still holds' },
   },
-  required: ['followups', 'notes'],
+  required: ['followups', 'summary', 'notes'],
 }
 
 const rules = `
@@ -142,7 +144,7 @@ ${rules}
 - You are read-only on the worktree. Do not edit or commit there. Run experiments in ${T.dir}/scratch/. If an experiment requires a file inside the worktree, delete that file before you return.
 - Do not run the full check. Run targeted builds and tests.
 
-${summary ? `The implementer's summary: ${summary}` : ''}
+${summary ? `The summary from the agent that last changed the work: ${summary}` : ''}
 The proposed commit message is in ${MSG}.
 ${extra}
 Review steps:
@@ -174,11 +176,23 @@ This review is narrow. A fixer applied only the exact fixes of the findings belo
 ${listFindings(open)}
 `
 
-const fixPrompt = (round, findings, exact) => `You repair a change after an adversarial review. A different agent implemented task ${T.ref}: "${T.title}", and a reviewer reported the findings below.
+// The summary and the notes that the result carries so far, for the
+// prompt of an agent that changes the work and returns both revised.
+const summaryNote = ({ summary, notes }) => `
+The orchestrator of this run acts on the summary and the notes of the change, and it does not read the diff.
+
+The summary of the change so far:
+${summary || 'none'}
+
+The notes of the change so far:
+${notes || 'none'}
+`
+
+const fixPrompt = (round, findings, exact, current) => `You repair a change after an adversarial review. A different agent implemented task ${T.ref}: "${T.title}", and a reviewer reported the findings below.
 ${rules}
 
 The current commit message is in ${MSG}.
-
+${summaryNote(current)}
 Findings:
 ${listFindings(findings)}
 
@@ -191,6 +205,7 @@ Steps:
 5. Append a section to ${HISTORY}, creating the file if it does not exist. Head it \`## Round ${round}\`. List each finding with its location and problem, followed by your answer: fixed or rebutted, and the detail.
 6. Commit the work in progress.
 7. Return one response per finding.
+8. Return summary and notes that describe the whole change as you leave it, not this round alone. Start from the summary and the notes so far, and check each of their statements against the worktree and the findings. Keep each statement that still holds. Correct each statement that a finding or a fix made false, and remove each caveat that a fix resolved. Add each caveat that this round found. When the summary so far is "none", write it from the diff.
 
 If the findings show that the task cannot land without massive scope creep or significant regressions, set gave_up to true and explain in notes instead of forcing the task through.`
 
@@ -212,17 +227,18 @@ Steps:
 
 If the commits on ${base} make this task obsolete or force a redesign, return status "abandoned" with the evidence in notes.`
 
-const narrowPrompt = findings => `You prepare one change to land with known gaps. A different agent implemented task ${T.ref}: "${T.title}". A review left the findings below open. A reviewer judged that the change is a strict improvement over ${base} and that no open finding is a regression, so the change lands as it stands, and a follow-up task tracks each open finding.
+const narrowPrompt = (findings, current) => `You prepare one change to land with known gaps. A different agent implemented task ${T.ref}: "${T.title}". A review left the findings below open. A reviewer judged that the change is a strict improvement over ${base} and that no open finding is a regression, so the change lands as it stands, and a follow-up task tracks each open finding.
 ${rules}
 
 Open findings:
 ${listFindings(findings)}
-
+${summaryNote(current)}
 Steps:
 1. Do not fix the findings, and do not change behavior.
 2. Narrow the claims to what the code does. Edit each doc comment, doc, and example of this change, and the commit message in ${MSG}, so that none promises a behavior that an open finding contradicts. State a known limit where a reader would otherwise expect the full behavior.
 3. Make the full check pass in the worktree, and commit the work in progress.
-4. Return one follow-up task per open finding. Each task must stand alone for a reader who never saw this review: write what happens, what should happen, the minimal reproduction, and the evidence.`
+4. Return summary and notes that describe the whole change as it lands. Start from the summary and the notes so far. Remove or reword each statement that an open finding contradicts. In notes, list each claim that you removed or reworded, and keep each caveat that still holds. When the summary so far is "none", write it from the diff.
+5. Return one follow-up task per open finding. Each task must stand alone for a reader who never saw this review: write what happens, what should happen, the minimal reproduction, and the evidence.`
 
 // An agent that dies, or that ends without its structured result, returns
 // null here, and each caller retries it one time. The retry finds the
@@ -239,10 +255,15 @@ const attempt = async (prompt, opts) => {
   return null
 }
 
+// The result. The implementer writes its summary and notes. Each fixer and
+// the narrowing agent receive both in the prompt and return them revised
+// for the whole change. So a fix that overturns a statement also corrects
+// it. A task that resumes at a review round starts with an empty summary,
+// and its notes hold only the notes of a sync agent. The error, rejected,
+// and unconverged results replace the notes with their reason.
 const out = { ref: T.ref, title: T.title, rounds: 0, summary: '', notes: '', findings: [], followups: [], boundedReview: false }
 const done = (status, extra) => ({ ...out, status, ...extra })
 
-let summary = ''
 let extra = ''
 if (RESUME && RESUME.sync) {
   const sync = await attempt(syncPrompt(RESUME.sync), { label: `sync ${T.ref}`, phase: 'Sync', schema: SYNC_SCHEMA })
@@ -260,23 +281,24 @@ Review the whole diff against ${base} again. Give the merge the most attention: 
   out.summary = impl.summary
   out.notes = impl.notes
   if (impl.status !== 'implemented') return done(impl.status)
-  summary = impl.summary
 }
 
 const rebutted = []
 for (let round = FIRST; ; round++) {
   out.rounds = round
   const history = round > 1 ? historyNote(rebutted) : ''
-  const rev = await attempt(reviewPrompt(round, summary, extra + history), { label: `review ${T.ref} r${round}`, phase: 'Review', schema: REVIEW_SCHEMA })
+  const rev = await attempt(reviewPrompt(round, out.summary, extra + history), { label: `review ${T.ref} r${round}`, phase: 'Review', schema: REVIEW_SCHEMA })
   if (!rev) return done('error', { notes: `the reviewer of round ${round} returned nothing` })
   if (rev.verdict === 'reject') return done('rejected', { notes: rev.reject_reason, findings: rev.findings })
   if (rev.findings.length === 0) return done('approved')
   log(`${T.ref}: round ${round} has ${rev.findings.length} findings`)
 
   const capped = round >= LAST
-  const fix = await attempt(fixPrompt(round, rev.findings, capped), { label: `fix ${T.ref} r${round}`, phase: capped ? 'Final' : 'Fix', schema: FIX_SCHEMA })
+  const fix = await attempt(fixPrompt(round, rev.findings, capped, out), { label: `fix ${T.ref} r${round}`, phase: capped ? 'Final' : 'Fix', schema: FIX_SCHEMA })
   if (!fix) return done('error', { notes: `the fixer of round ${round} returned nothing`, findings: rev.findings })
-  if (fix.gave_up) return done('abandoned', { notes: fix.notes, findings: rev.findings })
+  out.summary = fix.summary
+  out.notes = fix.notes
+  if (fix.gave_up) return done('abandoned', { findings: rev.findings })
   rev.findings.forEach((f, i) => {
     const r = fix.responses.find(x => x.finding === i + 1)
     if (r && r.action === 'rebutted') rebutted.push(`- ${f.location}: ${f.problem}\n  Rebuttal: ${r.detail}`)
@@ -287,12 +309,14 @@ for (let round = FIRST; ; round++) {
   log(`${T.ref}: reached the cap at round ${round}`)
   out.rounds = round + 1
   out.boundedReview = true
-  const fin = await attempt(reviewPrompt(round + 1, summary, boundedNote(rev.findings) + historyNote(rebutted)), { label: `review ${T.ref} final`, phase: 'Final', schema: REVIEW_SCHEMA })
+  const fin = await attempt(reviewPrompt(round + 1, out.summary, boundedNote(rev.findings) + historyNote(rebutted)), { label: `review ${T.ref} final`, phase: 'Final', schema: REVIEW_SCHEMA })
   if (!fin) return done('unconverged', { notes: 'the final reviewer returned nothing, so the findings of the last round stand unverified', findings: rev.findings })
   if (fin.verdict !== 'reject' && fin.findings.length === 0) return done('approved')
   const landable = fin.verdict !== 'reject' && fin.improves_base && !fin.findings.some(f => f.regression)
   if (!landable) return done('unconverged', { notes: fin.reject_reason, findings: fin.findings })
-  const narrow = await attempt(narrowPrompt(fin.findings), { label: `narrow ${T.ref}`, phase: 'Final', schema: NARROW_SCHEMA })
+  const narrow = await attempt(narrowPrompt(fin.findings, out), { label: `narrow ${T.ref}`, phase: 'Final', schema: NARROW_SCHEMA })
   if (!narrow) return done('unconverged', { notes: 'the change is a strict improvement, but the narrowing agent returned nothing', findings: fin.findings })
-  return done('landable', { notes: narrow.notes, findings: fin.findings, followups: narrow.followups })
+  out.summary = narrow.summary
+  out.notes = narrow.notes
+  return done('landable', { findings: fin.findings, followups: narrow.followups })
 }

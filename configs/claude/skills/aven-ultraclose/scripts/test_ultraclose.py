@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for ultraclose.py. Run with: python3 test_ultraclose.py"""
+"""Tests for ultraclose.py and close-task.js.
+
+Run with: python3 test_ultraclose.py. The close-task.js tests run the
+script under Node, and they skip when node is not on PATH.
+"""
 
 import json
 import os
@@ -12,6 +16,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("ultraclose.py")
 WORKFLOW = Path(__file__).with_name("close-task.js")
+NODE = shutil.which("node")
 DEFAULT_SHARED = [
     "*_test.*",
     "*/test_*",
@@ -214,6 +219,323 @@ class WorkflowCopyTest(unittest.TestCase):
                     (after.st_ino, after.st_mtime_ns),
                     (before.st_ino, before.st_mtime_ns),
                 )
+
+
+# The Workflow tool runs the body of close-task.js inside an async
+# function, and passes it the input and an agent function. The driver
+# does the same under Node with scripted agents. It reads the input and
+# one result per agent label from standard input. It prints the result of
+# the script and each agent call.
+DRIVER_HEAD = """\
+const scenario = JSON.parse(require('node:fs').readFileSync(0, 'utf8'))
+const calls = []
+const scripted = async (prompt, opts) => {
+  calls.push({ label: opts.label, prompt, required: opts.schema.required })
+  if (!(opts.label in scenario.agents)) throw new Error(`no result for ${opts.label}`)
+  return scenario.agents[opts.label]
+}
+const workflow = async (args, agent, log) => {
+"""
+DRIVER_TAIL = """
+}
+workflow(scenario.args, scripted, () => {}).then(result => {
+  process.stdout.write(JSON.stringify({ result, calls }))
+})
+"""
+
+FINDING = {
+    "severity": "major",
+    "location": "a.py:1",
+    "problem": "p",
+    "evidence": "e",
+    "fix": "f",
+    "regression": False,
+}
+APPROVE = {
+    "verdict": "approve",
+    "findings": [],
+    "improves_base": True,
+    "reject_reason": "",
+}
+CHANGES = {**APPROVE, "verdict": "changes", "findings": [FINDING]}
+REJECT = {
+    **CHANGES,
+    "verdict": "reject",
+    "improves_base": False,
+    "reject_reason": "the approach cannot work",
+}
+# The resume field of the input that `ultraclose.py args` prints for a
+# task with one finished round, without and with --sync.
+RELAUNCH = {"round": 2, "lastRound": 6}
+SYNC = {"round": 2, "lastRound": 3, "sync": "the merge conflicts"}
+
+
+def described(author):
+    """The summary and the notes that one agent returns."""
+    return {"summary": f"summary by {author}", "notes": f"notes by {author}"}
+
+
+IMPLEMENTED = {"status": "implemented", **described("the implementer")}
+SYNCED = {"status": "synced", **described("the sync agent")}
+NARROWED = {
+    "followups": [{"title": "t", "description": "d"}],
+    **described("the narrowing agent"),
+}
+
+
+def fixed(n, gave_up=False):
+    return {
+        "responses": [{"finding": 1, "action": "fixed", "detail": "d"}],
+        "gave_up": gave_up,
+        **described(f"fixer {n}"),
+    }
+
+
+@unittest.skipUnless(NODE, "node is not on PATH")
+class WorkflowResultTest(unittest.TestCase):
+    """The summary and the notes of a result follow the last change."""
+
+    REF = "APP-7KQ9"
+
+    def label(self, short):
+        """Turn a short label such as "fix r1" into the label of the script."""
+        kind, _, rest = short.partition(" ")
+        return f"{kind} {self.REF} {rest}".strip()
+
+    def run_workflow(self, agents, rounds=6, resume=None):
+        """Run close-task.js with scripted agents.
+
+        The agents argument maps each short agent label to the result of
+        that agent, in the order that the script must call them. Return
+        the result of the script and each agent call by short label.
+        """
+        task = {
+            "ref": self.REF,
+            "title": "t",
+            "wt": "/repo/wt",
+            "dir": f"/run/tasks/{self.REF}",
+        }
+        if resume:
+            task["resume"] = resume
+        scenario = {
+            "args": {
+                "run": "/run",
+                "repo": "/repo",
+                "base": "main",
+                "rounds": rounds,
+                "task": task,
+            },
+            "agents": {self.label(short): r for short, r in agents.items()},
+        }
+        body = WORKFLOW.read_text().replace("export const meta", "const meta", 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            driver = Path(tmp, "driver.js")
+            driver.write_text(DRIVER_HEAD + body + DRIVER_TAIL)
+            p = subprocess.run(
+                [NODE, str(driver)],
+                input=json.dumps(scenario),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(p.returncode, 0, p.stderr)
+        ran = json.loads(p.stdout)
+        self.assertEqual([c["label"] for c in ran["calls"]], list(scenario["agents"]))
+        return ran["result"], dict(zip(agents, ran["calls"]))
+
+    def test_result_describes_last_change(self):
+        first_fix = {"impl": IMPLEMENTED, "review r1": CHANGES, "fix r1": fixed(1)}
+        rejected = {"summary": fixed(1)["summary"], "notes": REJECT["reject_reason"]}
+        # name: (run_workflow arguments, status, the summary and the notes)
+        cases = {
+            "the first review approves": (
+                {"agents": {"impl": IMPLEMENTED, "review r1": APPROVE}},
+                "approved",
+                IMPLEMENTED,
+            ),
+            "a fix round": (
+                {"agents": {**first_fix, "review r2": APPROVE}},
+                "approved",
+                fixed(1),
+            ),
+            "two fix rounds": (
+                {
+                    "agents": {
+                        **first_fix,
+                        "review r2": CHANGES,
+                        "fix r2": fixed(2),
+                        "review r3": APPROVE,
+                    }
+                },
+                "approved",
+                fixed(2),
+            ),
+            "the final cycle approves": (
+                {"agents": {**first_fix, "review final": APPROVE}, "rounds": 1},
+                "approved",
+                fixed(1),
+            ),
+            "the change lands with open findings": (
+                {
+                    "agents": {
+                        **first_fix,
+                        "review final": CHANGES,
+                        "narrow": NARROWED,
+                    },
+                    "rounds": 1,
+                },
+                "landable",
+                NARROWED,
+            ),
+            "a fixer gives up": (
+                {
+                    "agents": {
+                        "impl": IMPLEMENTED,
+                        "review r1": CHANGES,
+                        "fix r1": fixed(1, gave_up=True),
+                    }
+                },
+                "abandoned",
+                fixed(1),
+            ),
+            "the implementer finds the task obsolete": (
+                {"agents": {"impl": {**IMPLEMENTED, "status": "obsolete"}}},
+                "obsolete",
+                IMPLEMENTED,
+            ),
+            "a review rejects after a fix round": (
+                {"agents": {**first_fix, "review r2": REJECT}},
+                "rejected",
+                rejected,
+            ),
+            "the final review leaves a change that cannot land": (
+                {"agents": {**first_fix, "review final": REJECT}, "rounds": 1},
+                "unconverged",
+                rejected,
+            ),
+            "a reviewer returns nothing after a fix round": (
+                {
+                    "agents": {
+                        **first_fix,
+                        "review r2": None,
+                        "review r2 retry": None,
+                    }
+                },
+                "error",
+                {
+                    "summary": fixed(1)["summary"],
+                    "notes": "the reviewer of round 2 returned nothing",
+                },
+            ),
+            "a sync agent abandons the task": (
+                {
+                    "agents": {"sync": {**SYNCED, "status": "abandoned"}},
+                    "resume": SYNC,
+                },
+                "abandoned",
+                SYNCED,
+            ),
+            "a relaunch with a fix round": (
+                {
+                    "agents": {
+                        "review r2": CHANGES,
+                        "fix r2": fixed(2),
+                        "review r3": APPROVE,
+                    },
+                    "resume": RELAUNCH,
+                },
+                "approved",
+                fixed(2),
+            ),
+            "a relaunch that the first review approves": (
+                {"agents": {"review r2": APPROVE}, "resume": RELAUNCH},
+                "approved",
+                {"summary": "", "notes": ""},
+            ),
+            "a sync that the review approves": (
+                {
+                    "agents": {"sync": SYNCED, "review r2": APPROVE},
+                    "resume": SYNC,
+                },
+                "approved",
+                {"summary": "", "notes": SYNCED["notes"]},
+            ),
+        }
+        for name, (kwargs, status, want) in cases.items():
+            with self.subTest(name):
+                result, _ = self.run_workflow(**kwargs)
+                self.assertEqual(
+                    (result["status"], result["summary"], result["notes"]),
+                    (status, want["summary"], want["notes"]),
+                )
+
+    def test_agents_receive_last_summary_and_notes(self):
+        _, calls = self.run_workflow(
+            {
+                "impl": IMPLEMENTED,
+                "review r1": CHANGES,
+                "fix r1": fixed(1),
+                "review r2": CHANGES,
+                "fix r2": fixed(2),
+                "review final": CHANGES,
+                "narrow": NARROWED,
+            },
+            rounds=2,
+        )
+        authors = [IMPLEMENTED, fixed(1), fixed(2), NARROWED]
+        # label: (the agent whose words the prompt carries, the fields)
+        want = {
+            "review r1": (IMPLEMENTED, ["summary"]),
+            "fix r1": (IMPLEMENTED, ["summary", "notes"]),
+            "review r2": (fixed(1), ["summary"]),
+            "fix r2": (fixed(1), ["summary", "notes"]),
+            "review final": (fixed(2), ["summary"]),
+            "narrow": (fixed(2), ["summary", "notes"]),
+        }
+        for label, (author, fields) in want.items():
+            with self.subTest(label):
+                prompt = calls[label]["prompt"]
+                for field in fields:
+                    self.assertIn(author[field], prompt)
+                # No prompt carries the words of an earlier or a later agent.
+                for other in authors:
+                    if other != author:
+                        self.assertNotIn(other["summary"], prompt)
+                        self.assertNotIn(other["notes"], prompt)
+
+    def test_agents_that_change_the_work_return_summary_and_notes(self):
+        _, calls = self.run_workflow(
+            {
+                "impl": IMPLEMENTED,
+                "review r1": CHANGES,
+                "fix r1": fixed(1),
+                "review final": CHANGES,
+                "narrow": NARROWED,
+            },
+            rounds=1,
+        )
+        for label in ("impl", "fix r1", "narrow"):
+            with self.subTest(label):
+                self.assertLessEqual(
+                    {"summary", "notes"}, set(calls[label]["required"])
+                )
+
+    def test_fixer_after_relaunch_learns_what_exists(self):
+        fix_round = {"review r2": CHANGES, "fix r2": fixed(2), "review r3": APPROVE}
+        # name: (run_workflow arguments, the notes that the fixer receives)
+        cases = {
+            "a relaunch": ({"agents": fix_round, "resume": RELAUNCH}, "none"),
+            "a sync": (
+                {"agents": {"sync": SYNCED, **fix_round}, "resume": SYNC},
+                SYNCED["notes"],
+            ),
+        }
+        for name, (kwargs, notes) in cases.items():
+            with self.subTest(name):
+                _, calls = self.run_workflow(**kwargs)
+                prompt = calls["fix r2"]["prompt"]
+                self.assertIn("The summary of the change so far:\nnone\n", prompt)
+                self.assertIn(f"The notes of the change so far:\n{notes}\n", prompt)
 
 
 if __name__ == "__main__":
