@@ -10,14 +10,31 @@
 # Expression
 #
 # The pattern matches `while` after a comma and before a determiner, a
-# pronoun, or a proper noun. A determiner is a word that introduces a
-# noun, such as `the`, `a`, or `this`. A proper noun is a name that
-# takes a capital letter, such as `Kubernetes`. Harper's part-of-speech
-# tagger marks each word with a tag for its word class. The pattern
-# names the three classes as `DET` (a determiner), `PRON` (a pronoun),
-# and `PROPN` (a proper noun). A `while` before any other word passes,
-# even when it marks a contrast (`reads are fast, while writes are
-# slow`).
+# pronoun, a proper noun, or a noun (`reads are fast, while requests are
+# slow`). A determiner is a word that introduces a noun, such as `the`,
+# `a`, or `this`. A proper noun is a name that takes a capital letter,
+# such as `Kubernetes`. Harper's part-of-speech tagger marks each word
+# with a tag for its word class. The pattern names these classes as
+# `DET` (a determiner), `PRON` (a pronoun), `PROPN` (a proper noun), and
+# `NOUN` (a noun).
+#
+# The tagger tags some `-ing` forms of a verb as nouns (`building`), and
+# a `while` before one marks time (`, while building the image`). `!PROG`
+# drops the `-ing` form of a verb from the noun branch, so that `while`
+# passes. The guard also passes a contrast that opens with an `-ing`
+# word (`, while binding cycles may run concurrently`).
+#
+# The tagger tags some nouns as verbs, because each is also a verb form
+# (`writes`, `runs`). `verb` holds a word with the tag `VERB` (a verb)
+# or `AUX` (a helping verb). The `verb` branch matches two such words in
+# a row (`reads are fast, while writes are slow`). It reads the first
+# word as the subject of the second, and so as a noun. `!PROG` drops
+# the `-ing` form from `verb` too, because an `-ing` form and the verb
+# on either side of it are one verb with no subject (`, while being
+# written`, `, while left running`).
+#
+# Every other `while` passes, even when it marks a contrast (`reads are
+# fast, while large writes are slow`).
 #
 # By default, a Weir match stops at a comma, so `let scope "Sentence"`
 # lets the pattern cross one.
@@ -25,15 +42,31 @@
 # False Positives
 #
 # `while` with no comma before it passes, because the rule takes the
-# comma as the sign of a contrast. A `while` after a comma that marks
-# time still draws a finding (`It is served anyway, while the refresher
-# catches up`). That sentence reads one way after the comma goes.
+# comma as the sign of a contrast. After a comma, `while` before a verb
+# with no subject passes too, because it marks time there (`, while
+# connected to the server`, `, while holding the lock`, `, while
+# building the image`).
+#
+# A `while` after a comma that marks time still draws a finding when a
+# subject follows it (`It is served anyway, while the refresher catches
+# up`). That sentence reads one way after the comma goes. `PROG` does
+# not match every `-ing` word, so `, while encoding` still draws a
+# finding. The `verb` branch also reports a verb of two words that has
+# no subject (`, while let go by the scheduler`).
+#
+# The noun branch also reports `while` as the name of a loop in a list
+# of keywords (`for loops, while loops, and until loops`). A contrast
+# can open with the same words (`, while loops with no exit spin
+# forever`), so the branch has no guard for `loop` or `statement`.
 #
 # Measurement
 #
-# The rule hit 50 lines in the measure.py corpus, and 20 of 20 sampled
-# hits marked a contrast.
-expr main , (while [DET, PRON, PROPN])
+# The rule hit 59 lines in the measure.py corpus, and 20 of 20 sampled
+# hits marked a contrast. All 9 hits before a word with the `NOUN` tag
+# marked a contrast, and so did the one hit of the `verb` branch
+# (`while Ignore will cause`).
+expr verb <[VERB, AUX], !PROG>
+expr main , (while [DET, PRON, PROPN, <NOUN, !PROG>, (@verb @verb)])
 let message "Contrastive `while`. Write `but` for a contrast, or split the sentence."
 let description "Flags `while` after a comma, where it usually marks a contrast that `but` marks in one reading."
 let becomes ""
