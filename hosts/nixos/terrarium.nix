@@ -3,10 +3,17 @@
   system,
 }:
 let
-  # Envoy writes its access log to this path. hostModule sets the path
-  # in the daemon config, and homeModule names it in the Claude Code
-  # host notes.
-  envoyAccessLog = "/var/lib/terrarium/envoy-access.log";
+  # The terrarium daemon writes the DNS log, and Envoy writes its
+  # process log and its access log. hostModule sets each path in the
+  # daemon config and rotates every file in this set. homeModule names
+  # the access log and its rotated files in the Claude Code host notes.
+  logs = {
+    dns = "/var/lib/terrarium/dns.log";
+    envoy = "/var/lib/terrarium/envoy.log";
+    envoyAccess = "/var/lib/terrarium/envoy-access.log";
+  };
+  # logrotate keeps this many rotated files of each log.
+  logRotations = 7;
 in
 {
   inherit system;
@@ -174,18 +181,37 @@ in
           dns = {
             enabled = true;
             format = "json";
-            path = "/var/lib/terrarium/dns.log";
+            path = logs.dns;
           };
           envoy = {
-            path = "/var/lib/terrarium/envoy.log";
+            path = logs.envoy;
             accessLog = {
               enabled = true;
               format = "json";
-              path = envoyAccessLog;
+              path = logs.envoyAccess;
             };
           };
           firewall.enabled = true;
         };
+      };
+
+      # Nothing else bounds these logs. In five days of uptime the DNS
+      # log reached 2.4 GB and the access log 621 MB. The daemon reopens
+      # its logs only on a reload, and a reload restarts the DNS proxy
+      # and Envoy. So logrotate copies each file and then truncates it in
+      # place. Each writer opens its file with O_APPEND, so its next line
+      # goes to the start of the truncated file. logrotate loses the
+      # lines that arrive between its copy and its truncate.
+      # delaycompress leaves the newest rotated file uncompressed, so
+      # `agrind -f` reads that file. The logrotate timer fires every
+      # hour, and its first run of each day rotates the logs.
+      services.logrotate.settings.terrarium = {
+        files = builtins.attrValues logs;
+        frequency = "daily";
+        rotate = logRotations;
+        copytruncate = true;
+        compress = true;
+        delaycompress = true;
       };
 
       # CNI bridge network for containerd workloads.
@@ -265,7 +291,7 @@ in
           hostContext = ''
             This host is the terrarium VM. The terrarium daemon routes each outbound connection of the VM and of its containers through Envoy.
 
-            When a build, a fetch, or a commit hook is slow, read `${envoyAccessLog}` first. Envoy appends one JSON line when an outbound connection closes, so the log does not show a download in progress. These fields show where a connection went, what it downloaded, and how fast:
+            When a build, a fetch, or a commit hook is slow, read `${logs.envoyAccess}` first. Envoy appends one JSON line when an outbound connection closes, so the log does not show a download in progress. These fields show where a connection went, what it downloaded, and how fast:
 
             - `time`: the start of the connection, in UTC.
             - `sni`: the TLS server name of a connection to port 443. Plain HTTP requests to port 80 leave `sni` null and name the server in `authority`. TCP connections to other ports and UDP flows leave both fields null.
@@ -276,13 +302,21 @@ in
             This command totals the bytes downloaded from each server since the timestamp. Replace the timestamp with the UTC time that the slow command started.
 
             ```sh
-            agrind -f ${envoyAccessLog} '* | json | where time >= "2026-01-31T14:05" | sum(tx_bytes) as bytes, count by sni | sort by bytes desc'
+            agrind -f ${logs.envoyAccess} '* | json | where time >= "2026-01-31T14:05" | sum(tx_bytes) as bytes, count by sni | sort by bytes desc'
             ```
 
             The output puts every connection that leaves `sni` null in one `None` row. To split that row by destination, group those connections by `authority` and by the host part of `upstream`:
 
             ```sh
-            agrind -f ${envoyAccessLog} '* | json | where time >= "2026-01-31T14:05" | where isNull(sni) | parse regex "^(?P<host>.*):[0-9]+$" from upstream nodrop | sum(tx_bytes) as bytes, count by authority, host | sort by bytes desc'
+            agrind -f ${logs.envoyAccess} '* | json | where time >= "2026-01-31T14:05" | where isNull(sni) | parse regex "^(?P<host>.*):[0-9]+$" from upstream nodrop | sum(tx_bytes) as bytes, count by authority, host | sort by bytes desc'
+            ```
+
+            logrotate rotates the log every day, so `${logs.envoyAccess}` holds only the lines that Envoy wrote after the last rotation. `${logs.envoyAccess}.1` holds the lines of the day that ended at that rotation, and the modification time of `${logs.envoyAccess}.1` is the time of the rotation. `${logs.envoyAccess}.2.gz` to `${logs.envoyAccess}.${toString logRotations}.gz` hold the days before that, newest first.
+
+            When the slow command started before the last rotation, pipe the `.1` file and the live log to the same query. `zcat -f` decompresses the `.gz` files and copies the uncompressed files unchanged, so the same pipe reads every one of these files.
+
+            ```sh
+            zcat -f ${logs.envoyAccess}.1 ${logs.envoyAccess} | agrind '* | json | where time >= "2026-01-31T14:05" | sum(tx_bytes) as bytes, count by sni | sort by bytes desc'
             ```
           '';
         };
