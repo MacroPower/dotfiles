@@ -6827,6 +6827,25 @@ class WorkflowResultTest(WorkflowCase):
                 "approved",
                 SYNCED,
             ),
+            # A sync relaunch runs the review rounds of every other launch,
+            # so it can reach the cap. SKILL.md says to land a synced task
+            # that ends approved or landable.
+            "a sync that lands with open findings": (
+                {
+                    "agents": {
+                        "sync": SYNCED,
+                        "review r2": CHANGES,
+                        "fix r2": fixed(2),
+                        "review r3": CHANGES,
+                        "fix r3": fixed(3),
+                        "review final": CHANGES,
+                        "narrow": NARROWED,
+                    },
+                    "resume": SYNC,
+                },
+                "landable",
+                NARROWED,
+            ),
             "a sync agent returns nothing": (
                 {"agents": {"sync": None, "sync retry": None}, "resume": SYNC},
                 "error",

@@ -875,8 +875,9 @@ you relaunch it with `ultraclose.py args <ref>` and its Workflow ends
 
 To sync a task, relaunch it with
 `ultraclose.py args <ref> --sync '<reason and failing output>'`. A sync
-agent merges and adapts, and a reviewer checks the merge. Land again after
-approval. Note the task when a second sync fails for the same reason.
+agent merges and adapts, and a reviewer checks the merge. Land the task
+again after its Workflow ends `approved` or `landable`, as the Loop table
+says. Note the task when a second sync fails for the same reason.
 
 `CHECKFAIL` and `COMMITFAIL` do not show that the task must change, and each
 sync costs an agent run and a review. Find the cause in the failing output
@@ -1078,7 +1079,7 @@ these events as this table says:
 
 | Event | Action |
 | --- | --- |
-| The pull request has a conflict with the base branch | Bring the base branch up to date as step 2 of the merge steps says. Sync the task with `ultraclose.py args <ref> --sync '<reason>'`, as the Landing section says, and land it again after approval. The relaunch works on the branch of the pull request. The `PR` result of that landing ends with `pr=<url>`. |
+| The pull request has a conflict with the base branch | Bring the base branch up to date as step 2 of the merge steps says. Sync the task with `ultraclose.py args <ref> --sync '<reason>'`, as the Landing section says. The relaunch works on the branch of the pull request. Land the task again after its Workflow ends `approved` or `landable`, as the Loop table says. The `PR` result of that landing ends with `pr=<url>`. |
 | The user closes the pull request without a merge | Add a note with the reason and the branch name, set the task to `todo`, and run `ultraclose.py set <ref> noted`. The branch stays. When the user asks for the task again, relaunch it with `ultraclose.py args <ref>`. Its landing names the closed pull request, so the steps for each `PR` result open a new one. |
 | A relaunch of the task ends `obsolete` | Close the pull request with `mcp__github__update_pull_request` and `state` set to `closed`. Then act on the result as the Loop table says, and record the closed pull request in `notes.md`. |
 | A relaunch of the task ends `abandoned`, `rejected`, or `unconverged` | Leave the pull request open for the user, and add its address to the note of the task. Then act on the result as the Loop table says, and record the open pull request in `notes.md`. |
