@@ -2848,6 +2848,18 @@ in
             host = "(google|bing|duckduckgo|brave)\\.com";
             reason = "Fetching from general-purpose search engines is blocked. Use mcp__kagi__kagi_search_fetch instead.";
           }
+          # bungie.net serves every news article as an empty application
+          # shell and fills it in the browser. The mcp-fetch renderer
+          # cannot run that application, so a fetch returns no content
+          # with or without render_js. Kagi returns the article text.
+          # The path accepts either case of `News` and `Article` because
+          # the site links to `/news/article/<slug>` and redirects
+          # `/en/News/Article/<id>` to `/7/en/News/article/<id>`.
+          {
+            host = "(www\\.)?bungie\\.net";
+            path = "/7/[^/]+/[Nn]ews/[Aa]rticle/.*";
+            reason = "bungie.net news articles load in the browser, and mcp-fetch cannot render them. Call mcp__kagi__kagi_search_fetch with the article URL as the query and extract_count set to 1 to read the full text.";
+          }
         ];
         instructions = {
           items = [
