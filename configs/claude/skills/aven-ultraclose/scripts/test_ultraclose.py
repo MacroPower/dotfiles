@@ -1860,6 +1860,29 @@ class WorkflowRulesTest(WorkflowCase):
                 for sentence in rule:
                     self.assertIn(sentence, call["prompt"])
 
+    def test_every_agent_learns_how_many_commands_to_run_at_once(self):
+        calls = self.every_agent()
+        self.assertEqual(
+            set(calls),
+            {"impl", "sync", "review r1", "fix r1", "review final", "narrow"},
+        )
+        # The agents of a run share the memory of one machine. The rule
+        # limits the commands that one agent runs at the same time, and
+        # forbids load that the agent creates. It also says how to
+        # reproduce a failure that appears only under load.
+        rule = (
+            "Run at most two build, test, or probe commands at the same time.",
+            "Never create load on the machine to reproduce a failure.",
+            "do not run copies of a test at the same time with "
+            "`rust-parallel`, `xargs -P`, or background jobs, and do not "
+            "run a stress tool.",
+            "repeat the test in sequence, or limit the test to one CPU",
+        )
+        for label, call in calls.items():
+            with self.subTest(label):
+                for sentence in rule:
+                    self.assertIn(sentence, call["prompt"])
+
 
 class WorkflowRegressionTest(WorkflowCase):
     """What a reviewer reports as a regression."""

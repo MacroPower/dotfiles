@@ -21,8 +21,9 @@ records. Workflow agents write and review the code. Runs last for days, so keep
 diffs and logs out of your context, and read one only when a landing fails.
 
 A number in the arguments sets how many tasks run at the same time, and the
-default is 5. Any other argument is an `aven list` filter that narrows the
-queue, such as `--label bug`.
+default is 5. When the memory of the machine cannot hold that many tasks,
+lower the limit, as the Setup section says. Any other argument is an
+`aven list` filter that narrows the queue, such as `--label bug`.
 
 ## Tools
 
@@ -123,6 +124,27 @@ approved task. `status` then prints an `ended` line.
    ask for each such fault in the `defects` of the result, as the Defects
    section says. Agents put `rules.md` above their defaults, so a rule that
    sends the fault to `notes` hides it in prose again.
+
+   All agents of the run share the memory and the CPUs of one machine. So
+   the Workflow prompts allow each agent at most two build, test, or probe
+   commands at the same time. The prompts also forbid load that an agent
+   creates to reproduce a failure.
+
+   Compare the memory of the machine with the number of these commands
+   that can run at the same time. A run with a limit of 5 can run 10 of
+   them in its agents. The check and the commit hooks of a landing run
+   beside them. The limit stops counting a task when its landing starts.
+   So each task that you relaunch to sync it after a failed landing adds
+   one agent beyond the limit.
+
+   When the memory cannot hold that number of copies of the heaviest test
+   or build, allow fewer commands in `rules.md`, such as one race test at
+   a time in each agent. Let `rules.md` allow each agent at least one and
+   at most two such commands at the same time. When the memory cannot hold
+   a landing and one copy for each task that the limit allows, lower the
+   limit with `ultraclose.py config --limit <N>`. Lower the limit even when
+   the arguments set it. Tell the user the limit that you set and the
+   reason, and record both in `notes.md`.
 6. Triage the queue. List it with `ultraclose.py untriaged`, as the Scope
    section says. For each task, predict the files that it edits. Fan the
    reading out to Explore agents, and write the result as a JSON list:
@@ -174,7 +196,12 @@ that it started with. When you continue the run, fit both to the arguments
 and to the open tasks that are not in the run. `ultraclose.py untriaged`
 prints those tasks, as the Scope section says. Fit the run in these ways:
 
-- If the arguments hold a number, set the limit to it.
+- If the arguments hold a number, set the limit to it. Set a lower limit
+  when the memory cannot hold that many tasks, as the Setup section says.
+- When you change the limit, or when those tasks run a heavier test or
+  build than the tasks of the run, compare the memory again, as the Setup
+  section says for `rules.md`. Then fit the rule in `rules.md` that limits
+  the commands of each agent.
 - Remove each shared glob that covers files that two of those tasks must
   not edit at the same time, such as the source files of one module.
   `next` starts such tasks together, and a landing returns `CONFLICT` when
@@ -469,6 +496,7 @@ final report requires, because compaction drops whatever exists only in your
 context. Record:
 
 - Each hand fix.
+- Each limit that you lowered to fit the memory, with the reason.
 - Each landing without a full final review.
 - Each task that you file for a follow-up or a defect, with the task that
   reported it.
@@ -485,5 +513,6 @@ End with a report that lists:
 - The tasks that the run filed for follow-ups and for defects, each with
   the task that reported it.
 - The tasks that landed without a full final review.
+- Each limit that you lowered to fit the memory, with the reason.
 - The stale artifacts.
 - The commits that the run did not push, and each rejected push.
