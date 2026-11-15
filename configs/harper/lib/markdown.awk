@@ -14,9 +14,14 @@
 # indented line after a blank line outside a list, so a nested list
 # item still counts). It skips a MyST directive's opening fence and the
 # `:name: value` option lines under it, because ProseEmoji's shortcode
-# pattern matches an option such as `:class: tip`. Under the C locale
-# the nix build sandbox uses, gawk reads bytes, so column() converts a
-# byte offset to the character column a reader sees.
+# pattern matches an option such as `:class: tip`.
+#
+# gawk counts an offset in characters under a UTF-8 locale and in bytes
+# under the C locale that the nix build sandbox uses. Blanking writes
+# one space for each character or each byte that it removes. An offset
+# in the text that prose() gets is therefore the same offset in the
+# line. column() converts the offset to the character column that a
+# person sees in an editor.
 #
 # With RAW=1 in the environment, the reader passes every line to
 # prose() whole, string literals included, for a source file with no
@@ -172,14 +177,29 @@ function clean(s) {
   return s
 }
 
-# Converts a 1-based offset in s to a character column, so a byte
-# offset under the C locale reports the column a UTF-8 reader sees.
-function column(s, off,   pre) {
+# Returns the number of characters in s. Under the C locale, length()
+# counts bytes, so the function leaves out each continuation byte of a
+# UTF-8 character.
+function chars(s) {
+  if (utf8) {
+    return length(s)
+  }
+  return length(s) - gsub("[\x80-\xBF]", "", s)
+}
+
+# Converts a 1-based offset in the line that gawk is on to a character
+# column. A check takes the offset from the text that prose() gets, or
+# from a copy of that text that the check blanked further. Under a
+# UTF-8 locale the offset already counts characters, so the function
+# returns it. Under the C locale the offset counts bytes, so the
+# function counts the characters before it. It counts them in `$0`,
+# because blanking leaves one space for each byte of a character. The
+# blanked text then holds more characters than the line.
+function column(off) {
   if (utf8) {
     return off
   }
-  pre = substr(s, 1, off - 1)
-  return length(pre) - gsub("[\x80-\xBF]", "", pre) + 1
+  return chars(substr($0, 1, off - 1)) + 1
 }
 
 FNR == 1 && $0 ~ /^---[ \t]*$/ {

@@ -51,6 +51,6 @@ function prose(text,   lower, at, hit) {
     }
     hit = substr($0, at + 1)
     sub(/\].*/, "", hit)
-    printf "%s:%d:%d: Style::ProseLinkText: Link text `%s` names no destination. Name the page or section it opens.\n", FILENAME, FNR, column(text, at), hit
+    printf "%s:%d:%d: Style::ProseLinkText: Link text `%s` names no destination. Name the page or section it opens.\n", FILENAME, FNR, column(at), hit
   }
 }

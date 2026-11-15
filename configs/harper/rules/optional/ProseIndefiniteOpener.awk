@@ -161,11 +161,11 @@ function prose(text,   rest, pos, tok, col, word, base) {
       if (word == "a" || word == "an") {
         run++
         if (run == 2) {
-          printf "%s:%d:%d: Style::ProseIndefiniteOpener: Indefinite opener. `a` or `an` opens two sentences in a row. Write a claim about a whole class with a plural subject or with `every`.\n", FILENAME, FNR, column(text, col)
+          printf "%s:%d:%d: Style::ProseIndefiniteOpener: Indefinite opener. `a` or `an` opens two sentences in a row. Write a claim about a whole class with a plural subject or with `every`.\n", FILENAME, FNR, column(col)
         } else if (run == 1) {
           scan = 1
           scan_line = FNR
-          scan_col = column(text, col)
+          scan_col = column(col)
         }
       } else {
         run = 0

@@ -54,7 +54,7 @@ function prose(text,   rest, pos, t, col) {
     tok_n++
     tok[tok_n] = t
     tok_line[tok_n] = FNR
-    tok_col[tok_n] = column(text, col)
+    tok_col[tok_n] = column(col)
     if (tok_n == 1) {
       sentence_file = FILENAME
     }

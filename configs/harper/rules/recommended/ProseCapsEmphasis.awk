@@ -153,7 +153,7 @@ function prose(text,   at, word) {
     word = substr(text, at)
     match(word, "^(" words ")")
     word = substr(word, 1, RLENGTH)
-    finding[++held] = sprintf("%s:%d:%d: Style::ProseCapsEmphasis: Uppercase emphasis `%s`. Write it in lowercase, and state the consequence when the reader needs a reason.", FILENAME, FNR, column(text, at), word)
+    finding[++held] = sprintf("%s:%d:%d: Style::ProseCapsEmphasis: Uppercase emphasis `%s`. Write it in lowercase, and state the consequence when the reader needs a reason.", FILENAME, FNR, column(at), word)
   }
 }
 

@@ -117,7 +117,7 @@ function pend_add(text,   n) {
   if (n > 0 && pend_words == 0) {
     pend_file = FILENAME
     pend_line = FNR
-    pend_col = column(text, first_col)
+    pend_col = column(first_col)
   }
   pend_words += n
 }
@@ -191,7 +191,7 @@ function prose(text,   n) {
 
   n = count_words(text)
   if (n > 0) {
-    add_words(n, FILENAME, FNR, column(text, first_col))
+    add_words(n, FILENAME, FNR, column(first_col))
     last_was_text = 1
   }
 }

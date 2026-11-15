@@ -167,5 +167,5 @@ function prose(text,   start, rest, t1, t2, t3, w1, first, shown) {
   }
   shown = t1
   gsub(/[^A-Za-z]/, "", shown)
-  printf "%s:%d:%d: Style::ProseOpeningPronoun: Opening pronoun. The paragraph opens with `%s`, so the reader must look back for its noun. Name the noun.\n", FILENAME, FNR, column(text, index(text, t1)), shown
+  printf "%s:%d:%d: Style::ProseOpeningPronoun: Opening pronoun. The paragraph opens with `%s`, so the reader must look back for its noun. Name the noun.\n", FILENAME, FNR, column(index(text, t1)), shown
 }

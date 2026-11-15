@@ -84,7 +84,7 @@ function prose(text,   rest, pos, tok, col) {
     if (!open && sentences == 0) {
       start_file = FILENAME
       start_line = FNR
-      start_col = column(text, col)
+      start_col = column(col)
     }
     open = 1
     if (tok ~ /[.?!]["')*_\]]*$/ && tok !~ /\.\.\.["')*_\]]*$/ && tolower(tok) !~ /^[("'*_]*(e\.g|i\.e|vs|cf)\.$/) {

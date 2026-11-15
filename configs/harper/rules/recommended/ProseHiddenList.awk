@@ -140,7 +140,7 @@ function prose(text,   rest, pos, tok, col, word) {
     if (fresh) {
       start_file = FILENAME
       start_line = FNR
-      start_col = column(text, col)
+      start_col = column(col)
       fresh = 0
     }
     word = tolower(tok)

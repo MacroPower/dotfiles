@@ -984,6 +984,98 @@ in
           done
           touch "$out"
         '';
+
+        # Lints lines that hold a multi-byte character ahead of a
+        # finding and expects the character column of each finding. The
+        # character sits in text that lib/markdown.awk or a check
+        # blanks, such as a code span or a link destination, or earlier
+        # in the word that holds the finding. gawk counts bytes under
+        # the C locale and characters under a UTF-8 locale, so the test
+        # lints under both and expects the same columns. The command in
+        # configs/harper/CLAUDE.md builds this test too.
+        tests.columns = runCommand "prose-lint-columns" { nativeBuildInputs = [ gawk ]; } ''
+          # The markdown file puts the character in a code span, in a
+          # link destination, and in a code span that wraps onto the
+          # next line. It then puts one in a quotation, which
+          # ProseCapsEmphasis blanks, and in the code span of a sentence
+          # that ProseDoubleNegative reads. The last line puts one in the
+          # word before the paren that opens a ProseLongParenthetical
+          # finding.
+          cat >columns.md <<'EOF'
+          Set `🚀` and then 🎉 here.
+
+          Read [the guide](https://example.com/café) 🎉 now.
+
+          Pass `--name
+          café` to it 🎉 now.
+
+          Set "café" first, and you MUST restart it.
+
+          The `café` job does not run unless the lock is free.
+
+          The café(which holds many extra words that run on and on and on past the limit of words here) runs fast.
+          EOF
+
+          # A run of 260 words opens after a code span.
+          printf '`é` %s\n' "$(printf 'word %.0s' $(seq 260))" >wall.md
+
+          # The source file holds a comment, and a string literal with
+          # an ellipsis character that ProseTypography reports.
+          printf '# Set `🚀` and then 🎉 here.\nname = "caf\303\251 \342\200\246"\n' >columns.py
+
+          cat >want <<'EOF'
+          columns.md:1:18 ProseEmoji
+          columns.md:3:44 ProseEmoji
+          columns.md:6:13 ProseEmoji
+          columns.md:8:27 ProseCapsEmphasis
+          columns.md:10:29 ProseDoubleNegative
+          columns.md:12:9 ProseLongParenthetical
+          wall.md:1:5 ProseWallOfText
+          columns.py:1:20 ProseEmoji
+          columns.py:2:14 ProseTypography
+          EOF
+
+          # glibc names its UTF-8 locale C.UTF-8, and macOS has
+          # en_US.UTF-8. gawk reads a locale that the system lacks as
+          # the C locale, where one accented letter counts as two bytes.
+          utf8=
+          for locale in C.UTF-8 en_US.UTF-8; do
+            if LC_ALL=$locale awk 'BEGIN { exit length("é") != 1 }'; then
+              utf8=$locale
+              break
+            fi
+          done
+          if [ -z "$utf8" ]; then
+            echo "gawk found no UTF-8 locale" >&2
+            exit 1
+          fi
+
+          # Prints `file:line:col Rule` for each finding of the awk
+          # checks that the files exercise, by line within each file.
+          positions() {
+            local f out rc
+            for f in columns.md wall.md columns.py; do
+              rc=0
+              out=$(LC_ALL=$1 ${lib.getExe finalAttrs.finalPackage} "$f") || rc=$?
+              if [ "$rc" -ne 1 ]; then
+                echo "$f: prose-lint exited $rc under the $1 locale" >&2
+                return 1
+              fi
+              printf '%s\n' "$out" |
+                sed -nE 's,^([^:]+:[0-9]+:[0-9]+): \[[A-Za-z]+\] [A-Za-z]+::(ProseCapsEmphasis|ProseDoubleNegative|ProseEmoji|ProseLongParenthetical|ProseTypography|ProseWallOfText): .*,\1 \2,p' |
+                sort -t: -k2,2n
+            done
+          }
+
+          for locale in C "$utf8"; do
+            positions "$locale" >got || exit 1
+            if ! diff want got; then
+              echo "the $locale locale reports columns that do not count characters" >&2
+              exit 1
+            fi
+          done
+          touch "$out"
+        '';
       };
     }
   )

@@ -58,6 +58,6 @@ function prose(text,   hit) {
   text = blank(text, keyname)
   if (match(text, arrow)) {
     hit = substr(text, RSTART, RLENGTH)
-    printf "%s:%d:%d: Style::ProseArrow: Arrow `%s` stands in for a word. Write the verb, a colon after a label, or `>` for a menu path.\n", FILENAME, FNR, column(text, RSTART), hit
+    printf "%s:%d:%d: Style::ProseArrow: Arrow `%s` stands in for a word. Write the verb, a colon after a label, or `>` for a menu path.\n", FILENAME, FNR, column(RSTART), hit
   }
 }

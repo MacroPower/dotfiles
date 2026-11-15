@@ -69,9 +69,9 @@ function prose(text,   hit) {
   if (match(text, bad)) {
     hit = substr(text, RSTART, RLENGTH)
     if (raw_mode) {
-      printf "%s:%d:%d: Punctuation::ProseTypography: Typographic character `%s` (`U+%s`). In a string literal, write its escape. In a comment, use a straight quote, three periods, or a hyphen.\n", FILENAME, FNR, column(text, RSTART), hit, code[hit]
+      printf "%s:%d:%d: Punctuation::ProseTypography: Typographic character `%s` (`U+%s`). In a string literal, write its escape. In a comment, use a straight quote, three periods, or a hyphen.\n", FILENAME, FNR, column(RSTART), hit, code[hit]
     } else {
-      printf "%s:%d:%d: Punctuation::ProseTypography: Typographic character `%s` (`U+%s`). Use a straight quote, three periods, or a hyphen.\n", FILENAME, FNR, column(text, RSTART), hit, code[hit]
+      printf "%s:%d:%d: Punctuation::ProseTypography: Typographic character `%s` (`U+%s`). Use a straight quote, three periods, or a hyphen.\n", FILENAME, FNR, column(RSTART), hit, code[hit]
     }
   }
 }

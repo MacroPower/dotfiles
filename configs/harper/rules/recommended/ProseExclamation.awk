@@ -39,6 +39,6 @@ function BEGIN_CHECK() {
 
 function prose(text) {
   if (match(text, bang)) {
-    printf "%s:%d:%d: Style::ProseExclamation: Exclamation mark. End the sentence with a period.\n", FILENAME, FNR, column(text, RSTART + 1)
+    printf "%s:%d:%d: Style::ProseExclamation: Exclamation mark. End the sentence with a period.\n", FILENAME, FNR, column(RSTART + 1)
   }
 }

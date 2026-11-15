@@ -371,8 +371,9 @@ tests show that a breach fails the build.
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; in pkgs.callPackage ./pkgs/prose-weirpack.nix { }'
 ```
 
-Build the tests of prose-lint after you change `pkgs/prose-lint.nix`.
-Each test runs the built wrapper on a set of files.
+Build the tests of prose-lint after you change `pkgs/prose-lint.nix`,
+an awk check, or a file under `lib/`. Each test runs the built wrapper
+on a set of files.
 
 - `license-headers` lints source files that open with a license header
   and expects no finding.
@@ -380,6 +381,12 @@ Each test runs the built wrapper on a set of files.
   a prompt file for an agent and at other paths. It expects the
   ProseCapsEmphasis finding only at the other paths, which include a
   file of a worktree under `.claude/worktrees/`.
+- `columns` lints lines that hold a multi-byte character ahead of a
+  finding. The character sits inside text that an awk check blanks, or
+  earlier in the word that holds the finding. The test expects the
+  character column of each finding under the C locale and under a
+  UTF-8 locale. `check.py` compares only the line of each finding, so
+  only this test reads the columns.
 
 This command builds every test.
 

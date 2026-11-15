@@ -148,7 +148,9 @@ function parens(n,   i, j, at, t, depth, words) {
       }
     }
     if (j < n && tok[j + 1] ~ /^[^A-Za-z]*[a-z]/) {
-      report(i, tok_col[i] + index(tok[i], "(") - 1, words)
+      # tok_col[i] counts characters, and under the C locale index()
+      # counts bytes, so chars() counts the characters before the paren.
+      report(i, tok_col[i] + chars(substr(tok[i], 1, index(tok[i], "(") - 1)), words)
     }
     i = j
   }

@@ -53,11 +53,11 @@ function BEGIN_CHECK() {
   english["n.b"] = "Delete it and state the point."
 }
 
-function report(text, col, hit,   key) {
+function report(col, hit,   key) {
   key = tolower(hit)
   gsub(/ /, "", key)
   sub(/\.$/, "", key)
-  printf "%s:%d:%d: Style::ProseLatinAbbreviation: Latin abbreviation `%s`. %s\n", FILENAME, FNR, column(text, col), hit, english[key]
+  printf "%s:%d:%d: Style::ProseLatinAbbreviation: Latin abbreviation `%s`. %s\n", FILENAME, FNR, column(col), hit, english[key]
 }
 
 function prose(text,   rest, off, hit, start, len) {
@@ -72,7 +72,7 @@ function prose(text,   rest, off, hit, start, len) {
       start++
     }
     sub(/[^A-Za-z.]$/, "", hit)
-    report(text, off + start, hit)
+    report(off + start, hit)
     # Resume at the last character of the match, so the character after
     # one abbreviation can open the next match.
     off += RSTART + len - 2

@@ -155,7 +155,7 @@ function named(before, after) {
 }
 
 function report(text, start, end) {
-  printf "%s:%d:%d: Style::ProseEmoji: Emoji `%s` decorates the text or stands in for a word. Delete it, or say the point in words. When the text names the emoji, set it in a code span.\n", FILENAME, FNR, column(text, start), substr(text, start, end - start)
+  printf "%s:%d:%d: Style::ProseEmoji: Emoji `%s` decorates the text or stands in for a word. Delete it, or say the point in words. When the text names the emoji, set it in a code span.\n", FILENAME, FNR, column(start), substr(text, start, end - start)
 }
 
 function prose(text,   from, start, end) {

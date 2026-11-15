@@ -67,6 +67,6 @@ function prose(text,   lower, at, word) {
     }
     word = substr(lower, at)
     sub(/[^a-z].*/, "", word)
-    printf "%s:%d:%d: Style::ProseOverUnder: `%s` before a number. Write `more than`, `fewer than`, or `less than`.\n", FILENAME, FNR, column(text, at), word
+    printf "%s:%d:%d: Style::ProseOverUnder: `%s` before a number. Write `more than`, `fewer than`, or `less than`.\n", FILENAME, FNR, column(at), word
   }
 }
