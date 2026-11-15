@@ -15,6 +15,7 @@
 - Keycap 1️⃣ first step
   The deploy finished 🎉 and the team moved on.
   | Linux | ✅ |
+  | macOS | :heavy_check_mark: |
 
 > **Note** 💡 the flag is optional.
 
@@ -28,3 +29,17 @@ See [the guide 📖](https://example.com) for details.
 
 - nested item 🔥
   - deeper nested item 🔥
+
+The emoji 🎉 is named, and this one decorates 🚀.
+
+The :tada: emoji is named, and :rocket: decorates the text.
+
+The emoji 🎉 is named, and :rocket: decorates the text.
+
+Add an emoji picker 🎉 to the form.
+
+The emoji 🎉🚀 runs two together.
+
+Open 🎉 Emojipedia to find more.
+
+Twemoji 🎉 draws the icons.
