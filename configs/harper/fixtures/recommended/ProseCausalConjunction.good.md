@@ -8,4 +8,8 @@ The job runs as root.
 
 As you can see, the output has two columns.
 
+The output has two columns, as you can see.
+
+The flag is ignored, as he is the owner.
+
 The pod has run since the upgrade landed.

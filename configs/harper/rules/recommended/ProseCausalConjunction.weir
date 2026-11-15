@@ -28,10 +28,13 @@
 # rarely needed`). `aux` lists those verbs. The filter narrows the
 # finding to `since`.
 #
-# After a comma, `as` counts only before a subject pronoun (`I`, `you`,
-# `he`, `she`, `it`, `we`, or `they`) and a verb that carries a tense
-# (`, as it is deprecated`). `subject` and `verb` list the words that
-# count.
+# After a comma, `as` counts only before a word from `subject` and a
+# verb from `verb` (`, as it is deprecated`, `, as there is no owner`).
+# `subject` holds `it`, `they`, `this`, `these`, and `there`, and `verb`
+# holds verbs that carry a tense. `I`, `he`, and `she` stay out of
+# `subject`, so `, as he is the owner` passes. In the measure.py corpus,
+# none of them sits between `, as` and a word from `verb`, so a sample
+# cannot show how often that `as` marks a cause.
 #
 # By default, a Weir match stops at a comma, so `let scope "Sentence"`
 # lets the comma branches cross one.
