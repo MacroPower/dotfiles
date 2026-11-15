@@ -171,12 +171,17 @@ stdenvNoCC.mkDerivation {
   # harper-cli looks for a user dictionary under $HOME and prints a
   # note when none exists. Pointing HOME at the build dir keeps that
   # lookup inside the sandbox.
+  #
+  # Every rule file follows the comment layout, so check.py alone never
+  # shows that a breach fails. test_check.py runs the comment check of
+  # check.py on comments that break the layout.
   checkPhase = ''
     runHook preCheck
     export HOME="$TMPDIR"
     for rule in rules/*/*.weir; do
       harper-cli test --no-color "$rule"
     done
+    python3 test_check.py
     python3 check.py prose.weirpack fixtures rules lib
     runHook postCheck
   '';

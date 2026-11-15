@@ -93,7 +93,7 @@ EXPR_LINE = re.compile(r"expr (\w+) (.*)")
 # The sections of a rule comment, in the order that the Comments section
 # of CLAUDE.md gives them. Change that section and these names together.
 SECTIONS = ("Overview", "Expression", "False Positives", "Related Rules", "Measurement")
-REQUIRED_SECTIONS = frozenset({"Overview"})
+REQUIRED_SECTIONS = frozenset({"Overview", "Measurement"})
 # The words that open the last lines of an awk rule's comment.
 OUTPUT_FORMAT = "Output format"
 

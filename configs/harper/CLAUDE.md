@@ -78,13 +78,12 @@ Every comment holds these sections in this order.
   split between the tiers of one rule name.
 - **Measurement** gives the hits and the sampled precision that the
   Measurement section of this file requires, and it says what the
-  sampled misfires were. A comment without this section marks a rule
-  that has no numbers.
+  sampled misfires were.
 
 `SECTIONS` in `check.py` holds the section names in the same order, and
 `REQUIRED_SECTIONS` holds the sections that every comment must carry.
-When you add, rename, reorder, or require a section, change this file
-and `check.py` together.
+When you add, rename, reorder, or require a section, change this file,
+`check.py`, and the cases in `test_check.py` together.
 
 Each heading is a comment line that holds only the section name. One
 blank comment line follows each heading, and one separates each section
@@ -104,6 +103,11 @@ code, and no blank comment line sits between the two.
 #
 # ProseSlash reports two lowercase words joined by a slash and skips
 # `and/or`, so only this rule reports the phrase.
+#
+# Measurement
+#
+# The rule hit 61 lines in the measure.py corpus, and in 20 of 20
+# sampled hits `and/or` joined alternatives in a sentence.
 ```
 
 `check.py` also reads a lone comment line as a heading when the line
@@ -117,8 +121,11 @@ directly above the code can therefore be lone lines.
 period. An example line that you indent further does not need the
 period.
 
-Every comment carries Overview. Leave out a section that has nothing
-to say, and keep the other sections in order. Never write a placeholder
+Every comment carries Overview and Measurement, and `check.py` fails a
+comment that lacks either one. When a rule hits no lines in the corpus,
+write the sentence that the Measurement section of this file gives for
+that case. Leave out any other section that has nothing to say, and
+keep the remaining sections in order. Never write a placeholder
 sentence such as `No related rules.`, because the prose rules reject it
 as filler.
 
@@ -355,6 +362,10 @@ Build the weirpack from the repository root. The build runs every rule
 against its fixtures and fails with one line for each rule that misses
 a fixture. It also fails with one line for each breach of the comment
 layout in Comments.
+
+The build also runs `test_check.py`, the unit tests of the comment
+check in `check.py`. Every rule file follows the layout, so only these
+tests show that a breach fails the build.
 
 ```bash
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; in pkgs.callPackage ./pkgs/prose-weirpack.nix { }'
