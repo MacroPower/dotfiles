@@ -1,0 +1,18 @@
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -104,6 +104,15 @@
+   missing details.
+ - Use `--description-stdin`, `--description-file`, `note --stdin`, or
+   `note --file` for long Markdown instead of shell-escaping it.
++- `--label` accepts only a label that exists in the workspace. For any other
++  name, `add` fails with `unknown-label` and does not create the task. `edit`,
++  `list`, and `bulk-update` fail with the same error.
++- To see the labels, run `aven label list`. Every project of the workspace
++  shares one set of labels, so use an existing label when one fits.
++- To add a label, run `aven label create <name>`. You may create a label
++  without asking when the user or the active agent instructions name it. When
++  no existing label fits a set of related tasks that you file, you may also
++  create one for them. Ask the user before you create any other label.
+ - Capture and report the ref printed by `aven add`.
+ - Keep secrets out of titles, descriptions, labels, projects, metadata, notes,
+   and logs.
