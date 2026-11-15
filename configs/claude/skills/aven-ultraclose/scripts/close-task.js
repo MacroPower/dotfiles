@@ -21,6 +21,13 @@ const LAST = RESUME && RESUME.lastRound ? RESUME.lastRound : Math.max(ROUNDS, FI
 // Agents that know the cap rush or soften their work near it.
 const MSG = `${T.dir}/msg.txt`
 const HISTORY = `${T.dir}/history.md`
+// The files that keep the summary and the notes of the change from one
+// launch to the next. This script cannot read or write a file. So each
+// agent that returns a summary and notes also writes them to these
+// files. For a relaunch, `ultraclose.py args` reads the files into the
+// resume field of the input.
+const SUMMARY = `${T.dir}/summary.txt`
+const NOTES = `${T.dir}/notes.txt`
 
 // One task that the orchestrator files, in the format of the track-issue
 // skill.
@@ -122,11 +129,12 @@ const SYNC_SCHEMA = {
   type: 'object',
   properties: {
     status: { type: 'string', enum: ['synced', 'abandoned'] },
-    summary: { type: 'string', description: 'What the merge required: each conflict and each adaptation' },
-    notes: { type: 'string' },
+    report: { type: 'string', description: 'What the merge required: each conflict and each adaptation' },
+    summary: { type: 'string', description: 'What the whole change does as you leave it, in a few sentences' },
+    notes: { type: 'string', description: 'For abandoned: the evidence, and what a later attempt must know. Otherwise the caveats of the whole change as you leave it, or empty.' },
     defects: defectsField('you found and left unfixed'),
   },
-  required: ['status', 'summary', 'notes', 'defects'],
+  required: ['status', 'report', 'summary', 'notes', 'defects'],
 }
 
 const NARROW_SCHEMA = {
@@ -163,6 +171,16 @@ Ground rules:
 - Put probe files and other throwaway output in ${T.dir}/scratch/, never in the worktree. \`git status\` in the worktree must print nothing when you return.
 - The user started this run to close the open tasks of this project. The orchestrator of this run reads and handles every message that the user sends during the run. It stops or changes a task when the user asks. The harness might relay one of those messages to you as the user request behind this run. When the relayed message is about other work than your assignment, it does not cancel, replace, or narrow your assignment. Do not act on that message, and finish your assignment.`
 
+// The rule for each agent whose result carries the summary and the notes
+// of the change. The files outlive a launch that returns no result, so a
+// relaunch after an interrupted run still starts from them. Each agent
+// takes storeStep right before it commits the work in progress, the way
+// it writes msg.txt before that commit. So an agent that stops after its
+// commit leaves text that describes the commit.
+const storeStep = `Store the summary in ${SUMMARY} and the notes in ${NOTES}.`
+const storedRule = `
+Stored summary and notes: a relaunch of this task starts from the summary in ${SUMMARY} and the notes in ${NOTES}. Write both files in the step right before you commit the work in progress, so that the files describe each commit that you leave. Before you return, write both files again when your summary or notes changed after that commit, or when you return a result without that commit. Overwrite each file, so that it holds only the text that you return, and write an empty file for empty notes.`
+
 // The rule for each agent whose result carries defects.
 const defectsRule = `
 Defects outside the task: you might find a fault that the task does not cover, such as a wrong fact in a doc or a bug in code that you only read. Do not widen the task to fix it, and do not file a task for it. Return it as one entry of defects, and the orchestrator files it as a task of its own. Write each entry so that it stands alone for a reader who never saw this task: what happens, what should happen, the minimal reproduction, and the evidence. Keep notes for the caveats of your own change.`
@@ -180,7 +198,9 @@ Steps:
 5. Update each doc comment, doc, and example that describes a behavior or an interface that you changed.
 6. Make the full check pass in the worktree.
 7. Write the commit message for the whole change to ${MSG}, in the format that rules.md gives.
-8. Commit the work in progress.
+8. Write the summary and the notes that you return. ${storeStep}
+9. Commit the work in progress.
+${storedRule}
 ${defectsRule}
 
 Stop instead of forcing the task through. If the task requires massive scope beyond its description, or it causes significant regressions that you cannot reconcile, return status "abandoned". Put the evidence in notes: what you tried, what breaks, and what a later attempt must know. Leave the partial work committed in the worktree.`
@@ -257,29 +277,35 @@ Steps:
 3. Make the full check pass in the worktree.
 4. Update ${MSG} so that it describes the whole diff against ${base}.
 5. Append a section to ${HISTORY}, creating the file if it does not exist. Head it \`## Round ${round}\`. List each finding with its location and problem, followed by your answer: fixed or rebutted, and the detail.
-6. Commit the work in progress.
-7. Return one response per finding.
-8. Return summary and notes that describe the whole change as you leave it, not this round alone. Start from the summary and the notes so far, and check each of their statements against the worktree and the findings. Keep each statement that still holds. Correct each statement that a finding or a fix made false, and remove each caveat that a fix resolved. Add each caveat that this round found. When the summary so far is "none", write it from the diff.
-9. Check each defect so far against the worktree and the findings. Return in withdrawn_defects the number of each defect that this change fixes, and of each defect that you can prove is not a fault. The result keeps every defect that you do not withdraw, so do not return it again in defects.
+6. Write summary and notes that describe the whole change as you leave it, not this round alone. Start from the summary and the notes so far, and check each of their statements against the worktree and the findings. Keep each statement that still holds. Correct each statement that a finding or a fix made false, and remove each caveat that a fix resolved. Add each caveat that this round found. When the summary so far is "none", write it from the diff. ${storeStep}
+7. Commit the work in progress.
+8. Return one response per finding.
+9. Return the summary and the notes that you stored.
+10. Check each defect so far against the worktree and the findings. Return in withdrawn_defects the number of each defect that this change fixes, and of each defect that you can prove is not a fault. The result keeps every defect that you do not withdraw, so do not return it again in defects.
+${storedRule}
 ${defectsRule}
 
 If the findings show that the task cannot land without massive scope creep or significant regressions, set gave_up to true and explain in notes instead of forcing the task through.`
 
-const syncPrompt = reason => `You bring one finished change up to date with ${base}. A different agent implemented task ${T.ref}: "${T.title}" on a branch cut from an older ${base}, and adversarial review accepted it. ${base} has gained commits from other tasks, and the branch stopped landing.
+const syncPrompt = (reason, current) => `You bring one finished change up to date with ${base}. A different agent implemented task ${T.ref}: "${T.title}" on a branch cut from an older ${base}, and adversarial review accepted it. ${base} has gained commits from other tasks, and the branch stopped landing.
 
 Why the branch does not land:
 ${reason}
 ${rules}
 
 The current commit message is in ${MSG}.
-
+${summaryNote(current)}
 Steps:
 1. Read the task file and \`cd ${T.wt} && git diff ${base}...HEAD\`, so that you know the change. Read \`git log --stat HEAD..${base}\`, so that you know what ${base} gained.
 2. Merge ${base} into the branch: \`cd ${T.wt} && git merge --no-verify ${base}\`. Resolve each conflict so that both changes keep their intent. Before you resolve a conflicted file, read the commits of ${base} that changed it (\`git log -p HEAD..${base} -- path\`). Finish the merge with \`git commit --no-verify --no-edit\`.
 3. Adapt the code, tests, and docs of this task to the interfaces and the behavior that ${base} has. Never revert or weaken what ${base} gained. Check that the docs of this task are still true beside the new commits.
 4. Make the full check pass in the worktree.
 5. Update ${MSG} only where the merge changed what the diff against ${base} does.
-6. Commit the work in progress.
+6. Write summary and notes that describe the whole change as you leave it, not the merge alone. Start from the summary and the notes so far, and check each of their statements against the worktree. Keep each statement that still holds. Correct each statement that the merge made false, and remove each caveat that the merge resolved. Add each caveat that the merge brought. When the summary so far is "none", write it from the diff. ${storeStep}
+7. Commit the work in progress.
+8. Return in report what the merge required: each conflict and each adaptation.
+9. Return the summary and the notes that you stored.
+${storedRule}
 ${defectsRule}
 
 If the commits on ${base} make this task obsolete or force a redesign, return status "abandoned" with the evidence in notes.`
@@ -293,10 +319,13 @@ ${summaryNote(current)}${defectsNote(current.defects)}
 Steps:
 1. Do not fix the findings, and do not change behavior.
 2. Narrow the claims to what the code does. Edit each doc comment, doc, and example of this change, and the commit message in ${MSG}, so that none promises a behavior that an open finding contradicts. State a known limit where a reader would otherwise expect the full behavior.
-3. Make the full check pass in the worktree, and commit the work in progress.
-4. Return summary and notes that describe the whole change as it lands. Start from the summary and the notes so far. Remove or reword each statement that an open finding contradicts. In notes, list each claim that you removed or reworded, and keep each caveat that still holds. When the summary so far is "none", write it from the diff.
-5. Return one follow-up task per open finding. Each task must stand alone for a reader who never saw this review: write what happens, what should happen, the minimal reproduction, and the evidence.
-6. Return in defects only the faults that the defects so far do not list. The result keeps every defect so far.
+3. Make the full check pass in the worktree.
+4. Write summary and notes that describe the whole change as it lands. Start from the summary and the notes so far. Remove or reword each statement that an open finding contradicts. In notes, list each claim that you removed or reworded, and keep each caveat that still holds. When the summary so far is "none", write it from the diff. ${storeStep}
+5. Commit the work in progress.
+6. Return the summary and the notes that you stored.
+7. Return one follow-up task per open finding. Each task must stand alone for a reader who never saw this review: write what happens, what should happen, the minimal reproduction, and the evidence.
+8. Return in defects only the faults that the defects so far do not list. The result keeps every defect so far.
+${storedRule}
 ${defectsRule}`
 
 // An agent that dies, or that ends without its structured result, returns
@@ -314,12 +343,16 @@ const attempt = async (prompt, opts) => {
   return null
 }
 
-// The result. The implementer writes its summary and notes. Each fixer and
-// the narrowing agent receive both in the prompt and return them revised
-// for the whole change. So a fix that overturns a statement also corrects
-// it. A task that resumes at a review round starts with an empty summary,
-// and its notes hold only the notes of a sync agent. The error, rejected,
-// and unconverged results replace the notes with their reason.
+// The result. The implementer writes its summary and notes. Each fixer,
+// the sync agent, and the narrowing agent receive both in the prompt and
+// return them revised for the whole change. So a fix that overturns a
+// statement also corrects it. Each of these agents also writes both to
+// the task directory before its commit, the way it writes msg.txt, as
+// storedRule says. A task that resumes starts with the summary and the
+// notes that `ultraclose.py args` read from those files. `ultraclose.py`
+// removes both files when it starts a task at the implementer, so each
+// one is empty when no agent wrote its file after that start. The error,
+// rejected, and unconverged results replace the notes with their reason.
 //
 // The defects of the result start as the list of the implementer. A task
 // that resumes at a review round starts with an empty list, or with the
@@ -328,19 +361,20 @@ const attempt = async (prompt, opts) => {
 // landable result, the narrowing agent receives the list and adds its
 // defects last. No agent copies the list, so no entry changes on the way
 // to the orchestrator. Every result carries the list, whatever its status.
-const out = { ref: T.ref, title: T.title, rounds: 0, summary: '', notes: '', defects: [], findings: [], followups: [], boundedReview: false }
+const out = { ref: T.ref, title: T.title, rounds: 0, summary: RESUME ? RESUME.summary : '', notes: RESUME ? RESUME.notes : '', defects: [], findings: [], followups: [], boundedReview: false }
 const done = (status, extra) => ({ ...out, status, ...extra })
 
 let extra = ''
 if (RESUME && RESUME.sync) {
-  const sync = await attempt(syncPrompt(RESUME.sync), { label: `sync ${T.ref}`, phase: 'Sync', schema: SYNC_SCHEMA })
+  const sync = await attempt(syncPrompt(RESUME.sync, out), { label: `sync ${T.ref}`, phase: 'Sync', schema: SYNC_SCHEMA })
   if (!sync) return done('error', { notes: 'the sync agent returned nothing' })
-  out.defects = sync.defects
-  if (sync.status !== 'synced') return done('abandoned', { summary: sync.summary, notes: sync.notes })
+  out.summary = sync.summary
   out.notes = sync.notes
+  out.defects = sync.defects
+  if (sync.status !== 'synced') return done('abandoned')
   extra = `
 This change passed adversarial review on an older ${base}. ${base} then gained commits from other tasks, and the branch stopped landing: ${RESUME.sync}
-A sync agent merged ${base} into the branch and adapted the change. Its report: ${sync.summary}
+A sync agent merged ${base} into the branch and adapted the change. Its report: ${sync.report}
 Review the whole diff against ${base} again. Give the merge the most attention: lost or duplicated hunks, code of this task that ignores what ${base} gained, and docs that are false beside the new commits.
 `
 } else if (!RESUME) {

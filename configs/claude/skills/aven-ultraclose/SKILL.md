@@ -35,10 +35,11 @@ inside the repository.
 | `close-task.js` | A Workflow script that takes one task from implementation through review. |
 
 The run directory holds everything that must outlive your context:
-`state.json`, `rules.md`, `notes.md`, `logs/`, and `tasks/<ref>/` with the
-task file, the commit message (`msg.txt`), and the review history. The
-repository's git config records the path of the run directory, so every
-command finds it.
+`state.json`, `rules.md`, `notes.md`, `logs/`, and `tasks/<ref>/`. The
+directory of a task holds its task file, its commit message (`msg.txt`),
+and its review history. It also holds the summary and the notes of its
+change (`summary.txt` and `notes.txt`). The repository's git config records
+the path of the run directory, so every command finds it.
 
 The run directory also holds a copy of `close-task.js`. The `init`, `next`,
 and `args` commands of `ultraclose.py` each refresh that copy from the skill
@@ -195,15 +196,27 @@ final fixes. Record the task in `notes.md`.
 
 On an `approved` or `landable` result, `summary` and `notes` describe the
 change that lands. The implementer writes them, and each fixer revises
-them, so a fix that overturns an earlier statement also corrects it. On a
-`landable` result, the agent that narrows the claims of the change revises
-them last.
+them, so a fix that overturns an earlier statement also corrects it. A
+sync agent revises them after its merge. On a `landable` result, the agent
+that narrows the claims of the change revises them last.
 
-A relaunched task that resumes at a review round starts without the
-`summary` and `notes` of its earlier launch. Until a fixer runs, its
-`summary` stays empty, and its `notes` hold only what a sync agent
-reported. When the `summary` of such a result is empty, read `msg.txt` for
-what the change does.
+Each agent that writes or revises the `summary` and `notes` also stores
+them in the task directory, as `summary.txt` and `notes.txt`. The agent
+writes both files before it commits its work, the way it writes
+`msg.txt`. So an agent that stops after its commit leaves text that
+describes that commit. `ultraclose.py args` passes the stored text to the relaunch. So the result
+of a relaunched task carries the `summary` and `notes` of its earlier
+launch until an agent of the relaunch revises them. The relaunch after an
+interrupted run carries the stored text too, although the interrupted
+launch returned no result.
+
+A launch at the implementer starts with no stored text. `next` and `args`
+remove both files when they start a task there, so a relaunch never
+carries the text of an attempt that the new implementer replaced. An
+implementer that stops before it stores the two files leaves no text for
+the relaunch. The `summary` of the relaunched task then stays empty
+until an agent revises it. When the `summary` of a result is empty, read
+`msg.txt` for what the change does.
 
 ## Defects
 

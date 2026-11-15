@@ -11,6 +11,15 @@ directory of this script into the run directory. Pass that copy to the
 Workflow tool as scriptPath. The tool refuses the script in the skill
 directory after Nix store optimisation hard-links it.
 
+The directory of a task holds its task file, its commit message, its
+review history, and the summary and the notes of its change. The agents of
+close-task.js write the summary to summary.txt and the notes to notes.txt.
+The args command reads both files into the resume field of its output, so
+a relaunched task starts with the summary and the notes of its earlier
+launch. The next and args commands remove both files when they start a
+task at the implementer, so a relaunch never carries the text of an
+attempt that the implementer replaced.
+
 A run ends when no task is pending, inflight, or approved. The init
 command replaces a run that has ended, and with --force it replaces a run
 that has not. Each run takes a directory of its own, so init refuses a
@@ -95,6 +104,10 @@ GLOB_RULE = (
 # The Workflow script, which sits beside this file. Each run keeps a copy
 # of it under the same name.
 WORKFLOW = "close-task.js"
+# The files of a task directory that hold the summary and the notes of the
+# change, by the key of the resume field that carries each one. The
+# prompts of close-task.js name the same files.
+STORED = {"summary": "summary.txt", "notes": "notes.txt"}
 
 
 def die(msg):
@@ -262,6 +275,33 @@ def workflow_args(st, run, ref, resume=None):
         "rounds": cfg["rounds"],
         "task": task,
     }
+
+
+def stored(run, ref):
+    """The summary and the notes that the agents of a task stored.
+
+    The Workflow script cannot read a file, so the args command passes
+    both to a relaunch. A value is empty when no agent wrote its file.
+    """
+    d = run / "tasks" / ref
+    return {
+        key: (d / name).read_text(errors="replace").strip()
+        if (d / name).is_file()
+        else ""
+        for key, name in STORED.items()
+    }
+
+
+def unstore(run, ref):
+    """Remove the summary and the notes that the agents of a task stored.
+
+    A launch at the implementer starts with no stored text. The text of
+    an earlier attempt describes work that the new implementer replaces,
+    so a later relaunch must not carry it.
+    """
+    d = run / "tasks" / ref
+    for name in STORED.values():
+        (d / name).unlink(missing_ok=True)
 
 
 def install_workflow(run):
@@ -453,6 +493,8 @@ def cmd_next(a):
         launched = []
         for ref in pick(st):
             start(st, run, ref)
+            # A launch without a resume field starts at the implementer.
+            unstore(run, ref)
             launched.append(workflow_args(st, run, ref))
     print(json.dumps(launched, indent=1))
 
@@ -474,7 +516,7 @@ def cmd_args(a):
             last = rnd + 1
         else:
             last = max(st["config"]["rounds"], rnd)
-        resume = {"round": rnd, "lastRound": last}
+        resume = {"round": rnd, "lastRound": last, **stored(run, a.ref)}
         if a.sync:
             resume["sync"] = a.sync
         was = t["state"]
@@ -489,6 +531,7 @@ def cmd_args(a):
         )
         if ahead == "0" and not a.sync:
             resume = None
+            unstore(run, a.ref)
         print(json.dumps(workflow_args(st, run, a.ref, resume), indent=1))
         print(f"{a.ref}: {was} to inflight", file=sys.stderr)
 

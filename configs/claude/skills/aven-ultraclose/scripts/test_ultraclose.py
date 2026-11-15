@@ -7,6 +7,7 @@ script under Node, and they skip when node is not on PATH.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -72,19 +73,8 @@ def new_repo(tmp):
     return repo, env
 
 
-def launchable_repo(tmp):
-    """Create a repository whose tasks can start, and return it with its env.
-
-    The repository has one commit, so a task branch can start from it.
-    A stub stands in for aven, which a task start calls.
-    """
-    repo, env = new_repo(tmp)
-    bin_dir = Path(tmp, "bin")
-    bin_dir.mkdir()
-    aven = bin_dir / "aven"
-    aven.write_text("#!/bin/sh\necho stub\n")
-    aven.chmod(0o755)
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+def empty_commit(cwd, env, message):
+    """Record one commit that changes no file."""
     subprocess.run(
         [
             "git",
@@ -99,13 +89,46 @@ def launchable_repo(tmp):
             "--no-verify",
             "--allow-empty",
             "-m",
-            "init",
+            message,
         ],
-        cwd=repo,
+        cwd=cwd,
         env=env,
         check=True,
     )
+
+
+def launchable_repo(tmp):
+    """Create a repository whose tasks can start, and return it with its env.
+
+    The repository has one commit, so a task branch can start from it.
+    A stub stands in for aven, which a task start calls.
+    """
+    repo, env = new_repo(tmp)
+    bin_dir = Path(tmp, "bin")
+    bin_dir.mkdir()
+    aven = bin_dir / "aven"
+    aven.write_text("#!/bin/sh\necho stub\n")
+    aven.chmod(0o755)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    empty_commit(repo, env, "init")
     return repo, env
+
+
+def running_task(tmp, commits=1):
+    """Start a run with one running task.
+
+    The task branch holds the given number of commits. The args command
+    resumes a task at a review round only when its branch holds a commit.
+    Return the repository, the environment, and the Workflow input that
+    next printed for the task.
+    """
+    repo, env = launchable_repo(tmp)
+    ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+    triage(tmp, repo, env, {"ref": REF})
+    launch = json.loads(ultraclose("next", cwd=repo, env=env))[0]
+    for n in range(commits):
+        empty_commit(launch["task"]["wt"], env, f"wip {n}")
+    return repo, env, launch
 
 
 def triage(tmp, repo, env, *rows):
@@ -158,6 +181,17 @@ ENDED = "ended: no task is pending, inflight, or approved"
 # The states of a task that keep a run from its end, and the other states.
 UNFINISHED = ("pending", "inflight", "approved")
 FINISHED = ("landed", "noted", "closed")
+# The files of a task directory that hold the summary and the notes of the
+# change, by the key of the resume field that carries each one. The agents
+# of close-task.js write the files, and the args command reads them.
+STORED_FILES = {"summary": "summary.txt", "notes": "notes.txt"}
+
+
+def store_step(task_dir):
+    """The text of the prompt step that stores the summary and the notes in
+    the files of the given task directory."""
+    summary, notes = (Path(task_dir, STORED_FILES[key]) for key in STORED_FILES)
+    return f"Store the summary in {summary} and the notes in {notes}."
 
 
 class InitTest(unittest.TestCase):
@@ -657,6 +691,136 @@ class WorkflowCopyTest(unittest.TestCase):
                 )
 
 
+class ArgsTest(unittest.TestCase):
+    """The args command prints the Workflow input that relaunches a task."""
+
+    def test_resume_carries_stored_summary_and_notes(self):
+        both = {"summary": "a summary\n", "notes": "a note\n"}
+        kept = {"summary": "a summary", "notes": "a note"}
+        # name: (the text of each stored file, the commits of the task
+        # branch, the flags, the resume field)
+        cases = {
+            "both files": (both, 1, [], {"round": 1, "lastRound": 6, **kept}),
+            "no file": (
+                {},
+                1,
+                [],
+                {"round": 1, "lastRound": 6, "summary": "", "notes": ""},
+            ),
+            "only the summary": (
+                {"summary": "a summary\n"},
+                1,
+                [],
+                {"round": 1, "lastRound": 6, "summary": "a summary", "notes": ""},
+            ),
+            "an empty notes file": (
+                {"summary": "a summary\n", "notes": ""},
+                1,
+                [],
+                {"round": 1, "lastRound": 6, "summary": "a summary", "notes": ""},
+            ),
+            "text of several paragraphs": (
+                {"summary": "one\n\ntwo\n", "notes": "\nthree\nfour\n\n"},
+                1,
+                [],
+                {
+                    "round": 1,
+                    "lastRound": 6,
+                    "summary": "one\n\ntwo",
+                    "notes": "three\nfour",
+                },
+            ),
+            "--final": (both, 1, ["--final"], {"round": 1, "lastRound": 1, **kept}),
+            "--sync": (
+                both,
+                1,
+                ["--sync", "the merge conflicts"],
+                {
+                    "round": 1,
+                    "lastRound": 2,
+                    "sync": "the merge conflicts",
+                    **kept,
+                },
+            ),
+            "--sync and a branch without a commit": (
+                both,
+                0,
+                ["--sync", "the merge conflicts"],
+                {
+                    "round": 1,
+                    "lastRound": 2,
+                    "sync": "the merge conflicts",
+                    **kept,
+                },
+            ),
+            # The task starts again at the implementer. StoredTextTest
+            # covers the files that this launch leaves.
+            "a branch without a commit": (both, 0, [], None),
+        }
+        for name, (files, commits, flags, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, launch = running_task(tmp, commits)
+                for key, text in files.items():
+                    Path(launch["task"]["dir"], STORED_FILES[key]).write_text(text)
+                relaunch = json.loads(
+                    ultraclose("args", REF, *flags, cwd=repo, env=env)
+                )
+                self.assertEqual(relaunch["task"].get("resume"), want)
+                # The rest of the input matches the first launch.
+                relaunch["task"].pop("resume", None)
+                self.assertEqual(relaunch, launch)
+
+
+class StoredTextTest(unittest.TestCase):
+    """A launch at the implementer starts with no stored summary or notes.
+
+    The text of an earlier attempt describes work that the new implementer
+    replaces. An implementer can commit and stop before it stores its own
+    text, and the relaunch after it must not carry the earlier text.
+    """
+
+    def test_launch_at_implementer_removes_stored_text(self):
+        earlier = {"summary": "an earlier attempt", "notes": "its caveat"}
+        # name: (the commits of the task branch, the commands that launch
+        # the task again, whether that launch starts at the implementer)
+        cases = {
+            "args on a branch without a commit": (0, [["args", REF]], True),
+            "next after the task returns to pending": (
+                1,
+                [["set", REF, "noted"], ["set", REF, "pending"], ["next"]],
+                True,
+            ),
+            "args on a branch with a commit": (1, [["args", REF]], False),
+            "--sync on a branch without a commit": (
+                0,
+                [["args", REF, "--sync", "the merge conflicts"]],
+                False,
+            ),
+        }
+        for name, (commits, commands, fresh) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, launch = running_task(tmp, commits)
+                d = Path(launch["task"]["dir"])
+                for key, text in earlier.items():
+                    (d / STORED_FILES[key]).write_text(text + "\n")
+                for command in commands:
+                    ultraclose(*command, cwd=repo, env=env)
+                self.assertEqual(
+                    {key: (d / file).exists() for key, file in STORED_FILES.items()},
+                    dict.fromkeys(STORED_FILES, not fresh),
+                )
+                # The agent of that launch commits and stops before it
+                # stores its text. The next relaunch resumes at a review
+                # round.
+                empty_commit(launch["task"]["wt"], env, "wip of the launch")
+                relaunch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+                resume = relaunch["task"]["resume"]
+                self.assertEqual(
+                    {key: resume[key] for key in STORED_FILES},
+                    dict.fromkeys(STORED_FILES, "") if fresh else earlier,
+                )
+
+
 class LandTest(unittest.TestCase):
     """A landing prints its result last and tells a down service from a fault."""
 
@@ -931,15 +1095,21 @@ REJECT = {
     "improves_base": False,
     "reject_reason": "the approach cannot work",
 }
-# The resume field of the input that `ultraclose.py args` prints for a
-# task with one finished round, without and with --sync.
-RELAUNCH = {"round": 2, "lastRound": 6}
-SYNC = {"round": 2, "lastRound": 3, "sync": "the merge conflicts"}
 
 
 def described(author):
     """The summary and the notes that one agent returns."""
     return {"summary": f"summary by {author}", "notes": f"notes by {author}"}
+
+
+# The summary and the notes that the agents of an earlier launch stored,
+# and the two values of a task whose agents stored nothing.
+STORED = described("the earlier launch")
+UNSTORED = {"summary": "", "notes": ""}
+# The resume field of the input that `ultraclose.py args` prints for a
+# task with one finished round, without and with --sync.
+RELAUNCH = {"round": 2, "lastRound": 6, **STORED}
+SYNC = {"round": 2, "lastRound": 3, "sync": "the merge conflicts", **STORED}
 
 
 def defect(author):
@@ -970,6 +1140,7 @@ IMPLEMENTED = {
 }
 SYNCED = {
     "status": "synced",
+    "report": "report by the sync agent",
     **described("the sync agent"),
     "defects": [defect("the sync agent")],
 }
@@ -1004,12 +1175,15 @@ class WorkflowCase(unittest.TestCase):
         kind, _, rest = short.partition(" ")
         return f"{kind} {REF} {rest}".strip()
 
-    def run_workflow(self, agents, rounds=6, resume=None):
+    def run_workflow(self, agents, rounds=6, resume=None, args=None):
         """Run close-task.js with scripted agents.
 
         The agents argument maps each short agent label to the result of
-        that agent, in the order that the script must call them. Return
-        the result of the script and each agent call by short label.
+        that agent, in the order that the script must call them. The args
+        argument holds the input of the script as `ultraclose.py` printed
+        it. Without it, the input names a task outside any run, with the
+        given rounds and resume field. Return the result of the script and
+        each agent call by short label.
         """
         task = {
             "ref": REF,
@@ -1020,7 +1194,8 @@ class WorkflowCase(unittest.TestCase):
         if resume:
             task["resume"] = resume
         scenario = {
-            "args": {
+            "args": args
+            or {
                 "run": "/run",
                 "repo": "/repo",
                 "base": "main",
@@ -1122,8 +1297,9 @@ class WorkflowRegressionTest(WorkflowCase):
 class WorkflowResultTest(WorkflowCase):
     """The summary, the notes, and the defects of a result.
 
-    The summary and the notes follow the last change. The defects add up
-    over the agents of one launch.
+    The summary and the notes follow the last change. A relaunch starts
+    from the summary and the notes that the earlier launch stored. The
+    defects add up over the agents of one launch.
     """
 
     def test_result_describes_last_change(self):
@@ -1233,7 +1409,20 @@ class WorkflowResultTest(WorkflowCase):
             "a relaunch that the first review approves": (
                 {"agents": {"review r2": APPROVE}, "resume": RELAUNCH},
                 "approved",
-                {"summary": "", "notes": ""},
+                STORED,
+            ),
+            "a relaunch of a task that stored nothing": (
+                {
+                    "agents": {"review r2": APPROVE},
+                    "resume": {**RELAUNCH, **UNSTORED},
+                },
+                "approved",
+                UNSTORED,
+            ),
+            "a relaunch that the first review rejects": (
+                {"agents": {"review r2": REJECT}, "resume": RELAUNCH},
+                "rejected",
+                {"summary": STORED["summary"], "notes": REJECT["reject_reason"]},
             ),
             "a sync that the review approves": (
                 {
@@ -1241,7 +1430,15 @@ class WorkflowResultTest(WorkflowCase):
                     "resume": SYNC,
                 },
                 "approved",
-                {"summary": "", "notes": SYNCED["notes"]},
+                SYNCED,
+            ),
+            "a sync agent returns nothing": (
+                {"agents": {"sync": None, "sync retry": None}, "resume": SYNC},
+                "error",
+                {
+                    "summary": STORED["summary"],
+                    "notes": "the sync agent returned nothing",
+                },
             ),
         }
         for name, (kwargs, status, want) in cases.items():
@@ -1252,55 +1449,132 @@ class WorkflowResultTest(WorkflowCase):
                     (status, want["summary"], want["notes"]),
                 )
 
-    def test_agents_receive_last_summary_and_notes(self):
-        _, calls = self.run_workflow(
-            {
-                "impl": IMPLEMENTED,
-                "review r1": CHANGES,
-                "fix r1": fixed(1),
-                "review r2": CHANGES,
-                "fix r2": fixed(2),
-                "review final": CHANGES,
-                "narrow": NARROWED,
-            },
-            rounds=2,
-        )
-        authors = [IMPLEMENTED, fixed(1), fixed(2), NARROWED]
-        # label: (the agent whose words the prompt carries, the fields)
-        want = {
-            "review r1": (IMPLEMENTED, ["summary"]),
-            "fix r1": (IMPLEMENTED, ["summary", "notes"]),
-            "review r2": (fixed(1), ["summary"]),
-            "fix r2": (fixed(1), ["summary", "notes"]),
-            "review final": (fixed(2), ["summary"]),
-            "narrow": (fixed(2), ["summary", "notes"]),
-        }
-        for label, (author, fields) in want.items():
-            with self.subTest(label):
-                prompt = calls[label]["prompt"]
-                for field in fields:
-                    self.assertIn(author[field], prompt)
-                # No prompt carries the words of an earlier or a later agent.
-                for other in authors:
-                    if other != author:
-                        self.assertNotIn(other["summary"], prompt)
-                        self.assertNotIn(other["notes"], prompt)
+    def test_relaunch_returns_what_the_agents_stored(self):
+        # The implementer stores its summary and notes, and its launch
+        # returns no result. The input that the args command prints
+        # carries both to the next launch.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, launch = running_task(tmp)
+            _, calls = self.run_workflow(
+                {"impl": IMPLEMENTED, "review r1": APPROVE}, args=launch
+            )
+            self.assertIn(store_step(launch["task"]["dir"]), calls["impl"]["prompt"])
+            for key, name in STORED_FILES.items():
+                Path(launch["task"]["dir"], name).write_text(IMPLEMENTED[key] + "\n")
+            relaunch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+            result, _ = self.run_workflow({"review r1": APPROVE}, args=relaunch)
+            self.assertEqual(
+                (result["status"], result["summary"], result["notes"]),
+                ("approved", IMPLEMENTED["summary"], IMPLEMENTED["notes"]),
+            )
 
-    def test_agents_that_change_the_work_return_summary_and_notes(self):
+    def test_agents_receive_last_summary_and_notes(self):
+        both, review = ["summary", "notes"], ["summary"]
+        fix_round = {"review r2": CHANGES, "fix r2": fixed(2), "review r3": APPROVE}
+        # name: (run_workflow arguments, label: (the author whose words
+        # the prompt carries, the fields))
+        cases = {
+            "a first launch": (
+                {
+                    "agents": {
+                        "impl": IMPLEMENTED,
+                        "review r1": CHANGES,
+                        "fix r1": fixed(1),
+                        "review r2": CHANGES,
+                        "fix r2": fixed(2),
+                        "review final": CHANGES,
+                        "narrow": NARROWED,
+                    },
+                    "rounds": 2,
+                },
+                {
+                    "review r1": (IMPLEMENTED, review),
+                    "fix r1": (IMPLEMENTED, both),
+                    "review r2": (fixed(1), review),
+                    "fix r2": (fixed(1), both),
+                    "review final": (fixed(2), review),
+                    "narrow": (fixed(2), both),
+                },
+            ),
+            "a relaunch": (
+                {"agents": fix_round, "resume": RELAUNCH},
+                {
+                    "review r2": (STORED, review),
+                    "fix r2": (STORED, both),
+                    "review r3": (fixed(2), review),
+                },
+            ),
+            "a sync": (
+                {"agents": {"sync": SYNCED, **fix_round}, "resume": SYNC},
+                {
+                    "sync": (STORED, both),
+                    "review r2": (SYNCED, review),
+                    "fix r2": (SYNCED, both),
+                    "review r3": (fixed(2), review),
+                },
+            ),
+        }
+        authors = [STORED, IMPLEMENTED, SYNCED, fixed(1), fixed(2), NARROWED]
+        for name, (kwargs, want) in cases.items():
+            _, calls = self.run_workflow(**kwargs)
+            for label, (author, fields) in want.items():
+                with self.subTest(f"{name}, {label}"):
+                    prompt = calls[label]["prompt"]
+                    for field in fields:
+                        self.assertIn(author[field], prompt)
+                    # No prompt carries the words of an earlier or a later
+                    # author.
+                    for other in authors:
+                        if other != author:
+                            self.assertNotIn(other["summary"], prompt)
+                            self.assertNotIn(other["notes"], prompt)
+
+    def test_reviewer_receives_report_of_sync_agent(self):
         _, calls = self.run_workflow(
-            {
-                "impl": IMPLEMENTED,
-                "review r1": CHANGES,
-                "fix r1": fixed(1),
-                "review final": CHANGES,
-                "narrow": NARROWED,
-            },
-            rounds=1,
+            {"sync": SYNCED, "review r2": APPROVE}, resume=SYNC
         )
-        for label in ("impl", "fix r1", "narrow"):
+        # The summary of the sync agent describes the whole change, so its
+        # account of the merge takes a field of its own.
+        sync, review = calls["sync"], calls["review r2"]
+        self.assertIn("report", sync["schema"]["required"])
+        self.assertIn("Return in report what the merge required", sync["prompt"])
+        self.assertIn(f"Its report: {SYNCED['report']}\n", review["prompt"])
+
+    def test_agents_that_change_the_work_return_and_store_summary_and_notes(self):
+        calls = self.every_agent()
+        # label: whether the result of the agent carries the summary and
+        # the notes of the change
+        want = {
+            "impl": True,
+            "sync": True,
+            "fix r1": True,
+            "narrow": True,
+            "review r1": False,
+            "review final": False,
+        }
+        self.assertEqual(set(calls), set(want))
+        for label, returns in want.items():
             with self.subTest(label):
-                self.assertLessEqual(
-                    {"summary", "notes"}, set(calls[label]["schema"]["required"])
+                schema, prompt = calls[label]["schema"], calls[label]["prompt"]
+                self.assertEqual(
+                    {"summary", "notes"} <= set(schema["required"]), returns
+                )
+                # An agent that returns both also stores both, in the files
+                # that the args command reads.
+                store = store_step(f"/run/tasks/{REF}")
+                self.assertEqual("Stored summary and notes:" in prompt, returns)
+                self.assertEqual(store in prompt, returns)
+                if not returns:
+                    continue
+                # The agent stores both in the step right before it commits
+                # the work in progress, the way it writes msg.txt before
+                # that commit. So an agent that stops after its commit
+                # leaves text that describes the commit.
+                commit = "Commit the work in progress."
+                self.assertEqual(prompt.count(commit), 1)
+                self.assertEqual(prompt.count(store), 1)
+                self.assertRegex(
+                    prompt, re.escape(store) + r"\n\d+\. " + re.escape(commit)
                 )
 
     def test_result_lists_defects_of_each_agent(self):
@@ -1530,25 +1804,57 @@ class WorkflowResultTest(WorkflowCase):
                         ["title", "description"],
                     )
 
-    def test_fixer_after_relaunch_learns_what_exists(self):
+    def test_agents_after_relaunch_learn_what_exists(self):
         fix_round = {"review r2": CHANGES, "fix r2": fixed(2), "review r3": APPROVE}
-        # name: (run_workflow arguments, the notes that the fixer receives,
-        # the agents whose defects it receives)
+        synced = {"sync": SYNCED, **fix_round}
+        nothing = {"summary": "none", "notes": "none"}
+        # name: (run_workflow arguments, the agent, the summary and the
+        # notes that it receives, the agents whose defects it receives or
+        # None for an agent that receives no defects)
         cases = {
-            "a relaunch": ({"agents": fix_round, "resume": RELAUNCH}, "none", []),
-            "a sync": (
-                {"agents": {"sync": SYNCED, **fix_round}, "resume": SYNC},
-                SYNCED["notes"],
+            "the fixer of a relaunch": (
+                {"agents": fix_round, "resume": RELAUNCH},
+                "fix r2",
+                STORED,
+                [],
+            ),
+            "the fixer of a relaunch that stored nothing": (
+                {"agents": fix_round, "resume": {**RELAUNCH, **UNSTORED}},
+                "fix r2",
+                nothing,
+                [],
+            ),
+            "the sync agent": (
+                {"agents": synced, "resume": SYNC},
+                "sync",
+                STORED,
+                None,
+            ),
+            "the sync agent of a task that stored nothing": (
+                {"agents": synced, "resume": {**SYNC, **UNSTORED}},
+                "sync",
+                nothing,
+                None,
+            ),
+            "the fixer after a sync": (
+                {"agents": synced, "resume": SYNC},
+                "fix r2",
+                SYNCED,
                 ["the sync agent"],
             ),
         }
-        for name, (kwargs, notes, reporters) in cases.items():
+        for name, (kwargs, label, want, reporters) in cases.items():
             with self.subTest(name):
                 _, calls = self.run_workflow(**kwargs)
-                prompt = calls["fix r2"]["prompt"]
-                self.assertIn("The summary of the change so far:\nnone\n", prompt)
-                self.assertIn(f"The notes of the change so far:\n{notes}\n", prompt)
-                self.assertIn(listed(*reporters), prompt)
+                prompt = calls[label]["prompt"]
+                self.assertIn(
+                    f"The summary of the change so far:\n{want['summary']}\n", prompt
+                )
+                self.assertIn(
+                    f"The notes of the change so far:\n{want['notes']}\n", prompt
+                )
+                if reporters is not None:
+                    self.assertIn(listed(*reporters), prompt)
 
 
 if __name__ == "__main__":
