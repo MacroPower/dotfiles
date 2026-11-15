@@ -330,6 +330,7 @@ let
               test = mkOption {
                 type = types.enum [
                   "matches"
+                  "branchMatches"
                   "true"
                   "absentOrTrue"
                   "absentOrZero"
@@ -340,6 +341,14 @@ let
 
                   - `matches`: the field is a string that `pattern`
                     matches from start to end.
+                  - `branchMatches`: the field names a branch that
+                    `pattern` matches from start to end. When the field
+                    is absent or an empty string, hook-router asks git
+                    for the current branch of the repository at the
+                    path in the `repoField` field, and tests that
+                    branch. The test fails when git names no current
+                    branch there, as on a detached HEAD, and when the
+                    path is relative.
                   - `true`: the field is the boolean true.
                   - `absentOrTrue`: the field is absent or the boolean
                     true.
@@ -351,11 +360,21 @@ let
                 type = types.str;
                 default = "";
                 description = ''
-                  Regular expression of the `matches` test, in Go
-                  syntax. The test holds only when the expression
-                  matches the whole value. hook-router exits with an
-                  error on every hook event when the expression does
-                  not compile. Every other test takes no pattern.
+                  Regular expression of the `matches` and
+                  `branchMatches` tests, in Go syntax. Each test holds
+                  only when the expression matches the whole value.
+                  hook-router exits with an error on every hook event
+                  when the expression does not compile. Every other
+                  test takes no pattern.
+                '';
+              };
+              repoField = mkOption {
+                type = types.str;
+                default = "";
+                description = ''
+                  Top-level `tool_input` key that holds the path of a
+                  git repository, for the `branchMatches` test. Every
+                  other test takes no `repoField`.
                 '';
               };
             };
@@ -368,6 +387,31 @@ let
       };
     };
   };
+
+  # Conventional Commits types that can open a branch name. The
+  # conditional rules let a remote write to a branch named
+  # `<type>/<name>` run without a prompt. By convention such a name
+  # marks a working branch, so `main` and every other branch keep the
+  # prompt.
+  conventionalBranchTypes = [
+    "build"
+    "chore"
+    "ci"
+    "docs"
+    "feat"
+    "fix"
+    "perf"
+    "refactor"
+    "revert"
+    "style"
+    "test"
+  ];
+
+  # Regular expression, in Go syntax, for the name of such a branch.
+  # Every conditional rule that tests a branch name reads it from here.
+  # Mirrored by pushRules in tools/hook-router/mcp_test.go, so update
+  # both together.
+  conventionalBranchPattern = "^(${lib.concatStringsSep "|" conventionalBranchTypes})/.+$";
 
   toPermGlob =
     path:
@@ -1610,13 +1654,17 @@ let
     ) conditionalRuleTools;
   conditionalRuleConflicts = conditionalRuleConflictsIn "ask" ++ conditionalRuleConflictsIn "allow";
 
-  # Conditions that pair a pattern with the wrong test. hook-router
-  # rejects them on every hook event, so the assertion in `config`
-  # reports them at evaluation instead.
-  conditionalRulePatternFaults = lib.concatMap (
+  # Conditions that pair a pattern or a repo field with the wrong test.
+  # hook-router rejects them on every hook event, so the assertion in
+  # `config` reports them at evaluation instead.
+  conditionalRuleOperandFaults = lib.concatMap (
     rule:
     map (c: "${rule.tool} field ${c.field} with test ${c.test}") (
-      lib.filter (c: (c.test == "matches") != (c.pattern != "")) rule.conditions
+      lib.filter (
+        c:
+        (c.test == "matches" || c.test == "branchMatches") != (c.pattern != "")
+        || (c.test == "branchMatches") != (c.repoField != "")
+      ) rule.conditions
     )
   ) bundledConditionalRules;
 
@@ -2609,8 +2657,9 @@ in
                     conditions = [
                       {
                         field = "ref";
-                        test = "matches";
+                        test = "branchMatches";
                         pattern = "(feat|fix)/.+";
+                        repoField = "repo";
                       }
                       {
                         field = "tags";
@@ -2771,12 +2820,14 @@ in
           ${lib.concatMapStrings (conflict: "  - ${conflict}\n") conditionalRuleConflicts}'';
       }
       {
-        assertion = conditionalRulePatternFaults == [ ];
+        assertion = conditionalRuleOperandFaults == [ ];
         message = ''
           dotfiles.claude: in toolBundles.<name>.conditionalRules, a
-          condition must set `pattern` when its test is `matches`, and
-          must leave it empty for every other test:
-          ${lib.concatMapStrings (fault: "  - ${fault}\n") conditionalRulePatternFaults}'';
+          condition must set `pattern` when its test is `matches` or
+          `branchMatches`, and `repoField` when its test is
+          `branchMatches`. It must leave each one empty for every other
+          test:
+          ${lib.concatMapStrings (fault: "  - ${fault}\n") conditionalRuleOperandFaults}'';
       }
     ];
 
@@ -2913,11 +2964,13 @@ in
           ];
         };
         # Every git command runs without a prompt except the ones that
-        # write to a remote, listed in permissions.ask below. The allow
-        # entries matter on hosts where the sandbox auto-allow is off;
-        # on auto-allow hosts hook-router already allows git.
-        # Permission rules evaluate deny -> ask -> allow regardless of
-        # specificity, so each ask entry wins over Bash(git *).
+        # write to a remote. permissions.ask lists the Bash forms of
+        # those commands, and conditionalRules decides
+        # mcp__git__git_push. The allow entries matter on hosts where
+        # the sandbox auto-allow is off. On auto-allow hosts
+        # hook-router already allows git. Permission rules evaluate
+        # deny, then ask, then allow, whatever their specificity, so
+        # each ask entry wins over Bash(git *).
         permissions.allow = [
           "mcp__git__git_clone"
           "mcp__git__git_fetch"
@@ -2925,11 +2978,11 @@ in
           "Bash(git)"
           "Bash(git *)"
         ];
-        # Git commands that write to a remote. commandRules.deny also
-        # redirects push to mcp__git__git_push; the Bash push entries
-        # still prompt when hook-router emits no decision.
+        # Bash forms of the git commands that write to a remote.
+        # commandRules.deny also redirects push to mcp__git__git_push.
+        # The Bash push entries still prompt when hook-router emits no
+        # decision.
         permissions.ask = [
-          "mcp__git__git_push"
           "Bash(git push)"
           "Bash(git push *)"
           "Bash(git send-email)"
@@ -2937,6 +2990,40 @@ in
           "Bash(git lfs push *)"
           "Bash(git svn dcommit)"
           "Bash(git svn dcommit *)"
+        ];
+        # mcp__git__git_push has no permissions.ask entry, because
+        # hook-router decides each call on its arguments. A push runs
+        # without a prompt when the name of the pushed branch matches
+        # conventionalBranchPattern and the call does not push tags.
+        # Every other push prompts. force_with_lease, set_upstream, and
+        # remote do not change the decision.
+        #
+        # A call with no `ref` pushes the current branch of `repo`, so
+        # hook-router asks git for that branch. The call prompts when
+        # git names no branch, as on a detached HEAD.
+        #
+        # mcp-git runs the pre-push hook of the repository outside the
+        # Bash sandbox. A push that this rule allows runs that hook
+        # without a prompt.
+        #
+        # Mirrored by pushRules in tools/hook-router/mcp_test.go, so
+        # update both together.
+        conditionalRules = [
+          {
+            tool = "mcp__git__git_push";
+            conditions = [
+              {
+                field = "ref";
+                test = "branchMatches";
+                pattern = conventionalBranchPattern;
+                repoField = "repo";
+              }
+              {
+                field = "tags";
+                test = "absentOrZero";
+              }
+            ];
+          }
         ];
         sandbox.allowWrite = [
           "/tmp/git"
@@ -3004,6 +3091,9 @@ in
           items = [
             "Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there."
             "Use `mcp__git__git_fetch`, `mcp__git__git_pull`, and `mcp__git__git_push` for git operations that contact a remote; plain `git` in Bash handles local work (add, commit, branch, rebase)."
+            "`mcp__git__git_push` runs without a prompt when the pushed branch is named `<type>/<name>` and the call does not set `tags`. `<type>` is one of ${
+              lib.concatMapStringsSep ", " (type: "`${type}`") conventionalBranchTypes
+            }. Every other push prompts, so give each branch that you create for a push a name of that form, such as `fix/retry-timeout`."
           ];
         };
       };

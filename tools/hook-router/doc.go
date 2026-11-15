@@ -16,10 +16,12 @@
 //     --mcp-rules JSON. "MCP" is a routing sentinel, and the tool name
 //     comes from the payload. A conditional rule in the same JSON
 //     allows a call of its tool when the arguments meet every
-//     condition. Every other call of that tool gets an ask. It lints
-//     the tool arguments that the toolFields of --message-lint-config
-//     name, and findings deny the call before the allow or ask
-//     decision. A deny-listed tool skips the lint.
+//     condition. Every other call of that tool gets an ask. A
+//     condition on a branch name reads the current branch of the
+//     repository that the call names when the call names no branch. It
+//     lints the tool arguments that the toolFields of
+//     --message-lint-config name, and findings deny the call before the
+//     allow or ask decision. A deny-listed tool skips the lint.
 //   - PreToolUse:FileWrite asks, under --write-guard, before a Write,
 //     Edit, MultiEdit, or NotebookEdit call in plan or
 //     bypassPermissions mode writes a path that the sandbox denies to

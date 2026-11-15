@@ -1,6 +1,7 @@
 package mcprules
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -14,9 +15,10 @@ const (
 )
 
 // Ruleset is the matcher for PreToolUse:MCP. It holds the allow, ask,
-// and deny pattern lists and the conditional allow rules. Construct
-// with [New] or [Parse]. Both return a non-nil zero value for empty
-// input, so callers can invoke [*Ruleset.Match] without nil guards.
+// and deny pattern lists, the conditional allow rules, and the
+// [BranchResolver] that those rules call. Construct with [New] or
+// [Parse]. Both return a non-nil ruleset for empty input, so callers
+// can invoke [*Ruleset.Match] without nil guards.
 //
 // The deny list decides first. A tool with one or more conditional
 // rules then gets its decision from those rules. The ask and allow
@@ -25,15 +27,23 @@ const (
 // pattern wins. The order of the lists mirrors Claude Code's own
 // permission-rule precedence.
 type Ruleset struct {
-	deny  []string
-	ask   []string
-	allow []string
-	rules []Rule
+	branch BranchResolver
+	deny   []string
+	ask    []string
+	allow  []string
+	rules  []Rule
 }
 
-// Option configures a [*Ruleset] that [New] builds.
+// BranchResolver returns the short name of the current branch of the
+// git repository at the path repo, such as "feat/x". It returns an
+// error when it cannot name that branch, for example because HEAD is
+// detached or the path holds no repository.
+type BranchResolver func(ctx context.Context, repo string) (string, error)
+
+// Option configures a [*Ruleset] that [New] or [Parse] builds.
 //
 //   - [WithRules]
+//   - [WithBranchResolver]
 type Option func(*Ruleset)
 
 // WithRules adds conditional allow rules to the ruleset. Rules that
@@ -47,6 +57,16 @@ func WithRules(rules ...Rule) Option {
 				r.rules = append(r.rules, rule)
 			}
 		}
+	}
+}
+
+// WithBranchResolver sets the [BranchResolver] that a
+// [TestBranchMatches] condition calls when its field names no branch.
+// Without a resolver, such a condition fails for every call that names
+// no branch, so the call resolves to ask. See [Option].
+func WithBranchResolver(resolve BranchResolver) Option {
+	return func(r *Ruleset) {
+		r.branch = resolve
 	}
 }
 
@@ -94,8 +114,9 @@ type Result struct {
 // one of them and to ask otherwise. Every other tool resolves through
 // the ask and allow lists in that order. A nil receiver or an unmatched
 // tool returns matched == false, and the caller then falls through to
-// the normal permission flow.
-func (r *Ruleset) Match(tool string, input map[string]any) (Result, bool) {
+// the normal permission flow. ctx bounds the [BranchResolver] call of a
+// [TestBranchMatches] condition.
+func (r *Ruleset) Match(ctx context.Context, tool string, input map[string]any) (Result, bool) {
 	if r == nil {
 		return Result{}, false
 	}
@@ -111,7 +132,7 @@ func (r *Ruleset) Match(tool string, input map[string]any) (Result, bool) {
 			continue
 		}
 
-		if rule.holds(input) {
+		if rule.holds(ctx, input, r.branch) {
 			return Result{Decision: DecisionAllow, Conditions: rule.describe()}, true
 		}
 
@@ -169,15 +190,15 @@ func MatchPattern(pattern, tool string) bool {
 }
 
 // Parse decodes the JSON payload passed via --mcp-rules into a
-// [*Ruleset]. Empty input yields an empty ruleset. Parse returns an
-// error for malformed JSON and for a conditional rule that [NewRule]
-// rejects, such as one whose regular expression does not compile. The
-// error makes wrapper misconfiguration loud. Like the other hook-router
-// JSON flag parsers, Parse drops unknown fields without a report
-// (lenient json.Unmarshal).
-func Parse(s string) (*Ruleset, error) {
+// [*Ruleset] and applies opts to it. Empty input yields a ruleset with
+// no patterns and no rules. Parse returns an error for malformed JSON
+// and for a conditional rule that [NewRule] rejects, such as one whose
+// regular expression does not compile. The error makes wrapper
+// misconfiguration loud. Like the other hook-router JSON flag parsers,
+// Parse drops unknown fields without a report (lenient json.Unmarshal).
+func Parse(s string, opts ...Option) (*Ruleset, error) {
 	if s == "" {
-		return New(nil, nil, nil), nil
+		return New(nil, nil, nil, opts...), nil
 	}
 
 	var payload struct {
@@ -206,5 +227,5 @@ func Parse(s string) (*Ruleset, error) {
 		rules = append(rules, rule)
 	}
 
-	return New(payload.Allow, payload.Ask, payload.Deny, WithRules(rules...)), nil
+	return New(payload.Allow, payload.Ask, payload.Deny, append([]Option{WithRules(rules...)}, opts...)...), nil
 }

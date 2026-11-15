@@ -65,7 +65,9 @@ import (
 // mcpRules shares the compactor's nil-safe contract: mainErr always
 // wires it to a non-nil (possibly empty) value, but a bare config{}
 // test literal may leave it nil, since [mcprules.Ruleset.Match] and
-// [mcprules.Ruleset.Empty] guard a nil receiver.
+// [mcprules.Ruleset.Empty] guard a nil receiver. mainErr builds it with
+// [parseMCPRules], which adds the resolver of [currentBranch]. A
+// ruleset that a test builds another way resolves no current branch.
 //
 // commitSkills lists the wrap-up skill names (without leading slash)
 // whose UserPromptSubmit invocation clears plan-guard state. A nil or
@@ -220,7 +222,7 @@ func main() {
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
 	commitSkills := flag.String("commit-skills", "", "JSON array of skill names whose invocation clears plan-guard state")
 	commandRules := flag.String("command-rules", "", "JSON array of command deny/ask rules ({command, args, except, action, reason})")
-	mcpRules := flag.String("mcp-rules", "", "JSON object of MCP tool allow/ask/deny pattern lists and conditional allow rules ({allow, ask, deny, conditional}); patterns are exact names, bare server names, or trailing-* globs, and each conditional rule ({tool, conditions}) allows a call of one tool whose arguments meet every condition ({field, test, pattern})")
+	mcpRules := flag.String("mcp-rules", "", "JSON object of MCP tool allow/ask/deny pattern lists and conditional allow rules ({allow, ask, deny, conditional}); patterns are exact names, bare server names, or trailing-* globs, and each conditional rule ({tool, conditions}) allows a call of one tool whose arguments meet every condition ({field, test, pattern, repoField})")
 	formatterRules := flag.String("formatter-rules", "", "JSON array of file-formatter routing rules ({pathGlob, command, timeout})")
 	linterRules := flag.String("linter-rules", "", "JSON array of file-linter routing rules ({pathGlob, command, timeout}); findings block PostToolUse:Write/Edit/MultiEdit through exit code 2")
 	compactionConfig := flag.String("compaction-config", "", "JSON object configuring PostToolUse:Bash output compaction ({enable, stripAnsi, minRunLength, minBytes, streams})")
@@ -320,9 +322,9 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 		logger.Debug("command rules engine is empty")
 	}
 
-	mcp, err := mcprules.Parse(mcpRulesJSON)
+	mcp, err := parseMCPRules(mcpRulesJSON, logger)
 	if err != nil {
-		return fmt.Errorf("parsing --mcp-rules: %w", err)
+		return err
 	}
 
 	if mcp.Empty() {

@@ -287,9 +287,9 @@ func TestHandlePushRunsHooks(t *testing.T) {
 
 	commitFile(t, work, "blocked.txt", "x", "blocked commit")
 
-	// Unlike fetch and pull, push keeps local hooks: it sits behind
-	// a permission prompt, and pre-push hooks are repo policy. A
-	// rejecting hook must therefore fail the push.
+	// Unlike fetch and pull, push keeps local hooks, because pre-push
+	// hooks are repo policy. A rejecting hook must therefore fail the
+	// push.
 	writeHook(t, work, "pre-push", "#!/bin/sh\nexit 1\n")
 
 	h := &handler{}

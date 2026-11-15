@@ -1,6 +1,8 @@
 package mcprules_test
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -51,6 +53,16 @@ func TestParse(t *testing.T) {
 			input: `{"conditional":[{"tool":"mcp__git__git_push"}]}`,
 			err:   mcprules.ErrInvalidRule,
 		},
+		"branch condition with a repo field": {
+			input: `{"conditional":[{"tool":"mcp__git__git_push","conditions":[{"field":"ref","test":"branchMatches","pattern":"feat/.+","repoField":"repo"}]}]}`,
+		},
+		"branch condition with an empty repo field": {
+			input: `{"conditional":[{"tool":"mcp__git__git_push","conditions":[{"field":"ref","test":"branchMatches","pattern":"feat/.+","repoField":""}]}]}`,
+			err:   mcprules.ErrInvalidRule,
+		},
+		"empty repo field on a test that takes none": {
+			input: `{"conditional":[{"tool":"mcp__git__git_push","conditions":[{"field":"tags","test":"absentOrZero","pattern":"","repoField":""}]}]}`,
+		},
 	}
 
 	for name, tc := range cases {
@@ -98,18 +110,22 @@ func TestParseConditional(t *testing.T) {
 	}`)
 	require.NoError(t, err)
 
-	got, matched := rs.Match("mcp__github__create_pull_request", map[string]any{"draft": true, "head": "feat/x"})
+	got, matched := rs.Match(
+		t.Context(),
+		"mcp__github__create_pull_request",
+		map[string]any{"draft": true, "head": "feat/x"},
+	)
 	require.True(t, matched)
 	assert.Equal(t, mcprules.Result{
 		Decision:   mcprules.DecisionAllow,
 		Conditions: "`draft` is true and `head` matches `(feat|fix)/.+` and `reviewers` is absent, false, or empty",
 	}, got)
 
-	got, matched = rs.Match("mcp__github__create_pull_request", map[string]any{"head": "feat/x"})
+	got, matched = rs.Match(t.Context(), "mcp__github__create_pull_request", map[string]any{"head": "feat/x"})
 	require.True(t, matched)
 	assert.Equal(t, mcprules.DecisionAsk, got.Decision)
 
-	got, matched = rs.Match("mcp__github__merge_pull_request", map[string]any{})
+	got, matched = rs.Match(t.Context(), "mcp__github__merge_pull_request", map[string]any{})
 	require.True(t, matched)
 	assert.Equal(t, mcprules.Result{
 		Decision: mcprules.DecisionDeny,
@@ -129,6 +145,7 @@ func TestNewRule(t *testing.T) {
 			tool: "mcp__git__git_push",
 			conditions: []mcprules.Condition{
 				{Field: "ref", Test: mcprules.TestMatches, Pattern: "^(feat|fix)/.+$"},
+				{Field: "ref", Test: mcprules.TestBranchMatches, Pattern: "^(feat|fix)/.+$", RepoField: "repo"},
 				{Field: "set_upstream", Test: mcprules.TestTrue},
 				{Field: "force_with_lease", Test: mcprules.TestAbsentOrTrue},
 				{Field: "tags", Test: mcprules.TestAbsentOrZero},
@@ -156,6 +173,35 @@ func TestNewRule(t *testing.T) {
 		"pattern on a test that takes none": {
 			tool:       "mcp__git__git_push",
 			conditions: []mcprules.Condition{{Field: "tags", Test: mcprules.TestTrue, Pattern: "true"}},
+			err:        mcprules.ErrInvalidRule,
+		},
+		"branchMatches without a pattern": {
+			tool:       "mcp__git__git_push",
+			conditions: []mcprules.Condition{{Field: "ref", Test: mcprules.TestBranchMatches, RepoField: "repo"}},
+			err:        mcprules.ErrInvalidRule,
+		},
+		"branchMatches without a repo field": {
+			tool:       "mcp__git__git_push",
+			conditions: []mcprules.Condition{{Field: "ref", Test: mcprules.TestBranchMatches, Pattern: "feat/.+"}},
+			err:        mcprules.ErrInvalidRule,
+		},
+		"branchMatches with a pattern that does not compile": {
+			tool: "mcp__git__git_push",
+			conditions: []mcprules.Condition{
+				{Field: "ref", Test: mcprules.TestBranchMatches, Pattern: "(feat", RepoField: "repo"},
+			},
+			err: mcprules.ErrInvalidRule,
+		},
+		"repo field on matches": {
+			tool: "mcp__git__git_push",
+			conditions: []mcprules.Condition{
+				{Field: "ref", Test: mcprules.TestMatches, Pattern: "feat/.+", RepoField: "repo"},
+			},
+			err: mcprules.ErrInvalidRule,
+		},
+		"repo field on a test that takes no operand": {
+			tool:       "mcp__git__git_push",
+			conditions: []mcprules.Condition{{Field: "tags", Test: mcprules.TestAbsentOrZero, RepoField: "repo"}},
 			err:        mcprules.ErrInvalidRule,
 		},
 		"unknown test": {
@@ -311,7 +357,7 @@ func TestRulesetMatch(t *testing.T) {
 
 			rs := mcprules.New(tc.allow, tc.ask, tc.deny)
 
-			got, matched := rs.Match(tc.tool, map[string]any{"ref": "main"})
+			got, matched := rs.Match(t.Context(), tc.tool, map[string]any{"ref": "main"})
 			assert.Equal(t, tc.wantMatched, matched)
 			assert.Equal(t, mcprules.Result{Decision: tc.wantDecision, Pattern: tc.wantPattern}, got)
 		})
@@ -540,7 +586,7 @@ func TestConditions(t *testing.T) {
 
 			rs := mcprules.New(nil, nil, nil, mcprules.WithRules(mustRule(t, tool, tc.condition)))
 
-			got, matched := rs.Match(tool, tc.input)
+			got, matched := rs.Match(t.Context(), tool, tc.input)
 			require.True(t, matched, "a tool with a conditional rule always gets a decision")
 
 			want := mcprules.DecisionAsk
@@ -553,6 +599,197 @@ func TestConditions(t *testing.T) {
 			assert.NotEmpty(t, got.Conditions)
 		})
 	}
+}
+
+// TestBranchMatches checks the [mcprules.TestBranchMatches] test
+// against the values of its field, the values of its repo field, and
+// the answers of the [mcprules.BranchResolver].
+func TestBranchMatches(t *testing.T) {
+	t.Parallel()
+
+	const tool = "mcp__git__git_push"
+
+	errUnresolved := errors.New("unresolved")
+
+	// branches maps a repository path to its current branch. A path
+	// that the map does not hold resolves to an error.
+	branches := map[string]string{
+		"/feat":     "feat/x",
+		"/main":     "main",
+		"/unnamed":  "",
+		"/prefixed": "someone/feat/x",
+	}
+
+	branch := mcprules.Condition{
+		Field:     "ref",
+		Test:      mcprules.TestBranchMatches,
+		Pattern:   "(feat|fix)/.+",
+		RepoField: "repo",
+	}
+	noTags := mcprules.Condition{Field: "tags", Test: mcprules.TestAbsentOrZero}
+
+	cases := map[string]struct {
+		input        map[string]any
+		conditions   []mcprules.Condition
+		wantResolved []string
+		noResolver   bool
+		want         bool
+	}{
+		"field names a branch that the pattern matches": {
+			input: map[string]any{"repo": "/main", "ref": "fix/y"},
+			want:  true,
+		},
+		"field names a branch that the pattern rejects": {
+			input: map[string]any{"repo": "/feat", "ref": "main"},
+		},
+		"field must match from the start": {
+			input: map[string]any{"repo": "/feat", "ref": "someone/feat/x"},
+		},
+		"field is absent and the current branch matches": {
+			input:        map[string]any{"repo": "/feat"},
+			wantResolved: []string{"/feat"},
+			want:         true,
+		},
+		"field is null and the current branch matches": {
+			input:        map[string]any{"repo": "/feat", "ref": nil},
+			wantResolved: []string{"/feat"},
+			want:         true,
+		},
+		"field is an empty string and the current branch matches": {
+			input:        map[string]any{"repo": "/feat", "ref": ""},
+			wantResolved: []string{"/feat"},
+			want:         true,
+		},
+		"field is absent and the pattern rejects the current branch": {
+			input:        map[string]any{"repo": "/main"},
+			wantResolved: []string{"/main"},
+		},
+		"current branch must match from the start": {
+			input:        map[string]any{"repo": "/prefixed"},
+			wantResolved: []string{"/prefixed"},
+		},
+		"field is absent and the current branch does not resolve": {
+			input:        map[string]any{"repo": "/detached"},
+			wantResolved: []string{"/detached"},
+		},
+		"field is absent and the resolver returns no name": {
+			input:        map[string]any{"repo": "/unnamed"},
+			wantResolved: []string{"/unnamed"},
+		},
+		"field is absent and so is the repo field": {
+			input: map[string]any{"remote": "origin"},
+		},
+		"field is absent and the repo field is empty": {
+			input: map[string]any{"repo": ""},
+		},
+		"field is absent and the repo field is not a string": {
+			input: map[string]any{"repo": []any{"/feat"}},
+		},
+		"field is not a string": {
+			input: map[string]any{"repo": "/feat", "ref": float64(1)},
+		},
+		"nil input": {},
+		"no resolver and the field names a matching branch": {
+			input:      map[string]any{"repo": "/feat", "ref": "feat/x"},
+			noResolver: true,
+			want:       true,
+		},
+		"no resolver and the field is absent": {
+			input:      map[string]any{"repo": "/feat"},
+			noResolver: true,
+		},
+		"condition before it fails, so the resolver does not run": {
+			conditions: []mcprules.Condition{noTags, branch},
+			input:      map[string]any{"repo": "/feat", "tags": true},
+		},
+		"condition after it fails": {
+			conditions:   []mcprules.Condition{branch, noTags},
+			input:        map[string]any{"repo": "/feat", "tags": true},
+			wantResolved: []string{"/feat"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var resolved []string
+
+			opts := []mcprules.Option{}
+			if !tc.noResolver {
+				opts = append(opts, mcprules.WithBranchResolver(func(_ context.Context, repo string) (string, error) {
+					resolved = append(resolved, repo)
+
+					name, ok := branches[repo]
+					if !ok {
+						return "", errUnresolved
+					}
+
+					return name, nil
+				}))
+			}
+
+			conditions := tc.conditions
+			if conditions == nil {
+				conditions = []mcprules.Condition{branch}
+			}
+
+			opts = append(opts, mcprules.WithRules(mustRule(t, tool, conditions...)))
+			rs := mcprules.New(nil, nil, nil, opts...)
+
+			got, matched := rs.Match(t.Context(), tool, tc.input)
+			require.True(t, matched, "a tool with a conditional rule always gets a decision")
+
+			want := mcprules.DecisionAsk
+			if tc.want {
+				want = mcprules.DecisionAllow
+			}
+
+			assert.Equal(t, want, got.Decision)
+			assert.Equal(t, tc.wantResolved, resolved)
+
+			if tc.conditions == nil {
+				assert.Equal(
+					t,
+					"`ref`, or the current branch of `repo` when `ref` is empty, matches `(feat|fix)/.+`",
+					got.Conditions,
+				)
+			}
+		})
+	}
+}
+
+// TestParseBranchResolver checks that [mcprules.Parse] hands its
+// options to the ruleset, so that a parsed branch condition reaches the
+// resolver.
+func TestParseBranchResolver(t *testing.T) {
+	t.Parallel()
+
+	const payload = `{"conditional":[{"tool":"mcp__git__git_push","conditions":[
+		{"field":"ref","test":"branchMatches","pattern":"feat/.+","repoField":"repo"}
+	]}]}`
+
+	resolve := func(_ context.Context, repo string) (string, error) {
+		return "feat/" + repo, nil
+	}
+
+	rs, err := mcprules.Parse(payload, mcprules.WithBranchResolver(resolve))
+	require.NoError(t, err)
+
+	got, matched := rs.Match(t.Context(), "mcp__git__git_push", map[string]any{"repo": "x"})
+	require.True(t, matched)
+	assert.Equal(t, mcprules.DecisionAllow, got.Decision)
+
+	rs, err = mcprules.Parse(payload)
+	require.NoError(t, err)
+
+	got, matched = rs.Match(t.Context(), "mcp__git__git_push", map[string]any{"repo": "x"})
+	require.True(t, matched)
+	assert.Equal(t, mcprules.DecisionAsk, got.Decision)
+
+	rs, err = mcprules.Parse("", mcprules.WithBranchResolver(resolve))
+	require.NoError(t, err)
+	assert.True(t, rs.Empty(), "a resolver alone decides no call")
 }
 
 // TestRulesetMatchConditional checks how conditional rules combine with
@@ -702,7 +939,7 @@ func TestRulesetMatchConditional(t *testing.T) {
 
 			rs := mcprules.New(tc.allow, tc.ask, tc.deny, mcprules.WithRules(tc.rules...))
 
-			got, matched := rs.Match(tc.tool, tc.input)
+			got, matched := rs.Match(t.Context(), tc.tool, tc.input)
 			assert.Equal(t, tc.wantMatched, matched)
 			assert.Equal(t, tc.want, got)
 		})
@@ -717,10 +954,10 @@ func TestZeroRule(t *testing.T) {
 	rs := mcprules.New(nil, nil, nil, mcprules.WithRules(mcprules.Rule{}))
 	assert.True(t, rs.Empty())
 
-	_, matched := rs.Match("", nil)
+	_, matched := rs.Match(t.Context(), "", nil)
 	assert.False(t, matched)
 
-	_, matched = rs.Match("mcp__git__git_push", nil)
+	_, matched = rs.Match(t.Context(), "mcp__git__git_push", nil)
 	assert.False(t, matched)
 }
 
@@ -731,7 +968,7 @@ func TestRulesetNilSafe(t *testing.T) {
 
 	assert.True(t, rs.Empty())
 
-	_, matched := rs.Match("mcp__fetch__fetch", nil)
+	_, matched := rs.Match(t.Context(), "mcp__fetch__fetch", nil)
 	assert.False(t, matched)
 }
 

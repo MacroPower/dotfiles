@@ -100,8 +100,8 @@ type remoteOp struct {
 	push    bool // resolve the remote's push URL, not its fetch URL
 
 	// runHooks permits local git hooks. Hooks execute with the
-	// server's privileges, outside the Bash sandbox, so only tools
-	// that sit behind a permission prompt should set it.
+	// server's privileges, outside the Bash sandbox, so only a tool
+	// that a permission rule gates should set it.
 	runHooks bool
 }
 

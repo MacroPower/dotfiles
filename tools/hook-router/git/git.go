@@ -2,10 +2,15 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 )
+
+// ErrNoBranch reports a HEAD that names no branch, such as a detached
+// HEAD.
+var ErrNoBranch = errors.New("HEAD names no branch")
 
 // Runner executes git commands in a working directory.
 type Runner struct {
@@ -56,4 +61,33 @@ func (g *Runner) HeadSHA(ctx context.Context) (string, error) {
 	}
 
 	return strings.TrimSpace(string(out)), nil
+}
+
+// CurrentBranch returns the short name of the branch that HEAD names,
+// such as "feat/x". A branch with no commits still has a name. It
+// returns [ErrNoBranch] when HEAD is detached or names a ref outside
+// refs/heads/, and another error when Dir is not a git repository.
+func (g *Runner) CurrentBranch(ctx context.Context) (string, error) {
+	// The full ref name avoids the "heads/" prefix that --short adds
+	// when a tag shares the name of the branch.
+	cmd := exec.CommandContext(ctx, "git", "symbolic-ref", "--quiet", "HEAD")
+	cmd.Dir = g.Dir
+
+	out, err := cmd.Output()
+	if err != nil {
+		// With --quiet, exit code 1 is the answer for a detached HEAD.
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return "", ErrNoBranch
+		}
+
+		return "", fmt.Errorf("git symbolic-ref HEAD: %w", err)
+	}
+
+	branch, ok := strings.CutPrefix(strings.TrimSuffix(string(out), "\n"), "refs/heads/")
+	if !ok || branch == "" {
+		return "", ErrNoBranch
+	}
+
+	return branch, nil
 }

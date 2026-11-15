@@ -16,6 +16,11 @@
 // other call of that tool resolves to ask. A deny pattern still wins
 // over the rule.
 //
+// One test reads a branch name. A call that names no branch acts on the
+// current branch of a repository. The test then reads that branch
+// through the [BranchResolver] of the ruleset. The caller supplies the
+// resolver, and the package itself runs no git command.
+//
 // Claude Code prompts on a settings ask rule even when a hook allows
 // the call. A tool with a conditional rule must therefore have no
 // settings ask or allow entry. The hook decision is then the only one

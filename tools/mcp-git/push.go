@@ -43,8 +43,12 @@ func (h *handler) handlePush(
 		push:    true,
 		timeout: input.TimeoutSeconds,
 		args:    buildPushArgs(remote, input),
-		// pre-push hooks are repo policy worth keeping, and push is
-		// the one remote operation gated by a permission prompt.
+		// pre-push hooks are repo policy worth keeping. Push is the
+		// one remote operation that a permission rule gates. The rule
+		// in home/claude.nix prompts for every push except a push of
+		// a branch named `<type>/<name>`, where `<type>` is a
+		// Conventional Commits type, that does not push tags. Such a
+		// push runs the hooks without a prompt.
 		runHooks: true,
 	})
 	if err != nil {

@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/git"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/msglint"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/state"
@@ -526,6 +529,267 @@ func TestHandleMCPConditional(t *testing.T) {
 			}
 		})
 	}
+}
+
+// pushRules is the --mcp-rules JSON that home/claude.nix serializes for
+// mcp__git__git_push. It mirrors conventionalBranchPattern and the
+// conditionalRules of the git bundle there, so update both together.
+const pushRules = `{
+	"allow": ["mcp__git__git_clone", "mcp__git__git_fetch", "mcp__git__git_pull"],
+	"ask": [],
+	"deny": [],
+	"conditional": [
+		{
+			"tool": "mcp__git__git_push",
+			"conditions": [
+				{
+					"field": "ref",
+					"test": "branchMatches",
+					"pattern": "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)/.+$",
+					"repoField": "repo"
+				},
+				{"field": "tags", "test": "absentOrZero", "pattern": "", "repoField": ""}
+			]
+		}
+	]
+}`
+
+// checkoutRepo creates a git repository with one commit, checks out
+// the branch named branch in it, and returns its path. It uses -B
+// because git init might already have created a branch of that name.
+func checkoutRepo(t *testing.T, branch string) string {
+	t.Helper()
+
+	dir := initTestRepo(t)
+
+	cmd := exec.CommandContext(t.Context(), "git", "checkout", "-B", branch)
+	cmd.Dir = dir
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git checkout -B %s: %s", branch, out)
+
+	return dir
+}
+
+// TestHandleMCPPush runs mcp__git__git_push calls through [handleMCP]
+// with the rule that home/claude.nix sets for the tool. [parseMCPRules]
+// builds the ruleset the way [mainErr] does. A call that names no ref
+// pushes the current branch, so those cases read the branch of a real
+// repository.
+func TestHandleMCPPush(t *testing.T) {
+	t.Parallel()
+
+	const tool = "mcp__git__git_push"
+
+	logger := slog.New(slog.DiscardHandler)
+
+	rules, err := parseMCPRules(pushRules, logger)
+	require.NoError(t, err)
+
+	cfg := config{mcpRules: rules}
+
+	fixRepo := checkoutRepo(t, "fix/y")
+	mainRepo := checkoutRepo(t, "main")
+
+	detachedRepo := checkoutRepo(t, "feat/x")
+	cmd := exec.CommandContext(t.Context(), "git", "checkout", "--detach")
+	cmd.Dir = detachedRepo
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git checkout --detach: %s", out)
+
+	subdir := filepath.Join(fixRepo, "sub")
+	require.NoError(t, os.Mkdir(subdir, 0o755))
+
+	const conditions = "`ref`, or the current branch of `repo` when `ref` is empty, matches " +
+		"`^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)/.+$`" +
+		" and `tags` is absent, false, or empty"
+
+	cases := map[string]struct {
+		input  map[string]any
+		want   string
+		reason string
+	}{
+		"ref with a conventional type: allow": {
+			input:  map[string]any{"repo": mainRepo, "ref": "feat/x"},
+			want:   "allow",
+			reason: "mcp conditional rule (" + conditions + ")",
+		},
+		"ref with a conventional type and force_with_lease: allow": {
+			input: map[string]any{"repo": mainRepo, "ref": "feat/x", "force_with_lease": true},
+			want:  "allow",
+		},
+		"ref with a conventional type, set_upstream, and remote: allow": {
+			input: map[string]any{"repo": mainRepo, "ref": "feat/x", "set_upstream": true, "remote": "fork"},
+			want:  "allow",
+		},
+		"ref with a conventional type and tags false: allow": {
+			input: map[string]any{"repo": mainRepo, "ref": "feat/x", "tags": false},
+			want:  "allow",
+		},
+		"ref main: ask": {
+			input:  map[string]any{"repo": fixRepo, "ref": "main"},
+			want:   "ask",
+			reason: "This call needs confirmation. " + tool + " runs without a prompt when " + conditions + ".",
+		},
+		"ref with a conventional type and tags: ask": {
+			input: map[string]any{"repo": fixRepo, "ref": "feat/x", "tags": true},
+			want:  "ask",
+		},
+		"ref with another prefix: ask": {
+			input: map[string]any{"repo": fixRepo, "ref": "feature/x"},
+			want:  "ask",
+		},
+		"ref of a type alone: ask": {
+			input: map[string]any{"repo": fixRepo, "ref": "feat"},
+			want:  "ask",
+		},
+		"ref of a type and a slash: ask": {
+			input: map[string]any{"repo": fixRepo, "ref": "feat/"},
+			want:  "ask",
+		},
+		"ref with the type after another segment: ask": {
+			input: map[string]any{"repo": fixRepo, "ref": "release/feat/x"},
+			want:  "ask",
+		},
+		"full ref name: ask": {
+			input: map[string]any{"repo": fixRepo, "ref": "refs/heads/feat/x"},
+			want:  "ask",
+		},
+		"no ref on a branch with a conventional type: allow": {
+			input:  map[string]any{"repo": fixRepo},
+			want:   "allow",
+			reason: "mcp conditional rule (" + conditions + ")",
+		},
+		"empty ref on a branch with a conventional type: allow": {
+			input: map[string]any{"repo": fixRepo, "ref": ""},
+			want:  "allow",
+		},
+		"no ref and force_with_lease on a branch with a conventional type: allow": {
+			input: map[string]any{"repo": fixRepo, "force_with_lease": true, "set_upstream": true},
+			want:  "allow",
+		},
+		"no ref in a subdirectory of the repository: allow": {
+			input: map[string]any{"repo": subdir},
+			want:  "allow",
+		},
+		"no ref on main: ask": {
+			input:  map[string]any{"repo": mainRepo},
+			want:   "ask",
+			reason: "This call needs confirmation. " + tool + " runs without a prompt when " + conditions + ".",
+		},
+		"no ref and tags on a branch with a conventional type: ask": {
+			input: map[string]any{"repo": fixRepo, "tags": true},
+			want:  "ask",
+		},
+		"no ref on a detached HEAD: ask": {
+			input: map[string]any{"repo": detachedRepo},
+			want:  "ask",
+		},
+		"no ref and a path that holds no repository: ask": {
+			input: map[string]any{"repo": t.TempDir()},
+			want:  "ask",
+		},
+		"no ref and a path that does not exist: ask": {
+			input: map[string]any{"repo": filepath.Join(t.TempDir(), "missing")},
+			want:  "ask",
+		},
+		"no ref and a relative repo: ask": {
+			input: map[string]any{"repo": "."},
+			want:  "ask",
+		},
+		"no ref and no repo: ask": {
+			input: map[string]any{"remote": "origin"},
+			want:  "ask",
+		},
+		"missing tool_input: ask": {
+			want: "ask",
+		},
+	}
+
+	for _, kind := range []string{
+		"build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "style", "test",
+	} {
+		cases["ref of type "+kind+": allow"] = struct {
+			input  map[string]any
+			want   string
+			reason string
+		}{
+			input: map[string]any{"repo": mainRepo, "ref": kind + "/retry-budget"},
+			want:  "allow",
+		}
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			payload := map[string]any{"session_id": "s1", "tool_name": tool}
+			if tc.input != nil {
+				payload["tool_input"] = tc.input
+			}
+
+			input, err := json.Marshal(payload)
+			require.NoError(t, err)
+
+			var stdout bytes.Buffer
+
+			require.NoError(t, handleMCP(t.Context(), input, &stdout, cfg, logger))
+
+			hso := preToolDecision(t, &stdout)
+			assert.Equal(t, tc.want, hso["permissionDecision"])
+
+			if tc.reason != "" {
+				assert.Equal(t, tc.reason, hso["permissionDecisionReason"])
+			}
+		})
+	}
+
+	t.Run("Bash git push keeps the deny that names the tool", func(t *testing.T) {
+		t.Parallel()
+
+		var stdout bytes.Buffer
+
+		cfg := config{commandRules: canonicalRules(), autoAllow: true}
+
+		require.NoError(t, handleBash(bashInput(t, "git push origin feat/x", nil), &stdout, cfg, logger))
+
+		hso := preToolDecision(t, &stdout)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Equal(t, pushDeniedReason, hso["permissionDecisionReason"])
+		assert.Contains(t, hso["permissionDecisionReason"], tool)
+	})
+}
+
+// TestRepoBranch checks the paths that [repoBranch] accepts.
+func TestRepoBranch(t *testing.T) {
+	t.Parallel()
+
+	repo := checkoutRepo(t, "docs/readme")
+
+	got, err := repoBranch(t.Context(), repo)
+	require.NoError(t, err)
+	assert.Equal(t, "docs/readme", got)
+
+	// A relative path stays unresolved even when the working directory
+	// of the test is inside a repository.
+	for _, relative := range []string{".", "", "repo", "../repo"} {
+		_, err = repoBranch(t.Context(), relative)
+		require.ErrorIs(t, err, errRelativeRepo, "path %q", relative)
+	}
+
+	_, err = repoBranch(t.Context(), t.TempDir())
+	require.Error(t, err)
+	require.NotErrorIs(t, err, errRelativeRepo)
+
+	cmd := exec.CommandContext(t.Context(), "git", "checkout", "--detach")
+	cmd.Dir = repo
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git checkout --detach: %s", out)
+
+	_, err = repoBranch(t.Context(), repo)
+	require.ErrorIs(t, err, git.ErrNoBranch)
 }
 
 // TestHandleMCPProseLintWaiver runs the same Recommended-only tool call

@@ -1,6 +1,7 @@
 package mcprules
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -16,6 +17,14 @@ const (
 	// TestMatches holds when the field is a string that the regular
 	// expression in [Condition.Pattern] matches from start to end.
 	TestMatches = "matches"
+	// TestBranchMatches holds when the field names a branch that the
+	// regular expression in [Condition.Pattern] matches from start to
+	// end. When the field is absent or an empty string, the test reads
+	// the current branch of the git repository whose path the
+	// [Condition.RepoField] field holds. The [BranchResolver] of the
+	// ruleset resolves that branch, and the test fails when it does
+	// not resolve.
+	TestBranchMatches = "branchMatches"
 	// TestTrue holds when the field is the boolean true.
 	TestTrue = "true"
 	// TestAbsentOrTrue holds when the field is absent or the boolean
@@ -28,13 +37,17 @@ const (
 
 // Condition is one test on a top-level tool_input field of an MCP tool
 // call. Field names the key and Test names one of the Test constants.
-// Pattern carries the regular expression of [TestMatches] in Go syntax
-// and stays empty for every other test. JSON tags are camelCase because
-// builtins.toJSON in home/claude.nix emits attribute names verbatim.
+// Pattern carries the regular expression of [TestMatches] and
+// [TestBranchMatches] in Go syntax and stays empty for every other
+// test. RepoField names the key that holds the repository path of
+// [TestBranchMatches] and stays empty for every other test. JSON tags
+// are camelCase because builtins.toJSON in home/claude.nix emits
+// attribute names verbatim.
 type Condition struct {
-	Field   string `json:"field"`
-	Test    string `json:"test"`
-	Pattern string `json:"pattern,omitempty"`
+	Field     string `json:"field"`
+	Test      string `json:"test"`
+	Pattern   string `json:"pattern,omitempty"`
+	RepoField string `json:"repoField,omitempty"`
 }
 
 // Rule is a conditional allow rule for one MCP tool. A call of the tool
@@ -47,7 +60,7 @@ type Rule struct {
 }
 
 // condition is a [Condition] that [NewRule] accepted. re is set for
-// [TestMatches] alone.
+// [TestMatches] and [TestBranchMatches] alone.
 type condition struct {
 	re *regexp.Regexp
 	Condition
@@ -57,8 +70,10 @@ type condition struct {
 // wraps [ErrInvalidRule]. NewRule rejects a tool that is not the exact
 // name of one tool, and a rule with no conditions. It rejects a
 // condition that names no field, names an unknown test, or carries a
-// pattern that its test does not take. A [TestMatches] pattern must be
-// a non-empty regular expression that compiles.
+// pattern or a repo field that its test does not take. The pattern of
+// [TestMatches] and of [TestBranchMatches] must be a non-empty regular
+// expression that compiles, and [TestBranchMatches] must name a repo
+// field.
 func NewRule(tool string, conditions ...Condition) (Rule, error) {
 	if !exactTool(tool) {
 		return Rule{}, fmt.Errorf("%w: %q is not the exact name of one MCP tool", ErrInvalidRule, tool)
@@ -95,49 +110,62 @@ func exactTool(name string) bool {
 	return ok && server != "" && tool != ""
 }
 
-// compile validates c and compiles the pattern of a [TestMatches]
-// condition. The holds method accepts only a match that spans the
-// whole value. The compiled expression prefers leftmost-longest
-// matches, so it finds such a match whenever the value has one. A
-// pattern with no anchors of its own therefore matches only a whole
-// value. compile does not add anchors to the pattern text, because
-// text such as an unterminated \Q quote swallows them.
+// compile validates c and compiles the pattern of a [TestMatches] or
+// [TestBranchMatches] condition. Both tests accept only a match that
+// spans the whole value. The compiled expression prefers
+// leftmost-longest matches, so it finds such a match whenever the
+// value has one. A pattern with no anchors of its own therefore
+// matches only a whole value. compile does not add anchors to the
+// pattern text, because text such as an unterminated \Q quote swallows
+// them.
 func compile(c Condition) (condition, error) {
 	if c.Field == "" {
 		return condition{}, errors.New("field is empty")
 	}
 
+	var needsPattern, needsRepo bool
+
 	switch c.Test {
 	case TestMatches:
-		if c.Pattern == "" {
-			return condition{}, fmt.Errorf("field %s: test %q needs a pattern", c.Field, c.Test)
-		}
-
-		re, err := regexp.Compile(c.Pattern)
-		if err != nil {
-			return condition{}, fmt.Errorf("field %s: compiling pattern: %w", c.Field, err)
-		}
-
-		re.Longest()
-
-		return condition{Condition: c, re: re}, nil
-
+		needsPattern = true
+	case TestBranchMatches:
+		needsPattern, needsRepo = true, true
 	case TestTrue, TestAbsentOrTrue, TestAbsentOrZero:
-		if c.Pattern != "" {
-			return condition{}, fmt.Errorf("field %s: test %q takes no pattern", c.Field, c.Test)
-		}
-
-		return condition{Condition: c}, nil
-
 	default:
 		return condition{}, fmt.Errorf("field %s: unknown test %q", c.Field, c.Test)
 	}
+
+	switch {
+	case needsPattern && c.Pattern == "":
+		return condition{}, fmt.Errorf("field %s: test %q needs a pattern", c.Field, c.Test)
+	case !needsPattern && c.Pattern != "":
+		return condition{}, fmt.Errorf("field %s: test %q takes no pattern", c.Field, c.Test)
+	case needsRepo && c.RepoField == "":
+		return condition{}, fmt.Errorf("field %s: test %q needs a repo field", c.Field, c.Test)
+	case !needsRepo && c.RepoField != "":
+		return condition{}, fmt.Errorf("field %s: test %q takes no repo field", c.Field, c.Test)
+	}
+
+	if !needsPattern {
+		return condition{Condition: c}, nil
+	}
+
+	re, err := regexp.Compile(c.Pattern)
+	if err != nil {
+		return condition{}, fmt.Errorf("field %s: compiling pattern: %w", c.Field, err)
+	}
+
+	re.Longest()
+
+	return condition{Condition: c, re: re}, nil
 }
 
 // holds reports whether every condition of the rule holds for input.
-func (r Rule) holds(input map[string]any) bool {
+// It stops at the first condition that fails, so resolve runs only
+// when every condition before a [TestBranchMatches] condition holds.
+func (r Rule) holds(ctx context.Context, input map[string]any, resolve BranchResolver) bool {
 	for _, c := range r.conditions {
-		if !c.holds(input) {
+		if !c.holds(ctx, input, resolve) {
 			return false
 		}
 	}
@@ -156,20 +184,21 @@ func (r Rule) describe() string {
 	return strings.Join(parts, " and ")
 }
 
-// holds reports whether the condition holds for input.
-func (c condition) holds(input map[string]any) bool {
+// holds reports whether the condition holds for input. resolve serves
+// [TestBranchMatches] alone.
+func (c condition) holds(ctx context.Context, input map[string]any, resolve BranchResolver) bool {
 	value := input[c.Field]
 
 	switch c.Test {
 	case TestMatches:
 		s, ok := value.(string)
-		if !ok {
-			return false
-		}
 
-		loc := c.re.FindStringIndex(s)
+		return ok && c.whole(s)
 
-		return len(loc) == 2 && loc[0] == 0 && loc[1] == len(s)
+	case TestBranchMatches:
+		branch, ok := c.branch(ctx, input, resolve)
+
+		return ok && c.whole(branch)
 
 	case TestTrue:
 		return value == true
@@ -180,6 +209,45 @@ func (c condition) holds(input map[string]any) bool {
 	default:
 		return value == nil || zero(value)
 	}
+}
+
+// whole reports whether the pattern of the condition matches s from
+// start to end.
+func (c condition) whole(s string) bool {
+	loc := c.re.FindStringIndex(s)
+
+	return len(loc) == 2 && loc[0] == 0 && loc[1] == len(s)
+}
+
+// branch returns the branch name that a [TestBranchMatches] condition
+// tests. The field supplies the name when it holds one. When the field
+// is absent or an empty string, resolve supplies the current branch of
+// the repository that the repo field names. branch reports false when
+// neither source yields a name.
+func (c condition) branch(ctx context.Context, input map[string]any, resolve BranchResolver) (string, bool) {
+	switch v := input[c.Field].(type) {
+	case nil:
+		// An absent field leaves the name to the repository.
+	case string:
+		if v != "" {
+			return v, true
+		}
+
+	default:
+		return "", false
+	}
+
+	repo, ok := input[c.RepoField].(string)
+	if !ok || repo == "" || resolve == nil {
+		return "", false
+	}
+
+	name, err := resolve(ctx, repo)
+	if err != nil || name == "" {
+		return "", false
+	}
+
+	return name, true
 }
 
 // zero reports whether value is false, an empty string, or an empty
@@ -202,6 +270,12 @@ func (c condition) describe() string {
 	switch c.Test {
 	case TestMatches:
 		return fmt.Sprintf("`%s` matches `%s`", c.Field, c.Pattern)
+	case TestBranchMatches:
+		return fmt.Sprintf(
+			"`%s`, or the current branch of `%s` when `%s` is empty, matches `%s`",
+			c.Field, c.RepoField, c.Field, c.Pattern,
+		)
+
 	case TestTrue:
 		return fmt.Sprintf("`%s` is true", c.Field)
 	case TestAbsentOrTrue:
