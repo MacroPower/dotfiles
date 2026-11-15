@@ -116,8 +116,10 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestDevBaseNoBuildArtifacts(ctx) })
 	eg.Go(func() error { return m.TestDevBaseClaudeState(ctx) })
 	eg.Go(func() error { return m.TestDevBaseMcpSync(ctx) })
+	eg.Go(func() error { return m.TestDevBaseKrewPlugins(ctx) })
 	eg.Go(func() error { return m.TestSandboxBase(ctx) })
-	eg.Go(func() error { return m.TestSandboxKrewVolume(ctx) })
+	eg.Go(func() error { return m.TestSandboxKrewPlugins(ctx) })
+	eg.Go(func() error { return m.TestSandboxKrewRoot(ctx) })
 	eg.Go(func() error { return m.TestSandboxEgressRules(ctx) })
 	eg.Go(func() error { return m.TestSandboxAdditionalPorts(ctx) })
 	eg.Go(func() error { return m.TestSandboxTCPForward(ctx) })
@@ -419,6 +421,46 @@ func (m *Tests) TestDevBaseClaudeState(ctx context.Context) error {
 	return nil
 }
 
+// krewPluginsScript checks that a container holds the krew plugins that
+// the activation of its build installed. The krew root must not be a
+// mount point, because a volume there hides the plugins of the build.
+// The bin directory of the krew root must hold an executable file for
+// each plugin that home/kubernetes.nix declares for every host. The
+// shell sessions of the container have that directory on PATH.
+//
+// krew names the file of a plugin kubectl-<name>, and it writes each
+// hyphen of the name as an underscore.
+const krewPluginsScript = `set -e
+krew_root="$HOME/.krew"
+fail() { echo "$1"; exit 1; }
+
+if grep -qF " $krew_root " /proc/self/mountinfo; then
+  fail "a mount at $krew_root hides the krew plugins of the build"
+fi
+for plugin in blame gadget get_all graph krew netshoot tree; do
+  [ -x "$krew_root/bin/kubectl-$plugin" ] ||
+    fail "$krew_root/bin holds no executable kubectl-$plugin"
+done
+echo OK
+`
+
+// TestDevBaseKrewPlugins verifies that [Dev.DevBase] holds the krew
+// plugins of its build (see krewPluginsScript). [Dev.Shell] opens that
+// container, so its shell sessions run the plugins that the home
+// configuration declares.
+//
+// +check
+func (m *Tests) TestDevBaseKrewPlugins(ctx context.Context) error {
+	_, err := dag.Dev().DevBase().
+		WithExec([]string{"sh", "-c", krewPluginsScript}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("krew plugins of the dev container: %w", err)
+	}
+
+	return nil
+}
+
 // TestSandboxBase verifies that [Dev.SandboxBase] layers the terrarium
 // config, environment, and user setup on top of the base container.
 // Checks that config YAML exists, terrarium binary is on PATH, required
@@ -473,21 +515,68 @@ func (m *Tests) TestSandboxBase(ctx context.Context) error {
 	return nil
 }
 
-// TestSandboxKrewVolume verifies that the sandbox user can write the
+// sandboxKrewOwnerScript checks the owners of the krew root of the
+// sandbox, and it runs as the sandbox user. The sandbox user must be
+// able to write the krew root and its bin, index, receipts, and store
+// directories. krew writes to them when it updates the index or
+// installs a plugin. The sandbox user and its group must not own a file
+// in a plugin directory of the store. The setup of the sandbox user
+// leaves the plugins of the build to root. A chown of those plugins
+// puts a second copy of them into the published sandbox image.
+const sandboxKrewOwnerScript = `set -e
+krew_root="$HOME/.krew"
+fail() { echo "$1"; exit 1; }
+
+for dir in "$krew_root" "$krew_root/bin" "$krew_root/index" \
+  "$krew_root/receipts" "$krew_root/store"; do
+  [ -w "$dir" ] || fail "the sandbox user cannot write $dir"
+done
+owned=$(find "$krew_root/store" -mindepth 1 \
+  \( -uid "$(id -u)" -o -gid "$(id -g)" \) -print -quit)
+if [ -n "$owned" ]; then
+  fail "the sandbox user owns $owned of the krew plugins of the build"
+fi
+echo OK
+`
+
+// TestSandboxKrewPlugins verifies that [Dev.SandboxBase] holds the krew
+// plugins of its build, and that the sandbox user can run them (see
+// krewPluginsScript). It also verifies that the sandbox user can
+// install a plugin but does not own the plugins of the build (see
+// sandboxKrewOwnerScript). terrarium init drops to the sandbox user
+// ahead of the sandboxed process.
+//
+// +check
+func (m *Tests) TestSandboxKrewPlugins(ctx context.Context) error {
+	_, err := dag.Dev().SandboxBase().
+		WithUser(sandboxUID + ":" + sandboxGID).
+		WithExec([]string{"sh", "-c", krewPluginsScript}).
+		WithExec([]string{"sh", "-c", sandboxKrewOwnerScript}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("krew plugins of the sandbox: %w", err)
+	}
+
+	return nil
+}
+
+// TestSandboxKrewRoot verifies that the sandbox user can write the
 // krew root of [Dev.SandboxBase]. It also verifies that the krew root
 // of [Dev.DevBase] holds no file of the sandbox user. The check covers
 // the file that the test writes and each file that a sandboxed process
 // wrote before. [Dev.Shell] opens the container of [Dev.DevBase] as
 // root with no egress filter. Its shell sessions run the programs in
-// the bin directory of the krew root. A krew cache volume that the
-// sandbox user can write therefore lets a sandboxed process run a
-// program as root.
+// the bin directory of the krew root. A krew root that the two
+// containers share therefore lets a sandboxed process run a program as
+// root.
 //
-// The test writes an empty file to the krew cache volume of the
-// sandbox, and removes the file before it returns.
+// Each container keeps its krew root in its own root filesystem, so
+// the engine discards the empty file that the test writes. The test
+// still removes the file. Two containers can share a krew root only
+// through a cache volume, and a cache volume keeps the file.
 //
 // +check
-func (m *Tests) TestSandboxKrewVolume(ctx context.Context) error {
+func (m *Tests) TestSandboxKrewRoot(ctx context.Context) error {
 	krewRoot := homeDir + "/.krew"
 
 	// The engine caches each exec by its arguments, so a name that no

@@ -33,11 +33,6 @@ const (
 	// homeDir is the home directory for the dev container user.
 	homeDir = "/home/dev"
 
-	// krewRoot is the krew root of the dev container user. home-manager
-	// puts the bin directory of the krew root ahead of the rest of PATH
-	// in each shell session.
-	krewRoot = homeDir + "/.krew"
-
 	// uid is the numeric user ID for the sandbox user.
 	uid = "1000"
 
@@ -178,6 +173,30 @@ func nixSystem(ctx context.Context, ctr *dagger.Container) (string, error) {
 // given container. It detects the container platform and selects the
 // matching home-manager config. Callers are expected to configure any
 // cache mounts on ctr before calling this method.
+//
+// The activation installs the krew plugins that the home configuration
+// declares into the krew root, ~/.krew. The krew root is a directory of
+// the root filesystem of the container, so each container of this
+// module holds the plugins of its build. home-manager puts the bin
+// directory of the krew root ahead of the rest of PATH in each shell
+// session.
+//
+// No container of this module mounts a cache volume at the krew root,
+// because such a volume has these faults:
+//
+//   - A volume that a container mounts after the activation hides the
+//     plugins of the build.
+//   - The activation fills a volume that ctr mounts ahead of it. The
+//     engine caches the exec of the activation until the build changes,
+//     so a volume that the engine creates later stays empty.
+//   - A volume that [Dev.Shell] and [Dev.Sandbox] both mount lets a
+//     sandboxed process plant a program that a shell session of
+//     [Dev.Shell] runs as root (see [withSandboxUser]).
+//
+// An engine that ran an earlier build of this module might hold krew
+// cache volumes. The sandbox user owns the volumes whose keys end in
+// :krew and :krew-sandbox, so they can hold programs that a sandboxed
+// process wrote. A container of this module must not mount those keys.
 func (m *Dev) buildBase(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
 	sys, err := nixSystem(ctx, ctr)
 	if err != nil {
@@ -321,29 +340,18 @@ ln -sf /claude-state/claude.json ` + homeDir + `/.claude.json
 // processes, and the Kagi MCP server of a session reads the key when
 // it starts.
 //
-// The container mounts the krew cache volume of [Dev.Shell] at the krew
-// root. The shell sessions of [Dev.Shell] run as root with no egress
-// filter, and they run the krew plugins of the volume. A container that
-// runs a process of the sandbox user must therefore mount another
-// volume there (see [withSandboxUser]).
-//
-// The key of the volume ends in :krew-shell. An engine that ran an
-// earlier build of the sandbox might hold a volume with the key that
-// ends in :krew. The sandbox user owns that volume, so it can hold
-// programs that a sandboxed process wrote. A container of this module
-// must not mount that key.
+// The container mounts no cache volume at the krew root, so its shell
+// sessions run the krew plugins that the activation installed (see
+// [Dev.buildBase]).
 func (m *Dev) devBaseForPlatform(
 	ctx context.Context,
 	platform dagger.Platform,
 	kagiApiKey *dagger.Secret,
 ) (*dagger.Container, error) {
-	built, err := m.cachedBuild(ctx, platform)
+	ctr, err := m.cachedBuild(ctx, platform)
 	if err != nil {
 		return nil, err
 	}
-
-	ctr := built.
-		WithMountedCache(krewRoot, dag.CacheVolume(devCacheNamespace+":krew-shell"))
 
 	// The key must stay a secret. The value of a plain variable is an
 	// argument of the withEnvVariable call. The engine writes that
@@ -379,10 +387,10 @@ mkdir -p ` + homeDir + `/.local/share/atuin
 // terrarium init, which also drops to a non-root user, preventing the
 // sandboxed process from modifying the rules.
 //
-// The non-root user owns the home directory and the krew cache volume
-// of the container. [Dev.Shell] mounts another krew cache volume, so a
-// sandboxed process cannot write the krew plugins that [Dev.Shell] runs
-// as root (see [withSandboxUser]).
+// The non-root user owns the home directory of the container, except
+// the krew plugins of the build (see [withSandboxUser]). [Dev.Shell]
+// runs the krew plugins of its own container, so a sandboxed process
+// cannot change the plugins that a shell session of [Dev.Shell] runs.
 func (m *Dev) SandboxBase(
 	ctx context.Context,
 	// Kagi API key for the MCP server configuration.
@@ -421,32 +429,40 @@ func (m *Dev) SandboxBase(
 // that user the owner of the home directory. terrarium init drops to
 // the sandbox user ahead of the sandboxed process.
 //
-// The helper first replaces the krew cache volume of [Dev.Shell] (see
-// [Dev.devBaseForPlatform]) with a volume that [Dev.Shell] does not
-// mount. chown -R crosses mount points. The sandbox user therefore owns
-// each volume that ctr mounts under the home directory when the script
-// runs. A sandboxed process that can write the volume of [Dev.Shell]
-// can plant a program in the bin directory of the krew root. A shell
-// session of [Dev.Shell] finds that program ahead of the rest of PATH,
-// and runs it as root with no egress filter.
+// The home directory holds the krew root (see [Dev.buildBase]). The
+// script skips the plugin directories of the krew store, so root keeps
+// the plugins of the build. An image layer stores in full each file
+// whose owner changes. The skip therefore keeps a second copy of the
+// plugins out of the published sandbox image.
 //
-// The Owner option makes the sandbox user the owner of the volume when
-// the engine creates it. The engine caches the exec of the script until
-// the build changes. The chown therefore does not run again for a
-// volume that the engine creates later.
+// The plugin files are executable for every user, so the sandbox user
+// can run them. The sandbox user owns the rest of the krew root, so a
+// sandboxed process can install plugins in its own container. krew
+// cannot upgrade a plugin of the build. An uninstall of a plugin of the
+// build removes the link of the plugin from the bin directory. The
+// uninstall then fails, so krew still lists the plugin.
+//
+// find crosses mount points. The sandbox user therefore owns each
+// volume that ctr mounts under the home directory when the script
+// runs. The shell sessions of [Dev.Shell] run as root with no egress
+// filter, so ctr must not mount there a volume that [Dev.Shell] also
+// mounts. For example, a sandboxed process that can write a shared
+// volume at the krew root can plant a program in the bin directory of
+// the krew root. A shell session of [Dev.Shell] finds that program
+// ahead of the rest of PATH and runs it.
 func withSandboxUser(ctr *dagger.Container) *dagger.Container {
+	krewStore := homeDir + "/.krew/store"
+
 	// setup-user: create non-root user in /etc/passwd and /etc/group,
-	// then chown the home directory.
+	// then chown the home directory except the plugins of the krew
+	// store. chown -h changes the owner of each link, not of its target.
 	setupUserScript := fmt.Sprintf(`set -e
 printf '%s:x:%s:%s::%s:/bin/sh\n' >> /etc/passwd
 printf '%s:x:%s:\n' >> /etc/group
-chown -R %s:%s %s
-`, username, uid, gid, homeDir, username, gid, uid, gid, homeDir)
+find %s -path '%s/*' -prune -o -exec chown -h %s:%s {} +
+`, username, uid, gid, homeDir, username, gid, homeDir, krewStore, uid, gid)
 
-	return ctr.
-		WithMountedCache(krewRoot, dag.CacheVolume(devCacheNamespace+":krew-sandbox"),
-			dagger.ContainerWithMountedCacheOpts{Owner: uid + ":" + gid}).
-		WithExec([]string{"sh", "-c", setupUserScript})
+	return ctr.WithExec([]string{"sh", "-c", setupUserScript})
 }
 
 // Sandbox opens an interactive development container with DNS-based
@@ -737,9 +753,7 @@ func (m *Dev) PublishShell(
 // for a single platform. It activates home-manager via
 // [Dev.devBaseForPlatform] and creates the non-root sandbox user via
 // [withSandboxUser]. It then snapshots the /nix cache mount into the
-// rootfs, and sets the terrarium entrypoint and OCI labels. The build
-// drops the krew cache mount that [withSandboxUser] adds, so that the
-// mount does not bake into the published image.
+// rootfs, and sets the terrarium entrypoint and OCI labels.
 //
 // The build does not mount the claude-state cache volume. The image
 // keeps the claude.json that the activation wrote as a regular file,
@@ -771,7 +785,6 @@ func (m *Dev) buildSandboxForPlatform(
 	return built.
 		WithoutMount("/nix").
 		WithoutMount("/root/.cache/nix").
-		WithoutMount(krewRoot).
 		WithoutDirectory("/nix").
 		WithDirectory("/nix", nixDir).
 		WithWorkdir(homeDir).
