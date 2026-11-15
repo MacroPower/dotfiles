@@ -1,8 +1,10 @@
 package fetch_test
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -186,6 +188,132 @@ func TestHandleRenderJSEmptyResultFallsBack(t *testing.T) {
 	require.Len(t, rows, 1)
 	assert.Equal(t, 1, rows[0].RenderJS)
 	assert.Equal(t, 0, rows[0].RenderOK)
+}
+
+func TestHandleRenderJSOversizedSubresource(t *testing.T) {
+	t.Parallel()
+
+	// Every bundle is larger than the byte cap of the test, so the
+	// render skips it.
+	const (
+		byteCap      = 64
+		skipNotice   = "<javascript rendering skipped "
+		inlineFiller = `<script>document.getElementById("root").innerHTML = "<p>` + spaInjectedText + `</p>";</script>`
+	)
+
+	bundle := `document.body.innerHTML += "<p>` + strings.Repeat("x", byteCap) + `</p>";`
+
+	tests := map[string]struct {
+		// body follows the empty root element of the page.
+		body string
+		// want is the notice, with %[1]s for the URL of the server.
+		want string
+		// budget is the render budget. Zero keeps the default.
+		budget       time.Duration
+		wantFallback bool
+	}{
+		"rendered page": {
+			body: `<script src="/big-1.js"></script>` + inlineFiller,
+			want: "<javascript rendering skipped 1 subresource larger than the 64 B cap, " +
+				"so content might be missing: %[1]s/big-1.js>",
+		},
+		"empty render": {
+			body: `<script src="/big-1.js"></script>`,
+			want: "<javascript rendering skipped 1 subresource larger than the 64 B cap, " +
+				"so content might be missing: %[1]s/big-1.js>",
+			wantFallback: true,
+		},
+		"render that runs out of budget": {
+			body: `<script src="/big-1.js"></script><script>while (true) {}</script>`,
+			want: "<javascript rendering skipped 1 subresource larger than the 64 B cap, " +
+				"so content might be missing: %[1]s/big-1.js>",
+			budget:       500 * time.Millisecond,
+			wantFallback: true,
+		},
+		"more subresources than the notice lists": {
+			body: `<script src="/big-1.js"></script><script src="/big-2.js"></script>` +
+				`<script src="/big-3.js"></script><script src="/big-4.js"></script>` +
+				`<script src="/big-5.js"></script>` + inlineFiller,
+			want: "<javascript rendering skipped 5 subresources larger than the 64 B cap, " +
+				"so content might be missing: %[1]s/big-1.js, %[1]s/big-2.js, %[1]s/big-3.js, and 2 more>",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var pageRequests atomic.Int64
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/page", func(w http.ResponseWriter, _ *http.Request) {
+				pageRequests.Add(1)
+				w.Header().Set("Content-Type", "text/html")
+				mustWrite(w, []byte(`<html><body><div id="root"></div>`+tc.body+`</body></html>`))
+			})
+			mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/javascript")
+				mustWrite(w, []byte(bundle))
+			})
+
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+
+			renderOpts := []render.Option{render.WithMaxSubresourceBytes(byteCap)}
+			if tc.budget > 0 {
+				renderOpts = append(renderOpts, render.WithBudget(tc.budget))
+			}
+
+			h := newTestHandler(t, srv.Client(), fetch.WithRenderOptions(renderOpts...))
+			want := fmt.Sprintf(tc.want, srv.URL)
+
+			result, _, err := h.Handle(t.Context(), nil, fetch.Input{URL: srv.URL + "/page", RenderJS: true})
+			require.NoError(t, err)
+			require.False(t, result.IsError)
+
+			text := resultText(t, result)
+			assert.Contains(t, text, want)
+
+			if tc.wantFallback {
+				assert.Contains(t, text, renderFallbackNotice)
+			} else {
+				assert.Contains(t, text, "Rendered client side")
+				assert.NotContains(t, text, renderFallbackNotice)
+			}
+
+			// A repeat call keeps the notice. A rendered page comes from
+			// the cache, and a failed render runs again.
+			result, _, err = h.Handle(t.Context(), nil, fetch.Input{URL: srv.URL + "/page", RenderJS: true})
+			require.NoError(t, err)
+			assert.Contains(t, resultText(t, result), want)
+
+			// A pattern that matches no line keeps the notice, because
+			// the skipped subresource might hold the text.
+			result, _, err = h.Handle(t.Context(), nil, fetch.Input{
+				URL: srv.URL + "/page", RenderJS: true, Pattern: "no-such-line",
+			})
+			require.NoError(t, err)
+
+			text = resultText(t, result)
+			assert.Contains(t, text, `<no lines matched pattern "no-such-line">`)
+			assert.Contains(t, text, want)
+
+			// A continuation carries no notices.
+			result, _, err = h.Handle(t.Context(), nil, fetch.Input{
+				URL: srv.URL + "/page", RenderJS: true, StartIndex: 1,
+			})
+			require.NoError(t, err)
+			assert.NotContains(t, resultText(t, result), skipNotice)
+
+			// A plain fetch runs no render, so it reports no skipped
+			// subresource.
+			result, _, err = h.Handle(t.Context(), nil, fetch.Input{URL: srv.URL + "/page"})
+			require.NoError(t, err)
+			assert.NotContains(t, resultText(t, result), skipNotice)
+
+			assert.Equal(t, int64(1), pageRequests.Load(), "every call must reuse the first fetch")
+		})
+	}
 }
 
 func TestHandleRenderJSNonHTML(t *testing.T) {

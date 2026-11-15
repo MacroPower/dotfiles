@@ -27,6 +27,7 @@ type policyHandler struct {
 	client    *http.Client
 	rules     *rules.Rules
 	log       *slog.Logger
+	oversized *oversizedURLs
 	userAgent string
 	pageURL   string
 	seed      Seed
@@ -34,12 +35,19 @@ type policyHandler struct {
 	remaining atomic.Int64
 }
 
-func newPolicyHandler(ctx context.Context, r *Renderer, pageURL string, seed Seed) *policyHandler {
+func newPolicyHandler(
+	ctx context.Context,
+	r *Renderer,
+	pageURL string,
+	seed Seed,
+	oversized *oversizedURLs,
+) *policyHandler {
 	h := &policyHandler{
 		ctx:       ctx,
 		client:    r.client,
 		rules:     r.rules,
 		log:       r.log,
+		oversized: oversized,
 		userAgent: r.userAgent,
 		pageURL:   pageURL,
 		seed:      seed,
@@ -162,7 +170,7 @@ func (h *policyHandler) proxy(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if int64(len(body)) > h.perBytes {
-		h.deny(w, req, "subresource exceeds byte cap")
+		h.skipOversized(w, req)
 
 		return
 	}
@@ -188,4 +196,22 @@ func (h *policyHandler) deny(w http.ResponseWriter, req *http.Request, reason st
 		slog.String("reason", reason),
 	)
 	http.Error(w, reason, http.StatusForbidden)
+}
+
+// skipOversized refuses a subresource whose response is larger than
+// the byte cap. The browser reports the refusal only as a 403 status
+// on the script. The handler therefore logs the cap at Warn and
+// records the URL for [Result.Oversized].
+//
+//nolint:contextcheck // logs deliberately carry the render context, not the browser's
+func (h *policyHandler) skipOversized(w http.ResponseWriter, req *http.Request) {
+	reqURL := req.URL.String()
+
+	h.log.WarnContext(h.ctx, "render: subresource exceeds byte cap",
+		slog.String("url", reqURL),
+		slog.String("page", h.pageURL),
+		slog.Int64("limit_bytes", h.perBytes),
+	)
+	h.oversized.add(reqURL)
+	http.Error(w, "subresource exceeds byte cap", http.StatusForbidden)
 }

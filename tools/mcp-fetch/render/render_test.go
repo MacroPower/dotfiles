@@ -2,11 +2,14 @@ package render_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"runtime/pprof"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -45,6 +48,42 @@ func mustWrite(w http.ResponseWriter, data []byte) {
 	}
 }
 
+// logBuffer is a log sink that a test can read while the goroutines of
+// a render still write to it.
+type logBuffer struct {
+	buf bytes.Buffer
+	mu  sync.Mutex
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.Write(p) //nolint:wrapcheck // A bytes.Buffer write returns a nil error.
+}
+
+// entries decodes the JSON log lines whose message is msg.
+func (b *logBuffer) entries(t *testing.T, msg string) []map[string]any {
+	t.Helper()
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	var out []map[string]any
+
+	for line := range strings.Lines(b.buf.String()) {
+		var entry map[string]any
+
+		require.NoError(t, json.Unmarshal([]byte(line), &entry), "log line: %s", line)
+
+		if entry["msg"] == msg {
+			out = append(out, entry)
+		}
+	}
+
+	return out
+}
+
 func TestRenderInlineScripts(t *testing.T) {
 	t.Parallel()
 
@@ -81,7 +120,7 @@ func TestRenderInlineScripts(t *testing.T) {
 
 			out, err := newRenderer(t).Render(t.Context(), srv.URL+pagePath, seed)
 			require.NoError(t, err)
-			assert.Contains(t, string(out), tc.want)
+			assert.Contains(t, string(out.HTML), tc.want)
 		})
 	}
 }
@@ -106,7 +145,7 @@ func TestRenderExternalScript(t *testing.T) {
 	out, err := newRenderer(t, render.WithUserAgent("test-ua")).
 		Render(t.Context(), srv.URL+pagePath, seed)
 	require.NoError(t, err)
-	assert.Contains(t, string(out), "FromScript")
+	assert.Contains(t, string(out.HTML), "FromScript")
 	assert.Equal(t, "test-ua", gotUserAgent.Load(),
 		"subresource requests carry the configured User-Agent")
 }
@@ -203,7 +242,7 @@ func TestRenderSourceMapComment(t *testing.T) {
 
 			out, err := newRenderer(t).Render(t.Context(), srv.URL+pagePath, seed)
 			require.NoError(t, err)
-			assert.Contains(t, string(out), filled)
+			assert.Contains(t, string(out.HTML), filled)
 			assert.Zero(t, mapRequests.Load(), "a render must not request a source map")
 		})
 	}
@@ -232,7 +271,7 @@ func TestRenderFetchReturnsScriptSource(t *testing.T) {
 
 	out, err := newRenderer(t).Render(t.Context(), srv.URL+pagePath, seed)
 	require.NoError(t, err)
-	assert.Contains(t, string(out), fmt.Sprintf(`<div id="root">true:%d</div>`, len(src)))
+	assert.Contains(t, string(out.HTML), fmt.Sprintf(`<div id="root">true:%d</div>`, len(src)))
 }
 
 func TestRenderFetchDrivenContent(t *testing.T) {
@@ -252,7 +291,7 @@ func TestRenderFetchDrivenContent(t *testing.T) {
 
 	out, err := newRenderer(t).Render(t.Context(), srv.URL+pagePath, seed)
 	require.NoError(t, err)
-	assert.Contains(t, string(out), "FetchedData")
+	assert.Contains(t, string(out.HTML), "FetchedData")
 }
 
 func TestRenderInfiniteLoopTimesOut(t *testing.T) {
@@ -330,8 +369,8 @@ func TestRenderRulesDeniedSubresource(t *testing.T) {
 	out, err := newRenderer(t, render.WithRules(denied)).
 		Render(t.Context(), srv.URL+pagePath, seed)
 	require.NoError(t, err)
-	assert.Contains(t, string(out), "StillRendered")
-	assert.NotContains(t, string(out), "ShouldNotAppear")
+	assert.Contains(t, string(out.HTML), "StillRendered")
+	assert.NotContains(t, string(out.HTML), "ShouldNotAppear")
 	assert.Zero(t, blockedRequests.Load(), "denied subresource must not be requested")
 }
 
@@ -354,8 +393,8 @@ func TestRenderSubresourceLimit(t *testing.T) {
 	out, err := newRenderer(t, render.WithMaxSubresources(0)).
 		Render(t.Context(), srv.URL+pagePath, seed)
 	require.NoError(t, err)
-	assert.Contains(t, string(out), "StillRendered")
-	assert.NotContains(t, string(out), "ShouldNotAppear")
+	assert.Contains(t, string(out.HTML), "StillRendered")
+	assert.NotContains(t, string(out.HTML), "ShouldNotAppear")
 }
 
 func TestRenderSubresourceByteCap(t *testing.T) {
@@ -364,26 +403,141 @@ func TestRenderSubresourceByteCap(t *testing.T) {
 	// A script over the byte cap fails to load outright (truncating it
 	// mid-token would execute corrupted JavaScript), so nothing is
 	// injected; the page itself still renders.
-	script := `document.body.innerHTML += "<p>ShouldNotAppear</p>";`
+	const byteCap = 40
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/big.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/javascript")
-		mustWrite(w, []byte(script))
+		mustWrite(w, []byte(`document.body.innerHTML += "<p>ShouldNotAppear</p>";`))
+	})
+	mux.HandleFunc("/small.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		mustWrite(w, []byte(`window.small = "SmallLoaded";`))
 	})
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
+	// The page requests the oversized script twice.
 	seed := page(`<div id="root"></div>` +
 		`<script src="/big.js"></script>` +
-		`<script>document.getElementById("root").textContent = "StillRendered";</script>`)
+		`<script src="/small.js"></script>` +
+		`<script src="/big.js"></script>` +
+		`<script>document.getElementById("root").textContent = "StillRendered:" + window.small;</script>`)
 
-	out, err := newRenderer(t, render.WithMaxSubresourceBytes(10)).
-		Render(t.Context(), srv.URL+pagePath, seed)
+	var logs logBuffer
+
+	out, err := newRenderer(t,
+		render.WithMaxSubresourceBytes(byteCap),
+		render.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))),
+	).Render(t.Context(), srv.URL+pagePath, seed)
 	require.NoError(t, err)
-	assert.Contains(t, string(out), "StillRendered")
-	assert.NotContains(t, string(out), "ShouldNotAppear")
+	assert.Contains(t, string(out.HTML), "StillRendered:SmallLoaded")
+	assert.NotContains(t, string(out.HTML), "ShouldNotAppear")
+	assert.Equal(t, []string{srv.URL + "/big.js"}, out.Oversized,
+		"the result names each skipped subresource one time")
+
+	// The browser logs the skipped script only as a 403 status. The
+	// renderer names the cap at a level that the default handler keeps.
+	entries := logs.entries(t, "render: subresource exceeds byte cap")
+	require.Len(t, entries, 2, "one log line for each refused request")
+
+	for _, entry := range entries {
+		assert.Equal(t, "WARN", entry["level"])
+		assert.Equal(t, srv.URL+"/big.js", entry["url"])
+		assert.Equal(t, srv.URL+pagePath, entry["page"])
+		assert.InDelta(t, byteCap, entry["limit_bytes"], 0)
+	}
+}
+
+func TestRenderDefaultSubresourceByteCap(t *testing.T) {
+	t.Parallel()
+
+	// Each script fills the root element, and a comment pads the script
+	// to the size of the case.
+	const (
+		fill   = `document.getElementById("root").textContent = "Filled";`
+		filled = `<div id="root">Filled</div>`
+	)
+
+	limit := render.New(&http.Client{}).MaxSubresourceBytes()
+
+	tests := map[string]struct {
+		size int64
+		want bool
+	}{
+		"bundle of 3 MiB loads": {
+			size: 3 << 20,
+			want: true,
+		},
+		"bundle of the cap size loads": {
+			size: limit,
+			want: true,
+		},
+		"bundle one byte larger than the cap is skipped": {
+			size: limit + 1,
+			want: false,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			padding := int(tc.size) - len(fill) - len("/**/")
+			script := fill + "/*" + strings.Repeat("x", padding) + "*/"
+			require.Len(t, script, int(tc.size))
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/bundle.js", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/javascript")
+				mustWrite(w, []byte(script))
+			})
+
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+
+			seed := page(`<div id="root"></div><script src="/bundle.js"></script>`)
+
+			// The budget leaves room for a large download on a busy host.
+			out, err := newRenderer(t, render.WithBudget(time.Minute)).
+				Render(t.Context(), srv.URL+pagePath, seed)
+			require.NoError(t, err)
+
+			if tc.want {
+				assert.Contains(t, string(out.HTML), filled)
+				assert.Empty(t, out.Oversized)
+			} else {
+				assert.NotContains(t, string(out.HTML), filled)
+				assert.Equal(t, []string{srv.URL + "/bundle.js"}, out.Oversized)
+			}
+		})
+	}
+}
+
+func TestRenderFailureReportsOversized(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/big.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		mustWrite(w, []byte(`document.body.innerHTML += "<p>ShouldNotAppear</p>";`))
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	// The render skips the script and then runs out of budget in the
+	// loop. The result of the failed render still names the script.
+	seed := page(`<script src="/big.js"></script><script>while (true) {}</script>`)
+
+	out, err := newRenderer(t,
+		render.WithBudget(time.Second),
+		render.WithMaxSubresourceBytes(10),
+	).Render(t.Context(), srv.URL+pagePath, seed)
+	require.ErrorIs(t, err, render.ErrRenderFailed)
+	assert.Nil(t, out.HTML)
+	assert.Equal(t, []string{srv.URL + "/big.js"}, out.Oversized)
 }
 
 func TestRenderSubresourcePOSTBlocked(t *testing.T) {
@@ -409,7 +563,7 @@ func TestRenderSubresourcePOSTBlocked(t *testing.T) {
 
 	out, err := newRenderer(t).Render(t.Context(), srv.URL+pagePath, seed)
 	require.NoError(t, err)
-	assert.Contains(t, string(out), "StillRendered")
+	assert.Contains(t, string(out.HTML), "StillRendered")
 	assert.Zero(t, posts.Load(), "state-changing subresource requests must not reach the network")
 }
 
@@ -431,6 +585,6 @@ func TestRenderSeedServedWithoutRefetch(t *testing.T) {
 
 	out, err := newRenderer(t).Render(t.Context(), srv.URL+pagePath, seed)
 	require.NoError(t, err)
-	assert.Contains(t, string(out), "seed copy")
+	assert.Contains(t, string(out.HTML), "seed copy")
 	assert.Zero(t, pageRequests.Load(), "top-level document must come from the seed")
 }

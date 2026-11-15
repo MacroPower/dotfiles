@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/gost-dom/browser"
@@ -17,9 +19,12 @@ import (
 )
 
 const (
-	defaultBudget              = 10 * time.Second
-	defaultMaxSubresources     = 50
-	defaultMaxSubresourceBytes = 2 * 1024 * 1024 // 2 MiB
+	defaultBudget          = 10 * time.Second
+	defaultMaxSubresources = 50
+
+	// defaultMaxSubresourceBytes admits the script bundles of large
+	// single-page applications, which reach several MiB.
+	defaultMaxSubresourceBytes = 10 * 1024 * 1024 // 10 MiB
 
 	// serializeGraceDivisor reserves a fraction of the remaining budget
 	// for DOM serialization: event pumping stops at deadline-minus-grace
@@ -91,7 +96,8 @@ func WithMaxSubresources(n int) Option {
 }
 
 // WithMaxSubresourceBytes caps the bytes read from each subresource
-// response (default 2 MiB). See [Option].
+// response (default 10 MiB). A render skips every subresource with a
+// larger response and names it in [Result.Oversized]. See [Option].
 func WithMaxSubresourceBytes(n int64) Option {
 	return func(rd *Renderer) { rd.maxSubresourceBytes = n }
 }
@@ -114,11 +120,57 @@ func New(client *http.Client, opts ...Option) *Renderer {
 	return r
 }
 
+// MaxSubresourceBytes returns the byte cap on each subresource
+// response, which [WithMaxSubresourceBytes] sets.
+func (r *Renderer) MaxSubresourceBytes() int64 {
+	return r.maxSubresourceBytes
+}
+
 // Seed carries the already-fetched top-level document so a render does
 // not hit the network a second time for the page itself.
 type Seed struct {
 	ContentType string
 	Body        []byte
+}
+
+// Result is what one [Renderer.Render] call produced.
+type Result struct {
+	// HTML is the serialized post-JS DOM.
+	HTML []byte
+
+	// Oversized holds the URL of each subresource that the render
+	// skipped because the response was larger than the byte cap, in
+	// the order that the render skipped them. A page that depends on a
+	// skipped subresource renders with content missing.
+	Oversized []string
+}
+
+// oversizedURLs collects the URLs for [Result.Oversized] during one
+// render. A mutex guards the list for two reasons. The policy handler
+// serves requests on several goroutines, and [Renderer.Render] reads
+// the list when the budget expires with the browser still running.
+type oversizedURLs struct {
+	urls []string
+	mu   sync.Mutex
+}
+
+// add records u. It ignores a URL that the list already holds, so a
+// subresource that the page requests again appears one time.
+func (o *oversizedURLs) add(u string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if !slices.Contains(o.urls, u) {
+		o.urls = append(o.urls, u)
+	}
+}
+
+// list returns a copy of the recorded URLs.
+func (o *oversizedURLs) list() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	return slices.Clone(o.urls)
 }
 
 // Render opens pageURL in a fresh browser, executes its scripts, and
@@ -131,10 +183,16 @@ type Seed struct {
 // page, an unrecovered browser panic, or the budget expiring return an
 // error (wrapping [ErrRenderFailed]) that tells the caller to fall
 // back to the non-rendered content.
-func (r *Renderer) Render(ctx context.Context, pageURL string, seed Seed) ([]byte, error) {
+//
+// A subresource that exceeds a resource cap does not fail the render
+// either. The [Result] names every subresource that the render skipped
+// for its size. A Result that Render returns with an error has no HTML
+// and names the subresources that the render skipped before it
+// stopped.
+func (r *Renderer) Render(ctx context.Context, pageURL string, seed Seed) (Result, error) {
 	u, err := url.Parse(pageURL)
 	if err != nil {
-		return nil, fmt.Errorf("%w: parsing page URL: %w", ErrRenderFailed, err)
+		return Result{}, fmt.Errorf("%w: parsing page URL: %w", ErrRenderFailed, err)
 	}
 
 	// Normalize an empty path to "/" so the browser's request for the
@@ -157,6 +215,8 @@ func (r *Renderer) Render(ctx context.Context, pageURL string, seed Seed) ([]byt
 	// resources) even when the budget expired and nobody receives.
 	done := make(chan outcome, 1)
 
+	oversized := &oversizedURLs{}
+
 	go func() {
 		var out outcome
 
@@ -170,27 +230,35 @@ func (r *Renderer) Render(ctx context.Context, pageURL string, seed Seed) ([]byt
 			done <- out
 		}()
 
-		doc, err := r.render(ctx, pageURL, seed)
+		doc, err := r.render(ctx, pageURL, seed, oversized)
 		out = outcome{html: doc, err: err}
 	}()
 
 	select {
 	case out := <-done:
+		res := Result{Oversized: oversized.list()}
 		if out.err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrRenderFailed, out.err)
+			return res, fmt.Errorf("%w: %w", ErrRenderFailed, out.err)
 		}
 
-		return out.html, nil
+		res.HTML = out.html
+
+		return res, nil
 
 	case <-ctx.Done():
-		return nil, fmt.Errorf("%w: %w", ErrRenderFailed, ctx.Err())
+		return Result{Oversized: oversized.list()}, fmt.Errorf("%w: %w", ErrRenderFailed, ctx.Err())
 	}
 }
 
 // render runs on its own goroutine; all browser interaction stays here
 // because gost-dom requires single-goroutine window access. The caller
 // recovers browser panics at the goroutine boundary.
-func (r *Renderer) render(ctx context.Context, pageURL string, seed Seed) ([]byte, error) {
+func (r *Renderer) render(
+	ctx context.Context,
+	pageURL string,
+	seed Seed,
+	oversized *oversizedURLs,
+) ([]byte, error) {
 	seed.Body = withCompatScript(seed.Body)
 
 	// The watchdog interrupts the script VM when the budget expires;
@@ -204,7 +272,7 @@ func (r *Renderer) render(ctx context.Context, pageURL string, seed Seed) ([]byt
 			inner:    sobekengine.DefaultEngine(),
 			register: watchdog.register,
 		}),
-		browser.WithHandler(newPolicyHandler(ctx, r, pageURL, seed)),
+		browser.WithHandler(newPolicyHandler(ctx, r, pageURL, seed, oversized)),
 		browser.WithContext(ctx),
 		browser.WithLogger(r.log),
 	)

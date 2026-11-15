@@ -30,4 +30,12 @@
 // (browsers do not consult robots.txt for subresources), but their
 // redirects follow the shared client's policy, which re-validates
 // rules on every hop and robots.txt on cross-host hops.
+//
+// The resource caps bound the number of subresource requests in one
+// render and the size of each response. A render skips every
+// subresource whose response is larger than the byte cap, because a
+// truncated script does not parse. The browser logs a skipped script
+// only as a load that ended in a 403 status. The policy handler
+// therefore logs the cap at Warn, and [Result.Oversized] names each
+// skipped subresource for the caller.
 package render

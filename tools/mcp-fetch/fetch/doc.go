@@ -17,5 +17,8 @@
 // Markdown). When the render_js input is set,
 // [go.jacobcolvin.com/dotfiles/tools/mcp-fetch/render] executes the
 // page's JavaScript in a headless browser first, best-effort: a failed
-// or empty render degrades to the plain conversion with a notice.
+// or empty render degrades to the plain conversion with a notice. When
+// a render skips subresources that are larger than the byte cap of the
+// renderer, another notice names the cap and the skipped subresources,
+// whether or not the render produced content.
 package fetch

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -47,6 +48,10 @@ const (
 	// from the request via [context.WithoutCancel] so cancellation
 	// does not lose the row.
 	recordTimeout = 5 * time.Second
+
+	// maxListedOversized caps how many subresource URLs the notice
+	// about oversized subresources lists. The notice counts the rest.
+	maxListedOversized = 3
 )
 
 var (
@@ -116,11 +121,15 @@ type cachedFetch struct {
 // JavaScript render produced the content, and the post-redirect
 // origin), so hints, render stats, and the llms.txt probe stay correct
 // on cache hits.
+//
+// A rendered view also carries the notice about the subresources that
+// its render skipped, so a cache hit repeats the notice.
 type cachedContent struct {
-	processed string
-	origin    string
-	jsShell   bool
-	rendered  bool
+	processed    string
+	origin       string
+	renderNotice string
+	jsShell      bool
+	rendered     bool
 }
 
 // Option configures a [Handler] via [New].
@@ -373,6 +382,7 @@ func (h *Handler) Handle(
 	var (
 		processed    string
 		origin       string
+		renderNotice string
 		jsShell      bool
 		renderFailed bool
 	)
@@ -391,6 +401,7 @@ func (h *Handler) Handle(
 		processed = cached.processed
 		jsShell = cached.jsShell
 		origin = cached.origin
+		renderNotice = cached.renderNotice
 
 		if cached.rendered {
 			rec.RenderOK = 1
@@ -446,7 +457,14 @@ func (h *Handler) Handle(
 		}
 
 		if renderJS && bodyIsHTML {
-			rendered, ok := h.renderPage(ctx, fetched.finalURL.String(), fetched.body, fetched.contentType)
+			var (
+				rendered string
+				ok       bool
+			)
+
+			rendered, renderNotice, ok = h.renderPage(
+				ctx, fetched.finalURL.String(), fetched.body, fetched.contentType,
+			)
 			if ok {
 				processed = rendered
 				rec.RenderOK = 1
@@ -469,12 +487,20 @@ func (h *Handler) Handle(
 			key = input.URL
 		}
 
-		h.contentCache.Add(key, cachedContent{
+		entry := cachedContent{
 			processed: processed,
 			origin:    origin,
 			jsShell:   jsShell,
 			rendered:  rec.RenderOK == 1,
-		})
+		}
+
+		// The plain slot holds no render notice, because a plain fetch
+		// that reuses the entry ran no render.
+		if entry.rendered {
+			entry.renderNotice = renderNotice
+		}
+
+		h.contentCache.Add(key, entry)
 	}
 
 	filtered := processed
@@ -503,6 +529,11 @@ func (h *Handler) Handle(
 			rec.OutputBytes = len(notice)
 			rec.Truncated = 0
 
+			// A skipped script bundle can explain why no line matched.
+			if renderNotice != "" && startIndex == 0 {
+				notice += "\n\n" + renderNotice
+			}
+
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: notice}},
 			}, nil, nil
@@ -517,6 +548,10 @@ func (h *Handler) Handle(
 
 	if renderFailed && startIndex == 0 {
 		result += "\n\n<javascript rendering failed; returning non-rendered content>"
+	}
+
+	if renderNotice != "" && startIndex == 0 {
+		result += "\n\n" + renderNotice
 	}
 
 	if jsShell && !renderJS && startIndex == 0 {
@@ -619,20 +654,26 @@ func (h *Handler) doFetch(
 // after redirects) and converts the resulting DOM. It reports ok=false
 // when the render failed or produced no readable content, in which
 // case the caller degrades to the plain conversion with a notice.
+//
+// The second result is the notice from [Handler.oversizedNotice] about
+// the subresources that the render skipped. It applies whether or not
+// the render produced content, because a skipped script bundle is a
+// common cause of an empty render.
 func (h *Handler) renderPage(
 	ctx context.Context,
 	pageURL string,
 	body []byte,
 	contentType string,
-) (string, bool) {
+) (string, string, bool) {
 	rendered, err := h.renderer.Render(ctx, pageURL, render.Seed{
 		Body:        body,
 		ContentType: contentType,
 	})
+	notice := h.oversizedNotice(rendered.Oversized)
 
 	var processed string
 	if err == nil {
-		processed, err = h.processBody(rendered, contentType, false)
+		processed, err = h.processBody(rendered.HTML, contentType, false)
 	}
 
 	if err != nil {
@@ -641,7 +682,7 @@ func (h *Handler) renderPage(
 			slog.Any("error", err),
 		)
 
-		return "", false
+		return "", notice, false
 	}
 
 	if strings.TrimSpace(processed) == "" {
@@ -653,10 +694,37 @@ func (h *Handler) renderPage(
 			slog.String("url", pageURL),
 		)
 
-		return "", false
+		return "", notice, false
 	}
 
-	return processed, true
+	return processed, notice, true
+}
+
+// oversizedNotice returns the result notice that names the byte cap
+// and the subresources that a render skipped for exceeding it. It
+// returns "" when urls is empty. The notice lists the first
+// [maxListedOversized] URLs and counts the rest.
+func (h *Handler) oversizedNotice(urls []string) string {
+	if len(urls) == 0 {
+		return ""
+	}
+
+	noun := "subresources"
+	if len(urls) == 1 {
+		noun = "subresource"
+	}
+
+	listed := strings.Join(urls[:min(len(urls), maxListedOversized)], ", ")
+	if more := len(urls) - maxListedOversized; more > 0 {
+		listed += fmt.Sprintf(", and %d more", more)
+	}
+
+	limit := humanize.IBytes(uint64(max(h.renderer.MaxSubresourceBytes(), 0)))
+
+	return fmt.Sprintf(
+		"<javascript rendering skipped %d %s larger than the %s cap, so content might be missing: %s>",
+		len(urls), noun, limit, listed,
+	)
 }
 
 // htmlSniffLen bounds the body prefix isHTML lowercases; the doctype
