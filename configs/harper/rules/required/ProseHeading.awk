@@ -43,6 +43,12 @@
 # Recommended triggers misread a heading more often, so a commit that
 # draws them passes on its second try.
 #
+# The Recommended ProseHeading skips each heading that this check
+# reports, so the two tiers never report the same heading. When a
+# heading that narrates (`How it works:`) or runs long ends in a colon,
+# it draws only the finding for the colon. The Recommended ProseHeading
+# reports the heading after the writer deletes the colon.
+#
 # Measurement
 #
 # The rule hit 15 lines in the measure.py docs corpus, and 15 of 15 were

@@ -61,8 +61,13 @@
 # that end in a colon (`Setup:`). The Recommended ProseHeading reports
 # headings that narrate (`How matching works`) or run long. The
 # Recommended triggers misread a heading more often, so a commit that
-# draws them passes on its second try. This check skips a wrap-up,
-# because the Required ProseHeading reports it.
+# draws them passes on its second try.
+#
+# This check skips each heading that the Required ProseHeading reports,
+# so the two tiers never report the same heading. When a heading that
+# narrates (`How it works:`) or runs long ends in a colon, it draws only
+# the Required finding. This check reports the heading after the writer
+# deletes the colon.
 #
 # Measurement
 #
@@ -169,7 +174,9 @@ fence_char != "" {
   name = tolower(text)
   sub(/[.!:]+$/, "", name)
   gsub(/[ \t]+/, " ", name)
-  if (name in closer) {
+  # The Required ProseHeading reports a wrap-up and a heading that ends
+  # in a colon, so this check leaves both to it.
+  if (name in closer || text ~ /:$/) {
     next
   }
   counted = text
