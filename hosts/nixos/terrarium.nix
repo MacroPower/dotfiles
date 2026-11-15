@@ -2,6 +2,12 @@
   nixos-lima,
   system,
 }:
+let
+  # Envoy writes its access log to this path. hostModule sets the path
+  # in the daemon config, and homeModule names it in the Claude Code
+  # host notes.
+  envoyAccessLog = "/var/lib/terrarium/envoy-access.log";
+in
 {
   inherit system;
   username = "jacobcolvin";
@@ -175,7 +181,7 @@
             accessLog = {
               enabled = true;
               format = "json";
-              path = "/var/lib/terrarium/envoy-access.log";
+              path = envoyAccessLog;
             };
           };
           firewall.enabled = true;
@@ -252,6 +258,33 @@
           # creds). Surface it as a local kubectx source so guest-local
           # clusters behave like any normal cluster.
           guestKubeconfigLocal = true;
+          # home/claude.nix renders this text as the Host Environment
+          # section of ~/.claude/CLAUDE.md. Only this host has the access
+          # log, so the guidance lives here and not in the instructions
+          # that every host gets.
+          hostContext = ''
+            This host is the terrarium VM. The terrarium daemon routes each outbound connection of the VM and of its containers through Envoy.
+
+            When a build, a fetch, or a commit hook is slow, read `${envoyAccessLog}` first. Envoy appends one JSON line when an outbound connection closes, so the log does not show a download in progress. These fields show where a connection went, what it downloaded, and how fast:
+
+            - `time`: the start of the connection, in UTC.
+            - `sni`: the TLS server name of a connection to port 443. Plain HTTP requests to port 80 leave `sni` null and name the server in `authority`. TCP connections to other ports and UDP flows leave both fields null.
+            - `upstream`: the address and port that Envoy connected to. It is the only field that names the connections that leave both `sni` and `authority` null. Many of those connections go to `127.0.0.1` or to the Lima host gateway at `192.168.5.2`, not to the internet.
+            - `tx_bytes`: the bytes that the connection downloaded. `rx_bytes` holds the bytes that the connection uploaded.
+            - `duration`: the milliseconds that the connection stayed open.
+
+            This command totals the bytes downloaded from each server since the timestamp. Replace the timestamp with the UTC time that the slow command started.
+
+            ```sh
+            agrind -f ${envoyAccessLog} '* | json | where time >= "2026-01-31T14:05" | sum(tx_bytes) as bytes, count by sni | sort by bytes desc'
+            ```
+
+            The output puts every connection that leaves `sni` null in one `None` row. To split that row by destination, group those connections by `authority` and by the host part of `upstream`:
+
+            ```sh
+            agrind -f ${envoyAccessLog} '* | json | where time >= "2026-01-31T14:05" | where isNull(sni) | parse regex "^(?P<host>.*):[0-9]+$" from upstream nodrop | sum(tx_bytes) as bytes, count by authority, host | sort by bytes desc'
+            ```
+          '';
         };
         ytdlp.enable = true;
       };
