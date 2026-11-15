@@ -1803,8 +1803,14 @@ in
                     # that limit.
                     {
                       segments = {
+                        # `showPace` prints a second percentage after
+                        # the usage, as in `62%/57%`. The second
+                        # percentage is the usage that an even spend
+                        # over the 7-day window reaches by the time of
+                        # the render.
                         weekly = {
                           enabled = true;
+                          showPace = true;
                         };
                       };
                     }
@@ -1838,18 +1844,14 @@ in
                   default = { };
                   description = "Per-session budget.";
                 };
-                weekly = mkOption {
-                  type = mkBudgetType {
-                    amount = 1100;
-                    type = "cost";
-                  };
-                  default = { };
-                  description = "Weekly budget.";
-                };
               };
             };
             default = { };
-            description = "claude-powerline `budget` config block.";
+            description = ''
+              claude-powerline `budget` config block. The `weekly`
+              segment does not read a budget. It shows the percentage of
+              the 7-day rate limit that Claude Code reports.
+            '';
           };
         };
       };
