@@ -4410,7 +4410,8 @@ in
 
         ## Installed CLI Tools
         - `coreutils` are ALWAYS the GNU versions: sed, awk, grep, find, diff, patch, tar, and make on PATH all come from nix's GNU releases, never BSD system tools. Use GNU syntax freely (`sed -i`, `date -d`, `readlink -f`, `sort -V`, `grep -P`), you do not need to write BSD fallbacks.
-        - `rust-parallel` runs commands in parallel: `rust-parallel -j4 cmd ::: a b c`, args from stdin, `-s` for shell pipelines. Per-job output is buffered, so results never interleave. Prefer it over `xargs -P` and over bare `parallel` (from moreutils).
+        - `rust-parallel` runs commands in parallel, one job per `:::` argument (`rust-parallel -j4 cmd ::: a b c`) or per stdin line. `-s` runs each job as a `bash -c` script, so the command can hold a pipeline. Per-job output is buffered, so results never interleave. Prefer it over `xargs -P` and over bare `parallel` (from moreutils).
+        - `rust-parallel` expands `{}` in the command for `:::` arguments but not for stdin lines. It appends each stdin line to the end of the command instead, so `ls | rust-parallel -s 'cmd {} | head'` runs `cmd {} | head <line>`. Add `-r '.*'` to make `{}` expand to the line: `ls | rust-parallel -r '.*' -s 'cmd "{}" | head'`.
         - `yq` (Go yq) queries and edits YAML/TOML/XML with `jq`-style syntax (`jq` is also available).
         - `agrind` (angle-grinder) slices and aggregates large log files with a query language; prefer it over long grep/awk pipelines.
         - `sponge` (moreutils) soaks up a pipeline's output before writing, allowing safe in-place file rewrites; `ts` prepends timestamps to lines.
