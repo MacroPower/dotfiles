@@ -31,6 +31,7 @@ directory that holds an earlier run.
        [--shared GLOB]... [--unshared GLOB]... [--disk-floor-gb N]
                          change the config of the run, then print it
   triage FILE            add or update tasks from a JSON list
+  untriaged [FILTER]...  print the open aven tasks that the run does not hold
   next                   start one task per free slot, print each Workflow input
   args REF [--round N] [--final] [--sync REASON]
                          print the Workflow input that relaunches REF
@@ -38,6 +39,21 @@ directory that holds an earlier run.
   land REF               land REF on the base branch, one landing at a time
   status
   watch                  exit when free disk space runs low
+
+The triage command asks aven for the dependencies of each task that it
+loads, and adds each open dependency to the after list of the task. So
+write into the after list of a row only the order that aven does not
+record.
+
+The untriaged command prints one triage row per open aven task that the
+run does not hold, as a JSON list. The list leaves out every epic. Each
+row holds the ref, the title, and the priority of its task. Add the files
+of the task to the row before you load it with triage.
+
+Each FILTER of untriaged is an argument of aven list, such as
+--project app or --label bug. Without --project, aven list covers the
+tasks of every project. With --limit N, untriaged prints at most N rows,
+and the tasks that the run holds do not count toward N.
 
 The land command prints the failing output of a failed landing. The last
 line that it prints is the RESULT line.
@@ -79,6 +95,8 @@ STATES = ("pending", "inflight", "approved", "landed", "noted", "closed")
 SETTLED = ("landed", "closed")
 UNFINISHED = ("pending", "inflight", "approved")
 PRIORITY = {"urgent": 0, "high": 1, "medium": 2, "low": 3, "none": 4}
+# The aven statuses of an open task.
+AVEN_OPEN = ("inbox", "backlog", "todo", "active")
 # Files that match a shared glob hold no lock, so two running tasks may
 # both edit them. The scheduler matches each glob against "/" plus the
 # path relative to the repository. The run config starts with these
@@ -414,10 +432,18 @@ def cmd_config(a):
     warn_unmatched(unused)
 
 
+def dependencies(repo, ref):
+    """The refs of the open tasks that aven records as blockers of a task."""
+    listed = json.loads(out("aven", "dep", "list", ref, "--json", cwd=repo))
+    return [d["ref"] for d in listed["depends_on"] if d["unresolved"]]
+
+
 def cmd_triage(a):
     repo = main_checkout()
     run = run_dir(repo)
     rows = json.loads(Path(a.file).read_text())
+    # A failed aven command ends the triage before it changes the state.
+    deps = {row["ref"]: dependencies(repo, row["ref"]) for row in rows}
     with state(run) as st:
         added = updated = 0
         for row in rows:
@@ -429,7 +455,7 @@ def cmd_triage(a):
                 "title": row["title"],
                 "priority": row.get("priority", "none"),
                 "files": files,
-                "after": row.get("after", []),
+                "after": list(dict.fromkeys(row.get("after", []) + deps[ref])),
                 "last": bool(row.get("last", False)),
             }
             old = st["tasks"].get(ref)
@@ -447,6 +473,55 @@ def cmd_triage(a):
         unused = unmatched(st)
     print(f"added={added} updated={updated}")
     warn_unmatched(unused)
+
+
+def take_limit(filters):
+    """Split the --limit filter from the other filters of aven list.
+
+    Return the other filters and the limit, or None for no limit.
+    """
+    rest, limit = [], None
+    args = iter(filters)
+    for f in args:
+        if f == "--limit":
+            value = next(args, "")
+        elif f.startswith("--limit="):
+            value = f.removeprefix("--limit=")
+        else:
+            rest.append(f)
+            continue
+        if not value.isdecimal() or int(value) < 1:
+            die(f"--limit takes a whole number of at least 1, not {value!r}")
+        limit = int(value)
+    return rest, limit
+
+
+def cmd_untriaged(a):
+    repo = main_checkout()
+    run = run_dir(repo)
+    # aven list applies --limit before the command drops the tasks that
+    # the run holds and the epics. So the command applies the limit itself
+    # after it drops them.
+    filters, limit = take_limit(a.filters)
+    # The command passes --open whenever aven accepts it, so aven lists
+    # only the open tasks. aven refuses --open beside --status, --all,
+    # --deleted, or --upcoming, and it refuses a second --open. With one
+    # of those flags, the command itself drops each closed or deleted
+    # task.
+    flags = {f.split("=", 1)[0] for f in filters}
+    refused = {"--open", "--status", "--all", "--deleted", "--upcoming"}
+    opened = [] if flags & refused else ["--open"]
+    listed = json.loads(out("aven", "list", "--json", *opened, *filters, cwd=repo))
+    held = json.loads((run / "state.json").read_text())["tasks"]
+    rows = [
+        {"ref": t["ref"], "title": t["title"], "priority": t["priority"]}
+        for t in listed
+        if t["status"] in AVEN_OPEN
+        and not t["deleted"]
+        and not t["is_epic"]
+        and t["ref"] not in held
+    ]
+    print(json.dumps(rows[:limit], indent=1))
 
 
 def start(st, run, ref):
@@ -803,6 +878,19 @@ def main():
     s.add_argument("file")
     s.set_defaults(fn=cmd_triage)
 
+    # The untriaged command takes the arguments that the parser does not
+    # know, because each one belongs to aven list.
+    s = sub.add_parser(
+        "untriaged",
+        usage="%(prog)s [-h] [FILTER]...",
+        description="Print the open aven tasks that the run does not hold."
+        " Each FILTER is an argument of aven list, such as --project app or"
+        " --label bug. Without --project, aven list covers the tasks of"
+        " every project. With --limit N, the command prints at most N rows,"
+        " and the tasks that the run holds do not count toward N.",
+    )
+    s.set_defaults(fn=cmd_untriaged)
+
     sub.add_parser("next").set_defaults(fn=cmd_next)
 
     s = sub.add_parser("args")
@@ -825,7 +913,11 @@ def main():
     sub.add_parser("status").set_defaults(fn=cmd_status)
     sub.add_parser("watch").set_defaults(fn=cmd_watch)
 
-    a = p.parse_args()
+    a, extra = p.parse_known_args()
+    if a.fn is cmd_untriaged:
+        a.filters = extra
+    elif extra:
+        p.error(f"unrecognized arguments: {' '.join(extra)}")
     a.fn(a)
 
 

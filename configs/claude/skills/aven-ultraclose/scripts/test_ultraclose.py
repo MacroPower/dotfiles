@@ -66,9 +66,111 @@ def refused(*args, cwd, env):
     return p.stderr
 
 
+# The script that stands in for aven. The AVEN_ANSWERS directory holds the
+# answers that a test recorded. The dep list command prints the
+# dependencies of its task, and it reports no dependency for a task without
+# an answer. It fails for a ref that starts with NOPE, as aven fails for a
+# ref that it does not know. The list command ignores its filters. It
+# prints the recorded tasks and saves its arguments, one per line. Every
+# other command prints one word.
+AVEN_STUB = """\
+#!/bin/sh
+case "$1 $2" in
+"dep list")
+    case $3 in
+    NOPE-*)
+        echo "Error: error unknown-ref input=$3" >&2
+        exit 1
+        ;;
+    esac
+    answer="$AVEN_ANSWERS/$3.deps.json"
+    if [ -e "$answer" ]; then
+        cat "$answer"
+    else
+        echo '{"depends_on": [], "blocks": []}'
+    fi
+    ;;
+"list "*)
+    printf '%s\\n' "$@" >"$AVEN_ANSWERS/list.args"
+    cat "$AVEN_ANSWERS/list.json"
+    ;;
+*) echo stub ;;
+esac
+"""
+
+
+def stub_aven(tmp, env):
+    """Put the stub for aven first on the PATH of an environment.
+
+    The triage command and each task start call aven, and a test must not
+    read the tasks of the user. The AVEN_ANSWERS variable of the
+    environment names the directory of the recorded answers.
+    """
+    bin_dir, answers = Path(tmp, "bin"), Path(tmp, "aven")
+    bin_dir.mkdir()
+    answers.mkdir()
+    aven = bin_dir / "aven"
+    aven.write_text(AVEN_STUB)
+    aven.chmod(0o755)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env["AVEN_ANSWERS"] = str(answers)
+
+
+def aven_dependencies(env, ref, unresolved=(), resolved=(), blocks=()):
+    """Record the answer of the aven stub for the dependencies of one task.
+
+    The task depends on each unresolved ref and on each resolved ref, and
+    it blocks each blocks ref. The answer has the fields that
+    `aven dep list --json` prints.
+    """
+
+    def entry(other, is_open):
+        return {
+            "ref": other,
+            "title": "t",
+            "status": "todo" if is_open else "done",
+            "priority": "none",
+            "deleted": False,
+            "unresolved": is_open,
+        }
+
+    answer = {
+        "depends_on_open": len(unresolved),
+        "depends_on_total": len(unresolved) + len(resolved),
+        "blocks_open": len(blocks),
+        "blocks_total": len(blocks),
+        "depends_on": [entry(r, True) for r in unresolved]
+        + [entry(r, False) for r in resolved],
+        "blocks": [entry(r, True) for r in blocks],
+    }
+    Path(env["AVEN_ANSWERS"], f"{ref}.deps.json").write_text(json.dumps(answer))
+
+
+def aven_listed_tasks(env, *tasks):
+    """Record the tasks that the aven stub lists.
+
+    Each task holds at least a ref. The other fields default to those of
+    an open task that is not an epic, under the names that
+    `aven list --json` prints.
+    """
+    plain = {
+        "title": "t",
+        "status": "todo",
+        "priority": "none",
+        "deleted": False,
+        "is_epic": False,
+    }
+    rows = [{**plain, **task} for task in tasks]
+    Path(env["AVEN_ANSWERS"], "list.json").write_text(json.dumps(rows))
+
+
 def new_repo(tmp):
-    """Create an empty repository, and return it with a clean environment."""
+    """Create an empty repository, and return it with a clean environment.
+
+    A stub stands in for aven.
+    """
     repo, env = Path(tmp, "repo"), clean_env()
+    stub_aven(tmp, env)
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], env=env, check=True)
     return repo, env
 
@@ -101,15 +203,8 @@ def launchable_repo(tmp):
     """Create a repository whose tasks can start, and return it with its env.
 
     The repository has one commit, so a task branch can start from it.
-    A stub stands in for aven, which a task start calls.
     """
     repo, env = new_repo(tmp)
-    bin_dir = Path(tmp, "bin")
-    bin_dir.mkdir()
-    aven = bin_dir / "aven"
-    aven.write_text("#!/bin/sh\necho stub\n")
-    aven.chmod(0o755)
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
     empty_commit(repo, env, "init")
     return repo, env
 
@@ -592,6 +687,298 @@ class SharedGlobTest(unittest.TestCase):
                 self.assertIn(ROOT_GLOB, " ".join(text.split()))
 
 
+class DependencyTest(unittest.TestCase):
+    """The triage command adds each open aven dependency to an after list."""
+
+    def test_triage_adds_open_dependencies(self):
+        # name: (the after list of the row, or None for a row without one,
+        # the dependencies that aven reports, the after list of the task)
+        cases = {
+            "no dependency": (None, {}, []),
+            "an open dependency": (
+                None,
+                {"unresolved": ["APP-0001"]},
+                ["APP-0001"],
+            ),
+            "two open dependencies": (
+                None,
+                {"unresolved": ["APP-0002", "APP-0001"]},
+                ["APP-0002", "APP-0001"],
+            ),
+            "a resolved dependency": (None, {"resolved": ["APP-0001"]}, []),
+            "an open and a resolved dependency": (
+                None,
+                {"unresolved": ["APP-0001"], "resolved": ["APP-0002"]},
+                ["APP-0001"],
+            ),
+            "a task that waits for the task": (None, {"blocks": ["APP-0001"]}, []),
+            "an order that only the row names": (
+                ["APP-0003"],
+                {"unresolved": ["APP-0001"]},
+                ["APP-0003", "APP-0001"],
+            ),
+            "a dependency that the row also names": (
+                ["APP-0001"],
+                {"unresolved": ["APP-0001"]},
+                ["APP-0001"],
+            ),
+        }
+        for name, (after, reported, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                run = Path(tmp, "run")
+                ultraclose("init", "--run", str(run), cwd=repo, env=env)
+                aven_dependencies(env, REF, **reported)
+                row = {"ref": REF} if after is None else {"ref": REF, "after": after}
+                triage(tmp, repo, env, row)
+                self.assertEqual(state_of(run)["tasks"][REF]["after"], want)
+
+    def test_later_triage_reads_dependencies_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            run = Path(tmp, "run")
+            ultraclose("init", "--run", str(run), cwd=repo, env=env)
+            aven_dependencies(env, REF, unresolved=["APP-0001"])
+            triage(tmp, repo, env, {"ref": REF})
+            self.assertEqual(state_of(run)["tasks"][REF]["after"], ["APP-0001"])
+            # The first dependency is done, and the task gains a second one.
+            aven_dependencies(env, REF, unresolved=["APP-0002"], resolved=["APP-0001"])
+            triage(tmp, repo, env, {"ref": REF})
+            self.assertEqual(state_of(run)["tasks"][REF]["after"], ["APP-0002"])
+
+    def test_next_waits_for_dependency(self):
+        # The rows name no order. The first task depends on the second
+        # task in aven, and the limit of the run leaves a slot for both.
+        first, second = "APP-0001", "APP-0002"
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = launchable_repo(tmp)
+            ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+            aven_dependencies(env, first, unresolved=[second])
+            aven_dependencies(env, second, blocks=[first])
+            triage(tmp, repo, env, {"ref": first}, {"ref": second})
+            started = json.loads(ultraclose("next", cwd=repo, env=env))
+            self.assertEqual([t["task"]["ref"] for t in started], [second])
+            ultraclose("set", second, "landed", cwd=repo, env=env)
+            started = json.loads(ultraclose("next", cwd=repo, env=env))
+            self.assertEqual([t["task"]["ref"] for t in started], [first])
+
+    def test_triage_loads_no_row_when_aven_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            run = Path(tmp, "run")
+            ultraclose("init", "--run", str(run), cwd=repo, env=env)
+            triage(tmp, repo, env, {"ref": REF})
+            before = state_of(run)
+            # The stub fails for the ref of the second row.
+            file = Path(tmp, "unknown.json")
+            rows = [{"ref": r, "title": "t", "files": []} for r in (REF, "NOPE-0000")]
+            file.write_text(json.dumps(rows))
+            message = refused("triage", str(file), cwd=repo, env=env)
+            self.assertIn("unknown-ref input=NOPE-0000", message)
+            self.assertEqual(state_of(run), before)
+
+
+class UntriagedTest(unittest.TestCase):
+    """The untriaged command prints the open aven tasks outside the run."""
+
+    def test_prints_open_tasks_that_run_does_not_hold(self):
+        # The run holds one task. The row of a task holds its ref, its
+        # title, and its priority.
+        new = {"ref": "APP-0002", "title": "A new task", "priority": "high"}
+        plain = {"ref": "APP-0003", "title": "t", "priority": "none"}
+        # name: (the state of the task of the run, the tasks that aven
+        # lists, the rows that the command prints)
+        cases = {
+            "no open task": ("pending", [], []),
+            "a task outside the run": ("pending", [new], [new]),
+            "two tasks outside the run": ("pending", [new, plain], [new, plain]),
+            "an epic": ("pending", [{**new, "is_epic": True}], []),
+            "a deleted task": ("pending", [{**new, "deleted": True}], []),
+            "a done task beside an open task": (
+                "pending",
+                [{**new, "status": "done"}, plain],
+                [plain],
+            ),
+        }
+        cases |= {
+            f"a task with status {s}": ("pending", [{**new, "status": s}], [new])
+            for s in ("inbox", "backlog", "todo", "active")
+        }
+        cases |= {
+            f"a task with status {s}": ("pending", [{**new, "status": s}], [])
+            for s in ("done", "canceled")
+        }
+        cases |= {
+            f"the {s} task of the run": (s, [{"ref": REF}, new], [new])
+            for s in UNFINISHED + FINISHED
+        }
+        for name, (task_state, listed_tasks, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+                triage(tmp, repo, env, {"ref": REF})
+                ultraclose("set", REF, task_state, cwd=repo, env=env)
+                aven_listed_tasks(env, *listed_tasks)
+                rows = json.loads(ultraclose("untriaged", cwd=repo, env=env))
+                self.assertEqual(rows, want)
+
+    def test_triage_loads_rows_with_files(self):
+        new = {"ref": "APP-0002", "title": "A new task", "priority": "high"}
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            run = Path(tmp, "run")
+            ultraclose("init", "--run", str(run), cwd=repo, env=env)
+            aven_listed_tasks(env, new)
+            rows = json.loads(ultraclose("untriaged", cwd=repo, env=env))
+            file = Path(tmp, "rows.json")
+            file.write_text(json.dumps([{**row, "files": ["a.go"]} for row in rows]))
+            ultraclose("triage", str(file), cwd=repo, env=env)
+            task = state_of(run)["tasks"][new["ref"]]
+            self.assertEqual(
+                {k: task[k] for k in ("title", "priority", "files", "state")},
+                {
+                    "title": new["title"],
+                    "priority": new["priority"],
+                    "files": ["a.go"],
+                    "state": "pending",
+                },
+            )
+            # The run holds the task, so the command prints it no more.
+            rows = json.loads(ultraclose("untriaged", cwd=repo, env=env))
+            self.assertEqual(rows, [])
+
+    def test_passes_filters_to_aven_list(self):
+        # name: (the filters of the command, the filters that aven list
+        # gets after --json)
+        cases = {
+            # The command adds --open beside each filter that aven accepts
+            # with it.
+            "no filter": ([], ["--open"]),
+            "a project and a label": (
+                ["--project", "app", "--label", "bug"],
+                ["--open", "--project", "app", "--label", "bug"],
+            ),
+            "a filter with an equals sign": (
+                ["--metadata", "review=pending"],
+                ["--open", "--metadata", "review=pending"],
+            ),
+            # The parser knows --help, which starts with the same letters.
+            "a flag that starts as a flag of the parser": (
+                ["--has-metadata", "review"],
+                ["--open", "--has-metadata", "review"],
+            ),
+            # aven list refuses --open beside each of these filters.
+            "a status": (
+                ["--project", "app", "--status", "todo"],
+                ["--project", "app", "--status", "todo"],
+            ),
+            "a status with its value attached": (["--status=todo"], ["--status=todo"]),
+            "deleted tasks too": (["--all"], ["--all"]),
+            "only deleted tasks": (["--deleted"], ["--deleted"]),
+            "tasks that start later": (["--upcoming"], ["--upcoming"]),
+            "open tasks": (["--project", "app", "--open"], ["--project", "app", "--open"]),
+            # The command applies the limit itself.
+            "a limit": (
+                ["--project", "app", "--limit", "3"],
+                ["--open", "--project", "app"],
+            ),
+            "a limit with its value attached": (
+                ["--limit=3", "--project", "app"],
+                ["--open", "--project", "app"],
+            ),
+            "a limit and a status": (
+                ["--status", "todo", "--limit", "3"],
+                ["--status", "todo"],
+            ),
+        }
+        for name, (filters, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+                aven_listed_tasks(env)
+                ultraclose("untriaged", *filters, cwd=repo, env=env)
+                args = Path(env["AVEN_ANSWERS"], "list.args").read_text().splitlines()
+                self.assertEqual(args, ["list", "--json", *want])
+
+    def test_limit_counts_printed_rows(self):
+        # aven lists the task of the run, an epic, and a done task before
+        # the new tasks. None of these tasks counts toward the limit.
+        listed = [
+            {"ref": REF},
+            {"ref": "APP-0002", "is_epic": True},
+            {"ref": "APP-0003", "status": "done"},
+            {"ref": "APP-0004"},
+            {"ref": "APP-0005"},
+            {"ref": "APP-0006"},
+        ]
+        # name: (the filters of the command, the refs that it prints)
+        cases = {
+            "no limit": ([], ["APP-0004", "APP-0005", "APP-0006"]),
+            "a limit": (["--limit", "2"], ["APP-0004", "APP-0005"]),
+            "a limit with its value attached": (["--limit=2"], ["APP-0004", "APP-0005"]),
+            "a limit beside another filter": (
+                ["--project", "app", "--limit", "1"],
+                ["APP-0004"],
+            ),
+            "a limit larger than the list": (
+                ["--limit", "9"],
+                ["APP-0004", "APP-0005", "APP-0006"],
+            ),
+        }
+        for name, (filters, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+                triage(tmp, repo, env, {"ref": REF})
+                aven_listed_tasks(env, *listed)
+                rows = json.loads(ultraclose("untriaged", *filters, cwd=repo, env=env))
+                self.assertEqual([row["ref"] for row in rows], want)
+
+    def test_refuses_limit_that_is_not_a_count(self):
+        cases = {
+            "zero": ["--limit", "0"],
+            "zero attached": ["--limit=0"],
+            "a negative number": ["--limit", "-1"],
+            "a word": ["--limit", "some"],
+            "no value": ["--project", "app", "--limit"],
+            "another flag": ["--limit", "--project", "app"],
+        }
+        for name, filters in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+                aven_listed_tasks(env)
+                message = refused("untriaged", *filters, cwd=repo, env=env)
+                self.assertIn("--limit takes a whole number of at least 1", message)
+                self.assertFalse(Path(env["AVEN_ANSWERS"], "list.args").exists())
+
+    def test_other_commands_refuse_filters(self):
+        commands = (
+            ["status"],
+            ["next"],
+            ["triage", "rows.json"],
+            ["set", REF, "noted"],
+        )
+        for command in commands:
+            with self.subTest(command[0]), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                run = Path(tmp, "run")
+                ultraclose("init", "--run", str(run), cwd=repo, env=env)
+                triage(tmp, repo, env, {"ref": REF})
+                before = state_of(run)
+                message = refused(*command, "--project", "app", cwd=repo, env=env)
+                self.assertIn("unrecognized arguments: --project app", message)
+                self.assertEqual(state_of(run), before)
+
+    def test_help_names_filters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = ultraclose("untriaged", "--help", cwd=tmp, env=clean_env())
+            # The help wraps its lines at the width of the terminal.
+            text = " ".join(text.split())
+            self.assertIn("untriaged [-h] [FILTER]...", text)
+            self.assertIn("Each FILTER is an argument of aven list", text)
+
+
 def stale(copy):
     copy.write_text("// an older close-task.js\n")
 
@@ -844,18 +1231,14 @@ class LandTest(unittest.TestCase):
         only the landing commits with hooks on. Return the repository
         and the environment.
         """
-        repo, run, bin_dir = Path(tmp, "repo"), Path(tmp, "run"), Path(tmp, "bin")
-        bin_dir.mkdir()
-        aven = bin_dir / "aven"
-        aven.write_text("#!/bin/sh\necho stub\n")
-        aven.chmod(0o755)
+        repo, run = Path(tmp, "repo"), Path(tmp, "run")
         # The landing commits with the git config of its caller. This
         # file replaces the config of the user, so the hook path and the
         # signing key of the user do not reach the test repository.
         config = Path(tmp, "gitconfig")
         config.write_text("[user]\n\tname = test\n\temail = test@example.com\n")
         env = clean_env()
-        env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+        stub_aven(tmp, env)
         env["GIT_CONFIG_GLOBAL"] = str(config)
         env["GIT_CONFIG_NOSYSTEM"] = "1"
         env["ENGINE"] = str(Path(tmp, "engine"))

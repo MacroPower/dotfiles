@@ -54,6 +54,13 @@ The queue is every open task that is not an epic, including each task that
 anyone files during the run. Triage the new tasks each time `next` returns
 nothing.
 
+`ultraclose.py untriaged --project <key>` prints each task of the queue
+that the run does not hold. `<key>` names the aven project of the
+repository. Always pass `--project`, because `aven list` covers every
+project without it. Add each `aven list` filter that the arguments hold.
+The command prints a JSON list with the ref, the title, and the priority
+of each task. The list is empty when the run holds the whole queue.
+
 Every epic stays open while one of its children is open. Set an epic to
 `done` when its last child lands.
 
@@ -108,21 +115,29 @@ approved task. `status` then prints an `ended` line.
    ask for each such fault in the `defects` of the result, as the Defects
    section says. Agents put `rules.md` above their defaults, so a rule that
    sends the fault to `notes` hides it in prose again.
-6. Triage the queue. For each open task, predict the files that it edits.
-   Fan the reading out to Explore agents, and write the result as a JSON
-   list:
+6. Triage the queue. List it with `ultraclose.py untriaged`, as the Scope
+   section says. For each task, predict the files that it edits. Fan the
+   reading out to Explore agents, and write the result as a JSON list:
 
    ```json
    [{"ref": "APP-7KQ9", "title": "...", "priority": "high",
      "files": ["pkg/a.go"], "after": ["APP-7KQ0"], "last": false}]
    ```
 
-   `after` names the tasks that must land first, which covers each aven
-   dependency. Set `last` on a task that changes the commit hooks, the
-   check, or the pins between the repository's own modules. Every `last`
-   task runs alone after the other tasks, so that the other landings keep
-   the hooks and pins they started with. Load the list with
-   `ultraclose.py triage <file>`. The same command adds tasks later.
+   Load the list with `ultraclose.py triage <file>`. The same command adds
+   tasks later.
+
+   `after` names the tasks that must land first. `triage` reads the
+   dependencies of each task from aven, and adds each open dependency to
+   the `after` of the task. So write into `after` only the order that aven
+   does not record, such as a task that builds on the change of another
+   task. `triage` reads the dependencies each time it loads a task. After
+   the aven dependencies of a pending task change, load the task again.
+
+   Set `last` on a task that changes the commit hooks, the check, or the
+   pins between the repository's own modules. Every `last` task runs alone
+   after the other tasks, so that the other landings keep the hooks and
+   pins they started with.
 
    `triage` prints a warning for each `--shared` glob that matches no file
    of any task. Such a glob shares no file, so two tasks that edit one
@@ -145,7 +160,8 @@ started with.
 
 A run that you continue carries the config and the `rules.md` of the tasks
 that it started with. When you continue the run, fit both to the arguments
-and to the open tasks that are not in the run:
+and to the open tasks that are not in the run. `ultraclose.py untriaged`
+prints those tasks, as the Scope section says. Fit the run in these ways:
 
 - If the arguments hold a number, set the limit to it.
 - Remove each shared glob that covers files that two of those tasks must
