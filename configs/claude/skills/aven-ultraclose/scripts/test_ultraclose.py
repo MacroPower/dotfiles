@@ -1677,6 +1677,105 @@ class WorkflowRegressionTest(WorkflowCase):
                     self.assertIn(sentence, field)
 
 
+class WorkflowReviewScopeTest(WorkflowCase):
+    """How much of the change each reviewer reviews.
+
+    A reviewer of the loop reviews the whole diff. The final reviewer
+    checks only the findings of the last round and their fixes.
+    """
+
+    def test_reviewers_learn_how_much_to_review(self):
+        proof = "the proof that the finding is wrong"
+        rebuts = {
+            **fixed(1),
+            "responses": [{"finding": 1, "action": "rebutted", "detail": proof}],
+        }
+        # The notes that the prompt of a reviewer can carry. The scripted
+        # run names its base branch main.
+        notes = {
+            "history": (
+                "Earlier review rounds already happened, and "
+                f"/run/tasks/{REF}/history.md records each finding with the "
+                "fixer's answer. Read it. Verify each claimed fix in the "
+                "code. Do not raise a rebutted finding again unless the "
+                "rebuttal is wrong, and then say why."
+            ),
+            "rebuttals": f"Rebuttals so far:\n- a.py:1: p\n  Rebuttal: {proof}\n",
+            "afresh": (
+                "Then review the whole diff afresh, because fixes introduce "
+                "new faults."
+            ),
+            "sync": "Review the whole diff against main again.",
+            "bounded": (
+                "This review is narrow. A fixer applied only the exact fixes "
+                "of the findings below. Do not review the whole diff again. "
+                "In the review steps, check only these findings and what "
+                "their fixes changed. Report a finding only when it is one "
+                "of these findings and it is still open, or when one of "
+                "these fixes introduced it.\n"
+                "1. [major] a.py:1\n   Problem: p\n   Evidence: e\n   Fix: f\n"
+            ),
+        }
+        # The final reviewer reads the history and the rebuttals, but no
+        # sentence that asks for a review of the whole diff.
+        loop = {"history", "rebuttals", "afresh"}
+        final = {"history", "rebuttals", "bounded"}
+        # name: (run_workflow arguments, label: the notes of the prompt)
+        cases = {
+            "a cap at the first round": (
+                {
+                    "agents": {
+                        "impl": IMPLEMENTED,
+                        "review r1": CHANGES,
+                        "fix r1": fixed(1),
+                        "review final": APPROVE,
+                    },
+                    "rounds": 1,
+                },
+                {"review r1": set(), "review final": {"history", "bounded"}},
+            ),
+            "a cap at a later round": (
+                {
+                    "agents": {
+                        "impl": IMPLEMENTED,
+                        "review r1": CHANGES,
+                        "fix r1": rebuts,
+                        "review r2": CHANGES,
+                        "fix r2": fixed(2),
+                        "review final": APPROVE,
+                    },
+                    "rounds": 2,
+                },
+                {"review r1": set(), "review r2": loop, "review final": final},
+            ),
+            "a cap after a sync": (
+                {
+                    "agents": {
+                        "sync": SYNCED,
+                        "review r2": CHANGES,
+                        "fix r2": rebuts,
+                        "review r3": CHANGES,
+                        "fix r3": fixed(3),
+                        "review final": APPROVE,
+                    },
+                    "resume": SYNC,
+                },
+                {
+                    "review r2": {"history", "afresh", "sync"},
+                    "review r3": loop | {"sync"},
+                    "review final": final,
+                },
+            ),
+        }
+        for name, (kwargs, want) in cases.items():
+            _, calls = self.run_workflow(**kwargs)
+            for label, carried in want.items():
+                prompt = calls[label]["prompt"]
+                for note, text in notes.items():
+                    with self.subTest(f"{name}, {label}, {note}"):
+                        self.assertEqual(text in prompt, note in carried)
+
+
 class WorkflowResultTest(WorkflowCase):
     """The summary, the notes, and the defects of a result.
 

@@ -228,8 +228,13 @@ Verdict:
 - "changes" when a fixer can repair the findings inside the task scope.
 - "reject" only when the approach itself forces massive scope creep or significant regressions. Give the reason in reject_reason.`
 
-const historyNote = rebutted => `
-Earlier review rounds already happened, and ${HISTORY} records each finding with the fixer's answer. Read it. Verify each claimed fix in the code. Do not raise a rebutted finding again unless the rebuttal is wrong, and then say why. Then review the whole diff afresh, because fixes introduce new faults.
+// What a reviewer after the first round learns about the earlier rounds.
+// The afresh flag adds the sentence that asks for a new review of the
+// whole diff. Each loop round after the first one sets the flag.
+// boundedNote limits the final review to the last fixes, so that review
+// leaves the flag unset.
+const historyNote = (rebutted, afresh) => `
+Earlier review rounds already happened, and ${HISTORY} records each finding with the fixer's answer. Read it. Verify each claimed fix in the code. Do not raise a rebutted finding again unless the rebuttal is wrong, and then say why.${afresh ? ' Then review the whole diff afresh, because fixes introduce new faults.' : ''}
 ${rebutted.length ? 'Rebuttals so far:\n' + rebutted.join('\n') : ''}
 `
 
@@ -237,8 +242,13 @@ const listFindings = findings => findings
   .map((f, i) => `${i + 1}. [${f.severity}] ${f.location}\n   Problem: ${f.problem}\n   Evidence: ${f.evidence}\n   Fix: ${f.fix}`)
   .join('\n')
 
+// The scope of the final review: the findings of the last round and
+// their exact fixes. The review steps of reviewPrompt follow this note
+// in the prompt, and they describe a review of the whole change. So the
+// note limits what the reviewer checks in those steps, and what the
+// reviewer reports.
 const boundedNote = open => `
-This review is narrow. A fixer applied only the exact fixes of the findings below. Do not review the whole diff again. Report a finding only when it is one of these findings and it is still open, or when one of these fixes introduced it.
+This review is narrow. A fixer applied only the exact fixes of the findings below. Do not review the whole diff again. In the review steps, check only these findings and what their fixes changed. Report a finding only when it is one of these findings and it is still open, or when one of these fixes introduced it.
 ${listFindings(open)}
 `
 
@@ -389,7 +399,7 @@ Review the whole diff against ${base} again. Give the merge the most attention: 
 const rebutted = []
 for (let round = FIRST; ; round++) {
   out.rounds = round
-  const history = round > 1 ? historyNote(rebutted) : ''
+  const history = round > 1 ? historyNote(rebutted, true) : ''
   const rev = await attempt(reviewPrompt(round, out.summary, extra + history), { label: `review ${T.ref} r${round}`, phase: 'Review', schema: REVIEW_SCHEMA })
   if (!rev) return done('error', { notes: `the reviewer of round ${round} returned nothing` })
   if (rev.verdict === 'reject') return done('rejected', { notes: rev.reject_reason, findings: rev.findings })
@@ -413,7 +423,7 @@ for (let round = FIRST; ; round++) {
   log(`${T.ref}: reached the cap at round ${round}`)
   out.rounds = round + 1
   out.boundedReview = true
-  const fin = await attempt(reviewPrompt(round + 1, out.summary, boundedNote(rev.findings) + historyNote(rebutted)), { label: `review ${T.ref} final`, phase: 'Final', schema: REVIEW_SCHEMA })
+  const fin = await attempt(reviewPrompt(round + 1, out.summary, boundedNote(rev.findings) + historyNote(rebutted, false)), { label: `review ${T.ref} final`, phase: 'Final', schema: REVIEW_SCHEMA })
   if (!fin) return done('unconverged', { notes: 'the final reviewer returned nothing, so the findings of the last round stand unverified', findings: rev.findings })
   if (fin.verdict !== 'reject' && fin.findings.length === 0) return done('approved')
   const landable = fin.verdict !== 'reject' && fin.improves_base && !fin.findings.some(f => f.regression)
