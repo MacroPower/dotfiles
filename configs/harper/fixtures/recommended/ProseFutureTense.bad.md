@@ -9,3 +9,5 @@ The pod will be created in the default namespace.
 The default handler will be used.
 
 You will need Docker on every host.
+
+Each worker will want its own queue.

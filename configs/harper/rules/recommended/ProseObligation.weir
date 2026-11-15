@@ -24,6 +24,11 @@
 # that describes a verb, an adjective, or a whole sentence, such as
 # `safely` or `also`.
 #
+# After `will`, `may`, or `might`, `want to` counts with any subject
+# (`users will want to pin the version`). The contraction counts after
+# `I`, `you`, `we`, `they`, `he`, `she`, and `it` (`they'll want to pin
+# the version`).
+#
 # False Positives
 #
 # The guard before the phrase skips a word that states that no
@@ -49,6 +54,12 @@
 # the technical-writing skill reads better anyway (`To X, do Y`), so the
 # message names it.
 #
+# `will want to` after a subject other than `you` still fires where it
+# predicts what people want instead of advising the reader (`gui users
+# will want to create their own types`, `it's more likely we'll want to
+# move code definitions`). `must` or `should` changes the meaning there,
+# and the rule accepts that misfire.
+#
 # Related Rules
 #
 # `it is important to` counts here except before the verbs that the
@@ -57,23 +68,27 @@
 # stative words, ones that name a state, so `it is recommended that` and
 # `are encouraged to` each draw one finding, from this rule.
 #
+# ProseFutureTense skips `will want to` and `will need to`, so only this
+# rule reports them.
+#
 # The Recommended ProseObligation reports `need to` and the other
 # phrases that read as advice. The Optional ProseObligation reports `has
 # to` and `have to`, which often state a reason or a burden instead.
 #
 # Measurement
 #
-# The rule hit 835 lines in the measure.py corpus, and 15 of 20 sampled
+# The rule hit 837 lines in the measure.py corpus, and 17 of 20 sampled
 # hits stated obligations that `must`, `should`, the present tense, or a
-# `To` opener states more clearly. The misfires described a situation
-# (`your Pods need to communicate with the API server`) or a
-# hypothetical (`Say we need to work with`), or they quoted license text
-# (`shall any Contributor be liable`).
+# `To` opener states more clearly. Of the three misfires, one described
+# a situation (`Cluster administrators need to be able to offer a
+# variety of PersistentVolumes`), one stated that a step is rare (`you
+# rarely need to do this type annotation`), and one quoted license text
+# (`shall mean the terms and conditions`).
 expr need [need, needs]
 expr neg [not, never, don't, doesn't, didn't, won't, wouldn't, shouldn't, only, might, may, would, could, DET]
 expr wrap [expected, required, supposed]
 expr verbs [note, remember, understand, mention, realize, recognize]
-expr main [<(!@neg @need to !know), (@need to)>, ([(it is), it's] [necessary, essential, critical, best] to), ([is, are] [advised, encouraged] to), ([is, are] ADV [advised, encouraged] to), ([is, are] @wrap to), ([is, are] recommended), <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>, (it is advisable), (it is a good idea), (you'll want to), (you will want to), ([may, might] want to), (be sure to), (make sure to), (ought to), (must try to), shall]
+expr main [<(!@neg @need to !know), (@need to)>, ([(it is), it's] [necessary, essential, critical, best] to), ([is, are] [advised, encouraged] to), ([is, are] ADV [advised, encouraged] to), ([is, are] @wrap to), ([is, are] recommended), <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>, (it is advisable), (it is a good idea), ([I'll, you'll, we'll, they'll, he'll, she'll, it'll] want to), ([will, may, might] want to), (be sure to), (make sure to), (ought to), (must try to), shall]
 let message "Vague obligation. Write `must` or `should` for what a person does, the present tense for what the system does, or open with `To` and the goal."
 let description "Flags `needs to`, `is expected to`, `is recommended`, and other phrases that hide how strong an obligation is."
 let becomes ""

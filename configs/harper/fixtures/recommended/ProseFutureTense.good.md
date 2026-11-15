@@ -10,4 +10,6 @@ The flag will be removed in the next release.
 
 You will want to pin the version.
 
+Users will want to pin the version.
+
 The job will need to restart.

@@ -22,6 +22,10 @@ It is a good idea to pin the version.
 
 You'll want to pin the version.
 
+They'll want to pin the version.
+
+Users will want to pin the version.
+
 You may want to pin the version.
 
 Be sure to restart the node.
