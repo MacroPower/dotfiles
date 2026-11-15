@@ -32,10 +32,14 @@
 # configs/harper/comment-checks.txt lists the check, so prose-lint also
 # runs it on the comments of a source file. A `!<kind>` after a name in
 # the list skips one comment kind, such as `!go` for Go comments, and
-# the list puts none after this check. prose-lint skips the check on
-# every file under `configs/claude/` and `.claude/`, so a word in
-# capitals in the comment of a script in a skill passes
-# (`# Do NOT retry`).
+# the list puts none after this check.
+#
+# prose-lint skips the check on every file under `configs/claude/`. It
+# also skips every file under the `agents`, `commands`,
+# `output-styles`, `rules`, and `skills` directories of `.claude/`. A
+# word in capitals in the comment of a script in a skill therefore
+# passes (`# Do NOT retry`). The check reads the other directories of
+# `.claude/`, such as a worktree under `.claude/worktrees/`.
 #
 # False Positives
 #

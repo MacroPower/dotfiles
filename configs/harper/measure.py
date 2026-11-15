@@ -384,14 +384,23 @@ def code_lines(docs: list[Doc]) -> set[tuple[str, str, int]]:
 # writes capitals for emphasis on purpose.
 AGENT_FILE_SKIPS = frozenset({"ProseCapsEmphasis"})
 
+# The directories of `.claude/` that hold only prompt files. Its other
+# directories hold other files, such as the source files of a worktree
+# under `.claude/worktrees/`.
+PROMPT_DIRS = ("agents", "commands", "output-styles", "rules", "skills")
+
 
 def agent_file(name: str) -> bool:
-    path = Path(name)
+    """Tell whether prose-lint reads the file as a prompt file for an agent.
+
+    The slash in front of the name lets each test match a name with no
+    directory, the way the patterns in prose-lint do.
+    """
+    path = f"/{name}"
     return (
-        path.name in {"AGENTS.md", "CLAUDE.md", "SKILL.md"}
-        or ".claude" in path.parts
-        or name.startswith("configs/claude/")
-        or "/configs/claude/" in name
+        path.endswith(("/AGENTS.md", "/CLAUDE.md", "/SKILL.md"))
+        or "/configs/claude/" in path
+        or any(f"/.claude/{d}/" in path for d in PROMPT_DIRS)
     )
 
 

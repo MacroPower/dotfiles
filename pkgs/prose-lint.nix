@@ -764,11 +764,20 @@ in
         ;;
     esac
 
-    # Prompt files for an agent (skills, agent definitions, CLAUDE.md,
-    # and AGENTS.md) write capitals for emphasis on purpose, so
-    # ProseCapsEmphasis skips them.
-    case "$file" in
-      configs/claude/* | */configs/claude/* | .claude/* | */.claude/* | CLAUDE.md | */CLAUDE.md | AGENTS.md | */AGENTS.md | SKILL.md | */SKILL.md)
+    # Prompt files for an agent write capitals for emphasis on purpose,
+    # so ProseCapsEmphasis skips them. A prompt file is a file named
+    # CLAUDE.md, AGENTS.md, or SKILL.md, or a file under
+    # configs/claude/. The agents, commands, output-styles, rules, and
+    # skills directories of .claude/ hold prompt files too. The
+    # patterns name those directories and not all of .claude/, because
+    # the hook passes an absolute path. In a worktree under
+    # .claude/worktrees/, the path of every file holds .claude/. The
+    # slash in front of the path lets each pattern also match a
+    # relative path.
+    case "/$file" in
+      */CLAUDE.md | */AGENTS.md | */SKILL.md | */configs/claude/* | \
+        */.claude/agents/* | */.claude/commands/* | */.claude/output-styles/* | \
+        */.claude/rules/* | */.claude/skills/*)
         skips="$skips ProseCapsEmphasis"
         ;;
     esac
@@ -905,6 +914,74 @@ in
             echo "control.go: expected a finding" >&2
             exit 1
           fi
+          touch "$out"
+        '';
+
+        # Writes one line with a word in capitals at each path of a
+        # scratch repository and lints it. ProseCapsEmphasis must skip
+        # each prompt file for an agent and report each other file. The
+        # other files include the files of a worktree under
+        # .claude/worktrees/, whose absolute paths hold .claude/. The
+        # command in configs/harper/CLAUDE.md builds this test too.
+        tests.prompt-files = runCommand "prose-lint-prompt-files" { } ''
+          # Writes the line at the path, lints it, and succeeds when
+          # ProseCapsEmphasis reports it.
+          reports() {
+            local out rc=0
+            mkdir -p "$(dirname "$1")"
+            case "$1" in
+              *.md) echo 'Do NOT retry the call.' >"$1" ;;
+              *) echo '# Do NOT retry the call.' >"$1" ;;
+            esac
+            out=$(${lib.getExe finalAttrs.finalPackage} "$1") || rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "$1: prose-lint exited $rc" >&2
+              exit 1
+            fi
+            case "$out" in
+              *ProseCapsEmphasis*) return 0 ;;
+            esac
+            return 1
+          }
+
+          root=$PWD/repo
+          mkdir "$root"
+          cd "$root"
+
+          # Each file runs under its relative path, as a person types
+          # it, and under its absolute path, as the hook passes it.
+          for f in \
+            CLAUDE.md \
+            docs/AGENTS.md \
+            docs/demo/SKILL.md \
+            configs/claude/agents/demo.md \
+            .claude/agents/demo.md \
+            .claude/commands/demo.md \
+            .claude/output-styles/demo.md \
+            .claude/rules/demo.md \
+            .claude/skills/demo/scripts/run.py \
+            .claude/worktrees/demo/configs/claude/agents/demo.md \
+            .claude/worktrees/demo/.claude/agents/demo.md; do
+            for path in "$f" "$root/$f"; do
+              if reports "$path"; then
+                echo "$path: ProseCapsEmphasis reported a prompt file" >&2
+                exit 1
+              fi
+            done
+          done
+          for f in \
+            docs/guide.md \
+            tools/run.py \
+            .claude/worktrees/demo/docs/guide.md \
+            .claude/worktrees/demo/tools/run.py \
+            .claude/plans/demo.md; do
+            for path in "$f" "$root/$f"; do
+              if ! reports "$path"; then
+                echo "$path: expected a ProseCapsEmphasis finding" >&2
+                exit 1
+              fi
+            done
+          done
           touch "$out"
         '';
       };

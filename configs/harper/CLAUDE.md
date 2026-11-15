@@ -371,9 +371,18 @@ tests show that a breach fails the build.
 nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; in pkgs.callPackage ./pkgs/prose-weirpack.nix { }'
 ```
 
-The prose-lint test lints source files that open with a license header
-and expects no finding.
+Build the tests of prose-lint after you change `pkgs/prose-lint.nix`.
+Each test runs the built wrapper on a set of files.
+
+- `license-headers` lints source files that open with a license header
+  and expects no finding.
+- `prompt-files` lints one line with a word in capitals at the path of
+  a prompt file for an agent and at other paths. It expects the
+  ProseCapsEmphasis finding only at the other paths, which include a
+  file of a worktree under `.claude/worktrees/`.
+
+This command builds every test.
 
 ```bash
-nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; prose-weirpack = pkgs.callPackage ./pkgs/prose-weirpack.nix { }; in (pkgs.callPackage ./pkgs/prose-lint.nix { inherit prose-weirpack; }).passthru.tests.license-headers'
+nix build --no-link --impure --expr 'let f = builtins.getFlake (toString ./.); pkgs = import f.inputs.nixpkgs { system = builtins.currentSystem; }; prose-weirpack = pkgs.callPackage ./pkgs/prose-weirpack.nix { }; in (pkgs.callPackage ./pkgs/prose-lint.nix { inherit prose-weirpack; }).passthru.tests'
 ```
