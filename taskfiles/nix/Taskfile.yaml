@@ -68,6 +68,7 @@ tasks:
       - bash pkgs/zed-update.sh
       - bash pkgs/photo-cli-update.sh
       - bash pkgs/radar-update.sh
+      - bash pkgs/helm-schema-update.sh
       - bash pkgs/claude-powerline-update.sh
       - bash pkgs/leanspec-cli-update.sh
       - bash pkgs/playwright-cli-update.sh
