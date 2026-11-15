@@ -83,6 +83,15 @@
 // file. It keeps --log-backups renamed files, numbered from the most
 // recent, and removes the files past that count.
 //
+// With --check-flags, the router parses the flags that configure its
+// handlers and handles no event. It exits with an error that names the
+// first flag whose value does not parse, such as an --mcp-rules
+// pattern that does not compile. It opens neither the log file nor
+// the state database. The wrapper build in home/claude.nix runs this
+// check, because the same value otherwise fails every hook event.
+// Claude Code treats that failure as a hook error that does not block,
+// so each tool call then runs without the guards of the router.
+//
 // The binary is thin wiring: event dispatch, flag parsing, and the
 // handlers that connect Claude Code's hook protocol to the underlying
 // engines. The engines themselves live in independent, importable

@@ -1145,3 +1145,105 @@ func TestOpenLogger(t *testing.T) {
 		closeLog()
 	})
 }
+
+// TestMainErrCheckFlags covers [mainErr] under --check-flags. Every
+// case names the Stop event, a log file, and a state database. A Stop
+// event creates the log file and the database, so their absence shows
+// that the check handles no event.
+func TestMainErrCheckFlags(t *testing.T) {
+	t.Parallel()
+
+	// The pattern lacks its closing parenthesis.
+	badPattern := strings.Replace(pushRules, conventionalBranchPattern, `^(feat|fix/.+$`, 1)
+	require.NotEqual(t, pushRules, badPattern)
+
+	tcs := map[string]struct {
+		flags configFlags
+		is    error
+		err   string
+	}{
+		"no flags": {},
+		"conditional rule with a pattern that compiles": {
+			flags: configFlags{mcpRules: pushRules},
+		},
+		"conditional rule with a pattern that does not compile": {
+			flags: configFlags{mcpRules: badPattern},
+			is:    mcprules.ErrInvalidRule,
+			err:   "parsing --mcp-rules: conditional rule 0",
+		},
+		"malformed --mcp-rules": {
+			flags: configFlags{mcpRules: "{"},
+			err:   "parsing --mcp-rules",
+		},
+		"malformed --post-impl-skills": {
+			flags: configFlags{postImplSkills: "{"},
+			err:   "parsing --post-impl-skills",
+		},
+		"malformed --commit-skills": {
+			flags: configFlags{commitSkills: "{"},
+			err:   "parsing --commit-skills",
+		},
+		"malformed --command-rules": {
+			flags: configFlags{commandRules: "{"},
+			err:   "parsing --command-rules",
+		},
+		"malformed --formatter-rules": {
+			flags: configFlags{formatterRules: "{"},
+			err:   "parsing --formatter-rules",
+		},
+		"malformed --linter-rules": {
+			flags: configFlags{linterRules: "{"},
+			err:   "parsing --linter-rules",
+		},
+		"malformed --compaction-config": {
+			flags: configFlags{compactionConfig: "{"},
+			err:   "parsing --compaction-config",
+		},
+		"malformed --search-rewrite-config": {
+			flags: configFlags{searchRewriteConfig: "{"},
+			err:   "parsing --search-rewrite-config",
+		},
+		"malformed --sleep-guard-config": {
+			flags: configFlags{sleepGuardConfig: "{"},
+			err:   "parsing --sleep-guard-config",
+		},
+		"malformed --message-lint-config": {
+			flags: configFlags{messageLintConfig: "{"},
+			err:   "parsing --message-lint-config",
+		},
+		"malformed --escape-restore-config": {
+			flags: configFlags{escapeRestoreConfig: "{"},
+			err:   "parsing --escape-restore-config",
+		},
+		"unknown --agent-scope": {
+			flags: configFlags{agentScope: "teammate"},
+			is:    errUnknownAgentScope,
+			err:   "parsing --agent-scope",
+		},
+	}
+
+	for name, tc := range tcs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			logFile := filepath.Join(dir, "log", "router.log")
+			dbPath := filepath.Join(dir, "state.db")
+
+			err := mainErr(logFile, "Stop", "", dbPath, tc.flags, true, 1, 3)
+
+			if tc.err == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.err)
+			}
+
+			if tc.is != nil {
+				require.ErrorIs(t, err, tc.is)
+			}
+
+			assert.NoDirExists(t, filepath.Dir(logFile))
+			assert.NoFileExists(t, dbPath)
+		})
+	}
+}

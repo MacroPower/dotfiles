@@ -378,10 +378,10 @@ let
                 description = ''
                   Regular expression of the `matches` and
                   `branchMatches` tests, in Go syntax. Each test holds
-                  only when the expression matches the whole value.
-                  hook-router exits with an error on every hook event
-                  when the expression does not compile. Every other
-                  test takes no pattern.
+                  only when the expression matches the whole value. The
+                  build of the hook-router wrapper fails when the
+                  expression does not compile. Every other test takes
+                  no pattern.
                 '';
               };
               repoField = mkOption {
@@ -910,6 +910,16 @@ let
     # shellcheck warns SC2016 about them as if they were unexpanded
     # command substitutions.
     excludeShellChecks = [ "SC2016" ];
+    # hook-router exits with an error on every hook event when it
+    # cannot parse one of the flags in `text`, such as a conditional
+    # rule whose pattern does not compile. Claude Code runs the tool
+    # call after that error, so every hook-router guard stops until a
+    # later switch fixes the flag. The check runs the wrapper with
+    # --check-flags, which parses the same flags and handles no
+    # event. This build therefore fails on a flag of that kind.
+    derivationArgs.postCheck = ''
+      "$target" --check-flags
+    '';
     text = ''
       exec hook-router \
         --db "${config.xdg.stateHome}/hook-router/state.db" \
@@ -1692,8 +1702,9 @@ let
   conditionalRuleConflicts = conditionalRuleConflictsIn "ask" ++ conditionalRuleConflictsIn "allow";
 
   # Conditions that pair a pattern or a repo field with the wrong test.
-  # hook-router rejects them on every hook event, so the assertion in
-  # `config` reports them at evaluation instead.
+  # hook-router rejects them, so the build of its wrapper fails on
+  # them. The assertion in `config` reports them first, at evaluation,
+  # and names the option to change.
   conditionalRuleOperandFaults = lib.concatMap (
     rule:
     map (c: "${rule.tool} field ${c.field} with test ${c.test}") (

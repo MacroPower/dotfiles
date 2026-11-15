@@ -31,7 +31,8 @@ import (
 )
 
 // config holds runtime settings resolved from the environment and
-// from flag-parsed wrapper inputs.
+// from flag-parsed wrapper inputs. [mainErr] wires it from
+// [configFromEnv] and [configFlags.parse].
 //
 // Invariant: once [mainErr] finishes wiring, postImpl, commandRules,
 // and formatterRules are non-nil (possibly empty), so handlers can
@@ -262,6 +263,11 @@ func main() {
 		"",
 		"JSON object configuring the PostToolUse:Write and Edit step that puts back the \\uXXXX escapes Claude Code decoded in the call's text ({enable, maxWaitSeconds})",
 	)
+	checkFlags := flag.Bool(
+		"check-flags",
+		false,
+		"parse the flags that configure the handlers, exit with an error when one of them does not parse, and handle no event",
+	)
 
 	flag.Parse()
 
@@ -270,23 +276,26 @@ func main() {
 		*event,
 		*tool,
 		*dbPath,
-		*postImplSkills,
-		*commitSkills,
-		*commandRules,
-		*mcpRules,
-		*formatterRules,
-		*linterRules,
-		*compactionConfig,
-		*compactionOutputDir,
-		*searchRewriteConfig,
-		*sleepGuardConfig,
-		*messageLintConfig,
-		*escapeRestoreConfig,
-		*agentScope,
-		*autoAllow,
-		*skipPlanReview,
-		*rmGuard,
-		*writeGuard,
+		configFlags{
+			postImplSkills:      *postImplSkills,
+			commitSkills:        *commitSkills,
+			commandRules:        *commandRules,
+			mcpRules:            *mcpRules,
+			formatterRules:      *formatterRules,
+			linterRules:         *linterRules,
+			compactionConfig:    *compactionConfig,
+			compactionOutputDir: *compactionOutputDir,
+			searchRewriteConfig: *searchRewriteConfig,
+			sleepGuardConfig:    *sleepGuardConfig,
+			messageLintConfig:   *messageLintConfig,
+			escapeRestoreConfig: *escapeRestoreConfig,
+			agentScope:          *agentScope,
+			autoAllow:           *autoAllow,
+			skipPlanReview:      *skipPlanReview,
+			rmGuard:             *rmGuard,
+			writeGuard:          *writeGuard,
+		},
+		*checkFlags,
 		*logMaxBytes,
 		*logBackups,
 	)
@@ -307,25 +316,47 @@ func main() {
 	os.Exit(1)
 }
 
+// mainErr handles one hook event. It parses the flags that configure
+// the handlers, reads the payload of the event from stdin, and hands
+// both to [run].
+//
+// With checkFlags, it parses those flags and returns the error of the
+// first one that does not parse. It then opens neither the log file
+// nor the state database, and it reads no payload. The check therefore
+// runs in the build of the wrapper in home/claude.nix, where none of
+// the three exists.
 func mainErr(
-	logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON, escapeRestoreConfigJSON, agentScopeName string,
-	autoAllow, skipPlanReview, rmGuard, writeGuard bool,
+	logFile, event, tool, dbPath string,
+	flags configFlags,
+	checkFlags bool,
 	logMaxBytes int64,
 	logBackups int,
 ) error {
+	if checkFlags {
+		_, err := flags.parse(config{}, nil, slog.New(slog.DiscardHandler))
+
+		return err
+	}
+
 	logger, closeLog, err := openLogger(logFile, logMaxBytes, logBackups)
 	if err != nil {
 		return err
 	}
 	defer closeLog()
 
-	escapes, err := parseEscapeRestore(escapeRestoreConfigJSON)
-	if err != nil {
-		return fmt.Errorf("parsing --escape-restore-config: %w", err)
+	// PreToolUse:MCP runs with the store closed. The pull request
+	// lookup of the MCP rules and the message-lint waiver open it
+	// through this opener.
+	var openStore func(context.Context) (*state.Store, error)
+	if dbPath != "" {
+		openStore = func(ctx context.Context) (*state.Store, error) {
+			return state.Open(ctx, dbPath)
+		}
 	}
 
-	if !escapes.Enable {
-		logger.Debug("escape restore is disabled")
+	cfg, err := flags.parse(configFromEnv(), openStore, logger)
+	if err != nil {
+		return err
 	}
 
 	// Read stdin once so [eventNeedsStore] can peek at the payload's
@@ -340,7 +371,10 @@ func mainErr(
 
 	// 45s > 30s busy_timeout leaves headroom for JSON encode + git calls
 	// even when a single DB call burns the full busy_timeout budget.
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second+escapes.waitFor(event, tool, input))
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		45*time.Second+cfg.escapeRestore.waitFor(event, tool, input),
+	)
 	defer cancel()
 
 	var store *state.Store
@@ -361,23 +395,72 @@ func mainErr(
 		}
 	}
 
-	catalog, err := postimpl.Parse(postImplSkillsJSON)
+	return run(ctx, bytes.NewReader(input), os.Stdout, event, tool, store, cfg, logger)
+}
+
+// configFlags holds the values of the flags that configure the
+// handlers, as the command line gives them. [configFlags.parse] turns
+// them into a [config].
+type configFlags struct {
+	postImplSkills      string
+	commitSkills        string
+	commandRules        string
+	mcpRules            string
+	formatterRules      string
+	linterRules         string
+	compactionConfig    string
+	compactionOutputDir string
+	searchRewriteConfig string
+	sleepGuardConfig    string
+	messageLintConfig   string
+	escapeRestoreConfig string
+	agentScope          string
+	autoAllow           bool
+	skipPlanReview      bool
+	rmGuard             bool
+	writeGuard          bool
+}
+
+// parse returns base with every field that a flag configures set. Its
+// error names the first flag whose value does not parse. [mainErr]
+// calls parse for each hook event and for --check-flags, so the check
+// rejects the same values that fail an event.
+//
+// openStore opens the state database for the handlers that run with
+// the store closed (see the openStore field of [config]). A nil
+// openStore leaves those handlers without a store. logger receives a
+// record for each engine that the flags leave empty or disabled.
+func (f configFlags) parse(
+	base config,
+	openStore func(context.Context) (*state.Store, error),
+	logger *slog.Logger,
+) (config, error) {
+	escapes, err := parseEscapeRestore(f.escapeRestoreConfig)
 	if err != nil {
-		return fmt.Errorf("parsing --post-impl-skills: %w", err)
+		return config{}, fmt.Errorf("parsing --escape-restore-config: %w", err)
+	}
+
+	if !escapes.Enable {
+		logger.Debug("escape restore is disabled")
+	}
+
+	catalog, err := postimpl.Parse(f.postImplSkills)
+	if err != nil {
+		return config{}, fmt.Errorf("parsing --post-impl-skills: %w", err)
 	}
 
 	if catalog.Empty() {
 		logger.Warn("post-impl catalog is empty")
 	}
 
-	skills, err := parseCommitSkills(commitSkillsJSON)
+	skills, err := parseCommitSkills(f.commitSkills)
 	if err != nil {
-		return fmt.Errorf("parsing --commit-skills: %w", err)
+		return config{}, fmt.Errorf("parsing --commit-skills: %w", err)
 	}
 
-	rules, err := cmdrules.Parse(commandRulesJSON)
+	rules, err := cmdrules.Parse(f.commandRules)
 	if err != nil {
-		return fmt.Errorf("parsing --command-rules: %w", err)
+		return config{}, fmt.Errorf("parsing --command-rules: %w", err)
 	}
 
 	if rules.Empty() {
@@ -387,19 +470,9 @@ func mainErr(
 		logger.Debug("command rules engine is empty")
 	}
 
-	// PreToolUse:MCP runs with the store closed. The pull request
-	// lookup of the MCP rules and the message-lint waiver open it
-	// through this opener.
-	var openStore func(context.Context) (*state.Store, error)
-	if dbPath != "" {
-		openStore = func(ctx context.Context) (*state.Store, error) {
-			return state.Open(ctx, dbPath)
-		}
-	}
-
-	mcp, err := parseMCPRules(mcpRulesJSON, openStore, logger)
+	mcp, err := parseMCPRules(f.mcpRules, openStore, logger)
 	if err != nil {
-		return err
+		return config{}, err
 	}
 
 	if mcp.Empty() {
@@ -408,66 +481,66 @@ func mainErr(
 		logger.Debug("mcp rules ruleset is empty")
 	}
 
-	formatters, err := formatter.Parse(formatterRulesJSON)
+	formatters, err := formatter.Parse(f.formatterRules)
 	if err != nil {
-		return fmt.Errorf("parsing --formatter-rules: %w", err)
+		return config{}, fmt.Errorf("parsing --formatter-rules: %w", err)
 	}
 
 	if formatters.Empty() {
 		logger.Debug("formatter rules engine is empty")
 	}
 
-	linters, err := linter.Parse(linterRulesJSON)
+	linters, err := linter.Parse(f.linterRules)
 	if err != nil {
-		return fmt.Errorf("parsing --linter-rules: %w", err)
+		return config{}, fmt.Errorf("parsing --linter-rules: %w", err)
 	}
 
 	if linters.Empty() {
 		logger.Debug("linter rules engine is empty")
 	}
 
-	compactor, err := compact.Parse(compactionConfigJSON)
+	compactor, err := compact.Parse(f.compactionConfig)
 	if err != nil {
-		return fmt.Errorf("parsing --compaction-config: %w", err)
+		return config{}, fmt.Errorf("parsing --compaction-config: %w", err)
 	}
 
 	if compactor.Empty() {
 		logger.Debug("output compaction is disabled")
 	}
 
-	searchRewrite, err := searchrewrite.Parse(searchRewriteConfigJSON)
+	searchRewrite, err := searchrewrite.Parse(f.searchRewriteConfig)
 	if err != nil {
-		return fmt.Errorf("parsing --search-rewrite-config: %w", err)
+		return config{}, fmt.Errorf("parsing --search-rewrite-config: %w", err)
 	}
 
 	if !searchRewrite.Grep && !searchRewrite.Find {
 		logger.Debug("search rewriting is disabled")
 	}
 
-	sleepGuard, err := sleepguard.Parse(sleepGuardConfigJSON)
+	sleepGuard, err := sleepguard.Parse(f.sleepGuardConfig)
 	if err != nil {
-		return fmt.Errorf("parsing --sleep-guard-config: %w", err)
+		return config{}, fmt.Errorf("parsing --sleep-guard-config: %w", err)
 	}
 
 	if !sleepGuard.Enable {
 		logger.Debug("foreground sleep guard is disabled")
 	}
 
-	messageLint, err := msglint.Parse(messageLintConfigJSON)
+	messageLint, err := msglint.Parse(f.messageLintConfig)
 	if err != nil {
-		return fmt.Errorf("parsing --message-lint-config: %w", err)
+		return config{}, fmt.Errorf("parsing --message-lint-config: %w", err)
 	}
 
 	if messageLint.Empty() {
 		logger.Debug("message lint is disabled")
 	}
 
-	scope, err := parseAgentScope(agentScopeName)
+	scope, err := parseAgentScope(f.agentScope)
 	if err != nil {
-		return fmt.Errorf("parsing --agent-scope: %w", err)
+		return config{}, fmt.Errorf("parsing --agent-scope: %w", err)
 	}
 
-	cfg := configFromEnv()
+	cfg := base
 	cfg.agentScope = scope
 	cfg.postImpl = catalog
 	cfg.commitSkills = skills
@@ -476,24 +549,24 @@ func mainErr(
 	cfg.formatterRules = formatters
 	cfg.linterRules = linters
 	cfg.compactor = compactor
-	cfg.outputArchive = archive.New(compactionOutputDir)
+	cfg.outputArchive = archive.New(f.compactionOutputDir)
 	cfg.searchRewrite = searchRewrite
 	cfg.sleepGuard = sleepGuard
 	cfg.escapeRestore = escapes
 	cfg.messageLint = messageLint
-	cfg.autoAllow = autoAllow
-	cfg.rmGuard = rmGuard
+	cfg.autoAllow = f.autoAllow
+	cfg.rmGuard = f.rmGuard
 
-	if writeGuard {
+	if f.writeGuard {
 		cfg.writeGuardDirs = func(cwd string) (writeguard.Dirs, error) {
 			return writeguard.DirsFromEnv(os.Getenv, cwd)
 		}
 	}
 
 	cfg.openStore = openStore
-	cfg.skipPlanReview = skipPlanReview
+	cfg.skipPlanReview = f.skipPlanReview
 
-	return run(ctx, bytes.NewReader(input), os.Stdout, event, tool, store, cfg, logger)
+	return cfg, nil
 }
 
 // eventNeedsStore reports whether the dispatch for (event, tool) will
