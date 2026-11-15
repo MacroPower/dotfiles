@@ -1,0 +1,19 @@
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -16,9 +16,13 @@
+-- Run commands from the repository whose tasks you want. Aven infers the
++- Run commands from the repository that you work in. Aven infers the
+   workspace and project from the current directory.
+ - Use `aven doctor` when workspace, database, or project routing is unclear.
+ - Add `--workspace <name-or-key>` when a command must target another workspace.
+-- Let Aven infer the project unless the user specifies one or inference is
+-  incorrect.
++- `add` and `prime` use the inferred project, and `aven prime --json` prints its
++  key in the `project` field. Let them infer it unless the user specifies a
++  project or inference is incorrect.
++- `list` and `search` ignore the inferred project and cover every project of
++  the workspace. Pass `--project <key-or-name>` to them for the tasks of one
++  project.
+ - Run `aven <command> --help` for flags or operations not covered here.
+ - Status values are `inbox`, `backlog`, `todo`, `active`, `done`, and
+   `canceled`.

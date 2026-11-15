@@ -42,3 +42,9 @@ done
 # Update version
 sed -i "s|version = \"$currentVersion\"|version = \"$latestVersion\"|" "$PKG_FILE"
 echo "aven updated to $latestVersion"
+
+# The test fails when the skill of the new release and its binary
+# disagree about which commands use the inferred project.
+echo "  building tests.project-scope..."
+# shellcheck disable=SC2016 # Nix, not the shell, expands the expression.
+(cd "$DIRNAME/.." && nix build --no-link --impure --expr '((builtins.getFlake (toString ./.)).inputs.nixpkgs.legacyPackages.${builtins.currentSystem}.callPackage ./pkgs/aven.nix { }).tests.project-scope')

@@ -1,0 +1,9 @@
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -81,4 +81,6 @@
+ - Inspect dependency and conflict context before changing status or task order.
+ - Run `aven bulk-update ... --dry-run` before a broad mutation.
++- `bulk-update` ignores the inferred project and matches tasks in every project
++  of the workspace. Pass `--project <key-or-name>` to limit it to one project.
+ - `aven delete <ref>` soft-deletes a task. Recover it with
+   `aven restore <ref>`.
