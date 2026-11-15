@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -274,7 +275,8 @@ def state_of(run):
 def configured_run(repo, env, run):
     """Start a run that sets each config value that a batch inherits.
 
-    The run sets a limit, a check, a health command, and a shared glob.
+    The run sets a limit, a check, a health command, a step timeout, and
+    a shared glob.
     """
     ultraclose(
         "init",
@@ -286,6 +288,8 @@ def configured_run(repo, env, run):
         "sh check.sh",
         "--health",
         "docker version",
+        "--step-timeout",
+        "90",
         "--shared",
         GLOB,
         cwd=repo,
@@ -326,6 +330,11 @@ FINISHED = ("landed", "noted", "closed")
 STORED_FILES = {"summary": "summary.txt", "notes": "notes.txt"}
 # The directory that holds a golangci-lint cache of one checkout.
 LINT_CACHE = "golangci-lint-cache"
+# The step timeout that a run starts with, in seconds.
+STEP_TIMEOUT = 3600
+# How long a landing waits for the processes of a step to end after each
+# signal that it sends them, in seconds.
+GRACE = 5
 
 
 def home_repo(tmp):
@@ -458,10 +467,16 @@ class InitTest(unittest.TestCase):
                 # The new run takes no task and no config from the first run.
                 state = state_of(second)
                 self.assertEqual(state["tasks"], {})
-                keys = ("limit", "check", "health", "shared")
+                keys = ("limit", "check", "health", "stepTimeout", "shared")
                 self.assertEqual(
                     {k: state["config"][k] for k in keys},
-                    {"limit": 5, "check": "", "health": "", "shared": DEFAULT_SHARED},
+                    {
+                        "limit": 5,
+                        "check": "",
+                        "health": "",
+                        "stepTimeout": STEP_TIMEOUT,
+                        "shared": DEFAULT_SHARED,
+                    },
                 )
                 status = ultraclose("status", cwd=repo, env=env)
                 self.assertEqual(status.splitlines()[0], f"run={second}")
@@ -534,17 +549,27 @@ class StatusTest(unittest.TestCase):
 
     def test_prints_config(self):
         # name: (the init flags, the shared globs, the check, the health
-        # command)
+        # command, the step timeout)
         cases = {
-            "the defaults": ([], DEFAULT_SHARED, "none", "none"),
-            "a shared glob, a check, and a health command": (
-                ["--shared", GLOB, "--check", "sh check.sh", "--health", "true"],
+            "the defaults": ([], DEFAULT_SHARED, "none", "none", "60m00s"),
+            "a shared glob, a check, a health command, and a step timeout": (
+                [
+                    "--shared",
+                    GLOB,
+                    "--check",
+                    "sh check.sh",
+                    "--health",
+                    "true",
+                    "--step-timeout",
+                    "90",
+                ],
                 DEFAULT_SHARED + [GLOB],
                 "sh check.sh",
                 "true",
+                "1m30s",
             ),
         }
-        for name, (flags, shared, check, health) in cases.items():
+        for name, (flags, shared, check, health, timeout) in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
                 repo, env = new_repo(tmp)
                 ultraclose(
@@ -554,6 +579,7 @@ class StatusTest(unittest.TestCase):
                 self.assertIn(f"shared: {' '.join(shared)}", lines)
                 self.assertIn(f"check: {check}", lines)
                 self.assertIn(f"health: {health}", lines)
+                self.assertIn(f"step timeout: {timeout}", lines)
 
     def test_state_without_health_key(self):
         # A run can continue from a state file that init wrote without
@@ -567,6 +593,21 @@ class StatusTest(unittest.TestCase):
             (run / "state.json").write_text(json.dumps(st))
             lines = ultraclose("status", cwd=repo, env=env).splitlines()
             self.assertIn("health: none", lines)
+
+    def test_state_without_step_timeout_key(self):
+        # A run can continue from a state file that init wrote without
+        # the stepTimeout key. That run has the default step timeout.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            run = Path(tmp, "run")
+            ultraclose(
+                "init", "--run", str(run), "--step-timeout", "90", cwd=repo, env=env
+            )
+            st = state_of(run)
+            del st["config"]["stepTimeout"]
+            (run / "state.json").write_text(json.dumps(st))
+            lines = ultraclose("status", cwd=repo, env=env).splitlines()
+            self.assertIn("step timeout: 60m00s", lines)
 
     def test_marks_ended_run(self):
         # name: (the state of each task, whether status marks the run)
@@ -657,6 +698,7 @@ class ConfigTest(unittest.TestCase):
             "an empty --check": (["--check", ""], {"check": ""}),
             "--health": (["--health", "true"], {"health": "true"}),
             "an empty --health": (["--health", ""], {"health": ""}),
+            "--step-timeout": (["--step-timeout", "120.5"], {"stepTimeout": 120.5}),
             "--disk-floor-gb": (["--disk-floor-gb", "12.5"], {"diskFloorGb": 12.5}),
             "--shared adds a glob": (
                 ["--shared", "*/main.go"],
@@ -707,6 +749,23 @@ class ConfigTest(unittest.TestCase):
             self.assertIn("no shared glob */absent/*", message)
             # The command changes nothing when it refuses one flag.
             self.assertEqual(state_of(run), before)
+
+    def test_refuses_step_timeout_that_is_not_positive_and_finite(self):
+        # A landing with a step timeout of 0 stops each step at its start,
+        # and a landing with an infinite step timeout stops no step.
+        for value in ("0", "-1", "inf", "nan"):
+            with self.subTest(value), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                flag = f"--step-timeout={value}"
+                run = Path(tmp, "run")
+                message = refused("init", "--run", str(run), flag, cwd=repo, env=env)
+                self.assertIn("greater than 0", message)
+                self.assertFalse(run.exists())
+                configured_run(repo, env, run)
+                before = state_of(run)
+                message = refused("config", flag, cwd=repo, env=env)
+                self.assertIn("greater than 0", message)
+                self.assertEqual(state_of(run), before)
 
     def test_next_follows_shared_globs(self):
         # Two tasks edit one file, and the shared glob of the run covers it.
@@ -1349,12 +1408,17 @@ class WatchTest(unittest.TestCase):
                 [(state_of(Path(tmp, "run"))["config"]["repo"], LOW), (other, LOW)],
             )
 
-    def test_refuses_interval_that_is_not_positive(self):
-        # A watch command that accepts a negative interval fails at its
-        # first wait. One that accepts an interval of 0 measures without a
-        # wait, and the run holds a pending task, so it keeps running until
-        # the timeout.
-        for flags in (["--interval", "0"], ["--interval=-1"]):
+    def test_refuses_interval_that_is_not_positive_and_finite(self):
+        # A watch command that accepts a negative or an infinite interval
+        # fails at its first wait. One that accepts an interval of 0
+        # measures without a wait, and the run holds a pending task, so it
+        # keeps running until the timeout.
+        for flags in (
+            ["--interval", "0"],
+            ["--interval=-1"],
+            ["--interval=inf"],
+            ["--interval=nan"],
+        ):
             with self.subTest(flags), tempfile.TemporaryDirectory() as tmp:
                 repo, env = self.start(tmp, "pending")
                 message = refused("watch", *flags, cwd=repo, env=env, timeout=60)
@@ -2642,6 +2706,81 @@ class LeftoverTest(unittest.TestCase):
                 self.assertEqual(self.ahead(repo, env, BRANCH), 2)
 
 
+# A program that stands in for lefthook. It runs a process in a process
+# group of its own, and it ends that process only after SIGINT. The
+# process file of the environment records the ID of the process.
+MANAGER = """\
+import os
+import signal
+import subprocess
+import sys
+
+child = subprocess.Popen(["sleep", "30"], start_new_session=True)
+
+
+def stop(signum, frame):
+    child.kill()
+    sys.exit(1)
+
+
+signal.signal(signal.SIGINT, stop)
+with open(os.environ["PROCESS"], "w") as f:
+    f.write(f"{child.pid}\\n")
+child.wait()
+"""
+
+
+# A shell script that hangs, and whose processes ignore SIGINT. After
+# SIGTERM, its first process creates the stopped file of the environment
+# and ends. That process waits for a second process, which ignores
+# SIGTERM as well. The process file of the environment records the ID of
+# the second process.
+STUBBORN = """\
+trap "" INT
+trap 'touch "$STOPPED"; exit 1' TERM
+(trap "" TERM; exec sleep 30) &
+echo $! >"$PROCESS"
+wait
+"""
+
+
+# A program that hangs. It keeps running after SIGINT, and it records
+# each SIGINT that it gets in the interrupted file of the environment.
+# The process file of the environment records the ID of its process.
+OUTLASTS_SIGINT = """\
+import os
+import signal
+import time
+
+
+def interrupted(signum, frame):
+    with open(os.environ["INTERRUPTED"], "a") as f:
+        f.write("SIGINT\\n")
+
+
+signal.signal(signal.SIGINT, interrupted)
+with open(os.environ["PROCESS"], "w") as f:
+    f.write(f"{os.getpid()}\\n")
+time.sleep(30)
+"""
+
+
+def gone(process):
+    """Whether a process ends within 10 seconds.
+
+    A process that ended keeps its ID until its parent reads its exit
+    status, so the function waits for the ID to leave.
+    """
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        try:
+            os.kill(process, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.05)
+    return False
+
+
 class LandTest(unittest.TestCase):
     """What a landing prints, and how it tells a down service from a fault.
 
@@ -2649,6 +2788,7 @@ class LandTest(unittest.TestCase):
     result OK then starts the next tasks. The check and the commit hooks
     of a landing do not read the golangci-lint cache that every checkout
     shares. A landing also records how long its check and its commit took.
+    It stops a check or a commit that runs longer than the step timeout.
     """
 
     SUBJECT = "feat: add a file"
@@ -2672,6 +2812,14 @@ class LandTest(unittest.TestCase):
     # A step that passes and adds an entry to its golangci-lint cache, as
     # golangci-lint does.
     FILL_CACHE = 'mkdir -p "$GOLANGCI_LINT_CACHE" && touch "$GOLANGCI_LINT_CACHE/entry"'
+    # What a step that hangs prints before it hangs.
+    WAITS = "the step waits for the engine"
+    # A step that hangs. It prints a line and waits for a process that
+    # it starts. The process file of the environment records the ID of
+    # that process.
+    HANG = f'echo "{WAITS}"; sh -c \'echo $$ >"$PROCESS"; exec sleep 30\''
+    # A step whose first run hangs, and whose later runs pass.
+    HANG_ONCE = f'test -e "$RAN" || {{ touch "$RAN"; {HANG}; }}'
 
     def start_task(self, tmp, *flags, hook="exit 0"):
         """Start a run with one task that is ready to land.
@@ -2693,6 +2841,7 @@ class LandTest(unittest.TestCase):
         env["GIT_CONFIG_NOSYSTEM"] = "1"
         env["ENGINE"] = str(Path(tmp, "engine"))
         env["RAN"] = str(Path(tmp, "ran"))
+        env["PROCESS"] = str(Path(tmp, "process"))
         git("init", "-q", "-b", "main", str(repo), cwd=tmp, env=env)
         git("commit", "-q", "--allow-empty", "-m", "init", cwd=repo, env=env)
         ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
@@ -2708,12 +2857,14 @@ class LandTest(unittest.TestCase):
         (hooks / "pre-commit").chmod(0o755)
         return repo, env
 
-    def land(self, repo, env, *flags, stderr=subprocess.PIPE):
+    def land(self, repo, env, *flags, stderr=subprocess.PIPE, timeout=None):
         """Land the task. Return the exit status and the printed lines.
 
         The flags go to the land command. The lines come from the standard
         output. Pass subprocess.STDOUT as stderr to add the lines of the
-        standard error in the order that the command writes both.
+        standard error in the order that the command writes both. A
+        timeout in seconds fails the test when the landing keeps running,
+        such as a landing that does not stop a step that hangs.
         """
         p = subprocess.run(
             [sys.executable, str(SCRIPT), "land", REF, *flags],
@@ -2723,8 +2874,31 @@ class LandTest(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=stderr,
             text=True,
+            timeout=timeout,
         )
         return p.returncode, p.stdout.splitlines()
+
+    def hung_process(self, env):
+        """The ID of the process that a step that hangs waits for.
+
+        Wait until the step records the process.
+        """
+        record = Path(env["PROCESS"])
+        deadline = time.monotonic() + 60
+        while not (record.exists() and record.read_text().endswith("\n")):
+            self.assertLess(time.monotonic(), deadline, "the step did not start")
+            time.sleep(0.05)
+        return int(record.read_text())
+
+    def assert_ended(self, process):
+        """The process that a step waited for ended with the step.
+
+        The test kills a process that still runs, so that the process
+        does not outlive the test.
+        """
+        if not gone(process):
+            os.kill(process, signal.SIGKILL)
+            self.fail(f"the process {process} of the step still runs")
 
     def add_other(self, tmp, repo, env, **row):
         """Add the second task to the run, with the fields of the row.
@@ -3276,6 +3450,344 @@ class LandTest(unittest.TestCase):
                 self.assertEqual(
                     (landings[-1]["ref"], landings[-1]["result"]), (REF, result)
                 )
+
+    def test_stops_step_that_runs_longer_than_step_timeout(self):
+        # The first run of the step hangs, and the step timeout of the run
+        # is 2 seconds.
+        # name: (the check, the hook, the step that hangs, the result)
+        cases = {
+            "a check that hangs": (self.HANG_ONCE, "exit 0", "check", "CHECKTIMEOUT"),
+            "a commit hook that hangs": (
+                "",
+                self.HANG_ONCE,
+                "commit",
+                "COMMITTIMEOUT",
+            ),
+        }
+        for name, (check, hook, step, result) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(
+                    tmp, "--check", check, "--step-timeout", "2", hook=hook
+                )
+                landing = self.land(repo, env, timeout=60)
+                # The step waited for a process that it started. The
+                # landing ended that process with the step.
+                self.assert_ended(self.hung_process(env))
+                # After a stopped commit, the main checkout holds no
+                # change of the task.
+                self.assert_failed(repo, env, landing, result)
+                run = Path(tmp, "run").resolve()
+                log = run / "logs" / f"{REF}.{step}.log"
+                lines = landing[1]
+                self.assertIn(
+                    f"the {step} ran longer than the step timeout of 2s, so the"
+                    f" landing stopped it, see {log}",
+                    lines,
+                )
+                # The end of the log shows where the step stopped.
+                self.assertIn(self.WAITS, lines)
+                self.assertIn(self.WAITS, log.read_text())
+                [entry] = state_of(run)["landings"]
+                self.assertEqual((entry["ref"], entry["result"]), (REF, result))
+                self.assertGreaterEqual(entry["times"][step], 2)
+                # The step ended on the SIGINT of the stop, and the landing
+                # saw it end before the time of the next signal.
+                self.assertLess(entry["times"][step], 2 + GRACE)
+                self.assertRegex(lines[-2], rf"^TIMES (check=\S+ )?{step}=\S+$")
+                # The landing lock is free, and the task lands when its
+                # step ends in time.
+                self.assert_landed(repo, env, self.land(repo, env, timeout=60))
+
+    def test_stops_process_group_that_step_ends_after_sigint(self):
+        # The hook stands in for lefthook, which runs some hook commands
+        # in process groups of their own and ends them only after SIGINT.
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = Path(tmp, "manager.py")
+            manager.write_text(MANAGER)
+            hook = f'exec "{sys.executable}" "{manager}"'
+            repo, env = self.start_task(tmp, "--step-timeout", "2", hook=hook)
+            landing = self.land(repo, env, timeout=60)
+            self.assert_ended(self.hung_process(env))
+            self.assert_failed(repo, env, landing, "COMMITTIMEOUT")
+            # Every process of the commit ended on the SIGINT of the stop,
+            # and the landing saw them end before the time of SIGTERM.
+            [entry] = state_of(Path(tmp, "run"))["landings"]
+            self.assertLess(entry["times"]["commit"], 2 + GRACE)
+
+    def test_stops_processes_that_ignore_signals(self):
+        # The landing sends SIGTERM to the processes that SIGINT did not
+        # end, and it kills the processes that SIGTERM did not end.
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp, "stubborn.sh")
+            script.write_text(STUBBORN)
+            hook = f'exec sh "{script}"'
+            repo, env = self.start_task(tmp, "--step-timeout", "2", hook=hook)
+            stopped = Path(tmp, "stopped")
+            env["STOPPED"] = str(stopped)
+            landing = self.land(repo, env, timeout=60)
+            self.assert_ended(self.hung_process(env))
+            # The first process got SIGTERM before the landing killed the
+            # processes of the step.
+            self.assertTrue(stopped.exists())
+            self.assert_failed(repo, env, landing, "COMMITTIMEOUT")
+
+    def test_config_changes_step_timeout(self):
+        # The run starts with the default step timeout, and the step
+        # hangs for less time than that. So only the step timeout of the
+        # config command stops the step.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--check", self.HANG)
+            ultraclose("config", "--step-timeout", "2", cwd=repo, env=env)
+            landing = self.land(repo, env, timeout=60)
+            self.assert_ended(self.hung_process(env))
+            self.assert_failed(repo, env, landing, "CHECKTIMEOUT")
+
+    def test_state_without_step_timeout_key(self):
+        # A run can continue from a state file that init wrote without
+        # the stepTimeout key. Its landings have the default step timeout.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--check", self.RECORD)
+            state = Path(tmp, "run", "state.json")
+            st = json.loads(state.read_text())
+            del st["config"]["stepTimeout"]
+            state.write_text(json.dumps(st))
+            self.assert_landed(repo, env, self.land(repo, env, timeout=60))
+
+    def test_stopped_step_does_not_run_health_command(self):
+        # The service is down when the landing stops the step. A failed
+        # step with the service down ends the landing with HEALTHFAIL.
+        stop = 'rm "$ENGINE"; '
+        # name: (the check, the hook, the result)
+        cases = {
+            "a check that hangs": (
+                stop + self.HANG,
+                "exit 0",
+                "CHECKTIMEOUT",
+            ),
+            "a commit hook that hangs": (
+                "",
+                stop + self.HANG,
+                "COMMITTIMEOUT",
+            ),
+        }
+        for name, (check, hook, result) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(
+                    tmp,
+                    "--check",
+                    check,
+                    "--health",
+                    self.HEALTH,
+                    "--step-timeout",
+                    "2",
+                    hook=hook,
+                )
+                Path(env["ENGINE"]).touch()
+                landing = self.land(repo, env, timeout=60)
+                self.assert_ended(self.hung_process(env))
+                self.assert_failed(repo, env, landing, result)
+                self.assertNotIn("no engine", landing[1])
+
+    def test_result_line_follows_checkout_that_landing_cannot_restore(self):
+        # The hook leaves the lock file of the index and hangs, as a git
+        # process that the landing kills can. No git command can then
+        # restore the main checkout.
+        hook = f'touch "$LOCK"; {self.HANG_ONCE}'
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--step-timeout", "2", hook=hook)
+            lock = Path(repo, ".git", "index.lock")
+            env["LOCK"] = str(lock)
+            head = git("rev-parse", "HEAD", cwd=repo, env=env)
+            status, lines = self.land(repo, env, timeout=60)
+            self.assert_ended(self.hung_process(env))
+            self.assertEqual(status, 2, lines)
+            self.assertEqual(lines[-1], f"RESULT {REF} COMMITTIMEOUT")
+            self.assertRegex(lines[-2], r"^TIMES commit=\S+$")
+            # The output names the branch whose changes the main checkout
+            # holds, the git command that failed, and the lock file.
+            output = "\n".join(lines)
+            self.assertIn(
+                "the landing did not restore the main checkout, which still"
+                f" holds the changes of task/{REF}:",
+                lines,
+            )
+            reset = f"git reset -q --hard {head}"
+            self.assertIn(f"ultraclose: {reset} failed in {repo}:", lines)
+            self.assertIn(str(lock), output)
+            self.assertNotEqual(git("status", "--porcelain", cwd=repo, env=env), "")
+            # The task lands after the lock file leaves and the two
+            # commands of the rollback run.
+            lock.unlink()
+            git(*reset.split()[1:], cwd=repo, env=env)
+            git("clean", "-qfd", cwd=repo, env=env)
+            self.assert_landed(repo, env, self.land(repo, env, timeout=60))
+
+    def test_signal_during_restore_lets_git_command_finish(self):
+        # The landing restores the main checkout after a commit that fails
+        # and after a commit that it stops. The git wrapper sends a signal
+        # to the land command when the landing runs the first git command
+        # of the restore. The wrapper waits until the land command ends.
+        # Then it runs that git command and records that the command
+        # passed.
+        # result: (the init flags, the commit hook)
+        cases = {
+            "COMMITFAIL": ([], "exit 1"),
+            "COMMITTIMEOUT": (["--step-timeout", "2"], self.HANG),
+        }
+        for (result, (flags, hook)), sig in itertools.product(
+            cases.items(), (signal.SIGTERM, signal.SIGHUP)
+        ):
+            with (
+                self.subTest(result=result, signal=sig.name),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                # The land command of this test inherits the signals that
+                # the caller of the test ignores, and it keeps them ignored.
+                if signal.getsignal(sig) == signal.SIG_IGN:
+                    self.skipTest(f"the caller of the test ignores {sig.name}")
+                repo, env = self.start_task(tmp, *flags, hook=hook)
+                wrapper = Path(tmp, "wrapper")
+                wrapper.mkdir()
+                real = shutil.which("git", path=env["PATH"])
+                reset = Path(tmp, "reset")
+                (wrapper / "git").write_text(
+                    "#!/bin/sh\n"
+                    'if [ "$1 $2 $3" = "reset -q --hard" ]; then\n'
+                    f"  kill -{sig.name.removeprefix('SIG')} $PPID\n"
+                    "  while kill -0 $PPID 2>/dev/null; do sleep 0.05; done\n"
+                    f'  "{real}" "$@" && touch "{reset}"\n'
+                    "  exit\n"
+                    "fi\n"
+                    f'exec "{real}" "$@"\n'
+                )
+                (wrapper / "git").chmod(0o755)
+                env["PATH"] = f"{wrapper}{os.pathsep}{env['PATH']}"
+                status, lines = self.land(repo, env, timeout=60)
+                if result == "COMMITTIMEOUT":
+                    self.assert_ended(self.hung_process(env))
+                # The signal ended the land command before it printed a
+                # result.
+                self.assertEqual(status, -sig, lines)
+                self.assertFalse(
+                    [line for line in lines if line.startswith(f"RESULT {REF}")],
+                    lines,
+                )
+                # The git command of the restore outlives the land command.
+                deadline = time.monotonic() + 30
+                while not reset.exists():
+                    self.assertLess(
+                        time.monotonic(), deadline, "the git reset did not pass"
+                    )
+                    time.sleep(0.05)
+                self.assertEqual(git("status", "--porcelain", cwd=repo, env=env), "")
+
+    def test_signal_stops_step_that_runs(self):
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            with self.subTest(sig.name), tempfile.TemporaryDirectory() as tmp:
+                # The land command of this test inherits the signals that
+                # the caller of the test ignores, and it keeps them ignored.
+                if signal.getsignal(sig) == signal.SIG_IGN:
+                    self.skipTest(f"the caller of the test ignores {sig.name}")
+                repo, env = self.start_task(tmp, "--check", self.HANG)
+                p = subprocess.Popen(
+                    [sys.executable, str(SCRIPT), "land", REF],
+                    cwd=repo,
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                try:
+                    process = self.hung_process(env)
+                    p.send_signal(sig)
+                    p.wait(timeout=60)
+                finally:
+                    p.kill()
+                    p.wait()
+                self.assertNotEqual(p.returncode, 0)
+                self.assert_ended(process)
+
+    def test_signal_during_stop_ends_command_after_step_stops(self):
+        # The step keeps running after SIGINT, so the landing sends it
+        # SIGTERM GRACE seconds after SIGINT. A signal comes in that time.
+        # name: (the init flags, the signal that starts the stop, the
+        # signal that comes during the stop, the exit status of the land
+        # command)
+        cases = {
+            "a second SIGINT": ([], signal.SIGINT, signal.SIGINT, -signal.SIGINT),
+            "SIGTERM after the step timeout": (
+                ["--step-timeout", "1"],
+                None,
+                signal.SIGTERM,
+                128 + signal.SIGTERM,
+            ),
+        }
+        for name, (flags, first, second, status) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                # The land command of this test inherits the signals that
+                # the caller of the test ignores, and it keeps them ignored.
+                if signal.getsignal(second) == signal.SIG_IGN:
+                    self.skipTest(f"the caller of the test ignores {second.name}")
+                program = Path(tmp, "program.py")
+                program.write_text(OUTLASTS_SIGINT)
+                check = f'exec "{sys.executable}" "{program}"'
+                repo, env = self.start_task(tmp, "--check", check, *flags)
+                interrupted = Path(tmp, "interrupted")
+                env["INTERRUPTED"] = str(interrupted)
+                p = subprocess.Popen(
+                    [sys.executable, str(SCRIPT), "land", REF],
+                    cwd=repo,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+                try:
+                    process = self.hung_process(env)
+                    if first:
+                        p.send_signal(first)
+                    # The step records the SIGINT of the stop.
+                    deadline = time.monotonic() + 60
+                    while not interrupted.exists():
+                        self.assertLess(
+                            time.monotonic(), deadline, "the stop did not start"
+                        )
+                        time.sleep(0.05)
+                    p.send_signal(second)
+                    output = p.communicate(timeout=60)[0]
+                finally:
+                    p.kill()
+                    p.wait()
+                self.assert_ended(process)
+                # The signal ended the land command before it printed a
+                # result.
+                self.assertEqual(p.returncode, status)
+                self.assertNotIn(f"RESULT {REF}", output)
+
+    def test_keeps_signal_that_caller_ignores(self):
+        # The land command inherits each signal that its caller ignores,
+        # such as SIGHUP under nohup. That signal does not stop the step,
+        # and the task lands.
+        check = 'echo $$ >"$PROCESS"; sleep 3'
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            with self.subTest(sig.name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp, "--check", check)
+                ignore = f'trap "" {sig.name.removeprefix("SIG")}; exec "$0" "$@"'
+                p = subprocess.Popen(
+                    ["sh", "-c", ignore, sys.executable, str(SCRIPT), "land", REF],
+                    cwd=repo,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                try:
+                    self.hung_process(env)
+                    p.send_signal(sig)
+                    output = p.communicate(timeout=60)[0]
+                finally:
+                    p.kill()
+                    p.wait()
+                self.assert_landed(repo, env, (p.returncode, output.splitlines()))
 
 
 # The Workflow tool runs the body of close-task.js inside an async

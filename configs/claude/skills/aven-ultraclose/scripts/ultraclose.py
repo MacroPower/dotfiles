@@ -58,12 +58,12 @@ branch and the worktree of a task without a directory, and it prints a
 line that names a kept worktree.
 
   init --run DIR [--limit N] [--rounds N] [--check CMD] [--health CMD]
-       [--shared GLOB]... [--disk-floor-gb N] [--disk-floor-percent PATH=N]...
-       [--disk-path PATH]... [--force]
+       [--step-timeout SECONDS] [--shared GLOB]... [--disk-floor-gb N]
+       [--disk-floor-percent PATH=N]... [--disk-path PATH]... [--force]
   config [--limit N] [--rounds N] [--check CMD] [--health CMD]
-       [--shared GLOB]... [--unshared GLOB]... [--disk-floor-gb N]
-       [--disk-floor-percent PATH=N]... [--disk-path PATH]...
-       [--no-disk-path PATH]...
+       [--step-timeout SECONDS] [--shared GLOB]... [--unshared GLOB]...
+       [--disk-floor-gb N] [--disk-floor-percent PATH=N]...
+       [--disk-path PATH]... [--no-disk-path PATH]...
                          change the config of the run, then print it
   triage FILE            add or update tasks from a JSON list
   untriaged [FILTER]...  print the open aven tasks that the run does not hold
@@ -155,6 +155,43 @@ landing with HEALTHFAIL, and the output then names the log of the failed
 step. When a task ends in HEALTHFAIL after the check or the commit a
 second time, read that log instead of landing the task again.
 
+A landing stops its check, and each attempt of its commit, when the step
+runs longer than the step timeout of the run. The --step-timeout flag of
+init and config sets the step timeout in seconds, and the default is
+3600. Set it to more than the time that the slowest step of a healthy
+landing takes, so that a landing stops only a step that hangs. A hook
+that hangs then holds the landing lock only until the landing stops it,
+and the queued landings run after it.
+
+Each step of a landing leads a process group of its own. To stop a step,
+the landing sends SIGINT to that process group, as an interrupt from the
+keyboard does. git then removes its lock files, and lefthook ends the
+process groups that it started for its hook commands. The processes of
+the group that still run GRACE seconds later get SIGTERM, and the
+processes that run GRACE seconds after SIGTERM get SIGKILL. A process
+that left the group keeps running when no process of the group ends it.
+
+A landing that stopped a step ends with the result CHECKTIMEOUT or
+COMMITTIMEOUT, and its output names the step timeout and the log of the
+step. The landing does not run the health command after it stops a step,
+so neither result shows whether the service of the health command
+answers.
+
+After COMMITTIMEOUT, the landing restores the main checkout as it does
+after a failed commit. A killed process can leave a lock file of git
+there, and the landing then cannot restore the main checkout. Its output
+says so above the RESULT line, and it names the git command that failed.
+
+When SIGINT, SIGTERM, or SIGHUP ends the land command during a step, the
+command stops that step first. When one of these signals comes while the
+command stops a step, the signal ends the command after the step stops.
+Between the steps, SIGTERM and SIGHUP end the command at once, and the
+git command that the land command runs keeps running until it ends. So
+the git reset that restores the main checkout after a failed or stopped
+commit finishes its work. SIGKILL ends the command at once, and the step
+then keeps running. A signal that the caller of the land command ignores
+stays ignored.
+
 A shared glob names files that two running tasks may both edit. The
 scheduler matches each glob against "/" plus the path of a file relative
 to the repository, and "*" also matches "/". So /README.md matches the
@@ -169,9 +206,11 @@ import argparse
 import fcntl
 import fnmatch
 import json
+import math
 import os
 import re
 import shutil
+import signal
 import statistics
 import subprocess
 import sys
@@ -221,6 +260,17 @@ LINT_CACHE = "golangci-lint-cache"
 # The steps of a landing whose time the run records, in the order in which
 # a landing runs them. The commit step runs the commit hooks.
 TIMED = ("check", "commit")
+# The step timeout that a run starts with, in seconds. A landing stops its
+# check, and each attempt of its commit, when the step runs longer. The
+# --step-timeout flag gives a run whose healthy steps take longer a higher
+# step timeout.
+STEP_TIMEOUT = 3600
+# How long a landing waits for the processes of a step to end after each
+# signal that it sends them, in seconds.
+GRACE = 5
+# The signals that end the land command. The command stops the step that
+# runs before it ends.
+ENDS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 # How many landings the status command prints with their times.
 RECENT = 5
 # What the status command and the watch command print for a run that has
@@ -550,6 +600,7 @@ def cmd_init(a):
         "rounds": a.rounds,
         "check": a.check,
         "health": a.health,
+        "stepTimeout": a.step_timeout,
         "shared": list(dict.fromkeys(DEFAULT_SHARED + (a.shared or []))),
         "diskFloorGb": a.disk_floor_gb,
         "diskFloorPercent": percents,
@@ -588,6 +639,7 @@ def cmd_config(a):
             "rounds": a.rounds,
             "check": a.check,
             "health": a.health,
+            "stepTimeout": a.step_timeout,
             "diskFloorGb": a.disk_floor_gb,
         }
         cfg.update({k: v for k, v in changes.items() if v is not None})
@@ -1049,6 +1101,7 @@ def cmd_status(a):
     print(f"check: {cfg['check'] or 'none'}")
     # A run can continue from a state file that has no health key.
     print(f"health: {cfg.get('health') or 'none'}")
+    print(f"step timeout: {span(step_timeout(cfg))}")
     if ended(tasks):
         print(f"ended: {ENDED}")
     for ref, t in sorted(tasks.items()):
@@ -1105,6 +1158,112 @@ def lint_env(cache):
     return {**os.environ, "GOLANGCI_LINT_CACHE": str(cache)}
 
 
+def step_timeout(cfg):
+    """How long a timed step of a landing runs before the landing stops it.
+
+    A run can continue from a state file that has no stepTimeout key. That
+    run has the default step timeout.
+    """
+    return cfg.get("stepTimeout", STEP_TIMEOUT)
+
+
+def alive(p):
+    """Whether a process still runs in the process group that p leads."""
+    # A leader that has ended stays in its group until the landing reads
+    # its exit status.
+    p.poll()
+    try:
+        os.killpg(p.pid, 0)
+    except (ProcessLookupError, PermissionError):
+        # The group holds no process, or no process that the landing can
+        # signal.
+        return False
+    return True
+
+
+def stop_group(p):
+    """End every process of the process group that p leads.
+
+    The group first gets SIGINT, the signal of an interrupt from the
+    keyboard. git then removes its lock files. lefthook 2.2 runs some
+    hook commands in process groups of their own, and it ends those
+    groups only after SIGINT. The processes that still run GRACE seconds
+    later get SIGTERM, and the processes that run GRACE seconds after
+    SIGTERM get SIGKILL. The function waits GRACE seconds at most for the
+    processes that it kills. A process that left the group keeps running
+    when no process of the group ends it.
+    """
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(p.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        until = time.monotonic() + GRACE
+        while alive(p):
+            if time.monotonic() >= until:
+                break
+            time.sleep(0.05)
+        else:
+            return
+
+
+def run_step(cmd, cwd, env, log, limit):
+    """Run one step of a landing, and return its exit status.
+
+    The output of the step goes to the log file. The step leads a process
+    group of its own, so that the landing can stop the step together with
+    each process that the step started. When the step runs longer than
+    limit seconds, the function stops that group as stop_group says, and
+    it returns None. A limit of None gives the step no time limit. The
+    function also stops the group when a signal of ENDS ends the land
+    command during the step. A signal of ENDS that comes while the
+    function stops the group ends the land command after the group stops.
+    """
+    # During the step, SIGTERM and SIGHUP raise an exit in place of the
+    # death of the process, so that the function stops the step. Python
+    # raises an interrupt for SIGINT. A signal that the caller ignores
+    # stays ignored, and Python keeps an ignored SIGINT ignored. After the
+    # step, each signal gets its old handler back. So between the steps,
+    # SIGTERM and SIGHUP end the land command at once. The git command that
+    # the land command runs then keeps running until it ends. An exit that
+    # raises in subprocess.run makes it kill its child with SIGKILL. A
+    # killed git command can leave a lock file of git in the main checkout.
+    old = {}
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        if signal.getsignal(sig) == signal.SIG_DFL:
+            old[sig] = signal.signal(
+                sig, lambda signum, frame: sys.exit(128 + signum)
+            )
+    try:
+        with open(log, "w") as f:
+            p = subprocess.Popen(
+                cmd,
+                cwd=cwd,
+                env=env,
+                stdout=f,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            try:
+                return p.wait(timeout=limit)
+            except BaseException as e:
+                # No signal reaches the step after the land command ends.
+                # So the command blocks the signals that end it until the
+                # group stops, and a blocked signal raises when the mask
+                # returns.
+                mask = signal.pthread_sigmask(signal.SIG_BLOCK, ENDS)
+                try:
+                    stop_group(p)
+                finally:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+                if isinstance(e, subprocess.TimeoutExpired):
+                    return None
+                raise
+    finally:
+        for sig, handler in old.items():
+            signal.signal(sig, handler)
+
+
 def tail(path, n=40):
     return "\n".join(Path(path).read_text(errors="replace").splitlines()[-n:])
 
@@ -1125,6 +1284,7 @@ def cmd_land(a):
     wt, br, base = worktree(cfg, ref), branch(ref), cfg["base"]
     msg = run / "tasks" / ref / "msg.txt"
     logs = run / "logs"
+    timeout = step_timeout(cfg)
 
     # How long each timed step of this landing took, in seconds.
     times = {}
@@ -1163,20 +1323,35 @@ def cmd_land(a):
         print(f"RESULT {ref} {code}")
         sys.exit(2)
 
-    def logged(name, *cmd, cwd, env=None):
+    def logged(name, *cmd, cwd, env=None, limit=None):
+        """Run a step, and return its exit status and the path of its log.
+
+        The exit status is None when the step ran longer than limit
+        seconds and the landing stopped it, as run_step says.
+        """
         path = logs / f"{ref}.{name}.log"
-        with open(path, "w") as f:
-            rc = subprocess.run(
-                cmd, cwd=cwd, env=env, stdout=f, stderr=subprocess.STDOUT, check=False
-            )
-        return rc.returncode, path
+        return run_step(cmd, cwd, env, path, limit), path
 
     def timed(name, *cmd, cwd, env=None):
-        """Run a logged step, and add how long it took to the times."""
+        """Run a logged step under the step timeout of the run.
+
+        Add how long the step took to the times.
+        """
         began = time.monotonic()
-        rc, path = logged(name, *cmd, cwd=cwd, env=env)
+        rc, path = logged(name, *cmd, cwd=cwd, env=env, limit=timeout)
         times[name] = round(times.get(name, 0) + time.monotonic() - began, 1)
         return rc, path
+
+    def overran(name, path):
+        """What a landing prints about a timed step that it stopped.
+
+        The text names the step timeout and the log of the step, and it
+        ends with the last lines of that log.
+        """
+        return (
+            f"the {name} ran longer than the step timeout of {span(timeout)}, so"
+            f" the landing stopped it, see {path}\n{tail(path)}"
+        ).rstrip()
 
     def require_health(when):
         """Fail the landing with HEALTHFAIL when the health command fails.
@@ -1244,6 +1419,8 @@ def cmd_land(a):
                 cwd=wt,
                 env=lint_env(Path(git_dir, LINT_CACHE)),
             )
+            if rc is None:
+                fail("CHECKTIMEOUT", overran("check", log))
             if rc:
                 require_health(f"after the check failed, see {log}")
                 fail("CHECKFAIL", tail(log))
@@ -1280,6 +1457,19 @@ def cmd_land(a):
                 cwd=repo,
                 env=lint_env(run / LINT_CACHE),
             )
+            if rc is None:
+                detail = overran("commit", log)
+                # A process that the landing killed can leave a lock file
+                # of git in the main checkout, and the rollback then
+                # fails. The landing still prints its RESULT line.
+                try:
+                    rollback()
+                except SystemExit as e:
+                    detail += (
+                        "\nthe landing did not restore the main checkout, which"
+                        f" still holds the changes of {br}:\n{e}"
+                    )
+                fail("COMMITTIMEOUT", detail)
             if rc:
                 rollback()
                 require_health(f"after the commit failed, see {log}")
@@ -1320,11 +1510,13 @@ def percent(text):
     return value
 
 
-def interval(text):
-    """The value of a flag that takes how long to wait, in seconds."""
+def seconds(text):
+    """The value of a flag that takes a time span in seconds."""
     value = float(text)
-    if not value > 0:
-        raise argparse.ArgumentTypeError("give a number of seconds greater than 0")
+    if not 0 < value < math.inf:
+        raise argparse.ArgumentTypeError(
+            "give a finite number of seconds greater than 0"
+        )
     return value
 
 
@@ -1360,6 +1552,11 @@ FLOOR_PERCENT_HELP = (
 DISK_PATH_HELP = (
     "also watch the file system that holds PATH, such as the directory of a build cache"
 )
+STEP_TIMEOUT_HELP = (
+    "a landing stops its check, and each attempt of its commit, when the step"
+    " runs longer than SECONDS. Give more than the time that the slowest step"
+    " of a healthy landing takes"
+)
 
 
 def main():
@@ -1378,6 +1575,13 @@ def main():
         default="",
         metavar="CMD",
         help="a fast command that fails when a service of the check or a hook is down",
+    )
+    s.add_argument(
+        "--step-timeout",
+        type=seconds,
+        default=STEP_TIMEOUT,
+        metavar="SECONDS",
+        help=f"{STEP_TIMEOUT_HELP}. The default is %(default)s",
     )
     s.add_argument(
         "--shared",
@@ -1421,6 +1625,9 @@ def main():
         "--health",
         metavar="CMD",
         help="an empty command removes the health command",
+    )
+    s.add_argument(
+        "--step-timeout", type=seconds, metavar="SECONDS", help=STEP_TIMEOUT_HELP
     )
     s.add_argument(
         "--shared",
@@ -1515,7 +1722,7 @@ def main():
     s = sub.add_parser("watch")
     s.add_argument(
         "--interval",
-        type=interval,
+        type=seconds,
         default=60,
         metavar="SECONDS",
         help="how long the command waits between two measurements",

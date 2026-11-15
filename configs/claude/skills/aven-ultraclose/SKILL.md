@@ -90,8 +90,9 @@ approved task. `status` then prints an `ended` line.
    - **No run:** do the rest of the setup.
    - **A run with an `ended` line:** do the rest of the setup, which
      starts a new run. The arguments ask for a new batch of tasks. Do not
-     copy the limit, the check, the health command, the shared globs, or the
-     `rules.md` of the ended run. They fit the tasks that it closed.
+     copy the limit, the check, the health command, the step timeout, the
+     shared globs, or the `rules.md` of the ended run. They fit the tasks
+     that it closed.
    - **A run without an `ended` line:** continue that run, and skip the
      rest of the setup. First fit the run to the arguments and to the
      open tasks that are not in it, as the Config section says.
@@ -115,6 +116,13 @@ approved task. `status` then prints an `ended` line.
    when the check or a commit hook requires a service, such as Docker. The
    health command is a fast command that fails when the service is down,
    such as `docker version`.
+
+   Pass `--step-timeout <seconds>` when the check or the commit of a
+   healthy landing can run longer than half an hour, such as a build with
+   empty caches. Each landing stops its check and its commit when the
+   step runs longer than the step timeout, as the Landing section says.
+   The default is 3600 seconds. Set the step timeout to at least twice
+   the longest time that a healthy step takes.
 
    Pass `--shared <glob>` for each kind of file that two running tasks may
    both edit. Each `--shared` glob adds to the default globs, which cover
@@ -225,13 +233,13 @@ approved task. `status` then prints an `ended` line.
 
 `init` writes the config of a run, and the run keeps that config until you
 change it. `ultraclose.py status` prints the limit, the shared globs, the
-check, and the health command. It also prints the free space and the floor
-of each watched file system.
+check, the health command, and the step timeout. It also prints the free
+space and the floor of each watched file system.
 
 `ultraclose.py config` changes the config and prints the result. It takes
-the `--limit`, `--rounds`, `--check`, `--health`, `--shared`,
-`--disk-floor-gb`, `--disk-floor-percent`, and `--disk-path` flags of
-`init`. Its `--unshared <glob>` flag removes a shared glob, and its
+the `--limit`, `--rounds`, `--check`, `--health`, `--step-timeout`,
+`--shared`, `--disk-floor-gb`, `--disk-floor-percent`, and `--disk-path`
+flags of `init`. Its `--unshared <glob>` flag removes a shared glob, and its
 `--no-disk-path <path>` flag removes a disk path and the percent floor of
 that path. `--disk-floor-percent <dir>=0` removes the percent floor of
 `<dir>` and keeps `<dir>` as a disk path. `config` prints the warning of
@@ -263,6 +271,8 @@ prints those tasks, as the Scope section says. Fit the run in these ways:
   does not test, change the health command as well. When the new check
   fills a build cache that the disk flags do not cover, set those flags as
   the Setup section says.
+- Raise the step timeout when the check or the commit of those tasks can
+  run longer than half of it, as the Setup section says.
 - Rewrite each rule in `rules.md` that the landed tasks made false, such as
   the layout of a module that they split. Remove each exception that the
   run made for one of them.
@@ -515,6 +525,7 @@ Act on the result as this table says:
 | `OK` | Launch one Workflow per object of the list that follows the `RESULT` line, as the Loop section says. Skip each object whose task you relaunched after the landing started. When an error follows the line instead of the list, the task landed and `next` failed. Repair the cause of the error, and run `ultraclose.py next`. |
 | `CONFLICT` | The base branch moved under the task. Sync the task. |
 | `CHECKFAIL`, `COMMITFAIL` | The check or a commit hook failed. Find the cause in the failing output, and act on that cause. |
+| `CHECKTIMEOUT`, `COMMITTIMEOUT` | The check or the commit ran longer than the step timeout, and the landing stopped it. Find the cause in the last lines of the output, and act on that cause before you start another landing. |
 | `HEALTHFAIL` | The service that the check or a commit hook requires is down. Repair the service and land again. Do not sync the task. When the same task ends in `HEALTHFAIL` after the check or the commit a second time, read the log that the output names above the `RESULT` line, and do not land the task again. |
 | `WTDIRTY` | An agent left files behind. Delete probe files and built binaries, commit real changes with `--no-verify`, and land again. |
 | `MSGHASREF`, `REFINDIFF` | Remove the task ref from the message or the code, and land again. |
@@ -543,6 +554,42 @@ with a test that fills the memory or the disk. Then each landing of the task cau
 failure again. After the same task fails a second time for the same cause,
 sync the task with the log of the failed step when that log shows that the
 change causes the failure. Otherwise, note the task.
+
+Each landing stops its check and its commit when the step runs longer than
+the step timeout of the run. The landing then ends the processes of the
+step, and its result is `CHECKTIMEOUT` or `COMMITTIMEOUT`. So a hook that
+hangs holds the queued landings only until the landing stops it. The
+landing does not run the health command after it stops a step, so neither
+result shows whether the service answers.
+
+`CHECKTIMEOUT` and `COMMITTIMEOUT` do not show that the task must change.
+The output names the log of the step, and the last lines of that log come
+before the `TIMES` line. Those lines show what the step did when the
+landing stopped it. Each cause has its own action:
+
+| Cause | Action |
+| --- | --- |
+| The step waited for a service that did not answer, such as a Dagger call whose engine another client removed. | Confirm that the service answers, such as with the health command of the run, and repair the service when it does not. Then land again. Do not sync the task. |
+| The step still did its work, such as a build that fills an empty cache. | Find why the step was slow, as this section says for the `TIMES` line. When a healthy step takes that long, raise the step timeout with `ultraclose.py config --step-timeout <seconds>`. Then land again. Do not sync the task. |
+| The step ran a build or a test of the changed code that does not end. | Sync the task. |
+
+The change might cause the wait for a service, such as with a test that
+stops the service. The same task can end in a timeout result a second
+time, with the end of its log at the same place. Then do not land the task
+again. Sync the task with the log of the step when that log shows that the
+change causes the wait. Otherwise, note the task.
+
+After `COMMITTIMEOUT`, the landing restores the main checkout as it does
+after a failed commit. A process that the landing killed can leave a lock
+file of git, and the landing then cannot restore the main checkout. Its
+output says so above the `TIMES` line, and it names the git command that
+failed, such as `git reset -q --hard <commit>`. Repair the main checkout
+before the next landing:
+
+1. Confirm that no git process runs in the main checkout.
+2. Remove the lock file that the output names.
+3. Run the git command that failed again, in the main checkout.
+4. Run `git clean -fd` in the main checkout.
 
 When you fix something by hand before a landing, record the fix in
 `notes.md`, because no reviewer saw it.
