@@ -119,6 +119,11 @@ import (
 // payloads from a subagent (see [agentScope]). Its zero value handles
 // every payload, so a bare config{} test literal is unaffected.
 //
+// escapeRestore configures the [handlePostFileWrite] step that puts
+// back the `\uXXXX` escapes that Claude Code decoded in a Write or an
+// Edit (see [restoreDecodedEscapes]). Its zero value leaves the file as
+// the tool wrote it, so a bare config{} test literal is a no-op.
+//
 // writeGuardDirs, when non-nil, turns on the [handleFileWritePre] guard
 // and returns the directories its sandbox write policy resolves against
 // for a session in cwd. mainErr sets it to [writeguard.DirsFromEnv]
@@ -134,6 +139,7 @@ type config struct {
 	compactor      *compact.Compactor
 	outputArchive  *archive.Archive
 	searchRewrite  searchrewrite.Config
+	escapeRestore  escapeRestore
 	sleepGuard     sleepguard.Config
 	messageLint    msglint.Config
 	openStore      func(context.Context) (*state.Store, error)
@@ -163,6 +169,9 @@ func configFromEnv() config {
 
 	return cfg
 }
+
+// eventPostToolUse is the --event value of a PostToolUse hook.
+const eventPostToolUse = "PostToolUse"
 
 // errUnknownAgentScope reports an --agent-scope value that names no
 // [agentScope].
@@ -237,10 +246,37 @@ func main() {
 	rmGuard := flag.Bool("rm-guard", false, "deny a PreToolUse:Bash rm or rmdir whose target Claude Code would stop on a permission prompt (variable-leading or statically unresolvable)")
 	agentScope := flag.String("agent-scope", "", "handle only payloads from the main conversation (\"main\", no agent_id) or only payloads from a subagent (\"subagent\", agent_id set); \"\" handles every payload")
 	writeGuard := flag.Bool("write-guard", false, "ask before a Write, Edit, MultiEdit, or NotebookEdit call in plan or bypassPermissions mode writes a path the sandbox denies to commands (use only where Claude Code's sandbox is on)")
+	escapeRestoreConfig := flag.String(
+		"escape-restore-config",
+		"",
+		"JSON object configuring the PostToolUse:Write and Edit step that puts back the \\uXXXX escapes Claude Code decoded in the call's text ({enable, maxWaitSeconds})",
+	)
 
 	flag.Parse()
 
-	err := mainErr(*logFile, *event, *tool, *dbPath, *postImplSkills, *commitSkills, *commandRules, *mcpRules, *formatterRules, *linterRules, *compactionConfig, *compactionOutputDir, *searchRewriteConfig, *sleepGuardConfig, *messageLintConfig, *agentScope, *autoAllow, *skipPlanReview, *rmGuard, *writeGuard)
+	err := mainErr(
+		*logFile,
+		*event,
+		*tool,
+		*dbPath,
+		*postImplSkills,
+		*commitSkills,
+		*commandRules,
+		*mcpRules,
+		*formatterRules,
+		*linterRules,
+		*compactionConfig,
+		*compactionOutputDir,
+		*searchRewriteConfig,
+		*sleepGuardConfig,
+		*messageLintConfig,
+		*escapeRestoreConfig,
+		*agentScope,
+		*autoAllow,
+		*skipPlanReview,
+		*rmGuard,
+		*writeGuard,
+	)
 	if err == nil {
 		return
 	}
@@ -258,17 +294,24 @@ func main() {
 	os.Exit(1)
 }
 
-func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON, agentScopeName string, autoAllow, skipPlanReview, rmGuard, writeGuard bool) error {
+func mainErr(
+	logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON, escapeRestoreConfigJSON, agentScopeName string,
+	autoAllow, skipPlanReview, rmGuard, writeGuard bool,
+) error {
 	logger, closeLog, err := openLogger(logFile)
 	if err != nil {
 		return err
 	}
 	defer closeLog()
 
-	// 45s > 30s busy_timeout leaves headroom for JSON encode + git calls
-	// even when a single DB call burns the full busy_timeout budget.
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
+	escapes, err := parseEscapeRestore(escapeRestoreConfigJSON)
+	if err != nil {
+		return fmt.Errorf("parsing --escape-restore-config: %w", err)
+	}
+
+	if !escapes.Enable {
+		logger.Debug("escape restore is disabled")
+	}
 
 	// Read stdin once so [eventNeedsStore] can peek at the payload's
 	// tool_name. The matcher-less PostToolUse hook fires hook-router
@@ -279,6 +322,11 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	if err != nil {
 		return fmt.Errorf("reading stdin: %w", err)
 	}
+
+	// 45s > 30s busy_timeout leaves headroom for JSON encode + git calls
+	// even when a single DB call burns the full busy_timeout budget.
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second+escapes.waitFor(event, tool, input))
+	defer cancel()
 
 	var store *state.Store
 
@@ -416,6 +464,7 @@ func mainErr(logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON,
 	cfg.outputArchive = archive.New(compactionOutputDir)
 	cfg.searchRewrite = searchRewrite
 	cfg.sleepGuard = sleepGuard
+	cfg.escapeRestore = escapes
 	cfg.messageLint = messageLint
 	cfg.autoAllow = autoAllow
 	cfg.rmGuard = rmGuard
@@ -447,7 +496,7 @@ func eventNeedsStore(event, tool string, input []byte) bool {
 		return true
 	case "PreToolUse":
 		return tool == "ExitPlanMode" || tool == "EnterPlanMode"
-	case "PostToolUse":
+	case eventPostToolUse:
 		toolName := tool
 		if toolName == "" {
 			parsed, err := hook.ParseInput(input)
@@ -532,7 +581,7 @@ func run(
 		default:
 			return nil
 		}
-	case "PostToolUse":
+	case eventPostToolUse:
 		// The PostToolUse hook entries of home/claude.nix pass no
 		// --tool for the tools of Claude Code, and hook-router routes
 		// by tool internally. Claude Code does not inject a

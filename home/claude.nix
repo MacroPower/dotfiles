@@ -987,6 +987,11 @@ let
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
         ${lib.optionalString cfg.rmGuard "--rm-guard"} \
+        --escape-restore-config ${
+          # Passed unconditionally, like --sleep-guard-config: enable
+          # travels inside the JSON.
+          lib.escapeShellArg (builtins.toJSON cfg.escapeRestore)
+        } \
         ${lib.optionalString sandboxEnabled "--write-guard"} \
         "$@"
     '';
@@ -2382,6 +2387,58 @@ in
         session waits out the prompt before it can retry. The deny
         reaches the agent first and carries the rewrite. See
         tools/hook-router/rmguard for the matching rules.
+      '';
+    };
+
+    escapeRestore = mkOption {
+      type = types.submodule {
+        options = {
+          enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether hook-router puts back the `\uXXXX` escapes that
+              Claude Code decoded in the text of a Write or an Edit.
+              Claude Code decodes each such escape in a tool input
+              before the tool runs, so Go source that spells a
+              character as an escape reaches the file with the
+              character itself. hook-router reads the text that the
+              model sent from the session transcript and rewrites the
+              text that the call wrote. It leaves every other tool
+              alone. A Bash command and an MCP tool argument keep the
+              decoded characters.
+            '';
+          };
+          maxWaitSeconds = mkOption {
+            type = types.ints.positive;
+            default = 120;
+            description = ''
+              Longest wait for the transcript entry of a Write or an
+              Edit, in seconds. Claude Code runs a tool as soon as the
+              model has sent the call. It writes the transcript entry
+              after the model has sent its whole message, so the entry
+              of a call that other calls follow arrives late.
+              hook-router waits only when the text of the call holds a
+              character outside ASCII. The model is still sending its
+              message during the wait, so the wait delays only the
+              later calls of that message. When the entry does not
+              arrive, the hook tells the agent which characters it did
+              not check. The value extends the timeout of the Write and
+              Edit hook entries. A call whose escapes all name ASCII
+              characters gets one read of the transcript, so the
+              restore misses that call when its entry arrives late.
+            '';
+          };
+        };
+      };
+      default = { };
+      description = ''
+        hook-router PostToolUse restore of decoded `\uXXXX` escapes
+        after a Write or an Edit. camelCase keys so `builtins.toJSON`
+        matches the Go struct tags in tools/hook-router/escapes.go
+        escapeRestore. The restore reads `wireToolInputs` from the
+        transcript, which Claude Code does not document. Set `enable`
+        to false when a Claude Code release moves that data.
       '';
     };
 
@@ -4418,6 +4475,12 @@ in
                 # (tools/hook-router/main.go); 60s is a backstop for a
                 # hung process, not a working budget.
                 routerTimeout = 60;
+                # The Write and Edit entries can first wait
+                # escapeRestore.maxWaitSeconds for the transcript entry
+                # of the call. hook-router adds that wait to its own
+                # timeout, so the backstop grows by the same amount.
+                fileWriteTimeout =
+                  routerTimeout + (if cfg.escapeRestore.enable then cfg.escapeRestore.maxWaitSeconds else 0);
                 # Exec form: with `args` present Claude Code resolves
                 # `command` as an executable and spawns it directly, so no
                 # shell parses the store path or the flags.
@@ -4541,6 +4604,20 @@ in
                     # hook. hook-router logs formatter and linter crashes
                     # and swallows them, so they stay in its own log.
                     #
+                    # With escapeRestore on, the same invocation first
+                    # puts back the `\uXXXX` escapes that Claude Code
+                    # decoded in a Write or an Edit
+                    # (tools/hook-router/escapes.go). The formatter and
+                    # the linter then read the file as the model wrote
+                    # it. A notice about an escape that hook-router
+                    # could not put back also arrives through exit
+                    # code 2. The restore waits for the transcript entry
+                    # of the call, so fileWriteTimeout covers that wait.
+                    # In the main conversation the restore runs in the
+                    # background with the lint. A later call of the same
+                    # message can then read the file before the escapes
+                    # are back.
+                    #
                     # Claude Code delivers an asyncRewake hook's exit-2
                     # stderr to the main conversation, even for a
                     # subagent's edit, so --agent-scope splits the work
@@ -4555,8 +4632,14 @@ in
                     # real tool name from the payload.
                     matcher = "^(Write|Edit|MultiEdit)$";
                     hooks = [
-                      ((scoped "main" (router "PostToolUse" null)) // { asyncRewake = true; })
-                      (scoped "subagent" (router "PostToolUse" null))
+                      (
+                        (scoped "main" (router "PostToolUse" null))
+                        // {
+                          asyncRewake = true;
+                          timeout = fileWriteTimeout;
+                        }
+                      )
+                      ((scoped "subagent" (router "PostToolUse" null)) // { timeout = fileWriteTimeout; })
                     ];
                   }
                 ]
@@ -4841,6 +4924,16 @@ in
       + lib.optionalString cfg.rmGuard ''
         - A hook denies `rm` and `rmdir` on a target Claude Code cannot check before the command runs, because Claude Code forces a permission prompt on it in every permission mode. Give `rm` literal paths. Guard a leading variable with `:?` (`rm -rf "''${DIR:?}/''${name:?}"`). Do not remove the output of a command substitution (`rm -rf $(...)`); run it first and remove the paths it prints. Do not `cd` before a relative glob (`cd build && rm -rf ./*`). Do not put a trailing `/*` under `~`, `..`, a variable, or another glob (`rm -rf ~/x/*`, `rm -rf build/*/*`).
       ''
+      + (
+        if cfg.escapeRestore.enable then
+          ''
+            - Claude Code turns every `\uXXXX` escape in a tool input into its character before the tool runs. After a Write or an Edit, a hook puts back each escape of a character outside ASCII. The escape of an ASCII character, such as `<` in a JSON string, usually stays decoded, so build its backslash at run time (`chr(92) + "u003c"` in Python) or check the file after the call. No other tool gets the escapes back, so a heredoc, an inline script, or a `-m` message in a Bash command carries the character. Put text that needs the escape of a character outside ASCII in a file with Write, then run or pass the file in a later message (`python3 fix.py`, `git commit -F msg.txt`), because in the main conversation the escapes come back only after the message that wrote the file ends.
+          ''
+        else
+          ''
+            - Claude Code turns every `\uXXXX` escape in a tool input into its character before the tool runs, in Write and Edit too. To keep an escape, build its backslash at run time (`chr(92) + "u2028"` in Python), or type two backslashes where the reader takes the pair as one (a sed or Perl replacement).
+          ''
+      )
       + ''
 
         ## Python

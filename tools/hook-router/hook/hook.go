@@ -11,9 +11,12 @@ import (
 //
 // Cwd, HookEventName, and TranscriptPath are sent on every event.
 // Source is set on SessionStart only (one of "startup", "resume",
-// "clear", "compact"). AgentID and AgentType are set on SubagentStart
-// and SubagentStop, TeammateName on TeammateIdle, and Trigger on
-// PreCompact and PostCompact (one of "manual", "auto").
+// "clear", "compact"). ToolUseID is set on PreToolUse and
+// PostToolUse, and names the tool call in the transcript. AgentID and
+// AgentType are set on SubagentStart and SubagentStop, and AgentID also
+// on every payload that a subagent's tool call fires. TeammateName is
+// set on TeammateIdle, and Trigger on PreCompact and PostCompact (one
+// of "manual", "auto").
 //
 // The tool_response of a PostToolUse payload has one of two forms.
 // Claude Code sends a JSON object for its own tools, such as Bash, and
@@ -27,6 +30,7 @@ type Input struct {
 	ToolInput      map[string]any `json:"tool_input"`
 	ToolResponse   map[string]any `json:"tool_response"`
 	ToolContent    []ContentBlock `json:"-"`
+	ToolUseID      string         `json:"tool_use_id"`
 	TranscriptPath string         `json:"transcript_path"`
 	Prompt         string         `json:"prompt"`
 	StopHookActive bool           `json:"stop_hook_active"`

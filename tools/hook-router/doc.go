@@ -51,7 +51,10 @@
 //     Findings block through exit code 2, which reaches the agent that
 //     made the edit. A Write reports every finding, and an Edit reports
 //     those on the lines it wrote and those it created elsewhere in the
-//     file.
+//     file. Under --escape-restore-config, a Write or an Edit first
+//     gets back the `\uXXXX` escapes that Claude Code decoded in its
+//     text. An escape that the handler cannot put back blocks through
+//     exit code 2 as well.
 //   - Stop blocks with a message that instructs an AskUserQuestion call,
 //     until the post-impl question has an answer for the current plan
 //     cycle.
@@ -85,6 +88,8 @@
 //     and by the arguments of a call.
 //   - formatter: file-formatter routing.
 //   - linter: file-linter routing and finding filtering.
+//   - wireinput: the tool input as the model sent it, and the restore
+//     of the escapes that Claude Code decoded in it.
 //   - compact: output compaction.
 //   - archive: uncompacted-output archiving.
 //   - searchrewrite: rewriting grep into rg and find into bfs.

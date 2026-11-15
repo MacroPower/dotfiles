@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -22,6 +24,11 @@ import (
 // linter crashes at warn and swallows them, so a wedged or missing tool
 // never reaches the hook JSON channel.
 //
+// Under cfg.escapeRestore, [restoreDecodedEscapes] runs before the
+// formatter and puts back the `\uXXXX` escapes that Claude Code decoded
+// in the call. Its notice about an escape that it could not put back
+// leads the [*blockError], ahead of the linter findings.
+//
 // Emits no hookSpecificOutput.
 func handlePostFileWrite(
 	ctx context.Context,
@@ -29,7 +36,7 @@ func handlePostFileWrite(
 	cfg config,
 	logger *slog.Logger,
 ) error {
-	if cfg.formatterRules.Empty() && cfg.linterRules.Empty() {
+	if cfg.formatterRules.Empty() && cfg.linterRules.Empty() && !cfg.escapeRestore.Enable {
 		return nil
 	}
 
@@ -44,9 +51,30 @@ func handlePostFileWrite(
 		return nil
 	}
 
+	notice := ""
+	if cfg.escapeRestore.Enable {
+		h, notice = restoreDecodedEscapes(ctx, h, filePath, cfg.escapeRestore, logger)
+	}
+
 	formatPath(ctx, cfg, filePath, logger)
 
-	return lintPath(ctx, cfg, h, filePath, logger)
+	return withNotice(notice, lintPath(ctx, cfg, h, filePath, logger))
+}
+
+// withNotice puts notice ahead of the linter findings in err, the
+// result of [lintPath]. An empty notice returns err unchanged, and a
+// notice without findings blocks on its own.
+func withNotice(notice string, err error) error {
+	if notice == "" {
+		return err
+	}
+
+	var blocked *blockError
+	if errors.As(err, &blocked) {
+		return &blockError{Reason: notice + "\n\n" + blocked.Reason}
+	}
+
+	return &blockError{Reason: notice}
 }
 
 // handlePostBashEdits runs the matching formatter rule against every
@@ -118,13 +146,38 @@ func handlePostBashEdits(
 // formatPath runs the first formatter rule whose glob accepts filePath.
 // A path no rule matches stays untouched. A failing formatter logs at
 // warn and nothing more, so formatter breakage never reaches Claude.
+//
+// The formatter runs under the lock of the file, see [lockFile]. A
+// formatter reads the file and writes it back. Without the lock, it can
+// write back the file from before the restore of another call's hook.
 func formatPath(ctx context.Context, cfg config, filePath string, logger *slog.Logger) {
 	rule, ok := cfg.formatterRules.Match(filePath)
 	if !ok {
 		return
 	}
 
-	err := rule.Run(ctx, filePath)
+	lock, err := lockFile(ctx, filePath, os.O_RDONLY)
+	if errors.Is(err, fs.ErrNotExist) {
+		return
+	}
+
+	if err != nil {
+		logger.WarnContext(ctx, "formatter skipped the file it could not lock",
+			slog.String("file_path", filePath),
+			slog.Any("error", err),
+		)
+
+		return
+	}
+
+	defer func() {
+		err := lock.Close()
+		if err != nil {
+			logger.WarnContext(ctx, "closing locked file", slog.String("file_path", filePath), slog.Any("error", err))
+		}
+	}()
+
+	err = rule.Run(ctx, filePath)
 	if err != nil {
 		logger.Warn("formatter run failed",
 			slog.String("file_path", filePath),

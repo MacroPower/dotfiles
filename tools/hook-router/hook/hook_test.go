@@ -55,6 +55,7 @@ func TestParseInput(t *testing.T) {
 		assert.Equal(t, "PostToolUse", got.HookEventName)
 		assert.Equal(t, "mcp__github__create_pull_request", got.ToolName)
 		assert.Equal(t, "MacroPower", got.ToolInput["owner"])
+		assert.Equal(t, "toolu_01F18cNuFkaeyTCHJeh7UBCf", got.ToolUseID)
 		assert.Nil(t, got.ToolResponse)
 		assert.Equal(t, []hook.ContentBlock{{
 			Type: "text",
