@@ -47,12 +47,17 @@
 # check also skips an opener with a verb before the first comma (`The
 # results were alarming,`) and a time or manner phrase (`This time,`).
 #
+# A stray comma between a subject and its verb still reads as the start
+# of a comma aside (`This application written in Go, simplifies`), and
+# the rule accepts that misfire.
+#
 # Measurement
 #
 # The rule hit 90 lines in the measure.py corpus, and 20 of 20 sampled
 # hits held the sentence open across an aside of a clause or a list.
-# Seven hits were comma asides. One of them was a stray comma between a
-# subject and its verb (`This application written in Go, simplifies`).
+#
+# The comma form produced 7 of the 90 hits, and 6 of the 7 were asides.
+# The seventh hit fell outside the sample.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Readability::ProseLongParenthetical: <message>
