@@ -4,7 +4,7 @@
 # no-negation, after its `no` (`needs no npm`). The object is the noun
 # that the verb acts on. A negation on the verb is not-negation (`does
 # not need npm`). `needs no npm` negates the verb through its object, so
-# the reader meets the noun before learning that the sentence is
+# the reader meets the verb before learning that the sentence is
 # negative. The fix moves the negation onto the verb, so the negation
 # comes first. The rule sits at Required, because it matches an exact
 # phrase and every fix moves the negation the same way.
