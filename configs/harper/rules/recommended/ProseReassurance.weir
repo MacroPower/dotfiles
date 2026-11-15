@@ -17,9 +17,8 @@
 # so does its comma form (`no more, no less`).
 #
 # `nothing more, nothing less` never takes `than`, so it counts as
-# written. `without changing it` stays unconditional. By default, a Weir
-# match stops at a comma, so `let scope "Sentence"` lets the comma forms
-# cross one.
+# written. By default, a Weir match stops at a comma, so `let scope
+# "Sentence"` lets the comma forms cross one.
 #
 # A negated word after a space needs a word to consume (`less !than`),
 # so each branch with `!than` or `!@magic` has a twin for the end of a
@@ -53,11 +52,14 @@
 # a verb, `nothing else` is the subject of a new clause (`touches the
 # file and nothing else references it`).
 #
-# `without changing it` also marks a contrast that matters (`Fsck checks
-# the filesystem without changing it when invoked with -n`). The rule
-# reports it anyway. The sentence reads better with the contrast named
-# (`With -n, fsck only reports`), and the prose skill lists the phrase
-# as the writer weighing a fact on the reader's behalf.
+# The rule leaves out `without changing it`, because the phrase also
+# states a fact that its sentence needs. In `A validating policy accepts
+# or rejects an object without changing it`, the phrase separates a
+# validating policy from a mutating one, and the fix deletes that fact.
+# On a getter, the phrase vouches (`Value returns the current count
+# without changing it`), and the rule passes that sentence too. The
+# phrase hit no lines in the measure.py corpus, so no sample measures a
+# guard that separates the two senses.
 #
 # Related Rules
 #
@@ -71,7 +73,7 @@
 # nothing else`.
 expr tagged [ADJ, ADP, ADV, AUX, CCONJ, DET, INTJ, NOUN, NUM, PART, PRON, PROPN, SCONJ, SYM, VERB, X]
 expr magic [number, numbers, byte, bytes, prefix, string, strings, value, values, constant, constants]
-expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (no more, no less !than), (no more, no less[., ;, :, (,)]), (nothing more, nothing less), (nothing more and nothing less), (and nothing else!( )), (and nothing else !@tagged!( )), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that), (without changing it)]
+expr main [(no more and no less !than), (no more and no less[., ;, :, (,)]), (no more, no less !than), (no more, no less[., ;, :, (,)]), (nothing more, nothing less), (nothing more and nothing less), (and nothing else!( )), (and nothing else !@tagged!( )), (exactly what you would expect), (exactly what you'd expect), (no magic !@magic), (no magic[., ;, :, (,)]), (no surprises[., ;, :, (,)]), (as the name [suggests, implies]), (the [whole, entire] point [of, is, was, that]), ([is, was] the [whole, entire] point), (it does exactly that)]
 let message "Reassurance. A stated fact does not need vouching, so delete the phrase."
 let description "Flags phrases that insist on a fact the sentence already stated."
 let becomes ""
@@ -89,3 +91,4 @@ allows "The reader reads no more and no less than n bytes, or returns an error."
 allows "The reader reads no more, no less than n bytes."
 allows "Probe touches the file and nothing else references it."
 allows "The prune does not touch it, and nothing else deletes it."
+allows "A validating policy accepts or rejects an object without changing it."

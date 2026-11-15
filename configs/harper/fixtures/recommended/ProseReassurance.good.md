@@ -19,3 +19,4 @@ The pass rewrites the header and nothing else
 references the file.
 The prune does not touch it, and nothing else deletes it.
 The reader reads no more, no less than n bytes.
+A validating policy accepts or rejects an object without changing it.

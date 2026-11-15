@@ -9,7 +9,6 @@ As the name implies, Flush writes the buffer.
 That is the entire point of the function.
 That is the whole point of the function.
 It does exactly that.
-Value returns the current count without changing it.
 No magic is involved; the loader reads the environment variable.
 The whole point is that the bucket allows bursts.
 ReadFull reads exactly n bytes, no more and no less, or returns an error.
