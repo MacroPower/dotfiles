@@ -15,6 +15,12 @@
 # slash. It also reads the characters on each side of the pair, so the
 # check can skip a path, a URL, or a name.
 #
+# `media` holds every top-level media type that the Internet Assigned
+# Numbers Authority (IANA) registers, and `kinds` holds the endings that
+# mark two joined words. The media guard skips each pair that `media`
+# matches and `kinds` does not. Two joined words therefore pass when the
+# first is a top-level type and `kinds` lacks the second (`model/view`).
+#
 # configs/harper/comment-checks.txt lists the check, so prose-lint also
 # runs it on the comments of a source file. The list puts `!go` after
 # the name, so prose-lint skips the check on Go comments. A pair that
@@ -31,11 +37,14 @@
 # quoted value, a link, or an attribute (`"text/plain"`,
 # `[database/sql]`, `targetDir="images/qr"`). A pair before `package`
 # names an import path (`the net/http package`), and a pair that opens
-# with `golang/` or `kubernetes/` names a repository. A pair that opens
-# with a top-level media type such as `text` or `image` passes
-# (`text/html`). Pairs that end in another such type or in `binary`
-# still report (`audio/video`, `text/binary`), because they join two
-# words.
+# with `golang/` or `kubernetes/` names a repository.
+#
+# A pair that opens with a top-level media type passes as a media type
+# (`text/html`, `message/http`). When such a pair ends in another
+# top-level type or in `binary`, it joins two words and still reports
+# (`audio/video`, `text/binary`). The type `example` is the exception.
+# IANA registers it as a subtype of other types, so `text/example`
+# passes.
 #
 # Go comments name import paths with no `package` after them (`the
 # client in net/http`). `pair` cannot tell such a path from two joined
@@ -64,8 +73,8 @@
 function BEGIN_CHECK() {
   pair = "(^|[^A-Za-z0-9_./~:@\"'=[-])[a-z]+/[a-z]+([^A-Za-z0-9_/.-]|\\.([^A-Za-z0-9]|$)|$)"
   owner = "^(golang|kubernetes)/"
-  media = "^(application|text|image|audio|video|multipart|font)/"
-  kinds = "/(application|text|image|audio|video|multipart|font|binary)$"
+  media = "^(application|audio|example|font|haptics|image|message|model|multipart|text|video)/"
+  kinds = "/(application|audio|font|haptics|image|message|model|multipart|text|video|binary)$"
 }
 
 function prose(text,   rest, base, at, hit, after) {

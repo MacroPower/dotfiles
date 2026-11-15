@@ -21,3 +21,13 @@ The shortcode sets targetDir="images/qr".
 The server answers with text/html.
 
 The docs live in the kubernetes/website repository.
+
+The proxy answers with message/http.
+
+The viewer loads model/stl files.
+
+The pad plays haptics/ivs effects.
+
+The draft shows example/widget as a placeholder type.
+
+The sample labels its body message/example.
