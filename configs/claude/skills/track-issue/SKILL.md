@@ -24,12 +24,15 @@ config in the `dotfiles` project with `--label self-improve`. The config
 covers skills, agents, hooks, permission rules, MCP servers, and CLAUDE.md.
 
 Pass `--project <key>` to `aven add`, `aven search`, and `aven list`.
-Without the flag, `aven add` infers the project from the working directory,
-and `aven search` and `aven list` return the tasks of every project. Do not
-pass `--project` to `aven note` or `aven related add`. The ref already
-selects the task, and both commands reject the flag. `aven edit` reads the
-flag as a request to move the task to that project, so leave it off there
-too.
+Without the flag, each command uses the project that aven infers from the
+working directory. That project is not always the one that you file in.
+When the directory belongs to no project, `aven add` fails, and
+`aven search` and `aven list` return the tasks of every project.
+
+Do not pass `--project` to `aven note` or `aven related add`. The ref
+already selects the task, and both commands reject the flag. `aven edit`
+reads the flag as a request to move the task to that project, so leave it
+off there too.
 
 ## Duplicates
 

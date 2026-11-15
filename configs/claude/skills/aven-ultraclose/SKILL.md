@@ -59,8 +59,10 @@ slots.
 
 `ultraclose.py untriaged --project <key>` prints each task of the queue
 that the run does not hold. `<key>` names the aven project of the
-repository. Always pass `--project`, because `aven list` covers every
-project without it. Add each `aven list` filter that the arguments hold.
+repository. Always pass `--project`. Without it, `aven list` keeps to the
+project that aven infers from the main checkout, and it covers every
+project when aven infers none. Add each `aven list` filter that the
+arguments hold.
 The command prints a JSON list with the ref, the title, and the priority
 of each task. The list is empty when the run holds the whole queue.
 

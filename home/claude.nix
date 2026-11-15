@@ -4338,6 +4338,10 @@ in
         ];
         # The task database, its attachments, and the log all live here.
         sandbox.allowWrite = [ "~/.local/state/aven" ];
+        # After each change, aven wakes its daemon through this socket
+        # beside the database. The daemon then syncs the change without
+        # waiting for its sync interval.
+        sandbox.allowUnixSockets = [ "${config.xdg.stateHome}/aven/db.sqlite.host.sock" ];
         instructions.items = [
           "Refs like `APP-7KQ9` name aven tasks. Load the `aven` skill before running `aven` commands."
         ];

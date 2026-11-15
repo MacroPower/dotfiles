@@ -52,9 +52,10 @@ row holds the ref, the title, and the priority of its task. Add the files
 of the task to the row before you load it with triage.
 
 Each FILTER of untriaged is an argument of aven list, such as
---project app or --label bug. Without --project, aven list covers the
-tasks of every project. With --limit N, untriaged prints at most N rows,
-and the tasks that the run holds do not count toward N.
+--project app or --label bug. Without --project, aven list keeps to the
+project that aven infers from the main checkout, and it covers every
+project when aven infers none. With --limit N, untriaged prints at most
+N rows, and the tasks that the run holds do not count toward N.
 
 The land command prints the failing output of a failed landing. The last
 line that a failed landing prints is the RESULT line. With --next, a
@@ -960,9 +961,11 @@ def main():
         usage="%(prog)s [-h] [FILTER]...",
         description="Print the open aven tasks that the run does not hold."
         " Each FILTER is an argument of aven list, such as --project app or"
-        " --label bug. Without --project, aven list covers the tasks of"
-        " every project. With --limit N, the command prints at most N rows,"
-        " and the tasks that the run holds do not count toward N.",
+        " --label bug. Without --project, aven list keeps to the project"
+        " that aven infers from the main checkout, and it covers every"
+        " project when aven infers none. With --limit N, the command prints"
+        " at most N rows, and the tasks that the run holds do not count"
+        " toward N.",
     )
     s.set_defaults(fn=cmd_untriaged)
 

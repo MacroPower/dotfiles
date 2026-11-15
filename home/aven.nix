@@ -20,7 +20,9 @@ let
   syncEnabled = isDarwin || isTerrarium;
 
   # `aven server` exits when its storage is missing, so launchd starts it
-  # only once `aven server setup` has created this file.
+  # only after `aven server setup` has created this file. The server reads
+  # its settings from an optional `server.yaml` beside this file. It does
+  # not read config.yaml, so managedConfig sets nothing for the server.
   serverDb = "${config.xdg.stateHome}/aven/server/sync-server.sqlite";
   daemonLogDir = "${config.home.homeDirectory}/Library/Logs/aven";
 
@@ -226,7 +228,7 @@ in
     aven-daemon = {
       enable = true;
       config = {
-        Label = "com.raine.aven.daemon";
+        Label = "fi.zendit.Aven.daemon";
         ProgramArguments = [
           (lib.getExe pkgs.aven)
           "daemon"

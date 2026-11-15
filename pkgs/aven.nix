@@ -6,24 +6,24 @@
 }:
 
 let
-  version = "0.1.50";
+  version = "0.1.56";
 
   srcs = {
     "aarch64-darwin" = {
       url = "https://github.com/raine/aven/releases/download/v${version}/aven-darwin-arm64.tar.gz";
-      hash = "sha256-GqJMNGOcQv6Y/hdoTA9M60jYz6l23gUXZYZkFU0t67o=";
+      hash = "sha256-gduS2t3O9knU/dmRsBNGadZz76Y3fJ8wELFaKOQdRMc=";
     };
     "x86_64-darwin" = {
       url = "https://github.com/raine/aven/releases/download/v${version}/aven-darwin-amd64.tar.gz";
-      hash = "sha256-gZBnKiLpQv4UQYfocFfdgB+OQ7jCjgEorZ6DZAWajV0=";
+      hash = "sha256-G0VY6ugj4ym94P7/YOqLV4kVRN9BUKbFveMFpAdzlas=";
     };
     "aarch64-linux" = {
       url = "https://github.com/raine/aven/releases/download/v${version}/aven-linux-arm64.tar.gz";
-      hash = "sha256-hc1St0Z/V0DM/uGKGG8uoKKKsx3zeDBWOHxdodHrACE=";
+      hash = "sha256-+ONunvYmQvpi9aGZmsr81LsVoRaGmV8j6itRihf0BX8=";
     };
     "x86_64-linux" = {
       url = "https://github.com/raine/aven/releases/download/v${version}/aven-linux-amd64.tar.gz";
-      hash = "sha256-DcR+ERhqElfWqM4WHScqO2NyxhQA41emJcDiQ2d2drM=";
+      hash = "sha256-7DqAZqqi4BS8QL0wlzufeoYDsmLvozaQ9Afe0AI4y7E=";
     };
   };
 
@@ -61,12 +61,6 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   # names that command in the skill of every release. It also tells the
   # agent when to ask the user before it creates a label.
   #
-  # Releases before 0.1.51 use the inferred project in `add` and `prime`,
-  # but their `list` and `search` cover every project of the workspace.
-  # The project-scope patch makes the skill of those releases name both
-  # groups of commands. From 0.1.51, `list` and `search` keep to the
-  # inferred project, and the skill says so.
-  #
   # `--fuzz=0` fails the build when a release rewrites the lines around a
   # hunk, so a hunk never lands inside another bullet. With
   # `--no-backup-if-mismatch`, a hunk that applies at an offset leaves no
@@ -82,34 +76,34 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       <${./aven-skill-bulk-update-scope.patch}
     patch --fuzz=0 --no-backup-if-mismatch -d $out/share/aven/skills/claude -p1 \
       <${./aven-skill-unknown-label.patch}
-    ${lib.optionalString (lib.versionOlder version "0.1.51") ''
-      patch --fuzz=0 --no-backup-if-mismatch -d $out/share/aven/skills/claude -p1 \
-        <${./aven-skill-project-scope.patch}
-    ''}
 
     mkdir -p $out/share/fish/vendor_completions.d
     $out/bin/aven completions fish > $out/share/fish/vendor_completions.d/aven.fish
     runHook postInstall
   '';
 
-  # Checks the project-scope patch and the bulk-update patch against the
+  # Checks what the skill says about the inferred project against the
   # binary. The test runs `list`, `search`, and `bulk-update` from the
   # directory of one project, in a workspace that also holds a task of
   # another project.
   #
-  # When `list` prints the task of the other project, the skill must carry
-  # the claim of the project-scope patch. `search` must then cover every
-  # project, and `--project` must narrow `list` and `search` to one
-  # project. `add` must file its task in the inferred project, and
-  # `prime --json` must keep to that project and print its key.
+  # `add` must file its task in the inferred project, and `prime --json`
+  # must keep to that project and print its key. `list` and `search` must
+  # keep to that project too, and the skill of the release must say so.
+  # `--all-projects` must widen both commands to every project, and
+  # `--project` must point them at the other project. From a directory
+  # that belongs to no project, both commands must cover every project,
+  # and `add` must fail.
+  #
+  # The track-issue and aven-ultraclose skills state the same rules for
+  # `add`, `list`, and `search`. When a release changes one of the rules,
+  # the test fails. Update those skills together with the test.
   #
   # When `bulk-update` matches the task of the other project, the skill
   # must carry the claim of the bulk-update patch, and `--project` must
-  # narrow `bulk-update` to one project.
-  #
-  # When `list` or `bulk-update` keeps to the inferred project, the skill
-  # must not carry the claim about that command. A release that changes
-  # the scope then fails the test until you drop the patch.
+  # narrow `bulk-update` to one project. When `bulk-update` keeps to the
+  # inferred project, the skill must not carry the claim. A release that
+  # changes the scope then fails the test until you drop the patch.
   #
   # home/claude.nix installs the whole skill directory as the aven skill,
   # so the test also checks that the directory holds only SKILL.md.
@@ -143,26 +137,45 @@ stdenvNoCC.mkDerivation (finalAttrs: {
         own='alpha task'
         other='beta task'
 
-        list_claim='`list` and `search` ignore the inferred project'
+        # only OUTPUT TASK OTHER succeeds when the output of a command
+        # names the first task and does not name the second one.
+        only() {
+          [[ $1 == *"$2"* && $1 != *"$3"* ]]
+        }
+        # both OUTPUT succeeds when the output names the task of each
+        # project.
+        both() {
+          [[ $1 == *"$own"* && $1 == *"$other"* ]]
+        }
+
+        listed=$(aven list --project alpha)
+        only "$listed" "$own" "$other" ||
+          fail '`add` did not file its task in the inferred project'
+        primed=$(aven prime --json)
+        [[ $primed == *'"project": "alpha"'* && $primed != *"$other"* ]] ||
+          fail '`prime --json` did not keep to the inferred project or print its key'
+
+        list_claim='`list` and `search` default to the project inferred'
+        [[ $skill == *"$list_claim"* && $skill == *'`--all-projects`'* ]] ||
+          fail 'the skill does not say that `list` and `search` keep to the inferred project'
         listed=$(aven list)
-        if [[ $listed == *"$other"* ]]; then
-          [[ $skill == *"$list_claim"* ]] ||
-            fail '`list` covers every project, but the skill does not say so'
-          found=$(aven search task)
-          [[ $found == *"$other"* ]] ||
-            fail '`list` covers every project, but `search` does not'
-          listed=$(aven list --project alpha)
-          [[ $listed == *"$own"* ]] ||
-            fail '`add` did not file its task in the inferred project'
-          found=$(aven search --project alpha task)
-          [[ $listed != *"$other"* && $found == *"$own"* && $found != *"$other"* ]] ||
-            fail '`--project` does not narrow `list` or `search` to one project'
-          primed=$(aven prime --json)
-          [[ $primed == *'"project": "alpha"'* && $primed != *"$other"* ]] ||
-            fail '`prime --json` did not keep to the inferred project or print its key'
-        else
-          [[ $skill != *"$list_claim"* ]] ||
-            fail '`list` keeps to the inferred project, but the skill says that it covers every project'
+        found=$(aven search task)
+        only "$listed" "$own" "$other" && only "$found" "$own" "$other" ||
+          fail '`list` or `search` does not keep to the inferred project'
+        listed=$(aven list --all-projects)
+        found=$(aven search --all-projects task)
+        both "$listed" && both "$found" ||
+          fail '`--all-projects` does not widen `list` or `search` to every project'
+        listed=$(aven list --project beta)
+        found=$(aven search --project beta task)
+        only "$listed" "$other" "$own" && only "$found" "$other" "$own" ||
+          fail '`--project` does not point `list` or `search` at another project'
+        listed=$(cd .. && aven list)
+        found=$(cd .. && aven search task)
+        both "$listed" && both "$found" ||
+          fail '`list` or `search` does not cover every project from a directory that belongs to no project'
+        if (cd .. && aven add 'stray task'); then
+          fail '`add` filed a task from a directory that belongs to no project'
         fi
 
         bulk_claim='`bulk-update` ignores the inferred project'
