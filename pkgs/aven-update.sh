@@ -45,7 +45,9 @@ echo "aven updated to $latestVersion"
 
 # The tests fail when the skill of the new release and its binary
 # disagree about which commands use the inferred project, or about which
-# labels `--label` accepts.
+# labels `--label` accepts. They also fail when the binary accepts the
+# ref prefix of a project as the value of `--project`. The
+# aven-ultraclose skill says that aven rejects that prefix.
 echo "  building tests..."
 # shellcheck disable=SC2016 # Nix, not the shell, expands the expression.
 (cd "$DIRNAME/.." && nix build --no-link --impure --expr '((builtins.getFlake (toString ./.)).inputs.nixpkgs.legacyPackages.${builtins.currentSystem}.callPackage ./pkgs/aven.nix { }).tests')

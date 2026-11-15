@@ -70,13 +70,28 @@ adds tasks, run `ultraclose.py next`, so that the new tasks take the free
 slots.
 
 `ultraclose.py untriaged --project <key>` prints each task of the queue
-that the run does not hold. `<key>` names the aven project of the
+that the run does not hold. `<key>` is the key of the aven project of the
 repository. Always pass `--project`. Without it, `aven list` keeps to the
 project that aven infers from the main checkout, and it covers every
 project when aven infers none. Add each `aven list` filter that the
 arguments hold.
 The command prints a JSON list with the ref, the title, and the priority
 of each task. The list is empty when the run holds the whole queue.
+
+`--project` takes the key of a project, not the prefix of its refs. For
+example, the refs of the project `terrarium` start with `TRR`, and aven
+rejects `--project TRR` with the error `unknown-project`. The `Project:`
+line of the session-start aven context gives the key of the project that
+aven infers from the directory where the session started.
+`aven project list` prints one line per project, with the key first and
+the prefix of the refs after it:
+
+```text
+terrarium prefix=TRR name="terrarium"
+```
+
+When the arguments name the project by its prefix, such as `TRR`, pass
+the key from the line that holds that prefix.
 
 Every epic stays open while one of its children is open. Set an epic to
 `done` when its last child lands.

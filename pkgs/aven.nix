@@ -99,6 +99,12 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   # `add`, `list`, and `search`. When a release changes one of the rules,
   # the test fails. Update those skills together with the test.
   #
+  # The aven-ultraclose skill also says that `--project` takes the key of
+  # a project, not the prefix of its refs. So `project list` must print
+  # the prefix of each project after its key, and `list --project` must
+  # fail with `unknown-project` for that prefix. A release that accepts
+  # the prefix fails the test until you drop the rule from that skill.
+  #
   # When `bulk-update` matches the task of the other project, the skill
   # must carry the claim of the bulk-update patch, and `--project` must
   # narrow `bulk-update` to one project. When `bulk-update` keeps to the
@@ -170,6 +176,16 @@ stdenvNoCC.mkDerivation (finalAttrs: {
         found=$(aven search --project beta task)
         only "$listed" "$other" "$own" && only "$found" "$other" "$own" ||
           fail '`--project` does not point `list` or `search` at another project'
+        # `listed` holds the list of the beta project, which names the
+        # task of that project by its ref.
+        [[ $(aven project list) =~ beta\ prefix=([A-Z0-9]+) ]] ||
+          fail '`project list` does not print the ref prefix of a project after its key'
+        prefix=''${BASH_REMATCH[1]}
+        [[ $listed == *"$prefix-"* ]] ||
+          fail 'the refs of a project do not start with the prefix that `project list` prints'
+        if rejected=$(aven list --project "$prefix" 2>&1) || [[ $rejected != *unknown-project* ]]; then
+          fail "\`list --project\` did not fail with \`unknown-project\` for the ref prefix of a project: $rejected"
+        fi
         listed=$(cd .. && aven list)
         found=$(cd .. && aven search task)
         both "$listed" && both "$found" ||
