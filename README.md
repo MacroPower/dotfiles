@@ -428,11 +428,23 @@ journalctl -k --since today -g 'Killed process'
 sudo systemctl restart "user@$(id -u).service"
 ```
 
+### Session variables
+
+Each agent in the VM gets the `home.sessionVariables` entries and the `home.sessionPath` directories of the home-manager configuration. Workmux starts each agent from a bash login shell, and home-manager manages only fish on this host. So `hosts/nixos/terrarium.nix` makes `/etc/profile` source the home-manager script that exports these entries. The evaluation of the host fails when `/etc/profile` does not source the script, or when the script does not export an entry.
+
+A bash login shell and fish get the same `PATH`. The `home.sessionPath` directories come first, then `/run/wrappers/bin`, then the Nix profiles, and `/run/current-system/sw/bin` comes last. Workmux and devbox then put their own directories ahead of these in the `PATH` of an agent.
+
+Run `task switch` in the VM after you change these entries. The switch applies the change to each agent that workmux starts after it. Agents keep the environment that they started with, so restart each agent that started before the switch. To check a session, run this command in it, which prints `1` when the session has the home-manager variables:
+
+```sh
+printenv __HM_SESS_VARS_SOURCED
+```
+
 ### Dagger engines
 
 Each Dagger version keeps its own engine container in the VM. Sessions in repositories that pin different Dagger versions can therefore run Dagger at the same time. `docker ps` lists each engine as `dagger-engine-<version>`.
 
-The `DAGGER_LEAVE_OLD_ENGINE` variable keeps the engines. Without it, a Dagger CLI removes the engine containers of every other version each time it connects to its own engine. A call on a removed engine then hangs without output. `home/tools.nix` sets the variable for the shells that home-manager manages. Workmux starts each agent from a bash login shell, which does not load the home-manager variables, so `hosts/nixos/terrarium.nix` copies the variable into the system environment.
+The `DAGGER_LEAVE_OLD_ENGINE` variable keeps the engines. Without it, a Dagger CLI removes the engine containers of every other version each time it connects to its own engine. A call on a removed engine then hangs without output. `home/tools.nix` sets the variable in `home.sessionVariables`, and the [Session variables](#session-variables) section describes how the agents get it.
 
 Run `task switch` in the VM. The switch applies the variable to each agent that workmux starts after it. Agents keep the environment that they started with, so restart each agent that started before the switch. To check a session, run this command in it, which prints `1` when the session has the variable:
 

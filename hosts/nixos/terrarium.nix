@@ -29,6 +29,13 @@ in
       config,
       ...
     }:
+    let
+      inherit (config.dotfiles.system) username;
+      userHome = config.home-manager.users.${username}.home;
+      # home-manager writes the entries of home.sessionVariables,
+      # home.sessionPath, and home.sessionSearchVariables to this script.
+      sessionVarsScript = "${userHome.sessionVariablesPackage}/etc/profile.d/hm-session-vars.sh";
+    in
     {
       imports = [
         ./default.nix
@@ -54,40 +61,77 @@ in
         extraGroups = [ "audio" ];
       };
 
-      # home-manager loads home.sessionVariables only in the shells that it
-      # manages, and it manages only fish on this host. Workmux starts each
-      # agent from the user's bash login shell. The agent and every command
-      # that it runs therefore do not get those variables. NixOS exports
-      # the variables of this set in every login shell, and PAM sets them
-      # in every session, whatever the shell.
+      # Workmux starts each agent from the user's bash login shell. The agent
+      # and every command that it runs inherit the environment of that
+      # shell. home-manager loads its session variables only in the shells
+      # that it manages, and it manages only fish on this host. Every bash
+      # login shell reads /etc/profile, so /etc/profile sources the
+      # home-manager script.
       #
-      # home/tools.nix sets DAGGER_LEAVE_OLD_ENGINE. Without that variable,
-      # a Dagger CLI removes the engine containers of every other Dagger
-      # version each time it connects to its own engine. A call from a
-      # repository that pins another version then loses its engine and
-      # hangs without output.
-      environment.sessionVariables = {
-        inherit (config.home-manager.users.${config.dotfiles.system.username}.home.sessionVariables)
-          DAGGER_LEAVE_OLD_ENGINE
-          ;
-      };
+      # NixOS puts this text after the lines of /etc/profile that set the
+      # system environment. Fish loads the system environment and the
+      # home-manager script in the same order, so a bash login shell and
+      # fish get the same values. The home-manager values replace the
+      # NixOS defaults, such as EDITOR. In PATH, the home.sessionPath
+      # directories come first, then /run/wrappers/bin, then the Nix
+      # profiles, and /run/current-system/sw/bin comes last.
+      #
+      # The script holds paths in the home directory of this user, such as
+      # XDG_CONFIG_HOME, so the login shells of the other users skip it.
+      programs.bash.loginShellInit = ''
+        if [ "$USER" = ${lib.escapeShellArg username} ]; then
+          . ${sessionVarsScript}
+        fi
+      '';
 
-      # Every login shell sources the script that this assertion reads. The
-      # assertion fails the evaluation when a change leaves the variable
-      # only in home.sessionVariables, which the agents do not load.
-      assertions = [
-        {
-          assertion = lib.hasInfix "\nexport DAGGER_LEAVE_OLD_ENGINE=" config.system.build.setEnvironment.text;
-          message = ''
-            terrarium: the environment of a login shell does not hold
-            DAGGER_LEAVE_OLD_ENGINE. Workmux starts each agent from a bash
-            login shell, and that shell does not load
-            home.sessionVariables. Without the variable, the Dagger CLI of
-            one agent removes the engine that the Dagger CLI of another
-            version uses. Set the variable in environment.sessionVariables.
-          '';
-        }
-      ];
+      # These assertions fail the evaluation when a bash login shell does
+      # not export an entry of home.sessionVariables. The first assertion
+      # reads /etc/profile. It also fails when /etc/profile sources the
+      # home-manager script before the system environment, because the
+      # NixOS script then replaces PATH and EDITOR. The second assertion
+      # reads the home-manager script.
+      assertions =
+        let
+          # The line of /etc/profile that sources a script. lib.splitString
+          # and lib.hasInfix reject a pattern that carries the context of
+          # a store path, so the line drops the context.
+          sourceLine = script: builtins.unsafeDiscardStringContext ". ${script}\n";
+          # The text of /etc/profile on each side of the line that sources
+          # the home-manager script.
+          profileParts = lib.splitString (sourceLine sessionVarsScript) config.environment.etc.profile.text;
+          # home-manager skips each entry that holds null.
+          sessionVariableNames = builtins.attrNames (
+            lib.filterAttrs (_: value: value != null) userHome.sessionVariables
+          );
+          unexported = lib.filter (
+            name: !lib.hasInfix "\nexport ${name}=" userHome.sessionVariablesPackage.text
+          ) sessionVariableNames;
+        in
+        [
+          {
+            assertion =
+              builtins.length profileParts == 2
+              && lib.hasInfix (sourceLine config.system.build.setEnvironment) (builtins.head profileParts);
+            message = ''
+              terrarium: /etc/profile does not source the home-manager
+              script after the script that sets the NixOS environment.
+              Workmux starts each agent from a bash login shell, and that
+              shell gets home.sessionVariables and home.sessionPath only
+              from /etc/profile. Source this script in
+              programs.bash.loginShellInit:
+              ${sessionVarsScript}
+            '';
+          }
+          {
+            assertion = unexported == [ ];
+            message = ''
+              terrarium: the home-manager script that /etc/profile sources
+              does not export these entries of home.sessionVariables, so
+              the agents that workmux starts do not get them:
+              ${lib.concatStringsSep ", " unexported}
+            '';
+          }
+        ];
 
       # The VM has no swap. When its memory runs out, the kernel gives
       # each process a score and kills the process with the highest

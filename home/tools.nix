@@ -336,10 +336,10 @@ in
   # caches, each time it connects to its own engine. Keep them so that
   # projects pinned to different Dagger versions each keep their own engine.
   #
-  # Only the shells that home-manager manages load this variable. The agents
-  # on the terrarium VM start from a bash login shell, which loads none of
-  # home.sessionVariables. hosts/nixos/terrarium.nix therefore copies the
-  # variable into the system environment of that VM.
+  # The agents on the terrarium VM start from a bash login shell, and
+  # home-manager does not manage bash on that host. hosts/nixos/terrarium.nix
+  # makes /etc/profile load home.sessionVariables, so the agents get this
+  # variable.
   home.sessionVariables.DAGGER_LEAVE_OLD_ENGINE = "1";
 
   # The Dagger CLI mounts $XDG_CONFIG_HOME/dagger/engine.json over the
