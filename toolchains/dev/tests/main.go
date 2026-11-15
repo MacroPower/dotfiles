@@ -102,6 +102,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestDevBaseEnv(ctx) })
 	eg.Go(func() error { return m.TestDevBaseShellConfig(ctx) })
 	eg.Go(func() error { return m.TestDevBaseNoBuildArtifacts(ctx) })
+	eg.Go(func() error { return m.TestDevBaseClaudeState(ctx) })
 	eg.Go(func() error { return m.TestDevBaseMcpSync(ctx) })
 	eg.Go(func() error { return m.TestSandboxBase(ctx) })
 	eg.Go(func() error { return m.TestSandboxEgressRules(ctx) })
@@ -321,6 +322,37 @@ func (m *Tests) TestDevBaseMcpSync(ctx context.Context) error {
 		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("container-init MCP sync: %w", err)
+	}
+
+	return nil
+}
+
+// claudeStateScript checks that the dev container keeps ~/.claude.json
+// in the claude-state cache volume. The container must mount the volume
+// at /claude-state, and ~/.claude.json must be a link to the claude.json
+// of the volume. The script reads the link and not the file, so it
+// passes on a volume of any content.
+const claudeStateScript = `set -e
+fail() { echo "$1"; exit 1; }
+
+grep -q ' /claude-state ' /proc/self/mountinfo ||
+  fail "the container does not mount /claude-state"
+[ "$(readlink "$HOME/.claude.json")" = /claude-state/claude.json ] ||
+  fail "~/.claude.json is not a link to the claude.json of the volume"
+echo OK
+`
+
+// TestDevBaseClaudeState verifies that [Dev.DevBase] keeps
+// ~/.claude.json in the claude-state cache volume (see
+// claudeStateScript), so that the file outlives the container.
+//
+// +check
+func (m *Tests) TestDevBaseClaudeState(ctx context.Context) error {
+	_, err := dag.Dev().DevBase().
+		WithExec([]string{"sh", "-c", claudeStateScript}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("claude-state volume: %w", err)
 	}
 
 	return nil
@@ -783,9 +815,31 @@ echo "=== All runtime config assertions passed ==="
 	return nil
 }
 
+// sandboxClaudeJSONScript checks that the published sandbox image keeps
+// the claude.json of its build. The image runs without the claude-state
+// volume, so ~/.claude.json must be a regular file. A link into the
+// volume dangles in the image. The file must hold the MCP servers that
+// the image declares. The sandbox user must own the file, because
+// terrarium init drops to that user ahead of Claude Code.
+const sandboxClaudeJSONScript = `set -e
+state="$HOME/.claude.json"
+servers="$HOME/.config/mcp/mcp.json"
+fail() { echo "$1"; exit 1; }
+
+[ ! -L "$state" ] || fail "~/.claude.json is a link to $(readlink "$state")"
+[ -f "$state" ] || fail "the image holds no ~/.claude.json"
+[ -f "$servers" ] || fail "the image declares no MCP server"
+jq -e --slurpfile declared "$servers" '.mcpServers == $declared[0].mcpServers' "$state" >/dev/null ||
+  fail "~/.claude.json does not hold the MCP servers of the image"
+[ "$(stat -c %u "$state")" = 1000 ] ||
+  fail "the sandbox user does not own ~/.claude.json"
+echo OK
+`
+
 // TestPublishSandboxImage verifies that [Dev.PublishSandbox] builds a
 // container with terrarium binary, default config.yaml, correct
-// entrypoint, and no pre-baked firewall configs.
+// entrypoint, the claude.json of the build, and no pre-baked firewall
+// configs.
 //
 // Not annotated with +check because it rebuilds from scratch. Run manually:
 //
@@ -840,6 +894,12 @@ func (m *Tests) TestPublishSandboxImage(ctx context.Context) error {
 	}
 	if !strings.Contains(cfgContent, "egress") {
 		return fmt.Errorf("default config.yaml missing egress")
+	}
+
+	// Verify that the image keeps the claude.json of its build.
+	_, err = ctr.WithExec([]string{"sh", "-c", sandboxClaudeJSONScript}).Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("claude.json of the sandbox image: %w", err)
 	}
 
 	// Verify no pre-baked firewall configs (they are generated at runtime).

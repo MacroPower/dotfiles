@@ -245,9 +245,11 @@ func (m *Dev) cachedBuild(ctx context.Context, platform dagger.Platform) (*dagge
 // tests to verify tool availability without requiring an interactive
 // terminal.
 //
-// The container carries container-init. The terminal sessions of
-// [Dev.Shell] and [Dev.Sandbox] start through it, so each start syncs
-// the MCP servers of the persisted claude.json with the build.
+// The container keeps ~/.claude.json in the claude-state cache volume
+// (see [withClaudeState]) and carries container-init. The terminal
+// sessions of [Dev.Shell] and [Dev.Sandbox] start through
+// container-init, so each start syncs the MCP servers of the persisted
+// claude.json with the build.
 func (m *Dev) DevBase(
 	ctx context.Context,
 	// Kagi API key for the MCP server configuration. Injected as
@@ -261,16 +263,49 @@ func (m *Dev) DevBase(
 	}
 
 	// The published sandbox image builds from devBaseForPlatform and
-	// drops the claude-state volume, so only this container gets
-	// container-init.
-	return ctr.WithNewFile(containerInitPath, containerInitScript,
-		dagger.ContainerWithNewFileOpts{Permissions: 0o755}), nil
+	// runs without the claude-state volume, so only this container gets
+	// the volume and container-init.
+	ctr = ctr.WithNewFile(containerInitPath, containerInitScript,
+		dagger.ContainerWithNewFileOpts{Permissions: 0o755})
+
+	return withClaudeState(ctr), nil
+}
+
+// withClaudeState mounts the claude-state cache volume on ctr and
+// replaces ~/.claude.json with a link to the claude.json of the volume.
+// The file therefore outlives the container. When the volume holds no
+// claude.json, the file that the activation wrote seeds it.
+//
+// A published image must not get the link. The image does not carry the
+// volume, so the link dangles there and Claude Code starts without the
+// MCP servers of the build.
+//
+// The engine caches the exec until the build changes, so the script
+// does not sync the MCP servers of the persisted claude.json.
+// container-init syncs them at each terminal start (see
+// [wrapWithContainerInit]).
+func withClaudeState(ctr *dagger.Container) *dagger.Container {
+	script := `set -e
+if [ ! -f /claude-state/claude.json ] && [ -f ` + homeDir + `/.claude.json ]; then
+  cp ` + homeDir + `/.claude.json /claude-state/claude.json
+fi
+rm -f ` + homeDir + `/.claude.json
+ln -sf /claude-state/claude.json ` + homeDir + `/.claude.json
+`
+
+	return ctr.
+		WithMountedCache("/claude-state", dag.CacheVolume(devCacheNamespace+":claude-state")).
+		WithExec([]string{"sh", "-c", script})
 }
 
 // devBaseForPlatform is the platform-aware implementation behind
 // [Dev.DevBase]. The Publish helpers call this directly so each
 // architecture variant runs through the same activation steps with
 // its own /nix cache.
+//
+// The container does not mount the claude-state cache volume, and
+// ~/.claude.json stays the regular file that the activation wrote.
+// [Dev.DevBase] adds the volume (see [withClaudeState]).
 func (m *Dev) devBaseForPlatform(
 	ctx context.Context,
 	platform dagger.Platform,
@@ -293,27 +328,17 @@ func (m *Dev) devBaseForPlatform(
 		ctr = ctr.WithEnvVariable("KAGI_API_KEY", plaintext)
 	}
 
-	// setup-dev: create fish history symlink, persist claude.json to
-	// cache volume, disable atuin systemd socket, create atuin data dir.
-	// The engine caches this exec until the build changes, so the script
-	// does not sync the MCP servers of the persisted claude.json.
-	// container-init syncs them at each terminal start (see
-	// wrapWithContainerInit).
+	// setup-dev: create fish history symlink, disable atuin systemd
+	// socket, create atuin data dir.
 	setupScript := `set -e
 mkdir -p ` + homeDir + `/.local/share/fish
 ln -sf /commandhistory/fish_history ` + homeDir + `/.local/share/fish/fish_history
-if [ ! -f /claude-state/claude.json ] && [ -f ` + homeDir + `/.claude.json ]; then
-  cp ` + homeDir + `/.claude.json /claude-state/claude.json
-fi
-rm -f ` + homeDir + `/.claude.json
-ln -sf /claude-state/claude.json ` + homeDir + `/.claude.json
 sed -i 's/systemd_socket = true/systemd_socket = false/' ` + homeDir + `/.config/atuin/config.toml 2>/dev/null || true
 mkdir -p ` + homeDir + `/.local/share/atuin
 `
 
 	return ctr.
 		WithEnvVariable("IS_SANDBOX", "1").
-		WithMountedCache("/claude-state", dag.CacheVolume(devCacheNamespace+":claude-state")).
 		WithExec([]string{"sh", "-c", setupScript}), nil
 }
 
@@ -653,12 +678,16 @@ func (m *Dev) PublishShell(
 }
 
 // buildSandboxForPlatform builds a self-contained sandbox container
-// for a single platform: it activates home-manager via
+// for a single platform. It activates home-manager via
 // [Dev.devBaseForPlatform], creates the non-root sandbox user,
 // snapshots the /nix cache mount into the rootfs, and sets the
-// terrarium entrypoint and OCI labels. Cache-only mounts that should
-// not bake into the published image (krew, claude-state) are dropped
-// after [Dev.devBaseForPlatform] adds them.
+// terrarium entrypoint and OCI labels. The build drops the krew cache
+// mount that [Dev.devBaseForPlatform] adds, so that the mount does not
+// bake into the published image.
+//
+// The build does not mount the claude-state cache volume. The image
+// keeps the claude.json that the activation wrote as a regular file,
+// so Claude Code starts with the MCP servers of the image.
 func (m *Dev) buildSandboxForPlatform(
 	ctx context.Context,
 	platform dagger.Platform,
@@ -695,7 +724,6 @@ chown -R %s:%s %s
 		WithoutMount("/nix").
 		WithoutMount("/root/.cache/nix").
 		WithoutMount(homeDir+"/.krew").
-		WithoutMount("/claude-state").
 		WithoutDirectory("/nix").
 		WithDirectory("/nix", nixDir).
 		WithWorkdir(homeDir).
