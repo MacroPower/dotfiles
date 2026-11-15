@@ -30,6 +30,24 @@ command replaces a run that has ended, and with --force it replaces a run
 that has not. Each run takes a directory of its own, so init refuses a
 directory that holds an earlier run.
 
+A run resumes only the task branches and the task worktrees that it
+created. An earlier run leaves the branch of each task that it noted, and
+a run that stopped before its end leaves the worktree of each task that
+it started. Such a branch can sit far behind the base branch. The next
+command starts no task while a pending task has a branch or a worktree
+that the run did not create, and neither does a landing that runs next.
+The args command refuses such a task. Each of these commands prints one
+line per such task. The line names the branch, the count of its commits
+that the base branch lacks, and the worktree. Commit the uncommitted
+changes of the worktree, and remove the worktree. Then count the commits
+of the branch again, because the printed count does not include that
+commit. Delete the branch when the new count is 0, and rename it
+otherwise. Then run next or args again, and run next after a landing.
+The Leftover work section of SKILL.md holds these steps. Each command
+that starts a task creates the directory of the task first, so the
+branch and the worktree of a task without a directory come from an
+earlier run.
+
   init --run DIR [--limit N] [--rounds N] [--check CMD] [--health CMD]
        [--shared GLOB]... [--disk-floor-gb N] [--force]
   config [--limit N] [--rounds N] [--check CMD] [--health CMD]
@@ -595,10 +613,88 @@ def cmd_untriaged(a):
     print(json.dumps(rows[:limit], indent=1))
 
 
+def leftovers(st, run, refs):
+    """Describe the work that an earlier run left for the given tasks.
+
+    The start of a task creates the directory of the task in the run
+    directory before the branch and the worktree, and each run takes a
+    run directory of its own. So a task branch or a task worktree whose
+    task has no directory comes from an earlier run.
+
+    Return one line per task that has such a branch or such a worktree.
+    The line names the branch, the count of its commits that the base
+    branch lacks, and the worktree.
+    """
+    cfg = st["config"]
+    repo, base = cfg["repo"], cfg["base"]
+    heads = out(
+        "git",
+        "for-each-ref",
+        "--format=%(refname:lstrip=2)",
+        "refs/heads/task",
+        cwd=repo,
+    ).splitlines()
+    lines = []
+    for ref in refs:
+        if (run / "tasks" / ref).is_dir():
+            continue
+        found = []
+        if branch(ref) in heads:
+            ahead = int(
+                out("git", "rev-list", "--count", f"{base}..{branch(ref)}", cwd=repo)
+            )
+            commits = "commit" if ahead == 1 else "commits"
+            found.append(f"the branch {branch(ref)}, {ahead} {commits} ahead of {base}")
+        if Path(worktree(cfg, ref)).exists():
+            found.append(f"the worktree {worktree(cfg, ref)}")
+        if found:
+            lines.append(f"{ref}: {', and '.join(found)}")
+    return lines
+
+
+def refuse_leftovers(st, run, refs, retry):
+    """End the command when an earlier run left work for one of the given tasks.
+
+    A task that starts on the branch of an earlier run edits a tree that
+    can sit far behind the base branch. Its landing then records the
+    commits of the earlier run in the commit of the task.
+
+    The retry argument names the ultraclose.py command that starts the
+    tasks after the cleanup.
+    """
+    if lines := leftovers(st, run, refs):
+        base = st["config"]["base"]
+        die(
+            "these tasks have a branch or a worktree that this run did not"
+            " create, and a run resumes only its own work. The command"
+            " started no task.\n" + "\n".join(lines) + "\nIn each worktree that"
+            " holds uncommitted changes, commit them with git add -A and git"
+            " commit --no-verify. Remove each worktree with git worktree remove."
+            " After those commits, count the commits of each branch again with"
+            f" git rev-list --count {base}..<branch>, because the counts above"
+            " do not include those commits. Delete each branch whose new count"
+            " is 0 with git branch -D. Rename every other branch with git"
+            " branch -m to kept/<ref>-<date>, so that it keeps its commits as"
+            " a reference, and name the new branch and its old name in a note"
+            f" on the task with aven note. Then run ultraclose.py {retry}."
+            " The Leftover work section of SKILL.md holds these steps."
+        )
+
+
 def start(st, run, ref):
-    """Give a task its worktree, its task file, and the active status."""
+    """Give a task its worktree, its task file, and the active status.
+
+    The caller first refuses a task that has the work of an earlier run.
+    So a branch or a worktree that exists here is the work of this run,
+    and the task resumes it.
+    """
     cfg, t = st["config"], st["tasks"][ref]
     repo, wt = cfg["repo"], worktree(cfg, ref)
+    # The directory of the task records that this run started the task,
+    # and leftovers() reads that record. So the directory comes before
+    # the branch and the worktree.
+    d = run / "tasks" / ref
+    (d / "scratch").mkdir(parents=True, exist_ok=True)
     if not Path(wt).exists():
         has_branch = not sh(
             "git",
@@ -623,8 +719,6 @@ def start(st, run, ref):
                 cfg["base"],
                 cwd=repo,
             )
-    d = run / "tasks" / ref
-    (d / "scratch").mkdir(parents=True, exist_ok=True)
     (d / "task.md").write_text(out("aven", "context", ref, cwd=repo) + "\n")
     sh("aven", "edit", ref, "--status", "active", cwd=repo)
     t["state"] = "inflight"
@@ -634,6 +728,13 @@ def start(st, run, ref):
 def fill_slots(run):
     """Start one task per free slot, and print the list of their Workflow inputs."""
     with state(run) as st:
+        # A pending task that waits for another task starts in a later
+        # call. The command reports its leftover work in the first call,
+        # together with the leftover work of every other pending task. A
+        # landing that runs next has landed its task, so the retry is next
+        # for both callers.
+        pending = sorted(r for r, t in st["tasks"].items() if t["state"] == "pending")
+        refuse_leftovers(st, run, pending, "next")
         launched = []
         for ref in pick(st):
             install_workflow(st, run, ref)
@@ -655,6 +756,7 @@ def cmd_args(a):
     run = run_dir(repo)
     with state(run) as st:
         t = st["tasks"].get(a.ref) or die(f"unknown task {a.ref}")
+        refuse_leftovers(st, run, [a.ref], f"args {a.ref} again")
         install_workflow(st, run, a.ref)
         history = run / "tasks" / a.ref / "history.md"
         done = 0

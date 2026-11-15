@@ -227,6 +227,52 @@ prints those tasks, as the Scope section says. Fit the run in these ways:
   the layout of a module that they split. Remove each exception that the
   run made for one of them.
 
+## Leftover work
+
+Each run resumes only the branches and the worktrees that it created.
+Earlier runs can leave a `task/<ref>` branch or a `t-<ref>` worktree for a
+task that is open again. Every run leaves the branch of each task that it
+notes. Runs that stop before their end also leave the worktree of each
+task that they started. That branch can sit far behind the base branch.
+Every landing squashes the whole branch, so a task that starts on that
+branch lands the commits that the earlier run did not land.
+
+`ultraclose.py next` starts no task while a pending task has leftover
+work, and neither does the `next` of a landing. `ultraclose.py args <ref>`
+refuses a task that has leftover work. Each of these commands then prints
+one line per such task. The line names the branch, the count of its commits
+that the base branch lacks, and the worktree. Move the leftover work of
+each task out of the way:
+
+1. If the worktree holds uncommitted changes, commit them in the worktree
+   with `--no-verify`, so that the branch keeps them.
+2. Remove the worktree with `git worktree remove <path>`.
+3. Count the commits that the branch holds and the base branch lacks with
+   `git rev-list --count <base>..task/<ref>`. The `<base>` placeholder
+   names the base branch. The count that the command printed does not
+   include the commit of step 1, so use the new count.
+4. If the new count is 0, delete the branch with
+   `git branch -D task/<ref>`. Otherwise, rename it with
+   `git branch -m task/<ref> kept/<ref>-<date>`. The date is the date of
+   the cleanup, such as `kept/APP-7KQ9-20261114`. If a branch with that
+   name exists, add a counter, such as `kept/APP-7KQ9-20261114-2`.
+5. For each branch that you rename, add a note to the task with
+   `aven note`. Name the new branch in the note. Say that the branch was
+   `task/<ref>` before the rename, so that an earlier note that names
+   `task/<ref>` means the kept branch and not the branch of the new
+   attempt. Say that the branch holds an earlier attempt as a reference,
+   and that the implementer must not merge or rebase it. The implementer
+   reads the notes of the task in its task file.
+
+Then run `next` or `args <ref>` again. After a landing that printed the
+lines, run `ultraclose.py next`, because the task of the landing has
+landed. Each task starts on a new branch from the base branch.
+
+`ultraclose.py` creates the directory of a task in the run directory when
+it starts the task. It treats the branch or the worktree of a task without
+that directory as leftover work. So do not create or remove a task
+directory yourself.
+
 ## Loop
 
 Repeat until the run ends:
@@ -234,13 +280,16 @@ Repeat until the run ends:
 1. Run `ultraclose.py next`. It starts one task per free slot. No two
    running tasks share a file outside the shared globs. It prints one input
    object per started task. After a user message about other work, the
-   User messages section says in which turn to run it.
+   User messages section says in which turn to run it. When `next`, or the
+   `next` of a landing, reports the branch or the worktree of an earlier
+   run, move that work out of the way as the Leftover work section says.
 
    A landing with the result `OK` runs `next`, as the Landing section says.
    In a turn that acts on such a landing, run this step only after an
    action that can let a task start. These actions are a triage that adds
-   tasks, a `set <ref> noted`, a `set <ref> closed`, a landing that you
-   start, and a config change. The `next` of the landing ran before those
+   tasks, a move of leftover work as the Leftover work section says, a
+   `set <ref> noted`, a `set <ref> closed`, a landing that you start, and a
+   config change. The `next` of the landing ran before those
    actions, so it missed each task that they add and each slot that they
    free. Skip this step in a turn that takes none of those actions, even
    after a triage that adds no task.

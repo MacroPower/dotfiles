@@ -73,8 +73,9 @@ def refused(*args, cwd, env, script=SCRIPT):
 # dependencies of its task, and it reports no dependency for a task without
 # an answer. It fails for a ref that starts with NOPE, as aven fails for a
 # ref that it does not know. The list command ignores its filters. It
-# prints the recorded tasks and saves its arguments, one per line. Every
-# other command prints one word.
+# prints the recorded tasks and saves its arguments, one per line. The
+# edit command fails while the AVEN_ANSWERS directory holds the file
+# edit.fails. Every other command prints one word.
 AVEN_STUB = """\
 #!/bin/sh
 case "$1 $2" in
@@ -95,6 +96,13 @@ case "$1 $2" in
 "list "*)
     printf '%s\\n' "$@" >"$AVEN_ANSWERS/list.args"
     cat "$AVEN_ANSWERS/list.json"
+    ;;
+"edit "*)
+    if [ -e "$AVEN_ANSWERS/edit.fails" ]; then
+        echo "Error: the database is locked" >&2
+        exit 1
+    fi
+    echo stub
     ;;
 *) echo stub ;;
 esac
@@ -177,17 +185,24 @@ def new_repo(tmp):
     return repo, env
 
 
+# The git options that let a test commit without the identity and the
+# signing key of the user.
+IDENTITY = [
+    "-c",
+    "user.name=test",
+    "-c",
+    "user.email=test@example.com",
+    "-c",
+    "commit.gpgsign=false",
+]
+
+
 def empty_commit(cwd, env, message):
     """Record one commit that changes no file."""
     subprocess.run(
         [
             "git",
-            "-c",
-            "user.name=test",
-            "-c",
-            "user.email=test@example.com",
-            "-c",
-            "commit.gpgsign=false",
+            *IDENTITY,
             "commit",
             "-q",
             "--no-verify",
@@ -199,6 +214,14 @@ def empty_commit(cwd, env, message):
         env=env,
         check=True,
     )
+
+
+def git(*args, cwd, env):
+    """Run one git command that must pass, and return its standard output."""
+    p = subprocess.run(
+        ["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True
+    )
+    return p.stdout.strip()
 
 
 def launchable_repo(tmp):
@@ -1420,6 +1443,278 @@ class StoredTextTest(unittest.TestCase):
                 )
 
 
+# The branch of the task, and the name that keeps the branch of an earlier
+# run as a reference.
+BRANCH = f"task/{REF}"
+KEPT = f"kept/{REF}"
+# The word that stands for the path of the task worktree in a test case.
+WT = "WORKTREE"
+# A second task, which no run has started.
+OTHER = "APP-0001"
+# What the refusal says about a run and the work of an earlier run.
+OWN_WORK = "a run resumes only its own work"
+# The command that the refusal names for the uncommitted changes of a
+# worktree, so that the removal of the worktree keeps them.
+COMMIT = "git commit --no-verify"
+# The command that the refusal names to count the commits of a branch
+# again after that commit.
+RECOUNT = "git rev-list --count main..<branch>"
+# The sentence of the refusal that names the command to run after the
+# cleanup, with the words of that command.
+RETRY = "Then run ultraclose.py {}."
+
+
+def noted(tmp, repo, env, wt):
+    """The first run notes its task, which removes the clean worktree."""
+    ultraclose("set", REF, "noted", cwd=repo, env=env)
+
+
+def dirty(tmp, repo, env, wt):
+    """The first run notes its task, and the worktree keeps a new file."""
+    Path(wt, "work.txt").write_text("work\n")
+    noted(tmp, repo, env, wt)
+
+
+def lost(tmp, repo, env, wt):
+    """The first run stops with its task running, and its directory is lost."""
+    shutil.rmtree(Path(tmp, "run"))
+
+
+def dirty_lost(tmp, repo, env, wt):
+    """The first run stops before its task commits, and its directory is lost."""
+    Path(wt, "work.txt").write_text("work\n")
+    lost(tmp, repo, env, wt)
+
+
+def renamed(tmp, repo, env, wt):
+    """The first run is lost, and its task branch then takes another name."""
+    lost(tmp, repo, env, wt)
+    git("branch", "-m", BRANCH, KEPT, cwd=repo, env=env)
+
+
+class LeftoverTest(unittest.TestCase):
+    """A run resumes only the branches and the worktrees that it created."""
+
+    def ahead(self, repo, env, name):
+        """The count of the commits of a branch that main lacks."""
+        return int(git("rev-list", "--count", f"main..{name}", cwd=repo, env=env))
+
+    def second_run(self, tmp, commits=1, end=noted, rows=({"ref": REF},)):
+        """Start a second run after a first run left work for its task.
+
+        The first run starts the task, and the task branch gets the given
+        number of commits. The end argument ends the first run. The
+        second run holds one task per row. Return the repository, the
+        environment, the directory of the second run, and the path of the
+        task worktree.
+        """
+        repo, env, launch = running_task(tmp, commits)
+        wt = launch["task"]["wt"]
+        end(tmp, repo, env, wt)
+        second = Path(tmp, "second")
+        ultraclose("init", "--run", str(second), cwd=repo, env=env)
+        triage(tmp, repo, env, *rows)
+        return repo, env, second, wt
+
+    def test_refuses_work_of_earlier_run(self):
+        # name: (the commits of the task branch, what ends the first run,
+        # the line that names the leftover work, the repair, the commits
+        # of the kept branch). The repair holds the git commands that
+        # move the work out of the way. WT stands for the path of the
+        # task worktree. The commits of the kept branch are None when no
+        # kept branch remains.
+        cases = {
+            "the branch of a noted task": (
+                1,
+                noted,
+                f"{REF}: the branch {BRANCH}, 1 commit ahead of main",
+                [["branch", "-m", BRANCH, KEPT]],
+                1,
+            ),
+            "a branch without a commit": (
+                0,
+                noted,
+                f"{REF}: the branch {BRANCH}, 0 commits ahead of main",
+                [["branch", "-D", BRANCH]],
+                None,
+            ),
+            "the dirty worktree of a noted task": (
+                1,
+                dirty,
+                f"{REF}: the branch {BRANCH}, 1 commit ahead of main,"
+                f" and the worktree {WT}",
+                [
+                    ["-C", WT, "add", "-A"],
+                    [*IDENTITY, "-C", WT, "commit", "-q", "--no-verify", "-m", "wip"],
+                    ["worktree", "remove", WT],
+                    ["branch", "-m", BRANCH, KEPT],
+                ],
+                2,
+            ),
+            # The refusal counts 0 commits, and the commit of the
+            # uncommitted changes puts the branch 1 commit ahead. So the
+            # repair renames the branch after it counts again.
+            "the dirty worktree of a lost task without a commit": (
+                0,
+                dirty_lost,
+                f"{REF}: the branch {BRANCH}, 0 commits ahead of main,"
+                f" and the worktree {WT}",
+                [
+                    ["-C", WT, "add", "-A"],
+                    [*IDENTITY, "-C", WT, "commit", "-q", "--no-verify", "-m", "wip"],
+                    ["worktree", "remove", WT],
+                    ["branch", "-m", BRANCH, KEPT],
+                ],
+                1,
+            ),
+            "the branch and the worktree of a lost run": (
+                2,
+                lost,
+                f"{REF}: the branch {BRANCH}, 2 commits ahead of main,"
+                f" and the worktree {WT}",
+                [["worktree", "remove", WT], ["branch", "-m", BRANCH, KEPT]],
+                2,
+            ),
+            "the worktree of a branch with another name": (
+                2,
+                renamed,
+                f"{REF}: the worktree {WT}",
+                [["worktree", "remove", WT]],
+                2,
+            ),
+        }
+        for name, (commits, end, line, repair, kept) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, second, wt = self.second_run(tmp, commits, end)
+                before = state_of(second)
+                # A refused command does not record the task as started,
+                # so each later command refuses the task again. Each
+                # refusal names the command that it refused.
+                commands = (
+                    (["next"], "next"),
+                    (["args", REF], f"args {REF} again"),
+                    (["next"], "next"),
+                )
+                for command, retry in commands:
+                    message = refused(*command, cwd=repo, env=env)
+                    self.assertIn(line.replace(WT, wt), message.splitlines())
+                    self.assertIn(OWN_WORK, message)
+                    self.assertIn(COMMIT, message)
+                    self.assertIn(RECOUNT, message)
+                    self.assertIn(RETRY.format(retry), message)
+                self.assertEqual(state_of(second), before)
+                for command in repair:
+                    args = [wt if arg == WT else arg for arg in command]
+                    git(*args, cwd=repo, env=env)
+                # The task starts on a new branch from the base branch.
+                launch = json.loads(ultraclose("next", cwd=repo, env=env))[0]
+                self.assertEqual(launch["task"]["ref"], REF)
+                self.assertEqual(self.ahead(repo, env, BRANCH), 0)
+                self.assertEqual(
+                    git("branch", "--show-current", cwd=wt, env=env), BRANCH
+                )
+                if kept is not None:
+                    self.assertEqual(self.ahead(repo, env, KEPT), kept)
+
+    def test_next_reports_work_for_waiting_task(self):
+        # The task with the leftover work waits for the other task. The
+        # first next reports the work, and it starts no task.
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = ({"ref": OTHER}, {"ref": REF, "after": [OTHER]})
+            repo, env, second, _ = self.second_run(tmp, rows=rows)
+            before = state_of(second)
+            message = refused("next", cwd=repo, env=env)
+            self.assertEqual(
+                [line for line in message.splitlines() if line.startswith("APP-")],
+                [f"{REF}: the branch {BRANCH}, 1 commit ahead of main"],
+            )
+            self.assertEqual(state_of(second), before)
+            self.assertEqual(
+                git("branch", "--list", f"task/{OTHER}", cwd=repo, env=env), ""
+            )
+            # Only a pending task starts, so next ignores the leftover
+            # work of a task in another state.
+            ultraclose("set", REF, "noted", cwd=repo, env=env)
+            started = json.loads(ultraclose("next", cwd=repo, env=env))
+            self.assertEqual([t["task"]["ref"] for t in started], [OTHER])
+            self.assertEqual(self.ahead(repo, env, BRANCH), 1)
+
+    def test_args_checks_only_its_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = ({"ref": OTHER}, {"ref": REF})
+            repo, env, _, _ = self.second_run(tmp, rows=rows)
+            launch = json.loads(ultraclose("args", OTHER, cwd=repo, env=env))
+            self.assertEqual(launch["task"]["ref"], OTHER)
+            self.assertIn(OWN_WORK, refused("args", REF, cwd=repo, env=env))
+
+    def test_run_resumes_its_own_work(self):
+        # name: the commands that launch the task of the run again
+        cases = {
+            "next after a noted task returns to pending": [
+                ["set", REF, "noted"],
+                ["set", REF, "pending"],
+                ["next"],
+            ],
+            "args of a noted task": [["set", REF, "noted"], ["args", REF]],
+            "args of a running task": [["args", REF]],
+        }
+        for name, commands in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, launch = running_task(tmp, 2)
+                for command in commands:
+                    ultraclose(*command, cwd=repo, env=env)
+                # The task keeps the commits of its branch.
+                self.assertEqual(self.ahead(repo, env, BRANCH), 2)
+                wt = launch["task"]["wt"]
+                self.assertEqual(
+                    git("branch", "--show-current", cwd=wt, env=env), BRANCH
+                )
+                state = state_of(Path(tmp, "run"))["tasks"][REF]["state"]
+                self.assertEqual(state, "inflight")
+
+    def test_next_starts_task_again_after_failed_start(self):
+        # The first next creates the worktree, and then aven fails. The
+        # command ends before it saves the state, so the state does not
+        # show that the run created the worktree.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = launchable_repo(tmp)
+            run = Path(tmp, "run")
+            ultraclose("init", "--run", str(run), cwd=repo, env=env)
+            triage(tmp, repo, env, {"ref": REF})
+            failing = Path(env["AVEN_ANSWERS"], "edit.fails")
+            failing.touch()
+            self.assertIn("aven edit", refused("next", cwd=repo, env=env))
+            self.assertEqual(state_of(run)["tasks"][REF]["state"], "pending")
+            self.assertEqual(self.ahead(repo, env, BRANCH), 0)
+            failing.unlink()
+            launch = json.loads(ultraclose("next", cwd=repo, env=env))[0]
+            self.assertEqual(launch["task"]["ref"], REF)
+            self.assertTrue(Path(launch["task"]["wt"]).is_dir())
+
+    def test_next_resumes_branch_of_failed_worktree_add(self):
+        # git worktree add creates the task branch, and then it fails to
+        # create the worktree. The run created that branch, so the next
+        # call starts the task on it.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = launchable_repo(tmp)
+            run = Path(tmp, "run")
+            ultraclose("init", "--run", str(run), cwd=repo, env=env)
+            triage(tmp, repo, env, {"ref": REF})
+            # A file in place of the worktrees directory makes git fail.
+            blocker = Path(repo, ".claude", "worktrees")
+            blocker.parent.mkdir()
+            blocker.touch()
+            self.assertIn("git worktree add", refused("next", cwd=repo, env=env))
+            self.assertEqual(self.ahead(repo, env, BRANCH), 0)
+            blocker.unlink()
+            launch = json.loads(ultraclose("next", cwd=repo, env=env))[0]
+            self.assertEqual(launch["task"]["ref"], REF)
+            self.assertEqual(
+                git("branch", "--show-current", cwd=launch["task"]["wt"], env=env),
+                BRANCH,
+            )
+
+
 class LandTest(unittest.TestCase):
     """What a landing prints, and how it tells a down service from a fault.
 
@@ -1471,27 +1766,20 @@ class LandTest(unittest.TestCase):
         env["GIT_CONFIG_NOSYSTEM"] = "1"
         env["ENGINE"] = str(Path(tmp, "engine"))
         env["RAN"] = str(Path(tmp, "ran"))
-        self.git("init", "-q", "-b", "main", str(repo), cwd=tmp, env=env)
-        self.git("commit", "-q", "--allow-empty", "-m", "init", cwd=repo, env=env)
+        git("init", "-q", "-b", "main", str(repo), cwd=tmp, env=env)
+        git("commit", "-q", "--allow-empty", "-m", "init", cwd=repo, env=env)
         ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
         triage(tmp, repo, env, {"ref": REF})
         task = json.loads(ultraclose("next", cwd=repo, env=env))[0]["task"]
         Path(task["wt"], self.FILE).write_text("a\n")
-        self.git("add", "-A", cwd=task["wt"], env=env)
-        self.git("commit", "-q", "--no-verify", "-m", "wip", cwd=task["wt"], env=env)
+        git("add", "-A", cwd=task["wt"], env=env)
+        git("commit", "-q", "--no-verify", "-m", "wip", cwd=task["wt"], env=env)
         Path(task["dir"], "msg.txt").write_text(self.SUBJECT + "\n")
         hooks = Path(repo, ".git", "hooks")
         hooks.mkdir(exist_ok=True)
         (hooks / "pre-commit").write_text(f"#!/bin/sh\n{hook}\n")
         (hooks / "pre-commit").chmod(0o755)
         return repo, env
-
-    def git(self, *args, cwd, env):
-        """Run one git command and return its standard output."""
-        p = subprocess.run(
-            ["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True
-        )
-        return p.stdout.strip()
 
     def land(self, repo, env, *flags, stderr=subprocess.PIPE):
         """Land the task. Return the exit status and the printed lines.
@@ -1540,15 +1828,15 @@ class LandTest(unittest.TestCase):
         status, lines = landing
         self.assertEqual(status, 2, lines)
         self.assertEqual(lines[-1], f"RESULT {REF} {result}")
-        self.assertEqual(self.git("log", "--format=%s", cwd=repo, env=env), "init")
-        self.assertEqual(self.git("status", "--porcelain", cwd=repo, env=env), "")
+        self.assertEqual(git("log", "--format=%s", cwd=repo, env=env), "init")
+        self.assertEqual(git("status", "--porcelain", cwd=repo, env=env), "")
 
     def assert_landed(self, repo, env, landing):
         status, lines = landing
         self.assertEqual(status, 0, lines)
         self.assertTrue(lines[-1].startswith(f"RESULT {REF} OK "), lines)
         self.assertEqual(
-            self.git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
+            git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
         )
 
     def test_result_line_comes_last(self):
@@ -1589,7 +1877,7 @@ class LandTest(unittest.TestCase):
             env["GOLANGCI_LINT_CACHE"] = str(shared)
             env["SEEN"] = str(Path(tmp, "seen"))
             wt = Path(repo, ".claude", "worktrees", f"t-{REF}")
-            git_dir = self.git("rev-parse", "--absolute-git-dir", cwd=wt, env=env)
+            git_dir = git("rev-parse", "--absolute-git-dir", cwd=wt, env=env)
             # The check filled its cache, and the worktree stayed clean.
             self.assert_landed(repo, env, self.land(repo, env))
             seen = {
@@ -1635,7 +1923,7 @@ class LandTest(unittest.TestCase):
                 self.assertEqual(status, 0, lines)
                 self.assertTrue(lines[0].startswith(f"RESULT {REF} OK "), lines)
                 self.assertEqual(
-                    self.git("log", "-1", "--format=%s", cwd=repo, env=env),
+                    git("log", "-1", "--format=%s", cwd=repo, env=env),
                     self.SUBJECT,
                 )
                 # The list of Workflow inputs follows the RESULT line.
@@ -1690,11 +1978,37 @@ class LandTest(unittest.TestCase):
             self.assertTrue(lines[0].startswith(f"RESULT {REF} OK "), lines)
             self.assertIn(f"ultraclose: aven context {self.OTHER} failed", lines[1])
             self.assertEqual(
-                self.git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
+                git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
             )
             self.assertEqual(
                 self.task_states(tmp), {REF: "landed", self.OTHER: "pending"}
             )
+
+    def test_next_reports_leftover_work_after_landing(self):
+        # An earlier run left the branch of the second task. The landing
+        # passes, and its next starts no task.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            self.add_other(tmp, repo, env)
+            other = f"task/{self.OTHER}"
+            git("branch", other, cwd=repo, env=env)
+            status, lines = self.land(repo, env, "--next", stderr=subprocess.STDOUT)
+            self.assertEqual(status, 1, lines)
+            # The RESULT line comes first, and the refusal of next follows it.
+            self.assertTrue(lines[0].startswith(f"RESULT {REF} OK "), lines)
+            self.assertIn(
+                f"{self.OTHER}: the branch {other}, 0 commits ahead of main", lines
+            )
+            message = "\n".join(lines[1:])
+            self.assertIn(OWN_WORK, message)
+            # The task of the landing has landed, so the refusal names next
+            # and not the landing.
+            self.assertIn(RETRY.format("next"), message)
+            self.assertEqual(
+                self.task_states(tmp), {REF: "landed", self.OTHER: "pending"}
+            )
+            git("branch", "-D", other, cwd=repo, env=env)
+            self.assertEqual(self.next_refs(repo, env), [self.OTHER])
 
     def test_result_reaches_output_before_next(self):
         # The aven stub holds the start of the second task until the test
