@@ -104,13 +104,17 @@ approved task. `status` then prints an `ended` line.
    for each cache.
 4. Run `ultraclose.py init --run <scratchpad>/ultraclose --limit <N>`. If
    that directory holds an earlier run, pass a new directory, such as
-   `<scratchpad>/ultraclose-2`. `init` refuses the directory of an earlier
-   run, so the new run starts without the `rules.md` and the `notes.md` of
-   that run. Pass `--check '<command>'` with the full check of the project,
-   unless the commit hook already runs that check. Pass
-   `--health '<command>'` when the check or a commit hook requires a
-   service, such as Docker. The health command is a fast command that fails
-   when the service is down, such as `docker version`.
+   `<scratchpad>/ultraclose-2`. `init` refuses a directory that holds the
+   `state.json` or the `tasks/` directory of an earlier run. So the new run
+   starts without the `rules.md` and the `notes.md` of that run. It also
+   treats each branch and each worktree that the earlier run left as
+   leftover work, as the Leftover work section says.
+
+   Pass `--check '<command>'` with the full check of the project, unless
+   the commit hook already runs that check. Pass `--health '<command>'`
+   when the check or a commit hook requires a service, such as Docker. The
+   health command is a fast command that fails when the service is down,
+   such as `docker version`.
 
    Pass `--shared <glob>` for each kind of file that two running tasks may
    both edit. Each `--shared` glob adds to the default globs, which cover
@@ -304,10 +308,28 @@ Then run `next` or `args <ref>` again. After a landing that printed the
 lines, run `ultraclose.py next`, because the task of the landing has
 landed. Each task starts on a new branch from the base branch.
 
+`ultraclose.py set <ref> noted` removes the clean worktree of the task.
+`set <ref> closed` removes that worktree and then deletes the branch.
+Neither command deletes a branch whose worktree is gone or dirty. Both
+commands remove only the work of the run.
+
+For a task with leftover work, each `set` command keeps the worktree and
+the branch. When the worktree exists, the command prints a line that names
+the worktree. `next` starts only pending tasks, so the leftover work of a
+noted or closed task can stay. If you remove that work, follow the steps
+of this section, so that the branch keeps its commits.
+
 `ultraclose.py` creates the directory of a task in the run directory when
 it starts the task. It treats the branch or the worktree of a task without
 that directory as leftover work. So do not create or remove a task
 directory yourself.
+
+`ultraclose.py init` refuses a run directory that holds the `tasks/`
+directory of an earlier run. A run in that directory treats each task
+directory there as its own, so it resumes the branch of that task. Pass a
+new directory, as the Setup section says. With `--force`, `init` takes the
+directory. Pass `--force` only when the user asks you to resume the tasks
+of that run.
 
 ## Loop
 

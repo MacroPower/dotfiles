@@ -504,6 +504,30 @@ class InitTest(unittest.TestCase):
                 self.assertEqual(status.splitlines()[0], f"run={second}")
                 self.assertEqual({n: state_of(r) for n, r in runs.items()}, before)
 
+    def test_retry_after_failed_init(self):
+        # Init fails after its checks when it cannot add the worktrees to
+        # the exclude file of the repository. Without a global config and
+        # a global ignore file, git ignores no worktree, so init writes
+        # the exclude file.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            env |= {
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "XDG_CONFIG_HOME": tmp,
+            }
+            info = Path(repo, ".git", "info")
+            shutil.rmtree(info, ignore_errors=True)
+            run = Path(tmp, "run").resolve()
+            refused("init", "--run", str(run), cwd=repo, env=env)
+            self.assertFalse(run.exists())
+            info.mkdir()
+            ultraclose("init", "--run", str(run), cwd=repo, env=env)
+            self.assertEqual(state_of(run)["tasks"], {})
+            self.assertIn(".claude/worktrees/\n", (info / "exclude").read_text())
+            status = ultraclose("status", cwd=repo, env=env)
+            self.assertEqual(status.splitlines()[0], f"run={run}")
+
 
 class StatusTest(unittest.TestCase):
     """The status command shows what a later batch of tasks inherits."""
@@ -2234,6 +2258,12 @@ RECOUNT = "git rev-list --count main..<branch>"
 # The sentence of the refusal that names the command to run after the
 # cleanup, with the words of that command.
 RETRY = "Then run ultraclose.py {}."
+# The line that set prints for the worktree of an earlier run, with the
+# path of that worktree.
+NOT_CREATED = "kept worktree {}, which this run did not create"
+# What init says about a directory that holds the tasks directory of an
+# earlier run.
+HOLDS_TASKS = "holds the tasks directory of an earlier run"
 
 
 def noted(tmp, repo, env, wt):
@@ -2265,7 +2295,10 @@ def renamed(tmp, repo, env, wt):
 
 
 class LeftoverTest(unittest.TestCase):
-    """A run resumes only the branches and the worktrees that it created."""
+    """A run resumes only the branches and the worktrees that it created.
+
+    The set command also removes only those branches and those worktrees.
+    """
 
     def ahead(self, repo, env, name):
         """The count of the commits of a branch that main lacks."""
@@ -2485,6 +2518,128 @@ class LeftoverTest(unittest.TestCase):
                 git("branch", "--show-current", cwd=launch["task"]["wt"], env=env),
                 BRANCH,
             )
+
+    def test_set_keeps_work_of_earlier_run(self):
+        # The second run does not start the task. A lost run leaves a
+        # clean worktree, and a run that notes the task leaves only the
+        # branch.
+        # name: (what ends the first run, the state that the second run
+        # sets, whether the first run leaves the worktree)
+        cases = {
+            "noted, and the worktree of a lost run": (lost, "noted", True),
+            "closed, and the worktree of a lost run": (lost, "closed", True),
+            "closed, and the branch of a noted task": (noted, "closed", False),
+        }
+        for name, (end, task_state, has_worktree) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, second, wt = self.second_run(tmp, 2, end)
+                printed = ultraclose("set", REF, task_state, cwd=repo, env=env)
+                self.assertEqual(Path(wt).is_dir(), has_worktree)
+                self.assertEqual(self.ahead(repo, env, BRANCH), 2)
+                kept = []
+                if has_worktree:
+                    self.assertEqual(
+                        git("branch", "--show-current", cwd=wt, env=env), BRANCH
+                    )
+                    kept = [NOT_CREATED.format(wt)]
+                self.assertEqual(printed.splitlines(), [*kept, f"{REF} {task_state}"])
+                self.assertEqual(state_of(second)["tasks"][REF]["state"], task_state)
+                # The command does not record the work as the work of the
+                # run, so the run still refuses to resume it.
+                ultraclose("set", REF, "pending", cwd=repo, env=env)
+                self.assertIn(OWN_WORK, refused("next", cwd=repo, env=env))
+
+    def test_set_removes_work_of_its_run(self):
+        # name: (the commands that end the task of the run, the state that
+        # the last command sets, whether the branch remains)
+        cases = {
+            "a noted task": ([["set", REF, "noted"]], "noted", True),
+            "a closed task": ([["set", REF, "closed"]], "closed", False),
+            # The worktree of the task is gone, so the command keeps the
+            # branch.
+            "a noted task that the run closes": (
+                [["set", REF, "noted"], ["set", REF, "closed"]],
+                "closed",
+                True,
+            ),
+            "a noted task that the run starts again and closes": (
+                [["set", REF, "noted"], ["args", REF], ["set", REF, "closed"]],
+                "closed",
+                False,
+            ),
+        }
+        for name, (commands, task_state, keeps_branch) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, launch = running_task(tmp, 2)
+                for command in commands:
+                    printed = ultraclose(*command, cwd=repo, env=env)
+                self.assertEqual(printed.splitlines(), [f"{REF} {task_state}"])
+                self.assertFalse(Path(launch["task"]["wt"]).exists())
+                branches = git("branch", "--list", BRANCH, cwd=repo, env=env)
+                self.assertEqual(bool(branches), keeps_branch)
+
+    def test_set_keeps_dirty_worktree_of_its_run(self):
+        for task_state in ("noted", "closed"):
+            with self.subTest(task_state), tempfile.TemporaryDirectory() as tmp:
+                repo, env, launch = running_task(tmp, 2)
+                wt = launch["task"]["wt"]
+                Path(wt, "dirty.txt").write_text("dirty\n")
+                printed = ultraclose("set", REF, task_state, cwd=repo, env=env)
+                self.assertEqual(
+                    printed.splitlines(),
+                    [f"kept dirty worktree {wt}", f"{REF} {task_state}"],
+                )
+                self.assertTrue(Path(wt, "dirty.txt").is_file())
+                self.assertEqual(self.ahead(repo, env, BRANCH), 2)
+
+    def test_init_refuses_directory_that_holds_tasks(self):
+        # The first run loses its state file, and its directory keeps its
+        # tasks directory.
+        # name: whether the first run started its task
+        cases = {"the directory of a started task": True, "no task directory": False}
+        for name, started in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = launchable_repo(tmp)
+                first = Path(tmp, "first").resolve()
+                ultraclose("init", "--run", str(first), cwd=repo, env=env)
+                triage(tmp, repo, env, {"ref": REF})
+                if started:
+                    ultraclose("next", cwd=repo, env=env)
+                (first / "state.json").unlink()
+                message = refused("init", "--run", str(first), cwd=repo, env=env)
+                self.assertIn(f"{first} {HOLDS_TASKS}", message)
+                self.assertIn("Pass a new directory", message)
+                self.assertIn("With --force, init takes this directory", message)
+                self.assertFalse((first / "state.json").exists())
+                self.assertIn("no run found", refused("status", cwd=repo, env=env))
+
+    def test_run_after_lost_state_file(self):
+        # The first run loses its state file while its task runs, and its
+        # directory keeps the directory of the task.
+        # name: (the directory of the second run, the flags of its init,
+        # whether the second run resumes the work of the first run)
+        cases = {
+            "a new directory": ("second", [], False),
+            "the directory of the first run with --force": ("first", ["--force"], True),
+        }
+        for name, (directory, flags, resumes) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, launch = running_task(tmp, 2)
+                runs = {"first": Path(tmp, "run"), "second": Path(tmp, "second")}
+                (runs["first"] / "state.json").unlink()
+                run = runs[directory].resolve()
+                ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
+                self.assertEqual(state_of(run)["tasks"], {})
+                triage(tmp, repo, env, {"ref": REF})
+                if resumes:
+                    # The run treats the directory of the task as its own,
+                    # so it resumes the branch and the worktree.
+                    started = json.loads(ultraclose("next", cwd=repo, env=env))
+                    self.assertEqual([t["task"]["ref"] for t in started], [REF])
+                    self.assertEqual(started[0]["task"]["wt"], launch["task"]["wt"])
+                else:
+                    self.assertIn(OWN_WORK, refused("next", cwd=repo, env=env))
+                self.assertEqual(self.ahead(repo, env, BRANCH), 2)
 
 
 class LandTest(unittest.TestCase):

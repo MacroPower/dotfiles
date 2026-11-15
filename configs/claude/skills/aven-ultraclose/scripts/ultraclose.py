@@ -28,7 +28,10 @@ replaced.
 A run ends when no task is pending, inflight, or approved. The init
 command replaces a run that has ended, and with --force it replaces a run
 that has not. Each run takes a directory of its own, so init refuses a
-directory that holds an earlier run.
+directory that holds the state.json or the tasks directory of an earlier
+run. With --force, init takes a directory that holds the tasks directory
+and no state.json. The new run then treats the branch and the worktree of
+each task that has a directory there as its own work.
 
 A run resumes only the task branches and the task worktrees that it
 created. An earlier run leaves the branch of each task that it noted, and
@@ -47,6 +50,12 @@ The Leftover work section of SKILL.md holds these steps. Each command
 that starts a task creates the directory of the task first, so the
 branch and the worktree of a task without a directory come from an
 earlier run.
+
+The set command removes the clean worktree of a task that it sets to
+noted or closed. When it removes the worktree of a closed task, it also
+deletes the branch. It removes only the work of the run. So it keeps the
+branch and the worktree of a task without a directory, and it prints a
+line that names a kept worktree.
 
   init --run DIR [--limit N] [--rounds N] [--check CMD] [--health CMD]
        [--shared GLOB]... [--disk-floor-gb N] [--disk-floor-percent PATH=N]...
@@ -503,15 +512,26 @@ def cmd_init(a):
     if not base:
         die("the main checkout has a detached HEAD")
     run = Path(a.run).resolve()
-    # The directory of an earlier run holds its rules.md, its notes.md,
-    # and the history of its tasks, and the new run must not inherit them.
+    # A directory that holds state.json is the directory of an earlier run,
+    # with its rules.md, its notes.md, and the history of its tasks. No new
+    # run takes it, even with --force.
     if (run / "state.json").exists():
         die(
             f"{run} holds an earlier run, and each run takes a directory of"
             " its own. Pass a new directory"
         )
-    for d in (run, run / "tasks", run / "logs"):
-        d.mkdir(parents=True, exist_ok=True)
+    # A run reads the directory of a task as the record that it created
+    # the branch and the worktree of the task, as owns() says. So a run
+    # that takes the tasks directory of an earlier run resumes the
+    # branches of that run as its own.
+    if (run / "tasks").is_dir() and not a.force:
+        die(
+            f"{run} holds the tasks directory of an earlier run, and each run"
+            " takes a directory of its own. Pass a new directory. With --force,"
+            " init takes this directory, and the new run then treats the branch"
+            " and the worktree of each task that has a directory there as its"
+            " own work"
+        )
     percents = floor_percents({}, a.disk_floor_percent)
     ignored = sh(
         "git", "check-ignore", "-q", ".claude/worktrees/x", cwd=repo, check=False
@@ -537,6 +557,10 @@ def cmd_init(a):
             dict.fromkeys(default_disk_paths(repo) + a.disk_path + list(percents))
         ),
     }
+    # Init creates the run directory after each step that can fail. So a
+    # failed init leaves no tasks directory for a retry to refuse.
+    for d in (run, run / "tasks", run / "logs"):
+        d.mkdir(parents=True, exist_ok=True)
     (run / "state.json").write_text(json.dumps({"config": cfg, "tasks": {}}))
     sh("git", "config", "--local", "ultraclose.run", str(run), cwd=repo)
     if replaces:
@@ -678,17 +702,28 @@ def cmd_untriaged(a):
     print(json.dumps(rows[:limit], indent=1))
 
 
-def leftovers(st, run, refs):
-    """Describe the work that an earlier run left for the given tasks.
+def owns(run, ref):
+    """Whether the branch and the worktree of a task are the work of the run.
 
     The start of a task creates the directory of the task in the run
     directory before the branch and the worktree, and each run takes a
     run directory of its own. So a task branch or a task worktree whose
     task has no directory comes from an earlier run.
 
-    Return one line per task that has such a branch or such a worktree.
-    The line names the branch, the count of its commits that the base
-    branch lacks, and the worktree.
+    The init command refuses a run directory that holds the tasks
+    directory of an earlier run. With --force, init takes that directory,
+    and the run then owns the work of each task that has a directory
+    there.
+    """
+    return (run / "tasks" / ref).is_dir()
+
+
+def leftovers(st, run, refs):
+    """Describe the work that an earlier run left for the given tasks.
+
+    Return one line per task that has a branch or a worktree that the run
+    does not own, as owns() says. The line names the branch, the count of
+    its commits that the base branch lacks, and the worktree.
     """
     cfg = st["config"]
     repo, base = cfg["repo"], cfg["base"]
@@ -701,7 +736,7 @@ def leftovers(st, run, refs):
     ).splitlines()
     lines = []
     for ref in refs:
-        if (run / "tasks" / ref).is_dir():
+        if owns(run, ref):
             continue
         found = []
         if branch(ref) in heads:
@@ -756,8 +791,8 @@ def start(st, run, ref):
     cfg, t = st["config"], st["tasks"][ref]
     repo, wt = cfg["repo"], worktree(cfg, ref)
     # The directory of the task records that this run started the task,
-    # and leftovers() reads that record. So the directory comes before
-    # the branch and the worktree.
+    # and owns() reads that record. So the directory comes before the
+    # branch and the worktree.
     d = run / "tasks" / ref
     (d / "scratch").mkdir(parents=True, exist_ok=True)
     if not Path(wt).exists():
@@ -865,7 +900,11 @@ def cmd_set(a):
             t["flags"].append(a.flag)
         wt = worktree(cfg, a.ref)
         if a.state in ("noted", "closed") and Path(wt).exists():
-            if out("git", "status", "--porcelain", cwd=wt):
+            # The command removes only the work of this run. The branch of
+            # an earlier run can hold commits that no other branch holds.
+            if not owns(run, a.ref):
+                print(f"kept worktree {wt}, which this run did not create")
+            elif out("git", "status", "--porcelain", cwd=wt):
                 print(f"kept dirty worktree {wt}")
             else:
                 sh("git", "worktree", "remove", wt, cwd=repo)
@@ -1366,7 +1405,10 @@ def main():
         help=DISK_PATH_HELP,
     )
     s.add_argument(
-        "--force", action="store_true", help="replace a run that has not ended"
+        "--force",
+        action="store_true",
+        help="replace a run that has not ended, and take a run directory that"
+        " holds the tasks directory of an earlier run",
     )
     s.set_defaults(fn=cmd_init)
 
