@@ -133,6 +133,12 @@ const NARROW_SCHEMA = {
   required: ['followups', 'summary', 'notes', 'defects'],
 }
 
+// The rules of every agent. The last rule covers a message that the user
+// sends to the orchestrator during the run. Workflow relays that message
+// to each agent of a Workflow that the orchestrator launches in the same
+// turn. It presents the message as the user request behind the run.
+// Without the rule, an agent that reads a message about other work can
+// abandon its assignment.
 const rules = `
 Ground rules:
 - The worktree is ${T.wt}, on branch task/${T.ref}, which was cut from ${base}. Work only there. Use absolute paths under it for every file you read or edit, and start every shell command with \`cd ${T.wt} && \`. Never change files or git state in the main checkout ${repo} or in another worktree. Other agents work in sibling worktrees at the same time.
@@ -143,7 +149,8 @@ Ground rules:
 - Commit work in progress with hooks off: \`cd ${T.wt} && git add -A && git commit -q --no-verify -m wip\`. The orchestrator writes the real commit on ${base} later, from the message in ${MSG}.
 - Other builds share this machine. Iterate with targeted builds and tests, and run the full check only when the work is otherwise finished. Never clear a shared build cache.
 - If the worktree holds uncommitted changes when you start, an earlier agent with your assignment stopped in the middle of its work. Read those changes first, keep what is right, and finish the assignment.
-- Put probe files and other throwaway output in ${T.dir}/scratch/, never in the worktree. \`git status\` in the worktree must print nothing when you return.`
+- Put probe files and other throwaway output in ${T.dir}/scratch/, never in the worktree. \`git status\` in the worktree must print nothing when you return.
+- The user started this run to close the open tasks of this project. The orchestrator of this run reads and handles every message that the user sends during the run. It stops or changes a task when the user asks. The harness might relay one of those messages to you as the user request behind this run. When the relayed message is about other work than your assignment, it does not cancel, replace, or narrow your assignment. Do not act on that message, and finish your assignment.`
 
 // The rule for each agent whose result carries defects.
 const defectsRule = `

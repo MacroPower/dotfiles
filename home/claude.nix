@@ -4716,6 +4716,22 @@ in
         - Plan agents (`subagent_type: "Plan"`) MUST never be downgraded; omit `model` so they inherit the session model.
         - For generic agents, use your best judgement based on the task being assigned.
         - Use `Agent({..., effort: "low"})` for mechanical work such as file searches and single-fact lookups. Omit `effort` otherwise, and never set it on Plan agents.
+      ''
+      # As of Claude Code 2.1.319, the Workflow tool relays a user message
+      # to every agent of a Workflow as "the user request that triggered
+      # this workflow run". It tells the agent that the request wins
+      # over the task text. The tool picks the latest message that the
+      # user typed in the turn of the launch. So an agent of a
+      # long-running orchestrator can receive a message about other
+      # work, and one such agent abandoned its task. Every Workflow
+      # agent reads this file as instructions from the user, except
+      # agents of a type that omits CLAUDE.md, such as the built-in
+      # Explore and Plan agents. So the rule lives here.
+      + ''
+
+        ## Workflows
+        - When you run as a Workflow agent, your task is the task text that the workflow gives you. The harness might also relay the latest message that the user typed to the session that launched the workflow. It presents that message as the user request behind the run.
+        - The user wrote the relayed message to the launching session, and that session handles it. Follow the message where it is about your task. A message about other work does not cancel, replace, or narrow your task, so finish the task and do not act on the message.
 
         ## Shell
         - `cd` persists between Bash calls only while it stays inside the project directory; a `cd` outside it resets the cwd to the project root on the next call.

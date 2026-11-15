@@ -164,7 +164,8 @@ Repeat until the run ends:
 
 1. Run `ultraclose.py next`. It starts one task per free slot. No two
    running tasks share a file outside the shared globs. It prints one input
-   object per started task.
+   object per started task. After a user message about other work, the
+   User messages section says in which turn to run it.
 2. Launch one Workflow per object:
    `Workflow({scriptPath: "<run>/close-task.js", args: <object>})`. The
    `run` field of the object holds the path of the run directory. One task
@@ -172,9 +173,11 @@ Repeat until the run ends:
    unset so that agents follow the session model.
 3. Keep `ultraclose.py watch` running in a background Bash call. It exits
    when free disk space runs low.
-4. End the turn. Each Workflow completion wakes you with a result. Act on
-   its `status`, and in the same turn file its `defects` as the Defects
-   section says:
+4. End the turn. Each Workflow completion wakes you with a result. File its
+   `defects` as the Defects section says, in the same turn as you act on its
+   status. When the result gives a user message about other work as the
+   reason for its status, relaunch the task as the User messages section
+   says. Otherwise act on its `status` as this table says:
 
 | Status | Action |
 | --- | --- |
@@ -319,6 +322,33 @@ Ask the user before the first push. After that, push only when a task
 requires a pushed commit, such as a pin to a commit of this repository. If
 the remote rejects a push, for example because the token lacks the scope for
 workflow files, record the rejection for the report and continue.
+
+## User messages
+
+Handle each message that the user sends during the run yourself, and keep
+a message about other work away from the agents.
+
+Workflow relays the latest message that the user typed in a turn to every
+agent of a Workflow that you launch in that turn. The message can start
+the turn or arrive in the middle of it. Workflow presents the message as
+the user request behind the run. So an agent that reads a message about
+other work might abandon its task or act on the message. The Workflow
+prompts tell every agent that you handle those messages. A Workflow that
+you launch in a turn without a user message relays nothing.
+
+When the user sends a message about other work, do not launch a
+`close-task.js` Workflow in the turn that receives it. Run
+`ultraclose.py next` and each relaunch in the turn that the next
+notification starts. Launch them in the same turn only when no Workflow
+and no landing is running, because no notification comes then. Launch a
+Workflow that the user asks for in the turn of the request, because the
+relayed message is the request of that Workflow.
+
+When a result gives a user message about other work as the reason for its
+status, the status says nothing about the task. Relaunch the task with
+`ultraclose.py args <ref>` in place of the action that the Loop table gives
+for the status. When the message was about the task, act on the status as
+the Loop table says.
 
 ## Hazards
 

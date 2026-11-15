@@ -996,12 +996,8 @@ def fixed(n, gave_up=False, withdrawn=()):
 
 
 @unittest.skipUnless(NODE, "node is not on PATH")
-class WorkflowResultTest(unittest.TestCase):
-    """The summary, the notes, and the defects of a result.
-
-    The summary and the notes follow the last change. The defects add up
-    over the agents of one launch.
-    """
+class WorkflowCase(unittest.TestCase):
+    """The base of each test that runs close-task.js under Node."""
 
     def label(self, short):
         """Turn a short label such as "fix r1" into the label of the script."""
@@ -1048,6 +1044,56 @@ class WorkflowResultTest(unittest.TestCase):
         ran = json.loads(p.stdout)
         self.assertEqual([c["label"] for c in ran["calls"]], list(scenario["agents"]))
         return ran["result"], dict(zip(agents, ran["calls"]))
+
+    def every_agent(self):
+        """Return one call of each agent that the script starts, by short
+        label."""
+        # The first run reaches every agent except the sync agent.
+        _, calls = self.run_workflow(
+            {
+                "impl": IMPLEMENTED,
+                "review r1": CHANGES,
+                "fix r1": fixed(1),
+                "review final": CHANGES,
+                "narrow": NARROWED,
+            },
+            rounds=1,
+        )
+        _, synced = self.run_workflow(
+            {"sync": SYNCED, "review r2": APPROVE}, resume=SYNC
+        )
+        calls["sync"] = synced["sync"]
+        return calls
+
+
+class WorkflowRulesTest(WorkflowCase):
+    """The ground rules that the prompt of every agent carries."""
+
+    def test_every_agent_learns_who_handles_user_messages(self):
+        calls = self.every_agent()
+        self.assertEqual(
+            set(calls),
+            {"impl", "sync", "review r1", "fix r1", "review final", "narrow"},
+        )
+        # The rule says who handles a message of the user, and what a
+        # relayed message does not change.
+        rule = (
+            "The orchestrator of this run reads and handles every message "
+            "that the user sends during the run",
+            "does not cancel, replace, or narrow your assignment",
+        )
+        for label, call in calls.items():
+            with self.subTest(label):
+                for sentence in rule:
+                    self.assertIn(sentence, call["prompt"])
+
+
+class WorkflowResultTest(WorkflowCase):
+    """The summary, the notes, and the defects of a result.
+
+    The summary and the notes follow the last change. The defects add up
+    over the agents of one launch.
+    """
 
     def test_result_describes_last_change(self):
         first_fix = {"impl": IMPLEMENTED, "review r1": CHANGES, "fix r1": fixed(1)}
@@ -1427,21 +1473,7 @@ class WorkflowResultTest(unittest.TestCase):
                 self.assertIn(listed(*authors), calls[label]["prompt"])
 
     def test_agents_that_report_defects_learn_the_rule(self):
-        # The first run reaches every agent except the sync agent.
-        _, calls = self.run_workflow(
-            {
-                "impl": IMPLEMENTED,
-                "review r1": CHANGES,
-                "fix r1": fixed(1),
-                "review final": CHANGES,
-                "narrow": NARROWED,
-            },
-            rounds=1,
-        )
-        _, synced = self.run_workflow(
-            {"sync": SYNCED, "review r2": APPROVE}, resume=SYNC
-        )
-        calls["sync"] = synced["sync"]
+        calls = self.every_agent()
         # label: the fields for defects that the schema of the agent requires
         want = {
             "impl": {"defects"},
