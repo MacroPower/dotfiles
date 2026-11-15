@@ -19,5 +19,7 @@ We embarked on a rewrite of the parser.
 The router harnesses the power of async IO.
 The SDK unlocks the full potential of the API.
 The cache is in the realm of tens of megabytes.
+The report covers a landscape of tools.
+The post surveys the changing landscape of container tools.
 The key takeaway is that the cache never expires.
 The tool navigates the complexities of the config.

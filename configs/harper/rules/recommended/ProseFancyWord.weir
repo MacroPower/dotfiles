@@ -15,15 +15,18 @@
 # whitespace token, so `deep[-, ( )]dive` lists a hyphen and a space.
 # The pattern matches the spaced and the hyphenated spelling alike.
 #
+# `(landscape of)` does not open with `the`, so the branch also matches
+# `the changing landscape of` and `a landscape of tools`.
+#
 # False Positives
 #
 # `unlock`, `harness`, `landscape`, `realm`, and `underscore` are left
 # out, because each names something in code (a mutex, a test harness, a
 # page orientation, a Kerberos realm, the character). The stock phrases
 # built on them count instead (`harness the power`, `unlock the full
-# potential`, `the landscape of`, `the realm of`). `elevate privileges`
+# potential`, `landscape of`, `the realm of`). `elevate privileges`
 # names a security operation, so `elevate` skips a following
-# `privileges` or `permissions`.
+# `privilege`, `privileges`, or `permissions`.
 #
 # Related Rules
 #
@@ -52,4 +55,5 @@ allows "The test harness builds the fixture once."
 allows "The realm names the Kerberos domain."
 allows "Names with an underscore are private."
 allows "The installer elevates privileges with sudo."
+allows "The script elevates privilege for the install."
 allows "Rotate the page to landscape orientation before printing."
