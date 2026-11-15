@@ -181,6 +181,7 @@
                 mcp-opentofu = ./tools/mcp-opentofu/package.nix;
                 mcp-destiny = ./tools/mcp-destiny/package.nix;
                 leanspec-cli = ./pkgs/leanspec-cli.nix;
+                claude-json-sync = ./pkgs/claude-json-sync.nix;
                 claude-powerline = ./pkgs/claude-powerline.nix;
                 playwright-cli = ./pkgs/playwright-cli.nix;
                 comfyui = ./pkgs/comfyui.nix;

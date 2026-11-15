@@ -36,6 +36,7 @@ let
     mcp-opentofu = final.callPackage paths.mcp-opentofu { };
     mcp-destiny = final.callPackage paths.mcp-destiny { };
     leanspec-cli = final.callPackage paths.leanspec-cli { };
+    claude-json-sync = final.callPackage paths.claude-json-sync { };
     claude-powerline = final.callPackage paths.claude-powerline { };
     playwright-cli = final.callPackage paths.playwright-cli { };
     comfyui = final.callPackage paths.comfyui { };

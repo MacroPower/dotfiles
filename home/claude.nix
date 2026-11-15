@@ -4896,6 +4896,9 @@ in
         workmuxWrapped
         pkgs.git-surgeon
         pkgs.slugify
+        # container-init of the published shell image calls it from PATH
+        # (toolchains/dev/scripts/container-init.sh).
+        pkgs.claude-json-sync
       ]
       ++ lib.optionals cfg.clauth.enable [ pkgs.clauth ]
       # `mcp-destiny login` signs in from a terminal.
@@ -5031,73 +5034,49 @@ in
         run install -d -m 700 "${config.xdg.stateHome}/mcp-kubectx-run"
       '';
 
-      # Merge MCP servers into mutable ~/.claude.json. Fenced ahead of
-      # sibling entries that can abort the activation script so the merge
-      # cannot be silently skipped by an unrelated upstream failure.
+      # Sync the declared parts of the mutable ~/.claude.json: the MCP
+      # servers of ~/.config/mcp/mcp.json and the settings in --merge.
+      # claude-json-sync records the servers that it writes. A server
+      # that the configuration stops declaring leaves the file on the
+      # next activation, and a server from `claude mcp add` stays.
+      #
+      # The entry runs after linkGeneration, which links mcp.json. It
+      # runs ahead of sops-nix and caffeineTccReset, so a failure in
+      # either entry cannot skip the sync. An entry that sorts ahead of
+      # this one and aborts still skips the sync.
       activation.syncClaudeJson =
-        lib.hm.dag.entryBetween [ "sops-nix" "caffeineTccReset" ] [ "writeBoundary" ]
-          ''
-            CLAUDE_JSON="$HOME/.claude.json"
+        let
+          settings =
+            # Enable remote control for all interactive sessions.
+            lib.optionalAttrs cfg.remoteControl { remoteControlAtStartup = true; }
+            # Trust the home directory before the first session (sandbox
+            # only). Workspace trust does not require a token, so the
+            # setting does not depend on secrets.
+            // lib.optionalAttrs skipPerms {
+              projects.${config.dotfiles.homeDirectory}.hasTrustDialogAccepted = true;
+            };
+        in
+        lib.hm.dag.entryBetween [ "sops-nix" "caffeineTccReset" ] [ "writeBoundary" "linkGeneration" ] ''
+          CLAUDE_JSON="$HOME/.claude.json"
 
-            # Read existing file or start fresh
-            if [ -f "$CLAUDE_JSON" ]; then
-              if ${pkgs.jq}/bin/jq empty "$CLAUDE_JSON" 2>/dev/null; then
-                EXISTING=$(cat "$CLAUDE_JSON")
-              else
-                echo "Warning: ~/.claude.json is malformed, backing up" >&2
-                $DRY_RUN_CMD cp "$CLAUDE_JSON" "$CLAUDE_JSON.bak.$(date +%s)"
-                EXISTING='{}'
-              fi
-            else
-              EXISTING='{}'
-            fi
+          # claude-json-sync prints the count of the servers that it
+          # synced. An activation that prints no such line shows that a
+          # sibling entry sorted ahead of this one and aborted.
+          run ${lib.getExe pkgs.claude-json-sync} \
+            --servers "${config.xdg.configHome}/mcp/mcp.json" \
+            --record "${config.xdg.stateHome}/claude-json-sync/mcp-servers.json" \
+            --merge ${lib.escapeShellArg (builtins.toJSON settings)} \
+            "$CLAUDE_JSON"
 
-            # Merge MCP servers from home-manager config
-            MCP_CONFIG="${config.xdg.configHome}/mcp/mcp.json"
-            MCP_SERVERS='{}'
-            if [ -f "$MCP_CONFIG" ]; then
-              MCP_SERVERS=$(${pkgs.jq}/bin/jq '.mcpServers // {}' "$MCP_CONFIG")
-            fi
-            UPDATED=$(echo "$EXISTING" | ${pkgs.jq}/bin/jq \
-              --argjson mcp "$MCP_SERVERS" \
-              '.mcpServers = (.mcpServers // {} | to_entries | map(select(.key as $k | $mcp | has($k) | not)) | from_entries) * $mcp')
-
-            ${lib.optionalString cfg.remoteControl ''
-              # Enable remote control for all interactive sessions
-              UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq '.remoteControlAtStartup = true')
-            ''}
-
-            ${lib.optionalString skipPerms ''
-              # Pre-trust home directory (sandbox only); workspace trust does
-              # not require a token, so this runs independently of secrets.
-              UPDATED=$(echo "$UPDATED" | ${pkgs.jq}/bin/jq \
-                '.projects["${config.dotfiles.homeDirectory}"].hasTrustDialogAccepted = true')
-            ''}
-
-            # Atomic write
-            if [ -z "$DRY_RUN_CMD" ]; then
-              TMPFILE=$(mktemp "$CLAUDE_JSON.tmp.XXXXXX")
-              echo "$UPDATED" > "$TMPFILE"
-              chmod 600 "$TMPFILE"
-              mv "$TMPFILE" "$CLAUDE_JSON"
-            else
-              echo "Would write merged MCP config to $CLAUDE_JSON"
-            fi
-
-            # Prune stale worktree entries from ~/.claude.json
-            if [ -z "$DRY_RUN_CMD" ] && command -v workmux >/dev/null 2>&1 && [ -f "$CLAUDE_JSON" ]; then
-              ${lib.getExe' pkgs.workmux-bin "workmux"} claude prune 2>/dev/null || true
-            fi
-
-            # Load-bearing diagnostic: surfaces silent-skip regressions when
-            # a future sibling entry sorts ahead of this one and aborts.
-            MCP_COUNT=$(${pkgs.jq}/bin/jq 'length' <<<"$MCP_SERVERS")
-            echo "syncClaudeJson: synced $MCP_COUNT MCP servers to ~/.claude.json" >&2
-          '';
+          # Prune stale worktree entries from ~/.claude.json
+          if [ -z "$DRY_RUN_CMD" ] && command -v workmux >/dev/null 2>&1 && [ -f "$CLAUDE_JSON" ]; then
+            ${lib.getExe' pkgs.workmux-bin "workmux"} claude prune 2>/dev/null || true
+          fi
+        '';
 
       # Best-effort GitHub PAT upkeep for fish and gh. Kept separate from
-      # syncClaudeJson so a sops-nix failure cannot prevent the MCP merge
-      # from running.
+      # syncClaudeJson so a sops-nix failure cannot prevent the MCP server
+      # sync from running.
       activation.syncClaudeSecrets = lib.mkIf sopsEnabled (
         lib.hm.dag.entryAfter [ "sops-nix" "syncClaudeJson" ] ''
           # Earlier generations stored the PAT as a universal fish

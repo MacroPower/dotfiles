@@ -31,8 +31,8 @@ home=/home/dev
 # --- heal managed symlinks ----------------------------------------------
 # A persisted ~/.claude or ~/.config volume shadows the image's freshly
 # baked home-manager symlinks with an older image's (now-dangling) ones.
-# Re-link them against the current generation before anything reads them
-# -- in particular before the MCP re-merge below reads ~/.config/mcp.
+# Re-link them against the current generation before anything reads them.
+# The MCP server sync of the /claude-state volume reads ~/.config/mcp.
 [ -x /usr/local/bin/relink-managed ] && /usr/local/bin/relink-managed || true
 
 # --- persistence volumes ------------------------------------------------
@@ -54,31 +54,25 @@ if [ -d /claude-state ]; then
   rm -f "$home/.claude.json"
   ln -sf /claude-state/claude.json "$home/.claude.json"
 
-  # Re-merge MCP server definitions into the persisted claude.json. The file
-  # survives image updates via /claude-state, but its .mcpServers[].command
-  # values embed /nix/store paths that go stale on a new image. relink-managed
-  # (above) has already healed ~/.config/mcp/mcp.json to the current store, so
-  # re-run the same merge home/claude.nix's syncClaudeJson does at build time.
-  # Keep this jq expression in sync with home/claude.nix. Write through the
-  # symlink to the real /claude-state file so the redirect is preserved.
-  # Resilient under `set -e`: every jq step is guarded so a malformed file
-  # can't abort the entrypoint before the main process execs.
+  # Sync the MCP servers of the persisted claude.json with the image. The
+  # file survives image updates via /claude-state, but its
+  # .mcpServers[].command values embed /nix/store paths that go stale on a new
+  # image. relink-managed has already healed ~/.config/mcp/mcp.json to the
+  # current store, so run claude-json-sync, the tool that home/claude.nix's
+  # syncClaudeJson runs at build time. The tool also removes each server
+  # that an earlier image declared and this image does not declare.
+  #
+  # The record of the servers that the tool wrote lives in /claude-state,
+  # because it describes the file there. The record in the image describes
+  # the image's own copy of claude.json. claude-json-sync replaces the file
+  # at the path that it gets, so pass the real /claude-state file and keep
+  # the ~/.claude.json redirect. `|| true` keeps a failed sync from aborting
+  # the entrypoint under `set -e` before the main process execs.
   mcp_config="$home/.config/mcp/mcp.json"
-  if command -v jq >/dev/null 2>&1 && [ -f "$mcp_config" ]; then
+  if command -v claude-json-sync >/dev/null 2>&1 && [ -f "$mcp_config" ]; then
     claude_real=$(readlink -f "$home/.claude.json" 2>/dev/null || echo /claude-state/claude.json)
-    if jq empty "$claude_real" 2>/dev/null; then
-      existing=$(cat "$claude_real" 2>/dev/null) || existing='{}'
-    else
-      existing='{}'
-    fi
-    mcp_servers=$(jq '.mcpServers // {}' "$mcp_config" 2>/dev/null) || mcp_servers='{}'
-    if updated=$(printf '%s' "$existing" | jq --argjson mcp "$mcp_servers" \
-      '.mcpServers = (.mcpServers // {} | to_entries | map(select(.key as $k | $mcp | has($k) | not)) | from_entries) * $mcp' 2>/dev/null) &&
-      tmp=$(mktemp "$claude_real.tmp.XXXXXX" 2>/dev/null); then
-      printf '%s\n' "$updated" >"$tmp"
-      chmod 600 "$tmp"
-      mv "$tmp" "$claude_real"
-    fi
+    claude-json-sync --servers "$mcp_config" \
+      --record /claude-state/mcp-servers.json "$claude_real" || true
   fi
 fi
 
