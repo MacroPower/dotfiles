@@ -355,8 +355,9 @@ in
           guestKubeconfigLocal = true;
           # home/claude.nix renders this text as the Host Environment
           # section of ~/.claude/CLAUDE.md. Only this host has the access
-          # log and the memory limit on login sessions. So the guidance
-          # lives here and not in the instructions that every host gets.
+          # log, the daemon that redirects UDP datagrams, and the memory
+          # limit on login sessions. So the guidance lives here and not in
+          # the instructions that every host gets.
           hostContext = ''
             This host is the terrarium VM. The terrarium daemon routes each outbound connection of the VM and of its containers through Envoy.
 
@@ -387,6 +388,32 @@ in
             ```sh
             zcat -f ${logs.envoyAccess}.1 ${logs.envoyAccess} | agrind '* | json | where time >= "2026-01-31T14:05" | sum(tx_bytes) as bytes, count by sni | sort by bytes desc'
             ```
+
+            Tests that send UDP over loopback, such as the tests of a DNS server, fail with a timeout on this host. Go tests report the timeout as `read udp 127.0.0.1:50210->127.0.0.1:39613: i/o timeout`. The terrarium daemon redirects to Envoy each UDP datagram that a non-root process sends to a port other than 53. Datagrams to an address of the VM itself, such as `127.0.0.1` or `::1`, then never arrive at the sockets that listen for them. TCP connections over loopback work.
+
+            To run a command that sends UDP over loopback, start it in a new network namespace, where the rules of the daemon do not apply:
+
+            ```sh
+            unshare -rn sh -c 'ip link set lo up && go test ./...'
+            ```
+
+            `unshare -rn` runs the shell as root in a new user namespace and a new network namespace. The loopback interface of a new network namespace is down, and `ip link set lo up` brings it up. Without that step, a connection to `127.0.0.1` fails with `network is unreachable`, and a socket on `::1` fails with `cannot assign requested address`.
+
+            The namespace holds no interface other than its own loopback. Commands in the namespace cannot reach the internet, the Lima host, or a server that listens outside the namespace. So fetch the dependencies of the command before you start it. Unix sockets that have a file path work from inside the namespace, so `nix` and `devbox` still reach the Nix daemon.
+
+            Root in the namespace is your own user outside it, so the files that the command writes belong to your user. Root in the namespace also opens each file of your user whatever the mode of the file, so tests that expect a permission error fail. To run the command as your own user, drop root with a second `unshare`. Keep the double quotes, so that the outer shell fills in your IDs. Inside the namespace, `id -u` prints 0.
+
+            ```sh
+            unshare -rn sh -c "ip link set lo up && exec unshare -U --map-user=$(id -u) --map-group=$(id -g) go test ./..."
+            ```
+
+            When a commit hook runs tests that send UDP over loopback, run `git commit` in a namespace so that the hook passes. Pass the `git commit` command as arguments after the `sh -c` string, not inside it. The outer shell then expands the commit message. So the quotes in the message, or in a heredoc that builds it, never end the single quotes of the `sh -c` string. The `sh` after the string sets `$0`, and `exec "$@"` runs the arguments after `sh`:
+
+            ```sh
+            unshare -rn sh -c 'ip link set lo up && exec "$@"' sh git commit -F msg.txt
+            ```
+
+            Hooks that also need the internet fail in the namespace. The Claude Code hook that lints commit messages finds a message only when the shell runs `git` itself. In this command, `git` is an argument of `unshare`, so that hook does not lint the message. Before you commit, run `prose-lint --commit < msg.txt` to lint the message yourself.
 
             systemd limits the processes of one login to ${sessionMemoryMax} of the VM's memory. The commands of every Claude Code session that the login started count toward the limit. When those processes need more memory than the limit, the kernel kills the largest one with SIGKILL. Shells report the kill as exit status 137, and `go test` reports it as `signal: killed`.
 
