@@ -135,6 +135,18 @@ func TestServerListsTools(t *testing.T) {
 
 		case toolGetItem:
 			assert.Contains(t, tool.Description, "a pick can be a perk that this version cannot roll")
+			assert.Contains(t, tool.Description, "the time to aim down sights in seconds")
+			assert.Contains(
+				t,
+				tool.Description,
+				"The values are therefore community measurements and not numbers from Bungie.",
+			)
+			assert.Contains(t, tool.Description, "without a stat bonus, such as Snapshot Sights, change them as well.")
+
+		case toolCompareDuplicates:
+			assert.Contains(t, tool.Description, "so two rolls compare in seconds and meters")
+			assert.Contains(t, tool.Description, "The values are the community measurements that get_item describes")
+			assert.Contains(t, tool.Description, "without a stat bonus, such as Snapshot Sights.")
 
 		case toolSaveLoadout:
 			assert.Equal(t, &mcp.ToolAnnotations{DestructiveHint: &destructive, IdempotentHint: true}, tool.Annotations)
@@ -1340,6 +1352,15 @@ func TestSnapshotCache(t *testing.T) {
 func TestGetItem(t *testing.T) {
 	t.Parallel()
 
+	// The lines that end the output of a fixture weapon. No fixture
+	// weapon holds a frame. A copy with perks ends with noFrame, and a
+	// copy for which the profile lists no perks ends with noPerks.
+	const (
+		noFrame = "Times and falloff: unknown. The community data has no curves for the frame of this weapon."
+		noPerks = "Times and falloff: unknown. " +
+			"The profile lists no perks for this copy, so the server cannot tell its frame."
+	)
+
 	// fatebringer returns the output for instance 1001 with the given
 	// lines of the roll ratings block.
 	fatebringer := func(ratings ...string) string {
@@ -1367,6 +1388,8 @@ func TestGetItem(t *testing.T) {
 			"",
 			"Stats:",
 			"- Range: 55",
+			"",
+			noFrame,
 		}), "\n")
 	}
 
@@ -1454,7 +1477,7 @@ func TestGetItem(t *testing.T) {
 			"Location: Hunter",
 			"",
 			"Roll ratings:",
-		}, ratings), "\n")
+		}, ratings, []string{"", noPerks}), "\n")
 	}
 
 	tests := map[string]struct {
@@ -1670,7 +1693,7 @@ func TestGetItem(t *testing.T) {
 			configs: 2,
 			prefs:   1,
 		},
-		"copy without perks has an unknown roll and ends with the ratings": {
+		"copy without perks has an unknown roll": {
 			files: map[string][]string{"rolls": {"rolls.a.json"}, "pvprolls": {"pvprolls.a.json"}},
 			bodies: map[string]string{
 				"rolls.a.json":    tiered,
@@ -1690,6 +1713,8 @@ func TestGetItem(t *testing.T) {
 				"Roll ratings:",
 				"- PvE: S on the Aegis sheet (in HCs), roll unknown: the profile lists no perks for this copy",
 				"- PvP: no tier on the PvP sheet (in HCs), roll unknown: the profile lists no perks for this copy",
+				"",
+				noPerks,
 			}, "\n"),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
@@ -1740,6 +1765,8 @@ func TestGetItem(t *testing.T) {
 				"  Sheet note: Add clear and boss damage.",
 				"  Pairs with Firefly.",
 				"- PvP: C on the PvP sheet (in Hand Cannon), roll unknown: the profile lists no perks for this copy",
+				"",
+				noPerks,
 			}, "\n"),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
@@ -1765,6 +1792,8 @@ func TestGetItem(t *testing.T) {
 				"Roll ratings:",
 				"- PvE: B on the Aegis sheet (in Exotic Weapons), which judges no perk columns",
 				"- PvP: not on the PvP sheet",
+				"",
+				noPerks,
 			}, "\n"),
 			fetched: []string{"/artifacts/rolls.a.json", "/artifacts/pvprolls.a.json"},
 			configs: 2,
@@ -2808,8 +2837,18 @@ func TestCompareDuplicates(t *testing.T) {
 		noAegis = "PvE: rating unavailable: the service publishes no Aegis sheet"
 		noPvP   = "PvP: rating unavailable: the service publishes no PvP sheet"
 
-		header   = "instance id | name | type | power | location | tag | flags | pve rating | pvp rating | perks"
+		header = "instance id | name | type | power | location | tag | flags | pve rating | pvp rating | " +
+			"reload | ready | stow | aim | hip falloff | aim falloff | perks"
 		noRating = "unavailable | unavailable"
+
+		// The lines after the title of a group. No fixture weapon holds a
+		// frame, so each copy leaves its six measure cells empty, as
+		// noCells shows. A copy with perks gives the reason noFrame, and a
+		// copy for which the profile lists no perks gives noPerks.
+		noFrame = "Times and falloff: unknown. The community data has no curves for the frame of this weapon."
+		noPerks = "Times and falloff: unknown. " +
+			"The profile lists no perks for this copy, so the server cannot tell its frame."
+		noCells = " |  |  |  |  |  |  | "
 
 		// The rating cells of a copy without perks.
 		unknownBoth  = "roll unknown (sheet S) | roll unknown (sheet C)"
@@ -2837,12 +2876,14 @@ func TestCompareDuplicates(t *testing.T) {
 	fatebringer := func(cells ...string) []string {
 		return []string{
 			"Fatebringer: 3 copies",
+			noFrame,
+			noPerks,
 			"",
 			header,
 			"1001 | Fatebringer | Kinetic Hand Cannon | 2010 | Vault | keep | favorite, locked, masterwork, note | " +
-				cells[0] + " | Explosive Payload (can swap to Rampage); Firefly",
-			"1005 | Fatebringer | Kinetic Hand Cannon | 1970 | Hunter (postmaster) |  |  | " + cells[1] + " | ",
-			"1006 | Fatebringer | Kinetic Hand Cannon | 1980 | Hunter (equipped) |  |  | " + cells[2] + " | ",
+				cells[0] + noCells + "Explosive Payload (can swap to Rampage); Firefly",
+			"1005 | Fatebringer | Kinetic Hand Cannon | 1970 | Hunter (postmaster) |  |  | " + cells[1] + noCells,
+			"1006 | Fatebringer | Kinetic Hand Cannon | 1980 | Hunter (equipped) |  |  | " + cells[2] + noCells,
 		}
 	}
 
@@ -2872,9 +2913,10 @@ func TestCompareDuplicates(t *testing.T) {
 		noPvP,
 		"",
 		"Midnight Coup: 1 copy",
+		noPerks,
 		"",
 		header,
-		"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | " + noRating + " | ",
+		"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | " + noRating + noCells,
 	}, "\n")
 
 	tests := map[string]struct {
@@ -3004,12 +3046,12 @@ func TestCompareDuplicates(t *testing.T) {
 			},
 			in: CompareDuplicatesInput{Name: "fatebringer"},
 			want: strings.Join(slices.Concat(
-				[]string{"Fatebringer: 4 copies", "", header},
+				[]string{"Fatebringer: 4 copies", noFrame, noPerks, "", header},
 				// The rows of the three copies of the base weapon.
-				rated[3:],
+				rated[5:],
 				[]string{
 					"1007 | Fatebringer (Adept) | Kinetic Hand Cannon | 2010 | Vault |  | locked, masterwork | " +
-						"not listed | not listed | Explosive Payload (can swap to Rampage); Firefly",
+						"not listed | not listed" + noCells + "Explosive Payload (can swap to Rampage); Firefly",
 				},
 			), "\n"),
 		},
@@ -3140,10 +3182,12 @@ func TestCompareDuplicatesPaging(t *testing.T) {
 		"PvP: rating unavailable: the service publishes no PvP sheet",
 		"",
 		"Midnight Coup: 2 copies",
+		"Times and falloff: unknown. The profile lists no perks for this copy, so the server cannot tell its frame.",
 		"",
-		"instance id | name | type | power | location | tag | flags | pve rating | pvp rating | perks",
-		"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | unavailable | unavailable | ",
-		"1007 | Midnight Coup | Kinetic Hand Cannon | 2005 | Vault |  |  | unavailable | unavailable | ",
+		"instance id | name | type | power | location | tag | flags | pve rating | pvp rating | " +
+			"reload | ready | stow | aim | hip falloff | aim falloff | perks",
+		"1003 | Midnight Coup | Kinetic Hand Cannon | 2005 | Hunter |  |  | unavailable | unavailable |  |  |  |  |  |  | ",
+		"1007 | Midnight Coup | Kinetic Hand Cannon | 2005 | Vault |  |  | unavailable | unavailable |  |  |  |  |  |  | ",
 	}, "\n"), got)
 
 	got, isError = call(t, f.h.handleCompareDuplicates, CompareDuplicatesInput{Limit: 1})

@@ -72,7 +72,7 @@ func TestNewSnapshot(t *testing.T) {
 				Socket: 1,
 			},
 		},
-		Stats:        []Stat{{Name: "Range", Value: 55}},
+		Stats:        []Stat{{Name: "Range", Value: 55, Hash: 1}},
 		Locked:       true,
 		Masterwork:   true,
 		Transferable: true,

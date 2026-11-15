@@ -1,0 +1,2774 @@
+{
+  "license": "The curves, the weapon lists, and the frame lists derive from D2Foundry's Oracle Engine, which its authors license under the MIT license or the Unlicense. See the NOTICE file.",
+  "sources": {
+    "oracle": {
+      "title": "D2Foundry's Oracle Engine: build_resources/weapon_formulas.json, build_resources/cached_build.ron, build.rs, and src/weapons/stat_calc.rs",
+      "url": "https://github.com/d2foundry/oracle_engine/tree/dcd0c7d302b056ffbb532edcb711d724a17ca8c1",
+      "date": "2025-05-06",
+      "patch": "8.2.6"
+    },
+    "9.1.0": {
+      "title": "Destiny 2 Update 9.1.0",
+      "url": "https://www.bungie.net/7/en/News/Article/destiny_update_9_1_0",
+      "date": "2025-09-09",
+      "patch": "9.1.0"
+    },
+    "9.5.0": {
+      "title": "Destiny 2 Update 9.5.0",
+      "url": "https://www.bungie.net/7/en/News/Article/destiny_update_9_5_0",
+      "date": "2025-12-02",
+      "patch": "9.5.0"
+    },
+    "9.7.0": {
+      "title": "Destiny 2 Update 9.7.0",
+      "url": "https://www.bungie.net/7/en/News/Article/destiny_update_9_7_0",
+      "date": "2026-06-09",
+      "patch": "9.7.0"
+    }
+  },
+  "frames": [
+    {
+      "names": ["High-Impact Frame"],
+      "hashes": [
+        302702765, 1019291327, 1451602450, 1472963920, 1875323682, 1946568256,
+        2516075140, 2617324347, 3769337248, 4231246084
+      ]
+    },
+    {
+      "names": ["VEIST Rapid-Fire", "Rapid-Fire Frame", "Rapid-Fire Glaive"],
+      "hashes": [
+        2593449, 137876701, 217816625, 680193725, 694879972, 762801111,
+        802623077, 806997698, 872207875, 878286503, 996573084, 1027896051,
+        1483339932, 1497440861, 1564126489, 1576423267, 1707990417, 1765356367,
+        1787083609, 1886418605, 1894749743, 1956005708, 2003022817, 2164888232,
+        2260949877, 2263539715, 2353477480, 2479787361, 2806361224, 2984571381,
+        2986029425, 3095041770, 3249407402, 3364911712, 3478030936, 3688301727,
+        3841661468, 3920852688, 4116588173, 4188742693
+      ]
+    },
+    {
+      "names": ["Adaptive Frame", "Adaptive Glaive", "Adaptive Burst"],
+      "hashes": [
+        31057037, 141515518, 378204240, 451371216, 489506521, 1063261332,
+        1294026524, 1316753551, 1338909520, 1447716563, 1655963600, 1793150018,
+        1795925907, 1900989425, 1938288214, 2178772051, 2189829540, 2490530085,
+        2503963990, 2696719570, 3049431773, 3133077199, 3355499393, 3387402995,
+        3414419157, 3435239180, 3449390870, 3530948111, 3576895600, 4172267910,
+        4193948962, 4200880287, 4249817697, 4269485650
+      ]
+    },
+    {
+      "names": ["Aggressive Frame", "Aggressive Glaive", "Aggressive Burst"],
+      "hashes": [
+        16021165, 16445399, 167794220, 176072987, 189818679, 389945760,
+        581875391, 738339367, 757651572, 836583820, 1020196213, 1068043187,
+        1069611115, 1326668122, 1361856293, 1487938731, 1525239159, 1632897927,
+        1737914521, 1739861752, 1748364716, 1749118639, 1827557644, 1831499663,
+        1986105578, 2040155611, 2059481925, 2097693203, 2101490074, 2159352803,
+        2419864979, 2518716062, 2552875793, 2662827496, 2757685314, 2874284214,
+        2912509910, 3026990487, 3228668394, 3320257055, 3468089894, 3615521782,
+        3794558792, 3884051579, 3983457027, 4036525828, 4074888076, 4198833635,
+        4203236451
+      ]
+    },
+    {
+      "names": ["Lightweight Frame", "MIDA Synergy"],
+      "hashes": [
+        118439741, 132189785, 308595185, 395096174, 474269988, 539564471,
+        885620491, 956390015, 1057935015, 1458010786, 1665848857, 1671927875,
+        1713206376, 1891876363, 2012877834, 2105054824, 2108556049, 2213377102,
+        2470575005, 2670025099, 2753228730, 3048420653, 3272152575, 3377988521,
+        3472640090, 3725333007, 3728676938, 4008973208, 4080055066
+      ]
+    },
+    {
+      "names": ["Precision Frame", "Häkke Precision Frame"],
+      "hashes": [
+        26177576, 216781713, 224485255, 364418505, 384272571, 433469519,
+        445823153, 453527127, 482158780, 668357349, 715195141, 738967614,
+        743857847, 762204274, 797798924, 811588234, 886865893, 895140517,
+        1034287523, 1045795938, 1052350088, 1206996986, 1236001742, 1322370662,
+        1636108362, 1827389998, 2057203855, 2094305299, 2305599261, 2409208302,
+        2458294492, 2563509458, 2725422375, 2743098132, 2927971896, 2986718682,
+        3000852559, 3046673757, 3094629643, 3114731754, 3192296481, 3226552705,
+        3252839262, 3274444880, 3356299403, 3399947696, 3419227006, 3419274965,
+        3489809232, 3573764622, 3646909656, 3665558569, 3774850330, 3913106382,
+        4000302358, 4083543255, 4113841443, 4130495068
+      ]
+    },
+    {
+      "names": ["Double Fire", "Heavy Burst"],
+      "hashes": [
+        570373697, 583593420, 650063316, 749936529, 983290038, 1370384437,
+        1634975868, 1759472859, 1817649409, 2170254329, 2213429699, 2444870733,
+        2732540911, 3099083217, 3291480605, 3330548924, 3456918063, 3755958904,
+        3923638944, 4175870265
+      ]
+    },
+    {
+      "names": ["Wave Frame", "Compressed Wave Frame"],
+      "hashes": [
+        210578077, 621911507, 667908513, 1220310607, 1395789926, 1713394949,
+        2264456959, 2571259936, 3030812579, 3142073525
+      ]
+    },
+    {
+      "names": ["Legacy PR-55 Frame"],
+      "hashes": [916649862, 2155015844, 3332480988, 3766386008, 4172222323]
+    },
+    {
+      "names": ["Support Frame"],
+      "hashes": [
+        156358224, 785441979, 840061228, 1535085486, 1926141333, 2491949917,
+        2622129339, 2707250581, 3161047604, 3488129416
+      ]
+    },
+    {
+      "names": ["Area Denial Frame"],
+      "hashes": [244760020, 385138649, 1208953762, 1782704870, 2012023082]
+    },
+    {
+      "names": ["Rocket-Assisted Frame"],
+      "hashes": [
+        368110299, 651554065, 687584589, 1225770249, 2100231191, 2928496916,
+        3178379945
+      ]
+    },
+    {
+      "names": ["Shot Package"],
+      "hashes": [3054949324]
+    },
+    {
+      "names": ["Pinpoint Slug Frame"],
+      "hashes": [
+        846472617, 878620401, 918679156, 1113207372, 1714663217, 1966150207,
+        2410819063, 2426674025, 2897981193, 3260675681
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "Auto Rifle",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 8.55689e-5,
+            "linear": -0.0242021,
+            "constant": 2.80673006666667,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.00279338,
+            "constant": 0.51985381,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.00268436,
+            "constant": 0.48414822,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001875,
+            "constant": 0.38975,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.125,
+            "constant": 10.75,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "Cerberus": {
+          "reload": {
+            "quadratic": 8.55689e-5,
+            "linear": -0.0242021,
+            "constant": 2.80673006666667,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.00279338,
+            "constant": 0.51985381,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.00268436,
+            "constant": 0.48414822,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001875,
+            "constant": 0.38975,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data has no damage falloff start for this weapon.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 1.6,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "high-impact": {
+          "scale": 1.6,
+          "source": "9.7.0",
+          "checked": "9.7.0.6"
+        },
+        "sweet-business": {
+          "omitted": "Update 9.7.0 left Sweet Business out of its change to the aim-down-sights falloff of High-Impact auto rifles, and no source gives the value of Sweet Business.",
+          "source": "9.7.0",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 878286503,
+          "name": "Rapid-Fire Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 944506345,
+          "name": "SUROS Regime",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 961505134,
+          "name": "Tommy's Matchbook",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1019291327,
+          "name": "High-Impact Frame",
+          "curves": "default",
+          "aimScale": "high-impact"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 4129629253,
+          "name": "Khvostov 7G-0X",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2622129339,
+          "name": "Support Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3488129416,
+          "name": "Support Frame (Strand)",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1458010786,
+          "name": "Lightweight",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2694044463,
+          "name": "Jiangshi AR1",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1484442054,
+          "name": "Monte Carlo",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1636108362,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3208839961,
+          "name": "Cerberus+1",
+          "curves": "Cerberus",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3610814281,
+          "name": "Hard Light",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3755070117,
+          "name": "Sweet Business",
+          "curves": "default",
+          "aimScale": "sweet-business"
+        },
+        {
+          "hash": 3602718766,
+          "name": "Quicksilver Storm",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1385166695,
+          "name": "Centrifuse",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 4184462049,
+          "name": "Necrochasm",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3698448090,
+          "name": "Choir of One",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Combat Bow",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 5.35476056419958e-5,
+            "linear": -0.0102410419405799,
+            "constant": 1.10091136388022,
+            "maxStat": 85,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002909930716,
+            "constant": 0.7364549654,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.00179330254,
+            "constant": 0.5396466513,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001855658199,
+            "constant": 0.5293778291,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 1.8,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 715195141,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1470121888,
+          "name": "Wish-Ender",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1573888036,
+          "name": "Trinity Ghoul",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1699724249,
+          "name": "Leviathan's Breath",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2108556049,
+          "name": "Lightweight Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2186532310,
+          "name": "Le Monarque",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3239299468,
+          "name": "Ticuu's Divination",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2226793914,
+          "name": "Hierarchy Of Needs",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2636679416,
+          "name": "Verglass Curve",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2910326942,
+          "name": "Wish-Keeper",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Fusion Rifle",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 6.15281e-5,
+            "linear": -0.0198054,
+            "constant": 2.8285704,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.001448069241,
+            "constant": 0.4990612517,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002863515313,
+            "constant": 0.4445712383,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001693741678,
+            "constant": 0.4112330226,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.0404,
+            "constant": 10.73,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "aggressive": {
+          "reload": {
+            "quadratic": 6.15281e-5,
+            "linear": -0.0198054,
+            "constant": 2.8285704,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.001448069241,
+            "constant": 0.4990612517,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002863515313,
+            "constant": 0.4445712383,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001693741678,
+            "constant": 0.4112330226,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.0404,
+            "constant": 14.73,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "1KV": {
+          "reload": {
+            "omitted": "The community data has no reload time for this weapon.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.001448069241,
+            "constant": 0.4990612517,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002863515313,
+            "constant": 0.4445712383,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001693741678,
+            "constant": 0.4112330226,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "Telesto": {
+          "reload": {
+            "quadratic": 6.15281e-5,
+            "linear": -0.0198054,
+            "constant": 2.8285704,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.001448069241,
+            "constant": 0.4990612517,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002863515313,
+            "constant": 0.4445712383,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001693741678,
+            "constant": 0.4112330226,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "Jotunn": {
+          "reload": {
+            "omitted": "Update 9.5.0 changed the reload timing of Jötunn, and no measurement is newer.",
+            "source": "9.5.0",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.001448069241,
+            "constant": 0.4990612517,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002863515313,
+            "constant": 0.4445712383,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001693741678,
+            "constant": 0.4112330226,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "Vex": {
+          "reload": {
+            "quadratic": 8.55689e-5,
+            "linear": -0.0242021,
+            "constant": 2.80673006666667,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.00279338,
+            "constant": 0.51985381,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.00268436,
+            "constant": 0.48414822,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001875,
+            "constant": 0.38975,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.09615,
+            "constant": 11.75,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "delicate-tomb": {
+          "reload": {
+            "omitted": "Update 9.7.0 changed the reload timing of Delicate Tomb, and no measurement is newer.",
+            "source": "9.7.0",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.001448069241,
+            "constant": 0.4990612517,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002863515313,
+            "constant": 0.4445712383,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001693741678,
+            "constant": 0.4112330226,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.0404,
+            "constant": 10.73,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 1.3,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "vex-mythoclast": {
+          "scale": 1.6,
+          "source": "9.7.0",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 656200654,
+          "name": "Merciless",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 878286503,
+          "name": "Rapid-Fire Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1019291327,
+          "name": "High-Impact Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1186480754,
+          "name": "Bastion",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1636108362,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1656957541,
+          "name": "Jötunn",
+          "curves": "Jotunn",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1657056865,
+          "name": "One Thousand Voices",
+          "curves": "1KV",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1927916065,
+          "name": "Telesto",
+          "curves": "Telesto",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2518716062,
+          "name": "Aggressive Frame",
+          "curves": "aggressive",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3610750208,
+          "name": "Vex Mythoclast",
+          "curves": "Vex",
+          "aimScale": "vex-mythoclast"
+        },
+        {
+          "hash": 2585427437,
+          "name": "Delicate Tomb",
+          "curves": "delicate-tomb",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Glaive",
+      "curves": {
+        "default": {
+          "reload": {
+            "omitted": "Update 9.7.0 changed the reload timing of glaives, and no measurement is newer.",
+            "source": "9.7.0",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002139219,
+            "constant": 0.42369,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002827674,
+            "constant": 0.5147,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "omitted": "The community data has no aim-down-sights time for this weapon.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.0546,
+            "constant": 15.0,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "omitted": "The community data has no aim-down-sights falloff for glaives.",
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 1900919151,
+          "name": "Edge Of Action",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3551884421,
+          "name": "Edge Of Concurrence",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3024740338,
+          "name": "Edge Of Intent",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1316753551,
+          "name": "Adaptive Glaive",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1986105578,
+          "name": "Aggressive Glaive",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2751656639,
+          "name": "Vexcaliber",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2898674463,
+          "name": "Vexcaliber",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2898674462,
+          "name": "Vexcaliber",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2898674457,
+          "name": "Vexcaliber",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1956005708,
+          "name": "Rapid-Fire Glaive",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Grenade Launcher",
+      "curves": {
+        "special": {
+          "reload": {
+            "quadratic": 7.24199e-5,
+            "linear": -0.0216432,
+            "constant": 3.24104606666667,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.00272791,
+            "constant": 0.55133684,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.00232786,
+            "constant": 0.48726765,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.00187072,
+            "constant": 0.50019128,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "heavy": {
+          "reload": {
+            "quadratic": 7.55233e-5,
+            "linear": -0.0248947,
+            "constant": 4.12880153333333,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.00272791,
+            "constant": 0.55133684,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.00232786,
+            "constant": 0.48726765,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.00187072,
+            "constant": 0.50019128,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "omitted": "The community data has no aim-down-sights falloff for grenade launchers.",
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 389268985,
+          "name": "Anarchy",
+          "curves": "heavy",
+          "aimScale": "default"
+        },
+        {
+          "hash": 425960662,
+          "name": "Fighting Lion",
+          "curves": "special",
+          "aimScale": "default"
+        },
+        {
+          "hash": 474269988,
+          "name": "Lightweight Frame",
+          "curves": "special",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "heavy",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1315870387,
+          "name": "Salvation's Grip",
+          "curves": "heavy",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1395789926,
+          "name": "Wave Frame",
+          "curves": "special",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1458010786,
+          "name": "Lightweight Frame",
+          "curves": "special",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2353477480,
+          "name": "Rapid-Fire Frame",
+          "curves": "heavy",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2977709078,
+          "name": "The Prospector",
+          "curves": "heavy",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3063320916,
+          "name": "Witherhoard",
+          "curves": "special",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3913463509,
+          "name": "The Colony",
+          "curves": "heavy",
+          "aimScale": "default"
+        },
+        {
+          "hash": 4130495068,
+          "name": "Precision Frame",
+          "curves": "heavy",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1174163613,
+          "name": "Parasite",
+          "curves": "heavy",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1759472859,
+          "name": "Double Fire",
+          "curves": "special",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3758615625,
+          "name": "Micro-Missile Frame",
+          "curves": "special",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2571259936,
+          "name": "Compressed Wave Frame",
+          "curves": "heavy",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Hand Cannon",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 6.137590643e-5,
+            "linear": -0.02385522011,
+            "constant": 3.600042253,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002942857143,
+            "constant": 0.4782571429,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002952380952,
+            "constant": 0.5133809524,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001666666667,
+            "constant": 0.3316666667,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.09,
+            "constant": 16.0,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "120 RPM": {
+          "reload": {
+            "quadratic": 6.137590643e-5,
+            "linear": -0.02385522011,
+            "constant": 3.600042253,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002942857143,
+            "constant": 0.4782571429,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002952380952,
+            "constant": 0.5133809524,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001666666667,
+            "constant": 0.3316666667,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.09,
+            "constant": 18,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "Eriana": {
+          "reload": {
+            "quadratic": 6.137590643e-5,
+            "linear": -0.02385522011,
+            "constant": 3.600042253,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002942857143,
+            "constant": 0.4782571429,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002952380952,
+            "constant": 0.5133809524,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001666666667,
+            "constant": 0.3316666667,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.0,
+            "constant": 38.0,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "LastWord": {
+          "reload": {
+            "quadratic": 6.137590643e-5,
+            "linear": -0.02385522011,
+            "constant": 3.600042253,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002942857143,
+            "constant": 0.4782571429,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002952380952,
+            "constant": 0.5133809524,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001666666667,
+            "constant": 0.3316666667,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.0,
+            "constant": 19.3,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 1.5,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "heavy-burst": {
+          "scale": 1.6,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "last-word": {
+          "scale": 1.1,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "crimson": {
+          "scale": 1.3,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "eriana": {
+          "scale": 2.4,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 213689231,
+          "name": "Hawkmoon",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 507151084,
+          "name": "Sturm",
+          "curves": "120 RPM",
+          "aimScale": "default"
+        },
+        {
+          "hash": 647617635,
+          "name": "Ace of spades",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1030990989,
+          "name": "Crimson",
+          "curves": "default",
+          "aimScale": "crimson"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3757612024,
+          "name": "Luna's Howl",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2763843899,
+          "name": "Luna's Howl",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 153979399,
+          "name": "Not Forgotten",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1322370662,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1791592647,
+          "name": "Malfeasance",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1863355414,
+          "name": "Thorn",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2144092201,
+          "name": "Lumina",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2189829540,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2757685314,
+          "name": "Aggressive Frame",
+          "curves": "120 RPM",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2770223582,
+          "name": "The Last Word",
+          "curves": "LastWord",
+          "aimScale": "last-word"
+        },
+        {
+          "hash": 3174300811,
+          "name": "Eriana's vow",
+          "curves": "Eriana",
+          "aimScale": "eriana"
+        },
+        {
+          "hash": 3468089894,
+          "name": "Aggressive Frame",
+          "curves": "120 RPM",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3923638944,
+          "name": "Heavy Burst",
+          "curves": "default",
+          "aimScale": "heavy-burst"
+        },
+        {
+          "hash": 4045839491,
+          "name": "Sunshot",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1458010786,
+          "name": "Rose",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Linear Fusion Rifle",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 5.88462e-5,
+            "linear": -0.0199884,
+            "constant": 2.87206463333,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.001448069241,
+            "constant": 0.4990612517,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002863515313,
+            "constant": 0.4445712383,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001693741678,
+            "constant": 0.4112330226,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 2.5,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 1531126198,
+          "name": "The Queenbreaker",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2057203855,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2564164194,
+          "name": "Arbalest",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3884127242,
+          "name": "Sleeper Simulant",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2881100038,
+          "name": "Lorentz Driver",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3530948111,
+          "name": "Adaptive Burst",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3284383335,
+          "name": "Euphony",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Machine Gun",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 9.05351e-5,
+            "linear": -0.0305819,
+            "constant": 6.1219905,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002391721353,
+            "constant": 0.4950499748,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002041393236,
+            "constant": 0.4547501262,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001234477537,
+            "constant": 0.4574687027,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.0223,
+            "constant": 28.5,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "Xenophage": {
+          "reload": {
+            "quadratic": 9.05351e-5,
+            "linear": -0.0305819,
+            "constant": 6.1219905,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002391721353,
+            "constant": 0.4950499748,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002041393236,
+            "constant": 0.4547501262,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001234477537,
+            "constant": 0.4574687027,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "Overture": {
+          "reload": {
+            "quadratic": 9.05351e-5,
+            "linear": -0.0305819,
+            "constant": 6.1219905,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002391721353,
+            "constant": 0.4950499748,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002041393236,
+            "constant": 0.4547501262,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001234477537,
+            "constant": 0.4584687027,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "omitted": "The source marks its aim-down-sights falloff of machine guns as a guess.",
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 878286503,
+          "name": "Rapid-Fire Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1019291327,
+          "name": "High-Impact Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3468089894,
+          "name": "Aggressive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2261491232,
+          "name": "Xenophage",
+          "curves": "Xenophage",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2608508147,
+          "name": "Heir Apparent",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 4148158229,
+          "name": "Thunderlord",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2940035732,
+          "name": "Grand Overture",
+          "curves": "Overture",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1468523096,
+          "name": "Deterministic Chaos",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Pulse Rifle",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 9.26208e-5,
+            "linear": -0.0256877,
+            "constant": 2.92627266666667,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.00312085,
+            "constant": 0.54370932,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.0035545,
+            "constant": 0.55005845,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.00196208,
+            "constant": 0.4574687,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.075,
+            "constant": 16,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 1.7,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "burst": {
+          "scale": 1.8,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "high-impact": {
+          "scale": 1.6,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "legacy": {
+          "scale": 1.7,
+          "source": "9.7.0",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 878286503,
+          "name": "Rapid-Fire Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1019291327,
+          "name": "High-Impact Frame",
+          "curves": "default",
+          "aimScale": "high-impact"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1458010786,
+          "name": "Lightweight Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2307143135,
+          "name": "Vigilance Wing",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2874284214,
+          "name": "Aggressive Burst",
+          "curves": "default",
+          "aimScale": "burst"
+        },
+        {
+          "hash": 3837077246,
+          "name": "No Time to Explain",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3905543891,
+          "name": "Graviton Lance",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 4004944400,
+          "name": "Bad Juju",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 4208418110,
+          "name": "Outbreak Perfected",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 4172222323,
+          "name": "Legacy PR-55 Frame",
+          "curves": "default",
+          "aimScale": "legacy"
+        },
+        {
+          "hash": 3441203855,
+          "name": "Collective Obligation",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 891750160,
+          "name": "Revision Zero IV",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 891750167,
+          "name": "Revision Zero III",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 891750166,
+          "name": "Revision Zero II",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3834106778,
+          "name": "Revision Zero I",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1473821207,
+          "name": "Revision Zero",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 427899681,
+          "name": "Red Death Reformed",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1634975868,
+          "name": "Heavy Burst",
+          "curves": "default",
+          "aimScale": "burst"
+        }
+      ]
+    },
+    {
+      "name": "Rocket Launcher",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 0.000103959,
+            "linear": -0.0252069,
+            "constant": 4.09182213333333,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.003998740554,
+            "constant": 0.6635944584,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.003296509536,
+            "constant": 0.5463332134,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.002139258726,
+            "constant": 0.528984167,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "omitted": "The community data has no aim-down-sights falloff for rocket launchers.",
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 216781713,
+          "name": "Häkke Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 411799453,
+          "name": "Deathbringer",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1019291327,
+          "name": "High-Impact Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2200569208,
+          "name": "Eyes of Tomorrow",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2473404935,
+          "name": "The Wardcliff Coil",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3419274965,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3468089894,
+          "name": "Aggressive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3649430342,
+          "name": "Two-Tailed Fox",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2962361451,
+          "name": "Gjallarhorn",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Scout Rifle",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 0.000102915,
+            "linear": -0.0276889,
+            "constant": 3.11797356666666,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.00285336856,
+            "constant": 0.540561867,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002941215324,
+            "constant": 0.527217745,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001693527081,
+            "constant": 0.4114236019,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.1568,
+            "constant": 30.25,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 2.0,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 377257911,
+          "name": "MIDA Multi-Tool",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1000724343,
+          "name": "Polaris Lance",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1019291327,
+          "name": "High-Impact Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1319823571,
+          "name": "Dead Man's Tale",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1458010786,
+          "name": "Lightweight Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1636108362,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2741975068,
+          "name": "Skyburner's Oath",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3364911712,
+          "name": "VEIST Rapid-Fire",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3668782036,
+          "name": "The Jade Rabbit",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3920852688,
+          "name": "Rapid-Fire Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 4185339856,
+          "name": "Symmetry",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3468089894,
+          "name": "Aggressive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2724693746,
+          "name": "Touch Of Malice",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1266604956,
+          "name": "Wicked Implement",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Shotgun",
+      "curves": {
+        "default": {
+          "reload": {
+            "omitted": "The source does not say whether its reload time of shotguns covers one shell or a full reload.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.003271255061,
+            "constant": 0.5388744939,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.003388663968,
+            "constant": 0.5711336032,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.00233805668,
+            "constant": 0.451194332,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.0294,
+            "constant": 3.77,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "slug": {
+          "reload": {
+            "omitted": "The source does not say whether its reload time of shotguns covers one shell or a full reload.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.003271255061,
+            "constant": 0.5388744939,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.003388663968,
+            "constant": 0.5711336032,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.00233805668,
+            "constant": 0.451194332,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.0295,
+            "constant": 5.77,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "LoW": {
+          "reload": {
+            "omitted": "The source does not say whether its reload time of shotguns covers one shell or a full reload.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.003271255061,
+            "constant": 0.5388744939,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.003388663968,
+            "constant": 0.5711336032,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.00233805668,
+            "constant": 0.451194332,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data has no damage falloff start for this weapon.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 1.0,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "pinpoint-slug": {
+          "scale": 1.25,
+          "source": "9.5.0",
+          "checked": "9.7.0.6"
+        },
+        "heavy-burst": {
+          "scale": 1.3,
+          "source": "9.5.0",
+          "checked": "9.7.0.6"
+        },
+        "chaperone": {
+          "omitted": "Update 9.5.0 gave The Chaperone the profile of Rapid-Fire slug shotguns and raised the aim-down-sights falloff of Pinpoint slug shotguns, and no source gives the value of The Chaperone.",
+          "source": "9.5.0",
+          "checked": "9.7.0.6"
+        },
+        "duality": {
+          "omitted": "Update 9.5.0 raised the aim-down-sights falloff of Pinpoint slug shotguns, and no source says whether Duality follows them.",
+          "source": "9.5.0",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 372430833,
+          "name": "Legend of Acrius",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 481338655,
+          "name": "Lord of Wolves",
+          "curves": "LoW",
+          "aimScale": "default"
+        },
+        {
+          "hash": 895140517,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 536517534,
+          "name": "Duality",
+          "curves": "slug",
+          "aimScale": "duality"
+        },
+        {
+          "hash": 918679156,
+          "name": "Precision Frame",
+          "curves": "slug",
+          "aimScale": "pinpoint-slug"
+        },
+        {
+          "hash": 3923638944,
+          "name": "Heavy Burst",
+          "curves": "slug",
+          "aimScale": "heavy-burst"
+        },
+        {
+          "hash": 996573084,
+          "name": "Rapid-Fire Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1210807262,
+          "name": "Tractor Cannon",
+          "curves": "slug",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1394384862,
+          "name": "The Chaperone",
+          "curves": "slug",
+          "aimScale": "chaperone"
+        },
+        {
+          "hash": 1458010786,
+          "name": "Lightweight Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1636108362,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2223914385,
+          "name": "The Fourth Horseman",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3054949324,
+          "name": "Shot Package",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3468089894,
+          "name": "Aggressive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3983457027,
+          "name": "Aggressive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3787406018,
+          "name": "Conditional Finality",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Sidearm",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 2.38311e-5,
+            "linear": -0.0124553,
+            "constant": 2.14667245,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.00264010989,
+            "constant": 0.4232582418,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.00197527473,
+            "constant": 0.4298956044,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.0022293956,
+            "constant": 0.3435796703,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.04,
+            "constant": 11,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "Forerunner": {
+          "reload": {
+            "quadratic": 2.38311e-5,
+            "linear": -0.0124553,
+            "constant": 2.64667245,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.00264010989,
+            "constant": 0.4232582418,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.00197527473,
+            "constant": 0.4298956044,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.0022293956,
+            "constant": 0.3435796703,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.0,
+            "constant": 28.3,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 1.2,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "forerunner": {
+          "scale": 2.0,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 31057037,
+          "name": "Omolon Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 334466122,
+          "name": "Devil's Ruin",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 806997698,
+          "name": "SUROS Rapid-Fire",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 975429949,
+          "name": "Traveler's Chosen",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 986191425,
+          "name": "Cryosthesia 77K",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1282254042,
+          "name": "Together Forever",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1458010786,
+          "name": "Lightweight Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1636108362,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2121086290,
+          "name": "Rat King",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3330548924,
+          "name": "Heavy Burst",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3449390870,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2641107734,
+          "name": "Trespasser",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2984682260,
+          "name": "Forerunner",
+          "curves": "Forerunner",
+          "aimScale": "forerunner"
+        },
+        {
+          "hash": 1903618525,
+          "name": "Final Warning",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2928496916,
+          "name": "Rocket-Assisted Frame",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Sniper Rifle",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 6.74498e-5,
+            "linear": -0.0231542,
+            "constant": 3.8384,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002623944983,
+            "constant": 0.5079465458,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002083932479,
+            "constant": 0.4392525789,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.00194998437,
+            "constant": 0.5021325414,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "omitted": "The community data shows that the damage of this weapon does not fall off with distance.",
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 4.5,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 281315705,
+          "name": "Whisper of the Worm",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 878286503,
+          "name": "Rapid-Fire Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 938999636,
+          "name": "D.A.R.C.I.",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1070100196,
+          "name": "Izanagi's Burden",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2909403175,
+          "name": "Cloudstrike",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3081173348,
+          "name": "Borealis",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3468089894,
+          "name": "Aggressive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2905188646,
+          "name": "Still Hunt",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1111334348,
+          "name": "Ice Breaker",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    },
+    {
+      "name": "Submachine Gun",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 6.08642e-5,
+            "linear": -0.0191345,
+            "constant": 2.62769,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002376970528,
+            "constant": 0.4710178204,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002547978067,
+            "constant": 0.4481295408,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001873200822,
+            "constant": 0.3581576422,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.065,
+            "constant": 10.3,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        },
+        "striga": {
+          "reload": {
+            "quadratic": 6.08642e-5,
+            "linear": -0.0191345,
+            "constant": 2.62769,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.002376970528,
+            "constant": 0.4710178204,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.002547978067,
+            "constant": 0.4481295408,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001873200822,
+            "constant": 0.3581576422,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.1247,
+            "constant": 9.0835,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 1.4,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "adaptive": {
+          "scale": 1.5,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        },
+        "aggressive": {
+          "scale": 1.5,
+          "source": "9.1.0",
+          "checked": "9.7.0.6"
+        },
+        "lightweight": {
+          "scale": 1.45,
+          "source": "9.5.0",
+          "checked": "9.7.0.6"
+        },
+        "exotic": {
+          "omitted": "Updates 9.1.0 and 9.5.0 raised the aim-down-sights falloff of Aggressive and Lightweight submachine guns, and no source says which exotic submachine guns follow them.",
+          "source": "9.5.0",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 630329983,
+          "name": "The Huckleberry",
+          "curves": "default",
+          "aimScale": "exotic"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "adaptive"
+        },
+        {
+          "hash": 1458010786,
+          "name": "Lightweight Frame",
+          "curves": "default",
+          "aimScale": "lightweight"
+        },
+        {
+          "hash": 1525239159,
+          "name": "Aggressive Frame",
+          "curves": "default",
+          "aimScale": "aggressive"
+        },
+        {
+          "hash": 1636108362,
+          "name": "Precision Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 2213377102,
+          "name": "MIDA Synergy",
+          "curves": "default",
+          "aimScale": "lightweight"
+        },
+        {
+          "hash": 2516532331,
+          "name": "Riskrunner",
+          "curves": "default",
+          "aimScale": "exotic"
+        },
+        {
+          "hash": 2540536653,
+          "name": "Tarrabah",
+          "curves": "default",
+          "aimScale": "exotic"
+        },
+        {
+          "hash": 3468089894,
+          "name": "Aggressive Frame",
+          "curves": "default",
+          "aimScale": "aggressive"
+        },
+        {
+          "hash": 2965975126,
+          "name": "Osteo Striga",
+          "curves": "striga",
+          "aimScale": "exotic"
+        },
+        {
+          "hash": 228577175,
+          "name": "The Manticore",
+          "curves": "default",
+          "aimScale": "exotic"
+        }
+      ]
+    },
+    {
+      "name": "Trace Rifle",
+      "curves": {
+        "default": {
+          "reload": {
+            "quadratic": 5e-5,
+            "linear": -0.0155,
+            "constant": 2.65,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "ready": {
+            "linear": -0.00279338,
+            "constant": 0.51985381,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "stow": {
+            "linear": -0.00268436,
+            "constant": 0.48414822,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "aim": {
+            "linear": -0.001875,
+            "constant": 0.38975,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          },
+          "falloff": {
+            "linear": 0.1017,
+            "constant": 14.756,
+            "source": "oracle",
+            "checked": "9.7.0.6"
+          }
+        }
+      },
+      "aimScales": {
+        "default": {
+          "scale": 1.6,
+          "source": "oracle",
+          "checked": "9.7.0.6"
+        }
+      },
+      "weapons": [
+        {
+          "hash": 459441288,
+          "name": "Wavesplitter",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 571267712,
+          "name": "Prometheus Lens",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1036269296,
+          "name": "Coldheart",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1657401727,
+          "name": "Ruinous Effigy",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1797707170,
+          "name": "Divinity",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 1294026524,
+          "name": "Adaptive Frame",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3164944314,
+          "name": "Ager's Scepter",
+          "curves": "default",
+          "aimScale": "default"
+        },
+        {
+          "hash": 3172115769,
+          "name": "The Navigator",
+          "curves": "default",
+          "aimScale": "default"
+        }
+      ]
+    }
+  ]
+}

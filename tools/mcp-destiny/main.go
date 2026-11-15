@@ -403,7 +403,20 @@ func newServer(h *handler) *mcp.Server {
 			"The web client reads another socket list, so its rating of a copy can differ. " +
 			"A copy for which the profile lists no perks reads 'roll unknown'. " +
 			"When the server has no sheet for a game mode, or cannot read the perk preferences or the Destiny definitions, " +
-			"the line of that mode names the reason.",
+			"the line of that mode names the reason. " +
+			"A weapon also shows its times and its damage falloff in real units, at the stats of this copy. " +
+			"The block gives the reload time, the ready time, the stow time, and the time to aim down sights in seconds. " +
+			"It also gives the distance in meters at which the damage falloff starts, " +
+			"from the hip and while aiming down sights. " +
+			"Bungie publishes each stat only as a number from 0 to 100. " +
+			"The server turns the stats into seconds and meters with curves that players measured in the game " +
+			"for each weapon type and frame, as D2Foundry's Oracle Engine collects them. " +
+			"The values are therefore community measurements and not numbers from Bungie. " +
+			"They are the base values of the weapon. " +
+			"The Weapons stat of a character, armor mods, and perks with a timed bonus change them in the game. " +
+			"Perks that scale a time or a distance without a stat bonus, such as Snapshot Sights, change them as well. " +
+			"A value that the measurements do not give reads 'unknown' with the reason, " +
+			"such as a frame without curves or a game update that changed the value after the last measurement.",
 		Annotations: readOnly,
 	}, h.handleGetItem)
 
@@ -420,7 +433,19 @@ func newServer(h *handler) *mcp.Server {
 			"and the copies of a reissue and of its Adept, Timelost, or Harrowed version count as copies of one weapon. " +
 			"The server rates each copy by its own item hash. " +
 			"Adept copies therefore read 'not listed' beside rated copies of the base weapon " +
-			"when the sheet has no row for the Adept version.",
+			"when the sheet has no row for the Adept version. " +
+			"Each row also gives the times and the damage falloff of the copy in real units, at the stats of the copy, " +
+			"so two rolls compare in seconds and meters. " +
+			"The reload, ready, stow, and aim columns hold the reload time, the ready time, the stow time, " +
+			"and the time to aim down sights in seconds. " +
+			"The hip falloff and aim falloff columns hold the distance in meters at which the damage falloff starts, " +
+			"from the hip and while aiming down sights. " +
+			"The values are the community measurements that get_item describes, and not numbers from Bungie. " +
+			"They omit the effect of perks that scale a time or a distance without a stat bonus, such as Snapshot Sights. " +
+			"A cell is empty when the measurements do not give the value. " +
+			"A line after the title of the group then gives the reason. " +
+			"The line names the columns that the reason empties, " +
+			"or it opens with 'Times and falloff' when the reason empties all of them.",
 		Annotations: readOnly,
 	}, h.handleCompareDuplicates)
 

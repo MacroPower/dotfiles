@@ -147,10 +147,12 @@ func (p Perk) OptionNames() []string {
 	return names
 }
 
-// Stat is one named stat value of an item instance.
+// Stat is one named stat value of an item instance. Hash is the hash of
+// the stat definition.
 type Stat struct {
 	Name  string
 	Value int
+	Hash  uint32
 }
 
 // Character is one character of the signed-in account.
@@ -731,7 +733,7 @@ func statsOf(profile *bungie.Profile, defs *definitions.Defs, instanceID string)
 			continue
 		}
 
-		stats = append(stats, Stat{Name: name, Value: stat.Value})
+		stats = append(stats, Stat{Name: name, Value: stat.Value, Hash: stat.Hash})
 	}
 
 	slices.SortFunc(stats, func(a, b Stat) int { return cmp.Compare(a.Name, b.Name) })

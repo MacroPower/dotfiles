@@ -1,0 +1,32 @@
+The file curves.json derives from D2Foundry's Oracle Engine at commit
+dcd0c7d302b056ffbb532edcb711d724a17ca8c1 of
+https://github.com/d2foundry/oracle_engine. The curves and the weapon
+lists come from build_resources/weapon_formulas.json. The frame lists come
+from build_resources/cached_build.ron and build.rs. The aim-down-sights
+falloff scales come from src/weapons/stat_calc.rs, and curves.go ports the
+math of that file to Go.
+
+The authors of Oracle Engine license it under the MIT license or the
+Unlicense. This module takes it under the MIT license, whose text follows.
+
+MIT License
+
+Copyright (c) 2023 Bowan T. Foryt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

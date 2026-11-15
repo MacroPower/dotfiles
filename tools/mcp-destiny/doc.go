@@ -285,6 +285,59 @@
 // rating cells of the mode read "unavailable", and one line before the
 // first table gives the reason.
 //
+// # Weapon Curves
+//
+// The get_item tool shows a weapon copy in real units. It gives the
+// reload time, the ready time, the stow time, and the time to aim down
+// sights in seconds. It also gives the distance in meters at which the
+// damage falloff starts, from the hip and while the copy aims down
+// sights. The compare_duplicates tool gives each of these values in a
+// column of its own, so two rolls compare in seconds and meters.
+//
+// Bungie publishes each weapon stat as a number from 0 to 100. Its API
+// does not say how many seconds or meters a stat means. Players measured
+// the seconds and the meters in the game for each weapon type and frame.
+// The server holds the curves that D2Foundry's Oracle Engine collects
+// from those measurements, and it evaluates them at the stats of the
+// copy. The values are therefore community measurements and not numbers
+// from Bungie. The curves are part of the server, so the tools send no
+// request for them.
+//
+// The values are the base values of the weapon. The Weapons stat of a
+// character, armor mods, and perks with a timed bonus change them in the
+// game. Perks that scale a time or a distance without a stat bonus, such
+// as Snapshot Sights, change them as well.
+//
+// Oracle Engine describes the game at Update 8.2.6. The patch notes of
+// Bungie from Update 8.2.6.1 to Update 9.7.0.6 change some of its values.
+// The server takes each new value that the notes state. It shows no
+// value where the notes leave the new value open, such as the reload
+// time of glaives after Update 9.7.0. The curves package records the
+// source of each curve and the last update of its check.
+//
+// A value that the server does not have reads "unknown" in the get_item
+// output, and the reason follows. The compare_duplicates table leaves the
+// cell empty, and a line after the title of the group gives the reason.
+// The line names the columns that the reason empties, or it opens with
+// "Times and falloff" when the reason empties all of them. The reason is
+// one of these:
+//
+//   - The weapon type has no curves, as a sword has none.
+//   - The frame of the weapon has no curves, as a frame that the game
+//     gained after Update 8.2.6 has none.
+//   - The profile lists no perks for the copy, so the server cannot tell
+//     its frame.
+//   - The copy lacks the stat that the curve reads.
+//   - In Oracle Engine, the damage of the weapon does not fall off with
+//     distance, as for sniper rifles, bows, linear fusion rifles, and
+//     launchers.
+//   - Oracle Engine does not measure the value, such as the falloff
+//     distance of Lord of Wolves.
+//   - Oracle Engine does not say what the value covers. Its reload time
+//     of a shotgun can cover one shell or a full reload.
+//   - A game update changed the value after the last measurement, or
+//     its patch notes do not say whether a change reaches the weapon.
+//
 // # Autotag Preview
 //
 // The preview_autotag_rule tool lists the owned items that an autotag

@@ -468,7 +468,8 @@ const saveCountCaveat = "The count ignores the other rules, so an earlier rule c
 
 // renderItem renders one item in full. For a weapon, ratings holds the
 // [rolls.Rating] of each game mode, and the output gains the roll ratings
-// block. Ratings is nil for every other item.
+// block. Ratings is nil for every other item. The output of a weapon ends
+// with the block of [writeMeasures].
 func renderItem(s *inventory.Snapshot, item *inventory.Item, ratings map[string]rolls.Rating) string {
 	var b strings.Builder
 
@@ -517,6 +518,10 @@ func renderItem(s *inventory.Snapshot, item *inventory.Item, ratings map[string]
 		for _, stat := range item.Stats {
 			fmt.Fprintf(&b, "- %s: %d\n", stat.Name, stat.Value)
 		}
+	}
+
+	if item.Kind == inventory.KindWeapon {
+		writeMeasures(&b, item)
 	}
 
 	return strings.TrimRight(b.String(), "\n")
@@ -596,6 +601,11 @@ func renderSingleGroup(
 // gets the rating of its own item hash, not the rating of the base
 // weapon. One result can hold several tables, so the caller writes the
 // reason of each game mode without ratings.
+//
+// After the rating columns, the table has one column for each kind of
+// [measureKinds], with the value of [measure.text] in each cell. The
+// lines of [measureNotes] follow the title and give the reason of each
+// empty cell of those columns.
 func renderWeaponGroup(
 	s *inventory.Snapshot,
 	group inventory.WeaponGroup,
@@ -608,16 +618,30 @@ func renderWeaponGroup(
 		noun = "copy"
 	}
 
-	fmt.Fprintf(&b, "%s: %d %s\n\n", group.Name, len(group.Copies), noun)
-	b.WriteString("instance id | name | type | power | location | tag | flags")
+	fmt.Fprintf(&b, "%s: %d %s\n", group.Name, len(group.Copies), noun)
+
+	measures := make([][]measure, 0, len(group.Copies))
+	for _, item := range group.Copies {
+		measures = append(measures, measuresOf(item))
+	}
+
+	for _, note := range measureNotes(measures) {
+		b.WriteString(note + "\n")
+	}
+
+	b.WriteString("\ninstance id | name | type | power | location | tag | flags")
 
 	for _, mode := range rolls.Modes {
 		b.WriteString(" | " + mode + " rating")
 	}
 
+	for _, kind := range measureKinds {
+		b.WriteString(" | " + kind.column)
+	}
+
 	b.WriteString(" | perks\n")
 
-	for _, item := range group.Copies {
+	for i, item := range group.Copies {
 		fields := []string{
 			item.InstanceID,
 			item.Name,
@@ -630,6 +654,10 @@ func renderWeaponGroup(
 
 		for _, mode := range rolls.Modes {
 			fields = append(fields, ratingCell(sources[mode], item))
+		}
+
+		for _, m := range measures[i] {
+			fields = append(fields, m.text())
 		}
 
 		perks := make([]string, 0, len(item.Perks))
