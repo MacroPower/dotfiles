@@ -1,14 +1,14 @@
 # Overview
 #
-# Reports a word written in capitals for emphasis in markdown prose
-# (`The hook ALWAYS runs`, `Do NOT commit the token`). The capitals
-# stress the word and give the reader no reason. The technical-writing
-# skill writes emphasis into the sentence, not the typeface, and keeps
-# the obligation words lowercase. The fix states the consequence that
-# the capitals stood in for (`Do not commit the token, because the push
-# publishes it`). The rule sits at Recommended, because a comment that
-# copies the text of a standard without naming the standard also
-# matches.
+# Reports a word written in capitals for emphasis in markdown prose and
+# in source comments (`The hook ALWAYS runs`, `Do NOT commit the
+# token`). The capitals stress the word and give the reader no reason.
+# The technical-writing skill writes emphasis into the sentence, not the
+# typeface, and keeps the obligation words lowercase. The fix states the
+# consequence that the capitals stood in for (`Do not commit the token,
+# because the push publishes it`). The rule sits at Recommended, because
+# a comment that copies the text of a standard without naming the
+# standard also matches.
 #
 # Expression
 #
@@ -28,6 +28,14 @@
 # line of the paragraph, so a quote that wraps across the lines of a
 # comment passes whole. The check holds each finding until the paragraph
 # ends, so a citation anywhere in the paragraph clears the finding.
+#
+# configs/harper/comment-checks.txt lists the check, so prose-lint also
+# runs it on the comments of a source file. A `!<kind>` after a name in
+# the list skips one comment kind, such as `!go` for Go comments, and
+# the list puts none after this check. prose-lint skips the check on
+# every file under `configs/claude/` and `.claude/`, so a word in
+# capitals in the comment of a script in a skill passes
+# (`# Do NOT retry`).
 #
 # False Positives
 #

@@ -1,12 +1,12 @@
 # Overview
 #
-# Reports an emoji in markdown prose (`:rocket: Deployed the fix`). An
-# emoji decorates the text and states nothing, so the reader must guess
-# the point that it stands for. The fix deletes the emoji or says the
-# point in words (`Deployed the fix`). When the text names an emoji,
-# the fix sets the emoji in a code span. The rule sits at Required,
-# because the check matches the characters themselves and each fix is
-# mechanical.
+# Reports an emoji in markdown prose and in source comments
+# (`:rocket: Deployed the fix`). An emoji decorates the text and states
+# nothing, so the reader must guess the point that it stands for. The
+# fix deletes the emoji or says the point in words (`Deployed the fix`).
+# When the text names an emoji, the fix sets the emoji in a code span.
+# The rule sits at Required, because the check matches the characters
+# themselves and each fix is mechanical.
 #
 # An emoji alone in a table cell reports as well (`| Linux | ✅ |`). It
 # stands in for a word such as `yes`, and the word reads the same in
@@ -48,6 +48,11 @@
 # lib/markdown.awk sets when gawk reads a two-byte character as one.
 # Under the C locale the check spells the same block as its UTF-8 bytes,
 # so the output matches in both.
+#
+# configs/harper/comment-checks.txt lists the check, so prose-lint also
+# runs it on the comments of a source file. A `!<kind>` after a name in
+# the list skips one comment kind, such as `!go` for Go comments, and
+# the list puts none after this check.
 #
 # False Positives
 #
