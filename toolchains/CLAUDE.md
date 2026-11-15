@@ -5,27 +5,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with Da
 ## Overview
 
 - `dev`: Development shell and sandbox containers.
-- `nix`: Nix utils, e.g. `format`, `lint`.
+- `nix`: Nix utils, such as `format` and `lint`.
 
 ## Code Style
 
+Each toolchain is a Dagger module in `package main`, and Dagger builds the API of the module from its Go code. Dagger publishes each exported method of the main object, such as `Dev` or `Nix`, as a function of the module. It publishes the comments of the module as the descriptions that `dagger functions` and `dagger call --help` print.
+
 ### Go Conventions
 
-- Document all exported items with doc comments.
-- Package documentation in `doc.go` files.
-- Wrap errors with `fmt.Errorf("context: %w", err)`, or `fmt.Errorf("%w: %w", ErrSentinel, err)`.
-- Avoid using "failed" or "error" in library error messages.
-- Use global error variables for common errors.
-- Use constructors with functional options.
-- Accept interfaces, return concrete types.
-- Prefer consistency over performance, avoid "fast paths" that could lead to unpredictable behavior.
+Follow these conventions in the Go code of each module.
+
+- Take each setting of the module as an argument of the `New` constructor. Set the default of the argument with a Dagger pragma, as `+defaultPath="/"` sets the default of `source`.
+- Store each setting in an exported field of the main object, as `New` stores `source` in `Source`. Dagger passes only the exported fields from the constructor to a function.
+- Keep each helper unexported, so that Dagger does not publish it as a function.
+- Wrap each error that another package returns, such as the error of a Dagger call, with `fmt.Errorf("context: %w", err)`. `CheckLint` of the `dev` toolchain runs `golangci-lint` on that toolchain, and the `wrapcheck` linter reports each such error that a function returns unwrapped.
+- Name the step in the context of the wrap, such as `reading sbom`. Do not write that the step failed, as in `failed to read sbom` or `error reading sbom`.
+- Prefer consistency over performance. Do not add a fast path that makes the behavior of a function hard to predict.
 
 ### Documentation
 
-- Use `[Name]` syntax for Go doc links. Use `[*Name]` for pointer types.
-- Functional option types should have a list linking to all functions of that type.
-- Functional options should always have a link to their type.
-- Docs should explain concepts and usage patterns; **do not enumerate exports**.
+Follow these conventions in the comments of each module.
+
+- Open `main.go` with a comment that describes the module. Dagger publishes that comment as the description of the module. It reads the comment only from the file that declares the main object, so do not move the comment to a `doc.go` file.
+- Leave a blank line between a comment at the top of a file and the `package main` clause. Without the blank line, Go reads the comment as the doc comment of the package. In `CheckLint` of the `dev` toolchain, the `godoclint` linter reports each package that carries a doc comment in more than one file.
+- Document each exported item with a doc comment. Dagger publishes the doc comment of a function as the description of the function.
+- In the module comment and in each doc comment, explain what the module or the item does and how to use it. Do not list the exported items that the comment covers. `dagger functions` lists the functions of the module, so do not list them in the module comment or in the doc comment of the main object.
+- Put a comment above each argument of an exported function, except `ctx`. Dagger publishes the comment as the description of the argument. Put each pragma of the argument, such as `+optional` or `+default`, on a line of its own after the description.
+- Put each pragma of a function, such as `+check`, `+generate`, or `+cache`, on a line of its own at the end of the doc comment.
+- Link a Go name with the `[Name]` syntax, such as `[Dev]` for the main object, `[Dev.DevBase]` for a function of the module, and `[withClaudeState]` for a helper.
 
 ## Testing
 
