@@ -15,17 +15,44 @@
 // and force pushes cannot be expressed (git_push offers
 // force_with_lease explicitly).
 //
-// git_fetch and git_pull disable local git hooks (core.hooksPath).
-// Hooks run with the server's privileges, outside any sandbox that
-// confines the caller, and neither tool prompts. Repository-local
-// hooks must therefore not be a code execution path for them.
+// git_fetch, git_pull, and git_push never run the hook files of the
+// repository. A hook runs with the server's privileges, outside any
+// sandbox that confines the caller, and the caller can edit the code
+// that a hook runs. The tools therefore point core.hooksPath at
+// /dev/null. No tool input enables hooks.
 //
-// git_push runs hooks normally, because pre-push hooks are repo
-// policy worth keeping. A permission rule in home/claude.nix gates
-// git_push instead. The rule prompts for every push except a push of
-// a branch named `<type>/<name>`, where `<type>` is a Conventional
-// Commits type, that does not push tags. Such a push runs the
-// pre-push hook without a prompt.
+// git_push skips every pre-push hook. It passes --no-verify, which
+// also skips a pre-push hook that git config defines with
+// hook.<name>.command. Git does not pass --no-verify on to the push
+// that it starts in a submodule, so git_push never pushes a
+// submodule. The git config can ask git push to recurse into
+// submodules, with push.recurseSubmodules or submodule.recurse. In
+// that case git_push makes git check the submodules instead. The
+// check refuses a push that references a submodule commit that no
+// remote-tracking ref of the submodule reaches. The caller then
+// pushes the submodule with a git_push call of its own. Otherwise
+// git_push checks no submodule, like a git push with the default
+// config.
+//
+// git_push refuses to push to a repository on the local file system,
+// such as a path or a file:// URL. Git pushes to such a repository by
+// starting receive-pack itself, and receive-pack runs the hooks of
+// that repository with the server's privileges. git_push runs git
+// with protocol.file.allow=never, so git enforces the refusal for
+// each URL that the push resolves. Before the push, git_push also
+// checks the push URLs of the remote, so that the error names the
+// remote.
+//
+// A pre-push hook is repository policy, so git_push reports the
+// pre-push hooks that it skips. The result of a successful push names
+// the executable pre-push hook file and each enabled pre-push hook
+// that git config defines. The result also tells the caller to run
+// the checks of each hook itself, inside its sandbox.
+//
+// The tools trust the git config of the repository, and git runs the
+// commands that the config names. A hook that the config defines for
+// an event other than pre-push, such as reference-transaction, is
+// one of those commands.
 //
 // # Flags
 //

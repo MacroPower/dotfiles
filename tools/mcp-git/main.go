@@ -93,7 +93,7 @@ func main() {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "git_push",
-		Description: "Push a branch or tag to a remote of an existing local repo. Supports set_upstream, force_with_lease, and tags; no bare --force and no remote-ref deletes.",
+		Description: "Push a branch or tag to a remote of an existing local repo. Supports set_upstream, force_with_lease, and tags; no bare --force and no remote-ref deletes. Skips every pre-push hook and the hook files of the repository, so run the checks of a pre-push hook in Bash first. Never pushes a submodule, so push each new submodule commit with its own call first. When git config asks git push to recurse into submodules, the push fails when no remote-tracking ref of a submodule reaches a submodule commit that the push references. Refuses a remote on the local file system.",
 	}, h.handlePush)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

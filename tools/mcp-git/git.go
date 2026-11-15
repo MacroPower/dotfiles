@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -91,24 +92,31 @@ type remoteOp struct {
 	remote string   // validated remote name
 	args   []string // git args after "-C <repo>", e.g. {"fetch", "--", "origin"}
 
+	// skippedHook names a hook event of the subcommand, such as
+	// "pre-push", whose hooks the subcommand skips. The caller must
+	// run the checks of those hooks itself. When the repository has a
+	// hook for the event, the output of a successful command ends
+	// with a note that names each hook.
+	skippedHook string
+
 	// cleanupArgs, when set, runs best-effort after the main command
-	// fails, restoring the repository to its pre-call state (e.g.
-	// {"rebase", "--abort"} after a conflicting rebase pull).
+	// fails, restoring the repository to its pre-call state, such as
+	// {"rebase", "--abort"} after a conflicting rebase pull.
 	cleanupArgs []string
 
 	timeout int  // per-call timeout override in seconds
-	push    bool // resolve the remote's push URL, not its fetch URL
-
-	// runHooks permits local git hooks. Hooks execute with the
-	// server's privileges, outside the Bash sandbox, so only a tool
-	// that a permission rule gates should set it.
-	runHooks bool
+	push    bool // resolve the remote's push URLs, refuse a local one, and push no submodule
 }
 
 // runRemote validates the repository, bounds the call by the
 // effective timeout, locks the repository's git directory, resolves
 // the remote's URL so [handler.credentialArgs] can authenticate it,
-// and returns git's combined output.
+// and returns git's combined output. It runs git with the hooks
+// directory disabled, so no hook file of the repository runs. It
+// refuses a push to a repository on the local file system, because
+// git runs the hooks of that repository outside the sandbox. For a
+// push, it reads the submodule recursion that the git config asks
+// for, and [handler.gitArgs] keeps git from pushing a submodule.
 func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 	if d := h.effectiveTimeout(op.timeout); d > 0 {
 		var cancel context.CancelFunc
@@ -149,30 +157,260 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 	}
 	defer cleanup()
 
-	url, err := remoteURL(ctx, abs, op.remote, op.push)
+	urls, err := remoteURLs(ctx, abs, op.remote, op.push)
 	if err != nil {
 		return "", err
 	}
 
-	args := h.credentialArgs(url)
-
-	// Local git hooks (including an in-tree core.hooksPath enabled
-	// by repo config) would run with the server's privileges,
-	// outside the Bash sandbox. Point hooksPath at a non-directory
-	// so no hook can fire unless the tool opts in.
-	if !op.runHooks {
-		args = append(args, "-c", "core.hooksPath="+os.DevNull)
+	// A push to a repository on the local file system runs the hooks
+	// of that repository, as [handler.gitArgs] explains. git refuses
+	// such a push when it connects. This check refuses it first, so
+	// that the error names the remote.
+	if op.push && !h.allowFileURLs && slices.ContainsFunc(urls, isLocalURL) {
+		return "", fmt.Errorf(
+			"%w: remote %s names a repository on the local file system, and git runs its hooks outside the sandbox",
+			ErrDeniedURL, op.remote,
+		)
 	}
 
-	args = append(args, "-C", abs)
-	args = append(args, op.args...)
+	var checkSubmodules bool
 
-	out, err := runGit(ctx, args...)
+	if op.push {
+		checkSubmodules, err = pushRecursesSubmodules(ctx, abs)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	var note string
+
+	if op.skippedHook != "" {
+		note, err = skippedHookNote(ctx, abs, op.skippedHook)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	out, err := runGit(ctx, h.gitArgs(op, abs, urls[0], checkSubmodules)...)
 	if err != nil && len(op.cleanupArgs) > 0 {
 		h.runCleanup(ctx, abs, op.cleanupArgs)
 	}
 
-	return truncateOutput(out), err
+	out = truncateOutput(out)
+
+	if err == nil && note != "" {
+		out = strings.TrimSpace(out + "\n\n" + note)
+	}
+
+	return out, err
+}
+
+// gitArgs returns the arguments of the git command that runs op in
+// the repository at the absolute path abs. url is the first URL of
+// the remote, which [handler.credentialArgs] authenticates. Only a
+// push reads checkSubmodules, which makes git check the submodule
+// commits that the push references.
+func (h *handler) gitArgs(op remoteOp, abs, url string, checkSubmodules bool) []string {
+	args := h.credentialArgs(url)
+
+	// A hook runs with the server's privileges, outside the Bash
+	// sandbox, and the caller can edit the code that a hook runs.
+	// That code is the hook file itself under an in-tree
+	// core.hooksPath, and each working-tree command that a hook
+	// starts. Point hooksPath at a non-directory so that no hook
+	// file runs. No tool input enables hooks.
+	args = append(args, "-c", "core.hooksPath="+os.DevNull)
+
+	// git pushes to a repository on the local file system by starting
+	// receive-pack itself. receive-pack does not inherit the hooksPath
+	// override, so it runs the hooks of the receiving repository with
+	// the server's privileges. The caller can write those hooks when
+	// the repository lies under a path that the sandbox lets it write.
+	// git resolves the remote again for the push, and the caller can
+	// change the definition of the remote after [handler.runRemote]
+	// checks its URLs. git therefore refuses the local transport
+	// itself, for a path and for a file:// URL alike. A value on the
+	// command line overrides the git config of the repository.
+	if op.push && !h.allowFileURLs {
+		args = append(args, "-c", "protocol.file.allow=never")
+	}
+
+	// git does not pass --no-verify on to the push that it starts in
+	// a submodule. That push runs the pre-push hooks of the
+	// submodule. git applies the last value that its config sets for
+	// push.recurseSubmodules or submodule.recurse. A value on the
+	// command line comes after every config file, so it wins. With
+	// check or no, git starts no push in a submodule. check refuses a
+	// push that references a submodule commit that no remote-tracking
+	// ref of the submodule reaches. A push uses check when the git
+	// config asks git to recurse into submodules. Otherwise it uses
+	// no, the default of git.
+	if op.push {
+		recurse := "no"
+		if checkSubmodules {
+			recurse = "check"
+		}
+
+		args = append(args, "-c", "push.recurseSubmodules="+recurse)
+	}
+
+	args = append(args, "-C", abs)
+
+	return append(args, op.args...)
+}
+
+// skippedHookNote returns the note that tells the caller about the
+// hooks for event that a command skips. The note names the hook file
+// of the repository and each enabled hook that git config defines for
+// event. It returns "" when repo has neither.
+func skippedHookNote(ctx context.Context, repo, event string) (string, error) {
+	path, err := hookFile(ctx, repo, event)
+	if err != nil {
+		return "", err
+	}
+
+	names, err := configHooks(ctx, repo, event)
+	if err != nil {
+		return "", err
+	}
+
+	var hooks []string
+
+	if path != "" {
+		hooks = append(hooks, "- the hook file "+path)
+	}
+
+	for _, name := range names {
+		hooks = append(hooks, fmt.Sprintf("- the hook %s in git config (hook.%s.command)", name, name))
+	}
+
+	if len(hooks) == 0 {
+		return "", nil
+	}
+
+	return fmt.Sprintf(
+		"This server runs outside the sandbox, so it skipped these %s hooks:\n%s\n"+
+			"Run the checks of each hook in Bash.",
+		event, strings.Join(hooks, "\n"),
+	), nil
+}
+
+// configHooks returns the names of the enabled hooks that git config
+// defines for event in the repository at repo. The hooksPath override
+// keeps the hook file out of the listing of git hook list. That
+// command exits 1 when it finds no hook. Git 2.53 and earlier do not
+// read hooks from git config, and they exit with an error too. A
+// listing that exits with an error therefore holds no hook.
+func configHooks(ctx context.Context, repo, event string) ([]string, error) {
+	out, err := gitValue(ctx,
+		"-c", "core.hooksPath="+os.DevNull, "-C", repo, "hook", "list", "-z", event,
+	)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil, nil
+		}
+
+		if errors.Is(err, ErrTimeout) {
+			return nil, err
+		}
+
+		return nil, fmt.Errorf("listing %s hooks: %w", event, err)
+	}
+
+	var names []string
+
+	// Each entry names one hook. git puts the reason and a tab before
+	// the name of a hook that it does not run, such as "disabled".
+	for entry := range strings.SplitSeq(out, "\x00") {
+		if entry == "" || strings.Contains(entry, "\t") {
+			continue
+		}
+
+		names = append(names, entry)
+	}
+
+	return names, nil
+}
+
+// pushRecursesSubmodules reports whether the git config of the
+// repository at repo asks git push to recurse into submodules. Two
+// keys set the recursion, and git applies the last of them that the
+// config sets. push.recurseSubmodules recurses with check, on-demand,
+// or only, and submodule.recurse recurses when it is true. The
+// bool-or-str type makes git print each boolean value as true or
+// false.
+func pushRecursesSubmodules(ctx context.Context, repo string) (bool, error) {
+	out, err := gitValue(ctx,
+		"-C", repo, "config", "-z", "--type=bool-or-str", "--get-regexp",
+		`^(push\.recursesubmodules|submodule\.recurse)$`,
+	)
+	if err != nil {
+		// git config exits 1 when the config sets neither key.
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+
+		if errors.Is(err, ErrTimeout) {
+			return false, err
+		}
+
+		return false, fmt.Errorf("reading submodule recursion config: %w", err)
+	}
+
+	// Each entry ends with a NUL and holds the key, a newline, and the
+	// value.
+	entries := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
+	key, value, _ := strings.Cut(entries[len(entries)-1], "\n")
+
+	if key == "submodule.recurse" {
+		return value == "true", nil
+	}
+
+	return value != "false", nil
+}
+
+// hookFile returns the path of the hook file that the repository at
+// the absolute path repo holds for event, or "" when it holds none.
+// Git reads hook files from core.hooksPath when the repository sets
+// it, and git ignores a hook file that is not executable.
+func hookFile(ctx context.Context, repo, event string) (string, error) {
+	path, err := gitValue(ctx, "-C", repo, "rev-parse", "--git-path", "hooks/"+event)
+	if err != nil {
+		if errors.Is(err, ErrTimeout) {
+			return "", err
+		}
+
+		return "", fmt.Errorf("resolving %s hook path: %w", event, err)
+	}
+
+	// git prints a path inside the repository relative to repo after
+	// the OS resolves its symlinks. A join to the unresolved spelling
+	// cleans each ".." against the wrong parent when repo is a symlink
+	// into the working tree.
+	if !filepath.IsAbs(path) {
+		dir, err := filepath.EvalSymlinks(repo)
+		if err != nil {
+			return "", fmt.Errorf("resolving %s hook path: %w", event, err)
+		}
+
+		path = filepath.Join(dir, path)
+	}
+
+	if !isExecutableFile(path) {
+		return "", nil
+	}
+
+	return path, nil
+}
+
+// isExecutableFile reports whether path names a regular file that
+// has an execute permission bit. It follows symlinks.
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+
+	return err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0
 }
 
 // runCleanup best-effort runs a git command that restores the
@@ -270,13 +508,13 @@ func gitCommonDir(ctx context.Context, repo string) (string, error) {
 	return out, nil
 }
 
-// remoteURL returns the URL configured for remote in repo. When push
-// is set it returns the push URL, which git allows to differ from
-// the fetch URL. The URL is only ever passed to
-// [handler.credentialArgs]; it must not appear in messages because
-// it can embed credentials.
-func remoteURL(ctx context.Context, repo, remote string, push bool) (string, error) {
-	args := []string{"-C", repo, "remote", "get-url"}
+// remoteURLs returns the URLs configured for remote in repo, with
+// insteadOf and pushInsteadOf rewrites applied. When push is set it
+// returns the push URLs, which can differ from the fetch URLs. A push
+// goes to every push URL, and a fetch uses the first URL. The URLs
+// must not appear in messages, because a URL can embed credentials.
+func remoteURLs(ctx context.Context, repo, remote string, push bool) ([]string, error) {
+	args := []string{"-C", repo, "remote", "get-url", "--all"}
 	if push {
 		args = append(args, "--push")
 	}
@@ -286,13 +524,29 @@ func remoteURL(ctx context.Context, repo, remote string, push bool) (string, err
 	out, err := gitValue(ctx, args...)
 	if err != nil {
 		if errors.Is(err, ErrTimeout) {
-			return "", err
+			return nil, err
 		}
 
-		return "", fmt.Errorf("%w: %s", ErrUnknownRemote, remote)
+		return nil, fmt.Errorf("%w: %s", ErrUnknownRemote, remote)
 	}
 
-	return out, nil
+	return strings.Split(out, "\n"), nil
+}
+
+// isLocalURL reports whether git reaches the repository at url on
+// the local file system. Git treats two forms of URL as local: a
+// file:// URL, and a path, which holds no ':' before its first '/'.
+// Every other URL names a host, as https://host/repo and the
+// SCP-style host:repo do.
+func isLocalURL(url string) bool {
+	if strings.HasPrefix(url, "file://") {
+		return true
+	}
+
+	colon := strings.IndexByte(url, ':')
+	slash := strings.IndexByte(url, '/')
+
+	return colon < 0 || (slash >= 0 && slash < colon)
 }
 
 // checkRemoteInputs validates the fields shared by the remote

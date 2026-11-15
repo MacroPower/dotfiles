@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,16 +59,27 @@ func currentBranch(t *testing.T, repo string) string {
 }
 
 // writeHook installs an executable hook script in repo's default
-// hooks directory.
-func writeHook(t *testing.T, repo, name, script string) {
+// hooks directory and returns the path of the hook file.
+func writeHook(t *testing.T, repo, name, script string) string {
 	t.Helper()
 
-	hookDir := filepath.Join(repo, ".git", "hooks")
-	require.NoError(t, os.MkdirAll(hookDir, 0o755))
+	return writeHookIn(t, filepath.Join(repo, ".git", "hooks"), name, script)
+}
+
+// writeHookIn installs an executable hook script in dir and returns
+// the path of the hook file.
+func writeHookIn(t *testing.T, dir, name, script string) string {
+	t.Helper()
+
+	hook := filepath.Join(dir, name)
+
+	require.NoError(t, os.MkdirAll(dir, 0o755))
 	require.NoError(
 		t,
-		os.WriteFile(filepath.Join(hookDir, name), []byte(script), 0o755),
+		os.WriteFile(hook, []byte(script), 0o755),
 	) //nolint:gosec // test hook must be executable
+
+	return hook
 }
 
 // commitFile writes content to name in repo and commits it.
@@ -223,6 +235,399 @@ func TestGitCommonDir(t *testing.T) {
 
 	_, err = gitCommonDir(t.Context(), t.TempDir())
 	require.ErrorIs(t, err, ErrNotRepo)
+}
+
+func TestIsLocalURL(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		url  string
+		want bool
+	}{
+		"absolute path":      {url: "/srv/git/repo.git", want: true},
+		"relative path":      {url: "../repo.git", want: true},
+		"bare name":          {url: "repo", want: true},
+		"slash before colon": {url: "./a:b", want: true},
+		"file URL":           {url: "file:///srv/git/repo.git", want: true},
+		"empty":              {url: "", want: true},
+		"https URL":          {url: "https://github.com/o/r.git"},
+		"ssh URL":            {url: "ssh://git@github.com/o/r.git"},
+		"SCP-style URL":      {url: "git@github.com:o/r.git"},
+		"SCP-style host":     {url: "host:repo"},
+		"remote helper":      {url: "codecommit::us-east-1://repo"},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, isLocalURL(tt.url))
+		})
+	}
+}
+
+func TestGitArgs(t *testing.T) {
+	t.Parallel()
+
+	hooksOff := []string{"-c", "core.hooksPath=" + os.DevNull}
+	fileOff := []string{"-c", "protocol.file.allow=never"}
+	recurseOff := []string{"-c", "push.recurseSubmodules=no"}
+	recurseCheck := []string{"-c", "push.recurseSubmodules=check"}
+	repo := []string{"-C", "/r"}
+	fetch := []string{"fetch", "--", "origin"}
+	push := []string{"push", "--", "origin"}
+
+	tests := map[string]struct {
+		h               *handler
+		op              remoteOp
+		checkSubmodules bool
+		want            []string
+	}{
+		"fetch": {
+			h:    &handler{},
+			op:   remoteOp{args: fetch},
+			want: slices.Concat(hooksOff, repo, fetch),
+		},
+		"fetch ignores the submodule check": {
+			h:               &handler{},
+			op:              remoteOp{args: fetch},
+			checkSubmodules: true,
+			want:            slices.Concat(hooksOff, repo, fetch),
+		},
+		"push": {
+			h:    &handler{},
+			op:   remoteOp{push: true, args: push},
+			want: slices.Concat(hooksOff, fileOff, recurseOff, repo, push),
+		},
+		"push that checks submodules": {
+			h:               &handler{},
+			op:              remoteOp{push: true, args: push},
+			checkSubmodules: true,
+			want:            slices.Concat(hooksOff, fileOff, recurseCheck, repo, push),
+		},
+		"push with file URLs allowed": {
+			h:    &handler{allowFileURLs: true},
+			op:   remoteOp{push: true, args: push},
+			want: slices.Concat(hooksOff, recurseOff, repo, push),
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := tt.h.gitArgs(tt.op, "/r", "https://example.invalid/r.git", tt.checkSubmodules)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestPushRecursesSubmodules(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		// config holds the lines that the test appends to the git
+		// config of the repository, in order.
+		config string
+		want   bool
+		err    bool
+	}{
+		"no config":                        {},
+		"push.recurseSubmodules check":     {config: "[push]\n\trecurseSubmodules = check\n", want: true},
+		"push.recurseSubmodules on-demand": {config: "[push]\n\trecurseSubmodules = on-demand\n", want: true},
+		"push.recurseSubmodules only":      {config: "[push]\n\trecurseSubmodules = only\n", want: true},
+		"push.recurseSubmodules no":        {config: "[push]\n\trecurseSubmodules = no\n"},
+		"push.recurseSubmodules off":       {config: "[push]\n\trecurseSubmodules = off\n"},
+		"push.recurseSubmodules empty":     {config: "[push]\n\trecurseSubmodules =\n"},
+		"submodule.recurse true":           {config: "[submodule]\n\trecurse = true\n", want: true},
+		"submodule.recurse yes":            {config: "[submodule]\n\trecurse = yes\n", want: true},
+		"submodule.recurse 1":              {config: "[submodule]\n\trecurse = 1\n", want: true},
+		"submodule.recurse without value":  {config: "[submodule]\n\trecurse\n", want: true},
+		"submodule.recurse false":          {config: "[submodule]\n\trecurse = false\n"},
+		"key in another case":              {config: "[Push]\n\tRecurseSubmodules = check\n", want: true},
+		"submodule.recurse false after push.recurseSubmodules on-demand": {
+			config: "[push]\n\trecurseSubmodules = on-demand\n[submodule]\n\trecurse = false\n",
+		},
+		"push.recurseSubmodules no after submodule.recurse true": {
+			config: "[submodule]\n\trecurse = true\n[push]\n\trecurseSubmodules = no\n",
+		},
+		"push.recurseSubmodules check after submodule.recurse false": {
+			config: "[submodule]\n\trecurse = false\n[push]\n\trecurseSubmodules = check\n",
+			want:   true,
+		},
+		"broken config": {config: "[push\n", err: true},
+		"other submodule keys": {
+			config: "[submodule \"sub\"]\n\tpath = sub\n\turl = https://example.invalid/sub.git\n",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := filepath.Join(t.TempDir(), "repo")
+			runGitCmds(t, [][]string{{"git", "init", "-q", repo}})
+
+			config := filepath.Join(repo, ".git", "config")
+			f, err := os.OpenFile(config, os.O_APPEND|os.O_WRONLY, 0o644)
+			require.NoError(t, err)
+
+			_, err = f.WriteString(tt.config)
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
+
+			got, err := pushRecursesSubmodules(t.Context(), repo)
+			if tt.err {
+				require.Error(t, err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestConfigHooks(t *testing.T) {
+	t.Parallel()
+
+	// hook returns the git config commands that define the hook name
+	// for event in repo.
+	hook := func(repo, name, event string) [][]string {
+		return [][]string{
+			{"git", "-C", repo, "config", "hook." + name + ".command", "true"},
+			{"git", "-C", repo, "config", "hook." + name + ".event", event},
+		}
+	}
+
+	tests := map[string]struct {
+		// setup prepares the clone at work.
+		setup func(t *testing.T, work string)
+		want  []string
+	}{
+		"no hook": {
+			setup: func(*testing.T, string) {},
+		},
+		"hook": {
+			setup: func(t *testing.T, work string) {
+				t.Helper()
+
+				runGitCmds(t, hook(work, "check", "pre-push"))
+			},
+			want: []string{"check"},
+		},
+		"hooks in config order": {
+			setup: func(t *testing.T, work string) {
+				t.Helper()
+
+				runGitCmds(t, hook(work, "lint", "pre-push"))
+				runGitCmds(t, hook(work, "check", "pre-push"))
+			},
+			want: []string{"lint", "check"},
+		},
+		"disabled hook": {
+			setup: func(t *testing.T, work string) {
+				t.Helper()
+
+				runGitCmds(t, hook(work, "check", "pre-push"))
+				runGitCmds(t, [][]string{
+					{"git", "-C", work, "config", "hook.check.enabled", "false"},
+				})
+			},
+		},
+		"hook for another event": {
+			setup: func(t *testing.T, work string) {
+				t.Helper()
+
+				runGitCmds(t, hook(work, "check", "pre-commit"))
+			},
+		},
+		// hookFile reports the hook file.
+		"hook file": {
+			setup: func(t *testing.T, work string) {
+				t.Helper()
+
+				writeHook(t, work, "pre-push", "#!/bin/sh\n")
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			work := initWorkClone(t, initBareRepo(t))
+			tt.setup(t, work)
+
+			got, err := configHooks(t.Context(), work, "pre-push")
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestHookFile(t *testing.T) {
+	t.Parallel()
+
+	const script = "#!/bin/sh\n"
+
+	tests := map[string]struct {
+		// setup prepares the clone at work. It returns the
+		// repository path to ask about and the hook file that the
+		// repository holds for pre-push, or "" when it holds none.
+		setup func(t *testing.T, work string) (repo, want string)
+	}{
+		"no hook file": {
+			setup: func(_ *testing.T, work string) (string, string) {
+				return work, ""
+			},
+		},
+		"executable file": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				return work, writeHook(t, work, "pre-push", script)
+			},
+		},
+		"file for another event": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				writeHook(t, work, "pre-commit", script)
+
+				return work, ""
+			},
+		},
+		"file that is not executable": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				hook := writeHook(t, work, "pre-push", script)
+				require.NoError(t, os.Chmod(hook, 0o644))
+
+				return work, ""
+			},
+		},
+		"directory": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				hook := filepath.Join(work, ".git", "hooks", "pre-push")
+				require.NoError(t, os.MkdirAll(hook, 0o755))
+
+				return work, ""
+			},
+		},
+		"symlink to an executable file": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				target := writeHookIn(t, t.TempDir(), "check", script)
+				hook := filepath.Join(work, ".git", "hooks", "pre-push")
+				require.NoError(t, os.MkdirAll(filepath.Dir(hook), 0o755))
+				require.NoError(t, os.Symlink(target, hook))
+
+				return work, hook
+			},
+		},
+		"hooksPath in the working tree": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				// The default hooks directory must lose to hooksPath.
+				writeHook(t, work, "pre-push", script)
+				runGitCmds(t, [][]string{
+					{"git", "-C", work, "config", "core.hooksPath", ".husky"},
+				})
+
+				return work, writeHookIn(t, filepath.Join(work, ".husky"), "pre-push", script)
+			},
+		},
+		"hooksPath that is not a directory": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				writeHook(t, work, "pre-push", script)
+				runGitCmds(t, [][]string{
+					{"git", "-C", work, "config", "core.hooksPath", os.DevNull},
+				})
+
+				return work, ""
+			},
+		},
+		"subdirectory of the working tree": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				sub := filepath.Join(work, "sub")
+				require.NoError(t, os.Mkdir(sub, 0o755))
+
+				return sub, writeHook(t, work, "pre-push", script)
+			},
+		},
+		// git prints the hook path relative to the resolved directory,
+		// so its ".." components climb from the target of the symlink.
+		"symlink to a subdirectory": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				sub := filepath.Join(work, "a", "b")
+				require.NoError(t, os.MkdirAll(sub, 0o755))
+
+				link := filepath.Join(t.TempDir(), "link")
+				require.NoError(t, os.Symlink(sub, link))
+
+				return link, writeHook(t, work, "pre-push", script)
+			},
+		},
+		// A linked worktree shares the hooks directory of the main
+		// checkout.
+		"linked worktree": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				wt := filepath.Join(t.TempDir(), "wt")
+				runGitCmds(t, [][]string{
+					{"git", "-C", work, "worktree", "add", "-b", "wt-branch", wt},
+				})
+
+				return wt, writeHook(t, work, "pre-push", script)
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			repo, want := tt.setup(t, initWorkClone(t, initBareRepo(t)))
+
+			got, err := hookFile(t.Context(), repo, "pre-push")
+			require.NoError(t, err)
+
+			if want == "" {
+				assert.Empty(t, got)
+
+				return
+			}
+
+			// git names the hooks directory of a linked worktree by
+			// its resolved path, so compare the hook files and not
+			// the spelling of their paths.
+			wantInfo, err := os.Stat(want)
+			require.NoError(t, err)
+
+			gotInfo, err := os.Stat(got)
+			require.NoError(t, err)
+
+			assert.True(t, os.SameFile(wantInfo, gotInfo), "got %s, want %s", got, want)
+			assert.True(t, filepath.IsAbs(got), "got %s, want an absolute path", got)
+		})
+	}
+
+	_, err := hookFile(t.Context(), t.TempDir(), "pre-push")
+	require.Error(t, err, "a path outside a repository holds no hook path")
 }
 
 func TestRunRemoteEscapeAboveAllowDir(t *testing.T) {

@@ -3082,9 +3082,11 @@ in
         # hook-router asks git for that branch. The call prompts when
         # git names no branch, as on a detached HEAD.
         #
-        # mcp-git runs the pre-push hook of the repository outside the
-        # Bash sandbox. A push that this rule allows runs that hook
-        # without a prompt.
+        # mcp-git skips every pre-push hook and never pushes a
+        # submodule. It also refuses a remote on the local file
+        # system, whose hooks git runs as children of mcp-git. A push
+        # that this rule allows therefore runs no pre-push hook outside
+        # the Bash sandbox.
         #
         # Mirrored by pushRules in tools/hook-router/mcp_test.go, so
         # update both together.

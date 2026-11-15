@@ -43,13 +43,10 @@ func (h *handler) handlePush(
 		push:    true,
 		timeout: input.TimeoutSeconds,
 		args:    buildPushArgs(remote, input),
-		// pre-push hooks are repo policy worth keeping. Push is the
-		// one remote operation that a permission rule gates. The rule
-		// in home/claude.nix prompts for every push except a push of
-		// a branch named `<type>/<name>`, where `<type>` is a
-		// Conventional Commits type, that does not push tags. Such a
-		// push runs the hooks without a prompt.
-		runHooks: true,
+		// A pre-push hook is repository policy, and the push skips
+		// every pre-push hook. The note tells the caller to run the
+		// hook itself, in the sandbox.
+		skippedHook: "pre-push",
 	})
 	if err != nil {
 		return toolError(fmt.Errorf("%w: %w", ErrPush, err)), nil, nil
@@ -65,8 +62,15 @@ func (h *handler) handlePush(
 // git push, targeting the already-resolved remote name. It never
 // produces a delete refspec or a bare --force: Ref is validated as
 // a plain branch or tag name by [checkRefName].
+//
+// The list always holds --no-verify, which makes git skip the
+// pre-push event. [handler.runRemote] disables the hooks directory.
+// --no-verify also skips a pre-push hook that git config defines with
+// hook.<name>.command. Git does not pass --no-verify on to the push
+// that it starts in a submodule, so [handler.gitArgs] keeps git from
+// starting such a push.
 func buildPushArgs(remote string, input PushInput) []string {
-	args := []string{"push"}
+	args := []string{"push", "--no-verify"}
 
 	if input.SetUpstream {
 		args = append(args, "--set-upstream")
