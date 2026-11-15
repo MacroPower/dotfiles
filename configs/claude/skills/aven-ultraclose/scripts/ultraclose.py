@@ -2,24 +2,28 @@
 """Scheduler and landing queue for the aven-ultraclose skill.
 
 Run every command from inside the repository. The run directory holds
-state.json, rules.md, notes.md, logs/, one directory per task, and a copy
-of close-task.js. The repository's git config records its path as
-ultraclose.run, so a later session finds the run without arguments.
+state.json, rules.md, notes.md, logs/, and one directory per task. The
+repository's git config records its path as ultraclose.run, so a later
+session finds the run without arguments.
 
-The init, next, and args commands each copy close-task.js from the
-directory of this script into the run directory, and so does a landing
-that runs next. Pass that copy to the Workflow tool as scriptPath. The
+The next and args commands write a copy of close-task.js into the
+directory of each task that they start, and so does a landing that runs
+next. The meta of the copy names its task. The name holds the ref, and
+the description holds the title, so the Workflow list shows which task
+each Workflow closes. The script field of each Workflow input holds the
+path of the copy. Pass that path to the Workflow tool as scriptPath. The
 tool refuses the script in the skill directory after Nix store
 optimisation hard-links it.
 
 The directory of a task holds its task file, its commit message, its
-review history, and the summary and the notes of its change. The agents of
-close-task.js write the summary to summary.txt and the notes to notes.txt.
-The args command reads both files into the resume field of its output, so
-a relaunched task starts with the summary and the notes of its earlier
-launch. The next and args commands remove both files when they start a
-task at the implementer, so a relaunch never carries the text of an
-attempt that the implementer replaced.
+review history, its copy of close-task.js, and the summary and the notes
+of its change. The agents of close-task.js write the summary to
+summary.txt and the notes to notes.txt. The args command reads both files
+into the resume field of its output, so a relaunched task starts with the
+summary and the notes of its earlier launch. The next and args commands
+remove both files when they start a task at the implementer, so a
+relaunch never carries the text of an attempt that the implementer
+replaced.
 
 A run ends when no task is pending, inflight, or approved. The init
 command replaces a run that has ended, and with --force it replaces a run
@@ -139,8 +143,8 @@ GLOB_RULE = (
     " README.md at the root of the repository, */README.md matches the"
     " README.md of every directory, and README.md matches no file."
 )
-# The Workflow script, which sits beside this file. Each run keeps a copy
-# of it under the same name.
+# The Workflow script, which sits beside this file. The directory of each
+# task keeps a copy of it under the same name.
 WORKFLOW = "close-task.js"
 # The files of a task directory that hold the summary and the notes of the
 # change, by the key of the resume field that carries each one. The
@@ -315,6 +319,7 @@ def workflow_args(st, run, ref, resume=None):
         "repo": cfg["repo"],
         "base": cfg["base"],
         "rounds": cfg["rounds"],
+        "script": str(script_path(run, ref)),
         "task": task,
     }
 
@@ -346,22 +351,63 @@ def unstore(run, ref):
         (d / name).unlink(missing_ok=True)
 
 
-def install_workflow(run):
-    """Write the copy of close-task.js that the Workflow tool loads.
+def script_path(run, ref):
+    """The copy of close-task.js that the Workflow of a task loads."""
+    return run / "tasks" / ref / WORKFLOW
+
+
+def task_script(ref, title):
+    """The text of close-task.js with the meta of one task.
+
+    The Workflow list shows the name and the description of the meta. The
+    Workflow tool reads the meta as a literal, so the script cannot build
+    either value from its input. The name line of the result holds the
+    ref, and the description line holds the title. Each value is a JSON
+    string, which JavaScript reads as a string literal with the same
+    value. The string escapes each control character, because the tool
+    refuses a script file that holds one. The tool also refuses an empty
+    description, so a task without a title keeps the description of
+    close-task.js.
+    """
+    source = Path(__file__).with_name(WORKFLOW).read_text(encoding="utf-8")
+    # The meta is the first statement of the script, and its last line is
+    # the first line that holds only a closing brace.
+    meta, end, body = source.partition("\n}\n")
+    lines = meta.split("\n")
+    # Every task checks both lines, so a script that the check refuses
+    # fails at the first task that a command starts, whatever its title.
+    index = {}
+    for key in ("name", "description"):
+        held = [
+            n
+            for n, line in enumerate(lines)
+            if line.startswith(f"  {key}: ") and line.endswith(",")
+        ]
+        if len(held) != 1:
+            die(f"the meta of {WORKFLOW} must hold its {key} on one line")
+        index[key] = held[0]
+    lines[index["name"]] = f"  name: {json.dumps(f'close {ref}')},"
+    if title.strip():
+        lines[index["description"]] = f"  description: {json.dumps(title)},"
+    return "\n".join(lines) + end + body
+
+
+def install_workflow(st, run, ref):
+    """Write the copy of close-task.js that the Workflow of a task loads.
 
     The Workflow tool refuses a script file that has more than one hard
     link. The skill directory holds symlinks into the Nix store, where
     store optimisation can add a hard link to a file in the middle of a
-    run. The copy in the run directory is a regular file with one link,
-    and its content matches the script beside this file.
+    run. The copy in the task directory is a regular file with one link.
+    Its content matches the script beside this file, except that its
+    meta names the task, as task_script says.
 
     The tool also refuses a script file that a rename replaces during
-    the load. A copy that the tool can load stays in place, so a next
-    command, an args command, or a landing that runs next can run at the
-    same time as a Workflow launch.
+    the load. A copy that the tool can load stays in place, so the tool
+    can load the copy of a task while a command starts that task again.
     """
-    script = Path(__file__).with_name(WORKFLOW).read_bytes()
-    copy = run / WORKFLOW
+    script = task_script(ref, st["tasks"][ref]["title"]).encode()
+    copy = script_path(run, ref)
     loadable = (
         copy.is_file()
         and not copy.is_symlink()
@@ -369,9 +415,10 @@ def install_workflow(run):
         and copy.read_bytes() == script
     )
     if not loadable:
+        copy.parent.mkdir(parents=True, exist_ok=True)
         # A rename gives the copy a new inode, so the links of the old
         # file do not carry to it.
-        tmp = run / f"{WORKFLOW}.tmp"
+        tmp = copy.with_name(f"{WORKFLOW}.tmp")
         tmp.unlink(missing_ok=True)
         tmp.write_bytes(script)
         tmp.replace(copy)
@@ -402,7 +449,6 @@ def cmd_init(a):
         )
     for d in (run, run / "tasks", run / "logs"):
         d.mkdir(parents=True, exist_ok=True)
-    install_workflow(run)
     ignored = sh(
         "git", "check-ignore", "-q", ".claude/worktrees/x", cwd=repo, check=False
     )
@@ -588,9 +634,9 @@ def start(st, run, ref):
 def fill_slots(run):
     """Start one task per free slot, and print the list of their Workflow inputs."""
     with state(run) as st:
-        install_workflow(run)
         launched = []
         for ref in pick(st):
+            install_workflow(st, run, ref)
             start(st, run, ref)
             # A launch without a resume field starts at the implementer.
             unstore(run, ref)
@@ -609,7 +655,7 @@ def cmd_args(a):
     run = run_dir(repo)
     with state(run) as st:
         t = st["tasks"].get(a.ref) or die(f"unknown task {a.ref}")
-        install_workflow(run)
+        install_workflow(st, run, a.ref)
         history = run / "tasks" / a.ref / "history.md"
         done = 0
         if history.exists():

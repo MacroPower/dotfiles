@@ -10,6 +10,13 @@ export const meta = {
   ],
 }
 
+// `ultraclose.py` launches each task from a copy of this script. In the
+// meta of the copy, the name holds the ref of the task, and the
+// description holds its title. So the Workflow list shows which task each
+// Workflow closes. `ultraclose.py` replaces the name line and the
+// description line of the meta, so keep each of the two values on one
+// line.
+
 // Input: one object that `ultraclose.py next`, `ultraclose.py land --next`,
 // or `ultraclose.py args` prints.
 const { run, repo, base } = args

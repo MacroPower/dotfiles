@@ -42,12 +42,24 @@ and its review history. It also holds the summary and the notes of its
 change (`summary.txt` and `notes.txt`). The repository's git config records
 the path of the run directory, so every command finds it.
 
-The run directory also holds a copy of `close-task.js`. The `init`, `next`,
-and `args` commands of `ultraclose.py` each refresh that copy from the skill
-directory, and so does a landing that runs `next`. Pass only the copy to
-Workflow. Workflow refuses a script file that has more than one hard link.
-The skill directory holds symlinks into the Nix store. Store optimisation
-can add a hard link to a store file in the middle of a run.
+The directory of a task also holds its own copy of `close-task.js`. The
+`next` and `args` commands of `ultraclose.py` write the copy of each task
+that they start, and so does a landing that runs `next`. In the `meta` of
+the copy, the name holds the ref of the task, and the description holds its
+title. So the Workflow list and `/workflows` show which task each Workflow
+closes.
+
+Each `next` and `args` command prints one input object per task that it
+starts, and the `script` field of the object holds the path of the copy.
+Launch every Workflow from that path, for a first launch and for a
+relaunch. The `args` command writes the copy again when `close-task.js` in
+the skill directory or the title of the task has changed. So a relaunch
+runs the script that the skill directory holds at the time of the relaunch.
+
+Never pass the `close-task.js` of the skill directory to Workflow. Workflow
+refuses a script file that has more than one hard link. The skill directory
+holds symlinks into the Nix store. Store optimisation can add a hard link
+to a store file in the middle of a run.
 
 ## Scope
 
@@ -233,10 +245,11 @@ Repeat until the run ends:
    free. Skip this step in a turn that takes none of those actions, even
    after a triage that adds no task.
 2. Launch one Workflow per object:
-   `Workflow({scriptPath: "<run>/close-task.js", args: <object>})`. The
-   `run` field of the object holds the path of the run directory. One task
-   per Workflow lets each task land the moment it finishes. Leave `model`
-   unset so that agents follow the session model.
+   `Workflow({scriptPath: <script>, args: <object>})`. For `<script>`, pass
+   the `script` field of the object. That field holds the path of the copy
+   of `close-task.js` that names the task of the object. One task per
+   Workflow lets each task land the moment it finishes. Leave `model` unset
+   so that agents follow the session model.
 3. Keep `ultraclose.py watch` running in a background Bash call. It exits
    when free disk space runs low.
 4. End the turn. Each Workflow completion wakes you with a result. File its
@@ -251,7 +264,7 @@ Repeat until the run ends:
 | `landable` | The task reached its cap as a strict improvement with no regression. File each entry of `followups` with `aven add` and link it with `aven related add`. Then land the task. |
 | `obsolete` | Add the evidence with `aven note`, set the task to `done`, and run `ultraclose.py set <ref> closed`. |
 | `abandoned`, `rejected`, `unconverged` | Add a note with the open findings and the branch name, set the task to `todo`, and run `ultraclose.py set <ref> noted`. The branch stays. Do not force the task through. |
-| `error` | Relaunch the task one time with the output of `ultraclose.py args <ref>`. After a second error, note the task. |
+| `error` | Relaunch the task one time. Run `ultraclose.py args <ref>`, and launch the object that it prints from the path in its `script` field, as step 2 says. After a second error, note the task. |
 
 `ultraclose.py status` lists each pending task that waits for a noted task.
 Note those tasks too.

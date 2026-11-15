@@ -5,6 +5,7 @@ Run with: python3 test_ultraclose.py. The close-task.js tests run the
 script under Node, and they skip when node is not on PATH.
 """
 
+import itertools
 import json
 import os
 import re
@@ -52,10 +53,10 @@ def ultraclose(*args, cwd, env, script=SCRIPT):
     return finished(*args, cwd=cwd, env=env, script=script).stdout
 
 
-def refused(*args, cwd, env):
+def refused(*args, cwd, env, script=SCRIPT):
     """Run one ultraclose.py command that must fail, and return its message."""
     p = subprocess.run(
-        [sys.executable, str(SCRIPT), *args],
+        [sys.executable, str(script), *args],
         cwd=cwd,
         env=env,
         check=False,
@@ -991,26 +992,99 @@ def hard_linked(copy):
 
 
 def symlinked(copy):
-    copy.unlink()
-    copy.symlink_to(WORKFLOW)
+    target = copy.with_name("target.js")
+    copy.rename(target)
+    copy.symlink_to(target)
+
+
+def task_copy(run, ref):
+    """The copy of close-task.js that the Workflow of a task loads."""
+    return Path(run, "tasks", ref, "close-task.js")
+
+
+def copy_text(ref, title, source=WORKFLOW):
+    """The text of the copy of close-task.js that names one task.
+
+    The copy matches the source script, except for two lines of its meta.
+    The name line holds the ref, and the description line holds the
+    title. With the title None, the copy keeps the description of the
+    source.
+    """
+    lines = source.read_text().splitlines(keepends=True)
+    values = {"name": f"close {ref}", "description": title}
+    for n, (key, value) in enumerate(values.items(), 1):
+        if not lines[n].startswith(f"  {key}: "):
+            raise AssertionError(f"line {n + 1} of {source} does not hold the {key}")
+        if value is not None:
+            lines[n] = f"  {key}: {json.dumps(value)},\n"
+    return "".join(lines)
+
+
+def meta_of(script):
+    """The meta that Node reads from the text of a Workflow script.
+
+    Node runs the meta without the rest of the script, so a meta that
+    reads the input of the script fails.
+    """
+    meta, end, _ = script.partition("\n}\n")
+    program = meta.replace("export const meta", "const meta", 1) + end
+    p = subprocess.run(
+        [NODE, "-"],
+        input=program + "process.stdout.write(JSON.stringify(meta))\n",
+        capture_output=True,
+        encoding="utf-8",
+        check=True,
+    )
+    return json.loads(p.stdout)
 
 
 class WorkflowCopyTest(unittest.TestCase):
-    """The run directory holds a copy of close-task.js that Workflow loads."""
+    """Each task launches from its own copy of close-task.js.
 
-    def start_run(self, tmp):
+    The meta of the copy names the task, so the Workflow list shows which
+    task each Workflow closes.
+    """
+
+    # The title that the triage helper gives a task.
+    TITLE = "t"
+    # A second task of the run.
+    OTHER = "APP-0002"
+    # The commands that print the Workflow input of the first task, each
+    # with the function that reads the input from the output.
+    LAUNCHES = {
+        "next": (["next"], lambda out: json.loads(out)[0]),
+        "args": (["args", REF], json.loads),
+    }
+    # Titles that must reach the description of the meta unchanged.
+    TITLES = {
+        "a plain title": "The list shows one name for every task",
+        "quotes": """It's a "quoted" `title`""",
+        "backslashes": "C:\\new\\table\\x41 and a last \\",
+        "an interpolation": "${args.run} #{x} $(id) \\1 \\g<0>",
+        "the end of a comment and of a script": "*/ }; // </script>",
+        "several lines": "one\ntwo\r\nthree",
+        "line separators": "one\u2028two\u2029three",
+        "control characters": "a\x00b\x1bc",
+        "characters outside ASCII": "na\u00efve \u65e5\u672c\u8a9e \U0001f600",
+    }
+    # Titles that hold no text. The Workflow tool refuses an empty
+    # description, so each copy keeps the description of close-task.js.
+    BLANK = {"an empty title": "", "a title of spaces": "   "}
+
+    def start_run(self, tmp, script=SCRIPT):
         """Start a run with one pending task, and return the repo and the env."""
         repo, env = launchable_repo(tmp)
-        ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+        run = Path(tmp, "run")
+        ultraclose("init", "--run", str(run), cwd=repo, env=env, script=script)
         triage(tmp, repo, env, {"ref": REF})
         return repo, env
 
-    def assert_loadable(self, copy):
+    def assert_loadable(self, copy, text):
         """The Workflow tool loads only a regular file with one hard link."""
         self.assertFalse(copy.is_symlink(), "the copy is a symlink")
         self.assertTrue(copy.is_file(), "the copy is not a regular file")
         self.assertEqual(copy.stat().st_nlink, 1)
-        self.assertEqual(copy.read_bytes(), WORKFLOW.read_bytes())
+        self.assertEqual(copy.read_text(), text)
 
     def installed_skill(self, tmp):
         """Lay the scripts out as home-manager installs them.
@@ -1028,57 +1102,192 @@ class WorkflowCopyTest(unittest.TestCase):
             (skill / source.name).symlink_to(stored)
         return skill / SCRIPT.name
 
-    def test_init_copies(self):
+    def titled_copies(self, tmp):
+        """Start one task per title of TITLES and BLANK in one run.
+
+        Return the ref and the title of each task and the text of its
+        copy, by the name of the title.
+        """
+        titles = {**self.TITLES, **self.BLANK}
+        refs = {name: f"APP-{n:04}" for n, name in enumerate(titles)}
+        rows = [{"ref": refs[name], "title": title} for name, title in titles.items()]
+        repo, env = launchable_repo(tmp)
+        run = Path(tmp, "run")
+        limit = str(len(rows))
+        ultraclose("init", "--run", str(run), "--limit", limit, cwd=repo, env=env)
+        triage(tmp, repo, env, *rows)
+        started = json.loads(ultraclose("next", cwd=repo, env=env))
+        texts = {t["task"]["ref"]: Path(t["script"]).read_text() for t in started}
+        return {
+            name: (refs[name], title, texts[refs[name]])
+            for name, title in titles.items()
+        }
+
+    def test_next_writes_copy_of_each_task(self):
         layouts = {
             "plain files": lambda tmp: SCRIPT,
             "symlinks to hard-linked store files": self.installed_skill,
         }
         for name, layout in layouts.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
-                repo, env = new_repo(tmp)
-                run = Path(tmp, "run")
                 script = layout(tmp)
-                ultraclose("init", "--run", str(run), cwd=repo, env=env, script=script)
-                self.assert_loadable(run / "close-task.js")
+                repo, env = self.start_run(tmp, script)
+                triage(tmp, repo, env, {"ref": self.OTHER, "title": "u"})
+                run = Path(tmp, "run").resolve()
+                copies = {ref: task_copy(run, ref) for ref in (REF, self.OTHER)}
+                started = json.loads(
+                    ultraclose("next", cwd=repo, env=env, script=script)
+                )
+                # The script field of each input names the copy of its task.
+                self.assertEqual(
+                    {t["task"]["ref"]: Path(t["script"]) for t in started}, copies
+                )
+                self.assert_loadable(copies[REF], copy_text(REF, self.TITLE))
+                self.assert_loadable(copies[self.OTHER], copy_text(self.OTHER, "u"))
+                # The run holds no other copy of the script.
+                self.assertEqual(
+                    sorted(run.rglob("close-task.js*")), sorted(copies.values())
+                )
 
-    def test_launch_refreshes(self):
-        # Each command prints the Workflow input of the pending task.
-        commands = {
-            "next": (["next"], lambda out: json.loads(out)[0]),
-            "args": (["args", REF], json.loads),
-        }
+    def test_launch_replaces_copy_that_workflow_refuses(self):
         damages = {
             "a missing copy": Path.unlink,
             "a stale copy": stale,
             "a copy with a second hard link": hard_linked,
-            "a symlink into the skill directory": symlinked,
+            "a symlink to a file that holds the text of the copy": symlinked,
         }
-        for command, (args, workflow_input) in commands.items():
+        for command, (args, workflow_input) in self.LAUNCHES.items():
             for name, damage in damages.items():
                 with (
                     self.subTest(f"{command} replaces {name}"),
                     tempfile.TemporaryDirectory() as tmp,
                 ):
                     repo, env = self.start_run(tmp)
-                    damage(Path(tmp, "run", "close-task.js"))
+                    copy = task_copy(Path(tmp, "run").resolve(), REF)
+                    copy.parent.mkdir()
+                    copy.write_text(copy_text(REF, self.TITLE))
+                    damage(copy)
                     task = workflow_input(ultraclose(*args, cwd=repo, env=env))
-                    # SKILL.md names the copy by the run field of the input.
-                    self.assert_loadable(Path(task["run"], "close-task.js"))
+                    # SKILL.md names the copy by the script field of the input.
+                    self.assertEqual(Path(task["script"]), copy)
+                    self.assert_loadable(copy, copy_text(REF, self.TITLE))
 
     def test_launch_keeps_loadable_copy(self):
         # Workflow refuses a script that a command replaces during the load.
-        commands = {"next": ["next"], "args": ["args", REF]}
-        for command, args in commands.items():
-            with self.subTest(command), tempfile.TemporaryDirectory() as tmp:
-                repo, env = self.start_run(tmp)
-                copy = Path(tmp, "run", "close-task.js")
+        # name: the commands that start the running task again
+        relaunches = {
+            "args": [["args", REF]],
+            "next": [["set", REF, "noted"], ["set", REF, "pending"], ["next"]],
+        }
+        for name, commands in relaunches.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, launch = running_task(tmp)
+                copy = Path(launch["script"])
                 before = copy.stat()
-                ultraclose(*args, cwd=repo, env=env)
+                for command in commands:
+                    ultraclose(*command, cwd=repo, env=env)
                 after = copy.stat()
                 self.assertEqual(
                     (after.st_ino, after.st_mtime_ns),
                     (before.st_ino, before.st_mtime_ns),
                 )
+
+    def test_relaunch_follows_script_and_title(self):
+        # A later version of the skill changes close-task.js, and a later
+        # triage changes the title of the task.
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self.installed_skill(tmp)
+            source = script.with_name("close-task.js")
+            repo, env = self.start_run(tmp, script)
+            launch = json.loads(ultraclose("next", cwd=repo, env=env, script=script))
+            copy = Path(launch[0]["script"])
+            self.assert_loadable(copy, copy_text(REF, self.TITLE))
+            with source.open("a") as f:
+                f.write("// a later line\n")
+            triage(tmp, repo, env, {"ref": REF, "title": "a later title"})
+            relaunch = json.loads(
+                ultraclose("args", REF, cwd=repo, env=env, script=script)
+            )
+            self.assertEqual(Path(relaunch["script"]), copy)
+            self.assertTrue(copy.read_text().endswith("// a later line\n"))
+            self.assert_loadable(copy, copy_text(REF, "a later title", source))
+
+    def test_launch_refuses_script_whose_meta_value_spans_lines(self):
+        # Each copy differs from close-task.js in one line per value. So
+        # the commands refuse a script whose value takes two lines.
+        # name: the two lines that replace the line of the value
+        splits = {
+            "after the key": lambda head, value: f"{head}:\n    {value}",
+            "inside the value": lambda head, value: f"{head}: 'a ' +\n    {value}",
+        }
+        # A task without a title keeps the description of close-task.js,
+        # and the commands refuse its script all the same.
+        titles = {"a title": self.TITLE, "an empty title": ""}
+        # A titled task that the next command picks after the first task.
+        later = "APP-9000"
+        cases = itertools.product(
+            self.LAUNCHES.items(),
+            enumerate(("name", "description"), 1),
+            splits.items(),
+            titles.items(),
+        )
+        for (command, (args, _)), (n, key), (split, join), (named, title) in cases:
+            with (
+                self.subTest(f"{command} with a {key} split {split} for {named}"),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                script = self.installed_skill(tmp)
+                source = script.with_name("close-task.js")
+                lines = source.read_text().splitlines(keepends=True)
+                head, value = lines[n].split(": ", 1)
+                self.assertEqual(head, f"  {key}")
+                lines[n] = join(head, value)
+                source.write_text("".join(lines))
+                repo, env = launchable_repo(tmp)
+                run = Path(tmp, "run")
+                ultraclose(
+                    *("init", "--run", str(run), "--limit", "2"),
+                    cwd=repo,
+                    env=env,
+                    script=script,
+                )
+                rows = [{"ref": REF, "title": title}, {"ref": later, "title": "u"}]
+                triage(tmp, repo, env, *rows)
+                message = refused(*args, cwd=repo, env=env, script=script)
+                self.assertIn(
+                    f"the meta of close-task.js must hold its {key} on one line",
+                    message,
+                )
+                # The command fails before it starts any task.
+                tasks = state_of(run)["tasks"]
+                self.assertEqual(
+                    {ref: t["state"] for ref, t in tasks.items()},
+                    {REF: "pending", later: "pending"},
+                )
+                self.assertEqual(list(Path(repo, ".claude", "worktrees").glob("*")), [])
+                self.assertEqual(list(run.rglob("close-task.js*")), [])
+
+    def test_copy_differs_from_script_only_in_name_and_description(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, (ref, title, text) in self.titled_copies(tmp).items():
+                with self.subTest(name):
+                    kept = None if name in self.BLANK else title
+                    self.assertEqual(text, copy_text(ref, kept))
+                    # The Workflow tool refuses a script file that holds a
+                    # control character.
+                    self.assertNotRegex(text, r"[^\n -~]")
+
+    @unittest.skipUnless(NODE, "node is not on PATH")
+    def test_meta_of_copy_names_task(self):
+        source = meta_of(WORKFLOW.read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, (ref, title, text) in self.titled_copies(tmp).items():
+                with self.subTest(name):
+                    description = source["description"] if name in self.BLANK else title
+                    self.assertEqual(
+                        meta_of(text),
+                        {**source, "name": f"close {ref}", "description": description},
+                    )
 
 
 class ArgsTest(unittest.TestCase):
@@ -1422,8 +1631,6 @@ class LandTest(unittest.TestCase):
                     self.add_other(tmp, repo, env, **row)
                     others = [self.OTHER]
                 self.assertEqual(self.next_refs(repo, env), [])
-                copy = Path(tmp, "run", "close-task.js")
-                copy.unlink()
                 status, lines = self.land(repo, env, "--next")
                 self.assertEqual(status, 0, lines)
                 self.assertTrue(lines[0].startswith(f"RESULT {REF} OK "), lines)
@@ -1440,12 +1647,16 @@ class LandTest(unittest.TestCase):
                 )
                 # Each input names a task that is ready for its Workflow,
                 # as an input of the next command does.
+                run = Path(tmp, "run").resolve()
                 for t in started:
                     self.assertTrue(Path(t["task"]["wt"], ".git").exists())
                     self.assertTrue(Path(t["task"]["dir"], "task.md").exists())
-                    self.assertEqual(Path(t["run"]), copy.parent.resolve())
-                # The landing refreshes the copy that the Workflows load.
-                self.assertEqual(copy.read_bytes(), WORKFLOW.read_bytes())
+                    self.assertEqual(Path(t["run"]), run)
+                    # The landing writes the copy of close-task.js that the
+                    # Workflow of the task loads.
+                    copy = Path(t["script"])
+                    self.assertEqual(copy, task_copy(run, self.OTHER))
+                    self.assertEqual(copy.read_text(), copy_text(self.OTHER, "t"))
 
     def test_landing_starts_no_task(self):
         # A next command can start the second task after each landing.
@@ -1779,9 +1990,10 @@ class WorkflowCase(unittest.TestCase):
         The agents argument maps each short agent label to the result of
         that agent, in the order that the script must call them. The args
         argument holds the input of the script as `ultraclose.py` printed
-        it. Without it, the input names a task outside any run, with the
-        given rounds and resume field. Return the result of the script and
-        each agent call by short label.
+        it, and the driver then runs the copy of the script that the input
+        names. Without it, the input names a task outside any run, with
+        the given rounds and resume field. Return the result of the script
+        and each agent call by short label.
         """
         task = {
             "ref": REF,
@@ -1802,7 +2014,8 @@ class WorkflowCase(unittest.TestCase):
             },
             "agents": {self.label(short): r for short, r in agents.items()},
         }
-        body = WORKFLOW.read_text().replace("export const meta", "const meta", 1)
+        script = Path(args["script"]) if args else WORKFLOW
+        body = script.read_text().replace("export const meta", "const meta", 1)
         with tempfile.TemporaryDirectory() as tmp:
             driver = Path(tmp, "driver.js")
             driver.write_text(DRIVER_HEAD + body + DRIVER_TAIL)
