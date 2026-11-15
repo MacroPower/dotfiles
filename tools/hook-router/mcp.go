@@ -63,6 +63,10 @@ var (
 // before a permission prompt shows it to the user. Unmatched tools with
 // clean text and malformed input fall through to the normal permission
 // flow.
+//
+// Every ask goes through [writeAsk]. Under cfg.promptGuard, a Workflow
+// agent's call therefore gets a deny that carries the reason of the
+// ask.
 func handleMCP(ctx context.Context, input []byte, stdout io.Writer, cfg config, logger *slog.Logger) error {
 	h, err := hook.ParseInput(input)
 	if err != nil {
@@ -100,7 +104,7 @@ func handleMCP(ctx context.Context, input []byte, stdout io.Writer, cfg config, 
 	}
 
 	if res.Conditions != "" {
-		return writeDecision(stdout, conditionalDecision(ctx, tool, res, logger))
+		return writeConditionalDecision(ctx, stdout, h, res, cfg, logger)
 	}
 
 	logger.Info(
@@ -110,25 +114,35 @@ func handleMCP(ctx context.Context, input []byte, stdout io.Writer, cfg config, 
 		slog.String("pattern", pattern),
 	)
 
-	var response map[string]any
-
 	switch decision {
 	case mcprules.DecisionAllow:
-		response = hook.Allow("mcp allow-list (" + pattern + ")")
+		return writeDecision(stdout, hook.Allow("mcp allow-list ("+pattern+")"))
 	case mcprules.DecisionAsk:
-		response = hook.Ask("This MCP tool is on the ask list (" + pattern + "). Confirm before running.")
-	default:
-		response = hook.Deny("This MCP tool is denied (" + pattern + ").")
-	}
+		reason := "This MCP tool is on the ask list (" + pattern + "). Confirm before running."
 
-	return writeDecision(stdout, response)
+		return writeAsk(stdout, h, reason, cfg, logger)
+
+	default:
+		return writeDecision(stdout, hook.Deny("This MCP tool is denied ("+pattern+")."))
+	}
 }
 
-// conditionalDecision logs and returns the PreToolUse decision for a
-// call that the conditional rules of tool decided. res.Conditions
+// writeConditionalDecision logs and writes the PreToolUse decision for
+// a call that the conditional rules of its tool decided. res.Conditions
 // states the conditions of the rule that allowed the call, or of every
-// rule of the tool when the call satisfied none.
-func conditionalDecision(ctx context.Context, tool string, res mcprules.Result, logger *slog.Logger) map[string]any {
+// rule of the tool when the call satisfied none. An ask goes through
+// [writeAsk], so under cfg.promptGuard a Workflow agent reads its
+// reason in a deny.
+func writeConditionalDecision(
+	ctx context.Context,
+	stdout io.Writer,
+	h hook.Input,
+	res mcprules.Result,
+	cfg config,
+	logger *slog.Logger,
+) error {
+	tool := h.ToolName
+
 	attrs := []any{
 		slog.String("rule", "mcp-conditional-"+res.Decision),
 		slog.String("tool", tool),
@@ -138,12 +152,14 @@ func conditionalDecision(ctx context.Context, tool string, res mcprules.Result, 
 	if res.Decision == mcprules.DecisionAllow {
 		logger.InfoContext(ctx, "allow", attrs...)
 
-		return hook.Allow("mcp conditional rule (" + res.Conditions + ")")
+		return writeDecision(stdout, hook.Allow("mcp conditional rule ("+res.Conditions+")"))
 	}
 
 	logger.InfoContext(ctx, "ask", attrs...)
 
-	return hook.Ask("This call needs confirmation. " + tool + " runs without a prompt when " + res.Conditions + ".")
+	reason := "This call needs confirmation. " + tool + " runs without a prompt when " + res.Conditions + "."
+
+	return writeAsk(stdout, h, reason, cfg, logger)
 }
 
 // parseMCPRules builds the ruleset of [handleMCP] from the --mcp-rules

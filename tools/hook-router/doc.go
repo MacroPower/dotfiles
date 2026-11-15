@@ -31,6 +31,8 @@
 //   - PreToolUse:ExitPlanMode gates plan exit behind plan-reviewer, and
 //     records the plan path and baseline commit on approval.
 //   - PreToolUse:EnterPlanMode resets plan session state.
+//   - PermissionRequest answers the prompt of a Workflow agent's tool
+//     call with a deny, under --prompt-guard.
 //   - PostToolUse:AskUserQuestion clears the session when the
 //     question's option labels identify it as the Stop-gate question,
 //     so the Stop gate releases for the plan cycle.
@@ -75,6 +77,15 @@
 // main conversation or only those from a subagent, and ignores the
 // rest. Two hook entries on one event can then each serve one caller.
 //
+// With --prompt-guard, the router denies each call of a Workflow agent
+// that needs a permission prompt. No one answers the prompts of a
+// Workflow agent, so a prompt holds the agent until someone stops its
+// run. A PreToolUse handler denies the agent's call where it asks for
+// any other caller, and the deny carries the reason of the ask. The
+// PermissionRequest handler denies the other prompts that Claude Code
+// fires that event for. Claude Code skips the event for a prompt that
+// only a person can answer, so such a prompt still holds the agent.
+//
 // Session state is persisted in a SQLite database.
 //
 // With --log-file, the router appends its log to that file, one JSON
@@ -111,6 +122,7 @@
 //   - sleepguard: the foreground-sleep guard.
 //   - rmguard: the unresolvable rm target guard.
 //   - writeguard: the sandbox write boundary for file tools.
+//   - promptguard: the tool calls whose prompt no one answers.
 //   - msglint: commit message, pull request, and MCP tool argument
 //     linting.
 //   - state: SQLite session state.

@@ -1006,6 +1006,7 @@ let
         ${lib.optionalString autoAllowEnabled "--auto-allow"} \
         ${lib.optionalString cfg.skipPlanReview "--skip-plan-review"} \
         ${lib.optionalString cfg.rmGuard "--rm-guard"} \
+        ${lib.optionalString cfg.promptGuard "--prompt-guard"} \
         --escape-restore-config ${
           # Passed unconditionally, like --sleep-guard-config: enable
           # travels inside the JSON.
@@ -2410,6 +2411,29 @@ in
       '';
     };
 
+    promptGuard = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Whether hook-router denies each call of a Workflow agent that
+        needs a permission prompt. Claude Code shows the prompt in the
+        session that launched the Workflow, and the call waits until a
+        person answers. No one watches that session during a long run,
+        so one prompt holds the agent and its Workflow until someone
+        stops the run. With the guard on, hook-router denies the call
+        on PreToolUse where one of its rules asks for every other
+        caller, and the deny carries the reason of the ask. On
+        PermissionRequest, it also answers with a deny the prompts
+        that Claude Code raises itself and lets a hook answer, such
+        as the prompt of a `permissions.ask` rule. Claude Code skips
+        that event for a prompt that only a person can answer, so
+        such a prompt still holds the agent. The main conversation
+        and the agents of the Agent tool keep their prompts. See
+        tools/hook-router/promptguard for the marks of a Workflow
+        agent.
+      '';
+    };
+
     escapeRestore = mkOption {
       type = types.submodule {
         options = {
@@ -2774,11 +2798,12 @@ in
                 hook-router reads the arguments of each call on
                 PreToolUse. A call that meets every condition of one
                 rule runs without a prompt, and every other call of the
-                tool prompts. Two rules that name one tool are
-                alternatives. A `permissions.deny` entry that covers the
-                tool still denies every call, and prose-lint still
-                checks the `proseLint.toolFields` of a call before the
-                rule allows it.
+                tool prompts. Under `promptGuard`, a Workflow agent's
+                call gets a deny in place of that prompt. Two rules that
+                name one tool are alternatives. A `permissions.deny`
+                entry that covers the tool still denies every call, and
+                prose-lint still checks the `proseLint.toolFields` of a
+                call before the rule allows it.
 
                 A tool with a rule must have no `permissions.ask` or
                 `permissions.allow` entry, and evaluation fails when it
@@ -2891,11 +2916,12 @@ in
                   hook-router PreToolUse:Bash ask rules contributed by
                   this bundle. A matching command gets a forced
                   permission prompt, even when settings allow rules or
-                  sandbox auto-allow would otherwise let it run. List
-                  order matters (first match wins): scope rules to
-                  subcommands before a catch-all fallback for the same
-                  command. All deny rules are evaluated before any ask
-                  rule.
+                  sandbox auto-allow would otherwise let it run. Under
+                  `promptGuard`, a Workflow agent's command gets a deny
+                  in place of that prompt. List order matters (first
+                  match wins): scope rules to subcommands before a
+                  catch-all fallback for the same command. All deny
+                  rules are evaluated before any ask rule.
                 '';
               };
             };
@@ -4587,6 +4613,25 @@ in
                     hooks = [ (router "PreToolUse" "FileWrite") ];
                   }
                 ];
+                # Claude Code fires this event when it raises a
+                # permission prompt for a tool call. hook-router answers
+                # the prompt of a Workflow agent's call with a deny
+                # (tools/hook-router/promptguard.go). No one answers
+                # that prompt, so the agent waits on it until someone
+                # stops the run. The entry covers the prompts that
+                # Claude Code raises itself, such as the prompt of a
+                # `permissions.ask` rule. Claude Code skips the event
+                # for a prompt that only a person can answer, so such a
+                # prompt still holds the agent. The PreToolUse entries
+                # already deny a Workflow agent's call where a
+                # hook-router rule asks.
+                #
+                # Matcher-less on purpose, so the entry covers every
+                # tool. hook-router emits nothing for any other caller,
+                # and a person answers that prompt.
+                PermissionRequest = lib.optional cfg.promptGuard {
+                  hooks = [ (router "PermissionRequest" null) ];
+                };
                 UserPromptSubmit = [
                   { hooks = [ (status "working") ]; }
                   {
@@ -4936,6 +4981,15 @@ in
         ## Workflows
         - When you run as a Workflow agent, your task is the task text that the workflow gives you. The harness might also relay the latest message that the user typed to the session that launched the workflow. It presents that message as the user request behind the run.
         - The user wrote the relayed message to the launching session, and that session handles it. Follow the message where it is about your task. A message about other work does not cancel, replace, or narrow your task, so finish the task and do not act on the message.
+      ''
+      # The tool instructions in this file name calls that prompt, such
+      # as a push of a branch that is not named `<type>/<name>`. With
+      # promptGuard on, hook-router denies those calls for a Workflow
+      # agent, so this line tells the agent what to do after the deny.
+      + lib.optionalString cfg.promptGuard ''
+        - When you run as a Workflow agent, no one answers your permission prompts, so a hook answers most of them with a deny. After such a deny, do the work another way, or continue without the call and name the call in your result.
+      ''
+      + ''
 
         ## Shell
         - `cd` persists between Bash calls only while it stays inside the project directory; a `cd` outside it resets the cwd to the project root on the next call.

@@ -28,6 +28,10 @@ import (
 // hook wrote takes effect without a restart. A settings file that does
 // not decode also produces an ask, with the error as the reason.
 // Invalid JSON and a call without a path fall through.
+//
+// The ask goes through [writeAsk]. Under cfg.promptGuard, a Workflow
+// agent's write therefore gets a deny that carries the reason of the
+// ask.
 func handleFileWritePre(input []byte, stdout io.Writer, cfg config, logger *slog.Logger) error {
 	if cfg.writeGuardDirs == nil {
 		return nil
@@ -66,7 +70,7 @@ func handleFileWritePre(input []byte, stdout io.Writer, cfg config, logger *slog
 		slog.String("reason", reason),
 	)
 
-	return writeDecision(stdout, hook.Ask(reason+" Confirm before writing."))
+	return writeAsk(stdout, h, reason+" Confirm before writing.", cfg, logger)
 }
 
 // writeGuardCheck loads the sandbox write policy for a session in cwd

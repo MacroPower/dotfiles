@@ -131,6 +131,14 @@ import (
 // for a session in cwd. mainErr sets it to [writeguard.DirsFromEnv]
 // under --write-guard. nil disables the guard, so a bare config{} test
 // literal is a no-op.
+//
+// promptGuard, when true, denies each call of a Workflow agent that
+// needs a permission prompt, because no one answers the prompt (see
+// the promptguard package). [writeAsk] turns each ask of a PreToolUse
+// handler into that deny. [handlePermissionRequest] answers the
+// prompts that Claude Code raises itself and lets a hook answer. When
+// false, a Workflow agent's call prompts like any other, so a bare
+// config{} test literal is a no-op.
 type config struct {
 	agentScope     agentScope
 	postImpl       *postimpl.Catalog
@@ -152,6 +160,7 @@ type config struct {
 	autoAllow      bool
 	rmGuard        bool
 	skipPlanReview bool
+	promptGuard    bool
 }
 
 func configFromEnv() config {
@@ -239,7 +248,11 @@ func main() {
 		logrotate.DefaultBackups,
 		"number of rotated --log-file files to keep, with <path>.1 the most recent (0 keeps none)",
 	)
-	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, SessionStart, SessionEnd, UserPromptSubmit, SubagentStart, TeammateIdle, PreCompact)")
+	event := flag.String(
+		"event",
+		"",
+		"hook event (PreToolUse, PostToolUse, PermissionRequest, Stop, SessionStart, SessionEnd, UserPromptSubmit, SubagentStart, TeammateIdle, PreCompact)",
+	)
 	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion, or a routing sentinel: MCP, FileWrite, or CreatePullRequest)")
 	dbPath := flag.String("db", "", "path to SQLite state database")
 	postImplSkills := flag.String("post-impl-skills", "", "JSON array of {label, description} entries")
@@ -258,6 +271,11 @@ func main() {
 	rmGuard := flag.Bool("rm-guard", false, "deny a PreToolUse:Bash rm or rmdir whose target Claude Code would stop on a permission prompt (variable-leading or statically unresolvable)")
 	agentScope := flag.String("agent-scope", "", "handle only payloads from the main conversation (\"main\", no agent_id) or only payloads from a subagent (\"subagent\", agent_id set); \"\" handles every payload")
 	writeGuard := flag.Bool("write-guard", false, "ask before a Write, Edit, MultiEdit, or NotebookEdit call in plan or bypassPermissions mode writes a path the sandbox denies to commands (use only where Claude Code's sandbox is on)")
+	promptGuard := flag.Bool(
+		"prompt-guard",
+		false,
+		"deny each call of a Workflow agent that needs a permission prompt, on PreToolUse and on PermissionRequest, because no one answers the prompt",
+	)
 	escapeRestoreConfig := flag.String(
 		"escape-restore-config",
 		"",
@@ -294,6 +312,7 @@ func main() {
 			skipPlanReview:      *skipPlanReview,
 			rmGuard:             *rmGuard,
 			writeGuard:          *writeGuard,
+			promptGuard:         *promptGuard,
 		},
 		*checkFlags,
 		*logMaxBytes,
@@ -419,6 +438,7 @@ type configFlags struct {
 	skipPlanReview      bool
 	rmGuard             bool
 	writeGuard          bool
+	promptGuard         bool
 }
 
 // parse returns base with every field that a flag configures set. Its
@@ -565,6 +585,7 @@ func (f configFlags) parse(
 
 	cfg.openStore = openStore
 	cfg.skipPlanReview = f.skipPlanReview
+	cfg.promptGuard = f.promptGuard
 
 	return cfg, nil
 }
@@ -727,6 +748,9 @@ func run(
 		default:
 			return nil
 		}
+
+	case "PermissionRequest":
+		return handlePermissionRequest(input, stdout, cfg, logger)
 
 	case "Stop":
 		if store == nil {

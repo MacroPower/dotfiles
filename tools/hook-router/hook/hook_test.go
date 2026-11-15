@@ -1,6 +1,7 @@
 package hook_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -146,4 +147,21 @@ func TestParseInputToolResponse(t *testing.T) {
 		assert.Nil(t, got.ToolResponse)
 		assert.Nil(t, got.ToolContent)
 	})
+}
+
+// TestDenyPermissionRequest pins the document that Claude Code 2.1.319
+// reads as a deny of a permission prompt.
+func TestDenyPermissionRequest(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+
+	require.NoError(t, hook.Encode(&out, hook.DenyPermissionRequest("No one answers the prompt.")))
+
+	assert.JSONEq(t, `{
+		"hookSpecificOutput": {
+			"hookEventName": "PermissionRequest",
+			"decision": {"behavior": "deny", "message": "No one answers the prompt."}
+		}
+	}`, out.String())
 }

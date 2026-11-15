@@ -85,6 +85,7 @@ func TestEventNeedsStore(t *testing.T) {
 		"SubagentStart always needs store": {event: "SubagentStart", want: true},
 		"TeammateIdle always needs store":  {event: "TeammateIdle", want: true},
 		"PreCompact always needs store":    {event: "PreCompact", want: true},
+		"PermissionRequest skips store":    {event: "PermissionRequest", want: false},
 		"unknown event skips store":        {event: "Foo", want: false},
 	}
 

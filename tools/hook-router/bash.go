@@ -87,6 +87,10 @@ func handleBash(input []byte, stdout io.Writer, cfg config, logger *slog.Logger)
 // handleBashCtx is [handleBash] with the context the message-lint
 // waiver store uses. Every other check in the handler is in-process
 // and needs no context.
+//
+// A command that matches an ask rule gets its ask through [writeAsk].
+// Under cfg.promptGuard, a Workflow agent's command therefore gets a
+// deny that carries the reason of the rule.
 func handleBashCtx(ctx context.Context, input []byte, stdout io.Writer, cfg config, logger *slog.Logger) error {
 	h, err := hook.ParseInput(input)
 	if err != nil {
@@ -120,9 +124,9 @@ func handleBashCtx(ctx context.Context, input []byte, stdout io.Writer, cfg conf
 	}
 
 	if rule, reason, matched := cfg.commandRules.Check(prog); matched {
-		decision, ruleKind, response := "denied", "command-deny", hook.Deny(reason)
+		decision, ruleKind := "denied", "command-deny"
 		if rule.Ask() {
-			decision, ruleKind, response = "ask", "command-ask", hook.Ask(reason)
+			decision, ruleKind = "ask", "command-ask"
 		}
 
 		logger.Info(
@@ -134,7 +138,11 @@ func handleBashCtx(ctx context.Context, input []byte, stdout io.Writer, cfg conf
 			slog.String("reason", reason),
 		)
 
-		return writeDecision(stdout, response)
+		if rule.Ask() {
+			return writeAsk(stdout, h, reason, cfg, logger)
+		}
+
+		return writeDecision(stdout, hook.Deny(reason))
 	}
 
 	// Monitor commands reach this handler too, because the PreToolUse

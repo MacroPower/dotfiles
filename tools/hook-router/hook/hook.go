@@ -13,10 +13,12 @@ import (
 // Source is set on SessionStart only (one of "startup", "resume",
 // "clear", "compact"). ToolUseID is set on PreToolUse and
 // PostToolUse, and names the tool call in the transcript. AgentID and
-// AgentType are set on SubagentStart and SubagentStop, and AgentID also
-// on every payload that a subagent's tool call fires. TeammateName is
-// set on TeammateIdle, and Trigger on PreCompact and PostCompact (one
-// of "manual", "auto").
+// AgentType are set on SubagentStart and SubagentStop, and on every
+// payload that a subagent's tool call fires. A session that starts
+// with --agent also sets AgentType on the payloads of its main
+// conversation. So only AgentID tells a subagent from the main
+// conversation. TeammateName is set on TeammateIdle, and Trigger on
+// PreCompact and PostCompact (one of "manual", "auto").
 //
 // The tool_response of a PostToolUse payload has one of two forms.
 // Claude Code sends a JSON object for its own tools, such as Bash, and
@@ -115,6 +117,22 @@ func Ask(reason string) map[string]any {
 			"hookEventName":            "PreToolUse",
 			"permissionDecision":       "ask",
 			"permissionDecisionReason": reason,
+		},
+	}
+}
+
+// DenyPermissionRequest returns a PermissionRequest decision that
+// answers the prompt of a tool call with a deny. Claude Code takes the
+// prompt down and hands message to the agent as the result of the
+// call.
+func DenyPermissionRequest(message string) map[string]any {
+	return map[string]any{
+		"hookSpecificOutput": map[string]any{
+			"hookEventName": "PermissionRequest",
+			"decision": map[string]any{
+				"behavior": "deny",
+				"message":  message,
+			},
 		},
 	}
 }
