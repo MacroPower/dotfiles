@@ -276,6 +276,154 @@ func TestGitCommonDir(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotRepo)
 }
 
+func TestGitWorkTree(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	work := initWorkClone(t, bare)
+
+	want, err := filepath.EvalSymlinks(work)
+	require.NoError(t, err)
+
+	got, err := gitWorkTree(t.Context(), work)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+
+	sub := filepath.Join(work, "dir")
+	require.NoError(t, os.Mkdir(sub, 0o755))
+
+	got, err = gitWorkTree(t.Context(), sub)
+	require.NoError(t, err)
+	assert.Equal(t, want, got, "a directory of the working tree resolves to its root")
+
+	wt := filepath.Join(t.TempDir(), "wt")
+	runGitCmds(t, [][]string{
+		{"git", "-C", work, "worktree", "add", "-b", "wt-branch", wt},
+	})
+
+	wantWt, err := filepath.EvalSymlinks(wt)
+	require.NoError(t, err)
+
+	got, err = gitWorkTree(t.Context(), wt)
+	require.NoError(t, err)
+	assert.Equal(t, wantWt, got)
+
+	got, err = gitWorkTree(t.Context(), bare)
+	require.NoError(t, err)
+	assert.Empty(t, got, "a bare repository has no working tree")
+
+	// core.worktree moves the working tree away from the path of the
+	// repository.
+	outside, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	runGitCmds(t, [][]string{{"git", "-C", work, "config", "core.worktree", outside}})
+
+	got, err = gitWorkTree(t.Context(), work)
+	require.NoError(t, err)
+	assert.Equal(t, outside, got)
+}
+
+func TestEnclosingGitDir(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	work := initWorkClone(t, bare)
+	gitDir := filepath.Join(work, ".git")
+
+	wt := filepath.Join(t.TempDir(), "wt")
+	runGitCmds(t, [][]string{{"git", "-C", work, "worktree", "add", "-b", "wt-branch", wt}})
+
+	// git keeps the HEAD and the commondir file of a linked worktree
+	// in a directory of the common git directory.
+	wtGitDir := gitOut(t, "-C", wt, "rev-parse", "--absolute-git-dir")
+
+	// A caller that writes a git directory can move its HEAD aside,
+	// or replace HEAD with a symbolic link that git accepts.
+	headless := filepath.Join(initRepo(t, t.TempDir()), ".git")
+	head := filepath.Join(headless, "HEAD")
+	require.NoError(t, os.Rename(head, head+".aside"))
+
+	missingRef := filepath.Join(t.TempDir(), "missing.git")
+	runGitCmds(t, [][]string{{"git", "init", "-q", "--bare", missingRef}})
+	linkHead(t, missingRef, "refs/heads/nope")
+
+	refsDir := filepath.Join(t.TempDir(), "dir.git")
+	runGitCmds(t, [][]string{{"git", "init", "-q", "--bare", refsDir}})
+	linkHead(t, refsDir, "refs/heads")
+
+	named := filepath.Join(t.TempDir(), ".git")
+	upper := filepath.Join(t.TempDir(), ".GIT")
+
+	tests := map[string]struct {
+		dir  string
+		want string
+	}{
+		"working tree":                          {dir: work},
+		"directory of the working tree":         {dir: filepath.Join(work, "dir")},
+		"linked worktree":                       {dir: wt},
+		"plain directory":                       {dir: t.TempDir()},
+		"git directory":                         {dir: gitDir, want: gitDir},
+		"hooks directory":                       {dir: filepath.Join(gitDir, "hooks"), want: gitDir},
+		"bare repository":                       {dir: bare, want: bare},
+		"git directory of a linked worktree":    {dir: wtGitDir, want: wtGitDir},
+		"hooks directory, HEAD moved aside":     {dir: filepath.Join(headless, "hooks"), want: headless},
+		"directory named .git":                  {dir: named, want: named},
+		"directory inside .GIT":                 {dir: filepath.Join(upper, "hooks"), want: upper},
+		"bare repository, HEAD links to no ref": {dir: missingRef, want: missingRef},
+		"bare repository, HEAD links to a dir":  {dir: filepath.Join(refsDir, "hooks"), want: refsDir},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, enclosingGitDir(tt.dir))
+		})
+	}
+}
+
+func TestConfigValue(t *testing.T) {
+	t.Parallel()
+
+	repo := filepath.Join(t.TempDir(), "repo")
+	runGitCmds(t, [][]string{
+		{"git", "init", "-q", repo},
+		{"git", "-C", repo, "config", "mcp-git.name", "value"},
+		{"git", "-C", repo, "config", "mcp-git.switch", "yes"},
+		{"git", "-C", repo, "config", "branch.feat/x.merge", "refs/heads/feat/x"},
+	})
+
+	tests := map[string]struct {
+		key     string
+		options []string
+		want    string
+		err     bool
+	}{
+		"key that the config sets":    {key: "mcp-git.name", want: "value"},
+		"key in another case":         {key: "MCP-Git.Name", want: "value"},
+		"key with a subsection":       {key: "branch.feat/x.merge", want: "refs/heads/feat/x"},
+		"key that the config lacks":   {key: "mcp-git.nosuch"},
+		"boolean":                     {key: "mcp-git.switch", options: []string{"--type=bool"}, want: "true"},
+		"boolean that the key is not": {key: "mcp-git.name", options: []string{"--type=bool"}, err: true},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := configValue(t.Context(), repo, tt.key, tt.options...)
+			if tt.err {
+				require.Error(t, err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestGitOptions(t *testing.T) {
 	t.Parallel()
 
@@ -285,31 +433,29 @@ func TestGitOptions(t *testing.T) {
 		"-c", "core.alternateRefsCommand=true",
 		"-c", "maintenance.auto=false",
 	}
-	recurseOff := []string{"-c", "push.recurseSubmodules=no"}
-	recurseCheck := []string{"-c", "push.recurseSubmodules=check"}
+	push := []string{
+		"-c", "push.recurseSubmodules=no",
+		"-c", "push.pushOption=",
+		"-c", "remote.up.mirror=false",
+	}
 	repo := []string{"-C", "/r"}
 
 	tests := map[string]struct {
-		op              remoteOp
-		checkSubmodules bool
-		hooks           []string
-		want            []string
+		op       remoteOp
+		workTree string
+		hooks    []string
+		want     []string
 	}{
 		"fetch": {
 			want: slices.Concat(guard, repo),
 		},
-		"fetch ignores the submodule check": {
-			checkSubmodules: true,
-			want:            slices.Concat(guard, repo),
-		},
 		"push": {
-			op:   remoteOp{push: true},
-			want: slices.Concat(guard, recurseOff, repo),
+			op:   remoteOp{remote: "up", push: true},
+			want: slices.Concat(guard, push, repo),
 		},
-		"push that checks submodules": {
-			op:              remoteOp{push: true},
-			checkSubmodules: true,
-			want:            slices.Concat(guard, recurseCheck, repo),
+		"working tree": {
+			workTree: "/w",
+			want:     slices.Concat(guard, []string{"--work-tree=/w"}, repo),
 		},
 		// git reads the value of each key from the environment, so
 		// the name of a hook can hold '='.
@@ -322,13 +468,15 @@ func TestGitOptions(t *testing.T) {
 				"--config-env=hook..enabled=" + hookSwitchEnv,
 			}, repo),
 		},
-		"push with a hook": {
-			op:    remoteOp{push: true},
-			hooks: []string{"check"},
+		"push with a hook and a working tree": {
+			op:       remoteOp{remote: "up", push: true},
+			workTree: "/w",
+			hooks:    []string{"check"},
 			want: slices.Concat(
 				guard,
 				[]string{"--config-env=hook.check.enabled=" + hookSwitchEnv},
-				recurseOff,
+				push,
+				[]string{"--work-tree=/w"},
 				repo,
 			),
 		},
@@ -338,7 +486,7 @@ func TestGitOptions(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := (&handler{}).gitOptions(tt.op, "/r", "https://example.invalid/r.git", tt.checkSubmodules, tt.hooks)
+			got := (&handler{}).gitOptions(tt.op, "/r", "https://example.invalid/r.git", tt.workTree, tt.hooks)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -387,73 +535,6 @@ func lastEnv(env []string, name string) string {
 	}
 
 	return last
-}
-
-func TestPushRecursesSubmodules(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		// config holds the lines that the test appends to the git
-		// config of the repository, in order.
-		config string
-		want   bool
-		err    bool
-	}{
-		"no config":                        {},
-		"push.recurseSubmodules check":     {config: "[push]\n\trecurseSubmodules = check\n", want: true},
-		"push.recurseSubmodules on-demand": {config: "[push]\n\trecurseSubmodules = on-demand\n", want: true},
-		"push.recurseSubmodules only":      {config: "[push]\n\trecurseSubmodules = only\n", want: true},
-		"push.recurseSubmodules no":        {config: "[push]\n\trecurseSubmodules = no\n"},
-		"push.recurseSubmodules off":       {config: "[push]\n\trecurseSubmodules = off\n"},
-		"push.recurseSubmodules empty":     {config: "[push]\n\trecurseSubmodules =\n"},
-		"submodule.recurse true":           {config: "[submodule]\n\trecurse = true\n", want: true},
-		"submodule.recurse yes":            {config: "[submodule]\n\trecurse = yes\n", want: true},
-		"submodule.recurse 1":              {config: "[submodule]\n\trecurse = 1\n", want: true},
-		"submodule.recurse without value":  {config: "[submodule]\n\trecurse\n", want: true},
-		"submodule.recurse false":          {config: "[submodule]\n\trecurse = false\n"},
-		"key in another case":              {config: "[Push]\n\tRecurseSubmodules = check\n", want: true},
-		"submodule.recurse false after push.recurseSubmodules on-demand": {
-			config: "[push]\n\trecurseSubmodules = on-demand\n[submodule]\n\trecurse = false\n",
-		},
-		"push.recurseSubmodules no after submodule.recurse true": {
-			config: "[submodule]\n\trecurse = true\n[push]\n\trecurseSubmodules = no\n",
-		},
-		"push.recurseSubmodules check after submodule.recurse false": {
-			config: "[submodule]\n\trecurse = false\n[push]\n\trecurseSubmodules = check\n",
-			want:   true,
-		},
-		"broken config": {config: "[push\n", err: true},
-		"other submodule keys": {
-			config: "[submodule \"sub\"]\n\tpath = sub\n\turl = https://example.invalid/sub.git\n",
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			repo := filepath.Join(t.TempDir(), "repo")
-			runGitCmds(t, [][]string{{"git", "init", "-q", repo}})
-
-			config := filepath.Join(repo, ".git", "config")
-			f, err := os.OpenFile(config, os.O_APPEND|os.O_WRONLY, 0o644)
-			require.NoError(t, err)
-
-			_, err = f.WriteString(tt.config)
-			require.NoError(t, err)
-			require.NoError(t, f.Close())
-
-			got, err := pushRecursesSubmodules(t.Context(), repo)
-			if tt.err {
-				require.Error(t, err)
-
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
-		})
-	}
 }
 
 func TestConfigHooks(t *testing.T) {

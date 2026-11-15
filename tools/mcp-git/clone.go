@@ -306,7 +306,8 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 // chose every file. [handler.runRemote] reads the git config of an
 // existing repository before it runs git. The config of a new clone
 // does not exist before the clone, so clone disables the hooks of
-// [readUserHooks].
+// [readUserHooks]. The command of [sparseCheckoutArgs] runs after the
+// clone, and it names the working tree itself.
 //
 //nolint:unparam // signature matches mcp.AddTool handler contract.
 func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*mcp.CallToolResult, any, error) {
@@ -323,9 +324,12 @@ func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*m
 	}
 
 	if len(input.SparsePaths) > 0 {
-		scArgs := slices.Concat(opts, []string{"-C", input.Dest, "sparse-checkout", "set"}, input.SparsePaths)
+		dest, absErr := filepath.Abs(input.Dest)
+		if absErr != nil {
+			return nil, nil, fmt.Errorf("resolving dest path: %w", absErr)
+		}
 
-		_, scErr := h.runGit(ctx, scArgs...)
+		_, scErr := h.runGit(ctx, sparseCheckoutArgs(opts, dest, input.SparsePaths)...)
 		if scErr != nil {
 			return toolError(fmt.Errorf("setting sparse checkout: %w", scErr)), nil, nil
 		}
@@ -343,6 +347,22 @@ func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*m
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: msg}},
 	}, nil, nil
+}
+
+// sparseCheckoutArgs returns the arguments of the git command that
+// sets paths as the sparse checkout of the new clone at dest. opts
+// holds the options that come before the subcommand, and dest is an
+// absolute path.
+//
+// The command runs after the clone, and the caller can write the git
+// config of the clone between the two commands. core.worktree in that
+// config names the working tree, and git writes the files of paths
+// there. The remote chooses the content of those files. --work-tree
+// wins over core.worktree, so git writes the files in dest. git
+// resolves a relative --work-tree against the directory of -C, so
+// dest must be absolute.
+func sparseCheckoutArgs(opts []string, dest string, paths []string) []string {
+	return slices.Concat(opts, []string{"--work-tree=" + dest, "-C", dest, "sparse-checkout", "set"}, paths)
 }
 
 // checkSparsePaths validates each path in paths for use with

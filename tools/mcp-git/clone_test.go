@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -622,6 +623,44 @@ func TestHandleCloneSparse(t *testing.T) {
 	assert.Contains(t, resultText(t, result), "Pulled")
 }
 
+// The caller can write the git config of a new clone before git_clone
+// sets its sparse checkout. core.worktree in that config names a
+// directory outside the destination.
+func TestSparseCheckoutArgsKeepWorkTree(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	work := initWorkClone(t, bare)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(work, "docs"), 0o755))
+	commitFile(t, work, "docs/README", "docs", "add docs")
+	runGitCmds(t, [][]string{{"git", "-C", work, "push"}})
+
+	h := &handler{allowFileURLs: true}
+	dest := filepath.Join(t.TempDir(), "cloned")
+	outside := t.TempDir()
+	opts := slices.Concat(guardOptions(), hookOptions(nil))
+	paths := []string{"docs"}
+
+	out, err := h.runGit(t.Context(), slices.Concat(opts, buildCloneArgs(CloneInput{
+		URL:         bare,
+		Dest:        dest,
+		SparsePaths: paths,
+	}))...)
+	require.NoError(t, err, out)
+
+	runGitCmds(t, [][]string{{"git", "-C", dest, "config", "core.worktree", outside}})
+
+	out, err = h.runGit(t.Context(), sparseCheckoutArgs(opts, dest, paths)...)
+	require.NoError(t, err, out)
+
+	entries, err := os.ReadDir(outside)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+
+	assert.FileExists(t, filepath.Join(dest, "docs", "README"))
+}
+
 func TestHandleOriginMismatch(t *testing.T) {
 	t.Parallel()
 
@@ -716,6 +755,34 @@ func TestHandleCloneSkipsGlobalHooks(t *testing.T) { //nolint:paralleltest // t.
 	global := filepath.Join(t.TempDir(), "gitconfig")
 	require.NoError(t, os.WriteFile(global, []byte(hookConfig(script, "check", "x=y")), 0o644))
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
+
+	result, _, err := (&handler{allowFileURLs: true}).handleClone(t.Context(), nil, CloneInput{
+		URL:         bare,
+		Dest:        filepath.Join(t.TempDir(), "cloned"),
+		SparsePaths: []string{"docs"},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	requireNotRun(t, marker)
+}
+
+// git clone reads no config of a repository that holds its working
+// directory, so [readUserHooks] does not list the hooks of such a
+// repository. The caller can write that config when the server starts
+// in a repository of the caller.
+func TestHandleCloneIgnoresConfigOfWorkingDirectory(t *testing.T) { //nolint:paralleltest // t.Chdir
+	bare := initBareRepo(t)
+	script, marker := markerScript(t)
+
+	cwd := filepath.Join(t.TempDir(), "repo")
+	runGitCmds(t, [][]string{
+		{"git", "init", "-q", cwd},
+		{"git", "-C", cwd, "config", "core.fsmonitor", script},
+	})
+	appendGitConfig(t, cwd, hookConfig(script, "check"))
+
+	t.Chdir(cwd)
 
 	result, _, err := (&handler{allowFileURLs: true}).handleClone(t.Context(), nil, CloneInput{
 		URL:         bare,

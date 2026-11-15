@@ -338,6 +338,116 @@ func TestHandlePullSkipsSubmodules(t *testing.T) {
 	}
 }
 
+// The server names the working tree of each git command. A pull must
+// therefore update the working tree that git picks for the path of
+// the call.
+func TestHandlePullWorkTrees(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		// setup returns the path of the call, and the root of the
+		// working tree that the pull updates, for a clone at work.
+		setup func(t *testing.T, work string) (string, string)
+	}{
+		"root of the working tree": {
+			setup: func(_ *testing.T, work string) (string, string) { return work, work },
+		},
+		"directory of the working tree": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				dir := filepath.Join(work, "dir")
+				require.NoError(t, os.Mkdir(dir, 0o755))
+
+				return dir, work
+			},
+		},
+		"linked worktree": {
+			setup: func(t *testing.T, work string) (string, string) {
+				t.Helper()
+
+				wt := filepath.Join(filepath.Dir(work), "wt")
+				runGitCmds(t, [][]string{{"git", "-C", work, "worktree", "add", "-b", "wt-branch", wt}})
+
+				return wt, wt
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			bare := initBareRepo(t)
+			work := initWorkClone(t, bare)
+			other := initWorkClone(t, bare)
+			branch := currentBranch(t, work)
+
+			repo, root := tt.setup(t, work)
+
+			commitFile(t, other, "new.txt", "fresh", "add new file")
+			runGitCmds(t, [][]string{{"git", "-C", other, "push"}})
+
+			h := &handler{
+				allowDirs:     resolveAllowDirs([]string{filepath.Dir(work)}),
+				allowFileURLs: true,
+			}
+
+			result, _, err := h.handlePull(t.Context(), nil, PullInput{Repo: repo, Branch: branch})
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+
+			assert.FileExists(t, filepath.Join(root, "new.txt"))
+		})
+	}
+}
+
+// git names the working tree of a submodule with core.worktree, in
+// the git config of the submodule. A pull in the submodule updates
+// that working tree.
+func TestHandlePullInSubmodule(t *testing.T) {
+	t.Parallel()
+
+	s := initSubmoduleRepos(t)
+	branch := advanceSubmodule(t, s)
+
+	require.NotEmpty(t, gitOut(t, "-C", s.sub, "config", "core.worktree"))
+
+	h := &handler{
+		allowDirs:     resolveAllowDirs([]string{filepath.Dir(s.work)}),
+		allowFileURLs: true,
+	}
+
+	result, _, err := h.handlePull(t.Context(), nil, PullInput{Repo: s.sub, Branch: branch})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	assert.FileExists(t, filepath.Join(s.sub, "next.txt"))
+}
+
+// A pull updates the working tree, so it refuses a repository that
+// has none.
+func TestHandlePullRefusesBareRepo(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	mirror := filepath.Join(t.TempDir(), "mirror.git")
+
+	runGitCmds(t, [][]string{{"git", "clone", "--bare", bare, mirror}})
+
+	h := &handler{allowFileURLs: true}
+
+	result, _, err := h.handlePull(t.Context(), nil, PullInput{Repo: mirror})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	assert.Contains(t, resultText(t, result), ErrNoWorkTree.Error())
+
+	// A fetch does not need a working tree.
+	result, _, err = h.handleFetch(t.Context(), nil, FetchInput{Repo: mirror})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+}
+
 func TestHandlePullTimeout(t *testing.T) {
 	t.Parallel()
 

@@ -90,7 +90,13 @@ func remoteTools() map[string]remoteTool {
 		},
 		"push": {
 			local: true,
-			op:    remoteOp{remote: defaultRemote, push: true, args: buildPushArgs(defaultRemote, PushInput{})},
+			op: remoteOp{
+				remote: defaultRemote,
+				push:   true,
+				buildArgs: func(ctx context.Context, repo string) ([]string, error) {
+					return pushArgs(ctx, repo, defaultRemote, PushInput{})
+				},
+			},
 			call: func(ctx context.Context, h *handler, repo string) (*mcp.CallToolResult, any, error) {
 				return h.handlePush(ctx, nil, PushInput{Repo: repo})
 			},
@@ -149,10 +155,30 @@ func (rt remoteTool) requireNotLanded(t *testing.T, bare, work string) {
 func (rt remoteTool) runGit(t *testing.T, h *handler, work string) (string, error) {
 	t.Helper()
 
-	// The checks saw an https URL and no hook.
-	opts := h.gitOptions(rt.op, work, "https://example.invalid/repo.git", false, nil)
+	args := rt.op.args
 
-	return h.runGit(t.Context(), slices.Concat(opts, rt.op.args)...)
+	if rt.op.buildArgs != nil {
+		var err error
+
+		args, err = rt.op.buildArgs(t.Context(), work)
+		require.NoError(t, err)
+	}
+
+	// The checks saw an https URL, the working tree at work, and no
+	// hook.
+	opts := h.gitOptions(rt.op, work, "https://example.invalid/repo.git", work, nil)
+
+	return h.runGit(t.Context(), slices.Concat(opts, args)...)
+}
+
+// requireEmptyDir fails the test when the directory at dir holds an
+// entry.
+func requireEmptyDir(t *testing.T, dir string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Empty(t, entries, "git must write nothing to %s", dir)
 }
 
 // hookEvents holds the events that git fires in a fetch, a pull, or a
@@ -298,9 +324,10 @@ func TestRemoteToolsIgnoreConfigCommands(t *testing.T) {
 	}
 }
 
-// git options cannot turn off these commands, so a tool refuses the
-// repository when its config names one that the tool reads.
-func TestRemoteToolsRefuseConfigCommands(t *testing.T) {
+// git options cannot override these keys, so a tool refuses the
+// repository when its config sets one that the tool reads. The keys
+// name a command, or they change how git connects to a remote.
+func TestRemoteToolsRefuseConfigKeys(t *testing.T) {
 	t.Parallel()
 
 	keys := map[string]struct {
@@ -312,12 +339,26 @@ func TestRemoteToolsRefuseConfigCommands(t *testing.T) {
 		"credential.https://example.invalid.helper": {},
 		"remote.origin.uploadpack":                  {},
 		"remote.other.receivepack":                  {},
+		"http.proxy":                                {},
+		"http.https://example.invalid/.proxy":       {},
+		"http.sslverify":                            {},
+		"http.https://example.invalid/.sslverify":   {},
+		"http.sslcainfo":                            {},
+		"http.curloptresolve":                       {},
+		"http.cookiefile":                           {},
+		"remote.origin.proxy":                       {},
+		"remote.other.proxyauthmethod":              {},
 		"filter.x.clean":                            {worktree: true},
 		"filter.x.smudge":                           {worktree: true},
 		"filter.x.process":                          {worktree: true},
 		"merge.x.driver":                            {worktree: true},
 		"gpg.program":                               {worktree: true},
 		"gpg.ssh.defaultkeycommand":                 {worktree: true},
+		"lfs.extension.x.clean":                     {worktree: true},
+		"lfs.extension.x.smudge":                    {worktree: true},
+		"lfs.customtransfer.x.path":                 {worktree: true},
+		"lfs.customtransfer.x.args":                 {worktree: true},
+		"lfs.storage":                               {worktree: true},
 	}
 
 	for toolName, rt := range remoteTools() {
@@ -350,6 +391,251 @@ func TestRemoteToolsRefuseConfigCommands(t *testing.T) {
 				rt.requireNotLanded(t, bare, work)
 			})
 		}
+	}
+}
+
+// core.worktree in the config of a repository names its working tree,
+// and git writes there. Every tool therefore refuses a repository
+// whose working tree lies outside the allowed directories.
+func TestRemoteToolsRefuseWorkTreeOutsideAllowDir(t *testing.T) {
+	t.Parallel()
+
+	for toolName, rt := range remoteTools() {
+		t.Run(toolName, func(t *testing.T) {
+			t.Parallel()
+
+			bare, work := rt.repos(t)
+			outside := t.TempDir()
+
+			runGitCmds(t, [][]string{{"git", "-C", work, "config", "core.worktree", outside}})
+
+			h := &handler{
+				allowDirs:     resolveAllowDirs([]string{filepath.Dir(work)}),
+				allowFileURLs: true,
+			}
+
+			result, _, err := rt.call(t.Context(), h, work)
+			require.NoError(t, err)
+			require.True(t, result.IsError, "the tool must refuse the working tree")
+			assert.Contains(t, resultText(t, result), ErrDeniedDest.Error())
+
+			requireEmptyDir(t, outside)
+			rt.requireNotLanded(t, bare, work)
+		})
+	}
+}
+
+// The allowed directories can hold paths that the sandbox of the
+// caller cannot write, such as another checkout and the hooks
+// directory of its git directory. Every tool therefore refuses a
+// working tree that does not hold the git directory of the
+// repository, or that lies inside a git directory.
+func TestRemoteToolsRefuseForeignWorkTree(t *testing.T) {
+	t.Parallel()
+
+	// Each setup prepares a directory under other, the second allowed
+	// directory, for the clone at work. It returns the path of the
+	// call and the directory that git must not write.
+	trees := map[string]func(t *testing.T, other, work string) (string, string){
+		"hooks directory of another repository": func(t *testing.T, other, work string) (string, string) {
+			t.Helper()
+
+			hooks := filepath.Join(initRepo(t, other), ".git", "hooks")
+			setWorkTree(t, work, hooks)
+
+			return work, hooks
+		},
+		"another checkout": func(t *testing.T, other, work string) (string, string) {
+			t.Helper()
+
+			checkout := initRepo(t, other)
+			setWorkTree(t, work, checkout)
+
+			return work, checkout
+		},
+		"plain directory": func(t *testing.T, other, work string) (string, string) {
+			t.Helper()
+
+			dir := filepath.Join(other, "plain")
+			require.NoError(t, os.Mkdir(dir, 0o755))
+			setWorkTree(t, work, dir)
+
+			return work, dir
+		},
+	}
+
+	// A .git file in the git directory of another repository points
+	// git at the git directory of the clone. git then finds the git
+	// directory of the clone from that directory and from each
+	// directory inside it. git reads the .git file before HEAD, so the
+	// caller can also change HEAD.
+	for headName, changeHead := range headChanges() {
+		trees["git directory of another repository, "+headName] = func(t *testing.T, other, work string) (string, string) {
+			t.Helper()
+
+			gitDir := plantGitFile(t, initRepo(t, other), work)
+			changeHead(t, gitDir)
+			setWorkTree(t, work, gitDir)
+
+			return work, gitDir
+		}
+
+		trees["hooks directory of another repository with a .git file, "+headName] = func(t *testing.T, other, work string) (string, string) {
+			t.Helper()
+
+			gitDir := plantGitFile(t, initRepo(t, other), work)
+			changeHead(t, gitDir)
+
+			hooks := filepath.Join(gitDir, "hooks")
+			setWorkTree(t, work, hooks)
+
+			return work, hooks
+		}
+
+		// git takes the directory that holds a .git file as the
+		// working tree, so the call names no core.worktree.
+		trees["call in the git directory of another repository, "+headName] = func(t *testing.T, other, work string) (string, string) {
+			t.Helper()
+
+			gitDir := plantGitFile(t, initRepo(t, other), work)
+			changeHead(t, gitDir)
+
+			return gitDir, gitDir
+		}
+	}
+
+	for toolName, rt := range remoteTools() {
+		for treeName, setup := range trees {
+			t.Run(toolName+"/"+treeName, func(t *testing.T) {
+				t.Parallel()
+
+				bare, work := rt.repos(t)
+				other := t.TempDir()
+				repo, dir := setup(t, other, work)
+				before := dirEntries(t, dir)
+
+				h := &handler{
+					allowDirs:     resolveAllowDirs([]string{filepath.Dir(work), other}),
+					allowFileURLs: true,
+				}
+
+				result, _, err := rt.call(t.Context(), h, repo)
+				require.NoError(t, err)
+				require.True(t, result.IsError, "the tool must refuse the working tree")
+				assert.Contains(t, resultText(t, result), ErrDeniedWorkTree.Error())
+
+				assert.Equal(t, before, dirEntries(t, dir), "git must write nothing to %s", dir)
+				rt.requireNotLanded(t, bare, work)
+			})
+		}
+	}
+}
+
+// initRepo creates a repository in a new directory under parent, and
+// returns the path of its working tree.
+func initRepo(t *testing.T, parent string) string {
+	t.Helper()
+
+	repo := filepath.Join(parent, "repo")
+	runGitCmds(t, [][]string{{"git", "init", "-q", repo}})
+
+	return repo
+}
+
+// setWorkTree sets core.worktree in the config of the repository at
+// work to dir.
+func setWorkTree(t *testing.T, work, dir string) {
+	t.Helper()
+
+	runGitCmds(t, [][]string{{"git", "-C", work, "config", "core.worktree", dir}})
+}
+
+// plantGitFile writes a .git file into the git directory of the
+// repository at repo. The file points git at the git directory of the
+// repository at work. plantGitFile returns the git directory of repo.
+func plantGitFile(t *testing.T, repo, work string) string {
+	t.Helper()
+
+	gitDir := filepath.Join(repo, ".git")
+	target := gitOut(t, "-C", work, "rev-parse", "--absolute-git-dir")
+
+	require.NoError(t, os.WriteFile(filepath.Join(gitDir, ".git"), []byte("gitdir: "+target+"\n"), 0o644))
+
+	return gitDir
+}
+
+// headChanges maps a name to a function that changes the HEAD of the
+// git directory at gitDir, as a caller that can write that git
+// directory can.
+func headChanges() map[string]func(t *testing.T, gitDir string) {
+	return map[string]func(t *testing.T, gitDir string){
+		"HEAD in place": func(*testing.T, string) {},
+		"HEAD moved aside": func(t *testing.T, gitDir string) {
+			t.Helper()
+
+			head := filepath.Join(gitDir, "HEAD")
+			require.NoError(t, os.Rename(head, head+".aside"))
+		},
+		"HEAD linked to a missing ref": func(t *testing.T, gitDir string) {
+			t.Helper()
+
+			linkHead(t, gitDir, "refs/heads/nope")
+		},
+	}
+}
+
+// linkHead replaces the HEAD of the git directory at gitDir with a
+// symbolic link to target. git accepts a link into refs/ as HEAD.
+func linkHead(t *testing.T, gitDir, target string) {
+	t.Helper()
+
+	head := filepath.Join(gitDir, "HEAD")
+	require.NoError(t, os.Remove(head))
+	require.NoError(t, os.Symlink(target, head))
+}
+
+// dirEntries returns the names of the entries of the directory at
+// dir.
+func dirEntries(t *testing.T, dir string) []string {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+
+	return names
+}
+
+// TestGitIgnoresCoreWorktree covers a repository whose core.worktree
+// changes after runRemote checks the working tree. The git command
+// itself must name the working tree that the server checked.
+func TestGitIgnoresCoreWorktree(t *testing.T) {
+	t.Parallel()
+
+	for toolName, rt := range remoteTools() {
+		if !rt.op.worktree {
+			continue
+		}
+
+		t.Run(toolName, func(t *testing.T) {
+			t.Parallel()
+
+			bare, work := rt.repos(t)
+			outside := t.TempDir()
+
+			runGitCmds(t, [][]string{{"git", "-C", work, "config", "core.worktree", outside}})
+
+			out, err := rt.runGit(t, &handler{allowFileURLs: true}, work)
+			require.NoError(t, err, out)
+
+			requireEmptyDir(t, outside)
+			assert.FileExists(t, filepath.Join(work, "remote.txt"))
+			rt.requireLanded(t, bare, work)
+		})
 	}
 }
 

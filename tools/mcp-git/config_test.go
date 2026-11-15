@@ -72,7 +72,7 @@ func TestParseConfigList(t *testing.T) {
 				listEntry("local", "credential.https://example.invalid.helper", "!f() { :; }; f") +
 				listEntry("local", "remote.origin.uploadpack", "/x/upload-pack") +
 				listEntry("local", "remote.a.b.receivepack", "/x/receive-pack"),
-			want: repoConfig{remoteCommands: []string{
+			want: repoConfig{remoteKeys: []string{
 				"credential.helper",
 				"credential.https://example.invalid.helper",
 				"remote.origin.uploadpack",
@@ -89,7 +89,7 @@ func TestParseConfigList(t *testing.T) {
 				listEntry("local", "gpg.x509.program", "/x/gpgsm") +
 				listEntry("local", "gpg.ssh.program", "/x/ssh-keygen") +
 				listEntry("local", "gpg.ssh.defaultkeycommand", "/x/keys"),
-			want: repoConfig{worktreeCommands: []string{
+			want: repoConfig{worktreeKeys: []string{
 				"filter.lfs.clean",
 				"filter.lfs.smudge",
 				"filter.lfs.process",
@@ -101,40 +101,126 @@ func TestParseConfigList(t *testing.T) {
 				"gpg.ssh.defaultkeycommand",
 			}},
 		},
+		// git-lfs reads these keys when the global config defines it
+		// as a filter. lfs.storage names the directory where git-lfs
+		// writes each object that it downloads.
+		"keys of git-lfs": {
+			list: listEntry("local", "lfs.extension.x.clean", "clean %f") +
+				listEntry("local", "lfs.extension.x.smudge", "smudge %f") +
+				listEntry("local", "lfs.extension.x.priority", "0") +
+				listEntry("local", "lfs.customtransfer.agent.path", "/x/agent") +
+				listEntry("local", "lfs.customtransfer.agent.args", "; command") +
+				listEntry("local", "lfs.customTransfer.Agent.path", "/x/agent") +
+				listEntry("local", "lfs.Extension.X.smudge", "smudge %f") +
+				listEntry("local", "lfs.storage", "/x/lfs") +
+				listEntry("worktree", "lfs.storage", "../../x") +
+				listEntry("local", "lfs.customtransfer.agent.concurrent", "false") +
+				listEntry("local", "lfs.standalonetransferagent", "agent") +
+				listEntry("local", "lfs.repositoryformatversion", "0") +
+				listEntry("local", "lfs.https://example.invalid/r.git/info/lfs.access", "basic"),
+			want: repoConfig{worktreeKeys: []string{
+				"lfs.extension.x.clean",
+				"lfs.extension.x.smudge",
+				"lfs.customtransfer.agent.path",
+				"lfs.customtransfer.agent.args",
+				"lfs.customTransfer.Agent.path",
+				"lfs.Extension.X.smudge",
+				"lfs.storage",
+			}},
+		},
+		"keys that change the connection": {
+			list: listEntry("local", "http.proxy", "http://proxy.invalid:8080") +
+				listEntry("local", "http.https://github.com/.proxy", "socks5://proxy.invalid") +
+				listEntry("local", "http.sslverify", "false") +
+				listEntry("local", "http.https://github.com/.sslverify", "false") +
+				listEntry("local", "http.sslcainfo", "/x/ca.pem") +
+				listEntry("local", "http.sslcapath", "/x/ca") +
+				listEntry("local", "http.curloptresolve", "github.com:443:192.0.2.1") +
+				listEntry("local", "http.cookiefile", "/x/cookies") +
+				listEntry("local", "http.postbuffer", "1048576") +
+				listEntry("worktree", "http.extraheader", "X: y") +
+				listEntry("local", "remote.origin.proxy", "http://proxy.invalid:8080") +
+				listEntry("local", "remote.a.b.proxyauthmethod", "basic"),
+			want: repoConfig{remoteKeys: []string{
+				"http.proxy",
+				"http.https://github.com/.proxy",
+				"http.sslverify",
+				"http.https://github.com/.sslverify",
+				"http.sslcainfo",
+				"http.sslcapath",
+				"http.curloptresolve",
+				"http.cookiefile",
+				"http.postbuffer",
+				"http.extraheader",
+				"remote.origin.proxy",
+				"remote.a.b.proxyauthmethod",
+			}},
+		},
+		// An empty http.sslVerify is false, and an empty proxy turns
+		// off the proxy of the global config.
+		"connection keys with an empty value and without a value": {
+			list: listEntry("local", "http.sslverify", "") +
+				listEntry("local", "http.proxy", "") +
+				"local\x00http.sslverify\x00" +
+				"local\x00http.emptyauth\x00" +
+				listEntry("local", "remote.origin.proxy", ""),
+			want: repoConfig{remoteKeys: []string{
+				"http.sslverify",
+				"http.proxy",
+				"http.emptyauth",
+				"remote.origin.proxy",
+			}},
+		},
+		"keys of a remote that change no connection": {
+			list: listEntry("local", "remote.origin.url", "https://example.invalid/r.git") +
+				listEntry("local", "remote.origin.push", "refs/heads/a:refs/heads/b") +
+				listEntry("local", "remote.proxy.url", "https://example.invalid/r.git") +
+				listEntry("local", "httpx.proxy", "http://proxy.invalid") +
+				listEntry("local", "core.worktree", "/x"),
+		},
 		// The caller cannot write these parts of the config.
-		"commands of the system, the global config, and the environment": {
+		"keys of the system, the global config, and the environment": {
 			list: listEntry("system", "credential.helper", "store") +
 				listEntry("global", "credential.https://github.com.helper", "/x/gh auth git-credential") +
 				listEntry("global", "filter.lfs.process", "git-lfs filter-process") +
+				listEntry("global", "lfs.customtransfer.agent.path", "/x/agent") +
+				listEntry("global", "lfs.storage", "/x/lfs") +
+				listEntry("system", "http.proxy", "http://proxy.invalid:8080") +
+				listEntry("global", "http.sslcainfo", "/x/ca.pem") +
+				listEntry("command", "http.sslverify", "false") +
 				listEntry("command", "gpg.program", "/x/gpg"),
 		},
 		"commands of the worktree config and of a scope without a name": {
 			list: listEntry("worktree", "credential.helper", "store") +
-				listEntry("unknown", "filter.x.clean", "clean"),
+				listEntry("unknown", "filter.x.clean", "clean") +
+				listEntry("unknown", "http.proxy", "http://proxy.invalid:8080"),
 			want: repoConfig{
-				remoteCommands:   []string{"credential.helper"},
-				worktreeCommands: []string{"filter.x.clean"},
+				remoteKeys:   []string{"credential.helper", "http.proxy"},
+				worktreeKeys: []string{"filter.x.clean"},
 			},
 		},
 		// An empty value names no command. For credential.helper, it
-		// clears the helpers that come before it.
-		"empty values": {
+		// clears the helpers that come before it. git-lfs uses its
+		// default directory for an empty lfs.storage.
+		"keys with an empty value": {
 			list: listEntry("local", "credential.helper", "") +
-				listEntry("local", "filter.x.smudge", ""),
+				listEntry("local", "filter.x.smudge", "") +
+				listEntry("local", "lfs.customtransfer.agent.args", "") +
+				listEntry("local", "lfs.storage", ""),
 		},
 		"key without a value": {
 			list: "local\x00submodule.recurse\x00" +
 				listEntry("local", "credential.helper", "store"),
-			want: repoConfig{remoteCommands: []string{"credential.helper"}},
+			want: repoConfig{remoteKeys: []string{"credential.helper"}},
 		},
 		"value with a newline": {
 			list: listEntry("local", "credential.helper", "!f() {\n:\n}; f"),
-			want: repoConfig{remoteCommands: []string{"credential.helper"}},
+			want: repoConfig{remoteKeys: []string{"credential.helper"}},
 		},
 		"key that the config sets more than one time": {
 			list: listEntry("local", "credential.helper", "cache") +
 				listEntry("local", "credential.helper", "store"),
-			want: repoConfig{remoteCommands: []string{"credential.helper"}},
+			want: repoConfig{remoteKeys: []string{"credential.helper"}},
 		},
 		"scope without a key": {
 			list: listEntry("local", "credential.helper", "store") + "local\x00",
@@ -184,19 +270,19 @@ func TestRepoConfigCheck(t *testing.T) {
 			worktree: true,
 		},
 		"command for a remote": {
-			cfg:  repoConfig{remoteCommands: []string{"credential.helper"}},
+			cfg:  repoConfig{remoteKeys: []string{"credential.helper"}},
 			want: []string{"credential.helper"},
 		},
 		"command for a remote and a working tree update": {
-			cfg:      repoConfig{remoteCommands: []string{"credential.helper"}},
+			cfg:      repoConfig{remoteKeys: []string{"credential.helper"}},
 			worktree: true,
 			want:     []string{"credential.helper"},
 		},
 		"command for the working tree": {
-			cfg: repoConfig{worktreeCommands: []string{"filter.x.smudge"}},
+			cfg: repoConfig{worktreeKeys: []string{"filter.x.smudge"}},
 		},
 		"command for the working tree and a working tree update": {
-			cfg:      repoConfig{worktreeCommands: []string{"filter.x.smudge", "merge.x.driver"}},
+			cfg:      repoConfig{worktreeKeys: []string{"filter.x.smudge", "merge.x.driver"}},
 			worktree: true,
 			want:     []string{"filter.x.smudge", "merge.x.driver"},
 			advice:   true,
@@ -205,18 +291,32 @@ func TestRepoConfigCheck(t *testing.T) {
 		// tell the caller to fetch.
 		"commands of both kinds and a working tree update": {
 			cfg: repoConfig{
-				remoteCommands:   []string{"remote.origin.uploadpack"},
-				worktreeCommands: []string{"gpg.program"},
+				remoteKeys:   []string{"remote.origin.uploadpack"},
+				worktreeKeys: []string{"gpg.program"},
 			},
 			worktree: true,
 			want:     []string{"remote.origin.uploadpack", "gpg.program"},
 		},
 		"commands of both kinds": {
 			cfg: repoConfig{
-				remoteCommands:   []string{"remote.origin.uploadpack"},
-				worktreeCommands: []string{"gpg.program"},
+				remoteKeys:   []string{"remote.origin.uploadpack"},
+				worktreeKeys: []string{"gpg.program"},
 			},
 			want: []string{"remote.origin.uploadpack"},
+		},
+		"key that changes the connection": {
+			cfg:  repoConfig{remoteKeys: []string{"http.proxy"}},
+			want: []string{"http.proxy"},
+		},
+		// A fetch refuses the repository too, so the message must not
+		// tell the caller to fetch.
+		"key that changes the connection and a working tree update": {
+			cfg: repoConfig{
+				remoteKeys:   []string{"http.sslverify"},
+				worktreeKeys: []string{"lfs.extension.x.clean"},
+			},
+			worktree: true,
+			want:     []string{"http.sslverify", "lfs.extension.x.clean"},
 		},
 	}
 
@@ -259,12 +359,14 @@ func TestReadRepoConfig(t *testing.T) {
 					{"git", "-C", repo, "config", "hook.check.event", "pre-push"},
 					{"git", "-C", repo, "config", "credential.helper", "store"},
 					{"git", "-C", repo, "config", "filter.x.smudge", "smudge"},
+					{"git", "-C", repo, "config", "http.https://example.invalid/.sslVerify", "false"},
+					{"git", "-C", repo, "config", "lfs.customTransfer.Agent.path", "agent"},
 				})
 			},
 			want: repoConfig{
-				hooks:            []string{"check"},
-				remoteCommands:   []string{"credential.helper"},
-				worktreeCommands: []string{"filter.x.smudge"},
+				hooks:        []string{"check"},
+				remoteKeys:   []string{"credential.helper", "http.https://example.invalid/.sslverify"},
+				worktreeKeys: []string{"filter.x.smudge", "lfs.customTransfer.Agent.path"},
 			},
 		},
 		// git reports the keys of an included file with the scope of
@@ -284,8 +386,8 @@ func TestReadRepoConfig(t *testing.T) {
 				})
 			},
 			want: repoConfig{
-				hooks:            []string{"check"},
-				worktreeCommands: []string{"merge.x.driver"},
+				hooks:        []string{"check"},
+				worktreeKeys: []string{"merge.x.driver"},
 			},
 		},
 		"worktree config": {
@@ -297,7 +399,7 @@ func TestReadRepoConfig(t *testing.T) {
 					{"git", "-C", repo, "config", "--worktree", "gpg.program", "gpg"},
 				})
 			},
-			want: repoConfig{worktreeCommands: []string{"gpg.program"}},
+			want: repoConfig{worktreeKeys: []string{"gpg.program"}},
 		},
 		"key in another case": {
 			setup: func(t *testing.T, repo string) {
@@ -306,8 +408,8 @@ func TestReadRepoConfig(t *testing.T) {
 				appendGitConfig(t, repo, "[Credential]\n\tHelper = store\n[Hook \"Check\"]\n\tCommand = check\n")
 			},
 			want: repoConfig{
-				hooks:          []string{"Check"},
-				remoteCommands: []string{"credential.helper"},
+				hooks:      []string{"Check"},
+				remoteKeys: []string{"credential.helper"},
 			},
 		},
 		"broken config": {

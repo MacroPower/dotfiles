@@ -59,6 +59,16 @@ var (
 	// repository.
 	ErrNotRepo = errors.New("not a git repository")
 
+	// ErrNoWorkTree is returned when a command that updates the
+	// working tree runs in a repository that has none, such as a bare
+	// repository.
+	ErrNoWorkTree = errors.New("repository has no working tree")
+
+	// ErrDeniedWorkTree is returned when the working tree of a
+	// repository does not hold the git directory of the repository,
+	// or when it lies inside a git directory.
+	ErrDeniedWorkTree = errors.New("working tree must hold the git directory of the repository")
+
 	// ErrDeniedRemote is returned when a remote name is not a
 	// plain name.
 	ErrDeniedRemote = errors.New("remote name is invalid")
@@ -99,6 +109,11 @@ type remoteOp struct {
 	remote string   // validated remote name
 	args   []string // git args after "-C <repo>", e.g. {"fetch", "--", "origin"}
 
+	// buildArgs, when set, returns the git args in place of args. It
+	// reads the repository at the absolute path repo, so
+	// [handler.runRemote] calls it after the path checks pass.
+	buildArgs func(ctx context.Context, repo string) ([]string, error)
+
 	// skippedHook names a hook event of the subcommand, such as
 	// "pre-push", whose hooks the subcommand skips. The caller must
 	// run the checks of those hooks itself. When the repository has a
@@ -112,13 +127,14 @@ type remoteOp struct {
 	cleanupArgs []string
 
 	timeout int  // per-call timeout override in seconds
-	push    bool // resolve the remote's push URLs, and push no submodule
+	push    bool // resolve the remote's push URLs, and take the options of a push
 
 	// worktree is set for a subcommand that updates the working tree
 	// or writes commits, as pull does. git then runs the filters, the
 	// merge drivers, and the signing programs that the git config
 	// names, so [handler.runRemote] refuses a repository whose config
-	// names one.
+	// names one. It also refuses a repository that has no working
+	// tree.
 	worktree bool
 }
 
@@ -131,9 +147,14 @@ type remoteOp struct {
 // and the caller can write the git config of the repository. runRemote
 // therefore keeps git from running a command that this config names.
 // It refuses a remote whose URL [handler.checkURL] denies. It refuses
-// a repository whose config names a command that git options cannot
-// turn off, as [repoConfig.check] describes. [handler.gitOptions] and
+// a repository whose config sets a key that git options cannot
+// override, as [repoConfig.check] describes. [handler.gitOptions] and
 // [handler.commandEnv] turn off the hooks and each other command.
+//
+// The config also names the working tree, with core.worktree.
+// runRemote refuses a working tree that [handler.checkWorkTree]
+// denies, and [handler.gitOptions] passes the path that runRemote
+// checked to git.
 func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 	if d := h.effectiveTimeout(op.timeout); d > 0 {
 		var cancel context.CancelFunc
@@ -166,6 +187,25 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 	destErr = h.checkDest(commonDir)
 	if destErr != nil {
 		return "", destErr
+	}
+
+	// core.worktree in the config of the repository names the working
+	// tree. git can therefore write a working tree that lies outside
+	// the path of the call.
+	workTree, err := gitWorkTree(ctx, abs)
+	if err != nil {
+		return "", err
+	}
+
+	if workTree == "" && op.worktree {
+		return "", fmt.Errorf("%w: %s", ErrNoWorkTree, op.repo)
+	}
+
+	if workTree != "" {
+		err = h.checkWorkTree(ctx, abs, workTree)
+		if err != nil {
+			return "", fmt.Errorf("working tree of %s: %w", op.repo, err)
+		}
 	}
 
 	cleanup, err := acquireLock(filepath.Join(commonDir, "mcp-git"))
@@ -202,10 +242,10 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 		}
 	}
 
-	var checkSubmodules bool
+	args := op.args
 
-	if op.push {
-		checkSubmodules, err = pushRecursesSubmodules(ctx, abs)
+	if op.buildArgs != nil {
+		args, err = op.buildArgs(ctx, abs)
 		if err != nil {
 			return "", err
 		}
@@ -232,9 +272,9 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 		return "", err
 	}
 
-	opts := h.gitOptions(op, abs, urls[0], checkSubmodules, cfg.hooks)
+	opts := h.gitOptions(op, abs, urls[0], workTree, cfg.hooks)
 
-	out, err := h.runGit(ctx, slices.Concat(opts, op.args)...)
+	out, err := h.runGit(ctx, slices.Concat(opts, args)...)
 	if err != nil && len(op.cleanupArgs) > 0 {
 		h.runCleanup(ctx, opts, op.cleanupArgs)
 	}
@@ -251,33 +291,55 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 // gitOptions returns the options that come before the subcommand in
 // each git command that op runs in the repository at the absolute
 // path abs. url is the first URL of the remote, which
-// [handler.credentialArgs] authenticates. Only a push reads
-// checkSubmodules, which makes git check the submodule commits that
-// the push references. hooks names each hook that the git config
-// defines.
-func (h *handler) gitOptions(op remoteOp, abs, url string, checkSubmodules bool, hooks []string) []string {
+// [handler.credentialArgs] authenticates. workTree is the working
+// tree that [handler.runRemote] checked, or "" for a repository that
+// has none. hooks names each hook that the git config defines.
+func (h *handler) gitOptions(op remoteOp, abs, url, workTree string, hooks []string) []string {
 	args := slices.Concat(h.credentialArgs(url), guardOptions(), hookOptions(hooks))
 
-	// git does not pass --no-verify on to the push that it starts in
-	// a submodule. That push runs the pre-push hooks of the
-	// submodule. git applies the last value that its config sets for
-	// push.recurseSubmodules or submodule.recurse. A value on the
-	// command line comes after every config file, so it wins. With
-	// check or no, git starts no push in a submodule. check refuses a
-	// push that references a submodule commit that no remote-tracking
-	// ref of the submodule reaches. A push uses check when the git
-	// config asks git to recurse into submodules. Otherwise it uses
-	// no, the default of git.
 	if op.push {
-		recurse := "no"
-		if checkSubmodules {
-			recurse = "check"
-		}
+		args = append(args, pushOptions(op.remote)...)
+	}
 
-		args = append(args, "-c", "push.recurseSubmodules="+recurse)
+	// --work-tree wins over core.worktree. git therefore writes the
+	// working tree at the path that the server checked, whatever the
+	// config holds when git reads it.
+	if workTree != "" {
+		args = append(args, "--work-tree="+workTree)
 	}
 
 	return append(args, "-C", abs)
+}
+
+// pushOptions returns the git options that keep a push to remote from
+// following keys of the git config. A value on the command line comes
+// after every config file, so it wins.
+//
+// push.recurseSubmodules is no, so git runs no command in a
+// submodule. With on-demand or only, git starts a push in each
+// submodule, and it does not pass --no-verify on to that push. With
+// check, git looks for each submodule commit that the push
+// references. It fetches a missing commit from the promisor remote of
+// a submodule that is a partial clone. Each of these commands reads
+// the git config of the submodule, which [readRepoConfig] does not
+// read. That config can name a credential helper, and the fetch runs
+// it. The value no also wins over submodule.recurse.
+//
+// push.pushOption is empty, which clears the list of push options
+// that the config files set. git sends each push option to the
+// remote, and the server acts on it. A GitLab server can create a
+// merge request for merge_request.create, and it can merge that
+// request into the branch of merge_request.target.
+//
+// remote.<name>.mirror is false. When it is true, git pushes every
+// local ref with force, and it deletes each ref of the remote that
+// the repository lacks.
+func pushOptions(remote string) []string {
+	return []string{
+		"-c", "push.recurseSubmodules=no",
+		"-c", "push.pushOption=",
+		"-c", "remote." + remote + ".mirror=false",
+	}
 }
 
 // hookOptions returns the git options that disable each hook that
@@ -399,44 +461,6 @@ func configHooks(ctx context.Context, repo, event string) ([]string, error) {
 	}
 
 	return names, nil
-}
-
-// pushRecursesSubmodules reports whether the git config of the
-// repository at repo asks git push to recurse into submodules. Two
-// keys set the recursion, and git applies the last of them that the
-// config sets. push.recurseSubmodules recurses with check, on-demand,
-// or only, and submodule.recurse recurses when it is true. The
-// bool-or-str type makes git print each boolean value as true or
-// false.
-func pushRecursesSubmodules(ctx context.Context, repo string) (bool, error) {
-	out, err := gitValue(ctx,
-		"-C", repo, "config", "-z", "--type=bool-or-str", "--get-regexp",
-		`^(push\.recursesubmodules|submodule\.recurse)$`,
-	)
-	if err != nil {
-		// git config exits 1 when the config sets neither key.
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-			return false, nil
-		}
-
-		if errors.Is(err, ErrTimeout) {
-			return false, err
-		}
-
-		return false, fmt.Errorf("reading submodule recursion config: %w", err)
-	}
-
-	// Each entry ends with a NUL and holds the key, a newline, and the
-	// value.
-	entries := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
-	key, value, _ := strings.Cut(entries[len(entries)-1], "\n")
-
-	if key == "submodule.recurse" {
-		return value == "true", nil
-	}
-
-	return value != "false", nil
 }
 
 // hookFile returns the path of the hook file that the repository at
@@ -574,6 +598,176 @@ func gitCommonDir(ctx context.Context, repo string) (string, error) {
 		}
 
 		return "", fmt.Errorf("%w: %s", ErrNotRepo, repo)
+	}
+
+	return out, nil
+}
+
+// gitWorkTree returns the absolute path of the working tree that git
+// uses for the repository at repo. The path is the value of
+// core.worktree when the config of the repository sets it. It returns
+// "" for a repository that has no working tree, such as a bare
+// repository. git rev-parse exits with an error there.
+func gitWorkTree(ctx context.Context, repo string) (string, error) {
+	out, err := gitValue(ctx, "-C", repo, "rev-parse", "--show-toplevel")
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return "", nil
+		}
+
+		if errors.Is(err, ErrTimeout) {
+			return "", err
+		}
+
+		return "", fmt.Errorf("resolving working tree: %w", err)
+	}
+
+	return out, nil
+}
+
+// checkWorkTree checks the working tree at workTree of the repository
+// at the absolute path abs. The working tree must lie under an allowed
+// directory, and it must hold the git directory of the repository. It
+// must also lie outside every git directory.
+//
+// The allowed directories can hold paths that the sandbox of the
+// caller cannot write, such as other checkouts and the hooks
+// directory of each git directory. core.worktree can name such a
+// path, and git then writes the files of the remote there. git runs a
+// file that lands in a hooks directory as a hook. A working tree
+// holds the git directory when git finds that git directory from the
+// working tree. git finds it through a .git directory or a .git file.
+// The caller can write a .git file into a git directory whose hooks it
+// cannot write. checkWorkTree therefore also refuses a working tree
+// inside a git directory, as [enclosingGitDir] finds it.
+func (h *handler) checkWorkTree(ctx context.Context, abs, workTree string) error {
+	err := h.checkDest(workTree)
+	if err != nil {
+		return err
+	}
+
+	enclosing := enclosingGitDir(workTree)
+	if enclosing == workTree {
+		return fmt.Errorf("%w: %s is a git directory", ErrDeniedWorkTree, workTree)
+	}
+
+	if enclosing != "" {
+		return fmt.Errorf("%w: %s lies inside the git directory %s", ErrDeniedWorkTree, workTree, enclosing)
+	}
+
+	gitDir, err := absoluteGitDir(ctx, abs)
+	if err != nil {
+		return err
+	}
+
+	found, err := absoluteGitDir(ctx, workTree)
+	if errors.Is(err, ErrTimeout) {
+		return err
+	}
+
+	if err != nil {
+		return fmt.Errorf("%w: git finds no git directory from %s", ErrDeniedWorkTree, workTree)
+	}
+
+	if found != gitDir {
+		return fmt.Errorf("%w: git finds the git directory %s from %s", ErrDeniedWorkTree, found, workTree)
+	}
+
+	return nil
+}
+
+// absoluteGitDir returns the absolute path of the git directory that
+// git finds from the directory at dir. The path has no symbolic link.
+// A linked worktree has a git directory of its own, inside the common
+// git directory.
+func absoluteGitDir(ctx context.Context, dir string) (string, error) {
+	out, err := gitValue(ctx, "-C", dir, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		if errors.Is(err, ErrTimeout) {
+			return "", err
+		}
+
+		return "", fmt.Errorf("%w: %s", ErrNotRepo, dir)
+	}
+
+	return out, nil
+}
+
+// enclosingGitDir returns the git directory that holds the directory
+// at the absolute path dir, or dir when it is a git directory itself.
+// It returns "" for a directory outside every git directory.
+//
+// A directory named .git is a git directory, whatever it holds. The
+// git directory of each checkout has that name. A caller that can
+// write that git directory can move aside each entry that [isGitDir]
+// looks for, and git still follows a .git file there. The name
+// comparison ignores case, because the file system of macOS ignores
+// case and git keeps the spelling of a path that core.worktree gives.
+// A directory with another name is a git directory when [isGitDir]
+// reports it.
+func enclosingGitDir(dir string) string {
+	for {
+		if strings.EqualFold(filepath.Base(dir), ".git") || isGitDir(dir) {
+			return dir
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+
+		dir = parent
+	}
+}
+
+// isGitDir reports whether the directory at dir holds the entries
+// that git looks for in a git directory. These are a HEAD entry, and
+// either the objects and refs directories or a commondir file. git
+// accepts a symbolic link as HEAD when the link points into refs/,
+// even when the ref does not exist. isGitDir therefore accepts a HEAD
+// entry of any type, and it does not follow a link there or read the
+// entry. It also reports a directory whose HEAD git rejects.
+func isGitDir(dir string) bool {
+	_, err := os.Lstat(filepath.Join(dir, "HEAD"))
+	if err != nil {
+		return false
+	}
+
+	commonDir, err := os.Stat(filepath.Join(dir, "commondir"))
+	if err == nil && commonDir.Mode().IsRegular() {
+		return true
+	}
+
+	for _, name := range []string{"objects", "refs"} {
+		info, err := os.Stat(filepath.Join(dir, name))
+		if err != nil || !info.IsDir() {
+			return false
+		}
+	}
+
+	return true
+}
+
+// configValue returns the value that the git config of the repository
+// at repo holds for key, or "" when the config does not set the key.
+// options holds options of git config, such as --type=bool.
+func configValue(ctx context.Context, repo, key string, options ...string) (string, error) {
+	args := slices.Concat([]string{"-C", repo, "config"}, options, []string{"--get", key})
+
+	out, err := gitValue(ctx, args...)
+	if err != nil {
+		// git config exits 1 when the config does not set the key.
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return "", nil
+		}
+
+		if errors.Is(err, ErrTimeout) {
+			return "", err
+		}
+
+		return "", fmt.Errorf("reading git config %s: %w", key, err)
 	}
 
 	return out, nil

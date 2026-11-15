@@ -12,8 +12,8 @@ import (
 
 var (
 	// ErrDeniedConfig is returned when the git config of a repository
-	// names a command that the server does not run.
-	ErrDeniedConfig = errors.New("git config names a command")
+	// sets a key that the server refuses.
+	ErrDeniedConfig = errors.New("git config of the repository is denied")
 
 	// ErrConfigList is returned when git prints a config listing that
 	// does not pair each scope with a key.
@@ -30,37 +30,61 @@ var (
 		`^(?:credential\.(?:.*\.)?helper|remote\..*\.(?:uploadpack|receivepack))$`,
 	)
 
-	// worktreeCommandPattern matches the config keys that name a
-	// command that git runs when it updates the working tree or writes
-	// a commit. The command is a filter, a merge driver, or a program
-	// that signs commits and verifies their signatures.
-	worktreeCommandPattern = regexp.MustCompile(
-		`^(?:filter\..*\.(?:clean|smudge|process)|merge\..*\.driver|gpg\.(?:.*\.)?program|gpg\.ssh\.defaultkeycommand)$`,
+	// connectionPattern matches the config keys that change how git
+	// connects to the host of an http or https remote. Such a key can
+	// name a proxy, an address for the host, or the certificates that
+	// git trusts. git then sends the credential of the host to another
+	// server. The pattern matches every key under http, because a key
+	// of the form http.<url>.<name> wins over each value that a git
+	// option sets for http.<name>. It also matches the proxy keys of a
+	// remote, which win over http.proxy.
+	connectionPattern = regexp.MustCompile(`^(?:http\..*|remote\..*\.proxy(?:authmethod)?)$`)
+
+	// worktreePattern matches the config keys that name a command that
+	// git runs when it updates the working tree or writes a commit.
+	// The command is a filter, a merge driver, or a program that signs
+	// commits and verifies their signatures.
+	//
+	// The pattern also matches keys of git-lfs. The global config can
+	// define git-lfs as a filter, and git-lfs then reads these keys
+	// from the config of the repository. It runs the clean and smudge
+	// commands of an extension. It also runs the path of a custom
+	// transfer agent in a shell, with the args of the agent.
+	// lfs.storage names the directory where git-lfs writes each object
+	// that it downloads, and that directory can lie outside every
+	// allowed directory. git keeps the case of the words extension and
+	// customtransfer, because they belong to the subsection of the key.
+	worktreePattern = regexp.MustCompile(
+		`^(?:filter\..*\.(?:clean|smudge|process)|merge\..*\.driver` +
+			`|gpg\.(?:.*\.)?program|gpg\.ssh\.defaultkeycommand` +
+			`|lfs\.(?i:extension)\..*\.(?:clean|smudge)` +
+			`|lfs\.(?i:customtransfer)\..*\.(?:path|args)|lfs\.storage)$`,
 	)
 )
 
 // repoConfig holds what the git config of a repository asks git to
-// run. The caller can write the config files of the repository, which
-// git reports with the scopes local and worktree. It cannot write the
-// system config, the global config, or the environment of the server.
+// run, and how it asks git to connect to a remote. The caller can
+// write the config files of the repository, which git reports with the
+// scopes local and worktree. It cannot write the system config, the
+// global config, or the environment of the server.
 type repoConfig struct {
 	// hooks holds the name of each hook that a config file of any
 	// scope defines. A hook of the global config still runs commands
 	// from the working tree.
 	hooks []string
 
-	// remoteCommands holds each key that matches remoteCommandPattern
-	// and that a config file of the repository sets.
-	remoteCommands []string
+	// remoteKeys holds each key that matches remoteCommandPattern or
+	// connectionPattern and that a config file of the repository sets.
+	remoteKeys []string
 
-	// worktreeCommands holds each key that matches
-	// worktreeCommandPattern and that a config file of the repository
-	// sets.
-	worktreeCommands []string
+	// worktreeKeys holds each key that matches worktreePattern
+	// and that a config file of the repository sets.
+	worktreeKeys []string
 }
 
 // readRepoConfig lists the git config that applies in the repository
-// at repo, and returns the hooks and the commands that it names.
+// at repo. It returns the hooks that the config defines, and the keys
+// that the server refuses.
 func readRepoConfig(ctx context.Context, repo string) (repoConfig, error) {
 	list, err := gitValue(ctx, "-C", repo, "config", "--list", "--show-scope", "-z")
 	if err != nil {
@@ -90,8 +114,15 @@ func readUserHooks(ctx context.Context) ([]string, error) {
 
 // parseConfigList reads the output of git config --list --show-scope
 // -z. Each entry holds a scope, a NUL, a key, a newline, a value, and
-// a NUL. An entry for a key without a value holds no newline. A key
-// that is set to an empty value names no command.
+// a NUL. An entry for a key without a value holds no newline.
+//
+// A key of remoteCommandPattern or worktreePattern counts only when
+// its value is not empty. An empty command key names no command, and
+// git-lfs uses its default directory for an empty lfs.storage. A key
+// of connectionPattern counts whatever its value is, because an empty
+// value still changes the connection. An empty http.sslVerify turns
+// off the certificate check, and an empty http.proxy turns off the
+// proxy of the global config.
 func parseConfigList(list string) (repoConfig, error) {
 	var cfg repoConfig
 
@@ -114,15 +145,25 @@ func parseConfigList(list string) (repoConfig, error) {
 			continue
 		}
 
-		if value == "" || isTrustedScope(scope) {
+		if isTrustedScope(scope) {
+			continue
+		}
+
+		if connectionPattern.MatchString(key) {
+			cfg.remoteKeys = appendUnique(cfg.remoteKeys, key)
+
+			continue
+		}
+
+		if value == "" {
 			continue
 		}
 
 		switch {
 		case remoteCommandPattern.MatchString(key):
-			cfg.remoteCommands = appendUnique(cfg.remoteCommands, key)
-		case worktreeCommandPattern.MatchString(key):
-			cfg.worktreeCommands = appendUnique(cfg.worktreeCommands, key)
+			cfg.remoteKeys = appendUnique(cfg.remoteKeys, key)
+		case worktreePattern.MatchString(key):
+			cfg.worktreeKeys = appendUnique(cfg.worktreeKeys, key)
 		}
 	}
 
@@ -146,17 +187,21 @@ func appendUnique(list []string, value string) []string {
 }
 
 // check returns an error that wraps [ErrDeniedConfig] when the config
-// files of the repository name a command that git options cannot turn
-// off. The name of such a key holds a part that the config chooses,
-// such as the name of a filter, or the key holds a list, as
-// credential.helper does. Every command reads the keys of
-// remoteCommandPattern. Only a command that updates the working tree
-// reads the keys of worktreeCommandPattern, and worktree is set for
-// such a command.
+// files of the repository set a key that the server refuses. git
+// options cannot override most of these keys. The name of such a key
+// holds a part that the config chooses, such as the name of a filter
+// or the URL of an http key. Other keys hold a list, as
+// credential.helper does. A git option for lfs.storage also replaces
+// the directory that the global config names.
+//
+// Every command reads the keys of remoteCommandPattern and
+// connectionPattern. Only a command that updates the working tree
+// reads the keys of worktreePattern, and worktree is set for such a
+// command.
 func (c repoConfig) check(worktree bool) error {
-	keys := c.remoteCommands
+	keys := c.remoteKeys
 	if worktree {
-		keys = slices.Concat(keys, c.worktreeCommands)
+		keys = slices.Concat(keys, c.worktreeKeys)
 	}
 
 	if len(keys) == 0 {
@@ -165,15 +210,16 @@ func (c repoConfig) check(worktree bool) error {
 
 	advice := "Remove each key, or move it to the global git config"
 
-	// A fetch reads no key of worktreeCommandPattern, and git in Bash
-	// runs the commands inside the sandbox.
-	if len(c.remoteCommands) == 0 {
-		advice += ". To update the working tree with these commands, run git_fetch, and then merge or rebase in Bash"
+	// A fetch reads no key of worktreePattern, and git in Bash
+	// applies these keys inside the sandbox.
+	if len(c.remoteKeys) == 0 {
+		advice += ". To update the working tree with these keys, run git_fetch, and then merge or rebase in Bash"
 	}
 
 	return fmt.Errorf(
-		"%w: the repository sets %s. This server runs outside the sandbox, "+
-			"so it does not run a command that the config of a repository names. %s",
+		"%w: the repository sets %s. This server runs outside the sandbox. "+
+			"It does not run a command that the config of a repository names. "+
+			"It does not let that config change how git connects to a remote, or where git-lfs writes. %s",
 		ErrDeniedConfig, strings.Join(keys, ", "), advice,
 	)
 }

@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,48 +13,60 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// pushArgsPrefix holds the options that every push takes. A push
+// skips the pre-push hooks, signs nothing, follows no tag, and names
+// the program that serves it.
+func pushArgsPrefix() []string {
+	return []string{
+		"push", "--no-verify", "--no-signed", "--no-follow-tags", "--receive-pack=git-receive-pack",
+	}
+}
+
 func TestBuildPushArgs(t *testing.T) {
 	t.Parallel()
 
-	// Every push skips the pre-push hooks, signs nothing, and names
-	// the program that serves it.
-	push := []string{"push", "--no-verify", "--no-signed", "--receive-pack=git-receive-pack"}
+	push := pushArgsPrefix()
 
 	tests := map[string]struct {
-		input PushInput
-		want  []string
+		input   PushInput
+		refspec string
+		want    []string
 	}{
-		"minimal": {
+		"no refspec": {
 			input: PushInput{Repo: "/r"},
 			want:  slices.Concat(push, []string{"--", "origin"}),
 		},
-		"with ref": {
-			input: PushInput{Repo: "/r", Ref: "feature"},
-			want:  slices.Concat(push, []string{"--", "origin", "feature"}),
+		"with refspec": {
+			input:   PushInput{Repo: "/r", Ref: "feature"},
+			refspec: "refs/heads/feature:refs/heads/feature",
+			want:    slices.Concat(push, []string{"--", "origin", "refs/heads/feature:refs/heads/feature"}),
 		},
 		"with set upstream": {
-			input: PushInput{Repo: "/r", Ref: "feature", SetUpstream: true},
-			want:  slices.Concat(push, []string{"--set-upstream", "--", "origin", "feature"}),
+			input:   PushInput{Repo: "/r", Ref: "feature", SetUpstream: true},
+			refspec: "refs/heads/feature:refs/heads/feature",
+			want: slices.Concat(push, []string{
+				"--set-upstream", "--", "origin", "refs/heads/feature:refs/heads/feature",
+			}),
 		},
 		"with force with lease": {
-			input: PushInput{Repo: "/r", Ref: "main", ForceWithLease: true},
-			want:  slices.Concat(push, []string{"--force-with-lease", "--", "origin", "main"}),
+			input:   PushInput{Repo: "/r", Ref: "main", ForceWithLease: true},
+			refspec: "refs/heads/main:refs/heads/main",
+			want: slices.Concat(push, []string{
+				"--force-with-lease", "--", "origin", "refs/heads/main:refs/heads/main",
+			}),
 		},
 		"with tags": {
 			input: PushInput{Repo: "/r", Tags: true},
 			want:  slices.Concat(push, []string{"--tags", "--", "origin"}),
-		},
-		"tag ref": {
-			input: PushInput{Repo: "/r", Ref: "v1.0.0"},
-			want:  slices.Concat(push, []string{"--", "origin", "v1.0.0"}),
 		},
 		"all options": {
 			input: PushInput{
 				Repo: "/r", Remote: "up", Ref: "x",
 				SetUpstream: true, ForceWithLease: true, Tags: true,
 			},
+			refspec: "refs/heads/x:refs/heads/x",
 			want: slices.Concat(push, []string{
-				"--set-upstream", "--force-with-lease", "--tags", "--", "up", "x",
+				"--set-upstream", "--force-with-lease", "--tags", "--", "up", "refs/heads/x:refs/heads/x",
 			}),
 		},
 	}
@@ -62,8 +75,224 @@ func TestBuildPushArgs(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := buildPushArgs(remoteOrDefault(tt.input.Remote), tt.input)
+			got := buildPushArgs(remoteOrDefault(tt.input.Remote), tt.input, tt.refspec)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestPushArgs(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	work := initWorkClone(t, bare)
+	branch := currentBranch(t, work)
+
+	runGitCmds(t, [][]string{
+		{"git", "-C", work, "branch", "feat/x"},
+		{"git", "-C", work, "branch", "both"},
+		{"git", "-C", work, "tag", "both"},
+		{"git", "-C", work, "tag", "v1.0.0"},
+	})
+
+	tests := map[string]struct {
+		input PushInput
+
+		// want holds the arguments that follow the options of every
+		// push.
+		want []string
+		err  error
+	}{
+		"current branch": {
+			want: []string{"--", "origin", "refs/heads/" + branch + ":refs/heads/" + branch},
+		},
+		"branch": {
+			input: PushInput{Ref: "feat/x"},
+			want:  []string{"--", "origin", "refs/heads/feat/x:refs/heads/feat/x"},
+		},
+		"tag": {
+			input: PushInput{Ref: "v1.0.0"},
+			want:  []string{"--", "origin", "refs/tags/v1.0.0:refs/tags/v1.0.0"},
+		},
+		"full name of a branch": {
+			input: PushInput{Ref: "refs/heads/both"},
+			want:  []string{"--", "origin", "refs/heads/both:refs/heads/both"},
+		},
+		"full name of a tag": {
+			input: PushInput{Ref: "refs/tags/both"},
+			want:  []string{"--", "origin", "refs/tags/both:refs/tags/both"},
+		},
+		"branch and tags": {
+			input: PushInput{Ref: "feat/x", Tags: true},
+			want:  []string{"--tags", "--", "origin", "refs/heads/feat/x:refs/heads/feat/x"},
+		},
+		"branch with options": {
+			input: PushInput{Remote: "up", Ref: "feat/x", SetUpstream: true, ForceWithLease: true},
+			want: []string{
+				"--set-upstream", "--force-with-lease", "--", "up", "refs/heads/feat/x:refs/heads/feat/x",
+			},
+		},
+		// git push --tags with no refspec pushes the tags alone.
+		"tags alone": {
+			input: PushInput{Tags: true},
+			want:  []string{"--tags", "--", "origin"},
+		},
+		"name of a branch and a tag": {
+			input: PushInput{Ref: "both"},
+			err:   ErrAmbiguousRef,
+		},
+		// git lists refs/heads/feat/x for refs/heads/feat.
+		"directory of branches": {
+			input: PushInput{Ref: "feat"},
+			err:   ErrUnknownRef,
+		},
+		"unknown name": {
+			input: PushInput{Ref: "nosuch"},
+			err:   ErrUnknownRef,
+		},
+		"full name of an unknown branch": {
+			input: PushInput{Ref: "refs/heads/nosuch"},
+			err:   ErrUnknownRef,
+		},
+		"remote-tracking branch": {
+			input: PushInput{Ref: "origin/" + branch},
+			err:   ErrUnknownRef,
+		},
+		"full name outside the branches and the tags": {
+			input: PushInput{Ref: "refs/remotes/origin/" + branch},
+			err:   ErrUnknownRef,
+		},
+		"HEAD": {
+			input: PushInput{Ref: "HEAD"},
+			err:   ErrUnknownRef,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := pushArgs(t.Context(), work, remoteOrDefault(tt.input.Remote), tt.input)
+			if tt.err != nil {
+				require.ErrorIs(t, err, tt.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, slices.Concat(pushArgsPrefix(), tt.want), got)
+		})
+	}
+}
+
+func TestPushArgsDetachedHead(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	work := initWorkClone(t, bare)
+
+	runGitCmds(t, [][]string{
+		{"git", "-C", work, "switch", "-q", "--detach"},
+		{"git", "-C", work, "tag", "v1.0.0"},
+	})
+
+	_, err := pushArgs(t.Context(), work, defaultRemote, PushInput{})
+	require.ErrorIs(t, err, ErrNoBranch)
+
+	got, err := pushArgs(t.Context(), work, defaultRemote, PushInput{Ref: "v1.0.0"})
+	require.NoError(t, err)
+	assert.Equal(t,
+		slices.Concat(pushArgsPrefix(), []string{"--", "origin", "refs/tags/v1.0.0:refs/tags/v1.0.0"}),
+		got,
+	)
+
+	got, err = pushArgs(t.Context(), work, defaultRemote, PushInput{Tags: true})
+	require.NoError(t, err)
+	assert.Equal(t, slices.Concat(pushArgsPrefix(), []string{"--tags", "--", "origin"}), got)
+
+	_, err = pushArgs(t.Context(), t.TempDir(), defaultRemote, PushInput{})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrNoBranch)
+}
+
+// git applies push.autoSetupRemote only to a push that names no
+// refspec, and the server always names one. The server therefore
+// records the upstream itself for a push of the current branch.
+func TestPushArgsAutoSetupRemote(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		// config holds the arguments of each git config call that the
+		// test runs in the clone.
+		config [][]string
+		input  PushInput
+
+		// want is set when the push records the upstream.
+		want bool
+		err  bool
+	}{
+		"key is true": {
+			config: [][]string{{"push.autoSetupRemote", "true"}},
+			want:   true,
+		},
+		"key is yes": {
+			config: [][]string{{"push.autoSetupRemote", "yes"}},
+			want:   true,
+		},
+		"key is false": {
+			config: [][]string{{"push.autoSetupRemote", "false"}},
+		},
+		"key is no boolean": {
+			config: [][]string{{"push.autoSetupRemote", "sometimes"}},
+			err:    true,
+		},
+		"branch has an upstream": {
+			config: [][]string{
+				{"push.autoSetupRemote", "true"},
+				{"branch.feat/x.remote", "origin"},
+				{"branch.feat/x.merge", "refs/heads/other"},
+			},
+		},
+		"branch names a remote and no branch of it": {
+			config: [][]string{
+				{"push.autoSetupRemote", "true"},
+				{"branch.feat/x.remote", "origin"},
+			},
+			want: true,
+		},
+		// git applies the key to a push that names no refspec.
+		"call names the branch": {
+			config: [][]string{{"push.autoSetupRemote", "true"}},
+			input:  PushInput{Ref: "feat/x"},
+		},
+		"call sets the upstream": {
+			input: PushInput{SetUpstream: true},
+			want:  true,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			bare := initBareRepo(t)
+			work := initWorkClone(t, bare)
+
+			runGitCmds(t, [][]string{{"git", "-C", work, "switch", "-q", "-c", "feat/x"}})
+
+			for _, args := range tt.config {
+				runGitCmds(t, [][]string{slices.Concat([]string{"git", "-C", work, "config"}, args)})
+			}
+
+			got, err := pushArgs(t.Context(), work, defaultRemote, tt.input)
+			if tt.err {
+				require.Error(t, err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, slices.Contains(got, "--set-upstream"))
 		})
 	}
 }
@@ -156,6 +385,37 @@ func TestHandlePushSetUpstream(t *testing.T) {
 
 	assert.Equal(t, "origin",
 		gitOut(t, "-C", work, "config", "branch.feature.remote"))
+	assert.Equal(t,
+		gitOut(t, "-C", work, "rev-parse", "HEAD"),
+		gitOut(t, "-C", bare, "rev-parse", "feature"),
+	)
+}
+
+// A push of the current branch names its refspec, and it still
+// records the upstream of a new branch when push.autoSetupRemote asks
+// for that.
+func TestHandlePushAutoSetupRemote(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	work := initWorkClone(t, bare)
+
+	runGitCmds(t, [][]string{
+		{"git", "-C", work, "switch", "-c", "feature"},
+		{"git", "-C", work, "config", "push.autoSetupRemote", "true"},
+	})
+	commitFile(t, work, "feature.txt", "x", "feature commit")
+
+	h := &handler{allowFileURLs: true}
+
+	result, _, err := h.handlePush(t.Context(), nil, PushInput{Repo: work})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	assert.Equal(t, "origin",
+		gitOut(t, "-C", work, "config", "branch.feature.remote"))
+	assert.Equal(t, "refs/heads/feature",
+		gitOut(t, "-C", work, "config", "branch.feature.merge"))
 	assert.Equal(t,
 		gitOut(t, "-C", work, "rev-parse", "HEAD"),
 		gitOut(t, "-C", bare, "rev-parse", "feature"),
@@ -636,7 +896,9 @@ func TestPushRefusesLocalTransport(t *testing.T) {
 			op := remoteOp{
 				remote: defaultRemote,
 				push:   true,
-				args:   buildPushArgs(defaultRemote, PushInput{Repo: work, Ref: branch}),
+				args: buildPushArgs(
+					defaultRemote, PushInput{Repo: work, Ref: branch}, "refs/heads/"+branch+":refs/heads/"+branch,
+				),
 			}
 
 			// The check saw an https URL, and the remote names the
@@ -645,7 +907,7 @@ func TestPushRefusesLocalTransport(t *testing.T) {
 
 			// push runs the git command of the push as h runs it.
 			push := func(h *handler) (string, error) {
-				return h.runGit(t.Context(), slices.Concat(h.gitOptions(op, work, checked, false, nil), op.args)...)
+				return h.runGit(t.Context(), slices.Concat(h.gitOptions(op, work, checked, work, nil), op.args)...)
 			}
 
 			_, err := push(&handler{})
@@ -745,6 +1007,10 @@ func advanceSubmodule(t *testing.T, s submoduleRepos) string {
 	return branch
 }
 
+// The git config can ask git push to recurse into submodules. git
+// then runs commands in each submodule, under the git config of the
+// submodule. A push therefore never pushes a submodule and never
+// checks one, whatever the config asks for.
 func TestHandlePushSubmodule(t *testing.T) {
 	t.Parallel()
 
@@ -758,10 +1024,6 @@ func TestHandlePushSubmodule(t *testing.T) {
 		// the test bumps the submodule to a new commit that is on no
 		// remote.
 		tag bool
-
-		// err means that git checks the submodule commit that the
-		// push of the parent references, so the push fails.
-		err bool
 	}{
 		"default config with a tag commit": {tag: true},
 		"default config with a new commit": {},
@@ -770,26 +1032,21 @@ func TestHandlePushSubmodule(t *testing.T) {
 		},
 		"push.recurseSubmodules check": {
 			config: []string{"push.recurseSubmodules", "check"},
-			err:    true,
 		},
 		// With on-demand, git push starts a push in each submodule
 		// that holds a commit that the push references.
 		"push.recurseSubmodules on-demand": {
 			config: []string{"push.recurseSubmodules", "on-demand"},
-			err:    true,
 		},
 		"push.recurseSubmodules only": {
 			config: []string{"push.recurseSubmodules", "only"},
-			err:    true,
 		},
 		"submodule.recurse": {
 			config: []string{"submodule.recurse", "true"},
-			err:    true,
 		},
 		"push.recurseSubmodules on-demand with a tag commit": {
 			config: []string{"push.recurseSubmodules", "on-demand"},
 			tag:    true,
-			err:    true,
 		},
 	}
 
@@ -811,49 +1068,249 @@ func TestHandlePushSubmodule(t *testing.T) {
 
 			commitFile(t, s.work, "parent.txt", "x", "bump submodule")
 
-			branch := currentBranch(t, s.work)
-			before := gitOut(t, "-C", s.bare, "rev-parse", branch)
 			subBefore := gitOut(t, "-C", s.subBare, "for-each-ref")
 
 			h := &handler{allowFileURLs: true}
 
 			result, _, err := h.handlePush(t.Context(), nil, PushInput{Repo: s.work})
 			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+
+			assert.Equal(t,
+				gitOut(t, "-C", s.work, "rev-parse", "HEAD"),
+				gitOut(t, "-C", s.bare, "rev-parse", currentBranch(t, s.work)),
+			)
 			assert.Equal(t, subBefore, gitOut(t, "-C", s.subBare, "for-each-ref"),
 				"git_push must not push a submodule")
-
-			if tt.err {
-				require.True(t, result.IsError, resultText(t, result))
-				assert.Equal(t, before, gitOut(t, "-C", s.bare, "rev-parse", branch))
-			} else {
-				require.False(t, result.IsError, resultText(t, result))
-				assert.Equal(t,
-					gitOut(t, "-C", s.work, "rev-parse", "HEAD"),
-					gitOut(t, "-C", s.bare, "rev-parse", branch),
-				)
-			}
-
-			// After the caller pushes a new submodule commit, the push
-			// of the parent succeeds.
-			if tt.err && !tt.tag {
-				result, _, err = h.handlePush(t.Context(), nil, PushInput{Repo: s.sub})
-				require.NoError(t, err)
-				require.False(t, result.IsError, resultText(t, result))
-
-				result, _, err = h.handlePush(t.Context(), nil, PushInput{Repo: s.work})
-				require.NoError(t, err)
-				require.False(t, result.IsError, resultText(t, result))
-				assert.Equal(t,
-					gitOut(t, "-C", s.work, "rev-parse", "HEAD"),
-					gitOut(t, "-C", s.bare, "rev-parse", branch),
-				)
-			}
 
 			_, statErr := os.Stat(s.marker)
 			require.ErrorIs(t, statErr, os.ErrNotExist,
 				"the pre-push hook of the submodule must not run")
 		})
 	}
+}
+
+// A submodule can be a partial clone. git then fetches each commit
+// that the submodule lacks from the promisor remote of the submodule,
+// and the fetch reads the git config of the submodule. With
+// push.recurseSubmodules=check, git looks for each submodule commit
+// that a push references, so the caller can make the fetch run a
+// command. The test uses the uploadpack key, which names a command for
+// a remote on the local file system. A credential helper runs the
+// same way for an https remote.
+func TestHandlePushRunsNoSubmoduleFetch(t *testing.T) {
+	t.Parallel()
+
+	configs := map[string][]string{
+		"push.recurseSubmodules check":     {"push.recurseSubmodules", "check"},
+		"push.recurseSubmodules on-demand": {"push.recurseSubmodules", "on-demand"},
+		"submodule.recurse":                {"submodule.recurse", "true"},
+	}
+
+	// missing names a commit that no repository of the test holds.
+	const missing = "1111111111111111111111111111111111111111"
+
+	for name, config := range configs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			bare := initBareRepo(t)
+			work := initWorkClone(t, bare)
+			sub := filepath.Join(work, "sub")
+			promisor := initBareRepo(t)
+			script, marker := markerScript(t)
+
+			runGitCmds(t, [][]string{
+				{"git", "init", "-q", sub},
+				{"git", "-C", sub, "config", "user.email", "test@test.com"},
+				{"git", "-C", sub, "config", "user.name", "Test"},
+				{"git", "-C", sub, "commit", "-q", "--allow-empty", "-m", "submodule commit"},
+				{"git", "-C", sub, "update-ref", "refs/remotes/promisor/main", "HEAD"},
+				{"git", "-C", sub, "config", "extensions.partialClone", "promisor"},
+				{"git", "-C", sub, "config", "remote.promisor.promisor", "true"},
+				{"git", "-C", sub, "config", "remote.promisor.url", promisor},
+				{"git", "-C", sub, "config", "remote.promisor.uploadpack", script},
+				{"git", "-C", work, "update-index", "--add", "--cacheinfo", "160000," + missing + ",sub"},
+				{"git", "-C", work, "commit", "-q", "-m", "reference a submodule commit"},
+				slices.Concat([]string{"git", "-C", work, "config"}, config),
+			})
+
+			h := &handler{allowFileURLs: true}
+
+			result, _, err := h.handlePush(t.Context(), nil, PushInput{Repo: work})
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+
+			requireNotRun(t, marker)
+			assert.Equal(t,
+				gitOut(t, "-C", work, "rev-parse", "HEAD"),
+				gitOut(t, "-C", bare, "rev-parse", currentBranch(t, work)),
+			)
+		})
+	}
+}
+
+// pushConfigs maps a name to the git config keys of a repository that
+// make a plain git push update more than the current branch, or
+// another ref. Each entry holds the arguments of one git config call.
+// The keys name the branch of the remote as base, and the pushed
+// branch is feat/x.
+func pushConfigs(base string) map[string][][]string {
+	return map[string][][]string{
+		"no config": nil,
+		"remote.origin.push to another branch": {
+			{"remote.origin.push", "+refs/heads/feat/x:refs/heads/" + base},
+		},
+		"remote.origin.push of every branch": {
+			{"remote.origin.push", "+refs/heads/*:refs/heads/*"},
+		},
+		"remote.origin.mirror": {
+			{"remote.origin.mirror", "true"},
+		},
+		"push.default matching": {
+			{"push.default", "matching"},
+		},
+		"push.default upstream": {
+			{"push.default", "upstream"},
+			{"branch.feat/x.remote", "origin"},
+			{"branch.feat/x.merge", "refs/heads/" + base},
+		},
+		"push.followTags": {
+			{"push.followTags", "true"},
+		},
+	}
+}
+
+// refObjects returns the object of each ref of the repository at
+// repo, by the name of the ref.
+func refObjects(t *testing.T, repo string) map[string]string {
+	t.Helper()
+
+	refs := map[string]string{}
+
+	for line := range strings.SplitSeq(gitOut(t, "-C", repo, "for-each-ref", "--format=%(refname) %(objectname)"), "\n") {
+		name, object, ok := strings.Cut(line, " ")
+		require.True(t, ok, "ref listing must pair a name with an object: %q", line)
+
+		refs[name] = object
+	}
+
+	return refs
+}
+
+// The caller can write the git config of the repository, and that
+// config names the refs that a plain git push updates. A push must
+// update only the ref of the call, so that a push of a feature branch
+// never moves another branch of the remote.
+func TestHandlePushIgnoresPushConfig(t *testing.T) {
+	t.Parallel()
+
+	calls := map[string]struct {
+		input PushInput
+
+		// want names the ref that the push adds to the remote.
+		want string
+	}{
+		"current branch":          {want: "refs/heads/feat/x"},
+		"named branch":            {input: PushInput{Ref: "feat/x"}, want: "refs/heads/feat/x"},
+		"named branch with force": {input: PushInput{Ref: "feat/x", ForceWithLease: true}, want: "refs/heads/feat/x"},
+		"tags alone":              {input: PushInput{Tags: true}, want: "refs/tags/v1"},
+	}
+
+	for callName, call := range calls {
+		for configName, config := range pushConfigs("base") {
+			t.Run(callName+"/"+configName, func(t *testing.T) {
+				t.Parallel()
+
+				bare := initBareRepo(t)
+				work := initWorkClone(t, bare)
+
+				// The remote holds the branch base, and the clone is
+				// ahead of it on base and on feat/x. The clone also
+				// holds an annotated tag on the pushed commit.
+				runGitCmds(t, [][]string{
+					{"git", "-C", work, "switch", "-q", "-c", "base"},
+					{"git", "-C", work, "push", "-q", "origin", "base"},
+				})
+				commitFile(t, work, "base.txt", "x", "local commit on base")
+				runGitCmds(t, [][]string{{"git", "-C", work, "switch", "-q", "-c", "feat/x"}})
+				commitFile(t, work, "feature.txt", "x", "feature commit")
+				runGitCmds(t, [][]string{{"git", "-C", work, "tag", "-a", "-m", "release", "v1"}})
+
+				for _, args := range config {
+					runGitCmds(t, [][]string{slices.Concat([]string{"git", "-C", work, "config"}, args)})
+				}
+
+				want := refObjects(t, bare)
+				want[call.want] = gitOut(t, "-C", work, "rev-parse", call.want)
+
+				input := call.input
+				input.Repo = work
+
+				result, _, err := (&handler{allowFileURLs: true}).handlePush(t.Context(), nil, input)
+				require.NoError(t, err)
+				require.False(t, result.IsError, resultText(t, result))
+
+				assert.Equal(t, want, refObjects(t, bare))
+			})
+		}
+	}
+}
+
+// The server of the remote acts on the push options that it receives.
+// A GitLab server can merge the pushed branch into the default branch.
+// The caller can write the git config of the repository, so a push
+// sends no push option that push.pushOption sets.
+func TestHandlePushSendsNoPushOption(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	work := initWorkClone(t, bare)
+
+	commitFile(t, work, "pushed.txt", "x", "pushed commit")
+
+	// receive-pack runs the pre-receive hook with the number of push
+	// options that the push sent.
+	count := filepath.Join(t.TempDir(), "push-option-count")
+	writeHookIn(t, filepath.Join(bare, "hooks"), "pre-receive",
+		"#!/bin/sh\necho \"$GIT_PUSH_OPTION_COUNT\" > '"+count+"'\n")
+
+	runGitCmds(t, [][]string{
+		{"git", "-C", bare, "config", "receive.advertisePushOptions", "true"},
+		{"git", "-C", work, "config", "push.pushOption", "merge_request.create"},
+		{"git", "-C", work, "config", "--add", "push.pushOption", "merge_request.target=main"},
+	})
+
+	result, _, err := (&handler{allowFileURLs: true}).handlePush(t.Context(), nil, PushInput{Repo: work})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	got, err := os.ReadFile(count)
+	require.NoError(t, err, "the pre-receive hook of the remote must run")
+	assert.Equal(t, "0\n", string(got), "the push must send no push option")
+	assert.Equal(t,
+		gitOut(t, "-C", work, "rev-parse", "HEAD"),
+		gitOut(t, "-C", bare, "rev-parse", currentBranch(t, work)),
+	)
+}
+
+// A push that names no ref needs a current branch.
+func TestHandlePushDetachedHead(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	work := initWorkClone(t, bare)
+
+	commitFile(t, work, "pushed.txt", "x", "pushed commit")
+	runGitCmds(t, [][]string{{"git", "-C", work, "switch", "-q", "--detach"}})
+
+	before := refObjects(t, bare)
+
+	result, _, err := (&handler{allowFileURLs: true}).handlePush(t.Context(), nil, PushInput{Repo: work})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	assert.Contains(t, resultText(t, result), ErrNoBranch.Error())
+	assert.Equal(t, before, refObjects(t, bare))
 }
 
 // push.gpgSign makes git sign a push with the program of gpg.program
