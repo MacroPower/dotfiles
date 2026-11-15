@@ -5,7 +5,7 @@
 #
 # A `!<kind>` after a name skips one comment kind: go, py, hcl, yaml,
 # hash, slash, or dash. ProseSlash skips Go, whose comments name import
-# paths and media types (`net/http`, `text/plain`).
+# paths with no `package` after them (`the client in net/http`).
 #
 # ProseArrow stays out, because a comment often draws an arrow on
 # purpose (`a -> b`).

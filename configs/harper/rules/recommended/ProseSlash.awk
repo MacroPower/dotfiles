@@ -1,11 +1,11 @@
 # Overview
 #
-# Reports two lowercase words joined by a slash in markdown prose
-# (`read/write`, `client/server`). The slash can mean `and`, `or`, or
-# `per`, so the reader must pick one, and the technical-writing skill
-# bans it. The fix joins the words with `and` or `or`, or sets a path or
-# a name in a code span. The rule sits at Recommended, because a pair
-# that names one thing also matches.
+# Reports two lowercase words joined by a slash in markdown prose and in
+# source comments (`read/write`, `client/server`). The slash can mean
+# `and`, `or`, or `per`, so the reader must pick one, and the
+# technical-writing skill bans it. The fix joins the words with `and` or
+# `or`, or sets a path or a name in a code span. The rule sits at
+# Recommended, because a pair that names one thing also matches.
 #
 # Expression
 #
@@ -14,6 +14,11 @@
 # passes. `pair` matches two runs of lowercase letters joined by a
 # slash. It also reads the characters on each side of the pair, so the
 # check can skip a path, a URL, or a name.
+#
+# configs/harper/comment-checks.txt lists the check, so prose-lint also
+# runs it on the comments of a source file. The list puts `!go` after
+# the name, so prose-lint skips the check on Go comments. A pair that
+# joins two words in a Go comment therefore passes (`read/write`).
 #
 # False Positives
 #
@@ -32,6 +37,10 @@
 # still report (`audio/video`, `text/binary`), because they join two
 # words.
 #
+# Go comments name import paths with no `package` after them (`the
+# client in net/http`). `pair` cannot tell such a path from two joined
+# words, so the check skips every Go comment.
+#
 # Related Rules
 #
 # ProseAndOr reports `and/or`, so this check skips the phrase.
@@ -43,6 +52,9 @@
 # misfires named one thing. They were a Hugo edition
 # (`extended/deploy`), the shorthand `k/k` for the kubernetes
 # repository, and a namespace and name in a table.
+#
+# measure.py reads configs/harper/comment-checks.txt too and skips the
+# Go comments of the corpus, so every hit is in a markdown file.
 #
 # Output format, one line per finding:
 #   <file>:<line>:<col>: Style::ProseSlash: <message>
