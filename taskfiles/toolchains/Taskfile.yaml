@@ -1,17 +1,36 @@
 version: "3"
 
 vars:
-  INTEGRATION_MODULES: toolchains/dev/tests
+  # The test module of each toolchain. Each module defines all-full,
+  # which runs every test of the module.
+  INTEGRATION_MODULES: toolchains/dev/tests toolchains/nix/tests
 
 tasks:
+  # The integration tasks run only the modules that INTEGRATION_MODULES
+  # lists. This check fails them when a toolchain has a test module that
+  # the variable does not list.
+  _check-modules:
+    internal: true
+    preconditions:
+      - sh: |
+          for module in toolchains/*/tests; do
+            case " {{.INTEGRATION_MODULES}} " in
+              *" $module "*) ;;
+              *) exit 1 ;;
+            esac
+          done
+        msg: "INTEGRATION_MODULES in taskfiles/toolchains/Taskfile.yaml must list each module that matches toolchains/*/tests."
+
   integration:
     desc: Run lightweight integration tests (+check)
+    deps: [_check-modules]
     cmds:
       - for: { var: INTEGRATION_MODULES }
         cmd: dagger check -m {{.ITEM}}
 
   integration:full:
     desc: Run all integration tests (including heavy network/MITM tests)
+    deps: [_check-modules]
     cmds:
       - for: { var: INTEGRATION_MODULES }
         cmd: dagger call -m {{.ITEM}} all-full

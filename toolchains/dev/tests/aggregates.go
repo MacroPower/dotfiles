@@ -1,3 +1,6 @@
+// The test module of each toolchain holds a copy of this file. Apply
+// each change to every copy.
+
 package main
 
 import (

@@ -9,10 +9,36 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Tests provides integration tests for the [Nix] module.
 type Tests struct{}
+
+// All runs every test that carries +check in parallel.
+// [Tests.TestAggregates] fails when a test with that pragma is missing
+// here.
+func (m *Tests) All(ctx context.Context) error {
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(m.TestAggregates)
+	eg.Go(func() error { return m.TestDependencySnapshot(ctx) })
+	eg.Go(func() error { return m.TestSbom(ctx) })
+	eg.Go(func() error { return m.TestVulnscanSarif(ctx) })
+
+	return eg.Wait()
+}
+
+// AllFull runs every test of the module.
+// `task toolchains:integration:full` calls it in the test module of
+// each toolchain. Every test of this module carries +check, so the
+// function calls only [Tests.All]. It must also call each test that
+// someone adds without the pragma. [Tests.TestAggregates] fails when
+// a test is missing here.
+func (m *Tests) AllFull(ctx context.Context) error {
+	return m.All(ctx)
+}
 
 // ghSnapshot is the subset of the GitHub dependency snapshot format
 // needed to validate [Nix.DependencySnapshot] output.
@@ -225,7 +251,7 @@ func (m *Tests) TestVulnscanSarif(ctx context.Context) error {
 		return fmt.Errorf("driver name = %q, want %q", run.Tool.Driver.Name, "grype")
 	}
 
-	// Don't assert specific CVE counts (they change), but validate structure.
+	// Do not assert specific CVE counts (they change), but validate structure.
 	for i, r := range run.Results {
 		if r.RuleID == "" {
 			return fmt.Errorf("result[%d] has empty ruleId", i)
