@@ -21,3 +21,9 @@ You might need to restart the node.
 You won't need to restart the node.
 
 You only need to set the flag once.
+
+We just need to hand back control.
+
+You rarely need to annotate types.
+
+You will need to know the port.

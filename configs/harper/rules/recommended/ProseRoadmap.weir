@@ -47,9 +47,11 @@
 #
 # Related Rules
 #
-# ProseFutureTense skips `will be` before `added`, `supported`,
-# `removed`, and `deprecated`. Both tiers of ProsePassive skip `be`
-# right after `will`. Only this rule then reports `will be removed`.
+# ProseFutureTense skips `will be` before `supported`, `removed`, and
+# `deprecated`. It skips `will be added` unless `to` follows, so it
+# reports `will be added to`, the phrase that the guard here skips. Both
+# tiers of ProsePassive skip `be` right after `will`. Only this rule
+# then reports `will be removed`.
 #
 # Measurement
 #

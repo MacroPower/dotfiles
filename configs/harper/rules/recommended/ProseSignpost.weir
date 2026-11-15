@@ -46,6 +46,11 @@
 # The Required ProseFiller holds the signposts that point at what the
 # reader can see (`as you can see`).
 #
+# ProseFutureTense reports `we will` before a verb. Its guard skips the
+# `we will` phrases that `main` lists here, so `we will explore` draws
+# one finding. Its `signpost` list holds the verbs of those phrases, so
+# a `we will` phrase added to `main` needs its verb in that list.
+#
 # Measurement
 #
 # The rule hit 251 lines in the measure.py corpus, and 20 of 20 sampled

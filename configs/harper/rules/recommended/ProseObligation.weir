@@ -33,8 +33,12 @@
 #
 # The guard before the phrase skips a word that states that no
 # obligation exists, such as a negation (`you do not need to restart`,
-# `you won't need to restart`). It skips `only`, which states what
-# suffices (`you only need to set the flag once`).
+# `you won't need to restart`). It skips `only` and `just`, which state
+# what suffices (`you only need to set the flag once`, `we just need to
+# hand back control`). It also skips `rarely`, which states that a step
+# is rare (`you rarely need to annotate types`). In the measure.py
+# corpus, `just` or `rarely` sits before `need to` on 9 lines, and each
+# of the 9 states what suffices or that a step is rare.
 #
 # A modal verb is a helping verb that marks possibility, ability, or
 # obligation, such as `can`, `might`, or `must`. The guard skips a modal
@@ -69,7 +73,8 @@
 # `are encouraged to` each draw one finding, from this rule.
 #
 # ProseFutureTense skips `will want to` and `will need to`, so only this
-# rule reports them.
+# rule reports them. The guard on `know` skips `will need to know` here,
+# so ProseFutureTense reports that phrase.
 #
 # The Recommended ProseObligation reports `need to` and the other
 # phrases that read as advice. The Optional ProseObligation reports `has
@@ -77,15 +82,16 @@
 #
 # Measurement
 #
-# The rule hit 837 lines in the measure.py corpus, and 17 of 20 sampled
+# The rule hit 831 lines in the measure.py corpus, and 15 of 20 sampled
 # hits stated obligations that `must`, `should`, the present tense, or a
-# `To` opener states more clearly. Of the three misfires, one described
-# a situation (`Cluster administrators need to be able to offer a
-# variety of PersistentVolumes`), one stated that a step is rare (`you
-# rarely need to do this type annotation`), and one quoted license text
-# (`shall mean the terms and conditions`).
+# `To` opener states more clearly. Of the five misfires, two described a
+# situation (`nodes that need to be upgraded to a Kubernetes release`),
+# and one predicted what the reader wants (`Often, you'll want to
+# combine two existing strings`). One stated that a step is rare (`It's
+# rare to need to call poll directly`), and one quoted license text
+# (`shall mean any form`).
 expr need [need, needs]
-expr neg [not, never, don't, doesn't, didn't, won't, wouldn't, shouldn't, only, might, may, would, could, DET]
+expr neg [not, never, don't, doesn't, didn't, won't, wouldn't, shouldn't, only, just, rarely, might, may, would, could, DET]
 expr wrap [expected, required, supposed]
 expr verbs [note, remember, understand, mention, realize, recognize]
 expr main [<(!@neg @need to !know), (@need to)>, ([(it is), it's] [necessary, essential, critical, best] to), ([is, are] [advised, encouraged] to), ([is, are] ADV [advised, encouraged] to), ([is, are] @wrap to), ([is, are] recommended), <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>, (it is advisable), (it is a good idea), ([I'll, you'll, we'll, they'll, he'll, she'll, it'll] want to), ([will, may, might] want to), (be sure to), (make sure to), (ought to), (must try to), shall]
@@ -101,4 +107,6 @@ allows "A timeout is required for every request."
 allows "You must pin the version."
 allows "You might need to restart the node."
 allows "You only need to set the flag once."
+allows "We just need to hand back control."
+allows "You rarely need to annotate types."
 allows "Read the guide for everything you need to know."

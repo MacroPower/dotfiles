@@ -19,6 +19,17 @@
 # subject (`the kubelet uses the default handler`), so one fix clears
 # it.
 #
+# The rule reads only the full word `will`, so the contraction passes
+# (`you'll see the output`). Before a verb, `'ll` hit 468 lines in the
+# measure.py corpus, and the Rust book holds 407 of them. Of 40 sampled
+# hits, 26 described normal behavior. The other 14 marked a later event,
+# such as a later chapter of a tutorial (`We'll see a case in which
+# multiple impl blocks are useful in Chapter 10`). The rule leaves the
+# contraction out, because its 468 lines at 26 of 40 lower the precision
+# of the whole rule from 18 of 20 to about 17 of 20. The `we will` hits
+# that Measurement counts reach only 19 of 31, but their 31 lines are
+# too few to move the rule from 18 of 20.
+#
 # Weir has no lookbehind, so the filter consumes the word before `will`
 # and narrows the finding back to `will`. A rule that reports the words
 # after `will` therefore keeps its own finding, as the Recommended
@@ -26,10 +37,20 @@
 # `Will` is a question, and the filter needs a word before `will`, so it
 # passes.
 #
-# The guards skip the words that another rule reports. `skip` lists the
-# words before `will`, and `roadmap` lists the participles after `will
-# be`. `will not` and `will also` pass, because the word after `will` is
-# not a verb there.
+# The guards skip the phrases that another rule reports. `skip` lists
+# the phrases that start at the word before `will`, and `signpost` lists
+# the verbs that end the `we will` phrases. A negated phrase reads ahead
+# and consumes one word, so the guard rejects `we will explore` at `we`
+# and consumes only `we` before another verb. `roadmap` lists the
+# participles after `will be`. `will not` and `will also` pass, because
+# the word after `will` is not a verb there.
+#
+# `will want` and `will need` count unless `to` follows (`you will need
+# Docker`). A negated word after a space needs a word to consume, so the
+# branch has a twin for the end of a clause (`install the tools you will
+# need`). A clause is a subject and its verb, such as `the tests pass`.
+# `will need to know` and `will be added to` each have a branch of their
+# own, because the rule that reports the shorter phrase skips them.
 #
 # False Positives
 #
@@ -38,14 +59,21 @@
 #
 # Related Rules
 #
-# The guard skips `we will`, which ProseSignpost reports (`we will
-# explore`), and `time will tell`, which ProseClosingCliche reports. It
-# also skips `will want to` and `will need to`, which the Recommended
-# ProseObligation reports. `will want` and `will need` before another
-# word still count (`you will need Docker`). ProseRoadmap reports `will
-# be added`, `will be supported`, `will be removed`, and `will be
-# deprecated`, and the Required ProseWordy reports `will be able to`, so
-# the guard skips those too.
+# ProseSignpost reports `we will` before `explore`, `cover`, `discuss`,
+# `examine`, `walk through`, and `look at`, so the guard skips those
+# phrases. `we will` before any other verb counts (`we will build the
+# binary`). The guard also skips `time will tell`, because
+# ProseClosingCliche reports `only time will tell`.
+#
+# The Recommended ProseObligation reports `will want to` and `will need
+# to`, so this rule skips both. The Recommended ProseObligation skips
+# `need to know`, so `will need to know` counts here.
+#
+# ProseRoadmap reports `will be added`, `will be supported`, `will be
+# removed`, and `will be deprecated`, and the Required ProseWordy
+# reports `will be able to`, so the guard skips those too. ProseRoadmap
+# skips `will be added to`, so that phrase counts here (`the item will
+# be added to the queue`).
 #
 # ProsePassive leaves `will be` plus a participle to this rule, so only
 # this rule reports `the default handler will be used`. The Recommended
@@ -54,13 +82,20 @@
 #
 # Measurement
 #
-# The rule hit 2172 lines in the measure.py corpus, and 19 of 20 sampled
-# hits described the system's normal behavior. The other hit marked a
-# later event (`Starting in v1.31, in-tree cloud providers will be
-# permanently disabled`), and the rule accepts that misfire.
-expr skip [we, time]
+# The rule hit 2209 lines in the measure.py corpus, and 18 of 20 sampled
+# hits described the system's normal behavior. The other two marked a
+# later event (`a testing framework that will include as many providers
+# as possible`), and the rule accepts those misfires.
+#
+# `we will` before a verb hit 31 of those lines, and 19 of the 31
+# described normal behavior or narrated a step (`when that fails we will
+# try against /a/{x}/c`). The other 12 marked a later event, either a
+# later point in the text or a plan (`we will continue to focus on
+# enhancing extensibility`). Kubernetes blog posts hold 8 of the 12.
+expr signpost [explore, cover, discuss, examine, (walk through), (look at)]
+expr skip [(we will @signpost), (time will tell)]
 expr roadmap [added, supported, removed, deprecated]
-expr main <(!@skip will [<VERB, ![want, need]>, ([want, need] !to), (be ![@roadmap, able])]), will>
+expr main <(!@skip will [<VERB, ![want, need]>, ([want, need] !to), ([want, need]!( )), (need to know), (be ![@roadmap, able]), (be added to)]), will>
 let message "Future tense. Write the present tense for what the system does, such as `the kubelet uses the default handler`."
 let description "Flags `will` before a verb, where the present tense usually describes what the system does."
 let becomes ""
@@ -68,8 +103,10 @@ let kind "Style"
 allows "Running make builds the binary."
 allows "Will the job retry?"
 allows "We will explore the scheduler."
+allows "We will walk through the setup."
 allows "Only time will tell."
 allows "The flag will be removed in the next release."
 allows "You will want to pin the version."
 allows "The caller will be able to cancel the request."
 allows "The job will need to restart."
+allows "You'll see the output."

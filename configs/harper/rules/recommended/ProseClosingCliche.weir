@@ -14,7 +14,7 @@
 #
 # Related Rules
 #
-# ProseFutureTense skips `will` after `time`, so only this rule reports
+# ProseFutureTense skips `time will tell`, so only this rule reports
 # `only time will tell`.
 #
 # Measurement
