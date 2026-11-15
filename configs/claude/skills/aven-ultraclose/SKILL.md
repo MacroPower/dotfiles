@@ -248,6 +248,23 @@ that cycle, a fixer applies only the exact fixes of the open findings, and
 a reviewer checks only those fixes. If findings remain, the reviewer
 decides between `landable` and `unconverged`.
 
+The task is `landable` only when the reviewer reports that the change
+leaves the base branch strictly better and that no open finding is a
+regression. Otherwise the task is `unconverged`. The reviewer decides
+whether each open finding is a regression by this rule:
+
+| Open finding | Regression |
+| --- | --- |
+| A fault in behavior that the change introduced, such as a wrong result or a broken build | Yes |
+| A wrong instruction that the change introduced in text that an agent acts on, such as a prompt, a skill, or a CLAUDE.md file | Yes |
+| A fault that the base branch also has | No |
+| A missing or weak test, even in code that the change added | No |
+| A doc, comment, or convention fault that does not change an instruction, even in code that the change added | No |
+
+Only a fault in behavior is a regression, because an `unconverged` task
+stays open together with each task that waits for it. Every `landable`
+task lands, and a follow-up task tracks each of its open findings.
+
 Agents must not learn the cap, because an agent that knows it rushes or
 softens its work near it. The Workflow prompts never state the cap or say
 that a cycle is the last. Keep the cap out of everything that agents read:

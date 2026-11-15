@@ -54,6 +54,17 @@ const IMPL_SCHEMA = {
   required: ['status', 'summary', 'notes', 'defects'],
 }
 
+// What a reviewer reports as a regression. At the cap, one open
+// regression keeps the change from landing. The task then stays open, and
+// so does each task that waits for it. So the rule covers only a fault in
+// behavior. A missing test or a comment fault leaves the base branch no
+// worse, even in code that the change added. So the change lands, and a
+// follow-up task tracks the fault. An agent acts on the text of a skill or
+// a prompt, so a wrong instruction there counts as a fault in behavior.
+// The rule does not say what a regression decides, so the consequence
+// does not sway the reviewer.
+const REGRESSION = `A finding is a regression only when it reports a fault in behavior that the change introduced, such as a wrong result, a crash, a broken build, a broken caller, a failing test, or slower code. A fault that ${base} also has is not a regression. A missing or weak test leaves the behavior as it is, and so does a doc, comment, or convention fault. None of these faults is a regression, even in code that the change added. Text that an agent acts on is behavior, so a wrong instruction in a prompt, a skill, an agent definition, a CLAUDE.md file, or other such text is a fault in behavior.`
+
 const REVIEW_SCHEMA = {
   type: 'object',
   properties: {
@@ -68,7 +79,7 @@ const REVIEW_SCHEMA = {
           problem: { type: 'string' },
           evidence: { type: 'string', description: 'Command output, a failing test, or the code reading that proves it' },
           fix: { type: 'string', description: 'The exact change the fixer makes' },
-          regression: { type: 'boolean', description: `true when ${base} does not have this fault, so the change introduced it` },
+          regression: { type: 'boolean', description: REGRESSION },
         },
         required: ['severity', 'location', 'problem', 'evidence', 'fix', 'regression'],
       },
@@ -190,7 +201,7 @@ Review steps:
 5. Check docs and conventions: doc comments and docs that the change made false, the rules of rules.md and CLAUDE.md, leftover shims, changes outside the task scope, and task refs in the tree. Search the repository for the old names and the old behavior.
 6. Check that the commit message describes the diff and claims nothing more.
 
-Report only findings that require a change, each with a location, the proof, and the exact fix. Leave out praise, restatements, and style preferences that the linters accept. Severity: blocker for wrong behavior or a broken build, major for a missing part of the task, a regression, or a missing test, and minor for a doc or convention fault. Set regression on each finding, and set improves_base for the change as a whole.
+Report only findings that require a change, each with a location, the proof, and the exact fix. Leave out praise, restatements, and style preferences that the linters accept. Severity: blocker for wrong behavior or a broken build, major for a missing part of the task, a regression, or a missing test, and minor for a doc or convention fault. Set regression on each finding. ${REGRESSION} Set improves_base for the change as a whole.
 
 Verdict:
 - "approve" only when you have zero findings.

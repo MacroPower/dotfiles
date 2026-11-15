@@ -1088,6 +1088,37 @@ class WorkflowRulesTest(WorkflowCase):
                     self.assertIn(sentence, call["prompt"])
 
 
+class WorkflowRegressionTest(WorkflowCase):
+    """What a reviewer reports as a regression."""
+
+    def test_reviewers_learn_what_a_regression_is(self):
+        calls = self.every_agent()
+        # The scripted run names its base branch main. A fault in added
+        # code is a regression only when it is a fault in behavior.
+        rule = (
+            "A finding is a regression only when it reports a fault in "
+            "behavior that the change introduced",
+            "A fault that main also has is not a regression.",
+            "A missing or weak test leaves the behavior as it is, and so "
+            "does a doc, comment, or convention fault.",
+            "None of these faults is a regression, even in code that the "
+            "change added.",
+            "Text that an agent acts on is behavior, so a wrong instruction "
+            "in a prompt, a skill, an agent definition, a CLAUDE.md file, or "
+            "other such text is a fault in behavior.",
+        )
+        for label in ("review r1", "review final"):
+            with self.subTest(label):
+                call = calls[label]
+                finding = call["schema"]["properties"]["findings"]["items"]
+                field = finding["properties"]["regression"]["description"]
+                for sentence in rule:
+                    # The reviewer reads the rule in the prompt and beside
+                    # the field that it sets.
+                    self.assertIn(sentence, call["prompt"])
+                    self.assertIn(sentence, field)
+
+
 class WorkflowResultTest(WorkflowCase):
     """The summary, the notes, and the defects of a result.
 
