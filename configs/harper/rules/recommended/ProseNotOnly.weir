@@ -50,9 +50,15 @@
 #
 # Related Rules
 #
-# ProseJust skips `just` after a negation and after `than`, so only this
-# rule reports `not just` and `more than just`. ProseNegativeContraction
-# also reports the contraction in `isn't just`.
+# ProseJust and ProseMinimizer skip `just` after a negation and after
+# `than`, so neither reports the `just` of `not just` or `more than
+# just` (`do not just run make`, `does more than just run the tests`).
+# ProseNegativeContraction also reports the contraction in `isn't just`.
+#
+# ProseContrastiveNegation reports a clause that denies one framing
+# before it asserts another (`the hook isn't just a linter, it's a
+# gate`). When the denial holds `not just` or `isn't just`, the sentence
+# draws a finding from both rules, and no guard separates the two.
 #
 # Measurement
 #

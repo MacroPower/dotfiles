@@ -10,3 +10,4 @@ Not just a cache but a log.
 Set this option, not only on the server but on every client.
 The rule covers rows. Not only the cache but the log grows.
 The store is more than just a cache.
+The hook does more than just run the tests.

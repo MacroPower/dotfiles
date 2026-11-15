@@ -10,6 +10,8 @@ You can't just use a container for this.
 You cannot just use a container for this.
 Do not just run make.
 Read the docs, not just run make.
+The hook does more than just run the tests.
+Rather than just run the tests, the hook also lints the tree.
 The file was just created.
 The list holds just one entry.
 The cache fills quickly under load.
