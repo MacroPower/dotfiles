@@ -3,7 +3,7 @@ name: aven-ultraclose
 description: >-
   Close every open aven task in the current project with parallel worktree
   agents and adversarial review.
-argument-hint: "[concurrency] [aven list filters]"
+argument-hint: "[concurrency] [aven list filters] [models]"
 disable-model-invocation: true
 ---
 
@@ -22,7 +22,9 @@ diffs and logs out of your context, and read one only when a landing fails.
 
 A number in the arguments sets how many tasks run at the same time, and the
 default is 5. When the memory of the machine cannot hold that many tasks,
-lower the limit, as the Setup section says. Any other argument is an
+lower the limit, as the Setup section says. The arguments can also name a
+model for the agents of a role, such as `opus-5-5 for the reviewers`, and
+the Models section says how to set it. Any other argument is an
 `aven list` filter that narrows the queue, such as `--label bug`.
 
 ## Tools
@@ -105,9 +107,9 @@ approved task. `status` then prints an `ended` line.
    - **No run:** do the rest of the setup.
    - **A run with an `ended` line:** do the rest of the setup, which
      starts a new run. The arguments ask for a new batch of tasks. Do not
-     copy the limit, the check, the health command, the step timeout, the
-     shared globs, or the `rules.md` of the ended run. They fit the tasks
-     that it closed.
+     copy the limit, the models, the check, the health command, the step
+     timeout, the shared globs, or the `rules.md` of the ended run. They
+     fit the tasks that it closed.
    - **A run without an `ended` line:** continue that run, and skip the
      rest of the setup. First fit the run to the arguments and to the
      open tasks that are not in it, as the Config section says.
@@ -125,6 +127,9 @@ approved task. `status` then prints an `ended` line.
    starts without the `rules.md` and the `notes.md` of that run. It also
    treats each branch and each worktree that the earlier run left as
    leftover work, as the Leftover work section says.
+
+   Pass `--model <role>=<model>` for each model that the arguments name,
+   as the Models section says.
 
    Pass `--check '<command>'` with the full check of the project, unless
    the commit hook already runs that check. Pass `--health '<command>'`
@@ -248,18 +253,19 @@ approved task. `status` then prints an `ended` line.
 
 `init` writes the config of a run, and the run keeps that config until you
 change it. `ultraclose.py status` prints the limit, the shared globs, the
-check, the health command, and the step timeout. It also prints the free
-space and the floor of each watched file system.
+models, the check, the health command, and the step timeout. It also prints
+the free space and the floor of each watched file system.
 
 `ultraclose.py config` changes the config and prints the result. It takes
-the `--limit`, `--rounds`, `--check`, `--health`, `--step-timeout`,
-`--shared`, `--disk-floor-gb`, `--disk-floor-percent`, and `--disk-path`
-flags of `init`. Its `--unshared <glob>` flag removes a shared glob, and its
-`--no-disk-path <path>` flag removes a disk path and the percent floor of
-that path. `--disk-floor-percent <dir>=0` removes the percent floor of
-`<dir>` and keeps `<dir>` as a disk path. `config` prints the warning of
-`triage` for each glob that its `--shared` flag adds and that matches no
-file of any task.
+the `--limit`, `--rounds`, `--model`, `--check`, `--health`,
+`--step-timeout`, `--shared`, `--disk-floor-gb`, `--disk-floor-percent`,
+and `--disk-path` flags of `init`. Its `--unshared <glob>` flag removes a
+shared glob, and its `--no-disk-path <path>` flag removes a disk path and
+the percent floor of that path. `--disk-floor-percent <dir>=0` removes the
+percent floor of `<dir>` and keeps `<dir>` as a disk path. `--model <role>=`
+removes the model of `<role>`, as the Models section says. `config` prints
+the warning of `triage` for each glob that its `--shared` flag adds and
+that matches no file of any task.
 
 Every config change applies to the commands that start after it. So a
 running Workflow and a queued landing keep the values that they started
@@ -273,6 +279,9 @@ prints those tasks, as the Scope section says. Fit the run in these ways:
 
 - If the arguments hold a number, set the limit to it. Set a lower limit
   when the memory cannot hold that many tasks, as the Setup section says.
+- If the arguments name a model, set it with `ultraclose.py config`, as the
+  Models section says. The run keeps each model that the arguments do not
+  change.
 - When you change the limit, or when those tasks run a heavier test or
   build than the tasks of the run, compare the memory again, as the Setup
   section says for `rules.md`. Then fit the rule in `rules.md` that limits
@@ -291,6 +300,70 @@ prints those tasks, as the Scope section says. Fit the run in these ways:
 - Rewrite each rule in `rules.md` that the landed tasks made false, such as
   the layout of a module that they split. Remove each exception that the
   run made for one of them.
+
+## Models
+
+Every agent follows the session model unless the run names a model for the
+role of that agent. `init` and `config` take one `--model <role>=<model>`
+flag per role. This table lists each role with the agents that run on its
+model:
+
+| Role | Agents |
+| --- | --- |
+| `implementer` | The implementer of each task |
+| `sync` | The sync agent of each task that you sync |
+| `reviewer` | Each reviewer, including the reviewer of the final cycle |
+| `fixer` | Each fixer, including the fixer of the final cycle |
+| `narrow` | The agent that narrows the claims of a `landable` change |
+| `default` | Each agent whose role has no model of its own |
+
+Pass one flag for each role whose model the arguments name. Pass the
+`default` role for a model that the arguments give to every agent, or to
+every agent that they do not name. For example, the arguments
+`fable-5-2 for the implementer and opus-5-5 elsewhere` become
+`--model implementer=claude-fable-5-2 --model default=claude-opus-5-5`.
+For `<model>`, pass the id of the model, such as `claude-opus-5-5` for
+`opus-5-5`. When the arguments name no model, pass no `--model` flag.
+
+The `default` model covers only the roles that have no model of their own.
+So when you pass the `default` role to a run that already names
+models, also pass `--model <role>=` for each role other than `default` that
+the `models` line of `ultraclose.py status` names and that the arguments do
+not name. Those roles then run on the new `default` model. For example, in
+a run whose `models` line names `implementer=claude-fable-5-2`, the
+arguments `opus-5-5 for every agent` become
+`--model default=claude-opus-5-5 --model implementer=`.
+
+The run config keeps the models. `ultraclose.py status` prints them, and
+it prints `models: none` for a run in which every agent follows the
+session model. `next` and `args` write the model of each role into the
+`models` field of each input object, and so does the `next` of a landing.
+`close-task.js` starts each agent on the model of its role. So every
+launch and every relaunch runs on the models of the run. Do not edit the
+copy of `close-task.js` to set a model.
+
+To change a model during the run, run
+`ultraclose.py config --model <role>=<model>`. With an empty model, such
+as `--model reviewer=`, `config` removes the model of the role. The agents
+of that role then run on the `default` model, or follow the session model
+when the run has no `default` model. Every running Workflow keeps the
+models of its input object, as the Config section says.
+
+`ultraclose.py` does not check that Workflow can run a model. Agents that
+Workflow cannot start on their model return nothing, and the `notes` of
+the result name the agent that returned nothing. When a result names such
+an agent and the run names a model for its role, either of its own or the
+`default` model, check that model. Correct a wrong model with
+`config --model`, then relaunch the task.
+
+The role of the agent that returned nothing sets the status of the result,
+and this table gives the relaunch that follows the correction:
+
+| Role | Status | Relaunch |
+| --- | --- | --- |
+| `narrow` | `unconverged` | Run `ultraclose.py args <ref> --final` in place of the action that the Loop table gives for `unconverged` |
+| `sync` | `error` | Run `ultraclose.py args <ref> --sync '<reason and failing output>'` with the reason that started the sync agent, as the `error` row of the Loop table says |
+| Each other role | `error` | Follow the `error` row of the Loop table |
 
 ## Leftover work
 
@@ -380,8 +453,9 @@ Repeat until the run ends:
    `Workflow({scriptPath: <script>, args: <object>})`. For `<script>`, pass
    the `script` field of the object. That field holds the path of the copy
    of `close-task.js` that names the task of the object. One task per
-   Workflow lets each task land the moment it finishes. Leave `model` unset
-   so that agents follow the session model.
+   Workflow lets each task land the moment it finishes. Do not set a model
+   in the call. The object names the model of each role, as the Models
+   section says.
 3. Keep `ultraclose.py watch` running in a background Bash call. It exits
    with a `DISK` line when a watched file system is low, and the Hazards
    section says what to do then. It exits with an `ENDED` line when the
@@ -397,8 +471,8 @@ Repeat until the run ends:
 | `approved` | Land the task. |
 | `landable` | The task reached its cap as a strict improvement with no regression. File each entry of `followups` with `aven add` and link it with `aven related add`. Then land the task. |
 | `obsolete` | Add the evidence with `aven note`, set the task to `done`, and run `ultraclose.py set <ref> closed`. |
-| `abandoned`, `rejected`, `unconverged` | Add a note with the open findings and the branch name, set the task to `todo`, and run `ultraclose.py set <ref> noted`. The branch stays. Do not force the task through. |
-| `error` | Relaunch the task one time. Run `ultraclose.py args <ref>`, and launch the object that it prints from the path in its `script` field, as step 2 says. After a second error, note the task. |
+| `abandoned`, `rejected`, `unconverged` | If an `unconverged` result names the narrowing agent and the run names a model for that agent, check that model first, as the Models section says. After you correct a wrong model, relaunch the task as that section says. Otherwise add a note with the open findings and the branch name, set the task to `todo`, and run `ultraclose.py set <ref> noted`. The branch stays. Do not force the task through. |
+| `error` | If the run names a model for the agent that returned nothing, check that model first, as the Models section says. Relaunch the task one time. Run `ultraclose.py args <ref>`, and launch the object that it prints from the path in its `script` field, as step 2 says. When the sync agent returned nothing, add `--sync` with the reason that started that agent, so that the relaunch syncs the task again. After a second error, note the task. |
 
 `ultraclose.py status` lists each pending task that waits for a noted task.
 Note those tasks too.

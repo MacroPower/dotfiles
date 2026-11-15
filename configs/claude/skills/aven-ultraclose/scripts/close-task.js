@@ -22,6 +22,13 @@ export const meta = {
 const { run, repo, base } = args
 const T = args.task
 const ROUNDS = args.rounds || 6
+// The model that the agents of each role run on, by the name of the
+// role. `ultraclose.py` fills the field from the run config. The roles
+// are implementer, sync, reviewer, fixer, and narrow. The reviewer and
+// the fixer of the final cycle take the models of the reviewer role and
+// the fixer role. The agents of a role that the field leaves out follow
+// the session model.
+const MODELS = args.models || {}
 const RESUME = T.resume || null
 const FIRST = RESUME ? RESUME.round : 1
 const LAST = RESUME && RESUME.lastRound ? RESUME.lastRound : Math.max(ROUNDS, FIRST)
@@ -357,10 +364,16 @@ ${defectsRule}`
 // An agent that dies, or that ends without its structured result, returns
 // null here, and each caller retries it one time. The retry finds the
 // uncommitted work of the first attempt in the worktree.
-const attempt = async (prompt, opts) => {
+//
+// The role option names the role of the agent. The agent and its retry
+// run on the model that MODELS holds for that role. An agent call
+// without a model option follows the session model, so the call of a
+// role without a model carries no such option.
+const attempt = async (prompt, { role, ...opts }) => {
+  const model = MODELS[role] ? { model: MODELS[role] } : {}
   for (const suffix of ['', ' retry']) {
     try {
-      const result = await agent(prompt, { ...opts, label: opts.label + suffix })
+      const result = await agent(prompt, { ...opts, ...model, label: opts.label + suffix })
       if (result) return result
     } catch (err) {
       log(`${opts.label}${suffix} failed: ${err && err.message ? err.message : err}`)
@@ -392,7 +405,7 @@ const done = (status, extra) => ({ ...out, status, ...extra })
 
 let extra = ''
 if (RESUME && RESUME.sync) {
-  const sync = await attempt(syncPrompt(RESUME.sync, out), { label: `sync ${T.ref}`, phase: 'Sync', schema: SYNC_SCHEMA })
+  const sync = await attempt(syncPrompt(RESUME.sync, out), { role: 'sync', label: `sync ${T.ref}`, phase: 'Sync', schema: SYNC_SCHEMA })
   if (!sync) return done('error', { notes: 'the sync agent returned nothing' })
   out.summary = sync.summary
   out.notes = sync.notes
@@ -404,7 +417,7 @@ A sync agent merged ${base} into the branch and adapted the change. Its report: 
 Review the whole diff against ${base} again. Give the merge the most attention: lost or duplicated hunks, code of this task that ignores what ${base} gained, and docs that are false beside the new commits.
 `
 } else if (!RESUME) {
-  const impl = await attempt(implPrompt, { label: `impl ${T.ref}`, phase: 'Implement', schema: IMPL_SCHEMA })
+  const impl = await attempt(implPrompt, { role: 'implementer', label: `impl ${T.ref}`, phase: 'Implement', schema: IMPL_SCHEMA })
   if (!impl) return done('error', { notes: 'the implementer returned nothing' })
   out.summary = impl.summary
   out.notes = impl.notes
@@ -416,14 +429,14 @@ const rebutted = []
 for (let round = FIRST; ; round++) {
   out.rounds = round
   const history = round > 1 ? historyNote(rebutted, true) : ''
-  const rev = await attempt(reviewPrompt(round, out.summary, extra + history), { label: `review ${T.ref} r${round}`, phase: 'Review', schema: REVIEW_SCHEMA })
+  const rev = await attempt(reviewPrompt(round, out.summary, extra + history), { role: 'reviewer', label: `review ${T.ref} r${round}`, phase: 'Review', schema: REVIEW_SCHEMA })
   if (!rev) return done('error', { notes: `the reviewer of round ${round} returned nothing` })
   if (rev.verdict === 'reject') return done('rejected', { notes: rev.reject_reason, findings: rev.findings })
   if (rev.findings.length === 0) return done('approved')
   log(`${T.ref}: round ${round} has ${rev.findings.length} findings`)
 
   const capped = round >= LAST
-  const fix = await attempt(fixPrompt(round, rev.findings, capped, out), { label: `fix ${T.ref} r${round}`, phase: capped ? 'Final' : 'Fix', schema: FIX_SCHEMA })
+  const fix = await attempt(fixPrompt(round, rev.findings, capped, out), { role: 'fixer', label: `fix ${T.ref} r${round}`, phase: capped ? 'Final' : 'Fix', schema: FIX_SCHEMA })
   if (!fix) return done('error', { notes: `the fixer of round ${round} returned nothing`, findings: rev.findings })
   out.summary = fix.summary
   out.notes = fix.notes
@@ -439,12 +452,12 @@ for (let round = FIRST; ; round++) {
   log(`${T.ref}: reached the cap at round ${round}`)
   out.rounds = round + 1
   out.boundedReview = true
-  const fin = await attempt(reviewPrompt(round + 1, out.summary, boundedNote(rev.findings) + historyNote(rebutted, false)), { label: `review ${T.ref} final`, phase: 'Final', schema: REVIEW_SCHEMA })
+  const fin = await attempt(reviewPrompt(round + 1, out.summary, boundedNote(rev.findings) + historyNote(rebutted, false)), { role: 'reviewer', label: `review ${T.ref} final`, phase: 'Final', schema: REVIEW_SCHEMA })
   if (!fin) return done('unconverged', { notes: 'the final reviewer returned nothing, so the findings of the last round stand unverified', findings: rev.findings })
   if (fin.verdict !== 'reject' && fin.findings.length === 0) return done('approved')
   const landable = fin.verdict !== 'reject' && fin.improves_base && !fin.findings.some(f => f.regression)
   if (!landable) return done('unconverged', { notes: fin.reject_reason, findings: fin.findings })
-  const narrow = await attempt(narrowPrompt(fin.findings, out), { label: `narrow ${T.ref}`, phase: 'Final', schema: NARROW_SCHEMA })
+  const narrow = await attempt(narrowPrompt(fin.findings, out), { role: 'narrow', label: `narrow ${T.ref}`, phase: 'Final', schema: NARROW_SCHEMA })
   if (!narrow) return done('unconverged', { notes: 'the change is a strict improvement, but the narrowing agent returned nothing', findings: fin.findings })
   out.summary = narrow.summary
   out.notes = narrow.notes

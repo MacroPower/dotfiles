@@ -57,13 +57,15 @@ deletes the branch. It removes only the work of the run. So it keeps the
 branch and the worktree of a task without a directory, and it prints a
 line that names a kept worktree.
 
-  init --run DIR [--limit N] [--rounds N] [--check CMD] [--health CMD]
-       [--step-timeout SECONDS] [--shared GLOB]... [--disk-floor-gb N]
+  init --run DIR [--limit N] [--rounds N] [--model ROLE=MODEL]...
+       [--check CMD] [--health CMD] [--step-timeout SECONDS]
+       [--shared GLOB]... [--disk-floor-gb N]
        [--disk-floor-percent PATH=N]... [--disk-path PATH]... [--force]
-  config [--limit N] [--rounds N] [--check CMD] [--health CMD]
-       [--step-timeout SECONDS] [--shared GLOB]... [--unshared GLOB]...
-       [--disk-floor-gb N] [--disk-floor-percent PATH=N]...
-       [--disk-path PATH]... [--no-disk-path PATH]...
+  config [--limit N] [--rounds N] [--model ROLE=MODEL]... [--check CMD]
+       [--health CMD] [--step-timeout SECONDS] [--shared GLOB]...
+       [--unshared GLOB]... [--disk-floor-gb N]
+       [--disk-floor-percent PATH=N]... [--disk-path PATH]...
+       [--no-disk-path PATH]...
                          change the config of the run, then print it
   triage FILE            add or update tasks from a JSON list
   untriaged [FILTER]...  print the open aven tasks that the run does not hold
@@ -75,6 +77,27 @@ line that names a kept worktree.
   status
   watch [--interval SECONDS]
                          exit when free disk space runs low or the run ends
+
+Each --model ROLE=MODEL flag of init and config names the model of the
+agents of one role of close-task.js. The roles are implementer, sync,
+reviewer, fixer, and narrow. The reviewer and the fixer of the final
+cycle take the models of the reviewer role and the fixer role. The
+narrow role covers the agent that narrows the claims of a landable
+change.
+
+A flag with the role default names the model of each role that has no
+model of its own. A flag with an empty MODEL removes the model of ROLE.
+When two flags of one command name the same role, the last one applies.
+The commands do not check that the Workflow tool can run a model. The
+status command prints the models of the run.
+
+The next and args commands print the model of each role in the models
+field of each Workflow input, and so does a landing that runs next.
+close-task.js starts each agent on the model of its role, so a relaunch
+runs on the models of the run. The field leaves out each role that has
+neither a model of its own nor a default. The agents of such a role
+follow the session model, and so does every agent of a run without a
+--model flag.
 
 The triage command asks aven for the dependencies of each task that it
 loads, and adds each open dependency to the after list of the task. So
@@ -253,6 +276,13 @@ WORKFLOW = "close-task.js"
 # change, by the key of the resume field that carries each one. The
 # prompts of close-task.js name the same files.
 STORED = {"summary": "summary.txt", "notes": "notes.txt"}
+# The roles of the agents of close-task.js. The run config can name one
+# model per role, and close-task.js reads the model of each agent under
+# the name of its role.
+ROLES = ("implementer", "sync", "reviewer", "fixer", "narrow")
+# The role of a --model flag that names the model of each role without a
+# model of its own.
+DEFAULT_ROLE = "default"
 # The directory that holds a golangci-lint cache of one checkout. A landing
 # keeps one inside the git directory of the task worktree and one inside
 # the run directory.
@@ -441,9 +471,37 @@ def workflow_args(st, run, ref, resume=None):
         "repo": cfg["repo"],
         "base": cfg["base"],
         "rounds": cfg["rounds"],
+        "models": models(cfg),
         "script": str(script_path(run, ref)),
         "task": task,
     }
+
+
+def models(cfg):
+    """The model of each role of close-task.js that has one.
+
+    A role without a model of its own takes the default model of the run.
+    The result leaves out each role that then has no model, and the
+    agents of that role follow the session model. A run can continue from
+    a state file that has no models key. That run names no model.
+    """
+    held = cfg.get("models", {})
+    found = {role: held.get(role) or held.get(DEFAULT_ROLE) for role in ROLES}
+    return {role: model for role, model in found.items() if model}
+
+
+def role_models(held, flags):
+    """The model of each role after the --model flags.
+
+    A flag with an empty model removes the model of its role.
+    """
+    held = dict(held)
+    for role, model in flags:
+        if model:
+            held[role] = model
+        else:
+            held.pop(role, None)
+    return held
 
 
 def stored(run, ref):
@@ -598,6 +656,7 @@ def cmd_init(a):
         "worktrees": f"{repo}/.claude/worktrees",
         "limit": a.limit,
         "rounds": a.rounds,
+        "models": role_models({}, a.model),
         "check": a.check,
         "health": a.health,
         "stepTimeout": a.step_timeout,
@@ -643,6 +702,8 @@ def cmd_config(a):
             "diskFloorGb": a.disk_floor_gb,
         }
         cfg.update({k: v for k, v in changes.items() if v is not None})
+        # A run can continue from a state file that has no models key.
+        cfg["models"] = role_models(cfg.get("models", {}), a.model)
         # A run can continue from a state file that has no percent floors.
         percents = floor_percents(cfg.get("diskFloorPercent", {}), a.disk_floor_percent)
         cfg["diskPaths"] = [
@@ -1098,6 +1159,10 @@ def cmd_status(a):
     print(f"run={run}")
     print(" ".join(f"{s}={n}" for s, n in counts.items()), f"limit={cfg['limit']}")
     print(f"shared: {' '.join(cfg['shared'])}")
+    # A run can continue from a state file that has no models key.
+    held = cfg.get("models", {})
+    named = [f"{r}={held[r]}" for r in (*ROLES, DEFAULT_ROLE) if r in held]
+    print(f"models: {' '.join(named) or 'none'}")
     print(f"check: {cfg['check'] or 'none'}")
     # A run can continue from a state file that has no health key.
     print(f"health: {cfg.get('health') or 'none'}")
@@ -1541,6 +1606,29 @@ def floor_percent(text):
     return disk_path(path), percent(n)
 
 
+def role_model(text):
+    """The role and the model of a --model flag.
+
+    The text is ROLE=MODEL, and the first "=" ends the role. The model
+    is empty when the flag removes the model of the role.
+    """
+    role, sep, model = text.partition("=")
+    model = model.strip()
+    if not sep or role not in (*ROLES, DEFAULT_ROLE) or len(model.split()) > 1:
+        raise argparse.ArgumentTypeError(
+            f"give ROLE=MODEL, such as reviewer=claude-opus-5-5, in place of"
+            f" {text!r}. ROLE is one of {', '.join((*ROLES, DEFAULT_ROLE))}, and"
+            " MODEL holds no space"
+        )
+    return role, model
+
+
+MODEL_HELP = (
+    "the agents of ROLE in close-task.js run on MODEL. ROLE is one of"
+    f" {', '.join(ROLES)}, or {DEFAULT_ROLE} for each role that has no model"
+    " of its own. The agents of a role without a model follow the session"
+    " model"
+)
 FLOOR_GB_HELP = "a watched file system is low when fewer than N GB of it are free"
 FLOOR_PERCENT_HELP = (
     "the file system that holds PATH is low when less than N percent of it is"
@@ -1569,6 +1657,14 @@ def main():
     s.add_argument("--run", required=True)
     s.add_argument("--limit", type=int, default=5)
     s.add_argument("--rounds", type=int, default=6)
+    s.add_argument(
+        "--model",
+        action="append",
+        default=[],
+        type=role_model,
+        metavar="ROLE=MODEL",
+        help=MODEL_HELP,
+    )
     s.add_argument("--check", default="")
     s.add_argument(
         "--health",
@@ -1620,6 +1716,14 @@ def main():
     s = sub.add_parser("config")
     s.add_argument("--limit", type=int)
     s.add_argument("--rounds", type=int)
+    s.add_argument(
+        "--model",
+        action="append",
+        default=[],
+        type=role_model,
+        metavar="ROLE=MODEL",
+        help=f"{MODEL_HELP}. An empty MODEL removes the model of ROLE",
+    )
     s.add_argument("--check", help="an empty command removes the check")
     s.add_argument(
         "--health",

@@ -240,16 +240,16 @@ def launchable_repo(tmp):
     return repo, env
 
 
-def running_task(tmp, commits=1):
+def running_task(tmp, commits=1, flags=()):
     """Start a run with one running task.
 
-    The task branch holds the given number of commits. The args command
-    resumes a task at a review round only when its branch holds a commit.
-    Return the repository, the environment, and the Workflow input that
-    next printed for the task.
+    The flags go to init. The task branch holds the given number of
+    commits. The args command resumes a task at a review round only when
+    its branch holds a commit. Return the repository, the environment,
+    and the Workflow input that next printed for the task.
     """
     repo, env = launchable_repo(tmp)
-    ultraclose("init", "--run", str(Path(tmp, "run")), cwd=repo, env=env)
+    ultraclose("init", "--run", str(Path(tmp, "run")), *flags, cwd=repo, env=env)
     triage(tmp, repo, env, {"ref": REF})
     launch = json.loads(ultraclose("next", cwd=repo, env=env))[0]
     for n in range(commits):
@@ -275,8 +275,8 @@ def state_of(run):
 def configured_run(repo, env, run):
     """Start a run that sets each config value that a batch inherits.
 
-    The run sets a limit, a check, a health command, a step timeout, and
-    a shared glob.
+    The run sets a limit, a model, a check, a health command, a step
+    timeout, and a shared glob.
     """
     ultraclose(
         "init",
@@ -284,6 +284,8 @@ def configured_run(repo, env, run):
         str(run),
         "--limit",
         "8",
+        "--model",
+        f"reviewer={OPUS}",
         "--check",
         "sh check.sh",
         "--health",
@@ -298,6 +300,15 @@ def configured_run(repo, env, run):
 
 
 REF = "APP-7KQ9"
+# The roles of the agents of close-task.js. A --model flag with the
+# default role names the model of each role without a model of its own.
+ROLES = ("implementer", "sync", "reviewer", "fixer", "narrow")
+DEFAULT_ROLE = "default"
+# Two models that a --model flag can name.
+FABLE = "claude-fable-5-2"
+OPUS = "claude-opus-5-5"
+# A model that a config command names in place of the models of init.
+NEW = "claude-new-5-0"
 # The shared glob of a configured run, and a file that the glob covers.
 GLOB = "*/tools/mcp/*"
 COVERED = "tools/mcp/render.go"
@@ -467,11 +478,12 @@ class InitTest(unittest.TestCase):
                 # The new run takes no task and no config from the first run.
                 state = state_of(second)
                 self.assertEqual(state["tasks"], {})
-                keys = ("limit", "check", "health", "stepTimeout", "shared")
+                keys = ("limit", "models", "check", "health", "stepTimeout", "shared")
                 self.assertEqual(
                     {k: state["config"][k] for k in keys},
                     {
                         "limit": 5,
+                        "models": {},
                         "check": "",
                         "health": "",
                         "stepTimeout": STEP_TIMEOUT,
@@ -548,14 +560,22 @@ class StatusTest(unittest.TestCase):
     """The status command shows what a later batch of tasks inherits."""
 
     def test_prints_config(self):
-        # name: (the init flags, the shared globs, the check, the health
-        # command, the step timeout)
+        # name: (the init flags, the shared globs, the models, the check,
+        # the health command, the step timeout)
         cases = {
-            "the defaults": ([], DEFAULT_SHARED, "none", "none", "60m00s"),
-            "a shared glob, a check, a health command, and a step timeout": (
+            "the defaults": ([], DEFAULT_SHARED, "none", "none", "none", "60m00s"),
+            "a shared glob, models, a check, a health command, and a step timeout": (
                 [
                     "--shared",
                     GLOB,
+                    # The line names the roles in the order of close-task.js
+                    # and the default last, whatever the order of the flags.
+                    "--model",
+                    f"{DEFAULT_ROLE}={OPUS}",
+                    "--model",
+                    f"fixer={OPUS}",
+                    "--model",
+                    f"implementer={FABLE}",
                     "--check",
                     "sh check.sh",
                     "--health",
@@ -564,12 +584,13 @@ class StatusTest(unittest.TestCase):
                     "90",
                 ],
                 DEFAULT_SHARED + [GLOB],
+                f"implementer={FABLE} fixer={OPUS} {DEFAULT_ROLE}={OPUS}",
                 "sh check.sh",
                 "true",
                 "1m30s",
             ),
         }
-        for name, (flags, shared, check, health, timeout) in cases.items():
+        for name, (flags, shared, models, check, health, timeout) in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
                 repo, env = new_repo(tmp)
                 ultraclose(
@@ -577,6 +598,7 @@ class StatusTest(unittest.TestCase):
                 )
                 lines = ultraclose("status", cwd=repo, env=env).splitlines()
                 self.assertIn(f"shared: {' '.join(shared)}", lines)
+                self.assertIn(f"models: {models}", lines)
                 self.assertIn(f"check: {check}", lines)
                 self.assertIn(f"health: {health}", lines)
                 self.assertIn(f"step timeout: {timeout}", lines)
@@ -694,6 +716,30 @@ class ConfigTest(unittest.TestCase):
             "no flag": ([], {}),
             "--limit": (["--limit", "10"], {"limit": 10}),
             "--rounds": (["--rounds", "4"], {"rounds": 4}),
+            "--model names the model of a role": (
+                ["--model", f"implementer={FABLE}"],
+                {"models": {"reviewer": OPUS, "implementer": FABLE}},
+            ),
+            "--model names the default model": (
+                ["--model", f"{DEFAULT_ROLE}={FABLE}"],
+                {"models": {"reviewer": OPUS, DEFAULT_ROLE: FABLE}},
+            ),
+            "--model changes the model of a role": (
+                ["--model", f"reviewer={FABLE}"],
+                {"models": {"reviewer": FABLE}},
+            ),
+            "an empty --model removes the model of a role": (
+                ["--model", "reviewer="],
+                {"models": {}},
+            ),
+            "an empty --model of a role without a model": (
+                ["--model", "fixer="],
+                {},
+            ),
+            "the last --model of a role applies": (
+                ["--model", "fixer=", "--model", f"fixer={FABLE}"],
+                {"models": {"reviewer": OPUS, "fixer": FABLE}},
+            ),
             "--check": (["--check", "sh other.sh"], {"check": "sh other.sh"}),
             "an empty --check": (["--check", ""], {"check": ""}),
             "--health": (["--health", "true"], {"health": "true"}),
@@ -783,6 +829,160 @@ class ConfigTest(unittest.TestCase):
                 ultraclose("config", *flags, cwd=repo, env=env)
                 started = json.loads(ultraclose("next", cwd=repo, env=env))
                 self.assertEqual([t["task"]["ref"] for t in started], want)
+
+
+def model_flags(models):
+    """One --model flag per role of the given models."""
+    return [f"--model={role}={model}" for role, model in models.items()]
+
+
+class ModelTest(unittest.TestCase):
+    """A run names the model that the agents of each role run on.
+
+    Each Workflow input carries the model of each role, and close-task.js
+    starts each agent on the model of its role. The agents of a role
+    without a model follow the session model.
+    """
+
+    def test_input_names_model_of_each_role(self):
+        # name: (the models of the init flags, the models field of each
+        # Workflow input)
+        cases = {
+            "no flag": ({}, {}),
+            "one role": ({"implementer": FABLE}, {"implementer": FABLE}),
+            "every role": (
+                {role: f"model-of-{role}" for role in ROLES},
+                {role: f"model-of-{role}" for role in ROLES},
+            ),
+            "the default covers every role": (
+                {DEFAULT_ROLE: OPUS},
+                dict.fromkeys(ROLES, OPUS),
+            ),
+            "the default covers each role without a model of its own": (
+                {"implementer": FABLE, DEFAULT_ROLE: OPUS},
+                {**dict.fromkeys(ROLES, OPUS), "implementer": FABLE},
+            ),
+            "the default comes first": (
+                {DEFAULT_ROLE: OPUS, "narrow": FABLE},
+                {**dict.fromkeys(ROLES, OPUS), "narrow": FABLE},
+            ),
+            "an empty model names no model": ({"reviewer": ""}, {}),
+            "the spaces around a model do not count": (
+                {"reviewer": f" {OPUS} "},
+                {"reviewer": OPUS},
+            ),
+        }
+        for name, (flagged, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, launch = running_task(tmp, flags=model_flags(flagged))
+                self.assertEqual(launch["models"], want)
+                # A relaunch runs on the models of the run.
+                relaunch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+                self.assertEqual(relaunch["models"], want)
+
+    def test_config_changes_models_of_later_launches(self):
+        first = {"implementer": FABLE, DEFAULT_ROLE: OPUS}
+        # name: (the config flags, the models field of the next Workflow
+        # input)
+        cases = {
+            "no flag": ([], {**dict.fromkeys(ROLES, OPUS), "implementer": FABLE}),
+            "a role gets a model of its own": (
+                [f"--model=fixer={FABLE}"],
+                {**dict.fromkeys(ROLES, OPUS), "implementer": FABLE, "fixer": FABLE},
+            ),
+            "a role without a model of its own takes the default": (
+                ["--model=implementer="],
+                dict.fromkeys(ROLES, OPUS),
+            ),
+            # A new default leaves each role with a model of its own on
+            # that model. Arguments that name a model for every agent
+            # also remove the model of each such role.
+            "a new default": (
+                [f"--model={DEFAULT_ROLE}={NEW}"],
+                {**dict.fromkeys(ROLES, NEW), "implementer": FABLE},
+            ),
+            "a new default for every role": (
+                [f"--model={DEFAULT_ROLE}={NEW}", "--model=implementer="],
+                dict.fromkeys(ROLES, NEW),
+            ),
+            "a run without a default": (
+                [f"--model={DEFAULT_ROLE}="],
+                {"implementer": FABLE},
+            ),
+            "a run without a model": (
+                ["--model=implementer=", f"--model={DEFAULT_ROLE}="],
+                {},
+            ),
+        }
+        for name, (flags, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, launch = running_task(tmp, flags=model_flags(first))
+                ultraclose("config", *flags, cwd=repo, env=env)
+                relaunch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+                self.assertEqual(relaunch["models"], want)
+                # The rest of the input matches the first launch.
+                del relaunch["task"]["resume"]
+                self.assertEqual({**relaunch, "models": launch["models"]}, launch)
+
+    def test_refuses_model_flag_without_role_or_model_name(self):
+        values = {
+            "no model": "reviewer",
+            "no role": f"={OPUS}",
+            "a role that close-task.js does not have": f"review={OPUS}",
+            "a role in capitals": f"Reviewer={OPUS}",
+            "a model of two words": "reviewer=claude opus",
+        }
+        for name, value in values.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                run = Path(tmp, "run")
+                flag = f"--model={value}"
+                message = refused("init", "--run", str(run), flag, cwd=repo, env=env)
+                self.assertIn("give ROLE=MODEL", message)
+                self.assertFalse(run.exists())
+                configured_run(repo, env, run)
+                before = state_of(run)
+                message = refused("config", flag, cwd=repo, env=env)
+                self.assertIn("give ROLE=MODEL", message)
+                # The message names each role that a flag can hold.
+                for role in (*ROLES, DEFAULT_ROLE):
+                    self.assertIn(role, message)
+                self.assertEqual(state_of(run), before)
+
+    def test_help_names_roles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            for command in ("init", "config"):
+                with self.subTest(command):
+                    text = ultraclose(command, "--help", cwd=repo, env=env)
+                    text = " ".join(text.split())
+                    self.assertIn("--model ROLE=MODEL", text)
+                    self.assertIn(
+                        f"ROLE is one of {', '.join(ROLES)}, or {DEFAULT_ROLE}", text
+                    )
+                    self.assertIn("follow the session model", text)
+
+    def test_state_without_models_key(self):
+        # A run can continue from a state file that init wrote without
+        # the models key. That run names no model.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = launchable_repo(tmp)
+            run = Path(tmp, "run")
+            ultraclose(
+                "init", "--run", str(run), f"--model=fixer={FABLE}", cwd=repo, env=env
+            )
+            triage(tmp, repo, env, {"ref": REF})
+            st = state_of(run)
+            del st["config"]["models"]
+            (run / "state.json").write_text(json.dumps(st))
+            lines = ultraclose("status", cwd=repo, env=env).splitlines()
+            self.assertIn("models: none", lines)
+            launch = json.loads(ultraclose("next", cwd=repo, env=env))[0]
+            self.assertEqual(launch["models"], {})
+            ultraclose("config", f"--model=reviewer={OPUS}", cwd=repo, env=env)
+            self.assertEqual(state_of(run)["config"]["models"], {"reviewer": OPUS})
+            relaunch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+            self.assertEqual(relaunch["models"], {"reviewer": OPUS})
 
 
 class DiskTest(unittest.TestCase):
@@ -3057,6 +3257,22 @@ class LandTest(unittest.TestCase):
                     self.assertEqual(copy, task_copy(run, self.OTHER))
                     self.assertEqual(copy.read_text(), copy_text(self.OTHER, "t"))
 
+    def test_next_after_landing_names_models(self):
+        # The input of a task that a landing starts names the models of
+        # the run, as an input of the next command does.
+        with tempfile.TemporaryDirectory() as tmp:
+            flags = model_flags({"implementer": FABLE, DEFAULT_ROLE: OPUS})
+            repo, env = self.start_task(tmp, *flags)
+            self.add_other(tmp, repo, env, after=[REF])
+            status, lines = self.land(repo, env, "--next")
+            self.assertEqual(status, 0, lines)
+            started = json.loads("\n".join(self.after_result(lines)))
+            self.assertEqual([t["task"]["ref"] for t in started], [self.OTHER])
+            self.assertEqual(
+                started[0]["models"],
+                {**dict.fromkeys(ROLES, OPUS), "implementer": FABLE},
+            )
+
     def test_landing_starts_no_task(self):
         # A next command can start the second task after each landing.
         # name: (the check, the land flags, the result)
@@ -3799,9 +4015,10 @@ DRIVER_HEAD = """\
 const scenario = JSON.parse(require('node:fs').readFileSync(0, 'utf8'))
 const calls = []
 const scripted = async (prompt, opts) => {
-  calls.push({ label: opts.label, prompt, schema: opts.schema })
-  if (!(opts.label in scenario.agents)) throw new Error(`no result for ${opts.label}`)
-  return scenario.agents[opts.label]
+  const { label, schema, model } = opts
+  calls.push({ label, prompt, schema, model, options: Object.keys(opts).sort() })
+  if (!(label in scenario.agents)) throw new Error(`no result for ${label}`)
+  return scenario.agents[label]
 }
 const workflow = async (args, agent, log) => {
 """
@@ -3913,7 +4130,7 @@ class WorkflowCase(unittest.TestCase):
         kind, _, rest = short.partition(" ")
         return f"{kind} {REF} {rest}".strip()
 
-    def run_workflow(self, agents, rounds=6, resume=None, args=None):
+    def run_workflow(self, agents, rounds=6, resume=None, args=None, models=None):
         """Run close-task.js with scripted agents.
 
         The agents argument maps each short agent label to the result of
@@ -3921,8 +4138,12 @@ class WorkflowCase(unittest.TestCase):
         argument holds the input of the script as `ultraclose.py` printed
         it, and the driver then runs the copy of the script that the input
         names. Without it, the input names a task outside any run, with
-        the given rounds and resume field. Return the result of the script
-        and each agent call by short label.
+        the given rounds and resume field. That input holds the models
+        field only when the models argument is not None. Return the result
+        of the script and each agent call by short label. Each call holds
+        the label, the prompt, the schema, and the sorted names of the
+        options of the agent. It holds the model only when the call has
+        one.
         """
         task = {
             "ref": REF,
@@ -3932,15 +4153,17 @@ class WorkflowCase(unittest.TestCase):
         }
         if resume:
             task["resume"] = resume
+        outside = {
+            "run": "/run",
+            "repo": "/repo",
+            "base": "main",
+            "rounds": rounds,
+            "task": task,
+        }
+        if models is not None:
+            outside["models"] = models
         scenario = {
-            "args": args
-            or {
-                "run": "/run",
-                "repo": "/repo",
-                "base": "main",
-                "rounds": rounds,
-                "task": task,
-            },
+            "args": args or outside,
             "agents": {self.label(short): r for short, r in agents.items()},
         }
         script = Path(args["script"]) if args else WORKFLOW
@@ -3960,9 +4183,13 @@ class WorkflowCase(unittest.TestCase):
         self.assertEqual([c["label"] for c in ran["calls"]], list(scenario["agents"]))
         return ran["result"], dict(zip(agents, ran["calls"]))
 
-    def every_agent(self):
+    def every_agent(self, models=None):
         """Return one call of each agent that the script starts, by short
-        label."""
+        label.
+
+        The models argument holds the models field of the input, or None
+        for an input without the field.
+        """
         # The first run reaches every agent except the sync agent.
         _, calls = self.run_workflow(
             {
@@ -3973,9 +4200,10 @@ class WorkflowCase(unittest.TestCase):
                 "narrow": NARROWED,
             },
             rounds=1,
+            models=models,
         )
         _, synced = self.run_workflow(
-            {"sync": SYNCED, "review r2": APPROVE}, resume=SYNC
+            {"sync": SYNCED, "review r2": APPROVE}, resume=SYNC, models=models
         )
         calls["sync"] = synced["sync"]
         return calls
@@ -4024,6 +4252,156 @@ class WorkflowRulesTest(WorkflowCase):
             with self.subTest(label):
                 for sentence in rule:
                     self.assertIn(sentence, call["prompt"])
+
+
+class WorkflowModelTest(WorkflowCase):
+    """Each agent runs on the model that the input names for its role."""
+
+    # The role of each agent, by the first word of its label.
+    ROLE = {
+        "impl": "implementer",
+        "sync": "sync",
+        "review": "reviewer",
+        "fix": "fixer",
+        "narrow": "narrow",
+    }
+    # The options that the call of every agent carries.
+    OPTIONS = ["label", "phase", "schema"]
+
+    def assert_models(self, calls, models):
+        """Each call carries the model of its role, by short label.
+
+        An agent call without a model option follows the session model.
+        So the call of a role without a model carries no such option.
+        """
+        for label, call in calls.items():
+            with self.subTest(label):
+                want = models.get(self.ROLE[label.split()[0]])
+                self.assertEqual(call.get("model"), want)
+                named = ["model"] if want else []
+                self.assertEqual(call["options"], sorted(self.OPTIONS + named))
+
+    def test_each_agent_runs_on_model_of_its_role(self):
+        # name: the models field of the input, or None for an input
+        # without the field
+        cases = {
+            "an input without the field": None,
+            "no role": {},
+            "every role": {role: f"model-of-{role}" for role in ROLES},
+            "the implementer": {"implementer": FABLE},
+            "the reviewer and the fixer": {"reviewer": OPUS, "fixer": FABLE},
+            "the sync agent and the narrowing agent": {"sync": OPUS, "narrow": FABLE},
+        }
+        for name, models in cases.items():
+            with self.subTest(name):
+                calls = self.every_agent(models)
+                self.assertEqual(
+                    set(calls),
+                    {"impl", "sync", "review r1", "fix r1", "review final", "narrow"},
+                )
+                self.assert_models(calls, models or {})
+
+    def test_retry_runs_on_model_of_its_role(self):
+        models = {"implementer": FABLE, "reviewer": OPUS}
+        _, calls = self.run_workflow(
+            {
+                "impl": None,
+                "impl retry": IMPLEMENTED,
+                "review r1": None,
+                "review r1 retry": CHANGES,
+                "fix r1": None,
+                "fix r1 retry": fixed(1),
+                "review r2": APPROVE,
+            },
+            models=models,
+        )
+        self.assert_models(calls, models)
+
+    def test_agents_run_on_models_of_run(self):
+        # The input that `ultraclose.py` prints carries the models of the
+        # run config to the agents of the copy of the script. So a
+        # relaunch runs on the models of the run, and on each model that
+        # the config command changed.
+        with tempfile.TemporaryDirectory() as tmp:
+            flags = model_flags({"implementer": FABLE, DEFAULT_ROLE: OPUS})
+            repo, env, launch = running_task(tmp, flags=flags)
+            first = {**dict.fromkeys(ROLES, OPUS), "implementer": FABLE}
+            agents = {"impl": IMPLEMENTED, "review r1": CHANGES, "fix r1": fixed(1)}
+            _, calls = self.run_workflow({**agents, "review r2": APPROVE}, args=launch)
+            self.assert_models(calls, first)
+            ultraclose("config", "--model=reviewer=", cwd=repo, env=env)
+            ultraclose("config", f"--model=fixer={FABLE}", cwd=repo, env=env)
+            relaunch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+            _, calls = self.run_workflow(
+                {"review r1": CHANGES, "fix r1": fixed(1), "review r2": APPROVE},
+                args=relaunch,
+            )
+            self.assert_models(calls, {**first, "fixer": FABLE})
+            ultraclose("config", f"--model={DEFAULT_ROLE}=", cwd=repo, env=env)
+            relaunch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+            _, calls = self.run_workflow(
+                {"review r1": CHANGES, "fix r1": fixed(1), "review r2": APPROVE},
+                args=relaunch,
+            )
+            self.assert_models(calls, {"implementer": FABLE, "fixer": FABLE})
+
+    def test_final_relaunch_runs_narrowing_agent_on_corrected_model(self):
+        # A narrowing agent that returns nothing ends its task as
+        # unconverged, not as error. After a config command corrects the
+        # model of the narrow role, args --final relaunches the task. The
+        # narrowing agent of the relaunch runs on the corrected model.
+        with tempfile.TemporaryDirectory() as tmp:
+            wrong = "claude-opsu-5-5"
+            flags = ["--rounds=1", *model_flags({"narrow": wrong})]
+            repo, env, launch = running_task(tmp, flags=flags)
+            capped = {"review r1": CHANGES, "fix r1": fixed(1), "review final": CHANGES}
+            result, calls = self.run_workflow(
+                {"impl": IMPLEMENTED, **capped, "narrow": None, "narrow retry": None},
+                args=launch,
+            )
+            self.assertEqual(result["status"], "unconverged")
+            self.assertIn("the narrowing agent returned nothing", result["notes"])
+            self.assert_models(calls, {"narrow": wrong})
+            ultraclose("config", f"--model=narrow={OPUS}", cwd=repo, env=env)
+            relaunch = json.loads(ultraclose("args", REF, "--final", cwd=repo, env=env))
+            result, calls = self.run_workflow(
+                {**capped, "narrow": NARROWED}, args=relaunch
+            )
+            self.assertEqual(result["status"], "landable")
+            self.assert_models(calls, {"narrow": OPUS})
+
+    def test_sync_relaunch_runs_sync_agent_on_corrected_model(self):
+        # A sync agent that returns nothing ends its task as error. Then a
+        # config command corrects the model of the sync role. Only a
+        # relaunch with the --sync reason starts a sync agent, and that
+        # agent runs on the corrected model. A relaunch without the reason
+        # goes straight to the review of the unsynced branch.
+        reason = "the merge conflicts"
+        with tempfile.TemporaryDirectory() as tmp:
+            wrong = "claude-opsu-5-5"
+            repo, env, _ = running_task(tmp, flags=model_flags({"sync": wrong}))
+            launch = json.loads(
+                ultraclose("args", REF, "--sync", reason, cwd=repo, env=env)
+            )
+            result, calls = self.run_workflow(
+                {"sync": None, "sync retry": None}, args=launch
+            )
+            self.assertEqual(result["status"], "error")
+            self.assertIn("the sync agent returned nothing", result["notes"])
+            self.assert_models(calls, {"sync": wrong})
+            ultraclose("config", f"--model=sync={OPUS}", cwd=repo, env=env)
+            relaunch = json.loads(ultraclose("args", REF, cwd=repo, env=env))
+            _, calls = self.run_workflow({"review r1": APPROVE}, args=relaunch)
+            self.assertNotIn("sync", calls)
+            relaunch = json.loads(
+                ultraclose("args", REF, "--sync", reason, cwd=repo, env=env)
+            )
+            result, calls = self.run_workflow(
+                {"sync": SYNCED, "review r1": APPROVE}, args=relaunch
+            )
+            self.assertEqual(result["status"], "approved")
+            self.assertIn(reason, calls["sync"]["prompt"])
+            self.assert_models(calls, {"sync": OPUS})
 
 
 class WorkflowRegressionTest(WorkflowCase):
