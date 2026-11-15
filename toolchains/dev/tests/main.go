@@ -1355,7 +1355,7 @@ func (m *Tests) TestSandboxWildcardDnsmasq(ctx context.Context) error {
 // Not annotated with +check because it requires InsecureRootCapabilities.
 // Run manually:
 //
-//	dagger call -m toolchains/dev/tests test-sandbox-refused-d-n-s
+//	dagger call -m toolchains/dev/tests test-sandbox-refused-dns
 func (m *Tests) TestSandboxRefusedDNS(ctx context.Context) error {
 	ctr := dag.Dev().SandboxBase(dagger.DevSandboxBaseOpts{
 		SandboxConfig: configFile(`egress:
@@ -1457,7 +1457,7 @@ echo "=== All REFUSED DNS assertions passed ==="
 // Not annotated with +check because it requires InsecureRootCapabilities.
 // Run manually:
 //
-//	dagger call -m toolchains/dev/tests test-sandbox-path-normalization-e2-e
+//	dagger call -m toolchains/dev/tests test-sandbox-path-normalization-e-2-e
 func (m *Tests) TestSandboxPathNormalizationE2E(ctx context.Context) error {
 	ctr := dag.Dev().SandboxBase(dagger.DevSandboxBaseOpts{
 		SandboxConfig: configFile(`egress:
