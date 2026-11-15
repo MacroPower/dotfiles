@@ -996,3 +996,152 @@ func TestConfigFromEnv(t *testing.T) { //nolint:tparallel,paralleltest // subtes
 			"current-context set with no usable creds must still deny")
 	})
 }
+
+// logRecord holds the fields of a JSON log record that the tests check.
+type logRecord struct {
+	Level string `json:"level"`
+	Msg   string `json:"msg"`
+	Error string `json:"error"`
+}
+
+// readLog decodes each JSON record of the log at path.
+func readLog(t *testing.T, path string) []logRecord {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var records []logRecord
+
+	for line := range strings.Lines(string(data)) {
+		var record logRecord
+
+		require.NoError(t, json.Unmarshal([]byte(line), &record))
+
+		records = append(records, record)
+	}
+
+	return records
+}
+
+// logRecords returns each JSON record of the log at path as its level
+// and message, joined by a space.
+func logRecords(t *testing.T, path string) []string {
+	t.Helper()
+
+	var records []string
+
+	for _, record := range readLog(t, path) {
+		records = append(records, record.Level+" "+record.Msg)
+	}
+
+	return records
+}
+
+func TestOpenLogger(t *testing.T) {
+	t.Parallel()
+
+	const earlier = `{"level":"INFO","msg":"earlier"}` + "\n"
+
+	t.Run("appends to a log smaller than the limit", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "state", "router.log")
+		require.NoError(t, os.Mkdir(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(earlier), 0o644))
+
+		logger, closeLog, err := openLogger(path, int64(len(earlier))+1, 3)
+		require.NoError(t, err)
+
+		logger.Info("later")
+		closeLog()
+
+		assert.Equal(t, []string{"INFO earlier", "INFO later"}, logRecords(t, path))
+		assert.NoFileExists(t, path+".1")
+	})
+
+	t.Run("starts a new log when the log reaches the limit", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "router.log")
+		require.NoError(t, os.WriteFile(path, []byte(earlier), 0o644))
+
+		logger, closeLog, err := openLogger(path, int64(len(earlier)), 3)
+		require.NoError(t, err)
+
+		logger.Info("later")
+		closeLog()
+
+		assert.Equal(t, []string{"INFO rotated log file", "INFO later"}, logRecords(t, path))
+		assert.Equal(t, []string{"INFO earlier"}, logRecords(t, path+".1"))
+	})
+
+	t.Run("keeps as many rotated files as the backup count", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "router.log")
+
+		for _, msg := range []string{"first", "second", "third"} {
+			logger, closeLog, err := openLogger(path, 1, 1)
+			require.NoError(t, err)
+
+			logger.Info(msg)
+			closeLog()
+		}
+
+		assert.Equal(t, []string{"INFO rotated log file", "INFO third"}, logRecords(t, path))
+		assert.Equal(t, []string{"INFO rotated log file", "INFO second"}, logRecords(t, path+".1"))
+		assert.NoFileExists(t, path+".2")
+	})
+
+	t.Run("appends to the log when the rotation fails", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "router.log")
+		require.NoError(t, os.WriteFile(path, []byte(earlier), 0o644))
+
+		// The rotator cannot remove a directory that holds a child, so
+		// the rotation fails at rotated file number 1.
+		require.NoError(t, os.Mkdir(path+".1", 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(path+".1", "child"), []byte("data"), 0o644))
+
+		logger, closeLog, err := openLogger(path, 1, 1)
+		require.NoError(t, err)
+
+		logger.Info("later")
+		closeLog()
+
+		assert.Equal(t,
+			[]string{"INFO earlier", "WARN rotating log file", "INFO later"},
+			logRecords(t, path),
+		)
+
+		records := readLog(t, path)
+		require.Len(t, records, 3)
+		assert.Contains(t, records[1].Error, "removing rotated log", "the warning records the cause")
+	})
+
+	t.Run("creates the directory of the log", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "missing", "router.log")
+
+		logger, closeLog, err := openLogger(path, 1, 3)
+		require.NoError(t, err)
+
+		logger.Info("first")
+		closeLog()
+
+		assert.Equal(t, []string{"INFO first"}, logRecords(t, path))
+	})
+
+	t.Run("empty path discards records", func(t *testing.T) {
+		t.Parallel()
+
+		logger, closeLog, err := openLogger("", 1, 3)
+		require.NoError(t, err)
+
+		logger.Info("dropped")
+		closeLog()
+	})
+}

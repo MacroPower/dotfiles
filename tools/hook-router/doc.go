@@ -77,6 +77,12 @@
 //
 // Session state is persisted in a SQLite database.
 //
+// With --log-file, the router appends its log to that file, one JSON
+// record per line. When the file reaches --log-max-bytes, the router
+// renames it to the same path with ".1" appended and starts an empty
+// file. It keeps --log-backups renamed files, numbered from the most
+// recent, and removes the files past that count.
+//
 // The binary is thin wiring: event dispatch, flag parsing, and the
 // handlers that connect Claude Code's hook protocol to the underlying
 // engines. The engines themselves live in independent, importable
@@ -99,6 +105,7 @@
 //   - msglint: commit message, pull request, and MCP tool argument
 //     linting.
 //   - state: SQLite session state.
+//   - logrotate: rotation of the log file by size.
 //   - kubectx: kubectl gating and session dir lifecycle.
 //   - git: repo queries.
 //   - postimpl: the post-implementation skill catalog.

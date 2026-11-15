@@ -914,6 +914,15 @@ let
       exec hook-router \
         --db "${config.xdg.stateHome}/hook-router/state.db" \
         --log-file "${config.xdg.stateHome}/hook-router/hook-router.log" \
+        --log-max-bytes ${
+          # hook-router renames the log to hook-router.log.1 when the
+          # log reaches this size, and starts an empty log. It keeps
+          # the --log-backups most recent renamed files. The log and
+          # those files together hold little more than this size times
+          # one more than that count.
+          toString (16 * 1024 * 1024)
+        } \
+        --log-backups 3 \
         --post-impl-skills ${lib.escapeShellArg (builtins.toJSON postImplCatalog)} \
         --commit-skills ${lib.escapeShellArg (builtins.toJSON commitSkills)} \
         --command-rules ${

@@ -20,6 +20,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/hook"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/kubectx"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/linter"
+	"go.jacobcolvin.com/dotfiles/tools/hook-router/logrotate"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/mcprules"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/msglint"
 	"go.jacobcolvin.com/dotfiles/tools/hook-router/postimpl"
@@ -227,6 +228,16 @@ func (s agentScope) accepts(agentID string) bool {
 
 func main() {
 	logFile := flag.String("log-file", "", "path to JSON log file (append)")
+	logMaxBytes := flag.Int64(
+		"log-max-bytes",
+		logrotate.DefaultMaxBytes,
+		"size in bytes at which the --log-file moves to <path>.1 and a new log starts (0 never rotates)",
+	)
+	logBackups := flag.Int(
+		"log-backups",
+		logrotate.DefaultBackups,
+		"number of rotated --log-file files to keep, with <path>.1 the most recent (0 keeps none)",
+	)
 	event := flag.String("event", "", "hook event (PreToolUse, PostToolUse, Stop, SessionStart, SessionEnd, UserPromptSubmit, SubagentStart, TeammateIdle, PreCompact)")
 	tool := flag.String("tool", "", "tool name (Bash, ExitPlanMode, EnterPlanMode, AskUserQuestion, or a routing sentinel: MCP, FileWrite, or CreatePullRequest)")
 	dbPath := flag.String("db", "", "path to SQLite state database")
@@ -276,6 +287,8 @@ func main() {
 		*skipPlanReview,
 		*rmGuard,
 		*writeGuard,
+		*logMaxBytes,
+		*logBackups,
 	)
 	if err == nil {
 		return
@@ -297,8 +310,10 @@ func main() {
 func mainErr(
 	logFile, event, tool, dbPath, postImplSkillsJSON, commitSkillsJSON, commandRulesJSON, mcpRulesJSON, formatterRulesJSON, linterRulesJSON, compactionConfigJSON, compactionOutputDir, searchRewriteConfigJSON, sleepGuardConfigJSON, messageLintConfigJSON, escapeRestoreConfigJSON, agentScopeName string,
 	autoAllow, skipPlanReview, rmGuard, writeGuard bool,
+	logMaxBytes int64,
+	logBackups int,
 ) error {
-	logger, closeLog, err := openLogger(logFile)
+	logger, closeLog, err := openLogger(logFile, logMaxBytes, logBackups)
 	if err != nil {
 		return err
 	}
@@ -740,9 +755,20 @@ func writeDecision(w io.Writer, v any) error {
 	return nil
 }
 
-// openLogger creates a JSON [*slog.Logger] writing to the named file.
-// Returns a discard logger and no-op closer when path is empty.
-func openLogger(path string) (*slog.Logger, func(), error) {
+// openLogger creates a JSON [*slog.Logger] that appends to the named
+// file. It returns a discard logger and a no-op closer when path is
+// empty.
+//
+// Before it opens the file, openLogger rotates a file that has reached
+// maxBytes and keeps backups rotated files (see the logrotate
+// package). The process that rotates the file then writes a record to
+// the new file that reports the rotation.
+//
+// A rotation that fails does not fail openLogger. Claude Code runs the
+// tool call when a hook exits 1, so an error here switches off every
+// check the router makes. The logger appends to the file that stayed
+// in place instead, and records the cause there.
+func openLogger(path string, maxBytes int64, backups int) (*slog.Logger, func(), error) {
 	if path == "" {
 		return slog.New(slog.DiscardHandler), func() {}, nil
 	}
@@ -752,12 +778,24 @@ func openLogger(path string) (*slog.Logger, func(), error) {
 		return nil, nil, fmt.Errorf("creating log directory: %w", err)
 	}
 
+	rotated, rotateErr := logrotate.New(path,
+		logrotate.WithMaxBytes(maxBytes),
+		logrotate.WithBackups(backups),
+	).Rotate()
+
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening %s: %w", path, err)
 	}
 
 	logger := slog.New(slog.NewJSONHandler(f, nil))
+
+	switch {
+	case rotateErr != nil:
+		logger.Warn("rotating log file", slog.Any("error", rotateErr))
+	case rotated:
+		logger.Info("rotated log file")
+	}
 
 	return logger, func() {
 		err := f.Close()
