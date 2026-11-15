@@ -11,7 +11,7 @@ directory of this script into the run directory. Pass that copy to the
 Workflow tool as scriptPath. The tool refuses the script in the skill
 directory after Nix store optimisation hard-links it.
 
-  init --run DIR [--limit N] [--rounds N] [--check CMD]
+  init --run DIR [--limit N] [--rounds N] [--check CMD] [--health CMD]
        [--shared GLOB]... [--disk-floor-gb N] [--force]
   triage FILE            add or update tasks from a JSON list
   next                   start one task per free slot, print each Workflow input
@@ -21,6 +21,20 @@ directory after Nix store optimisation hard-links it.
   land REF               land REF on the base branch, one landing at a time
   status
   watch                  exit when free disk space runs low
+
+The land command prints the failing output of a failed landing. The last
+line that it prints is the RESULT line.
+
+The health command of init --health is a fast command that fails when a
+service that the check or a commit hook requires is down. A landing runs
+it in the main checkout before the merge, and again after a failed check
+or a failed commit. A failed health command ends the landing with the
+result HEALTHFAIL. The failure does not show that the task needs a change,
+so land it again after the service answers. A check or a commit hook that
+stops the service also ends each landing with HEALTHFAIL, and the output
+then names the log of the failed step. When a task ends in HEALTHFAIL after
+the check or the commit a second time, read that log instead of landing the
+task again.
 """
 
 import argparse
@@ -242,6 +256,7 @@ def cmd_init(a):
         "limit": a.limit,
         "rounds": a.rounds,
         "check": a.check,
+        "health": a.health,
         "shared": list(dict.fromkeys(DEFAULT_SHARED + (a.shared or []))),
         "diskFloorGb": a.disk_floor_gb,
     }
@@ -451,9 +466,11 @@ def cmd_land(a):
     logs = run / "logs"
 
     def fail(code, detail=""):
-        print(f"RESULT {ref} {code}")
+        # The RESULT line comes last, so the end of the output shows it
+        # however long the detail is.
         if detail:
             print(detail)
+        print(f"RESULT {ref} {code}")
         sys.exit(2)
 
     def logged(name, *cmd, cwd):
@@ -463,6 +480,22 @@ def cmd_land(a):
                 cmd, cwd=cwd, stdout=f, stderr=subprocess.STDOUT, check=False
             )
         return rc.returncode, path
+
+    def require_health(when):
+        """Fail the landing with HEALTHFAIL when the health command fails.
+
+        The check and the commit hooks cannot run when the health command
+        fails. So a failed check or a failed commit then does not show that
+        the task needs a change. The when argument says when the health
+        command ran, and after a failed step it names the log of that step.
+        """
+        # A run can continue from a state file that has no health key.
+        if not cfg.get("health"):
+            return
+        rc, path = logged("health", "sh", "-c", cfg["health"], cwd=repo)
+        if rc:
+            detail = f"the health command failed {when}\n{tail(path)}"
+            fail("HEALTHFAIL", detail.rstrip())
 
     with locked(run / "land.lock"):
         if out("git", "branch", "--show-current", cwd=repo) != base:
@@ -477,6 +510,7 @@ def cmd_land(a):
             fail("NOMSG", str(msg))
         if found := refs.findall(msg.read_text()):
             fail("MSGHASREF", " ".join(sorted(set(found))))
+        require_health("before the merge")
 
         # Bring the base branch into the task branch, so that the check
         # runs on the tree that the commit records.
@@ -503,6 +537,7 @@ def cmd_land(a):
         if cfg["check"]:
             rc, log = logged("check", "sh", "-c", cfg["check"], cwd=wt)
             if rc:
+                require_health(f"after the check failed, see {log}")
                 fail("CHECKFAIL", tail(log))
             if dirty := out("git", "status", "--porcelain", cwd=wt):
                 fail("WTDIRTY", "the check changed files:\n" + dirty)
@@ -529,6 +564,7 @@ def cmd_land(a):
             rc, log = logged("commit", "git", "commit", "-F", str(msg), cwd=repo)
             if rc:
                 rollback()
+                require_health(f"after the commit failed, see {log}")
                 fail("COMMITFAIL", tail(log))
             if out("git", "rev-parse", "HEAD^{tree}", cwd=repo) == want:
                 break
@@ -558,6 +594,12 @@ def main():
     s.add_argument("--limit", type=int, default=5)
     s.add_argument("--rounds", type=int, default=6)
     s.add_argument("--check", default="")
+    s.add_argument(
+        "--health",
+        default="",
+        metavar="CMD",
+        help="a fast command that fails when a service of the check or a hook is down",
+    )
     s.add_argument(
         "--shared",
         action="append",

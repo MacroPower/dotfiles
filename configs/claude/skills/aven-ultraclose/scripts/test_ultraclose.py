@@ -221,6 +221,219 @@ class WorkflowCopyTest(unittest.TestCase):
                 )
 
 
+class LandTest(unittest.TestCase):
+    """A landing prints its result last and tells a down service from a fault."""
+
+    REF = "APP-7KQ9"
+    SUBJECT = "feat: add a file"
+    # The engine file stands in for a service that the check and the
+    # commit hook require. The environment of the test names the file.
+    HEALTH = 'test -e "$ENGINE" || { echo no engine; exit 1; }'
+    # A step that stops the service, prints the cause, and fails.
+    CAUSE = "the step killed the engine"
+    STOP = f'rm "$ENGINE"; echo "{CAUSE}"; exit 1'
+    # A step that passes and records that it ran.
+    RECORD = 'touch "$RAN"'
+    # A step that passes, and whose first run stops the service.
+    STOP_ONCE = 'test -e "$RAN" || { touch "$RAN"; rm "$ENGINE"; }'
+
+    def start_task(self, tmp, *flags, hook="exit 0"):
+        """Start a run with one task that is ready to land.
+
+        The flags go to init. The task branch holds one commit. The
+        pre-commit hook of the repository runs the hook argument, and
+        only the landing commits with hooks on. Return the repository
+        and the environment.
+        """
+        repo, run, bin_dir = Path(tmp, "repo"), Path(tmp, "run"), Path(tmp, "bin")
+        bin_dir.mkdir()
+        aven = bin_dir / "aven"
+        aven.write_text("#!/bin/sh\necho stub\n")
+        aven.chmod(0o755)
+        # The landing commits with the git config of its caller. This
+        # file replaces the config of the user, so the hook path and the
+        # signing key of the user do not reach the test repository.
+        config = Path(tmp, "gitconfig")
+        config.write_text("[user]\n\tname = test\n\temail = test@example.com\n")
+        env = clean_env()
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+        env["GIT_CONFIG_GLOBAL"] = str(config)
+        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        env["ENGINE"] = str(Path(tmp, "engine"))
+        env["RAN"] = str(Path(tmp, "ran"))
+        self.git("init", "-q", "-b", "main", str(repo), cwd=tmp, env=env)
+        self.git("commit", "-q", "--allow-empty", "-m", "init", cwd=repo, env=env)
+        ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
+        triage = Path(tmp, "triage.json")
+        triage.write_text(json.dumps([{"ref": self.REF, "title": "t", "files": []}]))
+        ultraclose("triage", str(triage), cwd=repo, env=env)
+        task = json.loads(ultraclose("next", cwd=repo, env=env))[0]["task"]
+        Path(task["wt"], "a.txt").write_text("a\n")
+        self.git("add", "-A", cwd=task["wt"], env=env)
+        self.git("commit", "-q", "--no-verify", "-m", "wip", cwd=task["wt"], env=env)
+        Path(task["dir"], "msg.txt").write_text(self.SUBJECT + "\n")
+        hooks = Path(repo, ".git", "hooks")
+        hooks.mkdir(exist_ok=True)
+        (hooks / "pre-commit").write_text(f"#!/bin/sh\n{hook}\n")
+        (hooks / "pre-commit").chmod(0o755)
+        return repo, env
+
+    def git(self, *args, cwd, env):
+        """Run one git command and return its standard output."""
+        p = subprocess.run(
+            ["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True
+        )
+        return p.stdout.strip()
+
+    def land(self, repo, env):
+        """Land the task. Return the exit status and the printed lines."""
+        p = subprocess.run(
+            [sys.executable, str(SCRIPT), "land", self.REF],
+            cwd=repo,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return p.returncode, p.stdout.splitlines()
+
+    def assert_failed(self, repo, env, landing, result):
+        """The landing printed the result last and left the base branch alone."""
+        status, lines = landing
+        self.assertEqual(status, 2, lines)
+        self.assertEqual(lines[-1], f"RESULT {self.REF} {result}")
+        self.assertEqual(self.git("log", "--format=%s", cwd=repo, env=env), "init")
+        self.assertEqual(self.git("status", "--porcelain", cwd=repo, env=env), "")
+
+    def assert_landed(self, repo, env, landing):
+        status, lines = landing
+        self.assertEqual(status, 0, lines)
+        self.assertTrue(lines[-1].startswith(f"RESULT {self.REF} OK "), lines)
+        self.assertEqual(
+            self.git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
+        )
+
+    def test_result_line_comes_last(self):
+        # name: (the init flags, the hook, the result, a line of the failing output)
+        cases = {
+            "a failed check": (
+                ["--check", "echo 'test: FAIL'; exit 1"],
+                "exit 0",
+                "CHECKFAIL",
+                "test: FAIL",
+            ),
+            "a failed commit hook": (
+                [],
+                "echo 'lint: FAIL'; exit 1",
+                "COMMITFAIL",
+                "lint: FAIL",
+            ),
+        }
+        for name, (flags, hook, result, output) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp, *flags, hook=hook)
+                landing = self.land(repo, env)
+                self.assert_failed(repo, env, landing, result)
+                self.assertIn(output, landing[1][:-1])
+
+    def test_health(self):
+        # name: (the service runs at the start, the check, the hook, the
+        # result, when the health command failed)
+        cases = {
+            "the service is down before the merge": (
+                False,
+                self.RECORD,
+                "exit 0",
+                "HEALTHFAIL",
+                "before the merge",
+            ),
+            "the service stops during the check": (
+                True,
+                self.STOP,
+                "exit 0",
+                "HEALTHFAIL",
+                "after the check failed",
+            ),
+            "the service stops during the commit": (
+                True,
+                self.RECORD,
+                self.STOP,
+                "HEALTHFAIL",
+                "after the commit failed",
+            ),
+            "the check fails and the service answers": (
+                True,
+                "exit 1",
+                "exit 0",
+                "CHECKFAIL",
+                None,
+            ),
+            "the hook fails and the service answers": (
+                True,
+                self.RECORD,
+                "exit 1",
+                "COMMITFAIL",
+                None,
+            ),
+        }
+        for name, (up, check, hook, result, when) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(
+                    tmp, "--check", check, "--health", self.HEALTH, hook=hook
+                )
+                if up:
+                    Path(env["ENGINE"]).touch()
+                landing = self.land(repo, env)
+                self.assert_failed(repo, env, landing, result)
+                output = landing[1][:-1]
+                if when:
+                    self.assertIn("no engine", output)
+                    found = [line for line in output if when in line]
+                    self.assertTrue(found, output)
+                    # After a failed step, the output names the log of
+                    # that step, which shows whether the step stopped the
+                    # service.
+                    if when.startswith("after"):
+                        log = Path(found[0].split(", see ", 1)[1])
+                        self.assertIn(self.CAUSE, log.read_text())
+                else:
+                    self.assertNotIn("no engine", output)
+                # A landing that starts with the service down skips the check.
+                self.assertEqual(Path(env["RAN"]).exists(), up and check == self.RECORD)
+
+    def test_land_again_after_repair(self):
+        # The check passes and the service stops. Then the hook cannot run.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(
+                tmp,
+                "--check",
+                self.STOP_ONCE,
+                "--health",
+                self.HEALTH,
+                hook=self.HEALTH,
+            )
+            Path(env["ENGINE"]).touch()
+            landing = self.land(repo, env)
+            self.assert_failed(repo, env, landing, "HEALTHFAIL")
+            self.assertTrue(
+                any("after the commit failed" in line for line in landing[1]), landing
+            )
+            # The task did not change. The service runs again.
+            Path(env["ENGINE"]).touch()
+            self.assert_landed(repo, env, self.land(repo, env))
+
+    def test_state_without_health_key(self):
+        # A run can continue from a state file that init wrote without
+        # the health key.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp)
+            state = Path(tmp, "run", "state.json")
+            st = json.loads(state.read_text())
+            del st["config"]["health"]
+            state.write_text(json.dumps(st))
+            self.assert_landed(repo, env, self.land(repo, env))
+
+
 # The Workflow tool runs the body of close-task.js inside an async
 # function, and passes it the input and an agent function. The driver
 # does the same under Node with scripted agents. It reads the input and

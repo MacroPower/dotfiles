@@ -69,9 +69,12 @@ approved task.
    `git log -15`.
 4. Run `ultraclose.py init --run <scratchpad>/ultraclose --limit <N>`. Pass
    `--check '<command>'` with the full check of the project, unless the
-   commit hook already runs that check. Pass `--shared <glob>` for each kind
-   of file that two running tasks may both edit. Each `--shared` glob adds to
-   the default globs, which cover test files.
+   commit hook already runs that check. Pass `--health '<command>'` when the
+   check or a commit hook requires a service, such as Docker. The health
+   command is a fast command that fails when the service is down, such as
+   `docker version`. Pass `--shared <glob>` for each kind of file that two
+   running tasks may both edit. Each `--shared` glob adds to the default
+   globs, which cover test files.
 5. Write `rules.md` in the run directory. Every agent reads it, so state
    each rule as an instruction:
    - The commands that build, test, and run the full check.
@@ -213,15 +216,48 @@ Run `ultraclose.py land <ref>` in a background Bash call. Landings queue on
 a lock, so start one as soon as a task is ready. The command merges the base
 branch into the worktree and runs the check. Then it squashes the branch
 into one commit on the base branch with `msg.txt` as the message, removes
-the worktree, and sets the task to `done`. It prints one `RESULT` line:
+the worktree, and sets the task to `done`. Each landing of a run with a
+health command runs that command before the merge, and again after a failed
+check or a failed commit.
+
+When a landing fails, the command prints the last lines of the failing
+output. The run directory holds the full output of each step in
+`logs/<ref>.<step>.log`. The last line that the command prints is the
+`RESULT` line:
 
 | Result | Action |
 | --- | --- |
 | `OK` | Run `next`. |
-| `CONFLICT`, `CHECKFAIL`, `COMMITFAIL` | The base branch moved under the task. Relaunch with `ultraclose.py args <ref> --sync '<reason and failing output>'`. A sync agent merges and adapts, and a reviewer checks the merge. Land again after approval. Note the task when a second sync fails for the same reason. |
+| `CONFLICT` | The base branch moved under the task. Sync the task. |
+| `CHECKFAIL`, `COMMITFAIL` | The check or a commit hook failed. Find the cause in the failing output, and act on that cause. |
+| `HEALTHFAIL` | The service that the check or a commit hook requires is down. Repair the service and land again. Do not sync the task. When the same task ends in `HEALTHFAIL` after the check or the commit a second time, read the log that the output names above the `RESULT` line, and do not land the task again. |
 | `WTDIRTY` | An agent left files behind. Delete probe files and built binaries, commit real changes with `--no-verify`, and land again. |
 | `MSGHASREF`, `REFINDIFF` | Remove the task ref from the message or the code, and land again. |
 | `DIRTY`, `NOTBASE`, `TREEMISMATCH`, `POSTDIRTY` | An agent or a hook changed the main checkout. Stop landing, find the cause, and repair the checkout before the next landing. |
+
+To sync a task, relaunch it with
+`ultraclose.py args <ref> --sync '<reason and failing output>'`. A sync
+agent merges and adapts, and a reviewer checks the merge. Land again after
+approval. Note the task when a second sync fails for the same reason.
+
+`CHECKFAIL` and `COMMITFAIL` do not show that the task must change, and each
+sync costs an agent run and a review. Find the cause in the failing output
+before you sync a task. Each cause has its own action:
+
+| Cause | Action |
+| --- | --- |
+| A down service, a network failure, a full disk, or a lack of memory stopped the check or the hook, such as a test that the kernel killed (`Killed`, `signal: killed`, exit status 137). | Repair the environment and land again. Do not sync the task. When the same task fails a second time for the same cause, read the log of the failed step, and do not land the task again. |
+| A failed test covers code that the task did not change. | Land again one time. Sync the task when the same test fails again. |
+| The check or the hook reports a fault in the change, such as a broken build, a linter finding, or a failed test of the changed code. | Sync the task. |
+
+A `HEALTHFAIL` after the check or the commit shows that the environment
+failed during that step, but not why. The failing output of `CHECKFAIL` or
+`COMMITFAIL` shows the same when it names a down service, a network failure,
+a lack of memory, or a full disk. The change might cause the failure, such as
+with a test that fills the memory or the disk. Then each landing of the task causes the
+failure again. After the same task fails a second time for the same cause,
+sync the task with the log of the failed step when that log shows that the
+change causes the failure. Otherwise, note the task.
 
 When you fix something by hand before a landing, record the fix in
 `notes.md`, because no reviewer saw it.
