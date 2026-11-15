@@ -33,6 +33,11 @@ const (
 	// homeDir is the home directory for the dev container user.
 	homeDir = "/home/dev"
 
+	// krewRoot is the krew root of the dev container user. home-manager
+	// puts the bin directory of the krew root ahead of the rest of PATH
+	// in each shell session.
+	krewRoot = homeDir + "/.krew"
+
 	// uid is the numeric user ID for the sandbox user.
 	uid = "1000"
 
@@ -306,6 +311,18 @@ ln -sf /claude-state/claude.json ` + homeDir + `/.claude.json
 // The container does not mount the claude-state cache volume, and
 // ~/.claude.json stays the regular file that the activation wrote.
 // [Dev.DevBase] adds the volume (see [withClaudeState]).
+//
+// The container mounts the krew cache volume of [Dev.Shell] at the krew
+// root. The shell sessions of [Dev.Shell] run as root with no egress
+// filter, and they run the krew plugins of the volume. A container that
+// runs a process of the sandbox user must therefore mount another
+// volume there (see [withSandboxUser]).
+//
+// The key of the volume ends in :krew-shell. An engine that ran an
+// earlier build of the sandbox might hold a volume with the key that
+// ends in :krew. The sandbox user owns that volume, so it can hold
+// programs that a sandboxed process wrote. A container of this module
+// must not mount that key.
 func (m *Dev) devBaseForPlatform(
 	ctx context.Context,
 	platform dagger.Platform,
@@ -317,7 +334,7 @@ func (m *Dev) devBaseForPlatform(
 	}
 
 	ctr := built.
-		WithMountedCache(homeDir+"/.krew", dag.CacheVolume(devCacheNamespace+":krew"))
+		WithMountedCache(krewRoot, dag.CacheVolume(devCacheNamespace+":krew-shell"))
 
 	if kagiApiKey != nil {
 		plaintext, err := kagiApiKey.Plaintext(ctx)
@@ -350,6 +367,11 @@ mkdir -p ` + homeDir + `/.local/share/atuin
 // allowlist. The proxy, DNS, and firewall are applied at runtime via
 // terrarium init, which also drops to a non-root user, preventing the
 // sandboxed process from modifying the rules.
+//
+// The non-root user owns the home directory and the krew cache volume
+// of the container. [Dev.Shell] mounts another krew cache volume, so a
+// sandboxed process cannot write the krew plugins that [Dev.Shell] runs
+// as root (see [withSandboxUser]).
 func (m *Dev) SandboxBase(
 	ctx context.Context,
 	// Kagi API key for the MCP server configuration.
@@ -380,6 +402,28 @@ func (m *Dev) SandboxBase(
 		})
 	}
 
+	return withSandboxUser(ctr).
+		WithEnvVariable("IS_SANDBOX_NETWORK", "1"), nil
+}
+
+// withSandboxUser creates the non-root sandbox user on ctr and makes
+// that user the owner of the home directory. terrarium init drops to
+// the sandbox user ahead of the sandboxed process.
+//
+// The helper first replaces the krew cache volume of [Dev.Shell] (see
+// [Dev.devBaseForPlatform]) with a volume that [Dev.Shell] does not
+// mount. chown -R crosses mount points. The sandbox user therefore owns
+// each volume that ctr mounts under the home directory when the script
+// runs. A sandboxed process that can write the volume of [Dev.Shell]
+// can plant a program in the bin directory of the krew root. A shell
+// session of [Dev.Shell] finds that program ahead of the rest of PATH,
+// and runs it as root with no egress filter.
+//
+// The Owner option makes the sandbox user the owner of the volume when
+// the engine creates it. The engine caches the exec of the script until
+// the build changes. The chown therefore does not run again for a
+// volume that the engine creates later.
+func withSandboxUser(ctr *dagger.Container) *dagger.Container {
 	// setup-user: create non-root user in /etc/passwd and /etc/group,
 	// then chown the home directory.
 	setupUserScript := fmt.Sprintf(`set -e
@@ -389,8 +433,9 @@ chown -R %s:%s %s
 `, username, uid, gid, homeDir, username, gid, uid, gid, homeDir)
 
 	return ctr.
-		WithExec([]string{"sh", "-c", setupUserScript}).
-		WithEnvVariable("IS_SANDBOX_NETWORK", "1"), nil
+		WithMountedCache(krewRoot, dag.CacheVolume(devCacheNamespace+":krew-sandbox"),
+			dagger.ContainerWithMountedCacheOpts{Owner: uid + ":" + gid}).
+		WithExec([]string{"sh", "-c", setupUserScript})
 }
 
 // Sandbox opens an interactive development container with DNS-based
@@ -679,11 +724,11 @@ func (m *Dev) PublishShell(
 
 // buildSandboxForPlatform builds a self-contained sandbox container
 // for a single platform. It activates home-manager via
-// [Dev.devBaseForPlatform], creates the non-root sandbox user,
-// snapshots the /nix cache mount into the rootfs, and sets the
-// terrarium entrypoint and OCI labels. The build drops the krew cache
-// mount that [Dev.devBaseForPlatform] adds, so that the mount does not
-// bake into the published image.
+// [Dev.devBaseForPlatform] and creates the non-root sandbox user via
+// [withSandboxUser]. It then snapshots the /nix cache mount into the
+// rootfs, and sets the terrarium entrypoint and OCI labels. The build
+// drops the krew cache mount that [withSandboxUser] adds, so that the
+// mount does not bake into the published image.
 //
 // The build does not mount the claude-state cache volume. The image
 // keeps the claude.json that the activation wrote as a regular file,
@@ -697,15 +742,7 @@ func (m *Dev) buildSandboxForPlatform(
 		return nil, err
 	}
 
-	// setup-user: create non-root user.
-	setupUserScript := fmt.Sprintf(`set -e
-printf '%s:x:%s:%s::%s:/bin/sh\n' >> /etc/passwd
-printf '%s:x:%s:\n' >> /etc/group
-chown -R %s:%s %s
-`, username, uid, gid, homeDir, username, gid, uid, gid, homeDir)
-
-	built := base.
-		WithExec([]string{"sh", "-c", setupUserScript}).
+	built := withSandboxUser(base).
 		WithEnvVariable("IS_SANDBOX_NETWORK", "1")
 
 	// Snapshot cache-mounted paths into the rootfs. Dagger cannot
@@ -723,7 +760,7 @@ chown -R %s:%s %s
 	return built.
 		WithoutMount("/nix").
 		WithoutMount("/root/.cache/nix").
-		WithoutMount(homeDir+"/.krew").
+		WithoutMount(krewRoot).
 		WithoutDirectory("/nix").
 		WithDirectory("/nix", nixDir).
 		WithWorkdir(homeDir).

@@ -29,6 +29,14 @@ const (
 	// homeDir is the home directory for the dev container user.
 	homeDir = "/home/dev"
 
+	// sandboxUID is the user ID that terrarium init drops to ahead of
+	// the sandboxed process.
+	sandboxUID = "1000"
+
+	// sandboxGID is the group ID that terrarium init drops to ahead of
+	// the sandboxed process.
+	sandboxGID = "1000"
+
 	// terrariumConfigPath is the XDG config path where terrarium
 	// looks for its configuration YAML.
 	terrariumConfigPath = homeDir + "/.config/terrarium/config.yaml"
@@ -108,6 +116,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestDevBaseClaudeState(ctx) })
 	eg.Go(func() error { return m.TestDevBaseMcpSync(ctx) })
 	eg.Go(func() error { return m.TestSandboxBase(ctx) })
+	eg.Go(func() error { return m.TestSandboxKrewVolume(ctx) })
 	eg.Go(func() error { return m.TestSandboxEgressRules(ctx) })
 	eg.Go(func() error { return m.TestSandboxAdditionalPorts(ctx) })
 	eg.Go(func() error { return m.TestSandboxTCPForward(ctx) })
@@ -418,6 +427,63 @@ func (m *Tests) TestSandboxBase(ctx context.Context) error {
 	}
 	if !strings.Contains(passwd, "dev:x:1000:1000") {
 		return fmt.Errorf("/etc/passwd missing dev user entry")
+	}
+
+	return nil
+}
+
+// TestSandboxKrewVolume verifies that the sandbox user can write the
+// krew root of [Dev.SandboxBase]. It also verifies that the krew root
+// of [Dev.DevBase] holds no file of the sandbox user. The check covers
+// the file that the test writes and each file that a sandboxed process
+// wrote before. [Dev.Shell] opens the container of [Dev.DevBase] as
+// root with no egress filter. Its shell sessions run the programs in
+// the bin directory of the krew root. A krew cache volume that the
+// sandbox user can write therefore lets a sandboxed process run a
+// program as root.
+//
+// The test writes an empty file to the krew cache volume of the
+// sandbox, and removes the file before it returns.
+//
+// +check
+func (m *Tests) TestSandboxKrewVolume(ctx context.Context) error {
+	krewRoot := homeDir + "/.krew"
+
+	// The engine caches each exec by its arguments, so a name that no
+	// earlier run used makes the engine run the execs of this test.
+	probeName := fmt.Sprintf("sandbox-probe-%d", time.Now().UnixNano())
+	probe := krewRoot + "/" + probeName
+
+	sandbox := dag.Dev().SandboxBase().WithUser(sandboxUID + ":" + sandboxGID)
+
+	_, err := sandbox.WithExec([]string{"touch", probe}).Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("writing the krew root as the sandbox user: %w", err)
+	}
+
+	// find prints the probe and each file that the sandbox user or its
+	// group owns.
+	seen, seenErr := dag.Dev().DevBase().
+		WithExec([]string{
+			"find", krewRoot,
+			"(", "-name", probeName, "-o", "-uid", sandboxUID, "-o", "-gid", sandboxGID, ")",
+			"-print",
+		}).
+		Stdout(ctx)
+
+	// Remove the probe before the test reports a shared volume, so that
+	// the probe does not stay in the volume of the dev container.
+	_, err = sandbox.WithExec([]string{"rm", "-f", probe}).Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("removing the probe: %w", err)
+	}
+
+	if seenErr != nil {
+		return fmt.Errorf("listing the krew root of the dev container: %w", seenErr)
+	}
+
+	if seen = strings.TrimSpace(seen); seen != "" {
+		return fmt.Errorf("the krew root of the dev container holds files of the sandbox user:\n%s", seen)
 	}
 
 	return nil
