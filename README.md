@@ -407,3 +407,23 @@ Workmux reads `dotfiles.claude.lima` only when it creates the VM. To resize a VM
 Lima grows the disk image when the VM starts. In the VM, `growpart.service` then grows the root partition, and `systemd-growfs-root.service` grows the filesystem. If `vda2` kept its old size, the VM runs a configuration that lacks `growpart.service`. Run `task switch` in the VM, then stop and start the VM again. If `vda2` grew but `df -h /` still shows the old size, run `sudo resize2fs /dev/vda2` in the VM.
 
 To change the CPUs or the memory, set `.cpus` or `.memory` with the same `limactl edit` command.
+
+### Memory
+
+The VM has no swap, so the kernel kills a process when memory runs out. These settings in `hosts/nixos/terrarium.nix` decide which process the kernel kills and bring the user manager back after a kill:
+
+- `sessionMemoryMax` limits the processes of one login to a share of the VM's memory. Workmux starts every agent with `limactl shell`, and Lima carries those shells over one SSH connection, so every agent runs in one login. When the processes of that login need more than the limit, the kernel kills the largest of them and no process outside the login.
+- `OOMScoreAdjust` on `user@.service` puts the user services, such as rootless Docker, level with the commands of a login. When the whole VM runs out of memory, the kernel kills the largest process first.
+- `Restart` on `user@.service` starts the user manager again after a signal kills it.
+
+To list the processes that the kernel killed today to free memory, run this command in the VM:
+
+```sh
+journalctl -k --since today -g 'Killed process'
+```
+
+`task switch` applies a new `sessionMemoryMax` and a new `Restart` to the running VM. The user manager and its services get a new `OOMScoreAdjust` only when the manager starts. To apply it, reboot the VM or restart the manager. The restart stops every user service and every rootless Docker container, so wait until no session uses Docker. Then run this command in the VM:
+
+```sh
+sudo systemctl restart "user@$(id -u).service"
+```

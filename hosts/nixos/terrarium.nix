@@ -14,6 +14,10 @@ let
   };
   # logrotate keeps this many rotated files of each log.
   logRotations = 7;
+  # The share of the VM's memory that the processes of one login session
+  # can hold. hostModule sets it as the MemoryMax of every session scope,
+  # and homeModule names it in the Claude Code host notes.
+  sessionMemoryMax = "75%";
 in
 {
   inherit system;
@@ -48,6 +52,71 @@ in
         # /dev/snd is root:audio 0660, and logind does not grant a seat ACL
         # to SSH sessions such as `limactl shell`.
         extraGroups = [ "audio" ];
+      };
+
+      # The VM has no swap. When its memory runs out, the kernel gives
+      # each process a score and kills the process with the highest
+      # score. The score is the memory that the process holds, plus the
+      # oom_score_adj of the process in thousandths of the VM's memory.
+      #
+      # The commands of a login session run at an oom_score_adj of 0. The
+      # upstream unit starts the user manager at 100, and the manager
+      # starts each of its services 100 higher than itself. A user
+      # service at 200 therefore outscores a session command until the
+      # command holds a fifth of the VM's memory more than the service
+      # holds.
+      #
+      # On a 47 GiB VM, twelve race-test binaries of about 5 GiB each ran
+      # in one session. The kernel killed rootless dockerd, the Dagger
+      # engine, every other user service, and the user manager before it
+      # killed the first test binary. The upstream unit does not set
+      # Restart=, so nothing restarted the dead user manager. The
+      # `systemctl --user` command and rootless Docker stayed down until
+      # `sudo systemctl start` brought the manager back.
+      #
+      # With an OOMScoreAdjust of -100, the kernel ranks the manager after
+      # every process at 0, and the manager starts its services at 0,
+      # level with the session commands. The kernel then kills the
+      # largest process first. Restart=on-failure starts the manager
+      # again when it dies of a signal or exits with an error. Restarts
+      # that are 5 seconds apart never reach the default start limit of
+      # five starts in 10 seconds, so systemd keeps trying.
+      #
+      # A switch applies the restart setting to the running manager. The
+      # manager and its services keep their old oom_score_adj until the
+      # manager starts again. To apply the new value, reboot the VM or
+      # run `sudo systemctl restart "user@$(id -u).service"`. The restart
+      # stops every user service and every rootless Docker container.
+      systemd.services."user@".serviceConfig = {
+        OOMScoreAdjust = -100;
+        Restart = "on-failure";
+        RestartSec = "5s";
+      };
+
+      # logind puts each login in a scope named session-<id>.scope, and
+      # systemd reads this drop-in into every such scope. A process stays
+      # in the scope of the login that started it. Workmux starts each
+      # agent with `limactl shell`, and Lima carries every such shell over
+      # one SSH connection, so one login and one scope hold every agent.
+      #
+      # When the processes of one scope need more than MemoryMax, the
+      # kernel kills the largest process of that scope. It never kills a
+      # process outside the scope to enforce the limit. While one login
+      # holds every agent, the limit leaves the rest of the VM's memory to
+      # the user services and the system. A second login, such as one that
+      # a reconnected SSH connection opens, gets a limit of its own.
+      # logind sets OOMPolicy=continue on each session scope, so the
+      # other processes of the scope keep running. A switch applies the
+      # limit to the running scopes.
+      #
+      # systemd-oomd does not fit here. It kills a whole cgroup, and the
+      # cgroup of the scope holds every agent.
+      systemd.units."session-.scope" = {
+        overrideStrategy = "asDropin";
+        text = ''
+          [Scope]
+          MemoryMax=${sessionMemoryMax}
+        '';
       };
 
       # Claude Code's native recorder loads libasound through nix-ld.
@@ -286,8 +355,8 @@ in
           guestKubeconfigLocal = true;
           # home/claude.nix renders this text as the Host Environment
           # section of ~/.claude/CLAUDE.md. Only this host has the access
-          # log, so the guidance lives here and not in the instructions
-          # that every host gets.
+          # log and the memory limit on login sessions. So the guidance
+          # lives here and not in the instructions that every host gets.
           hostContext = ''
             This host is the terrarium VM. The terrarium daemon routes each outbound connection of the VM and of its containers through Envoy.
 
@@ -318,6 +387,16 @@ in
             ```sh
             zcat -f ${logs.envoyAccess}.1 ${logs.envoyAccess} | agrind '* | json | where time >= "2026-01-31T14:05" | sum(tx_bytes) as bytes, count by sni | sort by bytes desc'
             ```
+
+            systemd limits the processes of one login to ${sessionMemoryMax} of the VM's memory. The commands of every Claude Code session that the login started count toward the limit. When those processes need more memory than the limit, the kernel kills the largest one with SIGKILL. Shells report the kill as exit status 137, and `go test` reports it as `signal: killed`.
+
+            After the kernel kills a command, list the processes that the kernel killed today to free memory:
+
+            ```sh
+            journalctl -k --since today -g 'Killed process'
+            ```
+
+            Each line names one killed process and gives the memory that the process held as `anon-rss`. When the processes of your command held most of that memory, do not run the command again unchanged. Run fewer processes at the same time, or lower the memory that each process needs.
           '';
         };
         ytdlp.enable = true;
