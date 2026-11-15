@@ -1,11 +1,8 @@
 package definitions
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -632,63 +629,6 @@ func TestLoaderIgnoresCorruptCache(t *testing.T) {
 	got, err := loader.Get(t.Context())
 	require.NoError(t, err)
 	assert.Len(t, got.Items, 8)
-}
-
-// TestSaveCacheConcurrentWrites pins that each write of several processes
-// to one cache file replaces the whole file and leaves no temporary file.
-func TestSaveCacheConcurrentWrites(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	path := cachePath(dir, namesCachePrefix, "v1")
-
-	// Each write has its own length, so a file that mixes two writes does
-	// not decode as either of them.
-	var writes []string
-	for i := range 8 {
-		writes = append(writes, strings.Repeat("x", 4096*(i+1)))
-	}
-
-	var wg sync.WaitGroup
-
-	for _, write := range writes {
-		wg.Go(func() {
-			assert.NoError(t, saveCache(dir, path, write))
-		})
-	}
-
-	wg.Wait()
-
-	raw, err := os.ReadFile(path)
-	require.NoError(t, err)
-
-	var got string
-
-	require.NoError(t, json.Unmarshal(raw, &got))
-	assert.Contains(t, writes, got)
-
-	files, err := filepath.Glob(filepath.Join(dir, "*"))
-	require.NoError(t, err)
-	assert.Equal(t, []string{path}, files)
-}
-
-// TestSaveCacheFailedWrite pins that a write that fails removes its
-// temporary file.
-func TestSaveCacheFailedWrite(t *testing.T) {
-	t.Parallel()
-
-	// A directory that holds a file stands at the path of the cache file,
-	// so the rename of the temporary file fails.
-	dir := t.TempDir()
-	path := filepath.Join(dir, "target.json")
-	require.NoError(t, os.Mkdir(path, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(path, "keep"), nil, 0o644))
-
-	require.Error(t, saveCache(dir, path, "v"))
-
-	files, err := filepath.Glob(filepath.Join(dir, "*"))
-	require.NoError(t, err)
-	assert.Equal(t, []string{path}, files)
 }
 
 func TestWithLoaded(t *testing.T) {

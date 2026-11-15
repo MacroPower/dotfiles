@@ -27,6 +27,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/clarity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
@@ -135,6 +136,9 @@ func TestServerListsTools(t *testing.T) {
 
 		case toolGetItem:
 			assert.Contains(t, tool.Description, "a pick can be a perk that this version cannot roll")
+			assert.Contains(t, tool.Description, "A line that starts with 'Clarity:' then opens the tested description")
+			assert.Contains(t, tool.Description, "'"+clarity.EnhancedMark+"' precedes each value")
+			assert.Contains(t, tool.Description, "A line that starts with 'Might predate the final patch'")
 			assert.Contains(t, tool.Description, "the time to aim down sights in seconds")
 			assert.Contains(
 				t,
@@ -1362,7 +1366,9 @@ func TestGetItem(t *testing.T) {
 	)
 
 	// fatebringer returns the output for instance 1001 with the given
-	// lines of the roll ratings block.
+	// lines of the roll ratings block. The fixture database of Clarity
+	// describes Explosive Payload and not Firefly, and the fixture
+	// definitions give only Firefly a text of Bungie.
 	fatebringer := func(ratings ...string) string {
 		return strings.Join(slices.Concat([]string{
 			"Fatebringer",
@@ -1379,9 +1385,12 @@ func TestGetItem(t *testing.T) {
 			"",
 			"Perks:",
 			"- Explosive Payload (Trait), can swap to Rampage",
+			"  Clarity: Each bullet deals half of its damage as an explosion.",
+			"  \U00002022 The explosion ignores damage falloff.",
 			"- Firefly (Trait)",
 			"  Precision final blows cause targets to explode.",
 			"  Explosions deal Solar damage.",
+			clarityCreditLine,
 			"",
 			"Roll ratings:",
 		}, ratings, []string{

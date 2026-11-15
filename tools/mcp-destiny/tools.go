@@ -19,6 +19,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/autotag"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/clarity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/fold"
@@ -341,10 +342,10 @@ type GetStatsInput struct {
 // handler holds the shared state of the tool handlers. The mutex serializes
 // tool calls, because moves, lock changes, perk changes, and the equips,
 // saves, and clears of loadouts update the cached snapshot in place. The
-// sheet store and the loadout table store have no lock of their own, so
-// the same mutex guards them. The name store runs several Bungie requests
-// at a time, so keyMu guards the cached API key. Every time that a tool
-// prints is in the zone of the handler.
+// sheet store, the loadout table store, and the Clarity store have no lock
+// of their own, so the same mutex guards them. The name store runs several
+// Bungie requests at a time, so keyMu guards the cached API key. Every
+// time that a tool prints is in the zone of the handler.
 type handler struct {
 	service       *dvm.Client
 	bungie        *bungie.Client
@@ -353,6 +354,7 @@ type handler struct {
 	names         *definitions.NameStore
 	sheets        *rolls.SheetStore
 	loadoutTables *bungie.LoadoutTableStore
+	clarity       *clarity.Store
 	log           *slog.Logger
 	now           func() time.Time
 	zone          *time.Location
@@ -540,7 +542,15 @@ func (h *handler) handleGetItem(
 		}
 	}
 
-	return textResult(renderItem(s, item, ratings)), nil, nil
+	// Clarity describes perks, so an item without perks costs no
+	// request for its database. A database that the server cannot load
+	// costs only the tested descriptions, and the output says so.
+	var tested clarity.State
+	if len(item.Perks) > 0 {
+		tested = h.clarity.Load(ctx)
+	}
+
+	return textResult(renderItem(s, item, ratings, tested)), nil, nil
 }
 
 func (h *handler) handleCompareDuplicates(

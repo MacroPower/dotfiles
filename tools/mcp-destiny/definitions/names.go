@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/cachefile"
 )
 
 const (
@@ -358,7 +359,7 @@ func (s *NameStore) writeCache(ctx context.Context) {
 		return
 	}
 
-	removeCaches(ctx, s.log, filepath.Join(s.cacheDir, "names-v*.json"), path)
+	cachefile.RemoveOthers(ctx, s.log, filepath.Join(s.cacheDir, "names-v*.json"), path)
 }
 
 // saveAnswers keeps the answers of the cache file at path and saves the
@@ -374,7 +375,8 @@ func (s *NameStore) saveAnswers(ctx context.Context, path string) error {
 
 	s.merge(s.readCache(ctx))
 
-	return saveCache(s.cacheDir, path, namesFile{Version: s.version, Answers: s.answers})
+	//nolint:wrapcheck // The error of the write names the step that did not succeed.
+	return cachefile.Save(s.cacheDir, path, namesFile{Version: s.version, Answers: s.answers})
 }
 
 // lockCache takes the exclusive advisory lock of the name cache files in

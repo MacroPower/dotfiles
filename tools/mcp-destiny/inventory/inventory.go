@@ -119,6 +119,13 @@ type Plug struct {
 	Hash        uint32
 }
 
+// Enhanced reports whether the plug is the enhanced variant of a perk.
+// The type of an enhanced plug starts with "Enhanced", such as "Enhanced
+// Trait".
+func (p Plug) Enhanced() bool {
+	return strings.HasPrefix(p.Type, "Enhanced")
+}
+
 // Perk is the active plug in one visible socket of an item, such as a
 // weapon trait or an armor mod. Socket is the index of the socket in the
 // socket list of the item. Options lists the other plugs that Bungie
@@ -695,18 +702,12 @@ func optionsOf(plugs []Plug, active Plug) []Plug {
 		switch {
 		case kept < 0:
 			options = append(options, plug)
-		case isEnhanced(plug):
+		case plug.Enhanced():
 			options[kept] = plug
 		}
 	}
 
 	return options
-}
-
-// isEnhanced reports whether a plug is the enhanced variant of a perk. The
-// type of an enhanced plug starts with "Enhanced", such as "Enhanced Trait".
-func isEnhanced(plug Plug) bool {
-	return strings.HasPrefix(plug.Type, "Enhanced")
 }
 
 // isPerk reports whether a plug changes how an item plays. It rejects

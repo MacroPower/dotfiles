@@ -14,6 +14,8 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungietest"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/clarity"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/claritytest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitionstest"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
@@ -21,8 +23,10 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
 )
 
-// fakes is a handler wired to a fake Agg's Destiny Vault Manager service
-// and a fake Bungie platform. The definition loader of the handler serves
+// fakes is a handler wired to a fake Agg's Destiny Vault Manager service,
+// a fake Bungie platform, and a fake Clarity site. The fake Clarity site
+// serves the fixture database of package claritytest, which describes
+// Explosive Payload. The definition loader of the handler serves
 // defs, which holds [definitionstest.Defs], until a test calls [fakes.dropDefs]. A
 // test edits defs before its first call to change the definitions that the
 // handler reads.
@@ -30,6 +34,7 @@ type fakes struct {
 	h       *handler
 	service *dvmtest.Server
 	bungie  *bungietest.Server
+	clarity *claritytest.Server
 	defs    *definitions.Defs
 }
 
@@ -39,6 +44,7 @@ func newFakes(t *testing.T) *fakes {
 	f := &fakes{
 		service: dvmtest.NewServer(t),
 		bungie:  bungietest.NewServer(t),
+		clarity: claritytest.NewServer(t),
 		defs:    definitionstest.Defs(),
 	}
 
@@ -99,6 +105,7 @@ func newFakes(t *testing.T) *fakes {
 	}
 	f.h.loadoutTables = bungie.NewLoadoutTableStore(bungieManifest{h: f.h})
 	f.h.names = definitions.NewNameStore(bungieItems{h: f.h}, "")
+	f.h.clarity = clarity.NewStore(clarity.NewClient(clarity.WithURL(f.clarity.URL)), "", clarity.WithClock(now))
 
 	return f
 }

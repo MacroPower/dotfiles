@@ -32,6 +32,10 @@
 // character can play, they give the name, the type, the location, and the
 // names of the rewards.
 //
+// The server also downloads the Clarity database, which holds the tested
+// descriptions of the perks, from the site of that project. The Perk
+// Descriptions section describes it.
+//
 // The definition artifacts of the service leave out the loadout tables,
 // which give the name, the icon, and the color of each saved loadout. The
 // list_loadouts and save_loadout tools therefore read those tables from
@@ -122,6 +126,65 @@
 // fetches the profile from Bungie again. It fetches the profile again in
 // cases such as a copy older than 30 seconds or a call that sets refresh.
 // Every get_stats call looks up each such item again.
+//
+// # Perk Descriptions
+//
+// Only the get_item tool shows the descriptions of perks, and it shows
+// two for each perk that Clarity covers. The first is the in-game text of
+// Bungie, which the Destiny definitions hold. That text gives no numbers.
+// The second is the description of the Clarity database, a community
+// project that tests how the perks play. It gives the numbers, such as
+// the size of a damage bonus, its duration, and how it stacks. The web
+// client and Destiny Item Manager (DIM) show the same descriptions.
+//
+// The description of Clarity follows the text of Bungie under the perk,
+// and its first line starts with "Clarity:". Clarity covers a part of the
+// perks, so a perk without a description of Clarity shows only the text
+// of Bungie. One line after the perk list names Clarity as the source.
+// The text of Clarity marks two kinds of values:
+//
+//   - A value in square brackets after the word PvP applies only against
+//     players. The value before the brackets applies against combatants.
+//   - An up arrow precedes each value that the enhanced perk improves.
+//
+// The Clarity repository carries no license file. The server therefore
+// downloads the database from the Clarity site when it runs, as the web
+// client and DIM do. This module holds no copy of the database.
+//
+// The server keeps the download in a cache file in the cache directory,
+// with the version that the site gives it. It asks the site for the
+// version at most one time each hour, and it downloads the database
+// again only for another version. The servers of several sessions that
+// share the cache directory share the download.
+//
+// The server works without Clarity. When it holds no database, such as
+// after a failed download into an empty cache directory, get_item shows
+// only the text of Bungie. One line after the perk list then says that
+// the tested descriptions are unavailable and gives the reason. The
+// server asks the site again after five minutes. A server that holds an
+// earlier download keeps showing it while the site does not answer.
+//
+// Destiny 2 Update 9.7.0 and its hotfixes made the last changes to how
+// the perks play. Clarity records when it last updated each description.
+// A description from before such a change might describe the old
+// behavior. The server holds the list of the perks and the exotic items
+// that those patches changed, which comes from the patch notes of Bungie.
+// For a listed perk whose description predates the change, get_item adds
+// a line that starts with "Might predate the final patch". The line
+// names the patch and the perk or the exotic item that it changed.
+// Clarity copies the text of a base perk into the entry of each of its
+// enhanced perks. The entry of the enhanced perk keeps the date of its
+// own upload. The server therefore dates the description of an enhanced
+// perk at the later update of the two entries.
+//
+// Clarity gives many enhanced perks no entry of their own. For an
+// enhanced trait, origin trait, barrel, or magazine without one, get_item
+// shows the description of the base perk with the same name, as the web
+// client does. Some of these descriptions mark the improved values of the
+// enhanced perk with up arrows. The others give only the values of the
+// base perk. An enhanced weapon frame without an entry shows only the
+// text of Bungie. Bungie gives one frame name to the frames of several
+// weapon types that play differently.
 //
 // # Roll Ratings
 //
@@ -821,9 +884,9 @@
 //   - --service-url: base URL of Agg's Destiny Vault Manager
 //   - --state-dir: directory of the token file (default:
 //     $XDG_STATE_HOME/mcp-destiny)
-//   - --cache-dir: directory of the definition cache and the item name
-//     cache (default: $XDG_CACHE_HOME/mcp-destiny)
+//   - --cache-dir: directory of the definition cache, the item name
+//     cache, and the Clarity cache (default: $XDG_CACHE_HOME/mcp-destiny)
 //   - --log-file: path to JSON log file (append), which records tool
 //     errors, failed moves, failed lock changes, failed loadout equips,
-//     and failed item lookups
+//     failed item lookups, and failed loads of the Clarity database
 package main

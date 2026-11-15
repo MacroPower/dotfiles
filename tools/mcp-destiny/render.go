@@ -15,6 +15,7 @@ import (
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/autotag"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/clarity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/inventory"
@@ -468,9 +469,15 @@ const saveCountCaveat = "The count ignores the other rules, so an earlier rule c
 
 // renderItem renders one item in full. For a weapon, ratings holds the
 // [rolls.Rating] of each game mode, and the output gains the roll ratings
-// block. Ratings is nil for every other item. The output of a weapon ends
-// with the block of [writeMeasures].
-func renderItem(s *inventory.Snapshot, item *inventory.Item, ratings map[string]rolls.Rating) string {
+// block. Ratings is nil for every other item. For an item with perks,
+// tested holds the [clarity.State] of the call, which [writePerks] reads.
+// The output of a weapon ends with the block of [writeMeasures].
+func renderItem(
+	s *inventory.Snapshot,
+	item *inventory.Item,
+	ratings map[string]rolls.Rating,
+	tested clarity.State,
+) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s\n", item.Name)
@@ -491,17 +498,7 @@ func renderItem(s *inventory.Snapshot, item *inventory.Item, ratings map[string]
 
 	if len(item.Perks) > 0 {
 		b.WriteString("\nPerks:\n")
-
-		for _, perk := range item.Perks {
-			fmt.Fprintf(&b, "- %s (%s)", perk.Name, perk.Type)
-
-			if len(perk.Options) > 0 {
-				fmt.Fprintf(&b, ", can swap to %s", strings.Join(perk.OptionNames(), ", "))
-			}
-
-			b.WriteString("\n")
-			writeDescription(&b, perk.Description)
-		}
+		writePerks(&b, item.Perks, tested)
 	}
 
 	if ratings != nil {

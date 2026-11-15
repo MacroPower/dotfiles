@@ -19,6 +19,7 @@ import (
 
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/auth"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/bungie"
+	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/clarity"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/definitions"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/dvm"
 	"go.jacobcolvin.com/dotfiles/tools/mcp-destiny/rolls"
@@ -118,7 +119,8 @@ func parseFlags(name string, args []string) (options, error) {
 		&o.cacheDir,
 		"cache-dir",
 		"",
-		"directory of the definition cache and the item name cache (default $XDG_CACHE_HOME/mcp-destiny)",
+		"directory of the definition cache, the item name cache, and the Clarity cache "+
+			"(default $XDG_CACHE_HOME/mcp-destiny)",
 	)
 	fs.StringVar(&o.logFile, "log-file", "", "path to JSON log file (append)")
 
@@ -285,6 +287,11 @@ func runServe(ctx context.Context, args []string) error {
 	}
 	h.loadoutTables = bungie.NewLoadoutTableStore(bungieManifest{h: h})
 	h.names = definitions.NewNameStore(bungieItems{h: h}, o.cacheDir, definitions.WithNameLogger(logger))
+	h.clarity = clarity.NewStore(
+		clarity.NewClient(clarity.WithUserAgent(userAgent)),
+		o.cacheDir,
+		clarity.WithLogger(logger),
+	)
 
 	err = newServer(h).Run(ctx, &mcp.StdioTransport{})
 	if err != nil {
@@ -379,6 +386,20 @@ func newServer(h *handler) *mcp.Server {
 		Name: toolGetItem,
 		Description: "Show one item instance in full: perks with their descriptions and the alternatives each socket can swap to, " +
 			"stats, tag, note, and location. " +
+			"Under each perk, the in-game text of Bungie comes first. " +
+			"A line that starts with 'Clarity:' then opens the tested description of the Clarity database, " +
+			"for each perk that Clarity covers. " +
+			"That description gives the numbers that the in-game text leaves out, " +
+			"such as the size and the duration of a damage bonus. " +
+			"In it, a value in square brackets after 'PvP' applies only against players, " +
+			"and '\u2191' precedes each value that the enhanced perk improves. " +
+			"An enhanced trait, origin trait, or other weapon perk without a description of its own " +
+			"shows the description of its base perk. " +
+			"An enhanced weapon frame without one shows only the in-game text. " +
+			"A line that starts with 'Might predate the final patch' names an update of Destiny 2 " +
+			"that changed the perk after Clarity last updated the description, so its numbers might be out of date. " +
+			"When the server cannot load the Clarity database, one line after the perk list gives the reason, " +
+			"and the perks show only the in-game text. " +
 			"A weapon also shows how the Aegis sheet (PvE) and the PvP sheet rate the roll of this copy. " +
 			"Each sheet gives a weapon a tier from S (best) to F and picks the perks that it wants in each perk column. " +
 			"The line of each sheet names the category that lists the weapon on the sheet, such as 'in HCs'. " +
