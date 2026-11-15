@@ -63,7 +63,8 @@
 # `examine`, `walk through`, and `look at`, so the guard skips those
 # phrases. `we will` before any other verb counts (`we will build the
 # binary`). The guard also skips `time will tell`, because
-# ProseClosingCliche reports `only time will tell`.
+# ProseClosingCliche reports that phrase, with or without `only` before
+# it.
 #
 # The Recommended ProseObligation reports `will want to` and `will need
 # to`, so this rule skips both. The Recommended ProseObligation skips
@@ -105,6 +106,7 @@ allows "Will the job retry?"
 allows "We will explore the scheduler."
 allows "We will walk through the setup."
 allows "Only time will tell."
+allows "Time will tell whether the API sticks."
 allows "The flag will be removed in the next release."
 allows "You will want to pin the version."
 allows "The caller will be able to cancel the request."

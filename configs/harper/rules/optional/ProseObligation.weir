@@ -22,9 +22,14 @@
 #
 # The guard before the phrase skips a word that states that no
 # obligation exists, such as a negation (`you do not have to restart`,
-# `you won't have to restart`) or `necessarily`. It skips `only`, which
-# states what suffices (`you only have to set the flag once`), and `to`,
-# which names a burden (`we don't want to have to update the test`).
+# `you won't have to restart`) or `necessarily`. It skips `only` and
+# `just`, which state what suffices (`you only have to set the flag
+# once`, `the application just has to reload the token`). It skips
+# `rarely`, which states that a step is rare (`you rarely have to
+# annotate types`), and `to`, which names a burden (`we don't want to
+# have to update the test`). In the measure.py corpus, `just` sits
+# before the phrase on 1 line, which states what suffices. `rarely` does
+# not sit before the phrase on any line.
 #
 # A modal verb is a helping verb that marks possibility, ability, or
 # obligation, such as `can`, `might`, or `must`. The guard skips a modal
@@ -43,12 +48,14 @@
 #
 # Measurement
 #
-# The rule hit 148 lines in the measure.py corpus, and 15 of 20 sampled
+# The rule hit 147 lines in the measure.py corpus, and 15 of 20 sampled
 # hits stated obligations that `must` or the present tense states more
-# clearly. The misfires stated a reason or a burden (`the amount of code
-# you have to write`), a hypothetical (`likely have to change if it were
-# modifying the list`), or a question (`do we have to worry`).
-expr hneg [not, never, don't, doesn't, didn't, shouldn't, won't, wouldn't, would, we'd, you'd, necessarily, might, may, could, to, only]
+# clearly. Of the five misfires, one stated a reason (`because you have
+# to remember two rules`), and one stated what suffices (`we have to
+# look in only one place`). One denied an obligation (`does not even
+# have to be running`), one used `have` for owning (`any automation you
+# have to use`), and one was a figure of speech (`I have to ask`).
+expr hneg [not, never, don't, doesn't, didn't, shouldn't, won't, wouldn't, would, we'd, you'd, necessarily, might, may, could, to, only, just, rarely]
 expr main <(!@hneg [has, have] to ![do, offer]), ([has, have] to)>
 let message "Vague obligation. Write `must` or `should` for what a person does, the present tense for what the system does, or open with `To` and the goal."
 let description "Flags `has to` and `have to`, which hide how strong an obligation is."
@@ -60,3 +67,5 @@ allows "You won't have to restart the node."
 allows "See what the release has to offer."
 allows "PVCs do not necessarily have to request a class."
 allows "You only have to set the flag once."
+allows "The application just has to reload the token."
+allows "You rarely have to annotate types."

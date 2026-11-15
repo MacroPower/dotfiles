@@ -15,7 +15,17 @@
 # `need to` carries a guard on the word before it, and `neg` lists the
 # words that the guard skips. Weir has no lookbehind, so the filter
 # consumes the word before `need` and narrows the finding back to the
-# phrase. A second guard skips `know` after the phrase.
+# phrase. A second guard skips `know` after the phrase. The guard on
+# `to` also drops `the hosts that the client connects to need to support
+# TLS`, an obligation that the rule misses.
+#
+# `going to need to` has a branch of its own, because the guard on `to`
+# skips it (`you are going to need to restart`). Its guard skips the
+# words of `neg` before `going`, so a negation still passes (`you are
+# not going to need to restart`). `neg` lists `aren't`, `isn't`,
+# `wasn't`, and `weren't` for this branch (`you aren't going to need to
+# restart`). The guard needs a word to consume, so a sentence that opens
+# with `Going to need to` passes.
 #
 # `it is necessary to`, `it is essential to`, `it is critical to`, and
 # `it is best to` hide the grade the same way. So do `are advised to`
@@ -39,6 +49,12 @@
 # is rare (`you rarely need to annotate types`). In the measure.py
 # corpus, `just` or `rarely` sits before `need to` on 9 lines, and each
 # of the 9 states what suffices or that a step is rare.
+#
+# The guard skips `to`, because `to need to` describes a situation
+# instead of a duty (`it is rare to need to call the method directly`,
+# `we do not want to need to update the test`). In the measure.py
+# corpus, `to` sits before `need to` on 1 line, which states that a step
+# is rare.
 #
 # A modal verb is a helping verb that marks possibility, ability, or
 # obligation, such as `can`, `might`, or `must`. The guard skips a modal
@@ -82,19 +98,18 @@
 #
 # Measurement
 #
-# The rule hit 831 lines in the measure.py corpus, and 15 of 20 sampled
+# The rule hit 830 lines in the measure.py corpus, and 15 of 20 sampled
 # hits stated obligations that `must`, `should`, the present tense, or a
-# `To` opener states more clearly. Of the five misfires, two described a
-# situation (`nodes that need to be upgraded to a Kubernetes release`),
-# and one predicted what the reader wants (`Often, you'll want to
-# combine two existing strings`). One stated that a step is rare (`It's
-# rare to need to call poll directly`), and one quoted license text
-# (`shall mean any form`).
+# `To` opener states more clearly. Of the five misfires, three described
+# a situation (`nodes that need to be upgraded to a Kubernetes
+# release`), and one predicted what the reader wants (`Often, you'll
+# want to combine two existing strings`). One quoted license text
+# (`shall mean the work of authorship`).
 expr need [need, needs]
-expr neg [not, never, don't, doesn't, didn't, won't, wouldn't, shouldn't, only, just, rarely, might, may, would, could, DET]
+expr neg [not, never, don't, doesn't, didn't, won't, wouldn't, shouldn't, aren't, isn't, wasn't, weren't, only, just, rarely, to, might, may, would, could, DET]
 expr wrap [expected, required, supposed]
 expr verbs [note, remember, understand, mention, realize, recognize]
-expr main [<(!@neg @need to !know), (@need to)>, ([(it is), it's] [necessary, essential, critical, best] to), ([is, are] [advised, encouraged] to), ([is, are] ADV [advised, encouraged] to), ([is, are] @wrap to), ([is, are] recommended), <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>, (it is advisable), (it is a good idea), ([I'll, you'll, we'll, they'll, he'll, she'll, it'll] want to), ([will, may, might] want to), (be sure to), (make sure to), (ought to), (must try to), shall]
+expr main [<(!@neg @need to !know), (@need to)>, <(!@neg going to @need to !know), (@need to)>, ([(it is), it's] [necessary, essential, critical, best] to), ([is, are] [advised, encouraged] to), ([is, are] ADV [advised, encouraged] to), ([is, are] @wrap to), ([is, are] recommended), <([(it is), it's] important to !@verbs), ([(it is), it's] important to)>, (it is advisable), (it is a good idea), ([I'll, you'll, we'll, they'll, he'll, she'll, it'll] want to), ([will, may, might] want to), (be sure to), (make sure to), (ought to), (must try to), shall]
 let message "Vague obligation. Write `must` or `should` for what a person does, the present tense for what the system does, or open with `To` and the goal."
 let description "Flags `needs to`, `is expected to`, `is recommended`, and other phrases that hide how strong an obligation is."
 let becomes ""
@@ -109,4 +124,6 @@ allows "You might need to restart the node."
 allows "You only need to set the flag once."
 allows "We just need to hand back control."
 allows "You rarely need to annotate types."
+allows "It is rare to need to call the method directly."
+allows "You are not going to need to restart the node."
 allows "Read the guide for everything you need to know."

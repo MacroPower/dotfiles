@@ -7,25 +7,38 @@
 # because the pattern cannot tell where a section ends, so it matches
 # each phrase anywhere in the text.
 #
+# Expression
+#
+# The entry for `only time will tell` puts `only` in a list of one word,
+# so check.py does not read it as a plain entry. check.py fails a plain
+# entry that holds a shorter one, because the shorter entry already
+# matches every sentence that the longer one matches. Here the longer
+# entry moves the start of the finding to `only`, so the fix deletes the
+# whole phrase instead of leaving `Only` behind.
+#
 # False Positives
 #
 # A phrase in the middle of a section still draws a finding (`The parser
-# reads one token, and if that's it, the parser returns`).
+# reads one token, and if that's it, the parser returns`). `time will
+# tell` also draws a finding where `time` counts a run (`the second time
+# will tell you which cache is stale`).
 #
 # Related Rules
 #
-# ProseFutureTense skips `time will tell`, so only this rule reports
-# `only time will tell`.
+# ProseFutureTense skips `time will tell`, so only this rule reports the
+# phrase, with or without `only` before it.
 #
 # Measurement
 #
 # The rule hit 2 lines in the measure.py corpus, and 2 of 2 sampled hits
 # said nothing. Each one was `that's it!` after a code block. One
 # opened the last paragraph of its section, and the other sat in the
-# middle of its section.
-expr main [(the future looks bright), (only time will tell), (exciting times ahead), (the possibilities are endless), (that's it), (you're all set), (you are all set), (say goodbye to)]
+# middle of its section. `time will tell` hit no lines in the corpus, so
+# no sample measures that phrase.
+expr main [(the future looks bright), (time will tell), ([only] time will tell), (exciting times ahead), (the possibilities are endless), (that's it), (you're all set), (you are all set), (say goodbye to)]
 let message "Closing cliche. Delete it and end on the last fact."
 let description "Flags cliches that end a section without saying anything."
 let becomes ""
 let kind "Style"
+test "Only time will tell whether the API sticks." " whether the API sticks."
 allows "The event log records every retry."

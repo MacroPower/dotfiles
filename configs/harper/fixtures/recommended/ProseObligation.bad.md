@@ -45,3 +45,5 @@ Users are encouraged to pin the version.
 Users are strongly encouraged to pin the version.
 
 Operators are advised to pin the version.
+
+You are going to need to restart the node.

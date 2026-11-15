@@ -11,3 +11,7 @@ PVCs do not necessarily have to request a class.
 See what the release has to offer.
 
 You only have to set the flag once.
+
+The application just has to reload the token.
+
+You rarely have to annotate types.

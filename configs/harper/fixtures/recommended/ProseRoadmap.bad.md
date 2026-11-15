@@ -15,3 +15,9 @@ Tables should soon be supported.
 Support for tables will be added.
 
 In the future, we plan to add a watch endpoint.
+
+Is it certain that support for anchors will be added?
+
+Footnotes (which will be added) need a parser change.
+
+Support for footnotes will be added

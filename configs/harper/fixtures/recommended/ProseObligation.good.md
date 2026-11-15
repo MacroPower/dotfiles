@@ -27,3 +27,13 @@ We just need to hand back control.
 You rarely need to annotate types.
 
 You will need to know the port.
+
+It is rare to need to call the method directly.
+
+We do not want to need to update the test.
+
+You are going to need to know the port.
+
+You are not going to need to restart the node.
+
+You aren't going to need to restart the node.

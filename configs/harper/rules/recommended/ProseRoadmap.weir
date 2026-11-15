@@ -23,11 +23,17 @@
 # stops at a comma, so `let scope "Sentence"` lets the opener branch
 # cross one.
 #
-# `will be added` skips `to` after it. That guard also drops `no new
-# features will be added to cgroup v1`, a promise the rule misses. `is
-# planned` skips `by` after it. A negated word after a space needs a
-# word to consume, so both branches have a twin for the end of a clause.
-# A clause is a subject and its verb, such as `the tests pass`. `to be
+# `will be added` skips `to` after it. A negated phrase reads ahead and
+# consumes one word, so the filter takes any word after `will be` unless
+# `added to` starts there, and it narrows the finding to `will be
+# added`. The filter does not need a word after `added`, so the phrase
+# counts before any punctuation mark and as the last words of a text
+# (`Which formats will be added?`). The guard also drops `no new
+# features will be added to cgroup v1`, a promise the rule misses.
+#
+# `is planned` skips `by` after it. A negated word after a space needs a
+# word to consume, so the branch has a twin for the end of a clause. A
+# clause is a subject and its verb, such as `the tests pass`. `to be
 # implemented` needs `yet`, `still`, or `remains` before it.
 #
 # False Positives
@@ -61,7 +67,7 @@
 # (`Going forward, let's add the package`).
 expr when [be, is, are, was, were, have, time, date, point, timestamp, deadline, cutoff, moment, instant, far, further, year, years]
 expr tutorial [whenever, when, if, you]
-expr main [(going forward), <(!@when in the future![,, ?]), (in the future)>, (in the future, !@tutorial), (in a future release), (in a future version), (in an upcoming release), (in upcoming releases), (in future releases), (in future versions), (will be added !to), (will be added[., ;, :, (,)]), (will be supported), (will be removed), (will be deprecated), ([is, are] planned !by), ([is, are] planned!( )), (on the roadmap), (coming soon), (not yet implemented), (not yet supported), ([yet, still, remains, remain] to be implemented), (will soon), (soon be)]
+expr main [(going forward), <(!@when in the future![,, ?]), (in the future)>, (in the future, !@tutorial), (in a future release), (in a future version), (in an upcoming release), (in upcoming releases), (in future releases), (in future versions), <(will be !(added to)), (will be added)>, (will be supported), (will be removed), (will be deprecated), ([is, are] planned !by), ([is, are] planned!( )), (on the roadmap), (coming soon), (not yet implemented), (not yet supported), ([yet, still, remains, remain] to be implemented), (will soon), (soon be)]
 let message "Roadmap promise. Describe the system as it ships, such as `the flag is deprecated`, and keep plans in the issue tracker."
 let description "Flags phrases that promise a change for a later version."
 let becomes ""
