@@ -200,7 +200,7 @@ func (r *Renderer) render(ctx context.Context, pageURL string, seed Seed) ([]byt
 	defer watchdog.stop()
 
 	b := browser.New(
-		browser.WithScriptEngine(&interruptEngine{
+		browser.WithScriptEngine(&scriptEngine{
 			inner:    sobekengine.DefaultEngine(),
 			register: watchdog.register,
 		}),

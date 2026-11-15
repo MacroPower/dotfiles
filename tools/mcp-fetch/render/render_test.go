@@ -111,6 +111,130 @@ func TestRenderExternalScript(t *testing.T) {
 		"subresource requests carry the configured User-Agent")
 }
 
+func TestRenderSourceMapComment(t *testing.T) {
+	t.Parallel()
+
+	// Each case fills the root element from a script that ends in a
+	// source map comment. No script text contains the filled element,
+	// so only a script that ran produces it.
+	const (
+		fill   = `document.getElementById("root").textContent = "Filled";`
+		filled = `<div id="root">Filled</div>`
+		mapRef = "\n//# sourceMappingURL=app.js.map"
+	)
+
+	tests := map[string]struct {
+		// scripts maps a path to the JavaScript that the server
+		// returns for it.
+		scripts map[string]string
+		body    string
+	}{
+		"external script": {
+			body:    `<script src="/static/app.js"></script>`,
+			scripts: map[string]string{"/static/app.js": fill + mapRef},
+		},
+		"external script with a final newline": {
+			body:    `<script src="/static/app.js"></script>`,
+			scripts: map[string]string{"/static/app.js": fill + mapRef + "\n"},
+		},
+		"external script with an absolute map URL": {
+			body: `<script src="/static/app.js"></script>`,
+			scripts: map[string]string{
+				"/static/app.js": fill + "\n//# sourceMappingURL=https://cdn.example.com/app.js.map",
+			},
+		},
+		"inline script": {
+			body: `<script>` + fill + mapRef + `</script>`,
+		},
+		"inline script with a file map URL": {
+			body: `<script>` + fill + "\n//# sourceMappingURL=file:///nonexistent/app.js.map</script>",
+		},
+		"inline script with a malformed data URL": {
+			body: `<script>` + fill + "\n//# sourceMappingURL=data:application/json;base64,!!!</script>",
+		},
+		"eval": {
+			body: `<script>eval("document.getElementById('root').textContent = 'Filled';` +
+				`\n//# sourceMappingURL=app.js.map");</script>`,
+		},
+		"Function constructor": {
+			body: `<script>new Function("document.getElementById('root').textContent = 'Filled';` +
+				`\n//# sourceMappingURL=app.js.map")();</script>`,
+		},
+		"module script": {
+			body:    `<script type="module" src="/static/app.js"></script>`,
+			scripts: map[string]string{"/static/app.js": fill + mapRef},
+		},
+		"imported module": {
+			body: `<script type="module" src="/static/app.js"></script>`,
+			scripts: map[string]string{
+				"/static/app.js": `import { text } from "./dep.js";` +
+					`document.getElementById("root").textContent = text;`,
+				"/static/dep.js": `export const text = "Filled";` + mapRef,
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var mapRequests atomic.Int64
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, ".map") {
+					mapRequests.Add(1)
+				}
+
+				http.NotFound(w, r)
+			})
+
+			for path, src := range tc.scripts {
+				mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "text/javascript")
+					mustWrite(w, []byte(src))
+				})
+			}
+
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+
+			seed := page(`<div id="root"></div>` + tc.body)
+
+			out, err := newRenderer(t).Render(t.Context(), srv.URL+pagePath, seed)
+			require.NoError(t, err)
+			assert.Contains(t, string(out), filled)
+			assert.Zero(t, mapRequests.Load(), "a render must not request a source map")
+		})
+	}
+}
+
+func TestRenderFetchReturnsScriptSource(t *testing.T) {
+	t.Parallel()
+
+	// The renderer changes only the copy of a script that the engine
+	// downloads to run. A page that reads the same script with fetch
+	// receives the bytes that the server sent.
+	src := `window.appLoaded = true;` + "\n//# sourceMappingURL=app.js.map"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/app.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		mustWrite(w, []byte(src))
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	seed := page(`<div id="root"></div><script src="/app.js"></script>` +
+		`<script>fetch("/app.js").then(r => r.text()).then(t => {` +
+		`document.getElementById("root").textContent = window.appLoaded + ":" + t.length; });</script>`)
+
+	out, err := newRenderer(t).Render(t.Context(), srv.URL+pagePath, seed)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), fmt.Sprintf(`<div id="root">true:%d</div>`, len(src)))
+}
+
 func TestRenderFetchDrivenContent(t *testing.T) {
 	t.Parallel()
 

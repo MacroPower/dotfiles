@@ -14,6 +14,11 @@
 // until the script engine yields, because sobek executions are not
 // context-interruptible.
 //
+// Scripts compile without their source maps. sobek fails a script
+// whose source map does not load, and it cannot load one over HTTP.
+// With source maps on, the `//# sourceMappingURL=` comment at the end
+// of a bundle stops the bundle from running.
+//
 // Every subresource request (scripts, fetch/XHR) is routed through a
 // policy handler that enforces URL rules and resource caps on top of
 // the shared HTTP client, so rendered pages obey the same network
