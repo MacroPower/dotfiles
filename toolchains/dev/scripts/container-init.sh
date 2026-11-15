@@ -1,5 +1,8 @@
 #!/bin/sh
 # Env-driven runtime init for the published shell image (see ssh.go).
+# The Dagger dev container starts each terminal session through it (see
+# wrapWithContainerInit in main.go), for the MCP server sync of the
+# /claude-state volume.
 #
 #   IDMAPPED_MOUNTS    One "path=uid:gid" per line. Bind-mounts each path
 #                      over itself with a UID/GID translation so writes by
@@ -36,10 +39,11 @@ home=/home/dev
 [ -x /usr/local/bin/relink-managed ] && /usr/local/bin/relink-managed || true
 
 # --- persistence volumes ------------------------------------------------
-# When the runtime mounts /commandhistory or /claude-state (named
-# volumes in compose deployments), redirect the session state that
-# should survive container recreates into them. Both are skipped when
-# the mounts are absent, so a plain "docker run" keeps stock behavior.
+# When the runtime mounts /commandhistory or /claude-state, redirect the
+# session state that should survive container recreates into them.
+# Compose deployments mount them as named volumes, and the Dagger dev
+# container mounts them as cache volumes. The script skips both when the
+# mounts are absent, so a plain "docker run" keeps stock behavior.
 if [ -d /commandhistory ]; then
   mkdir -p "$home/.local/share/fish"
   [ -e /commandhistory/fish_history ] || : >/commandhistory/fish_history
@@ -54,20 +58,24 @@ if [ -d /claude-state ]; then
   rm -f "$home/.claude.json"
   ln -sf /claude-state/claude.json "$home/.claude.json"
 
-  # Sync the MCP servers of the persisted claude.json with the image. The
-  # file survives image updates via /claude-state, but its
-  # .mcpServers[].command values embed /nix/store paths that go stale on a new
-  # image. relink-managed has already healed ~/.config/mcp/mcp.json to the
-  # current store, so run claude-json-sync, the tool that home/claude.nix's
+  # Sync the MCP servers of the persisted claude.json with the build. The
+  # file outlives image updates and rebuilds in /claude-state, but its
+  # .mcpServers[].command values embed /nix/store paths of the build that
+  # wrote it. ~/.config/mcp/mcp.json names the store paths of the current
+  # build. In the published shell image, relink-managed has healed the
+  # link against the current generation. The Dagger dev container mounts
+  # no volume over ~/.config/mcp, so its link comes from the activation
+  # of its own build. Run claude-json-sync, the tool that home/claude.nix's
   # syncClaudeJson runs at build time. The tool also removes each server
-  # that an earlier image declared and this image does not declare.
+  # that an earlier build declared and this build does not declare.
   #
   # The record of the servers that the tool wrote lives in /claude-state,
-  # because it describes the file there. The record in the image describes
-  # the image's own copy of claude.json. claude-json-sync replaces the file
-  # at the path that it gets, so pass the real /claude-state file and keep
-  # the ~/.claude.json redirect. `|| true` keeps a failed sync from aborting
-  # the entrypoint under `set -e` before the main process execs.
+  # because it describes the file there. The record under ~/.local/state
+  # describes the copy of claude.json that the activation wrote.
+  # claude-json-sync replaces the file at the path that it gets, so pass
+  # the real /claude-state file and keep the ~/.claude.json redirect.
+  # `|| true` keeps a failed sync from aborting the entrypoint under
+  # `set -e` before the main process execs.
   mcp_config="$home/.config/mcp/mcp.json"
   if command -v claude-json-sync >/dev/null 2>&1 && [ -f "$mcp_config" ]; then
     claude_real=$(readlink -f "$home/.claude.json" 2>/dev/null || echo /claude-state/claude.json)

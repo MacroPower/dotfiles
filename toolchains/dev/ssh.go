@@ -56,6 +56,8 @@ var (
 
 	// containerInitScript handles env-driven runtime setup that must
 	// happen before the main process starts, then execs its arguments.
+	// [Dev.DevBase] installs it as well, for the terminal sessions of
+	// the dev container.
 	//go:embed scripts/container-init.sh
 	containerInitScript string
 

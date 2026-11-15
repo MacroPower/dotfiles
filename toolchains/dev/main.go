@@ -244,6 +244,10 @@ func (m *Dev) cachedBuild(ctx context.Context, platform dagger.Platform) (*dagge
 // tools activated but no project source mounted. Used by integration
 // tests to verify tool availability without requiring an interactive
 // terminal.
+//
+// The container carries container-init. The terminal sessions of
+// [Dev.Shell] and [Dev.Sandbox] start through it, so each start syncs
+// the MCP servers of the persisted claude.json with the build.
 func (m *Dev) DevBase(
 	ctx context.Context,
 	// Kagi API key for the MCP server configuration. Injected as
@@ -251,7 +255,16 @@ func (m *Dev) DevBase(
 	// +optional
 	kagiApiKey *dagger.Secret,
 ) (*dagger.Container, error) {
-	return m.devBaseForPlatform(ctx, "", kagiApiKey)
+	ctr, err := m.devBaseForPlatform(ctx, "", kagiApiKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// The published sandbox image builds from devBaseForPlatform and
+	// drops the claude-state volume, so only this container gets
+	// container-init.
+	return ctr.WithNewFile(containerInitPath, containerInitScript,
+		dagger.ContainerWithNewFileOpts{Permissions: 0o755}), nil
 }
 
 // devBaseForPlatform is the platform-aware implementation behind
@@ -282,6 +295,10 @@ func (m *Dev) devBaseForPlatform(
 
 	// setup-dev: create fish history symlink, persist claude.json to
 	// cache volume, disable atuin systemd socket, create atuin data dir.
+	// The engine caches this exec until the build changes, so the script
+	// does not sync the MCP servers of the persisted claude.json.
+	// container-init syncs them at each terminal start (see
+	// wrapWithContainerInit).
 	setupScript := `set -e
 mkdir -p ` + homeDir + `/.local/share/fish
 ln -sf /commandhistory/fish_history ` + homeDir + `/.local/share/fish/fish_history
@@ -410,9 +427,11 @@ func (m *Dev) Sandbox(
 		cmd = []string{"fish"}
 	}
 
+	// container-init runs ahead of terrarium init, because root owns the
+	// claude-state volume and terrarium init drops to the non-root user.
 	initCmd := append([]string{"terrarium", "init", "--"}, wrapWithAtuinDaemon(cmd)...)
 	ctr = ctr.Terminal(dagger.ContainerTerminalOpts{
-		Cmd:                      initCmd,
+		Cmd:                      wrapWithContainerInit(initCmd),
 		InsecureRootCapabilities: true,
 	})
 
@@ -806,7 +825,7 @@ func (m *Dev) Shell(
 	}
 
 	devCtr = devCtr.Terminal(dagger.ContainerTerminalOpts{
-		Cmd:                           wrapWithAtuinDaemon(cmd),
+		Cmd:                           wrapWithContainerInit(wrapWithAtuinDaemon(cmd)),
 		ExperimentalPrivilegedNesting: true,
 	})
 
@@ -848,4 +867,22 @@ func applyDevConfig(
 // because the container lacks systemd to start the daemon service.
 func wrapWithAtuinDaemon(cmd []string) []string {
 	return append([]string{"sh", "-c", `atuin daemon >/dev/null 2>&1 & exec "$@"`, "--"}, cmd...)
+}
+
+// wrapWithContainerInit wraps a terminal command so that container-init
+// runs ahead of it (see scripts/container-init.sh). [Dev.DevBase]
+// installs container-init.
+//
+// The claude.json in the claude-state cache volume outlives the build
+// that wrote it. The commands of its MCP servers are Nix store paths of
+// that build. A later build deletes the store paths that it does not
+// reference, so those servers fail to start. container-init syncs the
+// servers with the build that the terminal runs, and removes each
+// server that the build stops declaring.
+//
+// The sync is part of the terminal command because the engine caches
+// each exec of a build that did not change. The terminal command runs
+// at every start.
+func wrapWithContainerInit(cmd []string) []string {
+	return append([]string{containerInitPath}, cmd...)
 }

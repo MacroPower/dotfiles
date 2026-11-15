@@ -102,6 +102,7 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestDevBaseEnv(ctx) })
 	eg.Go(func() error { return m.TestDevBaseShellConfig(ctx) })
 	eg.Go(func() error { return m.TestDevBaseNoBuildArtifacts(ctx) })
+	eg.Go(func() error { return m.TestDevBaseMcpSync(ctx) })
 	eg.Go(func() error { return m.TestSandboxBase(ctx) })
 	eg.Go(func() error { return m.TestSandboxEgressRules(ctx) })
 	eg.Go(func() error { return m.TestSandboxAdditionalPorts(ctx) })
@@ -241,6 +242,85 @@ func (m *Tests) TestDevBaseNoBuildArtifacts(ctx context.Context) error {
 	_, err := ctr.WithExec([]string{"test", "!", "-e", "/dotfiles"}).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("/dotfiles should not exist in dev container: %w", err)
+	}
+
+	return nil
+}
+
+// mcpSyncScript checks that container-init syncs the MCP servers of a
+// persisted claude.json with the container that runs it (see
+// toolchains/dev/scripts/container-init.sh). It seeds /claude-state with
+// the file of an older build. That file holds a server that the
+// container does not declare and a server from `claude mcp add`, and
+// /claude-state holds no record. The first container-init run must add
+// every server of the container, keep the user's server, and remove the
+// older build's server. The second run must remove a server that the
+// record names and the container does not declare.
+//
+// The fake store hash stands in for a server of an older build, whose
+// store path does not exist after an update.
+const mcpSyncScript = `set -e
+servers="$HOME/.config/mcp/mcp.json"
+state=/claude-state/claude.json
+record=/claude-state/mcp-servers.json
+fail() { echo "$1"; exit 1; }
+
+[ -f "$servers" ] || fail "the container declares no MCP server"
+
+# Simulate a volume from an older build: a server that only the older
+# build declared, a server from claude mcp add, and no record.
+mkdir -p /claude-state
+jq -n '{mcpServers: {
+  dropped: {type: "stdio", command: "/nix/store/00000000000000000000000000000000-dropped-mcp/bin/dropped-mcp"},
+  mine: {type: "stdio", command: "npx", args: ["mine-mcp"]}
+}}' >"$state"
+
+container-init true
+
+[ "$(readlink -f "$HOME/.claude.json")" = "$state" ] ||
+  fail "~/.claude.json does not resolve to the volume"
+jq -e '.mcpServers | has("dropped") | not' "$state" >/dev/null ||
+  fail "the server of the older build is still in the file"
+jq -e '.mcpServers.mine.command == "npx"' "$state" >/dev/null ||
+  fail "the sync changed the server from claude mcp add"
+jq -e --slurpfile declared "$servers" '.mcpServers | del(.mine) == $declared[0].mcpServers' "$state" >/dev/null ||
+  fail "the file does not hold the servers of the container"
+jq -e --slurpfile declared "$servers" '. == ($declared[0].mcpServers | keys)' "$record" >/dev/null ||
+  fail "the record does not name the servers of the container"
+
+# Add a server that the record names and the container does not
+# declare. Its command is not in the Nix store, so only the record
+# marks it.
+jq '.mcpServers.remote = {type: "http", url: "https://remote.example/mcp"}' "$state" >"$state.next"
+mv "$state.next" "$state"
+jq '. + ["remote"]' "$record" >"$record.next"
+mv "$record.next" "$record"
+
+container-init true
+
+jq -e '.mcpServers | has("remote") | not' "$state" >/dev/null ||
+  fail "a server that the record names is still in the file"
+jq -e '.mcpServers | has("mine")' "$state" >/dev/null ||
+  fail "the second sync removed the server from claude mcp add"
+echo OK
+`
+
+// TestDevBaseMcpSync verifies that the container-init of [Dev.DevBase]
+// syncs the MCP servers of a persisted claude.json with the build (see
+// mcpSyncScript). The terminal sessions of the dev container start
+// through container-init, so each start runs the sync.
+//
+// +check
+func (m *Tests) TestDevBaseMcpSync(ctx context.Context) error {
+	// Without the mount, /claude-state is a directory of this container.
+	// The test therefore leaves the claude.json that the dev container
+	// persists in the cache volume as it is.
+	_, err := dag.Dev().DevBase().
+		WithoutMount("/claude-state").
+		WithExec([]string{"sh", "-c", mcpSyncScript}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("container-init MCP sync: %w", err)
 	}
 
 	return nil
@@ -1673,71 +1753,18 @@ echo OK
 	return nil
 }
 
-// TestShellMcpSync verifies that container-init syncs the MCP servers of
-// a persisted claude.json with the image (see
-// toolchains/dev/scripts/container-init.sh). It seeds /claude-state with
-// the file of an older image. That file holds a server that the image
-// does not declare and a server from `claude mcp add`, and the volume
-// holds no record. The first container-init run must add every server
-// of the image, keep the user's server, and remove the older image's
-// server. The second run must remove a server that the record names
-// and the image does not declare.
+// TestShellMcpSync verifies that the container-init of the published
+// shell image syncs the MCP servers of a persisted claude.json with the
+// image (see mcpSyncScript).
 //
 // Not annotated with +check because it builds the full shell image
 // (snapshot + strip). Run manually:
 //
 //	dagger call -m toolchains/dev/tests test-shell-mcp-sync
 func (m *Tests) TestShellMcpSync(ctx context.Context) error {
-	// The fake store hash stands in for a server of an older image,
-	// whose store path does not exist after an update.
-	const script = `set -e
-servers="$HOME/.config/mcp/mcp.json"
-state=/claude-state/claude.json
-record=/claude-state/mcp-servers.json
-fail() { echo "$1"; exit 1; }
-
-[ -f "$servers" ] || fail "the image declares no MCP server"
-
-# Simulate a volume from an older image: a server that only the older
-# image declared, a server from claude mcp add, and no record.
-mkdir -p /claude-state
-jq -n '{mcpServers: {
-  dropped: {type: "stdio", command: "/nix/store/00000000000000000000000000000000-dropped-mcp/bin/dropped-mcp"},
-  mine: {type: "stdio", command: "npx", args: ["mine-mcp"]}
-}}' >"$state"
-
-container-init true
-
-[ "$(readlink -f "$HOME/.claude.json")" = "$state" ] ||
-  fail "~/.claude.json does not resolve to the volume"
-jq -e '.mcpServers | has("dropped") | not' "$state" >/dev/null ||
-  fail "the server of the older image is still in the file"
-jq -e '.mcpServers.mine.command == "npx"' "$state" >/dev/null ||
-  fail "the sync changed the server from claude mcp add"
-jq -e --slurpfile image "$servers" '.mcpServers | del(.mine) == $image[0].mcpServers' "$state" >/dev/null ||
-  fail "the file does not hold the servers of the image"
-jq -e --slurpfile image "$servers" '. == ($image[0].mcpServers | keys)' "$record" >/dev/null ||
-  fail "the record does not name the servers of the image"
-
-# Add a server that the record names and the image does not declare.
-# Its command is not in the Nix store, so only the record marks it.
-jq '.mcpServers.remote = {type: "http", url: "https://remote.example/mcp"}' "$state" >"$state.next"
-mv "$state.next" "$state"
-jq '. + ["remote"]' "$record" >"$record.next"
-mv "$record.next" "$record"
-
-container-init true
-
-jq -e '.mcpServers | has("remote") | not' "$state" >/dev/null ||
-  fail "a server that the record names is still in the file"
-jq -e '.mcpServers | has("mine")' "$state" >/dev/null ||
-  fail "the second sync removed the server from claude mcp add"
-echo OK
-`
-
 	_, err := dag.Dev().BuildShell().
 		WithEnvVariable("HOME", homeDir).
-		WithExec([]string{"sh", "-c", script}).
+		WithExec([]string{"sh", "-c", mcpSyncScript}).
 		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("container-init MCP sync: %w", err)

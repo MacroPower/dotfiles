@@ -4896,7 +4896,8 @@ in
         workmuxWrapped
         pkgs.git-surgeon
         pkgs.slugify
-        # container-init of the published shell image calls it from PATH
+        # container-init calls it from PATH in the published shell image
+        # and in the Dagger dev container
         # (toolchains/dev/scripts/container-init.sh).
         pkgs.claude-json-sync
       ]
