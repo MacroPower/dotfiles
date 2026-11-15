@@ -153,6 +153,72 @@ func TestSetPerk(t *testing.T) {
 			wantTo:     "Rampage",
 			wantActive: []string{"Rampage", "Firefly"},
 		},
+		"perk and replace with digits for letters": {
+			id:         "1001",
+			perk:       "Rampag3",
+			replace:    "EXPL0S1VE PAYL0AD",
+			want:       []string{"insert 903 into socket 0 of 1001 on c1"},
+			wantFrom:   "Explosive Payload",
+			wantTo:     "Rampage",
+			wantActive: []string{"Rampage", "Firefly"},
+		},
+		"active perk with a digit for a letter sends no request": {
+			id:         "1001",
+			perk:       "F1refly",
+			wantFrom:   "Firefly",
+			wantTo:     "Firefly",
+			wantActive: []string{"Explosive Payload", "Firefly"},
+		},
+		"perk in letters before a perk with a digit": {
+			id: "1001",
+			// The second socket can swap to a perk that differs from Rampage
+			// only in a digit that stands for a letter.
+			setup: func(item *Item) {
+				item.Perks[1].Options = []Plug{{Name: "Rampag3", Type: "Trait", Hash: 950}}
+			},
+			perk:       "rampage",
+			want:       []string{"insert 903 into socket 0 of 1001 on c1"},
+			wantFrom:   "Explosive Payload",
+			wantTo:     "Rampage",
+			wantActive: []string{"Rampage", "Firefly"},
+		},
+		"perk with a digit before a perk in letters": {
+			id: "1001",
+			setup: func(item *Item) {
+				item.Perks[1].Options = []Plug{{Name: "Rampag3", Type: "Trait", Hash: 950}}
+				item.Perks[1].Socket = 3
+			},
+			perk:       "RAMPAG3",
+			want:       []string{"insert 950 into socket 3 of 1001 on c1"},
+			wantFrom:   "Firefly",
+			wantTo:     "Rampag3",
+			wantActive: []string{"Explosive Payload", "Rampag3"},
+		},
+		"perks that differ only in a digit and a letter": {
+			id: "1001",
+			setup: func(item *Item) {
+				item.Perks[1].Options = []Plug{{Name: "Rampag3", Type: "Trait", Hash: 950}}
+			},
+			perk:       "rampa9e",
+			err:        ErrPerk,
+			wantErr:    "2 sockets of Fatebringer can swap to Rampage, so pass replace with the active perk of one: Explosive Payload, Firefly",
+			wantActive: []string{"Explosive Payload", "Firefly"},
+		},
+		"replace in letters before an active perk with a digit": {
+			id: "1001",
+			// Both sockets can swap to Rampage, and their active perks differ
+			// only in a digit that stands for a letter.
+			setup: func(item *Item) {
+				item.Perks[1].Plug = Plug{Name: "Expl0sive Payload", Type: "Trait", Hash: 951}
+				item.Perks[1].Options = []Plug{plugRampage}
+			},
+			perk:       "Rampage",
+			replace:    "explosive payload",
+			want:       []string{"insert 903 into socket 0 of 1001 on c1"},
+			wantFrom:   "Explosive Payload",
+			wantTo:     "Rampage",
+			wantActive: []string{"Rampage", "Expl0sive Payload"},
+		},
 		"active perk sends no request": {
 			id:         "1001",
 			perk:       "EXPLOSIVE PAYLOAD",

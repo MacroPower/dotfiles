@@ -77,6 +77,64 @@ func TestResolveSlot(t *testing.T) {
 			name: "power",
 			want: "Power",
 		},
+		"full name with a digit for a letter": {name: "h3lmet", want: "Helmet"},
+		"substring with digits for letters":   {name: "K1N3T", want: "Kinetic Weapons"},
+		"full name in letters wins over a name with a digit": {
+			edit: func(s *Snapshot) {
+				s.Buckets = []Bucket{
+					{Name: "P0wer", Hash: bungie.BucketPower, Capacity: 10},
+					{Name: "Power", Hash: bungie.BucketHelmet, Capacity: 10},
+				}
+				s.Items = []*Item{
+					{InstanceID: "1", Kind: KindWeapon, Bucket: bungie.BucketPower},
+					{InstanceID: "2", Kind: KindArmor, Bucket: bungie.BucketHelmet},
+				}
+			},
+			name: "power",
+			want: "Power",
+		},
+		"substring in letters wins over a name with a digit": {
+			edit: func(s *Snapshot) {
+				s.Buckets = []Bucket{
+					{Name: "P0wer Weapons", Hash: bungie.BucketPower, Capacity: 10},
+					{Name: "Power Armor", Hash: bungie.BucketHelmet, Capacity: 10},
+				}
+				s.Items = []*Item{
+					{InstanceID: "1", Kind: KindWeapon, Bucket: bungie.BucketPower},
+					{InstanceID: "2", Kind: KindArmor, Bucket: bungie.BucketHelmet},
+				}
+			},
+			name: "power",
+			want: "Power Armor",
+		},
+		"substring in letters wins over a full name with a digit": {
+			edit: func(s *Snapshot) {
+				s.Buckets = []Bucket{
+					{Name: "P0wer", Hash: bungie.BucketPower, Capacity: 10},
+					{Name: "Power Weapons", Hash: bungie.BucketHelmet, Capacity: 10},
+				}
+				s.Items = []*Item{
+					{InstanceID: "1", Kind: KindWeapon, Bucket: bungie.BucketPower},
+					{InstanceID: "2", Kind: KindArmor, Bucket: bungie.BucketHelmet},
+				}
+			},
+			name: "power",
+			want: "Power Weapons",
+		},
+		"several matches that differ in a digit and a letter": {
+			edit: func(s *Snapshot) {
+				s.Buckets = []Bucket{
+					{Name: "P0wer Weapons", Hash: bungie.BucketPower, Capacity: 10},
+					{Name: "Pow3r Armor", Hash: bungie.BucketHelmet, Capacity: 10},
+				}
+				s.Items = []*Item{
+					{InstanceID: "1", Kind: KindWeapon, Bucket: bungie.BucketPower},
+					{InstanceID: "2", Kind: KindArmor, Bucket: bungie.BucketHelmet},
+				}
+			},
+			name: "power",
+			err:  `invalid input: slot "power" matches P0wer Weapons, Pow3r Armor, so pass more of the name`,
+		},
 		"several matches": {
 			name: "weapons",
 			err:  `invalid input: slot "weapons" matches Kinetic Weapons, Power Weapons, so pass more of the name`,

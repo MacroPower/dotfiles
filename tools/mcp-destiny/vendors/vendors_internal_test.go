@@ -181,12 +181,122 @@ func TestSelect(t *testing.T) {
 		{Name: "X\u00fbr Prime", Hash: 4},
 	}
 
+	// The game names two vendors M3-D1 Accessory Pack and S733k Pack. Each
+	// writes digits in place of letters.
+	digits := []Vendor{
+		{Name: "M3-D1 Accessory Pack", Hash: 1},
+		{Name: "S733k Pack", Hash: 2},
+		{Name: "Saint-14", Hash: 3},
+	}
+
+	// The second and the third vendor write letters where the first one
+	// writes digits.
+	rivals := []Vendor{
+		{Name: "M3-D1 Accessory Pack", Hash: 1},
+		{Name: "Me-Di Accessory Pack", Hash: 2},
+		{Name: "Me-Di Accessory Pack Prime", Hash: 3},
+	}
+
+	// The second and the third vendor write a letter where the first one
+	// writes 7. The game writes the 7 of S733k Pack for l.
+	sevens := []Vendor{
+		{Name: "S733k Pack", Hash: 2},
+		{Name: "Sleek Pack", Hash: 3},
+		{Name: "Sveek Pack", Hash: 4},
+	}
+
 	tests := map[string]struct {
 		arg     string
 		err     string
 		vendors []Vendor
 		want    uint32
 	}{
+		"letters for the digits of a name": {
+			arg:     "me-di accessory pack",
+			vendors: digits,
+			want:    1,
+		},
+		"letters for the digits of a part of a name": {
+			arg:     "me-di",
+			vendors: digits,
+			want:    1,
+		},
+		"digits as the name writes them": {
+			arg:     "m3-d1",
+			vendors: digits,
+			want:    1,
+		},
+		"letters for some digits of a name": {
+			arg:     "s7eek pack",
+			vendors: digits,
+			want:    2,
+		},
+		"digits for the letters of a name": {
+			arg:     "5a1nt-14",
+			vendors: digits,
+			want:    3,
+		},
+		"name in letters before a name with digits": {
+			arg:     "me-di accessory pack",
+			vendors: rivals,
+			want:    2,
+		},
+		"name with digits before a name in letters": {
+			arg:     "m3-d1 accessory pack",
+			vendors: rivals,
+			want:    1,
+		},
+		"part of a name in letters before a name with digits": {
+			arg:     "me-di acc",
+			vendors: rivals,
+			err: `unknown vendor: "me-di acc" matches 2 vendors, so pass a vendor hash, ` +
+				`such as Me-Di Accessory Pack (2), Me-Di Accessory Pack Prime (3)`,
+		},
+		"part of a name with digits before a name in letters": {
+			arg:     "m3-d1 acc",
+			vendors: rivals,
+			want:    1,
+		},
+		"names that differ only in digits and letters": {
+			arg:     "m3-di accessory pack",
+			vendors: rivals,
+			err: `unknown vendor: "m3-di accessory pack" matches 2 vendors, so pass a vendor hash, ` +
+				`such as M3-D1 Accessory Pack (1), Me-Di Accessory Pack (2)`,
+		},
+		"letters for a seven that stands for l": {
+			arg:     "sleek pack",
+			vendors: digits,
+			want:    2,
+		},
+		"letters for a part with a seven that stands for l": {
+			arg:     "sleek",
+			vendors: digits,
+			want:    2,
+		},
+		"name in letters before a name with a seven for l": {
+			arg:     "sleek pack",
+			vendors: sevens,
+			want:    3,
+		},
+		"part of a name in letters before a whole name with digits": {
+			arg: "sleek pack",
+			vendors: []Vendor{
+				{Name: "S733k Pack", Hash: 2},
+				{Name: "Sleek Pack Prime", Hash: 5},
+			},
+			want: 5,
+		},
+		"seven that reads as l and as v": {
+			arg:     "s7eek pack",
+			vendors: sevens[1:],
+			err: `unknown vendor: "s7eek pack" matches 2 vendors, so pass a vendor hash, ` +
+				`such as Sleek Pack (3), Sveek Pack (4)`,
+		},
+		"letters that no name writes": {
+			arg:     "slick pack",
+			vendors: digits,
+			err:     `unknown vendor: no vendor of Hunter has a name that contains "slick pack"`,
+		},
 		"exact name before a name in another letter case": {
 			arg:  "Ada-1",
 			want: 1,

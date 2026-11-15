@@ -13,12 +13,14 @@ import (
 // ResolveSlot returns the bucket that a slot name selects. The candidates
 // are the buckets of [Snapshot.Buckets] that each character has and that
 // hold at least one weapon or armor piece. ResolveSlot trims the spaces
-// around name, and it compares each bucket name with name after
-// [fold.Name] folds both. A name that folds to the empty text, such as
-// "^", selects no slot. A candidate whose full name equals name wins.
-// Otherwise the one candidate whose name contains name wins. Every other
-// outcome returns an [ErrInvalidInput] error, which names the candidates
-// or the matches when there are any.
+// around name. It then applies the folds of [fold.Passes] in order, and
+// it compares each bucket name with name after the fold folds both. A
+// candidate whose full name equals name wins. Otherwise the one candidate
+// whose name contains name wins, and more than one such candidate returns
+// an error. The next fold applies only when no candidate matches. A name
+// that folds to the empty text, such as "^", selects no slot. Each error
+// wraps [ErrInvalidInput], and it names the candidates or the matches
+// when there are any.
 func (s *Snapshot) ResolveSlot(name string) (Bucket, error) {
 	candidates := s.gearBuckets()
 	if len(candidates) == 0 {
@@ -30,31 +32,36 @@ func (s *Snapshot) ResolveSlot(name string) (Bucket, error) {
 		return Bucket{}, fmt.Errorf("%w: pass a slot, one of %s", ErrInvalidInput, bucketNames(candidates))
 	}
 
-	var matches []Bucket
+	for _, f := range fold.Passes() {
+		text := f.Text(name)
 
-	for _, b := range candidates {
-		if fold.Equal(b.Name, name) {
-			return b, nil
+		var matches []Bucket
+
+		for _, b := range candidates {
+			if text.Equal(b.Name) {
+				return b, nil
+			}
+
+			if text.In(b.Name) {
+				matches = append(matches, b)
+			}
 		}
 
-		if fold.Contains(b.Name, name) {
-			matches = append(matches, b)
+		switch len(matches) {
+		case 0:
+			continue
+		case 1:
+			return matches[0], nil
 		}
-	}
 
-	switch len(matches) {
-	case 0:
 		return Bucket{}, fmt.Errorf(
-			"%w: slot %q matches no weapon or armor slot, so pass one of %s",
-			ErrInvalidInput, name, bucketNames(candidates),
+			"%w: slot %q matches %s, so pass more of the name", ErrInvalidInput, name, bucketNames(matches),
 		)
-
-	case 1:
-		return matches[0], nil
 	}
 
 	return Bucket{}, fmt.Errorf(
-		"%w: slot %q matches %s, so pass more of the name", ErrInvalidInput, name, bucketNames(matches),
+		"%w: slot %q matches no weapon or armor slot, so pass one of %s",
+		ErrInvalidInput, name, bucketNames(candidates),
 	)
 }
 

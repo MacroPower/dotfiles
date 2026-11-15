@@ -609,6 +609,19 @@ func TestListItems(t *testing.T) {
 			in:   ListItemsInput{Query: "thorn"},
 			want: "No items match.",
 		},
+		"query with digits for letters": {
+			in:   ListItemsInput{Query: "9jallarh0rn"},
+			want: strings.Join([]string{"Items 1-1 of 1.", "", plainHeader, row1002}, "\n"),
+		},
+		"stat with a digit for a letter": {
+			in: ListItemsInput{Stat: "H3alth", MinStat: 30},
+			want: strings.Join([]string{
+				"Items 1-1 of 1.",
+				"",
+				"instance id | name | type | tier | power | stat total | h3alth | location | tag | flags",
+				"1004 | Celestial Nighthawk | Helmet | Exotic | 2000 | 55 | 30 | Hunter (equipped) |  | ",
+			}, "\n"),
+		},
 		"offset past the end": {
 			in:   ListItemsInput{Offset: 50},
 			want: "Offset 6 is past the last of 6 matching items.",
@@ -3651,6 +3664,11 @@ func TestListVendors(t *testing.T) {
 			paths: []string{bungietest.PathHunterVendors},
 			want:  banshee,
 		},
+		"vendor by its name with digits for letters": {
+			in:    ListVendorsInput{Vendor: "Ban5h33-44"},
+			paths: []string{bungietest.PathHunterVendors},
+			want:  banshee,
+		},
 		"vendor by hash": {
 			in:    ListVendorsInput{Vendor: "3361454721"},
 			paths: []string{bungietest.PathHunterVendors},
@@ -3917,6 +3935,11 @@ func TestListActivities(t *testing.T) {
 		},
 		"query matches a name": {
 			in:      ListActivitiesInput{Query: "coil"},
+			fetches: 1,
+			want:    strings.Join([]string{intro(1, 1, 1, "Hunter"), "", header, coil}, "\n"),
+		},
+		"query matches a name with digits for letters": {
+			in:      ListActivitiesInput{Query: "c01l"},
 			fetches: 1,
 			want:    strings.Join([]string{intro(1, 1, 1, "Hunter"), "", header, coil}, "\n"),
 		},
@@ -6447,6 +6470,67 @@ func TestPerkChangeFoldsNames(t *testing.T) {
 		"accent marks only": {
 			perk: "^",
 			err:  "invalid input: perk \"^\" is not a weapon trait",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := perkChange(PerkPreferenceInput{Mode: "pve", Perk: tc.perk, Stance: "up"}, traits)
+			if tc.err != "" {
+				require.ErrorIs(t, err, ErrInvalidInput)
+				require.EqualError(t, err, tc.err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, dvm.PerkPreference{Mode: "pve", Perk: tc.want, Stance: "up"}, got)
+		})
+	}
+}
+
+func TestPerkChangeReadsDigitsAsLetters(t *testing.T) {
+	t.Parallel()
+
+	// The trait of item 4 differs from Kill Clip only in a digit that
+	// stands for a letter.
+	defs := &definitions.Defs{Items: map[uint32]definitions.ItemDef{
+		1: {Name: "Déjà Vu", TypeName: "Trait"},
+		2: {Name: "Kill Clip", TypeName: "Trait"},
+		3: {Name: "Kill Clip Enhanced", TypeName: "Enhanced Trait"},
+		4: {Name: "K1ll Clip", TypeName: "Trait"},
+		5: {Name: "Rampage", TypeName: "Trait"},
+	}}
+	traits := defs.TraitNames()
+
+	tests := map[string]struct {
+		perk string
+		want string
+		err  string
+	}{
+		"digit for a letter":                {perk: "rampag3", want: "Rampage"},
+		"digits for letters and no accents": {perk: "D3JA VU", want: "Déjà Vu"},
+		"enhanced suffix with a digit":      {perk: "Rampage 3nhanced", want: "Rampage"},
+		"name in letters before a digit":    {perk: "kill clip", want: "Kill Clip"},
+		"name with a digit before letters":  {perk: "K1LL CLIP", want: "K1ll Clip"},
+		"enhanced name with a digit in it":  {perk: "k1ll clip enhanced", want: "K1ll Clip"},
+		"enhanced suffix with a digit on two such traits": {
+			perk: "kill clip 3nhanced",
+			err:  "invalid input: perk \"kill clip 3nhanced\" is not a weapon trait. Similar traits: K1ll Clip, Kill Clip",
+		},
+		"traits that differ only in a digit and a letter": {
+			perk: "kill cl1p",
+			err:  "invalid input: perk \"kill cl1p\" is not a weapon trait. Similar traits: K1ll Clip, Kill Clip",
+		},
+		"part of a name with a digit": {
+			perk: "rampa9",
+			err:  "invalid input: perk \"rampa9\" is not a weapon trait. Similar traits: Rampage",
+		},
+		"another digit": {
+			perk: "rampag2",
+			err:  "invalid input: perk \"rampag2\" is not a weapon trait",
 		},
 	}
 

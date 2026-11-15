@@ -63,10 +63,18 @@
 // A decimal argument selects the vendor with that hash. Any other argument
 // selects by name.
 // An exact name ranks first. The other ranks fold the name and the
-// argument before they compare them. The fold removes letter case and
-// accents, so the argument xur matches the name Xûr. A name that equals
-// the argument after the fold ranks second, and a name that contains the
-// argument after the fold ranks third.
+// argument before they compare them. The first fold removes letter case
+// and accents, so the argument xur matches the name Xûr. A name that
+// equals the argument after that fold ranks second, and a name that
+// contains the argument after that fold ranks third.
+//
+// The second fold also reads a digit that a name writes in place of a
+// letter as that letter, as [fold.Lookalike] describes. The argument me-di
+// therefore matches the name M3-D1 Accessory Pack. A name that equals the
+// argument after the second fold ranks fourth, and a name that contains
+// the argument after it ranks fifth. An argument that matches a name
+// after the first fold therefore never competes with a name that matches
+// only after the second.
 //
 // The selection takes the first rank with a match. When that rank holds
 // more than one vendor, the selection returns an error that names some of

@@ -70,10 +70,13 @@
 //
 // The text fields match without regard to letter case. The query, the
 // slot, the perk, and the stat match names, and they fold each name and
-// the text with [fold.Name] before they compare them. They therefore also
-// match without regard to accents. The query, the slot, and the perk match
-// a part of the name. A filter that names a stat must name a stat that an
-// item of the snapshot has.
+// the text before they compare them. They therefore also match without
+// regard to accents. The query, the slot, and the perk match a part of
+// the name after [fold.Lookalike] folds both. That fold reads a digit
+// that a name writes in place of a letter as that letter, so the query
+// stomp matches St0mp-EE5. The stat matches the full name of a stat, as
+// [*Item.StatValue] compares names. A filter that names a stat must name
+// a stat that an item of the snapshot has.
 //
 // The default order is by name and then by instance id. Bungie issues
 // ascending instance ids, so the id order is also the order in which the
@@ -92,6 +95,12 @@
 // both comes next, so the text can differ in letter case and in accents.
 // Otherwise a group matches when its name contains the text after the same
 // fold, or when the full name of one of its copies contains the text. The
-// one such group wins. A name that selects no group or more than one
-// returns an error that wraps [ErrUnknownWeapon].
+// one such group wins.
+//
+// When no group matches after [fold.Name], the selection runs the same
+// tests after [fold.Lookalike] folds each text. That fold also reads a
+// digit that a name writes in place of a letter as that letter. A text
+// that matches a group after [fold.Name] therefore never competes with a
+// group that matches only after [fold.Lookalike]. A name that selects no
+// group or more than one returns an error that wraps [ErrUnknownWeapon].
 package inventory

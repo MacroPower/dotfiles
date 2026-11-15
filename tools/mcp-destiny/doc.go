@@ -127,6 +127,43 @@
 // cases such as a copy older than 30 seconds or a call that sets refresh.
 // Every get_stats call looks up each such item again.
 //
+// # Name Lookups
+//
+// Several tools take a name that the user types, or a part of one. The
+// text names an item, a slot, a perk, a stat, a weapon, a vendor, an
+// activity, a loadout name, or a weapon trait. The tools are list_items,
+// compare_duplicates, list_vendors, list_activities, stage_junk, set_perk,
+// save_loadout, and set_perk_preferences. Each tool folds the name that
+// it searches and the text before it compares them. The fold removes
+// letter case and diacritics, so the text xur matches the name Xûr.
+//
+// Some names of the game write a digit in place of a letter, such as
+// St0mp-EE5, M3-D1 Shell, and Se7enth. The fold of these tools therefore
+// also reads each such digit as its letter. It reads 0 as o, 1 as i, 3 as
+// e, 5 as s, and 9 as g. It reads 7 both as v and as l, because Se7enth
+// writes 7 for v and S733k Pack writes it for l. The texts stomp and st0mp
+// both match St0mp-EE5, and the text sleek matches S733k Pack. The fold
+// keeps every other character. The text stomp-ees therefore matches the
+// whole name St0mp-EE5, and the text stompees matches no part of it.
+//
+// The fold reads a digit as a letter wherever the digit stands, also in a
+// number. An input that filters a list keeps every name that matches after
+// the fold. Those inputs are the query, the slot, and the perk of
+// list_items and the query of list_activities. The query ooo therefore
+// matches 1000 Yard Stare, and the query 10 matches a name that contains
+// the letters io.
+//
+// Every other input picks one name, such as the vendor of list_vendors and
+// the name of compare_duplicates. Such an input first compares the names
+// with each digit as it stands. It reads the digits as letters only when
+// that comparison finds no name. A name that matches with its digits as
+// they stand therefore never competes with a name that matches only with
+// its digits as letters.
+//
+// The name: and exactname: filters of the autotag rule queries keep every
+// digit, as the web client does. The Autotag Preview section describes
+// them.
+//
 // # Perk Descriptions
 //
 // Only the get_item tool shows the descriptions of perks, and it shows
@@ -661,8 +698,10 @@
 // The name filters fold the item name and the text before they compare
 // them, as the web client does. The fold removes letter case and
 // diacritics, so name:deja matches a name that writes deja with accents.
-// Each other tool that looks up a name folds the name in the same way,
-// such as list_items with a query and list_vendors with a vendor.
+// It keeps every digit, so name:stomp does not match St0mp-EE5. The other
+// tools that look up a name also read such a digit as a letter, as the
+// Name Lookups section describes. The preview shows what a rule matches
+// in the web client, so the name filters keep the fold of the web client.
 // The filters also read the curly quotes U+2018 through U+201A and U+201C
 // through U+201E in the name as ASCII quotes, as the parser reads them in
 // the query. A straight apostrophe in the text therefore matches a curly

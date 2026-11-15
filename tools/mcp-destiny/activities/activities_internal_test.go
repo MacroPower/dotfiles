@@ -137,6 +137,14 @@ func TestFilter(t *testing.T) {
 		{Hash: 2, Name: "Pit", Type: "Strike", Location: "Côte", Focus: &Loot{Name: "Mataiodoxía"}},
 		{Hash: 3, Name: "Control", Type: "The Crucible", Loot: []Loot{{Name: "Xûr Engram"}}},
 		{Hash: 4, Name: "Deja Vu", Type: "Dúngeon"},
+		{Hash: 5, Name: "K1 Logistics", Type: "Lost Sector", Location: "Moon", Focus: &Loot{Name: "St0mp-EE5"}},
+		{
+			Hash:     6,
+			Name:     "Bunker E15",
+			Type:     "Lost Sector",
+			Location: "Europa",
+			Loot:     []Loot{{Name: "Fr0st-EE5"}, {Name: "S733k Pack"}},
+		},
 	}
 
 	tests := map[string]struct {
@@ -151,10 +159,19 @@ func TestFilter(t *testing.T) {
 		"location without its accents":       {query: "cote", want: []uint32{2}},
 		"focused reward without its accents": {query: "doxia", want: []uint32{2}},
 		"bonus loot without its accents":     {query: "xur", want: []uint32{3}},
-		"blank query":                        {query: "  ", want: []uint32{1, 2, 3, 4}},
+		"blank query":                        {query: "  ", want: []uint32{1, 2, 3, 4, 5, 6}},
 		"query that matches nothing":         {query: "gambit"},
-		"rewards":                            {rewards: true, want: []uint32{2, 3}},
+		"rewards":                            {rewards: true, want: []uint32{2, 3, 5, 6}},
 		"query and rewards":                  {query: "vu", rewards: true},
+		"focused reward in letters":          {query: "stomp", want: []uint32{5}},
+		"focused reward as the game has it":  {query: "ST0MP-EE5", want: []uint32{5}},
+		"bonus loot in letters":              {query: "frost-ees", want: []uint32{6}},
+		"name in letters":                    {query: "ki logistics", want: []uint32{5}},
+		"name as the game has it":            {query: "k1 log", want: []uint32{5}},
+		"type with a digit for a letter":     {query: "l0st sector", want: []uint32{5, 6}},
+		"location with a digit for a letter": {query: "eur0pa", want: []uint32{6}},
+		"another digit":                      {query: "st9mp"},
+		"bonus loot with a seven for l":      {query: "sleek pack", want: []uint32{6}},
 	}
 
 	for name, tc := range tests {

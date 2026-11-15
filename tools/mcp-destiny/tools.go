@@ -142,16 +142,16 @@ type CompleteLoginInput struct {
 
 // ListItemsInput is the input schema of the list_items tool.
 type ListItemsInput struct {
-	Query          string `json:"query,omitzero"           jsonschema:"Substring of the item name or type, in any letter case and with or without accents, such as 'fatebringer' or 'hand cannon'"`
+	Query          string `json:"query,omitzero"           jsonschema:"Substring of the item name or type, in any letter case and with or without accents, such as 'fatebringer' or 'hand cannon'. A digit also matches the letter that it stands for in some names (0 for o, 1 for i, 3 for e, 5 for s, 7 for v or l, 9 for g), so 'stomp' finds St0mp-EE5"`
 	Kind           string `json:"kind,omitzero"            jsonschema:"weapon, armor, gear (weapons and armor, the default), other, or all"`
-	Slot           string `json:"slot,omitzero"            jsonschema:"Substring of the slot name, in any letter case and with or without accents, such as 'kinetic', 'energy', 'power', 'helmet', or 'class armor'"`
+	Slot           string `json:"slot,omitzero"            jsonschema:"Substring of the slot name, in any letter case and with or without accents, such as 'kinetic', 'energy', 'power', 'helmet', or 'class armor'. A digit also matches the letter that it stands for, such as 0 for o"`
 	Tier           string `json:"tier,omitzero"            jsonschema:"Rarity, such as 'exotic' or 'legendary'"`
 	Class          string `json:"class,omitzero"           jsonschema:"Class that armor belongs to: hunter, titan, or warlock"`
 	Damage         string `json:"damage,omitzero"          jsonschema:"Damage type, such as 'kinetic', 'arc', 'solar', 'void', 'stasis', or 'strand'"`
 	Location       string `json:"location,omitzero"        jsonschema:"vault, postmaster, equipped, characters (any character), a character id, or a class name"`
 	Tag            string `json:"tag,omitzero"             jsonschema:"Tag id from list_tags, 'none' for untagged items, or 'any' for tagged items"`
-	Perk           string `json:"perk,omitzero"            jsonschema:"Substring of a perk the item has equipped, in any letter case and with or without accents, such as 'kill clip'"`
-	Stat           string `json:"stat,omitzero"            jsonschema:"Full name of one stat, in any letter case and with or without accents, such as 'health' for armor or 'range' for weapons. Adds a column with its value, and min_stat and sort=stat read it"`
+	Perk           string `json:"perk,omitzero"            jsonschema:"Substring of a perk the item has equipped, in any letter case and with or without accents, such as 'kill clip'. A digit also matches the letter that it stands for, such as 0 for o"`
+	Stat           string `json:"stat,omitzero"            jsonschema:"Full name of one stat, in any letter case and with or without accents, such as 'health' for armor or 'range' for weapons. A digit also matches the letter that it stands for, such as 0 for o. Adds a column with its value, and min_stat and sort=stat read it"`
 	Sort           string `json:"sort,omitzero"            jsonschema:"name (default), power (highest first, and the items without power last), newest (most recently acquired first), total (highest armor stat total first), or stat (highest value of the stat that stat names first)"`
 	MinPvERating   string `json:"min_pve_rating,omitzero"  jsonschema:"Lowest roll rating on the Aegis sheet (PvE) to include, a tier from S (best) to F. Only weapon copies whose roll has a tier on that sheet match"`
 	MinPvPRating   string `json:"min_pvp_rating,omitzero"  jsonschema:"Lowest roll rating on the PvP sheet to include, a tier from S (best) to F. Only weapon copies whose roll has a tier on that sheet match"`
@@ -176,7 +176,7 @@ type GetItemInput struct {
 // tool. Without a name or an instance id, the tool compares every weapon
 // that has more than one copy, a page at a time.
 type CompareDuplicatesInput struct {
-	Name       string `json:"name,omitzero"        jsonschema:"Weapon name in any letter case and with or without accents, such as 'Fatebringer'. A name that no weapon has selects the one weapon whose name contains it"`
+	Name       string `json:"name,omitzero"        jsonschema:"Weapon name in any letter case and with or without accents, such as 'Fatebringer'. A name that no weapon has selects the one weapon whose name contains it. When no weapon matches, a digit also matches the letter that it stands for, such as 0 for o"`
 	InstanceID string `json:"instance_id,omitzero" jsonschema:"Instance id of one copy, from list_items"`
 	Limit      int    `json:"limit,omitzero"       jsonschema:"Without name and instance_id: maximum number of weapons to return (default 10, maximum 50)"`
 	Offset     int    `json:"offset,omitzero"      jsonschema:"Without name and instance_id: number of weapons to skip (default 0)"`
@@ -194,14 +194,14 @@ type ListActivityHistoryInput struct {
 // group lists and that have a sale, or every vendor when All is set.
 type ListVendorsInput struct {
 	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to read the most recently played character"`
-	Vendor    string `json:"vendor,omitzero"    jsonschema:"Vendor hash, or a vendor name in any letter case and with or without accents, such as 'Banshee-44' or 'Xur'. A name that no vendor has selects the one vendor whose name contains it. Every vendor that Bungie returns can match. Omit to list the vendors"`
+	Vendor    string `json:"vendor,omitzero"    jsonschema:"Vendor hash, or a vendor name in any letter case and with or without accents, such as 'Banshee-44' or 'Xur'. A name that no vendor has selects the one vendor whose name contains it. When no vendor matches, a digit also matches the letter that it stands for, such as 0 for o. Every vendor that Bungie returns can match. Omit to list the vendors"`
 	All       bool   `json:"all,omitzero"       jsonschema:"Without vendor: list every vendor that Bungie returns, such as subclass screens, archives, and vendors without a name. Omit to list only the vendors that Bungie groups for its Companion app and that have a sale"`
 }
 
 // ListActivitiesInput is the input schema of the list_activities tool.
 type ListActivitiesInput struct {
 	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to read the most recently played character"`
-	Query     string `json:"query,omitzero"     jsonschema:"Substring of the activity name, the activity type, the location, the focused reward, or a bonus loot name, in any letter case and with or without accents, such as 'raid' or 'deepsight'"`
+	Query     string `json:"query,omitzero"     jsonschema:"Substring of the activity name, the activity type, the location, the focused reward, or a bonus loot name, in any letter case and with or without accents, such as 'raid' or 'deepsight'. A digit also matches the letter that it stands for, such as 0 for o"`
 	Limit     int    `json:"limit,omitzero"     jsonschema:"Maximum number of activities to return (default 50, maximum 200)"`
 	Offset    int    `json:"offset,omitzero"    jsonschema:"Number of matching activities to skip (default 0)"`
 	Rewards   bool   `json:"rewards,omitzero"   jsonschema:"Return only the activities that still offer bonus drops, a focused reward, or bonus loot this week"`
@@ -223,7 +223,7 @@ type MoveStackInput struct {
 
 // StageJunkInput is the input schema of the stage_junk tool.
 type StageJunkInput struct {
-	Slot      string `json:"slot"               jsonschema:"Part of the name of a weapon or armor slot, in any letter case and with or without accents, such as 'kinetic' or 'helmet'"`
+	Slot      string `json:"slot"               jsonschema:"Part of the name of a weapon or armor slot, in any letter case and with or without accents, such as 'kinetic' or 'helmet'. A digit also matches the letter that it stands for, such as 0 for o"`
 	Character string `json:"character,omitzero" jsonschema:"Character id, or a class name that exactly one character has. Omit to stage on the most recently played character"`
 }
 
@@ -236,8 +236,8 @@ type SetLockInput struct {
 // SetPerkInput is the input schema of the set_perk tool.
 type SetPerkInput struct {
 	InstanceID string `json:"instance_id"      jsonschema:"Instance id from list_items"`
-	Perk       string `json:"perk"             jsonschema:"Perk to make active, in any letter case and with or without accents, such as 'Rampage'. get_item lists the perks that each socket can swap to"`
-	Replace    string `json:"replace,omitzero" jsonschema:"Active perk to swap out, in any letter case and with or without accents. Pass it when more than one socket can swap to the perk"`
+	Perk       string `json:"perk"             jsonschema:"Perk to make active, in any letter case and with or without accents, such as 'Rampage'. A digit also matches the letter that it stands for, such as 0 for o. get_item lists the perks that each socket can swap to"`
+	Replace    string `json:"replace,omitzero" jsonschema:"Active perk to swap out, in any letter case and with or without accents. A digit also matches the letter that it stands for, such as 0 for o. Pass it when more than one socket can swap to the perk"`
 }
 
 // ListLoadoutsInput is the input schema of the list_loadouts tool.
@@ -254,7 +254,7 @@ type EquipLoadoutInput struct {
 // SaveLoadoutInput is the input schema of the save_loadout tool.
 type SaveLoadoutInput struct {
 	Character string `json:"character"     jsonschema:"Character id, or a class name that exactly one character has"`
-	Name      string `json:"name,omitzero" jsonschema:"Loadout name from the list that the game offers, in any letter case and with or without accents, such as 'Crucible' or 'raid'. Omit to keep the name of a saved loadout. An empty slot then takes the first name of the list"`
+	Name      string `json:"name,omitzero" jsonschema:"Loadout name from the list that the game offers, in any letter case and with or without accents, such as 'Crucible' or 'raid'. A digit also matches the letter that it stands for, such as 0 for o. Omit to keep the name of a saved loadout. An empty slot then takes the first name of the list"`
 	Number    int    `json:"number"        jsonschema:"Loadout slot to save into, counted from 1 on the in-game loadout screen as in list_loadouts"`
 }
 
@@ -298,7 +298,7 @@ type SetNoteInput struct {
 // PerkPreferenceInput is one entry of the set_perk_preferences tool input.
 type PerkPreferenceInput struct {
 	Mode   string `json:"mode"   jsonschema:"pve or pvp"`
-	Perk   string `json:"perk"   jsonschema:"Weapon trait name in any letter case and with or without accents, such as 'Kill Clip'. An enhanced trait shares the preference of its base trait"`
+	Perk   string `json:"perk"   jsonschema:"Weapon trait name in any letter case and with or without accents, such as 'Kill Clip'. A digit also matches the letter that it stands for, such as 0 for o. An enhanced trait shares the preference of its base trait"`
 	Stance string `json:"stance" jsonschema:"up (liked), down (disliked), or none to clear the preference"`
 }
 
@@ -2362,9 +2362,9 @@ func keepRated(
 // perkChange validates one preference and converts it to a service row.
 //
 // The web client matches a stored preference to a perk by exact display
-// name. perkChange therefore looks up the given name in traits under the
-// key that [traitKey] gives. It replaces the name with the display name of
-// the weapon trait. It rejects a name that is no trait, because the web
+// name. perkChange therefore looks up the given name in traits, as
+// [traitName] does. It replaces the name with the display name of the
+// weapon trait. It rejects a name that is no trait, because the web
 // client never matches such a row. A removal passes an unknown name
 // through, so the tool can clear a row that an earlier write left behind.
 func perkChange(in PerkPreferenceInput, traits map[string]string) (dvm.PerkPreference, error) {
@@ -2384,7 +2384,7 @@ func perkChange(in PerkPreferenceInput, traits map[string]string) (dvm.PerkPrefe
 		return dvm.PerkPreference{}, fmt.Errorf("%w: stance %q is not up, down, or none", ErrInvalidInput, in.Stance)
 	}
 
-	name, known := traits[traitKey(perk)]
+	name, known := traitName(perk, traits)
 	if known {
 		perk = name
 	}
@@ -2401,26 +2401,68 @@ func perkChange(in PerkPreferenceInput, traits map[string]string) (dvm.PerkPrefe
 	return dvm.PerkPreference{Mode: mode, Perk: perk, Stance: stance}, nil
 }
 
+// traitName returns the display name of the weapon trait that perk names.
+// Traits is the map that [definitions.Defs.TraitNames] builds. traitName
+// first reads the map under the key that [traitKey] gives. When the map
+// lacks that key, traitName compares the text that [lookalikeTraitKey]
+// gives with each key of the map. It then takes the one trait that
+// matches, and more than one match names no trait. A name that differs
+// from a trait only in letter case and accents therefore always selects
+// that trait.
+func traitName(perk string, traits map[string]string) (string, bool) {
+	name, known := traits[traitKey(perk)]
+	if known {
+		return name, true
+	}
+
+	key := lookalikeTraitKey(perk)
+
+	var names []string
+
+	for folded, name := range traits {
+		if key.Equal(folded) {
+			names = append(names, name)
+		}
+	}
+
+	if len(names) != 1 {
+		return "", false
+	}
+
+	return names[0], true
+}
+
+// enhancedSuffix ends the name of an enhanced trait after a fold
+// lowercases the name.
+const enhancedSuffix = " enhanced"
+
 // traitKey returns the key of a trait name in the map that
 // [definitions.Defs.TraitNames] builds. It folds name with [fold.Name] and
 // removes the suffix of an enhanced trait. The suffix can therefore differ
 // in letter case and in accents.
 func traitKey(name string) string {
-	return strings.TrimSuffix(fold.Name(name), " enhanced")
+	return strings.TrimSuffix(fold.Name(name), enhancedSuffix)
+}
+
+// lookalikeTraitKey folds a trait name with [fold.Lookalike] and removes
+// the suffix of an enhanced trait. The suffix can therefore differ in
+// every way that the fold removes, such as a digit in place of a letter.
+func lookalikeTraitKey(name string) fold.Text {
+	return fold.Lookalike.Text(name).TrimSuffix(enhancedSuffix)
 }
 
 // unknownTrait reports a perk name that is no weapon trait, with the traits
-// whose keys contain the key that [traitKey] gives for the name. A name
-// whose key is empty, such as "^", gets no similar traits.
+// whose keys contain the text that [lookalikeTraitKey] gives for the name.
+// A name whose key is empty, such as "^", gets no similar traits.
 func unknownTrait(perk string, traits map[string]string) error {
 	const limit = 5
 
 	var similar []string
 
-	part := traitKey(perk)
+	part := lookalikeTraitKey(perk)
 
 	for key, name := range traits {
-		if part != "" && strings.Contains(key, part) {
+		if !part.Empty() && part.In(key) {
 			similar = append(similar, name)
 		}
 	}

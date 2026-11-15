@@ -603,6 +603,7 @@ func newServer(h *handler) *mcp.Server {
 			"The game saves the mods and the perks of the equipped gear with it. " +
 			"A save into a slot that holds a loadout replaces that loadout. " +
 			"name picks a name from the list that the game offers, in any letter case and with or without accents. " +
+			"A digit also matches the letter that it stands for, such as 0 for o. " +
 			"Without name, a saved loadout keeps its name, and an empty slot takes the first name of the list. " +
 			"A saved loadout also keeps its icon and its color, and an empty slot takes the first icon and " +
 			"the first color. The tool cannot pick an icon or a color, because the game defines both only as images. " +
@@ -717,7 +718,8 @@ func newServer(h *handler) *mcp.Server {
 			"Each is: word also works as not:<word>. " +
 			"name:<text> matches an item with a word in its name that starts with the text, " +
 			"and exactname:<text> matches an item whose whole name is the text. " +
-			"Both ignore letter case and accents. " +
+			"Both ignore letter case and accents, and neither reads a digit as a letter, " +
+			"so name:stomp does not match St0mp-EE5. " +
 			"power:<range> and light:<range> compare the power that the web client counts with a number, " +
 			"such as power:>=1900. The tool refuses a season word in the range, such as pinnaclecap. " +
 			"rate:<range> tests the tier of the roll of a copy on the Aegis sheet, " +

@@ -1164,6 +1164,36 @@ func TestNameDiacritics(t *testing.T) {
 	}
 }
 
+func TestNameDigits(t *testing.T) {
+	t.Parallel()
+
+	// The game writes digits in place of letters in the first name. The
+	// web client keeps every digit, so a letter of the value matches only
+	// a letter of a name.
+	items := namedItems("St0mp-EE5", "Hardcase Stompers", "1000 Yard Stare")
+
+	tests := map[string]struct {
+		query string
+		want  []string
+	}{
+		"letters for the digits of a name": {query: "name:stomp", want: []string{"Hardcase Stompers"}},
+		"digits as the name writes them":   {query: "name:st0mp", want: []string{"St0mp-EE5"}},
+		"digit for a letter of a name":     {query: "name:st0mpers", want: []string{}},
+		"letters for a number":             {query: "name:iooo", want: []string{}},
+		"number as the name writes it":     {query: "name:1000", want: []string{"1000 Yard Stare"}},
+		"whole name in letters":            {query: `exactname:"stomp-ees"`, want: []string{}},
+		"whole name as the game writes it": {query: `exactname:"st0mp-ee5"`, want: []string{"St0mp-EE5"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, matchIDs(t, tc.query, items))
+		})
+	}
+}
+
 func TestNameEscapes(t *testing.T) {
 	t.Parallel()
 

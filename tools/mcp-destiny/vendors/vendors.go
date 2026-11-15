@@ -281,11 +281,13 @@ func vendorItemName(defs *definitions.Defs, hash uint32) string {
 
 // Select returns the vendor that arg selects among vendors. A decimal arg
 // selects the vendor with that hash. Any other arg selects by name. An exact
-// name comes first. A name that equals arg after [fold.Name] folds both
-// comes second, and a name that contains arg after the same fold comes
-// third. Several vendors that match at the first rank with a match return
-// an error that names some of them with their hashes. Owner names the
-// character for the error that an unknown vendor returns.
+// name comes first. The other ranks compare the name with arg after a fold
+// of [fold.Passes] folds both. The ranks of the first fold come before the
+// ranks of the second. Under each fold, a name that equals arg comes
+// before a name that contains arg. Several vendors that match at the first
+// rank with a match return an error that names some of them with their
+// hashes. Owner names the character for the error that an unknown vendor
+// returns.
 func Select(vendors []Vendor, arg, owner string) (Vendor, error) {
 	arg = strings.TrimSpace(arg)
 
@@ -300,24 +302,34 @@ func Select(vendors []Vendor, arg, owner string) (Vendor, error) {
 		return Vendor{}, fmt.Errorf("%w: no vendor of %s has the hash %d", ErrUnknownVendor, owner, hash)
 	}
 
-	plain := fold.Name(arg)
-
-	var exact, folded, similar []Vendor
+	var exact []Vendor
 
 	for _, v := range vendors {
-		name := fold.Name(v.Name)
-
-		switch {
-		case v.Name == arg:
+		if v.Name == arg {
 			exact = append(exact, v)
-		case name == plain:
-			folded = append(folded, v)
-		case strings.Contains(name, plain):
-			similar = append(similar, v)
 		}
 	}
 
-	for _, matches := range [][]Vendor{exact, folded, similar} {
+	ranks := [][]Vendor{exact}
+
+	for _, f := range fold.Passes() {
+		text := f.Text(arg)
+
+		var equal, similar []Vendor
+
+		for _, v := range vendors {
+			switch {
+			case text.Equal(v.Name):
+				equal = append(equal, v)
+			case text.In(v.Name):
+				similar = append(similar, v)
+			}
+		}
+
+		ranks = append(ranks, equal, similar)
+	}
+
+	for _, matches := range ranks {
 		switch len(matches) {
 		case 0:
 			continue

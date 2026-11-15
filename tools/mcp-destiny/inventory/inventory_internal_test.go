@@ -676,29 +676,123 @@ func TestFilterNames(t *testing.T) {
 	}
 }
 
-func TestStatValue(t *testing.T) {
+func TestFilterLookalikes(t *testing.T) {
 	t.Parallel()
 
-	item := &Item{Stats: []Stat{{Name: "Grenade", Value: 10}, {Name: "Stábility", Value: 40}}}
+	// The game writes a digit in place of a letter in the names of the
+	// first three items, of the last two items, and of the perk. It writes
+	// the name of item 6 with a number.
+	s := &Snapshot{Items: []*Item{
+		{InstanceID: "1", Name: "St0mp-EE5", TypeName: "Leg Armor", Kind: KindArmor, Slot: "Leg Armor"},
+		{InstanceID: "2", Name: "Fr0st-EE5", TypeName: "Leg Armor", Kind: KindArmor, Slot: "Leg Armor"},
+		{InstanceID: "3", Name: "BrayTech Sn0Boots", TypeName: "Leg Armor", Kind: KindArmor, Slot: "Leg Armor"},
+		{
+			InstanceID: "4",
+			Name:       "Hardcase Stompers",
+			TypeName:   "Leg Armor",
+			Kind:       KindArmor,
+			Slot:       "Leg Armor",
+			Perks:      []Perk{{Plug: Plug{Name: "M1R Distribution Matrix"}}},
+		},
+		{
+			InstanceID: "5",
+			Name:       "Permafrost",
+			TypeName:   "Grenade Launcher",
+			Kind:       KindWeapon,
+			Slot:       "Power Weapons",
+			Stats:      []Stat{{Name: "Velocity", Value: 60}},
+		},
+		{
+			InstanceID: "6",
+			Name:       "1000 Yard Stare",
+			TypeName:   "Sniper Rifle",
+			Kind:       KindWeapon,
+			Slot:       "Kinetic Weapons",
+			Stats:      []Stat{{Name: "Velocity", Value: 40}},
+		},
+		{InstanceID: "7", Name: "S733k Pack", TypeName: "Ghost Shell", Kind: KindOther},
+		{InstanceID: "8", Name: "Se7enth", TypeName: "Emblem", Kind: KindOther},
+	}}
 
-	// The stat name and the first case carry accents on different
-	// letters, so the case matches only when StatValue folds both texts.
 	tests := map[string]struct {
-		name  string
-		want  int
-		found bool
+		filter ItemFilter
+		want   []string
 	}{
-		"name with other accents":   {name: "STABILÍTY", want: 40, found: true},
-		"name without its accents":  {name: "stability", want: 40, found: true},
-		"name that differs in case": {name: "grenade", want: 10, found: true},
-		"missing stat":              {name: "range"},
+		"letters for a digit of a name":    {filter: ItemFilter{Query: "stomp"}, want: []string{"4", "1"}},
+		"letters for a seven that is l":    {filter: ItemFilter{Kind: KindAll, Query: "sleek"}, want: []string{"7"}},
+		"letters for a seven that is v":    {filter: ItemFilter{Kind: KindAll, Query: "seventh"}, want: []string{"8"}},
+		"seven as the name writes it":      {filter: ItemFilter{Kind: KindAll, Query: "S733K"}, want: []string{"7"}},
+		"letters for every digit":          {filter: ItemFilter{Query: "Stomp-EES"}, want: []string{"1"}},
+		"letters and digits":               {filter: ItemFilter{Query: "stomp-ee5"}, want: []string{"1"}},
+		"digits as the name writes them":   {filter: ItemFilter{Query: "ST0MP-EE5"}, want: []string{"1"}},
+		"digit for a letter of a name":     {filter: ItemFilter{Query: "st0mpers"}, want: []string{"4"}},
+		"letters for a digit of two names": {filter: ItemFilter{Query: "frost"}, want: []string{"2", "5"}},
+		"letters inside a word":            {filter: ItemFilter{Query: "snoboots"}, want: []string{"3"}},
+		"type name with a digit": {
+			filter: ItemFilter{Query: "l3g arm0r"},
+			want:   []string{"3", "2", "4", "1"},
+		},
+		"slot with a digit":            {filter: ItemFilter{Slot: "p0wer"}, want: []string{"5"}},
+		"perk in letters":              {filter: ItemFilter{Perk: "mir distribution"}, want: []string{"4"}},
+		"perk as the name writes it":   {filter: ItemFilter{Perk: "m1r"}, want: []string{"4"}},
+		"number as the name writes it": {filter: ItemFilter{Query: "1000 yard"}, want: []string{"6"}},
+		"letters for a number":         {filter: ItemFilter{Query: "iooo"}, want: []string{"6"}},
+		"another digit":                {filter: ItemFilter{Query: "st9mp"}, want: []string{}},
+		"letters without the hyphen":   {filter: ItemFilter{Query: "stompees"}, want: []string{}},
+		"minimum stat with a digit": {
+			filter: ItemFilter{Stat: "vel0city", MinStat: 50},
+			want:   []string{"5"},
+		},
+		"stat sort with digits": {
+			filter: ItemFilter{Kind: KindWeapon, Stat: "V3L0C1TY", Sort: SortStat},
+			want:   []string{"5", "6"},
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got, ok := item.StatValue(tc.name)
+			got, err := s.Filter(tc.filter)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, ids(got))
+		})
+	}
+}
+
+func TestStatValue(t *testing.T) {
+	t.Parallel()
+
+	item := &Item{Stats: []Stat{{Name: "Grenade", Value: 10}, {Name: "Stábility", Value: 40}}}
+
+	// The first stat of rivals differs from the second only in a digit
+	// that stands for a letter.
+	rivals := &Item{Stats: []Stat{{Name: "Gr3nade", Value: 5}, {Name: "Grenade", Value: 10}}}
+
+	// The stat name and the first case carry accents on different
+	// letters, so the case matches only when StatValue folds both texts.
+	tests := map[string]struct {
+		item  *Item
+		name  string
+		want  int
+		found bool
+	}{
+		"name with other accents":       {name: "STABILÍTY", want: 40, found: true},
+		"name without its accents":      {name: "stability", want: 40, found: true},
+		"name that differs in case":     {name: "grenade", want: 10, found: true},
+		"missing stat":                  {name: "range"},
+		"digits for letters":            {name: "5tab1l1ty", want: 40, found: true},
+		"missing stat with a digit":     {name: "grenad3s"},
+		"name in letters before digits": {item: rivals, name: "GRENADE", want: 10, found: true},
+		"name in digits":                {item: rivals, name: "gr3nade", want: 5, found: true},
+		"first stat with a digit":       {item: rivals, name: "9renade", want: 5, found: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := cmp.Or(tc.item, item).StatValue(tc.name)
 			assert.Equal(t, tc.found, ok)
 			assert.Equal(t, tc.want, got)
 		})
@@ -850,6 +944,19 @@ func TestCopiesOf(t *testing.T) {
 		{InstanceID: "31", Name: "Fatebringer", Kind: KindWeapon},
 	}}
 
+	// The game writes the first three names with numbers.
+	numbered := &Snapshot{Items: []*Item{
+		{InstanceID: "41", Name: "1000 Yard Stare", Kind: KindWeapon},
+		{InstanceID: "42", Name: "DEADHORSE 04", Kind: KindWeapon},
+		{InstanceID: "43", Name: "Wendigo GL3", Kind: KindWeapon},
+		{InstanceID: "44", Name: "Wendigo GL3 (Adept)", Kind: KindWeapon},
+	}}
+
+	// The last name writes a letter where Wendigo GL3 writes a digit.
+	rivals := &Snapshot{Items: append(slices.Clone(numbered.Items),
+		&Item{InstanceID: "45", Name: "Wendigo GLE", Kind: KindWeapon},
+	)}
+
 	tests := map[string]struct {
 		err      error
 		snapshot *Snapshot
@@ -890,6 +997,81 @@ func TestCopiesOf(t *testing.T) {
 			snapshot: accented,
 			name:     "Déjà Vu (Ádept)",
 			want:     []string{"21"},
+		},
+		"digits for the letters of a name": {
+			snapshot: numbered,
+			name:     "w3nd1g0 gl3",
+			want:     []string{"43", "44"},
+		},
+		"letters for the digits of a name": {
+			snapshot: numbered,
+			name:     "iooo yard stare",
+			want:     []string{"41"},
+		},
+		"part of a name with a digit for a letter": {
+			snapshot: numbered,
+			name:     "wend1g",
+			want:     []string{"43", "44"},
+		},
+		"part of a name with a letter for a digit": {
+			snapshot: numbered,
+			name:     "deadhorse o",
+			want:     []string{"42"},
+		},
+		"version suffix with a digit for a letter": {
+			snapshot: numbered,
+			name:     "Wendigo GL3 (Ad3pt)",
+			want:     []string{"43", "44"},
+		},
+		"version suffix with a digit for a letter and no copy of the version": {
+			snapshot: &Snapshot{Items: []*Item{
+				{InstanceID: "43", Name: "Wendigo GL3", Kind: KindWeapon},
+			}},
+			name: "Wendigo GL3 (Ad3pt)",
+			want: []string{"43"},
+		},
+		"bare suffix with a digit for a letter": {
+			snapshot: numbered,
+			name:     "(ad3pt)",
+			want:     []string{"43", "44"},
+		},
+		"number as the name writes it": {
+			snapshot: numbered,
+			name:     "1000 yard",
+			want:     []string{"41"},
+		},
+		"name in digits before a name in letters": {
+			snapshot: rivals,
+			name:     "wendigo gl3",
+			want:     []string{"43", "44"},
+		},
+		"name in letters before a name in digits": {
+			snapshot: rivals,
+			name:     "wendigo gle",
+			want:     []string{"45"},
+		},
+		"part of a name in digits before a name in letters": {
+			snapshot: rivals,
+			name:     "go gl3",
+			want:     []string{"43", "44"},
+		},
+		"part of a name in letters before a name in digits": {
+			snapshot: rivals,
+			name:     "go gle",
+			want:     []string{"45"},
+		},
+		"part of a name in letters before a whole name in digits": {
+			snapshot: &Snapshot{Items: []*Item{
+				{InstanceID: "51", Name: "Wendigo GL3", Kind: KindWeapon},
+				{InstanceID: "52", Name: "Wendigo GLE Prime", Kind: KindWeapon},
+			}},
+			name: "wendigo gle",
+			want: []string{"52"},
+		},
+		"names that differ only in a digit and a letter": {
+			snapshot: rivals,
+			name:     "wend1go gle",
+			err:      ErrUnknownWeapon,
 		},
 		"exact name in any case": {
 			name: "FATEBRINGER",
@@ -1008,6 +1190,15 @@ func TestCopiesOfSuggestions(t *testing.T) {
 			name: "(Adept)",
 			want: `unknown weapon: no weapon in the inventory has a name that contains "(Adept)"`,
 		},
+		"names that differ only in a digit and a letter": {
+			s: &Snapshot{Items: []*Item{
+				{InstanceID: "1", Name: "Wendigo GL3", Kind: KindWeapon},
+				{InstanceID: "2", Name: "Wendigo GLE", Kind: KindWeapon},
+			}},
+			name: "wend1go gle",
+			want: `unknown weapon: "wend1go gle" matches 2 weapons, so pass a full name, ` +
+				`such as Wendigo GL3, Wendigo GLE`,
+		},
 	}
 
 	for name, tc := range tests {
@@ -1083,6 +1274,10 @@ func TestBaseName(t *testing.T) {
 		"suffix without a space and spaces around": {
 			name: " Fatebringer(adept) ",
 			want: "Fatebringer",
+		},
+		"suffix with a digit for a letter": {
+			name: "Wendigo GL3 (Ad3pt)",
+			want: "Wendigo GL3",
 		},
 		"parenthesis that is not a version suffix": {
 			name: "Midnight Coup (Replica)",

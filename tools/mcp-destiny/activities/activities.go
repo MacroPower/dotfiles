@@ -56,7 +56,7 @@ func (a Row) Offers() bool {
 
 // matches reports whether query occurs in the name, the type, the
 // location, the focused reward, or a bonus loot name of the activity
-// after [fold.Name] folds both texts.
+// after [fold.Lookalike] folds both texts.
 func (a Row) matches(query string) bool {
 	if fold.Contains(a.Name, query) || fold.Contains(a.Type, query) || fold.Contains(a.Location, query) {
 		return true
@@ -205,8 +205,10 @@ func compareFlags(a, b bool) int {
 
 // Filter returns the activities that match query and rewards, in their
 // order. A query keeps each activity whose name, type, location, focused
-// reward, or bonus loot name contains the query after [fold.Name] folds
-// both texts. An empty or blank query keeps every activity. A true rewards
+// reward, or bonus loot name contains the query after [fold.Lookalike]
+// folds both texts. The query can therefore differ in letter case and in
+// accents. It can also write a letter where a name writes a digit in its
+// place. An empty or blank query keeps every activity. A true rewards
 // keeps only the activities that [Row.Offers] reports.
 func Filter(rows []Row, query string, rewards bool) []Row {
 	query = strings.TrimSpace(query)
