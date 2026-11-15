@@ -94,10 +94,13 @@ const allDomainsYAML = `egress:
       - matchName: "registry.terraform.io"
 `
 
-// All runs all tests in parallel.
+// All runs every test that carries +check in parallel.
+// [Tests.TestAggregates] fails when a test with that pragma is missing
+// here.
 func (m *Tests) All(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
+	eg.Go(m.TestAggregates)
 	eg.Go(func() error { return m.TestDevBase(ctx) })
 	eg.Go(func() error { return m.TestDevBaseEnv(ctx) })
 	eg.Go(func() error { return m.TestDevBaseShellConfig(ctx) })
@@ -111,12 +114,18 @@ func (m *Tests) All(ctx context.Context) error {
 	eg.Go(func() error { return m.TestSandboxLogging(ctx) })
 	eg.Go(func() error { return m.TestSandboxCIDRNoExcept(ctx) })
 	eg.Go(func() error { return m.TestSandboxMethodRestriction(ctx) })
+	eg.Go(func() error { return m.TestSandboxOpenPortRange(ctx) })
+	eg.Go(func() error { return m.TestSandboxPathNormalization(ctx) })
+	eg.Go(func() error { return m.TestSandboxWildcardDnsmasq(ctx) })
 	eg.Go(func() error { return m.TestAtuinDaemon(ctx) })
 
 	return eg.Wait()
 }
 
-// AllFull runs all tests including heavy network, MITM, and publish tests.
+// AllFull runs every test of the module in parallel. It adds to
+// [Tests.All] the tests that do not carry +check, such as the network,
+// MITM, publish, and shell image tests. [Tests.TestAggregates] fails
+// when a test is missing here.
 func (m *Tests) AllFull(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -134,6 +143,8 @@ func (m *Tests) AllFull(ctx context.Context) error {
 	eg.Go(func() error { return m.TestPublish(ctx) })
 	eg.Go(func() error { return m.TestShellSSHReady(ctx) })
 	eg.Go(func() error { return m.TestShellSSHLogin(ctx) })
+	eg.Go(func() error { return m.TestShellRelinkManaged(ctx) })
+	eg.Go(func() error { return m.TestShellMcpSync(ctx) })
 
 	return eg.Wait()
 }
