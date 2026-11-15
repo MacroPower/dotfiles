@@ -230,7 +230,7 @@ DRIVER_HEAD = """\
 const scenario = JSON.parse(require('node:fs').readFileSync(0, 'utf8'))
 const calls = []
 const scripted = async (prompt, opts) => {
-  calls.push({ label: opts.label, prompt, required: opts.schema.required })
+  calls.push({ label: opts.label, prompt, schema: opts.schema })
   if (!(opts.label in scenario.agents)) throw new Error(`no result for ${opts.label}`)
   return scenario.agents[opts.label]
 }
@@ -275,25 +275,66 @@ def described(author):
     return {"summary": f"summary by {author}", "notes": f"notes by {author}"}
 
 
-IMPLEMENTED = {"status": "implemented", **described("the implementer")}
-SYNCED = {"status": "synced", **described("the sync agent")}
+def defect(author):
+    """The defect outside the task that one agent reports."""
+    return {
+        "title": f"defect by {author}",
+        "description": f"## Observed\nthe fault that {author} found",
+    }
+
+
+def listed(*authors):
+    """The defects of the authors as the prompt of a fixer or the narrowing
+    agent lists them."""
+    head = "The defects outside the task that the change reports so far:\n"
+    if not authors:
+        return head + "none\n"
+    return head + "".join(
+        f"{n}. defect by {author}\n"
+        f"   ## Observed\n   the fault that {author} found\n"
+        for n, author in enumerate(authors, 1)
+    )
+
+
+IMPLEMENTED = {
+    "status": "implemented",
+    **described("the implementer"),
+    "defects": [defect("the implementer")],
+}
+SYNCED = {
+    "status": "synced",
+    **described("the sync agent"),
+    "defects": [defect("the sync agent")],
+}
 NARROWED = {
     "followups": [{"title": "t", "description": "d"}],
     **described("the narrowing agent"),
+    "defects": [defect("the narrowing agent")],
 }
 
 
-def fixed(n, gave_up=False):
+def fixed(n, gave_up=False, withdrawn=()):
+    """The result of fixer n, which reports one defect of its own.
+
+    The withdrawn argument holds the numbers of the defects so far that
+    the fixer withdraws.
+    """
     return {
         "responses": [{"finding": 1, "action": "fixed", "detail": "d"}],
         "gave_up": gave_up,
         **described(f"fixer {n}"),
+        "defects": [defect(f"fixer {n}")],
+        "withdrawn_defects": list(withdrawn),
     }
 
 
 @unittest.skipUnless(NODE, "node is not on PATH")
 class WorkflowResultTest(unittest.TestCase):
-    """The summary and the notes of a result follow the last change."""
+    """The summary, the notes, and the defects of a result.
+
+    The summary and the notes follow the last change. The defects add up
+    over the agents of one launch.
+    """
 
     REF = "APP-7KQ9"
 
@@ -517,25 +558,269 @@ class WorkflowResultTest(unittest.TestCase):
         for label in ("impl", "fix r1", "narrow"):
             with self.subTest(label):
                 self.assertLessEqual(
-                    {"summary", "notes"}, set(calls[label]["required"])
+                    {"summary", "notes"}, set(calls[label]["schema"]["required"])
                 )
+
+    def test_result_lists_defects_of_each_agent(self):
+        first_fix = {"impl": IMPLEMENTED, "review r1": CHANGES, "fix r1": fixed(1)}
+        second_fix = {**first_fix, "review r2": CHANGES}
+        relaunched_fix = {"review r2": CHANGES, "fix r2": fixed(2)}
+        # name: (run_workflow arguments, status, the agents whose defects
+        # the result lists)
+        cases = {
+            "the first review approves": (
+                {"agents": {"impl": IMPLEMENTED, "review r1": APPROVE}},
+                "approved",
+                ["the implementer"],
+            ),
+            "the implementer reports no defect": (
+                {
+                    "agents": {
+                        "impl": {**IMPLEMENTED, "defects": []},
+                        "review r1": APPROVE,
+                    }
+                },
+                "approved",
+                [],
+            ),
+            "a fixer adds a defect": (
+                {"agents": {**first_fix, "review r2": APPROVE}},
+                "approved",
+                ["the implementer", "fixer 1"],
+            ),
+            "each fixer adds a defect": (
+                {"agents": {**second_fix, "fix r2": fixed(2), "review r3": APPROVE}},
+                "approved",
+                ["the implementer", "fixer 1", "fixer 2"],
+            ),
+            "a fixer withdraws the defect of the implementer": (
+                {
+                    "agents": {
+                        "impl": IMPLEMENTED,
+                        "review r1": CHANGES,
+                        "fix r1": fixed(1, withdrawn=[1]),
+                        "review r2": APPROVE,
+                    }
+                },
+                "approved",
+                ["fixer 1"],
+            ),
+            "a fixer withdraws the defect of an earlier fixer": (
+                {
+                    "agents": {
+                        **second_fix,
+                        "fix r2": fixed(2, withdrawn=[2]),
+                        "review r3": APPROVE,
+                    }
+                },
+                "approved",
+                ["the implementer", "fixer 2"],
+            ),
+            # Number 2 names no defect so far. The defect that the fixer
+            # adds takes that number only in the next round.
+            "a fixer withdraws a number that the list lacks": (
+                {
+                    "agents": {
+                        "impl": IMPLEMENTED,
+                        "review r1": CHANGES,
+                        "fix r1": fixed(1, withdrawn=[0, 2]),
+                        "review r2": APPROVE,
+                    }
+                },
+                "approved",
+                ["the implementer", "fixer 1"],
+            ),
+            "the change lands with open findings": (
+                {
+                    "agents": {
+                        **first_fix,
+                        "review final": CHANGES,
+                        "narrow": NARROWED,
+                    },
+                    "rounds": 1,
+                },
+                "landable",
+                ["the implementer", "fixer 1", "the narrowing agent"],
+            ),
+            "a fixer gives up": (
+                {
+                    "agents": {
+                        "impl": IMPLEMENTED,
+                        "review r1": CHANGES,
+                        "fix r1": fixed(1, gave_up=True),
+                    }
+                },
+                "abandoned",
+                ["the implementer", "fixer 1"],
+            ),
+            "the implementer finds the task obsolete": (
+                {"agents": {"impl": {**IMPLEMENTED, "status": "obsolete"}}},
+                "obsolete",
+                ["the implementer"],
+            ),
+            "the implementer abandons the task": (
+                {"agents": {"impl": {**IMPLEMENTED, "status": "abandoned"}}},
+                "abandoned",
+                ["the implementer"],
+            ),
+            "a review rejects after a fix round": (
+                {"agents": {**first_fix, "review r2": REJECT}},
+                "rejected",
+                ["the implementer", "fixer 1"],
+            ),
+            "the final review leaves a change that cannot land": (
+                {"agents": {**first_fix, "review final": REJECT}, "rounds": 1},
+                "unconverged",
+                ["the implementer", "fixer 1"],
+            ),
+            "a fixer returns nothing": (
+                {
+                    "agents": {
+                        "impl": IMPLEMENTED,
+                        "review r1": CHANGES,
+                        "fix r1": None,
+                        "fix r1 retry": None,
+                    }
+                },
+                "error",
+                ["the implementer"],
+            ),
+            "a sync agent abandons the task": (
+                {
+                    "agents": {"sync": {**SYNCED, "status": "abandoned"}},
+                    "resume": SYNC,
+                },
+                "abandoned",
+                ["the sync agent"],
+            ),
+            "a sync that the review approves": (
+                {
+                    "agents": {"sync": SYNCED, "review r2": APPROVE},
+                    "resume": SYNC,
+                },
+                "approved",
+                ["the sync agent"],
+            ),
+            "a sync with a fix round": (
+                {
+                    "agents": {
+                        "sync": SYNCED,
+                        **relaunched_fix,
+                        "review r3": APPROVE,
+                    },
+                    "resume": SYNC,
+                },
+                "approved",
+                ["the sync agent", "fixer 2"],
+            ),
+            "a relaunch that the first review approves": (
+                {"agents": {"review r2": APPROVE}, "resume": RELAUNCH},
+                "approved",
+                [],
+            ),
+            "a relaunch with a fix round": (
+                {
+                    "agents": {**relaunched_fix, "review r3": APPROVE},
+                    "resume": RELAUNCH,
+                },
+                "approved",
+                ["fixer 2"],
+            ),
+        }
+        for name, (kwargs, status, authors) in cases.items():
+            with self.subTest(name):
+                result, _ = self.run_workflow(**kwargs)
+                self.assertEqual(
+                    (result["status"], result["defects"]),
+                    (status, [defect(author) for author in authors]),
+                )
+
+    def test_agents_receive_defects_so_far(self):
+        _, calls = self.run_workflow(
+            {
+                "impl": IMPLEMENTED,
+                "review r1": CHANGES,
+                "fix r1": fixed(1),
+                "review r2": CHANGES,
+                "fix r2": fixed(2, withdrawn=[1]),
+                "review r3": CHANGES,
+                "fix r3": fixed(3),
+                "review final": CHANGES,
+                "narrow": NARROWED,
+            },
+            rounds=3,
+        )
+        # label: the agents whose defects the prompt lists, by number
+        want = {
+            "fix r1": ["the implementer"],
+            "fix r2": ["the implementer", "fixer 1"],
+            "fix r3": ["fixer 1", "fixer 2"],
+            "narrow": ["fixer 1", "fixer 2", "fixer 3"],
+        }
+        for label, authors in want.items():
+            with self.subTest(label):
+                self.assertIn(listed(*authors), calls[label]["prompt"])
+
+    def test_agents_that_report_defects_learn_the_rule(self):
+        # The first run reaches every agent except the sync agent.
+        _, calls = self.run_workflow(
+            {
+                "impl": IMPLEMENTED,
+                "review r1": CHANGES,
+                "fix r1": fixed(1),
+                "review final": CHANGES,
+                "narrow": NARROWED,
+            },
+            rounds=1,
+        )
+        _, synced = self.run_workflow(
+            {"sync": SYNCED, "review r2": APPROVE}, resume=SYNC
+        )
+        calls["sync"] = synced["sync"]
+        # label: the fields for defects that the schema of the agent requires
+        want = {
+            "impl": {"defects"},
+            "sync": {"defects"},
+            "fix r1": {"defects", "withdrawn_defects"},
+            "review r1": set(),
+            "review final": set(),
+            "narrow": {"defects"},
+        }
+        self.assertEqual(set(calls), set(want))
+        for label, fields in want.items():
+            with self.subTest(label):
+                schema, prompt = calls[label]["schema"], calls[label]["prompt"]
+                self.assertEqual(
+                    {f for f in schema["properties"] if "defects" in f}, fields
+                )
+                self.assertLessEqual(fields, set(schema["required"]))
+                # An agent learns the rule only when its result has the field.
+                self.assertEqual("Defects outside the task:" in prompt, bool(fields))
+                if fields:
+                    self.assertEqual(
+                        schema["properties"]["defects"]["items"]["required"],
+                        ["title", "description"],
+                    )
 
     def test_fixer_after_relaunch_learns_what_exists(self):
         fix_round = {"review r2": CHANGES, "fix r2": fixed(2), "review r3": APPROVE}
-        # name: (run_workflow arguments, the notes that the fixer receives)
+        # name: (run_workflow arguments, the notes that the fixer receives,
+        # the agents whose defects it receives)
         cases = {
-            "a relaunch": ({"agents": fix_round, "resume": RELAUNCH}, "none"),
+            "a relaunch": ({"agents": fix_round, "resume": RELAUNCH}, "none", []),
             "a sync": (
                 {"agents": {"sync": SYNCED, **fix_round}, "resume": SYNC},
                 SYNCED["notes"],
+                ["the sync agent"],
             ),
         }
-        for name, (kwargs, notes) in cases.items():
+        for name, (kwargs, notes, reporters) in cases.items():
             with self.subTest(name):
                 _, calls = self.run_workflow(**kwargs)
                 prompt = calls["fix r2"]["prompt"]
                 self.assertIn("The summary of the change so far:\nnone\n", prompt)
                 self.assertIn(f"The notes of the change so far:\n{notes}\n", prompt)
+                self.assertIn(listed(*reporters), prompt)
 
 
 if __name__ == "__main__":

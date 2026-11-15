@@ -22,14 +22,36 @@ const LAST = RESUME && RESUME.lastRound ? RESUME.lastRound : Math.max(ROUNDS, FI
 const MSG = `${T.dir}/msg.txt`
 const HISTORY = `${T.dir}/history.md`
 
+// One task that the orchestrator files, in the format of the track-issue
+// skill.
+const NEW_TASK = {
+  type: 'object',
+  properties: {
+    title: { type: 'string', description: 'Sentence case, names the symptom, not the fix' },
+    description: { type: 'string', description: 'Markdown with the sections Observed, Expected, Reproduction, and Evidence' },
+  },
+  required: ['title', 'description'],
+}
+
+// A defect is a fault outside the task that an agent found and left
+// unfixed. The implementer and the sync agent return each defect that
+// they found. A fixer and the narrowing agent return only the defects
+// that the result does not list yet.
+const defectsField = which => ({
+  type: 'array',
+  description: `One task per defect outside the task that ${which}. Empty when you found none. Never put a caveat of the change here.`,
+  items: NEW_TASK,
+})
+
 const IMPL_SCHEMA = {
   type: 'object',
   properties: {
     status: { type: 'string', enum: ['implemented', 'abandoned', 'obsolete'] },
     summary: { type: 'string', description: 'What changed, in a few sentences' },
     notes: { type: 'string', description: 'For abandoned or obsolete: the evidence, and what a later attempt must know. Otherwise caveats, or empty.' },
+    defects: defectsField('you found and left unfixed'),
   },
-  required: ['status', 'summary', 'notes'],
+  required: ['status', 'summary', 'notes', 'defects'],
 }
 
 const REVIEW_SCHEMA = {
@@ -75,8 +97,14 @@ const FIX_SCHEMA = {
     gave_up: { type: 'boolean', description: 'true when the findings show that the task cannot land without massive scope creep or significant regressions' },
     summary: { type: 'string', description: 'What the whole change does as you leave it, in a few sentences' },
     notes: { type: 'string', description: 'For gave_up: why the task cannot land, and what a later attempt must know. Otherwise the caveats of the whole change as you leave it, or empty.' },
+    defects: defectsField('you found in this round, left unfixed, and do not see in the defects so far'),
+    withdrawn_defects: {
+      type: 'array',
+      description: 'The number of each defect so far that you withdraw, because this change fixes it or because it is not a fault. Empty when every defect so far still holds.',
+      items: { type: 'integer', description: '1-based index in the defects so far' },
+    },
   },
-  required: ['responses', 'gave_up', 'summary', 'notes'],
+  required: ['responses', 'gave_up', 'summary', 'notes', 'defects', 'withdrawn_defects'],
 }
 
 const SYNC_SCHEMA = {
@@ -85,8 +113,9 @@ const SYNC_SCHEMA = {
     status: { type: 'string', enum: ['synced', 'abandoned'] },
     summary: { type: 'string', description: 'What the merge required: each conflict and each adaptation' },
     notes: { type: 'string' },
+    defects: defectsField('you found and left unfixed'),
   },
-  required: ['status', 'summary', 'notes'],
+  required: ['status', 'summary', 'notes', 'defects'],
 }
 
 const NARROW_SCHEMA = {
@@ -95,19 +124,13 @@ const NARROW_SCHEMA = {
     followups: {
       type: 'array',
       description: 'One task per open finding',
-      items: {
-        type: 'object',
-        properties: {
-          title: { type: 'string', description: 'Sentence case, names the symptom, not the fix' },
-          description: { type: 'string', description: 'Markdown with the sections Observed, Expected, Reproduction, and Evidence' },
-        },
-        required: ['title', 'description'],
-      },
+      items: NEW_TASK,
     },
     summary: { type: 'string', description: 'What the whole change does as it lands, in a few sentences' },
     notes: { type: 'string', description: 'Each claim that you removed or reworded, and each earlier caveat that still holds' },
+    defects: defectsField('you found, left unfixed, and do not see in the defects so far'),
   },
-  required: ['followups', 'summary', 'notes'],
+  required: ['followups', 'summary', 'notes', 'defects'],
 }
 
 const rules = `
@@ -121,6 +144,10 @@ Ground rules:
 - Other builds share this machine. Iterate with targeted builds and tests, and run the full check only when the work is otherwise finished. Never clear a shared build cache.
 - If the worktree holds uncommitted changes when you start, an earlier agent with your assignment stopped in the middle of its work. Read those changes first, keep what is right, and finish the assignment.
 - Put probe files and other throwaway output in ${T.dir}/scratch/, never in the worktree. \`git status\` in the worktree must print nothing when you return.`
+
+// The rule for each agent whose result carries defects.
+const defectsRule = `
+Defects outside the task: you might find a fault that the task does not cover, such as a wrong fact in a doc or a bug in code that you only read. Do not widen the task to fix it, and do not file a task for it. Return it as one entry of defects, and the orchestrator files it as a task of its own. Write each entry so that it stands alone for a reader who never saw this task: what happens, what should happen, the minimal reproduction, and the evidence. Keep notes for the caveats of your own change.`
 
 const implPrompt = `You implement one tracked task.
 
@@ -136,6 +163,7 @@ Steps:
 6. Make the full check pass in the worktree.
 7. Write the commit message for the whole change to ${MSG}, in the format that rules.md gives.
 8. Commit the work in progress.
+${defectsRule}
 
 Stop instead of forcing the task through. If the task requires massive scope beyond its description, or it causes significant regressions that you cannot reconcile, return status "abandoned". Put the evidence in notes: what you tried, what breaks, and what a later attempt must know. Leave the partial work committed in the worktree.`
 
@@ -188,11 +216,19 @@ The notes of the change so far:
 ${notes || 'none'}
 `
 
+// The defects that the result carries so far, for the prompt of a fixer
+// or the narrowing agent. A fixer withdraws a defect by its number in this
+// list.
+const defectsNote = defects => `
+The defects outside the task that the change reports so far:
+${defects.length ? defects.map((d, i) => `${i + 1}. ${d.title}\n${d.description.replace(/^/gm, '   ')}`).join('\n') : 'none'}
+`
+
 const fixPrompt = (round, findings, exact, current) => `You repair a change after an adversarial review. A different agent implemented task ${T.ref}: "${T.title}", and a reviewer reported the findings below.
 ${rules}
 
 The current commit message is in ${MSG}.
-${summaryNote(current)}
+${summaryNote(current)}${defectsNote(current.defects)}
 Findings:
 ${listFindings(findings)}
 
@@ -206,6 +242,8 @@ Steps:
 6. Commit the work in progress.
 7. Return one response per finding.
 8. Return summary and notes that describe the whole change as you leave it, not this round alone. Start from the summary and the notes so far, and check each of their statements against the worktree and the findings. Keep each statement that still holds. Correct each statement that a finding or a fix made false, and remove each caveat that a fix resolved. Add each caveat that this round found. When the summary so far is "none", write it from the diff.
+9. Check each defect so far against the worktree and the findings. Return in withdrawn_defects the number of each defect that this change fixes, and of each defect that you can prove is not a fault. The result keeps every defect that you do not withdraw, so do not return it again in defects.
+${defectsRule}
 
 If the findings show that the task cannot land without massive scope creep or significant regressions, set gave_up to true and explain in notes instead of forcing the task through.`
 
@@ -224,6 +262,7 @@ Steps:
 4. Make the full check pass in the worktree.
 5. Update ${MSG} only where the merge changed what the diff against ${base} does.
 6. Commit the work in progress.
+${defectsRule}
 
 If the commits on ${base} make this task obsolete or force a redesign, return status "abandoned" with the evidence in notes.`
 
@@ -232,13 +271,15 @@ ${rules}
 
 Open findings:
 ${listFindings(findings)}
-${summaryNote(current)}
+${summaryNote(current)}${defectsNote(current.defects)}
 Steps:
 1. Do not fix the findings, and do not change behavior.
 2. Narrow the claims to what the code does. Edit each doc comment, doc, and example of this change, and the commit message in ${MSG}, so that none promises a behavior that an open finding contradicts. State a known limit where a reader would otherwise expect the full behavior.
 3. Make the full check pass in the worktree, and commit the work in progress.
 4. Return summary and notes that describe the whole change as it lands. Start from the summary and the notes so far. Remove or reword each statement that an open finding contradicts. In notes, list each claim that you removed or reworded, and keep each caveat that still holds. When the summary so far is "none", write it from the diff.
-5. Return one follow-up task per open finding. Each task must stand alone for a reader who never saw this review: write what happens, what should happen, the minimal reproduction, and the evidence.`
+5. Return one follow-up task per open finding. Each task must stand alone for a reader who never saw this review: write what happens, what should happen, the minimal reproduction, and the evidence.
+6. Return in defects only the faults that the defects so far do not list. The result keeps every defect so far.
+${defectsRule}`
 
 // An agent that dies, or that ends without its structured result, returns
 // null here, and each caller retries it one time. The retry finds the
@@ -261,13 +302,22 @@ const attempt = async (prompt, opts) => {
 // it. A task that resumes at a review round starts with an empty summary,
 // and its notes hold only the notes of a sync agent. The error, rejected,
 // and unconverged results replace the notes with their reason.
-const out = { ref: T.ref, title: T.title, rounds: 0, summary: '', notes: '', findings: [], followups: [], boundedReview: false }
+//
+// The defects of the result start as the list of the implementer. A task
+// that resumes at a review round starts with an empty list, or with the
+// list of its sync agent. Each fixer receives the list in the prompt, adds
+// the defects that it found, and withdraws entries by number. On a
+// landable result, the narrowing agent receives the list and adds its
+// defects last. No agent copies the list, so no entry changes on the way
+// to the orchestrator. Every result carries the list, whatever its status.
+const out = { ref: T.ref, title: T.title, rounds: 0, summary: '', notes: '', defects: [], findings: [], followups: [], boundedReview: false }
 const done = (status, extra) => ({ ...out, status, ...extra })
 
 let extra = ''
 if (RESUME && RESUME.sync) {
   const sync = await attempt(syncPrompt(RESUME.sync), { label: `sync ${T.ref}`, phase: 'Sync', schema: SYNC_SCHEMA })
   if (!sync) return done('error', { notes: 'the sync agent returned nothing' })
+  out.defects = sync.defects
   if (sync.status !== 'synced') return done('abandoned', { summary: sync.summary, notes: sync.notes })
   out.notes = sync.notes
   extra = `
@@ -280,6 +330,7 @@ Review the whole diff against ${base} again. Give the merge the most attention: 
   if (!impl) return done('error', { notes: 'the implementer returned nothing' })
   out.summary = impl.summary
   out.notes = impl.notes
+  out.defects = impl.defects
   if (impl.status !== 'implemented') return done(impl.status)
 }
 
@@ -298,6 +349,7 @@ for (let round = FIRST; ; round++) {
   if (!fix) return done('error', { notes: `the fixer of round ${round} returned nothing`, findings: rev.findings })
   out.summary = fix.summary
   out.notes = fix.notes
+  out.defects = out.defects.filter((_, i) => !fix.withdrawn_defects.includes(i + 1)).concat(fix.defects)
   if (fix.gave_up) return done('abandoned', { findings: rev.findings })
   rev.findings.forEach((f, i) => {
     const r = fix.responses.find(x => x.finding === i + 1)
@@ -318,5 +370,6 @@ for (let round = FIRST; ; round++) {
   if (!narrow) return done('unconverged', { notes: 'the change is a strict improvement, but the narrowing agent returned nothing', findings: fin.findings })
   out.summary = narrow.summary
   out.notes = narrow.notes
+  out.defects = out.defects.concat(narrow.defects)
   return done('landable', { findings: fin.findings, followups: narrow.followups })
 }

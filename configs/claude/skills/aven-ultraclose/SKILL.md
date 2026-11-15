@@ -82,6 +82,12 @@ approved task.
    - Commands that agents must not run. A `dagger call` from a linked
      worktree has emptied the index of the main checkout, so forbid Dagger
      in worktrees unless the project requires it.
+
+   Do not tell agents where to report a fault outside their task, even in
+   a rule that forbids the commands that file tasks. The Workflow prompts
+   ask for each such fault in the `defects` of the result, as the Defects
+   section says. Agents put `rules.md` above their defaults, so a rule that
+   sends the fault to `notes` hides it in prose again.
 6. Triage the queue. For each open task, predict the files that it edits.
    Fan the reading out to Explore agents, and write the result as a JSON
    list:
@@ -113,7 +119,8 @@ Repeat until the run ends:
 3. Keep `ultraclose.py watch` running in a background Bash call. It exits
    when free disk space runs low.
 4. End the turn. Each Workflow completion wakes you with a result. Act on
-   its `status`:
+   its `status`, and in the same turn file its `defects` as the Defects
+   section says:
 
 | Status | Action |
 | --- | --- |
@@ -140,6 +147,41 @@ A relaunched task that resumes at a review round starts without the
 `summary` stays empty, and its `notes` hold only what a sync agent
 reported. When the `summary` of such a result is empty, read `msg.txt` for
 what the change does.
+
+## Defects
+
+File each defect that a result reports as a task of its own. A defect is a
+fault that an agent found outside its task and left unfixed, such as a
+wrong fact in a doc or a bug in nearby code. Every result lists its
+defects in `defects`, whatever its status. Each entry holds a `title` and
+a `description` in the format of the `track-issue` skill.
+
+When a result arrives, file its defects in the same turn. Act on its status
+first, so that its landing or its relaunch runs in the background while you
+file:
+
+1. Load the `track-issue` skill, and file each entry as the skill says.
+   Its duplicate search finds a defect that an earlier result reported.
+2. Link each new task to the task that reported the defect, with
+   `aven related add <new-ref> <ref>`.
+3. Record each new task in `notes.md`.
+
+Do not wait for the user to ask for these tasks, and do not reproduce a
+defect before you file it. Each new task joins the queue as the Scope
+section says, and its implementer confirms the fault before it changes
+anything.
+
+The implementer starts the list of a result. Each fixer adds the defects
+that it finds, and withdraws each entry that the change fixes or that is
+not a fault. On a `landable` result, the agent that narrows the claims of
+the change adds its defects last. A relaunched task that resumes at a
+review round starts with an empty list, or with the list of its sync
+agent. Its result does not repeat the defects of the earlier launch. A
+launch that returns no result loses its defects.
+
+The `notes` of a result can report a defect that `defects` does not list.
+File that defect in the same way, and write its description from the
+notes.
 
 ## Caps
 
@@ -213,6 +255,8 @@ context. Record:
 
 - Each hand fix.
 - Each landing without a full final review.
+- Each task that you file for a follow-up or a defect, with the task that
+  reported it.
 - Each artifact that a task made stale, such as a recorded demo or a
   generated file.
 - Each behavior change that the user should know about.
@@ -223,7 +267,8 @@ End with a report that lists:
 
 - The landed tasks, each with its commit.
 - The noted tasks, each with its reason and its branch.
-- The follow-up tasks that the run filed.
+- The tasks that the run filed for follow-ups and for defects, each with
+  the task that reported it.
 - The tasks that landed without a full final review.
 - The stale artifacts.
 - The commits that the run did not push, and each rejected push.
