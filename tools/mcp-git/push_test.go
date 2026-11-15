@@ -15,57 +15,46 @@ import (
 func TestBuildPushArgs(t *testing.T) {
 	t.Parallel()
 
+	// Every push skips the pre-push hooks, signs nothing, and names
+	// the program that serves it.
+	push := []string{"push", "--no-verify", "--no-signed", "--receive-pack=git-receive-pack"}
+
 	tests := map[string]struct {
 		input PushInput
 		want  []string
 	}{
 		"minimal": {
 			input: PushInput{Repo: "/r"},
-			want:  []string{"push", "--no-verify", "--", "origin"},
+			want:  slices.Concat(push, []string{"--", "origin"}),
 		},
 		"with ref": {
 			input: PushInput{Repo: "/r", Ref: "feature"},
-			want:  []string{"push", "--no-verify", "--", "origin", "feature"},
+			want:  slices.Concat(push, []string{"--", "origin", "feature"}),
 		},
 		"with set upstream": {
 			input: PushInput{Repo: "/r", Ref: "feature", SetUpstream: true},
-			want: []string{
-				"push",
-				"--no-verify",
-				"--set-upstream",
-				"--",
-				"origin",
-				"feature",
-			},
+			want:  slices.Concat(push, []string{"--set-upstream", "--", "origin", "feature"}),
 		},
 		"with force with lease": {
 			input: PushInput{Repo: "/r", Ref: "main", ForceWithLease: true},
-			want: []string{
-				"push",
-				"--no-verify",
-				"--force-with-lease",
-				"--",
-				"origin",
-				"main",
-			},
+			want:  slices.Concat(push, []string{"--force-with-lease", "--", "origin", "main"}),
 		},
 		"with tags": {
 			input: PushInput{Repo: "/r", Tags: true},
-			want:  []string{"push", "--no-verify", "--tags", "--", "origin"},
+			want:  slices.Concat(push, []string{"--tags", "--", "origin"}),
 		},
 		"tag ref": {
 			input: PushInput{Repo: "/r", Ref: "v1.0.0"},
-			want:  []string{"push", "--no-verify", "--", "origin", "v1.0.0"},
+			want:  slices.Concat(push, []string{"--", "origin", "v1.0.0"}),
 		},
 		"all options": {
 			input: PushInput{
 				Repo: "/r", Remote: "up", Ref: "x",
 				SetUpstream: true, ForceWithLease: true, Tags: true,
 			},
-			want: []string{
-				"push", "--no-verify", "--set-upstream", "--force-with-lease", "--tags",
-				"--", "up", "x",
-			},
+			want: slices.Concat(push, []string{
+				"--set-upstream", "--force-with-lease", "--tags", "--", "up", "x",
+			}),
 		},
 	}
 
@@ -613,11 +602,11 @@ func TestHandlePushRefusesLocalRemote(t *testing.T) {
 	}
 }
 
-// TestPushArgsRefuseLocalTransport covers a remote whose definition
+// TestPushRefusesLocalTransport covers a remote whose definition
 // changes after runRemote checks its URLs. git resolves the remote
 // again for the push, so the git command itself must refuse a remote
 // that names a repository on the local file system.
-func TestPushArgsRefuseLocalTransport(t *testing.T) {
+func TestPushRefusesLocalTransport(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
@@ -654,7 +643,12 @@ func TestPushArgsRefuseLocalTransport(t *testing.T) {
 			// bare repository by the time git pushes.
 			const checked = "https://example.invalid/repo.git"
 
-			_, err := runGit(t.Context(), (&handler{}).gitArgs(op, work, checked, false)...)
+			// push runs the git command of the push as h runs it.
+			push := func(h *handler) (string, error) {
+				return h.runGit(t.Context(), slices.Concat(h.gitOptions(op, work, checked, false, nil), op.args)...)
+			}
+
+			_, err := push(&handler{})
 			require.Error(t, err, "git must refuse a push to a local repository")
 
 			_, statErr := os.Stat(marker)
@@ -664,7 +658,7 @@ func TestPushArgsRefuseLocalTransport(t *testing.T) {
 
 			// Without the refusal, the same command pushes and runs
 			// the hooks of the bare repository.
-			out, err := runGit(t.Context(), (&handler{allowFileURLs: true}).gitArgs(op, work, checked, false)...)
+			out, err := push(&handler{allowFileURLs: true})
 			require.NoError(t, err, out)
 			assert.FileExists(t, marker)
 		})
@@ -721,6 +715,34 @@ func initSubmoduleRepos(t *testing.T) submoduleRepos {
 	})
 
 	return submoduleRepos{work: work, sub: sub, bare: bare, subBare: subBare, marker: marker}
+}
+
+// advanceSubmodule pushes a new commit to the upstream of the
+// submodule, and a commit to the upstream of the parent that moves
+// the submodule to the new commit. A fetch in the parent that recurses
+// into submodules then fetches the new commit into the submodule. It
+// returns the branch of the submodule upstream that holds the new
+// commit.
+func advanceSubmodule(t *testing.T, s submoduleRepos) string {
+	t.Helper()
+
+	other := initWorkClone(t, s.bare)
+	sub := filepath.Join(other, "sub")
+	branch := gitOut(t, "-C", s.subBare, "symbolic-ref", "--short", "HEAD")
+
+	runGitCmds(t, [][]string{
+		{"git", "-C", other, "-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init"},
+		{"git", "-C", sub, "config", "user.email", "test@test.com"},
+		{"git", "-C", sub, "config", "user.name", "Test"},
+	})
+	commitFile(t, sub, "next.txt", "x", "next submodule commit")
+	runGitCmds(t, [][]string{
+		{"git", "-C", sub, "push", "-q", "origin", "HEAD:refs/heads/" + branch},
+	})
+	commitFile(t, other, "bump.txt", "x", "bump submodule")
+	runGitCmds(t, [][]string{{"git", "-C", other, "push", "-q"}})
+
+	return branch
 }
 
 func TestHandlePushSubmodule(t *testing.T) {
@@ -832,6 +854,38 @@ func TestHandlePushSubmodule(t *testing.T) {
 				"the pre-push hook of the submodule must not run")
 		})
 	}
+}
+
+// push.gpgSign makes git sign a push with the program of gpg.program
+// when the remote accepts signed pushes. The program runs outside the
+// caller's sandbox, so the push tool never signs a push.
+func TestHandlePushNeverSigns(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	work := initWorkClone(t, bare)
+
+	commitFile(t, work, "pushed.txt", "x", "pushed commit")
+
+	script, marker := markerScript(t)
+
+	runGitCmds(t, [][]string{
+		{"git", "-C", bare, "config", "receive.certNonceSeed", "seed"},
+		{"git", "-C", work, "config", "push.gpgSign", "true"},
+		{"git", "-C", work, "config", "gpg.program", script},
+	})
+
+	h := &handler{allowFileURLs: true}
+
+	result, _, err := h.handlePush(t.Context(), nil, PushInput{Repo: work})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	requireNotRun(t, marker)
+	assert.Equal(t,
+		gitOut(t, "-C", work, "rev-parse", "HEAD"),
+		gitOut(t, "-C", bare, "rev-parse", currentBranch(t, work)),
+	)
 }
 
 func TestHandlePushTimeout(t *testing.T) {

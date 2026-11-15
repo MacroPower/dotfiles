@@ -83,17 +83,17 @@ func main() {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "git_fetch",
-		Description: "Fetch from a remote of an existing local repo. Updates remote-tracking refs; never touches the working tree.",
+		Description: "Fetch from a remote of an existing local repo. Updates remote-tracking refs and never touches the working tree. Skips every hook of the repository. Never fetches a submodule, so fetch each submodule with its own call. Refuses a remote on the local file system. Refuses a repo whose own git config sets a credential helper, or the uploadpack or receivepack key of a remote.",
 	}, h.handleFetch)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "git_pull",
-		Description: "Pull from a remote into an existing local repo. Fast-forward only unless rebase is set.",
+		Description: "Pull from a remote into an existing local repo. Fast-forward only unless rebase is set. Skips every hook of the repository. Never fetches or updates a submodule. Refuses a remote on the local file system. Also refuses a repo whose own git config sets a credential helper, the uploadpack or receivepack key of a remote, a filter, a merge driver, or a signing program. When the repo sets only a filter, a merge driver, or a signing program, run git_fetch, and then merge or rebase in Bash.",
 	}, h.handlePull)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "git_push",
-		Description: "Push a branch or tag to a remote of an existing local repo. Supports set_upstream, force_with_lease, and tags; no bare --force and no remote-ref deletes. Skips every pre-push hook and the hook files of the repository, so run the checks of a pre-push hook in Bash first. Never pushes a submodule, so push each new submodule commit with its own call first. When git config asks git push to recurse into submodules, the push fails when no remote-tracking ref of a submodule reaches a submodule commit that the push references. Refuses a remote on the local file system.",
+		Description: "Push a branch or tag to a remote of an existing local repo. Supports set_upstream, force_with_lease, and tags. It has no bare --force and no remote-ref deletes. Skips every hook of the repository, so run the checks of a pre-push hook in Bash first. Never signs a push. Never pushes a submodule, so push each new submodule commit with its own call first. When git config asks git push to recurse into submodules, the push fails when no remote-tracking ref of a submodule reaches a submodule commit that the push references. Refuses a remote on the local file system. Refuses a repo whose own git config sets a credential helper, or the uploadpack or receivepack key of a remote.",
 	}, h.handlePush)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

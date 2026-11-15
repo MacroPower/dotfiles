@@ -54,8 +54,10 @@ func (h *handler) handleFetch(
 
 // buildFetchArgs converts a [FetchInput] into the argument list for
 // git fetch, targeting the already-resolved remote name.
+//
+// The list always holds the options of [fetchGuardArgs].
 func buildFetchArgs(remote string, input FetchInput) []string {
-	args := []string{"fetch"}
+	args := append([]string{"fetch"}, fetchGuardArgs()...)
 
 	if input.Prune {
 		args = append(args, "--prune")
@@ -72,4 +74,21 @@ func buildFetchArgs(remote string, input FetchInput) []string {
 	}
 
 	return args
+}
+
+// fetchGuardArgs returns the options that git fetch and git pull take
+// so that the fetch runs no command from the git config of a
+// repository.
+//
+// --no-recurse-submodules keeps git from fetching a submodule. git
+// fetches a submodule with a git command of its own, which reads the
+// git config of the submodule. That config defines hooks that
+// [handler.gitOptions] does not know by name. For a pull, the option
+// also keeps git from updating the working tree of a submodule.
+//
+// --upload-pack names the program that serves the fetch. Its value is
+// the default of git, and it wins over remote.<name>.uploadpack. git
+// runs that program on the host of an ssh remote.
+func fetchGuardArgs() []string {
+	return []string{"--no-recurse-submodules", "--upload-pack=git-upload-pack"}
 }

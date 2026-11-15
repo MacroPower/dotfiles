@@ -82,6 +82,45 @@ func writeHookIn(t *testing.T, dir, name, script string) string {
 	return hook
 }
 
+// markerScript writes an executable script that creates a marker file
+// and then fails. It returns the path of the script and the path of
+// the marker. A test sets a command that git must not run to the
+// script. The marker then shows that git ran the command, and the
+// failure of the script also fails most git commands that run it.
+func markerScript(t *testing.T) (string, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran")
+	script := writeHookIn(t, dir, "command", "#!/bin/sh\ntouch '"+marker+"'\nexit 1\n")
+
+	return script, marker
+}
+
+// requireNotRun fails the test when the script of [markerScript] ran.
+func requireNotRun(t *testing.T, marker string) {
+	t.Helper()
+
+	_, err := os.Stat(marker)
+	require.ErrorIs(t, err, os.ErrNotExist, "git must not run a command that the git config names")
+}
+
+// appendGitConfig appends text to the config file of the repository
+// at repo. Text reaches the keys that git config cannot write, such
+// as a hook with an empty name.
+func appendGitConfig(t *testing.T, repo, text string) {
+	t.Helper()
+
+	config := filepath.Join(gitOut(t, "-C", repo, "rev-parse", "--absolute-git-dir"), "config")
+
+	f, err := os.OpenFile(config, os.O_APPEND|os.O_WRONLY, 0o644)
+	require.NoError(t, err)
+
+	_, err = f.WriteString(text)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+}
+
 // commitFile writes content to name in repo and commits it.
 func commitFile(t *testing.T, repo, name, content, msg string) {
 	t.Helper()
@@ -237,78 +276,87 @@ func TestGitCommonDir(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotRepo)
 }
 
-func TestIsLocalURL(t *testing.T) {
+func TestGitOptions(t *testing.T) {
 	t.Parallel()
 
+	guard := []string{
+		"-c", "core.hooksPath=" + os.DevNull,
+		"-c", "core.fsmonitor=false",
+		"-c", "core.alternateRefsCommand=true",
+		"-c", "maintenance.auto=false",
+	}
+	recurseOff := []string{"-c", "push.recurseSubmodules=no"}
+	recurseCheck := []string{"-c", "push.recurseSubmodules=check"}
+	repo := []string{"-C", "/r"}
+
 	tests := map[string]struct {
-		url  string
-		want bool
+		op              remoteOp
+		checkSubmodules bool
+		hooks           []string
+		want            []string
 	}{
-		"absolute path":      {url: "/srv/git/repo.git", want: true},
-		"relative path":      {url: "../repo.git", want: true},
-		"bare name":          {url: "repo", want: true},
-		"slash before colon": {url: "./a:b", want: true},
-		"file URL":           {url: "file:///srv/git/repo.git", want: true},
-		"empty":              {url: "", want: true},
-		"https URL":          {url: "https://github.com/o/r.git"},
-		"ssh URL":            {url: "ssh://git@github.com/o/r.git"},
-		"SCP-style URL":      {url: "git@github.com:o/r.git"},
-		"SCP-style host":     {url: "host:repo"},
-		"remote helper":      {url: "codecommit::us-east-1://repo"},
+		"fetch": {
+			want: slices.Concat(guard, repo),
+		},
+		"fetch ignores the submodule check": {
+			checkSubmodules: true,
+			want:            slices.Concat(guard, repo),
+		},
+		"push": {
+			op:   remoteOp{push: true},
+			want: slices.Concat(guard, recurseOff, repo),
+		},
+		"push that checks submodules": {
+			op:              remoteOp{push: true},
+			checkSubmodules: true,
+			want:            slices.Concat(guard, recurseCheck, repo),
+		},
+		// git reads the value of each key from the environment, so
+		// the name of a hook can hold '='.
+		"hooks": {
+			hooks: []string{"check", "a.b c", "x=y", ""},
+			want: slices.Concat(guard, []string{
+				"--config-env=hook.check.enabled=" + hookSwitchEnv,
+				"--config-env=hook.a.b c.enabled=" + hookSwitchEnv,
+				"--config-env=hook.x=y.enabled=" + hookSwitchEnv,
+				"--config-env=hook..enabled=" + hookSwitchEnv,
+			}, repo),
+		},
+		"push with a hook": {
+			op:    remoteOp{push: true},
+			hooks: []string{"check"},
+			want: slices.Concat(
+				guard,
+				[]string{"--config-env=hook.check.enabled=" + hookSwitchEnv},
+				recurseOff,
+				repo,
+			),
+		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tt.want, isLocalURL(tt.url))
+			got := (&handler{}).gitOptions(tt.op, "/r", "https://example.invalid/r.git", tt.checkSubmodules, tt.hooks)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestGitArgs(t *testing.T) {
+func TestCommandEnv(t *testing.T) {
 	t.Parallel()
 
-	hooksOff := []string{"-c", "core.hooksPath=" + os.DevNull}
-	fileOff := []string{"-c", "protocol.file.allow=never"}
-	recurseOff := []string{"-c", "push.recurseSubmodules=no"}
-	recurseCheck := []string{"-c", "push.recurseSubmodules=check"}
-	repo := []string{"-C", "/r"}
-	fetch := []string{"fetch", "--", "origin"}
-	push := []string{"push", "--", "origin"}
-
 	tests := map[string]struct {
-		h               *handler
-		op              remoteOp
-		checkSubmodules bool
-		want            []string
+		h    *handler
+		want string
 	}{
-		"fetch": {
-			h:    &handler{},
-			op:   remoteOp{args: fetch},
-			want: slices.Concat(hooksOff, repo, fetch),
-		},
-		"fetch ignores the submodule check": {
-			h:               &handler{},
-			op:              remoteOp{args: fetch},
-			checkSubmodules: true,
-			want:            slices.Concat(hooksOff, repo, fetch),
-		},
-		"push": {
-			h:    &handler{},
-			op:   remoteOp{push: true, args: push},
-			want: slices.Concat(hooksOff, fileOff, recurseOff, repo, push),
-		},
-		"push that checks submodules": {
-			h:               &handler{},
-			op:              remoteOp{push: true, args: push},
-			checkSubmodules: true,
-			want:            slices.Concat(hooksOff, fileOff, recurseCheck, repo, push),
-		},
-		"push with file URLs allowed": {
-			h:    &handler{allowFileURLs: true},
-			op:   remoteOp{push: true, args: push},
-			want: slices.Concat(hooksOff, recurseOff, repo, push),
+		"default":         {h: &handler{}, want: "https:ssh"},
+		"allow insecure":  {h: &handler{allowInsecure: true}, want: "https:ssh:http:git"},
+		"allow file URLs": {h: &handler{allowFileURLs: true}, want: "https:ssh:file"},
+		"allow both": {
+			h:    &handler{allowInsecure: true, allowFileURLs: true},
+			want: "https:ssh:http:git:file",
 		},
 	}
 
@@ -316,10 +364,29 @@ func TestGitArgs(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got := tt.h.gitArgs(tt.op, "/r", "https://example.invalid/r.git", tt.checkSubmodules)
-			assert.Equal(t, tt.want, got)
+			env := tt.h.commandEnv()
+
+			// The process runs git with the last value of a variable,
+			// so the values of the server must come last.
+			assert.Equal(t, "GIT_ALLOW_PROTOCOL="+tt.want, lastEnv(env, "GIT_ALLOW_PROTOCOL"))
+			assert.Equal(t, hookSwitchEnv+"=false", lastEnv(env, hookSwitchEnv))
+			assert.Contains(t, env, "GIT_TERMINAL_PROMPT=0")
 		})
 	}
+}
+
+// lastEnv returns the last entry of env that sets the variable name,
+// or "" when env does not set it.
+func lastEnv(env []string, name string) string {
+	var last string
+
+	for _, entry := range env {
+		if strings.HasPrefix(entry, name+"=") {
+			last = entry
+		}
+	}
+
+	return last
 }
 
 func TestPushRecursesSubmodules(t *testing.T) {
@@ -687,13 +754,15 @@ func TestRunRemoteDeniedRepoPath(t *testing.T) {
 func TestRunGitCapturesOutput(t *testing.T) {
 	t.Parallel()
 
-	out, err := runGit(t.Context(), "version")
+	h := &handler{}
+
+	out, err := h.runGit(t.Context(), "version")
 	require.NoError(t, err)
 	assert.Contains(t, out, "git version")
 
 	// Failure output (git writes it to stderr) must be captured and
 	// folded into the error, never streamed to the process stdout.
-	out, err = runGit(t.Context(), "-C", t.TempDir(), "rev-parse", "--git-dir")
+	out, err = h.runGit(t.Context(), "-C", t.TempDir(), "rev-parse", "--git-dir")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a git repository")
 	assert.Contains(t, out, "not a git repository")
@@ -742,6 +811,59 @@ func TestGitEnvPreservesSSHCommand(t *testing.T) { //nolint:paralleltest // t.Se
 	env := gitEnv()
 	assert.Contains(t, env, "GIT_SSH_COMMAND=ssh -i /custom/key")
 	assert.NotContains(t, env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
+}
+
+// unsetEnv removes the variable name from the environment for the
+// rest of the test. t.Setenv restores the variable when the test
+// ends.
+func unsetEnv(t *testing.T, name string) {
+	t.Helper()
+
+	t.Setenv(name, "")
+	require.NoError(t, os.Unsetenv(name))
+}
+
+// git reads core.askPass and core.gitProxy only when the environment
+// does not set the variable, so gitEnv sets each variable.
+func TestGitEnvSetsConfigCommands(t *testing.T) { //nolint:paralleltest // t.Setenv
+	unsetEnv(t, "GIT_ASKPASS")
+	unsetEnv(t, "SSH_ASKPASS")
+	unsetEnv(t, "GIT_PROXY_COMMAND")
+
+	env := gitEnv()
+	assert.Contains(t, env, "GIT_ASKPASS=")
+	assert.Contains(t, env, "GIT_PROXY_COMMAND=")
+}
+
+// git reads SSH_ASKPASS after core.askPass, so gitEnv moves its value
+// to GIT_ASKPASS, which git reads first.
+func TestGitEnvKeepsSSHAskpass(t *testing.T) { //nolint:paralleltest // t.Setenv
+	unsetEnv(t, "GIT_ASKPASS")
+	t.Setenv("SSH_ASKPASS", "/usr/bin/askpass")
+
+	assert.Contains(t, gitEnv(), "GIT_ASKPASS=/usr/bin/askpass")
+}
+
+func TestGitEnvPreservesConfigCommands(t *testing.T) { //nolint:paralleltest // t.Setenv
+	t.Setenv("GIT_ASKPASS", "/custom/askpass")
+	t.Setenv("SSH_ASKPASS", "/usr/bin/askpass")
+	t.Setenv("GIT_PROXY_COMMAND", "/custom/proxy")
+
+	env := gitEnv()
+	assert.Equal(t, "GIT_ASKPASS=/custom/askpass", lastEnv(env, "GIT_ASKPASS"))
+	assert.Equal(t, "GIT_PROXY_COMMAND=/custom/proxy", lastEnv(env, "GIT_PROXY_COMMAND"))
+}
+
+// A variable with an empty value already keeps git from reading the
+// config key.
+func TestGitEnvPreservesEmptyConfigCommands(t *testing.T) { //nolint:paralleltest // t.Setenv
+	t.Setenv("GIT_ASKPASS", "")
+	t.Setenv("SSH_ASKPASS", "/usr/bin/askpass")
+	t.Setenv("GIT_PROXY_COMMAND", "")
+
+	env := gitEnv()
+	assert.Equal(t, "GIT_ASKPASS=", lastEnv(env, "GIT_ASKPASS"))
+	assert.Equal(t, "GIT_PROXY_COMMAND=", lastEnv(env, "GIT_PROXY_COMMAND"))
 }
 
 func TestRemoteOrDefault(t *testing.T) {

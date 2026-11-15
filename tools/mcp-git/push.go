@@ -67,10 +67,18 @@ func (h *handler) handlePush(
 // pre-push event. [handler.runRemote] disables the hooks directory.
 // --no-verify also skips a pre-push hook that git config defines with
 // hook.<name>.command. Git does not pass --no-verify on to the push
-// that it starts in a submodule, so [handler.gitArgs] keeps git from
-// starting such a push.
+// that it starts in a submodule, so [handler.gitOptions] keeps git
+// from starting such a push.
+//
+// The list also holds the options that keep the push from running a
+// command that the git config names. --no-signed keeps git from
+// signing the push with the program of gpg.program, which
+// push.gpgSign asks for. --receive-pack names the program that serves
+// the push. Its value is the default of git, and it wins over
+// remote.<name>.receivepack. git runs that program on the host of an
+// ssh remote.
 func buildPushArgs(remote string, input PushInput) []string {
-	args := []string{"push", "--no-verify"}
+	args := []string{"push", "--no-verify", "--no-signed", "--receive-pack=git-receive-pack"}
 
 	if input.SetUpstream {
 		args = append(args, "--set-upstream")

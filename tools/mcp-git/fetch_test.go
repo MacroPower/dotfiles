@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -14,36 +15,40 @@ import (
 func TestBuildFetchArgs(t *testing.T) {
 	t.Parallel()
 
+	// Every fetch fetches no submodule, and it names the program that
+	// serves it.
+	fetch := []string{"fetch", "--no-recurse-submodules", "--upload-pack=git-upload-pack"}
+
 	tests := map[string]struct {
 		input FetchInput
 		want  []string
 	}{
 		"minimal": {
 			input: FetchInput{Repo: "/r"},
-			want:  []string{"fetch", "--", "origin"},
+			want:  slices.Concat(fetch, []string{"--", "origin"}),
 		},
 		"with remote": {
 			input: FetchInput{Repo: "/r", Remote: "upstream"},
-			want:  []string{"fetch", "--", "upstream"},
+			want:  slices.Concat(fetch, []string{"--", "upstream"}),
 		},
 		"with prune": {
 			input: FetchInput{Repo: "/r", Prune: true},
-			want:  []string{"fetch", "--prune", "--", "origin"},
+			want:  slices.Concat(fetch, []string{"--prune", "--", "origin"}),
 		},
 		"with tags": {
 			input: FetchInput{Repo: "/r", Tags: true},
-			want:  []string{"fetch", "--tags", "--", "origin"},
+			want:  slices.Concat(fetch, []string{"--tags", "--", "origin"}),
 		},
 		"with ref": {
 			input: FetchInput{Repo: "/r", Ref: "main"},
-			want:  []string{"fetch", "--", "origin", "main"},
+			want:  slices.Concat(fetch, []string{"--", "origin", "main"}),
 		},
 		"all options": {
 			input: FetchInput{
 				Repo: "/r", Remote: "up", Ref: "v1.0.0",
 				Prune: true, Tags: true,
 			},
-			want: []string{"fetch", "--prune", "--tags", "--", "up", "v1.0.0"},
+			want: slices.Concat(fetch, []string{"--prune", "--tags", "--", "up", "v1.0.0"}),
 		},
 	}
 
@@ -114,7 +119,7 @@ func TestHandleFetch(t *testing.T) {
 	commitFile(t, b, "new.txt", "fresh", "add new file")
 	runGitCmds(t, [][]string{{"git", "-C", b, "push"}})
 
-	h := &handler{}
+	h := &handler{allowFileURLs: true}
 
 	result, _, err := h.handleFetch(t.Context(), nil, FetchInput{Repo: a})
 	require.NoError(t, err)
@@ -144,7 +149,7 @@ func TestHandleFetchRef(t *testing.T) {
 	runGitCmds(t, [][]string{{"git", "-C", b, "push"}})
 
 	branch := currentBranch(t, a)
-	h := &handler{}
+	h := &handler{allowFileURLs: true}
 
 	result, _, err := h.handleFetch(t.Context(), nil, FetchInput{
 		Repo: a,
@@ -177,7 +182,7 @@ func TestHandleFetchPrune(t *testing.T) {
 		{"git", "-C", bare, "branch", "-D", "extra"},
 	})
 
-	h := &handler{}
+	h := &handler{allowFileURLs: true}
 
 	result, _, err := h.handleFetch(t.Context(), nil, FetchInput{
 		Repo:  a,
@@ -204,7 +209,7 @@ func TestHandleFetchTags(t *testing.T) {
 		{"git", "-C", b, "push", "--tags"},
 	})
 
-	h := &handler{}
+	h := &handler{allowFileURLs: true}
 
 	result, _, err := h.handleFetch(t.Context(), nil, FetchInput{
 		Repo: a,
@@ -214,6 +219,64 @@ func TestHandleFetchTags(t *testing.T) {
 	require.False(t, result.IsError, resultText(t, result))
 
 	assert.Contains(t, gitOut(t, "-C", a, "tag", "--list"), "v9.9.9")
+}
+
+// git fetches a submodule with a git command of its own, which runs
+// the hooks that the git config of the submodule defines. The fetch
+// tool therefore never fetches a submodule.
+func TestHandleFetchSkipsSubmodules(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		// config is a key and a value that the test sets in the git
+		// config of the parent.
+		config []string
+	}{
+		// git fetches a submodule when the fetch of the parent brings
+		// a commit that moves the submodule.
+		"default config":          {},
+		"fetch.recurseSubmodules": {config: []string{"fetch.recurseSubmodules", "true"}},
+		"submodule.recurse":       {config: []string{"submodule.recurse", "true"}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := initSubmoduleRepos(t)
+			subBranch := advanceSubmodule(t, s)
+
+			// The hook of the submodule fires when a fetch updates a
+			// ref of the submodule.
+			runGitCmds(t, [][]string{
+				{"git", "-C", s.sub, "config", "--add", "hook.check.event", "reference-transaction"},
+			})
+
+			if tt.config != nil {
+				runGitCmds(t, [][]string{slices.Concat([]string{"git", "-C", s.work, "config"}, tt.config)})
+			}
+
+			before := gitOut(t, "-C", s.sub, "rev-parse", "origin/"+subBranch)
+
+			h := &handler{allowFileURLs: true}
+
+			result, _, err := h.handleFetch(t.Context(), nil, FetchInput{Repo: s.work})
+			require.NoError(t, err)
+			require.False(t, result.IsError, resultText(t, result))
+
+			branch := currentBranch(t, s.work)
+			assert.Equal(t,
+				gitOut(t, "-C", s.bare, "rev-parse", branch),
+				gitOut(t, "-C", s.work, "rev-parse", "origin/"+branch),
+			)
+			assert.Equal(t, before, gitOut(t, "-C", s.sub, "rev-parse", "origin/"+subBranch),
+				"git_fetch must not fetch a submodule")
+
+			_, statErr := os.Stat(s.marker)
+			require.ErrorIs(t, statErr, os.ErrNotExist,
+				"the hook of the submodule must not run")
+		})
+	}
 }
 
 func TestHandleFetchUnknownRemote(t *testing.T) {

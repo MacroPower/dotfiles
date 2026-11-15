@@ -36,10 +36,11 @@ func (h *handler) handlePull(
 	}
 
 	op := remoteOp{
-		repo:    input.Repo,
-		remote:  remote,
-		timeout: input.TimeoutSeconds,
-		args:    buildPullArgs(remote, input),
+		repo:     input.Repo,
+		remote:   remote,
+		worktree: true,
+		timeout:  input.TimeoutSeconds,
+		args:     buildPullArgs(remote, input),
 	}
 
 	// A conflicting rebase exits non-zero and would leave the
@@ -64,8 +65,10 @@ func (h *handler) handlePull(
 // git pull, targeting the already-resolved remote name. Without
 // Rebase the pull is fast-forward only, matching the pull that
 // git_clone performs on an existing destination.
+//
+// The list always holds the options of [fetchGuardArgs].
 func buildPullArgs(remote string, input PullInput) []string {
-	args := []string{"pull"}
+	args := append([]string{"pull"}, fetchGuardArgs()...)
 
 	if input.Rebase {
 		args = append(args, "--rebase")

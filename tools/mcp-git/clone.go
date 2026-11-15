@@ -256,10 +256,11 @@ func (h *handler) pullExisting(ctx context.Context, input CloneInput) (*mcp.Call
 	// handleClone already holds; the ordering is fixed, so it
 	// cannot deadlock.
 	out, err := h.runRemote(ctx, remoteOp{
-		repo:    input.Dest,
-		remote:  defaultRemote,
-		timeout: input.TimeoutSeconds,
-		args:    buildPullArgs(defaultRemote, PullInput{Repo: input.Dest}),
+		repo:     input.Dest,
+		remote:   defaultRemote,
+		worktree: true,
+		timeout:  input.TimeoutSeconds,
+		args:     buildPullArgs(defaultRemote, PullInput{Repo: input.Dest}),
 	})
 	if err != nil {
 		return toolError(fmt.Errorf("pulling latest changes in %s: %w", input.Dest, err)), nil, nil
@@ -298,21 +299,33 @@ func (h *handler) checkOrigin(ctx context.Context, url, dest string) error {
 // that a corrupt checkout at the destination moved to, and the
 // result message reports it.
 //
+// Each git command takes the options of [guardOptions] and
+// [hookOptions]. A new clone holds the hook files of the template
+// directory, and git runs them when it checks out the clone. git also
+// runs each hook of the global config in the clone, where the remote
+// chose every file. [handler.runRemote] reads the git config of an
+// existing repository before it runs git. The config of a new clone
+// does not exist before the clone, so clone disables the hooks of
+// [readUserHooks].
+//
 //nolint:unparam // signature matches mcp.AddTool handler contract.
 func (h *handler) clone(ctx context.Context, input CloneInput, aside string) (*mcp.CallToolResult, any, error) {
-	args := h.credentialArgs(input.URL)
-	args = append(args, buildCloneArgs(input)...)
+	hooks, err := readUserHooks(ctx)
+	if err != nil {
+		return toolError(err), nil, nil
+	}
 
-	_, err := runGit(ctx, args...)
+	opts := slices.Concat(guardOptions(), hookOptions(hooks))
+
+	_, err = h.runGit(ctx, slices.Concat(h.credentialArgs(input.URL), opts, buildCloneArgs(input))...)
 	if err != nil {
 		return toolError(fmt.Errorf("%w: %w", ErrClone, err)), nil, nil
 	}
 
 	if len(input.SparsePaths) > 0 {
-		scArgs := []string{"-C", input.Dest, "sparse-checkout", "set"}
-		scArgs = append(scArgs, input.SparsePaths...)
+		scArgs := slices.Concat(opts, []string{"-C", input.Dest, "sparse-checkout", "set"}, input.SparsePaths)
 
-		_, scErr := runGit(ctx, scArgs...)
+		_, scErr := h.runGit(ctx, scArgs...)
 		if scErr != nil {
 			return toolError(fmt.Errorf("setting sparse checkout: %w", scErr)), nil, nil
 		}

@@ -30,6 +30,13 @@ const (
 	// after the main git invocation may already have consumed its
 	// budget.
 	cleanupTimeout = 30 * time.Second
+
+	// hookSwitchEnv names the environment variable that holds the
+	// value false. The --config-env option of git reads the value of
+	// a config key from an environment variable, and it accepts a key
+	// that holds '='. [hookOptions] uses the option to set
+	// hook.<name>.enabled for a hook with any name.
+	hookSwitchEnv = "MCP_GIT_HOOK_ENABLED"
 )
 
 var (
@@ -105,18 +112,28 @@ type remoteOp struct {
 	cleanupArgs []string
 
 	timeout int  // per-call timeout override in seconds
-	push    bool // resolve the remote's push URLs, refuse a local one, and push no submodule
+	push    bool // resolve the remote's push URLs, and push no submodule
+
+	// worktree is set for a subcommand that updates the working tree
+	// or writes commits, as pull does. git then runs the filters, the
+	// merge drivers, and the signing programs that the git config
+	// names, so [handler.runRemote] refuses a repository whose config
+	// names one.
+	worktree bool
 }
 
 // runRemote validates the repository, bounds the call by the
 // effective timeout, locks the repository's git directory, resolves
 // the remote's URL so [handler.credentialArgs] can authenticate it,
-// and returns git's combined output. It runs git with the hooks
-// directory disabled, so no hook file of the repository runs. It
-// refuses a push to a repository on the local file system, because
-// git runs the hooks of that repository outside the sandbox. For a
-// push, it reads the submodule recursion that the git config asks
-// for, and [handler.gitArgs] keeps git from pushing a submodule.
+// and returns git's combined output.
+//
+// git runs with the server's privileges, outside the Bash sandbox,
+// and the caller can write the git config of the repository. runRemote
+// therefore keeps git from running a command that this config names.
+// It refuses a remote whose URL [handler.checkURL] denies. It refuses
+// a repository whose config names a command that git options cannot
+// turn off, as [repoConfig.check] describes. [handler.gitOptions] and
+// [handler.commandEnv] turn off the hooks and each other command.
 func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 	if d := h.effectiveTimeout(op.timeout); d > 0 {
 		var cancel context.CancelFunc
@@ -162,15 +179,27 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 		return "", err
 	}
 
-	// A push to a repository on the local file system runs the hooks
-	// of that repository, as [handler.gitArgs] explains. git refuses
-	// such a push when it connects. This check refuses it first, so
-	// that the error names the remote.
-	if op.push && !h.allowFileURLs && slices.ContainsFunc(urls, isLocalURL) {
-		return "", fmt.Errorf(
-			"%w: remote %s names a repository on the local file system, and git runs its hooks outside the sandbox",
-			ErrDeniedURL, op.remote,
-		)
+	// git reaches a repository on the local file system by starting
+	// upload-pack or receive-pack in it. That process does not inherit
+	// the options of [handler.gitOptions], so it runs the hooks and the
+	// config commands of the other repository. The caller can write
+	// both when the repository lies under a path that the sandbox lets
+	// it write. git refuses each transport that [handler.protocols]
+	// does not name when it connects. This check refuses the URL first,
+	// so that the error names the remote and never its URL. A push
+	// goes to every push URL, and a fetch uses the first URL.
+	checked := urls
+	if !op.push {
+		checked = urls[:1]
+	}
+
+	for _, url := range checked {
+		if h.checkURL(url) != nil {
+			return "", fmt.Errorf(
+				"%w: remote %s has a URL that is not https, ssh, or user@host:path",
+				ErrDeniedURL, op.remote,
+			)
+		}
 	}
 
 	var checkSubmodules bool
@@ -191,9 +220,23 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 		}
 	}
 
-	out, err := runGit(ctx, h.gitArgs(op, abs, urls[0], checkSubmodules)...)
+	// The config is read last, so that the caller has the least time
+	// to change it before git reads it.
+	cfg, err := readRepoConfig(ctx, abs)
+	if err != nil {
+		return "", err
+	}
+
+	err = cfg.check(op.worktree)
+	if err != nil {
+		return "", err
+	}
+
+	opts := h.gitOptions(op, abs, urls[0], checkSubmodules, cfg.hooks)
+
+	out, err := h.runGit(ctx, slices.Concat(opts, op.args)...)
 	if err != nil && len(op.cleanupArgs) > 0 {
-		h.runCleanup(ctx, abs, op.cleanupArgs)
+		h.runCleanup(ctx, opts, op.cleanupArgs)
 	}
 
 	out = truncateOutput(out)
@@ -205,35 +248,15 @@ func (h *handler) runRemote(ctx context.Context, op remoteOp) (string, error) {
 	return out, err
 }
 
-// gitArgs returns the arguments of the git command that runs op in
-// the repository at the absolute path abs. url is the first URL of
-// the remote, which [handler.credentialArgs] authenticates. Only a
-// push reads checkSubmodules, which makes git check the submodule
-// commits that the push references.
-func (h *handler) gitArgs(op remoteOp, abs, url string, checkSubmodules bool) []string {
-	args := h.credentialArgs(url)
-
-	// A hook runs with the server's privileges, outside the Bash
-	// sandbox, and the caller can edit the code that a hook runs.
-	// That code is the hook file itself under an in-tree
-	// core.hooksPath, and each working-tree command that a hook
-	// starts. Point hooksPath at a non-directory so that no hook
-	// file runs. No tool input enables hooks.
-	args = append(args, "-c", "core.hooksPath="+os.DevNull)
-
-	// git pushes to a repository on the local file system by starting
-	// receive-pack itself. receive-pack does not inherit the hooksPath
-	// override, so it runs the hooks of the receiving repository with
-	// the server's privileges. The caller can write those hooks when
-	// the repository lies under a path that the sandbox lets it write.
-	// git resolves the remote again for the push, and the caller can
-	// change the definition of the remote after [handler.runRemote]
-	// checks its URLs. git therefore refuses the local transport
-	// itself, for a path and for a file:// URL alike. A value on the
-	// command line overrides the git config of the repository.
-	if op.push && !h.allowFileURLs {
-		args = append(args, "-c", "protocol.file.allow=never")
-	}
+// gitOptions returns the options that come before the subcommand in
+// each git command that op runs in the repository at the absolute
+// path abs. url is the first URL of the remote, which
+// [handler.credentialArgs] authenticates. Only a push reads
+// checkSubmodules, which makes git check the submodule commits that
+// the push references. hooks names each hook that the git config
+// defines.
+func (h *handler) gitOptions(op remoteOp, abs, url string, checkSubmodules bool, hooks []string) []string {
+	args := slices.Concat(h.credentialArgs(url), guardOptions(), hookOptions(hooks))
 
 	// git does not pass --no-verify on to the push that it starts in
 	// a submodule. That push runs the pre-push hooks of the
@@ -254,9 +277,54 @@ func (h *handler) gitArgs(op remoteOp, abs, url string, checkSubmodules bool) []
 		args = append(args, "-c", "push.recurseSubmodules="+recurse)
 	}
 
-	args = append(args, "-C", abs)
+	return append(args, "-C", abs)
+}
 
-	return append(args, op.args...)
+// hookOptions returns the git options that disable each hook that
+// hooks names. git 2.54 and later run each hook that the git config
+// defines with hook.<name>.command, whatever the hooks directory
+// holds. hook.<name>.enabled disables one hook, and a value on the
+// command line wins over every config file. The name of a hook can
+// hold '=', which -c reads as the end of the key. The value therefore
+// comes from the environment variable hookSwitchEnv.
+func hookOptions(hooks []string) []string {
+	args := make([]string, 0, len(hooks))
+
+	for _, name := range hooks {
+		args = append(args, "--config-env=hook."+name+".enabled="+hookSwitchEnv)
+	}
+
+	return args
+}
+
+// guardOptions returns the git options that turn off each command
+// that the git config names under a fixed key. A value on the command
+// line wins over every config file, and git passes the values on to
+// each git command that it starts in the same repository.
+func guardOptions() []string {
+	return []string{
+		// A hook runs with the server's privileges, outside the Bash
+		// sandbox, and the caller can edit the code that a hook runs.
+		// That code is the hook file itself under an in-tree
+		// core.hooksPath, and each working-tree command that a hook
+		// starts. Point hooksPath at a non-directory so that no hook
+		// file runs. No tool input enables hooks.
+		"-c", "core.hooksPath=" + os.DevNull,
+
+		// core.fsmonitor can name a hook that git runs when it reads
+		// the index.
+		"-c", "core.fsmonitor=false",
+
+		// core.alternateRefsCommand names a command that lists the
+		// refs of an alternate object store during a fetch. The
+		// command true lists no ref, so a fetch can download an object
+		// that the alternate already holds.
+		"-c", "core.alternateRefsCommand=true",
+
+		// A fetch, a merge, and a rebase each start git maintenance,
+		// which runs the pre-auto-gc hook and gc.recentObjectsHook.
+		"-c", "maintenance.auto=false",
+	}
 }
 
 // skippedHookNote returns the note that tells the caller about the
@@ -414,15 +482,16 @@ func isExecutableFile(path string) bool {
 }
 
 // runCleanup best-effort runs a git command that restores the
-// repository after a failed operation. It runs on a fresh deadline
-// because the main command may have consumed the caller's budget.
-func (h *handler) runCleanup(ctx context.Context, repo string, cleanupArgs []string) {
+// repository after a failed operation. The command takes opts, the
+// options of [handler.gitOptions], because the cleanup fires hooks
+// and writes the working tree as the failed command does. It runs on
+// a fresh deadline because the main command might have consumed the
+// caller's budget.
+func (h *handler) runCleanup(ctx context.Context, opts, cleanupArgs []string) {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 
-	args := append([]string{"-C", repo}, cleanupArgs...)
-
-	_, err := runGit(cleanupCtx, args...)
+	_, err := h.runGit(cleanupCtx, slices.Concat(opts, cleanupArgs)...)
 	if err != nil {
 		slog.WarnContext(
 			ctx,
@@ -433,17 +502,19 @@ func (h *handler) runCleanup(ctx context.Context, repo string, cleanupArgs []str
 	}
 }
 
-// runGit runs git with args and returns its combined stdout and
-// stderr. git writes fetch and push summaries to stderr, so both
+// runGit runs git with args in the environment of
+// [handler.commandEnv], and returns its combined stdout and stderr.
+// It runs each git command that contacts a remote or changes a
+// repository. git writes fetch and push summaries to stderr, so both
 // streams go to one buffer and neither can reach the process's own
 // stdout, which carries the MCP protocol. On failure the captured
 // output is folded into the returned error.
-func runGit(ctx context.Context, args ...string) (string, error) {
+func (h *handler) runGit(ctx context.Context, args ...string) (string, error) {
 	var buf bytes.Buffer
 
 	//nolint:gosec // G204: args are validated by the calling handler.
 	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Env = gitEnv()
+	cmd.Env = h.commandEnv()
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 
@@ -531,22 +602,6 @@ func remoteURLs(ctx context.Context, repo, remote string, push bool) ([]string, 
 	}
 
 	return strings.Split(out, "\n"), nil
-}
-
-// isLocalURL reports whether git reaches the repository at url on
-// the local file system. Git treats two forms of URL as local: a
-// file:// URL, and a path, which holds no ':' before its first '/'.
-// Every other URL names a host, as https://host/repo and the
-// SCP-style host:repo do.
-func isLocalURL(url string) bool {
-	if strings.HasPrefix(url, "file://") {
-		return true
-	}
-
-	colon := strings.IndexByte(url, ':')
-	slash := strings.IndexByte(url, '/')
-
-	return colon < 0 || (slash >= 0 && slash < colon)
 }
 
 // checkRemoteInputs validates the fields shared by the remote
@@ -678,6 +733,17 @@ func (h *handler) credentialArgs(url string) []string {
 // credential prompt, no editor for merge or rebase messages, and no
 // SSH passphrase prompt. GIT_SSH_COMMAND is only set when the caller
 // has not configured one.
+//
+// Each variable also keeps git from running a command that the git
+// config names. git reads the editor, the SSH command, the program
+// that asks for a password, and the proxy command of the git://
+// transport from the environment first. It reads core.editor,
+// sequence.editor, core.sshCommand, core.askPass, and core.gitProxy
+// only when the variable is not set. gitEnv therefore sets
+// GIT_ASKPASS and GIT_PROXY_COMMAND when the inherited environment
+// does not. GIT_ASKPASS takes the value of SSH_ASKPASS, which git
+// reads after core.askPass. GIT_PROXY_COMMAND is empty, which runs no
+// proxy.
 func gitEnv() []string {
 	env := append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
@@ -689,7 +755,49 @@ func gitEnv() []string {
 		env = append(env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
 	}
 
+	if _, ok := os.LookupEnv("GIT_ASKPASS"); !ok {
+		env = append(env, "GIT_ASKPASS="+os.Getenv("SSH_ASKPASS"))
+	}
+
+	if _, ok := os.LookupEnv("GIT_PROXY_COMMAND"); !ok {
+		env = append(env, "GIT_PROXY_COMMAND=")
+	}
+
 	return env
+}
+
+// commandEnv returns the environment of a git command that contacts a
+// remote or changes a repository. It extends [gitEnv].
+// GIT_ALLOW_PROTOCOL makes git refuse each transport that
+// [handler.protocols] does not name, whatever the git config allows.
+// The variable that hookSwitchEnv names holds the value that
+// [hookOptions] gives to hook.<name>.enabled.
+func (h *handler) commandEnv() []string {
+	return append(gitEnv(),
+		"GIT_ALLOW_PROTOCOL="+strings.Join(h.protocols(), ":"),
+		hookSwitchEnv+"=false",
+	)
+}
+
+// protocols returns the names of the git transports that the handler
+// lets git use. They are the transports of the URLs that
+// [handler.checkURL] accepts. The list never holds ext, the transport
+// that runs a command from the URL. git resolves a remote again after
+// [handler.runRemote] checks its URLs, and the git config can rewrite
+// a URL or name a transport for a remote, so git enforces the list
+// itself.
+func (h *handler) protocols() []string {
+	protocols := []string{"https", "ssh"}
+
+	if h.allowInsecure {
+		protocols = append(protocols, "http", "git")
+	}
+
+	if h.allowFileURLs {
+		protocols = append(protocols, "file")
+	}
+
+	return protocols
 }
 
 // checkDest verifies that dest is under one of the allowed

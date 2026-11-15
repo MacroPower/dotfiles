@@ -648,6 +648,112 @@ func TestHandleOriginMismatch(t *testing.T) {
 	assert.Contains(t, resultText(t, result), "origin URL mismatch")
 }
 
+// The git config can rewrite the URL of a clone to a transport that
+// the server denies, after checkURL accepts the URL. git itself must
+// refuse the transport.
+func TestHandleCloneRefusesRewrittenURL(t *testing.T) { //nolint:paralleltest // t.Setenv
+	bare := initBareRepo(t)
+
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	rewrite := "[url \"" + filepath.Dir(bare) + "/\"]\n\tinsteadOf = https://example.invalid/\n"
+
+	require.NoError(t, os.WriteFile(global, []byte(rewrite), 0o644))
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+
+	input := CloneInput{
+		URL:  "https://example.invalid/" + filepath.Base(bare),
+		Dest: filepath.Join(t.TempDir(), "cloned"),
+	}
+
+	result, _, err := (&handler{}).handleClone(t.Context(), nil, input)
+	require.NoError(t, err)
+	require.True(t, result.IsError, "git must refuse the file transport")
+	assert.Contains(t, resultText(t, result), "transport 'file' not allowed")
+
+	// The rewrite reaches the bare repository, so the refusal is what
+	// kept git from cloning it.
+	result, _, err = (&handler{allowFileURLs: true}).handleClone(t.Context(), nil, input)
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+}
+
+// A new clone holds the hook files of the template directory, and git
+// fires hooks when it checks out the clone and when it sets the sparse
+// checkout.
+func TestHandleCloneSkipsHooks(t *testing.T) { //nolint:paralleltest // t.Setenv
+	bare := initBareRepo(t)
+	script, marker := markerScript(t)
+	template := t.TempDir()
+
+	for _, event := range hookEvents {
+		writeHookIn(t, filepath.Join(template, "hooks"), event, "#!/bin/sh\nexec '"+script+"'\n")
+	}
+
+	t.Setenv("GIT_TEMPLATE_DIR", template)
+
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	result, _, err := (&handler{allowFileURLs: true}).handleClone(t.Context(), nil, CloneInput{
+		URL:         bare,
+		Dest:        dest,
+		SparsePaths: []string{"docs"},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	requireNotRun(t, marker)
+	assert.FileExists(t, filepath.Join(dest, ".git", "hooks", "post-checkout"),
+		"the clone must hold the hook files of the template")
+}
+
+// A hook of the global config runs in the new clone, and the remote
+// chose each file of that clone. git fires hooks when it checks out
+// the clone and when it sets the sparse checkout.
+func TestHandleCloneSkipsGlobalHooks(t *testing.T) { //nolint:paralleltest // t.Setenv
+	bare := initBareRepo(t)
+	script, marker := markerScript(t)
+
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	require.NoError(t, os.WriteFile(global, []byte(hookConfig(script, "check", "x=y")), 0o644))
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+
+	result, _, err := (&handler{allowFileURLs: true}).handleClone(t.Context(), nil, CloneInput{
+		URL:         bare,
+		Dest:        filepath.Join(t.TempDir(), "cloned"),
+		SparsePaths: []string{"docs"},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	requireNotRun(t, marker)
+}
+
+// A second git_clone call pulls into the existing checkout, and the
+// caller can write the git config of that checkout.
+func TestHandleClonePullRefusesConfigCommands(t *testing.T) {
+	t.Parallel()
+
+	bare := initBareRepo(t)
+	h := &handler{allowFileURLs: true}
+
+	input := CloneInput{URL: bare, Dest: filepath.Join(t.TempDir(), "cloned")}
+
+	result, _, err := h.handleClone(t.Context(), nil, input)
+	require.NoError(t, err)
+	require.False(t, result.IsError, resultText(t, result))
+
+	script, marker := markerScript(t)
+
+	runGitCmds(t, [][]string{{"git", "-C", input.Dest, "config", "filter.x.smudge", script}})
+
+	result, _, err = h.handleClone(t.Context(), nil, input)
+	require.NoError(t, err)
+	require.True(t, result.IsError, "the pull must refuse the checkout")
+	assert.Contains(t, resultText(t, result), ErrDeniedConfig.Error()+": the repository sets filter.x.smudge.")
+
+	requireNotRun(t, marker)
+}
+
 func TestHandleCloneCorruptDest(t *testing.T) {
 	t.Parallel()
 
