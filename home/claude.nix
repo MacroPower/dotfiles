@@ -1378,21 +1378,25 @@ let
     ]
   );
 
-  # Sops secrets that the wrappers above export into the session
+  # Sops secrets that gitWrapper, kagiWrapper, spaceliftWrapper,
+  # githubWrapper, and workmuxWrapped export into the session
   # environment. The sandbox credentials block denies them, so no
-  # sandboxed command reads a token out of its own environment. Export
-  # sites: gitWrapper (762), kagiWrapper (767), spaceliftWrapper (772),
-  # githubWrapper (804), workmuxWrapped (866). Spelling the names out
-  # beats deriving them from those sites, which mix positional
-  # exportSecret calls, attrset exportSecrets calls, and literal export
-  # lines, and whose union would also pick up ARGOCD_BASE_URL, which is
-  # not a credential. DAGGER_CLOUD_TOKEN is missing here because the
-  # Dagger CLI needs it inside the sandbox to reach Dagger Cloud, and
-  # mask mode (the middle ground) breaks on macOS. HASS_TOKEN is missing
-  # because sandboxed commands call the Home Assistant API with it.
-  # GITHUB_TOKEN and
-  # GITHUB_PERSONAL_ACCESS_TOKEN alias gh_token; literal export lines at
-  # 805 and 868-869 set them, so they have no sops secret of their own.
+  # sandboxed command reads a token out of its own environment.
+  #
+  # The list spells the names out instead of deriving them from those
+  # wrappers. The wrappers mix positional exportSecret calls, attrset
+  # exportSecrets calls, and literal export lines. The union of their
+  # variables also includes ARGOCD_BASE_URL, which is not a credential.
+  #
+  # DAGGER_CLOUD_TOKEN is missing here because the Dagger CLI needs it
+  # inside the sandbox to reach Dagger Cloud. Mask mode, the middle
+  # ground, breaks on macOS. HASS_TOKEN is missing because sandboxed
+  # commands call the Home Assistant API with it.
+  #
+  # GITHUB_TOKEN and GITHUB_PERSONAL_ACCESS_TOKEN alias gh_token and
+  # have no sops secret of their own. A literal export line in
+  # githubWrapper sets GITHUB_PERSONAL_ACCESS_TOKEN, and literal export
+  # lines in workmuxWrapped set both variables.
   deniedCredentialVars = [
     "ARGOCD_API_TOKEN"
     "ATUIN_PASSWORD"
