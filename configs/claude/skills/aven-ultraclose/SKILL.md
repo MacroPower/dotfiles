@@ -98,7 +98,10 @@ approved task. `status` then prints an `ended` line.
 2. Confirm that the main checkout is clean and on the base branch.
 3. Find how the project builds, tests, and checks itself, and what its
    commit hooks run. Read CLAUDE.md, the task runner config, and
-   `git log -15`.
+   `git log -15`. Find the build caches that those commands fill, and the
+   file system that holds each cache. Some caches evict their content when
+   the free space of the disk falls to a threshold, so find that threshold
+   for each cache.
 4. Run `ultraclose.py init --run <scratchpad>/ultraclose --limit <N>`. If
    that directory holds an earlier run, pass a new directory, such as
    `<scratchpad>/ultraclose-2`. `init` refuses the directory of an earlier
@@ -116,6 +119,31 @@ approved task. `status` then prints an `ended` line.
    `/README.md` matches the `README.md` at the root of the repository,
    `*/README.md` matches the `README.md` of every directory, and
    `README.md` matches no file.
+
+   Pass the disk flags that fit the build caches of the check and the
+   commit hooks. `ultraclose.py watch` exits when a watched file system is
+   low, so that you can free space before the disk fills and before a
+   cache evicts its content. A landing with an evicted cache builds
+   everything again, so it takes many times as long.
+
+   - `--disk-path <path>`: `watch` measures the file system of the
+     repository and the file system of your home directory. Pass a path
+     for each build cache that another file system holds, such as the
+     data directory of Docker.
+   - `--disk-floor-percent <dir>=<N>`: `watch` counts the file system
+     that holds `<dir>` as low when less than N percent of it is free, and
+     the flag adds `<dir>` to the watched paths. The floor does not apply
+     to the other file systems. Pass this flag for each cache that has a
+     threshold in percent of the disk. Set N to more than that threshold,
+     and set `<dir>` to a directory on the file system of the cache. For
+     example, the default garbage collection of the Dagger engine prunes
+     its cache until 20% of the disk is free. So pass
+     `--disk-floor-percent <dir>=25` with a `<dir>` on the file system
+     that holds the state of the Dagger engine, such as the data directory
+     of Docker or your home directory.
+   - `--disk-floor-gb <N>`: `watch` counts every watched file system as
+     low when fewer than N GB of it are free. The default is 30. Pass more
+     when a cache has a higher threshold in GB.
 5. Write `rules.md` in the run directory. Every agent reads it, so state
    each rule as an instruction:
    - The commands that build, test, and run the full check.
@@ -193,11 +221,17 @@ approved task. `status` then prints an `ended` line.
 
 `init` writes the config of a run, and the run keeps that config until you
 change it. `ultraclose.py status` prints the limit, the shared globs, the
-check, and the health command. `ultraclose.py config` changes the config
-and prints the result. It takes the `--limit`, `--rounds`, `--check`,
-`--health`, `--shared`, and `--disk-floor-gb` flags of `init`, and its
-`--unshared <glob>` flag removes a shared glob. `config` prints the warning
-of `triage` for each glob that its `--shared` flag adds and that matches no
+check, and the health command. It also prints the free space and the floor
+of each watched file system.
+
+`ultraclose.py config` changes the config and prints the result. It takes
+the `--limit`, `--rounds`, `--check`, `--health`, `--shared`,
+`--disk-floor-gb`, `--disk-floor-percent`, and `--disk-path` flags of
+`init`. Its `--unshared <glob>` flag removes a shared glob, and its
+`--no-disk-path <path>` flag removes a disk path and the percent floor of
+that path. `--disk-floor-percent <dir>=0` removes the percent floor of
+`<dir>` and keeps `<dir>` as a disk path. `config` prints the warning of
+`triage` for each glob that its `--shared` flag adds and that matches no
 file of any task.
 
 Every config change applies to the commands that start after it. So a
@@ -222,7 +256,9 @@ prints those tasks, as the Scope section says. Fit the run in these ways:
   both tasks changed the same lines.
 - Change the check when it skips a part of the repository that those tasks
   change. When the new check requires a service that the health command
-  does not test, change the health command as well.
+  does not test, change the health command as well. When the new check
+  fills a build cache that the disk flags do not cover, set those flags as
+  the Setup section says.
 - Rewrite each rule in `rules.md` that the landed tasks made false, such as
   the layout of a module that they split. Remove each exception that the
   run made for one of them.
@@ -300,7 +336,9 @@ Repeat until the run ends:
    Workflow lets each task land the moment it finishes. Leave `model` unset
    so that agents follow the session model.
 3. Keep `ultraclose.py watch` running in a background Bash call. It exits
-   when free disk space runs low.
+   with a `DISK` line when a watched file system is low, and the Hazards
+   section says what to do then. It exits with an `ENDED` line when the
+   run ends, so start it again after you add tasks to an ended run.
 4. End the turn. Each Workflow completion wakes you with a result. File its
    `defects` as the Defects section says, in the same turn as you act on its
    status. When the result gives a user message about other work as the
@@ -487,6 +525,22 @@ change causes the failure. Otherwise, note the task.
 When you fix something by hand before a landing, record the fix in
 `notes.md`, because no reviewer saw it.
 
+Each landing that runs the check or the commit prints a `TIMES` line before
+the `RESULT` line, such as
+`TIMES check=1m22s (median 1m24s) commit=11m52s (median 18s)`. The time of
+the commit includes the commit hooks. When a commit hook changes the index,
+the landing commits a second time, and the time of the commit covers both
+attempts. Each median covers the earlier
+landings of the run that landed a task. `ultraclose.py status` prints the
+medians and the times of the last landings.
+
+Read the `TIMES` line of each landing. When a step takes more than twice
+its median, and more than a minute longer than its median, do not report
+the time as normal. Find the cause before you start another landing. A
+build cache that evicted its content is a common cause. `ultraclose.py
+status` prints the free space of each watched file system, and the Disk
+entry of the Hazards section says how to free space.
+
 ## Pushes
 
 Ask the user before the first push. After that, push only when a task
@@ -533,9 +587,24 @@ the Loop table says.
   The message resumes a second copy of the agent. Relaunch the task with
   `ultraclose.py args <ref>` instead.
 - **Stash:** never run `git stash`. All worktrees share one stash list.
-- **Disk:** when `watch` prints `DISK`, clean the build caches only while no
-  landing and no check runs, then start `watch` again. A cache clean races
+- **Disk:** when `watch` prints `DISK`, free space on each file system
+  that the `DISK` lines name, then start `watch` again. Clean the build
+  caches only while no landing and no check runs. A cache clean races
   running builds, so land again any task that failed during the clean.
+  Start with what the check and the hooks do not reuse, such as unused
+  container volumes, because the caches that they reuse keep landings
+  fast. When a `DISK` line says that `watch` cannot measure a path, remove
+  that path with `ultraclose.py config --no-disk-path <path>`.
+
+  When you cannot free enough space, lower the floor that the `DISK` line
+  names with `ultraclose.py config`, and record the change in `notes.md`.
+  A line that ends with `set by --disk-floor-percent <dir>=<N>` names the
+  percent floor of `<dir>`. Pass `--disk-floor-percent <dir>=<M>` with an
+  M less than N, or with an M of 0 to remove the floor. Every other line
+  names the floor in GB, so lower `--disk-floor-gb`, which applies to
+  every watched file system. A file system that holds no build cache and
+  no worktree, such as a small home partition, does not need a floor.
+  Remove its path with `--no-disk-path <path>`.
 - **Lint cache:** golangci-lint issues under the path of another worktree,
   such as `../t-<ref>/...`, come from the lint cache that all checkouts
   share. The command that reported them ran without the private cache
@@ -551,7 +620,7 @@ the Loop table says.
   other inflight task with `ultraclose.py args <ref>`. The agents find the
   unfinished work in the worktree. A list that arrives after the relaunch
   can name a task that you relaunched, and the Landing section says to
-  skip its object.
+  skip its object. New sessions do not run `watch`, so start it again.
 
 ## Notes
 

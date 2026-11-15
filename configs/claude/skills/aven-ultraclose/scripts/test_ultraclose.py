@@ -53,8 +53,12 @@ def ultraclose(*args, cwd, env, script=SCRIPT):
     return finished(*args, cwd=cwd, env=env, script=script).stdout
 
 
-def refused(*args, cwd, env, script=SCRIPT):
-    """Run one ultraclose.py command that must fail, and return its message."""
+def refused(*args, cwd, env, script=SCRIPT, timeout=None):
+    """Run one ultraclose.py command that must fail, and return its message.
+
+    A timeout in seconds stops a command that keeps running, such as a
+    watch command that does not refuse its flags.
+    """
     p = subprocess.run(
         [sys.executable, str(script), *args],
         cwd=cwd,
@@ -62,6 +66,7 @@ def refused(*args, cwd, env, script=SCRIPT):
         check=False,
         capture_output=True,
         text=True,
+        timeout=timeout,
     )
     if not p.returncode:
         raise AssertionError(f"ultraclose.py {' '.join(args)} passed:\n{p.stdout}")
@@ -296,8 +301,22 @@ COVERED = "tools/mcp/render.go"
 # The help of each --shared flag prints it, and so does each warning about
 # a shared glob that matches no file.
 ROOT_GLOB = "/README.md matches the README.md at the root of the repository"
-# The line that status prints for a run that has ended.
+# The line that status prints for a run that has ended, and the line that
+# watch prints for it.
 ENDED = "ended: no task is pending, inflight, or approved"
+WATCH_ENDED = "ENDED no task is pending, inflight, or approved"
+# What status prints after "disk " for a watched file system, and watch
+# after "DISK " for a low one. The text holds the first disk path of the
+# file system, the free space, the size, the free share of the size, and
+# the floor. The words before the floor say whether the file system is low.
+# When the percent floor of a disk path sets the floor, the text ends with
+# that path and its percent.
+DISK_TEXT = re.compile(
+    r"(?P<path>.+): (?P<free>\d+) GB free of (?P<size>\d+) GB \((?P<share>\d+)%\),"
+    r" (?P<low>less than the floor of|floor) (?P<floor>\d+) GB"
+    r"(?: set by --disk-floor-percent (?P<by>.+)=(?P<percent>[\d.]+))?"
+)
+LOW = "less than the floor of"
 # The states of a task that keep a run from its end, and the other states.
 UNFINISHED = ("pending", "inflight", "approved")
 FINISHED = ("landed", "noted", "closed")
@@ -307,6 +326,71 @@ FINISHED = ("landed", "noted", "closed")
 STORED_FILES = {"summary": "summary.txt", "notes": "notes.txt"}
 # The directory that holds a golangci-lint cache of one checkout.
 LINT_CACHE = "golangci-lint-cache"
+
+
+def home_repo(tmp):
+    """Create an empty repository beside a home directory.
+
+    The environment names the home directory. So the default disk paths
+    of a run, the repository and the home directory, share the file
+    system of the temporary directory. Return the repository, the
+    environment, and the home directory.
+    """
+    repo, env = new_repo(tmp)
+    home = Path(tmp, "home")
+    home.mkdir()
+    env["HOME"] = str(home)
+    return repo, env, home
+
+
+def other_file_system(tmp):
+    """An existing path on another file system than tmp, or None.
+
+    The commands can measure the free space of the path. Some of the space
+    of its file system is in use, so a floor of 100 percent is more than
+    the free space. The file systems of a host differ, so the function
+    tries each path in turn.
+    """
+    device = os.stat(tmp).st_dev
+    for path in ("/dev", "/dev/shm", "/run", "/"):
+        try:
+            if os.stat(path).st_dev != device:
+                usage = shutil.disk_usage(path)
+                if usage.free < usage.total:
+                    return path
+        except OSError:
+            continue
+    return None
+
+
+def disk_texts(repo, env):
+    """What status prints for each watched file system, without the prefix."""
+    lines = ultraclose("status", cwd=repo, env=env).splitlines()
+    return [line.removeprefix("disk ") for line in lines if line.startswith("disk ")]
+
+
+def watching(repo, env):
+    """Start a watch command that measures 20 times a second."""
+    return subprocess.Popen(
+        [sys.executable, str(SCRIPT), "watch", "--interval", "0.05"],
+        cwd=repo,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def watched(repo, env):
+    """Run a watch command that must exit, and return the lines it prints."""
+    with watching(repo, env) as p:
+        try:
+            out, err = p.communicate(timeout=60)
+        finally:
+            p.kill()
+    if p.returncode:
+        raise AssertionError(f"ultraclose.py watch failed:\n{err}")
+    return out.splitlines()
 
 
 def store_step(task_dir):
@@ -481,6 +565,59 @@ class StatusTest(unittest.TestCase):
                 lines = ultraclose("status", cwd=repo, env=env).splitlines()
                 self.assertEqual(ENDED in lines, ended)
 
+    def test_prints_landing_times(self):
+        def landing(n, result, **times):
+            return {"ref": f"APP-000{n}", "result": result, "times": times}
+
+        # The medians count the landings that landed a task. The times of
+        # the three checks are 80, 90, and 85.4 seconds, and the times of
+        # the four commits are 10, 20, 710, and 16 seconds.
+        landings = [
+            landing(1, "OK", check=80, commit=10),
+            landing(2, "CHECKFAIL", check=9000),
+            landing(3, "OK", check=90, commit=20),
+            landing(4, "COMMITFAIL", check=85, commit=9000),
+            landing(5, "OK", commit=710),
+            landing(6, "OK", check=85.4, commit=16),
+        ]
+        # name: (the landings of the run, the lines that status prints)
+        cases = {
+            "no landing": ([], []),
+            "a failed landing gives no median": (
+                landings[1:2],
+                ["landing APP-0002 CHECKFAIL: check=150m00s"],
+            ),
+            "the medians and the last five landings": (
+                landings,
+                [
+                    "median landing: check=1m25s commit=18s",
+                    "landing APP-0002 CHECKFAIL: check=150m00s",
+                    "landing APP-0003 OK: check=1m30s commit=20s",
+                    "landing APP-0004 COMMITFAIL: check=1m25s commit=150m00s",
+                    "landing APP-0005 OK: commit=11m50s",
+                    "landing APP-0006 OK: check=1m25s commit=16s",
+                ],
+            ),
+        }
+        for name, (recorded, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = new_repo(tmp)
+                run = Path(tmp, "run")
+                ultraclose("init", "--run", str(run), cwd=repo, env=env)
+                # The state file of a run has no landings key before the
+                # first landing that runs a timed step.
+                if recorded:
+                    st = state_of(run)
+                    st["landings"] = recorded
+                    (run / "state.json").write_text(json.dumps(st))
+                lines = ultraclose("status", cwd=repo, env=env).splitlines()
+                found = [
+                    line
+                    for line in lines
+                    if line.startswith(("median landing", "landing "))
+                ]
+                self.assertEqual(found, want)
+
 
 class ConfigTest(unittest.TestCase):
     """The config command changes a run after init."""
@@ -563,6 +700,641 @@ class ConfigTest(unittest.TestCase):
                 ultraclose("config", *flags, cwd=repo, env=env)
                 started = json.loads(ultraclose("next", cwd=repo, env=env))
                 self.assertEqual([t["task"]["ref"] for t in started], want)
+
+
+class DiskTest(unittest.TestCase):
+    """A run watches the free space of the file systems of its disk paths."""
+
+    def test_init_sets_floors(self):
+        # Each flag names a path by its key in braces.
+        # name: (the init flags, the floor in GB, the percent floor of each
+        # path by its key, the disk paths by their keys)
+        cases = {
+            "no flag": ([], 30, {}, ["repo", "home"]),
+            "both flags": (
+                ["--disk-floor-gb", "12.5", "--disk-floor-percent", "{home}=25"],
+                12.5,
+                {"home": 25},
+                ["repo", "home"],
+            ),
+            "a percent floor adds its path": (
+                ["--disk-floor-percent", "{cache}=25"],
+                30,
+                {"cache": 25},
+                ["repo", "home", "cache"],
+            ),
+            "a percent floor for each path": (
+                ["--disk-floor-percent", "{home}=10"]
+                + ["--disk-floor-percent", "{cache}=25"],
+                30,
+                {"home": 10, "cache": 25},
+                ["repo", "home", "cache"],
+            ),
+            "the last flag of a path applies": (
+                ["--disk-floor-percent", "{cache}=25"]
+                + ["--disk-floor-percent", "{cache}=12.5"],
+                30,
+                {"cache": 12.5},
+                ["repo", "home", "cache"],
+            ),
+            "a floor of 0 percent sets no floor and adds no path": (
+                ["--disk-floor-percent", "{cache}=0"],
+                30,
+                {},
+                ["repo", "home"],
+            ),
+            "the last = of a flag ends its path": (
+                ["--disk-floor-percent", "{equals}=25"],
+                30,
+                {"equals": 25},
+                ["repo", "home", "equals"],
+            ),
+        }
+        for name, (flags, gb, percents, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, home = home_repo(tmp)
+                paths = {"home": str(home)}
+                for key, directory in (("cache", "cache"), ("equals", "a=b")):
+                    paths[key] = str(Path(tmp, directory))
+                    Path(paths[key]).mkdir()
+                run = Path(tmp, "run")
+                flags = [flag.format(**paths) for flag in flags]
+                ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
+                config = state_of(run)["config"]
+                paths["repo"] = config["repo"]
+                self.assertEqual(config["diskFloorGb"], gb)
+                self.assertEqual(
+                    config["diskFloorPercent"],
+                    {paths[key]: n for key, n in percents.items()},
+                )
+                self.assertEqual(config["diskPaths"], [paths[key] for key in want])
+
+    def test_init_sets_disk_paths(self):
+        # name: (the path of each --disk-path flag, the disk paths of the run)
+        cases = {
+            "no flag keeps the defaults": ([], ["repo", "home"]),
+            "a flag adds to the defaults": (["cache"], ["repo", "home", "cache"]),
+            "flags keep their order": (
+                ["other", "cache"],
+                ["repo", "home", "other", "cache"],
+            ),
+            "a default path appears once": (
+                ["home", "cache"],
+                ["repo", "home", "cache"],
+            ),
+            "a relative path": (["../cache"], ["repo", "home", "cache"]),
+        }
+        for name, (flags, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, home = home_repo(tmp)
+                for directory in ("cache", "other"):
+                    Path(tmp, directory).mkdir()
+                run = Path(tmp, "run")
+                args = ["init", "--run", str(run)]
+                for flag in flags:
+                    path = flag if flag.startswith(".") else str(Path(tmp, flag))
+                    args += ["--disk-path", path]
+                ultraclose(*args, cwd=repo, env=env)
+                config = state_of(run)["config"]
+                # The run names the repository by the path that git prints.
+                root = Path(config["repo"]).parent
+                paths = {"repo": config["repo"], "home": str(home)}
+                paths |= {d: str(root / d) for d in ("cache", "other")}
+                # A temporary directory can sit behind a symbolic link.
+                self.assertEqual(
+                    [os.path.realpath(p) for p in config["diskPaths"]],
+                    [os.path.realpath(paths[key]) for key in want],
+                )
+
+    def test_init_without_home_directory(self):
+        # The home directory of the environment does not exist, so the run
+        # watches only the repository.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            env["HOME"] = str(Path(tmp, "absent"))
+            run = Path(tmp, "run")
+            flags = ["--disk-floor-gb", "0"]
+            ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
+            config = state_of(run)["config"]
+            self.assertEqual(config["diskPaths"], [config["repo"]])
+            # The watch command measures the repository, so it does not
+            # report a path that it cannot measure.
+            [text] = disk_texts(repo, env)
+            found = DISK_TEXT.fullmatch(text)
+            self.assertTrue(found, text)
+            self.assertEqual(found["path"], config["repo"])
+            self.assertEqual(watched(repo, env), [WATCH_ENDED])
+
+    def test_init_refuses_bad_disk_flags(self):
+        # Each flag names the home directory as {home}.
+        # name: (the flags, a part of the message)
+        cases = {
+            "a disk path that does not exist": (
+                ["--disk-path", "absent"],
+                "absent does not exist",
+            ),
+            "a percent floor of a path that does not exist": (
+                ["--disk-floor-percent", "absent=25"],
+                "absent does not exist",
+            ),
+            "a percent floor without a path": (
+                ["--disk-floor-percent", "25"],
+                "give PATH=N",
+            ),
+            "a percent floor with an empty path": (
+                ["--disk-floor-percent", "=25"],
+                "give PATH=N",
+            ),
+            "a floor of more than 100 percent": (
+                ["--disk-floor-percent", "{home}=100.5"],
+                "between 0 and 100",
+            ),
+            "a floor of less than 0 percent": (
+                ["--disk-floor-percent", "{home}=-1"],
+                "between 0 and 100",
+            ),
+        }
+        for name, (flags, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, home = home_repo(tmp)
+                flags = [flag.format(home=home) for flag in flags]
+                run = Path(tmp, "run")
+                message = refused("init", "--run", str(run), *flags, cwd=repo, env=env)
+                self.assertIn(want, message)
+                self.assertFalse(run.exists())
+
+    def disk_run(self, tmp):
+        """Start a run that watches the default paths and a cache directory.
+
+        Return the repository, the environment, the run directory, and
+        each disk path by its name.
+        """
+        repo, env, home = home_repo(tmp)
+        cache, run = Path(tmp, "cache"), Path(tmp, "run")
+        cache.mkdir()
+        ultraclose(
+            "init",
+            "--run",
+            str(run),
+            "--disk-floor-gb",
+            "0",
+            "--disk-path",
+            str(cache),
+            cwd=repo,
+            env=env,
+        )
+        paths = {
+            "repo": state_of(run)["config"]["repo"],
+            "home": str(home),
+            "cache": str(cache),
+            "other": str(Path(tmp, "other")),
+        }
+        Path(paths["other"]).mkdir()
+        return repo, env, run, paths
+
+    def test_config_changes_disk_paths(self):
+        # name: (the paths that --disk-path adds, the paths that
+        # --no-disk-path removes, the disk paths of the run afterward)
+        cases = {
+            "--disk-path adds a path": (
+                ["other"],
+                [],
+                ["repo", "home", "cache", "other"],
+            ),
+            "--disk-path keeps one copy of a path": (
+                ["cache"],
+                [],
+                ["repo", "home", "cache"],
+            ),
+            "--no-disk-path removes an init path": ([], ["cache"], ["repo", "home"]),
+            "--no-disk-path removes a default path": (
+                [],
+                ["home"],
+                ["repo", "cache"],
+            ),
+            "both flags": (["other"], ["repo", "cache"], ["home", "other"]),
+        }
+        for name, (added, removed, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, run, paths = self.disk_run(tmp)
+                before = state_of(run)
+                # The command removes a path that no directory holds anymore.
+                if "cache" in removed:
+                    Path(paths["cache"]).rmdir()
+                flags = []
+                for key in added:
+                    flags += ["--disk-path", paths[key]]
+                for key in removed:
+                    flags += ["--no-disk-path", paths[key]]
+                printed = json.loads(ultraclose("config", *flags, cwd=repo, env=env))
+                after = state_of(run)
+                self.assertEqual(
+                    after["config"],
+                    {**before["config"], "diskPaths": [paths[key] for key in want]},
+                )
+                self.assertEqual(printed, after["config"])
+
+    def test_config_changes_percent_floors(self):
+        # Each case starts from a run with a percent floor of 25 for the
+        # cache directory. Each flag names a path by its key in braces.
+        # name: (the flags, the percent floor of each path by its key, the
+        # disk paths by their keys)
+        cases = {
+            "a floor for another disk path": (
+                ["--disk-floor-percent", "{home}=10"],
+                {"cache": 25, "home": 10},
+                ["repo", "home", "cache"],
+            ),
+            "a floor adds its path": (
+                ["--disk-floor-percent", "{other}=10"],
+                {"cache": 25, "other": 10},
+                ["repo", "home", "cache", "other"],
+            ),
+            "a floor replaces the floor of its path": (
+                ["--disk-floor-percent", "{cache}=12.5"],
+                {"cache": 12.5},
+                ["repo", "home", "cache"],
+            ),
+            "a floor of 0 percent removes the floor and keeps the path": (
+                ["--disk-floor-percent", "{cache}=0"],
+                {},
+                ["repo", "home", "cache"],
+            ),
+            "a floor of 0 percent adds no path": (
+                ["--disk-floor-percent", "{other}=0"],
+                {"cache": 25},
+                ["repo", "home", "cache"],
+            ),
+            "--no-disk-path removes the floor of its path": (
+                ["--no-disk-path", "{cache}"],
+                {},
+                ["repo", "home"],
+            ),
+            "--no-disk-path wins over a floor of its path": (
+                ["--disk-floor-percent", "{cache}=10", "--no-disk-path", "{cache}"],
+                {},
+                ["repo", "home"],
+            ),
+            "another flag keeps the floors": (
+                ["--disk-floor-gb", "12.5"],
+                {"cache": 25},
+                ["repo", "home", "cache"],
+            ),
+        }
+        for name, (flags, percents, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, run, paths = self.disk_run(tmp)
+                floor = ["--disk-floor-percent", f"{paths['cache']}=25"]
+                ultraclose("config", *floor, cwd=repo, env=env)
+                before = state_of(run)
+                self.assertEqual(
+                    before["config"]["diskFloorPercent"], {paths["cache"]: 25}
+                )
+                flags = [flag.format(**paths) for flag in flags]
+                printed = json.loads(ultraclose("config", *flags, cwd=repo, env=env))
+                after = state_of(run)
+                changed = {
+                    "diskFloorPercent": {paths[key]: n for key, n in percents.items()},
+                    "diskPaths": [paths[key] for key in want],
+                }
+                if "--disk-floor-gb" in flags:
+                    changed["diskFloorGb"] = 12.5
+                self.assertEqual(after["config"], {**before["config"], **changed})
+                self.assertEqual(printed, after["config"])
+
+    def test_config_refuses_bad_disk_flags(self):
+        # name: (the flags, a part of the message)
+        cases = {
+            "a disk path that does not exist": (
+                ["--disk-path", "absent"],
+                "absent does not exist",
+            ),
+            "a path that the run does not watch": (
+                ["--no-disk-path", "absent"],
+                "no disk path",
+            ),
+            "a percent floor without a path": (
+                ["--disk-floor-percent", "25"],
+                "give PATH=N",
+            ),
+            "a floor of more than 100 percent": (
+                ["--disk-floor-percent", "{cache}=100.5"],
+                "between 0 and 100",
+            ),
+        }
+        for name, (flags, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, run, paths = self.disk_run(tmp)
+                flags = [flag.format(**paths) for flag in flags]
+                before = state_of(run)
+                message = refused("config", "--limit", "10", *flags, cwd=repo, env=env)
+                self.assertIn(want, message)
+                # The command changes nothing when it refuses one flag.
+                self.assertEqual(state_of(run), before)
+
+    def test_floors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            usage = shutil.disk_usage(tmp)
+        size, free = usage.total / 2**30, usage.free / 2**30
+        share = 100 * free / size
+        # The free space changes during the test, and so does the size of
+        # some file systems. Each floor that the free space meets is half
+        # of the free space, and each other floor is far more than the
+        # free space. The test allows 1 GB between each size that it
+        # computes and the size that a command prints.
+        met_gb, unmet_gb = free / 2, 2 * free + 1
+        met_share, unmet_share = share / 2, (share + 100) / 2
+        # name: (the floor in GB, the percent floor of the home directory,
+        # whether the file system is low)
+        cases = {
+            "no floor": (0, 0, False),
+            "a floor in GB that the free space meets": (met_gb, 0, False),
+            "a floor in GB that the free space does not meet": (unmet_gb, 0, True),
+            "a floor in percent that the free space meets": (0, met_share, False),
+            "a floor in percent that the free space does not meet": (
+                0,
+                unmet_share,
+                True,
+            ),
+            "two floors that the free space meets": (met_gb, met_share / 2, False),
+            "the floor in GB is the higher floor": (unmet_gb, met_share, True),
+            "the floor in percent is the higher floor": (met_gb, unmet_share, True),
+        }
+        for name, (gb, percent, low) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, home = home_repo(tmp)
+                run = Path(tmp, "run")
+                ultraclose(
+                    "init",
+                    "--run",
+                    str(run),
+                    "--disk-floor-gb",
+                    repr(gb),
+                    "--disk-floor-percent",
+                    f"{home}={percent!r}",
+                    cwd=repo,
+                    env=env,
+                )
+                # The repository and the home directory share a file
+                # system, so status prints one line. The line names the
+                # home directory when its percent floor is the higher
+                # floor. No case puts the two floors near each other.
+                by = str(home) if size * percent / 100 > gb else None
+                [text] = disk_texts(repo, env)
+                found = DISK_TEXT.fullmatch(text)
+                self.assertTrue(found, text)
+                self.assertEqual(found["path"], state_of(run)["config"]["repo"])
+                self.assertAlmostEqual(int(found["size"]), size, delta=1)
+                floor = max(gb, size * percent / 100)
+                self.assertAlmostEqual(int(found["floor"]), floor, delta=1)
+                self.assertEqual(found["low"] == LOW, low)
+                self.assertEqual(found["by"], by)
+                # The run holds no task, so the watch command exits with
+                # the ENDED line. The DISK line of a low file system
+                # comes first.
+                *reported, last = watched(repo, env)
+                self.assertEqual(last, WATCH_ENDED)
+                self.assertEqual(len(reported), low)
+                for line in reported:
+                    found = DISK_TEXT.fullmatch(line.removeprefix("DISK "))
+                    self.assertTrue(line.startswith("DISK ") and found, line)
+                    self.assertEqual(found["low"], LOW)
+                    self.assertAlmostEqual(int(found["floor"]), floor, delta=1)
+                    self.assertEqual(found["by"], by)
+
+    def test_highest_percent_floor_of_file_system(self):
+        # The home directory and the cache directory share the file system
+        # of the temporary directory, and each has a percent floor.
+        # name: (the percent floor of the home directory, the percent
+        # floor of the cache directory, the key of the path whose floor
+        # applies)
+        cases = {
+            "the later path has the higher floor": (1, 100, "cache"),
+            "the earlier path has the higher floor": (100, 1, "home"),
+        }
+        for name, (home_percent, cache_percent, key) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, home = home_repo(tmp)
+                paths = {"home": str(home), "cache": str(Path(tmp, "cache"))}
+                Path(paths["cache"]).mkdir()
+                flags = ["--disk-floor-gb", "0"]
+                flags += ["--disk-floor-percent", f"{paths['home']}={home_percent}"]
+                flags += ["--disk-floor-percent", f"{paths['cache']}={cache_percent}"]
+                run = Path(tmp, "run")
+                ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
+                [text] = disk_texts(repo, env)
+                found = DISK_TEXT.fullmatch(text)
+                self.assertTrue(found, text)
+                # Some of the file system is in use, so its free space is
+                # less than the floor of 100 percent.
+                self.assertEqual(
+                    (found["path"], found["low"], found["by"], found["percent"]),
+                    (state_of(run)["config"]["repo"], LOW, paths[key], "100"),
+                )
+                self.assertAlmostEqual(int(found["floor"]), int(found["size"]), delta=1)
+
+    def test_percent_floor_applies_to_its_file_system(self):
+        # The home directory sits on the file system of the temporary
+        # directory and has a percent floor that no file system meets. The
+        # other path sits on another file system and has no percent floor.
+        with tempfile.TemporaryDirectory() as tmp:
+            other = other_file_system(tmp)
+            if other is None:
+                self.skipTest("no path sits on another file system")
+            repo, env, home = home_repo(tmp)
+            run = Path(tmp, "run")
+            flags = ["--disk-floor-gb", "0", "--disk-path", other]
+            flags += ["--disk-floor-percent", f"{home}=100"]
+            ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
+            texts = disk_texts(repo, env)
+            found = [DISK_TEXT.fullmatch(text) for text in texts]
+            self.assertTrue(all(found), texts)
+            self.assertEqual(
+                [(f["path"], f["low"], f["by"], f["floor"]) for f in found[1:]],
+                [(other, "floor", None, "0")],
+            )
+            self.assertEqual(
+                (found[0]["path"], found[0]["low"], found[0]["by"]),
+                (state_of(run)["config"]["repo"], LOW, str(home)),
+            )
+            self.assertEqual(watched(repo, env), [f"DISK {texts[0]}", WATCH_ENDED])
+
+    def test_file_system_without_size(self):
+        # The proc file system of Linux reports a size of 0.
+        if not os.path.isdir("/proc") or shutil.disk_usage("/proc").total:
+            self.skipTest("no /proc file system with a size of 0")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, _ = home_repo(tmp)
+            run = Path(tmp, "run")
+            flags = ["--disk-floor-gb", "0", "--disk-path", "/proc"]
+            ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
+            texts = disk_texts(repo, env)
+            self.assertEqual(len(texts), 2, texts)
+            found = DISK_TEXT.fullmatch(texts[0])
+            self.assertTrue(found, texts)
+            self.assertEqual(found["path"], state_of(run)["config"]["repo"])
+            self.assertEqual(texts[1], "/proc: 0 GB free of 0 GB (0%), floor 0 GB")
+            self.assertEqual(watched(repo, env), [WATCH_ENDED])
+
+    def test_one_line_per_file_system(self):
+        # The disk paths of the run share one file system.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, _, paths = self.disk_run(tmp)
+            for first in ("repo", "home", "cache"):
+                # The line names the first disk path of the file system.
+                [text] = disk_texts(repo, env)
+                self.assertEqual(DISK_TEXT.fullmatch(text)["path"], paths[first])
+                ultraclose("config", "--no-disk-path", paths[first], cwd=repo, env=env)
+            # A run without a disk path watches no file system.
+            self.assertEqual(disk_texts(repo, env), [])
+            self.assertEqual(watched(repo, env), [WATCH_ENDED])
+
+    def test_one_line_per_file_system_on_each_device(self):
+        # The repository and the home directory share the file system of
+        # the temporary directory. The third disk path sits on another
+        # file system, so status prints a line for each of the two.
+        with tempfile.TemporaryDirectory() as tmp:
+            other = other_file_system(tmp)
+            if other is None:
+                self.skipTest("no path sits on another file system")
+            repo, env, _ = home_repo(tmp)
+            run = Path(tmp, "run")
+            flags = ["--disk-floor-gb", "0", "--disk-path", other]
+            ultraclose("init", "--run", str(run), *flags, cwd=repo, env=env)
+            texts = disk_texts(repo, env)
+            found = [DISK_TEXT.fullmatch(text) for text in texts]
+            self.assertTrue(all(found), texts)
+            self.assertEqual(
+                [(f["path"], f["low"]) for f in found],
+                [(state_of(run)["config"]["repo"], "floor"), (other, "floor")],
+            )
+            self.assertEqual(watched(repo, env), [WATCH_ENDED])
+
+    def test_reports_path_that_it_cannot_measure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, _, paths = self.disk_run(tmp)
+            Path(paths["cache"]).rmdir()
+            measured, failed = disk_texts(repo, env)
+            self.assertTrue(DISK_TEXT.fullmatch(measured), measured)
+            start = f"{paths['cache']}: cannot measure the free space, "
+            self.assertTrue(failed.startswith(start), failed)
+            # The watch command reports the path, so it does not stay
+            # silent about a file system that it cannot measure.
+            self.assertEqual(watched(repo, env), [f"DISK {failed}", WATCH_ENDED])
+
+    def test_state_without_disk_keys(self):
+        # A run can continue from a state file that init wrote without
+        # the percent floor and the disk paths.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, run, paths = self.disk_run(tmp)
+            st = state_of(run)
+            del st["config"]["diskFloorPercent"], st["config"]["diskPaths"]
+            (run / "state.json").write_text(json.dumps(st))
+            [text] = disk_texts(repo, env)
+            found = DISK_TEXT.fullmatch(text)
+            self.assertEqual(
+                (found["path"], found["low"], found["floor"]),
+                (paths["repo"], "floor", "0"),
+            )
+            self.assertEqual(watched(repo, env), [WATCH_ENDED])
+            # The run watches the default paths with no percent floor, and
+            # config adds to them.
+            flags = ["--disk-path", paths["other"]]
+            flags += ["--disk-floor-percent", f"{paths['home']}=25"]
+            printed = json.loads(ultraclose("config", *flags, cwd=repo, env=env))
+            self.assertEqual(
+                printed["diskPaths"], [paths["repo"], paths["home"], paths["other"]]
+            )
+            self.assertEqual(printed["diskFloorPercent"], {paths["home"]: 25})
+
+
+class WatchTest(unittest.TestCase):
+    """The watch command runs until a file system is low or the run ends."""
+
+    def start(self, tmp, task_state, *flags):
+        """Start a run that has no floor and one task in the given state.
+
+        The init command of the run takes the given flags as well.
+        """
+        repo, env, _ = home_repo(tmp)
+        ultraclose(
+            "init",
+            "--run",
+            str(Path(tmp, "run")),
+            "--disk-floor-gb",
+            "0",
+            *flags,
+            cwd=repo,
+            env=env,
+        )
+        triage(tmp, repo, env, {"ref": REF})
+        ultraclose("set", REF, task_state, cwd=repo, env=env)
+        return repo, env
+
+    def exit_after(self, repo, env, *command):
+        """Start watch, and run a command when watch has kept running.
+
+        Return the lines that watch prints before it exits.
+        """
+        with watching(repo, env) as p:
+            try:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    p.wait(timeout=0.5)
+                ultraclose(*command, cwd=repo, env=env)
+                out, _ = p.communicate(timeout=60)
+            finally:
+                p.kill()
+        self.assertEqual(p.returncode, 0)
+        return out.splitlines()
+
+    def test_exits_when_run_ends(self):
+        # Each pair holds a state that keeps the run from its end, and a
+        # state that ends the run.
+        for unfinished, done in zip(UNFINISHED, FINISHED):
+            with self.subTest(unfinished), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start(tmp, unfinished)
+                lines = self.exit_after(repo, env, "set", REF, done)
+                self.assertEqual(lines, [WATCH_ENDED])
+
+    def test_exits_when_file_system_runs_low(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start(tmp, "inflight")
+            # No file system has this much free space.
+            flags = ["--disk-floor-gb", "1e12"]
+            [line] = self.exit_after(repo, env, "config", *flags)
+            found = DISK_TEXT.fullmatch(line.removeprefix("DISK "))
+            self.assertTrue(line.startswith("DISK ") and found, line)
+            self.assertEqual(found["low"], LOW)
+
+    def test_prints_line_for_each_low_file_system(self):
+        # The repository and the other path sit on two file systems, and
+        # both run low when config raises the floor.
+        with tempfile.TemporaryDirectory() as tmp:
+            other = other_file_system(tmp)
+            if other is None:
+                self.skipTest("no path sits on another file system")
+            repo, env = self.start(tmp, "inflight", "--disk-path", other)
+            flags = ["--disk-floor-gb", "1e12"]
+            lines = self.exit_after(repo, env, "config", *flags)
+            found = [DISK_TEXT.fullmatch(line.removeprefix("DISK ")) for line in lines]
+            self.assertTrue(
+                all(line.startswith("DISK ") for line in lines) and all(found), lines
+            )
+            self.assertEqual(
+                [(f["path"], f["low"]) for f in found],
+                [(state_of(Path(tmp, "run"))["config"]["repo"], LOW), (other, LOW)],
+            )
+
+    def test_refuses_interval_that_is_not_positive(self):
+        # A watch command that accepts a negative interval fails at its
+        # first wait. One that accepts an interval of 0 measures without a
+        # wait, and the run holds a pending task, so it keeps running until
+        # the timeout.
+        for flags in (["--interval", "0"], ["--interval=-1"]):
+            with self.subTest(flags), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start(tmp, "pending")
+                message = refused("watch", *flags, cwd=repo, env=env, timeout=60)
+                self.assertIn("greater than 0", message)
 
 
 def unmatched_globs(stderr):
@@ -1721,7 +2493,7 @@ class LandTest(unittest.TestCase):
     A failed landing prints its result last. A landing with --next and the
     result OK then starts the next tasks. The check and the commit hooks
     of a landing do not read the golangci-lint cache that every checkout
-    shares.
+    shares. A landing also records how long its check and its commit took.
     """
 
     SUBJECT = "feat: add a file"
@@ -1839,6 +2611,16 @@ class LandTest(unittest.TestCase):
             git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
         )
 
+    def after_result(self, lines):
+        """The lines that follow the RESULT line of a landing with the result OK.
+
+        The landing prints its TIMES line right before the RESULT line, so
+        the RESULT line is the second line.
+        """
+        self.assertRegex(lines[0], r"^TIMES ", lines)
+        self.assertTrue(lines[1].startswith(f"RESULT {REF} OK "), lines)
+        return lines[2:]
+
     def test_result_line_comes_last(self):
         # name: (the init flags, the hook, the result, a line of the failing output)
         cases = {
@@ -1921,13 +2703,13 @@ class LandTest(unittest.TestCase):
                 self.assertEqual(self.next_refs(repo, env), [])
                 status, lines = self.land(repo, env, "--next")
                 self.assertEqual(status, 0, lines)
-                self.assertTrue(lines[0].startswith(f"RESULT {REF} OK "), lines)
+                listed = self.after_result(lines)
                 self.assertEqual(
                     git("log", "-1", "--format=%s", cwd=repo, env=env),
                     self.SUBJECT,
                 )
                 # The list of Workflow inputs follows the RESULT line.
-                started = json.loads("\n".join(lines[1:]))
+                started = json.loads("\n".join(listed))
                 self.assertEqual([t["task"]["ref"] for t in started], others)
                 self.assertEqual(
                     self.task_states(tmp),
@@ -1974,9 +2756,9 @@ class LandTest(unittest.TestCase):
             Path(tmp, "bin", "aven").write_text('#!/bin/sh\ntest "$1" != context\n')
             status, lines = self.land(repo, env, "--next", stderr=subprocess.STDOUT)
             self.assertEqual(status, 1, lines)
-            # The RESULT line comes first, and the error of next follows it.
-            self.assertTrue(lines[0].startswith(f"RESULT {REF} OK "), lines)
-            self.assertIn(f"ultraclose: aven context {self.OTHER} failed", lines[1])
+            # The error of next follows the RESULT line.
+            after = self.after_result(lines)
+            self.assertIn(f"ultraclose: aven context {self.OTHER} failed", after[0])
             self.assertEqual(
                 git("log", "-1", "--format=%s", cwd=repo, env=env), self.SUBJECT
             )
@@ -1994,12 +2776,12 @@ class LandTest(unittest.TestCase):
             git("branch", other, cwd=repo, env=env)
             status, lines = self.land(repo, env, "--next", stderr=subprocess.STDOUT)
             self.assertEqual(status, 1, lines)
-            # The RESULT line comes first, and the refusal of next follows it.
-            self.assertTrue(lines[0].startswith(f"RESULT {REF} OK "), lines)
+            # The refusal of next follows the RESULT line.
+            after = self.after_result(lines)
             self.assertIn(
-                f"{self.OTHER}: the branch {other}, 0 commits ahead of main", lines
+                f"{self.OTHER}: the branch {other}, 0 commits ahead of main", after
             )
-            message = "\n".join(lines[1:])
+            message = "\n".join(after)
             self.assertIn(OWN_WORK, message)
             # The task of the landing has landed, so the refusal names next
             # and not the landing.
@@ -2007,6 +2789,9 @@ class LandTest(unittest.TestCase):
             self.assertEqual(
                 self.task_states(tmp), {REF: "landed", self.OTHER: "pending"}
             )
+            # The refusal keeps the times that the landing recorded.
+            [entry] = state_of(Path(tmp, "run"))["landings"]
+            self.assertEqual((entry["ref"], entry["result"]), (REF, "OK"))
             git("branch", "-D", other, cwd=repo, env=env)
             self.assertEqual(self.next_refs(repo, env), [self.OTHER])
 
@@ -2044,16 +2829,15 @@ class LandTest(unittest.TestCase):
                     self.assertLess(time.monotonic(), deadline, "next did not start")
                     time.sleep(0.05)
                 # The next command is running, and the landing is done.
-                self.assertTrue(
-                    output.read_text().startswith(f"RESULT {REF} OK "),
-                    repr(output.read_text()),
+                self.assertEqual(
+                    self.after_result(output.read_text().splitlines()), []
                 )
             finally:
                 release.touch()
                 p.wait(timeout=60)
             self.assertEqual(p.returncode, 0, output.read_text())
             lines = output.read_text().splitlines()
-            started = json.loads("\n".join(lines[1:]))
+            started = json.loads("\n".join(self.after_result(lines)))
             self.assertEqual([t["task"]["ref"] for t in started], [self.OTHER])
 
     def test_health(self):
@@ -2173,6 +2957,170 @@ class LandTest(unittest.TestCase):
             del st["config"]["health"]
             state.write_text(json.dumps(st))
             self.assert_landed(repo, env, self.land(repo, env))
+
+    def test_records_times(self):
+        # A step that takes half a second.
+        slow = "sleep 0.5"
+        # name: (the init flags, the hook, the result, the timed steps
+        # that ran, the step that takes half a second)
+        cases = {
+            "a slow check": (
+                ["--check", slow],
+                "exit 0",
+                "OK",
+                ["check", "commit"],
+                "check",
+            ),
+            "a slow commit hook and no check": ([], slow, "OK", ["commit"], "commit"),
+            "a failed check": (
+                ["--check", "exit 1"],
+                "exit 0",
+                "CHECKFAIL",
+                ["check"],
+                None,
+            ),
+            "a failed commit hook": (
+                ["--check", self.RECORD],
+                "exit 1",
+                "COMMITFAIL",
+                ["check", "commit"],
+                None,
+            ),
+            "a service that stops during the check": (
+                ["--check", self.STOP, "--health", self.HEALTH],
+                "exit 0",
+                "HEALTHFAIL",
+                ["check"],
+                None,
+            ),
+        }
+        for name, (flags, hook, result, steps, slow_step) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp, *flags, hook=hook)
+                Path(env["ENGINE"]).touch()
+                _, lines = self.land(repo, env)
+                # A run starts from a state file without the landings key.
+                [entry] = state_of(Path(tmp, "run"))["landings"]
+                self.assertEqual((entry["ref"], entry["result"]), (REF, result))
+                self.assertEqual(sorted(entry["times"]), steps)
+                if slow_step:
+                    self.assertGreaterEqual(entry["times"][slow_step], 0.5)
+                # The TIMES line comes after the failing output and before
+                # the RESULT line. The first landing has no median.
+                times = " ".join(rf"{step}=\S+" for step in steps)
+                self.assertRegex(lines[-2], f"^TIMES {times}$")
+                self.assertTrue(lines[-1].startswith(f"RESULT {REF} {result}"), lines)
+
+    def test_records_time_of_both_commit_attempts(self):
+        # The first run of the hook drops the file of the task from the
+        # index, so the landing commits a second time. Each run of the
+        # hook takes half a second.
+        hook = 'test -e "$RAN" || { touch "$RAN"; git rm -q --cached a.txt; }; sleep 0.5'
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, hook=hook)
+            landing = self.land(repo, env)
+            self.assert_landed(repo, env, landing)
+            self.assertEqual(
+                git("ls-tree", "--name-only", "HEAD", cwd=repo, env=env), "a.txt"
+            )
+            [entry] = state_of(Path(tmp, "run"))["landings"]
+            self.assertEqual((entry["ref"], entry["result"]), (REF, "OK"))
+            # The time of the commit covers both attempts.
+            self.assertGreaterEqual(entry["times"]["commit"], 1.0)
+            self.assertRegex(landing[1][-2], r"^TIMES commit=\S+$")
+
+    def test_landing_that_stops_before_check_records_no_time(self):
+        # name: (the init flags, whether the task has a commit message,
+        # the result)
+        cases = {
+            "no commit message": ([], False, "NOMSG"),
+            "the service is down before the merge": (
+                ["--health", self.HEALTH],
+                True,
+                "HEALTHFAIL",
+            ),
+        }
+        for name, (flags, has_message, result) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp, "--check", self.RECORD, *flags)
+                if not has_message:
+                    Path(tmp, "run", "tasks", REF, "msg.txt").unlink()
+                landing = self.land(repo, env)
+                self.assert_failed(repo, env, landing, result)
+                self.assertNotIn("landings", state_of(Path(tmp, "run")))
+                self.assertFalse(
+                    [line for line in landing[1] if line.startswith("TIMES")], landing
+                )
+
+    def test_result_line_follows_times_that_run_cannot_record(self):
+        # The check fails, and it puts a directory in the place of the
+        # file that the next write of the state takes.
+        block = 'mkdir "$BLOCK"; exit 1'
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = self.start_task(tmp, "--check", block)
+            env["BLOCK"] = str(Path(tmp, "run", "state.json.tmp"))
+            before = state_of(Path(tmp, "run"))
+            landing = self.land(repo, env)
+            self.assert_failed(repo, env, landing, "CHECKFAIL")
+            lines = landing[1]
+            self.assertTrue(
+                lines[-3].startswith("the run did not record the times"), lines
+            )
+            self.assertRegex(lines[-2], r"^TIMES check=\S+$")
+            before["tasks"][REF]["state"] = "approved"
+            self.assertEqual(state_of(Path(tmp, "run")), before)
+
+    def test_times_line_gives_medians_of_landed_tasks(self):
+        def landing(result, **times):
+            return {"ref": "APP-0001", "result": result, "times": times}
+
+        # The medians count the landings that landed a task. The times
+        # of their checks are 80 and 90 seconds, and the times of their
+        # commits are 10, 20, and 710 seconds.
+        earlier = [
+            landing("OK", check=80, commit=10),
+            landing("CHECKFAIL", check=9000),
+            landing("OK", check=90, commit=20),
+            landing("COMMITFAIL", check=9000, commit=9000),
+            landing("OK", commit=710),
+        ]
+        medians = {"check": "1m25s", "commit": "20s"}
+        # name: (the init flags, the hook, the result, the median of each
+        # timed step that ran)
+        cases = {
+            "a landed task": (["--check", self.RECORD], "exit 0", "OK", medians),
+            "a landed task of a run without a check": (
+                [],
+                "exit 0",
+                "OK",
+                {"commit": "20s"},
+            ),
+            "a failed commit hook": (
+                ["--check", self.RECORD],
+                "exit 1",
+                "COMMITFAIL",
+                medians,
+            ),
+        }
+        for name, (flags, hook, result, want) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env = self.start_task(tmp, *flags, hook=hook)
+                state = Path(tmp, "run", "state.json")
+                st = json.loads(state.read_text())
+                st["landings"] = earlier
+                state.write_text(json.dumps(st))
+                _, lines = self.land(repo, env)
+                times = " ".join(
+                    rf"{step}=\S+ \(median {median}\)" for step, median in want.items()
+                )
+                self.assertRegex(lines[-2], f"^TIMES {times}$")
+                self.assertTrue(lines[-1].startswith(f"RESULT {REF} {result}"), lines)
+                # The run keeps the earlier landings and adds this one.
+                landings = state_of(Path(tmp, "run"))["landings"]
+                self.assertEqual(landings[:-1], earlier)
+                self.assertEqual(
+                    (landings[-1]["ref"], landings[-1]["result"]), (REF, result)
+                )
 
 
 # The Workflow tool runs the body of close-task.js inside an async

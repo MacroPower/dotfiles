@@ -49,9 +49,12 @@ branch and the worktree of a task without a directory come from an
 earlier run.
 
   init --run DIR [--limit N] [--rounds N] [--check CMD] [--health CMD]
-       [--shared GLOB]... [--disk-floor-gb N] [--force]
+       [--shared GLOB]... [--disk-floor-gb N] [--disk-floor-percent PATH=N]...
+       [--disk-path PATH]... [--force]
   config [--limit N] [--rounds N] [--check CMD] [--health CMD]
        [--shared GLOB]... [--unshared GLOB]... [--disk-floor-gb N]
+       [--disk-floor-percent PATH=N]... [--disk-path PATH]...
+       [--no-disk-path PATH]...
                          change the config of the run, then print it
   triage FILE            add or update tasks from a JSON list
   untriaged [FILTER]...  print the open aven tasks that the run does not hold
@@ -61,7 +64,8 @@ earlier run.
   set REF STATE [--flag TEXT]
   land REF [--next]      land REF on the base branch, one landing at a time
   status
-  watch                  exit when free disk space runs low
+  watch [--interval SECONDS]
+                         exit when free disk space runs low or the run ends
 
 The triage command asks aven for the dependencies of each task that it
 loads, and adds each open dependency to the after list of the task. So
@@ -99,6 +103,38 @@ in the main checkout, and it gets the golangci-lint-cache directory of
 the run directory. A check that sets the variable itself keeps its own
 value.
 
+A landing records how long its check and its commit took. The time of the
+commit includes the commit hooks. When the landing commits a second time
+because the first commit did not record the staged tree, the time of the
+commit covers both attempts. The land command prints both times in a
+TIMES line before the RESULT line. Each time comes with the median of the
+earlier landings that landed a task. The status command prints the medians
+of the run and the times of its last landings, so a slow check or a slow
+hook shows beside the usual time.
+
+The watch command measures the file system of each disk path of the run.
+A run starts with the repository and the home directory of the user as
+its disk paths. Each --disk-path flag adds a path, such as the directory
+of a build cache that another file system holds. A file system is low
+when its free space is less than --disk-floor-gb, or less than its
+percent floor.
+
+Each --disk-floor-percent PATH=N flag with an N of more than 0 gives the
+file system that holds PATH a floor of N percent of its size, and adds
+PATH to the disk paths. The other file systems keep their floors. Set N
+to more than the share of the disk that a build cache on that file system
+keeps free, so that the watch command exits before that cache evicts its
+content. When two disk paths of one file system have a percent floor,
+the higher floor applies. A flag with an N of 0 removes the percent floor
+of PATH and adds no disk path. The --no-disk-path flag of config removes
+both the path and its percent floor.
+
+The watch command prints one DISK line per low file system and exits.
+It prints an ENDED line and exits when the run ends. It prints the DISK
+lines first when both apply. The status command prints the free space
+and the floor of each file system. The line of a file system whose
+percent floor is more than --disk-floor-gb names the flag that sets it.
+
 The health command of init --health and config --health is a fast
 command that fails when a service that the check or a commit hook
 requires is down. A landing runs it in the main checkout before the
@@ -127,6 +163,7 @@ import json
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import time
@@ -172,6 +209,14 @@ STORED = {"summary": "summary.txt", "notes": "notes.txt"}
 # keeps one inside the git directory of the task worktree and one inside
 # the run directory.
 LINT_CACHE = "golangci-lint-cache"
+# The steps of a landing whose time the run records, in the order in which
+# a landing runs them. The commit step runs the commit hooks.
+TIMED = ("check", "commit")
+# How many landings the status command prints with their times.
+RECENT = 5
+# What the status command and the watch command print for a run that has
+# ended.
+ENDED = "no task is pending, inflight, or approved"
 
 
 def die(msg):
@@ -467,6 +512,7 @@ def cmd_init(a):
         )
     for d in (run, run / "tasks", run / "logs"):
         d.mkdir(parents=True, exist_ok=True)
+    percents = floor_percents({}, a.disk_floor_percent)
     ignored = sh(
         "git", "check-ignore", "-q", ".claude/worktrees/x", cwd=repo, check=False
     )
@@ -486,6 +532,10 @@ def cmd_init(a):
         "health": a.health,
         "shared": list(dict.fromkeys(DEFAULT_SHARED + (a.shared or []))),
         "diskFloorGb": a.disk_floor_gb,
+        "diskFloorPercent": percents,
+        "diskPaths": list(
+            dict.fromkeys(default_disk_paths(repo) + a.disk_path + list(percents))
+        ),
     }
     (run / "state.json").write_text(json.dumps({"config": cfg, "tasks": {}}))
     sh("git", "config", "--local", "ultraclose.run", str(run), cwd=repo)
@@ -504,6 +554,11 @@ def cmd_config(a):
                 f"no shared glob {' '.join(absent)}. The shared globs are"
                 f" {' '.join(cfg['shared'])}"
             )
+        paths = disk_paths(cfg)
+        if absent := [p for p in a.no_disk_path if p not in paths]:
+            die(
+                f"no disk path {' '.join(absent)}. The disk paths are {' '.join(paths)}"
+            )
         changes = {
             "limit": a.limit,
             "rounds": a.rounds,
@@ -512,6 +567,16 @@ def cmd_config(a):
             "diskFloorGb": a.disk_floor_gb,
         }
         cfg.update({k: v for k, v in changes.items() if v is not None})
+        # A run can continue from a state file that has no percent floors.
+        percents = floor_percents(cfg.get("diskFloorPercent", {}), a.disk_floor_percent)
+        cfg["diskPaths"] = [
+            p
+            for p in dict.fromkeys(paths + a.disk_path + list(percents))
+            if p not in a.no_disk_path
+        ]
+        cfg["diskFloorPercent"] = {
+            p: n for p, n in percents.items() if p not in a.no_disk_path
+        }
         cfg["shared"] = [
             g for g in dict.fromkeys(cfg["shared"] + a.shared) if g not in a.unshared
         ]
@@ -809,8 +874,127 @@ def cmd_set(a):
     print(f"{a.ref} {a.state}")
 
 
-def free_gb(path):
-    return shutil.disk_usage(path).free / 2**30
+def default_disk_paths(repo):
+    """The disk paths that a run starts with.
+
+    The worktrees fill the file system of the repository. Most build
+    caches fill the home directory of the user, which another file system
+    can hold.
+    """
+    home = os.path.expanduser("~")
+    return list(dict.fromkeys([repo, home])) if os.path.isdir(home) else [repo]
+
+
+def disk_paths(cfg):
+    """The paths whose file systems the run watches.
+
+    A run can continue from a state file that has no diskPaths key. That
+    run watches the default paths.
+    """
+    return cfg.get("diskPaths", default_disk_paths(cfg["repo"]))
+
+
+def floor_percents(percents, flags):
+    """The percent floor of each disk path after the --disk-floor-percent flags.
+
+    A flag with 0 percent removes the floor of its path.
+    """
+    percents = dict(percents)
+    for path, n in flags:
+        if n:
+            percents[path] = n
+        else:
+            percents.pop(path, None)
+    return percents
+
+
+def disks(cfg):
+    """The watched file systems, each as a line of text and whether it is low.
+
+    The line names the first disk path that the file system holds, so two
+    paths on one file system give one line. A file system is low when its
+    free space is less than the floor in GB, or less than its percent
+    floor. The percent floor of a file system is the highest percent floor
+    of the disk paths that it holds, and it applies to no other file
+    system. A path that the command cannot measure counts as low, so that
+    the watch command reports the path.
+    """
+    # Each disk path with its device and its usage, or with no device and
+    # the cause that kept the command from measuring it.
+    measured = []
+    for path in disk_paths(cfg):
+        try:
+            measured.append((path, os.stat(path).st_dev, shutil.disk_usage(path)))
+        except OSError as e:
+            measured.append((path, None, e.strerror or e))
+    # A run can continue from a state file that has no percent floors.
+    percents = cfg.get("diskFloorPercent", {})
+    # The highest percent floor of each device, and the disk path that has it.
+    highest = {}
+    for path, device, _ in measured:
+        n = percents.get(path, 0)
+        if device is not None and n > highest.get(device, (0, None))[0]:
+            highest[device] = (n, path)
+    found, seen = [], set()
+    for path, device, usage in measured:
+        if device is None:
+            found.append((f"{path}: cannot measure the free space, {usage}", True))
+            continue
+        if device in seen:
+            continue
+        seen.add(device)
+        size, free = usage.total / 2**30, usage.free / 2**30
+        floor, source = cfg["diskFloorGb"], ""
+        n, by = highest.get(device, (0, None))
+        if size * n / 100 > floor:
+            floor = size * n / 100
+            source = f" set by --disk-floor-percent {by}={n:g}"
+        share = 100 * free / size if size else 0
+        text = f"{path}: {free:.0f} GB free of {size:.0f} GB ({share:.0f}%)"
+        if free < floor:
+            text += f", less than the floor of {floor:.0f} GB{source}"
+        else:
+            text += f", floor {floor:.0f} GB{source}"
+        found.append((text, free < floor))
+    return found
+
+
+def span(seconds):
+    """A time span as text, such as 42s or 11m50s."""
+    s = round(seconds)
+    return f"{s}s" if s < 60 else f"{s // 60}m{s % 60:02d}s"
+
+
+def medians(landings):
+    """The median time of each timed step over the landings that landed a task.
+
+    A failed landing can stop a step early, so its times do not count.
+    """
+    found = {}
+    for step in TIMED:
+        times = [
+            entry["times"][step]
+            for entry in landings
+            if entry["result"] == "OK" and step in entry["times"]
+        ]
+        if times:
+            found[step] = statistics.median(times)
+    return found
+
+
+def times_text(times, typical=()):
+    """The time of each timed step of a landing, in the order of the landing.
+
+    Each time comes with the median of its step when typical holds one.
+    """
+    parts = []
+    for step in TIMED:
+        if step in times:
+            part = f"{step}={span(times[step])}"
+            if step in typical:
+                part += f" (median {span(typical[step])})"
+            parts.append(part)
+    return " ".join(parts)
 
 
 def cmd_status(a):
@@ -827,7 +1011,7 @@ def cmd_status(a):
     # A run can continue from a state file that has no health key.
     print(f"health: {cfg.get('health') or 'none'}")
     if ended(tasks):
-        print("ended: no task is pending, inflight, or approved")
+        print(f"ended: {ENDED}")
     for ref, t in sorted(tasks.items()):
         if t["state"] == "inflight":
             hours = (now - t["startedAt"]) / 3600
@@ -841,7 +1025,14 @@ def cmd_status(a):
     for ref, t in sorted(tasks.items()):
         for flag in t["flags"]:
             print(f"flag {ref} {t['state']}: {flag}")
-    print(f"free disk: {free_gb(repo):.0f} GB (floor {cfg['diskFloorGb']} GB)")
+    # A run can continue from a state file that has no landings key.
+    landings = st.get("landings", [])
+    if typical := medians(landings):
+        print(f"median landing: {times_text(typical)}")
+    for entry in landings[-RECENT:]:
+        print(f"landing {entry['ref']} {entry['result']}: {times_text(entry['times'])}")
+    for text, _ in disks(cfg):
+        print(f"disk {text}")
 
 
 def cmd_watch(a):
@@ -849,12 +1040,15 @@ def cmd_watch(a):
     run = run_dir(repo)
     while True:
         st = json.loads((run / "state.json").read_text())
-        cfg = st["config"]
-        gb = free_gb(repo)
-        if gb < cfg["diskFloorGb"]:
-            print(f"DISK free={gb:.0f}GB floor={cfg['diskFloorGb']}GB")
+        low = [text for text, is_low in disks(st["config"]) if is_low]
+        for text in low:
+            print(f"DISK {text}")
+        over = ended(st["tasks"])
+        if over:
+            print(f"ENDED {ENDED}")
+        if low or over:
             return
-        time.sleep(60)
+        time.sleep(a.interval)
 
 
 def lint_env(cache):
@@ -893,11 +1087,40 @@ def cmd_land(a):
     msg = run / "tasks" / ref / "msg.txt"
     logs = run / "logs"
 
+    # How long each timed step of this landing took, in seconds.
+    times = {}
+
+    def record(code):
+        """Record the times of the landing with its result, and print them.
+
+        The TIMES line gives each time with the median of the earlier
+        landings that landed a task. A landing that ran no timed step
+        records nothing and prints nothing.
+
+        The command prints the RESULT line after this function returns.
+        So the function reports a state file that it cannot write, such
+        as on a full disk, and returns.
+        """
+        if not times:
+            return
+        typical = {}
+        try:
+            with state(run) as st:
+                # A run can continue from a state file that has no
+                # landings key.
+                landings = st.setdefault("landings", [])
+                typical = medians(landings)
+                landings.append({"ref": ref, "result": code, "times": times})
+        except OSError as e:
+            print(f"the run did not record the times of this landing: {e}")
+        print(f"TIMES {times_text(times, typical)}")
+
     def fail(code, detail=""):
         # The RESULT line comes last, so the end of the output shows it
         # however long the detail is.
         if detail:
             print(detail)
+        record(code)
         print(f"RESULT {ref} {code}")
         sys.exit(2)
 
@@ -908,6 +1131,13 @@ def cmd_land(a):
                 cmd, cwd=cwd, env=env, stdout=f, stderr=subprocess.STDOUT, check=False
             )
         return rc.returncode, path
+
+    def timed(name, *cmd, cwd, env=None):
+        """Run a logged step, and add how long it took to the times."""
+        began = time.monotonic()
+        rc, path = logged(name, *cmd, cwd=cwd, env=env)
+        times[name] = round(times.get(name, 0) + time.monotonic() - began, 1)
+        return rc, path
 
     def require_health(when):
         """Fail the landing with HEALTHFAIL when the health command fails.
@@ -967,7 +1197,7 @@ def cmd_land(a):
             # worktree stays clean, and git removes the cache together
             # with the worktree.
             git_dir = out("git", "rev-parse", "--absolute-git-dir", cwd=wt)
-            rc, log = logged(
+            rc, log = timed(
                 "check",
                 "sh",
                 "-c",
@@ -1002,7 +1232,7 @@ def cmd_land(a):
         for attempt in (1, 2):
             # The commit hooks run in the main checkout. Its cache sits in
             # the run directory, where no worktree writes.
-            rc, log = logged(
+            rc, log = timed(
                 "commit",
                 "git",
                 "commit",
@@ -1029,6 +1259,7 @@ def cmd_land(a):
         sh("aven", "edit", ref, "--status", "done", cwd=repo)
         with state(run) as st:
             st["tasks"][ref]["state"] = "landed"
+        record("OK")
         # Python buffers the standard output of a background call. The
         # flush writes the result to the output before next runs, so the
         # result stays there when the caller stops the command during next.
@@ -1040,6 +1271,56 @@ def cmd_land(a):
     # here, so a queued landing does not wait for the tasks that start.
     if a.next:
         fill_slots(run)
+
+
+def percent(text):
+    """The value of a flag that takes a percent."""
+    value = float(text)
+    if not 0 <= value <= 100:
+        raise argparse.ArgumentTypeError("give a percent between 0 and 100, inclusive")
+    return value
+
+
+def interval(text):
+    """The value of a flag that takes how long to wait, in seconds."""
+    value = float(text)
+    if not value > 0:
+        raise argparse.ArgumentTypeError("give a number of seconds greater than 0")
+    return value
+
+
+def disk_path(text):
+    """The absolute path of a --disk-path flag, which must exist."""
+    path = os.path.abspath(text)
+    if not os.path.exists(path):
+        raise argparse.ArgumentTypeError(f"the path {path} does not exist")
+    return path
+
+
+def floor_percent(text):
+    """The disk path and the percent of a --disk-floor-percent flag.
+
+    The text is PATH=N, and the last "=" ends the path.
+    """
+    path, sep, n = text.rpartition("=")
+    if not sep or not path:
+        raise argparse.ArgumentTypeError(
+            f"give PATH=N, such as /var/lib/docker=25, in place of {text}"
+        )
+    return disk_path(path), percent(n)
+
+
+FLOOR_GB_HELP = "a watched file system is low when fewer than N GB of it are free"
+FLOOR_PERCENT_HELP = (
+    "the file system that holds PATH is low when less than N percent of it is"
+    " free, and the other file systems keep their floors. Give a PATH on the"
+    " file system of a build cache, and give an N of more than the share of"
+    " the disk that the cache keeps free. An N of more than 0 adds PATH to the"
+    " disk paths"
+)
+DISK_PATH_HELP = (
+    "also watch the file system that holds PATH, such as the directory of a build cache"
+)
 
 
 def main():
@@ -1065,7 +1346,25 @@ def main():
         metavar="GLOB",
         help=f"add a glob to the default test-file globs. {GLOB_RULE}",
     )
-    s.add_argument("--disk-floor-gb", type=float, default=30)
+    s.add_argument(
+        "--disk-floor-gb", type=float, default=30, metavar="N", help=FLOOR_GB_HELP
+    )
+    s.add_argument(
+        "--disk-floor-percent",
+        action="append",
+        default=[],
+        type=floor_percent,
+        metavar="PATH=N",
+        help=FLOOR_PERCENT_HELP,
+    )
+    s.add_argument(
+        "--disk-path",
+        action="append",
+        default=[],
+        type=disk_path,
+        metavar="PATH",
+        help=DISK_PATH_HELP,
+    )
     s.add_argument(
         "--force", action="store_true", help="replace a run that has not ended"
     )
@@ -1095,7 +1394,35 @@ def main():
         metavar="GLOB",
         help="remove a glob from the shared globs",
     )
-    s.add_argument("--disk-floor-gb", type=float)
+    s.add_argument("--disk-floor-gb", type=float, metavar="N", help=FLOOR_GB_HELP)
+    s.add_argument(
+        "--disk-floor-percent",
+        action="append",
+        default=[],
+        type=floor_percent,
+        metavar="PATH=N",
+        help=f"{FLOOR_PERCENT_HELP}. An N of 0 removes the percent floor of PATH",
+    )
+    s.add_argument(
+        "--disk-path",
+        action="append",
+        default=[],
+        type=disk_path,
+        metavar="PATH",
+        help=DISK_PATH_HELP,
+    )
+    s.add_argument(
+        "--no-disk-path",
+        action="append",
+        default=[],
+        type=os.path.abspath,
+        metavar="PATH",
+        help=(
+            "remove PATH and its percent floor from the disk paths. The run"
+            " still watches the file system of PATH while another disk path"
+            " sits on it"
+        ),
+    )
     s.set_defaults(fn=cmd_config)
 
     s = sub.add_parser("triage")
@@ -1142,7 +1469,16 @@ def main():
     s.set_defaults(fn=cmd_land)
 
     sub.add_parser("status").set_defaults(fn=cmd_status)
-    sub.add_parser("watch").set_defaults(fn=cmd_watch)
+
+    s = sub.add_parser("watch")
+    s.add_argument(
+        "--interval",
+        type=interval,
+        default=60,
+        metavar="SECONDS",
+        help="how long the command waits between two measurements",
+    )
+    s.set_defaults(fn=cmd_watch)
 
     a, extra = p.parse_known_args()
     if a.fn is cmd_untriaged:

@@ -20,3 +20,4 @@ lima/result*
 .task/
 tools/mcp-git/mcp-git
 tools/mcp-destiny/mcp-destiny
+__pycache__/
