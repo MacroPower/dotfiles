@@ -7,11 +7,13 @@ Put simply, the cache is a map.
 To put it simply, the cache is a map.
 Simply, the cache is a map.
 You can easily swap the backend.
+The parser easily handles nested lists.
 The fix is straightforward.
 The config file is easy to read.
 It's easy to add a rule.
 The tool is lightweight and easy to use.
 Most callers should just use Close.
+The hook does more than just run the tests.
 The value is trivially copied.
 To quickly set up the project, run make.
 You can quickly add a rule.

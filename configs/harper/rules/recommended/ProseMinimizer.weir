@@ -52,8 +52,12 @@
 # mostly describes how fast the code runs (`the cache fills quickly`).
 #
 # None of the words needs a guard for a product name or a mention of the
-# word. Both are rare in technical prose, and the technical-writing
-# skill wants the words gone from a sentence about behavior.
+# word, because both are rare in technical prose.
+#
+# The technical-writing skill bans `simply`, `easy`, and `quickly` only
+# in a procedure. The rule also reports a minimizer in a sentence about
+# behavior (`the parser easily handles nested lists`), because the word
+# adds no fact there either.
 #
 # The two opener branches also fire after a negation when a verb follows
 # (`is not simply copied`), a case rare enough to leave.
@@ -61,7 +65,18 @@
 # Related Rules
 #
 # The Required ProseRestatement reports `Simply put`, so `simply` skips
-# `put`. After a negation, ProseNotOnly applies instead of this rule.
+# `put`.
+#
+# ProseNotOnly reports `just` after `not`, `isn't`, `aren't`, `wasn't`,
+# or `weren't` (`do not just run make`), and the `neg` guard keeps this
+# rule off that `just`. ProseNotOnly reports nothing else that the `neg`
+# guard skips, so `cannot just use`, `not simply an offset`, and `not
+# merely a cache` pass both rules. Without a later `but`, ProseNotOnly
+# passes a `not just` that follows a comma or an open paren or that
+# opens a sentence, so `read the docs, not just run make` passes both
+# rules too. ProseNotOnly also reports `more than just`, and no guard of
+# this rule skips `than`, so `does more than just run the tests` draws a
+# finding from each rule.
 #
 # `just` has other senses, such as `only` and `a moment ago` (`just one
 # entry`, `the file was just created`). Those senses belong to

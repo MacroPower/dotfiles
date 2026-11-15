@@ -3,6 +3,7 @@ The cache is not just a store of rules.
 Not only does the cache hold rules, it also holds results.
 The rule covers rows. Not only does the cache hold rules, it also holds results.
 This isn't just a cache.
+Do not just run make.
 Not only the cache but the log grows.
 Not only the cache, but also the log grows.
 Not just a cache but a log.
