@@ -18,15 +18,63 @@
 # `(landscape of)` does not open with `the`, so the branch also matches
 # `the changing landscape of` and `a landscape of tools`.
 #
+# The two `elevate` branches name each form of the verb, because
+# `$elevate` also expands to the noun `elevation`. `privilege` lists the
+# words for a privilege. `ahead` matches a word from `privilege`, alone
+# or after one, two, or three other words (`their Kubernetes RBAC
+# privileges`). A list picks its longest match and never backtracks, so
+# each gap length is its own alternative. `gap` matches one of the other
+# words. In a pattern, `*` matches one token. A hyphen is a token of its
+# own, and so is the apostrophe that ends a plural possessive. `gap`
+# therefore lists `*-*` beside `*` for a word with one hyphen (`its
+# cluster-admin privileges`) and `*'` for a plural possessive (`the
+# users' privileges`).
+#
+# Each branch skips a verb when `ahead` matches the words after it. A
+# fancy `elevate` therefore passes near a privilege word (`the redesign
+# elevates the permissions page`). The negated `ahead` after a space
+# needs a word to consume, so a verb before a comma or at the end of a
+# sentence passes.
+#
+# `elevated` counts only before `to` or before a word that opens an
+# object (`was elevated to GA status`, `elevated the discussion`).
+# Harper's part-of-speech tagger marks such a word `DET` or `PRON`.
+# `DET` is a determiner, a word that introduces a noun, such as `the`,
+# `a`, or `this`, and `PRON` is a pronoun. The filter applies the
+# `ahead` guard and then narrows the next word to one of the three. The
+# verb `elevated` therefore passes before a noun that has no determiner
+# (`the talk elevated developer experience`).
+#
 # False Positives
 #
 # `unlock`, `harness`, `landscape`, `realm`, and `underscore` are left
 # out, because each names something in code (a mutex, a test harness, a
 # page orientation, a Kerberos realm, the character). The stock phrases
 # built on them count instead (`harness the power`, `unlock the full
-# potential`, `landscape of`, `the realm of`). `elevate privileges`
-# names a security operation, so `elevate` skips a following
-# `privilege`, `privileges`, or `permissions`.
+# potential`, `landscape of`, `the realm of`).
+#
+# `elevate privileges` names a security operation, so a verb with a
+# privilege word after it passes (`elevate their privileges`, `elevates
+# permission for the install`). The security sense still matches when
+# no privilege word follows the verb (`the helper elevates through
+# sudo`, `the process was elevated to administrator`). `gap` matches
+# only a plain word, a word with one hyphen, or a plural possessive. The
+# verb therefore still matches before a privilege word when the gap
+# holds other punctuation, such as a slash, quotes, a comma, or a second
+# hyphen (`elevate read/write permissions`, `elevate read, write, and
+# admin permissions`). The verb also still matches when four or more
+# words sit between it and the privilege word (`elevate their own
+# cluster-wide RBAC privileges`).
+#
+# `elevated` is also an adjective for code that runs with administrator
+# rights (`an elevated prompt`), so `elevated` before a noun passes. The
+# adjective after a verb still matches before `to`, a determiner, or a
+# pronoun (`run the terminal elevated to edit the hosts file`, `the
+# installer runs elevated the whole time`, `admins running elevated who
+# forget to drop rights`).
+#
+# A name that holds one of the words also matches (`Learning Journey
+# Working Group`).
 #
 # Related Rules
 #
@@ -42,10 +90,15 @@
 #
 # Measurement
 #
-# The rule hit 60 lines in the measure.py corpus, and 19 of 20 sampled
-# hits stood in for a plainer word. The misfire was the name `Learning
-# Journey Working Group`.
-expr main [delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates] ![privilege, privileges, permissions]), tapestry, journey, ([navigate, navigates, navigating] the [complexities, complexity, landscape, world, challenges]), testament, $foster, $showcase, $garner, $boast, interplay, intricacies, synergy, nuanced, multifaceted, meticulous, meticulously, bolster, bolsters, bolstered, bolstering, spearhead, spearheads, spearheaded, spearheading, supercharge, supercharges, supercharged, supercharging, revolutionize, revolutionizes, revolutionized, revolutionizing, embark, embarks, embarked, embarking, ([harness, harnesses, harnessing] the power), ([unlock, unlocks, unlocking] the potential), ([unlock, unlocks, unlocking] the [full, true] potential), (the realm of), (landscape of), (key takeaway), (key takeaways)]
+# The rule hit 60 lines in the measure.py corpus, and 20 of 20 sampled
+# hits stood in for a plainer word. Five lines in the corpus hold a form
+# of `elevate`. Four name the security operation and pass. The rule
+# reports the fifth (`was elevated to GA status`), where `promoted` is
+# the plain word.
+expr privilege [privilege, privileges, permission, permissions]
+expr gap [*, (*-*), (*')]
+expr ahead [@privilege, (@gap @privilege), (@gap @gap @privilege), (@gap @gap @gap @privilege)]
+expr main [delve, delves, delving, (dive into), (deep[-, ( )]dive), unleash, unleashes, empower, empowers, empowering, streamline, streamlines, streamlined, ([elevate, elevates, elevating] !@ahead), (elevated <!@ahead, [DET, PRON, to]>), tapestry, journey, ([navigate, navigates, navigating] the [complexities, complexity, landscape, world, challenges]), testament, $foster, $showcase, $garner, $boast, interplay, intricacies, synergy, nuanced, multifaceted, meticulous, meticulously, bolster, bolsters, bolstered, bolstering, spearhead, spearheads, spearheaded, spearheading, supercharge, supercharges, supercharged, supercharging, revolutionize, revolutionizes, revolutionized, revolutionizing, embark, embarks, embarked, embarking, ([harness, harnesses, harnessing] the power), ([unlock, unlocks, unlocking] the potential), ([unlock, unlocks, unlocking] the [full, true] potential), (the realm of), (landscape of), (key takeaway), (key takeaways)]
 let message "Fancy word. Use the plain word it stands for."
 let description "Flags fancy words and phrases, such as `delve`, `showcase`, and `tapestry`, that stand in for a plainer word."
 let becomes ""
@@ -56,4 +109,14 @@ allows "The realm names the Kerberos domain."
 allows "Names with an underscore are private."
 allows "The installer elevates privileges with sudo."
 allows "The script elevates privilege for the install."
+allows "The script elevates permission for the install."
+allows "An attacker can further elevate their privileges."
+allows "The wrapper elevates its own permissions."
+allows "The attack works without elevating their Kubernetes RBAC privileges."
+allows "The bug lets a pod elevate its cluster-admin privileges."
+allows "The attacker elevates root-level permissions."
+allows "The bug lets a pod elevate the users' privileges."
+allows "The service runs with elevated privileges."
+allows "The exploit elevated the privileges of the process."
+allows "Run the installer from an elevated prompt."
 allows "Rotate the page to landscape orientation before printing."
