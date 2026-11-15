@@ -768,11 +768,11 @@ func ghWriteRedirectReason(tool string) string {
 	return "Write via " + tool + " instead of the gh CLI."
 }
 
-// ghWriteRedirectRules mirrors the gh write-redirect deny-rule bundle
-// in home/claude.nix: mutating gh subcommands whose mutation an
-// ask-gated github MCP tool covers, denied and pointed at the MCP
-// tool. The hook-router handler tests carry a copy of the same
-// fixture.
+// ghWriteRedirectRules mirrors the deny rules that home/claude.nix
+// builds from ghWriteRedirectGroups. Each rule denies a mutating gh
+// subcommand whose mutation a github MCP write tool covers, and its
+// reason names that tool. The hook-router handler tests carry a copy
+// of the same fixture.
 func ghWriteRedirectRules() *cmdrules.Engine {
 	redirect := func(tool string, args ...string) cmdrules.Rule {
 		return cmdrules.Rule{

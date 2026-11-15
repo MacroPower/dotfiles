@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -531,9 +532,22 @@ func TestHandleMCPConditional(t *testing.T) {
 	}
 }
 
+// conventionalBranchPattern mirrors conventionalBranchPattern in
+// home/claude.nix, so update both together. Every rule there that
+// tests a branch name carries this expression.
+const conventionalBranchPattern = `^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)/.+$`
+
+// conventionalBranchTypes returns the types that
+// [conventionalBranchPattern] accepts before the slash.
+func conventionalBranchTypes() []string {
+	return []string{
+		"build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "style", "test",
+	}
+}
+
 // pushRules is the --mcp-rules JSON that home/claude.nix serializes for
-// mcp__git__git_push. It mirrors conventionalBranchPattern and the
-// conditionalRules of the git bundle there, so update both together.
+// mcp__git__git_push. It mirrors the conditionalRules of the git bundle
+// there, so update both together.
 const pushRules = `{
 	"allow": ["mcp__git__git_clone", "mcp__git__git_fetch", "mcp__git__git_pull"],
 	"ask": [],
@@ -545,7 +559,7 @@ const pushRules = `{
 				{
 					"field": "ref",
 					"test": "branchMatches",
-					"pattern": "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)/.+$",
+					"pattern": "` + conventionalBranchPattern + `",
 					"repoField": "repo"
 				},
 				{"field": "tags", "test": "absentOrZero", "pattern": "", "repoField": ""}
@@ -602,7 +616,7 @@ func TestHandleMCPPush(t *testing.T) {
 	require.NoError(t, os.Mkdir(subdir, 0o755))
 
 	const conditions = "`ref`, or the current branch of `repo` when `ref` is empty, matches " +
-		"`^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)/.+$`" +
+		"`" + conventionalBranchPattern + "`" +
 		" and `tags` is absent, false, or empty"
 
 	cases := map[string]struct {
@@ -707,9 +721,7 @@ func TestHandleMCPPush(t *testing.T) {
 		},
 	}
 
-	for _, kind := range []string{
-		"build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "style", "test",
-	} {
+	for _, kind := range conventionalBranchTypes() {
 		cases["ref of type "+kind+": allow"] = struct {
 			input  map[string]any
 			want   string
@@ -758,6 +770,259 @@ func TestHandleMCPPush(t *testing.T) {
 		assert.Equal(t, "deny", hso["permissionDecision"])
 		assert.Equal(t, pushDeniedReason, hso["permissionDecisionReason"])
 		assert.Contains(t, hso["permissionDecisionReason"], tool)
+	})
+}
+
+// createPullRequestRules is the --mcp-rules JSON that home/claude.nix
+// serializes for the pull request tools of the github bundle. It
+// mirrors the conditionalRules of that bundle, and the entries of its
+// permissions lists that name the tools here, so update both together.
+const createPullRequestRules = `{
+	"allow": ["mcp__github__pull_request_read"],
+	"ask": ["mcp__github__merge_pull_request", "mcp__github__update_pull_request"],
+	"deny": ["mcp__github__create_pull_request_with_copilot"],
+	"conditional": [
+		{
+			"tool": "mcp__github__create_pull_request",
+			"conditions": [
+				{"field": "draft", "test": "true", "pattern": "", "repoField": ""},
+				{
+					"field": "head",
+					"test": "matches",
+					"pattern": "` + conventionalBranchPattern + `",
+					"repoField": ""
+				},
+				{"field": "reviewers", "test": "absentOrZero", "pattern": "", "repoField": ""}
+			]
+		}
+	]
+}`
+
+// TestHandleMCPCreatePullRequest runs mcp__github__create_pull_request
+// calls through [handleMCP] with the rule that home/claude.nix sets for
+// the tool. The message lint is on, because it reads the title and the
+// body of a call before the rule allows the call.
+func TestHandleMCPCreatePullRequest(t *testing.T) {
+	t.Parallel()
+
+	const tool = "mcp__github__create_pull_request"
+
+	logger := slog.New(slog.DiscardHandler)
+
+	rules, err := parseMCPRules(createPullRequestRules, logger)
+	require.NoError(t, err)
+
+	cfg := config{
+		mcpRules: rules,
+		messageLint: msglint.Config{
+			Command: []string{
+				"sh",
+				"-c",
+				`grep -q deliberate && { echo '<stdin>:1:1: Style::ProseReassurance: reassurance'; exit 1; }; exit 0`,
+			},
+			ToolFields: []msglint.ToolField{{Tool: tool, Fields: []string{"title", "body"}}},
+		},
+	}
+
+	const conditions = "`draft` is true and `head` matches `" + conventionalBranchPattern + "`" +
+		" and `reviewers` is absent, false, or empty"
+
+	// args returns the arguments of a call with clean text, and sets
+	// each entry of fields in them. The rule reads draft, head, and
+	// reviewers, so each case names the ones that it sets.
+	args := func(fields map[string]any) map[string]any {
+		input := map[string]any{
+			"owner": "octo-org",
+			"repo":  "widgets",
+			"title": "Add a retry budget",
+			"body":  "Adds a retry budget to the client.",
+			"base":  "main",
+		}
+
+		maps.Copy(input, fields)
+
+		return input
+	}
+
+	cases := map[string]struct {
+		input  map[string]any
+		want   string
+		reason string
+	}{
+		"draft from a branch with a conventional type: allow": {
+			input:  args(map[string]any{"draft": true, "head": "feat/x"}),
+			want:   "allow",
+			reason: "mcp conditional rule (" + conditions + ")",
+		},
+		"draft with an empty reviewers list: allow": {
+			input: args(map[string]any{"draft": true, "head": "feat/x", "reviewers": []any{}}),
+			want:  "allow",
+		},
+		"draft with null reviewers: allow": {
+			input: args(map[string]any{"draft": true, "head": "feat/x", "reviewers": nil}),
+			want:  "allow",
+		},
+		"draft against another base: allow": {
+			input: args(map[string]any{"draft": true, "head": "fix/y", "base": "release/1.x"}),
+			want:  "allow",
+		},
+		"draft that maintainers cannot modify: allow": {
+			input: args(map[string]any{"draft": true, "head": "fix/y", "maintainer_can_modify": false}),
+			want:  "allow",
+		},
+		"no draft field: ask": {
+			input:  args(map[string]any{"head": "feat/x"}),
+			want:   "ask",
+			reason: "This call needs confirmation. " + tool + " runs without a prompt when " + conditions + ".",
+		},
+		"draft false: ask": {
+			input: args(map[string]any{"draft": false, "head": "feat/x"}),
+			want:  "ask",
+		},
+		"draft as a string: ask": {
+			input: args(map[string]any{"draft": "true", "head": "feat/x"}),
+			want:  "ask",
+		},
+		"head with no type: ask": {
+			input:  args(map[string]any{"draft": true, "head": "my-branch"}),
+			want:   "ask",
+			reason: "This call needs confirmation. " + tool + " runs without a prompt when " + conditions + ".",
+		},
+		"head on a fork: ask": {
+			input: args(map[string]any{"draft": true, "head": "someone:feat/x"}),
+			want:  "ask",
+		},
+		"head main: ask": {
+			input: args(map[string]any{"draft": true, "head": "main"}),
+			want:  "ask",
+		},
+		"head with another prefix: ask": {
+			input: args(map[string]any{"draft": true, "head": "feature/x"}),
+			want:  "ask",
+		},
+		"head of a type alone: ask": {
+			input: args(map[string]any{"draft": true, "head": "feat"}),
+			want:  "ask",
+		},
+		"head of a type and a slash: ask": {
+			input: args(map[string]any{"draft": true, "head": "feat/"}),
+			want:  "ask",
+		},
+		"head with the type after another segment: ask": {
+			input: args(map[string]any{"draft": true, "head": "release/feat/x"}),
+			want:  "ask",
+		},
+		"full ref name as head: ask": {
+			input: args(map[string]any{"draft": true, "head": "refs/heads/feat/x"}),
+			want:  "ask",
+		},
+		"no head: ask": {
+			input: args(map[string]any{"draft": true}),
+			want:  "ask",
+		},
+		"reviewers list with a user: ask": {
+			input:  args(map[string]any{"draft": true, "head": "feat/x", "reviewers": []any{"octocat"}}),
+			want:   "ask",
+			reason: "This call needs confirmation. " + tool + " runs without a prompt when " + conditions + ".",
+		},
+		"reviewers list with a team: ask": {
+			input: args(map[string]any{"draft": true, "head": "feat/x", "reviewers": []any{"octo-org/platform"}}),
+			want:  "ask",
+		},
+		"missing tool_input: ask": {
+			want: "ask",
+		},
+		"Required finding in the body of a call that the rule allows: deny": {
+			input:  args(map[string]any{"draft": true, "head": "feat/x", "body": "This is deliberate."}),
+			want:   "deny",
+			reason: "prose-lint: 1 finding in the `body` field of " + tool + ".",
+		},
+		"Required finding in the title of a call that the rule allows: deny": {
+			input:  args(map[string]any{"draft": true, "head": "feat/x", "title": "Make a deliberate change"}),
+			want:   "deny",
+			reason: "prose-lint: 1 finding in the `title` field of " + tool + ".",
+		},
+		"Required finding in the body of a call that the rule does not allow: deny": {
+			input:  args(map[string]any{"head": "my-branch", "body": "This is deliberate."}),
+			want:   "deny",
+			reason: "prose-lint: 1 finding in the `body` field of " + tool + ".",
+		},
+		"flagged word in a field that the lint does not read: allow": {
+			input: args(map[string]any{"draft": true, "head": "fix/deliberate"}),
+			want:  "allow",
+		},
+	}
+
+	for _, kind := range conventionalBranchTypes() {
+		cases["head of type "+kind+": allow"] = struct {
+			input  map[string]any
+			want   string
+			reason string
+		}{
+			input: args(map[string]any{"draft": true, "head": kind + "/retry-budget"}),
+			want:  "allow",
+		}
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			payload := map[string]any{"session_id": "s1", "tool_name": tool}
+			if tc.input != nil {
+				payload["tool_input"] = tc.input
+			}
+
+			input, err := json.Marshal(payload)
+			require.NoError(t, err)
+
+			var stdout bytes.Buffer
+
+			require.NoError(t, handleMCP(t.Context(), input, &stdout, cfg, logger))
+
+			hso := preToolDecision(t, &stdout)
+			assert.Equal(t, tc.want, hso["permissionDecision"])
+
+			if tc.reason != "" {
+				assert.Contains(t, hso["permissionDecisionReason"], tc.reason)
+			}
+		})
+	}
+
+	t.Run("pull request edit that keeps a draft stays on the ask list", func(t *testing.T) {
+		t.Parallel()
+
+		const edit = "mcp__github__update_pull_request"
+
+		var stdout bytes.Buffer
+
+		input := mcpCall(t, edit, map[string]any{"pullNumber": 7, "draft": true, "head": "feat/x"})
+
+		require.NoError(t, handleMCP(t.Context(), input, &stdout, cfg, logger))
+
+		hso := preToolDecision(t, &stdout)
+		assert.Equal(t, "ask", hso["permissionDecision"])
+		assert.Equal(
+			t,
+			"This MCP tool is on the ask list ("+edit+"). Confirm before running.",
+			hso["permissionDecisionReason"],
+		)
+	})
+
+	t.Run("Bash gh pr create keeps the deny that names the tool", func(t *testing.T) {
+		t.Parallel()
+
+		var stdout bytes.Buffer
+
+		cfg := config{commandRules: ghRules(), autoAllow: true}
+
+		command := "gh pr create --draft --head feat/x --title 'Add a retry budget' --body 'Adds a retry budget.'"
+
+		require.NoError(t, handleBash(bashInput(t, command, nil), &stdout, cfg, logger))
+
+		hso := preToolDecision(t, &stdout)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Equal(t, ghWriteRedirectReason(tool), hso["permissionDecisionReason"])
 	})
 }
 

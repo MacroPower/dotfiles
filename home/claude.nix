@@ -389,10 +389,10 @@ let
   };
 
   # Conventional Commits types that can open a branch name. The
-  # conditional rules let a remote write to a branch named
-  # `<type>/<name>` run without a prompt. By convention such a name
-  # marks a working branch, so `main` and every other branch keep the
-  # prompt.
+  # conditional rules let a push to a branch named `<type>/<name>`, and
+  # a draft pull request from one, run without a prompt. By convention
+  # such a name marks a working branch, so `main` and every other
+  # branch keep the prompt.
   conventionalBranchTypes = [
     "build"
     "chore"
@@ -409,9 +409,15 @@ let
 
   # Regular expression, in Go syntax, for the name of such a branch.
   # Every conditional rule that tests a branch name reads it from here.
-  # Mirrored by pushRules in tools/hook-router/mcp_test.go, so update
-  # both together.
+  # Mirrored by conventionalBranchPattern in
+  # tools/hook-router/mcp_test.go, so update both together.
   conventionalBranchPattern = "^(${lib.concatStringsSep "|" conventionalBranchTypes})/.+$";
+
+  # The types as a list of inline code, for the bundle instructions
+  # that tell Claude how to name a branch.
+  conventionalBranchTypeList = lib.concatMapStringsSep ", " (
+    type: "`${type}`"
+  ) conventionalBranchTypes;
 
   toPermGlob =
     path:
@@ -1102,9 +1108,10 @@ let
   # (context, repos, issues, pull_requests, users), which carries no
   # Actions, security-alert, discussion, or project tools. Claude
   # reaches these through ToolSearch, so an unused tool costs one name
-  # in the deferred listing rather than a schema, and permissions.deny
-  # below stays the place where tool policy is spelled out: it strips
-  # every write tool except the ask-gated pull request set. A new
+  # in the deferred listing rather than a schema. permissions.deny of
+  # the github bundle stays the place that spells out tool policy. It
+  # strips every write tool except the pull request set that the
+  # bundle gates with permissions.ask and conditionalRules. A new
   # upstream tool appears here on its own and prompts on first use
   # until it is allowed or denied.
   #
@@ -3091,9 +3098,7 @@ in
           items = [
             "Use `mcp__git__git_clone` to clone repositories into `/tmp/git/<owner>/<repo>` and read from there."
             "Use `mcp__git__git_fetch`, `mcp__git__git_pull`, and `mcp__git__git_push` for git operations that contact a remote; plain `git` in Bash handles local work (add, commit, branch, rebase)."
-            "`mcp__git__git_push` runs without a prompt when the pushed branch is named `<type>/<name>` and the call does not set `tags`. `<type>` is one of ${
-              lib.concatMapStringsSep ", " (type: "`${type}`") conventionalBranchTypes
-            }. Every other push prompts, so give each branch that you create for a push a name of that form, such as `fix/retry-timeout`."
+            "`mcp__git__git_push` runs without a prompt when the pushed branch is named `<type>/<name>` and the call does not set `tags`. `<type>` is one of ${conventionalBranchTypeList}. Every other push prompts, so give each branch that you create for a push a name of that form, such as `fix/retry-timeout`."
           ];
         };
       };
@@ -3213,18 +3218,22 @@ in
             search = "mcp__github__search_code / search_issues / search_pull_requests / search_repositories";
           };
 
-          # gh write subcommands whose mutation a github MCP tool in
-          # permissions.ask covers. These are denied at the hook level and
-          # redirected to the MCP tool named in the value, which prompts on
-          # each call, so the confirmation moves from the gh CLI ask rule
-          # to the MCP permission prompt. Writes with no equivalent (pr
-          # comment, run delete, workflow enable/disable, issue writes,
-          # ...) stay with the ask rules below. These leaves stay out of
-          # the ask-rule except lists on purpose: the deny rules win
-          # first, and dropping one falls back to a prompt rather than an
-          # allow. Mirrored by ghWriteRedirectRules in
-          # tools/hook-router/{helpers,cmdrules/cmdrules}_test.go; update
-          # all together.
+          # gh write subcommands whose mutation a github MCP write tool
+          # covers. A deny rule at the hook level redirects each one to
+          # the MCP tool named in the value. Each call of that tool
+          # prompts, so the confirmation moves from the gh CLI ask rule
+          # to the MCP permission prompt. create_pull_request is the
+          # exception. hook-router decides it with the rule in
+          # conditionalRules of this bundle, and a call that meets the
+          # rule runs without a prompt. Writes with no equivalent stay
+          # with the ask rules below, such as pr comment, run delete,
+          # workflow enable, workflow disable, and the issue writes.
+          # These leaves stay out of the except lists of the ask rules
+          # on purpose. The deny rules win first, and dropping one falls
+          # back to a prompt rather than an allow. Mirrored by
+          # ghWriteRedirectRules in
+          # `tools/hook-router/{helpers,cmdrules/cmdrules}_test.go`, so
+          # update all together.
           ghWriteRedirectGroups = {
             pr = {
               create = "mcp__github__create_pull_request";
@@ -3457,9 +3466,10 @@ in
             # Overlaps mcp__kagi__kagi_search_fetch, which stays the one
             # web search tool.
             "mcp__github__web_search"
-            # GitHub MCP: deny every write/mutating tool except the pull
-            # request set in permissions.ask below. The proxy filter strips
-            # the denied tools' schemas from tools/list.
+            # GitHub MCP: deny every write tool except the pull request
+            # set that permissions.ask and conditionalRules of this
+            # bundle gate. The proxy filter strips the schemas of the
+            # denied tools from `tools/list`.
             "mcp__github__add_issue_comment"
             "mcp__github__assign_copilot_to_issue_with_intent"
             "mcp__github__create_branch"
@@ -3488,21 +3498,64 @@ in
             "mcp__github__update_issue_comment"
             "mcp__github__run_secret_scanning"
           ];
-          # Pull request and Actions write tools, the only write surface
-          # the MCP serves here. Each call prompts, matching the ask gating
-          # on mutating gh CLI commands. add_comment_to_pending_review
-          # rides along with pull_request_review_write: a pending review
-          # needs both. actions_run_trigger triggers, re-runs, and cancels
-          # workflow runs.
+          # Pull request and Actions write tools. With
+          # create_pull_request, which conditionalRules decides, they
+          # are the only write surface the MCP serves here. Each call
+          # of a tool in this list prompts, and so does each mutating
+          # gh CLI command. add_comment_to_pending_review rides along
+          # with pull_request_review_write, because a pending review
+          # needs both. actions_run_trigger triggers, re-runs, and
+          # cancels workflow runs.
           permissions.ask = [
             "mcp__github__actions_run_trigger"
             "mcp__github__add_comment_to_pending_review"
             "mcp__github__add_reply_to_pull_request_comment"
-            "mcp__github__create_pull_request"
             "mcp__github__merge_pull_request"
             "mcp__github__pull_request_review_write"
             "mcp__github__update_pull_request"
             "mcp__github__update_pull_request_branch"
+          ];
+          # mcp__github__create_pull_request has no permissions.ask
+          # entry, because hook-router decides each call on its
+          # arguments. A call runs without a prompt when it opens a
+          # draft, the name of its head branch matches
+          # conventionalBranchPattern, and it requests no reviewers.
+          # Every other call prompts. `base`, `owner`, and `repo` do
+          # not change the decision.
+          #
+          # GitHub does not merge a draft, and it requests no review
+          # from code owners for one. `reviewers` requests a review
+          # from each account that it names, so a call that sets it
+          # prompts.
+          #
+          # A `head` of the form `owner:branch` names a branch of a
+          # fork. An owner name holds no slash, so the pattern does not
+          # match that form, and a pull request from a fork prompts.
+          #
+          # prose-lint checks `title` and `body` before the rule allows
+          # a call, through proseLint.toolFields of this bundle.
+          #
+          # Mirrored by createPullRequestRules in
+          # `tools/hook-router/mcp_test.go`, so update both together.
+          conditionalRules = [
+            {
+              tool = "mcp__github__create_pull_request";
+              conditions = [
+                {
+                  field = "draft";
+                  test = "true";
+                }
+                {
+                  field = "head";
+                  test = "matches";
+                  pattern = conventionalBranchPattern;
+                }
+                {
+                  field = "reviewers";
+                  test = "absentOrZero";
+                }
+              ];
+            }
           ];
           # The prose that the write tools above publish. A cmdrules deny
           # redirects `gh pr create` to create_pull_request, so these
@@ -3660,6 +3713,7 @@ in
             items = [
               "Use `mcp__github__*` and `mcp__git__*` tools for reading GitHub data (issues, PRs, releases, Actions runs and job logs, security alerts, discussions, projects, code search, etc.)"
               "The `gh` CLI is available for functions the `mcp__github__*` tools do not serve. A hook redirects the `gh` subcommands that have an MCP equivalent. Note that `gh api` is always denied."
+              "`mcp__github__create_pull_request` runs without a prompt when `draft` is true, `head` is a branch named `<type>/<name>`, and the call sets no `reviewers`. `<type>` is one of ${conventionalBranchTypeList}. Every other call prompts, so open each pull request as a draft from a branch of that form, such as `fix/retry-timeout`."
             ];
           };
         };
