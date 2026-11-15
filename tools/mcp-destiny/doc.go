@@ -285,6 +285,30 @@
 // rating cells of the mode read "unavailable", and one line before the
 // first table gives the reason.
 //
+// # Game Data
+//
+// Destiny 2 is frozen, so the game data that the server embeds does not
+// go stale. Bungie shipped its final major patch, Update 9.7.0, on
+// 2026-06-09. Bungie has shipped only maintenance hotfixes since that
+// patch, and the last hotfix is Update 9.7.0.6 of 2026-10-20. Game data
+// such as perks, weapon frames, armor archetypes, and stat formulas
+// stays as that hotfix left it.
+//
+// Bungie has announced plans for later Destiny 2 updates but has not set
+// a release date for any of them. On 2026-09-17, Bungie announced work
+// to bring vaulted campaigns, destinations, and raids back into the
+// game. On 2026-10-29, Bungie said that the work stays in pre-production
+// until about February 2027 and then needs about 12 months of
+// production. Bungie also announced a Destiny 2 "Celebration" that
+// brings new updates, and it plans to give more news about the
+// Celebration in February 2027.
+//
+// The server embeds the game data that it takes from a source other
+// than the Bungie API and the service, such as the curves that the
+// Weapon Curves section describes. The embedded data follows the patch
+// notes of Bungie up to the last hotfix. The tools send no request for
+// it.
+//
 // # Weapon Curves
 //
 // The get_item tool shows a weapon copy in real units. It gives the
