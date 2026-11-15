@@ -2366,6 +2366,9 @@ in
       description = "Per-host attribution settings for commits and PRs authored via Claude Code.";
     };
 
+    # Workmux writes cpus, memory, and disk into the Lima config only when
+    # it creates the sandbox VM. The "Sandbox VM" section of README.md
+    # describes how to resize a VM that exists.
     lima = {
       enable = lib.mkEnableOption "Lima sandbox backend";
       cpus = mkOption {

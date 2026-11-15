@@ -42,6 +42,16 @@ in
 {
   imports = [ "${nixos-lima}/lima.nix" ];
 
+  # Grow the root partition to the end of the disk at every boot. Lima
+  # grows the disk image at start when the instance's `disk` value rises,
+  # and `autoResize` from nixos-lima then grows the ext4 filesystem to
+  # the partition. The image variant of this configuration sets
+  # growPartition by default, so a new VM grows at its first boot.
+  # Without the line here, the first switch to this configuration
+  # removes growpart.service, and a disk that grows later leaves the
+  # partition at its old size.
+  boot.growPartition = true;
+
   # Prevent nixos-rebuild switch from restarting lima-init or its
   # dependent lima-guestagent. This allows provisioning scripts
   # (which run inside lima-init) to call switch without killing themselves.

@@ -372,3 +372,38 @@ task displays
 task update
 sudo task switch
 ```
+
+## Sandbox VM
+
+Workmux runs sandboxed agents in a Lima VM that boots the NixOS configuration in `hosts/nixos/terrarium.nix`. `limactl list` shows the VM as `wm-<hash>`. The `dotfiles.claude.lima` option in the host's file under `hosts/darwin/` sets the CPUs, the memory, and the disk of the VM.
+
+### Resize
+
+Workmux reads `dotfiles.claude.lima` only when it creates the VM. To resize a VM that exists, you must also edit its Lima config. Lima can grow a disk but cannot shrink it.
+
+1. Set the new values in `dotfiles.claude.lima`. A VM that workmux creates later gets them.
+2. In the VM, run `task switch` so that the VM runs the current configuration. That configuration includes `growpart.service`, which grows the root partition at boot.
+3. Wait until no session in the VM has work in progress. Stopping the VM ends every session, build, and container in it.
+4. On the Mac, find the name of the VM and stop the VM:
+
+   ```sh
+   limactl list
+   limactl stop <name>
+   ```
+
+5. Set the new disk size and start the VM:
+
+   ```sh
+   limactl edit <name> --set '.disk = "1TiB"' --start
+   ```
+
+6. In the VM, check that the root partition `vda2` and the filesystem grew:
+
+   ```sh
+   lsblk /dev/vda
+   df -h /
+   ```
+
+Lima grows the disk image when the VM starts. In the VM, `growpart.service` then grows the root partition, and `systemd-growfs-root.service` grows the filesystem. If `vda2` kept its old size, the VM runs a configuration that lacks `growpart.service`. Run `task switch` in the VM, then stop and start the VM again. If `vda2` grew but `df -h /` still shows the old size, run `sudo resize2fs /dev/vda2` in the VM.
+
+To change the CPUs or the memory, set `.cpus` or `.memory` with the same `limactl edit` command.

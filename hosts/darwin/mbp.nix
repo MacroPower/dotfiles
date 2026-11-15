@@ -91,8 +91,8 @@
           lima = {
             enable = true;
             cpus = 12;
-            memory = "32GiB";
-            disk = "500GiB";
+            memory = "48GiB";
+            disk = "1TiB";
           };
         };
         comfyui.enable = true;

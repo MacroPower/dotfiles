@@ -19,6 +19,11 @@ images:
   - location: ""
     arch: "x86_64"
 
+# Resources of the standalone `terrarium` instance that lima:create
+# makes on any host. The workmux sandbox VM does not read this template.
+# Workmux generates the Lima config of that VM from the host's
+# `dotfiles.claude.lima` option, and the "Sandbox VM" section of
+# README.md describes how to resize it.
 cpus: 2
 memory: 2GiB
 disk: 20GiB
