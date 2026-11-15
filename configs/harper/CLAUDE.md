@@ -296,8 +296,14 @@ The rule hit 57 lines in the measure.py corpus, and 16 of 16 sampled
 hits were conjunctions.
 ```
 
-Rule comments that predate the corpus cite counts from other runs. Measure such a rule again the next time it changes,
-and replace its numbers.
+The counts in every rule comment come from the `measure.py` corpus.
+When a rule hits no lines in the corpus, its comment says that no
+sample measures the precision:
+
+```text
+The rule hit no lines in the measure.py corpus, so no sample measures
+its precision.
+```
 
 ## Measured and Rejected
 
