@@ -2404,9 +2404,10 @@ in
         a literal path, and a glob that spans more than one directory
         level. The guard also reads a script that a call passes to a
         shell with `-c`. Claude Code forces a permission prompt on
-        those patterns in every permission mode, and an unattended
-        session waits out the prompt before it can retry. The deny
-        reaches the agent first and carries the rewrite. See
+        those patterns in every permission mode. The call waits on the
+        prompt until a person answers it or someone stops the session.
+        Until then the prompt holds the agent that made the call. The
+        deny reaches the agent first and carries the rewrite. See
         tools/hook-router/rmguard for the matching rules.
       '';
     };

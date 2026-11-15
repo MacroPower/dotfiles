@@ -4,10 +4,11 @@
 //
 // Claude Code has built-in checks for removal targets it cannot prove
 // safe before the command runs. Each one forces a permission prompt
-// that no permission mode or allow rule skips, and an unattended
-// session waits out the prompt's timeout before the agent can retry. A
-// PreToolUse deny arrives ahead of that prompt, so the agent rewrites
-// the command in the same turn.
+// that no permission mode or allow rule skips. The call waits on the
+// prompt until a person answers it or someone stops the session. Until
+// then the prompt holds the agent that made the call. A PreToolUse deny
+// arrives ahead of that prompt, so the agent rewrites the command in
+// the same turn.
 //
 // # Variable Paths
 //
