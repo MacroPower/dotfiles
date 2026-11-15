@@ -31,3 +31,5 @@ Override the default if appropriate.
 Set the zone if applicable.
 
 Update the fields as applicable.
+
+Retry the request if possible.

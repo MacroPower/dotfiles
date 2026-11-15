@@ -153,8 +153,9 @@ that second one.
   three. Keep `may` for an option a person is free to take (`you may
   skip the tag`).
 - Name the criterion instead of writing `as needed`, `where applicable`,
-  or `appropriate`. `Set the timeout as needed` leaves the reader to
-  guess what makes a timeout right (`longer than the slowest request`).
+  `if possible`, or `appropriate`. `Set the timeout as needed` leaves
+  the reader to guess what makes a timeout right (`longer than the
+  slowest request`).
 - Put `only` beside the word it limits, so `fails only on growth`
   rather than `only fails on growth`.
 - Never write `please`. Give the instruction.

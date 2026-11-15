@@ -22,6 +22,9 @@
 # A description of lazy evaluation still draws a finding (`computes
 # values when needed`), because there the phrase names the criterion.
 #
+# The rule still reports `if possible` before a noun that `possible`
+# describes (`drop the index if possible duplicates remain`).
+#
 # Related Rules
 #
 # The Recommended ProseVagueCriterion holds the phrases (`as needed`,
@@ -29,18 +32,27 @@
 # single words (`appropriate`, `properly`).
 #
 # ProseTrailingCondition skips `if needed`, `if necessary`,
-# `if applicable`, and `if appropriate`, so only this rule reports them.
+# `if applicable`, `if appropriate`, and `if possible`, so only this
+# rule reports them.
 #
 # Measurement
 #
-# The rule hit 157 lines in the measure.py corpus. In 19 of 20 sampled
+# The rule hit 173 lines in the measure.py corpus. In 17 of 20 sampled
 # hits, the phrase left the criterion unstated, or the sentence read the
-# same without the phrase. In the one misfire, `if necessary` pointed at
-# a check that the same sentence named (`Check whether we need to escape
-# the string and if necessary copy it`).
-expr main [(as needed), (as necessary), (as appropriate), (as applicable), (as required!(( )by)), (where needed), (where necessary), (where appropriate), (where applicable), (when needed), (when necessary), (when appropriate), (when applicable), (if needed), (if necessary), (if appropriate), (if applicable)]
+# same without the phrase. In two of the misfires, `as required` named
+# its criterion after `for` or `per` (`as required for JSON object
+# names`). In the third misfire, `if necessary` pointed at a state that
+# the same sentence named (`ensures that a value is always addressable
+# (by copying the value if necessary)`).
+#
+# `if possible` hit 16 of those lines. In 15 of the 16, the phrase left
+# the criterion unstated, or the sentence read the same without the
+# phrase. In the one misfire, `if possible` pointed at a check that the
+# same sentence named (`See if the statement has already been prepared
+# on this connection, and reuse it if possible`).
+expr main [(as needed), (as necessary), (as appropriate), (as applicable), (as required!(( )by)), (where needed), (where necessary), (where appropriate), (where applicable), (when needed), (when necessary), (when appropriate), (when applicable), (if needed), (if necessary), (if appropriate), (if applicable), (if possible)]
 let message "Vague criterion. Name the condition the reader should check, or drop the phrase."
-let description "Flags `as needed`, `where applicable`, `if necessary`, and similar phrases that leave the reader to supply a criterion."
+let description "Flags `as needed`, `where applicable`, `if possible`, and similar phrases that leave the reader to supply a criterion."
 let becomes ""
 let kind "Style"
 let scope "Sentence"

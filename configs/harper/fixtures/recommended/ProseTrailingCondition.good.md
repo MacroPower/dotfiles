@@ -2,6 +2,8 @@ If the port is taken, use the flag.
 
 Use the flag if needed.
 
+Retry the request if possible.
+
 Check if the port is taken.
 
 Avoid the cache unless the data is static.
