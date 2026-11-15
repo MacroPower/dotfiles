@@ -6,6 +6,60 @@ state.json, rules.md, notes.md, logs/, and one directory per task. The
 repository's git config records its path as ultraclose.run, so a later
 session finds the run without arguments.
 
+The state of a run records the version of the skill that created the
+run, and the session of the run. The version is a hash of SKILL.md, of
+close-task.js, and of this script. The session of a run is the Claude
+Code session of the init command that created it, and then the session
+of each later command that changes it. Claude Code names the session of
+a command in the CLAUDE_CODE_SESSION_ID variable. The status command
+prints the version and the session. It says when the command comes from
+another version of the skill, and when the command runs in another
+session.
+
+The script decides whether a session continues the run that the
+repository names, and the setup line of the status command prints the
+decision. A session continues each run that has an unfinished task, with
+one exception. It starts a new run when the run comes from another
+session and from another version of the skill. That run holds the
+config, the rules.md, and the notes.md of that version. A session also
+starts a new run when the run has ended. The script cannot compare the
+sessions when the run records no session, or when the command runs
+outside a session. A run with a task then counts as a run of the session
+of the command.
+
+A run without a task has not started, so a new run loses nothing of it.
+A session continues that run only when the run records the session of
+the command and the version of the skill of the command. So a session
+starts a new run in place of a run without a task that records no
+session, or that another version of the skill created. A command outside
+a session continues a run without a task only when the init command that
+created the run ran outside a session too.
+
+The init command follows that decision. It starts a new run in place of
+a run that the session does not continue, and it refuses to replace a
+run that the session continues. With --force, it replaces that run too.
+Each other command that changes the run first refuses a run of another
+session that its own session does not continue. Then it records its
+session as the session of the run.
+
+A new run does not take the config, the rules.md, or the notes.md of an
+earlier run. When init replaces a run that has unfinished tasks, it
+moves those tasks and each noted task into the new run. Each task keeps
+its triage row, its state, and its directory, so the new run resumes its
+branch and its worktree. The earlier run keeps its landed and closed
+tasks. The state of the new run names the earlier run, and each run
+that the state of the earlier run names, and the status command prints
+each of them. The batch of the new run goes on from those runs, so its
+report covers their landed tasks and their notes.md. Init does not move
+the tasks while a landing of the earlier run runs. With --force, init
+starts an empty run and leaves the tasks in the earlier run.
+
+A noted task is still open in aven. So the untriaged command of a new
+run lists each noted task that the new run does not hold, and a triage
+starts that task again. The new run holds each noted task that init
+moves, so a pending task that waits for it keeps waiting, and the status
+command still prints that pending task as stuck.
+
 The next and args commands write a copy of close-task.js into the
 directory of each task that they start, and so does a landing that runs
 next. The meta of the copy names its task. The name holds the ref, and
@@ -25,13 +79,15 @@ remove both files when they start a task at the implementer, so a
 relaunch never carries the text of an attempt that the implementer
 replaced.
 
-A run ends when no task is pending, inflight, or approved. The init
-command replaces a run that has ended, and with --force it replaces a run
-that has not. Each run takes a directory of its own, so init refuses a
-directory that holds the state.json or the tasks directory of an earlier
-run. With --force, init takes a directory that holds the tasks directory
-and no state.json. The new run then treats the branch and the worktree of
-each task that has a directory there as its own work.
+A run ends when no task is pending, inflight, or approved. Each run
+takes a directory of its own. When the directory of init --run holds the
+state.json or the tasks directory of an earlier run, the new run takes
+the next free directory beside it, such as DIR-2. The init command
+prints the directory that the run takes. With --force, init takes the
+directory of --run when it holds the tasks directory and no state.json.
+The new run then treats the branch and the worktree of each task that
+has a directory there as its own work. Init takes no other such
+directory, even with --force.
 
 A run resumes only the task branches and the task worktrees that it
 created. An earlier run leaves the branch of each task that it noted, and
@@ -49,7 +105,9 @@ otherwise. Then run next or args again, and run next after a landing.
 The Leftover work section of SKILL.md holds these steps. Each command
 that starts a task creates the directory of the task first, so the
 branch and the worktree of a task without a directory come from an
-earlier run.
+earlier run. The init command moves the directory of each task that a
+new run takes from the run that it replaces, so the new run resumes the
+work of those tasks as its own.
 
 The set command removes the clean worktree of a task that it sets to
 noted or closed. When it removes the worktree of a closed task, it also
@@ -228,6 +286,7 @@ warning for each such glob that its --shared flag adds.
 import argparse
 import fcntl
 import fnmatch
+import hashlib
 import json
 import math
 import os
@@ -238,7 +297,7 @@ import statistics
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 STATES = ("pending", "inflight", "approved", "landed", "noted", "closed")
@@ -306,6 +365,11 @@ RECENT = 5
 # What the status command and the watch command print for a run that has
 # ended.
 ENDED = "no task is pending, inflight, or approved"
+# The key of the git config of the repository that names the run directory.
+KEY = "ultraclose.run"
+# The environment variable in which Claude Code names the session of each
+# command that it runs.
+SESSION = "CLAUDE_CODE_SESSION_ID"
 
 
 def die(msg):
@@ -335,12 +399,208 @@ def main_checkout():
     return p.stdout.splitlines()[0].split(" ", 1)[1]
 
 
+def named_run(repo):
+    """The run that the git config of the repository names.
+
+    Return the path of the run directory, the state of the run, and what
+    keeps a command from the run. The path is empty when the config
+    names no directory. The state is None when the config names no
+    directory, or a directory whose state file the command cannot read,
+    such as a directory that is gone. The last value then names the
+    cause.
+    """
+    path = sh("git", "config", "--get", KEY, cwd=repo, check=False).stdout.strip()
+    if not path:
+        return "", None, f"the git config of the repository does not set {KEY}"
+    file = Path(path, "state.json")
+    try:
+        st = json.loads(file.read_text())
+        if not isinstance(st, dict) or not {"config", "tasks"} <= st.keys():
+            raise ValueError("the file holds no config or no tasks")
+    except (FileNotFoundError, NotADirectoryError):
+        cause = f"{KEY} in the git config names {path}, which holds no state.json"
+        return path, None, cause
+    except (OSError, ValueError) as e:
+        cause = f"{KEY} in the git config names {path}, and the command cannot"
+        return path, None, f"{cause} read {file} ({e})"
+    return path, st, ""
+
+
+def current(repo):
+    """The directory and the state of the run that the repository names.
+
+    The command ends when the repository names no run that it can read.
+    """
+    path, st, cause = named_run(repo)
+    if st is None:
+        die(f"no run found for this repository, because {cause}. Start a run with init")
+    return Path(path), st
+
+
 def run_dir(repo):
-    p = sh("git", "config", "--get", "ultraclose.run", cwd=repo, check=False)
-    path = p.stdout.strip()
-    if not path or not Path(path, "state.json").exists():
-        die("no run found for this repository, start one with init")
-    return Path(path)
+    return current(repo)[0]
+
+
+def skill_version():
+    """The version of the skill that holds this script.
+
+    The version is a hash of SKILL.md, of close-task.js, and of this
+    script. A run records the version that created it, so a later command
+    can tell that the skill has changed.
+    """
+    here = Path(__file__).absolute()
+    digest = hashlib.sha256()
+    for file in (here.parent.parent / "SKILL.md", here.with_name(WORKFLOW), here):
+        # A copy of the scripts that has no SKILL.md still has a version.
+        text = file.read_bytes() if file.is_file() else b""
+        digest.update(hashlib.sha256(text).digest())
+    return digest.hexdigest()[:12]
+
+
+def session():
+    """The ID of the Claude Code session that runs this command.
+
+    The ID is empty for a command that runs outside a session.
+    """
+    return os.environ.get(SESSION, "")
+
+
+def foreign(st):
+    """Whether a run comes from another session than the session of this command.
+
+    The session of a run is the session of the init command that created
+    it, and then the session of each later command that changes it. The
+    script cannot compare the two sessions when the run records none, or
+    when this command runs outside a session. The run then counts as a
+    run of the session of this command.
+    """
+    mine, theirs = session(), st.get("session")
+    return bool(mine and theirs and mine != theirs)
+
+
+def new_run_reason(st):
+    """Why the session of this command starts a new run in place of a run.
+
+    The result is empty when the session continues the run. A session
+    continues each run that has an unfinished task, with one exception.
+    It does not continue a run that comes from another session and from
+    another version of the skill. That run holds the config, the
+    rules.md, and the notes.md of that version.
+
+    A run without a task has not started, so a new run loses nothing of
+    it. The session continues that run only when the run records the
+    session of this command and the version of the skill of this
+    command.
+    """
+    tasks = st["tasks"]
+    other = foreign(st)
+    if not tasks:
+        if other:
+            return "this run holds no task, and another session created it"
+        if st.get("skill") != skill_version():
+            return "this run holds no task, and another version of the skill created it"
+        # The run and the command differ in their sessions, but one of
+        # them names no session. So foreign() counts the run as a run of
+        # this session.
+        if (st.get("session") or "") != session():
+            if not session():
+                return "this run holds no task, and this command runs outside a session"
+            return "this run holds no task, and it records no session"
+        return ""
+    if ended(tasks):
+        return "this run has ended"
+    if other and st.get("skill") != skill_version():
+        return "this run comes from another session and another version of the skill"
+    return ""
+
+
+def setup_text(st):
+    """What the status command prints about the decision of new_run_reason()."""
+    why = new_run_reason(st)
+    if not why:
+        # The status command prints its ended line for a run without a
+        # task, so the text says why the session continues that run.
+        unstarted = "" if st["tasks"] else ", which holds no task yet"
+        return f"continue this run{unstarted}"
+    text = f"start a new run with init, because {why}"
+    unfinished, noted = moving(st["tasks"])
+    if unfinished:
+        text += f". init moves its {counted(len(unfinished), 'unfinished task')}"
+        if noted:
+            text += f" and its {counted(len(noted), 'noted task')}"
+        text += " to the new run"
+    return text
+
+
+def counted(n, noun):
+    """The number n and the noun, which takes the plural s unless n is 1."""
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def moving(tasks):
+    """The tasks that a new run takes from the run that it replaces.
+
+    Return the refs of the unfinished tasks and the refs of the noted
+    tasks. The new run takes no task from a run that has ended, so the
+    function returns no ref for such a run.
+
+    A noted task is still open in aven. So the untriaged command of the
+    new run lists each noted task that the new run does not hold, and a
+    triage starts that task again. A pending task that waits for a noted
+    task that the new run does not hold also starts, because next waits
+    only for the tasks that the run holds.
+    """
+    unfinished = [r for r, t in tasks.items() if t["state"] in UNFINISHED]
+    if not unfinished:
+        return [], []
+    noted = [r for r, t in tasks.items() if t["state"] == "noted"]
+    return unfinished, noted
+
+
+def origin_texts(st):
+    """What the status command prints about the skill version and the session of a run.
+
+    The first text says when the command comes from another version of
+    the skill than the version that created the run. The second text
+    says when the command runs in another session than the session of
+    the run.
+    """
+    version, mine = skill_version(), session()
+    made, theirs = st.get("skill"), st.get("session")
+    if not made:
+        skill = f"not recorded, and this command comes from version {version}"
+    elif made != version:
+        skill = f"{made}, and this command comes from another version, {version}"
+    else:
+        skill = made
+    if not theirs:
+        ran = "not recorded"
+    elif not mine:
+        ran = f"{theirs}, and this command runs outside a session"
+    elif theirs != mine:
+        ran = f"{theirs}, and this command runs in another session, {mine}"
+    else:
+        ran = theirs
+    return skill, ran
+
+
+def earlier_texts(st):
+    """What the status command prints about each run that a run replaces.
+
+    Init names those runs in the new state, as take_over() says. The
+    batch of the run goes on from each of them, so the final report also
+    covers the landed tasks and the notes.md of each of them.
+    """
+    texts = []
+    for path in st.get("replaces", []):
+        try:
+            tasks = json.loads(Path(path, "state.json").read_text())["tasks"]
+            landed = sum(1 for t in tasks.values() if t["state"] == "landed")
+        except (OSError, ValueError, LookupError, TypeError, AttributeError) as e:
+            texts.append(f"{path}, whose state.json this command cannot read ({e})")
+        else:
+            texts.append(f"{path}, which keeps {counted(landed, 'landed task')}")
+    return texts
 
 
 @contextmanager
@@ -351,7 +611,7 @@ def locked(path):
 
 
 @contextmanager
-def state(run):
+def edited(run):
     """Load state.json under a lock and save it when the block ends."""
     with locked(run / "state.lock"):
         st = json.loads((run / "state.json").read_text())
@@ -359,6 +619,27 @@ def state(run):
         tmp = run / "state.json.tmp"
         tmp.write_text(json.dumps(st, indent=1, sort_keys=True) + "\n")
         tmp.replace(run / "state.json")
+
+
+@contextmanager
+def state(run):
+    """Load the state of a run for a command that changes the run.
+
+    The function loads state.json under a lock and saves it when the
+    block ends. It ends the command when the run comes from another
+    session and the session of this command does not continue the run,
+    as new_run_reason() says. Otherwise it records the session of this
+    command as the session of the run.
+    """
+    with edited(run) as st:
+        if foreign(st) and (why := new_run_reason(st)):
+            die(
+                f"this session does not continue the run at {run}, because {why}."
+                " Start a new run with init, as the setup line of status says"
+            )
+        if mine := session():
+            st["session"] = mine
+        yield st
 
 
 def worktree(cfg, ref):
@@ -604,42 +885,121 @@ def install_workflow(st, run, ref):
         tmp.replace(copy)
 
 
+def free_dir(want, force):
+    """The directory that a new run takes.
+
+    Each run takes a directory of its own, so a new run starts without
+    the rules.md, the notes.md, and the task directories of an earlier
+    run. The new run takes the wanted directory when no earlier run
+    holds it. Otherwise it takes the directory beside the wanted
+    directory that no earlier run holds and whose name ends with the
+    lowest number, starting at DIR-2. A directory that holds state.json
+    or the tasks directory is the directory of an earlier run. With
+    force, the wanted directory is free when it holds the tasks directory
+    and no state.json. Force frees no other directory, because the caller
+    named only the wanted directory.
+    """
+    run, n = want, 1
+    while (run / "state.json").exists() or (
+        (run / "tasks").is_dir() and not (force and run == want)
+    ):
+        n += 1
+        run = want.with_name(f"{want.name}-{n}")
+    return run
+
+
+def take_over(repo, old, run, new):
+    """Write the state of a new run that takes the unfinished tasks of an earlier run.
+
+    The function moves the entry of each task that moving() names from
+    the state of the earlier run to the new state. Those tasks are the
+    unfinished tasks and the noted tasks. It also moves the directory of
+    each task to the new run directory. The directory records that a run
+    created the branch and the worktree of the task, as owns() says. So
+    the new run resumes that work, and the earlier run keeps its landed
+    and closed tasks. The new state names the earlier run first under
+    replaces, and then each run that the state of the earlier run names
+    there. The batch of the new run goes on from each of those runs. Then
+    the function names the new run in the git config of the repository,
+    and it saves the state of the earlier run last.
+
+    The function holds the landing lock of the earlier run, and it ends
+    the command when a landing of that run holds the lock. A landing
+    reads the commit message of its task from the directory of the task,
+    so a move during the landing breaks it. When a step fails, the
+    function moves each directory back, names the earlier run in the git
+    config again, and ends the command. When git cannot set the key back,
+    the error names the git config command that does.
+    """
+    moved, named = [], False
+    try:
+        with open(old / "land.lock", "w") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                die(
+                    f"a landing of the run at {old} is running, so another"
+                    " session still continues that run. Init moves the"
+                    " unfinished tasks of that run only after that session"
+                    " stops"
+                )
+            with edited(old) as st:
+                unfinished, noted = moving(st["tasks"])
+                for ref in unfinished + noted:
+                    d = old / "tasks" / ref
+                    if d.is_dir():
+                        d.rename(run / "tasks" / ref)
+                        moved.append(ref)
+                    new["tasks"][ref] = st["tasks"].pop(ref)
+                new["replaces"] = [str(old), *st.get("replaces", [])]
+                (run / "state.json").write_text(json.dumps(new))
+                # An error here ends the block before edited() saves the
+                # state of the earlier run, so that state keeps each task.
+                p = sh("git", "config", "--local", KEY, str(run), cwd=repo, check=False)
+                if p.returncode:
+                    raise OSError(f"git cannot write {KEY}: {p.stderr.strip()}")
+                named = True
+    except OSError as e:
+        for ref in moved:
+            (run / "tasks" / ref).rename(old / "tasks" / ref)
+        lost = ""
+        if named:
+            p = sh("git", "config", "--local", KEY, str(old), cwd=repo, check=False)
+            if p.returncode:
+                lost = (
+                    f" Git also cannot set {KEY} back to that run, so run git"
+                    f" config --local {KEY} {old} before init."
+                )
+        die(
+            f"init cannot move the unfinished tasks of the run at {old} to a"
+            f" new run: {e}. Those tasks stay in that run.{lost} Remove the"
+            " cause and run init again, or pass --force to start an empty run"
+            " without those tasks"
+        )
+
+
 def cmd_init(a):
     repo = main_checkout()
-    old = sh("git", "config", "--get", "ultraclose.run", cwd=repo, check=False)
-    old = old.stdout.strip()
-    replaces = bool(old) and Path(old, "state.json").exists()
-    if replaces and not a.force:
-        tasks = json.loads(Path(old, "state.json").read_text())["tasks"]
-        if not ended(tasks):
+    old, old_st, cause = named_run(repo)
+    # The script decides whether the session continues the run that the
+    # repository names, as new_run_reason() says. Only --force replaces a
+    # run that the session continues.
+    if old_st is not None and not a.force and not new_run_reason(old_st):
+        if old_st["tasks"]:
             die(
-                f"the run at {old} has not ended. Continue it, or pass --force"
-                " and a new run directory to replace it"
+                f"the run at {old} has not ended, and this session continues it."
+                " Pass --force to replace it with an empty run, which leaves"
+                " its unfinished tasks in that run"
             )
+        die(
+            f"the run at {old} holds no task yet, and this session continues"
+            " it. Change its config with the config command, or pass --force"
+            " to replace it"
+        )
     base = out("git", "branch", "--show-current", cwd=repo)
     if not base:
         die("the main checkout has a detached HEAD")
-    run = Path(a.run).resolve()
-    # A directory that holds state.json is the directory of an earlier run,
-    # with its rules.md, its notes.md, and the history of its tasks. No new
-    # run takes it, even with --force.
-    if (run / "state.json").exists():
-        die(
-            f"{run} holds an earlier run, and each run takes a directory of"
-            " its own. Pass a new directory"
-        )
-    # A run reads the directory of a task as the record that it created
-    # the branch and the worktree of the task, as owns() says. So a run
-    # that takes the tasks directory of an earlier run resumes the
-    # branches of that run as its own.
-    if (run / "tasks").is_dir() and not a.force:
-        die(
-            f"{run} holds the tasks directory of an earlier run, and each run"
-            " takes a directory of its own. Pass a new directory. With --force,"
-            " init takes this directory, and the new run then treats the branch"
-            " and the worktree of each task that has a directory there as its"
-            " own work"
-        )
+    run = free_dir(Path(a.run).resolve(), a.force)
     percents = floor_percents({}, a.disk_floor_percent)
     ignored = sh(
         "git", "check-ignore", "-q", ".claude/worktrees/x", cwd=repo, check=False
@@ -667,14 +1027,48 @@ def cmd_init(a):
             dict.fromkeys(default_disk_paths(repo) + a.disk_path + list(percents))
         ),
     }
-    # Init creates the run directory after each step that can fail. So a
-    # failed init leaves no tasks directory for a retry to refuse.
-    for d in (run, run / "tasks", run / "logs"):
-        d.mkdir(parents=True, exist_ok=True)
-    (run / "state.json").write_text(json.dumps({"config": cfg, "tasks": {}}))
-    sh("git", "config", "--local", "ultraclose.run", str(run), cwd=repo)
-    if replaces:
+    # The new run takes its config from the flags of this command. It
+    # does not take the config, the rules.md, or the notes.md of an
+    # earlier run.
+    new = {"config": cfg, "tasks": {}, "skill": skill_version(), "session": session()}
+    # A run that the session does not continue can hold unfinished tasks,
+    # as new_run_reason() says. The new run takes them, and --force leaves
+    # them.
+    takes = old_st is not None and not a.force and not ended(old_st["tasks"])
+    # Init creates the run directory after each step that can fail, and a
+    # failed init removes each directory that it created. So a failed
+    # init leaves no tasks directory, which a retry counts as the
+    # directory of an earlier run. Init names the new run in the git
+    # config inside the same guard. A failed init leaves the git config as
+    # it was, unless take_over() cannot set it back. Its error then gives
+    # the git config command that does.
+    made = [d for d in (run, run / "tasks", run / "logs") if not d.exists()]
+    for d in made:
+        d.mkdir(parents=True)
+    try:
+        if takes:
+            take_over(repo, Path(old), run, new)
+        else:
+            (run / "state.json").write_text(json.dumps(new))
+            sh("git", "config", "--local", KEY, str(run), cwd=repo)
+    except BaseException:
+        (run / "state.json").unlink(missing_ok=True)
+        for d in reversed(made):
+            with suppress(OSError):
+                d.rmdir()
+        raise
+    if old_st is not None:
         print(f"replaced the run at {old}")
+    elif old:
+        print(f"replaced a run that init cannot read, because {cause}")
+    moved = sorted(new["tasks"].items())
+    if unfinished := [(r, t) for r, t in moved if t["state"] in UNFINISHED]:
+        tasks = counted(len(unfinished), "unfinished task")
+        print(f"moved {tasks} of that run to the new run:")
+        print(" ".join(f"{ref} ({t['state']})" for ref, t in unfinished))
+    if noted := [r for r, t in moved if t["state"] == "noted"]:
+        print(f"moved {counted(len(noted), 'noted task')} of that run to the new run:")
+        print(" ".join(noted))
     print(f"run={run} repo={repo} base={base} limit={a.limit}")
 
 
@@ -823,10 +1217,12 @@ def owns(run, ref):
     run directory of its own. So a task branch or a task worktree whose
     task has no directory comes from an earlier run.
 
-    The init command refuses a run directory that holds the tasks
-    directory of an earlier run. With --force, init takes that directory,
-    and the run then owns the work of each task that has a directory
-    there.
+    With --force, the init command takes the directory of --run when that
+    directory holds the tasks directory of an earlier run and no
+    state.json. The run then owns the work of each task that has a
+    directory there. The init command also moves the directory of each
+    task that a new run takes from the run that it replaces, as
+    take_over() says. So the new run owns the work of those tasks.
     """
     return (run / "tasks" / ref).is_dir()
 
@@ -1151,12 +1547,18 @@ def times_text(times, typical=()):
 
 def cmd_status(a):
     repo = main_checkout()
-    run = run_dir(repo)
-    with state(run) as st:
-        cfg, tasks = st["config"], st["tasks"]
+    # The command changes no state, so it records no session.
+    run, st = current(repo)
+    cfg, tasks = st["config"], st["tasks"]
     now = time.time()
     counts = {s: sum(1 for t in tasks.values() if t["state"] == s) for s in STATES}
+    skill, ran = origin_texts(st)
     print(f"run={run}")
+    print(f"skill: {skill}")
+    print(f"session: {ran}")
+    print(f"setup: {setup_text(st)}")
+    for text in earlier_texts(st):
+        print(f"earlier run: {text}")
     print(" ".join(f"{s}={n}" for s, n in counts.items()), f"limit={cfg['limit']}")
     print(f"shared: {' '.join(cfg['shared'])}")
     # A run can continue from a state file that has no models key.
@@ -1654,7 +2056,13 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("init")
-    s.add_argument("--run", required=True)
+    s.add_argument(
+        "--run",
+        required=True,
+        metavar="DIR",
+        help="the directory of the new run. When DIR holds an earlier run, the"
+        " run takes the next free directory beside it, such as DIR-2",
+    )
     s.add_argument("--limit", type=int, default=5)
     s.add_argument("--rounds", type=int, default=6)
     s.add_argument(
@@ -1707,8 +2115,9 @@ def main():
     s.add_argument(
         "--force",
         action="store_true",
-        help="replace a run that has not ended, and take a run directory that"
-        " holds the tasks directory of an earlier run",
+        help="start an empty run in place of a run that this session continues"
+        " or whose unfinished tasks init moves, and take the --run directory"
+        " when it holds the tasks directory of an earlier run and no state.json",
     )
     s.set_defaults(fn=cmd_init)
 

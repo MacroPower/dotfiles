@@ -5,6 +5,7 @@ Run with: python3 test_ultraclose.py. The close-task.js tests run the
 script under Node, and they skip when node is not on PATH.
 """
 
+import fcntl
 import itertools
 import json
 import os
@@ -20,6 +21,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("ultraclose.py")
 WORKFLOW = Path(__file__).with_name("close-task.js")
+SKILL = Path(__file__).parent.with_name("SKILL.md")
 NODE = shutil.which("node")
 DEFAULT_SHARED = [
     "*_test.*",
@@ -32,9 +34,29 @@ DEFAULT_SHARED = [
 ]
 
 
+# The environment variable in which Claude Code names the session of each
+# command that it runs.
+SESSION = "CLAUDE_CODE_SESSION_ID"
+
+
 def clean_env():
-    """The environment without the GIT_* variables of a calling git hook."""
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    """The environment without the GIT_* variables of a calling git hook.
+
+    The environment also names no Claude Code session. So each command of
+    a test runs outside a session, unless the test names one with
+    in_session().
+    """
+    return {
+        k: v for k, v in os.environ.items() if not k.startswith("GIT_") and k != SESSION
+    }
+
+
+def in_session(env, session):
+    """The environment of a command that the given Claude Code session runs.
+
+    A session of None stands for a command that runs outside a session.
+    """
+    return {**env, SESSION: session} if session else env
 
 
 def finished(*args, cwd, env, script=SCRIPT):
@@ -272,11 +294,12 @@ def state_of(run):
     return json.loads((run / "state.json").read_text())
 
 
-def configured_run(repo, env, run):
+def configured_run(repo, env, run, script=SCRIPT):
     """Start a run that sets each config value that a batch inherits.
 
     The run sets a limit, a model, a check, a health command, a step
-    timeout, and a shared glob.
+    timeout, and a shared glob. Its directory holds a rules.md and a
+    notes.md.
     """
     ultraclose(
         "init",
@@ -296,10 +319,109 @@ def configured_run(repo, env, run):
         GLOB,
         cwd=repo,
         env=env,
+        script=script,
     )
+    for name in RUN_FILES:
+        (run / name).write_text(f"the {name} of the run at {run}\n")
+
+
+def assert_fresh(test, run):
+    """Assert that a run holds the default config and none of the RUN_FILES."""
+    config = state_of(run)["config"]
+    keys = ("limit", "models", "check", "health", "stepTimeout", "shared")
+    test.assertEqual(
+        {k: config[k] for k in keys},
+        {
+            "limit": 5,
+            "models": {},
+            "check": "",
+            "health": "",
+            "stepTimeout": STEP_TIMEOUT,
+            "shared": DEFAULT_SHARED,
+        },
+    )
+    test.assertEqual([n for n in RUN_FILES if (run / n).exists()], [])
+
+
+def earlier_skill(tmp, changed=SKILL.name):
+    """Lay out a copy of the skill, and return the path of its ultraclose.py.
+
+    The copy differs from the skill of SCRIPT in the file that changed
+    names, which gets one more line. So the copy is another version of
+    the skill. A changed argument of None gives a copy with the same
+    files, which is the same version.
+    """
+    skill = Path(tempfile.mkdtemp(dir=tmp, prefix="skill-"))
+    scripts = skill / "scripts"
+    scripts.mkdir()
+    files = {
+        SKILL.name: (SKILL, skill / SKILL.name, "\nAn earlier rule.\n"),
+        WORKFLOW.name: (WORKFLOW, scripts / WORKFLOW.name, "\n// An earlier line.\n"),
+        SCRIPT.name: (SCRIPT, scripts / SCRIPT.name, "\n# An earlier line.\n"),
+    }
+    for name, (source, copy, line) in files.items():
+        copy.write_text(source.read_text() + (line if name == changed else ""))
+    return scripts / SCRIPT.name
+
+
+def unrecorded(run):
+    """Remove the skill version and the session from the state of a run.
+
+    The state file then holds what an earlier version of ultraclose.py
+    wrote, before runs recorded their version and their session.
+    """
+    st = state_of(run)
+    del st["skill"], st["session"]
+    (run / "state.json").write_text(json.dumps(st))
+
+
+# A value that stands for the session of a run that records no session
+# and no skill version, as unrecorded() leaves it.
+UNRECORDED = "unrecorded"
+
+
+def first_run(tmp, task_state=None, session=None, script=SCRIPT):
+    """Start a configured run, and return the repo, the env, and the run.
+
+    The run holds one task in the given state, or no task. The given
+    script creates the run, and the given session runs each command. A
+    session of UNRECORDED gives a run that records no session and no
+    skill version, as unrecorded() leaves it. The environment that the
+    function returns names no session.
+    """
+    repo, env = new_repo(tmp)
+    earlier = in_session(env, None if session == UNRECORDED else session)
+    run = Path(tmp, "first").resolve()
+    configured_run(repo, earlier, run, script=script)
+    if task_state:
+        triage(tmp, repo, earlier, {"ref": REF})
+        ultraclose("set", REF, task_state, cwd=repo, env=earlier)
+    if session == UNRECORDED:
+        unrecorded(run)
+    return repo, env, run
+
+
+def status_values(repo, env, key):
+    """What status prints after the given key and a colon, one text per line."""
+    lines = ultraclose("status", cwd=repo, env=env).splitlines()
+    return [
+        line.removeprefix(f"{key}: ") for line in lines if line.startswith(f"{key}: ")
+    ]
+
+
+def version_of(tmp, script=SCRIPT):
+    """The version of the skill of a script, as a run of that script records it."""
+    with tempfile.TemporaryDirectory(dir=tmp) as other:
+        repo, env = new_repo(other)
+        run = Path(other, "run")
+        ultraclose("init", "--run", str(run), cwd=repo, env=env, script=script)
+        return state_of(run)["skill"]
 
 
 REF = "APP-7KQ9"
+# The files that the orchestrator writes into a run directory. A new run
+# must start without the files of an earlier run.
+RUN_FILES = ("rules.md", "notes.md")
 # The roles of the agents of close-task.js. A --model flag with the
 # default role names the model of each role without a model of its own.
 ROLES = ("implementer", "sync", "reviewer", "fixer", "narrow")
@@ -447,89 +569,135 @@ class InitTest(unittest.TestCase):
                 ultraclose(*args, cwd=repo, env=env)
                 self.assertEqual(state_of(run)["config"]["shared"], want)
 
-    def first_run(self, tmp, task_state=None):
-        """Start a configured run, and return the repo, the env, and the run.
-
-        The run holds one task in the given state, or no task.
-        """
-        repo, env = new_repo(tmp)
-        run = Path(tmp, "first").resolve()
-        configured_run(repo, env, run)
-        if task_state:
-            triage(tmp, repo, env, {"ref": REF})
-            ultraclose("set", REF, task_state, cwd=repo, env=env)
-        return repo, env, run
-
-    def test_replaces_ended_run(self):
-        # name: (the state of the task of the first run, the flags of the
+    def test_replaces_run_that_session_does_not_continue(self):
+        # name: (the state of the task of the first run, the session of
+        # the first run, the session of the second init, the flags of the
         # second init)
-        cases = {"a run with no task": (None, [])}
-        cases |= {f"a run with one {s} task": (s, []) for s in FINISHED}
-        cases |= {f"--force and one {s} task": (s, ["--force"]) for s in UNFINISHED}
-        for name, (task_state, flags) in cases.items():
+        cases = {f"one {s} task": (s, None, None, []) for s in FINISHED}
+        cases |= {
+            f"a new session and one {s} task": (s, "first", "second", [])
+            for s in FINISHED
+        }
+        # A session continues a run with no task only when the run records
+        # the session and the version of the command.
+        cases |= {
+            "a new session and a run with no task": (None, "first", "second", []),
+            "a run with no task that records no session": (None, None, "second", []),
+            "a run with no task that records no version and no session": (
+                None,
+                UNRECORDED,
+                "second",
+                [],
+            ),
+            "a command outside a session and a run with no task": (
+                None,
+                "first",
+                None,
+                [],
+            ),
+            "--force and a run with no task": (None, None, None, ["--force"]),
+        }
+        cases |= {
+            f"--force and one {s} task": (s, None, None, ["--force"])
+            for s in UNFINISHED
+        }
+        for name, (task_state, earlier, later, flags) in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
-                repo, env, first = self.first_run(tmp, task_state)
+                repo, env, first = first_run(tmp, task_state, earlier)
                 before = state_of(first)
                 second = Path(tmp, "second").resolve()
+                env = in_session(env, later)
+                if not flags:
+                    [setup] = status_values(repo, env, "setup")
+                    self.assertTrue(setup.startswith(NEW_RUN), setup)
                 out = ultraclose(
                     "init", "--run", str(second), *flags, cwd=repo, env=env
                 )
                 self.assertIn(f"replaced the run at {first}\n", out)
-                # The new run takes no task and no config from the first run.
-                state = state_of(second)
-                self.assertEqual(state["tasks"], {})
-                keys = ("limit", "models", "check", "health", "stepTimeout", "shared")
-                self.assertEqual(
-                    {k: state["config"][k] for k in keys},
-                    {
-                        "limit": 5,
-                        "models": {},
-                        "check": "",
-                        "health": "",
-                        "stepTimeout": STEP_TIMEOUT,
-                        "shared": DEFAULT_SHARED,
-                    },
-                )
+                # The new run takes no task, no config, and no file from
+                # the first run.
+                self.assertEqual(state_of(second)["tasks"], {})
+                assert_fresh(self, second)
                 status = ultraclose("status", cwd=repo, env=env)
                 self.assertEqual(status.splitlines()[0], f"run={second}")
                 self.assertEqual(state_of(first), before)
+                kept = [name for name in RUN_FILES if (first / name).is_file()]
+                self.assertEqual(kept, list(RUN_FILES))
 
-    def test_keeps_run_that_has_not_ended(self):
-        for task_state in UNFINISHED:
-            with self.subTest(task_state), tempfile.TemporaryDirectory() as tmp:
-                repo, env, first = self.first_run(tmp, task_state)
+    def test_keeps_run_that_session_continues(self):
+        unfinished = "has not ended, and this session continues it"
+        unstarted = "holds no task yet, and this session continues it"
+        # name: (the state of the task of the first run, the session of
+        # the first run, the session of the second init, what the refusal
+        # says about the first run)
+        cases = {f"one {s} task": (s, None, None, unfinished) for s in UNFINISHED}
+        cases |= {
+            f"a new session and one {s} task": (s, "first", "second", unfinished)
+            for s in UNFINISHED
+        }
+        cases |= {
+            "a run with no task": (None, None, None, unstarted),
+            "the session of a run with no task": (None, "first", "first", unstarted),
+        }
+        for name, (task_state, earlier, later, text) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, first = first_run(tmp, task_state, earlier)
                 before = state_of(first)
                 second = Path(tmp, "second")
+                env = in_session(env, later)
                 message = refused("init", "--run", str(second), cwd=repo, env=env)
-                self.assertIn(f"the run at {first} has not ended", message)
+                self.assertIn(f"the run at {first} {text}", message)
+                self.assertIn("--force", message)
                 self.assertFalse(second.exists())
                 status = ultraclose("status", cwd=repo, env=env)
                 self.assertEqual(status.splitlines()[0], f"run={first}")
                 self.assertEqual(state_of(first), before)
 
-    def test_refuses_directory_of_earlier_run(self):
-        # The repository names the second run, and the first run is older.
-        cases = {
-            "the run that the repository names": ("second", []),
-            "the same run with --force": ("second", ["--force"]),
-            "an older run": ("first", []),
-        }
-        for name, (directory, flags) in cases.items():
-            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
-                repo, env, first = self.first_run(tmp)
-                second = Path(tmp, "second").resolve()
-                ultraclose(
-                    "init", "--run", str(second), "--limit", "9", cwd=repo, env=env
-                )
-                runs = {"first": first, "second": second}
-                before = {n: state_of(r) for n, r in runs.items()}
-                message = refused(
-                    "init", "--run", str(runs[directory]), *flags, cwd=repo, env=env
-                )
-                self.assertIn(f"{runs[directory]} holds an earlier run", message)
+    def test_takes_next_free_directory(self):
+        # Each init names the directory of the first run. Each step holds
+        # the state in which the task of the run before the init ends. It
+        # also holds the flags of the init, and the name of the directory
+        # that the init takes.
+        steps = [
+            ("landed", [], "first-2"),
+            ("noted", [], "first-3"),
+            ("pending", ["--force"], "first-4"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first = first_run(tmp)
+            runs = [first]
+            for task_state, flags, name in steps:
+                triage(tmp, repo, env, {"ref": REF})
+                ultraclose("set", REF, task_state, cwd=repo, env=env)
+                before = [state_of(run) for run in runs]
+                out = ultraclose("init", "--run", str(first), *flags, cwd=repo, env=env)
+                run = first.with_name(name)
+                self.assertIn(f"run={run} ", out)
+                self.assertEqual(state_of(run)["tasks"], {})
+                assert_fresh(self, run)
                 status = ultraclose("status", cwd=repo, env=env)
-                self.assertEqual(status.splitlines()[0], f"run={second}")
-                self.assertEqual({n: state_of(r) for n, r in runs.items()}, before)
+                self.assertEqual(status.splitlines()[0], f"run={run}")
+                self.assertEqual([state_of(run) for run in runs], before)
+                runs.append(run)
+
+    def test_force_takes_no_directory_beside_named_directory(self):
+        # The directory beside the directory of the first run holds the
+        # tasks directory and the files of an earlier run, and no state
+        # file. --force frees only the directory that --run names.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first = first_run(tmp, "pending")
+            beside = first.with_name("first-2")
+            (beside / "tasks" / "APP-0009").mkdir(parents=True)
+            for name in RUN_FILES:
+                (beside / name).write_text(f"the {name} of the run at {beside}\n")
+            out = ultraclose("init", "--run", str(first), "--force", cwd=repo, env=env)
+            run = first.with_name("first-3")
+            self.assertIn(f"run={run} ", out)
+            self.assertEqual(state_of(run)["tasks"], {})
+            assert_fresh(self, run)
+            self.assertEqual(os.listdir(run / "tasks"), [])
+            self.assertFalse((beside / "state.json").exists())
+            self.assertEqual(os.listdir(beside / "tasks"), ["APP-0009"])
 
     def test_retry_after_failed_init(self):
         # Init fails after its checks when it cannot add the worktrees to
@@ -554,6 +722,770 @@ class InitTest(unittest.TestCase):
             self.assertIn(".claude/worktrees/\n", (info / "exclude").read_text())
             status = ultraclose("status", cwd=repo, env=env)
             self.assertEqual(status.splitlines()[0], f"run={run}")
+
+    def test_retry_after_failed_config_write(self):
+        # Git writes its config through a lock file, and it refuses the
+        # write while that file exists. The second session starts a new
+        # run in place of the run without a task of the first session.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            first = Path(tmp, "first").resolve()
+            ultraclose(
+                "init", "--run", str(first), cwd=repo, env=in_session(env, "first")
+            )
+            env = in_session(env, "second")
+            lock = repo / ".git" / "config.lock"
+            lock.touch()
+            run = Path(tmp, "run").resolve()
+            message = refused("init", "--run", str(run), cwd=repo, env=env)
+            self.assertIn(f"git config --local ultraclose.run {run} failed", message)
+            self.assertFalse(run.exists())
+            status = ultraclose("status", cwd=repo, env=env)
+            self.assertEqual(status.splitlines()[0], f"run={first}")
+            lock.unlink()
+            ultraclose("init", "--run", str(run), cwd=repo, env=env)
+            self.assertEqual(state_of(run)["session"], "second")
+            status = ultraclose("status", cwd=repo, env=env)
+            self.assertEqual(status.splitlines()[0], f"run={run}")
+
+
+class OriginTest(unittest.TestCase):
+    """A run records the version of the skill that created it, and its session."""
+
+    def test_version_follows_each_file_of_skill(self):
+        # name: the file of the skill copy that differs from the skill of
+        # SCRIPT, or None for a copy with the same files
+        copies = {"the same files": None, "the same files in another place": None}
+        copies |= {
+            f"another {file.name}": file.name for file in (SKILL, WORKFLOW, SCRIPT)
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            versions = {
+                name: version_of(tmp, earlier_skill(tmp, changed))
+                for name, changed in copies.items()
+            }
+            for name, version in versions.items():
+                with self.subTest(name):
+                    self.assertRegex(version, r"^[0-9a-f]{12}$")
+            same = versions.pop("the same files")
+            self.assertEqual(same, version_of(tmp))
+            self.assertEqual(same, versions.pop("the same files in another place"))
+            self.assertEqual(len({same, *versions.values()}), len(versions) + 1)
+
+    def test_records_session_of_each_command_that_changes_run(self):
+        # Each line holds a command, the session that runs it, and the
+        # session that the run records after it.
+        steps = [
+            (["status"], "second", "first"),
+            (["untriaged"], "second", "first"),
+            (["config", "--limit", "7"], "second", "second"),
+            (["config", "--limit", "6"], None, "second"),
+            (["set", REF, "pending"], "third", "third"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, run = first_run(tmp, session="first")
+            self.assertEqual(state_of(run)["session"], "first")
+            # Another session continues only a run that has a task.
+            triage(tmp, repo, in_session(env, "first"), {"ref": REF})
+            aven_listed_tasks(env)
+            for command, session, recorded in steps:
+                with self.subTest(command=command, session=session):
+                    ultraclose(*command, cwd=repo, env=in_session(env, session))
+                    self.assertEqual(state_of(run)["session"], recorded)
+
+    def test_status_flags_another_version_and_another_session(self):
+        # Each case names the file of the skill that differs when the run
+        # starts, or None. It names the session of the run and the session
+        # of the status command. It then says whether status flags the
+        # version, and what status prints about the session.
+        cases = {
+            "the same version and the same session": (
+                None,
+                "first",
+                "first",
+                False,
+                "first",
+            ),
+            "another version": (SKILL.name, "first", "first", True, "first"),
+            "another session": (
+                None,
+                "first",
+                "second",
+                False,
+                "first, and this command runs in another session, second",
+            ),
+            "a command outside a session": (
+                None,
+                "first",
+                None,
+                False,
+                "first, and this command runs outside a session",
+            ),
+            "a run that records no session": (
+                None,
+                None,
+                "second",
+                False,
+                "not recorded",
+            ),
+        }
+        for name, (changed, earlier, later, flagged, session) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                script = earlier_skill(tmp, changed)
+                repo, env, run = first_run(tmp, "pending", earlier, script)
+                env = in_session(env, later)
+                made, this = state_of(run)["skill"], version_of(tmp)
+                self.assertEqual(made != this, flagged)
+                skill = (
+                    f"{made}, and this command comes from another version, {this}"
+                    if flagged
+                    else this
+                )
+                self.assertEqual(status_values(repo, env, "skill"), [skill])
+                self.assertEqual(status_values(repo, env, "session"), [session])
+
+    def test_state_without_skill_and_session_keys(self):
+        # A run can continue from a state file that init wrote without
+        # the skill key and the session key.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, run = first_run(tmp, "pending", "first")
+            unrecorded(run)
+            env = in_session(env, "second")
+            this = version_of(tmp)
+            self.assertEqual(
+                status_values(repo, env, "skill"),
+                [f"not recorded, and this command comes from version {this}"],
+            )
+            self.assertEqual(status_values(repo, env, "session"), ["not recorded"])
+            self.assertEqual(status_values(repo, env, "setup"), [CONTINUE])
+            # The first command that changes the run records its session.
+            ultraclose("config", "--limit", "7", cwd=repo, env=env)
+            self.assertEqual(state_of(run)["session"], "second")
+            self.assertNotIn("skill", state_of(run))
+
+
+# What status prints after "setup: " for a run that the session continues,
+# and the start of what it prints for every other run.
+CONTINUE = "continue this run"
+NEW_RUN = "start a new run with init, because "
+# The reasons for which a session starts a new run.
+HAS_ENDED = "this run has ended"
+UNSTARTED = "this run holds no task, and another session created it"
+UNSTARTED_VERSION = "this run holds no task, and another version of the skill created it"
+UNSTARTED_OUTSIDE = "this run holds no task, and this command runs outside a session"
+UNSTARTED_UNRECORDED = "this run holds no task, and it records no session"
+STALE = "this run comes from another session and another version of the skill"
+
+
+class ContinueTest(unittest.TestCase):
+    """The script decides whether a session continues the run of the repository."""
+
+    def test_decision(self):
+        # Each case names the file of the skill that differs when the run
+        # starts, or None. It names the state of the task of the run, or
+        # None for a run with no task. It names the session of the run,
+        # or UNRECORDED, and the session of the later commands. It then
+        # gives the reason for which that session starts a new run, or
+        # None for a session that continues the run. Last, it says
+        # whether a command of that session changes the run.
+        cases = {
+            "its own run with an unfinished task": (
+                None,
+                "pending",
+                "first",
+                "first",
+                None,
+                True,
+            ),
+            "its own run with no task": (None, None, "first", "first", None, True),
+            "its own run that has ended": (
+                None,
+                "landed",
+                "first",
+                "first",
+                HAS_ENDED,
+                True,
+            ),
+            "its own run from another version": (
+                SKILL.name,
+                "inflight",
+                "first",
+                "first",
+                None,
+                True,
+            ),
+            "the run of another session": (
+                None,
+                "approved",
+                "first",
+                "second",
+                None,
+                True,
+            ),
+            "the run of another session that has ended": (
+                None,
+                "noted",
+                "first",
+                "second",
+                HAS_ENDED,
+                False,
+            ),
+            "the run of another session with no task": (
+                None,
+                None,
+                "first",
+                "second",
+                UNSTARTED,
+                False,
+            ),
+            "its own run with no task from another version": (
+                SKILL.name,
+                None,
+                "first",
+                "first",
+                UNSTARTED_VERSION,
+                True,
+            ),
+            "a run with no task that records no version and no session": (
+                None,
+                None,
+                UNRECORDED,
+                "second",
+                UNSTARTED_VERSION,
+                True,
+            ),
+            "a run with no task that records no session": (
+                None,
+                None,
+                None,
+                "second",
+                UNSTARTED_UNRECORDED,
+                True,
+            ),
+            "a command outside a session and a run with no task": (
+                None,
+                None,
+                "first",
+                None,
+                UNSTARTED_OUTSIDE,
+                True,
+            ),
+            "a run that records no session": (
+                SKILL.name,
+                "pending",
+                None,
+                "second",
+                None,
+                True,
+            ),
+            "a command outside a session": (
+                SKILL.name,
+                "pending",
+                "first",
+                None,
+                None,
+                True,
+            ),
+            "an ended run of another session and another version": (
+                SKILL.name,
+                "closed",
+                "first",
+                "second",
+                HAS_ENDED,
+                False,
+            ),
+        }
+        # Each file of the skill makes another version.
+        cases |= {
+            f"the run of another session and another {file.name}": (
+                file.name,
+                "pending",
+                "first",
+                "second",
+                STALE,
+                False,
+            )
+            for file in (SKILL, WORKFLOW, SCRIPT)
+        }
+        for name, case in cases.items():
+            changed, task_state, earlier, later, why, changes = case
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                script = earlier_skill(tmp, changed)
+                repo, env, first = first_run(tmp, task_state, earlier, script)
+                env = in_session(env, later)
+                before = state_of(first)
+                unfinished = task_state in UNFINISHED
+                # The status command prints the decision.
+                line = NEW_RUN + why if why else CONTINUE
+                if why and unfinished:
+                    line += ". init moves its 1 unfinished task to the new run"
+                if not why and not task_state:
+                    line += ", which holds no task yet"
+                self.assertEqual(status_values(repo, env, "setup"), [line])
+                # Each command that changes the run follows the decision.
+                command = ["config", "--limit", "3"]
+                if changes:
+                    ultraclose(*command, cwd=repo, env=env)
+                    self.assertEqual(state_of(first)["config"]["limit"], 3)
+                    # The command records its session, which can change
+                    # the decision. So init reads the state that status
+                    # read.
+                    (first / "state.json").write_text(json.dumps(before))
+                else:
+                    message = refused(*command, cwd=repo, env=env)
+                    self.assertIn(
+                        f"this session does not continue the run at {first},"
+                        f" because {why}. Start a new run with init",
+                        message,
+                    )
+                    self.assertEqual(state_of(first), before)
+                # The init command follows the decision.
+                second = Path(tmp, "second").resolve()
+                init = ["init", "--run", str(second)]
+                if why:
+                    ultraclose(*init, cwd=repo, env=env)
+                    tasks = [REF] if unfinished else []
+                    self.assertEqual(list(state_of(second)["tasks"]), tasks)
+                    assert_fresh(self, second)
+                else:
+                    message = refused(*init, cwd=repo, env=env)
+                    self.assertIn("this session continues it", message)
+                    self.assertFalse(second.exists())
+
+
+class TakeOverTest(unittest.TestCase):
+    """A new run takes the unfinished tasks of the run that it replaces."""
+
+    # The tasks of the earlier run, each named after its state. The run
+    # started the inflight task and the approved task, so each of the two
+    # has a directory, a branch, and a worktree.
+    INFLIGHT, APPROVED, PENDING = "APP-0001", "APP-0002", "APP-0003"
+    NOTED, LANDED = "APP-0004", "APP-0005"
+    UNFINISHED = (INFLIGHT, APPROVED, PENDING)
+    # The tasks that a new run takes from the earlier run.
+    MOVED = UNFINISHED + (NOTED,)
+    # The review history of the inflight task.
+    HISTORY = "## Round 1\n"
+
+    def earlier_run(self, tmp):
+        """Start a run of an earlier session and an earlier version of the skill.
+
+        The run holds one task per state of this class. Return the
+        repository, an environment that names no session, the run
+        directory, and the Workflow input of the inflight task.
+        """
+        repo, env = launchable_repo(tmp)
+        earlier = in_session(env, "first")
+        first = Path(tmp, "first").resolve()
+        configured_run(repo, earlier, first, script=earlier_skill(tmp))
+        started = (self.INFLIGHT, self.APPROVED)
+        triage(tmp, repo, earlier, *({"ref": ref} for ref in started))
+        launches = json.loads(ultraclose("next", cwd=repo, env=earlier))
+        launch = {t["task"]["ref"]: t for t in launches}[self.INFLIGHT]
+        empty_commit(launch["task"]["wt"], env, "wip")
+        Path(launch["task"]["dir"], "history.md").write_text(self.HISTORY)
+        rest = {
+            self.APPROVED: "approved",
+            self.PENDING: "pending",
+            self.NOTED: "noted",
+            self.LANDED: "landed",
+        }
+        rows = [
+            {"ref": ref, "files": [COVERED], "after": [self.INFLIGHT]}
+            for ref in (self.PENDING, self.NOTED, self.LANDED)
+        ]
+        triage(tmp, repo, earlier, *rows)
+        for ref, task_state in rest.items():
+            ultraclose("set", ref, task_state, cwd=repo, env=earlier)
+        return repo, env, first, launch
+
+    def assert_unchanged(self, repo, env, first, before):
+        """The earlier run keeps its state and its task directories."""
+        self.assertEqual(state_of(first), before)
+        for ref in (self.INFLIGHT, self.APPROVED):
+            self.assertTrue((first / "tasks" / ref / "task.md").is_file(), ref)
+        status = ultraclose("status", cwd=repo, env=env)
+        self.assertEqual(status.splitlines()[0], f"run={first}")
+
+    def test_new_run_takes_unfinished_tasks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first, launch = self.earlier_run(tmp)
+            before = state_of(first)
+            env = in_session(env, "second")
+            moves = (
+                ". init moves its 3 unfinished tasks and its 1 noted task to the"
+                " new run"
+            )
+            self.assertEqual(
+                status_values(repo, env, "setup"), [NEW_RUN + STALE + moves]
+            )
+            self.assertIn(
+                f"this session does not continue the run at {first}",
+                refused("next", cwd=repo, env=env),
+            )
+            second = Path(tmp, "second").resolve()
+            out = ultraclose("init", "--run", str(second), cwd=repo, env=env)
+            states = (
+                f"{self.INFLIGHT} (inflight) {self.APPROVED} (approved)"
+                f" {self.PENDING} (pending)"
+            )
+            self.assertEqual(
+                out.splitlines()[:5],
+                [
+                    f"replaced the run at {first}",
+                    "moved 3 unfinished tasks of that run to the new run:",
+                    states,
+                    "moved 1 noted task of that run to the new run:",
+                    self.NOTED,
+                ],
+            )
+            # The new run holds each unfinished task and the noted task
+            # with its row and its state, and it holds no config and no
+            # file of the first run.
+            later = state_of(second)
+            self.assertEqual(
+                later["tasks"], {ref: before["tasks"][ref] for ref in self.MOVED}
+            )
+            self.assertEqual(later["session"], "second")
+            self.assertEqual(later["skill"], version_of(tmp))
+            self.assertEqual(later["replaces"], [str(first)])
+            assert_fresh(self, second)
+            # The first run keeps the task that it landed, its config, and
+            # its files.
+            after = state_of(first)
+            self.assertEqual(
+                after["tasks"], {self.LANDED: before["tasks"][self.LANDED]}
+            )
+            self.assertEqual(after["config"], before["config"])
+            kept = [name for name in RUN_FILES if (first / name).is_file()]
+            self.assertEqual(kept, list(RUN_FILES))
+            # The directory of each started task moves to the new run.
+            for ref in (self.INFLIGHT, self.APPROVED):
+                self.assertFalse((first / "tasks" / ref).exists(), ref)
+                self.assertTrue((second / "tasks" / ref / "task.md").is_file(), ref)
+            # So the new run resumes the work of the task as its own.
+            relaunch = json.loads(ultraclose("args", self.INFLIGHT, cwd=repo, env=env))
+            task = relaunch["task"]
+            self.assertEqual(task["wt"], launch["task"]["wt"])
+            self.assertEqual(task["dir"], str(second / "tasks" / self.INFLIGHT))
+            self.assertEqual(task["resume"]["round"], 2)
+            self.assertEqual(Path(task["dir"], "history.md").read_text(), self.HISTORY)
+            # The first run names a model for the reviewer, and the new run
+            # names none. So the relaunch follows the session model.
+            self.assertEqual(before["config"]["models"], {"reviewer": OPUS})
+            self.assertEqual(relaunch["models"], {})
+            self.assertEqual(status_values(repo, env, "setup"), [CONTINUE])
+            # The batch goes on from the first run, so status names it for
+            # the report.
+            self.assertEqual(
+                status_values(repo, env, "earlier run"),
+                [f"{first}, which keeps 1 landed task"],
+            )
+
+    def test_new_run_names_each_earlier_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first, _ = self.earlier_run(tmp)
+            second = Path(tmp, "second").resolve()
+            later = in_session(env, "second")
+            ultraclose("init", "--run", str(second), cwd=repo, env=later)
+            ultraclose("set", self.APPROVED, "landed", cwd=repo, env=later)
+            # A session of another version of the skill takes over the
+            # second run before its end.
+            third = Path(tmp, "third").resolve()
+            last = in_session(env, "third")
+            other = earlier_skill(tmp, changed=WORKFLOW.name)
+            ultraclose("init", "--run", str(third), cwd=repo, env=last, script=other)
+            self.assertEqual(state_of(third)["replaces"], [str(second), str(first)])
+            self.assertEqual(
+                status_values(repo, last, "earlier run"),
+                [
+                    f"{second}, which keeps 1 landed task",
+                    f"{first}, which keeps 1 landed task",
+                ],
+            )
+            # Status still names an earlier run whose state file is gone.
+            (first / "state.json").unlink()
+            texts = status_values(repo, last, "earlier run")
+            self.assertEqual(texts[0], f"{second}, which keeps 1 landed task")
+            unreadable = f"{first}, whose state.json this command cannot read ("
+            self.assertTrue(texts[1].startswith(unreadable), texts[1])
+
+    def test_new_run_takes_noted_tasks(self):
+        # The earlier run started and noted two tasks, so each has a
+        # directory and a branch. The pending task waits for the first
+        # noted task, and no task waits for the other.
+        noted, waiting, other = self.NOTED, self.PENDING, "APP-0006"
+        stuck = f"stuck {waiting} waits for noted {noted} | t"
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = launchable_repo(tmp)
+            earlier = in_session(env, "first")
+            first = Path(tmp, "first").resolve()
+            configured_run(repo, earlier, first, script=earlier_skill(tmp))
+            triage(tmp, repo, earlier, {"ref": noted}, {"ref": other})
+            ultraclose("next", cwd=repo, env=earlier)
+            triage(tmp, repo, earlier, {"ref": waiting, "after": [noted]})
+            for ref in (noted, other):
+                ultraclose("set", ref, "noted", cwd=repo, env=earlier)
+            self.assertIn(stuck, ultraclose("status", cwd=repo, env=earlier))
+            before = state_of(first)
+            env = in_session(env, "second")
+            moves = (
+                ". init moves its 1 unfinished task and its 2 noted tasks to the"
+                " new run"
+            )
+            self.assertEqual(
+                status_values(repo, env, "setup"), [NEW_RUN + STALE + moves]
+            )
+            second = Path(tmp, "second").resolve()
+            out = ultraclose("init", "--run", str(second), cwd=repo, env=env)
+            self.assertEqual(
+                out.splitlines()[1:5],
+                [
+                    "moved 1 unfinished task of that run to the new run:",
+                    f"{waiting} (pending)",
+                    "moved 2 noted tasks of that run to the new run:",
+                    f"{noted} {other}",
+                ],
+            )
+            # The new run holds each noted task with its row and its
+            # directory, so the pending task keeps waiting for the first.
+            moved = (noted, waiting, other)
+            self.assertEqual(
+                state_of(second)["tasks"], {ref: before["tasks"][ref] for ref in moved}
+            )
+            self.assertEqual(state_of(first)["tasks"], {})
+            for ref in (noted, other):
+                self.assertFalse((first / "tasks" / ref).exists(), ref)
+                self.assertTrue((second / "tasks" / ref / "task.md").is_file(), ref)
+            status = ultraclose("status", cwd=repo, env=env)
+            self.assertIn(stuck, status)
+            self.assertIn(" noted=2 ", status)
+            self.assertEqual(json.loads(ultraclose("next", cwd=repo, env=env)), [])
+            self.assertEqual(state_of(second)["tasks"][waiting]["state"], "pending")
+            # Aven lists each noted task as open, but the new run holds
+            # them, so untriaged prints neither.
+            aven_listed_tasks(env, {"ref": noted}, {"ref": other})
+            self.assertEqual(json.loads(ultraclose("untriaged", cwd=repo, env=env)), [])
+
+    def test_force_leaves_unfinished_tasks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first, _ = self.earlier_run(tmp)
+            before = state_of(first)
+            env = in_session(env, "second")
+            second = Path(tmp, "second").resolve()
+            out = ultraclose("init", "--run", str(second), "--force", cwd=repo, env=env)
+            self.assertNotIn("moved", out)
+            self.assertEqual(state_of(second)["tasks"], {})
+            self.assertNotIn("replaces", state_of(second))
+            self.assertEqual(status_values(repo, env, "earlier run"), [])
+            self.assertEqual(state_of(first), before)
+            for ref in (self.INFLIGHT, self.APPROVED):
+                self.assertTrue((first / "tasks" / ref / "task.md").is_file(), ref)
+            # The new run treats the work of those tasks as leftover work.
+            triage(tmp, repo, env, {"ref": self.INFLIGHT})
+            self.assertIn(OWN_WORK, refused("next", cwd=repo, env=env))
+
+    def test_moves_no_task_while_earlier_run_lands(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first, _ = self.earlier_run(tmp)
+            before = state_of(first)
+            env = in_session(env, "second")
+            second = Path(tmp, "second").resolve()
+            init = ["init", "--run", str(second)]
+            # A landing holds the landing lock of its run.
+            with open(first / "land.lock", "w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                message = refused(*init, cwd=repo, env=env)
+            self.assertIn(f"a landing of the run at {first} is running", message)
+            self.assertFalse(second.exists())
+            self.assert_unchanged(repo, env, first, before)
+            ultraclose(*init, cwd=repo, env=env)
+            self.assertEqual(sorted(state_of(second)["tasks"]), sorted(self.MOVED))
+
+    def test_failed_move_changes_no_run(self):
+        def read_only(repo, first):
+            """Keep init from the move of the directory of the approved task.
+
+            The move of a directory into another directory fails when the
+            user cannot write the directory. Init moves the directory of
+            the inflight task first.
+            """
+            if os.geteuid() == 0:
+                self.skipTest("root moves a directory that it cannot write")
+            (first / "tasks" / self.APPROVED).chmod(0o555)
+
+        def unwritable_config(repo, first):
+            """Keep init from the git config after it moves each task.
+
+            Git writes its config through a lock file with this name, and
+            it refuses the write while the file exists.
+            """
+            (repo / ".git" / "config.lock").touch()
+
+        def unsaved(repo, first):
+            """Keep init from the state file of the earlier run.
+
+            Init saves that state last, after it names the new run in the
+            git config, through a file with this name.
+            """
+            (first / "state.json.tmp").mkdir()
+
+        cases = {
+            "a task directory that init cannot move": (read_only, "Permission denied"),
+            "a git config that init cannot write": (
+                unwritable_config,
+                "git cannot write ultraclose.run",
+            ),
+            "a state file that init cannot save": (unsaved, "state.json.tmp"),
+        }
+        for name, (block, cause) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, first, _ = self.earlier_run(tmp)
+                before = state_of(first)
+                env = in_session(env, "second")
+                second = Path(tmp, "second").resolve()
+                block(repo, first)
+                try:
+                    message = refused("init", "--run", str(second), cwd=repo, env=env)
+                finally:
+                    (first / "tasks" / self.APPROVED).chmod(0o755)
+                    (repo / ".git" / "config.lock").unlink(missing_ok=True)
+                self.assertIn(
+                    f"init cannot move the unfinished tasks of the run at {first}",
+                    message,
+                )
+                self.assertIn(cause, message)
+                self.assertIn("Those tasks stay in that run.", message)
+                self.assertIn("run init again, or pass --force", message)
+                self.assertNotIn("set ultraclose.run back", message)
+                self.assertFalse(second.exists())
+                # The git config still names the earlier run, as the first
+                # line of status says.
+                self.assert_unchanged(repo, env, first, before)
+
+    def test_config_that_init_cannot_set_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env, first, _ = self.earlier_run(tmp)
+            before = state_of(first)
+            env = in_session(env, "second")
+            second = Path(tmp, "second").resolve()
+            # Init names the new run in the git config, and then it cannot
+            # save the state of the earlier run. The wrapper refuses the git
+            # command that names the earlier run again.
+            (first / "state.json.tmp").mkdir()
+            wrapper = Path(tmp, "wrapper")
+            wrapper.mkdir()
+            real = shutil.which("git", path=env["PATH"])
+            (wrapper / "git").write_text(
+                "#!/bin/sh\n"
+                f'if [ "$1 $2 $3 $4" = "config --local ultraclose.run {first}" ]; then\n'
+                '  echo "error: could not lock config file" >&2\n'
+                "  exit 1\n"
+                "fi\n"
+                f'exec "{real}" "$@"\n'
+            )
+            (wrapper / "git").chmod(0o755)
+            refusing = {**env, "PATH": f"{wrapper}{os.pathsep}{env['PATH']}"}
+            message = refused("init", "--run", str(second), cwd=repo, env=refusing)
+            self.assertIn(
+                f"init cannot move the unfinished tasks of the run at {first}",
+                message,
+            )
+            self.assertIn("state.json.tmp", message)
+            self.assertIn("Those tasks stay in that run.", message)
+            fix = (
+                "Git also cannot set ultraclose.run back to that run, so run"
+                f" git config --local ultraclose.run {first} before init."
+            )
+            self.assertIn(fix, message)
+            # The git config names the new run directory, which init
+            # removed. So no command finds a run until the caller runs the
+            # git command of the message.
+            self.assertFalse(second.exists())
+            self.assertEqual(
+                git("config", "--get", "ultraclose.run", cwd=repo, env=env),
+                str(second),
+            )
+            self.assertIn(
+                f"ultraclose.run in the git config names {second}, which holds"
+                " no state.json",
+                refused("status", cwd=repo, env=env),
+            )
+            self.assertEqual(state_of(first), before)
+            for ref in (self.INFLIGHT, self.APPROVED):
+                self.assertTrue((first / "tasks" / ref / "task.md").is_file(), ref)
+            command = re.search(r"so run (git config .+?) before init", message)
+            subprocess.run(command[1].split(), cwd=repo, env=env, check=True)
+            self.assert_unchanged(repo, env, first, before)
+            # After the caller removes the cause, init moves the tasks.
+            (first / "state.json.tmp").rmdir()
+            ultraclose("init", "--run", str(second), cwd=repo, env=env)
+            self.assertEqual(sorted(state_of(second)["tasks"]), sorted(self.MOVED))
+
+
+class MissingRunTest(unittest.TestCase):
+    """A git config that names no run that a command can read blocks no new run."""
+
+    def test_no_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, env = new_repo(tmp)
+            for command in (["status"], ["next"], ["watch"]):
+                with self.subTest(command=command):
+                    message = refused(*command, cwd=repo, env=env)
+                    self.assertIn(
+                        "no run found for this repository, because the git config"
+                        " of the repository does not set ultraclose.run. Start a"
+                        " run with init",
+                        message,
+                    )
+
+    def test_run_directory_that_holds_no_run(self):
+        def remove(run):
+            shutil.rmtree(run)
+
+        def lose_state(run):
+            (run / "state.json").unlink()
+
+        def cut_state(run):
+            (run / "state.json").write_text('{"config": {')
+
+        def empty_state(run):
+            (run / "state.json").write_text("{}")
+
+        missing = "which holds no state.json"
+        unread = "and the command cannot read {}/state.json"
+        # name: (what happens to the run directory, what each command
+        # says about the directory)
+        cases = {
+            "a directory that is gone": (remove, missing),
+            "a directory without its state file": (lose_state, missing),
+            "a state file that ends early": (cut_state, unread),
+            "a state file without a config": (empty_state, unread),
+        }
+        for name, (lose, cause) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                repo, env, first = first_run(tmp, "inflight", "first")
+                lose(first)
+                env = in_session(env, "second")
+                named = f"ultraclose.run in the git config names {first}, "
+                for command in (["status"], ["next"], ["config", "--limit", "3"]):
+                    message = refused(*command, cwd=repo, env=env)
+                    self.assertIn("no run found for this repository", message)
+                    self.assertIn(named + cause.format(first), message)
+                    self.assertIn("Start a run with init", message)
+                    self.assertNotIn("Traceback", message)
+                second = Path(tmp, "second").resolve()
+                out = ultraclose("init", "--run", str(second), cwd=repo, env=env)
+                self.assertIn(
+                    "replaced a run that init cannot read, because "
+                    + named
+                    + cause.format(first),
+                    out,
+                )
+                self.assertEqual(state_of(second)["tasks"], {})
+                assert_fresh(self, second)
+                status = ultraclose("status", cwd=repo, env=env)
+                self.assertEqual(status.splitlines()[0], f"run={second}")
 
 
 class StatusTest(unittest.TestCase):
@@ -2525,9 +3457,6 @@ RETRY = "Then run ultraclose.py {}."
 # The line that set prints for the worktree of an earlier run, with the
 # path of that worktree.
 NOT_CREATED = "kept worktree {}, which this run did not create"
-# What init says about a directory that holds the tasks directory of an
-# earlier run.
-HOLDS_TASKS = "holds the tasks directory of an earlier run"
 
 
 def noted(tmp, repo, env, wt):
@@ -2856,7 +3785,7 @@ class LeftoverTest(unittest.TestCase):
                 self.assertTrue(Path(wt, "dirty.txt").is_file())
                 self.assertEqual(self.ahead(repo, env, BRANCH), 2)
 
-    def test_init_refuses_directory_that_holds_tasks(self):
+    def test_init_leaves_directory_that_holds_tasks(self):
         # The first run loses its state file, and its directory keeps its
         # tasks directory.
         # name: whether the first run started its task
@@ -2870,12 +3799,19 @@ class LeftoverTest(unittest.TestCase):
                 if started:
                     ultraclose("next", cwd=repo, env=env)
                 (first / "state.json").unlink()
-                message = refused("init", "--run", str(first), cwd=repo, env=env)
-                self.assertIn(f"{first} {HOLDS_TASKS}", message)
-                self.assertIn("Pass a new directory", message)
-                self.assertIn("With --force, init takes this directory", message)
+                out = ultraclose("init", "--run", str(first), cwd=repo, env=env)
+                # The new run takes the next free directory, so it does
+                # not treat the work of the first run as its own.
+                second = first.with_name("first-2")
+                self.assertIn(f"run={second} ", out)
                 self.assertFalse((first / "state.json").exists())
-                self.assertIn("no run found", refused("status", cwd=repo, env=env))
+                self.assertEqual(state_of(second)["tasks"], {})
+                triage(tmp, repo, env, {"ref": REF})
+                if started:
+                    self.assertIn(OWN_WORK, refused("next", cwd=repo, env=env))
+                else:
+                    launched = json.loads(ultraclose("next", cwd=repo, env=env))
+                    self.assertEqual([t["task"]["ref"] for t in launched], [REF])
 
     def test_run_after_lost_state_file(self):
         # The first run loses its state file while its task runs, and its

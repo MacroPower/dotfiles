@@ -44,6 +44,19 @@ and its review history. It also holds the summary and the notes of its
 change (`summary.txt` and `notes.txt`). The repository's git config records
 the path of the run directory, so every command finds it.
 
+`state.json` also records where the run comes from, and `ultraclose.py
+status` prints each record:
+
+- **The skill version:** a hash of the `SKILL.md`, the `close-task.js`,
+  and the `ultraclose.py` that created the run. The `skill` line of
+  `status` says when the command comes from another version of the skill.
+- **The session:** the session of the `init` command, and then of each
+  later command that changes the run. The `session` line of `status` says
+  when the command runs in another session.
+- **The earlier runs:** the run whose unfinished tasks `init` moved to
+  this run, and each earlier run that the state of that run records. Each
+  `earlier run` line of `status` names one of them.
+
 The directory of a task also holds its own copy of `close-task.js`. The
 `next` and `args` commands of `ultraclose.py` write the copy of each task
 that they start, and so does a landing that runs `next`. In the `meta` of
@@ -99,20 +112,39 @@ Every epic stays open while one of its children is open. Set an epic to
 `done` when its last child lands.
 
 The run ends when `ultraclose.py status` counts no pending, inflight, or
-approved task. `status` then prints an `ended` line.
+approved task. `status` then prints an `ended` line. Its `setup` line then
+names `init` for the setup of a later batch, so do not start a new run at
+the end of a run.
 
 ## Setup
 
-1. Run `ultraclose.py status`, and act on what it reports:
-   - **No run:** do the rest of the setup.
-   - **A run with an `ended` line:** do the rest of the setup, which
-     starts a new run. The arguments ask for a new batch of tasks. Do not
-     copy the limit, the models, the check, the health command, the step
-     timeout, the shared globs, or the `rules.md` of the ended run. They
-     fit the tasks that it closed.
-   - **A run without an `ended` line:** continue that run, and skip the
-     rest of the setup. First fit the run to the arguments and to the
-     open tasks that are not in it, as the Config section says.
+1. Run `ultraclose.py status`. The script decides whether this session
+   continues the run that the repository names, and the `setup` line of
+   `status` prints the decision:
+   - **`setup: continue this run`:** continue that run, and skip the rest
+     of the setup. First fit the run to the arguments and to the open
+     tasks that are not in it, as the Config section says. When the
+     `session` line names another session, also follow the Interrupted
+     run entry of the Hazards section. Follow that entry as well when the
+     line says `not recorded` and this session has not worked on that run
+     before.
+   - **`setup: continue this run, which holds no task yet`:** an earlier
+     setup of this session stopped early. Do the rest of the setup, and
+     in step 4 change the run with `ultraclose.py config` in place of
+     `init`.
+   - **`setup: start a new run with init`:** do the rest of the setup.
+     The line gives the reason, such as a run that has ended, or a run
+     that comes from another session and another version of the skill.
+     A run without a task gets this line as well, unless it records this
+     session and this version of the skill. Also do the rest of the setup
+     when `status` fails with `no run found`.
+
+   New runs do not take the config, the `rules.md`, or the `notes.md` of
+   an earlier run. Set each flag of `init`, such as the limit, the models,
+   and the shared globs, from the arguments and from this setup. Write
+   `rules.md` from this setup too. The values of an earlier run fit the
+   arguments and the tasks of that run, and the version of the skill that
+   created it.
 2. Confirm that the main checkout is clean and on the base branch.
 3. Find how the project builds, tests, and checks itself, and what its
    commit hooks run. Read CLAUDE.md, the task runner config, and
@@ -120,13 +152,40 @@ approved task. `status` then prints an `ended` line.
    file system that holds each cache. Some caches evict their content when
    the free space of the disk falls to a threshold, so find that threshold
    for each cache.
-4. Run `ultraclose.py init --run <scratchpad>/ultraclose --limit <N>`. If
-   that directory holds an earlier run, pass a new directory, such as
-   `<scratchpad>/ultraclose-2`. `init` refuses a directory that holds the
-   `state.json` or the `tasks/` directory of an earlier run. So the new run
-   starts without the `rules.md` and the `notes.md` of that run. It also
-   treats each branch and each worktree that the earlier run left as
-   leftover work, as the Leftover work section says.
+4. Run `ultraclose.py init --run <scratchpad>/ultraclose --limit <N>`.
+   `init` prints the run directory in its `run=` line, and so does
+   `status`. Each run takes a directory of its own. When
+   `<scratchpad>/ultraclose` holds the `state.json` or the `tasks/`
+   directory of an earlier run, the new run takes the next free directory,
+   such as `<scratchpad>/ultraclose-2`. So the new run starts without the
+   `rules.md` and the `notes.md` of that run. It also treats each branch
+   and each worktree that the earlier run left as leftover work, as the
+   Leftover work section says.
+
+   `init` follows the decision of the `setup` line. When this session
+   continues the run, `init` fails, and its error names that run. Pass
+   `--force` only when the user asks for an empty run. With `--force`,
+   `init` replaces a run that this session continues, and the unfinished
+   tasks of that run become leftover work.
+
+   When the `setup` line says that `init` moves unfinished tasks, the
+   earlier run stopped before its end. `init` moves each pending, inflight,
+   approved, and noted task of that run to the new run, and it prints
+   those tasks. Each task keeps its triage row, its state, and its task
+   directory, so the new run resumes its branch and its worktree. The new
+   run holds each noted task, so `untriaged` does not list it. `status`
+   still lists each pending task that waits for a noted task as stuck, and
+   the Loop section says to note it.
+
+   The earlier run keeps its landed and closed tasks, and the batch of the
+   new run goes on from that run. So `status` names that run in an
+   `earlier run` line, and the report covers it, as the Report section
+   says.
+
+   Before you run `init`, stop each Workflow that still runs one of the
+   unfinished tasks. Its agents write to the task directory of the earlier
+   run. After the setup, start those tasks again as the Interrupted run
+   entry of the Hazards section says.
 
    Pass `--model <role>=<model>` for each model that the arguments name,
    as the Models section says.
@@ -300,6 +359,11 @@ prints those tasks, as the Scope section says. Fit the run in these ways:
 - Rewrite each rule in `rules.md` that the landed tasks made false, such as
   the layout of a module that they split. Remove each exception that the
   run made for one of them.
+- When the `skill` line of `status` says that the command comes from
+  another version, the skill changed after the run started. Compare
+  `rules.md` with step 5 of the Setup section, and rewrite each rule that
+  the step states in another way. Do the same when the line says that
+  the run records no version.
 
 ## Models
 
@@ -367,13 +431,14 @@ and this table gives the relaunch that follows the correction:
 
 ## Leftover work
 
-Each run resumes only the branches and the worktrees that it created.
-Earlier runs can leave a `task/<ref>` branch or a `t-<ref>` worktree for a
-task that is open again. Every run leaves the branch of each task that it
-notes. Runs that stop before their end also leave the worktree of each
-task that they started. That branch can sit far behind the base branch.
-Every landing squashes the whole branch, so a task that starts on that
-branch lands the commits that the earlier run did not land.
+Each run resumes only the branches and the worktrees that it created, and
+those of the tasks that `init` moved to it. Earlier runs can leave a
+`task/<ref>` branch or a `t-<ref>` worktree for a task that is open again.
+Every run leaves the branch of each task that it notes. Runs that stop
+before their end also leave the worktree of each task that they started.
+That branch can sit far behind the base branch. Every landing squashes the
+whole branch, so a task that starts on that branch lands the commits that
+the earlier run did not land.
 
 `ultraclose.py next` starts no task while a pending task has leftover
 work, and neither does the `next` of a landing. `ultraclose.py args <ref>`
@@ -422,12 +487,13 @@ it starts the task. It treats the branch or the worktree of a task without
 that directory as leftover work. So do not create or remove a task
 directory yourself.
 
-`ultraclose.py init` refuses a run directory that holds the `tasks/`
-directory of an earlier run. A run in that directory treats each task
-directory there as its own, so it resumes the branch of that task. Pass a
-new directory, as the Setup section says. With `--force`, `init` takes the
-directory. Pass `--force` only when the user asks you to resume the tasks
-of that run.
+`ultraclose.py init` takes no run directory that holds the `tasks/`
+directory of an earlier run, as the Setup section says. A run in that
+directory treats each task directory there as its own, so it resumes the
+branch of that task. With `--force`, `init` takes the `--run` directory
+when it holds `tasks/` and no `state.json`. It takes no other such
+directory, even with `--force`. Pass `--force` for such a directory only
+when the user asks you to resume the tasks of that run.
 
 ## Loop
 
@@ -780,6 +846,11 @@ the Loop table says.
   can name a task that you relaunched, and the Landing section says to
   skip its object. New sessions do not run `watch`, so start it again.
 
+  Each new session first follows the `setup` line of `status`, as the
+  Setup section says. After the earlier session has ended, no landing
+  runs for its approved tasks. Land each of them again, as the Landing
+  section says.
+
 ## Notes
 
 Append to `notes.md` in the run directory when something happens that the
@@ -807,3 +878,11 @@ End with a report that lists:
 - Each limit that you lowered to fit the memory, with the reason.
 - The stale artifacts.
 - The commits that the run did not push, and each rejected push.
+
+Each `earlier run` line of `status` names a run that this batch goes on
+from, because `init` moved the unfinished tasks of that run to this run.
+Cover each such run in the report as well. List each landed task in the
+`state.json` of that run with its commit, and report each entry of its
+`notes.md` in the matching item of this list. Read those files in that run
+directory, and do not copy them into the `notes.md` or the `rules.md` of
+this run.
